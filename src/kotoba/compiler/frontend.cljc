@@ -6,6 +6,7 @@
   ;; for the fuller explanation). `#?@` (splicing) rather than `#?` here
   ;; because each branch below is more than one require-spec.
   (:require [clojure.set :as set]
+            [kotoba.compiler.value :as value]
             #?@(:clj [[clojure.tools.reader :as reader]
                       [clojure.tools.reader.reader-types :as rt]]
                 :cljs [[kotoba.compiler.kotoba-reader :as kr]
@@ -65,6 +66,8 @@
 ;; (discard non-final expressions by binding gensym temps). Admitted in
 ;; reserved-function-names so authors cannot define a conflicting `do`.
 (def sequencing-operations '#{do})
+(def string-operations '{string-byte-length 1 string=? 2 string-concat 2})
+(def f64-operations '{f64-to-bits 1 f64-from-bits 1})
 (def reserved-function-names
   (set/union forbidden-heads arithmetic comparisons (set (keys heap-operations))
              (set (keys kernel-memory-operations))
@@ -75,7 +78,9 @@
              closure-operations
              lazy-sequence-operations
              sequencing-operations
-             '#{let if fn cap-call ns defn}))
+             (set (keys string-operations))
+             (set (keys f64-operations))
+             '#{let if fn cap-call ns defn defn-}))
 (def max-functions 1024)
 (def max-expression-nodes 50000)
 (def max-lowered-nodes 100000)
@@ -84,6 +89,8 @@
 (def max-symbol-chars 128)
 (def max-list-items 128)
 (def max-set-items 16)
+(def value-types #{:i64 :string :f64})
+(def ^:dynamic *typed-values?* false)
 
 (defn- kotoba-integer?
   "True for a value that is (or stands for) a `.kotoba` integer literal --
@@ -158,6 +165,34 @@
 
 (defn- reject! [message form]
   (throw (ex-info message {:phase :subset :form form})))
+
+(declare valid-name?)
+
+(defn- namespace-parts [form]
+  (let [[op namespace-symbol & tail] form]
+    (when-not (and (= 'ns op) (symbol? namespace-symbol)
+                   (nil? (namespace namespace-symbol))
+                   (pos? (count (str namespace-symbol)))
+                   (<= (count (str namespace-symbol)) max-symbol-chars))
+      (reject! "invalid bounded namespace symbol" form))
+    (let [[docstring tail] (if (string? (first tail))
+                             [(first tail) (rest tail)] [nil tail])]
+      (when (and docstring (> (count docstring) 4096))
+        (reject! "namespace docstring exceeds admission limit" docstring))
+      (when (> (count tail) 1)
+        (reject! "namespace admits at most one :export clause" form))
+      (let [clause (first tail)]
+        (when (and clause
+                   (not (and (seq? clause) (= :export (first clause))
+                             (= 2 (count clause)) (vector? (second clause)))))
+          (reject! "ns must contain only a bounded :export vector in namespace clauses" clause))
+        (let [exports (when clause (vec (second clause)))]
+          (when (and exports
+                     (or (> (count exports) max-functions)
+                         (not= (count exports) (count (distinct exports)))
+                         (not-every? valid-name? exports)))
+            (reject! "namespace exports must be unique bounded function names" exports))
+          {:namespace namespace-symbol :exports exports})))))
 
 (declare desugar-expr desugar-list form-free-symbols nth-pair-second
          replace-recur valid-name?)
@@ -1001,7 +1036,8 @@
 (defn- desugar-expr [form]
   (cond
     (keyword? form) (keyword->i64 form)
-    (string? form) (string->i64 form)
+    (string? form) (if *typed-values?* form (string->i64 form))
+    (value/f64-value? form) (list 'f64-from-bits (value/f64-to-i64-bits form))
     (map? form) (desugar-map form)
     (set? form) (desugar-set form)
     ;; ADR-2607150000: vector-as-data reuses desugar-list's pair-chain
@@ -1230,6 +1266,21 @@
                         (list 'bit-and (list 'quot (desugar-expr (first args)) 2097152) 127))
         string= (do (when-not (= 2 (count args)) (reject! "string= requires two operands" form))
                     (list '= (desugar-expr (first args)) (desugar-expr (second args))))
+        string-byte-length (do (when-not (= 1 (count args))
+                                (reject! "string-byte-length requires one operand" form))
+                               (list 'string-byte-length (desugar-expr (first args))))
+        string=? (do (when-not (= 2 (count args))
+                       (reject! "string=? requires two operands" form))
+                     (list 'string=? (desugar-expr (first args)) (desugar-expr (second args))))
+        string-concat (do (when-not (= 2 (count args))
+                           (reject! "string-concat requires two operands" form))
+                          (list 'string-concat (desugar-expr (first args)) (desugar-expr (second args))))
+        f64-to-bits (do (when-not (= 1 (count args))
+                          (reject! "f64-to-bits requires one operand" form))
+                        (list 'f64-to-bits (desugar-expr (first args))))
+        f64-from-bits (do (when-not (= 1 (count args))
+                            (reject! "f64-from-bits requires one operand" form))
+                          (list 'f64-from-bits (desugar-expr (first args))))
         and (desugar-and args)
         or (desugar-or args)
         do (desugar-do args)
@@ -1362,6 +1413,10 @@
                 (reject! "integer literal is outside i64" form))
        :cljs (if (i64/in-i64-range? form) form
                  (reject! "integer literal is outside i64" form)))
+    (string? form) (if *typed-values?* form
+                       (reject! "value type is outside the safe profile" form))
+    (value/f64-value? form) (when-not *typed-values?*
+                              (reject! "f64 literal requires the typed value profile" form))
     (symbol? form) (if (contains? locals form) form
                        (reject! "unbound or dynamic symbol is forbidden" form))
     (seq? form)
@@ -1411,6 +1466,16 @@
               (reject! "kernel privileged operation arity mismatch" form))
             (doseq [arg args] (validate-expr arg locals functions (inc depth) budget)))
 
+        (contains? string-operations op)
+        (do (when-not (= (get string-operations op) (count args))
+              (reject! "string operation arity mismatch" form))
+            (doseq [arg args] (validate-expr arg locals functions (inc depth) budget)))
+
+        (contains? f64-operations op)
+        (do (when-not (= (get f64-operations op) (count args))
+              (reject! "f64 operation arity mismatch" form))
+            (doseq [arg args] (validate-expr arg locals functions (inc depth) budget)))
+
         (contains? functions op)
         (let [expected (count (get functions op))]
           (when-not (= expected (count args))
@@ -1458,6 +1523,8 @@
 (defn- lowered-cost [form env]
   (cond
     (kotoba-integer? form) 1
+    (string? form) 1
+    (value/f64-value? form) 1
     (symbol? form) (get env form 1)
     :else
     (let [[op & args] form]
@@ -1828,10 +1895,68 @@
                     (apply list op (map expand args))))))]
       (mapv expand forms))))
 
+(defn- typed-defn-parts [form]
+  (let [[_ name raw-params & tail] form
+        [result body] (if (keyword? (first tail)) [(first tail) (rest tail)] [:i64 tail])]
+    (when-not (contains? value-types result)
+      (reject! "function result type is outside the safe value profile" result))
+    (let [typed? (some keyword? raw-params)
+          _ (when (and typed? (odd? (count raw-params)))
+              (reject! "typed parameters require alternating name/type pairs" raw-params))
+          parts (if typed?
+                  (mapv (fn [[pattern type]]
+                          (when-not (contains? value-types type)
+                            (reject! "parameter type is outside the safe value profile" type))
+                          {:pattern pattern :type type})
+                        (partition 2 raw-params))
+                  (mapv #(hash-map :pattern % :type :i64) raw-params))]
+      {:name name :parts parts :result result :body body})))
+
+(defn- infer-value-type [form locals signatures]
+  (cond
+    (kotoba-integer? form) :i64
+    (string? form) :string
+    (value/f64-value? form) :f64
+    (symbol? form) (or (get locals form) (reject! "unbound symbol has no value type" form))
+    (seq? form)
+    (let [[op & args] form]
+      (cond
+        (= op 'let) (let [[bindings body] args]
+                      (loop [pairs (partition 2 bindings) env locals]
+                        (if-let [[name value] (first pairs)]
+                          (recur (next pairs) (assoc env name (infer-value-type value env signatures)))
+                          (infer-value-type body env signatures))))
+        (= op 'if) (let [[test then else] args
+                         tt (infer-value-type test locals signatures)
+                         a (infer-value-type then locals signatures)
+                         b (infer-value-type else locals signatures)]
+                     (when-not (= :i64 tt) (reject! "if test must be i64" test))
+                     (when-not (= a b) (reject! "if branches must have the same value type" form)) a)
+        (= op 'string-byte-length) (do (when-not (= [:string] (mapv #(infer-value-type % locals signatures) args))
+                                        (reject! "string-byte-length requires string" form)) :i64)
+        (= op 'string=?) (do (when-not (= [:string :string] (mapv #(infer-value-type % locals signatures) args))
+                              (reject! "string=? requires strings" form)) :i64)
+        (= op 'string-concat) (do (when-not (= [:string :string] (mapv #(infer-value-type % locals signatures) args))
+                                   (reject! "string-concat requires strings" form)) :string)
+        (= op 'f64-to-bits) (do (when-not (= [:f64] (mapv #(infer-value-type % locals signatures) args))
+                                  (reject! "f64-to-bits requires f64" form)) :i64)
+        (= op 'f64-from-bits) (do (when-not (= [:i64] (mapv #(infer-value-type % locals signatures) args))
+                                    (reject! "f64-from-bits requires i64" form)) :f64)
+        (contains? signatures op)
+        (let [{:keys [param-types result]} (get signatures op)
+              actual (mapv #(infer-value-type % locals signatures) args)]
+          (when-not (= param-types actual) (reject! "function argument value type mismatch" form)) result)
+        :else (do (doseq [arg args]
+                    (when-not (= :i64 (infer-value-type arg locals signatures))
+                      (reject! "i64 operation received non-i64 value" form))) :i64)))
+    :else (reject! "value has no admitted type" form)))
+
 (defn analyze [source]
   (let [source-forms (read-forms source)
         _ (validate-portable-value-ids! source-forms)
-        forms (-> source-forms expand-pure-desugars expand-match-forms)
+        typed-values? (boolean (re-find #"(?<![A-Za-z0-9_-]):(?:string|f64)(?![A-Za-z0-9_-])" source))
+        forms (binding [*typed-values?* typed-values?]
+                (-> source-forms expand-pure-desugars expand-match-forms))
         namespaces (filter #(and (seq? %) (= 'ns (first %))) forms)
         protocol-forms (filter #(and (seq? %) (contains? '#{defprotocol definterface} (first %))) forms)
         protocol-infos (mapv protocol-form->info protocol-forms)
@@ -1852,7 +1977,8 @@
         _ (when-not (= (count implementations)
                        (count (distinct (map (juxt :protocol :method :record) implementations))))
             (reject! "duplicate record protocol method implementation" records))
-        raw-defs (filter #(and (seq? %) (= 'defn (first %))) forms)
+        source-defs (filter #(and (seq? %) (contains? '#{defn defn-} (first %))) forms)
+        raw-defs (mapv #(if (= 'defn- (first %)) (cons 'defn (rest %)) %) source-defs)
         multi-expanded (mapv expand-multi-arity-defn (filter multi-arity-defn? raw-defs))
         multi-dispatch (into {}
                              (map (fn [form expansion] [(second form) (:dispatch expansion)])
@@ -1867,7 +1993,7 @@
                                    (update out name (fnil conj #{}) (count params)))
                                  {} defs)
         other (remove #(or (and (seq? %) (= 'ns (first %)))
-                           (and (seq? %) (= 'defn (first %)))
+                           (and (seq? %) (contains? '#{defn defn-} (first %)))
                            (and (seq? %) (= 'defrecord (first %)))
                            (and (seq? %) (= 'defprotocol (first %)))
                            (and (seq? %) (= 'definterface (first %)))
@@ -1875,11 +2001,10 @@
                            (and (seq? %) (= 'extend-protocol (first %)))) forms)
         _ (when (> (count defs) max-functions)
             (reject! "function count exceeds admission limit" (count defs)))
-        _ (when (or (> (count namespaces) 1)
-                    (some #(not (and (= 2 (count %)) (symbol? (second %))
-                                     (<= (count (str (second %))) max-symbol-chars)))
-                          namespaces))
-            (reject! "ns must contain exactly one namespace symbol" namespaces))
+        _ (when (> (count namespaces) 1)
+            (reject! "ns must contain at most one namespace form" namespaces))
+        namespace-info (when-let [namespace-form (first namespaces)]
+                         (namespace-parts namespace-form))
         ;; ADR-2607150000: mapcat, not mapv -- a defn using `loop` may
         ;; expand into itself PLUS one or more synthesized loop-helper
         ;; functions (collected via *pending-loop-helpers*, bound fresh
@@ -1891,7 +2016,8 @@
         lambda-infos (atom [])
         uses-apply? (volatile! false)
         uses-lazy? (volatile! false)
-        parsed (binding [*loop-counter* (volatile! 0)
+        parsed (binding [*typed-values?* typed-values?
+                         *loop-counter* (volatile! 0)
                          *hof-counter* (volatile! 0)
                          *lambda-counter* (volatile! 0)
                          *pending-lambdas* lambda-infos
@@ -1909,7 +2035,8 @@
                (vec
                      (mapcat
                      (fn [form]
-                       (let [[_ name raw-params & body] form]
+                       (let [{:keys [name parts result body]} (typed-defn-parts form)
+                             raw-params (mapv :pattern parts)]
                          (when-not (valid-name? name) (reject! "invalid function name" name))
                          (when (contains? reserved-function-names name)
                            (reject! "reserved function name" name))
@@ -1921,6 +2048,7 @@
                            (reject! "function must contain one result expression" body))
                          (let [name+wraps (mapv param-name+wrap raw-params)
                                params (mapv first name+wraps)
+                               param-types (mapv :type parts)
                                wrap-body (apply comp (map second name+wraps))]
                            (when-not (and (every? valid-name? params) (= (count params) (count (distinct params))))
                              (reject! "function parameters must be unique bounded symbols with ABI-supported arity" raw-params))
@@ -1929,7 +2057,7 @@
                                  desugared (binding [*pending-loop-helpers* loop-helpers
                                                      *pending-hof-helpers* hof-helpers]
                                              (desugar-expr (wrap-body (first body))))]
-                             (into [{:name name :params params :result :i64 :effects #{}
+                             (into [{:name name :params params :param-types param-types :result result :effects #{}
                                      :body desugared}]
                                    (concat @loop-helpers @hof-helpers))))))
                      defs)))
@@ -1957,24 +2085,51 @@
                  (some #(uses-helper? coll-nth-helper-name (:body %)) parsed) (conj coll-nth-helper)
                  (some #(uses-helper? map-keys-helper-name (:body %)) parsed) (conj map-keys-helper)
                  (some #(uses-helper? map-vals-helper-name (:body %)) parsed) (conj map-vals-helper))
-        signatures (into {} (map (juxt :name :params) parsed))]
-    (when (seq other) (reject! "only ns and defn are allowed at top level" (first other)))
+        signatures (into {} (map (juxt :name :params) parsed))
+        type-signatures (into {} (map (fn [{:keys [name param-types result]}]
+                                        [name {:param-types param-types :result result}]) parsed))
+        source-public (mapv second (filter #(= 'defn (first %)) source-defs))
+        exports (cond
+                  (some? (:exports namespace-info)) (:exports namespace-info)
+                  (some #(= 'defn- (first %)) source-defs) source-public
+                  :else (mapv :name parsed))
+        entry (when (contains? signatures 'main) 'main)]
+    (when (seq other) (reject! "only ns, defn, and defn- are allowed at top level" (first other)))
     (when (empty? parsed) (reject! "at least one defn is required" forms))
     (when (> (count parsed) max-functions)
       (reject! "function count exceeds admission limit after closure/helper lowering" (count parsed)))
     (when-not (= (count parsed) (count signatures)) (reject! "duplicate function name" defs))
-    (when-not (contains? signatures 'main) (reject! "main entrypoint is required" defs))
-    (when-not (empty? (get signatures 'main)) (reject! "main must take zero arguments" 'main))
-    (let [budget (volatile! 0)]
-      (doseq [{:keys [params body]} parsed]
-        (validate-expr body (set params) signatures 0 budget)))
+    (when (and (some? (:exports namespace-info))
+               (not-every? (set source-public) exports))
+      (reject! "namespace exports must name declared public functions" exports))
+    (when (and (nil? entry) (nil? (:exports namespace-info)))
+      (reject! "entryless library requires an explicit non-empty namespace export list" defs))
+    (when (and (nil? entry) (empty? exports))
+      (reject! "entryless library requires at least one exported function" exports))
+    (when (and entry (not (empty? (get signatures entry))))
+      (reject! "main must take zero arguments" 'main))
+    (when (and entry (not (some #{entry} exports)))
+      (reject! "main entrypoint must be exported" exports))
+    (when typed-values?
+      (doseq [{:keys [name params param-types result body]} parsed]
+        (let [actual (infer-value-type body (zipmap params param-types) type-signatures)]
+          (when-not (= result actual) (reject! "function result value type mismatch" name))))
+      (let [literal-bytes (reduce + 0 (map value/utf8-byte-count!
+                                           (filter string? (mapcat #(tree-seq (fn [x] (and (coll? x) (not (string? x)))) seq (:body %)) parsed))))]
+        (when (> literal-bytes value/string-value-byte-limit)
+          (reject! "module string literals exceed UTF-8 byte limit" literal-bytes))))
+    (binding [*typed-values?* typed-values?]
+      (let [budget (volatile! 0)]
+        (doseq [{:keys [params body]} parsed]
+          (validate-expr body (set params) signatures 0 budget))))
     (check-lowering-budget! parsed)
     (let [function-effects (infer-effects parsed)
           _ (doseq [{:keys [name lazy-thunk?]} parsed
                     :when (and lazy-thunk? (seq (get function-effects name)))]
               (reject! "lazy sequence thunks must be effect-free because forcing is non-memoized" name))
           functions (mapv #(assoc % :effects (get function-effects (:name %))) parsed)]
-      {:format :kotoba.hir/v2 :entry 'main :result :i64
+      {:format (if typed-values? :kotoba.hir/v3 :kotoba.hir/v2) :entry entry :exports (vec exports)
+       :result (when entry (:result (some #(when (= entry (:name %)) %) functions)))
        ;; Every function is exported by current backends, so admission covers
        ;; the union rather than only effects reachable from main.
        :effects (reduce set/union #{} (vals function-effects))

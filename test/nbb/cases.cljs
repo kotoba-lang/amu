@@ -41,4 +41,7 @@
    {:name "negative-one-literal" :source "test/nbb/fixtures/negative-one-literal.kotoba" :target "wasm32-browser" :policy nil}
    {:name "sleb-boundary-127" :source "test/nbb/fixtures/sleb-boundary-127.kotoba" :target "wasm32-browser" :policy nil}
    {:name "sleb-boundary-neg128" :source "test/nbb/fixtures/sleb-boundary-neg128.kotoba" :target "wasm32-browser" :policy nil}
-   {:name "sleb-boundary-128" :source "test/nbb/fixtures/sleb-boundary-128.kotoba" :target "wasm32-browser" :policy nil}])
+   {:name "sleb-boundary-128" :source "test/nbb/fixtures/sleb-boundary-128.kotoba" :target "wasm32-browser" :policy nil}
+   ;; Typed f64 must remain byte-identical between the JVM compiler host and
+   ;; the JVM-free nbb compiler path, including negative-zero encoding.
+   {:name "f64-bits" :source "test/nbb/fixtures/f64-bits.kotoba" :target "wasm32-browser" :policy nil}])

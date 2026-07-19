@@ -25,6 +25,41 @@
 (def targets target-profile/compatibility-targets)
 (def supported-targets (set (keys target-profile/profiles)))
 
+(def ^:private kernel-only-operations
+  '#{kernel-load-u8 kernel-load-u8-4k kernel-load-u8-16k
+     kernel-store-u8 kernel-store-u8-4k kernel-read-cr2 kernel-boot-info
+     kernel-read-cr3 kernel-write-cr3 kernel-invlpg kernel-cli kernel-sti
+     kernel-hlt kernel-pause kernel-out-u8 kernel-out-u32})
+
+(defn- kernel-operation [hir]
+  (some #(when (and (seq? %) (contains? kernel-only-operations (first %)))
+           (first %))
+        (tree-seq coll? seq (:functions hir))))
+
+(defn- validate-target-operations! [hir target]
+  (when-let [operation (kernel-operation hir)]
+    (when-not (= target :x86_64-aiueos-kernel-v1)
+      (throw (ex-info "bounded kernel memory operation requires the aiueos kernel target"
+                      {:phase :target :target target :operation operation})))))
+
+(defn- hir-value-types [hir]
+  (into #{}
+        (mapcat (fn [{:keys [param-types result]}]
+                  (conj (vec (or param-types [])) (or result :i64))))
+        (:functions hir)))
+
+(defn- validate-value-target! [hir target backend]
+  (let [types (hir-value-types hir)]
+    (when (and (contains? types :string) (not= backend :js-kotoba-v1))
+      (throw (ex-info "typed string values currently require the kotoba-script web target"
+                      {:phase :target :target target :backend backend
+                       :value-profile :kotoba.value/typed-v1})))
+    (when (and (contains? types :f64)
+               (not (contains? #{:js-kotoba-v1 :wasm32-kotoba-v1} backend)))
+      (throw (ex-info "f64 values require a qualified Kotoba Script or Wasm target"
+                      {:phase :target :target target :backend backend
+                       :value-profile :kotoba.value/typed-v1})))))
+
 (defn check-source
   ([source] (check-source source {}))
   ([source policy]
@@ -39,6 +74,8 @@
    (let [profile (target-profile/profile target)
         backend (target-profile/backend target)
         hir (frontend/analyze source)
+        _ (validate-target-operations! hir target)
+        _ (validate-value-target! hir target backend)
         admission (admission/check hir policy)
         kir (ir/lower hir)
         value (:oracle-value kir)]
@@ -60,18 +97,26 @@
       (= backend :js-kotoba-v1)
       (let [source-digest (text-sha256 source)
             kir-digest (artifact/sha256 kir)
+            typed-values? (= :kotoba.kir/v4 (:format kir))
+            value-profile (if typed-values? :kotoba.value/typed-v1 :kotoba.value/i64-v1)
+            limits (cond-> {:fuel 256 :replenishable? false}
+                     typed-values? (assoc :string-literal-bytes 4096
+                                          :string-module-literal-bytes 65536
+                                          :string-value-bytes 65536))
             js-source (script/emit kir {:source-digest source-digest
                                         :kir-digest kir-digest
                                         :compiler-version compiler-version})
             output-digest (text-sha256 js-source)]
         {:format :javascript/v1 :target target :target-profile profile
          :hir hir :kir kir :admission admission
-         :limits {:fuel 256 :replenishable? false} :source js-source
+         :value-profile value-profile :limits limits :source js-source
          :manifest {:kotoba.artifact/schema "kotoba-js-artifact/v1"
                     :kotoba.artifact/source-digest source-digest
                     :kotoba.artifact/kir-digest kir-digest
                     :kotoba.artifact/output-digest output-digest
                     :kotoba.artifact/compiler-version compiler-version
+                    :kotoba.artifact/value-profile value-profile
+                    :kotoba.artifact/limits limits
                     :kotoba.artifact/target target
                     :kotoba.artifact/target-profile profile
                     :kotoba.artifact/effects (:effects kir)}})

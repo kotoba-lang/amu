@@ -1,7 +1,8 @@
 (ns kotoba.compiler.backend.wasm
   ;; See `kotoba.compiler.ir`'s ns form for why the whole `:require` clause
   ;; (not just an item inside it) is behind the reader-conditional.
-  #?(:cljs (:require [kotoba.compiler.cljs-i64 :as i64])))
+  (:require [kotoba.compiler.value :as value]
+            #?@(:cljs [[kotoba.compiler.cljs-i64 :as i64]])))
 
 ;; `uleb` only ever encodes small, non-negative, interpreter-internal counts
 ;; and indices in this file (section/payload lengths, function/type/import
@@ -44,6 +45,42 @@
      :cljs (vec (js/Array.from (.encode (js/TextEncoder.) s)))))
 (defn- name-bytes [s] (let [bs (utf8 s)] (into (uleb (count bs)) bs)))
 
+(defn- f64-bytes [n]
+  #?(:clj
+     (let [bits (Double/doubleToRawLongBits ^double n)]
+       (mapv #(bit-and 0xff (unsigned-bit-shift-right bits (* 8 %))) (range 8)))
+     :cljs
+     (let [buffer (js/ArrayBuffer. 8)
+           view (js/DataView. buffer)]
+       (.setFloat64 view 0 n true)
+       (mapv #(.getUint8 view %) (range 8)))))
+
+(defn- wasm-type [type]
+  (case type :i64 0x7e :f64 0x7c
+        (throw (ex-info "unsupported Wasm value type" {:phase :backend :type type}))))
+
+(declare expression-type)
+
+(defn- expression-type [form type-env function-types]
+  (cond
+    #?(:clj (integer? form) :cljs (or (i64/bigint-value? form) (integer? form))) :i64
+    (value/f64-value? form) :f64
+    (symbol? form) (get type-env form)
+    (seq? form)
+    (let [[op & args] form]
+      (cond
+        (= op 'let) (let [[bindings body] args]
+                       (loop [pairs (partition 2 bindings) env type-env]
+                         (if-let [[name binding] (first pairs)]
+                           (recur (next pairs) (assoc env name (expression-type binding env function-types)))
+                           (expression-type body env function-types))))
+        (= op 'if) (expression-type (second args) type-env function-types)
+        (= op 'f64-to-bits) :i64
+        (= op 'f64-from-bits) :f64
+        (contains? function-types op) (:result (get function-types op))
+        :else :i64))
+    :else nil))
+
 (defn- local-count [form]
   (if-not (seq? form)
     0
@@ -60,7 +97,7 @@
 (defn- emit-many [forms env ctx]
   (mapcat #(emit-expr % env ctx) forms))
 
-(defn emit-expr [form env {:keys [function-indices intrinsic-indices next-local] :as ctx}]
+(defn emit-expr [form env {:keys [function-indices intrinsic-indices next-local type-env function-types] :as ctx}]
   (cond
     ;; A literal here may be a bigint (from a `.kotoba` source literal, or
     ;; from `kotoba.compiler.ir`'s coercion once it passes through there)
@@ -68,25 +105,33 @@
     ;; -- e.g. `when`'s trailing `0`); `sleb` above accepts either.
     #?(:clj (integer? form) :cljs (or (i64/bigint-value? form) (integer? form)))
     (into [0x42] (sleb form))                                    ; i64.const
+    (value/f64-value? form) (into [0x44] (f64-bytes form))       ; f64.const
     (symbol? form) [0x20 (get env form)]                         ; local.get
     :else
     (let [[op & args] form]
       (cond
         (= op 'let)
         (let [[bindings body] args]
-          (loop [pairs (partition 2 bindings) env env out [] cursor next-local]
+          (loop [pairs (partition 2 bindings) env env types type-env out [] cursor next-local]
             (if-let [[name value] (first pairs)]
-              (let [value-code (emit-expr value env (assoc ctx :next-local cursor))]
-                (recur (next pairs) (assoc env name cursor)
+              (let [value-code (emit-expr value env (assoc ctx :next-local cursor :type-env types))
+                    value-type (expression-type value types function-types)]
+                (recur (next pairs) (assoc env name cursor) (assoc types name value-type)
                        (into out (concat value-code [0x21 cursor])) (inc cursor))) ; local.set
-              (into out (emit-expr body env (assoc ctx :next-local cursor))))))
+              (into out (emit-expr body env (assoc ctx :next-local cursor :type-env types))))))
 
         (= op 'if)
         (let [[test then else] args]
           (concat (emit-expr test env ctx)
-                  [0x50 0x45 0x04 0x7e]                         ; i64.eqz;i32.eqz;if i64
+                  [0x50 0x45 0x04 (wasm-type (expression-type then type-env function-types))]
                   (emit-expr then env ctx) [0x05]
                   (emit-expr else env ctx) [0x0b]))
+
+        (= op 'f64-to-bits)
+        (concat (emit-expr (first args) env ctx) [0xbd])         ; i64.reinterpret_f64
+
+        (= op 'f64-from-bits)
+        (concat (emit-expr (first args) env ctx) [0xbf])         ; f64.reinterpret_i64
 
         (= op 'cap-call)
         (let [[cap-id value] args]
@@ -116,12 +161,21 @@
         :else
         (concat (emit-many args env ctx) [0x10 (get function-indices op)]))))) ; call
 
-(defn- function-type [{:keys [params]}]
-  (concat [0x60] (uleb (count params)) (repeat (count params) 0x7e) [1 0x7e]))
+(defn- function-type [{:keys [params param-types result]}]
+  (let [types (or param-types (vec (repeat (count params) :i64)))]
+    (concat [0x60] (uleb (count params)) (map wasm-type types)
+            [1 (wasm-type (or result :i64))])))
 
-(defn- function-body [function function-indices intrinsic-indices]
+(defn- function-body [function function-indices intrinsic-indices function-types]
   (let [param-env (zipmap (:params function) (range))
+        type-env (zipmap (:params function)
+                         (or (:param-types function)
+                             (repeat (count (:params function)) :i64)))
         locals (local-count (:body function))
+        _ (when (and (pos? locals)
+                     (some #{:f64} (cons (:result function) (:param-types function))))
+            (throw (ex-info "f64 Wasm phase 1 forbids local bindings"
+                            {:phase :backend :function (:name function)})))
         declarations (if (zero? locals) [0] (concat [1] (uleb locals) [0x7e]))
         ;; Every call consumes one unit from a module-private monotonic fuel
         ;; global. It is never exported and cannot be replenished by guest code.
@@ -130,6 +184,8 @@
         instructions (concat charge (emit-expr (:body function) param-env
                                 {:function-indices function-indices
                                  :intrinsic-indices intrinsic-indices
+                                 :type-env type-env
+                                 :function-types function-types
                                  :next-local (count (:params function))}))
         body (concat declarations instructions [0x0b])]
     (concat (uleb (count body)) body)))
@@ -158,6 +214,10 @@
         shift (count imports)
         intrinsic-indices (into {} (map-indexed (fn [index [op]] [op index]) imports))
         indices (into {} (map-indexed (fn [i f] [(:name f) (+ i shift)]) functions))
+        function-types (into {} (map (fn [f] [(:name f) {:result (or (:result f) :i64)
+                                                         :param-types (or (:param-types f)
+                                                                          (vec (repeat (count (:params f)) :i64)))}])
+                                     functions))
         types (concat (uleb (+ (count functions) shift))
                       (mapcat #(nth % 3) imports) (mapcat function-type functions))
         import-sec (when (seq imports)
@@ -179,7 +239,7 @@
                                              (uleb (+ index shift))))
                                    (map-indexed vector functions)))
         code-sec (concat (uleb (count functions))
-                         (mapcat #(function-body % indices intrinsic-indices) functions))
+                         (mapcat #(function-body % indices intrinsic-indices function-types) functions))
         target-sec (concat (name-bytes "kotoba.target")
                            (utf8 (name target)))]
     (let [bytes (concat [0 0x61 0x73 0x6d 1 0 0 0] (section 0 target-sec)

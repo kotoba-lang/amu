@@ -62,6 +62,23 @@ is the shared GPU compiler contract consumed by `kotoba-lang/num`; see
 ADR-0002.
 `.kotoba` is the sole admitted source-file format.
 
+The bounded transport component ABI is vendored at
+`resources/kotoba/lang/transport-component-abi.edn`. The compiler validates
+component manifests against that exact operation set and rejects unknown or
+ambient imports. This is currently a prototype contract and reference import
+lowering, not a claim that a native socket/TLS provider or general component
+linker is production-ready.
+
+The first safety-qualified scalar floating profile is now admitted as typed
+`:f64` values for Kotoba Script and Wasm. Decimal and symbolic literals are
+normalized to exact IEEE-754 binary64 bit patterns; `f64-to-bits` and
+`f64-from-bits` expose explicit i64 reinterpretation. Finite values,
+infinities, and signed zero preserve their bits across the reference executor,
+JVM-free nbb compiler, JS, and Wasm. NaN payloads are not language-observable
+and Kotoba Script canonicalizes them to quiet NaN. There are no implicit
+integer conversions, arithmetic, or transcendentals in this phase, and native
+i64-only targets reject `:f64` rather than narrowing it.
+
 ```text
 source -> inert reader -> typed/effect HIR -> SSA-like KIR
        -> wasm32 | x86_64 | aarch64 | cljs -> independent verifier -> admission
@@ -90,7 +107,7 @@ interpreter doesn't resolve -- see that ns's docstring). `test/nbb/run.cljs`
 checked-in golden `.wasm` files -- byte-for-byte, not just "looks right" --
 covering every `examples/*.kotoba` fixture plus dedicated i64/sleb128
 boundary cases (true i64 max/min, add-wraparound, the sleb continuation-bit
-crossing at 127/128).
+crossing at 127/128), plus an f64 bit/signed-zero artifact golden.
 
 **Every other target (`x86_64*`, `aarch64*`, `aarch64-android`,
 `aarch64-ios`) and every other `kotoba` subcommand** (`package-ios`, `sbom`,

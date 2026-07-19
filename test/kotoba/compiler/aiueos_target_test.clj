@@ -399,9 +399,10 @@
 
 (deftest bounded-kernel-memory-is-rejected-for-host-targets
   (let [source "(defn read-byte [base length index] (kernel-load-u8 base length index)) (defn main [] 0)"]
-    (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"requires the aiueos kernel target"
-         (compiler/compile-source source :x86_64-linux-kotoba-v1)))))
+    (doseq [target [:x86_64-linux-kotoba-v1 :wasm32-kotoba-v1 :js-kotoba-v1]]
+      (is (thrown-with-msg?
+           clojure.lang.ExceptionInfo #"requires the aiueos kernel target"
+           (compiler/compile-source source target))))))
 
 (deftest wide-bounded-kernel-memory-is-rejected-for-host-targets
   (let [source "(defn read-byte [base length index] (kernel-load-u8-16k base length index)) (defn main [] 0)"]
