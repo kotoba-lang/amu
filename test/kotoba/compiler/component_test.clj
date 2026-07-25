@@ -66,6 +66,14 @@
                 (catch clojure.lang.ExceptionInfo e e))]
     (is (= :component-abi-v2 (:phase (ex-data error))))))
 
+(deftest compiler-consumes-the-authoritative-v3-capability-package
+  (let [wit (component/typed-world-wit-v3)]
+    (is (= "aiueos:capability/application@0.3.0"
+           component/typed-world-id-v3))
+    (is (.contains wit "package aiueos:capability@0.3.0"))
+    (is (.contains wit "resource grant"))
+    (is (.contains wit "acquire: func(request: grant-request)"))))
+
 (deftest component-capabilities-are-named-wit-imports-not-an-ambient-wasi-surface
   (let [source "(ns app (:capabilities #{:clock/now})) (defn main [] (cap-call :clock/now 0))"
         compiled (compiler/compile-source source :wasm-component-kotoba-v1
