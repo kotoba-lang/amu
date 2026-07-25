@@ -79,11 +79,13 @@
       (is (not (str/includes? (wasm-tools/run-command! ["wasm-tools" "print" path])
                               "(import"))
           "a scalar component core module must have no imports")
+      ;; This is a core module, not a component: wasmtime takes the export
+      ;; name and the arguments as separate positional args. The WAVE call
+      ;; syntax `f(a, b)` is for components only.
       (letfn [(call [& args]
                 (-> (wasm-tools/run-command!
-                     ["wasmtime" "run" "--invoke"
-                      (str "cm32p2_realloc(" (str/join ", " args) ")")
-                      path])
+                     (concat ["wasmtime" "run" "--invoke" "cm32p2_realloc" path]
+                             (map str args)))
                     str str/trim))]
         ;; wasmtime prints the returned i32; a trap makes run-command! throw.
         (testing "a zero-sized request returns the null pointer"
