@@ -99,6 +99,52 @@ per-call copy. That is a larger change to the typed backend and should be its
 own ADR; (a) is chosen here because it unblocks real programs without
 destabilizing the existing representation.
 
+### 4a. Correction (2026-07-25): option (a) is not implementable
+
+Decision 4 above is wrong, and it is worth stating plainly because acting on it
+would cost a substantial implementation effort before failing.
+
+**Marshalling a host collection at the boundary requires calling the host to
+read it** -- `vector-count`, `vector-at-i64` and friends, which live in the
+`kotoba:typed` intrinsic module. **A component cannot import those.** Every core
+import of a component must resolve against its WIT world, and `kotoba:typed` is
+not a WIT interface; it is a host intrinsic table. Inside a component there is no
+host to call, so the marshalling code option (a) calls for cannot be written.
+
+The evidence was already in this repository. Every one of the sixteen
+hand-written WAT generators in `component-core` imports **only**
+`cm32p2|kotoba:application/<interface>@1` -- WIT-bound capabilities. Not one
+imports `kotoba:typed` or `kotoba:heap`. Instead they contain 23
+`i64.store`/`i32.store` sites: they **construct their records, variants and
+strings directly in linear memory**, because that is the only thing that works.
+Read as sixteen ad-hoc shapes, they obscured the fact that they were already
+demonstrating the correct representation.
+
+So the work is not a marshalling layer over the existing host-object
+collections. It is a **linear-memory representation** for them in the component
+profile -- what the paragraph above filed as the longer-term direction, promoted
+here to the actual plan. Option (b), resource types, stays rejected for value
+types for the reason already given; this correction does not revive it.
+
+The prerequisites are concrete and currently absent: `emit-component-core`
+declares `(section 5 [1 0 0])` -- a **zero-page** memory -- and a
+`cm32p2_realloc` whose entire body is `i32.const 0`, a stub. Both are correct
+for a scalar-only signature and useless for anything else. A real bounded bump
+allocator already exists in WAT form (`bounded-bump-realloc-wat`: alignment,
+capacity trapping, old-content preservation) and is what to port into the binary
+emitter first.
+
+**Revised order for acceptance criterion 2.**
+
+1. A non-zero memory and a real bump `cm32p2_realloc` in the binary emitter,
+   ported from `bounded-bump-realloc-wat`. Self-contained and independently
+   testable.
+2. A linear-memory representation for `:vector-i64` in the component profile.
+   This deserves its own ADR: it changes how a typed collection is represented,
+   not just how one crosses a boundary.
+3. The Canonical `list<T>` layout (ptr/len pair, return area for the
+   `MAX_FLAT_RESULTS = 1` spill) on top of it.
+
 ### 5. Keep the allowlist as a fallback, and shrink it
 
 `assert-supported!` stays, but inverts: the compositional lowering is tried
@@ -115,6 +161,11 @@ This ADR is done when all of the following hold, verified — not asserted:
 
 1. A **multi-function program with capability imports** compiles to a validated
    component. `wasm-tools validate --features all` passes and `wasmtime` runs it.
+   **Done (increment 1, 2026-07-25)** for scalar capability calls:
+   `component-core/scalar-capability-imports` derives a per-capability typed core
+   import from the KIR and the WIT contract, so shape no longer matters. The four
+   hand-written `*-capability-call` shapes stay ahead of it in
+   `assert-supported!`, so existing artifacts are byte-identical.
 2. A function taking and returning `list<s64>` round-trips a non-trivial vector
    through the component boundary with the values intact.
 3. A signature exceeding `MAX_FLAT_PARAMS` compiles and runs correctly, proving
