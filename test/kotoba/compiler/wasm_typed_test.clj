@@ -529,3 +529,24 @@
         probe (node-probe compiled "if(h.instance.exports.main()!==42n)process.exit(2);")]
     (is (> (count (typed/descriptor-table (:kir compiled))) 16))
     (is (zero? (:exit probe)) (:err probe))))
+
+(deftest f64-scratch-locals-are-fully-declared-before-instantiation
+  ;; Regression for kotoba-lang/compiler#206 Bug 1: a typed function that
+  ;; needs six-or-more f64 scratch locals (each `f64-from-bits` constant
+  ;; allocates one for its NaN canonicalization) declared too few of them,
+  ;; because the locals declaration read `@locals` before the lazy body
+  ;; emission had realized all `allocate!` side effects. The module compiled
+  ;; ({:ok true}) but failed to instantiate with `invalid local index: N`.
+  ;; A five-`:f64`-param callee (at the max-parameters limit) plus a caller
+  ;; whose comparison introduces a sixth f64 constant reproduces exactly six
+  ;; scratch locals in one function.
+  (let [source
+        "(ns f64.scratch (:export [main]))
+         (defn five [a :f64 b :f64 c :f64 d :f64 e :f64] :f64
+           (f64-add a (f64-add b (f64-add c (f64-add d e)))))
+         (defn main [] :i64
+           (if (f64-eq 15.0 (five 1.0 2.0 3.0 4.0 5.0)) 42 1))"
+        compiled (compiler/compile-source source :wasm32-browser-kotoba-v1)
+        probe (node-probe compiled
+                          "if(h.instance.exports.main()!==42n)process.exit(2);")]
+    (is (zero? (:exit probe)) (:err probe))))
