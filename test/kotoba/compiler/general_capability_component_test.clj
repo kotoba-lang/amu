@@ -81,10 +81,30 @@
     (testing "the module imports the typed capability"
       (is (str/includes? text "cm32p2|kotoba:application/clock@1"))
       (is (str/includes? text "now")))
-    (testing "the generic intrinsic is gone once a typed binding exists"
-      ;; If this regresses, the module still compiles but nothing can bind the
+    (testing "the generic cap-call intrinsic is gone once a typed binding exists"
+      ;; `kotoba:typed` is the module name many intrinsics share, so its mere
+      ;; presence proves nothing. An import is encoded as
+      ;; <len> module <len> field, so the generic binding is exactly
+      ;; "kotoba:typed" followed by the length byte 8 and "cap-call".
+      ;; If this regresses the module still compiles, but nothing can bind the
       ;; import -- exactly the failure this increment removes.
-      (is (not (str/includes? text "kotoba:typed"))))))
+      (is (not (str/includes? text (str "kotoba:typed" (char 8) "cap-call")))))))
+
+(deftest generic-intrinsic-is-still-used-without-a-typed-binding
+  ;; Negative control for the assertion above: with an unknown capability id
+  ;; there is no typed binding, so the generic import must still appear. Without
+  ;; this, that assertion could pass because the byte pattern never occurs.
+  (let [unbound (assoc-in passthrough-kir [:functions 0 :body]
+                          (list 'typed-cap-call clock-now :i64 :i64 'request))
+        bytes (component-core/emit
+               (assoc unbound :exports ['measure 'echo]
+                      :functions (conj (:functions unbound)
+                                       {:name 'echo :params ['x] :param-types [:i64]
+                                        :result :i64 :body 'x}))
+               :wasm32-wasi-kotoba-v1)
+        text (String. (byte-array (map unchecked-byte bytes)) "ISO-8859-1")]
+    (is (str/includes? text "cm32p2|kotoba:application/clock@1")
+        "a bound capability must reach the typed import")))
 
 (deftest declared-fuel-still-reaches-a-capability-component
   ;; The new lowering goes through the real backend, so it must keep the
