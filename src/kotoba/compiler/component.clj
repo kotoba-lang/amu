@@ -10,6 +10,10 @@
 
 (def world-id abi/component-world)
 (def world-id-v2 abi/component-world-v2)
+(def typed-world-id-v3 abi/typed-capability-world-v3)
+
+(defn typed-world-wit-v3 []
+  (abi/typed-capability-wit-v3))
 
 (defn world-id-for [target]
   (case target
