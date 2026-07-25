@@ -83,10 +83,14 @@
       ;; name and the arguments as separate positional args. The WAVE call
       ;; syntax `f(a, b)` is for components only.
       (letfn [(call [& args]
-                (-> (wasm-tools/run-command!
-                     (concat ["wasmtime" "run" "--invoke" "cm32p2_realloc" path]
-                             (map str args)))
-                    str str/trim))]
+                ;; run-command! merges stderr, and wasmtime prints two
+                ;; `--invoke is experimental` warnings before the value, so
+                ;; take the last non-blank line rather than the whole output.
+                (->> (wasm-tools/run-command!
+                      (concat ["wasmtime" "run" "--invoke" "cm32p2_realloc" path]
+                              (map str args)))
+                     str str/split-lines
+                     (remove str/blank?) last str/trim))]
         ;; wasmtime prints the returned i32; a trap makes run-command! throw.
         (testing "a zero-sized request returns the null pointer"
           (is (= "0" (call 0 0 8 0))))
