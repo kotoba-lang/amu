@@ -24,6 +24,31 @@
 (def compiler-version compatibility/compiler-version)
 (def floating-point-policy :kotoba.floating-point/ieee-754-f32-f64-v7)
 
+(defn- component-abilities!
+  "Every effectful Component import is a statically named WIT operation plus
+  a policy-bound descriptor.  Do not emit an import whose target, operation,
+  quotas, deadline, or audit identity would be ambient or inferred later."
+  [capability-ids policy]
+  (let [declared (:component-abilities policy)
+        required #{:target :operation :max-bytes :max-items :deadline-ms :audit-id}
+        abilities
+        (into (sorted-map)
+              (map (fn [id]
+                     (let [ability (get declared id)]
+                       (when-not (and (map? ability)
+                                      (= required (set (keys ability)))
+                                      (string? (:target ability))
+                                      (keyword? (:operation ability))
+                                      (string? (:audit-id ability))
+                                      (every? #(pos-int? (get ability %))
+                                              [:max-bytes :max-items :deadline-ms]))
+                         (throw (ex-info "component ability descriptor is required"
+                                         {:phase :component-ability
+                                          :capability id})))
+                       [id ability])))
+              capability-ids)]
+    abilities))
+
 (defn- text-sha256 [text]
   (let [digest (.digest (MessageDigest/getInstance "SHA-256")
                         (.getBytes ^String text StandardCharsets/UTF_8))]
@@ -90,8 +115,11 @@
                         :target target :target-profile profile :value-abi value-abi})]
     (cond
       (= target :wasm-component-kotoba-v1)
-      (let [core-bytes (wasm/emit kir target)
-            component-bytes (component/encode! core-bytes)]
+      (let [capability-ids (into (sorted-set) (map second)
+                                 (filter #(= :cap/call (first %)) (:effects kir)))
+            abilities (component-abilities! capability-ids policy)
+            core-bytes (wasm/emit kir target)
+            component-bytes (component/encode! core-bytes capability-ids)]
         {:format :wasm-component/v1 :target target :target-profile profile
          :hir hir :kir kir :admission admission :compatibility compatibility
          :component-world component/world-id
@@ -100,7 +128,9 @@
          ;; must never imply unbounded linear memory.  These are the minimum
          ;; sync-profile bounds required by kototama/component-platform.
          :limits {:fuel 512 :memory-pages 1 :replenishable? false}
-         :capabilities #{}})
+         :capabilities (into #{} (map #(keyword "aiueos.component"
+                                                (component/capability-import-name %)) capability-ids))
+         :component-abilities abilities})
 
       (= backend :wasm32-kotoba-v1)
       (let [typed-values? (= :kotoba.kir/v4 (:format kir))]

@@ -74,6 +74,24 @@
 
 (def compatibility-section-name "kotoba.compatibility")
 
+;; Component imports are part of the public WIT contract, never an internal
+;; numeric capability dispatch table.  Keep the core import spelling aligned
+;; with `kotoba.compiler.component/capability-import-name`; an unknown id is
+;; rejected before bytes are emitted.
+(def component-capability-import-names
+  {1 "aiueos-identity-sign"
+   2 "aiueos-identity-verify"
+   3 "aiueos-hash-sha256"
+   4 "aiueos-http-post"
+   5 "aiueos-log-read"
+   6 "aiueos-log-append"
+   7 "aiueos-clock-now"})
+
+(defn- component-capability-import-name [id]
+  (or (get component-capability-import-names id)
+      (throw (ex-info "Component capability has no named WIT interface"
+                      {:phase :component-abi :capability-id id}))))
+
 (defn- wasm-runtime [target]
   (case target
     :wasm-component-kotoba-v1 :kotoba-component-runtime-v1
@@ -159,8 +177,12 @@
 
         (= op 'cap-call)
         (let [[cap-id value] args]
-          (concat [0x42] (sleb cap-id) (emit-expr value env ctx)
-                  [0x10 (get intrinsic-indices 'cap-call)]))
+          (if (:component? ctx)
+            (concat (emit-expr value env ctx)
+                    [0x10 (get intrinsic-indices
+                               (symbol (component-capability-import-name cap-id)))])
+            (concat [0x42] (sleb cap-id) (emit-expr value env ctx)
+                    [0x10 (get intrinsic-indices 'cap-call)])))
 
         (contains? '#{pair pair-first pair-second} op)
         (concat (emit-many args env ctx) [0x10 (get intrinsic-indices op)])
@@ -1019,7 +1041,7 @@
 (defn- function-type [{:keys [params]}]
   (concat [0x60] (uleb (count params)) (repeat (count params) 0x7e) [1 0x7e]))
 
-(defn- function-body [function function-indices intrinsic-indices]
+(defn- function-body [function function-indices intrinsic-indices component?]
   (let [param-env (zipmap (:params function) (range))
         locals (local-count (:body function))
         declarations (if (zero? locals) [0] (concat [1] (uleb locals) [0x7e]))
@@ -1031,6 +1053,7 @@
                       (concat charge (emit-expr (:body function) param-env
                                       {:function-indices function-indices
                                        :intrinsic-indices intrinsic-indices
+                                       :component? component?
                                        :next-local (count (:params function))})))
         body (concat declarations instructions [0x0b])]
     (concat (uleb (count body)) body)))
@@ -1114,9 +1137,13 @@
                            [['decimal-f64-parse "kotoba:typed" "decimal-f64-parse" [0x60 1 0x6f 1 0x6f]]])
                          (when has-decimal-x3?
                            [['decimal-f64x3-parse "kotoba:typed" "decimal-f64x3-parse" [0x60 1 0x6f 1 0x6f]]]))))
+        cap-ids (sort (map second (filter #(= :cap/call (first %)) (:effects kir))))
         imports (vec (concat typed-imports
-                      (when has-cap? [['cap-call "kotoba:cap" "call"
-                                       [0x60 2 0x7e 0x7e 1 0x7e]]])
+                      (if component?
+                        (mapv (fn [id] (let [name (component-capability-import-name id)]
+                                          [(symbol name) "cm32p2" name [0x60 1 0x7e 1 0x7e]])) cap-ids)
+                        (when has-cap? [['cap-call "kotoba:cap" "call"
+                                         [0x60 2 0x7e 0x7e 1 0x7e]]]))
                       (when (seq heap-ops)
                         [['pair "kotoba:heap" "pair" [0x60 2 0x7e 0x7e 1 0x7e]]
                          ['pair-first "kotoba:heap" "pair-first" [0x60 1 0x7e 1 0x7e]]
@@ -1133,7 +1160,7 @@
                            [0x60 0 0]])                       ; initialize
         component-main-index (get indices 'main)
         _ (when (and component?
-                     (or typed? has-cap? (seq heap-ops)
+                     (or typed? (seq heap-ops)
                          (not= 1 (count functions))
                          (not= 'main (:name (first functions)))
                          (seq (:params (first functions)))
@@ -1191,7 +1218,7 @@
                   (mapcat #(if typed?
                              (emit-typed-function-body % indices intrinsic-indices
                                                        descriptor-indices literal-indices signatures)
-                             (function-body % indices intrinsic-indices))
+                             (function-body % indices intrinsic-indices component?))
                           functions)
                   (mapcat (fn [body] (concat (uleb (count body)) body)) component-bodies))
         target-sec (concat (name-bytes "kotoba.target")

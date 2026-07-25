@@ -35,7 +35,7 @@
         (let [wit (Files/createTempFile "kotoba-component-world-" ".wit"
                                         (make-array java.nio.file.attribute.FileAttribute 0))]
           (try
-            (Files/writeString wit component/world-wit StandardCharsets/UTF_8
+            (Files/writeString wit (component/world-wit #{}) StandardCharsets/UTF_8
                                (make-array java.nio.file.OpenOption 0))
             (let [targeted (shell/sh "wasm-tools" "component" "targets" (.toString wit) (.toString path)
                                  "--world" "kotoba:app/kotoba-app@0.1.0")]
@@ -51,3 +51,23 @@
                   (catch clojure.lang.ExceptionInfo error error))]
       (is error)
       (is (= :component-abi (:phase (ex-data error)))))))
+
+(deftest component-capabilities-are-named-wit-imports-not-an-ambient-wasi-surface
+  (let [source "(ns app (:capabilities #{:clock/now})) (defn main [] (cap-call :clock/now 0))"
+        compiled (compiler/compile-source source :wasm-component-kotoba-v1
+                                          {:allow #{[:cap/call 7]}
+                                           :component-abilities
+                                           {7 {:target "clock://monotonic"
+                                               :operation :clock/now
+                                               :max-bytes 1 :max-items 1
+                                               :deadline-ms 10 :audit-id "test-clock"}}})]
+    (is (= #{:aiueos.component/aiueos-clock-now} (:capabilities compiled)))
+    (is (.contains (component/world-wit #{7}) "import aiueos-clock-now"))
+    (is (not (.contains (component/world-wit #{7}) "wasi:")))))
+
+(deftest effectful-components-require-a-fully-scoped-ability-descriptor
+  (is (thrown-with-msg? clojure.lang.ExceptionInfo #"descriptor is required"
+                        #(compiler/compile-source
+                          "(defn main [] (cap-call 7 0))"
+                          :wasm-component-kotoba-v1
+                          {:allow #{[:cap/call 7]}}))))
