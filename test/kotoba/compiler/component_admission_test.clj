@@ -20,8 +20,15 @@
 
 ;; The fuel global is `(global (mut i64) (i64.const N))`, encoded as
 ;; count=1, valtype 0x7e, mutable 0x01, 0x42 (i64.const), SLEB128 N, 0x0b.
-(defn- fuel-global-hex [n]
-  (str "017e0142" (hex (loop [n (long n) out []]
+(defn- fuel-global-hex
+  "The fuel global's own entry: valtype i64, mutable, i64.const N, end.
+
+  Deliberately WITHOUT the section's global-count prefix -- that count is 1 for
+  a plain core module and 2 for a component (which also declares the bump
+  pointer), and baking it in here made this assert the number of globals rather
+  than the fuel budget."
+  [n]
+  (str "7e0142" (hex (loop [n (long n) out []]
                          (let [b (bit-and n 0x7f) n' (bit-shift-right n 7)
                                done (or (and (= n' 0) (zero? (bit-and b 0x40)))
                                         (and (= n' -1) (not (zero? (bit-and b 0x40)))))]

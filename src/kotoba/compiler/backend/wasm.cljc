@@ -1246,6 +1246,69 @@
                     {:phase :wasm-emit :fuel fuel :max max-fuel}))
     :else fuel))
 
+;; --- component linear memory -------------------------------------------------
+;; ADR 0076 section 4a. A component cannot import `kotoba:typed`/`kotoba:heap`,
+;; so anything that is not a bare scalar has to live in the module's own linear
+;; memory -- which is why all sixteen hand-written WAT shapes build their data
+;; with i32.store/i64.store rather than calling the host. Until now the emitted
+;; component declared a ZERO-page memory and a `cm32p2_realloc` whose whole body
+;; was `i32.const 0`: correct for a scalar-only signature, useless for anything
+;; else, and worse than useless if the Canonical ABI ever called it (address 0
+;; in a 0-page memory traps).
+;;
+;; This is the binary port of `component-core/bounded-bump-realloc-wat`, with
+;; the same properties: alignment-respecting, capacity-trapping, and
+;; old-content-preserving on grow. The Canonical ABI's own string-copy
+;; machinery calls realloc an unpredictable number of times before a module's
+;; own body runs, so the allocator has to compose with those calls rather than
+;; assume it owns every allocation.
+
+(def component-memory-pages
+  "Pages of linear memory a component module declares. One 64 KiB page bounds
+  the arena; `component-arena-capacity` traps anything past it rather than
+  letting a write run off the declared memory."
+  1)
+
+(def component-arena-base
+  "First address the bump allocator hands out. Not 0: the Canonical ABI uses a
+  null `old-ptr` to mean `fresh allocation`, so address 0 must never be a live
+  pointer."
+  8)
+
+(def component-arena-capacity (* component-memory-pages 65536))
+
+(defn- component-realloc-body
+  "cm32p2_realloc: (old-ptr, old-size, align, new-size) -> ptr.
+  Params 0..3; locals 4=ptr, 5=end, 6=copy-size."
+  []
+  (let [body (concat
+              ;; three i32 locals
+              [1 3 0x7f]
+              ;; new-size == 0 -> return 0
+              [0x20 3 0x45 0x04 0x40 0x41 0x00 0x0f 0x0b]
+              ;; align must be non-zero, <= 8, and a power of two
+              [0x20 2 0x45 0x04 0x40 0x00 0x0b]
+              [0x20 2 0x41 0x08 0x4b 0x04 0x40 0x00 0x0b]
+              [0x20 2 0x20 2 0x41 0x01 0x6b 0x71 0x04 0x40 0x00 0x0b]
+              ;; ptr = (next + align - 1) & -align
+              [0x23 1 0x20 2 0x41 0x01 0x6b 0x6a
+               0x41 0x00 0x20 2 0x6b 0x71 0x22 4]
+              ;; end = ptr + new-size; trap on wrap
+              [0x20 3 0x6a 0x22 5 0x20 4 0x49 0x04 0x40 0x00 0x0b]
+              ;; trap past capacity
+              (concat [0x20 5 0x41] (sleb component-arena-capacity)
+                      [0x4b 0x04 0x40 0x00 0x0b])
+              ;; next = end
+              [0x20 5 0x24 1]
+              ;; if old-ptr != 0, copy min(old-size, new-size) bytes
+              [0x20 0 0x45 0x04 0x40 0x05
+               0x20 1 0x20 3 0x49 0x04 0x7f 0x20 1 0x05 0x20 3 0x0b 0x21 6
+               0x20 4 0x20 0 0x20 6 0xfc 0x0a 0x00 0x00
+               0x0b]
+              ;; return ptr
+              [0x20 4 0x0b])]
+    (concat (uleb (count body)) body)))
+
 (defn emit
   ([kir target] (emit kir target {}))
   ([kir target {:keys [component-standard32? fuel capability-imports]}]
@@ -1472,7 +1535,15 @@
         ;; integer). So the value is a caller-supplied budget here rather than
         ;; a constant baked into codegen; the enforcement mechanism (charge
         ;; per call, trap at zero, no guest replenishment) is unchanged.
-        global-sec (vec (concat [1 0x7e 1 0x42] (sleb fuel-initial) [0x0b]))
+        global-sec (vec (concat
+                         (if component-standard32? [2] [1])
+                         [0x7e 1 0x42] (sleb fuel-initial) [0x0b]
+                         ;; global 1: the bump pointer. Fuel stays global 0 so
+                         ;; every function prologue's `global.get 0` is
+                         ;; unchanged.
+                         (when component-standard32?
+                           (concat [0x7f 1 0x41]
+                                   (sleb component-arena-base) [0x0b]))))
         ;; Pure functions are exported with their source names. This makes
         ;; runtime parameters observable and testable without host authority.
         component-function-base (+ shift (count functions))
@@ -1510,7 +1581,7 @@
                   (when component-standard32?
                     (concat
                      (mapcat (fn [_] [2 0 0x0b]) exported-functions)
-                     [4 0 0x41 0 0x0b]
+                     (component-realloc-body)
                      [2 0 0x0b])))
         target-sec (concat (name-bytes "kotoba.target")
                            (utf8 (name target)))
@@ -1524,7 +1595,7 @@
                         (when typed-sec (section 0 typed-sec))
                         (section 1 types) (when (seq imports) (section 2 import-sec))
                         (section 3 function-sec)
-                        (when component-standard32? (section 5 [1 0 0]))
+                        (when component-standard32? (section 5 [1 0 component-memory-pages]))
                         (section 6 global-sec)
                         (section 7 export-sec) (section 10 code-sec))]
       #?(:clj (byte-array (map unchecked-byte bytes))
