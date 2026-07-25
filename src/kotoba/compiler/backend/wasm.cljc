@@ -788,6 +788,10 @@
                     (concat (i32-const (descriptor-id :string))
                             (emit* (first args) env) (emit* (second args) env)
                             [0x10 (get intrinsic-indices 'typed-string-contains) 0xad])
+                    (= op 'string-code-point-at)
+                    (concat (i32-const (descriptor-id :string))
+                            (emit* (first args) env) (emit* (second args) env)
+                            [0x10 (get intrinsic-indices 'typed-string-code-point-at) 0xad])
                     (= op 'string-fold-case)
                     (concat (i32-const (descriptor-id :string)) (emit* (first args) env)
                             [0x10 (get intrinsic-indices 'typed-string-fold-case)])
@@ -1343,6 +1347,7 @@
         has-string-substring? (uses-operation? functions '#{string-substring})
         has-string-replace? (uses-operation? functions '#{string-replace-all})
         has-string-contains? (uses-operation? functions '#{string-contains?})
+        has-string-code-point-at? (uses-operation? functions '#{string-code-point-at})
         has-string-fold-case? (uses-operation? functions '#{string-fold-case})
         has-keyword-name? (uses-operation? functions '#{keyword-name})
         has-disjoint-set? (uses-operation? functions
@@ -1389,6 +1394,9 @@
                          (when has-string-contains?
                            [['typed-string-contains "kotoba:typed" "string-contains"
                              [0x60 3 0x7f 0x6f 0x6f 1 0x7f]]])
+                         (when has-string-code-point-at?
+                           [['typed-string-code-point-at "kotoba:typed" "string-code-point-at"
+                             [0x60 3 0x7f 0x6f 0x7e 1 0x7f]]])
                          (when has-string-fold-case?
                            [['typed-string-fold-case "kotoba:typed" "string-fold-case"
                              [0x60 2 0x7f 0x6f 1 0x6f]]])

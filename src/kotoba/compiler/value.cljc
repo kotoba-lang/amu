@@ -260,6 +260,42 @@
           (recur (+ index units) (+ byte-index bytes)
                  (assoc boundaries (+ byte-index bytes) (+ index units))))))))
 
+(defn utf8-code-point-at!
+  "Return the Unicode code point of the UTF-8 sequence that STARTS at BYTE-OFFSET
+  (a UTF-8 byte offset into VALUE, same coordinate space as utf8-substring!'s
+  offsets and string-byte-length). BYTE-OFFSET must be a code-point boundary in
+  [0, byte-length); anything else traps. The guest can derive the code point's
+  UTF-8 byte width from the returned value (< 0x80 -> 1, < 0x800 -> 2,
+  < 0x10000 -> 3, else 4) to advance, so a single op is enough to walk a string."
+  [value byte-offset]
+  (let [length (utf8-byte-count! value)]
+    (when-not (and (integer? byte-offset) (<= 0 byte-offset) (< byte-offset length))
+      (throw (ex-info "string code-point offset is out of bounds"
+                      {:phase :value :offset byte-offset :length length})))
+    (loop [index 0 byte-index 0]
+      (when (= index (count value))
+        (throw (ex-info "string code-point offset splits a UTF-8 code point"
+                        {:phase :value :offset byte-offset})))
+      (let [unit #?(:clj (int (.charAt ^String value index))
+                    :cljs (.charCodeAt value index))
+            [units bytes code-point]
+            (cond
+              (<= unit 0x7f) [1 1 unit]
+              (<= unit 0x7ff) [1 2 unit]
+              (<= 0xd800 unit 0xdbff)
+              (let [next-unit #?(:clj (int (.charAt ^String value (inc index)))
+                                 :cljs (.charCodeAt value (inc index)))]
+                [2 4 (+ 0x10000
+                        (bit-shift-left (- unit 0xd800) 10)
+                        (- next-unit 0xdc00))])
+              :else [1 3 unit])]
+        (cond
+          (= byte-index byte-offset) code-point
+          (> (+ byte-index bytes) byte-offset)
+          (throw (ex-info "string code-point offset splits a UTF-8 code point"
+                          {:phase :value :offset byte-offset}))
+          :else (recur (+ index units) (+ byte-index bytes)))))))
+
 (defn bounded-keyword!
   [value limit]
   (when-not (keyword? value)
