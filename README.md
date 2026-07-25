@@ -17,6 +17,10 @@ signer. The signed statement binds the platform, native/Wasm paths, exact target
 profiles, conformance and runtime digests, CI run, test time, and expiry.
 
 The multi-target, deny-by-default compiler for the safe Kotoba language.
+It is the Kotoba equivalent of a Wasm-language compiler: it produces Core Wasm
+and standard Components, but it does not decide grants or execute production
+guests. Shared worlds and admission data are versioned in
+[`kotoba-lang/abi`](https://github.com/kotoba-lang/abi).
 
 ## Execution policy
 
@@ -37,6 +41,10 @@ must not duplicate runtime policy: `kototama` owns component linking/execution
 and `aiueos` owns grant decisions, while a small native host independently
 enforces the resulting grant. See
 [`ADR-2607252500`](https://github.com/com-junkawasaki/root/blob/main/90-docs/adr/2607252500-kotoba-wasm-component-first-execution-boundary.edn).
+
+The compiler's KIR interpreter and supervised native KEXE executor remain
+reference/conformance and trusted-low-level paths. They are not a second
+Component host: production Component execution is delegated to Kototama.
 
 Project compilation accepts repeated `--source-path ROOT` arguments to link
 explicit package roots into one closed graph. Every dependency remains
