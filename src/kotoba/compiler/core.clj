@@ -130,6 +130,12 @@
          :limits {:fuel 512 :memory-pages 1 :replenishable? false}
          :capabilities (into #{} (map #(keyword "aiueos.component"
                                                 (component/capability-import-name %)) capability-ids))
+         :component-imports (into (sorted-map)
+                                  (map (fn [id]
+                                         [(keyword "aiueos.component"
+                                                   (component/capability-import-name id))
+                                          (get abilities id)]))
+                                  capability-ids)
          :component-abilities abilities})
 
       (= backend :wasm32-kotoba-v1)
