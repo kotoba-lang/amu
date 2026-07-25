@@ -64,6 +64,13 @@
                :when (some? capability)]
            capability))))
 
+(defn- component-source-cap-call?
+  "A parser/analysis regression must never turn a syntactically present
+  capability call into ambient Component authority.  This is deliberately a
+  narrow lexical backstop; the HIR-derived set remains the import source."
+  [source]
+  (boolean (re-find #"\\(\\s*cap-call(?:\\s|\\))" source)))
+
 (defn- text-sha256 [text]
   (let [digest (.digest (MessageDigest/getInstance "SHA-256")
                         (.getBytes ^String text StandardCharsets/UTF_8))]
@@ -131,6 +138,11 @@
     (cond
       (= target :wasm-component-kotoba-v1)
       (let [capability-ids (component-capability-ids hir)
+            _ (when (and (component-source-cap-call? source)
+                         (empty? capability-ids))
+                (throw (ex-info "component ability descriptor is required"
+                                {:phase :component-ability
+                                 :reason :unresolved-capability-call})))
             abilities (component-abilities! capability-ids policy)
             core-bytes (wasm/emit kir target)
             component-bytes (component/encode! core-bytes capability-ids)]
