@@ -1024,6 +1024,12 @@
               (mapv #(eval-expr % env functions fuel heap call-stack cap-call) args)]
           (value/utf8-substring! input start end))
 
+        (= op 'string-code-point-at)
+        (let [[input offset]
+              (mapv #(eval-expr % env functions fuel heap call-stack cap-call) args)
+              cp (value/utf8-code-point-at! input offset)]
+          #?(:clj (long cp) :cljs (i64/->bigint cp)))
+
         (= op 'string-replace-all)
         (let [[input needle replacement]
               (mapv #(eval-expr % env functions fuel heap call-stack cap-call) args)]

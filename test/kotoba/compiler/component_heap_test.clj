@@ -16,6 +16,17 @@
   (:import [java.nio.file Files]
            [java.nio.file.attribute FileAttribute]))
 
+(def ^:private wasmtime-binary
+  "Resolve the Wasmtime CLI the same way `scripts/wasmtime_tool.cljs` installs
+   it: the pinned, SHA-verified binary under `.tools/wasmtime/wasmtime` that
+   `npm run test-wasmtime` downloads. The CI `test` job runs that step before
+   `clojure -M:test`, so the binary is present there even though it is not on
+   PATH -- invoking a bare `\"wasmtime\"` PATH lookup is what left this test
+   erroring in CI. Fall back to a PATH lookup for local machines that have
+   Wasmtime installed directly."
+  (let [pinned (io/file ".tools" "wasmtime" "wasmtime")]
+    (if (.canExecute pinned) (.getPath pinned) "wasmtime")))
+
 (def ^:private scalar-kir
   {:format :kotoba.kir/v4 :exports ['add] :schemas {}
    :functions [{:name 'add :params ['l 'r] :param-types [:i64 :i64]
@@ -87,7 +98,7 @@
                 ;; `--invoke is experimental` warnings before the value, so
                 ;; take the last non-blank line rather than the whole output.
                 (->> (wasm-tools/run-command!
-                      (concat ["wasmtime" "run" "--invoke" "cm32p2_realloc" path]
+                      (concat [wasmtime-binary "run" "--invoke" "cm32p2_realloc" path]
                               (map str args)))
                      str str/split-lines
                      (remove str/blank?) last str/trim))]

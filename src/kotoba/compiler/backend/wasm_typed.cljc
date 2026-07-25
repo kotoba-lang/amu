@@ -283,7 +283,7 @@
                       i32-wrap u32-wrap i32-wrapping-add i32-wrapping-mul i32-xor
                       i32-shift-left i32-shift-right u32-shift-right xorshift32
                       i64-shift-left i64-shift-right u64-shift-right
-                      string-byte-length map-get vector-count vector-get vector-f64-count
+                      string-byte-length string-code-point-at map-get vector-count vector-get vector-f64-count
                       vector-at hetero-vector-count typed-set-count
                       typed-map-count xml-path-count xml-name-count string-index-count
                       disjoint-set-i64-count document-count} op) :i64

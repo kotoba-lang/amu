@@ -56,6 +56,7 @@ const ALLOWED_IMPORTS = new Set([
   "kotoba:typed/string-substring/function",
   "kotoba:typed/string-replace-all/function",
   "kotoba:typed/string-contains/function",
+  "kotoba:typed/string-code-point-at/function",
   "kotoba:typed/string-fold-case/function",
   "kotoba:typed/keyword-name/function",
   "kotoba:typed/string-index-new/function",
@@ -1109,6 +1110,31 @@ function createTypedRuntime(abi, typedCapCall, allow) {
       const result = value.split(needle).join(replacement);
       if (utf8Length(result) > 65536) reject("invalid-typed-value", "typed string is oversized");
       return result;
+    },
+    "string-code-point-at"(descriptorId, value, offset) {
+      const descriptor = descriptorAt(descriptorId);
+      if (descriptor !== "string") reject("invalid-typed-operation", "string descriptor required");
+      value = assertValue(descriptor, value);
+      offset = Number(offset);
+      const bytes = new TextEncoder().encode(value);
+      if (!Number.isSafeInteger(offset) || offset < 0 || offset >= bytes.length)
+        reject("invalid-typed-operation", "string code-point offset is out of bounds");
+      const b0 = bytes[offset];
+      // A continuation byte (0x80..0xbf) is mid-code-point, not a boundary.
+      if (b0 >= 0x80 && b0 < 0xc0)
+        reject("invalid-typed-operation", "string code-point offset splits a UTF-8 code point");
+      let cp, width;
+      if (b0 < 0x80) { cp = b0; width = 1; }
+      else if (b0 < 0xe0) { cp = b0 & 0x1f; width = 2; }
+      else if (b0 < 0xf0) { cp = b0 & 0x0f; width = 3; }
+      else { cp = b0 & 0x07; width = 4; }
+      for (let i = 1; i < width; i++) {
+        const b = bytes[offset + i];
+        if (b === undefined || b < 0x80 || b >= 0xc0)
+          reject("invalid-typed-operation", "string contains a malformed UTF-8 sequence");
+        cp = (cp << 6) | (b & 0x3f);
+      }
+      return cp;
     },
     "string-contains"(descriptorId, haystack, needle) {
       const descriptor = descriptorAt(descriptorId);

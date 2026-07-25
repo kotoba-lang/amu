@@ -165,6 +165,7 @@
 (def sequencing-operations '#{do})
 (def string-operations '{string-byte-length 1 string=? 2 string-concat 2 string-substring 3
                          string-replace-all 3 string-contains? 2 string-fold-case 1
+                         string-code-point-at 2
                          keyword-from-string 1 keyword-name 1 symbol 1})
 (def xml-operations
   '{xml-path-count 2 xml-name-count 2 xml-name-text 3 xml-path-text 3 xml-path-attr 4})
@@ -515,6 +516,16 @@
 ;; generalized to support MULTIPLE, uniquely-named helpers per defn (one
 ;; per `loop` occurrence) rather than one fixed shared name.
 (def ^:dynamic *pending-loop-helpers* nil)
+
+;; A synthesized loop-helper carries no param-type annotations (its captured
+;; outer variables have types only knowable at its call site). During the
+;; param-type resolution pass (resolve-loop-helper-param-types) these two are
+;; bound so that infer-call-type, on reaching a still-unresolved loop-helper
+;; call, RECORDS the argument types instead of type-checking the arguments
+;; against the (placeholder) declared param-types. Both nil in the normal
+;; check-value-types! pass, so ordinary type-checking is unchanged.
+(def ^:dynamic *loop-helper-names* nil)
+(def ^:dynamic *loop-helper-recorder* nil)
 
 ;; ADR-2607150000: loop-helper names are NOT `gensym` -- unlike and/or's
 ;; gensym'd `let`-local temp names (erased into numeric WASM local indices,
@@ -1368,6 +1379,7 @@
             (when *pending-loop-helpers*
               (swap! *pending-loop-helpers* conj
                      {:name helper-name :params helper-params :result :i64 :effects #{}
+                      :loop-helper? true
                       :body (replace-recur desugared-body helper-name loop-names captured)}))
             (list* helper-name (concat loop-inits captured))))
         cons (do (when-not (= 2 (count args)) (reject! "cons requires two operands" form))
@@ -2492,6 +2504,11 @@
             (require-expression-type! type :string arg))
           :i64)
 
+      (= op 'string-code-point-at)
+      (do (require-expression-type! (first types) :string (first args))
+          (require-expression-type! (second types) :i64 (second args))
+          :i64)
+
       (= op 'string-fold-case)
       (do (require-expression-type! (first types) :string (first args)) :string)
 
@@ -2633,8 +2650,16 @@
 
       (contains? signatures op)
       (let [{expected :param-types result :result} (get signatures op)]
-        (doseq [[arg actual wanted] (map vector args types expected)]
-          (require-expression-type! actual wanted arg))
+        (if (and *loop-helper-recorder* (contains? *loop-helper-names* op))
+          ;; Resolution pass: this loop-helper's param-types are not yet known.
+          ;; Record the call-site argument types AS its param-types rather than
+          ;; checking against the placeholder signature. The (non-recursive)
+          ;; enclosing call site is inferred before the helper's own body, so
+          ;; the recorded types are the enclosing-scope types of the loop
+          ;; bindings' inits and the captured outer variables.
+          (vswap! *loop-helper-recorder* assoc op (vec types))
+          (doseq [[arg actual wanted] (map vector args types expected)]
+            (require-expression-type! actual wanted arg)))
         result)
 
       :else (reject! "operation has no admitted type signature" op))))
@@ -2931,6 +2956,61 @@
           :i64)
         (infer-call-type op args locals signatures)))
     :else (reject! "value has no admitted type" form)))
+
+(defn- resolve-loop-helper-param-types
+  "`loop`/`recur` desugars to a synthesized recursive helper whose parameters
+  are the loop bindings followed by the captured outer variables (see the
+  `loop` case in desugar-expr). The helper carries no param-type annotations
+  because a captured variable's type is knowable only at the helper's call
+  site. Recover each loop-helper's param-types from the (unique, non-recursive)
+  call site it has in its enclosing function body -- `(helper loop-init...
+  captured-sym...)` -- by fixpoint: each round, infer every function whose
+  param-types are already known, recording the argument types at every
+  still-unresolved loop-helper call. Enclosing callers resolve first (they are
+  non-helpers, or an outer loop-helper resolved in an earlier round), so nested
+  loops converge. Returns `functions` with every loop-helper's :param-types
+  filled in; any helper left unresolved (only possible when the module has an
+  independent type error that makes inference throw) keeps an all-:i64
+  placeholder so the genuine error still surfaces in check-value-types!."
+  [functions]
+  (let [helper-names (into #{} (comp (filter :loop-helper?) (map :name)) functions)]
+    (if (empty? helper-names)
+      functions
+      (letfn [(placeholder [{:keys [params]}] (vec (repeat (count params) :i64)))
+              (round [resolved]
+                (let [recorder (volatile! {})
+                      sigs (into {}
+                                 (map (fn [{:keys [name params param-types result] :as f}]
+                                        [name {:params params
+                                               :param-types (cond
+                                                              (contains? resolved name) (resolved name)
+                                                              (contains? helper-names name) (placeholder f)
+                                                              param-types param-types
+                                                              :else (placeholder f))
+                                               :result (if (contains? helper-names name) :i64 result)}]))
+                                 functions)]
+                  (binding [*loop-helper-names* (into #{} (remove #(contains? resolved %) helper-names))
+                            *loop-helper-recorder* recorder]
+                    (doseq [{:keys [name params body] :as f} functions
+                            :when (or (not (contains? helper-names name))
+                                      (contains? resolved name))]
+                      (try
+                        (infer-expression-type body (zipmap params (get-in sigs [name :param-types])) sigs)
+                        (catch #?(:clj Exception :cljs :default) _
+                          ;; An independent type error in this body -- ignore
+                          ;; here; check-value-types! will report it properly.
+                          nil))))
+                  (merge resolved @recorder)))]
+        (loop [resolved {}]
+          (let [next-resolved (round resolved)]
+            (if (or (= (count next-resolved) (count helper-names))
+                    (= (count next-resolved) (count resolved)))
+              (mapv (fn [{:keys [name] :as f}]
+                      (if (contains? helper-names name)
+                        (assoc f :param-types (get next-resolved name (placeholder f)))
+                        f))
+                    functions)
+              (recur next-resolved))))))))
 
 (defn- check-value-types! [functions]
   (let [signatures (into {} (map (fn [{:keys [name params param-types result]}]
@@ -3511,6 +3591,12 @@
                         %
                         (assoc % :param-types (vec (repeat (count (:params %)) :i64))))
                      parsed)
+        ;; Synthesized loop-helpers were param-type-defaulted to all-:i64 just
+        ;; above (they carry no annotations); recover the real types of their
+        ;; captured outer variables from each helper's call site so a loop that
+        ;; captures a :string/:f64/record variable type-checks and lowers with
+        ;; the correct local types instead of a spurious "expected i64" error.
+        parsed (resolve-loop-helper-param-types parsed)
         signatures (into {} (map (juxt :name :params) parsed))
         source-public (->> def-parts (filter :public?) (map :source-name) distinct vec)
         expand-export (fn [source-name]
