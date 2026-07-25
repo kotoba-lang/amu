@@ -3,7 +3,10 @@
 Status: accepted, 2026-07-11.
 
 `kotoba-lang/kotoba` owns language semantics. This repository owns compilation.
-`aiueos` owns process isolation, capability brokerage, loading, and receipts.
+`kotoba-lang/abi` owns WIT worlds, artifact/admission schemas, and conformance
+vectors shared by independent implementations. `kototama` owns Component
+execution; `aiueos` owns capability brokerage and authority; `murakumo` owns
+fleet placement only.
 
 The shared safety pipeline precedes every backend. A backend cannot weaken the
 source subset, inferred effects, resource bounds, or capability requirements.
