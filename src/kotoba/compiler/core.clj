@@ -140,7 +140,7 @@
       (= target :wasm-component-kotoba-v1)
       (let [capability-ids (component-capability-ids hir)
             _ (when (and (component-source-cap-call? source)
-                         (empty? capability-ids))
+                         (not (map? (:component-abilities policy))))
                 (throw (ex-info "component ability descriptor is required"
                                 {:phase :component-ability
                                  :reason :unresolved-capability-call})))
