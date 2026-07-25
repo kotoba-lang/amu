@@ -1277,7 +1277,9 @@
                         (section 3 function-sec)
                         ;; A canonical ABI memory is required even though the
                         ;; scalar v1 world never serializes through it.
-                        (when component? (section 5 [1 0 0]))
+                        (when component? (section 5 [1 0 (if (and typed-component?
+                                                                   (seq cap-ids))
+                                                            1 0)]))
                         (section 6 global-sec)
                         (section 7 export-sec) (section 10 code-sec))]
       #?(:clj (byte-array (map unchecked-byte bytes))
