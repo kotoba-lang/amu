@@ -1267,11 +1267,21 @@
 ;; own body runs, so the allocator has to compose with those calls rather than
 ;; assume it owns every allocation.
 
+(def ^:private wasm-page-bytes 65536)
+
 (def component-memory-pages
-  "Pages of linear memory a component module declares. One 64 KiB page bounds
-  the arena; `component-arena-capacity` traps anything past it rather than
-  letting a write run off the declared memory."
-  1)
+  "Pages of linear memory a component module declares.
+
+  ADR 0077 decision 3 sizes this from the language's own bound rather than a
+  round number: `value/vector-item-limit` is 16384 items, so one maximum
+  `:vector-i64` is 128 KiB of live data -- two pages exactly. The extra page is
+  headroom for the Canonical ABI's own string-copy allocations, which call
+  `cm32p2_realloc` an unpredictable number of times before a module's body
+  runs, plus the vector's length header.
+
+  Derived here rather than written as a literal so it cannot drift from the
+  item limit it exists to cover."
+  (+ 1 (quot (+ (* 16384 8) (dec wasm-page-bytes)) wasm-page-bytes)))
 
 (def component-arena-base
   "First address the bump allocator hands out. Not 0: the Canonical ABI uses a
@@ -1279,7 +1289,13 @@
   pointer."
   8)
 
-(def component-arena-capacity (* component-memory-pages 65536))
+(def component-arena-capacity
+  "The bump allocator's ceiling. Kept in lockstep with the declared memory: a
+  capacity above it would let a write run off the memory, and one below it would
+  waste a declared page. `component-heap-test` asserts the two agree, because
+  they are edited in different places and nothing else would notice them
+  drifting apart."
+  (* component-memory-pages wasm-page-bytes))
 
 (defn- component-realloc-body
   "cm32p2_realloc: (old-ptr, old-size, align, new-size) -> ptr.
