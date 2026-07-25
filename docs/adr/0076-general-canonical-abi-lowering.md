@@ -138,10 +138,18 @@ emitter first.
 
 1. A non-zero memory and a real bump `cm32p2_realloc` in the binary emitter,
    ported from `bounded-bump-realloc-wat`. Self-contained and independently
-   testable.
+   testable. **Done 2026-07-25**: one page, bump pointer as global 1 based at 8,
+   verified by `wasm-tools validate`, by the printed instruction sequence
+   matching the WAT, and by executing the allocator under `wasmtime`. ADR 0077
+   revises the page count upward.
 2. A linear-memory representation for `:vector-i64` in the component profile.
    This deserves its own ADR: it changes how a typed collection is represented,
-   not just how one crosses a boundary.
+   not just how one crosses a boundary. **Written: ADR 0077.** Its finding is
+   that the deciding constraint is not layout but allocation -- collections are
+   persistent (`ir/eval-expr`'s `vector-conj` is `(conj items item)`) and the
+   arena never frees, so building a 16384-item vector by repeated `conj` would
+   allocate 1.0 GiB. ADR 0077 admits single-shot construction now and defers
+   `conj` chains to a linearity analysis.
 3. The Canonical `list<T>` layout (ptr/len pair, return area for the
    `MAX_FLAT_RESULTS = 1` spill) on top of it.
 
