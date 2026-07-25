@@ -73,7 +73,8 @@
   capability call into ambient Component authority.  This is deliberately a
   narrow lexical backstop; the HIR-derived set remains the import source."
   [source]
-  (boolean (re-find #"\(\s*cap-call(?:\s|\))" source)))
+  (and (string? source)
+       (.contains ^String source "cap-call")))
 
 (defn- text-sha256 [text]
   (let [digest (.digest (MessageDigest/getInstance "SHA-256")
