@@ -23,7 +23,7 @@
   (:gen-class))
 
 (defn- parse-target [s]
-  (case s "wasm32" :wasm32-kotoba-v1 "x86_64" :x86_64-kotoba-v1
+  (case s "wasm32" :wasm32-kotoba-v1 "wasm-component" :wasm-component-kotoba-v1 "x86_64" :x86_64-kotoba-v1
         "aarch64" :aarch64-kotoba-v1
         "js" :js-kotoba-v1
         "javascript" :js-kotoba-v1
@@ -262,10 +262,13 @@
     "compile"
     (let [input (kotoba-source! (second args))
           source-roots (options args "--source-path")
-          target (parse-target (or (option args "--target") "wasm32"))
+          ;; ADR-2607252500: ordinary application compilation is Component
+          ;; first.  A raw Wasm module remains an explicit lower-level target
+          ;; for reviewed tooling, never the silent default execution form.
+          target (parse-target (or (option args "--target") "wasm-component"))
           output (or (option args "--output")
                      (str input (case (:execution (target-profile/profile target))
-                                  :wasm ".wasm"
+                                  (:wasm :component) ".wasm"
                                   :cljs ".cljs"
                                   :javascript ".mjs"
                                   :kernel ".o"
@@ -282,7 +285,7 @@
                      (compiler/compile-project sources root target policy))
                    (compiler/compile-source (bounded-edn/read-text-file input) target policy))]
       (case (:format result)
-        :wasm/v1 (atomic-output/write-bytes! output (:bytes result))
+        (:wasm/v1 :wasm-component/v1) (atomic-output/write-bytes! output (:bytes result))
         ;; ADR-2607151500: the cljs backend emits SOURCE TEXT, not an
         ;; artifact map -- write-edn! would pr-str this into a quoted/
         ;; escaped EDN string literal instead of directly readable cljs

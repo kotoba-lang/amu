@@ -76,6 +76,7 @@
 
 (defn- wasm-runtime [target]
   (case target
+    :wasm-component-kotoba-v1 :kotoba-component-runtime-v1
     :wasm32-browser-kotoba-v1 :kotoba-browser-host-v1
     :wasm32-wasi-kotoba-v1 :kotoba-wasi-host-v1
     :kotoba-capability-host-v1))
@@ -1043,6 +1044,7 @@
 
 (defn emit [kir target]
   (let [functions (:functions kir)
+        component? (= target :wasm-component-kotoba-v1)
         typed? (= :kotoba.kir/v4 (:format kir))
         exported-names (set (or (:exports kir) (map :name functions)))
         exported-functions (filterv #(contains? exported-names (:name %)) functions)
@@ -1122,37 +1124,76 @@
         shift (count imports)
         intrinsic-indices (into {} (map-indexed (fn [index [op]] [op index]) imports))
         indices (into {} (map-indexed (fn [i f] [(:name f) (+ i shift)]) functions))
-        types (concat (uleb (+ (count functions) shift))
+        ;; Component v1 adds only the canonical ABI shims required by a
+        ;; zero-argument `main -> s64` export.  They have no authority and
+        ;; are not visible in the Kotoba surface language.
+        component-types (when component?
+                          [[0x60 1 0x7e 0]                    ; post-return
+                           [0x60 4 0x7f 0x7f 0x7f 0x7f 1 0x7f] ; realloc
+                           [0x60 0 0]])                       ; initialize
+        component-main-index (get indices 'main)
+        _ (when (and component?
+                     (or typed? has-cap? (seq heap-ops)
+                         (not= 1 (count functions))
+                         (not= 'main (:name (first functions)))
+                         (seq (:params (first functions)))
+                         (not= :i64 (:result (first functions)))))
+            (throw (ex-info "Component v1 requires one pure (defn main [] <i64>) entry"
+                            {:phase :component-abi
+                             :target target
+                             :functions (mapv #(select-keys % [:name :params :result]) functions)
+                             :effects (:effects kir)})))
+        types (concat (uleb (+ (count functions) shift (count component-types)))
                       (mapcat #(nth % 3) imports)
-                      (mapcat (if typed? typed-function-type function-type) functions))
+                      (mapcat (if typed? typed-function-type function-type) functions)
+                      (mapcat identity component-types))
         import-sec (when (seq imports)
                      (concat (uleb shift)
                              (mapcat (fn [[_ module field _] index]
                                        (concat (name-bytes module) (name-bytes field)
                                                [0] (uleb index)))
                                      imports (range))))
-        function-sec (concat (uleb (count functions))
-                             (mapcat uleb (range shift (+ shift (count functions)))))
+        function-sec (concat (uleb (+ (count functions) (count component-types)))
+                             (mapcat uleb (range shift (+ shift (count functions))))
+                             (when component?
+                               (mapcat uleb (range (+ shift (count functions))
+                                                   (+ shift (count functions) (count component-types))))))
         ;; (global (mut i64) (i64.const 512)); fixed and low enough to trap before the
         ;; host call stack becomes the limiting resource.
         global-sec [1 0x7e 1 0x42 0x80 0x04 0x0b]
         ;; Pure functions are exported with their source names. This makes
         ;; runtime parameters observable and testable without host authority.
-        export-sec (concat (uleb (count exported-functions))
+        component-export-items (when component?
+                                 [["cm32p2||main" 0 component-main-index]
+                                  ["cm32p2||main_post" 0 (+ component-main-index 1)]
+                                  ["cm32p2_memory" 2 0]
+                                  ["cm32p2_realloc" 0 (+ component-main-index 2)]
+                                  ["cm32p2_initialize" 0 (+ component-main-index 3)]])
+        export-sec (concat (uleb (+ (count exported-functions) (count component-export-items)))
                            (mapcat (fn [function]
                                      (concat (name-bytes (name (:name function))) [0]
                                              (uleb (get indices (:name function)))))
-                                   exported-functions))
+                                   exported-functions)
+                           (mapcat (fn [[name kind index]]
+                                     (concat (name-bytes name) [kind] (uleb index)))
+                                   component-export-items))
         descriptor-indices (when typed? (typed/descriptor-indices kir))
         literal-indices (when typed? (typed/literal-indices kir))
         signatures (when typed? (typed-function-signatures functions))
+        component-bodies (when component?
+                           ;; post-return and initialize are no-ops. realloc is
+                           ;; unreachable because the scalar ABI never allocates.
+                           ;; Keeping it trapping makes accidental future use fail
+                           ;; closed instead of granting an implicit allocator.
+                           [[0 0x0b] [0 0x00 0x0b] [0 0x0b]])
         code-sec (concat
-                  (uleb (count functions))
+                  (uleb (+ (count functions) (count component-bodies)))
                   (mapcat #(if typed?
                              (emit-typed-function-body % indices intrinsic-indices
                                                        descriptor-indices literal-indices signatures)
                              (function-body % indices intrinsic-indices))
-                          functions))
+                          functions)
+                  (mapcat (fn [body] (concat (uleb (count body)) body)) component-bodies))
         target-sec (concat (name-bytes "kotoba.target")
                            (utf8 (name target)))
         typed-sec (when (= :kotoba.kir/v4 (:format kir))
@@ -1164,7 +1205,11 @@
                         (section 0 compatibility-sec)
                         (when typed-sec (section 0 typed-sec))
                         (section 1 types) (when (seq imports) (section 2 import-sec))
-                        (section 3 function-sec) (section 6 global-sec)
+                        (section 3 function-sec)
+                        ;; A canonical ABI memory is required even though the
+                        ;; scalar v1 world never serializes through it.
+                        (when component? (section 5 [1 0 0]))
+                        (section 6 global-sec)
                         (section 7 export-sec) (section 10 code-sec))]
       #?(:clj (byte-array (map unchecked-byte bytes))
          :cljs (js/Uint8Array.from (clj->js (map #(bit-and % 0xff) bytes)))))))

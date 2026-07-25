@@ -103,6 +103,18 @@
                                 (.toPath (java.io.File. output)))))))
           (is (str/includes? (slurp output) "export")))))))
 
+(deftest compile-defaults-to-a-pure-wasm-component
+  (let [source (temp-kotoba-source! "(defn main [] 42)")
+        output (.getPath (doto (java.io.File/createTempFile "kotoba-component-default-" ".wasm")
+                           (.deleteOnExit)))
+        out (StringWriter.)]
+    (binding [*out* out]
+      (cli/-main "compile" source "--output" output))
+    (let [report (edn/read-string (str out))]
+      (is (:ok report))
+      (is (= :wasm-component-kotoba-v1 (:target report)))
+      (is (.exists (io/file output))))))
+
 (deftest compile-source-path-loads-only-a-closed-qualified-project
   (let [directory (.toFile (java.nio.file.Files/createTempDirectory
                             "kotoba-cli-project-" (make-array java.nio.file.attribute.FileAttribute 0)))
