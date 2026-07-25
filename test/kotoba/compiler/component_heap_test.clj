@@ -52,7 +52,9 @@
     (fn [path]
       (let [text (wasm-tools/run-command! ["wasm-tools" "print" path])]
         (testing "memory is no longer zero pages"
-          (is (re-find #"\(memory[^)]*1" text)
+          ;; wasm-tools prints `(memory (;0;) 1)`; the index comment contains a
+          ;; `)`, so match the declared minimum after it rather than before.
+          (is (re-find #"\(memory \(;\d+;\) [1-9]" text)
               "a component module must declare at least one page"))
         (testing "the bump pointer is a mutable i32 global, not address 0"
           (is (re-find #"\(global.*mut i32" text))
