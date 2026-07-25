@@ -49,6 +49,21 @@
               capability-ids)]
     abilities))
 
+(defn- component-capability-ids
+  "Collect every literal Component capability at the source boundary.  The
+  effect summary is authoritative for normal programs; walking function bodies
+  as well makes the descriptor check fail closed even if a future frontend
+  transform accidentally drops a direct `cap-call` from that summary."
+  [hir]
+  (into (sorted-set)
+        (concat
+         (map second (filter #(= :cap/call (first %)) (:effects hir)))
+         (for [form (tree-seq coll? seq (:functions hir))
+               :when (and (seq? form) (= 'cap-call (first form)))
+               :let [capability (second form)]
+               :when (some? capability)]
+           capability))))
+
 (defn- text-sha256 [text]
   (let [digest (.digest (MessageDigest/getInstance "SHA-256")
                         (.getBytes ^String text StandardCharsets/UTF_8))]
@@ -115,13 +130,13 @@
                         :target target :target-profile profile :value-abi value-abi})]
     (cond
       (= target :wasm-component-kotoba-v1)
-      (let [capability-ids (into (sorted-set) (map second)
-                                 (filter #(= :cap/call (first %)) (:effects kir)))
+      (let [capability-ids (component-capability-ids hir)
             abilities (component-abilities! capability-ids policy)
             core-bytes (wasm/emit kir target)
             component-bytes (component/encode! core-bytes capability-ids)]
         {:format :wasm-component/v1 :target target :target-profile profile
          :hir hir :kir kir :admission admission :compatibility compatibility
+         :floating-point-policy floating-point-policy
          :component-world component/world-id
          :core-bytes core-bytes :bytes component-bytes
          ;; The linker/runtime may choose a tighter ceiling, but an artifact
