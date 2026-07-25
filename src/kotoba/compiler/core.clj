@@ -34,7 +34,7 @@
         _ (when-not (map? declared)
             (throw (ex-info "component ability descriptor is required"
                             {:phase :component-ability
-                             :reason :missing-descriptor-map}))
+                             :reason :missing-descriptor-map})))
         abilities
         (into (sorted-map)
               (map (fn [id]
