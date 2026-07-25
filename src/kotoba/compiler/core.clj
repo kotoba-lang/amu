@@ -302,7 +302,11 @@
    ;; an effectful Component must never become a provider-free artifact just
    ;; because a later analysis transform failed to retain a direct cap-call.
    (when (and (= target :wasm-component-kotoba-v1)
-              (component-source-cap-call? source)
+              ;; A caller that supplies an authority policy is requesting a
+              ;; capability-bearing Component boundary.  Require the complete
+              ;; descriptor map before parsing so a lost HIR effect can never
+              ;; turn that request into a provider-free artifact.
+              (contains? policy :allow)
               (not (map? (:component-abilities policy))))
      (throw (ex-info "component ability descriptor is required"
                      {:phase :component-ability
