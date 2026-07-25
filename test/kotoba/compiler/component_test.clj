@@ -84,7 +84,7 @@
 
 (deftest effectful-components-require-a-fully-scoped-ability-descriptor
   (is (thrown-with-msg? clojure.lang.ExceptionInfo #"descriptor is required"
-                        #(compiler/compile-source
-                          "(defn main [] (cap-call 7 0))"
-                          :wasm-component-kotoba-v1
-                          {:allow #{[:cap/call 7]}}))))
+                        (compiler/compile-source
+                         "(defn main [] (cap-call 7 0))"
+                         :wasm-component-kotoba-v1
+                         {:allow #{[:cap/call 7]}}))))
