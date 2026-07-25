@@ -164,9 +164,9 @@
         (contains? '#{pair pair-first pair-second} op)
         (concat (emit-many args env ctx) [0x10 (get intrinsic-indices op)])
 
-        (contains? '#{+ - * quot bit-xor bit-and} op)
+        (contains? '#{+ - * quot bit-xor bit-and bit-or} op)
         (let [opcode ({'+ 0x7c '- 0x7d '* 0x7e 'quot 0x7f
-                       'bit-and 0x83 'bit-xor 0x85} op)]
+                       'bit-and 0x83 'bit-xor 0x85 'bit-or 0x84} op)]
           (if (and (= op '-) (= 1 (count args)))
             (concat [0x42 0] (emit-expr (first args) env ctx) [0x7d])
             (concat (emit-expr (first args) env ctx)
@@ -183,6 +183,18 @@
                 (emit-expr (second args) env ctx) [0xa7]
                 [({'i32-wrapping-add 0x6a 'i32-wrapping-mul 0x6c 'i32-xor 0x73} op)
                  0xac])
+
+        ;; ADR-2607254600 D1. Operands are already i64, so unlike the i32
+        ;; shifts above there is no wrap/extend around the opcode.
+        (contains? '#{i64-shift-left i64-shift-right u64-shift-right} op)
+        (concat (emit-expr (first args) env ctx)
+                (emit-expr (second args) env ctx)
+                [({'i64-shift-left 0x86 'i64-shift-right 0x87 'u64-shift-right 0x88} op)])
+
+        ;; ADR-2607254600 D2. Wasm has no i64.not; xor with all-ones is the
+        ;; canonical encoding. `0x42 0x7f` is i64.const -1 (SLEB128).
+        (= op 'bit-not)
+        (concat (emit-expr (first args) env ctx) [0x42 0x7f 0x85])
 
         (contains? '#{i32-shift-left i32-shift-right u32-shift-right} op)
         (concat (emit-expr (first args) env ctx) [0xa7]
@@ -715,9 +727,9 @@
                               [::local-get left-local ::local-get left-local 0x5c
                                ::local-get right-local ::local-get right-local 0x5c 0x72
                                0x10 (get intrinsic-indices 'typed-bool)]))
-                    (contains? '#{+ - * quot bit-xor bit-and} op)
+                    (contains? '#{+ - * quot bit-xor bit-and bit-or} op)
                     (let [opcode ({'+ 0x7c '- 0x7d '* 0x7e 'quot 0x7f
-                                   'bit-and 0x83 'bit-xor 0x85} op)]
+                                   'bit-and 0x83 'bit-xor 0x85 'bit-or 0x84} op)]
                       (if (and (= op '-) (= 1 (count args)))
                         (concat [0x42 0] (emit* (first args) env) [0x7d])
                         (concat (emit* (first args) env)
@@ -731,6 +743,19 @@
                             (emit* (second args) env) [0xa7]
                             [({'i32-wrapping-add 0x6a 'i32-wrapping-mul 0x6c 'i32-xor 0x73} op)
                              0xac])
+                    ;; ADR-2607254600 D1. Operands are already i64, so unlike
+                    ;; the i32 shifts below there is no wrap/extend.
+                    (contains? '#{i64-shift-left i64-shift-right u64-shift-right} op)
+                    (concat (emit* (first args) env)
+                            (emit* (second args) env)
+                            [({'i64-shift-left 0x86 'i64-shift-right 0x87
+                               'u64-shift-right 0x88} op)])
+
+                    ;; ADR-2607254600 D2. No i64.not in wasm; xor all-ones.
+                    ;; `0x42 0x7f` is i64.const -1 (SLEB128).
+                    (= op 'bit-not)
+                    (concat (emit* (first args) env) [0x42 0x7f 0x85])
+
                     (contains? '#{i32-shift-left i32-shift-right u32-shift-right} op)
                     (concat (emit* (first args) env) [0xa7]
                             (emit* (second args) env) [0xa7]

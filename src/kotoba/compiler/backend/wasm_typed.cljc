@@ -278,9 +278,11 @@
         (= op 'if) (infer-type (second args) env signatures)
         (= op 'do) (infer-type (last args) env signatures)
         (= op 'typed-cap-call) (nth args 2)
-        (contains? '#{+ - * quot bit-xor bit-and cap-call pair pair-first pair-second
+        (contains? '#{+ - * quot bit-xor bit-and bit-or bit-not
+                      cap-call pair pair-first pair-second
                       i32-wrap u32-wrap i32-wrapping-add i32-wrapping-mul i32-xor
                       i32-shift-left i32-shift-right u32-shift-right xorshift32
+                      i64-shift-left i64-shift-right u64-shift-right
                       string-byte-length map-get vector-count vector-get vector-f64-count
                       vector-at hetero-vector-count typed-set-count
                       typed-map-count xml-path-count xml-name-count string-index-count

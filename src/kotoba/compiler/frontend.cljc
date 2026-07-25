@@ -73,10 +73,31 @@
   default set of names available even if the classpath resource is absent."
   (load-capability-registry))
 
-(def arithmetic '#{+ - * quot bit-xor bit-and})
+(def arithmetic '#{+ - * quot bit-xor bit-and bit-or})
 (def i32-operations
   '{i32-wrap 1 u32-wrap 1 i32-wrapping-add 2 i32-wrapping-mul 2 i32-xor 2
     i32-shift-left 2 i32-shift-right 2 u32-shift-right 2 xorshift32 1})
+;; ADR-2607254600 D1/D2. `bit-and`/`bit-xor` were already 64-bit
+;; (`i64.and` 0x83 / `i64.xor` 0x85) while the only shifts were 32-bit, so a
+;; 64-bit lane rotation -- the body of Keccak-f[1600], and the natural shape of
+;; u256 limb arithmetic -- could not be written at all. Wasm has had
+;; `i64.shl`/`i64.shr_s`/`i64.shr_u` since the MVP; this was an unimplemented
+;; op, not a spec limit.
+;;
+;; The shift count is restricted to a literal in [0,63], mirroring the existing
+;; [0,31] rule for the i32 shifts. Wasm itself masks the count modulo the
+;; width, so a dynamic count would be safe to emit; the literal rule is a
+;; frontend admission choice that keeps the emitted shift auditable. A dynamic
+;; count (needed for EVM SHL/SHR, whose amount is a stack value) is a separate
+;; change with its own reasoning.
+;;
+;; Rotation is deliberately absent: with a literal count `n`, `64 - n` is also
+;; a literal, so `rotl(x, n)` is exactly
+;; `(bit-or (i64-shift-left x n) (u64-shift-right x (- 64 n)))`. Adding
+;; `i64.rotl`/`i64.rotr` as single instructions is a follow-up once these
+;; primitives are proven, not a prerequisite.
+(def i64-operations
+  '{bit-not 1 i64-shift-left 2 i64-shift-right 2 u64-shift-right 2})
 (def comparisons '#{= < > <= >=})
 (def heap-operations '{pair 2 pair-first 1 pair-second 1})
 ;; kgraph-* (ADR-2607198300): all-integer EAVT datom store, the native
@@ -192,6 +213,7 @@
              (set (keys f64-operations))
              (set (keys f32-operations))
              (set (keys i32-operations))
+             (set (keys i64-operations))
              '#{let if cap-call typed-cap-call ns defn defn- some some? nil? vector-i64 vector-f64 vector-new vector-f64-new
                 hetero-vector typed-set record match-result match-variant match-option}))
 (def max-functions 1024)
@@ -1807,8 +1829,16 @@
           (validate-expr request locals functions (inc depth) budget))
 
         (contains? arithmetic op)
-            (do (when (or (empty? args) (and (contains? '#{quot bit-xor bit-and} op) (not= 2 (count args))))
+            (do (when (or (empty? args) (and (contains? '#{quot bit-xor bit-and bit-or} op) (not= 2 (count args))))
               (reject! "invalid arithmetic arity" form))
+            (doseq [arg args] (validate-expr arg locals functions (inc depth) budget)))
+
+        (contains? i64-operations op)
+        (do (when-not (= (get i64-operations op) (count args))
+              (reject! "i64 operation arity mismatch" form))
+            (when (contains? '#{i64-shift-left i64-shift-right u64-shift-right} op)
+              (when-not (and (kotoba-integer? (second args)) (<= 0 (second args) 63))
+                (reject! "i64 shift count must be an integer literal in [0,63]" form)))
             (doseq [arg args] (validate-expr arg locals functions (inc depth) budget)))
 
         (contains? i32-operations op)
@@ -2197,6 +2227,11 @@
   (let [types (mapv #(infer-expression-type % locals signatures) args)]
     (cond
       (contains? arithmetic op)
+      (do (doseq [[arg type] (map vector args types)]
+            (require-expression-type! type :i64 arg))
+          :i64)
+
+      (contains? i64-operations op)
       (do (doseq [[arg type] (map vector args types)]
             (require-expression-type! type :i64 arg))
           :i64)
