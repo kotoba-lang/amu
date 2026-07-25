@@ -1135,17 +1135,25 @@
                       (throw (ex-info "typed Wasm operation is not qualified"
                                       {:phase :wasm-typed-lowering
                                        :operation op :form form})))))))]
-      (let [prefix (mapcat (fn [[index type]]
-                             (when (typed/reference-type? type)
-                               (concat (i32-const (descriptor-id type)) [::local-get index]
-                                       [0x10 (get intrinsic-indices 'typed-assert-ref)
-                                        ::local-set index])))
-                           (map-indexed vector (:param-types function)))
-            body-code (emit* (:body function) env)
-            body-code (if (typed/reference-type? (:result function))
-                        (concat (i32-const (descriptor-id (:result function))) body-code
-                                [0x10 (get intrinsic-indices 'typed-assert-ref)])
-                        body-code)
+      ;; `prefix` and `body-code` are lazy seqs whose realization is what runs
+      ;; `allocate!`'s side effects into `@locals`. Force them with `doall`
+      ;; BEFORE reading `@locals` for the locals declaration below -- otherwise
+      ;; the declared count is taken from a partially-realized `@locals` and
+      ;; undercounts scratch locals (e.g. a body needing 6 f64 temporaries
+      ;; declared only 5, producing `invalid local index: 5` at instantiation).
+      (let [prefix (doall
+                    (mapcat (fn [[index type]]
+                              (when (typed/reference-type? type)
+                                (concat (i32-const (descriptor-id type)) [::local-get index]
+                                        [0x10 (get intrinsic-indices 'typed-assert-ref)
+                                         ::local-set index])))
+                            (map-indexed vector (:param-types function))))
+            body-code (doall (emit* (:body function) env))
+            body-code (doall
+                       (if (typed/reference-type? (:result function))
+                         (concat (i32-const (descriptor-id (:result function))) body-code
+                                 [0x10 (get intrinsic-indices 'typed-assert-ref)])
+                         body-code))
             declarations (if (empty? @locals) [0]
                            (concat (uleb (count @locals))
                                    (mapcat (fn [type] [1 type]) @locals)))
