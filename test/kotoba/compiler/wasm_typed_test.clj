@@ -550,3 +550,34 @@
         probe (node-probe compiled
                           "if(h.instance.exports.main()!==42n)process.exit(2);")]
     (is (zero? (:exit probe)) (:err probe))))
+
+(deftest scalar-f64-body-ops-select-the-typed-kir-even-with-i64-signatures
+  ;; Regression: a function whose exported signature is scalar :i64 but whose
+  ;; BODY uses scalar f64 ops (f64-from-bits, f64-eq, f64-add, ...) was
+  ;; classified :kotoba.kir/v3 (untyped) because the typed-values? scan looked
+  ;; at signatures + structured body ops but NOT scalar f64/f32 ops. The
+  ;; untyped v3 emitter has no lowering for them, so it emitted `call nil`
+  ;; (a null function index) -> NullPointerException at module byte assembly.
+  (testing "the module is promoted to the typed KIR"
+    (let [kir (:kir (compiler/compile-source
+                     "(ns t (:export [main]))
+                      (defn main [] :i64
+                        (if (f64-eq (f64-from-bits 1) (f64-from-bits 2)) 42 1))"
+                     :js-browser-kotoba-v1))]
+      (is (= :kotoba.kir/v4 (:format kir)))))
+  (testing "a purely-i64 body is NOT promoted"
+    (let [kir (:kir (compiler/compile-source
+                     "(ns t (:export [main])) (defn main [] :i64 (+ 40 2))"
+                     :js-browser-kotoba-v1))]
+      (is (= :kotoba.kir/v3 (:format kir)))))
+  (testing "it now emits and runs on wasm32-browser (3.0 == 1.0 + 2.0)"
+    (let [three "(f64-from-bits 4613937818241073152)"
+          one "(f64-from-bits 4607182418800017408)"
+          two "(f64-from-bits 4611686018427387904)"
+          source (str "(ns t (:export [main]))"
+                      "(defn main [] :i64 (if (f64-eq " three
+                      " (f64-add " one " " two ")) 42 99))")
+          compiled (compiler/compile-source source :wasm32-browser-kotoba-v1)
+          probe (node-probe compiled
+                            "if(h.instance.exports.main()!==42n)process.exit(2);")]
+      (is (zero? (:exit probe)) (:err probe)))))

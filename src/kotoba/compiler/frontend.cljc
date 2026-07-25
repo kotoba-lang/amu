@@ -3545,7 +3545,16 @@
                                                          (contains? typed-f64-vector-operations (first %))
                                                          (contains? document-fixed-operations (first %))
                                                          (contains? document-variadic-operations (first %))
-                                                         (contains? i32-operations (first %)))))
+                                                         (contains? i32-operations (first %))
+                                                         ;; Scalar f64/f32 ops (incl. f64-from-bits and the
+                                                         ;; f64-/f32-comparison ops) require the typed (KIR v4)
+                                                         ;; emitter: the untyped v3 path has no lowering for
+                                                         ;; them and would emit a `call nil`. A body may use
+                                                         ;; these while every exported signature stays scalar
+                                                         ;; :i64, so scan for them here, not just in signatures.
+                                                         (contains? f64-operations (first %))
+                                                         (contains? f32-operations (first %))
+                                                         (contains? decimal-operations (first %)))))
                                            (tree-seq coll? seq body))))
                                parsed)))
           function-effects (infer-effects parsed)
