@@ -12,6 +12,7 @@
             [clojure.java.io :as io]
             [clojure.string :as str]
             [kotoba.compiler.backend.wasm :as wasm]
+            [kotoba.compiler.value :as value]
             [kotoba.compiler.wasm-tools :as wasm-tools])
   (:import [java.nio.file Files]
            [java.nio.file.attribute FileAttribute]))
@@ -80,6 +81,28 @@
           (is (re-find #"cm32p2_realloc" text))
           (is (re-find #"memory\.copy" text)
               "grow must preserve old content, as the Canonical ABI requires"))))))
+
+(deftest arena-capacity-and-declared-memory-cannot-drift
+  ;; ADR 0077 decision 3. These two constants live in different places and are
+  ;; edited for different reasons; nothing else in the build would notice one
+  ;; moving without the other. A capacity above the declared memory lets a write
+  ;; run off it; below, a declared page is wasted.
+  (testing "capacity is exactly the declared memory"
+    (is (= wasm/component-arena-capacity
+           (* wasm/component-memory-pages 65536))))
+  (testing "the arena covers one maximum vector, which is what sized it"
+    ;; value/vector-item-limit i64 elements. If the item limit moves, the page
+    ;; count must move with it -- this is the assertion that says so.
+    (is (<= (* value/vector-item-limit 8)
+            (- wasm/component-arena-capacity wasm/component-arena-base))
+        "a maximum :vector-i64 must fit the arena above the base"))
+  (testing "the module declares the pages the capacity assumes"
+    (with-temp-module
+      (fn [path]
+        (let [text (wasm-tools/run-command! ["wasm-tools" "print" path])]
+          (is (re-find (re-pattern (str "\\(memory \\(;\\d+;\\) "
+                                        wasm/component-memory-pages))
+                       text)))))))
 
 (deftest allocator-behaviour-is-exercised-not-assumed
   (with-temp-module
