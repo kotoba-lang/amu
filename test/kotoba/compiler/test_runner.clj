@@ -11,6 +11,7 @@
             [kotoba.compiler.bounded-edn-test]
             [kotoba.compiler.cache-test]
             [kotoba.compiler.compact-graph-value-test]
+            [kotoba.compiler.component-test]
             [kotoba.compiler.document-value-test]
             [kotoba.compiler.string-operation-test]
             [kotoba.compiler.frontend-fuzz-test]
@@ -80,6 +81,7 @@
                                           'kotoba.compiler.bounded-edn-test
                                           'kotoba.compiler.cache-test
                                           'kotoba.compiler.compact-graph-value-test
+                                          'kotoba.compiler.component-test
                                           'kotoba.compiler.document-value-test
                                           'kotoba.compiler.string-operation-test
                                           'kotoba.compiler.frontend-fuzz-test

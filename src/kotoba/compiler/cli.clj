@@ -23,7 +23,7 @@
   (:gen-class))
 
 (defn- parse-target [s]
-  (case s "wasm32" :wasm32-kotoba-v1 "x86_64" :x86_64-kotoba-v1
+  (case s "wasm32" :wasm32-kotoba-v1 "wasm-component" :wasm-component-kotoba-v1 "x86_64" :x86_64-kotoba-v1
         "aarch64" :aarch64-kotoba-v1
         ;; ADR-2607252500: the primary application artifact.
         "component" :wasm-component-kotoba-v1
@@ -265,7 +265,10 @@
     "compile"
     (let [input (kotoba-source! (second args))
           source-roots (options args "--source-path")
-          target (parse-target (or (option args "--target") "wasm32"))
+          ;; ADR-2607252500: ordinary application compilation is Component
+          ;; first.  A raw Wasm module remains an explicit lower-level target
+          ;; for reviewed tooling, never the silent default execution form.
+          target (parse-target (or (option args "--target") "wasm-component"))
           output (or (option args "--output")
                      (str input (case (:execution (target-profile/profile target))
                                   :wasm ".wasm"

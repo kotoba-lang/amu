@@ -7,6 +7,7 @@
             [kotoba.compiler.ir :as ir]
             [kotoba.compiler.admission :as admission]
             [kotoba.compiler.backend.wasm :as wasm]
+            [kotoba.compiler.component :as component]
             [kotoba.compiler.backend.wasm-typed :as typed]
             [kotoba.compiler.component-wit :as component-wit]
             [kotoba.compiler.component-artifact :as component-artifact]
@@ -183,6 +184,19 @@
                        {:hir-format (:format hir) :kir-format (:format kir)
                         :target target :target-profile profile :value-abi value-abi})]
     (cond
+      (= target :wasm-component-kotoba-v1)
+      (let [core-bytes (wasm/emit kir target)
+            component-bytes (component/encode! core-bytes)]
+        {:format :wasm-component/v1 :target target :target-profile profile
+         :hir hir :kir kir :admission admission :compatibility compatibility
+         :component-world component/world-id
+         :core-bytes core-bytes :bytes component-bytes
+         ;; The linker/runtime may choose a tighter ceiling, but an artifact
+         ;; must never imply unbounded linear memory.  These are the minimum
+         ;; sync-profile bounds required by kototama/component-platform.
+         :limits {:fuel 512 :memory-pages 1 :replenishable? false}
+         :capabilities #{}})
+
       (= backend :wasm32-kotoba-v1)
       (let [typed-values? (= :kotoba.kir/v4 (:format kir))]
         {:format :wasm/v1 :target target :target-profile profile

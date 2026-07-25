@@ -21,10 +21,14 @@ The multi-target, deny-by-default compiler for the safe Kotoba language.
 ## Execution policy
 
 The compiler has one source-admission and KIR pipeline. Its primary application
-artifact is a Wasm Component/profile: a component is portable, linked through
-typed WIT imports, and receives no authority except the capabilities admitted
-by its host. `wasm32-wasi` does **not** mean ambient WASI access: the current
-profile rejects ambient WASI imports and expects a closed capability adapter.
+artifact is a standard Wasm Component: `--target wasm-component` emits the
+`kotoba:app/kotoba-app@0.1.0` world, currently a deliberately authority-free
+`main: func() -> s64`. The compiler emits its canonical-ABI core module and
+uses `wasm-tools component` to validate and seal the Component binary. This v1
+world accepts exactly one pure `(defn main [] <i64>)`; typed values, heap calls,
+and capability calls fail closed until they have explicit WIT contracts.
+`wasm32-wasi` does **not** mean ambient WASI access: the current profile rejects
+ambient WASI imports and expects a closed capability adapter.
 
 Direct x86-64/AArch64 AOT remains a supported backend for aiueos boot/kernel,
 engine, driver, root-key adapter, and explicitly trusted low-level primitives.
@@ -143,7 +147,8 @@ the full Clojure/ClojureScript reader, reader conditionals, or ambient host APIs
 
 ```text
 source -> inert reader -> typed/effect HIR -> SSA-like KIR
-       -> wasm32 | x86_64 | aarch64 | cljs -> independent verifier -> admission
+       -> core Wasm + canonical ABI -> standard Wasm Component -> one Component runtime
+       -> independent verifier -> admission
 ```
 
 ## Runtime: nbb-native for wasm32, JVM compat for everything else
@@ -171,7 +176,7 @@ i64 max/min, add-wraparound, the sleb continuation-bit crossing at 127/128).
 Observable semantics, ABI behavior, resource bounds, and fail-closed rejection
 are the compatibility contract; byte layout is not.
 
-**Every other target (`x86_64*`, `aarch64*`, `aarch64-android`,
+**Every other target (`wasm-component`, `x86_64*`, `aarch64*`, `aarch64-android`,
 `aarch64-ios`) and every other `kotoba` subcommand** (`package-ios`, `sbom`,
 `attest-release`, `sign`, `run`, receipts, coverage, etc.) still goes through
 `clojure -M:run` (`kotoba.compiler.cli`, JVM) exactly as before -- native
@@ -383,7 +388,7 @@ Destructured function parameters must declare `:vector-i64` explicitly.
 The explicit `(list ...)` surface retains the legacy pair-chain representation.
 
 Release-oriented target identities explicitly bind execution format, ISA, OS,
-ABI, and runtime profile. Current explicit names are `wasm32-browser`, `wasm32-wasi`,
+ABI, and runtime profile. Current explicit names are `wasm-component`, `wasm32-browser`, `wasm32-wasi`,
 `x86_64-linux`, `x86_64-macos`, `x86_64-windows`, `aarch64-linux`,
 `aarch64-macos`, `aarch64-windows`, `aarch64-android`, and `aarch64-ios`.
 The short `wasm32`, `x86_64`, and `aarch64` names remain experimental
@@ -580,6 +585,10 @@ compact substitution chains cannot amplify into unbounded native code.
 
 ```bash
 bin/kotoba -M compile example.kotoba --target wasm32 --output app.wasm
+bin/kotoba -M compile example.kotoba --target wasm-component --output app.component.wasm
+# A Component-capable Wasmtime executes the same sealed artifact; no WASI
+# directory, environment, or network grant is passed by this command.
+wasmtime --invoke main app.component.wasm
 bin/kotoba -M compile example.kotoba --target wasm32-wasi --output service.wasm
 bin/kotoba -M compile example.kotoba --target x86_64 --output app.kexe
 bin/kotoba -M compile example.kotoba --target x86_64-windows --output app-windows.kexe
