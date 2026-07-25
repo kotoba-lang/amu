@@ -1,0 +1,134 @@
+(ns kotoba.compiler.test-profile
+  "One-source Kotoba test runner.
+
+  Exported zero-arity functions whose names start with `test-` are tests and
+  pass only when they return i64 1. `test-handler(cap-id,value)` is an optional
+  Kotoba-defined deterministic ability handler used by every target. The same
+  checked KIR is executed by the JVM oracle, restricted ESM, and Wasm."
+  (:require [clojure.data.json :as json]
+            [clojure.java.shell :as shell]
+            [clojure.string :as str]
+            [kotoba.compiler.artifact :as artifact]
+            [kotoba.compiler.core :as compiler]
+            [kotoba.compiler.frontend :as frontend]
+            [kotoba.compiler.ir :as ir]))
+
+(def targets [:jvm-kir :js :wasm])
+
+(defn- harness-source [source]
+  (let [hir (frontend/analyze source)]
+    (if (some #(= 'main (:name %)) (:functions hir))
+      source
+      ;; The admitted Wasm browser host requires the conventional `main`
+      ;; lifecycle export. It is harness plumbing, never a test expectation.
+      (str (str/replace-first source #"\(:export\s+\["
+                              "(:export [main ")
+           "\n(defn main [] 0)\n"))))
+
+(defn- tests-in [kir]
+  (let [functions (into {} (map (juxt :name identity)) (:functions kir))]
+    (->> (:exports kir)
+         (filter #(and (str/starts-with? (name %) "test-")
+                       (not= 'test-handler %)))
+         (mapv (fn [test-name]
+                 (let [function (get functions test-name)]
+                   (when-not (and function (empty? (:params function)))
+                     (throw (ex-info "Kotoba tests must be exported zero-arity functions"
+                                     {:phase :test :test test-name})))
+                   test-name))))))
+
+(defn- test-policy [checked]
+  {:allow (set (filter #(= :cap/call (first %))
+                       (get-in checked [:hir :effects])))})
+
+(defn- jvm-results [kir tests]
+  (letfn [(handler [cap-id value]
+            (ir/execute kir 'test-handler [cap-id value]))]
+    (mapv (fn [test-name]
+            (try
+              {:test test-name :ok (= 1 (ir/execute kir test-name [] {:cap-call handler}))}
+              (catch Exception error
+                {:test test-name :ok false :error (or (ex-message error) "test trap")})))
+          tests)))
+
+(defn- node-run [target program]
+  (let [result (shell/sh "node" "--input-type=module" "-e" program)]
+    (when-not (zero? (:exit result))
+      (throw (ex-info "Kotoba target test process failed"
+                      {:phase :test :target target :stderr (:err result)})))
+    (json/read-str (:out result) :key-fn keyword)))
+
+(defn- encoded-text [text]
+  (.encodeToString (java.util.Base64/getEncoder)
+                   (.getBytes ^String text "UTF-8")))
+
+(defn- capability-ids [kir]
+  (->> (:effects kir)
+       (keep (fn [[effect id]] (when (= :cap/call effect) id)))
+       distinct
+       sort
+       vec))
+
+(defn- js-results [source tests cap-ids]
+  (let [encoded (encoded-text source)
+        names (json/write-str (mapv name tests))
+        ids (json/write-str cap-ids)]
+    (node-run :javascript
+     (str "const names=" names ",ids=" ids ";"
+          "const m=await import('data:text/javascript;base64," encoded "');"
+          "let x;"
+          "const grants=Object.fromEntries(ids.map(id=>[id,value=>"
+          "x['test-handler'](BigInt(id),value)]));"
+          "x=m.instantiateKotoba(grants);"
+          "const out=names.map(name=>{try{return {test:name,ok:x[name]()===1n}}"
+          "catch(e){return {test:name,ok:false,error:'test trap'}}});"
+          "console.log(JSON.stringify(out));"))))
+
+(defn- wasm-results [bytes tests cap-ids]
+  (let [encoded (.encodeToString (java.util.Base64/getEncoder) bytes)
+        names (json/write-str (mapv name tests))
+        ids (json/write-str cap-ids)]
+    (node-run
+     :wasm
+     (str "const names=" names ",ids=" ids ";"
+          "const bytes=Uint8Array.from(Buffer.from('" encoded "','base64'));"
+          "const host=await import('./runtime/browser-host.mjs');"
+          "let instance;"
+          "const loaded=await host.instantiateKotoba(bytes,{allowCapabilities:ids,"
+          "capCall:(id,value)=>instance.exports['test-handler'](BigInt(id),value)});"
+          "instance=loaded.instance;"
+          "const out=names.map(name=>{try{return {test:name,ok:instance.exports[name]()===1n}}"
+          "catch(e){return {test:name,ok:false,error:'test trap'}}});"
+          "console.log(JSON.stringify(out));"))))
+
+(defn run-source
+  "Run one Kotoba source's exported `test-*` definitions on all semantic
+  targets. Returns a deterministic report; target adapters never define test
+  expectations."
+  [source]
+  (let [source (harness-source source)
+        checked {:hir (frontend/analyze source)}
+        policy (test-policy checked)
+        js (compiler/compile-source source :js-kotoba-v1 policy)
+        wasm (compiler/compile-source source :wasm32-kotoba-v1 policy)
+        kir (:kir js)
+        tests (tests-in kir)
+        cap-ids (capability-ids kir)
+        _ (when (empty? tests)
+            (throw (ex-info "no exported test-* definitions" {:phase :test})))
+        results {:jvm-kir (jvm-results kir tests)
+                 :js (js-results (:source js) tests cap-ids)
+                 :wasm (wasm-results (:bytes wasm) tests cap-ids)}
+        failed (vec (for [[target cases] results
+                          case cases
+                          :when (not (:ok case))]
+                      (assoc case :target target)))]
+    {:format :kotoba.test-report/v1
+     :ok (empty? failed)
+     :test-definition-cid (artifact/sha256
+                           (select-keys kir [:format :exports :signature
+                                             :effects :functions]))
+     :tests tests
+     :targets targets
+     :results results
+     :failed failed}))
