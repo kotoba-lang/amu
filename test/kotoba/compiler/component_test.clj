@@ -62,6 +62,9 @@
                                                :max-bytes 1 :max-items 1
                                                :deadline-ms 10 :audit-id "test-clock"}}})]
     (is (= #{:aiueos.component/aiueos-clock-now} (:capabilities compiled)))
+    (is (= {:target "clock://monotonic" :operation :clock/now
+            :max-bytes 1 :max-items 1 :deadline-ms 10 :audit-id "test-clock"}
+           (get-in compiled [:component-imports :aiueos.component/aiueos-clock-now])))
     (is (.contains (component/world-wit #{7}) "import aiueos-clock-now"))
     (is (not (.contains (component/world-wit #{7}) "wasi:")))))
 
