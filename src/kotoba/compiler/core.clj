@@ -31,6 +31,10 @@
   quotas, deadline, or audit identity would be ambient or inferred later."
   [capability-ids policy]
   (let [declared (:component-abilities policy)
+        _ (when-not (map? declared)
+            (throw (ex-info "component ability descriptor is required"
+                            {:phase :component-ability
+                             :reason :missing-descriptor-map}))
         abilities
         (into (sorted-map)
               (map (fn [id]
@@ -291,7 +295,14 @@
           (assoc :binary (elf64/package-user artifact))))))))
 
 (defn compile-source
-  ([source target] (compile-source source target {}))
+  ([source target]
+   ;; A pure Component has the same explicit descriptor shape as an
+   ;; effectful one: an empty map. This keeps the artifact-building path from
+   ;; interpreting an absent map as authority.
+   (compile-source source target
+                   (if (= target :wasm-component-kotoba-v1)
+                     {:component-abilities {}}
+                     {})))
   ([source target policy]
    ;; Keep this guard on the public three-argument entry as well as the
    ;; metadata-bearing implementation below.  CLI and embedding callers use
