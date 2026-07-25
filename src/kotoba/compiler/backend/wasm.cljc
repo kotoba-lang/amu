@@ -487,13 +487,13 @@
                               [0x04 (typed/wasm-type result-type)]
                               (emit* then env) [0x05] (emit* else env) [0x0b]))
                     (= op 'typed-cap-call)
-                    (let [[cap-id _ _ request] args]
-                      (if (contains? capability-import-index cap-id)
+                    (let [[cap-id _ _ request] args
+                          typed-import (get intrinsic-indices [:capability cap-id])]
+                      (if typed-import
                         ;; A typed import takes the request directly; the
                         ;; capability id is carried by the import identity, not
                         ;; passed as an operand.
-                        (concat (emit* request env)
-                                [0x10 (get intrinsic-indices [:capability cap-id])])
+                        (concat (emit* request env) [0x10 typed-import])
                         (concat (i32-const cap-id) (emit* request env)
                                 [0x10 (get intrinsic-indices 'typed-cap-call)])))
                     (= op 'f64-to-bits)
@@ -1250,15 +1250,6 @@
   ([kir target] (emit kir target {}))
   ([kir target {:keys [component-standard32? fuel capability-imports]}]
   (let [fuel-initial (fuel-budget! fuel)
-        ;; ADR 0076 increment 1. Without this the component path imports the
-        ;; generic `kotoba:typed`/`cap-call` intrinsic, which no WIT interface
-        ;; can be bound to -- which is why capability-using components had to
-        ;; be hand-written per shape. When the caller supplies the per-
-        ;; capability bindings (it owns the WIT, this backend does not), each
-        ;; `typed-cap-call` becomes a direct call to its own typed import and
-        ;; any program shape works.
-        capability-import-index
-        (into {} (map-indexed (fn [i {:keys [id]}] [id i])) capability-imports)
         functions (:functions kir)
         typed? (= :kotoba.kir/v4 (:format kir))
         exported-names (set (or (:exports kir) (map :name functions)))
