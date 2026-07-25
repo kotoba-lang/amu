@@ -63,12 +63,10 @@
   capability call into ambient Component authority.  This is deliberately a
   narrow lexical backstop; the HIR-derived set remains the import source."
   [source]
-  (and (string? source)
-       ;; Require an actual reader token, rather than matching it only as a
-       ;; substring of a comment or identifier.  This remains independent of
-       ;; the HIR effect summary, which may legitimately be empty if a future
-       ;; frontend regression loses the direct call.
-       (boolean (re-find #"\(\s*cap-call(?:\s|\))" source))))
+  ;; Source may be a reader-backed value through project entry points. Scan
+  ;; its printed reader representation rather than assuming java.lang.String,
+  ;; and reject whenever a direct capability token is present.
+  (boolean (re-find #"cap-call" (pr-str source))))
 
 (defn- text-sha256 [text]
   (let [digest (.digest (MessageDigest/getInstance "SHA-256")
