@@ -2416,9 +2416,22 @@
       "  (data (i32.const " error-message-pointer ") \"" (wat-data error-message-bytes) "\")\n"
       ")\n"))))
 
-(defn emit [kir target]
+(defn fuel-enforcement
+  "Where a component's declared `:fuel` budget is actually enforced.
+
+  `:module-global` -- the budget is compiled into the core module's fuel global
+  and the guest traps by itself at exhaustion. `:host-only` -- this shape is
+  emitted as hand-written Canonical ABI WAT (realloc arena, no fuel global), so
+  only the host can enforce the budget. The admission envelope reports this so
+  a declared budget never reads as guest-enforced when it is not."
+  [kir]
+  (if (= :scalar (assert-supported! kir)) :module-global :host-only))
+
+(defn emit
+  ([kir target] (emit kir target {}))
+  ([kir target opts]
   (case (assert-supported! kir)
-    :scalar (wasm/emit-component-core kir target)
+    :scalar (wasm/emit-component-core kir target opts)
     :string-expression (wasm-tools/parse-wat
                         (string-expression-wat (first (exported-functions kir))))
     :scalar-record-identity
@@ -2464,4 +2477,4 @@
     (let [function (first (exported-functions kir))]
       (wasm-tools/parse-wat
        (variant-capability-wat function (:schemas kir)
-                               (different-variant-capability-call function (:schemas kir)))))))
+                               (different-variant-capability-call function (:schemas kir))))))))

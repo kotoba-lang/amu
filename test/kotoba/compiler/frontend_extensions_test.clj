@@ -68,10 +68,24 @@
 
 (deftest floating-point-policy-is-versioned-and-artifact-sealed
   (let [source "(defn main [] 1)"
-        results (mapv #(compiler/compile-source source %) compiler/supported-targets)
+        ;; Every target that compile-source emits directly. A component target
+        ;; is lifted by compile-component instead, and is covered separately
+        ;; below so this sweep still reaches every declared target.
+        results (mapv #(compiler/compile-source source %)
+                      compiler/source-compilable-targets)
+        component-targets (remove compiler/source-compilable-targets
+                                  compiler/supported-targets)
         web (compiler/compile-source source :js-kotoba-v1)]
     (is (= :kotoba.floating-point/ieee-754-f32-f64-v7 compiler/floating-point-policy))
     (is (every? #(= compiler/floating-point-policy (:floating-point-policy %)) results))
+    (is (= compiler/supported-targets
+           (into (set compiler/source-compilable-targets) component-targets))
+        "the two target sets must still partition every declared target")
+    (is (seq component-targets)
+        "the component target must be declared, or this sweep silently shrinks")
+    (is (= compiler/floating-point-policy
+           (:floating-point-policy (compiler/compile-component source)))
+        "a component seals the same floating-point policy as every backend")
     (is (= compiler/floating-point-policy
            (get-in web [:manifest :kotoba.artifact/floating-point-policy])))
     (is (str/includes? (:source web) "floatingPointPolicy:'ieee-754-f32-f64-v7'")))

@@ -25,6 +25,9 @@
 (defn- parse-target [s]
   (case s "wasm32" :wasm32-kotoba-v1 "x86_64" :x86_64-kotoba-v1
         "aarch64" :aarch64-kotoba-v1
+        ;; ADR-2607252500: the primary application artifact.
+        "component" :wasm-component-kotoba-v1
+        "wasm-component" :wasm-component-kotoba-v1
         "js" :js-kotoba-v1
         "javascript" :js-kotoba-v1
         "js-browser" :js-browser-kotoba-v1
@@ -266,23 +269,57 @@
           output (or (option args "--output")
                      (str input (case (:execution (target-profile/profile target))
                                   :wasm ".wasm"
+                                  :component ".component.wasm"
                                   :cljs ".cljs"
                                   :javascript ".mjs"
                                   :kernel ".o"
                                   :process ".elf"
                                   ".kexe")))
+          component-target? (= :component (:execution (target-profile/profile target)))
           policy-path (option args "--policy")
           policy (if policy-path (bounded-edn/read-file policy-path) {})
           artifact-kind (option args "--artifact")
           _ (when-not (contains? #{nil "object" "image"} artifact-kind)
               (throw (ex-info "unknown native artifact kind"
                               {:phase :artifact-target :artifact artifact-kind})))
-          result (if (seq source-roots)
+          _ (when (and component-target? (seq source-roots))
+              (throw (ex-info "component compilation does not accept --source-path yet"
+                              {:phase :target-routing :target target})))
+          result (cond
+                   ;; A component is lifted from a core module through the
+                   ;; Canonical ABI, so it has its own entry point rather than
+                   ;; being one more backend behind compile-source.
+                   component-target?
+                   (compiler/compile-component
+                    (bounded-edn/read-text-file input) policy
+                    (cond-> {}
+                      (option args "--profile")
+                      (assoc :profile (keyword (option args "--profile")))
+                      (option args "--fuel")
+                      (assoc-in [:budgets :fuel] (Long/parseLong (option args "--fuel")))
+                      (option args "--memory-pages")
+                      (assoc-in [:budgets :memory-pages]
+                                (Long/parseLong (option args "--memory-pages")))
+                      (option args "--package-lock-cid")
+                      (assoc :package-lock-cid (option args "--package-lock-cid"))))
+
+                   (seq source-roots)
                    (let [{:keys [sources root]} (project-files/load-closed-graph input source-roots)]
                      (compiler/compile-project sources root target policy))
+
+                   :else
                    (compiler/compile-source (bounded-edn/read-text-file input) target policy))]
       (case (:format result)
         :wasm/v1 (atomic-output/write-bytes! output (:bytes result))
+        ;; The component artifact is three files: the binary, the WIT world it
+        ;; was lifted against, and the admission request kototama needs. They
+        ;; are written together so an artifact can never circulate without the
+        ;; interface and bounds it claims.
+        :wasm-component/v1
+        (do (atomic-output/write-bytes! output (:bytes result))
+            (atomic-output/write-text! (str output ".wit") (get-in result [:wit :source]))
+            (atomic-output/write-edn! (str output ".admission.edn")
+                                      (:admission-request result)))
         ;; ADR-2607151500: the cljs backend emits SOURCE TEXT, not an
         ;; artifact map -- write-edn! would pr-str this into a quoted/
         ;; escaped EDN string literal instead of directly readable cljs

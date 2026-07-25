@@ -1189,10 +1189,37 @@
                  (tree-seq coll? seq (:body function))))
          functions)))
 
+(def default-fuel
+  "Historical fixed call budget. Every caller that supplies no `:fuel` gets
+  exactly this, so core-wasm behaviour is unchanged by fuel parameterization."
+  512)
+
+(def max-fuel
+  "Upper bound on a declared fuel budget. The charge is a single i64
+  `global.get`/`sub`, so the representable ceiling is i64; this bound keeps a
+  declared budget inside a value the SLEB128 encoder and every host that
+  reports remaining fuel can carry without ambiguity."
+  (dec (bit-shift-left 1 62)))
+
+(defn- fuel-budget! [fuel]
+  (cond
+    (nil? fuel) default-fuel
+    (not (integer? fuel))
+    (throw (ex-info "fuel budget must be an integer"
+                    {:phase :wasm-emit :fuel fuel}))
+    (not (pos? fuel))
+    (throw (ex-info "fuel budget must be positive"
+                    {:phase :wasm-emit :fuel fuel}))
+    (> fuel max-fuel)
+    (throw (ex-info "fuel budget exceeds the representable ceiling"
+                    {:phase :wasm-emit :fuel fuel :max max-fuel}))
+    :else fuel))
+
 (defn emit
   ([kir target] (emit kir target {}))
-  ([kir target {:keys [component-standard32?]}]
-  (let [functions (:functions kir)
+  ([kir target {:keys [component-standard32? fuel]}]
+  (let [fuel-initial (fuel-budget! fuel)
+        functions (:functions kir)
         typed? (= :kotoba.kir/v4 (:format kir))
         exported-names (set (or (:exports kir) (map :name functions)))
         exported-functions (filterv #(contains? exported-names (:name %)) functions)
@@ -1396,9 +1423,21 @@
                       (when component-standard32?
                         (mapcat uleb (concat post-type-indices
                                              [realloc-type-index initialize-type-index]))))
-        ;; (global (mut i64) (i64.const 512)); fixed and low enough to trap before the
-        ;; host call stack becomes the limiting resource.
-        global-sec [1 0x7e 1 0x42 0x80 0x04 0x0b]
+        ;; (global (mut i64) (i64.const FUEL)); the module-private, guest-
+        ;; unreplenishable call budget. It defaults to `default-fuel` (512),
+        ;; which is low enough to trap before the host call stack becomes the
+        ;; limiting resource -- the historical fixed value, and still what
+        ;; every core-wasm caller gets when it passes no `:fuel`.
+        ;;
+        ;; ADR-2607252500 makes Wasm Components the primary application
+        ;; artifact, and kototama's component-platform contract requires
+        ;; `:fuel` as a DECLARED per-component budget
+        ;; (`:required-budgets [:fuel :memory-pages]`, validated by
+        ;; `kototama.component-platform/validate-world!` as any positive
+        ;; integer). So the value is a caller-supplied budget here rather than
+        ;; a constant baked into codegen; the enforcement mechanism (charge
+        ;; per call, trap at zero, no guest replenishment) is unchanged.
+        global-sec (vec (concat [1 0x7e 1 0x42] (sleb fuel-initial) [0x0b]))
         ;; Pure functions are exported with their source names. This makes
         ;; runtime parameters observable and testable without host authority.
         component-function-base (+ shift (count functions))
@@ -1457,6 +1496,10 @@
          :cljs (js/Uint8Array.from (clj->js (map #(bit-and % 0xff) bytes))))))))
 
 (defn emit-component-core
-  "Emit a standard32-named core module for Component Model Canonical lifting."
-  [kir target]
-  (emit kir target {:component-standard32? true}))
+  "Emit a standard32-named core module for Component Model Canonical lifting.
+
+  `opts` accepts the same `:fuel` budget as `emit`; a component's declared
+  `:fuel` budget is compiled into the module's fuel global so the artifact and
+  its admission envelope cannot disagree about the bound."
+  ([kir target] (emit-component-core kir target {}))
+  ([kir target opts] (emit kir target (assoc opts :component-standard32? true))))

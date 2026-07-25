@@ -11,6 +11,7 @@
             [kotoba.compiler.component-wit :as component-wit]
             [kotoba.compiler.component-artifact :as component-artifact]
             [kotoba.compiler.component-core :as component-core]
+            [kotoba.compiler.component-admission :as component-admission]
             [kotoba.compiler.backend.cljs :as cljs]
             [kotoba.script :as script]
             [kotoba.compiler.backend.x86-64 :as x86-64]
@@ -33,6 +34,17 @@
 
 (def targets target-profile/compatibility-targets)
 (def supported-targets (set (keys target-profile/profiles)))
+
+(def source-compilable-targets
+  "Targets `compile-source` emits directly.
+
+  A component target is deliberately excluded: a component is a core module
+  lifted through the Canonical ABI by `compile-component`, not a backend
+  output. Callers that fan out over every target (conformance sweeps, policy
+  seal checks) want this set; `supported-targets` remains every declared
+  target, so `--target component` still validates as a real target name."
+  (into #{} (remove #(= :component (:execution (target-profile/profile %))))
+        supported-targets))
 
 ;; Native (x86_64/aarch64) targets admit the string slice of "typed values"
 ;; (string literals + string-byte-length/string=?/string-concat,
@@ -78,16 +90,49 @@
 
 (declare compile-source)
 
+(def default-component-budgets
+  "Declared resource bounds used when a caller supplies none.
+
+  `:fuel` keeps the historical 512-call budget so an unparameterized component
+  behaves exactly like every core-wasm module. `:memory-pages` is a DECLARED
+  host bound, not a property read back out of the module -- kototama's
+  `component-platform.edn` requires the key to be a positive integer for the
+  `:sync` profile, and 16 pages (1 MiB) is a default, not a measurement."
+  {:fuel wasm/default-fuel :memory-pages 16})
+
 (defn compile-component
-  "Compile the currently qualified scalar slice to a validated Component Model
-  binary. Structured/provider Canonical ABI lowering remains fail-closed."
-  ([source] (compile-component source {}))
-  ([source policy]
-   (let [core (compile-source source :wasm32-wasi-kotoba-v1 policy)
+  "Compile the currently qualified slice to a validated Component Model binary
+  plus its admission request. Structured/provider Canonical ABI lowering
+  remains fail-closed.
+
+  `opts` takes `:profile` (`:sync`/`:async`), `:budgets`, `:package-lock-cid`.
+  The declared `:fuel` budget is compiled into the core module's fuel global
+  where the shape allows it; `:fuel-enforcement` in the result reports whether
+  that happened or the budget is host-enforced only."
+  ([source] (compile-component source {} {}))
+  ([source policy] (compile-component source policy {}))
+  ([source policy {:keys [profile budgets] :or {profile :sync} :as opts}]
+   (let [budgets (merge default-component-budgets budgets)
+         core (compile-source source :wasm32-wasi-kotoba-v1 policy)
          wit (component-wit/emit (:kir core))
-         component-bytes (component-core/emit (:kir core) :wasm32-wasi-kotoba-v1)]
-     (assoc (component-artifact/package component-bytes (:kir core) wit)
-            :wit wit :admission (:admission core)))))
+         enforcement (component-core/fuel-enforcement (:kir core))
+         component-bytes (component-core/emit (:kir core) :wasm32-wasi-kotoba-v1
+                                              {:fuel (:fuel budgets)})
+         packaged (component-artifact/package component-bytes (:kir core) wit)]
+     (assoc packaged
+            :wit wit
+            :admission (:admission core)
+            ;; Carry the core compile's provenance and sealed policies: the
+            ;; component is a repackaging of exactly that module, so it
+            ;; inherits the same attestation rather than having none.
+            :provenance (:provenance core)
+            :floating-point-policy (:floating-point-policy core)
+            :compatibility (:compatibility core)
+            :budgets budgets
+            :fuel-enforcement enforcement
+            :admission-request (component-admission/request
+                                packaged wit
+                                (assoc opts :profile profile :budgets budgets))))))
 
 (defn- compile-source*
   ([source target] (compile-source* source target {}))
@@ -95,6 +140,15 @@
   ([source target policy emit-metadata]
    (when-not (contains? supported-targets target)
      (throw (ex-info "unsupported target" {:target target :supported supported-targets})))
+   ;; A Component is not a backend output: it is a core module lifted through
+   ;; the Canonical ABI and packaged by the pinned wasm-tools toolchain. Route
+   ;; it explicitly rather than letting it fall through to the wasm32 backend,
+   ;; which would silently emit a bare core module under a component target
+   ;; name.
+   (when (= :component (:execution (target-profile/profile target)))
+     (throw (ex-info "component targets compile through compile-component"
+                     {:phase :target-routing :target target
+                      :entry-point 'kotoba.compiler.core/compile-component})))
    (let [profile (target-profile/profile target)
         backend (target-profile/backend target)
         hir (frontend/analyze source)
