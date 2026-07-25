@@ -18,6 +18,22 @@ profiles, conformance and runtime digests, CI run, test time, and expiry.
 
 The multi-target, deny-by-default compiler for the safe Kotoba language.
 
+## Execution policy
+
+The compiler has one source-admission and KIR pipeline. Its primary application
+artifact is a Wasm Component/profile: a component is portable, linked through
+typed WIT imports, and receives no authority except the capabilities admitted
+by its host. `wasm32-wasi` does **not** mean ambient WASI access: the current
+profile rejects ambient WASI imports and expects a closed capability adapter.
+
+Direct x86-64/AArch64 AOT remains a supported backend for aiueos boot/kernel,
+engine, driver, root-key adapter, and explicitly trusted low-level primitives.
+It is not the default route for an ordinary Kotoba application. The compiler
+must not duplicate runtime policy: `kototama` owns component linking/execution
+and `aiueos` owns grant decisions, while a small native host independently
+enforces the resulting grant. See
+[`ADR-2607252500`](https://github.com/com-junkawasaki/root/blob/main/90-docs/adr/2607252500-kotoba-wasm-component-first-execution-boundary.edn).
+
 Project compilation accepts repeated `--source-path ROOT` arguments to link
 explicit package roots into one closed graph. Every dependency remains
 confined to one of those real paths. If the same qualified namespace exists
