@@ -5,74 +5,89 @@
   The blocker was that the general component path imported the generic
   `kotoba:typed`/`cap-call` intrinsic, which no WIT interface can be bound to.
   Each `typed-cap-call` now becomes a call to its own typed import, so any
-  program shape works as long as its exports and capability calls are scalar."
+  program shape works as long as its exports and capability calls are scalar.
+
+  `typed-cap-call` is a KIR form, not source syntax, so these fixtures build
+  KIR directly -- the same way `component-artifact-test` does."
   (:require [clojure.test :refer [deftest is testing]]
             [clojure.string :as str]
-            [kotoba.compiler.core :as compiler]
-            [kotoba.compiler.component-core :as component-core]
-            [kotoba.compiler.frontend :as frontend]
-            [kotoba.compiler.ir :as ir]))
+            [kotoba.compiler.component-core :as component-core]))
 
-;; A shape that was rejected before this increment: several functions, real
-;; computation on both sides of the capability call, and two exports.
-(def ^:private multi-function-source
-  "(ns app)
-   (defn scale [x :i64] :i64 (* x 2))
-   (defn offset [x :i64] :i64 (+ x 7))
-   (defn measure [request :i64] :i64
-     (offset (typed-cap-call 211 :i64 :i64 (scale request))))
-   (defn twice [request :i64] :i64
-     (+ (typed-cap-call 211 :i64 :i64 request)
-        (typed-cap-call 211 :i64 :i64 request)))")
+;; clock/now, id 7 in the component-model contract: interface "clock",
+;; function "now".
+(def ^:private clock-now 7)
 
-(defn- kir [source] (ir/lower (frontend/analyze source)))
+;; A shape that was rejected before this increment: a helper function, real
+;; computation on both sides of the capability call, two exports, and the same
+;; capability invoked from two places.
+(def ^:private multi-function-kir
+  {:format :kotoba.kir/v4
+   :exports ['measure 'twice]
+   :schemas {}
+   :functions [{:name 'scale :params ['x] :param-types [:i64] :result :i64
+                :body '(* x 2)}
+               {:name 'measure :params ['request] :param-types [:i64] :result :i64
+                :body (list '+ (list 'typed-cap-call clock-now :i64 :i64
+                                     '(scale request))
+                            7)}
+               {:name 'twice :params ['request] :param-types [:i64] :result :i64
+                :body (list '+
+                            (list 'typed-cap-call clock-now :i64 :i64 'request)
+                            (list 'typed-cap-call clock-now :i64 :i64 'request))}]})
+
+(def ^:private passthrough-kir
+  {:format :kotoba.kir/v4
+   :exports ['measure]
+   :schemas {}
+   :functions [{:name 'measure :params ['request] :param-types [:i64] :result :i64
+                :body (list 'typed-cap-call clock-now :i64 :i64 'request)}]})
 
 (deftest multi-function-capability-program-is-admitted
-  (testing "the general lowering claims this shape"
+  (testing "the general lowering claims a shape the allowlist never covered"
     (is (= :scalar-with-capabilities
-           (component-core/assert-supported! (kir multi-function-source)))))
-  (testing "the four hand-written shapes still win where they applied"
-    ;; A bare passthrough is still :scalar-capability-call, so this increment
-    ;; changes no existing artifact.
+           (component-core/assert-supported! multi-function-kir))))
+  (testing "a bare passthrough still takes the hand-written shape"
+    ;; Ordering matters: the four enumerated shapes stay ahead of the general
+    ;; one, so this increment changes no existing artifact.
     (is (= :scalar-capability-call
-           (component-core/assert-supported!
-            (kir "(ns app)
-                  (defn measure [request :i64] :i64
-                    (typed-cap-call 211 :i64 :i64 request))"))))))
+           (component-core/assert-supported! passthrough-kir)))))
 
 (deftest capability-imports-are-typed-and-deduplicated
-  (let [imports (component-core/scalar-capability-imports (kir multi-function-source))]
+  (let [imports (component-core/scalar-capability-imports multi-function-kir)]
     (testing "one import per capability id, not per call site"
       (is (= 1 (count imports)))
-      (is (= 211 (:id (first imports)))))
+      (is (= clock-now (:id (first imports)))))
     (testing "named for the standard32 binding wasm-tools resolves"
-      (is (str/starts-with? (:module (first imports)) "cm32p2|kotoba:application/"))
-      (is (str/ends-with? (:module (first imports)) "@1")))
-    (testing "signature is the scalar lowering: one param, one result"
-      ;; 0x60 = functype, then param count / types, then result count / types.
+      (is (= "cm32p2|kotoba:application/clock@1" (:module (first imports))))
+      (is (= "now" (:field (first imports)))))
+    (testing "signature is the scalar lowering: one i64 param, one i64 result"
+      ;; 0x60 functype, 1 param, 0x7e i64, 1 result, 0x7e i64.
       (is (= [0x60 1 0x7e 1 0x7e] (:type (first imports)))))))
 
-(deftest non-scalar-capability-is-still-fail-closed
-  (testing "a capability id with no contract entry is refused"
+(deftest capability-binding-is-fail-closed
+  (testing "an unknown capability id yields no bindings"
     (is (nil? (component-core/scalar-capability-imports
-               (kir "(ns app)
-                     (defn measure [request :i64] :i64
-                       (typed-cap-call 9999 :i64 :i64 request))")))))
-  (testing "a program with no capability call has no capability imports"
+               (assoc-in passthrough-kir [:functions 0 :body]
+                         (list 'typed-cap-call 9999 :i64 :i64 'request))))))
+  (testing "a program with no capability call has no bindings"
     (is (nil? (component-core/scalar-capability-imports
-               (kir "(ns app) (defn main [] :i64 42)"))))))
+               {:format :kotoba.kir/v4 :exports ['add] :schemas {}
+                :functions [{:name 'add :params ['l 'r] :param-types [:i64 :i64]
+                             :result :i64 :body '(+ l r)}]})))))
 
 (deftest emitted-core-module-binds-the-capability-directly
-  (let [bytes (component-core/emit (kir multi-function-source) :wasm32-wasi-kotoba-v1)
+  (let [bytes (component-core/emit multi-function-kir :wasm32-wasi-kotoba-v1)
         text (String. (byte-array (map unchecked-byte bytes)) "ISO-8859-1")]
-    (testing "the module imports the typed capability, not the generic intrinsic"
-      (is (str/includes? text "cm32p2|kotoba:application/")
-          "per-capability import name is absent")
-      (is (not (str/includes? text "kotoba:typed"))
-          "the generic cap-call intrinsic must not be imported once bound"))))
+    (testing "the module imports the typed capability"
+      (is (str/includes? text "cm32p2|kotoba:application/clock@1"))
+      (is (str/includes? text "now")))
+    (testing "the generic intrinsic is gone once a typed binding exists"
+      ;; If this regresses, the module still compiles but nothing can bind the
+      ;; import -- exactly the failure this increment removes.
+      (is (not (str/includes? text "kotoba:typed"))))))
 
 (deftest declared-fuel-still-reaches-a-capability-component
   ;; The new lowering goes through the real backend, so it must keep the
   ;; property ADR 0075 established rather than silently becoming host-only.
-  (is (= :module-global
-         (component-core/fuel-enforcement (kir multi-function-source)))))
+  (is (= :module-global (component-core/fuel-enforcement multi-function-kir)))
+  (is (= :host-only (component-core/fuel-enforcement passthrough-kir))))
