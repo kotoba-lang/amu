@@ -95,6 +95,9 @@
   (into #{} (remove #(= :component (:execution (target-profile/profile %))))
         supported-targets))
 
+(defn- component-target? [target]
+  (contains? #{:wasm-component-kotoba-v1 :wasm-component-kotoba-v2} target))
+
 ;; Native (x86_64/aarch64) targets admit the string slice of "typed values"
 ;; (string literals + string-byte-length/string=?/string-concat,
 ;; ADR-2607198300 follow-up) PLUS -- as of the first native record increment
