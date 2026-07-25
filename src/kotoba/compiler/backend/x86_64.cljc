@@ -691,7 +691,7 @@
         (and (= op '-) (= 1 (count args)))
         (vec (concat (emit-expr (first args) env (assoc ctx :tail? false)) [0x48 0xf7 0xd8]))
 
-        (contains? '#{+ - * quot bit-xor bit-and} op)
+        (contains? '#{+ - * quot bit-xor bit-and bit-or} op)
         (let [ctx (assoc ctx :tail? false)]
           (reduce (fn [left-code right]
                   (vec (concat left-code [0x50]
@@ -701,7 +701,11 @@
                                       * [0x48 0x0f 0xaf 0xc1]
                                       quot [0x48 0x99 0x48 0xf7 0xf9]
                                       bit-xor [0x48 0x31 0xc8]
-                                      bit-and [0x48 0x21 0xc8]))))
+                                      bit-and [0x48 0x21 0xc8]
+                                      ;; ADR-2607254600 D2: OR r/m64,r64
+                                      ;; (REX.W 09 /r), the sibling of the
+                                      ;; and/xor encodings above.
+                                      bit-or [0x48 0x09 0xc8]))))
                   (emit-expr (first args) env ctx) (rest args)))
 
         (contains? '#{= < > <= >=} op)

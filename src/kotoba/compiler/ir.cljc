@@ -77,6 +77,7 @@
      document-bool-value document-i64-value document-f64-value
      i32-wrap u32-wrap i32-wrapping-add i32-wrapping-mul i32-xor
      i32-shift-left i32-shift-right u32-shift-right xorshift32
+     bit-or bit-not i64-shift-left i64-shift-right u64-shift-right
      keyword-from-string keyword-name symbol})
 
 ;; The two field kinds this backend's own runtime value representation is
@@ -731,6 +732,41 @@
                           (<= i64/zero value (js/BigInt 31))))
     (trap! :i32-shift-count-out-of-range {:count value}))
   #?(:clj (int value) :cljs (js/Number value)))
+
+;; ADR-2607254600 D1/D2. Wasm masks a shift count modulo the width; this
+;; interpreter is the oracle the tests compare against, so it applies the same
+;; [0,63] admission the frontend enforces and traps rather than wrapping.
+(defn- checked-shift64 [value]
+  (when-not #?(:clj (and (integer? value) (<= 0 value 63))
+               :cljs (and (i64/bigint-value? value)
+                          (<= i64/zero value (js/BigInt 63))))
+    (trap! :i64-shift-count-out-of-range {:count value}))
+  #?(:clj (int value) :cljs (js/Number value)))
+
+(defn- i64-not [x]
+  #?(:clj (bit-not (long x))
+     :cljs (i64/wrap-i64 (bit-xor (i64/->bigint x) (js/BigInt -1)))))
+
+(defn- i64-shl [value count]
+  (let [shift (checked-shift64 count)]
+    #?(:clj (bit-shift-left (long value) shift)
+       ;; 2^shift is exact as a double for every shift in [0,63] (it is a power
+       ;; of two), so the BigInt conversion is exact.
+       :cljs (i64/wrap-i64 (* (i64/->bigint value)
+                              (js/BigInt (js/Math.pow 2 shift)))))))
+
+(defn- i64-shr [value count]
+  (let [shift (checked-shift64 count)]
+    #?(:clj (bit-shift-right (long value) shift)
+       :cljs (i64/wrap-i64 (i64/ashr (i64/->bigint value) shift)))))
+
+(defn- u64-shr [value count]
+  (let [shift (checked-shift64 count)]
+    #?(:clj (unsigned-bit-shift-right (long value) shift)
+       ;; asUintN reinterprets the two's-complement bits as unsigned, so the
+       ;; arithmetic shift below is a logical shift on that value.
+       :cljs (i64/wrap-i64 (i64/ashr (js/BigInt.asUintN 64 (i64/->bigint value))
+                                     shift)))))
 
 (defn- i32-add [x y]
   #?(:clj (long (unchecked-add-int (unchecked-int (long x)) (unchecked-int (long y))))
@@ -1932,7 +1968,7 @@
                       kernel-out-u8 kernel-out-u32} op)
         (trap! :kernel-privileged-unavailable {:operation op})
 
-        (contains? '#{+ - * quot bit-xor bit-and = < > <= >=} op)
+        (contains? '#{+ - * quot bit-xor bit-and bit-or = < > <= >=} op)
         (let [xs (mapv #(eval-expr % env functions fuel heap call-stack cap-call) args)]
           #?(:clj
              (case op
@@ -1946,6 +1982,7 @@
                       (quot x y))
                bit-xor (apply bit-xor xs)
                bit-and (apply bit-and xs)
+               bit-or (apply bit-or xs)
                = (if (apply = xs) 1 0)
                < (if (apply < xs) 1 0)
                > (if (apply > xs) 1 0)
@@ -1973,11 +2010,20 @@
                       (/ x y))
                bit-xor (i64/->bigint (apply bit-xor xs))
                bit-and (i64/->bigint (apply bit-and xs))
+               bit-or (i64/->bigint (apply bit-or xs))
                = (if (apply = xs) i64/one i64/zero)
                < (if (apply < xs) i64/one i64/zero)
                > (if (apply > xs) i64/one i64/zero)
                <= (if (apply <= xs) i64/one i64/zero)
                >= (if (apply >= xs) i64/one i64/zero))))
+
+        (contains? '#{bit-not i64-shift-left i64-shift-right u64-shift-right} op)
+        (let [xs (mapv #(eval-expr % env functions fuel heap call-stack cap-call) args)]
+          (case op
+            bit-not (i64-not (first xs))
+            i64-shift-left (i64-shl (first xs) (second xs))
+            i64-shift-right (i64-shr (first xs) (second xs))
+            u64-shift-right (u64-shr (first xs) (second xs))))
 
         (contains? '#{i32-wrap u32-wrap i32-wrapping-add i32-wrapping-mul i32-xor
                       i32-shift-left i32-shift-right u32-shift-right xorshift32} op)
