@@ -84,6 +84,8 @@
 (defn- stub-value [type]
   (cond
     (= type :i64) 0
+    (= type :f64) '(f64-from-bits 0)
+    (= type :f32) '(f32-from-bits 0)
     (= type :string) ""
     (= type :keyword) :kotoba.stub/value
     (= type :symbol) '(symbol "kotoba.stub/value")
