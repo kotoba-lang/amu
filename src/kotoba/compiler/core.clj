@@ -304,6 +304,15 @@
   ([source target] (compile-source source target {}))
   ([source target policy] (compile-source source target policy {}))
   ([source target policy emit-metadata]
+   ;; This gate deliberately precedes frontend/admission/backend selection:
+   ;; an effectful Component must never become a provider-free artifact just
+   ;; because a later analysis transform failed to retain a direct cap-call.
+   (when (and (= target :wasm-component-kotoba-v1)
+              (component-source-cap-call? source)
+              (not (map? (:component-abilities policy))))
+     (throw (ex-info "component ability descriptor is required"
+                     {:phase :component-ability
+                      :reason :unresolved-capability-call})))
    (provenance/attach source policy emit-metadata
                       (compile-source* source target policy emit-metadata))))
 
