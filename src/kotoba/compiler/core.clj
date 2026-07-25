@@ -392,7 +392,18 @@
 
 (defn compile-source
   ([source target] (compile-source source target {}))
-  ([source target policy] (compile-source source target policy {}))
+  ([source target policy]
+   ;; Keep this guard on the public three-argument entry as well as the
+   ;; metadata-bearing implementation below.  CLI and embedding callers use
+   ;; this arity directly, so a capability policy cannot bypass descriptor
+   ;; admission by taking a different public call shape.
+   (when (and (= target :wasm-component-kotoba-v1)
+              (contains? policy :allow)
+              (not (map? (:component-abilities policy))))
+     (throw (ex-info "component ability descriptor is required"
+                     {:phase :component-ability
+                      :reason :unresolved-capability-call})))
+   (compile-source source target policy {}))
   ([source target policy emit-metadata]
    ;; This gate deliberately precedes frontend/admission/backend selection:
    ;; an effectful Component must never become a provider-free artifact just
