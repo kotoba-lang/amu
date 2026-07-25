@@ -308,36 +308,37 @@
    ;; metadata-bearing implementation below.  CLI and embedding callers use
    ;; this arity directly, so a capability policy cannot bypass descriptor
    ;; admission by taking a different public call shape.
-   (when (and (= target :wasm-component-kotoba-v1)
-              (seq (:allow policy))
-              (not (map? (:component-abilities policy))))
-     (throw (ex-info "component ability descriptor is required"
-                     {:phase :component-ability
-                      :reason :unresolved-capability-call})))
-   (compile-source source target
-                   (if (and (= target :wasm-component-kotoba-v1)
-                            (not (map? (:component-abilities policy))))
-                     (assoc policy :component-abilities {})
-                     policy)
-                   {}))
+   (let [policy (if (and (= target :wasm-component-kotoba-v1)
+                         (not (contains? policy :allow))
+                         (not (map? (:component-abilities policy))))
+                  (assoc policy :component-abilities {})
+                  policy)]
+     (when (and (= target :wasm-component-kotoba-v1)
+                (contains? policy :allow)
+                (not (map? (:component-abilities policy))))
+       (throw (ex-info "component ability descriptor is required"
+                       {:phase :component-ability
+                        :reason :unresolved-capability-call})))
+     (compile-source source target policy {})))
   ([source target policy emit-metadata]
    ;; This gate deliberately precedes frontend/admission/backend selection:
    ;; an effectful Component must never become a provider-free artifact just
    ;; because a later analysis transform failed to retain a direct cap-call.
-    (when (and (= target :wasm-component-kotoba-v1)
-              ;; A caller that supplies an authority policy is requesting a
-              ;; capability-bearing Component boundary.  Require the complete
-              ;; descriptor map before parsing so a lost HIR effect can never
-              ;; turn that request into a provider-free artifact.
-              (seq (:allow policy))
-              (not (map? (:component-abilities policy))))
-     (throw (ex-info "component ability descriptor is required"
-                     {:phase :component-ability
-                      :reason :unresolved-capability-call})))
    (let [policy (if (and (= target :wasm-component-kotoba-v1)
+                         (not (contains? policy :allow))
                          (not (map? (:component-abilities policy))))
                   (assoc policy :component-abilities {})
                   policy)]
+     (when (and (= target :wasm-component-kotoba-v1)
+                ;; A caller that supplies an authority policy is requesting a
+                ;; capability-bearing Component boundary.  Require the complete
+                ;; descriptor map before parsing so a lost HIR effect can never
+                ;; turn that request into a provider-free artifact.
+                (contains? policy :allow)
+                (not (map? (:component-abilities policy))))
+       (throw (ex-info "component ability descriptor is required"
+                       {:phase :component-ability
+                        :reason :unresolved-capability-call})))
      (provenance/attach source policy emit-metadata
                         (compile-source* source target policy emit-metadata)))))
 
