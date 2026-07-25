@@ -477,6 +477,59 @@
                request-schema result-schema capability)
       {:capability capability :request request-type :result result})))
 
+(def ^:private scalar-wasm-type-byte
+  "Core value type for a scalar Canonical ABI leaf: i64/f32/f64."
+  {:i64 0x7e :f32 0x7d :f64 0x7c})
+
+(defn- typed-cap-calls
+  "Every distinct (id, request-type, result-type) a KIR performs, in a stable
+  order. Mirrors component-wit's own scan so the WIT and the core module's
+  imports are derived from the same facts."
+  [kir]
+  (->> (:functions kir)
+       (mapcat #(tree-seq coll? seq (:body %)))
+       (keep (fn [form]
+               (when (and (seq? form) (= 'typed-cap-call (first form)))
+                 (let [[_ id request-type result-type] form]
+                   {:id id :request-type request-type :result-type result-type}))))
+       distinct
+       (sort-by (juxt :id (comp pr-str :request-type) (comp pr-str :result-type)))
+       vec))
+
+(defn scalar-capability-imports
+  "Per-capability core imports for a KIR whose capability calls are all scalar,
+  or nil if any is not.
+
+  ADR 0076 increment 1. The generic `kotoba:typed`/`cap-call` intrinsic cannot
+  be bound to a WIT interface, so a capability-using component previously had
+  to be one of four hand-written single-function shapes. A scalar request and
+  result lower to themselves under the Canonical ABI -- no memory, no realloc --
+  so the import is simply (param T) (result T) under the standard32 name the
+  hand-written shapes already use."
+  [kir]
+  (let [calls (typed-cap-calls kir)
+        by-id (into {} (map (juxt :id identity)) (:capabilities component-wit/contract))]
+    (when (seq calls)
+      (let [descriptors
+            (reduce (fn [acc {:keys [id request-type result-type]}]
+                      (let [entry (get by-id id)
+                            param (scalar-wasm-type-byte request-type)
+                            result (scalar-wasm-type-byte result-type)]
+                        (if (and entry param result)
+                          (conj acc {:id id
+                                     :module (str "cm32p2|kotoba:application/"
+                                                  (name (:interface entry)) "@1")
+                                     :field (:function entry)
+                                     :type [0x60 1 param 1 result]})
+                          (reduced nil))))
+                    [] calls)]
+        ;; Distinct capability ids only: two calls to the same capability share
+        ;; one import, and differing signatures for one id would be ambiguous.
+        (when (and descriptors
+                   (= (count descriptors)
+                      (count (distinct (map :id descriptors)))))
+          descriptors)))))
+
 (defn assert-supported! [kir]
   (let [exports (exported-functions kir)]
     (cond
@@ -493,6 +546,13 @@
            (= 1 (count exports))
            (different-variant-capability-call (first exports) (:schemas kir)))
       :different-variant-capability-call
+      ;; ADR 0076 increment 1: any shape -- many functions, computation around
+      ;; the call -- as long as every export and every capability call is
+      ;; scalar. The four hand-written *-capability-call shapes above stay
+      ;; ahead of this so their behaviour is unchanged.
+      (and (every? scalar-function? exports)
+           (some? (scalar-capability-imports kir)))
+      :scalar-with-capabilities
       (every? scalar-function? exports) :scalar
       (and (= 1 (count (:functions kir)))
            (= 1 (count exports))
@@ -2425,13 +2485,18 @@
   only the host can enforce the budget. The admission envelope reports this so
   a declared budget never reads as guest-enforced when it is not."
   [kir]
-  (if (= :scalar (assert-supported! kir)) :module-global :host-only))
+  (if (contains? #{:scalar :scalar-with-capabilities} (assert-supported! kir))
+    :module-global
+    :host-only))
 
 (defn emit
   ([kir target] (emit kir target {}))
   ([kir target opts]
   (case (assert-supported! kir)
     :scalar (wasm/emit-component-core kir target opts)
+    :scalar-with-capabilities
+    (wasm/emit-component-core
+     kir target (assoc opts :capability-imports (scalar-capability-imports kir)))
     :string-expression (wasm-tools/parse-wat
                         (string-expression-wat (first (exported-functions kir))))
     :scalar-record-identity

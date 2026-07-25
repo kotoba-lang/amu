@@ -33,6 +33,7 @@
             [kotoba.compiler.component-composition-test]
             [kotoba.compiler.component-admission-test]
             [kotoba.compiler.i64-bitwise-test]
+            [kotoba.compiler.general-capability-component-test]
             [kotoba.compiler.canonical-abi-test]
             [kotoba.compiler.ios-aot-test]
             [kotoba.compiler.interface-test]
@@ -99,6 +100,7 @@
                                           'kotoba.compiler.component-composition-test
                                           'kotoba.compiler.component-admission-test
                                           'kotoba.compiler.i64-bitwise-test
+                                          'kotoba.compiler.general-capability-component-test
                                           'kotoba.compiler.canonical-abi-test
                                           'kotoba.compiler.ios-aot-test
                                           'kotoba.compiler.interface-test
