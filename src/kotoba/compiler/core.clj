@@ -8,6 +8,7 @@
             [kotoba.compiler.admission :as admission]
             [kotoba.compiler.backend.wasm :as wasm]
             [kotoba.compiler.component :as component]
+            [kotoba.abi.contract :as abi]
             [kotoba.compiler.backend.wasm-typed :as typed]
             [kotoba.compiler.component-wit :as component-wit]
             [kotoba.compiler.component-artifact :as component-artifact]
@@ -34,18 +35,11 @@
   quotas, deadline, or audit identity would be ambient or inferred later."
   [capability-ids policy]
   (let [declared (:component-abilities policy)
-        required #{:target :operation :max-bytes :max-items :deadline-ms :audit-id}
         abilities
         (into (sorted-map)
               (map (fn [id]
                      (let [ability (get declared id)]
-                       (when-not (and (map? ability)
-                                      (= required (set (keys ability)))
-                                      (string? (:target ability))
-                                      (keyword? (:operation ability))
-                                      (string? (:audit-id ability))
-                                      (every? #(pos-int? (get ability %))
-                                              [:max-bytes :max-items :deadline-ms]))
+                       (when-not (abi/valid-ability? ability)
                          (throw (ex-info "component ability descriptor is required"
                                          {:phase :component-ability
                                           :capability id})))
