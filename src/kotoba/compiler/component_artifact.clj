@@ -21,7 +21,11 @@
     (when (and (seq (:imports wit))
                (not (contains? #{:scalar-capability-call :record-capability-call
                                   :variant-capability-call
-                                  :different-variant-capability-call}
+                                  :different-variant-capability-call
+                                  ;; ADR 0076 increment 1: the general lowering
+                                  ;; now emits per-capability typed imports, so
+                                  ;; it may carry WIT imports too.
+                                  :scalar-with-capabilities}
                                 lowering)))
       (reject "component capability imports require Canonical provider lowering"
               {:imports (:imports wit)}))
