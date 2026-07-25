@@ -13,17 +13,10 @@
 (def capability-import-names abi/capability-import-names)
 
 (defn capability-import-name [id]
-  (or (get capability-import-names id)
-      (throw (ex-info "Component capability has no named WIT interface"
-                      {:phase :component-abi :capability-id id}))))
+  (abi/capability-import-name id))
 
 (defn world-wit [capability-ids]
-  (str "package kotoba:app@0.1.0;\n\nworld kotoba-app {\n"
-       ;; Every authority is a separately declared WIT import.  There is no
-       ;; `wasi:*` umbrella and no generic dispatcher in the Component ABI.
-       (apply str (map #(str "  import " (capability-import-name %) ": func(value: s64) -> s64;\n")
-                       (sort capability-ids)))
-       "  export main: func() -> s64;\n}\n"))
+  (abi/world-wit capability-ids))
 
 (defn- command! [& args]
   (let [{:keys [exit out err]} (apply shell/sh args)]
