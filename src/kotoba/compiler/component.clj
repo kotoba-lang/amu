@@ -3,20 +3,14 @@
    standard Component binary format.  `wasm-tools` is used as the reference
    encoder until the compiler owns the Component encoder itself."
   (:require [clojure.java.io :as io]
-            [clojure.java.shell :as shell])
+            [clojure.java.shell :as shell]
+            [kotoba.abi.contract :as abi])
   (:import [java.nio.file Files Path]
            [java.nio.charset StandardCharsets]))
 
-(def world-id "kotoba:app/kotoba-app@0.1.0")
+(def world-id abi/component-world)
 
-(def capability-import-names
-  {1 "aiueos-identity-sign"
-   2 "aiueos-identity-verify"
-   3 "aiueos-hash-sha256"
-   4 "aiueos-http-post"
-   5 "aiueos-log-read"
-   6 "aiueos-log-append"
-   7 "aiueos-clock-now"})
+(def capability-import-names abi/capability-import-names)
 
 (defn capability-import-name [id]
   (or (get capability-import-names id)
