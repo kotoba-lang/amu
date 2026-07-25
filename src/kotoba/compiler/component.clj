@@ -9,14 +9,26 @@
            [java.nio.charset StandardCharsets]))
 
 (def world-id abi/component-world)
+(def world-id-v2 abi/component-world-v2)
+
+(defn world-id-for [target]
+  (case target
+    :wasm-component-kotoba-v1 world-id
+    :wasm-component-kotoba-v2 world-id-v2
+    (throw (ex-info "unsupported Component world target" {:target target}))))
 
 (def capability-import-names abi/capability-import-names)
 
 (defn capability-import-name [id]
   (abi/capability-import-name id))
 
-(defn world-wit [capability-ids]
-  (abi/world-wit capability-ids))
+(defn world-wit
+  ([capability-ids] (abi/world-wit capability-ids))
+  ([target capability-ids]
+   (case target
+     :wasm-component-kotoba-v1 (abi/world-wit capability-ids)
+     :wasm-component-kotoba-v2 (abi/world-wit-v2 capability-ids)
+     (throw (ex-info "unsupported Component world target" {:target target})))))
 
 (defn- command! [& args]
   (let [{:keys [exit out err]} (apply shell/sh args)]
@@ -30,13 +42,15 @@
    compiler output remains deterministic and failures carry structured data."
   ([core-bytes] (encode! core-bytes #{}))
   ([core-bytes capability-ids]
+   (encode! core-bytes capability-ids :wasm-component-kotoba-v1))
+  ([core-bytes capability-ids target]
   (let [dir (Files/createTempDirectory "kotoba-component-" (make-array java.nio.file.attribute.FileAttribute 0))
         wit (.resolve dir "kotoba-app.wit")
         core (.resolve dir "core.wasm")
         embedded (.resolve dir "embedded.wasm")
         component (.resolve dir "app.component.wasm")]
     (try
-      (Files/writeString wit (world-wit capability-ids) StandardCharsets/UTF_8 (make-array java.nio.file.OpenOption 0))
+      (Files/writeString wit (world-wit target capability-ids) StandardCharsets/UTF_8 (make-array java.nio.file.OpenOption 0))
       (Files/write core core-bytes (make-array java.nio.file.OpenOption 0))
       (command! "wasm-tools" "component" "embed" (.toString wit) (.toString core)
                 "--world" "kotoba-app" "--output" (.toString embedded))

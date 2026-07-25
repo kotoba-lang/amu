@@ -80,6 +80,9 @@
 (def targets target-profile/compatibility-targets)
 (def supported-targets (set (keys target-profile/profiles)))
 
+(defn- component-target? [target]
+  (contains? #{:wasm-component-kotoba-v1 :wasm-component-kotoba-v2} target))
+
 ;; Native (x86_64/aarch64) targets admit ONLY the string slice of "typed
 ;; values" (string literals + string-byte-length/string=?/string-concat,
 ;; ADR-2607198300 follow-up) -- every other typed feature (options, results,
@@ -137,8 +140,14 @@
                        {:hir-format (:format hir) :kir-format (:format kir)
                         :target target :target-profile profile :value-abi value-abi})]
     (cond
-      (= target :wasm-component-kotoba-v1)
+      (component-target? target)
       (let [capability-ids (component-capability-ids hir)
+            _ (when (and (= target :wasm-component-kotoba-v2)
+                         (seq capability-ids))
+                (throw (ex-info "typed capability WIT v2 lowering is required"
+                                {:phase :component-abi-v2
+                                 :target target
+                                 :capability-ids capability-ids})))
             _ (when (and (component-source-cap-call? source)
                          (not (map? (:component-abilities policy))))
                 (throw (ex-info "component ability descriptor is required"
@@ -146,11 +155,13 @@
                                  :reason :unresolved-capability-call})))
             abilities (component-abilities! capability-ids policy)
             core-bytes (wasm/emit kir target)
-            component-bytes (component/encode! core-bytes capability-ids)]
-        {:format :wasm-component/v1 :target target :target-profile profile
+            component-bytes (component/encode! core-bytes capability-ids target)]
+        {:format (if (= target :wasm-component-kotoba-v2)
+                   :wasm-component/v2 :wasm-component/v1)
+         :target target :target-profile profile
          :hir hir :kir kir :admission admission :compatibility compatibility
          :floating-point-policy floating-point-policy
-         :component-world component/world-id
+         :component-world (component/world-id-for target)
          :core-bytes core-bytes :bytes component-bytes
          ;; The linker/runtime may choose a tighter ceiling, but an artifact
          ;; must never imply unbounded linear memory.  These are the minimum
@@ -300,7 +311,7 @@
    ;; effectful one: an empty map. This keeps the artifact-building path from
    ;; interpreting an absent map as authority.
    (compile-source source target
-                   (if (= target :wasm-component-kotoba-v1)
+                   (if (component-target? target)
                      {:component-abilities {}}
                      {})))
   ([source target policy]
@@ -308,12 +319,12 @@
    ;; metadata-bearing implementation below.  CLI and embedding callers use
    ;; this arity directly, so a capability policy cannot bypass descriptor
    ;; admission by taking a different public call shape.
-   (let [policy (if (and (= target :wasm-component-kotoba-v1)
+   (let [policy (if (and (component-target? target)
                          (not (contains? policy :allow))
                          (not (map? (:component-abilities policy))))
                   (assoc policy :component-abilities {})
                   policy)]
-     (when (and (= target :wasm-component-kotoba-v1)
+     (when (and (component-target? target)
                 (contains? policy :allow)
                 (not (map? (:component-abilities policy))))
        (throw (ex-info "component ability descriptor is required"
@@ -324,12 +335,12 @@
    ;; This gate deliberately precedes frontend/admission/backend selection:
    ;; an effectful Component must never become a provider-free artifact just
    ;; because a later analysis transform failed to retain a direct cap-call.
-   (let [policy (if (and (= target :wasm-component-kotoba-v1)
+   (let [policy (if (and (component-target? target)
                          (not (contains? policy :allow))
                          (not (map? (:component-abilities policy))))
                   (assoc policy :component-abilities {})
                   policy)]
-     (when (and (= target :wasm-component-kotoba-v1)
+     (when (and (component-target? target)
                 ;; A caller that supplies an authority policy is requesting a
                 ;; capability-bearing Component boundary.  Require the complete
                 ;; descriptor map before parsing so a lost HIR effect can never

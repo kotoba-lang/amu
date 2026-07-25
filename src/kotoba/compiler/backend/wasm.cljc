@@ -95,6 +95,7 @@
 (defn- wasm-runtime [target]
   (case target
     :wasm-component-kotoba-v1 :kotoba-component-runtime-v1
+    :wasm-component-kotoba-v2 :kotoba-component-runtime-v2
     :wasm32-browser-kotoba-v1 :kotoba-browser-host-v1
     :wasm32-wasi-kotoba-v1 :kotoba-wasi-host-v1
     :kotoba-capability-host-v1))
@@ -1067,7 +1068,7 @@
 
 (defn emit [kir target]
   (let [functions (:functions kir)
-        component? (= target :wasm-component-kotoba-v1)
+        component? (contains? #{:wasm-component-kotoba-v1 :wasm-component-kotoba-v2} target)
         typed? (= :kotoba.kir/v4 (:format kir))
         exported-names (set (or (:exports kir) (map :name functions)))
         exported-functions (filterv #(contains? exported-names (:name %)) functions)

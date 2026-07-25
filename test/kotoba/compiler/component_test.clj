@@ -50,6 +50,22 @@
       (is error)
       (is (= :component-abi (:phase (ex-data error)))))))
 
+(deftest typed-capability-v2-target-is-pure-until-grant-resource-lowering-exists
+  (let [compiled (compiler/compile-source "(defn main [] 42)" :wasm-component-kotoba-v2)]
+    (is (= :wasm-component/v2 (:format compiled)))
+    (is (= "kotoba:app/kotoba-app@0.2.0" (:component-world compiled))))
+  (let [error (try
+                (compiler/compile-source
+                 "(ns app (:capabilities #{:clock/now})) (defn main [] (cap-call :clock/now 0))"
+                 :wasm-component-kotoba-v2
+                 {:allow #{[:cap/call 7]} :component-abilities {7 {:target "clock://monotonic"
+                                                                      :operation :clock/now
+                                                                      :max-bytes 1 :max-items 1
+                                                                      :deadline-ms 1 :audit-id "v2"}}})
+                nil
+                (catch clojure.lang.ExceptionInfo e e))]
+    (is (= :component-abi-v2 (:phase (ex-data error))))))
+
 (deftest component-capabilities-are-named-wit-imports-not-an-ambient-wasi-surface
   (let [source "(ns app (:capabilities #{:clock/now})) (defn main [] (cap-call :clock/now 0))"
         compiled (compiler/compile-source source :wasm-component-kotoba-v1

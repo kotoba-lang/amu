@@ -10,6 +10,7 @@
    ;; `kotoba:app/kotoba-app@0.1.0`.  It deliberately has no WASI imports;
    ;; capabilities are added in later worlds, never ambiently.
    :wasm-component-kotoba-v1 {:format :kotoba.target-profile/v1 :execution :component :isa :wasm32 :os :unspecified :abi :component-canonical-abi-v1 :runtime :kotoba-component-runtime-v1}
+   :wasm-component-kotoba-v2 {:format :kotoba.target-profile/v1 :execution :component :isa :wasm32 :os :unspecified :abi :component-canonical-abi-v2 :runtime :kotoba-component-runtime-v2}
    :x86_64-kotoba-v1 {:format :kotoba.target-profile/v1 :execution :native :isa :x86_64 :os :unspecified :abi :sysv :runtime :kotoba-supervisor-v1}
    :x86_64-linux-kotoba-v1 {:format :kotoba.target-profile/v1 :execution :native :isa :x86_64 :os :linux :abi :sysv :runtime :kotoba-linux-supervisor-v1}
    :x86_64-macos-kotoba-v1 {:format :kotoba.target-profile/v1 :execution :native :isa :x86_64 :os :macos :abi :sysv :runtime :kotoba-macos-supervisor-v1}
