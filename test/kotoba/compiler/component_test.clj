@@ -50,21 +50,22 @@
       (is error)
       (is (= :component-abi (:phase (ex-data error)))))))
 
-(deftest typed-capability-v2-target-is-pure-until-grant-resource-lowering-exists
+(deftest typed-capability-v2-target-lowers-clock-through-a-host-owned-grant
   (let [compiled (compiler/compile-source "(defn main [] 42)" :wasm-component-kotoba-v2)]
     (is (= :wasm-component/v2 (:format compiled)))
     (is (= "kotoba:app/kotoba-app@0.2.0" (:component-world compiled))))
-  (let [error (try
-                (compiler/compile-source
-                 "(ns app (:capabilities #{:clock/now})) (defn main [] (cap-call :clock/now 0))"
-                 :wasm-component-kotoba-v2
-                 {:allow #{[:cap/call 7]} :component-abilities {7 {:target "clock://monotonic"
-                                                                      :operation :clock/now
-                                                                      :max-bytes 1 :max-items 1
-                                                                      :deadline-ms 1 :audit-id "v2"}}})
-                nil
-                (catch clojure.lang.ExceptionInfo e e))]
-    (is (= :component-abi-v2 (:phase (ex-data error))))))
+  (let [compiled
+        (compiler/compile-source
+         "(ns app (:capabilities #{:clock/now})) (defn main [] (cap-call :clock/now 0))"
+         :wasm-component-kotoba-v2
+         {:allow #{[:cap/call 7]} :component-abilities {7 {:target "clock://monotonic"
+                                                           :operation :clock/now
+                                                           :max-bytes 64 :max-items 1
+                                                           :deadline-ms 1000 :audit-id "v3"}}})]
+    (is (= :wasm-component/v2 (:format compiled)))
+    (is (= "aiueos:capability/application@0.3.0" (:component-world compiled)))
+    (with-temp-component (:bytes compiled)
+      #(is (zero? (:exit (shell/sh "wasm-tools" "validate" (.toString %))))))))
 
 (deftest compiler-consumes-the-authoritative-v3-capability-package
   (let [wit (component/typed-world-wit-v3)]

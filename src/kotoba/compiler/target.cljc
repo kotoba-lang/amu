@@ -9,8 +9,14 @@
    ;; then seals it as a standards-compliant Component with the WIT world
    ;; `kotoba:app/kotoba-app@0.1.0`.  It deliberately has no WASI imports;
    ;; capabilities are added in later worlds, never ambiently.
-   :wasm-component-kotoba-v1 {:format :kotoba.target-profile/v1 :execution :component :isa :wasm32 :os :unspecified :abi :component-canonical-abi-v1 :runtime :kotoba-component-runtime-v1}
-   :wasm-component-kotoba-v2 {:format :kotoba.target-profile/v1 :execution :component :isa :wasm32 :os :unspecified :abi :component-canonical-abi-v2 :runtime :kotoba-component-runtime-v2}
+   :wasm-component-kotoba-v1 {:format :kotoba.target-profile/v1 :execution :component
+                              :isa :wasm32 :os :unspecified :abi :canonical-abi-v1
+                              :runtime :kototama-component-host-v1
+                              :wasi-version "0.3.0" :ambient-wasi false}
+   :wasm-component-kotoba-v2 {:format :kotoba.target-profile/v1 :execution :component
+                              :isa :wasm32 :os :unspecified :abi :component-canonical-abi-v2
+                              :runtime :kotoba-component-runtime-v2
+                              :wasi-version "0.3.0" :ambient-wasi false}
    :x86_64-kotoba-v1 {:format :kotoba.target-profile/v1 :execution :native :isa :x86_64 :os :unspecified :abi :sysv :runtime :kotoba-supervisor-v1}
    :x86_64-linux-kotoba-v1 {:format :kotoba.target-profile/v1 :execution :native :isa :x86_64 :os :linux :abi :sysv :runtime :kotoba-linux-supervisor-v1}
    :x86_64-macos-kotoba-v1 {:format :kotoba.target-profile/v1 :execution :native :isa :x86_64 :os :macos :abi :sysv :runtime :kotoba-macos-supervisor-v1}
@@ -50,25 +56,7 @@
    :cljs-node-kotoba-v1 {:format :kotoba.target-profile/v1 :execution :cljs :isa :cljs :os :node :abi :cljs-source-v1 :runtime :kotoba-cljs-node-host-v1}
    :cljs-browser-kotoba-v1 {:format :kotoba.target-profile/v1 :execution :cljs :isa :cljs :os :browser :abi :cljs-source-v1 :runtime :kotoba-cljs-browser-host-v1}
    :js-kotoba-v1 {:format :kotoba.target-profile/v1 :execution :javascript :isa :javascript :os :unspecified :abi :kotoba-restricted-esm-v1 :runtime :kototama-js-host-v1}
-   :js-browser-kotoba-v1 {:format :kotoba.target-profile/v1 :execution :javascript :isa :javascript :os :browser :abi :kotoba-restricted-esm-v1 :runtime :kototama-worker-host-v1}
-
-   ;; ADR-2607252500 makes a Wasm Component the primary application artifact:
-   ;; portable, linked through typed WIT imports, receiving no authority beyond
-   ;; the capabilities its host admits. This profile is the compile target for
-   ;; that artifact. It is deliberately NOT a `backend` in the
-   ;; `compile-source*` sense -- a component is produced by lifting a
-   ;; standard32-named core module through the Canonical ABI
-   ;; (`kotoba.compiler.component-core` + `component-artifact`), so
-   ;; `compile-source*` rejects it and `compile-component` owns the path.
-   ;;
-   ;; `:runtime` names kototama, which owns admission/linking/composition per
-   ;; `kototama/component-platform.edn`'s `:roles`. The target keyword matches
-   ;; that contract's `:target` exactly, so an artifact compiled here and an
-   ;; envelope validated there cannot silently disagree.
-   :wasm-component-kotoba-v1 {:format :kotoba.target-profile/v1 :execution :component
-                              :isa :wasm32 :os :unspecified :abi :canonical-abi-v1
-                              :runtime :kototama-component-host-v1
-                              :wasi-version "0.3.0" :ambient-wasi false}})
+   :js-browser-kotoba-v1 {:format :kotoba.target-profile/v1 :execution :javascript :isa :javascript :os :browser :abi :kotoba-restricted-esm-v1 :runtime :kototama-worker-host-v1}})
 
 (def compatibility-targets #{:wasm32-kotoba-v1 :x86_64-kotoba-v1 :aarch64-kotoba-v1 :cljs-kotoba-v1 :js-kotoba-v1})
 (defn profile [target] (get profiles target))
