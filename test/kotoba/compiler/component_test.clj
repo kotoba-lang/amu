@@ -26,6 +26,12 @@
       (fn [path]
         (let [validated (shell/sh "wasm-tools" "validate" (.toString path))]
           (is (zero? (:exit validated)) (:err validated)))
+        ;; This is a Component invocation, not execution of the internal
+        ;; core module.  No WASI directory, environment, or network grant is
+        ;; supplied, so a successful instantiation demonstrates the closed
+        ;; world runs on the single Component runtime boundary.
+        (let [executed (shell/sh "wasmtime" "--invoke" "main()" (.toString path))]
+          (is (zero? (:exit executed)) (:err executed)))
         (let [wit (Files/createTempFile "kotoba-component-world-" ".wit"
                                         (make-array java.nio.file.attribute.FileAttribute 0))]
           (try
