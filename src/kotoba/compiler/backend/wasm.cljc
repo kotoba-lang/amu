@@ -178,12 +178,35 @@
 
         (= op 'cap-call)
         (let [[cap-id value] args]
-          (if (:component? ctx)
+          (if (:typed-component? ctx)
+            (do
+              (when-not (= 7 cap-id)
+                (throw (ex-info "typed Component operation lowering is unavailable"
+                                {:phase :component-abi-v3 :capability-id cap-id})))
+              (concat
+               ;; Preserve evaluation of the legacy argument during migration;
+               ;; clock.now itself has no request payload.
+               (emit-expr value env ctx) [0x1a]
+               ;; acquire(clock-now, retptr=0)
+               [0x41 0x06 0x41 0x00 0x10]
+               (uleb (get intrinsic-indices 'v3-acquire))
+               ;; result tag != ok traps before a resource can be observed.
+               [0x41 0x00 0x28 0x02 0x00 0x04 0x40 0x00 0x0b]
+               ;; now(grant-at-4, retptr=16)
+               [0x41 0x00 0x28 0x02 0x04 0x41 0x10 0x10]
+               (uleb (get intrinsic-indices 'v3-clock-now))
+               [0x41 0x10 0x28 0x02 0x00 0x04 0x40 0x00 0x0b]
+               ;; Save the u64 payload, drop the owned grant, then return s64.
+               [0x41 0x20 0x41 0x10 0x29 0x03 0x08 0x37 0x03 0x00
+                0x41 0x00 0x28 0x02 0x04 0x10]
+               (uleb (get intrinsic-indices 'v3-grant-drop))
+               [0x41 0x20 0x29 0x03 0x00]))
+            (if (:component? ctx)
             (concat (emit-expr value env ctx)
                     [0x10 (get intrinsic-indices
                                (symbol (component-capability-import-name cap-id)))])
             (concat [0x42] (sleb cap-id) (emit-expr value env ctx)
-                    [0x10 (get intrinsic-indices 'cap-call)])))
+                    [0x10 (get intrinsic-indices 'cap-call)]))))
 
         (contains? '#{pair pair-first pair-second} op)
         (concat (emit-many args env ctx) [0x10 (get intrinsic-indices op)])
@@ -1042,7 +1065,7 @@
 (defn- function-type [{:keys [params]}]
   (concat [0x60] (uleb (count params)) (repeat (count params) 0x7e) [1 0x7e]))
 
-(defn- function-body [function function-indices intrinsic-indices component?]
+(defn- function-body [function function-indices intrinsic-indices component? typed-component?]
   (let [param-env (zipmap (:params function) (range))
         locals (local-count (:body function))
         declarations (if (zero? locals) [0] (concat [1] (uleb locals) [0x7e]))
@@ -1055,6 +1078,7 @@
                                       {:function-indices function-indices
                                        :intrinsic-indices intrinsic-indices
                                        :component? component?
+                                       :typed-component? typed-component?
                                        :next-local (count (:params function))})))
         body (concat declarations instructions [0x0b])]
     (concat (uleb (count body)) body)))
@@ -1069,6 +1093,7 @@
 (defn emit [kir target]
   (let [functions (:functions kir)
         component? (contains? #{:wasm-component-kotoba-v1 :wasm-component-kotoba-v2} target)
+        typed-component? (= :wasm-component-kotoba-v2 target)
         typed? (= :kotoba.kir/v4 (:format kir))
         exported-names (set (or (:exports kir) (map :name functions)))
         exported-functions (filterv #(contains? exported-names (:name %)) functions)
@@ -1139,10 +1164,26 @@
                          (when has-decimal-x3?
                            [['decimal-f64x3-parse "kotoba:typed" "decimal-f64x3-parse" [0x60 1 0x6f 1 0x6f]]]))))
         cap-ids (sort (map second (filter #(= :cap/call (first %)) (:effects kir))))
-        imports (vec (concat typed-imports
+        typed-capability-imports
+        (when (and typed-component? (seq cap-ids))
+          [['v3-acquire "cm32p2|aiueos:capability/capability@0.3" "acquire" [0x60 2 0x7f 0x7f 0]]
+           ['v3-grant-drop "cm32p2|aiueos:capability/capability@0.3" "grant_drop" [0x60 1 0x7f 0]]
+           ['v3-identity-sign "cm32p2|aiueos:capability/identity@0.3" "sign" [0x60 4 0x7f 0x7f 0x7f 0x7f 0]]
+           ['v3-identity-verify "cm32p2|aiueos:capability/identity@0.3" "verify" [0x60 4 0x7f 0x7f 0x7f 0x7f 0]]
+           ['v3-hash-sha256 "cm32p2|aiueos:capability/hash@0.3" "sha256" [0x60 4 0x7f 0x7f 0x7f 0x7f 0]]
+           ['v3-http-post "cm32p2|aiueos:capability/http@0.3" "post" [0x60 8 0x7f 0x7f 0x7f 0x7f 0x7f 0x7f 0x7f 0x7f 0]]
+           ['v3-log-read "cm32p2|aiueos:capability/log@0.3" "read" [0x60 4 0x7f 0x7e 0x7f 0x7f 0]]
+           ['v3-log-append "cm32p2|aiueos:capability/log@0.3" "append" [0x60 4 0x7f 0x7f 0x7f 0x7f 0]]
+           ['v3-clock-now "cm32p2|aiueos:capability/clock@0.3" "now" [0x60 2 0x7f 0x7f 0]]])
+        _ (when (and typed-component? (some #(not= 7 %) cap-ids))
+            (throw (ex-info "typed Component operation lowering is unavailable"
+                            {:phase :component-abi-v3 :capability-ids (set cap-ids)})))
+        imports (vec (concat typed-imports typed-capability-imports
                       (if component?
-                        (mapv (fn [id] (let [name (component-capability-import-name id)]
-                                          [(symbol name) "cm32p2" name [0x60 1 0x7e 1 0x7e]])) cap-ids)
+                        (when-not typed-component?
+                          (mapv (fn [id] (let [name (component-capability-import-name id)]
+                                           [(symbol name) "cm32p2" name [0x60 1 0x7e 1 0x7e]]))
+                                cap-ids))
                         (when has-cap? [['cap-call "kotoba:cap" "call"
                                          [0x60 2 0x7e 0x7e 1 0x7e]]]))
                       (when (seq heap-ops)
@@ -1219,7 +1260,7 @@
                   (mapcat #(if typed?
                              (emit-typed-function-body % indices intrinsic-indices
                                                        descriptor-indices literal-indices signatures)
-                             (function-body % indices intrinsic-indices component?))
+                             (function-body % indices intrinsic-indices component? typed-component?))
                           functions)
                   (mapcat (fn [body] (concat (uleb (count body)) body)) component-bodies))
         target-sec (concat (name-bytes "kotoba.target")

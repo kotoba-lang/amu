@@ -48,16 +48,20 @@
   ([core-bytes capability-ids]
    (encode! core-bytes capability-ids :wasm-component-kotoba-v1))
   ([core-bytes capability-ids target]
-  (let [dir (Files/createTempDirectory "kotoba-component-" (make-array java.nio.file.attribute.FileAttribute 0))
+  (let [typed-effect? (and (= target :wasm-component-kotoba-v2) (seq capability-ids))
+        dir (Files/createTempDirectory "kotoba-component-" (make-array java.nio.file.attribute.FileAttribute 0))
         wit (.resolve dir "kotoba-app.wit")
         core (.resolve dir "core.wasm")
         embedded (.resolve dir "embedded.wasm")
         component (.resolve dir "app.component.wasm")]
     (try
-      (Files/writeString wit (world-wit target capability-ids) StandardCharsets/UTF_8 (make-array java.nio.file.OpenOption 0))
+      (Files/writeString wit (if typed-effect? (typed-world-wit-v3)
+                                 (world-wit target capability-ids))
+                         StandardCharsets/UTF_8 (make-array java.nio.file.OpenOption 0))
       (Files/write core core-bytes (make-array java.nio.file.OpenOption 0))
       (command! "wasm-tools" "component" "embed" (.toString wit) (.toString core)
-                "--world" "kotoba-app" "--output" (.toString embedded))
+                "--world" (if typed-effect? "application" "kotoba-app")
+                "--output" (.toString embedded))
       (command! "wasm-tools" "component" "new" (.toString embedded)
                 "--reject-legacy-names" "--output" (.toString component))
       (Files/readAllBytes component)

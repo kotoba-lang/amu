@@ -142,12 +142,6 @@
     (cond
       (component-target? target)
       (let [capability-ids (component-capability-ids hir)
-            _ (when (and (= target :wasm-component-kotoba-v2)
-                         (seq capability-ids))
-                (throw (ex-info "typed capability WIT v2 lowering is required"
-                                {:phase :component-abi-v2
-                                 :target target
-                                 :capability-ids capability-ids})))
             _ (when (and (component-source-cap-call? source)
                          (not (map? (:component-abilities policy))))
                 (throw (ex-info "component ability descriptor is required"
@@ -161,7 +155,10 @@
          :target target :target-profile profile
          :hir hir :kir kir :admission admission :compatibility compatibility
          :floating-point-policy floating-point-policy
-         :component-world (component/world-id-for target)
+         :component-world (if (and (= target :wasm-component-kotoba-v2)
+                                   (seq capability-ids))
+                            component/typed-world-id-v3
+                            (component/world-id-for target))
          :core-bytes core-bytes :bytes component-bytes
          ;; The linker/runtime may choose a tighter ceiling, but an artifact
          ;; must never imply unbounded linear memory.  These are the minimum
