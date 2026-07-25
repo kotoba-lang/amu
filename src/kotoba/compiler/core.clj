@@ -152,12 +152,10 @@
          ;; must never imply unbounded linear memory.  These are the minimum
          ;; sync-profile bounds required by kototama/component-platform.
          :limits {:fuel 512 :memory-pages 1 :replenishable? false}
-         :capabilities (into #{} (map #(keyword "aiueos.component"
-                                                (component/capability-import-name %)) capability-ids))
+         :capabilities (into #{} (map abi/component-import-key capability-ids))
          :component-imports (into (sorted-map)
                                   (map (fn [id]
-                                         [(keyword "aiueos.component"
-                                                   (component/capability-import-name id))
+                                         [(abi/component-import-key id)
                                           (get abilities id)]))
                                   capability-ids)
          :component-abilities abilities})
