@@ -553,35 +553,50 @@
            (:export [choose point-x])
            (:schemas
             {:demo/point
-             [:record :demo/point [[:x :i64] [:visible :bool]]]}))
+             [:record :demo/point [[:x :i64] [:state [:ref :demo/state]]]]
+             :demo/state
+             [:record :demo/state [[:visible :bool]]]}))
          (defn choose
-           [value [:option [:record :demo/point [[:x :i64] [:visible :bool]]]]
+           [value
+            [:option
+             [:record :demo/point [[:x :i64] [:state [:ref :demo/state]]]]]
             fallback :i64] :i64
            (match-option
             value
-            [:option [:record :demo/point [[:x :i64] [:visible :bool]]]]
+            [:option
+             [:record :demo/point [[:x :i64] [:state [:ref :demo/state]]]]]
             (none fallback)
             (some point
               (if (record-get
-                   [:record :demo/point [[:x :i64] [:visible :bool]]]
-                   point :visible)
+                   [:record :demo/state [[:visible :bool]]]
+                   (record-get
+                    [:record :demo/point
+                     [[:x :i64] [:state [:ref :demo/state]]]]
+                    point :state)
+                   :visible)
                 (+ (record-get
-                    [:record :demo/point [[:x :i64] [:visible :bool]]]
+                    [:record :demo/point
+                     [[:x :i64] [:state [:ref :demo/state]]]]
                     point :x)
                    1)
                 (record-get
-                 [:record :demo/point [[:x :i64] [:visible :bool]]]
+                 [:record :demo/point
+                  [[:x :i64] [:state [:ref :demo/state]]]]
                  point :x)))))
          (defn point-x
-           [value [:option [:record :demo/point [[:x :i64] [:visible :bool]]]]
+           [value
+            [:option
+             [:record :demo/point [[:x :i64] [:state [:ref :demo/state]]]]]
             fallback :i64] :i64
            (match-option
             value
-            [:option [:record :demo/point [[:x :i64] [:visible :bool]]]]
+            [:option
+             [:record :demo/point [[:x :i64] [:state [:ref :demo/state]]]]]
             (none fallback)
             (some point
               (record-get
-               [:record :demo/point [[:x :i64] [:visible :bool]]]
+               [:record :demo/point
+                [[:x :i64] [:state [:ref :demo/state]]]]
                point :x))))"
         compiled (compiler/compile-source source :wasm32-wasi-kotoba-v1)
         kir (:kir compiled)
@@ -602,9 +617,9 @@
       (is (empty? (:required-imports artifact)))
       (doseq [[invoke expected]
               [["choose(none, 9)" "9"]
-               ["choose(some({x: 7, visible: true}), 9)" "8"]
-               ["choose(some({x: 7, visible: false}), 9)" "7"]
-               ["point-x(some({x: 11, visible: true}), 9)" "11"]]]
+               ["choose(some({x: 7, state: {visible: true}}), 9)" "8"]
+               ["choose(some({x: 7, state: {visible: false}}), 9)" "7"]
+               ["point-x(some({x: 11, state: {visible: true}}), 9)" "11"]]]
         (let [run (shell/sh wasmtime-binary "run" "--invoke" invoke
                             (str component-path))]
           (is (zero? (:exit run)) (:err run))
