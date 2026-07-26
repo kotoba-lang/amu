@@ -231,14 +231,10 @@ implementation gap.
 
 ### P0: correctness bugs in already-admitted programs
 
-1. **Five-parameter `:f64` Wasm functions can emit an invalid local index.**
-   Four parameters work; five are admitted but the generated module can fail
-   validation. This is tracked by compiler issue #206 and is a correctness
-   bug, not an unsupported-language decision.
-2. **Project linking cannot synthesize an import stub for `:f64`/`:f32`
-   results.** Standalone floating functions work, but a cross-file call can
-   fail in `kotoba.compiler.project/stub-value`. This is the second open item
-   in issue #206.
+There are currently no known open P0 correctness bugs in this ledger. The two
+floating-point bugs formerly listed here were fixed by PRs #262 and #263; the
+same investigation also fixed scalar-float body misclassification in PR #264.
+Their real Wasm and cross-file regression tests remain in the suite.
 
 The JavaScript self-shadowing `let` bug formerly tracked as issue #225 is
 closed by compiler PR #250 and kotoba-script PR #68. Lexical parameters,
@@ -336,18 +332,16 @@ or backend-parity patch.
 
 ## Updated completion order
 
-1. Fix both issue #206 floating-point correctness bugs and add real Wasm/
-   cross-file regression tests.
-2. Implement executable Component lowering/lifting for one already-planned
+1. Implement executable Component lowering/lifting for one already-planned
    aggregate, starting with bounded `list<T>`; validate every pointer, length,
    stride, discriminant, and allocation before widening to the other shapes.
-3. Add map/set layout plans only after their deterministic ordering,
+2. Add map/set layout plans only after their deterministic ordering,
    duplicate-key/item, and aggregate-budget rules are explicit.
-4. Extend the same aggregate codec through typed capability boundaries and
+3. Extend the same aggregate codec through typed capability boundaries and
    provider-result validation.
-5. Close production provider/runtime qualification gaps with a shared
+4. Close production provider/runtime qualification gaps with a shared
    Wasmtime/native/CLJS corpus.
-6. Address recursive resources and bounded WASI 0.3 async as separate,
+5. Address recursive resources and bounded WASI 0.3 async as separate,
    explicitly reviewed authority-bearing designs.
 
 ## Progress addendum (this snapshot's own prose is not rewritten in place; see ADR 0071)

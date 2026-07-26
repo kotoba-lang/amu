@@ -12,6 +12,10 @@
   {:i64 0 :string 1 :keyword 2 :bool 3 :symbol 19 :vector-i64 11 :f64 12 :f32 13
    :vector-f64 14 :string-index 16 :disjoint-set-i64 17 :document 18})
 
+(def ^:private scalar-adt-aliases
+  {:option-i64 [:option :i64]
+   :result-i64 [:result :i64 :i64]})
+
 (def ^:private boolean-result-ops
   '#{f64-eq f64-lt f64-le f64-gt f64-ge f64-unordered
      f32-eq f32-lt f32-le f32-gt f32-ge f32-unordered
@@ -22,7 +26,9 @@
 (defn descriptor? [value]
   ;; nbb cannot hash JavaScript BigInt as a map key. Guard before contains?
   ;; because literal i64 values are walked alongside descriptors.
-  (or (and (keyword? value) (contains? primitive-tags value))
+  (or (and (keyword? value)
+           (or (contains? primitive-tags value)
+               (contains? scalar-adt-aliases value)))
       (and (vector? value)
            (contains? #{:option :result :variant :vector :set :map :record :ref}
                       (first value)))))
@@ -56,7 +62,9 @@
                 members)))
 
 (defn encode-descriptor [descriptor]
-  (if-let [tag (get primitive-tags descriptor)]
+  (if-let [expanded (get scalar-adt-aliases descriptor)]
+    (encode-descriptor expanded)
+    (if-let [tag (get primitive-tags descriptor)]
     [tag]
     (case (first descriptor)
       :option (into [4] (encode-descriptor (second descriptor)))
@@ -73,7 +81,7 @@
                                 (encode-named-members (nth descriptor 2))))
       :ref (into [15] (text-bytes (keyword-text (second descriptor))))
       (throw (ex-info "unsupported Wasm typed descriptor"
-                      {:phase :wasm-typed-metadata :descriptor descriptor})))))
+                      {:phase :wasm-typed-metadata :descriptor descriptor}))))))
 
 (defn- walk [value found]
   (cond
@@ -95,6 +103,18 @@
     (and (seq? value) (contains? boolean-result-ops (first value)))
     (reduce (fn [result item] (walk item result))
             (conj found :bool)
+            value)
+    (and (seq? value)
+         (contains? '#{option-some option-none option-some? option-value}
+                    (first value)))
+    (reduce (fn [result item] (walk item result))
+            (conj found :option-i64)
+            value)
+    (and (seq? value)
+         (contains? '#{result-ok result-err result-ok? result-value result-error}
+                    (first value)))
+    (reduce (fn [result item] (walk item result))
+            (conj found :result-i64)
             value)
     (and (seq? value)
          (contains? '#{vector-f64-new vector-f64-count vector-f64-get vector-f64-at

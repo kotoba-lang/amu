@@ -453,6 +453,10 @@ canonical ABI component. WASI filesystem, HTTP, clocks, and similar interfaces
 belong only to explicitly declared provider components, never to the
 application as ambient authority. Wasmtime is a conformance engine for that
 artifact; no Wasmtime-specific Rust runner is part of the language ABI.
+The Core-Wasm compatibility ABI also lowers the monomorphic
+`:option-i64`/`:result-i64` operations through the same sealed descriptor
+encoding as `[:option :i64]`/`[:result :i64 :i64]`; admitted scalar ADTs no
+longer fail late in the Wasm emitter.
 The pinned official specification baseline and synchronous/async version split
 are documented in `docs/component-model-baseline.md`.
 The full test matrix includes a native `ubuntu-24.04-arm` runner: AArch64 KEXE

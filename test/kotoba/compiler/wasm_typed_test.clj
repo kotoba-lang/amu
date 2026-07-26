@@ -530,6 +530,33 @@
     (is (> (count (typed/descriptor-table (:kir compiled))) 16))
     (is (zero? (:exit probe)) (:err probe))))
 
+(deftest scalar-option-and-result-ops-have-real-wasm-lowering
+  ;; Regression for compiler#258: these monomorphic operations were admitted
+  ;; and executed by the reference/JS paths, but fell through the typed Wasm
+  ;; emitter with `typed Wasm operation is not qualified`.
+  (let [source
+        "(ns scalar.adt (:export [main]))
+         (defn main [] :i64
+           (if (option-some? (option-some 7))
+             (+ (option-value (option-some 8) 90)
+                (+ (option-value (option-none) 9)
+                   (+ (result-value (result-ok 10) 91)
+                      (+ (result-error (result-err 8) 92)
+                         (if (result-ok? (result-err 1)) 93 0)))))
+             94))"
+        compiled (compiler/compile-source source :wasm32-browser-kotoba-v1)
+        descriptors (set (typed/descriptor-table (:kir compiled)))
+        probe (node-probe compiled
+                          "if(h.instance.exports.main()!==35n)process.exit(2);")]
+    (is (= 35 (ir/execute (:kir compiled) 'main [])))
+    (is (contains? descriptors :option-i64))
+    (is (contains? descriptors :result-i64))
+    (is (= (typed/encode-descriptor [:option :i64])
+           (typed/encode-descriptor :option-i64)))
+    (is (= (typed/encode-descriptor [:result :i64 :i64])
+           (typed/encode-descriptor :result-i64)))
+    (is (zero? (:exit probe)) (:err probe))))
+
 (deftest f64-scratch-locals-are-fully-declared-before-instantiation
   ;; Regression for kotoba-lang/compiler#206 Bug 1: a typed function that
   ;; needs six-or-more f64 scratch locals (each `f64-from-bits` constant
