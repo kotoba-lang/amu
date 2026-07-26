@@ -20,7 +20,8 @@
             [kotoba.compiler.packaging.pe32plus :as pe32plus]
             [kotoba.compiler.artifact :as artifact]
             [kotoba.compiler.target :as target-profile]
-            [kotoba.compiler.verifier :as verifier])
+            [kotoba.compiler.verifier :as verifier]
+            [kotoba.abi.contract :as abi])
   (:import [java.nio.charset StandardCharsets]
            [java.security MessageDigest]))
 
@@ -111,14 +112,30 @@
   that happened or the budget is host-enforced only."
   ([source] (compile-component source {} {}))
   ([source policy] (compile-component source policy {}))
-  ([source policy {:keys [profile budgets] :or {profile :sync} :as opts}]
-   (let [budgets (merge default-component-budgets budgets)
+  ([source policy {:keys [profile budgets target] :or {profile :sync} :as opts}]
+   (let [target (or target abi/component-target)
+         _ (when-not (= :component (:execution (target-profile/profile target)))
+             (throw (ex-info "Component compilation requires a Component target"
+                             {:phase :component-target :target target})))
+         budgets (merge default-component-budgets budgets)
          core (compile-source source :wasm32-wasi-kotoba-v1 policy)
-         wit (component-wit/emit (:kir core))
+         effectful? (seq (:effects (:kir core)))
+         _ (when (and (= target abi/component-target-v2) effectful?)
+             (throw (ex-info "effectful v2 Components require typed grant lowering"
+                             {:phase :component-abi-v3
+                              :effects (:effects (:kir core))})))
+         wit (if (= target abi/component-target-v2)
+               {:format :kotoba.wit-package/v2
+                :target target :wasi-version abi/wasi-version
+                :source (abi/world-wit-v2 #{})
+                :sha256 (text-sha256 (abi/world-wit-v2 #{}))
+                :imports [] :exports ['main]}
+               (component-wit/emit (:kir core)))
          enforcement (component-core/fuel-enforcement (:kir core))
-         component-bytes (component-core/emit (:kir core) :wasm32-wasi-kotoba-v1
+         component-bytes (component-core/emit (:kir core) target
                                               {:fuel (:fuel budgets)})
-         packaged (component-artifact/package component-bytes (:kir core) wit)]
+         packaged (component-artifact/package component-bytes (:kir core) wit
+                                              {:target target :wasi-version abi/wasi-version})]
      (assoc packaged
             :wit wit
             :admission (:admission core)

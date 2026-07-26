@@ -61,6 +61,13 @@
    :wasm-component-kotoba-v1 {:format :kotoba.target-profile/v1 :execution :component
                               :isa :wasm32 :os :unspecified :abi :canonical-abi-v1
                               :runtime :kototama-component-host-v1
+                              :wasi-version "0.3.0" :ambient-wasi false}
+   ;; v2 is the provider-free half of the authoritative Component boundary.
+   ;; Effectful v2 programs use the separate aiueos:capability@0.3 world and
+   ;; are admitted only once typed grant lowering is selected explicitly.
+   :wasm-component-kotoba-v2 {:format :kotoba.target-profile/v1 :execution :component
+                              :isa :wasm32 :os :unspecified :abi :canonical-abi-v2
+                              :runtime :kototama-component-host-v2
                               :wasi-version "0.3.0" :ambient-wasi false}})
 
 (def compatibility-targets #{:wasm32-kotoba-v1 :x86_64-kotoba-v1 :aarch64-kotoba-v1 :cljs-kotoba-v1 :js-kotoba-v1})

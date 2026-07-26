@@ -162,3 +162,20 @@
       (is (= :module-global (:fuel-enforcement result)))
       (is (str/includes? (hex (:bytes result)) (fuel-global-hex budget))
           "the declared budget must be the one compiled into the module"))))
+
+(deftest provider-free-v2-component-is-an-explicit-closed-world
+  (let [result (compiler/compile-component
+                scalar-source {}
+                {:target :wasm-component-kotoba-v2})]
+    (is (= :wasm-component-kotoba-v2 (:target result)))
+    (is (= "0.3.0" (:wasi-version result)))
+    (is (= [] (:imports result)))
+    (is (= ['main] (:exports result)))
+    (is (= :scalar (:canonical-lowering result))))
+  (is (thrown-with-msg?
+       clojure.lang.ExceptionInfo
+       #"effectful v2 Components require typed grant lowering"
+       (compiler/compile-component
+        "(ns app (:capabilities #{:clock/now})) (defn main [] (cap-call :clock/now 0))"
+        {:allow #{[:cap/call 7]}}
+        {:target :wasm-component-kotoba-v2}))))
