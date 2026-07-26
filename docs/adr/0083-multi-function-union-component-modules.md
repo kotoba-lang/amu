@@ -75,8 +75,11 @@ are rejected.
   `ceecdc5`: the shared public vector layouts drive selected-case count,
   alignment, overflow, and arena-range validation; the admitted input buffer
   remains borrowed until canonical post-return resets the arena;
-- nested/indirect list item types, nested option/result payloads, and
-  non-identity aggregate branch computation;
+- nested option/result payload identity is implemented by `kotoba-component`
+  commit `fed370c`; every inner discriminant is range checked and only its
+  selected payload recursively validates/stores;
+- nested/indirect list item types and non-identity aggregate branch
+  computation;
 - general aggregate ownership and linearity analysis beyond this bounded
   identity/borrowed-result slice;
 - general compositional lowering for mixtures of aggregate match functions and
