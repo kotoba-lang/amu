@@ -486,6 +486,12 @@ the discriminant is validated. Multiple such match exports and private scalar
 helpers are emitted into one Component core module, sharing the same sealed
 fuel global while retaining per-function bool validation scopes. WIT export
 and parameter names are collision-checked after canonical normalization.
+Finite record payloads with recursively scalar `i64`, `f32`, `f64`, and
+`bool` leaves use that same match path. Record binders may only escape through
+a statically resolved `record-get` chain; selected bool leaves are validated
+even when branch code does not read them, while inactive joined slots remain
+uninterpreted. A source-level `.kotoba` test packages and runs this boundary,
+not only a hand-built KIR fixture.
 The Core-Wasm compatibility ABI also lowers the monomorphic
 `:option-i64`/`:result-i64` operations through the same sealed descriptor
 encoding as `[:option :i64]`/`[:result :i64 :i64]`; admitted scalar ADTs no
