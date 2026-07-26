@@ -87,8 +87,10 @@ execute both `ok` and `err` through a real Component in Wasmtime and match
 than numeric conversion. Direct `result<bool,f32>` and `result<f32,bool>` core
 calls prove the joined i32 slot is bool-validated only in the bool case.
 
+ADR 0083 generalizes this adapter into multi-function and multi-export modules
+without changing the match semantics recorded here.
+
 ## Remaining gaps
 
 - nested option/result, record, string, and list payloads;
-- match expressions in multi-function Component modules;
 - general aggregate computation and ownership/linearity analysis.

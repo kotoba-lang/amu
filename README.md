@@ -478,7 +478,10 @@ Canonical i32 discriminant/native payload boundary; selected bool values are
 checked as 0/1 without interpreting an inactive payload. Heterogeneous
 `result<T,E>` payloads use the Component Model joined-flat coercion table:
 their bits are wrapped/reinterpreted into the selected case type only after
-the discriminant is validated.
+the discriminant is validated. Multiple such match exports and private scalar
+helpers are emitted into one Component core module, sharing the same sealed
+fuel global while retaining per-function bool validation scopes. WIT export
+and parameter names are collision-checked after canonical normalization.
 The Core-Wasm compatibility ABI also lowers the monomorphic
 `:option-i64`/`:result-i64` operations through the same sealed descriptor
 encoding as `[:option :i64]`/`[:result :i64 :i64]`; admitted scalar ADTs no
