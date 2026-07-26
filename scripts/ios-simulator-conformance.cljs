@@ -52,6 +52,20 @@
                       "\n" (.-stdout result) (.-stderr result)))
     result))
 
+;; `run!` treats a nonzero exit as a build/tool failure. The trap-containment
+;; case below EXPECTS a nonzero exit (the harness returns the host status), and
+;; must distinguish "contained, reported as a status" from "the process was
+;; killed by SIGTRAP" -- which is exactly the regression being guarded. So it
+;; needs the raw result rather than run!'s assertion.
+(defn run-allowing-failure [command args]
+  (let [result (.spawnSync child command (clj->js args)
+                           #js {:cwd lib/root :encoding "utf8" :maxBuffer 4194304})]
+    (when (.-error result) (throw (.-error result)))
+    {:status (.-status result)
+     :signal (.-signal result)
+     :stdout (str (.-stdout result))
+     :stderr (str (.-stderr result))}))
+
 (defn- simulator-devices []
   (let [data (js/JSON.parse (.-stdout (run! "xcrun" ["simctl" "list" "devices" "available" "-j"])))
         by-runtime (js->clj (.-devices data) :keywordize-keys false)]
@@ -116,8 +130,17 @@
       _ (lib/ensure! (= expected-xcode identity) "ios-simulator: pinned Xcode 16.2 is required")
       tmp (lib/temp-dir "kotoba-ios-simulator-")
       typed-source (.join path tmp "typed-capability.kotoba")
-      typed-policy (.join path tmp "typed-policy.edn")]
+      typed-policy (.join path tmp "typed-policy.edn")
+      trap-source (.join path tmp "guest-trap.kotoba")
+      trap-policy (.join path tmp "trap-policy.edn")]
   (try
+    ;; A guest trap that static analysis CANNOT reject: the divisor comes from
+    ;; the host through cap-call, so there is no constant to fold and the
+    ;; compiler's fuel/constant analysis admits the program. This host stub
+    ;; returns value+1, making the divisor 0 and reaching the backend's
+    ;; division-by-zero `brk #0`.
+    (.writeFileSync fs trap-source "(defn main [] (quot 10 (cap-call 4 -1)))\n")
+    (.writeFileSync fs trap-policy "{:allow #{[:cap/call 4]}}\n")
     (.writeFileSync
      fs typed-source
      "(defn main [] :i64\n  (+ (string-byte-length (typed-cap-call 4 :string :string \"hello😀\"))\n     (option-value (typed-cap-call 4 :option-i64 :option-i64 (some 41)) 0)\n     (option-value (typed-cap-call 4 :option-i64 :option-i64 (option-none)) 5)\n     (result-value (typed-cap-call 4 :result-i64 :result-i64 (result-ok 7)) 0)\n     (result-error (typed-cap-call 4 :result-i64 :result-i64 (result-err 9)) 0)))\n")
@@ -126,6 +149,7 @@
           (build! (.join path tmp "structured")
                   (.join path lib/root "examples" "structured.kotoba") nil)
           typed-build (build! (.join path tmp "typed") typed-source typed-policy)
+          trap-build (build! (.join path tmp "guest-trap") trap-source trap-policy)
           object-info (.-stdout (run! "file" [harness]))
           build-info (.-stdout (run! "xcrun" ["vtool" "-show-build" harness]))]
       (lib/ensure! (.includes object-info "Mach-O 64-bit executable arm64")
@@ -148,7 +172,27 @@
                          (str "ios-simulator: structured.kotoba's main() must equal 42, got: " out))
             (lib/ensure! (str/includes? typed-out ":result 71")
                          (str "ios-simulator: typed callback mismatch: " typed-out))
-            (println (str "ios-simulator: real Simulator execution -- " out)))
+            ;; Trap containment. iOS has no fork+supervise, so before
+            ;; kotoba_ios_host.c installed its own handlers this guest killed
+            ;; the whole process (SIGTRAP -> 128+5 = 133). An app that dies on
+            ;; a guest trap is not shippable, so this asserts the trap comes
+            ;; back as a STATUS, and that no signal reached the process.
+            (let [trapped (run-allowing-failure
+                           "xcrun" ["simctl" "spawn" udid (:harness trap-build) "typed"])]
+              (lib/ensure! (nil? (:signal trapped))
+                           (str "ios-simulator: guest trap escaped containment and "
+                                "signalled the host process: " (:signal trapped)
+                                " -- kotoba_ios_host.c's handlers are not effective"))
+              (lib/ensure! (not (str/includes? (:stderr trapped) "Trace/BPT trap"))
+                           (str "ios-simulator: guest trap terminated the process: "
+                                (:stderr trapped)))
+              ;; 4 = KOTOBA_IOS_GUEST_TRAP, reported by the harness as its exit
+              ;; code. 133 would mean the simulator killed it instead.
+              (lib/ensure! (= 4 (:status trapped))
+                           (str "ios-simulator: expected KOTOBA_IOS_GUEST_TRAP (4), got status "
+                                (:status trapped) " stderr: " (:stderr trapped))))
+            (println (str "ios-simulator: real Simulator execution -- " out))
+            (println "ios-simulator: guest trap contained as KOTOBA_IOS_GUEST_TRAP"))
           (finally
             (when booted-by-us? (run! "xcrun" ["simctl" "shutdown" udid]))))))
     (println "ios-simulator: verified real arm64 Simulator execution of compiled .kotoba code")
