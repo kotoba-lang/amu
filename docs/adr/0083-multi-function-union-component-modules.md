@@ -78,8 +78,15 @@ are rejected.
 - nested option/result payload identity is implemented by `kotoba-component`
   commit `fed370c`; every inner discriminant is range checked and only its
   selected payload recursively validates/stores;
-- nested/indirect list item types and non-identity aggregate branch
-  computation;
+- finite record payload match computation is implemented by
+  `kotoba-component` commits `7b50152` / `a6991f9`: sealed record binders are
+  eliminated through typed `record-get` paths into selected joined-flat
+  scalar slots, and all selected bool leaves validate even if unread. The
+  compiler test starts at `.kotoba` source and executes the packaged
+  Component;
+- nested/indirect list item types, string/list leaf operations in aggregate
+  match branches, and source-schema references across distinct nominal record
+  roots;
 - general aggregate ownership and linearity analysis beyond this bounded
   identity/borrowed-result slice;
 - general compositional lowering for mixtures of aggregate match functions and

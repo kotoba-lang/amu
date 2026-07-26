@@ -547,6 +547,82 @@
         (finally
           (Files/deleteIfExists path))))))
 
+(deftest kotoba-source-record-payload-match-crosses-the-component-boundary
+  (let [source
+        "(ns component.record-payload-match
+           (:export [choose point-x])
+           (:schemas
+            {:demo/point
+             [:record :demo/point [[:x :i64] [:visible :bool]]]}))
+         (defn choose
+           [value [:option [:record :demo/point [[:x :i64] [:visible :bool]]]]
+            fallback :i64] :i64
+           (match-option
+            value
+            [:option [:record :demo/point [[:x :i64] [:visible :bool]]]]
+            (none fallback)
+            (some point
+              (if (record-get
+                   [:record :demo/point [[:x :i64] [:visible :bool]]]
+                   point :visible)
+                (+ (record-get
+                    [:record :demo/point [[:x :i64] [:visible :bool]]]
+                    point :x)
+                   1)
+                (record-get
+                 [:record :demo/point [[:x :i64] [:visible :bool]]]
+                 point :x)))))
+         (defn point-x
+           [value [:option [:record :demo/point [[:x :i64] [:visible :bool]]]]
+            fallback :i64] :i64
+           (match-option
+            value
+            [:option [:record :demo/point [[:x :i64] [:visible :bool]]]]
+            (none fallback)
+            (some point
+              (record-get
+               [:record :demo/point [[:x :i64] [:visible :bool]]]
+               point :x))))"
+        compiled (compiler/compile-source source :wasm32-wasi-kotoba-v1)
+        kir (:kir compiled)
+        artifact (compiler/compile-component source)
+        core (component-core/emit kir :wasm32-wasi-kotoba-v1)
+        component-path (Files/createTempFile
+                        "kotoba-source-record-match-" ".wasm"
+                        (make-array FileAttribute 0))
+        core-path (Files/createTempFile
+                   "kotoba-source-record-match-core-" ".wasm"
+                   (make-array FileAttribute 0))]
+    (try
+      (Files/write component-path ^bytes (:bytes artifact)
+                   (make-array java.nio.file.OpenOption 0))
+      (Files/write core-path ^bytes core
+                   (make-array java.nio.file.OpenOption 0))
+      (is (= :structural-union-match-module (:canonical-lowering artifact)))
+      (is (empty? (:required-imports artifact)))
+      (doseq [[invoke expected]
+              [["choose(none, 9)" "9"]
+               ["choose(some({x: 7, visible: true}), 9)" "8"]
+               ["choose(some({x: 7, visible: false}), 9)" "7"]
+               ["point-x(some({x: 11, visible: true}), 9)" "11"]]]
+        (let [run (shell/sh wasmtime-binary "run" "--invoke" invoke
+                            (str component-path))]
+          (is (zero? (:exit run)) (:err run))
+          (is (= expected (str/trim (:out run))) invoke)))
+      (let [inactive (shell/sh wasmtime-binary "run" "--invoke"
+                               "cm32p2||point-x" (str core-path)
+                               "0" "0" "2" "9")
+            active (shell/sh wasmtime-binary "run" "--invoke"
+                             "cm32p2||point-x" (str core-path)
+                             "1" "11" "2" "9")]
+        (is (zero? (:exit inactive)) (:err inactive))
+        (is (= "9" (str/trim (:out inactive))))
+        (is (not (zero? (:exit active)))
+            "all selected bool leaves are canonical, even when unread"))
+      (finally
+        (Files/deleteIfExists component-path)
+        (Files/deleteIfExists core-path)))))
+
 (deftest structural-union-matches-cover-all-canonical-scalar-types
   (doseq [{:keys [source export calls]}
           [{:source "(ns component.match-option-f64 (:export [choose]))
