@@ -509,6 +509,33 @@
                request-schema result-schema capability)
       {:capability capability :request request-type :result result})))
 
+(defn- structural-union-capability-call
+  "Admission for a direct named capability call that transports one scalar
+  structural option/result type unchanged."
+  [function schemas]
+  (let [{:keys [params param-types result body]} function
+        request-type (first param-types)
+        [_ id body-request-type body-result-type request] (when (seq? body) body)
+        capability (some #(when (= id (:id %)) %) (:capabilities component-wit/contract))
+        payloads (when (vector? request-type)
+                   (case (first request-type)
+                     :option [(second request-type)]
+                     :result [(second request-type) (get request-type 2)]
+                     nil))]
+    (when (and (= 1 (count params))
+               (= 1 (count param-types))
+               (seq? body)
+               (= 'typed-cap-call (first body))
+               (= request (first params))
+               (= body-request-type request-type)
+               (= body-result-type result)
+               (= request-type result)
+               (seq payloads)
+               (every? #{:i64 :f32 :f64 :bool} payloads)
+               (canonical/layout request-type schemas)
+               capability)
+      {:capability capability :request request-type :result result})))
+
 (defn- asymmetric-variant-capability-case?
   "True when `payload-type` is a shape admitted as one variant case's payload
   for the *different-identity* `typed-cap-call` crossing: a bare Canonical
@@ -673,6 +700,10 @@
       (and (= 1 (count (:functions kir)))
            (= 1 (count exports))
            (variant-capability-call (first exports) (:schemas kir))) :variant-capability-call
+      (and (= 1 (count (:functions kir)))
+           (= 1 (count exports))
+           (structural-union-capability-call (first exports) (:schemas kir)))
+      :structural-union-capability-call
       (and (= 1 (count (:functions kir)))
            (= 1 (count exports))
            (different-variant-capability-call (first exports) (:schemas kir)))
@@ -2931,6 +2962,12 @@
       (wasm-tools/parse-wat
        (variant-capability-wat function (:schemas kir)
                                (variant-capability-call function (:schemas kir)))))
+    :structural-union-capability-call
+    (let [function (first (exported-functions kir))]
+      (wasm-tools/parse-wat
+       (variant-capability-wat
+        function (:schemas kir)
+        (structural-union-capability-call function (:schemas kir)))))
     :different-variant-capability-call
     (let [function (first (exported-functions kir))]
       (wasm-tools/parse-wat

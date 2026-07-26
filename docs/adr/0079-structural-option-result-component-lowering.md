@@ -57,7 +57,8 @@ match the reference interpreter's values.
 ## Remaining gaps
 
 - recursive aggregate payload codecs and aggregate values nested in records;
-- option/result capability request/result and provider bindings;
+- asymmetric or aggregate option/result capability payloads (same-type scalar
+  option/result provider bindings are implemented by ADR 0081);
 - exhaustive matches and general branch computation in the Component emitter
   (direct tag predicates and fallback projections are implemented by ADR
   0080);
