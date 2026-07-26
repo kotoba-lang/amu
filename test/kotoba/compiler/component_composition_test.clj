@@ -361,6 +361,76 @@
         (finally
           (Files/deleteIfExists path))))))
 
+(deftest source-string-match-calls-and-matches-a-named-capability
+  (doseq [[descriptor body calls]
+          [[[:option :string]
+            "(match-option value [:option :string]
+               (none 9)
+               (some selected
+                 (match-option
+                   (typed-cap-call :http/post
+                     [:option :string] [:option :string]
+                     (option-some-of [:option :string] selected))
+                   [:option :string]
+                   (none 9)
+                   (some returned (string-byte-length returned)))))"
+            [["choose(none)" "9"]
+             ["choose(some(\"安全\"))" "6"]]]
+           [[:result :string :string]
+            "(match-result value [:result :string :string]
+               (ok selected
+                 (match-result
+                   (typed-cap-call :http/post
+                     [:result :string :string] [:result :string :string]
+                     (result-ok-of [:result :string :string] selected))
+                   [:result :string :string]
+                   (ok returned (string-byte-length returned))
+                   (err returned (string-byte-length returned))))
+               (err selected
+                 (match-result
+                   (typed-cap-call :http/post
+                     [:result :string :string] [:result :string :string]
+                     (result-err-of [:result :string :string] selected))
+                   [:result :string :string]
+                   (ok returned (string-byte-length returned))
+                   (err returned (string-byte-length returned)))))"
+            [["choose(ok(\"安全\"))" "6"]
+             ["choose(err(\"abc\"))" "3"]]]]]
+    (let [source
+          (str "(ns component.match-string-capability "
+               "  (:export [choose echo]) "
+               "  (:capabilities #{:http/post})) "
+               "(defn choose [value " (pr-str descriptor) "] :i64 "
+               body ") "
+               "(defn echo [value :i64] :i64 value)")
+          compiled (compiler/compile-source
+                    source :wasm32-wasi-kotoba-v1
+                    {:allow #{[:cap/call 4]}})
+          application
+          (compiler/compile-component source {:allow #{[:cap/call 4]}})
+          provider
+          (composition/package-structural-union-identity-provider
+           :http/post descriptor)
+          closed (composition/compose-closed application [provider])
+          path (Files/createTempFile
+                "kotoba-source-match-string-capability-" ".wasm"
+                (make-array FileAttribute 0))]
+      (try
+        (Files/write path ^bytes (:bytes closed)
+                     (make-array java.nio.file.OpenOption 0))
+        (is (contains? #{'option-match 'result-match-of}
+                       (first (get-in compiled [:kir :functions 0 :body]))))
+        (is (= :structural-union-match-module
+               (:canonical-lowering application)))
+        (is (= [:http/post] (:application-imports closed)))
+        (doseq [[invoke expected] calls]
+          (let [run (shell/sh wasmtime-binary "run" "--invoke"
+                              invoke (str path))]
+            (is (zero? (:exit run)) (:err run))
+            (is (= expected (str/trim (:out run))) invoke)))
+        (finally
+          (Files/deleteIfExists path))))))
+
 (deftest structural-union-provider-rejects-a-malformed-discriminant
   (let [entry {:interface "http" :function "post"}
         core (wasm-tools/parse-wat

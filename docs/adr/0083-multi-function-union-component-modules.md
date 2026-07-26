@@ -135,3 +135,9 @@ are rejected.
   both `ok` and `err` request branches. `kotoba-wasm` commit `ed5ce4f` checks
   the returned case and active list; `kotoba-component` commit `ac3156c`
   admits only the exact typed shape. Source E2E covers s64 and f64 lists.
+- bounded string/keyword leaves now reuse the indirect `(pointer,length)`
+  codec in option and symmetric result matches. `kotoba-wasm` commit
+  `aaecaa4` separates payload alignment from union result alignment, and
+  `kotoba-component` commit `4c6a617` validates both. `.kotoba` E2E covers
+  string; keyword remains covered at typed KIR because source
+  `string-byte-length` intentionally accepts only `:string`.
