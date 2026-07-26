@@ -12,6 +12,7 @@
             [kotoba.compiler.cache-test]
             [kotoba.compiler.compact-graph-value-test]
             [kotoba.compiler.document-value-test]
+            [kotoba.compiler.plan-test]
             [kotoba.compiler.string-operation-test]
             [kotoba.compiler.frontend-fuzz-test]
             [kotoba.compiler.frontend-assert-test]
@@ -81,6 +82,7 @@
                                           'kotoba.compiler.cache-test
                                           'kotoba.compiler.compact-graph-value-test
                                           'kotoba.compiler.document-value-test
+                                          'kotoba.compiler.plan-test
                                           'kotoba.compiler.string-operation-test
                                           'kotoba.compiler.frontend-fuzz-test
                                           'kotoba.compiler.frontend-assert-test
