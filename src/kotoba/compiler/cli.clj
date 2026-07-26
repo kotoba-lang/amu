@@ -12,6 +12,7 @@
             [kotoba.compiler.native-executor :as native-executor]
             [kotoba.compiler.packaging.pe32plus :as pe32plus]
             [kotoba.compiler.receipt :as receipt]
+            [kotoba.compiler.test-profile :as test-profile]
             [kotoba.compiler.release :as release]
             [kotoba.compiler.runtime-identity :as runtime-identity]
             [kotoba.compiler.signing :as signing]
@@ -250,6 +251,11 @@
       (println (pr-str {:ok true
                         :effects (get-in result [:hir :effects])
                         :admission (:admission result)})))
+    "test"
+    (let [input (kotoba-source! (second args))
+          report (test-profile/run-source (bounded-edn/read-text-file input))]
+      (println (pr-str report))
+      (when-not (:ok report) (*exit* 1)))
     "package-aiueos-boot"
     (let [input (second args)
           output (or (option args "--output") "BOOTX64.EFI")
