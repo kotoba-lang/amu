@@ -57,8 +57,8 @@ are ignored and the canonical fallback is returned.
 
 ## Remaining gaps
 
-- non-i64/aggregate exhaustive match values (the i64 exhaustive match path and
-  its ordinary scalar computation are implemented by ADR 0082);
+- heterogeneous-scalar/aggregate exhaustive match values (same-type
+  i64/f32/f64/bool exhaustive computation is implemented by ADR 0082);
 - recursive aggregate payload codecs;
 - asymmetric or aggregate option/result capability request/result bindings
   (same-type scalar bindings are implemented by ADR 0081);

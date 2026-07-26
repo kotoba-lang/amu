@@ -325,9 +325,10 @@
                :kind :projection)))))
 
 (defn- structural-union-match
-  "Return an exhaustive scalar-i64 option/result match plan. Branch bodies are
-  compiled by the ordinary binary Wasm expression emitter, not reimplemented
-  in this namespace."
+  "Return an exhaustive host-free scalar option/result match plan. Branch
+  bodies are compiled by the shared typed binary Wasm expression emitter, not
+  reimplemented in this namespace. A result's two cases must currently share
+  one scalar payload representation; heterogeneous joins remain fail-closed."
   [function schemas]
   (let [{:keys [params param-types result body]} function
         [op descriptor value & branches] (when (seq? body) body)
@@ -359,11 +360,12 @@
                (= descriptor union-type)
                (= value (first params))
                (= expected-kind (first descriptor))
-               (every? #{:i64} payloads)
-               (= :i64 result)
-               (every? #{:i64} (rest param-types))
+               (every? #{:i64 :f32 :f64 :bool} payloads)
+               (apply = payloads)
+               (contains? #{:i64 :f32 :f64 :bool} result)
+               (every? #{:i64 :f32 :f64 :bool} (rest param-types))
                (canonical/layout descriptor schemas))
-      plan)))
+      (assoc plan :payload-type (first payloads)))))
 
 (defn- structural-union-match-core
   [function schemas plan target opts]
@@ -376,33 +378,50 @@
         disc64 (fresh "__component_tag")
         payload (fresh "__component_payload")
         other-params (vec (rest (:params function)))
+        payload-type (:payload-type plan)
+        other-types (vec (rest (:param-types function)))
+        selected-payload (if (= :bool payload-type)
+                           (list 'component-assert-bool payload)
+                           payload)
         case-0 (if-let [binder (:case-0-binder plan)]
-                 (list 'let [binder payload] (:case-0-body plan))
+                 (list 'let [binder selected-payload] (:case-0-body plan))
                  (:case-0-body plan))
-        case-1 (list 'let [(:case-1-binder plan) payload] (:case-1-body plan))
+        case-1 (list 'let [(:case-1-binder plan) selected-payload] (:case-1-body plan))
         branch (list 'if disc64 case-1 case-0)
         checked
         (list 'let [disc64 (list 'i64-extend-i32-u disc32)]
               (list 'if (list '< disc64 2)
                     branch
-                    (list 'quot 1 0)))
+                    (list 'component-unreachable)))
         synthetic
-        {:format :kotoba.kir/v3
+        {:format :kotoba.kir/v4
          :exports [(:name function)]
          :schemas {}
          :effects #{}
          :functions [{:name (:name function)
                       :params (vec (concat [disc32 payload] other-params))
-                      :param-types (vec (repeat (+ 2 (count other-params)) :i64))
-                      :result :i64
+                      ;; The discriminant's source-level type is deliberately
+                      ;; i64 so the shared emitter can widen and range-check
+                      ;; it; :core-param-types below seals its actual ABI type
+                      ;; as i32.
+                      :param-types (vec (concat [:i64 payload-type] other-types))
+                      :result (:result function)
                       :effects #{}
                       :body checked}]}
-        core-types (vec (concat [:i32 :i64]
-                                (repeat (count other-params) :i64)))
-        wasm-types (mapv {:i32 0x7f :i64 0x7e} core-types)]
+        core-type {:i64 :i64 :f32 :f32 :f64 :f64 :bool :i32}
+        core-types (vec (concat [:i32 (core-type payload-type)]
+                                (map core-type other-types)))
+        wasm-types (mapv {:i32 0x7f :i64 0x7e :f32 0x7d :f64 0x7c} core-types)]
     (wasm/emit-component-core
      synthetic target
-     (assoc opts :core-param-types {(:name function) wasm-types}))))
+     (assoc opts
+            :component-canonical-scalars? true
+            ;; A joined option/result payload is meaningful only in its active
+            ;; case. Validate bool after tag dispatch so an inactive slot does
+            ;; not acquire semantics or trap.
+            :component-unchecked-bool-params
+            (if (= :bool payload-type) #{1} #{})
+            :core-param-types {(:name function) wasm-types}))))
 
 (defn- scalar-record-projection [function schemas]
   (let [{:keys [params param-types result body]} function

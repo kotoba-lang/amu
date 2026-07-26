@@ -12,29 +12,35 @@ Wasm backend.
 
 ## Decision
 
-Admit exhaustive matches whose option/result payloads and final result are
-`i64`; any additional function parameters must also be `i64`.
+Admit exhaustive matches whose option/result payloads, final result, and
+additional parameters are Canonical scalars (`i64`, `f32`, `f64`, or `bool`).
+The two payloads of a result currently share one scalar type so their joined
+core representation needs no case-dependent bit reinterpretation.
 
 `component-core` performs only an adapter transformation:
 
 1. replace the structural union parameter with a Canonical `i32`
-   discriminant and joined `i64` payload;
-2. unsigned-extend the discriminant into the ordinary emitter's i64 value
+   discriminant and joined native scalar payload;
+2. unsigned-extend the discriminant into the emitter's i64 value
    domain;
 3. range-check it against the two valid cases before dispatch;
 4. bind the payload to the source branch binder through an ordinary `let`;
 5. hand both original branch expressions to the existing binary Wasm
    expression emitter.
 
-The backend gains a narrowly scoped `core-param-types` override so the
-synthetic scalar function can receive the Canonical i32 discriminant while all
-ordinary Kotoba values remain i64. It also gains the internal
-`i64-extend-i32-u` bridge instruction used by this adapter. Normal compilation
-does not supply the override and is byte-for-byte on its previous path.
+The backend has a narrowly scoped `core-param-types` override so the synthetic
+function receives the Canonical i32 discriminant and native payload types. It
+also has an explicit `component-canonical-scalars?` mode: the shared typed
+expression emitter keeps `i64`, `f32`, and `f64` native and represents
+Canonical `bool` as checked `i32`, rather than the ordinary KIR v4 host
+`externref`. Normal compilation does not select this mode and retains its
+existing ABI.
 
-The transformed function is emitted as KIR v3 intentionally: its only values
-are native i64 scalars and the one explicitly typed core i32 adapter parameter,
-so it needs no `kotoba:typed` imports. Component packaging still embeds the WIT
+The transformed function is emitted as a host-free scalar KIR v4 adapter so
+float arithmetic, conversion, comparison, `if`, `let`, and calls reuse the
+existing typed expression implementation. The mode suppresses typed host
+imports only after Component admission has proved every value is one of the
+four native Canonical scalars. Component packaging still embeds the WIT
 derived from the original checked KIR, not the synthetic adapter KIR.
 
 Fresh adapter locals are selected deterministically against source parameter
@@ -47,25 +53,29 @@ handled by the ordinary emitter rather than textual symbol substitution.
   negative i32 bit patterns become large positive i64 values and trap;
 - exactly one branch executes, preserving lazy failure and effects;
 - malformed hand-built KIR branch counts or non-symbol binders fail admission;
+- bool parameters and selected bool payloads are checked for canonical 0/1,
+  while an inactive joined payload is not interpreted;
 - the standard module-private fuel global charges the match function;
 - no ambient import or typed host heap is introduced.
 
 ## Evidence
 
 `.kotoba` option and result programs compile through `compile-component`.
-Their branches use multiplication, addition, subtraction, outer parameters,
+Their branches exercise i64, f64, f32, and bool operations, outer parameters,
 and lexical binders. `none`, `some`, `ok`, and `err` executions in the pinned
-real Wasmtime engine match `ir/execute`.
+real Wasmtime engine match `ir/execute`, and the artifacts have no host import.
 
 A lazy fixture puts division-by-zero exclusively in the `some` branch:
 `none` returns normally and `some` traps. Direct core invocation with
 discriminant `2` traps before dispatch. The artifact reports
-`:fuel-enforcement :module-global`.
+`:fuel-enforcement :module-global`. Direct bool-core calls prove an invalid
+active payload traps, the same bits in an inactive option payload are ignored,
+and an invalid ordinary bool argument traps at entry.
 
 ## Remaining gaps
 
-- f32/f64/bool payload and result matches through a host-free typed scalar
-  expression emitter;
+- heterogeneous result payload joins that require case-dependent scalar
+  reinterpretation;
 - nested option/result, record, string, and list payloads;
 - match expressions in multi-function Component modules;
 - general aggregate computation and ownership/linearity analysis.
