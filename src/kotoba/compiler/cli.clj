@@ -9,7 +9,6 @@
             [kotoba.compiler.ios-aot :as ios-aot]
             [kotoba.compiler.interface :as interface]
             [kotoba.compiler.project-files :as project-files]
-            [kototama.native.executor :as native-executor]
             [kotoba.compiler.packaging.pe32plus :as pe32plus]
             [kotoba.compiler.receipt :as receipt]
             [kotoba.compiler.test-profile :as test-profile]
@@ -22,6 +21,15 @@
             [clojure.data.json :as json]
             [clojure.string :as str])
   (:gen-class))
+
+(defn- native-executor-fn [operation]
+  (or (try
+        (requiring-resolve (symbol "kototama.native.executor" (name operation)))
+        (catch java.io.FileNotFoundException _ nil))
+      (throw (ex-info
+              "native execution requires the kotoba-lang/tender-native plugin"
+              {:phase :native-executor :operation operation
+               :dependency 'io.github.kotoba-lang/tender-native}))))
 
 (defn- parse-target [s]
   (case s "wasm32" :wasm32-kotoba-v1 "x86_64" :x86_64-kotoba-v1
@@ -123,7 +131,7 @@
       (atomic-output/write-edn! output updated)
       (println (pr-str {:ok true :output output :runtime-sha256 runtime-sha})))
     "measure-runtime"
-    (let [{:keys [runtime loader-bytes]} (native-executor/measure-runtime)
+    (let [{:keys [runtime loader-bytes]} ((native-executor-fn 'measure-runtime))
           output (or (option args "--output") "kotoba-runtime.edn")
           loader-output (or (option args "--loader-output") "kotoba-loader")]
       (atomic-output/write-bytes! loader-output loader-bytes {:executable? true})
@@ -161,10 +169,11 @@
           entry (symbol (or (option args "--entry") "main"))
           runtime-measurement (bounded-edn/read-file (option args "--runtime"))
           _ (runtime-identity/validate-measurement! runtime-measurement)
-          execution (native-executor/execute envelope trust policy input
-                                              {:now now :entry entry
-                                               :runtime (:runtime runtime-measurement)
-                                               :loader-path (option args "--loader")})
+          execution ((native-executor-fn 'execute)
+                     envelope trust policy input
+                     {:now now :entry entry
+                      :runtime (:runtime runtime-measurement)
+                      :loader-path (option args "--loader")})
           report (:report execution)
           evidence (:evidence execution)
           value (receipt/create

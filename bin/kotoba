@@ -120,8 +120,11 @@
           (when (.-error result)
             (fail! "error: unable to start nbb-native compiler runtime" 70))
           (.exit js/process (or (.-status result) 70)))
-        (let [result (.spawnSync child "clojure"
-                                 (clj->js (into ["-M:run"] sub-args))
+        (let [alias (if (contains? #{"measure-runtime" "run"} (first sub-args))
+                      "-M:native-run"
+                      "-M:run")
+              result (.spawnSync child "clojure"
+                                 (clj->js (into [alias] sub-args))
                                  #js {:cwd root :stdio "inherit" :env js/process.env})]
           (when (.-error result)
             (fail! "error: unable to start private compiler runtime" 70))

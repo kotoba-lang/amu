@@ -174,7 +174,8 @@ are the compatibility contract; byte layout is not.
 **Every other target (`x86_64*`, `aarch64*`, `aarch64-android`,
 `aarch64-ios`) and every other `kotoba` subcommand** (`package-ios`, `sbom`,
 `attest-release`, `sign`, `run`, receipts, coverage, etc.) still goes through
-`clojure -M:run` (`kotoba.compiler.cli`, JVM) exactly as before -- native
+`clojure -M:run` (`kotoba.compiler.cli`, JVM) for compiler commands and
+`clojure -M:native-run` for `measure-runtime` / `run` -- native
 codegen (`backend/x86_64.clj`/`backend/aarch64.clj`), ELF64/PE32+ packaging,
 signing, the independent verifier, and release/coverage evidence are not
 part of this nbb-native slice and remain JVM/compat, honestly, the same way
