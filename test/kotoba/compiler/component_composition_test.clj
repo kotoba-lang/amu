@@ -1,15 +1,21 @@
 (ns kotoba.compiler.component-composition-test
   (:require [clojure.edn :as edn]
             [clojure.java.io :as io]
+            [clojure.java.shell :as shell]
             [clojure.test :refer [deftest is]]
             [kotoba.compiler.canonical-abi :as canonical]
             [kotoba.compiler.component-artifact :as artifact]
             [kotoba.compiler.component-composition :as composition]
             [kotoba.compiler.component-core :as component-core]
             [kotoba.compiler.component-wit :as wit]
+            [kotoba.compiler.core :as compiler]
             [kotoba.compiler.wasm-tools :as wasm-tools])
   (:import [java.nio.file Files]
            [java.nio.file.attribute FileAttribute]))
+
+(def ^:private wasmtime-binary
+  (let [pinned (io/file ".tools" "wasmtime" "wasmtime")]
+    (if (.canExecute pinned) (.getPath pinned) "wasmtime")))
 
 (def capability-kir
   {:format :kotoba.kir/v4 :exports ['invoke] :schemas {}
@@ -98,6 +104,64 @@
            (:providers closed)))
     (is (= [0 97 115 109 13 0 1 0]
            (mapv #(bit-and (int %) 0xff) (take 8 (:bytes closed)))))))
+
+(deftest structural-option-and-result-provider-close-and-execute
+  (doseq [{:keys [descriptor calls]}
+          [{:descriptor [:option :i64]
+            :calls [["invoke(none)" "none"]
+                    ["invoke(some(7))" "some(7)"]]}
+           {:descriptor [:result :i64 :i64]
+            :calls [["invoke(ok(8))" "ok(8)"]
+                    ["invoke(err(-9))" "err(-9)"]]}]]
+    (let [type-source (pr-str descriptor)
+          source (str "(ns component.structural-union-capability "
+                      "(:export [invoke]) (:capabilities #{:http/post})) "
+                      "(defn invoke [request " type-source "] " type-source " "
+                      "(typed-cap-call :http/post " type-source " "
+                      type-source " request))")
+          application
+          (compiler/compile-component source {:allow #{[:cap/call 4]}})
+          provider
+          (composition/package-structural-union-identity-provider
+           :http/post descriptor)
+          closed (composition/compose-closed application [provider])
+          path (Files/createTempFile
+                "kotoba-structural-union-closed-" ".wasm"
+                (make-array FileAttribute 0))]
+      (try
+        (Files/write path ^bytes (:bytes closed)
+                     (make-array java.nio.file.OpenOption 0))
+        (is (= :structural-union-capability-call
+               (:canonical-lowering application)))
+        (is (= [:http/post] (:application-imports closed)))
+        (is (= #{:aiueos.component/aiueos-http-post}
+               (:capabilities application)))
+        (is (= [{:capability :http/post :descriptor descriptor}]
+               (:providers closed)))
+        (doseq [[invoke expected] calls]
+          (let [run (shell/sh wasmtime-binary "run" "--invoke" invoke (str path))]
+            (is (zero? (:exit run)) (:err run))
+            (is (= expected (.trim ^String (:out run))))))
+        (finally
+          (Files/deleteIfExists path))))))
+
+(deftest structural-union-provider-rejects-a-malformed-discriminant
+  (let [entry {:interface "http" :function "post"}
+        core (wasm-tools/parse-wat
+              (component-core/variant-capability-provider-wat
+               entry [:option :i64] {}))
+        path (Files/createTempFile
+              "kotoba-structural-union-provider-core-" ".wasm"
+              (make-array FileAttribute 0))]
+    (try
+      (Files/write path ^bytes core (make-array java.nio.file.OpenOption 0))
+      (let [run (shell/sh wasmtime-binary "run" "--invoke"
+                          "cm32p2|kotoba:application/http@1|post"
+                          (str path) "2" "0")]
+        (is (not (zero? (:exit run)))
+            "the provider must reject a caller-controlled invalid tag"))
+      (finally
+        (Files/deleteIfExists path)))))
 
 (deftest variant-with-record-case-closes-the-application-world
   ;; ADR 0056: a case wrapping a sealed all-scalar record now crosses a

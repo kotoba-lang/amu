@@ -465,6 +465,10 @@ fallback projections also execute directly at the Component boundary; the
 core boundary traps out-of-range discriminants and non-canonical active bool
 payloads without interpreting an inactive case. CI checks
 `none`/`some`/`ok`/`err` with the pinned Wasmtime engine.
+The same scalar union codec crosses an explicitly named capability import:
+the compiler emits the WIT import, a separately packaged provider exports the
+matching structural type, and closed-world composition rejects missing or
+extra providers. No ambient WASI import is introduced.
 The Core-Wasm compatibility ABI also lowers the monomorphic
 `:option-i64`/`:result-i64` operations through the same sealed descriptor
 encoding as `[:option :i64]`/`[:result :i64 :i64]`; admitted scalar ADTs no

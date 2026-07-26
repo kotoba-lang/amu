@@ -31,7 +31,11 @@
 
 (declare type-text)
 
-(defn- type-text [descriptor]
+(defn type-text
+  "Return the canonical WIT spelling for an admitted Kotoba descriptor.
+  Public so provider packaging derives its side of an interface from the
+  same renderer as the application world."
+  [descriptor]
   (cond
     (= descriptor :i64) "s64"
     (= descriptor :f32) "f32"

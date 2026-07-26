@@ -60,6 +60,7 @@ are ignored and the canonical fallback is returned.
 - exhaustive `option-match`/`result-match-of` and arbitrary scalar computation
   around union operations;
 - recursive aggregate payload codecs;
-- option/result capability request/result and provider bindings;
+- asymmetric or aggregate option/result capability request/result bindings
+  (same-type scalar bindings are implemented by ADR 0081);
 - option/result values nested inside record fields;
 - native AOT parity, which remains a separate ABI track.
