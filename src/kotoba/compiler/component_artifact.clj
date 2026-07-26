@@ -26,6 +26,7 @@
                                   ;; now emits per-capability typed imports, so
                                   ;; it may carry WIT imports too.
                                   :scalar-with-capabilities
+                                  :scalar-literal-capability-call
                                   :vector-i64-identity
                                   :vector-i64-literal}
                                 lowering)))
