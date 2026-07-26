@@ -118,11 +118,22 @@
    ;; boundary, so an effect cannot accidentally acquire the old ambient-like
    ;; scalar surface while v0.3 grant lowering is being selected.
    (let [target (or target abi/component-target-v2)
+         component-abilities (:component-abilities policy)
+         _ (when (and (some? component-abilities)
+                      (not (and (map? component-abilities)
+                                (every? integer? (keys component-abilities))
+                                (every? abi/valid-ability? (vals component-abilities)))))
+             (throw (ex-info "component ability descriptors must be exact and bounded"
+                             {:phase :component-abi-v3})))
+         ;; Component descriptors are compiler-to-host authority data, not a
+         ;; generic admission policy key. Keep policy admission strict while
+         ;; carrying the descriptors into the Component boundary below.
+         admission-policy (dissoc policy :component-abilities)
          _ (when-not (= :component (:execution (target-profile/profile target)))
              (throw (ex-info "Component compilation requires a Component target"
                              {:phase :component-target :target target})))
          budgets (merge default-component-budgets budgets)
-         core (compile-source source :wasm32-wasi-kotoba-v1 policy)
+         core (compile-source source :wasm32-wasi-kotoba-v1 admission-policy)
          effectful? (seq (:effects (:kir core)))
          _ (when (and (= target abi/component-target-v2) effectful?)
              (throw (ex-info "effectful v2 Components require typed grant lowering"
@@ -149,6 +160,12 @@
             :provenance (:provenance core)
             :floating-point-policy (:floating-point-policy core)
             :compatibility (:compatibility core)
+            ;; Keep authority descriptors keyed by the portable WIT import,
+            ;; never by the compiler-local numeric capability id.
+            :component-imports
+            (into {}
+                  (map (fn [[id ability]] [(abi/component-import-key id) ability]))
+                  component-abilities)
             :budgets budgets
             :fuel-enforcement enforcement
             :admission-request (component-admission/request

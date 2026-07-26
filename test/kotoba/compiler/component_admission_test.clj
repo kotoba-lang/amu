@@ -176,5 +176,8 @@
        #"effectful v2 Components require typed grant lowering"
        (compiler/compile-component
         "(ns app (:capabilities #{:clock/now})) (defn main [] (cap-call :clock/now 0))"
-        {:allow #{[:cap/call 7]}}
+        {:allow #{[:cap/call 7]}
+         :component-abilities {7 {:target "clock://monotonic" :operation :clock/now
+                                  :max-bytes 1 :max-items 1 :deadline-ms 10
+                                  :audit-id "v2-denial"}}}
         {:target :wasm-component-kotoba-v2}))))
