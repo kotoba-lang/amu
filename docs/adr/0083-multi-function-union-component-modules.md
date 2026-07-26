@@ -67,7 +67,10 @@ are rejected.
 - flat record payload identity for structural option/result is implemented by
   `kotoba-component` commit `3230520`, including active-case bool and bounded
   string/keyword validation;
-- nested record and list payloads, and non-identity aggregate branch
+- finite nested record and bare bounded string/keyword payload identity is
+  implemented by `kotoba-component` commit `ed8e4b3`, with recursive
+  active-case leaf validation;
+- list and nested option/result payloads, and non-identity aggregate branch
   computation;
 - aggregate ownership, post-return cleanup, and linearity analysis;
 - general compositional lowering for mixtures of aggregate match functions and

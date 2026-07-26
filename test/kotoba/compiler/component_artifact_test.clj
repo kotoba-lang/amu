@@ -225,6 +225,45 @@
         (Files/deleteIfExists component-path)
         (Files/deleteIfExists core-path)))))
 
+(deftest nested-record-and-string-unions-use-the-extracted-recursive-codec
+  (let [schemas {:demo/inner
+                 [:record :demo/inner [[:label :string] [:enabled :bool]]]
+                 :demo/outer
+                 [:record :demo/outer
+                  [[:id :i64] [:inner [:ref :demo/inner]]]]}]
+    (doseq [{:keys [descriptor invoke expected]}
+            [{:descriptor [:option [:ref :demo/outer]]
+              :invoke
+              "echo(some({id: 9, inner: {label: \"hi\", enabled: true}}))"
+              :expected
+              "some({id: 9, inner: {label: \"hi\", enabled: true}})"}
+             {:descriptor [:option :string]
+              :invoke "echo(some(\"hello\"))"
+              :expected "some(\"hello\")"}]]
+      (let [kir {:format :kotoba.kir/v4 :exports ['echo]
+                 :schemas schemas :effects #{}
+                 :functions
+                 [{:name 'echo :params ['value] :param-types [descriptor]
+                   :result descriptor :effects #{} :body 'value}]}
+            world (wit/emit kir)
+            artifact (component/package
+                      (component-core/emit kir :wasm32-wasi-kotoba-v1)
+                      kir world)
+            path (Files/createTempFile
+                  "kotoba-component-recursive-union-" ".wasm"
+                  (make-array FileAttribute 0))]
+        (try
+          (is (= :structural-union-identity
+                 (:canonical-lowering artifact)))
+          (Files/write path ^bytes (:bytes artifact)
+                       (make-array java.nio.file.OpenOption 0))
+          (let [run (shell/sh wasmtime-binary "run" "--invoke" invoke
+                              (str path))]
+            (is (zero? (:exit run)) (:err run))
+            (is (= expected (str/trim (:out run)))))
+          (finally
+            (Files/deleteIfExists path)))))))
+
 (deftest structural-option-and-result-constructors-compile-from-kotoba
   (doseq [{:keys [source export invoke output args oracle]}
           [{:source "(ns component.make-none (:export [make-none]))
