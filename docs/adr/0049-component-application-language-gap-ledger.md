@@ -247,15 +247,17 @@ The Canonical ABI layout planner now covers:
 
 - scalar/string/keyword/symbol;
 - sealed record and variant;
-- bounded structural `list<T>` (ADR 0065);
+- bounded structural `list<T>` (ADR 0065), with executable single-shot
+  `:vector-i64` literal and identity Component lowering (ADR 0077);
 - structural `option<T>` and `result<T,E>` (ADR 0068);
 - structural tuple (ADR 0070).
 
-For `list`, `option`, `result`, and tuple, this is still **type-level planning
-only**. `component-core.clj` has no general lowering/lifting/store/load path
-for these shapes, no `.kotoba` export or typed capability call can use them
-end to end, and the planner's validation tags are not executable instance
-checks. The next coherent implementation slice is:
+For `option`, `result`, tuple, and general/nested lists, this is still
+**type-level planning only**. `component-core.clj` has no general
+lowering/lifting/store/load path for these shapes, and no typed capability call
+can use them end to end. ADR 0077 closes only single-shot `:vector-i64`
+literals and identity exports; `vector-conj` deliberately remains rejected.
+The next coherent implementation slice is:
 
 1. runtime value validation and bounded allocation;
 2. export parameter/result lowering and lifting;
@@ -332,9 +334,9 @@ or backend-parity patch.
 
 ## Updated completion order
 
-1. Implement executable Component lowering/lifting for one already-planned
-   aggregate, starting with bounded `list<T>`; validate every pointer, length,
-   stride, discriminant, and allocation before widening to the other shapes.
+1. Extend executable Component aggregate lowering beyond ADR 0077's
+   single-shot `:vector-i64` slice, starting with option/result; validate every
+   pointer, length, stride, discriminant, and allocation before widening.
 2. Add map/set layout plans only after their deterministic ordering,
    duplicate-key/item, and aggregate-budget rules are explicit.
 3. Extend the same aggregate codec through typed capability boundaries and

@@ -1,7 +1,7 @@
 # ADR 0068: Structural `option<T>`/`result<T, E>` Canonical ABI layout plan
 
-Status: accepted; layout-plan slice implemented (type-level plan only, no
-codegen)
+Status: accepted; layout plan implemented, scalar executable slice completed
+by ADR 0079
 
 ## Decision
 
@@ -217,19 +217,15 @@ result directly and never depends on `layout-leaves` to do so (see Evidence).
 
 ## Remaining gaps
 
-1. **No component_core.clj codegen.** Exactly ADR 0065's own gap 1, restated
-   for `option`/`result`: this ADR is deliberately scoped to the Canonical
-   ABI *layout plan* layer only. No `.kotoba` export, `typed-cap-call`, or
-   provider Component can actually take or return an option/result value
-   yet. A future ADR is needed to admit an option/result-identity/
-   passthrough function shape into `component-core.clj` and emit the actual
-   discriminant-range runtime check the `:bounded-discriminant` tag
-   describes as an obligation.
-2. **`:bounded-discriminant` is declarative metadata only, not an executable
-   check**, exactly like every other `:validation` tag in this file. There
-   is no instance-level "option value"/"result value" concept in this
-   namespace at all -- `layout` only ever inspects *type descriptors*, never
-   concrete data.
+1. **The executable slice is deliberately scalar.** ADR 0079 adds
+   option/result identity and explicit constructors for `i64`, `f32`, `f64`,
+   and `bool` payloads. Nested records, strings, lists, option/result nesting,
+   capability calls, and provider boundaries remain fail-closed until their
+   recursive validation and ownership rules are implemented.
+2. **`:bounded-discriminant` remains layout metadata, while admitted codegen
+   now enforces it.** `component-core` emits an unsigned range check before
+   dispatch for every admitted option/result identity. Layout consumers that
+   do not enter that lowering still receive only the declarative obligation.
 3. **`variant`-typed record fields (and now, by the same pre-existing gap,
    `option`/`result`-typed record fields) have no dedicated `layout-leaves`
    leaf shape.** This ADR does not close this gap (closing it for
@@ -248,9 +244,9 @@ result directly and never depends on `layout-leaves` to do so (see Evidence).
    aggregate/union shapes before this ADR -- `:record`/`:variant`/`:list` --
    now five with `:option`/`:result`). Recursive schema identity itself (ADR
    0049 remaining gap 2) is unchanged and explicitly out of scope here.
-6. **No Wasmtime/native evidence**, consistent with every layout-only ADR in
-   this chain (0051/0052/0065 note the same); there is nothing to execute
-   yet since gap 1 above is unaddressed.
+6. **Native AOT is a separate ABI.** ADR 0079 supplies real Wasmtime
+   Component evidence for the scalar slice; it does not change the native
+   value representation or claim Component Model support on a native target.
 
 ## Related
 
