@@ -2,11 +2,11 @@
   (:require [clojure.test :refer [deftest is testing]]
             [clojure.java.shell :as shell]
             [clojure.string :as str]
-            [kotoba.compiler.artifact :as artifact]
+            [kotoba.artifact.core :as artifact]
             [kotoba.compiler.core :as compiler]
-            [kotoba.compiler.ir :as ir]
+            [kotoba.kir :as ir]
             [kotoba.compiler.provenance :as provenance]
-            [kotoba.compiler.verifier :as verifier]))
+            [kotoba.verifier :as verifier]))
 
 (def source "(ns demo) (defn main [] (+ 40 2))")
 (def structured-source

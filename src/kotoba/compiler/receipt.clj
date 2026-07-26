@@ -1,8 +1,8 @@
 (ns kotoba.compiler.receipt
-  (:require [kotoba.compiler.admission :as admission]
-            [kotoba.compiler.artifact :as artifact]
-            [kotoba.compiler.runtime-identity :as runtime-identity]
-            [kotoba.compiler.signing :as signing]))
+  (:require [kotoba.kir.admission :as admission]
+            [kotoba.artifact.core :as artifact]
+            [kotoba.artifact.runtime-identity :as runtime-identity]
+            [kotoba.verifier.signing :as signing]))
 
 (def statuses #{:ok :trap :denied})
 (def ^:private receipt-fields

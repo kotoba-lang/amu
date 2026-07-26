@@ -1,5 +1,5 @@
 (ns kotoba.compiler.packaging.pe32plus
-  (:require [kotoba.compiler.artifact :as artifact]))
+  (:require [kotoba.artifact.core :as artifact]))
 
 (def ^:private firmware-target :x86_64-aiueos-uefi-v1)
 (def ^:private file-alignment 0x200)

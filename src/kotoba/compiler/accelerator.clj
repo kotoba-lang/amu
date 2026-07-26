@@ -1,6 +1,6 @@
 (ns kotoba.compiler.accelerator
   "Typed, bounded accelerator KIR and deterministic WGSL/CUDA lowering."
-  (:require [kotoba.compiler.artifact :as artifact]))
+  (:require [kotoba.artifact.core :as artifact]))
 
 (def kir-format :kotoba.accelerator-kir/v1)
 (def artifact-format :kotoba.gpu-artifact/v1)

@@ -1,7 +1,7 @@
 (ns kotoba.compiler.canonical-abi-test
   (:require [clojure.test :refer [deftest is]]
-            [kotoba.compiler.canonical-abi :as canonical]
-            [kotoba.compiler.value :as value]))
+            [kotoba.wasm.canonical-abi :as canonical]
+            [kotoba.kir.value :as value]))
 
 (deftest scalar-and-bounded-string-layouts-are-closed
   (is (= {:descriptor :i64 :size 8 :alignment 8 :flat [:i64]}

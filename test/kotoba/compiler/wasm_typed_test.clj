@@ -2,10 +2,10 @@
   (:require [clojure.java.shell :as shell]
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
-            [kotoba.compiler.backend.wasm :as wasm]
-            [kotoba.compiler.backend.wasm-typed :as typed]
+            [kotoba.wasm.core :as wasm]
+            [kotoba.wasm.typed :as typed]
             [kotoba.compiler.core :as compiler]
-            [kotoba.compiler.ir :as ir]))
+            [kotoba.kir :as ir]))
 
 (defn- node-probe [compiled javascript]
   (let [encoded (.encodeToString (java.util.Base64/getEncoder) ^bytes (:bytes compiled))

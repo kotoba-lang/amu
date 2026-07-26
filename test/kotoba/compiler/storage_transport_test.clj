@@ -1,5 +1,5 @@
 (ns kotoba.compiler.storage-transport-test
-  "Unit and integration tests for `kotoba.compiler.provider.storage-transport`.
+  "Unit and integration tests for `provider.storage-transport`.
 
   Two groups, deliberately separated (same split as
   `http_transport_test.clj`):
@@ -15,7 +15,7 @@
      stateful in-memory key/value backend speaking this namespace's own wire
      protocol (same fake-server technique as `llm_transport_test.clj` /
      `http_transport_test.clj`), run through `production-transport` and the
-     full typed `kotoba.compiler.provider.storage/provider` boundary --
+     full typed `provider.storage/provider` boundary --
      get/put/delete round trips, conditional-version conflicts, a
      malformed/oversized upstream reply sanitized rather than crashing, a
      non-2xx status mapped to a typed error, and the `:on-call` audit hook.
@@ -29,11 +29,11 @@
   (:require [clojure.data.json :as json]
             [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]
-            [kotoba.compiler.ir :as ir]
-            [kotoba.compiler.provider.storage :as storage]
-            [kotoba.compiler.provider.storage-transport :as transport]
+            [kotoba.kir :as ir]
+            [provider.storage :as storage]
+            [provider.storage-transport :as transport]
             [kotoba.compiler.reference-runtime :as runtime]
-            [kotoba.compiler.value :as value])
+            [kotoba.kir.value :as value])
   (:import (com.sun.net.httpserver HttpServer HttpHandler)
            (java.net InetSocketAddress)))
 
@@ -207,7 +207,7 @@
   `value/bounded-typed-value!` enforces: exactly 2 elements (`[type
   false]`) when absent, exactly 3 (`[type true version]`) when present --
   a trailing placeholder value alongside `false` is rejected outright (see
-  `kotoba.compiler.value/bounded-typed-value!`'s `:option` case). Mirrors
+  `kotoba.kir.value/bounded-typed-value!`'s `:option` case). Mirrors
   `storage.cljc`'s own private `option-version` construction exactly."
   [expected]
   (if (nil? expected)

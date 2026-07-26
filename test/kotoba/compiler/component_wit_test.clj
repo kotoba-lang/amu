@@ -1,7 +1,7 @@
 (ns kotoba.compiler.component-wit-test
   (:require [clojure.test :refer [deftest is testing]]
             [clojure.java.shell :as shell]
-            [kotoba.compiler.component-wit :as wit])
+            [kotoba.component.wit :as wit])
   (:import [java.nio.file Files]
            [java.nio.file.attribute FileAttribute]))
 

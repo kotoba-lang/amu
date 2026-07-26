@@ -7,9 +7,9 @@
   Run from the repo root: `nbb test/nbb/run.cljs`."
   (:require ["node:fs" :as fs]
             [kotoba.compiler.frontend :as frontend]
-            [kotoba.compiler.admission :as admission]
-            [kotoba.compiler.ir :as ir]
-            [kotoba.compiler.backend.wasm :as wasm]
+            [kotoba.kir.admission :as admission]
+            [kotoba.kir :as ir]
+            [kotoba.wasm.core :as wasm]
             [kotoba.compiler.diagnostic :as diagnostic]
             [kotoba.compiler.kotoba-reader :as kr]
             [test.nbb.cases :as cases]))

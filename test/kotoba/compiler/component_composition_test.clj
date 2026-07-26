@@ -3,13 +3,13 @@
             [clojure.java.io :as io]
             [clojure.java.shell :as shell]
             [clojure.test :refer [deftest is]]
-            [kotoba.compiler.canonical-abi :as canonical]
-            [kotoba.compiler.component-artifact :as artifact]
-            [kotoba.compiler.component-composition :as composition]
-            [kotoba.compiler.component-core :as component-core]
-            [kotoba.compiler.component-wit :as wit]
+            [kotoba.wasm.canonical-abi :as canonical]
+            [kotoba.component.artifact :as artifact]
+            [kotoba.component.composition :as composition]
+            [kotoba.component.core :as component-core]
+            [kotoba.component.wit :as wit]
             [kotoba.compiler.core :as compiler]
-            [kotoba.compiler.wasm-tools :as wasm-tools])
+            [kotoba.wasm.tools :as wasm-tools])
   (:import [java.nio.file Files]
            [java.nio.file.attribute FileAttribute]))
 
@@ -432,7 +432,7 @@
   ;; `urgent: bool`) crosses to `demo/cap-string-outcome` (`found: cap-
   ;; entry`/`missing: bool`), proving the widened admission and the new
   ;; independent RESULT-side memory-page sizing
-  ;; (`kotoba.compiler.component-core/string-headroom-bytes`,
+  ;; (`kotoba.component.core/string-headroom-bytes`,
   ;; `plan-result-string-data`) both engage correctly when the string/
   ;; keyword leaf is on the opposite side from the prior test.
   (let [descriptor [:ref :demo/other-outcome]
@@ -688,7 +688,7 @@
   (proves the version counter is real and increments); get(k2)->missing
   (proves no cross-key contamination); delete(k1)->deleted true; get(k1)
   ->missing (proves deletion is real); delete(k1) again->deleted false
-  (matching `kotoba.compiler.provider.state`'s own 'delete on an absent key
+  (matching `provider.state`'s own 'delete on an absent key
   still succeeds, reporting false' semantics); put k2/k3/k4/k5 (fills the
   4-slot table from k1's now-vacated state); put k6 (a SIXTH distinct key,
   table full)->error `state/capacity`; put k2 again (an EXISTING key,
@@ -936,7 +936,7 @@
 (defn- package-state-driver
   "Embed/wrap `state-driver-wat`/`state-driver-wit` into a
   `:wasm-component/v1` application artifact -- the driver's own counterpart
-  to `kotoba.compiler.component-artifact/package`, since the driver is
+  to `kotoba.component.artifact/package`, since the driver is
   hand-authored WAT/WIT rather than compiled from KIR."
   [result-descriptor schemas]
   (let [wit (state-driver-wit)
@@ -991,7 +991,7 @@
 ;;
 ;; ADR 0060 deliberately narrowed `state-provider-table-capacity` to `4` and
 ;; stated growing it back to the pure-Clojure reference's own `256`
-;; (`kotoba.compiler.provider.state/max-entries`, matching `state-v1.edn`'s
+;; (`provider.state/max-entries`, matching `state-v1.edn`'s
 ;; own declared `:limits {:entries 256 ...}`) would be "a mechanical,
 ;; separate follow-up (the per-slot layout and unrolled scan generalize
 ;; directly to any fixed compile-time slot count)". `state-scan-wat`

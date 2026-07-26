@@ -1,28 +1,28 @@
 (ns kotoba.compiler.core
   (:require [clojure.walk :as walk]
             [kotoba.compiler.frontend :as frontend]
-            [kotoba.compiler.compatibility :as compatibility]
+            [kotoba.kir.compatibility :as compatibility]
             [kotoba.compiler.provenance :as provenance]
             [kotoba.compiler.cache :as cache]
             [kotoba.compiler.project :as project]
-            [kotoba.compiler.ir :as ir]
-            [kotoba.compiler.admission :as admission]
-            [kotoba.compiler.backend.wasm :as wasm]
-            [kotoba.compiler.backend.wasm-typed :as typed]
-            [kotoba.compiler.component-wit :as component-wit]
-            [kotoba.compiler.component-artifact :as component-artifact]
-            [kotoba.compiler.component-core :as component-core]
-            [kotoba.compiler.component-admission :as component-admission]
+            [kotoba.kir :as ir]
+            [kotoba.kir.admission :as admission]
+            [kotoba.wasm.core :as wasm]
+            [kotoba.wasm.typed :as typed]
+            [kotoba.component.wit :as component-wit]
+            [kotoba.component.artifact :as component-artifact]
+            [kotoba.component.core :as component-core]
+            [kotoba.component.admission :as component-admission]
             [kotoba.abi.contract :as abi]
             [kotoba.compiler.backend.cljs :as cljs]
             [kotoba.script :as script]
-            [kotoba.compiler.backend.x86-64 :as x86-64]
-            [kotoba.compiler.backend.aarch64 :as aarch64]
-            [kotoba.compiler.packaging.elf64 :as elf64]
+            [kotoba.native.x86-64 :as x86-64]
+            [kotoba.native.aarch64 :as aarch64]
+            [kotoba.native.elf64 :as elf64]
             [kotoba.compiler.packaging.pe32plus :as pe32plus]
-            [kotoba.compiler.artifact :as artifact]
-            [kotoba.compiler.target :as target-profile]
-            [kotoba.compiler.verifier :as verifier])
+            [kotoba.artifact.core :as artifact]
+            [kotoba.kir.target :as target-profile]
+            [kotoba.verifier :as verifier])
   (:import [java.nio.charset StandardCharsets]
            [java.security MessageDigest]))
 
@@ -71,7 +71,7 @@
 ;; would silently let unsupported ops reach the backend and crash confusingly
 ;; instead of rejecting cleanly. Shared with `kotoba.compiler.nbb.cli` (the
 ;; nbb-native fast path) via
-;; `kotoba.compiler.ir/only-native-word-typed-features?` so both
+;; `kotoba.kir/only-native-word-typed-features?` so both
 ;; compile paths admit the exact same native-typed-feature subset.
 
 (defn check-source

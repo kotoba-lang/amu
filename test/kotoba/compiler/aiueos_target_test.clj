@@ -2,7 +2,7 @@
   (:require [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]
             [kotoba.compiler.packaging.pe32plus :as pe32plus]
-            [kotoba.compiler.target :as target]))
+            [kotoba.kir.target :as target]))
 
 (defn- unsigned [n] (bit-and (int n) 0xff))
 (defn- read-le [bytes offset width]

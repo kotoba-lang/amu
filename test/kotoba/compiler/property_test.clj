@@ -1,8 +1,8 @@
 (ns kotoba.compiler.property-test
   (:require [clojure.test :refer [deftest is]]
             [kotoba.compiler.core :as compiler]
-            [kotoba.compiler.ir :as ir]
-            [kotoba.compiler.verifier :as verifier])
+            [kotoba.kir :as ir]
+            [kotoba.verifier :as verifier])
   (:import [java.util Random]))
 
 (def vars ['x 'y])

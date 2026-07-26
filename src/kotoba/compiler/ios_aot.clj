@@ -1,7 +1,7 @@
 (ns kotoba.compiler.ios-aot
   (:require [clojure.string :as str]
-            [kotoba.compiler.artifact :as artifact]
-            [kotoba.compiler.verifier :as verifier])
+            [kotoba.artifact.core :as artifact]
+            [kotoba.verifier :as verifier])
   (:import [java.nio.charset StandardCharsets]))
 
 (def ^:private ios-target :aarch64-ios-kotoba-v1)

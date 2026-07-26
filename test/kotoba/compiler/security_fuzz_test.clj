@@ -1,10 +1,10 @@
 (ns kotoba.compiler.security-fuzz-test
   (:require [clojure.test :refer [deftest is]]
-            [kotoba.compiler.artifact :as artifact]
+            [kotoba.artifact.core :as artifact]
             [kotoba.compiler.core :as compiler]
             [kotoba.compiler.receipt :as receipt]
-            [kotoba.compiler.signing :as signing]
-            [kotoba.compiler.verifier :as verifier])
+            [kotoba.verifier.signing :as signing]
+            [kotoba.verifier :as verifier])
   (:import [java.util Random]))
 
 (def default-seed 0x4b4f544f4241465a)

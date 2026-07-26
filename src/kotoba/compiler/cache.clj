@@ -1,8 +1,8 @@
 (ns kotoba.compiler.cache
-  (:require [kotoba.compiler.artifact :as artifact]
+  (:require [kotoba.artifact.core :as artifact]
             [kotoba.compiler.provenance :as provenance]
-            [kotoba.compiler.signing :as signing]
-            [kotoba.compiler.verifier :as verifier]))
+            [kotoba.verifier.signing :as signing]
+            [kotoba.verifier :as verifier]))
 
 (def entry-schema :kotoba.incremental-cache/v1)
 (def statement-schema :kotoba.incremental-cache-statement/v1)

@@ -1,6 +1,6 @@
 (ns kotoba.compiler.release
-  (:require [kotoba.compiler.signing :as signing]
-            [kotoba.compiler.target :as target])
+  (:require [kotoba.verifier.signing :as signing]
+            [kotoba.kir.target :as target])
   (:import [java.io FileInputStream]
            [java.nio.charset StandardCharsets]
            [java.nio.file Files LinkOption Path Paths]

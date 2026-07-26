@@ -1,7 +1,7 @@
 (ns kotoba.compiler.typed-capability-test
   (:require [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]
-            [kotoba.compiler.ir :as ir]))
+            [kotoba.kir :as ir]))
 
 (def source
   "(ns demo.typed-cap (:export [invoke]) (:capabilities #{:http/post}))

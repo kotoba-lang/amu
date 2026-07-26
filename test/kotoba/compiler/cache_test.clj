@@ -1,9 +1,9 @@
 (ns kotoba.compiler.cache-test
   (:require [clojure.test :refer [deftest is testing]]
-            [kotoba.compiler.artifact :as artifact]
+            [kotoba.artifact.core :as artifact]
             [kotoba.compiler.cache :as cache]
             [kotoba.compiler.core :as compiler]
-            [kotoba.compiler.signing :as signing]))
+            [kotoba.verifier.signing :as signing]))
 
 (def source "(ns cache.demo) (defn main [] (+ 40 2))")
 (defn- trust [key]

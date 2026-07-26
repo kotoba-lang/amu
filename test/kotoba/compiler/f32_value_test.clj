@@ -1,9 +1,9 @@
 (ns kotoba.compiler.f32-value-test
   (:require [clojure.java.shell :as shell]
             [clojure.test :refer [deftest is testing]]
-            [kotoba.compiler.backend.wasm-typed :as typed]
+            [kotoba.wasm.typed :as typed]
             [kotoba.compiler.core :as compiler]
-            [kotoba.compiler.ir :as ir]))
+            [kotoba.kir :as ir]))
 
 (def source
   (str "(ns pilot.f32 (:export [main from-bits bits rounded widen add divide unordered to-f32 rounded-i64 to-i64 truncating f32-s f32-lo f32-hi f64-s f64-lo f64-hi sin cos wide-sin wide-cos exp log atan2 wide-exp wide-log])) "

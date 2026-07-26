@@ -1,6 +1,6 @@
 (ns kotoba.compiler.ios-aot-test
   (:require [clojure.test :refer [deftest is]]
-            [kotoba.compiler.artifact :as artifact]
+            [kotoba.artifact.core :as artifact]
             [kotoba.compiler.core :as compiler]
             [kotoba.compiler.ios-aot :as ios-aot]))
 

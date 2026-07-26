@@ -1,8 +1,8 @@
 (ns kotoba.compiler.verifier-profile-test
   (:require [clojure.test :refer [deftest is]]
-            [kotoba.compiler.artifact :as artifact]
+            [kotoba.artifact.core :as artifact]
             [kotoba.compiler.core :as compiler]
-            [kotoba.compiler.verifier :as verifier]))
+            [kotoba.verifier :as verifier]))
 
 (defn- base-artifact []
   (:artifact (compiler/compile-source "(defn main [] 0)" :x86_64-kotoba-v1)))
