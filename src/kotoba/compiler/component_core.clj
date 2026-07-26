@@ -229,6 +229,53 @@
          schema
          (canonical/layout descriptor schemas))))
 
+(defn- structural-union-identity-function?
+  "An identity export over a structural Component Model option/result.
+  These layouts have the same discriminant-plus-joined-payload shape as a
+  sealed variant, so they deliberately share `variant-wat`.  Keep this first
+  executable slice to scalar payloads; admitting nested/string/list payloads
+  requires the corresponding recursive validation proof."
+  [function schemas]
+  (let [{:keys [params param-types result body]} function
+        descriptor (first param-types)
+        payloads (when (vector? descriptor)
+                   (case (first descriptor)
+                     :option [(second descriptor)]
+                     :result [(second descriptor) (nth descriptor 2)]
+                     nil))]
+    (and (= 1 (count params))
+         (= 1 (count param-types))
+         (= descriptor result)
+         (= (first params) body)
+         (seq payloads)
+         (every? #{:i64 :f32 :f64 :bool} payloads)
+         (canonical/layout descriptor schemas))))
+
+(defn- structural-union-construction
+  "Return the fixed case/payload plan for a scalar option/result constructor."
+  [function schemas]
+  (let [{:keys [params param-types result body]} function
+        [op descriptor payload] (when (seq? body) body)
+        construction
+        (case [op (when (vector? descriptor) (first descriptor))]
+          [option-none-of :option] {:case-index 0 :payload-type nil}
+          [option-some-of :option] {:case-index 1 :payload-type (second descriptor)}
+          [result-ok-of :result] {:case-index 0 :payload-type (second descriptor)}
+          [result-err-of :result] {:case-index 1 :payload-type (get descriptor 2)}
+          nil)
+        {:keys [case-index payload-type]} construction]
+    (when (and construction
+               (vector? descriptor)
+               (= descriptor result)
+               (contains? #{:option :result} (first descriptor))
+               (= (if payload-type 1 0) (count params))
+               (= (if payload-type [payload-type] []) param-types)
+               (or (nil? payload-type)
+                   (contains? #{:i64 :f32 :f64 :bool} payload-type))
+               (or (nil? payload-type) (= payload (first params)))
+               (canonical/layout descriptor schemas))
+      (assoc construction :descriptor descriptor))))
+
 (defn- scalar-record-projection [function schemas]
   (let [{:keys [params param-types result body]} function
         descriptor (first param-types)
@@ -602,6 +649,14 @@
            (empty? (:effects kir))) :variant-identity
       (and (= 1 (count (:functions kir)))
            (= 1 (count exports))
+           (structural-union-identity-function? (first exports) (:schemas kir))
+           (empty? (:effects kir))) :structural-union-identity
+      (and (= 1 (count (:functions kir)))
+           (= 1 (count exports))
+           (structural-union-construction (first exports) (:schemas kir))
+           (empty? (:effects kir))) :structural-union-construction
+      (and (= 1 (count (:functions kir)))
+           (= 1 (count exports))
            (string-field-record-identity-function? (first exports) (:schemas kir))
            (empty? (:effects kir))) :string-field-record-identity
       (and (= 1 (count (:functions kir)))
@@ -889,7 +944,9 @@
   the ADR 0051 one-level-nested shape, so no leaf here is itself a nested
   record."
   [layout]
-  (if (contains? layout :fields)
+  (cond
+    (empty? (:flat layout)) []
+    (contains? layout :fields)
     (loop [remaining (:fields layout) flat-index 0 acc []]
       (if-let [{:keys [offset layout]} (first remaining)]
         (let [descriptor (:descriptor layout)
@@ -899,6 +956,7 @@
                      max-bytes (assoc :max-bytes max-bytes))]
           (recur (next remaining) (+ flat-index width) (conj acc leaf)))
         acc))
+    :else
     [{:relative-offset 0 :descriptor (:descriptor layout) :flat-index 0}]))
 
 (defn- variant-flat-value-expr
@@ -1613,6 +1671,36 @@
    "      local.set $copy-size\n"
    "      local.get $ptr local.get $old-ptr local.get $copy-size memory.copy\n"
    "    end local.get $ptr)\n"))
+
+(defn- structural-union-construction-wat [function schemas plan]
+  (let [export (wit-name (:name function))
+        layout (canonical/layout (:descriptor plan) schemas)
+        payload-type (:payload-type plan)
+        payload-offset (:payload-offset layout)
+        bool-validation (when (= :bool payload-type)
+                          "    local.get $value i32.const 1 i32.gt_u if unreachable end\n")
+        payload-store (when payload-type
+                        (str "    local.get $ret local.get $value "
+                             (wasm-store payload-type) " offset=" payload-offset "\n"))]
+    (str
+     "(module\n"
+     "  (memory (export \"cm32p2_memory\") 1 1)\n"
+     "  (global $next (mut i32) (i32.const 8))\n"
+     (bounded-bump-realloc-wat 65536)
+     "  (func (export \"cm32p2||" export "\")"
+     (when payload-type (str " (param $value " (wasm-value-type payload-type) ")"))
+     " (result i32)\n"
+     "    (local $ret i32)\n"
+     bool-validation
+     "    i32.const 0 i32.const 0 i32.const " (:alignment layout)
+     " i32.const " (:size layout) " call $realloc local.set $ret\n"
+     "    local.get $ret i32.const " (:case-index plan) " "
+     (variant-disc-store (:discriminant-size layout)) " offset=0\n"
+     payload-store
+     "    local.get $ret)\n"
+     "  (func (export \"cm32p2||" export "_post\") (param i32)\n"
+     "    i32.const 8 global.set $next)\n"
+     "  (func (export \"cm32p2_initialize\") i32.const 8 global.set $next))\n")))
 
 (defn- variant-capability-wat
   "Application-side standard32 core module for a direct `typed-cap-call`
@@ -2623,6 +2711,15 @@
     :variant-identity
     (wasm-tools/parse-wat
      (variant-wat (first (exported-functions kir)) (:schemas kir)))
+    :structural-union-identity
+    (wasm-tools/parse-wat
+     (variant-wat (first (exported-functions kir)) (:schemas kir)))
+    :structural-union-construction
+    (let [function (first (exported-functions kir))]
+      (wasm-tools/parse-wat
+       (structural-union-construction-wat
+        function (:schemas kir)
+        (structural-union-construction function (:schemas kir)))))
     :string-field-record-identity
     (wasm-tools/parse-wat
      (string-field-record-wat (first (exported-functions kir)) (:schemas kir)))
