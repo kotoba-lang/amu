@@ -343,8 +343,15 @@
   ([source target] (compile-source source target {}))
   ([source target policy] (compile-source source target policy {}))
   ([source target policy emit-metadata]
-   (provenance/attach source policy emit-metadata
-                      (compile-source* source target policy emit-metadata))))
+   ;; A Component target is a packaging boundary, not a bare core-Wasm
+   ;; backend.  Route the public API through that boundary so callers cannot
+   ;; accidentally obtain a core module labelled as a Component.  The inner
+   ;; compile-component call uses :wasm32-wasi-kotoba-v1 for its sealed core
+   ;; input, so this does not recurse.
+   (if (= :component (:execution (target-profile/profile target)))
+     (compile-component source policy {:target target})
+     (provenance/attach source policy emit-metadata
+                        (compile-source* source target policy emit-metadata)))))
 
 (defn compile-source-cached
   [source target policy build-metadata cache-entry trust now]

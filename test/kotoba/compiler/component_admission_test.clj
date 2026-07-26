@@ -73,12 +73,11 @@
       (is (= :component (:execution profile)))
       (is (= "0.3.0" (:wasi-version profile)))
       (is (false? (:ambient-wasi profile)))))
-  (testing "compile-source refuses it instead of emitting a bare core module"
-    (let [thrown (try (compiler/compile-source scalar-source :wasm-component-kotoba-v1)
-                      nil
-                      (catch clojure.lang.ExceptionInfo e (ex-data e)))]
-      (is (= :target-routing (:phase thrown)))
-      (is (= 'kotoba.compiler.core/compile-component (:entry-point thrown))))))
+  (testing "compile-source routes it through the Component packaging boundary"
+    (let [compiled (compiler/compile-source scalar-source :wasm-component-kotoba-v2)]
+      (is (= :wasm-component/v1 (:format compiled)))
+      (is (= :wasm-component-kotoba-v2 (:target compiled)))
+      (is (= [] (:imports compiled))))))
 
 (deftest cid-matches-the-canonical-empty-block
   (testing "CIDv1 raw/sha2-256/base32 agrees with the published empty-block CID"
