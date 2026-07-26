@@ -527,6 +527,95 @@
         (finally
           (Files/deleteIfExists path))))))
 
+(deftest multiple-scalar-union-match-exports-share-one-component-module
+  (let [source
+        "(ns component.multiple-matches
+           (:export [choose-option choose-result negate]))
+         (defn- twice [value :i64] :i64 (* value 2))
+         (defn choose-option
+           [value [:option :i64] fallback :i64] :i64
+           (match-option value [:option :i64]
+             (none fallback)
+             (some item (twice item))))
+         (defn choose-result
+           [value [:result :bool :f32]] :i64
+           (match-result value [:result :bool :f32]
+             (ok flag (if flag 1 0))
+             (err ratio (f32-to-bits ratio))))
+         (defn negate [flag :bool] :bool (bool-not flag))"
+        artifact (compiler/compile-component source)
+        kir (:kir (compiler/compile-source source :wasm32-wasi-kotoba-v1))
+        component-path (Files/createTempFile
+                        "kotoba-component-multiple-matches-" ".wasm"
+                        (make-array FileAttribute 0))
+        fuel-one-path (Files/createTempFile
+                       "kotoba-component-multiple-fuel-one-" ".wasm"
+                       (make-array FileAttribute 0))
+        fuel-two-path (Files/createTempFile
+                       "kotoba-component-multiple-fuel-two-" ".wasm"
+                       (make-array FileAttribute 0))]
+    (try
+      (Files/write component-path ^bytes (:bytes artifact)
+                   (make-array java.nio.file.OpenOption 0))
+      (Files/write fuel-one-path
+                   ^bytes (component-core/emit
+                           kir :wasm32-wasi-kotoba-v1 {:fuel 1})
+                   (make-array java.nio.file.OpenOption 0))
+      (Files/write fuel-two-path
+                   ^bytes (component-core/emit
+                           kir :wasm32-wasi-kotoba-v1 {:fuel 2})
+                   (make-array java.nio.file.OpenOption 0))
+      (is (= :structural-union-match-module (:canonical-lowering artifact)))
+      (is (= :module-global (:fuel-enforcement artifact)))
+      (is (empty? (:required-imports artifact)))
+      (is (= #{'choose-option 'choose-result 'negate}
+             (set (:exports artifact))))
+      (doseq [[invoke expected export args]
+              [["choose-option(none, 9)" "9" 'choose-option
+                [[[:option :i64] false] 9]]
+               ["choose-option(some(7), 9)" "14" 'choose-option
+                [[[:option :i64] true 7] 9]]
+               ["choose-result(ok(true))" "1" 'choose-result [[true true]]]
+               ["choose-result(err(-1.5))"
+                (str (value/f32-to-i64-bits (float -1.5)))
+                'choose-result [[false (float -1.5)]]]
+               ["negate(false)" "true" 'negate [false]]]]
+        (let [run (shell/sh wasmtime-binary "run" "--invoke" invoke
+                            (str component-path))]
+          (is (zero? (:exit run)) (:err run))
+          (is (= expected (str/trim (:out run))) invoke)
+          (is (= expected (str (ir/execute kir export args))) invoke)))
+      (let [fuel-one
+            (shell/sh wasmtime-binary "run" "--invoke" "cm32p2||choose-option"
+                      (str fuel-one-path) "1" "7" "0")
+            fuel-two
+            (shell/sh wasmtime-binary "run" "--invoke" "cm32p2||choose-option"
+                      (str fuel-two-path) "1" "7" "0")
+            active-f32
+            (shell/sh wasmtime-binary "run" "--invoke" "cm32p2||choose-result"
+                      (str fuel-two-path) "1" "2")
+            active-bool
+            (shell/sh wasmtime-binary "run" "--invoke" "cm32p2||choose-result"
+                      (str fuel-two-path) "0" "2")
+            ordinary-bool
+            (shell/sh wasmtime-binary "run" "--invoke" "cm32p2||negate"
+                      (str fuel-two-path) "2")]
+        (is (not (zero? (:exit fuel-one)))
+            "the match and its private helper share the module fuel global")
+        (is (zero? (:exit fuel-two)) (:err fuel-two))
+        (is (= "14" (str/trim (:out fuel-two))))
+        (is (zero? (:exit active-f32)) (:err active-f32))
+        (is (= "2" (str/trim (:out active-f32)))
+            "joined payload validation is scoped to this export's selected case")
+        (is (not (zero? (:exit active-bool)))
+            "the same joined bits trap in this export's bool case")
+        (is (not (zero? (:exit ordinary-bool)))
+            "another export's ordinary bool parameter remains entry-validated"))
+      (finally
+        (Files/deleteIfExists component-path)
+        (Files/deleteIfExists fuel-one-path)
+        (Files/deleteIfExists fuel-two-path)))))
+
 (deftest structural-union-match-is-lazy-and-rejects-malformed-tags
   (let [source "(ns component.lazy-match (:export [choose]))
                 (defn choose

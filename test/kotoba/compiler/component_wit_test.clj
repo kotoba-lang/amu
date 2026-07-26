@@ -58,4 +58,22 @@
   (is (thrown-with-msg? clojure.lang.ExceptionInfo #"collide"
                         (wit/emit (assoc kir :schemas
                                          {:app/a [:record :app/a [[:x :i64]]]
-                                          :app.a [:record :app.a [[:x :i64]]]})))))
+                                          :app.a [:record :app.a [[:x :i64]]]}))))
+  (is (thrown-with-msg?
+       clojure.lang.ExceptionInfo #"export names collide"
+       (wit/emit {:format :kotoba.kir/v4
+                  :exports ['do-work 'do_work]
+                  :schemas {}
+                  :functions [{:name 'do-work :params [] :param-types []
+                               :result :i64 :body 0}
+                              {:name 'do_work :params [] :param-types []
+                               :result :i64 :body 0}]})))
+  (is (thrown-with-msg?
+       clojure.lang.ExceptionInfo #"parameter names collide"
+       (wit/emit {:format :kotoba.kir/v4
+                  :exports ['invoke]
+                  :schemas {}
+                  :functions [{:name 'invoke
+                               :params ['item-id 'item_id]
+                               :param-types [:i64 :i64]
+                               :result :i64 :body 'item-id}]}))))
