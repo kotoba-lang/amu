@@ -2,6 +2,7 @@
   (:require [clojure.edn :as edn]
             [clojure.java.io :as io]
             [clojure.java.shell :as shell]
+            [clojure.string :as str]
             [clojure.test :refer [deftest is]]
             [kotoba.wasm.canonical-abi :as canonical]
             [kotoba.component.artifact :as artifact]
@@ -36,6 +37,46 @@
     (is (= [{:capability :http/post :descriptor :i64}] (:providers closed)))
     (is (= [0 97 115 109 13 0 1 0]
            (mapv #(bit-and (int %) 0xff) (take 8 (:bytes closed)))))))
+
+(deftest structural-union-match-branch-calls-a-composed-scalar-provider
+  (let [source
+        "(ns component.match-capability
+           (:export [invoke])
+           (:capabilities #{:http/post}))
+         (defn- passthrough [value :i64] :i64 value)
+         (defn invoke
+           [value [:option :i64] fallback :i64] :i64
+           (match-option value [:option :i64]
+             (none (passthrough fallback))
+             (some item
+               (typed-cap-call :http/post :i64 :i64 item))))"
+        application
+        (compiler/compile-component source {:allow #{[:cap/call 4]}})
+        provider
+        (composition/package-scalar-identity-provider :http/post :i64)
+        closed (composition/compose-closed application [provider])
+        path (Files/createTempFile
+              "kotoba-match-capability-closed-" ".wasm"
+              (make-array FileAttribute 0))]
+    (try
+      (Files/write path ^bytes (:bytes closed)
+                   (make-array java.nio.file.OpenOption 0))
+      (is (= :structural-union-match-module
+             (:canonical-lowering application)))
+      (is (= [:http/post] (:application-imports closed)))
+      (is (= #{:aiueos.component/aiueos-http-post}
+             (:capabilities application)))
+      (is (= [{:capability :http/post :descriptor :i64}]
+             (:providers closed)))
+      (doseq [[invoke expected]
+              [["invoke(none, 9)" "9"]
+               ["invoke(some(7), 9)" "7"]]]
+        (let [run (shell/sh wasmtime-binary "run" "--invoke"
+                            invoke (str path))]
+          (is (zero? (:exit run)) (:err run))
+          (is (= expected (str/trim (:out run))) invoke)))
+      (finally
+        (Files/deleteIfExists path)))))
 
 (deftest composition-fails-closed-without-the-required-provider
   (let [world (wit/emit capability-kir)

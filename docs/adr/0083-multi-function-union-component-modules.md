@@ -93,5 +93,10 @@ are rejected.
   match branches;
 - general aggregate ownership and linearity analysis beyond this bounded
   identity/borrowed-result slice;
-- general compositional lowering for mixtures of aggregate match functions and
-  capability imports.
+- scalar named capabilities now compose with aggregate match functions through
+  `kotoba-wasm` commit `7359448` and `kotoba-component` commit `a5804c0`.
+  The shared match emitter receives the exact WIT import table, generic
+  canonical capability fallback is rejected, and a `.kotoba` option match is
+  executed through a closed application-plus-provider Component;
+- aggregate request/result capability types still require their dedicated
+  Canonical codecs to be generalized into the shared match module.
