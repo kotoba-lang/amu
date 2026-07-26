@@ -490,8 +490,11 @@ Finite record payloads with recursively scalar `i64`, `f32`, `f64`, and
 `bool` leaves use that same match path. Record binders may only escape through
 a statically resolved `record-get` chain; selected bool leaves are validated
 even when branch code does not read them, while inactive joined slots remain
-uninterpreted. A source-level `.kotoba` test packages and runs this boundary,
-not only a hand-built KIR fixture.
+uninterpreted. Closed namespace schemas may reference a distinct nominal
+record root; inline field-aware descriptors must exactly match the declared
+schema before `[:ref ...]` and the descriptor are type-compatible. A
+source-level `.kotoba` test packages and runs a nested record boundary, not
+only a hand-built KIR fixture.
 The Core-Wasm compatibility ABI also lowers the monomorphic
 `:option-i64`/`:result-i64` operations through the same sealed descriptor
 encoding as `[:option :i64]`/`[:result :i64 :i64]`; admitted scalar ADTs no

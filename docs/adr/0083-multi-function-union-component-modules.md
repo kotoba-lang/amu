@@ -84,9 +84,13 @@ are rejected.
   scalar slots, and all selected bool leaves validate even if unread. The
   compiler test starts at `.kotoba` source and executes the packaged
   Component;
-- nested/indirect list item types, string/list leaf operations in aggregate
-  match branches, and source-schema references across distinct nominal record
-  roots;
+- source schemas may now reference distinct nominal record roots while each
+  referenced descriptor retains its own identity. Inline descriptors naming a
+  closed schema must exactly match it before ref/descriptor type compatibility
+  is admitted; the `.kotoba` Component test exercises a nested record through
+  that path;
+- nested/indirect list item types and string/list leaf operations in aggregate
+  match branches;
 - general aggregate ownership and linearity analysis beyond this bounded
   identity/borrowed-result slice;
 - general compositional lowering for mixtures of aggregate match functions and

@@ -1058,3 +1058,39 @@
                   "(def not-a-type 7) (defn main [] [:alias not-a-type] 0)"
                   "(def a [:alias b]) (def b [:alias a]) (defn main [] 0)"]]
     (is (some? (rejection-message source)))))
+
+(deftest closed-schema-references-preserve-distinct-nominal-roots
+  (let [source
+        "(ns app.nested
+           (:export [main])
+           (:schemas
+            {:app/point
+             [:record :app/point [[:x :i64] [:state [:ref :app/state]]]]
+             :app/state
+             [:record :app/state [[:visible :bool]]]}))
+         (defn main [] :i64 0)"
+        kir (:kir (compiler/compile-source source :wasm32-wasi-kotoba-v1))]
+    (is (= [:ref :app/state]
+           (get-in kir [:schemas :app/point 2 1 1])))
+    (is (= :app/state (get-in kir [:schemas :app/state 1])))
+    (is (= #{:app/point :app/state}
+           (set (keys (:schema-identities kir))))))
+  (is (some?
+       (rejection-message
+        "(ns app.forged-root
+           (:schemas
+            {:app/point
+             [:record :app/not-point [[:state [:ref :app/state]]]]
+             :app/state
+             [:record :app/state [[:visible :bool]]]}))
+         (defn main [] :i64 0)"))
+      "each referenced descriptor retains its own declared nominal identity")
+  (is (some?
+       (rejection-message
+        "(ns app.forged-inline
+           (:schemas
+            {:app/point [:record :app/point [[:x :i64]]]}))
+         (defn main
+           [point [:record :app/point [[:x :bool]]]] :bool
+           (record-get [:record :app/point [[:x :bool]]] point :x))"))
+      "an inline nominal descriptor cannot redefine a closed schema"))

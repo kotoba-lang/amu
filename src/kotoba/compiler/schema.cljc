@@ -25,41 +25,54 @@
   (when-not (and (map? table) (seq table) (<= (count table) max-schemas)
                  (every? #(and (keyword? %) (namespace %)) (keys table)))
     (fail! "schema table must contain bounded qualified names" {:table table}))
-  (letfn [(walk [root node path productive? depth budget]
+  (letfn [(walk [origin nominal-root node path productive? depth budget]
             (vswap! budget inc)
             (when (> @budget max-schema-nodes)
-              (fail! "schema graph exceeds node limit" {:root root}))
+              (fail! "schema graph exceeds node limit" {:root origin}))
             (when (> depth max-schema-depth)
-              (fail! "schema graph exceeds depth limit" {:root root}))
+              (fail! "schema graph exceeds depth limit" {:root origin}))
             (cond
               (primitives node) nil
               (ref-type? node)
               (let [target (second node)]
                 (when-not (contains? table target)
-                  (fail! "schema reference is not declared" {:root root :ref target}))
+                  (fail! "schema reference is not declared"
+                         {:root origin :ref target}))
                 (if (contains? path target)
                   (when-not productive?
-                    (fail! "schema alias cycle is not productive" {:root root :ref target}))
-                  (walk root (get table target) (conj path target) false (inc depth) budget)))
+                    (fail! "schema alias cycle is not productive"
+                           {:root origin :ref target}))
+                  ;; A reference changes the nominal owner whose descriptor is
+                  ;; being checked. Keeping the original root separately
+                  ;; preserves whole-graph depth/node accounting and useful
+                  ;; diagnostics without requiring the referenced record or
+                  ;; variant to forge the caller's nominal identity.
+                  (walk origin target (get table target)
+                        (conj path target) false (inc depth) budget)))
               (and (vector? node) (unary-tags (first node)) (= 2 (count node)))
-              (walk root (second node) path true (inc depth) budget)
+              (walk origin nominal-root (second node)
+                    path true (inc depth) budget)
               (and (vector? node) (binary-tags (first node)) (= 3 (count node)))
               (doseq [child (rest node)]
-                (walk root child path true (inc depth) budget))
+                (walk origin nominal-root child
+                      path true (inc depth) budget))
               (and (vector? node) (= :vector (first node)) (= 2 (count node))
                    (vector? (second node)))
               (doseq [child (second node)]
-                (walk root child path true (inc depth) budget))
+                (walk origin nominal-root child
+                      path true (inc depth) budget))
               (and (vector? node) (#{:record :variant} (first node)) (= 3 (count node))
-                   (= root (second node)) (vector? (nth node 2)))
+                   (= nominal-root (second node)) (vector? (nth node 2)))
               (doseq [[member child] (nth node 2)]
                 (when-not (keyword? member)
-                  (fail! "schema member name must be a keyword" {:root root :member member}))
-                (walk root child path true (inc depth) budget))
+                  (fail! "schema member name must be a keyword"
+                         {:root origin :member member}))
+                (walk origin nominal-root child
+                      path true (inc depth) budget))
               :else (fail! "schema descriptor is outside the closed profile"
-                           {:root root :descriptor node})))]
+                           {:root origin :descriptor node})))]
     (doseq [[root descriptor] table]
-      (walk root descriptor #{root} false 0 (volatile! 0))))
+      (walk root root descriptor #{root} false 0 (volatile! 0))))
   table)
 
 (defn identities

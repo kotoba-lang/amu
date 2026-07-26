@@ -2226,8 +2226,26 @@
       form)
     :else (reject! "value type is outside the safe profile" form)))
 
+(defn- nominal-type-identity [type]
+  (cond
+    (schema-ref-type? type) (second type)
+    (or (record-type? type) (variant-type? type)) (second type)
+    :else nil))
+
+(defn- same-expression-type?
+  "Exact structural equality remains the default. A closed-schema reference
+  and its fully declared nominal descriptor are interchangeable only by the
+  same qualified identity; analyze verifies every inline descriptor carrying
+  a declared identity against the namespace's authoritative schema first."
+  [actual expected]
+  (or (= actual expected)
+      (and (or (schema-ref-type? actual) (schema-ref-type? expected))
+           (= (nominal-type-identity actual)
+              (nominal-type-identity expected))
+           (some? (nominal-type-identity actual)))))
+
 (defn- require-expression-type! [actual expected form]
-  (when-not (= actual expected)
+  (when-not (same-expression-type? actual expected)
     (let [type-text #(if (keyword? %) (name %) (pr-str %))]
       (reject! (str "expression type mismatch: expected " (type-text expected)
                     ", got " (type-text actual))
@@ -3637,6 +3655,24 @@
           missing (set/difference refs declared)]
       (when (seq missing)
         (reject! "value type references a schema outside the closed namespace table" missing)))
+    ;; Inline nominal descriptors are convenient for field-aware source
+    ;; operations while [:ref ...] keeps recursive/cross-root schemas closed.
+    ;; When an inline descriptor names a declared schema, it must be byte-for-
+    ;; byte the authoritative descriptor before ref/descriptor type
+    ;; compatibility is admitted.
+    (let [schemas (:schemas namespace-info)
+          mismatched
+          (->> parsed
+               (tree-seq coll? seq)
+               (filter #(or (record-type? %) (variant-type? %)))
+               (filter (fn [descriptor]
+                         (let [identity (second descriptor)]
+                           (and (contains? schemas identity)
+                                (not= descriptor (get schemas identity))))))
+               vec)]
+      (when (seq mismatched)
+        (reject! "inline nominal descriptor differs from closed namespace schema"
+                 (first mismatched))))
     (let [budget (volatile! 0)]
       (doseq [{:keys [params body]} parsed]
         (validate-expr body (set params) signatures 0 budget)))
