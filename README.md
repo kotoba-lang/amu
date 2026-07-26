@@ -453,6 +453,10 @@ canonical ABI component. WASI filesystem, HTTP, clocks, and similar interfaces
 belong only to explicitly declared provider components, never to the
 application as ambient authority. Wasmtime is a conformance engine for that
 artifact; no Wasmtime-specific Rust runner is part of the language ABI.
+Bounded `:vector-i64` literals and identity exports now cross that real
+Component boundary as `list<s64>`; the compiler validates pointer, length,
+alignment, arena range, and the 16,384-item limit, while `vector-conj` remains
+fail-closed pending the linearity analysis required for persistent semantics.
 The Core-Wasm compatibility ABI also lowers the monomorphic
 `:option-i64`/`:result-i64` operations through the same sealed descriptor
 encoding as `[:option :i64]`/`[:result :i64 :i64]`; admitted scalar ADTs no

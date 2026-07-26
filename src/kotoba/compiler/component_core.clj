@@ -34,6 +34,28 @@
        (= :string result)
        (seq (string-leaves body (set params)))))
 
+(defn- vector-i64-identity-function?
+  [{:keys [params param-types result body]}]
+  (and (= 1 (count params))
+       (= [:vector-i64] param-types)
+       (= :vector-i64 result)
+       (= (first params) body)))
+
+(defn- vector-i64-literal-function?
+  [{:keys [params param-types result body]}]
+  (and (empty? params)
+       (empty? param-types)
+       (= :vector-i64 result)
+       (seq? body)
+       (= 'vector-new (first body))
+       (<= (count (rest body)) value/vector-item-limit)
+       (every? integer? (rest body))))
+
+(defn- uses-operation? [function operation]
+  (boolean
+   (some #(and (seq? %) (= operation (first %)))
+         (tree-seq coll? seq (:body function)))))
+
 (defn- sealed-scalar-record [descriptor schemas]
   (let [schema (cond
                  (and (vector? descriptor) (= :ref (first descriptor)))
@@ -560,6 +582,14 @@
            (empty? (:effects kir))) :string-expression
       (and (= 1 (count (:functions kir)))
            (= 1 (count exports))
+           (vector-i64-identity-function? (first exports))
+           (empty? (:effects kir))) :vector-i64-identity
+      (and (= 1 (count (:functions kir)))
+           (= 1 (count exports))
+           (vector-i64-literal-function? (first exports))
+           (empty? (:effects kir))) :vector-i64-literal
+      (and (= 1 (count (:functions kir)))
+           (= 1 (count exports))
            (scalar-record-identity-function? (first exports) (:schemas kir))
            (empty? (:effects kir))) :scalar-record-identity
       (and (= 1 (count (:functions kir)))
@@ -587,8 +617,12 @@
            (scalar-record-update (first exports) (:schemas kir))
            (empty? (:effects kir))) :scalar-record-update
       :else
-      (reject "component function body has no qualified Canonical lowering"
-              {:exports (mapv #(select-keys % [:name :param-types :result :body]) exports)}))))
+      (if (some #(uses-operation? % 'vector-conj) exports)
+        (reject "component vector-conj requires linearity analysis (ADR 0077)"
+                {:operation 'vector-conj})
+        (reject "component function body has no qualified Canonical lowering"
+                {:exports (mapv #(select-keys % [:name :param-types :result :body])
+                                exports)})))))
 
 (defn- wit-name [symbol]
   (let [value (name symbol)]
@@ -711,6 +745,81 @@
      "    i32.const " arena-base " global.set $next)\n"
      "  (func (export \"cm32p2_initialize\") i32.const " arena-base " global.set $next)\n"
      data-segments
+     ")\n")))
+
+(declare bounded-bump-realloc-wat)
+
+(defn- vector-i64-identity-wat
+  "Canonical `list<s64> -> list<s64>` identity.
+
+  The Canonical adapter has already copied the input elements into this
+  module's memory through `cm32p2_realloc`. Validate the complete `(ptr,len)`
+  pair before returning it; the result record aliases that admitted input
+  buffer and is consumed before `_post` resets the arena."
+  [function]
+  (let [export (wit-name (:name function))
+        pages wasm/component-memory-pages
+        capacity wasm/component-arena-capacity
+        item-limit value/vector-item-limit]
+    (str
+     "(module\n"
+     "  (memory (export \"cm32p2_memory\") " pages " " pages ")\n"
+     "  (global $next (mut i32) (i32.const 8))\n"
+     (bounded-bump-realloc-wat capacity)
+     "  (func (export \"cm32p2||" export "\")"
+     " (param $ptr i32) (param $len i32) (result i32)\n"
+     "    (local $bytes i32) (local $end i32) (local $ret i32)\n"
+     "    local.get $len i32.const " item-limit " i32.gt_u if unreachable end\n"
+     "    local.get $len i32.const 3 i32.shl local.set $bytes\n"
+     "    local.get $len i32.eqz if else\n"
+     "      local.get $ptr i32.const 8 i32.lt_u if unreachable end\n"
+     "      local.get $ptr i32.const 7 i32.and if unreachable end\n"
+     "    end\n"
+     "    local.get $ptr local.get $bytes i32.add local.tee $end\n"
+     "    local.get $ptr i32.lt_u if unreachable end\n"
+     "    local.get $end i32.const " capacity " i32.gt_u if unreachable end\n"
+     "    i32.const 0 i32.const 0 i32.const 4 i32.const 8\n"
+     "    call $realloc local.tee $ret\n"
+     "    local.get $ptr i32.store\n"
+     "    local.get $ret local.get $len i32.store offset=4\n"
+     "    local.get $ret)\n"
+     "  (func (export \"cm32p2||" export "_post\") (param i32)\n"
+     "    i32.const 8 global.set $next)\n"
+     "  (func (export \"cm32p2_initialize\") i32.const 8 global.set $next)\n"
+     ")\n")))
+
+(defn- vector-i64-literal-wat [function]
+  (let [export (wit-name (:name function))
+        items (vec (rest (:body function)))
+        bytes (* 8 (count items))
+        pages wasm/component-memory-pages
+        capacity wasm/component-arena-capacity
+        stores
+        (apply str
+               (map-indexed
+                (fn [index item]
+                  (str "    local.get $out i64.const " item
+                       " i64.store offset=" (+ 8 (* index 8)) "\n"))
+                items))]
+    (str
+     "(module\n"
+     "  (memory (export \"cm32p2_memory\") " pages " " pages ")\n"
+     "  (global $next (mut i32) (i32.const 8))\n"
+     (bounded-bump-realloc-wat capacity)
+     "  (func (export \"cm32p2||" export "\") (result i32)\n"
+     "    (local $out i32) (local $ret i32)\n"
+     "    i32.const 0 i32.const 0 i32.const 8 i32.const " (+ 8 bytes)
+     " call $realloc local.set $out\n"
+     "    local.get $out i32.const " (count items) " i32.store\n"
+     stores
+     "    i32.const 0 i32.const 0 i32.const 4 i32.const 8\n"
+     "    call $realloc local.tee $ret\n"
+     "    local.get $out i32.const 8 i32.add i32.store\n"
+     "    local.get $ret i32.const " (count items) " i32.store offset=4\n"
+     "    local.get $ret)\n"
+     "  (func (export \"cm32p2||" export "_post\") (param i32)\n"
+     "    i32.const 8 global.set $next)\n"
+     "  (func (export \"cm32p2_initialize\") i32.const 8 global.set $next)\n"
      ")\n")))
 
 (defn- wasm-value-type [descriptor]
@@ -2499,6 +2608,12 @@
      kir target (assoc opts :capability-imports (scalar-capability-imports kir)))
     :string-expression (wasm-tools/parse-wat
                         (string-expression-wat (first (exported-functions kir))))
+    :vector-i64-identity
+    (wasm-tools/parse-wat
+     (vector-i64-identity-wat (first (exported-functions kir))))
+    :vector-i64-literal
+    (wasm-tools/parse-wat
+     (vector-i64-literal-wat (first (exported-functions kir))))
     :scalar-record-identity
     (wasm-tools/parse-wat
      (scalar-record-wat (first (exported-functions kir)) (:schemas kir)))
