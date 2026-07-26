@@ -1460,3 +1460,83 @@
       (is (str/includes? standard32 name)))
     (is (str/includes? ordinary "add"))
     (is (not (str/includes? ordinary "cm32p2||add")))))
+
+;; Every earlier capability test in this file builds KIR by hand. This one goes
+;; from `.kotoba` SOURCE, which is where the gap actually was: the frontend
+;; admitted the program, `wit/emit` rendered its four interfaces, and the
+;; artifact step then failed -- once inside `wasm-tools` (an unbindable
+;; `kotoba:typed` intrinsic import, fixed in kotoba-wasm) and once inside the
+;; ABI (ids 8-12 had no portable import name, fixed in abi). Neither was
+;; reachable from a hand-built single-function KIR, so the whole
+;; `:scalar-with-capabilities` path looked qualified while no real application
+;; could use it.
+;;
+;; Shape asserted here: many functions, four DIFFERENT capabilities, named
+;; rather than numeric, computation between the calls, and a `:capabilities`
+;; declaration the frontend checks against actual use.
+(def ^:private multi-capability-source
+  (str "(ns advisor-gate\n"
+       "  (:export [decide main])\n"
+       "  (:capabilities #{:state/transact :llm/generate :ui/commit :log/append}))\n"
+       "(defn ceiling [state-code] (if (< state-code 600) 1 2))\n"
+       "(defn contain [proposal limit] (if (< proposal limit) proposal limit))\n"
+       "(defn decide [command]\n"
+       "  (let [state-code (typed-cap-call :state/transact :i64 :i64 command)\n"
+       "        limit (ceiling state-code)\n"
+       "        proposal (typed-cap-call :llm/generate :i64 :i64 state-code)\n"
+       "        decided (contain proposal limit)]\n"
+       "    (let [ui (typed-cap-call :ui/commit :i64 :i64 decided)]\n"
+       "      (+ (* 10 decided) (typed-cap-call :log/append :i64 :i64 ui)))))\n"
+       "(defn main [] (decide 0))\n"))
+
+(def ^:private multi-capability-policy
+  {:allow #{[:cap/call 8] [:cap/call 11] [:cap/call 9] [:cap/call 6]}})
+
+(deftest source-level-multi-capability-application-is-a-component
+  (let [artifact (compiler/compile-component multi-capability-source
+                                             multi-capability-policy {})]
+    (is (= :scalar-with-capabilities (:canonical-lowering artifact)))
+    ;; The `:export` clause is the WIT surface: helpers stay internal.
+    (is (= '[decide main] (:exports artifact)))
+    (is (= #{:state/transact :llm/generate :ui/commit :log/append}
+           (set (:imports artifact))))
+    (let [source (get-in artifact [:wit :source])]
+      (doseq [interface ["state" "llm" "ui" "log"]]
+        (is (str/includes? source (str "import " interface ";"))))
+      (is (not (str/includes? source "wasi:")) "no ambient WASI authority")
+      (is (not (str/includes? source "ceiling"))
+          "an undeclared helper must not reach the world"))
+    ;; The regression itself: a component may not import the host intrinsic
+    ;; tables, because nothing in a WIT world can bind them.
+    (let [path (Files/createTempFile "kotoba-source-capability-" ".wasm"
+                                     (make-array FileAttribute 0))]
+      (try
+        (Files/write path ^bytes (:bytes artifact) (make-array java.nio.file.OpenOption 0))
+        (let [{:keys [exit out err]} (shell/sh "wasm-tools" "validate"
+                                               "--features" "all" (str path))]
+          (is (zero? exit) (str out err)))
+        (let [{:keys [out]} (shell/sh "wasm-tools" "component" "wit" (str path))]
+          (is (not (str/includes? out "kotoba:typed"))
+              "a component must not import the kotoba:typed intrinsics")
+          (is (not (str/includes? out "kotoba:heap"))
+              "a component must not import the kotoba:heap intrinsics")
+          (is (str/includes? out "import kotoba:application/llm@1.0.0;")))
+        (finally (Files/deleteIfExists path))))))
+
+(deftest source-level-capability-application-is-deny-by-default
+  ;; Least privilege is enforced in both directions: an effect the policy does
+  ;; not grant fails, and a grant nothing uses fails too.
+  (is (thrown-with-msg?
+       clojure.lang.ExceptionInfo #"capability policy denies required effects"
+       (compiler/compile-component multi-capability-source
+                                   (update multi-capability-policy :allow
+                                           disj [:cap/call 11])
+                                   {})))
+  ;; The `:capabilities` clause has to match actual use, so an effect cannot be
+  ;; added without also declaring it.
+  (is (thrown? clojure.lang.ExceptionInfo
+               (compiler/compile-component
+                (str/replace multi-capability-source
+                             ":state/transact :llm/generate :ui/commit :log/append"
+                             ":state/transact :llm/generate :ui/commit")
+                multi-capability-policy {}))))
