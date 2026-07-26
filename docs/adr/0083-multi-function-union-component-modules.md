@@ -89,8 +89,13 @@ are rejected.
   closed schema must exactly match it before ref/descriptor type compatibility
   is admitted; the `.kotoba` Component test exercises a nested record through
   that path;
-- nested/indirect list item types and string/list leaf operations in aggregate
-  match branches;
+- selected string/keyword record leaves now support `string-byte-length`
+  through `kotoba-wasm` commit `b6de0dc` and `kotoba-component` commit
+  `fe9a70c`: the Canonical pointer/length pair is bounded against its
+  descriptor and actual core memory, selected unread leaves validate, and
+  inactive slots remain lazy;
+- nested/indirect list item types and list leaf operations in aggregate match
+  branches;
 - general aggregate ownership and linearity analysis beyond this bounded
   identity/borrowed-result slice;
 - scalar named capabilities now compose with aggregate match functions through

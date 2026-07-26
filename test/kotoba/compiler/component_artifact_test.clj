@@ -638,6 +638,84 @@
         (Files/deleteIfExists component-path)
         (Files/deleteIfExists core-path)))))
 
+(deftest kotoba-source-match-consumes-an-indirect-string-record-leaf
+  (let [source
+        "(ns component.indirect-string-match
+           (:export [label-size point-x])
+           (:schemas
+            {:demo/labeled-point
+             [:record :demo/labeled-point [[:label :string] [:x :i64]]]}))
+         (defn label-size
+           [value
+            [:option
+             [:record :demo/labeled-point [[:label :string] [:x :i64]]]]
+            fallback :i64] :i64
+           (match-option
+            value
+            [:option
+             [:record :demo/labeled-point [[:label :string] [:x :i64]]]]
+            (none fallback)
+            (some point
+              (string-byte-length
+               (record-get
+                [:record :demo/labeled-point [[:label :string] [:x :i64]]]
+                point :label)))))
+         (defn point-x
+           [value
+            [:option
+             [:record :demo/labeled-point [[:label :string] [:x :i64]]]]
+            fallback :i64] :i64
+           (match-option
+            value
+            [:option
+             [:record :demo/labeled-point [[:label :string] [:x :i64]]]]
+            (none fallback)
+            (some point
+              (record-get
+               [:record :demo/labeled-point [[:label :string] [:x :i64]]]
+               point :x))))"
+        compiled (compiler/compile-source source :wasm32-wasi-kotoba-v1)
+        kir (:kir compiled)
+        artifact (compiler/compile-component source)
+        core (component-core/emit kir :wasm32-wasi-kotoba-v1)
+        component-path (Files/createTempFile
+                        "kotoba-source-indirect-string-match-" ".wasm"
+                        (make-array FileAttribute 0))
+        core-path (Files/createTempFile
+                   "kotoba-source-indirect-string-match-core-" ".wasm"
+                   (make-array FileAttribute 0))]
+    (try
+      (Files/write component-path ^bytes (:bytes artifact)
+                   (make-array java.nio.file.OpenOption 0))
+      (Files/write core-path ^bytes core
+                   (make-array java.nio.file.OpenOption 0))
+      (is (= :structural-union-match-module (:canonical-lowering artifact)))
+      (is (empty? (:required-imports artifact)))
+      (doseq [[invoke expected]
+              [["label-size(none, 9)" "9"]
+               ["label-size(some({label: \"安全\", x: 7}), 9)" "6"]
+               ["point-x(some({label: \"ignored\", x: 11}), 9)" "11"]]]
+        (let [run (shell/sh wasmtime-binary "run" "--invoke" invoke
+                            (str component-path))]
+          (is (zero? (:exit run)) (:err run))
+          (is (= expected (str/trim (:out run))) invoke)))
+      (let [inactive (shell/sh wasmtime-binary "run" "--invoke"
+                               "cm32p2||point-x" (str core-path)
+                               "0" "-1" "2" "0" "9")
+            over-bound (shell/sh wasmtime-binary "run" "--invoke"
+                                 "cm32p2||point-x" (str core-path)
+                                 "1" "0" "65537" "11" "9")
+            wrapped (shell/sh wasmtime-binary "run" "--invoke"
+                              "cm32p2||point-x" (str core-path)
+                              "1" "-1" "2" "11" "9")]
+        (is (zero? (:exit inactive)) (:err inactive))
+        (is (= "9" (str/trim (:out inactive))))
+        (is (not (zero? (:exit over-bound))))
+        (is (not (zero? (:exit wrapped)))))
+      (finally
+        (Files/deleteIfExists component-path)
+        (Files/deleteIfExists core-path)))))
+
 (deftest structural-union-matches-cover-all-canonical-scalar-types
   (doseq [{:keys [source export calls]}
           [{:source "(ns component.match-option-f64 (:export [choose]))
