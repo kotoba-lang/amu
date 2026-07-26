@@ -11,7 +11,7 @@
   KIR directly -- the same way `component-artifact-test` does."
   (:require [clojure.test :refer [deftest is testing]]
             [clojure.string :as str]
-            [kotoba.compiler.component-core :as component-core]))
+            [kotoba.component.core :as component-core]))
 
 ;; clock/now, id 7 in the component-model contract: interface "clock",
 ;; function "now".

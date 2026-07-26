@@ -1,6 +1,6 @@
 (ns kotoba.compiler.schema
   "Closed, bounded nominal schema graphs for structured application values."
-  (:require [kotoba.compiler.artifact :as artifact]))
+  (:require [kotoba.artifact.core :as artifact]))
 
 (def max-schemas 32)
 (def max-schema-nodes 64)

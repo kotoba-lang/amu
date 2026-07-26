@@ -2,16 +2,16 @@
   ;; `clojure.set` is required on both runtimes, so `:require` is never
   ;; empty -- an empty `(:require)` (what results if EVERY item inside it
   ;; were individually `#?()`-conditional and none matched) fails ns-form
-  ;; spec validation (confirmed live; see `kotoba.compiler.ir`'s ns form
+  ;; spec validation (confirmed live; see `kotoba.kir`'s ns form
   ;; for the fuller explanation). `#?@` (splicing) rather than `#?` here
   ;; because each branch below is more than one require-spec.
   (:require [clojure.set :as set]
             [kotoba.compiler.schema :as schema]
-            [kotoba.compiler.value :as value]
+            [kotoba.kir.value :as value]
             #?@(:clj [[clojure.tools.reader :as reader]
                       [clojure.tools.reader.reader-types :as rt]]
                 :cljs [[kotoba.compiler.kotoba-reader :as kr]
-                       [kotoba.compiler.cljs-i64 :as i64]])))
+                       [kotoba.kir.cljs-i64 :as i64]])))
 
 (defn- load-catalog-forbidden
   "P0: merge catalog forbidden-heads when guest-grammar.edn is on classpath."
@@ -354,7 +354,7 @@
   desugaring, e.g. `desugar-and`'s vacuous `1`, `when`'s trailing `0`, `get`'s
   default `0` -- ordinary Clojure literals in THIS file's source, never
   routed through the reader) -- both are valid until
-  `kotoba.compiler.ir/eval-expr` coerces every literal to `bigint` via
+  `kotoba.kir/eval-expr` coerces every literal to `bigint` via
   `cljs-i64/->bigint` at the single point it enters the runtime value
   stream. Plain cljs `integer?`/`int?` do not recognize `bigint`
   (confirmed live), so this checks both forms explicitly."

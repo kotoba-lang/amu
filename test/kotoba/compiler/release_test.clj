@@ -1,7 +1,7 @@
 (ns kotoba.compiler.release-test
   (:require [clojure.test :refer [deftest is]]
             [kotoba.compiler.release :as release]
-            [kotoba.compiler.signing :as signing])
+            [kotoba.verifier.signing :as signing])
   (:import [java.nio.file Files Path]
            [java.nio.file.attribute FileAttribute]))
 

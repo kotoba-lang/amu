@@ -1,7 +1,7 @@
 (ns kotoba.compiler.reference-runtime-test
   (:require [clojure.test :refer [deftest is]]
             [kotoba.compiler.core :as compiler]
-            [kotoba.compiler.ir :as ir]
+            [kotoba.kir :as ir]
             [kotoba.compiler.reference-runtime :as runtime]))
 
 (def source

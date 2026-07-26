@@ -1,8 +1,8 @@
 (ns kotoba.compiler.signing-test
   (:require [clojure.test :refer [deftest is]]
-            [kotoba.compiler.artifact :as artifact]
+            [kotoba.artifact.core :as artifact]
             [kotoba.compiler.core :as compiler]
-            [kotoba.compiler.signing :as signing]))
+            [kotoba.verifier.signing :as signing]))
 
 (def source "(defn main [] 42)")
 

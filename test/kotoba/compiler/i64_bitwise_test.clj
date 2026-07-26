@@ -9,7 +9,7 @@
   (:require [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]
             [kotoba.compiler.frontend :as frontend]
-            [kotoba.compiler.ir :as ir]))
+            [kotoba.kir :as ir]))
 
 (defn- oracle
   "Evaluate `main` through the IR interpreter."

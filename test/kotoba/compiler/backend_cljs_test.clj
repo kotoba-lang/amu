@@ -20,13 +20,13 @@
             [clojure.java.shell :as shell]
             [clojure.tools.reader :as reader]
             [kotoba.compiler.core :as compiler]
-            [kotoba.compiler.provider.clock :as clock]
-            [kotoba.compiler.provider.http :as http]
-            [kotoba.compiler.provider.llm :as llm]
-            [kotoba.compiler.provider.log :as log]
-            [kotoba.compiler.provider.state :as state]
-            [kotoba.compiler.provider.storage :as storage]
-            [kotoba.compiler.provider.ui :as ui]))
+            [provider.clock :as clock]
+            [provider.http :as http]
+            [provider.llm :as llm]
+            [provider.log :as log]
+            [provider.state :as state]
+            [provider.storage :as storage]
+            [provider.ui :as ui]))
 
 (defn- compile-cljs
   ([source] (compiler/compile-source source :cljs-kotoba-v1))

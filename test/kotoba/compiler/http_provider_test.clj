@@ -1,8 +1,8 @@
 (ns kotoba.compiler.http-provider-test
   (:require [clojure.test :refer [deftest is]]
             [kotoba.compiler.core :as compiler]
-            [kotoba.compiler.ir :as ir]
-            [kotoba.compiler.provider.http :as http]
+            [kotoba.kir :as ir]
+            [provider.http :as http]
             [kotoba.compiler.reference-runtime :as runtime]))
 
 (def source

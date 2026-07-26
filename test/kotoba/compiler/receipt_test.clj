@@ -1,10 +1,10 @@
 (ns kotoba.compiler.receipt-test
   (:require [clojure.test :refer [deftest is]]
-            [kotoba.compiler.artifact :as artifact]
+            [kotoba.artifact.core :as artifact]
             [kotoba.compiler.core :as compiler]
             [kotoba.compiler.receipt :as receipt]
-            [kotoba.compiler.runtime-identity :as runtime-identity]
-            [kotoba.compiler.signing :as signing]))
+            [kotoba.artifact.runtime-identity :as runtime-identity]
+            [kotoba.verifier.signing :as signing]))
 
 (defn fixture []
   (let [kexe (:artifact (compiler/compile-source "(defn main [] 42)" :x86_64-kotoba-v1))

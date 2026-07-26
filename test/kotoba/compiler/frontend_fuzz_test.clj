@@ -2,7 +2,7 @@
   (:require [clojure.test :refer [deftest is]]
             [kotoba.compiler.core :as compiler]
             [kotoba.compiler.frontend :as frontend]
-            [kotoba.compiler.verifier :as verifier])
+            [kotoba.verifier :as verifier])
   (:import [java.util Random]))
 
 (def seed 0x4b4f544f42414645)

@@ -1,6 +1,6 @@
 (ns test.nbb.project
   (:require [kotoba.compiler.frontend :as frontend]
-            [kotoba.compiler.ir :as ir]
+            [kotoba.kir :as ir]
             [kotoba.compiler.project :as project]))
 
 (def sources

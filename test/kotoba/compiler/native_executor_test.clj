@@ -3,12 +3,12 @@
             [clojure.string :as str]
             [clojure.test :refer [deftest is]]
             [kotoba.compiler.atomic-output :as atomic-output]
-            [kotoba.compiler.backend.aarch64 :as aarch64]
-            [kotoba.compiler.backend.x86-64 :as x86-64]
+            [kotoba.native.aarch64 :as aarch64]
+            [kotoba.native.x86-64 :as x86-64]
             [kotoba.compiler.core :as compiler]
-            [kotoba.compiler.native-executor :as executor]
-            [kotoba.compiler.runtime-identity :as runtime-identity]
-            [kotoba.compiler.signing :as signing]))
+            [kototama.native.executor :as executor]
+            [kotoba.artifact.runtime-identity :as runtime-identity]
+            [kotoba.verifier.signing :as signing]))
 
 (defn- target []
   (if (contains? #{"aarch64" "arm64"} (.toLowerCase (System/getProperty "os.arch")))
@@ -776,11 +776,11 @@
 ;; tag at compile time (`infer-expression-type`'s existing "variant
 ;; constructor tag is not declared" check); this backend's own codegen
 ;; independently re-derives the tag-to-ordinal lookup a second time and
-;; throws if it does not resolve; `kotoba.compiler.verifier`'s OWN
+;; throws if it does not resolve; `kotoba.verifier`'s OWN
 ;; independent re-derivation (the new `variant-new`/`variant-match` cases in
 ;; `verify-expr!` added by this ADR) enforces the identical narrow shape a
 ;; THIRD time; and -- unique to this repository's native track -- BOTH
-;; `kotoba.compiler.signing/sign` and `signing/verify` unconditionally
+;; `kotoba.verifier.signing/sign` and `signing/verify` unconditionally
 ;; re-run `verifier/verify-artifact!` (confirmed by reading `signing.clj`),
 ;; and `signing/verify` runs on EVERY execution (`native-executor/execute`
 ;; calls it, not just once at compile time) -- so there is no way, at any

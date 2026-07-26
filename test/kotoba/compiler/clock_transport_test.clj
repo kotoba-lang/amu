@@ -1,12 +1,12 @@
 (ns kotoba.compiler.clock-transport-test
-  "Tests for `kotoba.compiler.provider.clock-transport`'s `:clj` real
+  "Tests for `provider.clock-transport`'s `:clj` real
   wall/monotonic sources.
 
   These are deterministic property checks against the REAL
   `System/currentTimeMillis`/`System/nanoTime`-backed sources (no fake
   server needed -- unlike ADR 0064/0066/0071's LLM/HTTP/storage
   transports, there is no network to fake here), plus one end-to-end round
-  trip through the full typed `kotoba.compiler.provider.clock/provider`
+  trip through the full typed `provider.clock/provider`
   boundary via `kotoba.compiler.reference-runtime`, mirroring
   `clock_provider_test.clj`'s own fixture-based test shape.
 
@@ -15,9 +15,9 @@
   'Evidence' for why (`clojure -M:test` never loads cljs)."
   (:require [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]
-            [kotoba.compiler.ir :as ir]
-            [kotoba.compiler.provider.clock :as clock]
-            [kotoba.compiler.provider.clock-transport :as transport]
+            [kotoba.kir :as ir]
+            [provider.clock :as clock]
+            [provider.clock-transport :as transport]
             [kotoba.compiler.reference-runtime :as runtime]))
 
 ;; ---------------------------------------------------------------------------

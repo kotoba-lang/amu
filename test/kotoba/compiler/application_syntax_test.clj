@@ -1,7 +1,7 @@
 (ns kotoba.compiler.application-syntax-test
   (:require [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]
-            [kotoba.compiler.ir :as ir]))
+            [kotoba.kir :as ir]))
 
 (defn- compile-kir [source]
   (:kir (compiler/compile-source source :wasm32-kotoba-v1)))

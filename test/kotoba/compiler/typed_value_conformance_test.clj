@@ -4,7 +4,7 @@
             [clojure.java.shell :as shell]
             [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]
-            [kotoba.compiler.ir :as ir]))
+            [kotoba.kir :as ir]))
 
 (def corpus
   (-> "kotoba/compiler/typed-value-conformance.edn" io/resource slurp edn/read-string))

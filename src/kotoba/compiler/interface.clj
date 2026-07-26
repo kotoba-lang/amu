@@ -1,5 +1,5 @@
 (ns kotoba.compiler.interface
-  (:require [kotoba.compiler.artifact :as artifact]
+  (:require [kotoba.artifact.core :as artifact]
             [kotoba.compiler.frontend :as frontend]))
 
 (def schema :kotoba.interface/v1)

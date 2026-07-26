@@ -1,6 +1,6 @@
 (ns kotoba.compiler.value-test
   (:require [clojure.test :refer [deftest is]]
-            [kotoba.compiler.value :as value]))
+            [kotoba.kir.value :as value]))
 
 (deftest exact-utf8-count-and-malformed-unicode-rejection
   (is (= 3 (value/utf8-byte-count! "abc")))

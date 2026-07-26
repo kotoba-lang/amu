@@ -1,6 +1,6 @@
 (ns test.nbb.clock-transport
   "Repeatable, JVM-free regression test for the `:cljs` real wall/monotonic
-  sources in `kotoba.compiler.provider.clock-transport` (ADR 0073). The
+  sources in `provider.clock-transport` (ADR 0073). The
   `:clj` sources have their own property tests under `clojure -M:test`
   (`test/kotoba/compiler/clock_transport_test.clj`); `clojure.test` never
   loads cljs, so this is the only place the `:cljs` branch -- and the
@@ -12,17 +12,17 @@
   `:cljs`, NOT a plain cljs number -- `cljs.core/=`, unlike `<=`, does NOT
   consider a bigint and a same-valued plain number equal (`(= 1 (js/BigInt
   1))` => false, confirmed live), so every equality assertion below
-  compares bigint against bigint explicitly (`kotoba.compiler.cljs-i64`'s
+  compares bigint against bigint explicitly (`kotoba.kir.cljs-i64`'s
   own `one`/`zero`, or an explicit `js/BigInt` literal) rather than against
   a bare cljs integer literal.
 
   Run from the repo root: `npm run test-nbb-clock-transport`."
-  (:require [kotoba.compiler.admission :as admission]
-            [kotoba.compiler.cljs-i64 :as i64]
+  (:require [kotoba.kir.admission :as admission]
+            [kotoba.kir.cljs-i64 :as i64]
             [kotoba.compiler.frontend :as frontend]
-            [kotoba.compiler.ir :as ir]
-            [kotoba.compiler.provider.clock :as clock]
-            [kotoba.compiler.provider.clock-transport :as transport]
+            [kotoba.kir :as ir]
+            [provider.clock :as clock]
+            [provider.clock-transport :as transport]
             [kotoba.compiler.reference-runtime :as runtime]))
 
 (def source

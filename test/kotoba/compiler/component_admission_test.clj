@@ -3,11 +3,11 @@
   request the compiler owes kototama (ADR-2607252500)."
   (:require [clojure.test :refer [deftest is testing]]
             [clojure.string :as str]
-            [kotoba.compiler.component-admission :as admission]
-            [kotoba.compiler.backend.wasm :as wasm]
+            [kotoba.component.admission :as admission]
+            [kotoba.wasm.core :as wasm]
             [kotoba.compiler.frontend :as frontend]
-            [kotoba.compiler.ir :as ir]
-            [kotoba.compiler.target :as target-profile]
+            [kotoba.kir :as ir]
+            [kotoba.kir.target :as target-profile]
             [kotoba.compiler.core :as compiler])
   (:import [java.nio.charset StandardCharsets]))
 
