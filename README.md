@@ -513,6 +513,9 @@ unsigned byte-size/range overflow, and the module's actual memory size.
 `vector-at`/`vector-f64-at` additionally validate the unsigned index before
 loading one scalar element. Raw list escape and other operations remain
 fail-closed.
+`vector-get`/`vector-f64-get` perform the same list validation, but return
+their explicit fallback for a negative or out-of-range index without forming
+a memory address.
 The Core-Wasm compatibility ABI also lowers the monomorphic
 `:option-i64`/`:result-i64` operations through the same sealed descriptor
 encoding as `[:option :i64]`/`[:result :i64 :i64]`; admitted scalar ADTs no

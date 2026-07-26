@@ -104,17 +104,15 @@ rewrite:
   `layout*` now admits three aggregate schema shapes (`:record`/`:variant`/
   `:list`); the list item type may recursively be any existing scalar/
   string/keyword/symbol/record/variant, but a list-of-lists is explicitly
-  rejected and remains closed. Tuples/vectors, maps, sets, options, and
-  results named in this same ledger item are UNCHANGED by ADR 0065 and
-  remain entirely unimplemented in `layout*`. ADR 0065 adds no
-  `component-core.clj` codegen for `list` (no `.kotoba` export, capability
-  call, or provider Component can take or return a list value yet) and no
-  instance-level list-value validator — both are explicit remaining gaps
-  in ADR 0065 itself, matching this ledger's own "plans... plus pre-call and
-  post-return validation" phrasing only at the declarative-metadata level
-  (`:max-items`/`:validation` tags), not as an executable check. Recursive
-  schema identity itself (this ledger's own item 2) is unchanged and out of
-  scope for ADR 0065.
+  rejected and remains closed. Subsequent Component lowering now executes
+  public `:vector-i64`/`:vector-f64` identity, count, trapping read, and
+  fallback read paths from `.kotoba` source under Wasmtime. The shared
+  validator enforces item bounds, alignment, unsigned byte/pointer overflow,
+  actual memory range, and read indices. What remains is general structured
+  item access, list-of-list, owned mutation/results, and aggregate-list
+  capability crossing; ADR 0065's current Remaining gaps records those
+  boundaries. Recursive schema identity itself (this ledger's own item 2)
+  remains out of scope for that list slice.
 - **HTTP (`:http/post`) now also has a real `:clj` production provider
   transport** — `kotoba.compiler.provider.http-transport` (ADR 0066) —
   backed by `java.net.http.HttpClient` with bounded, per-hop

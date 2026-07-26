@@ -103,8 +103,11 @@ are rejected.
   `vector-f64-at` through `kotoba-wasm` commit `9550a08` and
   `kotoba-component` commit `058ff9a`; the same list checks run before an
   unsigned index check and aligned scalar load;
-- nested/indirect list item types and list fallback/update operations in
-  aggregate match branches;
+- fallback reads with `vector-get`/`vector-f64-get` are implemented by
+  `kotoba-wasm` commit `0eb2cf9` and `kotoba-component` commit `ea2bc06`;
+  malformed selected lists still trap before index fallback selection;
+- nested/indirect list item types and list update operations in aggregate
+  match branches;
 - general aggregate ownership and linearity analysis beyond this bounded
   identity/borrowed-result slice;
 - scalar named capabilities now compose with aggregate match functions through
