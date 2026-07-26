@@ -507,10 +507,12 @@ core emitter validates their declared byte limit, pointer overflow, and actual
 memory range without constructing a host string. Selected but unread indirect
 leaves are still validated; malformed inactive slots are ignored.
 Selected `:vector-i64` and `:vector-f64` record leaves likewise feed only
-`vector-count` and `vector-f64-count`, respectively. Their Canonical list
+their matching count and trapping element-read operations. Their Canonical list
 pointer/count pair is checked for element alignment, the item ceiling,
 unsigned byte-size/range overflow, and the module's actual memory size.
-Raw list escape and unrelated list operations remain fail-closed.
+`vector-at`/`vector-f64-at` additionally validate the unsigned index before
+loading one scalar element. Raw list escape and other operations remain
+fail-closed.
 The Core-Wasm compatibility ABI also lowers the monomorphic
 `:option-i64`/`:result-i64` operations through the same sealed descriptor
 encoding as `[:option :i64]`/`[:result :i64 :i64]`; admitted scalar ADTs no
