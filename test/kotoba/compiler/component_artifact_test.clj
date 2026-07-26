@@ -107,7 +107,7 @@
         (Files/deleteIfExists core-path)
         (Files/deleteIfExists dir)))))
 
-(deftest vector-i64-single-shot-literal-and-conj-policy-are-executable
+(deftest vector-literals-and-owned-transforms-are-executable-components
   (let [artifact
         (compiler/compile-component
          "(ns component.list-literal (:export [items]))
@@ -132,13 +132,60 @@
         (is (= "[7, -8, 9]" (str/trim (:out result)))))
       (finally
         (Files/deleteIfExists path))))
-  (is (thrown-with-msg?
-       clojure.lang.ExceptionInfo
-       #"vector-conj requires linearity analysis \(ADR 0077\)"
-       (compiler/compile-component
-        "(ns component.list-conj (:export [append]))
-         (defn append [items :vector-i64] :vector-i64
-           (vector-conj items 1))"))))
+  (doseq [{:keys [source invoke expected oracle-args oracle-expected]}
+          [{:source "(ns component.list-drop (:export [apply-op]))
+                     (defn apply-op [items :vector-i64 amount :i64] :vector-i64
+                       (vector-drop items amount))"
+            :invoke "apply-op([1, 2, 3], 1)"
+            :expected "[2, 3]"
+            :oracle-args [[1 2 3] 1] :oracle-expected [2 3]}
+           {:source "(ns component.list-assoc (:export [apply-op]))
+                     (defn apply-op
+                       [items :vector-i64 index :i64 item :i64] :vector-i64
+                       (vector-assoc items index item))"
+            :invoke "apply-op([1, 2, 3], 1, 9)"
+            :expected "[1, 9, 3]"
+            :oracle-args [[1 2 3] 1 9] :oracle-expected [1 9 3]}
+           {:source "(ns component.list-conj (:export [apply-op]))
+                     (defn apply-op [items :vector-i64 item :i64] :vector-i64
+                       (vector-conj items item))"
+            :invoke "apply-op([1, 2], 3)"
+            :expected "[1, 2, 3]"
+            :oracle-args [[1 2] 3] :oracle-expected [1 2 3]}
+           {:source "(ns component.list-f64-drop (:export [apply-op]))
+                     (defn apply-op [items :vector-f64 amount :i64] :vector-f64
+                       (vector-f64-drop items amount))"
+            :invoke "apply-op([1.5, 2.5, 3.5], 1)"
+            :expected "[2.5, 3.5]"
+            :oracle-args [[1.5 2.5 3.5] 1] :oracle-expected [2.5 3.5]}
+           {:source "(ns component.list-f64-assoc (:export [apply-op]))
+                     (defn apply-op
+                       [items :vector-f64 index :i64 item :f64] :vector-f64
+                       (vector-f64-assoc items index item))"
+            :invoke "apply-op([1.5, 2.5], 0, 9.5)"
+            :expected "[9.5, 2.5]"
+            :oracle-args [[1.5 2.5] 0 9.5] :oracle-expected [9.5 2.5]}
+           {:source "(ns component.list-f64-conj (:export [apply-op]))
+                     (defn apply-op [items :vector-f64 item :f64] :vector-f64
+                       (vector-f64-conj items item))"
+            :invoke "apply-op([1.5], 2.5)"
+            :expected "[1.5, 2.5]"
+            :oracle-args [[1.5] 2.5] :oracle-expected [1.5 2.5]}]]
+    (let [artifact (compiler/compile-component source)
+          kir (:kir (compiler/compile-source source :wasm32-wasi-kotoba-v1))
+          path (Files/createTempFile
+                "kotoba-source-owned-vector-transform-" ".wasm"
+                (make-array FileAttribute 0))]
+      (try
+        (Files/write path ^bytes (:bytes artifact)
+                     (make-array java.nio.file.OpenOption 0))
+        (let [run (shell/sh wasmtime-binary "run" "--invoke" invoke (str path))]
+          (is (= :owned-vector-transform (:canonical-lowering artifact)))
+          (is (= oracle-expected (ir/execute kir 'apply-op oracle-args)))
+          (is (zero? (:exit run)) (:err run))
+          (is (= expected (str/trim (:out run))) invoke))
+        (finally
+          (Files/deleteIfExists path))))))
 
 (deftest structural-option-and-result-round-trip-through-a-real-component
   (doseq [{:keys [descriptor calls expected]}

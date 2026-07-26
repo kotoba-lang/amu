@@ -516,6 +516,11 @@ fail-closed.
 `vector-get`/`vector-f64-get` perform the same list validation, but return
 their explicit fallback for a negative or out-of-range index without forming
 a memory address.
+Top-level drop/assoc/conj operations now return owned i64/f64 list results:
+the Component validates the borrowed input, allocates and copies a new buffer,
+applies the bounded update, emits the standard pointer/count result area, and
+releases transient storage through post-return. Input buffers are never
+mutated or exposed as result aliases.
 The Core-Wasm compatibility ABI also lowers the monomorphic
 `:option-i64`/`:result-i64` operations through the same sealed descriptor
 encoding as `[:option :i64]`/`[:result :i64 :i64]`; admitted scalar ADTs no
