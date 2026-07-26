@@ -253,6 +253,9 @@
 (defn- generic-option-type? [type]
   (and (vector? type) (= 2 (count type)) (= :option (first type))))
 
+(defn- canonical-list-type? [type]
+  (and (vector? type) (= 2 (count type)) (= :list (first type))))
+
 (defn- heterogeneous-vector-type? [type]
   (and (vector? type) (= 2 (count type)) (= :vector (first type))))
 
@@ -271,6 +274,7 @@
 
 (defn- structured-type? [type]
   (or (parametric-result-type? type) (variant-type? type) (generic-option-type? type)
+      (canonical-list-type? type)
       (heterogeneous-vector-type? type) (typed-set-type? type)
       (canonical-typed-map-type? type) (record-type? type) (schema-ref-type? type)))
 
@@ -292,6 +296,9 @@
          (validate-value-type! (nth type 2) (inc depth) nodes)
          type)
      (generic-option-type? type)
+     (do (validate-value-type! (second type) (inc depth) nodes)
+         type)
+     (canonical-list-type? type)
      (do (validate-value-type! (second type) (inc depth) nodes)
          type)
      (heterogeneous-vector-type? type)

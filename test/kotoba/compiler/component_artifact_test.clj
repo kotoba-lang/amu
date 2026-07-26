@@ -384,6 +384,40 @@
         (Files/deleteIfExists component-path)
         (Files/deleteIfExists core-path)))))
 
+(deftest kotoba-source-round-trips-a-bounded-list-of-records
+  (let [source
+        "(ns component.list-record
+           (:export [echo])
+           (:schemas
+            {:demo/point
+             [:record :demo/point [[:x :i64] [:visible :bool]]]}))
+         (defn echo
+           [value [:option [:list [:ref :demo/point]]]]
+           [:option [:list [:ref :demo/point]]]
+           value)"
+        compiled (compiler/compile-source source :wasm32-wasi-kotoba-v1)
+        artifact (compiler/compile-component source)
+        path (Files/createTempFile
+              "kotoba-source-option-list-record-" ".wasm"
+              (make-array FileAttribute 0))]
+    (try
+      (Files/write path ^bytes (:bytes artifact)
+                   (make-array java.nio.file.OpenOption 0))
+      (is (= [:option [:list [:ref :demo/point]]]
+             (get-in compiled [:kir :functions 0 :result])))
+      (is (= :structural-union-identity (:canonical-lowering artifact)))
+      (doseq [[invoke expected]
+              [["echo(none)" "none"]
+               ["echo(some([]))" "some([])"]
+               ["echo(some([{x: 7, visible: true}, {x: -2, visible: false}]))"
+                "some([{x: 7, visible: true}, {x: -2, visible: false}])"]]]
+        (let [run (shell/sh wasmtime-binary "run" "--invoke"
+                            invoke (str path))]
+          (is (zero? (:exit run)) (:err run))
+          (is (= expected (str/trim (:out run))) invoke)))
+      (finally
+        (Files/deleteIfExists path)))))
+
 (deftest nested-record-and-string-unions-use-the-extracted-recursive-codec
   (let [schemas {:demo/inner
                  [:record :demo/inner [[:label :string] [:enabled :bool]]]

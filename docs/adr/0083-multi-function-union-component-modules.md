@@ -113,8 +113,14 @@ are rejected.
   Canonical buffer and result area, selected aggregate leaves validate,
   inactive joined slots stay lazy, and post-return permits repeated calls in
   one core instance without arena growth;
-- nested/indirect list item types remain fail-closed pending recursive
-  per-element validation and an ownership plan;
+- fixed-size list items are now recursively admitted for `bool` and finite
+  scalar records. `kotoba-kir` commit `fe497ba` owns the `[:list T]` type,
+  `kotoba-wasm` commits `18ac409` / `94d8857` encode metadata ABI v13 without
+  hashing BigInt literals, and `kotoba-component` commit `8531784` validates
+  every active item's bool leaves. The borrowed item graph remains live
+  through Canonical lift and is released only by post-return;
+- list items containing strings, nested unions, or another list remain
+  fail-closed pending recursive indirect-graph validation/copy ownership;
 - linear reuse for repeated internal collection construction remains separate
   from the now-implemented bounded export-result ownership contract;
 - scalar named capabilities now compose with aggregate match functions through
