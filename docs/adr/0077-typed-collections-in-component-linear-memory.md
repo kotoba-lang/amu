@@ -1,6 +1,6 @@
 # ADR 0077: representing typed collections in a component's linear memory
 
-**Status**: proposed
+**Status**: accepted
 **Date**: 2026-07-25
 **Depends on**: ADR 0076 (general Canonical ABI lowering), in particular section 4a
 **Blocks**: ADR 0076 acceptance criterion 2 (`list<s64>` round-trip); root
@@ -153,3 +153,20 @@ measuring would be building machinery against a guess.
    `ir/execute` agree on the observable result.
 5. A vector at `vector-item-limit` either fits the declared arena or traps
    cleanly; it must not write past the declared memory.
+
+## Implemented boundary
+
+The first executable slice implements two single-shot forms:
+
+- a `:vector-i64` literal is allocated once as `{len: i32, padding: i32,
+  elements: len * i64}` and returned as the Canonical `(elements-ptr, len)`
+  pair;
+- an identity export validates and aliases the Canonical input buffer without
+  copying it. Since the old value is not retained or mutated, this preserves
+  the same observable semantics without creating a second maximum-sized
+  allocation.
+
+Both forms execute as standard Components on Wasmtime. Empty, non-trivial, and
+16,384-item boundary vectors round-trip; a core call above that bound traps.
+`vector-conj` remains rejected with an ADR-specific diagnostic until the
+linearity analysis selected by this decision is implemented.
