@@ -495,6 +495,12 @@ record root; inline field-aware descriptors must exactly match the declared
 schema before `[:ref ...]` and the descriptor are type-compatible. A
 source-level `.kotoba` test packages and runs a nested record boundary, not
 only a hand-built KIR fixture.
+Aggregate match modules may invoke scalar named capabilities from either
+branch. The compiler emits the match adapter, private helpers, fuel global,
+and standard32 capability import in one core module; closed-world composition
+then requires an exact provider before execution. Canonical adapters reject a
+typed capability with no named binding instead of falling back to a generic
+ambient host import.
 The Core-Wasm compatibility ABI also lowers the monomorphic
 `:option-i64`/`:result-i64` operations through the same sealed descriptor
 encoding as `[:option :i64]`/`[:result :i64 :i64]`; admitted scalar ADTs no
