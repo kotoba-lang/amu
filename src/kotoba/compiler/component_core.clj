@@ -324,6 +324,86 @@
         (assoc projection :descriptor descriptor :operation op
                :kind :projection)))))
 
+(defn- structural-union-match
+  "Return an exhaustive scalar-i64 option/result match plan. Branch bodies are
+  compiled by the ordinary binary Wasm expression emitter, not reimplemented
+  in this namespace."
+  [function schemas]
+  (let [{:keys [params param-types result body]} function
+        [op descriptor value & branches] (when (seq? body) body)
+        union-type (first param-types)
+        plan
+        (case op
+          option-match
+          (let [[none-body some-name some-body] branches]
+            {:operation op :descriptor descriptor
+             :shape-valid? (and (= 3 (count branches)) (symbol? some-name))
+             :case-0-body none-body
+             :case-1-binder some-name :case-1-body some-body})
+          result-match-of
+          (let [[ok-name ok-body err-name err-body] branches]
+            {:operation op :descriptor descriptor
+             :shape-valid? (and (= 4 (count branches))
+                                (symbol? ok-name) (symbol? err-name))
+             :case-0-binder ok-name :case-0-body ok-body
+             :case-1-binder err-name :case-1-body err-body})
+          nil)
+        expected-kind ({'option-match :option 'result-match-of :result} op)
+        payloads (when (and plan (vector? descriptor))
+                   (case (first descriptor)
+                     :option [(second descriptor)]
+                     :result [(second descriptor) (get descriptor 2)]
+                     nil))]
+    (when (and plan
+               (:shape-valid? plan)
+               (= descriptor union-type)
+               (= value (first params))
+               (= expected-kind (first descriptor))
+               (every? #{:i64} payloads)
+               (= :i64 result)
+               (every? #{:i64} (rest param-types))
+               (canonical/layout descriptor schemas))
+      plan)))
+
+(defn- structural-union-match-core
+  [function schemas plan target opts]
+  (let [used (set (:params function))
+        fresh (fn [base]
+                (first (remove used
+                               (map #(symbol (str base (when (pos? %) %)))
+                                    (range)))))
+        disc32 (fresh "__component_disc")
+        disc64 (fresh "__component_tag")
+        payload (fresh "__component_payload")
+        other-params (vec (rest (:params function)))
+        case-0 (if-let [binder (:case-0-binder plan)]
+                 (list 'let [binder payload] (:case-0-body plan))
+                 (:case-0-body plan))
+        case-1 (list 'let [(:case-1-binder plan) payload] (:case-1-body plan))
+        branch (list 'if disc64 case-1 case-0)
+        checked
+        (list 'let [disc64 (list 'i64-extend-i32-u disc32)]
+              (list 'if (list '< disc64 2)
+                    branch
+                    (list 'quot 1 0)))
+        synthetic
+        {:format :kotoba.kir/v3
+         :exports [(:name function)]
+         :schemas {}
+         :effects #{}
+         :functions [{:name (:name function)
+                      :params (vec (concat [disc32 payload] other-params))
+                      :param-types (vec (repeat (+ 2 (count other-params)) :i64))
+                      :result :i64
+                      :effects #{}
+                      :body checked}]}
+        core-types (vec (concat [:i32 :i64]
+                                (repeat (count other-params) :i64)))
+        wasm-types (mapv {:i32 0x7f :i64 0x7e} core-types)]
+    (wasm/emit-component-core
+     synthetic target
+     (assoc opts :core-param-types {(:name function) wasm-types}))))
+
 (defn- scalar-record-projection [function schemas]
   (let [{:keys [params param-types result body]} function
         descriptor (first param-types)
@@ -752,6 +832,10 @@
            (= 1 (count exports))
            (structural-union-elimination (first exports) (:schemas kir))
            (empty? (:effects kir))) :structural-union-elimination
+      (and (= 1 (count (:functions kir)))
+           (= 1 (count exports))
+           (structural-union-match (first exports) (:schemas kir))
+           (empty? (:effects kir))) :structural-union-match
       (and (= 1 (count (:functions kir)))
            (= 1 (count exports))
            (string-field-record-identity-function? (first exports) (:schemas kir))
@@ -2877,7 +2961,8 @@
   only the host can enforce the budget. The admission envelope reports this so
   a declared budget never reads as guest-enforced when it is not."
   [kir]
-  (if (contains? #{:scalar :scalar-with-capabilities} (assert-supported! kir))
+  (if (contains? #{:scalar :scalar-with-capabilities :structural-union-match}
+                 (assert-supported! kir))
     :module-global
     :host-only))
 
@@ -2929,6 +3014,10 @@
        (structural-union-elimination-wat
         function (:schemas kir)
         (structural-union-elimination function (:schemas kir)))))
+    :structural-union-match
+    (let [function (first (exported-functions kir))
+          plan (structural-union-match function (:schemas kir))]
+      (structural-union-match-core function (:schemas kir) plan target opts))
     :string-field-record-identity
     (wasm-tools/parse-wat
      (string-field-record-wat (first (exported-functions kir)) (:schemas kir)))

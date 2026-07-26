@@ -190,6 +190,12 @@
         (= op 'u32-wrap)
         (concat (emit-expr (first args) env ctx) [0xa7 0xad])
 
+        ;; Component adapters may receive a Canonical discriminant as i32
+        ;; while reusing the ordinary i64 expression emitter. This internal
+        ;; bridge widens that already-on-stack i32 without changing its bits.
+        (= op 'i64-extend-i32-u)
+        (concat (emit-expr (first args) env ctx) [0xad])
+
         (contains? '#{i32-wrapping-add i32-wrapping-mul i32-xor} op)
         (concat (emit-expr (first args) env ctx) [0xa7]
                 (emit-expr (second args) env ctx) [0xa7]
@@ -1383,7 +1389,8 @@
 
 (defn emit
   ([kir target] (emit kir target {}))
-  ([kir target {:keys [component-standard32? fuel memory-pages capability-imports]}]
+  ([kir target {:keys [component-standard32? fuel memory-pages capability-imports
+                       core-param-types]}]
   (let [fuel-initial (fuel-budget! fuel)
         memory-maximum (component-memory-budget! memory-pages)
         functions (:functions kir)
@@ -1584,9 +1591,16 @@
                                    exported-functions)
                            [0x60 4 0x7f 0x7f 0x7f 0x7f 1 0x7f]
                            [0x60 0 0]))
+        function-types
+        (mapcat (fn [function]
+                  (if-let [params (get core-param-types (:name function))]
+                    (concat [0x60] (uleb (count params)) params
+                            [1 (typed/wasm-type (:result function))])
+                    ((if typed? typed-function-type function-type) function)))
+                functions)
         types (concat (uleb (+ (count functions) shift component-type-count))
                       (mapcat #(nth % 3) imports)
-                      (mapcat (if typed? typed-function-type function-type) functions)
+                      function-types
                       component-types)
         import-sec (when (seq imports)
                      (concat (uleb shift)
