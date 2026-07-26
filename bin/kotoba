@@ -53,12 +53,11 @@
     (or (= cmd "check")
         (and (= cmd "compile") (contains? nbb-native-targets (option sub-args "--target"))))))
 
-;; `kotoba.compiler.nbb.cli` requires `kotoba.compiler.admission`, which in
-;; turn requires `kotoba.security.abac`/`kotoba.security.information-flow`
-;; from the `io.github.kotoba-lang/security` git dependency pinned in
-;; `deps.edn`. nbb has no concept of `deps.edn`/tools.deps -- it only
+;; `kotoba.compiler.nbb.cli` requires `kotoba.kir.admission`, whose
+;; transitive dependencies include the shared security controls. nbb has no
+;; concept of `deps.edn`/tools.deps -- it only
 ;; resolves namespaces from directories on its own `--classpath`. `clojure
-;; -Spath` is the only thing that (a) fetches that pinned git SHA into
+;; -Spath` is the only thing that (a) fetches those pinned git SHAs into
 ;; `~/.gitlibs` if it isn't already cached there and (b) prints the
 ;; resulting directories, so it's used here purely as a classpath
 ;; resolver, not to run any compiler code on the JVM. Its result is cached
