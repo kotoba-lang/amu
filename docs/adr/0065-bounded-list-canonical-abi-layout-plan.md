@@ -183,11 +183,11 @@ The remaining list gaps are narrower:
    current list operations are typed specifically as `:vector-i64` or
    `:vector-f64`; there is no general `[:list T]` value/operator surface that
    could safely project a structured item.
-3. **Mutation requires an owned-result lowering.** `vector-assoc`,
-   `vector-conj`, and `vector-drop` return a new vector. Aggregate match
-   lowering currently borrows the caller-owned Canonical input buffer and
-   returns a scalar, so it deliberately does not mutate that buffer or expose
-   it as a new owned result.
+3. **Aggregate-match mutation still needs result composition.** Top-level
+   `vector-assoc`, `vector-conj`, and `vector-drop` now return a freshly
+   allocated/copy-on-write Canonical list and reset its transient arena in
+   post-return. Aggregate match lowering still has a scalar result adapter;
+   composing that owned-result path across option/result branches remains.
 4. **Aggregate list capability request/results remain closed.** Their
    cross-instance ownership, copying, and post-return behavior must be added
    to the generalized capability codec rather than inferred from the
