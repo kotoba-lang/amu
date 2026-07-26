@@ -94,8 +94,13 @@ are rejected.
   `fe9a70c`: the Canonical pointer/length pair is bounded against its
   descriptor and actual core memory, selected unread leaves validate, and
   inactive slots remain lazy;
-- nested/indirect list item types and list leaf operations in aggregate match
-  branches;
+- selected `list<s64>`/`list<f64>` record leaves now support their matching
+  count operation through `kotoba-wasm` commit `db5b04f` and
+  `kotoba-component` commit `0911651`: pointer alignment, item bounds,
+  unsigned byte-size/range overflow, and actual memory size are checked;
+  selected unread leaves validate and inactive slots remain lazy;
+- nested/indirect list item types and list element-reading/mutating operations
+  in aggregate match branches;
 - general aggregate ownership and linearity analysis beyond this bounded
   identity/borrowed-result slice;
 - scalar named capabilities now compose with aggregate match functions through
