@@ -122,5 +122,12 @@ are rejected.
   The shared match emitter receives the exact WIT import table, generic
   canonical capability fallback is rejected, and a `.kotoba` option match is
   executed through a closed application-plus-provider Component;
-- aggregate request/result capability types still require their dedicated
-  Canonical codecs to be generalized into the shared match module.
+- an `option<list<s64>>` selected payload may now be reconstructed, passed to
+  a named capability with the same request/result descriptor, and immediately
+  matched through the shared module. `kotoba-wasm` commit `ab8dde1` keeps the
+  maximum bounded request and result live in one arena; `kotoba-component`
+  commit `6e4759b` binds the caller-allocated standard32 result without a
+  generic host ABI. The evidence starts at `.kotoba`, composes an identity
+  provider, and executes the closed Component in Wasmtime;
+- other aggregate request/result descriptors and less constrained branch
+  shapes remain fail-closed pending explicit shared Canonical codec admission.

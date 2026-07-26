@@ -28,18 +28,18 @@
     (is (= {:aiueos.component/aiueos-clock-now clock-ability}
            (:component-imports artifact))))
   (testing "memory ceiling is part of executable Component identity"
-    (let [four (compiler/compile-component
+    (let [five (compiler/compile-component
                 source policy {:component-abilities {7 clock-ability}
-                               :budgets {:memory-pages 4}})
+                               :budgets {:memory-pages 5}})
           eight (compiler/compile-component
                  source policy {:component-abilities {7 clock-ability}
                                 :budgets {:memory-pages 8}})]
-      (is (not= (:sha256 four) (:sha256 eight)))
+      (is (not= (:sha256 five) (:sha256 eight)))
       (is (thrown-with-msg?
            clojure.lang.ExceptionInfo #"memory budget"
            (compiler/compile-component
             source policy {:component-abilities {7 clock-ability}
-                           :budgets {:memory-pages 2}}))))))
+                           :budgets {:memory-pages 4}}))))))
 
 (deftest direct-capability-call-can-use-a-linear-wit-resource
   (let [source "(defn main [] (cap-call :clock/now 7))"
