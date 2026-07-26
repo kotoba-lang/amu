@@ -249,6 +249,59 @@
       (finally
         (Files/deleteIfExists path)))))
 
+(deftest source-option-f64-list-match-calls-and-matches-a-named-capability
+  (let [descriptor [:option :vector-f64]
+        source
+        "(ns component.match-f64-capability
+           (:export [choose echo])
+           (:capabilities #{:http/post}))
+         (defn choose
+           [value [:option :vector-f64] fallback :i64] :i64
+           (match-option value [:option :vector-f64]
+             (none fallback)
+             (some items
+               (match-option
+                 (typed-cap-call
+                   :http/post
+                   [:option :vector-f64]
+                   [:option :vector-f64]
+                   (option-some-of [:option :vector-f64] items))
+                 [:option :vector-f64]
+                 (none fallback)
+                 (some returned (vector-f64-count returned))))))
+         (defn echo [value :i64] :i64 value)"
+        compiled (compiler/compile-source
+                  source :wasm32-wasi-kotoba-v1
+                  {:allow #{[:cap/call 4]}})
+        application
+        (compiler/compile-component source {:allow #{[:cap/call 4]}})
+        provider
+        (composition/package-structural-union-identity-provider
+         :http/post descriptor)
+        closed (composition/compose-closed application [provider])
+        path (Files/createTempFile
+              "kotoba-source-match-f64-list-capability-" ".wasm"
+              (make-array FileAttribute 0))]
+    (try
+      (Files/write path ^bytes (:bytes closed)
+                   (make-array java.nio.file.OpenOption 0))
+      (is (= 'option-match
+             (first (get-in compiled [:kir :functions 0 :body]))))
+      (is (= :structural-union-match-module
+             (:canonical-lowering application)))
+      (is (= [:http/post] (:application-imports closed)))
+      (doseq [[invoke expected]
+              [["choose(none, 9)" "9"]
+               ["choose(some([]), 9)" "0"]
+               ["choose(some([1.5, -2.25, 3.0]), 9)" "3"]
+               ["echo(11)" "11"]]]
+        (let [run (shell/sh wasmtime-binary "run" "--invoke"
+                            invoke (str path))]
+          (is (zero? (:exit run)) (:err run))
+          (is (= expected (str/trim (:out run))) invoke)))
+      (finally
+        (Files/deleteIfExists path)))))
+
 (deftest structural-union-provider-rejects-a-malformed-discriminant
   (let [entry {:interface "http" :function "post"}
         core (wasm-tools/parse-wat

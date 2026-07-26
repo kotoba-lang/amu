@@ -496,7 +496,7 @@ the discriminant is validated. Multiple such match exports and private scalar
 helpers are emitted into one Component core module, sharing the same sealed
 fuel global while retaining per-function bool validation scopes. WIT export
 and parameter names are collision-checked after canonical normalization.
-Within an `option<list<s64>>` match, the selected list can be reconstructed,
+Within an `option<list<s64>>` or `option<list<f64>>` match, the selected list can be reconstructed,
 sent through an explicitly named capability with the same request/result
 descriptor, and immediately matched again. This path stays in that shared
 module and uses the standard WIT import's caller-allocated result storage;
