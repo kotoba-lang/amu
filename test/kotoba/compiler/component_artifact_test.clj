@@ -181,6 +181,50 @@
           (Files/deleteIfExists core-path)
           (Files/deleteIfExists dir))))))
 
+(deftest structural-option-record-round-trips-through-the-extracted-backend
+  (let [point [:ref :demo/point]
+        descriptor [:option point]
+        kir {:format :kotoba.kir/v4
+             :exports ['echo]
+             :schemas {:demo/point
+                       [:record :demo/point [[:x :i64] [:visible :bool]]]}
+             :effects #{}
+             :functions
+             [{:name 'echo :params ['value] :param-types [descriptor]
+               :result descriptor :effects #{} :body 'value}]}
+        world (wit/emit kir)
+        core-bytes (component-core/emit kir :wasm32-wasi-kotoba-v1)
+        artifact (component/package core-bytes kir world)
+        component-path (Files/createTempFile
+                        "kotoba-component-option-record-" ".wasm"
+                        (make-array FileAttribute 0))
+        core-path (Files/createTempFile
+                   "kotoba-component-option-record-core-" ".wasm"
+                   (make-array FileAttribute 0))]
+    (try
+      (is (= :structural-union-identity (:canonical-lowering artifact)))
+      (Files/write component-path ^bytes (:bytes artifact)
+                   (make-array java.nio.file.OpenOption 0))
+      (Files/write core-path ^bytes core-bytes
+                   (make-array java.nio.file.OpenOption 0))
+      (doseq [[invoke expected]
+              [["echo(none)" "none"]
+               ["echo(some({x: 7, visible: true}))"
+                "some({x: 7, visible: true})"]]]
+        (let [run (shell/sh wasmtime-binary "run" "--invoke" invoke
+                            (str component-path))]
+          (is (zero? (:exit run)) (:err run))
+          (is (= expected (str/trim (:out run))) invoke)))
+      (let [inactive (shell/sh wasmtime-binary "run" "--invoke"
+                               "cm32p2||echo" (str core-path) "0" "0" "2")
+            active (shell/sh wasmtime-binary "run" "--invoke"
+                             "cm32p2||echo" (str core-path) "1" "7" "2")]
+        (is (zero? (:exit inactive)))
+        (is (not (zero? (:exit active)))))
+      (finally
+        (Files/deleteIfExists component-path)
+        (Files/deleteIfExists core-path)))))
+
 (deftest structural-option-and-result-constructors-compile-from-kotoba
   (doseq [{:keys [source export invoke output args oracle]}
           [{:source "(ns component.make-none (:export [make-none]))
