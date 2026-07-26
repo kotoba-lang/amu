@@ -153,7 +153,16 @@
                     ["invoke(some(7))" "some(7)"]]}
            {:descriptor [:result :i64 :i64]
             :calls [["invoke(ok(8))" "ok(8)"]
-                    ["invoke(err(-9))" "err(-9)"]]}]]
+                    ["invoke(err(-9))" "err(-9)"]]}
+           {:descriptor [:option :vector-i64]
+            :calls [["invoke(none)" "none"]
+                    ["invoke(some([]))" "some([])"]
+                    ["invoke(some([1, -2, 3]))" "some([1, -2, 3])"]]}
+           {:descriptor [:result [:option :vector-f64] :string]
+            :calls [["invoke(ok(none))" "ok(none)"]
+                    ["invoke(ok(some([1.5, -2.25])))"
+                     "ok(some([1.5, -2.25]))"]
+                    ["invoke(err(\"denied\"))" "err(\"denied\")"]]}]]
     (let [type-source (pr-str descriptor)
           source (str "(ns component.structural-union-capability "
                       "(:export [invoke]) (:capabilities #{:http/post})) "

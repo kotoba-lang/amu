@@ -474,10 +474,15 @@ payloads without interpreting an inactive case. Nested option/result payloads
 apply the same rule recursively at every discriminant, including bounded
 string and list leaves. CI checks
 `none`/`some`/`ok`/`err` with the pinned Wasmtime engine.
-The same scalar union codec crosses an explicitly named capability import:
-the compiler emits the WIT import, a separately packaged provider exports the
-matching structural type, and closed-world composition rejects missing or
-extra providers. No ambient WASI import is introduced.
+The same union codec crosses an explicitly named capability import. In
+addition to scalar leaves, the request/result may carry bounded
+strings/keywords, `list<s64>`/`list<f64>`, and nested option/result payloads.
+The compiler emits the exact WIT import, a separately packaged provider
+exports the matching structural type, and closed-world composition rejects
+missing or extra providers. Both sides derive their bounded Canonical arena
+from the recursive payload layout; unsupported or nominal aggregate shapes
+fail closed rather than falling back to an ambient WASI or generic host
+import.
 Exhaustive `match-option` and `match-result` over `i64`, `f32`, `f64`, and
 `bool` payloads also compile to Components. Their branch bodies use the shared
 typed binary Wasm expression emitter, including its fuel global, so

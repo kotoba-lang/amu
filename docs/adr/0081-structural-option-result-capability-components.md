@@ -14,8 +14,9 @@ security-sensitive discriminant and joined-payload codec.
 ## Decision
 
 Admit a direct `typed-cap-call` when request and result are the same structural
-`option<T>` or `result<T,E>` and every payload is `i64`, `f32`, `f64`, or
-`bool`.
+`option<T>` or `result<T,E>`. Payloads recurse through structural
+options/results and may terminate in `i64`, `f32`, `f64`, `bool`, bounded
+string/keyword, `list<s64>`, or `list<f64>` leaves.
 
 The application reuses the sealed-variant capability emitter. It forwards the
 checked WIT value as discriminant plus joined payload positions to the named
@@ -47,24 +48,30 @@ qualified scalar call shape.
   renderer;
 - provider dispatch rejects an out-of-range discriminant before interpreting
   payload bits;
-- aggregate and resource-owning payloads remain fail-closed.
+- each active indirect leaf is checked against its byte/item bound, alignment,
+  unsigned range, and the actual linear-memory arena;
+- nominal records, unbounded aggregates, and resource-owning payloads remain
+  fail-closed.
 
 ## Evidence
 
-Two `.kotoba` programs use an explicitly declared and policy-allowed
-`:http/post` typed capability with `option<s64>` and `result<s64,s64>`.
-`compile-component` produces the application Component and its
-`:aiueos-http-post` ability identity. Independently packaged identity providers
-close each application with no remaining import.
+Source programs use an explicitly declared and policy-allowed `:http/post`
+typed capability with scalar option/result, `option<list<s64>>`, and nested
+`result<option<list<f64>>,string>` descriptors. `compile-component` produces
+the application Component and its `:aiueos-http-post` ability identity.
+Independently packaged identity providers close each application with no
+remaining import.
 
-The pinned real Wasmtime engine executes `none`, `some(7)`, `ok(8)`, and
-`err(-9)` through the composed application/provider boundary. A direct
-invocation of the provider core export with discriminant `2` traps.
+The pinned real Wasmtime engine executes every case, including none, empty and
+non-empty lists, f64 lists, and a string error, through the composed
+application/provider boundary. `kotoba-component` also executes the full
+16,384-item list bound through a closed Component. A direct invocation of the
+provider core export with discriminant `2` traps.
 
 ## Remaining gaps
 
 - request and result structural unions with different descriptors;
-- recursive record/string/list/nested-union payloads;
+- nominal record payloads on this structural identity-provider path;
 - production provider semantics instead of the wiring-only identity fixture;
 - aggregate exhaustive matches around the call (heterogeneous
   i64/f32/f64/bool matching is implemented by ADR 0082);
