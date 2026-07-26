@@ -70,8 +70,14 @@ are rejected.
 - finite nested record and bare bounded string/keyword payload identity is
   implemented by `kotoba-component` commit `ed8e4b3`, with recursive
   active-case leaf validation;
-- list and nested option/result payloads, and non-identity aggregate branch
-  computation;
-- aggregate ownership, post-return cleanup, and linearity analysis;
+- bounded `list<s64>` payload identity is implemented by `kotoba-wasm` commit
+  `7e2bc34` and `kotoba-component` commit `3b99139`: the shared public vector
+  layout drives selected-case count, alignment, overflow, and arena-range
+  validation; the admitted input buffer remains borrowed until canonical
+  post-return resets the arena;
+- other list item types, nested option/result payloads, and non-identity
+  aggregate branch computation;
+- general aggregate ownership and linearity analysis beyond this bounded
+  identity/borrowed-result slice;
 - general compositional lowering for mixtures of aggregate match functions and
   capability imports.
