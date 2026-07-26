@@ -1,5 +1,6 @@
 (ns kotoba.compiler.core
-  (:require [kotoba.compiler.frontend :as frontend]
+  (:require [clojure.walk :as walk]
+            [kotoba.compiler.frontend :as frontend]
             [kotoba.compiler.compatibility :as compatibility]
             [kotoba.compiler.provenance :as provenance]
             [kotoba.compiler.cache :as cache]
@@ -12,6 +13,7 @@
             [kotoba.compiler.component-artifact :as component-artifact]
             [kotoba.compiler.component-core :as component-core]
             [kotoba.compiler.component-admission :as component-admission]
+            [kotoba.abi.contract :as abi]
             [kotoba.compiler.backend.cljs :as cljs]
             [kotoba.script :as script]
             [kotoba.compiler.backend.x86-64 :as x86-64]
@@ -78,6 +80,34 @@
    (let [hir (frontend/analyze source)]
      {:hir hir :admission (admission/check hir policy)})))
 
+(defn- component-kir
+  "Make the source language's legacy scalar `cap-call` explicit at the
+  Component boundary. In KIR, untyped cap-call has always been an i64 -> i64
+  operation; Component WIT/core lowering intentionally accepts only
+  `typed-cap-call`. Keeping this normalization here preserves all ordinary
+  backend KIR identities while preventing an effectful Component from falling
+  through to the unbindable generic `kotoba:cap::call` core import."
+  [kir]
+  (-> kir
+      (update :functions
+              (fn [functions]
+                (mapv (fn [function]
+                        (-> function
+                            (update :param-types
+                                    #(or % (vec (repeat (count (:params function)) :i64))))
+                            (update :result #(or % :i64))
+                            (update :body
+                                    #(walk/postwalk
+                                      (fn [form]
+                                        (if (and (seq? form)
+                                                 (= 'cap-call (first form))
+                                                 (= 3 (count form)))
+                                          (let [[_ id request] form]
+                                            (list 'typed-cap-call id :i64 :i64 request))
+                                          form))
+                                      %))))
+                      functions)))))
+
 (defn compile-component-wit
   "Compile source through checked HIR/KIR and emit its deterministic closed WIT
   package. This does not claim to emit a Component binary."
@@ -85,7 +115,7 @@
   ([source policy]
    (let [hir (frontend/analyze source)
          checked (admission/check hir policy)
-         kir (ir/lower hir)]
+         kir (component-kir (ir/lower hir))]
      (assoc (component-wit/emit kir) :admission checked))))
 
 (declare compile-source)
@@ -100,6 +130,14 @@
   `:sync` profile, and 16 pages (1 MiB) is a default, not a measurement."
   {:fuel wasm/default-fuel :memory-pages 16})
 
+(defn- component-capability-ids [kir]
+  (->> (:functions kir)
+       (mapcat #(tree-seq coll? seq (:body %)))
+       (keep (fn [form]
+               (when (and (seq? form) (= 'typed-cap-call (first form)))
+                 (second form))))
+       set))
+
 (defn compile-component
   "Compile the currently qualified slice to a validated Component Model binary
   plus its admission request. Structured/provider Canonical ABI lowering
@@ -111,15 +149,36 @@
   that happened or the budget is host-enforced only."
   ([source] (compile-component source {} {}))
   ([source policy] (compile-component source policy {}))
-  ([source policy {:keys [profile budgets] :or {profile :sync} :as opts}]
+  ([source policy {:keys [profile budgets component-abilities]
+                   :or {profile :sync} :as opts}]
    (let [budgets (merge default-component-budgets budgets)
          core (compile-source source :wasm32-wasi-kotoba-v1 policy)
-         wit (component-wit/emit (:kir core))
-         enforcement (component-core/fuel-enforcement (:kir core))
-         component-bytes (component-core/emit (:kir core) :wasm32-wasi-kotoba-v1
-                                              {:fuel (:fuel budgets)})
-         packaged (component-artifact/package component-bytes (:kir core) wit)]
+         kir (component-kir (:kir core))
+         capability-ids (component-capability-ids kir)
+         _ (when (and component-abilities
+                      (not= capability-ids (set (keys component-abilities))))
+             (throw (ex-info "Component abilities must exactly match capability calls"
+                             {:phase :component-abilities
+                              :required capability-ids
+                              :supplied (set (keys component-abilities))})))
+         _ (when (and component-abilities
+                      (not-every? abi/valid-ability? (vals component-abilities)))
+             (throw (ex-info "Component ability descriptor is invalid"
+                             {:phase :component-abilities})))
+         wit (component-wit/emit kir)
+         enforcement (component-core/fuel-enforcement kir)
+         component-bytes (component-core/emit kir :wasm32-wasi-kotoba-v1
+                                              {:fuel (:fuel budgets)
+                                               :memory-pages (:memory-pages budgets)})
+         packaged (component-artifact/package component-bytes kir wit)]
      (assoc packaged
+            :capabilities (into #{} (map abi/component-import-key) capability-ids)
+            :component-imports
+            (into (sorted-map)
+                  (map (fn [id]
+                         [(abi/component-import-key id)
+                          (get component-abilities id)]))
+                  capability-ids)
             :wit wit
             :admission (:admission core)
             ;; Carry the core compile's provenance and sealed policies: the

@@ -161,6 +161,18 @@
           (concat [0x42] (sleb cap-id) (emit-expr value env ctx)
                   [0x10 (get intrinsic-indices 'cap-call)]))
 
+        (= op 'typed-cap-call)
+        (let [[cap-id _request-type _result-type request] args
+              typed-import (get intrinsic-indices [:capability cap-id])]
+          (if typed-import
+            (concat (emit-expr request env ctx) [0x10 typed-import])
+            ;; This path is intentionally unbindable by Component packaging;
+            ;; it retains the ordinary core-module fallback for callers that
+            ;; emit a typed KIR without a named capability-import table.
+            (concat [0x41] (sleb cap-id)
+                    (emit-expr request env ctx)
+                    [0x10 (get intrinsic-indices 'typed-cap-call)])))
+
         (contains? '#{pair pair-first pair-second} op)
         (concat (emit-many args env ctx) [0x10 (get intrinsic-indices op)])
 
@@ -1283,6 +1295,15 @@
   item limit it exists to cover."
   (+ 1 (quot (+ (* 16384 8) (dec wasm-page-bytes)) wasm-page-bytes)))
 
+(defn- component-memory-budget! [pages]
+  (let [pages (or pages 16)]
+    (when-not (and (integer? pages)
+                   (<= component-memory-pages pages 65536))
+      (throw (ex-info "component memory budget must cover the language arena"
+                      {:phase :wasm-emit :memory-pages pages
+                       :minimum component-memory-pages :maximum 65536})))
+    pages))
+
 (def component-arena-base
   "First address the bump allocator hands out. Not 0: the Canonical ABI uses a
   null `old-ptr` to mean `fresh allocation`, so address 0 must never be a live
@@ -1331,13 +1352,19 @@
 
 (defn emit
   ([kir target] (emit kir target {}))
-  ([kir target {:keys [component-standard32? fuel capability-imports]}]
+  ([kir target {:keys [component-standard32? fuel memory-pages capability-imports]}]
   (let [fuel-initial (fuel-budget! fuel)
+        memory-maximum (component-memory-budget! memory-pages)
         functions (:functions kir)
         typed? (= :kotoba.kir/v4 (:format kir))
         exported-names (set (or (:exports kir) (map :name functions)))
         exported-functions (filterv #(contains? exported-names (:name %)) functions)
-        has-cap? (contains? (set (map first (:effects kir))) :cap/call)
+        ;; Effects describe authority requirements, but imports must be
+        ;; derived from executable operations. Component normalization keeps
+        ;; the original :cap/call effect while replacing the generic operation
+        ;; with a named typed-cap-call; deriving this from effects would then
+        ;; reintroduce an ambient, unbindable generic import.
+        has-cap? (uses-operation? functions '#{cap-call})
         has-typed-cap? (uses-operation? functions '#{typed-cap-call})
         heap-ops (let [found (volatile! #{})]
                    (letfn [(walk [form]
@@ -1619,7 +1646,8 @@
                         (when typed-sec (section 0 typed-sec))
                         (section 1 types) (when (seq imports) (section 2 import-sec))
                         (section 3 function-sec)
-                        (when component-standard32? (section 5 [1 0 component-memory-pages]))
+                        (when component-standard32?
+                          (section 5 [1 1 component-memory-pages memory-maximum]))
                         (section 6 global-sec)
                         (section 7 export-sec) (section 10 code-sec))]
       #?(:clj (byte-array (map unchecked-byte bytes))
@@ -1628,8 +1656,7 @@
 (defn emit-component-core
   "Emit a standard32-named core module for Component Model Canonical lifting.
 
-  `opts` accepts the same `:fuel` budget as `emit`; a component's declared
-  `:fuel` budget is compiled into the module's fuel global so the artifact and
-  its admission envelope cannot disagree about the bound."
+  `opts` accepts `:fuel` and `:memory-pages`; both are compiled into the core
+  module so independent Component engines enforce the admitted ceilings."
   ([kir target] (emit-component-core kir target {}))
   ([kir target opts] (emit kir target (assoc opts :component-standard32? true))))
