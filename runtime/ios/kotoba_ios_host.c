@@ -1,6 +1,8 @@
 #include "kotoba_ios_host.h"
 
 #include <limits.h>
+#include <setjmp.h>
+#include <signal.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -204,6 +206,71 @@ static int64_t typed_cap_call(struct kotoba_context_v2 *context,
 #if defined(__APPLE__) && defined(__aarch64__)
 typedef int64_t (*kotoba_fn8)(int64_t, int64_t, int64_t, int64_t,
                               int64_t, int64_t, int64_t, int64_t);
+
+/* ---- Trap containment -------------------------------------------------
+ *
+ * The compiled guest reaches `brk #0` for fuel exhaustion, division by zero,
+ * INT64_MIN/-1 overflow, bounds violations, and denied capabilities; this
+ * host's own guest_trap() adds __builtin_trap(). kexe_loader.c contains all
+ * of those by running the guest in a forked child and reporting the wait
+ * status. iOS has no such supervisor available to an app process, so without
+ * the handlers below a single guest trap terminates the ENTIRE application.
+ *
+ * That is reachable from ordinary, policy-allowed code: a divisor supplied by
+ * the host through cap-call is not a constant, so the compiler's static fuel
+ * and constant analysis cannot reject it, and `(quot x host-value)` with a
+ * zero host-value traps at runtime.
+ *
+ * This is mechanism, not policy: the handler only converts a synchronous
+ * trap into a normal return path. What that means -- the guest is rejected,
+ * with KOTOBA_IOS_GUEST_TRAP -- stays a typed result the caller decides on.
+ *
+ * Scope and limits, stated rather than implied:
+ *  - Signal dispositions are process-wide, so execution is serialized by
+ *    `containment_busy` and concurrent/reentrant calls are refused, not
+ *    silently run unprotected.
+ *  - siglongjmp out of a handler abandons the guest's stack frames. That is
+ *    sound here only because the guest allocates nothing that needs
+ *    unwinding: its heap is the arena in `shared`, which the caller frees.
+ *  - Only the trap signals the guest can raise are handled. Faults with
+ *    other causes are deliberately left to crash rather than be swallowed. */
+static volatile sig_atomic_t containment_busy;
+static sigjmp_buf containment_return;
+
+static void containment_handler(int signal_number) {
+  (void)signal_number;
+  siglongjmp(containment_return, 1);
+}
+
+struct containment_state {
+  struct sigaction previous_trap;
+  struct sigaction previous_ill;
+  int installed;
+};
+
+static int containment_install(struct containment_state *state) {
+  struct sigaction action;
+  memset(&action, 0, sizeof(action));
+  action.sa_handler = containment_handler;
+  sigemptyset(&action.sa_mask);
+  /* No SA_RESTART/SA_SIGINFO: the handler never returns to the trap site. */
+  action.sa_flags = 0;
+  state->installed = 0;
+  if (sigaction(SIGTRAP, &action, &state->previous_trap) != 0) return 0;
+  if (sigaction(SIGILL, &action, &state->previous_ill) != 0) {
+    sigaction(SIGTRAP, &state->previous_trap, NULL);
+    return 0;
+  }
+  state->installed = 1;
+  return 1;
+}
+
+static void containment_restore(struct containment_state *state) {
+  if (!state->installed) return;
+  sigaction(SIGTRAP, &state->previous_trap, NULL);
+  sigaction(SIGILL, &state->previous_ill, NULL);
+  state->installed = 0;
+}
 #endif
 
 __attribute__((visibility("default")))
@@ -247,9 +314,41 @@ int kotoba_ios_execute_static_v1(const struct kotoba_ios_request_v1 *request,
       (uint64_t)((uintptr_t)kotoba_ios_code_end -
                  (uintptr_t)kotoba_ios_code_start);
   kotoba_fn8 entry = (kotoba_fn8)(uintptr_t)kotoba_ios_entry;
+  /* Process-wide signal dispositions cannot be shared: refuse rather than
+     run a second guest with the first one's handlers half-installed. */
+  if (containment_busy) {
+    free(shared);
+    result->status = KOTOBA_IOS_CONTAINMENT_UNAVAILABLE;
+    return KOTOBA_IOS_CONTAINMENT_UNAVAILABLE;
+  }
+  struct containment_state containment;
+  if (!containment_install(&containment)) {
+    free(shared);
+    result->status = KOTOBA_IOS_CONTAINMENT_UNAVAILABLE;
+    return KOTOBA_IOS_CONTAINMENT_UNAVAILABLE;
+  }
+  containment_busy = 1;
+
+  if (sigsetjmp(containment_return, 1) != 0) {
+    /* Reached from containment_handler: the guest trapped. Report the fuel
+       and heap state as of the trap -- it is the caller's evidence for WHY
+       the guest was rejected -- but never the (undefined) return value. */
+    containment_busy = 0;
+    containment_restore(&containment);
+    result->value = 0;
+    result->fuel_remaining = shared->context.fuel;
+    result->pairs_used = shared->pair_used;
+    result->status = KOTOBA_IOS_GUEST_TRAP;
+    free(shared);
+    return KOTOBA_IOS_GUEST_TRAP;
+  }
+
   result->value = entry(request->args[0], request->args[1], request->args[2],
                         request->args[3], request->args[4], 0, 0,
                         (int64_t)(intptr_t)&shared->context);
+
+  containment_busy = 0;
+  containment_restore(&containment);
   result->fuel_remaining = shared->context.fuel;
   result->pairs_used = shared->pair_used;
   result->status = KOTOBA_IOS_OK;
