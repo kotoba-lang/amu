@@ -59,9 +59,9 @@ match the reference interpreter's values.
 - recursive aggregate payload codecs and aggregate values nested in records;
 - asymmetric or aggregate option/result capability payloads (same-type scalar
   option/result provider bindings are implemented by ADR 0081);
-- heterogeneous scalar joins and aggregate branch values (same-type
-  i64/f32/f64/bool exhaustive matching with general scalar branch computation
-  is implemented by ADR 0082; direct predicates/projections by ADR 0080);
+- aggregate branch values (heterogeneous i64/f32/f64/bool exhaustive matching
+  with general scalar branch computation is implemented by ADR 0082; direct
+  predicates/projections by ADR 0080);
 - payload-less WIT result forms outside Kotoba's existing two-payload result
   descriptor;
 - native AOT parity, which remains a distinct ABI track.
