@@ -141,3 +141,9 @@ are rejected.
   `kotoba-component` commit `4c6a617` validates both. `.kotoba` E2E covers
   string; keyword remains covered at typed KIR because source
   `string-byte-length` intentionally accepts only `:string`.
+- sealed finite scalar records now cross an option match capability through a
+  shared flat request/scalar-projection codec. `kotoba-wasm` commit `340c109`
+  validates the returned result area, discriminant, and every active bool
+  field; `kotoba-component` commit `b84fb5c` emits matching provider record
+  declarations. Source E2E begins at a declared schema and executes a closed
+  Component.

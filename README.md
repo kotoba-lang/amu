@@ -511,6 +511,10 @@ Bounded string payloads use the same option/result path and expose only their
 validated UTF-8 byte length. Payload and enclosing result-area alignment are
 independent Canonical properties, preventing the string's byte alignment from
 weakening union result-pointer checks.
+Sealed finite scalar records can be reconstructed from an option match,
+passed through the named capability, and projected from the returned record.
+The shared flat codec validates the returned option and every active bool
+field before exposing the selected scalar field.
 Finite record payloads with recursively scalar `i64`, `f32`, `f64`, and
 `bool` leaves use that same match path. Record binders may only escape through
 a statically resolved `record-get` chain; selected bool leaves are validated

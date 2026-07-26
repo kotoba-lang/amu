@@ -431,6 +431,88 @@
         (finally
           (Files/deleteIfExists path))))))
 
+(deftest source-option-record-match-calls-and-projects-a-named-capability
+  (let [record-type
+        [:record :demo/cap-record
+         [[:x :i64] [:enabled :bool] [:weight :f32]]]
+        schemas {:demo/cap-record record-type}
+        descriptor [:option record-type]
+        source
+        "(ns component.match-record-capability
+           (:export [choose echo])
+           (:capabilities #{:http/post})
+           (:schemas
+            {:demo/cap-record
+             [:record :demo/cap-record
+              [[:x :i64] [:enabled :bool] [:weight :f32]]]}))
+         (defn choose
+           [value
+            [:option
+             [:record :demo/cap-record
+              [[:x :i64] [:enabled :bool] [:weight :f32]]]]
+            fallback :i64] :i64
+           (match-option
+             value
+             [:option
+              [:record :demo/cap-record
+               [[:x :i64] [:enabled :bool] [:weight :f32]]]]
+             (none fallback)
+             (some selected
+               (match-option
+                 (typed-cap-call
+                   :http/post
+                   [:option
+                    [:record :demo/cap-record
+                     [[:x :i64] [:enabled :bool] [:weight :f32]]]]
+                   [:option
+                    [:record :demo/cap-record
+                     [[:x :i64] [:enabled :bool] [:weight :f32]]]]
+                   (option-some-of
+                     [:option
+                      [:record :demo/cap-record
+                       [[:x :i64] [:enabled :bool] [:weight :f32]]]]
+                     selected))
+                 [:option
+                  [:record :demo/cap-record
+                   [[:x :i64] [:enabled :bool] [:weight :f32]]]]
+                 (none fallback)
+                 (some returned
+                   (record-get
+                     [:record :demo/cap-record
+                      [[:x :i64] [:enabled :bool] [:weight :f32]]]
+                     returned :x))))))
+         (defn echo [value :i64] :i64 value)"
+        compiled (compiler/compile-source
+                  source :wasm32-wasi-kotoba-v1
+                  {:allow #{[:cap/call 4]}})
+        application
+        (compiler/compile-component source {:allow #{[:cap/call 4]}})
+        provider
+        (composition/package-structural-union-identity-provider
+         :http/post descriptor schemas)
+        closed (composition/compose-closed application [provider])
+        path (Files/createTempFile
+              "kotoba-source-match-record-capability-" ".wasm"
+              (make-array FileAttribute 0))]
+    (try
+      (Files/write path ^bytes (:bytes closed)
+                   (make-array java.nio.file.OpenOption 0))
+      (is (= 'option-match
+             (first (get-in compiled [:kir :functions 0 :body]))))
+      (is (= :structural-union-match-module
+             (:canonical-lowering application)))
+      (is (= [:http/post] (:application-imports closed)))
+      (doseq [[invoke expected]
+              [["choose(none, 9)" "9"]
+               ["choose(some({x: 7, enabled: true, weight: 1.5}), 9)" "7"]
+               ["echo(11)" "11"]]]
+        (let [run (shell/sh wasmtime-binary "run" "--invoke"
+                            invoke (str path))]
+          (is (zero? (:exit run)) (:err run))
+          (is (= expected (str/trim (:out run))) invoke)))
+      (finally
+        (Files/deleteIfExists path)))))
+
 (deftest structural-union-provider-rejects-a-malformed-discriminant
   (let [entry {:interface "http" :function "post"}
         core (wasm-tools/parse-wat
