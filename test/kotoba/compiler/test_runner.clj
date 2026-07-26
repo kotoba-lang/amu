@@ -23,6 +23,7 @@
             [kotoba.compiler.native-executor-test]
             [kotoba.compiler.admission-test]
             [kotoba.compiler.guest-grammar-conformance-test]
+            [kotoba.compiler.host-profile-test]
             [kotoba.compiler.property-test]
             [kotoba.compiler.project-test]
             [kotoba.compiler.receipt-test]
@@ -31,6 +32,7 @@
             [kotoba.compiler.signing-test]
             [kotoba.compiler.source-path-test]
             [kotoba.compiler.typed-value-conformance-test]
+            [kotoba.compiler.test-profile-test]
             [kotoba.compiler.wasm-typed-test]
             [kotoba.compiler.value-test]
             [kotoba.compiler.verifier-profile-test]))
@@ -58,9 +60,11 @@
                                           'kotoba.compiler.interface-test
                                           'kotoba.compiler.admission-test
                                           'kotoba.compiler.guest-grammar-conformance-test
+                                          'kotoba.compiler.host-profile-test
                                           'kotoba.compiler.signing-test
                                           'kotoba.compiler.source-path-test
                                           'kotoba.compiler.typed-value-conformance-test
+                                          'kotoba.compiler.test-profile-test
                                           'kotoba.compiler.wasm-typed-test
                                           'kotoba.compiler.native-executor-test
                                           'kotoba.compiler.receipt-test

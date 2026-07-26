@@ -85,7 +85,11 @@
    4 "aiueos-http-post"
    5 "aiueos-log-read"
    6 "aiueos-log-append"
-   7 "aiueos-clock-now"})
+   7 "aiueos-clock-now"
+   8 "aiueos-http-get-stream"
+   9 "aiueos-object-get-stream"
+   10 "aiueos-object-put-block"
+   11 "aiueos-object-compare-and-set-ref"})
 
 (defn- component-capability-import-name [id]
   (or (get component-capability-import-names id)
@@ -873,6 +877,15 @@
                     (= op 'string-byte-length)
                     (concat (i32-const (descriptor-id :string)) (emit* (first args) env)
                             [0x10 (get intrinsic-indices 'typed-count)])
+                    (= op 'string-concat)
+                    (concat (i32-const (descriptor-id :string))
+                            (emit* (first args) env) (emit* (second args) env)
+                            [0x10 (get intrinsic-indices 'typed-string-concat)])
+                    (= op 'string-replace-all)
+                    (concat (i32-const (descriptor-id :string))
+                            (emit* (first args) env) (emit* (second args) env)
+                            (emit* (nth args 2) env)
+                            [0x10 (get intrinsic-indices 'typed-string-replace-all)])
                     (= op 'vector-new)
                     (emit-builder :vector-i64 -1 args (repeat (count args) :i64) env)
                     (= op 'vector-count)
@@ -1117,6 +1130,17 @@
                     (= op 'xml-path-count)
                     (concat (emit* (first args) env) (emit* (second args) env)
                             [0x10 (get intrinsic-indices 'xml-path-count)])
+                    (= op 'xml-name-count)
+                    (concat (emit* (first args) env) (emit* (second args) env)
+                            [0x10 (get intrinsic-indices 'xml-name-count)])
+                    (= op 'xml-name-text)
+                    (concat (emit* (nth args 0) env) (emit* (nth args 1) env)
+                            (emit* (nth args 2) env)
+                            [0x10 (get intrinsic-indices 'xml-name-text)])
+                    (= op 'xml-path-text)
+                    (concat (emit* (nth args 0) env) (emit* (nth args 1) env)
+                            (emit* (nth args 2) env)
+                            [0x10 (get intrinsic-indices 'xml-path-text)])
                     (= op 'xml-path-attr)
                     (concat (emit* (nth args 0) env) (emit* (nth args 1) env)
                             (emit* (nth args 2) env) (emit* (nth args 3) env)
@@ -1200,7 +1224,11 @@
                                (coll? form) (doseq [item form] (walk item))))]
                      (doseq [function functions] (walk (:body function)))
                      @found))
-        has-xml? (uses-operation? functions '#{xml-path-count xml-path-attr})
+        has-xml? (uses-operation? functions
+                                  '#{xml-path-count xml-name-count xml-name-text
+                                     xml-path-text xml-path-attr})
+        has-string-concat? (uses-operation? functions '#{string-concat})
+        has-string-replace? (uses-operation? functions '#{string-replace-all})
         has-decimal? (uses-operation? functions '#{decimal-f64-parse})
         has-decimal-x3? (uses-operation? functions '#{decimal-f64x3-parse})
         typed-imports (when (and typed? (typed/requires-host-runtime? kir))
@@ -1221,6 +1249,10 @@
                          ['typed-count "kotoba:typed" "count" [0x60 2 0x7f 0x6f 1 0x7e]]
                          ['typed-bool "kotoba:typed" "bool" [0x60 1 0x7f 1 0x6f]]
                          ['typed-equal "kotoba:typed" "equal" [0x60 3 0x7f 0x6f 0x6f 1 0x7f]]
+                         ['typed-string-concat "kotoba:typed" "string-concat"
+                          [0x60 3 0x7f 0x6f 0x6f 1 0x6f]]
+                         ['typed-string-replace-all "kotoba:typed" "string-replace-all"
+                          [0x60 4 0x7f 0x6f 0x6f 0x6f 1 0x6f]]
                          ['typed-assoc-i64 "kotoba:typed" "assoc-i64" [0x60 4 0x7f 0x6f 0x7f 0x7e 1 0x6f]]
                          ['typed-assoc-f64 "kotoba:typed" "assoc-f64" [0x60 4 0x7f 0x6f 0x7f 0x7c 1 0x6f]]
                          ['typed-assoc-f32 "kotoba:typed" "assoc-f32" [0x60 4 0x7f 0x6f 0x7f 0x7d 1 0x6f]]
@@ -1249,6 +1281,9 @@
                          ['typed-map-dissoc-ref "kotoba:typed" "map-dissoc-ref" [0x60 3 0x7f 0x6f 0x6f 1 0x6f]]]
                          (when has-xml?
                            [['xml-path-count "kotoba:typed" "xml-path-count" [0x60 2 0x6f 0x6f 1 0x7e]]
+                            ['xml-name-count "kotoba:typed" "xml-name-count" [0x60 2 0x6f 0x6f 1 0x7e]]
+                            ['xml-name-text "kotoba:typed" "xml-name-text" [0x60 3 0x6f 0x6f 0x7e 1 0x6f]]
+                            ['xml-path-text "kotoba:typed" "xml-path-text" [0x60 3 0x6f 0x6f 0x7e 1 0x6f]]
                             ['xml-path-attr "kotoba:typed" "xml-path-attr" [0x60 4 0x6f 0x6f 0x7e 0x6f 1 0x6f]]])
                          (when has-decimal?
                            [['decimal-f64-parse "kotoba:typed" "decimal-f64-parse" [0x60 1 0x6f 1 0x6f]]])

@@ -52,7 +52,12 @@ const ALLOWED_IMPORTS = new Set([
   "kotoba:typed/map-assoc-rr/function",
   "kotoba:typed/map-dissoc-i64/function",
   "kotoba:typed/map-dissoc-ref/function",
+  "kotoba:typed/string-concat/function",
+  "kotoba:typed/string-replace-all/function",
   "kotoba:typed/xml-path-count/function",
+  "kotoba:typed/xml-name-count/function",
+  "kotoba:typed/xml-name-text/function",
+  "kotoba:typed/xml-path-text/function",
   "kotoba:typed/xml-path-attr/function",
   "kotoba:typed/decimal-f64-parse/function",
   "kotoba:typed/decimal-f64x3-parse/function"
@@ -350,6 +355,8 @@ function createTypedRuntime(abi) {
   };
   const xmlWhitespace = character =>
     character === " " || character === "\t" || character === "\n" || character === "\r";
+  const normalizeXmlText = text =>
+    xmlString(text.replace(/[ \t\r\n]+/gu, " ").replace(/^ | $/gu, ""));
   const parseBoundedXml = input => {
     const text = xmlString(input);
     let cursor = 0, nodes = 0;
@@ -403,20 +410,26 @@ function createTypedRuntime(abi) {
         if (cursor >= text.length) reject("invalid-xml", "XML attribute is unterminated");
         attributes[attribute] = xmlString(text.slice(begin, cursor++));
       }
-      output.push(Object.freeze({ path, attributes: Object.freeze(attributes) }));
-      if (empty) return;
+      const record = { path, attributes: Object.freeze(attributes), text: "" };
+      output.push(record);
+      if (empty) return "";
+      const parts = [];
       for (;;) {
-        comments(); skip();
         if (text.startsWith("</", cursor)) {
           cursor += 2;
           const closing = name();
           skip();
           if (closing !== tag || text[cursor++] !== ">")
             reject("invalid-xml", "XML closing tag mismatch");
-          return;
+          record.text = normalizeXmlText(parts.join(" "));
+          return record.text;
         }
-        if (text[cursor] === "<") { element(depth + 1, path); continue; }
-        reject("invalid-xml", "XML text content is rejected");
+        if (text.startsWith("<!--", cursor)) { comment(); parts.push(" "); continue; }
+        if (text[cursor] === "<") { parts.push(element(depth + 1, path)); continue; }
+        const begin = cursor;
+        while (cursor < text.length && text[cursor] !== "<") cursor += 1;
+        if (cursor === begin) reject("invalid-xml", "XML text is invalid");
+        parts.push(text.slice(begin, cursor));
       }
     };
     comments();
@@ -428,7 +441,7 @@ function createTypedRuntime(abi) {
     }
     comments(); element(1, ""); comments(); skip();
     if (cursor !== text.length) reject("invalid-xml", "XML trailing content is rejected");
-    return Object.freeze(output);
+    return Object.freeze(output.map(node => Object.freeze(node)));
   };
   const xmlPath = path => {
     path = xmlString(path);
@@ -437,6 +450,12 @@ function createTypedRuntime(abi) {
       reject("invalid-xml", "XML path is invalid");
     return path;
   };
+  const xmlCheckedName = name => {
+    name = xmlString(name);
+    if (!xmlName.test(name)) reject("invalid-xml", "XML element name is invalid");
+    return name;
+  };
+  const xmlElementName = node => node.path.slice(node.path.lastIndexOf("/") + 1);
   const compareSequence = (types, left, right) => {
     const length = Math.min(left.length, right.length);
     for (let index = 0; index < length; index += 1) {
@@ -850,9 +869,60 @@ function createTypedRuntime(abi) {
       return mapDissoc(descriptorId, value, i64(key));
     },
     "map-dissoc-ref"(descriptorId, value, key) { return mapDissoc(descriptorId, value, key); },
+    "string-concat"(descriptorId, left, right) {
+      const descriptor = descriptorAt(descriptorId);
+      if (descriptor !== "string") reject("invalid-typed-operation", "string descriptor required");
+      const result = assertValue(descriptor, left) + assertValue(descriptor, right);
+      if (utf8Length(result) > 65536) reject("invalid-typed-value", "typed string is oversized");
+      return result;
+    },
+    "string-replace-all"(descriptorId, value, needle, replacement) {
+      const descriptor = descriptorAt(descriptorId);
+      if (descriptor !== "string") reject("invalid-typed-operation", "string descriptor required");
+      value = assertValue(descriptor, value);
+      needle = assertValue(descriptor, needle);
+      replacement = assertValue(descriptor, replacement);
+      if (needle.length === 0)
+        reject("invalid-typed-operation", "empty string replacement needle rejected");
+      const result = value.split(needle).join(replacement);
+      if (utf8Length(result) > 65536) reject("invalid-typed-value", "typed string is oversized");
+      return result;
+    },
     "xml-path-count"(xml, path) {
       const wanted = xmlPath(path);
       return BigInt(parseBoundedXml(xml).filter(node => node.path === wanted).length);
+    },
+    "xml-name-count"(xml, name) {
+      const wanted = xmlCheckedName(name);
+      return BigInt(parseBoundedXml(xml).filter(node => xmlElementName(node) === wanted).length);
+    },
+    "xml-name-text"(xml, name, index) {
+      const wanted = xmlCheckedName(name);
+      if (typeof index !== "bigint" || index < 0n || BigInt.asIntN(64, index) !== index)
+        reject("invalid-xml", "XML element index is invalid");
+      const optionDescriptor = abi.descriptors.find(candidate =>
+        Array.isArray(candidate) && candidate[0] === "option" && candidate[1] === "string");
+      if (optionDescriptor === undefined)
+        reject("invalid-typed-operation", "XML string option descriptor is absent");
+      const matches = parseBoundedXml(xml).filter(node => xmlElementName(node) === wanted);
+      const present = index < BigInt(matches.length);
+      return admitValue(optionDescriptor, Object.freeze(present
+        ? [optionDescriptor, true, matches[Number(index)].text]
+        : [optionDescriptor, false]));
+    },
+    "xml-path-text"(xml, path, index) {
+      const wanted = xmlPath(path);
+      if (typeof index !== "bigint" || index < 0n || BigInt.asIntN(64, index) !== index)
+        reject("invalid-xml", "XML element index is invalid");
+      const optionDescriptor = abi.descriptors.find(candidate =>
+        Array.isArray(candidate) && candidate[0] === "option" && candidate[1] === "string");
+      if (optionDescriptor === undefined)
+        reject("invalid-typed-operation", "XML string option descriptor is absent");
+      const matches = parseBoundedXml(xml).filter(node => node.path === wanted);
+      const present = index < BigInt(matches.length);
+      return admitValue(optionDescriptor, Object.freeze(present
+        ? [optionDescriptor, true, matches[Number(index)].text]
+        : [optionDescriptor, false]));
     },
     "xml-path-attr"(xml, path, index, attribute) {
       const wanted = xmlPath(path);

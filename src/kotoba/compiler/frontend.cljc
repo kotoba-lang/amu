@@ -49,7 +49,9 @@
 ;; renamed, or removed there).
 (def ^:private capability-registry-cljs-fallback
   '{:identity/sign 1 :identity/verify 2 :hash/sha256 3 :http/post 4
-    :log/read 5 :log/append 6 :clock/now 7})
+    :log/read 5 :log/append 6 :clock/now 7
+    :http/get-stream 8 :object/get-stream 9 :object/put-block 10
+    :object/compare-and-set-ref 11})
 
 (defn- load-capability-registry []
   #?(:clj
@@ -126,8 +128,11 @@
   '{vector-f64-count 1 vector-f64-get 3 vector-f64-at 2 vector-f64-drop 2
     vector-f64-assoc 3 vector-f64-conj 2})
 (def sequencing-operations '#{do})
-(def string-operations '{string-byte-length 1 string=? 2 string-concat 2})
-(def xml-operations '{xml-path-count 2 xml-path-attr 4})
+(def string-operations
+  '{string-byte-length 1 string=? 2 string-concat 2 string-replace-all 3})
+(def xml-operations
+  '{xml-path-count 2 xml-name-count 2 xml-name-text 3
+    xml-path-text 3 xml-path-attr 4})
 (def decimal-operations '{decimal-f64-parse 1 decimal-f64x3-parse 1})
 (def f64-operations
   '{f64-to-bits 1 f64-from-bits 1
@@ -1729,15 +1734,21 @@
             (require-expression-type! type :string arg))
           :i64)
 
-      (= op 'string-concat)
+      (contains? '#{string-concat string-replace-all} op)
       (do (doseq [[arg type] (map vector args types)]
             (require-expression-type! type :string arg))
           :string)
 
-      (= op 'xml-path-count)
+      (contains? '#{xml-path-count xml-name-count} op)
       (do (doseq [[arg type] (map vector args types)]
             (require-expression-type! type :string arg))
           :i64)
+
+      (contains? '#{xml-name-text xml-path-text} op)
+      (do (require-expression-type! (nth types 0) :string (nth args 0))
+          (require-expression-type! (nth types 1) :string (nth args 1))
+          (require-expression-type! (nth types 2) :i64 (nth args 2))
+          [:option :string])
 
       (= op 'xml-path-attr)
       (do (require-expression-type! (nth types 0) :string (nth args 0))

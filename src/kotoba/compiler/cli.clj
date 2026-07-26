@@ -8,6 +8,7 @@
             [kotoba.compiler.diagnostic :as diagnostic]
             [kotoba.compiler.ios-aot :as ios-aot]
             [kotoba.compiler.interface :as interface]
+            [kotoba.compiler.host-profile :as host-profile]
             [kotoba.compiler.project-files :as project-files]
             [kotoba.compiler.native-executor :as native-executor]
             [kotoba.compiler.packaging.pe32plus :as pe32plus]
@@ -17,6 +18,7 @@
             [kotoba.compiler.signing :as signing]
             [kotoba.compiler.source-path :as source-path]
             [kotoba.compiler.target :as target-profile]
+            [kotoba.compiler.test-profile :as test-profile]
             [kotoba.compiler.verifier :as verifier]
             [clojure.data.json :as json]
             [clojure.string :as str])
@@ -52,7 +54,8 @@
 
 (def ^:private detail-keys
   #{:phase :target :artifact-target :host-target :entry :arity :limit :status
-    :reason :runtime-sha256 :not-before :expires :now})
+    :reason :runtime-sha256 :not-before :expires :now :field :binding
+    :minimum :maximum :unknown})
 
 (defn error-report
   ([error] (error-report error nil))
@@ -70,7 +73,8 @@
 (defn exit-code [phase]
   (case phase
     :usage 64
-    (:decode :read :subset :admission :ir :verify :coverage :project-link) 65
+    (:decode :read :subset :admission :ir :verify :coverage :project-link
+     :host-profile) 65
     (:signature :trust :runtime-identity) 77
     :output 74
     :execute 69
@@ -247,6 +251,33 @@
       (println (pr-str {:ok true
                         :effects (get-in result [:hir :effects])
                         :admission (:admission result)})))
+    "test"
+    (let [input (kotoba-source! (second args))
+          report (test-profile/run-source (bounded-edn/read-text-file input))]
+      (println (pr-str report))
+      (when-not (:ok report) (*exit* 1)))
+    "host-profile"
+    (let [input (second args)
+          profile (bounded-edn/read-file input)
+          generated (host-profile/generate profile)
+          output-dir (or (option args "--output-dir") "kotoba-host")
+          directory (java.nio.file.Paths/get output-dir
+                                               (make-array String 0))
+          _ (java.nio.file.Files/createDirectories
+             directory
+             (make-array java.nio.file.attribute.FileAttribute 0))
+          worker-output (str (.resolve directory "worker.mjs"))
+          wrangler-output (str (.resolve directory "wrangler.json"))
+          manifest-output (str (.resolve directory "host.manifest.edn"))]
+      (atomic-output/write-text! worker-output (:worker-source generated))
+      (atomic-output/write-text! wrangler-output
+                                 (json/write-str (:wrangler generated)))
+      (atomic-output/write-edn! manifest-output (:manifest generated))
+      (println (pr-str {:ok true
+                        :target (get-in generated [:profile :target])
+                        :output worker-output
+                        :wrangler-output wrangler-output
+                        :manifest-output manifest-output})))
     "package-aiueos-boot"
     (let [input (second args)
           output (or (option args "--output") "BOOTX64.EFI")

@@ -6,7 +6,8 @@
   ;; is conditional and the branch doesn't match -- fails ns-form spec
   ;; validation ("Extra input spec: :clojure.core.specs.alpha/ns-form",
   ;; confirmed live).
-  (:require [kotoba.compiler.value :as value]
+  (:require [clojure.string :as str]
+            [kotoba.compiler.value :as value]
             [kotoba.compiler.decimal :as decimal]
             [kotoba.compiler.xml :as xml]
             #?@(:cljs [[kotoba.compiler.cljs-i64 :as i64]])))
@@ -48,7 +49,8 @@
      typed-set-new typed-set-count typed-set-contains typed-set-conj typed-set-disj typed-set-equal
      typed-map-new typed-map-count typed-map-contains typed-map-get
      typed-map-entry-at typed-map-assoc typed-map-dissoc typed-map-equal
-     xml-path-count xml-path-attr decimal-f64-parse decimal-f64x3-parse
+     string-replace-all xml-path-count xml-name-count xml-name-text
+     xml-path-text xml-path-attr decimal-f64-parse decimal-f64x3-parse
      record-new record-get record-assoc record-equal
      vector-count vector-get vector-at vector-drop vector-assoc vector-conj
      vector-f64-new vector-f64-count vector-f64-get vector-f64-at
@@ -668,10 +670,34 @@
         (let [[left right] (mapv #(eval-expr % env functions fuel heap call-stack cap-call) args)]
           (value/bounded-string! (str left right) value/string-value-byte-limit))
 
+        (= op 'string-replace-all)
+        (let [[input needle replacement]
+              (mapv #(eval-expr % env functions fuel heap call-stack cap-call) args)]
+          (when (empty? needle) (trap! :empty-string-replacement-needle {}))
+          (value/bounded-string! (str/replace input needle replacement)
+                                 value/string-value-byte-limit))
+
         (= op 'xml-path-count)
         (xml/path-count
          (eval-expr (first args) env functions fuel heap call-stack cap-call)
          (eval-expr (second args) env functions fuel heap call-stack cap-call))
+
+        (= op 'xml-name-count)
+        (xml/name-count
+         (eval-expr (first args) env functions fuel heap call-stack cap-call)
+         (eval-expr (second args) env functions fuel heap call-stack cap-call))
+
+        (= op 'xml-name-text)
+        (xml/name-text
+         (eval-expr (nth args 0) env functions fuel heap call-stack cap-call)
+         (eval-expr (nth args 1) env functions fuel heap call-stack cap-call)
+         (eval-expr (nth args 2) env functions fuel heap call-stack cap-call))
+
+        (= op 'xml-path-text)
+        (xml/path-text
+         (eval-expr (nth args 0) env functions fuel heap call-stack cap-call)
+         (eval-expr (nth args 1) env functions fuel heap call-stack cap-call)
+         (eval-expr (nth args 2) env functions fuel heap call-stack cap-call))
 
         (= op 'xml-path-attr)
         (xml/path-attr
