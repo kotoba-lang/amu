@@ -79,21 +79,31 @@
 
 (deftest bounded-xml-queries-have-reference-and-typed-wasm-runtime-parity
   (let [source
-        "(ns xml.query (:export [main count-links link-name]))
+        "(ns xml.query (:export [main count-links count-elements element-text link-text link-name]))
          (defn main [] 0)
-         (defn count-links [xml :string] :i64 (xml-path-count xml \"robot/link\"))
+         (defn count-links [xml :string] :i64 (xml-path-count xml \"html/robot/link\"))
+         (defn count-elements [xml :string name :string] :i64 (xml-name-count xml name))
+         (defn element-text [xml :string name :string index :i64] [:option :string]
+           (xml-name-text xml name index))
+         (defn link-text [xml :string index :i64] [:option :string]
+           (xml-path-text xml \"html/robot/link\" index))
          (defn link-name [xml :string index :i64] [:option :string]
-           (xml-path-attr xml \"robot/link\" index \"name\"))"
-        xml "<?xml version=\"1.0\" encoding=\"utf-8\"?><robot><link name=\"base\"/><link name=\"tip\"/></robot>"
+           (xml-path-attr xml \"html/robot/link\" index \"name\"))"
+        xml "<?xml version=\"1.0\" encoding=\"utf-8\"?><!DOCTYPE html><html><robot><link name=\"base\"> Hello <span>typed</span> Wasm </link><link name=\"tip\"/></robot></html>"
         compiled (compiler/compile-source source :wasm32-browser-kotoba-v1)
         probe (node-probe
                compiled
                (str "const x=h.instance.exports,xml=" (pr-str xml) ";"
-                    "const tip=x['link-name'](xml,1n),missing=x['link-name'](xml,2n);"
-                    "if(x['count-links'](xml)!==2n||!tip[1]||tip[2]!=='tip'||missing[1])process.exit(2);"))]
+                    "const tip=x['link-name'](xml,1n),missing=x['link-name'](xml,2n),text=x['link-text'](xml,0n),named=x['element-text'](xml,'link',0n);"
+                    "if(x['count-links'](xml)!==2n||x['count-elements'](xml,'link')!==2n||!tip[1]||tip[2]!=='tip'||missing[1]||!text[1]||text[2]!=='Hello typed Wasm'||!named[1]||named[2]!=='Hello typed Wasm')process.exit(2);"))]
     (is (= 2 (ir/execute (:kir compiled) 'count-links [xml])))
     (is (= [[:option :string] true "tip"]
            (ir/execute (:kir compiled) 'link-name [xml 1])))
+    (is (= [[:option :string] true "Hello typed Wasm"]
+           (ir/execute (:kir compiled) 'link-text [xml 0])))
+    (is (= 2 (ir/execute (:kir compiled) 'count-elements [xml "link"])))
+    (is (= [[:option :string] true "Hello typed Wasm"]
+           (ir/execute (:kir compiled) 'element-text [xml "link" 0])))
     (is (zero? (:exit probe)) (:err probe))))
 
 (deftest i32-wrapping-shifts-and-xorshift-have-wasm-runtime-parity
@@ -186,6 +196,59 @@
     (is (= :kotoba.value/typed-v1 (:value-profile compiled)))
     (is (= :kotoba.typed/externref-v1 (:value-abi compiled)))
     (is (= #{:reference-types} (:wasm-features compiled)))
+    (is (zero? (:exit probe)) (:err probe))))
+
+(deftest schema-referenced-typed-capability-crosses-the-browser-wasm-boundary
+  (let [source
+        "(ns typed.capability
+           (:export [main make-request make-other invoke])
+           (:capabilities #{:http/post})
+           (:schemas {:demo/request [:record :demo/request [[:url :string]]]
+                      :demo/other [:record :demo/other [[:url :string]]] }))
+         (defn main [] 0)
+         (defn make-request [] [:record :demo/request [[:url :string]]]
+           (record [:record :demo/request [[:url :string]]] \"https://example.test\"))
+         (defn make-other [] [:record :demo/other [[:url :string]]]
+           (record [:record :demo/other [[:url :string]]] \"https://example.test\"))
+         (defn invoke [request [:ref :demo/request]] [:ref :demo/request]
+           (typed-cap-call :http/post [:ref :demo/request] [:ref :demo/request] request))"
+        compiled (compiler/compile-source source :wasm32-browser-kotoba-v1
+                                          {:allow #{[:cap/call 4]}})
+        encoded (.encodeToString (java.util.Base64/getEncoder) ^bytes (:bytes compiled))
+        probe (shell/sh
+               "node" "--input-type=module" "-e"
+               (str "import('./runtime/browser-host.mjs').then(async m=>{"
+                    "let calls=0;const h=await m.instantiateKotoba(Buffer.from(process.argv[1],'base64'),{"
+                    "allowCapabilities:[4],typedCapCall:(id,request,contract)=>{"
+                    "calls++;"
+                    "if(id!==4||contract.request[0]!=='ref'||contract.result[0]!=='ref')process.exit(2);"
+                    "return request}});const x=h.instance.exports;"
+                    "const request=x['make-request']();if(x.invoke(request)!==request)process.exit(3);"
+                    "try{x.invoke(x['make-other']());process.exit(5)}catch(e){}if(calls!==1)process.exit(6);"
+                    "if(h.typedAbi.version!==9||h.typedAbi.schemas.get(':demo/request')===undefined)process.exit(4)"
+                    "}).catch(e=>{console.error(e);process.exit(70)})")
+               encoded)]
+    (is (= typed/schema-abi-version (first (typed/metadata-bytes (:kir compiled)))))
+    (is (zero? (:exit probe)) (:err probe))))
+
+(deftest typed-capability-provider-result-is-validated-after-dispatch
+  (let [source
+        "(ns typed.capability-result (:export [main invoke]) (:capabilities #{:http/post}))
+         (defn main [] 0)
+         (defn invoke [request :string] :string
+           (typed-cap-call :http/post :string :string request))"
+        compiled (compiler/compile-source source :wasm32-browser-kotoba-v1
+                                          {:allow #{[:cap/call 4]}})
+        encoded (.encodeToString (java.util.Base64/getEncoder) ^bytes (:bytes compiled))
+        probe (shell/sh
+               "node" "--input-type=module" "-e"
+               (str "import('./runtime/browser-host.mjs').then(async m=>{"
+                    "const h=await m.instantiateKotoba(Buffer.from(process.argv[1],'base64'),{"
+                    "allowCapabilities:[4],typedCapCall:()=>7n});"
+                    "try{h.instance.exports.invoke('request');process.exit(2)}catch(e){"
+                    "if(e.code!=='invalid-typed-value')process.exit(3)}})"
+                    ".catch(e=>{console.error(e);process.exit(70)})")
+               encoded)]
     (is (zero? (:exit probe)) (:err probe))))
 
 (deftest structured-f64-and-f32-cross-the-sealed-wasm-abi
@@ -466,3 +529,82 @@
         probe (node-probe compiled "if(h.instance.exports.main()!==42n)process.exit(2);")]
     (is (> (count (typed/descriptor-table (:kir compiled))) 16))
     (is (zero? (:exit probe)) (:err probe))))
+
+(deftest scalar-option-and-result-ops-have-real-wasm-lowering
+  ;; Regression for compiler#258: these monomorphic operations were admitted
+  ;; and executed by the reference/JS paths, but fell through the typed Wasm
+  ;; emitter with `typed Wasm operation is not qualified`.
+  (let [source
+        "(ns scalar.adt (:export [main]))
+         (defn main [] :i64
+           (if (option-some? (option-some 7))
+             (+ (option-value (option-some 8) 90)
+                (+ (option-value (option-none) 9)
+                   (+ (result-value (result-ok 10) 91)
+                      (+ (result-error (result-err 8) 92)
+                         (if (result-ok? (result-err 1)) 93 0)))))
+             94))"
+        compiled (compiler/compile-source source :wasm32-browser-kotoba-v1)
+        descriptors (set (typed/descriptor-table (:kir compiled)))
+        probe (node-probe compiled
+                          "if(h.instance.exports.main()!==35n)process.exit(2);")]
+    (is (= 35 (ir/execute (:kir compiled) 'main [])))
+    (is (contains? descriptors :option-i64))
+    (is (contains? descriptors :result-i64))
+    (is (= (typed/encode-descriptor [:option :i64])
+           (typed/encode-descriptor :option-i64)))
+    (is (= (typed/encode-descriptor [:result :i64 :i64])
+           (typed/encode-descriptor :result-i64)))
+    (is (zero? (:exit probe)) (:err probe))))
+
+(deftest f64-scratch-locals-are-fully-declared-before-instantiation
+  ;; Regression for kotoba-lang/compiler#206 Bug 1: a typed function that
+  ;; needs six-or-more f64 scratch locals (each `f64-from-bits` constant
+  ;; allocates one for its NaN canonicalization) declared too few of them,
+  ;; because the locals declaration read `@locals` before the lazy body
+  ;; emission had realized all `allocate!` side effects. The module compiled
+  ;; ({:ok true}) but failed to instantiate with `invalid local index: N`.
+  ;; A five-`:f64`-param callee (at the max-parameters limit) plus a caller
+  ;; whose comparison introduces a sixth f64 constant reproduces exactly six
+  ;; scratch locals in one function.
+  (let [source
+        "(ns f64.scratch (:export [main]))
+         (defn five [a :f64 b :f64 c :f64 d :f64 e :f64] :f64
+           (f64-add a (f64-add b (f64-add c (f64-add d e)))))
+         (defn main [] :i64
+           (if (f64-eq 15.0 (five 1.0 2.0 3.0 4.0 5.0)) 42 1))"
+        compiled (compiler/compile-source source :wasm32-browser-kotoba-v1)
+        probe (node-probe compiled
+                          "if(h.instance.exports.main()!==42n)process.exit(2);")]
+    (is (zero? (:exit probe)) (:err probe))))
+
+(deftest scalar-f64-body-ops-select-the-typed-kir-even-with-i64-signatures
+  ;; Regression: a function whose exported signature is scalar :i64 but whose
+  ;; BODY uses scalar f64 ops (f64-from-bits, f64-eq, f64-add, ...) was
+  ;; classified :kotoba.kir/v3 (untyped) because the typed-values? scan looked
+  ;; at signatures + structured body ops but NOT scalar f64/f32 ops. The
+  ;; untyped v3 emitter has no lowering for them, so it emitted `call nil`
+  ;; (a null function index) -> NullPointerException at module byte assembly.
+  (testing "the module is promoted to the typed KIR"
+    (let [kir (:kir (compiler/compile-source
+                     "(ns t (:export [main]))
+                      (defn main [] :i64
+                        (if (f64-eq (f64-from-bits 1) (f64-from-bits 2)) 42 1))"
+                     :js-browser-kotoba-v1))]
+      (is (= :kotoba.kir/v4 (:format kir)))))
+  (testing "a purely-i64 body is NOT promoted"
+    (let [kir (:kir (compiler/compile-source
+                     "(ns t (:export [main])) (defn main [] :i64 (+ 40 2))"
+                     :js-browser-kotoba-v1))]
+      (is (= :kotoba.kir/v3 (:format kir)))))
+  (testing "it now emits and runs on wasm32-browser (3.0 == 1.0 + 2.0)"
+    (let [three "(f64-from-bits 4613937818241073152)"
+          one "(f64-from-bits 4607182418800017408)"
+          two "(f64-from-bits 4611686018427387904)"
+          source (str "(ns t (:export [main]))"
+                      "(defn main [] :i64 (if (f64-eq " three
+                      " (f64-add " one " " two ")) 42 99))")
+          compiled (compiler/compile-source source :wasm32-browser-kotoba-v1)
+          probe (node-probe compiled
+                            "if(h.instance.exports.main()!==42n)process.exit(2);")]
+      (is (zero? (:exit probe)) (:err probe)))))

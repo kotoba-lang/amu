@@ -1,0 +1,25 @@
+{:kotoba.backend-provider-qualification/format :v1
+ :provider-manifest {:format :kotoba.provider-conformance/v1
+                     :sha256 "5d7599b5701b6fb9660de7488afbfa0b85314f90208a3f11b2ea28ca502e476e"
+                     :capability-count 9}
+ :backends
+  {:wasmtime {:manifest-gate :required
+             :execution-status :pending
+             :gaps [:nested-canonical-request-result-abi
+                    :recursive-schema-component-representation
+                    :production-provider-components
+                    :component-runtime-semantic-vectors
+                    :bounded-wasi-0.3-async
+                    :minimum-wasmtime-43]
+             :evidence {}}
+  :native {:manifest-gate :required
+           :execution-status :pending
+           :gaps [:typed-provider-syscall-abi
+                  :nested-request-result-host-codec
+                  :native-provider-semantic-vectors]
+           :evidence {}}
+  :cljs {:manifest-gate :required
+         :execution-status :qualified
+         :gaps []
+         :evidence {:runtime-boundary "kotoba.compiler.backend-cljs-test/real-nbb-round-trips-full-i64-provider-values"
+                    :semantic-vectors "kotoba.compiler.backend-cljs-test/typed-provider-dispatch-runs-all-application-kit-contracts"}}}}

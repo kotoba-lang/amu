@@ -21,7 +21,8 @@
        (catch clojure.lang.ExceptionInfo e (ex-message e))))
 
 (defn- unsupported-typed-targets []
-  (remove #(contains? #{:js-kotoba-v1 :wasm32-kotoba-v1} (target/backend %))
+  (remove #(contains? #{:js-kotoba-v1 :wasm32-kotoba-v1 :cljs-kotoba-v1}
+                       (target/backend %))
           compiler/supported-targets))
 
 (deftest sealed-multi-arity-resolves-every-call-before-hir
@@ -67,10 +68,24 @@
 
 (deftest floating-point-policy-is-versioned-and-artifact-sealed
   (let [source "(defn main [] 1)"
-        results (mapv #(compiler/compile-source source %) compiler/supported-targets)
+        ;; Every target that compile-source emits directly. A component target
+        ;; is lifted by compile-component instead, and is covered separately
+        ;; below so this sweep still reaches every declared target.
+        results (mapv #(compiler/compile-source source %)
+                      compiler/source-compilable-targets)
+        component-targets (remove compiler/source-compilable-targets
+                                  compiler/supported-targets)
         web (compiler/compile-source source :js-kotoba-v1)]
     (is (= :kotoba.floating-point/ieee-754-f32-f64-v7 compiler/floating-point-policy))
     (is (every? #(= compiler/floating-point-policy (:floating-point-policy %)) results))
+    (is (= compiler/supported-targets
+           (into (set compiler/source-compilable-targets) component-targets))
+        "the two target sets must still partition every declared target")
+    (is (seq component-targets)
+        "the component target must be declared, or this sweep silently shrinks")
+    (is (= compiler/floating-point-policy
+           (:floating-point-policy (compiler/compile-component source)))
+        "a component seals the same floating-point policy as every backend")
     (is (= compiler/floating-point-policy
            (get-in web [:manifest :kotoba.artifact/floating-point-policy])))
     (is (str/includes? (:source web) "floatingPointPolicy:'ieee-754-f32-f64-v7'")))
@@ -639,27 +654,44 @@
     (is (zero? (:exit result)) (:err result))))
 
 (deftest bounded-xml-queries-run-through-compiler-and-kotoba-script
-  (let [source "(ns pilot.xml (:export [count-links link-name]))
+  (let [source "(ns pilot.xml (:export [count-links count-elements element-text link-text link-name]))
                 (defn count-links [xml :string] :i64
-                  (xml-path-count xml \"robot/link\"))
+                  (xml-path-count xml \"html/robot/link\"))
+                (defn count-elements [xml :string name :string] :i64
+                  (xml-name-count xml name))
+                (defn element-text [xml :string name :string index :i64] [:option :string]
+                  (xml-name-text xml name index))
+                (defn link-text [xml :string index :i64] [:option :string]
+                  (xml-path-text xml \"html/robot/link\" index))
                 (defn link-name [xml :string index :i64] [:option :string]
-                  (xml-path-attr xml \"robot/link\" index \"name\"))"
+                  (xml-path-attr xml \"html/robot/link\" index \"name\"))"
         compiled (compiler/compile-source source :js-kotoba-v1)
         encoded (.encodeToString (java.util.Base64/getEncoder)
                                  (.getBytes ^String (:source compiled) "UTF-8"))
-        xml "<?xml version=\"1.0\" encoding=\"utf-8\"?><robot><link name=\"base\"/><link name=\"tip\"/></robot>"
+        xml "<?xml version=\"1.0\" encoding=\"utf-8\"?><!DOCTYPE html><html><robot><link name=\"base\"> Hello <span>bounded</span> XML </link><link name=\"tip\"/></robot></html>"
         probe (str "import('data:text/javascript;base64," encoded
                    "').then(m=>{const x=m.instantiateKotoba({}),xml=" (pr-str xml) ";"
-                   "const tip=x['link-name'](xml,1n),missing=x['link-name'](xml,2n);"
-                   "if(x['count-links'](xml)!==2n||!tip[1]||tip[2]!=='tip'||missing[1])process.exit(2)})")
+                   "const tip=x['link-name'](xml,1n),missing=x['link-name'](xml,2n),text=x['link-text'](xml,0n),named=x['element-text'](xml,'link',0n);"
+                   "if(x['count-links'](xml)!==2n||x['count-elements'](xml,'link')!==2n||!tip[1]||tip[2]!=='tip'||missing[1]||!text[1]||text[2]!=='Hello bounded XML'||!named[1]||named[2]!=='Hello bounded XML')process.exit(2)})")
         result (shell/sh "node" "--input-type=module" "-e" probe)]
     (is (= 2 (ir/execute (:kir compiled) 'count-links [xml])))
     (is (= [[:option :string] true "tip"]
            (ir/execute (:kir compiled) 'link-name [xml 1])))
     (is (= [[:option :string] false]
            (ir/execute (:kir compiled) 'link-name [xml 2])))
+    (is (= [[:option :string] true "Hello bounded XML"]
+           (ir/execute (:kir compiled) 'link-text [xml 0])))
+    (is (= 2 (ir/execute (:kir compiled) 'count-elements [xml "link"])))
+    (is (= [[:option :string] true "Hello bounded XML"]
+           (ir/execute (:kir compiled) 'element-text [xml "link" 0])))
+    (doseq [invalid ["<!DOCTYPE svg><svg/>"
+                     "<!DOCTYPE html PUBLIC \"external\"><html/>"
+                     "<!DOCTYPE html SYSTEM \"external\"><html/>"
+                     "<!DOCTYPE html [<!ENTITY x \"unsafe\">]><html/>"]]
+      (is (thrown? clojure.lang.ExceptionInfo
+                   (ir/execute (:kir compiled) 'count-elements [invalid "html"]))))
     (is (= [:option :string]
-           (get-in compiled [:hir :functions 1 :result])))
+           (get-in compiled [:hir :functions 4 :result])))
     (is (str/includes? (:source compiled)
                        "xmlSubsetLimits:Object.freeze({nodes:2048,depth:32,attributesPerNode:32,pathSegments:32})"))
     (is (zero? (:exit result)) (:err result))))
@@ -754,6 +786,26 @@
     (is (= 43 (ir/execute (:kir (compiler/compile-source source :js-kotoba-v1))
                           'main [])))))
 
+(deftest nested-top-level-constant-aliases-resolve-closed-and-acyclically
+  (let [source "(def base 21)
+                (def derived base)
+                (defn main [] (+ derived 1))"]
+    (is (= 22 (oracle source)))
+    (is (= (:kir (compiler/compile-source source :js-kotoba-v1))
+           (:kir (compiler/compile-source source :wasm32-kotoba-v1)))))
+  (is (= 21 (oracle "(def base 21)
+                     (def config {:multiplier base})
+                     (defn main [] (get config :multiplier))")))
+  (is (= 2 (oracle "(def base 21)
+                    (def items [base 2])
+                    (defn main [] (vector-at items 1))")))
+  (is (= "constant alias must name a declared constant"
+         (rejection-message "(def value missing) (defn main [] value)")))
+  (is (= "constant alias must name a declared constant"
+         (rejection-message "(def pi Math/PI) (defn main [] pi)")))
+  (is (= "constant aliases must be acyclic"
+         (rejection-message "(def left right) (def right left) (defn main [] left)"))))
+
 (deftest string-constant-is-a-value-not-an-implicit-docstring
   (is (= "@context"
          (oracle "(def context-key \"@context\") (defn main [] :string context-key)")))
@@ -761,16 +813,55 @@
          (oracle "(def context-key \"JSON-LD key\" \"@context\")
                   (defn main [] :string context-key)"))))
 
+(deftest f64-constants-are-closed-and-use-canonical-bit-lowering
+  (let [source "(ns pilot.f64-constants (:export [scaled signed-zero nan-value]))
+                (def factor 1.25)
+                (def negative-zero -0.0)
+                (def not-a-number ##NaN)
+                (defn scaled [value :f64] :f64 (f64-mul value factor))
+                (defn signed-zero [] :f64 negative-zero)
+                (defn nan-value [] :f64 not-a-number)"
+        js (compiler/compile-source source :js-kotoba-v1)
+        wasm (compiler/compile-source source :wasm32-kotoba-v1)]
+    (is (= 2.5 (ir/execute (:kir js) 'scaled [2.0])))
+    (is (= Long/MIN_VALUE
+           (value/f64-to-i64-bits (ir/execute (:kir js) 'signed-zero []))))
+    (is (Double/isNaN ^double (ir/execute (:kir js) 'nan-value [])))
+    (is (= (:kir js) (:kir wasm)) "targets consume the same substituted canonical KIR"))
+  (is (= "constant value must be closed bounded integer/string/keyword/boolean/nil/vector/map or non-empty keyword-set data"
+         (rejection-message "(def unsafe (host-value))
+                             (defn main [] :f64 unsafe)"))))
+
+(deftest bounded-keyword-set-constants-lower-to-canonical-typed-values
+  (let [source "(ns pilot.keyword-set (:export [count-kinds has-blue?]))
+                (def kinds #{:red :green :blue})
+                (defn count-kinds []
+                  (typed-set-count [:set :keyword] kinds))
+                (defn has-blue? [] :bool
+                  (typed-set-contains [:set :keyword] kinds :blue))"
+        js (compiler/compile-source source :js-kotoba-v1)
+        wasm (compiler/compile-source source :wasm32-kotoba-v1)]
+    (is (= 3 (ir/execute (:kir js) 'count-kinds [])))
+    (is (true? (ir/execute (:kir js) 'has-blue? [])))
+    (is (= (:kir js) (:kir wasm)) "all targets consume one canonical typed-set KIR"))
+  (doseq [source ["(def values #{}) (defn main [] values)"
+                  "(def values #{:ok 1}) (defn main [] values)"
+                  (str "(def values #{"
+                       (clojure.string/join " " (map #(str ":k" %) (range 33)))
+                       "}) (defn main [] values)")]]
+    (is (= "constant value must be closed bounded integer/string/keyword/boolean/nil/vector/map or non-empty keyword-set data"
+           (rejection-message source)))))
+
 (deftest literal-keyword-constructor-is-closed-at-compile-time
   (is (= (keyword "@context")
          (oracle "(def context-key (keyword \"@context\"))
                   (defn main [] :keyword context-key)")))
-  (is (= "constant value must be closed bounded integer/string/keyword/boolean/nil/vector/map data"
+  (is (= "constant value must be closed bounded integer/string/keyword/boolean/nil/vector/map or non-empty keyword-set data"
          (rejection-message "(def context-key (keyword (host-value)))
                              (defn main [] context-key)"))))
 
 (deftest top-level-constants-never-execute-code-or-shadow-locals
-  (is (= "constant value must be closed bounded integer/string/keyword/boolean/nil/vector/map data"
+  (is (= "constant value must be closed bounded integer/string/keyword/boolean/nil/vector/map or non-empty keyword-set data"
          (rejection-message "(def danger (+ 1 2)) (defn main [] danger)")))
   (is (= "duplicate constant name"
          (rejection-message "(def x 1) (def x 2) (defn main [] x)")))

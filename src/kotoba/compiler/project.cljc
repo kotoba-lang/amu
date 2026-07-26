@@ -84,14 +84,19 @@
 (defn- stub-value [type]
   (cond
     (= type :i64) 0
+    (= type :f64) '(f64-from-bits 0)
+    (= type :f32) '(f32-from-bits 0)
     (= type :string) ""
     (= type :keyword) :kotoba.stub/value
+    (= type :symbol) '(symbol "kotoba.stub/value")
     (= type :map) {}
     (= type :bool) false
     (= type :option-i64) '(option-none)
     (= type :result-i64) '(result-ok 0)
     (= type :vector-i64) '(vector-i64)
     (= type :vector-f64) '(vector-f64)
+    (= type :string-index) '(string-index)
+    (= type :disjoint-set-i64) '(disjoint-set-i64)
     (and (vector? type) (= :result (first type)))
     (list 'result-ok-of type (stub-value (second type)))
     (and (vector? type) (= :option (first type)))

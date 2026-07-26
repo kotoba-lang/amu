@@ -60,6 +60,25 @@
                   'example.age :js-kotoba-v1)]
     (is (= 7 (ir/execute (:kir compiled) 'age [])))))
 
+(deftest project-stubs-cover-scalar-f64-and-f32-export-results
+  ;; Regression for kotoba-lang/compiler#206 Bug 2: a cross-file :require of a
+  ;; function whose declared result type is scalar :f64 (or :f32) failed at
+  ;; :project-link with "project import result type has no closed stub value"
+  ;; -- project/stub-value had :vector-f64 but no :f64 / :f32 case. Only the
+  ;; import-boundary stub is exercised here, which is exactly what was missing.
+  (let [provider (str "(ns example.num (:export [scale narrow]))"
+                      "(defn scale [x :f64] :f64 (f64-mul x 2.0))"
+                      "(defn narrow [x :f64] :f32 (f64-to-f32-rounded x))")
+        consumer (str "(ns example.use (:require [example.num :as num])"
+                      " (:export [doubled ratio]))"
+                      "(defn doubled [] :f64 (num/scale 3.0))"
+                      "(defn ratio [] :bool (f32-unordered (num/narrow 2.0)"
+                      " (f32-from-bits 0)))")
+        compiled (compiler/compile-project
+                  {'example.num provider 'example.use consumer}
+                  'example.use :js-kotoba-v1)]
+    (is (= ['doubled 'ratio] (get-in compiled [:kir :exports])))))
+
 (deftest project-linking-keeps-nested-option-match-type-descriptors-idempotent
   (let [person "[:record :example/person [[:name :string] [:age :i64]]]"
         option (str "[:option " person "]")

@@ -162,6 +162,23 @@
           (when align? [0x48 0x83 0xc4 0x08])
           [0x41 0x59]))))                         ; pop r9
 
+(defn- emit-typed-cap-call [cap-id kind value env {:keys [temp-depth] :as ctx}]
+  (let [cap-id #?(:clj cap-id :cljs (js/Number cap-id))
+        byte-offset (+ 16 (quot cap-id 8))
+        mask (bit-shift-left 1 (mod cap-id 8))
+        align? (even? temp-depth)]
+    (vec (concat
+          [0x41 0xf6 0x41 byte-offset mask 0x75 0x02 0x0f 0x0b]
+          (emit-expr value env (assoc ctx :tail? false))
+          [0x49 0x89 0xc0 0x41 0x51]             ; r8=request; push r9
+          (when align? [0x50])
+          [0xbe] (le32 cap-id)                    ; esi=cap-id
+          [0xba] (le32 kind)                      ; edx=request kind
+          [0xb9] (le32 kind)                      ; ecx=result kind
+          [0x4c 0x89 0xcf 0x41 0xff 0x91] (le32 128)
+          (when align? [0x48 0x83 0xc4 0x08])
+          [0x41 0x59]))))
+
 (def ^:private heap-call-offsets
   {'pair 56 'pair-first 64 'pair-second 72
    'kgraph-assert! 80 'kgraph-get 88 'kgraph-count 96 'kgraph-entity-at 104
@@ -279,6 +296,189 @@
           (vec (concat code body-code
                        (when (pos? n) (concat [0x48 0x81 0xc4] (le32 (* 8 n)))))))))))
 
+;; A native scalar record has NO independent runtime representation at all --
+;; no pointer, no heap-arena allocation (unlike `pair`, which IS heap-backed
+;; via a host call), no new host ABI offset, no kexe_loader.c change. This
+;; increment's ENTIRE admitted shape is `(record-get type (record-new type
+;; v0 v1 ... vN-1) field)` -- a `record-get` immediately, directly nested
+;; over a matching `record-new` -- which is REWRITTEN here into exactly the
+;; `emit-let`/`load-let` machinery an ordinary `(let [f0 v0 f1 v1 ... fN-1
+;; vN-1] fI)` already uses: one synthetic 8-byte stack slot per field,
+;; pushed once each in source order (so a side-effecting field expression
+;; still runs exactly once, per the ADR-2607198300 `let`-sequencing fix),
+;; read back via the SAME depth-relative `load-let` arithmetic. This lands
+;; on the same "packed, 8-byte-per-field, offsets 0, 8, 16, ..." layout ADR
+;; 0043 chose for its own WASM linear-memory encoding, just realized on the
+;; native SysV stack frame instead: every value in this backend (including
+;; a `:bool`) is already a uniform 8-byte machine word, so there is no
+;; narrower packing to do. Because it degrades to a plain `let`, this is
+;; provably correct via machinery already proven by every existing `let`
+;; test in `native_executor_test.clj`; it needs zero new machine
+;; instructions of its own.
+;;
+;; Deliberately narrow, matching ADR 0043/0044/0045's own discipline: a
+;; bare `record-new` (used anywhere other than as `record-get`'s direct
+;; operand), a `record-get` over anything else (a parameter, a `let`-bound
+;; name, an `if`, a different-schema construction, a mismatched field
+;; count), and `record-assoc`/`record-equal`/nested records are all
+;; rejected here with a clear `ex-info`, not silently miscompiled -- no
+;; record value can ever escape past this one call, so no new host arena,
+;; no new function-boundary ABI (records never appear in `param-types`
+;; or `result`), and no lifetime question to answer.
+(defn- emit-record-get-of-new [type value-form field env ctx]
+  (when-not (seq? value-form)
+    (throw (ex-info "record-get is only supported directly over a matching record-new construction on the native backend"
+                    {:phase :x86-64 :type type})))
+  (let [[record-op record-type & field-exprs] value-form
+        fields (nth type 2)
+        field-index (first (keep-indexed (fn [i [name _]] (when (= name field) i)) fields))]
+    (when-not (= 'record-new record-op)
+      (throw (ex-info "record-get is only supported directly over a matching record-new construction on the native backend"
+                      {:phase :x86-64 :type type})))
+    (when-not (= type record-type)
+      (throw (ex-info "record-get's schema must be identical to its record-new operand's schema"
+                      {:phase :x86-64 :expected type :actual record-type})))
+    (when-not (= (count fields) (count field-exprs))
+      (throw (ex-info "record-new does not supply exactly one value per declared field"
+                      {:phase :x86-64 :type type})))
+    (when (nil? field-index)
+      (throw (ex-info "record-get references an undeclared field"
+                      {:phase :x86-64 :type type :field field})))
+    (let [names (mapv #(symbol (str "$record-field-" %)) (range (count fields)))
+          bindings (vec (mapcat vector names field-exprs))]
+      (emit-let bindings (nth names field-index) env ctx))))
+
+;; ADR 0063: the second native value-representation increment, immediately
+;; following ADR 0062's record. A native sealed variant, like the record, has
+;; NO independent heap/pointer representation -- it is rewritten at codegen
+;; time into TWO synthetic 8-byte stack slots on the SAME synthetic-stack-slot
+;; scheme `emit-let`/`load-let` already implement: slot 0 = discriminant (the
+;; case's 0-based ordinal index within the type's own declared `cases`
+;; vector, resolved at COMPILE TIME the same way `emit-record-get-of-new`
+;; resolves a field name to its index), slot 1 = payload (the ONE word every
+;; admitted case needs, since every admitted payload type -- `:i64`/`:bool`
+;; -- is already a uniform 8-byte word on this backend, matching the record
+;; ADR's own "no narrower packing" finding; a tag-only/"unit" case still
+;; reserves this SAME word -- its value is simply never bound/read by that
+;; case's own branch body, exactly the way a Rust `enum` variant without a
+;; payload still occupies its union's full size). Both slots are pushed
+;; UNCONDITIONALLY and exactly once (matching `emit-let`'s own side-
+;; effecting-binding discipline: the payload expression runs once regardless
+;; of which case it belongs to or whether that case's branch reads it).
+;;
+;; Dispatch is a REAL runtime compare-and-branch chain over the stored
+;; discriminant word, not a compile-time selection: for each of the N
+;; declared cases, in order, `cmp rax,i ; je case_i`, falling through past
+;; ALL N comparisons to a defensive UD2 trap if none match. The codegen does
+;; NOT special-case away any comparison based on a directly-nested
+;; `variant-new`'s literal tag being known at that particular call site (see
+;; `emit-variant-match-of-new` below) -- every one of the N comparisons is
+;; always present in the emitted bytes, for every call site, regardless of
+;; which case that site happens to construct. See docs/adr/0063-* for the
+;; full design rationale, including why the UD2 fallback is unreachable from
+;; any program this compiler's own pipeline will admit, sign, or execute (a
+;; MULTI-LAYER, not just single-layer, guarantee: frontend's own tag
+;; declaration check, this backend's own re-derived ordinal lookup,
+;; `kotoba.compiler.verifier`'s independent re-derivation, AND -- unique to
+;; this repository's native track -- `kotoba.compiler.signing/sign` and
+;; `signing/verify` BOTH unconditionally re-run the full verifier before
+;; producing or trusting a signature, so even a hand-crafted artifact
+;; bypassing `frontend/analyze` cannot reach real execution with a
+;; discriminant the type system did not itself validate).
+(defn- emit-variant-dispatch
+  "ORDINAL-EXPR and PAYLOAD-EXPR are ordinary KIR expressions (ORDINAL-EXPR
+  is normally a compile-time-computed plain integer, but nothing here
+  requires that -- see the direct low-level trap test in
+  native_executor_test.clj, which passes an out-of-range integer here
+  directly, bypassing `emit-variant-match-of-new`'s own tag-lookup entirely,
+  specifically to exercise this dispatch chain's fallback trap with a value
+  no admitted `.kotoba` program could ever produce). BRANCH-SPECS is an
+  ordered vector of `{:binder sym :body kir-form}`, one per declared case, in
+  the SAME order as the discriminant ordinal each one corresponds to."
+  [ordinal-expr payload-expr branch-specs env {:keys [temp-depth] :as ctx}]
+  (let [tail-ctx (assoc ctx :tail? false)
+        push-ordinal (vec (concat (emit-expr ordinal-expr env tail-ctx) [0x50]))
+        payload-depth (inc temp-depth)
+        push-payload (vec (concat (emit-expr payload-expr env (assoc tail-ctx :temp-depth payload-depth))
+                                  [0x50]))
+        dispatch-depth (+ temp-depth 2)
+        load-tag (load-let temp-depth dispatch-depth)
+        n (count branch-specs)
+        body-ctx (assoc ctx :temp-depth dispatch-depth)
+        ;; add rsp, 16 -- drops the two synthetic slots this dispatch alone
+        ;; pushed, run at the end of EVERY case body before falling through
+        ;; to whatever follows this whole construct (mirrors `emit-let`'s own
+        ;; final pop, just deferred until after the SELECTED branch runs
+        ;; instead of after a single body expression).
+        cleanup [0x48 0x81 0xc4 0x10 0x00 0x00 0x00]
+        body-codes (mapv (fn [{:keys [binder body]}]
+                           (vec (emit-expr body (assoc env binder {:let-depth payload-depth}) body-ctx)))
+                         branch-specs)
+        ;; Build the final per-case bodies right-to-left: the LAST case never
+        ;; needs a trailing jump (nothing follows it but whatever comes after
+        ;; this whole dispatch), so its size is fixed first; each earlier
+        ;; case's own trailing `jmp` distance is exactly the total size of
+        ;; every case that will be laid out after it, which is already known
+        ;; once the fold reaches that case -- no forward-reference patching
+        ;; needed.
+        full-bodies
+        (vec (reverse
+              (reduce (fn [built body-code]
+                        (let [remaining (reduce + (map code-size built))]
+                          (conj built
+                                (if (empty? built)
+                                  (vec (concat body-code cleanup))
+                                  (vec (concat body-code cleanup [0xe9] (le32 remaining)))))))
+                      []
+                      (reverse body-codes))))
+        body-sizes (mapv code-size full-bodies)
+        body-start-offsets (reductions + 0 (butlast body-sizes))
+        trap [0x0f 0x0b]                                  ; ud2
+        compare-entry-size 12                              ; cmp rax,imm32 (6) + je rel32 (6)
+        compare-block
+        (vec (mapcat
+              (fn [i]
+                (let [remaining-compares (- n i 1)
+                      distance (+ (* remaining-compares compare-entry-size)
+                                  (count trap)
+                                  (nth body-start-offsets i))]
+                  (concat [0x48 0x3d] (le32 i) [0x0f 0x84] (le32 distance))))
+              (range n)))]
+    (vec (concat push-ordinal push-payload load-tag compare-block trap (apply concat full-bodies)))))
+
+;; The public-facing admitted shape, mirroring `emit-record-get-of-new`
+;; exactly: `variant-match`'s value operand must be a DIRECTLY-nested,
+;; SAME-schema `variant-new` (never a parameter, a `let`-bound name, an
+;; `if`, or a different-schema construction) -- a variant value never
+;; escapes past this one call, so no new host arena, no new function-
+;; boundary ABI (variants never appear in `param-types` or `result`, exactly
+;; matching the record ADR's own restriction), and no lifetime question to
+;; answer. `branches` arrives in the SAME order as the type's own declared
+;; `cases` (frontend's shared, unchanged `variant-match` validation already
+;; enforces `(= (mapv first cases) (mapv first branches))`), so the branch at
+;; index i always corresponds to the case whose ordinal is i.
+(defn- emit-variant-match-of-new [type value-form branches env ctx]
+  (when-not (seq? value-form)
+    (throw (ex-info "variant-match is only supported directly over a matching variant-new construction on the native backend"
+                    {:phase :x86-64 :type type})))
+  (let [[ctor-op ctor-type tag payload-expr] value-form
+        cases (nth type 2)
+        ordinal (first (keep-indexed (fn [i [case-tag _]] (when (= case-tag tag) i)) cases))]
+    (when-not (= 'variant-new ctor-op)
+      (throw (ex-info "variant-match is only supported directly over a matching variant-new construction on the native backend"
+                      {:phase :x86-64 :type type})))
+    (when-not (= type ctor-type)
+      (throw (ex-info "variant-match's schema must be identical to its variant-new operand's schema"
+                      {:phase :x86-64 :expected type :actual ctor-type})))
+    (when (nil? ordinal)
+      (throw (ex-info "variant-new references an undeclared case"
+                      {:phase :x86-64 :type type :tag tag})))
+    (when-not (= (count cases) (count branches))
+      (throw (ex-info "variant-match does not supply exactly one branch per declared case"
+                      {:phase :x86-64 :type type})))
+    (let [branch-specs (mapv (fn [[_ binder body]] {:binder binder :body body}) branches)]
+      (emit-variant-dispatch ordinal payload-expr branch-specs env ctx))))
+
 (defn emit-expr [form env {:keys [param-count pad? temp-depth] :as ctx}]
   (cond
     ;; `integer?` alone does not reliably recognize a cljs `bigint` (see
@@ -286,6 +486,15 @@
     ;; `kotoba.compiler.backend.wasm`'s identical dispatch guard.
     #?(:clj (integer? form) :cljs (or (i64/bigint-value? form) (integer? form)))
     (into [0x48 0xb8] (le64 form))
+    ;; A literal `true`/`false` -- the only source of a genuine `:bool`
+    ;; VALUE in this frontend's type system (see
+    ;; `emit-record-get-of-new`'s own doc comment above) -- is just the i64
+    ;; word 1/0, encoded through the SAME `le64` path an ordinary integer
+    ;; literal uses; this backend has never distinguished a narrower bool
+    ;; width from a full 8-byte word anywhere else. MUST be checked before
+    ;; the generic `:else`, which would otherwise try to sequentially
+    ;; destructure a bare boolean (`(let [[op & args] true])`) and throw.
+    (boolean? form) (into [0x48 0xb8] (le64 (if form 1 0)))
     (string? form) (emit-string-literal form ctx)
     (symbol? form)
     (let [binding (get env form)]
@@ -319,6 +528,131 @@
 
         (= op 'cap-call)
         (emit-cap-call (first args) (second args) env ctx)
+
+        (= op 'typed-cap-call)
+        (let [[cap-id request-type result-type request] args]
+          (cond
+            (= :i64 request-type result-type)
+            (emit-cap-call cap-id request env ctx)
+            (= :string request-type result-type)
+            (emit-typed-cap-call cap-id 1 request env ctx)
+            (= :option-i64 request-type result-type)
+            (emit-typed-cap-call cap-id 2 request env ctx)
+            (= :result-i64 request-type result-type)
+            (emit-typed-cap-call cap-id 3 request env ctx)
+            :else
+            (throw (ex-info "native typed capability ABI does not support this boundary"
+                            {:phase :x86-64 :request-type request-type
+                             :result-type result-type}))))
+
+        (= op 'option-some)
+        (emit-heap-call 'pair [1 (first args)] env ctx)
+
+        (= op 'option-none)
+        (emit-heap-call 'pair [0 0] env ctx)
+
+        (= op 'option-some?)
+        (emit-heap-call 'pair-first [(first args)] env ctx)
+
+        (= op 'option-value)
+        (let [[value fallback] args
+              tagged-value '__native_option_value]
+          (emit-let [tagged-value value]
+                    (list 'if (list 'pair-first tagged-value)
+                          (list 'pair-second tagged-value)
+                          fallback)
+                    env ctx))
+
+        (= op 'option-some-of)
+        (emit-heap-call 'pair [1 (second args)] env ctx)
+
+        (= op 'option-none-of)
+        (emit-heap-call 'pair [0 0] env ctx)
+
+        (= op 'option-some?-of)
+        (emit-heap-call 'pair-first [(second args)] env ctx)
+
+        (= op 'option-value-of)
+        (let [[_type value fallback] args
+              tagged-value '__native_generic_option_value]
+          (emit-let [tagged-value value]
+                    (list 'if (list 'pair-first tagged-value)
+                          (list 'pair-second tagged-value)
+                          fallback)
+                    env ctx))
+
+        (= op 'option-match)
+        (let [[_type value none-body binder some-body] args
+              tagged-value '__native_generic_option_match]
+          (emit-let [tagged-value value]
+                    (list 'if (list 'pair-first tagged-value)
+                          (list 'let [binder (list 'pair-second tagged-value)]
+                                some-body)
+                          none-body)
+                    env ctx))
+
+        (= op 'result-ok)
+        (emit-heap-call 'pair [1 (first args)] env ctx)
+
+        (= op 'result-err)
+        (emit-heap-call 'pair [0 (first args)] env ctx)
+
+        (= op 'result-ok?)
+        (emit-heap-call 'pair-first [(first args)] env ctx)
+
+        (contains? '#{result-value result-error} op)
+        (let [[value fallback] args
+              tagged-value '__native_result_value
+              ok? (list 'pair-first tagged-value)
+              payload (list 'pair-second tagged-value)]
+          (emit-let [tagged-value value]
+                    (if (= op 'result-value)
+                      (list 'if ok? payload fallback)
+                      (list 'if ok? fallback payload))
+                    env ctx))
+
+        (contains? '#{result-ok-of result-err-of} op)
+        (emit-heap-call 'pair [(if (= op 'result-ok-of) 1 0) (second args)] env ctx)
+
+        (= op 'result-ok?-of)
+        (emit-heap-call 'pair-first [(second args)] env ctx)
+
+        (contains? '#{result-value-of result-error-of} op)
+        (let [[_type value fallback] args
+              tagged-value '__native_generic_result_value
+              ok? (list 'pair-first tagged-value)
+              payload (list 'pair-second tagged-value)]
+          (emit-let [tagged-value value]
+                    (if (= op 'result-value-of)
+                      (list 'if ok? payload fallback)
+                      (list 'if ok? fallback payload))
+                    env ctx))
+
+        (= op 'result-match-of)
+        (let [[_type value ok-binder ok-body err-binder err-body] args
+              tagged-value '__native_generic_result_match
+              payload (list 'pair-second tagged-value)]
+          (emit-let [tagged-value value]
+                    (list 'if (list 'pair-first tagged-value)
+                          (list 'let [ok-binder payload] ok-body)
+                          (list 'let [err-binder payload] err-body))
+                    env ctx))
+
+        (= op 'record-get)
+        (let [[type value-form field] args]
+          (emit-record-get-of-new type value-form field env ctx))
+
+        (= op 'record-new)
+        (throw (ex-info "record-new is only supported as the direct operand of a matching record-get on the native backend"
+                        {:phase :x86-64}))
+
+        (= op 'variant-match)
+        (let [[type value-form branches] args]
+          (emit-variant-match-of-new type value-form branches env ctx))
+
+        (= op 'variant-new)
+        (throw (ex-info "variant-new is only supported as the direct operand of a matching variant-match on the native backend"
+                        {:phase :x86-64}))
 
         (contains? '#{pair pair-first pair-second
                       kgraph-assert! kgraph-get kgraph-count kgraph-entity-at
@@ -357,7 +691,7 @@
         (and (= op '-) (= 1 (count args)))
         (vec (concat (emit-expr (first args) env (assoc ctx :tail? false)) [0x48 0xf7 0xd8]))
 
-        (contains? '#{+ - * quot bit-xor bit-and} op)
+        (contains? '#{+ - * quot bit-xor bit-and bit-or} op)
         (let [ctx (assoc ctx :tail? false)]
           (reduce (fn [left-code right]
                   (vec (concat left-code [0x50]
@@ -367,7 +701,11 @@
                                       * [0x48 0x0f 0xaf 0xc1]
                                       quot [0x48 0x99 0x48 0xf7 0xf9]
                                       bit-xor [0x48 0x31 0xc8]
-                                      bit-and [0x48 0x21 0xc8]))))
+                                      bit-and [0x48 0x21 0xc8]
+                                      ;; ADR-2607254600 D2: OR r/m64,r64
+                                      ;; (REX.W 09 /r), the sibling of the
+                                      ;; and/xor encodings above.
+                                      bit-or [0x48 0x09 0xc8]))))
                   (emit-expr (first args) env ctx) (rest args)))
 
         (contains? '#{= < > <= >=} op)

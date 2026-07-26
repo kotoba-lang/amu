@@ -6,7 +6,8 @@
   ;; is conditional and the branch doesn't match -- fails ns-form spec
   ;; validation ("Extra input spec: :clojure.core.specs.alpha/ns-form",
   ;; confirmed live).
-  (:require [kotoba.compiler.value :as value]
+  (:require [clojure.string :as str]
+            [kotoba.compiler.value :as value]
             [kotoba.compiler.decimal :as decimal]
             [kotoba.compiler.xml :as xml]
             #?@(:cljs [[kotoba.compiler.cljs-i64 :as i64]])))
@@ -14,21 +15,33 @@
 (def ^:private default-fuel 512)
 (def ^:private default-pair-capacity 4096)
 (def ^:private default-kgraph-capacity 4096)
+(def ^:dynamic *runtime-schemas* nil)
 
 ;; Shared between `kotoba.compiler.core` (JVM `clojure -M:run` path) and
 ;; `kotoba.compiler.nbb.cli` (nbb-native fast path) -- both admit
 ;; `:kotoba.hir/v3` (typed) HIR onto the x86_64/aarch64 native backends
 ;; ONLY when the actual features used are limited to string literals +
-;; `string-byte-length`/`string=?`/`string-concat` (the only typed
-;; features those backends implement); every other typed feature (maps,
-;; options, results, variants, records, typed sets, heterogeneous
-;; vectors, ...) still requires the kotoba-script web target or typed
-;; Wasm target. A blanket per-backend allowance would silently let
-;; unsupported ops reach the backend and crash confusingly instead of
-;; rejecting cleanly -- so admission has to inspect which features are
-;; actually used, not just the HIR format tag.
+;; `string-byte-length`/`string=?`/`string-concat` (the pre-existing typed
+;; native slice) PLUS -- as of the first native record increment -- a
+;; SEALED, ALL-SCALAR (`:i64`/`:bool` fields only, no `:f64`: see
+;; `native-scalar-record-field-types`'s own comment for why f64 is
+;; deliberately excluded even though it's part of the WASM-track ADR 0043
+;; this slice models) `record-new`/`record-get` pair used in the one exact
+;; nested shape `backend/x86-64.cljc`'s and `backend/aarch64.cljc`'s own
+;; `emit-record-get-of-new` implement: `record-get`'s value operand must be
+;; a directly-nested, SAME-schema `record-new`, plus monomorphic
+;; `:option-i64`/`:result-i64` constructors, projections, and same-type
+;; capability callbacks using canonical pair-backed `(tag,payload)` handles.
+;; Every other typed feature (maps, generic options/results, variants,
+;; general/escaping/nested records, typed sets, heterogeneous vectors, ...)
+;; still requires the kotoba-script web target or typed Wasm target. A blanket
+;; per-backend allowance would
+;; silently let unsupported ops reach the backend and crash confusingly
+;; instead of rejecting cleanly -- so admission has to inspect which
+;; features are actually used, not just the HIR format tag.
 (def non-string-typed-ops
-  '#{f32-to-bits f32-from-bits f64-to-f32-rounded f32-to-f64-exact
+  '#{string-replace-all string-contains? string-fold-case
+     f32-to-bits f32-from-bits f64-to-f32-rounded f32-to-f64-exact
      f32-add f32-sub f32-mul f32-div f32-min f32-max f32-neg f32-abs f32-sqrt
      f32-eq f32-lt f32-le f32-gt f32-ge f32-unordered
      i64-to-f32-checked i64-to-f32-rounded f32-to-i64-checked f32-to-i64-truncating
@@ -48,15 +61,261 @@
      typed-set-new typed-set-count typed-set-contains typed-set-conj typed-set-disj typed-set-equal
      typed-map-new typed-map-count typed-map-contains typed-map-get
      typed-map-entry-at typed-map-assoc typed-map-dissoc typed-map-equal
-     xml-path-count xml-path-attr decimal-f64-parse decimal-f64x3-parse
+     xml-path-count xml-name-count xml-name-text xml-path-text xml-path-attr
+     decimal-f64-parse decimal-f64x3-parse
      record-new record-get record-assoc record-equal
      vector-count vector-get vector-at vector-drop vector-assoc vector-conj
      vector-f64-new vector-f64-count vector-f64-get vector-f64-at
      vector-f64-drop vector-f64-assoc vector-f64-conj
+     string-index-new string-index-count string-index-contains string-index-get string-index-assoc
+     disjoint-set-i64-new disjoint-set-i64-count disjoint-set-i64-union
+     document-null document-bool document-i64 document-f64 document-string document-keyword
+     document-vector document-map document-count document-kind document-equal? document-contains document-get
+     document-vector-at document-map-entry-at document-vector-assoc document-vector-conj document-vector-drop
+     document-vector-remove
+     document-assoc document-dissoc document-merge document-string-value document-keyword-value
+     document-bool-value document-i64-value document-f64-value
      i32-wrap u32-wrap i32-wrapping-add i32-wrapping-mul i32-xor
-     i32-shift-left i32-shift-right u32-shift-right xorshift32})
+     i32-shift-left i32-shift-right u32-shift-right xorshift32
+     bit-or bit-not i64-shift-left i64-shift-right u64-shift-right
+     keyword-from-string keyword-name symbol})
 
-(defn only-string-typed-features? [hir]
+;; The two field kinds this backend's own runtime value representation is
+;; ALREADY bit-identical for: every existing x86-64.cljc/aarch64.cljc
+;; comparison/setcc sequence already carries `:bool` as a plain 0/1 word
+;; (see e.g. x86-64.cljc's `contains? '#{= < > <= >=}` case), and `:i64`
+;; needs no conversion at all -- there is no narrower-than-8-bytes packing
+;; anywhere else in either file. `:f64` is deliberately NOT admitted here
+;; even though it's part of ADR 0043 (the WASM Component Model analog this
+;; native slice is modeled on): `kotoba.compiler.core/compile-source*`'s
+;; own f32/f64 gate unconditionally rejects ANY `:f32`/`:f64` usage on
+;; native targets today (`ir/uses-f32?`/`ir/uses-f64?`), independent of
+;; records -- admitting f64 record fields here would silently also have to
+;; widen THAT orthogonal, pre-existing gate, which is exactly the "don't
+;; widen two dimensions in one step" pattern this compiler's own component
+;; ADR chain (0058/0059) explicitly avoids. Native f64 record fields remain
+;; a separately-gapped follow-up, not attempted by this increment.
+(def ^:private native-scalar-record-field-types #{:i64 :bool})
+
+;; Structural shape check only (`[:record :qualified/kw [[:field :type] ...]]`)
+;; -- deliberately does not re-derive `kotoba.compiler.frontend`'s own
+;; `record-type?`/`validate-value-type!` (that generic check already ran
+;; before `ir/lower` produced this HIR), just narrows it further to the
+;; scalar-only field-type universe this native increment implements.
+(defn- native-scalar-record-type? [type]
+  (and (vector? type) (= 3 (count type)) (= :record (first type))
+       (keyword? (second type)) (some? (namespace (second type)))
+       (vector? (nth type 2)) (seq (nth type 2))
+       (every? (fn [field]
+                 (and (vector? field) (= 2 (count field)) (keyword? (first field))
+                      (contains? native-scalar-record-field-types (second field))))
+               (nth type 2))
+       (= (count (nth type 2)) (count (distinct (map first (nth type 2)))))))
+
+;; ADR 0063: the second native value-representation increment (right after
+;; ADR 0062's record). A native sealed variant admits the SAME narrow
+;; per-case payload universe records already admit (`:i64`/`:bool` only, no
+;; `:f64` -- identical reasoning as `native-scalar-record-field-types`'s own
+;; comment: native f32/f64 is a separate, orthogonal, pre-existing gate this
+;; increment does not touch). A "tag-only" (unit-like) case is realized
+;; WITHOUT any new type-system concept: every case still declares a real
+;; `:i64`/`:bool` payload type and every `variant-new` call still supplies a
+;; real payload expression (this frontend's shared, target-independent
+;; `variant-new`/`variant-match` grammar, unchanged by this ADR, always
+;; requires exactly one payload per case) -- a case is "tag-only" purely by
+;; the codegen/test convention of never binding or reading that case's own
+;; payload word in its branch body, matching this backend's own "every
+;; value, including an unused one, is still a uniform 8-byte word" stance
+;; already established by ADR 0062. See docs/adr/0063-* for why this ADR
+;; deliberately does NOT introduce a genuine zero-payload marker type.
+(defn- native-scalar-variant-type? [type]
+  (and (vector? type) (= 3 (count type)) (= :variant (first type))
+       (keyword? (second type)) (some? (namespace (second type)))
+       (vector? (nth type 2)) (seq (nth type 2))
+       (every? (fn [case-entry]
+                 (and (vector? case-entry) (= 2 (count case-entry)) (keyword? (first case-entry))
+                      (contains? native-scalar-record-field-types (second case-entry))))
+               (nth type 2))
+       (= (count (nth type 2)) (count (distinct (map first (nth type 2)))))))
+
+(defn- native-word-value-type?
+  "Types whose runtime value fits the native backend's uniform 64-bit word.
+  Structured option/result values are pair handles, so they compose
+  recursively without changing the machine ABI."
+  ([type] (native-word-value-type? type 0))
+  ([type depth]
+   (and (<= depth 8)
+        (or (contains? #{:i64 :bool :string} type)
+            (and (vector? type)
+                 (case (first type)
+                   :option (and (= 2 (count type))
+                                (native-word-value-type? (second type) (inc depth)))
+                   :result (and (= 3 (count type))
+                                (native-word-value-type? (second type) (inc depth))
+                                (native-word-value-type? (nth type 2) (inc depth)))
+                   false))))))
+
+(defn only-native-word-typed-features? [hir]
+  (letfn [(walk [form]
+            (cond
+              (or (string? form) (integer? form) (symbol? form)) true
+              ;; A literal `true`/`false` is the ONLY way to produce a
+              ;; genuine `:bool`-typed VALUE anywhere in this frontend's
+              ;; type system today (confirmed by reading
+              ;; `frontend.cljc/infer-expression-type`: every comparison,
+              ;; including `=`, always returns `:i64`, never `:bool` -- see
+              ;; `emit-record-get-of-new`'s own doc comment in both native
+              ;; backends). Admitting it is the minimum needed to construct
+              ;; a `:bool` record field at all; it is a plain 0/1 scalar
+              ;; with no side effects, so admitting it in any expression
+              ;; position (not only inside `record-new`) costs nothing extra
+              ;; to verify and needs no narrower gating. `:keyword` remains
+              ;; rejected -- this increment implements no native keyword
+              ;; representation.
+              (boolean? form) true
+              (keyword? form) false
+              (seq? form)
+              (let [[op & args] form]
+                (cond
+                  ;; Construction: every field value is walked; the type
+                  ;; descriptor itself (args' first element) is compile-time
+                  ;; sealed data, never walked as an expression.
+                  (= op 'record-new)
+                  (let [[type & values] args]
+                    (and (native-scalar-record-type? type)
+                         (= (count values) (count (nth type 2)))
+                         (every? walk values)))
+                  ;; Projection: the codegen backends require `value` to be
+                  ;; a directly-nested, same-schema `record-new` -- that
+                  ;; EXACT narrower shape is enforced by
+                  ;; `emit-record-get-of-new` and (independently)
+                  ;; `kotoba.compiler.verifier`'s own `record-get` case, not
+                  ;; here, so this admission layer only needs to confirm
+                  ;; the schema/field are well-formed and keep walking.
+                  (= op 'record-get)
+                  (let [[type value field] args]
+                    (and (= 3 (count args))
+                         (native-scalar-record-type? type)
+                         (keyword? field)
+                         (some #(= field (first %)) (nth type 2))
+                         (walk value)))
+                  ;; Construction: the tag must be a declared case (frontend
+                  ;; already enforces this too, unconditionally, via
+                  ;; `infer-expression-type`'s own "variant constructor tag
+                  ;; is not declared" check -- re-derived here regardless,
+                  ;; matching every other op-family's own independent-check
+                  ;; discipline in this file); the payload is walked.
+                  (= op 'variant-new)
+                  (let [[type tag payload] args]
+                    (and (= 3 (count args))
+                         (native-scalar-variant-type? type)
+                         (keyword? tag)
+                         (some #(= tag (first %)) (nth type 2))
+                         (walk payload)))
+                  ;; Dispatch: mirrors `record-get`'s own admission shape --
+                  ;; the codegen backends independently require `value` to
+                  ;; be a directly-nested, same-schema `variant-new`
+                  ;; (`emit-variant-match-of-new`, cross-checked again by
+                  ;; `kotoba.compiler.verifier`'s own `variant-match` case),
+                  ;; not enforced here; this layer only confirms every
+                  ;; declared case has exactly one, exhaustively-ordered
+                  ;; branch and keeps walking both the value and every
+                  ;; branch body.
+                  (= op 'variant-match)
+                  (let [[type value branches] args]
+                    (and (= 3 (count args))
+                         (native-scalar-variant-type? type)
+                         (vector? branches)
+                         (= (mapv first (nth type 2)) (mapv first branches))
+                         (every? #(and (vector? %) (= 3 (count %)) (symbol? (second %))) branches)
+                         (walk value)
+                         (every? (fn [[_ _binder body]] (walk body)) branches)))
+                  ;; Native capability callbacks preserve sealed descriptors
+                  ;; in KIR and pass either a scalar word or a validated
+                  ;; pair-backed string/tagged-value handle at the
+                  ;; already-type-checked machine-code boundary.
+                  (= op 'typed-cap-call)
+                  (let [[cap-id request-type result-type request] args]
+                    (and (= 4 (count args))
+                         #?(:clj (integer? cap-id)
+                            :cljs (or (i64/bigint-value? cap-id) (integer? cap-id)))
+                         (<= 0 cap-id 255)
+                         (contains? #{[:i64 :i64] [:string :string]
+                                      [:option-i64 :option-i64]
+                                      [:result-i64 :result-i64]}
+                                    [request-type result-type])
+                         (walk request)))
+                  (= op 'option-some)
+                  (and (= 1 (count args)) (walk (first args)))
+                  (= op 'option-none)
+                  (empty? args)
+                  (= op 'option-some?)
+                  (and (= 1 (count args)) (walk (first args)))
+                  (= op 'option-value)
+                  (and (= 2 (count args)) (every? walk args))
+                  (contains? '#{result-ok result-err result-ok?} op)
+                  (and (= 1 (count args)) (walk (first args)))
+                  (contains? '#{result-value result-error} op)
+                  (and (= 2 (count args)) (every? walk args))
+                  (contains? '#{option-some-of option-some?-of} op)
+                  (let [[type value] args]
+                    (and (= 2 (count args))
+                         (vector? type) (= :option (first type))
+                         (native-word-value-type? type)
+                         (walk value)))
+                  (= op 'option-none-of)
+                  (let [[type] args]
+                    (and (= 1 (count args))
+                         (vector? type) (= :option (first type))
+                         (native-word-value-type? type)))
+                  (= op 'option-value-of)
+                  (let [[type value fallback] args]
+                    (and (= 3 (count args))
+                         (vector? type) (= :option (first type))
+                         (native-word-value-type? type)
+                         (walk value) (walk fallback)))
+                  (= op 'option-match)
+                  (let [[type value none-body binder some-body] args]
+                    (and (= 5 (count args))
+                         (vector? type) (= :option (first type))
+                         (native-word-value-type? type)
+                         (symbol? binder)
+                         (walk value) (walk none-body) (walk some-body)))
+                  (contains? '#{result-ok-of result-err-of result-ok?-of} op)
+                  (let [[type value] args]
+                    (and (= 2 (count args))
+                         (vector? type) (= :result (first type))
+                         (native-word-value-type? type)
+                         (walk value)))
+                  (contains? '#{result-value-of result-error-of} op)
+                  (let [[type value fallback] args]
+                    (and (= 3 (count args))
+                         (vector? type) (= :result (first type))
+                         (native-word-value-type? type)
+                         (walk value) (walk fallback)))
+                  (= op 'result-match-of)
+                  (let [[type value ok-binder ok-body err-binder err-body] args]
+                    (and (= 6 (count args))
+                         (vector? type) (= :result (first type))
+                         (native-word-value-type? type)
+                         (symbol? ok-binder) (symbol? err-binder)
+                         (walk value) (walk ok-body) (walk err-body)))
+                  :else
+                  (and (not (contains? non-string-typed-ops op))
+                       (every? walk args))))
+              :else true))]
+    (every? (fn [{:keys [param-types result body]}]
+              (and (every? #{:i64 :string} param-types)
+                   (contains? #{:i64 :string} result)
+                   (walk body)))
+            (:functions hir))))
+
+(defn only-cljs-provider-typed-features?
+  "True when typed values appear only as function boundary types and sealed
+  typed-cap-call request/result descriptors. The CLJS backend owns the codec
+  for those boundaries, but does not yet lower general typed construction or
+  mutation operations."
+  [hir]
   (letfn [(walk [form]
             (cond
               (or (string? form) (integer? form) (symbol? form)) true
@@ -65,12 +324,11 @@
               (let [[op & args] form]
                 (and (not (contains? non-string-typed-ops op))
                      (every? walk args)))
-              :else true))]
-    (every? (fn [{:keys [param-types result body]}]
-              (and (every? #{:i64 :string} param-types)
-                   (contains? #{:i64 :string} result)
-                   (walk body)))
-            (:functions hir))))
+              ;; Type descriptors inside typed-cap-call are vectors and are
+              ;; sealed constants, not runtime construction operations.
+              (vector? form) true
+              :else false))]
+    (every? #(walk (:body %)) (:functions hir))))
 
 (defn uses-f64? [program]
   (boolean
@@ -334,7 +592,11 @@
        (* exponent 2.3190468138462996e-17))))
 
 (defn- validate-runtime-value! [runtime-value type position]
-  (case type
+  (if (and (vector? type) (= :ref (first type)) (= 2 (count type)))
+    (if-let [descriptor (get *runtime-schemas* (second type))]
+      (validate-runtime-value! runtime-value descriptor position)
+      (trap! :unknown-schema-reference {:schema (second type) :position position}))
+    (case type
     :i64
     (when-not #?(:clj (and (integer? runtime-value)
                             (<= Long/MIN_VALUE runtime-value Long/MAX_VALUE))
@@ -361,6 +623,12 @@
       (value/bounded-keyword! runtime-value value/keyword-value-byte-limit)
       (catch #?(:clj Exception :cljs :default) error
         (trap! :invalid-keyword-value {:position position :message (ex-message error)})))
+
+    :symbol
+    (try
+      (value/bounded-symbol! runtime-value value/symbol-value-byte-limit)
+      (catch #?(:clj Exception :cljs :default) error
+        (trap! :invalid-symbol-value {:position position :message (ex-message error)})))
 
     :map
     (try
@@ -400,11 +668,32 @@
         (trap! :invalid-vector-f64-value
                {:position position :message (ex-message error)})))
 
+    :string-index
+    (try
+      (value/bounded-string-index! runtime-value)
+      (catch #?(:clj Exception :cljs :default) error
+        (trap! :invalid-string-index-value
+               {:position position :message (ex-message error)})))
+
+    :disjoint-set-i64
+    (try
+      (value/bounded-disjoint-set-i64! runtime-value)
+      (catch #?(:clj Exception :cljs :default) error
+        (trap! :invalid-disjoint-set-i64-value
+               {:position position :message (ex-message error)})))
+
+    :document
+    (try
+      (value/bounded-document! runtime-value)
+      (catch #?(:clj Exception :cljs :default) error
+        (trap! :invalid-document-value
+               {:position position :message (ex-message error)})))
+
     (try
       (value/bounded-typed-value! type runtime-value)
       (catch #?(:clj Exception :cljs :default) error
         (trap! :invalid-parametric-value
-               {:type type :position position :message (ex-message error)}))))
+               {:type type :position position :message (ex-message error)})))))
   runtime-value)
 
 ;; #?(:cljs ...): every i64 arithmetic op coerces both operands via
@@ -443,6 +732,41 @@
                           (<= i64/zero value (js/BigInt 31))))
     (trap! :i32-shift-count-out-of-range {:count value}))
   #?(:clj (int value) :cljs (js/Number value)))
+
+;; ADR-2607254600 D1/D2. Wasm masks a shift count modulo the width; this
+;; interpreter is the oracle the tests compare against, so it applies the same
+;; [0,63] admission the frontend enforces and traps rather than wrapping.
+(defn- checked-shift64 [value]
+  (when-not #?(:clj (and (integer? value) (<= 0 value 63))
+               :cljs (and (i64/bigint-value? value)
+                          (<= i64/zero value (js/BigInt 63))))
+    (trap! :i64-shift-count-out-of-range {:count value}))
+  #?(:clj (int value) :cljs (js/Number value)))
+
+(defn- i64-not [x]
+  #?(:clj (bit-not (long x))
+     :cljs (i64/wrap-i64 (bit-xor (i64/->bigint x) (js/BigInt -1)))))
+
+(defn- i64-shl [value count]
+  (let [shift (checked-shift64 count)]
+    #?(:clj (bit-shift-left (long value) shift)
+       ;; 2^shift is exact as a double for every shift in [0,63] (it is a power
+       ;; of two), so the BigInt conversion is exact.
+       :cljs (i64/wrap-i64 (* (i64/->bigint value)
+                              (js/BigInt (js/Math.pow 2 shift)))))))
+
+(defn- i64-shr [value count]
+  (let [shift (checked-shift64 count)]
+    #?(:clj (bit-shift-right (long value) shift)
+       :cljs (i64/wrap-i64 (i64/ashr (i64/->bigint value) shift)))))
+
+(defn- u64-shr [value count]
+  (let [shift (checked-shift64 count)]
+    #?(:clj (unsigned-bit-shift-right (long value) shift)
+       ;; asUintN reinterprets the two's-complement bits as unsigned, so the
+       ;; arithmetic shift below is a logical shift on that value.
+       :cljs (i64/wrap-i64 (i64/ashr (js/BigInt.asUintN 64 (i64/->bigint value))
+                                     shift)))))
 
 (defn- i32-add [x y]
   #?(:clj (long (unchecked-add-int (unchecked-int (long x)) (unchecked-int (long y))))
@@ -579,6 +903,22 @@
       (trap! :invalid-kgraph-index {:index index}))
     (nth entities i)))
 
+(defn- compact-host-index [index size code]
+  (when-not (and #?(:clj (integer? index) :cljs (i64/bigint-value? index))
+                 (not (neg? index)) (< index size))
+    (trap! code {:index index :size size}))
+  #?(:clj (int index) :cljs (js/Number index)))
+
+(defn- disjoint-root [parents start]
+  (loop [current start remaining (inc (count parents))]
+    (when (zero? remaining)
+      (trap! :invalid-disjoint-set-i64-value {:reason :parent-cycle}))
+    (let [parent (compact-host-index (nth parents current) (count parents)
+                                     :invalid-disjoint-set-i64-value)]
+      (if (= parent current)
+        current
+        (recur parent (dec remaining))))))
+
 (defn eval-expr [form env functions fuel heap call-stack cap-call]
   (cond
     #?(:clj (integer? form)
@@ -629,6 +969,17 @@
           (let [result (cap-call cap-id (eval-expr value env functions fuel heap call-stack cap-call))]
             #?(:clj (long result) :cljs (i64/->bigint result))))
 
+        (= op 'typed-cap-call)
+        (let [[cap-id request-type result-type request-form] args]
+          (when-not cap-call
+            (trap! :capability-denied {:capability cap-id :typed true}))
+          (let [request (eval-expr request-form env functions fuel heap call-stack cap-call)]
+            (validate-runtime-value! request request-type
+                                     {:capability cap-id :boundary :request})
+            (validate-runtime-value! (cap-call cap-id request-type result-type request)
+                                     result-type
+                                     {:capability cap-id :boundary :result})))
+
         (= op 'pair)
         (let [[left right] (mapv #(eval-expr % env functions fuel heap call-stack cap-call) args)]
           (allocate-pair! heap left right))
@@ -668,10 +1019,80 @@
         (let [[left right] (mapv #(eval-expr % env functions fuel heap call-stack cap-call) args)]
           (value/bounded-string! (str left right) value/string-value-byte-limit))
 
+        (= op 'string-substring)
+        (let [[input start end]
+              (mapv #(eval-expr % env functions fuel heap call-stack cap-call) args)]
+          (value/utf8-substring! input start end))
+
+        (= op 'string-code-point-at)
+        (let [[input offset]
+              (mapv #(eval-expr % env functions fuel heap call-stack cap-call) args)
+              cp (value/utf8-code-point-at! input offset)]
+          #?(:clj (long cp) :cljs (i64/->bigint cp)))
+
+        (= op 'string-replace-all)
+        (let [[input needle replacement]
+              (mapv #(eval-expr % env functions fuel heap call-stack cap-call) args)]
+          (when (empty? needle) (trap! :empty-string-replacement-needle {}))
+          (value/bounded-string! (str/replace input needle replacement)
+                                 value/string-value-byte-limit))
+
+        (= op 'string-contains?)
+        (let [[haystack needle]
+              (mapv #(eval-expr % env functions fuel heap call-stack cap-call) args)]
+          (when (empty? needle) (trap! :empty-string-search-needle {}))
+          #?(:clj (if (str/includes? haystack needle) 1 0)
+             :cljs (if (str/includes? haystack needle) i64/one i64/zero)))
+
+        (= op 'string-fold-case)
+        (value/bounded-string!
+         (value/fold-case! (eval-expr (first args) env functions fuel heap call-stack cap-call))
+         value/string-value-byte-limit)
+
+        (= op 'keyword-from-string)
+        (let [text (value/bounded-string!
+                    (eval-expr (first args) env functions fuel heap call-stack cap-call)
+                    value/keyword-value-byte-limit)]
+          (when (or (empty? text) (= \: (first text))
+                    (re-find #"[\s\[\]{}()\"',;`~^\\]" text))
+            (trap! :invalid-keyword-source {}))
+          (value/bounded-keyword! (keyword text) value/keyword-value-byte-limit))
+
+        (= op 'keyword-name)
+        (value/bounded-string!
+         (name (eval-expr (first args) env functions fuel heap call-stack cap-call))
+         value/string-value-byte-limit)
+
+        (= op 'symbol)
+        (let [text (value/bounded-string!
+                    (eval-expr (first args) env functions fuel heap call-stack cap-call)
+                    value/symbol-value-byte-limit)]
+          (when (or (empty? text)
+                    (re-find #"[\s\[\]{}()\"',;`~^\\]" text))
+            (trap! :invalid-symbol-source {}))
+          (value/bounded-symbol! (symbol text) value/symbol-value-byte-limit))
+
         (= op 'xml-path-count)
         (xml/path-count
          (eval-expr (first args) env functions fuel heap call-stack cap-call)
          (eval-expr (second args) env functions fuel heap call-stack cap-call))
+
+        (= op 'xml-name-count)
+        (xml/name-count
+         (eval-expr (first args) env functions fuel heap call-stack cap-call)
+         (eval-expr (second args) env functions fuel heap call-stack cap-call))
+
+        (= op 'xml-name-text)
+        (xml/name-text
+         (eval-expr (nth args 0) env functions fuel heap call-stack cap-call)
+         (eval-expr (nth args 1) env functions fuel heap call-stack cap-call)
+         (eval-expr (nth args 2) env functions fuel heap call-stack cap-call))
+
+        (= op 'xml-path-text)
+        (xml/path-text
+         (eval-expr (nth args 0) env functions fuel heap call-stack cap-call)
+         (eval-expr (nth args 1) env functions fuel heap call-stack cap-call)
+         (eval-expr (nth args 2) env functions fuel heap call-stack cap-call))
 
         (= op 'xml-path-attr)
         (xml/path-attr
@@ -1313,6 +1734,236 @@
             (trap! :vector-f64-too-large {:limit value/vector-item-limit}))
           (value/bounded-vector-f64! (conj items item)))
 
+        (= op 'string-index-new) []
+
+        (= op 'string-index-count)
+        (let [index (value/bounded-string-index!
+                     (eval-expr (first args) env functions fuel heap call-stack cap-call))]
+          #?(:clj (long (count index)) :cljs (i64/->bigint (count index))))
+
+        (contains? '#{string-index-contains string-index-get} op)
+        (let [[index-form key-form] args
+              index (value/bounded-string-index!
+                     (eval-expr index-form env functions fuel heap call-stack cap-call))
+              key (value/bounded-typed-value!
+                   :string (eval-expr key-form env functions fuel heap call-stack cap-call))
+              found (some (fn [[candidate item]] (when (= candidate key) item)) index)]
+          (if (= op 'string-index-contains)
+            (boolean (some? found))
+            (if (some? found) [[:option :i64] true found] [[:option :i64] false])))
+
+        (= op 'string-index-assoc)
+        (let [[index-form key-form item-form] args
+              index (value/bounded-string-index!
+                     (eval-expr index-form env functions fuel heap call-stack cap-call))
+              key (value/bounded-typed-value!
+                   :string (eval-expr key-form env functions fuel heap call-stack cap-call))
+              item (value/bounded-typed-value!
+                    :i64 (eval-expr item-form env functions fuel heap call-stack cap-call))
+              without-key (filterv #(not= key (first %)) index)]
+          (when (and (= (count without-key) (count index))
+                     (>= (count index) value/compact-graph-item-limit))
+            (trap! :string-index-too-large {:limit value/compact-graph-item-limit}))
+          (value/bounded-string-index! (vec (sort-by first (conj without-key [key item])))))
+
+        (= op 'disjoint-set-i64-new)
+        (let [size-value (eval-expr (first args) env functions fuel heap call-stack cap-call)]
+          (when-not (and #?(:clj (integer? size-value) :cljs (i64/bigint-value? size-value))
+                         (<= 0 size-value value/compact-graph-item-limit))
+            (trap! :disjoint-set-i64-size-out-of-range
+                   {:limit value/compact-graph-item-limit}))
+          (let [size #?(:clj (int size-value) :cljs (js/Number size-value))
+                parents #?(:clj (mapv long (range size))
+                           :cljs (mapv i64/->bigint (range size)))
+                ranks (vec (repeat size #?(:clj 0 :cljs i64/zero)))]
+            (value/bounded-disjoint-set-i64! [parents ranks])))
+
+        (= op 'disjoint-set-i64-count)
+        (let [[parents _] (value/bounded-disjoint-set-i64!
+                           (eval-expr (first args) env functions fuel heap call-stack cap-call))]
+          #?(:clj (long (count parents)) :cljs (i64/->bigint (count parents))))
+
+        (= op 'disjoint-set-i64-union)
+        (let [[set-form left-form right-form] args
+              [parents ranks :as disjoint-set]
+              (value/bounded-disjoint-set-i64!
+               (eval-expr set-form env functions fuel heap call-stack cap-call))
+              left-index (compact-host-index
+                          (eval-expr left-form env functions fuel heap call-stack cap-call)
+                          (count parents) :disjoint-set-i64-index-out-of-range)
+              right-index (compact-host-index
+                           (eval-expr right-form env functions fuel heap call-stack cap-call)
+                           (count parents) :disjoint-set-i64-index-out-of-range)
+              left-root (disjoint-root parents left-index)
+              right-root (disjoint-root parents right-index)
+              option-type [:option :disjoint-set-i64]]
+          (if (= left-root right-root)
+            [option-type false]
+            (let [left-rank (nth ranks left-root)
+                  right-rank (nth ranks right-root)
+                  [child root equal-rank?]
+                  (cond (< left-rank right-rank) [left-root right-root false]
+                        (> left-rank right-rank) [right-root left-root false]
+                        :else [right-root left-root true])
+                  new-parents (assoc parents child #?(:clj (long root) :cljs (i64/->bigint root)))
+                  new-ranks (if equal-rank?
+                              (assoc ranks root #?(:clj (inc (long left-rank))
+                                                   :cljs (+ left-rank i64/one)))
+                              ranks)]
+              [option-type true
+               (value/bounded-disjoint-set-i64! [new-parents new-ranks])])))
+
+        (= op 'document-null) ["null"]
+
+        (contains? '#{document-bool document-i64 document-f64
+                      document-string document-keyword} op)
+        (let [type (case op document-bool :bool document-i64 :i64 document-f64 :f64
+                         document-string :string document-keyword :keyword)
+              tag (name type)
+              item (value/bounded-typed-value!
+                    type (eval-expr (first args) env functions fuel heap call-stack cap-call))]
+          (value/bounded-document! [tag item]))
+
+        (= op 'document-vector)
+        (value/bounded-document!
+         ["vector" (mapv #(value/bounded-document!
+                            (eval-expr % env functions fuel heap call-stack cap-call)) args)])
+
+        (= op 'document-map)
+        (let [entries (mapv (fn [[key-form item-form]]
+                              [(value/bounded-typed-value!
+                                :keyword (eval-expr key-form env functions fuel heap call-stack cap-call))
+                               (value/bounded-document!
+                                (eval-expr item-form env functions fuel heap call-stack cap-call))])
+                            (partition 2 args))]
+          (value/bounded-document! ["map" (vec (sort-by (comp str first) entries))]))
+
+        (= op 'document-count)
+        (let [[tag payload] (value/bounded-document!
+                             (eval-expr (first args) env functions fuel heap call-stack cap-call))]
+          (when-not (contains? #{"map" "vector"} tag)
+            (trap! :document-container-required {:tag tag}))
+          #?(:clj (long (count payload)) :cljs (i64/->bigint (count payload))))
+
+        (contains? '#{document-vector-at document-vector-assoc
+                      document-vector-conj document-vector-drop document-vector-remove} op)
+        (let [[document-form index-or-item-form item-form] args
+              [tag items]
+              (value/bounded-document!
+               (eval-expr document-form env functions fuel heap call-stack cap-call))
+              _ (when-not (= "vector" tag) (trap! :document-vector-required {:tag tag}))]
+          (case op
+            document-vector-at
+            (let [index (value/bounded-typed-value!
+                         :i64 (eval-expr index-or-item-form env functions fuel heap call-stack cap-call))]
+              (if (and (not (neg? index)) (< index (count items)))
+                [[:option :document] true (nth items index)]
+                [[:option :document] false]))
+            document-vector-assoc
+            (let [index (value/bounded-typed-value!
+                         :i64 (eval-expr index-or-item-form env functions fuel heap call-stack cap-call))
+                  item (value/bounded-document!
+                        (eval-expr item-form env functions fuel heap call-stack cap-call))]
+              (when-not (and (not (neg? index)) (< index (count items)))
+                (trap! :document-vector-index-out-of-range {:index index :count (count items)}))
+              (value/bounded-document! ["vector" (assoc items index item)]))
+            document-vector-conj
+            (let [item (value/bounded-document!
+                        (eval-expr index-or-item-form env functions fuel heap call-stack cap-call))]
+              (when (>= (count items) value/document-container-item-limit)
+                (trap! :document-vector-too-large {:limit value/document-container-item-limit}))
+              (value/bounded-document! ["vector" (conj items item)]))
+            document-vector-drop
+            (let [drop-count (value/bounded-typed-value!
+                              :i64 (eval-expr index-or-item-form env functions fuel heap call-stack cap-call))]
+              (when-not (and (not (neg? drop-count)) (<= drop-count (count items)))
+                (trap! :document-vector-drop-out-of-range
+                       {:count drop-count :items (count items)}))
+              (value/bounded-document! ["vector" (subvec items drop-count)]))
+            document-vector-remove
+            (let [index (value/bounded-typed-value!
+                         :i64 (eval-expr index-or-item-form env functions fuel heap call-stack cap-call))]
+              (when-not (and (not (neg? index)) (< index (count items)))
+                (trap! :document-vector-index-out-of-range {:index index :count (count items)}))
+              (value/bounded-document!
+               ["vector" (vec (concat (subvec items 0 index) (subvec items (inc index))))]))))
+
+        (= op 'document-map-entry-at)
+        (let [[tag entries]
+              (value/bounded-document!
+               (eval-expr (first args) env functions fuel heap call-stack cap-call))
+              index (value/bounded-typed-value!
+                     :i64 (eval-expr (second args) env functions fuel heap call-stack cap-call))]
+          (when-not (= "map" tag) (trap! :document-map-required {:tag tag}))
+          (if (and (not (neg? index)) (< index (count entries)))
+            (let [[key item] (nth entries index)]
+              [[:option :document] true
+               (value/bounded-document! ["vector" [["keyword" key] item]])])
+            [[:option :document] false]))
+
+        (= op 'document-kind)
+        (let [[tag]
+              (value/bounded-document!
+               (eval-expr (first args) env functions fuel heap call-stack cap-call))]
+          (value/bounded-keyword! (keyword tag) value/keyword-value-byte-limit))
+
+        (= op 'document-equal?)
+        (let [[left right]
+              (mapv #(value/bounded-document!
+                      (eval-expr % env functions fuel heap call-stack cap-call)) args)]
+          (= left right))
+
+        (contains? '#{document-contains document-get document-assoc document-dissoc} op)
+        (let [[document-form key-form item-form] args
+              [tag entries :as document]
+              (value/bounded-document!
+               (eval-expr document-form env functions fuel heap call-stack cap-call))
+              _ (when-not (= "map" tag) (trap! :document-map-required {:tag tag}))
+              key (value/bounded-typed-value!
+                   :keyword (eval-expr key-form env functions fuel heap call-stack cap-call))
+              position (first (keep-indexed #(when (= key (first %2)) %1) entries))]
+          (case op
+            document-contains (boolean (some? position))
+            document-get (if (some? position)
+                           [[:option :document] true (second (nth entries position))]
+                           [[:option :document] false])
+            document-dissoc (if (some? position)
+                              (value/bounded-document!
+                               ["map" (vec (concat (subvec entries 0 position)
+                                                    (subvec entries (inc position))))])
+                              document)
+            document-assoc
+            (let [item (value/bounded-document!
+                        (eval-expr item-form env functions fuel heap call-stack cap-call))
+                  output (if (some? position)
+                           (assoc entries position [key item])
+                           (conj entries [key item]))]
+              (when (> (count output) value/document-container-item-limit)
+                (trap! :document-map-too-large
+                       {:limit value/document-container-item-limit}))
+              (value/bounded-document! ["map" (vec (sort-by (comp str first) output))]))))
+
+        (= op 'document-merge)
+        (let [documents (mapv #(value/bounded-document!
+                                (eval-expr % env functions fuel heap call-stack cap-call)) args)
+              _ (doseq [[tag _] documents]
+                  (when-not (= "map" tag) (trap! :document-map-required {:tag tag})))
+              entries (reduce (fn [result [key item]] (assoc result key item))
+                              (sorted-map-by #(compare (str %1) (str %2)))
+                              (mapcat second documents))]
+          (when (> (count entries) value/document-container-item-limit)
+            (trap! :document-map-too-large {:limit value/document-container-item-limit}))
+          (value/bounded-document! ["map" (mapv vec entries)]))
+
+        (contains? '#{document-string-value document-keyword-value document-bool-value
+                      document-i64-value document-f64-value} op)
+        (let [[tag payload] (value/bounded-document!
+                             (eval-expr (first args) env functions fuel heap call-stack cap-call))
+              type (case op document-string-value :string document-keyword-value :keyword document-bool-value :bool
+                         document-i64-value :i64 document-f64-value :f64)
+              option-type [:option type]]
+          (if (= tag (name type)) [option-type true payload] [option-type false]))
+
         (contains? '#{kernel-load-u8 kernel-load-u8-4k kernel-load-u8-16k
                       kernel-store-u8 kernel-store-u8-4k
                       kernel-load-u32 kernel-store-u32} op)
@@ -1323,7 +1974,7 @@
                       kernel-out-u8 kernel-out-u32} op)
         (trap! :kernel-privileged-unavailable {:operation op})
 
-        (contains? '#{+ - * quot bit-xor bit-and = < > <= >=} op)
+        (contains? '#{+ - * quot bit-xor bit-and bit-or = < > <= >=} op)
         (let [xs (mapv #(eval-expr % env functions fuel heap call-stack cap-call) args)]
           #?(:clj
              (case op
@@ -1337,6 +1988,7 @@
                       (quot x y))
                bit-xor (apply bit-xor xs)
                bit-and (apply bit-and xs)
+               bit-or (apply bit-or xs)
                = (if (apply = xs) 1 0)
                < (if (apply < xs) 1 0)
                > (if (apply > xs) 1 0)
@@ -1364,11 +2016,20 @@
                       (/ x y))
                bit-xor (i64/->bigint (apply bit-xor xs))
                bit-and (i64/->bigint (apply bit-and xs))
+               bit-or (i64/->bigint (apply bit-or xs))
                = (if (apply = xs) i64/one i64/zero)
                < (if (apply < xs) i64/one i64/zero)
                > (if (apply > xs) i64/one i64/zero)
                <= (if (apply <= xs) i64/one i64/zero)
                >= (if (apply >= xs) i64/one i64/zero))))
+
+        (contains? '#{bit-not i64-shift-left i64-shift-right u64-shift-right} op)
+        (let [xs (mapv #(eval-expr % env functions fuel heap call-stack cap-call) args)]
+          (case op
+            bit-not (i64-not (first xs))
+            i64-shift-left (i64-shl (first xs) (second xs))
+            i64-shift-right (i64-shr (first xs) (second xs))
+            u64-shift-right (u64-shr (first xs) (second xs))))
 
         (contains? '#{i32-wrap u32-wrap i32-wrapping-add i32-wrapping-mul i32-xor
                       i32-shift-left i32-shift-right u32-shift-right xorshift32} op)
@@ -1393,7 +2054,7 @@
   wraps modulo 2^64; bounded strings preserve Unicode text; invalid values,
   division, and resource exhaustion trap."
   ([kir function-name args] (execute kir function-name args {}))
-  ([kir function-name args {:keys [fuel cap-call pair-capacity kgraph-capacity]
+  ([kir function-name args {:keys [fuel cap-call typed-cap-call pair-capacity kgraph-capacity]
                             :or {fuel default-fuel pair-capacity default-pair-capacity
                                  kgraph-capacity default-kgraph-capacity}}]
    (when (and (contains? kir :exports)
@@ -1410,13 +2071,28 @@
    (when-not (and (integer? kgraph-capacity) (<= 0 kgraph-capacity default-kgraph-capacity))
      (throw (ex-info "kgraph capacity is outside runtime limits"
                      {:phase :ir :kgraph-capacity kgraph-capacity})))
-   (let [functions (into {} (map (juxt :name identity) (:functions kir)))
+   (let [cap-dispatch (when (or cap-call typed-cap-call)
+                        (fn
+                          ([cap-id value]
+                           (if cap-call
+                             (cap-call cap-id value)
+                             (trap! :capability-denied {:capability cap-id})))
+                          ([cap-id request-type result-type request]
+                           (if typed-cap-call
+                             (typed-cap-call cap-id request-type result-type request)
+                             (trap! :capability-denied {:capability cap-id :typed true})))))
+         functions (into {} (map (juxt :name identity) (:functions kir)))
          function (get functions function-name)
          param-types (or (:param-types function)
                          (vec (repeat (count (:params function)) :i64)))]
      (when-not (and (sequential? args) (= (count args) (count param-types)))
        (throw (ex-info "arguments do not match function arity" {:phase :ir :args args})))
-     (doseq [[arg type] (map vector args param-types)]
+     (doseq [[arg declared-type] (map vector args param-types)]
+       (let [type (if (and (vector? declared-type) (= :ref (first declared-type)))
+                    (or (get (:schemas kir) (second declared-type))
+                        (throw (ex-info "argument references an unknown schema"
+                                        {:phase :ir :schema (second declared-type)})))
+                    declared-type)]
        (case type
          :i64 (when-not #?(:clj (and (integer? arg) (<= Long/MIN_VALUE arg Long/MAX_VALUE))
                           :cljs (and (or (i64/bigint-value? arg) (integer? arg))
@@ -1424,6 +2100,7 @@
                 (throw (ex-info "argument must be a signed i64" {:phase :ir :arg arg})))
          :string (value/bounded-string! arg value/string-value-byte-limit)
          :keyword (value/bounded-keyword! arg value/keyword-value-byte-limit)
+         :symbol (value/bounded-symbol! arg value/symbol-value-byte-limit)
          :map (value/bounded-map! arg)
          :bool (when-not (boolean? arg)
                  (throw (ex-info "argument must be a boolean" {:phase :ir :arg arg})))
@@ -1431,8 +2108,12 @@
          :result-i64 (value/bounded-result-i64! arg)
          :vector-i64 (value/bounded-vector-i64! arg)
          :vector-f64 (value/bounded-vector-f64! arg)
-         (value/bounded-typed-value! type arg)))
-     (let [invoke #(invoke-function function
+         :string-index (value/bounded-string-index! arg)
+         :disjoint-set-i64 (value/bounded-disjoint-set-i64! arg)
+         :document (value/bounded-document! arg)
+         (value/bounded-typed-value! type arg))))
+     (let [invoke #(binding [*runtime-schemas* (:schemas kir)]
+                     (invoke-function function
                                     (mapv (fn [arg type]
                                             (if (= type :i64)
                                               (#?(:clj long :cljs i64/->bigint) arg)
@@ -1441,7 +2122,7 @@
                                     functions
                                     (volatile! fuel) {:cells (volatile! []) :capacity pair-capacity
                                                       :datoms (volatile! []) :kgraph-capacity kgraph-capacity}
-                                    [] cap-call)]
+                                    [] cap-dispatch))]
        #?(:clj
           ;; A host JVM with a small native stack can exhaust that stack just
           ;; before the fixed Kotoba call budget does.  Host resource errors
@@ -1467,6 +2148,8 @@
         base {:format (if typed-values? :kotoba.kir/v4 :kotoba.kir/v3)
               :entry (:entry hir)
               :exports (:exports hir)
+              :schemas (:schemas hir)
+              :schema-identities (:schema-identities hir)
               :signature (when (:entry hir) {:params [] :result (:result hir)})
               :effects (:effects hir)
               :functions (mapv #(select-keys % (cond-> [:name :params :result :effects :body]

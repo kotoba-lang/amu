@@ -150,6 +150,16 @@
   (insn (bit-or 0x54000000 (bit-shift-left (bit-and (quot byte-offset 4) 0x7ffff) 5) cond-code)))
 (defn- cbz-reg [rt byte-offset]
   (insn (bit-or 0xb4000000 (bit-shift-left (bit-and (quot byte-offset 4) 0x7ffff) 5) rt)))
+;; `CMP Xn, #imm12` (alias of `SUBS XZR, Xn, #imm12`, no shift). Used by
+;; `emit-variant-dispatch` below to compare the discriminant register
+;; against each case's own small, always-non-negative, compile-time-known
+;; ordinal -- never an arbitrary `.kotoba` i64 VALUE (that class of value
+;; goes through the general `contains? '#{= < > <= >=}` register-vs-register
+;; path already in `emit-expr`, unchanged), so a plain JS-number-safe imm12
+;; is always sufficient here (this increment's own case counts are a
+;; handful, nowhere near imm12's 4096 ceiling).
+(defn- cmp-imm [rn imm12]
+  (insn (bit-or 0xf100001f (bit-shift-left (bit-and imm12 0xfff) 10) (bit-shift-left rn 5))))
 (def ^:private cond-hi 8)     ; unsigned length > maximum
 (def ^:private cond-hs 2)     ; unsigned index >= length
 
@@ -260,6 +270,22 @@
           (ldr-context 16 48) (insn 0xd63f0200)   ; blr x16
           (ldr-sp 7 0) (add-sp 16)))))
 
+(defn- emit-typed-cap-call [cap-id kind value env depth]
+  (let [cap-id #?(:clj cap-id :cljs (js/Number cap-id))
+        word-offset (+ 16 (* 8 (quot cap-id 64)))
+        bit-index (mod cap-id 64)]
+    (vec (concat
+          (ldr-context 16 word-offset) (tbnz 16 bit-index 8) (insn 0xd4200000)
+          (emit-expr value env depth)
+          (mov-reg 4 0)                           ; x4=request handle
+          (sub-sp 16) (str-sp 7 0)
+          (load-constant-reg 1 cap-id)
+          (load-constant-reg 2 kind)              ; request kind
+          (load-constant-reg 3 kind)              ; result kind
+          (mov-reg 0 7)
+          (ldr-context 16 128) (insn 0xd63f0200)
+          (ldr-sp 7 0) (add-sp 16)))))
+
 (def ^:private heap-call-offsets
   {'pair 56 'pair-first 64 'pair-second 72
    'kgraph-assert! 80 'kgraph-get 88 'kgraph-count 96 'kgraph-entity-at 104
@@ -323,6 +349,139 @@
         (let [body-code (emit-expr body env d)]
           (vec (concat code body-code (pop-n (count pairs)))))))))
 
+;; A native scalar record has NO independent runtime representation at all --
+;; no pointer, no heap-arena allocation (unlike `pair`, which IS heap-backed
+;; via a host call), no new host ABI offset. Mirrors
+;; `kotoba.compiler.backend.x86-64/emit-record-get-of-new`'s own docstring
+;; exactly (this is the AArch64 half of the SAME design decision, see that
+;; comment for the full rationale): this increment's ENTIRE admitted shape
+;; is `(record-get type (record-new type v0 v1 ... vN-1) field)`, rewritten
+;; into the SAME `emit-let`/`load-let` machinery an ordinary `(let [f0 v0 f1
+;; v1 ... fN-1 vN-1] fI)` already uses -- one synthetic 16-byte-aligned
+;; stack slot per field (this backend's own `let` slot size), read back via
+;; the same depth-relative `load-let` arithmetic already proven correct by
+;; every existing `let` test.
+(defn- emit-record-get-of-new [type value-form field env depth]
+  (when-not (seq? value-form)
+    (throw (ex-info "record-get is only supported directly over a matching record-new construction on the native backend"
+                    {:phase :aarch64 :type type})))
+  (let [[record-op record-type & field-exprs] value-form
+        fields (nth type 2)
+        field-index (first (keep-indexed (fn [i [name _]] (when (= name field) i)) fields))]
+    (when-not (= 'record-new record-op)
+      (throw (ex-info "record-get is only supported directly over a matching record-new construction on the native backend"
+                      {:phase :aarch64 :type type})))
+    (when-not (= type record-type)
+      (throw (ex-info "record-get's schema must be identical to its record-new operand's schema"
+                      {:phase :aarch64 :expected type :actual record-type})))
+    (when-not (= (count fields) (count field-exprs))
+      (throw (ex-info "record-new does not supply exactly one value per declared field"
+                      {:phase :aarch64 :type type})))
+    (when (nil? field-index)
+      (throw (ex-info "record-get references an undeclared field"
+                      {:phase :aarch64 :type type :field field})))
+    (let [names (mapv #(symbol (str "$record-field-" %)) (range (count fields)))
+          bindings (vec (mapcat vector names field-exprs))]
+      (emit-let bindings (nth names field-index) env depth))))
+
+;; ADR 0063: AArch64 half of the SAME design decision
+;; `backend/x86-64.cljc/emit-variant-dispatch`'s own docstring documents in
+;; full (this is the second native value-representation increment, right
+;; after ADR 0062's record). A native sealed variant has no independent
+;; heap/pointer representation: it is rewritten into TWO synthetic 16-byte-
+;; aligned stack slots (this backend's own `let` slot size) on the SAME
+;; `emit-let`/`load-let` machinery -- slot 0 = discriminant (the case's
+;; 0-based ordinal within the type's declared `cases`), slot 1 = payload (one
+;; word, uniformly reserved for every case including a tag-only/"unit" one,
+;; whose branch body simply never reads it). Dispatch is a real runtime
+;; compare-and-branch chain over the stored discriminant (x0 after
+;; `load-let`): `cmp x0,#i ; b.eq case_i` for each of the N declared cases in
+;; order, falling through past all N comparisons to a defensive `brk`trap if
+;; none match -- never special-cased away by a directly-nested `variant-
+;; new`'s literal tag being statically known at that call site (see
+;; `emit-variant-match-of-new` below).
+(defn- emit-variant-dispatch
+  "Mirrors `backend/x86-64.cljc`'s own `emit-variant-dispatch` exactly, on
+  this backend's own AArch64 instruction encodings and 16-byte let-slot
+  convention. See that function's docstring for the full contract (including
+  why ORDINAL-EXPR is intentionally NOT restricted to a compiler-derived
+  in-range value here)."
+  [ordinal-expr payload-expr branch-specs env depth]
+  (let [push-ordinal (vec (concat (emit-expr ordinal-expr env depth) (save-x0)))
+        payload-depth (inc depth)
+        push-payload (vec (concat (emit-expr payload-expr env payload-depth) (save-x0)))
+        dispatch-depth (+ depth 2)
+        load-tag (load-let 0 depth dispatch-depth)
+        n (count branch-specs)
+        ;; add sp, sp, #32 -- drops the two synthetic 16-byte slots this
+        ;; dispatch alone pushed, run at the end of EVERY case body.
+        cleanup (add-sp 32)
+        body-codes (mapv (fn [{:keys [binder body]}]
+                           (vec (emit-expr body (assoc env binder {:let-depth payload-depth}) dispatch-depth)))
+                         branch-specs)
+        ;; Right-to-left fold, same reasoning as the x86-64 half: the last
+        ;; case never needs a trailing branch, so its size is known first,
+        ;; and each earlier case's own trailing `b` distance is exactly the
+        ;; already-known total size of every case laid out after it. Unlike
+        ;; x86-64's `jmp rel32` (relative to the NEXT instruction), AArch64's
+        ;; `b`/`b.cond` immediate is relative to the BRANCH INSTRUCTION'S OWN
+        ;; address (confirmed against this file's own pre-existing `if` and
+        ;; `bounds-check` byte-layout comments/offsets) -- every offset here
+        ;; therefore adds this instruction's own 4-byte width on top of the
+        ;; byte count between the END of this instruction and its target.
+        full-bodies
+        (vec (reverse
+              (reduce (fn [built body-code]
+                        (let [remaining (reduce + (map code-size built))]
+                          (conj built
+                                (if (empty? built)
+                                  (vec (concat body-code cleanup))
+                                  (vec (concat body-code cleanup (branch (+ 4 remaining))))))))
+                      []
+                      (reverse body-codes))))
+        body-sizes (mapv code-size full-bodies)
+        body-start-offsets (reductions + 0 (butlast body-sizes))
+        trap (insn 0xd4200000)                              ; brk #0
+        compare-entry-size 8                                 ; cmp-imm (4) + b.eq (4)
+        compare-block
+        (vec (mapcat
+              (fn [i]
+                (let [remaining-compares (- n i 1)
+                      ;; +4: `b.eq`'s own self-relative width, see the
+                      ;; `full-bodies` comment above for why.
+                      distance (+ 4 (* remaining-compares compare-entry-size)
+                                  (count trap)
+                                  (nth body-start-offsets i))]
+                  (concat (cmp-imm 0 i) (b-cond 0 distance))))    ; cond-eq = 0
+              (range n)))]
+    (vec (concat push-ordinal push-payload load-tag compare-block trap (apply concat full-bodies)))))
+
+;; Mirrors `backend/x86-64.cljc/emit-variant-match-of-new` exactly: `value-
+;; form` must be a directly-nested, same-schema `variant-new` -- a variant
+;; value never crosses a function boundary, matching the record ADR's own
+;; restriction, so no new host arena and no lifetime question to answer.
+(defn- emit-variant-match-of-new [type value-form branches env depth]
+  (when-not (seq? value-form)
+    (throw (ex-info "variant-match is only supported directly over a matching variant-new construction on the native backend"
+                    {:phase :aarch64 :type type})))
+  (let [[ctor-op ctor-type tag payload-expr] value-form
+        cases (nth type 2)
+        ordinal (first (keep-indexed (fn [i [case-tag _]] (when (= case-tag tag) i)) cases))]
+    (when-not (= 'variant-new ctor-op)
+      (throw (ex-info "variant-match is only supported directly over a matching variant-new construction on the native backend"
+                      {:phase :aarch64 :type type})))
+    (when-not (= type ctor-type)
+      (throw (ex-info "variant-match's schema must be identical to its variant-new operand's schema"
+                      {:phase :aarch64 :expected type :actual ctor-type})))
+    (when (nil? ordinal)
+      (throw (ex-info "variant-new references an undeclared case"
+                      {:phase :aarch64 :type type :tag tag})))
+    (when-not (= (count cases) (count branches))
+      (throw (ex-info "variant-match does not supply exactly one branch per declared case"
+                      {:phase :aarch64 :type type})))
+    (let [branch-specs (mapv (fn [[_ binder body]] {:binder binder :body body}) branches)]
+      (emit-variant-dispatch ordinal payload-expr branch-specs env depth))))
+
 (defn emit-expr [form env depth]
   (cond
     ;; `integer?` alone does not reliably recognize a cljs `bigint` (see
@@ -330,6 +489,14 @@
     ;; `kotoba.compiler.backend.wasm`'s identical dispatch guard.
     #?(:clj (integer? form) :cljs (or (i64/bigint-value? form) (integer? form)))
     (load-constant form)
+    ;; A literal `true`/`false` -- the only source of a genuine `:bool`
+    ;; VALUE in this frontend's type system (see
+    ;; `emit-record-get-of-new`'s own doc comment above) -- is just the i64
+    ;; word 1/0, encoded through the SAME `load-constant` path an ordinary
+    ;; integer literal uses. MUST be checked before the generic `:else`,
+    ;; which would otherwise try to sequentially destructure a bare boolean
+    ;; and throw.
+    (boolean? form) (load-constant (if form 1 0))
     (string? form) (emit-string-literal form)
     (symbol? form)
     (let [binding (get env form)]
@@ -355,6 +522,109 @@
         (emit-let (first args) (second args) env depth)
         (= op 'cap-call)
         (emit-cap-call (first args) (second args) env depth)
+        (= op 'typed-cap-call)
+        (let [[cap-id request-type result-type request] args]
+          (cond
+            (= :i64 request-type result-type)
+            (emit-cap-call cap-id request env depth)
+            (= :string request-type result-type)
+            (emit-typed-cap-call cap-id 1 request env depth)
+            (= :option-i64 request-type result-type)
+            (emit-typed-cap-call cap-id 2 request env depth)
+            (= :result-i64 request-type result-type)
+            (emit-typed-cap-call cap-id 3 request env depth)
+            :else
+            (throw (ex-info "native typed capability ABI does not support this boundary"
+                            {:phase :aarch64 :request-type request-type
+                             :result-type result-type}))))
+        (= op 'option-some)
+        (emit-heap-call 'pair [1 (first args)] env depth)
+        (= op 'option-none)
+        (emit-heap-call 'pair [0 0] env depth)
+        (= op 'option-some?)
+        (emit-heap-call 'pair-first [(first args)] env depth)
+        (= op 'option-value)
+        (let [[value fallback] args
+              tagged-value '__native_option_value]
+          (emit-let [tagged-value value]
+                    (list 'if (list 'pair-first tagged-value)
+                          (list 'pair-second tagged-value)
+                          fallback)
+                    env depth))
+        (= op 'option-some-of)
+        (emit-heap-call 'pair [1 (second args)] env depth)
+        (= op 'option-none-of)
+        (emit-heap-call 'pair [0 0] env depth)
+        (= op 'option-some?-of)
+        (emit-heap-call 'pair-first [(second args)] env depth)
+        (= op 'option-value-of)
+        (let [[_type value fallback] args
+              tagged-value '__native_generic_option_value]
+          (emit-let [tagged-value value]
+                    (list 'if (list 'pair-first tagged-value)
+                          (list 'pair-second tagged-value)
+                          fallback)
+                    env depth))
+        (= op 'option-match)
+        (let [[_type value none-body binder some-body] args
+              tagged-value '__native_generic_option_match]
+          (emit-let [tagged-value value]
+                    (list 'if (list 'pair-first tagged-value)
+                          (list 'let [binder (list 'pair-second tagged-value)]
+                                some-body)
+                          none-body)
+                    env depth))
+        (= op 'result-ok)
+        (emit-heap-call 'pair [1 (first args)] env depth)
+        (= op 'result-err)
+        (emit-heap-call 'pair [0 (first args)] env depth)
+        (= op 'result-ok?)
+        (emit-heap-call 'pair-first [(first args)] env depth)
+        (contains? '#{result-value result-error} op)
+        (let [[value fallback] args
+              tagged-value '__native_result_value
+              ok? (list 'pair-first tagged-value)
+              payload (list 'pair-second tagged-value)]
+          (emit-let [tagged-value value]
+                    (if (= op 'result-value)
+                      (list 'if ok? payload fallback)
+                      (list 'if ok? fallback payload))
+                    env depth))
+        (contains? '#{result-ok-of result-err-of} op)
+        (emit-heap-call 'pair [(if (= op 'result-ok-of) 1 0) (second args)] env depth)
+        (= op 'result-ok?-of)
+        (emit-heap-call 'pair-first [(second args)] env depth)
+        (contains? '#{result-value-of result-error-of} op)
+        (let [[_type value fallback] args
+              tagged-value '__native_generic_result_value
+              ok? (list 'pair-first tagged-value)
+              payload (list 'pair-second tagged-value)]
+          (emit-let [tagged-value value]
+                    (if (= op 'result-value-of)
+                      (list 'if ok? payload fallback)
+                      (list 'if ok? fallback payload))
+                    env depth))
+        (= op 'result-match-of)
+        (let [[_type value ok-binder ok-body err-binder err-body] args
+              tagged-value '__native_generic_result_match
+              payload (list 'pair-second tagged-value)]
+          (emit-let [tagged-value value]
+                    (list 'if (list 'pair-first tagged-value)
+                          (list 'let [ok-binder payload] ok-body)
+                          (list 'let [err-binder payload] err-body))
+                    env depth))
+        (= op 'record-get)
+        (let [[type value-form field] args]
+          (emit-record-get-of-new type value-form field env depth))
+        (= op 'record-new)
+        (throw (ex-info "record-new is only supported as the direct operand of a matching record-get on the native backend"
+                        {:phase :aarch64}))
+        (= op 'variant-match)
+        (let [[type value-form branches] args]
+          (emit-variant-match-of-new type value-form branches env depth))
+        (= op 'variant-new)
+        (throw (ex-info "variant-new is only supported as the direct operand of a matching variant-match on the native backend"
+                        {:phase :aarch64}))
         (contains? '#{pair pair-first pair-second
                       kgraph-assert! kgraph-get kgraph-count kgraph-entity-at
                       string-byte-length string=? string-concat} op)

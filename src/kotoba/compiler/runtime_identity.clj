@@ -4,18 +4,16 @@
 
 (def loader-source-sha256
   "Pinned identity of the reviewed POSIX native loader source.
-  Updated for ADR-2607198300 follow-up: adds string_equal/string_concat
-  (checked_string_equal/checked_string_concat) plus a bounded 65536-byte
-  string_pool and the read-only code_base/code_length fields they resolve
-  a string handle's (offset, length) against, alongside the existing
-  pair-arena/kgraph-datom-arena/cap-call surface."
-  "eab2b204326e032d4c9cd259f239b4c49782d7413bcd32074585982a0f034449")
+  Includes string_equal/string_concat and the typed string capability
+  callback, which validates pair-backed pointer/length handles and canonical
+  UTF-8 before and after the provider boundary."
+  "7f7950e9764e108986fd5050241a8588061ae869ab56f06ffe292b3f7c08f55f")
 
 (def windows-loader-source-sha256
   "Pinned identity of the reviewed Windows native loader source.
-  Updated for the zero-capability AppContainer execution boundary and its
-  filesystem, process, outbound-network, and listen denial probes."
-  "da10256734943e82a8c786839b6dd2ada2a1e99e38ca8463ba4ad5dd63232961")
+  Includes the AppContainer denial boundary plus pair-backed string,
+  option-i64, and result-i64 typed capability validation."
+  "504de28c6ba3835318a0788402885a492857fe9a674df0ae88eb541bcfb111bb")
 
 (defn loader-source-for-profile [profile]
   (case (:os profile)

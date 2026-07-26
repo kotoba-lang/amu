@@ -64,6 +64,8 @@ struct kexe_context_v2 {
    * need one each, since only they read/copy the addressed bytes. */
   int64_t (*string_equal)(struct kexe_context_v2 *, int64_t, int64_t);
   int64_t (*string_concat)(struct kexe_context_v2 *, int64_t, int64_t);
+  int64_t (*typed_cap_call)(struct kexe_context_v2 *, uint64_t, uint64_t,
+                            uint64_t, int64_t);
   /* Data-only (not part of the compiler-checked context-abi): the mmap'd
    * code+literal-data region's base address and real (unpadded) byte
    * length, set once in main() before the guest runs. Never read by guest
@@ -98,6 +100,7 @@ _Static_assert(offsetof(struct kexe_context_v2, kgraph_assert) == 80, "kgraph AB
 _Static_assert(offsetof(struct kexe_context_v2, kgraph_get) == 88, "kgraph ABI drift");
 _Static_assert(offsetof(struct kexe_context_v2, kgraph_count) == 96, "kgraph ABI drift");
 _Static_assert(offsetof(struct kexe_context_v2, kgraph_entity_at) == 104, "kgraph ABI drift");
+_Static_assert(offsetof(struct kexe_context_v2, typed_cap_call) == 128, "typed cap ABI drift");
 _Static_assert(offsetof(struct kexe_context_v2, string_equal) == 112, "string ABI drift");
 _Static_assert(offsetof(struct kexe_context_v2, string_concat) == 120, "string ABI drift");
 _Static_assert(sizeof(((struct kexe_shared_v2 *)0)->pairs) == 65536,
@@ -282,6 +285,77 @@ static const uint8_t *resolve_string_bytes(struct kexe_context_v2 *context,
     return NULL;
   }
   return shared->string_pool + pool_offset;
+}
+
+static int valid_utf8(const uint8_t *bytes, uint64_t length) {
+  uint64_t i = 0;
+  while (i < length) {
+    uint8_t a = bytes[i++];
+    if (a <= 0x7f) continue;
+    if (a >= 0xc2 && a <= 0xdf) {
+      if (i >= length || (bytes[i++] & 0xc0) != 0x80) return 0;
+      continue;
+    }
+    if (a >= 0xe0 && a <= 0xef) {
+      if (i + 1 >= length) return 0;
+      uint8_t b = bytes[i++], c = bytes[i++];
+      if ((b & 0xc0) != 0x80 || (c & 0xc0) != 0x80 ||
+          (a == 0xe0 && b < 0xa0) || (a == 0xed && b >= 0xa0)) return 0;
+      continue;
+    }
+    if (a >= 0xf0 && a <= 0xf4) {
+      if (i + 2 >= length) return 0;
+      uint8_t b = bytes[i++], c = bytes[i++], d = bytes[i++];
+      if ((b & 0xc0) != 0x80 || (c & 0xc0) != 0x80 || (d & 0xc0) != 0x80 ||
+          (a == 0xf0 && b < 0x90) || (a == 0xf4 && b >= 0x90)) return 0;
+      continue;
+    }
+    return 0;
+  }
+  return 1;
+}
+
+enum kexe_typed_kind_v1 {
+  KEXE_TYPED_STRING = 1,
+  KEXE_TYPED_OPTION_I64 = 2,
+  KEXE_TYPED_RESULT_I64 = 3
+};
+
+static int valid_typed_value(struct kexe_context_v2 *context,
+                             uint64_t kind, int64_t value) {
+  if (kind == KEXE_TYPED_STRING) {
+    int64_t offset = checked_pair_get(context, value, 0);
+    int64_t length = checked_pair_get(context, value, 1);
+    const uint8_t *bytes = resolve_string_bytes(context, offset, length);
+    return valid_utf8(bytes, (uint64_t)length);
+  }
+  if (kind == KEXE_TYPED_OPTION_I64 || kind == KEXE_TYPED_RESULT_I64) {
+    int64_t tag = checked_pair_get(context, value, 0);
+    int64_t payload = checked_pair_get(context, value, 1);
+    if (tag != 0 && tag != 1) return 0;
+    return kind != KEXE_TYPED_OPTION_I64 || tag != 0 || payload == 0;
+  }
+  return 0;
+}
+
+static int64_t checked_typed_cap_call(struct kexe_context_v2 *context,
+                                      uint64_t id, uint64_t request_kind,
+                                      uint64_t result_kind, int64_t request) {
+  if (context == NULL || context->version != 2 || id > 255 ||
+      !(context->allow[id / 64] & (UINT64_C(1) << (id % 64))) ||
+      request_kind != result_kind ||
+      !valid_typed_value(context, request_kind, request)) {
+    raise(SIGILL);
+    return 0;
+  }
+  /* The qualification host's deterministic typed provider is identity.
+   * Production tenders replace this callback while preserving validation. */
+  int64_t result = request;
+  if (!valid_typed_value(context, result_kind, result)) {
+    raise(SIGILL);
+    return 0;
+  }
+  return result;
 }
 
 static int64_t checked_string_equal(struct kexe_context_v2 *context,
@@ -624,6 +698,7 @@ int main(int argc, char **argv) {
   shared->context.kgraph_entity_at = checked_kgraph_entity_at;
   shared->context.string_equal = checked_string_equal;
   shared->context.string_concat = checked_string_concat;
+  shared->context.typed_cap_call = checked_typed_cap_call;
   shared->context.code_base = (const uint8_t *)memory;
   shared->context.code_length = (uint64_t)length;
   if (parse_allow(argv[5], shared->context.allow) != 0) return 2;

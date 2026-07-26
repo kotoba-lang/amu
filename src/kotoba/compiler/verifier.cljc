@@ -38,9 +38,59 @@
 (def ^:private heap-operations '{pair 2 pair-first 1 pair-second 1})
 (def ^:private kgraph-operations '{kgraph-assert! 3 kgraph-get 2 kgraph-count 1 kgraph-entity-at 2})
 (def ^:private string-operations '{string-byte-length 1 string=? 2 string-concat 2})
-(def ^:private xml-operations '{xml-path-count 2 xml-path-attr 4})
+(def ^:private tagged-i64-operations
+  '{option-some 1 option-none 0 option-some? 1 option-value 2
+    result-ok 1 result-err 1 result-ok? 1 result-value 2 result-error 2})
+(def ^:private xml-operations
+  '{xml-path-count 2 xml-name-count 2 xml-name-text 3 xml-path-text 3 xml-path-attr 4})
 (def ^:private decimal-operations '{decimal-f64-parse 1 decimal-f64x3-parse 1})
 (def ^:private string-literal-byte-limit 4096)
+(def ^:private max-record-fields 32)
+
+;; Independently re-derived from `kotoba.compiler.ir/native-scalar-record-type?`
+;; ON PURPOSE -- this verifier is a from-scratch re-check of the embedded
+;; KIR, so it must never call into the compiler code being verified (same
+;; reasoning already documented at every other op-family in this file: none
+;; of `arithmetic`/`heap-operations`/`kgraph-operations`/... share a helper
+;; with the emitters/admission they cross-check either).
+(defn- native-scalar-record-type? [type]
+  (and (vector? type) (= 3 (count type)) (= :record (first type))
+       (keyword? (second type)) (some? (namespace (second type)))
+       (vector? (nth type 2)) (seq (nth type 2)) (<= (count (nth type 2)) max-record-fields)
+       (every? (fn [field]
+                 (and (vector? field) (= 2 (count field)) (keyword? (first field))
+                      (contains? #{:i64 :bool} (second field))))
+               (nth type 2))
+       (= (count (nth type 2)) (count (distinct (map first (nth type 2)))))))
+
+;; Independently re-derived from `kotoba.compiler.ir/native-scalar-variant-
+;; type?` ON PURPOSE, same reasoning as `native-scalar-record-type?`'s own
+;; comment immediately above (ADR 0063).
+(def ^:private max-variant-cases 32)
+(defn- native-scalar-variant-type? [type]
+  (and (vector? type) (= 3 (count type)) (= :variant (first type))
+       (keyword? (second type)) (some? (namespace (second type)))
+       (vector? (nth type 2)) (seq (nth type 2)) (<= (count (nth type 2)) max-variant-cases)
+       (every? (fn [case-entry]
+                 (and (vector? case-entry) (= 2 (count case-entry)) (keyword? (first case-entry))
+                      (contains? #{:i64 :bool} (second case-entry))))
+               (nth type 2))
+       (= (count (nth type 2)) (count (distinct (map first (nth type 2)))))))
+
+(defn- native-word-value-type?
+  "Independent verifier copy of the recursive one-word native value slice."
+  ([type] (native-word-value-type? type 0))
+  ([type depth]
+   (and (<= depth 8)
+        (or (contains? #{:i64 :bool :string} type)
+            (and (vector? type)
+                 (case (first type)
+                   :option (and (= 2 (count type))
+                                (native-word-value-type? (second type) (inc depth)))
+                   :result (and (= 3 (count type))
+                                (native-word-value-type? (second type) (inc depth))
+                                (native-word-value-type? (nth type 2) (inc depth)))
+                   false))))))
 
 ;; Mirrors `kotoba.compiler.backend.wasm`'s `utf8` -- `.getBytes` is
 ;; JVM-only, cljs has no `String`/`Charset`; `TextEncoder` is the
@@ -71,7 +121,63 @@
     #?(:clj (integer? form) :cljs (or (i64/bigint-value? form) (integer? form)))
     1
     (string? form) 1
+    ;; A bare literal `true`/`false` (only reachable via a record field
+    ;; value, see `verify-expr!`'s own comment below) -- costed the same
+    ;; flat 1 as any other scalar literal.
+    (boolean? form) 1
     (symbol? form) (get env form 1)
+    ;; `record-new`/`record-get`'s FIRST argument is a compile-time type
+    ;; descriptor VECTOR (e.g. `[:record :kw [[:field :type] ...]]`), not a
+    ;; KIR expression -- the generic `:else` branch below would otherwise
+    ;; recurse `lowered-cost` into it as an ordinary arg and crash trying to
+    ;; sequentially destructure a bare keyword (`(let [[op & args] :kw])`
+    ;; throws, keywords are not seqable), so both ops are special-cased here
+    ;; to skip the descriptor and cost only the actual value expressions.
+    (and (seq? form) (= 'record-new (first form)))
+    (let [[_ _type & values] form]
+      (bounded-sum (cons 1 (map #(lowered-cost % env) values))))
+    (and (seq? form) (= 'record-get (first form)))
+    (let [[_ _type value _field] form]
+      (bounded-sum [1 (lowered-cost value env)]))
+    ;; `variant-new`/`variant-match`'s FIRST argument is likewise a compile-
+    ;; time type descriptor, not a KIR expression -- same reasoning as
+    ;; `record-new`/`record-get` immediately above (ADR 0063). `variant-
+    ;; match`'s branches are `[tag binder body]` triples; only `body` costs
+    ;; anything (mirrors `let`'s own env-threading just above), each binder
+    ;; is scoped to its own branch only (they do not see each other).
+    (and (seq? form) (= 'variant-new (first form)))
+    (let [[_ _type _tag payload] form]
+      (bounded-sum [1 (lowered-cost payload env)]))
+    (and (seq? form) (= 'variant-match (first form)))
+    (let [[_ _type value branches] form]
+      (bounded-sum (list* 1 (lowered-cost value env)
+                          (map (fn [[_tag binder body]] (lowered-cost body (assoc env binder 1)))
+                               branches))))
+    (and (seq? form) (= 'typed-cap-call (first form)))
+    (let [[_ _cap-id _request-type _result-type request] form]
+      (bounded-sum [1 (lowered-cost request env)]))
+    (and (seq? form)
+         (contains? '#{option-some-of option-some?-of
+                       result-ok-of result-err-of result-ok?-of}
+                    (first form)))
+    (let [[_ _type value] form]
+      (bounded-sum [1 (lowered-cost value env)]))
+    (and (seq? form) (= 'option-none-of (first form))) 1
+    (and (seq? form)
+         (contains? '#{option-value-of result-value-of result-error-of}
+                    (first form)))
+    (let [[_ _type value fallback] form]
+      (bounded-sum [1 (lowered-cost value env) (lowered-cost fallback env)]))
+    (and (seq? form) (= 'option-match (first form)))
+    (let [[_ _type value none-body binder some-body] form]
+      (bounded-sum [1 (lowered-cost value env)
+                    (lowered-cost none-body env)
+                    (lowered-cost some-body (assoc env binder 1))]))
+    (and (seq? form) (= 'result-match-of (first form)))
+    (let [[_ _type value ok-binder ok-body err-binder err-body] form]
+      (bounded-sum [1 (lowered-cost value env)
+                    (lowered-cost ok-body (assoc env ok-binder 1))
+                    (lowered-cost err-body (assoc env err-binder 1))]))
     :else
     (let [[op & args] form]
       (if (= op 'let)
@@ -118,6 +224,15 @@
     (when-not (contains? locals form)
       (reject! "runtime KIR contains an unbound symbol" {:symbol form}))
 
+    ;; A bare literal `true`/`false` -- the only source of a genuine
+    ;; `:bool`-typed VALUE in this frontend's type system (every comparison,
+    ;; including `=`, always yields `:i64`; see `ir/only-string-and-scalar-
+    ;; record-typed-features?`'s own comment), reachable only as a
+    ;; `record-new` field value or generic option/result payload under this
+    ;; increment's admission. Always
+    ;; valid; no bound to check.
+    (boolean? form) nil
+
     (string? form)
     (when-not (<= (utf8-byte-count form) string-literal-byte-limit)
       (reject! "runtime KIR string literal exceeds byte limit" {:bytes (utf8-byte-count form)}))
@@ -154,6 +269,20 @@
           (vswap! facts update :effects conj [:cap/call cap-id])
           (verify-expr! value locals signatures (inc depth) nodes facts))
 
+        (= op 'typed-cap-call)
+        (let [[cap-id request-type result-type request :as call-args] args]
+          (when-not (and (= 4 (count call-args))
+                         #?(:clj (integer? cap-id)
+                            :cljs (or (i64/bigint-value? cap-id) (integer? cap-id)))
+                         (<= 0 cap-id 255)
+                         (contains? #{[:i64 :i64] [:string :string]
+                                      [:option-i64 :option-i64]
+                                      [:result-i64 :result-i64]}
+                                    [request-type result-type]))
+            (reject! "runtime KIR typed capability call rejected" {}))
+          (vswap! facts update :effects conj [:cap/call cap-id])
+          (verify-expr! request locals signatures (inc depth) nodes facts))
+
         (contains? arithmetic op)
         (do
           (when (or (empty? args) (and (contains? '#{quot bit-xor bit-and} op) (not= 2 (count args))))
@@ -165,6 +294,129 @@
           (when-not (= 2 (count args))
             (reject! "runtime KIR comparison arity rejected" {:operation op}))
           (doseq [arg args] (verify-expr! arg locals signatures (inc depth) nodes facts)))
+
+        (= op 'record-new)
+        (let [[type & values] args
+              fields (when (native-scalar-record-type? type) (nth type 2))]
+          (when-not (and fields (= (count fields) (count values)))
+            (reject! "runtime KIR record construction rejected" {:operation op}))
+          (doseq [arg values] (verify-expr! arg locals signatures (inc depth) nodes facts)))
+
+        ;; The codegen backends (`emit-record-get-of-new` in both
+        ;; `backend/x86-64.cljc` and `backend/aarch64.cljc`) require `value`
+        ;; to be a directly-nested, same-schema `record-new` -- this
+        ;; independent re-check enforces the EXACT same narrow shape (rather
+        ;; than relying solely on `verify-runtime!`'s `(emit program)`
+        ;; re-invocation to fail closed on anything looser), matching this
+        ;; file's own "treat embedded KIR as hostile" posture for every
+        ;; other op-family above.
+        (= op 'record-get)
+        (let [[type value field] args]
+          (when-not (and (= 3 (count args))
+                        (native-scalar-record-type? type)
+                        (keyword? field)
+                        (some #(= field (first %)) (nth type 2))
+                        (seq? value) (= 'record-new (first value)) (= type (second value)))
+            (reject! "runtime KIR record projection rejected" {:operation op}))
+          (verify-expr! value locals signatures (inc depth) nodes facts))
+
+        ;; ADR 0063, mirroring `record-new` immediately above: the tag must
+        ;; be one of the type's own declared cases.
+        (= op 'variant-new)
+        (let [[type tag payload] args
+              case-type (when (native-scalar-variant-type? type)
+                          (some (fn [[case-tag payload-type]]
+                                  (when (= case-tag tag) payload-type))
+                                (nth type 2)))]
+          (when-not (and (= 3 (count args)) case-type)
+            (reject! "runtime KIR variant construction rejected" {:operation op}))
+          (verify-expr! payload locals signatures (inc depth) nodes facts))
+
+        ;; ADR 0063, mirroring `record-get` immediately above: the codegen
+        ;; backends (`emit-variant-match-of-new` in both `backend/x86-
+        ;; 64.cljc` and `backend/aarch64.cljc`) require `value` to be a
+        ;; directly-nested, same-schema `variant-new` -- this independent
+        ;; re-check enforces the EXACT same narrow shape. `branches` must
+        ;; exhaustively cover every declared case, in the SAME order (the
+        ;; ordinal each branch corresponds to is its position).
+        (= op 'variant-match)
+        (let [[type value branches] args
+              cases (when (native-scalar-variant-type? type) (nth type 2))]
+          (when-not (and (= 3 (count args)) cases
+                        (vector? branches) (= (mapv first cases) (mapv first branches))
+                        (every? #(and (vector? %) (= 3 (count %)) (valid-name? (second %))) branches)
+                        (seq? value) (= 'variant-new (first value)) (= type (second value))
+                        (some #(= (nth value 2) (first %)) cases))
+            (reject! "runtime KIR variant dispatch rejected" {:operation op}))
+          (verify-expr! value locals signatures (inc depth) nodes facts)
+          (doseq [[_ binder body] branches]
+            (verify-expr! body (conj locals binder) signatures (inc depth) nodes facts)))
+
+        (contains? '#{option-some-of option-some?-of} op)
+        (let [[type value] args]
+          (when-not (and (= 2 (count args))
+                         (vector? type) (= :option (first type))
+                         (native-word-value-type? type))
+            (reject! "runtime KIR generic option operation rejected" {:operation op}))
+          (verify-expr! value locals signatures (inc depth) nodes facts))
+
+        (= op 'option-none-of)
+        (let [[type] args]
+          (when-not (and (= 1 (count args))
+                         (vector? type) (= :option (first type))
+                         (native-word-value-type? type))
+            (reject! "runtime KIR generic option operation rejected" {:operation op})))
+
+        (= op 'option-value-of)
+        (let [[type value fallback] args]
+          (when-not (and (= 3 (count args))
+                         (vector? type) (= :option (first type))
+                         (native-word-value-type? type))
+            (reject! "runtime KIR generic option projection rejected" {:operation op}))
+          (verify-expr! value locals signatures (inc depth) nodes facts)
+          (verify-expr! fallback locals signatures (inc depth) nodes facts))
+
+        (= op 'option-match)
+        (let [[type value none-body binder some-body] args]
+          (when-not (and (= 5 (count args))
+                         (vector? type) (= :option (first type))
+                         (native-word-value-type? type)
+                         (valid-name? binder))
+            (reject! "runtime KIR generic option match rejected" {:operation op}))
+          (verify-expr! value locals signatures (inc depth) nodes facts)
+          (verify-expr! none-body locals signatures (inc depth) nodes facts)
+          (verify-expr! some-body (conj locals binder) signatures
+                        (inc depth) nodes facts))
+
+        (contains? '#{result-ok-of result-err-of result-ok?-of} op)
+        (let [[type value] args]
+          (when-not (and (= 2 (count args))
+                         (vector? type) (= :result (first type))
+                         (native-word-value-type? type))
+            (reject! "runtime KIR generic result operation rejected" {:operation op}))
+          (verify-expr! value locals signatures (inc depth) nodes facts))
+
+        (contains? '#{result-value-of result-error-of} op)
+        (let [[type value fallback] args]
+          (when-not (and (= 3 (count args))
+                         (vector? type) (= :result (first type))
+                         (native-word-value-type? type))
+            (reject! "runtime KIR generic result projection rejected" {:operation op}))
+          (verify-expr! value locals signatures (inc depth) nodes facts)
+          (verify-expr! fallback locals signatures (inc depth) nodes facts))
+
+        (= op 'result-match-of)
+        (let [[type value ok-binder ok-body err-binder err-body] args]
+          (when-not (and (= 6 (count args))
+                         (vector? type) (= :result (first type))
+                         (native-word-value-type? type)
+                         (valid-name? ok-binder) (valid-name? err-binder))
+            (reject! "runtime KIR generic result match rejected" {:operation op}))
+          (verify-expr! value locals signatures (inc depth) nodes facts)
+          (verify-expr! ok-body (conj locals ok-binder) signatures
+                        (inc depth) nodes facts)
+          (verify-expr! err-body (conj locals err-binder) signatures
+                        (inc depth) nodes facts))
 
         (contains? heap-operations op)
         (do
@@ -183,6 +435,14 @@
           (when-not (= (get string-operations op) (count args))
             (reject! "runtime KIR string operation arity rejected" {:operation op}))
           (doseq [arg args] (verify-expr! arg locals signatures (inc depth) nodes facts)))
+
+        (contains? tagged-i64-operations op)
+        (do
+          (when-not (= (get tagged-i64-operations op) (count args))
+            (reject! "runtime KIR tagged i64 operation arity rejected"
+                     {:operation op}))
+          (doseq [arg args]
+            (verify-expr! arg locals signatures (inc depth) nodes facts)))
 
         (contains? xml-operations op)
         (do
@@ -349,6 +609,7 @@
                             :kgraph-count-offset 96 :kgraph-entity-at-offset 104
                             :kgraph-capacity 4096
                             :string-equal-offset 112 :string-concat-offset 120
+                            :typed-cap-call-offset 128
                             :string-pool-capacity 65536}]
       (when-not (= expected-fuel-abi fuel-abi)
         (reject! "fuel ABI is not admitted" {:target target :fuel-abi fuel-abi}))

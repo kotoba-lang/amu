@@ -74,28 +74,8 @@
 
 (def compatibility-section-name "kotoba.compatibility")
 
-;; Component imports are part of the public WIT contract, never an internal
-;; numeric capability dispatch table.  Keep the core import spelling aligned
-;; with `kotoba.compiler.component/capability-import-name`; an unknown id is
-;; rejected before bytes are emitted.
-(def component-capability-import-names
-  {1 "aiueos-identity-sign"
-   2 "aiueos-identity-verify"
-   3 "aiueos-hash-sha256"
-   4 "aiueos-http-post"
-   5 "aiueos-log-read"
-   6 "aiueos-log-append"
-   7 "aiueos-clock-now"})
-
-(defn- component-capability-import-name [id]
-  (or (get component-capability-import-names id)
-      (throw (ex-info "Component capability has no named WIT interface"
-                      {:phase :component-abi :capability-id id}))))
-
 (defn- wasm-runtime [target]
   (case target
-    :wasm-component-kotoba-v1 :kotoba-component-runtime-v1
-    :wasm-component-kotoba-v2 :kotoba-component-runtime-v2
     :wasm32-browser-kotoba-v1 :kotoba-browser-host-v1
     :wasm32-wasi-kotoba-v1 :kotoba-wasi-host-v1
     :kotoba-capability-host-v1))
@@ -135,7 +115,7 @@
              (local-count body)))
         (reduce + (map local-count args))))))
 
-(declare emit-expr i32-const)
+(declare emit-expr)
 
 (defn- emit-many [forms env ctx]
   (mapcat #(emit-expr % env ctx) forms))
@@ -178,133 +158,27 @@
 
         (= op 'cap-call)
         (let [[cap-id value] args]
-          (if (:typed-component? ctx)
-            (do
-              (when-not (contains? #{1 2 3 4 5 6 7} cap-id)
-                (throw (ex-info "typed Component operation lowering is unavailable"
-                                {:phase :component-abi-v3 :capability-id cap-id})))
-              (let [acquire
-                    (fn [request]
-                      (concat [0x41 request 0x41 0x00 0x10]
-                              (uleb (get intrinsic-indices 'v3-acquire))
-                              [0x41 0x00 0x28 0x02 0x00 0x04 0x40 0x00 0x0b]))
-                    drop-grant
-                    (concat [0x41 0x00 0x28 0x02 0x04 0x10]
-                            (uleb (get intrinsic-indices 'v3-grant-drop)))
-                    check-result
-                    (concat (i32-const 80)
-                            ;; The variant discriminant is one byte. Loading a
-                            ;; word would alias a bool payload at offset 1.
-                            [0x2d 0x00 0x00 0x04 0x40 0x00 0x0b])]
-                (case cap-id
-                  1
-                  (concat
-                   (i32-const 64) (emit-expr value env ctx) [0x37 0x03 0x00]
-                   (acquire 0)
-                   ;; sign(grant, bytes@64/8, retptr=80)
-                   [0x41 0x00 0x28 0x02 0x04]
-                   (i32-const 64) [0x41 0x08] (i32-const 80) [0x10]
-                   (uleb (get intrinsic-indices 'v3-identity-sign))
-                   check-result
-                   ;; The scalar migration contract requires at least 8 bytes.
-                   (i32-const 80) [0x28 0x02 0x08 0x41 0x08 0x49
-                                   0x04 0x40 0x00 0x0b]
-                   (i32-const 96) (i32-const 80)
-                   [0x28 0x02 0x04 0x29 0x03 0x00 0x37 0x03 0x00]
-                   drop-grant (i32-const 96) [0x29 0x03 0x00])
+          (concat [0x42] (sleb cap-id) (emit-expr value env ctx)
+                  [0x10 (get intrinsic-indices 'cap-call)]))
 
-                  2
-                  (concat
-                   ;; Store the scalar migration payload as canonical bytes.
-                   (i32-const 64) (emit-expr value env ctx) [0x37 0x03 0x00]
-                   (acquire 1)
-                   ;; verify(grant, bytes@64/8, retptr=80)
-                   [0x41 0x00 0x28 0x02 0x04]
-                   (i32-const 64) [0x41 0x08] (i32-const 80) [0x10]
-                   (uleb (get intrinsic-indices 'v3-identity-verify))
-                   check-result
-                   ;; Save bool before dropping the owned resource.
-                   (i32-const 96) (i32-const 80)
-                   [0x2d 0x00 0x01 0x36 0x02 0x00]
-                   drop-grant
-                   (i32-const 96) [0x28 0x02 0x00 0xad])
-
-                  3
-                  (concat
-                   (i32-const 64) (emit-expr value env ctx) [0x37 0x03 0x00]
-                   (acquire 2)
-                   ;; sha256(grant, bytes@64/8, retptr=80)
-                   [0x41 0x00 0x28 0x02 0x04]
-                   (i32-const 64) [0x41 0x08] (i32-const 80) [0x10]
-                   (uleb (get intrinsic-indices 'v3-hash-sha256))
-                   check-result
-                   (i32-const 80) [0x28 0x02 0x08 0x41 0x08 0x49
-                                   0x04 0x40 0x00 0x0b]
-                   (i32-const 96) (i32-const 80)
-                   [0x28 0x02 0x04 0x29 0x03 0x00 0x37 0x03 0x00]
-                   drop-grant (i32-const 96) [0x29 0x03 0x00])
-
-                  4
-                  (concat
-                   (i32-const 64) (emit-expr value env ctx) [0x37 0x03 0x00]
-                   (acquire 3)
-                   ;; post(grant, empty-path, empty-headers, body@64/8, retptr=80)
-                   [0x41 0x00 0x28 0x02 0x04
-                    0x41 0x00 0x41 0x00 0x41 0x00 0x41 0x00]
-                   (i32-const 64) [0x41 0x08] (i32-const 80) [0x10]
-                   (uleb (get intrinsic-indices 'v3-http-post))
-                   check-result
-                   ;; Save the u16 status before dropping the grant.
-                   (i32-const 96) (i32-const 80)
-                   [0x2f 0x01 0x04 0x36 0x02 0x00]
-                   drop-grant (i32-const 96) [0x28 0x02 0x00 0xad])
-
-                  5
-                  (concat
-                   ;; read(grant, cursor=value, max-bytes=8, retptr=80)
-                   (acquire 4)
-                   [0x41 0x00 0x28 0x02 0x04]
-                   (emit-expr value env ctx)
-                   [0x41 0x08] (i32-const 80) [0x10]
-                   (uleb (get intrinsic-indices 'v3-log-read))
-                   check-result
-                   (i32-const 96) (i32-const 80)
-                   [0x29 0x03 0x08 0x37 0x03 0x00]
-                   drop-grant (i32-const 96) [0x29 0x03 0x00])
-
-                  6
-                  (concat
-                   (i32-const 64) (emit-expr value env ctx) [0x37 0x03 0x00]
-                   (acquire 5)
-                   ;; append(grant, bytes@64/8, retptr=80)
-                   [0x41 0x00 0x28 0x02 0x04]
-                   (i32-const 64) [0x41 0x08] (i32-const 80) [0x10]
-                   (uleb (get intrinsic-indices 'v3-log-append))
-                   check-result drop-grant [0x42 0x00])
-
-                  7
-                  (concat
-                   ;; Preserve evaluation of the legacy argument; now has none.
-                   (emit-expr value env ctx) [0x1a]
-                   (acquire 6)
-                   [0x41 0x00 0x28 0x02 0x04 0x41 0x10 0x10]
-                   (uleb (get intrinsic-indices 'v3-clock-now))
-                   [0x41 0x10 0x28 0x02 0x00 0x04 0x40 0x00 0x0b
-                    0x41 0x20 0x41 0x10 0x29 0x03 0x08 0x37 0x03 0x00]
-                   drop-grant [0x41 0x20 0x29 0x03 0x00]))))
-            (if (:component? ctx)
-            (concat (emit-expr value env ctx)
-                    [0x10 (get intrinsic-indices
-                               (symbol (component-capability-import-name cap-id)))])
-            (concat [0x42] (sleb cap-id) (emit-expr value env ctx)
-                    [0x10 (get intrinsic-indices 'cap-call)]))))
+        (= op 'typed-cap-call)
+        (let [[cap-id _request-type _result-type request] args
+              typed-import (get intrinsic-indices [:capability cap-id])]
+          (if typed-import
+            (concat (emit-expr request env ctx) [0x10 typed-import])
+            ;; This path is intentionally unbindable by Component packaging;
+            ;; it retains the ordinary core-module fallback for callers that
+            ;; emit a typed KIR without a named capability-import table.
+            (concat [0x41] (sleb cap-id)
+                    (emit-expr request env ctx)
+                    [0x10 (get intrinsic-indices 'typed-cap-call)])))
 
         (contains? '#{pair pair-first pair-second} op)
         (concat (emit-many args env ctx) [0x10 (get intrinsic-indices op)])
 
-        (contains? '#{+ - * quot bit-xor bit-and} op)
+        (contains? '#{+ - * quot bit-xor bit-and bit-or} op)
         (let [opcode ({'+ 0x7c '- 0x7d '* 0x7e 'quot 0x7f
-                       'bit-and 0x83 'bit-xor 0x85} op)]
+                       'bit-and 0x83 'bit-xor 0x85 'bit-or 0x84} op)]
           (if (and (= op '-) (= 1 (count args)))
             (concat [0x42 0] (emit-expr (first args) env ctx) [0x7d])
             (concat (emit-expr (first args) env ctx)
@@ -321,6 +195,18 @@
                 (emit-expr (second args) env ctx) [0xa7]
                 [({'i32-wrapping-add 0x6a 'i32-wrapping-mul 0x6c 'i32-xor 0x73} op)
                  0xac])
+
+        ;; ADR-2607254600 D1. Operands are already i64, so unlike the i32
+        ;; shifts above there is no wrap/extend around the opcode.
+        (contains? '#{i64-shift-left i64-shift-right u64-shift-right} op)
+        (concat (emit-expr (first args) env ctx)
+                (emit-expr (second args) env ctx)
+                [({'i64-shift-left 0x86 'i64-shift-right 0x87 'u64-shift-right 0x88} op)])
+
+        ;; ADR-2607254600 D2. Wasm has no i64.not; xor with all-ones is the
+        ;; canonical encoding. `0x42 0x7f` is i64.const -1 (SLEB128).
+        (= op 'bit-not)
+        (concat (emit-expr (first args) env ctx) [0x42 0x7f 0x85])
 
         (contains? '#{i32-shift-left i32-shift-right u32-shift-right} op)
         (concat (emit-expr (first args) env ctx) [0xa7]
@@ -612,6 +498,16 @@
                       (concat (emit-test test env)
                               [0x04 (typed/wasm-type result-type)]
                               (emit* then env) [0x05] (emit* else env) [0x0b]))
+                    (= op 'typed-cap-call)
+                    (let [[cap-id _ _ request] args
+                          typed-import (get intrinsic-indices [:capability cap-id])]
+                      (if typed-import
+                        ;; A typed import takes the request directly; the
+                        ;; capability id is carried by the import identity, not
+                        ;; passed as an operand.
+                        (concat (emit* request env) [0x10 typed-import])
+                        (concat (i32-const cap-id) (emit* request env)
+                                [0x10 (get intrinsic-indices 'typed-cap-call)])))
                     (= op 'f64-to-bits)
                     (let [value-local (allocate! 0x7c)]
                       (concat (emit* (first args) env) [::local-set value-local]
@@ -849,9 +745,9 @@
                               [::local-get left-local ::local-get left-local 0x5c
                                ::local-get right-local ::local-get right-local 0x5c 0x72
                                0x10 (get intrinsic-indices 'typed-bool)]))
-                    (contains? '#{+ - * quot bit-xor bit-and} op)
+                    (contains? '#{+ - * quot bit-xor bit-and bit-or} op)
                     (let [opcode ({'+ 0x7c '- 0x7d '* 0x7e 'quot 0x7f
-                                   'bit-and 0x83 'bit-xor 0x85} op)]
+                                   'bit-and 0x83 'bit-xor 0x85 'bit-or 0x84} op)]
                       (if (and (= op '-) (= 1 (count args)))
                         (concat [0x42 0] (emit* (first args) env) [0x7d])
                         (concat (emit* (first args) env)
@@ -865,6 +761,19 @@
                             (emit* (second args) env) [0xa7]
                             [({'i32-wrapping-add 0x6a 'i32-wrapping-mul 0x6c 'i32-xor 0x73} op)
                              0xac])
+                    ;; ADR-2607254600 D1. Operands are already i64, so unlike
+                    ;; the i32 shifts below there is no wrap/extend.
+                    (contains? '#{i64-shift-left i64-shift-right u64-shift-right} op)
+                    (concat (emit* (first args) env)
+                            (emit* (second args) env)
+                            [({'i64-shift-left 0x86 'i64-shift-right 0x87
+                               'u64-shift-right 0x88} op)])
+
+                    ;; ADR-2607254600 D2. No i64.not in wasm; xor all-ones.
+                    ;; `0x42 0x7f` is i64.const -1 (SLEB128).
+                    (= op 'bit-not)
+                    (concat (emit* (first args) env) [0x42 0x7f 0x85])
+
                     (contains? '#{i32-shift-left i32-shift-right u32-shift-right} op)
                     (concat (emit* (first args) env) [0xa7]
                             (emit* (second args) env) [0xa7]
@@ -873,6 +782,40 @@
                     (= op 'string-byte-length)
                     (concat (i32-const (descriptor-id :string)) (emit* (first args) env)
                             [0x10 (get intrinsic-indices 'typed-count)])
+                    (= op 'string-concat)
+                    (concat (i32-const (descriptor-id :string))
+                            (emit* (first args) env) (emit* (second args) env)
+                            [0x10 (get intrinsic-indices 'typed-string-concat)])
+                    (= op 'string-substring)
+                    (concat (i32-const (descriptor-id :string))
+                            (emit* (first args) env) (emit* (second args) env)
+                            (emit* (nth args 2) env)
+                            [0x10 (get intrinsic-indices 'typed-string-substring)])
+                    (= op 'string-replace-all)
+                    (concat (i32-const (descriptor-id :string))
+                            (emit* (first args) env) (emit* (second args) env)
+                            (emit* (nth args 2) env)
+                            [0x10 (get intrinsic-indices 'typed-string-replace-all)])
+                    (= op 'string-contains?)
+                    (concat (i32-const (descriptor-id :string))
+                            (emit* (first args) env) (emit* (second args) env)
+                            [0x10 (get intrinsic-indices 'typed-string-contains) 0xad])
+                    (= op 'string-code-point-at)
+                    (concat (i32-const (descriptor-id :string))
+                            (emit* (first args) env) (emit* (second args) env)
+                            [0x10 (get intrinsic-indices 'typed-string-code-point-at) 0xad])
+                    (= op 'string-fold-case)
+                    (concat (i32-const (descriptor-id :string)) (emit* (first args) env)
+                            [0x10 (get intrinsic-indices 'typed-string-fold-case)])
+                    (= op 'keyword-name)
+                    (concat (i32-const (descriptor-id :keyword)) (emit* (first args) env)
+                            [0x10 (get intrinsic-indices 'typed-keyword-name)])
+                    (= op 'keyword-from-string)
+                    (concat (i32-const (descriptor-id :keyword)) (emit* (first args) env)
+                            [0x10 (get intrinsic-indices 'typed-keyword-from-string)])
+                    (= op 'symbol)
+                    (concat (i32-const (descriptor-id :symbol)) (emit* (first args) env)
+                            [0x10 (get intrinsic-indices 'typed-symbol-from-string)])
                     (= op 'vector-new)
                     (emit-builder :vector-i64 -1 args (repeat (count args) :i64) env)
                     (= op 'vector-count)
@@ -913,6 +856,101 @@
                     (= op 'vector-f64-count)
                     (concat (i32-const (descriptor-id :vector-f64)) (emit* (first args) env)
                             [0x10 (get intrinsic-indices 'typed-count)])
+                    (= op 'string-index-new)
+                    (concat (i32-const (descriptor-id :string-index))
+                            [0x10 (get intrinsic-indices 'typed-string-index-new)])
+                    (= op 'string-index-count)
+                    (concat (i32-const (descriptor-id :string-index)) (emit* (first args) env)
+                            [0x10 (get intrinsic-indices 'typed-count)])
+                    (= op 'string-index-contains)
+                    (emit-bool
+                     (concat (i32-const (descriptor-id :string-index))
+                             (emit* (first args) env) (emit* (second args) env)
+                             [0x10 (get intrinsic-indices 'typed-string-index-contains)]))
+                    (= op 'string-index-get)
+                    (concat (i32-const (descriptor-id :string-index))
+                            (emit* (first args) env) (emit* (second args) env)
+                            [0x10 (get intrinsic-indices 'typed-string-index-get)])
+                    (= op 'string-index-assoc)
+                    (concat (i32-const (descriptor-id :string-index))
+                            (emit* (first args) env) (emit* (second args) env)
+                            (emit* (nth args 2) env)
+                            [0x10 (get intrinsic-indices 'typed-string-index-assoc)])
+                    (= op 'disjoint-set-i64-new)
+                    (concat (i32-const (descriptor-id :disjoint-set-i64))
+                            (emit* (first args) env)
+                            [0x10 (get intrinsic-indices 'typed-disjoint-set-i64-new)])
+                    (= op 'disjoint-set-i64-count)
+                    (concat (i32-const (descriptor-id :disjoint-set-i64))
+                            (emit* (first args) env)
+                            [0x10 (get intrinsic-indices 'typed-count)])
+                    (= op 'disjoint-set-i64-union)
+                    (concat (i32-const (descriptor-id :disjoint-set-i64))
+                            (emit* (first args) env) (emit* (second args) env)
+                            (emit* (nth args 2) env)
+                            [0x10 (get intrinsic-indices 'typed-disjoint-set-i64-union)])
+                    (= op 'document-null)
+                    (concat (i32-const (descriptor-id :document))
+                            [0x10 (get intrinsic-indices 'typed-document-null)])
+                    (contains? '#{document-bool document-i64 document-f64
+                                  document-string document-keyword} op)
+                    (concat (i32-const (descriptor-id :document))
+                            (emit* (first args) env)
+                            [0x10 (get intrinsic-indices
+                                       ({'document-bool 'typed-document-bool
+                                         'document-i64 'typed-document-i64
+                                         'document-f64 'typed-document-f64
+                                         'document-string 'typed-document-string
+                                         'document-keyword 'typed-document-keyword} op))])
+                    (= op 'document-vector)
+                    (emit-builder :document -1 args (repeat (count args) :document) env)
+                    (= op 'document-map)
+                    (emit-builder :document -2 args
+                                  (map-indexed (fn [index _]
+                                                 (if (even? index) :keyword :document)) args) env)
+                    (= op 'document-count)
+                    (concat (i32-const (descriptor-id :document)) (emit* (first args) env)
+                            [0x10 (get intrinsic-indices 'typed-count)])
+                    (= op 'document-kind)
+                    (concat (i32-const (descriptor-id :document)) (emit* (first args) env)
+                            [0x10 (get intrinsic-indices 'typed-document-kind)])
+                    (contains? '#{document-vector-at document-map-entry-at document-vector-assoc
+                                  document-vector-conj document-vector-drop
+                                  document-vector-remove} op)
+                    (concat (i32-const (descriptor-id :document))
+                            (mapcat #(emit* % env) args)
+                            [0x10 (get intrinsic-indices
+                                       ({'document-vector-at 'typed-document-vector-at
+                                         'document-map-entry-at 'typed-document-map-entry-at
+                                         'document-vector-assoc 'typed-document-vector-assoc
+                                         'document-vector-conj 'typed-document-vector-conj
+                                         'document-vector-drop 'typed-document-vector-drop
+                                         'document-vector-remove 'typed-document-vector-remove} op))])
+                    (= op 'document-contains)
+                    (emit-bool
+                     (concat (i32-const (descriptor-id :document))
+                             (emit* (first args) env) (emit* (second args) env)
+                             [0x10 (get intrinsic-indices 'typed-document-contains)]))
+                    (= op 'document-equal?)
+                    (emit-bool
+                     (concat (i32-const (descriptor-id :document))
+                             (emit* (first args) env) (emit* (second args) env)
+                             [0x10 (get intrinsic-indices 'typed-equal)]))
+                    (contains? '#{document-get document-assoc document-dissoc
+                                  document-merge document-string-value document-bool-value
+                                  document-keyword-value document-i64-value document-f64-value} op)
+                    (concat (i32-const (descriptor-id :document))
+                            (mapcat #(emit* % env) args)
+                            [0x10 (get intrinsic-indices
+                                       ({'document-get 'typed-document-get
+                                         'document-assoc 'typed-document-assoc
+                                         'document-dissoc 'typed-document-dissoc
+                                         'document-merge 'typed-document-merge
+                                         'document-string-value 'typed-document-string-value
+                                         'document-keyword-value 'typed-document-keyword-value
+                                         'document-bool-value 'typed-document-bool-value
+                                         'document-i64-value 'typed-document-i64-value
+                                         'document-f64-value 'typed-document-f64-value} op))])
                     (= op 'vector-f64-at)
                     (concat (i32-const (descriptor-id :vector-f64))
                             (emit* (first args) env) (emit* (second args) env)
@@ -949,6 +987,37 @@
                             [0x10 (get intrinsic-indices 'typed-equal) 0xad])
                     (= op 'bool-not)
                     (emit-bool (concat (emit-test (first args) env) [0x45]))
+                    (contains? '#{option-some option-none} op)
+                    (let [payload (when (= op 'option-some) args)]
+                      (emit-builder :option-i64
+                                    (if (= op 'option-some) 1 0)
+                                    payload
+                                    (if payload [:i64] [])
+                                    env))
+                    (contains? '#{result-ok result-err} op)
+                    (emit-builder :result-i64
+                                  (if (= op 'result-ok) 1 0)
+                                  args [:i64] env)
+                    (contains? '#{option-some? result-ok?} op)
+                    (let [type (if (= op 'option-some?)
+                                 :option-i64 :result-i64)]
+                      (emit-bool
+                       (concat (i32-const (descriptor-id type))
+                               (emit* (first args) env)
+                               [0x10 (get intrinsic-indices 'typed-tag)])))
+                    (contains? '#{option-value result-value result-error} op)
+                    (let [[value fallback] args
+                          type (if (= op 'option-value)
+                                 :option-i64 :result-i64)
+                          wanted (if (= op 'result-error) 0 1)
+                          value-local (allocate! 0x6f)]
+                      (concat (emit* value env) [::local-set value-local]
+                              (i32-const (descriptor-id type))
+                              [::local-get value-local
+                               0x10 (get intrinsic-indices 'typed-tag)]
+                              (i32-const wanted) [0x46 0x04 0x7e]
+                              (emit-get type {:wasm-local value-local} 0 :i64 env)
+                              [0x05] (emit* fallback env) [0x0b]))
                     (contains? '#{= < > <= >=} op)
                     (let [operand-type (typed/infer-type
                                         (first args)
@@ -1117,6 +1186,17 @@
                     (= op 'xml-path-count)
                     (concat (emit* (first args) env) (emit* (second args) env)
                             [0x10 (get intrinsic-indices 'xml-path-count)])
+                    (= op 'xml-name-count)
+                    (concat (emit* (first args) env) (emit* (second args) env)
+                            [0x10 (get intrinsic-indices 'xml-name-count)])
+                    (= op 'xml-name-text)
+                    (concat (emit* (nth args 0) env) (emit* (nth args 1) env)
+                            (emit* (nth args 2) env)
+                            [0x10 (get intrinsic-indices 'xml-name-text)])
+                    (= op 'xml-path-text)
+                    (concat (emit* (nth args 0) env) (emit* (nth args 1) env)
+                            (emit* (nth args 2) env)
+                            [0x10 (get intrinsic-indices 'xml-path-text)])
                     (= op 'xml-path-attr)
                     (concat (emit* (nth args 0) env) (emit* (nth args 1) env)
                             (emit* (nth args 2) env) (emit* (nth args 3) env)
@@ -1133,17 +1213,25 @@
                       (throw (ex-info "typed Wasm operation is not qualified"
                                       {:phase :wasm-typed-lowering
                                        :operation op :form form})))))))]
-      (let [prefix (mapcat (fn [[index type]]
-                             (when (typed/reference-type? type)
-                               (concat (i32-const (descriptor-id type)) [::local-get index]
-                                       [0x10 (get intrinsic-indices 'typed-assert-ref)
-                                        ::local-set index])))
-                           (map-indexed vector (:param-types function)))
-            body-code (emit* (:body function) env)
-            body-code (if (typed/reference-type? (:result function))
-                        (concat (i32-const (descriptor-id (:result function))) body-code
-                                [0x10 (get intrinsic-indices 'typed-assert-ref)])
-                        body-code)
+      ;; `prefix` and `body-code` are lazy seqs whose realization is what runs
+      ;; `allocate!`'s side effects into `@locals`. Force them with `doall`
+      ;; BEFORE reading `@locals` for the locals declaration below -- otherwise
+      ;; the declared count is taken from a partially-realized `@locals` and
+      ;; undercounts scratch locals (e.g. a body needing 6 f64 temporaries
+      ;; declared only 5, producing `invalid local index: 5` at instantiation).
+      (let [prefix (doall
+                    (mapcat (fn [[index type]]
+                              (when (typed/reference-type? type)
+                                (concat (i32-const (descriptor-id type)) [::local-get index]
+                                        [0x10 (get intrinsic-indices 'typed-assert-ref)
+                                         ::local-set index])))
+                            (map-indexed vector (:param-types function))))
+            body-code (doall (emit* (:body function) env))
+            body-code (doall
+                       (if (typed/reference-type? (:result function))
+                         (concat (i32-const (descriptor-id (:result function))) body-code
+                                 [0x10 (get intrinsic-indices 'typed-assert-ref)])
+                         body-code))
             declarations (if (empty? @locals) [0]
                            (concat (uleb (count @locals))
                                    (mapcat (fn [type] [1 type]) @locals)))
@@ -1156,7 +1244,7 @@
 (defn- function-type [{:keys [params]}]
   (concat [0x60] (uleb (count params)) (repeat (count params) 0x7e) [1 0x7e]))
 
-(defn- function-body [function function-indices intrinsic-indices component? typed-component?]
+(defn- function-body [function function-indices intrinsic-indices]
   (let [param-env (zipmap (:params function) (range))
         locals (local-count (:body function))
         declarations (if (zero? locals) [0] (concat [1] (uleb locals) [0x7e]))
@@ -1168,8 +1256,6 @@
                       (concat charge (emit-expr (:body function) param-env
                                       {:function-indices function-indices
                                        :intrinsic-indices intrinsic-indices
-                                       :component? component?
-                                       :typed-component? typed-component?
                                        :next-local (count (:params function))})))
         body (concat declarations instructions [0x0b])]
     (concat (uleb (count body)) body)))
@@ -1181,14 +1267,136 @@
                  (tree-seq coll? seq (:body function))))
          functions)))
 
-(defn emit [kir target]
-  (let [functions (:functions kir)
-        component? (contains? #{:wasm-component-kotoba-v1 :wasm-component-kotoba-v2} target)
-        typed-component? (= :wasm-component-kotoba-v2 target)
+(def default-fuel
+  "Historical fixed call budget. Every caller that supplies no `:fuel` gets
+  exactly this, so core-wasm behaviour is unchanged by fuel parameterization."
+  512)
+
+(def max-fuel
+  "Upper bound on a declared fuel budget. The charge is a single i64
+  `global.get`/`sub`, so the representable ceiling is i64; this bound keeps a
+  declared budget inside a value the SLEB128 encoder and every host that
+  reports remaining fuel can carry without ambiguity."
+  (dec (bit-shift-left 1 62)))
+
+(defn- fuel-budget! [fuel]
+  (cond
+    (nil? fuel) default-fuel
+    (not (integer? fuel))
+    (throw (ex-info "fuel budget must be an integer"
+                    {:phase :wasm-emit :fuel fuel}))
+    (not (pos? fuel))
+    (throw (ex-info "fuel budget must be positive"
+                    {:phase :wasm-emit :fuel fuel}))
+    (> fuel max-fuel)
+    (throw (ex-info "fuel budget exceeds the representable ceiling"
+                    {:phase :wasm-emit :fuel fuel :max max-fuel}))
+    :else fuel))
+
+;; --- component linear memory -------------------------------------------------
+;; ADR 0076 section 4a. A component cannot import `kotoba:typed`/`kotoba:heap`,
+;; so anything that is not a bare scalar has to live in the module's own linear
+;; memory -- which is why all sixteen hand-written WAT shapes build their data
+;; with i32.store/i64.store rather than calling the host. Until now the emitted
+;; component declared a ZERO-page memory and a `cm32p2_realloc` whose whole body
+;; was `i32.const 0`: correct for a scalar-only signature, useless for anything
+;; else, and worse than useless if the Canonical ABI ever called it (address 0
+;; in a 0-page memory traps).
+;;
+;; This is the binary port of `component-core/bounded-bump-realloc-wat`, with
+;; the same properties: alignment-respecting, capacity-trapping, and
+;; old-content-preserving on grow. The Canonical ABI's own string-copy
+;; machinery calls realloc an unpredictable number of times before a module's
+;; own body runs, so the allocator has to compose with those calls rather than
+;; assume it owns every allocation.
+
+(def ^:private wasm-page-bytes 65536)
+
+(def component-memory-pages
+  "Pages of linear memory a component module declares.
+
+  ADR 0077 decision 3 sizes this from the language's own bound rather than a
+  round number: `value/vector-item-limit` is 16384 items, so one maximum
+  `:vector-i64` is 128 KiB of live data -- two pages exactly. The extra page is
+  headroom for the Canonical ABI's own string-copy allocations, which call
+  `cm32p2_realloc` an unpredictable number of times before a module's body
+  runs, plus the vector's length header.
+
+  Derived here rather than written as a literal so it cannot drift from the
+  item limit it exists to cover."
+  (+ 1 (quot (+ (* 16384 8) (dec wasm-page-bytes)) wasm-page-bytes)))
+
+(defn- component-memory-budget! [pages]
+  (let [pages (or pages 16)]
+    (when-not (and (integer? pages)
+                   (<= component-memory-pages pages 65536))
+      (throw (ex-info "component memory budget must cover the language arena"
+                      {:phase :wasm-emit :memory-pages pages
+                       :minimum component-memory-pages :maximum 65536})))
+    pages))
+
+(def component-arena-base
+  "First address the bump allocator hands out. Not 0: the Canonical ABI uses a
+  null `old-ptr` to mean `fresh allocation`, so address 0 must never be a live
+  pointer."
+  8)
+
+(def component-arena-capacity
+  "The bump allocator's ceiling. Kept in lockstep with the declared memory: a
+  capacity above it would let a write run off the memory, and one below it would
+  waste a declared page. `component-heap-test` asserts the two agree, because
+  they are edited in different places and nothing else would notice them
+  drifting apart."
+  (* component-memory-pages wasm-page-bytes))
+
+(defn- component-realloc-body
+  "cm32p2_realloc: (old-ptr, old-size, align, new-size) -> ptr.
+  Params 0..3; locals 4=ptr, 5=end, 6=copy-size."
+  []
+  (let [body (concat
+              ;; three i32 locals
+              [1 3 0x7f]
+              ;; new-size == 0 -> return 0
+              [0x20 3 0x45 0x04 0x40 0x41 0x00 0x0f 0x0b]
+              ;; align must be non-zero, <= 8, and a power of two
+              [0x20 2 0x45 0x04 0x40 0x00 0x0b]
+              [0x20 2 0x41 0x08 0x4b 0x04 0x40 0x00 0x0b]
+              [0x20 2 0x20 2 0x41 0x01 0x6b 0x71 0x04 0x40 0x00 0x0b]
+              ;; ptr = (next + align - 1) & -align
+              [0x23 1 0x20 2 0x41 0x01 0x6b 0x6a
+               0x41 0x00 0x20 2 0x6b 0x71 0x22 4]
+              ;; end = ptr + new-size; trap on wrap
+              [0x20 3 0x6a 0x22 5 0x20 4 0x49 0x04 0x40 0x00 0x0b]
+              ;; trap past capacity
+              (concat [0x20 5 0x41] (sleb component-arena-capacity)
+                      [0x4b 0x04 0x40 0x00 0x0b])
+              ;; next = end
+              [0x20 5 0x24 1]
+              ;; if old-ptr != 0, copy min(old-size, new-size) bytes
+              [0x20 0 0x45 0x04 0x40 0x05
+               0x20 1 0x20 3 0x49 0x04 0x7f 0x20 1 0x05 0x20 3 0x0b 0x21 6
+               0x20 4 0x20 0 0x20 6 0xfc 0x0a 0x00 0x00
+               0x0b]
+              ;; return ptr
+              [0x20 4 0x0b])]
+    (concat (uleb (count body)) body)))
+
+(defn emit
+  ([kir target] (emit kir target {}))
+  ([kir target {:keys [component-standard32? fuel memory-pages capability-imports]}]
+  (let [fuel-initial (fuel-budget! fuel)
+        memory-maximum (component-memory-budget! memory-pages)
+        functions (:functions kir)
         typed? (= :kotoba.kir/v4 (:format kir))
         exported-names (set (or (:exports kir) (map :name functions)))
         exported-functions (filterv #(contains? exported-names (:name %)) functions)
-        has-cap? (contains? (set (map first (:effects kir))) :cap/call)
+        ;; Effects describe authority requirements, but imports must be
+        ;; derived from executable operations. Component normalization keeps
+        ;; the original :cap/call effect while replacing the generic operation
+        ;; with a named typed-cap-call; deriving this from effects would then
+        ;; reintroduce an ambient, unbindable generic import.
+        has-cap? (uses-operation? functions '#{cap-call})
+        has-typed-cap? (uses-operation? functions '#{typed-cap-call})
         heap-ops (let [found (volatile! #{})]
                    (letfn [(walk [form]
                              (cond
@@ -1200,9 +1408,36 @@
                                (coll? form) (doseq [item form] (walk item))))]
                      (doseq [function functions] (walk (:body function)))
                      @found))
-        has-xml? (uses-operation? functions '#{xml-path-count xml-path-attr})
+        has-xml? (uses-operation? functions
+                                  '#{xml-path-count xml-name-count xml-name-text
+                                     xml-path-text xml-path-attr})
         has-decimal? (uses-operation? functions '#{decimal-f64-parse})
         has-decimal-x3? (uses-operation? functions '#{decimal-f64x3-parse})
+        has-string-index? (uses-operation? functions
+                                            '#{string-index-new string-index-count
+                                               string-index-contains string-index-get
+                                               string-index-assoc})
+        has-string-concat? (uses-operation? functions '#{string-concat})
+        has-string-substring? (uses-operation? functions '#{string-substring})
+        has-string-replace? (uses-operation? functions '#{string-replace-all})
+        has-string-contains? (uses-operation? functions '#{string-contains?})
+        has-string-code-point-at? (uses-operation? functions '#{string-code-point-at})
+        has-string-fold-case? (uses-operation? functions '#{string-fold-case})
+        has-keyword-name? (uses-operation? functions '#{keyword-name})
+        has-disjoint-set? (uses-operation? functions
+                                            '#{disjoint-set-i64-new disjoint-set-i64-count
+                                               disjoint-set-i64-union})
+        has-document? (uses-operation? functions
+                                       '#{document-null document-bool document-i64 document-f64
+                                          document-string document-keyword document-vector document-map
+                                          document-count document-kind document-vector-at document-map-entry-at document-vector-assoc
+                                          document-vector-conj document-vector-drop document-vector-remove
+                                          document-equal? document-contains document-get document-assoc
+                                          document-dissoc document-merge document-string-value
+                                          document-keyword-value document-bool-value
+                                          document-i64-value document-f64-value})
+        has-keyword-from-string? (uses-operation? functions '#{keyword-from-string})
+        has-symbol-from-string? (uses-operation? functions '#{symbol})
         typed-imports (when (and typed? (typed/requires-host-runtime? kir))
                         (vec (concat
                          [['typed-literal "kotoba:typed" "literal" [0x60 1 0x7f 1 0x6f]]
@@ -1220,7 +1455,29 @@
                          ['typed-get-ref "kotoba:typed" "get-ref" [0x60 3 0x7f 0x6f 0x7f 1 0x6f]]
                          ['typed-count "kotoba:typed" "count" [0x60 2 0x7f 0x6f 1 0x7e]]
                          ['typed-bool "kotoba:typed" "bool" [0x60 1 0x7f 1 0x6f]]
-                         ['typed-equal "kotoba:typed" "equal" [0x60 3 0x7f 0x6f 0x6f 1 0x7f]]
+                         ['typed-equal "kotoba:typed" "equal" [0x60 3 0x7f 0x6f 0x6f 1 0x7f]]]
+                         (when has-string-concat?
+                           [['typed-string-concat "kotoba:typed" "string-concat"
+                             [0x60 3 0x7f 0x6f 0x6f 1 0x6f]]])
+                         (when has-string-substring?
+                           [['typed-string-substring "kotoba:typed" "string-substring"
+                             [0x60 4 0x7f 0x6f 0x7e 0x7e 1 0x6f]]])
+                         (when has-string-replace?
+                           [['typed-string-replace-all "kotoba:typed" "string-replace-all"
+                             [0x60 4 0x7f 0x6f 0x6f 0x6f 1 0x6f]]])
+                         (when has-string-contains?
+                           [['typed-string-contains "kotoba:typed" "string-contains"
+                             [0x60 3 0x7f 0x6f 0x6f 1 0x7f]]])
+                         (when has-string-code-point-at?
+                           [['typed-string-code-point-at "kotoba:typed" "string-code-point-at"
+                             [0x60 3 0x7f 0x6f 0x7e 1 0x7f]]])
+                         (when has-string-fold-case?
+                           [['typed-string-fold-case "kotoba:typed" "string-fold-case"
+                             [0x60 2 0x7f 0x6f 1 0x6f]]])
+                         (when has-keyword-name?
+                           [['typed-keyword-name "kotoba:typed" "keyword-name"
+                             [0x60 2 0x7f 0x6f 1 0x6f]]])
+                         [
                          ['typed-assoc-i64 "kotoba:typed" "assoc-i64" [0x60 4 0x7f 0x6f 0x7f 0x7e 1 0x6f]]
                          ['typed-assoc-f64 "kotoba:typed" "assoc-f64" [0x60 4 0x7f 0x6f 0x7f 0x7c 1 0x6f]]
                          ['typed-assoc-f32 "kotoba:typed" "assoc-f32" [0x60 4 0x7f 0x6f 0x7f 0x7d 1 0x6f]]
@@ -1247,36 +1504,64 @@
                          ['typed-map-assoc-rr "kotoba:typed" "map-assoc-rr" [0x60 4 0x7f 0x6f 0x6f 0x6f 1 0x6f]]
                          ['typed-map-dissoc-i64 "kotoba:typed" "map-dissoc-i64" [0x60 3 0x7f 0x6f 0x7e 1 0x6f]]
                          ['typed-map-dissoc-ref "kotoba:typed" "map-dissoc-ref" [0x60 3 0x7f 0x6f 0x6f 1 0x6f]]]
+                         (when has-string-index?
+                           [['typed-string-index-new "kotoba:typed" "string-index-new" [0x60 1 0x7f 1 0x6f]]
+                            ['typed-string-index-contains "kotoba:typed" "string-index-contains" [0x60 3 0x7f 0x6f 0x6f 1 0x7f]]
+                            ['typed-string-index-get "kotoba:typed" "string-index-get" [0x60 3 0x7f 0x6f 0x6f 1 0x6f]]
+                            ['typed-string-index-assoc "kotoba:typed" "string-index-assoc" [0x60 4 0x7f 0x6f 0x6f 0x7e 1 0x6f]]])
+                         (when has-disjoint-set?
+                           [['typed-disjoint-set-i64-new "kotoba:typed" "disjoint-set-i64-new" [0x60 2 0x7f 0x7e 1 0x6f]]
+                            ['typed-disjoint-set-i64-union "kotoba:typed" "disjoint-set-i64-union" [0x60 4 0x7f 0x6f 0x7e 0x7e 1 0x6f]]])
+                         (when has-document?
+                           [['typed-document-null "kotoba:typed" "document-null" [0x60 1 0x7f 1 0x6f]]
+                            ['typed-document-bool "kotoba:typed" "document-bool" [0x60 2 0x7f 0x6f 1 0x6f]]
+                            ['typed-document-i64 "kotoba:typed" "document-i64" [0x60 2 0x7f 0x7e 1 0x6f]]
+                            ['typed-document-f64 "kotoba:typed" "document-f64" [0x60 2 0x7f 0x7c 1 0x6f]]
+                            ['typed-document-string "kotoba:typed" "document-string" [0x60 2 0x7f 0x6f 1 0x6f]]
+                            ['typed-document-keyword "kotoba:typed" "document-keyword" [0x60 2 0x7f 0x6f 1 0x6f]]
+                            ['typed-document-kind "kotoba:typed" "document-kind" [0x60 2 0x7f 0x6f 1 0x6f]]
+                            ['typed-document-vector-at "kotoba:typed" "document-vector-at" [0x60 3 0x7f 0x6f 0x7e 1 0x6f]]
+                            ['typed-document-map-entry-at "kotoba:typed" "document-map-entry-at" [0x60 3 0x7f 0x6f 0x7e 1 0x6f]]
+                            ['typed-document-vector-assoc "kotoba:typed" "document-vector-assoc" [0x60 4 0x7f 0x6f 0x7e 0x6f 1 0x6f]]
+                            ['typed-document-vector-conj "kotoba:typed" "document-vector-conj" [0x60 3 0x7f 0x6f 0x6f 1 0x6f]]
+                            ['typed-document-vector-drop "kotoba:typed" "document-vector-drop" [0x60 3 0x7f 0x6f 0x7e 1 0x6f]]
+                            ['typed-document-vector-remove "kotoba:typed" "document-vector-remove" [0x60 3 0x7f 0x6f 0x7e 1 0x6f]]
+                            ['typed-document-contains "kotoba:typed" "document-contains" [0x60 3 0x7f 0x6f 0x6f 1 0x7f]]
+                            ['typed-document-get "kotoba:typed" "document-get" [0x60 3 0x7f 0x6f 0x6f 1 0x6f]]
+                            ['typed-document-assoc "kotoba:typed" "document-assoc" [0x60 4 0x7f 0x6f 0x6f 0x6f 1 0x6f]]
+                            ['typed-document-dissoc "kotoba:typed" "document-dissoc" [0x60 3 0x7f 0x6f 0x6f 1 0x6f]]
+                            ['typed-document-merge "kotoba:typed" "document-merge" [0x60 3 0x7f 0x6f 0x6f 1 0x6f]]
+                            ['typed-document-string-value "kotoba:typed" "document-string-value" [0x60 2 0x7f 0x6f 1 0x6f]]
+                            ['typed-document-keyword-value "kotoba:typed" "document-keyword-value" [0x60 2 0x7f 0x6f 1 0x6f]]
+                            ['typed-document-bool-value "kotoba:typed" "document-bool-value" [0x60 2 0x7f 0x6f 1 0x6f]]
+                            ['typed-document-i64-value "kotoba:typed" "document-i64-value" [0x60 2 0x7f 0x6f 1 0x6f]]
+                            ['typed-document-f64-value "kotoba:typed" "document-f64-value" [0x60 2 0x7f 0x6f 1 0x6f]]])
+                         (when has-keyword-from-string?
+                           [['typed-keyword-from-string "kotoba:typed" "keyword-from-string"
+                             [0x60 2 0x7f 0x6f 1 0x6f]]])
+                         (when has-symbol-from-string?
+                           [['typed-symbol-from-string "kotoba:typed" "symbol-from-string"
+                             [0x60 2 0x7f 0x6f 1 0x6f]]])
                          (when has-xml?
                            [['xml-path-count "kotoba:typed" "xml-path-count" [0x60 2 0x6f 0x6f 1 0x7e]]
+                            ['xml-name-count "kotoba:typed" "xml-name-count" [0x60 2 0x6f 0x6f 1 0x7e]]
+                            ['xml-name-text "kotoba:typed" "xml-name-text" [0x60 3 0x6f 0x6f 0x7e 1 0x6f]]
+                            ['xml-path-text "kotoba:typed" "xml-path-text" [0x60 3 0x6f 0x6f 0x7e 1 0x6f]]
                             ['xml-path-attr "kotoba:typed" "xml-path-attr" [0x60 4 0x6f 0x6f 0x7e 0x6f 1 0x6f]]])
                          (when has-decimal?
                            [['decimal-f64-parse "kotoba:typed" "decimal-f64-parse" [0x60 1 0x6f 1 0x6f]]])
                          (when has-decimal-x3?
                            [['decimal-f64x3-parse "kotoba:typed" "decimal-f64x3-parse" [0x60 1 0x6f 1 0x6f]]]))))
-        cap-ids (sort (map second (filter #(= :cap/call (first %)) (:effects kir))))
-        typed-capability-imports
-        (when (and typed-component? (seq cap-ids))
-          [['v3-acquire "cm32p2|aiueos:capability/capability@0.3" "acquire" [0x60 2 0x7f 0x7f 0]]
-           ['v3-grant-drop "cm32p2|aiueos:capability/capability@0.3" "grant_drop" [0x60 1 0x7f 0]]
-           ['v3-identity-sign "cm32p2|aiueos:capability/identity@0.3" "sign" [0x60 4 0x7f 0x7f 0x7f 0x7f 0]]
-           ['v3-identity-verify "cm32p2|aiueos:capability/identity@0.3" "verify" [0x60 4 0x7f 0x7f 0x7f 0x7f 0]]
-           ['v3-hash-sha256 "cm32p2|aiueos:capability/hash@0.3" "sha256" [0x60 4 0x7f 0x7f 0x7f 0x7f 0]]
-           ['v3-http-post "cm32p2|aiueos:capability/http@0.3" "post" [0x60 8 0x7f 0x7f 0x7f 0x7f 0x7f 0x7f 0x7f 0x7f 0]]
-           ['v3-log-read "cm32p2|aiueos:capability/log@0.3" "read" [0x60 4 0x7f 0x7e 0x7f 0x7f 0]]
-           ['v3-log-append "cm32p2|aiueos:capability/log@0.3" "append" [0x60 4 0x7f 0x7f 0x7f 0x7f 0]]
-           ['v3-clock-now "cm32p2|aiueos:capability/clock@0.3" "now" [0x60 2 0x7f 0x7f 0]]])
-        _ (when (and typed-component? (some #(not (contains? #{1 2 3 4 5 6 7} %)) cap-ids))
-            (throw (ex-info "typed Component operation lowering is unavailable"
-                            {:phase :component-abi-v3 :capability-ids (set cap-ids)})))
-        imports (vec (concat typed-imports typed-capability-imports
-                      (if component?
-                        (when-not typed-component?
-                          (mapv (fn [id] (let [name (component-capability-import-name id)]
-                                           [(symbol name) "cm32p2" name [0x60 1 0x7e 1 0x7e]]))
-                                cap-ids))
-                        (when has-cap? [['cap-call "kotoba:cap" "call"
-                                         [0x60 2 0x7e 0x7e 1 0x7e]]]))
+        imports (vec (concat typed-imports
+                      (if (seq capability-imports)
+                        (mapv (fn [{:keys [id module field type]}]
+                                [[:capability id] module field type])
+                              capability-imports)
+                        (when has-typed-cap?
+                          [['typed-cap-call "kotoba:typed" "cap-call"
+                            [0x60 2 0x7f 0x6f 1 0x6f]]]))
+                      (when has-cap? [['cap-call "kotoba:cap" "call"
+                                       [0x60 2 0x7e 0x7e 1 0x7e]]])
                       (when (seq heap-ops)
                         [['pair "kotoba:heap" "pair" [0x60 2 0x7e 0x7e 1 0x7e]]
                          ['pair-first "kotoba:heap" "pair-first" [0x60 1 0x7e 1 0x7e]]
@@ -1284,89 +1569,102 @@
         shift (count imports)
         intrinsic-indices (into {} (map-indexed (fn [index [op]] [op index]) imports))
         indices (into {} (map-indexed (fn [i f] [(:name f) (+ i shift)]) functions))
-        ;; Component v1 adds only the canonical ABI shims required by a
-        ;; zero-argument `main -> s64` export.  They have no authority and
-        ;; are not visible in the Kotoba surface language.
-        component-types (when component?
-                          [[0x60 1 0x7e 0]                    ; post-return
-                           [0x60 4 0x7f 0x7f 0x7f 0x7f 1 0x7f] ; realloc
-                           [0x60 0 0]])                       ; initialize
-        component-main-index (get indices 'main)
-        _ (when (and component?
-                     (or typed? (seq heap-ops)
-                         (not= 1 (count functions))
-                         (not= 'main (:name (first functions)))
-                         (seq (:params (first functions)))
-                         (not= :i64 (:result (first functions)))))
-            (throw (ex-info "Component v1 requires one pure (defn main [] <i64>) entry"
-                            {:phase :component-abi
-                             :target target
-                             :functions (mapv #(select-keys % [:name :params :result]) functions)
-                             :effects (:effects kir)})))
-        types (concat (uleb (+ (count functions) shift (count component-types)))
+        component-type-count (if component-standard32?
+                               (+ (count exported-functions) 2)
+                               0)
+        component-type-base (+ (count functions) shift)
+        post-type-indices (range component-type-base
+                                 (+ component-type-base (count exported-functions)))
+        realloc-type-index (+ component-type-base (count exported-functions))
+        initialize-type-index (inc realloc-type-index)
+        component-types (when component-standard32?
+                          (concat
+                           (mapcat (fn [{:keys [result]}]
+                                     [0x60 1 (typed/wasm-type result) 0])
+                                   exported-functions)
+                           [0x60 4 0x7f 0x7f 0x7f 0x7f 1 0x7f]
+                           [0x60 0 0]))
+        types (concat (uleb (+ (count functions) shift component-type-count))
                       (mapcat #(nth % 3) imports)
                       (mapcat (if typed? typed-function-type function-type) functions)
-                      (mapcat identity component-types))
+                      component-types)
         import-sec (when (seq imports)
                      (concat (uleb shift)
                              (mapcat (fn [[_ module field _] index]
                                        (concat (name-bytes module) (name-bytes field)
                                                [0] (uleb index)))
                                      imports (range))))
-        function-sec (concat (uleb (+ (count functions) (count component-types)))
-                             (mapcat uleb (range shift (+ shift (count functions))))
-                             (when component?
-                               (mapcat uleb (range (+ shift (count functions))
-                                                   (+ shift (count functions) (count component-types))))))
-        ;; (global (mut i64) (i64.const 512)); fixed and low enough to trap before the
-        ;; host call stack becomes the limiting resource.
-        typed-effect? (and typed-component? (seq cap-ids))
-        global-sec (if typed-effect?
-                     ;; The second global is the typed-effect result-list bump
-                     ;; pointer. Memory bounds remain the hard allocation cap.
-                     [2 0x7e 1 0x42 0x80 0x04 0x0b
-                      0x7f 1 0x41 0x80 0x20 0x0b]
-                     [1 0x7e 1 0x42 0x80 0x04 0x0b])
+        component-function-count (if component-standard32?
+                                   (+ (count exported-functions) 2)
+                                   0)
+        function-sec (concat
+                      (uleb (+ (count functions) component-function-count))
+                      (mapcat uleb (range shift (+ shift (count functions))))
+                      (when component-standard32?
+                        (mapcat uleb (concat post-type-indices
+                                             [realloc-type-index initialize-type-index]))))
+        ;; (global (mut i64) (i64.const FUEL)); the module-private, guest-
+        ;; unreplenishable call budget. It defaults to `default-fuel` (512),
+        ;; which is low enough to trap before the host call stack becomes the
+        ;; limiting resource -- the historical fixed value, and still what
+        ;; every core-wasm caller gets when it passes no `:fuel`.
+        ;;
+        ;; ADR-2607252500 makes Wasm Components the primary application
+        ;; artifact, and kototama's component-platform contract requires
+        ;; `:fuel` as a DECLARED per-component budget
+        ;; (`:required-budgets [:fuel :memory-pages]`, validated by
+        ;; `kototama.component-platform/validate-world!` as any positive
+        ;; integer). So the value is a caller-supplied budget here rather than
+        ;; a constant baked into codegen; the enforcement mechanism (charge
+        ;; per call, trap at zero, no guest replenishment) is unchanged.
+        global-sec (vec (concat
+                         (if component-standard32? [2] [1])
+                         [0x7e 1 0x42] (sleb fuel-initial) [0x0b]
+                         ;; global 1: the bump pointer. Fuel stays global 0 so
+                         ;; every function prologue's `global.get 0` is
+                         ;; unchanged.
+                         (when component-standard32?
+                           (concat [0x7f 1 0x41]
+                                   (sleb component-arena-base) [0x0b]))))
         ;; Pure functions are exported with their source names. This makes
         ;; runtime parameters observable and testable without host authority.
-        component-export-items (when component?
-                                 [["cm32p2||main" 0 component-main-index]
-                                  ["cm32p2||main_post" 0 (+ component-main-index 1)]
-                                  ["cm32p2_memory" 2 0]
-                                  ["cm32p2_realloc" 0 (+ component-main-index 2)]
-                                  ["cm32p2_initialize" 0 (+ component-main-index 3)]])
-        export-sec (concat (uleb (+ (count exported-functions) (count component-export-items)))
-                           (mapcat (fn [function]
-                                     (concat (name-bytes (name (:name function))) [0]
-                                             (uleb (get indices (:name function)))))
-                                   exported-functions)
-                           (mapcat (fn [[name kind index]]
-                                     (concat (name-bytes name) [kind] (uleb index)))
-                                   component-export-items))
+        component-function-base (+ shift (count functions))
+        realloc-function-index (+ component-function-base (count exported-functions))
+        initialize-function-index (inc realloc-function-index)
+        export-sec (if component-standard32?
+                     (concat
+                      (uleb (+ (* 2 (count exported-functions)) 3))
+                      (mapcat (fn [function post-index]
+                                (concat
+                                 (name-bytes (str "cm32p2||" (name (:name function))))
+                                 [0] (uleb (get indices (:name function)))
+                                 (name-bytes (str "cm32p2||" (name (:name function)) "_post"))
+                                 [0] (uleb post-index)))
+                              exported-functions
+                              (range component-function-base realloc-function-index))
+                      (name-bytes "cm32p2_memory") [2] (uleb 0)
+                      (name-bytes "cm32p2_realloc") [0] (uleb realloc-function-index)
+                      (name-bytes "cm32p2_initialize") [0] (uleb initialize-function-index))
+                     (concat (uleb (count exported-functions))
+                             (mapcat (fn [function]
+                                       (concat (name-bytes (name (:name function))) [0]
+                                               (uleb (get indices (:name function)))))
+                                     exported-functions)))
         descriptor-indices (when typed? (typed/descriptor-indices kir))
         literal-indices (when typed? (typed/literal-indices kir))
         signatures (when typed? (typed-function-signatures functions))
-        component-bodies
-        (when component?
-          ;; post-return and initialize are no-ops. Typed list results need the
-          ;; Canonical ABI realloc export; it is a monotonic allocator within
-          ;; the single declared memory page, so exhaustion traps closed.
-          [[0 0x0b]
-           (if typed-effect?
-             [1 1 0x7f
-              0x23 0x01 0x22 0x04
-              0x20 0x03 0x6a 0x24 0x01
-              0x20 0x04 0x0b]
-             [0 0x00 0x0b])
-           [0 0x0b]])
         code-sec (concat
-                  (uleb (+ (count functions) (count component-bodies)))
+                  (uleb (+ (count functions) component-function-count))
                   (mapcat #(if typed?
                              (emit-typed-function-body % indices intrinsic-indices
                                                        descriptor-indices literal-indices signatures)
-                             (function-body % indices intrinsic-indices component? typed-component?))
+                             (function-body % indices intrinsic-indices))
                           functions)
-                  (mapcat (fn [body] (concat (uleb (count body)) body)) component-bodies))
+                  (when component-standard32?
+                    (concat
+                     (mapcat (fn [_] [2 0 0x0b]) exported-functions)
+                     (component-realloc-body)
+                     [2 0 0x0b])))
         target-sec (concat (name-bytes "kotoba.target")
                            (utf8 (name target)))
         typed-sec (when (= :kotoba.kir/v4 (:format kir))
@@ -1379,12 +1677,17 @@
                         (when typed-sec (section 0 typed-sec))
                         (section 1 types) (when (seq imports) (section 2 import-sec))
                         (section 3 function-sec)
-                        ;; A canonical ABI memory is required even though the
-                        ;; scalar v1 world never serializes through it.
-                        (when component? (section 5 [1 0 (if (and typed-component?
-                                                                   (seq cap-ids))
-                                                            1 0)]))
+                        (when component-standard32?
+                          (section 5 [1 1 component-memory-pages memory-maximum]))
                         (section 6 global-sec)
                         (section 7 export-sec) (section 10 code-sec))]
       #?(:clj (byte-array (map unchecked-byte bytes))
-         :cljs (js/Uint8Array.from (clj->js (map #(bit-and % 0xff) bytes)))))))
+         :cljs (js/Uint8Array.from (clj->js (map #(bit-and % 0xff) bytes))))))))
+
+(defn emit-component-core
+  "Emit a standard32-named core module for Component Model Canonical lifting.
+
+  `opts` accepts `:fuel` and `:memory-pages`; both are compiled into the core
+  module so independent Component engines enforce the admitted ceilings."
+  ([kir target] (emit-component-core kir target {}))
+  ([kir target opts] (emit kir target (assoc opts :component-standard32? true))))

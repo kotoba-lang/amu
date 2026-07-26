@@ -46,6 +46,22 @@ The compiler's KIR interpreter and supervised native KEXE executor remain
 reference/conformance and trusted-low-level paths. They are not a second
 Component host: production Component execution is delegated to Kototama.
 
+## Execution policy
+
+The compiler has one source-admission and KIR pipeline. Its primary application
+artifact is a Wasm Component/profile: a component is portable, linked through
+typed WIT imports, and receives no authority except the capabilities admitted
+by its host. `wasm32-wasi` does **not** mean ambient WASI access: the current
+profile rejects ambient WASI imports and expects a closed capability adapter.
+
+Direct x86-64/AArch64 AOT remains a supported backend for aiueos boot/kernel,
+engine, driver, root-key adapter, and explicitly trusted low-level primitives.
+It is not the default route for an ordinary Kotoba application. The compiler
+must not duplicate runtime policy: `kototama` owns component linking/execution
+and `aiueos` owns grant decisions, while a small native host independently
+enforces the resulting grant. See
+[`ADR-2607252500`](https://github.com/com-junkawasaki/root/blob/main/90-docs/adr/2607252500-kotoba-wasm-component-first-execution-boundary.edn).
+
 Project compilation accepts repeated `--source-path ROOT` arguments to link
 explicit package roots into one closed graph. Every dependency remains
 confined to one of those real paths. If the same qualified namespace exists
@@ -94,16 +110,28 @@ whereas `i64-to-f64-rounded` names the IEEE rounding request.
 `f64-to-i64-truncating` names truncation toward zero while still rejecting
 NaN, infinities, and signed-i64 overflow.
 
+## Stack topology & boundaries
+
+This repository is the **foundation layer** of the kotoba stack: it depends
+on nothing else in the stack (`security` and the pinned `kotoba-script` JS
+backend only), and `kotoba` / `kototama` / `aiueos` / `kotobase` consume it —
+as a library or as emitted artifacts — never the reverse. The canonical
+topology, the dependency-direction invariants, and this repo's assigned
+design-cleanup items (admission-gate ↔ backend capability parity, unified
+`=` equality surface, kexe-loader validation in Kotoba objects, classpath-scan
+robustness) are recorded in
+[`docs/adr/0074-stack-topology-admission-backend-parity.md`](docs/adr/0074-stack-topology-admission-backend-parity.md)
+(root authority: `com-junkawasaki/root` ADR-2607241100).
+
 ## Relationship to `kotoba-lang/kotoba` and `kotoba-lang/kotoba-lang`
 
 This repository is the CLJC-native successor of `kotoba-lang/kotoba`'s
 historical Rust "safe Kotoba" three-gate design (`policy.rs`/`subset.rs`/
 `effects.rs`, removed from that repo `604896171b` 2026-07-01 — see
 `kotoba-lang/kotoba`'s README, "Language — kotoba-lang & kotoba wasm"
-section) — not `kotoba-lang/kotoba-lang`, which that README currently
-(mis)states as where the successor "lives entirely." `kotoba-lang/kotoba-lang`
-owns the source-extension/CLI/package *contract* only; it does not implement
-compile-time admission gates. The three gates map onto this repo's
+section, which now states this attribution correctly) — not
+`kotoba-lang/kotoba-lang`, which owns the source-extension/CLI/package
+*contract* only and does not implement compile-time admission gates. The three gates map onto this repo's
 `src/kotoba/compiler/frontend.clj` as follows:
 
 | safe-Kotoba gate | Theorem | This repo |
@@ -166,11 +194,11 @@ around representing `.kotoba`'s full signed-64-bit integer semantics as JS
 `clojure.tools.reader` (its nominal ClojureScript sibling,
 `cljs.tools.reader`, depends on several `cljs.core` internals nbb's SCI
 interpreter doesn't resolve -- see that ns's docstring). `test/nbb/run.cljs`
-(`npm run test-nbb-wasm32`) cross-checks this path's output against
-checked-in golden `.wasm` files -- byte-for-byte, not just "looks right" --
-covering every `examples/*.kotoba` fixture plus dedicated i64/sleb128
-boundary cases (true i64 max/min, add-wraparound, the sleb continuation-bit
-crossing at 127/128).
+(`npm run test-nbb-wasm32`) verifies that this path emits valid Wasm for every
+`examples/*.kotoba` fixture plus dedicated i64/sleb128 boundary cases (true
+i64 max/min, add-wraparound, the sleb continuation-bit crossing at 127/128).
+Observable semantics, ABI behavior, resource bounds, and fail-closed rejection
+are the compatibility contract; byte layout is not.
 
 **Every other target (`wasm-component`, `x86_64*`, `aarch64*`, `aarch64-android`,
 `aarch64-ios`) and every other `kotoba` subcommand** (`package-ios`, `sbom`,
@@ -310,6 +338,17 @@ descriptor ...)`, count, membership, idempotent insertion, removal, and
 structural equality preserve this representation without observing host
 insertion order or object identity.
 
+A top-level `def` may use a non-empty set literal only when every item is a
+keyword and the set has at most 32 items. The frontend lowers it immediately
+to canonical `[:set :keyword]` data. Empty, mixed-type, floating, oversized,
+or computed set constants remain rejected; use an explicit typed constructor
+where the item type cannot be safely inferred.
+
+Closed top-level constants may reference other declared constants, including
+inside vectors and maps. Resolution is compile-time-only, must terminate in
+bounded literal data, and rejects unknown names and cycles. A symbol never
+falls through to host lookup or execution.
+
 Canonical typed maps use `[:map key-type value-type]` and at most 31 entries
 inside the shared 64-node value budget. Values are
 `[descriptor, sorted-entry-vector]`; every entry is an exact two-item
@@ -426,7 +465,8 @@ shape. This needs no physical hardware or paid signing (Simulator binaries
 run unsigned), but does not by itself count toward this repo's coverage
 percentage -- see ADR-0001's Phase 3 for why.
 
-`wasm32-wasi` is the first server/component profile. Its Wasm custom section
+`wasm32-wasi` is the first sealed server core-Wasm profile. It is not yet a
+WebAssembly Component Model component. Its Wasm custom section
 seals `wasm32-wasi-kotoba-v1`; the dependency-free host rejects missing or
 substituted target identity and admits only `kotoba:cap` and `kotoba:heap`
 functions. Ambient WASI filesystem, socket, clock, random, environment, and
@@ -435,6 +475,19 @@ CI also executes the sealed pure ABI and fuel traps on Wasmtime 42.0.1, fetched
 by an NBB installer that verifies the pinned official release SHA-256. This is
 independent engine evidence alongside Node/V8, not yet a Kubernetes release
 claim.
+
+The planned `wasm-component-kotoba-v1` target is generated directly by the
+compiler: Kotoba schemas and typed capabilities become a closed WIT world and
+canonical ABI component. WASI filesystem, HTTP, clocks, and similar interfaces
+belong only to explicitly declared provider components, never to the
+application as ambient authority. Wasmtime is a conformance engine for that
+artifact; no Wasmtime-specific Rust runner is part of the language ABI.
+The Core-Wasm compatibility ABI also lowers the monomorphic
+`:option-i64`/`:result-i64` operations through the same sealed descriptor
+encoding as `[:option :i64]`/`[:result :i64 :i64]`; admitted scalar ADTs no
+longer fail late in the Wasm emitter.
+The pinned official specification baseline and synchronous/async version split
+are documented in `docs/component-model-baseline.md`.
 The full test matrix includes a native `ubuntu-24.04-arm` runner: AArch64 KEXE
 execution under the W^X loader, sanitizer vectors, architecture-specific
 libFuzzer coverage floors, the WASI host, and Wasmtime all run without CPU
@@ -540,9 +593,13 @@ one-based integers validated on every access; zero, negative, future, and
 out-of-range handles trap before an address is formed. Allocation is monotonic,
 immutable, and traps at capacity—there is no fallback to host allocation and no
 GC pause or unbounded growth. The normative KIR executor enforces the same
-capacity. Native code reaches only three fixed context-v2 callbacks at sealed
-offsets; the loader owns the arena. Wasm uses equivalent `kotoba:heap` imports,
-whose host implementation must enforce the same contract.
+capacity. Native code reaches only fixed context-v2 callbacks at sealed
+offsets; the loader owns the arena. The typed callback admits bounded strings
+and monomorphic `:option-i64`/`:result-i64`. Options and results use canonical
+pair-backed `(tag,payload)` handles; the loader validates the handle and tag on
+both sides and additionally requires a none option's payload to be zero. Wasm
+uses equivalent `kotoba:heap` imports, whose host implementation must enforce
+the same contract.
 
 The empty list is the i64 value zero. Non-empty lists are immutable pair chains;
 projection from zero or any forged handle traps. `list` is capped at 128 items
