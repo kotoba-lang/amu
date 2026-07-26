@@ -302,6 +302,65 @@
       (finally
         (Files/deleteIfExists path)))))
 
+(deftest source-result-list-match-calls-and-matches-a-named-capability
+  (doseq [[list-type count-op values]
+          [[:vector-i64 "vector-count" "[1, -2, 3]"]
+           [:vector-f64 "vector-f64-count" "[1.5, -2.25, 3.0]"]]]
+    (let [descriptor [:result list-type list-type]
+          type-source (pr-str descriptor)
+          source
+          (str
+           "(ns component.match-result-list-capability "
+           "  (:export [choose echo]) "
+           "  (:capabilities #{:http/post})) "
+           "(defn choose [value " type-source "] :i64 "
+           "  (match-result value " type-source
+           "    (ok ok-items "
+           "      (match-result "
+           "        (typed-cap-call :http/post " type-source " " type-source
+           "          (result-ok-of " type-source " ok-items)) "
+           type-source
+           "        (ok returned-ok (" count-op " returned-ok)) "
+           "        (err returned-err (" count-op " returned-err)))) "
+           "    (err err-items "
+           "      (match-result "
+           "        (typed-cap-call :http/post " type-source " " type-source
+           "          (result-err-of " type-source " err-items)) "
+           type-source
+           "        (ok returned-ok (" count-op " returned-ok)) "
+           "        (err returned-err (" count-op " returned-err)))))) "
+           "(defn echo [value :i64] :i64 value)")
+          compiled (compiler/compile-source
+                    source :wasm32-wasi-kotoba-v1
+                    {:allow #{[:cap/call 4]}})
+          application
+          (compiler/compile-component source {:allow #{[:cap/call 4]}})
+          provider
+          (composition/package-structural-union-identity-provider
+           :http/post descriptor)
+          closed (composition/compose-closed application [provider])
+          path (Files/createTempFile
+                "kotoba-source-match-result-list-capability-" ".wasm"
+                (make-array FileAttribute 0))]
+      (try
+        (Files/write path ^bytes (:bytes closed)
+                     (make-array java.nio.file.OpenOption 0))
+        (is (= 'result-match-of
+               (first (get-in compiled [:kir :functions 0 :body]))))
+        (is (= :structural-union-match-module
+               (:canonical-lowering application)))
+        (is (= [:http/post] (:application-imports closed)))
+        (doseq [[invoke expected]
+                [[(str "choose(ok(" values "))") "3"]
+                 [(str "choose(err(" values "))") "3"]
+                 ["echo(11)" "11"]]]
+          (let [run (shell/sh wasmtime-binary "run" "--invoke"
+                              invoke (str path))]
+            (is (zero? (:exit run)) (:err run))
+            (is (= expected (str/trim (:out run))) invoke)))
+        (finally
+          (Files/deleteIfExists path))))))
+
 (deftest structural-union-provider-rejects-a-malformed-discriminant
   (let [entry {:interface "http" :function "post"}
         core (wasm-tools/parse-wat

@@ -503,6 +503,10 @@ module and uses the standard WIT import's caller-allocated result storage;
 maximum request and result lists can coexist in the bounded arena. Other
 aggregate match/capability combinations remain fail-closed until admitted by
 an explicit Canonical codec.
+Symmetric `result<list<T>, list<T>>` values also cross this shared path. Both
+the outgoing `ok`/`err` case and the provider's returned case stay explicit;
+the returned discriminant and active list are validated before either branch
+observes its count.
 Finite record payloads with recursively scalar `i64`, `f32`, `f64`, and
 `bool` leaves use that same match path. Record binders may only escape through
 a statically resolved `record-get` chain; selected bool leaves are validated

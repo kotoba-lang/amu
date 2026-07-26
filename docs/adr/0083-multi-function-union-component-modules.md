@@ -131,3 +131,7 @@ are rejected.
   provider, and executes the closed Component in Wasmtime;
 - other aggregate request/result descriptors and less constrained branch
   shapes remain fail-closed pending explicit shared Canonical codec admission.
+- symmetric `result<list<T>, list<T>>` now uses the shared match module for
+  both `ok` and `err` request branches. `kotoba-wasm` commit `ed5ce4f` checks
+  the returned case and active list; `kotoba-component` commit `ac3156c`
+  admits only the exact typed shape. Source E2E covers s64 and f64 lists.
