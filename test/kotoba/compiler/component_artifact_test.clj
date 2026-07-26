@@ -312,6 +312,89 @@
         (Files/deleteIfExists core-path)
         (Files/deleteIfExists dir)))))
 
+(deftest structural-option-and-result-matches-reuse-general-wasm-expressions
+  (doseq [{:keys [source export calls]}
+          [{:source "(ns component.match-option (:export [choose]))
+                     (defn choose
+                       [value [:option :i64] fallback :i64] :i64
+                       (match-option value [:option :i64]
+                         (none (+ fallback 2))
+                         (some item (* item 3))))"
+            :export 'choose
+            :calls [["choose(none, 10)" "12" [[[:option :i64] false] 10]]
+                    ["choose(some(7), 10)" "21"
+                     [[[:option :i64] true 7] 10]]]}
+           {:source "(ns component.match-result (:export [choose]))
+                     (defn choose
+                       [value [:result :i64 :i64] offset :i64] :i64
+                       (match-result value [:result :i64 :i64]
+                         (ok item (+ item offset))
+                         (err error (- offset error))))"
+            :export 'choose
+            :calls [["choose(ok(7), 10)" "17" [[true 7] 10]]
+                    ["choose(err(3), 10)" "7" [[false 3] 10]]]}]]
+    (let [artifact (compiler/compile-component source)
+          kir (:kir (compiler/compile-source source :wasm32-wasi-kotoba-v1))
+          path (Files/createTempFile
+                "kotoba-component-union-match-" ".wasm"
+                (make-array FileAttribute 0))]
+      (try
+        (Files/write path ^bytes (:bytes artifact)
+                     (make-array java.nio.file.OpenOption 0))
+        (is (= :structural-union-match (:canonical-lowering artifact)))
+        (is (= :module-global (:fuel-enforcement artifact)))
+        (doseq [[invoke expected args] calls]
+          (let [run (shell/sh wasmtime-binary "run" "--invoke" invoke (str path))]
+            (is (zero? (:exit run)) (:err run))
+            (is (= expected (str/trim (:out run))))
+            (is (= expected (str (ir/execute kir export args))))))
+        (finally
+          (Files/deleteIfExists path))))))
+
+(deftest structural-union-match-is-lazy-and-rejects-malformed-tags
+  (let [source "(ns component.lazy-match (:export [choose]))
+                (defn choose
+                  [value [:option :i64] fallback :i64] :i64
+                  (match-option value [:option :i64]
+                    (none fallback)
+                    (some item (quot 1 0))))"
+        artifact (compiler/compile-component source)
+        kir (:kir (compiler/compile-source source :wasm32-wasi-kotoba-v1))
+        core (component-core/emit kir :wasm32-wasi-kotoba-v1)
+        dir (Files/createTempDirectory
+             "kotoba-component-lazy-union-match-" (make-array FileAttribute 0))
+        component-path (.resolve dir "lazy.component.wasm")
+        core-path (.resolve dir "lazy.core.wasm")]
+    (try
+      (Files/write component-path ^bytes (:bytes artifact)
+                   (make-array java.nio.file.OpenOption 0))
+      (Files/write core-path ^bytes core
+                   (make-array java.nio.file.OpenOption 0))
+      (let [inactive (shell/sh wasmtime-binary "run" "--invoke"
+                               "choose(none, 41)" (str component-path))
+            active (shell/sh wasmtime-binary "run" "--invoke"
+                             "choose(some(7), 41)" (str component-path))
+            malformed (shell/sh wasmtime-binary "run" "--invoke"
+                                "cm32p2||choose" (str core-path) "2" "0" "41")]
+        (is (zero? (:exit inactive)) (:err inactive))
+        (is (= "41" (str/trim (:out inactive))))
+        (is (not (zero? (:exit active)))
+            "the selected branch executes and traps")
+        (is (not (zero? (:exit malformed)))
+            "a tag outside the two-case union traps before branch dispatch"))
+      (finally
+        (Files/deleteIfExists component-path)
+        (Files/deleteIfExists core-path)
+        (Files/deleteIfExists dir))))
+  (let [descriptor [:option :i64]
+        malformed {:format :kotoba.kir/v4 :exports ['choose] :schemas {} :effects #{}
+                   :functions [{:name 'choose :params ['value]
+                                :param-types [descriptor] :result :i64
+                                :body (list 'option-match descriptor 'value 0)}]}]
+    (is (thrown-with-msg?
+         clojure.lang.ExceptionInfo #"no qualified Canonical lowering"
+         (component/assert-scalar-slice! malformed (wit/emit malformed))))))
+
 (deftest named-scalar-record-identity-is-admitted
   (let [descriptor [:ref :demo/point]
         kir {:format :kotoba.kir/v4 :exports ['echo] :effects #{}

@@ -66,5 +66,6 @@ invocation of the provider core export with discriminant `2` traps.
 - request and result structural unions with different descriptors;
 - recursive record/string/list/nested-union payloads;
 - production provider semantics instead of the wiring-only identity fixture;
-- exhaustive matches and general expression lowering around the call;
+- non-i64/aggregate exhaustive matches around the call (the i64 exhaustive
+  match path is implemented by ADR 0082);
 - portable host adapters beyond the already standardized Component artifact.
