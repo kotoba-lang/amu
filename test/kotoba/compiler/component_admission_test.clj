@@ -95,7 +95,7 @@
         request (:admission-request result)]
     (testing "the request carries what the compiler knows"
       (is (= :kotoba.component-admission-request/v1 (:format request)))
-      (is (= :wasm-component-kotoba-v1 (:target request)))
+      (is (= :wasm-component-kotoba-v2 (:target request)))
       (is (= "0.3.0" (:wasi-version request)))
       (is (= :sync (:profile request)))
       (is (false? (:ambient-wasi request)))

@@ -113,7 +113,11 @@
   ([source] (compile-component source {} {}))
   ([source policy] (compile-component source policy {}))
   ([source policy {:keys [profile budgets target] :or {profile :sync} :as opts}]
-   (let [target (or target abi/component-target)
+   ;; v1's scalar capability imports are retained only for explicit legacy
+   ;; compatibility. New Component compilation starts at the provider-free v2
+   ;; boundary, so an effect cannot accidentally acquire the old ambient-like
+   ;; scalar surface while v0.3 grant lowering is being selected.
+   (let [target (or target abi/component-target-v2)
          _ (when-not (= :component (:execution (target-profile/profile target)))
              (throw (ex-info "Component compilation requires a Component target"
                              {:phase :component-target :target target})))
