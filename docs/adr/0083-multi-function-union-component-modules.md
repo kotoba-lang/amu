@@ -64,7 +64,11 @@ are rejected.
 
 ## Remaining gaps
 
-- nested option/result, record, string, and list payload computation;
+- flat record payload identity for structural option/result is implemented by
+  `kotoba-component` commit `3230520`, including active-case bool and bounded
+  string/keyword validation;
+- nested record and list payloads, and non-identity aggregate branch
+  computation;
 - aggregate ownership, post-return cleanup, and linearity analysis;
 - general compositional lowering for mixtures of aggregate match functions and
   capability imports.
