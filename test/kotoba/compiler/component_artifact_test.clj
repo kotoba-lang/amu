@@ -181,6 +181,48 @@
           (Files/deleteIfExists core-path)
           (Files/deleteIfExists dir))))))
 
+(deftest structural-option-vector-round-trips-from-kotoba-through-a-real-component
+  (let [source
+        "(ns component.option-vector (:export [echo]))
+         (defn echo [value [:option :vector-i64]] [:option :vector-i64] value)"
+        compiled (compiler/compile-source source :wasm32-wasi-kotoba-v1)
+        kir (:kir compiled)
+        artifact (compiler/compile-component source)
+        core (component-core/emit kir :wasm32-wasi-kotoba-v1)
+        component-path (Files/createTempFile
+                        "kotoba-component-option-vector-" ".wasm"
+                        (make-array FileAttribute 0))
+        core-path (Files/createTempFile
+                   "kotoba-component-option-vector-core-" ".wasm"
+                   (make-array FileAttribute 0))]
+    (try
+      (Files/write component-path ^bytes (:bytes artifact)
+                   (make-array java.nio.file.OpenOption 0))
+      (Files/write core-path ^bytes core
+                   (make-array java.nio.file.OpenOption 0))
+      (is (= :structural-union-identity (:canonical-lowering artifact)))
+      (is (str/includes? (:source (:wit artifact)) "option<list<s64>>"))
+      (doseq [[invoke expected]
+              [["echo(none)" "none"]
+               ["echo(some([1, -2, 3]))" "some([1, -2, 3])"]]]
+        (let [run (shell/sh wasmtime-binary "run" "--invoke" invoke
+                            (str component-path))]
+          (is (zero? (:exit run)) (:err run))
+          (is (= expected (str/trim (:out run))))))
+      (let [inactive (shell/sh wasmtime-binary "run" "--invoke"
+                               "cm32p2||echo" (str core-path)
+                               "0" "1" "16385")
+            active (shell/sh wasmtime-binary "run" "--invoke"
+                             "cm32p2||echo" (str core-path)
+                             "1" "1" "16385")]
+        (is (zero? (:exit inactive))
+            "an inactive joined list must remain uninterpreted")
+        (is (not (zero? (:exit active)))
+            "the selected list must validate alignment and item count"))
+      (finally
+        (Files/deleteIfExists component-path)
+        (Files/deleteIfExists core-path)))))
+
 (deftest structural-option-record-round-trips-through-the-extracted-backend
   (let [point [:ref :demo/point]
         descriptor [:option point]
@@ -224,6 +266,45 @@
       (finally
         (Files/deleteIfExists component-path)
         (Files/deleteIfExists core-path)))))
+
+(deftest nested-record-and-string-unions-use-the-extracted-recursive-codec
+  (let [schemas {:demo/inner
+                 [:record :demo/inner [[:label :string] [:enabled :bool]]]
+                 :demo/outer
+                 [:record :demo/outer
+                  [[:id :i64] [:inner [:ref :demo/inner]]]]}]
+    (doseq [{:keys [descriptor invoke expected]}
+            [{:descriptor [:option [:ref :demo/outer]]
+              :invoke
+              "echo(some({id: 9, inner: {label: \"hi\", enabled: true}}))"
+              :expected
+              "some({id: 9, inner: {label: \"hi\", enabled: true}})"}
+             {:descriptor [:option :string]
+              :invoke "echo(some(\"hello\"))"
+              :expected "some(\"hello\")"}]]
+      (let [kir {:format :kotoba.kir/v4 :exports ['echo]
+                 :schemas schemas :effects #{}
+                 :functions
+                 [{:name 'echo :params ['value] :param-types [descriptor]
+                   :result descriptor :effects #{} :body 'value}]}
+            world (wit/emit kir)
+            artifact (component/package
+                      (component-core/emit kir :wasm32-wasi-kotoba-v1)
+                      kir world)
+            path (Files/createTempFile
+                  "kotoba-component-recursive-union-" ".wasm"
+                  (make-array FileAttribute 0))]
+        (try
+          (is (= :structural-union-identity
+                 (:canonical-lowering artifact)))
+          (Files/write path ^bytes (:bytes artifact)
+                       (make-array java.nio.file.OpenOption 0))
+          (let [run (shell/sh wasmtime-binary "run" "--invoke" invoke
+                              (str path))]
+            (is (zero? (:exit run)) (:err run))
+            (is (= expected (str/trim (:out run)))))
+          (finally
+            (Files/deleteIfExists path)))))))
 
 (deftest structural-option-and-result-constructors-compile-from-kotoba
   (doseq [{:keys [source export invoke output args oracle]}
