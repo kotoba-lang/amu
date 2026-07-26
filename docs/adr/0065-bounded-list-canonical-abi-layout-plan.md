@@ -166,45 +166,32 @@ item shape/stride by this leaf-level flattening choice.
 
 ## Remaining gaps
 
-1. **No component_core.clj codegen.** This ADR is deliberately scoped to
-   the Canonical ABI *layout plan* layer only (`canonical_abi.cljc`), per
-   the task that produced it and matching ADR 0049's own "plans" wording for
-   this gap-ledger item. There is no WAT emitter here analogous to
-   `component_core.clj`'s `nested-record-wat`/`variant-wat`: no `.kotoba`
-   export, `typed-cap-call`, or provider Component can actually take or
-   return a `list` value yet. A future ADR is needed to (a) admit a
-   list-identity/list-passthrough function shape into `component-core.clj`
-   and (b) emit the actual pointer-range-against-`capacity` and
-   length-against-`:max-items` runtime checks the `:validation` tags above
-   describe as an obligation -- exactly the two-phase pattern this repo's
-   own ADR chain already used for record (ADR 0051's layout, then later
-   ADRs' codegen) and variant (ADR 0052 did both together, but 0055/0056/
-   0057/0058/0059 kept extending the codegen side afterward).
-2. **`:max-items`/`:bounded-item-count` is declarative metadata only, not an
-   executable check**, exactly like every other `:validation` tag in this
-   file today (confirmed by grep: nothing in this repository reads the
-   `:validation` key programmatically). There is no instance-level "list
-   value" concept in this namespace at all -- `layout` only ever inspects
-   *type descriptors*, never concrete data -- so there is no function here
-   that could reject an actual over-length list at this layer; that
-   enforcement can only exist in a codegen consumer (gap 1) or a future
-   domain-value validator analogous to `kotoba.compiler.value`'s
-   `bounded-vector-i64!`/`bounded-string!`, neither of which this ADR adds.
-3. **List-of-list remains closed**, by explicit design (see Decision) --
-   named as a distinct future slice, not silently subsumed by this one.
-4. **Every other unimplemented shape from ADR 0049's item 1 remains
-   unimplemented**: tuples/vectors, maps, sets, options, results are still
-   entirely unimplemented in `canonical-abi.cljc`'s `layout*` (still exactly
-   two admitted aggregate shapes before this ADR -- `:record`/`:variant` --
-   now three with `:list`). String-in-record and one-level nested record
-   (ADR 0051/0053) and variant-of-record/string/keyword (ADR 0052/0054) were
-   already closed before this ADR and are unaffected. Recursive schema
-   identity itself (ADR 0049 remaining gap 2, "Component v1 still rejects
-   general recursive Kotoba schemas") is unchanged and explicitly out of
-   scope here, per the task that produced this ADR.
-5. **No Wasmtime/native evidence**, consistent with every layout-only ADR
-   in this chain (0051/0052 note the same); there is nothing to execute yet
-   since gap 1 above is unaddressed.
+The original layout-only gaps are now implemented for Kotoba's public
+`:vector-i64`/`:vector-f64` aliases. Standard Components accept and return
+`list<s64>`/`list<f64>` values, and aggregate option/result matches can count,
+trap-read, and fallback-read selected scalar list leaves. The shared
+`kotoba-wasm` lowering checks alignment, item bounds, unsigned byte-size and
+pointer overflow, actual linear-memory range, and read indices. `.kotoba`
+source tests execute those paths in pinned Wasmtime, including malicious
+direct-core inputs.
+
+The remaining list gaps are narrower:
+
+1. **List-of-list remains closed**, by explicit design (see Decision).
+2. **Structured/indirect item access is not a source-language operation.**
+   Canonical layout can describe bounded record/variant items, but Kotoba's
+   current list operations are typed specifically as `:vector-i64` or
+   `:vector-f64`; there is no general `[:list T]` value/operator surface that
+   could safely project a structured item.
+3. **Mutation requires an owned-result lowering.** `vector-assoc`,
+   `vector-conj`, and `vector-drop` return a new vector. Aggregate match
+   lowering currently borrows the caller-owned Canonical input buffer and
+   returns a scalar, so it deliberately does not mutate that buffer or expose
+   it as a new owned result.
+4. **Aggregate list capability request/results remain closed.** Their
+   cross-instance ownership, copying, and post-return behavior must be added
+   to the generalized capability codec rather than inferred from the
+   host-free scalar match path.
 
 ## Related
 
