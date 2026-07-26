@@ -29,15 +29,11 @@
             [kotoba.compiler.frontend-named-capability-test]
             [kotoba.compiler.backend-cljs-test]
             [kotoba.compiler.backend-qualification-test]
-            [kotoba.compiler.component-wit-test]
             [kotoba.compiler.component-artifact-test]
             [kotoba.compiler.component-composition-test]
             [kotoba.compiler.component-admission-test]
             [kotoba.compiler.i64-bitwise-test]
-            [kotoba.compiler.general-capability-component-test]
             [kotoba.compiler.effectful-component-source-test]
-            [kotoba.compiler.component-heap-test]
-            [kotoba.compiler.canonical-abi-test]
             [kotoba.compiler.ios-aot-test]
             [kotoba.compiler.interface-test]
             [kotoba.compiler.native-executor-test]
@@ -66,8 +62,6 @@
             [kotoba.compiler.log-provider-test]
             [kotoba.compiler.provider-conformance-test]
             [kotoba.compiler.wasm-typed-test]
-            [kotoba.compiler.wasm-tools-test]
-            [kotoba.compiler.value-test]
             [kotoba.compiler.verifier-profile-test]))
 
 (defn -main [& _]
@@ -99,15 +93,11 @@
                                           'kotoba.compiler.frontend-named-capability-test
                                           'kotoba.compiler.backend-cljs-test
                                           'kotoba.compiler.backend-qualification-test
-                                          'kotoba.compiler.component-wit-test
                                           'kotoba.compiler.component-artifact-test
                                           'kotoba.compiler.component-composition-test
                                           'kotoba.compiler.component-admission-test
                                           'kotoba.compiler.i64-bitwise-test
-                                          'kotoba.compiler.general-capability-component-test
                                           'kotoba.compiler.effectful-component-source-test
-                                          'kotoba.compiler.component-heap-test
-                                          'kotoba.compiler.canonical-abi-test
                                           'kotoba.compiler.ios-aot-test
                                           'kotoba.compiler.interface-test
                                           'kotoba.compiler.admission-test
@@ -130,12 +120,10 @@
                                           'kotoba.compiler.log-provider-test
                                           'kotoba.compiler.provider-conformance-test
                                           'kotoba.compiler.wasm-typed-test
-                                          'kotoba.compiler.wasm-tools-test
                                           'kotoba.compiler.native-executor-test
                                           'kotoba.compiler.receipt-test
                                           'kotoba.compiler.release-test
                                           'kotoba.compiler.security-fuzz-test
-                                          'kotoba.compiler.value-test
                                           'kotoba.compiler.verifier-profile-test
                                           'kotoba.compiler.project-test
                                           'kotoba.compiler.property-test)]

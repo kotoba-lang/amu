@@ -5,34 +5,36 @@
         org.clojure/tools.reader {:mvn/version "1.5.2"}
         org.clojure/data.json {:mvn/version "2.5.1"}
         io.github.kotoba-lang/kotoba-script
-        {:git/sha "b6f1a37e48b69ef4def424e0868b041c32fdbf32"}
+        {:git/url "https://github.com/kotoba-lang/kotoba-script.git"
+         :git/sha "b6f1a37e48b69ef4def424e0868b041c32fdbf32"}
         ;; ADR-2607266000 Phase B: these responsibilities moved out of this repo.
         ;; The compiler owns frontend -> KIR; it consumes the rest.
         io.github.kotoba-lang/kotoba-kir
         {:git/url "https://github.com/kotoba-lang/kotoba-kir.git"
-         :git/sha "22d31af066d773e30504133fd3cde831149cfd63"}
+         :git/sha "d968c01cdd874e8641006a7c5aeb623c5a37cb51"}
         io.github.kotoba-lang/artifact
         {:git/url "https://github.com/kotoba-lang/artifact.git"
-         :git/sha "af43fc8fa43edb12361828e26456f75b12ab40be"}
+         :git/sha "ba29522ece748d2f7ff420d2ba45b1126c94baf8"}
         io.github.kotoba-lang/kotoba-wasm
         {:git/url "https://github.com/kotoba-lang/kotoba-wasm.git"
-         :git/sha "7e2bc34127e5fc0a99b97454048072a29da8058c"}
+         :git/sha "9f988676859d55d709a95b025d3f5a80b3743826"}
         io.github.kotoba-lang/kotoba-native
         {:git/url "https://github.com/kotoba-lang/kotoba-native.git"
-         :git/sha "85b628f839533ae6f35b23cb6464ce245ea6fdad"}
+         :git/sha "502f2921c7016b6c3772ca2ea0069b68e28d0b17"}
         io.github.kotoba-lang/kotoba-component
         {:git/url "https://github.com/kotoba-lang/kotoba-component.git"
-         :git/sha "fed370cd61195db6717812191004b9182de42f1d"}
+         :git/sha "a9d4727821d84b4bef11fa6ff0a68bcc617cd3b8"}
         io.github.kotoba-lang/kotoba-verifier
         {:git/url "https://github.com/kotoba-lang/kotoba-verifier.git"
-         :git/sha "ef5d93d628d33b3101e6e487c6eed22f19e19a01"}
-        io.github.kotoba-lang/provider
-        {:git/url "https://github.com/kotoba-lang/provider.git"
-         :git/sha "4c7b886b4458da0e8eb8b089aad07e2bcc053774"}
-        io.github.kotoba-lang/tender-native
-        {:git/url "https://github.com/kotoba-lang/tender-native.git"
-         :git/sha "a41813d1931b3234ecebb1bd582957fd66198ed1"}
+         :git/sha "af28d272a36ad2712f3eddd945eb208939fb6a8a"}
 }
  :aliases {:test {:extra-paths ["test"]
+                  :extra-deps
+                  {io.github.kotoba-lang/provider
+                   {:git/url "https://github.com/kotoba-lang/provider.git"
+                    :git/sha "c9de9095d5cbffc477f9d262f7eef0248ca34683"}
+                   io.github.kotoba-lang/tender-native
+                   {:git/url "https://github.com/kotoba-lang/tender-native.git"
+                    :git/sha "7442e8c1cc2de8262e84e3f19ad9081db40f77b7"}}
                   :main-opts ["-m" "kotoba.compiler.test-runner"]}
            :run {:main-opts ["-m" "kotoba.compiler.cli"]}}}
