@@ -135,7 +135,7 @@
              (local-count body)))
         (reduce + (map local-count args))))))
 
-(declare emit-expr)
+(declare emit-expr i32-const)
 
 (defn- emit-many [forms env ctx]
   (mapcat #(emit-expr % env ctx) forms))
@@ -180,27 +180,118 @@
         (let [[cap-id value] args]
           (if (:typed-component? ctx)
             (do
-              (when-not (= 7 cap-id)
+              (when-not (contains? #{1 2 3 4 5 6 7} cap-id)
                 (throw (ex-info "typed Component operation lowering is unavailable"
                                 {:phase :component-abi-v3 :capability-id cap-id})))
-              (concat
-               ;; Preserve evaluation of the legacy argument during migration;
-               ;; clock.now itself has no request payload.
-               (emit-expr value env ctx) [0x1a]
-               ;; acquire(clock-now, retptr=0)
-               [0x41 0x06 0x41 0x00 0x10]
-               (uleb (get intrinsic-indices 'v3-acquire))
-               ;; result tag != ok traps before a resource can be observed.
-               [0x41 0x00 0x28 0x02 0x00 0x04 0x40 0x00 0x0b]
-               ;; now(grant-at-4, retptr=16)
-               [0x41 0x00 0x28 0x02 0x04 0x41 0x10 0x10]
-               (uleb (get intrinsic-indices 'v3-clock-now))
-               [0x41 0x10 0x28 0x02 0x00 0x04 0x40 0x00 0x0b]
-               ;; Save the u64 payload, drop the owned grant, then return s64.
-               [0x41 0x20 0x41 0x10 0x29 0x03 0x08 0x37 0x03 0x00
-                0x41 0x00 0x28 0x02 0x04 0x10]
-               (uleb (get intrinsic-indices 'v3-grant-drop))
-               [0x41 0x20 0x29 0x03 0x00]))
+              (let [acquire
+                    (fn [request]
+                      (concat [0x41 request 0x41 0x00 0x10]
+                              (uleb (get intrinsic-indices 'v3-acquire))
+                              [0x41 0x00 0x28 0x02 0x00 0x04 0x40 0x00 0x0b]))
+                    drop-grant
+                    (concat [0x41 0x00 0x28 0x02 0x04 0x10]
+                            (uleb (get intrinsic-indices 'v3-grant-drop)))
+                    check-result
+                    (concat (i32-const 80)
+                            ;; The variant discriminant is one byte. Loading a
+                            ;; word would alias a bool payload at offset 1.
+                            [0x2d 0x00 0x00 0x04 0x40 0x00 0x0b])]
+                (case cap-id
+                  1
+                  (concat
+                   (i32-const 64) (emit-expr value env ctx) [0x37 0x03 0x00]
+                   (acquire 0)
+                   ;; sign(grant, bytes@64/8, retptr=80)
+                   [0x41 0x00 0x28 0x02 0x04]
+                   (i32-const 64) [0x41 0x08] (i32-const 80) [0x10]
+                   (uleb (get intrinsic-indices 'v3-identity-sign))
+                   check-result
+                   ;; The scalar migration contract requires at least 8 bytes.
+                   (i32-const 80) [0x28 0x02 0x08 0x41 0x08 0x49
+                                   0x04 0x40 0x00 0x0b]
+                   (i32-const 96) (i32-const 80)
+                   [0x28 0x02 0x04 0x29 0x03 0x00 0x37 0x03 0x00]
+                   drop-grant (i32-const 96) [0x29 0x03 0x00])
+
+                  2
+                  (concat
+                   ;; Store the scalar migration payload as canonical bytes.
+                   (i32-const 64) (emit-expr value env ctx) [0x37 0x03 0x00]
+                   (acquire 1)
+                   ;; verify(grant, bytes@64/8, retptr=80)
+                   [0x41 0x00 0x28 0x02 0x04]
+                   (i32-const 64) [0x41 0x08] (i32-const 80) [0x10]
+                   (uleb (get intrinsic-indices 'v3-identity-verify))
+                   check-result
+                   ;; Save bool before dropping the owned resource.
+                   (i32-const 96) (i32-const 80)
+                   [0x2d 0x00 0x01 0x36 0x02 0x00]
+                   drop-grant
+                   (i32-const 96) [0x28 0x02 0x00 0xad])
+
+                  3
+                  (concat
+                   (i32-const 64) (emit-expr value env ctx) [0x37 0x03 0x00]
+                   (acquire 2)
+                   ;; sha256(grant, bytes@64/8, retptr=80)
+                   [0x41 0x00 0x28 0x02 0x04]
+                   (i32-const 64) [0x41 0x08] (i32-const 80) [0x10]
+                   (uleb (get intrinsic-indices 'v3-hash-sha256))
+                   check-result
+                   (i32-const 80) [0x28 0x02 0x08 0x41 0x08 0x49
+                                   0x04 0x40 0x00 0x0b]
+                   (i32-const 96) (i32-const 80)
+                   [0x28 0x02 0x04 0x29 0x03 0x00 0x37 0x03 0x00]
+                   drop-grant (i32-const 96) [0x29 0x03 0x00])
+
+                  4
+                  (concat
+                   (i32-const 64) (emit-expr value env ctx) [0x37 0x03 0x00]
+                   (acquire 3)
+                   ;; post(grant, empty-path, empty-headers, body@64/8, retptr=80)
+                   [0x41 0x00 0x28 0x02 0x04
+                    0x41 0x00 0x41 0x00 0x41 0x00 0x41 0x00]
+                   (i32-const 64) [0x41 0x08] (i32-const 80) [0x10]
+                   (uleb (get intrinsic-indices 'v3-http-post))
+                   check-result
+                   ;; Save the u16 status before dropping the grant.
+                   (i32-const 96) (i32-const 80)
+                   [0x2f 0x01 0x04 0x36 0x02 0x00]
+                   drop-grant (i32-const 96) [0x28 0x02 0x00 0xad])
+
+                  5
+                  (concat
+                   ;; read(grant, cursor=value, max-bytes=8, retptr=80)
+                   (acquire 4)
+                   [0x41 0x00 0x28 0x02 0x04]
+                   (emit-expr value env ctx)
+                   [0x41 0x08] (i32-const 80) [0x10]
+                   (uleb (get intrinsic-indices 'v3-log-read))
+                   check-result
+                   (i32-const 96) (i32-const 80)
+                   [0x29 0x03 0x08 0x37 0x03 0x00]
+                   drop-grant (i32-const 96) [0x29 0x03 0x00])
+
+                  6
+                  (concat
+                   (i32-const 64) (emit-expr value env ctx) [0x37 0x03 0x00]
+                   (acquire 5)
+                   ;; append(grant, bytes@64/8, retptr=80)
+                   [0x41 0x00 0x28 0x02 0x04]
+                   (i32-const 64) [0x41 0x08] (i32-const 80) [0x10]
+                   (uleb (get intrinsic-indices 'v3-log-append))
+                   check-result drop-grant [0x42 0x00])
+
+                  7
+                  (concat
+                   ;; Preserve evaluation of the legacy argument; now has none.
+                   (emit-expr value env ctx) [0x1a]
+                   (acquire 6)
+                   [0x41 0x00 0x28 0x02 0x04 0x41 0x10 0x10]
+                   (uleb (get intrinsic-indices 'v3-clock-now))
+                   [0x41 0x10 0x28 0x02 0x00 0x04 0x40 0x00 0x0b
+                    0x41 0x20 0x41 0x10 0x29 0x03 0x08 0x37 0x03 0x00]
+                   drop-grant [0x41 0x20 0x29 0x03 0x00]))))
             (if (:component? ctx)
             (concat (emit-expr value env ctx)
                     [0x10 (get intrinsic-indices
@@ -1175,7 +1266,7 @@
            ['v3-log-read "cm32p2|aiueos:capability/log@0.3" "read" [0x60 4 0x7f 0x7e 0x7f 0x7f 0]]
            ['v3-log-append "cm32p2|aiueos:capability/log@0.3" "append" [0x60 4 0x7f 0x7f 0x7f 0x7f 0]]
            ['v3-clock-now "cm32p2|aiueos:capability/clock@0.3" "now" [0x60 2 0x7f 0x7f 0]]])
-        _ (when (and typed-component? (some #(not= 7 %) cap-ids))
+        _ (when (and typed-component? (some #(not (contains? #{1 2 3 4 5 6 7} %)) cap-ids))
             (throw (ex-info "typed Component operation lowering is unavailable"
                             {:phase :component-abi-v3 :capability-ids (set cap-ids)})))
         imports (vec (concat typed-imports typed-capability-imports
@@ -1229,7 +1320,13 @@
                                                    (+ shift (count functions) (count component-types))))))
         ;; (global (mut i64) (i64.const 512)); fixed and low enough to trap before the
         ;; host call stack becomes the limiting resource.
-        global-sec [1 0x7e 1 0x42 0x80 0x04 0x0b]
+        typed-effect? (and typed-component? (seq cap-ids))
+        global-sec (if typed-effect?
+                     ;; The second global is the typed-effect result-list bump
+                     ;; pointer. Memory bounds remain the hard allocation cap.
+                     [2 0x7e 1 0x42 0x80 0x04 0x0b
+                      0x7f 1 0x41 0x80 0x20 0x0b]
+                     [1 0x7e 1 0x42 0x80 0x04 0x0b])
         ;; Pure functions are exported with their source names. This makes
         ;; runtime parameters observable and testable without host authority.
         component-export-items (when component?
@@ -1249,12 +1346,19 @@
         descriptor-indices (when typed? (typed/descriptor-indices kir))
         literal-indices (when typed? (typed/literal-indices kir))
         signatures (when typed? (typed-function-signatures functions))
-        component-bodies (when component?
-                           ;; post-return and initialize are no-ops. realloc is
-                           ;; unreachable because the scalar ABI never allocates.
-                           ;; Keeping it trapping makes accidental future use fail
-                           ;; closed instead of granting an implicit allocator.
-                           [[0 0x0b] [0 0x00 0x0b] [0 0x0b]])
+        component-bodies
+        (when component?
+          ;; post-return and initialize are no-ops. Typed list results need the
+          ;; Canonical ABI realloc export; it is a monotonic allocator within
+          ;; the single declared memory page, so exhaustion traps closed.
+          [[0 0x0b]
+           (if typed-effect?
+             [1 1 0x7f
+              0x23 0x01 0x22 0x04
+              0x20 0x03 0x6a 0x24 0x01
+              0x20 0x04 0x0b]
+             [0 0x00 0x0b])
+           [0 0x0b]])
         code-sec (concat
                   (uleb (+ (count functions) (count component-bodies)))
                   (mapcat #(if typed?

@@ -67,6 +67,34 @@
     (with-temp-component (:bytes compiled)
       #(is (zero? (:exit (shell/sh "wasm-tools" "validate" (.toString %))))))))
 
+(deftest typed-capability-v3-lowers-every-operation-through-a-host-owned-grant
+  (doseq [[id operation]
+          [[1 :identity/sign]
+           [2 :identity/verify]
+           [3 :hash/sha256]
+           [4 :http/post]
+           [5 :log/read]
+           [6 :log/append]
+           [7 :clock/now]]]
+    (testing (name operation)
+      (let [source (format "(ns app (:capabilities #{:%s})) (defn main [] (cap-call :%s 42))"
+                           (subs (str operation) 1) (subs (str operation) 1))
+            compiled
+            (compiler/compile-source
+             source :wasm-component-kotoba-v2
+             {:allow #{[:cap/call id]}
+              :component-abilities
+              {id {:target (str "test://" (name operation))
+                   :operation operation
+                   :max-bytes 256 :max-items 1
+                   :deadline-ms 1000 :audit-id (str "v3-" id)}}})]
+        (is (= "aiueos:capability/application@0.3.0"
+               (:component-world compiled)))
+        (with-temp-component
+          (:bytes compiled)
+          #(let [validated (shell/sh "wasm-tools" "validate" (.toString %))]
+             (is (zero? (:exit validated)) (:err validated))))))))
+
 (deftest compiler-consumes-the-authoritative-v3-capability-package
   (let [wit (component/typed-world-wit-v3)]
     (is (= "aiueos:capability/application@0.3.0"
