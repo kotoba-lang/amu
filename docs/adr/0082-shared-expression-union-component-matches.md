@@ -14,8 +14,7 @@ Wasm backend.
 
 Admit exhaustive matches whose option/result payloads, final result, and
 additional parameters are Canonical scalars (`i64`, `f32`, `f64`, or `bool`).
-The two payloads of a result currently share one scalar type so their joined
-core representation needs no case-dependent bit reinterpretation.
+The two payloads of a result may differ.
 
 `component-core` performs only an adapter transformation:
 
@@ -24,9 +23,17 @@ core representation needs no case-dependent bit reinterpretation.
 2. unsigned-extend the discriminant into the emitter's i64 value
    domain;
 3. range-check it against the two valid cases before dispatch;
-4. bind the payload to the source branch binder through an ordinary `let`;
-5. hand both original branch expressions to the existing binary Wasm
+4. decode the joined payload into the selected case's scalar type using the
+   same authoritative coercion classification as the general variant codec;
+5. bind the decoded payload to the source branch binder through an ordinary
+   `let`;
+6. hand both original branch expressions to the existing binary Wasm
    expression emitter.
+
+Joined `i32/f32` slots stay i32. Every other heterogeneous pair joins to i64.
+The adapter renders the Component Model coercions as native binary Wasm
+`wrap`/`reinterpret` instructions; no numeric conversion or NaN
+canonicalization is substituted for bit reinterpretation.
 
 The backend has a narrowly scoped `core-param-types` override so the synthetic
 function receives the Canonical i32 discriminant and native payload types. It
@@ -55,6 +62,8 @@ handled by the ordinary emitter rather than textual symbol substitution.
 - malformed hand-built KIR branch counts or non-symbol binders fail admission;
 - bool parameters and selected bool payloads are checked for canonical 0/1,
   while an inactive joined payload is not interpreted;
+- joined bits are decoded only after discriminant validation, so one case
+  cannot impose its type validation on another case's active payload;
 - the standard module-private fuel global charges the match function;
 - no ambient import or typed host heap is introduced.
 
@@ -72,10 +81,14 @@ discriminant `2` traps before dispatch. The artifact reports
 active payload traps, the same bits in an inactive option payload are ignored,
 and an invalid ordinary bool argument traps at entry.
 
+All twelve ordered heterogeneous pairs of `i64`, `f32`, `f64`, and `bool`
+execute both `ok` and `err` through a real Component in Wasmtime and match
+`ir/execute`. Negative float fixtures prove sign-bit reinterpretation rather
+than numeric conversion. Direct `result<bool,f32>` and `result<f32,bool>` core
+calls prove the joined i32 slot is bool-validated only in the bool case.
+
 ## Remaining gaps
 
-- heterogeneous result payload joins that require case-dependent scalar
-  reinterpretation;
 - nested option/result, record, string, and list payloads;
 - match expressions in multi-function Component modules;
 - general aggregate computation and ownership/linearity analysis.
