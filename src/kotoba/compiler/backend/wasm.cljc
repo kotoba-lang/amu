@@ -975,6 +975,37 @@
                             [0x10 (get intrinsic-indices 'typed-equal) 0xad])
                     (= op 'bool-not)
                     (emit-bool (concat (emit-test (first args) env) [0x45]))
+                    (contains? '#{option-some option-none} op)
+                    (let [payload (when (= op 'option-some) args)]
+                      (emit-builder :option-i64
+                                    (if (= op 'option-some) 1 0)
+                                    payload
+                                    (if payload [:i64] [])
+                                    env))
+                    (contains? '#{result-ok result-err} op)
+                    (emit-builder :result-i64
+                                  (if (= op 'result-ok) 1 0)
+                                  args [:i64] env)
+                    (contains? '#{option-some? result-ok?} op)
+                    (let [type (if (= op 'option-some?)
+                                 :option-i64 :result-i64)]
+                      (emit-bool
+                       (concat (i32-const (descriptor-id type))
+                               (emit* (first args) env)
+                               [0x10 (get intrinsic-indices 'typed-tag)])))
+                    (contains? '#{option-value result-value result-error} op)
+                    (let [[value fallback] args
+                          type (if (= op 'option-value)
+                                 :option-i64 :result-i64)
+                          wanted (if (= op 'result-error) 0 1)
+                          value-local (allocate! 0x6f)]
+                      (concat (emit* value env) [::local-set value-local]
+                              (i32-const (descriptor-id type))
+                              [::local-get value-local
+                               0x10 (get intrinsic-indices 'typed-tag)]
+                              (i32-const wanted) [0x46 0x04 0x7e]
+                              (emit-get type {:wasm-local value-local} 0 :i64 env)
+                              [0x05] (emit* fallback env) [0x0b]))
                     (contains? '#{= < > <= >=} op)
                     (let [operand-type (typed/infer-type
                                         (first args)
