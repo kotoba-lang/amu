@@ -9,7 +9,8 @@
             [kotoba.compiler.component-core :as component-core]
             [kotoba.compiler.component-wit :as wit]
             [kotoba.compiler.core :as compiler]
-            [kotoba.compiler.ir :as ir])
+            [kotoba.compiler.ir :as ir]
+            [kotoba.compiler.value :as value])
   (:import [java.nio.file Files]
            [java.nio.file.attribute FileAttribute]))
 
@@ -444,6 +445,87 @@
             "an ordinary bool parameter is validated at entry"))
       (finally
         (Files/deleteIfExists path)))))
+
+(deftest structural-result-match-decodes-every-heterogeneous-scalar-join
+  (let [fixtures
+        {:i64 {:invoke "-7" :value -7 :encoded -7
+               :body (fn [binder] binder)}
+         :f32 {:invoke "-1.5" :value (float -1.5)
+               :encoded (value/f32-to-i64-bits (float -1.5))
+               :body (fn [binder] (str "(f32-to-bits " binder ")"))}
+         :f64 {:invoke "-1.5" :value -1.5
+               :encoded (value/f64-to-i64-bits -1.5)
+               :body (fn [binder] (str "(f64-to-bits " binder ")"))}
+         :bool {:invoke "true" :value true :encoded 1
+                :body (fn [binder] (str "(if " binder " 1 0)"))}}]
+    (doseq [ok-type [:i64 :f32 :f64 :bool]
+            err-type [:i64 :f32 :f64 :bool]
+            :when (not= ok-type err-type)]
+      (let [ok (get fixtures ok-type)
+            err (get fixtures err-type)
+            descriptor [:result ok-type err-type]
+            source
+            (str "(ns component.match-heterogeneous (:export [choose])) "
+                 "(defn choose [value " (pr-str descriptor) "] :i64 "
+                 "(match-result value " (pr-str descriptor) " "
+                 "(ok item " ((:body ok) "item") ") "
+                 "(err error " ((:body err) "error") ")))")
+            artifact (compiler/compile-component source)
+            kir (:kir (compiler/compile-source source :wasm32-wasi-kotoba-v1))
+            path (Files/createTempFile
+                  "kotoba-component-heterogeneous-result-" ".wasm"
+                  (make-array FileAttribute 0))]
+        (try
+          (Files/write path ^bytes (:bytes artifact)
+                       (make-array java.nio.file.OpenOption 0))
+          (is (= :structural-union-match (:canonical-lowering artifact)))
+          (is (empty? (:required-imports artifact)))
+          (doseq [[case-name fixture tag]
+                  [["ok" ok true] ["err" err false]]]
+            (let [invoke (str "choose(" case-name "(" (:invoke fixture) "))")
+                  run (shell/sh wasmtime-binary "run" "--invoke" invoke (str path))
+                  expected (str (:encoded fixture))
+                  oracle-arg [[tag (:value fixture)]]]
+              (is (zero? (:exit run))
+                  (str descriptor " " invoke ": " (:err run)))
+              (is (= expected (str/trim (:out run))) (str descriptor " " invoke))
+              (is (= expected (str (ir/execute kir 'choose oracle-arg))))))
+          (finally
+            (Files/deleteIfExists path)))))))
+
+(deftest heterogeneous-result-bool-validation-is-case-dependent
+  (doseq [{:keys [descriptor valid-tag invalid-tag]}
+          [{:descriptor [:result :bool :f32] :valid-tag "1" :invalid-tag "0"}
+           {:descriptor [:result :f32 :bool] :valid-tag "0" :invalid-tag "1"}]]
+    (let [source
+          (str "(ns component.match-heterogeneous-bool (:export [choose])) "
+               "(defn choose [value " (pr-str descriptor) "] :i64 "
+               "(match-result value " (pr-str descriptor) " "
+               "(ok item "
+               (if (= :bool (second descriptor)) "(if item 1 0)" "(f32-to-bits item)")
+               ") (err error "
+               (if (= :bool (nth descriptor 2)) "(if error 1 0)" "(f32-to-bits error)")
+               ")))")
+          kir (:kir (compiler/compile-source source :wasm32-wasi-kotoba-v1))
+          core (component-core/emit kir :wasm32-wasi-kotoba-v1)
+          path (Files/createTempFile
+                "kotoba-component-heterogeneous-bool-core-" ".wasm"
+                (make-array FileAttribute 0))]
+      (try
+        (Files/write path ^bytes core (make-array java.nio.file.OpenOption 0))
+        (let [inactive-bits
+              (shell/sh wasmtime-binary "run" "--invoke" "cm32p2||choose"
+                        (str path) valid-tag "2")
+              active-bool
+              (shell/sh wasmtime-binary "run" "--invoke" "cm32p2||choose"
+                        (str path) invalid-tag "2")]
+          (is (zero? (:exit inactive-bits)) (:err inactive-bits))
+          (is (= "2" (str/trim (:out inactive-bits)))
+              "f32 case reinterprets the same i32 bits without bool validation")
+          (is (not (zero? (:exit active-bool)))
+              "the bool case validates the selected joined slot"))
+        (finally
+          (Files/deleteIfExists path))))))
 
 (deftest structural-union-match-is-lazy-and-rejects-malformed-tags
   (let [source "(ns component.lazy-match (:export [choose]))

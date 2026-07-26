@@ -475,7 +475,10 @@ typed binary Wasm expression emitter, including its fuel global, so
 arithmetic, comparisons, `if`, and `let` do not have a parallel
 Component-only implementation. The host-free adapter specializes only the
 Canonical i32 discriminant/native payload boundary; selected bool values are
-checked as 0/1 without interpreting an inactive payload.
+checked as 0/1 without interpreting an inactive payload. Heterogeneous
+`result<T,E>` payloads use the Component Model joined-flat coercion table:
+their bits are wrapped/reinterpreted into the selected case type only after
+the discriminant is validated.
 The Core-Wasm compatibility ABI also lowers the monomorphic
 `:option-i64`/`:result-i64` operations through the same sealed descriptor
 encoding as `[:option :i64]`/`[:result :i64 :i64]`; admitted scalar ADTs no
