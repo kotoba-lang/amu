@@ -464,7 +464,9 @@ the explicit `option-*-of`/`result-*-of` constructors compile from Kotoba to
 real `option<T>`/`result<T,E>` Component exports. Their tag predicates and
 fallback projections also execute directly at the Component boundary; the
 core boundary traps out-of-range discriminants and non-canonical active bool
-payloads without interpreting an inactive case. CI checks
+payloads without interpreting an inactive case. Nested option/result payloads
+apply the same rule recursively at every discriminant, including bounded
+string and list leaves. CI checks
 `none`/`some`/`ok`/`err` with the pinned Wasmtime engine.
 The same scalar union codec crosses an explicitly named capability import:
 the compiler emits the WIT import, a separately packaged provider exports the

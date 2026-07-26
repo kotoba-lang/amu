@@ -248,6 +248,51 @@
       (finally
         (Files/deleteIfExists path)))))
 
+(deftest nested-structural-unions-round-trip-from-kotoba
+  (let [source
+        "(ns component.nested-union (:export [echo]))
+         (defn echo [value [:option [:result :string :bool]]]
+           [:option [:result :string :bool]] value)"
+        kir (:kir (compiler/compile-source source :wasm32-wasi-kotoba-v1))
+        artifact (compiler/compile-component source)
+        core (component-core/emit kir :wasm32-wasi-kotoba-v1)
+        component-path (Files/createTempFile
+                        "kotoba-component-nested-union-" ".wasm"
+                        (make-array FileAttribute 0))
+        core-path (Files/createTempFile
+                   "kotoba-component-nested-union-core-" ".wasm"
+                   (make-array FileAttribute 0))]
+    (try
+      (Files/write component-path ^bytes (:bytes artifact)
+                   (make-array java.nio.file.OpenOption 0))
+      (Files/write core-path ^bytes core
+                   (make-array java.nio.file.OpenOption 0))
+      (is (= :structural-union-identity (:canonical-lowering artifact)))
+      (is (str/includes? (:source (:wit artifact))
+                         "option<result<string, bool>>"))
+      (doseq [[invoke expected]
+              [["echo(none)" "none"]
+               ["echo(some(ok(\"hello\")))" "some(ok(\"hello\"))"]
+               ["echo(some(err(true)))" "some(err(true))"]]]
+        (let [run (shell/sh wasmtime-binary "run" "--invoke" invoke
+                            (str component-path))]
+          (is (zero? (:exit run)) (:err run))
+          (is (= expected (str/trim (:out run))))))
+      (doseq [[args trap?]
+              [[["0" "2" "0" "65537"] false]
+               [["1" "2" "0" "0"] true]
+               [["1" "0" "0" "65537"] true]
+               [["1" "1" "2" "65537"] true]
+               [["1" "1" "1" "65537"] false]]]
+        (let [run (apply shell/sh wasmtime-binary "run" "--invoke"
+                         "cm32p2||echo" (str core-path) args)]
+          (if trap?
+            (is (not (zero? (:exit run))))
+            (is (zero? (:exit run)) (:err run)))))
+      (finally
+        (Files/deleteIfExists component-path)
+        (Files/deleteIfExists core-path)))))
+
 (deftest structural-option-record-round-trips-through-the-extracted-backend
   (let [point [:ref :demo/point]
         descriptor [:option point]
