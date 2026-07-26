@@ -351,6 +351,100 @@
         (finally
           (Files/deleteIfExists path))))))
 
+(deftest structural-union-matches-cover-all-canonical-scalar-types
+  (doseq [{:keys [source export calls]}
+          [{:source "(ns component.match-option-f64 (:export [choose]))
+                     (defn choose
+                       [value [:option :f64] fallback :f64] :f64
+                       (match-option value [:option :f64]
+                         (none (f64-add fallback 0.5))
+                         (some item (f64-mul item 2.0))))"
+            :export 'choose
+            :calls [["choose(none, 2.0)" "2.5"
+                     [[[:option :f64] false] 2.0]]
+                    ["choose(some(1.75), 2.0)" "3.5"
+                     [[[:option :f64] true 1.75] 2.0]]]}
+           {:source "(ns component.match-result-f32 (:export [choose]))
+                     (defn choose
+                       [value [:result :f32 :f32] fallback :f32] :f32
+                       (match-result value [:result :f32 :f32]
+                         (ok item (f32-add item fallback))
+                         (err error (f32-sub fallback error))))"
+            :export 'choose
+            :calls [["choose(ok(1.5), 2.0)" "3.5"
+                     [[true (float 1.5)] (float 2.0)]]
+                    ["choose(err(0.5), 2.0)" "1.5"
+                     [[false (float 0.5)] (float 2.0)]]]}
+           {:source "(ns component.match-option-bool (:export [choose]))
+                     (defn choose
+                       [value [:option :bool] fallback :bool] :bool
+                       (match-option value [:option :bool]
+                         (none (bool-not fallback))
+                         (some item (bool-not item))))"
+            :export 'choose
+            :calls [["choose(none, false)" "true"
+                     [[[:option :bool] false] false]]
+                    ["choose(some(true), false)" "false"
+                     [[[:option :bool] true true] false]]]}]]
+    (let [artifact (compiler/compile-component source)
+          kir (:kir (compiler/compile-source source :wasm32-wasi-kotoba-v1))
+          path (Files/createTempFile
+                "kotoba-component-scalar-union-match-" ".wasm"
+                (make-array FileAttribute 0))]
+      (try
+        (Files/write path ^bytes (:bytes artifact)
+                     (make-array java.nio.file.OpenOption 0))
+        (is (= :structural-union-match (:canonical-lowering artifact)))
+        (is (empty? (:required-imports artifact))
+            "canonical scalar matching must remain host-free")
+        (doseq [[invoke expected args] calls]
+          (let [run (shell/sh wasmtime-binary "run" "--invoke" invoke (str path))]
+            (is (zero? (:exit run)) (:err run))
+            (is (= expected (str/trim (:out run))))
+            (is (= expected (str (ir/execute kir export args))))))
+        (finally
+          (Files/deleteIfExists path)))))
+  (is (thrown-with-msg?
+       clojure.lang.ExceptionInfo #"requires a host value"
+       (compiler/compile-component
+        "(ns component.match-host-value (:export [choose]))
+         (defn choose [value [:option :i64]] :i64
+           (match-option value [:option :i64]
+             (none (string-byte-length \"not-ambient\"))
+             (some item item)))"))
+      "a scalar result must not smuggle a host-backed value into the adapter"))
+
+(deftest structural-bool-union-match-validates-only-selected-payload
+  (let [source "(ns component.match-option-bool-validation (:export [choose]))
+                (defn choose
+                  [value [:option :bool] fallback :bool] :bool
+                  (match-option value [:option :bool]
+                    (none (bool-not fallback))
+                    (some item item)))"
+        kir (:kir (compiler/compile-source source :wasm32-wasi-kotoba-v1))
+        core (component-core/emit kir :wasm32-wasi-kotoba-v1)
+        path (Files/createTempFile
+              "kotoba-component-bool-union-core-" ".wasm"
+              (make-array FileAttribute 0))]
+    (try
+      (Files/write path ^bytes core (make-array java.nio.file.OpenOption 0))
+      (let [inactive (shell/sh wasmtime-binary "run" "--invoke" "cm32p2||choose"
+                               (str path) "0" "2" "0")
+            active (shell/sh wasmtime-binary "run" "--invoke" "cm32p2||choose"
+                             (str path) "1" "2" "0")
+            malformed-fallback
+            (shell/sh wasmtime-binary "run" "--invoke" "cm32p2||choose"
+                      (str path) "0" "0" "2")]
+        (is (zero? (:exit inactive)) (:err inactive))
+        (is (= "1" (str/trim (:out inactive)))
+            "the inactive joined payload is not interpreted")
+        (is (not (zero? (:exit active)))
+            "a selected bool payload must be canonical")
+        (is (not (zero? (:exit malformed-fallback)))
+            "an ordinary bool parameter is validated at entry"))
+      (finally
+        (Files/deleteIfExists path)))))
+
 (deftest structural-union-match-is-lazy-and-rejects-malformed-tags
   (let [source "(ns component.lazy-match (:export [choose]))
                 (defn choose

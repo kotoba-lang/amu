@@ -469,11 +469,13 @@ The same scalar union codec crosses an explicitly named capability import:
 the compiler emits the WIT import, a separately packaged provider exports the
 matching structural type, and closed-world composition rejects missing or
 extra providers. No ambient WASI import is introduced.
-Exhaustive `match-option` and `match-result` over i64 payloads also compile to
-Components. Their branch bodies use the ordinary binary Wasm expression
-emitter, including its fuel global, so arithmetic, `if`, and `let` do not have
-a parallel Component-only implementation; only the Canonical i32
-discriminant/i64 payload adapter is specialized.
+Exhaustive `match-option` and `match-result` over `i64`, `f32`, `f64`, and
+`bool` payloads also compile to Components. Their branch bodies use the shared
+typed binary Wasm expression emitter, including its fuel global, so
+arithmetic, comparisons, `if`, and `let` do not have a parallel
+Component-only implementation. The host-free adapter specializes only the
+Canonical i32 discriminant/native payload boundary; selected bool values are
+checked as 0/1 without interpreting an inactive payload.
 The Core-Wasm compatibility ABI also lowers the monomorphic
 `:option-i64`/`:result-i64` operations through the same sealed descriptor
 encoding as `[:option :i64]`/`[:result :i64 :i64]`; admitted scalar ADTs no
