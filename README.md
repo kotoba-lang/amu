@@ -457,8 +457,13 @@ artifact; no Wasmtime-specific Rust runner is part of the language ABI.
 Bounded `:vector-i64` and `:vector-f64` identity exports now cross that real
 Component boundary as `list<s64>` and `list<f64>`; the compiler validates
 pointer, length, alignment, arena range, and the 16,384-item limit, while
-mutating collection operations remain fail-closed pending the linearity
-analysis required for persistent semantics.
+`drop`, `assoc`, and `conj` export results use bounded copy-on-write and
+canonical post-return so they neither mutate nor alias a borrowed input.
+Option/result matches may return those owned lists from a selected payload,
+another vector parameter, or a bounded literal. Selected aggregate leaves
+remain fully validated and inactive joined slots remain lazy. Repeated
+internal construction still needs linear reuse for efficiency; the
+export-boundary ownership rule does not claim to solve that optimization.
 Structural scalar `[:option T]` and `[:result T E]` values now use the same
 standard Canonical ABI union codec as sealed variants. Identity exports and
 the explicit `option-*-of`/`result-*-of` constructors compile from Kotoba to

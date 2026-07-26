@@ -945,6 +945,70 @@
         (Files/deleteIfExists component-path)
         (Files/deleteIfExists core-path)))))
 
+(deftest kotoba-source-union-match-returns-owned-list-results
+  (doseq [{:keys [source calls]}
+          [{:source
+            "(ns component.owned-option-list
+               (:export [choose])
+               (:schemas
+                {:demo/items
+                 [:record :demo/items
+                  [[:values :vector-i64] [:enabled :bool]]]}))
+             (defn choose
+               [value
+                [:option
+                 [:record :demo/items
+                  [[:values :vector-i64] [:enabled :bool]]]]
+                fallback :vector-i64 item :i64] :vector-i64
+               (match-option
+                value
+                [:option
+                 [:record :demo/items
+                  [[:values :vector-i64] [:enabled :bool]]]]
+                (none fallback)
+                (some selected
+                  (vector-conj
+                   (record-get
+                    [:record :demo/items
+                     [[:values :vector-i64] [:enabled :bool]]]
+                    selected :values)
+                   item))))"
+            :calls
+            [["choose(none, [8, 9], 4)" "[8, 9]"]
+             ["choose(some({values: [1, 2], enabled: true}), [8], 3)"
+              "[1, 2, 3]"]]}
+           {:source
+            "(ns component.owned-result-list (:export [choose]))
+             (defn choose
+               [value [:result :vector-f64 :vector-f64]
+                index :i64 item :f64] :vector-f64
+               (match-result
+                value [:result :vector-f64 :vector-f64]
+                (ok values (vector-f64-drop values index))
+                (err ignored
+                  (vector-f64-assoc (vector-f64 4.5 5.5) index item))))"
+            :calls
+            [["choose(ok([1.5, 2.5, 3.5]), 1, 9.5)" "[2.5, 3.5]"]
+             ["choose(err([1.5, 2.5]), 0, 9.5)" "[9.5, 5.5]"]]}]]
+    (let [compiled (compiler/compile-source source :wasm32-wasi-kotoba-v1)
+          artifact (compiler/compile-component source)
+          path (Files/createTempFile
+                "kotoba-source-owned-union-list-" ".wasm"
+                (make-array FileAttribute 0))]
+      (try
+        (Files/write path ^bytes (:bytes artifact)
+                     (make-array java.nio.file.OpenOption 0))
+        (is (= :kotoba.kir/v4 (get-in compiled [:kir :format])))
+        (is (= :owned-vector-match (:canonical-lowering artifact)))
+        (is (empty? (:required-imports artifact)))
+        (doseq [[invoke expected] calls]
+          (let [run (shell/sh wasmtime-binary "run" "--invoke"
+                              invoke (str path))]
+            (is (zero? (:exit run)) (:err run))
+            (is (= expected (str/trim (:out run))) invoke)))
+        (finally
+          (Files/deleteIfExists path))))))
+
 (deftest structural-union-matches-cover-all-canonical-scalar-types
   (doseq [{:keys [source export calls]}
           [{:source "(ns component.match-option-f64 (:export [choose]))
