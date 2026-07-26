@@ -84,7 +84,18 @@
                  (value/bounded-document! ["vector" (vec (repeat 33 ["null"]))])))
     (is (thrown? clojure.lang.ExceptionInfo
                  (value/bounded-document!
-                  (reduce (fn [item _] ["vector" [item]]) ["null"] (range 9)))))))
+                  ["vector"
+                   (vec (repeat 9
+                                ["vector" (vec (repeat 32 ["null"]))]))])))
+    (is (thrown? clojure.lang.ExceptionInfo
+                 (value/bounded-document!
+                  (reduce (fn [item _] ["vector" [item]]) ["null"] (range 9))))))
+  (testing "the shared UTF-8 budget is measured in bytes, not characters"
+    (is (= ["string" "😀"]
+           (value/bounded-document! ["string" "😀"])))
+    (is (thrown? clojure.lang.ExceptionInfo
+                 (value/bounded-document!
+                  ["string" (apply str (repeat 16385 "😀"))])))))
 
 (def vector-source
   "(ns document.vector (:export [main first-item kind doc-kind bool-kind key-name entry changed tail removed missing missing-entry same-doc same-sample different-sample signed-zero-equal repeated-nulls repeated-value bad-assoc bad-drop]))

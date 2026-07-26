@@ -39,6 +39,21 @@
         (is (re-find #"component-type" (:out result))))
       (finally (Files/deleteIfExists path)))))
 
+(deftest task-and-bounded-byte-stream-map-to-wasi-03-linear-types
+  (let [stream-type [:stream :bytes]
+        task-type [:task stream-type]
+        value {:format :kotoba.kir/v4 :exports ['open]
+               :schemas {}
+               :functions
+               [{:name 'open :params ['url] :param-types [:string]
+                 :result task-type
+                 :body (list 'typed-cap-call 13 :string task-type 'url)}]}
+        emitted (wit/emit value)
+        source (:source emitted)]
+    (is (= [:http/get-stream] (:imports emitted)))
+    (is (re-find #"get: func\(request: string\) -> future<stream<u8>>" source))
+    (is (re-find #"export open: func\(url: string\) -> future<stream<u8>>" source))))
+
 (deftest sealed-inline-record-exports-use-their-nominal-wit-type
   (let [record-type [:record :app/point [[:x :i64] [:visible :bool]]]
         value {:format :kotoba.kir/v4 :exports ['echo]

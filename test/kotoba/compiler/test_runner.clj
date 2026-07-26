@@ -43,6 +43,7 @@
             [kotoba.compiler.native-executor-test]
             [kotoba.compiler.admission-test]
             [kotoba.compiler.guest-grammar-conformance-test]
+            [kotoba.compiler.host-profile-test]
             [kotoba.compiler.property-test]
             [kotoba.compiler.project-test]
             [kotoba.compiler.receipt-test]
@@ -59,6 +60,7 @@
             [kotoba.compiler.http-transport-test]
             [kotoba.compiler.llm-provider-test]
             [kotoba.compiler.llm-transport-test]
+            [kotoba.compiler.linear-resource-test]
             [kotoba.compiler.storage-provider-test]
             [kotoba.compiler.storage-transport-test]
             [kotoba.compiler.clock-provider-test]
@@ -112,6 +114,7 @@
                                           'kotoba.compiler.interface-test
                                           'kotoba.compiler.admission-test
                                           'kotoba.compiler.guest-grammar-conformance-test
+                                          'kotoba.compiler.host-profile-test
                                           'kotoba.compiler.signing-test
                                           'kotoba.compiler.source-path-test
                                           'kotoba.compiler.typed-value-conformance-test
@@ -123,6 +126,7 @@
                                           'kotoba.compiler.http-transport-test
                                           'kotoba.compiler.llm-provider-test
                                           'kotoba.compiler.llm-transport-test
+                                          'kotoba.compiler.linear-resource-test
                                           'kotoba.compiler.storage-provider-test
                                           'kotoba.compiler.storage-transport-test
                                           'kotoba.compiler.clock-provider-test

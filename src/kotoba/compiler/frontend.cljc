@@ -52,7 +52,8 @@
   '{:identity/sign 1 :identity/verify 2 :hash/sha256 3 :http/post 4
     :log/read 5 :log/append 6 :clock/now 7 :state/transact 8
     :ui/commit 9 :ui/next-event 10 :llm/generate 11
-    :storage/transact 12})
+    :storage/transact 12 :http/get-stream 13 :object/get-stream 14
+    :object/put-block 15 :object/compare-and-set-ref 16})
 
 (defn- load-capability-registry []
   #?(:clj
@@ -239,7 +240,7 @@
 ;; most 256 distinct capabilities can ever exist), not the unrelated
 ;; function-count limit.
 (def max-namespace-capabilities 256)
-(def value-types #{:i64 :f32 :f64 :string :keyword :symbol :map :bool :option-i64 :result-i64
+(def value-types #{:i64 :f32 :f64 :string :keyword :symbol :bytes :map :bool :option-i64 :result-i64
                    :vector-i64 :vector-f64 :string-index :disjoint-set-i64 :document})
 
 (declare reject!)
@@ -269,10 +270,20 @@
   (and (vector? type) (= 2 (count type)) (= :ref (first type))
        (keyword? (second type)) (namespace (second type))))
 
+(defn- task-type? [type]
+  (and (vector? type) (= 2 (count type)) (= :task (first type))))
+
+(defn- stream-type? [type]
+  (and (= type [:stream :bytes])))
+
+(defn- linear-resource-type? [type]
+  (or (task-type? type) (stream-type? type)))
+
 (defn- structured-type? [type]
   (or (parametric-result-type? type) (variant-type? type) (generic-option-type? type)
       (heterogeneous-vector-type? type) (typed-set-type? type)
-      (canonical-typed-map-type? type) (record-type? type) (schema-ref-type? type)))
+      (canonical-typed-map-type? type) (record-type? type) (schema-ref-type? type)
+      (task-type? type) (stream-type? type)))
 
 (defn- validate-value-type!
   ([type] (validate-value-type! type 0 (volatile! 0)))
@@ -286,6 +297,10 @@
      (contains? value-types type)
      type
      (schema-ref-type? type)
+     type
+     (task-type? type)
+     (do (validate-value-type! (second type) (inc depth) nodes) type)
+     (stream-type? type)
      type
      (parametric-result-type? type)
      (do (validate-value-type! (second type) (inc depth) nodes)
@@ -1724,14 +1739,20 @@
                  (map desugar-expr (rest args)))
           (apply list op (map desugar-expr args)))
         typed-cap-call
-        (if (and (seq args) (keyword? (first args)))
-          (let [[capability request-type result-type request & extra] args]
-            (list* 'typed-cap-call
+        (let [[capability & operands] args]
+          (list* 'typed-cap-call
+                 (if (keyword? capability)
                    (resolve-capability-keyword! capability form)
-                   request-type result-type
-                   (when (some? request) (desugar-expr request))
-                   (map desugar-expr extra)))
-          (apply list op (map desugar-expr args)))
+                   capability)
+                 ;; Type descriptors are compiler syntax, not vector value
+                 ;; expressions. Preserve them while desugaring the request
+                 ;; (including nil -> option-none) and any malformed excess
+                 ;; operands so the validator still owns the arity error.
+                 (map-indexed (fn [index operand]
+                                (if (< index 2)
+                                  operand
+                                  (desugar-expr operand)))
+                              operands)))
         xorshift32
         (do
           (when-not (= 1 (count args))
@@ -3019,7 +3040,20 @@
                                  functions))]
     (doseq [{:keys [name params param-types result body]} functions]
       (let [actual (infer-expression-type body (zipmap params param-types) signatures)]
-        (require-expression-type! actual result name)))
+        (require-expression-type! actual result name)
+        ;; Linear values cannot enter ordinary locals/parameters yet: until
+        ;; move-aware control-flow lowering exists, only a direct capability
+        ;; result may cross the component export boundary. This is useful for
+        ;; Worker hosts while remaining fail-closed against copying a future
+        ;; or stream handle as if it were an ordinary externref.
+        (when (some linear-resource-type? param-types)
+          (reject! "linear resource parameters require move-aware lowering" name))
+        (when (linear-resource-type? result)
+          (when-not (and (seq? body)
+                         (= 'typed-cap-call (first body))
+                         (= result (nth body 3 nil)))
+            (reject! "linear resource result must be one direct typed capability move"
+                     name)))))
     (let [nodes (mapcat #(tree-seq coll? seq (:body %)) functions)
           literal-bytes
           (reduce + 0
@@ -3645,9 +3679,9 @@
     (let [typed-values? (boolean
                          (or (seq (:schemas namespace-info))
                          (some (fn [{:keys [param-types result body]}]
-                                 (or (some #(or (contains? #{:f32 :f64 :string :keyword :map :bool :option-i64 :result-i64 :vector-i64 :vector-f64 :string-index :disjoint-set-i64 :document} %)
+                                 (or (some #(or (contains? #{:f32 :f64 :string :keyword :bytes :map :bool :option-i64 :result-i64 :vector-i64 :vector-f64 :string-index :disjoint-set-i64 :document} %)
                                                 (structured-type? %)) param-types)
-                                     (or (contains? #{:f32 :f64 :string :keyword :map :bool :option-i64 :result-i64 :vector-i64 :vector-f64 :string-index :disjoint-set-i64 :document} result)
+                                     (or (contains? #{:f32 :f64 :string :keyword :bytes :map :bool :option-i64 :result-i64 :vector-i64 :vector-f64 :string-index :disjoint-set-i64 :document} result)
                                          (structured-type? result))
                                      (some #(or (string? %) (keyword? %) (boolean? %)
                                                 (and (seq? %)

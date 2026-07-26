@@ -9,7 +9,8 @@
 (def custom-section-name "kotoba.typed")
 
 (def ^:private primitive-tags
-  {:i64 0 :string 1 :keyword 2 :bool 3 :symbol 19 :vector-i64 11 :f64 12 :f32 13
+  {:i64 0 :string 1 :keyword 2 :bool 3 :symbol 19 :bytes 20
+   :vector-i64 11 :f64 12 :f32 13
    :vector-f64 14 :string-index 16 :disjoint-set-i64 17 :document 18})
 
 (def ^:private scalar-adt-aliases
@@ -30,7 +31,7 @@
            (or (contains? primitive-tags value)
                (contains? scalar-adt-aliases value)))
       (and (vector? value)
-           (contains? #{:option :result :variant :vector :set :map :record :ref}
+           (contains? #{:option :result :variant :vector :set :map :record :ref :task :stream}
                       (first value)))))
 
 (defn- uleb [n]
@@ -80,6 +81,11 @@
       :record (into [9] (concat (text-bytes (keyword-text (second descriptor)))
                                 (encode-named-members (nth descriptor 2))))
       :ref (into [15] (text-bytes (keyword-text (second descriptor))))
+      :task (into [21] (encode-descriptor (second descriptor)))
+      :stream (if (= descriptor [:stream :bytes])
+                [22]
+                (throw (ex-info "only bounded Stream Bytes is admitted"
+                                {:phase :wasm-typed-metadata :descriptor descriptor})))
       (throw (ex-info "unsupported Wasm typed descriptor"
                       {:phase :wasm-typed-metadata :descriptor descriptor}))))))
 

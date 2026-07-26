@@ -32,6 +32,10 @@
   :bool {:wit :bool}
   :string {:wit :string :validation :kotoba-utf8-byte-limit}
   :keyword {:wit :string :validation :kotoba-canonical-keyword}
+  :bytes {:wit :list-u8 :validation :kotoba-stream-pull-byte-limit}
+  :task {:wit :future :ownership :linear}
+  :stream-bytes {:wit :stream-u8 :ownership :linear
+                 :max-pull-bytes 65536}
   :option {:wit :option}
   :result {:wit :result}
   :record {:wit :record :identity :schema-digest-metadata}
@@ -48,8 +52,8 @@
   :ambient-wasi false}
  :lowering {:sync-function :wit-func
             :async-function :wit-async-func
-            :future :declared-only
-            :stream :declared-only
+            :future :compiler-typed
+            :stream :compiler-typed-bounded
             :canonical-abi :compiler-generated
             :private-externref-abi :legacy-only}
  :capabilities
@@ -71,7 +75,15 @@
   {:name :llm/generate :id 11 :interface "llm" :function "generate"
    :kit :llm :provider-wasi []}
   {:name :storage/transact :id 12 :interface "storage" :function "transact"
-   :kit :storage :provider-wasi []}]
+   :kit :storage :provider-wasi []}
+  {:name :http/get-stream :id 13 :interface "http-stream" :function "get"
+   :kit :http-stream :provider-wasi ["wasi:http/outgoing-handler@0.3.0"]}
+  {:name :object/get-stream :id 14 :interface "object-store" :function "get-stream"
+   :kit :object-stream :provider-wasi []}
+  {:name :object/put-block :id 15 :interface "object-store" :function "put-block"
+   :kit :object-stream :provider-wasi []}
+  {:name :object/compare-and-set-ref :id 16 :interface "object-store"
+   :function "compare-and-set-ref" :kit :object-stream :provider-wasi []}]
  :provider-authority
  {:rule :kit-declared-only
   :no-inferred-wasi true

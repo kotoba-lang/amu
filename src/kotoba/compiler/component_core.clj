@@ -34,28 +34,6 @@
        (= :string result)
        (seq (string-leaves body (set params)))))
 
-(defn- vector-i64-identity-function?
-  [{:keys [params param-types result body]}]
-  (and (= 1 (count params))
-       (= [:vector-i64] param-types)
-       (= :vector-i64 result)
-       (= (first params) body)))
-
-(defn- vector-i64-literal-function?
-  [{:keys [params param-types result body]}]
-  (and (empty? params)
-       (empty? param-types)
-       (= :vector-i64 result)
-       (seq? body)
-       (= 'vector-new (first body))
-       (<= (count (rest body)) value/vector-item-limit)
-       (every? integer? (rest body))))
-
-(defn- uses-operation? [function operation]
-  (boolean
-   (some #(and (seq? %) (= operation (first %)))
-         (tree-seq coll? seq (:body function)))))
-
 (defn- sealed-scalar-record [descriptor schemas]
   (let [schema (cond
                  (and (vector? descriptor) (= :ref (first descriptor)))
@@ -229,101 +207,6 @@
          schema
          (canonical/layout descriptor schemas))))
 
-(defn- structural-union-identity-function?
-  "An identity export over a structural Component Model option/result.
-  These layouts have the same discriminant-plus-joined-payload shape as a
-  sealed variant, so they deliberately share `variant-wat`.  Keep this first
-  executable slice to scalar payloads; admitting nested/string/list payloads
-  requires the corresponding recursive validation proof."
-  [function schemas]
-  (let [{:keys [params param-types result body]} function
-        descriptor (first param-types)
-        payloads (when (vector? descriptor)
-                   (case (first descriptor)
-                     :option [(second descriptor)]
-                     :result [(second descriptor) (nth descriptor 2)]
-                     nil))]
-    (and (= 1 (count params))
-         (= 1 (count param-types))
-         (= descriptor result)
-         (= (first params) body)
-         (seq payloads)
-         (every? #{:i64 :f32 :f64 :bool} payloads)
-         (canonical/layout descriptor schemas))))
-
-(defn- structural-union-construction
-  "Return the fixed case/payload plan for a scalar option/result constructor."
-  [function schemas]
-  (let [{:keys [params param-types result body]} function
-        [op descriptor payload] (when (seq? body) body)
-        construction
-        (case [op (when (vector? descriptor) (first descriptor))]
-          [option-none-of :option] {:case-index 0 :payload-type nil}
-          [option-some-of :option] {:case-index 1 :payload-type (second descriptor)}
-          [result-ok-of :result] {:case-index 0 :payload-type (second descriptor)}
-          [result-err-of :result] {:case-index 1 :payload-type (get descriptor 2)}
-          nil)
-        {:keys [case-index payload-type]} construction]
-    (when (and construction
-               (vector? descriptor)
-               (= descriptor result)
-               (contains? #{:option :result} (first descriptor))
-               (= (if payload-type 1 0) (count params))
-               (= (if payload-type [payload-type] []) param-types)
-               (or (nil? payload-type)
-                   (contains? #{:i64 :f32 :f64 :bool} payload-type))
-               (or (nil? payload-type) (= payload (first params)))
-               (canonical/layout descriptor schemas))
-      (assoc construction :descriptor descriptor))))
-
-(defn- structural-union-elimination
-  "Return a plan for a scalar option/result predicate or payload projection.
-  The admitted projection shape takes its fallback as a parameter, preserving
-  an exact flat Component signature without compiling arbitrary branch
-  expressions in this increment."
-  [function schemas]
-  (let [{:keys [params param-types result body]} function
-        [op descriptor value fallback] (when (seq? body) body)
-        union-param (first params)
-        union-type (first param-types)
-        predicate-kind
-        ({'option-some?-of :option 'result-ok?-of :result} op)
-        predicate? (some? predicate-kind)
-        projection
-        (case op
-          option-value-of {:selected-case 1 :payload-type (second descriptor)}
-          result-value-of {:selected-case 0 :payload-type (second descriptor)}
-          result-error-of {:selected-case 1 :payload-type (get descriptor 2)}
-          nil)
-        projection-kind
-        ({'option-value-of :option
-          'result-value-of :result
-          'result-error-of :result} op)
-        payload-type (:payload-type projection)]
-    (when (and (vector? descriptor)
-               (= descriptor union-type)
-               (= value union-param)
-               (contains? #{:option :result} (first descriptor))
-               (or (nil? predicate-kind)
-                   (= predicate-kind (first descriptor)))
-               (or (nil? projection-kind)
-                   (= projection-kind (first descriptor)))
-               (canonical/layout descriptor schemas)
-               (if predicate?
-                 (and (= 1 (count params))
-                      (= 1 (count param-types))
-                      (= :bool result))
-                 (and projection
-                      (= 2 (count params))
-                      (= [descriptor payload-type] param-types)
-                      (= fallback (second params))
-                      (= payload-type result)
-                      (contains? #{:i64 :f32 :f64 :bool} payload-type))))
-      (if predicate?
-        {:descriptor descriptor :operation op :kind :predicate}
-        (assoc projection :descriptor descriptor :operation op
-               :kind :projection)))))
-
 (defn- scalar-record-projection [function schemas]
   (let [{:keys [params param-types result body]} function
         descriptor (first param-types)
@@ -404,6 +287,22 @@
                (= result-type result)
                (contains? #{:i64 :f32 :f64} request-type)
                (contains? #{:i64 :f32 :f64} result-type)
+               capability)
+      capability)))
+
+(defn- task-stream-capability-call [function]
+  (let [{:keys [params param-types result body]} function
+        [_ id request-type result-type request] (when (seq? body) body)
+        capability (some #(when (= id (:id %)) %)
+                         (:capabilities component-wit/contract))]
+    (when (and (= 1 (count params))
+               (= [:i64] param-types)
+               (= request-type :i64)
+               (= result [:task [:stream :bytes]])
+               (= result-type result)
+               (= request (first params))
+               (= 'typed-cap-call (first body))
+               (contains? #{13 14} id)
                capability)
       capability)))
 
@@ -507,33 +406,6 @@
                (= body-result-type result)
                (= request-type result)
                request-schema result-schema capability)
-      {:capability capability :request request-type :result result})))
-
-(defn- structural-union-capability-call
-  "Admission for a direct named capability call that transports one scalar
-  structural option/result type unchanged."
-  [function schemas]
-  (let [{:keys [params param-types result body]} function
-        request-type (first param-types)
-        [_ id body-request-type body-result-type request] (when (seq? body) body)
-        capability (some #(when (= id (:id %)) %) (:capabilities component-wit/contract))
-        payloads (when (vector? request-type)
-                   (case (first request-type)
-                     :option [(second request-type)]
-                     :result [(second request-type) (get request-type 2)]
-                     nil))]
-    (when (and (= 1 (count params))
-               (= 1 (count param-types))
-               (seq? body)
-               (= 'typed-cap-call (first body))
-               (= request (first params))
-               (= body-request-type request-type)
-               (= body-result-type result)
-               (= request-type result)
-               (seq payloads)
-               (every? #{:i64 :f32 :f64 :bool} payloads)
-               (canonical/layout request-type schemas)
-               capability)
       {:capability capability :request request-type :result result})))
 
 (defn- asymmetric-variant-capability-case?
@@ -696,14 +568,13 @@
            (scalar-capability-call (first exports))) :scalar-capability-call
       (and (= 1 (count (:functions kir)))
            (= 1 (count exports))
+           (task-stream-capability-call (first exports))) :task-stream-capability-call
+      (and (= 1 (count (:functions kir)))
+           (= 1 (count exports))
            (record-capability-call (first exports) (:schemas kir))) :record-capability-call
       (and (= 1 (count (:functions kir)))
            (= 1 (count exports))
            (variant-capability-call (first exports) (:schemas kir))) :variant-capability-call
-      (and (= 1 (count (:functions kir)))
-           (= 1 (count exports))
-           (structural-union-capability-call (first exports) (:schemas kir)))
-      :structural-union-capability-call
       (and (= 1 (count (:functions kir)))
            (= 1 (count exports))
            (different-variant-capability-call (first exports) (:schemas kir)))
@@ -722,14 +593,6 @@
            (empty? (:effects kir))) :string-expression
       (and (= 1 (count (:functions kir)))
            (= 1 (count exports))
-           (vector-i64-identity-function? (first exports))
-           (empty? (:effects kir))) :vector-i64-identity
-      (and (= 1 (count (:functions kir)))
-           (= 1 (count exports))
-           (vector-i64-literal-function? (first exports))
-           (empty? (:effects kir))) :vector-i64-literal
-      (and (= 1 (count (:functions kir)))
-           (= 1 (count exports))
            (scalar-record-identity-function? (first exports) (:schemas kir))
            (empty? (:effects kir))) :scalar-record-identity
       (and (= 1 (count (:functions kir)))
@@ -740,18 +603,6 @@
            (= 1 (count exports))
            (variant-identity-function? (first exports) (:schemas kir))
            (empty? (:effects kir))) :variant-identity
-      (and (= 1 (count (:functions kir)))
-           (= 1 (count exports))
-           (structural-union-identity-function? (first exports) (:schemas kir))
-           (empty? (:effects kir))) :structural-union-identity
-      (and (= 1 (count (:functions kir)))
-           (= 1 (count exports))
-           (structural-union-construction (first exports) (:schemas kir))
-           (empty? (:effects kir))) :structural-union-construction
-      (and (= 1 (count (:functions kir)))
-           (= 1 (count exports))
-           (structural-union-elimination (first exports) (:schemas kir))
-           (empty? (:effects kir))) :structural-union-elimination
       (and (= 1 (count (:functions kir)))
            (= 1 (count exports))
            (string-field-record-identity-function? (first exports) (:schemas kir))
@@ -769,12 +620,8 @@
            (scalar-record-update (first exports) (:schemas kir))
            (empty? (:effects kir))) :scalar-record-update
       :else
-      (if (some #(uses-operation? % 'vector-conj) exports)
-        (reject "component vector-conj requires linearity analysis (ADR 0077)"
-                {:operation 'vector-conj})
-        (reject "component function body has no qualified Canonical lowering"
-                {:exports (mapv #(select-keys % [:name :param-types :result :body])
-                                exports)})))))
+      (reject "component function body has no qualified Canonical lowering"
+              {:exports (mapv #(select-keys % [:name :param-types :result :body]) exports)}))))
 
 (defn- wit-name [symbol]
   (let [value (name symbol)]
@@ -899,81 +746,6 @@
      data-segments
      ")\n")))
 
-(declare bounded-bump-realloc-wat)
-
-(defn- vector-i64-identity-wat
-  "Canonical `list<s64> -> list<s64>` identity.
-
-  The Canonical adapter has already copied the input elements into this
-  module's memory through `cm32p2_realloc`. Validate the complete `(ptr,len)`
-  pair before returning it; the result record aliases that admitted input
-  buffer and is consumed before `_post` resets the arena."
-  [function]
-  (let [export (wit-name (:name function))
-        pages wasm/component-memory-pages
-        capacity wasm/component-arena-capacity
-        item-limit value/vector-item-limit]
-    (str
-     "(module\n"
-     "  (memory (export \"cm32p2_memory\") " pages " " pages ")\n"
-     "  (global $next (mut i32) (i32.const 8))\n"
-     (bounded-bump-realloc-wat capacity)
-     "  (func (export \"cm32p2||" export "\")"
-     " (param $ptr i32) (param $len i32) (result i32)\n"
-     "    (local $bytes i32) (local $end i32) (local $ret i32)\n"
-     "    local.get $len i32.const " item-limit " i32.gt_u if unreachable end\n"
-     "    local.get $len i32.const 3 i32.shl local.set $bytes\n"
-     "    local.get $len i32.eqz if else\n"
-     "      local.get $ptr i32.const 8 i32.lt_u if unreachable end\n"
-     "      local.get $ptr i32.const 7 i32.and if unreachable end\n"
-     "    end\n"
-     "    local.get $ptr local.get $bytes i32.add local.tee $end\n"
-     "    local.get $ptr i32.lt_u if unreachable end\n"
-     "    local.get $end i32.const " capacity " i32.gt_u if unreachable end\n"
-     "    i32.const 0 i32.const 0 i32.const 4 i32.const 8\n"
-     "    call $realloc local.tee $ret\n"
-     "    local.get $ptr i32.store\n"
-     "    local.get $ret local.get $len i32.store offset=4\n"
-     "    local.get $ret)\n"
-     "  (func (export \"cm32p2||" export "_post\") (param i32)\n"
-     "    i32.const 8 global.set $next)\n"
-     "  (func (export \"cm32p2_initialize\") i32.const 8 global.set $next)\n"
-     ")\n")))
-
-(defn- vector-i64-literal-wat [function]
-  (let [export (wit-name (:name function))
-        items (vec (rest (:body function)))
-        bytes (* 8 (count items))
-        pages wasm/component-memory-pages
-        capacity wasm/component-arena-capacity
-        stores
-        (apply str
-               (map-indexed
-                (fn [index item]
-                  (str "    local.get $out i64.const " item
-                       " i64.store offset=" (+ 8 (* index 8)) "\n"))
-                items))]
-    (str
-     "(module\n"
-     "  (memory (export \"cm32p2_memory\") " pages " " pages ")\n"
-     "  (global $next (mut i32) (i32.const 8))\n"
-     (bounded-bump-realloc-wat capacity)
-     "  (func (export \"cm32p2||" export "\") (result i32)\n"
-     "    (local $out i32) (local $ret i32)\n"
-     "    i32.const 0 i32.const 0 i32.const 8 i32.const " (+ 8 bytes)
-     " call $realloc local.set $out\n"
-     "    local.get $out i32.const " (count items) " i32.store\n"
-     stores
-     "    i32.const 0 i32.const 0 i32.const 4 i32.const 8\n"
-     "    call $realloc local.tee $ret\n"
-     "    local.get $out i32.const 8 i32.add i32.store\n"
-     "    local.get $ret i32.const " (count items) " i32.store offset=4\n"
-     "    local.get $ret)\n"
-     "  (func (export \"cm32p2||" export "_post\") (param i32)\n"
-     "    i32.const 8 global.set $next)\n"
-     "  (func (export \"cm32p2_initialize\") i32.const 8 global.set $next)\n"
-     ")\n")))
-
 (defn- wasm-value-type [descriptor]
   ({:i64 "i64" :f32 "f32" :f64 "f64" :bool "i32"} descriptor))
 
@@ -1041,9 +813,7 @@
   the ADR 0051 one-level-nested shape, so no leaf here is itself a nested
   record."
   [layout]
-  (cond
-    (empty? (:flat layout)) []
-    (contains? layout :fields)
+  (if (contains? layout :fields)
     (loop [remaining (:fields layout) flat-index 0 acc []]
       (if-let [{:keys [offset layout]} (first remaining)]
         (let [descriptor (:descriptor layout)
@@ -1053,7 +823,6 @@
                      max-bytes (assoc :max-bytes max-bytes))]
           (recur (next remaining) (+ flat-index width) (conj acc leaf)))
         acc))
-    :else
     [{:relative-offset 0 :descriptor (:descriptor layout) :flat-index 0}]))
 
 (defn- variant-flat-value-expr
@@ -1657,6 +1426,24 @@
      "    i32.const 0)\n"
      "  (func (export \"cm32p2_initialize\")))\n")))
 
+(defn- task-stream-capability-wat [function capability]
+  (let [export (wit-name (:name function))
+        module (str "cm32p2|kotoba:application/"
+                    (name (:interface capability)) "@1")
+        operation (:function capability)]
+    (str
+     "(module\n"
+     "  (import \"" module "\" \"" operation
+     "\" (func $execute (param i64) (result i32)))\n"
+     "  (memory (export \"cm32p2_memory\") 1 1)\n"
+     "  (func (export \"cm32p2||" export
+     "\") (param $request i64) (result i32)\n"
+     "    local.get $request call $execute)\n"
+     "  (func (export \"cm32p2||" export "_post\") (param i32))\n"
+     "  (func (export \"cm32p2_realloc\")"
+     " (param i32 i32 i32 i32) (result i32) i32.const 0)\n"
+     "  (func (export \"cm32p2_initialize\")))\n")))
+
 (defn- record-capability-wat [function schemas plan]
   (let [export (wit-name (:name function))
         capability (:capability plan)
@@ -1812,90 +1599,6 @@
    "      local.set $copy-size\n"
    "      local.get $ptr local.get $old-ptr local.get $copy-size memory.copy\n"
    "    end local.get $ptr)\n"))
-
-(defn- structural-union-construction-wat [function schemas plan]
-  (let [export (wit-name (:name function))
-        layout (canonical/layout (:descriptor plan) schemas)
-        payload-type (:payload-type plan)
-        payload-offset (:payload-offset layout)
-        bool-validation (when (= :bool payload-type)
-                          "    local.get $value i32.const 1 i32.gt_u if unreachable end\n")
-        payload-store (when payload-type
-                        (str "    local.get $ret local.get $value "
-                             (wasm-store payload-type) " offset=" payload-offset "\n"))]
-    (str
-     "(module\n"
-     "  (memory (export \"cm32p2_memory\") 1 1)\n"
-     "  (global $next (mut i32) (i32.const 8))\n"
-     (bounded-bump-realloc-wat 65536)
-     "  (func (export \"cm32p2||" export "\")"
-     (when payload-type (str " (param $value " (wasm-value-type payload-type) ")"))
-     " (result i32)\n"
-     "    (local $ret i32)\n"
-     bool-validation
-     "    i32.const 0 i32.const 0 i32.const " (:alignment layout)
-     " i32.const " (:size layout) " call $realloc local.set $ret\n"
-     "    local.get $ret i32.const " (:case-index plan) " "
-     (variant-disc-store (:discriminant-size layout)) " offset=0\n"
-     payload-store
-     "    local.get $ret)\n"
-     "  (func (export \"cm32p2||" export "_post\") (param i32)\n"
-     "    i32.const 8 global.set $next)\n"
-     "  (func (export \"cm32p2_initialize\") i32.const 8 global.set $next))\n")))
-
-(defn- structural-union-elimination-wat [function schemas plan]
-  (let [export (wit-name (:name function))
-        layout (canonical/layout (:descriptor plan) schemas)
-        joined-types (vec (rest (:flat layout)))
-        joined-params
-        (apply str
-               (map-indexed
-                (fn [index core-type]
-                  (str " (param $p" index " " (core-type-name core-type) ")"))
-                joined-types))
-        predicate? (= :predicate (:kind plan))
-        payload-type (:payload-type plan)
-        result-type (if predicate? :bool payload-type)
-        fallback-param (when-not predicate?
-                         (str " (param $fallback "
-                              (wasm-value-type payload-type) ")"))
-        predicate-expression
-        (case (:operation plan)
-          option-some?-of "    local.get $disc\n"
-          result-ok?-of "    local.get $disc i32.eqz\n"
-          nil)
-        payload-expression
-        (when-not predicate?
-          (variant-flat-value-expr joined-types 0 (core-type-of payload-type)))
-        selected-body
-        (when-not predicate?
-          (if (= :bool payload-type)
-            (str "      " payload-expression
-                 " local.tee $selected i32.const 1 i32.gt_u if unreachable end\n"
-                 "      local.get $selected\n")
-            (str "      " payload-expression "\n")))
-        projection-expression
-        (when-not predicate?
-          (str
-           (when (= :bool payload-type)
-             "    local.get $fallback i32.const 1 i32.gt_u if unreachable end\n")
-           "    local.get $disc i32.const " (:selected-case plan) " i32.eq\n"
-           "    if (result " (wasm-value-type payload-type) ")\n"
-           selected-body
-           "    else\n"
-           "      local.get $fallback\n"
-           "    end\n"))]
-    (str
-     "(module\n"
-     "  (func (export \"cm32p2||" export "\") (param $disc i32)"
-     joined-params fallback-param " (result " (wasm-value-type result-type) ")\n"
-     (when (= :bool payload-type) "    (local $selected i32)\n")
-     "    local.get $disc i32.const 2 i32.ge_u if unreachable end\n"
-     (if predicate? predicate-expression projection-expression)
-     "  )\n"
-     "  (func (export \"cm32p2||" export "_post\") (param "
-     (wasm-value-type result-type) "))\n"
-     "  (func (export \"cm32p2_initialize\")))\n")))
 
 (defn- variant-capability-wat
   "Application-side standard32 core module for a direct `typed-cap-call`
@@ -2885,6 +2588,11 @@
   ([kir target] (emit kir target {}))
   ([kir target opts]
   (case (assert-supported! kir)
+    :task-stream-capability-call
+    (let [function (first (exported-functions kir))]
+      (wasm-tools/parse-wat
+       (task-stream-capability-wat
+        function (task-stream-capability-call function))))
     :scalar-literal-capability-call
     (let [function (first (exported-functions kir))]
       (if (= :linear-resource (:capability-mode opts))
@@ -2899,12 +2607,6 @@
      kir target (assoc opts :capability-imports (scalar-capability-imports kir)))
     :string-expression (wasm-tools/parse-wat
                         (string-expression-wat (first (exported-functions kir))))
-    :vector-i64-identity
-    (wasm-tools/parse-wat
-     (vector-i64-identity-wat (first (exported-functions kir))))
-    :vector-i64-literal
-    (wasm-tools/parse-wat
-     (vector-i64-literal-wat (first (exported-functions kir))))
     :scalar-record-identity
     (wasm-tools/parse-wat
      (scalar-record-wat (first (exported-functions kir)) (:schemas kir)))
@@ -2914,21 +2616,6 @@
     :variant-identity
     (wasm-tools/parse-wat
      (variant-wat (first (exported-functions kir)) (:schemas kir)))
-    :structural-union-identity
-    (wasm-tools/parse-wat
-     (variant-wat (first (exported-functions kir)) (:schemas kir)))
-    :structural-union-construction
-    (let [function (first (exported-functions kir))]
-      (wasm-tools/parse-wat
-       (structural-union-construction-wat
-        function (:schemas kir)
-        (structural-union-construction function (:schemas kir)))))
-    :structural-union-elimination
-    (let [function (first (exported-functions kir))]
-      (wasm-tools/parse-wat
-       (structural-union-elimination-wat
-        function (:schemas kir)
-        (structural-union-elimination function (:schemas kir)))))
     :string-field-record-identity
     (wasm-tools/parse-wat
      (string-field-record-wat (first (exported-functions kir)) (:schemas kir)))
@@ -2962,12 +2649,6 @@
       (wasm-tools/parse-wat
        (variant-capability-wat function (:schemas kir)
                                (variant-capability-call function (:schemas kir)))))
-    :structural-union-capability-call
-    (let [function (first (exported-functions kir))]
-      (wasm-tools/parse-wat
-       (variant-capability-wat
-        function (:schemas kir)
-        (structural-union-capability-call function (:schemas kir)))))
     :different-variant-capability-call
     (let [function (first (exported-functions kir))]
       (wasm-tools/parse-wat

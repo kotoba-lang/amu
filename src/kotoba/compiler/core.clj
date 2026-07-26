@@ -138,6 +138,18 @@
                  (second form))))
        set))
 
+(def ^:private portable-component-capability-imports
+  "The compiler registry is append-only. These names are the stable ABI; the
+  numeric ids remain compiler-local and are deliberately not exported."
+  {13 :aiueos.component/aiueos-http-get-stream
+   14 :aiueos.component/aiueos-object-get-stream
+   15 :aiueos.component/aiueos-object-put-block
+   16 :aiueos.component/aiueos-object-compare-and-set-ref})
+
+(defn- component-import-key [id]
+  (or (get portable-component-capability-imports id)
+      (abi/component-import-key id)))
+
 (defn compile-component
   "Compile the currently qualified slice to a validated Component Model binary
   plus its admission request. Structured/provider Canonical ABI lowering
@@ -184,11 +196,11 @@
                                                :capability-mode capability-mode})
          packaged (component-artifact/package component-bytes kir wit)]
      (assoc packaged
-            :capabilities (into #{} (map abi/component-import-key) capability-ids)
+            :capabilities (into #{} (map component-import-key) capability-ids)
             :component-imports
             (into (sorted-map)
                   (map (fn [id]
-                         [(abi/component-import-key id)
+                         [(component-import-key id)
                           (get component-abilities id)]))
                   capability-ids)
             :wit wit

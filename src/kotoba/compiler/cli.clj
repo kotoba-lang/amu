@@ -8,27 +8,25 @@
             [kotoba.compiler.diagnostic :as diagnostic]
             [kotoba.compiler.ios-aot :as ios-aot]
             [kotoba.compiler.interface :as interface]
+            [kotoba.compiler.host-profile :as host-profile]
             [kotoba.compiler.project-files :as project-files]
             [kotoba.compiler.native-executor :as native-executor]
             [kotoba.compiler.packaging.pe32plus :as pe32plus]
             [kotoba.compiler.receipt :as receipt]
-            [kotoba.compiler.test-profile :as test-profile]
             [kotoba.compiler.release :as release]
             [kotoba.compiler.runtime-identity :as runtime-identity]
             [kotoba.compiler.signing :as signing]
             [kotoba.compiler.source-path :as source-path]
             [kotoba.compiler.target :as target-profile]
+            [kotoba.compiler.test-profile :as test-profile]
             [kotoba.compiler.verifier :as verifier]
             [clojure.data.json :as json]
             [clojure.string :as str])
   (:gen-class))
 
 (defn- parse-target [s]
-  (case s "wasm32" :wasm32-kotoba-v1 "x86_64" :x86_64-kotoba-v1
+  (case s "wasm32" :wasm32-kotoba-v1 "wasm-component" :wasm-component-kotoba-v1 "x86_64" :x86_64-kotoba-v1
         "aarch64" :aarch64-kotoba-v1
-        ;; ADR-2607252500: the primary application artifact.
-        "component" :wasm-component-kotoba-v1
-        "wasm-component" :wasm-component-kotoba-v1
         "js" :js-kotoba-v1
         "javascript" :js-kotoba-v1
         "js-browser" :js-browser-kotoba-v1
@@ -56,7 +54,8 @@
 
 (def ^:private detail-keys
   #{:phase :target :artifact-target :host-target :entry :arity :limit :status
-    :reason :runtime-sha256 :not-before :expires :now})
+    :reason :runtime-sha256 :not-before :expires :now :field :binding
+    :minimum :maximum :unknown})
 
 (defn error-report
   ([error] (error-report error nil))
@@ -74,7 +73,8 @@
 (defn exit-code [phase]
   (case phase
     :usage 64
-    (:decode :read :subset :admission :ir :verify :coverage :project-link) 65
+    (:decode :read :subset :admission :ir :verify :coverage :project-link
+     :host-profile) 65
     (:signature :trust :runtime-identity) 77
     :output 74
     :execute 69
@@ -256,6 +256,28 @@
           report (test-profile/run-source (bounded-edn/read-text-file input))]
       (println (pr-str report))
       (when-not (:ok report) (*exit* 1)))
+    "host-profile"
+    (let [input (second args)
+          profile (bounded-edn/read-file input)
+          generated (host-profile/generate profile)
+          output-dir (or (option args "--output-dir") "kotoba-host")
+          directory (java.nio.file.Paths/get output-dir
+                                               (make-array String 0))
+          _ (java.nio.file.Files/createDirectories
+             directory
+             (make-array java.nio.file.attribute.FileAttribute 0))
+          worker-output (str (.resolve directory "worker.mjs"))
+          wrangler-output (str (.resolve directory "wrangler.json"))
+          manifest-output (str (.resolve directory "host.manifest.edn"))]
+      (atomic-output/write-text! worker-output (:worker-source generated))
+      (atomic-output/write-text! wrangler-output
+                                 (json/write-str (:wrangler generated)))
+      (atomic-output/write-edn! manifest-output (:manifest generated))
+      (println (pr-str {:ok true
+                        :target (get-in generated [:profile :target])
+                        :output worker-output
+                        :wrangler-output wrangler-output
+                        :manifest-output manifest-output})))
     "package-aiueos-boot"
     (let [input (second args)
           output (or (option args "--output") "BOOTX64.EFI")
@@ -271,11 +293,13 @@
     "compile"
     (let [input (kotoba-source! (second args))
           source-roots (options args "--source-path")
-          target (parse-target (or (option args "--target") "wasm32"))
+          ;; ADR-2607252500: ordinary application compilation is Component
+          ;; first.  A raw Wasm module remains an explicit lower-level target
+          ;; for reviewed tooling, never the silent default execution form.
+          target (parse-target (or (option args "--target") "wasm-component"))
           output (or (option args "--output")
                      (str input (case (:execution (target-profile/profile target))
-                                  :wasm ".wasm"
-                                  :component ".component.wasm"
+                                  (:wasm :component) ".wasm"
                                   :cljs ".cljs"
                                   :javascript ".mjs"
                                   :kernel ".o"
@@ -292,9 +316,6 @@
               (throw (ex-info "component compilation does not accept --source-path yet"
                               {:phase :target-routing :target target})))
           result (cond
-                   ;; A component is lifted from a core module through the
-                   ;; Canonical ABI, so it has its own entry point rather than
-                   ;; being one more backend behind compile-source.
                    component-target?
                    (compiler/compile-component
                     (bounded-edn/read-text-file input) policy
@@ -302,7 +323,8 @@
                       (option args "--profile")
                       (assoc :profile (keyword (option args "--profile")))
                       (option args "--fuel")
-                      (assoc-in [:budgets :fuel] (Long/parseLong (option args "--fuel")))
+                      (assoc-in [:budgets :fuel]
+                                (Long/parseLong (option args "--fuel")))
                       (option args "--memory-pages")
                       (assoc-in [:budgets :memory-pages]
                                 (Long/parseLong (option args "--memory-pages")))
@@ -313,20 +335,19 @@
                              (keyword (option args "--capability-mode")))))
 
                    (seq source-roots)
-                   (let [{:keys [sources root]} (project-files/load-closed-graph input source-roots)]
+                   (let [{:keys [sources root]}
+                         (project-files/load-closed-graph input source-roots)]
                      (compiler/compile-project sources root target policy))
 
                    :else
-                   (compiler/compile-source (bounded-edn/read-text-file input) target policy))]
+                   (compiler/compile-source
+                    (bounded-edn/read-text-file input) target policy))]
       (case (:format result)
         :wasm/v1 (atomic-output/write-bytes! output (:bytes result))
-        ;; The component artifact is three files: the binary, the WIT world it
-        ;; was lifted against, and the admission request kototama needs. They
-        ;; are written together so an artifact can never circulate without the
-        ;; interface and bounds it claims.
         :wasm-component/v1
         (do (atomic-output/write-bytes! output (:bytes result))
-            (atomic-output/write-text! (str output ".wit") (get-in result [:wit :source]))
+            (atomic-output/write-text! (str output ".wit")
+                                       (get-in result [:wit :source]))
             (atomic-output/write-edn! (str output ".admission.edn")
                                       (:admission-request result)))
         ;; ADR-2607151500: the cljs backend emits SOURCE TEXT, not an

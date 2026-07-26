@@ -1,6 +1,7 @@
 (ns kotoba.compiler.backend-qualification-test
   (:require [clojure.edn :as edn]
             [clojure.java.io :as io]
+            [clojure.set :as set]
             [clojure.test :refer [deftest is]]
             [kotoba.compiler.backend-qualification :as qualification]))
 
@@ -39,7 +40,12 @@
         expected (->> (:kits manifest) (mapcat :capabilities) set)
         actual (->> (:capabilities contract) (map #(select-keys % [:name :id])) set)
         entries (:capabilities contract)]
-    (is (= expected actual))
+    (is (set/subset? expected actual))
+    (is (= #{{:name :http/get-stream :id 13}
+             {:name :object/get-stream :id 14}
+             {:name :object/put-block :id 15}
+             {:name :object/compare-and-set-ref :id 16}}
+           (set/difference actual expected)))
     (is (= (count entries) (count (set (map (juxt :interface :function) entries)))))
     (is (every? #(and (string? (:interface %))
                       (string? (:function %))
@@ -52,7 +58,9 @@
                  (first (filter #(= :clock/now (:name %)) entries)))))
     (is (every? empty?
                 (map :provider-wasi
-                     (remove #(contains? #{:http/post :clock/now} (:name %)) entries)))))))
+                     (remove #(contains? #{:http/post :http/get-stream :clock/now}
+                                         (:name %))
+                             entries)))))))
 
 (deftest every-backend-is-bound-to-the-same-manifest-gate
   (doseq [backend [:wasmtime :native :cljs]]
