@@ -88,85 +88,58 @@ and hand out a pointer. Nothing in `list<s64>` round-tripping actually requires
 
 ## Decision
 
-**Do (D) now and (B) next; do not do (A).**
+Use the Canonical ABI's contiguous `list<s64>`/`list<float64>` representation
+at the public Component boundary. Borrowed inputs are always validated for
+item count, alignment, unsigned range overflow, and arena bounds. Any operation
+that returns a list owns a fresh guest allocation and writes a standard
+pointer/count result area; canonical post-return resets transient storage.
 
-1. **Represent a `:vector-i64` as a pointer to `{len: i32}` followed by `len`
-   contiguous `i64` elements**, allocated once through `cm32p2_realloc` with
-   alignment 8. This is the Canonical ABI's own `list<s64>` layout plus a length
-   header, so lifting to `(ptr, len)` at the boundary is a projection rather
-   than a conversion.
+`vector-drop`, `vector-assoc`, and `vector-conj` therefore use bounded
+copy-on-write at an export boundary. This is semantically identical to the
+interpreter's persistent vectors and prevents a result from mutating or
+aliasing its input. It is deliberately distinct from repeated internal vector
+construction: linearity/escape analysis remains the required optimization for
+long-lived loops such as an EVM stack.
 
-2. **Admit, in the component profile, only vector values whose construction the
-   compiler can see is single-shot**: a literal, or a bounded construction whose
-   result is not derived from another live vector. Reject a `conj` chain with a
-   diagnostic that names the operation and points at this ADR — fail closed, the
-   same way every other unsupported shape already fails. This unblocks ADR 0076
-   acceptance criterion 2 and the `u256` layer of ADR-2607254500 without
-   pretending to support the EVM stack.
+The same ownership rule applies when an `option`/`result` match returns a list.
+A branch may source its result from the selected payload's scalar-item list,
+another vector parameter, or a bounded literal, and may apply one matching
+drop/assoc/conj transform. The selected union case validates every bool,
+string, and list leaf even if the branch does not read it; inactive joined
+payload slots stay uninterpreted. Both branches converge on the same fresh
+allocation and result-area convention.
 
-3. **Do not lower `vector-item-limit` for the component profile.** A vector that
-   fits is admitted whatever its length; what is restricted is how it may be
-   *built*, which is a property the compiler can explain, unlike an arbitrary
-   smaller ceiling. The arena must therefore be sized for the largest admitted
-   vector rather than left at step 1's single page: raise
-   `component-memory-pages` to cover `vector-item-limit` (128 KiB = 2 pages) plus
-   headroom for the ABI's own string-copy allocations, and keep
-   `component-arena-capacity` in lockstep so an over-large value traps instead of
-   running off the memory.
-
-4. **(B) is the sequel, and the EVM stack is its acceptance test.** Linearity
-   analysis is what turns the restriction in (2) from a permanent ceiling into
-   an optimisation boundary. It should not be attempted in the same change:
-   layout and analysis fail differently, and debugging them together is how a
-   wrong layout gets blamed on the analysis.
-
-(A) is rejected outright: a per-profile item limit makes the same source
-compile or not depending on the target for a reason no reader can derive from
-the program. (C) is deferred, not rejected — if (B)'s cliff proves too sharp in
-practice, reference counting is the honest next step, but adopting it before
-measuring would be building machinery against a guess.
+Do not lower `vector-item-limit` for the component profile. The fixed arena is
+sized for the language limit plus ABI headroom, and exhaustion traps before an
+out-of-range write. More general nested item types remain fail-closed until
+they have recursive per-element validation and a corresponding ownership
+plan.
 
 ## Consequences
 
-- `list<s64>` can cross a component boundary, closing ADR 0076 acceptance
-  criterion 2 and unblocking the crypto and storage providers of
-  ADR-2607254600 D5/D6, whose requests and results are byte sequences.
-- The `u256` and RLP layers of ADR-2607254500 Phase 0 become expressible as
-  component exports, not merely as internal computation.
-- A `conj` chain is rejected in the component profile until (B) lands. That is a
-  real restriction and it must be stated in the diagnostic, not discovered.
-- The typed backend gains a second representation for `:vector-i64`, selected by
-  profile. This is duplication and it is a cost: the two must agree with
-  `ir/execute`, which is the oracle. Every op admitted for the component profile
-  needs a test asserting both representations produce the same observable
-  result, in the same spirit as ADR 0076's acceptance criterion 4.
+- `list<s64>` and `list<float64>` can cross a Component boundary as parameters,
+  literals, identities, top-level transforms, and aggregate match results.
+- Borrowed input buffers are never mutated by an owned-result operation.
+- Export-boundary transforms are O(n) by design. This does not claim that a
+  repeated internal `conj` loop is efficient; that still needs linear reuse or
+  a reclaiming allocator.
+- The Component backend and `ir/execute` remain two representations of the
+  same persistent-vector semantics, so source-level vertical tests must cover
+  every newly admitted form.
 
 ## Acceptance
 
-1. A function returning a single-shot `:vector-i64` compiles to a validated
-   component; `wasmtime` reads back the same elements that went in.
-2. A signature taking `list<s64>` and returning `list<s64>` round-trips a
-   non-trivial vector with the values and length intact.
-3. A `conj` chain is rejected with a diagnostic naming the operation and this
-   ADR — verified as a rejection, not merely documented.
-4. For every admitted vector operation, the component representation and
-   `ir/execute` agree on the observable result.
-5. A vector at `vector-item-limit` either fits the declared arena or traps
-   cleanly; it must not write past the declared memory.
+1. Non-empty and maximum-bound scalar-item lists round-trip through a standard
+   Component; over-bound or malformed core inputs trap.
+2. i64 and f64 drop/assoc/conj results equal the language oracle, do not mutate
+   their inputs, and do not alias them.
+3. Option/result branches can return a selected payload list, another vector
+   parameter, or a literal through the same owned-result ABI.
+4. Selected aggregate leaves are validated and inactive joined slots remain
+   lazy.
+5. Repeated calls in one core instance succeed after post-return without
+   unbounded arena growth.
 
-## Implemented boundary
-
-The first executable slice implements two single-shot forms:
-
-- a `:vector-i64` literal is allocated once as `{len: i32, padding: i32,
-  elements: len * i64}` and returned as the Canonical `(elements-ptr, len)`
-  pair;
-- an identity export validates and aliases the Canonical input buffer without
-  copying it. Since the old value is not retained or mutated, this preserves
-  the same observable semantics without creating a second maximum-sized
-  allocation.
-
-Both forms execute as standard Components on Wasmtime. Empty, non-trivial, and
-16,384-item boundary vectors round-trip; a core call above that bound traps.
-`vector-conj` remains rejected with an ADR-specific diagnostic until the
-linearity analysis selected by this decision is implemented.
+All five conditions are executable. Component tests cover direct KIR and
+20,000 repeated core calls; compiler tests cover the full
+`.kotoba -> KIR -> core Wasm -> Component -> Wasmtime` path.
