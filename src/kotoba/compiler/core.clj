@@ -149,9 +149,13 @@
   that happened or the budget is host-enforced only."
   ([source] (compile-component source {} {}))
   ([source policy] (compile-component source policy {}))
-  ([source policy {:keys [profile budgets component-abilities]
+  ([source policy {:keys [profile budgets component-abilities capability-mode]
                    :or {profile :sync} :as opts}]
    (let [budgets (merge default-component-budgets budgets)
+         _ (when-not (contains? #{nil :function :linear-resource} capability-mode)
+             (throw (ex-info "Component capability mode is unsupported"
+                             {:phase :component-capability-mode
+                              :capability-mode capability-mode})))
          core (compile-source source :wasm32-wasi-kotoba-v1 policy)
          kir (component-kir (:kir core))
          capability-ids (component-capability-ids kir)
@@ -165,11 +169,19 @@
                       (not-every? abi/valid-ability? (vals component-abilities)))
              (throw (ex-info "Component ability descriptor is invalid"
                              {:phase :component-abilities})))
-         wit (component-wit/emit kir)
+         _ (when (and (= capability-mode :linear-resource)
+                      (not (contains? #{:scalar-capability-call
+                                       :scalar-literal-capability-call}
+                                     (component-core/assert-supported! kir))))
+             (throw (ex-info "Linear resource mode requires one direct scalar capability call"
+                             {:phase :component-capability-mode
+                              :capability-mode capability-mode})))
+         wit (component-wit/emit kir {:capability-mode (or capability-mode :function)})
          enforcement (component-core/fuel-enforcement kir)
          component-bytes (component-core/emit kir :wasm32-wasi-kotoba-v1
                                               {:fuel (:fuel budgets)
-                                               :memory-pages (:memory-pages budgets)})
+                                               :memory-pages (:memory-pages budgets)
+                                               :capability-mode capability-mode})
          packaged (component-artifact/package component-bytes kir wit)]
      (assoc packaged
             :capabilities (into #{} (map abi/component-import-key) capability-ids)
@@ -188,6 +200,7 @@
             :floating-point-policy (:floating-point-policy core)
             :compatibility (:compatibility core)
             :budgets budgets
+            :capability-mode (or capability-mode :function)
             :fuel-enforcement enforcement
             :admission-request (component-admission/request
                                 packaged wit

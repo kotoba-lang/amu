@@ -40,3 +40,23 @@
            (compiler/compile-component
             source policy {:component-abilities {7 clock-ability}
                            :budgets {:memory-pages 2}}))))))
+
+(deftest direct-capability-call-can-use-a-linear-wit-resource
+  (let [source "(defn main [] (cap-call :clock/now 7))"
+        artifact (compiler/compile-component
+                  source policy
+                  {:capability-mode :linear-resource
+                   :component-abilities {7 clock-ability}})
+        wit (get-in artifact [:wit :source])]
+    (is (= :linear-resource (:capability-mode artifact)))
+    (is (= :linear-resource (get-in artifact [:wit :capability-mode])))
+    (is (re-find #"resource now-capability;" wit))
+    (is (re-find #"issue-now: func\(\) -> own<now-capability>;" wit))
+    (is (re-find #"execute-now: func\(cap: own<now-capability>, request: s64\) -> s64;" wit))
+    (is (pos? (alength ^bytes (:bytes artifact))))
+    (is (thrown-with-msg?
+         clojure.lang.ExceptionInfo #"requires one direct"
+         (compiler/compile-component
+          "(defn main [] (+ 1 (cap-call :clock/now 7)))" policy
+          {:capability-mode :linear-resource
+           :component-abilities {7 clock-ability}})))))
