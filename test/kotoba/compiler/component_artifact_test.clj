@@ -139,6 +139,86 @@
          (defn append [items :vector-i64] :vector-i64
            (vector-conj items 1))"))))
 
+(deftest structural-option-and-result-round-trip-through-a-real-component
+  (doseq [{:keys [descriptor calls expected]}
+          [{:descriptor [:option :i64]
+            :calls ["echo(none)" "echo(some(7))"]
+            :expected ["none" "some(7)"]}
+           {:descriptor [:result :i64 :i64]
+            :calls ["echo(ok(7))" "echo(err(-8))"]
+            :expected ["ok(7)" "err(-8)"]}]]
+    (let [kir {:format :kotoba.kir/v4 :exports ['echo] :schemas {} :effects #{}
+               :functions [{:name 'echo :params ['value]
+                            :param-types [descriptor] :result descriptor
+                            :body 'value}]}
+          world (wit/emit kir)
+          artifact (component/package
+                    (component-core/emit kir :wasm32-wasi-kotoba-v1)
+                    kir world)
+          core (component-core/emit kir :wasm32-wasi-kotoba-v1)
+          dir (Files/createTempDirectory
+               "kotoba-component-union-" (make-array FileAttribute 0))
+          component-path (.resolve dir "union.component.wasm")
+          core-path (.resolve dir "union.core.wasm")]
+      (try
+        (Files/write component-path ^bytes (:bytes artifact)
+                     (make-array java.nio.file.OpenOption 0))
+        (Files/write core-path ^bytes core
+                     (make-array java.nio.file.OpenOption 0))
+        (is (= :structural-union-identity (:canonical-lowering artifact)))
+        (doseq [[call output] (map vector calls expected)]
+          (let [run (shell/sh wasmtime-binary "run" "--invoke" call
+                              (str component-path))]
+            (is (zero? (:exit run)) (:err run))
+            (is (= output (str/trim (:out run))))))
+        (let [malformed (shell/sh wasmtime-binary "run" "--invoke"
+                                  "cm32p2||echo" (str core-path) "2" "0")]
+          (is (not (zero? (:exit malformed)))
+              "an out-of-range option/result discriminant must trap"))
+        (finally
+          (Files/deleteIfExists component-path)
+          (Files/deleteIfExists core-path)
+          (Files/deleteIfExists dir))))))
+
+(deftest structural-option-and-result-constructors-compile-from-kotoba
+  (doseq [{:keys [source export invoke output args oracle]}
+          [{:source "(ns component.make-none (:export [make-none]))
+                     (defn make-none [] [:option :i64]
+                       (option-none-of [:option :i64]))"
+            :export 'make-none :invoke "make-none()" :output "none"
+            :args [] :oracle [[:option :i64] false]}
+           {:source "(ns component.make-some (:export [make-some]))
+                     (defn make-some [value :i64] [:option :i64]
+                       (option-some-of [:option :i64] value))"
+            :export 'make-some :invoke "make-some(7)" :output "some(7)"
+            :args [7] :oracle [[:option :i64] true 7]}
+           {:source "(ns component.make-ok (:export [make-ok]))
+                     (defn make-ok [value :i64] [:result :i64 :i64]
+                       (result-ok-of [:result :i64 :i64] value))"
+            :export 'make-ok :invoke "make-ok(8)" :output "ok(8)"
+            :args [8] :oracle [true 8]}
+           {:source "(ns component.make-err (:export [make-err]))
+                     (defn make-err [value :i64] [:result :i64 :i64]
+                       (result-err-of [:result :i64 :i64] value))"
+            :export 'make-err :invoke "make-err(-9)" :output "err(-9)"
+            :args [-9] :oracle [false -9]}]]
+    (let [artifact (compiler/compile-component source)
+          kir (:kir (compiler/compile-source source :wasm32-wasi-kotoba-v1))
+          path (Files/createTempFile
+                "kotoba-component-union-constructor-" ".wasm"
+                (make-array FileAttribute 0))]
+      (try
+        (Files/write path ^bytes (:bytes artifact)
+                     (make-array java.nio.file.OpenOption 0))
+        (let [run (shell/sh wasmtime-binary "run" "--invoke" invoke (str path))]
+          (is (= :structural-union-construction
+                 (:canonical-lowering artifact)))
+          (is (= oracle (ir/execute kir export args)))
+          (is (zero? (:exit run)) (:err run))
+          (is (= output (str/trim (:out run)))))
+        (finally
+          (Files/deleteIfExists path))))))
+
 (deftest named-scalar-record-identity-is-admitted
   (let [descriptor [:ref :demo/point]
         kir {:format :kotoba.kir/v4 :exports ['echo] :effects #{}
