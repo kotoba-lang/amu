@@ -2,7 +2,7 @@
   "CI gate binding backend qualification claims to the provider manifest."
   (:require [clojure.edn :as edn]
             [clojure.java.io :as io]
-            [kotoba.compiler.artifact :as artifact]))
+            [kotoba.artifact.core :as artifact]))
 
 (def manifest-resource "kotoba/lang/provider-conformance-v1.edn")
 (def qualification-resource "kotoba/lang/backend-provider-qualification-v1.edn")

@@ -2,7 +2,7 @@
   (:require [clojure.java.shell :as shell]
             [clojure.test :refer [deftest is]]
             [kotoba.compiler.core :as compiler]
-            [kotoba.compiler.ir :as ir]))
+            [kotoba.kir :as ir]))
 
 (def source
   "(ns string.operation (:export [main concat substring replace]))

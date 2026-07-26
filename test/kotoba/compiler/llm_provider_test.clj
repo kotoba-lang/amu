@@ -1,8 +1,8 @@
 (ns kotoba.compiler.llm-provider-test
   (:require [clojure.test :refer [deftest is]]
             [kotoba.compiler.core :as compiler]
-            [kotoba.compiler.ir :as ir]
-            [kotoba.compiler.provider.llm :as llm]
+            [kotoba.kir :as ir]
+            [provider.llm :as llm]
             [kotoba.compiler.reference-runtime :as runtime]))
 
 (def source

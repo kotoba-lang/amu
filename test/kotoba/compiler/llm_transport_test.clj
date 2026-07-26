@@ -1,5 +1,5 @@
 (ns kotoba.compiler.llm-transport-test
-  "Unit tests for `kotoba.compiler.provider.llm-transport` run against local
+  "Unit tests for `provider.llm-transport` run against local
   fake HTTP servers (`com.sun.net.httpserver`) -- no real network access, no
   network flakiness in CI. These exercise the production transport's own
   request/response mapping and the ①/③ resolution steps deterministically.
@@ -11,9 +11,9 @@
   `real-murakumo-main-endpoint-answers` below."
   (:require [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]
-            [kotoba.compiler.ir :as ir]
-            [kotoba.compiler.provider.llm :as llm]
-            [kotoba.compiler.provider.llm-transport :as transport]
+            [kotoba.kir :as ir]
+            [provider.llm :as llm]
+            [provider.llm-transport :as transport]
             [kotoba.compiler.reference-runtime :as runtime])
   (:import (com.sun.net.httpserver HttpServer HttpHandler)
            (java.net InetSocketAddress)))

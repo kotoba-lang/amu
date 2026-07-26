@@ -1,8 +1,8 @@
 (ns kotoba.compiler.storage-provider-test
   (:require [clojure.test :refer [deftest is]]
             [kotoba.compiler.core :as compiler]
-            [kotoba.compiler.ir :as ir]
-            [kotoba.compiler.provider.storage :as storage]
+            [kotoba.kir :as ir]
+            [provider.storage :as storage]
             [kotoba.compiler.reference-runtime :as runtime]))
 
 (def source

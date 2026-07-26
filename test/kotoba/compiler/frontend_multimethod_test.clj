@@ -1,7 +1,7 @@
 (ns kotoba.compiler.frontend-multimethod-test
   (:require [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]
-            [kotoba.compiler.ir :as ir]))
+            [kotoba.kir :as ir]))
 
 (defn- checked [source]
   (compiler/check-source source))

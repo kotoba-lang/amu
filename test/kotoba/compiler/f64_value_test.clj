@@ -1,11 +1,11 @@
 (ns kotoba.compiler.f64-value-test
   (:require [clojure.java.shell :as shell]
             [clojure.test :refer [deftest is testing]]
-            [kotoba.compiler.backend.wasm-typed :as typed]
+            [kotoba.wasm.typed :as typed]
             [kotoba.compiler.core :as compiler]
             [kotoba.compiler.frontend :as frontend]
-            [kotoba.compiler.ir :as ir]
-            [kotoba.compiler.value :as value]))
+            [kotoba.kir :as ir]
+            [kotoba.kir.value :as value]))
 
 (def source
   (str "(ns pilot.f64 (:export [bits from-bits negative-zero one nan-bits infinity])) "

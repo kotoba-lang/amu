@@ -4,12 +4,12 @@
             [clojure.java.shell :as shell]
             [clojure.test :refer [deftest is]]
             [clojure.string :as str]
-            [kotoba.compiler.backend.wasm :as wasm]
-            [kotoba.compiler.component-artifact :as component]
-            [kotoba.compiler.component-core :as component-core]
-            [kotoba.compiler.component-wit :as wit]
+            [kotoba.wasm.core :as wasm]
+            [kotoba.component.artifact :as component]
+            [kotoba.component.core :as component-core]
+            [kotoba.component.wit :as wit]
             [kotoba.compiler.core :as compiler]
-            [kotoba.compiler.ir :as ir])
+            [kotoba.kir :as ir])
   (:import [java.nio.file Files]
            [java.nio.file.attribute FileAttribute]))
 

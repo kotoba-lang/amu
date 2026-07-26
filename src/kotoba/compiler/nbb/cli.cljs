@@ -20,20 +20,20 @@
   happened to catch it."
   (:require ["node:path" :as node-path]
             [kotoba.compiler.frontend :as frontend]
-            [kotoba.compiler.admission :as admission]
-            [kotoba.compiler.artifact :as artifact]
-            [kotoba.compiler.backend.aarch64 :as aarch64]
-            [kotoba.compiler.backend.x86-64 :as x86-64]
-            [kotoba.compiler.compatibility :as compatibility]
+            [kotoba.kir.admission :as admission]
+            [kotoba.artifact.core :as artifact]
+            [kotoba.native.aarch64 :as aarch64]
+            [kotoba.native.x86-64 :as x86-64]
+            [kotoba.kir.compatibility :as compatibility]
             [kotoba.compiler.diagnostic :as diagnostic]
-            [kotoba.compiler.ir :as ir]
-            [kotoba.compiler.backend.wasm :as wasm]
+            [kotoba.kir :as ir]
+            [kotoba.wasm.core :as wasm]
             [kotoba.compiler.kotoba-reader :as kr]
             [kotoba.compiler.nbb.io :as io]
             [kotoba.compiler.provenance :as provenance]
             [kotoba.compiler.source-path :as source-path]
-            [kotoba.compiler.target :as target-profile]
-            [kotoba.compiler.verifier :as verifier]))
+            [kotoba.kir.target :as target-profile]
+            [kotoba.verifier :as verifier]))
 
 ;; Mirrors `kotoba.compiler.cli`'s `parse-target`, restricted to the wasm32
 ;; and ORDINARY (non-aiueos) native target names -- everything this fast

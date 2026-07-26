@@ -8,10 +8,10 @@
   (:require [clojure.data.json :as json]
             [clojure.java.shell :as shell]
             [clojure.string :as str]
-            [kotoba.compiler.artifact :as artifact]
+            [kotoba.artifact.core :as artifact]
             [kotoba.compiler.core :as compiler]
             [kotoba.compiler.frontend :as frontend]
-            [kotoba.compiler.ir :as ir]))
+            [kotoba.kir :as ir]))
 
 (def targets [:jvm-kir :js :wasm])
 

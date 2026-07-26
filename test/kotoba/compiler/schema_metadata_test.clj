@@ -1,6 +1,6 @@
 (ns kotoba.compiler.schema-metadata-test
   (:require [clojure.test :refer [deftest is]]
-            [kotoba.compiler.backend.wasm-typed :as typed]
+            [kotoba.wasm.typed :as typed]
             [kotoba.compiler.core :as compiler]))
 
 (def source

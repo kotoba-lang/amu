@@ -1,6 +1,6 @@
 (ns kotoba.compiler.coverage-evidence
-  (:require [kotoba.compiler.artifact :as artifact]
-            [kotoba.compiler.signing :as signing]))
+  (:require [kotoba.artifact.core :as artifact]
+            [kotoba.verifier.signing :as signing]))
 
 (def ^:private claim-keys
   #{:platform :paths :target-profiles :conformance-sha256 :runtime-sha256

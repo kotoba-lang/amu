@@ -24,7 +24,7 @@
   Integer literals are parsed as JS `bigint` (not `js/Number`), so a literal
   at the true i64 boundary (e.g. -9223372036854775808) round-trips exactly
   instead of losing precision the moment it's read -- required for
-  `kotoba.compiler.ir`'s compile-time oracle (constant-folds a pure `main`
+  `kotoba.kir`'s compile-time oracle (constant-folds a pure `main`
   by literally *executing* it) to match the JVM path's `Long` wraparound
   arithmetic bit-for-bit, not just within the JS safe-integer range."
   (:require [clojure.string :as str]))

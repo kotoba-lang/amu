@@ -1,8 +1,8 @@
 (ns kotoba.compiler.provenance
-  #?(:clj (:require [kotoba.compiler.artifact :as artifact]
-                    [kotoba.compiler.compatibility :as compatibility])
-     :cljs (:require [kotoba.compiler.artifact :as artifact]
-                     [kotoba.compiler.compatibility :as compatibility]
+  #?(:clj (:require [kotoba.artifact.core :as artifact]
+                    [kotoba.kir.compatibility :as compatibility])
+     :cljs (:require [kotoba.artifact.core :as artifact]
+                     [kotoba.kir.compatibility :as compatibility]
                      ["node:crypto" :as crypto]))
   #?(:clj (:import (java.nio.charset StandardCharsets)
                    (java.security MessageDigest))))
@@ -10,7 +10,7 @@
 (def schema :kotoba.provenance/v1)
 
 ;; Same JVM `MessageDigest`/Node `node:crypto` split
-;; `kotoba.compiler.artifact/sha256` uses -- see that namespace's own
+;; `kotoba.artifact.core/sha256` uses -- see that namespace's own
 ;; comment for why. `hex` uses `clojure.core/format`, which doesn't exist
 ;; in cljs at all (not just "throws" -- `format`'s cljs branch is
 ;; ITSELF unused, `node:crypto`'s `.digest "hex"` already returns a hex

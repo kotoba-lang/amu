@@ -1,7 +1,7 @@
 (ns kotoba.compiler.accelerator-test
   (:require [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.accelerator :as accelerator]
-            [kotoba.compiler.artifact :as artifact]))
+            [kotoba.artifact.core :as artifact]))
 
 (deftest typed-kir-lowers-deterministically-to-wgsl-and-cuda
   (let [kir (accelerator/kernel "ewise_add_f32" :ewise :add {:workgroup-size 256})

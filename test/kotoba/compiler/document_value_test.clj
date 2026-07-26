@@ -1,10 +1,10 @@
 (ns kotoba.compiler.document-value-test
   (:require [clojure.java.shell :as shell]
             [clojure.test :refer [deftest is testing]]
-            [kotoba.compiler.backend.wasm-typed :as typed]
+            [kotoba.wasm.typed :as typed]
             [kotoba.compiler.core :as compiler]
-            [kotoba.compiler.ir :as ir]
-            [kotoba.compiler.value :as value]))
+            [kotoba.kir :as ir]
+            [kotoba.kir.value :as value]))
 
 (def source
   "(ns document.value (:export [main type-name updated-count external-count]))

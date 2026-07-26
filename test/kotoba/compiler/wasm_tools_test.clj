@@ -6,7 +6,7 @@
    still reject a different version, including a longer token that merely
    shares the pinned prefix."
   (:require [clojure.test :refer [deftest is]]
-            [kotoba.compiler.wasm-tools :as wasm-tools]))
+            [kotoba.wasm.tools :as wasm-tools]))
 
 (def ^:private version-pattern @#'wasm-tools/version-pattern)
 

@@ -11,9 +11,9 @@
   (:require [clojure.test :refer [deftest is testing]]
             [clojure.java.io :as io]
             [clojure.string :as str]
-            [kotoba.compiler.backend.wasm :as wasm]
-            [kotoba.compiler.value :as value]
-            [kotoba.compiler.wasm-tools :as wasm-tools])
+            [kotoba.wasm.core :as wasm]
+            [kotoba.kir.value :as value]
+            [kotoba.wasm.tools :as wasm-tools])
   (:import [java.nio.file Files]
            [java.nio.file.attribute FileAttribute]))
 

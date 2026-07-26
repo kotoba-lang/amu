@@ -1,8 +1,8 @@
 (ns kotoba.compiler.state-provider-test
   (:require [clojure.test :refer [deftest is]]
             [kotoba.compiler.core :as compiler]
-            [kotoba.compiler.ir :as ir]
-            [kotoba.compiler.provider.state :as state]
+            [kotoba.kir :as ir]
+            [provider.state :as state]
             [kotoba.compiler.reference-runtime :as runtime]))
 
 (def source

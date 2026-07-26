@@ -1,7 +1,7 @@
 (ns kotoba.compiler.reference-runtime
   "Portable CLJ/CLJS reference application runtime. This is the executable
   language oracle; AOT/JIT backends qualify against the same KIR and vectors."
-  (:require [kotoba.compiler.ir :as ir]))
+  (:require [kotoba.kir :as ir]))
 
 (def runtime-format :kotoba.reference-runtime/v1)
 (def max-providers 256)

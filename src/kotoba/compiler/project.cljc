@@ -1,7 +1,7 @@
 (ns kotoba.compiler.project
   (:require [clojure.string :as str]
             [kotoba.compiler.frontend :as frontend]
-            [kotoba.compiler.value :as value]))
+            [kotoba.kir.value :as value]))
 
 (def max-project-modules 256)
 (def max-project-functions 1024)

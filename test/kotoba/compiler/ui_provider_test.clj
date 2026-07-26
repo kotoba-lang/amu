@@ -1,8 +1,8 @@
 (ns kotoba.compiler.ui-provider-test
   (:require [clojure.test :refer [deftest is]]
             [kotoba.compiler.core :as compiler]
-            [kotoba.compiler.ir :as ir]
-            [kotoba.compiler.provider.ui :as ui]
+            [kotoba.kir :as ir]
+            [provider.ui :as ui]
             [kotoba.compiler.reference-runtime :as runtime]))
 
 (def source

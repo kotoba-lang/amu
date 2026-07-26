@@ -1,8 +1,8 @@
 (ns kotoba.compiler.coverage-evidence-test
   (:require [clojure.test :refer [deftest is]]
-            [kotoba.compiler.artifact :as artifact]
+            [kotoba.artifact.core :as artifact]
             [kotoba.compiler.coverage-evidence :as evidence]
-            [kotoba.compiler.signing :as signing]))
+            [kotoba.verifier.signing :as signing]))
 
 (def digest (apply str (repeat 64 "a")))
 

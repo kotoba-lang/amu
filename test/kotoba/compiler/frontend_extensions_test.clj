@@ -8,9 +8,9 @@
             [clojure.java.shell :as shell]
             [kotoba.compiler.core :as compiler]
             [kotoba.compiler.frontend :as frontend]
-            [kotoba.compiler.ir :as ir]
-            [kotoba.compiler.target :as target]
-            [kotoba.compiler.value :as value]))
+            [kotoba.kir :as ir]
+            [kotoba.kir.target :as target]
+            [kotoba.kir.value :as value]))
 
 (defn- oracle [source]
   (let [kir (ir/lower (:hir (compiler/check-source source)))]

@@ -1,5 +1,5 @@
 (ns kotoba.compiler.http-transport-test
-  "Unit and integration tests for `kotoba.compiler.provider.http-transport`.
+  "Unit and integration tests for `provider.http-transport`.
 
   Two groups, deliberately separated:
 
@@ -35,11 +35,11 @@
   (:require [clojure.string :as string]
             [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]
-            [kotoba.compiler.ir :as ir]
-            [kotoba.compiler.provider.http :as http]
-            [kotoba.compiler.provider.http-transport :as transport]
+            [kotoba.kir :as ir]
+            [provider.http :as http]
+            [provider.http-transport :as transport]
             [kotoba.compiler.reference-runtime :as runtime]
-            [kotoba.compiler.value :as value])
+            [kotoba.kir.value :as value])
   (:import (com.sun.net.httpserver HttpServer HttpHandler)
            (java.net InetSocketAddress URI)
            (java.net.http HttpHeaders)
@@ -177,10 +177,10 @@
 ;; (`contains? allowed-origins origin`, in both `http.cljc` and
 ;; `http-transport.cljc`) is never touched -- only the SCHEME acceptance.
 ;;
-;; Note this must widen BOTH `kotoba.compiler.provider.http`'s own private
+;; Note this must widen BOTH `provider.http`'s own private
 ;; `https-origin` (used by `http/provider` itself to validate its
 ;; `:allowed-origins` construction option AND the guest's request URL at
-;; `:invoke` time) AND `kotoba.compiler.provider.http-transport`'s
+;; `:invoke` time) AND `provider.http-transport`'s
 ;; `canonical-origin` (used by the redirect loop) -- both independently
 ;; enforce HTTPS-only in production and both need relaxing for a local
 ;; plaintext loopback fixture to stand in for a remote HTTPS one.
@@ -192,7 +192,7 @@
       (str scheme "://" (string/lower-case host) (when port (str ":" port))))))
 
 (defn- widen-https-origin
-  "Drop-in test replacement for `kotoba.compiler.provider.http`'s private
+  "Drop-in test replacement for `provider.http`'s private
   `https-origin` -- same throw-on-failure contract, widened scheme
   acceptance."
   [url]
