@@ -716,6 +716,107 @@
         (Files/deleteIfExists component-path)
         (Files/deleteIfExists core-path)))))
 
+(deftest kotoba-source-match-consumes-an-indirect-list-record-leaf
+  (let [source
+        "(ns component.indirect-list-match
+           (:export [item-count point-x f64-count])
+           (:schemas
+            {:demo/list-point
+             [:record :demo/list-point [[:items :vector-i64] [:x :i64]]]
+             :demo/f64-list
+             [:record :demo/f64-list [[:items :vector-f64]]]}))
+         (defn item-count
+           [value
+            [:option
+             [:record :demo/list-point [[:items :vector-i64] [:x :i64]]]]
+            fallback :i64] :i64
+           (match-option
+            value
+            [:option
+             [:record :demo/list-point [[:items :vector-i64] [:x :i64]]]]
+            (none fallback)
+            (some point
+              (vector-count
+               (record-get
+                [:record :demo/list-point [[:items :vector-i64] [:x :i64]]]
+                point :items)))))
+         (defn point-x
+           [value
+            [:option
+             [:record :demo/list-point [[:items :vector-i64] [:x :i64]]]]
+            fallback :i64] :i64
+           (match-option
+            value
+            [:option
+             [:record :demo/list-point [[:items :vector-i64] [:x :i64]]]]
+            (none fallback)
+            (some point
+              (record-get
+               [:record :demo/list-point [[:items :vector-i64] [:x :i64]]]
+               point :x))))
+         (defn f64-count
+           [value
+            [:option [:record :demo/f64-list [[:items :vector-f64]]]]
+            fallback :i64] :i64
+           (match-option
+            value
+            [:option [:record :demo/f64-list [[:items :vector-f64]]]]
+            (none fallback)
+            (some point
+              (vector-f64-count
+               (record-get
+                [:record :demo/f64-list [[:items :vector-f64]]]
+                point :items)))))"
+        compiled (compiler/compile-source source :wasm32-wasi-kotoba-v1)
+        kir (:kir compiled)
+        artifact (compiler/compile-component source)
+        core (component-core/emit kir :wasm32-wasi-kotoba-v1)
+        component-path (Files/createTempFile
+                        "kotoba-source-indirect-list-match-" ".wasm"
+                        (make-array FileAttribute 0))
+        core-path (Files/createTempFile
+                   "kotoba-source-indirect-list-match-core-" ".wasm"
+                   (make-array FileAttribute 0))]
+    (try
+      (Files/write component-path ^bytes (:bytes artifact)
+                   (make-array java.nio.file.OpenOption 0))
+      (Files/write core-path ^bytes core
+                   (make-array java.nio.file.OpenOption 0))
+      (is (= :structural-union-match-module (:canonical-lowering artifact)))
+      (is (empty? (:required-imports artifact)))
+      (doseq [[invoke expected]
+              [["item-count(none, 9)" "9"]
+               ["item-count(some({items: [1, 2, 3], x: 7}), 9)" "3"]
+               ["point-x(some({items: [4, 5], x: 11}), 9)" "11"]
+               ["f64-count(some({items: [1.5, 2.5]}), 9)" "2"]]]
+        (let [run (shell/sh wasmtime-binary "run" "--invoke" invoke
+                            (str component-path))]
+          (is (zero? (:exit run)) (:err run))
+          (is (= expected (str/trim (:out run))) invoke)))
+      ;; Core shape: disc, items.ptr, items.count, x, fallback. Inactive
+      ;; joined slots remain lazy. A selected record validates its list even
+      ;; when point-x does not read that field.
+      (let [inactive (shell/sh wasmtime-binary "run" "--invoke"
+                               "cm32p2||point-x" (str core-path)
+                               "0" "1" "-1" "0" "9")
+            over-bound (shell/sh wasmtime-binary "run" "--invoke"
+                                 "cm32p2||point-x" (str core-path)
+                                 "1" "8" "16385" "11" "9")
+            unaligned (shell/sh wasmtime-binary "run" "--invoke"
+                                "cm32p2||point-x" (str core-path)
+                                "1" "1" "1" "11" "9")
+            wrapped (shell/sh wasmtime-binary "run" "--invoke"
+                              "cm32p2||point-x" (str core-path)
+                              "1" "-8" "2" "11" "9")]
+        (is (zero? (:exit inactive)) (:err inactive))
+        (is (= "9" (str/trim (:out inactive))))
+        (is (not (zero? (:exit over-bound))))
+        (is (not (zero? (:exit unaligned))))
+        (is (not (zero? (:exit wrapped)))))
+      (finally
+        (Files/deleteIfExists component-path)
+        (Files/deleteIfExists core-path)))))
+
 (deftest structural-union-matches-cover-all-canonical-scalar-types
   (doseq [{:keys [source export calls]}
           [{:source "(ns component.match-option-f64 (:export [choose]))
