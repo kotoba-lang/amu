@@ -501,6 +501,11 @@ and standard32 capability import in one core module; closed-world composition
 then requires an exact provider before execution. Canonical adapters reject a
 typed capability with no named binding instead of falling back to a generic
 ambient host import.
+String and keyword leaves inside selected record payloads may also feed
+`string-byte-length`. They stay as Canonical `(ptr,len)` values: the shared
+core emitter validates their declared byte limit, pointer overflow, and actual
+memory range without constructing a host string. Selected but unread indirect
+leaves are still validated; malformed inactive slots are ignored.
 The Core-Wasm compatibility ABI also lowers the monomorphic
 `:option-i64`/`:result-i64` operations through the same sealed descriptor
 encoding as `[:option :i64]`/`[:result :i64 :i64]`; admitted scalar ADTs no
