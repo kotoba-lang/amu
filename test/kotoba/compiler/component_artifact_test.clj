@@ -719,7 +719,7 @@
 (deftest kotoba-source-match-consumes-an-indirect-list-record-leaf
   (let [source
         "(ns component.indirect-list-match
-           (:export [item-count point-x f64-count])
+           (:export [item-count point-x f64-count item-at f64-at])
            (:schemas
             {:demo/list-point
              [:record :demo/list-point [[:items :vector-i64] [:x :i64]]]
@@ -766,7 +766,37 @@
               (vector-f64-count
                (record-get
                 [:record :demo/f64-list [[:items :vector-f64]]]
-                point :items)))))"
+                point :items)))))
+         (defn item-at
+           [value
+            [:option
+             [:record :demo/list-point [[:items :vector-i64] [:x :i64]]]]
+            index :i64 fallback :i64] :i64
+           (match-option
+            value
+            [:option
+             [:record :demo/list-point [[:items :vector-i64] [:x :i64]]]]
+            (none fallback)
+            (some point
+              (vector-at
+               (record-get
+                [:record :demo/list-point [[:items :vector-i64] [:x :i64]]]
+                point :items)
+               index))))
+         (defn f64-at
+           [value
+            [:option [:record :demo/f64-list [[:items :vector-f64]]]]
+            index :i64 fallback :f64] :f64
+           (match-option
+            value
+            [:option [:record :demo/f64-list [[:items :vector-f64]]]]
+            (none fallback)
+            (some point
+              (vector-f64-at
+               (record-get
+                [:record :demo/f64-list [[:items :vector-f64]]]
+                point :items)
+               index))))"
         compiled (compiler/compile-source source :wasm32-wasi-kotoba-v1)
         kir (:kir compiled)
         artifact (compiler/compile-component source)
@@ -788,7 +818,9 @@
               [["item-count(none, 9)" "9"]
                ["item-count(some({items: [1, 2, 3], x: 7}), 9)" "3"]
                ["point-x(some({items: [4, 5], x: 11}), 9)" "11"]
-               ["f64-count(some({items: [1.5, 2.5]}), 9)" "2"]]]
+               ["f64-count(some({items: [1.5, 2.5]}), 9)" "2"]
+               ["item-at(some({items: [10, 20, 30], x: 7}), 1, 9)" "20"]
+               ["f64-at(some({items: [1.5, 2.5]}), 1, 9.0)" "2.5"]]]
         (let [run (shell/sh wasmtime-binary "run" "--invoke" invoke
                             (str component-path))]
           (is (zero? (:exit run)) (:err run))
@@ -807,12 +839,20 @@
                                 "1" "1" "1" "11" "9")
             wrapped (shell/sh wasmtime-binary "run" "--invoke"
                               "cm32p2||point-x" (str core-path)
-                              "1" "-8" "2" "11" "9")]
+                              "1" "-8" "2" "11" "9")
+            negative-index (shell/sh wasmtime-binary "run" "--invoke"
+                                     "cm32p2||item-at" (str core-path)
+                                     "1" "8" "2" "0" "-1" "9")
+            equal-index (shell/sh wasmtime-binary "run" "--invoke"
+                                  "cm32p2||item-at" (str core-path)
+                                  "1" "8" "2" "0" "2" "9")]
         (is (zero? (:exit inactive)) (:err inactive))
         (is (= "9" (str/trim (:out inactive))))
         (is (not (zero? (:exit over-bound))))
         (is (not (zero? (:exit unaligned))))
-        (is (not (zero? (:exit wrapped)))))
+        (is (not (zero? (:exit wrapped))))
+        (is (not (zero? (:exit negative-index))))
+        (is (not (zero? (:exit equal-index)))))
       (finally
         (Files/deleteIfExists component-path)
         (Files/deleteIfExists core-path)))))

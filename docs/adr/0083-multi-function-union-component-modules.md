@@ -99,8 +99,12 @@ are rejected.
   `kotoba-component` commit `0911651`: pointer alignment, item bounds,
   unsigned byte-size/range overflow, and actual memory size are checked;
   selected unread leaves validate and inactive slots remain lazy;
-- nested/indirect list item types and list element-reading/mutating operations
-  in aggregate match branches;
+- selected scalar list elements may now be read with `vector-at`/
+  `vector-f64-at` through `kotoba-wasm` commit `9550a08` and
+  `kotoba-component` commit `058ff9a`; the same list checks run before an
+  unsigned index check and aligned scalar load;
+- nested/indirect list item types and list fallback/update operations in
+  aggregate match branches;
 - general aggregate ownership and linearity analysis beyond this bounded
   identity/borrowed-result slice;
 - scalar named capabilities now compose with aggregate match functions through
