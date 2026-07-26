@@ -219,6 +219,99 @@
         (finally
           (Files/deleteIfExists path))))))
 
+(deftest structural-option-and-result-eliminators-compile-from-kotoba
+  (doseq [{:keys [source export calls]}
+          [{:source "(ns component.is-some (:export [is-some]))
+                     (defn is-some [value [:option :i64]] :bool
+                       (option-some?-of [:option :i64] value))"
+            :export 'is-some
+            :calls [["is-some(none)" "false" [[[:option :i64] false]]]
+                    ["is-some(some(7))" "true" [[[:option :i64] true 7]]]]}
+           {:source "(ns component.read-option (:export [read-option]))
+                     (defn read-option
+                       [value [:option :i64] fallback :i64] :i64
+                       (option-value-of [:option :i64] value fallback))"
+            :export 'read-option
+            :calls [["read-option(none, 41)" "41"
+                     [[[:option :i64] false] 41]]
+                    ["read-option(some(7), 41)" "7"
+                     [[[:option :i64] true 7] 41]]]}
+           {:source "(ns component.is-ok (:export [is-ok]))
+                     (defn is-ok [value [:result :i64 :i64]] :bool
+                       (result-ok?-of [:result :i64 :i64] value))"
+            :export 'is-ok
+            :calls [["is-ok(ok(8))" "true" [[true 8]]]
+                    ["is-ok(err(-9))" "false" [[false -9]]]]}
+           {:source "(ns component.read-ok (:export [read-ok]))
+                     (defn read-ok
+                       [value [:result :i64 :i64] fallback :i64] :i64
+                       (result-value-of [:result :i64 :i64] value fallback))"
+            :export 'read-ok
+            :calls [["read-ok(ok(8), 41)" "8" [[true 8] 41]]
+                    ["read-ok(err(-9), 41)" "41" [[false -9] 41]]]}
+           {:source "(ns component.read-error (:export [read-error]))
+                     (defn read-error
+                       [value [:result :i64 :i64] fallback :i64] :i64
+                       (result-error-of [:result :i64 :i64] value fallback))"
+            :export 'read-error
+            :calls [["read-error(ok(8), 41)" "41" [[true 8] 41]]
+                    ["read-error(err(-9), 41)" "-9" [[false -9] 41]]]}]]
+    (let [artifact (compiler/compile-component source)
+          kir (:kir (compiler/compile-source source :wasm32-wasi-kotoba-v1))
+          path (Files/createTempFile
+                "kotoba-component-union-eliminator-" ".wasm"
+                (make-array FileAttribute 0))]
+      (try
+        (Files/write path ^bytes (:bytes artifact)
+                     (make-array java.nio.file.OpenOption 0))
+        (is (= :structural-union-elimination
+               (:canonical-lowering artifact)))
+        (doseq [[invoke output args] calls]
+          (let [run (shell/sh wasmtime-binary "run" "--invoke" invoke (str path))]
+            (is (= output (str/trim (:out run))) (:err run))
+            (is (zero? (:exit run)) (:err run))
+            (is (= output (str (ir/execute kir export args))))))
+        (finally
+          (Files/deleteIfExists path))))))
+
+(deftest structural-option-bool-projection-validates-only-the-active-case
+  (let [source "(ns component.option-bool (:export [read-bool]))
+                (defn read-bool
+                  [value [:option :bool] fallback :bool] :bool
+                  (option-value-of [:option :bool] value fallback))"
+        artifact (compiler/compile-component source)
+        kir (:kir (compiler/compile-source source :wasm32-wasi-kotoba-v1))
+        core (component-core/emit kir :wasm32-wasi-kotoba-v1)
+        dir (Files/createTempDirectory
+             "kotoba-component-option-bool-" (make-array FileAttribute 0))
+        component-path (.resolve dir "option-bool.component.wasm")
+        core-path (.resolve dir "option-bool.core.wasm")]
+    (try
+      (Files/write component-path ^bytes (:bytes artifact)
+                   (make-array java.nio.file.OpenOption 0))
+      (Files/write core-path ^bytes core
+                   (make-array java.nio.file.OpenOption 0))
+      (let [component-run
+            (shell/sh wasmtime-binary "run" "--invoke"
+                      "read-bool(some(true), false)" (str component-path))
+            malformed-active
+            (shell/sh wasmtime-binary "run" "--invoke" "cm32p2||read-bool"
+                      (str core-path) "1" "2" "0")
+            malformed-inactive
+            (shell/sh wasmtime-binary "run" "--invoke" "cm32p2||read-bool"
+                      (str core-path) "0" "2" "0")]
+        (is (zero? (:exit component-run)) (:err component-run))
+        (is (= "true" (str/trim (:out component-run))))
+        (is (not (zero? (:exit malformed-active)))
+            "the selected bool payload must be canonical")
+        (is (zero? (:exit malformed-inactive)) (:err malformed-inactive))
+        (is (= "0" (str/trim (:out malformed-inactive)))
+            "an inactive payload is not interpreted"))
+      (finally
+        (Files/deleteIfExists component-path)
+        (Files/deleteIfExists core-path)
+        (Files/deleteIfExists dir)))))
+
 (deftest named-scalar-record-identity-is-admitted
   (let [descriptor [:ref :demo/point]
         kir {:format :kotoba.kir/v4 :exports ['echo] :effects #{}

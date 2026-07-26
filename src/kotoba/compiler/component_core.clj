@@ -276,6 +276,54 @@
                (canonical/layout descriptor schemas))
       (assoc construction :descriptor descriptor))))
 
+(defn- structural-union-elimination
+  "Return a plan for a scalar option/result predicate or payload projection.
+  The admitted projection shape takes its fallback as a parameter, preserving
+  an exact flat Component signature without compiling arbitrary branch
+  expressions in this increment."
+  [function schemas]
+  (let [{:keys [params param-types result body]} function
+        [op descriptor value fallback] (when (seq? body) body)
+        union-param (first params)
+        union-type (first param-types)
+        predicate-kind
+        ({'option-some?-of :option 'result-ok?-of :result} op)
+        predicate? (some? predicate-kind)
+        projection
+        (case op
+          option-value-of {:selected-case 1 :payload-type (second descriptor)}
+          result-value-of {:selected-case 0 :payload-type (second descriptor)}
+          result-error-of {:selected-case 1 :payload-type (get descriptor 2)}
+          nil)
+        projection-kind
+        ({'option-value-of :option
+          'result-value-of :result
+          'result-error-of :result} op)
+        payload-type (:payload-type projection)]
+    (when (and (vector? descriptor)
+               (= descriptor union-type)
+               (= value union-param)
+               (contains? #{:option :result} (first descriptor))
+               (or (nil? predicate-kind)
+                   (= predicate-kind (first descriptor)))
+               (or (nil? projection-kind)
+                   (= projection-kind (first descriptor)))
+               (canonical/layout descriptor schemas)
+               (if predicate?
+                 (and (= 1 (count params))
+                      (= 1 (count param-types))
+                      (= :bool result))
+                 (and projection
+                      (= 2 (count params))
+                      (= [descriptor payload-type] param-types)
+                      (= fallback (second params))
+                      (= payload-type result)
+                      (contains? #{:i64 :f32 :f64 :bool} payload-type))))
+      (if predicate?
+        {:descriptor descriptor :operation op :kind :predicate}
+        (assoc projection :descriptor descriptor :operation op
+               :kind :projection)))))
+
 (defn- scalar-record-projection [function schemas]
   (let [{:keys [params param-types result body]} function
         descriptor (first param-types)
@@ -669,6 +717,10 @@
            (= 1 (count exports))
            (structural-union-construction (first exports) (:schemas kir))
            (empty? (:effects kir))) :structural-union-construction
+      (and (= 1 (count (:functions kir)))
+           (= 1 (count exports))
+           (structural-union-elimination (first exports) (:schemas kir))
+           (empty? (:effects kir))) :structural-union-elimination
       (and (= 1 (count (:functions kir)))
            (= 1 (count exports))
            (string-field-record-identity-function? (first exports) (:schemas kir))
@@ -1760,6 +1812,60 @@
      "    i32.const 8 global.set $next)\n"
      "  (func (export \"cm32p2_initialize\") i32.const 8 global.set $next))\n")))
 
+(defn- structural-union-elimination-wat [function schemas plan]
+  (let [export (wit-name (:name function))
+        layout (canonical/layout (:descriptor plan) schemas)
+        joined-types (vec (rest (:flat layout)))
+        joined-params
+        (apply str
+               (map-indexed
+                (fn [index core-type]
+                  (str " (param $p" index " " (core-type-name core-type) ")"))
+                joined-types))
+        predicate? (= :predicate (:kind plan))
+        payload-type (:payload-type plan)
+        result-type (if predicate? :bool payload-type)
+        fallback-param (when-not predicate?
+                         (str " (param $fallback "
+                              (wasm-value-type payload-type) ")"))
+        predicate-expression
+        (case (:operation plan)
+          option-some?-of "    local.get $disc\n"
+          result-ok?-of "    local.get $disc i32.eqz\n"
+          nil)
+        payload-expression
+        (when-not predicate?
+          (variant-flat-value-expr joined-types 0 (core-type-of payload-type)))
+        selected-body
+        (when-not predicate?
+          (if (= :bool payload-type)
+            (str "      " payload-expression
+                 " local.tee $selected i32.const 1 i32.gt_u if unreachable end\n"
+                 "      local.get $selected\n")
+            (str "      " payload-expression "\n")))
+        projection-expression
+        (when-not predicate?
+          (str
+           (when (= :bool payload-type)
+             "    local.get $fallback i32.const 1 i32.gt_u if unreachable end\n")
+           "    local.get $disc i32.const " (:selected-case plan) " i32.eq\n"
+           "    if (result " (wasm-value-type payload-type) ")\n"
+           selected-body
+           "    else\n"
+           "      local.get $fallback\n"
+           "    end\n"))]
+    (str
+     "(module\n"
+     "  (func (export \"cm32p2||" export "\") (param $disc i32)"
+     joined-params fallback-param " (result " (wasm-value-type result-type) ")\n"
+     (when (= :bool payload-type) "    (local $selected i32)\n")
+     "    local.get $disc i32.const 2 i32.ge_u if unreachable end\n"
+     (if predicate? predicate-expression projection-expression)
+     "  )\n"
+     "  (func (export \"cm32p2||" export "_post\") (param "
+     (wasm-value-type result-type) "))\n"
+     "  (func (export \"cm32p2_initialize\")))\n")))
+
 (defn- variant-capability-wat
   "Application-side standard32 core module for a direct `typed-cap-call`
   whose request/result is one sealed variant admitted by
@@ -2786,6 +2892,12 @@
        (structural-union-construction-wat
         function (:schemas kir)
         (structural-union-construction function (:schemas kir)))))
+    :structural-union-elimination
+    (let [function (first (exported-functions kir))]
+      (wasm-tools/parse-wat
+       (structural-union-elimination-wat
+        function (:schemas kir)
+        (structural-union-elimination function (:schemas kir)))))
     :string-field-record-identity
     (wasm-tools/parse-wat
      (string-field-record-wat (first (exported-functions kir)) (:schemas kir)))

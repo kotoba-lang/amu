@@ -58,7 +58,9 @@ match the reference interpreter's values.
 
 - recursive aggregate payload codecs and aggregate values nested in records;
 - option/result capability request/result and provider bindings;
-- projections, matches, and general computation in the Component emitter;
+- exhaustive matches and general branch computation in the Component emitter
+  (direct tag predicates and fallback projections are implemented by ADR
+  0080);
 - payload-less WIT result forms outside Kotoba's existing two-payload result
   descriptor;
 - native AOT parity, which remains a distinct ABI track.

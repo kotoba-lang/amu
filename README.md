@@ -460,9 +460,11 @@ fail-closed pending the linearity analysis required for persistent semantics.
 Structural scalar `[:option T]` and `[:result T E]` values now use the same
 standard Canonical ABI union codec as sealed variants. Identity exports and
 the explicit `option-*-of`/`result-*-of` constructors compile from Kotoba to
-real `option<T>`/`result<T,E>` Component exports; the core boundary traps
-out-of-range discriminants, and CI checks `none`/`some`/`ok`/`err` with the
-pinned Wasmtime engine.
+real `option<T>`/`result<T,E>` Component exports. Their tag predicates and
+fallback projections also execute directly at the Component boundary; the
+core boundary traps out-of-range discriminants and non-canonical active bool
+payloads without interpreting an inactive case. CI checks
+`none`/`some`/`ok`/`err` with the pinned Wasmtime engine.
 The Core-Wasm compatibility ABI also lowers the monomorphic
 `:option-i64`/`:result-i64` operations through the same sealed descriptor
 encoding as `[:option :i64]`/`[:result :i64 :i64]`; admitted scalar ADTs no
