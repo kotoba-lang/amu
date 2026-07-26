@@ -223,6 +223,31 @@
         (Files/deleteIfExists component-path)
         (Files/deleteIfExists core-path)))))
 
+(deftest structural-option-f64-vector-round-trips-through-a-real-component
+  (let [source
+        "(ns component.option-f64-vector (:export [echo]))
+         (defn echo [value [:option :vector-f64]]
+           [:option :vector-f64] value)"
+        artifact (compiler/compile-component source)
+        path (Files/createTempFile
+              "kotoba-component-option-f64-vector-" ".wasm"
+              (make-array FileAttribute 0))]
+    (try
+      (Files/write path ^bytes (:bytes artifact)
+                   (make-array java.nio.file.OpenOption 0))
+      (is (= :structural-union-identity (:canonical-lowering artifact)))
+      (is (str/includes? (:source (:wit artifact))
+                         "option<list<f64>>"))
+      (doseq [[invoke expected]
+              [["echo(none)" "none"]
+               ["echo(some([1.5, -2.25]))" "some([1.5, -2.25])"]]]
+        (let [run (shell/sh wasmtime-binary "run" "--invoke" invoke
+                            (str path))]
+          (is (zero? (:exit run)) (:err run))
+          (is (= expected (str/trim (:out run))))))
+      (finally
+        (Files/deleteIfExists path)))))
+
 (deftest structural-option-record-round-trips-through-the-extracted-backend
   (let [point [:ref :demo/point]
         descriptor [:option point]
