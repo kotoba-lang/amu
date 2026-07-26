@@ -107,6 +107,21 @@
        (sort-by (juxt :id (comp pr-str :request-type) (comp pr-str :result-type)))
        vec))
 
+(defn- linear-resource-interface-text [[interface entries]]
+  (let [descriptors (mapcat (juxt :request-type :result-type) entries)]
+    (str "interface " interface " {\n"
+         (use-line (type-uses descriptors))
+         (apply str
+                (map (fn [{:keys [function request-type result-type]}]
+                       (let [resource (str function "-capability")]
+                         (str "  resource " resource ";\n"
+                              "  issue-" function ": func() -> own<" resource ">;\n"
+                              "  execute-" function ": func(cap: own<" resource
+                              ">, request: " (type-text request-type)
+                              ") -> " (type-text result-type) ";\n")))
+                     entries))
+         "}\n\n")))
+
 (defn- capability-interface-text [[interface entries]]
   (let [descriptors (mapcat (juxt :request-type :result-type) entries)]
     (str "interface " interface " {\n"
@@ -126,7 +141,8 @@
 
 (defn emit
   "Return a deterministic WIT v1 package and receipt for checked KIR."
-  [kir]
+  ([kir] (emit kir {}))
+  ([kir {:keys [capability-mode] :or {capability-mode :function}}]
   (when-not (contains? #{:kotoba.kir/v3 :kotoba.kir/v4} (:format kir))
     (reject "WIT generation requires checked KIR" {:format (:format kir)}))
   (let [schemas (or (:schemas kir) {})
@@ -157,7 +173,10 @@
                       (str "interface types {\n"
                            (apply str (map schema-text (sort-by (comp str key) schemas)))
                            "}\n\n"))
-                    (apply str (map capability-interface-text interfaces))
+                    (apply str (map (if (= capability-mode :linear-resource)
+                                      linear-resource-interface-text
+                                      capability-interface-text)
+                                    interfaces))
                     "world application {\n"
                     (use-line (type-uses export-types))
                     (apply str (map #(str "  import " % ";\n") (keys interfaces)))
@@ -169,4 +188,5 @@
        :source text
        :sha256 (text-sha256 text)
        :imports (mapv :name capabilities)
-       :exports (mapv :name exports)})))
+       :capability-mode capability-mode
+       :exports (mapv :name exports)}))))

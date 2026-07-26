@@ -307,7 +307,10 @@
                       (assoc-in [:budgets :memory-pages]
                                 (Long/parseLong (option args "--memory-pages")))
                       (option args "--package-lock-cid")
-                      (assoc :package-lock-cid (option args "--package-lock-cid"))))
+                      (assoc :package-lock-cid (option args "--package-lock-cid"))
+                      (option args "--capability-mode")
+                      (assoc :capability-mode
+                             (keyword (option args "--capability-mode")))))
 
                    (seq source-roots)
                    (let [{:keys [sources root]} (project-files/load-closed-graph input source-roots)]

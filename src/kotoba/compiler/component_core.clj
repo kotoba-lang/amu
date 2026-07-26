@@ -290,6 +290,16 @@
                capability)
       capability)))
 
+(defn- scalar-literal-capability-call [function]
+  (let [{:keys [params param-types result body]} function
+        [_ id request-type result-type request] (when (seq? body) body)
+        capability (some #(when (= id (:id %)) %) (:capabilities component-wit/contract))]
+    (when (and (empty? params) (empty? param-types)
+               (seq? body) (= 'typed-cap-call (first body))
+               (= :i64 request-type) (= :i64 result-type) (= :i64 result)
+               (integer? request) capability)
+      {:capability capability :request request})))
+
 (defn- record-capability-call [function schemas]
   (let [{:keys [params param-types result body]} function
         request-type (first param-types)
@@ -533,6 +543,10 @@
 (defn assert-supported! [kir]
   (let [exports (exported-functions kir)]
     (cond
+      (and (= 1 (count (:functions kir)))
+           (= 1 (count exports))
+           (scalar-literal-capability-call (first exports)))
+      :scalar-literal-capability-call
       (and (= 1 (count (:functions kir)))
            (= 1 (count exports))
            (scalar-capability-call (first exports))) :scalar-capability-call
@@ -1345,6 +1359,50 @@
      "    local.get $request call $provider)\n"
      "  (func (export \"cm32p2||" export "_post\") (param "
      (wasm-value-type result-type) "))\n"
+     "  (func (export \"cm32p2_realloc\") (param i32 i32 i32 i32) (result i32)\n"
+     "    i32.const 0)\n"
+     "  (func (export \"cm32p2_initialize\")))\n")))
+
+(defn- linear-resource-scalar-capability-wat [function capability]
+  (let [export (wit-name (:name function))
+        request-type (first (:param-types function))
+        result-type (:result function)
+        interface (name (:interface capability))
+        operation (:function capability)
+        module (str "cm32p2|kotoba:application/" interface "@1")]
+    (str
+     "(module\n"
+     "  (import \"" module "\" \"issue-" operation
+     "\" (func $issue (result i32)))\n"
+     "  (import \"" module "\" \"execute-" operation
+     "\" (func $execute (param i32 " (wasm-value-type request-type)
+     ") (result " (wasm-value-type result-type) ")))\n"
+     "  (memory (export \"cm32p2_memory\") 1 1)\n"
+     "  (func (export \"cm32p2||" export "\") (param $request "
+     (wasm-value-type request-type) ") (result " (wasm-value-type result-type) ")\n"
+     "    call $issue local.get $request call $execute)\n"
+     "  (func (export \"cm32p2||" export "_post\") (param "
+     (wasm-value-type result-type) "))\n"
+     "  (func (export \"cm32p2_realloc\") (param i32 i32 i32 i32) (result i32)\n"
+     "    i32.const 0)\n"
+     "  (func (export \"cm32p2_initialize\")))\n")))
+
+(defn- linear-resource-literal-capability-wat [function plan]
+  (let [export (wit-name (:name function))
+        capability (:capability plan)
+        interface (name (:interface capability))
+        operation (:function capability)
+        module (str "cm32p2|kotoba:application/" interface "@1")]
+    (str
+     "(module\n"
+     "  (import \"" module "\" \"issue-" operation
+     "\" (func $issue (result i32)))\n"
+     "  (import \"" module "\" \"execute-" operation
+     "\" (func $execute (param i32 i64) (result i64)))\n"
+     "  (memory (export \"cm32p2_memory\") 1 1)\n"
+     "  (func (export \"cm32p2||" export "\") (result i64)\n"
+     "    call $issue i64.const " (:request plan) " call $execute)\n"
+     "  (func (export \"cm32p2||" export "_post\") (param i64))\n"
      "  (func (export \"cm32p2_realloc\") (param i32 i32 i32 i32) (result i32)\n"
      "    i32.const 0)\n"
      "  (func (export \"cm32p2_initialize\")))\n")))
@@ -2493,6 +2551,14 @@
   ([kir target] (emit kir target {}))
   ([kir target opts]
   (case (assert-supported! kir)
+    :scalar-literal-capability-call
+    (let [function (first (exported-functions kir))]
+      (if (= :linear-resource (:capability-mode opts))
+        (wasm-tools/parse-wat
+         (linear-resource-literal-capability-wat
+          function (scalar-literal-capability-call function)))
+        (wasm/emit-component-core
+         kir target (assoc opts :capability-imports (scalar-capability-imports kir)))))
     :scalar (wasm/emit-component-core kir target opts)
     :scalar-with-capabilities
     (wasm/emit-component-core
@@ -2527,7 +2593,10 @@
     :scalar-capability-call
     (let [function (first (exported-functions kir))]
       (wasm-tools/parse-wat
-       (scalar-capability-wat function (scalar-capability-call function))))
+       ((if (= :linear-resource (:capability-mode opts))
+          linear-resource-scalar-capability-wat
+          scalar-capability-wat)
+        function (scalar-capability-call function))))
     :record-capability-call
     (let [function (first (exported-functions kir))]
       (wasm-tools/parse-wat
