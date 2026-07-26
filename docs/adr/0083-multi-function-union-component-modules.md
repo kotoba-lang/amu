@@ -106,10 +106,17 @@ are rejected.
 - fallback reads with `vector-get`/`vector-f64-get` are implemented by
   `kotoba-wasm` commit `0eb2cf9` and `kotoba-component` commit `ea2bc06`;
   malformed selected lists still trap before index fallback selection;
-- nested/indirect list item types and list update operations in aggregate
-  match branches;
-- general aggregate ownership and linearity analysis beyond this bounded
-  identity/borrowed-result slice;
+- aggregate match branches returning `list<s64>`/`list<f64>` are implemented
+  by `kotoba-component` commits `de5af55` / `a5cc925` and compiler commit
+  `b91b429`: a selected payload list, another vector parameter, or a bounded
+  literal may feed copy-on-write drop/assoc/conj; every result uses a fresh
+  Canonical buffer and result area, selected aggregate leaves validate,
+  inactive joined slots stay lazy, and post-return permits repeated calls in
+  one core instance without arena growth;
+- nested/indirect list item types remain fail-closed pending recursive
+  per-element validation and an ownership plan;
+- linear reuse for repeated internal collection construction remains separate
+  from the now-implemented bounded export-result ownership contract;
 - scalar named capabilities now compose with aggregate match functions through
   `kotoba-wasm` commit `7359448` and `kotoba-component` commit `a5804c0`.
   The shared match emitter receives the exact WIT import table, generic
