@@ -16,7 +16,9 @@
             [kotoba.compiler.document-digest-style-test]
             [kotoba.compiler.document-sha256-test]
             [kotoba.compiler.document-dom-reconcile-test]
+            [kotoba.compiler.document-dual-renderer-test]
             [kotoba.compiler.recursive-tree-value-test]
+            [kotoba.compiler.recursive-tree-update-test]
             [kotoba.compiler.plan-test]
             [kotoba.compiler.string-operation-test]
             [kotoba.compiler.frontend-fuzz-test]
@@ -87,7 +89,9 @@
                                           'kotoba.compiler.document-digest-style-test
                                           'kotoba.compiler.document-sha256-test
                                           'kotoba.compiler.document-dom-reconcile-test
+                                          'kotoba.compiler.document-dual-renderer-test
                                           'kotoba.compiler.recursive-tree-value-test
+                                          'kotoba.compiler.recursive-tree-update-test
                                           'kotoba.compiler.plan-test
                                           'kotoba.compiler.string-operation-test
                                           'kotoba.compiler.frontend-fuzz-test
