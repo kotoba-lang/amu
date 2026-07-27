@@ -248,6 +248,51 @@
       (finally
         (Files/deleteIfExists path)))))
 
+(deftest source-string-list-crosses-a-named-capability-provider
+  (let [descriptor [:option [:list :string]]
+        source
+        "(ns component.string-list-capability
+           (:export [invoke])
+           (:capabilities #{:http/post}))
+         (defn invoke
+           [request [:option [:list :string]]]
+           [:option [:list :string]]
+           (typed-cap-call
+            :http/post
+            [:option [:list :string]]
+            [:option [:list :string]]
+            request))"
+        compiled (compiler/compile-source
+                  source :wasm32-wasi-kotoba-v1
+                  {:allow #{[:cap/call 4]}})
+        application
+        (compiler/compile-component source {:allow #{[:cap/call 4]}})
+        provider
+        (composition/package-structural-union-identity-provider
+         :http/post descriptor)
+        closed (composition/compose-closed application [provider])
+        path (Files/createTempFile
+              "kotoba-source-string-list-capability-" ".wasm"
+              (make-array FileAttribute 0))]
+    (try
+      (Files/write path ^bytes (:bytes closed)
+                   (make-array java.nio.file.OpenOption 0))
+      (is (= descriptor (get-in compiled [:kir :functions 0 :result])))
+      (is (= :structural-union-capability-call
+             (:canonical-lowering application)))
+      (is (= [:http/post] (:application-imports closed)))
+      (doseq [[invoke expected]
+              [["invoke(none)" "none"]
+               ["invoke(some([]))" "some([])"]
+               ["invoke(some([\"hello\",\"安全\"]))"
+                "some([\"hello\", \"安全\"])"]]]
+        (let [run (shell/sh wasmtime-binary "run" "--invoke"
+                            invoke (str path))]
+          (is (zero? (:exit run)) (:err run))
+          (is (= expected (str/trim (:out run))) invoke)))
+      (finally
+        (Files/deleteIfExists path)))))
+
 (deftest source-option-list-match-calls-and-matches-a-named-capability
   (let [descriptor [:option :vector-i64]
         source
