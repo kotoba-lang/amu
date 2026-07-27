@@ -119,6 +119,13 @@ are rejected.
   hashing BigInt literals, and `kotoba-component` commit `8531784` validates
   every active item's bool leaves. The borrowed item graph remains live
   through Canonical lift and is released only by post-return;
+- the same `option<list<finite scalar record>>` now crosses an explicit named
+  WIT capability and a separately composed provider. `kotoba-component`
+  commit `36c542b` keeps application and provider admission fail-closed,
+  emits record declarations reached through the list item, and validates
+  every active item bool before the provider returns it. Compiler source E2E
+  starts at `.kotoba`, grants only `:http/post`, composes that named provider,
+  and executes none, empty, and multi-record values in Wasmtime;
 - list items containing strings, nested unions, or another list remain
   fail-closed pending recursive indirect-graph validation/copy ownership;
 - linear reuse for repeated internal collection construction remains separate
