@@ -477,6 +477,9 @@ string and list leaves. CI checks
 The same union codec crosses an explicitly named capability import. In
 addition to scalar leaves, the request/result may carry bounded
 strings/keywords, `list<s64>`/`list<f64>`, and nested option/result payloads.
+General bounded lists may recursively contain scalar, string/keyword,
+option/result, finite-record, or list items under shared whole-value byte and
+item-count budgets.
 The compiler emits the exact WIT import, a separately packaged provider
 exports the matching structural type, and closed-world composition rejects
 missing or extra providers. Both sides derive their bounded Canonical arena
@@ -504,10 +507,13 @@ maximum request and result lists can coexist in the bounded arena. Other
 aggregate match/capability combinations remain fail-closed until admitted by
 an explicit Canonical codec.
 General bounded `[:list T]` types are shared KIR/Wasm metadata ABI values.
-Component identity currently admits `bool` items and finite scalar-record
-items, recursively validates every active bool field, and borrows the
-fixed-size item buffer through Canonical lift until post-return. Indirect or
-union-bearing items and list-of-list remain rejected.
+Component identity and named capabilities admit scalar, string/keyword,
+structural option/result, finite-record, and recursively nested list items.
+Every active bool, discriminant, pointer/length, per-leaf bound, and arena
+range is checked. All UTF-8 leaves share a 1 MiB budget and all nested list
+nodes share a 16,384-item budget; depth-specific loops prevent inner
+traversals from corrupting outer cursors. Canonical lift borrows the complete
+item graph through return, and post-return releases it afterward.
 Symmetric `result<list<T>, list<T>>` values also cross this shared path. Both
 the outgoing `ok`/`err` case and the provider's returned case stay explicit;
 the returned discriminant and active list are validated before either branch
