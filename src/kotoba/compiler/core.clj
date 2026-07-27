@@ -149,9 +149,10 @@
   that happened or the budget is host-enforced only."
   ([source] (compile-component source {} {}))
   ([source policy] (compile-component source policy {}))
-  ([source policy {:keys [profile budgets component-abilities capability-mode]
-                   :or {profile :sync} :as opts}]
+  ([source policy {:keys [profile budgets component-abilities capability-mode target]
+                   :or {profile :sync target :wasm-component-kotoba-v1} :as opts}]
    (let [budgets (merge default-component-budgets budgets)
+         typed-v3? (= target abi/component-target-v2)
          _ (when-not (contains? #{nil :function :linear-resource} capability-mode)
              (throw (ex-info "Component capability mode is unsupported"
                              {:phase :component-capability-mode
@@ -159,6 +160,13 @@
          core (compile-source source :wasm32-wasi-kotoba-v1 policy)
          kir (component-kir (:kir core))
          capability-ids (component-capability-ids kir)
+         _ (when (and typed-v3? (not= #{7} capability-ids))
+             (throw (ex-info
+                     "typed v0.3 lowering currently requires the clock/now vertical slice"
+                     {:phase :component-abi-v3
+                      :target target
+                      :required #{7}
+                      :supplied capability-ids})))
          _ (when (and component-abilities
                       (not= capability-ids (set (keys component-abilities))))
              (throw (ex-info "Component abilities must exactly match capability calls"
@@ -176,12 +184,15 @@
              (throw (ex-info "Linear resource mode requires one direct scalar capability call"
                              {:phase :component-capability-mode
                               :capability-mode capability-mode})))
-         wit (component-wit/emit kir {:capability-mode (or capability-mode :function)})
+         component-opts {:capability-mode (or capability-mode :function)
+                         :typed-capability-v3? typed-v3?}
+         wit (component-wit/emit kir component-opts)
          enforcement (component-core/fuel-enforcement kir)
          component-bytes (component-core/emit kir :wasm32-wasi-kotoba-v1
                                               {:fuel (:fuel budgets)
                                                :memory-pages (:memory-pages budgets)
-                                               :capability-mode capability-mode})
+                                               :capability-mode capability-mode
+                                               :typed-capability-v3? typed-v3?})
          packaged (component-artifact/package component-bytes kir wit)]
      (assoc packaged
             :capabilities (into #{} (map abi/component-import-key) capability-ids)
