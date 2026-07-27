@@ -4,6 +4,7 @@
             [kotoba.compiler.core :as compiler]
             [kotoba.kir :as ir]
             [provider.object :as object]
+            [kotoba.kir.value :as value]
             [kotoba.compiler.reference-runtime :as runtime]))
 
 (def source
@@ -33,14 +34,15 @@
         runtime (hosted (fn [request]
                           (reset! seen request)
                           true))
+        payload (value/utf8-string->bytes "payload-bytes")
         request [object/put-block-request-type
-                 :example/blocks "sha256:deadbeef" "payload-bytes"]]
+                 :example/blocks "sha256:deadbeef" payload]]
     (is (true? ((:invoke runtime) 'put-block [request])))
-    (is (= {:operation :put-block
-            :binding :example/blocks
-            :digest "sha256:deadbeef"
-            :bytes "payload-bytes"}
-           @seen))))
+    (is (= :put-block (:operation @seen)))
+    (is (= :example/blocks (:binding @seen)))
+    (is (= "sha256:deadbeef" (:digest @seen)))
+    (is (value/bytes-value? (:bytes @seen)))
+    (is (zero? (value/compare-typed-values :bytes payload (:bytes @seen))))))
 
 (deftest cas-wins-and-loses-are-typed-bools
   (let [won (hosted (fn [_] true))
@@ -58,12 +60,12 @@
          clojure.lang.ExceptionInfo #"binding is not allowed"
          ((:invoke runtime) 'put-block
           [[object/put-block-request-type
-            :example/other "sha256:x" "p"]])))
+            :example/other "sha256:x" (value/utf8-string->bytes "p")]])))
     (is (thrown-with-msg?
          clojure.lang.ExceptionInfo #"digest must be non-empty"
          ((:invoke runtime) 'put-block
           [[object/put-block-request-type
-            :example/blocks "" "p"]])))
+            :example/blocks "" (value/utf8-string->bytes "p")]])))
     (is (false? @called?))))
 
 (deftest transport-exceptions-are-redacted
@@ -72,7 +74,7 @@
          clojure.lang.ExceptionInfo #"object provider failed"
          ((:invoke runtime) 'put-block
           [[object/put-block-request-type
-            :example/blocks "sha256:x" "p"]])))))
+            :example/blocks "sha256:x" (value/utf8-string->bytes "p")]])))))
 
 (deftest missing-grant-denies-before-provider-invoke
   (let [kir (ir/lower (:hir (compiler/check-source
@@ -82,7 +84,7 @@
          clojure.lang.ExceptionInfo #"capability denied"
          ((:invoke runtime) 'put-block
           [[object/put-block-request-type
-            :example/blocks "sha256:x" "p"]])))
+            :example/blocks "sha256:x" (value/utf8-string->bytes "p")]])))
     (is (thrown-with-msg?
          clojure.lang.ExceptionInfo #"capability denied"
          ((:invoke runtime) 'compare-and-set-ref

@@ -1,6 +1,6 @@
 (ns test.nbb.object-provider
   "W5 stream-object dual-runtime first slice — put-block + CAS on `:cljs`
-  with a mock host transport. Kit `:bytes` is a host string (opaque UTF-8).
+  with a mock host transport. Kit `:bytes` is a host Uint8Array (runtime leaf via kotoba.kir.value).
 
   Linear get-stream handles are out of this slice (Component v0.3 path).
   Run: `npm run test-nbb-object-provider`."
@@ -8,6 +8,7 @@
             [kotoba.compiler.frontend :as frontend]
             [kotoba.kir :as ir]
             [provider.object :as object]
+            [kotoba.kir.value :as value]
             [kotoba.compiler.reference-runtime :as runtime]))
 
 (def source
@@ -43,14 +44,16 @@
           runtime (hosted (fn [request]
                             (reset! seen request)
                             true))
+          payload (value/utf8-string->bytes "payload-bytes")
           request [object/put-block-request-type
-                   :example/blocks "sha256:deadbeef" "payload-bytes"]
+                   :example/blocks "sha256:deadbeef" payload]
           result ((:invoke runtime) 'put-block [request])]
       (check "cljs-put-block-crosses-only-the-typed-boundary"
              (and (true? result)
                   (= :example/blocks (:binding @seen))
                   (= "sha256:deadbeef" (:digest @seen))
-                  (= "payload-bytes" (:bytes @seen)))
+                  (value/bytes-value? (:bytes @seen))
+                  (zero? (value/compare-typed-values :bytes payload (:bytes @seen))))
              (pr-str {:result result :seen @seen})))
     (catch :default e
       (check "cljs-put-block-crosses-only-the-typed-boundary" false (.-message e)))))
@@ -77,14 +80,14 @@
           binding-threw?
           (try
             ((:invoke runtime) 'put-block
-             [[object/put-block-request-type :example/other "sha256:x" "p"]])
+             [[object/put-block-request-type :example/other "sha256:x" (value/utf8-string->bytes "p")]])
             false
             (catch :default e
               (boolean (re-find #"binding is not allowed" (.-message e)))))
           empty-threw?
           (try
             ((:invoke runtime) 'put-block
-             [[object/put-block-request-type :example/blocks "" "p"]])
+             [[object/put-block-request-type :example/blocks "" (value/utf8-string->bytes "p")]])
             false
             (catch :default e
               (boolean (re-find #"digest must be non-empty" (.-message e)))))]
@@ -101,7 +104,7 @@
           threw?
           (try
             ((:invoke runtime) 'put-block
-             [[object/put-block-request-type :example/blocks "sha256:x" "p"]])
+             [[object/put-block-request-type :example/blocks "sha256:x" (value/utf8-string->bytes "p")]])
             false
             (catch :default e
               (boolean (re-find #"object provider failed" (.-message e)))))]
@@ -121,7 +124,7 @@
           denied?
           (try
             ((:invoke runtime) 'put-block
-             [[object/put-block-request-type :example/blocks "sha256:x" "p"]])
+             [[object/put-block-request-type :example/blocks "sha256:x" (value/utf8-string->bytes "p")]])
             false
             (catch :default e
               (boolean (re-find #"capability denied" (.-message e)))))]
