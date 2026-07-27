@@ -152,6 +152,15 @@ identity. The executable plan and per-slice gates are documented in
 `kotoba-lang/kotoba-lang/docs/kotoba-centered-migration-plan.md` and root
 ADR-2607279200.
 
+The first CI7 slice accepts one-argument qualified operations such as
+`(http/post request)`, `(storage/transact request)`, and
+`(llm/generate request)`. Request type is inferred from the lexical value and
+result type from the enclosing typed context; the elaborated HIR is identical
+to the existing `typed-cap-call` form. The semantic name, source operation,
+effect, and stable compiler wire ID come from the language-owned catalog
+vendored at `resources/kotoba/lang/capability-catalog.edn`. Calls whose result
+has no typed context still fail closed instead of guessing a provider schema.
+
 
 GPU compilation now begins with a separate typed accelerator KIR rather than
 allowing arbitrary shaders into scalar CPU KIR. `kotoba.compiler.accelerator`

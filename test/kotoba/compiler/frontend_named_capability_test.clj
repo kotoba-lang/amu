@@ -15,8 +15,8 @@
   (try (compiler/check-source source) nil
        (catch clojure.lang.ExceptionInfo e (ex-message e))))
 
-;; `:identity/sign` is seeded to id 1 in
-;; resources/kotoba/compiler/capability-registry.edn -- asserted directly
+;; `:identity/sign` is seeded to id 1 in the language-owned semantic catalog
+;; vendored at resources/kotoba/lang/capability-catalog.edn -- asserted directly
 ;; here (not just relied upon) so a future re-numbering of the registry
 ;; fails this test loudly instead of silently changing what the other
 ;; assertions below actually exercise.
