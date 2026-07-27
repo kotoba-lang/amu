@@ -11,9 +11,9 @@
 
   Handles are not the application model: the guest builds and walks the
   document tree with the existing document-* operations. Full DOM
-  reconciliation and a first-class document-sha256 op remain follow-ups;
-  this slice locks the data→HTML half of the W4 exit gate that design-system
-  form-A (string-only call graphs) could not express."
+  reconciliation remains a follow-up; document-sha256 is first-class
+  (document_sha256_test). This slice locks the data→HTML half of the W4 exit
+  gate that design-system form-A (string-only call graphs) could not express."
   (:require [clojure.java.shell :as shell]
             [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]

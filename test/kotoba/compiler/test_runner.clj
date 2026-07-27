@@ -14,6 +14,7 @@
             [kotoba.compiler.document-value-test]
             [kotoba.compiler.document-ui-render-test]
             [kotoba.compiler.document-digest-style-test]
+            [kotoba.compiler.document-sha256-test]
             [kotoba.compiler.plan-test]
             [kotoba.compiler.string-operation-test]
             [kotoba.compiler.frontend-fuzz-test]
@@ -82,6 +83,7 @@
                                           'kotoba.compiler.document-value-test
                                           'kotoba.compiler.document-ui-render-test
                                           'kotoba.compiler.document-digest-style-test
+                                          'kotoba.compiler.document-sha256-test
                                           'kotoba.compiler.plan-test
                                           'kotoba.compiler.string-operation-test
                                           'kotoba.compiler.frontend-fuzz-test
