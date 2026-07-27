@@ -35,19 +35,11 @@
            locking dosync atom ref volatile!}
         (load-catalog-forbidden)))
 
-;; ADR-2607182410: compiler-local capability NAME -> [0,255] id registry, so
-;; `.kotoba` source can write `(cap-call :identity/sign msg)` instead of a
-;; magic number. This is a DISTINCT numbering system from any other repo's
-;; capability table (in particular kotoba-core-contracts'
-;; capability_contract.edn -- see resources/kotoba/compiler/
-;; capability-registry.edn's header comment for why reuse was rejected).
-;; `:cljs` mirrors the resource file's content by hand: unlike `:clj`, `:cljs`
-;; here has no wired-up synchronous classpath-resource read (the same
-;; limitation `load-catalog-forbidden` above documents by falling back to
-;; `#{}` on `:cljs` -- this fallback is a full copy rather than an empty set
-;; only because keeping ~7 short entries in sync by hand is cheap; it MUST be
-;; kept byte-identical to the resource file whenever an entry is added,
-;; renamed, or removed there).
+;; The language-owned semantic catalog is vendored byte-for-byte from
+;; kotoba-lang/kotoba-lang. The compiler derives both semantic-name -> wire ID
+;; and friendly source-operation -> semantic-name maps from that one authority.
+;; CLJS cannot synchronously read classpath resources, so its closed fallback
+;; is checked against the resource by JVM tests.
 (def ^:private capability-registry-cljs-fallback
   '{:identity/sign 1 :identity/verify 2 :hash/sha256 3 :http/post 4
     :log/read 5 :log/append 6 :clock/now 7 :state/transact 8
@@ -55,24 +47,42 @@
     :storage/transact 12 :http/get-stream 13 :object/get-stream 14
     :object/put-block 15 :object/compare-and-set-ref 16})
 
-(defn- load-capability-registry []
+(defn- load-capability-catalog []
   #?(:clj
      (try
-       (let [c (clojure.java.io/resource "kotoba/compiler/capability-registry.edn")]
+       (let [c (clojure.java.io/resource "kotoba/lang/capability-catalog.edn")]
          (if c
            (with-open [r (clojure.java.io/reader c)]
              (clojure.edn/read (java.io.PushbackReader. r)))
-           capability-registry-cljs-fallback))
-       (catch Exception _ capability-registry-cljs-fallback))
-     :cljs capability-registry-cljs-fallback))
+           {:capabilities
+            (into {} (map (fn [[name id]]
+                            [name {:source-operation (symbol (namespace name) (clojure.core/name name))
+                                   :effect name :compiler-wire-id id}]))
+                  capability-registry-cljs-fallback)}))
+       (catch Exception _
+         {:capabilities
+          (into {} (map (fn [[name id]]
+                          [name {:source-operation (symbol (namespace name) (clojure.core/name name))
+                                 :effect name :compiler-wire-id id}]))
+                capability-registry-cljs-fallback)}))
+     :cljs
+     {:capabilities
+      (into {} (map (fn [[name id]]
+                      [name {:source-operation (symbol (namespace name) (clojure.core/name name))
+                             :effect name :compiler-wire-id id}]))
+            capability-registry-cljs-fallback)}))
+
+(def capability-catalog (load-capability-catalog))
 
 (def capability-registry
-  "Compiler-local capability-name -> id map, loaded once at namespace-load
-  time (see load-capability-registry). A missing/unloadable resource falls
-  back to a small hand-maintained default rather than an empty map -- still
-  closed-world/deny-by-default for any name outside it, just with a non-empty
-  default set of names available even if the classpath resource is absent."
-  (load-capability-registry))
+  "Semantic capability name -> stable compiler wire ID."
+  (into {} (map (fn [[name entry]] [name (:compiler-wire-id entry)]))
+        (:capabilities capability-catalog)))
+
+(def source-operation-registry
+  "Friendly qualified source operation -> semantic capability name."
+  (into {} (map (fn [[name entry]] [(:source-operation entry) name]))
+        (:capabilities capability-catalog)))
 
 (def arithmetic '#{+ - * quot bit-xor bit-and bit-or})
 (def i32-operations
@@ -587,6 +597,17 @@
 ;; of resolving the keyword to its id.
 (def ^:dynamic *used-capability-keywords* nil)
 
+(defn- capability-wire-id [capability form]
+  (if-let [id (get capability-registry capability)]
+    id
+    (reject! (str "cap-call names an unregistered capability: " capability)
+             form)))
+
+(defn- effect-capability-id [id]
+  ;; `.kotoba` policy literals are bigint under nbb while typed Wasm metadata
+  ;; indices must remain host integers for ULEB encoding.
+  #?(:clj id :cljs (i64/->bigint id)))
+
 (defn- resolve-capability-keyword!
   "Resolve a `cap-call` NAME argument (a namespaced keyword, e.g.
   `:identity/sign`) against `capability-registry` to its [0,255] int id, at
@@ -599,11 +620,10 @@
   parse-time rejection (closed-world/deny-by-default for names, mirroring
   the existing [0,255]-range check for the integer form)."
   [kw form]
-  (if-let [id (get capability-registry kw)]
-    (do (when *used-capability-keywords*
-          (vswap! *used-capability-keywords* conj kw))
-        id)
-    (reject! (str "cap-call names an unregistered capability: " kw) form)))
+  (let [id (capability-wire-id kw form)]
+    (when *used-capability-keywords*
+      (vswap! *used-capability-keywords* conj kw))
+    id))
 
 (defn- desugar-list [args form]
   (when (> (count args) max-list-items)
@@ -3024,6 +3044,120 @@
         (infer-call-type op args locals signatures)))
     :else (reject! "value has no admitted type" form)))
 
+(defn- preserve-form-meta [source result]
+  (if-let [m (meta source)]
+    (with-meta result m)
+    result))
+
+(defn- elaborate-named-ability
+  "Lower a friendly qualified operation such as `(http/post request)` after
+  parameter and result types are known. Request type comes from the lexical
+  expression and result type from the typed context; neither is repeated in
+  application source. A call without result context fails closed until the
+  semantic catalog owns a context-independent result schema."
+  [form expected locals signatures used]
+  (if-not (seq? form)
+    form
+    (let [[op & args] form]
+      (cond
+        (contains? source-operation-registry op)
+        (do
+          (when-not (= 1 (count args))
+            (reject! "named capability operation requires exactly one request" form))
+          (when-not expected
+            (reject! "named capability operation requires a typed result context" form))
+          (let [request (elaborate-named-ability
+                         (first args) nil locals signatures used)
+                request-type (infer-expression-type request locals signatures)
+                capability (get source-operation-registry op)
+                id (capability-wire-id capability form)]
+            (vswap! used conj capability)
+            (preserve-form-meta
+             form
+             (list 'typed-cap-call id request-type expected request))))
+
+        (= op 'let)
+        (let [[bindings body] args]
+          (loop [pairs (partition 2 bindings)
+                 current locals
+                 out []]
+            (if-let [[name value] (first pairs)]
+              (let [elaborated
+                    (elaborate-named-ability value nil current signatures used)
+                    value-type
+                    (infer-expression-type elaborated current signatures)]
+                (recur (next pairs)
+                       (assoc current name value-type)
+                       (conj out name elaborated)))
+              (preserve-form-meta
+               form
+               (list 'let (vec out)
+                     (elaborate-named-ability
+                      body expected current signatures used))))))
+
+        (= op 'if)
+        (let [[test then else] args]
+          (preserve-form-meta
+           form
+           (list 'if
+                 (elaborate-named-ability test nil locals signatures used)
+                 (elaborate-named-ability then expected locals signatures used)
+                 (elaborate-named-ability else expected locals signatures used))))
+
+        (= op 'do)
+        (let [last-index (dec (count args))]
+          (preserve-form-meta
+           form
+           (list* 'do
+                  (map-indexed
+                   (fn [index expression]
+                     (elaborate-named-ability
+                      expression (when (= index last-index) expected)
+                      locals signatures used))
+                   args))))
+
+        (= op 'typed-cap-call)
+        (let [[id request-type result-type request] args]
+          (preserve-form-meta
+           form
+           (list 'typed-cap-call id request-type result-type
+                 (elaborate-named-ability
+                  request request-type locals signatures used))))
+
+        (contains? signatures op)
+        (let [expected-args (:param-types (get signatures op))]
+          (preserve-form-meta
+           form
+           (list* op
+                  (map (fn [argument argument-type]
+                         (elaborate-named-ability
+                          argument argument-type locals signatures used))
+                       args expected-args))))
+
+        :else
+        (preserve-form-meta
+         form
+         (list* op
+                (map #(elaborate-named-ability
+                       % nil locals signatures used)
+                     args)))))))
+
+(defn- elaborate-named-abilities [functions]
+  (let [signatures
+        (into {} (map (fn [{:keys [name params param-types result]}]
+                        [name {:params params
+                               :param-types param-types
+                               :result result}]))
+              functions)
+        used (volatile! #{})]
+    {:functions
+     (mapv (fn [{:keys [params param-types result] :as function}]
+             (update function :body
+                     #(elaborate-named-ability
+                       % result (zipmap params param-types) signatures used)))
+           functions)
+     :used @used}))
+
 (defn- resolve-loop-helper-param-types
   "`loop`/`recur` desugars to a synthesized recursive helper whose parameters
   are the loop bindings followed by the captured outer variables (see the
@@ -3147,10 +3281,12 @@
                 (let [[op & args] x]
                   (cond
                     (= op 'cap-call)
-                    (do (vswap! effects conj [:cap/call (first args)])
+                    (do (vswap! effects conj
+                                [:cap/call (effect-capability-id (first args))])
                         (walk (second args)))
                     (= op 'typed-cap-call)
-                    (do (vswap! effects conj [:cap/call (first args)])
+                    (do (vswap! effects conj
+                                [:cap/call (effect-capability-id (first args))])
                         (walk (nth args 3)))
                     (contains? function-names op)
                     (do (vswap! calls conj op) (doseq [arg args] (walk arg)))
@@ -3702,6 +3838,10 @@
         ;; captures a :string/:f64/record variable type-checks and lowers with
         ;; the correct local types instead of a spurious "expected i64" error.
         parsed (resolve-loop-helper-param-types parsed)
+        named-elaboration (elaborate-named-abilities parsed)
+        parsed (:functions named-elaboration)
+        used-capability-names
+        (set/union @used-capabilities (:used named-elaboration))
         signatures (into {} (map (juxt :name :params) parsed))
         source-public (->> def-parts (filter :public?) (map :source-name) distinct vec)
         expand-export (fn [source-name]
@@ -3732,7 +3872,8 @@
       (reject! "main must take zero arguments" 'main))
     (when (and entry (not (some #{entry} exports)))
       (reject! "main entrypoint must be exported" exports))
-    (check-namespace-capabilities! (:capabilities namespace-info) @used-capabilities)
+    (check-namespace-capabilities! (:capabilities namespace-info)
+                                   used-capability-names)
     (let [declared (set (keys (:schemas namespace-info)))
           refs (->> parsed
                     (tree-seq coll? seq)

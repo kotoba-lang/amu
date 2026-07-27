@@ -6,7 +6,7 @@
 
 (def manifest-resource "kotoba/lang/provider-conformance-v1.edn")
 (def qualification-resource "kotoba/lang/backend-provider-qualification-v1.edn")
-(def registry-resource "kotoba/compiler/capability-registry.edn")
+(def catalog-resource "kotoba/lang/capability-catalog.edn")
 (def backend-keys #{:wasmtime :native :cljs})
 (def qualification-keys #{:manifest-gate :execution-status :gaps :evidence})
 
@@ -69,10 +69,15 @@
      :gaps (:gaps claim)}))
 
 (defn verify! [backend]
-  (verify-data! (read-resource manifest-resource)
-                (read-resource registry-resource)
+  (let [catalog (read-resource catalog-resource)
+        registry (into {}
+                       (map (fn [[name entry]]
+                              [name (:compiler-wire-id entry)]))
+                       (:capabilities catalog))]
+    (verify-data! (read-resource manifest-resource)
+                registry
                 (read-resource qualification-resource)
-                backend))
+                backend)))
 
 (defn -main [& [command backend-name]]
   (when-not (= "verify" command)

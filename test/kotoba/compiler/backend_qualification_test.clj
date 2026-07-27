@@ -10,7 +10,9 @@
 (def manifest
   (read-resource "kotoba/lang/provider-conformance-v1.edn"))
 (def registry
-  (read-resource "kotoba/compiler/capability-registry.edn"))
+  (into {}
+        (map (fn [[name entry]] [name (:compiler-wire-id entry)]))
+        (:capabilities (read-resource "kotoba/lang/capability-catalog.edn"))))
 (def claims
   (read-resource "kotoba/lang/backend-provider-qualification-v1.edn"))
 
