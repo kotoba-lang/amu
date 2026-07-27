@@ -41,3 +41,23 @@
     (is (= [clock/result-type :error
             [clock/error-type :clock/source "clock source failed"]]
            ((:invoke runtime) 'now [[clock/request-type :wall false]])))))
+
+(deftest invalid-ticks-are-typed-errors
+  (let [runtime (hosted (constantly -1) (constantly -5))]
+    (is (= [clock/result-type :error
+            [clock/error-type :clock/invalid "wall clock value is invalid"]]
+           ((:invoke runtime) 'now [[clock/request-type :wall false]])))
+    (is (= [clock/result-type :error
+            [clock/error-type :clock/invalid "monotonic clock value is invalid"]]
+           ((:invoke runtime) 'now [[clock/request-type :monotonic false]])))))
+
+(deftest missing-grant-denies-before-provider-invoke
+  ;; Provider maps may only be registered when their id is in :allow
+  ;; (reference-runtime fail-closed admission). Denial is proven with an
+  ;; empty allow set and no providers: the guest still names :clock/now,
+  ;; but the runtime rejects the call before any host source could run.
+  (let [kir (ir/lower (:hir (compiler/check-source source {:allow #{[:cap/call 7]}})))
+        runtime (runtime/instantiate kir)]
+    (is (thrown-with-msg?
+         clojure.lang.ExceptionInfo #"capability denied"
+         ((:invoke runtime) 'now [[clock/request-type :wall false]])))))

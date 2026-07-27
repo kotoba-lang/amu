@@ -34,7 +34,7 @@
 (defn- hosted []
   (let [provider (clock/provider (transport/production-clock-source))
         hir (frontend/analyze source)
-        _ (admission/check hir {:allow #{[:cap/call 7]}})
+        _ (admission/check hir {:allow #{[:cap/call (js/BigInt 7)]}})
         kir (ir/lower hir)]
     (runtime/instantiate kir {:allow #{7} :providers {7 provider}})))
 
