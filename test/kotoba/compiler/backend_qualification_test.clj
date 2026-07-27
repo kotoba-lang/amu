@@ -37,7 +37,10 @@
 (deftest component-capability-inventory-and-provider-authority-are-closed
   (let [contract (read-resource "kotoba/lang/component-model-v1.edn")
         expected (into (->> (:kits manifest) (mapcat :capabilities) set)
-                       [{:id 13 :name :http/get-stream}
+                       [{:id 1 :name :identity/sign}
+                        {:id 2 :name :identity/verify}
+                        {:id 3 :name :hash/sha256}
+                        {:id 13 :name :http/get-stream}
                         {:id 14 :name :object/get-stream}
                         {:id 15 :name :object/put-block}
                         {:id 16 :name :object/compare-and-set-ref}])
