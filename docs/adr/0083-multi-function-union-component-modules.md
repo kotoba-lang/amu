@@ -133,8 +133,14 @@ are rejected.
   aggregate indirect-byte budget so collection cardinality cannot amplify
   valid leaves into a host-memory denial of service. Compiler source E2E
   executes `option<list<string>>` through an explicitly granted provider;
-- list items containing nested unions or another list remain fail-closed
-  pending recursive variable-cardinality graph validation/copy ownership;
+- list items containing structural option/result values and recursively
+  nested lists now use `kotoba-component` commits `ccff8fe` / `e3691c3`.
+  Each item union visits only its active case. `kotoba-kir` commit `e2cabbc`
+  and `kotoba-wasm` commit `082416a` expose one 16,384-item counter shared by
+  every active list node, preventing multiplicative cardinality. Depth-specific
+  Wasm loop locals prevent inner traversal from corrupting an outer cursor.
+  Source E2E crosses both `list<option<string>>` and `list<list<i64>>`
+  through an explicitly granted named provider;
 - linear reuse for repeated internal collection construction remains separate
   from the now-implemented bounded export-result ownership contract;
 - scalar named capabilities now compose with aggregate match functions through
