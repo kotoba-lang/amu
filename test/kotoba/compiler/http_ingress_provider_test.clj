@@ -1,5 +1,6 @@
 (ns kotoba.compiler.http-ingress-provider-test
-  "W5 family-3 first slice — HTTP ingress accept/reply dual-runtime vectors."
+  "W5 family-3 — HTTP ingress accept/reply dual-runtime vectors
+  (first slice + multi-inflight queue depth)."
   (:require [clojure.test :refer [deftest is]]
             [kotoba.compiler.core :as compiler]
             [kotoba.kir :as ir]
@@ -43,7 +44,9 @@
              [ingress/header-set-type []] ""]]
            accepted))
     (is (true? ((:invoke runtime) 'reply [reply])))
-    (is (= {:queued 0 :pending? false} ((:snapshot kit))))))
+    (is (= {:queued 0 :pending? false
+            :max-queue-depth ingress/default-max-queue-depth}
+           ((:snapshot kit))))))
 
 (deftest empty-queue-returns-none
   (let [{:keys [runtime]} (hosted)]
@@ -76,10 +79,50 @@
     (is (thrown-with-msg?
          clojure.lang.ExceptionInfo #"path must be non-empty"
          ((:enqueue! kit) :http/get "" {} "")))
+    (dotimes [i ingress/default-max-queue-depth]
+      ((:enqueue! kit) :http/get (str "/q" i) {} ""))
     (is (thrown-with-msg?
          clojure.lang.ExceptionInfo #"queue is full"
-         (do ((:enqueue! kit) :http/get "/a" {} "")
-             ((:enqueue! kit) :http/get "/b" {} ""))))))
+         ((:enqueue! kit) :http/get "/overflow" {} "")))))
+
+(deftest multi-inflight-queue-is-fifo-and-allows-host-buffering
+  (let [kit (ingress/create-provider {:max-queue-depth 3})
+        kir (ir/lower (:hir (compiler/check-source
+                             source {:allow #{[:cap/call 17] [:cap/call 18]}})))
+        runtime (runtime/instantiate kir
+                                     {:allow #{17 18}
+                                      :providers (:providers kit)})
+        reply-ok (fn [body]
+                   ((:invoke runtime) 'reply
+                    [[ingress/reply-request-type 200
+                      [ingress/header-set-type []] body]]))]
+    ((:enqueue! kit) :http/get "/1" {} "a")
+    ((:enqueue! kit) :http/get "/2" {} "b")
+    ((:enqueue! kit) :http/post "/3" {} "c")
+    (is (= 3 (:queued ((:snapshot kit)))))
+    ;; host may keep buffering path while guest has not accepted yet
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"queue is full"
+                          ((:enqueue! kit) :http/get "/4" {} "")))
+    (is (= [ingress/accept-result-type true
+            [ingress/incoming-request-type :http/get "/1"
+             [ingress/header-set-type []] "a"]]
+           ((:invoke runtime) 'accept [[ingress/accept-request-type 0]])))
+    ;; while pending, remaining queue still holds later requests
+    (is (= {:queued 2 :pending? true :max-queue-depth 3}
+           ((:snapshot kit))))
+    (is (true? (reply-ok "r1")))
+    (is (= [ingress/accept-result-type true
+            [ingress/incoming-request-type :http/get "/2"
+             [ingress/header-set-type []] "b"]]
+           ((:invoke runtime) 'accept [[ingress/accept-request-type 0]])))
+    (is (true? (reply-ok "r2")))
+    (is (= [ingress/accept-result-type true
+            [ingress/incoming-request-type :http/post "/3"
+             [ingress/header-set-type []] "c"]]
+           ((:invoke runtime) 'accept [[ingress/accept-request-type 0]])))
+    (is (true? (reply-ok "r3")))
+    (is (= [ingress/accept-result-type false]
+           ((:invoke runtime) 'accept [[ingress/accept-request-type 0]])))))
 
 (deftest missing-grant-denies-before-provider-invoke
   (let [kir (ir/lower (:hir (compiler/check-source
