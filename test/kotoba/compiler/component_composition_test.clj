@@ -83,7 +83,14 @@
         application (artifact/package
                      (component-core/emit capability-kir :wasm32-wasi-kotoba-v1)
                      capability-kir world)]
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"do not exactly close"
+    ;; Tolerant of both wordings on purpose. kotoba-component used to reject
+    ;; this as "do not exactly close application imports"; the current pin
+    ;; reports the more specific under-supply case as "do not close application
+    ;; imports", and CI went red on main the moment that pin advanced. What this
+    ;; test is actually about is that composing without the required provider
+    ;; FAILS CLOSED -- not which adjective the upstream message uses.
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                          #"do not (exactly )?close application imports"
                           (composition/compose-closed application [])))))
 
 (deftest sealed-scalar-record-provider-closes-the-application-world
