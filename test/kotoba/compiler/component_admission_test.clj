@@ -80,6 +80,29 @@
       (is (= :target-routing (:phase thrown)))
       (is (= 'kotoba.compiler.core/compile-component (:entry-point thrown))))))
 
+(deftest typed-v03-clock-component-is-produced-from-source
+  (let [ability {:target "clock://monotonic"
+                 :operation :clock/now
+                 :max-bytes 64
+                 :max-items 1
+                 :deadline-ms 1000
+                 :audit-id "compiler-v03-clock"}
+        artifact
+        (compiler/compile-component
+         "(ns app (:capabilities #{:clock/now}))
+          (defn main [] (cap-call :clock/now 0))"
+         {:allow #{[:cap/call 7]}}
+         {:target :wasm-component-kotoba-v2
+          :component-abilities {7 ability}})]
+    (is (= :wasm-component-kotoba-v2 (:target artifact)))
+    (is (= "aiueos:capability/application@0.3.0"
+           (:component-world artifact)))
+    (is (= ability
+           (get-in artifact
+                   [:component-imports :aiueos.component/aiueos-clock-now])))
+    (is (= [0 97 115 109 13 0 1 0]
+           (mapv #(bit-and (int %) 0xff) (take 8 (:bytes artifact)))))))
+
 (deftest cid-matches-the-canonical-empty-block
   (testing "CIDv1 raw/sha2-256/base32 agrees with the published empty-block CID"
     (is (= "bafkreihdwdcefgh4dqkjv67uzcmw7ojee6xedzdetojuzjevtenxquvyku"
