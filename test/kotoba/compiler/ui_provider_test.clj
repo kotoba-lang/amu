@@ -44,3 +44,30 @@
         request [ui/commit-request-type 1 nodes]]
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #"revision conflict"
                           ((:invoke runtime) 'commit [request])))))
+
+(deftest node-limit-fails-before-mutation
+  (let [{:keys [kit runtime]} (hosted)
+        nodes (mapv (fn [i]
+                      [ui/node-type (keyword "n" (str i))
+                       [ui/parent-type false] :ui/text "x"])
+                    (range (inc ui/max-nodes)))]
+    ;; typed-set-item-limit is 32 (= ui/max-nodes); admission rejects before
+    ;; the provider's own node-limit check when the set is oversized.
+    (is (thrown-with-msg?
+         clojure.lang.ExceptionInfo #"(node limit|typed set)"
+         ((:invoke runtime) 'commit
+          [[ui/commit-request-type 0 [ui/node-set-type nodes]]])))
+    (is (= 0 (:revision ((:snapshot kit)))))))
+
+(deftest missing-grant-denies-before-provider-invoke
+  (let [kir (ir/lower (:hir (compiler/check-source
+                             source {:allow #{[:cap/call 9] [:cap/call 10]}})))
+        runtime (runtime/instantiate kir)]
+    (is (thrown-with-msg?
+         clojure.lang.ExceptionInfo #"capability denied"
+         ((:invoke runtime) 'commit
+          [[ui/commit-request-type 0 [ui/node-set-type []]]])))
+    (is (thrown-with-msg?
+         clojure.lang.ExceptionInfo #"capability denied"
+         ((:invoke runtime) 'next-event
+          [[ui/event-request-type 0]])))))
