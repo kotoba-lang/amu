@@ -6,9 +6,9 @@
   1. Deterministic structural identity of a logical document without a host
      object — a pure guest FNV-1a-style i64 fingerprint over the canonical
      tagged tree (code-point content, sorted map order). Equal documents
-     agree; content-distinct documents disagree. (A first-class
-     document-sha256 host op remains a follow-up; this proves the *identity*
-     requirement with existing document-* ops.)
+     agree; content-distinct documents disagree. (document-sha256 is
+     first-class — see document_sha256_test; this guest FNV path still proves
+     identity with pure document-* ops.)
 
   2. Style vocabulary as ordinary :document values rendered to a CSS stream
      (selector + declaration list), parallel to the UI→HTML path — the Style
