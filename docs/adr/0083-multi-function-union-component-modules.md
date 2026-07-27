@@ -151,7 +151,7 @@ are rejected.
 - an `option<list<T>>` or symmetric `result<list<T>,list<T>>` selected payload
   may now be reconstructed, passed to a named capability with the same
   request/result descriptor, and immediately matched through the shared module
-  for `s64`, `float64`, `string`, and `keyword`. `kotoba-wasm` commit
+  for `s64`, `float64`, `string`, `keyword`, and `bool`. `kotoba-wasm` commit
   `b463906` keeps the maximum bounded request/result live in one arena and
   validates every active string-like item with one shared 1 MiB counter;
   `kotoba-component` commit `2aa876a` binds the caller-allocated standard32
@@ -159,6 +159,10 @@ are rejected.
   inner-pointer overflow and 17 × 64 KiB aggregate exhaustion. Compiler source
   E2E starts at `.kotoba`, composes an identity provider, and executes the
   closed Component in Wasmtime;
+- `list<bool>` match capability results additionally validate every inline
+  byte as canonical 0/1 before exposing even the outer count. The malicious
+  provider test writes byte `2` into an otherwise in-range result list and
+  proves the application traps rather than accepting an unread invalid item;
 - other aggregate request/result descriptors and less constrained branch
   shapes remain fail-closed pending explicit shared Canonical codec admission.
 - symmetric `result<list<T>, list<T>>` now uses the shared match module for
