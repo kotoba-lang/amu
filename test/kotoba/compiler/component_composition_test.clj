@@ -195,6 +195,59 @@
         (finally
           (Files/deleteIfExists path))))))
 
+(deftest source-record-list-crosses-a-named-capability-provider
+  (let [descriptor [:option [:list [:ref :demo/point]]]
+        schemas {:demo/point
+                 [:record :demo/point [[:x :i64] [:visible :bool]]]}
+        source
+        "(ns component.record-list-capability
+           (:export [invoke])
+           (:capabilities #{:http/post})
+           (:schemas
+            {:demo/point
+             [:record :demo/point [[:x :i64] [:visible :bool]]]}))
+         (defn invoke
+           [request [:option [:list [:ref :demo/point]]]]
+           [:option [:list [:ref :demo/point]]]
+           (typed-cap-call
+            :http/post
+            [:option [:list [:ref :demo/point]]]
+            [:option [:list [:ref :demo/point]]]
+            request))"
+        compiled (compiler/compile-source
+                  source :wasm32-wasi-kotoba-v1
+                  {:allow #{[:cap/call 4]}})
+        application
+        (compiler/compile-component source {:allow #{[:cap/call 4]}})
+        provider
+        (composition/package-structural-union-identity-provider
+         :http/post descriptor schemas)
+        closed (composition/compose-closed application [provider])
+        path (Files/createTempFile
+              "kotoba-source-record-list-capability-" ".wasm"
+              (make-array FileAttribute 0))]
+    (try
+      (Files/write path ^bytes (:bytes closed)
+                   (make-array java.nio.file.OpenOption 0))
+      (is (= descriptor
+             (get-in compiled [:kir :functions 0 :result])))
+      (is (= :structural-union-capability-call
+             (:canonical-lowering application)))
+      (is (= [:http/post] (:application-imports closed)))
+      (is (= [{:capability :http/post :descriptor descriptor}]
+             (:providers closed)))
+      (doseq [[invoke expected]
+              [["invoke(none)" "none"]
+               ["invoke(some([]))" "some([])"]
+               ["invoke(some([{x: 7, visible: true}, {x: -2, visible: false}]))"
+                "some([{x: 7, visible: true}, {x: -2, visible: false}])"]]]
+        (let [run (shell/sh wasmtime-binary "run" "--invoke"
+                            invoke (str path))]
+          (is (zero? (:exit run)) (:err run))
+          (is (= expected (str/trim (:out run))) invoke)))
+      (finally
+        (Files/deleteIfExists path)))))
+
 (deftest source-option-list-match-calls-and-matches-a-named-capability
   (let [descriptor [:option :vector-i64]
         source
