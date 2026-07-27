@@ -129,6 +129,30 @@ still not fully reconciled into one shared grammar spec. See
 `com-junkawasaki/root` ADR-2607141600 / ADR-2607150000 for the fuller
 cross-repo analysis.
 
+### Frontend reconciliation direction
+
+The reconciliation target is not to expose this compiler's KIR-level
+`cap-call`, numeric capability IDs, WIT imports, or provider callbacks as the
+preferred Kotoba source language. `kotoba-lang/kotoba-lang`'s
+`lang/guest-grammar.edn` remains the source-surface authority. The compiler
+must consume or mechanically check that contract, perform bounded desugaring,
+infer transitive effects, elaborate named operations into hidden typed ability
+parameters, and only then lower to typed KIR.
+
+Function effect annotations are public contracts or ceilings; inferred
+effects remain authoritative for admission. Explicit capability values belong
+in source only where authority is attenuated or delegated. Target-specific
+numeric ID spaces may remain stable wire ABIs, but their semantic
+name/schema/effect declarations should be generated from one language-owned
+catalog rather than maintained independently.
+
+Definition identity is computed after desugaring, type/effect checking, and
+ability elaboration, with the relevant contract versions sealed into the
+identity. The executable plan and per-slice gates are documented in
+`kotoba-lang/kotoba-lang/docs/kotoba-centered-migration-plan.md` and root
+ADR-2607279200.
+
+
 GPU compilation now begins with a separate typed accelerator KIR rather than
 allowing arbitrary shaders into scalar CPU KIR. `kotoba.compiler.accelerator`
 validates bounded f32 elementwise/reduction kernels and deterministically emits
