@@ -37,6 +37,8 @@
   (cond-> (sorted-map)
     (= :wasm/v1 (:format result))
     (assoc :primary (bytes-identity :wasm (:bytes result)))
+    (= :wasm-component/v1 (:format result))
+    (assoc :primary (bytes-identity :wasm-component (:bytes result)))
     (= :cljs/v1 (:format result))
     (assoc :primary {:format :cljs-source :sha256 (text-sha256 (:source result))
                      :size (byte-size (:source result))})

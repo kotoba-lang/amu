@@ -36,7 +36,11 @@
 
 (deftest component-capability-inventory-and-provider-authority-are-closed
   (let [contract (read-resource "kotoba/lang/component-model-v1.edn")
-        expected (->> (:kits manifest) (mapcat :capabilities) set)
+        expected (into (->> (:kits manifest) (mapcat :capabilities) set)
+                       [{:id 13 :name :http/get-stream}
+                        {:id 14 :name :object/get-stream}
+                        {:id 15 :name :object/put-block}
+                        {:id 16 :name :object/compare-and-set-ref}])
         actual (->> (:capabilities contract) (map #(select-keys % [:name :id])) set)
         entries (:capabilities contract)]
     (is (= expected actual))
@@ -52,7 +56,9 @@
                  (first (filter #(= :clock/now (:name %)) entries)))))
     (is (every? empty?
                 (map :provider-wasi
-                     (remove #(contains? #{:http/post :clock/now} (:name %)) entries)))))))
+                     (remove #(contains? #{:http/post :http/get-stream :clock/now}
+                                         (:name %))
+                             entries)))))))
 
 (deftest every-backend-is-bound-to-the-same-manifest-gate
   (doseq [backend [:wasmtime :native :cljs]]

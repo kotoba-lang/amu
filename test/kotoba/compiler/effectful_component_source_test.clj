@@ -17,7 +17,13 @@
         wit-source (get-in artifact [:wit :source])]
     (testing "source compiles to a real Component rather than generic core-Wasm"
       (is (= :wasm-component/v1 (:format artifact)))
-      (is (pos? (alength ^bytes (:bytes artifact)))))
+      (is (pos? (alength ^bytes (:bytes artifact))))
+      (is (= :wasm-component-kotoba-v1
+             (get-in artifact [:provenance :target])))
+      (is (= :wasm-component
+             (get-in artifact [:provenance :outputs :primary :format])))
+      (is (= (:sha256 artifact)
+             (get-in artifact [:provenance :outputs :primary :sha256]))))
     (testing "the legacy scalar source operation is exposed as named s64 -> s64"
       (is (str/includes? wit-source "import clock"))
       (is (str/includes? wit-source "now: func(request: s64) -> s64"))

@@ -52,7 +52,8 @@
   '{:identity/sign 1 :identity/verify 2 :hash/sha256 3 :http/post 4
     :log/read 5 :log/append 6 :clock/now 7 :state/transact 8
     :ui/commit 9 :ui/next-event 10 :llm/generate 11
-    :storage/transact 12})
+    :storage/transact 12 :http/get-stream 13 :object/get-stream 14
+    :object/put-block 15 :object/compare-and-set-ref 16})
 
 (defn- load-capability-registry []
   #?(:clj
@@ -239,7 +240,8 @@
 ;; most 256 distinct capabilities can ever exist), not the unrelated
 ;; function-count limit.
 (def max-namespace-capabilities 256)
-(def value-types #{:i64 :f32 :f64 :string :keyword :symbol :map :bool :option-i64 :result-i64
+(def value-types #{:i64 :f32 :f64 :string :keyword :symbol :map :bool :bytes
+                   :option-i64 :result-i64
                    :vector-i64 :vector-f64 :string-index :disjoint-set-i64 :document})
 
 (declare reject!)
@@ -255,6 +257,15 @@
 
 (defn- canonical-list-type? [type]
   (and (vector? type) (= 2 (count type)) (= :list (first type))))
+
+(defn- stream-type? [type]
+  (and (vector? type) (= 2 (count type)) (= :stream (first type))))
+
+(defn- task-type? [type]
+  (and (vector? type) (= 2 (count type)) (= :task (first type))))
+
+(defn- linear-resource-type? [type]
+  (or (stream-type? type) (task-type? type)))
 
 (defn- heterogeneous-vector-type? [type]
   (and (vector? type) (= 2 (count type)) (= :vector (first type))))
@@ -275,6 +286,7 @@
 (defn- structured-type? [type]
   (or (parametric-result-type? type) (variant-type? type) (generic-option-type? type)
       (canonical-list-type? type)
+      (stream-type? type) (task-type? type)
       (heterogeneous-vector-type? type) (typed-set-type? type)
       (canonical-typed-map-type? type) (record-type? type) (schema-ref-type? type)))
 
@@ -300,6 +312,16 @@
          type)
      (canonical-list-type? type)
      (do (validate-value-type! (second type) (inc depth) nodes)
+         type)
+     (stream-type? type)
+     (do (when-not (= :bytes (second type))
+           (reject! "stream payload must be bytes" type))
+         (validate-value-type! (second type) (inc depth) nodes)
+         type)
+     (task-type? type)
+     (do (when-not (stream-type? (second type))
+           (reject! "task payload must be a stream resource" type))
+         (validate-value-type! (second type) (inc depth) nodes)
          type)
      (heterogeneous-vector-type? type)
      (let [item-types (second type)]
@@ -3063,6 +3085,33 @@
       (when (> keyword-bytes value/string-value-byte-limit)
         (reject! "module keyword literals exceed UTF-8 byte limit" keyword-bytes)))))
 
+(defn- check-linear-resource-ownership! [functions]
+  (doseq [{:keys [param-types result body] :as function} functions]
+    (when (some linear-resource-type? param-types)
+      (reject! "linear resources require move-aware parameters"
+               (:name function)))
+    (let [linear-calls
+          (->> (tree-seq coll? seq body)
+               (keep (fn [form]
+                       (when (and (seq? form)
+                                  (= 'typed-cap-call (first form))
+                                  (= 5 (count form))
+                                  (linear-resource-type? (nth form 3)))
+                         form)))
+               vec)
+          direct (when (and (seq? body)
+                            (= 'typed-cap-call (first body))
+                            (= 5 (count body))
+                            (linear-resource-type? (nth body 3)))
+                   body)]
+      (when (or (and (linear-resource-type? result)
+                     (or (nil? direct)
+                         (not= result (nth direct 3))))
+                (and (seq linear-calls)
+                     (not= [direct] linear-calls)))
+        (reject! "linear result must be one direct typed capability move"
+                 (:name function))))))
+
 (defn- direct-facts [form function-names]
   (let [effects (volatile! #{}) calls (volatile! #{})]
     (letfn [(walk [x]
@@ -3688,6 +3737,7 @@
       (doseq [{:keys [params body]} parsed]
         (validate-expr body (set params) signatures 0 budget)))
     (check-value-types! parsed)
+    (check-linear-resource-ownership! parsed)
     (check-lowering-budget! parsed)
     (let [typed-values? (boolean
                          (or (seq (:schemas namespace-info))

@@ -7,6 +7,7 @@
   checking that nothing downstream (HIR :functions/:effects,
   admission.cljc) can tell the two forms apart."
   (:require [clojure.test :refer [deftest is]]
+            [kotoba.abi.contract :as abi]
             [kotoba.compiler.core :as compiler]
             [kotoba.compiler.frontend :as frontend]))
 
@@ -21,6 +22,42 @@
 ;; assertions below actually exercise.
 (deftest registry-seeds-identity-sign-as-id-1
   (is (= 1 (get frontend/capability-registry :identity/sign))))
+
+(deftest registry-covers-the-shared-typed-v03-operation-set
+  (is (= abi/typed-capability-ids
+         (->> frontend/capability-registry
+              (keep (fn [[_ id]]
+                      (when (contains? abi/typed-capability-ids id) id)))
+              set)))
+  (is (= 13 (get frontend/capability-registry :http/get-stream)))
+  (is (= 16 (get frontend/capability-registry
+                 :object/compare-and-set-ref))))
+
+(deftest linear-task-stream-types-are-admitted-only-as-direct-moves
+  (let [checked
+        (compiler/check-source
+         "(ns app (:export [open]))
+          (defn open [request :i64] [:task [:stream :bytes]]
+            (typed-cap-call :http/get-stream :i64
+              [:task [:stream :bytes]] request))"
+         {:allow #{[:cap/call 13]}})]
+    (is (= [:task [:stream :bytes]]
+           (get-in checked [:hir :functions 0 :result]))))
+  (is (thrown-with-msg?
+       clojure.lang.ExceptionInfo #"move-aware parameters"
+       (compiler/check-source
+        "(ns app (:export [copy]))
+         (defn copy [task [:task [:stream :bytes]]]
+           [:task [:stream :bytes]] task)")))
+  (is (thrown-with-msg?
+       clojure.lang.ExceptionInfo #"one direct typed capability move"
+       (compiler/check-source
+        "(ns app (:export [bad]))
+         (defn bad [request :i64] [:task [:stream :bytes]]
+           (let [task (typed-cap-call :http/get-stream :i64
+                        [:task [:stream :bytes]] request)]
+             task))"
+        {:allow #{[:cap/call 13]}}))))
 
 ;; ───────────────────────── round-trip equivalence ─────────────────────────
 
