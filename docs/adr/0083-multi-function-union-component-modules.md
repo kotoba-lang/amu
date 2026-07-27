@@ -148,13 +148,17 @@ are rejected.
   The shared match emitter receives the exact WIT import table, generic
   canonical capability fallback is rejected, and a `.kotoba` option match is
   executed through a closed application-plus-provider Component;
-- an `option<list<s64>>` or `option<list<f64>>` selected payload may now be reconstructed, passed to
-  a named capability with the same request/result descriptor, and immediately
-  matched through the shared module. `kotoba-wasm` commit `ab8dde1` keeps the
-  maximum bounded request and result live in one arena; `kotoba-component`
-  commits `6e4759b` / `efaf53f` bind the caller-allocated standard32 result without a
-  generic host ABI. The evidence starts at `.kotoba`, composes an identity
-  provider, and executes the closed Component in Wasmtime;
+- an `option<list<T>>` or symmetric `result<list<T>,list<T>>` selected payload
+  may now be reconstructed, passed to a named capability with the same
+  request/result descriptor, and immediately matched through the shared module
+  for `s64`, `float64`, `string`, and `keyword`. `kotoba-wasm` commit
+  `b463906` keeps the maximum bounded request/result live in one arena and
+  validates every active string-like item with one shared 1 MiB counter;
+  `kotoba-component` commit `2aa876a` binds the caller-allocated standard32
+  result without a generic host ABI. Malicious provider evidence covers both
+  inner-pointer overflow and 17 × 64 KiB aggregate exhaustion. Compiler source
+  E2E starts at `.kotoba`, composes an identity provider, and executes the
+  closed Component in Wasmtime;
 - other aggregate request/result descriptors and less constrained branch
   shapes remain fail-closed pending explicit shared Canonical codec admission.
 - symmetric `result<list<T>, list<T>>` now uses the shared match module for

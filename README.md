@@ -499,13 +499,16 @@ the discriminant is validated. Multiple such match exports and private scalar
 helpers are emitted into one Component core module, sharing the same sealed
 fuel global while retaining per-function bool validation scopes. WIT export
 and parameter names are collision-checked after canonical normalization.
-Within an `option<list<s64>>` or `option<list<f64>>` match, the selected list can be reconstructed,
-sent through an explicitly named capability with the same request/result
-descriptor, and immediately matched again. This path stays in that shared
-module and uses the standard WIT import's caller-allocated result storage;
-maximum request and result lists can coexist in the bounded arena. Other
-aggregate match/capability combinations remain fail-closed until admitted by
-an explicit Canonical codec.
+Within an `option<list<T>>` or symmetric `result<list<T>,list<T>>` match, the
+selected list can be reconstructed, sent through an explicitly named
+capability with the same request/result descriptor, and immediately matched
+again for `s64`, `float64`, `string`, and `keyword` items. This path stays in
+that shared module and uses the standard WIT import's caller-allocated result
+storage; maximum request and result lists can coexist in the bounded arena.
+Indirect items are visited on both sides of the provider call even when source
+code observes only the outer count, enforcing pointer/range checks and the
+shared 1 MiB byte budget. Other aggregate match/capability combinations remain
+fail-closed until admitted by an explicit Canonical codec.
 General bounded `[:list T]` types are shared KIR/Wasm metadata ABI values.
 Component identity and named capabilities admit scalar, string/keyword,
 structural option/result, finite-record, and recursively nested list items.

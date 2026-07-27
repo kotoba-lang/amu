@@ -2327,7 +2327,11 @@
           :vector-i64)
 
       (= op 'vector-count)
-      (do (require-expression-type! (first types) :vector-i64 (first args)) :i64)
+      (do
+        (when-not (or (= :vector-i64 (first types))
+                      (canonical-list-type? (first types)))
+          (require-expression-type! (first types) :vector-i64 (first args)))
+        :i64)
 
       (= op 'vector-get)
       (do (require-expression-type! (nth types 0) :vector-i64 (nth args 0))
