@@ -10,8 +10,8 @@
   - rejected when node/depth budgets are exceeded at construction
 
   Handles are not the application model: the guest builds and walks the
-  document tree with the existing document-* operations. Full DOM
-  reconciliation remains a follow-up; document-sha256 is first-class
+  document tree with the existing document-* operations. DOM reconciliation
+  is host-side (document_dom_reconcile_test); document-sha256 is first-class
   (document_sha256_test). This slice locks the data→HTML half of the W4 exit
   gate that design-system form-A (string-only call graphs) could not express."
   (:require [clojure.java.shell :as shell]

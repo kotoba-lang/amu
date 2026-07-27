@@ -1952,6 +1952,182 @@ export async function instantiateKotoba(source, rawOptions) {
   });
 }
 
+// --- W4: logical UI :document → real DOM reconcile (host API, not a capability) ---
+//
+// Exit-gate piece: a guest-built :document can be reconciled into browser DOM
+// without becoming a host object in the guest. Handles stay host-side.
+// Tag vocabulary is the same shallow UI shape as document_ui_render_test
+// (:tag string, optional :text string, optional :children vector).
+// Dangerous tags are denied closed. Not the final :ui/commit capability path
+// (flat node set + revision); this is the nested-document bridge.
+
+const UI_DOC_TAG_RE = /^[a-z][a-z0-9-]*$/;
+const UI_DOC_DENIED_TAGS = new Set([
+  "script", "iframe", "object", "embed", "frame", "frameset",
+  "base", "link", "meta", "style", "template", "foreignobject"
+]);
+
+function uiDocMapEntries(node) {
+  if (!Array.isArray(node) || node[0] !== "map" || !Array.isArray(node[1]))
+    reject("invalid-ui-document", "UI document root must be a map");
+  return node[1];
+}
+
+function uiDocGet(node, key) {
+  const want = key.startsWith(":") ? key : `:${key}`;
+  for (const entry of uiDocMapEntries(node)) {
+    if (Array.isArray(entry) && entry[0] === want) return entry[1];
+  }
+  return undefined;
+}
+
+function uiDocStringField(node, key, fallback = "") {
+  const item = uiDocGet(node, key);
+  if (item === undefined) return fallback;
+  if (!Array.isArray(item) || item[0] !== "string" || typeof item[1] !== "string")
+    reject("invalid-ui-document", `UI document field ${key} must be a string`);
+  return item[1];
+}
+
+function uiDocChildren(node) {
+  const item = uiDocGet(node, "children");
+  if (item === undefined) return [];
+  if (!Array.isArray(item) || item[0] !== "vector" || !Array.isArray(item[1]))
+    reject("invalid-ui-document", "UI document :children must be a vector");
+  if (item[1].length > 32)
+    reject("invalid-ui-document", "UI document children budget exceeded");
+  return item[1];
+}
+
+function uiDocTag(node) {
+  const tag = uiDocStringField(node, "tag", "");
+  if (!tag || !UI_DOC_TAG_RE.test(tag) || UI_DOC_DENIED_TAGS.has(tag))
+    reject("invalid-ui-document", `UI document tag is denied or invalid: ${tag || "(missing)"}`);
+  return tag;
+}
+
+/**
+ * Reconcile a logical UI :document into a DOM container element.
+ *
+ * @param {Element} container mount point (existing host element; not replaced)
+ * @param {Array} doc guest :document value (map with :tag / optional :text / :children)
+ * @param {{createElement?: Function, createTextNode?: Function}} [dom]
+ *        DOM factory; defaults to globalThis.document. Tests may inject a mock.
+ * @returns {Element} the element reconciled as container's first element child
+ */
+export function reconcileUiDocument(container, doc, dom = {}) {
+  if (container == null || typeof container !== "object")
+    reject("invalid-ui-document", "reconcile container is required");
+  const createElement = dom.createElement
+    || (typeof globalThis.document?.createElement === "function"
+      ? globalThis.document.createElement.bind(globalThis.document) : null);
+  const createTextNode = dom.createTextNode
+    || (typeof globalThis.document?.createTextNode === "function"
+      ? globalThis.document.createTextNode.bind(globalThis.document) : null);
+  if (typeof createElement !== "function" || typeof createTextNode !== "function")
+    reject("dom-unavailable", "DOM createElement/createTextNode required for reconcile");
+
+  const ensureChild = (parent, index, tag) => {
+    const existing = parent.childNodes?.[index];
+    const tagUpper = tag.toUpperCase();
+    if (existing && existing.nodeType === 1 && existing.tagName === tagUpper)
+      return existing;
+    const el = createElement(tag);
+    if (existing) {
+      if (typeof parent.replaceChild === "function") parent.replaceChild(el, existing);
+      else reject("dom-unavailable", "DOM replaceChild required");
+    } else if (typeof parent.appendChild === "function") {
+      parent.appendChild(el);
+    } else {
+      reject("dom-unavailable", "DOM appendChild required");
+    }
+    return el;
+  };
+
+  const trimAfter = (parent, keep) => {
+    while ((parent.childNodes?.length ?? 0) > keep) {
+      const last = parent.childNodes[parent.childNodes.length - 1];
+      if (typeof parent.removeChild === "function") parent.removeChild(last);
+      else reject("dom-unavailable", "DOM removeChild required");
+    }
+  };
+
+  const walk = (parent, index, node) => {
+    const tag = uiDocTag(node);
+    const el = ensureChild(parent, index, tag);
+    const text = uiDocStringField(node, "text", "");
+    const kids = uiDocChildren(node);
+    if (kids.length === 0) {
+      // Leaf: textContent is the single source of truth (clears element children).
+      if (el.textContent !== text) el.textContent = text;
+      return el;
+    }
+    // Branch: ignore :text; reconcile element/text children from the vector only.
+    for (let i = 0; i < kids.length; i++) walk(el, i, kids[i]);
+    trimAfter(el, kids.length);
+    return el;
+  };
+
+  const root = walk(container, 0, doc);
+  trimAfter(container, 1);
+  return root;
+}
+
+/**
+ * Minimal DOM mock for Node tests (no linkedom dependency).
+ * Enough of Element/Node for reconcileUiDocument.
+ */
+export function createMockDom() {
+  let seq = 0;
+  const makeText = data => {
+    const node = {
+      nodeType: 3,
+      nodeName: "#text",
+      data: String(data),
+      get textContent() { return this.data; },
+      set textContent(v) { this.data = String(v); },
+      childNodes: []
+    };
+    return node;
+  };
+  const makeEl = tag => {
+    const childNodes = [];
+    const el = {
+      nodeType: 1,
+      tagName: String(tag).toUpperCase(),
+      id: `mock-${++seq}`,
+      childNodes,
+      get children() { return childNodes.filter(c => c.nodeType === 1); },
+      get textContent() {
+        return childNodes.map(c => c.nodeType === 3 ? c.data : c.textContent).join("");
+      },
+      set textContent(v) {
+        childNodes.length = 0;
+        if (v !== "") childNodes.push(makeText(v));
+      },
+      appendChild(child) { childNodes.push(child); return child; },
+      removeChild(child) {
+        const i = childNodes.indexOf(child);
+        if (i < 0) throw new Error("not-found");
+        childNodes.splice(i, 1);
+        return child;
+      },
+      replaceChild(next, prev) {
+        const i = childNodes.indexOf(prev);
+        if (i < 0) throw new Error("not-found");
+        childNodes[i] = next;
+        return prev;
+      }
+    };
+    return el;
+  };
+  return Object.freeze({
+    createElement: makeEl,
+    createTextNode: makeText,
+    createContainer: () => makeEl("div")
+  });
+}
+
 export const browserProfile = Object.freeze({
   format: "kotoba.browser-host/v1",
   maxModuleBytes: MAX_MODULE_BYTES,
