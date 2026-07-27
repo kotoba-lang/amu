@@ -8,9 +8,10 @@
 
 (def ^:private primitives
   #{:i64 :f32 :f64 :string :keyword :bool :vector-i64 :vector-f64})
-(def ^:private unary-tags #{:option :set})
+(def ^:private unary-tags #{:option :set :list})
 (def ^:private binary-tags #{:result :map})
-(def ^:private productive-tags #{:option :set :result :map :vector :record :variant})
+(def ^:private productive-tags
+  #{:option :set :list :result :map :vector :record :variant})
 
 (defn ref-type? [value]
   (and (vector? value) (= 2 (count value)) (= :ref (first value))))

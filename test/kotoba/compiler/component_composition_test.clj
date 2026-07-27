@@ -618,6 +618,76 @@
       (finally
         (Files/deleteIfExists path)))))
 
+(deftest source-recursive-record-union-list-match-crosses-a-named-capability
+  (let [inner-type
+        [:record :demo/source-inner [[:tag :keyword] [:enabled :bool]]]
+        item-type
+        [:record :demo/source-item
+         [[:label :string]
+          [:choice [:result [:list :bool] [:ref :demo/source-inner]]]]]
+        schemas {:demo/source-inner inner-type :demo/source-item item-type}
+        descriptor [:option [:list [:ref :demo/source-item]]]
+        source
+        "(ns component.match-recursive-list-capability
+           (:export [choose echo])
+           (:capabilities #{:http/post})
+           (:schemas
+            {:demo/source-inner
+             [:record :demo/source-inner [[:tag :keyword] [:enabled :bool]]]
+             :demo/source-item
+             [:record :demo/source-item
+              [[:label :string]
+               [:choice
+                [:result [:list :bool] [:ref :demo/source-inner]]]]]}))
+         (defn choose
+           [value [:option [:list [:ref :demo/source-item]]]
+            fallback :i64] :i64
+           (match-option value [:option [:list [:ref :demo/source-item]]]
+             (none fallback)
+             (some items
+               (match-option
+                 (typed-cap-call
+                   :http/post
+                   [:option [:list [:ref :demo/source-item]]]
+                   [:option [:list [:ref :demo/source-item]]]
+                   (option-some-of
+                    [:option [:list [:ref :demo/source-item]]]
+                    items))
+                 [:option [:list [:ref :demo/source-item]]]
+                 (none fallback)
+                 (some returned (vector-count returned))))))
+         (defn echo [value :i64] :i64 value)"
+        application
+        (compiler/compile-component source {:allow #{[:cap/call 4]}})
+        provider
+        (composition/package-structural-union-identity-provider
+         :http/post descriptor schemas)
+        closed (composition/compose-closed application [provider])
+        path (Files/createTempFile
+              "kotoba-source-match-recursive-list-capability-" ".wasm"
+              (make-array FileAttribute 0))]
+    (try
+      (Files/write path ^bytes (:bytes closed)
+                   (make-array java.nio.file.OpenOption 0))
+      (is (= :structural-union-match-module
+             (:canonical-lowering application)))
+      (is (= [:http/post] (:application-imports closed)))
+      (doseq [[invoke expected]
+              [["choose(none, 9)" "9"]
+               ["choose(some([]), 9)" "0"]
+               [(str "choose(some([{label: \"outer\", "
+                     "choice: ok([true, false])}, "
+                     "{label: \"other\", choice: err({tag: \"safe\", "
+                     "enabled: true})}]), 9)")
+                "2"]
+               ["echo(11)" "11"]]]
+        (let [run (shell/sh wasmtime-binary "run" "--invoke"
+                            invoke (str path))]
+          (is (zero? (:exit run)) (:err run))
+          (is (= expected (str/trim (:out run))) invoke)))
+      (finally
+        (Files/deleteIfExists path)))))
+
 (deftest source-option-f64-list-match-calls-and-matches-a-named-capability
   (let [descriptor [:option :vector-f64]
         source
