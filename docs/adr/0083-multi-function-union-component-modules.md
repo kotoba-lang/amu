@@ -168,6 +168,11 @@ are rejected.
   offset is validated for every active request/result item; duplicate, missing,
   or out-of-stride backend plans fail closed. A malicious provider returning an
   otherwise in-range record with bool byte `2` traps before count is exposed;
+- scalar nested-list items use a fixed-depth sequence of Canonical
+  stride/alignment pairs and depth-specific loop locals. Request and provider
+  result traversal share one 16,384-item counter per value; two legal 8,192
+  inner lists under a two-item outer list therefore trap at 16,386 even when
+  both descriptors alias the same buffer;
 - other aggregate request/result descriptors and less constrained branch
   shapes remain fail-closed pending explicit shared Canonical codec admission.
 - symmetric `result<list<T>, list<T>>` now uses the shared match module for
