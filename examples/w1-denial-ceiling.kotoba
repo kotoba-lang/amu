@@ -1,0 +1,10 @@
+;; W1 denial: inferred effects exceed a public function effect ceiling.
+(ns examples.w1-denial-ceiling
+  (:capabilities #{:log/append}))
+
+(defn guarded [x]
+  {:effects #{:clock/now}}
+  (log/append x))
+
+(defn main []
+  (guarded 1))

@@ -78,7 +78,20 @@
   ([source] (check-source source {}))
   ([source policy]
    (let [hir (frontend/analyze source)]
-     {:hir hir :admission (admission/check hir policy)})))
+     (try
+       {:hir hir :admission (admission/check hir policy)}
+       (catch clojure.lang.ExceptionInfo e
+         ;; W1: rethrow admission denials with semantic operation names from
+         ;; elaboration, not only numeric [:cap/call id] effect rows.
+         (let [data (ex-data e)
+               named (:named-operations hir)
+               ops (when (seq named) (set named))]
+           (throw (ex-info (ex-message e)
+                           (cond-> (or data {})
+                             (seq ops) (assoc :operations ops
+                                              :named-operations ops)
+                             true (assoc :phase (or (:phase data) :admission))
+                             true (assoc :hir-effects (:effects hir)))))))))))
 
 (defn- component-kir
   "Make the source language's legacy scalar `cap-call` explicit at the
