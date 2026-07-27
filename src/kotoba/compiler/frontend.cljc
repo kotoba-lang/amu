@@ -74,6 +74,10 @@
   default set of names available even if the classpath resource is absent."
   (load-capability-registry))
 
+(def capability-id->name
+  "Inverse of capability-registry for diagnostics and effect ceilings."
+  (into {} (map (fn [[k v]] [v k]) capability-registry)))
+
 (def arithmetic '#{+ - * quot bit-xor bit-and bit-or})
 (def i32-operations
   '{i32-wrap 1 u32-wrap 1 i32-wrapping-add 2 i32-wrapping-mul 2 i32-xor 2
@@ -468,8 +472,15 @@
         (integer? end-offset) (assoc :end-offset end-offset)))))
 
 (defn- reject! [message form]
-  (throw (ex-info message (cond-> {:phase :subset :form form}
-                            (form-span form) (assoc :span (form-span form))))))
+  (let [m (meta form)
+        span (or (get m :span) (form-span form))
+        operation (or (get m :source-operation)
+                      (when (and (seq? form) (symbol? (first form)) (namespace (first form)))
+                        (keyword (namespace (first form)) (name (first form)))))]
+    (throw (ex-info message
+                    (cond-> {:phase :subset :form form}
+                      span (assoc :span span)
+                      operation (assoc :operation operation))))))
 
 (declare valid-name?)
 
@@ -604,6 +615,40 @@
           (vswap! *used-capability-keywords* conj kw))
         id)
     (reject! (str "cap-call names an unregistered capability: " kw) form)))
+
+(defn- capability-keyword-for-symbol
+  "Map a namespaced call head `clock/now` to registered keyword `:clock/now`."
+  [op]
+  (when (and (symbol? op) (namespace op))
+    (let [kw (keyword (namespace op) (name op))]
+      (when (contains? capability-registry kw) kw))))
+
+(defn- attach-source-operation
+  "Preserve reader span and the authored operation name on elaborated forms."
+  [form elaborated source-operation]
+  (let [location (select-keys (meta form)
+                              [:line :column :end-line :end-column :offset :end-offset])
+        span (form-span form)
+        m (cond-> {:source-operation source-operation}
+            (seq location) (merge location)
+            span (assoc :span span)
+            (meta form) (merge (meta form)))]
+    (if (or (coll? elaborated) (symbol? elaborated))
+      (with-meta elaborated (merge (meta elaborated) m))
+      elaborated)))
+
+(defn- elaborate-named-operation
+  "W1 safety elaboration: ordinary namespaced call `(clock/now req)` becomes
+  `(cap-call <id> req)` with `:source-operation` metadata. Authors never write
+  numeric capability IDs or portable-effect envelopes."
+  [form op kw args]
+  (when-not (= 1 (count args))
+    (reject! (str "named operation " (pr-str op)
+                  " requires exactly one request value")
+             form))
+  (let [id (resolve-capability-keyword! kw form)
+        elaborated (list 'cap-call id (desugar-expr (first args)))]
+    (attach-source-operation form elaborated kw)))
 
 (defn- desugar-list [args form]
   (when (> (count args) max-list-items)
@@ -1750,17 +1795,20 @@
         ;; instead of being silently coerced into a well-formed 2-arg call.
         cap-call
         (if (and (seq args) (keyword? (first args)))
-          (list* 'cap-call (resolve-capability-keyword! (first args) form)
-                 (map desugar-expr (rest args)))
+          (let [kw (first args)
+                elaborated (list* 'cap-call (resolve-capability-keyword! kw form)
+                                  (map desugar-expr (rest args)))]
+            (attach-source-operation form elaborated kw))
           (apply list op (map desugar-expr args)))
         typed-cap-call
         (if (and (seq args) (keyword? (first args)))
-          (let [[capability request-type result-type request & extra] args]
-            (list* 'typed-cap-call
-                   (resolve-capability-keyword! capability form)
-                   request-type result-type
-                   (when (some? request) (desugar-expr request))
-                   (map desugar-expr extra)))
+          (let [[capability request-type result-type request & extra] args
+                elaborated (list* 'typed-cap-call
+                                  (resolve-capability-keyword! capability form)
+                                  request-type result-type
+                                  (when (some? request) (desugar-expr request))
+                                  (map desugar-expr extra))]
+            (attach-source-operation form elaborated capability))
           (apply list op (map desugar-expr args)))
         xorshift32
         (do
@@ -1775,7 +1823,14 @@
                          x2 (list 'u32-wrap (list 'i32-xor x1 (list 'u32-shift-right x1 17)))
                          x3 (list 'u32-wrap (list 'i32-xor x2 (list 'i32-shift-left x2 5)))]
                   x3)))
-        (apply list op (map desugar-expr args))))))
+        ;; W1: friendly namespaced ops elaborate before validation sees them.
+        (if-let [kw (capability-keyword-for-symbol op)]
+          (elaborate-named-operation form op kw args)
+          (if (and (symbol? op) (namespace op))
+            (reject! (str "named operation " (pr-str op)
+                          " is not a registered capability")
+                     form)
+            (apply list op (map desugar-expr args))))))))
 
 (defn- desugar-expr [form]
   (let [result (desugar-expr* form)
@@ -3216,9 +3271,15 @@
     (let [undeclared (set/difference used declared)
           unused (set/difference declared used)]
       (when (seq undeclared)
-        (reject! "cap-call uses a capability not declared in namespace :capabilities" undeclared))
+        ;; Keep the historical message token so existing suites match, while
+        ;; including the semantic operation names for W1 diagnostics.
+        (reject! (str "cap-call uses a capability not declared in namespace :capabilities: "
+                      (pr-str undeclared))
+                 undeclared))
       (when (seq unused)
-        (reject! "namespace :capabilities declares a capability never used via cap-call" unused)))))
+        (reject! (str "namespace :capabilities declares a capability never used via cap-call: "
+                      (pr-str unused))
+                 unused)))))
 
 (defn- param-name+wrap
   "For one `defn` PARAM: a plain symbol is kept as-is (identity wrap). A
@@ -3249,11 +3310,28 @@
         resolved))
     type))
 
+(defn- normalize-effect-ceiling
+  "Translate a public effect ceiling declared as capability keywords into the
+  same `[:cap/call id]` row shape `infer-effects` produces."
+  [ceiling form]
+  (when (some? ceiling)
+    (when-not (and (set? ceiling) (seq ceiling) (every? keyword? ceiling))
+      (reject! "effect ceiling must be a non-empty set of capability keywords" form))
+    (into #{}
+          (map (fn [kw]
+                 (if-let [id (get capability-registry kw)]
+                   [:cap/call id]
+                   (reject! (str "effect ceiling names unregistered capability: " kw)
+                            form))))
+          ceiling)))
+
 (defn- defn-parts
   "Parse Kotoba's bounded function declaration shape. A docstring is inert
   metadata and is deliberately discarded before lowering. An optional result
   keyword follows the parameter vector: `(defn f [s :string] :string s)`.
-  Attributes, pre/post maps, and multiple arities remain outside the profile."
+  An optional public effect ceiling map may follow the result (or params):
+  `(defn f [x] {:effects #{:clock/now}} (clock/now x))`. Inferred effects
+  outside that ceiling fail closed. Other attributes remain outside the profile."
   [form constants]
   (let [[_ name & declaration] form
         [docstring declaration] (if (string? (first declaration))
@@ -3261,15 +3339,23 @@
                                   [nil declaration])
         raw-params (first declaration)
         tail (rest declaration)
-        [result body] (if (or (keyword? (first tail))
+        [result tail] (if (or (keyword? (first tail))
                               (structured-type? (first tail))
                               (type-alias-form? (first tail)))
                         [(resolve-type-alias! (first tail) constants) (rest tail)]
-                        [:i64 tail])]
+                        [:i64 tail])
+        ceiling-form (first tail)
+        [effects-ceiling body]
+        (if (and (map? ceiling-form)
+                 (contains? ceiling-form :effects)
+                 (= #{:effects} (set (keys ceiling-form))))
+          [(normalize-effect-ceiling (:effects ceiling-form) form) (rest tail)]
+          [nil tail])]
     (when (and docstring (> (count docstring) max-function-docstring-chars))
       (reject! "function docstring exceeds admission limit" docstring))
     (validate-value-type! result)
-    {:name name :raw-params raw-params :result result :body body}))
+    (cond-> {:name name :raw-params raw-params :result result :body body}
+      effects-ceiling (assoc :effects-ceiling effects-ceiling))))
 
 (declare typed-param-parts)
 
@@ -3650,7 +3736,7 @@
                ;; source using `loop`.
                (vec
                      (mapcat
-                     (fn [{:keys [name source-name raw-params result body]}]
+                     (fn [{:keys [name source-name raw-params result body effects-ceiling]}]
                        (let [source-name (or source-name name)]
                          (when-not (valid-name? name) (reject! "invalid function name" name))
                          (when (contains? reserved-function-names name)
@@ -3675,10 +3761,11 @@
                                               constants constant-bound)
                                  desugared (binding [*pending-loop-helpers* loop-helpers]
                                              (desugar-expr source-body))]
-                             (into [{:name name :source-name source-name
-                                     :params params :param-types param-types
-                                     :result result :effects #{}
-                                     :body desugared}]
+                             (into [(cond-> {:name name :source-name source-name
+                                             :params params :param-types param-types
+                                             :result result :effects #{}
+                                             :body desugared}
+                                      effects-ceiling (assoc :effects-ceiling effects-ceiling))]
                                    @loop-helpers)))))
                      def-parts)))
         parsed (mapv #(update % :body resolve-overloaded-calls overloads overloaded-sources) parsed)
@@ -3803,12 +3890,36 @@
                                            (tree-seq coll? seq body))))
                                parsed)))
           function-effects (infer-effects parsed)
+          _ (doseq [{:keys [name source-name effects-ceiling body]} parsed]
+              (when effects-ceiling
+                (let [inferred (get function-effects name #{})
+                      excess (set/difference inferred effects-ceiling)]
+                  (when (seq excess)
+                    (let [ops (into #{}
+                                    (keep (fn [[_tag id]]
+                                            (get capability-id->name id)))
+                                    excess)
+                          span (or (get (meta body) :span) (form-span body))]
+                      (throw (ex-info
+                              (str "inferred effects exceed declared effect ceiling"
+                                   (when source-name (str " for " source-name))
+                                   (when (seq ops) (str ": " (pr-str ops))))
+                              (cond-> {:phase :effect-ceiling
+                                       :function (or source-name name)
+                                       :inferred inferred
+                                       :ceiling effects-ceiling
+                                       :excess excess
+                                       :operations ops}
+                                span (assoc :span span)))))))))
           functions (mapv (fn [function]
                             (cond-> (assoc function :effects
                                            (get function-effects (:name function)))
+                              (:effects-ceiling function)
+                              (assoc :effects-ceiling (:effects-ceiling function))
                               (not typed-values?) (dissoc :param-types)))
                           parsed)
-          main-result (some->> parsed (some #(when (= 'main (:name %)) (:result %))))]
+          main-result (some->> parsed (some #(when (= 'main (:name %)) (:result %))))
+          named-operations (into (sorted-set) @used-capabilities)]
       {:format (if typed-values? :kotoba.hir/v3 :kotoba.hir/v2)
        :namespace (:namespace namespace-info)
        :schemas (:schemas namespace-info)
@@ -3818,4 +3929,6 @@
        ;; Admission conservatively covers private functions too: changing an
        ;; export boundary must never change the authority the module declares.
        :effects (reduce set/union #{} (vals function-effects))
+       ;; W1: semantic ability/operation names after elaboration (no numeric IDs).
+       :named-operations named-operations
        :functions functions})))

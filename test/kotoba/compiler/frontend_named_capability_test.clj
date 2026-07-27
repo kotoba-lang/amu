@@ -70,10 +70,13 @@
                      (defn main [] 42)"
         named-hir (:hir (compiler/check-source named-source {:allow #{[:cap/call 1]}}))
         int-hir (:hir (compiler/check-source int-source {:allow #{[:cap/call 1]}}))]
-    ;; Whole-HIR structural equality: :functions (including each function's
-    ;; :body -- the exact s-expression cap-call desugars to) and :effects
-    ;; must be byte-for-byte identical between the two source forms.
-    (is (= int-hir named-hir))
+    ;; Function bodies and effect rows must match. :named-operations is a
+    ;; W1 diagnostic surface present only when capability keywords (or
+    ;; friendly namespaced ops) appear in source, so compare without it.
+    (is (= (dissoc int-hir :named-operations)
+           (dissoc named-hir :named-operations)))
+    (is (= #{:identity/sign} (:named-operations named-hir)))
+    (is (= #{} (:named-operations int-hir)))
     (is (= #{[:cap/call 1]} (:effects named-hir)))
     (let [by-name (into {} (map (juxt :name identity) (:functions named-hir)))]
       (is (= '(cap-call 1 x) (:body (get by-name 'audit))))))

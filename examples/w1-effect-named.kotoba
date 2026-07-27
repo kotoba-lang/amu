@@ -1,0 +1,10 @@
+;; W1 effectful representative: friendly namespaced operation, no numeric
+;; capability wire IDs and no portable-effect envelopes in source.
+(ns examples.w1-effect-named
+  (:capabilities #{:clock/now}))
+
+(defn read-clock [seed]
+  (clock/now seed))
+
+(defn main []
+  (read-clock 42))
