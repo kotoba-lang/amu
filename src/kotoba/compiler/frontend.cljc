@@ -164,7 +164,7 @@
     document-i64-value 1 document-f64-value 1})
 (def document-variadic-operations '#{document-vector document-map})
 (def sequencing-operations '#{do})
-(def string-operations '{string-byte-length 1 bytes-task-byte-count 1
+(def string-operations '{string-byte-length 1 bytes-task-byte-count 1 object-cas-won 1
                          string=? 2 string-concat 2 string-substring 3
                          string-replace-all 3 string-contains? 2 string-fold-case 1
                          string-code-point-at 2
@@ -2533,6 +2533,17 @@
       (= op 'bytes-task-byte-count)
       (do (require-expression-type! (first types) [:task [:stream :bytes]] (first args))
           :i64)
+
+      (= op 'object-cas-won)
+      (let [descriptor (first types)
+            fields (when (and (vector? descriptor)
+                              (= :record (first descriptor)))
+                     (nth descriptor 2 nil))]
+        (when-not (and (seq fields)
+                       (= :bool (second (first fields))))
+          (reject! "object-cas-won requires a record whose first field is bool"
+                   (first args)))
+        :i64)
 
       (= op 'string=?)
       (do (doseq [[arg type] (map vector args types)]
