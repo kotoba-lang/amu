@@ -35,6 +35,24 @@
         {:name "structured-diagnostic" :ok? ok?
          :detail (when-not ok? (pr-str value))}))))
 
+(defn- named-operation-case []
+  (try
+    (let [hir (frontend/analyze
+               "(ns demo (:capabilities #{:http/post}))
+                (defn main [] :i64 (http/post 41))")
+          body (get-in hir [:functions 0 :body])
+          effect-id (second (first (:effects hir)))
+          ok? (and (= 'typed-cap-call (first body))
+                   (= 4 (second body))
+                   (= :i64 (nth body 2))
+                   (= :i64 (nth body 3))
+                   (= 4 (js/Number effect-id)))]
+      {:name "named-operation-elaboration" :ok? ok?
+       :detail (when-not ok? (pr-str {:body body :effects (:effects hir)}))})
+    (catch :default error
+      {:name "named-operation-elaboration" :ok? false
+       :detail (str "threw: " (.-message error))})))
+
 (let [results
       (conj
        (vec
@@ -46,7 +64,8 @@
                :detail (when-not ok? "emitted invalid Wasm")})
             (catch :default e
               {:name name :ok? false :detail (str "threw: " (.-message e))}))))
-       (diagnostic-case))
+       (diagnostic-case)
+       (named-operation-case))
       failures (remove :ok? results)]
   (doseq [{:keys [name ok? detail]} results]
     (println (if ok? "PASS" "FAIL") name (or detail "")))
