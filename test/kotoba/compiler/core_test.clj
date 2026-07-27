@@ -122,12 +122,29 @@
     (is (some #{0x7c} (map #(bit-and (int %) 0xff) bytes))
         "Wasm contains runtime i64.add rather than only a folded constant")))
 
+(defn- code-without-string-literals
+  "Emitted JS with single- and double-quoted string literals blanked out.
+
+  The ambient-global check below is about what the code REFERENCES, not what
+  text happens to appear in it. Run against the raw source it produced a false
+  positive the moment :document support landed: the runtime throws
+  Error('document-read-truncated'), Error('document-read-hex-charset') and
+  seventeen more labels naming the :document TYPE, and the bare pattern matched
+  the substring inside those literals. Blanking the literals first restores the
+  assertion's actual meaning."
+  [source]
+  (-> source
+      (str/replace #"'(?:[^'\\]|\\.)*'" "''")
+      (str/replace #"\"(?:[^\"\\]|\\.)*\"" "\"\"")))
+
 (deftest emits-restricted-javascript-from-the-same-kir
   (let [js (compiler/compile-source structured-source :js-kotoba-v1)]
     (is (= :javascript/v1 (:format js)))
     (is (= :kotoba.kir/v3 (get-in js [:kir :format])))
     (is (re-find #"export function instantiateKotoba" (:source js)))
-    (is (not (re-find #"globalThis|window|document|eval\s*\(" (:source js))))))
+    (is (not (re-find #"globalThis|window|document|eval\s*\("
+                      (code-without-string-literals (:source js))))
+        "restricted ESM must not reference an ambient browser global")))
 
 (deftest javascript-execution-matches-the-normative-kir
   (let [compiled (compiler/compile-source structured-source :js-kotoba-v1)
