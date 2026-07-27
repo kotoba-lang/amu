@@ -31,6 +31,10 @@
   (let [{:keys [profile worker-source wrangler manifest]}
         (host-profile/generate valid-profile)]
     (is (= :cloudflare/workerd (:target profile)))
+    ;; Egress stays GET-only; ingress defaults include POST for app routes.
+    (is (= ["GET"] (get-in profile [:http :allowed-methods])))
+    (is (= ["DELETE" "GET" "HEAD" "POST" "PUT"]
+           (get-in profile [:http :ingress-methods])))
     (is (= "./worker.mjs" (:main wrangler)))
     (is (= [{:binding "TOSHOKAN_BUCKET"
              :bucket_name "murakumo-toshokan"}]
@@ -38,6 +42,7 @@
     (is (= :kotoba.host-artifact/v1 (:format manifest)))
     (is (re-find #"capability-denied:http" worker-source))
     (is (re-find #"capability-denied:http-ingress" worker-source))
+    (is (re-find #"ingressMethods" worker-source))
     (is (re-find #"capability-denied:object-store" worker-source))
     (is (re-find #"etagDoesNotMatch" worker-source))
     (is (re-find #"getStream" worker-source))
