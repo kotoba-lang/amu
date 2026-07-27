@@ -56,3 +56,14 @@
     (is (= [llm/result-type :error
             [llm/error-type :llm/transport "provider failed" false]]
            ((:invoke crashed) 'generate [request])))))
+
+(deftest missing-grant-denies-before-provider-invoke
+  (let [kir (ir/lower (:hir (compiler/check-source
+                             source {:allow #{[:cap/call 11]}})))
+        runtime (runtime/instantiate kir)
+        called? (atom false)]
+    (is (thrown-with-msg?
+         clojure.lang.ExceptionInfo #"capability denied"
+         ((:invoke runtime) 'generate
+          [[llm/request-type :example/text-v1 "" "hello" 64 0]])))
+    (is (false? @called?))))
