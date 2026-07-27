@@ -12,6 +12,11 @@
   {:target "clock://monotonic" :operation :clock/now
    :max-bytes 1 :max-items 1 :deadline-ms 1000 :audit-id "compiler-test"})
 
+(def log-append-ability
+  {:target "log://application" :operation :log/append
+   :max-bytes 64 :max-items 1 :deadline-ms 1000
+   :audit-id "compiler-log-append-test"})
+
 (deftest source-cap-call-becomes-a-closed-component-import
   (let [artifact (compiler/compile-component source policy)
         wit-source (get-in artifact [:wit :source])]
@@ -66,3 +71,23 @@
           "(defn main [] (+ 1 (cap-call :clock/now 7)))" policy
           {:capability-mode :linear-resource
            :component-abilities {7 clock-ability}})))))
+
+(deftest source-log-append-becomes-a-typed-v03-component
+  (let [artifact
+        (compiler/compile-component
+         "(ns app (:capabilities #{:log/append}))
+          (defn main []
+            (typed-cap-call :log/append :string :i64 \"安全\"))"
+         {:allow #{[:cap/call 6]}}
+         {:target :wasm-component-kotoba-v2
+          :component-abilities {6 log-append-ability}})
+        call (get-in artifact [:kir :functions 0 :body])]
+    (is (= '(typed-cap-call 6 :string :i64 "安全") call))
+    (is (= :wasm-component-kotoba-v2 (:target artifact)))
+    (is (= "aiueos:capability/application@0.3.0"
+           (:component-world artifact)))
+    (is (= ["aiueos-log-append"] (:imports artifact)))
+    (is (= :string-literal-unit-capability-call
+           (:canonical-lowering artifact)))
+    (is (= #{:aiueos.component/aiueos-log-append}
+           (:capabilities artifact)))))
