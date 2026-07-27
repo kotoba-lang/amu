@@ -1,7 +1,7 @@
 const MAX_MODULE_BYTES = 1024 * 1024;
 const PAIR_CAPACITY = 4096;
 const TYPED_SECTION = "kotoba.typed";
-const TYPED_ABI_VERSION = 12;
+const TYPED_ABI_VERSION = 13;
 const COMPATIBILITY_SECTION = "kotoba.compatibility";
 const COMPATIBILITY_VERSION = 1;
 const MAX_TYPED_DESCRIPTORS = 64;
@@ -204,6 +204,8 @@ function parseTypedMetadata(module) {
     if (tag === 17 && version >= 10) return Object.freeze(["disjoint-set-i64"]);
     if (tag === 18 && version >= 11) return Object.freeze(["document"]);
     if (tag === 19 && version >= 12) return "symbol";
+    if (tag === 20 && version >= 13)
+      return Object.freeze(["list", descriptor(depth + 1)]);
     if (tag === 4) return Object.freeze(["option", descriptor(depth + 1)]);
     if (tag === 5) return Object.freeze(["result", descriptor(depth + 1), descriptor(depth + 1)]);
     if (tag === 7) {
@@ -702,6 +704,10 @@ function createTypedRuntime(abi, typedCapCall, allow) {
       return compareSequence(Array.from({ length: Math.max(left.length, right.length) - 1 }, () => "f64"),
                              left.slice(1), right.slice(1));
     if (kind === "vector") return compareSequence(descriptor[1], left.slice(1), right.slice(1));
+    if (kind === "list") {
+      const length = Math.max(left[1].length, right[1].length);
+      return compareSequence(Array.from({ length }, () => descriptor[1]), left[1], right[1]);
+    }
     if (kind === "set") {
       const length = Math.max(left[1].length, right[1].length);
       return compareSequence(Array.from({ length }, () => descriptor[1]), left[1], right[1]);
@@ -829,6 +835,12 @@ function createTypedRuntime(abi, typedCapCall, allow) {
         if (!sameTrustedDescriptor(value[0], descriptor) || value.length !== descriptor[1].length + 1)
           reject("invalid-typed-value", "heterogeneous vector shape is invalid");
         descriptor[1].forEach((item, index) => assertValue(item, value[index + 1], state));
+      } else if (kind === "list") {
+        if (!sameTrustedDescriptor(value[0], descriptor) || value.length !== 2 ||
+            !Array.isArray(value[1]) || !Object.isFrozen(value[1]) ||
+            value[1].length > 16384)
+          reject("invalid-typed-value", "bounded list shape is invalid");
+        value[1].forEach(item => assertValue(descriptor[1], item, state));
       } else if (kind === "set") {
         if (!sameTrustedDescriptor(value[0], descriptor) || value.length !== 2 || !Array.isArray(value[1]) ||
             !Object.isFrozen(value[1]) || value[1].length > 32)
