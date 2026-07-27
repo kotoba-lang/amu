@@ -37,6 +37,10 @@
    :max-bytes 65536 :max-items 1 :deadline-ms 1000
    :audit-id "compiler-object-cas-test"})
 
+(defn core-ability [operation target]
+  {:target target :operation operation :max-bytes 65536 :max-items 16
+   :deadline-ms 1000 :audit-id (str "compiler-" (name operation) "-test")})
+
 (deftest source-cap-call-becomes-a-closed-component-import
   (let [artifact (compiler/compile-component source policy)
         wit-source (get-in artifact [:wit :source])]
@@ -188,3 +192,48 @@
     (is (= :object-put-block-call (:canonical-lowering put)))
     (is (= ["aiueos-object-compare-and-set-ref"] (:imports cas)))
     (is (= :object-compare-and-set-call (:canonical-lowering cas)))))
+
+(deftest source-core-provider-operations-lower-to-v03-components
+  (let [bytes-request "[:record :cap/bytes-request [[:bytes :string]]]"
+        bytes-response "[:record :cap/bytes-response [[:bytes :string]]]"
+        http-request "[:record :http/post-request [[:path :string] [:headers :vector-i64] [:body :string]]]"
+        http-response "[:record :http/post-response [[:status :i64] [:headers :vector-i64] [:body :string]]]"
+        log-request "[:record :log/read-request [[:cursor :i64] [:max-bytes :i64]]]"
+        log-response "[:record :log/read-response [[:next-cursor :i64] [:bytes :string]]]"
+        compile-one
+        (fn [cap id ability body]
+          (compiler/compile-component
+           (str "(ns app (:capabilities #{" cap "})) (defn main [] " body ")")
+           {:allow #{[:cap/call id]}}
+           {:target :wasm-component-kotoba-v2
+            :component-abilities {id ability}}))
+        bytes-body
+        (fn [projection cap]
+          (str "(" projection " (typed-cap-call " cap " " bytes-request " "
+               bytes-response " (record " bytes-request " \"payload\")))"))
+        artifacts
+        [(compile-one ":identity/sign" 1
+                      (core-ability :identity/sign "identity://signer")
+                      (bytes-body "bytes-response-byte-count" ":identity/sign"))
+         (compile-one ":identity/verify" 2
+                      (core-ability :identity/verify "identity://verifier")
+                      (str "(bool-result (typed-cap-call :identity/verify "
+                           bytes-request " :bool (record " bytes-request " \"signed\")))"))
+         (compile-one ":hash/sha256" 3
+                      (core-ability :hash/sha256 "hash://sha256")
+                      (bytes-body "bytes-response-byte-count" ":hash/sha256"))
+         (compile-one ":http/post" 4
+                      (core-ability :http/post "https://example.invalid/safe")
+                      (str "(http-response-status (typed-cap-call :http/post "
+                           http-request " " http-response " (record " http-request
+                           " \"/safe\" (vector-new) \"body\")))"))
+         (compile-one ":log/read" 5
+                      (core-ability :log/read "log://application")
+                      (str "(log-read-byte-count (typed-cap-call :log/read "
+                           log-request " " log-response " (record " log-request
+                           " 0 128)))"))]]
+    (is (= ["aiueos-identity-sign" "aiueos-identity-verify"
+            "aiueos-hash-sha256" "aiueos-http-post" "aiueos-log-read"]
+           (mapv (comp first :imports) artifacts)))
+    (is (every? #(= :typed-v3-projected-call (:canonical-lowering %)) artifacts))
+    (is (every? #(pos? (alength ^bytes (:bytes %))) artifacts))))

@@ -169,6 +169,8 @@
 (def document-variadic-operations '#{document-vector document-map})
 (def sequencing-operations '#{do})
 (def string-operations '{string-byte-length 1 bytes-task-byte-count 1 object-cas-won 1
+                         bytes-response-byte-count 1 bool-result 1
+                         http-response-status 1 log-read-byte-count 1
                          string=? 2 string-concat 2 string-substring 3
                          string-replace-all 3 string-contains? 2 string-fold-case 1
                          string-code-point-at 2
@@ -2598,6 +2600,26 @@
                        (= :bool (second (first fields))))
           (reject! "object-cas-won requires a record whose first field is bool"
                    (first args)))
+        :i64)
+
+      (contains? '#{bytes-response-byte-count log-read-byte-count} op)
+      (let [descriptor (first types)
+            fields (when (and (vector? descriptor) (= :record (first descriptor)))
+                     (nth descriptor 2 nil))
+            field (if (= op 'bytes-response-byte-count) (first fields) (second fields))]
+        (when-not (= :string (second field))
+          (reject! (str op " requires a record bytes field") (first args)))
+        :i64)
+
+      (= op 'bool-result)
+      (do (require-expression-type! (first types) :bool (first args)) :i64)
+
+      (= op 'http-response-status)
+      (let [descriptor (first types)
+            fields (when (and (vector? descriptor) (= :record (first descriptor)))
+                     (nth descriptor 2 nil))]
+        (when-not (= :i64 (second (first fields)))
+          (reject! "http-response-status requires a record status field" (first args)))
         :i64)
 
       (= op 'string=?)
