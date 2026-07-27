@@ -660,16 +660,17 @@
       elaborated)))
 
 (defn- elaborate-named-operation
-  "W1 safety elaboration: ordinary namespaced call `(clock/now req)` becomes
-  `(cap-call <id> req)` with `:source-operation` metadata. Authors never write
-  numeric capability IDs or portable-effect envelopes."
+  "W1 safety elaboration validates an ordinary namespaced operation and keeps
+  it named until parameter/result types are available. The later contextual
+  elaboration pass lowers it to `typed-cap-call`; authors never write numeric
+  capability IDs, type envelopes, or portable-effect envelopes."
   [form op kw args]
   (when-not (= 1 (count args))
     (reject! (str "named operation " (pr-str op)
                   " requires exactly one request value")
              form))
-  (let [id (resolve-capability-keyword! kw form)
-        elaborated (list 'cap-call id (desugar-expr (first args)))]
+  (let [_ (resolve-capability-keyword! kw form)
+        elaborated (list op (desugar-expr (first args)))]
     (attach-source-operation form elaborated kw)))
 
 (defn- desugar-list [args form]
