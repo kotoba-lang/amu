@@ -458,6 +458,64 @@
       (finally
         (Files/deleteIfExists path)))))
 
+(deftest source-option-record-list-match-calls-and-matches-a-named-capability
+  (let [descriptor [:option [:list [:ref :demo/match-point]]]
+        schemas {:demo/match-point
+                 [:record :demo/match-point [[:x :i64] [:visible :bool]]]}
+        source
+        "(ns component.match-record-list-capability
+           (:export [choose echo])
+           (:capabilities #{:http/post})
+           (:schemas
+            {:demo/match-point
+             [:record :demo/match-point [[:x :i64] [:visible :bool]]]}))
+         (defn choose
+           [value [:option [:list [:ref :demo/match-point]]]
+            fallback :i64] :i64
+           (match-option value [:option [:list [:ref :demo/match-point]]]
+             (none fallback)
+             (some items
+               (match-option
+                 (typed-cap-call
+                   :http/post
+                   [:option [:list [:ref :demo/match-point]]]
+                   [:option [:list [:ref :demo/match-point]]]
+                   (option-some-of
+                    [:option [:list [:ref :demo/match-point]]]
+                    items))
+                 [:option [:list [:ref :demo/match-point]]]
+                 (none fallback)
+                 (some returned (vector-count returned))))))
+         (defn echo [value :i64] :i64 value)"
+        application
+        (compiler/compile-component source {:allow #{[:cap/call 4]}})
+        provider
+        (composition/package-structural-union-identity-provider
+         :http/post descriptor schemas)
+        closed (composition/compose-closed application [provider])
+        path (Files/createTempFile
+              "kotoba-source-match-record-list-capability-" ".wasm"
+              (make-array FileAttribute 0))]
+    (try
+      (Files/write path ^bytes (:bytes closed)
+                   (make-array java.nio.file.OpenOption 0))
+      (is (= :structural-union-match-module
+             (:canonical-lowering application)))
+      (is (= [:http/post] (:application-imports closed)))
+      (doseq [[invoke expected]
+              [["choose(none, 9)" "9"]
+               ["choose(some([]), 9)" "0"]
+               [(str "choose(some([{x: 7, visible: true}, "
+                     "{x: -2, visible: false}]), 9)")
+                "2"]
+               ["echo(11)" "11"]]]
+        (let [run (shell/sh wasmtime-binary "run" "--invoke"
+                            invoke (str path))]
+          (is (zero? (:exit run)) (:err run))
+          (is (= expected (str/trim (:out run))) invoke)))
+      (finally
+        (Files/deleteIfExists path)))))
+
 (deftest source-option-f64-list-match-calls-and-matches-a-named-capability
   (let [descriptor [:option :vector-f64]
         source
