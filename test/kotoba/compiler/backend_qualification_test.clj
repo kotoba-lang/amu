@@ -45,7 +45,9 @@
                         {:id 13 :name :http/get-stream}
                         {:id 14 :name :object/get-stream}
                         {:id 15 :name :object/put-block}
-                        {:id 16 :name :object/compare-and-set-ref}])
+                        {:id 16 :name :object/compare-and-set-ref}
+                        {:id 17 :name :http/accept}
+                        {:id 18 :name :http/reply}])
         actual (->> (:capabilities contract) (map #(select-keys % [:name :id])) set)
         entries (:capabilities contract)]
     (is (= expected actual))

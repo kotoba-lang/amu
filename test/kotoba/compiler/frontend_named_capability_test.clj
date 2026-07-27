@@ -31,7 +31,9 @@
               set)))
   (is (= 13 (get frontend/capability-registry :http/get-stream)))
   (is (= 16 (get frontend/capability-registry
-                 :object/compare-and-set-ref))))
+                 :object/compare-and-set-ref)))
+  (is (= 17 (get frontend/capability-registry :http/accept)))
+  (is (= 18 (get frontend/capability-registry :http/reply))))
 
 (deftest linear-task-stream-types-are-admitted-only-as-direct-moves
   (let [checked

@@ -45,7 +45,8 @@
     :log/read 5 :log/append 6 :clock/now 7 :state/transact 8
     :ui/commit 9 :ui/next-event 10 :llm/generate 11
     :storage/transact 12 :http/get-stream 13 :object/get-stream 14
-    :object/put-block 15 :object/compare-and-set-ref 16})
+    :object/put-block 15 :object/compare-and-set-ref 16
+    :http/accept 17 :http/reply 18})
 
 (defn- load-capability-catalog []
   #?(:clj
