@@ -307,7 +307,7 @@
                    component-target?
                    (compiler/compile-component
                     (bounded-edn/read-text-file input) policy
-                    (cond-> {}
+                    (cond-> {:target target}
                       (option args "--profile")
                       (assoc :profile (keyword (option args "--profile")))
                       (option args "--fuel")

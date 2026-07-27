@@ -5,6 +5,7 @@
             [clojure.tools.reader :as reader]
             [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.cli :as cli]
+            [kotoba.compiler.core :as compiler]
             [kotoba.compiler.frontend :as frontend])
   (:import [java.io StringWriter]))
 
@@ -285,3 +286,33 @@
       (is (:ok report))
       (is (= [0 97 115 109] (mapv #(bit-and % 0xff) (take 4 bytes)))
           "still a real WASM binary (magic bytes), the write-bytes! path is untouched"))))
+
+(deftest compile-cli-preserves-the-requested-component-target
+  (let [text "(ns app (:capabilities #{:clock/now}))
+              (defn main [] (cap-call :clock/now 0))"
+        policy {:allow #{[:cap/call 7]}}
+        source (temp-kotoba-source! text)
+        policy-file (.getPath
+                     (doto (java.io.File/createTempFile "kotoba-component-policy-" ".edn")
+                       (.deleteOnExit)))
+        output (.getPath
+                (doto (java.io.File/createTempFile "kotoba-component-v2-" ".wasm")
+                  (.deleteOnExit)))
+        out (StringWriter.)]
+    (spit policy-file (pr-str policy))
+    (binding [*out* out]
+      (cli/-main "compile" source
+                 "--target" "wasm-component-kotoba-v2"
+                 "--policy" policy-file
+                 "--output" output))
+    (let [report (edn/read-string (str out))
+          written (java.nio.file.Files/readAllBytes
+                   (.toPath (java.io.File. ^String output)))
+          direct (compiler/compile-component
+                  text policy {:target :wasm-component-kotoba-v2})
+          wit (slurp (str output ".wit"))]
+      (is (= :wasm-component-kotoba-v2 (:target report)))
+      (is (= (vec (:bytes direct)) (vec written))
+          "CLI output must be the requested target's bytes, not v1 bytes with a v2 label")
+      (is (str/starts-with? wit "package aiueos:capability@0.3.0;"))
+      (is (str/includes? wit "resource grant;")))))
