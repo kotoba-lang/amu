@@ -171,12 +171,13 @@
                          :target target :target-profile target-profile
                          :value-abi value-abi})
          capability-ids (component-capability-ids kir)
-         _ (when (and typed-v3? (not= #{7} capability-ids))
+         _ (when (and typed-v3?
+                      (not (contains? #{#{6} #{7}} capability-ids)))
              (throw (ex-info
-                     "typed v0.3 lowering currently requires the clock/now vertical slice"
+                     "typed v0.3 lowering currently requires one implemented vertical slice"
                      {:phase :component-abi-v3
                       :target target
-                      :required #{7}
+                      :implemented [#{6} #{7}]
                       :supplied capability-ids})))
          _ (when (and component-abilities
                       (not= capability-ids (set (keys component-abilities))))
