@@ -30,10 +30,10 @@
     (testing "source uses friendly namespaced ops, not cap-call syntax"
       (is (not (re-find #"\((cap-call|typed-cap-call)\b" source)))
       (is (re-find #"\(clock/now\b" source)))
-    (testing "elaboration yields cap-call id + inferred effect + named op"
+    (testing "elaboration yields typed cap-call + inferred effect + named op"
       (is (= #{:clock/now} (:named-operations hir)))
       (is (= #{[:cap/call 7]} (:effects hir)))
-      (is (= '(cap-call 7 seed) read-body))
+      (is (= '(typed-cap-call 7 :i64 :i64 seed) read-body))
       (is (= :clock/now (:source-operation (meta read-body))))
       (is (map? (:span (meta read-body))))
       (is (integer? (get-in (meta read-body) [:span :line]))))
