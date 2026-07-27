@@ -319,3 +319,111 @@
                 (get-in substituted [:manifest :kotoba.artifact/module-source-digests])))
       (is (not= (get-in original [:manifest :kotoba.artifact/output-digest])
                 (get-in substituted [:manifest :kotoba.artifact/output-digest]))))))
+
+;; --- ns :capabilities inside a project ------------------------------------
+;; Before this, a project module could declare `:export` and alias-only
+;; `:require` and nothing else, while a SINGLE-module compile had accepted
+;; `:capabilities` since ADR-2607182410. The two paths disagreeing meant a
+;; program could be multi-module or effectful, never both -- which put every
+;; effectful application outside project mode.
+
+(def commit-source
+  "(ns caps.render
+     (:capabilities #{:ui/commit})
+     (:export [commit-tree]))
+   (defn commit-tree [revision :i64] :i64 (cap-call :ui/commit revision))")
+
+(def poll-source
+  "(ns caps.events
+     (:capabilities #{:ui/next-event})
+     (:export [poll]))
+   (defn poll [after :i64] :i64 (cap-call :ui/next-event after))")
+
+(def caps-app-source
+  "(ns caps.app
+     (:require [caps.render :as render] [caps.events :as events])
+     (:export [main]))
+   (defn main [] :i64 (events/poll (render/commit-tree 0)))")
+
+(def caps-sources
+  {'caps.render commit-source 'caps.events poll-source 'caps.app caps-app-source})
+
+(deftest project-modules-admit-a-declared-capability-set
+  (let [{:keys [source]} (project/link-source caps-sources 'caps.app)
+        compiled (compiler/compile-source source :js-kotoba-v1
+                                          {:allow #{[:cap/call 9] [:cap/call 10]}})]
+    (testing "each module keeps its own declaration"
+      (is (= #{:ui/commit} (:capabilities (project/module-info (frontend/read-forms commit-source)))))
+      (is (= #{:ui/next-event} (:capabilities (project/module-info (frontend/read-forms poll-source)))))
+      ;; nil, not #{}: the app module writes no clause at all, and the
+      ;; frontend distinguishes "no declaration to check" from "declares that
+      ;; it uses nothing".
+      (is (nil? (:capabilities (project/module-info (frontend/read-forms caps-app-source))))))
+    (testing "the linked namespace carries no :capabilities clause"
+      ;; Bodies reach the linked unit already lowered to integer cap-calls,
+      ;; which populate no used-keyword set; re-declaring the union would fail
+      ;; the frontend's own declare-then-check.
+      (is (str/includes? source "(cap-call 9 "))
+      (is (str/includes? source "(cap-call 10 "))
+      (is (not (str/includes? source ":capabilities"))))
+    (testing "effects still reach the artifact through the integer form"
+      (is (= 77 (ir/execute (:kir compiled) 'main []
+                            {:cap-call (fn [id value]
+                                         (case (long id)
+                                           9 7
+                                           10 (* 11 value)))}))))))
+
+(deftest project-capability-declarations-fail-closed
+  (testing "declared but never used is still rejected per module"
+    (is (thrown-with-msg?
+         clojure.lang.ExceptionInfo #"never used via cap-call"
+         (project/link-source
+          (assoc caps-sources 'caps.render
+                 (str/replace commit-source "#{:ui/commit}" "#{:ui/commit :ui/next-event}"))
+          'caps.app))))
+  (testing "used but never declared is still rejected per module"
+    (is (thrown-with-msg?
+         clojure.lang.ExceptionInfo #"not declared in namespace :capabilities"
+         (project/link-source
+          (assoc caps-sources 'caps.render
+                 (str/replace commit-source "#{:ui/commit}" "#{:ui/next-event}"))
+          'caps.app))))
+  (testing "the policy, not the clause, is what actually gates an effect"
+    ;; `:capabilities` is an optional per-module lint -- a module that writes
+    ;; no clause may still name a cap-call, exactly as in single-module mode.
+    ;; What stops it is admission against the compile policy, so a project
+    ;; cannot gain an effect by simply omitting the declaration.
+    (let [undeclared (str/replace caps-app-source
+                                  "(defn main [] :i64 (events/poll (render/commit-tree 0)))"
+                                  "(defn main [] :i64 (cap-call :ui/commit 0))")
+          sources (assoc caps-sources 'caps.app undeclared)
+          {:keys [source]} (project/link-source sources 'caps.app)]
+      (is (str/includes? source "(cap-call 9 "))
+      (is (thrown-with-msg?
+           clojure.lang.ExceptionInfo #"policy denies"
+           (compiler/compile-source source :js-kotoba-v1 {:allow #{}})))))
+  (testing ":capabilities must be a set of namespaced keywords"
+    (is (thrown-with-msg?
+         clojure.lang.ExceptionInfo #"bounded set of namespaced keywords"
+         (project/link-source
+          (assoc caps-sources 'caps.render
+                 (str/replace commit-source "#{:ui/commit}" "#{:commit}"))
+          'caps.app))))
+  (testing "at most one :capabilities clause"
+    (is (thrown-with-msg?
+         clojure.lang.ExceptionInfo #"are admitted"
+         (project/link-source
+          (assoc caps-sources 'caps.render
+                 (str/replace commit-source
+                              "(:capabilities #{:ui/commit})"
+                              "(:capabilities #{:ui/commit}) (:capabilities #{:ui/commit})"))
+          'caps.app))))
+  (testing ":schemas remains rejected in project mode rather than silently dropped"
+    (is (thrown-with-msg?
+         clojure.lang.ExceptionInfo #"are admitted"
+         (project/link-source
+          (assoc caps-sources 'caps.render
+                 (str/replace commit-source
+                              "(:capabilities #{:ui/commit})"
+                              "(:capabilities #{:ui/commit}) (:schemas {})"))
+          'caps.app)))))
