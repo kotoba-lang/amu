@@ -157,8 +157,19 @@
              (throw (ex-info "Component capability mode is unsupported"
                              {:phase :component-capability-mode
                               :capability-mode capability-mode})))
-         core (compile-source source :wasm32-wasi-kotoba-v1 policy)
-         kir (component-kir (:kir core))
+         hir (frontend/analyze source)
+         checked-admission (admission/check hir policy)
+         kir (component-kir (ir/lower hir))
+         target-profile (target-profile/profile target)
+         typed-values? (= :kotoba.kir/v4 (:format kir))
+         value-abi (cond (ir/uses-f32? hir) :kotoba.typed/mixed-f32-f64-v3
+                         (ir/uses-f64? hir) :kotoba.typed/mixed-f64-v2
+                         typed-values? :kotoba.typed/externref-v1
+                         :else :kotoba.i64/direct-v1)
+         compatibility (compatibility/descriptor
+                        {:hir-format (:format hir) :kir-format (:format kir)
+                         :target target :target-profile target-profile
+                         :value-abi value-abi})
          capability-ids (component-capability-ids kir)
          _ (when (and typed-v3? (not= #{7} capability-ids))
              (throw (ex-info
@@ -193,8 +204,12 @@
                                                :memory-pages (:memory-pages budgets)
                                                :capability-mode capability-mode
                                                :typed-capability-v3? typed-v3?})
-         packaged (component-artifact/package component-bytes kir wit)]
-     (assoc packaged
+         packaged (component-artifact/package component-bytes kir wit)
+         result
+         (assoc packaged
+            :hir hir
+            :kir kir
+            :target-profile target-profile
             :capabilities (into #{} (map abi/component-import-key) capability-ids)
             :component-imports
             (into (sorted-map)
@@ -203,19 +218,16 @@
                           (get component-abilities id)]))
                   capability-ids)
             :wit wit
-            :admission (:admission core)
-            ;; Carry the core compile's provenance and sealed policies: the
-            ;; component is a repackaging of exactly that module, so it
-            ;; inherits the same attestation rather than having none.
-            :provenance (:provenance core)
-            :floating-point-policy (:floating-point-policy core)
-            :compatibility (:compatibility core)
+            :admission checked-admission
+            :floating-point-policy floating-point-policy
+            :compatibility compatibility
             :budgets budgets
             :capability-mode (or capability-mode :function)
             :fuel-enforcement enforcement
             :admission-request (component-admission/request
                                 packaged wit
-                                (assoc opts :profile profile :budgets budgets))))))
+                                (assoc opts :profile profile :budgets budgets)))]
+     (provenance/attach source policy opts result))))
 
 (defn- compile-source*
   ([source target] (compile-source* source target {}))
