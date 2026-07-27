@@ -22,6 +22,11 @@
    :max-bytes 65536 :max-items 1 :deadline-ms 1000
    :audit-id "compiler-http-stream-test"})
 
+(def object-stream-ability
+  {:target "object://bucket/blocks/key" :operation :object/get-stream
+   :max-bytes 65536 :max-items 1 :deadline-ms 1000
+   :audit-id "compiler-object-stream-test"})
+
 (deftest source-cap-call-becomes-a-closed-component-import
   (let [artifact (compiler/compile-component source policy)
         wit-source (get-in artifact [:wit :source])]
@@ -119,4 +124,28 @@
     (is (= :stream-byte-count-call (:canonical-lowering artifact)))
     (is (= :async (get-in artifact [:admission-request :profile])))
     (is (= #{:aiueos.component/aiueos-http-get-stream}
+           (:capabilities artifact)))))
+
+(deftest source-object-stream-consumes-linear-task-and-stream
+  (let [artifact
+        (compiler/compile-component
+         "(ns app (:capabilities #{:object/get-stream}))
+          (defn main []
+            (bytes-task-byte-count
+             (typed-cap-call :object/get-stream :string
+               [:task [:stream :bytes]] \"blocks/key\")))"
+         {:allow #{[:cap/call 14]}}
+         {:target :wasm-component-kotoba-v2
+          :profile :async
+          :component-abilities {14 object-stream-ability}
+          :budgets {:deadline-ms 1000 :max-items 1 :max-bytes 65536
+                    :cancellation true}})
+        call (get-in artifact [:kir :functions 0 :body])]
+    (is (= '(bytes-task-byte-count
+             (typed-cap-call 14 :string [:task [:stream :bytes]] "blocks/key"))
+           call))
+    (is (= ["aiueos-object-get-stream"] (:imports artifact)))
+    (is (= :stream-byte-count-call (:canonical-lowering artifact)))
+    (is (= :async (get-in artifact [:admission-request :profile])))
+    (is (= #{:aiueos.component/aiueos-object-get-stream}
            (:capabilities artifact)))))
