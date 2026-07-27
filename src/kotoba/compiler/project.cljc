@@ -18,9 +18,25 @@
   (throw (ex-info message (assoc data :phase :project-link))))
 
 (defn module-info
-  "Return the bounded declared namespace, exports and alias-only requires for
-  one project module. This is also the authority used by filesystem graph
-  discovery; discovery and linking therefore cannot disagree on syntax."
+  "Return the bounded declared namespace, exports, alias-only requires and
+  declared capability set for one project module. This is also the authority
+  used by filesystem graph discovery; discovery and linking therefore cannot
+  disagree on syntax.
+
+  `:capabilities` is admitted here because `frontend/namespace-parts` has
+  always admitted it for a single-module compile -- without this clause a
+  project could hold either multiple modules or a capability, never both,
+  which put every effectful application outside project mode entirely. The
+  set is validated against the SAME bounds the frontend applies
+  (`max-namespace-capabilities`, namespaced keywords only) so a module cannot
+  smuggle a wider declaration in through the project path than it could
+  through the single-module path.
+
+  Still not admitted here: `:schemas`. The frontend takes it, but linking
+  several modules' schema tables into one namespace needs a collision rule
+  for identically-named schemas across modules, which is a separate decision
+  from this one -- a project module that declares `:schemas` is still
+  rejected rather than silently having the clause dropped."
   [forms]
   (let [ns-forms (filter #(and (seq? %) (= 'ns (first %))) forms)]
     (when-not (= 1 (count ns-forms))
@@ -33,12 +49,21 @@
         (reject! "invalid project namespace" {:namespace name}))
       (when (and docstring (> (count docstring) frontend/max-namespace-docstring-chars))
         (reject! "namespace docstring exceeds admission limit" {:namespace name}))
-      (loop [remaining clauses exports nil requires []]
+      (loop [remaining clauses exports nil requires [] capabilities nil]
         (if-let [clause (first remaining)]
           (cond
             (and (seq? clause) (= :export (first clause)) (= 2 (count clause))
                  (vector? (second clause)) (nil? exports))
-            (recur (next remaining) (vec (second clause)) requires)
+            (recur (next remaining) (vec (second clause)) requires capabilities)
+
+            (and (seq? clause) (= :capabilities (first clause)) (= 2 (count clause))
+                 (set? (second clause)) (nil? capabilities))
+            (let [declared (second clause)]
+              (when (or (> (count declared) frontend/max-namespace-capabilities)
+                        (not-every? #(and (keyword? %) (namespace %)) declared))
+                (reject! "namespace :capabilities must be a bounded set of namespaced keywords"
+                         {:namespace name :capabilities declared}))
+              (recur (next remaining) exports requires declared))
 
             (and (seq? clause) (= :require (first clause)))
             (let [parsed
@@ -51,10 +76,10 @@
                                      {:namespace name :spec spec}))
                           {:namespace (first spec) :alias (nth spec 2)})
                         (rest clause))]
-              (recur (next remaining) exports (into requires parsed)))
+              (recur (next remaining) exports (into requires parsed) capabilities))
 
             :else
-            (reject! "only one :export and alias-only :require clauses are admitted"
+            (reject! "only one :export, one :capabilities and alias-only :require clauses are admitted"
                      {:namespace name :clause clause}))
           (do
             (when-not (some? exports)
@@ -63,7 +88,12 @@
               (reject! "duplicate import alias" {:namespace name :requires requires}))
             (when-not (= (count requires) (count (set (map :namespace requires))))
               (reject! "duplicate imported namespace" {:namespace name :requires requires}))
-            {:namespace name :exports exports :requires requires}))))))
+            ;; nil when the clause is absent, mirroring the frontend: nil
+            ;; means "no declare-then-check runs here", an explicit empty set
+            ;; means "this module must use no capability at all". Collapsing
+            ;; the two would silently turn the second into the first.
+            {:namespace name :exports exports :requires requires
+             :capabilities capabilities}))))))
 
 (defn- without-requires [forms]
   (mapv (fn [form]
@@ -284,6 +314,18 @@
           exports (sort-by (comp str key) (:interface root-module))
           wrappers (mapv wrapper-form exports)
           function-count (+ (count functions) (count wrappers))
+          ;; The linked namespace deliberately carries NO `:capabilities`
+          ;; clause even when its modules declared one. That clause is a
+          ;; source-level declare-then-check over NAMED `(cap-call :some/name)`
+          ;; forms, and it has already run once per module inside
+          ;; `analyze-module`. By the time bodies reach here the frontend has
+          ;; lowered every named cap-call to its integer id, so the linked
+          ;; source contains only `(cap-call 9 ...)`, which populates no
+          ;; used-keyword set -- re-declaring the union would fail its own
+          ;; check with "declares a capability never used via cap-call".
+          ;; Nothing is weakened by the omission: the effects the policy and
+          ;; the artifact's requiredCapabilities are computed from come from
+          ;; the integer cap-call forms, not from this clause.
           linked-source
           (source-text
            (into [(list 'ns root (list :export (vec (map first exports))))]
