@@ -73,6 +73,8 @@ const ALLOWED_IMPORTS = new Set([
   "kotoba:typed/document-keyword/function",
   "kotoba:typed/document-kind/function",
   "kotoba:typed/document-sha256/function",
+  "kotoba:typed/document-print/function",
+  "kotoba:typed/document-read/function",
   "kotoba:typed/document-contains/function",
   "kotoba:typed/document-vector-at/function",
   "kotoba:typed/document-map-entry-at/function",
@@ -624,7 +626,102 @@ function createTypedRuntime(abi, typedCapCall, allow) {
     [h0, h1, h2, h3, h4, h5, h6, h7].forEach((x, i) => ov.setUint32(i * 4, x, false));
     return Array.from(out).map(b => b.toString(16).padStart(2, "0")).join("");
   };
-  const xmlName = /^[A-Za-z_][A-Za-z0-9_.:-]{0,127}$/u;
+  const bytesToHex = bytes => Array.from(bytes).map(b => b.toString(16).padStart(2, "0")).join("");
+  const hexToBytes = s => {
+    if (typeof s !== "string") reject("invalid-typed-value", "document-read requires a string");
+    if (s.length % 2) reject("invalid-typed-value", "document-read hex length must be even");
+    if (s.length > 1048576) reject("invalid-typed-value", "document-read hex exceeds size limit");
+    if (!/^[0-9a-f]*$/.test(s)) reject("invalid-typed-value", "document-read hex must be lowercase [0-9a-f]");
+    const out = new Uint8Array(s.length / 2);
+    for (let i = 0; i < out.length; i++) out[i] = parseInt(s.substr(i * 2, 2), 16);
+    return out;
+  };
+  const documentFromCanonicalBytes = bytes => {
+    let i = 0;
+    const len = bytes.length;
+    const take = () => {
+      if (i >= len) reject("invalid-typed-value", "document-read truncated encoding");
+      return bytes[i++];
+    };
+    const takeUntil = sep => {
+      const start = i;
+      while (i < len && bytes[i] !== sep) i++;
+      if (i >= len) reject("invalid-typed-value", "document-read missing terminator");
+      const s = new TextDecoder("utf-8", { fatal: true }).decode(bytes.subarray(start, i));
+      i++;
+      return s;
+    };
+    const takeLenStr = () => {
+      const n = Number(takeUntil(58));
+      if (!Number.isInteger(n) || n < 0 || n > 65536)
+        reject("invalid-typed-value", "document-read string length out of range");
+      if (i + n > len) reject("invalid-typed-value", "document-read truncated string payload");
+      const s = new TextDecoder("utf-8", { fatal: true }).decode(bytes.subarray(i, i + n));
+      i += n;
+      return s;
+    };
+    const walk = () => {
+      const tag = take();
+      if (tag === 110) return Object.freeze(["null"]);
+      if (tag === 98) {
+        const b = take();
+        if (b === 116) return Object.freeze(["bool", true]);
+        if (b === 102) return Object.freeze(["bool", false]);
+        reject("invalid-typed-value", "document-read invalid bool");
+      }
+      if (tag === 105) return Object.freeze(["i64", BigInt(takeUntil(59))]);
+      if (tag === 102) {
+        const bits = BigInt(takeUntil(59));
+        const buf = new ArrayBuffer(8);
+        const dv = new DataView(buf);
+        dv.setBigInt64(0, bits, true);
+        return Object.freeze(["f64", dv.getFloat64(0, true)]);
+      }
+      if (tag === 115) return Object.freeze(["string", takeLenStr()]);
+      if (tag === 107) {
+        const k = takeLenStr();
+        if (!k.startsWith(":")) reject("invalid-typed-value", "document-read keyword must start with colon");
+        return Object.freeze(["keyword", k]);
+      }
+      if (tag === 118) {
+        const n = Number(takeUntil(58));
+        if (!Number.isInteger(n) || n < 0 || n > 32)
+          reject("invalid-typed-value", "document-read vector count out of range");
+        const items = [];
+        for (let k = 0; k < n; k++) items.push(walk());
+        return Object.freeze(["vector", Object.freeze(items)]);
+      }
+      if (tag === 109) {
+        const n = Number(takeUntil(58));
+        if (!Number.isInteger(n) || n < 0 || n > 32)
+          reject("invalid-typed-value", "document-read map count out of range");
+        const entries = [];
+        for (let k = 0; k < n; k++) {
+          if (take() !== 75) reject("invalid-typed-value", "document-read map entry missing K");
+          const ks = takeLenStr();
+          if (!ks.startsWith(":")) reject("invalid-typed-value", "document-read map key must be keyword");
+          entries.push(Object.freeze([ks, walk()]));
+        }
+        return Object.freeze(["map", Object.freeze(entries)]);
+      }
+      reject("invalid-typed-value", "document-read unknown tag");
+    };
+    const doc = walk();
+    if (i !== len) reject("invalid-typed-value", "document-read trailing bytes");
+    // Newly decoded trees must be admitted into the trustedValues set.
+    return constructDocument(doc);
+  };
+  const documentPrint = node => {
+    const hex = bytesToHex(documentCanonicalBytes(assertDocument(node)));
+    if (hex.length > 65536) reject("invalid-typed-value", "document-print exceeds string byte limit");
+    return hex;
+  };
+  const documentRead = s => {
+    if (typeof s !== "string") reject("invalid-typed-value", "document-read requires a string");
+    if (s.length > 65536) reject("invalid-typed-value", "document-read string exceeds byte limit");
+    return documentFromCanonicalBytes(hexToBytes(s));
+  };
+    const xmlName = /^[A-Za-z_][A-Za-z0-9_.:-]{0,127}$/u;
   const xmlString = value => {
     if (typeof value !== "string" || utf8Length(value) > 65536)
       reject("invalid-xml", "XML string is invalid or oversized");
@@ -1495,6 +1592,16 @@ function createTypedRuntime(abi, typedCapCall, allow) {
       if (descriptorAt(descriptorId) !== documentDescriptor)
         reject("invalid-typed-operation", "document descriptor required");
       return documentSha256Hex(assertDocument(value));
+    },
+    "document-print"(descriptorId, value) {
+      if (descriptorAt(descriptorId) !== documentDescriptor)
+        reject("invalid-typed-operation", "document descriptor required");
+      return documentPrint(value);
+    },
+    "document-read"(descriptorId, value) {
+      if (descriptorAt(descriptorId) !== documentDescriptor)
+        reject("invalid-typed-operation", "document descriptor required");
+      return documentRead(value);
     },
     "document-contains"(descriptorId, value, key) {
       if (descriptorAt(descriptorId) !== documentDescriptor)
