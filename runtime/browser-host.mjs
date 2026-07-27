@@ -737,7 +737,8 @@ function createTypedRuntime(abi, typedCapCall, allow) {
   const sameTrustedDescriptor = (left, right) =>
     left === right || (Array.isArray(left) && trustedDescriptors.has(left) &&
                        sameDescriptor(left, right));
-  const assertValue = (descriptor, value, state = { depth: 0, nodes: 0 }) => {
+  const assertValue = (descriptor, value,
+                       state = { depth: 0, nodes: 0, indirectBytes: 0 }) => {
     descriptor = resolveDescriptor(descriptor);
     state.nodes += 1;
     state.depth += 1;
@@ -748,12 +749,21 @@ function createTypedRuntime(abi, typedCapCall, allow) {
       if (descriptor === "f64") return f64(value);
       if (descriptor === "f32") return f32(value);
       if (descriptor === "string") {
-        if (utf8Length(value) > 65536) reject("invalid-typed-value", "typed string is oversized");
+        const bytes = utf8Length(value);
+        if (bytes > 65536) reject("invalid-typed-value", "typed string is oversized");
+        state.indirectBytes += bytes;
+        if (state.indirectBytes > 1048576)
+          reject("invalid-typed-value", "typed aggregate indirect byte budget exceeded");
         return value;
       }
       if (descriptor === "keyword") {
-        if (typeof value !== "string" || !value.startsWith(":") || utf8Length(value) > 512)
+        if (typeof value !== "string" || !value.startsWith(":"))
           reject("invalid-typed-value", "typed keyword is invalid");
+        const bytes = utf8Length(value);
+        if (bytes > 512) reject("invalid-typed-value", "typed keyword is invalid");
+        state.indirectBytes += bytes;
+        if (state.indirectBytes > 1048576)
+          reject("invalid-typed-value", "typed aggregate indirect byte budget exceeded");
         return value;
       }
       if (descriptor === "symbol") {

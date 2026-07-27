@@ -126,8 +126,15 @@ are rejected.
   every active item bool before the provider returns it. Compiler source E2E
   starts at `.kotoba`, grants only `:http/post`, composes that named provider,
   and executes none, empty, and multi-record values in Wasmtime;
-- list items containing strings, nested unions, or another list remain
-  fail-closed pending recursive indirect-graph validation/copy ownership;
+- string/keyword list items, including those nested in finite records, now
+  cross identity and named provider boundaries through `kotoba-component`
+  commit `92eb1b9`. Every active inner pointer/length and per-leaf bound is
+  checked, while `kotoba-kir` commit `7aacad9` supplies one shared 1 MiB
+  aggregate indirect-byte budget so collection cardinality cannot amplify
+  valid leaves into a host-memory denial of service. Compiler source E2E
+  executes `option<list<string>>` through an explicitly granted provider;
+- list items containing nested unions or another list remain fail-closed
+  pending recursive variable-cardinality graph validation/copy ownership;
 - linear reuse for repeated internal collection construction remains separate
   from the now-implemented bounded export-result ownership contract;
 - scalar named capabilities now compose with aggregate match functions through
