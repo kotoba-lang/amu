@@ -2085,3 +2085,58 @@
     (is (= :wasm-component-closed/v1 (:format closed)))
     (is (= [0 97 115 109 13 0 1 0]
            (mapv #(bit-and (int %) 0xff) (take 8 (:bytes closed)))))))
+
+;; --- W5 second slice: clock-v1 real wasm component provider -----------------
+
+(defn- clock-v1-descriptors
+  "Same ref-ify derivation as state-v1-descriptors, for clock-v1.edn."
+  []
+  (let [clock-kit (edn/read-string (slurp (io/resource "kotoba/lang/capability-kits/clock-v1.edn")))
+        request (ref-ify (:request clock-kit))
+        result (ref-ify (:result clock-kit))]
+    {:descriptor (:descriptor request)
+     :result-descriptor (:descriptor result)
+     :schemas (merge (:schemas request) (:schemas result))}))
+
+(deftest clock-real-provider-rejects-non-clock-v1-shape
+  ;; observation-sequence as :bool is still an admitted asymmetric scalar
+  ;; record field, but not clock-v1's literal i64 field — shape check rejects.
+  (let [descriptor [:ref :demo/clock-request]
+        result-descriptor [:ref :demo/clock-result]
+        schemas {:demo/wall [:record :demo/wall
+                             [[:unix-millis :i64] [:observation-sequence :bool]]]
+                 :demo/mono [:record :demo/mono
+                             [[:nanos :i64] [:observation-sequence :i64]]]
+                 :demo/err [:record :demo/err
+                            [[:code :keyword] [:message :string]]]
+                 :demo/clock-request
+                 [:variant :demo/clock-request [[:wall :bool] [:monotonic :bool]]]
+                 :demo/clock-result
+                 [:variant :demo/clock-result
+                  [[:wall [:ref :demo/wall]]
+                   [:monotonic [:ref :demo/mono]]
+                   [:error [:ref :demo/err]]]]}]
+    (is (thrown-with-msg?
+         clojure.lang.ExceptionInfo #"clock-v1's own literal request/result shape"
+         (composition/package-clock-provider
+          :clock/now descriptor result-descriptor schemas)))))
+
+(deftest clock-real-provider-closes-the-application-world
+  (let [{:keys [descriptor result-descriptor schemas]} (clock-v1-descriptors)
+        kir {:format :kotoba.kir/v4 :exports ['invoke] :schemas schemas
+             :functions [{:name 'invoke :params ['request]
+                          :param-types [descriptor] :result result-descriptor
+                          :body (list 'typed-cap-call 7 descriptor result-descriptor 'request)}]}
+        world (wit/emit kir)
+        application (artifact/package
+                     (component-core/emit kir :wasm32-wasi-kotoba-v1) kir world)
+        provider (composition/package-clock-provider
+                  :clock/now descriptor result-descriptor schemas)
+        closed (composition/compose-closed application [provider])]
+    (is (= :different-variant-capability-call (:canonical-lowering application)))
+    (is (= :wasm-component-provider/v1 (:format provider)))
+    (is (= :wasm-component-closed/v1 (:format closed)))
+    (is (= [{:capability :clock/now :descriptor descriptor}]
+           (:providers closed)))
+    (is (= [0 97 115 109 13 0 1 0]
+           (mapv #(bit-and (int %) 0xff) (take 8 (:bytes closed)))))))
