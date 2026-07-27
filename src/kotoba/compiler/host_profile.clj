@@ -16,8 +16,13 @@
 (def ^:private route-keys #{:pattern :custom-domain?})
 (def ^:private binding-keys #{:binding :bucket-name})
 (def ^:private http-keys
-  #{:allowed-origins :allowed-methods :max-request-bytes :max-response-bytes
-    :deadline-ms})
+  #{:allowed-origins :allowed-methods :ingress-methods
+    :max-request-bytes :max-response-bytes :deadline-ms})
+
+(def ^:private default-ingress-methods
+  "Inbound methods admitted when `:ingress-methods` is omitted. Egress
+  `:allowed-methods` stays a separate closed set (ADR 0103)."
+  ["DELETE" "GET" "HEAD" "POST" "PUT"])
 (def ^:private object-store-keys #{:bindings :max-object-bytes})
 (def ^:private object-binding-keys #{:key-prefixes})
 
@@ -140,29 +145,33 @@
     (reject! "secrets must be a bounded set" {:field :secrets :limit 32}))
   (vec (sort (map (comp binding-name! name) values))))
 
+(defn- normalize-http-methods [field methods]
+  (when-not (or (and (set? methods)
+                     (seq methods)
+                     (every? #{:get :head :post :put :delete} methods))
+                (and (vector? methods)
+                     (seq methods)
+                     (every? #{"GET" "HEAD" "POST" "PUT" "DELETE"} methods)))
+    (reject! "HTTP methods are invalid" {:field field}))
+  (vec (sort (map #(if (keyword? %)
+                     (str/upper-case (name %))
+                     %)
+                   methods))))
+
 (defn- normalize-http [value]
   (exact-keys! :http value http-keys)
   (let [origins (:allowed-origins value)
-        methods (:allowed-methods value)]
+        methods (:allowed-methods value)
+        ingress (or (:ingress-methods value) default-ingress-methods)]
     (when-not (and (vector? origins) (<= 1 (count origins) 64))
       (reject! "HTTP origins must be a non-empty bounded vector"
                {:field :http/allowed-origins :limit 64}))
-    (when-not (or (and (set? methods)
-                       (seq methods)
-                       (every? #{:get :head :post :put :delete} methods))
-                  (and (vector? methods)
-                       (seq methods)
-                       (every? #{"GET" "HEAD" "POST" "PUT" "DELETE"} methods)))
-      (reject! "HTTP methods are invalid" {:field :http/allowed-methods}))
     (sorted-map
-     :allowed-methods
-     (vec (sort (map #(if (keyword? %)
-                       (str/upper-case (name %))
-                       %)
-                     methods)))
+     :allowed-methods (normalize-http-methods :http/allowed-methods methods)
      :allowed-origins (mapv origin! origins)
      :deadline-ms (bounded-int! :http/deadline-ms (:deadline-ms value)
                                 1 120000)
+     :ingress-methods (normalize-http-methods :http/ingress-methods ingress)
      :max-request-bytes
      (bounded-int! :http/max-request-bytes (:max-request-bytes value)
                    1 16777216)
@@ -231,6 +240,7 @@
   {:http {:allowedMethods (:allowed-methods http)
           :allowedOrigins (:allowed-origins http)
           :deadlineMs (:deadline-ms http)
+          :ingressMethods (:ingress-methods http)
           :maxRequestBytes (:max-request-bytes http)
           :maxResponseBytes (:max-response-bytes http)
           ;; Family-3 ingress path/header bounds (kit http-ingress-v1).
@@ -320,7 +330,7 @@
      "}\n"
      "async function toIncoming(request) {\n"
      "  const method = String(request.method || \"GET\").toUpperCase();\n"
-     "  if (!PROFILE.http.allowedMethods.includes(method)) throw new Error(\"capability-denied:http-ingress\");\n"
+     "  if (!PROFILE.http.ingressMethods.includes(method)) throw new Error(\"capability-denied:http-ingress\");\n"
      "  const url = new URL(request.url);\n"
      "  const path = url.pathname + (url.search || \"\");\n"
      "  if (byteLength(path) < 1 || byteLength(path) > PROFILE.http.maxPathBytes) throw new Error(\"resource-limit:http-path\");\n"
