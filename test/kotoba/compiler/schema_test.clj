@@ -17,6 +17,16 @@
               (schema/identities
                (assoc-in node-table [:app/node 2 0 1] :f64))))))
 
+(deftest bounded-list-is-a-productive-schema-constructor
+  (let [table
+        {:app/item
+         [:record :app/item
+          [[:values [:list :bool]]
+           [:children [:list [:ref :app/item]]]]]}]
+    (is (= table (schema/validate-table! table)))
+    (is (re-matches #"[0-9a-f]{64}"
+                    (get (schema/identities table) :app/item)))))
+
 (deftest recursive-schema-fails-closed
   (doseq [[label table message]
           [[:missing {:app/a [:option [:ref :app/missing]]} #"not declared"]
