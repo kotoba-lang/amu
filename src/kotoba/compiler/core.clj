@@ -172,12 +172,12 @@
                          :value-abi value-abi})
          capability-ids (component-capability-ids kir)
          _ (when (and typed-v3?
-                      (not (contains? #{#{6} #{7}} capability-ids)))
+                      (not (contains? #{#{6} #{7} #{13}} capability-ids)))
              (throw (ex-info
                      "typed v0.3 lowering currently requires one implemented vertical slice"
                      {:phase :component-abi-v3
                       :target target
-                      :implemented [#{6} #{7}]
+                      :implemented [#{6} #{7} #{13}]
                       :supplied capability-ids})))
          _ (when (and component-abilities
                       (not= capability-ids (set (keys component-abilities))))

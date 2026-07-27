@@ -17,6 +17,11 @@
    :max-bytes 64 :max-items 1 :deadline-ms 1000
    :audit-id "compiler-log-append-test"})
 
+(def http-stream-ability
+  {:target "https://example.invalid/data" :operation :http/get-stream
+   :max-bytes 65536 :max-items 1 :deadline-ms 1000
+   :audit-id "compiler-http-stream-test"})
+
 (deftest source-cap-call-becomes-a-closed-component-import
   (let [artifact (compiler/compile-component source policy)
         wit-source (get-in artifact [:wit :source])]
@@ -90,4 +95,28 @@
     (is (= :string-literal-unit-capability-call
            (:canonical-lowering artifact)))
     (is (= #{:aiueos.component/aiueos-log-append}
+           (:capabilities artifact)))))
+
+(deftest source-http-stream-consumes-linear-task-and-stream
+  (let [artifact
+        (compiler/compile-component
+         "(ns app (:capabilities #{:http/get-stream}))
+          (defn main []
+            (bytes-task-byte-count
+             (typed-cap-call :http/get-stream :string
+               [:task [:stream :bytes]] \"/data\")))"
+         {:allow #{[:cap/call 13]}}
+         {:target :wasm-component-kotoba-v2
+          :profile :async
+          :component-abilities {13 http-stream-ability}
+          :budgets {:deadline-ms 1000 :max-items 1 :max-bytes 65536
+                    :cancellation true}})
+        call (get-in artifact [:kir :functions 0 :body])]
+    (is (= '(bytes-task-byte-count
+             (typed-cap-call 13 :string [:task [:stream :bytes]] "/data"))
+           call))
+    (is (= ["aiueos-http-get-stream"] (:imports artifact)))
+    (is (= :stream-byte-count-call (:canonical-lowering artifact)))
+    (is (= :async (get-in artifact [:admission-request :profile])))
+    (is (= #{:aiueos.component/aiueos-http-get-stream}
            (:capabilities artifact)))))
