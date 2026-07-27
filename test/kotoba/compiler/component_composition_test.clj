@@ -162,7 +162,16 @@
             :calls [["invoke(ok(none))" "ok(none)"]
                     ["invoke(ok(some([1.5, -2.25])))"
                      "ok(some([1.5, -2.25]))"]
-                    ["invoke(err(\"denied\"))" "err(\"denied\")"]]}]]
+                    ["invoke(err(\"denied\"))" "err(\"denied\")"]]}
+           {:descriptor [:option [:list [:option :string]]]
+            :calls [["invoke(none)" "none"]
+                    ["invoke(some([none, some(\"hello\")]))"
+                     "some([none, some(\"hello\")])"]]}
+           {:descriptor [:option [:list [:list :i64]]]
+            :calls [["invoke(none)" "none"]
+                    ["invoke(some([]))" "some([])"]
+                    ["invoke(some([[1, 2], [], [-3]]))"
+                     "some([[1, 2], [], [-3]])"]]}]]
     (let [type-source (pr-str descriptor)
           source (str "(ns component.structural-union-capability "
                       "(:export [invoke]) (:capabilities #{:http/post})) "

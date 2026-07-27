@@ -738,7 +738,8 @@ function createTypedRuntime(abi, typedCapCall, allow) {
     left === right || (Array.isArray(left) && trustedDescriptors.has(left) &&
                        sameDescriptor(left, right));
   const assertValue = (descriptor, value,
-                       state = { depth: 0, nodes: 0, indirectBytes: 0 }) => {
+                       state = { depth: 0, nodes: 0, indirectBytes: 0,
+                                 listItems: 0 }) => {
     descriptor = resolveDescriptor(descriptor);
     state.nodes += 1;
     state.depth += 1;
@@ -850,6 +851,9 @@ function createTypedRuntime(abi, typedCapCall, allow) {
             !Array.isArray(value[1]) || !Object.isFrozen(value[1]) ||
             value[1].length > 16384)
           reject("invalid-typed-value", "bounded list shape is invalid");
+        state.listItems += value[1].length;
+        if (state.listItems > 16384)
+          reject("invalid-typed-value", "typed aggregate list item budget exceeded");
         value[1].forEach(item => assertValue(descriptor[1], item, state));
       } else if (kind === "set") {
         if (!sameTrustedDescriptor(value[0], descriptor) || value.length !== 2 || !Array.isArray(value[1]) ||
