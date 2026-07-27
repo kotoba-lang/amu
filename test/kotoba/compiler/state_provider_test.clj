@@ -34,3 +34,33 @@
     ((:invoke left) 'transact [put])
     (is (= :found (second ((:invoke left) 'transact [get]))))
     (is (= :missing (second ((:invoke right) 'transact [get]))))))
+
+(deftest capacity-exhaustion-returns-typed-error
+  (let [runtime (host)
+        invoke #((:invoke runtime) 'transact [%])]
+    (dotimes [i state/max-entries]
+      (invoke [state/request-type :put
+               [state/put-type (keyword "k" (str i)) (str "v" i)]]))
+    (is (= [state/result-type :error
+            [state/error-type :state/capacity "state entry limit reached"]]
+           (invoke [state/request-type :put
+                    [state/put-type :overflow "nope"]])))
+    ;; existing key still writable when full
+    (is (= :written
+           (second (invoke [state/request-type :put
+                            [state/put-type (keyword "k" "0") "updated"]]))))))
+
+(deftest missing-grant-denies-before-provider-invoke
+  (let [kir (ir/lower (:hir (compiler/check-source
+                             source {:allow #{[:cap/call 8]}})))
+        runtime (runtime/instantiate kir)]
+    (is (thrown-with-msg?
+         clojure.lang.ExceptionInfo #"capability denied"
+         ((:invoke runtime) 'transact
+          [[state/request-type :put
+            [state/put-type :profile/name "x"]]])))
+    (is (thrown-with-msg?
+         clojure.lang.ExceptionInfo #"capability denied"
+         ((:invoke runtime) 'transact
+          [[state/request-type :get
+            [state/get-type :profile/name]]])))))
