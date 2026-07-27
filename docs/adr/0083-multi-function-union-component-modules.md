@@ -163,6 +163,11 @@ are rejected.
   byte as canonical 0/1 before exposing even the outer count. The malicious
   provider test writes byte `2` into an otherwise in-range result list and
   proves the application traps rather than accepting an unread invalid item;
+- finite numeric/bool record list items use a layout-derived, closed set of
+  bool offsets. Nested finite records are traversed at compile time and every
+  offset is validated for every active request/result item; duplicate, missing,
+  or out-of-stride backend plans fail closed. A malicious provider returning an
+  otherwise in-range record with bool byte `2` traps before count is exposed;
 - other aggregate request/result descriptors and less constrained branch
   shapes remain fail-closed pending explicit shared Canonical codec admission.
 - symmetric `result<list<T>, list<T>>` now uses the shared match module for
