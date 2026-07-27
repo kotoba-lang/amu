@@ -70,3 +70,18 @@
            ((:invoke runtime) 'post
             [[http/request-type "https://api.example.test/path"
               [http/header-set-type []] "" 1000]])))))
+
+(deftest missing-grant-denies-before-provider-invoke
+  ;; Empty providers / no allow at instantiate: guest still names :http/post,
+  ;; but the runtime rejects before transport is reached (same fail-closed
+  ;; path as log/clock W5 first-slice denial vectors).
+  (let [kir (ir/lower (:hir (compiler/check-source
+                             source {:allow #{[:cap/call 4]}})))
+        runtime (runtime/instantiate kir)
+        called? (atom false)]
+    (is (thrown-with-msg?
+         clojure.lang.ExceptionInfo #"capability denied"
+         ((:invoke runtime) 'post
+          [[http/request-type "https://api.example.test/path"
+            [http/header-set-type []] "" 1000]])))
+    (is (false? @called?))))
