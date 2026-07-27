@@ -27,6 +27,16 @@
    :max-bytes 65536 :max-items 1 :deadline-ms 1000
    :audit-id "compiler-object-stream-test"})
 
+(def object-put-ability
+  {:target "object://bucket/blocks/hash" :operation :object/put-block
+   :max-bytes 65536 :max-items 1 :deadline-ms 1000
+   :audit-id "compiler-object-put-test"})
+
+(def object-cas-ability
+  {:target "object://bucket/refs/main" :operation :object/compare-and-set-ref
+   :max-bytes 65536 :max-items 1 :deadline-ms 1000
+   :audit-id "compiler-object-cas-test"})
+
 (deftest source-cap-call-becomes-a-closed-component-import
   (let [artifact (compiler/compile-component source policy)
         wit-source (get-in artifact [:wit :source])]
@@ -149,3 +159,32 @@
     (is (= :async (get-in artifact [:admission-request :profile])))
     (is (= #{:aiueos.component/aiueos-object-get-stream}
            (:capabilities artifact)))))
+
+(deftest source-object-writes-lower-formal-records
+  (let [put-type "[:record :object/put [[:key :string] [:bytes :string]]]"
+        cas-type "[:record :object/cas [[:key :string] [:expected-etag :string] [:bytes :string]]]"
+        response-type "[:record :object/cas-response [[:won :bool] [:etag :string]]]"
+        put
+        (compiler/compile-component
+         (str "(ns app (:capabilities #{:object/put-block}))"
+              "(defn main []"
+              " (typed-cap-call :object/put-block " put-type " :i64"
+              "  (record " put-type " \"blocks/hash\" \"payload\")))")
+         {:allow #{[:cap/call 15]}}
+         {:target :wasm-component-kotoba-v2
+          :component-abilities {15 object-put-ability}})
+        cas
+        (compiler/compile-component
+         (str "(ns app (:capabilities #{:object/compare-and-set-ref}))"
+              "(defn main []"
+              " (object-cas-won"
+              "  (typed-cap-call :object/compare-and-set-ref "
+              cas-type " " response-type
+              "   (record " cas-type " \"refs/main\" \"etag-1\" \"next\"))))")
+         {:allow #{[:cap/call 16]}}
+         {:target :wasm-component-kotoba-v2
+          :component-abilities {16 object-cas-ability}})]
+    (is (= ["aiueos-object-put-block"] (:imports put)))
+    (is (= :object-put-block-call (:canonical-lowering put)))
+    (is (= ["aiueos-object-compare-and-set-ref"] (:imports cas)))
+    (is (= :object-compare-and-set-call (:canonical-lowering cas)))))
