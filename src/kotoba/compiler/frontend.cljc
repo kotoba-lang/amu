@@ -164,7 +164,8 @@
     document-i64-value 1 document-f64-value 1})
 (def document-variadic-operations '#{document-vector document-map})
 (def sequencing-operations '#{do})
-(def string-operations '{string-byte-length 1 string=? 2 string-concat 2 string-substring 3
+(def string-operations '{string-byte-length 1 bytes-task-byte-count 1
+                         string=? 2 string-concat 2 string-substring 3
                          string-replace-all 3 string-contains? 2 string-fold-case 1
                          string-code-point-at 2
                          keyword-from-string 1 keyword-name 1 symbol 1})
@@ -2529,6 +2530,10 @@
       (= op 'string-byte-length)
       (do (require-expression-type! (first types) :string (first args)) :i64)
 
+      (= op 'bytes-task-byte-count)
+      (do (require-expression-type! (first types) [:task [:stream :bytes]] (first args))
+          :i64)
+
       (= op 'string=?)
       (do (doseq [[arg type] (map vector args types)]
             (require-expression-type! type :string arg))
@@ -3099,11 +3104,22 @@
                                   (linear-resource-type? (nth form 3)))
                          form)))
                vec)
-          direct (when (and (seq? body)
-                            (= 'typed-cap-call (first body))
-                            (= 5 (count body))
-                            (linear-resource-type? (nth body 3)))
-                   body)]
+          direct
+          (cond
+            (and (seq? body)
+                 (= 'typed-cap-call (first body))
+                 (= 5 (count body))
+                 (linear-resource-type? (nth body 3)))
+            body
+
+            (and (seq? body)
+                 (= 'bytes-task-byte-count (first body))
+                 (= 2 (count body))
+                 (seq? (second body))
+                 (= 'typed-cap-call (first (second body)))
+                 (= 5 (count (second body)))
+                 (linear-resource-type? (nth (second body) 3)))
+            (second body))]
       (when (or (and (linear-resource-type? result)
                      (or (nil? direct)
                          (not= result (nth direct 3))))
