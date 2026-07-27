@@ -5,7 +5,7 @@
   env. Generated JavaScript is an artifact; the EDN profile is authoritative."
   (:require [clojure.data.json :as json]
             [clojure.string :as str]
-            [kotoba.artifact.core :as artifact]))
+            [kotoba.compiler.artifact :as artifact]))
 
 (def schema :kotoba.host-profile/v1)
 
