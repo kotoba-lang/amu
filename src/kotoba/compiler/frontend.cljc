@@ -170,7 +170,7 @@
     disjoint-set-i64-new 1 disjoint-set-i64-count 1 disjoint-set-i64-union 3})
 (def document-fixed-operations
   '{document-null 0 document-bool 1 document-i64 1 document-f64 1
-    document-string 1 document-keyword 1 document-count 1 document-kind 1 document-sha256 1
+    document-string 1 document-keyword 1 document-count 1 document-kind 1 document-sha256 1 document-print 1 document-read 1
     document-vector-at 2 document-map-entry-at 2 document-vector-assoc 3 document-vector-conj 2
     document-vector-drop 2 document-vector-remove 2
     document-equal? 2 document-contains 2 document-get 2 document-assoc 3 document-dissoc 2
@@ -2534,6 +2534,10 @@
       (do (require-expression-type! (first types) :document (first args)) :keyword)
       (= op 'document-sha256)
       (do (require-expression-type! (first types) :document (first args)) :string)
+      (= op 'document-print)
+      (do (require-expression-type! (first types) :document (first args)) :string)
+      (= op 'document-read)
+      (do (require-expression-type! (first types) :string (first args)) :document)
       (= op 'document-vector-at)
       (do (require-expression-type! (nth types 0) :document (nth args 0))
           (require-expression-type! (nth types 1) :i64 (nth args 1)) [:option :document])
