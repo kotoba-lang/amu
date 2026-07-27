@@ -1,17 +1,17 @@
 (ns kotoba.compiler.document-roundtrip-test
-  "W4 seventh slice (ADR-2607279200 Delivery 4 / migration plan W4):
+  "W4 seventh + eighth slice (ADR-2607279200 Delivery 4 / migration plan W4):
 
   Reader/printer round-trip for recursive logical document values.
 
   `document-print` emits the deterministic lowercase-hex form of
   `document-canonical-bytes` (same encoding as `document-sha256`);
   `document-read` is the inverse and re-applies depth/node/item/byte budgets.
-  A logical UI tree can therefore be inspected as data, printed, re-read, and
-  remain structurally equal with a stable sha256 — without host objects or
-  handles as the application model.
 
-  Complements slices 1–6 (HTML stream, digest/style, sha256, DOM reconcile,
-  sealed recursive ADTs, dual-renderer + persistent update)."
+  Seventh slice: KIR + restricted ESM.
+  Eighth slice: real wasm + browser-host import parity (kotoba-wasm emit +
+  browser-host.mjs), completing the document-sha256 multi-repo pattern.
+
+  Complements slices 1–6."
   (:require [clojure.java.shell :as shell]
             [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]
@@ -61,15 +61,20 @@
                    "').then(m=>{const x=m.instantiateKotoba({});" javascript
                    "}).catch(e=>{console.error(e);process.exit(70)})"))))
 
+(defn- node-probe [compiled javascript]
+  (let [encoded (.encodeToString (java.util.Base64/getEncoder) ^bytes (:bytes compiled))]
+    (shell/sh "node" "--input-type=module" "-e"
+              (str "import('./runtime/browser-host.mjs').then(async m=>{"
+                   "const h=await m.instantiateKotoba(Buffer.from(process.argv[1],'base64'));"
+                   javascript "}).catch(e=>{console.error(e);process.exit(70)})") encoded)))
+
 (defn- truthy? [v]
   (or (true? v) (= v 1) (= v 1N)))
 
 (deftest document-reader-printer-roundtrip
-  ;; KIR + restricted ESM first (same cut as W4 fifth). Wasm/browser-host
-  ;; import wiring for document-print/document-read follows the
-  ;; document-sha256 multi-repo pattern and is a fast follow-up.
-  (let [script (compiler/compile-source source :js-kotoba-v1)
-        kir (:kir script)]
+  (let [wasm (compiler/compile-source source :wasm32-browser-kotoba-v1)
+        script (compiler/compile-source source :js-kotoba-v1)
+        kir (:kir wasm)]
     (testing "reference KIR: print→read equals original; sha256 stable"
       (is (truthy? (ir/execute kir 'main [])))
       (is (truthy? (ir/execute kir 'same [])))
@@ -96,5 +101,19 @@
                                      "let denied=false;try{x.bad()}catch(e){denied=true}"
                                      "if(!denied)process.exit(5);"
                                      "console.log('ok');"))]
+        (is (zero? (:exit probe)) (str (:err probe) (:out probe)))
+        (is (= "ok\n" (:out probe)))))
+    (testing "real wasm + browser-host agrees"
+      (let [printed (ir/execute kir 'dig-print [])
+            probe (node-probe wasm
+                              (str "const x=h.instance.exports;"
+                                   "const t=v=>v===true||v===1n||v===1;"
+                                   "if(!t(x.main())||!t(x.same())||x['dig-same']()!==1n)process.exit(2);"
+                                   "if(!t(x['empty-ok']())||!t(x['leaves-ok']()))process.exit(3);"
+                                   "const p=x['dig-print']();"
+                                   "if(p!==" (pr-str printed) ")process.exit(4);"
+                                   "let denied=false;try{x.bad()}catch(e){denied=true}"
+                                   "if(!denied)process.exit(5);"
+                                   "console.log('ok');"))]
         (is (zero? (:exit probe)) (str (:err probe) (:out probe)))
         (is (= "ok\n" (:out probe)))))))
