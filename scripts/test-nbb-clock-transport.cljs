@@ -10,7 +10,9 @@
             ["node:child_process" :as child]
             ["node:path" :as path]))
 
-(let [resolved (lib/run "clojure" ["-Spath"])
+;; -M:test pulls io.github.kotoba-lang/provider (extracted host kits) onto
+;; the classpath; plain `-Spath` no longer sees provider.* after the split.
+(let [resolved (lib/run "clojure" ["-Spath" "-M:test"])
       nbb-cli (lib/join lib/root "node_modules" "nbb" "cli.js")
       classpath (str lib/root (.-delimiter path) (.trim (:stdout resolved)))
       result (.spawnSync child js/process.execPath

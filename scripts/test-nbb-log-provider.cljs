@@ -1,0 +1,17 @@
+(ns scripts.test-nbb-log-provider
+  "Launcher for `test/nbb/log-provider.cljs` (W5 first slice / ADR 0079),
+  mirroring `scripts/test-nbb-clock-transport.cljs`."
+  (:require [scripts.lib :as lib]
+            ["node:child_process" :as child]
+            ["node:path" :as path]))
+
+;; -M:test includes the extracted provider package (log kit lives there).
+(let [resolved (lib/run "clojure" ["-Spath" "-M:test"])
+      nbb-cli (lib/join lib/root "node_modules" "nbb" "cli.js")
+      classpath (str lib/root (.-delimiter path) (.trim (:stdout resolved)))
+      result (.spawnSync child js/process.execPath
+                         (clj->js [nbb-cli "--classpath" classpath
+                                  (lib/join lib/root "test" "nbb" "log-provider.cljs")])
+                         #js {:cwd lib/root :stdio "inherit" :env js/process.env})]
+  (when (.-error result) (throw (.-error result)))
+  (.exit js/process (or (.-status result) 70)))

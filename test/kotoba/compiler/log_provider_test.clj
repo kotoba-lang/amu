@@ -62,3 +62,19 @@
       (is (= 257 latest))
       (is (true? truncated))
       (is (= 2 (second (first entries)))))))
+
+(deftest missing-grant-denies-before-provider-invoke
+  ;; Empty :allow with no providers: guest still names :log/append and
+  ;; :log/read, but the runtime rejects each call before any kit state
+  ;; mutates (same fail-closed path as provider_conformance_test).
+  (let [kir (ir/lower (:hir (compiler/check-source
+                             source {:allow #{[:cap/call 5] [:cap/call 6]}})))
+        runtime (runtime/instantiate kir)]
+    (is (thrown-with-msg?
+         clojure.lang.ExceptionInfo #"capability denied"
+         ((:invoke runtime) 'append
+          [[log/append-request-type :log/info :app/started "ready"
+            [log/field-set-type []]]])))
+    (is (thrown-with-msg?
+         clojure.lang.ExceptionInfo #"capability denied"
+         ((:invoke runtime) 'read [[log/read-request-type 0 1]])))))
