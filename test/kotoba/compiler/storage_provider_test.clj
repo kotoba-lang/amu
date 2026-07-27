@@ -63,3 +63,14 @@
             [storage/delete-type :profile/name
              [storage/expected-version-type true 0]]]])))
     (is (false? @called?))))
+
+(deftest missing-grant-denies-before-provider-invoke
+  (let [kir (ir/lower (:hir (compiler/check-source
+                             source {:allow #{[:cap/call 12]}})))
+        runtime (runtime/instantiate kir)
+        called? (atom false)]
+    (is (thrown-with-msg?
+         clojure.lang.ExceptionInfo #"capability denied"
+         ((:invoke runtime) 'transact
+          [[storage/request-type :get [storage/get-type :profile/name]]])))
+    (is (false? @called?))))
