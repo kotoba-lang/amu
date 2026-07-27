@@ -504,13 +504,15 @@ selected list can be reconstructed, sent through an explicitly named
 capability with the same request/result descriptor, and immediately matched
 again for `s64`, `float64`, `string`, and `keyword` items. This path stays in
 that shared module and uses the standard WIT import's caller-allocated result
-storage; `bool` and finite numeric/bool record items are supported under the
-same path, and maximum request and result lists can coexist in the bounded
-arena. Every inline bool field and indirect item is visited on both sides of
-the provider call even when source code observes only the outer count,
-enforcing canonical 0/1 bytes, pointer/range checks, and the shared 1 MiB byte
-budget. Other aggregate match/capability combinations remain fail-closed until
-admitted by an explicit Canonical codec.
+storage; `bool`, finite numeric/bool record items, and nested lists recursively
+ending in `s64`/`float64` are supported under the same path. Maximum request
+and result lists can coexist in the bounded arena. Every inline bool field,
+indirect item, and nested pointer/count graph is visited on both sides of the
+provider call even when source code observes only the outer count, enforcing
+canonical 0/1 bytes, pointer/range checks, the shared 1 MiB byte budget, and
+one 16,384-item budget across all nested nodes. Other aggregate
+match/capability combinations remain fail-closed until admitted by an explicit
+Canonical codec.
 General bounded `[:list T]` types are shared KIR/Wasm metadata ABI values.
 Component identity and named capabilities admit scalar, string/keyword,
 structural option/result, finite-record, and recursively nested list items.

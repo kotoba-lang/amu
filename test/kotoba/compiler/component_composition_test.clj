@@ -516,6 +516,56 @@
       (finally
         (Files/deleteIfExists path)))))
 
+(deftest source-option-nested-list-match-calls-and-matches-a-named-capability
+  (let [descriptor [:option [:list [:list :i64]]]
+        source
+        "(ns component.match-nested-list-capability
+           (:export [choose echo])
+           (:capabilities #{:http/post}))
+         (defn choose
+           [value [:option [:list [:list :i64]]] fallback :i64] :i64
+           (match-option value [:option [:list [:list :i64]]]
+             (none fallback)
+             (some items
+               (match-option
+                 (typed-cap-call
+                   :http/post
+                   [:option [:list [:list :i64]]]
+                   [:option [:list [:list :i64]]]
+                   (option-some-of
+                    [:option [:list [:list :i64]]]
+                    items))
+                 [:option [:list [:list :i64]]]
+                 (none fallback)
+                 (some returned (vector-count returned))))))
+         (defn echo [value :i64] :i64 value)"
+        application
+        (compiler/compile-component source {:allow #{[:cap/call 4]}})
+        provider
+        (composition/package-structural-union-identity-provider
+         :http/post descriptor)
+        closed (composition/compose-closed application [provider])
+        path (Files/createTempFile
+              "kotoba-source-match-nested-list-capability-" ".wasm"
+              (make-array FileAttribute 0))]
+    (try
+      (Files/write path ^bytes (:bytes closed)
+                   (make-array java.nio.file.OpenOption 0))
+      (is (= :structural-union-match-module
+             (:canonical-lowering application)))
+      (is (= [:http/post] (:application-imports closed)))
+      (doseq [[invoke expected]
+              [["choose(none, 9)" "9"]
+               ["choose(some([]), 9)" "0"]
+               ["choose(some([[1, 2], [], [-3]]), 9)" "3"]
+               ["echo(11)" "11"]]]
+        (let [run (shell/sh wasmtime-binary "run" "--invoke"
+                            invoke (str path))]
+          (is (zero? (:exit run)) (:err run))
+          (is (= expected (str/trim (:out run))) invoke)))
+      (finally
+        (Files/deleteIfExists path)))))
+
 (deftest source-option-f64-list-match-calls-and-matches-a-named-capability
   (let [descriptor [:option :vector-f64]
         source
