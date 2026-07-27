@@ -29,6 +29,7 @@
             [kotoba.compiler.frontend-named-capability-test]
             [kotoba.compiler.backend-cljs-test]
             [kotoba.compiler.backend-qualification-test]
+            [kotoba.compiler.host-profile-test]
             [kotoba.compiler.component-artifact-test]
             [kotoba.compiler.component-composition-test]
             [kotoba.compiler.component-admission-test]
@@ -93,6 +94,7 @@
                                           'kotoba.compiler.frontend-named-capability-test
                                           'kotoba.compiler.backend-cljs-test
                                           'kotoba.compiler.backend-qualification-test
+                                          'kotoba.compiler.host-profile-test
                                           'kotoba.compiler.component-artifact-test
                                           'kotoba.compiler.component-composition-test
                                           'kotoba.compiler.component-admission-test
