@@ -19,6 +19,7 @@
    :secrets #{:TOSHOKAN_RUN_TOKEN}
    :http {:allowed-origins ["https://ndlsearch.ndl.go.jp"]
           :allowed-methods #{:get}
+          :max-request-bytes 65536
           :max-response-bytes 2097152
           :deadline-ms 30000}
    :object-store
@@ -36,6 +37,7 @@
            (:r2_buckets wrangler)))
     (is (= :kotoba.host-artifact/v1 (:format manifest)))
     (is (re-find #"capability-denied:http" worker-source))
+    (is (re-find #"capability-denied:http-ingress" worker-source))
     (is (re-find #"capability-denied:object-store" worker-source))
     (is (re-find #"etagDoesNotMatch" worker-source))
     (is (re-find #"getStream" worker-source))
@@ -46,6 +48,11 @@
     (is (re-find #"PROFILE\.secrets\.includes" worker-source))
     (is (re-find #"PROFILE\.vars" worker-source))
     (is (re-find #"allowedOrigins" worker-source))
+    (is (re-find #"maxRequestBytes" worker-source))
+    (is (re-find #"handleIncoming" worker-source))
+    (is (re-find #"toIncoming" worker-source))
+    (is (re-find #"fromReply" worker-source))
+    (is (re-find #"resource-limit:http-request-bytes" worker-source))
     (is (not (re-find #"allowed-origins" worker-source)))
     (is (not (re-find #"key-prefixes" worker-source)))
     (is (not (str/includes? worker-source
@@ -62,6 +69,8 @@
                       ["https://ndlsearch.ndl.go.jp/private"])]
            [:response-unbounded
             (assoc-in valid-profile [:http :max-response-bytes] 999999999)]
+           [:request-unbounded
+            (assoc-in valid-profile [:http :max-request-bytes] 999999999)]
            [:undeclared-store
             (assoc-in valid-profile [:object-store :bindings]
                       {:OTHER {:key-prefixes ["data/"]}})]]]
