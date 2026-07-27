@@ -51,7 +51,9 @@
                        [ingress/header-set-type []] ""]]
                      accepted)
                   (true? ok)
-                  (= {:queued 0 :pending? false} ((:snapshot kit))))
+                  (= {:queued 0 :pending? false
+                      :max-queue-depth ingress/default-max-queue-depth}
+                     ((:snapshot kit))))
              (pr-str {:accepted accepted :ok ok :snap ((:snapshot kit))})))
     (catch :default e
       (check "cljs-host-injected-request-is-accepted-and-replied" false (.-message e)))))
@@ -123,7 +125,36 @@
     (catch :default e
       (check "cljs-missing-grant-denies-before-provider-invoke" false (.-message e)))))
 
-(let [results [(round-trip-case) (empty-case) (pairing-case) (denial-case)]
+(defn- multi-inflight-case []
+  (try
+    (let [kit (ingress/create-provider {:max-queue-depth 3})
+          hir (frontend/analyze source)
+          _ (admission/check hir {:allow #{[:cap/call (js/BigInt 17)]
+                                           [:cap/call (js/BigInt 18)]}})
+          kir (ir/lower hir)
+          runtime (runtime/instantiate kir
+                                       {:allow #{17 18}
+                                        :providers (:providers kit)})
+          _ ((:enqueue! kit) :http/get "/1" {} "a")
+          _ ((:enqueue! kit) :http/get "/2" {} "b")
+          a1 ((:invoke runtime) 'accept [[ingress/accept-request-type i64/zero]])
+          snap ((:snapshot kit))
+          ok ((:invoke runtime) 'reply
+                                [[ingress/reply-request-type (js/BigInt 200)
+                                  [ingress/header-set-type []] "r1"]])
+          a2 ((:invoke runtime) 'accept [[ingress/accept-request-type i64/zero]])]
+      (check "cljs-multi-inflight-queue-is-fifo"
+             (and (= "/1" (get-in a1 [2 2]))
+                  (= 1 (:queued snap))
+                  (true? (:pending? snap))
+                  (true? ok)
+                  (= "/2" (get-in a2 [2 2])))
+             (pr-str {:a1 a1 :snap snap :ok ok :a2 a2})))
+    (catch :default e
+      (check "cljs-multi-inflight-queue-is-fifo" false (.-message e)))))
+
+(let [results [(round-trip-case) (empty-case) (pairing-case) (denial-case)
+               (multi-inflight-case)]
       failures (remove :ok? results)]
   (doseq [{:keys [name ok? detail]} results]
     (println (if ok? "PASS" "FAIL") name (or detail "")))
