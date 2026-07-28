@@ -1,0 +1,58 @@
+{:kotoba.lang.conformance/version 2
+ :kotoba.lang.conformance/wbs "T1.3"
+ :kotoba.lang.conformance/note
+ "T1.3 dual-backend pilot subset of pure-product-run cases that currently
+  compile and agree on KIR + wasm32-kotoba-v1. Full matrix lives in
+  kotoba-lang/lang/conformance/manifest.edn; expand as admission grows."
+
+ :backends
+ {:kir {:id :kir :status :required-for-pure-product}
+  :wasm32-kotoba-v1 {:id :wasm32-kotoba-v1 :status :required-for-pure-product}}
+
+ :case-classes
+ {:pure-product-run
+  {:required-backends #{:kir :wasm32-kotoba-v1}
+   :profile :pure-product
+   :kinds #{:run}}}
+
+ :cases
+ [{:id :portable-negative-and-advanced-threading-sugar
+   :class :pure-product-run
+   :required-backends #{:kir :wasm32-kotoba-v1}
+   :kind :run
+   :entry "control/simple_sugar.kotoba"
+   :function "main"
+   :args []
+   :expect {:kotoba 26}}
+  {:id :portable-bounded-dotimes
+   :class :pure-product-run
+   :required-backends #{:kir :wasm32-kotoba-v1}
+   :kind :run
+   :entry "control/dotimes.kotoba"
+   :function "main"
+   :args []
+   :expect {:kotoba 7}}
+  {:id :portable-guest-assert
+   :class :pure-product-run
+   :required-backends #{:kir :wasm32-kotoba-v1}
+   :kind :run
+   :entry "control/assert.kotoba"
+   :function "main"
+   :args []
+   :expect {:kotoba 7}}
+  {:id :portable-closed-world-multimethod
+   :class :pure-product-run
+   :required-backends #{:kir :wasm32-kotoba-v1}
+   :kind :run
+   :entry "control/multimethod.kotoba"
+   :function "main"
+   :args []
+   :expect {:kotoba 121}}
+  {:id :portable-static-predicate-condp
+   :class :pure-product-run
+   :required-backends #{:kir :wasm32-kotoba-v1}
+   :kind :run
+   :entry "control/condp.kotoba"
+   :function "main"
+   :args []
+   :expect {:kotoba 50}}]}
