@@ -36,3 +36,28 @@
              :severity :error}
       (string? source-name) (assoc :source source-name)
       (map? (:span data)) (assoc :span (:span data)))))
+
+(defn format-human
+  "T3.4: single-line human diagnostic for CLI default mode.
+
+  Shape: `error: <code> at <source>:<line>:<col>: <message>`
+  Falls back gracefully when span/source missing."
+  [error source-name]
+  (let [data (ex-data error)
+        d (from-error error source-name)
+        code (name (:code d))
+        span (:span d)
+        loc (cond
+              (and (string? source-name) (map? span)
+                   (or (:line span) (:column span)))
+              (str source-name
+                   (when (:line span) (str ":" (:line span)))
+                   (when (:column span) (str ":" (:column span))))
+              (string? source-name) source-name
+              (map? span)
+              (str "line " (:line span) " col " (:column span))
+              :else nil)
+        msg (or (ex-message error) "error")]
+    (if loc
+      (str "error: " code " at " loc ": " msg)
+      (str "error: " code ": " msg))))

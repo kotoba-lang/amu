@@ -75,11 +75,24 @@
 ;; compile paths admit the exact same native-typed-feature subset.
 
 (defn check-source
-  ([source] (check-source source {}))
-  ([source policy]
-   (let [hir (frontend/analyze source)]
+  "Frontend admit + optional language-profile (T9.2).
+
+  `policy` may include `:language-profile :pure-product` (or pass via
+  3-arity `opts`). Returns {:hir :admission :language-profile}."
+  ([source] (check-source source {} {}))
+  ([source policy] (check-source source policy {}))
+  ([source policy opts]
+   (let [language-profile (or (:language-profile opts)
+                              (:language-profile policy))
+         ;; admission/check only accepts capability policy keys — strip profile.
+         admission-policy (dissoc policy :language-profile)
+         analyze-opts (cond-> {}
+                        language-profile (assoc :language-profile language-profile))
+         hir (frontend/analyze source analyze-opts)]
      (try
-       {:hir hir :admission (admission/check hir policy)}
+       {:hir hir
+        :admission (admission/check hir admission-policy)
+        :language-profile language-profile}
        (catch clojure.lang.ExceptionInfo e
          ;; W1: rethrow admission denials with semantic operation names from
          ;; elaboration, not only numeric [:cap/call id] effect rows.
@@ -91,7 +104,8 @@
                              (seq ops) (assoc :operations ops
                                               :named-operations ops)
                              true (assoc :phase (or (:phase data) :admission))
-                             true (assoc :hir-effects (:effects hir)))))))))))
+                             true (assoc :hir-effects (:effects hir))
+                             language-profile (assoc :language-profile language-profile))))))))))
 
 (defn- component-kir
   "Make the source language's legacy scalar `cap-call` explicit at the

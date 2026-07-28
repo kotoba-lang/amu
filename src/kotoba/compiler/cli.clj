@@ -253,13 +253,36 @@
       (println (pr-str {:ok true :output output
                         :evidence-sha256 (artifact/sha256 (:statement envelope))})))
     "check"
+    ;; T9.2 / T3.4: frontend admit + optional --profile pure-product.
+    ;; Default human pretty errors; --json for machine envelope.
     (let [input (kotoba-source! (second args))
           policy-path (option args "--policy")
-          policy (if policy-path (bounded-edn/read-file policy-path) {})
-          result (compiler/check-source (bounded-edn/read-text-file input) policy)]
-      (println (pr-str {:ok true
-                        :effects (get-in result [:hir :effects])
-                        :admission (:admission result)})))
+          profile-s (option args "--profile")
+          json? (some #{"--json"} args)
+          policy (cond-> (if policy-path (bounded-edn/read-file policy-path) {})
+                   profile-s (assoc :language-profile (keyword profile-s)))
+          source (bounded-edn/read-text-file input)]
+      (try
+        (let [result (compiler/check-source source policy)]
+          (if json?
+            (println (pr-str {:ok true
+                              :format :kotoba.check/v1
+                              :language-profile (:language-profile result)
+                              :effects (get-in result [:hir :effects])
+                              :exports (get-in result [:hir :exports])
+                              :admission (:admission result)}))
+            (do (println "ok"
+                         (str "profile=" (or (some-> (:language-profile result) name) "default"))
+                         (str "effects=" (pr-str (get-in result [:hir :effects] #{})))
+                         (str "exports=" (pr-str (get-in result [:hir :exports] []))))
+                (flush))))
+        (catch Exception e
+          (if json?
+            (do (println (pr-str (error-report e input)))
+                (*exit* (exit-code (or (:phase (ex-data e)) :subset))))
+            (do (binding [*out* *err*]
+                  (println (diagnostic/format-human e input)))
+                (*exit* (exit-code (or (:phase (ex-data e)) :subset))))))))
     "test"
     (let [input (kotoba-source! (second args))
           report (test-profile/run-source (bounded-edn/read-text-file input))]
