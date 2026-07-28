@@ -185,7 +185,8 @@
                          bytes-response-byte-count 1 bool-result 1
                          http-response-status 1 log-read-byte-count 1
                          string=? 2 string-concat 2 string-substring 3
-                         string-replace-all 3 string-contains? 2 string-fold-case 1
+                         string-replace-all 3 string-contains? 2 string-split-count 2
+                         string-fold-case 1
                          string-code-point-at 2
                          keyword-from-string 1 keyword-name 1 symbol 1})
 (def xml-operations
@@ -2872,6 +2873,11 @@
           :string)
 
       (= op 'string-contains?)
+      (do (doseq [[arg type] (map vector args types)]
+            (require-expression-type! type :string arg))
+          :i64)
+
+      (= op 'string-split-count)
       (do (doseq [[arg type] (map vector args types)]
             (require-expression-type! type :string arg))
           :i64)

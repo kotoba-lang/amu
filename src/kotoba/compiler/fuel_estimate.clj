@@ -27,7 +27,8 @@
 (def ^:private specials
   '#{if if-not when when-not let do and or quote
      string-concat string-length string-byte-length string-from-i64
-     string=? string-substring string-contains? string-fold-case string-code-point-at
+     string=? string-substring string-contains? string-split-count
+     string-fold-case string-code-point-at
      string-join record-new record-get
      + - * / quot rem mod < > <= >= = not not=
      pair pair-first pair-second first second rest empty? cons list

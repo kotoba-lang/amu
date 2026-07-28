@@ -7,7 +7,7 @@
   (let [m (lc/load-manifest)]
     (is (= 2 (:kotoba.lang.conformance/version m)))
     (is (= "T1.3" (:kotoba.lang.conformance/wbs m)))
-    (is (= 29 (count (lc/pure-product-cases m))))))
+    (is (= 30 (count (lc/pure-product-cases m))))))
 
 (deftest pure-product-required-backends
   (is (= #{:kir :wasm32-kotoba-v1} lc/pure-product-required)))
@@ -15,7 +15,7 @@
 (deftest dual-backend-pilot-suite-green
   (let [report (lc/run-suite)]
     (is (pos? (:total report)))
-    (is (= 29 (:total report)))
+    (is (= 30 (:total report)))
     (is (true? (:ok? report))
         (str "failed: " (pr-str (:failed report))))
     (is (= (:total report) (:passed report)))
