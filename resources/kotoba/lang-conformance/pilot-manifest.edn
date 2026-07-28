@@ -1,9 +1,9 @@
 {:kotoba.lang.conformance/version 2
  :kotoba.lang.conformance/wbs "T1.3"
  :kotoba.lang.conformance/note
- "T1.3 dual-backend pilot subset of pure-product-run cases that currently
-  compile and agree on KIR + wasm32-kotoba-v1. Full matrix lives in
-  kotoba-lang/lang/conformance/manifest.edn; expand as admission grows."
+ "T1.3 dual-backend pilot (expanded). Includes kotoba-lang control fixtures that
+  dual-ok plus kit fixtures for string-join / string-from-i64 (T4.2). Full matrix
+  still progressive as admission grows."
 
  :backends
  {:kir {:id :kir :status :required-for-pure-product}
@@ -55,4 +55,22 @@
    :entry "control/condp.kotoba"
    :function "main"
    :args []
-   :expect {:kotoba 50}}]}
+   :expect {:kotoba 50}}
+  {:id :string-join-kit
+   :class :pure-product-run
+   :required-backends #{:kir :wasm32-kotoba-v1}
+   :kind :run
+   :entry "control/string_join_kit.kotoba"
+   :function "main"
+   :args []
+   :expect {:kotoba 5}
+   :note "T4.2 string-join dual-backend"}
+  {:id :string-from-i64-kit
+   :class :pure-product-run
+   :required-backends #{:kir :wasm32-kotoba-v1}
+   :kind :run
+   :entry "values/string_from_i64_kit.kotoba"
+   :function "main"
+   :args []
+   :expect {:kotoba 4}
+   :note "PVA string-from-i64 + concat dual-backend"}]}
