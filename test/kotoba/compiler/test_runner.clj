@@ -30,6 +30,7 @@
             [kotoba.compiler.pure-product-profile-test]
             [kotoba.compiler.ambient-negative-corpus-test]
             [kotoba.compiler.lang-conformance-test]
+            [kotoba.compiler.lang-conformance-golden-test]
             [kotoba.compiler.error-code-contract-test]
             [kotoba.compiler.frontend-condp-test]
             [kotoba.compiler.frontend-doseq-test]
@@ -115,6 +116,7 @@
                                           'kotoba.compiler.pure-product-profile-test
                                           'kotoba.compiler.ambient-negative-corpus-test
                                           'kotoba.compiler.lang-conformance-test
+                                          'kotoba.compiler.lang-conformance-golden-test
                                           'kotoba.compiler.error-code-contract-test
                                           'kotoba.compiler.frontend-condp-test
                                           'kotoba.compiler.frontend-doseq-test
