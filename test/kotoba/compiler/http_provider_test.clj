@@ -144,3 +144,37 @@
          ((:invoke runtime) 'get-stream
           [[http/get-stream-request-type "https://api.example.test/x"
             [http/header-set-type []]]])))))
+
+(deftest get-stream-pending-then-fulfill-then-read
+  "Transport returns {:pending true}; host task-fulfill! then stream-read."
+  (let [payload (value/utf8-string->bytes "late-http-body")
+        runtime (hosted-get-stream (fn [_] {:pending true}))
+        request [http/get-stream-request-type "https://api.example.test/v1/late"
+                 [http/header-set-type []]]
+        pending ((:invoke runtime) 'get-stream [request])
+        polled0 (value/task-poll pending)
+        ready (value/task-fulfill! pending payload)
+        polled1 (value/task-poll ready)
+        chunk (value/stream-read! (:stream polled1) 65536)]
+    (is (value/task-value? pending))
+    (is (= :pending (:state polled0)))
+    (is (nil? (:stream polled0)))
+    (is (= :ready (:state polled1)))
+    (is (= (:kotoba.task/id pending) (:kotoba.task/id ready)))
+    (is (true? (:done? chunk)))
+    (is (zero? (value/compare-typed-values :bytes payload (:bytes chunk))))))
+
+(deftest get-stream-multi-chunk-ready-task
+  "Transport returns {:chunks [...]}; provider joins into one ready stream."
+  (let [a (value/utf8-string->bytes "http-")
+        b (value/utf8-string->bytes "chunks")
+        joined (value/utf8-string->bytes "http-chunks")
+        runtime (hosted-get-stream (fn [_] {:chunks [a b]}))
+        request [http/get-stream-request-type "https://api.example.test/v1/chunks"
+                 [http/header-set-type []]]
+        task ((:invoke runtime) 'get-stream [request])
+        polled (value/task-poll task)
+        chunk (value/stream-read! (:stream polled) 65536)]
+    (is (= :ready (:state polled)))
+    (is (true? (:done? chunk)))
+    (is (zero? (value/compare-typed-values :bytes joined (:bytes chunk))))))
