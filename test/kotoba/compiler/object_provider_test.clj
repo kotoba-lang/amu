@@ -1,5 +1,5 @@
 (ns kotoba.compiler.object-provider-test
-  "W5 stream-object dual-runtime first slice — put-block + CAS write path."
+  "W5 stream-object dual-runtime — put-block + CAS + get-stream ready-task."
   (:require [clojure.test :refer [deftest is]]
             [kotoba.compiler.core :as compiler]
             [kotoba.kir :as ir]
@@ -8,8 +8,13 @@
             [kotoba.compiler.reference-runtime :as runtime]))
 
 (def source
-  (str "(ns app.object (:export [put-block compare-and-set-ref]) "
-       "(:capabilities #{:object/put-block :object/compare-and-set-ref}))"
+  (str "(ns app.object (:export [get-stream put-block compare-and-set-ref]) "
+       "(:capabilities #{:object/get-stream :object/put-block :object/compare-and-set-ref}))"
+       "(defn get-stream [request " (pr-str object/get-stream-request-type) "] "
+       (pr-str object/get-stream-result-type)
+       " (typed-cap-call :object/get-stream "
+       (pr-str object/get-stream-request-type) " "
+       (pr-str object/get-stream-result-type) " request))"
        "(defn put-block [request " (pr-str object/put-block-request-type) "] "
        (pr-str object/put-block-result-type)
        " (typed-cap-call :object/put-block "
@@ -26,8 +31,8 @@
              {:allowed-bindings #{:example/blocks :example/refs}
               :transport transport})
         kir (ir/lower (:hir (compiler/check-source
-                             source {:allow #{[:cap/call 15] [:cap/call 16]}})))]
-    (runtime/instantiate kir {:allow #{15 16} :providers (:providers kit)})))
+                             source {:allow #{[:cap/call 14] [:cap/call 15] [:cap/call 16]}})))]
+    (runtime/instantiate kir {:allow #{14 15 16} :providers (:providers kit)})))
 
 (deftest put-block-crosses-only-the-typed-boundary
   (let [seen (atom nil)
@@ -78,7 +83,7 @@
 
 (deftest missing-grant-denies-before-provider-invoke
   (let [kir (ir/lower (:hir (compiler/check-source
-                             source {:allow #{[:cap/call 15] [:cap/call 16]}})))
+                             source {:allow #{[:cap/call 14] [:cap/call 15] [:cap/call 16]}})))
         runtime (runtime/instantiate kir)]
     (is (thrown-with-msg?
          clojure.lang.ExceptionInfo #"capability denied"
@@ -91,4 +96,38 @@
           [[object/cas-request-type
             :example/refs "main"
             [object/expected-etag-type false]
-            "etag-2"]])))))
+            "etag-2"]])))
+    (is (thrown-with-msg?
+         clojure.lang.ExceptionInfo #"capability denied"
+         ((:invoke runtime) 'get-stream
+          [[object/get-stream-request-type :example/blocks "k"]])))))
+
+(deftest get-stream-returns-ready-task-and-reads-bytes
+  (let [payload (value/utf8-string->bytes "stream-body")
+        seen (atom nil)
+        runtime (hosted (fn [request]
+                          (reset! seen request)
+                          {:bytes payload}))
+        request [object/get-stream-request-type :example/blocks "key-1"]
+        task ((:invoke runtime) 'get-stream [request])
+        polled (value/task-poll task)
+        chunk (value/stream-read! (:stream polled) 65536)]
+    (is (= {:operation :get-stream :binding :example/blocks :key "key-1"} @seen))
+    (is (value/task-value? task))
+    (is (= :ready (:state polled)))
+    (is (true? (:done? chunk)))
+    (is (zero? (value/compare-typed-values :bytes payload (:bytes chunk))))))
+
+(deftest get-stream-binding-denial-and-transport-redaction
+  (let [called? (atom false)
+        runtime (hosted (fn [_] (reset! called? true) {:bytes (byte-array 0)}))]
+    (is (thrown-with-msg?
+         clojure.lang.ExceptionInfo #"binding is not allowed"
+         ((:invoke runtime) 'get-stream
+          [[object/get-stream-request-type :example/other "k"]])))
+    (is (false? @called?)))
+  (let [runtime (hosted (fn [_] (throw (ex-info "secret object URL" {}))))]
+    (is (thrown-with-msg?
+         clojure.lang.ExceptionInfo #"object provider failed"
+         ((:invoke runtime) 'get-stream
+          [[object/get-stream-request-type :example/blocks "k"]])))))
