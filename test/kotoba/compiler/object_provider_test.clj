@@ -244,3 +244,24 @@
         request [object/get-stream-request-type :example/blocks "k2"]
         n ((:invoke runtime) 'get-stream-byte-count [request])]
     (is (= 5 n))))
+
+(deftest resource-table-drop-and-guest-consume
+  "ADR 0133: host drop and guest bytes-task-byte-count consume fail-closed after."
+  (value/resource-table-reset!)
+  (let [payload (value/utf8-string->bytes "xy")
+        runtime (hosted (fn [_] {:bytes payload}))
+        request [object/get-stream-request-type :example/blocks "k"]
+        task ((:invoke runtime) 'get-stream [request])]
+    (is (true? (value/task-live? task)))
+    (value/task-drop! task)
+    (is (false? (value/task-live? task)))
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"not live"
+                          (value/task-poll task))))
+  (value/resource-table-reset!)
+  (let [payload (value/utf8-string->bytes "hello")
+        runtime (hosted-guest-poll (fn [_] {:bytes payload}))
+        request [object/get-stream-request-type :example/blocks "k"]
+        n ((:invoke runtime) 'get-stream-byte-count [request])]
+    (is (= 5 n))
+    ;; A second consume is a new task from a new get-stream; table is clean.
+    (is (= 5 ((:invoke runtime) 'get-stream-byte-count [request])))))
