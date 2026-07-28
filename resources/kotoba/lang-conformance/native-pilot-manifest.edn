@@ -1,0 +1,43 @@
+{:kotoba.lang.conformance/version 2
+ :kotoba.lang.conformance/wbs "T1.4"
+ :kotoba.lang.conformance/profile :pure-native-v1
+ :kotoba.lang.conformance/note
+ "Pure-native-v1 pilot: i64/string subset on host native ISA via signed kexe + loader.
+  Optional when tender-native is not on the classpath."
+
+ :backends
+ {:native-host {:id :native-host
+                :status :required-for-pure-native
+                :resolves-to #{:x86_64-kotoba-v1 :aarch64-kotoba-v1}}}
+
+ :cases
+ [{:id :native-i64-add
+   :kind :run
+   :entry "native/i64_add.kotoba"
+   :function "main"
+   :args []
+   :expect {:kotoba 7}}
+  {:id :native-i64-nested
+   :kind :run
+   :entry "native/i64_nested.kotoba"
+   :function "main"
+   :args []
+   :expect {:kotoba 12}}
+  {:id :native-string-length
+   :kind :run
+   :entry "native/string_length.kotoba"
+   :function "main"
+   :args []
+   :expect {:kotoba 4}}
+  {:id :native-string-concat-len
+   :kind :run
+   :entry "native/string_concat_len.kotoba"
+   :function "main"
+   :args []
+   :expect {:kotoba 4}}
+  {:id :native-control-if
+   :kind :run
+   :entry "native/option_if_some.kotoba"
+   :function "main"
+   :args []
+   :expect {:kotoba 9}}]}
