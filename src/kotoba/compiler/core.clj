@@ -365,7 +365,15 @@
                         :target target :target-profile profile :value-abi value-abi})]
     (cond
       (= backend :wasm32-kotoba-v1)
-      (let [typed-values? (= :kotoba.kir/v4 (:format kir))]
+      (let [typed-values? (= :kotoba.kir/v4 (:format kir))
+            ;; T7.4: optional `:fuel` in emit-metadata (or policy `:budgets`)
+            ;; bakes into the module-private fuel global; default remains 512.
+            fuel (or (:fuel emit-metadata)
+                     (get-in emit-metadata [:budgets :fuel])
+                     (get-in policy [:budgets :fuel])
+                     512)
+            emit-opts (cond-> {}
+                        fuel (assoc :fuel fuel))]
         {:format :wasm/v1 :target target :target-profile profile
          :hir hir :kir kir :admission admission
          :compatibility compatibility
@@ -376,7 +384,7 @@
                           (typed/requires-host-runtime? kir) (conj :reference-types)
                           (ir/uses-f32? kir) (conj :ieee-754-f32)
                           (ir/uses-f64? kir) (conj :ieee-754-f64))
-         :limits (cond-> {:fuel 512 :replenishable? false}
+         :limits (cond-> {:fuel fuel :replenishable? false}
                    typed-values? (assoc :parametric-adt-depth 8
                                         :parametric-adt-nodes 64
                                         :variant-cases 32
@@ -388,7 +396,7 @@
                                         :vector-f64-items 16384
                                         :compact-graph-items 128
                                         :string-index-key-bytes 65536))
-         :bytes (wasm/emit kir target)})
+         :bytes (wasm/emit kir target emit-opts)})
 
       ;; ADR-2607151500: cljs backend emits SOURCE TEXT, not bytes -- no
       ;; kexe sealing (that artifact shape is native-code-specific: raw

@@ -2,7 +2,8 @@
  :kotoba.lang.conformance/wbs "T1.3"
  :kotoba.lang.conformance/note
  "T1.3 dual-backend pilot expanded: control + string-ops + record + and/or/if-not/let/
-  arith/nested-fn/true + string-replace. Full kotoba-lang matrix still progressive."
+  arith/nested-fn/true + string-replace + loop + T7.4 deep loop (raised :fuel).
+  Full kotoba-lang matrix still progressive."
 
  :backends
  {:kir {:id :kir :status :required-for-pure-product}
@@ -203,5 +204,15 @@
    :args []
    :expect {:kotoba 7}
    :note "T7.1 loop countdown dual-backend"}
+  {:id :loop-deep-kit
+   :class :pure-product-run
+   :required-backends #{:kir :wasm32-kotoba-v1}
+   :kind :run
+   :entry "control/loop_deep_kit.kotoba"
+   :function "main"
+   :args []
+   :expect {:kotoba 42}
+   :fuel 12000
+   :note "T7.4: 10k loop/recur iters with raised fuel (helper-desugar charge model)"}
 ]
 }
