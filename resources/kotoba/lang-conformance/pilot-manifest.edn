@@ -4,7 +4,8 @@
  "T1.3 dual-backend pilot expanded: control + string-ops + record + and/or/if-not/let/
   arith/nested-fn/true + string-replace + loop + T7.4 deep loop (raised :fuel) +
   if-some/option + string-byte-length + when/cond/if-let + case + bitops +
-  typed-map (T4.4) + string-split-count (T4.2) + vector-i64 (T4.5).
+  typed-map (T4.4) + string-split-count (T4.2) + vector-i64 (T4.5) +
+  vector-mut + typed-map-dissoc + quot/bit-not.
   Full matrix still progressive."
 
  :backends
@@ -288,5 +289,32 @@
    :args []
    :expect {:kotoba 27}
    :note "T4.5 vector-i64 count/at/conj dual-backend (wasm#37 body seal)"}
+  {:id :vector-mut-kit
+   :class :pure-product-run
+   :required-backends #{:kir :wasm32-kotoba-v1}
+   :kind :run
+   :entry "values/vector_mut_kit.kotoba"
+   :function "main"
+   :args []
+   :expect {:kotoba 108}
+   :note "T4.5 vector-assoc/drop/get dual-backend"}
+  {:id :typed-map-dissoc-kit
+   :class :pure-product-run
+   :required-backends #{:kir :wasm32-kotoba-v1}
+   :kind :run
+   :entry "values/typed_map_dissoc_kit.kotoba"
+   :function "main"
+   :args []
+   :expect {:kotoba 1}
+   :note "T4.4 typed-map-dissoc dual-backend"}
+  {:id :quot-bitnot-kit
+   :class :pure-product-run
+   :required-backends #{:kir :wasm32-kotoba-v1}
+   :kind :run
+   :entry "control/quot_bitnot_kit.kotoba"
+   :function "main"
+   :args []
+   :expect {:kotoba 18}
+   :note "quot + bit-not dual-backend"}
 ]
 }
