@@ -404,6 +404,85 @@
                    (select-keys (ok-payload ((:invoke runtime) 'post [request])) [:status :body])))))
       (finally (stop! fake)))))
 
-;; Note: the cljs/nbb host branch of `production-transport` is a documented
-;; gap (ns docstring: no synchronous HTTP primitive available there today),
-;; not something this JVM test suite can exercise -- see docs/adr/0066.
+;; ---------------------------------------------------------------------------
+;; get-stream production transport (ADR 0128)
+;; ---------------------------------------------------------------------------
+
+(def get-stream-source
+  (str "(ns app.http-stream (:export [get-stream]) (:capabilities #{:http/get-stream}))"
+       "(defn get-stream [request " (pr-str http/get-stream-request-type) "] "
+       (pr-str http/get-stream-result-type) " (typed-cap-call :http/get-stream "
+       (pr-str http/get-stream-request-type) " " (pr-str http/get-stream-result-type) " request))"))
+
+(defn- hosted-get-stream [transport-fn origin]
+  (let [provider (http/get-stream-provider {:allowed-origins #{origin}
+                                            :transport transport-fn})
+        kir (ir/lower (:hir (compiler/check-source
+                             get-stream-source {:allow #{[:cap/call 13]}})))]
+    (runtime/instantiate kir {:allow #{13} :providers {13 provider}})))
+
+(deftest production-get-stream-returns-ready-bytes-task
+  (let [seen (atom nil)
+        payload "stream-body-bytes"
+        {:keys [origin] :as fake}
+        (fake-server
+         {"/v1/blob"
+          (fn [ex]
+            (reset! seen {:method (.getRequestMethod ex)})
+            (respond! ex 200 payload))})]
+    (try
+      (with-relaxed-guards
+        (let [transport-fn (transport/production-get-stream-transport
+                            {:allowed-origins #{origin}})
+              runtime (hosted-get-stream transport-fn origin)
+              request [http/get-stream-request-type (str origin "/v1/blob")
+                       [http/header-set-type []]]
+              task ((:invoke runtime) 'get-stream [request])
+              polled (value/task-poll task)
+              chunk (value/stream-read! (:stream polled) 65536)
+              expected (value/utf8-string->bytes payload)]
+          (is (= "GET" (:method @seen)))
+          (is (= :ready (:state polled)))
+          (is (true? (:done? chunk)))
+          (is (zero? (value/compare-typed-values :bytes expected (:bytes chunk))))))
+      (finally (stop! fake)))))
+
+(deftest production-get-stream-follows-in-allow-list-redirect
+  (let [hits (atom [])
+        {:keys [origin] :as fake}
+        (fake-server
+         {"/start" (fn [ex]
+                     (swap! hits conj "/start")
+                     (.. ex getResponseHeaders (add "Location" "/final"))
+                     (respond! ex 302 ""))
+          "/final" (fn [ex]
+                     (swap! hits conj "/final")
+                     (respond! ex 200 "done"))})]
+    (try
+      (with-relaxed-guards
+        (let [transport-fn (transport/production-get-stream-transport
+                            {:allowed-origins #{origin}})
+              runtime (hosted-get-stream transport-fn origin)
+              request [http/get-stream-request-type (str origin "/start")
+                       [http/header-set-type []]]
+              task ((:invoke runtime) 'get-stream [request])
+              chunk (value/stream-read! (:stream (value/task-poll task)) 65536)]
+          (is (= ["/start" "/final"] @hits))
+          (is (zero? (value/compare-typed-values
+                      :bytes (value/utf8-string->bytes "done") (:bytes chunk))))))
+      (finally (stop! fake)))))
+
+(deftest production-get-stream-refuses-outside-allow-list
+  (with-relaxed-guards
+    (let [transport-fn (transport/production-get-stream-transport
+                        {:allowed-origins #{"https://api.example.test"}})
+          runtime (hosted-get-stream transport-fn "https://api.example.test")]
+      (is (thrown-with-msg?
+           clojure.lang.ExceptionInfo #"http get-stream transport failed|not allowed|destination"
+           ((:invoke runtime) 'get-stream
+            [[http/get-stream-request-type "https://evil.example.test/x"
+              [http/header-set-type []]]]))))))
+
+(deftest production-get-stream-transport-requires-allowed-origins
+  (is (thrown-with-msg? clojure.lang.ExceptionInfo #"allowed-origins"
+                        (transport/production-get-stream-transport {}))))

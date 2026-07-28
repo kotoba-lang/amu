@@ -178,11 +178,42 @@ s.listen(0,'127.0.0.1',()=>{
       (check "cljs-first-hop-outside-allow-list-is-typed-destination-blocked-error"
              false (.-message e)))))
 
+(defn- get-stream-constructor-case []
+  (try
+    (let [threw? (try (transport/production-get-stream-transport {})
+                      false
+                      (catch :default _ true))]
+      (check "cljs-production-get-stream-transport-requires-allowed-origins"
+             threw?
+             "constructor should require allowed-origins"))
+    (catch :default e
+      (check "cljs-production-get-stream-transport-requires-allowed-origins"
+             false (.-message e)))))
+
+(defn- get-stream-first-hop-blocked-case []
+  (try
+    (let [t (transport/production-get-stream-transport
+             {:allowed-origins #{"https://example.test"}})
+          threw? (try
+                   (t {:operation :get-stream
+                       :url "https://evil.example.test/x"
+                       :headers {}})
+                   false
+                   (catch :default _ true))]
+      (check "cljs-get-stream-first-hop-outside-allow-list-throws"
+             threw?
+             "get-stream should throw on first-hop refuse"))
+    (catch :default e
+      (check "cljs-get-stream-first-hop-outside-allow-list-throws"
+             false (.-message e)))))
+
 (let [results [(destination-blocked-literal-case)
                (constructor-requires-origins-case)
                (first-hop-blocked-errors-case)
                (successful-post-case)
-               (redirect-outside-not-followed-case)]
+               (redirect-outside-not-followed-case)
+               (get-stream-constructor-case)
+               (get-stream-first-hop-blocked-case)]
       failures (remove :ok? results)]
   (doseq [{:keys [name ok? detail]} results]
     (println (if ok? "PASS" "FAIL") name (or detail "")))
