@@ -253,3 +253,37 @@
                 (bytes-task-byte-count task))))"
          {:allow #{[:cap/call 13]}})]
     (is (= :i64 (get-in checked [:hir :functions 0 :result])))))
+
+(deftest linear-one-arm-if-consume-is-admitted
+  "ADR 0142: linear produce+consume fully closed in one if arm."
+  (let [checked
+        (compiler/check-source
+         "(ns app (:export [size]))
+          (defn size [url :string flag :i64] :i64
+            (if flag
+              (let [task (typed-cap-call :http/get-stream :string
+                           [:task [:stream :bytes]] url)]
+                (bytes-task-byte-count task))
+              0))"
+         {:allow #{[:cap/call 13]}})]
+    (is (= :i64 (get-in checked [:hir :functions 0 :result])))))
+
+(deftest linear-one-arm-if-unclosed-else-producer-is-rejected
+  "Else arm must not introduce a second unconsumed linear producer."
+  (is (try
+        (compiler/check-source
+         "(ns app (:export [bad]))
+          (defn bad [url :string flag :i64] :i64
+            (if flag
+              (let [task (typed-cap-call :http/get-stream :string
+                           [:task [:stream :bytes]] url)]
+                (bytes-task-byte-count task))
+              (bytes-task-byte-count
+                (typed-cap-call :http/get-stream :string
+                  [:task [:stream :bytes]] url))))"
+         {:allow #{[:cap/call 13]}})
+        ;; Two distinct producers — ownership rejects even if both consume
+        false
+        (catch clojure.lang.ExceptionInfo error
+          (boolean (re-find #"one direct typed capability move"
+                            (.getMessage error)))))))
