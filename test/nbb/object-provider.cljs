@@ -292,7 +292,7 @@
 
 
 (def product-source
-  (str "(ns app.object-product (:export [put-then-count put-cas-then-count]) "
+  (str "(ns app.object-product (:export [put-then-count put-cas-then-count put-then-count-if]) "
        "(:capabilities #{:object/get-stream :object/put-block :object/compare-and-set-ref}))"
        "(defn put-then-count [put-req " (pr-str object/put-block-request-type)
        " get-req " (pr-str object/get-stream-request-type) "] :i64 "
@@ -315,7 +315,16 @@
        "task (typed-cap-call :object/get-stream "
        (pr-str object/get-stream-request-type) " "
        (pr-str object/get-stream-result-type) " get-req)] "
-       "(bytes-task-byte-count task)))"))
+       "(bytes-task-byte-count task)))"
+       "(defn put-then-count-if [put-req " (pr-str object/put-block-request-type)
+       " get-req " (pr-str object/get-stream-request-type) "] :i64 "
+       "(let [ok (typed-cap-call :object/put-block "
+       (pr-str object/put-block-request-type) " "
+       (pr-str object/put-block-result-type) " put-req)] "
+       "(if ok (let [task (typed-cap-call :object/get-stream "
+       (pr-str object/get-stream-request-type) " "
+       (pr-str object/get-stream-result-type) " get-req)] "
+       "(bytes-task-byte-count task)) 0)))"))
 
 (defn- hosted-product [transport]
   (let [kit (object/create-providers
@@ -390,6 +399,27 @@
     (catch :default e
       (check "cljs-product-put-cas-then-count-round-trip" false (.-message e)))))
 
+
+(defn- product-put-then-count-if-skip-case []
+  (try
+    (let [ops (atom [])
+          transport (fn [req]
+                      (swap! ops conj (:operation req))
+                      (case (:operation req)
+                        :put-block false
+                        :get-stream (throw (ex-info "nope" {}))
+                        (throw (ex-info "bad" req))))
+          runtime (hosted-product transport)
+          put-req [object/put-block-request-type
+                   :example/blocks "k" (value/utf8-string->bytes "x")]
+          get-req [object/get-stream-request-type :example/blocks "k"]
+          n ((:invoke runtime) 'put-then-count-if [put-req get-req])]
+      (check "cljs-product-put-then-count-if-skips-get"
+             (and (= (js/BigInt 0) n) (= [:put-block] @ops))
+             (pr-str {:n n :ops @ops})))
+    (catch :default e
+      (check "cljs-product-put-then-count-if-skips-get" false (.-message e)))))
+
 (let [results [(put-boundary-case)
                (cas-case)
                (binding-case)
@@ -403,7 +433,8 @@
                (guest-task-ready-case)
                (guest-byte-count-case)
                (product-put-then-count-case)
-               (product-put-cas-then-count-case)]
+               (product-put-cas-then-count-case)
+               (product-put-then-count-if-skip-case)]
       failures (remove :ok? results)]
   (doseq [{:keys [name ok? detail]} results]
     (println (if ok? "PASS" "FAIL") name (or detail "")))

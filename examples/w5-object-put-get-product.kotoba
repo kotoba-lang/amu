@@ -1,11 +1,11 @@
-;; W5 fuller product apps (ADR 0140 / 0141)
+;; W5 fuller product apps (ADR 0140–0142)
 ;; Guest single-export product verticals:
 ;;   put-then-count      — put-block → get-stream → byte-count
 ;;   put-cas-then-count  — put-block → CAS ref → get-stream → byte-count
 ;; Affine multi-binding let (ADR 0137–0138). CAS lose does not skip get.
 
 (ns app.object-product
-  (:export [put-then-count put-cas-then-count])
+  (:export [put-then-count put-cas-then-count put-then-count-if put-cas-then-count-if])
   (:capabilities #{:object/get-stream :object/put-block :object/compare-and-set-ref}))
 
 (defn put-then-count
@@ -52,3 +52,53 @@
                              [:task [:stream :bytes]]
                              get-req)]
     (bytes-task-byte-count task)))
+
+;; ADR 0142 — conditional get (skip get-stream when put/CAS fails)
+(defn put-then-count-if
+  [put-req [:record :kotoba.object/put-block-request
+            [[:binding :keyword] [:digest :string] [:bytes :bytes]]]
+   get-req [:record :kotoba.object/get-stream-request
+            [[:binding :keyword] [:key :string]]]]
+  :i64
+  (let [ok (typed-cap-call :object/put-block
+                           [:record :kotoba.object/put-block-request
+                            [[:binding :keyword] [:digest :string] [:bytes :bytes]]]
+                           :bool
+                           put-req)]
+    (if ok
+      (let [task (typed-cap-call :object/get-stream
+                                 [:record :kotoba.object/get-stream-request
+                                  [[:binding :keyword] [:key :string]]]
+                                 [:task [:stream :bytes]]
+                                 get-req)]
+        (bytes-task-byte-count task))
+      0)))
+
+(defn put-cas-then-count-if
+  [put-req [:record :kotoba.object/put-block-request
+            [[:binding :keyword] [:digest :string] [:bytes :bytes]]]
+   cas-req [:record :kotoba.object/compare-and-set-ref-request
+            [[:binding :keyword] [:key :string]
+             [:expected [:option :string]] [:next :string]]]
+   get-req [:record :kotoba.object/get-stream-request
+            [[:binding :keyword] [:key :string]]]]
+  :i64
+  (let [ok-put (typed-cap-call :object/put-block
+                               [:record :kotoba.object/put-block-request
+                                [[:binding :keyword] [:digest :string] [:bytes :bytes]]]
+                               :bool
+                               put-req)
+        ok-cas (typed-cap-call :object/compare-and-set-ref
+                               [:record :kotoba.object/compare-and-set-ref-request
+                                [[:binding :keyword] [:key :string]
+                                 [:expected [:option :string]] [:next :string]]]
+                               :bool
+                               cas-req)]
+    (if ok-cas
+      (let [task (typed-cap-call :object/get-stream
+                                 [:record :kotoba.object/get-stream-request
+                                  [[:binding :keyword] [:key :string]]]
+                                 [:task [:stream :bytes]]
+                                 get-req)]
+        (bytes-task-byte-count task))
+      0)))

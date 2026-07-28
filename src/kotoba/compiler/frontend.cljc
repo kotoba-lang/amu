@@ -3398,13 +3398,15 @@
     :else nil))
 
 (defn- linear-let-move
-  "ADR 0137–0139: admit let forms that bind exactly one linear typed-cap-call
+  "ADR 0137–0142: admit forms that bind exactly one linear typed-cap-call
   (possibly among non-linear bindings) and exclusively move or consume it.
 
   ADR 0138: multi-binding companions, nested non-linear outers, balanced if.
   ADR 0139: exclusive-use walks non-linear lets so multi-arm `case` / `cond` /
   `condp` (desugared to nested if + dispatch lets) are admitted when every
   arm exclusive-uses the binding the same way.
+  ADR 0142: one-arm linear `if` — linear produce+consume fully closed inside
+  exactly one arm; the other arm has no linear calls (conditional get).
 
   Returns the underlying typed-cap-call when admitted, else nil."
   [body]
@@ -3451,6 +3453,23 @@
                                    pairs))
                       (walk result-expr)
 
+                      :else nil))))
+
+              ;; ADR 0142: one-arm linear if — produce+consume closed in one arm
+              (and (seq? form) (= 'if (first form)) (>= (count form) 3))
+              (let [test (nth form 1)
+                    then (nth form 2)
+                    else (if (>= (count form) 4) (nth form 3) 0)]
+                (when-not (form-contains-linear-call? test)
+                  (let [then-lin (form-contains-linear-call? then)
+                        else-lin (form-contains-linear-call? else)]
+                    (cond
+                      (and then-lin (not else-lin)) (walk then)
+                      (and else-lin (not then-lin)) (walk else)
+                      ;; both arms linear: require the same producer call form
+                      (and then-lin else-lin)
+                      (let [t (walk then) e (walk else)]
+                        (when (and t e (= t e)) t))
                       :else nil))))
 
               :else nil))]
