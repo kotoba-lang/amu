@@ -56,6 +56,7 @@ const ALLOWED_IMPORTS = new Set([
   "kotoba:typed/string-substring/function",
   "kotoba:typed/string-replace-all/function",
   "kotoba:typed/string-contains/function",
+  "kotoba:typed/string-split-count/function",
   "kotoba:typed/string-code-point-at/function",
   "kotoba:typed/string-fold-case/function",
   "kotoba:typed/keyword-name/function",
@@ -1366,6 +1367,24 @@ function createTypedRuntime(abi, typedCapCall, allow) {
       if (needle.length === 0)
         reject("invalid-typed-operation", "empty string search needle rejected");
       return haystack.includes(needle) ? 1 : 0;
+    },
+    // T4.2: segment count for non-empty separator (non-overlapping), same
+    // length as JS String#split for non-regex separators.
+    "string-split-count"(descriptorId, haystack, sep) {
+      const descriptor = descriptorAt(descriptorId);
+      if (descriptor !== "string") reject("invalid-typed-operation", "string descriptor required");
+      haystack = assertValue(descriptor, haystack);
+      sep = assertValue(descriptor, sep);
+      if (sep.length === 0)
+        reject("invalid-typed-operation", "empty string split separator rejected");
+      let i = 0;
+      let n = 1;
+      while (true) {
+        const idx = haystack.indexOf(sep, i);
+        if (idx < 0) return n;
+        i = idx + sep.length;
+        n += 1;
+      }
     },
     "string-fold-case"(descriptorId, value) {
       const descriptor = descriptorAt(descriptorId);
