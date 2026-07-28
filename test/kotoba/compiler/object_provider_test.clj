@@ -1,5 +1,5 @@
 (ns kotoba.compiler.object-provider-test
-  "W5 stream-object dual-runtime — put-block + CAS + get-stream ready-task."
+  "W5 stream-object dual-runtime — put-block + CAS + get-stream ready/pending/multi-chunk."
   (:require [clojure.test :refer [deftest is]]
             [kotoba.compiler.core :as compiler]
             [kotoba.kir :as ir]
@@ -131,3 +131,35 @@
          clojure.lang.ExceptionInfo #"object provider failed"
          ((:invoke runtime) 'get-stream
           [[object/get-stream-request-type :example/blocks "k"]])))))
+
+(deftest get-stream-pending-then-fulfill-then-read
+  "Transport returns {:pending true}; host task-fulfill! then stream-read."
+  (let [payload (value/utf8-string->bytes "late-body")
+        runtime (hosted (fn [_] {:pending true}))
+        request [object/get-stream-request-type :example/blocks "key-pending"]
+        pending ((:invoke runtime) 'get-stream [request])
+        polled0 (value/task-poll pending)
+        ready (value/task-fulfill! pending payload)
+        polled1 (value/task-poll ready)
+        chunk (value/stream-read! (:stream polled1) 65536)]
+    (is (value/task-value? pending))
+    (is (= :pending (:state polled0)))
+    (is (nil? (:stream polled0)))
+    (is (= :ready (:state polled1)))
+    (is (= (:kotoba.task/id pending) (:kotoba.task/id ready)))
+    (is (true? (:done? chunk)))
+    (is (zero? (value/compare-typed-values :bytes payload (:bytes chunk))))))
+
+(deftest get-stream-multi-chunk-ready-task
+  "Transport returns {:chunks [...]}; provider joins into one ready stream."
+  (let [a (value/utf8-string->bytes "hel")
+        b (value/utf8-string->bytes "lo")
+        joined (value/utf8-string->bytes "hello")
+        runtime (hosted (fn [_] {:chunks [a b]}))
+        request [object/get-stream-request-type :example/blocks "key-chunks"]
+        task ((:invoke runtime) 'get-stream [request])
+        polled (value/task-poll task)
+        chunk (value/stream-read! (:stream polled) 65536)]
+    (is (= :ready (:state polled)))
+    (is (true? (:done? chunk)))
+    (is (zero? (value/compare-typed-values :bytes joined (:bytes chunk))))))
