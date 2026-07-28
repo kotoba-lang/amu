@@ -1,0 +1,97 @@
+(ns kotoba.compiler.ambient-negative-corpus-test
+  "T2.4: always-on security regression — ambient / forbidden forms reject.
+
+  Complements kotoba-lang `docs/grade-a-malicious-source-corpus.md` and
+  `lang/malicious-source/*` (policy evaluator corpus). This suite pins the
+  **compiler frontend** gate for the same security classes on guest source."
+  (:require [clojure.test :refer [deftest is testing]]
+            [kotoba.compiler.frontend :as frontend]))
+
+(defn- analyze-error
+  ([source] (analyze-error source nil))
+  ([source opts]
+   (try
+     (frontend/analyze source opts)
+     nil
+     (catch clojure.lang.ExceptionInfo e
+       e))))
+
+(def ambient-cases
+  "Stable table: [id source expected-code-or-nil]."
+  [[:eval
+    "(ns t (:export [f])) (defn f [] (eval 1))"
+    :kotoba.error/ambient-forbidden]
+   [:require
+    "(ns t (:export [f])) (defn f [] (require 'foo))"
+    :kotoba.error/ambient-forbidden]
+   [:load
+    "(ns t (:export [f])) (defn f [] (load \"x\"))"
+    :kotoba.error/ambient-forbidden]
+   [:atom
+    "(ns t (:export [f])) (defn f [] (atom 1))"
+    :kotoba.error/ambient-forbidden]
+   [:future
+    "(ns t (:export [f])) (defn f [] (future 1))"
+    :kotoba.error/ambient-forbidden]
+   [:new
+    "(ns t (:export [f])) (defn f [] (new Object))"
+    :kotoba.error/ambient-forbidden]
+   [:dot-interop
+    "(ns t (:export [f])) (defn f [] (.toString 1))"
+    :kotoba.error/ambient-forbidden]
+   [:set-bang
+    "(ns t (:export [f])) (defn f [] (set! x 1))"
+    :kotoba.error/ambient-forbidden]
+   [:throw
+    "(ns t (:export [f])) (defn f [] (throw 1))"
+    :kotoba.error/ambient-forbidden]
+   [:resolve
+    "(ns t (:export [f])) (defn f [] (resolve 'x))"
+    :kotoba.error/ambient-forbidden]
+   [:binding
+    "(ns t (:export [f])) (defn f [] (binding [x 1] x))"
+    :kotoba.error/ambient-forbidden]
+   [:defmacro-top
+    "(ns t (:export [f])) (defmacro m [] 1) (defn f [] 1)"
+    :kotoba.error/top-level-form]
+   [:ns-import-clause
+    "(ns t (:import [java.lang String]) (:export [f])) (defn f [] 1)"
+    :kotoba.error/namespace-export-clause]
+   [:max-parameters-6
+    "(ns t (:export [f])) (defn f [a b c d e g] :i64 0)"
+    :kotoba.error/max-parameters]])
+
+(deftest ambient-and-forbidden-forms-always-reject
+  (doseq [[id source expected-code] ambient-cases]
+    (testing (str id)
+      (let [e (analyze-error source)]
+        (is (some? e) (str id " should reject"))
+        (when expected-code
+          (is (= expected-code (:kotoba.error/code (ex-data e)))
+              (str id " code " (pr-str (ex-data e)))))))))
+
+(deftest pure-product-also-rejects-ambient
+  (testing "pure-product profile keeps ambient reject (profile gate may fire first)"
+    (let [e (analyze-error
+             "(ns t (:export [f])) (defn f [] (eval 1))"
+             {:language-profile :pure-product})
+          code (:kotoba.error/code (ex-data e))]
+      (is (some? e))
+      ;; pure-product-disallowed-heads / ambient both fail closed; either code is fine.
+      (is (contains? #{:kotoba.error/ambient-forbidden
+                       :kotoba.error/pure-product-forbidden}
+                     code)
+          (str "got " code)))))
+
+(deftest pure-product-rejects-cap-call-and-doseq
+  ;; Cross-link T2.1 living gate — must stay red under pure-product.
+  (let [e1 (analyze-error
+            "(ns t (:export [f])) (defn f [] (cap-call :clock/now))"
+            {:language-profile :pure-product})
+        e2 (analyze-error
+            "(ns t (:export [f])) (defn f [] (doseq [x [1]] x) 0)"
+            {:language-profile :pure-product})]
+    (is (= :kotoba.error/pure-product-forbidden
+           (:kotoba.error/code (ex-data e1))))
+    (is (= :kotoba.error/pure-product-forbidden
+           (:kotoba.error/code (ex-data e2))))))
