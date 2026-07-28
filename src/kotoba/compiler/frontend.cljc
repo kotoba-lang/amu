@@ -3348,7 +3348,11 @@
 
 (defn- exclusive-use-of-linear
   "If `form` exclusively moves or consumes `sym` (no other linear calls),
-  returns `{:kind :move|:consume}`. Returns nil on mismatch."
+  returns `{:kind :move|:consume}`. Returns nil on mismatch.
+
+  ADR 0138: balanced `if` arms (same kind).
+  ADR 0139: pure non-linear nested `let` wrappers — needed for `case` /
+  `condp` which desugar to `(let [tmp dispatch] (if …))` multi-arm chains."
   [form sym]
   (cond
     (= form sym)
@@ -3374,16 +3378,33 @@
           (when (and t e (= (:kind t) (:kind e)))
             t))))
 
+    ;; ADR 0139: non-linear let wrappers (case/condp dispatch temps).
+    (and (seq? form) (= 'let (first form)) (vector? (second form))
+         (even? (count (second form))))
+    (let [bindings (second form)
+          body-forms (nnext form)
+          result-expr (when (= 1 (count body-forms)) (first body-forms))
+          pairs (when result-expr (partition 2 bindings))]
+      (when (and result-expr
+                 (seq pairs)
+                 (every? (fn [[name value]]
+                           (and (simple-symbol? name)
+                                (not= name sym)
+                                (not (mentions-sym? value sym))
+                                (not (form-contains-linear-call? value))))
+                         pairs))
+        (exclusive-use-of-linear result-expr sym)))
+
     :else nil))
 
 (defn- linear-let-move
-  "ADR 0137 + 0138: admit let forms that bind exactly one linear typed-cap-call
+  "ADR 0137–0139: admit let forms that bind exactly one linear typed-cap-call
   (possibly among non-linear bindings) and exclusively move or consume it.
 
-  ADR 0138 adds:
-  - multi-binding lets with non-linear companions
-  - nested non-linear outer lets
-  - balanced `if` arms that each move or each consume the binding
+  ADR 0138: multi-binding companions, nested non-linear outers, balanced if.
+  ADR 0139: exclusive-use walks non-linear lets so multi-arm `case` / `cond` /
+  `condp` (desugared to nested if + dispatch lets) are admitted when every
+  arm exclusive-uses the binding the same way.
 
   Returns the underlying typed-cap-call when admitted, else nil."
   [body]
@@ -3456,7 +3477,7 @@
                  (linear-typed-cap-call? (second body)))
             (second body)
 
-            ;; ADR 0137/0138: let-bound affine move / consume (+ if balanced)
+            ;; ADR 0137–0139: let-bound affine move / consume (+ if/case arms)
             :else
             (linear-let-move body))]
       (when (or (and (linear-resource-type? result)

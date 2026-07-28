@@ -175,3 +175,81 @@
          {:allow #{[:cap/call 13]}})]
     (is (= [:task [:stream :bytes]]
            (get-in checked [:hir :functions 0 :result])))))
+
+(deftest linear-cond-multi-arm-consume-is-admitted
+  "ADR 0139: cond desugars to nested if; every arm may consume the binding."
+  (let [checked
+        (compiler/check-source
+         "(ns app (:export [size]))
+          (defn size [url :string a :i64 b :i64] :i64
+            (let [task (typed-cap-call :http/get-stream :string
+                         [:task [:stream :bytes]] url)]
+              (cond a (bytes-task-byte-count task)
+                    b (task-ready? task)
+                    :else (bytes-task-byte-count task))))"
+         {:allow #{[:cap/call 13]}})]
+    (is (= :i64 (get-in checked [:hir :functions 0 :result])))))
+
+(deftest linear-case-multi-arm-consume-is-admitted
+  "ADR 0139: case desugars to (let [tmp dispatch] nested if); exclusive-use
+  walks the dispatch let so multi-arm consume is admitted."
+  (let [checked
+        (compiler/check-source
+         "(ns app (:export [size]))
+          (defn size [url :string k :i64] :i64
+            (let [task (typed-cap-call :http/get-stream :string
+                         [:task [:stream :bytes]] url)]
+              (case k
+                0 (bytes-task-byte-count task)
+                1 (task-ready? task)
+                (bytes-task-byte-count task))))"
+         {:allow #{[:cap/call 13]}})]
+    (is (= :i64 (get-in checked [:hir :functions 0 :result])))
+    (is (= 'let (first (get-in checked [:hir :functions 0 :body]))))))
+
+(deftest linear-case-multi-arm-move-is-admitted
+  (let [checked
+        (compiler/check-source
+         "(ns app (:export [open]))
+          (defn open [url :string k :i64] [:task [:stream :bytes]]
+            (let [task (typed-cap-call :http/get-stream :string
+                         [:task [:stream :bytes]] url)]
+              (case k
+                0 task
+                1 task
+                task)))"
+         {:allow #{[:cap/call 13]}})]
+    (is (= [:task [:stream :bytes]]
+           (get-in checked [:hir :functions 0 :result])))))
+
+(deftest linear-case-unbalanced-is-rejected
+  (is (try
+        (compiler/check-source
+         "(ns app (:export [bad]))
+          (defn bad [url :string k :i64] :i64
+            (let [task (typed-cap-call :http/get-stream :string
+                         [:task [:stream :bytes]] url)]
+              (case k
+                0 (bytes-task-byte-count task)
+                1 0
+                (bytes-task-byte-count task))))"
+         {:allow #{[:cap/call 13]}})
+        false
+        (catch clojure.lang.ExceptionInfo error
+          (boolean (re-find #"one direct typed capability move"
+                            (.getMessage error)))))))
+
+(deftest linear-condp-multi-arm-consume-is-admitted
+  "ADR 0139: condp also desugars through dispatch let + nested if."
+  (let [checked
+        (compiler/check-source
+         "(ns app (:export [size]))
+          (defn size [url :string k :i64] :i64
+            (let [task (typed-cap-call :http/get-stream :string
+                         [:task [:stream :bytes]] url)]
+              (condp = k
+                0 (bytes-task-byte-count task)
+                1 (task-ready? task)
+                (bytes-task-byte-count task))))"
+         {:allow #{[:cap/call 13]}})]
+    (is (= :i64 (get-in checked [:hir :functions 0 :result])))))
