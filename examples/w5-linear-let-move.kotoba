@@ -1,0 +1,14 @@
+;; ADR 0137 — guest affine let move for linear task/stream resources.
+;; Product-shaped guest source: open a stream, then consume once.
+(ns app
+  (:export [open size]))
+
+(defn open [url :string] [:task [:stream :bytes]]
+  (let [task (typed-cap-call :http/get-stream :string
+               [:task [:stream :bytes]] url)]
+    task))
+
+(defn size [url :string] :i64
+  (let [task (typed-cap-call :http/get-stream :string
+               [:task [:stream :bytes]] url)]
+    (bytes-task-byte-count task)))

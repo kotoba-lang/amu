@@ -51,14 +51,26 @@
         "(ns app (:export [copy]))
          (defn copy [task [:task [:stream :bytes]]]
            [:task [:stream :bytes]] task)")))
+  ;; ADR 0137: single affine let-move is admitted
+  (let [checked
+        (compiler/check-source
+         "(ns app (:export [open]))
+          (defn open [request :i64] [:task [:stream :bytes]]
+            (let [task (typed-cap-call :http/get-stream :i64
+                         [:task [:stream :bytes]] request)]
+              task))"
+         {:allow #{[:cap/call 13]}})]
+    (is (= 'let (first (get-in checked [:hir :functions 0 :body])))))
+  ;; Multi-use of the affine binding is still rejected
   (is (thrown-with-msg?
        clojure.lang.ExceptionInfo #"one direct typed capability move"
        (compiler/check-source
         "(ns app (:export [bad]))
-         (defn bad [request :i64] [:task [:stream :bytes]]
+         (defn bad [request :i64] :i64
            (let [task (typed-cap-call :http/get-stream :i64
                         [:task [:stream :bytes]] request)]
-             task))"
+             (+ (bytes-task-byte-count task)
+                (bytes-task-byte-count task))))"
         {:allow #{[:cap/call 13]}}))))
 
 ;; ───────────────────────── round-trip equivalence ─────────────────────────
