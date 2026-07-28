@@ -179,3 +179,26 @@
     (is (zero? (value/compare-typed-values :bytes a (:bytes c1))))
     (is (true? (:done? c2)))
     (is (zero? (value/compare-typed-values :bytes b (:bytes c2))))))
+
+(deftest get-stream-open-stream-progressive-push
+  "Transport returns {:open-stream true}; host enqueues then closes while guest holds task."
+  (let [runtime (hosted (fn [_] {:open-stream true}))
+        request [object/get-stream-request-type :example/blocks "key-open"]
+        task ((:invoke runtime) 'get-stream [request])
+        stream (:stream (value/task-poll task))
+        p0 (value/stream-read! stream 65536)
+        a (value/utf8-string->bytes "prog")
+        b (value/utf8-string->bytes "-push")
+        _ (value/stream-enqueue! stream a)
+        c1 (value/stream-read! stream 65536)
+        _ (value/stream-enqueue! stream b)
+        c2 (value/stream-read! stream 65536)
+        _ (value/stream-close! stream)
+        done (value/stream-read! stream 65536)]
+    (is (true? (:pending? p0)))
+    (is (false? (:done? p0)))
+    (is (zero? (value/compare-typed-values :bytes a (:bytes c1))))
+    (is (false? (:done? c1)))
+    (is (zero? (value/compare-typed-values :bytes b (:bytes c2))))
+    (is (false? (:done? c2)))
+    (is (true? (:done? done)))))

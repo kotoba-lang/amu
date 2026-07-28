@@ -195,3 +195,21 @@
     (is (zero? (value/compare-typed-values :bytes a (:bytes c1))))
     (is (true? (:done? c2)))
     (is (zero? (value/compare-typed-values :bytes b (:bytes c2))))))
+
+(deftest get-stream-open-stream-progressive-push
+  "Transport returns {:open-stream true}; host enqueues then closes."
+  (let [runtime (hosted-get-stream (fn [_] {:open-stream true}))
+        request [http/get-stream-request-type "https://api.example.test/v1/open"
+                 [http/header-set-type []]]
+        task ((:invoke runtime) 'get-stream [request])
+        stream (:stream (value/task-poll task))
+        p0 (value/stream-read! stream 65536)
+        a (value/utf8-string->bytes "live")
+        _ (value/stream-enqueue! stream a)
+        c1 (value/stream-read! stream 65536)
+        _ (value/stream-close! stream)
+        done (value/stream-read! stream 65536)]
+    (is (true? (:pending? p0)))
+    (is (zero? (value/compare-typed-values :bytes a (:bytes c1))))
+    (is (false? (:done? c1)))
+    (is (true? (:done? done)))))

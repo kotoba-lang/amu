@@ -223,6 +223,28 @@
     (catch :default e
       (check "cljs-get-stream-chunk-queue-yields-discrete-chunks" false (.-message e)))))
 
+(defn- get-stream-open-stream-case []
+  (try
+    (let [runtime (hosted (fn [_] {:open-stream true}))
+          request [object/get-stream-request-type :example/blocks "key-open"]
+          task ((:invoke runtime) 'get-stream [request])
+          stream (:stream (value/task-poll task))
+          p0 (value/stream-read! stream 65536)
+          a (value/utf8-string->bytes "prog")
+          _ (value/stream-enqueue! stream a)
+          c1 (value/stream-read! stream 65536)
+          _ (value/stream-close! stream)
+          done (value/stream-read! stream 65536)]
+      (check "cljs-get-stream-open-stream-progressive-push"
+             (and (true? (:pending? p0))
+                  (false? (:done? p0))
+                  (zero? (value/compare-typed-values :bytes a (:bytes c1)))
+                  (false? (:done? c1))
+                  (true? (:done? done)))
+             (pr-str {:pending? (:pending? p0) :done-c1 (:done? c1) :done? (:done? done)})))
+    (catch :default e
+      (check "cljs-get-stream-open-stream-progressive-push" false (.-message e)))))
+
 (let [results [(put-boundary-case)
                (cas-case)
                (binding-case)
@@ -231,7 +253,8 @@
                (get-stream-ready-case)
                (get-stream-pending-fulfill-case)
                (get-stream-multi-chunk-case)
-               (get-stream-chunk-queue-case)]
+               (get-stream-chunk-queue-case)
+               (get-stream-open-stream-case)]
       failures (remove :ok? results)]
   (doseq [{:keys [name ok? detail]} results]
     (println (if ok? "PASS" "FAIL") name (or detail "")))
