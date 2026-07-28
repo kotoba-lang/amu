@@ -179,7 +179,8 @@
     document-i64-value 1 document-f64-value 1})
 (def document-variadic-operations '#{document-vector document-map})
 (def sequencing-operations '#{do})
-(def string-operations '{string-byte-length 1 bytes-task-byte-count 1 object-cas-won 1
+(def string-operations '{string-byte-length 1 bytes-task-byte-count 1 task-ready? 1
+                         object-cas-won 1
                          bytes-response-byte-count 1 bool-result 1
                          http-response-status 1 log-read-byte-count 1
                          string=? 2 string-concat 2 string-substring 3
@@ -2619,6 +2620,10 @@
       (do (require-expression-type! (first types) [:task [:stream :bytes]] (first args))
           :i64)
 
+      (= op 'task-ready?)
+      (do (require-expression-type! (first types) [:task [:stream :bytes]] (first args))
+          :i64)
+
       (= op 'object-cas-won)
       (let [descriptor (first types)
             fields (when (and (vector? descriptor)
@@ -3343,7 +3348,7 @@
             body
 
             (and (seq? body)
-                 (= 'bytes-task-byte-count (first body))
+                 (contains? '#{bytes-task-byte-count task-ready?} (first body))
                  (= 2 (count body))
                  (seq? (second body))
                  (= 'typed-cap-call (first (second body)))

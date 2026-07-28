@@ -202,3 +202,45 @@
     (is (zero? (value/compare-typed-values :bytes b (:bytes c2))))
     (is (false? (:done? c2)))
     (is (true? (:done? done)))))
+
+(def guest-poll-read-source
+  "Guest poll/read ops (ADR 0127): task-ready? + bytes-task-byte-count over get-stream."
+  (str "(ns app.object-guest (:export [get-stream-ready get-stream-byte-count]) "
+       "(:capabilities #{:object/get-stream}))"
+       "(defn get-stream-ready [request " (pr-str object/get-stream-request-type) "] :i64 "
+       "(task-ready? (typed-cap-call :object/get-stream "
+       (pr-str object/get-stream-request-type) " "
+       (pr-str object/get-stream-result-type) " request)))"
+       "(defn get-stream-byte-count [request " (pr-str object/get-stream-request-type) "] :i64 "
+       "(bytes-task-byte-count (typed-cap-call :object/get-stream "
+       (pr-str object/get-stream-request-type) " "
+       (pr-str object/get-stream-result-type) " request)))"))
+
+(defn- hosted-guest-poll [transport]
+  (let [provider (object/get-stream-provider
+                  {:allowed-bindings #{:example/blocks}
+                   :transport transport})
+        kir (ir/lower (:hir (compiler/check-source
+                             guest-poll-read-source {:allow #{[:cap/call 14]}})))]
+    (runtime/instantiate kir {:allow #{14} :providers {14 provider}})))
+
+(deftest guest-task-ready?-reports-ready-task
+  "Guest task-ready? is true (1) for a ready get-stream result."
+  (let [payload (value/utf8-string->bytes "abc")
+        runtime (hosted-guest-poll (fn [_] {:bytes payload}))
+        request [object/get-stream-request-type :example/blocks "k"]]
+    (is (= 1 ((:invoke runtime) 'get-stream-ready [request])))))
+
+(deftest guest-bytes-task-byte-count-reads-without-host-poll
+  "Guest bytes-task-byte-count drains the stream; host does not call task-poll."
+  (let [payload (value/utf8-string->bytes "hello")
+        runtime (hosted-guest-poll (fn [_] {:bytes payload}))
+        request [object/get-stream-request-type :example/blocks "k"]
+        n ((:invoke runtime) 'get-stream-byte-count [request])]
+    (is (= 5 n)))
+  (let [a (value/utf8-string->bytes "hel")
+        b (value/utf8-string->bytes "lo")
+        runtime (hosted-guest-poll (fn [_] {:chunk-queue [a b]}))
+        request [object/get-stream-request-type :example/blocks "k2"]
+        n ((:invoke runtime) 'get-stream-byte-count [request])]
+    (is (= 5 n))))

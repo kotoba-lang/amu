@@ -258,6 +258,53 @@
     (catch :default e
       (check "cljs-get-stream-open-stream-progressive-push" false (.-message e)))))
 
+(def guest-poll-read-source
+  (str "(ns app.http-guest (:export [get-stream-ready get-stream-byte-count]) "
+       "(:capabilities #{:http/get-stream}))"
+       "(defn get-stream-ready [request " (pr-str http/get-stream-request-type) "] :i64 "
+       "(task-ready? (typed-cap-call :http/get-stream "
+       (pr-str http/get-stream-request-type) " "
+       (pr-str http/get-stream-result-type) " request)))"
+       "(defn get-stream-byte-count [request " (pr-str http/get-stream-request-type) "] :i64 "
+       "(bytes-task-byte-count (typed-cap-call :http/get-stream "
+       (pr-str http/get-stream-request-type) " "
+       (pr-str http/get-stream-result-type) " request)))"))
+
+(defn- hosted-guest [transport]
+  (let [provider (http/get-stream-provider
+                  {:allowed-origins #{"https://api.example.test"}
+                   :transport transport})
+        hir (frontend/analyze guest-poll-read-source)
+        _ (admission/check hir {:allow #{[:cap/call (js/BigInt 13)]}})
+        kir (ir/lower hir)]
+    (runtime/instantiate kir {:allow #{13} :providers {13 provider}})))
+
+(defn- guest-task-ready-case []
+  (try
+    (let [payload (value/utf8-string->bytes "xyz")
+          runtime (hosted-guest (fn [_] {:bytes payload}))
+          request [http/get-stream-request-type "https://api.example.test/v1/x"
+                   [http/header-set-type []]]
+          n ((:invoke runtime) 'get-stream-ready [request])]
+      (check "cljs-guest-task-ready?-reports-ready-http-stream"
+             (= (js/BigInt 1) n)
+             (pr-str {:n n})))
+    (catch :default e
+      (check "cljs-guest-task-ready?-reports-ready-http-stream" false (.-message e)))))
+
+(defn- guest-byte-count-case []
+  (try
+    (let [payload (value/utf8-string->bytes "http-body")
+          runtime (hosted-guest (fn [_] {:bytes payload}))
+          request [http/get-stream-request-type "https://api.example.test/v1/body"
+                   [http/header-set-type []]]
+          n ((:invoke runtime) 'get-stream-byte-count [request])]
+      (check "cljs-guest-bytes-task-byte-count-http-without-host-poll"
+             (= (js/BigInt 9) n)
+             (pr-str {:n n})))
+    (catch :default e
+      (check "cljs-guest-bytes-task-byte-count-http-without-host-poll" false (.-message e)))))
+
 (let [results [(post-bounded-ok-case)
                (destinations-and-timeouts-case)
                (transport-error-case)
@@ -267,7 +314,9 @@
                (get-stream-pending-fulfill-case)
                (get-stream-multi-chunk-case)
                (get-stream-chunk-queue-case)
-               (get-stream-open-stream-case)]
+               (get-stream-open-stream-case)
+               (guest-task-ready-case)
+               (guest-byte-count-case)]
       failures (remove :ok? results)]
   (doseq [{:keys [name ok? detail]} results]
     (println (if ok? "PASS" "FAIL") name (or detail "")))
