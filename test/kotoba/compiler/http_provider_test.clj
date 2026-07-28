@@ -3,6 +3,7 @@
             [kotoba.compiler.core :as compiler]
             [kotoba.kir :as ir]
             [provider.http :as http]
+            [kotoba.kir.value :as value]
             [kotoba.compiler.reference-runtime :as runtime]))
 
 (def source
@@ -85,3 +86,61 @@
           [[http/request-type "https://api.example.test/path"
             [http/header-set-type []] "" 1000]])))
     (is (false? @called?))))
+
+(def get-stream-source
+  (str "(ns app.http-stream (:export [get-stream]) (:capabilities #{:http/get-stream}))"
+       "(defn get-stream [request " (pr-str http/get-stream-request-type) "] "
+       (pr-str http/get-stream-result-type) " (typed-cap-call :http/get-stream "
+       (pr-str http/get-stream-request-type) " " (pr-str http/get-stream-result-type) " request))"))
+
+(defn- hosted-get-stream [transport]
+  (let [provider (http/get-stream-provider {:allowed-origins #{"https://api.example.test"}
+                                            :transport transport})
+        kir (ir/lower (:hir (compiler/check-source get-stream-source {:allow #{[:cap/call 13]}})))]
+    (runtime/instantiate kir {:allow #{13} :providers {13 provider}})))
+
+(deftest get-stream-returns-ready-task-and-reads-bytes
+  (let [payload (value/utf8-string->bytes "stream-body")
+        seen (atom nil)
+        runtime (hosted-get-stream (fn [request]
+                                     (reset! seen request)
+                                     {:bytes payload}))
+        request [http/get-stream-request-type "https://api.example.test/v1/blob"
+                 [http/header-set-type []]]
+        task ((:invoke runtime) 'get-stream [request])
+        polled (value/task-poll task)
+        chunk (value/stream-read! (:stream polled) 65536)]
+    (is (= {:operation :get-stream
+            :url "https://api.example.test/v1/blob"
+            :headers {}}
+           @seen))
+    (is (value/task-value? task))
+    (is (= :ready (:state polled)))
+    (is (true? (:done? chunk)))
+    (is (zero? (value/compare-typed-values :bytes payload (:bytes chunk))))))
+
+(deftest get-stream-origin-denial-and-transport-redaction
+  (let [called? (atom false)
+        runtime (hosted-get-stream (fn [_] (reset! called? true) {:bytes (byte-array 0)}))]
+    (is (thrown-with-msg?
+         clojure.lang.ExceptionInfo #"origin is not allowed"
+         ((:invoke runtime) 'get-stream
+          [[http/get-stream-request-type "https://evil.example.test/x"
+            [http/header-set-type []]]])))
+    (is (false? @called?)))
+  (let [runtime (hosted-get-stream (fn [_] (throw (ex-info "secret" {}))))]
+    (is (thrown-with-msg?
+         clojure.lang.ExceptionInfo #"http get-stream transport failed"
+         ((:invoke runtime) 'get-stream
+          [[http/get-stream-request-type "https://api.example.test/x"
+            [http/header-set-type []]]])))))
+
+(deftest get-stream-missing-grant-denies
+  (let [kir (ir/lower (:hir (compiler/check-source
+                             get-stream-source {:allow #{[:cap/call 13]}})))
+        runtime (runtime/instantiate kir)]
+    (is (thrown-with-msg?
+         clojure.lang.ExceptionInfo #"capability denied"
+         ((:invoke runtime) 'get-stream
+          [[http/get-stream-request-type "https://api.example.test/x"
+            [http/header-set-type []]]])))))
