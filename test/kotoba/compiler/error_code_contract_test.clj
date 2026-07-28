@@ -46,3 +46,13 @@
         d (diagnostic/from-error e nil)]
     (is (= :kotoba/source-rejected (:code d)))
     (is (= :error (:severity d)))))
+
+(deftest two-arity-reject-defaults-to-subset-reject-code
+  (testing "T3.1: every reject! carries a stable code (default for unmigrated sites)"
+    (let [e (catch-analyze "(ns t (:export [f])) (defn f [] ())")]
+      (is (some? e))
+      (is (= :kotoba.error/subset-reject
+             (:kotoba.error/code (ex-data e))))
+      (let [d (diagnostic/from-error e "z.kotoba")]
+        (is (= :kotoba.error/subset-reject (:code d)))
+        (is (= "z.kotoba" (:source d)))))))

@@ -487,11 +487,13 @@
         (integer? end-offset) (assoc :end-offset end-offset)))))
 
 (defn- reject!
-  "Reject a source form. Always attaches `:phase :subset` and, when available,
-  a source `:span`. Prefer an explicit stable `:kotoba.error/code` (T3.1)
-  via the 3-arity; 2-arity keeps coarse phase diagnostics for CLI compat."
+  "Reject a source form. Always attaches `:phase :subset`, a source `:span`
+  when available, and a stable `:kotoba.error/code` (T3.1).
+
+  Prefer an explicit specific code via the 3-arity. The 2-arity defaults to
+  `:kotoba.error/subset-reject` so no reject site is code-less."
   ([message form]
-   (reject! message form nil))
+   (reject! message form :kotoba.error/subset-reject))
   ([message form code]
    (let [m (meta form)
          span (or (when (map? form) (:span form))
@@ -499,10 +501,10 @@
                   (form-span form))
          operation (or (get m :source-operation)
                        (when (and (seq? form) (symbol? (first form)) (namespace (first form)))
-                         (keyword (namespace (first form)) (name (first form)))))]
+                         (keyword (namespace (first form)) (name (first form)))))
+         code (or code :kotoba.error/subset-reject)]
      (throw (ex-info message
-                     (cond-> {:phase :subset :form form}
-                       code (assoc :kotoba.error/code code)
+                     (cond-> {:phase :subset :form form :kotoba.error/code code}
                        span (assoc :span span)
                        operation (assoc :operation operation)))))))
 
