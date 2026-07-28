@@ -74,6 +74,58 @@
 ;; `kotoba.kir/only-native-word-typed-features?` so both
 ;; compile paths admit the exact same native-typed-feature subset.
 
+
+(defn- capability-deny-message
+  "T3.2: name missing grant / effect / policy in admission denials."
+  [error]
+  (let [d (ex-data error)
+        missing (:missing d)
+        required (:required d)
+        allowed (:allowed d)
+        base (or (ex-message error) "capability denied")]
+    (cond
+      (seq missing)
+      (str base
+           "; missing grants " (pr-str missing)
+           " (required " (pr-str required)
+           ", allowed " (pr-str (or allowed #{})) ")")
+      (seq (:abac/violations d))
+      (str base "; ABAC violations " (pr-str (:abac/violations d))
+           (when-let [pid (:abac/policy-id d)] (str " policy-id=" pid)))
+      (:crypto d)
+      (str base "; crypto policy " (pr-str (:crypto d)))
+      (:hardware-signing d)
+      (str base "; hardware-signing " (pr-str (:hardware-signing d)))
+      (seq (:information-flow/violations d))
+      (str base "; information-flow violations "
+           (pr-str (:information-flow/violations d)))
+      :else base)))
+
+(defn- rethrow-admission!
+  "Rethrow admission ExceptionInfo with T3.2 message + stable error code."
+  [error]
+  (let [d (ex-data error)
+        code (cond
+               (seq (:missing d)) :kotoba.error/capability-missing-grant
+               (seq (:abac/violations d)) :kotoba.error/capability-abac-deny
+               (:crypto d) :kotoba.error/capability-crypto-deny
+               (:hardware-signing d) :kotoba.error/capability-hardware-deny
+               (seq (:information-flow/violations d)) :kotoba.error/capability-flow-deny
+               :else :kotoba.error/capability-denied)]
+    (throw (ex-info (capability-deny-message error)
+                    (assoc d
+                           :phase (or (:phase d) :admission)
+                           :kotoba.error/code code)))))
+
+(defn- admit!
+  [hir policy]
+  (try
+    (admission/check hir policy)
+    (catch clojure.lang.ExceptionInfo e
+      (if (= :admission (:phase (ex-data e)))
+        (rethrow-admission! e)
+        (throw e)))))
+
 (defn check-source
   "Frontend admit + optional language-profile (T9.2).
 
@@ -91,7 +143,7 @@
          hir (frontend/analyze source analyze-opts)]
      (try
        {:hir hir
-        :admission (admission/check hir admission-policy)
+        :admission (admit! hir admission-policy)
         :language-profile language-profile}
        (catch clojure.lang.ExceptionInfo e
          ;; W1: rethrow admission denials with semantic operation names from
@@ -141,7 +193,7 @@
   ([source] (compile-component-wit source {}))
   ([source policy]
    (let [hir (frontend/analyze source)
-         checked (admission/check hir policy)
+         checked (admit! hir policy)
          kir (component-kir (ir/lower hir))]
      (assoc (component-wit/emit kir) :admission checked))))
 
@@ -185,7 +237,7 @@
                              {:phase :component-capability-mode
                               :capability-mode capability-mode})))
          hir (frontend/analyze source)
-         checked-admission (admission/check hir policy)
+         checked-admission (admit! hir policy)
          kir (component-kir (ir/lower hir))
          target-profile (target-profile/profile target)
          typed-values? (= :kotoba.kir/v4 (:format kir))
@@ -300,7 +352,7 @@
                                       :cljs-kotoba-v1} backend)))
             (throw (ex-info "entryless libraries currently require the kotoba-script web target or Wasm target"
                             {:phase :target :target target :backend backend})))
-        admission (admission/check hir policy)
+        admission (admit! hir policy)
         kir (ir/lower hir)
         value (:oracle-value kir)
         typed-values? (= :kotoba.kir/v4 (:format kir))

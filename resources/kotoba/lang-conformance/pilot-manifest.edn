@@ -1,9 +1,8 @@
 {:kotoba.lang.conformance/version 2
  :kotoba.lang.conformance/wbs "T1.3"
  :kotoba.lang.conformance/note
- "T1.3 dual-backend pilot (string + record kit). Control fixtures + full pure-product
-  string-ops surface + sealed record-new/get (T4.4). Full kotoba-lang matrix still
-  progressive as admission grows."
+ "T1.3 dual-backend pilot expanded: control + string-ops + record + and/or/if-not/let/
+  arith/nested-fn/true + string-replace. Full kotoba-lang matrix still progressive."
 
  :backends
  {:kir {:id :kir :status :required-for-pure-product}
@@ -127,4 +126,63 @@
    :function "main"
    :args []
    :expect {:kotoba 7}
-   :note "T4.4 sealed record-new/get dual-backend"}]}
+   :note "T4.4 sealed record-new/get dual-backend"}
+  {:id :and-or-kit
+   :class :pure-product-run
+   :required-backends #{:kir :wasm32-kotoba-v1}
+   :kind :run
+   :entry "control/and_or_kit.kotoba"
+   :function "main"
+   :args []
+   :expect {:kotoba 3}
+   :note "and/or short-circuit dual-backend"}
+  {:id :if-not-kit
+   :class :pure-product-run
+   :required-backends #{:kir :wasm32-kotoba-v1}
+   :kind :run
+   :entry "control/if_not_kit.kotoba"
+   :function "main"
+   :args []
+   :expect {:kotoba 5}}
+  {:id :let-kit
+   :class :pure-product-run
+   :required-backends #{:kir :wasm32-kotoba-v1}
+   :kind :run
+   :entry "control/let_kit.kotoba"
+   :function "main"
+   :args []
+   :expect {:kotoba 12}}
+  {:id :arith-kit
+   :class :pure-product-run
+   :required-backends #{:kir :wasm32-kotoba-v1}
+   :kind :run
+   :entry "control/arith_kit.kotoba"
+   :function "main"
+   :args []
+   :expect {:kotoba 14}}
+  {:id :nested-fn-kit
+   :class :pure-product-run
+   :required-backends #{:kir :wasm32-kotoba-v1}
+   :kind :run
+   :entry "control/nested_fn_kit.kotoba"
+   :function "main"
+   :args []
+   :expect {:kotoba 42}}
+  {:id :true-lit-kit
+   :class :pure-product-run
+   :required-backends #{:kir :wasm32-kotoba-v1}
+   :kind :run
+   :entry "control/true_lit_kit.kotoba"
+   :function "main"
+   :args []
+   :expect {:kotoba 1}}
+  {:id :string-replace-kit
+   :class :pure-product-run
+   :required-backends #{:kir :wasm32-kotoba-v1}
+   :kind :run
+   :entry "values/string_replace_kit.kotoba"
+   :function "main"
+   :args []
+   :expect {:kotoba 3}
+   :note "string-replace-all dual-backend"}
+]}

@@ -284,9 +284,29 @@
                   (println (diagnostic/format-human e input)))
                 (*exit* (exit-code (or (:phase (ex-data e)) :subset))))))))
     "test"
+    ;; T9.3: official .kotoba test harness (test-profile). Human by default; --json machine.
     (let [input (kotoba-source! (second args))
+          json? (some #{"--json"} args)
           report (test-profile/run-source (bounded-edn/read-text-file input))]
-      (println (pr-str report))
+      (if json?
+        (println (pr-str report))
+        (let [by-target (or (:results report) {})
+              flat (mapcat (fn [[tgt rows]]
+                             (map #(assoc % :target tgt) rows))
+                           by-target)
+              passed (count (filter :ok flat))
+              total (count flat)
+              names (or (:tests report) [])]
+          (println (str "kotoba test: " passed "/" total
+                        (if (:ok report) " passed" " FAILED")
+                        " tests=" (pr-str names)
+                        " targets=" (pr-str (or (:targets report) []))))
+          (doseq [r flat]
+            (when-not (:ok r)
+              (binding [*out* *err*]
+                (println " FAIL" (:test r)
+                         (str "target=" (:target r))
+                         (or (:error r) "")))))))
       (when-not (:ok report) (*exit* 1)))
     "package-aiueos-boot"
     (let [input (second args)
