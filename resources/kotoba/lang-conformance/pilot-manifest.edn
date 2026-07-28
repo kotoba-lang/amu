@@ -3,8 +3,8 @@
  :kotoba.lang.conformance/note
  "T1.3 dual-backend pilot expanded: control + string-ops + record + and/or/if-not/let/
   arith/nested-fn/true + string-replace + loop + T7.4 deep loop (raised :fuel) +
-  if-some/option + string-byte-length + when/cond/if-let + case + bitops.
-  Full kotoba-lang matrix still progressive."
+  if-some/option + string-byte-length + when/cond/if-let + case + bitops +
+  typed-map (T4.4). Full kotoba-lang matrix still progressive."
 
  :backends
  {:kir {:id :kir :status :required-for-pure-product}
@@ -260,5 +260,14 @@
    :args []
    :expect {:kotoba 10}
    :note "bit-and/or/xor dual-backend"}
+  {:id :typed-map-kit
+   :class :pure-product-run
+   :required-backends #{:kir :wasm32-kotoba-v1}
+   :kind :run
+   :entry "values/typed_map_kit.kotoba"
+   :function "main"
+   :args []
+   :expect {:kotoba 28}
+   :note "T4.4 typed-map new/count/get/contains/assoc/equal dual-backend"}
 ]
 }

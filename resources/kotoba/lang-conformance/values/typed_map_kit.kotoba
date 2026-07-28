@@ -1,0 +1,10 @@
+(ns kotoba.lang.conformance.typed-map-kit (:export [main]))
+;; T4.4 / T1.3: pure-product typed-map pilot ([:map :i64 :i64]) dual-backend.
+(defn main [] :i64
+  (let [m (typed-map-new [:map :i64 :i64] 1 10 2 20)
+        m2 (typed-map-assoc [:map :i64 :i64] m 3 30)]
+    (+ (typed-map-count [:map :i64 :i64] m2)
+       (if-some [v (typed-map-get [:map :i64 :i64] m 2)] v 0)
+       (if-some [w (typed-map-get [:map :i64 :i64] m 9)] w 3)
+       (if (typed-map-contains [:map :i64 :i64] m 1) 1 0)
+       (typed-map-equal [:map :i64 :i64] m m))))
