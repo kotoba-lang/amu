@@ -26,6 +26,9 @@
             [kotoba.compiler.frontend-fuzz-test]
             [kotoba.compiler.frontend-assert-test]
             [kotoba.compiler.frontend-equality-diagnostic-test]
+            [kotoba.compiler.product-value-abi-v1-test]
+            [kotoba.compiler.pure-product-profile-test]
+            [kotoba.compiler.error-code-contract-test]
             [kotoba.compiler.frontend-condp-test]
             [kotoba.compiler.frontend-doseq-test]
             [kotoba.compiler.frontend-dotimes-test]
@@ -105,6 +108,10 @@
                                           'kotoba.compiler.string-operation-test
                                           'kotoba.compiler.frontend-fuzz-test
                                           'kotoba.compiler.frontend-assert-test
+                                          'kotoba.compiler.frontend-equality-diagnostic-test
+                                          'kotoba.compiler.product-value-abi-v1-test
+                                          'kotoba.compiler.pure-product-profile-test
+                                          'kotoba.compiler.error-code-contract-test
                                           'kotoba.compiler.frontend-condp-test
                                           'kotoba.compiler.frontend-doseq-test
                                           'kotoba.compiler.frontend-dotimes-test

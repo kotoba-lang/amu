@@ -263,7 +263,10 @@
                       :entry-point 'kotoba.compiler.core/compile-component})))
    (let [profile (target-profile/profile target)
         backend (target-profile/backend target)
-        hir (frontend/analyze source)
+        language-profile (or (:language-profile emit-metadata)
+                             (:language-profile policy))
+        hir (frontend/analyze source (cond-> {}
+                                       language-profile (assoc :language-profile language-profile)))
         _ (when (and (or (ir/uses-f32? hir) (ir/uses-f64? hir))
                      (not (contains? #{:js-kotoba-v1 :wasm32-kotoba-v1} backend)))
             (throw (ex-info "floating-point values require the kotoba-script or Wasm target"

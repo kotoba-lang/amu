@@ -315,9 +315,9 @@
   ([type depth nodes]
    (vswap! nodes inc)
    (when (> @nodes max-type-nodes)
-     (reject! "value type exceeds node limit" type))
+     (reject! "value type exceeds node limit" type :kotoba.error/value-type-node-limit))
    (when (> depth max-type-depth)
-     (reject! "value type exceeds depth limit" type))
+     (reject! "value type exceeds depth limit" type :kotoba.error/value-type-depth-limit))
    (cond
      (contains? value-types type)
      type
@@ -347,53 +347,53 @@
      (let [item-types (second type)]
        (when-not (and (vector? item-types)
                       (<= (count item-types) max-heterogeneous-vector-items))
-         (reject! "heterogeneous vector types must be a bounded vector" type))
+         (reject! "heterogeneous vector types must be a bounded vector" type :kotoba.error/hetero-vector-type))
        (vswap! nodes inc)
        (when (> @nodes max-type-nodes)
-         (reject! "value type exceeds node limit" type))
+         (reject! "value type exceeds node limit" type :kotoba.error/value-type-node-limit))
        (doseq [item-type item-types]
          (validate-value-type! item-type (inc depth) nodes))
        type)
      (typed-set-type? type)
      (do (when (contains? #{:f32 :f64} (second type))
-           (reject! "direct floating set items are outside the structured scalar ABI" type))
+           (reject! "direct floating set items are outside the structured scalar ABI" type :kotoba.error/floating-set-item))
          (validate-value-type! (second type) (inc depth) nodes)
          type)
      (canonical-typed-map-type? type)
      (do (when (some #{:f32 :f64} [(second type) (nth type 2)])
-           (reject! "direct floating map keys or values are outside the structured scalar ABI" type))
+           (reject! "direct floating map keys or values are outside the structured scalar ABI" type :kotoba.error/floating-map-kv))
          (validate-value-type! (second type) (inc depth) nodes)
          (validate-value-type! (nth type 2) (inc depth) nodes)
          type)
      (record-type? type)
      (let [[_ type-id fields] type]
        (when-not (and (keyword? type-id) (namespace type-id))
-         (reject! "record type id must be a qualified keyword" type))
+         (reject! "record type id must be a qualified keyword" type :kotoba.error/record-type-id))
        (when-not (and (vector? fields) (seq fields) (<= (count fields) max-record-fields)
                       (every? #(and (vector? %) (= 2 (count %)) (keyword? (first %))) fields)
                       (= (count fields) (count (distinct (map first fields)))))
-         (reject! "record fields must be a non-empty unique bounded vector" type))
+         (reject! "record fields must be a non-empty unique bounded vector" type :kotoba.error/record-fields))
        (vswap! nodes + (+ 2 (* 2 (count fields))))
        (when (> @nodes max-type-nodes)
-         (reject! "value type exceeds node limit" type))
+         (reject! "value type exceeds node limit" type :kotoba.error/value-type-node-limit))
        (doseq [[_ field-type] fields]
          (validate-value-type! field-type (inc depth) nodes))
        type)
      (variant-type? type)
      (let [[_ type-id cases] type]
        (when-not (and (keyword? type-id) (namespace type-id))
-         (reject! "variant type id must be a qualified keyword" type))
+         (reject! "variant type id must be a qualified keyword" type :kotoba.error/variant-type-id))
        (when-not (and (vector? cases) (seq cases) (<= (count cases) max-variant-cases)
                       (every? #(and (vector? %) (= 2 (count %)) (keyword? (first %))) cases)
                       (= (count cases) (count (distinct (map first cases)))))
-         (reject! "variant cases must be a non-empty unique bounded vector" type))
+         (reject! "variant cases must be a non-empty unique bounded vector" type :kotoba.error/variant-cases))
        (vswap! nodes + (+ 2 (* 2 (count cases))))
        (when (> @nodes max-type-nodes)
-         (reject! "value type exceeds node limit" type))
+         (reject! "value type exceeds node limit" type :kotoba.error/value-type-node-limit))
        (doseq [[_ payload-type] cases]
          (validate-value-type! payload-type (inc depth) nodes))
        type)
-     :else (reject! "value type is outside the safe profile" type))))
+     :else (reject! "value type is outside the safe profile" type :kotoba.error/value-type-outside-profile))))
 
 (defn- kotoba-integer?
   "True for a value that is (or stands for) a `.kotoba` integer literal --
@@ -413,12 +413,12 @@
 (defn- heterogeneous-vector-index!
   [index item-types form]
   (when-not (kotoba-integer? index)
-    (reject! "heterogeneous vector index must be an integer literal" form))
+    (reject! "heterogeneous vector index must be an integer literal" form :kotoba.error/hetero-vector-index))
   (let [host-index #?(:clj index
                       :cljs (if (i64/bigint-value? index) (js/Number index) index))]
     (when-not (and (integer? host-index) (<= 0 host-index)
                    (< host-index (count item-types)))
-      (reject! "heterogeneous vector index must be in range" form))
+      (reject! "heterogeneous vector index must be in range" form :kotoba.error/hetero-vector-index-range))
     #?(:clj (long host-index) :cljs host-index)))
 
 (defn- check-reader-depth! [source]
@@ -486,16 +486,65 @@
         (integer? offset) (assoc :offset offset)
         (integer? end-offset) (assoc :end-offset end-offset)))))
 
-(defn- reject! [message form]
-  (let [m (meta form)
-        span (or (get m :span) (form-span form))
-        operation (or (get m :source-operation)
-                      (when (and (seq? form) (symbol? (first form)) (namespace (first form)))
-                        (keyword (namespace (first form)) (name (first form)))))]
-    (throw (ex-info message
-                    (cond-> {:phase :subset :form form}
-                      span (assoc :span span)
-                      operation (assoc :operation operation))))))
+(defn- reject!
+  "Reject a source form. Always attaches `:phase :subset` and, when available,
+  a source `:span`. Prefer an explicit stable `:kotoba.error/code` (T3.1)
+  via the 3-arity; 2-arity keeps coarse phase diagnostics for CLI compat."
+  ([message form]
+   (reject! message form nil))
+  ([message form code]
+   (let [m (meta form)
+         span (or (when (map? form) (:span form))
+                  (get m :span)
+                  (form-span form))
+         operation (or (get m :source-operation)
+                       (when (and (seq? form) (symbol? (first form)) (namespace (first form)))
+                         (keyword (namespace (first form)) (name (first form)))))]
+     (throw (ex-info message
+                     (cond-> {:phase :subset :form form}
+                       code (assoc :kotoba.error/code code)
+                       span (assoc :span span)
+                       operation (assoc :operation operation)))))))
+
+(def pure-product-disallowed-heads
+  "Control / ambient heads rejected under `:language-profile :pure-product`
+  even when the general subset might admit them (see pure-product-profile.edn)."
+  '#{cap-call doseq dotimes defmulti defmethod
+     future pmap agent send send-off
+     condp cond-> cond->> some-> some->> as-> -> ->>})
+
+(defn- pure-product-form-head [form]
+  (when (and (seq? form) (symbol? (first form)))
+    (first form)))
+
+(defn- check-pure-product-source-forms!
+  "T2.1: writeable pure-product source must not declare capabilities or use
+  disallowed sugar / cap-call. Empty effects are checked after analyze."
+  [forms]
+  (doseq [form forms]
+    (when (and (seq? form) (= 'ns (first form)))
+      (doseq [clause (drop 2 form)]
+        (when (and (seq? clause) (= :capabilities (first clause)))
+          (reject! "pure-product profile rejects :capabilities (guest must be effect-free)"
+                   form
+                   :kotoba.error/pure-product-capabilities))))
+    (doseq [node (tree-seq
+                   (fn [x]
+                     (or (sequential? x)
+                         (map? x)
+                         (set? x)))
+                   (fn [x]
+                     (cond
+                       (map? x) (concat (keys x) (vals x))
+                       (set? x) (seq x)
+                       :else (seq x)))
+                   form)]
+      (when-let [head (pure-product-form-head node)]
+        (when (or (contains? forbidden-heads head)
+                  (contains? pure-product-disallowed-heads head))
+          (reject! (str "form outside pure-product profile: " head)
+                   node
+                   :kotoba.error/pure-product-forbidden))))))
 
 (declare valid-name?)
 
@@ -515,13 +564,13 @@
                    (nil? (namespace namespace-symbol))
                    (pos? (count (str namespace-symbol)))
                    (<= (count (str namespace-symbol)) max-symbol-chars))
-      (reject! "invalid bounded namespace symbol" form))
+      (reject! "invalid bounded namespace symbol" form :kotoba.error/namespace-symbol))
     (let [[docstring tail] (if (string? (first tail))
                              [(first tail) (rest tail)] [nil tail])]
       (when (and docstring (> (count docstring) max-namespace-docstring-chars))
-        (reject! "namespace docstring exceeds admission limit" docstring))
+        (reject! "namespace docstring exceeds admission limit" docstring :kotoba.error/namespace-docstring-limit))
       (when (> (count tail) 3)
-        (reject! "namespace admits at most :export, :capabilities, and :schemas clauses" form))
+        (reject! "namespace admits at most :export, :capabilities, and :schemas clauses" form :kotoba.error/namespace-clause-count))
       ;; ADR-2607182410: `:export`'s original (pre-existing, test-asserted)
       ;; rejection message is preserved VERBATIM for every clause shape it
       ;; already covered pre-`:capabilities` -- a non-`seq?` clause, an
@@ -532,17 +581,17 @@
       ;; pre-existing source could ever have produced).
       (doseq [clause tail]
         (when-not (seq? clause)
-          (reject! "only a bounded :export vector is admitted in namespace clauses" clause))
+          (reject! "only a bounded :export vector is admitted in namespace clauses" clause :kotoba.error/namespace-export-clause))
         (case (first clause)
           :export (when-not (and (= 2 (count clause)) (vector? (second clause)))
-                    (reject! "only a bounded :export vector is admitted in namespace clauses" clause))
+                    (reject! "only a bounded :export vector is admitted in namespace clauses" clause :kotoba.error/namespace-export-clause))
           :capabilities (when-not (and (= 2 (count clause)) (set? (second clause)))
-                          (reject! "only a bounded :capabilities set is admitted in namespace clauses" clause))
+                          (reject! "only a bounded :capabilities set is admitted in namespace clauses" clause :kotoba.error/namespace-capabilities-clause))
           :schemas (when-not (and (= 2 (count clause)) (map? (second clause)))
-                     (reject! "only a closed :schemas map is admitted in namespace clauses" clause))
-          (reject! "only a bounded :export vector is admitted in namespace clauses" clause)))
+                     (reject! "only a closed :schemas map is admitted in namespace clauses" clause :kotoba.error/namespace-schemas-clause))
+          (reject! "only a bounded :export vector is admitted in namespace clauses" clause :kotoba.error/namespace-export-clause)))
       (when (not= (count tail) (count (distinct (map first tail))))
-        (reject! "namespace admits each clause at most once" form))
+        (reject! "namespace admits each clause at most once" form :kotoba.error/namespace-clause-duplicate))
       (let [export-clause (first (filter #(= :export (first %)) tail))
             capabilities-clause (first (filter #(= :capabilities (first %)) tail))
             schemas-clause (first (filter #(= :schemas (first %)) tail))
@@ -553,11 +602,11 @@
                    (or (> (count exports) max-functions)
                        (not= (count exports) (count (distinct exports)))
                        (not-every? valid-name? exports)))
-          (reject! "namespace exports must be unique bounded function names" exports))
+          (reject! "namespace exports must be unique bounded function names" exports :kotoba.error/namespace-exports))
         (when (and capabilities
                    (or (> (count capabilities) max-namespace-capabilities)
                        (not-every? #(and (keyword? %) (namespace %)) capabilities)))
-          (reject! "namespace :capabilities must be a bounded set of namespaced keywords" capabilities))
+          (reject! "namespace :capabilities must be a bounded set of namespaced keywords" capabilities :kotoba.error/namespace-capabilities-shape))
         {:namespace namespace-symbol :exports exports :capabilities capabilities
          :schemas schemas
          :schema-identities (when schemas (schema/identities schemas))}))))
@@ -721,7 +770,7 @@
   profile's ordinary false/nil sentinel value, 0."
   [args form]
   (when (odd? (count args))
-    (reject! "cond requires test/result pairs" form))
+    (reject! "cond requires test/result pairs" form :kotoba.error/cond-pairs))
   (letfn [(lower [clauses]
             (if (empty? clauses)
               0
@@ -1541,7 +1590,7 @@
         ;; ops). A single-expression `do` collapses to that expression. `do` is
         ;; kept as a first-class head through desugaring (a nested-`let`
         ;; desugaring would DCE-drop unused side-effecting subexprs).
-        do (do (when (empty? args) (reject! "do requires at least one expression" form))
+        do (do (when (empty? args) (reject! "do requires at least one expression" form :kotoba.error/do-empty))
                (if (= 1 (count args))
                  (desugar-expr (first args))
                  (list* 'do (mapv desugar-expr args))))
@@ -2040,7 +2089,7 @@
             (doseq [arg args] (validate-expr arg locals functions (inc depth) budget)))
 
         (= op 'do)
-        (do (when (empty? args) (reject! "do requires at least one expression" form))
+        (do (when (empty? args) (reject! "do requires at least one expression" form :kotoba.error/do-empty))
             (doseq [arg args] (validate-expr arg locals functions (inc depth) budget)))
 
         (= op 'cap-call)
@@ -4092,8 +4141,19 @@
                        :else form))
                    forms))))))
 
-(defn analyze [source]
-  (let [forms (mapv annotate-doseq-collection-kinds (read-forms source))
+(defn analyze
+  "Analyze Kotoba source into HIR.
+
+  opts:
+    :language-profile  when `:pure-product`, enforce pure-product-profile.edn
+                       admission (T2.1): no capabilities/cap-call/disallowed sugar,
+                       empty effects."
+  ([source] (analyze source nil))
+  ([source opts]
+  (let [language-profile (when (map? opts) (:language-profile opts))
+        forms (mapv annotate-doseq-collection-kinds (read-forms source))
+        _ (when (= :pure-product language-profile)
+            (check-pure-product-source-forms! forms))
         forms (expand-closed-multimethod-forms forms)
         namespaces (filter #(and (seq? %) (= 'ns (first %))) forms)
         defs (filter #(and (seq? %) (contains? '#{defn defn-} (first %))) forms)
@@ -4102,7 +4162,7 @@
                            (and (seq? %) (contains? '#{defn defn-} (first %)))
                            (and (seq? %) (= 'def (first %)))) forms)
         _ (when (> (count namespaces) 1)
-            (reject! "at most one namespace form is admitted" namespaces))
+            (reject! "at most one namespace form is admitted" namespaces :kotoba.error/namespace-count))
         namespace-info (when-let [namespace-form (first namespaces)]
                          (namespace-parts namespace-form))
         raw-constants (into {}
@@ -4364,7 +4424,12 @@
                               (not typed-values?) (dissoc :param-types)))
                           parsed)
           main-result (some->> parsed (some #(when (= 'main (:name %)) (:result %))))
-          named-operations (into (sorted-set) @used-capabilities)]
+          named-operations (into (sorted-set) @used-capabilities)
+          effects (reduce set/union #{} (vals function-effects))
+          _ (when (and (= :pure-product language-profile) (seq effects))
+              (reject! "pure-product profile requires empty effects"
+                       {:effects effects}
+                       :kotoba.error/pure-product-effects))]
       {:format (if typed-values? :kotoba.hir/v3 :kotoba.hir/v2)
        :namespace (:namespace namespace-info)
        :schemas (:schemas namespace-info)
@@ -4373,7 +4438,8 @@
        :result (when entry main-result)
        ;; Admission conservatively covers private functions too: changing an
        ;; export boundary must never change the authority the module declares.
-       :effects (reduce set/union #{} (vals function-effects))
+       :effects effects
        ;; W1: semantic ability/operation names after elaboration (no numeric IDs).
        :named-operations named-operations
-       :functions functions})))
+       :language-profile language-profile
+       :functions functions}))))

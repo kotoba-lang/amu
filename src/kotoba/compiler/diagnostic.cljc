@@ -15,13 +15,24 @@
    :output :kotoba/output-failed
    :execute :kotoba/execution-failed
    :receipt :kotoba/receipt-failed
-   :internal :kotoba/internal-error})
+   :internal :kotoba/internal-error
+   :effect-ceiling :kotoba/effect-ceiling
+   :target :kotoba/target-rejected
+   :target-routing :kotoba/target-routing})
 
-(defn from-error [error source-name]
+(defn from-error
+  "Build a :kotoba.diagnostic/v1 map from an ExceptionInfo.
+
+  Prefer a specific `:kotoba.error/code` on ex-data when present (T3.1);
+  otherwise fall back to coarse `phase-codes`. Keeps the v1 shape stable for CLI
+  envelopes (no message/form leakage into :diagnostic)."
+  [error source-name]
   (let [data (ex-data error)
-        phase (or (:phase data) :internal)]
+        phase (or (:phase data) :internal)
+        code (or (:kotoba.error/code data)
+                 (get phase-codes phase :kotoba/internal-error))]
     (cond-> {:format :kotoba.diagnostic/v1
-             :code (get phase-codes phase :kotoba/internal-error)
+             :code code
              :severity :error}
       (string? source-name) (assoc :source source-name)
       (map? (:span data)) (assoc :span (:span data)))))
