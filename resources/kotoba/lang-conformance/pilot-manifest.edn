@@ -2,7 +2,8 @@
  :kotoba.lang.conformance/wbs "T1.3"
  :kotoba.lang.conformance/note
  "T1.3 dual-backend pilot expanded: control + string-ops + record + and/or/if-not/let/
-  arith/nested-fn/true + string-replace + loop + T7.4 deep loop (raised :fuel).
+  arith/nested-fn/true + string-replace + loop + T7.4 deep loop (raised :fuel) +
+  if-some/option + string-byte-length + when/cond/if-let + case + bitops.
   Full kotoba-lang matrix still progressive."
 
  :backends
@@ -214,5 +215,50 @@
    :expect {:kotoba 42}
    :fuel 12000
    :note "T7.4: 10k loop/recur iters with raised fuel (helper-desugar charge model)"}
+  {:id :if-some-kit
+   :class :pure-product-run
+   :required-backends #{:kir :wasm32-kotoba-v1}
+   :kind :run
+   :entry "values/if_some_kit.kotoba"
+   :function "main"
+   :args []
+   :expect {:kotoba 10}
+   :note "T4.3 if-some + option-some-of/none-of dual-backend"}
+  {:id :string-byte-length-kit
+   :class :pure-product-run
+   :required-backends #{:kir :wasm32-kotoba-v1}
+   :kind :run
+   :entry "values/string_byte_length_kit.kotoba"
+   :function "main"
+   :args []
+   :expect {:kotoba 4}
+   :note "T4.2 string-byte-length dual-backend"}
+  {:id :when-cond-kit
+   :class :pure-product-run
+   :required-backends #{:kir :wasm32-kotoba-v1}
+   :kind :run
+   :entry "control/when_cond_kit.kotoba"
+   :function "main"
+   :args []
+   :expect {:kotoba 21}
+   :note "when + cond + if-let dual-backend"}
+  {:id :case-kit
+   :class :pure-product-run
+   :required-backends #{:kir :wasm32-kotoba-v1}
+   :kind :run
+   :entry "control/case_kit.kotoba"
+   :function "main"
+   :args []
+   :expect {:kotoba 20}
+   :note "case dual-backend"}
+  {:id :bitops-kit
+   :class :pure-product-run
+   :required-backends #{:kir :wasm32-kotoba-v1}
+   :kind :run
+   :entry "control/bitops_kit.kotoba"
+   :function "main"
+   :args []
+   :expect {:kotoba 10}
+   :note "bit-and/or/xor dual-backend"}
 ]
 }

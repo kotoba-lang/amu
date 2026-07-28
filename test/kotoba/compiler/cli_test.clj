@@ -47,7 +47,8 @@
                 nil
                 (catch clojure.lang.ExceptionInfo error error))
         report (cli/error-report error "program.cljk")]
-    (is (= :kotoba/source-rejected (get-in report [:diagnostic :code])))
+    ;; T3.1: reject! sites use stable :kotoba.error/* codes (default :subset-reject).
+    (is (= :kotoba.error/subset-reject (get-in report [:diagnostic :code])))
     (is (= "program.cljk" (get-in report [:diagnostic :source])))
     (is (= {:line 2 :column 3}
            (select-keys (get-in report [:diagnostic :span]) [:line :column])))
