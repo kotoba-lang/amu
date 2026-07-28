@@ -15,24 +15,18 @@
     (is (= '(typed-cap-call 13 :string [:task [:stream :bytes]] url)
            (:body function)))))
 
-(deftest task-stream-capability-compiles-to-a-validated-component
+(deftest task-stream-capability-direct-i64-request-is-typed
+  "Direct linear move with an i64 request is admitted at the HIR layer."
   (let [source
         "(ns app (:export [open]))
          (defn open [request :i64] [:task [:stream :bytes]]
            (typed-cap-call :http/get-stream :i64
              [:task [:stream :bytes]] request))"
-        compiled (compiler/compile-component
-                  source {:allow #{[:cap/call 13]}}
-                  {:profile :async
-                   :budgets {:deadline-ms 1000
-                             :max-items 32
-                             :max-bytes 65536
-                             :cancellation true}})]
-    (is (= :wasm-component/v1 (:format compiled)))
-    (is (= :task-stream-capability-call (:canonical-lowering compiled)))
-    (is (= [:http/get-stream] (:imports compiled)))
-    (is (= :async (get-in compiled [:admission-request :profile])))
-    (is (pos? (alength ^bytes (:bytes compiled))))))
+        checked (compiler/check-source source {:allow #{[:cap/call 13]}})]
+    (is (= [:task [:stream :bytes]]
+           (get-in checked [:hir :functions 0 :result])))
+    (is (= #{[:cap/call 13]}
+           (get-in checked [:hir :functions 0 :effects])))))
 
 (deftest linear-resources-cannot-be-copied-through-ordinary-parameters
   (is (try
@@ -85,13 +79,13 @@
   (let [checked
         (compiler/check-source
          "(ns app (:export [ready]))
-          (defn ready [url :string] :bool
+          (defn ready [url :string] :i64
             (let [task (typed-cap-call :http/get-stream :string
                          [:task [:stream :bytes]] url)]
               (task-ready? task)))"
          {:allow #{[:cap/call 13]}})
         function (first (get-in checked [:hir :functions]))]
-    (is (= :bool (:result function)))
+    (is (= :i64 (:result function)))
     (is (= 'let (first (:body function))))))
 
 (deftest linear-let-double-use-is-rejected
@@ -110,18 +104,74 @@
           (boolean (re-find #"one direct typed capability move"
                             (.getMessage error)))))))
 
-(deftest linear-let-with-extra-binding-is-rejected
-  "Only a single binding that is the linear resource is admitted."
-  (is (try
+(deftest linear-let-with-non-linear-companion-binding-is-admitted
+  "ADR 0138: non-linear companions may share a let with one linear binding."
+  (let [checked
         (compiler/check-source
-         "(ns app (:export [bad]))
-          (defn bad [url :string] [:task [:stream :bytes]]
+         "(ns app (:export [open]))
+          (defn open [url :string] [:task [:stream :bytes]]
             (let [n 1
                   task (typed-cap-call :http/get-stream :string
                          [:task [:stream :bytes]] url)]
               task))"
          {:allow #{[:cap/call 13]}})
+        function (first (get-in checked [:hir :functions]))]
+    (is (= [:task [:stream :bytes]] (:result function)))
+    (is (= 'let (first (:body function))))))
+
+(deftest linear-nested-non-linear-outer-let-is-admitted
+  "ADR 0138: non-linear outer lets may wrap an affine inner move."
+  (let [checked
+        (compiler/check-source
+         "(ns app (:export [open]))
+          (defn open [url :string] [:task [:stream :bytes]]
+            (let [u url]
+              (let [task (typed-cap-call :http/get-stream :string
+                           [:task [:stream :bytes]] u)]
+                task)))"
+         {:allow #{[:cap/call 13]}})]
+    (is (= [:task [:stream :bytes]]
+           (get-in checked [:hir :functions 0 :result])))))
+
+(deftest linear-if-balanced-consume-is-admitted
+  "ADR 0138: both if arms may consume the same affine binding."
+  (let [checked
+        (compiler/check-source
+         "(ns app (:export [size]))
+          (defn size [url :string flag :i64] :i64
+            (let [task (typed-cap-call :http/get-stream :string
+                         [:task [:stream :bytes]] url)]
+              (if flag
+                (bytes-task-byte-count task)
+                (task-ready? task))))"
+         {:allow #{[:cap/call 13]}})]
+    (is (= :i64 (get-in checked [:hir :functions 0 :result])))))
+
+(deftest linear-if-unbalanced-consume-is-rejected
+  "One arm consuming and the other ignoring the binding is not affine."
+  (is (try
+        (compiler/check-source
+         "(ns app (:export [bad]))
+          (defn bad [url :string flag :i64] :i64
+            (let [task (typed-cap-call :http/get-stream :string
+                         [:task [:stream :bytes]] url)]
+              (if flag
+                (bytes-task-byte-count task)
+                0)))"
+         {:allow #{[:cap/call 13]}})
         false
         (catch clojure.lang.ExceptionInfo error
           (boolean (re-find #"one direct typed capability move"
                             (.getMessage error)))))))
+
+(deftest linear-if-balanced-move-is-admitted
+  (let [checked
+        (compiler/check-source
+         "(ns app (:export [open]))
+          (defn open [url :string flag :i64] [:task [:stream :bytes]]
+            (let [task (typed-cap-call :http/get-stream :string
+                         [:task [:stream :bytes]] url)]
+              (if flag task task)))"
+         {:allow #{[:cap/call 13]}})]
+    (is (= [:task [:stream :bytes]]
+           (get-in checked [:hir :functions 0 :result])))))

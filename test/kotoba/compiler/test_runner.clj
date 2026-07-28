@@ -36,6 +36,7 @@
             [kotoba.compiler.frontend-extensions-test]
             [kotoba.compiler.frontend-destructuring-loop-test]
             [kotoba.compiler.frontend-named-capability-test]
+            [kotoba.compiler.linear-resource-test]
             [kotoba.compiler.backend-cljs-test]
             [kotoba.compiler.backend-qualification-test]
             [kotoba.compiler.host-profile-test]
@@ -113,6 +114,7 @@
                                           'kotoba.compiler.frontend-extensions-test
                                           'kotoba.compiler.frontend-destructuring-loop-test
                                           'kotoba.compiler.frontend-named-capability-test
+                                          'kotoba.compiler.linear-resource-test
                                           'kotoba.compiler.backend-cljs-test
                                           'kotoba.compiler.backend-qualification-test
                                           'kotoba.compiler.host-profile-test
