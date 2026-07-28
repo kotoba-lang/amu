@@ -245,6 +245,51 @@
     (catch :default e
       (check "cljs-get-stream-open-stream-progressive-push" false (.-message e)))))
 
+(def guest-poll-read-source
+  (str "(ns app.object-guest (:export [get-stream-ready get-stream-byte-count]) "
+       "(:capabilities #{:object/get-stream}))"
+       "(defn get-stream-ready [request " (pr-str object/get-stream-request-type) "] :i64 "
+       "(task-ready? (typed-cap-call :object/get-stream "
+       (pr-str object/get-stream-request-type) " "
+       (pr-str object/get-stream-result-type) " request)))"
+       "(defn get-stream-byte-count [request " (pr-str object/get-stream-request-type) "] :i64 "
+       "(bytes-task-byte-count (typed-cap-call :object/get-stream "
+       (pr-str object/get-stream-request-type) " "
+       (pr-str object/get-stream-result-type) " request)))"))
+
+(defn- hosted-guest [transport]
+  (let [provider (object/get-stream-provider
+                  {:allowed-bindings #{:example/blocks}
+                   :transport transport})
+        hir (frontend/analyze guest-poll-read-source)
+        _ (admission/check hir {:allow #{[:cap/call (js/BigInt 14)]}})
+        kir (ir/lower hir)]
+    (runtime/instantiate kir {:allow #{14} :providers {14 provider}})))
+
+(defn- guest-task-ready-case []
+  (try
+    (let [payload (value/utf8-string->bytes "abc")
+          runtime (hosted-guest (fn [_] {:bytes payload}))
+          request [object/get-stream-request-type :example/blocks "k"]
+          n ((:invoke runtime) 'get-stream-ready [request])]
+      (check "cljs-guest-task-ready?-reports-ready-task"
+             (= (js/BigInt 1) n)
+             (pr-str {:n n})))
+    (catch :default e
+      (check "cljs-guest-task-ready?-reports-ready-task" false (.-message e)))))
+
+(defn- guest-byte-count-case []
+  (try
+    (let [payload (value/utf8-string->bytes "hello")
+          runtime (hosted-guest (fn [_] {:bytes payload}))
+          request [object/get-stream-request-type :example/blocks "k"]
+          n ((:invoke runtime) 'get-stream-byte-count [request])]
+      (check "cljs-guest-bytes-task-byte-count-without-host-poll"
+             (= (js/BigInt 5) n)
+             (pr-str {:n n})))
+    (catch :default e
+      (check "cljs-guest-bytes-task-byte-count-without-host-poll" false (.-message e)))))
+
 (let [results [(put-boundary-case)
                (cas-case)
                (binding-case)
@@ -254,7 +299,9 @@
                (get-stream-pending-fulfill-case)
                (get-stream-multi-chunk-case)
                (get-stream-chunk-queue-case)
-               (get-stream-open-stream-case)]
+               (get-stream-open-stream-case)
+               (guest-task-ready-case)
+               (guest-byte-count-case)]
       failures (remove :ok? results)]
   (doseq [{:keys [name ok? detail]} results]
     (println (if ok? "PASS" "FAIL") name (or detail "")))

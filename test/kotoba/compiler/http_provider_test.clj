@@ -213,3 +213,37 @@
     (is (zero? (value/compare-typed-values :bytes a (:bytes c1))))
     (is (false? (:done? c1)))
     (is (true? (:done? done)))))
+
+(def guest-poll-read-source
+  (str "(ns app.http-guest (:export [get-stream-ready get-stream-byte-count]) "
+       "(:capabilities #{:http/get-stream}))"
+       "(defn get-stream-ready [request " (pr-str http/get-stream-request-type) "] :i64 "
+       "(task-ready? (typed-cap-call :http/get-stream "
+       (pr-str http/get-stream-request-type) " "
+       (pr-str http/get-stream-result-type) " request)))"
+       "(defn get-stream-byte-count [request " (pr-str http/get-stream-request-type) "] :i64 "
+       "(bytes-task-byte-count (typed-cap-call :http/get-stream "
+       (pr-str http/get-stream-request-type) " "
+       (pr-str http/get-stream-result-type) " request)))"))
+
+(defn- hosted-guest-poll [transport]
+  (let [provider (http/get-stream-provider {:allowed-origins #{"https://api.example.test"}
+                                            :transport transport})
+        kir (ir/lower (:hir (compiler/check-source
+                             guest-poll-read-source {:allow #{[:cap/call 13]}})))]
+    (runtime/instantiate kir {:allow #{13} :providers {13 provider}})))
+
+(deftest guest-task-ready?-reports-ready-http-stream
+  (let [payload (value/utf8-string->bytes "xyz")
+        runtime (hosted-guest-poll (fn [_] {:bytes payload}))
+        request [http/get-stream-request-type "https://api.example.test/v1/x"
+                 [http/header-set-type []]]]
+    (is (= 1 ((:invoke runtime) 'get-stream-ready [request])))))
+
+(deftest guest-bytes-task-byte-count-http-without-host-poll
+  (let [payload (value/utf8-string->bytes "http-body")
+        runtime (hosted-guest-poll (fn [_] {:bytes payload}))
+        request [http/get-stream-request-type "https://api.example.test/v1/body"
+                 [http/header-set-type []]]
+        n ((:invoke runtime) 'get-stream-byte-count [request])]
+    (is (= 9 n))))
