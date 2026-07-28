@@ -290,6 +290,55 @@
     (catch :default e
       (check "cljs-guest-bytes-task-byte-count-without-host-poll" false (.-message e)))))
 
+
+(def product-source
+  (str "(ns app.object-product (:export [put-then-count]) "
+       "(:capabilities #{:object/get-stream :object/put-block}))"
+       "(defn put-then-count [put-req " (pr-str object/put-block-request-type)
+       " get-req " (pr-str object/get-stream-request-type) "] :i64 "
+       "(let [ok (typed-cap-call :object/put-block "
+       (pr-str object/put-block-request-type) " "
+       (pr-str object/put-block-result-type) " put-req) "
+       "task (typed-cap-call :object/get-stream "
+       (pr-str object/get-stream-request-type) " "
+       (pr-str object/get-stream-result-type) " get-req)] "
+       "(bytes-task-byte-count task)))"))
+
+(defn- hosted-product [transport]
+  (let [kit (object/create-providers
+             {:allowed-bindings #{:example/blocks}
+              :transport transport})
+        hir (frontend/analyze product-source)
+        _ (admission/check hir {:allow #{[:cap/call (js/BigInt 14)]
+                                         [:cap/call (js/BigInt 15)]}})
+        kir (ir/lower hir)]
+    (runtime/instantiate kir {:allow #{14 15 16}
+                              :providers (select-keys (:providers kit) [14 15])})))
+
+(defn- product-put-then-count-case []
+  (try
+    (let [store (atom {})
+          transport (fn [req]
+                      (case (:operation req)
+                        :put-block
+                        (do (swap! store assoc [(:binding req) (:digest req)] (:bytes req))
+                            true)
+                        :get-stream
+                        (if-let [bytes (get @store [(:binding req) (:key req)])]
+                          {:bytes bytes}
+                          (throw (ex-info "missing" {})))
+                        (throw (ex-info "bad" req))))
+          runtime (hosted-product transport)
+          payload (value/utf8-string->bytes "hello-product")
+          put-req [object/put-block-request-type :example/blocks "k1" payload]
+          get-req [object/get-stream-request-type :example/blocks "k1"]
+          n ((:invoke runtime) 'put-then-count [put-req get-req])]
+      (check "cljs-product-put-then-count-round-trip"
+             (= (js/BigInt 13) n)
+             (pr-str {:n n})))
+    (catch :default e
+      (check "cljs-product-put-then-count-round-trip" false (.-message e)))))
+
 (let [results [(put-boundary-case)
                (cas-case)
                (binding-case)
@@ -301,7 +350,8 @@
                (get-stream-chunk-queue-case)
                (get-stream-open-stream-case)
                (guest-task-ready-case)
-               (guest-byte-count-case)]
+               (guest-byte-count-case)
+               (product-put-then-count-case)]
       failures (remove :ok? results)]
   (doseq [{:keys [name ok? detail]} results]
     (println (if ok? "PASS" "FAIL") name (or detail "")))
