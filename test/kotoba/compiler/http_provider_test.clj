@@ -178,3 +178,20 @@
     (is (= :ready (:state polled)))
     (is (true? (:done? chunk)))
     (is (zero? (value/compare-typed-values :bytes joined (:bytes chunk))))))
+
+(deftest get-stream-chunk-queue-yields-discrete-chunks
+  "Transport returns {:chunk-queue [...]}; each stream-read! yields one producer chunk."
+  (let [a (value/utf8-string->bytes "http-")
+        b (value/utf8-string->bytes "queue")
+        runtime (hosted-get-stream (fn [_] {:chunk-queue [a b]}))
+        request [http/get-stream-request-type "https://api.example.test/v1/queue"
+                 [http/header-set-type []]]
+        task ((:invoke runtime) 'get-stream [request])
+        polled (value/task-poll task)
+        c1 (value/stream-read! (:stream polled) 65536)
+        c2 (value/stream-read! (:stream polled) 65536)]
+    (is (= :ready (:state polled)))
+    (is (false? (:done? c1)))
+    (is (zero? (value/compare-typed-values :bytes a (:bytes c1))))
+    (is (true? (:done? c2)))
+    (is (zero? (value/compare-typed-values :bytes b (:bytes c2))))))

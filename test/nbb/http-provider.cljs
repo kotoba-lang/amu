@@ -215,6 +215,27 @@
     (catch :default e
       (check "cljs-get-stream-multi-chunk-ready-task" false (.-message e)))))
 
+(defn- get-stream-chunk-queue-case []
+  (try
+    (let [a (value/utf8-string->bytes "http-")
+          b (value/utf8-string->bytes "queue")
+          runtime (hosted-get-stream (fn [_] {:chunk-queue [a b]}))
+          request [http/get-stream-request-type "https://api.example.test/v1/queue"
+                   [http/header-set-type []]]
+          task ((:invoke runtime) 'get-stream [request])
+          polled (value/task-poll task)
+          c1 (value/stream-read! (:stream polled) 65536)
+          c2 (value/stream-read! (:stream polled) 65536)]
+      (check "cljs-get-stream-chunk-queue-yields-discrete-chunks"
+             (and (= :ready (:state polled))
+                  (false? (:done? c1))
+                  (zero? (value/compare-typed-values :bytes a (:bytes c1)))
+                  (true? (:done? c2))
+                  (zero? (value/compare-typed-values :bytes b (:bytes c2))))
+             (pr-str {:state (:state polled) :done1 (:done? c1) :done2 (:done? c2)})))
+    (catch :default e
+      (check "cljs-get-stream-chunk-queue-yields-discrete-chunks" false (.-message e)))))
+
 (let [results [(post-bounded-ok-case)
                (destinations-and-timeouts-case)
                (transport-error-case)
@@ -222,7 +243,8 @@
                (denial-case)
                (get-stream-ready-case)
                (get-stream-pending-fulfill-case)
-               (get-stream-multi-chunk-case)]
+               (get-stream-multi-chunk-case)
+               (get-stream-chunk-queue-case)]
       failures (remove :ok? results)]
   (doseq [{:keys [name ok? detail]} results]
     (println (if ok? "PASS" "FAIL") name (or detail "")))
