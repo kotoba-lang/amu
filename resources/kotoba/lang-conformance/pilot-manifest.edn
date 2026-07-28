@@ -5,7 +5,7 @@
   arith/nested-fn/true + string-replace + loop + T7.4 deep loop (raised :fuel) +
   if-some/option + string-byte-length + when/cond/if-let + case + bitops +
   typed-map (T4.4) + string-split-count (T4.2) + vector-i64 (T4.5) +
-  vector-mut + typed-map-dissoc + quot/bit-not.
+  vector-mut + typed-map-dissoc + quot/bit-not + pred/when-ext/if-some-string/shift.
   Full matrix still progressive."
 
  :backends
@@ -316,5 +316,41 @@
    :args []
    :expect {:kotoba 18}
    :note "quot + bit-not dual-backend"}
+  {:id :pred-kit
+   :class :pure-product-run
+   :required-backends #{:kir :wasm32-kotoba-v1}
+   :kind :run
+   :entry "control/pred_kit.kotoba"
+   :function "main"
+   :args []
+   :expect {:kotoba 4}
+   :note "zero?/pos?/neg?/not= dual-backend"}
+  {:id :when-ext-kit
+   :class :pure-product-run
+   :required-backends #{:kir :wasm32-kotoba-v1}
+   :kind :run
+   :entry "control/when_ext_kit.kotoba"
+   :function "main"
+   :args []
+   :expect {:kotoba 10}
+   :note "when-not + when-some dual-backend"}
+  {:id :if-some-string-kit
+   :class :pure-product-run
+   :required-backends #{:kir :wasm32-kotoba-v1}
+   :kind :run
+   :entry "values/if_some_string_kit.kotoba"
+   :function "main"
+   :args []
+   :expect {:kotoba 2}
+   :note "T4.3 if-some on [:option :string] dual-backend"}
+  {:id :shift-kit
+   :class :pure-product-run
+   :required-backends #{:kir :wasm32-kotoba-v1}
+   :kind :run
+   :entry "control/shift_kit.kotoba"
+   :function "main"
+   :args []
+   :expect {:kotoba 8}
+   :note "i64-shift-left dual-backend"}
 ]
 }
