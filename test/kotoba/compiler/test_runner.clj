@@ -67,6 +67,7 @@
             [kotoba.compiler.llm-provider-test]
             [kotoba.compiler.llm-transport-test]
             [kotoba.compiler.object-provider-test]
+            [kotoba.compiler.object-product-vertical-test]
             [kotoba.compiler.object-transport-test]
             [kotoba.compiler.http-ingress-provider-test]
             [kotoba.compiler.storage-provider-test]
@@ -139,6 +140,7 @@
                                           'kotoba.compiler.llm-provider-test
                                           'kotoba.compiler.llm-transport-test
                                           'kotoba.compiler.object-provider-test
+                                          'kotoba.compiler.object-product-vertical-test
                                           'kotoba.compiler.object-transport-test
                                           'kotoba.compiler.http-ingress-provider-test
                                           'kotoba.compiler.storage-provider-test
