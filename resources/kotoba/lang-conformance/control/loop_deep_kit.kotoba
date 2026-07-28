@@ -1,0 +1,8 @@
+(ns kotoba.lang.conformance.loop-deep-kit (:export [main]))
+;; T7.4: 10_000 loop/recur iterations within a raised fuel envelope.
+;; Helper desugar still charges 1 unit per entry (T7.2); not machine TCO.
+(defn main [] :i64
+  (loop [n 10000]
+    (if (<= n 0)
+      42
+      (recur (- n 1)))))

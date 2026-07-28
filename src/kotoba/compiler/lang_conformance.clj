@@ -56,16 +56,38 @@
     (keyword? function) (symbol (name function))
     :else 'main))
 
+(defn- case-fuel
+  "Optional per-case fuel budget (T7.4 deep loop). Nil → backend default 512."
+  [case]
+  (when-let [f (:fuel case)]
+    (when-not (and (integer? f) (pos? f))
+      (throw (ex-info "case :fuel must be a positive integer"
+                      {:phase :lang-conformance :fuel f :id (:id case)})))
+    f))
+
+(defn- compile-opts
+  "emit-metadata map for compile-source when case declares :fuel."
+  [case]
+  (if-let [f (case-fuel case)]
+    {:fuel f}
+    {}))
+
 (defn run-kir
-  "Compile source → wasm32 path (produces KIR) and execute on KIR oracle."
-  [source function args]
-  (let [compiled (compiler/compile-source source :wasm32-kotoba-v1)
-        fn-sym (symbolize-function function)
-        result (ir/execute (:kir compiled) fn-sym (vec (or args [])))]
-    {:backend :kir
-     :ok? true
-     :result result
-     :wasm-bytes (:bytes compiled)}))
+  "Compile source → wasm32 path (produces KIR) and execute on KIR oracle.
+  Optional 4th arg is a case map (or {:fuel n}) for T7.4 fuel budgets."
+  ([source function args] (run-kir source function args {}))
+  ([source function args case-or-opts]
+   (let [opts (if (map? case-or-opts) (compile-opts case-or-opts) {})
+         fuel (or (:fuel opts) (:fuel case-or-opts))
+         compiled (compiler/compile-source source :wasm32-kotoba-v1 {} opts)
+         fn-sym (symbolize-function function)
+         exec-opts (cond-> {} fuel (assoc :fuel fuel))
+         result (ir/execute (:kir compiled) fn-sym (vec (or args [])) exec-opts)]
+     {:backend :kir
+      :ok? true
+      :result result
+      :fuel fuel
+      :wasm-bytes (:bytes compiled)})))
 
 (defn- project-root
   "Best-effort compiler repo root (dir containing runtime/browser-host.mjs)."
@@ -78,35 +100,40 @@
 
 (defn run-wasm32
   "Compile to wasm32-kotoba-v1 and execute `main` via Node browser-host runtime.
-  Returns {:backend :wasm32-kotoba-v1 :ok? bool :result long-or-nil :error ...}."
-  [source]
-  (let [compiled (compiler/compile-source source :wasm32-kotoba-v1)
-        bytes (:bytes compiled)]
-    (when-not (bytes? bytes)
-      (throw (ex-info "wasm compile produced no bytes" {:phase :lang-conformance})))
-    (let [encoded (.encodeToString (java.util.Base64/getEncoder) ^bytes bytes)
-          root (project-root)
-          ;; Same pattern as typed_value_conformance_test (relative import).
-          probe (str "import('./runtime/browser-host.mjs').then(async m=>{"
-                     "const h=await m.instantiateKotoba(Buffer.from(process.argv[1],'base64'));"
-                     "const value=h.instance.exports.main();"
-                     "if(typeof value!=='bigint' && typeof value!=='number')process.exit(2);"
-                     "console.log(String(value))})")
-          res (shell/sh "node" "--input-type=module" "-e" probe encoded
-                        :dir (.getAbsolutePath root))]
-      (if (zero? (:exit res))
-        (let [out (str/trim (:out res))
-              parsed (try (Long/parseLong out) (catch Exception _ out))]
-          {:backend :wasm32-kotoba-v1
-           :ok? true
-           :result parsed
-           :raw-out out})
-        {:backend :wasm32-kotoba-v1
-         :ok? false
-         :error (str "wasm exit " (:exit res) ": " (:err res) (:out res))}))))
+  Returns {:backend :wasm32-kotoba-v1 :ok? bool :result long-or-nil :error ...}.
+  Optional 2nd arg is a case map (or {:fuel n}) — fuel is baked into wasm."
+  ([source] (run-wasm32 source {}))
+  ([source case-or-opts]
+   (let [opts (if (map? case-or-opts) (compile-opts case-or-opts) {})
+         compiled (compiler/compile-source source :wasm32-kotoba-v1 {} opts)
+         bytes (:bytes compiled)]
+     (when-not (bytes? bytes)
+       (throw (ex-info "wasm compile produced no bytes" {:phase :lang-conformance})))
+     (let [encoded (.encodeToString (java.util.Base64/getEncoder) ^bytes bytes)
+           root (project-root)
+           ;; Same pattern as typed_value_conformance_test (relative import).
+           probe (str "import('./runtime/browser-host.mjs').then(async m=>{"
+                      "const h=await m.instantiateKotoba(Buffer.from(process.argv[1],'base64'));"
+                      "const value=h.instance.exports.main();"
+                      "if(typeof value!=='bigint' && typeof value!=='number')process.exit(2);"
+                      "console.log(String(value))})")
+           res (shell/sh "node" "--input-type=module" "-e" probe encoded
+                         :dir (.getAbsolutePath root))]
+       (if (zero? (:exit res))
+         (let [out (str/trim (:out res))
+               parsed (try (Long/parseLong out) (catch Exception _ out))]
+           {:backend :wasm32-kotoba-v1
+            :ok? true
+            :result parsed
+            :fuel (:fuel opts)
+            :raw-out out})
+         {:backend :wasm32-kotoba-v1
+          :ok? false
+          :error (str "wasm exit " (:exit res) ": " (:err res) (:out res))})))))
 
 (defn run-case
-  "Run one pure-product case on required backends. Returns result map."
+  "Run one pure-product case on required backends. Returns result map.
+  Cases may declare `:fuel` (positive int) for deep loop / T7.4 envelopes."
   [case]
   (let [id (:id case)
         entry (:entry case)
@@ -117,9 +144,9 @@
       {:id id :ok? false :status :missing-source :entry entry}
       (try
         (let [kir (when (contains? required :kir)
-                    (run-kir source (:function case) (:args case)))
+                    (run-kir source (:function case) (:args case) case))
               wasm (when (contains? required :wasm32-kotoba-v1)
-                     (run-wasm32 source))
+                     (run-wasm32 source case))
               kir-ok? (or (nil? kir) (and (:ok? kir) (= expect (:result kir))))
               wasm-ok? (or (nil? wasm) (and (:ok? wasm) (= expect (:result wasm))))
               ok? (and kir-ok? wasm-ok?)]
@@ -127,6 +154,7 @@
            :ok? ok?
            :status (if ok? :passed :failed)
            :expect expect
+           :fuel (case-fuel case)
            :kir kir
            :wasm32-kotoba-v1 wasm
            :kir-ok? kir-ok?
@@ -202,23 +230,28 @@
       normalize-gensyms))
 
 (defn digest-case
-  "Compile case once; return {:id :kir-sha256 :wasm-sha256 :expect :result}."
+  "Compile case once; return {:id :kir-sha256 :wasm-sha256 :expect :result}.
+  Honors case `:fuel` (T7.4) so digests match dual-backend execution."
   [case]
   (let [source (resolve-source (:entry case))
-        expect (get-in case [:expect :kotoba])]
+        expect (get-in case [:expect :kotoba])
+        opts (compile-opts case)
+        fuel (:fuel opts)]
     (when-not source
       (throw (ex-info "missing source for golden digest" {:id (:id case)
                                                           :entry (:entry case)})))
-    (let [compiled (compiler/compile-source source :wasm32-kotoba-v1)
+    (let [compiled (compiler/compile-source source :wasm32-kotoba-v1 {} opts)
           kir (:kir compiled)
           bytes (:bytes compiled)
+          exec-opts (cond-> {} fuel (assoc :fuel fuel))
           result (ir/execute kir (symbolize-function (:function case))
-                             (vec (or (:args case) [])))]
+                             (vec (or (:args case) [])) exec-opts)]
       {:id (:id case)
        :entry (:entry case)
        :expect expect
        :result result
        :result-ok? (= expect result)
+       :fuel fuel
        :kir-sha256 (artifact/sha256 (kir-digest-body kir))
        :wasm-sha256 (bytes-sha256-hex bytes)
        :wasm-byte-count (alength ^bytes bytes)})))
