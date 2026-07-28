@@ -1106,7 +1106,9 @@
   (letfn [(lower [option-form steps]
             (if (empty? steps)
               (desugar-expr option-form)
-              (let [tmp (gensym "some-thread__")
+              (let [tmp (if *loop-counter*
+                          (symbol (str "some-thread__" (vswap! *loop-counter* inc)))
+                          (gensym "some-thread__"))
                     option-type (or (resolve-option-type option-form) [:option :i64])
                     payload-type (when (and (vector? option-type) (= :option (first option-type)))
                                    (second option-type))
@@ -1146,7 +1148,11 @@
       (reject! (if when? "when-some requires at least one body expression"
                            "if-some requires then and optional else expressions") form))
     (let [[pattern value] binding
-          tmp (gensym "binding-some__")
+          ;; Deterministic temp names (not gensym): product-shell KIR artifacts
+          ;; must be byte-stable across regenerations for drift tests.
+          tmp (if *loop-counter*
+                (symbol (str "binding-some__" (vswap! *loop-counter* inc)))
+                (gensym "binding-some__"))
           option-type (or (resolve-option-type value) [:option :i64])
           then-form (if when?
                       (if (= 1 (count bodies)) (first bodies) (desugar-do bodies))
