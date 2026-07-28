@@ -28,6 +28,7 @@
             [kotoba.compiler.frontend-equality-diagnostic-test]
             [kotoba.compiler.product-value-abi-v1-test]
             [kotoba.compiler.pure-product-profile-test]
+            [kotoba.compiler.ambient-negative-corpus-test]
             [kotoba.compiler.lang-conformance-test]
             [kotoba.compiler.error-code-contract-test]
             [kotoba.compiler.frontend-condp-test]
@@ -112,6 +113,7 @@
                                           'kotoba.compiler.frontend-equality-diagnostic-test
                                           'kotoba.compiler.product-value-abi-v1-test
                                           'kotoba.compiler.pure-product-profile-test
+                                          'kotoba.compiler.ambient-negative-corpus-test
                                           'kotoba.compiler.lang-conformance-test
                                           'kotoba.compiler.error-code-contract-test
                                           'kotoba.compiler.frontend-condp-test

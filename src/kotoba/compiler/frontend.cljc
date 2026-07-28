@@ -2093,7 +2093,8 @@
     (let [[op & args] form]
       (when-not (simple-symbol? op) (reject! "computed or namespaced calls are forbidden" form))
       (when (or (contains? forbidden-heads op) (re-find #"[.]" (name op)))
-        (reject! "dynamic loading, interop, mutation, and metaprogramming are forbidden" form))
+        (reject! "dynamic loading, interop, mutation, and metaprogramming are forbidden"
+                 form :kotoba.error/ambient-forbidden))
       (cond
         (= op 'let)
         (let [[bindings & body] args]
@@ -4265,7 +4266,8 @@
                            (reject! "function must contain one result expression" body))
                          (let [param-parts (typed-param-parts raw-params constants)
                                _ (when (> (count param-parts) max-parameters)
-                                   (reject! "function parameters exceed ABI-supported arity" raw-params))
+                                   (reject! "function parameters exceed ABI-supported arity" raw-params
+                                            :kotoba.error/max-parameters))
                                name+wraps (mapv #(param-name+wrap (:pattern %)) param-parts)
                                params (mapv first name+wraps)
                                param-types (mapv :type param-parts)
@@ -4337,7 +4339,8 @@
         entry (when (contains? signatures 'main) 'main)]
     (when (seq (set/intersection (set (keys constants)) (set source-names)))
       (reject! "constant and function names must be disjoint" forms))
-    (when (seq other) (reject! "only ns, def, defn, and defn- are allowed at top level" (first other)))
+    (when (seq other) (reject! "only ns, def, defn, and defn- are allowed at top level"
+                                 (first other) :kotoba.error/top-level-form))
     (when (empty? parsed) (reject! "at least one defn is required" forms))
     (when-not (= (count parsed) (count signatures)) (reject! "duplicate function name" defs))
     (when (and (some? (:exports namespace-info))
