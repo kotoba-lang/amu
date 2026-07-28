@@ -1,0 +1,7 @@
+(ns kotoba.lang.conformance.loop-sum-kit (:export [main]))
+;; T7.1 / T1.3: loop/recur desugars to named helper; dual-backend.
+(defn main [] :i64
+  (loop [i 0 acc 0]
+    (if (< i 5)
+      (recur (+ i 1) (+ acc i))
+      acc)))
