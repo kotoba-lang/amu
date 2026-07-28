@@ -1,7 +1,6 @@
 (ns test.nbb.http-provider
-  "W5 family-2 first slice — dual-runtime semantic vectors for `http-v1`
-  on `:cljs` with a mock host transport (production cljs transport is still
-  intentionally unimplemented; see provider.http-transport).
+  "W5 family-2 dual-runtime for `http-v1` on `:cljs` — POST + get-stream
+  (ready / pending→fulfill / multi-chunk) with mock host transport.
 
   Mirrors `test/kotoba/compiler/http_provider_test.clj` (the `:clj` oracle)
   through the same typed `typed-cap-call` + reference-runtime boundary.
@@ -13,6 +12,7 @@
             [kotoba.compiler.frontend :as frontend]
             [kotoba.kir :as ir]
             [provider.http :as http]
+            [kotoba.kir.value :as value]
             [kotoba.compiler.reference-runtime :as runtime]))
 
 (def source
@@ -134,11 +134,95 @@
     (catch :default e
       (check "cljs-missing-grant-denies-before-provider-invoke" false (.-message e)))))
 
+(def get-stream-source
+  (str "(ns app.http-stream (:export [get-stream]) (:capabilities #{:http/get-stream}))"
+       "(defn get-stream [request " (pr-str http/get-stream-request-type) "] "
+       (pr-str http/get-stream-result-type) " (typed-cap-call :http/get-stream "
+       (pr-str http/get-stream-request-type) " " (pr-str http/get-stream-result-type) " request))"))
+
+(defn- hosted-get-stream [transport]
+  (let [provider (http/get-stream-provider {:allowed-origins #{"https://api.example.test"}
+                                            :transport transport})
+        hir (frontend/analyze get-stream-source)
+        _ (admission/check hir {:allow #{[:cap/call (js/BigInt 13)]}})
+        kir (ir/lower hir)]
+    (runtime/instantiate kir {:allow #{13} :providers {13 provider}})))
+
+(defn- get-stream-ready-case []
+  (try
+    (let [payload (value/utf8-string->bytes "stream-body")
+          seen (atom nil)
+          runtime (hosted-get-stream (fn [request]
+                                       (reset! seen request)
+                                       {:bytes payload}))
+          request [http/get-stream-request-type "https://api.example.test/v1/blob"
+                   [http/header-set-type []]]
+          task ((:invoke runtime) 'get-stream [request])
+          polled (value/task-poll task)
+          chunk (value/stream-read! (:stream polled) 65536)]
+      (check "cljs-get-stream-returns-ready-task-and-reads-bytes"
+             (and (= {:operation :get-stream
+                      :url "https://api.example.test/v1/blob"
+                      :headers {}}
+                     @seen)
+                  (value/task-value? task)
+                  (= :ready (:state polled))
+                  (true? (:done? chunk))
+                  (zero? (value/compare-typed-values :bytes payload (:bytes chunk))))
+             (pr-str {:seen @seen :state (:state polled)})))
+    (catch :default e
+      (check "cljs-get-stream-returns-ready-task-and-reads-bytes" false (.-message e)))))
+
+(defn- get-stream-pending-fulfill-case []
+  (try
+    (let [payload (value/utf8-string->bytes "late-http-body")
+          runtime (hosted-get-stream (fn [_] {:pending true}))
+          request [http/get-stream-request-type "https://api.example.test/v1/late"
+                   [http/header-set-type []]]
+          pending ((:invoke runtime) 'get-stream [request])
+          polled0 (value/task-poll pending)
+          ready (value/task-fulfill! pending payload)
+          polled1 (value/task-poll ready)
+          chunk (value/stream-read! (:stream polled1) 65536)]
+      (check "cljs-get-stream-pending-then-fulfill-then-read"
+             (and (value/task-value? pending)
+                  (= :pending (:state polled0))
+                  (nil? (:stream polled0))
+                  (= :ready (:state polled1))
+                  (= (:kotoba.task/id pending) (:kotoba.task/id ready))
+                  (true? (:done? chunk))
+                  (zero? (value/compare-typed-values :bytes payload (:bytes chunk))))
+             (pr-str {:state0 (:state polled0) :state1 (:state polled1)})))
+    (catch :default e
+      (check "cljs-get-stream-pending-then-fulfill-then-read" false (.-message e)))))
+
+(defn- get-stream-multi-chunk-case []
+  (try
+    (let [a (value/utf8-string->bytes "http-")
+          b (value/utf8-string->bytes "chunks")
+          joined (value/utf8-string->bytes "http-chunks")
+          runtime (hosted-get-stream (fn [_] {:chunks [a b]}))
+          request [http/get-stream-request-type "https://api.example.test/v1/chunks"
+                   [http/header-set-type []]]
+          task ((:invoke runtime) 'get-stream [request])
+          polled (value/task-poll task)
+          chunk (value/stream-read! (:stream polled) 65536)]
+      (check "cljs-get-stream-multi-chunk-ready-task"
+             (and (= :ready (:state polled))
+                  (true? (:done? chunk))
+                  (zero? (value/compare-typed-values :bytes joined (:bytes chunk))))
+             (pr-str {:state (:state polled) :done? (:done? chunk)})))
+    (catch :default e
+      (check "cljs-get-stream-multi-chunk-ready-task" false (.-message e)))))
+
 (let [results [(post-bounded-ok-case)
                (destinations-and-timeouts-case)
                (transport-error-case)
                (transport-exception-case)
-               (denial-case)]
+               (denial-case)
+               (get-stream-ready-case)
+               (get-stream-pending-fulfill-case)
+               (get-stream-multi-chunk-case)]
       failures (remove :ok? results)]
   (doseq [{:keys [name ok? detail]} results]
     (println (if ok? "PASS" "FAIL") name (or detail "")))

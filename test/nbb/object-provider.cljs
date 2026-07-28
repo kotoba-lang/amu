@@ -1,8 +1,9 @@
 (ns test.nbb.object-provider
-  "W5 stream-object dual-runtime first slice — put-block + CAS on `:cljs`
-  with a mock host transport. Kit `:bytes` is a host Uint8Array (runtime leaf via kotoba.kir.value).
+  "W5 stream-object dual-runtime — put-block + CAS + get-stream (ready /
+  pending→fulfill / multi-chunk) on `:cljs` with a mock host transport.
 
-  Linear get-stream handles are out of this slice (Component v0.3 path).
+  Kit `:bytes` is a host Uint8Array (runtime leaf via kotoba.kir.value).
+  Linear Component v0.3 handles remain out of this slice.
   Run: `npm run test-nbb-object-provider`."
   (:require [kotoba.kir.admission :as admission]
             [kotoba.compiler.frontend :as frontend]
@@ -12,8 +13,13 @@
             [kotoba.compiler.reference-runtime :as runtime]))
 
 (def source
-  (str "(ns app.object (:export [put-block compare-and-set-ref]) "
-       "(:capabilities #{:object/put-block :object/compare-and-set-ref}))"
+  (str "(ns app.object (:export [get-stream put-block compare-and-set-ref]) "
+       "(:capabilities #{:object/get-stream :object/put-block :object/compare-and-set-ref}))"
+       "(defn get-stream [request " (pr-str object/get-stream-request-type) "] "
+       (pr-str object/get-stream-result-type)
+       " (typed-cap-call :object/get-stream "
+       (pr-str object/get-stream-request-type) " "
+       (pr-str object/get-stream-result-type) " request))"
        "(defn put-block [request " (pr-str object/put-block-request-type) "] "
        (pr-str object/put-block-result-type)
        " (typed-cap-call :object/put-block "
@@ -118,7 +124,8 @@
 (defn- denial-case []
   (try
     (let [hir (frontend/analyze source)
-          _ (admission/check hir {:allow #{[:cap/call (js/BigInt 15)]
+          _ (admission/check hir {:allow #{[:cap/call (js/BigInt 14)]
+                                           [:cap/call (js/BigInt 15)]
                                            [:cap/call (js/BigInt 16)]}})
           kir (ir/lower hir)
           runtime (runtime/instantiate kir)
@@ -135,11 +142,75 @@
     (catch :default e
       (check "cljs-missing-grant-denies-before-provider-invoke" false (.-message e)))))
 
+(defn- get-stream-ready-case []
+  (try
+    (let [payload (value/utf8-string->bytes "stream-body")
+          seen (atom nil)
+          runtime (hosted (fn [request]
+                            (reset! seen request)
+                            {:bytes payload}))
+          request [object/get-stream-request-type :example/blocks "key-1"]
+          task ((:invoke runtime) 'get-stream [request])
+          polled (value/task-poll task)
+          chunk (value/stream-read! (:stream polled) 65536)]
+      (check "cljs-get-stream-returns-ready-task-and-reads-bytes"
+             (and (= {:operation :get-stream :binding :example/blocks :key "key-1"} @seen)
+                  (value/task-value? task)
+                  (= :ready (:state polled))
+                  (true? (:done? chunk))
+                  (zero? (value/compare-typed-values :bytes payload (:bytes chunk))))
+             (pr-str {:seen @seen :state (:state polled) :done? (:done? chunk)})))
+    (catch :default e
+      (check "cljs-get-stream-returns-ready-task-and-reads-bytes" false (.-message e)))))
+
+(defn- get-stream-pending-fulfill-case []
+  (try
+    (let [payload (value/utf8-string->bytes "late-body")
+          runtime (hosted (fn [_] {:pending true}))
+          request [object/get-stream-request-type :example/blocks "key-pending"]
+          pending ((:invoke runtime) 'get-stream [request])
+          polled0 (value/task-poll pending)
+          ready (value/task-fulfill! pending payload)
+          polled1 (value/task-poll ready)
+          chunk (value/stream-read! (:stream polled1) 65536)]
+      (check "cljs-get-stream-pending-then-fulfill-then-read"
+             (and (value/task-value? pending)
+                  (= :pending (:state polled0))
+                  (nil? (:stream polled0))
+                  (= :ready (:state polled1))
+                  (= (:kotoba.task/id pending) (:kotoba.task/id ready))
+                  (true? (:done? chunk))
+                  (zero? (value/compare-typed-values :bytes payload (:bytes chunk))))
+             (pr-str {:state0 (:state polled0) :state1 (:state polled1)})))
+    (catch :default e
+      (check "cljs-get-stream-pending-then-fulfill-then-read" false (.-message e)))))
+
+(defn- get-stream-multi-chunk-case []
+  (try
+    (let [a (value/utf8-string->bytes "hel")
+          b (value/utf8-string->bytes "lo")
+          joined (value/utf8-string->bytes "hello")
+          runtime (hosted (fn [_] {:chunks [a b]}))
+          request [object/get-stream-request-type :example/blocks "key-chunks"]
+          task ((:invoke runtime) 'get-stream [request])
+          polled (value/task-poll task)
+          chunk (value/stream-read! (:stream polled) 65536)]
+      (check "cljs-get-stream-multi-chunk-ready-task"
+             (and (= :ready (:state polled))
+                  (true? (:done? chunk))
+                  (zero? (value/compare-typed-values :bytes joined (:bytes chunk))))
+             (pr-str {:state (:state polled) :done? (:done? chunk)})))
+    (catch :default e
+      (check "cljs-get-stream-multi-chunk-ready-task" false (.-message e)))))
+
 (let [results [(put-boundary-case)
                (cas-case)
                (binding-case)
                (redaction-case)
-               (denial-case)]
+               (denial-case)
+               (get-stream-ready-case)
+               (get-stream-pending-fulfill-case)
+               (get-stream-multi-chunk-case)]
       failures (remove :ok? results)]
   (doseq [{:keys [name ok? detail]} results]
     (println (if ok? "PASS" "FAIL") name (or detail "")))
