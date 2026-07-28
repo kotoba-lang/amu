@@ -2004,6 +2004,24 @@
         (do (when-not (= 1 (count args))
               (reject! "string-from-i64 requires one i64" form))
             (list string-from-i64-helper-name (desugar-expr (first args))))
+        ;; T4.2: bounded multi-part join → nested string-concat (max 8 parts).
+        ;; Works on every backend that already has string-concat (wasm/KIR/js).
+        string-join
+        (do (when (zero? (count args))
+              (reject! "string-join requires a separator string" form))
+            (when (> (count (rest args)) 8)
+              (reject! "string-join exceeds max 8 parts" form))
+            (let [sep (desugar-expr (first args))
+                  parts (mapv desugar-expr (rest args))]
+              (cond
+                (empty? parts) ""
+                (= 1 (count parts)) (first parts)
+                :else
+                (reduce (fn [acc part]
+                          (list 'string-concat acc
+                                (list 'string-concat sep part)))
+                        (first parts)
+                        (rest parts)))))
         ;; W1: friendly namespaced ops elaborate before validation sees them.
         (if-let [kw (capability-keyword-for-symbol op)]
           (elaborate-named-operation form op kw args)
@@ -2779,6 +2797,16 @@
 
       (= op 'string-from-i64)
       (do (require-expression-type! (first types) :i64 (first args)) :string)
+
+      ;; T4.2: desugars away; defensive typing if seen pre-desugar.
+      (= op 'string-join)
+      (do (when (zero? (count args))
+            (reject! "string-join requires a separator string" args))
+          (when (> (count (rest args)) 8)
+            (reject! "string-join exceeds max 8 parts" args))
+          (doseq [[arg type] (map vector args types)]
+            (require-expression-type! type :string arg))
+          :string)
 
       (= op 'bytes-task-byte-count)
       (do (require-expression-type! (first types) [:task [:stream :bytes]] (first args))

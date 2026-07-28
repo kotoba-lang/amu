@@ -160,3 +160,48 @@
     (is (= 1 (ir/execute kir 'alnum-run-bytes [s])))
     (is (zero? (:exit js-result)) (:err js-result))
     (is (zero? (:exit wasm-result)) (:err wasm-result))))
+
+;; T4.2: bounded string-join desugars to nested string-concat.
+(def join-source
+  "(ns string.join (:export [main join2 join3 empty-parts one-part]))
+   (defn main [] :i64 0)
+   (defn join2 [sep :string a :string b :string] :string
+     (string-join sep a b))
+   (defn join3 [sep :string a :string b :string c :string] :string
+     (string-join sep a b c))
+   (defn empty-parts [sep :string] :string
+     (string-join sep))
+   (defn one-part [sep :string a :string] :string
+     (string-join sep a))")
+
+(deftest bounded-string-join-kir-and-targets
+  (let [javascript (compiler/compile-source join-source :js-kotoba-v1)
+        wasm (compiler/compile-source join-source :wasm32-kotoba-v1)
+        kir (:kir wasm)
+        js64 (encoded (.getBytes ^String (:source javascript) "UTF-8"))
+        wasm64 (encoded (:bytes wasm))
+        checks (str "if(x.join2(',', 'a', 'b')!=='a,b')process.exit(2);"
+                    "if(x.join3('-', 'x', 'y', 'z')!=='x-y-z')process.exit(3);"
+                    "if(x['empty-parts'](',')!=='')process.exit(4);"
+                    "if(x['one-part'](',', 'solo')!=='solo')process.exit(5);")
+        js-result (shell/sh "node" "--input-type=module" "-e"
+                            (str "import('data:text/javascript;base64," js64
+                                 "').then(m=>{const x=m.instantiateKotoba({});" checks "})"))
+        wasm-result (shell/sh "node" "--input-type=module" "-e"
+                              (str "import('./runtime/browser-host.mjs').then(async m=>{"
+                                   "const h=await m.instantiateKotoba(Buffer.from(process.argv[1],'base64'));"
+                                   "const x=h.instance.exports;" checks "})") wasm64)]
+    (is (= "a,b" (ir/execute kir 'join2 ["," "a" "b"])))
+    (is (= "x-y-z" (ir/execute kir 'join3 ["-" "x" "y" "z"])))
+    (is (= "" (ir/execute kir 'empty-parts [","])))
+    (is (= "solo" (ir/execute kir 'one-part ["," "solo"])))
+    (is (zero? (:exit js-result)) (:err js-result))
+    (is (zero? (:exit wasm-result)) (:err wasm-result))))
+
+(deftest string-join-rejects-too-many-parts
+  (is (thrown-with-msg? clojure.lang.ExceptionInfo #"max 8 parts"
+        (compiler/compile-source
+         "(ns t (:export [f]))
+          (defn f [] :string
+            (string-join \",\" \"1\" \"2\" \"3\" \"4\" \"5\" \"6\" \"7\" \"8\" \"9\"))"
+         :wasm32-kotoba-v1))))
