@@ -3338,38 +3338,102 @@
   [op]
   (contains? '#{bytes-task-byte-count task-ready?} op))
 
-(defn- single-linear-let-move
-  "ADR 0137: admit a single affine let that binds one linear resource and
-  uses it exactly once — either as the let result (move) or as the sole
-  argument to bytes-task-byte-count / task-ready? (consume).
+(defn- form-contains-linear-call?
+  [form]
+  (boolean (some linear-typed-cap-call? (tree-seq coll? seq form))))
 
-  Returns the underlying typed-cap-call form when the body matches, else nil.
-  Does not admit multi-binding lets, rebinding, or multiple uses."
+(defn- mentions-sym?
+  [form sym]
+  (boolean (some #(= % sym) (tree-seq coll? seq form))))
+
+(defn- exclusive-use-of-linear
+  "If `form` exclusively moves or consumes `sym` (no other linear calls),
+  returns `{:kind :move|:consume}`. Returns nil on mismatch."
+  [form sym]
+  (cond
+    (= form sym)
+    {:kind :move}
+
+    (and (seq? form)
+         (linear-consume-head? (first form))
+         (= 2 (count form))
+         (= sym (second form)))
+    {:kind :consume}
+
+    ;; ADR 0138: balanced if — both arms exclusive-use sym the same way;
+    ;; test must not mention sym or produce linear calls.
+    (and (seq? form) (= 'if (first form)) (>= (count form) 3))
+    (let [test (nth form 1)
+          then (nth form 2)
+          else (when (>= (count form) 4) (nth form 3))]
+      (when (and else
+                 (not (mentions-sym? test sym))
+                 (not (form-contains-linear-call? test)))
+        (let [t (exclusive-use-of-linear then sym)
+              e (exclusive-use-of-linear else sym)]
+          (when (and t e (= (:kind t) (:kind e)))
+            t))))
+
+    :else nil))
+
+(defn- linear-let-move
+  "ADR 0137 + 0138: admit let forms that bind exactly one linear typed-cap-call
+  (possibly among non-linear bindings) and exclusively move or consume it.
+
+  ADR 0138 adds:
+  - multi-binding lets with non-linear companions
+  - nested non-linear outer lets
+  - balanced `if` arms that each move or each consume the binding
+
+  Returns the underlying typed-cap-call when admitted, else nil."
   [body]
-  (when (and (seq? body)
-             (= 'let (first body))
-             (= 3 (count body)))
-    (let [[_ bindings result-expr] body]
-      (when (and (vector? bindings)
-                 (= 2 (count bindings))
-                 (simple-symbol? (first bindings))
-                 (linear-typed-cap-call? (second bindings)))
-        (let [sym (first bindings)
-              call (second bindings)]
-          (cond
-            ;; (let [task call] task)
-            (= result-expr sym)
-            call
+  (letfn [(walk [form]
+            (cond
+              (linear-typed-cap-call? form)
+              form
 
-            ;; (let [task call] (bytes-task-byte-count task))
-            ;; (let [task call] (task-ready? task))
-            (and (seq? result-expr)
-                 (linear-consume-head? (first result-expr))
-                 (= 2 (count result-expr))
-                 (= sym (second result-expr)))
-            call
+              (and (seq? form)
+                   (linear-consume-head? (first form))
+                   (= 2 (count form))
+                   (linear-typed-cap-call? (second form)))
+              (second form)
 
-            :else nil))))))
+              (and (seq? form) (= 'let (first form)) (vector? (second form))
+                   (even? (count (second form))))
+              (let [bindings (second form)
+                    body-forms (nnext form)
+                    result-expr (when (= 1 (count body-forms)) (first body-forms))]
+                (when result-expr
+                  (let [pairs (partition 2 bindings)
+                        linear-pairs (filter (fn [[_ v]] (linear-typed-cap-call? v)) pairs)
+                        non-linear-pairs (remove (fn [[_ v]] (linear-typed-cap-call? v)) pairs)]
+                    (cond
+                      ;; Exactly one linear binding (+ optional non-linear companions)
+                      (and (= 1 (count linear-pairs))
+                           (every? (fn [[name value]]
+                                     (and (simple-symbol? name)
+                                          (not (form-contains-linear-call? value))))
+                                   non-linear-pairs))
+                      (let [[sym call] (first linear-pairs)]
+                        (when (and (simple-symbol? sym)
+                                   (every? (fn [[_ v]] (not (mentions-sym? v sym)))
+                                           non-linear-pairs)
+                                   (exclusive-use-of-linear result-expr sym))
+                          call))
+
+                      ;; Pure non-linear outer wrappers — recurse into body
+                      (and (empty? linear-pairs)
+                           (seq pairs)
+                           (every? (fn [[name value]]
+                                     (and (simple-symbol? name)
+                                          (not (form-contains-linear-call? value))))
+                                   pairs))
+                      (walk result-expr)
+
+                      :else nil))))
+
+              :else nil))]
+    (walk body)))
 
 (defn- check-linear-resource-ownership! [functions]
   (doseq [{:keys [param-types result body] :as function} functions]
@@ -3392,9 +3456,9 @@
                  (linear-typed-cap-call? (second body)))
             (second body)
 
-            ;; ADR 0137: single let-bound affine move / consume
+            ;; ADR 0137/0138: let-bound affine move / consume (+ if balanced)
             :else
-            (single-linear-let-move body))]
+            (linear-let-move body))]
       (when (or (and (linear-resource-type? result)
                      (or (nil? direct)
                          (not= result (nth direct 3))))
