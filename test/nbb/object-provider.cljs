@@ -30,10 +30,11 @@
              {:allowed-bindings #{:example/blocks :example/refs}
               :transport transport})
         hir (frontend/analyze source)
-        _ (admission/check hir {:allow #{[:cap/call (js/BigInt 15)]
+        _ (admission/check hir {:allow #{[:cap/call (js/BigInt 14)]
+                                         [:cap/call (js/BigInt 15)]
                                          [:cap/call (js/BigInt 16)]}})
         kir (ir/lower hir)]
-    (runtime/instantiate kir {:allow #{15 16} :providers (:providers kit)})))
+    (runtime/instantiate kir {:allow #{14 15 16} :providers (:providers kit)})))
 
 (defn- check [name ok? detail]
   {:name name :ok? (boolean ok?) :detail (when-not ok? detail)})
