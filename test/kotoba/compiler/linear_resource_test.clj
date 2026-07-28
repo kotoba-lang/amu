@@ -45,12 +45,79 @@
         (catch clojure.lang.ExceptionInfo error
           (boolean (re-find #"move-aware" (.getMessage error)))))))
 
-(deftest linear-result-must-be-one-direct-capability-move
+(deftest linear-let-move-is-admitted
+  "ADR 0137: single affine let that returns the bound task is a valid move."
+  (let [checked
+        (compiler/check-source
+         "(ns app (:export [open]))
+          (defn open [url :string] [:task [:stream :bytes]]
+            (let [task (typed-cap-call :http/get-stream :string
+                         [:task [:stream :bytes]] url)]
+              task))"
+         {:allow #{[:cap/call 13]}})
+        function (first (get-in checked [:hir :functions]))
+        body (:body function)]
+    (is (= [:task [:stream :bytes]] (:result function)))
+    (is (= 'let (first body)))
+    (is (= 'task (first (second body))))
+    (is (= '(typed-cap-call 13 :string [:task [:stream :bytes]] url)
+           (second (second body))))
+    (is (= 'task (nth body 2)))))
+
+(deftest linear-let-consume-byte-count-is-admitted
+  "ADR 0137: let-bound task consumed exactly once via bytes-task-byte-count."
+  (let [checked
+        (compiler/check-source
+         "(ns app (:export [size]))
+          (defn size [url :string] :i64
+            (let [task (typed-cap-call :http/get-stream :string
+                         [:task [:stream :bytes]] url)]
+              (bytes-task-byte-count task)))"
+         {:allow #{[:cap/call 13]}})
+        function (first (get-in checked [:hir :functions]))
+        body (:body function)]
+    (is (= :i64 (:result function)))
+    (is (= 'let (first body)))
+    (is (= 'bytes-task-byte-count (first (nth body 2))))
+    (is (= 'task (second (nth body 2))))))
+
+(deftest linear-let-consume-task-ready-is-admitted
+  (let [checked
+        (compiler/check-source
+         "(ns app (:export [ready]))
+          (defn ready [url :string] :bool
+            (let [task (typed-cap-call :http/get-stream :string
+                         [:task [:stream :bytes]] url)]
+              (task-ready? task)))"
+         {:allow #{[:cap/call 13]}})
+        function (first (get-in checked [:hir :functions]))]
+    (is (= :bool (:result function)))
+    (is (= 'let (first (:body function))))))
+
+(deftest linear-let-double-use-is-rejected
+  "Two uses of the same affine binding is not a single move."
+  (is (try
+        (compiler/check-source
+         "(ns app (:export [bad]))
+          (defn bad [url :string] :i64
+            (let [task (typed-cap-call :http/get-stream :string
+                         [:task [:stream :bytes]] url)]
+              (+ (bytes-task-byte-count task)
+                 (bytes-task-byte-count task))))"
+         {:allow #{[:cap/call 13]}})
+        false
+        (catch clojure.lang.ExceptionInfo error
+          (boolean (re-find #"one direct typed capability move"
+                            (.getMessage error)))))))
+
+(deftest linear-let-with-extra-binding-is-rejected
+  "Only a single binding that is the linear resource is admitted."
   (is (try
         (compiler/check-source
          "(ns app (:export [bad]))
           (defn bad [url :string] [:task [:stream :bytes]]
-            (let [task (typed-cap-call :http/get-stream :string
+            (let [n 1
+                  task (typed-cap-call :http/get-stream :string
                          [:task [:stream :bytes]] url)]
               task))"
          {:allow #{[:cap/call 13]}})

@@ -3325,6 +3325,52 @@
       (when (> keyword-bytes value/string-value-byte-limit)
         (reject! "module keyword literals exceed UTF-8 byte limit" keyword-bytes)))))
 
+(defn- linear-typed-cap-call?
+  "True when `form` is a 5-element typed-cap-call whose result type is a
+  linear task/stream resource."
+  [form]
+  (and (seq? form)
+       (= 'typed-cap-call (first form))
+       (= 5 (count form))
+       (linear-resource-type? (nth form 3))))
+
+(defn- linear-consume-head?
+  [op]
+  (contains? '#{bytes-task-byte-count task-ready?} op))
+
+(defn- single-linear-let-move
+  "ADR 0137: admit a single affine let that binds one linear resource and
+  uses it exactly once — either as the let result (move) or as the sole
+  argument to bytes-task-byte-count / task-ready? (consume).
+
+  Returns the underlying typed-cap-call form when the body matches, else nil.
+  Does not admit multi-binding lets, rebinding, or multiple uses."
+  [body]
+  (when (and (seq? body)
+             (= 'let (first body))
+             (= 3 (count body)))
+    (let [[_ bindings result-expr] body]
+      (when (and (vector? bindings)
+                 (= 2 (count bindings))
+                 (simple-symbol? (first bindings))
+                 (linear-typed-cap-call? (second bindings)))
+        (let [sym (first bindings)
+              call (second bindings)]
+          (cond
+            ;; (let [task call] task)
+            (= result-expr sym)
+            call
+
+            ;; (let [task call] (bytes-task-byte-count task))
+            ;; (let [task call] (task-ready? task))
+            (and (seq? result-expr)
+                 (linear-consume-head? (first result-expr))
+                 (= 2 (count result-expr))
+                 (= sym (second result-expr)))
+            call
+
+            :else nil))))))
+
 (defn- check-linear-resource-ownership! [functions]
   (doseq [{:keys [param-types result body] :as function} functions]
     (when (some linear-resource-type? param-types)
@@ -3333,28 +3379,22 @@
     (let [linear-calls
           (->> (tree-seq coll? seq body)
                (keep (fn [form]
-                       (when (and (seq? form)
-                                  (= 'typed-cap-call (first form))
-                                  (= 5 (count form))
-                                  (linear-resource-type? (nth form 3)))
-                         form)))
+                       (when (linear-typed-cap-call? form) form)))
                vec)
           direct
           (cond
-            (and (seq? body)
-                 (= 'typed-cap-call (first body))
-                 (= 5 (count body))
-                 (linear-resource-type? (nth body 3)))
+            (linear-typed-cap-call? body)
             body
 
             (and (seq? body)
-                 (contains? '#{bytes-task-byte-count task-ready?} (first body))
+                 (linear-consume-head? (first body))
                  (= 2 (count body))
-                 (seq? (second body))
-                 (= 'typed-cap-call (first (second body)))
-                 (= 5 (count (second body)))
-                 (linear-resource-type? (nth (second body) 3)))
-            (second body))]
+                 (linear-typed-cap-call? (second body)))
+            (second body)
+
+            ;; ADR 0137: single let-bound affine move / consume
+            :else
+            (single-linear-let-move body))]
       (when (or (and (linear-resource-type? result)
                      (or (nil? direct)
                          (not= result (nth direct 3))))
