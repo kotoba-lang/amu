@@ -179,7 +179,8 @@
     document-i64-value 1 document-f64-value 1})
 (def document-variadic-operations '#{document-vector document-map})
 (def sequencing-operations '#{do})
-(def string-operations '{string-byte-length 1 bytes-task-byte-count 1 task-ready? 1
+(def string-operations '{string-byte-length 1 string-length 1 string-from-i64 1
+                         bytes-task-byte-count 1 task-ready? 1
                          object-cas-won 1
                          bytes-response-byte-count 1 bool-result 1
                          http-response-status 1 log-read-byte-count 1
@@ -611,6 +612,13 @@
 ;; every keyword": tracking is a purely additional ns-level lint, never part
 ;; of resolving the keyword to its id.
 (def ^:dynamic *used-capability-keywords* nil)
+
+;; Product Value ABI v1 / pure-product: local option types for if-some/when-some.
+;; Bound during analyze while desugaring a typed defn body so
+;; `(if-some [x opt-param] …)` can lower to option-match with the real
+;; `[:option T]` instead of hardcoding `[:option :i64]` (which broke
+;; `[:option :string]` and other payloads).
+(def ^:dynamic *local-option-types* nil)
 
 (defn- capability-wire-id [capability form]
   (if-let [id (get capability-registry capability)]
@@ -1057,6 +1065,41 @@
      (reduce (fn [value step] (list 'let [name value] step))
              initial steps))))
 
+(defn- resolve-option-type
+  "Best-effort option type for sugar lowering (Product Value ABI v1).
+
+  Prefer an explicit typed local (`*local-option-types*`), then syntactic
+  constructors `(option-some-of T …)` / `(option-none-of T)`. Fall back to
+  `[:option :i64]` only for legacy monomorphic option-i64 paths."
+  [value-form]
+  (cond
+    (and (symbol? value-form) (nil? (namespace value-form))
+         (map? *local-option-types*))
+    (get *local-option-types* value-form)
+
+    (and (seq? value-form)
+         (contains? '#{option-some-of option-none-of option-some?-of
+                       option-value-of option-match}
+                    (first value-form))
+         (vector? (second value-form))
+         (= :option (first (second value-form))))
+    (second value-form)
+
+    :else [:option :i64]))
+
+(defn- option-payload-fallback
+  "Typed bottom value for option-value-of's unused fallback arm.
+  Must match payload type so typecheck accepts the if-some lowering."
+  [payload-type]
+  (cond
+    (= payload-type :i64) 0
+    (= payload-type :bool) false
+    (= payload-type :string) ""
+    (= payload-type :keyword) :none
+    (= payload-type :f64) 0.0
+    (= payload-type :f32) 0.0
+    :else 0))
+
 (defn- desugar-some-thread [args form last?]
   (when (empty? args)
     (reject! (if last? "some->> requires an initial option" "some-> requires an initial option") form))
@@ -1064,8 +1107,11 @@
             (if (empty? steps)
               (desugar-expr option-form)
               (let [tmp (gensym "some-thread__")
-                    option-type [:option :i64]
-                    payload (list 'option-value-of option-type tmp 0)
+                    option-type (or (resolve-option-type option-form) [:option :i64])
+                    payload-type (when (and (vector? option-type) (= :option (first option-type)))
+                                   (second option-type))
+                    payload (list 'option-value-of option-type tmp
+                                  (option-payload-fallback payload-type))
                     threaded (thread-form payload (first steps) last?)]
                 (list 'let [tmp (desugar-expr option-form)]
                       (list 'if (list 'option-some?-of option-type tmp)
@@ -1101,14 +1147,22 @@
                            "if-some requires then and optional else expressions") form))
     (let [[pattern value] binding
           tmp (gensym "binding-some__")
+          option-type (or (resolve-option-type value) [:option :i64])
           then-form (if when?
                       (if (= 1 (count bodies)) (first bodies) (desugar-do bodies))
                       (first bodies))
-          else-form (if when? 0 (if (= 2 (count bodies)) (second bodies) 0))]
+          else-form (if when? 0 (if (= 2 (count bodies)) (second bodies) 0))
+          payload-type (when (and (vector? option-type) (= :option (first option-type)))
+                         (second option-type))
+          fallback (option-payload-fallback payload-type)]
+      (when-not (and (vector? option-type) (= :option (first option-type)))
+        (reject! "if-some/when-some value must have an option type; use match-option with an explicit type or a typed local"
+                 form))
       (desugar-expr
        (list 'let [tmp value]
-             (list 'if (list 'option-some?-of [:option :i64] tmp)
-                   (list 'let [pattern (list 'option-value-of [:option :i64] tmp 0)] then-form)
+             (list 'if (list 'option-some?-of option-type tmp)
+                   (list 'let [pattern (list 'option-value-of option-type tmp fallback)]
+                         then-form)
                    else-form))))))
 
 (defn- desugar-case [args form]
@@ -1211,6 +1265,43 @@
   (apply list 'map-new
          (mapcat (fn [[k v]] [k (desugar-expr v)])
                  (sort-by (comp str key) form))))
+
+(def ^:private string-from-i64-helper-name '__kotoba_string_from_i64)
+(def ^:private string-from-i64-nat-helper-name '__kotoba_string_from_i64_nat)
+
+(def ^:private string-from-i64-nat-helper
+  "Unsigned decimal digits for string-from-i64 (Product Value ABI v1).
+  Uses only string-substring/string-concat already qualified for wasm."
+  {:name string-from-i64-nat-helper-name
+   :params '[n]
+   :param-types [:i64]
+   :result :string
+   :effects #{}
+   :body '(if (< n 10)
+            (string-substring "0123456789" n (+ n 1))
+            (string-concat
+             (__kotoba_string_from_i64_nat (quot n 10))
+             (string-substring "0123456789" (- n (* (quot n 10) 10))
+                               (+ (- n (* (quot n 10) 10)) 1))))})
+
+(def ^:private string-from-i64-helper
+  "Signed decimal printer for string-from-i64 surface (Product Value ABI v1)."
+  {:name string-from-i64-helper-name
+   :params '[n]
+   :param-types [:i64]
+   :result :string
+   :effects #{}
+   :body '(if (< n 0)
+            (string-concat "-" (__kotoba_string_from_i64_nat (- 0 n)))
+            (__kotoba_string_from_i64_nat n))})
+
+(defn- uses-string-from-i64? [form]
+  (cond
+    (seq? form) (or (= string-from-i64-helper-name (first form))
+                    (= string-from-i64-nat-helper-name (first form))
+                    (some uses-string-from-i64? (rest form)))
+    (coll? form) (some uses-string-from-i64? form)
+    :else false))
 
 (def ^:private map-get-helper-name '__kotoba_map_get)
 
@@ -1848,6 +1939,16 @@
                          x2 (list 'u32-wrap (list 'i32-xor x1 (list 'u32-shift-right x1 17)))
                          x3 (list 'u32-wrap (list 'i32-xor x2 (list 'i32-shift-left x2 5)))]
                   x3)))
+        ;; Product Value ABI v1: surface aliases that lower to ops already
+        ;; qualified on every product backend (wasm / KIR / native string slice).
+        string-length
+        (do (when-not (= 1 (count args))
+              (reject! "string-length requires one string" form))
+            (list 'string-byte-length (desugar-expr (first args))))
+        string-from-i64
+        (do (when-not (= 1 (count args))
+              (reject! "string-from-i64 requires one i64" form))
+            (list string-from-i64-helper-name (desugar-expr (first args))))
         ;; W1: friendly namespaced ops elaborate before validation sees them.
         (if-let [kw (capability-keyword-for-symbol op)]
           (elaborate-named-operation form op kw args)
@@ -2615,6 +2716,14 @@
 
       (= op 'string-byte-length)
       (do (require-expression-type! (first types) :string (first args)) :i64)
+
+      ;; Product Value ABI v1: alias of string-byte-length (UTF-8 byte count;
+      ;; same unit as string-substring indices). Prefer this name in pure-product.
+      (= op 'string-length)
+      (do (require-expression-type! (first types) :string (first args)) :i64)
+
+      (= op 'string-from-i64)
+      (do (require-expression-type! (first types) :i64 (first args)) :string)
 
       (= op 'bytes-task-byte-count)
       (do (require-expression-type! (first types) [:task [:stream :bytes]] (first args))
@@ -4074,7 +4183,15 @@
                                  source-body (substitute-constants
                                               (wrap-body (first body))
                                               constants constant-bound)
-                                 desugared (binding [*pending-loop-helpers* loop-helpers]
+                                 ;; Product Value ABI v1: typed option params for if-some/when-some.
+                                 option-locals
+                                 (into {}
+                                       (keep (fn [[p t]]
+                                               (when (and (vector? t) (= :option (first t)))
+                                                 [p t]))
+                                             (map vector params param-types)))
+                                 desugared (binding [*pending-loop-helpers* loop-helpers
+                                                     *local-option-types* option-locals]
                                              (desugar-expr source-body))]
                              (into [(cond-> {:name name :source-name source-name
                                              :params params :param-types param-types
@@ -4093,7 +4210,9 @@
         ;; mismatch trips it).
         parsed (cond-> parsed
                  (some #(uses-map-get? (:body %)) parsed) (conj map-get-helper)
-                 (some #(uses-map-without? (:body %)) parsed) (conj map-without-helper))
+                 (some #(uses-map-without? (:body %)) parsed) (conj map-without-helper)
+                 (some #(uses-string-from-i64? (:body %)) parsed)
+                 (#(into % [string-from-i64-nat-helper string-from-i64-helper])))
         parsed (mapv #(if (:param-types %)
                         %
                         (assoc % :param-types (vec (repeat (count (:params %)) :i64))))
