@@ -1,0 +1,10 @@
+(ns kotoba.lang.conformance.record-kit)
+
+;; T1.3 + T4.4: sealed record-new / record-get dual backends.
+(defn main []
+  (+ (record-get [:record :demo/point [[:x :i64] [:y :i64]]]
+                 (record-new [:record :demo/point [[:x :i64] [:y :i64]]] 3 4)
+                 :x)
+     (record-get [:record :demo/point [[:x :i64] [:y :i64]]]
+                 (record-new [:record :demo/point [[:x :i64] [:y :i64]]] 3 4)
+                 :y)))

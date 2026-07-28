@@ -1,9 +1,9 @@
 {:kotoba.lang.conformance/version 2
  :kotoba.lang.conformance/wbs "T1.3"
  :kotoba.lang.conformance/note
- "T1.3 dual-backend pilot (string kit expand). Control fixtures + full pure-product
-  string surface dual-ok (join/from-i64/contains/eq/substring/fold-case/code-point).
-  Full kotoba-lang matrix still progressive as admission grows."
+ "T1.3 dual-backend pilot (string + record kit). Control fixtures + full pure-product
+  string-ops surface + sealed record-new/get (T4.4). Full kotoba-lang matrix still
+  progressive as admission grows."
 
  :backends
  {:kir {:id :kir :status :required-for-pure-product}
@@ -118,4 +118,13 @@
    :function "main"
    :args []
    :expect {:kotoba 65}
-   :note "string-code-point-at ASCII"}]}
+   :note "string-code-point-at ASCII"}
+  {:id :record-kit
+   :class :pure-product-run
+   :required-backends #{:kir :wasm32-kotoba-v1}
+   :kind :run
+   :entry "values/record_kit.kotoba"
+   :function "main"
+   :args []
+   :expect {:kotoba 7}
+   :note "T4.4 sealed record-new/get dual-backend"}]}
