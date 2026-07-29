@@ -7,7 +7,7 @@
   (let [g (lc/load-goldens)]
     (is (= 1 (:kotoba.lang.conformance.golden/version g)))
     (is (= "T1.5" (:kotoba.lang.conformance.golden/wbs g)))
-    (is (= 42 (count (:cases g))))))
+    (is (= 43 (count (:cases g))))))
 
 (deftest golden-digests-match-live-compile
   (let [report (lc/check-goldens)]
@@ -15,7 +15,7 @@
         (str "digest drift — regenerate with: "
              "clojure -M:conformance --write-golden ; "
              (pr-str (:mismatches report))))
-    (is (= 42 (:case-count report)))))
+    (is (= 43 (:case-count report)))))
 
 (deftest digest-case-includes-both-hashes
   (let [m (lc/load-manifest)

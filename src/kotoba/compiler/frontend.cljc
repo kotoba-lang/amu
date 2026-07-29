@@ -625,6 +625,10 @@
 ;; per `loop` occurrence) rather than one fixed shared name.
 (def ^:dynamic *pending-loop-helpers* nil)
 
+;; Optional override for synthesized loop-helper return type (default :i64).
+;; T4.5 map/filter bind this to :vector-i64 so the accumulator can exit as a vector.
+(def ^:dynamic *loop-result-type* :i64)
+
 ;; A synthesized loop-helper carries no param-type annotations (its captured
 ;; outer variables have types only knowable at its call site). During the
 ;; param-type resolution pass (resolve-loop-helper-param-types) these two are
@@ -1627,7 +1631,8 @@
               (reject! "loop bindings plus captured outer variables exceed this compiler's ABI-supported arity" form))
             (when *pending-loop-helpers*
               (swap! *pending-loop-helpers* conj
-                     {:name helper-name :params helper-params :result :i64 :effects #{}
+                     {:name helper-name :params helper-params
+                      :result (or *loop-result-type* :i64) :effects #{}
                       :loop-helper? true
                       :body (replace-recur desugared-body helper-name loop-names captured)}))
             (list* helper-name (concat loop-inits captured))))
@@ -2073,6 +2078,87 @@
                          (list 'if (list '< i (list 'vector-count v))
                                (list 'recur (list '+ i 1) step)
                                acc))))))
+        ;; T4.5: bounded map over vector-i64 → zero-charge loop + vector-conj.
+        ;; Single collection only: (map (fn [x] expr) coll) or (map inc|dec coll).
+        map
+        (do
+          (when-not (= 2 (count args))
+            (reject! "map requires fn and one vector-i64 collection (multi-source deferred)" form))
+          (let [[f-form coll-form] args
+                coll* (desugar-expr coll-form)
+                v (gensym "map_v__")
+                i (gensym "map_i__")
+                acc (gensym "map_acc__")
+                mapped
+                (cond
+                  (and (symbol? f-form)
+                       (nil? (namespace f-form))
+                       (= 'inc f-form))
+                  (list '+ (list 'vector-at v i) 1)
+
+                  (and (symbol? f-form)
+                       (nil? (namespace f-form))
+                       (= 'dec f-form))
+                  (list '- (list 'vector-at v i) 1)
+
+                  (and (seq? f-form) (= 'fn (first f-form)))
+                  (let [[_ params & body] f-form]
+                    (when-not (and (vector? params) (= 1 (count params))
+                                   (every? symbol? params)
+                                   (= 1 (count body)))
+                      (reject! "map fn must be (fn [x] single-expr)" f-form))
+                    (let [[x] params]
+                      (list 'let [x (list 'vector-at v i)]
+                            (desugar-expr (first body)))))
+
+                  :else
+                  (reject! "map only admits (fn [x] expr) or inc/dec" f-form))]
+            (binding [*loop-result-type* :vector-i64]
+              (desugar-expr
+               (list 'let [v coll*]
+                     (list 'loop [i 0 acc (list 'vector-i64)]
+                           (list 'if (list '< i (list 'vector-count v))
+                                 (list 'recur (list '+ i 1)
+                                       (list 'vector-conj acc mapped))
+                                 acc)))))))
+        ;; T4.5: bounded filter over vector-i64 → zero-charge loop + vector-conj.
+        ;; (filter (fn [x] pred-expr) coll) — pred-expr must be usable as if-test.
+        filter
+        (do
+          (when-not (= 2 (count args))
+            (reject! "filter requires pred and one vector-i64 collection" form))
+          (let [[p-form coll-form] args
+                coll* (desugar-expr coll-form)
+                v (gensym "filter_v__")
+                i (gensym "filter_i__")
+                acc (gensym "filter_acc__")
+                x (gensym "filter_x__")
+                pred-body
+                (cond
+                  (and (seq? p-form) (= 'fn (first p-form)))
+                  (let [[_ params & body] p-form]
+                    (when-not (and (vector? params) (= 1 (count params))
+                                   (every? symbol? params)
+                                   (= 1 (count body)))
+                      (reject! "filter pred must be (fn [x] single-expr)" p-form))
+                    (let [[px] params]
+                      ;; Bind user param to element; desugar body in that scope.
+                      (list 'let [px x]
+                            (desugar-expr (first body)))))
+
+                  :else
+                  (reject! "filter only admits (fn [x] pred-expr)" p-form))]
+            (binding [*loop-result-type* :vector-i64]
+              (desugar-expr
+               (list 'let [v coll*]
+                     (list 'loop [i 0 acc (list 'vector-i64)]
+                           (list 'if (list '< i (list 'vector-count v))
+                                 (list 'let [x (list 'vector-at v i)]
+                                       (list 'recur (list '+ i 1)
+                                             (list 'if pred-body
+                                                   (list 'vector-conj acc x)
+                                                   acc)))
+                                 acc)))))))
         ;; W1: friendly namespaced ops elaborate before validation sees them.
         (if-let [kw (capability-keyword-for-symbol op)]
           (elaborate-named-operation form op kw args)
@@ -3527,7 +3613,8 @@
                                                               (contains? helper-names name) (placeholder f)
                                                               param-types param-types
                                                               :else (placeholder f))
-                                               :result (if (contains? helper-names name) :i64 result)}]))
+                                               ;; Preserve declared loop-helper result (T4.5 map/filter → :vector-i64).
+                                               :result (or result :i64)}]))
                                  functions)]
                   (binding [*loop-helper-names* (into #{} (remove #(contains? resolved %) helper-names))
                             *loop-helper-recorder* recorder]

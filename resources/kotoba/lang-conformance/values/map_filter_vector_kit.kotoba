@@ -1,0 +1,6 @@
+(ns kotoba.lang.conformance.map-filter-vector-kit (:export [main]))
+;; T4.5: map/filter over vector-i64 (fn + inc) dual-backend.
+(defn main [] :i64
+  (+ (reduce + 0 (map (fn [x] (* x 2)) (vector-i64 1 2 3)))
+     (+ (reduce + 0 (filter (fn [x] (> x 1)) (vector-i64 1 2 3 4)))
+        (reduce + 0 (map inc (vector-i64 1 2 3))))))
