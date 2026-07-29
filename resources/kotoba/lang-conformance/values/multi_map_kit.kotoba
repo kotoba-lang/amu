@@ -1,0 +1,7 @@
+(ns kotoba.lang.conformance.multi-map-kit (:export [main]))
+;; T4.5: 2-source map over vector-i64 (fn + named; shortest stop).
+(defn add [a :i64 b :i64] :i64 (+ a b))
+(defn main [] :i64
+  (+ (reduce + 0 (map (fn [x y] (+ x y)) (vector-i64 1 2) (vector-i64 7 8)))
+     (+ (reduce + 0 (map add (vector-i64 1 2 3) (vector-i64 10 20)))
+        (vector-count (map add (vector-i64 1 2 3) (vector-i64 9 8))))))

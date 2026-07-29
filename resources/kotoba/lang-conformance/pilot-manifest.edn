@@ -8,7 +8,7 @@
   vector-mut + typed-map-dissoc + quot/bit-not + pred/when-ext/if-some-string/shift +
   inc/dec + vector-sum loop + shift-right + reduce-vector + map/filter-vector +
   named-hof + thread + option-result + reduce-named + pair-list +
-  string-length-concat.
+  string-length-concat + multi-map + list-rest + when-let-u64.
   Full matrix still progressive."
 
  :backends
@@ -454,5 +454,32 @@
    :args []
    :expect {:kotoba 7}
    :note "T1.3/T4.2 string-length + string-concat dual-backend"}
+  {:id :multi-map-kit
+   :class :pure-product-run
+   :required-backends #{:kir :wasm32-kotoba-v1}
+   :kind :run
+   :entry "values/multi_map_kit.kotoba"
+   :function "main"
+   :args []
+   :expect {:kotoba 53}
+   :note "T4.5 2-source map (fn+named, shortest stop) dual-backend"}
+  {:id :list-rest-kit
+   :class :pure-product-run
+   :required-backends #{:kir :wasm32-kotoba-v1}
+   :kind :run
+   :entry "values/list_rest_kit.kotoba"
+   :function "main"
+   :args []
+   :expect {:kotoba 7}
+   :note "T1.3 second/rest pair-chain dual-backend"}
+  {:id :when-let-u64-kit
+   :class :pure-product-run
+   :required-backends #{:kir :wasm32-kotoba-v1}
+   :kind :run
+   :entry "control/when_let_u64_kit.kotoba"
+   :function "main"
+   :args []
+   :expect {:kotoba 14}
+   :note "T1.3 when-let + u64-shr + false + <=/>= dual-backend"}
 ]
 }

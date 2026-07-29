@@ -2084,53 +2084,93 @@
                                (list 'recur (list '+ i 1) step)
                                acc))))))
         ;; T4.5: bounded map over vector-i64 → zero-charge loop + vector-conj.
-        ;; Single collection: (map (fn [x] expr) coll), (map inc|dec coll),
-        ;; or (map named-unary coll) where named-unary is a module defn of arity 1.
+        ;; 1-source: (map (fn [x] e)|inc|dec|named coll)
+        ;; 2-source: (map (fn [x y] e)|named a b) — shortest-collection termination.
+        ;; 3+ sources still deferred (arity/param budget).
         map
         (do
-          (when-not (= 2 (count args))
-            (reject! "map requires fn and one vector-i64 collection (multi-source deferred)" form))
-          (let [[f-form coll-form] args
-                coll* (desugar-expr coll-form)
-                v (gensym "map_v__")
+          (when-not (#{2 3} (count args))
+            (reject! "map requires fn and one or two vector-i64 collections (3+ deferred)" form))
+          (let [[f-form & coll-forms] args
+                n-colls (count coll-forms)
                 i (gensym "map_i__")
-                acc (gensym "map_acc__")
-                mapped
-                (cond
-                  (and (symbol? f-form)
-                       (nil? (namespace f-form))
-                       (= 'inc f-form))
-                  (list '+ (list 'vector-at v i) 1)
+                acc (gensym "map_acc__")]
+            (case n-colls
+              1
+              (let [coll* (desugar-expr (first coll-forms))
+                    v (gensym "map_v__")
+                    mapped
+                    (cond
+                      (and (symbol? f-form)
+                           (nil? (namespace f-form))
+                           (= 'inc f-form))
+                      (list '+ (list 'vector-at v i) 1)
 
-                  (and (symbol? f-form)
-                       (nil? (namespace f-form))
-                       (= 'dec f-form))
-                  (list '- (list 'vector-at v i) 1)
+                      (and (symbol? f-form)
+                           (nil? (namespace f-form))
+                           (= 'dec f-form))
+                      (list '- (list 'vector-at v i) 1)
 
-                  (and (seq? f-form) (= 'fn (first f-form)))
-                  (let [[_ params & body] f-form]
-                    (when-not (and (vector? params) (= 1 (count params))
-                                   (every? symbol? params)
-                                   (= 1 (count body)))
-                      (reject! "map fn must be (fn [x] single-expr)" f-form))
-                    (let [[x] params]
-                      (list 'let [x (list 'vector-at v i)]
-                            (desugar-expr (first body)))))
+                      (and (seq? f-form) (= 'fn (first f-form)))
+                      (let [[_ params & body] f-form]
+                        (when-not (and (vector? params) (= 1 (count params))
+                                       (every? symbol? params)
+                                       (= 1 (count body)))
+                          (reject! "1-source map fn must be (fn [x] single-expr)" f-form))
+                        (let [[x] params]
+                          (list 'let [x (list 'vector-at v i)]
+                                (desugar-expr (first body)))))
 
-                  ;; Named unary module function (fail-closed if unbound / wrong arity).
-                  (and (symbol? f-form) (nil? (namespace f-form)))
-                  (list f-form (list 'vector-at v i))
+                      (and (symbol? f-form) (nil? (namespace f-form)))
+                      (list f-form (list 'vector-at v i))
 
-                  :else
-                  (reject! "map only admits (fn [x] expr), inc/dec, or named unary" f-form))]
-            (binding [*loop-result-type* :vector-i64]
-              (desugar-expr
-               (list 'let [v coll*]
-                     (list 'loop [i 0 acc (list 'vector-i64)]
-                           (list 'if (list '< i (list 'vector-count v))
-                                 (list 'recur (list '+ i 1)
-                                       (list 'vector-conj acc mapped))
-                                 acc)))))))
+                      :else
+                      (reject! "1-source map only admits (fn [x] expr), inc/dec, or named unary" f-form))]
+                (binding [*loop-result-type* :vector-i64]
+                  (desugar-expr
+                   (list 'let [v coll*]
+                         (list 'loop [i 0 acc (list 'vector-i64)]
+                               (list 'if (list '< i (list 'vector-count v))
+                                     (list 'recur (list '+ i 1)
+                                           (list 'vector-conj acc mapped))
+                                     acc))))))
+
+              2
+              (let [a* (desugar-expr (first coll-forms))
+                    b* (desugar-expr (second coll-forms))
+                    va (gensym "map_a__")
+                    vb (gensym "map_b__")
+                    mapped
+                    (cond
+                      (and (seq? f-form) (= 'fn (first f-form)))
+                      (let [[_ params & body] f-form]
+                        (when-not (and (vector? params) (= 2 (count params))
+                                       (every? symbol? params)
+                                       (= 1 (count body)))
+                          (reject! "2-source map fn must be (fn [x y] single-expr)" f-form))
+                        (let [[x y] params]
+                          (list 'let [x (list 'vector-at va i)
+                                      y (list 'vector-at vb i)]
+                                (desugar-expr (first body)))))
+
+                      (and (symbol? f-form) (nil? (namespace f-form)))
+                      (list f-form (list 'vector-at va i) (list 'vector-at vb i))
+
+                      :else
+                      (reject! "2-source map only admits (fn [x y] expr) or named binary" f-form))]
+                (binding [*loop-result-type* :vector-i64]
+                  (desugar-expr
+                   (list 'let [va a* vb b*]
+                         (list 'loop [i 0 acc (list 'vector-i64)]
+                               ;; Stop at shortest source (or / >=).
+                               (list 'if (list 'or
+                                               (list '>= i (list 'vector-count va))
+                                               (list '>= i (list 'vector-count vb)))
+                                     acc
+                                     (list 'recur (list '+ i 1)
+                                           (list 'vector-conj acc mapped))))))))
+
+              (reject! "map supports at most two vector-i64 sources" form))))
         ;; T4.5: bounded filter over vector-i64 → zero-charge loop + vector-conj.
         ;; (filter (fn [x] pred) coll) or (filter named-pred coll).
         filter
