@@ -7,7 +7,8 @@
   typed-map (T4.4) + string-split-count (T4.2) + vector-i64 (T4.5) +
   vector-mut + typed-map-dissoc + quot/bit-not + pred/when-ext/if-some-string/shift +
   inc/dec + vector-sum loop + shift-right + reduce-vector + map/filter-vector +
-  named-hof + thread + option-result.
+  named-hof + thread + option-result + reduce-named + pair-list +
+  string-length-concat.
   Full matrix still progressive."
 
  :backends
@@ -426,5 +427,32 @@
    :args []
    :expect {:kotoba 18}
    :note "T1.3/T4.3 option+result+not dual-backend"}
+  {:id :reduce-named-kit
+   :class :pure-product-run
+   :required-backends #{:kir :wasm32-kotoba-v1}
+   :kind :run
+   :entry "values/reduce_named_kit.kotoba"
+   :function "main"
+   :args []
+   :expect {:kotoba 22}
+   :note "T4.5 named binary reduce HOF dual-backend"}
+  {:id :pair-list-kit
+   :class :pure-product-run
+   :required-backends #{:kir :wasm32-kotoba-v1}
+   :kind :run
+   :entry "values/pair_list_kit.kotoba"
+   :function "main"
+   :args []
+   :expect {:kotoba 15}
+   :note "T1.3 pair/cons/first/empty? dual-backend"}
+  {:id :string-length-concat-kit
+   :class :pure-product-run
+   :required-backends #{:kir :wasm32-kotoba-v1}
+   :kind :run
+   :entry "values/string_length_concat_kit.kotoba"
+   :function "main"
+   :args []
+   :expect {:kotoba 7}
+   :note "T1.3/T4.2 string-length + string-concat dual-backend"}
 ]
 }
