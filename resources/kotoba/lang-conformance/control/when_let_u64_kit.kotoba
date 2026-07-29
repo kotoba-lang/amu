@@ -1,0 +1,9 @@
+(ns kotoba.lang.conformance.when-let-u64-kit (:export [main]))
+;; T1.3: when-let + u64-shift-right + false + comparisons dual-backend.
+;; Note: nested `do` is not wasm-typed-qualified (solo `do` as body ok).
+(defn main [] :i64
+  (+ (when-let [x 5] (+ x 2))
+     (+ (u64-shift-right 16 2)
+        (+ (if false 0 1)
+           (+ (if (<= 1 2) 1 0)
+              (if (>= 3 3) 1 0))))))
