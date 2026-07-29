@@ -1932,9 +1932,15 @@
               (reject! "record-new requires a type descriptor" form))
             (list* 'record-new (first args) (map desugar-expr (rest args))))
         record-get
-        (do (when-not (= 3 (count args))
-              (reject! "record-get requires type, value, and literal field" form))
-            (list 'record-get (first args) (desugar-expr (second args)) (nth args 2)))
+        (do (when-not (contains? #{2 3} (count args))
+              (reject! "record-get requires (value field) or (type value field)" form))
+            ;; 2-arity is the projection sugar: the schema is recovered from the
+            ;; value's inferred type by rewrite-record-projections, which runs
+            ;; after desugar and before validation. Lowering only ever sees the
+            ;; canonical 3-arity form.
+            (if (= 2 (count args))
+              (list 'record-get (desugar-expr (first args)) (second args))
+              (list 'record-get (first args) (desugar-expr (second args)) (nth args 2))))
         record-assoc
         (do (when-not (= 4 (count args))
               (reject! "record-assoc requires type, value, literal field, and replacement" form))
@@ -3692,6 +3698,69 @@
                     functions)
               (recur next-resolved))))))))
 
+(defn- rewrite-record-projection
+  "Type-directed rewrite: `(record-get value :field)` -> the canonical
+  `(record-get SCHEMA value :field)`, recovering SCHEMA from the value's
+  inferred type.
+
+  `record-get` needs the descriptor because lowering is static, which forced
+  every projection site to repeat the whole `[:record :ns/name [[:f :i64] …]]`
+  literal (13 copies in one murakumo module). The type is already known here,
+  so the descriptor is derivable rather than something the author must retype.
+
+  Runs after desugar and before validation, so `validate-expr`, inference and
+  every backend continue to see only the 3-arity form — no lowering or
+  out-of-repo change is involved.
+
+  `let` is the only binding form that survives to this stage (`loop`/`fn` are
+  already lowered to helpers), so it is threaded explicitly and everything else
+  recurses structurally. Vectors — including type descriptors — are returned
+  untouched because they are not seqs."
+  [form locals signatures]
+  (if-not (seq? form)
+    form
+    (let [[op & args] form]
+      (cond
+        (= op 'let)
+        (let [[bindings body] args
+              [pairs locals']
+              (reduce (fn [[acc cur] [nm value]]
+                        (let [v (rewrite-record-projection value cur signatures)]
+                          [(conj acc nm v)
+                           (assoc cur nm (infer-expression-type v cur signatures))]))
+                      [[] locals]
+                      (partition 2 bindings))]
+          (list 'let (vec pairs) (rewrite-record-projection body locals' signatures)))
+
+        (and (= op 'record-get) (= 2 (count args)))
+        (let [value (rewrite-record-projection (first args) locals signatures)
+              value-type (infer-expression-type value locals signatures)]
+          (when-not (record-type? value-type)
+            (reject! (str "record-get without a type descriptor requires a record "
+                          "value; got " (pr-str value-type))
+                     form
+                     :kotoba.error/record-projection-unresolved))
+          (list 'record-get value-type value (second args)))
+
+        :else
+        (cons op (map #(rewrite-record-projection % locals signatures) args))))))
+
+(defn- rewrite-record-projections
+  "Apply `rewrite-record-projection` to every function body. Only modules that
+  declare param types can resolve the sugar; untyped modules are left alone and
+  a 2-arity `record-get` there fails closed in validation as before."
+  [functions]
+  (let [signatures (into {} (map (fn [{:keys [name params param-types result]}]
+                                   [name {:params params :param-types param-types
+                                          :result result}])
+                                 functions))]
+    (mapv (fn [{:keys [params param-types] :as f}]
+            (if (seq param-types)
+              (update f :body rewrite-record-projection
+                      (zipmap params param-types) signatures)
+              f))
+          functions)))
+
 (defn- check-value-types! [functions]
   (let [signatures (into {} (map (fn [{:keys [name params param-types result]}]
                                    [name {:params params :param-types param-types
@@ -4517,6 +4586,9 @@
         parsed (resolve-loop-helper-param-types parsed)
         named-elaboration (elaborate-named-abilities parsed)
         parsed (:functions named-elaboration)
+        ;; Resolve `(record-get value :field)` to the canonical 3-arity form
+        ;; before validation, so lowering and every backend are unaffected.
+        parsed (rewrite-record-projections parsed)
         used-capability-names
         (set/union @used-capabilities (:used named-elaboration))
         signatures (into {} (map (juxt :name :params) parsed))
