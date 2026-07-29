@@ -1,0 +1,8 @@
+(ns kotoba.lang.conformance.vector-sum-kit (:export [main]))
+;; T4.5: reduce-over-vector via zero-charge loop (no map/filter sugar yet).
+(defn main [] :i64
+  (let [v (vector-i64 10 20 30)]
+    (loop [i 0 acc 0]
+      (if (< i (vector-count v))
+        (recur (inc i) (+ acc (vector-at v i)))
+        acc))))

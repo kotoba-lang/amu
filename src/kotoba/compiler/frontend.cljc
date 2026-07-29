@@ -2025,6 +2025,15 @@
                                 (list 'string-concat sep part)))
                         (first parts)
                         (rest parts)))))
+        ;; T4.5/stdlib sugar: inc/dec → arithmetic already dual-backend green.
+        inc
+        (do (when-not (= 1 (count args))
+              (reject! "inc requires one i64" form))
+            (list '+ (desugar-expr (first args)) 1))
+        dec
+        (do (when-not (= 1 (count args))
+              (reject! "dec requires one i64" form))
+            (list '- (desugar-expr (first args)) 1))
         ;; W1: friendly namespaced ops elaborate before validation sees them.
         (if-let [kw (capability-keyword-for-symbol op)]
           (elaborate-named-operation form op kw args)
