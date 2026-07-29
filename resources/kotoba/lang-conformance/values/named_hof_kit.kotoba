@@ -1,0 +1,7 @@
+(ns kotoba.lang.conformance.named-hof-kit (:export [main]))
+;; T4.5: named unary HOF refs for map/filter over vector-i64.
+(defn dbl [x :i64] :i64 (* x 2))
+(defn above1 [x :i64] :i64 (if (> x 1) 1 0))
+(defn main [] :i64
+  (+ (reduce + 0 (map dbl (vector-i64 1 2 3)))
+     (reduce + 0 (filter above1 (vector-i64 1 2 3 4)))))

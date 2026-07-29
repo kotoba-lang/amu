@@ -2079,7 +2079,8 @@
                                (list 'recur (list '+ i 1) step)
                                acc))))))
         ;; T4.5: bounded map over vector-i64 → zero-charge loop + vector-conj.
-        ;; Single collection only: (map (fn [x] expr) coll) or (map inc|dec coll).
+        ;; Single collection: (map (fn [x] expr) coll), (map inc|dec coll),
+        ;; or (map named-unary coll) where named-unary is a module defn of arity 1.
         map
         (do
           (when-not (= 2 (count args))
@@ -2111,8 +2112,12 @@
                       (list 'let [x (list 'vector-at v i)]
                             (desugar-expr (first body)))))
 
+                  ;; Named unary module function (fail-closed if unbound / wrong arity).
+                  (and (symbol? f-form) (nil? (namespace f-form)))
+                  (list f-form (list 'vector-at v i))
+
                   :else
-                  (reject! "map only admits (fn [x] expr) or inc/dec" f-form))]
+                  (reject! "map only admits (fn [x] expr), inc/dec, or named unary" f-form))]
             (binding [*loop-result-type* :vector-i64]
               (desugar-expr
                (list 'let [v coll*]
@@ -2122,7 +2127,7 @@
                                        (list 'vector-conj acc mapped))
                                  acc)))))))
         ;; T4.5: bounded filter over vector-i64 → zero-charge loop + vector-conj.
-        ;; (filter (fn [x] pred-expr) coll) — pred-expr must be usable as if-test.
+        ;; (filter (fn [x] pred) coll) or (filter named-pred coll).
         filter
         (do
           (when-not (= 2 (count args))
@@ -2146,8 +2151,11 @@
                       (list 'let [px x]
                             (desugar-expr (first body)))))
 
+                  (and (symbol? p-form) (nil? (namespace p-form)))
+                  (list p-form x)
+
                   :else
-                  (reject! "filter only admits (fn [x] pred-expr)" p-form))]
+                  (reject! "filter only admits (fn [x] pred-expr) or named unary" p-form))]
             (binding [*loop-result-type* :vector-i64]
               (desugar-expr
                (list 'let [v coll*]
