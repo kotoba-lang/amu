@@ -29,7 +29,11 @@
     (catch :default error
       (let [value (diagnostic/from-error error "program.cljk")
             span (:span value)
-            ok? (and (= :kotoba/source-rejected (:code value))
+            ;; T3.1 (compiler#422 / ADR 0172): reject! sites carry stable
+            ;; :kotoba.error/* codes, default :subset-reject. The JVM twin
+            ;; (cli_test/structured-diagnostic-has-stable-code-and-bounded-source-span)
+            ;; was updated then; this one was not, and main has been red since.
+            ok? (and (= :kotoba.error/subset-reject (:code value))
                      (= "program.cljk" (:source value))
                      (= 2 (:line span)) (= 3 (:column span)))]
         {:name "structured-diagnostic" :ok? ok?
