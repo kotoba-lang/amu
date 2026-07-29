@@ -5,7 +5,8 @@
   arith/nested-fn/true + string-replace + loop + T7.4 deep loop (raised :fuel) +
   if-some/option + string-byte-length + when/cond/if-let + case + bitops +
   typed-map (T4.4) + string-split-count (T4.2) + vector-i64 (T4.5) +
-  vector-mut + typed-map-dissoc + quot/bit-not + pred/when-ext/if-some-string/shift.
+  vector-mut + typed-map-dissoc + quot/bit-not + pred/when-ext/if-some-string/shift +
+  inc/dec + vector-sum loop + shift-right.
   Full matrix still progressive."
 
  :backends
@@ -352,5 +353,32 @@
    :args []
    :expect {:kotoba 8}
    :note "i64-shift-left dual-backend"}
+  {:id :inc-dec-kit
+   :class :pure-product-run
+   :required-backends #{:kir :wasm32-kotoba-v1}
+   :kind :run
+   :entry "control/inc_dec_kit.kotoba"
+   :function "main"
+   :args []
+   :expect {:kotoba 84}
+   :note "T4.5 inc/dec desugar dual-backend"}
+  {:id :vector-sum-kit
+   :class :pure-product-run
+   :required-backends #{:kir :wasm32-kotoba-v1}
+   :kind :run
+   :entry "values/vector_sum_kit.kotoba"
+   :function "main"
+   :args []
+   :expect {:kotoba 60}
+   :note "T4.5 vector reduce via zero-charge loop (no map sugar)"}
+  {:id :shift-right-kit
+   :class :pure-product-run
+   :required-backends #{:kir :wasm32-kotoba-v1}
+   :kind :run
+   :entry "control/shift_right_kit.kotoba"
+   :function "main"
+   :args []
+   :expect {:kotoba 4}
+   :note "i64-shift-right dual-backend"}
 ]
 }
