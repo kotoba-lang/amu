@@ -1,0 +1,10 @@
+(ns kotoba.lang.conformance.option-result-kit (:export [main]))
+;; T1.3 / T4.3: option + result constructors/projections + not dual-backend.
+(defn main [] :i64
+  (+ (if (nil? (option-none)) 1 0)
+     (+ (if (some? (some 9)) 1 0)
+        (+ (option-value (some 7) 0)
+           (+ (if (result-ok? (result-ok 3)) 1 0)
+              (+ (result-value (result-ok 5) 0)
+                 (+ (result-error (result-err 2) 0)
+                    (if (not 0) 1 0))))))))
