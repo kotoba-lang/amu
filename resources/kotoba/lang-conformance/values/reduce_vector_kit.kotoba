@@ -1,0 +1,5 @@
+(ns kotoba.lang.conformance.reduce-vector-kit (:export [main]))
+;; T4.5: reduce over vector-i64 (arithmetic + fn forms) dual-backend.
+(defn main [] :i64
+  (+ (reduce + 0 (vector-i64 10 20 30))
+     (reduce (fn [a x] (+ a (* x 2))) 0 (vector-i64 1 2 3))))

@@ -2034,6 +2034,45 @@
         (do (when-not (= 1 (count args))
               (reject! "dec requires one i64" form))
             (list '- (desugar-expr (first args)) 1))
+        ;; T4.5: bounded reduce over vector-i64 → zero-charge loop.
+        ;; Admits (reduce + init coll) or (reduce (fn [acc x] expr) init coll).
+        reduce
+        (do
+          (when-not (= 3 (count args))
+            (reject! "reduce requires fn, init, and collection" form))
+          (let [[f-form init-form coll-form] args
+                init* (desugar-expr init-form)
+                coll* (desugar-expr coll-form)
+                v (gensym "reduce_v__")
+                i (gensym "reduce_i__")
+                acc (gensym "reduce_acc__")
+                step
+                (cond
+                  (and (symbol? f-form)
+                       (nil? (namespace f-form))
+                       (contains? '#{+ - * bit-and bit-or bit-xor} f-form))
+                  (list f-form acc (list 'vector-at v i))
+
+                  (and (seq? f-form) (= 'fn (first f-form)))
+                  (let [[_ params & body] f-form]
+                    (when-not (and (vector? params) (= 2 (count params))
+                                   (every? symbol? params)
+                                   (= 1 (count body)))
+                      (reject! "reduce fn must be (fn [acc x] single-expr)" f-form))
+                    (let [[a b] params]
+                      (list 'let [a acc
+                                  b (list 'vector-at v i)]
+                            (desugar-expr (first body)))))
+
+                  :else
+                  (reject! "reduce only admits binary arithmetic op or (fn [acc x] expr)" f-form))]
+            ;; Re-enter desugar so loop → __kotoba_loop_N under *pending-loop-helpers*.
+            (desugar-expr
+             (list 'let [v coll*]
+                   (list 'loop [i 0 acc init*]
+                         (list 'if (list '< i (list 'vector-count v))
+                               (list 'recur (list '+ i 1) step)
+                               acc))))))
         ;; W1: friendly namespaced ops elaborate before validation sees them.
         (if-let [kw (capability-keyword-for-symbol op)]
           (elaborate-named-operation form op kw args)
