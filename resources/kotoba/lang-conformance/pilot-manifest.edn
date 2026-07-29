@@ -6,7 +6,7 @@
   if-some/option + string-byte-length + when/cond/if-let + case + bitops +
   typed-map (T4.4) + string-split-count (T4.2) + vector-i64 (T4.5) +
   vector-mut + typed-map-dissoc + quot/bit-not + pred/when-ext/if-some-string/shift +
-  inc/dec + vector-sum loop + shift-right.
+  inc/dec + vector-sum loop + shift-right + reduce-vector.
   Full matrix still progressive."
 
  :backends
@@ -380,5 +380,14 @@
    :args []
    :expect {:kotoba 4}
    :note "i64-shift-right dual-backend"}
+  {:id :reduce-vector-kit
+   :class :pure-product-run
+   :required-backends #{:kir :wasm32-kotoba-v1}
+   :kind :run
+   :entry "values/reduce_vector_kit.kotoba"
+   :function "main"
+   :args []
+   :expect {:kotoba 72}
+   :note "T4.5 reduce over vector-i64 (op + fn) dual-backend"}
 ]
 }
