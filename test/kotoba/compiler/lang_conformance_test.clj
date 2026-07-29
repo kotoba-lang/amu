@@ -34,3 +34,37 @@
     (is (true? (:ok? r)))
     (is (= 7 (:expect r)))
     (is (= 7 (get-in r [:kir :result])))))
+
+;; --- T2.3: the profile label must be enforced, not decorative --------------
+
+(deftest every-pure-product-case-passes-profile-admission
+  (testing "a case labelled :pure-product compiles under :language-profile :pure-product"
+    (let [m (lc/load-manifest)
+          cases (lc/pure-product-cases m)
+          pure (filter #(= :pure-product (lc/case-language-profile %)) cases)
+          portable (filter #(= :portable (lc/case-language-profile %)) cases)]
+      (is (= 47 (count pure)))
+      (is (= 5 (count portable))
+          "dotimes / condp / defmethod / cond->> / -> are portable-only surface")
+      (doseq [c pure]
+        (testing (str (:id c))
+          (is (= :passed (:status (lc/run-case c)))))))))
+
+(deftest pure-product-label-on-forbidden-surface-is-rejected
+  (testing "mislabelling a portable-only case as :pure-product fails closed"
+    (let [m (lc/load-manifest)
+          condp-case (first (filter #(= :portable-static-predicate-condp (:id %))
+                                    (lc/pure-product-cases m)))
+          mislabelled (assoc condp-case :language-profile :pure-product)
+          r (lc/run-case mislabelled)]
+      (is (false? (:ok? r)))
+      (is (= :profile-rejected (:status r)))
+      (is (= :kotoba.error/pure-product-forbidden
+             (:kotoba.error/code (:ex-data r)))))))
+
+(deftest suite-reports-profile-split
+  (let [report (lc/run-suite)]
+    (is (= 47 (:pure-product-passed report)))
+    (is (= 5 (:portable-passed report)))
+    (is (= (:passed report)
+           (+ (:pure-product-passed report) (:portable-passed report))))))
