@@ -1,0 +1,7 @@
+(ns kotoba.lang.conformance.reduce-named-kit (:export [main]))
+;; T4.5: named binary HOF for reduce over vector-i64.
+(defn add [a :i64 b :i64] :i64 (+ a b))
+(defn mul-acc [a :i64 b :i64] :i64 (+ a (* b 2)))
+(defn main [] :i64
+  (+ (reduce add 0 (vector-i64 1 2 3 4))
+     (reduce mul-acc 0 (vector-i64 1 2 3))))

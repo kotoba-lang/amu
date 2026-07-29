@@ -2040,7 +2040,8 @@
               (reject! "dec requires one i64" form))
             (list '- (desugar-expr (first args)) 1))
         ;; T4.5: bounded reduce over vector-i64 → zero-charge loop.
-        ;; Admits (reduce + init coll) or (reduce (fn [acc x] expr) init coll).
+        ;; Admits (reduce + init coll), (reduce (fn [acc x] expr) init coll),
+        ;; or (reduce named-binary init coll) for arity-2 module defn.
         reduce
         (do
           (when-not (= 3 (count args))
@@ -2069,8 +2070,12 @@
                                   b (list 'vector-at v i)]
                             (desugar-expr (first body)))))
 
+                  ;; Named binary module function (fail-closed if unbound / wrong arity).
+                  (and (symbol? f-form) (nil? (namespace f-form)))
+                  (list f-form acc (list 'vector-at v i))
+
                   :else
-                  (reject! "reduce only admits binary arithmetic op or (fn [acc x] expr)" f-form))]
+                  (reject! "reduce only admits binary op, (fn [acc x] expr), or named binary" f-form))]
             ;; Re-enter desugar so loop → __kotoba_loop_N under *pending-loop-helpers*.
             (desugar-expr
              (list 'let [v coll*]
