@@ -39,6 +39,25 @@
                      (= pure-product-required (:required-backends %))))
            (:cases manifest)))
 
+(defn case-language-profile
+  "T2.1 profile a case is written against. Defaults to `:pure-product`; a case
+  that exercises portable-but-not-pure-product surface (dotimes, condp,
+  defmethod, threading sugar) must declare `:language-profile :portable`."
+  [case]
+  (get case :language-profile :pure-product))
+
+(defn- admit-language-profile!
+  "T2.3: a case labelled `:pure-product` must pass the T2.1 admission check.
+  Executing on both backends is not enough — the runner previously compiled
+  with policy {}, so `:language-profile :pure-product` was never applied and
+  the headline count silently included cases the profile rejects.
+
+  Runs `check-source` only; artifact bytes and T1.5 goldens are unaffected."
+  [source case]
+  (when (= :pure-product (case-language-profile case))
+    (compiler/check-source source {:language-profile :pure-product} {}))
+  nil)
+
 (defn- resolve-source
   "Load case source from classpath under pilot root, or absolute path."
   [entry]
@@ -143,6 +162,7 @@
     (if-not source
       {:id id :ok? false :status :missing-source :entry entry}
       (try
+        (admit-language-profile! source case)
         (let [kir (when (contains? required :kir)
                     (run-kir source (:function case) (:args case) case))
               wasm (when (contains? required :wasm32-kotoba-v1)
@@ -153,6 +173,7 @@
           {:id id
            :ok? ok?
            :status (if ok? :passed :failed)
+           :language-profile (case-language-profile case)
            :expect expect
            :fuel (case-fuel case)
            :kir kir
@@ -160,11 +181,17 @@
            :kir-ok? kir-ok?
            :wasm-ok? wasm-ok?})
         (catch Exception e
-          {:id id
-           :ok? false
-           :status :error
-           :error (.getMessage e)
-           :ex-data (ex-data e)})))))
+          (let [code (:kotoba.error/code (ex-data e))]
+            {:id id
+             :ok? false
+             :status (if (contains? #{:kotoba.error/pure-product-forbidden
+                                      :kotoba.error/pure-product-capabilities}
+                                    code)
+                       :profile-rejected
+                       :error)
+             :language-profile (case-language-profile case)
+             :error (.getMessage e)
+             :ex-data (ex-data e)}))))))
 
 (defn run-suite
   "Run all pure-product cases in manifest. Returns aggregate report."
@@ -180,6 +207,15 @@
       :failed-count (count failed)
       :failed failed
       :results results
+      ;; T2.3: how many of the passing cases are actually written against the
+      ;; pure-product profile. Reporting one merged number let 5 portable-only
+      ;; cases be counted as pure-product coverage.
+      :pure-product-passed (count (filter #(and (:ok? %)
+                                                (= :pure-product (:language-profile %)))
+                                          results))
+      :portable-passed (count (filter #(and (:ok? %)
+                                            (= :portable (:language-profile %)))
+                                      results))
       :required-backends pure-product-required
       :wbs "T1.3"})))
 
@@ -347,7 +383,9 @@
     :else
     (let [report (run-suite)]
       (println "lang-conformance T1.3 dual-backend:"
-               (:passed report) "/" (:total report) "passed")
+               (:passed report) "/" (:total report) "passed"
+               (str "(" (:pure-product-passed report) " pure-product, "
+                    (:portable-passed report) " portable)"))
       (doseq [f (:failed report)]
         (println " FAIL" (:id f) (:status f) (or (:error f) "")))
       (System/exit (if (:ok? report) 0 1)))))
