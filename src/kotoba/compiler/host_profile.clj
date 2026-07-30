@@ -5,7 +5,7 @@
   env. Generated JavaScript is an artifact; the EDN profile is authoritative."
   (:require [clojure.data.json :as json]
             [clojure.string :as str]
-            [kotoba.artifact.core :as artifact]))
+            [kotoba.compiler.artifact :as artifact]))
 
 (def schema :kotoba.host-profile/v1)
 
@@ -16,13 +16,7 @@
 (def ^:private route-keys #{:pattern :custom-domain?})
 (def ^:private binding-keys #{:binding :bucket-name})
 (def ^:private http-keys
-  #{:allowed-origins :allowed-methods :ingress-methods
-    :max-request-bytes :max-response-bytes :deadline-ms})
-
-(def ^:private default-ingress-methods
-  "Inbound methods admitted when `:ingress-methods` is omitted. Egress
-  `:allowed-methods` stays a separate closed set (ADR 0103)."
-  ["DELETE" "GET" "HEAD" "POST" "PUT"])
+  #{:allowed-origins :allowed-methods :max-response-bytes :deadline-ms})
 (def ^:private object-store-keys #{:bindings :max-object-bytes})
 (def ^:private object-binding-keys #{:key-prefixes})
 
@@ -145,36 +139,29 @@
     (reject! "secrets must be a bounded set" {:field :secrets :limit 32}))
   (vec (sort (map (comp binding-name! name) values))))
 
-(defn- normalize-http-methods [field methods]
-  (when-not (or (and (set? methods)
-                     (seq methods)
-                     (every? #{:get :head :post :put :delete} methods))
-                (and (vector? methods)
-                     (seq methods)
-                     (every? #{"GET" "HEAD" "POST" "PUT" "DELETE"} methods)))
-    (reject! "HTTP methods are invalid" {:field field}))
-  (vec (sort (map #(if (keyword? %)
-                     (str/upper-case (name %))
-                     %)
-                   methods))))
-
 (defn- normalize-http [value]
   (exact-keys! :http value http-keys)
   (let [origins (:allowed-origins value)
-        methods (:allowed-methods value)
-        ingress (or (:ingress-methods value) default-ingress-methods)]
+        methods (:allowed-methods value)]
     (when-not (and (vector? origins) (<= 1 (count origins) 64))
       (reject! "HTTP origins must be a non-empty bounded vector"
                {:field :http/allowed-origins :limit 64}))
+    (when-not (or (and (set? methods)
+                       (seq methods)
+                       (every? #{:get :head :post :put :delete} methods))
+                  (and (vector? methods)
+                       (seq methods)
+                       (every? #{"GET" "HEAD" "POST" "PUT" "DELETE"} methods)))
+      (reject! "HTTP methods are invalid" {:field :http/allowed-methods}))
     (sorted-map
-     :allowed-methods (normalize-http-methods :http/allowed-methods methods)
+     :allowed-methods
+     (vec (sort (map #(if (keyword? %)
+                       (str/upper-case (name %))
+                       %)
+                     methods)))
      :allowed-origins (mapv origin! origins)
      :deadline-ms (bounded-int! :http/deadline-ms (:deadline-ms value)
                                 1 120000)
-     :ingress-methods (normalize-http-methods :http/ingress-methods ingress)
-     :max-request-bytes
-     (bounded-int! :http/max-request-bytes (:max-request-bytes value)
-                   1 16777216)
      :max-response-bytes
      (bounded-int! :http/max-response-bytes (:max-response-bytes value)
                    1 16777216))))
@@ -240,12 +227,7 @@
   {:http {:allowedMethods (:allowed-methods http)
           :allowedOrigins (:allowed-origins http)
           :deadlineMs (:deadline-ms http)
-          :ingressMethods (:ingress-methods http)
-          :maxRequestBytes (:max-request-bytes http)
-          :maxResponseBytes (:max-response-bytes http)
-          ;; Family-3 ingress path/header bounds (kit http-ingress-v1).
-          :maxPathBytes 4096
-          :maxHeaders 32}
+          :maxResponseBytes (:max-response-bytes http)}
    :objectStore
    {:bindings
     (into (sorted-map)
@@ -310,61 +292,9 @@
      "  clock: Object.freeze({ now: () => Date.now() })\n"
      "}); }\n"
      "const INSTANCES = new WeakMap();\n"
-     "function application(env) { let value = INSTANCES.get(env); if (!value) { value = " factory "(host(env)); if (!value || (typeof value.fetch !== \"function\" && typeof value.handleIncoming !== \"function\")) throw new Error(\"invalid-kotoba-workerd-application\"); value = Object.freeze(value); INSTANCES.set(env, value); } return value; }\n"
-     "async function readBoundedBody(request) {\n"
-     "  const declared = Number(request.headers.get(\"content-length\"));\n"
-     "  if (Number.isFinite(declared) && declared > PROFILE.http.maxRequestBytes) throw new Error(\"resource-limit:http-request-bytes\");\n"
-     "  const bytes = new Uint8Array(await request.arrayBuffer());\n"
-     "  if (bytes.byteLength > PROFILE.http.maxRequestBytes) throw new Error(\"resource-limit:http-request-bytes\");\n"
-     "  return bytes;\n"
-     "}\n"
-     "function foldRequestHeaders(headers) {\n"
-     "  const out = Object.create(null); let count = 0;\n"
-     "  for (const [name, value] of headers) {\n"
-     "    const key = String(name).toLowerCase();\n"
-     "    if (Object.prototype.hasOwnProperty.call(out, key)) continue;\n"
-     "    count += 1; if (count > PROFILE.http.maxHeaders) throw new Error(\"resource-limit:http-request-headers\");\n"
-     "    out[key] = String(value);\n"
-     "  }\n"
-     "  return Object.freeze(out);\n"
-     "}\n"
-     "async function toIncoming(request) {\n"
-     "  const method = String(request.method || \"GET\").toUpperCase();\n"
-     "  if (!PROFILE.http.ingressMethods.includes(method)) throw new Error(\"capability-denied:http-ingress\");\n"
-     "  const url = new URL(request.url);\n"
-     "  const path = url.pathname + (url.search || \"\");\n"
-     "  if (byteLength(path) < 1 || byteLength(path) > PROFILE.http.maxPathBytes) throw new Error(\"resource-limit:http-path\");\n"
-     "  const bodyBytes = await readBoundedBody(request);\n"
-     "  const body = new TextDecoder().decode(bodyBytes);\n"
-     "  return Object.freeze({ method, path, headers: foldRequestHeaders(request.headers), body });\n"
-     "}\n"
-     "function fromReply(reply) {\n"
-     "  if (!reply || typeof reply !== \"object\") throw new Error(\"invalid-http-ingress-reply\");\n"
-     "  const status = Number(reply.status);\n"
-     "  if (!Number.isSafeInteger(status) || status < 100 || status > 599) throw new Error(\"invalid-http-ingress-status\");\n"
-     "  const body = reply.body == null ? \"\" : String(reply.body);\n"
-     "  if (byteLength(body) > PROFILE.http.maxResponseBytes) throw new Error(\"resource-limit:http-bytes\");\n"
-     "  const headers = new Headers();\n"
-     "  if (reply.headers && typeof reply.headers === \"object\") {\n"
-     "    let count = 0;\n"
-     "    for (const [name, value] of Object.entries(reply.headers)) {\n"
-     "      count += 1; if (count > PROFILE.http.maxHeaders) throw new Error(\"resource-limit:http-response-headers\");\n"
-     "      headers.set(String(name), String(value));\n"
-     "    }\n"
-     "  }\n"
-     "  return new Response(body, { status, headers });\n"
-     "}\n"
+     "function application(env) { let value = INSTANCES.get(env); if (!value) { value = " factory "(host(env)); if (!value || typeof value.fetch !== \"function\") throw new Error(\"invalid-kotoba-workerd-application\"); value = Object.freeze(value); INSTANCES.set(env, value); } return value; }\n"
      "export default Object.freeze({\n"
-     "  async fetch(request, env, ctx) {\n"
-     "    const app = application(env);\n"
-     "    if (typeof app.handleIncoming === \"function\") {\n"
-     "      const incoming = await toIncoming(request);\n"
-     "      const reply = await app.handleIncoming(incoming, ctx);\n"
-     "      return fromReply(reply);\n"
-     "    }\n"
-     "    if (typeof app.fetch !== \"function\") throw new Error(\"invalid-kotoba-workerd-application\");\n"
-     "    return app.fetch(request, ctx);\n"
-     "  },\n"
+     "  fetch(request, env, ctx) { return application(env).fetch(request, ctx); },\n"
      "  scheduled(controller, env, ctx) { const app = application(env); if (typeof app.scheduled !== \"function\") throw new Error(\"scheduled-handler-unavailable\"); return app.scheduled(Object.freeze({ scheduledTime: controller.scheduledTime, cron: controller.cron }), ctx); },\n"
      "  queue(batch, env, ctx) { const app = application(env); if (typeof app.queue !== \"function\") throw new Error(\"queue-handler-unavailable\"); return app.queue(batch, ctx); },\n"
      "  tail(events, env, ctx) { const app = application(env); if (typeof app.tail !== \"function\") throw new Error(\"tail-handler-unavailable\"); return app.tail(events, ctx); }\n"
