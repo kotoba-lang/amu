@@ -68,6 +68,37 @@ jobs:
           cli: 1.12.5.1654
       - run: npm ci
       - run: npm run test-kind-server
+  # This compiler is itself a library, and its own suite passing is not enough.
+  # A KIR-shape change can be green here and leave a downstream repo's shipped
+  # artifacts stale. That is not hypothetical: #455 renamed the `binding-some`
+  # temporary, every check here passed, and kotoba-lang/murakumo's drift gate
+  # went to 16 failures against this main until it regenerated.
+  #
+  # The libraries below this one already carry a `consumer-conformance` job that
+  # runs THIS repo against their checkout. This is the same idea one level up.
+  #
+  # murakumo's oracle-authority suite is the right downstream gate: it compiles
+  # every `kotoba/*_core.kotoba` live and compares it byte for byte with the
+  # shipped KIR, so it fails exactly when this repo changes the KIR a consumer
+  # has already frozen.
+  downstream-murakumo:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          path: compiler
+      - name: Check out the consumer
+        run: git clone --depth 1 https://github.com/kotoba-lang/murakumo murakumo
+      - uses: DeLaGuardo/setup-clojure@4c7a6f613e5089821bb3bb2a33a3ee115578580d # 13.6.1
+        with:
+          cli: 1.12.5.1654
+      - name: murakumo KIR drift gate against this checkout
+        working-directory: murakumo
+        run: |
+          clojure -Sdeps "{:aliases {:dep {:override-deps {io.github.kotoba-lang/compiler {:local/root \"../compiler\"}}}}}" \
+            -M:test:dep -n murakumo.kotoba-oracle-authority-test
+
   test:
     strategy:
       fail-fast: false
