@@ -95,3 +95,43 @@
                        "    (if (= t 0) 0 (if (< free minf) 0 m))))\n"
                        "(defn main [] :i64 0)")
                   'ok? [[[:record :r/lanes [[:text :i64] [:media :i64] [:postproc :i64]]] 1 1 0] 10 5])))))
+
+;; --- named schema references ------------------------------------------------
+;;
+;; A record threaded through many signatures should not need its descriptor
+;; repeated at every site. `[:ref :ns/name]` + the namespace `:schemas` map is
+;; the existing mechanism; these lock in that the record operations resolve it.
+
+(def ^:private REF-SRC-PREFIX
+  (str "(ns p (:schemas {:m/model [:record :m/model "
+       "[[:layers :i64] [:dense :i64] [:frac :i64]]]}))\n"))
+
+(deftest resolves-a-schema-ref-in-a-parameter-annotation
+  (is (= 12 (run (str REF-SRC-PREFIX
+                      "(defn f [r [:ref :m/model]] :i64 (record-get r :layers))\n"
+                      "(defn g [a :i64 b :i64 c :i64] :i64 (f (record-new [:ref :m/model] a b c)))\n"
+                      "(defn main [] :i64 0)")
+                 'g [12 0 100]))))
+
+(deftest resolves-a-schema-ref-in-a-return-annotation
+  (is (= 7 (run (str REF-SRC-PREFIX
+                     "(defn mk [a :i64 b :i64 c :i64] [:ref :m/model] (record-new [:ref :m/model] a b c))\n"
+                     "(defn f [r [:ref :m/model]] :i64 (record-get r :dense))\n"
+                     "(defn g [a :i64 b :i64 c :i64] :i64 (f (mk a b c)))\n"
+                     "(defn main [] :i64 0)")
+                'g [12 7 100]))))
+
+(deftest resolves-a-schema-ref-in-record-op-type-arguments
+  (testing "record-new / 3-arity record-get accept [:ref :ns/name]"
+    (is (= 100 (run (str REF-SRC-PREFIX
+                         "(defn g [a :i64 b :i64 c :i64] :i64\n"
+                         "  (record-get [:ref :m/model] (record-new [:ref :m/model] a b c) :frac))\n"
+                         "(defn main [] :i64 0)")
+                    'g [12 0 100])))))
+
+(deftest fails-closed-on-an-undeclared-schema-ref
+  (let [r (rejection (str "(ns p)\n"
+                          "(defn g [a :i64] :i64 (record-get [:ref :m/nope] a :x))\n"
+                          "(defn main [] :i64 0)"))]
+    (is (= :kotoba.error/record-projection-unresolved (:code r)))
+    (is (re-find #"no :record schema declared for" (:message r)))))
