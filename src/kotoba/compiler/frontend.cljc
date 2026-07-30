@@ -4584,11 +4584,14 @@
         ;; captures a :string/:f64/record variable type-checks and lowers with
         ;; the correct local types instead of a spurious "expected i64" error.
         parsed (resolve-loop-helper-param-types parsed)
+        ;; ADR 0189: resolve `(record-get value :field)` to the canonical
+        ;; 3-arity form. This must precede every later pass that runs type
+        ;; inference — elaborate-named-abilities does, and its record-get case
+        ;; destructures [type value field], so a 2-arity form reaching it puts
+        ;; the value symbol in the type slot and `(nth type 2)` throws.
+        parsed (rewrite-record-projections parsed)
         named-elaboration (elaborate-named-abilities parsed)
         parsed (:functions named-elaboration)
-        ;; Resolve `(record-get value :field)` to the canonical 3-arity form
-        ;; before validation, so lowering and every backend are unaffected.
-        parsed (rewrite-record-projections parsed)
         used-capability-names
         (set/union @used-capabilities (:used named-elaboration))
         signatures (into {} (map (juxt :name :params) parsed))
