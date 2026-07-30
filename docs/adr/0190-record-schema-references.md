@@ -72,8 +72,49 @@ assertions** — exactly the 14 tests and 17 assertions that had been invisible.
 
 This is the same defect class as the orphaned `:record-protocol-static-dispatch`
 conformance case (kotoba-lang#343): a test that exists, passes when run, and no
-gate executes. Worth a follow-up check that no other namespace under `test/` is
-missing from the runner.
+gate executes it.
+
+### The sweep, since one instance implied more
+
+`test/kotoba/compiler/` holds 103 namespaces; the `-main` list named 90. **Twelve
+were on disk and ungated.** Each was run before deciding what to do with it:
+
+| Namespace | tests | pass | fail |
+|---|---|---|---|
+| `map-filter-vector-test` | 4 | 7 | 0 |
+| `multi-map-test` | 3 | 3 | 0 |
+| `named-hof-test` | 3 | 3 | 0 |
+| `reduce-named-test` | 1 | 2 | 0 |
+| `reduce-vector-test` | 2 | 4 | 0 |
+| `schema-metadata-test` | 2 | 5 | 0 |
+| `schema-test` | 3 | 9 | 0 |
+| `test-profile-test` | 1 | 4 | 0 |
+| `named-ability-elaboration-test` | 5 | 9 | **1** |
+| `symbol-operation-test` | 2 | 4 | **1** |
+| `w1-elaboration-test` | 7 | 36 | **6** |
+| `string-literal-operation-test` | 2 | **0** | **4** |
+
+The eight green ones are registered. The gate goes from 716 / 6104 to
+**749 / 6158**.
+
+The four red ones are **deliberately left unregistered** — registering them would
+red the gate, and fixing 12 assertions across four areas I have not studied is a
+separate slice, not a side effect of this PR. Recorded here so they stop being
+invisible:
+
+- `string-literal-operation-test` (0 / 4) asserts `string-substring` is
+  **literal-only**: that a `:string` parameter is rejected with *"requires a
+  literal string"*, that out-of-bounds and non-code-point indices are rejected at
+  analyze time, and that literals fold during analysis. All four now return `nil`
+  instead of throwing, and the fold assertion sees an unevaluated call. That is
+  consistent with dynamic `string-substring` having landed (surface-status:
+  *"dynamic string results use allocation-checked descriptors"*) — the test
+  encodes superseded literal-only semantics. Same shape as the stale nbb
+  diagnostic code fixed in #439.
+- `symbol-operation-test` (1 failure) fails inside `runtime/browser-host.mjs`
+  with a `KotobaHostError`, so it is a host/runtime issue, not a pure assertion.
+- `named-ability-elaboration-test` (1) and `w1-elaboration-test` (6) are W1
+  elaboration-contract tests and need study before touching.
 
 ## Evidence
 

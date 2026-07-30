@@ -29,6 +29,14 @@
             [kotoba.compiler.product-value-abi-v1-test]
             [kotoba.compiler.pure-product-profile-test]
             [kotoba.compiler.record-projection-sugar-test]
+            [kotoba.compiler.map-filter-vector-test]
+            [kotoba.compiler.multi-map-test]
+            [kotoba.compiler.named-hof-test]
+            [kotoba.compiler.reduce-named-test]
+            [kotoba.compiler.reduce-vector-test]
+            [kotoba.compiler.schema-metadata-test]
+            [kotoba.compiler.schema-test]
+            [kotoba.compiler.test-profile-test]
             [kotoba.compiler.ambient-negative-corpus-test]
             [kotoba.compiler.lang-conformance-test]
             [kotoba.compiler.lang-conformance-golden-test]
@@ -121,6 +129,14 @@
                                           'kotoba.compiler.product-value-abi-v1-test
                                           'kotoba.compiler.pure-product-profile-test
                                           'kotoba.compiler.record-projection-sugar-test
+                                          'kotoba.compiler.map-filter-vector-test
+                                          'kotoba.compiler.multi-map-test
+                                          'kotoba.compiler.named-hof-test
+                                          'kotoba.compiler.reduce-named-test
+                                          'kotoba.compiler.reduce-vector-test
+                                          'kotoba.compiler.schema-metadata-test
+                                          'kotoba.compiler.schema-test
+                                          'kotoba.compiler.test-profile-test
                                           'kotoba.compiler.ambient-negative-corpus-test
                                           'kotoba.compiler.lang-conformance-test
                                           'kotoba.compiler.lang-conformance-golden-test
