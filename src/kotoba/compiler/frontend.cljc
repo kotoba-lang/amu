@@ -770,20 +770,50 @@
 (defn- chain-temp [prefix depth]
   (symbol (str "__kotoba_" prefix "_" depth)))
 
+;; Every other synthesized `let` temporary. Bound ONCE per `analyze` call, the
+;; same lifetime and for the same reason as `*loop-counter*` above: the same
+;; source encounters the same desugars in the same left-to-right order, so it
+;; always gets the same names.
+;;
+;; These were `gensym`, whose counter is process-global, so the emitted KIR
+;; differed on every compile. `and`/`or`/comparison chains were made
+;; deterministic first (they could be named by position); these could not,
+;; because a temp such as `doseq`'s cursor is still live after the body runs,
+;; so a nested `doseq` naming its cursor the same thing would capture it. A
+;; per-compilation counter keeps uniqueness exactly as gensym did while making
+;; the sequence a function of the source.
+;;
+;; The consumer-side cost this removes is real: kotoba-lang/murakumo carries a
+;; `normalize-kir-gensyms` that rewrites `or-tmp__N` / `binding-some__N` so its
+;; drift gate can compare structure instead of counter values.
+;;
+;; Falls back to `gensym` when unbound, so a desugar helper called outside
+;; `analyze` still produces correct (if unstable) names rather than colliding.
+(def ^:dynamic *synthetic-counter* nil)
+
+(defn- synthetic [prefix]
+  (if *synthetic-counter*
+    (symbol (str "__kotoba_" prefix "_" (vswap! *synthetic-counter* inc)))
+    (gensym (str prefix "__"))))
+
 (defn- reserved-binding-name? [value]
   (and (simple-symbol? value) (= "__kotoba_" (subs (str value) 0 (min 9 (count (str value)))))))
 
-(defn- reject-reserved-binding!
+(defn- reject-reserved-source-symbols!
   "`__kotoba_` is the prefix every synthesized binding uses. Deterministic
   synthesized names are only safe if a program cannot write one: a user local
   called `__kotoba_and_2` would be shadowed by the temp `(and x <expr>)` binds,
   and `<expr>` is user code evaluated inside that scope -- real capture, not a
-  theoretical one. Reserving the prefix removes the possibility instead of
-  relying on nobody choosing the name."
-  [pattern]
-  (doseq [value (tree-seq coll? seq pattern)]
+  theoretical one.
+
+  Checked once over the SOURCE forms, before any desugaring, because after
+  desugaring the synthesized names are indistinguishable from written ones. The
+  prefix is reserved outright rather than only in binding position: a program
+  that cannot mention the name cannot capture, shadow or read one."
+  [forms]
+  (doseq [value (mapcat #(tree-seq coll? seq %) forms)]
     (when (reserved-binding-name? value)
-      (reject! "binding name uses the reserved __kotoba_ prefix" pattern))))
+      (reject! "symbol uses the reserved __kotoba_ prefix" value))))
 
 (defn- desugar-and
   "`(and a b c ...)` -> nested `let`/`if`, ported from kotoba-lang/kotoba's
@@ -848,7 +878,7 @@
     (let [default? (odd? (count clauses))
           default (if default? (last clauses) '(quot 1 0))
           pairs (partition 2 (if default? (butlast clauses) clauses))
-          tmp (gensym "condp__")]
+          tmp (synthetic "condp")]
       (list 'let [tmp (desugar-expr dispatch)]
             (reduce (fn [fallback [test result]]
                       (list 'if
@@ -866,7 +896,7 @@
             (when-not (and (seq? step) (symbol? (first step)))
               (reject! (str (if last? "cond->>" "cond->")
                             " update must be a non-empty call form") step))
-            (let [tmp (gensym "cond-thread__")
+            (let [tmp (synthetic "cond-thread")
                   threaded (thread-form tmp step last?)]
               (list 'let [tmp value]
                     (list 'if (desugar-expr test)
@@ -881,7 +911,7 @@
                    (symbol? (first binding)) (nil? (namespace (first binding))))
       (reject! "dotimes requires [unqualified-symbol count]" form))
     (let [[index count-form] binding
-          limit (gensym "dotimes-limit__")
+          limit (synthetic "dotimes-limit")
           iteration (list* 'do (concat body [(list 'recur (list '+ index 1))]))]
       (desugar-expr
        (list 'let [limit count-form]
@@ -1060,8 +1090,8 @@
                          :while (list 'if modifier-value inner 0)))
                      (list* 'do (concat group-body [1]))
                      (reverse modifiers))
-                    values (gensym "doseq-values__")
-                    length (gensym "doseq-length__")
+                    values (synthetic "doseq-values")
+                    length (synthetic "doseq-length")
                     block-signal
                     (fn [indices]
                       (reduce
@@ -1084,13 +1114,13 @@
                             (reverse blocks))
                     pair-unrolled
                     ((fn step [index cursor-expr]
-                       (let [cursor (gensym "doseq-cursor__")]
+                       (let [cursor (synthetic "doseq-cursor")]
                          (list 'let [cursor cursor-expr]
                                (if (= index limit)
                                  (list 'if (list '= cursor 0)
                                        0
                                        (list 'quot 1 0))
-                                 (let [next-cursor (gensym "doseq-next__")]
+                                 (let [next-cursor (synthetic "doseq-next")]
                                    (list 'if (list '= cursor 0)
                                          0
                                          (list 'let
@@ -1204,7 +1234,7 @@
               (desugar-expr option-form)
               (let [tmp (if *loop-counter*
                           (symbol (str "some-thread__" (vswap! *loop-counter* inc)))
-                          (gensym "some-thread__"))
+                          (synthetic "some-thread"))
                     option-type (or (resolve-option-type option-form) [:option :i64])
                     payload-type (when (and (vector? option-type) (= :option (first option-type)))
                                    (second option-type))
@@ -1226,7 +1256,7 @@
       (reject! (if when? "when-let requires at least one body expression"
                            "if-let requires then and optional else expressions") form))
     (let [[pattern value] binding
-          tmp (gensym "binding-if__")
+          tmp (synthetic "binding-if")
           then-form (if when?
                       (if (= 1 (count bodies)) (first bodies) (cons 'do bodies))
                       (first bodies))
@@ -1248,7 +1278,7 @@
           ;; must be byte-stable across regenerations for drift tests.
           tmp (if *loop-counter*
                 (symbol (str "binding-some__" (vswap! *loop-counter* inc)))
-                (gensym "binding-some__"))
+                (synthetic "binding-some"))
           option-type (or (resolve-option-type value) [:option :i64])
           then-form (if when?
                       (if (= 1 (count bodies)) (first bodies) (desugar-do bodies))
@@ -1280,7 +1310,7 @@
       (reject! "case constants must be bounded integer, keyword, boolean, or string literals" form))
     (when-not (= (count constants) (count (distinct constants)))
       (reject! "case constants must be unique" form))
-    (let [tmp (gensym "case__")]
+    (let [tmp (synthetic "case")]
       (list 'let [tmp (desugar-expr dispatch)]
             (reduce (fn [fallback [group result]]
                       (let [members (if (seq? group) group [group])
@@ -1319,7 +1349,7 @@
   (cond
     (empty? args) 0
     (empty? (rest args)) (desugar-expr (first args))
-    :else (let [tmp (gensym "do-tmp__")]
+    :else (let [tmp (synthetic "do-tmp")]
             (list 'let [tmp (desugar-expr (first args))]
                   (desugar-do (rest args))))))
 
@@ -1445,7 +1475,6 @@
   a vector/map pattern is not itself recursively destructured -- a real,
   documented scope limit, not silently ignored (rejected below if written)."
   [pattern value-expr]
-  (reject-reserved-binding! pattern)
   (cond
     (symbol? pattern) [[pattern value-expr]]
 
@@ -1482,7 +1511,7 @@
                      (every? (set keys-vec) (keys defaults))
                      (or (nil? as-name) (symbol? as-name)))
         (reject! "map destructuring supports {:keys [...]} with bounded :or defaults and optional :as" pattern))
-      (let [tmp (gensym "destr-map__")]
+      (let [tmp (synthetic "destr-map")]
         (into [[tmp value-expr]]
               (concat
                ;; map-get is already a primitive shape here. Defaults are
@@ -2032,10 +2061,10 @@
         (do
           (when-not (= 1 (count args))
             (reject! "xorshift32 requires one state value" form))
-          (let [x0 (gensym "xorshift32_0__")
-                x1 (gensym "xorshift32_1__")
-                x2 (gensym "xorshift32_2__")
-                x3 (gensym "xorshift32_3__")]
+          (let [x0 (synthetic "xorshift32_0")
+                x1 (synthetic "xorshift32_1")
+                x2 (synthetic "xorshift32_2")
+                x3 (synthetic "xorshift32_3")]
             (list 'let [x0 (list 'u32-wrap (desugar-expr (first args)))
                          x1 (list 'u32-wrap (list 'i32-xor x0 (list 'i32-shift-left x0 13)))
                          x2 (list 'u32-wrap (list 'i32-xor x1 (list 'u32-shift-right x1 17)))
@@ -2088,9 +2117,9 @@
           (let [[f-form init-form coll-form] args
                 init* (desugar-expr init-form)
                 coll* (desugar-expr coll-form)
-                v (gensym "reduce_v__")
-                i (gensym "reduce_i__")
-                acc (gensym "reduce_acc__")
+                v (synthetic "reduce_v")
+                i (synthetic "reduce_i")
+                acc (synthetic "reduce_acc")
                 step
                 (cond
                   (and (symbol? f-form)
@@ -2132,12 +2161,12 @@
             (reject! "map requires fn and one or two vector-i64 collections (3+ deferred)" form))
           (let [[f-form & coll-forms] args
                 n-colls (count coll-forms)
-                i (gensym "map_i__")
-                acc (gensym "map_acc__")]
+                i (synthetic "map_i")
+                acc (synthetic "map_acc")]
             (case n-colls
               1
               (let [coll* (desugar-expr (first coll-forms))
-                    v (gensym "map_v__")
+                    v (synthetic "map_v")
                     mapped
                     (cond
                       (and (symbol? f-form)
@@ -2177,8 +2206,8 @@
               2
               (let [a* (desugar-expr (first coll-forms))
                     b* (desugar-expr (second coll-forms))
-                    va (gensym "map_a__")
-                    vb (gensym "map_b__")
+                    va (synthetic "map_a")
+                    vb (synthetic "map_b")
                     mapped
                     (cond
                       (and (seq? f-form) (= 'fn (first f-form)))
@@ -2218,10 +2247,10 @@
             (reject! "filter requires pred and one vector-i64 collection" form))
           (let [[p-form coll-form] args
                 coll* (desugar-expr coll-form)
-                v (gensym "filter_v__")
-                i (gensym "filter_i__")
-                acc (gensym "filter_acc__")
-                x (gensym "filter_x__")
+                v (synthetic "filter_v")
+                i (synthetic "filter_i")
+                acc (synthetic "filter_acc")
+                x (synthetic "filter_x")
                 pred-body
                 (cond
                   (and (seq? p-form) (= 'fn (first p-form)))
@@ -4190,7 +4219,7 @@
   [param]
   (if (symbol? param)
     [param identity]
-    (let [tmp (gensym "param-destr__")]
+    (let [tmp (synthetic "param-destr")]
       [tmp (fn [body] (list 'let [param tmp] body))])))
 
 (defn- type-alias-form? [value]
@@ -4575,6 +4604,7 @@
   ([source opts]
   (let [language-profile (when (map? opts) (:language-profile opts))
         forms (mapv annotate-doseq-collection-kinds (read-forms source))
+        _ (reject-reserved-source-symbols! forms)
         _ (when (= :pure-product language-profile)
             (check-pure-product-source-forms! forms))
         forms (expand-closed-multimethod-forms forms)
@@ -4639,6 +4669,7 @@
         ;; conjoined onto it during desugaring.
         used-capabilities (volatile! #{})
         parsed (binding [*loop-counter* (volatile! 0)
+                          *synthetic-counter* (volatile! 0)
                           *used-capability-keywords* used-capabilities]
                ;; `vec` (forcing) must stay INSIDE `binding`'s dynamic
                ;; extent: `mapcat` is lazy, so `(vec (binding [...]
