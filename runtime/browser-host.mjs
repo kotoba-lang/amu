@@ -26,6 +26,7 @@ const ALLOWED_IMPORTS = new Set([
   "kotoba:typed/get-ref/function",
   "kotoba:typed/count/function",
   "kotoba:typed/bool/function",
+  "kotoba:typed/bool-value/function",
   "kotoba:typed/equal/function",
   "kotoba:typed/assoc-i64/function",
   "kotoba:typed/assoc-f64/function",
@@ -1301,6 +1302,14 @@ function createTypedRuntime(abi, typedCapCall, allow) {
       reject("invalid-typed-operation", "count is not defined for this descriptor");
     },
     bool(value) { return value !== 0; },
+    // Inverse of bool: host boolean -> i32 0/1. Rejects non-booleans rather
+    // than coercing, so a forged container slot cannot become a word.
+    "bool-value"(value) {
+      if (typeof value !== "boolean") {
+        throw new TypeError("typed boolean is invalid");
+      }
+      return value ? 1 : 0;
+    },
     equal(descriptorId, left, right) {
       const descriptor = descriptorAt(descriptorId);
       return compareValue(descriptor, assertValue(descriptor, left), assertValue(descriptor, right)) === 0 ? 1 : 0;
