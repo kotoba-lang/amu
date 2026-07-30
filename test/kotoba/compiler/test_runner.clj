@@ -23,6 +23,9 @@
             [kotoba.compiler.recursive-tree-update-test]
             [kotoba.compiler.plan-test]
             [kotoba.compiler.string-operation-test]
+            [kotoba.compiler.w1-elaboration-test]
+            [kotoba.compiler.named-ability-elaboration-test]
+            [kotoba.compiler.symbol-operation-test]
             [kotoba.compiler.frontend-fuzz-test]
             [kotoba.compiler.frontend-assert-test]
             [kotoba.compiler.frontend-equality-diagnostic-test]
@@ -123,6 +126,9 @@
                                           'kotoba.compiler.recursive-tree-update-test
                                           'kotoba.compiler.plan-test
                                           'kotoba.compiler.string-operation-test
+                                          'kotoba.compiler.w1-elaboration-test
+                                          'kotoba.compiler.named-ability-elaboration-test
+                                          'kotoba.compiler.symbol-operation-test
                                           'kotoba.compiler.frontend-fuzz-test
                                           'kotoba.compiler.frontend-assert-test
                                           'kotoba.compiler.frontend-equality-diagnostic-test

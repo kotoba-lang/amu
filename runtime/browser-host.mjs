@@ -2,6 +2,7 @@ const MAX_MODULE_BYTES = 1024 * 1024;
 const PAIR_CAPACITY = 4096;
 const TYPED_SECTION = "kotoba.typed";
 const TYPED_ABI_VERSION = 13;
+const MIN_TYPED_ABI_VERSION = 5;
 const COMPATIBILITY_SECTION = "kotoba.compatibility";
 const COMPATIBILITY_VERSION = 1;
 const MAX_TYPED_DESCRIPTORS = 64;
@@ -237,8 +238,13 @@ function parseTypedMetadata(module) {
     reject("invalid-typed-metadata", "unknown typed ABI descriptor tag");
   };
   const version = byte();
-  if (version !== 5 && version !== 6 && version !== 7 && version !== 8 &&
-      version !== 9 && version !== 10 && version !== 11 && version !== TYPED_ABI_VERSION)
+  // Every version from MIN_TYPED_ABI_VERSION to the current one is supported, so
+  // say that rather than enumerating them. The enumeration had gone wrong: it
+  // listed 5..11 explicitly plus TYPED_ABI_VERSION, so when that constant moved
+  // 12 -> 13 for the list ABI, version 12 -- the symbol ABI -- stopped being
+  // accepted and every module emitting a symbol failed to instantiate with
+  // "unsupported Wasm typed ABI version". A range cannot develop that hole.
+  if (version < MIN_TYPED_ABI_VERSION || version > TYPED_ABI_VERSION)
     reject("unsupported-typed-abi", "unsupported Wasm typed ABI version");
   const count = uleb();
   if (count > MAX_TYPED_DESCRIPTORS)
