@@ -25,8 +25,14 @@
               (expression rng (dec depth)) (expression rng (dec depth)))
       2 (list 'let ['z (expression rng (dec depth))]
               (list (choose rng arithmetic) 'z (expression rng (dec depth))))
-      3 (list (choose rng comparisons)
-              (expression rng (dec depth)) (expression rng (dec depth)))
+      ;; Comparisons are :bool-typed (language profile 5), so a comparison used
+      ;; as a VALUE — an arithmetic operand, an `if` branch — is wrapped to an
+      ;; i64 the way Clojure would write it. As an `if` TEST (case 1) it needs
+      ;; no wrapper.
+      3 (list 'if
+              (list (choose rng comparisons)
+                    (expression rng (dec depth)) (expression rng (dec depth)))
+              1 0)
       (leaf rng))))
 
 (defn- source [^Random rng]
