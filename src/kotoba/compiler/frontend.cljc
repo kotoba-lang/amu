@@ -1454,7 +1454,12 @@
     ;; bound name, which is unique in this binding vector (duplicates are
     ;; already rejected). A `gensym` here would keep the emitted KIR different
     ;; on every compile for any module that destructures.
-    (let [tmp (chain-temp "destr" (name (or (first (filter symbol? pattern)) 'v)))
+    ;; `(or … 'v)` here made SCI/nbb fail to ANALYSE the whole namespace with
+    ;; "Unable to resolve symbol: v" -- the JVM reader accepts the quoted symbol,
+    ;; nbb's does not in this position, and the compiler is loaded under both.
+    (let [tmp (chain-temp "destr" (if-let [s (first (filter symbol? pattern))]
+                                    (name s)
+                                    "v"))
           [positional rest-part] (split-with (complement #{'&}) pattern)]
       (when-not (every? symbol? positional)
         (reject! "vector destructuring supports only flat (one-level) symbol patterns" pattern))
