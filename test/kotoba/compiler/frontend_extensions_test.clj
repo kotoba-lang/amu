@@ -145,13 +145,15 @@
                    "').then(m=>{const x=m.instantiateKotoba({});"
                    "if(x.negate(true)!==false||x['present?']([true,7n])!==true||x['missing?']([false])!==true)process.exit(2);"
                    "if(x.unwrap([true,7n])!==7n||x.unwrap([false])!==9n)process.exit(3);"
-                   "if(x['same?']([false],[false])!==1n||x['same?']([true,7n],[true,8n])!==0n)process.exit(4)})")
+                   ;; Profile 5: `=` returns host boolean on js-kotoba-v1 (word
+                   ;; 0/1 remains the KIR / wasm32 representation).
+                   "if(x['same?']([false],[false])!==true||x['same?']([true,7n],[true,8n])!==false)process.exit(4)})")
         result (shell/sh "node" "--input-type=module" "-e" probe)]
     (is (= false (ir/execute kir 'negate [true])))
     (is (= true (ir/execute kir 'present? [[true 7]])))
     (is (= true (ir/execute kir 'missing? [[false]])))
     (is (= 9 (ir/execute kir 'unwrap [[false]])))
-    (is (= 1 (ir/execute kir 'same? [[true 7] [true 7]])))
+    (is (= true (ir/execute kir 'same? [[true 7] [true 7]])))
     (is (= :kotoba.value/typed-v1 (:value-profile compiled)))
     (is (= 2 (get-in compiled [:manifest :kotoba.artifact/limits :option-i64-slots])))
     (is (zero? (:exit result)) (:err result))))
@@ -188,7 +190,7 @@
     (is (= 99 (ir/execute kir 'lookup [[1 2] -1])))
     (is (= [7 2] (ir/execute kir 'update [[1 2] 0 7])))
     (is (= [1 2 3] (ir/execute kir 'append [[1 2] 3])))
-    (is (= 1 (ir/execute kir 'same? [[1 2] [1 2]])))
+    (is (= true (ir/execute kir 'same? [[1 2] [1 2]])))
     (is (= 16384 (get-in compiled [:manifest :kotoba.artifact/limits :vector-i64-items])))
     (is (zero? (:exit result)) (:err result))
     (doseq [target-name (unsupported-typed-targets)]
@@ -299,13 +301,14 @@
         probe (str "import('data:text/javascript;base64," encoded
                    "').then(m=>{const x=m.instantiateKotoba({});"
                    "if(x.identity(':安全/確認')!==':安全/確認')process.exit(2);"
-                   "if(x['same?'](':a',':a')!==1n||x['same?'](':a',':b')!==0n)process.exit(3)})")
+                   ;; Profile 5: keyword `=` is a host boolean on this target.
+                   "if(x['same?'](':a',':a')!==true||x['same?'](':a',':b')!==false)process.exit(3)})")
         result (shell/sh "node" "--input-type=module" "-e" probe)]
     (is (= :keyword (get-in compiled [:kir :functions 0 :result])))
     (is (= [:keyword] (get-in compiled [:kir :functions 0 :param-types])))
     (is (= :安全/確認 (ir/execute (:kir compiled) 'identity [:安全/確認])))
-    (is (= 1 (ir/execute (:kir compiled) 'same? [:a :a])))
-    (is (= 0 (ir/execute (:kir compiled) 'same? [:a :b])))
+    (is (= true (ir/execute (:kir compiled) 'same? [:a :a])))
+    (is (= false (ir/execute (:kir compiled) 'same? [:a :b])))
     (is (zero? (:exit result)) (:err result))
     (is (not (re-find #"fnv|1099511628211|3750763034362895579" js-source)))
     (doseq [target (unsupported-typed-targets)]
@@ -334,7 +337,7 @@
     (is (= 99 (ir/execute kir 'value [[false 12]])))
     (is (= 12 (ir/execute kir 'error [[false 12]])))
     (is (= 98 (ir/execute kir 'error [[true 7]])))
-    (is (= 1 (ir/execute kir 'same? [[false 12] [false 12]])))
+    (is (= true (ir/execute kir 'same? [[false 12] [false 12]])))
     (is (= 2 (get-in compiled [:manifest :kotoba.artifact/limits :result-i64-slots])))
     (is (str/includes? (:source compiled) "resultProfile:'tagged-i64-i64-v1'")))
   (is (some? (rejection-message "(defn bad [] :result-i64 1)")))

@@ -2,9 +2,12 @@
   "One-source Kotoba test runner.
 
   Exported zero-arity functions whose names start with `test-` are tests and
-  pass only when they return i64 1. `test-handler(cap-id,value)` is an optional
-  Kotoba-defined deterministic ability handler used by every target. The same
-  checked KIR is executed by the JVM oracle, restricted ESM, and Wasm."
+  pass when they return a true-ish predicate: language profile 5 makes
+  comparisons `:bool`, so a test returns JS/KIR `true` (or the 0/1 word `1`
+  during the profile-4 deprecation window). `test-handler(cap-id,value)` is
+  an optional Kotoba-defined deterministic ability handler used by every
+  target. The same checked KIR is executed by the JVM oracle, restricted ESM,
+  and Wasm."
   (:require [clojure.data.json :as json]
             [clojure.java.shell :as shell]
             [clojure.string :as str]
@@ -46,7 +49,11 @@
             (ir/execute kir 'test-handler [cap-id value]))]
     (mapv (fn [test-name]
             (try
-              {:test test-name :ok (= 1 (ir/execute kir test-name [] {:cap-call handler}))}
+              ;; same rule as the js/wasm probes: a test is a predicate and
+              ;; returns a boolean under language profile 5; 1 stays accepted
+              ;; for the profile-4 deprecation window.
+              {:test test-name
+               :ok (contains? #{true 1} (ir/execute kir test-name [] {:cap-call handler}))}
               (catch Exception error
                 {:test test-name :ok false :error (or (ex-message error) "test trap")})))
           tests)))
@@ -80,7 +87,8 @@
           "const grants=Object.fromEntries(ids.map(id=>[id,value=>"
           "x['test-handler'](BigInt(id),value)]));"
           "x=m.instantiateKotoba(grants);"
-          "const out=names.map(name=>{try{return {test:name,ok:x[name]()===1n}}"
+          "const out=names.map(name=>{try{const v=x[name]();"
+          "return {test:name,ok:v===true||v===1n||v===1}}"
           "catch(e){return {test:name,ok:false,error:'test trap'}}});"
           "console.log(JSON.stringify(out));"))))
 
@@ -97,7 +105,8 @@
           "const loaded=await host.instantiateKotoba(bytes,{allowCapabilities:ids,"
           "capCall:(id,value)=>instance.exports['test-handler'](BigInt(id),value)});"
           "instance=loaded.instance;"
-          "const out=names.map(name=>{try{return {test:name,ok:instance.exports[name]()===1n}}"
+          "const out=names.map(name=>{try{const v=instance.exports[name]();"
+          "return {test:name,ok:v===true||v===1n||v===1}}"
           "catch(e){return {test:name,ok:false,error:'test trap'}}});"
           "console.log(JSON.stringify(out));"))))
 
