@@ -745,6 +745,46 @@
   (reduce (fn [tail item] (list 'pair (desugar-expr item) tail))
           0 (reverse args)))
 
+;; Synthesized `let` temporaries for `and` / `or` / comparison chains.
+;;
+;; These used to be `gensym`, which made the emitted KIR different on every
+;; compile: the same source produced `and-tmp__11125` in one run and
+;; `and-tmp__11129` in the next, because the counter is process-global and
+;; depends on how much compiled before it. Anything that compares precompiled
+;; KIR therefore could not use `and`/`or` at all -- measured in
+;; kotoba-lang/murakumo, whose `infer_schedule_core.kotoba` says in a comment:
+;;
+;;   Nested `if` (not `and`/`or`) so the precompiled KIR is gensym-stable for
+;;   the drift gate.
+;;
+;; That is language profile 5's headline ergonomics being unavailable in exactly
+;; the code that most wants them. A deterministic name fixes it: the name is a
+;; function of the chain position, so the same source always yields the same KIR.
+;;
+;; Capture is prevented by construction rather than by luck: the names live under
+;; the reserved `__kotoba_` prefix, which `reject-reserved-binding!` now refuses
+;; in any user binding or parameter position. Shadowing between nested chains is
+;; harmless anyway -- a temp is read only in its own `if` test and else branch,
+;; both outside any inner binding -- but relying on that alone would leave a real
+;; program able to capture one by writing the name.
+(defn- chain-temp [prefix depth]
+  (symbol (str "__kotoba_" prefix "_" depth)))
+
+(defn- reserved-binding-name? [value]
+  (and (simple-symbol? value) (= "__kotoba_" (subs (str value) 0 (min 9 (count (str value)))))))
+
+(defn- reject-reserved-binding!
+  "`__kotoba_` is the prefix every synthesized binding uses. Deterministic
+  synthesized names are only safe if a program cannot write one: a user local
+  called `__kotoba_and_2` would be shadowed by the temp `(and x <expr>)` binds,
+  and `<expr>` is user code evaluated inside that scope -- real capture, not a
+  theoretical one. Reserving the prefix removes the possibility instead of
+  relying on nobody choosing the name."
+  [pattern]
+  (doseq [value (tree-seq coll? seq pattern)]
+    (when (reserved-binding-name? value)
+      (reject! "binding name uses the reserved __kotoba_ prefix" pattern))))
+
 (defn- desugar-and
   "`(and a b c ...)` -> nested `let`/`if`, ported from kotoba-lang/kotoba's
   runtime.clj `desugar-and` (verified live there, ADR-2607150000): binds
@@ -754,7 +794,7 @@
   (cond
     (empty? args) 1
     (empty? (rest args)) (desugar-expr (first args))
-    :else (let [tmp (gensym "and-tmp__")]
+    :else (let [tmp (chain-temp "and" (count args))]
             (list 'let [tmp (desugar-expr (first args))]
                   (list 'if tmp (desugar-and (rest args)) tmp)))))
 
@@ -765,7 +805,7 @@
   (cond
     (empty? args) 0
     (empty? (rest args)) (desugar-expr (first args))
-    :else (let [tmp (gensym "or-tmp__")]
+    :else (let [tmp (chain-temp "or" (count args))]
             (list 'let [tmp (desugar-expr (first args))]
                   (list 'if tmp tmp (desugar-or (rest args)))))))
 
@@ -1262,13 +1302,13 @@
   (letfn [(chain [left remaining]
             (if (empty? remaining)
               true
-              (let [right (gensym "comparison__")]
+              (let [right (chain-temp "cmp" (count remaining))]
                 (list 'let [right (desugar-expr (first remaining))]
                       (list 'if (list op left right)
                             (chain right (rest remaining)) false)))))]
     (if (empty? args)
       true
-      (let [left (gensym "comparison__")]
+      (let [left (chain-temp "cmp" (inc (count args)))]
         (list 'let [left (desugar-expr (first args))]
               (chain left (rest args)))))))
 
@@ -1405,11 +1445,21 @@
   a vector/map pattern is not itself recursively destructured -- a real,
   documented scope limit, not silently ignored (rejected below if written)."
   [pattern value-expr]
+  (reject-reserved-binding! pattern)
   (cond
     (symbol? pattern) [[pattern value-expr]]
 
     (vector? pattern)
-    (let [tmp (gensym "destr-vec__")
+    ;; Deterministic, like the and/or/comparison temps: derived from the first
+    ;; bound name, which is unique in this binding vector (duplicates are
+    ;; already rejected). A `gensym` here would keep the emitted KIR different
+    ;; on every compile for any module that destructures.
+    ;; `(or … 'v)` here made SCI/nbb fail to ANALYSE the whole namespace with
+    ;; "Unable to resolve symbol: v" -- the JVM reader accepts the quoted symbol,
+    ;; nbb's does not in this position, and the compiler is loaded under both.
+    (let [tmp (chain-temp "destr" (if-let [s (first (filter symbol? pattern))]
+                                    (name s)
+                                    "v"))
           [positional rest-part] (split-with (complement #{'&}) pattern)]
       (when-not (every? symbol? positional)
         (reject! "vector destructuring supports only flat (one-level) symbol patterns" pattern))
