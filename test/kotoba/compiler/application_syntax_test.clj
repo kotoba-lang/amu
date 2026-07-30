@@ -81,13 +81,14 @@
     (is (thrown? clojure.lang.ExceptionInfo (compiler/check-source bad)))))
 
 (deftest variadic-comparisons-short-circuit-through-binary-core
+  ;; Comparisons and chains are :bool-typed (profile 5); tally with `(if p 1 0)`.
   (let [source "(defn main []
-                  (+ (=) (= 1) (= 2 2 2)
-                     (not= 2 2 3)
-                     (< 1 2 3 4)
-                     (> 4 3 2 1)
-                     (<= 1 1 2)
-                     (>= 2 2 1)))"
+                  (+ (if (=) 1 0) (if (= 1) 1 0) (if (= 2 2 2) 1 0)
+                     (if (not= 2 2 3) 1 0)
+                     (if (< 1 2 3 4) 1 0)
+                     (if (> 4 3 2 1) 1 0)
+                     (if (<= 1 1 2) 1 0)
+                     (if (>= 2 2 1) 1 0)))"
         kir (compile-kir source)
         printed (pr-str kir)]
     (is (= 8 (:oracle-value kir)))
