@@ -11,8 +11,7 @@
             [kotoba.artifact.core :as artifact]
             [kotoba.compiler.core :as compiler]
             [kotoba.kir :as ir]
-            [clojure.pprint]
-            [clojure.walk])
+            [clojure.pprint])
   (:import [java.security MessageDigest]
            [java.nio.charset StandardCharsets]))
 
@@ -230,40 +229,24 @@
   (let [digest (.digest (MessageDigest/getInstance "SHA-256") b)]
     (apply str (map #(format "%02x" (bit-and (int %) 0xff)) digest))))
 
-(defn- gensym-like?
-  "True for compiler gensyms like foo__12345 (digits after __)."
-  [x]
-  (and (symbol? x)
-       (nil? (namespace x))
-       (boolean (re-matches #".+__\d+" (name x)))))
-
-(defn- normalize-gensyms
-  "Rewrite gensym-like symbols to stable foo__G0, foo__G1 … by first-seen order
-  so KIR digests are deterministic across process runs."
-  [form]
-  (let [table (atom {})
-        counter (atom 0)
-        ren (fn [sym]
-              (or (get @table sym)
-                  (let [n (name sym)
-                        base (second (re-matches #"(.+)__\d+" n))
-                        fresh (symbol (str base "__G" @counter))]
-                    (swap! counter inc)
-                    (swap! table assoc sym fresh)
-                    fresh)))]
-    (clojure.walk/prewalk
-     (fn [x]
-       (if (gensym-like? x) (ren x) x))
-     form)))
-
 (defn- kir-digest-body
-  "Stable KIR projection for hashing — gensym-normalized + select-keys;
-  artifact/sha256 canonicalizes map key order."
+  "KIR projection for hashing — select-keys only; artifact/sha256 canonicalizes
+  map key order.
+
+  This used to normalize gensym-like symbols to `foo__G0`, `foo__G1` … so that
+  digests were reproducible across process runs. They are reproducible now
+  because the compiler emits no gensyms: every synthesized name is a function of
+  the source (compiler#453 by chain position, #454 on a per-compilation counter,
+  and `binding-some` folded in here). Measured across all 52 conformance cases:
+  zero symbols matching the `.+__\\d+` pattern the normalization looked for.
+
+  Removing it is not just cleanup. The normalization rewrote by FIRST-SEEN
+  ORDER, so a change that altered which synthesized binding appeared where --
+  the identity of a temp, not merely its number -- produced the same digest. The
+  golden gate could not see it. Now the digest is of the KIR itself."
   [kir]
-  (-> kir
-      (select-keys [:format :signature :functions :exports :effects
-                    :schemas :schema-identities :blocks :entry :oracle-value])
-      normalize-gensyms))
+  (select-keys kir [:format :signature :functions :exports :effects
+                    :schemas :schema-identities :blocks :entry :oracle-value]))
 
 (defn digest-case
   "Compile case once; return {:id :kir-sha256 :wasm-sha256 :expect :result}.
