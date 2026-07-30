@@ -751,9 +751,21 @@
     (is (not (contains? (set (map :name functions)) '__kotoba_map_get)))
     (is (not (contains? (set (map :name functions)) '__kotoba_map_without)))))
 
-(deftest legacy-helper-names-no-longer-affect-map-lowering
-  (is (= 2 (oracle "(defn __kotoba_map_without [m k] 0)
-                     (defn main [] (get (assoc {:a 1} :a 2) :a))"))))
+(deftest legacy-helper-names-are-reserved-not-merely-inert
+  ;; This used to assert that a user COULD define `__kotoba_map_without` and
+  ;; that map lowering ignored it. That property still holds -- lowering never
+  ;; reads the name -- but it is no longer observable, because `__kotoba_` is
+  ;; now reserved outright in source.
+  ;;
+  ;; The reservation is what makes deterministic synthesized names safe: a
+  ;; local called `__kotoba_and_2` would be shadowed by the temp `(and x
+  ;; <expr>)` binds, and `<expr>` is user code evaluated inside that scope.
+  ;; Being inert against ONE known helper name is weaker than being unable to
+  ;; write any of them.
+  (is (some? (rejection-message "(defn __kotoba_map_without [m k] 0)
+                                 (defn main [] (get (assoc {:a 1} :a 2) :a))")))
+  ;; the lowering itself is unchanged
+  (is (= 2 (oracle "(defn main [] (get (assoc {:a 1} :a 2) :a))"))))
 
 (deftest get-and-assoc-are-reserved-function-names
   (is (some? (rejection-message "(defn get [] 1) (defn main [] 0)")))
