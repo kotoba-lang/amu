@@ -1291,15 +1291,18 @@
 (defn- desugar-comparison-chain [op args form]
   (when (and (not= op '=) (empty? args))
     (reject! "ordered comparison requires at least one operand" form))
+  ;; Comparisons are `:bool`-typed, so a chain folds to `true`/`false` rather
+  ;; than 1/0 — otherwise the chain is an i64 that cannot compose with `and`,
+  ;; `or`, `not` or another comparison.
   (letfn [(chain [left remaining]
             (if (empty? remaining)
-              1
+              true
               (let [right (gensym "comparison__")]
                 (list 'let [right (desugar-expr (first remaining))]
                       (list 'if (list op left right)
-                            (chain right (rest remaining)) 0)))))]
+                            (chain right (rest remaining)) false)))))]
     (if (empty? args)
-      1
+      true
       (let [left (gensym "comparison__")]
         (list 'let [left (desugar-expr (first args))]
               (chain left (rest args)))))))
@@ -1646,12 +1649,18 @@
                  (list 'pair-second (desugar-expr (first args))))
         empty? (do (when-not (= 1 (count args)) (reject! "empty? requires one operand" form))
                    (list '= (desugar-expr (first args)) 0))
+        ;; `not`/`not=` desugar through `if`, not through `(= x 0)`: comparisons
+        ;; are `:bool`-typed now, so comparing their result to an i64 literal is
+        ;; a type error. `if` accepts a boolean or a legacy 0/1 integer test, so
+        ;; both an i64 operand and a bool one keep working, and the result is
+        ;; `:bool` either way.
         not (do (when-not (= 1 (count args)) (reject! "not requires one operand" form))
-                (list '= (desugar-expr (first args)) 0))
+                (list 'if (desugar-expr (first args)) false true))
         not= (if (= 2 (count args))
-               (list '= (list '= (desugar-expr (first args))
-                                    (desugar-expr (second args))) 0)
-               (list '= (desugar-comparison-chain '= args form) 0))
+               (list 'if (list '= (desugar-expr (first args))
+                                  (desugar-expr (second args)))
+                     false true)
+               (list 'if (desugar-comparison-chain '= args form) false true))
         zero? (do (when-not (= 1 (count args)) (reject! "zero? requires one operand" form))
                   (list '= (desugar-expr (first args)) 0))
         pos? (do (when-not (= 1 (count args)) (reject! "pos? requires one operand" form))
@@ -1698,10 +1707,12 @@
         when-some (desugar-binding-some args form true)
         if-not (do (when-not (<= 2 (count args) 3)
                      (reject! "if-not requires then and optional else expressions" form))
+                   ;; Negate by swapping the branches, not by `(= test 0)` —
+                   ;; the test may now be `:bool`.
                    (let [[test then else] args]
-                     (list 'if (list '= (desugar-expr test) 0)
-                           (desugar-expr then)
-                           (if (= 3 (count args)) (desugar-expr else) 0))))
+                     (list 'if (desugar-expr test)
+                           (if (= 3 (count args)) (desugar-expr else) 0)
+                           (desugar-expr then))))
         when-not (do (when (empty? args)
                        (reject! "when-not requires a test expression" form))
                      (let [[test & body] args
@@ -1709,7 +1720,8 @@
                                   (empty? body) 0
                                   (= 1 (count body)) (desugar-expr (first body))
                                   :else (list* 'do (mapv desugar-expr body)))]
-                       (list 'if (list '= (desugar-expr test) 0) then 0)))
+                       ;; Negate by swapping the branches (see if-not).
+                       (list 'if (desugar-expr test) 0 then)))
         when (do (when (empty? args)
                    (reject! "when requires a test expression" form))
                  (let [[test & body] args
@@ -2766,7 +2778,7 @@
                                       " identity")
                             ""))
                      args))
-          :i64)
+          :bool)
 
       (= op 'bool-not)
       (do (require-expression-type! (first types) :bool (first args)) :bool)
@@ -2963,7 +2975,7 @@
       (contains? (disj comparisons '=) op)
       (do (doseq [[arg type] (map vector args types)]
             (require-expression-type! type :i64 arg))
-          :i64)
+          :bool)
 
       (contains? heap-operations op)
       (do (doseq [[arg type] (map vector args types)]
