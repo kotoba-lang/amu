@@ -26,6 +26,7 @@ const ALLOWED_IMPORTS = new Set([
   "kotoba:typed/get-ref/function",
   "kotoba:typed/count/function",
   "kotoba:typed/bool/function",
+  "kotoba:typed/bool-value/function",
   "kotoba:typed/equal/function",
   "kotoba:typed/assoc-i64/function",
   "kotoba:typed/assoc-f64/function",
@@ -1301,6 +1302,13 @@ function createTypedRuntime(abi, typedCapCall, allow) {
       reject("invalid-typed-operation", "count is not defined for this descriptor");
     },
     bool(value) { return value !== 0; },
+    // Profile 5 (ADR 0191 A): unbox a sealed JS boolean to an i32 0/1 word.
+    // Inverse of `bool` (i32 → externref). Used when aggregates store :bool as
+    // a host boolean but the language value profile carries a 0/1 word.
+    "bool-value"(value) {
+      if (typeof value !== "boolean") reject("invalid-typed-value", "typed boolean is invalid");
+      return value ? 1 : 0;
+    },
     equal(descriptorId, left, right) {
       const descriptor = descriptorAt(descriptorId);
       return compareValue(descriptor, assertValue(descriptor, left), assertValue(descriptor, right)) === 0 ? 1 : 0;
