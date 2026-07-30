@@ -1,6 +1,6 @@
 # ADR 0191: language profile 5 — bool-typed predicates, inferred results, keyword accessor
 
-- Status: Accepted (design authority); **implementation not on main** — remaining A/B/C below
+- Status: Accepted
 - Date: 2026-07-30
 - WBS: closes the bool half of kotoba-lang `ADR-reliability-record-access-and-bool-comparisons`
 - Breaking: yes — language profile 4 → 5, `version-policy.edn` deprecation window
@@ -189,8 +189,8 @@ emitted bytes).
 - kotoba-lang `docs/adr/ADR-reliability-record-access-and-bool-comparisons.md`
 - kotoba-lang `lang/surface-status.edn` `:bool-is-a-type-not-a-number`
 
-## Progress (host A surface, 2026-07-30)
+## Progress (2026-07-30)
 
-- `runtime/browser-host.mjs`: `bool-value` implement + ALLOWED_IMPORTS
-- `kotoba-wasm` import table: `typed-bool-value` `[0x60 1 0x6f 1 0x7f]`
-- Emitter wiring and frontend profile-5 still **not** on main
+- Host A surface: `browser-host` `bool-value` (compiler#449) + wasm `typed-bool-value` import
+- Emitter A+B: kotoba-wasm#42 — word inside modules; box at aggregate + export ABI
+- Frontend profile-5 spike remains this PR (comparisons → `:bool`)

@@ -378,13 +378,13 @@
              0))
          (defn strings-match [] :bool
            (if (string=? \"same\" \"same\") true false))
-         (defn keyword-match [] :i64 (= :ready :ready))"
+         (defn keyword-match [] :bool (= :ready :ready))"
         compiled (compiler/compile-source source :wasm32-kotoba-v1)
         probe (node-probe
                compiled
                (str "const x=h.instance.exports;"
                     "if(x.main()!==42n||x['strings-match']()!==true||"
-                    "x['keyword-match']()!==1n)process.exit(2);"))]
+                    "x['keyword-match']()!==true)process.exit(2);"))]
     (is (zero? (:exit probe)) (:err probe))))
 
 (deftest string-equality-remains-i64-through-recursive-reference-calls
