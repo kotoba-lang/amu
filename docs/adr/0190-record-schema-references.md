@@ -122,7 +122,9 @@ invisible:
   (4 new: ref in parameter annotation, ref in return annotation, ref as a record
   op type argument, undeclared ref fails closed)
 - `clojure -M:conformance` → **52 / 52 passed (47 pure-product, 5 portable)**
-- `clojure -M:test` → **730 tests, 6121 assertions, 0 failures**
+- `clojure -M:test` → **749 tests, 6158 assertions, 0 failures**
+  (716 / 6104 before this PR: +14/+17 from registering the namespace ADR 0189
+  added, +19/+37 from the eight green namespaces the sweep found)
 
 ## Related
 
