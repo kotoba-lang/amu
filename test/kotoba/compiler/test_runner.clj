@@ -28,6 +28,7 @@
             [kotoba.compiler.frontend-equality-diagnostic-test]
             [kotoba.compiler.product-value-abi-v1-test]
             [kotoba.compiler.pure-product-profile-test]
+            [kotoba.compiler.record-projection-sugar-test]
             [kotoba.compiler.ambient-negative-corpus-test]
             [kotoba.compiler.lang-conformance-test]
             [kotoba.compiler.lang-conformance-golden-test]
@@ -119,6 +120,7 @@
                                           'kotoba.compiler.frontend-equality-diagnostic-test
                                           'kotoba.compiler.product-value-abi-v1-test
                                           'kotoba.compiler.pure-product-profile-test
+                                          'kotoba.compiler.record-projection-sugar-test
                                           'kotoba.compiler.ambient-negative-corpus-test
                                           'kotoba.compiler.lang-conformance-test
                                           'kotoba.compiler.lang-conformance-golden-test

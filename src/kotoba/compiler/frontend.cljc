@@ -3716,7 +3716,7 @@
   already lowered to helpers), so it is threaded explicitly and everything else
   recurses structurally. Vectors — including type descriptors — are returned
   untouched because they are not seqs."
-  [form locals signatures]
+  [form locals signatures schemas]
   (if-not (seq? form)
     form
     (let [[op & args] form]
@@ -3725,41 +3725,69 @@
         (let [[bindings body] args
               [pairs locals']
               (reduce (fn [[acc cur] [nm value]]
-                        (let [v (rewrite-record-projection value cur signatures)]
+                        (let [v (rewrite-record-projection value cur signatures schemas)]
                           [(conj acc nm v)
                            (assoc cur nm (infer-expression-type v cur signatures))]))
                       [[] locals]
                       (partition 2 bindings))]
-          (list 'let (vec pairs) (rewrite-record-projection body locals' signatures)))
+          (list 'let (vec pairs) (rewrite-record-projection body locals' signatures schemas)))
 
-        (and (= op 'record-get) (= 2 (count args)))
-        (let [value (rewrite-record-projection (first args) locals signatures)
-              value-type (infer-expression-type value locals signatures)]
-          (when-not (record-type? value-type)
-            (reject! (str "record-get without a type descriptor requires a record "
-                          "value; got " (pr-str value-type))
+        ;; A named schema reference in an operation's *type argument* is
+        ;; resolved here too, so validation, inference and lowering keep seeing
+        ;; only inline descriptors. Annotations in parameter/return position
+        ;; need no rewrite — `same-expression-type?` already treats a reference
+        ;; and its descriptor as the same nominal type.
+        (and (contains? '#{record-new record-get record-assoc record-equal} op)
+             (schema-ref-type? (first args)))
+        (let [descriptor (get schemas (second (first args)))]
+          (when-not (record-type? descriptor)
+            (reject! (str "no :record schema declared for " (second (first args))
+                          " in this namespace")
                      form
                      :kotoba.error/record-projection-unresolved))
-          (list 'record-get value-type value (second args)))
+          (cons op (cons descriptor
+                         (map #(rewrite-record-projection % locals signatures schemas)
+                              (rest args)))))
+
+        (and (= op 'record-get) (= 2 (count args)))
+        (let [value (rewrite-record-projection (first args) locals signatures schemas)
+              value-type (infer-expression-type value locals signatures)
+              ;; A named schema reference resolves through the namespace's
+              ;; closed :schemas map, so a value threaded through many
+              ;; signatures can be annotated `[:ref :ns/name]` instead of
+              ;; repeating the descriptor at every site.
+              descriptor (if (schema-ref-type? value-type)
+                           (get schemas (second value-type))
+                           value-type)]
+          (when-not (record-type? descriptor)
+            (reject! (str "record-get without a type descriptor requires a record "
+                          "value; got " (pr-str value-type)
+                          (when (schema-ref-type? value-type)
+                            (str " (no :record schema declared for "
+                                 (second value-type) " in this namespace)")))
+                     form
+                     :kotoba.error/record-projection-unresolved))
+          (list 'record-get descriptor value (second args)))
 
         :else
-        (cons op (map #(rewrite-record-projection % locals signatures) args))))))
+        (cons op (map #(rewrite-record-projection % locals signatures schemas) args))))))
 
 (defn- rewrite-record-projections
   "Apply `rewrite-record-projection` to every function body. Only modules that
   declare param types can resolve the sugar; untyped modules are left alone and
   a 2-arity `record-get` there fails closed in validation as before."
-  [functions]
-  (let [signatures (into {} (map (fn [{:keys [name params param-types result]}]
-                                   [name {:params params :param-types param-types
-                                          :result result}])
-                                 functions))]
-    (mapv (fn [{:keys [params param-types] :as f}]
-            (if (seq param-types)
-              (update f :body rewrite-record-projection
-                      (zipmap params param-types) signatures)
-              f))
-          functions)))
+  ([functions] (rewrite-record-projections functions {}))
+  ([functions schemas]
+   (let [signatures (into {} (map (fn [{:keys [name params param-types result]}]
+                                    [name {:params params :param-types param-types
+                                           :result result}])
+                                  functions))]
+     (mapv (fn [{:keys [params param-types] :as f}]
+             (if (seq param-types)
+               (update f :body rewrite-record-projection
+                       (zipmap params param-types) signatures schemas)
+               f))
+           functions))))
 
 (defn- check-value-types! [functions]
   (let [signatures (into {} (map (fn [{:keys [name params param-types result]}]
@@ -4589,7 +4617,7 @@
         ;; inference — elaborate-named-abilities does, and its record-get case
         ;; destructures [type value field], so a 2-arity form reaching it puts
         ;; the value symbol in the type slot and `(nth type 2)` throws.
-        parsed (rewrite-record-projections parsed)
+        parsed (rewrite-record-projections parsed (:schemas namespace-info))
         named-elaboration (elaborate-named-abilities parsed)
         parsed (:functions named-elaboration)
         used-capability-names
