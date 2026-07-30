@@ -43,6 +43,8 @@
   {:id :record-unknown-field
    :source "(defn main [value [:record :conformance/person [[:age :i64]]]] (record-get [:record :conformance/person [[:age :i64]]] value :missing))"}
   {:id :floating-literal
-   :source "(defn main [] 1.5)"}
+   ;; Profile 5 infers unannotated results, so bare 1.5 is a valid :f64
+   ;; program. Keep fail-closed via an explicit type mismatch.
+   :source "(defn main [] :i64 1.5)"}
   {:id :floating-descriptor
    :source "(defn main [value :f64] :f64 value)"}]}

@@ -1,0 +1,15 @@
+{:kotoba.lang.version-policy/version 1
+ :kotoba.lang.version-policy/current-profile 5
+ :kotoba.lang.version-policy/current-release "0.5.0"
+ :kotoba.lang.version-policy/adr "0191-language-profile-5-bool-typed-predicates"
+
+ ;; Profile 4 treated comparisons as :i64. Profile 5 makes them :bool so
+ ;; and/or/not compose and predicates stay Clojure-shaped (ADR 0191).
+ :deprecated
+ [{:profile 4
+   :release "0.4.0"
+   :deprecated-on "2026-07-30"
+   :removal-not-before "2027-01-26"
+   :reason "comparisons and predicates are :bool; arithmetic-over-predicates
+            was an admitted non-Clojure idiom and is no longer typed."
+   :migration "where a number is wanted from a predicate, write (if p 1 0)"}]}

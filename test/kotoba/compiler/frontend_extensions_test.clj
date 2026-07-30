@@ -145,7 +145,8 @@
                    "').then(m=>{const x=m.instantiateKotoba({});"
                    "if(x.negate(true)!==false||x['present?']([true,7n])!==true||x['missing?']([false])!==true)process.exit(2);"
                    "if(x.unwrap([true,7n])!==7n||x.unwrap([false])!==9n)process.exit(3);"
-                   "if(x['same?']([false],[false])!==1n||x['same?']([true,7n],[true,8n])!==0n)process.exit(4)})")
+                   ;; Profile 5: `=` is host boolean on js-kotoba-v1 (KIR word stays 0/1).
+                   "if(x['same?']([false],[false])!==true||x['same?']([true,7n],[true,8n])!==false)process.exit(4)})")
         result (shell/sh "node" "--input-type=module" "-e" probe)]
     (is (= false (ir/execute kir 'negate [true])))
     (is (= true (ir/execute kir 'present? [[true 7]])))
@@ -299,7 +300,8 @@
         probe (str "import('data:text/javascript;base64," encoded
                    "').then(m=>{const x=m.instantiateKotoba({});"
                    "if(x.identity(':安全/確認')!==':安全/確認')process.exit(2);"
-                   "if(x['same?'](':a',':a')!==1n||x['same?'](':a',':b')!==0n)process.exit(3)})")
+                   ;; Profile 5: keyword `=` is a host boolean on this target.
+                   "if(x['same?'](':a',':a')!==true||x['same?'](':a',':b')!==false)process.exit(3)})")
         result (shell/sh "node" "--input-type=module" "-e" probe)]
     (is (= :keyword (get-in compiled [:kir :functions 0 :result])))
     (is (= [:keyword] (get-in compiled [:kir :functions 0 :param-types])))
