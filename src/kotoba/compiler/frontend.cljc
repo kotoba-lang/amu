@@ -1253,41 +1253,6 @@
                     (desugar-expr default)
                     (reverse pairs))))))
 
-(defn- utf8-boundaries
-  "Map each valid UTF-8 byte boundary to its UTF-16 host-string index."
-  [s]
-  (loop [index 0 byte-index 0 boundaries {0 0}]
-    (if (= index (count s))
-      boundaries
-      (let [unit #?(:clj (int (.charAt ^String s index))
-                    :cljs (.charCodeAt s index))
-            [units bytes]
-            (cond
-              (<= unit 0x7f) [1 1]
-              (<= unit 0x7ff) [1 2]
-              (<= 0xd800 unit 0xdbff) [2 4]
-              :else [1 3])]
-        (recur (+ index units)
-               (+ byte-index bytes)
-               (assoc boundaries (+ byte-index bytes) (+ index units)))))))
-
-(defn- desugar-string-substring [args form]
-  (when-not (= 3 (count args))
-    (reject! "string-substring requires a string, start, and end" form))
-  (let [[s start end] args]
-    (when-not (string? s)
-      (reject! "string-substring currently requires a literal string" form))
-    (when-not (and (integer? start) (integer? end))
-      (reject! "string-substring indexes must be integer literals" form))
-    (value/utf8-byte-count! s)
-    (let [boundaries (utf8-boundaries s)
-          length (apply max (keys boundaries))]
-      (when-not (<= 0 start end length)
-        (reject! "string-substring indexes are out of bounds" form))
-      (when-not (and (contains? boundaries start) (contains? boundaries end))
-        (reject! "string-substring indexes must land on UTF-8 code-point boundaries" form))
-      (subs s (get boundaries start) (get boundaries end)))))
-
 (defn- desugar-comparison-chain [op args form]
   (when (and (not= op '=) (empty? args))
     (reject! "ordered comparison requires at least one operand" form))
@@ -3719,7 +3684,21 @@
   [form locals signatures schemas]
   (if-not (seq? form)
     form
-    (let [[op & args] form]
+    ;; Every branch below rebuilds the form, and a rebuilt list carries no
+    ;; metadata. That silently erased the reader span and `:source-operation`
+    ;; that `attach-source-operation` puts on an elaborated named operation --
+    ;; but only in functions WITH parameters, because `rewrite-record-projections`
+    ;; skips a body whose `:param-types` is empty. `(defn main [] (read-clock 42))`
+    ;; kept its span while `(defn read-clock [seed] (clock/now seed))` lost it,
+    ;; which is why the loss read as unrelated to this pass.
+    ;;
+    ;; Downstream diagnostics are the casualty: an effect-ceiling or admission
+    ;; rejection could no longer name the operation or point at a line
+    ;; (ADR-2607279200 promises both). Restore the source form's metadata onto
+    ;; whatever this pass produces.
+    (preserve-form-meta
+     form
+     (let [[op & args] form]
       (cond
         (= op 'let)
         (let [[bindings body] args
@@ -3727,7 +3706,25 @@
               (reduce (fn [[acc cur] [nm value]]
                         (let [v (rewrite-record-projection value cur signatures schemas)]
                           [(conj acc nm v)
-                           (assoc cur nm (infer-expression-type v cur signatures))]))
+                           ;; This pass resolves record projections; it is not a
+                           ;; type checker, and it must never be the thing that
+                           ;; reports a type error. It runs BEFORE
+                           ;; `elaborate-named-abilities`, so a binding whose
+                           ;; value is a still-named capability operation has no
+                           ;; signature yet -- inference threw "operation has no
+                           ;; admitted type signature", pre-empting the accurate
+                           ;; "named capability operation requires a typed result
+                           ;; context" that elaboration would have produced one
+                           ;; pass later. Measured on
+                           ;;   (let [response (http/post request)] response)
+                           ;; An untypeable binding simply has no known type
+                           ;; here; a 2-arity `record-get` against it still fails
+                           ;; closed with the record-projection message, and any
+                           ;; genuine type error surfaces later from
+                           ;; check-value-types! with its own diagnostics.
+                           (assoc cur nm
+                                  (try (infer-expression-type v cur signatures)
+                                       (catch #?(:clj Exception :cljs :default) _ nil)))]))
                       [[] locals]
                       (partition 2 bindings))]
           (list 'let (vec pairs) (rewrite-record-projection body locals' signatures schemas)))
@@ -3770,7 +3767,7 @@
           (list 'record-get descriptor value (second args)))
 
         :else
-        (cons op (map #(rewrite-record-projection % locals signatures schemas) args))))))
+        (cons op (map #(rewrite-record-projection % locals signatures schemas) args)))))))
 
 (defn- rewrite-record-projections
   "Apply `rewrite-record-projection` to every function body. Only modules that
