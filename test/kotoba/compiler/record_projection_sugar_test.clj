@@ -71,3 +71,27 @@
                             "(defn main [] :i64 0)"))]
       (is (some? r))
       (is (re-find #"declared keyword literal" (:message r))))))
+
+(deftest projects-inside-a-let-binding-value
+  (testing "regression: elaborate-named-abilities infers each let-bound value's
+            type, so the rewrite must run before it. When it ran after, a
+            2-arity record-get in a *binding* position reached elaboration and
+            crashed on (nth type 2) with the value symbol in the type slot.
+            The body-position cases above did not cover this."
+    (is (= 9 (run (str "(ns p)\n(defn go [t :i64 m :i64 p :i64] :i64\n"
+                       "  (let [r (record-new " S " t m p)\n"
+                       "        a (record-get r :text)\n"
+                       "        b (record-get r :media)]\n"
+                       "    (+ a b)))\n"
+                       "(defn main [] :i64 0)")
+                  'go [4 5 6])))))
+
+(deftest projects-a-record-parameter-inside-a-let-binding-value
+  (testing "the shape murakumo's infer_schedule_core/eligible? actually uses"
+    (is (= 1 (run (str "(ns p)\n"
+                       "(defn ok? [e " S " free :i64 minf :i64] :i64\n"
+                       "  (let [t (record-get e :text)\n"
+                       "        m (record-get e :media)]\n"
+                       "    (if (= t 0) 0 (if (< free minf) 0 m))))\n"
+                       "(defn main [] :i64 0)")
+                  'ok? [[[:record :r/lanes [[:text :i64] [:media :i64] [:postproc :i64]]] 1 1 0] 10 5])))))
