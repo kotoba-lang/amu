@@ -1256,15 +1256,18 @@
 (defn- desugar-comparison-chain [op args form]
   (when (and (not= op '=) (empty? args))
     (reject! "ordered comparison requires at least one operand" form))
+  ;; Comparisons are `:bool`-typed, so a chain folds to `true`/`false` rather
+  ;; than 1/0 — otherwise the chain is an i64 that cannot compose with `and`,
+  ;; `or`, `not` or another comparison.
   (letfn [(chain [left remaining]
             (if (empty? remaining)
-              1
+              true
               (let [right (gensym "comparison__")]
                 (list 'let [right (desugar-expr (first remaining))]
                       (list 'if (list op left right)
-                            (chain right (rest remaining)) 0)))))]
+                            (chain right (rest remaining)) false)))))]
     (if (empty? args)
-      1
+      true
       (let [left (gensym "comparison__")]
         (list 'let [left (desugar-expr (first args))]
               (chain left (rest args)))))))
@@ -1509,6 +1512,12 @@
           (reject! "vector literal exceeds item limit" form))
         (apply list 'vector-new (map desugar-expr form)))
     (not (seq? form)) form
+    ;; `(:field r)` — the Clojure keyword accessor. Desugars to the 2-arity
+    ;; `record-get`, which `rewrite-record-projection` then resolves against the
+    ;; value's inferred type (ADR 0189/0190). Keeping it a desugar means no new
+    ;; head reaches validation, inference or any backend.
+    (and (keyword? (first form)) (= 2 (count form)))
+    (list 'record-get (desugar-expr (second form)) (first form))
     :else
     (let [[op & args] form]
       (case op
@@ -1611,12 +1620,18 @@
                  (list 'pair-second (desugar-expr (first args))))
         empty? (do (when-not (= 1 (count args)) (reject! "empty? requires one operand" form))
                    (list '= (desugar-expr (first args)) 0))
+        ;; `not`/`not=` desugar through `if`, not through `(= x 0)`: comparisons
+        ;; are `:bool`-typed now, so comparing their result to an i64 literal is
+        ;; a type error. `if` accepts a boolean or a legacy 0/1 integer test, so
+        ;; both an i64 operand and a bool one keep working, and the result is
+        ;; `:bool` either way.
         not (do (when-not (= 1 (count args)) (reject! "not requires one operand" form))
-                (list '= (desugar-expr (first args)) 0))
+                (list 'if (desugar-expr (first args)) false true))
         not= (if (= 2 (count args))
-               (list '= (list '= (desugar-expr (first args))
-                                    (desugar-expr (second args))) 0)
-               (list '= (desugar-comparison-chain '= args form) 0))
+               (list 'if (list '= (desugar-expr (first args))
+                                  (desugar-expr (second args)))
+                     false true)
+               (list 'if (desugar-comparison-chain '= args form) false true))
         zero? (do (when-not (= 1 (count args)) (reject! "zero? requires one operand" form))
                   (list '= (desugar-expr (first args)) 0))
         pos? (do (when-not (= 1 (count args)) (reject! "pos? requires one operand" form))
@@ -1663,10 +1678,12 @@
         when-some (desugar-binding-some args form true)
         if-not (do (when-not (<= 2 (count args) 3)
                      (reject! "if-not requires then and optional else expressions" form))
+                   ;; Negate by swapping the branches, not by `(= test 0)` —
+                   ;; the test may now be `:bool`.
                    (let [[test then else] args]
-                     (list 'if (list '= (desugar-expr test) 0)
-                           (desugar-expr then)
-                           (if (= 3 (count args)) (desugar-expr else) 0))))
+                     (list 'if (desugar-expr test)
+                           (if (= 3 (count args)) (desugar-expr else) 0)
+                           (desugar-expr then))))
         when-not (do (when (empty? args)
                        (reject! "when-not requires a test expression" form))
                      (let [[test & body] args
@@ -1674,7 +1691,8 @@
                                   (empty? body) 0
                                   (= 1 (count body)) (desugar-expr (first body))
                                   :else (list* 'do (mapv desugar-expr body)))]
-                       (list 'if (list '= (desugar-expr test) 0) then 0)))
+                       ;; Negate by swapping the branches (see if-not).
+                       (list 'if (desugar-expr test) 0 then)))
         when (do (when (empty? args)
                    (reject! "when requires a test expression" form))
                  (let [[test & body] args
@@ -2731,7 +2749,7 @@
                                       " identity")
                             ""))
                      args))
-          :i64)
+          :bool)
 
       (= op 'bool-not)
       (do (require-expression-type! (first types) :bool (first args)) :bool)
@@ -2928,7 +2946,7 @@
       (contains? (disj comparisons '=) op)
       (do (doseq [[arg type] (map vector args types)]
             (require-expression-type! type :i64 arg))
-          :i64)
+          :bool)
 
       (contains? heap-operations op)
       (do (doseq [[arg type] (map vector args types)]
@@ -3769,6 +3787,37 @@
         :else
         (cons op (map #(rewrite-record-projection % locals signatures schemas) args)))))))
 
+(defn- infer-absent-results
+  "Give every unannotated `defn` the result type its body actually has.
+
+  An absent annotation used to mean `:i64`, so an unannotated function could not
+  return a predicate once comparisons became `:bool`-typed -- which is most of
+  the stdlib, the examples and the test fixtures. Inferring instead is both the
+  Clojure reading (no annotation means no constraint) and what keeps a single
+  dialect: annotations are for boundaries, not for every function.
+
+  Two passes, because one function's inferred result feeds the next one's
+  inference. A body whose type cannot be resolved keeps the `:i64` provisional
+  and `check-value-types!` reports the real error."
+  [functions]
+  (letfn [(sigs [fs]
+            (into {} (map (fn [{:keys [name params param-types result]}]
+                            [name {:params params :param-types param-types
+                                   :result result}]))
+                  fs))
+          (pass [fs]
+            (let [table (sigs fs)]
+              (mapv (fn [{:keys [params param-types body result-inferred?] :as f}]
+                      (if result-inferred?
+                        (if-let [inferred (try (infer-expression-type
+                                                body (zipmap params param-types) table)
+                                               (catch #?(:clj Exception :cljs :default) _ nil))]
+                          (assoc f :result inferred)
+                          f)
+                        f))
+                    fs)))]
+    (-> functions pass pass)))
+
 (defn- rewrite-record-projections
   "Apply `rewrite-record-projection` to every function body. Only modules that
   declare param types can resolve the sugar; untyped modules are left alone and
@@ -4141,7 +4190,10 @@
                               (structured-type? (first tail))
                               (type-alias-form? (first tail)))
                         [(resolve-type-alias! (first tail) constants) (rest tail)]
-                        [:i64 tail])
+                        ;; No annotation: `:i64` is provisional. `infer-absent-results`
+                        ;; replaces it with the body's inferred type, so an
+                        ;; unannotated `defn` can return a predicate.
+                        [::absent tail])
         ceiling-form (first tail)
         [effects-ceiling body]
         (if (and (map? ceiling-form)
@@ -4151,8 +4203,10 @@
           [nil tail])]
     (when (and docstring (> (count docstring) max-function-docstring-chars))
       (reject! "function docstring exceeds admission limit" docstring))
-    (validate-value-type! result)
-    (cond-> {:name name :raw-params raw-params :result result :body body}
+    (when-not (= ::absent result) (validate-value-type! result))
+    (cond-> {:name name :raw-params raw-params
+             :result (if (= ::absent result) :i64 result) :body body}
+      (= ::absent result) (assoc :result-inferred? true)
       effects-ceiling (assoc :effects-ceiling effects-ceiling))))
 
 (declare typed-param-parts)
@@ -4238,7 +4292,7 @@
         (reject! "typed parameters require alternating name/type pairs" raw-params))
       (mapv (fn [[pattern type]]
               (validate-value-type! type)
-              (when (and (or (contains? #{:f32 :f64 :string :keyword :map :bool :option-i64 :result-i64 :vector-i64 :vector-f64 :string-index :disjoint-set-i64 :document} type)
+              (when (and (or (contains? #{:f32 :f64 :string :keyword :map :option-i64 :result-i64 :vector-i64 :vector-f64 :string-index :disjoint-set-i64 :document} type)
                              (structured-type? type))
                          (not (or (symbol? pattern)
                                   (and (= type :map) (map? pattern))
@@ -4545,7 +4599,8 @@
                ;; source using `loop`.
                (vec
                      (mapcat
-                     (fn [{:keys [name source-name raw-params result body effects-ceiling]}]
+                     (fn [{:keys [name source-name raw-params result body effects-ceiling
+                                  result-inferred?]}]
                        (let [source-name (or source-name name)]
                          (when-not (valid-name? name) (reject! "invalid function name" name))
                          (when (contains? reserved-function-names name)
@@ -4582,6 +4637,7 @@
                              (into [(cond-> {:name name :source-name source-name
                                              :params params :param-types param-types
                                              :result result :effects #{}
+                                             :result-inferred? result-inferred?
                                              :body desugared}
                                       effects-ceiling (assoc :effects-ceiling effects-ceiling))]
                                    @loop-helpers)))))
@@ -4614,6 +4670,7 @@
         ;; inference — elaborate-named-abilities does, and its record-get case
         ;; destructures [type value field], so a 2-arity form reaching it puts
         ;; the value symbol in the type slot and `(nth type 2)` throws.
+        parsed (infer-absent-results parsed)
         parsed (rewrite-record-projections parsed (:schemas namespace-info))
         named-elaboration (elaborate-named-abilities parsed)
         parsed (:functions named-elaboration)
@@ -4688,11 +4745,12 @@
     (let [typed-values? (boolean
                          (or (seq (:schemas namespace-info))
                          (some (fn [{:keys [param-types result body]}]
-                                 (or (some #(or (contains? #{:f32 :f64 :string :keyword :map :bool :option-i64 :result-i64 :vector-i64 :vector-f64 :string-index :disjoint-set-i64 :document} %)
+                                 (or (some #(or (contains? #{:f32 :f64 :string :keyword :map :option-i64 :result-i64 :vector-i64 :vector-f64 :string-index :disjoint-set-i64 :document} %)
                                                 (structured-type? %)) param-types)
-                                     (or (contains? #{:f32 :f64 :string :keyword :map :bool :option-i64 :result-i64 :vector-i64 :vector-f64 :string-index :disjoint-set-i64 :document} result)
+                                     (or (contains? #{:f32 :f64 :string :keyword :map :option-i64 :result-i64 :vector-i64 :vector-f64 :string-index :disjoint-set-i64 :document} result)
                                          (structured-type? result))
-                                     (some #(or (string? %) (keyword? %) (boolean? %)
+                                     ;; `:bool` literals are plain 0/1 words, not typed values.
+                                     (some #(or (string? %) (keyword? %)
                                                 (and (seq? %)
                                                      (or (contains? typed-map-operations (first %))
                                                          (contains? typed-safe-value-operations (first %))

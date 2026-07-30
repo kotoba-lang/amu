@@ -1,6 +1,6 @@
 # ADR 0191: language profile 5 — bool-typed predicates, inferred results, keyword accessor
 
-- Status: Accepted (design authority); **implementation not on main** — remaining A/B/C below
+- Status: Accepted
 - Date: 2026-07-30
 - WBS: closes the bool half of kotoba-lang `ADR-reliability-record-access-and-bool-comparisons`
 - Breaking: yes — language profile 4 → 5, `version-policy.edn` deprecation window
@@ -105,20 +105,19 @@ wrapper). T1.5 goldens regenerated — the desugar changed, so the digests did.
 `lang/version-policy.edn` records profile 4 as deprecated on 2026-07-30 with
 `removal-not-before 2027-01-26` (the 180-day window), release 0.4.0 → 0.5.0.
 
-## Status: not landed — the remaining work, measured
+## Status: A+B landed; frontend profile-5 in this PR
 
-Do not read the Evidence section below as the current state. It described the
-frontend change alone. With `kotoba-wasm` carrying bool-as-word, the compiler
-suite is **749 tests / 6158 assertions, 18 failures, 0 errors** and conformance
-is 52/52. Four of the 18 are the wall-clock perf budgets that also fail on
-pristine `main` under load, so **14 are real**, and they are not one problem.
+A (aggregate box/unbox) and B (export wrappers) landed on kotoba-wasm main
+(#42 + #44). This PR finishes the frontend profile-5 spike, pins those
+backends, regenerates wasm digests only, and records profile 5 in
+`guest-grammar` / `version-policy`.
 
 An earlier note in this series claimed three irreconcilable requirements (word
 inside wasm / JS boolean at the boundary / JS boolean in ESM) and concluded the
 design was blocked. **That was wrong** — it read a validation bug as a design
 conflict. The requirements are not in tension: they belong to different layers.
 A bool is a word *inside* a module and a host boolean *at a boundary*, and
-boxing at the boundary is one operation that already half exists.
+boxing at the boundary is one operation that now fully exists (wrappers).
 
 ### A. Aggregate element slots typed `:bool`
 
@@ -189,8 +188,19 @@ emitted bytes).
 - kotoba-lang `docs/adr/ADR-reliability-record-access-and-bool-comparisons.md`
 - kotoba-lang `lang/surface-status.edn` `:bool-is-a-type-not-a-number`
 
-## Progress (host A surface, 2026-07-30)
+## Progress (2026-07-30 → 2026-07-31)
 
-- `runtime/browser-host.mjs`: `bool-value` implement + ALLOWED_IMPORTS
-- `kotoba-wasm` import table: `typed-bool-value` `[0x60 1 0x6f 1 0x7f]`
-- Emitter wiring and frontend profile-5 still **not** on main
+- Host A surface: `browser-host` `bool-value` (compiler#449) + wasm `typed-bool-value` import
+- Emitter A: kotoba-wasm#42 — word inside modules; box/unbox at aggregate slots
+- Emitter B: kotoba-wasm#44 — dual-function **export wrappers** (internal i64 callee;
+  export name boxes via `typed-bool` / unboxes params via `typed-bool-value`).
+  Removes the earlier box-at-end of every `:bool` body that broke internal
+  `i64.eqz` of call results (typed-if).
+- Script: kotoba-script#74 already on main — comparisons type as `:bool` and
+  emit host booleans on js-kotoba-v1; this PR pins it.
+- Frontend profile-5 spike: this PR (comparisons → `:bool`, inferred results,
+  test migration, golden wasm digests only, profile-version 5 / version-policy).
+- Measured residual probes (export + internal call + document-bool): green.
+  Focused suite (98 tests / 875 assertions across wasm-typed, document-value,
+  frontend-extensions, golden, conformance, test-profile, typed-value-conformance):
+  **0 failures / 0 errors**.

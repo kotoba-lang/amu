@@ -433,16 +433,16 @@
                       (kgraph-assert! 2 2 2002)
                       (kgraph-assert! 2 3 500)))
                  (defn main []
-                   (+ (= (create-customers) 6)
-                      (= (kgraph-get 1 1) 1001)
-                      (= (kgraph-get 1 2) 2001)
-                      (= (kgraph-get 1 3) 0)
-                      (= (kgraph-get 2 1) 1002)
-                      (= (kgraph-get 2 2) 2002)
-                      (= (kgraph-get 2 3) 500)
-                      (= (kgraph-count 1) 2)
-                      (= (kgraph-entity-at 1 0) 1)
-                      (= (kgraph-entity-at 1 1) 2)))
+                   (+ (if (= (create-customers) 6) 1 0)
+                      (if (= (kgraph-get 1 1) 1001) 1 0)
+                      (if (= (kgraph-get 1 2) 2001) 1 0)
+                      (if (= (kgraph-get 1 3) 0) 1 0)
+                      (if (= (kgraph-get 2 1) 1002) 1 0)
+                      (if (= (kgraph-get 2 2) 2002) 1 0)
+                      (if (= (kgraph-get 2 3) 500) 1 0)
+                      (if (= (kgraph-count 1) 2) 1 0)
+                      (if (= (kgraph-entity-at 1 0) 1) 1 0)
+                      (if (= (kgraph-entity-at 1 1) 2) 1 0)))
                  (defn get-unknown-field [] (+ (create-customers) (kgraph-get 1 999)))
                  (defn entity-at-out-of-range [] (+ (create-customers) (kgraph-entity-at 1 5)))"
                {:allow #{}})
@@ -605,8 +605,8 @@
   (let [schema (pr-str native-record-schema)
         source (str
                 "(defn checks [a b]
-                   (+ (= (record-get " schema " (record-new " schema " a b true) :a) a)
-                      (+ (= (record-get " schema " (record-new " schema " a b true) :b) b)
+                   (+ (if (= (record-get " schema " (record-new " schema " a b true) :a) a) 1 0)
+                      (+ (if (= (record-get " schema " (record-new " schema " a b true) :b) b) 1 0)
                          (+ (if (record-get " schema " (record-new " schema " a b true) :c) 1 0)
                             (if (record-get " schema " (record-new " schema " a b false) :c) 0 1)))))
                  (defn main [] (checks 11 22))")
@@ -694,7 +694,7 @@
         source (str
                 "(defn check-count [n]
                    (variant-match " schema " (variant-new " schema " :count n)
-                     [[:count v (= v n)] [:enabled v 0] [:disabled v 0] [:idle v 0]]))
+                     [[:count v (if (= v n) 1 0)] [:enabled v 0] [:disabled v 0] [:idle v 0]]))
                  (defn check-enabled []
                    (variant-match " schema " (variant-new " schema " :enabled true)
                      [[:count v 0] [:enabled v (if v 1 0)] [:disabled v 0] [:idle v 0]]))
