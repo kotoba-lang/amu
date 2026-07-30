@@ -42,7 +42,20 @@
    :phase :runtime}
   {:id :record-unknown-field
    :source "(defn main [value [:record :conformance/person [[:age :i64]]]] (record-get [:record :conformance/person [[:age :i64]]] value :missing))"}
-  {:id :floating-literal
-   :source "(defn main [] 1.5)"}
-  {:id :floating-descriptor
-   :source "(defn main [value :f64] :f64 value)"}]}
+  ;; These two were named :floating-literal and :floating-descriptor, as if this
+  ;; value profile excluded floating point. It does not -- `(defn main [] :f64
+  ;; 1.5)` has always been accepted, and there is an extensive f64 suite. What
+  ;; they actually rejected, measured 2026-07-30:
+  ;;
+  ;;   (defn main [] 1.5)                    only because an absent annotation
+  ;;                                         meant :i64, so the body mismatched
+  ;;   (defn main [value :f64] :f64 value)   "main must take zero arguments"
+  ;;
+  ;; The first stopped failing closed the moment an unannotated defn began
+  ;; inferring its result (language profile 5) -- which is how a corpus entry
+  ;; that never tested its own name came to light. Replaced with the rule each
+  ;; one really exercises, so the id and the rejection agree.
+  {:id :floating-set-item
+   :source "(defn main [] (typed-set-count [:set :f64] (typed-set [:set :f64] 1.5)))"}
+  {:id :entry-point-takes-arguments
+   :source "(defn main [value :i64] :i64 value)"}]}

@@ -105,74 +105,91 @@ wrapper). T1.5 goldens regenerated — the desugar changed, so the digests did.
 `lang/version-policy.edn` records profile 4 as deprecated on 2026-07-30 with
 `removal-not-before 2027-01-26` (the 180-day window), release 0.4.0 → 0.5.0.
 
-## Status: not landed — the remaining work, measured
+## Every target boxes `:bool` at its own boundary
 
-Do not read the Evidence section below as the current state. It described the
-frontend change alone. With `kotoba-wasm` carrying bool-as-word, the compiler
-suite is **749 tests / 6158 assertions, 18 failures, 0 errors** and conformance
-is 52/52. Four of the 18 are the wall-clock perf budgets that also fail on
-pristine `main` under load, so **14 are real**, and they are not one problem.
+An earlier note in this series claimed three irreconcilable requirements -- a
+word inside wasm, a JS boolean at the host boundary, a JS boolean in ESM -- and
+concluded the design was blocked. **That was wrong.** It read a validation bug
+as a design conflict. The requirements are not in tension; they belong to
+different layers, and each was a missing conversion at one boundary.
 
-An earlier note in this series claimed three irreconcilable requirements (word
-inside wasm / JS boolean at the boundary / JS boolean in ESM) and concluded the
-design was blocked. **That was wrong** — it read a validation bug as a design
-conflict. The requirements are not in tension: they belong to different layers.
-A bool is a word *inside* a module and a host boolean *at a boundary*, and
-boxing at the boundary is one operation that already half exists.
+The resolved rule is a single sentence:
 
-### A. Aggregate element slots typed `:bool`
+> `:bool` is a plain 0/1 word **inside** a target and a host boolean at every
+> point where a value **leaves** it.
 
-    (hetero-vector [:vector [:i64 :string :bool]] 7 "safe" true)
+Inside is what makes `and`/`or`/`not`, `if` tests, locals, branches and indirect
+calls typecheck. Outside is what the shared corpora demand: reference,
+restricted-ESM and wasm32 must return the *same* value for the *same* function.
 
-fails with `invalid-module`, not with a wrong value: the element is now an i64
-word where the container's slot expects an externref. Same shape for a `:bool`
-record field and a `:bool` typed-map value.
+| target | boundary | conversion |
+|---|---|---|
+| wasm32 | aggregate element slot (`hetero-vector`, record field, typed-map value) | `i32.wrap_i64` → `typed-bool`; read back through `typed-bool-value` |
+| wasm32 | `document-bool` | same box -- it takes an externref |
+| wasm32 | export | a thin wrapper function; the export section points at it |
+| reference (KIR) | `execute` return | 0/1 → boolean when the function's result is `:bool` |
+| restricted ESM | function result | `assertBool`, including in an **untyped** (v3) module |
 
-- write: `i32.wrap_i64` → `typed-bool` → store as a ref. The host keeps
-  validating the slot as a real JS boolean (`browser-host.mjs`: *"typed boolean
-  is invalid"* unless `typeof value === "boolean"`), so nothing there changes.
-- read: needs **one new intrinsic**, `typed-bool-value` (externref → i32), then
-  `i64.extend_i32_u`. `typed-get-i64` will not do — the slot holds a boolean, not
-  an i64. This is the only genuinely new host surface the whole change requires,
-  and it needs an implementation in `browser-host.mjs` and in the JVM/Chicory
-  host.
+`typed-bool-value` (externref → i32) is the one new host surface the whole
+change required. `get-i64` could not serve: the slot holds a boolean, not a
+bigint.
 
-### B. Export boundary
+Two consequences worth stating plainly:
 
-    (defn strings-match [] :bool (if (string=? "same" "same") true false))
+- `requires-host-runtime?` is now true for a module with a `:bool` export. It
+  has to be -- the wrapper calls `typed-bool` -- and it is simply accurate: the
+  value crossing the boundary *is* a host value. Gated on `(not native-bool?)`,
+  since the canonical-scalar Component adapter lowers `:bool` to i32 in the
+  signature and emits no wrapper.
+- An **untyped** KIR module can now carry a `:bool` result, because comparisons
+  infer `:bool` and an unannotated `defn` takes its body's type. `kotoba-script`
+  forced every v3 result to `:i64`, so it wrapped a boolean in `assertI64` and
+  every such export threw `invalid-i64` on its first call -- including
+  `(defn test-pure [] (= (+ 20 22) 42))`, which is what a Kotoba test looks
+  like.
 
-`wasm_typed_test.clj` calls `h.instance.exports['strings-match']()` — the raw
-instance, not a host wrapper — and requires `=== true`. A host-side wrapper
-therefore cannot fix this; the exported function itself must return the boxed
-value. Emit a wrapper per exported function whose declared result is `:bool`:
-call the internal (i64-word) function, `i32.wrap_i64`, `typed-bool`, return
-externref; export the wrapper under the original name. Params typed `:bool`
-unbox the same way on the way in.
+### Migration
 
-`typed-bool` already exists in the import table as `[0x60 1 0x7f 1 0x6f]`
-(i32 → externref) and the host already implements it. A and B are the same
-operation in the two directions.
+Where a predicate legitimately became a bool, the expectation moves with it:
+`(defn same? [l r] (= l r))` now answers `true`, not `1n`. **Only where the
+result actually became `:bool`.** `hetero-vector-equal`, `typed-set-equal` and
+`record-equal` are a separate family that stays `:i64`; three call sites were
+changed by an over-broad substitution earlier and had to be reverted. Check each
+site; do not pattern-match on the name.
 
-### C. Migration, not repair
+T1.5 goldens drift on the **wasm digest only** -- all 52 changed lines are
+`:wasm-sha256` / `:wasm-byte-count`, and **not one `:kir-sha256` changed**. That
+is a useful confirmation that this is an emission change and not a language-level
+one.
 
-    (defn same? [left :option-i64 right :option-i64] (= left right))
+### The negative corpus was not testing its own name
 
-now returns a bool, so `x['same?'](…)` is `true` rather than `1n`. That is the
-point of the profile, and the expectation moves with it — but only where the
-function's result actually became `:bool`. `hetero-vector-equal`,
-`typed-set-equal` and `record-equal` are a **separate family that stays `:i64`**;
-three call sites were migrated by an over-broad substitution earlier and had to
-be reverted. Check each site, do not pattern-match on the name.
+`:floating-literal` `(defn main [] 1.5)` stopped failing closed here, which
+looked like a safety regression. It was not: that case only ever rejected
+because an absent annotation meant `:i64`, so the body mismatched.
+`(defn main [] :f64 1.5)` has always been accepted, and there is an extensive
+f64 suite. Its sibling `:floating-descriptor` was rejected by **"main must take
+zero arguments"**. Neither excluded floating point, because nothing does.
 
-T1.5 goldens drift on the **wasm digest only** — every `kir-sha256` is
-unchanged. That is a useful confirmation that this is an emission change and not
-a language-level one, and it is why regenerating them is safe.
+Replaced with the rule each one really exercises -- `:floating-set-item` (a
+direct float in a `:set`, which *is* excluded) and
+`:entry-point-takes-arguments` -- so the id and the rejection agree.
 
-### Order
+## Evidence
 
-A (unblocks the corpus and document parity), then B (unblocks the typed
-control-flow tests), then C (mechanical, and pointless before A and B settle the
-emitted bytes).
+| state | compiler suite |
+|---|---|
+| bool-as-word alone | 18 failures |
+| + aggregate element boxing | 12 |
+| + `document-bool` boxing | 9 |
+| + export wrappers | 4 |
+| + KIR return boxing, ESM v3 result, expectation migration, goldens | **0** |
+
+Final: `clojure -M:test` **749 tests / 6158 assertions / 0 failures / 0 errors**;
+`clojure -M:conformance` **52 / 52 dual-backend** (47 pure-product, 5 portable).
+Siblings: `kotoba-wasm` 83/397, `kotoba-kir` 59/258, `kotoba-script` 51/183 --
+all 0 failures, and all three now have CI, so those runs are checked rather than
+asserted.
 
 ## Evidence (frontend change only, superseded by the section above)
 
