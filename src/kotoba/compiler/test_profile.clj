@@ -46,7 +46,9 @@
             (ir/execute kir 'test-handler [cap-id value]))]
     (mapv (fn [test-name]
             (try
-              {:test test-name :ok (= 1 (ir/execute kir test-name [] {:cap-call handler}))}
+              ;; same rule as the js/wasm probes above
+              {:test test-name
+               :ok (contains? #{true 1} (ir/execute kir test-name [] {:cap-call handler}))}
               (catch Exception error
                 {:test test-name :ok false :error (or (ex-message error) "test trap")})))
           tests)))
@@ -80,7 +82,16 @@
           "const grants=Object.fromEntries(ids.map(id=>[id,value=>"
           "x['test-handler'](BigInt(id),value)]));"
           "x=m.instantiateKotoba(grants);"
-          "const out=names.map(name=>{try{return {test:name,ok:x[name]()===1n}}"
+          ;; A test IS a predicate. Under language profile 5 a comparison infers
+          ;; `:bool`, so a test returns a boolean on every target as soon as
+          ;; result inference reaches it; 1n stays accepted for the profile-4
+          ;; deprecation window (lang/version-policy.edn). Stating the rule here
+          ;; rather than after it breaks -- measured 2026-07-31, `test-pure`
+          ;; alone infers `:bool` while the three-function module in
+          ;; test_profile_test still infers `:i64`, so which side of this the
+          ;; runner lands on today depends on inference reach, not on intent.
+          "const pass=v=>v===true||v===1n;"
+          "const out=names.map(name=>{try{return {test:name,ok:pass(x[name]())}}"
           "catch(e){return {test:name,ok:false,error:'test trap'}}});"
           "console.log(JSON.stringify(out));"))))
 
@@ -97,7 +108,8 @@
           "const loaded=await host.instantiateKotoba(bytes,{allowCapabilities:ids,"
           "capCall:(id,value)=>instance.exports['test-handler'](BigInt(id),value)});"
           "instance=loaded.instance;"
-          "const out=names.map(name=>{try{return {test:name,ok:instance.exports[name]()===1n}}"
+          "const pass=v=>v===true||v===1n;"
+          "const out=names.map(name=>{try{return {test:name,ok:pass(instance.exports[name]())}}"
           "catch(e){return {test:name,ok:false,error:'test trap'}}});"
           "console.log(JSON.stringify(out));"))))
 

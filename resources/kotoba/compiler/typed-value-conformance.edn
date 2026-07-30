@@ -42,9 +42,24 @@
    :phase :runtime}
   {:id :record-unknown-field
    :source "(defn main [value [:record :conformance/person [[:age :i64]]]] (record-get [:record :conformance/person [[:age :i64]]] value :missing))"}
-  {:id :floating-literal
-   ;; Profile 5 infers unannotated results, so bare 1.5 is a valid :f64
-   ;; program. Keep fail-closed via an explicit type mismatch.
+  ;; These two were :floating-literal and :floating-descriptor, as if this value
+  ;; profile excluded floating point. It does not -- `(defn main [] :f64 1.5)` is
+  ;; accepted and there is an extensive f64 suite. Measured 2026-07-31, what they
+  ;; actually reject is:
+  ;;
+  ;;   (defn main [] :i64 1.5)               a result type mismatch
+  ;;   (defn main [value :f64] :f64 value)   "main must take zero arguments"
+  ;;                                         -- identical for :i64, so the :f64
+  ;;                                         in it is doing no work
+  ;;
+  ;; The first was `(defn main [] 1.5)` until profile 5 began inferring
+  ;; unannotated results and it stopped failing closed; annotating it kept the
+  ;; corpus green but left the id describing something the case never tested.
+  ;; Renamed to the rule each really exercises, and the float exclusion that DOES
+  ;; exist is now covered for the first time.
+  {:id :result-type-mismatch
    :source "(defn main [] :i64 1.5)"}
-  {:id :floating-descriptor
-   :source "(defn main [value :f64] :f64 value)"}]}
+  {:id :entry-point-takes-arguments
+   :source "(defn main [value :i64] :i64 value)"}
+  {:id :floating-set-item
+   :source "(defn main [] (typed-set-count [:set :f64] (typed-set [:set :f64] 1.5)))"}]}
