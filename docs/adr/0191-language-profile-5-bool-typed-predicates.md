@@ -188,3 +188,9 @@ emitted bytes).
 - `docs/adr/0190-record-schema-references.md`
 - kotoba-lang `docs/adr/ADR-reliability-record-access-and-bool-comparisons.md`
 - kotoba-lang `lang/surface-status.edn` `:bool-is-a-type-not-a-number`
+
+## Progress (host A surface, 2026-07-30)
+
+- `runtime/browser-host.mjs`: `bool-value` implement + ALLOWED_IMPORTS
+- `kotoba-wasm` import table: `typed-bool-value` `[0x60 1 0x6f 1 0x7f]`
+- Emitter wiring and frontend profile-5 still **not** on main

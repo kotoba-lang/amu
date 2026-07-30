@@ -51,6 +51,9 @@ assert.ok(Object.isFrozen(typedHosted.typedAbi));
 const typedListHosted = await instantiateKotoba(typedListMain42);
 assert.equal(typedListHosted.typedAbi.version, 13);
 assert.deepEqual(typedListHosted.typedAbi.descriptors, [["list", "bool"]]);
+assert.ok(browserProfile.imports.includes("kotoba:typed/bool-value/function"),
+  "ADR 0191 A: typed-bool-value must be host-allowlisted");
+
 
 await assert.rejects(
   instantiateKotoba(rawMain42),
