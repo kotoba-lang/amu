@@ -1274,11 +1274,13 @@
       (reject! (if when? "when-some requires at least one body expression"
                            "if-some requires then and optional else expressions") form))
     (let [[pattern value] binding
-          ;; Deterministic temp names (not gensym): product-shell KIR artifacts
-          ;; must be byte-stable across regenerations for drift tests.
-          tmp (if *loop-counter*
-                (symbol (str "binding-some__" (vswap! *loop-counter* inc)))
-                (synthetic "binding-some"))
+          ;; Deterministic, like every other synthesized temp. This was already
+          ;; deterministic but kept the old `binding-some__N` shape, which has
+          ;; two costs: it still matches the `.+__\d+` gensym pattern, so the
+          ;; conformance digest normalized it away and could not see a change in
+          ;; it; and it borrowed `*loop-counter*`, so adding or removing a
+          ;; `loop` renumbered it for no reason.
+          tmp (synthetic "binding-some")
           option-type (or (resolve-option-type value) [:option :i64])
           then-form (if when?
                       (if (= 1 (count bodies)) (first bodies) (desugar-do bodies))
