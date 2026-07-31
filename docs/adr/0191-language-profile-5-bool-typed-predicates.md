@@ -75,11 +75,26 @@ backend** — the accessor exists only in the desugar.
 ## What this makes writable
 
 ```kotoba
-(defn eligible? [node model]
+(ns demo.schedule
+  (:export [eligible?])
+  (:schemas {:demo/node  [:record :demo/node
+                          [[:has-engine :bool] [:has-checkpoint :bool]
+                           [:holds-checkpoint :bool] [:free-bytes :i64]]]
+             :demo/model [:record :demo/model [[:min-free :i64]]]}))
+
+(defn eligible? [node [:ref :demo/node] model [:ref :demo/model]] :bool
   (and (:has-engine node)
        (or (not (:has-checkpoint node)) (:holds-checkpoint node))
        (>= (:free-bytes node) (:min-free model))))
 ```
+
+The parameter annotations are not decoration: `(:field r)` desugars to the
+2-arity `record-get`, which resolves against the value's *inferred* type, so an
+unannotated parameter leaves it nothing to resolve against. An earlier revision
+of this ADR showed the body alone, which reads well and does not compile --
+`record-get without a type descriptor requires a record value`. The composed
+form is now a conformance case (`:composed-surface-kit`), so the example and the
+gate cannot drift apart again.
 
 The same function under profile 4, in `kotoba-lang/murakumo`:
 
