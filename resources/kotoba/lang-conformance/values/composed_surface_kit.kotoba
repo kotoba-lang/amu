@@ -1,0 +1,39 @@
+;; The language-profile-5 surface as ADR 0191 describes it, composed rather
+;; than exercised feature by feature.
+;;
+;; Every part of this has its own conformance case already: and/or/not
+;; (control/and_or_kit), records (values/record_kit), schema references and the
+;; keyword accessor (ADR 0189/0190). What had no case was writing them
+;; together, and twice in one day that composition was the thing that broke:
+;;
+;;   - a `:bool` record field could not cross the wasm boundary until every
+;;     target boxed at its own edge
+;;   - a `[:ref :ns/name]` did not resolve inside a parameterless body, so a
+;;     program whose entry point is `(defn main [] …)` -- which is every
+;;     program -- failed to compile
+;;
+;; Both were green feature by feature.
+(ns conformance.composed-surface
+  (:export [main eligible? score])
+  (:schemas {:conformance/node
+             [:record :conformance/node
+              [[:has-engine :bool]
+               [:has-checkpoint :bool]
+               [:holds-checkpoint :bool]
+               [:free-bytes :i64]]]}))
+
+;; Reads as Clojure: and/or/not compose because comparisons and predicates are
+;; :bool, and `(:field r)` resolves through the declared schema.
+(defn eligible? [n [:ref :conformance/node] min-free :i64] :bool
+  (and (:has-engine n)
+       (or (not (:has-checkpoint n))
+           (:holds-checkpoint n))
+       (>= (:free-bytes n) min-free)))
+
+(defn score [n [:ref :conformance/node] min-free :i64] :i64
+  (if (eligible? n min-free) (:free-bytes n) 0))
+
+;; Parameterless entry point constructing through a schema reference.
+(defn main [] :i64
+  (+ (score (record-new [:ref :conformance/node] true false false 512) 100)
+     (score (record-new [:ref :conformance/node] true true false 512) 100)))
