@@ -14,6 +14,7 @@
             [kotoba.compiler.cache-test]
             [kotoba.compiler.compact-graph-value-test]
             [kotoba.compiler.document-value-test]
+            [kotoba.compiler.document-in-record-test]
             [kotoba.compiler.document-ui-render-test]
             [kotoba.compiler.document-digest-style-test]
             [kotoba.compiler.document-sha256-test]
@@ -119,6 +120,7 @@
                                           'kotoba.compiler.cache-test
                                           'kotoba.compiler.compact-graph-value-test
                                           'kotoba.compiler.document-value-test
+                                          'kotoba.compiler.document-in-record-test
                                           'kotoba.compiler.document-ui-render-test
                                           'kotoba.compiler.document-digest-style-test
                                           'kotoba.compiler.document-sha256-test

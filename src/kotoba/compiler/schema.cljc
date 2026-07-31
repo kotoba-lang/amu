@@ -7,7 +7,12 @@
 (def max-schema-depth 8)
 
 (def ^:private primitives
-  #{:i64 :f32 :f64 :string :keyword :bool :vector-i64 :vector-f64})
+  ;; :document admitted 2026-08-01 (document-in-record): design-system
+  ;; Delivery-6 document-plane multi-arg folds need guest records that carry
+  ;; logical :document fields (css rule-doc, html constructors, tokens groups).
+  ;; Frontend value-types and KIR already treat :document as a scalar-like
+  ;; heap value; schema closed profile was the remaining gate.
+  #{:i64 :f32 :f64 :string :keyword :bool :vector-i64 :vector-f64 :document})
 (def ^:private unary-tags #{:option :set :list})
 (def ^:private binary-tags #{:result :map})
 (def ^:private productive-tags
