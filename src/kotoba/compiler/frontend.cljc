@@ -675,6 +675,11 @@
 ;; `[:option T]` instead of hardcoding `[:option :i64]` (which broke
 ;; `[:option :string]` and other payloads).
 (def ^:dynamic *local-option-types* nil)
+;; All typed params + namespace `:schemas` so
+;; `(if-some [v (record-get rec :opt-field)] …)` recovers `[:option T]`
+;; from the record descriptor (T5.2 option-string-in-record gap).
+(def ^:dynamic *local-types* nil)
+(def ^:dynamic *schemas* nil)
 
 (defn- capability-wire-id [capability form]
   (if-let [id (get capability-registry capability)]
@@ -1191,12 +1196,32 @@
      (reduce (fn [value step] (list 'let [name value] step))
              initial steps))))
 
+(defn- resolve-ref-type
+  "Expand `[:ref :schema/name]` through `*schemas*` when available."
+  [type]
+  (if (and (vector? type)
+           (= 2 (count type))
+           (= :ref (first type))
+           (map? *schemas*))
+    (or (get *schemas* (second type)) type)
+    type))
+
+(defn- record-field-type
+  "Field type from a record descriptor or `[:ref …]` schema name, else nil."
+  [rec-type field]
+  (let [rec (resolve-ref-type rec-type)]
+    (when (and (record-type? rec) (keyword? field))
+      (some (fn [[k t]] (when (= k field) t))
+            (nth rec 2)))))
+
 (defn- resolve-option-type
   "Best-effort option type for sugar lowering (Product Value ABI v1).
 
   Prefer an explicit typed local (`*local-option-types*`), then syntactic
-  constructors `(option-some-of T …)` / `(option-none-of T)`. Fall back to
-  `[:option :i64]` only for legacy monomorphic option-i64 paths."
+  constructors `(option-some-of T …)` / `(option-none-of T)`, then
+  `(record-get … :field)` when the field is itself `[:option T]` (T5.2
+  option-string-in-record). Fall back to `[:option :i64]` only for legacy
+  monomorphic option-i64 paths."
   [value-form]
   (cond
     (and (symbol? value-form) (nil? (namespace value-form))
@@ -1210,6 +1235,27 @@
          (vector? (second value-form))
          (= :option (first (second value-form))))
     (second value-form)
+
+    ;; `(record-get TYPE value field)` (post rewrite) or
+    ;; `(record-get value field)` (pre rewrite, typed local).
+    (and (seq? value-form)
+         (= 'record-get (first value-form)))
+    (let [args (vec (rest value-form))
+          field-type
+          (cond
+            (and (= 3 (count args)) (keyword? (nth args 2)))
+            (record-field-type (nth args 0) (nth args 2))
+
+            (and (= 2 (count args))
+                 (symbol? (nth args 0))
+                 (keyword? (nth args 1))
+                 (map? *local-types*))
+            (record-field-type (get *local-types* (nth args 0)) (nth args 1))
+
+            :else nil)]
+      (if (and (vector? field-type) (= :option (first field-type)))
+        field-type
+        [:option :i64]))
 
     :else [:option :i64]))
 
@@ -4731,8 +4777,14 @@
                                                (when (and (vector? t) (= :option (first t)))
                                                  [p t]))
                                              (map vector params param-types)))
+                                 ;; All params + ns schemas so record-get of
+                                 ;; [:option T] fields desugars with the real T
+                                 ;; (closes option-string-in-record gap).
+                                 local-types (zipmap params param-types)
                                  desugared (binding [*pending-loop-helpers* loop-helpers
-                                                     *local-option-types* option-locals]
+                                                     *local-option-types* option-locals
+                                                     *local-types* local-types
+                                                     *schemas* (:schemas namespace-info)]
                                              (desugar-expr source-body))]
                              (into [(cond-> {:name name :source-name source-name
                                              :params params :param-types param-types
