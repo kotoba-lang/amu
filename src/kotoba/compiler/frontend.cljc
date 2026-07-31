@@ -155,7 +155,7 @@
      hetero-vector-assoc hetero-vector-equal})
 (def typed-set-operations
   '#{typed-set-new typed-set-count typed-set-contains typed-set-conj
-     typed-set-disj typed-set-equal})
+     typed-set-disj typed-set-equal typed-set-nth})
 (def canonical-typed-map-operations
   '#{typed-map-new typed-map-count typed-map-contains typed-map-get
      typed-map-entry-at typed-map-assoc typed-map-dissoc typed-map-equal})
@@ -1995,6 +1995,11 @@
               (reject! "typed-set-equal requires type and two values" form))
             (list 'typed-set-equal (first args) (desugar-expr (second args))
                   (desugar-expr (nth args 2))))
+        typed-set-nth
+        (do (when-not (= 3 (count args))
+              (reject! "typed-set-nth requires type, value, and index" form))
+            (list 'typed-set-nth (first args) (desugar-expr (second args))
+                  (desugar-expr (nth args 2))))
         typed-map-new
         (do (when-not (and (seq args) (odd? (count args)))
               (reject! "typed-map-new requires type and key/value pairs" form))
@@ -2541,6 +2546,15 @@
             (reject! "typed set equality requires [:set item-type]" form))
           (validate-expr left locals functions (inc depth) budget)
           (validate-expr right locals functions (inc depth) budget))
+
+        (= op 'typed-set-nth)
+        (let [[type value index] args]
+          (when-not (= 3 (count args)) (reject! "typed set nth shape is invalid" form))
+          (validate-value-type! type)
+          (when-not (typed-set-type? type)
+            (reject! "typed set nth requires [:set item-type]" form))
+          (validate-expr value locals functions (inc depth) budget)
+          (validate-expr index locals functions (inc depth) budget))
 
         (= op 'typed-map-new)
         (let [[type & entries] args]
@@ -3546,6 +3560,12 @@
           (require-expression-type! (infer-expression-type left locals signatures) type left)
           (require-expression-type! (infer-expression-type right locals signatures) type right)
           :i64)
+        typed-set-nth
+        (let [[type value index] args]
+          (validate-value-type! type)
+          (require-expression-type! (infer-expression-type value locals signatures) type value)
+          (require-expression-type! (infer-expression-type index locals signatures) :i64 index)
+          (second type))
         typed-map-new
         (let [[type & entries] args
               [key-type value-type] (rest type)]
