@@ -36,3 +36,25 @@
     (testing (name label)
       (is (thrown-with-msg? clojure.lang.ExceptionInfo message
                             (schema/validate-table! table))))))
+
+(deftest document-is-a-closed-record-field-type
+  "document-in-record: :document may appear as a guest-record field so
+  design-system Delivery-6 document-plane multi-arg pure can fold (css
+  rule-doc, html constructors, token groups)."
+  (let [table
+        {:doc/rule
+         [:record :doc/rule
+          [[:selector :string]
+           [:decls :document]]]
+         :doc/render-from
+         [:record :doc/render-from
+          [[:decls :document]
+           [:index :i64]
+           [:acc :string]]]}]
+    (is (= table (schema/validate-table! table)))
+    (is (re-matches #"[0-9a-f]{64}"
+                    (get (schema/identities table) :doc/rule)))
+    (is (not= (get (schema/identities table) :doc/rule)
+              (get (schema/identities
+                    (assoc-in table [:doc/rule 2 0 1] :keyword))
+                   :doc/rule)))))
