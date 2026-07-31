@@ -13,6 +13,9 @@
   ;; Frontend value-types and KIR already treat :document as a scalar-like
   ;; heap value; schema closed profile was the remaining gate.
   #{:i64 :f32 :f64 :string :keyword :bool :vector-i64 :vector-f64 :document})
+;; unary :set / :list / :option are productive constructors — guest records
+;; may already carry e.g. [:set :string] fields (set-in-record / T8.3 true-set
+;; uniqueness on pure/KIR; see set_in_record_test). Not a bare primitive.
 (def ^:private unary-tags #{:option :set :list})
 (def ^:private binary-tags #{:result :map})
 (def ^:private productive-tags

@@ -58,3 +58,23 @@
               (get (schema/identities
                     (assoc-in table [:doc/rule 2 0 1] :keyword))
                    :doc/rule)))))
+
+(deftest set-is-a-closed-record-field-type
+  "set-in-record: `[:set T]` may appear as a guest-record field so T8.3
+  true-set uniqueness (header-name bag) can fold on pure/KIR without
+  substring scan. Unary productive constructor already admitted; this
+  pins the header-bag shape used by set_in_record_test."
+  (let [table
+        {:hdr/bag
+         [:record :hdr/bag
+          [[:seen [:set :string]]]]
+         :hdr/bag-kw
+         [:record :hdr/bag-kw
+          [[:seen [:set :keyword]]]]}]
+    (is (= table (schema/validate-table! table)))
+    (is (re-matches #"[0-9a-f]{64}"
+                    (get (schema/identities table) :hdr/bag)))
+    (is (not= (get (schema/identities table) :hdr/bag)
+              (get (schema/identities
+                    (assoc-in table [:hdr/bag 2 0 1] :string))
+                   :hdr/bag)))))
