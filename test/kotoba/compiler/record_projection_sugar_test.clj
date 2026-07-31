@@ -135,3 +135,18 @@
                           "(defn main [] :i64 0)"))]
     (is (= :kotoba.error/record-projection-unresolved (:code r)))
     (is (re-find #"no :record schema declared for" (:message r)))))
+
+(deftest schema-refs-resolve-in-a-parameterless-body
+  ;; `rewrite-record-projections` used to skip a body whose `:param-types` was
+  ;; empty, on the reading that a function with no parameters has no locals to
+  ;; resolve against. True for the 2-arity `record-get` sugar; false for a
+  ;; `[:ref :ns/name]` in `record-new`, which resolves through the namespace's
+  ;; `:schemas` map and not through locals.
+  ;;
+  ;; The two programs below differ only by an unused parameter, and only the
+  ;; second compiled -- which is the shape of a bug, not a rule.
+  (let [s "(ns p (:export [f]) (:schemas {:p/n [:record :p/n [[:a :i64] [:b :i64]]]}))\n"]
+    (is (= 5 (run (str s "(defn f [] :i64 (record-get (record-new [:ref :p/n] 1 5) :b))")
+                  'f [])))
+    (is (= 5 (run (str s "(defn f [x :i64] :i64 (record-get (record-new [:ref :p/n] x 5) :b))")
+                  'f [1])))))
