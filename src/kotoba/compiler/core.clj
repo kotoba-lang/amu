@@ -522,7 +522,14 @@
      :result (compile-source source target policy build-metadata)}))
 
 (defn compile-project
-  "Compile a closed namespace-symbol -> source-text map without ambient lookup."
+  "Compile a closed namespace-symbol -> source-text map without ambient lookup.
+
+  Component targets (T8.3 multi-file project kit body): link the closed graph
+  then lift through `compile-component` (not `compile-source`, which rejects
+  component execution profiles). Linked source is monomorphic admission
+  skeleton material; Canonical lowering still owns component body. Does not
+  admit ambient classpath lookup. `:schemas` project-mode restrictions of
+  `project/link-source` still apply."
   ([sources root target] (compile-project sources root target {}))
   ([sources root target policy] (compile-project sources root target policy {}))
   ([sources root target policy supply-chain]
@@ -551,10 +558,16 @@
                 :kotoba.module/order (:module-order linked)
                 :kotoba.module/source-digests module-digests}
          graph-digest (artifact/sha256 graph)
-         compiled (compile-source (:source linked) target policy
-                                  (merge {:module-graph-digest graph-digest
-                                          :module-source-digests module-digests}
-                                         supply-chain))]
+         project-meta (merge {:module-graph-digest graph-digest
+                              :module-source-digests module-digests}
+                             supply-chain)
+         component-target? (= :component (:execution (target-profile/profile target)))
+         compiled (if component-target?
+                    ;; Component opts are target + project digests only here;
+                    ;; CLI attaches fuel/profile via direct compile-component.
+                    (compile-component (:source linked) policy
+                                       (merge {:target target} project-meta))
+                    (compile-source (:source linked) target policy project-meta))]
      (cond-> (assoc compiled :project graph :project-digest graph-digest)
        (:manifest compiled)
        (update :manifest merge
