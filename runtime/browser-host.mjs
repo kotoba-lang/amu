@@ -43,6 +43,8 @@ const ALLOWED_IMPORTS = new Set([
   "kotoba:typed/set-op-ref/function",
   "kotoba:typed/set-contains-i64/function",
   "kotoba:typed/set-contains-ref/function",
+  "kotoba:typed/set-nth-i64/function",
+  "kotoba:typed/set-nth-ref/function",
   "kotoba:typed/map-contains-i64/function",
   "kotoba:typed/map-contains-ref/function",
   "kotoba:typed/map-get-i64/function",
@@ -1503,6 +1505,12 @@ function createTypedRuntime(abi, typedCapCall, allow) {
     "set-contains-ref"(descriptorId, value, item) {
       return setContains(descriptorId, value, item) ? 1 : 0;
     },
+    "set-nth-i64"(descriptorId, value, rawIndex) {
+      return setNth(descriptorId, value, i64(rawIndex), /*i64Item*/ true);
+    },
+    "set-nth-ref"(descriptorId, value, rawIndex) {
+      return setNth(descriptorId, value, i64(rawIndex), /*i64Item*/ false);
+    },
     "map-contains-i64"(descriptorId, value, key) {
       return mapContains(descriptorId, value, i64(key)) ? 1 : 0;
     },
@@ -1892,6 +1900,19 @@ function createTypedRuntime(abi, typedCapCall, allow) {
     const checked = assertValue(descriptor, value);
     assertValue(descriptor[1], item);
     return checked[1].some(existing => compareValue(descriptor[1], existing, item) === 0);
+  };
+  /** T8.3 typed-set-nth: index into sorted set items (KIR ADR 0024 / compiler ADR 0194). */
+  const setNth = (descriptorId, value, index, i64Item) => {
+    const descriptor = descriptorAt(descriptorId);
+    if (!Array.isArray(descriptor) || descriptor[0] !== "set")
+      reject("invalid-typed-operation", "set nth requires a set descriptor");
+    const checked = assertValue(descriptor, value);
+    const items = checked[1];
+    if (index < 0n || index >= BigInt(items.length))
+      reject("invalid-typed-operation", "set index out of bounds");
+    const item = items[Number(index)];
+    assertValue(descriptor[1], item);
+    return i64Item ? i64(item) : item;
   };
   const checkedMap = (descriptorId, value) => {
     const descriptor = descriptorAt(descriptorId);

@@ -16,6 +16,7 @@
             [kotoba.compiler.document-value-test]
             [kotoba.compiler.document-in-record-test]
             [kotoba.compiler.set-in-record-test]
+            [kotoba.compiler.typed-set-nth-test]
             [kotoba.compiler.document-ui-render-test]
             [kotoba.compiler.document-digest-style-test]
             [kotoba.compiler.document-sha256-test]
@@ -123,6 +124,7 @@
                                           'kotoba.compiler.document-value-test
                                           'kotoba.compiler.document-in-record-test
                                           'kotoba.compiler.set-in-record-test
+                            'kotoba.compiler.typed-set-nth-test
                                           'kotoba.compiler.document-ui-render-test
                                           'kotoba.compiler.document-digest-style-test
                                           'kotoba.compiler.document-sha256-test
