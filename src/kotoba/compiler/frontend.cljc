@@ -3909,11 +3909,28 @@
                                     [name {:params params :param-types param-types
                                            :result result}])
                                   functions))]
+     ;; Every body, including a parameterless one. The guard used to be
+     ;; `(seq param-types)`, on the reading that a function with no parameters
+     ;; has no local types to resolve against -- true for the 2-arity
+     ;; `record-get` sugar, and false for everything else this pass does.
+     ;;
+     ;; A `[:ref :ns/name]` in `record-new`/`record-assoc`/`record-equal`
+     ;; resolves through the namespace's `:schemas` map, not through locals, so
+     ;; skipping the body left the reference unresolved and validation rejected
+     ;; the program:
+     ;;
+     ;;   (defn f [] [:ref :p/n] (record-new [:ref :p/n] 1 5))
+     ;;   -> record constructor must exactly match its descriptor
+     ;;   (defn f [x :i64] [:ref :p/n] (record-new [:ref :p/n] x 5))
+     ;;   -> compiles
+     ;;
+     ;; Adding one unused parameter made the same program legal, which is the
+     ;; shape of a bug rather than a rule. `rewrite-record-projection` already
+     ;; tolerates an empty locals map -- it only consults locals for inference,
+     ;; and an untypeable binding is allowed to have no known type there.
      (mapv (fn [{:keys [params param-types] :as f}]
-             (if (seq param-types)
-               (update f :body rewrite-record-projection
-                       (zipmap params param-types) signatures schemas)
-               f))
+             (update f :body rewrite-record-projection
+                     (zipmap params param-types) signatures schemas))
            functions))))
 
 (defn- check-value-types! [functions]
