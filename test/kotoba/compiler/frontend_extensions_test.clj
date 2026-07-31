@@ -489,6 +489,30 @@
                            "(defn main [] [:option :string] (option-none-of [:option :string]))"
                            target-name)))))
 
+(deftest if-some-on-record-option-string-field
+  "T5.2 option-string-in-record: if-some over record-get of [:option :string]
+   must lower with the real option-string type, not fallback option-i64."
+  (let [source "(ns optstr.rec
+                  (:schemas
+                   {:t/optstr [:record :t/optstr
+                               [[:a [:option :string]] [:b :string]]]})
+                  (:export [f]))
+                (defn f [x [:ref :t/optstr]] :string
+                  (if-some [a (record-get x :a)]
+                    a
+                    (record-get x :b)))"
+        kir (:kir (compiler/compile-source source :wasm32-kotoba-v1 {}))
+        some-rec (ir/execute kir 'f
+                             [[[:record :t/optstr
+                                [[:a [:option :string]] [:b :string]]]
+                               [[:option :string] true "yes"] "no"]])
+        none-rec (ir/execute kir 'f
+                             [[[:record :t/optstr
+                                [[:a [:option :string]] [:b :string]]]
+                               [[:option :string] false] "fallback"]])]
+    (is (= "yes" some-rec))
+    (is (= "fallback" none-rec))))
+
 (deftest heterogeneous-vectors-are-exact-statically-indexed-and-persistent
   (let [type [:vector [:i64 :string :bool]]
         source "(ns vector.heterogeneous (:export [make name rename count-items same?]))
