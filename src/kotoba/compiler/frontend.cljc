@@ -4664,12 +4664,20 @@
   opts:
     :language-profile  when `:pure-product`, enforce pure-product-profile.edn
                        admission (T2.1): no capabilities/cap-call/disallowed sugar,
-                       empty effects."
+                       empty effects.
+    :admit-linked-synthetics?  when true, skip reject-reserved-source-symbols!
+                       (T8.3 multi-file project monomorph: project/link-source
+                       re-emits HIR bodies that already contain desugared
+                       `__kotoba_or_*` / `__kotoba_and_*` bindings from the
+                       per-module first pass. User source still cannot invent
+                       those names — each module was checked before link.)"
   ([source] (analyze source nil))
   ([source opts]
   (let [language-profile (when (map? opts) (:language-profile opts))
+        admit-linked-synthetics? (when (map? opts) (:admit-linked-synthetics? opts))
         forms (mapv annotate-doseq-collection-kinds (read-forms source))
-        _ (reject-reserved-source-symbols! forms)
+        _ (when-not admit-linked-synthetics?
+            (reject-reserved-source-symbols! forms))
         _ (when (= :pure-product language-profile)
             (check-pure-product-source-forms! forms))
         forms (expand-closed-multimethod-forms forms)

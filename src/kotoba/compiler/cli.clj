@@ -364,7 +364,8 @@
                          (project-files/load-closed-graph input source-roots)
                          linked (project/link-source sources root)]
                      (compiler/compile-component (:source linked) policy
-                                                 component-opts))
+                                                 (assoc component-opts
+                                                        :admit-linked-synthetics? true)))
 
                    ;; A component is lifted from a core module through the
                    ;; Canonical ABI, so it has its own entry point rather than
