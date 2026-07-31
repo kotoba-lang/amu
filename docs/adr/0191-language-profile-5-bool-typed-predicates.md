@@ -188,6 +188,30 @@ A (unblocks the corpus and document parity), then B (unblocks the typed
 control-flow tests), then C (mechanical, and pointless before A and B settle the
 emitted bytes).
 
+## Status as of 2026-07-31: landed, and gated as a composition
+
+Profile 5 is on `main` in every layer: comparisons and predicates are `:bool`,
+each target boxes at its own boundary, the language authority records profile 5
+active at release 0.5.0 (kotoba-lang#349), and the surface-status entry no longer
+lists the record sugar as missing (kotoba-lang#353).
+
+Two things this ADR got wrong are worth keeping, because both were only visible
+once someone wrote the program rather than the feature:
+
+- The "three irreconcilable requirements" note was a misreading of a validation
+  bug. Corrected above.
+- The headline example did not compile. `(:field r)` resolves against the
+  value's inferred type, so the unannotated parameters left it nothing to
+  resolve against, and a `[:ref …]` in a parameterless body was not resolved at
+  all (compiler#460). Both fixed; the example now carries its schemas and types.
+
+The composed form is a conformance case, `:composed-surface-kit`
+(compiler#461) -- 53 / 53 dual-backend, 48 pure-product. That case exists
+because every part of this surface already had one and the composition had
+none, which is how both defects above survived a green suite. Verified to catch
+them: reverting only the parameterless-body fix takes conformance to 52 / 53
+with `:composed-surface-kit` named.
+
 ## Evidence (frontend change only, superseded by the section above)
 
 - `clojure -M:conformance` → **52 / 52 dual-backend** (47 pure-product, 5 portable)
