@@ -1,6 +1,7 @@
 (ns kotoba.compiler.cli-test
   (:require [clojure.edn :as edn]
             [clojure.java.io :as io]
+            [clojure.java.shell :as shell]
             [clojure.string :as str]
             [clojure.tools.reader :as reader]
             [clojure.test :refer [deftest is testing]]
@@ -129,6 +130,39 @@
       (is (.isFile output))
       (is (= #{'example.app 'example.text}
              (set (keys (:kotoba.artifact/module-source-digests manifest))))))))
+
+(deftest compile-source-path-component-multi-file-project
+  "T8.3 multi-file project kit body first slice: --target component + --source-path."
+  (let [directory (.toFile (java.nio.file.Files/createTempDirectory
+                            "kotoba-cli-component-project-"
+                            (make-array java.nio.file.attribute.FileAttribute 0)))
+        source-directory (io/file directory "src")
+        dependency (io/file source-directory "example/text.kotoba")
+        root (io/file directory "main.kotoba")
+        output (io/file directory "app.component.wasm")
+        out (StringWriter.)]
+    (.mkdirs (.getParentFile dependency))
+    (spit dependency
+          "(ns example.text (:export [answer])) (defn answer [] :i64 42)")
+    (spit root
+          "(ns example.app (:require [example.text :as text]) (:export [main]))
+           (defn main [] :i64 (text/answer))")
+    (binding [*out* out]
+      (cli/-main "compile" (.getPath root) "--source-path" (.getPath source-directory)
+                 "--target" "component" "--output" (.getPath output)))
+    (let [report (edn/read-string (str out))]
+      (is (:ok report) (str report))
+      (is (= :wasm-component-kotoba-v1 (:target report)))
+      (is (.isFile output))
+      (is (.isFile (io/file (str output ".wit"))))
+      (is (.isFile (io/file (str output ".admission.edn"))))
+      (is (.isFile (io/file (str output ".provenance.edn"))))
+      ;; Live wasmtime when available
+      (when (zero? (:exit (shell/sh "which" "wasmtime")))
+        (let [run (shell/sh "wasmtime" "run" "--invoke" "main()"
+                            (.getPath output))]
+          (is (zero? (:exit run)) (:err run))
+          (is (= "42" (str/trim (:out run)))))))))
 
 (deftest compile-repeated-source-path-links-explicit-package-roots
   (let [directory (.toFile (java.nio.file.Files/createTempDirectory

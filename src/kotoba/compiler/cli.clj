@@ -8,6 +8,7 @@
             [kotoba.compiler.diagnostic :as diagnostic]
             [kotoba.compiler.ios-aot :as ios-aot]
             [kotoba.compiler.interface :as interface]
+            [kotoba.compiler.project :as project]
             [kotoba.compiler.project-files :as project-files]
             [kotoba.compiler.packaging.pe32plus :as pe32plus]
             [kotoba.compiler.receipt :as receipt]
@@ -340,29 +341,37 @@
           _ (when-not (contains? #{nil "object" "image"} artifact-kind)
               (throw (ex-info "unknown native artifact kind"
                               {:phase :artifact-target :artifact artifact-kind})))
-          _ (when (and component-target? (seq source-roots))
-              (throw (ex-info "component compilation does not accept --source-path yet"
-                              {:phase :target-routing :target target})))
+          component-opts
+          (cond-> {:target target}
+            (option args "--profile")
+            (assoc :profile (keyword (option args "--profile")))
+            (option args "--fuel")
+            (assoc-in [:budgets :fuel] (Long/parseLong (option args "--fuel")))
+            (option args "--memory-pages")
+            (assoc-in [:budgets :memory-pages]
+                      (Long/parseLong (option args "--memory-pages")))
+            (option args "--package-lock-cid")
+            (assoc :package-lock-cid (option args "--package-lock-cid"))
+            (option args "--capability-mode")
+            (assoc :capability-mode
+                   (keyword (option args "--capability-mode"))))
           result (cond
+                   ;; Multi-file closed graph → link → compile-component (T8.3
+                   ;; multi-file project kit body first slice). Same Canonical
+                   ;; lowering path as single-file component compile.
+                   (and component-target? (seq source-roots))
+                   (let [{:keys [sources root]}
+                         (project-files/load-closed-graph input source-roots)
+                         linked (project/link-source sources root)]
+                     (compiler/compile-component (:source linked) policy
+                                                 component-opts))
+
                    ;; A component is lifted from a core module through the
                    ;; Canonical ABI, so it has its own entry point rather than
                    ;; being one more backend behind compile-source.
                    component-target?
                    (compiler/compile-component
-                    (bounded-edn/read-text-file input) policy
-                    (cond-> {:target target}
-                      (option args "--profile")
-                      (assoc :profile (keyword (option args "--profile")))
-                      (option args "--fuel")
-                      (assoc-in [:budgets :fuel] (Long/parseLong (option args "--fuel")))
-                      (option args "--memory-pages")
-                      (assoc-in [:budgets :memory-pages]
-                                (Long/parseLong (option args "--memory-pages")))
-                      (option args "--package-lock-cid")
-                      (assoc :package-lock-cid (option args "--package-lock-cid"))
-                      (option args "--capability-mode")
-                      (assoc :capability-mode
-                             (keyword (option args "--capability-mode")))))
+                    (bounded-edn/read-text-file input) policy component-opts)
 
                    (seq source-roots)
                    (let [{:keys [sources root]} (project-files/load-closed-graph input source-roots)]

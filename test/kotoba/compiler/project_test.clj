@@ -27,6 +27,20 @@
     (is (= ['welcome] (get-in compiled [:kir :exports])))
     (is (not-any? #{'greet 'prefix} (get-in compiled [:kir :exports])))))
 
+(deftest compile-project-component-target-multi-file
+  "T8.3: compile-project accepts component target (link → compile-component)."
+  (let [lib "(ns example.lib (:export [answer])) (defn answer [] :i64 42)"
+        app "(ns example.root (:require [example.lib :as lib]) (:export [main]))
+             (defn main [] :i64 (lib/answer))"
+        compiled (compiler/compile-project
+                  {'example.lib lib 'example.root app}
+                  'example.root :wasm-component-kotoba-v1)]
+    (is (= :wasm-component/v1 (:format compiled)))
+    (is (= :scalar (:canonical-lowering compiled)))
+    (is (= ['example.lib 'example.root] (get-in compiled [:project :kotoba.module/order])))
+    (is (bytes? (:bytes compiled)))
+    (is (pos? (alength ^bytes (:bytes compiled))))))
+
 (deftest project-stubs-preserve-typed-boolean-export-signatures
   (let [provider
         "(ns example.coverage (:export [covered?]))
