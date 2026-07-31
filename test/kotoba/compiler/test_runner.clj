@@ -1,6 +1,7 @@
 (ns kotoba.compiler.test-runner
   (:require [clojure.test :as t]
             [kotoba.compiler.atomic-output-test]
+            [kotoba.compiler.namespace-reachability-test]
             [kotoba.compiler.test-runner-completeness-test]
             [kotoba.compiler.aiueos-target-test]
             [kotoba.compiler.accelerator-test]
@@ -105,6 +106,7 @@
 
 (defn -main [& _]
   (let [{:keys [fail error]} (t/run-tests 'kotoba.compiler.atomic-output-test
+                                          'kotoba.compiler.namespace-reachability-test
                                           'kotoba.compiler.test-runner-completeness-test
                                           'kotoba.compiler.aiueos-target-test
                                           'kotoba.compiler.accelerator-test
