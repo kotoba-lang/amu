@@ -41,6 +41,25 @@
     (is (bytes? (:bytes compiled)))
     (is (pos? (alength ^bytes (:bytes compiled))))))
 
+(deftest compile-project-component-admits-linked-or-synthetics
+  "T8.3: linked monomorph re-emits desugared `or` as __kotoba_or_*; second
+  frontend pass must admit those synthetics (user source still cannot invent them)."
+  (let [lib "(ns example.bounds (:export [in-range?]))
+             (defn in-range? [n :i64] :i64
+               (if (or (< n 0) (> n 999)) 0 1))"
+        app "(ns example.root (:require [example.bounds :as b]) (:export [main]))
+             (defn main [] :i64 (b/in-range? 42))"
+        compiled (compiler/compile-project
+                  {'example.bounds lib 'example.root app}
+                  'example.root :wasm-component-kotoba-v1)]
+    (is (= :wasm-component/v1 (:format compiled)))
+    (is (pos? (alength ^bytes (:bytes compiled)))))
+  (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                        #"reserved __kotoba_ prefix"
+                        (compiler/compile-component
+                         "(ns u (:export [main])) (defn main [] :i64 (let [__kotoba_or_1 1] __kotoba_or_1))"
+                         {}))))
+
 (deftest project-stubs-preserve-typed-boolean-export-signatures
   (let [provider
         "(ns example.coverage (:export [covered?]))

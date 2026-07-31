@@ -164,6 +164,35 @@
           (is (zero? (:exit run)) (:err run))
           (is (= "42" (str/trim (:out run)))))))))
 
+(deftest compile-source-path-component-multi-file-with-or
+  "T8.3: multi-file Component must admit linked `or` desugar synthetics."
+  (let [directory (.toFile (java.nio.file.Files/createTempDirectory
+                            "kotoba-cli-component-or-"
+                            (make-array java.nio.file.attribute.FileAttribute 0)))
+        source-directory (io/file directory "src")
+        dependency (io/file source-directory "example/bounds.kotoba")
+        root (io/file directory "main.kotoba")
+        output (io/file directory "app.component.wasm")
+        out (StringWriter.)]
+    (.mkdirs (.getParentFile dependency))
+    (spit dependency
+          "(ns example.bounds (:export [ok?]))
+           (defn ok? [n :i64] :i64 (if (or (< n 0) (> n 999)) 0 1))")
+    (spit root
+          "(ns example.app (:require [example.bounds :as b]) (:export [main]))
+           (defn main [] :i64 (b/ok? 42))")
+    (binding [*out* out]
+      (cli/-main "compile" (.getPath root) "--source-path" (.getPath source-directory)
+                 "--target" "component" "--output" (.getPath output)))
+    (let [report (edn/read-string (str out))]
+      (is (:ok report) (str report))
+      (is (.isFile output))
+      (when (zero? (:exit (shell/sh "which" "wasmtime")))
+        (let [run (shell/sh "wasmtime" "run" "--invoke" "main()"
+                            (.getPath output))]
+          (is (zero? (:exit run)) (:err run))
+          (is (= "1" (str/trim (:out run)))))))))
+
 (deftest compile-repeated-source-path-links-explicit-package-roots
   (let [directory (.toFile (java.nio.file.Files/createTempDirectory
                             "kotoba-cli-multi-root-"

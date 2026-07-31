@@ -228,7 +228,8 @@
   that happened or the budget is host-enforced only."
   ([source] (compile-component source {} {}))
   ([source policy] (compile-component source policy {}))
-  ([source policy {:keys [profile budgets component-abilities capability-mode target]
+  ([source policy {:keys [profile budgets component-abilities capability-mode target
+                          admit-linked-synthetics?]
                    :or {profile :sync target :wasm-component-kotoba-v1} :as opts}]
    (let [budgets (merge default-component-budgets budgets)
          typed-v3? (= target abi/component-target-v2)
@@ -236,7 +237,10 @@
              (throw (ex-info "Component capability mode is unsupported"
                              {:phase :component-capability-mode
                               :capability-mode capability-mode})))
-         hir (frontend/analyze source)
+         hir (frontend/analyze source
+                               (cond-> {}
+                                 admit-linked-synthetics?
+                                 (assoc :admit-linked-synthetics? true)))
          checked-admission (admit! hir policy)
          kir (component-kir (ir/lower hir))
          target-profile (target-profile/profile target)
@@ -332,7 +336,9 @@
         language-profile (or (:language-profile emit-metadata)
                              (:language-profile policy))
         hir (frontend/analyze source (cond-> {}
-                                       language-profile (assoc :language-profile language-profile)))
+                                       language-profile (assoc :language-profile language-profile)
+                                       (:admit-linked-synthetics? emit-metadata)
+                                       (assoc :admit-linked-synthetics? true)))
         _ (when (and (or (ir/uses-f32? hir) (ir/uses-f64? hir))
                      (not (contains? #{:js-kotoba-v1 :wasm32-kotoba-v1} backend)))
             (throw (ex-info "floating-point values require the kotoba-script or Wasm target"
@@ -562,12 +568,13 @@
                               :module-source-digests module-digests}
                              supply-chain)
          component-target? (= :component (:execution (target-profile/profile target)))
+         linked-meta (assoc project-meta :admit-linked-synthetics? true)
          compiled (if component-target?
                     ;; Component opts are target + project digests only here;
                     ;; CLI attaches fuel/profile via direct compile-component.
                     (compile-component (:source linked) policy
-                                       (merge {:target target} project-meta))
-                    (compile-source (:source linked) target policy project-meta))]
+                                       (merge {:target target} linked-meta))
+                    (compile-source (:source linked) target policy linked-meta))]
      (cond-> (assoc compiled :project graph :project-digest graph-digest)
        (:manifest compiled)
        (update :manifest merge
