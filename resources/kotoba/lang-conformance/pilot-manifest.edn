@@ -129,6 +129,20 @@
    :args []
    :expect {:kotoba 65}
    :note "string-code-point-at ASCII"}
+  ;; The profile-5 surface composed, not exercised feature by feature. Every
+  ;; part has its own case; writing them together is what had none, and twice on
+  ;; 2026-07-31 the composition was the thing that broke while each feature was
+  ;; green (a :bool record field across the wasm boundary; a [:ref :ns/name]
+  ;; inside a parameterless body -- which every entry point is).
+  {:id :composed-surface-kit
+   :class :pure-product-run
+   :required-backends #{:kir :wasm32-kotoba-v1}
+   :kind :run
+   :entry "values/composed_surface_kit.kotoba"
+   :function "main"
+   :args []
+   :expect {:kotoba 512}
+   :note "ADR 0191 profile-5 surface: and/or/not + record schema refs + keyword accessor + parameterless entry"}
   {:id :record-kit
    :class :pure-product-run
    :required-backends #{:kir :wasm32-kotoba-v1}
