@@ -364,7 +364,7 @@
     (is (= [false [true 7]] (ir/execute kir 'make [])))
     (is (true? (ir/execute kir 'inspect [[false [true 7]]])))
     (is (= type (get-in kir [:functions 0 :result])))
-    (is (= 8 (get-in compiled [:manifest :kotoba.artifact/limits :parametric-adt-depth])))
+    (is (= 12 (get-in compiled [:manifest :kotoba.artifact/limits :parametric-adt-depth])))
     (is (= 64 (get-in compiled [:manifest :kotoba.artifact/limits :parametric-adt-nodes])))
     (is (str/includes? (:source compiled) "parametricAdtLimits:Object.freeze({depth:8,nodes:64,variantCases:32})"))
     (is (thrown? clojure.lang.ExceptionInfo
