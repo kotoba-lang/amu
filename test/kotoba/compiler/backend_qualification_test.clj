@@ -47,7 +47,13 @@
                         {:id 15 :name :object/put-block}
                         {:id 16 :name :object/compare-and-set-ref}
                         {:id 17 :name :http/accept}
-                        {:id 18 :name :http/reply}])
+                        {:id 18 :name :http/reply}
+                        ;; T8.3 ops kits (component ADR 0120 / catalog 19–23)
+                        {:id 19 :name :fs/transact}
+                        {:id 20 :name :process/spawn}
+                        {:id 21 :name :secret/get}
+                        {:id 22 :name :git/run}
+                        {:id 23 :name :entropy/draw}])
         actual (->> (:capabilities contract) (map #(select-keys % [:name :id])) set)
         entries (:capabilities contract)]
     (is (= expected actual))
