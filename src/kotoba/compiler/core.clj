@@ -391,7 +391,7 @@
                           (ir/uses-f32? kir) (conj :ieee-754-f32)
                           (ir/uses-f64? kir) (conj :ieee-754-f64))
          :limits (cond-> {:fuel fuel :replenishable? false}
-                   typed-values? (assoc :parametric-adt-depth 8
+                   typed-values? (assoc :parametric-adt-depth 12
                                         :parametric-adt-nodes 64
                                         :variant-cases 32
                                         :heterogeneous-vector-items 32
@@ -428,7 +428,7 @@
                                           :map-entries 128
                                           :option-i64-slots 2
                                           :result-i64-slots 2
-                                          :parametric-adt-depth 8
+                                          :parametric-adt-depth 12
                                           :parametric-adt-nodes 64
                                           :variant-cases 32
                                           :generic-option-max-slots 3

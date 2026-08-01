@@ -954,7 +954,8 @@ function createTypedRuntime(abi, typedCapCall, allow) {
     descriptor = resolveDescriptor(descriptor);
     state.nodes += 1;
     state.depth += 1;
-    if (state.depth > 8 || state.nodes > 64)
+    // ADT value depth raised 8→12 with kir ADR 0025 (structured kv EDN spines)
+    if (state.depth > 12 || state.nodes > 64)
       reject("invalid-typed-value", "typed runtime value budget exceeded");
     try {
       if (descriptor === "i64") return i64(value);
