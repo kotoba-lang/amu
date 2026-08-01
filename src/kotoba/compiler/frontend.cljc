@@ -46,7 +46,9 @@
     :ui/commit 9 :ui/next-event 10 :llm/generate 11
     :storage/transact 12 :http/get-stream 13 :object/get-stream 14
     :object/put-block 15 :object/compare-and-set-ref 16
-    :http/accept 17 :http/reply 18})
+    :http/accept 17 :http/reply 18
+    :fs/transact 19 :process/spawn 20 :secret/get 21
+    :git/run 22 :entropy/draw 23})
 
 (defn- load-capability-catalog []
   #?(:clj
