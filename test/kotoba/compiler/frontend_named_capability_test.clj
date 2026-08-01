@@ -33,7 +33,13 @@
   (is (= 16 (get frontend/capability-registry
                  :object/compare-and-set-ref)))
   (is (= 17 (get frontend/capability-registry :http/accept)))
-  (is (= 18 (get frontend/capability-registry :http/reply))))
+  (is (= 18 (get frontend/capability-registry :http/reply)))
+  ;; T8.3 ops kits — catalog authority ids 19–23 (provider kits; ADR 0198)
+  (is (= 19 (get frontend/capability-registry :fs/transact)))
+  (is (= 20 (get frontend/capability-registry :process/spawn)))
+  (is (= 21 (get frontend/capability-registry :secret/get)))
+  (is (= 22 (get frontend/capability-registry :git/run)))
+  (is (= 23 (get frontend/capability-registry :entropy/draw))))
 
 (deftest linear-task-stream-types-are-admitted-only-as-direct-moves
   (let [checked
@@ -194,3 +200,17 @@
                                 (defn audit [x] (cap-call :identity/sign x))
                                 (defn main [] (audit 0))"
                                {:allow #{[:cap/call 1]}})))))
+
+(deftest ops-kit-named-cap-call-lowers-like-int-form
+  "T8.3 catalog 19–23: named ops kit keyword lowers identically to numeric id."
+  (let [named-source "(defn run [x] (cap-call :process/spawn x))
+                       (defn main [] (run 0))"
+        int-source "(defn run [x] (cap-call 20 x))
+                     (defn main [] (run 0))"
+        named-hir (:hir (compiler/check-source named-source {:allow #{[:cap/call 20]}}))
+        int-hir (:hir (compiler/check-source int-source {:allow #{[:cap/call 20]}}))]
+    (is (= (dissoc int-hir :named-operations)
+           (dissoc named-hir :named-operations)))
+    (is (= #{:process/spawn} (:named-operations named-hir)))
+    (is (= #{[:cap/call 20]} (:effects named-hir)))))
+
