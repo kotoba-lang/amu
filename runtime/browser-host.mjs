@@ -878,6 +878,11 @@ function createTypedRuntime(abi, typedCapCall, allow) {
     return left[1].length < right[1].length ? -1 : left[1].length > right[1].length ? 1 : 0;
   };
   const compareValue = (descriptor, left, right) => {
+    // Resolve schema refs so set-of-record / set-of-ref elements have a
+    // canonical order (T8.3 ADR 0195). assertValue already resolves; compare
+    // must too or typed-set-conj of [:ref :record] rejects with
+    // "typed value has no canonical order".
+    descriptor = resolveDescriptor(descriptor);
     if (descriptor === "f64" || descriptor === "f32") {
       if (Number.isNaN(left) || Number.isNaN(right))
         return Number.isNaN(left) && Number.isNaN(right) ? 0 : Number.isNaN(left) ? 1 : -1;
