@@ -84,6 +84,7 @@ const ALLOWED_IMPORTS = new Set([
   "kotoba:typed/document-edn-print/function",
   "kotoba:typed/document-edn-read/function",
   "kotoba:typed/document-contains/function",
+  "kotoba:typed/document-set-contains/function",
   "kotoba:typed/document-vector-at/function",
   "kotoba:typed/document-list-at/function",
   "kotoba:typed/document-map-entry-at/function",
@@ -507,6 +508,18 @@ function createTypedRuntime(abi, typedCapCall, allow) {
         state.seen.add(payload);
         return finish(Object.freeze([tag, Object.freeze(payload.map(item => walk(item, depth + 1)))]));
       }
+      if (tag === "set") {
+        if (!Array.isArray(payload) || Object.getPrototypeOf(payload) !== Array.prototype || payload.length > 32)
+          reject("invalid-typed-value", "document set is invalid or oversized");
+        if (!allowShared && state.seen.has(payload))
+          reject("invalid-typed-value", "document arrays cannot be shared");
+        state.seen.add(payload);
+        const items = payload.map(item => walk(item, depth + 1));
+        for (let index = 1; index < items.length; index += 1)
+          if (compareDocument(items[index - 1], items[index], false) >= 0)
+            reject("invalid-typed-value", "document set items are duplicate or noncanonical");
+        return finish(Object.freeze([tag, Object.freeze(items)]));
+      }
       if (tag === "map") {
         if (!Array.isArray(payload) || Object.getPrototypeOf(payload) !== Array.prototype || payload.length > 32)
           reject("invalid-typed-value", "document map is invalid or oversized");
@@ -537,7 +550,7 @@ function createTypedRuntime(abi, typedCapCall, allow) {
     const result = copyDocument(source, allowShared);
     const trust = node => {
       trustedValues.add(node);
-      if (node[0] === "vector" || node[0] === "list") node[1].forEach(trust);
+      if (node[0] === "vector" || node[0] === "list" || node[0] === "set") node[1].forEach(trust);
       else if (node[0] === "map") node[1].forEach(entry => trust(entry[1]));
     };
     trust(result);
@@ -552,8 +565,8 @@ function createTypedRuntime(abi, typedCapCall, allow) {
   // Shared with kotoba-kir value/document-canonical-bytes + kotoba-script docCanonicalBytes.
   // Format: n | b t/f | i <decimal> ; | f <i64-bits-decimal> ; |
   // s <utf8-len> : <bytes> | k <utf8-len> : <keyword-str> | y <utf8-len> : <symbol> |
-  // v <count> : <items...> | l <count> : <items...> | m <count> : (K <key-len> : <key-bytes> <item>)*
-  const documentCanonicalBytes = node => {
+  // v <count> : <items...> | l <count> : <items...> | e <count> : <items...> | m <count> : (K <key-len> : <key-bytes> <item>)*
+  const documentCanonicalBytes = (node, admitted = true) => {
     const out = [];
     const enc = new TextEncoder();
     const emit = n => out.push(n & 255);
@@ -565,7 +578,7 @@ function createTypedRuntime(abi, typedCapCall, allow) {
       for (const x of b) emit(x);
     };
     const walk = n => {
-      n = assertDocument(n);
+      n = admitted ? assertDocument(n) : n;
       const t = n[0];
       if (t === "null") { emit(110); return; }
       if (t === "bool") { emit(98); emit(n[1] ? 116 : 102); return; }
@@ -590,6 +603,11 @@ function createTypedRuntime(abi, typedCapCall, allow) {
       }
       if (t === "list") {
         emit(108); emitStr(String(n[1].length)); emit(58);
+        for (const it of n[1]) walk(it);
+        return;
+      }
+      if (t === "set") {
+        emit(101); emitStr(String(n[1].length)); emit(58);
         for (const it of n[1]) walk(it);
         return;
       }
@@ -727,6 +745,14 @@ function createTypedRuntime(abi, typedCapCall, allow) {
         for (let k = 0; k < n; k++) items.push(walk());
         return Object.freeze(["list", Object.freeze(items)]);
       }
+      if (tag === 101) {
+        const n = Number(takeUntil(58));
+        if (!Number.isInteger(n) || n < 0 || n > 32)
+          reject("invalid-typed-value", "document-read set count out of range");
+        const items = [];
+        for (let k = 0; k < n; k++) items.push(walk());
+        return Object.freeze(["set", Object.freeze(items)]);
+      }
       if (tag === 109) {
         const n = Number(takeUntil(58));
         if (!Number.isInteger(n) || n < 0 || n > 32)
@@ -782,6 +808,7 @@ function createTypedRuntime(abi, typedCapCall, allow) {
       if (tag === "symbol") return symbolText(payload);
       if (tag === "vector") return `[${payload.map(walk).join(" ")}]`;
       if (tag === "list") return `(${payload.map(walk).join(" ")})`;
+      if (tag === "set") return `#{${payload.map(walk).join(" ")}}`;
       if (tag === "map") return `{${payload.map(([key, item]) => `${key} ${walk(item)}`).join(" ")}}`;
       reject("invalid-typed-value", "unknown document tag for EDN printer");
     };
@@ -883,7 +910,24 @@ function createTypedRuntime(abi, typedCapCall, allow) {
           entries.push([key[1], value(depth + 1)]);
         }
       }
-      if (character === "#") fail("dispatch forms are forbidden");
+      if (character === "#") {
+        cursor += 1;
+        if (text[cursor] !== "{") fail("dispatch forms are forbidden");
+        cursor += 1;
+        const items = [];
+        for (;;) {
+          skip();
+          if (text[cursor] === "}") {
+            cursor += 1;
+            items.sort((left, right) => compareDocument(left, right, false));
+            for (let index = 1; index < items.length; index += 1)
+              if (compareDocument(items[index - 1], items[index], false) === 0) fail("duplicate set item");
+            return ["set", items];
+          }
+          if (items.length >= 32) fail("set item limit exceeded");
+          items.push(value(depth + 1));
+        }
+      }
       if (character === ")" || character === "]" || character === "}") fail("unexpected closing delimiter");
       const item = token();
       if (item === "nil") return ["null"];
@@ -1034,27 +1078,14 @@ function createTypedRuntime(abi, typedCapCall, allow) {
     }
     return left.length < right.length ? -1 : left.length > right.length ? 1 : 0;
   };
-  const compareDocument = (left, right) => {
-    const tags = Object.freeze(["null", "bool", "i64", "f64", "string", "keyword", "symbol", "vector", "list", "map"]);
-    const leftTag = tags.indexOf(left[0]), rightTag = tags.indexOf(right[0]);
-    if (leftTag !== rightTag) return leftTag < rightTag ? -1 : 1;
-    if (left[0] === "null") return 0;
-    if (left[0] === "bool") return left[1] === right[1] ? 0 : left[1] ? 1 : -1;
-    if (left[0] !== "vector" && left[0] !== "list" && left[0] !== "map")
-      return left[1] < right[1] ? -1 : left[1] > right[1] ? 1 : 0;
-    const length = Math.min(left[1].length, right[1].length);
+  const compareDocument = (left, right, admitted = true) => {
+    const leftBytes = documentCanonicalBytes(left, admitted), rightBytes = documentCanonicalBytes(right, admitted);
+    const length = Math.min(leftBytes.length, rightBytes.length);
     for (let index = 0; index < length; index += 1) {
-      if (left[0] === "map") {
-        const leftKey = left[1][index][0], rightKey = right[1][index][0];
-        if (leftKey !== rightKey) return leftKey < rightKey ? -1 : 1;
-        const compared = compareDocument(left[1][index][1], right[1][index][1]);
-        if (compared !== 0) return compared;
-      } else {
-        const compared = compareDocument(left[1][index], right[1][index]);
-        if (compared !== 0) return compared;
-      }
+      if (leftBytes[index] < rightBytes[index]) return -1;
+      if (leftBytes[index] > rightBytes[index]) return 1;
     }
-    return left[1].length < right[1].length ? -1 : left[1].length > right[1].length ? 1 : 0;
+    return leftBytes.length < rightBytes.length ? -1 : leftBytes.length > rightBytes.length ? 1 : 0;
   };
   const compareValue = (descriptor, left, right) => {
     // Resolve schema refs so set-of-record / set-of-ref elements have a
@@ -1410,6 +1441,13 @@ function createTypedRuntime(abi, typedCapCall, allow) {
       } else if (kind === "document") {
         if (builder.tag === -1) result = ["vector", builder.slots];
         else if (builder.tag === -3) result = ["list", builder.slots];
+        else if (builder.tag === -4) {
+          const items = [...builder.slots].sort(compareDocument);
+          for (let index = 1; index < items.length; index += 1)
+            if (compareDocument(items[index - 1], items[index]) === 0)
+              reject("invalid-typed-set", "duplicate document set item rejected");
+          result = ["set", items];
+        }
         else if (builder.tag === -2) {
           if (builder.slots.length % 2 !== 0)
             reject("invalid-typed-builder", "document map builder has an unmatched key");
@@ -1483,7 +1521,7 @@ function createTypedRuntime(abi, typedCapCall, allow) {
       if (descriptor[0] === "string-index") return BigInt(checked[1].length);
       if (descriptor[0] === "disjoint-set-i64") return BigInt(checked[1].length);
       if (descriptor[0] === "document") {
-        if (checked[0] !== "map" && checked[0] !== "vector" && checked[0] !== "list")
+        if (checked[0] !== "map" && checked[0] !== "vector" && checked[0] !== "list" && checked[0] !== "set")
           reject("invalid-typed-operation", "document container required");
         return BigInt(checked[1].length);
       }
@@ -1849,6 +1887,13 @@ function createTypedRuntime(abi, typedCapCall, allow) {
       if (descriptorAt(descriptorId) !== documentDescriptor)
         reject("invalid-typed-operation", "document descriptor required");
       return documentPosition(value, key)[2] < 0 ? 0 : 1;
+    },
+    "document-set-contains"(descriptorId, value, item) {
+      if (descriptorAt(descriptorId) !== documentDescriptor)
+        reject("invalid-typed-operation", "document descriptor required");
+      value = assertDocument(value); item = assertDocument(item);
+      if (value[0] !== "set") reject("invalid-typed-operation", "document set required");
+      return value[1].some(candidate => compareDocument(candidate, item) === 0) ? 1 : 0;
     },
     "document-vector-at"(descriptorId, value, rawIndex) {
       if (descriptorAt(descriptorId) !== documentDescriptor)

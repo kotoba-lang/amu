@@ -6,7 +6,7 @@
 
 (def source
   "(ns data.document-edn
-     (:export [main value printed same commented symbol-doc symbol-text parsed-symbol symbol-value list-doc list-text parsed-list list-same list-second bad-symbol bad-tag bad-set bad-duplicate bad-limit]))
+     (:export [main value printed same commented symbol-doc symbol-text parsed-symbol symbol-value list-doc list-text parsed-list list-same list-second set-doc set-text parsed-set set-same set-has-ready bad-symbol bad-tag bad-set-duplicate bad-duplicate bad-limit]))
    (defn main [] :i64 42)
    (defn value [] :document
      (document-map
@@ -28,9 +28,16 @@
    (defn parsed-list [] :document (document-edn-read \"(actor/run 7)\"))
    (defn list-same [] :bool (document-equal? (list-doc) (parsed-list)))
    (defn list-second [] [:option :document] (document-list-at (parsed-list) 1))
+   (defn set-doc [] :document
+     (document-set (document-string \"one\") (document-keyword :ready) (document-i64 1)))
+   (defn set-text [] :string (document-edn-print (set-doc)))
+   (defn parsed-set [] :document (document-edn-read \"#{\\\"one\\\" 1 :ready}\"))
+   (defn set-same [] :bool (document-equal? (set-doc) (parsed-set)))
+   (defn set-has-ready [] :bool
+     (document-set-contains? (parsed-set) (document-keyword :ready)))
    (defn bad-symbol [] :string (document-edn-print (document-symbol (symbol \"nil\"))))
    (defn bad-tag [] :document (document-edn-read \"#inst \\\"2026-08-03\\\"\"))
-   (defn bad-set [] :document (document-edn-read \"#{:a}\"))
+   (defn bad-set-duplicate [] :document (document-edn-read \"#{:a :a}\"))
    (defn bad-duplicate [] :document (document-edn-read \"{:a 1 :a 2}\"))
    (defn bad-limit [] :document
      (document-edn-read
@@ -61,8 +68,9 @@
        "if(!(x.same()===true||x.same()===1||x.same()===1n))process.exit(3);"
        "if(x['symbol-text']()!=='actor/run'||x['parsed-symbol']()[0]!=='symbol')process.exit(4);"
        "if(x['list-text']()!=='(actor/run 7)'||x['parsed-list']()[0]!=='list'||!(x['list-same']()===true||x['list-same']()===1||x['list-same']()===1n))process.exit(5);"
-       "for(const name of ['bad-symbol','bad-tag','bad-set','bad-duplicate','bad-limit']){"
-       "let denied=false;try{x[name]()}catch(e){denied=true}if(!denied)process.exit(6);}"
+       "if(x['set-text']()!=='#{1 :ready \\\"one\\\"}'||x['parsed-set']()[0]!=='set'||!(x['set-same']()===true||x['set-same']()===1||x['set-same']()===1n)||!(x['set-has-ready']()===true||x['set-has-ready']()===1||x['set-has-ready']()===1n))process.exit(6);"
+       "for(const name of ['bad-symbol','bad-tag','bad-set-duplicate','bad-duplicate','bad-limit']){"
+       "let denied=false;try{x[name]()}catch(e){denied=true}if(!denied)process.exit(7);}"
        "console.log('ok');"))
 
 (deftest textual-edn-document-codec-is-backend-identical
@@ -74,7 +82,10 @@
       (is (true? (ir/execute kir 'same [])))
       (is (= "(actor/run 7)" (ir/execute kir 'list-text [])))
       (is (true? (ir/execute kir 'list-same [])))
-      (doseq [name ['bad-tag 'bad-set 'bad-duplicate 'bad-limit]]
+      (is (= "#{1 :ready \"one\"}" (ir/execute kir 'set-text [])))
+      (is (true? (ir/execute kir 'set-same [])))
+      (is (true? (ir/execute kir 'set-has-ready [])))
+      (doseq [name ['bad-tag 'bad-set-duplicate 'bad-duplicate 'bad-limit]]
         (is (thrown? clojure.lang.ExceptionInfo (ir/execute kir name [])))))
     (testing "restricted ESM"
       (let [result (script-probe script
