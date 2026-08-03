@@ -50,6 +50,7 @@ struct kexe_context {
   void *string_concat;
   void *typed_cap_call;
   void *string_substring;
+  void *string_code_point_at;
   uint64_t pair_used;
   struct pair_cell pairs[KEXE_PAIR_CAPACITY];
   uint64_t string_pool_used;
@@ -68,6 +69,7 @@ _Static_assert(offsetof(struct kexe_context, string_equal) == 112, "string ABI")
 _Static_assert(offsetof(struct kexe_context, string_concat) == 120, "string ABI");
 _Static_assert(offsetof(struct kexe_context, typed_cap_call) == 128, "typed cap ABI");
 _Static_assert(offsetof(struct kexe_context, string_substring) == 136, "string ABI");
+_Static_assert(offsetof(struct kexe_context, string_code_point_at) == 144, "string ABI");
 
 static void fail_win(const char *message) {
   fprintf(stderr, "kexe-loader-windows: %s: win32=%lu\n", message, (unsigned long)GetLastError());
@@ -219,6 +221,33 @@ static int64_t SYSV string_substring(struct kexe_context *ctx, int64_t handle,
   if (end < length && (bytes[end] & 0xc0) == 0x80) __builtin_trap();
   return pair_new(ctx, offset >= 0 ? offset + start : offset - start,
                   end - start);
+}
+
+/* See kexe_loader.c's checked_string_code_point_at: offset must be a
+ * code-point boundary in [0, byte-length), exclusive upper bound. */
+static int64_t SYSV string_code_point_at(struct kexe_context *ctx, int64_t handle,
+                                         int64_t byte_offset) {
+  struct pair_cell *source = checked_pair(ctx, handle);
+  int64_t offset = source->first;
+  int64_t length = source->second;
+  const uint8_t *bytes;
+  const uint8_t *p;
+  uint8_t a;
+  if (length < 0 || byte_offset < 0 || byte_offset >= length) __builtin_trap();
+  bytes = resolve_string_bytes(ctx, offset, length);
+  if (!valid_utf8(bytes, (uint64_t)length)) __builtin_trap();
+  p = bytes + byte_offset;
+  a = p[0];
+  if ((a & 0xc0) == 0x80) __builtin_trap();
+  if (a <= 0x7f) return a;
+  if (a >= 0xc2 && a <= 0xdf) return ((int64_t)(a & 0x1f) << 6) | (p[1] & 0x3f);
+  if (a >= 0xe0 && a <= 0xef)
+    return ((int64_t)(a & 0x0f) << 12) | ((int64_t)(p[1] & 0x3f) << 6) | (p[2] & 0x3f);
+  if (a >= 0xf0 && a <= 0xf4)
+    return ((int64_t)(a & 0x07) << 18) | ((int64_t)(p[1] & 0x3f) << 12) |
+           ((int64_t)(p[2] & 0x3f) << 6) | (p[3] & 0x3f);
+  __builtin_trap();
+  return 0;
 }
 
 static int valid_typed_value(struct kexe_context *ctx,
@@ -952,6 +981,7 @@ int main(int argc, char **argv) {
   ctx->string_concat = (void *)&string_concat;
   ctx->typed_cap_call = (void *)&typed_cap_call;
   ctx->string_substring = (void *)&string_substring;
+  ctx->string_code_point_at = (void *)&string_code_point_at;
   ctx->code_base = code;
   ctx->code_length = (uint64_t)length;
   parse_allow(ctx, argv[5]);
