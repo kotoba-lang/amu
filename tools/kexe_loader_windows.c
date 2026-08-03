@@ -49,6 +49,7 @@ struct kexe_context {
   void *string_equal;
   void *string_concat;
   void *typed_cap_call;
+  void *string_substring;
   uint64_t pair_used;
   struct pair_cell pairs[KEXE_PAIR_CAPACITY];
   uint64_t string_pool_used;
@@ -66,6 +67,7 @@ _Static_assert(offsetof(struct kexe_context, pair_second) == 72, "second ABI");
 _Static_assert(offsetof(struct kexe_context, string_equal) == 112, "string ABI");
 _Static_assert(offsetof(struct kexe_context, string_concat) == 120, "string ABI");
 _Static_assert(offsetof(struct kexe_context, typed_cap_call) == 128, "typed cap ABI");
+_Static_assert(offsetof(struct kexe_context, string_substring) == 136, "string ABI");
 
 static void fail_win(const char *message) {
   fprintf(stderr, "kexe-loader-windows: %s: win32=%lu\n", message, (unsigned long)GetLastError());
@@ -198,6 +200,25 @@ static int64_t SYSV string_concat(struct kexe_context *ctx,
          b_bytes, (size_t)b->second);
   ctx->string_pool_used += (uint64_t)total;
   return pair_new(ctx, -((int64_t)start) - 1, total);
+}
+
+/* See kexe_loader.c's checked_string_substring for why the two failures and
+ * the UTF-8 validation are exactly these, and why the result is a view that
+ * subtracts `start` for pool-backed (negative) offsets. */
+static int64_t SYSV string_substring(struct kexe_context *ctx, int64_t handle,
+                                     int64_t start, int64_t end) {
+  struct pair_cell *source = checked_pair(ctx, handle);
+  int64_t offset = source->first;
+  int64_t length = source->second;
+  const uint8_t *bytes;
+  if (length < 0 || start < 0 || end < start || end > length)
+    __builtin_trap();
+  bytes = resolve_string_bytes(ctx, offset, length);
+  if (!valid_utf8(bytes, (uint64_t)length)) __builtin_trap();
+  if (start < length && (bytes[start] & 0xc0) == 0x80) __builtin_trap();
+  if (end < length && (bytes[end] & 0xc0) == 0x80) __builtin_trap();
+  return pair_new(ctx, offset >= 0 ? offset + start : offset - start,
+                  end - start);
 }
 
 static int valid_typed_value(struct kexe_context *ctx,
@@ -930,6 +951,7 @@ int main(int argc, char **argv) {
   ctx->string_equal = (void *)&string_equal;
   ctx->string_concat = (void *)&string_concat;
   ctx->typed_cap_call = (void *)&typed_cap_call;
+  ctx->string_substring = (void *)&string_substring;
   ctx->code_base = code;
   ctx->code_length = (uint64_t)length;
   parse_allow(ctx, argv[5]);
