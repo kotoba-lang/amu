@@ -103,13 +103,26 @@
             form))
         forms))
 
-(defn- interface-of [{:keys [name params param-types result effects]} linked-name]
-  {:name name :params params
-   :param-types (or param-types (vec (repeat (count params) :i64)))
-   :result (or result :i64) :effects effects :linked-name linked-name})
+(defn- interface-of [{:keys [name params param-types result effects
+                             callable-param-contracts callable-result-contract]}
+                     linked-name]
+  (cond-> {:name name :params params
+           :param-types (or param-types (vec (repeat (count params) :i64)))
+           :result (or result :i64) :effects effects :linked-name linked-name}
+    (seq callable-param-contracts)
+    (assoc :callable-param-contracts callable-param-contracts)
+    callable-result-contract
+    (assoc :callable-result-contract callable-result-contract)))
 
-(defn- typed-params [params types]
-  (if (every? #{:i64} types) params (vec (mapcat vector params types))))
+(defn- typed-params
+  ([params types] (typed-params params types nil))
+  ([params types callable-contracts]
+   (let [source-types (mapv (fn [index type]
+                              (or (get callable-contracts index) type))
+                            (range) types)]
+     (if (every? #{:i64} source-types)
+       params
+       (vec (mapcat vector params source-types))))))
 
 (defn- stub-value [type]
   (cond
@@ -121,6 +134,8 @@
     (= type :symbol) '(symbol "kotoba.stub/value")
     (= type :map) {}
     (= type :bool) false
+    (= type :bytes) '(bytes-empty)
+    (= type :document) '(document-null)
     (= type :option-i64) '(option-none)
     (= type :result-i64) '(result-ok 0)
     (= type :vector-i64) '(vector-i64)
@@ -131,6 +146,8 @@
     (list 'result-ok-of type (stub-value (second type)))
     (and (vector? type) (= :option (first type)))
     (list 'option-none-of type)
+    (and (vector? type) (= :list (first type)))
+    (list 'typed-list-new type)
     (and (vector? type) (= :variant (first type)))
     (let [[tag payload-type] (first (nth type 2))]
       (list 'variant-new type tag (stub-value payload-type)))
@@ -145,8 +162,19 @@
     :else (reject! "project import result type has no closed stub value"
                    {:type type})))
 
-(defn- stub-form [stub {:keys [params param-types result]}]
-  (list 'defn- stub (typed-params params param-types) result (stub-value result)))
+(defn- stub-form
+  [stub {:keys [params param-types result callable-param-contracts
+                callable-result-contract]}]
+  (list 'defn- stub
+        (typed-params params param-types callable-param-contracts)
+        (or callable-result-contract result)
+        (if callable-result-contract
+          ;; The stub exists only for isolated type/effect analysis and is
+          ;; removed before linking. Its explicit result contract supplies
+          ;; the closure refinement without inventing a lambda ID/helper that
+          ;; could be mistaken for executable project code.
+          0
+          (stub-value result))))
 
 (defn- capability-operation?
   "True for a friendly capability operation such as `clock/now`.
@@ -228,6 +256,13 @@
                       form)
     :else form))
 
+(defn- invoke-dispatcher-name? [name]
+  (and (symbol? name)
+       (boolean (re-matches #"__kotoba_invoke(?:_.+)?\$arity[0-4]" (str name)))))
+
+(defn- closure-apply-name? [name]
+  (= '__kotoba_closure_apply name))
+
 (defn- source-text [forms]
   (str (str/join "\n" (map pr-str forms)) "\n"))
 
@@ -281,7 +316,11 @@
         stub->target (into {} (map (fn [[_ stub interface]] [stub (:linked-name interface)]) stub-pairs))
         rewritten (mapv #(rewrite-import-calls % import->stub) (without-requires forms))
         augmented (into rewritten (map (fn [[_ stub interface]] (stub-form stub interface)) stub-pairs))
-        hir (frontend/analyze (source-text augmented))
+        ;; Lambda IDs are artifact data. Give every source module a disjoint
+        ;; range so the project-level dispatcher can route a closure back to
+        ;; the module whose lifted helper owns that ID.
+        hir (frontend/analyze (source-text augmented)
+                              {:lambda-id-base (* module-index frontend/max-functions)})
         stubs (set (vals import->stub))
         locals (vec (remove #(contains? stubs (:name %)) (:functions hir)))
         local-names (into {} (map-indexed (fn [function-index {:keys [name]}]
@@ -289,18 +328,31 @@
                                                                module-index "__"
                                                                function-index))])
                                           locals))
-        call-names (merge local-names stub->target)
+        global-dispatcher-names
+        (into {}
+              (keep (fn [name]
+                      (when (or (invoke-dispatcher-name? name)
+                                (closure-apply-name? name))
+                        [name name])))
+              (keys local-names))
+        call-names (merge local-names stub->target global-dispatcher-names)
         functions (mapv (fn [function]
-                          (-> function
-                              (update :name local-names)
-                              ;; Before renaming: rewrite-calls rebuilds forms
-                              ;; with list*, which drops the :source-operation
-                              ;; metadata this reads. A friendly head is not in
-                              ;; the rename table, so it passes through
-                              ;; untouched while its arguments still get
-                              ;; renamed.
-                              (update :body resugar-capability-calls)
-                              (update :body rewrite-calls call-names)))
+                          (let [original-name (:name function)]
+                            (cond-> (-> function
+                                        (update :name local-names)
+                                        ;; Before renaming: rewrite-calls rebuilds forms
+                                        ;; with list*, which drops the :source-operation
+                                        ;; metadata this reads. A friendly head is not in
+                                        ;; the rename table, so it passes through
+                                        ;; untouched while its arguments still get
+                                        ;; renamed.
+                                        (update :body resugar-capability-calls)
+                                        (update :body rewrite-calls call-names))
+                              (invoke-dispatcher-name? original-name)
+                              (assoc :project-dispatcher original-name
+                                     :project-module-index module-index)
+                              (closure-apply-name? original-name)
+                              (assoc :project-closure-apply? true))))
                         locals)
         by-name (into {} (map (juxt :name identity) locals))
         interface
@@ -315,8 +367,49 @@
     {:namespace (:namespace info) :requires (:requires info)
      :functions functions :interface interface}))
 
-(defn- wrapper-form [[export {:keys [linked-name params param-types result]}]]
-  (list 'defn export (typed-params params param-types) result (list* linked-name params)))
+(defn- wrapper-form
+  [[export {:keys [linked-name params param-types result callable-param-contracts
+                   callable-result-contract]}]]
+  (list 'defn export
+        (typed-params params param-types callable-param-contracts)
+        (or callable-result-contract result)
+        (list* linked-name params)))
+
+(defn- typed-trap [result-type]
+  (if (= :bool result-type)
+    '(= (quot 1 0) 0)
+    (let [default (stub-value result-type)]
+      (list 'if '(= (quot 1 0) 0) default default))))
+
+(defn- project-dispatchers [functions]
+  (let [dispatchers (group-by :project-dispatcher
+                              (filter :project-dispatcher functions))
+        routed
+        (mapv
+         (fn [[dispatcher-name entries]]
+           (let [{:keys [params param-types result]} (first entries)
+                 closure (first params)
+                 body
+                 (reduce
+                  (fn [fallback {:keys [name project-module-index]}]
+                    (let [lower (* project-module-index frontend/max-functions)
+                          upper (+ lower frontend/max-functions)
+                          id (list 'pair-first closure)]
+                      (list 'if
+                            (list 'and (list '> id lower) (list '<= id upper))
+                            (list* name params)
+                            fallback)))
+                  (typed-trap result)
+                  (reverse (sort-by :project-module-index entries)))]
+             {:name dispatcher-name :params params :param-types param-types
+              :result result :effects #{} :body body}))
+         (sort-by (comp str key) dispatchers))
+        closure-apply (first (filter :project-closure-apply? functions))]
+    (cond-> routed
+      closure-apply
+      (conj (-> closure-apply
+                (assoc :name '__kotoba_closure_apply)
+                (dissoc :project-closure-apply?))))))
 
 (defn link-source
   "Link a closed namespace->source map into one bounded source unit."
@@ -370,7 +463,8 @@
                 (vswap! visiting disj name)))]
       (visit root 1))
     (let [root-module (get @linked root)
-          functions (vec (mapcat #(get-in @linked [% :functions]) @order))
+          module-functions (vec (mapcat #(get-in @linked [% :functions]) @order))
+          functions (into module-functions (project-dispatchers module-functions))
           export-count (reduce + (map #(count (get-in @linked [% :interface])) @order))
           exports (sort-by (comp str key) (:interface root-module))
           wrappers (mapv wrapper-form exports)
@@ -391,8 +485,12 @@
           (source-text
            (into [(list 'ns root (list :export (vec (map first exports))))]
                  (concat
-                  (map (fn [{:keys [name params param-types result body]}]
-                         (list 'defn- name (typed-params params param-types) result body))
+                  (map (fn [{:keys [name params param-types result body
+                                    callable-param-contracts callable-result-contract]}]
+                         (list 'defn- name
+                               (typed-params params param-types callable-param-contracts)
+                               (or callable-result-contract result)
+                               body))
                        functions)
                   wrappers)))
           linked-bytes (value/utf8-byte-count! linked-source)]

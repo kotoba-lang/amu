@@ -93,6 +93,35 @@
                   'example.age :js-kotoba-v1)]
     (is (= 7 (ir/execute (:kir compiled) 'age [])))))
 
+(deftest project-interfaces-preserve-public-callable-contracts
+  (let [provider
+        "(ns example.callables (:export [apply-one make-renderer make-document]))
+         (defn apply-one [f [:fn [[:i64] :i64]] x :i64] :i64 (f x))
+         (defn make-renderer [] [:fn [[:i64] :string]]
+           (fn [x] (string-from-i64 x)))
+         (defn make-document [] [:fn [[] :document]]
+           (fn [] (document-vector (document-i64 1))))"
+        consumer
+        "(ns example.use-callables
+           (:require [example.callables :as callables])
+           (:export [main]))
+         (defn main []
+           (+ (+ (callables/apply-one (fn [x] (+ x 1)) 4)
+                 (string-length
+                  (let [render (callables/make-renderer)] (render 42))))
+              (document-count
+               (let [build (callables/make-document)] (build)))))"
+        linked (project/link-source
+                {'example.callables provider 'example.use-callables consumer}
+                'example.use-callables)
+        compiled (compiler/compile-project
+                  {'example.callables provider 'example.use-callables consumer}
+                  'example.use-callables :js-kotoba-v1)]
+    (is (str/includes? (:source linked) "[:fn [[:i64] :i64]]"))
+    (is (str/includes? (:source linked) "[:fn [[:i64] :string]]"))
+    (is (str/includes? (:source linked) "[:fn [[] :document]]"))
+    (is (= 8 (ir/execute (:kir compiled) 'main [])))))
+
 (deftest project-stubs-cover-scalar-f64-and-f32-export-results
   ;; Regression for kotoba-lang/compiler#206 Bug 2: a cross-file :require of a
   ;; function whose declared result type is scalar :f64 (or :f32) failed at
