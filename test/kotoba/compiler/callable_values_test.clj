@@ -1,5 +1,6 @@
 (ns kotoba.compiler.callable-values-test
   (:require [clojure.test :refer [deftest is testing]]
+            [clojure.java.shell :as shell]
             [kotoba.compiler.core :as compiler]
             [kotoba.kir :as kir]))
 
@@ -254,6 +255,93 @@
                                 (fn [x] (option-some-of " option-string "
                                           (string-from-i64 x))) 3)
                               0))")))))))
+
+(deftest descriptor-keyed-collection-and-variant-results-use-contextual-application-syntax
+  (let [variant-type "[:variant :demo/reply [[:ok :i64] [:label :string]]]"
+        vector-type "[:vector [:i64 :string]]"
+        set-type "[:set :i64]"
+        map-type "[:map :keyword :string]"]
+    (is (= 7 (execute-main
+              (str "(defn main []
+                      (let [make (fn [x]
+                                   (variant-new " variant-type " :ok x))]
+                        (match-variant (make 7) " variant-type "
+                          (:ok value value)
+                          (:label text 0))))"))))
+    (is (= 8 (execute-main
+              (str "(ns demo (:schemas {:demo/reply " variant-type "}))
+                    (defn main []
+                      (let [make (fn [x]
+                                   (variant-new [:ref :demo/reply] :ok x))]
+                        (match-variant (make 8) [:ref :demo/reply]
+                          (:ok value value)
+                          (:label text 0))))"))))
+    (is (= 7 (execute-main
+              (str "(defn main []
+                      (let [make (fn [x]
+                                   (hetero-vector-new " vector-type " x \"ok\"))]
+                        (hetero-vector-at " vector-type " (make 7) 0)))"))))
+    (is (= 1 (execute-main
+              (str "(defn main []
+                      (let [make (fn [x] (typed-set-new " set-type " x))]
+                        (typed-set-count " set-type " (make 7))))"))))
+    (is (= 1 (execute-main
+              (str "(defn main []
+                      (typed-set-count " set-type "
+                        (invoke " set-type "
+                          (fn [x] (typed-set-new " set-type " x)) 7)))"))))
+    (is (= 2 (execute-main
+              (str "(defn main []
+                      (let [render (fn [x] (string-from-i64 x))
+                            make (fn [x]
+                                   (typed-map-new " map-type "
+                                     :value (render x)))]
+                        (string-length
+                          (option-value-of [:option :string]
+                            (typed-map-get " map-type " (make 42) :value)
+                            \"\"))))"))))
+    (testing "a variant dispatcher traps before returning its typed default"
+      (is (thrown? clojure.lang.ExceptionInfo
+                   (execute-main
+                    (str "(defn main []
+                            (match-variant
+                              (invoke " variant-type " (fn [x] (+ x 1)) 3)
+                              " variant-type "
+                              (:ok value value)
+                              (:label text 0)))")))))
+    (testing "descriptor-distinct typed collections do not share candidates"
+      (is (thrown? clojure.lang.ExceptionInfo
+                   (execute-main
+                    "(defn main []
+                       (typed-set-count [:set :string]
+                         (invoke [:set :string]
+                           (fn [x] (typed-set-new [:set :i64] x)) 3)))"))))))
+
+(deftest descriptor-keyed-collection-closures-lower-reproducibly-for-js-and-wasm
+  (let [source "(defn main []
+                  (let [make (fn [x]
+                               (typed-map-new [:map :keyword :string]
+                                 :value (string-from-i64 x)))]
+                    (string-length
+                      (option-value-of [:option :string]
+                        (typed-map-get [:map :keyword :string]
+                          (make 42) :value)
+                        \"\"))))"
+        js (compiler/compile-source source :js-kotoba-v1)
+        wasm-a (compiler/compile-source source :wasm32-browser-kotoba-v1)
+        wasm-b (compiler/compile-source source :wasm32-browser-kotoba-v1)
+        module (java.io.File/createTempFile "kotoba-structured-closure-" ".mjs")
+        probe (try
+                (spit module
+                      (str (:source js)
+                           "\nconst x=instantiateKotoba({});"
+                           "if(x.main()!==2n)process.exit(2);"))
+                (shell/sh "node" (.getPath module))
+                (finally (.delete module)))]
+    (is (= 2 (kir/execute (:kir js) 'main [])))
+    (is (zero? (:exit probe)) (:err probe))
+    (is (= (:kir wasm-a) (:kir wasm-b)))
+    (is (java.util.Arrays/equals ^bytes (:bytes wasm-a) ^bytes (:bytes wasm-b)))))
 
 (deftest lexical-string-results-use-contextual-application-syntax
   (is (= 2 (execute-main
