@@ -2,4 +2,8 @@
   (lazy-cons n (naturals (+ n 1))))
 
 (defn main []
-  (lazy-first (drop 4 (naturals 38))))
+  (let [increment (fn [x] (+ x 1))
+        above-41? (fn [x] (> x 41))]
+    (lazy-first
+     (lazy-filter above-41?
+                  (lazy-map increment (naturals 37))))))
