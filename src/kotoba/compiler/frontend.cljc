@@ -2470,57 +2470,97 @@
               (reject! "dec requires one i64" form))
             (list '- (desugar-expr (first args)) 1))
         ;; T4.5: bounded reduce over vector-i64 → zero-charge loop.
-        ;; Admits (reduce + init coll), (reduce (fn [acc x] expr) init coll),
-        ;; or (reduce named-binary init coll) for arity-2 module defn.
+        ;; With an explicit init, admits arithmetic, inline, named, or stored
+        ;; binary callbacks.  Without an init, the callback must provide the
+        ;; Clojure-compatible zero and binary arities: empty vectors invoke
+        ;; arity zero, while non-empty vectors start with their first item.
         reduce
         (do
-          (when-not (= 3 (count args))
-            (reject! "reduce requires fn, init, and collection" form))
-          (let [[f-form init-form coll-form] args
-                init* (desugar-expr init-form)
-                coll* (desugar-expr coll-form)
-                v (synthetic "reduce_v")
-                i (synthetic "reduce_i")
-                acc (synthetic "reduce_acc")
-                stored? (not (or (and (symbol? f-form)
-                                      (nil? (namespace f-form))
-                                      (or (contains? '#{+ - * bit-and bit-or bit-xor} f-form)
-                                          (contains? *function-arities* f-form)))
-                                 (and (seq? f-form) (= 'fn (first f-form)))))
-                callback (when stored? (synthetic "reduce_callback"))
-                step
-                (cond
-                  (and (symbol? f-form)
-                       (nil? (namespace f-form))
-                       (contains? '#{+ - * bit-and bit-or bit-xor} f-form))
-                  (list f-form acc (list 'vector-at v i))
+          (when-not (#{2 3} (count args))
+            (reject! "reduce requires callback+collection or callback+init+collection" form))
+          (if (= 2 (count args))
+            (let [[f-form coll-form] args
+                  named? (and (symbol? f-form)
+                              (nil? (namespace f-form))
+                              (contains? *function-arities* f-form))
+                  _ (when (and named?
+                               (not (every? (get *function-arities* f-form) [0 2])))
+                      (reject! "named no-init reduce callback must provide arities 0 and 2" f-form))
+                  inline? (and (seq? f-form) (= 'fn (first f-form)))
+                  _ (when inline?
+                      (let [[_ params-or-clause & tail] f-form
+                            clauses (when-not (vector? params-or-clause)
+                                      (cons params-or-clause tail))
+                            arities (when (and (seq clauses)
+                                               (every? #(and (seq? %)
+                                                             (vector? (first %)))
+                                                       clauses))
+                                      (mapv #(count (first %)) clauses))]
+                        (when-not (= #{0 2} (set arities))
+                          (reject! "inline no-init reduce callback must define exactly [] and [acc value] arities"
+                                   f-form))))
+                  callback* (desugar-expr (if named? (list 'fn-ref f-form) f-form))
+                  coll* (desugar-expr coll-form)
+                  callback (synthetic "reduce_callback")
+                  v (synthetic "reduce_v")
+                  i (synthetic "reduce_i")
+                  acc (synthetic "reduce_acc")]
+              (desugar-expr
+               (list 'let [callback callback* v coll*]
+                     (list 'if (list '= (list 'vector-count v) 0)
+                           (list (invoke-dispatcher-name 0) callback)
+                           (list 'loop [i 1 acc (list 'vector-at v 0)]
+                                 (list 'if (list '< i (list 'vector-count v))
+                                       (list 'recur
+                                             (list '+ i 1)
+                                             (list (invoke-dispatcher-name 2) callback acc
+                                                   (list 'vector-at v i)))
+                                       acc))))))
+            (let [[f-form init-form coll-form] args
+                  init* (desugar-expr init-form)
+                  coll* (desugar-expr coll-form)
+                  v (synthetic "reduce_v")
+                  i (synthetic "reduce_i")
+                  acc (synthetic "reduce_acc")
+                  stored? (not (or (and (symbol? f-form)
+                                        (nil? (namespace f-form))
+                                        (or (contains? '#{+ - * bit-and bit-or bit-xor} f-form)
+                                            (contains? *function-arities* f-form)))
+                                   (and (seq? f-form) (= 'fn (first f-form)))))
+                  callback (when stored? (synthetic "reduce_callback"))
+                  step
+                  (cond
+                    (and (symbol? f-form)
+                         (nil? (namespace f-form))
+                         (contains? '#{+ - * bit-and bit-or bit-xor} f-form))
+                    (list f-form acc (list 'vector-at v i))
 
-                  (and (seq? f-form) (= 'fn (first f-form)))
-                  (let [[_ params & body] f-form]
-                    (when-not (and (vector? params) (= 2 (count params))
-                                   (every? symbol? params)
-                                   (= 1 (count body)))
-                      (reject! "reduce fn must be (fn [acc x] single-expr)" f-form))
-                    (let [[a b] params]
-                      (list 'let [a acc
-                                  b (list 'vector-at v i)]
-                            (desugar-expr (first body)))))
+                    (and (seq? f-form) (= 'fn (first f-form)))
+                    (let [[_ params & body] f-form]
+                      (when-not (and (vector? params) (= 2 (count params))
+                                     (every? symbol? params)
+                                     (= 1 (count body)))
+                        (reject! "reduce fn must be (fn [acc x] single-expr)" f-form))
+                      (let [[a b] params]
+                        (list 'let [a acc
+                                    b (list 'vector-at v i)]
+                              (desugar-expr (first body)))))
 
-                  ;; Named binary module function (fail-closed if unbound / wrong arity).
-                  (and (symbol? f-form) (nil? (namespace f-form))
-                       (contains? *function-arities* f-form))
-                  (list f-form acc (list 'vector-at v i))
+                    ;; Named binary module function (fail-closed if unbound / wrong arity).
+                    (and (symbol? f-form) (nil? (namespace f-form))
+                         (contains? *function-arities* f-form))
+                    (list f-form acc (list 'vector-at v i))
 
-                  :else
-                  (list (invoke-dispatcher-name 2) callback acc
-                        (list 'vector-at v i)))]
-            ;; Re-enter desugar so loop → __kotoba_loop_N under *pending-loop-helpers*.
-            (desugar-expr
-             (list 'let (vec (concat (when stored? [callback f-form]) [v coll*]))
-                   (list 'loop [i 0 acc init*]
-                         (list 'if (list '< i (list 'vector-count v))
-                               (list 'recur (list '+ i 1) step)
-                               acc))))))
+                    :else
+                    (list (invoke-dispatcher-name 2) callback acc
+                          (list 'vector-at v i)))]
+              ;; Re-enter desugar so loop → __kotoba_loop_N under *pending-loop-helpers*.
+              (desugar-expr
+               (list 'let (vec (concat (when stored? [callback f-form]) [v coll*]))
+                     (list 'loop [i 0 acc init*]
+                           (list 'if (list '< i (list 'vector-count v))
+                                 (list 'recur (list '+ i 1) step)
+                                 acc)))))))
         ;; T4.5: bounded map over vector-i64 → zero-charge loop + vector-conj.
         ;; 1-source: (map (fn [x] e)|inc|dec|named coll)
         ;; 2-source: (map (fn [x y] e)|named a b) — shortest-collection termination.

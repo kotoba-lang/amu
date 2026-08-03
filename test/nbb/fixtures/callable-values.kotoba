@@ -1,8 +1,10 @@
 (defn add [a b] (+ a b))
+(defn sum ([] 0) ([acc value] (+ acc value)))
 
 (defn main []
   (let [offset 2
         add-offset (fn [x] (+ x offset))
         mapped (map add-offset [1])]
-    (+ (vector-at mapped 0)
-       (apply (fn-ref add) (list 19 20)))))
+    (+ (reduce sum mapped)
+       (+ (reduce sum [])
+          (apply (fn-ref add) (list 19 20))))))
