@@ -343,6 +343,66 @@
     (is (= (:kir wasm-a) (:kir wasm-b)))
     (is (java.util.Arrays/equals ^bytes (:bytes wasm-a) ^bytes (:bytes wasm-b)))))
 
+(deftest numeric-closure-results-use-contextual-application-syntax
+  (let [one-f64-bits 4607182418800017408
+        two-f64-bits 4611686018427387904
+        one-f32-bits 1065353216]
+    (is (= two-f64-bits
+           (execute-main
+            (str "(defn main []
+                    (let [decode (fn [bits] (f64-from-bits bits))]
+                      (f64-to-bits (f64-add (decode " one-f64-bits ")
+                                            (decode " one-f64-bits ")))))"))))
+    (is (= one-f32-bits
+           (execute-main
+            (str "(defn main []
+                    (let [decode (fn [bits] (f32-from-bits bits))]
+                      (f32-to-bits (f32-abs (decode " one-f32-bits ")))))"))))
+    (is (= two-f64-bits
+           (execute-main
+            (str "(defn main []
+                    (let [singleton (fn [bits]
+                                      (vector-f64-new (f64-from-bits bits)))]
+                      (f64-to-bits
+                        (vector-f64-at (singleton " two-f64-bits ") 0))))"))))
+    (is (= one-f64-bits
+           (execute-main
+            (str "(defn main []
+                    (f64-to-bits
+                      (invoke :f64 (fn [bits] (f64-from-bits bits))
+                        " one-f64-bits ")))"))))
+    (testing "numeric result dispatch remains family-specific"
+      (is (thrown? clojure.lang.ExceptionInfo
+                   (execute-main
+                    (str "(defn main []
+                            (f64-to-bits
+                              (invoke :f64
+                                (fn [bits] (f32-from-bits bits))
+                                " one-f32-bits ")))")))))))
+
+(deftest numeric-closure-results-lower-reproducibly-for-js-and-wasm
+  (let [source "(defn main []
+                  (let [singleton (fn [bits]
+                                    (vector-f64-new (f64-from-bits bits)))]
+                    (f64-to-bits
+                      (vector-f64-at
+                        (singleton 4607182418800017408) 0))))"
+        js (compiler/compile-source source :js-kotoba-v1)
+        wasm-a (compiler/compile-source source :wasm32-browser-kotoba-v1)
+        wasm-b (compiler/compile-source source :wasm32-browser-kotoba-v1)
+        module (java.io.File/createTempFile "kotoba-numeric-closure-" ".mjs")
+        probe (try
+                (spit module
+                      (str (:source js)
+                           "\nconst x=instantiateKotoba({});"
+                           "if(x.main()!==4607182418800017408n)process.exit(2);"))
+                (shell/sh "node" (.getPath module))
+                (finally (.delete module)))]
+    (is (= 4607182418800017408 (kir/execute (:kir js) 'main [])))
+    (is (zero? (:exit probe)) (:err probe))
+    (is (= (:kir wasm-a) (:kir wasm-b)))
+    (is (java.util.Arrays/equals ^bytes (:bytes wasm-a) ^bytes (:bytes wasm-b)))))
+
 (deftest lexical-string-results-use-contextual-application-syntax
   (is (= 2 (execute-main
             "(defn main []
