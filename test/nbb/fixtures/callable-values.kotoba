@@ -2,6 +2,7 @@
 
 (defn main []
   (let [offset 2
-        add-offset (fn [x] (+ x offset))]
-    (+ (invoke add-offset 1)
+        add-offset (fn [x] (+ x offset))
+        mapped (map add-offset [1])]
+    (+ (vector-at mapped 0)
        (apply (fn-ref add) (list 19 20)))))
