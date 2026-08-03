@@ -12,11 +12,14 @@
         keep? (fn [x] (> x 2))
         filtered (filter keep? mapped)
         render (fn [x] (string-from-i64 x))
-        rendered-size (string-length (render 42))]
-    (+ rendered-size
+        rendered-size (string-length (render 42))
+        build-document (fn [x] (document-vector (document-i64 x)))
+        document-size (document-count (build-document 42))]
+    (+ document-size
+       (+ rendered-size
        (+ (vector-at wide 0)
        (+ (vector-at (singleton 7) 0)
        (+ direct
        (+ (reduce sum filtered)
           (+ (reduce sum [])
-             (apply (fn-ref add) (list 19 20))))))))))
+             (apply (fn-ref add) (list 19 20)))))))))))
