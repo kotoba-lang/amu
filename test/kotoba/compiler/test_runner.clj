@@ -67,6 +67,7 @@
             [kotoba.compiler.f32-value-test]
             [kotoba.compiler.frontend-limits-test]
             [kotoba.compiler.frontend-multimethod-test]
+            [kotoba.compiler.record-protocol-static-dispatch-test]
             [kotoba.compiler.callable-values-test]
             [kotoba.compiler.lazy-sequence-test]
             [kotoba.compiler.frontend-extensions-test]
@@ -186,6 +187,7 @@
                                           'kotoba.compiler.f32-value-test
                                           'kotoba.compiler.frontend-limits-test
                                           'kotoba.compiler.frontend-multimethod-test
+                                          'kotoba.compiler.record-protocol-static-dispatch-test
                                           'kotoba.compiler.callable-values-test
                                           'kotoba.compiler.lazy-sequence-test
                                           'kotoba.compiler.frontend-extensions-test
