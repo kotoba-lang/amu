@@ -5117,6 +5117,8 @@
                     functions)
               (recur next-resolved))))))))
 
+(def ^:dynamic *record-protocol-dispatch* {})
+
 (defn- rewrite-record-projection
   "Type-directed rewrite: `(record-get value :field)` -> the canonical
   `(record-get SCHEMA value :field)`, recovering SCHEMA from the value's
@@ -5249,6 +5251,24 @@
                                                     signatures schemas)])
                       branches)))
 
+        (contains? (:methods *record-protocol-dispatch*) op)
+        (let [{:keys [arity implementations]}
+              (get-in *record-protocol-dispatch* [:methods op])
+              rewritten-args
+              (mapv #(rewrite-record-projection % locals signatures schemas) args)]
+          (when-not (= arity (count rewritten-args))
+            (reject! "protocol method call does not match its declared arity"
+                     form :kotoba.error/protocol-method))
+          (let [receiver-type (infer-expression-type (first rewritten-args)
+                                                     locals signatures)
+                type-id (nominal-type-identity receiver-type)
+                implementation (get implementations type-id)]
+            (when-not implementation
+              (reject! (str "protocol method requires a statically known implemented record; got "
+                            (pr-str receiver-type))
+                       form :kotoba.error/protocol-dispatch))
+            (list* implementation rewritten-args)))
+
         (and (= op 'variant-new)
              (schema-ref-type? (first args)))
         (let [descriptor (get schemas (second (first args)))]
@@ -5299,7 +5319,10 @@
           (list 'record-get descriptor value (second args)))
 
         :else
-        (cons op (map #(rewrite-record-projection % locals signatures schemas) args)))))))
+        ;; Force recursive rewrites while the per-analysis protocol dispatch
+        ;; binding is active. A lazy `map` here deferred nested protocol calls
+        ;; until validation, after the binding had unwound.
+        (cons op (mapv #(rewrite-record-projection % locals signatures schemas) args)))))))
 
 (defn- infer-absent-results
   "Give every unannotated `defn` the result type its body actually has.
@@ -5611,8 +5634,9 @@
   "Apply `rewrite-record-projection` to every function body. Only modules that
   declare param types can resolve the sugar; untyped modules are left alone and
   a 2-arity `record-get` there fails closed in validation as before."
-  ([functions] (rewrite-record-projections functions {}))
-  ([functions schemas]
+  ([functions] (rewrite-record-projections functions {} {}))
+  ([functions schemas] (rewrite-record-projections functions schemas {}))
+  ([functions schemas protocol-dispatch]
    (let [signatures (into {} (map (fn [{:keys [name params param-types result]}]
                                     [name {:params params :param-types param-types
                                            :result result}])
@@ -5636,10 +5660,11 @@
      ;; shape of a bug rather than a rule. `rewrite-record-projection` already
      ;; tolerates an empty locals map -- it only consults locals for inference,
      ;; and an untypeable binding is allowed to have no known type there.
-     (mapv (fn [{:keys [params param-types] :as f}]
-             (update f :body rewrite-record-projection
-                     (zipmap params param-types) signatures schemas))
-           functions))))
+     (binding [*record-protocol-dispatch* protocol-dispatch]
+       (mapv (fn [{:keys [params param-types] :as f}]
+               (update f :body rewrite-record-projection
+                       (zipmap params param-types) signatures schemas))
+             functions)))))
 
 (defn- check-value-types! [functions]
   (let [signatures (into {} (map (fn [{:keys [name params param-types result]}]
@@ -6588,6 +6613,213 @@
                        :else form))
                    forms))))))
 
+(defn- protocol-form->info [form]
+  (let [[_ protocol-name & methods] form]
+    (when-not (and (valid-name? protocol-name)
+                   (seq methods)
+                   (every? #(and (seq? %)
+                                 (= 2 (count %))
+                                 (valid-name? (first %))
+                                 (vector? (second %))
+                                 (seq (second %))
+                                 (<= (count (second %)) max-parameters)
+                                 (every? valid-name? (second %)))
+                           methods)
+                   (= (count methods) (count (distinct (map first methods)))))
+      (reject! "defprotocol requires unique bounded (method [this ...]) signatures"
+               form :kotoba.error/protocol-declaration))
+    {:name protocol-name
+     :methods (into {} (map (fn [[method-name params]] [method-name params]) methods))}))
+
+(defn- record-descriptor [namespace-symbol record-name fields]
+  [:record (keyword (str namespace-symbol) (name record-name))
+   (mapv (fn [field] [(keyword (name field)) :i64]) fields)])
+
+(defn- extension-implementations
+  [protocols records protocol-name record-name method-forms whole-form]
+  (let [protocol (get protocols protocol-name)
+        record (get records record-name)]
+    (when-not (and protocol record (seq method-forms))
+      (reject! "protocol extension requires a declared protocol, record, and methods"
+               whole-form :kotoba.error/protocol-extension))
+    (mapv
+     (fn [[method-name params & body :as method-form]]
+       (let [declared-params (get-in protocol [:methods method-name])]
+         (when-not (and declared-params
+                        (= 1 (count body))
+                        (vector? params)
+                        (= (count params) (count declared-params))
+                        (every? valid-name? params)
+                        (= (count params) (count (distinct params))))
+           (reject! "protocol method does not match its declaration"
+                    method-form :kotoba.error/protocol-method))
+         {:protocol protocol-name
+          :method method-name
+          :record record-name
+          :record-type (:descriptor record)
+          :params params
+          :body (first body)}))
+     method-forms)))
+
+(defn- record-form->info [namespace-symbol protocols form]
+  (let [[_ record-name fields & extra] form]
+    (when-not (and (valid-name? record-name)
+                   (vector? fields)
+                   (<= (count fields) max-parameters)
+                   (every? valid-name? fields)
+                   (= (count fields) (count (distinct fields))))
+      (reject! "defrecord requires a bounded name and unique symbol fields"
+               form :kotoba.error/record-declaration))
+    (let [descriptor (record-descriptor namespace-symbol record-name fields)
+          groups (loop [remaining extra out []]
+                   (if (empty? remaining)
+                     out
+                     (let [protocol-name (first remaining)
+                           [methods tail] (split-with seq? (rest remaining))]
+                       (when-not (and (symbol? protocol-name) (seq methods))
+                         (reject! "defrecord protocol section requires methods"
+                                  form :kotoba.error/protocol-extension))
+                       (recur tail (conj out [protocol-name methods])))))
+          record {:name record-name :fields fields :descriptor descriptor}
+          implementations
+          (mapcat (fn [[protocol-name methods]]
+                    (extension-implementations protocols {record-name record}
+                                               protocol-name record-name methods form))
+                  groups)]
+      (assoc record :implementations implementations))))
+
+(defn- rewrite-map-constructors [form records-by-map-constructor]
+  (cond
+    (seq? form)
+    (let [[op & args] form]
+      (preserve-form-meta
+       form
+       (cond
+        (= 'quote op) form
+
+        (contains? records-by-map-constructor op)
+        (let [{:keys [fields descriptor]} (get records-by-map-constructor op)
+              source-map (first args)
+              field-keys (mapv (comp keyword name) fields)]
+          (when-not (and (= 1 (count args))
+                         (map? source-map)
+                         (= (set field-keys) (set (keys source-map))))
+            (reject! "map-> record construction requires one literal map with exactly the declared fields"
+                     form :kotoba.error/record-map-constructor))
+          (list* 'record-new descriptor (map source-map field-keys)))
+
+        :else
+        (list* op (mapv #(rewrite-map-constructors % records-by-map-constructor) args)))))
+    (vector? form) (mapv #(rewrite-map-constructors % records-by-map-constructor) form)
+    (map? form) (into (empty form)
+                      (map (fn [[k v]] [(rewrite-map-constructors k records-by-map-constructor)
+                                       (rewrite-map-constructors v records-by-map-constructor)]))
+                      form)
+    (set? form) (set (map #(rewrite-map-constructors % records-by-map-constructor) form))
+    :else form))
+
+(defn- rewrite-record-member-access [form receiver descriptor]
+  (cond
+    (seq? form)
+    (let [[op & args] form]
+      (if (and (= 'get op)
+               (<= 2 (count args) 3)
+               (= receiver (first args))
+               (keyword? (second args)))
+        (list 'record-get descriptor receiver (second args))
+        (list* op (mapv #(rewrite-record-member-access % receiver descriptor) args))))
+    (vector? form) (mapv #(rewrite-record-member-access % receiver descriptor) form)
+    (map? form) (into (empty form)
+                      (map (fn [[k v]] [(rewrite-record-member-access k receiver descriptor)
+                                       (rewrite-record-member-access v receiver descriptor)]))
+                      form)
+    :else form))
+
+(defn- expand-record-protocol-forms [forms]
+  (let [namespace-symbol (or (some (fn [form]
+                                     (when (and (seq? form) (= 'ns (first form)))
+                                       (second form)))
+                                   forms)
+                             'kotoba.user)
+        protocol-forms (filter #(and (seq? %)
+                                     (contains? '#{defprotocol definterface} (first %)))
+                               forms)
+        protocol-infos (mapv protocol-form->info protocol-forms)
+        protocols (into {} (map (juxt :name identity)) protocol-infos)
+        _ (when-not (= (count protocols) (count protocol-infos))
+            (reject! "duplicate protocol name" protocol-forms
+                     :kotoba.error/protocol-declaration))
+        method-names (mapcat (comp keys :methods) protocol-infos)
+        _ (when-not (= (count method-names) (count (distinct method-names)))
+            (reject! "protocol method names must be unique within a namespace"
+                     protocol-forms :kotoba.error/protocol-declaration))
+        declared-function-names
+        (into #{} (keep (fn [form]
+                          (when (and (seq? form)
+                                     (contains? '#{defn defn-} (first form)))
+                            (second form)))) forms)
+        _ (when (seq (set/intersection (set method-names) declared-function-names))
+            (reject! "protocol method names must not collide with declared functions"
+                     protocol-forms :kotoba.error/protocol-declaration))
+        record-forms (filter #(and (seq? %) (= 'defrecord (first %))) forms)
+        record-infos (mapv #(record-form->info namespace-symbol protocols %) record-forms)
+        records (into {} (map (juxt :name identity)) record-infos)
+        _ (when-not (= (count records) (count record-infos))
+            (reject! "duplicate record name" record-forms :kotoba.error/record-declaration))
+        extend-type-forms (filter #(and (seq? %) (= 'extend-type (first %))) forms)
+        extend-type-impls
+        (mapcat (fn [[_ record-name protocol-name & methods :as form]]
+                  (extension-implementations protocols records protocol-name
+                                             record-name methods form))
+                extend-type-forms)
+        unsupported (filter #(and (seq? %) (= 'extend-protocol (first %))) forms)
+        _ (when (seq unsupported)
+            (reject! "extend-protocol is outside the canonical compiler's first static-dispatch profile; use extend-type"
+                     (first unsupported) :kotoba.error/protocol-extension))
+        implementations (vec (concat (mapcat :implementations record-infos)
+                                     extend-type-impls))
+        identities (map (juxt :protocol :method :record) implementations)
+        _ (when-not (= (count identities) (count (distinct identities)))
+            (reject! "duplicate protocol method implementation" implementations
+                     :kotoba.error/protocol-extension))
+        named-impls (mapv #(assoc %1 :impl-name
+                                  (symbol (str "__kotoba_protocol_impl_" %2)))
+                          implementations (range))
+        constructors
+        (mapv (fn [{:keys [name fields descriptor]}]
+                (list 'defn (symbol (str "->" name)) fields descriptor
+                      (list* 'record-new descriptor fields)))
+              record-infos)
+        impl-defs
+        (mapv (fn [{:keys [impl-name params record-type body]}]
+                (let [typed-params
+                      (vec (mapcat (fn [index param]
+                                     [param (if (zero? index) record-type :i64)])
+                                   (range) params))]
+                  (list 'defn- impl-name typed-params
+                        (rewrite-record-member-access body (first params) record-type))))
+              named-impls)
+        dispatch
+        {:methods (into {}
+                        (map (fn [[method-name params]]
+                               [method-name {:arity (count params)
+                                             :implementations
+                                             (into {}
+                                                   (keep (fn [{:keys [method record-type impl-name]}]
+                                                           (when (= method method-name)
+                                                             [(second record-type) impl-name])))
+                                                   named-impls)}]))
+                        (mapcat :methods protocol-infos))}
+        map-constructors
+        (into {} (map (fn [{:keys [name] :as record}]
+                        [(symbol (str "map->" name)) record]))
+              record-infos)
+        declarations '#{defrecord defprotocol definterface extend-type extend-protocol}
+        ordinary (remove #(and (seq? %) (contains? declarations (first %))) forms)
+        rewritten (mapv #(rewrite-map-constructors % map-constructors) ordinary)]
+    {:forms (into rewritten (concat constructors impl-defs))
+     :dispatch dispatch}))
+
 (defn analyze
   "Analyze Kotoba source into HIR.
 
@@ -6611,6 +6843,9 @@
             (reject-reserved-source-symbols! forms))
         _ (when (= :pure-product language-profile)
             (check-pure-product-source-forms! forms))
+        record-protocol-expansion (expand-record-protocol-forms forms)
+        forms (:forms record-protocol-expansion)
+        protocol-dispatch (:dispatch record-protocol-expansion)
         forms (expand-closed-multimethod-forms forms)
         namespaces (filter #(and (seq? %) (= 'ns (first %))) forms)
         defs (filter #(and (seq? %) (contains? '#{defn defn-} (first %))) forms)
@@ -6906,7 +7141,8 @@
         ;; destructures [type value field], so a 2-arity form reaching it puts
         ;; the value symbol in the type slot and `(nth type 2)` throws.
         parsed (infer-absent-results parsed)
-        parsed (rewrite-record-projections parsed (:schemas namespace-info))
+        parsed (rewrite-record-projections parsed (:schemas namespace-info)
+                                           protocol-dispatch)
         ;; `option-or` intentionally survives syntactic desugaring until the
         ;; rewrite above can infer its payload descriptor from locals and
         ;; function signatures. Re-run absent-result inference now that the
