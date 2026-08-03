@@ -665,8 +665,17 @@
 (def ^:dynamic *pending-lambdas* nil)
 (def ^:dynamic *uses-apply?* nil)
 
-(defn- invoke-dispatcher-name [arity]
-  (symbol (str "__kotoba_invoke$arity" arity)))
+(def ^:private closure-result-types #{:i64 :bool})
+
+(defn- invoke-dispatcher-name
+  ([arity] (invoke-dispatcher-name :i64 arity))
+  ([result-type arity]
+   (when-not (contains? closure-result-types result-type)
+     (reject! "closure result type is outside the admitted dispatcher profile"
+              result-type))
+   (symbol (str "__kotoba_invoke"
+                (when-not (= :i64 result-type) (str "_" (name result-type)))
+                "$arity" arity))))
 
 (defn- nth-pair-second [expr n]
   (nth (iterate (fn [value] (list 'pair-second value)) expr) n))
@@ -741,33 +750,47 @@
                              helper-name (symbol (str "__kotoba_lambda_" id "_arity" arity))]
                          {:id id :arity arity :captures captures
                           :helper {:name helper-name :params (into captures params)
-                                   :result :i64 :effects #{} :body body}}))
+                                   :result :i64 :result-inferred? true
+                                   :effects #{} :body body}}))
                      lowered)))
       (list 'pair id (desugar-list captures form)))))
 
 (defn- lambda-dispatchers [lambda-infos force-all-arities?]
-  (mapv
-   (fn [arity]
-     (let [closure (symbol (str "__kotoba_closure_" arity))
-           args (mapv #(symbol (str "__kotoba_invoke_arg_" %)) (range arity))
-           candidates (filter #(= arity (:arity %)) lambda-infos)
-           body (reduce
-                 (fn [fallback {:keys [id captures helper]}]
-                   (let [capture-chain (list 'pair-second closure)
-                         capture-values
-                         (map-indexed (fn [index _]
-                                        (list 'pair-first
-                                              (nth-pair-second capture-chain index)))
-                                      captures)]
-                     (list 'if (list '= (list 'pair-first closure) id)
-                           (apply list (:name helper) (concat capture-values args))
-                           fallback)))
-                 0 (reverse candidates))]
-       {:name (invoke-dispatcher-name arity) :params (into [closure] args)
-        :result :i64 :effects #{} :body body}))
-   (if force-all-arities?
-     (range 5)
-     (sort (distinct (map :arity lambda-infos))))))
+  (let [requested (into #{}
+                        (mapcat (fn [{:keys [arity helper]}]
+                                  [[:i64 arity] [(:result helper) arity]]))
+                        lambda-infos)
+        requested (if force-all-arities?
+                    (into requested (map (fn [arity] [:i64 arity]) (range 5)))
+                    requested)]
+    (mapv
+     (fn [[result-type arity]]
+       (let [closure (symbol (str "__kotoba_closure_" (name result-type) "_" arity))
+             args (mapv #(symbol (str "__kotoba_invoke_arg_" %)) (range arity))
+             candidates (filter #(and (= arity (:arity %))
+                                      (= result-type (get-in % [:helper :result])))
+                                lambda-infos)
+             ;; A closure id belonging to a different result family is a
+             ;; type error at the dynamic boundary.  Produce a result-typed
+             ;; trap instead of silently coercing it to false/zero.
+             fallback (case result-type
+                        :bool '(= (quot 1 0) 0)
+                        '(quot 1 0))
+             body (reduce
+                   (fn [fallback {:keys [id captures helper]}]
+                     (let [capture-chain (list 'pair-second closure)
+                           capture-values
+                           (map-indexed (fn [index _]
+                                          (list 'pair-first
+                                                (nth-pair-second capture-chain index)))
+                                        captures)]
+                       (list 'if (list '= (list 'pair-first closure) id)
+                             (apply list (:name helper) (concat capture-values args))
+                             fallback)))
+                   fallback (reverse candidates))]
+         {:name (invoke-dispatcher-name result-type arity) :params (into [closure] args)
+          :result result-type :effects #{} :body body}))
+     (sort-by (juxt (comp name first) second) requested))))
 
 (def ^:private closure-apply-helper
   {:name '__kotoba_closure_apply
@@ -1924,11 +1947,14 @@
         invoke
         (if (contains? *function-arities* 'invoke)
           (apply list 'invoke (map desugar-expr args))
-          (do
-            (when-not (<= 1 (count args) 5)
-              (reject! "invoke requires a closure and zero to four arguments" form))
-            (apply list (invoke-dispatcher-name (dec (count args)))
-                   (map desugar-expr args))))
+          (let [typed? (contains? closure-result-types (first args))
+                result-type (if typed? (first args) :i64)
+                call-args (if typed? (rest args) args)]
+            (when-not (<= 1 (count call-args) 5)
+              (reject! "invoke requires an optional :i64/:bool result type, a closure, and zero to four arguments"
+                       form))
+            (apply list (invoke-dispatcher-name result-type (dec (count call-args)))
+                   (map desugar-expr call-args))))
         apply
         (if (contains? *function-arities* 'apply)
           (apply list 'apply (map desugar-expr args))
@@ -2700,7 +2726,7 @@
                   (list p-form x)
 
                   :else
-                  (list (invoke-dispatcher-name 1) callback x))]
+                  (list (invoke-dispatcher-name :bool 1) callback x))]
             (binding [*loop-result-type* :vector-i64]
               (desugar-expr
                (list 'let (vec (concat (when stored? [callback p-form]) [v coll*]))
@@ -5349,9 +5375,32 @@
                                       effects-ceiling (assoc :effects-ceiling effects-ceiling))]
                                    @loop-helpers)))))
                      def-parts)))
+        ;; Infer lambda helper bodies before constructing dispatchers.  A
+        ;; dispatcher has one concrete Wasm result type, so bool-returning
+        ;; closures must not share the legacy i64 dispatcher family.  Keep
+        ;; every not-yet-admitted result on the legacy i64 path, where the
+        ;; ordinary value checker retains its previous fail-closed behavior.
+        preliminary-lambdas
+        (let [helpers (mapv :helper @lambda-infos)
+              candidates (->> (into parsed helpers)
+                              (mapv #(update % :body resolve-overloaded-calls
+                                             overloads overloaded-sources))
+                              (mapv #(if (:param-types %)
+                                       %
+                                       (assoc % :param-types
+                                              (vec (repeat (count (:params %)) :i64)))))
+                              infer-absent-results)
+              by-name (into {} (map (juxt :name identity)) candidates)]
+          (mapv (fn [{:keys [helper] :as info}]
+                  (let [typed (get by-name (:name helper))]
+                    (assoc info :helper
+                           (if (= :bool (:result typed))
+                             typed
+                             (dissoc helper :result-inferred?)))))
+                @lambda-infos))
         parsed (into parsed
-                     (concat (map :helper @lambda-infos)
-                             (lambda-dispatchers @lambda-infos @uses-apply?)
+                     (concat (map :helper preliminary-lambdas)
+                             (lambda-dispatchers preliminary-lambdas @uses-apply?)
                              (when @uses-apply? [closure-apply-helper])))
         _ (when (> (count parsed) max-functions)
             (reject! "function count exceeds admission limit after closure lowering"
