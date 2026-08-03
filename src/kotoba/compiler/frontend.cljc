@@ -158,6 +158,7 @@
 (def variant-operations '#{variant-new variant-match})
 (def generic-option-operations
   '#{option-some-of option-none-of option-some?-of option-value-of option-match})
+(def canonical-list-operations '#{typed-list-new})
 (def heterogeneous-vector-operations
   '#{hetero-vector-new hetero-vector-count hetero-vector-at
      hetero-vector-assoc hetero-vector-equal})
@@ -320,6 +321,7 @@
              (set (keys parametric-result-operations))
              variant-operations
              generic-option-operations
+             canonical-list-operations
              heterogeneous-vector-operations
              typed-set-operations
              canonical-typed-map-operations
@@ -807,6 +809,9 @@
     (generic-option-type? type)
     (list 'option-none-of type)
 
+    (canonical-list-type? type)
+    (list 'typed-list-new type)
+
     (parametric-result-type? type)
     (if-let [ok-value (closure-default-value-expr (second type))]
       (list 'result-ok-of type ok-value)
@@ -851,6 +856,7 @@
                        (generic-option-type? type)
                        (parametric-result-type? type)
                        (variant-type? type)
+                       (canonical-list-type? type)
                        (heterogeneous-vector-type? type)
                        (typed-set-type? type)
                        (canonical-typed-map-type? type))
@@ -925,7 +931,8 @@
   (nth (iterate (fn [value] (list 'pair-second value)) expr) n))
 
 (defn- lift-lambda [form]
-  (let [[_ params-or-clause & tail] form
+  (let [expected-result *contextual-closure-result-type*
+        [_ params-or-clause & tail] form
         raw-clauses (if (vector? params-or-clause)
                       [[params-or-clause (first tail)]]
                       (mapv (fn [clause]
@@ -979,7 +986,9 @@
                           {:params params
                            :body (binding [*lexical-bindings*
                                            (into *lexical-bindings* params)]
-                                   (desugar-expr body))})
+                                   (if expected-result
+                                     (desugar-result-expr expected-result body)
+                                     (desugar-expr body)))})
                         clauses)
           captures (vec (sort-by str
                                  (apply set/union #{}
@@ -1001,7 +1010,11 @@
                                    :effects #{} :body body
                                    :lazy-thunk? *lifting-lazy-thunk?*}}))
                      lowered)))
-      (list 'pair id (desugar-list captures form)))))
+      ;; Closure captures are always the internal i64 pair-chain ABI, even
+      ;; when the lambda's result is a canonical `[:list T]` value.
+      (list 'pair id
+            (binding [*contextual-closure-result-type* nil]
+              (desugar-list captures form))))))
 
 (defn- lambda-dispatchers [lambda-infos required-dispatchers]
   (let [requested (into #{}
@@ -1194,8 +1207,13 @@
 (defn- desugar-list [args form]
   (when (> (count args) max-list-items)
     (reject! "list item count exceeds admission limit" form))
-  (reduce (fn [tail item] (list 'pair (desugar-expr item) tail))
-          0 (reverse args)))
+  (if (canonical-list-type? *contextual-closure-result-type*)
+    (let [type *contextual-closure-result-type*
+          item-type (second type)]
+      (apply list 'typed-list-new type
+             (map #(desugar-expected-value item-type %) args)))
+    (reduce (fn [tail item] (list 'pair (desugar-expr item) tail))
+            0 (reverse args))))
 
 ;; Synthesized `let` temporaries for `and` / `or` / comparison chains.
 ;;
@@ -2390,8 +2408,10 @@
 
         :else
         (case op
-        list (desugar-list args form)
-        fn (lift-lambda form)
+        list (binding [*contextual-closure-result-type* contextual-result-type]
+               (desugar-list args form))
+        fn (binding [*contextual-closure-result-type* contextual-result-type]
+             (lift-lambda form))
         if (apply list 'if
                   (map-indexed (fn [index arg]
                                  (cond
@@ -2436,8 +2456,10 @@
             (when-not (<= 1 (count call-args) 5)
               (reject! "invoke requires an optional admitted result descriptor, a closure, and zero to four arguments"
                        form))
-            (apply list (request-invoke-dispatcher result-type (dec (count call-args)))
-                   (map desugar-expr call-args))))
+            (let [[closure & invoke-args] call-args]
+              (apply list (request-invoke-dispatcher result-type (count invoke-args))
+                     (desugar-result-expr result-type closure)
+                     (map desugar-expr invoke-args)))))
         apply
         (if (contains? *function-arities* 'apply)
           (apply list 'apply (map desugar-expr args))
@@ -2861,6 +2883,16 @@
                                (desugar-expected-value item-type item))
                              item-types (rest args))
                        (mapv desugar-expr (rest args))))))
+        typed-list-new
+        (do (when (empty? args)
+              (reject! "typed-list-new requires a type descriptor" form))
+            (let [type (first args)
+                  item-type (when (canonical-list-type? type) (second type))]
+              (list* 'typed-list-new type
+                     (mapv #(if item-type
+                              (desugar-expected-value item-type %)
+                              (desugar-expr %))
+                           (rest args)))))
         hetero-vector-new
         (do (when (empty? args)
               (reject! "hetero-vector-new requires a type descriptor" form))
@@ -3585,6 +3617,16 @@
         (do (when-not (= (get typed-safe-value-operations op) (count args))
               (reject! "typed safe-value operation arity mismatch" form))
             (doseq [arg args] (validate-expr arg locals functions (inc depth) budget)))
+
+        (= op 'typed-list-new)
+        (let [[type & items] args]
+          (validate-value-type! type)
+          (when-not (canonical-list-type? type)
+            (reject! "typed list constructor requires [:list item-type]" form))
+          (when (> (count items) max-list-items)
+            (reject! "typed list constructor exceeds item limit" form))
+          (doseq [item items]
+            (validate-expr item locals functions (inc depth) budget)))
 
         (= op 'typed-set-new)
         (let [[type & items] args]
@@ -4588,6 +4630,13 @@
             (when-not (= none-type some-type)
               (reject! "option match branches must have the same value type" form))
             none-type))
+        typed-list-new
+        (let [[type & items] args]
+          (validate-value-type! type)
+          (doseq [item items]
+            (require-expression-type! (infer-expression-type item locals signatures)
+                                      (second type) item))
+          type)
         hetero-vector-new
         (let [[type & items] args
               item-types (second type)]
@@ -6801,6 +6850,7 @@
                                                          (contains? parametric-result-operations (first %))
                                                          (contains? variant-operations (first %))
                                                          (contains? generic-option-operations (first %))
+                                                         (contains? canonical-list-operations (first %))
                                                          (contains? heterogeneous-vector-operations (first %))
                                                          (contains? typed-set-operations (first %))
                                                          (contains? canonical-typed-map-operations (first %))

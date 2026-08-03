@@ -38,6 +38,9 @@
    {:name "closure-refinements"
     :source "test/nbb/fixtures/closure-refinements.kotoba"
     :target "wasm32-browser" :policy nil}
+   {:name "canonical-list-closure-result"
+    :source "test/nbb/fixtures/canonical-list-closure-result.kotoba"
+    :target "wasm32-browser" :policy nil}
    {:name "numeric-closure-results"
     :source "test/nbb/fixtures/numeric-closure-results.kotoba"
     :target "wasm32-browser" :policy nil}
