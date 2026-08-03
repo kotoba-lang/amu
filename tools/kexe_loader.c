@@ -379,9 +379,18 @@ static int64_t checked_string_concat(struct kexe_context_v2 *context,
   int64_t length_a = checked_pair_get(context, handle_a, 1);
   int64_t offset_b = checked_pair_get(context, handle_b, 0);
   int64_t length_b = checked_pair_get(context, handle_b, 1);
+  /* Overflow must be ruled out BEFORE the addition, not after: signed
+   * overflow is undefined behaviour, so a compiler is entitled to assume it
+   * cannot happen and delete a `total < 0` test that only makes sense if it
+   * did. The lengths come from pair cells, and this function exists precisely
+   * because it does not trust what a guest put there. kexe_loader_windows.c's
+   * string_concat has always checked in this order; this one had not. */
+  if (length_a < 0 || length_b < 0 || length_a > INT64_MAX - length_b) {
+    raise(SIGILL);
+    return 0;
+  }
   int64_t total = length_a + length_b;
-  if (total < 0 || length_a < 0 || length_b < 0 ||
-      shared->string_pool_used + (uint64_t)total > KEXE_STRING_POOL_BYTES ||
+  if (shared->string_pool_used + (uint64_t)total > KEXE_STRING_POOL_BYTES ||
       shared->string_pool_used + (uint64_t)total < shared->string_pool_used) {
     raise(SIGILL);
     return 0;
