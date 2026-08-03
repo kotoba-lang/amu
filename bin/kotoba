@@ -111,8 +111,13 @@
               classpath (if (seq security-cp)
                           (str (.join path root "src") (.-delimiter path) security-cp)
                           (.join path root "src"))
+              ;; Keep the compiler's recursive closed-form oracle below one
+              ;; explicit, cross-runner budget. Some hosted Node builds expose
+              ;; only ~512 KiB by default, which rejects the admitted lazy
+              ;; sequence fixture before Wasm emission.
               result (.spawnSync child js/process.execPath
-                                 (clj->js (into [nbb-cli "--classpath"
+                                 (clj->js (into ["--stack-size=4096"
+                                                 nbb-cli "--classpath"
                                                  classpath
                                                  (.join path root "src" "kotoba" "compiler" "nbb" "cli.cljs")]
                                                 sub-args))

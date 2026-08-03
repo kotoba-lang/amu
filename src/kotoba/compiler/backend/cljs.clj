@@ -236,10 +236,19 @@
           :else (apply list op (map lower-expr args)))))))
 
 (defn- lower-function [{:keys [name params param-types result body]} exported?]
-  (let [parameter-checks
-        (mapv (fn [parameter type]
-                (list 'kotoba$typed-value! (list 'quote type) parameter))
-              params param-types)
+  (let [closure-dispatcher?
+        (boolean (re-matches #"__kotoba_invoke(?:_[^$]+)?\$arity[0-4]"
+                             (clojure.core/name name)))
+        ;; A closure is an i64 handle in Wasm/KIR but a private two-word pair
+        ;; in the host CLJS representation. Dispatcher entry is internal and
+        ;; validates the handle by closed lambda id, so do not apply the public
+        ;; scalar boundary validator to that first synthetic parameter.
+        parameter-checks
+        (->> (map vector params param-types (range))
+             (keep (fn [[parameter type index]]
+                     (when-not (and closure-dispatcher? (zero? index))
+                       (list 'kotoba$typed-value! (list 'quote type) parameter))))
+             vec)
         lowered-result (list 'kotoba$typed-value! (list 'quote result)
                              (lower-expr body))]
     (list (if exported? 'defn 'defn-) name (vec params)

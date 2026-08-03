@@ -369,6 +369,15 @@
     (is (= 14 (:oracle-value (:kir compiled))))
     (is (= 14 (call ns 'main)))))
 
+(deftest vector-returning-closures-execute-on-cljs
+  (let [source "(defn main []
+  (let [singleton (fn [x] [x])]
+    (vector-at (singleton 42) 0)))"
+        compiled (compile-cljs source)
+        ns (eval-in-fresh-ns (:source compiled))]
+    (is (= 42 (:oracle-value (:kir compiled))))
+    (is (= 42 (call ns 'main)))))
+
 (deftest vector-get-preserves-lazy-fallback-semantics
   (let [compiled (compile-cljs
                   "(defn main [] (vector-get [7] 0 (quot 1 0)))")
