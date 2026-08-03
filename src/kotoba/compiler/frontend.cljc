@@ -182,6 +182,7 @@
     document-i64-value 1 document-f64-value 1})
 (def document-variadic-operations '#{document-vector document-list document-set document-map})
 (def sequencing-operations '#{do})
+(def lazy-sequence-operations '#{lazy-cons lazy-first lazy-rest lazy-empty? take drop})
 (def string-operations '{string-byte-length 1 string-length 1 string-from-i64 1
                          bytes-task-byte-count 1 task-ready? 1
                          object-cas-won 1
@@ -240,6 +241,7 @@
              (set (keys f32-operations))
              (set (keys i32-operations))
              (set (keys i64-operations))
+             lazy-sequence-operations
              '#{let if cap-call typed-cap-call ns defn defn- some some? nil? option-or vector-i64 vector-f64 vector-new vector-f64-new
                 hetero-vector typed-set record match-result match-variant match-option}))
 (def max-functions 1024)
@@ -664,6 +666,8 @@
 (def ^:dynamic *lambda-counter* nil)
 (def ^:dynamic *pending-lambdas* nil)
 (def ^:dynamic *uses-apply?* nil)
+(def ^:dynamic *uses-lazy?* nil)
+(def ^:dynamic *lifting-lazy-thunk?* false)
 
 (def ^:private closure-result-types #{:i64 :bool})
 
@@ -751,18 +755,19 @@
                          {:id id :arity arity :captures captures
                           :helper {:name helper-name :params (into captures params)
                                    :result :i64 :result-inferred? true
-                                   :effects #{} :body body}}))
+                                   :effects #{} :body body
+                                   :lazy-thunk? *lifting-lazy-thunk?*}}))
                      lowered)))
       (list 'pair id (desugar-list captures form)))))
 
-(defn- lambda-dispatchers [lambda-infos force-all-arities?]
+(defn- lambda-dispatchers [lambda-infos required-i64-arities]
   (let [requested (into #{}
                         (mapcat (fn [{:keys [arity helper]}]
                                   [[:i64 arity] [(:result helper) arity]]))
                         lambda-infos)
-        requested (if force-all-arities?
-                    (into requested (map (fn [arity] [:i64 arity]) (range 5)))
-                    requested)]
+        requested (into requested
+                        (map (fn [arity] [:i64 arity]))
+                        required-i64-arities)]
     (mapv
      (fn [[result-type arity]]
        (let [closure (symbol (str "__kotoba_closure_" (name result-type) "_" arity))
@@ -813,6 +818,42 @@
                     (if (= t4 0)
                       (__kotoba_invoke$arity4 __kotoba_apply_closure a0 a1 a2 a3)
                       0)))))))))})
+
+(def ^:private lazy-take-helper-name '__kotoba_lazy_take)
+(def ^:private lazy-drop-helper-name '__kotoba_lazy_drop)
+
+(def ^:private lazy-take-helper
+  {:name lazy-take-helper-name
+   :params '[__kotoba_lazy_n __kotoba_lazy_seq]
+   :result :i64 :effects #{}
+   :body
+   '(if (<= __kotoba_lazy_n 0)
+      0
+      (if (= __kotoba_lazy_seq 0)
+        0
+        (let [__kotoba_lazy_cell (__kotoba_invoke$arity0 __kotoba_lazy_seq)]
+          (if (= __kotoba_lazy_cell 0)
+            0
+            (pair (__kotoba_invoke$arity0 (pair-first __kotoba_lazy_cell))
+                  (__kotoba_lazy_take
+                   (- __kotoba_lazy_n 1)
+                   (__kotoba_invoke$arity0 (pair-second __kotoba_lazy_cell))))))))})
+
+(def ^:private lazy-drop-helper
+  {:name lazy-drop-helper-name
+   :params '[__kotoba_lazy_n __kotoba_lazy_seq]
+   :result :i64 :effects #{}
+   :body
+   '(if (<= __kotoba_lazy_n 0)
+      __kotoba_lazy_seq
+      (if (= __kotoba_lazy_seq 0)
+        0
+        (let [__kotoba_lazy_cell (__kotoba_invoke$arity0 __kotoba_lazy_seq)]
+          (if (= __kotoba_lazy_cell 0)
+            0
+            (__kotoba_lazy_drop
+             (- __kotoba_lazy_n 1)
+             (__kotoba_invoke$arity0 (pair-second __kotoba_lazy_cell)))))))})
 
 ;; ADR-2607182410: bound (via `binding`, once per `analyze` call, same
 ;; lifetime as `*loop-counter*` above -- not per-defn) to a `volatile!` set
@@ -1971,6 +2012,73 @@
                                         (desugar-expr trailing)
                                         (reverse fixed))]
               (list '__kotoba_closure_apply (desugar-expr closure) argument-list))))
+        lazy-cons
+        (do
+          (when-not (= 2 (count args))
+            (reject! "lazy-cons requires a head and lazy tail expression" form))
+          (when *uses-lazy?* (vreset! *uses-lazy?* true))
+          (binding [*lifting-lazy-thunk?* true]
+            (lift-lambda
+             (list 'fn []
+                   (list 'pair
+                         (list 'fn [] (first args))
+                         (list 'fn [] (second args)))))))
+        lazy-first
+        (do
+          (when-not (= 1 (count args))
+            (reject! "lazy-first requires one lazy sequence" form))
+          (when *uses-lazy?* (vreset! *uses-lazy?* true))
+          (let [lazy-seq (synthetic "lazy_seq")
+                cell (synthetic "lazy_cell")]
+            (list 'let [lazy-seq (desugar-expr (first args))]
+                  (list 'if (list '= lazy-seq 0)
+                        0
+                        (list 'let [cell (list (invoke-dispatcher-name 0) lazy-seq)]
+                              (list 'if (list '= cell 0)
+                                    0
+                                    (list (invoke-dispatcher-name 0)
+                                          (list 'pair-first cell))))))))
+        lazy-rest
+        (do
+          (when-not (= 1 (count args))
+            (reject! "lazy-rest requires one lazy sequence" form))
+          (when *uses-lazy?* (vreset! *uses-lazy?* true))
+          (let [lazy-seq (synthetic "lazy_seq")
+                cell (synthetic "lazy_cell")]
+            (list 'let [lazy-seq (desugar-expr (first args))]
+                  (list 'if (list '= lazy-seq 0)
+                        0
+                        (list 'let [cell (list (invoke-dispatcher-name 0) lazy-seq)]
+                              (list 'if (list '= cell 0)
+                                    0
+                                    (list (invoke-dispatcher-name 0)
+                                          (list 'pair-second cell))))))))
+        lazy-empty?
+        (do
+          (when-not (= 1 (count args))
+            (reject! "lazy-empty? requires one lazy sequence" form))
+          (when *uses-lazy?* (vreset! *uses-lazy?* true))
+          (let [lazy-seq (synthetic "lazy_seq")]
+            (list 'let [lazy-seq (desugar-expr (first args))]
+                  (list 'if (list '= lazy-seq 0)
+                        true
+                        (list '= (list (invoke-dispatcher-name 0) lazy-seq) 0)))))
+        take
+        (do
+          (when-not (= 2 (count args))
+            (reject! "take requires a count and lazy sequence" form))
+          (when *uses-lazy?* (vreset! *uses-lazy?* true))
+          (list lazy-take-helper-name
+                (desugar-expr (first args))
+                (desugar-expr (second args))))
+        drop
+        (do
+          (when-not (= 2 (count args))
+            (reject! "drop requires a count and lazy sequence" form))
+          (when *uses-lazy?* (vreset! *uses-lazy?* true))
+          (list lazy-drop-helper-name
+                (desugar-expr (first args))
+                (desugar-expr (second args))))
         document
         (do (when-not (= 1 (count args))
               (reject! "document requires exactly one closed literal tree" form))
@@ -5310,10 +5418,12 @@
         used-capabilities (volatile! #{})
         lambda-infos (atom [])
         uses-apply? (volatile! false)
+        uses-lazy? (volatile! false)
         parsed (binding [*loop-counter* (volatile! 0)
                           *lambda-counter* (volatile! 0)
                           *pending-lambdas* lambda-infos
                           *uses-apply?* uses-apply?
+                          *uses-lazy?* uses-lazy?
                           *function-arities* function-arities
                           *synthetic-counter* (volatile! 0)
                           *used-capability-keywords* used-capabilities]
@@ -5400,8 +5510,13 @@
                 @lambda-infos))
         parsed (into parsed
                      (concat (map :helper preliminary-lambdas)
-                             (lambda-dispatchers preliminary-lambdas @uses-apply?)
-                             (when @uses-apply? [closure-apply-helper])))
+                             (lambda-dispatchers
+                              preliminary-lambdas
+                              (cond-> #{}
+                                @uses-apply? (into (range 5))
+                                @uses-lazy? (conj 0)))
+                             (when @uses-apply? [closure-apply-helper])
+                             (when @uses-lazy? [lazy-take-helper lazy-drop-helper])))
         _ (when (> (count parsed) max-functions)
             (reject! "function count exceeds admission limit after closure lowering"
                      (count parsed)))
@@ -5548,6 +5663,10 @@
                                            (tree-seq coll? seq body))))
                                parsed)))
           function-effects (infer-effects parsed)
+          _ (doseq [{:keys [name lazy-thunk?]} parsed
+                    :when (and lazy-thunk? (seq (get function-effects name)))]
+              (reject! "lazy sequence thunks must be effect-free because forcing is non-memoized"
+                       name))
           _ (doseq [{:keys [name source-name effects-ceiling body]} parsed]
               (when effects-ceiling
                 (let [inferred (get function-effects name #{})

@@ -65,6 +65,7 @@
             [kotoba.compiler.frontend-limits-test]
             [kotoba.compiler.frontend-multimethod-test]
             [kotoba.compiler.callable-values-test]
+            [kotoba.compiler.lazy-sequence-test]
             [kotoba.compiler.frontend-extensions-test]
             [kotoba.compiler.frontend-destructuring-loop-test]
             [kotoba.compiler.frontend-named-capability-test]
@@ -177,6 +178,7 @@
                                           'kotoba.compiler.frontend-limits-test
                                           'kotoba.compiler.frontend-multimethod-test
                                           'kotoba.compiler.callable-values-test
+                                          'kotoba.compiler.lazy-sequence-test
                                           'kotoba.compiler.frontend-extensions-test
                                           'kotoba.compiler.frontend-destructuring-loop-test
                                           'kotoba.compiler.frontend-named-capability-test
