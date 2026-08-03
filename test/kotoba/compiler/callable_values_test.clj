@@ -112,6 +112,9 @@
   (is (= 7 (execute-main
             "(defn main []
                (vector-at (invoke :vector-i64 (fn [x] [x]) 7) 0))")))
+  (is (= 2 (execute-main
+            "(defn main []
+               (string-length (invoke :string (fn [x] (string-from-i64 x)) 42)))")))
   (testing "a closure from a different result family traps closed"
     (is (thrown? clojure.lang.ExceptionInfo
                  (execute-main
@@ -121,7 +124,35 @@
     (is (thrown? clojure.lang.ExceptionInfo
                  (execute-main
                   "(defn main []
-                     (vector-count (invoke :vector-i64 (fn [x] (+ x 1)) 3)))")))))
+                     (vector-count (invoke :vector-i64 (fn [x] (+ x 1)) 3)))"))))
+  (testing "a string dispatcher rejects a scalar-returning closure"
+    (is (thrown? clojure.lang.ExceptionInfo
+                 (execute-main
+                  "(defn main []
+                     (string-length (invoke :string (fn [x] (+ x 1)) 3)))")))))
+
+(deftest lexical-string-results-use-contextual-application-syntax
+  (is (= 2 (execute-main
+            "(defn main []
+               (let [render (fn [x] (string-from-i64 x))]
+                 (string-length (render 42))))")))
+  (is (= 3 (execute-main
+            "(defn render-with [f] :string (let [n 123] (f n)))
+             (defn main []
+               (string-length (render-with (fn [x] (string-from-i64 x)))))")))
+  (is (= 2 (execute-main
+            "(defn main []
+               (let [render (fn [x] (string-from-i64 x))]
+                 (string-length
+                  (if (> 2 1) (render 42) (render 7)))))")))
+  (is (= 4 (execute-main
+            "(defn main []
+               (let [render (fn [x] (string-from-i64 x))]
+                 (string-length (string-concat (render 12) (render 34)))))")))
+  (is (= 2 (execute-main
+            "(defn render [x :i64] :string (string-from-i64 x))
+             (defn main []
+               (string-length (invoke :string (fn-ref render) 42)))"))))
 
 (deftest lexical-vector-results-use-contextual-application-syntax
   (is (= 7 (execute-main
@@ -200,5 +231,16 @@
         wasm-a (compiler/compile-source source :wasm32-browser-kotoba-v1)
         wasm-b (compiler/compile-source source :wasm32-browser-kotoba-v1)]
     (is (= 42 (kir/execute (:kir js) 'main [])))
+    (is (= (:kir wasm-a) (:kir wasm-b)))
+    (is (java.util.Arrays/equals ^bytes (:bytes wasm-a) ^bytes (:bytes wasm-b)))))
+
+(deftest string-returning-closures-lower-reproducibly-for-js-and-wasm
+  (let [source "(defn main []
+                  (let [render (fn [x] (string-from-i64 x))]
+                    (string-length (render 42))))"
+        js (compiler/compile-source source :js-kotoba-v1)
+        wasm-a (compiler/compile-source source :wasm32-browser-kotoba-v1)
+        wasm-b (compiler/compile-source source :wasm32-browser-kotoba-v1)]
+    (is (= 2 (kir/execute (:kir js) 'main [])))
     (is (= (:kir wasm-a) (:kir wasm-b)))
     (is (java.util.Arrays/equals ^bytes (:bytes wasm-a) ^bytes (:bytes wasm-b)))))

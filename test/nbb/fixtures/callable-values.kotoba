@@ -10,10 +10,13 @@
         wide (map (fn [a b c d e] (+ a (+ b (+ c (+ d e)))))
                   [1] [2] [3] [4] [5])
         keep? (fn [x] (> x 2))
-        filtered (filter keep? mapped)]
-    (+ (vector-at wide 0)
+        filtered (filter keep? mapped)
+        render (fn [x] (string-from-i64 x))
+        rendered-size (string-length (render 42))]
+    (+ rendered-size
+       (+ (vector-at wide 0)
        (+ (vector-at (singleton 7) 0)
        (+ direct
        (+ (reduce sum filtered)
           (+ (reduce sum [])
-             (apply (fn-ref add) (list 19 20)))))))))
+             (apply (fn-ref add) (list 19 20))))))))))
