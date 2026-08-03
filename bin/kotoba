@@ -66,7 +66,41 @@
 ;; `deps.edn` (e.g. once per CI job's checkout), not once per `compile`/
 ;; `check` call -- callers like `scripts/fuzz-native.cljs` invoke this
 ;; fast path thousands of times in a loop.
-(defn- security-classpath-entry [root]
+;;
+;; That is now the FALLBACK. `deps-lock.edn` records the closure `clojure
+;; -Spath` resolved, and `scripts/print-classpath.cljs` reproduces it from git
+;; alone -- so the whole fast path runs with no JDK present, which is what
+;; "the nbb path does not touch the JVM" was always supposed to mean. The lock
+;; is bound to `deps.edn`'s digest and the resolver fails closed on a stale
+;; one, so the fallback is for a checkout whose lock has not been regenerated
+;; yet, not a second way of getting an answer.
+;;
+;; Neither resolver may return "" any more. It used to, and the caller carried
+;; on with a truncated classpath, so a resolution failure surfaced as
+;; `Could not find namespace: kotoba.artifact.core` from somewhere else
+;; entirely -- measured directly by stubbing `clojure` out on a cold cache.
+(defn- resolve-with-lock [root nbb-cli]
+  (let [script (.join path root "scripts" "print-classpath.cljs")]
+    (when (and (.existsSync fs (.join path root "deps-lock.edn"))
+               (.existsSync fs script))
+      (let [result (.spawnSync child js/process.execPath
+                               (clj->js [nbb-cli "--classpath" (.join path root "src")
+                                         script root])
+                               #js {:cwd root :encoding "utf8" :maxBuffer 16777216})]
+        (when (and (not (.-error result)) (zero? (or (.-status result) 1)))
+          (let [joined (-> (.split (.trim (.-stdout result)) "\n")
+                           (.map (fn [line] (.trim line)))
+                           (.filter (fn [line] (not= "" line)))
+                           (.join (.-delimiter path)))]
+            (when (not= "" joined) joined)))))))
+
+(defn- resolve-with-jvm [root]
+  (let [result (.spawnSync child "clojure" (clj->js ["-Spath"])
+                           #js {:cwd root :encoding "utf8" :maxBuffer 16777216})]
+    (when (and (not (.-error result)) (zero? (or (.-status result) 70)))
+      (.trim (.-stdout result)))))
+
+(defn- security-classpath-entry [root nbb-cli]
   (let [deps-edn (.join path root "deps.edn")
         digest (-> (.createHash crypto "sha256")
                    (.update (.readFileSync fs deps-edn))
@@ -74,13 +108,14 @@
         cache-file (.join path (.tmpdir os) (str "kotoba-security-classpath-" digest ".txt"))]
     (if (.existsSync fs cache-file)
       (.trim (.readFileSync fs cache-file "utf8"))
-      (let [result (.spawnSync child "clojure" (clj->js ["-Spath"])
-                               #js {:cwd root :encoding "utf8" :maxBuffer 1048576})]
-        (if (and (not (.-error result)) (zero? (or (.-status result) 70)))
-          (let [resolved (.trim (.-stdout result))]
-            (.writeFileSync fs cache-file resolved)
-            resolved)
-          "")))))
+      (if-let [resolved (or (resolve-with-lock root nbb-cli) (resolve-with-jvm root))]
+        (do (.writeFileSync fs cache-file resolved) resolved)
+        (fail! (str "error: cannot resolve the compiler's dependency closure.\n"
+                    "  deps-lock.edn resolves it without a JDK; regenerate it with\n"
+                    "    nbb scripts/lock-classpath.cljs\n"
+                    "  (that script needs a JDK once; nothing else on this path does).\n"
+                    "  Diagnose with: nbb --classpath src scripts/print-classpath.cljs")
+               70)))))
 
 (let [args (vec *command-line-args*)
       boundary (first args)]
@@ -107,10 +142,14 @@
         ;; `process.execPath` (the current `node`/`node.exe`) is a real,
         ;; directly-executable binary on every platform.
         (let [nbb-cli (.join path root "node_modules" "nbb" "cli.js")
-              security-cp (security-classpath-entry root)
-              classpath (if (seq security-cp)
-                          (str (.join path root "src") (.-delimiter path) security-cp)
-                          (.join path root "src"))
+              security-cp (security-classpath-entry root nbb-cli)
+              ;; `<root>/resources` is joined explicitly rather than relying on
+              ;; the relative `resources` entry `clojure -Spath` happens to
+              ;; emit: the lock records dependency checkouts, and this
+              ;; repository's own directories are not a dependency of itself.
+              classpath (str (.join path root "src") (.-delimiter path)
+                             (.join path root "resources") (.-delimiter path)
+                             security-cp)
               ;; Keep the compiler's recursive closed-form oracle below one
               ;; explicit, cross-runner budget. Some hosted Node builds expose
               ;; only ~512 KiB by default, which rejects the admitted lazy

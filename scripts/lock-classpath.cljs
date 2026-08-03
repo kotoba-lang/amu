@@ -1,0 +1,120 @@
+#!/usr/bin/env nbb
+;; Regenerate `deps-lock.edn`, the dependency closure `bin/kotoba`'s nbb fast
+;; path resolves without a JVM.
+;;
+;; This script is the one place that still runs `clojure -Spath`, and it runs
+;; at authoring time, not at compile time. That split is the point: choosing
+;; between conflicting transitive git pins is `tools.deps`' job and
+;; re-implementing it in nbb would be a second resolver to disagree with the
+;; first. The lock records the answer `tools.deps` gave, keyed to the digest
+;; of the `deps.edn` it was given, so `kotoba.compiler.nbb.classpath` can
+;; reproduce the closure from git alone and refuse a stale one.
+;;
+;; Run it whenever `deps.edn` changes -- the resolver fails closed until you
+;; do, which is how the two records stay in agreement.
+;;
+;;   nbb scripts/lock-classpath.cljs [root]
+
+(ns lock-classpath
+  (:require ["node:child_process" :as child]
+            ["node:crypto" :as crypto]
+            ["node:fs" :as fs]
+            ["node:os" :as os]
+            ["node:path" :as node-path]
+            [clojure.string :as str]))
+
+(def lock-version 1)
+
+(defn- fail! [message]
+  (.error js/console message)
+  (.exit js/process 1))
+
+(defn- gitlibs-root []
+  (or (.-GITLIBS js/process.env)
+      (.join node-path (.homedir os) ".gitlibs")))
+
+(defn- sha256-hex [^js buffer]
+  (-> (.createHash crypto "sha256") (.update buffer) (.digest "hex")))
+
+(defn- git-out [args]
+  (let [result (.spawnSync child "git" (clj->js args)
+                           #js {:encoding "utf8" :maxBuffer 8388608})]
+    (when (and (not (.-error result)) (zero? (or (.-status result) 1)))
+      (str/trim (.-stdout result)))))
+
+;; A resolved entry looks like
+;;   <gitlibs>/libs/<group>/<artifact>/<sha>/<path>
+;; and several `-Spath` entries share one checkout (`src`, `resources`, ...),
+;; so they are grouped back into one lock entry per checkout. Maven jars are
+;; dropped: nbb cannot load them, and their `~/.m2` paths are machine-local.
+(defn- parse-entry [libs-prefix entry]
+  (when (str/starts-with? entry libs-prefix)
+    (let [relative (subs entry (count libs-prefix))
+          segments (str/split relative (re-pattern (str "\\" (.-sep node-path))))]
+      ;; Three segments is the checkout root itself, which `tools.deps` emits
+      ;; for a dependency whose `:paths` include `"."`. Requiring four dropped
+      ;; it silently -- and the shared security package is exactly that case.
+      (when (<= 3 (count segments))
+        (let [[group artifact sha & path-segments] segments]
+          {:coordinate (str group "/" artifact)
+           :git-sha sha
+           :path (if (seq path-segments)
+                   (str/join (.-sep node-path) path-segments)
+                   ".")})))))
+
+(defn- origin-url [coordinate sha]
+  (let [[group artifact] (str/split coordinate #"/")
+        dir (.join node-path (gitlibs-root) "libs" group artifact sha)]
+    (or (git-out ["-C" dir "remote" "get-url" "origin"])
+        (fail! (str "cannot read the origin URL of " coordinate " at " sha)))))
+
+(defn -main [& args]
+  (let [root (.resolve node-path (or (first args) "."))
+        deps-file (.join node-path root "deps.edn")
+        _ (when-not (.existsSync fs deps-file) (fail! (str "no deps.edn at " root)))
+        result (.spawnSync child "clojure" #js ["-Spath"]
+                           #js {:cwd root :encoding "utf8" :maxBuffer 16777216})
+        _ (when-not (and (not (.-error result)) (zero? (or (.-status result) 1)))
+            (fail! (str "clojure -Spath failed; this script needs a JDK.\n"
+                        "Only this script does -- kotoba.compiler.nbb.classpath resolves\n"
+                        "the lock it writes with git alone.\n"
+                        (some-> (.-stderr result) str/trim))))
+        libs-prefix (str (.join node-path (gitlibs-root) "libs") (.-sep node-path))
+        entries (->> (str/split (str/trim (.-stdout result))
+                                (re-pattern (str "\\" (.-delimiter node-path))))
+                     (keep #(parse-entry libs-prefix %)))
+        grouped (->> entries
+                     (group-by (juxt :coordinate :git-sha))
+                     (sort-by first)
+                     (mapv (fn [[[coordinate sha] group]]
+                             {:coordinate coordinate
+                              :git-url (origin-url coordinate sha)
+                              :git-sha sha
+                              :paths (vec (distinct (map :path group)))})))]
+    (when (empty? grouped)
+      (fail! "clojure -Spath resolved no git dependencies; nothing to lock"))
+    (let [lock {:lock/version lock-version
+                :lock/deps-digest (sha256-hex (.readFileSync fs deps-file))
+                :lock/resolver "clojure -Spath (authoring time only)"
+                :lock/entries grouped}
+          out (.join node-path root "deps-lock.edn")]
+      (.writeFileSync fs out
+                      (str ";; Generated by scripts/lock-classpath.cljs -- do not hand-edit.\n"
+                           ";; The dependency closure `bin/kotoba`'s nbb fast path resolves with\n"
+                           ";; git alone. Bound to deps.edn's digest: change a pin and the\n"
+                           ";; resolver fails closed until this is regenerated.\n"
+                           (with-out-str
+                             (println "{:lock/version" (:lock/version lock))
+                             (println " :lock/deps-digest" (pr-str (:lock/deps-digest lock)))
+                             (println " :lock/resolver" (pr-str (:lock/resolver lock)))
+                             (println " :lock/entries")
+                             (println " [")
+                             (doseq [entry (:lock/entries lock)]
+                               (println "  {:coordinate" (pr-str (:coordinate entry)))
+                               (println "   :git-url" (pr-str (:git-url entry)))
+                               (println "   :git-sha" (pr-str (:git-sha entry)))
+                               (println "   :paths" (pr-str (:paths entry)) "}"))
+                             (println " ]}"))))
+      (println (str "wrote " out " (" (count grouped) " dependencies)")))))
+
+(apply -main *command-line-args*)
