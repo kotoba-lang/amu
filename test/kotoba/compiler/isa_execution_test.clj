@@ -29,24 +29,44 @@
 
 (defn- tmp [name] (io/file (System/getProperty "java.io.tmpdir") name))
 
-(defn- buildable-and-runnable? [arch]
-  (let [probe (tmp (str "kotoba-isa-probe-" arch ".c"))
-        out (tmp (str "kotoba-isa-probe-" arch ".bin"))]
+(defn- macos? [] (= "Mac OS X" (System/getProperty "os.name")))
+
+(defn- host-isa []
+  (case (str/lower-case (System/getProperty "os.arch"))
+    ("amd64" "x86_64") "x86_64"
+    ("aarch64" "arm64") "aarch64"
+    nil))
+
+(defn- cc-command
+  "Build COMMAND for ISA. Apple's `cc -arch` selects a native/Rosetta slice;
+  GCC and Clang on Linux do not accept `-arch`, so the host ISA uses plain cc
+  there and non-host ISAs remain explicitly unavailable."
+  [isa arch & args]
+  (cond
+    (macos?) (into ["cc" "-arch" arch] args)
+    (= isa (host-isa)) (into ["cc"] args)
+    :else nil))
+
+(defn- buildable-and-runnable? [isa arch]
+  (let [probe (tmp (str "kotoba-isa-probe-" isa ".c"))
+        out (tmp (str "kotoba-isa-probe-" isa ".bin"))
+        command (cc-command isa arch (.getPath probe) "-o" (.getPath out))]
     (spit probe "int main(void){return 7;}")
-    (and (zero? (:exit (shell/sh "cc" "-arch" arch (.getPath probe)
-                                 "-o" (.getPath out))))
+    (and command
+         (zero? (:exit (apply shell/sh command)))
          (= 7 (:exit (shell/sh (.getPath out)))))))
 
 (defonce ^:private loaders
   (delay
     (into {}
           (for [[isa [arch _]] isas]
-            [isa (when (buildable-and-runnable? arch)
+            [isa (when (buildable-and-runnable? isa arch)
                    (let [loader (tmp (str "kotoba-isa-loader-" isa ".bin"))
-                         build (shell/sh "cc" "-arch" arch "-std=c11" "-O2"
-                                         "-Wall" "-Wextra" "-Werror"
-                                         "tools/kexe_loader.c"
-                                         "-o" (.getPath loader))]
+                         command (cc-command isa arch "-std=c11" "-O2"
+                                             "-Wall" "-Wextra" "-Werror"
+                                             "tools/kexe_loader.c"
+                                             "-o" (.getPath loader))
+                         build (when command (apply shell/sh command))]
                      (when (zero? (:exit build)) (.getPath loader))))]))))
 
 (defn- run-native
