@@ -118,11 +118,13 @@
        :cljs (js/BigInt token))))
 
 (defn- f64-form [number]
-  #?(:clj (list 'f64-from-bits (Double/doubleToRawLongBits ^double number))
-     :cljs (let [buffer (js/ArrayBuffer. 8)
-                 view (js/DataView. buffer)]
-             (.setFloat64 view 0 number true)
-             (list 'f64-from-bits (.getBigInt64 view 0 true)))))
+  (with-meta
+    #?(:clj (list 'f64-from-bits (Double/doubleToRawLongBits ^double number))
+       :cljs (let [buffer (js/ArrayBuffer. 8)
+                   view (js/DataView. buffer)]
+               (.setFloat64 view 0 number true)
+               (list 'f64-from-bits (.getBigInt64 view 0 true))))
+    {:kotoba.reader/f64-literal true}))
 
 (defn- parse-f64-token [token]
   (when (re-matches #"[+-]?(?:(?:[0-9]+\.[0-9]*|[0-9]*\.[0-9]+)(?:[eE][+-]?[0-9]+)?|[0-9]+[eE][+-]?[0-9]+)" token)
@@ -206,6 +208,17 @@
         (recur (next pairs)))
       [nil false])))
 
+(defn- reader-map
+  "Build reader maps without hashing their keys. JavaScript BigInt values are
+  exact Kotoba i64 literals but cannot be hashed by nbb when nested in a
+  vector/map key. A deterministic printed-form comparator keeps arbitrary EDN
+  keys readable while frontend elaboration supplies the semantic ordering."
+  [forms]
+  (reduce (fn [out [key value]] (assoc out key value))
+          (sorted-map-by (fn [left right]
+                           (compare (pr-str left) (pr-str right))))
+          (partition 2 forms)))
+
 (defn- read-form
   "Returns `[state form skip?]`. `skip?` is true for a `#?()` clause with no
   matching feature (nothing to splice in) so the caller omits it entirely."
@@ -225,7 +238,7 @@
       (= ch \{) (let [[st forms] (read-delimited (advance st) \})]
                   (when (odd? (count forms))
                     (reject! "map literal must contain an even number of forms" {}))
-                  [st (located (apply hash-map forms) start st) false])
+                  [st (located (reader-map forms) start st) false])
 
       (= ch \") (let [[st s] (read-string-literal st)] [st s false])
 
