@@ -1447,6 +1447,8 @@ function createTypedRuntime(abi, typedCapCall, allow) {
         result = [descriptor, member[0], ...builder.slots];
       } else if (kind === "vector-i64" || kind === "vector-f64" || kind === "vector" || kind === "record")
         result = [descriptor, ...builder.slots];
+      else if (kind === "list")
+        result = [descriptor, Object.freeze([...builder.slots])];
       else if (kind === "set") {
         const sorted = [...builder.slots].sort((left, right) => compareValue(descriptor[1], left, right));
         for (let index = 1; index < sorted.length; index += 1)
@@ -1545,6 +1547,7 @@ function createTypedRuntime(abi, typedCapCall, allow) {
       if (descriptor === "string") return BigInt(utf8Length(checked));
       if (descriptor[0] === "vector-i64" || descriptor[0] === "vector-f64" || descriptor[0] === "vector" || descriptor[0] === "record")
         return BigInt(checked.length - 1);
+      if (descriptor[0] === "list") return BigInt(checked[1].length);
       if (descriptor[0] === "set") return BigInt(checked[1].length);
       if (descriptor[0] === "map") return BigInt(checked[1].length);
       if (descriptor[0] === "string-index") return BigInt(checked[1].length);
