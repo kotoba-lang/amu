@@ -1,7 +1,7 @@
 const MAX_MODULE_BYTES = 1024 * 1024;
 const PAIR_CAPACITY = 4096;
 const TYPED_SECTION = "kotoba.typed";
-const TYPED_ABI_VERSION = 13;
+const TYPED_ABI_VERSION = 14;
 const MIN_TYPED_ABI_VERSION = 5;
 const COMPATIBILITY_SECTION = "kotoba.compatibility";
 const COMPATIBILITY_VERSION = 1;
@@ -28,6 +28,7 @@ const ALLOWED_IMPORTS = new Set([
   "kotoba:typed/bool/function",
   "kotoba:typed/bool-value/function",
   "kotoba:typed/equal/function",
+  "kotoba:typed/bytes-empty/function",
   "kotoba:typed/assoc-i64/function",
   "kotoba:typed/assoc-f64/function",
   "kotoba:typed/assoc-f32/function",
@@ -220,6 +221,7 @@ function parseTypedMetadata(module) {
     if (tag === 19 && version >= 12) return "symbol";
     if (tag === 20 && version >= 13)
       return Object.freeze(["list", descriptor(depth + 1)]);
+    if (tag === 21 && version >= 14) return "bytes";
     if (tag === 4) return Object.freeze(["option", descriptor(depth + 1)]);
     if (tag === 5) return Object.freeze(["result", descriptor(depth + 1), descriptor(depth + 1)]);
     if (tag === 7) {
@@ -1123,6 +1125,14 @@ function createTypedRuntime(abi, typedCapCall, allow) {
     }
     if (descriptor === "i64" || descriptor === "string" || descriptor === "keyword" || descriptor === "symbol")
       return left < right ? -1 : left > right ? 1 : 0;
+    if (descriptor === "bytes") {
+      const length = Math.min(left.byteLength, right.byteLength);
+      for (let index = 0; index < length; index += 1) {
+        if (left[index] < right[index]) return -1;
+        if (left[index] > right[index]) return 1;
+      }
+      return left.byteLength < right.byteLength ? -1 : left.byteLength > right.byteLength ? 1 : 0;
+    }
     if (descriptor === "bool") return left === right ? 0 : left ? 1 : -1;
     const kind = descriptor[0];
     if (kind === "document") return compareDocument(left, right);
@@ -1220,6 +1230,14 @@ function createTypedRuntime(abi, typedCapCall, allow) {
       }
       if (descriptor === "bool") {
         if (typeof value !== "boolean") reject("invalid-typed-value", "typed boolean is invalid");
+        return value;
+      }
+      if (descriptor === "bytes") {
+        if (!(value instanceof Uint8Array) || value.byteLength > 65536)
+          reject("invalid-typed-value", "typed bytes value is invalid or oversized");
+        state.indirectBytes += value.byteLength;
+        if (state.indirectBytes > 1048576)
+          reject("invalid-typed-value", "typed aggregate indirect byte budget exceeded");
         return value;
       }
       const kind = descriptor[0];
@@ -1566,6 +1584,11 @@ function createTypedRuntime(abi, typedCapCall, allow) {
     "bool-value"(value) {
       if (typeof value !== "boolean") reject("invalid-typed-value", "typed boolean is invalid");
       return value ? 1 : 0;
+    },
+    "bytes-empty"(descriptorId) {
+      const descriptor = descriptorAt(descriptorId);
+      if (descriptor !== "bytes") reject("invalid-typed-operation", "bytes descriptor required");
+      return admitValue(descriptor, Object.freeze(new Uint8Array(0)));
     },
     equal(descriptorId, left, right) {
       const descriptor = descriptorAt(descriptorId);

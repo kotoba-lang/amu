@@ -41,6 +41,9 @@
    {:name "canonical-list-closure-result"
     :source "test/nbb/fixtures/canonical-list-closure-result.kotoba"
     :target "wasm32-browser" :policy nil}
+   {:name "canonical-bytes-closure-result"
+    :source "test/nbb/fixtures/canonical-bytes-closure-result.kotoba"
+    :target "wasm32-browser" :policy nil}
    {:name "numeric-closure-results"
     :source "test/nbb/fixtures/numeric-closure-results.kotoba"
     :target "wasm32-browser" :policy nil}
