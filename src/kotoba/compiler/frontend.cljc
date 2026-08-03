@@ -3884,6 +3884,53 @@
                       locals signatures used))
                    args))))
 
+        ;; Lowered pattern forms bind payload names in only their branch
+        ;; bodies. Preserve those lexical types while elaborating named
+        ;; abilities; generic recursion would otherwise treat the binder as
+        ;; unbound when a branch contains any expression whose expected type
+        ;; must be inferred (including the `option-value-of` produced from
+        ;; `option-or`).
+        (= op 'option-match)
+        (let [[type value none-body some-name some-body] args]
+          (preserve-form-meta
+           form
+           (list 'option-match type
+                 (elaborate-named-ability value type locals signatures used)
+                 (elaborate-named-ability none-body expected locals signatures used)
+                 some-name
+                 (elaborate-named-ability some-body expected
+                                          (assoc locals some-name (second type))
+                                          signatures used))))
+
+        (= op 'result-match-of)
+        (let [[type value ok-name ok-body err-name err-body] args]
+          (preserve-form-meta
+           form
+           (list 'result-match-of type
+                 (elaborate-named-ability value type locals signatures used)
+                 ok-name
+                 (elaborate-named-ability ok-body expected
+                                          (assoc locals ok-name (second type))
+                                          signatures used)
+                 err-name
+                 (elaborate-named-ability err-body expected
+                                          (assoc locals err-name (nth type 2))
+                                          signatures used))))
+
+        (= op 'variant-match)
+        (let [[type value branches] args
+              payloads (into {} (nth type 2))]
+          (preserve-form-meta
+           form
+           (list 'variant-match type
+                 (elaborate-named-ability value type locals signatures used)
+                 (mapv (fn [[tag binder body]]
+                         [tag binder
+                          (elaborate-named-ability body expected
+                                                   (assoc locals binder (get payloads tag))
+                                                   signatures used)])
+                       branches))))
+
         (= op 'typed-cap-call)
         (let [[id request-type result-type request] args]
           (preserve-form-meta
@@ -4061,6 +4108,48 @@
                      form
                      :kotoba.error/option-type-unresolved))
           (list 'option-value-of option-type value fallback))
+
+        ;; Type-directed sugar may appear inside a lowered pattern branch. The
+        ;; branch binder is lexical, but a generic structural recursion would
+        ;; visit the body with the enclosing locals only. In practice this made
+        ;; `(option-or (typed-map-get ... key) fallback)` fail when `key` was
+        ;; derived from a `(some entry ...)` payload, even though `option-match`
+        ;; already carries the exact payload descriptor. Thread the same binder
+        ;; types used by `infer-expression-type` through this earlier rewrite.
+        (= op 'option-match)
+        (let [[type value none-body some-name some-body] args]
+          (list 'option-match type
+                (rewrite-record-projection value locals signatures schemas)
+                (rewrite-record-projection none-body locals signatures schemas)
+                some-name
+                (rewrite-record-projection some-body
+                                           (assoc locals some-name (second type))
+                                           signatures schemas)))
+
+        (= op 'result-match-of)
+        (let [[type value ok-name ok-body err-name err-body] args]
+          (list 'result-match-of type
+                (rewrite-record-projection value locals signatures schemas)
+                ok-name
+                (rewrite-record-projection ok-body
+                                           (assoc locals ok-name (second type))
+                                           signatures schemas)
+                err-name
+                (rewrite-record-projection err-body
+                                           (assoc locals err-name (nth type 2))
+                                           signatures schemas)))
+
+        (= op 'variant-match)
+        (let [[type value branches] args
+              payloads (into {} (nth type 2))]
+          (list 'variant-match type
+                (rewrite-record-projection value locals signatures schemas)
+                (mapv (fn [[tag binder body]]
+                        [tag binder
+                         (rewrite-record-projection body
+                                                    (assoc locals binder (get payloads tag))
+                                                    signatures schemas)])
+                      branches)))
 
         ;; A named schema reference in an operation's *type argument* is
         ;; resolved here too, so validation, inference and lowering keep seeing

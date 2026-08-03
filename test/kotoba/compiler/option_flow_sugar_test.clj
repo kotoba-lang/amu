@@ -63,6 +63,44 @@
     (is (= "fallback"
            (execute source 'choose [[[:option :string] false]])))))
 
+(deftest threads-lowered-pattern-binders-into-option-inference
+  (let [source
+        "(ns option.branch (:export [lookup]))
+         (def map-type [:map :i64 :bool])
+         (def entry-type [:vector [:i64 :bool]])
+         (defn lookup [values [:alias map-type]] :bool
+           (match-option (typed-map-entry-at map-type values 0)
+             [:option entry-type]
+             (none false)
+             (some entry
+               (let [key (hetero-vector-at entry-type entry 0)]
+                 (option-or (typed-map-get map-type values key) false)))))"
+        hir (frontend/analyze source {:language-profile :pure-product})
+        body (:body (first (:functions hir)))]
+    (is (not-any? #{'option-or} (tree-seq coll? seq body)))
+    (is (some #{'option-value-of} (tree-seq coll? seq body)))))
+
+(deftest threads-result-and-variant-payload-binders-too
+  (doseq [source
+          ["(ns option.result-branch (:export [choose]))
+            (def result-type [:result [:option :i64] :string])
+            (defn choose [value [:alias result-type]] :i64
+              (match-result value result-type
+                (ok payload (option-or payload 0))
+                (err message 0)))"
+           "(ns option.variant-branch (:export [choose]))
+            (def variant-type
+              [:variant :option/branch
+               [[:present [:option :i64]] [:absent :bool]]])
+            (defn choose [value [:alias variant-type]] :i64
+              (match-variant value variant-type
+                (:present payload (option-or payload 0))
+                (:absent ignored 0)))"]]
+    (let [hir (frontend/analyze source {:language-profile :pure-product})
+          body (:body (first (:functions hir)))]
+      (is (not-any? #{'option-or} (tree-seq coll? seq body)))
+      (is (some #{'option-value-of} (tree-seq coll? seq body))))))
+
 (deftest rejects-non-options-and-payload-mismatches
   (testing "the type-directed surface fails closed before lowering"
     (is (thrown-with-msg?
