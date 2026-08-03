@@ -5191,6 +5191,253 @@
                     fs)))]
     (-> functions pass pass)))
 
+(defn- closure-dispatcher-function?
+  "The synthetic entry points whose first physical i64 word is a closure pair."
+  [function-name]
+  (or (= '__kotoba_closure_apply function-name)
+      (boolean
+       (re-matches #"__kotoba_invoke(?:_.+)?\$arity[0-4]"
+                   (str function-name)))))
+
+(defn- infer-closure-refinements
+  "Infer checked closure positions without adding a public closure value type.
+
+  Closure pairs intentionally remain i64 words in Wasm/native signatures.  The
+  refinements tell representation-aware runtimes which of those words must be
+  validated as the bounded `(lambda-id, capture-chain)` shape.  Facts only grow:
+  dispatcher arguments seed the graph, static calls propagate requirements to
+  callers, and closure-valued results propagate back through aliases and return
+  positions.  The finite function/parameter graph therefore has a deterministic
+  fixed point."
+  [functions lambda-ids]
+  (let [function-names (set (map :name functions))
+        seed
+        (into {}
+              (map (fn [{:keys [name closure-param-indexes closure-result?]}]
+                     [name {:params (cond-> (set closure-param-indexes)
+                                      (closure-dispatcher-function? name) (conj 0))
+                            :result? (true? closure-result?)}]))
+              functions)
+        refinement-count-limit
+        (+ 1 (count functions) (reduce + (map (comp count :params) functions)))]
+    (letfn [(binding-value [env name]
+              (get env name))
+            (closure-literal? [form]
+              (and (seq? form)
+                   (= 'pair (first form))
+                   (= 3 (count form))
+                   (kotoba-integer? (second form))
+                   ;; NBB represents guest i64 literals as JavaScript BigInt,
+                   ;; which cannot be hashed by the CLJS persistent-set UID
+                   ;; path. Lambda IDs are bounded by max-functions, so a
+                   ;; deterministic linear scan avoids hashing arbitrary pair
+                   ;; payloads without widening the analysis.
+                   (some #(= % (second form)) lambda-ids)))
+            (zero-tested-symbol [form]
+              (when (and (seq? form) (= '= (first form)) (= 3 (count form)))
+                (let [[left right] (rest form)]
+                  (cond
+                    (and (symbol? left) (kotoba-integer? right) (zero? right)) left
+                    (and (symbol? right) (kotoba-integer? left) (zero? left)) right
+                    :else nil))))
+            (expression-status [function-name form env param-indexes facts seen]
+              (cond
+                (closure-literal? form) :closure
+                (symbol? form)
+                (if (contains? seen form)
+                  :unknown
+                  (if-let [{bound-form :form bound-env :env}
+                           (binding-value env form)]
+                    (expression-status function-name bound-form bound-env
+                                       param-indexes facts (conj seen form))
+                    (if (contains? (get-in facts [function-name :params] #{})
+                                   (get param-indexes form))
+                      :closure
+                      :unknown)))
+                (seq? form)
+                (let [[op & args] form]
+                  (cond
+                    (= op 'let)
+                    (let [[bindings body] args]
+                      (loop [pairs (partition 2 bindings) current env]
+                        (if-let [[name value] (first pairs)]
+                          (let [status (expression-status function-name value current
+                                                          param-indexes facts seen)]
+                            (if (= :trap status)
+                              :trap
+                              (recur (next pairs)
+                                     (assoc current name {:form value
+                                                          :env current}))))
+                          (expression-status function-name body current param-indexes
+                                             facts seen))))
+
+                    (= op 'if)
+                    (let [[test then else] args
+                          test-status (expression-status function-name test env
+                                                         param-indexes facts seen)]
+                      (if (= :trap test-status)
+                        :trap
+                        (let [then-status (expression-status function-name then env
+                                                             param-indexes facts seen)
+                              else-status (expression-status function-name else env
+                                                             param-indexes facts seen)
+                              statuses (set [then-status else-status])]
+                          (cond
+                            (= statuses #{:trap}) :trap
+                            (and (contains? statuses :closure)
+                                 (every? #{:closure :trap} statuses)) :closure
+                            :else :unknown))))
+
+                    (= op 'do)
+                    (loop [remaining args]
+                      (if-let [value (first remaining)]
+                        (let [status (expression-status function-name value env
+                                                        param-indexes facts seen)]
+                          (if (or (= :trap status) (nil? (next remaining)))
+                            status
+                            (recur (next remaining))))
+                        :unknown))
+
+                    (and (= op 'quot) (= args '(1 0))) :trap
+
+                    :else
+                    (let [arg-statuses (mapv #(expression-status
+                                              function-name % env param-indexes facts seen)
+                                             args)]
+                      (cond
+                        (some #{:trap} arg-statuses) :trap
+                        (and (contains? function-names op)
+                             (get-in facts [op :result?])) :closure
+                        :else :unknown))))
+                :else :unknown))
+            (analyze-pass [facts]
+              (let [next-facts (volatile! facts)]
+                (letfn [(mark-param! [function-name index]
+                          (when (some? index)
+                            (vswap! next-facts update-in
+                                    [function-name :params] (fnil conj #{}) index)))
+                        (mark-result! [function-name]
+                          (vswap! next-facts assoc-in [function-name :result?] true))
+                        (require-closure! [function-name form env param-indexes
+                                           narrowed seen]
+                          (when-not (= :trap (expression-status
+                                             function-name form env param-indexes
+                                             @next-facts seen))
+                            (cond
+                              (closure-literal? form) nil
+                              (symbol? form)
+                              (when-not (or (contains? narrowed form)
+                                            (contains? seen form))
+                                (if-let [{bound-form :form bound-env :env}
+                                         (binding-value env form)]
+                                  (require-closure! function-name bound-form bound-env
+                                                    param-indexes narrowed
+                                                    (conj seen form))
+                                  (mark-param! function-name
+                                               (get param-indexes form))))
+                              (seq? form)
+                              (let [[op & args] form]
+                                (cond
+                                  (= op 'let)
+                                  (let [[bindings body] args]
+                                    (loop [pairs (partition 2 bindings) current env]
+                                      (if-let [[name value] (first pairs)]
+                                        (recur (next pairs)
+                                               (assoc current name {:form value
+                                                                    :env current}))
+                                        (require-closure! function-name body current
+                                                          param-indexes narrowed seen))))
+                                  (= op 'if)
+                                  (doseq [branch (rest args)]
+                                    (require-closure! function-name branch env
+                                                      param-indexes narrowed seen))
+                                  (= op 'do)
+                                  (when-let [tail (last args)]
+                                    (require-closure! function-name tail env
+                                                      param-indexes narrowed seen))
+                                  (and (contains? function-names op)
+                                       (not (closure-dispatcher-function? op)))
+                                  (mark-result! op)
+                                  :else nil))
+                              :else nil)))
+                        (scan-calls! [function-name form env param-indexes narrowed]
+                          (when (seq? form)
+                            (let [[op & args] form]
+                              (cond
+                                (= op 'let)
+                                (let [[bindings body] args]
+                                  (loop [pairs (partition 2 bindings) current env]
+                                    (if-let [[name value] (first pairs)]
+                                      (do (scan-calls! function-name value current
+                                                       param-indexes narrowed)
+                                          (recur (next pairs)
+                                                 (assoc current name {:form value
+                                                                      :env current})))
+                                      (scan-calls! function-name body current
+                                                   param-indexes narrowed))))
+                                (= op 'if)
+                                (let [[test then else] args
+                                      nonzero-symbol (zero-tested-symbol test)]
+                                  (scan-calls! function-name test env param-indexes narrowed)
+                                  (scan-calls! function-name then env param-indexes narrowed)
+                                  (scan-calls! function-name else env param-indexes
+                                               (cond-> narrowed
+                                                 nonzero-symbol (conj nonzero-symbol))))
+                                :else
+                                (do
+                                  (doseq [arg args]
+                                    (scan-calls! function-name arg env param-indexes
+                                                 narrowed))
+                                  ;; A dispatcher multiplexes lambdas whose
+                                  ;; argument positions may have different
+                                  ;; representation refinements.  Candidate-
+                                  ;; specific requirements belong on each
+                                  ;; helper entry, not on the shared dispatcher
+                                  ;; argument (only its closure handle is a
+                                  ;; uniform checked position).
+                                  (when (and (contains? function-names op)
+                                             (not (closure-dispatcher-function?
+                                                   function-name)))
+                                    (doseq [index (get-in @next-facts
+                                                         [op :params] #{})]
+                                      (when-let [arg (nth args index nil)]
+                                        (require-closure! function-name arg env
+                                                          param-indexes narrowed
+                                                          #{})))))))))]
+                  (doseq [{:keys [name params body]} functions]
+                    (let [param-indexes (zipmap params (range))]
+                      (when (= :closure (expression-status
+                                         name body {} param-indexes @next-facts #{}))
+                        (mark-result! name))
+                      (when (get-in @next-facts [name :result?])
+                        (require-closure! name body {} param-indexes #{} #{}))
+                      (scan-calls! name body {} param-indexes #{})))
+                  @next-facts)))]
+      (let [facts
+            (loop [facts seed iteration 0]
+              (let [next-facts (analyze-pass facts)]
+                (cond
+                  (= facts next-facts) facts
+                  (>= iteration refinement-count-limit)
+                  (reject! "closure refinement inference did not converge"
+                           {:iterations iteration})
+                  :else (recur next-facts (inc iteration)))))]
+        (mapv
+         (fn [{:keys [name param-types result] :as function}]
+           (let [indexes (vec (sort (get-in facts [name :params] #{})))
+                 result? (true? (get-in facts [name :result?]))]
+             (doseq [index indexes]
+               (when-not (= :i64 (nth param-types index nil))
+                 (reject! "closure refinement requires an i64 parameter"
+                          {:function name :parameter-index index})))
+             (when (and result? (not= :i64 result))
+               (reject! "closure refinement requires an i64 result"
+                        {:function name :result result}))
+             (cond-> function
+               (seq indexes) (assoc :closure-param-indexes indexes)
+               result? (assoc :closure-result? true))))
+         functions)))))
+
 (defn- rewrite-record-projections
   "Apply `rewrite-record-projection` to every function body. Only modules that
   declare param types can resolve the sugar; untyped modules are left alone and
@@ -6439,6 +6686,8 @@
         parsed (infer-absent-results parsed)
         named-elaboration (elaborate-named-abilities parsed)
         parsed (:functions named-elaboration)
+        parsed (infer-closure-refinements parsed
+                                          (mapv :id preliminary-lambdas))
         used-capability-names
         (set/union @used-capabilities (:used named-elaboration))
         signatures (into {} (map (juxt :name :params) parsed))
@@ -6510,6 +6759,9 @@
     (check-lowering-budget! parsed)
     (let [typed-values? (boolean
                          (or (seq (:schemas namespace-info))
+                         (some #(or (seq (:closure-param-indexes %))
+                                    (:closure-result? %))
+                               parsed)
                          (some (fn [{:keys [param-types result body]}]
                                  (or (some #(or (contains? #{:f32 :f64 :string :keyword :map :option-i64 :result-i64 :vector-i64 :vector-f64 :string-index :disjoint-set-i64 :document} %)
                                                 (structured-type? %)) param-types)
