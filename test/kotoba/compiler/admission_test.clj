@@ -140,6 +140,7 @@
               :kgraph-capacity 4096
              :string-equal-offset 112 :string-concat-offset 120
              :typed-cap-call-offset 128
+              :string-substring-offset 136
               :string-pool-capacity 65536}
              (:context-abi artifact))))))
 
