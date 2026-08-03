@@ -24,6 +24,7 @@
             [kotoba.compiler.document-dom-reconcile-test]
             [kotoba.compiler.document-dual-renderer-test]
             [kotoba.compiler.document-roundtrip-test]
+            [kotoba.compiler.document-edn-test]
             [kotoba.compiler.document-perf-workload-test]
             [kotoba.compiler.recursive-tree-value-test]
             [kotoba.compiler.recursive-tree-update-test]
@@ -133,6 +134,7 @@
                                           'kotoba.compiler.document-dom-reconcile-test
                                           'kotoba.compiler.document-dual-renderer-test
                                           'kotoba.compiler.document-roundtrip-test
+                                          'kotoba.compiler.document-edn-test
                                           'kotoba.compiler.document-perf-workload-test
                                           'kotoba.compiler.recursive-tree-value-test
                                           'kotoba.compiler.recursive-tree-update-test

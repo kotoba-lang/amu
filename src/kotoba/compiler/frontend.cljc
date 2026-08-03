@@ -174,6 +174,7 @@
 (def document-fixed-operations
   '{document-null 0 document-bool 1 document-i64 1 document-f64 1
     document-string 1 document-keyword 1 document-count 1 document-kind 1 document-sha256 1 document-print 1 document-read 1
+    document-edn-print 1 document-edn-read 1
     document-vector-at 2 document-map-entry-at 2 document-vector-assoc 3 document-vector-conj 2
     document-vector-drop 2 document-vector-remove 2
     document-equal? 2 document-contains 2 document-get 2 document-assoc 3 document-dissoc 2
@@ -3036,6 +3037,10 @@
       (= op 'document-print)
       (do (require-expression-type! (first types) :document (first args)) :string)
       (= op 'document-read)
+      (do (require-expression-type! (first types) :string (first args)) :document)
+      (= op 'document-edn-print)
+      (do (require-expression-type! (first types) :document (first args)) :string)
+      (= op 'document-edn-read)
       (do (require-expression-type! (first types) :string (first args)) :document)
       (= op 'document-vector-at)
       (do (require-expression-type! (nth types 0) :document (nth args 0))
