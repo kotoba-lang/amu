@@ -175,12 +175,12 @@
   '{document-null 0 document-bool 1 document-i64 1 document-f64 1
     document-string 1 document-keyword 1 document-symbol 1 document-count 1 document-kind 1 document-sha256 1 document-print 1 document-read 1
     document-edn-print 1 document-edn-read 1
-    document-vector-at 2 document-map-entry-at 2 document-vector-assoc 3 document-vector-conj 2
+    document-vector-at 2 document-list-at 2 document-map-entry-at 2 document-vector-assoc 3 document-vector-conj 2
     document-vector-drop 2 document-vector-remove 2
     document-equal? 2 document-contains 2 document-get 2 document-assoc 3 document-dissoc 2
     document-merge 2 document-string-value 1 document-keyword-value 1 document-symbol-value 1 document-bool-value 1
     document-i64-value 1 document-f64-value 1})
-(def document-variadic-operations '#{document-vector document-map})
+(def document-variadic-operations '#{document-vector document-list document-map})
 (def sequencing-operations '#{do})
 (def string-operations '{string-byte-length 1 string-length 1 string-from-i64 1
                          bytes-task-byte-count 1 task-ready? 1
@@ -2802,9 +2802,9 @@
               (reject! "document operation arity mismatch" form))
             (doseq [arg args] (validate-expr arg locals functions (inc depth) budget)))
 
-        (= op 'document-vector)
+        (contains? '#{document-vector document-list} op)
         (do (when (> (count args) value/document-container-item-limit)
-              (reject! "document-vector exceeds item limit" form))
+              (reject! "document sequence exceeds item limit" form))
             (doseq [arg args] (validate-expr arg locals functions (inc depth) budget)))
 
         (= op 'document-map)
@@ -3025,6 +3025,9 @@
       (= op 'document-vector)
       (do (doseq [[arg type] (map vector args types)]
             (require-expression-type! type :document arg)) :document)
+      (= op 'document-list)
+      (do (doseq [[arg type] (map vector args types)]
+            (require-expression-type! type :document arg)) :document)
       (= op 'document-map)
       (do (doseq [[[key-form item-form] [key-type item-type]]
                   (map vector (partition 2 args) (partition 2 types))]
@@ -3045,6 +3048,9 @@
       (= op 'document-edn-read)
       (do (require-expression-type! (first types) :string (first args)) :document)
       (= op 'document-vector-at)
+      (do (require-expression-type! (nth types 0) :document (nth args 0))
+          (require-expression-type! (nth types 1) :i64 (nth args 1)) [:option :document])
+      (= op 'document-list-at)
       (do (require-expression-type! (nth types 0) :document (nth args 0))
           (require-expression-type! (nth types 1) :i64 (nth args 1)) [:option :document])
       (= op 'document-map-entry-at)
