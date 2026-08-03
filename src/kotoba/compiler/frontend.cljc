@@ -225,6 +225,38 @@
     document-bool-value #{0}
     document-i64-value #{0}
     document-f64-value #{0}})
+(def ^:private contextual-f64-argument-indexes
+  "Builtin positions whose operands are f64 values. Conversion constructors
+  whose input is i64 are deliberately absent."
+  '{f64-to-bits #{0}
+    f64-to-i64-checked #{0} f64-to-i64-truncating #{0}
+    f64-add #{0 1} f64-sub #{0 1} f64-mul #{0 1} f64-div #{0 1}
+    f64-min #{0 1} f64-max #{0 1}
+    f64-neg #{0} f64-abs #{0} f64-sqrt #{0}
+    f64-sin-quarter-turn #{0} f64-cos-quarter-turn #{0}
+    f64-sin-bounded #{0} f64-cos-bounded #{0}
+    f64-exp-near-zero #{0} f64-log-near-one #{0}
+    f64-atan2-bounded #{0 1} f64-exp-bounded #{0} f64-log-bounded #{0}
+    f64-eq #{0 1} f64-lt #{0 1} f64-le #{0 1}
+    f64-gt #{0 1} f64-ge #{0 1} f64-unordered #{0 1}
+    f64-to-f32-rounded #{0}})
+(def ^:private contextual-f32-argument-indexes
+  "Builtin positions whose operands are f32 values."
+  '{f32-to-bits #{0} f32-to-f64-exact #{0}
+    f32-to-i64-checked #{0} f32-to-i64-truncating #{0}
+    f32-add #{0 1} f32-sub #{0 1} f32-mul #{0 1} f32-div #{0 1}
+    f32-min #{0 1} f32-max #{0 1}
+    f32-neg #{0} f32-abs #{0} f32-sqrt #{0}
+    f32-eq #{0 1} f32-lt #{0 1} f32-le #{0 1}
+    f32-gt #{0 1} f32-ge #{0 1} f32-unordered #{0 1}})
+(def ^:private contextual-vector-f64-argument-types
+  "Typed vector operands and f64 item/fallback positions."
+  '{vector-f64-count {0 :vector-f64}
+    vector-f64-get {0 :vector-f64 2 :f64}
+    vector-f64-at {0 :vector-f64}
+    vector-f64-drop {0 :vector-f64}
+    vector-f64-assoc {0 :vector-f64 2 :f64}
+    vector-f64-conj {0 :vector-f64 1 :f64}})
 (def typed-f64-vector-operations
   '{vector-f64-count 1 vector-f64-get 3 vector-f64-at 2 vector-f64-drop 2
     vector-f64-assoc 3 vector-f64-conj 2})
@@ -739,7 +771,8 @@
 (def ^:dynamic *contextual-closure-result-type* nil)
 (def ^:dynamic *required-closure-dispatchers* nil)
 
-(def ^:private closure-flat-result-types #{:i64 :bool :string :vector-i64 :document})
+(def ^:private closure-flat-result-types
+  #{:i64 :bool :f32 :f64 :string :vector-i64 :vector-f64 :document})
 
 (defn- canonical-closure-result-type
   "Resolve a top-level schema reference before it becomes dispatcher identity.
@@ -2310,6 +2343,38 @@
                                arg))
                             args))
 
+        (contains? contextual-f64-argument-indexes op)
+        (let [f64-indexes (get contextual-f64-argument-indexes op)]
+          (apply list op
+                 (map-indexed (fn [index arg]
+                                ((if (contains? f64-indexes index)
+                                   #(desugar-result-expr :f64 %)
+                                   desugar-expr)
+                                 arg))
+                              args)))
+
+        (contains? contextual-f32-argument-indexes op)
+        (let [f32-indexes (get contextual-f32-argument-indexes op)]
+          (apply list op
+                 (map-indexed (fn [index arg]
+                                ((if (contains? f32-indexes index)
+                                   #(desugar-result-expr :f32 %)
+                                   desugar-expr)
+                                 arg))
+                              args)))
+
+        (contains? contextual-vector-f64-argument-types op)
+        (let [expected-types (get contextual-vector-f64-argument-types op)]
+          (apply list op
+                 (map-indexed (fn [index arg]
+                                (if-let [expected (get expected-types index)]
+                                  (desugar-result-expr expected arg)
+                                  (desugar-expr arg)))
+                              args)))
+
+        (= 'vector-f64-new op)
+        (apply list op (map #(desugar-result-expr :f64 %) args))
+
         (contains? typed-vector-operations op)
         (do
           (when-not (= (get typed-vector-operations op) (count args))
@@ -2674,7 +2739,8 @@
                        (apply list 'vector-new (map desugar-expr args)))
         vector-f64 (do (when (> (count args) value/vector-literal-item-limit)
                          (reject! "vector-f64 exceeds item limit" form))
-                       (apply list 'vector-f64-new (map desugar-expr args)))
+                       (apply list 'vector-f64-new
+                              (map #(desugar-result-expr :f64 %) args)))
         match-result
         (do
           (when-not (= 4 (count args))

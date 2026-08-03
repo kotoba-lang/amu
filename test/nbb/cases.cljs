@@ -35,6 +35,9 @@
     :target "wasm32-browser" :policy nil}
    {:name "callable-values" :source "test/nbb/fixtures/callable-values.kotoba"
     :target "wasm32-browser" :policy nil}
+   {:name "numeric-closure-results"
+    :source "test/nbb/fixtures/numeric-closure-results.kotoba"
+    :target "wasm32-browser" :policy nil}
    {:name "lazy-sequence" :source "test/nbb/fixtures/lazy-sequence.kotoba"
     :target "wasm32-browser" :policy nil}
    ;; i64/sleb128 boundary regression cases (this PR): the whole point of

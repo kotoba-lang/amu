@@ -1,0 +1,12 @@
+(defn main []
+  (let [decode-f64 (fn [bits] (f64-from-bits bits))
+        decode-f32 (fn [bits] (f32-from-bits bits))
+        singleton (fn [bits]
+                    (vector-f64-new (f64-from-bits bits)))]
+    (if (f32-eq (decode-f32 1065353216)
+                (f32-from-bits 1065353216))
+      (f64-to-bits
+        (f64-add
+          (decode-f64 4607182418800017408)
+          (vector-f64-at (singleton 4607182418800017408) 0)))
+      0)))
