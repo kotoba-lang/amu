@@ -108,7 +108,17 @@
         cache-file (.join path (.tmpdir os) (str "kotoba-security-classpath-" digest ".txt"))]
     (if (.existsSync fs cache-file)
       (.trim (.readFileSync fs cache-file "utf8"))
-      (if-let [resolved (or (resolve-with-lock root nbb-cli) (resolve-with-jvm root))]
+      (if-let [resolved (or (resolve-with-lock root nbb-cli)
+                            ;; Say so. A stale lock silently falling back to
+                            ;; the JVM is the JDK-free property disappearing
+                            ;; without anyone noticing -- and this repository
+                            ;; moves dependency pins often enough for that to
+                            ;; be the normal case, not an edge one.
+                            (do (.error js/console
+                                        (str "kotoba: deps-lock.edn is missing or stale; "
+                                             "falling back to `clojure -Spath` (needs a JDK). "
+                                             "Regenerate with: nbb scripts/lock-classpath.cljs"))
+                                (resolve-with-jvm root)))]
         (do (.writeFileSync fs cache-file resolved) resolved)
         (fail! (str "error: cannot resolve the compiler's dependency closure.\n"
                     "  deps-lock.edn resolves it without a JDK; regenerate it with\n"
