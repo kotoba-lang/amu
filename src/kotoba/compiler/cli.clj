@@ -8,6 +8,7 @@
             [kotoba.compiler.diagnostic :as diagnostic]
             [kotoba.compiler.ios-aot :as ios-aot]
             [kotoba.compiler.interface :as interface]
+            [kotoba.compiler.module-lock :as module-lock]
             [kotoba.compiler.project :as project]
             [kotoba.compiler.project-files :as project-files]
             [kotoba.compiler.packaging.pe32plus :as pe32plus]
@@ -321,19 +322,46 @@
       (println (pr-str {:ok true :target :x86_64-aiueos-uefi-v1
                         :kernel input :output output
                         :kernel-sha256 (:embedded-kernel-sha256 packaged)})))
-    "compile"
+    "module-lock"
+    ;; Pin a path-resolved project once so every later compile of it resolves
+    ;; by CID instead of by whatever is on disk.
     (let [input (kotoba-source! (second args))
           source-roots (options args "--source-path")
+          blocks (or (option args "--blocks")
+                     (throw (ex-info "--blocks <dir> is required" {:phase :usage})))
+          output (or (option args "--output") "kotoba.modules.edn")]
+      (when (empty? source-roots)
+        (throw (ex-info "--source-path is required" {:phase :usage})))
+      (let [lock (module-lock/lock-from-source-paths input source-roots blocks)]
+        (atomic-output/write-edn! output (dissoc lock :lock-cid))
+        (println (pr-str {:ok true :lock output :blocks blocks
+                          :root (:root lock) :modules (count (:modules lock))
+                          :lock-cid (:lock-cid lock)}))))
+
+    "compile"
+    (let [input (when-not (option args "--module-lock") (kotoba-source! (second args)))
+          source-roots (options args "--source-path")
+          module-lock-path (option args "--module-lock")
+          locked (when module-lock-path
+                   (module-lock/load-locked-graph
+                    module-lock-path
+                    (or (option args "--blocks")
+                        (throw (ex-info "--module-lock requires --blocks <dir>"
+                                        {:phase :usage})))))
           target (parse-target (or (option args "--target") "wasm32"))
           output (or (option args "--output")
-                     (str input (case (:execution (target-profile/profile target))
-                                  :wasm ".wasm"
-                                  :component ".component.wasm"
-                                  :cljs ".cljs"
-                                  :javascript ".mjs"
-                                  :kernel ".o"
-                                  :process ".elf"
-                                  ".kexe")))
+                     ;; A locked compile has no input PATH to derive a name
+                     ;; from -- that is the point -- so the root namespace
+                     ;; names the artifact instead.
+                     (str (or input (str (:root locked)))
+                          (case (:execution (target-profile/profile target))
+                            :wasm ".wasm"
+                            :component ".component.wasm"
+                            :cljs ".cljs"
+                            :javascript ".mjs"
+                            :kernel ".o"
+                            :process ".elf"
+                            ".kexe")))
           component-target? (= :component (:execution (target-profile/profile target)))
           policy-path (option args "--policy")
           policy (if policy-path (bounded-edn/read-file policy-path) {})
@@ -356,6 +384,18 @@
             (assoc :capability-mode
                    (keyword (option args "--capability-mode"))))
           result (cond
+                   ;; CID-pinned graph. Identical downstream to the path-
+                   ;; resolved cases below: only how the sources were found,
+                   ;; and whether that finding was verified, differs.
+                   (and locked component-target?)
+                   (let [linked (project/link-source (:sources locked) (:root locked))]
+                     (compiler/compile-component (:source linked) policy
+                                                 (assoc component-opts
+                                                        :admit-linked-synthetics? true)))
+
+                   locked
+                   (compiler/compile-project (:sources locked) (:root locked) target policy)
+
                    ;; Multi-file closed graph → link → compile-component (T8.3
                    ;; multi-file project kit body first slice). Same Canonical
                    ;; lowering path as single-file component compile.

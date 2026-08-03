@@ -40,6 +40,35 @@ confined to one of those real paths. If the same qualified namespace exists
 in multiple roots, compilation rejects the ambiguity instead of selecting a
 package by argument order.
 
+### CID-pinned modules
+
+Path resolution is ambient: what a build compiles depends on what happens to be
+on disk, so the same source can compile to two different artifacts on two
+machines and neither build can say which inputs it actually used. `--module-lock`
+resolves `(:require ...)` through a lock that names every module by CID instead.
+
+```sh
+# Pin a path-resolved project once.
+kotoba -M module-lock src/example/app.kotoba \
+  --source-path src --blocks .kotoba/blocks --output kotoba.modules.edn
+
+# From then on, compile by CID. No path search, no fallback.
+kotoba -M compile --module-lock kotoba.modules.edn --blocks .kotoba/blocks \
+  --target wasm32 --output app.wasm
+```
+
+Bytes are read from the block directory and rejected unless they hash to the
+CID the lock names, and a `:require` for a namespace the lock does not pin is an
+error rather than a reason to go looking. `module-lock/lock-cid` gives the whole
+resolved input set one identity, so a receipt can bind a value that changes
+whenever any input does.
+
+This is deliberately distinct from the semantic definition CIDs in
+`kotoba-lang/codebase`. A source-tree CID says which bytes were compiled; a
+definition CID says what a definition *means*. Conflating them would let a
+comment change invalidate a definition identity, or let two different sources
+claim one.
+
 All compilation results carry
 `:kotoba.floating-point/ieee-754-f32-f64-v7`; restricted JavaScript artifacts
 seal the equivalent policy. Scalar `:f32` and `:f64` provide exact bit
