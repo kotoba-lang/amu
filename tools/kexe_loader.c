@@ -66,6 +66,14 @@ struct kexe_context_v2 {
   int64_t (*string_concat)(struct kexe_context_v2 *, int64_t, int64_t);
   int64_t (*typed_cap_call)(struct kexe_context_v2 *, uint64_t, uint64_t,
                             uint64_t, int64_t);
+  /* string-substring over an arbitrary string value. Unlike string_concat
+   * this allocates no pool bytes: a substring is a contiguous byte range of
+   * its source, so the result is a VIEW -- a new pair(offset', length')
+   * addressing the same bytes. Only the boundary CHECK needs the host (the
+   * guest cannot load a byte), which is why this is a whole-operation
+   * callback like string_equal/string_concat rather than a byte accessor. */
+  int64_t (*string_substring)(struct kexe_context_v2 *, int64_t, int64_t,
+                              int64_t);
   /* Data-only (not part of the compiler-checked context-abi): the mmap'd
    * code+literal-data region's base address and real (unpadded) byte
    * length, set once in main() before the guest runs. Never read by guest
@@ -103,6 +111,7 @@ _Static_assert(offsetof(struct kexe_context_v2, kgraph_entity_at) == 104, "kgrap
 _Static_assert(offsetof(struct kexe_context_v2, typed_cap_call) == 128, "typed cap ABI drift");
 _Static_assert(offsetof(struct kexe_context_v2, string_equal) == 112, "string ABI drift");
 _Static_assert(offsetof(struct kexe_context_v2, string_concat) == 120, "string ABI drift");
+_Static_assert(offsetof(struct kexe_context_v2, string_substring) == 136, "string ABI drift");
 _Static_assert(sizeof(((struct kexe_shared_v2 *)0)->pairs) == 65536,
                "pair arena size drift");
 _Static_assert(sizeof(((struct kexe_shared_v2 *)0)->datoms) == 98304,
@@ -402,6 +411,43 @@ static int64_t checked_string_concat(struct kexe_context_v2 *context,
   memcpy(shared->string_pool + pool_offset + (uint64_t)length_a, b, (size_t)length_b);
   shared->string_pool_used += (uint64_t)total;
   return checked_pair_new(context, -((int64_t)pool_offset) - 1, total);
+}
+
+/* Mirrors backend/cljs.clj's kotoba$utf8-substring, which is the oracle for
+ * this operation on every target. That function's two distinct failures are
+ * reproduced here in its order:
+ *   1. :substring-bounds -- unless 0 <= start <= end <= byte-length.
+ *   2. :substring-code-point-boundary -- it maps byte offsets to code points
+ *      and fails when either index is absent from that map. An index is in
+ *      the map exactly when it is 0, the byte length, or addresses a
+ *      non-continuation byte -- PROVIDED the source is canonical UTF-8, so
+ *      that is checked rather than assumed: a guest can hand over any pair,
+ *      and over invalid UTF-8 "not a continuation byte" would not mean
+ *      "code-point boundary". */
+static int64_t checked_string_substring(struct kexe_context_v2 *context,
+                                        int64_t handle, int64_t start,
+                                        int64_t end) {
+  if (context == NULL || context->version != 2) { raise(SIGILL); return 0; }
+  int64_t offset = checked_pair_get(context, handle, 0);
+  int64_t length = checked_pair_get(context, handle, 1);
+  if (length < 0 || start < 0 || end < start || end > length) {
+    raise(SIGILL);
+    return 0;
+  }
+  const uint8_t *bytes = resolve_string_bytes(context, offset, length);
+  if (bytes == NULL) { raise(SIGILL); return 0; }
+  if (!valid_utf8(bytes, (uint64_t)length)) { raise(SIGILL); return 0; }
+  if (start < length && (bytes[start] & 0xc0) == 0x80) { raise(SIGILL); return 0; }
+  if (end < length && (bytes[end] & 0xc0) == 0x80) { raise(SIGILL); return 0; }
+  /* No copy and no pool allocation: the result addresses the source's own
+   * bytes. `offset` spans one uniform byte space whose two halves run in
+   * OPPOSITE directions -- non-negative indexes code+literal data forward,
+   * negative indexes string_pool through `-offset - 1` -- so advancing by
+   * `start` bytes means adding there and SUBTRACTING here. Neither can
+   * overflow: resolve_string_bytes has already established that the whole
+   * [offset, offset+length) range lies inside its half, and start <= length. */
+  int64_t result_offset = offset >= 0 ? offset + start : offset - start;
+  return checked_pair_new(context, result_offset, end - start);
 }
 
 static int parse_allow(const char *text, uint64_t allow[4]) {
@@ -707,6 +753,7 @@ int main(int argc, char **argv) {
   shared->context.kgraph_entity_at = checked_kgraph_entity_at;
   shared->context.string_equal = checked_string_equal;
   shared->context.string_concat = checked_string_concat;
+  shared->context.string_substring = checked_string_substring;
   shared->context.typed_cap_call = checked_typed_cap_call;
   shared->context.code_base = (const uint8_t *)memory;
   shared->context.code_length = (uint64_t)length;

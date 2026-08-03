@@ -857,3 +857,64 @@
              real `kexe-loader` native process every other deftest in this
              file uses"))
       (finally (delete-tree! (.toFile directory))))))
+
+;; string-substring's general form (host callback at context offset 136).
+;; The all-ASCII-literal case compiles to pure pair arithmetic and never
+;; reaches the host, so these deliberately use shapes it cannot claim: a
+;; concat result (string_pool-backed, NEGATIVE offset, where advancing by
+;; `start` bytes SUBTRACTS) and a non-ASCII literal (code+literal-data
+;; backed, positive offset, where it adds).
+(deftest general-string-substring-executes-through-real-native-loader
+  (let [{:keys [envelope trust]}
+        (signed (str "(defn main [] (string-byte-length"
+                     " (string-substring (string-concat \"ab\" \"cde\") 1 4)))")
+                {:allow #{}})
+        {:keys [trust options]} (execution-options trust)
+        result (executor/execute envelope trust {:allow #{}} {:args []} options)]
+    (is (= {:status :ok :result 3}
+           (select-keys (:evidence result) [:status :result])))))
+
+(deftest general-string-substring-preserves-content-over-pool-backed-source
+  (let [{:keys [envelope trust]}
+        (signed (str "(defn main [] (if (string=?"
+                     " (string-substring (string-concat \"日本\" \"語\") 3 9)"
+                     " \"本語\") 1 0))")
+                {:allow #{}})
+        {:keys [trust options]} (execution-options trust)
+        result (executor/execute envelope trust {:allow #{}} {:args []} options)]
+    (is (= {:status :ok :result 1}
+           (select-keys (:evidence result) [:status :result])))))
+
+(deftest general-string-substring-preserves-content-over-literal-source
+  (let [{:keys [envelope trust]}
+        (signed (str "(defn main [] (if (string=?"
+                     " (string-substring \"日本語\" 3 9) \"本語\") 1 0))")
+                {:allow #{}})
+        {:keys [trust options]} (execution-options trust)
+        result (executor/execute envelope trust {:allow #{}} {:args []} options)]
+    (is (= {:status :ok :result 1}
+           (select-keys (:evidence result) [:status :result])))))
+
+;; The shared oracle kotoba.kir.value/utf8-substring! rejects an index that
+;; splits a code point. The loader must too, rather than silently returning a
+;; handle to a partial code point -- that would be a string value whose bytes
+;; are not canonical UTF-8.
+(deftest constant-string-substring-splitting-a-code-point-is-rejected-at-compile-time
+  (is (thrown-with-msg?
+       clojure.lang.ExceptionInfo #"splits a UTF-8 code point"
+       (compiler/compile-source
+        "(defn main [] (string-byte-length (string-substring \"日本語\" 1 9)))"
+        (target) {:allow #{}}))))
+
+;; There is deliberately no test that reaches the loader's boundary check at
+;; run time, because from this compiler no artifact can. The entry takes zero
+;; arguments ("main must take zero arguments"), and compilation evaluates the
+;; entry with the shared oracle before emitting -- an index that splits a code
+;; point therefore always fails at compile time, as the test above shows, and
+;; there is no input left that the compiler cannot decide. The loader checks
+;; anyway for the same reason checked_string_concat rules out overflow: it does
+;; not trust what a guest put in a pair cell, and an artifact need not have
+;; come from this compiler. Attempts to reach it from here were tried and are
+;; recorded so they are not retried: a recursive index is still evaluated by
+;; the oracle, and passing :args to a zero-arity entry is rejected as an
+;; entry-arity error before execution.
