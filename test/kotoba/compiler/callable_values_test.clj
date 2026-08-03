@@ -93,6 +93,18 @@
             "(defn add [a b] (+ a b))
              (defn main [] (reduce (fn-ref add) 0 [4 5]))"))))
 
+(deftest lexical-callbacks-shadow-same-named-top-level-functions
+  (is (= 4 (execute-main
+            "(defn keep? [x] false)
+             (defn main []
+               (let [keep? (fn [x] (> x 2))]
+                 (vector-at (filter keep? [1 4]) 0)))")))
+  (is (= 7 (execute-main
+            "(defn combine [a b] (+ a b))
+             (defn main []
+               (let [combine (fn [a b] (- a b))]
+                 (reduce combine 10 [3])))"))))
+
 (deftest callable-values-have-explicit-typed-results
   (is (= 1 (execute-main
             "(defn main []

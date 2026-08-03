@@ -91,6 +91,12 @@
                     (<= (js/BigInt \"-9223372036854775808\") value
                         (js/BigInt \"9223372036854775807\"))))))")
 
+(def ^:private vector-index-source
+  "(defn- kotoba$host-index [index]
+  #?(:clj (when (integer? index) (long index))
+     :cljs (let [host-index (if (number? index) index (js/Number index))]
+             (when (js/Number.isSafeInteger host-index) host-index))))")
+
 (defn- lower-expr [form]
   (cond
     (integer? form) form
@@ -113,6 +119,77 @@
         pair (let [[l r] args] (list 'vector (lower-expr l) (lower-expr r)))
         pair-first (list 'nth (lower-expr (first args)) 0)
         pair-second (list 'nth (lower-expr (first args)) 1)
+
+        vector-new
+        (list 'kotoba$typed-value! (list 'quote :vector-i64)
+              (apply list 'vector (map lower-expr args)))
+
+        vector-count
+        (list 'kotoba$vector-count (lower-expr (first args)))
+
+        vector-get
+        (list 'kotoba$vector-get
+              (lower-expr (first args))
+              (lower-expr (second args))
+              (list 'fn [] (lower-expr (nth args 2))))
+
+        vector-at
+        (list 'kotoba$vector-at
+              (lower-expr (first args))
+              (lower-expr (second args)))
+
+        vector-drop
+        (list 'kotoba$vector-drop
+              (lower-expr (first args))
+              (lower-expr (second args)))
+
+        vector-assoc
+        (list 'kotoba$vector-assoc
+              (lower-expr (first args))
+              (lower-expr (second args))
+              (lower-expr (nth args 2)))
+
+        vector-conj
+        (list 'kotoba$vector-conj
+              (lower-expr (first args))
+              (lower-expr (second args)))
+
+        hetero-vector-new
+        (let [[type & items] args]
+          (list 'kotoba$typed-value! (list 'quote type)
+                (apply list 'vector (list 'quote type) (map lower-expr items))))
+
+        hetero-vector-count
+        (let [[type value] args]
+          (list 'dec
+                (list 'count
+                      (list 'kotoba$typed-value! (list 'quote type)
+                            (lower-expr value)))))
+
+        hetero-vector-at
+        (let [[type value index] args]
+          (list 'nth
+                (list 'kotoba$typed-value! (list 'quote type)
+                      (lower-expr value))
+                (inc index)))
+
+        hetero-vector-assoc
+        (let [[type value index item] args]
+          (list 'kotoba$typed-value! (list 'quote type)
+                (list 'assoc
+                      (list 'kotoba$typed-value! (list 'quote type)
+                            (lower-expr value))
+                      (inc index)
+                      (lower-expr item))))
+
+        hetero-vector-equal
+        (let [[type left right] args]
+          (list 'if
+                (list '= (list 'kotoba$typed-value! (list 'quote type)
+                               (lower-expr left))
+                      (list 'kotoba$typed-value! (list 'quote type)
+                            (lower-expr right)))
+                1 0))
 
         quot (list 'kotoba$quot (lower-expr (first args)) (lower-expr (second args)))
 
@@ -281,6 +358,12 @@
                     (= descriptor :bool)
                     (when-not (or (true? item) (false? item))
                       (kotoba$typed-fail! "invalid-typed-value" {:expected :bool}))
+                    (= descriptor :vector-i64)
+                    (when-not (and (vector? item)
+                                   (<= (count item) 16384)
+                                   (every? kotoba$i64-value? item))
+                      (kotoba$typed-fail! "invalid-typed-value"
+                                          {:expected :vector-i64}))
                     (and (vector? descriptor) (= :ref (first descriptor)))
                     (if-let [resolved (get kotoba$schemas (second descriptor))]
                       (walk resolved item (inc depth))
@@ -341,6 +424,40 @@
                                         {:reason :unknown-type :type descriptor})))]
           (walk type value 0)
           value)))
+    (defn- kotoba$vector-count [items]
+      (count (kotoba$typed-value! :vector-i64 items)))
+    (defn- kotoba$vector-get [items index fallback]
+      (let [items (kotoba$typed-value! :vector-i64 items)
+            index (kotoba$host-index index)]
+        (if (and (some? index) (<= 0 index) (< index (count items)))
+          (nth items index)
+          (fallback))))
+    (defn- kotoba$vector-at [items index]
+      (let [items (kotoba$typed-value! :vector-i64 items)
+            index (kotoba$host-index index)]
+        (when-not (and (some? index) (<= 0 index) (< index (count items)))
+          (kotoba$typed-fail! "vector-index-out-of-range" {:index index}))
+        (nth items index)))
+    (defn- kotoba$vector-drop [items drop-count]
+      (let [items (kotoba$typed-value! :vector-i64 items)
+            drop-count (kotoba$host-index drop-count)]
+        (when-not (and (some? drop-count)
+                       (<= 0 drop-count (count items)))
+          (kotoba$typed-fail! "vector-drop-out-of-range" {:count drop-count}))
+        (subvec items drop-count)))
+    (defn- kotoba$vector-assoc [items index item]
+      (let [items (kotoba$typed-value! :vector-i64 items)
+            index (kotoba$host-index index)]
+        (when-not (and (some? index) (<= 0 index) (< index (count items)))
+          (kotoba$typed-fail! "vector-index-out-of-range" {:index index}))
+        (kotoba$typed-value! :i64 item)
+        (assoc items index item)))
+    (defn- kotoba$vector-conj [items item]
+      (let [items (kotoba$typed-value! :vector-i64 items)]
+        (when (>= (count items) 16384)
+          (kotoba$typed-fail! "vector-too-large" {:limit 16384}))
+        (kotoba$typed-value! :i64 item)
+        (conj items item)))
     (defn set-typed-providers! [options]
       (when-not (and (map? options) (= #{:allow :providers} (set (keys options))))
         (kotoba$typed-fail! "typed provider options are not exact" {}))
@@ -416,5 +533,6 @@
                       prelude-forms
                        [(list* 'declare fn-names)] fn-forms)]
     (str/join "\n\n"
-              (concat [(pr-str (list 'ns default-ns-name)) i64-predicate-source]
+              (concat [(pr-str (list 'ns default-ns-name))
+                       i64-predicate-source vector-index-source]
                       (map pr-str forms)))))
