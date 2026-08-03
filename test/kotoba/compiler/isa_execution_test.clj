@@ -114,7 +114,19 @@
    ["f64-unordered NaN" (f64c "f64-unordered" f64-nan f64-one) 1]
    ["f64-unordered ordered" (f64c "f64-unordered" f64-one f64-two) 0]
    ["kgraph" (str "(defn main [] (do (kgraph-assert! 1 2 3)"
-                  " (kgraph-get 1 2)))") 3]])
+                  " (kgraph-get 1 2)))") 3]
+   ;; Keyword operations, which desugar into the general substring and the
+   ;; concatenation rather than needing anything of their own. The content
+   ;; comparisons are the point: a length-only check would pass even if the
+   ;; colon were kept or an extra byte dropped.
+   ["keyword-name length" "(defn main [] (string-byte-length (keyword-name :abc)))" 3]
+   ["keyword-name content"
+    "(defn main [] (if (string=? (keyword-name :abc) \"abc\") 1 0))" 1]
+   ["keyword-from-string round trip"
+    (str "(defn main [] (if (string=? (keyword-name"
+         " (keyword-from-string \"xy\")) \"xy\") 1 0))") 1]
+   ["keyword-name of a multi-byte name"
+    "(defn main [] (string-byte-length (keyword-name :日本)))" 6]])
 
 (deftest the-verified-surface-executes-identically-on-every-available-isa
   (let [available (into {} (remove (comp nil? val) @loaders))
