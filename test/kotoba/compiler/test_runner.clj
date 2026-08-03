@@ -86,6 +86,7 @@
             [kotoba.compiler.admission-test]
             [kotoba.compiler.guest-grammar-conformance-test]
             [kotoba.compiler.property-test]
+            [kotoba.compiler.module-lock-test]
             [kotoba.compiler.project-test]
             [kotoba.compiler.receipt-test]
             [kotoba.compiler.release-test]
@@ -226,6 +227,7 @@
                                           'kotoba.compiler.release-test
                                           'kotoba.compiler.security-fuzz-test
                                           'kotoba.compiler.verifier-profile-test
+                                          'kotoba.compiler.module-lock-test
                                           'kotoba.compiler.project-test
                                           'kotoba.compiler.property-test)]
     (System/exit (if (pos? (+ fail error)) 1 0))))
