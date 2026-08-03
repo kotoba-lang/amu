@@ -4,6 +4,7 @@
 (defn main []
   (let [offset 2
         add-offset (fn [x] (+ x offset))
+        singleton (fn [x] [x])
         direct (add-offset 1)
         mapped (map add-offset [1])
         wide (map (fn [a b c d e] (+ a (+ b (+ c (+ d e)))))
@@ -11,7 +12,8 @@
         keep? (fn [x] (> x 2))
         filtered (filter keep? mapped)]
     (+ (vector-at wide 0)
+       (+ (vector-at (singleton 7) 0)
        (+ direct
        (+ (reduce sum filtered)
           (+ (reduce sum [])
-             (apply (fn-ref add) (list 19 20))))))))
+             (apply (fn-ref add) (list 19 20)))))))))

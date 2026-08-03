@@ -620,7 +620,7 @@
          :schemas schemas
          :schema-identities (when schemas (schema/identities schemas))}))))
 
-(declare desugar-expr desugar-bool-expr desugar-do desugar-list thread-form form-free-symbols
+(declare desugar-expr desugar-result-expr desugar-bool-expr desugar-do desugar-list thread-form form-free-symbols
          nth-pair-second replace-recur valid-name?)
 
 ;; ADR-2607150000: bound (via `binding`) around each top-level defn's
@@ -671,7 +671,7 @@
 (def ^:dynamic *lifting-lazy-thunk?* false)
 (def ^:dynamic *lexical-bindings* #{})
 
-(def ^:private closure-result-types #{:i64 :bool})
+(def ^:private closure-result-types #{:i64 :bool :vector-i64})
 
 (defn- invoke-dispatcher-name
   ([arity] (invoke-dispatcher-name :i64 arity))
@@ -698,15 +698,18 @@
     (apply list (invoke-dispatcher-name result-type (count args)) closure
            (map desugar-expr args))))
 
-(defn- desugar-bool-expr
-  "Desugar an expression used directly as a boolean condition.  Only a
-  lexical call head needs special treatment; ordinary boolean expressions
-  retain their existing type-directed lowering, and their numeric operands do
-  not accidentally inherit the condition's result type."
-  [form]
+(defn- desugar-result-expr
+  "Desugar an expression in a context with a known closure result family.
+  Only a lexical call head needs special treatment; ordinary expressions keep
+  their existing type-directed lowering, and nested operands do not
+  accidentally inherit the enclosing result type."
+  [result-type form]
   (if (lexical-call-form? form)
-    (desugar-lexical-call :bool form)
+    (desugar-lexical-call result-type form)
     (desugar-expr form)))
+
+(defn- desugar-bool-expr [form]
+  (desugar-result-expr :bool form))
 
 (defn- nth-pair-second [expr n]
   (nth (iterate (fn [value] (list 'pair-second value)) expr) n))
@@ -810,6 +813,7 @@
              ;; trap instead of silently coercing it to false/zero.
              fallback (case result-type
                         :bool '(= (quot 1 0) 0)
+                        :vector-i64 '(vector-drop (vector-new) 1)
                         '(quot 1 0))
              body (reduce
                    (fn [fallback {:keys [id captures helper]}]
@@ -2089,8 +2093,23 @@
     (list 'record-get (desugar-expr (second form)) (first form))
     :else
     (let [[op & args] form]
-      (if (lexical-call-form? form)
+      (cond
+        (lexical-call-form? form)
         (desugar-lexical-call :i64 form)
+
+        (contains? typed-vector-operations op)
+        (do
+          (when-not (= (get typed-vector-operations op) (count args))
+            (reject! "typed vector operation arity mismatch" form))
+          (apply list op
+                 (map-indexed (fn [index arg]
+                                ((if (zero? index)
+                                   #(desugar-result-expr :vector-i64 %)
+                                   desugar-expr)
+                                 arg))
+                              args)))
+
+        :else
         (case op
         list (desugar-list args form)
         fn (lift-lambda form)
@@ -2127,7 +2146,7 @@
                 result-type (if typed? (first args) :i64)
                 call-args (if typed? (rest args) args)]
             (when-not (<= 1 (count call-args) 5)
-              (reject! "invoke requires an optional :i64/:bool result type, a closure, and zero to four arguments"
+              (reject! "invoke requires an optional :i64/:bool/:vector-i64 result type, a closure, and zero to four arguments"
                        form))
             (apply list (invoke-dispatcher-name result-type (dec (count call-args)))
                    (map desugar-expr call-args))))
@@ -2780,7 +2799,7 @@
                           (reject! "inline no-init reduce callback must define exactly [] and [acc value] arities"
                                    f-form))))
                   callback* (desugar-expr (if named? (list 'fn-ref f-form) f-form))
-                  coll* (desugar-expr coll-form)
+                  coll* (desugar-result-expr :vector-i64 coll-form)
                   callback (synthetic "reduce_callback")
                   v (synthetic "reduce_v")
                   i (synthetic "reduce_i")
@@ -2798,7 +2817,7 @@
                                        acc))))))
             (let [[f-form init-form coll-form] args
                   init* (desugar-expr init-form)
-                  coll* (desugar-expr coll-form)
+                  coll* (desugar-result-expr :vector-i64 coll-form)
                   v (synthetic "reduce_v")
                   i (synthetic "reduce_i")
                   acc (synthetic "reduce_acc")
@@ -2877,7 +2896,7 @@
                     (reject! "stored map callbacks support at most four sources" f-form))
                 packed? (> n-colls 2)
                 source-type [:vector (vec (repeat n-colls :vector-i64))]
-                source-values (mapv desugar-expr coll-forms)
+                source-values (mapv #(desugar-result-expr :vector-i64 %) coll-forms)
                 sources (when packed? (synthetic "map_sources"))
                 direct-sources (when-not packed?
                                  (mapv #(synthetic (str "map_source_" %))
@@ -2932,7 +2951,7 @@
           (when-not (= 2 (count args))
             (reject! "filter requires pred and one vector-i64 collection" form))
           (let [[p-form coll-form] args
-                coll* (desugar-expr coll-form)
+                coll* (desugar-result-expr :vector-i64 coll-form)
                 v (synthetic "filter_v")
                 i (synthetic "filter_i")
                 acc (synthetic "filter_acc")
@@ -5864,10 +5883,10 @@
                                    @loop-helpers)))))
                      def-parts)))
         ;; Infer lambda helper bodies before constructing dispatchers.  A
-        ;; dispatcher has one concrete Wasm result type, so bool-returning
-        ;; closures must not share the legacy i64 dispatcher family.  Keep
-        ;; every not-yet-admitted result on the legacy i64 path, where the
-        ;; ordinary value checker retains its previous fail-closed behavior.
+        ;; dispatcher has one concrete Wasm result type, so typed closures must
+        ;; not share the legacy i64 dispatcher family. Keep every not-yet-
+        ;; admitted result on the legacy i64 path, where the ordinary value
+        ;; checker retains its previous fail-closed behavior.
         preliminary-lambdas
         (let [helpers (mapv :helper @lambda-infos)
               candidates (->> (into parsed helpers)
@@ -5882,7 +5901,7 @@
           (mapv (fn [{:keys [helper] :as info}]
                   (let [typed (get by-name (:name helper))]
                     (assoc info :helper
-                           (if (= :bool (:result typed))
+                           (if (contains? closure-result-types (:result typed))
                              typed
                              (dissoc helper :result-inferred?)))))
                 @lambda-infos))
