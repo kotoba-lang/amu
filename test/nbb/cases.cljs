@@ -35,6 +35,9 @@
     :target "wasm32-browser" :policy nil}
    {:name "callable-values" :source "test/nbb/fixtures/callable-values.kotoba"
     :target "wasm32-browser" :policy nil}
+   {:name "closure-refinements"
+    :source "test/nbb/fixtures/closure-refinements.kotoba"
+    :target "wasm32-browser" :policy nil}
    {:name "numeric-closure-results"
     :source "test/nbb/fixtures/numeric-closure-results.kotoba"
     :target "wasm32-browser" :policy nil}

@@ -1,6 +1,7 @@
 (ns kotoba.compiler.callable-values-test
   (:require [clojure.test :refer [deftest is testing]]
             [clojure.java.shell :as shell]
+            [clojure.string :as str]
             [kotoba.compiler.core :as compiler]
             [kotoba.kir :as kir]))
 
@@ -13,6 +14,65 @@
     nil
     (catch clojure.lang.ExceptionInfo error
       (ex-message error))))
+
+(defn- execute-main-esm [source]
+  (let [javascript (:source (compiler/compile-source source :js-kotoba-v1))
+        encoded (.encodeToString (java.util.Base64/getEncoder)
+                                 (.getBytes javascript "UTF-8"))
+        probe (str "import('data:text/javascript;base64," encoded
+                   "').then(m=>console.log(String(m.instantiateKotoba({}).main())))")
+        result (shell/sh "node" "--input-type=module" "-e" probe)]
+    (when-not (zero? (:exit result))
+      (throw (ex-info "restricted ESM execution failed" result)))
+    (str/trim (:out result))))
+
+(deftest ordinary-higher-order-functions-carry-checked-closure-refinements
+  (let [source "(defn make [n] (fn [x] (+ x n)))
+                (defn apply-one [f x] (f x))
+                (defn identity [f] f)
+                (defn main [] (apply-one (identity (make 5)) 3))"
+        js (compiler/compile-source source :js-kotoba-v1)
+        wasm-a (compiler/compile-source source :wasm32-browser-kotoba-v1)
+        wasm-b (compiler/compile-source source :wasm32-browser-kotoba-v1)
+        functions (into {} (map (juxt :name identity)) (get-in js [:kir :functions]))
+        javascript (:source js)
+        encoded (.encodeToString (java.util.Base64/getEncoder)
+                                 (.getBytes javascript "UTF-8"))
+        malformed-probe
+        (shell/sh
+         "node" "--input-type=module" "-e"
+         (str "import('data:text/javascript;base64," encoded
+              "').then(m=>{const x=m.instantiateKotoba({});"
+              "try{x['apply-one'](0n,3n);process.exit(2)}catch(e){"
+              "if(e.message!=='invalid-closure')process.exit(3)}})"))]
+    (is (= 8 (kir/execute (:kir js) 'main [])))
+    (is (= "8" (execute-main-esm source)))
+    (is (= true (:closure-result? (get functions 'make))))
+    (is (= [0] (:closure-param-indexes (get functions 'apply-one))))
+    (is (= [0] (:closure-param-indexes (get functions 'identity))))
+    (is (= true (:closure-result? (get functions 'identity))))
+    (is (= [0] (:closure-param-indexes
+                (get functions '__kotoba_invoke$arity1))))
+    (is (str/includes? javascript "k$f$1=assertClosure(k$f$1);"))
+    (is (str/includes? javascript "k$x$2=assertI64(k$x$2);"))
+    (is (zero? (:exit malformed-probe)) (:err malformed-probe))
+    (is (= (:kir wasm-a) (:kir wasm-b)))
+    (is (java.util.Arrays/equals ^bytes (:bytes wasm-a) ^bytes (:bytes wasm-b)))))
+
+(deftest closure-valued-lambda-captures-run-on-restricted-esm
+  (let [source "(defn main []
+                  (let [bits 4607182418800017408
+                        decode (fn [bits] (f64-from-bits bits))
+                        singleton (fn [bits]
+                                    (vector-f64-new (decode bits)))]
+                    (f64-to-bits
+                     (vector-f64-at (singleton bits) 0))))"
+        js (compiler/compile-source source :js-kotoba-v1)
+        functions (into {} (map (juxt :name identity)) (get-in js [:kir :functions]))]
+    (is (= 4607182418800017408 (kir/execute (:kir js) 'main [])))
+    (is (= "4607182418800017408" (execute-main-esm source)))
+    (is (= [0] (:closure-param-indexes
+                (get functions '__kotoba_lambda_2_arity1))))))
 
 (deftest closures-cross-value-boundaries
   (is (= 5 (execute-main

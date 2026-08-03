@@ -42,7 +42,13 @@
            (= arm (verifier/verify-artifact! arm))
            (= (seq (:bytes wasm)) (seq (:bytes wasm-again)))))
     (catch clojure.lang.ExceptionInfo error
-      (contains? #{:read :subset :admission :ir :verify} (:phase (ex-data error))))))
+      ;; A mutation can turn an i64 local into a lexical closure head. The
+      ;; checked closure refinement promotes that module to typed KIR, after
+      ;; which a backend may reject an otherwise unsupported result family at
+      ;; its explicit target gate. That is the same controlled fail-closed
+      ;; outcome as the reader/subset/IR rejections covered here.
+      (contains? #{:read :subset :admission :target :ir :verify}
+                 (:phase (ex-data error))))))
 
 (deftest deterministic-frontend-byte-and-grammar-corpus
   (let [rng (Random. seed)]
