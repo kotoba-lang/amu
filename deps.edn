@@ -1,3 +1,16 @@
+;; ⚠ Advancing a pin below means regenerating `deps-lock.edn` IN THE SAME COMMIT:
+;;
+;;     nbb scripts/lock-classpath.cljs
+;;
+;; The lock is what lets `bin/kotoba` resolve this closure without a JDK
+;; (ADR-0202). A stale one is not an error you find later -- it silently sends
+;; the compiler back to `clojure -Spath`, and the JDK-free property is gone
+;; with nobody notified. Measured: the lock landed stale twice in a row,
+;; because a pin advanced while each PR was in review.
+;;
+;; The murakumo fleet gate `compiler-jdk-free` refuses a mismatch. Same
+;; intentional friction as a TCB inventory: you cannot move what a record
+;; describes without moving the record.
 {:paths ["src" "resources"]
  :deps {org.clojure/clojure {:mvn/version "1.12.0"}
         io.github.kotoba-lang/abi {:git/url "https://github.com/kotoba-lang/abi.git"
