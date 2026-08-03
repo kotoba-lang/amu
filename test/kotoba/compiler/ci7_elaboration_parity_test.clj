@@ -12,14 +12,16 @@
      exported import`. The single-file path accepted the same source. That is
      now fixed in kotoba.compiler.project/capability-operation?.
 
-  2. Project linking elaborates each module before linking, so the linked
-     source already contains `(typed-cap-call 7 ...)` under synthetic names.
-     The typed ability and the effect closure survive that -- which is what
-     CI7 requires -- but the friendly-operation provenance does not:
-     `:named-operations` and the `:source-operation` metadata are dropped.
-     `provenance-is-lost-by-project-linking` pins the current behaviour so the
-     gap is measured rather than assumed, and so that closing it is a visible
-     change."
+  2. Project linking elaborates each module before linking, so the body it
+     emitted was already `(typed-cap-call 7 ...)` under a synthetic name. The
+     typed ability and the effect closure survived that, but the friendly
+     operation did not: `:named-operations` came out empty for a project build
+     where a single file reported `#{:clock/now}`, so a diagnostic could not
+     name the operation the author wrote. Fixed by
+     `project/resugar-capability-calls`, which uses the `:source-operation`
+     metadata the elaborated form still carries to restore the source spelling
+     for capability calls only -- module-to-module calls keep their synthetic
+     names, so per-module isolation is unchanged."
   (:require [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]
             [kotoba.compiler.frontend :as frontend]
@@ -112,26 +114,35 @@
     (is (= #{[:cap/call 7]} (admission-missing single-source {})))
     (is (= #{[:cap/call 7]} (admission-missing (linked-source) {})))))
 
-(deftest provenance-is-lost-by-project-linking
-  (testing "KNOWN GAP, pinned deliberately. Linking analyzes each module first,
-            so the linked source carries the elaborated (typed-cap-call 7 ...)
-            rather than clock/now. The ability and effect survive -- CI7's
-            substance -- but the friendly name that produced them does not, so
-            a diagnostic raised during a project build cannot point back at the
-            operation the author actually wrote. Change these assertions when
-            the linker preserves provenance; do not delete them."
+(deftest provenance-survives-project-linking
+  (testing "Linking analyzes each module, so the body it emits is already
+            elaborated and the friendly name would be gone by the time the
+            linked source is re-analyzed. project/resugar-capability-calls puts
+            it back, using the :source-operation metadata the elaborated form
+            still carries. Without it, :named-operations came out empty for a
+            project build where a single file reported #{:clock/now}, and a
+            diagnostic could not name the operation the author wrote."
     (let [single (frontend/analyze single-source)
           project (frontend/analyze (linked-source))]
       (is (= #{:clock/now} (:named-operations single)))
-      (is (= #{} (:named-operations project))
-          "if this now reports #{:clock/now}, provenance was fixed — update the note")
+      (is (= (:named-operations single) (:named-operations project)))
       (is (= :clock/now (:source-operation (meta (ability-call single)))))
-      (is (nil? (:source-operation (meta (ability-call project))))))))
+      (is (= :clock/now (:source-operation (meta (ability-call project))))))))
 
-(deftest the-numeric-id-is-internal-not-user-facing
-  (testing "the linked intermediate does contain the wire id, which is fine:
-            CI7 constrains what an author must write, not what the compiler
-            emits between stages"
-    (is (re-find #"typed-cap-call 7" (linked-source)))
+(deftest resugaring-touches-only-capability-calls
+  (testing "module-to-module calls keep their synthetic names, so per-module
+            isolation is unchanged -- restoring provenance must not make one
+            module's syntax able to mean something different after linking"
+    (let [linked (linked-source)]
+      (is (re-find #"\(clock/now seed\)" linked))
+      (is (re-find #"kotoba_module__" linked))
+      (is (not (re-find #"lib/read-clock" linked))))))
+
+(deftest the-author-never-writes-a-wire-id
+  (testing "CI7 constrains what an author must write. The friendly form now
+            survives into the linked intermediate too, so the wire id is
+            confined to the compiler's later stages."
     (is (not (re-find #"typed-cap-call|:cap/call" app-source)))
-    (is (not (re-find #"typed-cap-call|:cap/call" lib-source)))))
+    (is (not (re-find #"typed-cap-call|:cap/call" lib-source)))
+    (is (not (re-find #"typed-cap-call|:cap/call" single-source)))
+    (is (not (re-find #"typed-cap-call" (linked-source))))))
