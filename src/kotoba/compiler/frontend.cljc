@@ -159,6 +159,7 @@
 (def generic-option-operations
   '#{option-some-of option-none-of option-some?-of option-value-of option-match})
 (def canonical-list-operations '#{typed-list-new})
+(def bytes-operations '{bytes-empty 0})
 (def heterogeneous-vector-operations
   '#{hetero-vector-new hetero-vector-count hetero-vector-at
      hetero-vector-assoc hetero-vector-equal})
@@ -322,6 +323,7 @@
              variant-operations
              generic-option-operations
              canonical-list-operations
+             (set (keys bytes-operations))
              heterogeneous-vector-operations
              typed-set-operations
              canonical-typed-map-operations
@@ -774,7 +776,7 @@
 (def ^:dynamic *required-closure-dispatchers* nil)
 
 (def ^:private closure-flat-result-types
-  #{:i64 :bool :f32 :f64 :string :vector-i64 :vector-f64 :document})
+  #{:i64 :bool :f32 :f64 :string :bytes :vector-i64 :vector-f64 :document})
 
 (defn- canonical-closure-result-type
   "Resolve a top-level schema reference before it becomes dispatcher identity.
@@ -793,6 +795,7 @@
     (= :i64 type) 0
     (= :bool type) false
     (= :string type) ""
+    (= :bytes type) '(bytes-empty)
     (= :keyword type) :kotoba.closure/trap
     (= :symbol type) '(symbol "")
     (= :f64 type) '(f64-from-bits 0)
@@ -2760,6 +2763,9 @@
         vector-i64 (do (when (> (count args) value/vector-literal-item-limit)
                          (reject! "vector-i64 exceeds item limit" form))
                        (apply list 'vector-new (map desugar-expr args)))
+        bytes (do (when-not (empty? args)
+                    (reject! "bytes currently constructs only the canonical empty value" form))
+                  '(bytes-empty))
         vector-f64 (do (when (> (count args) value/vector-literal-item-limit)
                          (reject! "vector-f64 exceeds item limit" form))
                        (apply list 'vector-f64-new
@@ -3627,6 +3633,10 @@
             (reject! "typed list constructor exceeds item limit" form))
           (doseq [item items]
             (validate-expr item locals functions (inc depth) budget)))
+
+        (= op 'bytes-empty)
+        (when-not (empty? args)
+          (reject! "bytes-empty does not accept operands" form))
 
         (= op 'typed-set-new)
         (let [[type & items] args]
@@ -4637,6 +4647,7 @@
             (require-expression-type! (infer-expression-type item locals signatures)
                                       (second type) item))
           type)
+        bytes-empty :bytes
         hetero-vector-new
         (let [[type & items] args
               item-types (second type)]
@@ -6838,9 +6849,9 @@
                                         (:closure-result? %))
                                parsed)
                          (some (fn [{:keys [param-types result body]}]
-                                 (or (some #(or (contains? #{:f32 :f64 :string :keyword :map :option-i64 :result-i64 :vector-i64 :vector-f64 :string-index :disjoint-set-i64 :document} %)
+                                 (or (some #(or (contains? #{:f32 :f64 :string :keyword :map :bytes :option-i64 :result-i64 :vector-i64 :vector-f64 :string-index :disjoint-set-i64 :document} %)
                                                 (structured-type? %)) param-types)
-                                     (or (contains? #{:f32 :f64 :string :keyword :map :option-i64 :result-i64 :vector-i64 :vector-f64 :string-index :disjoint-set-i64 :document} result)
+                                     (or (contains? #{:f32 :f64 :string :keyword :map :bytes :option-i64 :result-i64 :vector-i64 :vector-f64 :string-index :disjoint-set-i64 :document} result)
                                          (structured-type? result))
                                      ;; `:bool` literals are plain 0/1 words, not typed values.
                                      (some #(or (string? %) (keyword? %)
@@ -6851,6 +6862,7 @@
                                                          (contains? variant-operations (first %))
                                                          (contains? generic-option-operations (first %))
                                                          (contains? canonical-list-operations (first %))
+                                                         (contains? bytes-operations (first %))
                                                          (contains? heterogeneous-vector-operations (first %))
                                                          (contains? typed-set-operations (first %))
                                                          (contains? canonical-typed-map-operations (first %))
