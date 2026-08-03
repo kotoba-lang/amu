@@ -1,11 +1,12 @@
 (ns fixture.general-document-map (:export [main value]))
 
 (defn value [] :document
-  (document-map
-   :ready (document-bool true)
-   (document-vector (document-i64 1)) (document-string "value")))
+  (document
+   {:ready true
+    :ratio 1.5
+    [1] "value"}))
 
 (defn main [] :i64
-  (if (document-equal? (value) (document-edn-read "{:ready true [1] \"value\"}"))
+  (if (document-equal? (value) (document-edn-read "{:ratio 1.5 :ready true [1] \"value\"}"))
     42
     1))

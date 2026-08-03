@@ -1417,6 +1417,119 @@
          (mapcat (fn [[k v]] [k (desugar-expr v)])
                  (sort-by (comp str key) form))))
 
+(defn- document-reader-f64-form?
+  "The JVM reader represents an f64 literal as a Double. The JVM-free reader
+  preserves its exact bits as `(f64-from-bits <i64>)`; recognize that closed
+  reader shape here so contextual document literals elaborate identically."
+  [form]
+  (and (seq? form)
+       (true? (:kotoba.reader/f64-literal (meta form)))
+       (= 'f64-from-bits (first form))
+       (= 2 (count form))
+       (kotoba-integer? (second form))))
+
+(defn- document-literal-key-frame [text]
+  (str (count text) ":" text))
+
+(defn- document-literal-sort-key
+  "Stable, host-independent ordering used only to make elaborated KIR
+  reproducible. Runtime document constructors still own canonical EDN order."
+  [form]
+  (cond
+    (nil? form) "00:nil"
+    (boolean? form) (str "01:" form)
+    (kotoba-integer? form) (str "02:" form)
+    (value/f64-value? form) (str "03:" (value/f64-to-i64-bits form))
+    (document-reader-f64-form? form) (str "03:" (second form))
+    (string? form) (str "04:" form)
+    (keyword? form) (str "05:" form)
+    (symbol? form) (str "06:" form)
+    (vector? form) (str "07:["
+                        (apply str
+                               (map #(document-literal-key-frame
+                                      (document-literal-sort-key %))
+                                    form))
+                        "]")
+    (set? form) (str "08:{"
+                     (apply str
+                            (map document-literal-key-frame
+                                 (sort (map document-literal-sort-key form))))
+                     "}")
+    (map? form) (str "09:{"
+                     (apply str
+                            (sort
+                             (map (fn [[key item]]
+                                    (str (document-literal-key-frame
+                                          (document-literal-sort-key key))
+                                         (document-literal-key-frame
+                                          (document-literal-sort-key item))))
+                                  form)))
+                     "}")
+    (seq? form) (str "10:("
+                     (apply str
+                            (map #(document-literal-key-frame
+                                   (document-literal-sort-key %))
+                                 form))
+                     ")")
+    :else (str "99:" (pr-str form))))
+
+(defn- attach-literal-location [literal elaborated]
+  (let [location (select-keys (meta literal)
+                              [:line :column :end-line :end-column :offset :end-offset])]
+    (if (and (seq location) (coll? elaborated))
+      (with-meta elaborated (merge (meta elaborated) location))
+      elaborated)))
+
+(defn- elaborate-document-literal
+  "Elaborate one closed EDN-shaped tree into the existing document
+  constructors. Nothing below `(document ...)` is evaluated as Kotoba code."
+  [literal]
+  (let [nodes (volatile! 0)]
+    (letfn [(charge! [form depth]
+              (when (> depth value/document-depth-limit)
+                (reject! "document literal exceeds depth limit" form))
+              (when (> (vswap! nodes inc) value/document-node-limit)
+                (reject! "document literal exceeds node limit" form)))
+            (walk [form depth]
+              (charge! form depth)
+              (attach-literal-location
+               form
+               (cond
+                 (nil? form) '(document-null)
+                 (boolean? form) (list 'document-bool form)
+                 (kotoba-integer? form) (list 'document-i64 form)
+                 (value/f64-value? form) (list 'document-f64 form)
+                 (document-reader-f64-form? form) (list 'document-f64 form)
+                 (string? form) (list 'document-string form)
+                 (keyword? form) (list 'document-keyword form)
+                 (symbol? form) (list 'document-symbol (list 'symbol (str form)))
+                 (vector? form)
+                 (do (when (> (count form) value/document-container-item-limit)
+                       (reject! "document vector literal exceeds item limit" form))
+                     (list* 'document-vector (map #(walk % (inc depth)) form)))
+                 (set? form)
+                 (do (when (> (count form) value/document-container-item-limit)
+                       (reject! "document set literal exceeds item limit" form))
+                     (list* 'document-set
+                            (map #(walk % (inc depth))
+                                 (sort-by document-literal-sort-key form))))
+                 (map? form)
+                 (do (when (> (count form) value/document-container-item-limit)
+                       (reject! "document map literal exceeds entry limit" form))
+                     (list* 'document-map
+                            (mapcat (fn [[key item]]
+                                      [(if (keyword? key)
+                                         key
+                                         (walk key (inc depth)))
+                                       (walk item (inc depth))])
+                                    (sort-by (comp document-literal-sort-key key) form))))
+                 (seq? form)
+                 (do (when (> (count form) value/document-container-item-limit)
+                       (reject! "document list literal exceeds item limit" form))
+                     (list* 'document-list (map #(walk % (inc depth)) form)))
+                 :else (reject! "document requires a closed EDN literal tree" form))))]
+      (walk literal 0))))
+
 (def ^:private string-from-i64-helper-name '__kotoba_string_from_i64)
 (def ^:private string-from-i64-nat-helper-name '__kotoba_string_from_i64_nat)
 
@@ -1652,6 +1765,10 @@
     (let [[op & args] form]
       (case op
         list (desugar-list args form)
+        document
+        (do (when-not (= 1 (count args))
+              (reject! "document requires exactly one closed literal tree" form))
+            (elaborate-document-literal (first args)))
 
         ;; ADR-2607150000: `let` gets its own case (previously handled only
         ;; by the generic default case below) for two reasons: (1) bug fix
