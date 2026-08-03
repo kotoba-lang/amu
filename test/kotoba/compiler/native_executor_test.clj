@@ -918,3 +918,43 @@
 ;; recorded so they are not retried: a recursive index is still evaluated by
 ;; the oracle, and passing :args to a zero-arity entry is rejected as an
 ;; entry-arity error before execution.
+
+;; string-code-point-at (host callback at context offset 144). The oracle
+;; evaluates constant operands but does not replace the expression, so these
+;; still reach the loader -- which is how the probe that found this gap saw
+;; "operation not implemented on this backend" for a fully constant program.
+(deftest string-code-point-at-executes-through-real-native-loader
+  (let [{:keys [envelope trust]}
+        (signed "(defn main [] (string-code-point-at \"abc\" 1))" {:allow #{}})
+        {:keys [trust options]} (execution-options trust)
+        result (executor/execute envelope trust {:allow #{}} {:args []} options)]
+    (is (= {:status :ok :result 98}
+           (select-keys (:evidence result) [:status :result])))))
+
+;; U+672C. A three-byte sequence exercises the decode path, not just the ASCII
+;; short-circuit, and offset 3 is the boundary after 日 (also three bytes).
+(deftest string-code-point-at-decodes-a-multi-byte-sequence-on-native
+  (let [{:keys [envelope trust]}
+        (signed "(defn main [] (string-code-point-at \"日本語\" 3))" {:allow #{}})
+        {:keys [trust options]} (execution-options trust)
+        result (executor/execute envelope trust {:allow #{}} {:args []} options)]
+    (is (= {:status :ok :result 26412}
+           (select-keys (:evidence result) [:status :result])))))
+
+;; Pool-backed source (negative offset), where resolve_string_bytes takes the
+;; other half of the offset space.
+(deftest string-code-point-at-reads-a-pool-backed-string-on-native
+  (let [{:keys [envelope trust]}
+        (signed (str "(defn main [] (string-code-point-at"
+                     " (string-concat \"日\" \"本\") 3))")
+                {:allow #{}})
+        {:keys [trust options]} (execution-options trust)
+        result (executor/execute envelope trust {:allow #{}} {:args []} options)]
+    (is (= {:status :ok :result 26412}
+           (select-keys (:evidence result) [:status :result])))))
+
+(deftest string-code-point-at-splitting-a-code-point-is-rejected-at-compile-time
+  (is (thrown-with-msg?
+       clojure.lang.ExceptionInfo #"splits a UTF-8 code point"
+       (compiler/compile-source "(defn main [] (string-code-point-at \"日本語\" 1))"
+                                (target) {:allow #{}}))))

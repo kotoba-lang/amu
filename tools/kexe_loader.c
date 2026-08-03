@@ -74,6 +74,10 @@ struct kexe_context_v2 {
    * callback like string_equal/string_concat rather than a byte accessor. */
   int64_t (*string_substring)(struct kexe_context_v2 *, int64_t, int64_t,
                               int64_t);
+  /* string-code-point-at. Like string_substring this exists only because the
+   * guest cannot load a byte; unlike it the result is a scalar, not a handle,
+   * so nothing is allocated at all. */
+  int64_t (*string_code_point_at)(struct kexe_context_v2 *, int64_t, int64_t);
   /* Data-only (not part of the compiler-checked context-abi): the mmap'd
    * code+literal-data region's base address and real (unpadded) byte
    * length, set once in main() before the guest runs. Never read by guest
@@ -112,6 +116,7 @@ _Static_assert(offsetof(struct kexe_context_v2, typed_cap_call) == 128, "typed c
 _Static_assert(offsetof(struct kexe_context_v2, string_equal) == 112, "string ABI drift");
 _Static_assert(offsetof(struct kexe_context_v2, string_concat) == 120, "string ABI drift");
 _Static_assert(offsetof(struct kexe_context_v2, string_substring) == 136, "string ABI drift");
+_Static_assert(offsetof(struct kexe_context_v2, string_code_point_at) == 144, "string ABI drift");
 _Static_assert(sizeof(((struct kexe_shared_v2 *)0)->pairs) == 65536,
                "pair arena size drift");
 _Static_assert(sizeof(((struct kexe_shared_v2 *)0)->datoms) == 98304,
@@ -450,6 +455,39 @@ static int64_t checked_string_substring(struct kexe_context_v2 *context,
   return checked_pair_new(context, result_offset, end - start);
 }
 
+/* Mirrors kotoba.kir.value/utf8-code-point-at!: the offset must be a
+ * code-point boundary in [0, byte-length) -- note the EXCLUSIVE upper bound,
+ * unlike substring, since there is no code point starting at the end. The
+ * guest derives the width from the returned value to advance, so this one op
+ * walks a string. valid_utf8 has already established that a sequence starting
+ * at a non-continuation byte has all of its continuation bytes inside the
+ * string, which is why they are read without further bounds checks. */
+static int64_t checked_string_code_point_at(struct kexe_context_v2 *context,
+                                            int64_t handle, int64_t byte_offset) {
+  if (context == NULL || context->version != 2) { raise(SIGILL); return 0; }
+  int64_t offset = checked_pair_get(context, handle, 0);
+  int64_t length = checked_pair_get(context, handle, 1);
+  if (length < 0 || byte_offset < 0 || byte_offset >= length) {
+    raise(SIGILL);
+    return 0;
+  }
+  const uint8_t *bytes = resolve_string_bytes(context, offset, length);
+  if (bytes == NULL) { raise(SIGILL); return 0; }
+  if (!valid_utf8(bytes, (uint64_t)length)) { raise(SIGILL); return 0; }
+  const uint8_t *p = bytes + byte_offset;
+  uint8_t a = p[0];
+  if ((a & 0xc0) == 0x80) { raise(SIGILL); return 0; }
+  if (a <= 0x7f) return a;
+  if (a >= 0xc2 && a <= 0xdf) return ((int64_t)(a & 0x1f) << 6) | (p[1] & 0x3f);
+  if (a >= 0xe0 && a <= 0xef)
+    return ((int64_t)(a & 0x0f) << 12) | ((int64_t)(p[1] & 0x3f) << 6) | (p[2] & 0x3f);
+  if (a >= 0xf0 && a <= 0xf4)
+    return ((int64_t)(a & 0x07) << 18) | ((int64_t)(p[1] & 0x3f) << 12) |
+           ((int64_t)(p[2] & 0x3f) << 6) | (p[3] & 0x3f);
+  raise(SIGILL);
+  return 0;
+}
+
 static int parse_allow(const char *text, uint64_t allow[4]) {
   if (strcmp(text, "-") == 0) return 0;
   const char *cursor = text;
@@ -754,6 +792,7 @@ int main(int argc, char **argv) {
   shared->context.string_equal = checked_string_equal;
   shared->context.string_concat = checked_string_concat;
   shared->context.string_substring = checked_string_substring;
+  shared->context.string_code_point_at = checked_string_code_point_at;
   shared->context.typed_cap_call = checked_typed_cap_call;
   shared->context.code_base = (const uint8_t *)memory;
   shared->context.code_length = (uint64_t)length;
