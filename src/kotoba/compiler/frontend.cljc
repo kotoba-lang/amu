@@ -1956,9 +1956,15 @@
         (cons op (map #(replace-recur % helper-name loop-names captured) args))))
     :else form))
 
+(defn- top-level-function-symbol? [value]
+  (and (symbol? value)
+       (nil? (namespace value))
+       (not (contains? *lexical-bindings* value))
+       (contains? *function-arities* value)))
+
 (defn- callback-supported-arities [callback]
   (cond
-    (and (symbol? callback) (contains? *function-arities* callback))
+    (top-level-function-symbol? callback)
     (get *function-arities* callback)
 
     (and (seq? callback) (= 'fn (first callback)))
@@ -1984,7 +1990,7 @@
     (when-not (contains? arities arity)
       (reject! (str (name kind) " callback does not provide arity " arity)
                callback)))
-  (if (and (symbol? callback) (contains? *function-arities* callback))
+  (if (top-level-function-symbol? callback)
     (desugar-expr (list 'fn-ref callback))
     (desugar-expr callback)))
 
@@ -2756,9 +2762,7 @@
             (reject! "reduce requires callback+collection or callback+init+collection" form))
           (if (= 2 (count args))
             (let [[f-form coll-form] args
-                  named? (and (symbol? f-form)
-                              (nil? (namespace f-form))
-                              (contains? *function-arities* f-form))
+                  named? (top-level-function-symbol? f-form)
                   _ (when (and named?
                                (not (every? (get *function-arities* f-form) [0 2])))
                       (reject! "named no-init reduce callback must provide arities 0 and 2" f-form))
@@ -2798,17 +2802,16 @@
                   v (synthetic "reduce_v")
                   i (synthetic "reduce_i")
                   acc (synthetic "reduce_acc")
-                  stored? (not (or (and (symbol? f-form)
-                                        (nil? (namespace f-form))
-                                        (or (contains? '#{+ - * bit-and bit-or bit-xor} f-form)
-                                            (contains? *function-arities* f-form)))
+                  primitive? (and (symbol? f-form)
+                                  (not (contains? *lexical-bindings* f-form))
+                                  (contains? '#{+ - * bit-and bit-or bit-xor} f-form))
+                  named? (top-level-function-symbol? f-form)
+                  stored? (not (or primitive? named?
                                    (and (seq? f-form) (= 'fn (first f-form)))))
                   callback (when stored? (synthetic "reduce_callback"))
                   step
                   (cond
-                    (and (symbol? f-form)
-                         (nil? (namespace f-form))
-                         (contains? '#{+ - * bit-and bit-or bit-xor} f-form))
+                    primitive?
                     (list f-form acc (list 'vector-at v i))
 
                     (and (seq? f-form) (= 'fn (first f-form)))
@@ -2820,11 +2823,12 @@
                       (let [[a b] params]
                         (list 'let [a acc
                                     b (list 'vector-at v i)]
-                              (desugar-expr (first body)))))
+                              (binding [*lexical-bindings*
+                                        (into *lexical-bindings* params)]
+                                (desugar-expr (first body))))))
 
                     ;; Named binary module function (fail-closed if unbound / wrong arity).
-                    (and (symbol? f-form) (nil? (namespace f-form))
-                         (contains? *function-arities* f-form))
+                    named?
                     (list f-form acc (list 'vector-at v i))
 
                     :else
@@ -2837,110 +2841,90 @@
                            (list 'if (list '< i (list 'vector-count v))
                                  (list 'recur (list '+ i 1) step)
                                  acc)))))))
-        ;; T4.5: bounded map over vector-i64 → zero-charge loop + vector-conj.
-        ;; 1-source: (map (fn [x] e)|inc|dec|named coll)
-        ;; 2-source: (map (fn [x y] e)|named a b) — shortest-collection termination.
-        ;; 3+ sources still deferred (arity/param budget).
+        ;; Bounded eager map over one to five vector-i64 sources.  One/two
+        ;; sources stay direct for stable KIR; three-to-five source handles
+        ;; share one typed heterogeneous-vector state value, so synthesized
+        ;; loop helpers stay inside the five-word ABI even with a callback.
         map
         (do
-          (when-not (#{2 3} (count args))
-            (reject! "map requires fn and one or two vector-i64 collections (3+ deferred)" form))
+          (when-not (<= 2 (count args) 6)
+            (reject! "map requires a callback and one to five vector-i64 collections" form))
           (let [[f-form & coll-forms] args
                 n-colls (count coll-forms)
+                top-level? (top-level-function-symbol? f-form)
+                primitive? (and (= 1 n-colls)
+                                (symbol? f-form)
+                                (not (contains? *lexical-bindings* f-form))
+                                (contains? '#{inc dec} f-form))
+                inline? (and (seq? f-form) (= 'fn (first f-form)))
+                stored? (not (or top-level? primitive? inline?))
+                _ (when (and top-level?
+                             (not (contains? (get *function-arities* f-form) n-colls)))
+                    (reject! "named map callback does not support the source arity" f-form))
+                inline-parts
+                (when inline?
+                  (let [[_ params & body] f-form]
+                    (when-not (and (vector? params)
+                                   (= n-colls (count params))
+                                   (every? symbol? params)
+                                   (= (count params) (count (distinct params)))
+                                   (= 1 (count body)))
+                      (reject! (str n-colls
+                                    "-source map fn requires matching unique parameters and one expression")
+                               f-form))
+                    [params (first body)]))
+                _ (when (and stored? (> n-colls 4))
+                    (reject! "stored map callbacks support at most four sources" f-form))
+                packed? (> n-colls 2)
+                source-type [:vector (vec (repeat n-colls :vector-i64))]
+                source-values (mapv desugar-expr coll-forms)
+                sources (when packed? (synthetic "map_sources"))
+                direct-sources (when-not packed?
+                                 (mapv #(synthetic (str "map_source_" %))
+                                       (range n-colls)))
+                callback (when stored? (synthetic "map_callback"))
                 i (synthetic "map_i")
-                acc (synthetic "map_acc")]
-            (case n-colls
-              1
-              (let [coll* (desugar-expr (first coll-forms))
-                    v (synthetic "map_v")
-                    stored? (not (or (and (symbol? f-form)
-                                          (nil? (namespace f-form))
-                                          (or (contains? '#{inc dec} f-form)
-                                              (contains? *function-arities* f-form)))
-                                     (and (seq? f-form) (= 'fn (first f-form)))))
-                    callback (when stored? (synthetic "map_callback"))
-                    mapped
-                    (cond
-                      (and (symbol? f-form)
-                           (nil? (namespace f-form))
-                           (= 'inc f-form))
-                      (list '+ (list 'vector-at v i) 1)
-
-                      (and (symbol? f-form)
-                           (nil? (namespace f-form))
-                           (= 'dec f-form))
-                      (list '- (list 'vector-at v i) 1)
-
-                      (and (seq? f-form) (= 'fn (first f-form)))
-                      (let [[_ params & body] f-form]
-                        (when-not (and (vector? params) (= 1 (count params))
-                                       (every? symbol? params)
-                                       (= 1 (count body)))
-                          (reject! "1-source map fn must be (fn [x] single-expr)" f-form))
-                        (let [[x] params]
-                          (list 'let [x (list 'vector-at v i)]
-                                (desugar-expr (first body)))))
-
-                      (and (symbol? f-form) (nil? (namespace f-form))
-                           (contains? *function-arities* f-form))
-                      (list f-form (list 'vector-at v i))
-
-                      :else
-                      (list (invoke-dispatcher-name 1) callback
-                            (list 'vector-at v i)))]
-                (binding [*loop-result-type* :vector-i64]
-                  (desugar-expr
-                   (list 'let (vec (concat (when stored? [callback f-form]) [v coll*]))
-                         (list 'loop [i 0 acc (list 'vector-i64)]
-                               (list 'if (list '< i (list 'vector-count v))
-                                     (list 'recur (list '+ i 1)
-                                           (list 'vector-conj acc mapped))
-                                     acc))))))
-
-              2
-              (let [a* (desugar-expr (first coll-forms))
-                    b* (desugar-expr (second coll-forms))
-                    va (synthetic "map_a")
-                    vb (synthetic "map_b")
-                    stored? (not (or (and (symbol? f-form)
-                                          (nil? (namespace f-form))
-                                          (contains? *function-arities* f-form))
-                                     (and (seq? f-form) (= 'fn (first f-form)))))
-                    callback (when stored? (synthetic "map_callback"))
-                    mapped
-                    (cond
-                      (and (seq? f-form) (= 'fn (first f-form)))
-                      (let [[_ params & body] f-form]
-                        (when-not (and (vector? params) (= 2 (count params))
-                                       (every? symbol? params)
-                                       (= 1 (count body)))
-                          (reject! "2-source map fn must be (fn [x y] single-expr)" f-form))
-                        (let [[x y] params]
-                          (list 'let [x (list 'vector-at va i)
-                                      y (list 'vector-at vb i)]
-                                (desugar-expr (first body)))))
-
-                      (and (symbol? f-form) (nil? (namespace f-form))
-                           (contains? *function-arities* f-form))
-                      (list f-form (list 'vector-at va i) (list 'vector-at vb i))
-
-                      :else
-                      (list (invoke-dispatcher-name 2) callback
-                            (list 'vector-at va i) (list 'vector-at vb i)))]
-                (binding [*loop-result-type* :vector-i64]
-                  (desugar-expr
-                   (list 'let (vec (concat (when stored? [callback f-form])
-                                           [va a* vb b*]))
-                         (list 'loop [i 0 acc (list 'vector-i64)]
-                               ;; Stop at shortest source (or / >=).
-                               (list 'if (list 'or
-                                               (list '>= i (list 'vector-count va))
-                                               (list '>= i (list 'vector-count vb)))
-                                     acc
-                                     (list 'recur (list '+ i 1)
-                                           (list 'vector-conj acc mapped))))))))
-
-              (reject! "map supports at most two vector-i64 sources" form))))
+                acc (synthetic "map_acc")
+                source-at (fn [index]
+                            (if packed?
+                              (list 'hetero-vector-at source-type sources index)
+                              (nth direct-sources index)))
+                items (mapv (fn [index]
+                              (list 'vector-at (source-at index) i))
+                            (range n-colls))
+                mapped
+                (cond
+                  (and primitive? (= 'inc f-form)) (list '+ (first items) 1)
+                  (and primitive? (= 'dec f-form)) (list '- (first items) 1)
+                  inline?
+                  (let [[params body] inline-parts]
+                    (list 'let (vec (mapcat vector params items))
+                          (binding [*lexical-bindings*
+                                    (into *lexical-bindings* params)]
+                            (desugar-expr body))))
+                  top-level? (apply list f-form items)
+                  :else (apply list (invoke-dispatcher-name n-colls)
+                               callback items))
+                exhausted (apply list 'or
+                                 (map-indexed
+                                  (fn [index _]
+                                    (list '>= i
+                                          (list 'vector-count (source-at index))))
+                                  coll-forms))
+                source-bindings
+                (if packed?
+                  [sources (apply list 'hetero-vector source-type source-values)]
+                  (vec (mapcat vector direct-sources source-values)))]
+            (binding [*loop-result-type* :vector-i64]
+              (desugar-expr
+               (list 'let
+                     (vec (concat (when stored? [callback f-form])
+                                  source-bindings))
+                     (list 'loop [i 0 acc (list 'vector-i64)]
+                           (list 'if exhausted
+                                 acc
+                                 (list 'recur (list '+ i 1)
+                                       (list 'vector-conj acc mapped)))))))))
         ;; T4.5: bounded filter over vector-i64 → zero-charge loop + vector-conj.
         ;; (filter (fn [x] pred) coll) or (filter named-pred coll).
         filter
@@ -2953,9 +2937,8 @@
                 i (synthetic "filter_i")
                 acc (synthetic "filter_acc")
                 x (synthetic "filter_x")
-                stored? (not (or (and (symbol? p-form)
-                                      (nil? (namespace p-form))
-                                      (contains? *function-arities* p-form))
+                named? (top-level-function-symbol? p-form)
+                stored? (not (or named?
                                  (and (seq? p-form) (= 'fn (first p-form)))))
                 callback (when stored? (synthetic "filter_callback"))
                 pred-body
@@ -2969,10 +2952,11 @@
                     (let [[px] params]
                       ;; Bind user param to element; desugar body in that scope.
                       (list 'let [px x]
-                            (desugar-expr (first body)))))
+                            (binding [*lexical-bindings*
+                                      (into *lexical-bindings* params)]
+                              (desugar-expr (first body))))))
 
-                  (and (symbol? p-form) (nil? (namespace p-form))
-                       (contains? *function-arities* p-form))
+                  named?
                   (list p-form x)
 
                   :else

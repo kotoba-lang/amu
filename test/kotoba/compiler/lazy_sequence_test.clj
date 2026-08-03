@@ -82,7 +82,13 @@
              (defn main []
                (if (lazy-empty?
                     (drop 2 (lazy-map add (finite 1 3) (finite 3 4))))
-                 1 0))"))))
+                 1 0))")))
+  (is (= 2 (execute-main
+            "(defn transform [x] (+ x 100))
+             (defn source [] (lazy-cons 1 0))
+             (defn main []
+               (let [transform (fn [x] (+ x 1))]
+                 (lazy-first (lazy-map transform (source)))))"))))
 
 (deftest lazy-filter-uses-bool-closures-and-terminates-on-rejection
   (is (= 12 (execute-main
@@ -97,7 +103,13 @@
             "(defn finite [n]
                (if (> n 3) 0 (lazy-cons n (finite (+ n 1)))))
              (defn main []
-               (if (lazy-empty? (lazy-filter (fn [x] (> x 9)) (finite 0))) 1 0))"))))
+               (if (lazy-empty? (lazy-filter (fn [x] (> x 9)) (finite 0))) 1 0))")))
+  (is (= 4 (execute-main
+            "(defn keep? [x] false)
+             (defn source [] (lazy-cons 4 0))
+             (defn main []
+               (let [keep? (fn [x] (> x 2))]
+                 (lazy-first (lazy-filter keep? (source)))))"))))
 
 (deftest lazy-hof-callback-effects-are-rejected
   (is (re-find #"must be effect-free"
