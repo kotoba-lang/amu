@@ -14,12 +14,33 @@
         render (fn [x] (string-from-i64 x))
         rendered-size (string-length (render 42))
         build-document (fn [x] (document-vector (document-i64 x)))
-        document-size (document-count (build-document 42))]
-    (+ document-size
+        document-size (document-count (build-document 42))
+        make-point (fn [x]
+                     (record-new
+                      [:record :fixture/point [[:x :i64] [:label :string]]]
+                      x "point"))
+        point-x (record-get
+                 [:record :fixture/point [[:x :i64] [:label :string]]]
+                 (make-point 4) :x)
+        maybe-render (fn [x]
+                       (option-some-of [:option :string]
+                         (string-from-i64 x)))
+        maybe-size (string-length
+                    (option-value-of [:option :string] (maybe-render 42) ""))
+        render-result (fn [x]
+                        (result-ok-of [:result :string :i64]
+                          (string-from-i64 x)))
+        result-size (string-length
+                     (result-value-of [:result :string :i64]
+                       (render-result 42) ""))]
+    (+ result-size
+       (+ maybe-size
+       (+ point-x
+       (+ document-size
        (+ rendered-size
        (+ (vector-at wide 0)
        (+ (vector-at (singleton 7) 0)
        (+ direct
        (+ (reduce sum filtered)
           (+ (reduce sum [])
-             (apply (fn-ref add) (list 19 20)))))))))))
+             (apply (fn-ref add) (list 19 20))))))))))))))

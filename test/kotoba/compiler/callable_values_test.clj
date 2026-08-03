@@ -161,6 +161,100 @@
              (defn main []
                (document-count (invoke :document (fn-ref build) 42)))"))))
 
+(deftest descriptor-keyed-record-results-use-contextual-application-syntax
+  (let [point "[:record :demo/point [[:x :i64] [:label :string]]]"
+        other "[:record :demo/other [[:x :i64] [:label :string]]]"]
+    (is (= 7 (execute-main
+              (str "(defn main []
+                      (let [make (fn [x] (record-new " point " x \"point\"))]
+                        (record-get " point " (make 7) :x)))"))))
+    (is (= 8 (execute-main
+              (str "(defn main []
+                      (record-get " point "
+                        (invoke " point "
+                          (fn [x] (record-new " point " x \"point\")) 8)
+                        :x))"))))
+    (is (= 9 (execute-main
+              (str "(ns demo (:schemas {:demo/point " point "}))
+                    (defn call-maker [f] [:ref :demo/point]
+                      (let [n 9] (f n)))
+                    (defn main []
+                      (record-get [:ref :demo/point]
+                        (call-maker
+                          (fn [x] (record-new [:ref :demo/point] x \"point\")))
+                        :x))"))))
+    (is (= 10 (execute-main
+               (str "(defn make [x :i64] " point "
+                       (record-new " point " x \"point\"))
+                     (defn main []
+                       (record-get " point "
+                         (invoke " point " (fn-ref make) 10) :x))"))))
+    (testing "nominally distinct record dispatchers do not share candidates"
+      (is (thrown? clojure.lang.ExceptionInfo
+                   (execute-main
+                    (str "(defn main []
+                            (record-get " other "
+                              (invoke " other "
+                                (fn [x] (record-new " point " x \"point\")) 3)
+                              :x))")))))))
+
+(deftest descriptor-keyed-option-and-result-results-use-contextual-application-syntax
+  (let [option-string "[:option :string]"
+        option-i64 "[:option :i64]"
+        result-type "[:result :string :i64]"]
+    (is (= 2 (execute-main
+              (str "(defn main []
+                      (let [render (fn [x]
+                                     (option-some-of " option-string "
+                                       (string-from-i64 x)))]
+                        (string-length
+                          (option-value-of " option-string " (render 42) \"\"))))"))))
+    (is (= 3 (execute-main
+              (str "(defn render-with [f] " option-string "
+                       (let [n 123] (if (> n 0) (f n)
+                                     (option-none-of " option-string "))))
+                    (defn main []
+                      (string-length
+                        (option-value-of " option-string "
+                          (render-with
+                            (fn [x] (option-some-of " option-string "
+                                      (string-from-i64 x))))
+                          \"\")))"))))
+    (is (= 2 (execute-main
+              (str "(defn main []
+                      (let [render (fn [x]
+                                     (result-ok-of " result-type "
+                                       (string-from-i64 x)))]
+                        (string-length
+                          (result-value-of " result-type " (render 42) \"\"))))"))))
+    (is (= 3 (execute-main
+              (str "(defn render-with [f] " result-type "
+                       (let [ignored 0] (f 123)))
+                    (defn main []
+                      (string-length
+                        (result-value-of " result-type "
+                          (render-with
+                            (fn [x] (result-ok-of " result-type "
+                                      (string-from-i64 x))))
+                          \"\")))"))))
+    (is (= 2 (execute-main
+              (str "(defn main []
+                      (string-length
+                        (option-value-of " option-string "
+                          (invoke " option-string "
+                            (fn [x] (option-some-of " option-string "
+                                      (string-from-i64 x))) 42)
+                          \"\")))"))))
+    (testing "parameterized option dispatchers remain descriptor-specific"
+      (is (thrown? clojure.lang.ExceptionInfo
+                   (execute-main
+                    (str "(defn main []
+                            (option-value-of " option-i64 "
+                              (invoke " option-i64 "
+                                (fn [x] (option-some-of " option-string "
+                                          (string-from-i64 x))) 3)
+                              0))")))))))
+
 (deftest lexical-string-results-use-contextual-application-syntax
   (is (= 2 (execute-main
             "(defn main []
@@ -283,5 +377,21 @@
         wasm-a (compiler/compile-source source :wasm32-browser-kotoba-v1)
         wasm-b (compiler/compile-source source :wasm32-browser-kotoba-v1)]
     (is (= 1 (kir/execute (:kir js) 'main [])))
+    (is (= (:kir wasm-a) (:kir wasm-b)))
+    (is (java.util.Arrays/equals ^bytes (:bytes wasm-a) ^bytes (:bytes wasm-b)))))
+
+(deftest descriptor-keyed-closures-lower-reproducibly-for-js-and-wasm
+  (let [source "(defn main []
+                  (let [make (fn [x]
+                               (record-new
+                                [:record :demo/point [[:x :i64] [:label :string]]]
+                                x \"point\"))]
+                    (record-get
+                     [:record :demo/point [[:x :i64] [:label :string]]]
+                     (make 42) :x)))"
+        js (compiler/compile-source source :js-kotoba-v1)
+        wasm-a (compiler/compile-source source :wasm32-browser-kotoba-v1)
+        wasm-b (compiler/compile-source source :wasm32-browser-kotoba-v1)]
+    (is (= 42 (kir/execute (:kir js) 'main [])))
     (is (= (:kir wasm-a) (:kir wasm-b)))
     (is (java.util.Arrays/equals ^bytes (:bytes wasm-a) ^bytes (:bytes wasm-b)))))

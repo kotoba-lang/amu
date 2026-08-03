@@ -6,6 +6,7 @@
   ;; for the fuller explanation). `#?@` (splicing) rather than `#?` here
   ;; because each branch below is more than one require-spec.
   (:require [clojure.set :as set]
+            [kotoba.artifact.core :as artifact]
             [kotoba.compiler.schema :as schema]
             [kotoba.kir.value :as value]
             #?@(:clj [[clojure.tools.reader :as reader]
@@ -678,6 +679,11 @@
 (declare desugar-expr desugar-result-expr desugar-bool-expr desugar-do desugar-list thread-form form-free-symbols
          nth-pair-second replace-recur valid-name?)
 
+;; Closed namespace schema table used by descriptor-aware source elaboration.
+;; It must be defined before closure dispatch helpers so their one-argument
+;; canonicalization path observes the active per-function binding.
+(def ^:dynamic *schemas* nil)
+
 ;; ADR-2607150000: bound (via `binding`) around each top-level defn's
 ;; desugaring pass in `analyze`, to an atom `loop`'s desugar-expr case
 ;; conjoins synthesized helper-function definitions onto -- the same
@@ -728,16 +734,99 @@
 (def ^:dynamic *contextual-closure-result-type* nil)
 (def ^:dynamic *required-closure-dispatchers* nil)
 
-(def ^:private closure-result-types #{:i64 :bool :string :vector-i64 :document})
+(def ^:private closure-flat-result-types #{:i64 :bool :string :vector-i64 :document})
+
+(defn- canonical-closure-result-type
+  "Resolve a top-level schema reference before it becomes dispatcher identity.
+  Nested references remain closed schema edges and are not recursively expanded."
+  ([type] (canonical-closure-result-type type *schemas*))
+  ([type schemas]
+   (if (and (schema-ref-type? type) (map? schemas))
+     (or (get schemas (second type)) type)
+     type)))
+
+(defn- closure-default-value-expr
+  "Return a bounded inhabitant for a dispatcher result type, or nil when the
+  descriptor cannot yet be represented by the closed trap synthesizer."
+  [type]
+  (cond
+    (= :i64 type) 0
+    (= :bool type) false
+    (= :string type) ""
+    (= :keyword type) :kotoba.closure/trap
+    (= :symbol type) '(symbol "")
+    (= :f64 type) '(f64-from-bits 0)
+    (= :f32 type) '(f32-from-bits 0)
+    (= :vector-i64 type) '(vector-new)
+    (= :vector-f64 type) '(vector-f64-new)
+    (= :document type) '(document-null)
+    (= :map type) '(map-new)
+    (= :option-i64 type) '(option-none)
+    (= :result-i64 type) '(result-ok 0)
+    (= :string-index type) '(string-index-new)
+    (= :disjoint-set-i64 type) '(disjoint-set-i64-new 0)
+
+    (generic-option-type? type)
+    (list 'option-none-of type)
+
+    (parametric-result-type? type)
+    (if-let [ok-value (closure-default-value-expr (second type))]
+      (list 'result-ok-of type ok-value)
+      (when-let [error-value (closure-default-value-expr (nth type 2))]
+        (list 'result-err-of type error-value)))
+
+    (heterogeneous-vector-type? type)
+    (let [values (mapv closure-default-value-expr (second type))]
+      (when (every? some? values)
+        (apply list 'hetero-vector-new type values)))
+
+    (typed-set-type? type)
+    (list 'typed-set-new type)
+
+    (canonical-typed-map-type? type)
+    (list 'typed-map-new type)
+
+    (variant-type? type)
+    (let [[tag payload-type] (first (nth type 2))]
+      (when-let [payload (closure-default-value-expr payload-type)]
+        (list 'variant-new type tag payload)))
+
+    (record-type? type)
+    (let [values (mapv (comp closure-default-value-expr second) (nth type 2))]
+      (when (every? some? values)
+        (apply list 'record-new type values)))
+
+    :else nil))
+
+(defn- closure-result-type?
+  ([type] (closure-result-type? type *schemas*))
+  ([type schemas]
+   (let [type (canonical-closure-result-type type schemas)
+         valid? (try
+                  (validate-value-type! type)
+                  true
+                  (catch #?(:clj Exception :cljs :default) _ false))]
+     (and valid?
+          (or (contains? closure-flat-result-types type)
+              (and (or (record-type? type)
+                       (generic-option-type? type)
+                       (parametric-result-type? type))
+                   (some? (closure-default-value-expr type))))))))
+
+(defn- dispatcher-result-label [result-type]
+  (if (keyword? result-type)
+    (name result-type)
+    (str "t_" (artifact/sha256 result-type))))
 
 (defn- invoke-dispatcher-name
   ([arity] (invoke-dispatcher-name :i64 arity))
   ([result-type arity]
-   (when-not (contains? closure-result-types result-type)
+   (when-not (closure-result-type? result-type {})
      (reject! "closure result type is outside the admitted dispatcher profile"
               result-type))
    (symbol (str "__kotoba_invoke"
-                (when-not (= :i64 result-type) (str "_" (name result-type)))
+                (when-not (= :i64 result-type)
+                  (str "_" (dispatcher-result-label result-type)))
                 "$arity" arity))))
 
 (defn- request-invoke-dispatcher [result-type arity]
@@ -765,11 +854,21 @@
   The expectation follows value-producing tail positions, while ordinary
   operands are desugared without inheriting it."
   [result-type form]
-  (binding [*contextual-closure-result-type* result-type]
-    (desugar-expr form)))
+  (let [result-type (canonical-closure-result-type result-type)]
+    (when-not (closure-result-type? result-type {})
+      (reject! "closure result type is outside the admitted dispatcher profile"
+               result-type))
+    (binding [*contextual-closure-result-type* result-type]
+      (desugar-expr form))))
 
 (defn- desugar-bool-expr [form]
   (desugar-result-expr :bool form))
+
+(defn- desugar-expected-value [result-type form]
+  (let [result-type (canonical-closure-result-type result-type)]
+    (if (closure-result-type? result-type {})
+      (desugar-result-expr result-type form)
+      (desugar-expr form))))
 
 (defn- desugar-tail-expressions [result-type forms]
   (let [last-index (dec (count forms))]
@@ -869,7 +968,8 @@
         requested (into requested required-dispatchers)]
     (mapv
      (fn [[result-type arity]]
-       (let [closure (symbol (str "__kotoba_closure_" (name result-type) "_" arity))
+       (let [closure (symbol (str "__kotoba_closure_"
+                                  (dispatcher-result-label result-type) "_" arity))
              args (mapv #(symbol (str "__kotoba_invoke_arg_" %)) (range arity))
              candidates (filter #(and (= arity (:arity %))
                                       (= result-type (get-in % [:helper :result])))
@@ -884,7 +984,9 @@
                         :document '(if (= (quot 1 0) 0)
                                      (document-null)
                                      (document-null))
-                        '(quot 1 0))
+                        (if-let [default (closure-default-value-expr result-type)]
+                          (list 'if '(= (quot 1 0) 0) default default)
+                          '(quot 1 0)))
              body (reduce
                    (fn [fallback {:keys [id captures helper]}]
                      (let [capture-chain (list 'pair-second closure)
@@ -899,7 +1001,7 @@
                    fallback (reverse candidates))]
          {:name (invoke-dispatcher-name result-type arity) :params (into [closure] args)
           :result result-type :effects #{} :body body}))
-     (sort-by (juxt (comp name first) second) requested))))
+     (sort-by (juxt (comp dispatcher-result-label first) second) requested))))
 
 (def ^:private closure-apply-helper
   {:name '__kotoba_closure_apply
@@ -981,7 +1083,6 @@
 ;; `(if-some [v (record-get rec :opt-field)] …)` recovers `[:option T]`
 ;; from the record descriptor (T5.2 option-string-in-record gap).
 (def ^:dynamic *local-types* nil)
-(def ^:dynamic *schemas* nil)
 
 (defn- capability-wire-id [capability form]
   (if-let [id (get capability-registry capability)]
@@ -2245,11 +2346,19 @@
         invoke
         (if (contains? *function-arities* 'invoke)
           (apply list 'invoke (map desugar-expr args))
-          (let [typed? (contains? closure-result-types (first args))
-                result-type (if typed? (first args) :i64)
+          (let [declared-result (first args)
+                typed? (closure-result-type? declared-result)
+                _ (when (and (or (keyword? declared-result)
+                                 (structured-type? declared-result))
+                             (not typed?))
+                    (reject! "closure result type is outside the admitted dispatcher profile"
+                             declared-result))
+                result-type (if typed?
+                              (canonical-closure-result-type declared-result)
+                              :i64)
                 call-args (if typed? (rest args) args)]
             (when-not (<= 1 (count call-args) 5)
-              (reject! "invoke requires an optional :i64/:bool/:string/:vector-i64/:document result type, a closure, and zero to four arguments"
+              (reject! "invoke requires an optional admitted result descriptor, a closure, and zero to four arguments"
                        form))
             (apply list (request-invoke-dispatcher result-type (dec (count call-args)))
                    (map desugar-expr call-args))))
@@ -2567,7 +2676,7 @@
             (when-not (and (seq? err-branch) (= 3 (count err-branch))
                            (= 'err (first err-branch)) (symbol? (second err-branch)))
               (reject! "match-result requires exactly one (err binder body) branch" form))
-            (list 'result-match-of type (desugar-expr result)
+            (list 'result-match-of type (desugar-expected-value type result)
                   (second ok-branch) (desugar-expr (nth ok-branch 2))
                   (second err-branch) (desugar-expr (nth err-branch 2)))))
         result-match-of
@@ -2576,7 +2685,7 @@
             (let [[type value ok-binder ok-body err-binder err-body] args]
               (when-not (and (symbol? ok-binder) (symbol? err-binder))
                 (reject! "result-match-of requires symbol binders" form))
-              (list 'result-match-of type (desugar-expr value)
+              (list 'result-match-of type (desugar-expected-value type value)
                     ok-binder (desugar-expr ok-body)
                     err-binder (desugar-expr err-body))))
         variant-new
@@ -2605,17 +2714,20 @@
                     (mapv (fn [[tag binder body]] [tag binder (desugar-expr body)]) branches))))
         option-some-of
         (do (when-not (= 2 (count args)) (reject! "option-some-of requires type and payload" form))
-            (list 'option-some-of (first args) (desugar-expr (second args))))
+            (list 'option-some-of (first args)
+                  (desugar-expected-value (second (first args)) (second args))))
         option-none-of
         (do (when-not (= 1 (count args)) (reject! "option-none-of requires one type" form))
             (list 'option-none-of (first args)))
         option-some?-of
         (do (when-not (= 2 (count args)) (reject! "option-some?-of requires type and value" form))
-            (list 'option-some?-of (first args) (desugar-expr (second args))))
+            (list 'option-some?-of (first args)
+                  (desugar-expected-value (first args) (second args))))
         option-value-of
         (do (when-not (= 3 (count args)) (reject! "option-value-of requires type, value, and fallback" form))
-            (list 'option-value-of (first args) (desugar-expr (second args))
-                  (desugar-expr (nth args 2))))
+            (list 'option-value-of (first args)
+                  (desugar-expected-value (first args) (second args))
+                  (desugar-expected-value (second (first args)) (nth args 2))))
         option-or
         (do (when-not (= 2 (count args))
               (reject! "option-or requires an option value and a fallback" form))
@@ -2637,7 +2749,7 @@
             (let [[type value none-body binder some-body] args]
               (when-not (symbol? binder)
                 (reject! "option-match requires a symbol binder" form))
-              (list 'option-match type (desugar-expr value)
+              (list 'option-match type (desugar-expected-value type value)
                     (desugar-expr none-body) binder (desugar-expr some-body))))
         match-option
         (do (when-not (= 4 (count args))
@@ -2649,7 +2761,7 @@
               (when-not (and (seq? some-branch) (= 3 (count some-branch))
                              (= 'some (first some-branch)) (symbol? (second some-branch)))
                 (reject! "match-option requires exactly one (some binder body) branch" form))
-              (list 'option-match type (desugar-expr value)
+              (list 'option-match type (desugar-expected-value type value)
                     (desugar-expr (second none-branch)) (second some-branch)
                     (desugar-expr (nth some-branch 2)))))
         hetero-vector
@@ -2756,11 +2868,23 @@
         record
         (do (when (empty? args)
               (reject! "record requires a type descriptor" form))
-            (list* 'record-new (first args) (map desugar-expr (rest args))))
+            (let [type (canonical-closure-result-type (first args))
+                  field-types (mapv second (nth type 2 nil))]
+              (list* 'record-new type
+                     (map-indexed (fn [index value]
+                                    (desugar-expected-value
+                                     (nth field-types index nil) value))
+                                  (rest args)))))
         record-new
         (do (when (empty? args)
               (reject! "record-new requires a type descriptor" form))
-            (list* 'record-new (first args) (map desugar-expr (rest args))))
+            (let [type (canonical-closure-result-type (first args))
+                  field-types (mapv second (nth type 2 nil))]
+              (list* 'record-new type
+                     (map-indexed (fn [index value]
+                                    (desugar-expected-value
+                                     (nth field-types index nil) value))
+                                  (rest args)))))
         record-get
         (do (when-not (contains? #{2 3} (count args))
               (reject! "record-get requires (value field) or (type value field)" form))
@@ -2770,29 +2894,42 @@
             ;; canonical 3-arity form.
             (if (= 2 (count args))
               (list 'record-get (desugar-expr (first args)) (second args))
-              (list 'record-get (first args) (desugar-expr (second args)) (nth args 2))))
+              (let [type (canonical-closure-result-type (first args))]
+                (list 'record-get type
+                      (desugar-expected-value type (second args)) (nth args 2)))))
         record-assoc
         (do (when-not (= 4 (count args))
               (reject! "record-assoc requires type, value, literal field, and replacement" form))
-            (list 'record-assoc (first args) (desugar-expr (second args))
-                  (nth args 2) (desugar-expr (nth args 3))))
+            (let [type (canonical-closure-result-type (first args))
+                  field-type (some (fn [[field field-type]]
+                                     (when (= field (nth args 2)) field-type))
+                                   (nth type 2 nil))]
+              (list 'record-assoc type (desugar-expected-value type (second args))
+                    (nth args 2) (desugar-expected-value field-type (nth args 3)))))
         record-equal
         (do (when-not (= 3 (count args))
               (reject! "record-equal requires type and two values" form))
-            (list 'record-equal (first args) (desugar-expr (second args))
-                  (desugar-expr (nth args 2))))
+            (let [type (canonical-closure-result-type (first args))]
+              (list 'record-equal type
+                    (desugar-expected-value type (second args))
+                    (desugar-expected-value type (nth args 2)))))
         result-ok-of (do (when-not (= 2 (count args)) (reject! "result-ok-of requires type and payload" form))
-                         (list 'result-ok-of (first args) (desugar-expr (second args))))
+                         (list 'result-ok-of (first args)
+                               (desugar-expected-value (second (first args)) (second args))))
         result-err-of (do (when-not (= 2 (count args)) (reject! "result-err-of requires type and payload" form))
-                          (list 'result-err-of (first args) (desugar-expr (second args))))
+                          (list 'result-err-of (first args)
+                                (desugar-expected-value (nth (first args) 2 nil) (second args))))
         result-ok?-of (do (when-not (= 2 (count args)) (reject! "result-ok?-of requires type and result" form))
-                          (list 'result-ok?-of (first args) (desugar-expr (second args))))
+                          (list 'result-ok?-of (first args)
+                                (desugar-expected-value (first args) (second args))))
         result-value-of (do (when-not (= 3 (count args)) (reject! "result-value-of requires type, result, and fallback" form))
                             (list 'result-value-of (first args)
-                                  (desugar-expr (second args)) (desugar-expr (nth args 2))))
+                                  (desugar-expected-value (first args) (second args))
+                                  (desugar-expected-value (second (first args)) (nth args 2))))
         result-error-of (do (when-not (= 3 (count args)) (reject! "result-error-of requires type, result, and fallback" form))
                             (list 'result-error-of (first args)
-                                  (desugar-expr (second args)) (desugar-expr (nth args 2))))
+                                  (desugar-expected-value (first args) (second args))
+                                  (desugar-expected-value (nth (first args) 2 nil) (nth args 2))))
         ;; ADR-2607182410: `(cap-call :some/name value)` -> `(cap-call <int>
         ;; (desugar-expr value))`, resolving the keyword against
         ;; capability-registry BEFORE validate-expr/direct-facts ever see the
@@ -5983,7 +6120,7 @@
                                                      *local-types* local-types
                                                      *schemas* (:schemas namespace-info)
                                                      *lexical-bindings* (set params)]
-                                             (if (contains? closure-result-types result)
+                                             (if (closure-result-type? result (:schemas namespace-info))
                                                (desugar-result-expr result source-body)
                                                (desugar-expr source-body)))]
                              (into [(cond-> {:name name :source-name source-name
@@ -6015,9 +6152,12 @@
                               infer-absent-results)
               by-name (into {} (map (juxt :name identity)) candidates)]
           (mapv (fn [{:keys [helper] :as info}]
-                  (let [typed (get by-name (:name helper))]
+                  (let [typed (get by-name (:name helper))
+                        result (canonical-closure-result-type
+                                (:result typed) (:schemas namespace-info))
+                        typed (assoc typed :result result)]
                     (assoc info :helper
-                           (if (contains? closure-result-types (:result typed))
+                           (if (closure-result-type? result {})
                              typed
                              (dissoc helper :result-inferred?)))))
                 @lambda-infos))
