@@ -80,6 +80,8 @@ const ALLOWED_IMPORTS = new Set([
   "kotoba:typed/document-sha256/function",
   "kotoba:typed/document-print/function",
   "kotoba:typed/document-read/function",
+  "kotoba:typed/document-edn-print/function",
+  "kotoba:typed/document-edn-read/function",
   "kotoba:typed/document-contains/function",
   "kotoba:typed/document-vector-at/function",
   "kotoba:typed/document-map-entry-at/function",
@@ -730,6 +732,139 @@ function createTypedRuntime(abi, typedCapCall, allow) {
     if (typeof s !== "string") reject("invalid-typed-value", "document-read requires a string");
     if (s.length > 65536) reject("invalid-typed-value", "document-read string exceeds byte limit");
     return documentFromCanonicalBytes(hexToBytes(s));
+  };
+  const documentEdnPrint = value => {
+    const walk = node => {
+      node = assertDocument(node);
+      const [tag, payload] = node;
+      if (tag === "null") return "nil";
+      if (tag === "bool") return payload ? "true" : "false";
+      if (tag === "i64") return String(payload);
+      if (tag === "f64") {
+        if (!Number.isFinite(payload)) reject("invalid-typed-value", "non-finite document f64");
+        const text = String(payload);
+        return /[.eE]/u.test(text) ? text : `${text}.0`;
+      }
+      if (tag === "string") return JSON.stringify(payload);
+      if (tag === "keyword") return payload;
+      if (tag === "vector") return `[${payload.map(walk).join(" ")}]`;
+      if (tag === "map") return `{${payload.map(([key, item]) => `${key} ${walk(item)}`).join(" ")}}`;
+      reject("invalid-typed-value", "unknown document tag for EDN printer");
+    };
+    const output = walk(value);
+    if (utf8Length(output) > 65536)
+      reject("invalid-typed-value", "document-edn-print exceeds string byte limit");
+    return output;
+  };
+  const documentEdnRead = input => {
+    if (typeof input !== "string" || utf8Length(input) > 65536)
+      reject("invalid-typed-value", "document-edn-read input is invalid or oversized");
+    const text = input;
+    let cursor = 0;
+    const fail = message => reject("invalid-typed-value", `document-edn-read ${message}`);
+    const whitespace = character =>
+      character === " " || character === "\t" || character === "\n" ||
+      character === "\r" || character === ",";
+    const skip = () => {
+      for (;;) {
+        while (cursor < text.length && whitespace(text[cursor])) cursor += 1;
+        if (text[cursor] !== ";") return;
+        while (cursor < text.length && text[cursor++] !== "\n") {}
+      }
+    };
+    const delimiter = character =>
+      character === undefined || whitespace(character) || "[]{}()\";".includes(character);
+    const quoted = () => {
+      cursor += 1;
+      let output = "";
+      while (cursor < text.length) {
+        const character = text[cursor++];
+        if (character === "\"") return output;
+        if (character === "\n" || character === "\r") fail("newline in string");
+        if (character !== "\\") { output += character; continue; }
+        if (cursor >= text.length) fail("truncated escape");
+        const escaped = text[cursor++];
+        const escapes = { b: "\b", t: "\t", n: "\n", f: "\f", r: "\r", "\"": "\"", "\\": "\\" };
+        if (Object.prototype.hasOwnProperty.call(escapes, escaped)) {
+          output += escapes[escaped];
+          continue;
+        }
+        if (escaped !== "u") fail("unsupported escape");
+        const hex = text.slice(cursor, cursor + 4);
+        if (!/^[0-9A-Fa-f]{4}$/u.test(hex)) fail("invalid unicode escape");
+        output += String.fromCharCode(Number.parseInt(hex, 16));
+        cursor += 4;
+      }
+      fail("unterminated string");
+    };
+    const token = () => {
+      const begin = cursor;
+      while (cursor < text.length && !delimiter(text[cursor])) cursor += 1;
+      if (begin === cursor) fail("expected token");
+      return text.slice(begin, cursor);
+    };
+    const value = depth => {
+      if (depth > 8) fail("depth limit exceeded");
+      skip();
+      const character = text[cursor];
+      if (character === undefined) fail("unexpected end of input");
+      if (character === "\"") return ["string", quoted()];
+      if (character === "[") {
+        cursor += 1;
+        const items = [];
+        for (;;) {
+          skip();
+          if (text[cursor] === "]") { cursor += 1; return ["vector", items]; }
+          if (items.length >= 32) fail("vector item limit exceeded");
+          items.push(value(depth + 1));
+        }
+      }
+      if (character === "{") {
+        cursor += 1;
+        const entries = [];
+        for (;;) {
+          skip();
+          if (text[cursor] === "}") {
+            cursor += 1;
+            entries.sort((left, right) => left[0] < right[0] ? -1 : left[0] > right[0] ? 1 : 0);
+            for (let index = 1; index < entries.length; index += 1)
+              if (entries[index - 1][0] === entries[index][0]) fail("duplicate map key");
+            return ["map", entries];
+          }
+          if (entries.length >= 32) fail("map entry limit exceeded");
+          const key = value(depth + 1);
+          if (key[0] !== "keyword") fail("map keys must be keywords");
+          skip();
+          if (text[cursor] === "}") fail("map value missing");
+          entries.push([key[1], value(depth + 1)]);
+        }
+      }
+      if (character === "#") fail("dispatch forms are forbidden");
+      if (character === "(") fail("lists are unsupported");
+      if (character === ")" || character === "]" || character === "}") fail("unexpected closing delimiter");
+      const item = token();
+      if (item === "nil") return ["null"];
+      if (item === "true") return ["bool", true];
+      if (item === "false") return ["bool", false];
+      if (/^[+-]?[0-9]+$/u.test(item)) {
+        let parsed;
+        try { parsed = BigInt(item); } catch (_) { fail("invalid i64"); }
+        if (parsed < -9223372036854775808n || parsed > 9223372036854775807n) fail("i64 out of range");
+        return ["i64", parsed];
+      }
+      if (/^[+-]?(?:(?:[0-9]+\.[0-9]*)|(?:[0-9]*\.[0-9]+)|(?:[0-9]+[eE][+-]?[0-9]+))(?:[eE][+-]?[0-9]+)?$/u.test(item)) {
+        const parsed = Number(item);
+        if (!Number.isFinite(parsed)) fail("invalid or non-finite f64");
+        return ["f64", parsed];
+      }
+      if (item.length > 1 && item[0] === ":") return ["keyword", item];
+      fail("unsupported token");
+    };
+    skip();
+    const document = value(0);
+    skip();
+    if (cursor !== text.length) fail("trailing forms");
+    return constructDocument(document);
   };
     const xmlName = /^[A-Za-z_][A-Za-z0-9_.:-]{0,127}$/u;
   const xmlString = value => {
@@ -1649,6 +1784,16 @@ function createTypedRuntime(abi, typedCapCall, allow) {
       if (descriptorAt(descriptorId) !== documentDescriptor)
         reject("invalid-typed-operation", "document descriptor required");
       return documentRead(value);
+    },
+    "document-edn-print"(descriptorId, value) {
+      if (descriptorAt(descriptorId) !== documentDescriptor)
+        reject("invalid-typed-operation", "document descriptor required");
+      return documentEdnPrint(value);
+    },
+    "document-edn-read"(descriptorId, value) {
+      if (descriptorAt(descriptorId) !== documentDescriptor)
+        reject("invalid-typed-operation", "document descriptor required");
+      return documentEdnRead(value);
     },
     "document-contains"(descriptorId, value, key) {
       if (descriptorAt(descriptorId) !== documentDescriptor)
