@@ -133,9 +133,38 @@
   the substring inside those literals. Blanking the literals first restores the
   assertion's actual meaning."
   [source]
-  (-> source
-      (str/replace #"'(?:[^'\\]|\\.)*'" "''")
-      (str/replace #"\"(?:[^\"\\]|\\.)*\"" "\"\"")))
+  (loop [remaining (seq source)
+         quote nil
+         escaped? false
+         out (StringBuilder.)]
+    (if-let [ch (first remaining)]
+      (cond
+        quote
+        (cond
+          escaped?
+          (do (.append out \space)
+              (recur (next remaining) quote false out))
+
+          (= ch \\)
+          (do (.append out \space)
+              (recur (next remaining) quote true out))
+
+          (= ch quote)
+          (do (.append out \space)
+              (recur (next remaining) nil false out))
+
+          :else
+          (do (.append out \space)
+              (recur (next remaining) quote false out)))
+
+        (or (= ch \') (= ch \"))
+        (do (.append out \space)
+            (recur (next remaining) ch false out))
+
+        :else
+        (do (.append out ch)
+            (recur (next remaining) nil false out)))
+      (str out))))
 
 (deftest emits-restricted-javascript-from-the-same-kir
   (let [js (compiler/compile-source structured-source :js-kotoba-v1)]
