@@ -148,12 +148,32 @@
 (defn- stub-form [stub {:keys [params param-types result]}]
   (list 'defn- stub (typed-params params param-types) result (stub-value result)))
 
+(defn- capability-operation?
+  "True for a friendly capability operation such as `clock/now`.
+
+  These are namespaced calls that are not module references: the frontend
+  elaborates them into typed abilities against the capability catalog. The
+  linker used to see only `<ns>/<name>` and conclude that anything qualified
+  had to be an imported export, which made a friendly operation impossible to
+  write inside a project — the single-file path accepted it and the project
+  path rejected it with `qualified call is not an admitted exported import`.
+
+  Module imports are still resolved first, so an explicit `:require` alias
+  always wins over a capability of the same name; a project can never have a
+  capability silently displace a module it asked for."
+  [op]
+  (contains? frontend/capability-registry
+             (keyword (namespace op) (name op))))
+
 (defn- rewrite-import-calls [form imported]
   (cond
     (seq? form)
     (let [[op & args] form
           op' (if (and (symbol? op) (namespace op))
                 (or (get imported op)
+                    ;; Left as written: elaboration into a typed ability is the
+                    ;; frontend's job, and it runs identically on linked source.
+                    (when (capability-operation? op) op)
                     (reject! "qualified call is not an admitted exported import" {:call op}))
                 op)]
       (list* op' (map #(rewrite-import-calls % imported) args)))
