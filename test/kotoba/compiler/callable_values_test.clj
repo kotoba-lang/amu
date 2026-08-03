@@ -635,3 +635,58 @@
     (is (= 42 (kir/execute (:kir js) 'main [])))
     (is (= (:kir wasm-a) (:kir wasm-b)))
     (is (java.util.Arrays/equals ^bytes (:bytes wasm-a) ^bytes (:bytes wasm-b)))))
+
+(deftest public-callable-contracts-select-arity-and-result-family
+  (let [source "(defn apply-one [f [:fn [[:i64] :i64]] x :i64] :i64 (f x))
+                (defn make-renderer [] [:fn [[:i64] :string]]
+                  (fn [x] (string-from-i64 x)))
+                (defn main []
+                  (+ (apply-one (fn [x] (+ x 1)) 4)
+                     (string-length (let [render (make-renderer)] (render 42)))))"
+        compiled (compiler/compile-source source :js-kotoba-v1)
+        wasm-a (compiler/compile-source source :wasm32-browser-kotoba-v1)
+        wasm-b (compiler/compile-source source :wasm32-browser-kotoba-v1)
+        hir (:hir (compiler/check-source source))
+        functions (into {} (map (juxt :name identity)) (:functions hir))]
+    (is (= 7 (kir/execute (:kir compiled) 'main [])))
+    (is (= "7" (execute-main-esm source)))
+    (is (= (:kir wasm-a) (:kir wasm-b)))
+    (is (java.util.Arrays/equals ^bytes (:bytes wasm-a) ^bytes (:bytes wasm-b)))
+    (is (= {0 [:fn [[:i64] :i64]]}
+           (:callable-param-contracts (get functions 'apply-one))))
+    (is (= [:fn [[:i64] :string]]
+           (:callable-result-contract (get functions 'make-renderer))))
+    (is (= [0] (:closure-param-indexes (get functions 'apply-one))))
+    (is (true? (:closure-result? (get functions 'make-renderer))))))
+
+(deftest public-callable-contracts-fail-closed
+  (testing "an unlisted arity is rejected at the lexical call"
+    (is (re-find #"does not admit this arity"
+                 (rejection-message
+                  "(defn call-two [f [:fn [[:i64] :i64]]] :i64 (f 1 2))
+                   (defn main [] 0)"))))
+  (testing "clauses require distinct arities"
+    (is (re-find #"unique"
+                 (rejection-message
+                  "(defn bad [f [:fn [[:i64] :i64] [[:i64] :bool]]] :i64 0)
+                   (defn main [] 0)"))))
+  (testing "the descriptor does not promise unsupported argument ABIs"
+    (is (re-find #"i64 closure ABI"
+                 (rejection-message
+                  "(defn bad [f [:fn [[:string] :i64]]] :i64 0)
+                   (defn main [] 0)"))))
+  (testing "linear-resource results remain outside callable contracts"
+    (is (re-find #"linear resources"
+                 (rejection-message
+                  "(defn bad [f [:fn [[] [:stream :bytes]]]] :i64 0)
+                   (defn main [] 0)"))))
+  (testing "a returned fn must implement the declared result family"
+    (is (re-find #"does not match the declared callable contract"
+                 (rejection-message
+                  "(defn bad [] [:fn [[:i64] :string]] (fn [x] (+ x 1)))
+                   (defn main [] 0)"))))
+  (testing "callable pass-through contracts must agree"
+    (is (re-find #"returned callable contract does not match"
+                 (rejection-message
+                  "(defn bad [f [:fn [[] :i64]]] [:fn [[:i64] :i64]] f)
+                   (defn main [] 0)")))))

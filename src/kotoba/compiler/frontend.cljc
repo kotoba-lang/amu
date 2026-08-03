@@ -368,7 +368,13 @@
                    :option-i64 :result-i64
                    :vector-i64 :vector-f64 :string-index :disjoint-set-i64 :document})
 
-(declare reject!)
+(declare reject! closure-result-type?)
+
+(defn- callable-type? [type]
+  (and (vector? type) (= :fn (first type)) (<= 2 (count type) 6)))
+
+(defn- callable-clauses [type]
+  (when (callable-type? type) (subvec type 1)))
 
 (defn- parametric-result-type? [type]
   (and (vector? type) (= 3 (count type)) (= :result (first type))))
@@ -412,7 +418,8 @@
       (canonical-list-type? type)
       (stream-type? type) (task-type? type)
       (heterogeneous-vector-type? type) (typed-set-type? type)
-      (canonical-typed-map-type? type) (record-type? type) (schema-ref-type? type)))
+      (canonical-typed-map-type? type) (record-type? type) (schema-ref-type? type)
+      (callable-type? type)))
 
 (defn- validate-value-type!
   ([type] (validate-value-type! type 0 (volatile! 0)))
@@ -423,6 +430,29 @@
    (when (> depth max-type-depth)
      (reject! "value type exceeds depth limit" type :kotoba.error/value-type-depth-limit))
    (cond
+     (callable-type? type)
+     (let [clauses (callable-clauses type)
+           arities (mapv (comp count first) clauses)]
+       (when-not (and (seq clauses)
+                      (every? #(and (vector? %) (= 2 (count %))
+                                    (vector? (first %))
+                                    (<= (count (first %)) 4))
+                              clauses)
+                      (= (count arities) (count (distinct arities))))
+         (reject! "callable type requires one to five unique [parameter-types result-type] clauses"
+                  type :kotoba.error/callable-type))
+       (doseq [[parameter-types result-type] clauses]
+         (when-not (every? #{:i64} parameter-types)
+           (reject! "callable parameter types currently require the i64 closure ABI"
+                    type :kotoba.error/callable-parameter-type))
+         (when (or (callable-type? result-type) (linear-resource-type? result-type))
+           (reject! "callable results cannot be callable or linear resources"
+                    type :kotoba.error/callable-result-type))
+         (validate-value-type! result-type (inc depth) nodes)
+         (when-not (closure-result-type? result-type {})
+           (reject! "callable result type is outside the admitted dispatcher profile"
+                    type :kotoba.error/callable-result-type)))
+       type)
      (contains? value-types type)
      type
      (schema-ref-type? type)
@@ -772,6 +802,9 @@
 (def ^:dynamic *uses-lazy?* nil)
 (def ^:dynamic *lifting-lazy-thunk?* false)
 (def ^:dynamic *lexical-bindings* #{})
+(def ^:dynamic *lexical-callable-contracts* {})
+(def ^:dynamic *function-callable-result-contracts* {})
+(def ^:dynamic *expected-callable-contract* nil)
 (def ^:dynamic *contextual-closure-result-type* nil)
 (def ^:dynamic *required-closure-dispatchers* nil)
 
@@ -894,12 +927,37 @@
        (contains? *lexical-bindings* (first form))
        (not (contains? non-shadowable-special-heads (first form)))))
 
+(defn- callable-clause-for-arity [contract arity form]
+  (or (some #(when (= arity (count (first %))) %) (callable-clauses contract))
+      (reject! "callable contract does not admit this arity"
+               form :kotoba.error/callable-arity)))
+
+(defn- expression-callable-contract [form]
+  (cond
+    (symbol? form) (get *lexical-callable-contracts* form)
+    (seq? form) (or (get *function-callable-result-contracts*
+                         [(first form) (dec (count form))])
+                    (get *function-callable-result-contracts* (first form)))
+    :else nil))
+
 (defn- desugar-lexical-call [result-type form]
   (let [[closure & args] form]
     (when (> (count args) 4)
       (reject! "direct closure call exceeds ABI arity four" form))
-    (apply list (request-invoke-dispatcher result-type (count args)) closure
-           (map desugar-expr args))))
+    (let [contract (get *lexical-callable-contracts* closure)
+          [parameter-types contract-result]
+          (when contract (callable-clause-for-arity contract (count args) form))
+          result-type (or contract-result result-type)]
+      (when parameter-types
+        (doseq [[argument wanted] (map vector args parameter-types)]
+          ;; The admitted callable ABI is i64-only today. This explicit check
+          ;; keeps the contract useful if more physical argument types are
+          ;; introduced later without silently widening old descriptors.
+          (when-not (= :i64 wanted)
+            (reject! "callable argument type is outside the admitted closure ABI"
+                     argument :kotoba.error/callable-argument-type))))
+      (apply list (request-invoke-dispatcher result-type (count args)) closure
+             (map desugar-expr args)))))
 
 (defn- desugar-result-expr
   "Desugar an expression in a context with a known closure result family.
@@ -935,6 +993,7 @@
 
 (defn- lift-lambda [form]
   (let [expected-result *contextual-closure-result-type*
+        expected-contract *expected-callable-contract*
         [_ params-or-clause & tail] form
         raw-clauses (if (vector? params-or-clause)
                       [[params-or-clause (first tail)]]
@@ -966,6 +1025,15 @@
         variadic (first variadics)
         arities (sort (set/union (set (keys fixed-by-arity))
                                  (if variadic (set (range (:min-arity variadic) 5)) #{})))
+        contract-results
+        (when expected-contract
+          (into {} (map (fn [[parameter-types result-type]]
+                          [(count parameter-types) result-type]))
+                (callable-clauses expected-contract)))
+        _ (when (and expected-contract
+                     (not= (set arities) (set (keys contract-results))))
+            (reject! "fn arities do not match the declared callable result contract"
+                     form :kotoba.error/callable-result-arity))
         clauses (mapv (fn [arity]
                         (if-let [{:keys [params body]} (get fixed-by-arity arity)]
                           [params body]
@@ -986,12 +1054,13 @@
     (when (and (vector? params-or-clause) (not= 1 (count tail)))
       (reject! "single-arity fn value requires exactly one body" form))
     (let [lowered (mapv (fn [[params body]]
-                          {:params params
+                          (let [clause-result (get contract-results (count params))]
+                          {:params params :contract-result clause-result
                            :body (binding [*lexical-bindings*
                                            (into *lexical-bindings* params)]
-                                   (if expected-result
-                                     (desugar-result-expr expected-result body)
-                                     (desugar-expr body)))})
+                                   (if-let [result (or clause-result expected-result)]
+                                     (desugar-result-expr result body)
+                                     (desugar-expr body)))}))
                         clauses)
           captures (vec (sort-by str
                                  (apply set/union #{}
@@ -1004,14 +1073,15 @@
           (reject! "fn captures plus parameters exceed ABI-supported arity" form)))
       (when *pending-lambdas*
         (swap! *pending-lambdas* into
-               (mapv (fn [{:keys [params body]}]
+               (mapv (fn [{:keys [params body contract-result]}]
                        (let [arity (count params)
                              helper-name (symbol (str "__kotoba_lambda_" id "_arity" arity))]
-                         {:id id :arity arity :captures captures
+                         (cond-> {:id id :arity arity :captures captures
                           :helper {:name helper-name :params (into captures params)
                                    :result :i64 :result-inferred? true
                                    :effects #{} :body body
-                                   :lazy-thunk? *lifting-lazy-thunk?*}}))
+                                   :lazy-thunk? *lifting-lazy-thunk?*}}
+                           contract-result (assoc :contract-result contract-result))))
                      lowered)))
       ;; Closure captures are always the internal i64 pair-chain ABI, even
       ;; when the lambda's result is a canonical `[:list T]` value.
@@ -2583,23 +2653,33 @@
                 ;; Lower bindings sequentially.  A value may call a closure
                 ;; introduced by an earlier binding, while its own pattern is
                 ;; deliberately not visible until that value has finished.
-                (letfn [(lower-bindings [remaining env lowered]
+                (letfn [(lower-bindings [remaining env contracts lowered]
                           (if-let [[pattern value] (first remaining)]
-                            (let [expanded
-                                  (binding [*lexical-bindings* env]
+                            (let [value-contract
+                                  (binding [*lexical-callable-contracts* contracts]
+                                    (expression-callable-contract value))
+                                  expanded
+                                  (binding [*lexical-bindings* env
+                                            *lexical-callable-contracts* contracts]
                                     (destructure-binding pattern
                                                          (desugar-expr value)))
-                                  next-env (into env (map first expanded))]
-                              (lower-bindings (rest remaining) next-env
+                                  next-env (into env (map first expanded))
+                                  next-contracts
+                                  (if (and (symbol? pattern) value-contract)
+                                    (assoc contracts pattern value-contract)
+                                    contracts)]
+                              (lower-bindings (rest remaining) next-env next-contracts
                                               (into lowered expanded)))
-                            [(vec (mapcat identity lowered)) env]))]
-                  (let [[lowered-bindings body-env]
+                            [(vec (mapcat identity lowered)) env contracts]))]
+                  (let [[lowered-bindings body-env body-contracts]
                         (lower-bindings (partition 2 bindings)
-                                        *lexical-bindings* [])]
+                                        *lexical-bindings*
+                                        *lexical-callable-contracts* [])]
                     (list* 'let lowered-bindings
                            ;; `mapv`, not bare `map`: forcing must remain in
                            ;; the dynamic extent of the compiler counters.
-                           (binding [*lexical-bindings* body-env]
+                           (binding [*lexical-bindings* body-env
+                                     *lexical-callable-contracts* body-contracts]
                              (desugar-tail-expressions contextual-result-type body)))))
                 ;; Preserve malformed input so validate-expr emits its
                 ;; established even-binding-vector diagnostic.
@@ -5275,10 +5355,13 @@
         function-names (set (map :name functions))
         seed
         (into {}
-              (map (fn [{:keys [name closure-param-indexes closure-result?]}]
-                     [name {:params (cond-> (set closure-param-indexes)
+              (map (fn [{:keys [name closure-param-indexes closure-result?
+                                callable-param-contracts callable-result-contract]}]
+                     [name {:params (cond-> (into (set closure-param-indexes)
+                                                  (keys callable-param-contracts))
                                       (closure-dispatcher-function? name) (conj 0))
-                            :result? (true? closure-result?)}]))
+                            :result? (or (true? closure-result?)
+                                         (some? callable-result-contract))}]))
               functions)
         refinement-count-limit
         (+ 1 (count functions) (reduce + (map (comp count :params) functions)))]
@@ -6192,8 +6275,10 @@
       (reject! "function docstring exceeds admission limit" docstring))
     (when-not (= ::absent result) (validate-value-type! result))
     (cond-> {:name name :raw-params raw-params
-             :result (if (= ::absent result) :i64 result) :body body}
+             :result (if (or (= ::absent result) (callable-type? result)) :i64 result)
+             :body body}
       (= ::absent result) (assoc :result-inferred? true)
+      (callable-type? result) (assoc :callable-result-contract result)
       effects-ceiling (assoc :effects-ceiling effects-ceiling))))
 
 (declare typed-param-parts)
@@ -6285,7 +6370,9 @@
                                   (and (= type :map) (map? pattern))
                                   (and (= type :vector-i64) (vector? pattern)))))
                 (reject! "typed values require plain-symbol bindings" pattern))
-              {:pattern pattern :type type})
+              (cond-> {:pattern pattern
+                       :type (if (callable-type? type) :i64 type)}
+                (callable-type? type) (assoc :callable-contract type)))
             (partition 2 raw-params)))
     (mapv (fn [pattern] {:pattern pattern :type :i64}) raw-params))))
 
@@ -6518,6 +6605,7 @@
   ([source opts]
   (let [language-profile (when (map? opts) (:language-profile opts))
         admit-linked-synthetics? (when (map? opts) (:admit-linked-synthetics? opts))
+        lambda-id-base (or (when (map? opts) (:lambda-id-base opts)) 0)
         forms (mapv annotate-doseq-collection-kinds (read-forms source))
         _ (when-not admit-linked-synthetics?
             (reject-reserved-source-symbols! forms))
@@ -6581,6 +6669,21 @@
                         def-parts)
         _ (when (contains? overloaded-sources 'main)
             (reject! "main must have exactly one zero-arity clause" 'main))
+        function-callable-result-contracts
+        (into {}
+              (keep (fn [{:keys [source-name logical-arity raw-params
+                                 callable-result-contract]}]
+                      (when callable-result-contract
+                        (let [typed? (or (some keyword? raw-params)
+                                         (some type-alias-form? raw-params)
+                                         (and (even? (count raw-params))
+                                              (some structured-type?
+                                                    (map second (partition 2 raw-params)))))
+                              arity (or logical-arity
+                                        (if typed? (quot (count raw-params) 2)
+                                            (count raw-params)))]
+                          [[source-name arity] callable-result-contract]))))
+              def-parts)
         ;; ADR-2607150000: mapcat, not mapv -- a defn using `loop` may
         ;; expand into itself PLUS one or more synthesized loop-helper
         ;; functions (collected via *pending-loop-helpers*, bound fresh
@@ -6603,12 +6706,14 @@
         uses-lazy? (volatile! false)
         required-dispatchers (volatile! #{})
         parsed (binding [*loop-counter* (volatile! 0)
-                          *lambda-counter* (volatile! 0)
+                          *lambda-counter* (volatile! lambda-id-base)
                           *pending-lambdas* lambda-infos
                           *uses-apply?* uses-apply?
                           *uses-lazy?* uses-lazy?
                           *required-closure-dispatchers* required-dispatchers
                           *function-arities* function-arities
+                          *function-callable-result-contracts*
+                          function-callable-result-contracts
                           *synthetic-counter* (volatile! 0)
                           *used-capability-keywords* used-capabilities]
                ;; `vec` (forcing) must stay INSIDE `binding`'s dynamic
@@ -6621,7 +6726,7 @@
                (vec
                      (mapcat
                      (fn [{:keys [name source-name raw-params result body effects-ceiling
-                                  result-inferred?]}]
+                                  result-inferred? callable-result-contract]}]
                        (let [source-name (or source-name name)]
                          (when-not (valid-name? name) (reject! "invalid function name" name))
                          (when (contains? reserved-function-names name)
@@ -6637,6 +6742,12 @@
                                name+wraps (mapv #(param-name+wrap (:pattern %)) param-parts)
                                params (mapv first name+wraps)
                                param-types (mapv :type param-parts)
+                               callable-param-contracts
+                               (into {}
+                                     (keep-indexed (fn [index part]
+                                                     (when-let [contract (:callable-contract part)]
+                                                       [index contract])))
+                                     param-parts)
                                wrap-body (apply comp (map second name+wraps))]
                            (when-not (and (every? valid-name? params) (= (count params) (count (distinct params))))
                              (reject! "function parameters must be unique bounded symbols with ABI-supported arity" raw-params))
@@ -6656,11 +6767,32 @@
                                  ;; [:option T] fields desugars with the real T
                                  ;; (closes option-string-in-record gap).
                                  local-types (zipmap params param-types)
+                                 source-callable-contract
+                                 (binding [*lexical-callable-contracts*
+                                           (into {} (map (fn [[index contract]]
+                                                           [(nth params index) contract]))
+                                                 callable-param-contracts)]
+                                   (expression-callable-contract source-body))
+                                 _ (when (and callable-result-contract
+                                              source-callable-contract
+                                              (not= callable-result-contract
+                                                    source-callable-contract))
+                                     (reject! "returned callable contract does not match the declared result contract"
+                                              {:function source-name
+                                               :expected callable-result-contract
+                                               :actual source-callable-contract}
+                                              :kotoba.error/callable-result-contract))
                                  desugared (binding [*pending-loop-helpers* loop-helpers
                                                      *local-option-types* option-locals
                                                      *local-types* local-types
                                                      *schemas* (:schemas namespace-info)
-                                                     *lexical-bindings* (set params)]
+                                                     *lexical-bindings* (set params)
+                                                     *lexical-callable-contracts*
+                                                     (into {} (map (fn [[index contract]]
+                                                                     [(nth params index) contract]))
+                                                           callable-param-contracts)
+                                                     *expected-callable-contract*
+                                                     callable-result-contract]
                                              (if (closure-result-type? result (:schemas namespace-info))
                                                (desugar-result-expr result source-body)
                                                (desugar-expr source-body)))]
@@ -6669,6 +6801,10 @@
                                              :result result :effects #{}
                                              :result-inferred? result-inferred?
                                              :body desugared}
+                                      (seq callable-param-contracts)
+                                      (assoc :callable-param-contracts callable-param-contracts)
+                                      callable-result-contract
+                                      (assoc :callable-result-contract callable-result-contract)
                                       effects-ceiling (assoc :effects-ceiling effects-ceiling))]
                                    @loop-helpers)))))
                      def-parts)))
@@ -6712,10 +6848,16 @@
                                                 (vec (repeat (count (:params %)) :i64)))))
                                 infer-absent-results))
               by-name (into {} (map (juxt :name identity)) candidates)]
-          (mapv (fn [{:keys [helper] :as info}]
+          (mapv (fn [{:keys [helper contract-result] :as info}]
                   (let [typed (get by-name (:name helper))
                         result (canonical-closure-result-type
                                 (:result typed) (:schemas namespace-info))
+                        _ (when (and contract-result
+                                     (not (same-expression-type? result contract-result)))
+                            (reject! "fn result does not match the declared callable contract"
+                                     {:function (:name helper)
+                                      :expected contract-result :actual result}
+                                     :kotoba.error/callable-result-type))
                         typed (assoc typed :result result)]
                     (assoc info :helper
                            (if (closure-result-type? result {})
