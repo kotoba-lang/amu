@@ -1,3 +1,19 @@
+;; ⚠ Changing anything below means regenerating `deps-lock.edn` IN THE SAME
+;; COMMIT:
+;;
+;;     nbb scripts/lock-classpath.cljs
+;;
+;; The lock is what lets `bin/kotoba` resolve this closure without a JDK
+;; (ADR-0202). A stale one is not an error you find later -- it silently sends
+;; the compiler back to `clojure -Spath`, and the JDK-free property is gone
+;; with nobody notified.
+;;
+;; This is not hypothetical: the lock went stale three times in one afternoon
+;; (two pin advances and one new dependency, each landing while a lock refresh
+;; was in review). The murakumo fleet gate `compiler-jdk-free` refuses a
+;; mismatch, so the signal is visible -- but the frequency is the reason
+;; ADR-0202's follow-up is to derive the closure from git and stop needing a
+;; lock on the common path at all.
 {:paths ["src" "resources"]
  :deps {org.clojure/clojure {:mvn/version "1.12.0"}
         io.github.kotoba-lang/abi {:git/url "https://github.com/kotoba-lang/abi.git"
