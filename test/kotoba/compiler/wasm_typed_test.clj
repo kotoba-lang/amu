@@ -44,6 +44,18 @@
     (testing "legacy i64 modules do not acquire a typed ABI claim"
     (is (not-any? #(= marker %) (partition (count marker) 1 i64-bytes))))))
 
+(deftest canonical-list-closure-results-run-on-the-browser-wasm-host
+  (let [source
+        "(defn main []
+           (vector-count
+             (invoke [:list :i64]
+               (fn [x] (list x (+ x 1))) 7)))"
+        compiled (compiler/compile-source source :wasm32-browser-kotoba-v1)
+        probe (node-probe compiled
+                          "if(h.instance.exports.main()!==2n)process.exit(2);")]
+    (is (= 2 (ir/execute (:kir compiled) 'main [])))
+    (is (zero? (:exit probe)) (:err probe))))
+
 (deftest parameterized-i64-bitwise-ops-have-wasm-runtime-lowering
   (let [source
         "(ns i64.bitwise (:export [main xor and-bits]))
