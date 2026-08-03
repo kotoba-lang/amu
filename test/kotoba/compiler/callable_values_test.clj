@@ -223,6 +223,64 @@
                   "(defn main []
                      (document-count (invoke :document (fn [x] (+ x 1)) 3)))")))))
 
+(deftest computed-invoke-infers-an-unambiguous-result-context
+  (is (= 2 (execute-main
+            "(defn main []
+               (string-length
+                 (invoke (fn [x] (string-from-i64 x)) 42)))")))
+  (is (= "2" (execute-main-esm
+               "(defn main []
+                  (string-length
+                    (invoke (fn [x] (string-from-i64 x)) 42)))")))
+  (is (= 7 (execute-main
+            "(defn main []
+               (vector-at (invoke (fn [x] [x]) 7) 0))")))
+  (is (= 1 (execute-main
+            "(defn main []
+               (document-count
+                 (invoke (fn [x]
+                           (document-vector (document-i64 x)))
+                         42)))")))
+  (is (= 4607182418800017408
+         (execute-main
+          "(defn main []
+             (f64-to-bits
+               (invoke (fn [bits] (f64-from-bits bits))
+                       4607182418800017408)))")))
+  (is (= 8 (execute-main
+            "(defn main []
+               (record-get [:record :demo/point [[:x :i64]]]
+                 (invoke
+                   (fn [x]
+                     (record-new [:record :demo/point [[:x :i64]]] x))
+                   8)
+                 :x))")))
+  (is (= 2 (execute-main
+            "(defn render [f] :string (invoke f 42))
+             (defn main []
+               (string-length
+                 (render (fn [x] (string-from-i64 x)))))")))
+  (testing "an absent result context keeps the scalar default"
+    (is (= 5 (execute-main
+              "(defn main [] (invoke (fn [x] (+ x 1)) 4))"))))
+  (testing "contextual dispatch remains family-specific and traps closed"
+    (is (thrown? clojure.lang.ExceptionInfo
+                 (execute-main
+                  "(defn main []
+                     (string-length (invoke (fn [x] (+ x 1)) 3)))")))))
+
+(deftest contextual-computed-invoke-is-reproducible-across-backends
+  (let [source "(defn main []
+                  (string-length
+                    (invoke (fn [x] (string-from-i64 x)) 42)))"
+        js (compiler/compile-source source :js-kotoba-v1)
+        wasm-a (compiler/compile-source source :wasm32-browser-kotoba-v1)
+        wasm-b (compiler/compile-source source :wasm32-browser-kotoba-v1)]
+    (is (= 2 (kir/execute (:kir js) 'main [])))
+    (is (= (:kir js) (:kir wasm-a)))
+    (is (= (:kir wasm-a) (:kir wasm-b)))
+    (is (java.util.Arrays/equals ^bytes (:bytes wasm-a) ^bytes (:bytes wasm-b)))))
+
 (deftest lexical-document-results-use-contextual-application-syntax
   (is (= 1 (execute-main
             "(defn main []
