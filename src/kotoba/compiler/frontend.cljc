@@ -620,7 +620,7 @@
          :schemas schemas
          :schema-identities (when schemas (schema/identities schemas))}))))
 
-(declare desugar-expr desugar-do desugar-list thread-form form-free-symbols
+(declare desugar-expr desugar-bool-expr desugar-do desugar-list thread-form form-free-symbols
          nth-pair-second replace-recur valid-name?)
 
 ;; ADR-2607150000: bound (via `binding`) around each top-level defn's
@@ -669,6 +669,7 @@
 (def ^:dynamic *uses-apply?* nil)
 (def ^:dynamic *uses-lazy?* nil)
 (def ^:dynamic *lifting-lazy-thunk?* false)
+(def ^:dynamic *lexical-bindings* #{})
 
 (def ^:private closure-result-types #{:i64 :bool})
 
@@ -681,6 +682,31 @@
    (symbol (str "__kotoba_invoke"
                 (when-not (= :i64 result-type) (str "_" (name result-type)))
                 "$arity" arity))))
+
+(def ^:private non-shadowable-special-heads '#{let if do fn loop recur})
+
+(defn- lexical-call-form? [form]
+  (and (seq? form)
+       (symbol? (first form))
+       (contains? *lexical-bindings* (first form))
+       (not (contains? non-shadowable-special-heads (first form)))))
+
+(defn- desugar-lexical-call [result-type form]
+  (let [[closure & args] form]
+    (when (> (count args) 4)
+      (reject! "direct closure call exceeds ABI arity four" form))
+    (apply list (invoke-dispatcher-name result-type (count args)) closure
+           (map desugar-expr args))))
+
+(defn- desugar-bool-expr
+  "Desugar an expression used directly as a boolean condition.  Only a
+  lexical call head needs special treatment; ordinary boolean expressions
+  retain their existing type-directed lowering, and their numeric operands do
+  not accidentally inherit the condition's result type."
+  [form]
+  (if (lexical-call-form? form)
+    (desugar-lexical-call :bool form)
+    (desugar-expr form)))
 
 (defn- nth-pair-second [expr n]
   (nth (iterate (fn [value] (list 'pair-second value)) expr) n))
@@ -737,7 +763,10 @@
     (when (and (vector? params-or-clause) (not= 1 (count tail)))
       (reject! "single-arity fn value requires exactly one body" form))
     (let [lowered (mapv (fn [[params body]]
-                          {:params params :body (desugar-expr body)})
+                          {:params params
+                           :body (binding [*lexical-bindings*
+                                           (into *lexical-bindings* params)]
+                                   (desugar-expr body))})
                         clauses)
           captures (vec (sort-by str
                                  (apply set/union #{}
@@ -1027,9 +1056,9 @@
   [args]
   (cond
     (empty? args) 1
-    (empty? (rest args)) (desugar-expr (first args))
+    (empty? (rest args)) (desugar-bool-expr (first args))
     :else (let [tmp (chain-temp "and" (count args))]
-            (list 'let [tmp (desugar-expr (first args))]
+            (list 'let [tmp (desugar-bool-expr (first args))]
                   (list 'if tmp (desugar-and (rest args)) tmp)))))
 
 (defn- desugar-or
@@ -1038,9 +1067,9 @@
   [args]
   (cond
     (empty? args) 0
-    (empty? (rest args)) (desugar-expr (first args))
+    (empty? (rest args)) (desugar-bool-expr (first args))
     :else (let [tmp (chain-temp "or" (count args))]
-            (list 'let [tmp (desugar-expr (first args))]
+            (list 'let [tmp (desugar-bool-expr (first args))]
                   (list 'if tmp tmp (desugar-or (rest args)))))))
 
 (defn- desugar-cond
@@ -1060,7 +1089,7 @@
                   (do (when (seq remaining)
                         (reject! "cond :else clause must be last" form))
                       (desugar-expr result))
-                  (list 'if (desugar-expr test)
+                  (list 'if (desugar-bool-expr test)
                         (desugar-expr result)
                         (lower remaining))))))]
     (lower args)))
@@ -1086,7 +1115,8 @@
       (list 'let [tmp (desugar-expr dispatch)]
             (reduce (fn [fallback [test result]]
                       (list 'if
-                            (list predicate (desugar-expr test) tmp)
+                            (desugar-bool-expr
+                             (list predicate (desugar-expr test) tmp))
                             (desugar-expr result)
                             fallback))
                     (desugar-expr default)
@@ -1103,7 +1133,7 @@
             (let [tmp (synthetic "cond-thread")
                   threaded (thread-form tmp step last?)]
               (list 'let [tmp value]
-                    (list 'if (desugar-expr test)
+                    (list 'if (desugar-bool-expr test)
                           (desugar-expr threaded)
                           tmp))))
           (desugar-expr (first args))
@@ -1507,7 +1537,7 @@
                       (first bodies))
           else-form (if when? 0 (if (= 2 (count bodies)) (second bodies) 0))]
       (desugar-expr
-       (list 'let [tmp value]
+       (list 'let [tmp (desugar-bool-expr value)]
              (list 'if tmp (list 'let [pattern tmp] then-form) else-form))))))
 
 (defn- desugar-binding-some [args form when?]
@@ -2053,9 +2083,18 @@
     (list 'record-get (desugar-expr (second form)) (first form))
     :else
     (let [[op & args] form]
-      (case op
+      (if (lexical-call-form? form)
+        (desugar-lexical-call :i64 form)
+        (case op
         list (desugar-list args form)
         fn (lift-lambda form)
+        if (apply list 'if
+                  (map-indexed (fn [index arg]
+                                 ((if (zero? index)
+                                    desugar-bool-expr
+                                    desugar-expr)
+                                  arg))
+                               args))
         fn-ref
         (if (contains? *function-arities* 'fn-ref)
           (apply list 'fn-ref (map desugar-expr args))
@@ -2202,30 +2241,31 @@
         ;; "let requires an even binding vector" check still fires with
         ;; its original, clearer error.
         let (let [[bindings & body] args]
-              (list* 'let
-                     (if (and (vector? bindings) (even? (count bindings)))
-                       ;; destructure-binding returns a seq of [name value]
-                       ;; pairs per pattern; mapcat over patterns yields a
-                       ;; seq OF PAIRS (not yet flat), so a second `mapcat
-                       ;; identity` is needed to splice each pair's two
-                       ;; elements into the flat alternating binding vector
-                       ;; `let` itself expects.
-                       (vec (mapcat identity
-                                    (mapcat (fn [[pattern value]]
-                                              (destructure-binding pattern (desugar-expr value)))
-                                            (partition 2 bindings))))
-                       bindings)
-                     ;; `mapv`, not bare `map`: `list*`'s tail argument is
-                     ;; never forced by `list*` itself, so a lazy `map`
-                     ;; result here would defer these desugar-expr calls
-                     ;; past the end of whatever *loop-counter*/
-                     ;; *pending-loop-helpers* `binding` this `let` case is
-                     ;; nested inside -- confirmed live as an NPE ("Cannot
-                     ;; invoke Volatile.deref() ... is null") when a `loop`
-                     ;; inside a `let` body was first forced later, by
-                     ;; `uses-map-get?`'s post-analyze tree walk, long
-                     ;; after `analyze`'s `binding` had already exited.
-                     (mapv desugar-expr body)))
+              (if (and (vector? bindings) (even? (count bindings)))
+                ;; Lower bindings sequentially.  A value may call a closure
+                ;; introduced by an earlier binding, while its own pattern is
+                ;; deliberately not visible until that value has finished.
+                (letfn [(lower-bindings [remaining env lowered]
+                          (if-let [[pattern value] (first remaining)]
+                            (let [expanded
+                                  (binding [*lexical-bindings* env]
+                                    (destructure-binding pattern
+                                                         (desugar-expr value)))
+                                  next-env (into env (map first expanded))]
+                              (lower-bindings (rest remaining) next-env
+                                              (into lowered expanded)))
+                            [(vec (mapcat identity lowered)) env]))]
+                  (let [[lowered-bindings body-env]
+                        (lower-bindings (partition 2 bindings)
+                                        *lexical-bindings* [])]
+                    (list* 'let lowered-bindings
+                           ;; `mapv`, not bare `map`: forcing must remain in
+                           ;; the dynamic extent of the compiler counters.
+                           (binding [*lexical-bindings* body-env]
+                             (mapv desugar-expr body)))))
+                ;; Preserve malformed input so validate-expr emits its
+                ;; established even-binding-vector diagnostic.
+                (list* 'let bindings (mapv desugar-expr body))))
 
         ;; `do` sequencing: evaluate each subexpression in order, discard all
         ;; but the last (which is the value). Unlike `let`, a `do` subexpression
@@ -2333,7 +2373,7 @@
                  (when-not (= 1 (count args))
                    (reject! "assert requires exactly one condition; messages are not supported"
                             form))
-                 (list 'if (desugar-expr (first args)) 0 '(quot 1 0)))
+                 (list 'if (desugar-bool-expr (first args)) 0 '(quot 1 0)))
         case (desugar-case args form)
         if-let (desugar-binding-if args form false)
         when-let (desugar-binding-if args form true)
@@ -2344,7 +2384,7 @@
                    ;; Negate by swapping the branches, not by `(= test 0)` —
                    ;; the test may now be `:bool`.
                    (let [[test then else] args]
-                     (list 'if (desugar-expr test)
+                     (list 'if (desugar-bool-expr test)
                            (if (= 3 (count args)) (desugar-expr else) 0)
                            (desugar-expr then))))
         when-not (do (when (empty? args)
@@ -2355,14 +2395,14 @@
                                   (= 1 (count body)) (desugar-expr (first body))
                                   :else (list* 'do (mapv desugar-expr body)))]
                        ;; Negate by swapping the branches (see if-not).
-                       (list 'if (desugar-expr test) 0 then)))
+                       (list 'if (desugar-bool-expr test) 0 then)))
         when (do (when (empty? args)
                    (reject! "when requires a test expression" form))
                  (let [[test & body] args
                        then (if (= 1 (count body))
                               (desugar-expr (first body))
                               (list* 'do (mapv desugar-expr body)))]
-                   (list 'if (desugar-expr test) then 0)))
+                   (list 'if (desugar-bool-expr test) then 0)))
         get (do (when-not (<= 2 (count args) 3)
                   (reject! "get requires a map, a key, and an optional default" form))
                 (let [[m k default] args]
@@ -2955,7 +2995,7 @@
             (reject! (str "named operation " (pr-str op)
                           " is not a registered capability")
                      form)
-            (apply list op (map desugar-expr args))))))))
+            (apply list op (map desugar-expr args)))))))))
 
 (defn- desugar-expr [form]
   (let [result (desugar-expr* form)
@@ -5577,7 +5617,8 @@
                                  desugared (binding [*pending-loop-helpers* loop-helpers
                                                      *local-option-types* option-locals
                                                      *local-types* local-types
-                                                     *schemas* (:schemas namespace-info)]
+                                                     *schemas* (:schemas namespace-info)
+                                                     *lexical-bindings* (set params)]
                                              (desugar-expr source-body))]
                              (into [(cond-> {:name name :source-name source-name
                                              :params params :param-types param-types

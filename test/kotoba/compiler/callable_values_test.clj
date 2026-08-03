@@ -26,6 +26,37 @@
                (let [f (fn [x] (+ x 1)) v [f]]
                  (invoke (vector-at v 0) 2)))"))))
 
+(deftest lexical-closures-use-ordinary-application-syntax
+  (is (= 5 (execute-main
+            "(defn main [] (let [f (fn [x] (+ x 1))] (f 4)))")))
+  (is (= 7 (execute-main
+            "(defn main []
+               (let [bias 3 f (fn [x] (+ x bias)) result (f 4)] result))")))
+  (is (= 5 (execute-main
+            "(defn call-one [f] (f 4))
+             (defn main [] (call-one (fn [x] (+ x 1))))")))
+  (is (= 6 (execute-main
+            "(defn main []
+               (invoke (fn [f] (f 5)) (fn [x] (+ x 1))))")))
+  (is (= 3 (execute-main
+            "(defn main []
+               (let [[f] [(fn [x] (+ x 1))]] (f 2)))"))))
+
+(deftest lexical-closure-heads-shadow-ordinary-functions
+  (is (= 5 (execute-main
+            "(defn add [x] (+ x 100))
+             (defn main [] (let [add (fn [x] (+ x 1))] (add 4)))")))
+  (is (= 5 (execute-main
+            "(defn main [] (let [+ (fn [a b] (- a b))] (+ 9 4)))")))
+  (testing "unbound call heads remain closed-world errors"
+    (is (re-find #"no admitted lowering"
+                 (rejection-message "(defn main [] (misspelled 1))"))))
+  (testing "direct closure application retains the ABI arity bound"
+    (is (re-find #"arity four"
+                 (rejection-message
+                  "(defn main []
+                     (let [f (fn [x] x)] (f 1 2 3 4 5)))")))))
+
 (deftest callable-values-support-multiple-arities-and-bounded-apply
   (is (= 9 (execute-main
             "(defn make [base] (fn ([] base) ([a b] (+ a b))))
@@ -71,6 +102,29 @@
                  (execute-main
                   "(defn main []
                      (if (invoke :bool (fn [x] (+ x 1)) 3) 1 0))")))))
+
+(deftest lexical-predicates-use-contextual-application-syntax
+  (is (= 1 (execute-main
+            "(defn main []
+               (let [positive? (fn [x] (> x 0))]
+                 (if (positive? 3) 1 0)))")))
+  (is (= 7 (execute-main
+            "(defn choose [predicate] (cond (predicate 3) 7 :else 0))
+             (defn main [] (choose (fn [x] (> x 2))))")))
+  (is (= 1 (execute-main
+            "(defn main []
+               (let [positive? (fn [x] (> x 0))]
+                 (if (and (positive? 2) (positive? 1)) 1 0)))")))
+  (is (= 1 (execute-main
+            "(defn main []
+               (let [> (fn [a b] (< b a))]
+                 (if (> 3 2) 1 0)))")))
+  (testing "contextual boolean calls retain result-family safety"
+    (is (thrown? clojure.lang.ExceptionInfo
+                 (execute-main
+                  "(defn main []
+                     (let [not-a-predicate (fn [x] (+ x 1))]
+                       (if (not-a-predicate 3) 1 0)))")))))
 
 (deftest callable-values-are-bounded-and-closed
   (testing "closure ABI is capped at arity four"
