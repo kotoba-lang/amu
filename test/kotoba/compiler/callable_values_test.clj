@@ -373,6 +373,16 @@
                         (invoke " set-type "
                           (fn [x] (typed-set-new " set-type " x)) 7)))"))))
     (is (= 2 (execute-main
+              "(defn main []
+                 (vector-count
+                   (invoke [:list :i64]
+                     (fn [x] (list x (+ x 1))) 7)))")))
+    (is (= "2" (execute-main-esm
+                 "(defn main []
+                    (vector-count
+                      (invoke [:list :i64]
+                        (fn [x] (list x (+ x 1))) 7)))")))
+    (is (= 2 (execute-main
               (str "(defn main []
                       (let [render (fn [x] (string-from-i64 x))
                             make (fn [x]
