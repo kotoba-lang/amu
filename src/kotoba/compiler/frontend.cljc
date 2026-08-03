@@ -792,9 +792,10 @@
     (list 'typed-map-new type)
 
     (variant-type? type)
-    (let [[tag payload-type] (first (nth type 2))]
-      (when-let [payload (closure-default-value-expr payload-type)]
-        (list 'variant-new type tag payload)))
+    (some (fn [[tag payload-type]]
+            (when-let [payload (closure-default-value-expr payload-type)]
+              (list 'variant-new type tag payload)))
+          (nth type 2))
 
     (record-type? type)
     (let [values (mapv (comp closure-default-value-expr second) (nth type 2))]
@@ -815,7 +816,11 @@
           (or (contains? closure-flat-result-types type)
               (and (or (record-type? type)
                        (generic-option-type? type)
-                       (parametric-result-type? type))
+                       (parametric-result-type? type)
+                       (variant-type? type)
+                       (heterogeneous-vector-type? type)
+                       (typed-set-type? type)
+                       (canonical-typed-map-type? type))
                    (some? (closure-default-value-expr type))))))))
 
 (defn- dispatcher-result-label [result-type]
@@ -2696,7 +2701,16 @@
         variant-new
         (do (when-not (= 3 (count args))
               (reject! "variant-new requires type, case tag, and payload" form))
-            (list 'variant-new (first args) (second args) (desugar-expr (nth args 2))))
+            (let [[type tag payload] args
+                  canonical-type (canonical-closure-result-type type)
+                  payload-type (when (variant-type? canonical-type)
+                                 (some (fn [[case-tag case-type]]
+                                         (when (= case-tag tag) case-type))
+                                       (nth canonical-type 2)))]
+              (list 'variant-new type tag
+                    (if payload-type
+                      (desugar-expected-value payload-type payload)
+                      (desugar-expr payload)))))
         match-variant
         (do (when (< (count args) 3)
               (reject! "match-variant requires value, type, and exhaustive branches" form))
@@ -2704,7 +2718,7 @@
               (when-not (every? #(and (seq? %) (= 3 (count %))
                                       (keyword? (first %)) (symbol? (second %))) branches)
                 (reject! "match-variant branches require (:case binder body)" form))
-              (list 'variant-match type (desugar-expr value)
+              (list 'variant-match type (desugar-expected-value type value)
                     (mapv (fn [[tag binder body]] [tag binder (desugar-expr body)]) branches))))
         variant-match
         (do (when-not (= 3 (count args))
@@ -2715,7 +2729,7 @@
                                            (keyword? (first %)) (symbol? (second %)))
                                      branches))
                 (reject! "variant-match lowered branches are invalid" form))
-              (list 'variant-match type (desugar-expr value)
+              (list 'variant-match type (desugar-expected-value type value)
                     (mapv (fn [[tag binder body]] [tag binder (desugar-expr body)]) branches))))
         option-some-of
         (do (when-not (= 2 (count args)) (reject! "option-some-of requires type and payload" form))
@@ -2772,104 +2786,190 @@
         hetero-vector
         (do (when (empty? args)
               (reject! "hetero-vector requires a type descriptor" form))
-            (list* 'hetero-vector-new (first args) (map desugar-expr (rest args))))
+            (let [type (first args)
+                  item-types (when (heterogeneous-vector-type? type) (second type))]
+              (list* 'hetero-vector-new type
+                     (if (= (count item-types) (count (rest args)))
+                       (mapv (fn [item-type item]
+                               (desugar-expected-value item-type item))
+                             item-types (rest args))
+                       (mapv desugar-expr (rest args))))))
         hetero-vector-new
         (do (when (empty? args)
               (reject! "hetero-vector-new requires a type descriptor" form))
-            (list* 'hetero-vector-new (first args) (map desugar-expr (rest args))))
+            (let [type (first args)
+                  item-types (when (heterogeneous-vector-type? type) (second type))]
+              (list* 'hetero-vector-new type
+                     (if (= (count item-types) (count (rest args)))
+                       (mapv (fn [item-type item]
+                               (desugar-expected-value item-type item))
+                             item-types (rest args))
+                       (mapv desugar-expr (rest args))))))
         hetero-vector-count
         (do (when-not (= 2 (count args))
               (reject! "hetero-vector-count requires type and value" form))
-            (list 'hetero-vector-count (first args) (desugar-expr (second args))))
+            (list 'hetero-vector-count (first args)
+                  (desugar-expected-value (first args) (second args))))
         hetero-vector-at
         (do (when-not (= 3 (count args))
               (reject! "hetero-vector-at requires type, value, and literal index" form))
-            (list 'hetero-vector-at (first args) (desugar-expr (second args)) (nth args 2)))
+            (list 'hetero-vector-at (first args)
+                  (desugar-expected-value (first args) (second args)) (nth args 2)))
         hetero-vector-assoc
         (do (when-not (= 4 (count args))
               (reject! "hetero-vector-assoc requires type, value, literal index, and item" form))
-            (list 'hetero-vector-assoc (first args) (desugar-expr (second args))
-                  (nth args 2) (desugar-expr (nth args 3))))
+            (let [[type value index item] args
+                  item-type (when (and (heterogeneous-vector-type? type)
+                                       (integer? index)
+                                       (<= 0 index)
+                                       (< index (count (second type))))
+                              (nth (second type) index))]
+              (list 'hetero-vector-assoc type
+                    (desugar-expected-value type value)
+                    index
+                    (if item-type
+                      (desugar-expected-value item-type item)
+                      (desugar-expr item)))))
         hetero-vector-equal
         (do (when-not (= 3 (count args))
               (reject! "hetero-vector-equal requires type and two values" form))
-            (list 'hetero-vector-equal (first args) (desugar-expr (second args))
-                  (desugar-expr (nth args 2))))
+            (list 'hetero-vector-equal (first args)
+                  (desugar-expected-value (first args) (second args))
+                  (desugar-expected-value (first args) (nth args 2))))
         typed-set
         (do (when (empty? args)
               (reject! "typed-set requires a type descriptor" form))
-            (list* 'typed-set-new (first args) (map desugar-expr (rest args))))
+            (let [type (first args)
+                  item-type (when (typed-set-type? type) (second type))]
+              (list* 'typed-set-new type
+                     (mapv #(if item-type
+                              (desugar-expected-value item-type %)
+                              (desugar-expr %))
+                           (rest args)))))
         typed-set-new
         (do (when (empty? args)
               (reject! "typed-set-new requires a type descriptor" form))
-            (list* 'typed-set-new (first args) (map desugar-expr (rest args))))
+            (let [type (first args)
+                  item-type (when (typed-set-type? type) (second type))]
+              (list* 'typed-set-new type
+                     (mapv #(if item-type
+                              (desugar-expected-value item-type %)
+                              (desugar-expr %))
+                           (rest args)))))
         typed-set-count
         (do (when-not (= 2 (count args))
               (reject! "typed-set-count requires type and value" form))
-            (list 'typed-set-count (first args) (desugar-expr (second args))))
+            (list 'typed-set-count (first args)
+                  (desugar-expected-value (first args) (second args))))
         typed-set-contains
         (do (when-not (= 3 (count args))
               (reject! "typed-set-contains requires type, value, and item" form))
-            (list 'typed-set-contains (first args) (desugar-expr (second args))
-                  (desugar-expr (nth args 2))))
+            (list 'typed-set-contains (first args)
+                  (desugar-expected-value (first args) (second args))
+                  (desugar-expected-value
+                   (when (typed-set-type? (first args)) (second (first args)))
+                   (nth args 2))))
         typed-set-conj
         (do (when-not (= 3 (count args))
               (reject! "typed-set-conj requires type, value, and item" form))
-            (list 'typed-set-conj (first args) (desugar-expr (second args))
-                  (desugar-expr (nth args 2))))
+            (list 'typed-set-conj (first args)
+                  (desugar-expected-value (first args) (second args))
+                  (desugar-expected-value
+                   (when (typed-set-type? (first args)) (second (first args)))
+                   (nth args 2))))
         typed-set-disj
         (do (when-not (= 3 (count args))
               (reject! "typed-set-disj requires type, value, and item" form))
-            (list 'typed-set-disj (first args) (desugar-expr (second args))
-                  (desugar-expr (nth args 2))))
+            (list 'typed-set-disj (first args)
+                  (desugar-expected-value (first args) (second args))
+                  (desugar-expected-value
+                   (when (typed-set-type? (first args)) (second (first args)))
+                   (nth args 2))))
         typed-set-equal
         (do (when-not (= 3 (count args))
               (reject! "typed-set-equal requires type and two values" form))
-            (list 'typed-set-equal (first args) (desugar-expr (second args))
-                  (desugar-expr (nth args 2))))
+            (list 'typed-set-equal (first args)
+                  (desugar-expected-value (first args) (second args))
+                  (desugar-expected-value (first args) (nth args 2))))
         typed-set-nth
         (do (when-not (= 3 (count args))
               (reject! "typed-set-nth requires type, value, and index" form))
-            (list 'typed-set-nth (first args) (desugar-expr (second args))
+            (list 'typed-set-nth (first args)
+                  (desugar-expected-value (first args) (second args))
                   (desugar-expr (nth args 2))))
         typed-map-new
         (do (when-not (and (seq args) (odd? (count args)))
               (reject! "typed-map-new requires type and key/value pairs" form))
-            (list* 'typed-map-new (first args) (map desugar-expr (rest args))))
+            (let [type (first args)
+                  [key-type value-type] (when (canonical-typed-map-type? type)
+                                          (rest type))]
+              (list* 'typed-map-new type
+                     (into []
+                           (mapcat (fn [[key item]]
+                                     [(if key-type
+                                        (desugar-expected-value key-type key)
+                                        (desugar-expr key))
+                                      (if value-type
+                                        (desugar-expected-value value-type item)
+                                        (desugar-expr item))]))
+                           (partition 2 (rest args))))))
         typed-map-count
         (do (when-not (= 2 (count args))
               (reject! "typed-map-count requires type and value" form))
-            (list 'typed-map-count (first args) (desugar-expr (second args))))
+            (list 'typed-map-count (first args)
+                  (desugar-expected-value (first args) (second args))))
         typed-map-contains
         (do (when-not (= 3 (count args))
               (reject! "typed-map-contains requires type, value, and key" form))
-            (list 'typed-map-contains (first args) (desugar-expr (second args))
-                  (desugar-expr (nth args 2))))
+            (list 'typed-map-contains (first args)
+                  (desugar-expected-value (first args) (second args))
+                  (desugar-expected-value
+                   (when (canonical-typed-map-type? (first args))
+                     (second (first args)))
+                   (nth args 2))))
         typed-map-get
         (do (when-not (= 3 (count args))
               (reject! "typed-map-get requires type, value, and key" form))
-            (list 'typed-map-get (first args) (desugar-expr (second args))
-                  (desugar-expr (nth args 2))))
+            (list 'typed-map-get (first args)
+                  (desugar-expected-value (first args) (second args))
+                  (desugar-expected-value
+                   (when (canonical-typed-map-type? (first args))
+                     (second (first args)))
+                   (nth args 2))))
         typed-map-entry-at
         (do (when-not (= 3 (count args))
               (reject! "typed-map-entry-at requires type, value, and index" form))
-            (list 'typed-map-entry-at (first args) (desugar-expr (second args))
+            (list 'typed-map-entry-at (first args)
+                  (desugar-expected-value (first args) (second args))
                   (desugar-expr (nth args 2))))
         typed-map-assoc
         (do (when-not (= 4 (count args))
               (reject! "typed-map-assoc requires type, value, key, and item" form))
-            (list 'typed-map-assoc (first args) (desugar-expr (second args))
-                  (desugar-expr (nth args 2)) (desugar-expr (nth args 3))))
+            (list 'typed-map-assoc (first args)
+                  (desugar-expected-value (first args) (second args))
+                  (desugar-expected-value
+                   (when (canonical-typed-map-type? (first args))
+                     (second (first args)))
+                   (nth args 2))
+                  (desugar-expected-value
+                   (when (canonical-typed-map-type? (first args))
+                     (nth (first args) 2))
+                   (nth args 3))))
         typed-map-dissoc
         (do (when-not (= 3 (count args))
               (reject! "typed-map-dissoc requires type, value, and key" form))
-            (list 'typed-map-dissoc (first args) (desugar-expr (second args))
-                  (desugar-expr (nth args 2))))
+            (list 'typed-map-dissoc (first args)
+                  (desugar-expected-value (first args) (second args))
+                  (desugar-expected-value
+                   (when (canonical-typed-map-type? (first args))
+                     (second (first args)))
+                   (nth args 2))))
         typed-map-equal
         (do (when-not (= 3 (count args))
               (reject! "typed-map-equal requires type and two values" form))
-            (list 'typed-map-equal (first args) (desugar-expr (second args))
-                  (desugar-expr (nth args 2))))
+            (list 'typed-map-equal (first args)
+                  (desugar-expected-value (first args) (second args))
+                  (desugar-expected-value (first args) (nth args 2))))
         record
         (do (when (empty? args)
               (reject! "record requires a type descriptor" form))
@@ -4369,6 +4469,7 @@
             ok-type))
         variant-new
         (let [[type tag payload] args
+              type (canonical-closure-result-type type)
               payload-type (some (fn [[case-tag case-type]]
                                    (when (= case-tag tag) case-type))
                                  (nth type 2))]
@@ -4379,6 +4480,7 @@
           type)
         variant-match
         (let [[type value branches] args
+              type (canonical-closure-result-type type)
               cases (nth type 2)]
           (validate-value-type! type)
           (require-expression-type! (infer-expression-type value locals signatures) type value)
@@ -4920,8 +5022,18 @@
 
         (= op 'variant-match)
         (let [[type value branches] args
-              payloads (into {} (nth type 2))]
-          (list 'variant-match type
+              descriptor (if (schema-ref-type? type)
+                           (get schemas (second type))
+                           type)
+              _ (when (and (schema-ref-type? type)
+                           (not (variant-type? descriptor)))
+                  (reject! (str "no :variant schema declared for " (second type)
+                                " in this namespace")
+                           form))
+              payloads (if (variant-type? descriptor)
+                         (into {} (nth descriptor 2))
+                         {})]
+          (list 'variant-match descriptor
                 (rewrite-record-projection value locals signatures schemas)
                 (mapv (fn [[tag binder body]]
                         [tag binder
@@ -4929,6 +5041,17 @@
                                                     (assoc locals binder (get payloads tag))
                                                     signatures schemas)])
                       branches)))
+
+        (and (= op 'variant-new)
+             (schema-ref-type? (first args)))
+        (let [descriptor (get schemas (second (first args)))]
+          (when-not (variant-type? descriptor)
+            (reject! (str "no :variant schema declared for "
+                          (second (first args)) " in this namespace")
+                     form))
+          (cons op (cons descriptor
+                         (map #(rewrite-record-projection % locals signatures schemas)
+                              (rest args)))))
 
         ;; A named schema reference in an operation's *type argument* is
         ;; resolved here too, so validation, inference and lowering keep seeing
@@ -6156,18 +6279,38 @@
         ;; checker retains its previous fail-closed behavior.
         preliminary-lambdas
         (let [helpers (mapv :helper @lambda-infos)
+              ;; A lifted lambda may call an earlier lexical closure. Its body
+              ;; already contains the requested synthetic dispatcher call, but
+              ;; the real dispatcher functions are constructed only after
+              ;; lambda result inference. Seed signatures here so an enclosing
+              ;; lambda can infer the structured value returned by that nested
+              ;; call instead of falling back to its provisional :i64.
+              inference-dispatchers
+              (mapv (fn [[result-type arity]]
+                      {:name (invoke-dispatcher-name result-type arity)
+                       :params (vec (cons '__kotoba_inference_closure
+                                          (map #(symbol (str "__kotoba_inference_arg_" %))
+                                               (range arity))))
+                       :param-types (vec (repeat (inc arity) :i64))
+                       :result result-type
+                       :result-inferred? false
+                       ;; This body is never emitted or checked; only the
+                       ;; signature participates in infer-absent-results.
+                       :body 0})
+                    @required-dispatchers)
               inference-functions
-              (cond-> (into parsed helpers)
+              (cond-> (into parsed (concat helpers inference-dispatchers))
                 (some #(uses-string-from-i64? (:body %)) helpers)
                 (into [string-from-i64-nat-helper string-from-i64-helper]))
-              candidates (->> inference-functions
-                              (mapv #(update % :body resolve-overloaded-calls
-                                             overloads overloaded-sources))
-                              (mapv #(if (:param-types %)
-                                       %
-                                       (assoc % :param-types
-                                              (vec (repeat (count (:params %)) :i64)))))
-                              infer-absent-results)
+              candidates (binding [*schemas* (:schemas namespace-info)]
+                           (->> inference-functions
+                                (mapv #(update % :body resolve-overloaded-calls
+                                               overloads overloaded-sources))
+                                (mapv #(if (:param-types %)
+                                         %
+                                         (assoc % :param-types
+                                                (vec (repeat (count (:params %)) :i64)))))
+                                infer-absent-results))
               by-name (into {} (map (juxt :name identity)) candidates)]
           (mapv (fn [{:keys [helper] :as info}]
                   (let [typed (get by-name (:name helper))
