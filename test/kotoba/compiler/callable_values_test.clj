@@ -17,11 +17,9 @@
 
 (defn- execute-main-esm [source]
   (let [javascript (:source (compiler/compile-source source :js-kotoba-v1))
-        encoded (.encodeToString (java.util.Base64/getEncoder)
-                                 (.getBytes javascript "UTF-8"))
-        probe (str "import('data:text/javascript;base64," encoded
-                   "').then(m=>console.log(String(m.instantiateKotoba({}).main())))")
-        result (shell/sh "node" "--input-type=module" "-e" probe)]
+        probe (str javascript
+                   "\nconsole.log(String(instantiateKotoba({}).main()));\n")
+        result (shell/sh "node" "--input-type=module" :in probe)]
     (when-not (zero? (:exit result))
       (throw (ex-info "restricted ESM execution failed" result)))
     (str/trim (:out result))))
@@ -73,6 +71,30 @@
     (is (= "4607182418800017408" (execute-main-esm source)))
     (is (= [0] (:closure-param-indexes
                 (get functions '__kotoba_lambda_2_arity1))))))
+
+(deftest closure-parameters-flow-into-returned-captures-and-bounded-apply
+  (let [source "(defn make [n] (fn [x] (+ x n)))
+                (defn apply-one [f x] (f x))
+                (defn identity [f] f)
+                (defn wrap [f] (fn [x] (f x)))
+                (defn main []
+                  (+ (apply (fn [a b c] (+ a (+ b c))) 1 (list 2 3))
+                     (apply-one (identity (wrap (make 5))) 3)))"
+        js (compiler/compile-source source :js-kotoba-v1)
+        wasm-a (compiler/compile-source source :wasm32-browser-kotoba-v1)
+        wasm-b (compiler/compile-source source :wasm32-browser-kotoba-v1)
+        functions (into {} (map (juxt :name identity)) (get-in js [:kir :functions]))
+        javascript (:source js)]
+    (is (= 14 (kir/execute (:kir js) 'main [])))
+    (is (= "14" (execute-main-esm source)))
+    (is (= [0] (:closure-param-indexes (get functions 'wrap))))
+    (is (= [0] (:closure-param-indexes
+                (get functions '__kotoba_lambda_2_arity1))))
+    (is (= [1] (:i64-pair-chain-param-indexes
+                (get functions '__kotoba_closure_apply))))
+    (is (str/includes? javascript "assertI64PairChain"))
+    (is (= (:kir wasm-a) (:kir wasm-b)))
+    (is (java.util.Arrays/equals ^bytes (:bytes wasm-a) ^bytes (:bytes wasm-b)))))
 
 (deftest closures-cross-value-boundaries
   (is (= 5 (execute-main

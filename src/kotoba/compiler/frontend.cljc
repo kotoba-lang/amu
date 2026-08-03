@@ -1049,6 +1049,7 @@
 (def ^:private closure-apply-helper
   {:name '__kotoba_closure_apply
    :params '[__kotoba_apply_closure __kotoba_apply_args]
+   :i64-pair-chain-param-indexes [1]
    :result :i64 :effects #{}
    :body
    '(if (= __kotoba_apply_args 0)
@@ -5209,8 +5210,9 @@
   callers, and closure-valued results propagate back through aliases and return
   positions.  The finite function/parameter graph therefore has a deterministic
   fixed point."
-  [functions lambda-ids]
-  (let [function-names (set (map :name functions))
+  [functions lambda-infos]
+  (let [lambda-ids (mapv :id lambda-infos)
+        function-names (set (map :name functions))
         seed
         (into {}
               (map (fn [{:keys [name closure-param-indexes closure-result?]}]
@@ -5222,6 +5224,15 @@
         (+ 1 (count functions) (reduce + (map (comp count :params) functions)))]
     (letfn [(binding-value [env name]
               (get env name))
+            (lambda-info-for-id [id]
+              (some #(when (= id (:id %)) %) lambda-infos))
+            (pair-chain-values [form]
+              (loop [chain form values []]
+                (cond
+                  (and (kotoba-integer? chain) (zero? chain)) values
+                  (and (seq? chain) (= 'pair (first chain)) (= 3 (count chain)))
+                  (recur (nth chain 2) (conj values (second chain)))
+                  :else nil)))
             (closure-literal? [form]
               (and (seq? form)
                    (= 'pair (first form))
@@ -5362,8 +5373,23 @@
                               :else nil)))
                         (scan-calls! [function-name form env param-indexes narrowed]
                           (when (seq? form)
-                            (let [[op & args] form]
-                              (cond
+                            (if (closure-literal? form)
+                              (let [[_ lambda-id capture-chain] form
+                                    {:keys [captures helper]}
+                                    (lambda-info-for-id lambda-id)
+                                    capture-values (pair-chain-values capture-chain)
+                                    capture-count (count captures)]
+                                (doseq [capture capture-values]
+                                  (scan-calls! function-name capture env param-indexes
+                                               narrowed))
+                                (doseq [index (get-in @next-facts
+                                                     [(:name helper) :params] #{})
+                                        :when (< index capture-count)]
+                                  (when-let [capture (nth capture-values index nil)]
+                                    (require-closure! function-name capture env
+                                                      param-indexes narrowed #{}))))
+                              (let [[op & args] form]
+                                (cond
                                 (= op 'let)
                                 (let [[bindings body] args]
                                   (loop [pairs (partition 2 bindings) current env]
@@ -5403,7 +5429,7 @@
                                       (when-let [arg (nth args index nil)]
                                         (require-closure! function-name arg env
                                                           param-indexes narrowed
-                                                          #{})))))))))]
+                                                          #{}))))))))))]
                   (doseq [{:keys [name params body]} functions]
                     (let [param-indexes (zipmap params (range))]
                       (when (= :closure (expression-status
@@ -6686,8 +6712,7 @@
         parsed (infer-absent-results parsed)
         named-elaboration (elaborate-named-abilities parsed)
         parsed (:functions named-elaboration)
-        parsed (infer-closure-refinements parsed
-                                          (mapv :id preliminary-lambdas))
+        parsed (infer-closure-refinements parsed preliminary-lambdas)
         used-capability-names
         (set/union @used-capabilities (:used named-elaboration))
         signatures (into {} (map (juxt :name :params) parsed))
@@ -6759,8 +6784,9 @@
     (check-lowering-budget! parsed)
     (let [typed-values? (boolean
                          (or (seq (:schemas namespace-info))
-                         (some #(or (seq (:closure-param-indexes %))
-                                    (:closure-result? %))
+                             (some #(or (seq (:closure-param-indexes %))
+                                        (seq (:i64-pair-chain-param-indexes %))
+                                        (:closure-result? %))
                                parsed)
                          (some (fn [{:keys [param-types result body]}]
                                  (or (some #(or (contains? #{:f32 :f64 :string :keyword :map :option-i64 :result-i64 :vector-i64 :vector-f64 :string-index :disjoint-set-i64 :document} %)
