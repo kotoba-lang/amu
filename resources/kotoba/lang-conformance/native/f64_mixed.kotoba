@@ -1,0 +1,8 @@
+(ns kotoba.lang.conformance.native.f64-mixed)
+;; The unary ops take a different code path from the binary ones: no second
+;; register, and on x86-64 neg and abs are sign-bit operations rather than SSE.
+;; sqrt(abs(neg(4.0))) * 1.5 = 3.0
+(defn main [] :i64
+  (f64-to-bits
+   (f64-mul (f64-sqrt (f64-abs (f64-neg (f64-from-bits 4616189618054758400))))
+            (f64-from-bits 4609434218613702656))))

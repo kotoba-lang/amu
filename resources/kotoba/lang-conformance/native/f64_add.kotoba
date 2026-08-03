@@ -1,0 +1,11 @@
+(ns kotoba.lang.conformance.native.f64-add)
+;; T1.4 pure-native-v1: f64 arithmetic.
+;;
+;; An f64 value on the native backends IS its IEEE-754 bit pattern in an
+;; ordinary integer register, so f64-from-bits and f64-to-bits emit nothing
+;; and the literals below are the patterns for 2.0 and 3.5. What this fixture
+;; proves that a byte-level emitter test cannot is that the arithmetic between
+;; them runs on the FP unit and comes back correct.
+(defn main [] :i64
+  (f64-to-bits (f64-add (f64-from-bits 4611686018427387904)
+                        (f64-from-bits 4615063718147915776))))

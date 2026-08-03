@@ -170,10 +170,33 @@
     (is (zero? (:exit result)) (:err result))))
 
 (deftest f64-native-targets-fail-closed
-  (testing "f64 is not silently lowered through the i64 native ABI"
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo
-                          #"floating-point values require"
-                          (compiler/compile-source source :x86_64-kotoba-v1)))))
+  (testing "f64 as a DECLARED TYPE is not lowered through the i64 native ABI"
+    ;; `source` puts f64 in signatures -- vectors and records of f64 crossing
+    ;; the boundary -- for which native has no value representation. That is
+    ;; still refused, which is the property this test exists to pin.
+    ;;
+    ;; The message moved. Native gained f64 SCALAR arithmetic
+    ;; (ADR-2608030300), so this no longer stops at the floating-point target
+    ;; gate; it stops one gate later at the typed-value slice, which is the
+    ;; gate that actually knows native has no f64 aggregate representation.
+    ;; Asserting the refusal rather than its wording keeps the invariant and
+    ;; stops the test pinning which gate happens to catch it.
+    (is (thrown? clojure.lang.ExceptionInfo
+                 (compiler/compile-source source :x86_64-kotoba-v1)))
+    (is (thrown? clojure.lang.ExceptionInfo
+                 (compiler/compile-source source :aarch64-kotoba-v1)))))
+
+(deftest f64-arithmetic-behind-a-scalar-signature-does-reach-native
+  (testing "the other side of the same boundary: f64 used internally, with
+            every declared type an i64 word, compiles to both native ISAs.
+            Without this the fail-closed test above would pass equally well if
+            f64 had simply been banned outright, which is not the design."
+    (let [scalar (str "(ns pilot.f64-scalar) "
+                      "(defn main [] :i64 "
+                      "  (f64-to-bits (f64-add (f64-from-bits 4611686018427387904) "
+                      "                        (f64-from-bits 4615063718147915776))))")]
+      (doseq [target [:x86_64-kotoba-v1 :aarch64-kotoba-v1]]
+        (is (some? (compiler/compile-source scalar target)) (str target))))))
 
 (deftest f64-comparison-used-only-as-control-flow-is-sealed-for-typed-wasm
   (let [conditional-source

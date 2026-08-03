@@ -151,7 +151,7 @@
 
 (deftest f32-fails-closed-on-native-and-inside-structured-values
   (testing "native targets never reinterpret f32 through i64"
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"floating-point values require"
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"f32 values require"
                           (compiler/compile-source source :x86_64-kotoba-v1))))
   (testing "the initial profile remains scalar-only"
     (is (thrown? clojure.lang.ExceptionInfo
