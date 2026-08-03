@@ -113,7 +113,7 @@
             [kotoba.compiler.clock-transport-test]
             [kotoba.compiler.log-provider-test]
             [kotoba.compiler.provider-conformance-test]
-            [kotoba.compiler.x86-64-execution-test]
+            [kotoba.compiler.isa-execution-test]
             [kotoba.compiler.wasm-typed-test]
             [kotoba.compiler.verifier-profile-test]))
 
@@ -121,7 +121,7 @@
   (let [{:keys [fail error]} (t/run-tests 'kotoba.compiler.atomic-output-test
                                           'kotoba.compiler.namespace-reachability-test
                                           'kotoba.compiler.test-runner-completeness-test
-                                          'kotoba.compiler.x86-64-execution-test
+                                          'kotoba.compiler.isa-execution-test
                                           'kotoba.compiler.aiueos-target-test
                                           'kotoba.compiler.accelerator-test
                                           'kotoba.compiler.application-syntax-test
