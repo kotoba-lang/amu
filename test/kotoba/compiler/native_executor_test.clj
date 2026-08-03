@@ -958,3 +958,39 @@
        clojure.lang.ExceptionInfo #"splits a UTF-8 code point"
        (compiler/compile-source "(defn main [] (string-code-point-at \"日本語\" 1))"
                                 (target) {:allow #{}}))))
+
+;; f64 comparisons on native. The bit patterns are 1.0, 2.0 and a quiet NaN;
+;; the NaN rows are the point of the test, because the naive encodings
+;; (`setb`/`setbe` on x86-64, `LT`/`LE` on aarch64) are TRUE when a compare is
+;; unordered and would pass every ordered row here while being wrong.
+(def ^:private f64-one 4607182418800017408)      ; 0x3ff0000000000000
+(def ^:private f64-two 4611686018427387904)      ; 0x4000000000000000
+(def ^:private f64-nan 9221120237041090560)      ; 0x7ff8000000000000
+
+(defn- f64-compare-result [op a b]
+  (let [{:keys [envelope trust]}
+        (signed (str "(defn main [] (if (" op " (f64-from-bits " a ")"
+                     " (f64-from-bits " b ")) 1 0))")
+                {:allow #{}})
+        {:keys [trust options]} (execution-options trust)]
+    (:evidence (executor/execute envelope trust {:allow #{}} {:args []} options))))
+
+(deftest f64-comparisons-execute-with-ieee-semantics-on-native
+  (doseq [[op a b expected]
+          [["f64-lt" f64-one f64-two 1] ["f64-lt" f64-two f64-one 0]
+           ["f64-gt" f64-two f64-one 1] ["f64-gt" f64-one f64-two 0]
+           ["f64-le" f64-two f64-two 1] ["f64-le" f64-two f64-one 0]
+           ["f64-ge" f64-two f64-two 1] ["f64-ge" f64-one f64-two 0]
+           ["f64-eq" f64-one f64-one 1] ["f64-eq" f64-one f64-two 0]
+           ;; NaN is equal to nothing, ordered against nothing, unordered
+           ;; with everything -- including itself.
+           ["f64-eq" f64-nan f64-nan 0]
+           ["f64-lt" f64-nan f64-one 0] ["f64-lt" f64-one f64-nan 0]
+           ["f64-gt" f64-nan f64-one 0] ["f64-le" f64-nan f64-one 0]
+           ["f64-ge" f64-nan f64-one 0]
+           ["f64-unordered" f64-nan f64-one 1]
+           ["f64-unordered" f64-nan f64-nan 1]
+           ["f64-unordered" f64-one f64-two 0]]]
+    (is (= {:status :ok :result expected}
+           (select-keys (f64-compare-result op a b) [:status :result]))
+        (str op " " a " " b))))
