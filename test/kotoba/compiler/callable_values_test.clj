@@ -37,6 +37,27 @@
              "(defn main []
                 (apply (fn [a b c d] (+ (+ a b) (+ c d))) 1 2 (list 3 4)))"))))
 
+(deftest stored-closures-compose-with-bounded-higher-order-operations
+  (is (= 5 (execute-main
+            "(defn main []
+               (let [bias 2 f (fn [x] (+ x bias))]
+                 (vector-at (map f [1 3]) 1)))")))
+  (is (= 4 (execute-main
+            "(defn make [bias] (fn [x] (+ x bias)))
+             (defn transform [f :i64 xs :vector-i64] :vector-i64 (map f xs))
+             (defn main [] (vector-at (transform (make 3) [1]) 0))")))
+  (is (= 4 (execute-main
+            "(defn main []
+               (let [minimum 2 keep? (fn [x] (if (> x minimum) 1 0))]
+                 (vector-at (filter keep? [1 4 2]) 0)))")))
+  (is (= 5 (execute-main
+            "(defn main []
+               (let [bias 1 add (fn [acc x] (+ acc (+ x bias)))]
+                 (reduce add 0 [1 2])))")))
+  (is (= 9 (execute-main
+            "(defn add [a b] (+ a b))
+             (defn main [] (reduce (fn-ref add) 0 [4 5]))"))))
+
 (deftest callable-values-are-bounded-and-closed
   (testing "closure ABI is capped at arity four"
     (is (re-find #"zero to four"

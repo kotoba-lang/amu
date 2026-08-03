@@ -1863,6 +1863,11 @@
 
 (defn- desugar-expr* [form]
   (cond
+    ;; Under nbb, compiler-synthesized integer literals are ordinary JS
+    ;; numbers while source integers are bigint. Classify the integral host
+    ;; form before the broader f64 predicate so generated loop indices/defaults
+    ;; stay i64 in typed modules.
+    (kotoba-integer? form) form
     (value/f64-value? form) (list 'f64-from-bits (value/f64-to-i64-bits form))
     (keyword? form) form
     (boolean? form) form
@@ -2477,6 +2482,12 @@
                 v (synthetic "reduce_v")
                 i (synthetic "reduce_i")
                 acc (synthetic "reduce_acc")
+                stored? (not (or (and (symbol? f-form)
+                                      (nil? (namespace f-form))
+                                      (or (contains? '#{+ - * bit-and bit-or bit-xor} f-form)
+                                          (contains? *function-arities* f-form)))
+                                 (and (seq? f-form) (= 'fn (first f-form)))))
+                callback (when stored? (synthetic "reduce_callback"))
                 step
                 (cond
                   (and (symbol? f-form)
@@ -2496,14 +2507,16 @@
                             (desugar-expr (first body)))))
 
                   ;; Named binary module function (fail-closed if unbound / wrong arity).
-                  (and (symbol? f-form) (nil? (namespace f-form)))
+                  (and (symbol? f-form) (nil? (namespace f-form))
+                       (contains? *function-arities* f-form))
                   (list f-form acc (list 'vector-at v i))
 
                   :else
-                  (reject! "reduce only admits binary op, (fn [acc x] expr), or named binary" f-form))]
+                  (list (invoke-dispatcher-name 2) callback acc
+                        (list 'vector-at v i)))]
             ;; Re-enter desugar so loop → __kotoba_loop_N under *pending-loop-helpers*.
             (desugar-expr
-             (list 'let [v coll*]
+             (list 'let (vec (concat (when stored? [callback f-form]) [v coll*]))
                    (list 'loop [i 0 acc init*]
                          (list 'if (list '< i (list 'vector-count v))
                                (list 'recur (list '+ i 1) step)
@@ -2524,6 +2537,12 @@
               1
               (let [coll* (desugar-expr (first coll-forms))
                     v (synthetic "map_v")
+                    stored? (not (or (and (symbol? f-form)
+                                          (nil? (namespace f-form))
+                                          (or (contains? '#{inc dec} f-form)
+                                              (contains? *function-arities* f-form)))
+                                     (and (seq? f-form) (= 'fn (first f-form)))))
+                    callback (when stored? (synthetic "map_callback"))
                     mapped
                     (cond
                       (and (symbol? f-form)
@@ -2546,14 +2565,16 @@
                           (list 'let [x (list 'vector-at v i)]
                                 (desugar-expr (first body)))))
 
-                      (and (symbol? f-form) (nil? (namespace f-form)))
+                      (and (symbol? f-form) (nil? (namespace f-form))
+                           (contains? *function-arities* f-form))
                       (list f-form (list 'vector-at v i))
 
                       :else
-                      (reject! "1-source map only admits (fn [x] expr), inc/dec, or named unary" f-form))]
+                      (list (invoke-dispatcher-name 1) callback
+                            (list 'vector-at v i)))]
                 (binding [*loop-result-type* :vector-i64]
                   (desugar-expr
-                   (list 'let [v coll*]
+                   (list 'let (vec (concat (when stored? [callback f-form]) [v coll*]))
                          (list 'loop [i 0 acc (list 'vector-i64)]
                                (list 'if (list '< i (list 'vector-count v))
                                      (list 'recur (list '+ i 1)
@@ -2565,6 +2586,11 @@
                     b* (desugar-expr (second coll-forms))
                     va (synthetic "map_a")
                     vb (synthetic "map_b")
+                    stored? (not (or (and (symbol? f-form)
+                                          (nil? (namespace f-form))
+                                          (contains? *function-arities* f-form))
+                                     (and (seq? f-form) (= 'fn (first f-form)))))
+                    callback (when stored? (synthetic "map_callback"))
                     mapped
                     (cond
                       (and (seq? f-form) (= 'fn (first f-form)))
@@ -2578,14 +2604,17 @@
                                       y (list 'vector-at vb i)]
                                 (desugar-expr (first body)))))
 
-                      (and (symbol? f-form) (nil? (namespace f-form)))
+                      (and (symbol? f-form) (nil? (namespace f-form))
+                           (contains? *function-arities* f-form))
                       (list f-form (list 'vector-at va i) (list 'vector-at vb i))
 
                       :else
-                      (reject! "2-source map only admits (fn [x y] expr) or named binary" f-form))]
+                      (list (invoke-dispatcher-name 2) callback
+                            (list 'vector-at va i) (list 'vector-at vb i)))]
                 (binding [*loop-result-type* :vector-i64]
                   (desugar-expr
-                   (list 'let [va a* vb b*]
+                   (list 'let (vec (concat (when stored? [callback f-form])
+                                           [va a* vb b*]))
                          (list 'loop [i 0 acc (list 'vector-i64)]
                                ;; Stop at shortest source (or / >=).
                                (list 'if (list 'or
@@ -2608,6 +2637,11 @@
                 i (synthetic "filter_i")
                 acc (synthetic "filter_acc")
                 x (synthetic "filter_x")
+                stored? (not (or (and (symbol? p-form)
+                                      (nil? (namespace p-form))
+                                      (contains? *function-arities* p-form))
+                                 (and (seq? p-form) (= 'fn (first p-form)))))
+                callback (when stored? (synthetic "filter_callback"))
                 pred-body
                 (cond
                   (and (seq? p-form) (= 'fn (first p-form)))
@@ -2621,14 +2655,15 @@
                       (list 'let [px x]
                             (desugar-expr (first body)))))
 
-                  (and (symbol? p-form) (nil? (namespace p-form)))
+                  (and (symbol? p-form) (nil? (namespace p-form))
+                       (contains? *function-arities* p-form))
                   (list p-form x)
 
                   :else
-                  (reject! "filter only admits (fn [x] pred-expr) or named unary" p-form))]
+                  (list (invoke-dispatcher-name 1) callback x))]
             (binding [*loop-result-type* :vector-i64]
               (desugar-expr
-               (list 'let [v coll*]
+               (list 'let (vec (concat (when stored? [callback p-form]) [v coll*]))
                      (list 'loop [i 0 acc (list 'vector-i64)]
                            (list 'if (list '< i (list 'vector-count v))
                                  (list 'let [x (list 'vector-at v i)]
