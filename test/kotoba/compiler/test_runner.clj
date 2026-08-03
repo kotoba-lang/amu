@@ -37,6 +37,7 @@
             [kotoba.compiler.frontend-assert-test]
             [kotoba.compiler.frontend-equality-diagnostic-test]
             [kotoba.compiler.product-value-abi-v1-test]
+            [kotoba.compiler.option-flow-sugar-test]
             [kotoba.compiler.pure-product-profile-test]
             [kotoba.compiler.record-projection-sugar-test]
             [kotoba.compiler.map-filter-vector-test]
@@ -147,6 +148,7 @@
                                           'kotoba.compiler.frontend-assert-test
                                           'kotoba.compiler.frontend-equality-diagnostic-test
                                           'kotoba.compiler.product-value-abi-v1-test
+                                          'kotoba.compiler.option-flow-sugar-test
                                           'kotoba.compiler.pure-product-profile-test
                                           'kotoba.compiler.record-projection-sugar-test
                                           'kotoba.compiler.map-filter-vector-test

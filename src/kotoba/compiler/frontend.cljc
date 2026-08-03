@@ -240,7 +240,7 @@
              (set (keys f32-operations))
              (set (keys i32-operations))
              (set (keys i64-operations))
-             '#{let if cap-call typed-cap-call ns defn defn- some some? nil? vector-i64 vector-f64 vector-new vector-f64-new
+             '#{let if cap-call typed-cap-call ns defn defn- some some? nil? option-or vector-i64 vector-f64 vector-new vector-f64-new
                 hetero-vector typed-set record match-result match-variant match-option}))
 (def max-functions 1024)
 (def max-arity-clauses 8)
@@ -2030,6 +2030,15 @@
         (do (when-not (= 3 (count args)) (reject! "option-value-of requires type, value, and fallback" form))
             (list 'option-value-of (first args) (desugar-expr (second args))
                   (desugar-expr (nth args 2))))
+        option-or
+        (do (when-not (= 2 (count args))
+              (reject! "option-or requires an option value and a fallback" form))
+            ;; Keep this surface head until the type-directed rewrite pass.
+            ;; The payload descriptor is intentionally absent from authored
+            ;; source and cannot be recovered reliably during syntactic
+            ;; desugaring for calls to functions returning [:option T].
+            (list 'option-or (desugar-expr (first args))
+                  (desugar-expr (second args))))
         ;; `match-option` lowers to this internal form. Nested matches cause
         ;; the enclosing match's recursive desugaring to visit that lowered
         ;; form again, so it must preserve the type descriptor and binder.
@@ -4039,6 +4048,20 @@
                       (partition 2 bindings))]
           (list 'let (vec pairs) (rewrite-record-projection body locals' signatures schemas)))
 
+        (= op 'option-or)
+        (let [[value fallback] args
+              value (rewrite-record-projection value locals signatures schemas)
+              fallback (rewrite-record-projection fallback locals signatures schemas)
+              option-type (infer-expression-type value locals signatures)]
+          (when-not (and (vector? option-type)
+                         (= 2 (count option-type))
+                         (= :option (first option-type)))
+            (reject! (str "option-or requires an option value; got "
+                          (pr-str option-type))
+                     form
+                     :kotoba.error/option-type-unresolved))
+          (list 'option-value-of option-type value fallback))
+
         ;; A named schema reference in an operation's *type argument* is
         ;; resolved here too, so validation, inference and lowering keep seeing
         ;; only inline descriptors. Annotations in parameter/return position
@@ -4997,6 +5020,11 @@
         ;; the value symbol in the type slot and `(nth type 2)` throws.
         parsed (infer-absent-results parsed)
         parsed (rewrite-record-projections parsed (:schemas namespace-info))
+        ;; `option-or` intentionally survives syntactic desugaring until the
+        ;; rewrite above can infer its payload descriptor from locals and
+        ;; function signatures. Re-run absent-result inference now that the
+        ;; internal `option-value-of` form has an admitted type signature.
+        parsed (infer-absent-results parsed)
         named-elaboration (elaborate-named-abilities parsed)
         parsed (:functions named-elaboration)
         used-capability-names
