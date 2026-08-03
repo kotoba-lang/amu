@@ -5053,11 +5053,12 @@
                          (map #(rewrite-record-projection % locals signatures schemas)
                               (rest args)))))
 
-        ;; A named schema reference in an operation's *type argument* is
-        ;; resolved here too, so validation, inference and lowering keep seeing
-        ;; only inline descriptors. Annotations in parameter/return position
-        ;; need no rewrite — `same-expression-type?` already treats a reference
-        ;; and its descriptor as the same nominal type.
+        ;; A named record schema reference in an operation's *type argument*
+        ;; is resolved here too (variant constructor/match references are
+        ;; handled immediately above), so validation, inference and lowering
+        ;; keep seeing only inline descriptors. Annotations in parameter/return
+        ;; position need no rewrite — `same-expression-type?` already treats a
+        ;; reference and its descriptor as the same nominal type.
         (and (contains? '#{record-new record-get record-assoc record-equal} op)
              (schema-ref-type? (first args)))
         (let [descriptor (get schemas (second (first args)))]
