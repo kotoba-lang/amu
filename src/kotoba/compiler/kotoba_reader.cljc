@@ -137,7 +137,11 @@
 
 (defn- read-symbol-or-number [st]
   (let [[st token] (read-token st)]
-    [st (or (parse-int-token token) (parse-f64-token token) (symbol token))]))
+    [st (case token
+          "nil" nil
+          "true" true
+          "false" false
+          (or (parse-int-token token) (parse-f64-token token) (symbol token)))]))
 
 (defn- read-keyword [st]
   (let [st (advance st) ; consume leading `:`
