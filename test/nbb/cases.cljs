@@ -29,6 +29,8 @@
     :policy nil}
    {:name "general-document-map" :source "test/nbb/fixtures/general-document-map.kotoba"
     :target "wasm32-browser" :policy nil}
+   {:name "option-or" :source "test/nbb/fixtures/option-or.kotoba"
+    :target "wasm32-browser" :policy nil}
    ;; i64/sleb128 boundary regression cases (this PR): the whole point of
    ;; the `:cljs` port's `cljs-i64`/bigint machinery is the FULL signed
    ;; 64-bit range, which no `examples/*.kotoba` fixture happens to
