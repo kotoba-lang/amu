@@ -21,7 +21,8 @@ is a canonical tagged tree, never a host object. Its admitted nodes are:
 - boolean, signed i64, finite f64, bounded string, bounded keyword, or bounded
   symbol;
 - a vector, list, or set of document nodes;
-- a map from bounded keywords to document nodes.
+- a map from document nodes to document nodes. Source keyword keys remain a
+  shorthand and are normalized to document keyword nodes.
 
 Every value is validated as a whole with all of these fixed limits:
 
@@ -31,7 +32,8 @@ Every value is validated as a whole with all of these fixed limits:
 - maximum 32 items in any vector, list, or set;
 - maximum 65,536 aggregate UTF-8 bytes across strings, keywords, symbols, and
   keys;
-- unique map keys in canonical keyword order;
+- unique map keys in canonical document order; keyword-keyword pairs retain
+  textual keyword order for compatibility with the original profile;
 - unique set items in the unsigned lexicographic order of their canonical
   document bytes;
 - no NaN, infinity, functions, host references, prototypes, getters,
@@ -53,9 +55,10 @@ scalar-kind mismatches trap; no coercion or truthiness conversion occurs.
 
 Canonical binary encoding and bounded EDN reading/printing cover every
 admitted node. The binary encoding defines document identity and the total
-order used by sets. Keeping that order independent of host comparison rules is
-also the required substrate for a future map profile with arbitrary document
-keys; the current map remains keyword-keyed.
+order used by sets and non-keyword map keys. Existing keyword map entries keep
+their `K <keyword>` encoding, preserving their canonical bytes and digests;
+other keys use `D <document-key>`. This gives one map representation rather
+than splitting portable documents into keyword-keyed and general-map profiles.
 
 Typed Wasm ABI v11 assigns descriptor tag 18 to `:document`. The browser host
 admits older ABIs unchanged and exposes document imports only when the sealed
@@ -72,7 +75,8 @@ not a replacement for application schemas.
 
 Qualification covers the reference evaluator, restricted JavaScript, real
 typed Wasm instantiation, hostile host values, limits, canonicalization,
-bounded EDN round trips, set duplicate rejection, and persistent updates. The
+bounded EDN round trips, set and map duplicate rejection, general document-key
+lookup and construction, and persistent updates. The
 browser host regression suite also proves continued admission of ABI versions
 5 through 10, while modules using `:document` select ABI v11.
 `kotoba-lang/annotation` is the first fleet consumer and remains a separate

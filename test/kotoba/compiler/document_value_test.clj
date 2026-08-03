@@ -196,10 +196,10 @@
                            [["map" [[:a ["vector" [["i64" 1] ["null"]]]]]]
                             ["map" [[:a ["vector" [["i64" 1] ["null"]]]]]]])))
     (is (false? (ir/execute kir 'same-doc [["keyword" :a] ["keyword" :b]])))
-    (is (= ["map" [[:a ["null"]] [:b ["null"]]]]
+    (is (= ["map" [[["keyword" :a] ["null"]] [["keyword" :b] ["null"]]]]
            (ir/execute kir 'repeated-nulls [])))
-    (is (= ["vector" [["map" [[:name ["string" "same"]]]]
-                       ["map" [[:name ["string" "same"]]]]]]
+    (is (= ["vector" [["map" [[["keyword" :name] ["string" "same"]]]]
+                      ["map" [[["keyword" :name] ["string" "same"]]]]]]
            (ir/execute kir 'repeated-value [])))
     (is (thrown? clojure.lang.ExceptionInfo (ir/execute kir 'bad-assoc [])))
     (is (thrown? clojure.lang.ExceptionInfo (ir/execute kir 'bad-drop [])))

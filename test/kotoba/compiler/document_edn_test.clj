@@ -6,7 +6,7 @@
 
 (def source
   "(ns data.document-edn
-     (:export [main value printed same commented symbol-doc symbol-text parsed-symbol symbol-value list-doc list-text parsed-list list-same list-second set-doc set-text parsed-set set-same set-has-ready bad-symbol bad-tag bad-set-duplicate bad-duplicate bad-limit]))
+     (:export [main value printed same commented symbol-doc symbol-text parsed-symbol symbol-value list-doc list-text parsed-list list-same list-second set-doc set-text parsed-set set-same set-has-ready general-map general-text general-name general-constructed general-constructed-text bad-symbol bad-tag bad-set-duplicate bad-duplicate bad-general-duplicate bad-limit]))
    (defn main [] :i64 42)
    (defn value [] :document
      (document-map
@@ -35,10 +35,26 @@
    (defn set-same [] :bool (document-equal? (set-doc) (parsed-set)))
    (defn set-has-ready [] :bool
      (document-set-contains? (parsed-set) (document-keyword :ready)))
+   (defn general-map [] :document
+     (document-edn-read \"{[1 2] :pair, \\\"name\\\" 7, :ready true}\"))
+   (defn general-text [] :string (document-edn-print (general-map)))
+   (defn general-name [] :i64
+     (option-value-of [:option :i64]
+       (document-i64-value
+         (option-value-of [:option :document]
+           (document-get (general-map) (document-string \"name\"))
+           (document-null)))
+       -1))
+   (defn general-constructed [] :document
+     (document-map
+       (document-vector (document-i64 1)) (document-string \"vector-key\")
+       :legacy (document-bool true)))
+   (defn general-constructed-text [] :string (document-edn-print (general-constructed)))
    (defn bad-symbol [] :string (document-edn-print (document-symbol (symbol \"nil\"))))
    (defn bad-tag [] :document (document-edn-read \"#inst \\\"2026-08-03\\\"\"))
    (defn bad-set-duplicate [] :document (document-edn-read \"#{:a :a}\"))
    (defn bad-duplicate [] :document (document-edn-read \"{:a 1 :a 2}\"))
+   (defn bad-general-duplicate [] :document (document-edn-read \"{[1] :a [1] :b}\"))
    (defn bad-limit [] :document
      (document-edn-read
        \"[nil nil nil nil nil nil nil nil nil nil nil nil nil nil nil nil nil nil nil nil nil nil nil nil nil nil nil nil nil nil nil nil nil]\"))")
@@ -69,7 +85,9 @@
        "if(x['symbol-text']()!=='actor/run'||x['parsed-symbol']()[0]!=='symbol')process.exit(4);"
        "if(x['list-text']()!=='(actor/run 7)'||x['parsed-list']()[0]!=='list'||!(x['list-same']()===true||x['list-same']()===1||x['list-same']()===1n))process.exit(5);"
        "if(x['set-text']()!=='#{1 :ready \\\"one\\\"}'||x['parsed-set']()[0]!=='set'||!(x['set-same']()===true||x['set-same']()===1||x['set-same']()===1n)||!(x['set-has-ready']()===true||x['set-has-ready']()===1||x['set-has-ready']()===1n))process.exit(6);"
-       "for(const name of ['bad-symbol','bad-tag','bad-set-duplicate','bad-duplicate','bad-limit']){"
+       "if(x['general-text']()!=='{:ready true \\\"name\\\" 7 [1 2] :pair}'||x['general-name']()!==7n)process.exit(8);"
+       "if(x['general-constructed-text']()!=='{:legacy true [1] \\\"vector-key\\\"}')process.exit(9);"
+       "for(const name of ['bad-symbol','bad-tag','bad-set-duplicate','bad-duplicate','bad-general-duplicate','bad-limit']){"
        "let denied=false;try{x[name]()}catch(e){denied=true}if(!denied)process.exit(7);}"
        "console.log('ok');"))
 
@@ -85,7 +103,10 @@
       (is (= "#{1 :ready \"one\"}" (ir/execute kir 'set-text [])))
       (is (true? (ir/execute kir 'set-same [])))
       (is (true? (ir/execute kir 'set-has-ready [])))
-      (doseq [name ['bad-tag 'bad-set-duplicate 'bad-duplicate 'bad-limit]]
+      (is (= "{:ready true \"name\" 7 [1 2] :pair}" (ir/execute kir 'general-text [])))
+      (is (= 7 (ir/execute kir 'general-name [])))
+      (is (= "{:legacy true [1] \"vector-key\"}" (ir/execute kir 'general-constructed-text [])))
+      (doseq [name ['bad-tag 'bad-set-duplicate 'bad-duplicate 'bad-general-duplicate 'bad-limit]]
         (is (thrown? clojure.lang.ExceptionInfo (ir/execute kir name [])))))
     (testing "restricted ESM"
       (let [result (script-probe script
