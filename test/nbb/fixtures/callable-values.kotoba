@@ -4,7 +4,9 @@
 (defn main []
   (let [offset 2
         add-offset (fn [x] (+ x offset))
-        mapped (map add-offset [1])]
-    (+ (reduce sum mapped)
+        mapped (map add-offset [1])
+        keep? (fn [x] (> x 2))
+        filtered (filter keep? mapped)]
+    (+ (reduce sum filtered)
        (+ (reduce sum [])
           (apply (fn-ref add) (list 19 20))))))

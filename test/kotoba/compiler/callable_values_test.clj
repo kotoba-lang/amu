@@ -48,8 +48,12 @@
              (defn main [] (vector-at (transform (make 3) [1]) 0))")))
   (is (= 4 (execute-main
             "(defn main []
-               (let [minimum 2 keep? (fn [x] (if (> x minimum) 1 0))]
+               (let [minimum 2 keep? (fn [x] (> x minimum))]
                  (vector-at (filter keep? [1 4 2]) 0)))")))
+  (is (= 5 (execute-main
+            "(defn make [minimum] (fn [x] (> x minimum)))
+             (defn select [pred :i64 xs :vector-i64] :vector-i64 (filter pred xs))
+             (defn main [] (vector-at (select (make 3) [2 5 3]) 0))")))
   (is (= 5 (execute-main
             "(defn main []
                (let [bias 1 add (fn [acc x] (+ acc (+ x bias)))]
@@ -57,6 +61,16 @@
   (is (= 9 (execute-main
             "(defn add [a b] (+ a b))
              (defn main [] (reduce (fn-ref add) 0 [4 5]))"))))
+
+(deftest callable-values-have-explicit-typed-results
+  (is (= 1 (execute-main
+            "(defn main []
+               (if (invoke :bool (fn [x] (> x 2)) 3) 1 0))")))
+  (testing "a closure from a different result family traps closed"
+    (is (thrown? clojure.lang.ExceptionInfo
+                 (execute-main
+                  "(defn main []
+                     (if (invoke :bool (fn [x] (+ x 1)) 3) 1 0))")))))
 
 (deftest callable-values-are-bounded-and-closed
   (testing "closure ABI is capped at arity four"
