@@ -493,8 +493,8 @@ function createTypedRuntime(abi, typedCapCall, allow) {
       if (tag === "string") return finish(Object.freeze([tag, text(payload)]));
       if (tag === "keyword") return finish(Object.freeze([tag, text(payload, true)]));
       if (tag === "symbol") {
-        if (typeof payload !== "string" || payload.length === 0 || payload.startsWith(":") ||
-            utf8Length(payload) > 512)
+        if (typeof payload !== "string" || payload.length === 0 ||
+            /[\s,\[\]{}()"',;`~^\\]/u.test(payload) || utf8Length(payload) > 512)
           reject("invalid-typed-value", "document symbol is invalid");
         return finish(Object.freeze([tag, text(payload)]));
       }
@@ -744,6 +744,14 @@ function createTypedRuntime(abi, typedCapCall, allow) {
     return documentFromCanonicalBytes(hexToBytes(s));
   };
   const documentEdnPrint = value => {
+    const symbolText = symbol => {
+      if (symbol === "nil" || symbol === "true" || symbol === "false" ||
+          symbol.startsWith(":") || symbol.startsWith("#") ||
+          /^[+-]?[0-9]+$/u.test(symbol) ||
+          /^[+-]?(?:(?:[0-9]+\.[0-9]*)|(?:[0-9]*\.[0-9]+)|(?:[0-9]+[eE][+-]?[0-9]+))(?:[eE][+-]?[0-9]+)?$/u.test(symbol))
+        reject("invalid-typed-value", "ambiguous document symbol cannot be printed as EDN");
+      return symbol;
+    };
     const walk = node => {
       node = assertDocument(node);
       const [tag, payload] = node;
@@ -757,7 +765,7 @@ function createTypedRuntime(abi, typedCapCall, allow) {
       }
       if (tag === "string") return JSON.stringify(payload);
       if (tag === "keyword") return payload;
-      if (tag === "symbol") return payload;
+      if (tag === "symbol") return symbolText(payload);
       if (tag === "vector") return `[${payload.map(walk).join(" ")}]`;
       if (tag === "map") return `{${payload.map(([key, item]) => `${key} ${walk(item)}`).join(" ")}}`;
       reject("invalid-typed-value", "unknown document tag for EDN printer");
