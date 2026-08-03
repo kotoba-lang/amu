@@ -126,7 +126,12 @@
 (def kernel-memory-operations
   '{kernel-load-u8 3 kernel-load-u8-4k 3 kernel-load-u8-16k 3
     kernel-store-u8 4 kernel-store-u8-4k 4
-    kernel-load-u32 3 kernel-store-u32 4})
+    kernel-load-u32 3 kernel-store-u32 4
+    ;; (kernel-subregion base length offset sublen) -> base+offset, trapping
+    ;; unless offset+sublen fits inside length. Listed here so its first
+    ;; argument is checked as a base like every other kernel op's: a derived
+    ;; window is only as good as the window it was derived from.
+    kernel-subregion 4})
 (def kernel-privileged-operations
   '{kernel-boot-info 0 kernel-read-cr2 0 kernel-read-cr3 0 kernel-write-cr3 1 kernel-invlpg 1
     kernel-cli 0 kernel-sti 0 kernel-hlt 0 kernel-pause 0
@@ -5147,16 +5152,19 @@
   (let-bound symbol -> init expression) and PARAMS (this function's parameter
   symbols).
 
-  `(+ root offset)` is admitted because narrowing a validated region to a
-  sub-window is what real kernel code does -- aiueos hashes a record inside a
-  block it just range-checked, `(fnv (+ base object-offset) object-length)`,
-  in six of its objects. The OFFSET is not verified here (see
-  `kernel-region-report`'s `:derived-bases`, and the residual-gap note in
-  docs/threat-model.md): proving `offset + sublen <= length` needs a checked
-  narrowing primitive that traps, which the native backends do not have yet.
-  What this does buy is that every window is rooted in a literal, boot-info,
-  or an ABI-supplied region -- a base can no longer be conjured entirely out
-  of memory content, which is the shape with no legitimate counterpart:
+  Narrowing a validated region to a sub-window is what real kernel code does
+  -- aiueos hashes a record inside a block it just range-checked, in six of
+  its objects -- so it must be expressible, but `(+ base offset)` produced a
+  window nothing had checked. It is now spelled `(kernel-subregion base
+  length offset sublen)`, which the native backends emit as a real check:
+  offset within length, sublen within the remainder, non-null parent, `UD2`/
+  `brk` otherwise. So a derived base is rooted AND bounded, and a correct
+  entry window implies every window derived from it is correct.
+
+  Bare `+` in a base position is therefore rejected now (it was admitted, and
+  reported as an unchecked narrowing, while no checked form existed). What
+  stays rejected for the same reason as before is a base with no traceable
+  root at all:
 
     (kernel-load-u8 (kernel-load-u8 attacker-buf len i) 4096 0)
 
@@ -5167,9 +5175,10 @@
             (cond
               (integer? expr) true
               (and (seq? expr) (= 'kernel-boot-info (first expr))) true
-              ;; sub-window of a rooted region: the root must still be rooted
-              (and (seq? expr) (= '+ (first expr)) (>= (count expr) 2))
-              (clean? (second expr) seen)
+              ;; A checked sub-window. Its own parent base sits in argument
+              ;; position 0 and is validated as a base in its own right by
+              ;; `kernel-base-uses`, so recursing here would double-report.
+              (and (seq? expr) (= 'kernel-subregion (first expr))) true
               ;; one of two rooted origins is still rooted
               (and (seq? expr) (= 'if (first expr)) (= 4 (count expr)))
               (and (clean? (nth expr 2) seen) (clean? (nth expr 3) seen))
@@ -5183,10 +5192,12 @@
     (clean? expr #{})))
 
 (defn- derived-base?
-  "True when EXPR is a rooted base that was offset-adjusted -- i.e. an
-  unchecked narrowing, the residual gap this pass does not close."
+  "True when EXPR narrows a region to a sub-window. Now always a checked
+  narrowing (`kernel-subregion`); `kernel-region-report` still lists these so
+  a build can see which windows are derived and from what, but they are no
+  longer the unchecked residual they were before the primitive existed."
   [expr]
-  (and (seq? expr) (= '+ (first expr))))
+  (and (seq? expr) (= 'kernel-subregion (first expr))))
 
 (defn- kernel-base-uses
   "Walk BODY collecting, for one function:
@@ -5211,7 +5222,7 @@
               (when (derived-base? expr)
                 (vswap! derived conj
                         {:base expr
-                         :offset-static? (every? integer? (drop 2 expr))}))
+                         :offset-static? (every? integer? (drop 3 expr))}))
               (when-not (traceable-base? expr env params)
                 (vswap! problems conj expr))
               ;; a let-bound alias of a param still counts as reaching it
@@ -5233,8 +5244,14 @@
                       (doseq [form tail] (walk form env')))
 
                     (kernel-memory-op? op)
+                    ;; `args` in full, not `(rest args)`: a nested
+                    ;; `kernel-subregion` sitting IN a base position has its
+                    ;; own parent in its own argument 0, and skipping arg 0
+                    ;; here let a narrowing launder an untraceable base --
+                    ;; `(kernel-subregion (kernel-load-u8 buf len 0) ...)`
+                    ;; passed until a test went looking for it.
                     (do (base! (first args) env)
-                        (doseq [arg (rest args)] (walk arg env)))
+                        (doseq [arg args] (walk arg env)))
 
                     :else
                     (do (when (contains? function-names op)
@@ -5250,12 +5267,13 @@
   module can reach, whether it consults `kernel-boot-info`, the ABI
   boundary -- `{function [param ...]}` for base parameters no internal call
   supplies, i.e. the regions the C kernel is trusted to hand in -- and
-  `:derived-bases`, every sub-window narrowing, flagged `:offset-static?` when
-  the offset is a literal. A non-static derived base is an UNCHECKED
-  narrowing: rooted in a real region, but with an offset this pass cannot
-  bound. Public so a build can record what a kernel object is allowed to
-  address, and how much of that is still trust, instead of rediscovering it
-  by reading the source."
+  `:derived-bases`, every `kernel-subregion` narrowing, flagged
+  `:offset-static?` when both the offset and the sub-length are literals.
+  Every narrowing is now checked at runtime by the emitted code, so a
+  non-static one is no longer an unbounded window -- the flag distinguishes
+  what a build can verify statically from what the trap enforces. Public so a
+  build can record what a kernel object is allowed to address, and how much
+  of that is still trust, instead of rediscovering it by reading the source."
   [functions]
   (let [function-names (into #{} (map :name) functions)
         facts (into {}
@@ -5309,7 +5327,7 @@
                              (when (and (contains? (get tainted callee #{}) i)
                                         (derived-base? arg))
                                {:base arg
-                                :offset-static? (every? integer? (drop 2 arg))
+                                :offset-static? (every? integer? (drop 3 arg))
                                 :function caller
                                 :into [callee i]}))
                            calls)))

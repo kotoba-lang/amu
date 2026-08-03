@@ -631,19 +631,24 @@
 ;; native-target record-field-type gate, not an unrelated generic
 ;; function-result type mismatch that would fire even before that gate is
 ;; reached.
-(deftest native-record-with-an-unsupported-field-type-is-rejected-at-compile-time
+;; INVERTED 2026-08-04: this asserted native REJECTED a string-bearing record
+;; while Wasm accepted it. kotoba-kir's "admit :string record fields and
+;; variant payloads on native" (and the matching kotoba-native work) closed
+;; that gap upstream, so the rejection this pinned no longer happens. The
+;; assertion is inverted rather than deleted: the property worth keeping is
+;; that the two targets agree, which is now true in the other direction.
+;; Surfaced by bumping kotoba-kir/kotoba-native for kernel-subregion --
+;; those pins are coupled, so the bump could not be avoided.
+(deftest native-record-with-a-string-field-now-compiles-like-wasm
   (let [schema (pr-str '[:record :native/string-field-record [[:s :string]]])
         source (str
                 "(defn project-s [] :string
                    (record-get " schema " (record-new " schema " \"x\") :s))
                  (defn main [] 0)")]
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo
-                          #"qualified native"
-                          (compiler/compile-source source (target))))
-    ;; Confirms the rejection is native-specific admission, not a generic
-    ;; type error: the identical source compiles fine on the Wasm target,
-    ;; which already supports string-bearing records (ADR 0053).
-    (is (= :wasm/v1 (:format (compiler/compile-source source :wasm32-kotoba-v1))))))
+    (is (some? (:artifact (compiler/compile-source source (target))))
+        "native admits string-bearing records since the kir/native bump")
+    (is (= :wasm/v1 (:format (compiler/compile-source source :wasm32-kotoba-v1)))
+        "and Wasm still does (ADR 0053), so the targets agree")))
 
 ;; ADR 0062 fail-closed requirement (second vector): `record-get`'s value
 ;; operand must be a DIRECTLY-nested, same-schema `record-new` --
@@ -732,15 +737,17 @@
 ;; variant, unconditionally -- see `core.clj`'s own comment on why
 ;; `:wasm32-kotoba-v1`/`:js-kotoba-v1` need no content-based ir check at
 ;; all).
-(deftest native-variant-with-an-unsupported-case-payload-type-is-rejected-at-compile-time
+;; INVERTED 2026-08-04 for the same reason as its record sibling above: the
+;; upstream kir/native work admits string-cased variants on native, so the
+;; rejection this pinned no longer fires. Kept as a target-agreement check.
+(deftest native-variant-with-a-string-case-now-compiles-like-wasm
   (let [schema (pr-str '[:variant :native/string-case-variant [[:s :string]]])
         source (str
                 "(defn project-s [] :string
                    (variant-match " schema " (variant-new " schema " :s \"x\") [[:s v v]]))
                  (defn main [] 0)")]
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo
-                          #"qualified native"
-                          (compiler/compile-source source (target))))
+    (is (some? (:artifact (compiler/compile-source source (target))))
+        "native admits string-cased variants since the kir/native bump")
     (is (= :wasm/v1 (:format (compiler/compile-source source :wasm32-kotoba-v1))))))
 
 ;; ADR 0063 fail-closed requirement (second vector, mirroring ADR 0062's own

@@ -10,9 +10,11 @@
   data could be used directly as a physical address in ring 0.
 
   What is enforced here is ROOTEDNESS: every base resolves to a literal, to
-  `kernel-boot-info`, or to a parameter -- possibly plus an offset, because
-  narrowing a validated region to a sub-window is what real kernel code does.
-  What is NOT enforced is that offset (see `unchecked-narrowing-is-reported`)."
+  `kernel-boot-info`, or to a parameter. Narrowing a validated region to a
+  sub-window is what real kernel code does, so it must be expressible, and it
+  is spelled `kernel-subregion` -- whose offset the native backends bound
+  with an emitted check (see kernel-subregion-test). Bare `(+ base offset)`
+  in a base position is rejected here as a result."
   (:require [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.frontend :as frontend]))
@@ -60,10 +62,12 @@
   (testing "kernel-boot-info"
     (is (nil? (provenance-rejection
                "(defn main [] (kernel-load-u8 (kernel-boot-info) 4096 0))"))))
-  (testing "sub-window of a validated region, the pattern in six aiueos objects"
+  (testing "sub-window of a validated region, the pattern in six aiueos
+            objects -- now spelled as the checked narrowing, since bare `+`
+            in a base position is rejected (kernel-subregion-test)"
     (is (nil? (provenance-rejection
                "(defn fnv [base length] (kernel-load-u8 base length 0))
-                (defn f [base length] (fnv (+ base 48) 16))
+                (defn f [base length] (fnv (kernel-subregion base length 48 16) 16))
                 (defn main [] 0)")))))
 
 (deftest taint-propagates-through-call-sites
@@ -91,21 +95,6 @@
           "the C kernel hands `entry` its region; that is unverifiable here")
       (is (nil? (get (:abi-boundary report) 'read-byte))
           "an internally-supplied parameter is not a boundary"))))
-
-(deftest unchecked-narrowing-is-reported
-  (testing "the residual gap is machine-visible, not only prose"
-    (let [hir (frontend/analyze
-               "(defn fnv [base length] (kernel-load-u8 base length 0))
-                (defn f [base length offset] (fnv (+ base offset) 16))
-                (defn g [base length] (fnv (+ base 48) 16))
-                (defn main [] 0)")
-          derived (:derived-bases (frontend/kernel-region-report (:functions hir)))
-          by-fn (into {} (map (juxt :function :offset-static?)) derived)]
-      (is (= 2 (count derived)) "both narrowings are recorded")
-      (is (false? (get by-fn 'f))
-          "a value offset cannot be bounded here: this is the unchecked case")
-      (is (true? (get by-fn 'g))
-          "a literal offset is statically known"))))
 
 (deftest modules-without-kernel-ops-are-untouched
   (is (nil? (provenance-rejection "(defn main [] (+ 1 2))"))))
