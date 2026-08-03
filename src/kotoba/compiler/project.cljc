@@ -165,6 +165,40 @@
   (contains? frontend/capability-registry
              (keyword (namespace op) (name op))))
 
+(defn- resugar-capability-calls
+  "Put the friendly operation back into an emitted body.
+
+  Linking analyzes each module, so the bodies it emits are already elaborated:
+  `(clock/now seed)` has become `(typed-cap-call 7 :i64 :i64 seed)`. The linked
+  source is then re-analyzed in full, which re-derives the same ability and the
+  same effect — but not the friendly name, because by then there is nothing
+  left to name. A diagnostic raised during a project build therefore could not
+  point back at the operation the author wrote, and `:named-operations` came
+  out empty where a single-file build reported `#{:clock/now}`.
+
+  The elaborated form still carries `:source-operation` metadata, so exactly
+  the capability calls can be turned back into their source spelling. Nothing
+  else is touched: module-to-module calls keep their stubs and synthetic names,
+  so per-module isolation is unchanged — this restores provenance without
+  making one module's syntax able to mean something different after linking."
+  [form]
+  (cond
+    (seq? form)
+    (let [m (meta form)
+          walked (map resugar-capability-calls form)
+          operation (:source-operation m)]
+      (with-meta
+        (if (and operation (= 'typed-cap-call (first form)))
+          ;; (typed-cap-call <id> <request> <result> & args) -> (ns/name & args)
+          (apply list (symbol (namespace operation) (name operation)) (drop 4 walked))
+          (apply list walked))
+        m))
+
+    (vector? form) (with-meta (mapv resugar-capability-calls form) (meta form))
+    (map? form) (with-meta (into {} (map (fn [[k v]] [k (resugar-capability-calls v)])) form)
+                           (meta form))
+    :else form))
+
 (defn- rewrite-import-calls [form imported]
   (cond
     (seq? form)
@@ -259,6 +293,13 @@
         functions (mapv (fn [function]
                           (-> function
                               (update :name local-names)
+                              ;; Before renaming: rewrite-calls rebuilds forms
+                              ;; with list*, which drops the :source-operation
+                              ;; metadata this reads. A friendly head is not in
+                              ;; the rename table, so it passes through
+                              ;; untouched while its arguments still get
+                              ;; renamed.
+                              (update :body resugar-capability-calls)
                               (update :body rewrite-calls call-names)))
                         locals)
         by-name (into {} (map (juxt :name identity) locals))
