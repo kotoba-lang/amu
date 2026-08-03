@@ -57,6 +57,29 @@ two-second wall alarm. Fatal arithmetic and memory signals become a structured
 `KEXE_TRAP` failure. This is defense in depth for testing; it is not yet the
 full aiueos namespace/seccomp/Landlock production sandbox.
 
+Kernel memory windows are rooted, and their offsets are not yet checked. The
+`kernel-load-*`/`kernel-store-*` family emits a real bounds check before every
+access -- length against the op's static maximum, base against zero, index
+against length, `UD2`/`brk` on violation -- which constrains the offset within
+a window while saying nothing about the window. Frontend admission now also
+requires each base to be ROOTED: it must resolve to a literal, to
+`kernel-boot-info`, or to a parameter, so a base can no longer be conjured out
+of memory content, as in `(kernel-load-u8 (kernel-load-u8 buf len i) 4096 0)`.
+Taint propagates through call sites, so a caller cannot supply what the callee
+is forbidden to compute. A base parameter that no internal call supplies is the
+ABI boundary where the kernel hands in a region; `kernel-region-report` names
+those, along with every literal window.
+
+Rooted is weaker than bounded. `(+ base offset)` is admitted, because narrowing
+a validated region to a sub-window is what kernel code does -- aiueos hashes a
+record inside a block it just range-checked, in six of its objects -- and the
+offset is not verified. `kernel-region-report`'s `:derived-bases` records each
+narrowing and flags whether the offset is a literal, so an unchecked one is
+machine-visible rather than merely absent from this document. Closing it needs
+a narrowing primitive that traps unless `offset + sublen <= length`, which
+means new emission in both native backends; until those exist and are proven on
+real processes for both ISAs, a sub-window base remains trusted.
+
 Native capability authority is data, not ambient process privilege. Context v1
 contains a fixed 256-bit bitmap and one callback slot. A literal cap ID selects
 one bit; it cannot influence the callback address. Both generated code and the

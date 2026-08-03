@@ -56,6 +56,7 @@
             [kotoba.compiler.check-cli-test]
             [kotoba.compiler.capability-deny-test]
             [kotoba.compiler.kir-trap-source-test]
+            [kotoba.compiler.kernel-region-provenance-test]
             [kotoba.compiler.error-code-contract-test]
             [kotoba.compiler.frontend-condp-test]
             [kotoba.compiler.frontend-doseq-test]
@@ -168,6 +169,7 @@
                                           'kotoba.compiler.fuel-estimate-test
                                           'kotoba.compiler.check-cli-test
                                           'kotoba.compiler.capability-deny-test
+                                          'kotoba.compiler.kernel-region-provenance-test
                                           'kotoba.compiler.kir-trap-source-test
                                           'kotoba.compiler.error-code-contract-test
                                           'kotoba.compiler.frontend-condp-test

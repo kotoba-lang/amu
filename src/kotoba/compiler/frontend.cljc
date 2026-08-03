@@ -4970,6 +4970,257 @@
         (reject! "linear result must be one direct typed capability move"
                  (:name function))))))
 
+;; ---------------------------------------------------------------------------
+;; Kernel region provenance.
+;;
+;; `kernel-load-u8`/`kernel-store-u8`/... take (base, length, index, ...) and
+;; the native backends emit a real bounds check before the access: length must
+;; not exceed the op's static maximum, base must be non-zero, index must be
+;; below length, and any violation reaches `UD2`/`brk` before memory is
+;; touched. That check constrains the offset WITHIN a window; it says nothing
+;; about whether the window itself is legitimate. Until this pass, `base` was
+;; any `:i64` the program could compute, so
+;;
+;;   (kernel-load-u8 (kernel-load-u8 attacker-buf len i) 4096 0)
+;;
+;; -- take a byte of attacker-controlled data, use it as a physical address --
+;; passed admission. These objects run in ring 0, so that is arbitrary
+;; physical memory, and no amount of index checking recovers it.
+;;
+;; Ring 0 code cannot be forbidden from naming addresses; a kernel's whole job
+;; is to address device MMIO and physical frames. What it CAN be held to is
+;; that every address is TRACEABLE: each base must flow unmodified from a
+;; compile-time literal, from `kernel-boot-info`, or from a parameter — never
+;; from arithmetic, a load, or a call result. The set of physical windows an
+;; object can reach then becomes statically enumerable and reviewable instead
+;; of data-dependent.
+;;
+;; Parameters make this interprocedural: aiueos threads a base through
+;; recursive helpers (`aiueos-fnv1a-step base length index hash`), so a param
+;; used as a base taints that position, every internal call into it must pass
+;; a traceable argument, and the taint propagates to the caller's own params
+;; by fixpoint. A tainted param on a function with no internal caller is the
+;; ABI boundary where the C kernel supplies the region: unverifiable from
+;; here, so it is admitted and REPORTED (`kernel-region-report`) rather than
+;; silently trusted -- the same localize-and-name discipline the raw-memory
+;; gate uses, since the alternative is to keep pretending the boundary is not
+;; there.
+(defn- kernel-memory-op? [op]
+  (contains? kernel-memory-operations op))
+
+(defn- let-binding-pairs
+  "Seq of [sym init] for a desugared `(let [s0 v0 s1 v1 ...] body)`."
+  [bindings]
+  (when (vector? bindings)
+    (partition 2 bindings)))
+
+(defn- traceable-base?
+  "True when EXPR is ROOTED: it resolves to a compile-time literal, to
+  `kernel-boot-info`, or to a parameter, possibly plus an offset. Under ENV
+  (let-bound symbol -> init expression) and PARAMS (this function's parameter
+  symbols).
+
+  `(+ root offset)` is admitted because narrowing a validated region to a
+  sub-window is what real kernel code does -- aiueos hashes a record inside a
+  block it just range-checked, `(fnv (+ base object-offset) object-length)`,
+  in six of its objects. The OFFSET is not verified here (see
+  `kernel-region-report`'s `:derived-bases`, and the residual-gap note in
+  docs/threat-model.md): proving `offset + sublen <= length` needs a checked
+  narrowing primitive that traps, which the native backends do not have yet.
+  What this does buy is that every window is rooted in a literal, boot-info,
+  or an ABI-supplied region -- a base can no longer be conjured entirely out
+  of memory content, which is the shape with no legitimate counterpart:
+
+    (kernel-load-u8 (kernel-load-u8 attacker-buf len i) 4096 0)
+
+  Anything not listed here -- a bare load, a call result, a cap-call -- fails
+  closed."
+  [expr env params]
+  (letfn [(clean? [expr seen]
+            (cond
+              (integer? expr) true
+              (and (seq? expr) (= 'kernel-boot-info (first expr))) true
+              ;; sub-window of a rooted region: the root must still be rooted
+              (and (seq? expr) (= '+ (first expr)) (>= (count expr) 2))
+              (clean? (second expr) seen)
+              ;; one of two rooted origins is still rooted
+              (and (seq? expr) (= 'if (first expr)) (= 4 (count expr)))
+              (and (clean? (nth expr 2) seen) (clean? (nth expr 3) seen))
+              (symbol? expr)
+              (cond
+                (contains? seen expr) false          ; cyclic shadowing, fail closed
+                (contains? env expr) (clean? (get env expr) (conj seen expr))
+                (contains? params expr) true         ; ABI boundary, tracked below
+                :else false)
+              :else false))]
+    (clean? expr #{})))
+
+(defn- derived-base?
+  "True when EXPR is a rooted base that was offset-adjusted -- i.e. an
+  unchecked narrowing, the residual gap this pass does not close."
+  [expr]
+  (and (seq? expr) (= '+ (first expr))))
+
+(defn- kernel-base-uses
+  "Walk BODY collecting, for one function:
+    :problems  base expressions that are not traceable
+    :params    parameter symbols that reach a base position
+    :literals  compile-time-literal bases
+    :calls     [callee arg-index arg-expr env] for every internal call, so the
+               caller can be checked once callee taint is known
+  ENV threading follows `let`; a binding shadows an outer one of the same name."
+  [body params function-names]
+  (let [problems (volatile! [])
+        used-params (volatile! #{})
+        literals (volatile! #{})
+        derived (volatile! [])
+        calls (volatile! [])]
+    (letfn [(base! [expr env]
+              (cond
+                (integer? expr) (vswap! literals conj expr)
+                (symbol? expr) (when (contains? params expr)
+                                 (vswap! used-params conj expr))
+                :else nil)
+              (when (derived-base? expr)
+                (vswap! derived conj
+                        {:base expr
+                         :offset-static? (every? integer? (drop 2 expr))}))
+              (when-not (traceable-base? expr env params)
+                (vswap! problems conj expr))
+              ;; a let-bound alias of a param still counts as reaching it
+              (when (and (symbol? expr) (contains? env expr))
+                (let [root (get env expr)]
+                  (when (and (symbol? root) (contains? params root))
+                    (vswap! used-params conj root)))))
+            (walk [expr env]
+              (when (seq? expr)
+                (let [[op & args] expr]
+                  (cond
+                    (= op 'let)
+                    (let [[bindings & tail] args
+                          env' (reduce (fn [acc [sym init]]
+                                         (walk init acc)
+                                         (assoc acc sym init))
+                                       env
+                                       (let-binding-pairs bindings))]
+                      (doseq [form tail] (walk form env')))
+
+                    (kernel-memory-op? op)
+                    (do (base! (first args) env)
+                        (doseq [arg (rest args)] (walk arg env)))
+
+                    :else
+                    (do (when (contains? function-names op)
+                          (doseq [[i arg] (map-indexed vector args)]
+                            (vswap! calls conj [op i arg env])))
+                        (doseq [arg args] (walk arg env)))))))]
+      (walk body {})
+      {:problems @problems :params @used-params
+       :literals @literals :derived @derived :calls @calls})))
+
+(defn kernel-region-report
+  "Static region provenance for FUNCTIONS: the literal physical bases the
+  module can reach, whether it consults `kernel-boot-info`, the ABI
+  boundary -- `{function [param ...]}` for base parameters no internal call
+  supplies, i.e. the regions the C kernel is trusted to hand in -- and
+  `:derived-bases`, every sub-window narrowing, flagged `:offset-static?` when
+  the offset is a literal. A non-static derived base is an UNCHECKED
+  narrowing: rooted in a real region, but with an offset this pass cannot
+  bound. Public so a build can record what a kernel object is allowed to
+  address, and how much of that is still trust, instead of rediscovering it
+  by reading the source."
+  [functions]
+  (let [function-names (into #{} (map :name) functions)
+        facts (into {}
+                    (map (fn [{:keys [name params body]}]
+                           [name (kernel-base-uses body (set params) function-names)]))
+                    functions)
+        params-by-name (into {} (map (juxt :name :params)) functions)
+        ;; fixpoint: a param position is base-tainted when it is used as a base
+        ;; directly, or passed into an already-tainted position of a callee.
+        tainted
+        (loop [tainted (into {}
+                             (map (fn [[name {:keys [params]}]]
+                                    [name (into #{}
+                                                (keep-indexed
+                                                 (fn [i p] (when (contains? params p) i)))
+                                                (get params-by-name name))]))
+                             facts)]
+          (let [next-tainted
+                (reduce
+                 (fn [acc [caller {:keys [calls]}]]
+                   (reduce
+                    (fn [acc [callee i arg _env]]
+                      (if (and (contains? (get acc callee #{}) i) (symbol? arg))
+                        (let [caller-params (get params-by-name caller)
+                              idx (first (keep-indexed
+                                          (fn [j p] (when (= p arg) j)) caller-params))]
+                          (if idx (update acc caller (fnil conj #{}) idx) acc))
+                        acc))
+                    acc calls))
+                 tainted facts)]
+            (if (= next-tainted tainted) tainted (recur next-tainted))))
+        supplied (into #{}
+                       (mapcat (fn [[_caller {:keys [calls]}]]
+                                 (keep (fn [[callee i _arg _env]]
+                                         (when (contains? (get tainted callee #{}) i)
+                                           [callee i]))
+                                       calls)))
+                       facts)]
+    {:literal-bases (into (sorted-set) (mapcat (comp :literals val)) facts)
+     ;; Both shapes count: a narrowing written directly in a base position,
+     ;; and one passed as an argument into a base parameter -- which is how
+     ;; aiueos actually writes it, `(fnv (+ base object-offset) len)`, so
+     ;; collecting only the direct form would report an empty list on the
+     ;; very files that motivated admitting derivation at all.
+     :derived-bases
+     (into (into [] (mapcat (fn [[name {:keys [derived]}]]
+                              (map #(assoc % :function name) derived)))
+                 facts)
+           (mapcat (fn [[caller {:keys [calls]}]]
+                     (keep (fn [[callee i arg _env]]
+                             (when (and (contains? (get tainted callee #{}) i)
+                                        (derived-base? arg))
+                               {:base arg
+                                :offset-static? (every? integer? (drop 2 arg))
+                                :function caller
+                                :into [callee i]}))
+                           calls)))
+           facts)
+     :uses-boot-info?
+     (boolean (some (fn [{:keys [body]}]
+                      (some #(and (seq? %) (= 'kernel-boot-info (first %)))
+                            (tree-seq coll? seq body)))
+                    functions))
+     :tainted tainted
+     :abi-boundary
+     (into (sorted-map)
+           (keep (fn [[name idxs]]
+                   (let [unsupplied (remove #(contains? supplied [name %]) idxs)]
+                     (when (seq unsupplied)
+                       [name (mapv #(nth (get params-by-name name) %) (sort unsupplied))]))))
+           tainted)}))
+
+(defn- check-kernel-region-provenance! [functions]
+  (let [function-names (into #{} (map :name) functions)]
+    (when (some (fn [{:keys [body]}]
+                  (some #(and (seq? %) (kernel-memory-op? (first %)))
+                        (tree-seq coll? seq body)))
+                functions)
+      (let [{:keys [tainted]} (kernel-region-report functions)]
+        (doseq [{:keys [name params body]} functions]
+          (let [{:keys [problems calls]} (kernel-base-uses body (set params) function-names)]
+            (when-let [offender (first problems)]
+              (reject! "kernel memory base must name a region, not compute one"
+                       offender :kotoba.error/kernel-region-provenance))
+            ;; an argument flowing into a base position must be traceable too,
+            ;; or the caller becomes the hole the callee's own check closed
+            (doseq [[callee i arg env] calls
+                    :when (contains? (get tainted callee #{}) i)]
+              (when-not (traceable-base? arg env (set params))
+                (reject! "kernel memory base must name a region, not compute one"
+                         arg :kotoba.error/kernel-region-provenance)))))))))
+
 (defn- direct-facts [form function-names]
   (let [effects (volatile! #{}) calls (volatile! #{})]
     (letfn [(walk [x]
@@ -5751,6 +6002,7 @@
         (validate-expr body (set params) signatures 0 budget)))
     (check-value-types! parsed)
     (check-linear-resource-ownership! parsed)
+    (check-kernel-region-provenance! parsed)
     (check-lowering-budget! parsed)
     (let [typed-values? (boolean
                          (or (seq (:schemas namespace-info))
