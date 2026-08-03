@@ -7,7 +7,9 @@
       nbb-cli (lib/join lib/root "node_modules" "nbb" "cli.js")
       classpath (str lib/root (.-delimiter path) (.trim (:stdout resolved)))
       result (.spawnSync child js/process.execPath
-                         (clj->js [nbb-cli "--classpath" classpath
+                         ;; Match bin/kotoba's bounded NBB compiler stack.
+                         (clj->js ["--stack-size=4096"
+                                  nbb-cli "--classpath" classpath
                                   (lib/join lib/root "test" "nbb" "run.cljs")])
                          #js {:cwd lib/root :stdio "inherit" :env js/process.env})]
   (when (.-error result) (throw (.-error result)))
