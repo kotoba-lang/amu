@@ -85,6 +85,7 @@ const ALLOWED_IMPORTS = new Set([
   "kotoba:typed/document-edn-read/function",
   "kotoba:typed/document-contains/function",
   "kotoba:typed/document-vector-at/function",
+  "kotoba:typed/document-list-at/function",
   "kotoba:typed/document-map-entry-at/function",
   "kotoba:typed/document-vector-assoc/function",
   "kotoba:typed/document-vector-conj/function",
@@ -498,9 +499,9 @@ function createTypedRuntime(abi, typedCapCall, allow) {
           reject("invalid-typed-value", "document symbol is invalid");
         return finish(Object.freeze([tag, text(payload)]));
       }
-      if (tag === "vector") {
+      if (tag === "vector" || tag === "list") {
         if (!Array.isArray(payload) || Object.getPrototypeOf(payload) !== Array.prototype || payload.length > 32)
-          reject("invalid-typed-value", "document vector is invalid or oversized");
+          reject("invalid-typed-value", "document sequence is invalid or oversized");
         if (!allowShared && state.seen.has(payload))
           reject("invalid-typed-value", "document arrays cannot be shared");
         state.seen.add(payload);
@@ -536,7 +537,7 @@ function createTypedRuntime(abi, typedCapCall, allow) {
     const result = copyDocument(source, allowShared);
     const trust = node => {
       trustedValues.add(node);
-      if (node[0] === "vector") node[1].forEach(trust);
+      if (node[0] === "vector" || node[0] === "list") node[1].forEach(trust);
       else if (node[0] === "map") node[1].forEach(entry => trust(entry[1]));
     };
     trust(result);
@@ -551,7 +552,7 @@ function createTypedRuntime(abi, typedCapCall, allow) {
   // Shared with kotoba-kir value/document-canonical-bytes + kotoba-script docCanonicalBytes.
   // Format: n | b t/f | i <decimal> ; | f <i64-bits-decimal> ; |
   // s <utf8-len> : <bytes> | k <utf8-len> : <keyword-str> | y <utf8-len> : <symbol> |
-  // v <count> : <items...> | m <count> : (K <key-len> : <key-bytes> <item>)*
+  // v <count> : <items...> | l <count> : <items...> | m <count> : (K <key-len> : <key-bytes> <item>)*
   const documentCanonicalBytes = node => {
     const out = [];
     const enc = new TextEncoder();
@@ -584,6 +585,11 @@ function createTypedRuntime(abi, typedCapCall, allow) {
       if (t === "symbol") { emit(121); emitLenStr(String(n[1])); return; }
       if (t === "vector") {
         emit(118); emitStr(String(n[1].length)); emit(58);
+        for (const it of n[1]) walk(it);
+        return;
+      }
+      if (t === "list") {
+        emit(108); emitStr(String(n[1].length)); emit(58);
         for (const it of n[1]) walk(it);
         return;
       }
@@ -713,6 +719,14 @@ function createTypedRuntime(abi, typedCapCall, allow) {
         for (let k = 0; k < n; k++) items.push(walk());
         return Object.freeze(["vector", Object.freeze(items)]);
       }
+      if (tag === 108) {
+        const n = Number(takeUntil(58));
+        if (!Number.isInteger(n) || n < 0 || n > 32)
+          reject("invalid-typed-value", "document-read list count out of range");
+        const items = [];
+        for (let k = 0; k < n; k++) items.push(walk());
+        return Object.freeze(["list", Object.freeze(items)]);
+      }
       if (tag === 109) {
         const n = Number(takeUntil(58));
         if (!Number.isInteger(n) || n < 0 || n > 32)
@@ -767,6 +781,7 @@ function createTypedRuntime(abi, typedCapCall, allow) {
       if (tag === "keyword") return payload;
       if (tag === "symbol") return symbolText(payload);
       if (tag === "vector") return `[${payload.map(walk).join(" ")}]`;
+      if (tag === "list") return `(${payload.map(walk).join(" ")})`;
       if (tag === "map") return `{${payload.map(([key, item]) => `${key} ${walk(item)}`).join(" ")}}`;
       reject("invalid-typed-value", "unknown document tag for EDN printer");
     };
@@ -838,6 +853,16 @@ function createTypedRuntime(abi, typedCapCall, allow) {
           items.push(value(depth + 1));
         }
       }
+      if (character === "(") {
+        cursor += 1;
+        const items = [];
+        for (;;) {
+          skip();
+          if (text[cursor] === ")") { cursor += 1; return ["list", items]; }
+          if (items.length >= 32) fail("list item limit exceeded");
+          items.push(value(depth + 1));
+        }
+      }
       if (character === "{") {
         cursor += 1;
         const entries = [];
@@ -859,7 +884,6 @@ function createTypedRuntime(abi, typedCapCall, allow) {
         }
       }
       if (character === "#") fail("dispatch forms are forbidden");
-      if (character === "(") fail("lists are unsupported");
       if (character === ")" || character === "]" || character === "}") fail("unexpected closing delimiter");
       const item = token();
       if (item === "nil") return ["null"];
@@ -1011,12 +1035,12 @@ function createTypedRuntime(abi, typedCapCall, allow) {
     return left.length < right.length ? -1 : left.length > right.length ? 1 : 0;
   };
   const compareDocument = (left, right) => {
-    const tags = Object.freeze(["null", "bool", "i64", "f64", "string", "keyword", "vector", "map"]);
+    const tags = Object.freeze(["null", "bool", "i64", "f64", "string", "keyword", "symbol", "vector", "list", "map"]);
     const leftTag = tags.indexOf(left[0]), rightTag = tags.indexOf(right[0]);
     if (leftTag !== rightTag) return leftTag < rightTag ? -1 : 1;
     if (left[0] === "null") return 0;
     if (left[0] === "bool") return left[1] === right[1] ? 0 : left[1] ? 1 : -1;
-    if (left[0] !== "vector" && left[0] !== "map")
+    if (left[0] !== "vector" && left[0] !== "list" && left[0] !== "map")
       return left[1] < right[1] ? -1 : left[1] > right[1] ? 1 : 0;
     const length = Math.min(left[1].length, right[1].length);
     for (let index = 0; index < length; index += 1) {
@@ -1385,6 +1409,7 @@ function createTypedRuntime(abi, typedCapCall, allow) {
         result = [descriptor, Object.freeze(entries)];
       } else if (kind === "document") {
         if (builder.tag === -1) result = ["vector", builder.slots];
+        else if (builder.tag === -3) result = ["list", builder.slots];
         else if (builder.tag === -2) {
           if (builder.slots.length % 2 !== 0)
             reject("invalid-typed-builder", "document map builder has an unmatched key");
@@ -1458,7 +1483,7 @@ function createTypedRuntime(abi, typedCapCall, allow) {
       if (descriptor[0] === "string-index") return BigInt(checked[1].length);
       if (descriptor[0] === "disjoint-set-i64") return BigInt(checked[1].length);
       if (descriptor[0] === "document") {
-        if (checked[0] !== "map" && checked[0] !== "vector")
+        if (checked[0] !== "map" && checked[0] !== "vector" && checked[0] !== "list")
           reject("invalid-typed-operation", "document container required");
         return BigInt(checked[1].length);
       }
@@ -1830,6 +1855,14 @@ function createTypedRuntime(abi, typedCapCall, allow) {
         reject("invalid-typed-operation", "document descriptor required");
       value = assertDocument(value); const index = i64(rawIndex);
       if (value[0] !== "vector") reject("invalid-typed-operation", "document vector required");
+      const ok = index >= 0n && index < BigInt(value[1].length);
+      return documentOption(documentDescriptor, ok, ok ? value[1][Number(index)] : undefined);
+    },
+    "document-list-at"(descriptorId, value, rawIndex) {
+      if (descriptorAt(descriptorId) !== documentDescriptor)
+        reject("invalid-typed-operation", "document descriptor required");
+      value = assertDocument(value); const index = i64(rawIndex);
+      if (value[0] !== "list") reject("invalid-typed-operation", "document list required");
       const ok = index >= 0n && index < BigInt(value[1].length);
       return documentOption(documentDescriptor, ok, ok ? value[1][Number(index)] : undefined);
     },
