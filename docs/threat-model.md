@@ -70,15 +70,24 @@ is forbidden to compute. A base parameter that no internal call supplies is the
 ABI boundary where the kernel hands in a region; `kernel-region-report` names
 those, along with every literal window.
 
-Rooted is weaker than bounded. `(+ base offset)` is admitted, because narrowing
-a validated region to a sub-window is what kernel code does -- aiueos hashes a
-record inside a block it just range-checked, in six of its objects -- and the
-offset is not verified. `kernel-region-report`'s `:derived-bases` records each
-narrowing and flags whether the offset is a literal, so an unchecked one is
-machine-visible rather than merely absent from this document. Closing it needs
-a narrowing primitive that traps unless `offset + sublen <= length`, which
-means new emission in both native backends; until those exist and are proven on
-real processes for both ISAs, a sub-window base remains trusted.
+Narrowing a validated region to a sub-window is what kernel code does -- aiueos
+hashes a record inside a block it just range-checked, in six of its objects --
+so it must be expressible. It is spelled `(kernel-subregion base length offset
+sublen)`, which both native backends emit as a real check: non-null parent,
+`offset` within `length`, `sublen` within the remainder, `UD2`/`brk`
+otherwise. The comparison is against the remainder rather than against
+`offset + sublen`, so a hostile pair cannot wrap past it, and every comparison
+is unsigned, so a negative i64 arrives as a huge value and trips the check.
+Hand-written `(+ base offset)` in a base position is refused. A correct entry
+window therefore implies every window derived from it is correct.
+
+What remains trusted is the entry window itself: a base parameter and its
+length arrive together across the ABI boundary, and nothing here can confirm
+the length describes real memory. `kernel-region-report` names those boundaries
+and lists every narrowing. Kernel targets are linkable ELF objects rather than
+runnable processes, so the emitted checks are pinned by disassembly-derived
+encoding assertions in kotoba-native's isa-parity-test rather than by
+execution -- the same evidence available for every other kernel operation.
 
 Native capability authority is data, not ambient process privilege. Context v1
 contains a fixed 256-bit bitmap and one callback slot. A literal cap ID selects
