@@ -5,7 +5,8 @@
             [kotoba.wasm.core :as wasm]
             [kotoba.wasm.typed :as typed]
             [kotoba.compiler.core :as compiler]
-            [kotoba.kir :as ir]))
+            [kotoba.kir :as ir]
+            [kotoba.kir.value :as value]))
 
 (defn- node-probe [compiled javascript]
   (let [encoded (.encodeToString (java.util.Base64/getEncoder) ^bytes (:bytes compiled))
@@ -55,6 +56,36 @@
                           "if(h.instance.exports.main()!==2n)process.exit(2);")]
     (is (= 2 (ir/execute (:kir compiled) 'main [])))
     (is (zero? (:exit probe)) (:err probe))))
+
+(deftest canonical-bytes-closure-results-cross-all-typed-runtimes
+  (let [source
+        "(ns bytes.closure (:export [main identity]))
+         (defn main [] :bytes
+           (invoke :bytes (fn [] (bytes))))
+         (defn identity [value :bytes] :bytes value)"
+        javascript (:source (compiler/compile-source source :js-kotoba-v1))
+        js-encoded (.encodeToString (java.util.Base64/getEncoder)
+                                    (.getBytes javascript "UTF-8"))
+        js-probe
+        (shell/sh
+         "node" "--input-type=module" "-e"
+         (str "import('data:text/javascript;base64," js-encoded
+              "').then(m=>{const x=m.instantiateKotoba({}),empty=x.main(),input=new Uint8Array([1,2,3]);"
+              "if(!(empty instanceof Uint8Array)||empty.byteLength!==0||x.identity(input)!==input)process.exit(2);"
+              "try{x.identity('not-bytes');process.exit(3)}catch(e){if(e.message!=='invalid-bytes')process.exit(4)}})"))
+        compiled (compiler/compile-source source :wasm32-browser-kotoba-v1)
+        wasm-probe
+        (node-probe
+         compiled
+         (str "const x=h.instance.exports,empty=x.main(),input=new Uint8Array([1,2,3]);"
+              "if(h.typedAbi.version!==14||!h.typedAbi.descriptors.includes('bytes'))process.exit(2);"
+              "if(!(empty instanceof Uint8Array)||empty.byteLength!==0||x.identity(input)!==input)process.exit(3);"
+              "try{x.identity('not-bytes');process.exit(4)}catch(e){if(e.code!=='invalid-typed-value')process.exit(5)}"))
+        reference (ir/execute (:kir compiled) 'main [])]
+    (is (value/bytes-value? reference))
+    (is (zero? (value/bytes-byte-count reference)))
+    (is (zero? (:exit js-probe)) (:err js-probe))
+    (is (zero? (:exit wasm-probe)) (:err wasm-probe))))
 
 (deftest parameterized-i64-bitwise-ops-have-wasm-runtime-lowering
   (let [source
