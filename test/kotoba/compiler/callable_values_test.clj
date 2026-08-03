@@ -109,11 +109,39 @@
   (is (= 1 (execute-main
             "(defn main []
                (if (invoke :bool (fn [x] (> x 2)) 3) 1 0))")))
+  (is (= 7 (execute-main
+            "(defn main []
+               (vector-at (invoke :vector-i64 (fn [x] [x]) 7) 0))")))
   (testing "a closure from a different result family traps closed"
     (is (thrown? clojure.lang.ExceptionInfo
                  (execute-main
                   "(defn main []
-                     (if (invoke :bool (fn [x] (+ x 1)) 3) 1 0))")))))
+                     (if (invoke :bool (fn [x] (+ x 1)) 3) 1 0))"))))
+  (testing "a vector dispatcher rejects a scalar-returning closure"
+    (is (thrown? clojure.lang.ExceptionInfo
+                 (execute-main
+                  "(defn main []
+                     (vector-count (invoke :vector-i64 (fn [x] (+ x 1)) 3)))")))))
+
+(deftest lexical-vector-results-use-contextual-application-syntax
+  (is (= 7 (execute-main
+            "(defn main []
+               (let [singleton (fn [x] [x])]
+                 (vector-at (singleton 7) 0)))")))
+  (is (= 4 (execute-main
+            "(defn main []
+               (let [singleton (fn [x] [x])]
+                 (vector-at (map inc (singleton 3)) 0)))")))
+  (is (= 9 (execute-main
+            "(defn main []
+               (let [singleton (fn [x] [x]) stored [singleton]]
+                 (vector-at (invoke :vector-i64 (vector-at stored 0) 9) 0)))")))
+  (testing "the default scalar family still rejects vector-returning closures"
+    (is (thrown? clojure.lang.ExceptionInfo
+                 (execute-main
+                  "(defn main []
+                     (let [singleton (fn [x] [x])]
+                       (invoke singleton 3)))")))))
 
 (deftest lexical-predicates-use-contextual-application-syntax
   (is (= 1 (execute-main
@@ -150,6 +178,17 @@
 (deftest callable-values-lower-reproducibly-for-js-and-wasm
   (let [source "(defn add [a b] (+ a b))
                 (defn main [] (invoke (fn-ref add) 20 22))"
+        js (compiler/compile-source source :js-kotoba-v1)
+        wasm-a (compiler/compile-source source :wasm32-browser-kotoba-v1)
+        wasm-b (compiler/compile-source source :wasm32-browser-kotoba-v1)]
+    (is (= 42 (kir/execute (:kir js) 'main [])))
+    (is (= (:kir wasm-a) (:kir wasm-b)))
+    (is (java.util.Arrays/equals ^bytes (:bytes wasm-a) ^bytes (:bytes wasm-b)))))
+
+(deftest vector-returning-closures-lower-reproducibly-for-js-and-wasm
+  (let [source "(defn main []
+                  (let [singleton (fn [x] [x])]
+                    (vector-at (singleton 42) 0)))"
         js (compiler/compile-source source :js-kotoba-v1)
         wasm-a (compiler/compile-source source :wasm32-browser-kotoba-v1)
         wasm-b (compiler/compile-source source :wasm32-browser-kotoba-v1)]
