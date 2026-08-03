@@ -182,7 +182,8 @@
     document-i64-value 1 document-f64-value 1})
 (def document-variadic-operations '#{document-vector document-list document-set document-map})
 (def sequencing-operations '#{do})
-(def lazy-sequence-operations '#{lazy-cons lazy-first lazy-rest lazy-empty? take drop})
+(def lazy-sequence-operations
+  '#{lazy-cons lazy-first lazy-rest lazy-empty? lazy-map lazy-filter take drop})
 (def string-operations '{string-byte-length 1 string-length 1 string-from-i64 1
                          bytes-task-byte-count 1 task-ready? 1
                          object-cas-won 1
@@ -1925,6 +1926,95 @@
         (cons op (map #(replace-recur % helper-name loop-names captured) args))))
     :else form))
 
+(defn- callback-supported-arities [callback]
+  (cond
+    (and (symbol? callback) (contains? *function-arities* callback))
+    (get *function-arities* callback)
+
+    (and (seq? callback) (= 'fn (first callback)))
+    (let [[_ params-or-clause & tail] callback
+          clauses (if (vector? params-or-clause)
+                    [params-or-clause]
+                    (when (every? #(and (seq? %) (vector? (first %)))
+                                  (cons params-or-clause tail))
+                      (map first (cons params-or-clause tail))))]
+      (when clauses
+        (apply set/union
+               (map (fn [params]
+                      (let [amp-index (first (keep-indexed #(when (= '& %2) %1) params))]
+                        (if amp-index
+                          (set (range amp-index 5))
+                          #{(count params)})))
+                    clauses))))
+
+    :else nil))
+
+(defn- callback-closure [kind callback arity]
+  (when-let [arities (callback-supported-arities callback)]
+    (when-not (contains? arities arity)
+      (reject! (str (name kind) " callback does not provide arity " arity)
+               callback)))
+  (if (and (symbol? callback) (contains? *function-arities* callback))
+    (desugar-expr (list 'fn-ref callback))
+    (desugar-expr callback)))
+
+(defn- synthesize-lazy-map [callback colls form]
+  (let [arity (count colls)
+        helper-name (synthetic "lazy_map")
+        callback-param (symbol (str helper-name "_callback"))
+        coll-params (mapv #(symbol (str helper-name "_coll_" %)) (range arity))
+        callback-value (callback-closure :lazy-map callback arity)
+        resolver
+        (binding [*lifting-lazy-thunk?* true]
+          (lift-lambda
+           (list 'fn []
+                 (list 'if
+                       (apply list 'or (map #(list 'lazy-empty? %) coll-params))
+                       0
+                       (list 'pair
+                             (list 'fn []
+                                   (apply list 'invoke callback-param
+                                          (map #(list 'lazy-first %) coll-params)))
+                             (list 'fn []
+                                   (apply list helper-name callback-param
+                                          (map #(list 'lazy-rest %) coll-params))))))))
+        helper {:name helper-name
+                :params (into [callback-param] coll-params)
+                :result :i64 :effects #{} :body resolver}]
+    (when (> (count (:params helper)) max-parameters)
+      (reject! "lazy-map callback plus sources exceed ABI-supported arity" form))
+    (when *pending-loop-helpers*
+      (swap! *pending-loop-helpers* conj helper))
+    (apply list helper-name callback-value (map desugar-expr colls))))
+
+(defn- synthesize-lazy-filter [callback coll]
+  (let [helper-name (synthetic "lazy_filter")
+        callback-param (symbol (str helper-name "_callback"))
+        coll-param (symbol (str helper-name "_coll"))
+        value (symbol (str helper-name "_value"))
+        callback-value (callback-closure :lazy-filter callback 1)
+        resolver
+        (binding [*lifting-lazy-thunk?* true]
+          (lift-lambda
+           (list 'fn []
+                 (list 'if (list 'lazy-empty? coll-param)
+                       0
+                       (list 'let [value (list 'lazy-first coll-param)]
+                             (list 'if (list 'invoke :bool callback-param value)
+                                   (list 'pair
+                                         (list 'fn [] value)
+                                         (list 'fn []
+                                               (list helper-name callback-param
+                                                     (list 'lazy-rest coll-param))))
+                                   (list 'invoke
+                                         (list helper-name callback-param
+                                               (list 'lazy-rest coll-param)))))))))
+        helper {:name helper-name :params [callback-param coll-param]
+                :result :i64 :effects #{} :body resolver}]
+    (when *pending-loop-helpers*
+      (swap! *pending-loop-helpers* conj helper))
+    (list helper-name callback-value (desugar-expr coll))))
+
 (defn- desugar-expr* [form]
   (cond
     ;; Under nbb, compiler-synthesized integer literals are ordinary JS
@@ -2063,6 +2153,18 @@
                   (list 'if (list '= lazy-seq 0)
                         true
                         (list '= (list (invoke-dispatcher-name 0) lazy-seq) 0)))))
+        lazy-map
+        (do
+          (when-not (<= 2 (count args) 5)
+            (reject! "lazy-map requires a callback and one to four lazy sequences" form))
+          (when *uses-lazy?* (vreset! *uses-lazy?* true))
+          (synthesize-lazy-map (first args) (vec (rest args)) form))
+        lazy-filter
+        (do
+          (when-not (= 2 (count args))
+            (reject! "lazy-filter requires a unary predicate and lazy sequence" form))
+          (when *uses-lazy?* (vreset! *uses-lazy?* true))
+          (synthesize-lazy-filter (first args) (second args)))
         take
         (do
           (when-not (= 2 (count args))

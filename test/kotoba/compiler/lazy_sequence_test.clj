@@ -45,6 +45,67 @@
                  (rejection-message
                   "(defn main [] (lazy-cons (cap-call 1 0) 0))")))))
 
+(deftest lazy-map-supports-inline-named-and-stored-callbacks
+  (is (= 12 (execute-main
+             (str naturals-source
+                  " (defn main []
+                       (let [xs (take 3 (lazy-map (fn [x] (* x 2)) (naturals 1)))]
+                         (+ (first xs)
+                            (+ (first (rest xs))
+                               (first (rest (rest xs)))))))"))))
+  (is (= 10 (execute-main
+            "(defn finite [n limit]
+               (if (> n limit) 0 (lazy-cons n (finite (+ n 1) limit))))
+             (defn add [a b] (+ a b))
+             (defn main []
+               (let [xs (take 2 (lazy-map add (finite 1 3) (finite 3 4)))]
+                 (+ (first xs) (first (rest xs)))))")))
+  (is (= 15 (execute-main
+             (str naturals-source
+                  " (defn main []
+                       (let [offset 3 f (fn [x] (+ x offset))
+                             xs (take 3 (lazy-map f (naturals 1)))]
+                         (+ (first xs)
+                            (+ (first (rest xs))
+                               (first (rest (rest xs)))))))"))))
+  (is (= 11 (execute-main
+             "(defn one [x] (lazy-cons x 0))
+              (defn main []
+                (let [bias 1
+                      add4 (fn [a b c d] (+ bias (+ a (+ b (+ c d)))))]
+                  (lazy-first
+                   (lazy-map add4 (one 1) (one 2) (one 3) (one 4)))))")))
+  (is (= 1 (execute-main
+            "(defn finite [n limit]
+               (if (> n limit) 0 (lazy-cons n (finite (+ n 1) limit))))
+             (defn add [a b] (+ a b))
+             (defn main []
+               (if (lazy-empty?
+                    (drop 2 (lazy-map add (finite 1 3) (finite 3 4))))
+                 1 0))"))))
+
+(deftest lazy-filter-uses-bool-closures-and-terminates-on-rejection
+  (is (= 12 (execute-main
+             (str naturals-source
+                  " (defn main []
+                       (let [minimum 2 keep? (fn [x] (> x minimum))
+                             xs (take 3 (lazy-filter keep? (naturals 1)))]
+                         (+ (first xs)
+                            (+ (first (rest xs))
+                               (first (rest (rest xs)))))))"))))
+  (is (= 1 (execute-main
+            "(defn finite [n]
+               (if (> n 3) 0 (lazy-cons n (finite (+ n 1)))))
+             (defn main []
+               (if (lazy-empty? (lazy-filter (fn [x] (> x 9)) (finite 0))) 1 0))"))))
+
+(deftest lazy-hof-callback-effects-are-rejected
+  (is (re-find #"must be effect-free"
+               (rejection-message
+                "(defn effectful [x] (cap-call 1 x))
+                 (defn source [] (lazy-cons 1 0))
+                 (defn main [] (lazy-map effectful (source)))"))))
+
 (deftest lazy-core-lowers-reproducibly-to-wasm
   (let [source (str naturals-source
                     " (defn main [] (lazy-first (drop 4 (naturals 38))))")
