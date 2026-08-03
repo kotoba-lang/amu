@@ -76,6 +76,7 @@ const ALLOWED_IMPORTS = new Set([
   "kotoba:typed/document-f64/function",
   "kotoba:typed/document-string/function",
   "kotoba:typed/document-keyword/function",
+  "kotoba:typed/document-symbol/function",
   "kotoba:typed/document-kind/function",
   "kotoba:typed/document-sha256/function",
   "kotoba:typed/document-print/function",
@@ -95,6 +96,7 @@ const ALLOWED_IMPORTS = new Set([
   "kotoba:typed/document-merge/function",
   "kotoba:typed/document-string-value/function",
   "kotoba:typed/document-keyword-value/function",
+  "kotoba:typed/document-symbol-value/function",
   "kotoba:typed/document-bool-value/function",
   "kotoba:typed/document-i64-value/function",
   "kotoba:typed/document-f64-value/function",
@@ -490,6 +492,12 @@ function createTypedRuntime(abi, typedCapCall, allow) {
       }
       if (tag === "string") return finish(Object.freeze([tag, text(payload)]));
       if (tag === "keyword") return finish(Object.freeze([tag, text(payload, true)]));
+      if (tag === "symbol") {
+        if (typeof payload !== "string" || payload.length === 0 || payload.startsWith(":") ||
+            utf8Length(payload) > 512)
+          reject("invalid-typed-value", "document symbol is invalid");
+        return finish(Object.freeze([tag, text(payload)]));
+      }
       if (tag === "vector") {
         if (!Array.isArray(payload) || Object.getPrototypeOf(payload) !== Array.prototype || payload.length > 32)
           reject("invalid-typed-value", "document vector is invalid or oversized");
@@ -542,7 +550,7 @@ function createTypedRuntime(abi, typedCapCall, allow) {
   };
   // Shared with kotoba-kir value/document-canonical-bytes + kotoba-script docCanonicalBytes.
   // Format: n | b t/f | i <decimal> ; | f <i64-bits-decimal> ; |
-  // s <utf8-len> : <bytes> | k <utf8-len> : <keyword-str> |
+  // s <utf8-len> : <bytes> | k <utf8-len> : <keyword-str> | y <utf8-len> : <symbol> |
   // v <count> : <items...> | m <count> : (K <key-len> : <key-bytes> <item>)*
   const documentCanonicalBytes = node => {
     const out = [];
@@ -573,6 +581,7 @@ function createTypedRuntime(abi, typedCapCall, allow) {
       }
       if (t === "string") { emit(115); emitLenStr(n[1]); return; }
       if (t === "keyword") { emit(107); emitLenStr(String(n[1])); return; }
+      if (t === "symbol") { emit(121); emitLenStr(String(n[1])); return; }
       if (t === "vector") {
         emit(118); emitStr(String(n[1].length)); emit(58);
         for (const it of n[1]) walk(it);
@@ -695,6 +704,7 @@ function createTypedRuntime(abi, typedCapCall, allow) {
         if (!k.startsWith(":")) reject("invalid-typed-value", "document-read keyword must start with colon");
         return Object.freeze(["keyword", k]);
       }
+      if (tag === 121) return Object.freeze(["symbol", takeLenStr()]);
       if (tag === 118) {
         const n = Number(takeUntil(58));
         if (!Number.isInteger(n) || n < 0 || n > 32)
@@ -747,6 +757,7 @@ function createTypedRuntime(abi, typedCapCall, allow) {
       }
       if (tag === "string") return JSON.stringify(payload);
       if (tag === "keyword") return payload;
+      if (tag === "symbol") return payload;
       if (tag === "vector") return `[${payload.map(walk).join(" ")}]`;
       if (tag === "map") return `{${payload.map(([key, item]) => `${key} ${walk(item)}`).join(" ")}}`;
       reject("invalid-typed-value", "unknown document tag for EDN printer");
@@ -858,7 +869,8 @@ function createTypedRuntime(abi, typedCapCall, allow) {
         return ["f64", parsed];
       }
       if (item.length > 1 && item[0] === ":") return ["keyword", item];
-      fail("unsupported token");
+      if (item[0] === ":") fail("invalid keyword");
+      return ["symbol", item];
     };
     skip();
     const document = value(0);
@@ -1765,6 +1777,11 @@ function createTypedRuntime(abi, typedCapCall, allow) {
         reject("invalid-typed-operation", "document descriptor required");
       return constructDocument(["keyword", item]);
     },
+    "document-symbol"(descriptorId, item) {
+      if (descriptorAt(descriptorId) !== documentDescriptor)
+        reject("invalid-typed-operation", "document descriptor required");
+      return constructDocument(["symbol", item]);
+    },
     "document-kind"(descriptorId, value) {
       if (descriptorAt(descriptorId) !== documentDescriptor)
         reject("invalid-typed-operation", "document descriptor required");
@@ -1898,6 +1915,11 @@ function createTypedRuntime(abi, typedCapCall, allow) {
       if (descriptorAt(descriptorId) !== documentDescriptor)
         reject("invalid-typed-operation", "document descriptor required");
       value = assertDocument(value); return documentOption("keyword", value[0] === "keyword", value[1]);
+    },
+    "document-symbol-value"(descriptorId, value) {
+      if (descriptorAt(descriptorId) !== documentDescriptor)
+        reject("invalid-typed-operation", "document descriptor required");
+      value = assertDocument(value); return documentOption("symbol", value[0] === "symbol", value[1]);
     },
     "document-bool-value"(descriptorId, value) {
       if (descriptorAt(descriptorId) !== documentDescriptor)

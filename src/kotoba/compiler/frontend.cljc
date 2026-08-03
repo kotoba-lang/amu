@@ -173,12 +173,12 @@
     disjoint-set-i64-new 1 disjoint-set-i64-count 1 disjoint-set-i64-union 3})
 (def document-fixed-operations
   '{document-null 0 document-bool 1 document-i64 1 document-f64 1
-    document-string 1 document-keyword 1 document-count 1 document-kind 1 document-sha256 1 document-print 1 document-read 1
+    document-string 1 document-keyword 1 document-symbol 1 document-count 1 document-kind 1 document-sha256 1 document-print 1 document-read 1
     document-edn-print 1 document-edn-read 1
     document-vector-at 2 document-map-entry-at 2 document-vector-assoc 3 document-vector-conj 2
     document-vector-drop 2 document-vector-remove 2
     document-equal? 2 document-contains 2 document-get 2 document-assoc 3 document-dissoc 2
-    document-merge 2 document-string-value 1 document-keyword-value 1 document-bool-value 1
+    document-merge 2 document-string-value 1 document-keyword-value 1 document-symbol-value 1 document-bool-value 1
     document-i64-value 1 document-f64-value 1})
 (def document-variadic-operations '#{document-vector document-map})
 (def sequencing-operations '#{do})
@@ -3020,6 +3020,8 @@
       (do (require-expression-type! (first types) :string (first args)) :document)
       (= op 'document-keyword)
       (do (require-expression-type! (first types) :keyword (first args)) :document)
+      (= op 'document-symbol)
+      (do (require-expression-type! (first types) :symbol (first args)) :document)
       (= op 'document-vector)
       (do (doseq [[arg type] (map vector args types)]
             (require-expression-type! type :document arg)) :document)
@@ -3084,6 +3086,8 @@
       (do (require-expression-type! (first types) :document (first args)) [:option :string])
       (= op 'document-keyword-value)
       (do (require-expression-type! (first types) :document (first args)) [:option :keyword])
+      (= op 'document-symbol-value)
+      (do (require-expression-type! (first types) :document (first args)) [:option :symbol])
       (= op 'document-bool-value)
       (do (require-expression-type! (first types) :document (first args)) [:option :bool])
       (= op 'document-i64-value)

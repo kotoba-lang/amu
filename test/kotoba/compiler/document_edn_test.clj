@@ -6,7 +6,7 @@
 
 (def source
   "(ns data.document-edn
-     (:export [main value printed same commented bad-tag bad-set bad-duplicate bad-limit]))
+     (:export [main value printed same commented symbol-doc symbol-text parsed-symbol symbol-value bad-tag bad-set bad-duplicate bad-limit]))
    (defn main [] :i64 42)
    (defn value [] :document
      (document-map
@@ -19,6 +19,10 @@
      (document-equal? (value) (document-edn-read (document-edn-print (value)))))
    (defn commented [] :document
      (document-edn-read \"; policy\\n{:b false, :a 1}\"))
+   (defn symbol-doc [] :document (document-symbol (symbol \"actor/run\")))
+   (defn symbol-text [] :string (document-edn-print (symbol-doc)))
+   (defn parsed-symbol [] :document (document-edn-read \"actor/run\"))
+   (defn symbol-value [] [:option :symbol] (document-symbol-value (parsed-symbol)))
    (defn bad-tag [] :document (document-edn-read \"#inst \\\"2026-08-03\\\"\"))
    (defn bad-set [] :document (document-edn-read \"#{:a}\"))
    (defn bad-duplicate [] :document (document-edn-read \"{:a 1 :a 2}\"))
@@ -49,8 +53,9 @@
   (str "const x=" "RUNTIME" ";"
        "if(x.printed()!==" (pr-str expected) ")process.exit(2);"
        "if(!(x.same()===true||x.same()===1||x.same()===1n))process.exit(3);"
+       "if(x['symbol-text']()!=='actor/run'||x['parsed-symbol']()[0]!=='symbol')process.exit(4);"
        "for(const name of ['bad-tag','bad-set','bad-duplicate','bad-limit']){"
-       "let denied=false;try{x[name]()}catch(e){denied=true}if(!denied)process.exit(4);}"
+       "let denied=false;try{x[name]()}catch(e){denied=true}if(!denied)process.exit(5);}"
        "console.log('ok');"))
 
 (deftest textual-edn-document-codec-is-backend-identical
