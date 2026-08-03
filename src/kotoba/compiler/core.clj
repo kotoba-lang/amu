@@ -74,6 +74,117 @@
 ;; `kotoba.kir/only-native-word-typed-features?` so both
 ;; compile paths admit the exact same native-typed-feature subset.
 
+(def ^:private cljs-bounded-vector-ops
+  '#{vector-new vector-count vector-get vector-at vector-drop vector-assoc vector-conj
+     hetero-vector-new hetero-vector-count hetero-vector-at
+     hetero-vector-assoc hetero-vector-equal})
+
+(defn- cljs-bounded-vector-type?
+  "The closed typed-value universe implemented by backend.cljs for pure
+  collection code.  This intentionally excludes every provider/document/
+  record/map/set family; widening the CLJS target is permitted only when both
+  its boundary validator and expression lowerer own the representation."
+  ([type] (cljs-bounded-vector-type? type 0))
+  ([type depth]
+   (and (<= depth 8)
+        (or (contains? #{:i64 :bool :vector-i64} type)
+            (and (vector? type)
+                 (= :vector (first type))
+                 (= 2 (count type))
+                 (vector? (second type))
+                 (<= (count (second type)) 32)
+                 (every? #(cljs-bounded-vector-type? % (inc depth))
+                         (second type)))))))
+
+(defn- only-cljs-bounded-vector-features?
+  "Admit only the typed vector slice for which backend.cljs has exact
+  lowering.  Generic scalar control flow and named calls remain available;
+  any other typed operation stays fail-closed through ir/non-string-typed-ops."
+  [hir]
+  (letfn [(walk [form]
+            (cond
+              (or (integer? form) (symbol? form) (boolean? form)) true
+              (or (nil? form) (string? form) (keyword? form)) false
+              (seq? form)
+              (let [[op & args] form]
+                (cond
+                  (= op 'let)
+                  (let [[bindings body] args]
+                    (and (= 2 (count args))
+                         (vector? bindings)
+                         (even? (count bindings))
+                         (every? symbol? (take-nth 2 bindings))
+                         (every? walk (take-nth 2 (rest bindings)))
+                         (walk body)))
+
+                  (= op 'hetero-vector-new)
+                  (let [[type & items] args]
+                    (and (cljs-bounded-vector-type? type)
+                         (= :vector (first type))
+                         (= (count (second type)) (count items))
+                         (every? walk items)))
+
+                  (= op 'hetero-vector-count)
+                  (let [[type value] args]
+                    (and (= 2 (count args))
+                         (cljs-bounded-vector-type? type)
+                         (= :vector (first type))
+                         (walk value)))
+
+                  (= op 'hetero-vector-at)
+                  (let [[type value index] args]
+                    (and (= 3 (count args))
+                         (cljs-bounded-vector-type? type)
+                         (= :vector (first type))
+                         (integer? index)
+                         (<= 0 index)
+                         (< index (count (second type)))
+                         (walk value)))
+
+                  (= op 'hetero-vector-assoc)
+                  (let [[type value index item] args]
+                    (and (= 4 (count args))
+                         (cljs-bounded-vector-type? type)
+                         (= :vector (first type))
+                         (integer? index)
+                         (<= 0 index)
+                         (< index (count (second type)))
+                         (walk value)
+                         (walk item)))
+
+                  (= op 'hetero-vector-equal)
+                  (let [[type left right] args]
+                    (and (= 3 (count args))
+                         (cljs-bounded-vector-type? type)
+                         (= :vector (first type))
+                         (walk left)
+                         (walk right)))
+
+                  (contains? cljs-bounded-vector-ops op)
+                  (every? walk args)
+
+                  :else
+                  (and (not (contains? ir/non-string-typed-ops op))
+                       (every? walk args))))
+              :else false))]
+    (every? (fn [{:keys [param-types result body]}]
+              (and (every? cljs-bounded-vector-type? param-types)
+                   (cljs-bounded-vector-type? result)
+                   (walk body)))
+            (:functions hir))))
+
+(defn- only-cljs-implemented-typed-features?
+  "Compose the two CLJS-owned typed slices per function.  Checking per
+  function matters: a real application module may expose provider-boundary
+  functions and pure vector-processing functions together even though no
+  individual function needs to mix their representations."
+  [hir]
+  (every? (fn [function]
+            (let [single-function-hir (assoc hir :functions [function])]
+              (or (ir/only-cljs-provider-typed-features? single-function-hir)
+                  (only-cljs-bounded-vector-features? single-function-hir))))
+          (:functions hir)))
+
 
 (defn- capability-deny-message
   "T3.2: name missing grant / effect / policy in admission denials."
@@ -356,7 +467,7 @@
         _ (when (and (= :kotoba.hir/v3 (:format hir))
                      (not (contains? #{:js-kotoba-v1 :wasm32-kotoba-v1} backend))
                      (not (and (= :cljs-kotoba-v1 backend)
-                               (ir/only-cljs-provider-typed-features? hir)))
+                               (only-cljs-implemented-typed-features? hir)))
                      (not (and (contains? #{:x86_64-kotoba-v1 :aarch64-kotoba-v1} backend)
                                (ir/only-native-word-typed-features? hir))))
             (throw (ex-info "typed values currently require the kotoba-script web target, typed Wasm/CLJS target, or the qualified native one-word string/record/variant/option/result slice"
