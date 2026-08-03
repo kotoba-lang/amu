@@ -623,26 +623,26 @@
          JVM-side oracle-value check)")))
 
 ;; ADR 0062 fail-closed requirement: a record field type this native
-;; increment does not admit (`:string`, disjoint from
-;; `ir/native-scalar-record-field-types` = `#{:i64 :bool}`) must be
+;; increment does not admit (`:symbol`, disjoint from the native word field
+;; profile) must be
 ;; rejected at COMPILE TIME with a clear error, never silently miscompiled.
-;; The function's own declared result type is annotated `:string` (matching
+;; The function's own declared result type is annotated `:symbol` (matching
 ;; the field it projects) so this negative vector exercises ONLY the
 ;; native-target record-field-type gate, not an unrelated generic
 ;; function-result type mismatch that would fire even before that gate is
 ;; reached.
 (deftest native-record-with-an-unsupported-field-type-is-rejected-at-compile-time
-  (let [schema (pr-str '[:record :native/string-field-record [[:s :string]]])
+  (let [schema (pr-str '[:record :native/symbol-field-record [[:s :symbol]]])
         source (str
-                "(defn project-s [] :string
-                   (record-get " schema " (record-new " schema " \"x\") :s))
+                "(defn project-s [] :symbol
+                   (record-get " schema " (record-new " schema " (symbol \"x\")) :s))
                  (defn main [] 0)")]
     (is (thrown-with-msg? clojure.lang.ExceptionInfo
                           #"qualified native"
                           (compiler/compile-source source (target))))
     ;; Confirms the rejection is native-specific admission, not a generic
     ;; type error: the identical source compiles fine on the Wasm target,
-    ;; which already supports string-bearing records (ADR 0053).
+    ;; which already supports symbol-bearing records.
     (is (= :wasm/v1 (:format (compiler/compile-source source :wasm32-kotoba-v1))))))
 
 ;; ADR 0062 fail-closed requirement (second vector): `record-get`'s value
@@ -723,20 +723,20 @@
 
 ;; ADR 0063 fail-closed requirement (first vector, mirroring ADR 0062's own
 ;; first vector exactly): a variant case payload type this increment does
-;; not admit (`:string`, disjoint from `ir/native-scalar-variant-type?`'s
-;; `:i64`/`:bool` universe) is rejected at COMPILE TIME with the expected
+;; not admit (`:symbol`, disjoint from the native word payload profile) is
+;; rejected at COMPILE TIME with the expected
 ;; native-admission error message, confirmed to be the native-specific gate
 ;; and not an unrelated generic type error by additionally confirming the
 ;; IDENTICAL source compiles successfully on `:wasm32-kotoba-v1` (whose
-;; typed backend admits arbitrary typed values, including a string-cased
+;; typed backend admits arbitrary typed values, including a symbol-cased
 ;; variant, unconditionally -- see `core.clj`'s own comment on why
 ;; `:wasm32-kotoba-v1`/`:js-kotoba-v1` need no content-based ir check at
 ;; all).
 (deftest native-variant-with-an-unsupported-case-payload-type-is-rejected-at-compile-time
-  (let [schema (pr-str '[:variant :native/string-case-variant [[:s :string]]])
+  (let [schema (pr-str '[:variant :native/symbol-case-variant [[:s :symbol]]])
         source (str
-                "(defn project-s [] :string
-                   (variant-match " schema " (variant-new " schema " :s \"x\") [[:s v v]]))
+                "(defn project-s [] :symbol
+                   (variant-match " schema " (variant-new " schema " :s (symbol \"x\")) [[:s v v]]))
                  (defn main [] 0)")]
     (is (thrown-with-msg? clojure.lang.ExceptionInfo
                           #"qualified native"
