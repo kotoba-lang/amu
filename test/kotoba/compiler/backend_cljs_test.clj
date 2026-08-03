@@ -359,6 +359,69 @@
       (is (zero? (:exit execution)) (:err execution))
       (is (= "typed-provider-full-i64-ok\n" (:out execution))))))
 
+(deftest bounded-vector-operations-execute-on-cljs
+  (let [source "(defn main []
+  (let [items (vector-conj (vector-drop (vector-assoc [1 2 3] 1 7) 1) 9)]
+    (+ (vector-count items)
+       (+ (vector-at items 0) (vector-get items 9 4)))))"
+        compiled (compile-cljs source)
+        ns (eval-in-fresh-ns (:source compiled))]
+    (is (= 14 (:oracle-value (:kir compiled))))
+    (is (= 14 (call ns 'main)))))
+
+(deftest vector-get-preserves-lazy-fallback-semantics
+  (let [compiled (compile-cljs
+                  "(defn main [] (vector-get [7] 0 (quot 1 0)))")
+        ns (eval-in-fresh-ns (:source compiled))]
+    (is (= 7 (call ns 'main)))))
+
+(deftest real-nbb-accepts-full-i64-vector-values-and-indices
+  (let [compiled (compile-cljs
+                  "(ns demo.vector-i64 (:export [pick]))
+                   (defn pick [items :vector-i64 index :i64] :i64
+                     (vector-at items index))")
+        script (doto (java.io.File/createTempFile "kotoba-vector-i64-" ".cljs")
+                 (.deleteOnExit))]
+    (spit script
+          (str (:source compiled) "\n"
+               "(def item (js/BigInt \"9223372036854775807\"))\n"
+               "(def index (js/BigInt \"0\"))\n"
+               "(when-not (= item (pick [item] index)) "
+               "  (throw (ex-info \"vector-i64-bigint-mismatch\" {})))\n"
+               "(println \"vector-i64-bigint-ok\")\n"))
+    (let [execution (shell/sh "npx" "nbb" (.getPath script))]
+      (is (zero? (:exit execution)) (:err execution))
+      (is (= "vector-i64-bigint-ok\n" (:out execution))))))
+
+(deftest five-source-map-executes-packed-state-on-cljs
+  (let [source "(defn sum-five [a b c d e] (+ a (+ b (+ c (+ d e)))))
+(defn main [] (vector-at (map sum-five [1] [2] [3] [4] [5]) 0))"
+        compiled (compile-cljs source)
+        ns (eval-in-fresh-ns (:source compiled))]
+    (is (= 15 (:oracle-value (:kir compiled))))
+    (is (= 15 (call ns 'main)))))
+
+(deftest cljs-module-composes-provider-boundaries-with-vector-processing
+  (let [request-type [:record :demo.composed/request [[:value :i64]]]
+        result-type [:record :demo.composed/result [[:value :i64]]]
+        source (str "(ns demo.composed (:export [post-request main]) "
+                    "(:capabilities #{:http/post}))"
+                    (typed-function "post-request" ":http/post" request-type result-type)
+                    "(defn sum-three [a b c] (+ a (+ b c)))"
+                    "(defn main [] (vector-at (map sum-three [1] [2] [3]) 0))")
+        compiled (compile-cljs source {:allow #{[:cap/call 4]}})
+        ns (eval-in-fresh-ns (:source compiled))]
+    (is (= 6 (call ns 'main)))))
+
+(deftest cljs-vector-runtime-enforces-the-declared-item-bound
+  (let [compiled (compile-cljs
+                  "(ns demo.vector-bound (:export [append]))
+                   (defn append [items :vector-i64 item :i64] :vector-i64
+                     (vector-conj items item))")
+        ns (eval-in-fresh-ns (:source compiled))]
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"vector-too-large"
+                          (call ns 'append (vec (repeat 16384 1)) 2)))))
+
 (deftest cljs-typed-admission-remains-narrow-to-boundaries
   (is (thrown-with-msg?
        clojure.lang.ExceptionInfo #"typed values currently require"
