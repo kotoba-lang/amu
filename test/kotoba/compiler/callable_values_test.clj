@@ -115,6 +115,10 @@
   (is (= 2 (execute-main
             "(defn main []
                (string-length (invoke :string (fn [x] (string-from-i64 x)) 42)))")))
+  (is (= 1 (execute-main
+            "(defn main []
+               (document-count
+                (invoke :document (fn [x] (document-vector (document-i64 x))) 42)))")))
   (testing "a closure from a different result family traps closed"
     (is (thrown? clojure.lang.ExceptionInfo
                  (execute-main
@@ -129,7 +133,33 @@
     (is (thrown? clojure.lang.ExceptionInfo
                  (execute-main
                   "(defn main []
-                     (string-length (invoke :string (fn [x] (+ x 1)) 3)))")))))
+                     (string-length (invoke :string (fn [x] (+ x 1)) 3)))"))))
+  (testing "a document dispatcher rejects a scalar-returning closure"
+    (is (thrown? clojure.lang.ExceptionInfo
+                 (execute-main
+                  "(defn main []
+                     (document-count (invoke :document (fn [x] (+ x 1)) 3)))")))))
+
+(deftest lexical-document-results-use-contextual-application-syntax
+  (is (= 1 (execute-main
+            "(defn main []
+               (let [build (fn [x] (document-vector (document-i64 x)))]
+                 (document-count (build 42))))")))
+  (is (= 1 (execute-main
+            "(defn build-with [f] :document
+               (let [n 42] (if (> n 0) (f n) (document-null))))
+             (defn main []
+               (document-count
+                (build-with (fn [x] (document-vector (document-i64 x))))))")))
+  (is (= 2 (execute-main
+            "(defn main []
+               (let [build (fn [x] (document-i64 x))]
+                 (document-count (document-vector (build 1) (build 2)))))")))
+  (is (= 1 (execute-main
+            "(defn build [x :i64] :document
+               (document-vector (document-i64 x)))
+             (defn main []
+               (document-count (invoke :document (fn-ref build) 42)))"))))
 
 (deftest lexical-string-results-use-contextual-application-syntax
   (is (= 2 (execute-main
@@ -242,5 +272,16 @@
         wasm-a (compiler/compile-source source :wasm32-browser-kotoba-v1)
         wasm-b (compiler/compile-source source :wasm32-browser-kotoba-v1)]
     (is (= 2 (kir/execute (:kir js) 'main [])))
+    (is (= (:kir wasm-a) (:kir wasm-b)))
+    (is (java.util.Arrays/equals ^bytes (:bytes wasm-a) ^bytes (:bytes wasm-b)))))
+
+(deftest document-returning-closures-lower-reproducibly-for-js-and-wasm
+  (let [source "(defn main []
+                  (let [build (fn [x] (document-vector (document-i64 x)))]
+                    (document-count (build 42))))"
+        js (compiler/compile-source source :js-kotoba-v1)
+        wasm-a (compiler/compile-source source :wasm32-browser-kotoba-v1)
+        wasm-b (compiler/compile-source source :wasm32-browser-kotoba-v1)]
+    (is (= 1 (kir/execute (:kir js) 'main [])))
     (is (= (:kir wasm-a) (:kir wasm-b)))
     (is (java.util.Arrays/equals ^bytes (:bytes wasm-a) ^bytes (:bytes wasm-b)))))

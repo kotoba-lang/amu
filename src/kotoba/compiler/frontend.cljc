@@ -191,6 +191,34 @@
     xml-path-attr #{0 1 3}
     decimal-f64-parse #{0}
     decimal-f64x3-parse #{0}})
+(def ^:private contextual-document-argument-indexes
+  "Builtin argument positions whose declared type selects the closed document
+  closure dispatcher. Ambiguous map keys remain uncontextualized."
+  '{document-count #{0}
+    document-kind #{0}
+    document-sha256 #{0}
+    document-print #{0}
+    document-edn-print #{0}
+    document-vector-at #{0}
+    document-list-at #{0}
+    document-map-entry-at #{0}
+    document-vector-assoc #{0 2}
+    document-vector-conj #{0 1}
+    document-vector-drop #{0}
+    document-vector-remove #{0}
+    document-equal? #{0 1}
+    document-set-contains? #{0 1}
+    document-contains #{0}
+    document-get #{0}
+    document-assoc #{0 2}
+    document-dissoc #{0}
+    document-merge #{0 1}
+    document-string-value #{0}
+    document-keyword-value #{0}
+    document-symbol-value #{0}
+    document-bool-value #{0}
+    document-i64-value #{0}
+    document-f64-value #{0}})
 (def typed-f64-vector-operations
   '{vector-f64-count 1 vector-f64-get 3 vector-f64-at 2 vector-f64-drop 2
     vector-f64-assoc 3 vector-f64-conj 2})
@@ -700,7 +728,7 @@
 (def ^:dynamic *contextual-closure-result-type* nil)
 (def ^:dynamic *required-closure-dispatchers* nil)
 
-(def ^:private closure-result-types #{:i64 :bool :string :vector-i64})
+(def ^:private closure-result-types #{:i64 :bool :string :vector-i64 :document})
 
 (defn- invoke-dispatcher-name
   ([arity] (invoke-dispatcher-name :i64 arity))
@@ -853,6 +881,9 @@
                         :bool '(= (quot 1 0) 0)
                         :string '(if (= (quot 1 0) 0) "" "")
                         :vector-i64 '(vector-drop (vector-new) 1)
+                        :document '(if (= (quot 1 0) 0)
+                                     (document-null)
+                                     (document-null))
                         '(quot 1 0))
              body (reduce
                    (fn [fallback {:keys [id captures helper]}]
@@ -2146,6 +2177,28 @@
                                  arg))
                               args)))
 
+        (contains? contextual-document-argument-indexes op)
+        (let [document-indexes (get contextual-document-argument-indexes op)]
+          (apply list op
+                 (map-indexed (fn [index arg]
+                                ((if (contains? document-indexes index)
+                                   #(desugar-result-expr :document %)
+                                   desugar-expr)
+                                 arg))
+                              args)))
+
+        (contains? '#{document-vector document-list document-set} op)
+        (apply list op (map #(desugar-result-expr :document %) args))
+
+        (= 'document-map op)
+        (apply list op
+               (map-indexed (fn [index arg]
+                              ((if (odd? index)
+                                 #(desugar-result-expr :document %)
+                                 desugar-expr)
+                               arg))
+                            args))
+
         (contains? typed-vector-operations op)
         (do
           (when-not (= (get typed-vector-operations op) (count args))
@@ -2196,7 +2249,7 @@
                 result-type (if typed? (first args) :i64)
                 call-args (if typed? (rest args) args)]
             (when-not (<= 1 (count call-args) 5)
-              (reject! "invoke requires an optional :i64/:bool/:string/:vector-i64 result type, a closure, and zero to four arguments"
+              (reject! "invoke requires an optional :i64/:bool/:string/:vector-i64/:document result type, a closure, and zero to four arguments"
                        form))
             (apply list (request-invoke-dispatcher result-type (dec (count call-args)))
                    (map desugar-expr call-args))))
