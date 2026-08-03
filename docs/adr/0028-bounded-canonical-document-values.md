@@ -18,8 +18,9 @@ Introduce a distinct immutable `:document` value in typed ABI v11. A document
 is a canonical tagged tree, never a host object. Its admitted nodes are:
 
 - null;
-- boolean, signed i64, finite f64, bounded string, or bounded keyword;
-- a vector of document nodes;
+- boolean, signed i64, finite f64, bounded string, bounded keyword, or bounded
+  symbol;
+- a vector, list, or set of document nodes;
 - a map from bounded keywords to document nodes.
 
 Every value is validated as a whole with all of these fixed limits:
@@ -27,10 +28,13 @@ Every value is validated as a whole with all of these fixed limits:
 - maximum depth 8;
 - maximum 256 nodes;
 - maximum 32 entries in any map;
-- maximum 32 items in any vector;
-- maximum 65,536 aggregate UTF-8 bytes across strings, keywords, and keys;
+- maximum 32 items in any vector, list, or set;
+- maximum 65,536 aggregate UTF-8 bytes across strings, keywords, symbols, and
+  keys;
 - unique map keys in canonical keyword order;
-- no NaN, infinity, functions, symbols, host references, prototypes, getters,
+- unique set items in the unsigned lexicographic order of their canonical
+  document bytes;
+- no NaN, infinity, functions, host references, prototypes, getters,
   cycles, or shared mutable containers.
 
 Construction and update operations return newly frozen/canonical values.
@@ -41,10 +45,17 @@ must handle a kind mismatch explicitly. Runtime operations are pure and grant
 no capability.
 
 The constructor surface is `document-null`, scalar constructors for
-bool/i64/f64/string/keyword, `document-vector`, and `document-map`. Container
-operations are count, contains, get, assoc, dissoc, and right-biased merge.
-String, bool, i64, and f64 accessors return typed options. Container-kind or
+bool/i64/f64/string/keyword/symbol, `document-vector`, `document-list`,
+`document-set`, and `document-map`. Container operations are count, set
+membership, map contains/get/assoc/dissoc, and right-biased map merge. String,
+bool, i64, and f64 accessors return typed options. Container-kind or
 scalar-kind mismatches trap; no coercion or truthiness conversion occurs.
+
+Canonical binary encoding and bounded EDN reading/printing cover every
+admitted node. The binary encoding defines document identity and the total
+order used by sets. Keeping that order independent of host comparison rules is
+also the required substrate for a future map profile with arbitrary document
+keys; the current map remains keyword-keyed.
 
 Typed Wasm ABI v11 assigns descriptor tag 18 to `:document`. The browser host
 admits older ABIs unchanged and exposes document imports only when the sealed
@@ -60,9 +71,9 @@ preferred when a schema is closed. `:document` is the bounded extension seam,
 not a replacement for application schemas.
 
 Qualification covers the reference evaluator, restricted JavaScript, real
-typed Wasm instantiation, hostile host values, limits, canonicalization, and
-persistent updates in `document-value-test`. The browser host regression suite
-also proves continued admission of ABI versions 5 through 10, while modules
-using `:document` select ABI v11. `kotoba-lang/annotation` is the first fleet
-consumer and remains a separate migration so compiler publication is its
-immutable dependency boundary.
+typed Wasm instantiation, hostile host values, limits, canonicalization,
+bounded EDN round trips, set duplicate rejection, and persistent updates. The
+browser host regression suite also proves continued admission of ABI versions
+5 through 10, while modules using `:document` select ABI v11.
+`kotoba-lang/annotation` is the first fleet consumer and remains a separate
+migration so compiler publication is its immutable dependency boundary.
