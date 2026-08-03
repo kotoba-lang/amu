@@ -164,6 +164,33 @@
 (def record-operations '#{record-new record-get record-assoc record-equal})
 (def typed-vector-operations
   '{vector-count 1 vector-get 3 vector-at 2 vector-drop 2 vector-assoc 3 vector-conj 2})
+(def ^:private contextual-string-argument-indexes
+  "Builtin argument positions whose declared type selects the closed string
+  closure dispatcher. This is elaboration context, not dynamic overloading."
+  '{string-byte-length #{0}
+    string=? #{0 1}
+    string-concat #{0 1}
+    string-substring #{0}
+    string-replace-all #{0 1 2}
+    string-contains? #{0 1}
+    string-split-count #{0 1}
+    string-fold-case #{0}
+    string-code-point-at #{0}
+    keyword-from-string #{0}
+    symbol #{0}
+    string-index-contains #{1}
+    string-index-get #{1}
+    string-index-assoc #{1}
+    document-string #{0}
+    document-read #{0}
+    document-edn-read #{0}
+    xml-path-count #{0 1}
+    xml-name-count #{0 1}
+    xml-name-text #{0 1}
+    xml-path-text #{0 1}
+    xml-path-attr #{0 1 3}
+    decimal-f64-parse #{0}
+    decimal-f64x3-parse #{0}})
 (def typed-f64-vector-operations
   '{vector-f64-count 1 vector-f64-get 3 vector-f64-at 2 vector-f64-drop 2
     vector-f64-assoc 3 vector-f64-conj 2})
@@ -670,8 +697,10 @@
 (def ^:dynamic *uses-lazy?* nil)
 (def ^:dynamic *lifting-lazy-thunk?* false)
 (def ^:dynamic *lexical-bindings* #{})
+(def ^:dynamic *contextual-closure-result-type* nil)
+(def ^:dynamic *required-closure-dispatchers* nil)
 
-(def ^:private closure-result-types #{:i64 :bool :vector-i64})
+(def ^:private closure-result-types #{:i64 :bool :string :vector-i64})
 
 (defn- invoke-dispatcher-name
   ([arity] (invoke-dispatcher-name :i64 arity))
@@ -682,6 +711,11 @@
    (symbol (str "__kotoba_invoke"
                 (when-not (= :i64 result-type) (str "_" (name result-type)))
                 "$arity" arity))))
+
+(defn- request-invoke-dispatcher [result-type arity]
+  (when *required-closure-dispatchers*
+    (vswap! *required-closure-dispatchers* conj [result-type arity]))
+  (invoke-dispatcher-name result-type arity))
 
 (def ^:private non-shadowable-special-heads '#{let if do fn loop recur})
 
@@ -695,21 +729,27 @@
   (let [[closure & args] form]
     (when (> (count args) 4)
       (reject! "direct closure call exceeds ABI arity four" form))
-    (apply list (invoke-dispatcher-name result-type (count args)) closure
+    (apply list (request-invoke-dispatcher result-type (count args)) closure
            (map desugar-expr args))))
 
 (defn- desugar-result-expr
   "Desugar an expression in a context with a known closure result family.
-  Only a lexical call head needs special treatment; ordinary expressions keep
-  their existing type-directed lowering, and nested operands do not
-  accidentally inherit the enclosing result type."
+  The expectation follows value-producing tail positions, while ordinary
+  operands are desugared without inheriting it."
   [result-type form]
-  (if (lexical-call-form? form)
-    (desugar-lexical-call result-type form)
+  (binding [*contextual-closure-result-type* result-type]
     (desugar-expr form)))
 
 (defn- desugar-bool-expr [form]
   (desugar-result-expr :bool form))
+
+(defn- desugar-tail-expressions [result-type forms]
+  (let [last-index (dec (count forms))]
+    (mapv (fn [index form]
+            (if (and result-type (= index last-index))
+              (desugar-result-expr result-type form)
+              (desugar-expr form)))
+          (range (count forms)) forms)))
 
 (defn- nth-pair-second [expr n]
   (nth (iterate (fn [value] (list 'pair-second value)) expr) n))
@@ -793,14 +833,12 @@
                      lowered)))
       (list 'pair id (desugar-list captures form)))))
 
-(defn- lambda-dispatchers [lambda-infos required-i64-arities]
+(defn- lambda-dispatchers [lambda-infos required-dispatchers]
   (let [requested (into #{}
                         (mapcat (fn [{:keys [arity helper]}]
                                   [[:i64 arity] [(:result helper) arity]]))
                         lambda-infos)
-        requested (into requested
-                        (map (fn [arity] [:i64 arity]))
-                        required-i64-arities)]
+        requested (into requested required-dispatchers)]
     (mapv
      (fn [[result-type arity]]
        (let [closure (symbol (str "__kotoba_closure_" (name result-type) "_" arity))
@@ -813,6 +851,7 @@
              ;; trap instead of silently coercing it to false/zero.
              fallback (case result-type
                         :bool '(= (quot 1 0) 0)
+                        :string '(if (= (quot 1 0) 0) "" "")
                         :vector-i64 '(vector-drop (vector-new) 1)
                         '(quot 1 0))
              body (reduce
@@ -2055,7 +2094,7 @@
       (swap! *pending-loop-helpers* conj helper))
     (list helper-name callback-value (desugar-expr coll))))
 
-(defn- desugar-expr* [form]
+(defn- desugar-expr* [form contextual-result-type]
   (cond
     ;; Under nbb, compiler-synthesized integer literals are ordinary JS
     ;; numbers while source integers are bigint. Classify the integral host
@@ -2095,7 +2134,17 @@
     (let [[op & args] form]
       (cond
         (lexical-call-form? form)
-        (desugar-lexical-call :i64 form)
+        (desugar-lexical-call (or contextual-result-type :i64) form)
+
+        (contains? contextual-string-argument-indexes op)
+        (let [string-indexes (get contextual-string-argument-indexes op)]
+          (apply list op
+                 (map-indexed (fn [index arg]
+                                ((if (contains? string-indexes index)
+                                   #(desugar-result-expr :string %)
+                                   desugar-expr)
+                                 arg))
+                              args)))
 
         (contains? typed-vector-operations op)
         (do
@@ -2115,10 +2164,11 @@
         fn (lift-lambda form)
         if (apply list 'if
                   (map-indexed (fn [index arg]
-                                 ((if (zero? index)
-                                    desugar-bool-expr
-                                    desugar-expr)
-                                  arg))
+                                 (cond
+                                   (zero? index) (desugar-bool-expr arg)
+                                   contextual-result-type
+                                   (desugar-result-expr contextual-result-type arg)
+                                   :else (desugar-expr arg)))
                                args))
         fn-ref
         (if (contains? *function-arities* 'fn-ref)
@@ -2146,9 +2196,9 @@
                 result-type (if typed? (first args) :i64)
                 call-args (if typed? (rest args) args)]
             (when-not (<= 1 (count call-args) 5)
-              (reject! "invoke requires an optional :i64/:bool/:vector-i64 result type, a closure, and zero to four arguments"
+              (reject! "invoke requires an optional :i64/:bool/:string/:vector-i64 result type, a closure, and zero to four arguments"
                        form))
-            (apply list (invoke-dispatcher-name result-type (dec (count call-args)))
+            (apply list (request-invoke-dispatcher result-type (dec (count call-args)))
                    (map desugar-expr call-args))))
         apply
         (if (contains? *function-arities* 'apply)
@@ -2287,7 +2337,7 @@
                            ;; `mapv`, not bare `map`: forcing must remain in
                            ;; the dynamic extent of the compiler counters.
                            (binding [*lexical-bindings* body-env]
-                             (mapv desugar-expr body)))))
+                             (desugar-tail-expressions contextual-result-type body)))))
                 ;; Preserve malformed input so validate-expr emits its
                 ;; established even-binding-vector diagnostic.
                 (list* 'let bindings (mapv desugar-expr body))))
@@ -2301,8 +2351,10 @@
         ;; desugaring would DCE-drop unused side-effecting subexprs).
         do (do (when (empty? args) (reject! "do requires at least one expression" form :kotoba.error/do-empty))
                (if (= 1 (count args))
-                 (desugar-expr (first args))
-                 (list* 'do (mapv desugar-expr args))))
+                 (if contextual-result-type
+                   (desugar-result-expr contextual-result-type (first args))
+                   (desugar-expr (first args)))
+                 (list* 'do (desugar-tail-expressions contextual-result-type args))))
 
         ;; ADR-2607150000: `loop`/`recur` desugars to a compiler-synthesized
         ;; recursive helper function (like `get`'s __kotoba_map_get, but
@@ -2738,7 +2790,8 @@
         string-length
         (do (when-not (= 1 (count args))
               (reject! "string-length requires one string" form))
-            (list 'string-byte-length (desugar-expr (first args))))
+            (list 'string-byte-length
+                  (desugar-result-expr :string (first args))))
         string-from-i64
         (do (when-not (= 1 (count args))
               (reject! "string-from-i64 requires one i64" form))
@@ -2750,8 +2803,8 @@
               (reject! "string-join requires a separator string" form))
             (when (> (count (rest args)) 8)
               (reject! "string-join exceeds max 8 parts" form))
-            (let [sep (desugar-expr (first args))
-                  parts (mapv desugar-expr (rest args))]
+            (let [sep (desugar-result-expr :string (first args))
+                  parts (mapv #(desugar-result-expr :string %) (rest args))]
               (cond
                 (empty? parts) ""
                 (= 1 (count parts)) (first parts)
@@ -3001,7 +3054,9 @@
             (apply list op (map desugar-expr args)))))))))
 
 (defn- desugar-expr [form]
-  (let [result (desugar-expr* form)
+  (let [contextual-result-type *contextual-closure-result-type*
+        result (binding [*contextual-closure-result-type* nil]
+                 (desugar-expr* form contextual-result-type))
         location (select-keys (meta form)
                               [:line :column :end-line :end-column :offset :end-offset])]
     (if (and (seq location) (or (coll? result) (symbol? result)))
@@ -5815,11 +5870,13 @@
         lambda-infos (atom [])
         uses-apply? (volatile! false)
         uses-lazy? (volatile! false)
+        required-dispatchers (volatile! #{})
         parsed (binding [*loop-counter* (volatile! 0)
                           *lambda-counter* (volatile! 0)
                           *pending-lambdas* lambda-infos
                           *uses-apply?* uses-apply?
                           *uses-lazy?* uses-lazy?
+                          *required-closure-dispatchers* required-dispatchers
                           *function-arities* function-arities
                           *synthetic-counter* (volatile! 0)
                           *used-capability-keywords* used-capabilities]
@@ -5873,7 +5930,9 @@
                                                      *local-types* local-types
                                                      *schemas* (:schemas namespace-info)
                                                      *lexical-bindings* (set params)]
-                                             (desugar-expr source-body))]
+                                             (if (contains? closure-result-types result)
+                                               (desugar-result-expr result source-body)
+                                               (desugar-expr source-body)))]
                              (into [(cond-> {:name name :source-name source-name
                                              :params params :param-types param-types
                                              :result result :effects #{}
@@ -5889,7 +5948,11 @@
         ;; checker retains its previous fail-closed behavior.
         preliminary-lambdas
         (let [helpers (mapv :helper @lambda-infos)
-              candidates (->> (into parsed helpers)
+              inference-functions
+              (cond-> (into parsed helpers)
+                (some #(uses-string-from-i64? (:body %)) helpers)
+                (into [string-from-i64-nat-helper string-from-i64-helper]))
+              candidates (->> inference-functions
                               (mapv #(update % :body resolve-overloaded-calls
                                              overloads overloaded-sources))
                               (mapv #(if (:param-types %)
@@ -5909,9 +5972,10 @@
                      (concat (map :helper preliminary-lambdas)
                              (lambda-dispatchers
                               preliminary-lambdas
-                              (cond-> #{}
-                                @uses-apply? (into (range 5))
-                                @uses-lazy? (conj 0)))
+                              (cond-> @required-dispatchers
+                                @uses-apply? (into (map (fn [arity] [:i64 arity])
+                                                       (range 5)))
+                                @uses-lazy? (conj [:i64 0])))
                              (when @uses-apply? [closure-apply-helper])
                              (when @uses-lazy? [lazy-take-helper lazy-drop-helper])))
         _ (when (> (count parsed) max-functions)

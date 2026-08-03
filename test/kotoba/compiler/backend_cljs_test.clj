@@ -378,6 +378,25 @@
     (is (= 42 (:oracle-value (:kir compiled))))
     (is (= 42 (call ns 'main)))))
 
+(deftest string-returning-closures-execute-on-cljs
+  (let [source "(defn main []
+  (let [render (fn [x] (string-from-i64 x))]
+    (string-length (render 42))))"
+        compiled (compile-cljs source)
+        ns (eval-in-fresh-ns (:source compiled))]
+    (is (= 2 (:oracle-value (:kir compiled))))
+    (is (= 2 (call ns 'main)))))
+
+(deftest string-closure-dispatch-traps-wrong-result-family-on-cljs
+  (let [source "(ns demo.string-closure (:export [main wrong]))
+(defn main [] 0)
+(defn wrong []
+  (string-length (invoke :string (fn [x] (+ x 1)) 3)))"
+        compiled (compile-cljs source)
+        ns (eval-in-fresh-ns (:source compiled))]
+    (is (zero? (call ns 'main)))
+    (is (thrown? clojure.lang.ExceptionInfo (call ns 'wrong)))))
+
 (deftest vector-get-preserves-lazy-fallback-semantics
   (let [compiled (compile-cljs
                   "(defn main [] (vector-get [7] 0 (quot 1 0)))")
