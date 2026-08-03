@@ -125,6 +125,24 @@
   ;; empty do rejected by main frontend (requires at least one expression)
   (is (= 9 (oracle "(defn main [] (do 9))"))))
 
+(deftest multi-expression-do-preserves-typed-closure-tail-through-kotoba-script
+  (let [source "(defn main [] :string
+                  (let [f (fn [x] \"done\")]
+                    (do 0 (f 123))))"
+        compiled (compiler/compile-source source :js-kotoba-v1)
+        module (java.io.File/createTempFile "kotoba-do-portability-" ".mjs")
+        probe (try
+                (spit module
+                      (str (:source compiled)
+                           "\nconst x=instantiateKotoba({});"
+                           "if(x.main()!=='done')process.exit(2);"))
+                (shell/sh "node" (.getPath module))
+                (finally (.delete module)))]
+    (is (some #(= '(do 0 (__kotoba_invoke_string$arity1 f 123)) %)
+              (tree-seq coll? seq (get-in compiled [:hir :functions 0 :body]))))
+    (is (zero? (:exit probe)) (:err probe))
+    (is (= "done" (ir/execute (:kir compiled) 'main [])))))
+
 (deftest and-or-when-are-reserved-function-names
   (is (some? (rejection-message "(defn and [] 1) (defn main [] 0)")))
   (is (some? (rejection-message "(defn or [] 1) (defn main [] 0)")))
