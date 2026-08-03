@@ -617,7 +617,8 @@
          :schemas schemas
          :schema-identities (when schemas (schema/identities schemas))}))))
 
-(declare desugar-expr desugar-do thread-form form-free-symbols replace-recur)
+(declare desugar-expr desugar-do desugar-list thread-form form-free-symbols
+         nth-pair-second replace-recur valid-name?)
 
 ;; ADR-2607150000: bound (via `binding`) around each top-level defn's
 ;; desugaring pass in `analyze`, to an atom `loop`'s desugar-expr case
@@ -659,6 +660,136 @@
 ;; encounters `loop` forms in the same left-to-right desugaring order and
 ;; always assigns the same names.
 (def ^:dynamic *loop-counter* nil)
+(def ^:dynamic *function-arities* {})
+(def ^:dynamic *lambda-counter* nil)
+(def ^:dynamic *pending-lambdas* nil)
+(def ^:dynamic *uses-apply?* nil)
+
+(defn- invoke-dispatcher-name [arity]
+  (symbol (str "__kotoba_invoke$arity" arity)))
+
+(defn- nth-pair-second [expr n]
+  (nth (iterate (fn [value] (list 'pair-second value)) expr) n))
+
+(defn- lift-lambda [form]
+  (let [[_ params-or-clause & tail] form
+        raw-clauses (if (vector? params-or-clause)
+                      [[params-or-clause (first tail)]]
+                      (mapv (fn [clause]
+                              (when-not (and (seq? clause) (vector? (first clause))
+                                             (= 2 (count clause)))
+                                (reject! "multi-arity fn requires ([params] body) clauses" clause))
+                              [(first clause) (second clause)])
+                            (cons params-or-clause tail)))
+        parsed (mapv (fn [[params body :as clause]]
+                       (let [amp-index (first (keep-indexed #(when (= '& %2) %1) params))]
+                         (if amp-index
+                           (do
+                             (when-not (and (= amp-index (- (count params) 2))
+                                            (<= amp-index 4)
+                                            (every? valid-name? (subvec params 0 amp-index))
+                                            (valid-name? (peek params)))
+                               (reject! "variadic fn clause requires [fixed ... & rest]" clause))
+                             {:kind :variadic :fixed (subvec params 0 amp-index)
+                              :rest-name (peek params) :body body :min-arity amp-index})
+                           {:kind :fixed :params params :body body :arity (count params)})))
+                     raw-clauses)
+        fixed (filter #(= :fixed (:kind %)) parsed)
+        variadics (filter #(= :variadic (:kind %)) parsed)
+        _ (when (or (> (count variadics) 1)
+                    (not= (count fixed) (count (distinct (map :arity fixed)))))
+            (reject! "fn requires unique fixed arities and at most one variadic clause" form))
+        fixed-by-arity (into {} (map (juxt :arity identity) fixed))
+        variadic (first variadics)
+        arities (sort (set/union (set (keys fixed-by-arity))
+                                 (if variadic (set (range (:min-arity variadic) 5)) #{})))
+        clauses (mapv (fn [arity]
+                        (if-let [{:keys [params body]} (get fixed-by-arity arity)]
+                          [params body]
+                          (let [{:keys [fixed rest-name body]} variadic
+                                extras (mapv #(symbol (str "__kotoba_lambda_rest_arg_" %))
+                                             (range (- arity (count fixed))))]
+                            [(into (vec fixed) extras)
+                             (list 'let [rest-name (apply list 'list extras)] body)])))
+                      arities)]
+    (when-not (and (seq clauses)
+                   (every? (fn [[params body]]
+                             (and (some? body) (<= (count params) 4)
+                                  (every? valid-name? params)
+                                  (= (count params) (count (distinct params)))))
+                           clauses)
+                   (= (count clauses) (count (distinct (map (comp count first) clauses)))))
+      (reject! "fn value requires unique arities with zero to four unique parameters" form))
+    (when (and (vector? params-or-clause) (not= 1 (count tail)))
+      (reject! "single-arity fn value requires exactly one body" form))
+    (let [lowered (mapv (fn [[params body]]
+                          {:params params :body (desugar-expr body)})
+                        clauses)
+          captures (vec (sort-by str
+                                 (apply set/union #{}
+                                        (map (fn [{:keys [params body]}]
+                                               (form-free-symbols body (set params)))
+                                             lowered))))
+          id (vswap! *lambda-counter* inc)]
+      (doseq [{:keys [params]} lowered]
+        (when (> (+ (count captures) (count params)) max-parameters)
+          (reject! "fn captures plus parameters exceed ABI-supported arity" form)))
+      (when *pending-lambdas*
+        (swap! *pending-lambdas* into
+               (mapv (fn [{:keys [params body]}]
+                       (let [arity (count params)
+                             helper-name (symbol (str "__kotoba_lambda_" id "_arity" arity))]
+                         {:id id :arity arity :captures captures
+                          :helper {:name helper-name :params (into captures params)
+                                   :result :i64 :effects #{} :body body}}))
+                     lowered)))
+      (list 'pair id (desugar-list captures form)))))
+
+(defn- lambda-dispatchers [lambda-infos force-all-arities?]
+  (mapv
+   (fn [arity]
+     (let [closure (symbol (str "__kotoba_closure_" arity))
+           args (mapv #(symbol (str "__kotoba_invoke_arg_" %)) (range arity))
+           candidates (filter #(= arity (:arity %)) lambda-infos)
+           body (reduce
+                 (fn [fallback {:keys [id captures helper]}]
+                   (let [capture-chain (list 'pair-second closure)
+                         capture-values
+                         (map-indexed (fn [index _]
+                                        (list 'pair-first
+                                              (nth-pair-second capture-chain index)))
+                                      captures)]
+                     (list 'if (list '= (list 'pair-first closure) id)
+                           (apply list (:name helper) (concat capture-values args))
+                           fallback)))
+                 0 (reverse candidates))]
+       {:name (invoke-dispatcher-name arity) :params (into [closure] args)
+        :result :i64 :effects #{} :body body}))
+   (if force-all-arities?
+     (range 5)
+     (sort (distinct (map :arity lambda-infos))))))
+
+(def ^:private closure-apply-helper
+  {:name '__kotoba_closure_apply
+   :params '[__kotoba_apply_closure __kotoba_apply_args]
+   :result :i64 :effects #{}
+   :body
+   '(if (= __kotoba_apply_args 0)
+      (__kotoba_invoke$arity0 __kotoba_apply_closure)
+      (let [a0 (pair-first __kotoba_apply_args)
+            t1 (pair-second __kotoba_apply_args)]
+        (if (= t1 0)
+          (__kotoba_invoke$arity1 __kotoba_apply_closure a0)
+          (let [a1 (pair-first t1) t2 (pair-second t1)]
+            (if (= t2 0)
+              (__kotoba_invoke$arity2 __kotoba_apply_closure a0 a1)
+              (let [a2 (pair-first t2) t3 (pair-second t2)]
+                (if (= t3 0)
+                  (__kotoba_invoke$arity3 __kotoba_apply_closure a0 a1 a2)
+                  (let [a3 (pair-first t3) t4 (pair-second t3)]
+                    (if (= t4 0)
+                      (__kotoba_invoke$arity4 __kotoba_apply_closure a0 a1 a2 a3)
+                      0)))))))))})
 
 ;; ADR-2607182410: bound (via `binding`, once per `analyze` call, same
 ;; lifetime as `*loop-counter*` above -- not per-defn) to a `volatile!` set
@@ -1765,6 +1896,50 @@
     (let [[op & args] form]
       (case op
         list (desugar-list args form)
+        fn (lift-lambda form)
+        fn-ref
+        (if (contains? *function-arities* 'fn-ref)
+          (apply list 'fn-ref (map desugar-expr args))
+          (do
+            (when-not (and (= 1 (count args)) (symbol? (first args)))
+              (reject! "fn-ref requires one top-level function symbol" form))
+            (let [function-name (first args)
+                  arities (get *function-arities* function-name)]
+              (when-not (seq arities)
+                (reject! "fn-ref requires a declared top-level function" function-name))
+              (when (some #(> % 4) arities)
+                (reject! "fn-ref target exceeds closure ABI arity four" function-name))
+              (lift-lambda
+               (cons 'fn
+                     (mapv (fn [arity]
+                             (let [params (mapv #(symbol (str "__kotoba_fn_ref_arg_" %))
+                                                (range arity))]
+                               (list params (apply list function-name params))))
+                           (sort arities)))))))
+        invoke
+        (if (contains? *function-arities* 'invoke)
+          (apply list 'invoke (map desugar-expr args))
+          (do
+            (when-not (<= 1 (count args) 5)
+              (reject! "invoke requires a closure and zero to four arguments" form))
+            (apply list (invoke-dispatcher-name (dec (count args)))
+                   (map desugar-expr args))))
+        apply
+        (if (contains? *function-arities* 'apply)
+          (apply list 'apply (map desugar-expr args))
+          (do
+            (when-not (<= 2 (count args) 6)
+              (reject! "apply requires a closure, up to four fixed arguments, and a final argument collection" form))
+            (when *uses-apply?* (vreset! *uses-apply?* true))
+            (let [closure (first args)
+                  call-args (rest args)
+                  trailing (last call-args)
+                  fixed (butlast call-args)
+                  argument-list (reduce (fn [tail value]
+                                          (list 'pair (desugar-expr value) tail))
+                                        (desugar-expr trailing)
+                                        (reverse fixed))]
+              (list '__kotoba_closure_apply (desugar-expr closure) argument-list))))
         document
         (do (when-not (= 1 (count args))
               (reject! "document requires exactly one closed literal tree" form))
@@ -4987,6 +5162,20 @@
         _ (when-not (= (count source-names) (count (distinct source-names)))
             (reject! "duplicate function name" defs))
         def-parts (vec (mapcat #(expand-defn-parts % constants) defs))
+        function-arities
+        (reduce (fn [out {:keys [source-name logical-arity raw-params]}]
+                  (if (vector? raw-params)
+                    (let [typed? (or (some keyword? raw-params)
+                                     (some type-alias-form? raw-params)
+                                     (and (even? (count raw-params))
+                                          (some structured-type?
+                                                (map second (partition 2 raw-params)))))
+                          arity (or logical-arity
+                                    (if typed? (quot (count raw-params) 2)
+                                        (count raw-params)))]
+                      (update out source-name (fnil conj #{}) arity))
+                    out))
+                {} def-parts)
         _ (when (> (count def-parts) max-functions)
             (reject! "function count exceeds admission limit" (count def-parts)))
         overloaded-sources (->> def-parts
@@ -5018,7 +5207,13 @@
         ;; here from outside, keeps whatever `resolve-capability-keyword!`
         ;; conjoined onto it during desugaring.
         used-capabilities (volatile! #{})
+        lambda-infos (atom [])
+        uses-apply? (volatile! false)
         parsed (binding [*loop-counter* (volatile! 0)
+                          *lambda-counter* (volatile! 0)
+                          *pending-lambdas* lambda-infos
+                          *uses-apply?* uses-apply?
+                          *function-arities* function-arities
                           *synthetic-counter* (volatile! 0)
                           *used-capability-keywords* used-capabilities]
                ;; `vec` (forcing) must stay INSIDE `binding`'s dynamic
@@ -5079,6 +5274,13 @@
                                       effects-ceiling (assoc :effects-ceiling effects-ceiling))]
                                    @loop-helpers)))))
                      def-parts)))
+        parsed (into parsed
+                     (concat (map :helper @lambda-infos)
+                             (lambda-dispatchers @lambda-infos @uses-apply?)
+                             (when @uses-apply? [closure-apply-helper])))
+        _ (when (> (count parsed) max-functions)
+            (reject! "function count exceeds admission limit after closure lowering"
+                     (count parsed)))
         parsed (mapv #(update % :body resolve-overloaded-calls overloads overloaded-sources) parsed)
         ;; ADR-2607150000: inject the synthesized `get`/`assoc` helpers only
         ;; when a desugared body actually calls them -- keeps modules that
