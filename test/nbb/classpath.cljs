@@ -61,15 +61,35 @@
     root))
 
 ;; --- the checked-in lock resolves, and its pins are what they claim --------
+;;
+;; This is the only group that needs the real dependency closure, which means
+;; either a warm `~/.gitlibs` or reachable git remotes. `--hermetic-only`
+;; excludes it for runners that have neither -- the murakumo fleet nodes are on
+;; a tailnet with no route to github.com, which is why they cannot fetch and
+;; why the flag exists.
+;;
+;; The flag names what it drops, out loud. A runner that silently skipped this
+;; group would report the same "PASS jvm-free-classpath" as one that ran it.
 
-(let [dirs (classpath/resolve-directories repo-root)]
-  (check "checked-in lock resolves" (seq dirs))
-  (check "every resolved directory exists"
-         (every? #(.existsSync fs %) dirs))
-  (check "every dependency checkout is at its pinned commit"
-         (every? (fn [{:keys [coordinate git-sha]}]
-                   (= git-sha (classpath/head-sha (classpath/checkout-dir coordinate git-sha))))
-                 (:lock/entries (classpath/read-lock repo-root)))))
+(def hermetic-only? (boolean (some #{"--hermetic-only"} (vec *command-line-args*))))
+
+(if hermetic-only?
+  (do (println "SKIP the-checked-in-lock-resolves"
+               "(--hermetic-only: needs the real dependency closure)")
+      ;; The one thing still checkable without the closure: the lock must agree
+      ;; with the deps.edn beside it. That is the failure this pair exists to
+      ;; catch -- a pin moved and the lock was not regenerated.
+      (check "the checked-in lock agrees with deps.edn"
+             (= (classpath/deps-digest repo-root)
+                (:lock/deps-digest (classpath/read-lock repo-root)))))
+  (let [dirs (classpath/resolve-directories repo-root)]
+    (check "checked-in lock resolves" (seq dirs))
+    (check "every resolved directory exists"
+           (every? #(.existsSync fs %) dirs))
+    (check "every dependency checkout is at its pinned commit"
+           (every? (fn [{:keys [coordinate git-sha]}]
+                     (= git-sha (classpath/head-sha (classpath/checkout-dir coordinate git-sha))))
+                   (:lock/entries (classpath/read-lock repo-root))))))
 
 ;; --- fetch and verification -----------------------------------------------
 
@@ -135,5 +155,6 @@
   (check "a missing lock is refused"
          (= :lock (phase-of #(classpath/resolve-directories root)))))
 
-(println (if (zero? @failures) "PASS jvm-free-classpath" "FAIL jvm-free-classpath"))
+(println (str (if (zero? @failures) "PASS" "FAIL") " jvm-free-classpath"
+              (when hermetic-only? " (hermetic-only)")))
 (when (pos? @failures) (.exit js/process 1))
