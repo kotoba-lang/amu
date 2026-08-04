@@ -7,30 +7,32 @@
   (:require [kotoba.kir.value :as kir-value]
             [kotoba.value.codec :as value]))
 
-(def wire-contract
-  {:format :kotoba.value-boundary/v1
-   :codec value/codec-id
-   :representation :bytes
-   :limit-authority :ability-max-bytes})
+(def wire-contract value/wire-contract)
+
+(def aggregate-envelopes
+  {:record {:type :kotoba.record/type :fields :kotoba.record/fields}
+   :variant {:type :kotoba.variant/type
+             :case :kotoba.variant/case
+             :value :kotoba.variant/value}
+   :option {:present :kotoba.option/present :value :kotoba.option/value}
+   :result {:status :kotoba.result/status :value :kotoba.result/value}})
 
 (def ability-adapter-contract
-  {:format :kotoba.ability-wire-adapter/v1
+  {:format :kotoba.ability-wire-adapter/v2
    :source-boundary :typed-ability
    :wire wire-contract
-   :types #{:i64 :f64 :string :keyword :symbol :bool :document}
+   :scalar-types #{:i64 :f32 :f64 :string :bytes :keyword :symbol :bool
+                   :document :map :option-i64 :result-i64
+                   :vector-i64 :vector-f64}
+   :aggregate-types #{:record :variant :option :result :vector :list :set :map :ref}
+   :envelopes aggregate-envelopes
+   :component-parity {:authority :typed-ability-descriptor
+                      :physical-wire :wit-canonical-abi
+                      :byte-tunneling false}
    :provider-shape #{:request-type :result-type :invoke}})
 
 (defn- reject! [message data]
   (throw (ex-info message (assoc data :phase :value-codec))))
-
-(defn- byte-count [bytes]
-  #?(:clj (if (bytes? bytes)
-            (alength ^bytes bytes)
-            (reject! "canonical value payload is not bytes" {}))
-     :cljs (if (or (instance? js/Uint8Array bytes)
-                   (instance? js/Int8Array bytes))
-             (.-length bytes)
-             (reject! "canonical value payload is not bytes" {}))))
 
 (defn- checked-limit [max-bytes]
   (when-not (pos-int? max-bytes)
@@ -41,34 +43,119 @@
 (defn encode-bounded
   "Encode VALUE and reject an envelope larger than MAX-BYTES."
   [value max-bytes]
-  (let [limit (checked-limit max-bytes)
-        encoded (value/encode-value value)
-        actual (byte-count encoded)]
-    (when (> actual limit)
-      (reject! "canonical value payload exceeds ability max-bytes"
-               {:codec (:codec wire-contract) :bytes actual :max-bytes limit}))
-    encoded))
+  (value/encode-bounded value max-bytes))
 
 (defn decode-bounded
   "Decode canonical BYTES only after enforcing the ability's MAX-BYTES."
   [bytes max-bytes]
-  (let [limit (checked-limit max-bytes)
-        actual (byte-count bytes)]
-    (when (> actual limit)
-      (reject! "canonical value payload exceeds ability max-bytes"
-               {:codec (:codec wire-contract) :bytes actual :max-bytes limit}))
-    (value/decode-value bytes)))
+  (value/decode-bounded bytes max-bytes))
 
 (def ^:private direct-wire-types
-  #{:i64 :f64 :string :keyword :symbol :bool})
+  #{:string :bytes :keyword :symbol :bool})
+
+(def ^:private scalar-wire-types
+  (:scalar-types ability-adapter-contract))
+
+(def ^:private aggregate-wire-heads
+  (:aggregate-types ability-adapter-contract))
+
+(defn- exact-map! [label item expected]
+  (when-not (and (map? item) (= expected (set (keys item))))
+    (reject! (str label " wire envelope is not exact")
+             {:expected expected
+              :actual (when (map? item) (set (keys item)))}))
+  item)
+
+(defn- resolve-type [descriptor schemas]
+  (if (and (vector? descriptor) (= :ref (first descriptor)) (= 2 (count descriptor)))
+    (or (get schemas (second descriptor))
+        (reject! "ability wire adapter cannot resolve schema reference"
+                 {:type descriptor}))
+    descriptor))
+
+(defn- admitted-wire-type!
+  ([descriptor schemas] (admitted-wire-type! descriptor schemas 0 #{}))
+  ([descriptor schemas depth seen]
+   (kir-value/validate-value-type! descriptor)
+   (when (> depth kir-value/adt-depth-limit)
+     (reject! "ability wire type exceeds depth limit"
+              {:type descriptor :limit kir-value/adt-depth-limit}))
+   (cond
+     (contains? scalar-wire-types descriptor) descriptor
+
+     (and (vector? descriptor) (= :ref (first descriptor)) (= 2 (count descriptor)))
+     (let [type-id (second descriptor)]
+       (when-not (and (keyword? type-id) (namespace type-id))
+         (reject! "ability wire schema reference is invalid" {:type descriptor}))
+       (when-not (contains? seen type-id)
+         (admitted-wire-type! (resolve-type descriptor schemas) schemas
+                              (inc depth) (conj seen type-id)))
+       descriptor)
+
+     (and (vector? descriptor) (contains? aggregate-wire-heads (first descriptor)))
+     (let [[head _ members] descriptor]
+       (case head
+         (:option :list :set)
+         (do (when-not (= 2 (count descriptor))
+               (reject! "unary aggregate wire descriptor is invalid" {:type descriptor}))
+             (admitted-wire-type! (second descriptor) schemas (inc depth) seen))
+
+         :result
+         (do (when-not (= 3 (count descriptor))
+               (reject! "result wire descriptor is invalid" {:type descriptor}))
+             (admitted-wire-type! (second descriptor) schemas (inc depth) seen)
+             (admitted-wire-type! (nth descriptor 2) schemas (inc depth) seen))
+
+         :map
+         (do (when-not (= 3 (count descriptor))
+               (reject! "map wire descriptor is invalid" {:type descriptor}))
+             (admitted-wire-type! (second descriptor) schemas (inc depth) seen)
+             (admitted-wire-type! (nth descriptor 2) schemas (inc depth) seen))
+
+         :vector
+         (do (when-not (and (= 2 (count descriptor)) (vector? (second descriptor)))
+               (reject! "vector wire descriptor is invalid" {:type descriptor}))
+             (doseq [member (second descriptor)]
+               (admitted-wire-type! member schemas (inc depth) seen)))
+
+         (:record :variant)
+         (do (when-not (and (= 3 (count descriptor))
+                            (keyword? (second descriptor))
+                            (namespace (second descriptor))
+                            (vector? members) (seq members)
+                            (every? #(and (vector? %) (= 2 (count %))
+                                          (keyword? (first %)))
+                                    members)
+                            (= (count members) (count (distinct (map first members)))))
+               (reject! "nominal aggregate wire descriptor is invalid" {:type descriptor}))
+             (doseq [[_ member] members]
+               (admitted-wire-type! member schemas (inc depth) seen))))
+       descriptor)
+
+     :else
+     (reject! "ability wire adapter does not support this value type"
+              {:type descriptor
+               :scalar-types scalar-wire-types
+               :aggregate-types aggregate-wire-heads}))))
+
+(defn- admitted-schemas! [schemas]
+  (doseq [[type-id descriptor] schemas]
+    (when-not (and (keyword? type-id) (namespace type-id)
+                   (vector? descriptor)
+                   (contains? #{:record :variant} (first descriptor))
+                   (= type-id (second descriptor)))
+      (reject! "ability wire adapter schema entry is not an exact nominal definition"
+               {:schema type-id :type descriptor}))
+    (admitted-wire-type! descriptor schemas))
+  schemas)
 
 (defn- document->value [document]
   (letfn [(walk [[tag payload :as node]]
             (case tag
               "null" nil
               "bool" payload
-              "i64" payload
-              "f64" payload
+              "i64" (value/int64 payload)
+              "f64" (value/float64 payload)
               "string" payload
               "keyword" payload
               "symbol" payload
@@ -94,8 +181,12 @@
             (cond
               (nil? item) ["null"]
               (boolean? item) ["bool" item]
-              (integer? item) ["i64" item]
-              (number? item) ["f64" item]
+              (value/int64? item) ["i64" (value/int64-value item)]
+              (value/float64? item) ["f64" (value/float64-value item)]
+              (integer? item)
+              (reject! "document i64 wire value requires the exact int64 wrapper" {})
+              (number? item)
+              (reject! "document f64 wire value requires the float64 wrapper" {})
               (string? item) ["string" item]
               (keyword? item) ["keyword" item]
               (symbol? item) ["symbol" item]
@@ -113,21 +204,226 @@
                        {:value-type (type item)})))]
     (kir-value/bounded-document! (walk data))))
 
-(defn- wire-value [descriptor item]
-  (cond
-    (contains? direct-wire-types descriptor) item
-    (= :document descriptor) (document->value item)
-    :else (reject! "ability wire adapter does not support this value type"
-                   {:type descriptor
-                    :supported (:types ability-adapter-contract)})))
+(defn- exact-int64! [item]
+  (if (value/int64? item)
+    (value/int64-value item)
+    (reject! "ability wire i64 requires the exact int64 wrapper" {})))
 
-(defn- runtime-value [descriptor item]
-  (cond
-    (contains? direct-wire-types descriptor) item
-    (= :document descriptor) (value->document item)
-    :else (reject! "ability wire adapter does not support this value type"
-                   {:type descriptor
-                    :supported (:types ability-adapter-contract)})))
+(defn- exact-float! [item descriptor]
+  (if (value/float64? item)
+    (let [number (value/float64-value item)]
+      (if (= :f32 descriptor)
+        #?(:clj (float number) :cljs (js/Math.fround number))
+        number))
+    (reject! "ability wire float requires the float64 wrapper"
+             {:type descriptor})))
+
+(declare runtime->wire*)
+(declare wire->runtime*)
+
+(defn- option-wire [present? payload]
+  (if present?
+    {:kotoba.option/present true :kotoba.option/value payload}
+    {:kotoba.option/present false}))
+
+(defn- result-wire [ok? payload]
+  {:kotoba.result/status (if ok? :ok :error)
+   :kotoba.result/value payload})
+
+(defn- runtime->wire* [descriptor schemas item]
+  (let [type (resolve-type descriptor schemas)]
+    (cond
+      (= :i64 type) (value/int64 item)
+      (contains? #{:f32 :f64} type) (value/float64 item)
+      (contains? direct-wire-types type) item
+      (= :document type) (document->value item)
+      (= :map type) (into {} (map (fn [[k v]] [k (value/int64 v)]) item))
+      (= :option-i64 type)
+      (option-wire (first item) (when (first item) (value/int64 (second item))))
+      (= :result-i64 type) (result-wire (first item) (value/int64 (second item)))
+      (= :vector-i64 type) (mapv value/int64 item)
+      (= :vector-f64 type) (mapv value/float64 item)
+
+      (and (vector? type) (= :option (first type)))
+      (option-wire (second item)
+                   (when (second item)
+                     (runtime->wire* (second type) schemas (nth item 2))))
+
+      (and (vector? type) (= :result (first type)))
+      (result-wire (first item)
+                   (runtime->wire* (if (first item) (second type) (nth type 2))
+                                   schemas (second item)))
+
+      (and (vector? type) (= :record (first type)))
+      (let [fields (nth type 2)]
+        {:kotoba.record/type (second type)
+         :kotoba.record/fields
+         (into {} (map (fn [[[field-name field-type] field-value]]
+                         [field-name (runtime->wire* field-type schemas field-value)])
+                       (map vector fields (rest item))))})
+
+      (and (vector? type) (= :variant (first type)))
+      (let [case-name (second item)
+            case-type (some (fn [[candidate payload-type]]
+                              (when (= candidate case-name) payload-type))
+                            (nth type 2))]
+        {:kotoba.variant/type (second type)
+         :kotoba.variant/case case-name
+         :kotoba.variant/value (runtime->wire* case-type schemas (nth item 2))})
+
+      (and (vector? type) (= :vector (first type)))
+      (mapv (fn [item-type item-value]
+              (runtime->wire* item-type schemas item-value))
+            (second type) (rest item))
+
+      (and (vector? type) (= :list (first type)))
+      (apply list (map #(runtime->wire* (second type) schemas %)
+                       (second item)))
+
+      (and (vector? type) (= :set (first type)))
+      (let [items (mapv #(runtime->wire* (second type) schemas %) (second item))]
+        (when-not (= (count items) (count (set items)))
+          (reject! "typed set is ambiguous on the canonical value wire" {}))
+        (set items))
+
+      (and (vector? type) (= :map (first type)))
+      (let [entries (mapv (fn [[k v]]
+                            [(runtime->wire* (second type) schemas k)
+                             (runtime->wire* (nth type 2) schemas v)])
+                          (second item))]
+        (when-not (= (count entries) (count (set (map first entries))))
+          (reject! "typed map keys are ambiguous on the canonical value wire" {}))
+        (into {} entries))
+
+      :else
+      (reject! "ability wire adapter does not support this runtime value"
+               {:type descriptor}))))
+
+(defn- wire->runtime* [descriptor schemas item]
+  (let [type (resolve-type descriptor schemas)]
+    (cond
+      (= :i64 type) (exact-int64! item)
+      (contains? #{:f32 :f64} type) (exact-float! item type)
+      (contains? direct-wire-types type) item
+      (= :document type) (value->document item)
+      (= :map type) (do (when-not (map? item)
+                          (reject! "map wire value is not a map" {}))
+                        (into {} (map (fn [[k v]] [k (exact-int64! v)]) item)))
+      (= :option-i64 type)
+      (do (exact-map! "option" item
+                      (if (:kotoba.option/present item)
+                        #{:kotoba.option/present :kotoba.option/value}
+                        #{:kotoba.option/present}))
+          (if (:kotoba.option/present item)
+            [true (exact-int64! (:kotoba.option/value item))]
+            [false]))
+      (= :result-i64 type)
+      (do (exact-map! "result" item
+                      #{:kotoba.result/status :kotoba.result/value})
+          (let [status (:kotoba.result/status item)]
+            (when-not (contains? #{:ok :error} status)
+              (reject! "result wire status is invalid" {:status status}))
+            [(= :ok status) (exact-int64! (:kotoba.result/value item))]))
+      (= :vector-i64 type)
+      (do (when-not (vector? item) (reject! "vector-i64 wire value is not a vector" {}))
+          (mapv exact-int64! item))
+      (= :vector-f64 type)
+      (do (when-not (vector? item) (reject! "vector-f64 wire value is not a vector" {}))
+          (mapv #(exact-float! % :f64) item))
+
+      (and (vector? type) (= :option (first type)))
+      (let [present? (:kotoba.option/present item)]
+        (when-not (boolean? present?)
+          (reject! "option wire presence is not boolean" {}))
+        (exact-map! "option" item
+                    (if present?
+                      #{:kotoba.option/present :kotoba.option/value}
+                      #{:kotoba.option/present}))
+        (if present?
+          [type true (wire->runtime* (second type) schemas
+                                     (:kotoba.option/value item))]
+          [type false]))
+
+      (and (vector? type) (= :result (first type)))
+      (do (exact-map! "result" item #{:kotoba.result/status :kotoba.result/value})
+          (let [status (:kotoba.result/status item)]
+            (when-not (contains? #{:ok :error} status)
+              (reject! "result wire status is invalid" {:status status}))
+            [(= :ok status)
+             (wire->runtime* (if (= :ok status) (second type) (nth type 2))
+                             schemas (:kotoba.result/value item))]))
+
+      (and (vector? type) (= :record (first type)))
+      (do (exact-map! "record" item #{:kotoba.record/type :kotoba.record/fields})
+          (when-not (= (second type) (:kotoba.record/type item))
+            (reject! "record wire nominal identity does not match"
+                     {:expected (second type) :actual (:kotoba.record/type item)}))
+          (let [fields (nth type 2)
+                values (:kotoba.record/fields item)
+                expected (set (map first fields))]
+            (exact-map! "record fields" values expected)
+            (into [type]
+                  (map (fn [[field-name field-type]]
+                         (wire->runtime* field-type schemas (get values field-name)))
+                       fields))))
+
+      (and (vector? type) (= :variant (first type)))
+      (do (exact-map! "variant" item
+                      #{:kotoba.variant/type :kotoba.variant/case :kotoba.variant/value})
+          (when-not (= (second type) (:kotoba.variant/type item))
+            (reject! "variant wire nominal identity does not match"
+                     {:expected (second type) :actual (:kotoba.variant/type item)}))
+          (let [case-name (:kotoba.variant/case item)
+                case-type (some (fn [[candidate payload-type]]
+                                  (when (= candidate case-name) payload-type))
+                                (nth type 2))]
+            (when-not case-type
+              (reject! "variant wire case is not declared" {:case case-name}))
+            [type case-name
+             (wire->runtime* case-type schemas (:kotoba.variant/value item))]))
+
+      (and (vector? type) (= :vector (first type)))
+      (do (when-not (and (vector? item) (= (count item) (count (second type))))
+            (reject! "heterogeneous vector wire value has wrong shape" {}))
+          (into [type] (map #(wire->runtime* %1 schemas %2) (second type) item)))
+
+      (and (vector? type) (= :list (first type)))
+      (do (when-not (list? item) (reject! "typed list wire value is not a list" {}))
+          [type (mapv #(wire->runtime* (second type) schemas %) item)])
+
+      (and (vector? type) (= :set (first type)))
+      (do (when-not (set? item) (reject! "typed set wire value is not a set" {}))
+          [type (mapv #(wire->runtime* (second type) schemas %) item)])
+
+      (and (vector? type) (= :map (first type)))
+      (do (when-not (map? item) (reject! "typed map wire value is not a map" {}))
+          [type (mapv (fn [[k v]]
+                        [(wire->runtime* (second type) schemas k)
+                         (wire->runtime* (nth type 2) schemas v)])
+                      item)])
+
+      :else
+      (reject! "ability wire adapter does not support this wire value"
+               {:type descriptor}))))
+
+(defn runtime->wire-value
+  "Translate a checked compiler runtime VALUE into the canonical semantic
+  value represented on the ability byte wire. SCHEMAS resolves [:ref ...]
+  descriptors without transmitting compiler constructor vectors."
+  ([descriptor value] (runtime->wire-value descriptor {} value))
+  ([descriptor schemas value]
+   (admitted-wire-type! descriptor schemas)
+   (kir-value/bounded-typed-value! descriptor value)
+   (runtime->wire* descriptor schemas value)))
+
+(defn wire-value->runtime
+  "Translate one decoded canonical wire VALUE into the compiler runtime shape,
+  then revalidate it under DESCRIPTOR."
+  ([descriptor value] (wire-value->runtime descriptor {} value))
+  ([descriptor schemas value]
+   (admitted-wire-type! descriptor schemas)
+   (kir-value/bounded-typed-value!
+    descriptor (wire->runtime* descriptor schemas value))))
 
 (defn ability-provider
   "Build the exact typed-provider map accepted by compiler runtimes.
@@ -138,17 +434,20 @@
   codec preparation never becomes source syntax. Runtime type checks surround
   this adapter, while this layer owns the ability byte limit in both
   directions."
-  [{:keys [request-type result-type max-bytes invoke-wire] :as spec}]
-  (when-not (= #{:request-type :result-type :max-bytes :invoke-wire}
-               (set (keys spec)))
+  [{:keys [request-type result-type schemas max-bytes invoke-wire]
+    :or {schemas {}} :as spec}]
+  (when-not (contains? #{#{:request-type :result-type :max-bytes :invoke-wire}
+                          #{:request-type :result-type :schemas :max-bytes :invoke-wire}}
+                       (set (keys spec)))
     (reject! "ability wire adapter specification is not exact"
              {:keys (set (keys spec))}))
   (when (or (nil? request-type) (nil? result-type))
     (reject! "ability wire adapter requires request and result types" {}))
+  (when-not (map? schemas)
+    (reject! "ability wire adapter schemas must be a map" {}))
+  (admitted-schemas! schemas)
   (doseq [descriptor [request-type result-type]]
-    (when-not (contains? (:types ability-adapter-contract) descriptor)
-      (reject! "ability wire adapter does not support this value type"
-               {:type descriptor :supported (:types ability-adapter-contract)})))
+    (admitted-wire-type! descriptor schemas))
   (checked-limit max-bytes)
   (when-not (ifn? invoke-wire)
     (reject! "ability wire adapter requires an invoke-wire function" {}))
@@ -156,7 +455,8 @@
    :result-type result-type
    :invoke (fn [request]
              (let [request-bytes (encode-bounded
-                                  (wire-value request-type request) max-bytes)
+                                  (runtime->wire-value request-type schemas request)
+                                  max-bytes)
                    result-bytes (invoke-wire request-bytes)
                    result (decode-bounded result-bytes max-bytes)]
-               (runtime-value result-type result)))})
+               (wire-value->runtime result-type schemas result)))})
