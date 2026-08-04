@@ -9,7 +9,7 @@
   inc/dec + vector-sum loop + shift-right + reduce-vector + map/filter-vector +
   named-hof + thread + option-result + reduce-named + pair-list +
   string-length-concat + multi-map + list-rest + when-let-u64 +
-  type-directed heterogeneous nth + nested typed destructuring.
+  type-directed heterogeneous nth + nested typed destructuring + wide nominal records.
   Full matrix still progressive."
 
  :backends
@@ -537,6 +537,15 @@
    :args []
    :expect {:kotoba 26}
    :note "ADR 0207 nested vector/record/typed-map patterns select exact accessors"}
+  {:id :wide-nominal-records
+   :class :pure-product-run
+   :required-backends #{:kir :wasm32-kotoba-v1}
+   :kind :run
+   :entry "values/wide_nominal_records.kotoba"
+   :function "main"
+   :args []
+   :expect {:kotoba 8}
+   :note "ADR 0208 six-field defrecord, generated schema refs, and ordinary access"}
   {:id :when-let-u64-kit
    :class :pure-product-run
    :required-backends #{:kir :wasm32-kotoba-v1}
