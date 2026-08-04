@@ -7,7 +7,7 @@
 
 (def source
   "(ns data.document-edn
-     (:export [main value printed same commented symbol-doc symbol-text parsed-symbol symbol-value list-doc list-text parsed-list list-same list-second set-doc set-text parsed-set set-same set-has-ready general-map general-text general-name general-constructed general-constructed-text contextual contextual-explicit contextual-same contextual-text contextual-list-text bad-symbol bad-tag bad-set-duplicate bad-duplicate bad-general-duplicate bad-limit]))
+     (:export [main value printed same commented symbol-doc symbol-text parsed-symbol symbol-value list-doc list-text parsed-list list-same list-second set-doc set-text parsed-set set-same set-has-ready general-map general-text general-name general-constructed general-constructed-text contextual contextual-bare contextual-explicit contextual-same contextual-bare-same contextual-text contextual-bare-text contextual-list-text bad-symbol bad-tag bad-set-duplicate bad-duplicate bad-general-duplicate bad-limit]))
    (defn main [] :i64 42)
    (defn value [] :document
      (document-map
@@ -58,6 +58,12 @@
         :ready true
         :actors #{actor/run}
         :steps [nil :prepare]}))
+   (defn contextual-bare [] :document
+     {:goal \"migrate\"
+      :attempt 3
+      :ready true
+      :actors #{actor/run}
+      :steps [nil :prepare]})
    (defn contextual-explicit [] :document
      (document-map
        :actors (document-set (document-symbol (symbol \"actor/run\")))
@@ -67,7 +73,10 @@
        :steps (document-vector (document-null) (document-keyword :prepare))))
    (defn contextual-same [] :bool
      (document-equal? (contextual) (contextual-explicit)))
+   (defn contextual-bare-same [] :bool
+     (document-equal? (contextual-bare) (contextual-explicit)))
    (defn contextual-text [] :string (document-edn-print (contextual)))
+   (defn contextual-bare-text [] :string (document-edn-print (contextual-bare)))
    (defn contextual-list-text [] :string
      (document-edn-print (document (actor/run 7))))
    (defn bad-symbol [] :string (document-edn-print (document-symbol (symbol \"nil\"))))
@@ -108,7 +117,9 @@
        "if(x['general-text']()!=='{:ready true \\\"name\\\" 7 [1 2] :pair}'||x['general-name']()!==7n)process.exit(8);"
        "if(x['general-constructed-text']()!=='{:legacy true [1] \\\"vector-key\\\"}')process.exit(9);"
        "if(!(x['contextual-same']()===true||x['contextual-same']()===1||x['contextual-same']()===1n))process.exit(10);"
+       "if(!(x['contextual-bare-same']()===true||x['contextual-bare-same']()===1||x['contextual-bare-same']()===1n))process.exit(13);"
        "if(x['contextual-text']()!=='{:actors #{actor/run} :attempt 3 :goal \\\"migrate\\\" :ready true :steps [nil :prepare]}')process.exit(11);"
+       "if(x['contextual-bare-text']()!=='{:actors #{actor/run} :attempt 3 :goal \\\"migrate\\\" :ready true :steps [nil :prepare]}')process.exit(14);"
        "if(x['contextual-list-text']()!=='(actor/run 7)')process.exit(12);"
        "for(const name of ['bad-symbol','bad-tag','bad-set-duplicate','bad-duplicate','bad-general-duplicate','bad-limit']){"
        "let denied=false;try{x[name]()}catch(e){denied=true}if(!denied)process.exit(7);}"
@@ -118,7 +129,9 @@
   (let [hir (frontend/analyze source)
         bodies (into {} (map (juxt :name :body) (:functions hir)))]
     (is (= (get bodies 'contextual) (get bodies 'contextual-explicit))
-        "contextual syntax must elaborate to the existing constructor tree"))
+        "explicit contextual syntax must elaborate to the constructor tree")
+    (is (= (get bodies 'contextual-bare) (get bodies 'contextual-explicit))
+        "a closed bare literal must elaborate from its :document result type"))
   (is (thrown-with-msg?
        clojure.lang.ExceptionInfo
        #"document requires exactly one closed literal tree"
@@ -145,8 +158,11 @@
       (is (= 7 (ir/execute kir 'general-name [])))
       (is (= "{:legacy true [1] \"vector-key\"}" (ir/execute kir 'general-constructed-text [])))
       (is (true? (ir/execute kir 'contextual-same [])))
+      (is (true? (ir/execute kir 'contextual-bare-same [])))
       (is (= "{:actors #{actor/run} :attempt 3 :goal \"migrate\" :ready true :steps [nil :prepare]}"
              (ir/execute kir 'contextual-text [])))
+      (is (= "{:actors #{actor/run} :attempt 3 :goal \"migrate\" :ready true :steps [nil :prepare]}"
+             (ir/execute kir 'contextual-bare-text [])))
       (is (= "(actor/run 7)" (ir/execute kir 'contextual-list-text [])))
       (doseq [name ['bad-tag 'bad-set-duplicate 'bad-duplicate 'bad-general-duplicate 'bad-limit]]
         (is (thrown? clojure.lang.ExceptionInfo (ir/execute kir name [])))))

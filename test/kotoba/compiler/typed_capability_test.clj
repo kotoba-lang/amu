@@ -1,6 +1,7 @@
 (ns kotoba.compiler.typed-capability-test
   (:require [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]
+            [kotoba.compiler.frontend :as frontend]
             [kotoba.kir :as ir]))
 
 (def source
@@ -63,3 +64,32 @@
          (compiler/check-source
           "(ns missing.ref (:export [identity]))
            (defn identity [x [:ref :missing/schema]] [:ref :missing/schema] x)")))))
+
+(deftest closed-document-requests-use-the-declared-boundary-type
+  (let [source
+        "(ns demo.document-cap
+           (:export [expected submit forward])
+           (:capabilities #{:http/post}))
+         (defn expected [] :document
+           (document {:action :actor/run :attempt 3 :ready true}))
+         (defn submit [] :document
+           (typed-cap-call :http/post :document :document
+             {:action :actor/run :attempt 3 :ready true}))
+         (defn forward [request :document] :document
+           (typed-cap-call 4 :document :document request))"
+        hir (frontend/analyze source)
+        bodies (into {} (map (juxt :name :body) (:functions hir)))
+        kir (ir/lower (:hir (compiler/check-source source {:allow #{[:cap/call 4]}})))
+        expected (ir/execute kir 'expected [])
+        provider (fn [id request-type actual-result-type request]
+                   (is (= 4 id))
+                   (is (= :document request-type actual-result-type))
+                   request)]
+    (is (= (nth (get bodies 'submit) 4)
+           (get bodies 'expected))
+        "the request must be the same constructor tree as explicit document syntax")
+    (is (= expected
+           (ir/execute kir 'submit [] {:typed-cap-call provider})))
+    (is (= expected
+           (ir/execute kir 'forward [expected] {:typed-cap-call provider}))
+        "a document-typed lexical value must remain a value, not become symbol data")))
