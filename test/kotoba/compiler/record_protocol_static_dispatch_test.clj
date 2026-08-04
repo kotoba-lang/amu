@@ -105,6 +105,55 @@
           "(defrecord Person [name :string])
            (defn main [] :string (:name (->Person 7)))")))))
 
+(deftest wide-defrecord-keeps-direct-and-map-construction-data-shaped
+  (let [source
+        "(ns demo.http)
+         (defrecord Header [name :string value :string])
+         (defrecord Request
+           [url :string
+            headers [:set [:ref :demo.http/Header]]
+            names [:set :string]
+            body :string
+            timeout :i64
+            code :i64])
+         (defn main [] :i64
+           (let [header (->Header \"accept\" \"text/plain\")
+                 headers (typed-set-conj [:set [:ref :demo.http/Header]]
+                                         (typed-set-new [:set [:ref :demo.http/Header]])
+                                         header)
+                 request (map->Request
+                          {:url \"https://example.test\"
+                           :headers headers
+                           :names (typed-set-new [:set :string])
+                           :body \"\"
+                           :timeout 30
+                           :code 7})]
+             (+ (:code request)
+                (typed-set-count [:set [:ref :demo.http/Header]]
+                                 (:headers request)))))"
+        positional
+        "(ns demo.wide)
+         (defrecord Six [a b c d e f])
+         (defrecord Wrapper [six [:ref :demo.wide/Six]])
+         (defn main []
+           (:f (:six (map->Wrapper {:six (->Six 1 2 3 4 5 6)}))))"]
+    (is (= 8 (ir/execute (:kir (compile-fixture source)) 'main [])))
+    (is (= 6 (ir/execute (:kir (compile-fixture positional)) 'main [])))
+    (doseq [compiled [(compile-fixture source) (compile-fixture positional)]]
+      (is (not-any? #{'defrecord '->Six 'map->Request}
+                    (tree-seq coll? seq (:kir compiled)))))))
+
+(deftest defrecord-registers-a-closed-nominal-schema
+  (is (thrown-with-msg?
+       clojure.lang.ExceptionInfo
+       #"must not duplicate namespace :schemas"
+       (frontend/analyze
+        "(ns demo.collision
+           (:schemas {:demo.collision/Box
+                      [:record :demo.collision/Box [[:x :i64]]]}))
+         (defrecord Box [x])
+         (defn main [] 0)"))))
+
 (deftest record-and-protocol-surface-fails-closed
   (doseq [[source message]
           [["(defprotocol Value (value [this]))
@@ -128,7 +177,7 @@
             #"alternating name/type pairs"]
            ["(defrecord Box [x :string x :i64])
              (defn main [] 0)"
-            #"at most five unique fields"]
+            #"at most 32 unique fields"]
            ["(defprotocol Value (value [this]))
              (defrecord Box [x])
              (extend-protocol Value Box (value [this] 1))

@@ -6931,9 +6931,10 @@
     (let [field-parts (record-field-parts fields form)
           field-names (mapv :name field-parts)
           typed? (not= fields field-names)
-          _ (when-not (and (<= (count field-parts) max-parameters)
+          _ (when-not (and (<= (count field-parts) max-record-fields)
                            (= (count field-names) (count (distinct field-names))))
-              (reject! "defrecord requires at most five unique fields"
+              (reject! (str "defrecord requires at most " max-record-fields
+                            " unique fields")
                        form :kotoba.error/record-declaration))
           descriptor (record-descriptor namespace-symbol record-name field-parts)
           groups (protocol-extension-groups extra form)
@@ -6949,7 +6950,8 @@
                   groups)]
       (assoc record :implementations implementations))))
 
-(defn- rewrite-map-constructors [form records-by-map-constructor]
+(defn- rewrite-record-constructors
+  [form records-by-map-constructor records-by-wide-positional-constructor]
   (cond
     (seq? form)
     (let [[op & args] form]
@@ -6967,16 +6969,47 @@
                          (= (set field-keys) (set (keys source-map))))
             (reject! "map-> record construction requires one literal map with exactly the declared fields"
                      form :kotoba.error/record-map-constructor))
-          (list* 'record-new descriptor (map source-map field-keys)))
+          (list* 'record-new descriptor
+                 (map (fn [field-key]
+                        (rewrite-record-constructors
+                         (get source-map field-key)
+                         records-by-map-constructor
+                         records-by-wide-positional-constructor))
+                      field-keys)))
+
+        (contains? records-by-wide-positional-constructor op)
+        (let [{:keys [fields descriptor]} (get records-by-wide-positional-constructor op)]
+          (when-not (= (count fields) (count args))
+            (reject! "positional record construction must exactly match the declared fields"
+                     form :kotoba.error/record-positional-constructor))
+          (list* 'record-new descriptor
+                 (mapv #(rewrite-record-constructors
+                         % records-by-map-constructor
+                         records-by-wide-positional-constructor)
+                       args)))
 
         :else
-        (list* op (mapv #(rewrite-map-constructors % records-by-map-constructor) args)))))
-    (vector? form) (mapv #(rewrite-map-constructors % records-by-map-constructor) form)
+        (list* op (mapv #(rewrite-record-constructors
+                         % records-by-map-constructor
+                         records-by-wide-positional-constructor)
+                       args)))))
+    (vector? form) (mapv #(rewrite-record-constructors
+                          % records-by-map-constructor
+                          records-by-wide-positional-constructor)
+                         form)
     (map? form) (into (empty form)
-                      (map (fn [[k v]] [(rewrite-map-constructors k records-by-map-constructor)
-                                       (rewrite-map-constructors v records-by-map-constructor)]))
+                      (map (fn [[k v]]
+                             [(rewrite-record-constructors
+                               k records-by-map-constructor
+                               records-by-wide-positional-constructor)
+                              (rewrite-record-constructors
+                               v records-by-map-constructor
+                               records-by-wide-positional-constructor)]))
                       form)
-    (set? form) (set (map #(rewrite-map-constructors % records-by-map-constructor) form))
+    (set? form) (set (map #(rewrite-record-constructors
+                            % records-by-map-constructor
+                            records-by-wide-positional-constructor)
+                          form))
     :else form))
 
 (declare rewrite-record-member-access*)
@@ -7144,13 +7177,20 @@
                                   (symbol (str "__kotoba_protocol_impl_" %2)))
                           implementations (range))
         constructors
-        (mapv (fn [{:keys [name fields field-parts typed? descriptor]}]
-                (let [params (if typed?
-                               (vec (mapcat (juxt :name :type) field-parts))
-                               fields)]
-                  (list 'defn (symbol (str "->" name)) params descriptor
-                        (list* 'record-new descriptor fields))))
-              record-infos)
+        (into []
+              (keep (fn [{:keys [name fields field-parts typed? descriptor]}]
+                      ;; A positional constructor with more than max-parameters
+                      ;; is still valid as direct record syntax, but it cannot
+                      ;; become a first-class function without lying about the
+                      ;; bounded callable ABI. Wide direct calls are rewritten
+                      ;; below; map->Type remains available at every width.
+                      (when (<= (count fields) max-parameters)
+                        (let [params (if typed?
+                                       (vec (mapcat (juxt :name :type) field-parts))
+                                       fields)]
+                          (list 'defn (symbol (str "->" name)) params descriptor
+                                (list* 'record-new descriptor fields)))))
+                    record-infos))
         impl-defs
         (mapv (fn [{:keys [impl-name params record-type body]}]
                 (let [typed-params
@@ -7175,11 +7215,36 @@
         (into {} (map (fn [{:keys [name] :as record}]
                         [(symbol (str "map->" name)) record]))
               record-infos)
+        wide-positional-constructors
+        (into {} (keep (fn [{:keys [name fields] :as record}]
+                         (when (> (count fields) max-parameters)
+                           [(symbol (str "->" name)) record])))
+              record-infos)
+        record-schemas
+        ;; A defrecord whose fields already use closed schema edges can expose
+        ;; its nominal identity as [:ref :ns/Type]. Keep legacy declarations
+        ;; with nested inline nominal descriptors source-compatible: those
+        ;; descriptors are valid record values, but are intentionally not
+        ;; inserted into the stricter closed schema graph.
+        (into {} (keep (fn [{:keys [descriptor]}]
+                         (let [field-types (map second (nth descriptor 2))
+                               inline-nominal?
+                               (some (fn [field-type]
+                                       (some #(or (record-type? %)
+                                                  (variant-type? %))
+                                             (tree-seq coll? seq field-type)))
+                                     field-types)]
+                           (when-not inline-nominal?
+                             [(second descriptor) descriptor]))))
+              record-infos)
         declarations '#{defrecord defprotocol definterface extend-type extend-protocol}
         ordinary (remove #(and (seq? %) (contains? declarations (first %))) forms)
-        rewritten (mapv #(rewrite-map-constructors % map-constructors) ordinary)]
+        rewritten (mapv #(rewrite-record-constructors
+                          % map-constructors wide-positional-constructors)
+                        ordinary)]
     {:forms (into rewritten (concat constructors impl-defs))
-     :dispatch dispatch}))
+     :dispatch dispatch
+     :record-schemas record-schemas}))
 
 (defn analyze
   "Analyze Kotoba source into HIR.
@@ -7218,6 +7283,20 @@
             (reject! "at most one namespace form is admitted" namespaces :kotoba.error/namespace-count))
         namespace-info (when-let [namespace-form (first namespaces)]
                          (namespace-parts namespace-form))
+        declared-schemas (or (:schemas namespace-info) {})
+        record-schemas (:record-schemas record-protocol-expansion)
+        schema-collisions (set/intersection (set (keys declared-schemas))
+                                            (set (keys record-schemas)))
+        _ (when (seq schema-collisions)
+            (reject! "defrecord nominal identities must not duplicate namespace :schemas"
+                     schema-collisions :kotoba.error/record-schema-collision))
+        merged-schemas-raw (merge declared-schemas record-schemas)
+        merged-schemas (when (seq merged-schemas-raw)
+                         (schema/validate-table! merged-schemas-raw))
+        namespace-info (assoc (or namespace-info {})
+                              :schemas merged-schemas
+                              :schema-identities
+                              (when merged-schemas (schema/identities merged-schemas)))
         raw-constants (into {}
                         (map (fn [form]
                                (let [{:keys [name value]} (def-parts form)]

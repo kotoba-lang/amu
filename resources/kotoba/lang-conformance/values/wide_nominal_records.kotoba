@@ -1,0 +1,29 @@
+(ns conformance.wide-records)
+
+(defrecord Header [name :string value :string])
+
+(defrecord Request
+  [url :string
+   headers [:set [:ref :conformance.wide-records/Header]]
+   names [:set :string]
+   body :string
+   timeout :i64
+   code :i64])
+
+(defn main [] :i64
+  (let [header (->Header "accept" "text/plain")
+        headers (typed-set-conj
+                 [:set [:ref :conformance.wide-records/Header]]
+                 (typed-set-new
+                  [:set [:ref :conformance.wide-records/Header]])
+                 header)
+        request (map->Request
+                 {:url "https://example.test"
+                  :headers headers
+                  :names (typed-set-new [:set :string])
+                  :body ""
+                  :timeout 30
+                  :code 7})]
+    (+ (:code request)
+       (typed-set-count [:set [:ref :conformance.wide-records/Header]]
+                        (:headers request)))))

@@ -409,6 +409,15 @@ persistent. Exact nominal descriptor, arity, and recursive field validation
 exclude cross-schema substitution, unknown/dynamic fields, sparse host objects,
 prototype behavior, and host identity from record semantics.
 
+The Clojure-shaped `defrecord` surface uses that same 32-field bound rather
+than the unrelated five-parameter callable bound. `->Type` and exact-literal
+`map->Type` stay ordinary source constructors; a positional constructor wider
+than five lowers directly and intentionally is not a first-class function.
+Schema-shaped declarations automatically expose `[:ref :namespace/Type]`, so
+nested sets, maps, records, and signatures can reuse the nominal identity
+without a duplicate namespace `:schemas` entry. `get`, keyword lookup, and
+destructuring remain type-directed.
+
 The machine-readable corpus at
 `resources/kotoba/compiler/typed-value-conformance.edn` is the shared
 qualification source for these algebraic value families. Every positive vector now executes against the reference
