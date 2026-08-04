@@ -7106,6 +7106,124 @@
                   groups)]
       (assoc record :implementations implementations))))
 
+(declare rewrite-record-constructors)
+
+(defn- rewrite-record-map-expression
+  "Lower a computed, but statically closed, map expression to one nominal
+  record value.
+
+  Record context propagates only through result positions. Binding values,
+  tests, and non-final `do` expressions keep their ordinary meaning. Every
+  reachable leaf must still be a literal map with exactly the declared fields;
+  this admits heterogeneous records without introducing a dynamically typed
+  map representation or runtime field guessing."
+  [form {:keys [fields descriptor]}
+   records-by-map-constructor records-by-wide-positional-constructor]
+  (let [field-keys (mapv (comp keyword name) fields)
+        rewrite #(rewrite-record-constructors
+                  % records-by-map-constructor
+                  records-by-wide-positional-constructor)
+        recur-result #(rewrite-record-map-expression
+                       % {:fields fields :descriptor descriptor}
+                       records-by-map-constructor
+                       records-by-wide-positional-constructor)]
+    (cond
+      (map? form)
+      (do
+        (when-not (= (set field-keys) (set (keys form)))
+          (reject! "map-> record construction requires exactly the declared fields"
+                   form :kotoba.error/record-map-constructor))
+        (list* 'record-new descriptor
+               (map (fn [field-key] (rewrite (get form field-key))) field-keys)))
+
+      (and (seq? form) (contains? '#{if if-not} (first form)))
+      (let [[op test then else :as parts] form]
+        (when-not (= 4 (count parts))
+          (reject! "computed map-> if requires both record-valued branches"
+                   form :kotoba.error/record-map-constructor))
+        (preserve-form-meta
+         form
+         (list op (rewrite test) (recur-result then) (recur-result else))))
+
+      (and (seq? form) (contains? '#{if-let if-some} (first form)))
+      (let [[op binding then else :as parts] form]
+        (when-not (and (= 4 (count parts))
+                       (vector? binding) (= 2 (count binding)))
+          (reject! "computed map-> binding conditional requires one binding and both record-valued branches"
+                   form :kotoba.error/record-map-constructor))
+        (preserve-form-meta
+         form
+         (list op [(first binding) (rewrite (second binding))]
+               (recur-result then) (recur-result else))))
+
+      (and (seq? form) (= 'cond (first form)))
+      (let [clauses (vec (rest form))]
+        (when-not (and (even? (count clauses))
+                       (= :else (nth clauses (- (count clauses) 2) nil)))
+          (reject! "computed map-> cond requires a final :else record value"
+                   form :kotoba.error/record-map-constructor))
+        (preserve-form-meta
+         form
+         (list* 'cond
+                (map-indexed (fn [index item]
+                               (if (odd? index) (recur-result item) (rewrite item)))
+                             clauses))))
+
+      (and (seq? form) (= 'case (first form)))
+      (let [[_ dispatch & clauses] form]
+        (when-not (odd? (count clauses))
+          (reject! "computed map-> case requires a default record value"
+                   form :kotoba.error/record-map-constructor))
+        (preserve-form-meta
+         form
+         (list* 'case (rewrite dispatch)
+                (concat
+                 (mapcat (fn [[test result]] [test (recur-result result)])
+                         (partition 2 (butlast clauses)))
+                 [(recur-result (last clauses))]))))
+
+      (and (seq? form) (= 'condp (first form)))
+      (let [[_ predicate dispatch & clauses] form]
+        (when-not (and predicate dispatch (odd? (count clauses)))
+          (reject! "computed map-> condp requires a predicate, dispatch, and default record value"
+                   form :kotoba.error/record-map-constructor))
+        (preserve-form-meta
+         form
+         (list* 'condp (rewrite predicate) (rewrite dispatch)
+                (concat
+                 (mapcat (fn [[test result]] [test (recur-result result)])
+                         (partition 2 (butlast clauses)))
+                 [(recur-result (last clauses))]))))
+
+      (and (seq? form) (= 'let (first form)))
+      (let [[_ bindings & body] form]
+        (when-not (and (vector? bindings) (even? (count bindings)) (seq body))
+          (reject! "computed map-> let requires bindings and a result expression"
+                   form :kotoba.error/record-map-constructor))
+        (preserve-form-meta
+         form
+         (list* 'let
+                (mapv (fn [index item]
+                        (if (odd? index) (rewrite item) item))
+                      (range) bindings)
+                (concat (map rewrite (butlast body))
+                        [(recur-result (last body))]))))
+
+      (and (seq? form) (= 'do (first form)))
+      (let [body (rest form)]
+        (when-not (seq body)
+          (reject! "computed map-> do requires a result expression"
+                   form :kotoba.error/record-map-constructor))
+        (preserve-form-meta
+         form
+         (list* 'do (concat (map rewrite (butlast body))
+                            [(recur-result (last body))]))))
+
+      :else
+      (reject! (str "map-> record construction requires an exact map or a closed "
+                    "control expression of exact maps")
+               form :kotoba.error/record-map-constructor))))
+
 (defn- rewrite-record-constructors
   [form records-by-map-constructor records-by-wide-positional-constructor]
   (cond
@@ -7117,21 +7235,13 @@
         (= 'quote op) form
 
         (contains? records-by-map-constructor op)
-        (let [{:keys [fields descriptor]} (get records-by-map-constructor op)
-              source-map (first args)
-              field-keys (mapv (comp keyword name) fields)]
-          (when-not (and (= 1 (count args))
-                         (map? source-map)
-                         (= (set field-keys) (set (keys source-map))))
-            (reject! "map-> record construction requires one literal map with exactly the declared fields"
+        (let [record (get records-by-map-constructor op)]
+          (when-not (= 1 (count args))
+            (reject! "map-> record construction requires one map expression"
                      form :kotoba.error/record-map-constructor))
-          (list* 'record-new descriptor
-                 (map (fn [field-key]
-                        (rewrite-record-constructors
-                         (get source-map field-key)
-                         records-by-map-constructor
-                         records-by-wide-positional-constructor))
-                      field-keys)))
+          (rewrite-record-map-expression
+           (first args) record
+           records-by-map-constructor records-by-wide-positional-constructor))
 
         (contains? records-by-wide-positional-constructor op)
         (let [{:keys [fields descriptor]} (get records-by-wide-positional-constructor op)]
