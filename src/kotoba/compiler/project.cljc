@@ -339,6 +339,15 @@
         functions (mapv (fn [function]
                           (let [original-name (:name function)]
                             (cond-> (-> function
+                                        ;; Captured before the rewrites below.
+                                        ;; rewrite-calls rebuilds forms with
+                                        ;; list* and drops metadata, and the
+                                        ;; linked text cannot carry it either
+                                        ;; -- serialization is pr-str. This is
+                                        ;; the position in the module the
+                                        ;; author actually wrote.
+                                        (assoc :source-module (:namespace info)
+                                               :source-span (:span (meta (:body function))))
                                         (update :name local-names)
                                         ;; Before renaming: rewrite-calls rebuilds forms
                                         ;; with list*, which drops the :source-operation
@@ -471,16 +480,23 @@
           function-count (+ (count functions) (count wrappers))
           ;; The linked namespace deliberately carries NO `:capabilities`
           ;; clause even when its modules declared one. That clause is a
-          ;; source-level declare-then-check over NAMED `(cap-call :some/name)`
-          ;; forms, and it has already run once per module inside
-          ;; `analyze-module`. By the time bodies reach here the frontend has
-          ;; lowered every named cap-call to its integer id, so the linked
-          ;; source contains only `(cap-call 9 ...)`, which populates no
-          ;; used-keyword set -- re-declaring the union would fail its own
-          ;; check with "declares a capability never used via cap-call".
-          ;; Nothing is weakened by the omission: the effects the policy and
-          ;; the artifact's requiredCapabilities are computed from come from
-          ;; the integer cap-call forms, not from this clause.
+          ;; source-level declare-then-check, and it has already run once per
+          ;; module inside `analyze-module`; running it again over the union
+          ;; would re-check a property that is already established, against a
+          ;; namespace no author wrote.
+          ;;
+          ;; This comment used to justify the omission differently -- that the
+          ;; linked source contained only integer `(cap-call 9 ...)` forms and
+          ;; so populated no used-keyword set. That stopped being true when
+          ;; `resugar-capability-calls` restored the friendly spelling: the
+          ;; linked source now reads `(clock/now seed)` and the keyword set
+          ;; would be populated. The omission still holds and linking a module
+          ;; that declares `:capabilities` still works, but the old reasoning
+          ;; would now mislead anyone acting on it.
+          ;;
+          ;; Nothing is weakened either way: the effects that policy and the
+          ;; artifact's requiredCapabilities are computed from come from the
+          ;; elaborated calls, not from this clause.
           linked-source
           (source-text
            (into [(list 'ns root (list :export (vec (map first exports))))]
@@ -493,6 +509,21 @@
                                body))
                        functions)
                   wrappers)))
+          ;; source-text emits exactly one form per line, and the `ns` form is
+          ;; line 1, so an emitted function's linked line is its index + 2.
+          ;; Synthetic forms -- project dispatchers and export wrappers -- have
+          ;; no authoring module and are simply absent from the map rather than
+          ;; being attributed to one.
+          source-map {:kotoba.source-map/version 1
+                      :root root
+                      :entries (vec (keep-indexed
+                                     (fn [index function]
+                                       (when-let [module (:source-module function)]
+                                         {:linked-line (+ 2 index)
+                                          :module module
+                                          :source-name (:source-name function)
+                                          :source-span (:source-span function)}))
+                                     functions))}
           linked-bytes (value/utf8-byte-count! linked-source)]
       (when (> function-count max-project-functions)
         (reject! "linked project exceeds function limit" {:count function-count}))
@@ -502,4 +533,21 @@
         (reject! "linked project source exceeds byte limit" {:bytes linked-bytes}))
       {:source
        linked-source
-       :root root :module-order @order :modules (set @order)})))
+       :root root :module-order @order :modules (set @order)
+       :source-map source-map})))
+
+(defn source-position
+  "Translate a line in the linked source back to the module that wrote it.
+
+  The linked source is a synthetic single unit, so every span the frontend
+  derives from it -- and therefore every span in a diagnostic raised against a
+  project build -- refers to that intermediate rather than to anything an
+  author edited. Without a translation, a project-build error can name the
+  operation but not the file and line it came from.
+
+  Returns `{:module :source-name :source-span}` for a linked line that came
+  from a module, or nil for the `ns` form and for synthetic dispatchers and
+  export wrappers, which no author wrote."
+  [source-map linked-line]
+  (some (fn [entry] (when (= linked-line (:linked-line entry)) entry))
+        (:entries source-map)))
