@@ -8,7 +8,8 @@
   vector-mut + typed-map-dissoc + quot/bit-not + pred/when-ext/if-some-string/shift +
   inc/dec + vector-sum loop + shift-right + reduce-vector + map/filter-vector +
   named-hof + thread + option-result + reduce-named + pair-list +
-  string-length-concat + multi-map + list-rest + when-let-u64.
+  string-length-concat + multi-map + list-rest + when-let-u64 +
+  type-directed heterogeneous nth.
   Full matrix still progressive."
 
  :backends
@@ -518,6 +519,15 @@
    :args []
    :expect {:kotoba 7}
    :note "T1.3 second/rest pair-chain dual-backend"}
+  {:id :type-directed-heterogeneous-nth
+   :class :pure-product-run
+   :required-backends #{:kir :wasm32-kotoba-v1}
+   :kind :run
+   :entry "values/type_directed_heterogeneous_nth.kotoba"
+   :function "main"
+   :args []
+   :expect {:kotoba 3}
+   :note "ADR 0206 ordinary nth selects the exact heterogeneous child accessor"}
   {:id :when-let-u64-kit
    :class :pure-product-run
    :required-backends #{:kir :wasm32-kotoba-v1}
