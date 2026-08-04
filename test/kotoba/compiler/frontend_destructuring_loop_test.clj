@@ -1,6 +1,6 @@
 (ns kotoba.compiler.frontend-destructuring-loop-test
   "Tests for ADR-2607150000's remaining language extensions: destructuring
-  (let + defn params, one level only), bounded vector-i64 literals, and
+  (let + defn params, including bounded nested patterns), vector literals, and
   loop/recur (compiled to a synthesized recursive
   helper with purely-syntactic free-variable capture). Also regression-covers
   two bugs found and fixed while implementing these: (1) `let`'s bindings
@@ -71,6 +71,8 @@
 
 (deftest map-destructuring-in-let-binds-via-keys
   (is (= 30 (oracle "(defn main [] (let [{:keys [a b]} {:a 10 :b 20}] (+ a b)))")))
+  (is (= 10 (oracle "(defn main [] (let [{a :a} {:a 10}] a))"))
+      "explicit binding-pattern to keyword entries retain the familiar direction")
   (is (= 0 (oracle "(defn main [] (let [{:keys [a c]} {:a 10 :b 20}] (- a a c)))"))
       "a missing key in {:keys [...]} defaults to 0, same as bare `get`"))
 
@@ -91,9 +93,7 @@
   (is (= 3 (oracle "(defn one [] 1)
                      (defn main [] (let [[a b] [(one) (+ (one) 1)]] (+ a b)))"))))
 
-(deftest nested-destructuring-patterns-are-rejected-one-level-only
-  (is (some? (rejection-message "(defn main [] (let [[[a] b] [[1] 2]] a))"))
-      "a vector pattern nested inside a vector pattern is not supported")
+(deftest malformed-nested-destructuring-patterns-fail-closed
   (is (some? (rejection-message "(defn main [] (let [[a & b & c] [1 2 3]] a))"))
       "more than one rest-binding symbol after `&` is rejected")
   (is (some? (rejection-message "(defn main [] (let [{:keys [a] :strs [b]} {}] a))"))

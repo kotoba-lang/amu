@@ -7,7 +7,7 @@
   (let [m (lc/load-manifest)]
     (is (= 2 (:kotoba.lang.conformance/version m)))
     (is (= "T1.3" (:kotoba.lang.conformance/wbs m)))
-    (is (= 57 (count (lc/pure-product-cases m))))))
+    (is (= 58 (count (lc/pure-product-cases m))))))
 
 (deftest pure-product-required-backends
   (is (= #{:kir :wasm32-kotoba-v1} lc/pure-product-required)))
@@ -15,7 +15,7 @@
 (deftest dual-backend-pilot-suite-green
   (let [report (lc/run-suite)]
     (is (pos? (:total report)))
-    (is (= 57 (:total report)))
+    (is (= 58 (:total report)))
     (is (true? (:ok? report))
         (str "failed: " (pr-str (:failed report))))
     (is (= (:total report) (:passed report)))
@@ -43,7 +43,7 @@
           cases (lc/pure-product-cases m)
           pure (filter #(= :pure-product (lc/case-language-profile %)) cases)
           portable (filter #(= :portable (lc/case-language-profile %)) cases)]
-      (is (= 52 (count pure)))
+      (is (= 53 (count pure)))
       (is (= 5 (count portable))
           "dotimes / condp / defmethod / cond->> / -> are portable-only surface")
       (doseq [c pure]
@@ -64,7 +64,7 @@
 
 (deftest suite-reports-profile-split
   (let [report (lc/run-suite)]
-    (is (= 52 (:pure-product-passed report)))
+    (is (= 53 (:pure-product-passed report)))
     (is (= 5 (:portable-passed report)))
     (is (= (:passed report)
            (+ (:pure-product-passed report) (:portable-passed report))))))

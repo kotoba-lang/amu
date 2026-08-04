@@ -27,6 +27,14 @@
            (nth (hetero-vector [:vector [:string :bool]] \"x\" true) 1))"]
     (is (= true (ir/execute (:kir (compile-source source)) 'main [])))))
 
+(deftest ordinary-nth-also-selects-homogeneous-vector-accessors
+  (is (= 2 (ir/execute
+            (:kir (compile-source "(defn main [] (nth [1 2 3] 1))"))
+            'main [])))
+  (is (= 9 (ir/execute
+            (:kir (compile-source "(defn main [] (nth [1] 4 9))"))
+            'main []))))
+
 (deftest heterogeneous-nth-fails-closed-when-the-child-type-is-ambiguous
   (doseq [[source message]
           [["(defn pick [index :i64] :string
@@ -57,6 +65,60 @@
     (is (= "Ada" (ir/execute (:kir (compile-source typed-map-source)) 'main [])))
     (is (= "Grace" (ir/execute (:kir (compile-source default-source)) 'main [])))
     (is (= "Lin" (ir/execute (:kir (compile-source record-source)) 'main [])))))
+
+(deftest nested-destructuring-selects-exact-accessors
+  (let [vector-source
+        "(defn main [] :string
+           (let [[id [name active]]
+                 (hetero-vector
+                  [:vector [:i64 [:vector [:string :bool]]]]
+                  7
+                  (hetero-vector [:vector [:string :bool]] \"Ada\" true))]
+             (if active name \"inactive\")))"
+        record-source
+         "(ns demo)
+         (defrecord Profile [name :string])
+         (defrecord User [profile [:record :demo/Profile [[:name :string]]]])
+         (defn main [] :string
+           (let [{{:keys [name]} :profile}
+                 (->User (->Profile \"Lin\"))]
+             name))"
+        typed-map-source
+        "(defn main [] :string
+           (let [{:keys [name] :or {name \"missing\"}}
+                 (typed-map-new [:map :keyword :string] :name \"Grace\")]
+             name))"]
+    (is (= "Ada" (ir/execute (:kir (compile-source vector-source)) 'main [])))
+    (is (= "Lin" (ir/execute (:kir (compile-source record-source)) 'main [])))
+    (is (= "Grace" (ir/execute (:kir (compile-source typed-map-source)) 'main [])))
+    (doseq [source [vector-source record-source typed-map-source]]
+      (is (not-any? #(and (seq? %)
+                          (contains? '#{nth get __kotoba_destructure_get} (first %)))
+                    (tree-seq coll? seq (:kir (compile-source source))))))))
+
+(deftest typed-map-destructuring-keeps-missingness-explicit
+  (is (thrown-with-msg?
+       clojure.lang.ExceptionInfo
+       #"requires an :or default"
+       (frontend/analyze
+        "(defn main [] :string
+           (let [{:keys [name]}
+                 (typed-map-new [:map :keyword :string] :name \"Ada\")]
+             name))"))))
+
+(deftest typed-function-parameters-admit-nested-patterns
+  (let [source
+        "(defn choose
+           [[id [name active]] [:vector [:i64 [:vector [:string :bool]]]]]
+           :string
+           (if active name \"inactive\"))
+         (defn main [] :string
+           (choose
+            (hetero-vector
+             [:vector [:i64 [:vector [:string :bool]]]]
+             9
+             (hetero-vector [:vector [:string :bool]] \"Mio\" true))))"]
+    (is (= "Mio" (ir/execute (:kir (compile-source source)) 'main [])))))
 
 (deftest type-directed-get-rejects-schema-erasing-uses
   (doseq [[source message]

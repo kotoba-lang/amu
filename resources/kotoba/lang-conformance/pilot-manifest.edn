@@ -9,7 +9,7 @@
   inc/dec + vector-sum loop + shift-right + reduce-vector + map/filter-vector +
   named-hof + thread + option-result + reduce-named + pair-list +
   string-length-concat + multi-map + list-rest + when-let-u64 +
-  type-directed heterogeneous nth.
+  type-directed heterogeneous nth + nested typed destructuring.
   Full matrix still progressive."
 
  :backends
@@ -528,6 +528,15 @@
    :args []
    :expect {:kotoba 3}
    :note "ADR 0206 ordinary nth selects the exact heterogeneous child accessor"}
+  {:id :nested-typed-destructuring
+   :class :pure-product-run
+   :required-backends #{:kir :wasm32-kotoba-v1}
+   :kind :run
+   :entry "values/nested_typed_destructuring.kotoba"
+   :function "main"
+   :args []
+   :expect {:kotoba 26}
+   :note "ADR 0207 nested vector/record/typed-map patterns select exact accessors"}
   {:id :when-let-u64-kit
    :class :pure-product-run
    :required-backends #{:kir :wasm32-kotoba-v1}

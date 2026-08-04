@@ -2166,65 +2166,88 @@
 
 (defn- destructure-binding
   "Expands ONE `[pattern value-expr]` `let`/`defn`-param binding into a flat
-  seq of `[symbol expr]` pairs (ADR-2607150000). PATTERN is a plain symbol
-  (kept as-is, 1 pair), a positional vector `[a b & rest]` (bounded
-  vector-i64 destructuring via trapping vector-at/vector-drop),
-  or a map `{:keys [a b]}` (association-list destructuring via the `get`
-  special form, 1 pair per key). VALUE-EXPR must already be desugared --
-  callers desugar it once; every pattern binds a single gensym'd temp to it
-  first so it's never re-evaluated. One level only: a pattern NESTED inside
-  a vector/map pattern is not itself recursively destructured -- a real,
-  documented scope limit, not silently ignored (rejected below if written)."
+  seq of `[symbol expr]` pairs (ADR-2607150000/ADR 0207). PATTERN is a plain
+  symbol, a positional vector `[a [b c] & rest]`, or a map using `:keys`,
+  `:or`, `:as`, and Clojure-shaped explicit entries such as
+  `{{:keys [name]} :user}`. Composite patterns recurse through ordinary `nth`
+  and an internal destructuring lookup; the later type-directed pass selects
+  the exact heterogeneous-vector, typed-map, record, or legacy accessor.
+
+  VALUE-EXPR must already be desugared. Every composite pattern binds one
+  deterministic synthetic temp first, so neither the original expression nor
+  a nested projection is evaluated more than once."
   [pattern value-expr]
-  (cond
-    (symbol? pattern) [[pattern value-expr]]
+  (letfn [(supported-pattern? [candidate]
+            (or (symbol? candidate) (vector? candidate) (map? candidate)))
+          (expand [candidate value]
+            (cond
+              (symbol? candidate) [[candidate value]]
 
-    (vector? pattern)
-    ;; Deterministic, like the and/or/comparison temps: derived from the first
-    ;; bound name, which is unique in this binding vector (duplicates are
-    ;; already rejected). A `gensym` here would keep the emitted KIR different
-    ;; on every compile for any module that destructures.
-    ;; `(or … 'v)` here made SCI/nbb fail to ANALYSE the whole namespace with
-    ;; "Unable to resolve symbol: v" -- the JVM reader accepts the quoted symbol,
-    ;; nbb's does not in this position, and the compiler is loaded under both.
-    (let [tmp (chain-temp "destr" (if-let [s (first (filter symbol? pattern))]
-                                    (name s)
-                                    "v"))
-          [positional rest-part] (split-with (complement #{'&}) pattern)]
-      (when-not (every? symbol? positional)
-        (reject! "vector destructuring supports only flat (one-level) symbol patterns" pattern))
-      (when (and (seq rest-part) (or (not= 2 (count rest-part)) (not (symbol? (second rest-part)))))
-        (reject! "`&` in vector destructuring must be followed by exactly one rest-binding symbol" pattern))
-      (into [[tmp value-expr]]
-            (concat
-             (map-indexed (fn [i name] [name (list 'vector-at tmp i)]) positional)
-             (when-let [rest-name (second rest-part)]
-               [[rest-name (list 'vector-drop tmp (count positional))]]))))
+              (vector? candidate)
+              (let [tmp (synthetic "destr-vector")
+                    [positional rest-part] (split-with (complement #{'&}) candidate)]
+                (when-not (every? supported-pattern? positional)
+                  (reject! "vector destructuring items must be symbols or nested vector/map patterns"
+                           candidate))
+                (when (and (seq rest-part)
+                           (or (not= 2 (count rest-part))
+                               (not (symbol? (second rest-part)))))
+                  (reject! "`&` in vector destructuring must be followed by exactly one rest-binding symbol"
+                           candidate))
+                (into [[tmp value]]
+                      (concat
+                       (mapcat (fn [[index item-pattern]]
+                                 (expand item-pattern (list 'nth tmp index)))
+                               (map-indexed vector positional))
+                       ;; A rest binding retains the established homogeneous
+                       ;; vector contract. Heterogeneous rest needs an exact
+                       ;; sliced descriptor and is rejected by type checking
+                       ;; until that representation is admitted explicitly.
+                       (when-let [rest-name (second rest-part)]
+                         [[rest-name (list 'vector-drop tmp (count positional))]]))))
 
-    (map? pattern)
-    (let [keys-vec (:keys pattern)
-          defaults (:or pattern {})
-          as-name (:as pattern)
-          admitted-keys #{:keys :or :as}]
-      (when-not (and (every? admitted-keys (keys pattern))
-                     keys-vec (vector? keys-vec) (every? symbol? keys-vec)
-                     (map? defaults) (every? symbol? (keys defaults))
-                     (every? (set keys-vec) (keys defaults))
-                     (or (nil? as-name) (symbol? as-name)))
-        (reject! "map destructuring supports {:keys [...]} with bounded :or defaults and optional :as" pattern))
-      (let [tmp (synthetic "destr-map")]
-        (into [[tmp value-expr]]
-              (concat
-               ;; map-get is already a primitive shape here. Defaults are
-               ;; desugared exactly once and evaluated only for a missing key.
-               (map (fn [k]
-                      [k (list 'map-get tmp (keyword k)
-                               (if (contains? defaults k)
-                                 (desugar-expr (get defaults k)) 0))])
-                    keys-vec)
-               (when as-name [[as-name tmp]])))))
+              (map? candidate)
+              (let [keys-vec (get candidate :keys [])
+                    defaults (get candidate :or {})
+                    as-name (:as candidate)
+                    explicit (apply dissoc candidate [:keys :or :as])
+                    explicit (sort-by (comp pr-str val) explicit)
+                    direct-symbols
+                    (into (set keys-vec)
+                          (keep (fn [[binding-pattern _]]
+                                  (when (symbol? binding-pattern) binding-pattern)))
+                          explicit)]
+                (when-not (and (vector? keys-vec) (every? symbol? keys-vec)
+                               (map? defaults) (every? symbol? (keys defaults))
+                               (every? direct-symbols (keys defaults))
+                               (or (nil? as-name) (symbol? as-name))
+                               (every? (fn [[binding-pattern lookup-key]]
+                                         (and (supported-pattern? binding-pattern)
+                                              (keyword? lookup-key)))
+                                       explicit)
+                               (or (seq keys-vec) (seq explicit) as-name))
+                  (reject! (str "map destructuring requires :keys, :as, or keyword-valued "
+                                "explicit entries, with :or defaults for direct symbol bindings")
+                           candidate))
+                (let [tmp (synthetic "destr-map")
+                      entries (concat (map (fn [name] [name (keyword name)]) keys-vec)
+                                      explicit)]
+                  (into [[tmp value]]
+                        (concat
+                         (mapcat
+                          (fn [[binding-pattern lookup-key]]
+                            (let [lookup
+                                  (if (and (symbol? binding-pattern)
+                                           (contains? defaults binding-pattern))
+                                    (list '__kotoba_destructure_get tmp lookup-key
+                                          (desugar-expr (get defaults binding-pattern)))
+                                    (list '__kotoba_destructure_get tmp lookup-key))]
+                              (expand binding-pattern lookup)))
+                          entries)
+                         (when as-name [[as-name tmp]])))))
 
-    :else (reject! "unsupported destructuring pattern" pattern)))
+              :else (reject! "unsupported destructuring pattern" candidate)))]
+    (expand pattern value-expr)))
 
 (defn- form-free-symbols
   "Symbols FORM references as VALUES (never call-heads) that aren't in
@@ -4758,6 +4781,31 @@
           (validate-value-type! type)
           (require-expression-type! (infer-expression-type value locals signatures) type value)
           (nth item-types host-index))
+        __kotoba_destructure_get
+        (let [[value key default] args
+              value-type (infer-expression-type value locals signatures)
+              descriptor (resolve-ref-type value-type)]
+          (cond
+            (canonical-typed-map-type? value-type)
+            (do
+              (when-not (= 3 (count args))
+                (reject! "typed-map destructuring requires an :or default"
+                         form :kotoba.error/destructure-default))
+              (require-expression-type! (infer-expression-type key locals signatures)
+                                        (second value-type) key)
+              (require-expression-type! (infer-expression-type default locals signatures)
+                                        (nth value-type 2) default)
+              (nth value-type 2))
+
+            (record-type? descriptor)
+            (or (record-field-type descriptor key)
+                (reject! "record field is not declared"
+                         form :kotoba.error/record-field))
+
+            :else
+            (infer-call-type 'map-get
+                             [value key (if (= 3 (count args)) default 0)]
+                             locals signatures)))
         get
         (let [[value key default] args
               value-type (infer-expression-type value locals signatures)
@@ -4791,7 +4839,8 @@
         nth
         (let [[value index & defaults] args
               value-type (infer-expression-type value locals signatures)]
-          (if (heterogeneous-vector-type? value-type)
+          (cond
+            (heterogeneous-vector-type? value-type)
             (do
               (when-not (and (= 2 (count args)) (empty? defaults))
                 (reject! "heterogeneous vector nth requires value and one literal index"
@@ -4799,7 +4848,22 @@
               (let [host-index
                     (heterogeneous-vector-index! index (second value-type) form)]
                 (nth (second value-type) host-index)))
-            (infer-call-type op args locals signatures)))
+
+            (= :vector-i64 value-type)
+            (do
+              (when-not (<= 2 (count args) 3)
+                (reject! "vector nth requires value, index, and optional default" form))
+              (infer-call-type (if (= 3 (count args)) 'vector-get 'vector-at)
+                               args locals signatures))
+
+            (= :vector-f64 value-type)
+            (do
+              (when-not (<= 2 (count args) 3)
+                (reject! "vector nth requires value, index, and optional default" form))
+              (infer-call-type (if (= 3 (count args)) 'vector-f64-get 'vector-f64-at)
+                               args locals signatures))
+
+            :else (infer-call-type op args locals signatures)))
         hetero-vector-assoc
         (let [[type value index item] args
               item-types (second type)
@@ -5370,6 +5434,36 @@
                      :kotoba.error/record-projection-unresolved))
           (list 'record-get descriptor value (second args)))
 
+        (= op '__kotoba_destructure_get)
+        (let [rewritten-args
+              (mapv #(rewrite-record-projection % locals signatures schemas) args)
+              [value key default] rewritten-args
+              value-type (try (infer-expression-type value locals signatures)
+                              (catch #?(:clj Exception :cljs :default) _ nil))
+              descriptor (if (schema-ref-type? value-type)
+                           (get schemas (second value-type))
+                           value-type)]
+          (cond
+            (canonical-typed-map-type? value-type)
+            (do
+              (when-not (= 3 (count rewritten-args))
+                (reject! "typed-map destructuring requires an :or default"
+                         form :kotoba.error/destructure-default))
+              (list 'option-value-of [:option (nth value-type 2)]
+                    (list 'typed-map-get value-type value key)
+                    default))
+
+            (record-type? descriptor)
+            (do
+              (when-not (keyword? key)
+                (reject! "record destructuring requires keyword fields"
+                         form :kotoba.error/record-projection-unresolved))
+              (list 'record-get descriptor value key))
+
+            :else
+            (list 'map-get value key
+                  (if (= 3 (count rewritten-args)) default 0))))
+
         (= op 'get)
         (let [rewritten-args
               (mapv #(rewrite-record-projection % locals signatures schemas) args)
@@ -5408,7 +5502,8 @@
                            (infer-expression-type (first rewritten-args)
                                                   locals signatures)
                            (catch #?(:clj Exception :cljs :default) _ nil))]
-          (if (heterogeneous-vector-type? value-type)
+          (cond
+            (heterogeneous-vector-type? value-type)
             (do
               (when-not (= 2 (count rewritten-args))
                 (reject! "heterogeneous vector nth requires value and one literal index"
@@ -5417,7 +5512,22 @@
                                            (second value-type) form)
               (list 'hetero-vector-at value-type
                     (first rewritten-args) (second rewritten-args)))
-            (cons op rewritten-args)))
+
+            (= :vector-i64 value-type)
+            (do
+              (when-not (<= 2 (count rewritten-args) 3)
+                (reject! "vector nth requires value, index, and optional default" form))
+              (cons (if (= 3 (count rewritten-args)) 'vector-get 'vector-at)
+                    rewritten-args))
+
+            (= :vector-f64 value-type)
+            (do
+              (when-not (<= 2 (count rewritten-args) 3)
+                (reject! "vector nth requires value, index, and optional default" form))
+              (cons (if (= 3 (count rewritten-args)) 'vector-f64-get 'vector-f64-at)
+                    rewritten-args))
+
+            :else (cons op rewritten-args)))
 
         :else
         ;; Force recursive rewrites while the per-analysis protocol dispatch
@@ -6494,7 +6604,14 @@
                              (structured-type? type))
                          (not (or (symbol? pattern)
                                   (and (= type :map) (map? pattern))
-                                  (and (= type :vector-i64) (vector? pattern)))))
+                                  (and (contains? #{:vector-i64 :vector-f64} type)
+                                       (vector? pattern))
+                                  (and (heterogeneous-vector-type? type)
+                                       (vector? pattern))
+                                  (and (or (canonical-typed-map-type? type)
+                                           (record-type? type)
+                                           (schema-ref-type? type))
+                                       (map? pattern)))))
                 (reject! "typed values require plain-symbol bindings" pattern))
               (cond-> {:pattern pattern
                        :type (if (callable-type? type) :i64 type)}

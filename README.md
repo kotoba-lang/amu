@@ -439,10 +439,13 @@ inputs enter Web through checked arrays and typed Wasm through the host-issued
 `vector-get`, `vector-at`, `vector-drop`, `vector-assoc`, and `vector-conj` preserve signed-i64 elements;
 get uses a lazy fallback for every out-of-range index, while assoc traps.
 Generated Web values are frozen arrays and updates are persistent. Ordinary
-`[1 2 3]` literals now lower to this profile. Flat `[a b & rest]`
-destructuring uses trapping required positions and a bounded frozen suffix;
-missing positions fail closed instead of silently becoming zero or nil.
-Destructured function parameters must declare `:vector-i64` explicitly.
+`[1 2 3]` literals now lower to this profile. `[a b & rest]` destructuring uses
+trapping required positions and a bounded frozen suffix. Nested vector/map
+patterns select accessors from inferred heterogeneous-vector, record,
+typed-map, or homogeneous-vector types; missing positions fail closed instead
+of silently becoming zero or nil. Typed-map bindings require an explicit `:or`
+payload default. Destructured function parameters declare their structured type
+explicitly.
 The explicit `(list ...)` surface retains the legacy pair-chain representation.
 
 Release-oriented target identities explicitly bind execution format, ISA, OS,
