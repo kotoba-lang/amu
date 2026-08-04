@@ -1,0 +1,12 @@
+(ns kotoba.lang.conformance.native.vector-f64-composed)
+
+;; [1.5 2.5] -> append 3.5 -> drop 1 -> read 3.5. Native vectors store f64
+;; values as their IEEE-754 i64 words, so the final conversion is exact and
+;; makes this case independent of text formatting or host-number coercion.
+(defn main [] :i64
+  (f64-to-bits
+   (vector-f64-at
+    (vector-f64-drop
+     (vector-f64-conj (vector-f64 1.5 2.5) 3.5)
+     1)
+    1)))

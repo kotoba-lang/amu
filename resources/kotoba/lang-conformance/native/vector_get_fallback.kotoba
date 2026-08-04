@@ -1,0 +1,8 @@
+(ns kotoba.lang.conformance.native.vector-get-fallback)
+;; vector-get is total where vector-at traps. All three outcomes are
+;; exercised, because the lowering tests the two out-of-range directions with
+;; two separate comparisons and only then reads the element.
+(defn main [] :i64
+  (+ (+ (nth [1 2] 5 40)
+        (nth [1 2] -1 200))
+     (nth [1 2] 1 0)))

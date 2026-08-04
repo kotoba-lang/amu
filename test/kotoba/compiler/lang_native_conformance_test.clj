@@ -7,14 +7,14 @@
   (let [m (nc/load-manifest)]
     (is (= 2 (:kotoba.lang.conformance/version m)))
     (is (= "T1.4" (:kotoba.lang.conformance/wbs m)))
-    (is (= 8 (count (:cases m))))))
+    (is (= 16 (count (:cases m))))))
 
 (deftest pure-native-pilot-suite
   (let [report (nc/run-suite)]
     (is (true? (:ok? report))
         (str "failed: " (pr-str (:failed report))))
     (when-not (:skipped? report)
-      (is (= 8 (:passed report)))
+      (is (= 16 (:passed report)))
       (is (#{:x86_64-kotoba-v1 :aarch64-kotoba-v1} (:target report)))
       (doseq [r (:results report)]
         (testing (str (:id r))
