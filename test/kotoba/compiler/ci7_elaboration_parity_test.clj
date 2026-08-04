@@ -146,3 +146,54 @@
     (is (not (re-find #"typed-cap-call|:cap/call" lib-source)))
     (is (not (re-find #"typed-cap-call|:cap/call" single-source)))
     (is (not (re-find #"typed-cap-call" (linked-source))))))
+
+;; ---------------------------------------------------------------------------
+;; Source map: translating a linked position back to the module that wrote it
+
+(deftest linked-lines-resolve-to-the-authoring-module
+  (testing "Every span the frontend derives from linked source refers to the
+            synthetic intermediate, so a project-build diagnostic could name
+            the operation but not the file it came from. link-source now
+            returns a map from linked line to authoring module."
+    (let [{:keys [source source-map]}
+          (project/link-source {'ci7.app app-source 'ci7.clock lib-source} 'ci7.app)
+          ;; the emitted body carrying the capability call
+          capability-line (->> (clojure.string/split-lines source)
+                               (keep-indexed (fn [i l]
+                                               (when (clojure.string/includes? l "clock/now")
+                                                 (inc i))))
+                               first)
+          entry (project/source-position source-map capability-line)]
+      (is (some? capability-line))
+      (is (= 'ci7.clock (:module entry))
+          "the capability call came from the library module, not the root")
+      (is (= 'read-clock (:source-name entry))
+          "and from the function the author named, not its synthetic rename")
+      (testing "the span is the position inside that module's own source"
+        (is (= 2 (get-in entry [:source-span :line])))
+        (is (= 35 (get-in entry [:source-span :column])))))))
+
+(deftest the-map-attributes-nothing-an-author-did-not-write
+  (testing "the ns form and any synthetic dispatcher or export wrapper have no
+            authoring module, so they are absent rather than attributed to one"
+    (let [{:keys [source-map]}
+          (project/link-source {'ci7.app app-source 'ci7.clock lib-source} 'ci7.app)]
+      (is (nil? (project/source-position source-map 1)) "line 1 is the ns form")
+      (is (nil? (project/source-position source-map 9999)))
+      (is (every? #(contains? #{'ci7.app 'ci7.clock} (:module %))
+                  (:entries source-map))))))
+
+(deftest module-attribution-is-total-even-where-a-span-is-not
+  (testing "Module and function name resolve for every emitted module function.
+            The fine-grained span is only present where the frontend attached
+            one -- it does so for capability calls, not for every body -- so a
+            consumer gets file-level attribution always and line-level where it
+            exists. Stated rather than implied, because a map that silently
+            returned nil spans would look broken."
+    (let [{:keys [source-map]}
+          (project/link-source {'ci7.app app-source 'ci7.clock lib-source} 'ci7.app)
+          entries (:entries source-map)]
+      (is (seq entries))
+      (is (every? :module entries))
+      (is (every? :source-name entries))
+      (is (some :source-span entries) "at least the capability call carries one"))))
