@@ -82,6 +82,45 @@
            (+ (value (->Box 7)) (delta (->Box 8) 9)))"]
     (is (= 24 (ir/execute (:kir (compile-fixture source)) 'main [])))))
 
+(deftest extend-protocol-specializes-explicit-and-default-sections
+  (let [explicit-source
+        "(defprotocol Value (value [this]))
+         (defrecord Left [x])
+         (defrecord Right [x])
+         (extend-protocol Value
+           Left (value [this] (get this :x))
+           Right (value [this] (+ 1 (get this :x))))
+         (defn main []
+           (+ (value (->Left 7)) (value (->Right 8))))"
+        default-source
+        "(defprotocol Value (value [this]))
+         (defrecord Special [x])
+         (defrecord Ordinary [x])
+         (defrecord AlsoOrdinary [x])
+         (extend-protocol Value
+           Special (value [this] (+ 100 (get this :x)))
+           default (value [this] (get this :x)))
+         (defn main []
+           (+ (value (->Special 1))
+              (value (->Ordinary 2))
+              (value (->AlsoOrdinary 3))))"
+        first-build (compile-fixture default-source)
+        second-build (compile-fixture default-source)]
+    (is (= 16 (ir/execute (:kir (compile-fixture explicit-source)) 'main [])))
+    (is (= 106 (ir/execute (:kir first-build) 'main [])))
+    (is (= (seq (:bytes first-build)) (seq (:bytes second-build))))
+    (is (not-any? #{'extend-protocol}
+                  (tree-seq coll? seq (:kir first-build))))))
+
+(deftest extend-protocol-default-never-becomes-a-dynamic-fallback
+  (is (thrown-with-msg?
+       clojure.lang.ExceptionInfo #"statically known implemented record"
+       (frontend/analyze
+        "(defprotocol Value (value [this]))
+         (defrecord Box [x])
+         (extend-protocol Value default (value [this] 9))
+         (defn main [] (value 1))"))))
+
 (deftest defrecord-fields-use-the-function-signature-type-spelling
   (let [constructor-source
         "(defrecord Person [name :string active :bool])
@@ -317,10 +356,16 @@
              (defn main [] 0)"
             #"at most 32 unique fields"]
            ["(defprotocol Value (value [this]))
-             (defrecord Box [x])
-             (extend-protocol Value Box (value [this] 1))
+             (extend-protocol Value default (value [this] 1))
              (defn main [] 0)"
-            #"outside the canonical compiler's first static-dispatch profile"]
+            #"default has no declared record specialization targets"]
+           ["(defprotocol Value (value [this]))
+             (defrecord Box [x])
+             (extend-protocol Value
+               default (value [this] 1)
+               default (value [this] 2))
+             (defn main [] 0)"
+            #"at most one default section"]
            ["(defprotocol Value (value [this]))
              (defn value [x] x)
              (defrecord Box [x])

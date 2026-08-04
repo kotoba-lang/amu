@@ -7078,6 +7078,34 @@
                    whole-form :kotoba.error/protocol-extension))
         (recur tail (conj out [protocol-name methods]))))))
 
+(defn- extend-protocol-form->info [protocols records form]
+  (let [[_ protocol-name & sections] form]
+    (when-not (and (get protocols protocol-name) (seq sections))
+      (reject! "extend-protocol requires one declared protocol and bounded type sections"
+               form :kotoba.error/protocol-extension))
+    (loop [remaining sections implementations [] default-methods nil]
+      (if (empty? remaining)
+        {:protocol protocol-name
+         :implementations implementations
+         :default-methods default-methods
+         :form form}
+        (let [record-name (first remaining)
+              [methods tail] (split-with seq? (rest remaining))]
+          (when-not (and (symbol? record-name) (seq methods))
+            (reject! "extend-protocol type section requires a record name and methods"
+                     form :kotoba.error/protocol-extension))
+          (if (= 'default record-name)
+            (do
+              (when default-methods
+                (reject! "extend-protocol permits at most one default section"
+                         form :kotoba.error/protocol-extension))
+              (recur tail implementations methods))
+            (recur tail
+                   (into implementations
+                         (extension-implementations protocols records protocol-name
+                                                    record-name methods form))
+                   default-methods)))))))
+
 (defn- record-form->info [namespace-symbol protocols form]
   (let [[_ record-name fields & extra] form]
     (when-not (and (valid-name? record-name)
@@ -7429,12 +7457,49 @@
                                                        record-name methods form))
                           (protocol-extension-groups extra form)))
                 extend-type-forms)
-        unsupported (filter #(and (seq? %) (= 'extend-protocol (first %))) forms)
-        _ (when (seq unsupported)
-            (reject! "extend-protocol is outside the canonical compiler's first static-dispatch profile; use extend-type"
-                     (first unsupported) :kotoba.error/protocol-extension))
-        implementations (vec (concat (mapcat :implementations record-infos)
-                                     extend-type-impls))
+        extend-protocol-forms
+        (filter #(and (seq? %) (= 'extend-protocol (first %))) forms)
+        extend-protocol-infos
+        (mapv #(extend-protocol-form->info protocols records %) extend-protocol-forms)
+        default-infos (filter :default-methods extend-protocol-infos)
+        default-protocols (map :protocol default-infos)
+        _ (when-not (= (count default-protocols) (count (distinct default-protocols)))
+            (reject! "extend-protocol permits one default section per protocol"
+                     extend-protocol-forms :kotoba.error/protocol-extension))
+        explicit-implementations
+        (vec (concat (mapcat :implementations record-infos)
+                     extend-type-impls
+                     (mapcat :implementations extend-protocol-infos)))
+        explicit-identities (map (juxt :protocol :method :record)
+                                 explicit-implementations)
+        _ (when-not (= (count explicit-identities)
+                       (count (distinct explicit-identities)))
+            (reject! "duplicate protocol method implementation" explicit-implementations
+                     :kotoba.error/protocol-extension))
+        default-implementations
+        (mapcat
+         (fn [{:keys [protocol default-methods form]}]
+           (when-not (seq record-infos)
+             (reject! "extend-protocol default has no declared record specialization targets"
+                      form :kotoba.error/protocol-extension))
+           ;; Validate the section even when every record has an explicit
+           ;; implementation and the default therefore emits no function.
+           (extension-implementations protocols records protocol
+                                      (:name (first record-infos))
+                                      default-methods form)
+           (let [implemented-records
+                 (into #{}
+                       (keep (fn [{implemented-protocol :protocol record :record}]
+                               (when (= protocol implemented-protocol) record)))
+                       explicit-implementations)]
+             (mapcat (fn [{:keys [name]}]
+                       (when-not (contains? implemented-records name)
+                         (extension-implementations protocols records protocol name
+                                                    default-methods form)))
+                     record-infos)))
+         default-infos)
+        implementations (vec (concat explicit-implementations
+                                     default-implementations))
         identities (map (juxt :protocol :method :record) implementations)
         _ (when-not (= (count identities) (count (distinct identities)))
             (reject! "duplicate protocol method implementation" implementations
