@@ -94,6 +94,66 @@
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"max-bytes-exceeded"
                             ((:invoke oversized-result) ["null"]))))))
 
+(deftest async-ability-completion-is-observable-without-serializing-handles
+  (kir-value/resource-table-reset!)
+  (let [complete (atom nil)
+        seen (atom nil)
+        provider
+        (codec/async-ability-provider
+         {:request-type :document
+          :response-type :document
+          :max-bytes 512
+          :start-wire
+          (fn [request-bytes complete-wire!]
+            (reset! seen (value/decode-value request-bytes))
+            (reset! complete complete-wire!)
+            {:status :pending})})
+        request (kir-value/document-edn-read "{:job/id 7}")
+        task ((:invoke provider) request)]
+    (is (= [:task [:stream :bytes]] (:result-type provider)))
+    (is (= :pending (:state (kir-value/task-poll task))))
+    (is (= (value/int64 7) (:job/id @seen)))
+    (@complete (value/encode-value {:status :ready :count (value/int64 2)}))
+    (let [{:keys [state stream]} (kir-value/task-poll task)
+          chunk (kir-value/stream-read! stream 512)]
+      (is (= :ready state))
+      (is (true? (:done? chunk)))
+      (is (= {:status :ready :count (value/int64 2)}
+             (value/decode-value (:bytes chunk)))))))
+
+(deftest async-ability-contract-fails-closed
+  (kir-value/resource-table-reset!)
+  (testing "completed means the callback has already made the task ready"
+    (let [provider
+          (codec/async-ability-provider
+           {:request-type :document :response-type :document :max-bytes 64
+            :start-wire (fn [_ _] {:status :completed})})]
+      (is (thrown-with-msg?
+           clojure.lang.ExceptionInfo #"does not match task state"
+           ((:invoke provider) (kir-value/document-edn-read "nil"))))))
+  (testing "pending cannot hide synchronous completion"
+    (let [provider
+          (codec/async-ability-provider
+           {:request-type :document :response-type :document :max-bytes 64
+            :start-wire
+            (fn [_ complete-wire!]
+              (complete-wire! (value/encode-value nil))
+              {:status :pending})})]
+      (is (thrown-with-msg?
+           clojure.lang.ExceptionInfo #"does not match task state"
+           ((:invoke provider) (kir-value/document-edn-read "nil"))))))
+  (testing "invalid completion bytes do not transition the task"
+    (let [complete (atom nil)
+          provider
+          (codec/async-ability-provider
+           {:request-type :document :response-type :document :max-bytes 64
+            :start-wire (fn [_ done]
+                          (reset! complete done)
+                          {:status :pending})})
+          task ((:invoke provider) (kir-value/document-edn-read "nil"))]
+      (is (thrown? clojure.lang.ExceptionInfo (@complete (byte-array [1 2 3]))))
+      (is (= :pending (:state (kir-value/task-poll task)))))))
+
 (deftest schema-directed-aggregates-cross-the-canonical-byte-wire
   (let [choice-type [:variant :demo/choice [[:text :string] [:count :i64]]]
         attempt-type [:result :i64 :string]

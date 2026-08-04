@@ -29,7 +29,11 @@
    :component-parity {:authority :typed-ability-descriptor
                       :physical-wire :wit-canonical-abi
                       :byte-tunneling false}
-   :provider-shape #{:request-type :result-type :invoke}})
+   :provider-shape #{:request-type :result-type :invoke}
+   :async-provider {:result-type [:task [:stream :bytes]]
+                    :completion :callback
+                    :task-authority :linear-resource-table
+                    :handle-on-wire false}})
 
 (defn- reject! [message data]
   (throw (ex-info message (assoc data :phase :value-codec))))
@@ -460,3 +464,70 @@
                    result-bytes (invoke-wire request-bytes)
                    result (decode-bounded result-bytes max-bytes)]
                (wire-value->runtime result-type schemas result)))})
+
+(def async-ability-result-type [:task [:stream :bytes]])
+
+(defn async-ability-provider
+  "Build a typed provider whose canonical response bytes arrive asynchronously.
+
+  START-WIRE receives bounded canonical request bytes and a one-shot
+  `complete-wire!` callback. It returns exactly `{:status :pending}` or
+  `{:status :completed}`; the latter requires that completion already ran.
+  The provider returns an affine bytes-task immediately. Its task/stream handle
+  stays in the org-owned linear resource table and never crosses the value
+  wire. RESPONSE-TYPE validates and canonicalizes completion bytes before the
+  task becomes ready."
+  [{:keys [request-type response-type schemas max-bytes start-wire]
+    :or {schemas {}} :as spec}]
+  (when-not (contains?
+             #{#{:request-type :response-type :max-bytes :start-wire}
+               #{:request-type :response-type :schemas :max-bytes :start-wire}}
+             (set (keys spec)))
+    (reject! "async ability wire adapter specification is not exact"
+             {:keys (set (keys spec))}))
+  (when (or (nil? request-type) (nil? response-type))
+    (reject! "async ability wire adapter requires request and response types" {}))
+  (when-not (map? schemas)
+    (reject! "async ability wire adapter schemas must be a map" {}))
+  (admitted-schemas! schemas)
+  (doseq [descriptor [request-type response-type]]
+    (admitted-wire-type! descriptor schemas))
+  (checked-limit max-bytes)
+  (when-not (ifn? start-wire)
+    (reject! "async ability wire adapter requires a start-wire function" {}))
+  {:request-type request-type
+   :result-type async-ability-result-type
+   :invoke
+   (fn [request]
+     (let [request-bytes
+           (encode-bounded
+            (runtime->wire-value request-type schemas request)
+            max-bytes)
+           task (kir-value/make-pending-bytes-task)
+           complete-wire!
+           (fn [response-bytes]
+             (let [decoded (decode-bounded response-bytes max-bytes)
+                   runtime-value
+                   (wire-value->runtime response-type schemas decoded)
+                   canonical-bytes
+                   (encode-bounded
+                    (runtime->wire-value response-type schemas runtime-value)
+                    max-bytes)]
+               (kir-value/task-fulfill! task canonical-bytes)))]
+       (try
+         (let [started (start-wire request-bytes complete-wire!)
+               status (when (and (map? started)
+                                 (= #{:status} (set (keys started))))
+                        (:status started))
+               actual (:state (kir-value/task-poll task))]
+           (when-not (contains? #{:pending :completed} status)
+             (reject! "async ability start result is not exact"
+                      {:result started}))
+           (when-not (= (if (= :completed status) :ready :pending) actual)
+             (reject! "async ability start status does not match task state"
+                      {:status status :task-state actual}))
+           task)
+         (catch #?(:clj Throwable :cljs :default) error
+           (when (kir-value/task-live? task)
+             (kir-value/task-drop! task))
+           (throw error)))))})

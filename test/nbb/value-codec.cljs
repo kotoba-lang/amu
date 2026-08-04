@@ -70,4 +70,28 @@
             (get-in @aggregate-seen
                     [:kotoba.record/fields :next :kotoba.option/value]))))
 
-(println "canonical schema-directed ability adapter cljs: pass")
+(kir-value/resource-table-reset!)
+(def complete-async (atom nil))
+(def async-provider
+  (codec/async-ability-provider
+   {:request-type :document
+    :response-type :document
+    :max-bytes 256
+    :start-wire
+    (fn [_ complete-wire!]
+      (reset! complete-async complete-wire!)
+      {:status :pending})}))
+(def async-task
+  ((:invoke async-provider) (kir-value/document-edn-read "{:job/id 9}")))
+(assert (= :pending (:state (kir-value/task-poll async-task))))
+(@complete-async
+ (value/encode-value {:status :ready :count (value/int64 (js/BigInt "2"))}))
+(def async-stream (:stream (kir-value/task-poll async-task)))
+(def async-chunk (kir-value/stream-read! async-stream 256))
+(assert (= :ready (:state (kir-value/task-poll async-task))))
+(assert (:done? async-chunk))
+(assert (= (js/BigInt "2")
+           (value/int64-value
+            (:count (value/decode-value (:bytes async-chunk))))))
+
+(println "canonical sync/async schema-directed ability adapter cljs: pass")
