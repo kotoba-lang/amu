@@ -7287,9 +7287,12 @@
         record-schemas (:record-schemas record-protocol-expansion)
         schema-collisions (set/intersection (set (keys declared-schemas))
                                             (set (keys record-schemas)))
-        _ (when (seq schema-collisions)
-            (reject! "defrecord nominal identities must not duplicate namespace :schemas"
-                     schema-collisions :kotoba.error/record-schema-collision))
+        schema-conflicts (set (filter #(not= (get declared-schemas %)
+                                             (get record-schemas %))
+                                      schema-collisions))
+        _ (when (seq schema-conflicts)
+            (reject! "defrecord namespace :schemas forward declaration must match exactly"
+                     schema-conflicts :kotoba.error/record-schema-collision))
         merged-schemas-raw (merge declared-schemas record-schemas)
         merged-schemas (when (seq merged-schemas-raw)
                          (schema/validate-table! merged-schemas-raw))

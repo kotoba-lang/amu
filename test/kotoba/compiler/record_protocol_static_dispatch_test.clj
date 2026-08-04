@@ -143,14 +143,37 @@
       (is (not-any? #{'defrecord '->Six 'map->Request}
                     (tree-seq coll? seq (:kir compiled)))))))
 
-(deftest defrecord-registers-a-closed-nominal-schema
+(deftest defrecord-registers-and-may-forward-declare-a-closed-nominal-schema
+  (let [source
+        "(ns demo.forward
+           (:schemas {:demo.forward/Entry
+                      [:record :demo.forward/Entry [[:k :string] [:v :string]]]
+                      :demo.forward/Node
+                      [:variant :demo.forward/Node
+                       [[:entry [:ref :demo.forward/Entry]]]]}))
+         (defrecord Entry [k :string v :string])
+         (defn main [] :i64
+           (match-variant
+            (variant-new
+             [:variant :demo.forward/Node
+              [[:entry [:ref :demo.forward/Entry]]]]
+             :entry
+             (->Entry \"answer\" \"42\"))
+            [:variant :demo.forward/Node
+             [[:entry [:ref :demo.forward/Entry]]]]
+            (:entry entry (string-length (:v entry)))))"
+        compiled (compile-fixture source)
+        analyzed (frontend/analyze source {:language-profile :pure-product})]
+    (is (= 2 (ir/execute (:kir compiled) 'main [])))
+    (is (= [:record :demo.forward/Entry [[:k :string] [:v :string]]]
+           (get (:schemas analyzed) :demo.forward/Entry))))
   (is (thrown-with-msg?
        clojure.lang.ExceptionInfo
-       #"must not duplicate namespace :schemas"
+       #"forward declaration must match exactly"
        (frontend/analyze
         "(ns demo.collision
            (:schemas {:demo.collision/Box
-                      [:record :demo.collision/Box [[:x :i64]]]}))
+                      [:record :demo.collision/Box [[:x :string]]]}))
          (defrecord Box [x])
          (defn main [] 0)"))))
 

@@ -23,10 +23,11 @@ A defrecord whose field graph already uses closed `[:ref ...]` edges registers
 its descriptor in the namespace schema table under `:namespace/Type`. This
 makes the generated nominal identity available to parameter types and nested
 collection descriptors without duplicating `(:schemas ...)`. An explicit
-namespace schema with the same identity is rejected rather than silently
-shadowed. Legacy defrecords containing nested inline nominal descriptors remain
-valid but do not receive an automatic schema reference; authors can replace the
-inline edge with the generated `[:ref ...]` form.
+namespace schema with the same identity is accepted only as the exact forward
+declaration described by ADR 0209; an incompatible descriptor is rejected.
+Legacy defrecords containing nested inline nominal descriptors remain valid but
+do not receive an automatic schema reference; authors can replace the inline
+edge with the generated `[:ref ...]` form.
 
 ## Consequences
 
