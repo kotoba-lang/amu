@@ -2127,7 +2127,8 @@
 
 (defn- uses-map-get? [form]
   (cond
-    (seq? form) (or (= map-get-helper-name (first form)) (some uses-map-get? (rest form)))
+    (seq? form) (or (= map-get-helper-name (first form))
+                    (some uses-map-get? (rest form)))
     (coll? form) (some uses-map-get? form)
     :else false))
 
@@ -2832,10 +2833,11 @@
                               (list* 'do (mapv desugar-expr body)))]
                    (list 'if (desugar-bool-expr test) then 0)))
         get (do (when-not (<= 2 (count args) 3)
-                  (reject! "get requires a map, a key, and an optional default" form))
-                (let [[m k default] args]
-                  (list 'map-get (desugar-expr m) (desugar-expr k)
-                        (if (some? default) (desugar-expr default) 0))))
+                  (reject! "get requires a value, a key, and an optional default" form))
+                ;; Keep the authored head until the type-directed rewrite can
+                ;; select map-get, typed-map-get, or record-get. Every selected
+                ;; primitive is still closed and validated before lowering.
+                (list* 'get (mapv desugar-expr args)))
         assoc (do (when-not (and (>= (count args) 3) (odd? (count args)))
                     (reject! "assoc requires a map followed by one or more key/value pairs" form))
                   (let [[m & kvs] args]
@@ -4756,6 +4758,48 @@
           (validate-value-type! type)
           (require-expression-type! (infer-expression-type value locals signatures) type value)
           (nth item-types host-index))
+        get
+        (let [[value key default] args
+              value-type (infer-expression-type value locals signatures)
+              descriptor (resolve-ref-type value-type)]
+          (cond
+            (canonical-typed-map-type? value-type)
+            (do
+              (require-expression-type! (infer-expression-type key locals signatures)
+                                        (second value-type) key)
+              (if (= 3 (count args))
+                (do
+                  (require-expression-type!
+                   (infer-expression-type default locals signatures)
+                   (nth value-type 2) default)
+                  (nth value-type 2))
+                [:option (nth value-type 2)]))
+
+            (record-type? descriptor)
+            (do
+              (when-not (= 2 (count args))
+                (reject! "record get requires a value and one keyword field"
+                         form :kotoba.error/record-projection-unresolved))
+              (or (record-field-type descriptor key)
+                  (reject! "record field is not declared"
+                           form :kotoba.error/record-field)))
+
+            :else
+            (infer-call-type 'map-get
+                             [value key (if (= 3 (count args)) default 0)]
+                             locals signatures)))
+        nth
+        (let [[value index & defaults] args
+              value-type (infer-expression-type value locals signatures)]
+          (if (heterogeneous-vector-type? value-type)
+            (do
+              (when-not (and (= 2 (count args)) (empty? defaults))
+                (reject! "heterogeneous vector nth requires value and one literal index"
+                         form :kotoba.error/hetero-vector-index))
+              (let [host-index
+                    (heterogeneous-vector-index! index (second value-type) form)]
+                (nth (second value-type) host-index)))
+            (infer-call-type op args locals signatures)))
         hetero-vector-assoc
         (let [[type value index item] args
               item-types (second type)
@@ -5325,6 +5369,55 @@
                      form
                      :kotoba.error/record-projection-unresolved))
           (list 'record-get descriptor value (second args)))
+
+        (= op 'get)
+        (let [rewritten-args
+              (mapv #(rewrite-record-projection % locals signatures schemas) args)
+              [value key default] rewritten-args
+              ;; This rewrite selects a primitive when the receiver type is
+              ;; already known; it is not a type-checking pass. An earlier
+              ;; invalid binding may deliberately carry nil here so the final
+              ;; checker can report that binding's precise error.
+              value-type (try (infer-expression-type value locals signatures)
+                              (catch #?(:clj Exception :cljs :default) _ nil))
+              descriptor (if (schema-ref-type? value-type)
+                           (get schemas (second value-type))
+                           value-type)]
+          (cond
+            (canonical-typed-map-type? value-type)
+            (let [lookup (list 'typed-map-get value-type value key)]
+              (if (= 3 (count rewritten-args))
+                (list 'option-value-of [:option (nth value-type 2)] lookup default)
+                lookup))
+
+            (record-type? descriptor)
+            (do
+              (when-not (and (= 2 (count rewritten-args)) (keyword? key))
+                (reject! "record get requires a value and one keyword field"
+                         form :kotoba.error/record-projection-unresolved))
+              (list 'record-get descriptor value key))
+
+            :else
+            (list 'map-get value key
+                  (if (= 3 (count rewritten-args)) default 0))))
+
+        (= op 'nth)
+        (let [rewritten-args
+              (mapv #(rewrite-record-projection % locals signatures schemas) args)
+              value-type (try
+                           (infer-expression-type (first rewritten-args)
+                                                  locals signatures)
+                           (catch #?(:clj Exception :cljs :default) _ nil))]
+          (if (heterogeneous-vector-type? value-type)
+            (do
+              (when-not (= 2 (count rewritten-args))
+                (reject! "heterogeneous vector nth requires value and one literal index"
+                         form :kotoba.error/hetero-vector-index))
+              (heterogeneous-vector-index! (second rewritten-args)
+                                           (second value-type) form)
+              (list 'hetero-vector-at value-type
+                    (first rewritten-args) (second rewritten-args)))
+            (cons op rewritten-args)))
 
         :else
         ;; Force recursive rewrites while the per-analysis protocol dispatch
