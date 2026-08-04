@@ -914,10 +914,10 @@ kotoba -M compile examples/capability.kotoba --target wasm32 \
 
 `cap-call`'s capability id may also be written as a namespaced keyword name
 (ADR-2607182410) instead of a magic integer, e.g. `(cap-call :identity/sign
-value)`. The name is resolved against this compiler's own local registry,
-`resources/kotoba/compiler/capability-registry.edn` (a small, closed
-name->id table -- deliberately separate from any other repo's capability
-table), at parse time -- before anything else in the compiler runs, so
+value)`. The name is resolved against the language-owned semantic catalog,
+`resources/kotoba/lang/capability-catalog.edn`. The compiler derives its closed
+name-to-wire-id table from that vendored authority at parse time -- before
+anything else in the compiler runs, so
 `--policy` still grants/denies by the resolved integer id exactly as before.
 An unregistered name is a hard parse-time error. `examples/capability-named.
 kotoba` / `examples/capability-named.edn` are the named-form counterpart of
