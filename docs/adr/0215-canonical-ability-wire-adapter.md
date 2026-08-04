@@ -2,6 +2,9 @@
 
 Status: accepted
 
+Superseded for aggregate values by ADR 0216. The scalar/document v1 decision
+and source-level boundary remain valid.
+
 ## Context
 
 The legacy `data-host-arg` surface prepared `bytes-ptr` and `bytes-len` in
