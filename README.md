@@ -175,6 +175,11 @@ numeric ID spaces may remain stable wire ABIs, but their semantic
 name/schema/effect declarations should be generated from one language-owned
 catalog rather than maintained independently.
 
+Structured host data uses the org-owned `kotoba.value.v1` codec through
+`kotoba.value.codec`. Compiler/provider adapters apply each typed ability's
+`max-bytes` before decoding and after encoding; raw `bytes-ptr`/`bytes-len`
+sugar is not a second data contract and is not added to authored Kotoba.
+
 Definition identity is computed after desugaring, type/effect checking, and
 ability elaboration, with the relevant contract versions sealed into the
 identity. The executable plan and per-slice gates are documented in
