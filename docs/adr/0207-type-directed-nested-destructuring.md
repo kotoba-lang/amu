@@ -40,16 +40,21 @@ default for each direct symbol binding rather than silently manufacturing a
 payload or changing the local to an option. The default must have the declared
 map value type and is evaluated only on a miss.
 
-Heterogeneous `& rest` remains outside this slice because it needs a new sliced
-descriptor. Homogeneous vector rest keeps the established `vector-drop`
-behavior. `:strs`, `:syms`, and dynamic lookup keys remain outside the closed
-keyword identity model.
+Heterogeneous `& rest` is admitted through a bounded compile-time descriptor
+slice. A literal drop count determines the exact suffix descriptor, and the
+rewrite rebuilds that suffix from `hetero-vector-at` and `hetero-vector-new`
+while binding the receiver once. The vector length is admitted as a slice point
+and yields `[:vector []]`; negative, dynamic, and out-of-range counts fail
+closed. Homogeneous vector rest keeps the established `vector-drop` behavior,
+with `vector-f64-drop` selected for floating vectors. `:strs`, `:syms`, and
+dynamic lookup keys remain outside the closed keyword identity model.
 
 ## Evidence
 
 - `type-directed-access-test` covers nested heterogeneous vectors, nested
-  records, typed-map defaults, exact accessor erasure, and missing-default
-  rejection.
+  records, typed-map defaults, exact accessor erasure, heterogeneous suffixes
+  (including empty suffixes), bounded literal slice rejection, and
+  missing-default rejection.
 - `frontend-destructuring-loop-test` retains legacy map/vector behavior and
   malformed-pattern diagnostics.
 - `:nested-typed-destructuring` executes the composed surface on KIR and

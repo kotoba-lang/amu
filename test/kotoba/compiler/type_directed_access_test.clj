@@ -41,14 +41,27 @@
                (nth (hetero-vector [:vector [:i64 :string]] 7 \"x\") index))"
             #"index must be an integer literal"]
            ["(defn main [] :string
-               (nth (hetero-vector [:vector [:i64 :string]] 7 \"x\") 1 \"fallback\"))"
-            #"requires value and one literal index"]
-           ["(defn main [] :string
                (nth (hetero-vector [:vector [:i64 :string]] 7 \"x\") 2))"
-            #"index must be in range"]]]
+            #"index must be in range"]
+           ["(defn main [] :string
+               (nth (hetero-vector [:vector [:i64 :string]] 7 \"x\") 1 0))"
+            #"type mismatch"]
+           ["(defn main [] :string
+               (nth (hetero-vector [:vector [:i64 :string]] 7 \"x\") 1 false))"
+            #"type mismatch"]]]
     (testing source
       (is (thrown-with-msg? clojure.lang.ExceptionInfo message
                             (frontend/analyze source))))))
+
+(deftest heterogeneous-nth-admits-a-typed-unreachable-default
+  (let [source
+        "(defn main [] :string
+           (nth (hetero-vector [:vector [:i64 :string]] 7 \"x\")
+                1 \"fallback\"))"
+        compiled (compile-source source)]
+    (is (= "x" (ir/execute (:kir compiled) 'main [])))
+    (is (not-any? #{"fallback"}
+                  (tree-seq coll? seq (:kir compiled))))))
 
 (deftest ordinary-get-selects-typed-map-and-record-accessors
   (let [typed-map-source
@@ -119,6 +132,46 @@
              9
              (hetero-vector [:vector [:string :bool]] \"Mio\" true))))"]
     (is (= "Mio" (ir/execute (:kir (compile-source source)) 'main [])))))
+
+(deftest heterogeneous-vector-rest-synthesizes-an-exact-suffix
+  (let [source
+        "(defn main [] :string
+           (let [[id [left right] & rest]
+                 [7 [1 2] \"Ada\" true]
+                 [name active] rest]
+             (if active name \"inactive\")))"
+        compiled (compile-source source)
+        nodes (tree-seq coll? seq (:kir compiled))]
+    (is (= "Ada" (ir/execute (:kir compiled) 'main [])))
+    (is (some #(and (seq? %)
+                    (= 'hetero-vector-new (first %))
+                    (= [:vector [:string :bool]] (second %)))
+              nodes))
+    (is (not-any? #(and (seq? %) (= 'vector-drop (first %))) nodes))
+    (is (= (:kir compiled) (:kir (compile-source source)))
+        "the suffix temp is deterministic across compilations")))
+
+(deftest heterogeneous-vector-rest-may-be-empty
+  (let [source
+        "(defn main [] :i64
+           (let [[value & rest]
+                 (hetero-vector [:vector [:i64]] 7)]
+             (hetero-vector-count [:vector []] rest)))"]
+    (is (= 0 (ir/execute (:kir (compile-source source)) 'main [])))))
+
+(deftest heterogeneous-vector-drop-is-literal-and-bounded
+  (doseq [[source message]
+          [["(defn bad [n :i64] [:vector [:string]]
+               (vector-drop
+                (hetero-vector [:vector [:i64 :string]] 7 \"x\") n))"
+            #"drop count must be an integer literal"]
+           ["(defn bad [] [:vector []]
+               (vector-drop
+                (hetero-vector [:vector [:i64 :string]] 7 \"x\") 3))"
+            #"drop count must be in range"]]]
+    (testing source
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo message
+                            (frontend/analyze source))))))
 
 (deftest type-directed-get-rejects-schema-erasing-uses
   (doseq [[source message]
