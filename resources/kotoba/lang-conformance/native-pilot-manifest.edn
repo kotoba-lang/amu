@@ -61,4 +61,55 @@
    :entry "native/option_if_some.kotoba"
    :function "main"
    :args []
-   :expect {:kotoba 9}}]}
+   :expect {:kotoba 9}}
+  ;; vector-i64 (ADR-2608030300). These run the real host table in
+  ;; tools/kexe_loader.c through a signed kexe, so they are the only place the
+  ;; arena, the bounds checks and the copy-free append are executed rather
+  ;; than merely emitted.
+  {:id :native-vector-count
+   :kind :run
+   :entry "native/vector_count.kotoba"
+   :function "main"
+   :args []
+   :expect {:kotoba 3}}
+  {:id :native-vector-at
+   :kind :run
+   :entry "native/vector_at.kotoba"
+   :function "main"
+   :args []
+   :expect {:kotoba 20}}
+  {:id :native-vector-conj-at
+   :kind :run
+   :entry "native/vector_conj_at.kotoba"
+   :function "main"
+   :args []
+   :expect {:kotoba 3}}
+  {:id :native-vector-assoc-at
+   :kind :run
+   :entry "native/vector_assoc_at.kotoba"
+   :function "main"
+   :args []
+   :expect {:kotoba 99}}
+  ;; 0 iff assoc left its source alone: source[1] is 2, changed[1] is 99, so
+  ;; the expression is (2 - (99 - 97)). A host that wrote through the shared
+  ;; arena would make source[1] read 99 and this return 97.
+  {:id :native-vector-assoc-preserves-source
+   :kind :run
+   :entry "native/vector_assoc_preserves_source.kotoba"
+   :function "main"
+   :args []
+   :expect {:kotoba 0}}
+  ;; drop 2 of [5 6 7 8] leaves [7 8]: length 2 plus first element 7.
+  {:id :native-vector-drop-count
+   :kind :run
+   :entry "native/vector_drop_count.kotoba"
+   :function "main"
+   :args []
+   :expect {:kotoba 9}}
+  ;; 40 (index past the end) + 200 (negative index) + 2 (in range) = 242.
+  {:id :native-vector-get-fallback
+   :kind :run
+   :entry "native/vector_get_fallback.kotoba"
+   :function "main"
+   :args []
+   :expect {:kotoba 242}}]}
