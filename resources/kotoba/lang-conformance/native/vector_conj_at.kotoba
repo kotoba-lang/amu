@@ -1,0 +1,6 @@
+(ns kotoba.lang.conformance.native.vector-conj-at)
+;; Append, then read the appended element back. This is the copy-free path in
+;; the host: the source slice ends at the arena top, so the new element is
+;; written in place and a new handle minted over the longer slice.
+(defn main [] :i64
+  (vector-at (vector-conj (vector-new 1 2) 3) 2))

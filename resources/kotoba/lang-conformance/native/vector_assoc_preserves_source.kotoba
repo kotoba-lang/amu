@@ -1,0 +1,8 @@
+(ns kotoba.lang.conformance.native.vector-assoc-preserves-source)
+;; The immutability claim, stated as a value: assoc must not disturb the vector
+;; it derived from. If the host wrote through the shared arena instead of
+;; copying, the source would read 99 here and this would return 0.
+(defn main [] :i64
+  (let [source (vector-new 1 2 3)
+        changed (vector-assoc source 1 99)]
+    (- (vector-at source 1) (- (vector-at changed 1) 97))))
