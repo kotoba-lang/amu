@@ -2522,9 +2522,17 @@
                              (not typed?))
                     (reject! "closure result type is outside the admitted dispatcher profile"
                              declared-result))
-                result-type (if typed?
-                              (canonical-closure-result-type declared-result)
-                              :i64)
+                ;; A computed head is dynamic, but its result family often is
+                ;; not: consumers such as string-length, record-get, and typed
+                ;; function returns already provide a closed result context.
+                ;; Reuse that context so ordinary source can say `(invoke f x)`
+                ;; and reserve an explicit descriptor for genuinely ambiguous
+                ;; positions. No context retains the historical :i64 default.
+                result-type (cond
+                              typed? (canonical-closure-result-type declared-result)
+                              contextual-result-type
+                              (canonical-closure-result-type contextual-result-type)
+                              :else :i64)
                 call-args (if typed? (rest args) args)]
             (when-not (<= 1 (count call-args) 5)
               (reject! "invoke requires an optional admitted result descriptor, a closure, and zero to four arguments"
