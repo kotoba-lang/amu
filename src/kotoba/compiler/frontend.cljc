@@ -555,6 +555,22 @@
       (reject! "heterogeneous vector index must be in range" form :kotoba.error/hetero-vector-index-range))
     #?(:clj (long host-index) :cljs host-index)))
 
+(defn- heterogeneous-vector-slice-index!
+  "Return a host index for a compile-time heterogeneous-vector slice. Unlike
+  an element index, the vector length itself is valid and denotes an empty
+  suffix. Keeping this literal-only makes the resulting descriptor exact."
+  [index item-types form]
+  (when-not (kotoba-integer? index)
+    (reject! "heterogeneous vector drop count must be an integer literal"
+             form :kotoba.error/hetero-vector-slice-index))
+  (let [host-index #?(:clj index
+                      :cljs (if (i64/bigint-value? index) (js/Number index) index))]
+    (when-not (and (integer? host-index) (<= 0 host-index)
+                   (<= host-index (count item-types)))
+      (reject! "heterogeneous vector drop count must be in range"
+               form :kotoba.error/hetero-vector-slice-index-range))
+    #?(:clj (long host-index) :cljs host-index)))
+
 (defn- check-reader-depth! [source]
   (loop [index 0 depth 0 in-string? false escaped? false in-comment? false]
     (when (< index (count source))
@@ -993,6 +1009,27 @@
               (desugar-result-expr result-type form)
               (desugar-expr form)))
           (range (count forms)) forms)))
+
+(defn- closed-vector-literal-type
+  "Infer only descriptors that are completely determined by a closed vector
+  literal. Unknown expressions return nil and keep the established i64-vector
+  path, where ordinary type checking reports any mismatch."
+  [form]
+  (cond
+    (kotoba-integer? form) :i64
+    (value/f64-value? form) :f64
+    (string? form) :string
+    (keyword? form) :keyword
+    (boolean? form) :bool
+    (vector? form)
+    (let [item-types (mapv closed-vector-literal-type form)]
+      (cond
+        (empty? item-types) :vector-i64
+        (every? #{:i64} item-types) :vector-i64
+        (every? #{:f64} item-types) :vector-f64
+        (every? some? item-types) [:vector item-types]
+        :else nil))
+    :else nil))
 
 (defn- nth-pair-second [expr n]
   (nth (iterate (fn [value] (list 'pair-second value)) expr) n))
@@ -2419,7 +2456,23 @@
     (vector? form)
     (do (when (> (count form) value/vector-literal-item-limit)
           (reject! "vector literal exceeds item limit" form))
-        (apply list 'vector-new (map desugar-expr form)))
+        (let [item-types (mapv closed-vector-literal-type form)]
+          (cond
+            (or (empty? item-types) (every? #{:i64} item-types))
+            (apply list 'vector-new (map desugar-expr form))
+
+            (every? #{:f64} item-types)
+            (apply list 'vector-f64-new (map desugar-expr form))
+
+            (every? some? item-types)
+            (let [type [:vector item-types]]
+              (list* 'hetero-vector-new type
+                     (mapv (fn [item-type item]
+                             (desugar-expected-value item-type item))
+                           item-types form)))
+
+            :else
+            (apply list 'vector-new (map desugar-expr form)))))
     (not (seq? form)) form
     ;; `(:field r)` — the Clojure keyword accessor. Desugars to the 2-arity
     ;; `record-get`, which `rewrite-record-projection` then resolves against the
@@ -4848,12 +4901,18 @@
           (cond
             (heterogeneous-vector-type? value-type)
             (do
-              (when-not (and (= 2 (count args)) (empty? defaults))
-                (reject! "heterogeneous vector nth requires value and one literal index"
+              (when-not (<= 2 (count args) 3)
+                (reject! "heterogeneous vector nth requires a value, one literal index, and an optional default"
                          form :kotoba.error/hetero-vector-index))
               (let [host-index
-                    (heterogeneous-vector-index! index (second value-type) form)]
-                (nth (second value-type) host-index)))
+                    (heterogeneous-vector-index! index (second value-type) form)
+                    item-type (nth (second value-type) host-index)]
+                (when (= 3 (count args))
+                  (let [default (first defaults)]
+                    (require-expression-type!
+                     (infer-expression-type default locals signatures)
+                     item-type default)))
+                item-type))
 
             (= :vector-i64 value-type)
             (do
@@ -5501,6 +5560,42 @@
             (list 'map-get value key
                   (if (= 3 (count rewritten-args)) default 0))))
 
+        (= op 'vector-drop)
+        (let [rewritten-args
+              (mapv #(rewrite-record-projection % locals signatures schemas) args)
+              [value drop-count] rewritten-args
+              value-type (try
+                           (infer-expression-type value locals signatures)
+                           (catch #?(:clj Exception :cljs :default) _ nil))]
+          (cond
+            (heterogeneous-vector-type? value-type)
+            (do
+              (when-not (= 2 (count rewritten-args))
+                (reject! "heterogeneous vector drop requires a value and one literal count"
+                         form :kotoba.error/hetero-vector-slice-index))
+              (let [item-types (second value-type)
+                    host-index (heterogeneous-vector-slice-index!
+                                drop-count item-types form)
+                    suffix-types (subvec item-types host-index)
+                    suffix-type [:vector suffix-types]
+                    value-name (synthetic "hetero-slice")]
+                ;; Heterogeneous vectors already expose exact static indexed
+                ;; projection and construction. Rebuild the bounded suffix
+                ;; from those primitives, binding VALUE once so a general
+                ;; source `(vector-drop expression n)` keeps ordinary
+                ;; single-evaluation semantics.
+                (list 'let [value-name value]
+                      (list* 'hetero-vector-new suffix-type
+                             (mapv (fn [index]
+                                     (list 'hetero-vector-at value-type value-name index))
+                                   (range host-index (count item-types)))))))
+
+            (= :vector-f64 value-type)
+            (cons 'vector-f64-drop rewritten-args)
+
+            :else
+            (cons op rewritten-args)))
+
         (= op 'nth)
         (let [rewritten-args
               (mapv #(rewrite-record-projection % locals signatures schemas) args)
@@ -5511,11 +5606,18 @@
           (cond
             (heterogeneous-vector-type? value-type)
             (do
-              (when-not (= 2 (count rewritten-args))
-                (reject! "heterogeneous vector nth requires value and one literal index"
+              (when-not (<= 2 (count rewritten-args) 3)
+                (reject! "heterogeneous vector nth requires a value, one literal index, and an optional default"
                          form :kotoba.error/hetero-vector-index))
-              (heterogeneous-vector-index! (second rewritten-args)
-                                           (second value-type) form)
+              (let [host-index
+                    (heterogeneous-vector-index! (second rewritten-args)
+                                                 (second value-type) form)
+                    item-type (nth (second value-type) host-index)]
+                (when (= 3 (count rewritten-args))
+                  (let [default (nth rewritten-args 2)]
+                    (require-expression-type!
+                     (infer-expression-type default locals signatures)
+                     item-type default))))
               (list 'hetero-vector-at value-type
                     (first rewritten-args) (second rewritten-args)))
 
@@ -5877,7 +5979,15 @@
      ;; shape of a bug rather than a rule. `rewrite-record-projection` already
      ;; tolerates an empty locals map -- it only consults locals for inference,
      ;; and an untypeable binding is allowed to have no known type there.
-     (binding [*record-protocol-dispatch* protocol-dispatch]
+     ;; This rewrite may synthesize exact heterogeneous-vector suffix
+     ;; bindings after the parse/desugar binding has unwound. Give that pass
+     ;; its own source-order counter instead of falling back to gensym, so KIR
+     ;; and conformance digests stay reproducible across compiler processes.
+     ;; Prefixes are reserved and distinct from earlier desugar temporaries,
+     ;; so restarting the counter here cannot collide with authored or
+     ;; previously synthesized bindings.
+     (binding [*record-protocol-dispatch* protocol-dispatch
+               *synthetic-counter* (volatile! 0)]
        (mapv (fn [{:keys [params param-types] :as f}]
                (update f :body rewrite-record-projection
                        (zipmap params param-types) signatures schemas))
