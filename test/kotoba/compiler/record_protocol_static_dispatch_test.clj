@@ -81,6 +81,30 @@
            (+ (value (->Box 7)) (delta (->Box 8) 9)))"]
     (is (= 24 (ir/execute (:kir (compile-fixture source)) 'main [])))))
 
+(deftest defrecord-fields-use-the-function-signature-type-spelling
+  (let [constructor-source
+        "(defrecord Person [name :string active :bool])
+         (defn main [] :string (:name (->Person \"Ada\" true)))"
+        map-source
+        "(defrecord Person [name :string active :bool])
+         (defn main [] :string
+           (:name (map->Person {:active true :name \"Grace\"})))"
+        protocol-source
+        "(defprotocol Label (label [this]))
+         (defrecord Person [name :string]
+           Label
+           (label [this] (get this :name)))
+         (defn main [] :string (label (->Person \"Lin\")))"]
+    (is (= "Ada" (ir/execute (:kir (compile-fixture constructor-source)) 'main [])))
+    (is (= "Grace" (ir/execute (:kir (compile-fixture map-source)) 'main [])))
+    (is (= "Lin" (ir/execute (:kir (compile-fixture protocol-source)) 'main [])))
+    (is (thrown-with-msg?
+         clojure.lang.ExceptionInfo
+         #"type mismatch"
+         (compile-fixture
+          "(defrecord Person [name :string])
+           (defn main [] :string (:name (->Person 7)))")))))
+
 (deftest record-and-protocol-surface-fails-closed
   (doseq [[source message]
           [["(defprotocol Value (value [this]))
@@ -99,6 +123,12 @@
            ["(defrecord Box [x])
              (defn main [] (map->Box {:wrong 1}))"
             #"exactly the declared fields"]
+           ["(defrecord Box [x :string y])
+             (defn main [] 0)"
+            #"alternating name/type pairs"]
+           ["(defrecord Box [x :string x :i64])
+             (defn main [] 0)"
+            #"at most five unique fields"]
            ["(defprotocol Value (value [this]))
              (defrecord Box [x])
              (extend-protocol Value Box (value [this] 1))

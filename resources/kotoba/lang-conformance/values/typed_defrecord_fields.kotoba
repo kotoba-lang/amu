@@ -1,0 +1,7 @@
+(defrecord Reading [label :string ok :bool value :i64])
+
+(defn main []
+  (let [direct (->Reading "sensor" true 7)
+        mapped (map->Reading {:value 7 :ok true :label "sensor"})]
+    (+ (string-length (:label direct))
+       (if (:ok mapped) (:value mapped) 0))))
