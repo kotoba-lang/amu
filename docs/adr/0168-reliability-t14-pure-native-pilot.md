@@ -9,8 +9,15 @@
 1. Resource `resources/kotoba/lang-conformance/native-pilot-manifest.edn`  
 2. Runner `kotoba.compiler.lang-native-conformance` — signed kexe + loader  
 3. Host ISA only (`:x86_64-kotoba-v1` or `:aarch64-kotoba-v1`)  
-4. 5 pure cases: i64 arith, nested arith, string-length, concat+length, if  
+4. The manifest is the counted source of truth for the bounded native cases.
 5. Soft-skip if tender-native absent; CI `:test` alias includes tender-native  
+
+## Follow-up: context ABI v3 (2026-08-04)
+
+ADR 0212 expands the pilot to 16 cases and adds real signed-kexe execution for
+immutable `vector-i64` and `vector-f64` values. The compiler, native backends,
+verifier, and POSIX/Windows loaders agree on context ABI v3; the manifest count
+test prevents a new case from silently escaping the runner.
 
 ## Related
 

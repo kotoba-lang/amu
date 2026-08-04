@@ -131,11 +131,6 @@
     (let [artifact (:artifact (compiler/compile-source effect-source target
                                                        {:allow #{[:cap/call 7]}}))]
       (is (= #{[:cap/call 7]} (:effects artifact)))
-      ;; Version 3 adds the vector table at 152-192 (ADR-2608049200). The map
-      ;; is compared whole rather than key by key on purpose: this is the
-      ;; producer's half of a three-way agreement -- kotoba.verifier holds an
-      ;; independently written copy and both loaders hold _Static_asserts --
-      ;; so a slot that appears here without appearing there must fail.
       (is (= {:version 3 :fuel-offset 8 :allow-bitmap-offset 16
               :allow-bitmap-bytes 32 :cap-call-offset 48
               :pair-new-offset 56 :pair-first-offset 64
@@ -148,10 +143,14 @@
               :string-substring-offset 136
               :string-code-point-at-offset 144
               :string-pool-capacity 65536
-              :vector-new-empty-offset 152 :vector-conj-offset 160
-              :vector-count-offset 168 :vector-at-offset 176
-              :vector-assoc-offset 184 :vector-drop-offset 192
-              :vector-capacity 4096 :vector-item-capacity 65536}
+              :vector-new-empty-offset 152
+              :vector-conj-offset 160
+              :vector-count-offset 168
+              :vector-at-offset 176
+              :vector-assoc-offset 184
+              :vector-drop-offset 192
+              :vector-capacity 4096
+              :vector-item-capacity 65536}
              (:context-abi artifact))))))
 
 (deftest mutual-call-effects-reach-fixpoint
