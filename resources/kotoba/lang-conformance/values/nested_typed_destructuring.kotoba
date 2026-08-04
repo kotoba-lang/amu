@@ -1,0 +1,18 @@
+(ns conformance.nested-destructuring)
+
+(defrecord Profile [score :i64])
+(defrecord User [profile [:record :conformance.nested-destructuring/Profile
+                          [[:score :i64]]]])
+
+(defn main []
+  (let [[base [delta enabled]]
+        (hetero-vector [:vector [:i64 [:vector [:i64 :bool]]]]
+                       7
+                       (hetero-vector [:vector [:i64 :bool]] 3 true))
+        {{:keys [score]} :profile}
+        (->User (->Profile 11))
+        {:keys [bonus] :or {bonus 5}}
+        (typed-map-new [:map :keyword :i64])]
+    (if enabled
+      (+ base (+ delta (+ score bonus)))
+      0)))
