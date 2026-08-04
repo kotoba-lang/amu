@@ -2,7 +2,7 @@
  :kotoba.lang.conformance/wbs "T1.4"
  :kotoba.lang.conformance/profile :pure-native-v1
  :kotoba.lang.conformance/note
- "Pure-native-v1 pilot: i64/string subset on host native ISA via signed kexe + loader.
+ "Pure-native-v1 pilot: scalar, string, and bounded vector subset on the host native ISA via signed kexe + loader.
   Optional when tender-native is not on the classpath."
 
  :backends
@@ -112,4 +112,13 @@
    :entry "native/vector_get_fallback.kotoba"
    :function "main"
    :args []
-   :expect {:kotoba 242}}]}
+   :expect {:kotoba 242}}
+  ;; f64 values use the same host word arena as i64 values. This composed case
+  ;; exercises construction, append, suffix view, indexed read, and the
+  ;; f64-to-bits boundary without depending on host floating-point formatting.
+  {:id :native-vector-f64-composed
+   :kind :run
+   :entry "native/vector_f64_composed.kotoba"
+   :function "main"
+   :args []
+   :expect {:kotoba 4615063718147915776}}]}
