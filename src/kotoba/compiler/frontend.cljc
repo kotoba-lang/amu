@@ -2109,6 +2109,32 @@
                  :else (reject! "document requires a closed EDN literal tree" form))))]
       (walk literal 0))))
 
+(defn- contextual-document-literal?
+  "True only for syntax that is unambiguously a closed document value.
+
+  Simple symbols and lists remain expressions: a document-typed parameter must
+  still pass through as a parameter, and a call returning :document must still
+  execute. Namespaced symbols are admitted as inert document data because they
+  cannot name lexical values in the safe source profile. Explicit document
+  syntax remains the escape hatch for simple symbols and EDN list values."
+  [form]
+  (cond
+    (or (nil? form)
+        (boolean? form)
+        (kotoba-integer? form)
+        (value/f64-value? form)
+        (document-reader-f64-form? form)
+        (string? form)
+        (keyword? form)) true
+    (symbol? form) (some? (namespace form))
+    (vector? form) (every? contextual-document-literal? form)
+    (set? form) (every? contextual-document-literal? form)
+    (map? form) (every? (fn [[key item]]
+                          (and (contextual-document-literal? key)
+                               (contextual-document-literal? item)))
+                        form)
+    :else false))
+
 (def ^:private string-from-i64-helper-name '__kotoba_string_from_i64)
 (def ^:private string-from-i64-nat-helper-name '__kotoba_string_from_i64_nat)
 
@@ -2430,6 +2456,14 @@
 
 (defn- desugar-expr* [form contextual-result-type]
   (cond
+    ;; A closed EDN-shaped value in a :document context is already fully
+    ;; typed by its consumer. Elaborate it directly so authors do not have to
+    ;; wrap ordinary data in document syntax. The predicate deliberately
+    ;; excludes executable lists and lexical symbols.
+    (and (= :document contextual-result-type)
+         (contextual-document-literal? form))
+    (elaborate-document-literal form)
+
     ;; Under nbb, compiler-synthesized integer literals are ordinary JS
     ;; numbers while source integers are bigint. Classify the integral host
     ;; form before the broader f64 predicate so generated loop indices/defaults
@@ -3340,10 +3374,16 @@
                 elaborated (list* 'typed-cap-call
                                   (resolve-capability-keyword! capability form)
                                   request-type result-type
-                                  (when (some? request) (desugar-expr request))
+                                  (when (<= 4 (count args))
+                                    (desugar-expected-value request-type request))
                                   (map desugar-expr extra))]
             (attach-source-operation form elaborated capability))
-          (apply list op (map desugar-expr args)))
+          (if (and (= 4 (count args))
+                   (kotoba-integer? (first args)))
+            (let [[capability request-type result-type request] args]
+              (list 'typed-cap-call capability request-type result-type
+                    (desugar-expected-value request-type request)))
+            (apply list op (map desugar-expr args))))
         xorshift32
         (do
           (when-not (= 1 (count args))
