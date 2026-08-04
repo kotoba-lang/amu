@@ -2,6 +2,7 @@
   (:require [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]
             [kotoba.compiler.frontend :as frontend]
+            [kotoba.compiler.test-profile :as test-profile]
             [kotoba.kir :as ir]))
 
 (def fixture
@@ -104,6 +105,110 @@
          (compile-fixture
           "(defrecord Person [name :string])
            (defn main [] :string (:name (->Person 7)))")))))
+
+(deftest computed-map-record-construction-propagates-the-nominal-result-context
+  (let [source
+        "(defrecord Person [name :string active :bool])
+         (defn choose [enabled :bool] :string
+           (:name
+            (map->Person
+             (let [fallback \"Grace\"]
+               (do
+                 0
+                 (if enabled
+                   {:active true :name \"Ada\"}
+                   {:name fallback :active false}))))))
+         (defn main [] :string (choose true))"
+        compiled (compile-fixture source)
+        choose-body (:body (first (filter #(= 'choose (:name %))
+                                          (get-in compiled [:kir :functions]))))
+        nodes (tree-seq coll? seq choose-body)]
+    (is (= "Ada" (ir/execute (:kir compiled) 'choose [true])))
+    (is (= "Grace" (ir/execute (:kir compiled) 'choose [false])))
+    (is (= 2 (count (filter #(and (seq? %) (= 'record-new (first %))) nodes))))
+    (is (not-any? #(and (seq? %) (= 'map->Person (first %))) nodes))))
+
+(deftest computed-map-record-construction-has-jvm-js-and-wasm-parity
+  (let [report
+        (test-profile/run-source
+         "(ns demo.computed-record (:export [test-computed-record]))
+          (defrecord Pair [left right])
+          (defn test-computed-record [] :bool
+            (let [pair (map->Pair
+                        (if (= 1 1)
+                          {:right 5 :left 4}
+                          {:left 0 :right 0}))]
+              (= (+ (:left pair) (:right pair)) 9)))")]
+    (is (:ok report) (pr-str (:failed report)))
+    (is (= #{:jvm-kir :js :wasm} (set (keys (:results report)))))))
+
+(deftest computed-map-record-construction-covers-total-bounded-control
+  (let [source
+        "(defrecord Pair [left right])
+         (defn from-case [n :i64] :i64
+           (:right (map->Pair (case n 1 {:left 0 :right 11}
+                                           {:right 12 :left 0}))))
+         (defn from-cond [n :i64] :i64
+           (:right (map->Pair (cond (= n 1) {:left 0 :right 21}
+                                    :else {:right 22 :left 0}))))
+         (defn from-binding [enabled :bool] :i64
+           (:right (map->Pair (if-let [chosen enabled]
+                                {:left 0 :right 31}
+                                {:right 32 :left 0}))))
+         (defn from-condp [n :i64] :i64
+           (:right (map->Pair (condp = n
+                                1 {:left 0 :right 41}
+                                {:right 42 :left 0}))))
+         (defn from-some [] :i64
+           (:right (map->Pair (if-some [chosen (option-some-of [:option :i64] 1)]
+                                {:left 0 :right 51}
+                                {:right 52 :left 0}))))
+         (defn from-if-not [enabled :bool] :i64
+           (:right (map->Pair (if-not enabled
+                                {:left 0 :right 61}
+                                {:right 62 :left 0}))))
+         (defn main [] :i64
+           (+ (from-case 1) (from-case 0)
+              (from-cond 1) (from-cond 0)
+              (from-binding true) (from-binding false)
+              (from-condp 1) (from-condp 0) (from-some)
+              (from-if-not true) (from-if-not false)))"
+        kir (:kir (compiler/compile-source source :wasm32-kotoba-v1 {}))]
+    (is (= 386 (ir/execute kir 'main [])))))
+
+(deftest computed-map-record-construction-stays-exact-and-total
+  (doseq [[source message]
+          [["(defrecord Box [x])
+             (defn main [p :bool] [:ref :kotoba.user/Box]
+               (map->Box (if p {:x 1})))"
+            #"requires both record-valued branches"]
+           ["(defrecord Box [x])
+             (defn main [p :bool] [:ref :kotoba.user/Box]
+               (map->Box (if p {:x 1} {:wrong 2})))"
+            #"exactly the declared fields"]
+           ["(defrecord Box [x])
+             (defn main [value :map] [:ref :kotoba.user/Box]
+               (map->Box value))"
+            #"exact map or a closed control"]
+           ["(defrecord Box [x])
+             (defn main [p :bool] [:ref :kotoba.user/Box]
+               (map->Box (cond p {:x 1})))"
+            #"cond requires a final :else"]
+           ["(defrecord Box [x])
+             (defn main [n :i64] [:ref :kotoba.user/Box]
+               (map->Box (case n 1 {:x 1})))"
+            #"case requires a default"]
+           ["(defrecord Box [x])
+             (defn main [n :i64] [:ref :kotoba.user/Box]
+               (map->Box (condp = n 1 {:x 1})))"
+            #"condp requires a predicate, dispatch, and default"]
+           ["(defrecord Box [x])
+             (defn main [p :bool] [:ref :kotoba.user/Box]
+               (map->Box (if-let [value p] {:x 1})))"
+            #"binding conditional requires one binding and both"]]]
+    (testing source
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo message
+                            (frontend/analyze source))))))
 
 (deftest wide-defrecord-keeps-direct-and-map-construction-data-shaped
   (let [source

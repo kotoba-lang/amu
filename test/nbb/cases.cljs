@@ -29,6 +29,8 @@
     :policy nil}
    {:name "general-document-map" :source "test/nbb/fixtures/general-document-map.kotoba"
     :target "wasm32-browser" :policy nil}
+   {:name "computed-record-map" :source "test/nbb/fixtures/computed-record-map.kotoba"
+    :target "wasm32-browser" :policy nil}
    {:name "option-or" :source "test/nbb/fixtures/option-or.kotoba"
     :target "wasm32-browser" :policy nil}
    {:name "option-or-branch" :source "test/nbb/fixtures/option-or-branch.kotoba"

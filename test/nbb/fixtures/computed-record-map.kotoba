@@ -1,0 +1,13 @@
+(ns fixture.computed-record-map (:export [main]))
+
+(defrecord Person [name :string active :bool])
+
+(defn main [] :i64
+  (let [person (map->Person
+                 (let [fallback "Grace"]
+                   (if true
+                     {:active true :name "Ada"}
+                     {:name fallback :active false})))]
+    (if (:active person)
+      (string-length (:name person))
+      0)))
