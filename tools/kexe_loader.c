@@ -834,16 +834,12 @@ static void install_limits(void) {
   limit.rlim_cur = 1;
   limit.rlim_max = 2;
   if (setrlimit(RLIMIT_CPU, &limit) != 0) fail("setrlimit cpu");
-#if !defined(__APPLE__)
-#if defined(KEXE_SANITIZER_TEST)
-  /* ASan reserves shadow address space and needs additional shadow pages for
-   * the ABI-v3 vector arena. Keep the production child at 64 MiB; only the
-   * instrumented CI binary receives enough virtual headroom to observe the
-   * same bounded allocations instead of failing inside the sanitizer. */
-  limit.rlim_cur = limit.rlim_max = 128u * 1024u * 1024u;
-#else
+#if !defined(__APPLE__) && !defined(KEXE_SANITIZER_TEST)
+  /* ASan owns a platform-dependent shadow address space, so the sanitizer
+   * harness cannot share the production virtual-memory ceiling. The guest's
+   * own arenas remain bounded and production children retain this 64 MiB
+   * process limit. */
   limit.rlim_cur = limit.rlim_max = 64u * 1024u * 1024u;
-#endif
   if (setrlimit(RLIMIT_AS, &limit) != 0) fail("setrlimit address-space");
 #endif
   limit.rlim_cur = limit.rlim_max = 1024u * 1024u;
