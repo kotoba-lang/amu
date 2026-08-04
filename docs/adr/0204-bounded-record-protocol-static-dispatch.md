@@ -28,10 +28,10 @@ before ordinary function analysis:
   the matching private implementation. Unknown, untyped, or unimplemented
   receivers are rejected; there is no reflection or runtime type guessing.
 
-`definterface` shares the declaration contract. `extend-protocol` remains
-outside this first compiler profile because its default clause needs an
-explicit closed-world specialization rule; authors use `extend-type` until
-that rule is admitted.
+`definterface` shares the declaration contract. ADR 0217 subsequently admits
+`extend-protocol`: named sections use the same static implementation path, and
+one `default` section specializes only across otherwise-unimplemented nominal
+records in the sealed module. It never becomes a dynamic fallback.
 
 ## Bounds and safety
 

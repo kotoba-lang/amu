@@ -1,0 +1,18 @@
+(ns fixture.static-extend-protocol (:export [main]))
+
+(defprotocol Value
+  (value [this]))
+
+(defrecord Special [x])
+(defrecord Ordinary [x])
+
+(extend-protocol Value
+  Special
+  (value [this] (+ 100 (:x this)))
+
+  default
+  (value [this] (:x this)))
+
+(defn main [] :i64
+  (+ (value (->Special 1))
+     (value (->Ordinary 2))))
