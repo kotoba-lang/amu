@@ -66,5 +66,5 @@ KIR, restricted ESM, and browser Wasm. `typed-capability-test` proves that a
 closed request reaches the provider as the same `:document` value and that a
 document-typed lexical request remains a lexical value.
 
-The full JVM suite passes 914 tests / 6,903 assertions. The JVM-free NBB Wasm
+The full JVM suite passes 914 tests / 6,907 assertions. The JVM-free NBB Wasm
 suite passes all 36 cases.

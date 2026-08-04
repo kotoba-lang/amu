@@ -3374,7 +3374,7 @@
                 elaborated (list* 'typed-cap-call
                                   (resolve-capability-keyword! capability form)
                                   request-type result-type
-                                  (when (some? request)
+                                  (when (<= 4 (count args))
                                     (desugar-expected-value request-type request))
                                   (map desugar-expr extra))]
             (attach-source-operation form elaborated capability))

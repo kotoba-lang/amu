@@ -68,13 +68,16 @@
 (deftest closed-document-requests-use-the-declared-boundary-type
   (let [source
         "(ns demo.document-cap
-           (:export [expected submit forward])
+           (:export [expected expected-null submit submit-null forward])
            (:capabilities #{:http/post}))
          (defn expected [] :document
            (document {:action :actor/run :attempt 3 :ready true}))
+         (defn expected-null [] :document (document nil))
          (defn submit [] :document
            (typed-cap-call :http/post :document :document
              {:action :actor/run :attempt 3 :ready true}))
+         (defn submit-null [] :document
+           (typed-cap-call :http/post :document :document nil))
          (defn forward [request :document] :document
            (typed-cap-call 4 :document :document request))"
         hir (frontend/analyze source)
@@ -88,8 +91,13 @@
     (is (= (nth (get bodies 'submit) 4)
            (get bodies 'expected))
         "the request must be the same constructor tree as explicit document syntax")
+    (is (= (nth (get bodies 'submit-null) 4)
+           (get bodies 'expected-null))
+        "a present nil request must elaborate as document null")
     (is (= expected
            (ir/execute kir 'submit [] {:typed-cap-call provider})))
+    (is (= (ir/execute kir 'expected-null [])
+           (ir/execute kir 'submit-null [] {:typed-cap-call provider})))
     (is (= expected
            (ir/execute kir 'forward [expected] {:typed-cap-call provider}))
         "a document-typed lexical value must remain a value, not become symbol data")))
