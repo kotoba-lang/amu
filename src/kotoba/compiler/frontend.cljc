@@ -733,7 +733,12 @@
             schemas-clause (first (filter #(= :schemas (first %)) tail))
             exports (when export-clause (vec (second export-clause)))
             capabilities (when capabilities-clause (set (second capabilities-clause)))
-            schemas (when schemas-clause (schema/validate-table! (second schemas-clause)))]
+            ;; Defrecord descriptors are collected by the declaration expansion
+            ;; that precedes this parse. Keep the authored table raw here so
+            ;; analyze can merge those same-module nominal schemas before the
+            ;; closed graph is validated once. Shape checks above still run
+            ;; immediately; no unvalidated table reaches expression analysis.
+            schemas (when schemas-clause (second schemas-clause))]
         (when (and exports
                    (or (> (count exports) max-functions)
                        (not= (count exports) (count (distinct exports)))
@@ -745,7 +750,8 @@
           (reject! "namespace :capabilities must be a bounded set of namespaced keywords" capabilities :kotoba.error/namespace-capabilities-shape))
         {:namespace namespace-symbol :exports exports :capabilities capabilities
          :schemas schemas
-         :schema-identities (when schemas (schema/identities schemas))}))))
+         ;; Populated from the once-validated merged graph in analyze.
+         :schema-identities nil}))))
 
 (declare desugar-expr desugar-result-expr desugar-bool-expr desugar-do desugar-list thread-form form-free-symbols
          nth-pair-second replace-recur valid-name?)

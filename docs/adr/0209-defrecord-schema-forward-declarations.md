@@ -1,6 +1,6 @@
 # ADR 0209: exact defrecord schema forward declarations
 
-Status: accepted
+Status: accepted; explicit authoring requirement superseded by ADR 0210
 
 ## Context
 
@@ -26,6 +26,11 @@ closed schema graph or nominal identity. The declaration is intentionally
 explicit because the namespace table must validate before the record form is
 expanded. Exact equality prevents shadowing, structural substitution, and
 schema drift.
+
+ADR 0210 later moved closed-table validation after the existing declaration
+prepass, so new source need not repeat the descriptor. This exact-declaration
+rule remains the compatibility and collision contract when source does provide
+one.
 
 ## Evidence
 

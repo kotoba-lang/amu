@@ -143,12 +143,10 @@
       (is (not-any? #{'defrecord '->Six 'map->Request}
                     (tree-seq coll? seq (:kir compiled)))))))
 
-(deftest defrecord-registers-and-may-forward-declare-a-closed-nominal-schema
+(deftest defrecord-registers-before-the-closed-schema-graph-is-validated
   (let [source
         "(ns demo.forward
-           (:schemas {:demo.forward/Entry
-                      [:record :demo.forward/Entry [[:k :string] [:v :string]]]
-                      :demo.forward/Node
+           (:schemas {:demo.forward/Node
                       [:variant :demo.forward/Node
                        [[:entry [:ref :demo.forward/Entry]]]]}))
          (defrecord Entry [k :string v :string])
@@ -167,6 +165,18 @@
     (is (= 2 (ir/execute (:kir compiled) 'main [])))
     (is (= [:record :demo.forward/Entry [[:k :string] [:v :string]]]
            (get (:schemas analyzed) :demo.forward/Entry))))
+  (is (= [:record :demo.exact/Entry [[:value :string]]]
+         (get (:schemas
+               (frontend/analyze
+                "(ns demo.exact
+                   (:schemas {:demo.exact/Entry
+                              [:record :demo.exact/Entry [[:value :string]]]
+                              :demo.exact/Node
+                              [:variant :demo.exact/Node
+                               [[:entry [:ref :demo.exact/Entry]]]]}))
+                 (defrecord Entry [value :string])
+                 (defn main [] 0)"))
+              :demo.exact/Entry)))
   (is (thrown-with-msg?
        clojure.lang.ExceptionInfo
        #"forward declaration must match exactly"
