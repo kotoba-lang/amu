@@ -6639,9 +6639,34 @@
     {:name protocol-name
      :methods (into {} (map (fn [[method-name params]] [method-name params]) methods))}))
 
-(defn- record-descriptor [namespace-symbol record-name fields]
+(defn- record-descriptor [namespace-symbol record-name field-parts]
   [:record (keyword (str namespace-symbol) (name record-name))
-   (mapv (fn [field] [(keyword (name field)) :i64]) fields)])
+   (mapv (fn [{field-name :name field-type :type}]
+           [(keyword (name field-name)) field-type])
+         field-parts)])
+
+(defn- record-field-parts [fields form]
+  (let [typed? (or (some keyword? fields)
+                   (and (even? (count fields))
+                        (some structured-type? (map second (partition 2 fields)))))]
+    (if typed?
+      (do
+        (when-not (even? (count fields))
+          (reject! "typed defrecord fields require alternating name/type pairs"
+                   form :kotoba.error/record-declaration))
+        (mapv (fn [[field type]]
+                (when-not (valid-name? field)
+                  (reject! "defrecord field names must be unique unqualified symbols"
+                           field :kotoba.error/record-declaration))
+                (validate-value-type! type)
+                {:name field :type type})
+              (partition 2 fields)))
+      (mapv (fn [field]
+              (when-not (valid-name? field)
+                (reject! "defrecord field names must be unique unqualified symbols"
+                         field :kotoba.error/record-declaration))
+              {:name field :type :i64})
+            fields))))
 
 (defn- extension-implementations
   [protocols records protocol-name record-name method-forms whole-form]
@@ -6690,15 +6715,23 @@
 (defn- record-form->info [namespace-symbol protocols form]
   (let [[_ record-name fields & extra] form]
     (when-not (and (valid-name? record-name)
-                   (vector? fields)
-                   (<= (count fields) max-parameters)
-                   (every? valid-name? fields)
-                   (= (count fields) (count (distinct fields))))
-      (reject! "defrecord requires a bounded name and unique symbol fields"
+                   (vector? fields))
+      (reject! "defrecord requires a bounded name and field vector"
                form :kotoba.error/record-declaration))
-    (let [descriptor (record-descriptor namespace-symbol record-name fields)
+    (let [field-parts (record-field-parts fields form)
+          field-names (mapv :name field-parts)
+          typed? (not= fields field-names)
+          _ (when-not (and (<= (count field-parts) max-parameters)
+                           (= (count field-names) (count (distinct field-names))))
+              (reject! "defrecord requires at most five unique fields"
+                       form :kotoba.error/record-declaration))
+          descriptor (record-descriptor namespace-symbol record-name field-parts)
           groups (protocol-extension-groups extra form)
-          record {:name record-name :fields fields :descriptor descriptor}
+          record {:name record-name
+                  :fields field-names
+                  :field-parts field-parts
+                  :typed? typed?
+                  :descriptor descriptor}
           implementations
           (mapcat (fn [[protocol-name methods]]
                     (extension-implementations protocols {record-name record}
@@ -6901,9 +6934,12 @@
                                   (symbol (str "__kotoba_protocol_impl_" %2)))
                           implementations (range))
         constructors
-        (mapv (fn [{:keys [name fields descriptor]}]
-                (list 'defn (symbol (str "->" name)) fields descriptor
-                      (list* 'record-new descriptor fields)))
+        (mapv (fn [{:keys [name fields field-parts typed? descriptor]}]
+                (let [params (if typed?
+                               (vec (mapcat (juxt :name :type) field-parts))
+                               fields)]
+                  (list 'defn (symbol (str "->" name)) params descriptor
+                        (list* 'record-new descriptor fields))))
               record-infos)
         impl-defs
         (mapv (fn [{:keys [impl-name params record-type body]}]
