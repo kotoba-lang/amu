@@ -91,6 +91,8 @@
                           ") (f64-from-bits " b ")) 1 0))"))
 
 (def ^:private record-type "[:record :t/r [[:a :i64] [:b :i64]]]")
+(def ^:private option-record-type
+  "[:record :t/o [[:m [:option :i64]] [:x :i64]]]")
 
 (def ^:private cases
   [["arithmetic" "(defn main [] (+ (* 3 4) (quot 10 2)))" 17]
@@ -117,6 +119,79 @@
    ["record projection"
     (str "(defn main [] (record-get " record-type " (record-new "
          record-type " 4 9) :b))") 9]
+   ;; A record crossing INTO a function. It is boxed into the same pair chain a
+   ;; record result already crossed on, so these rows fail loudly if the caller
+   ;; and the callee ever disagree about that shape.
+   ;;
+   ;; Each row picks a field whose value differs from every other field's, and
+   ;; the two projections below select DIFFERENT fields, because a chain walked
+   ;; to the wrong depth still returns a plausible i64 -- reading `:a` when `:b`
+   ;; was asked for is exactly the bug this shape can have, and a row whose
+   ;; fields shared a value could not see it.
+   ["record parameter, first field"
+    (str "(defn f [r " record-type "] (record-get " record-type " r :a))"
+         " (defn main [] (f (record-new " record-type " 4 9)))") 4]
+   ["record parameter, second field"
+    (str "(defn f [r " record-type "] (record-get " record-type " r :b))"
+         " (defn main [] (f (record-new " record-type " 4 9)))") 9]
+   ;; A record parameter forwarded to a second function: the handle must stay a
+   ;; handle across the hop rather than being re-boxed into a chain of a chain.
+   ["record parameter forwarded"
+    (str "(defn g [r " record-type "] (record-get " record-type " r :b))"
+         " (defn f [r " record-type "] (g r))"
+         " (defn main [] (f (record-new " record-type " 4 9)))") 9]
+   ;; A `let`-bound record was flattened into one slot per field, so passing it
+   ;; exercises the OTHER caller path: re-boxing from slots, in field order.
+   ["let-bound record passed as an argument"
+    (str "(defn f [r " record-type "] (record-get " record-type " r :b))"
+         " (defn main [] (let [r (record-new " record-type " 4 9)] (f r)))") 9]
+   ;; Both directions at once: a record built by one function, returned boxed,
+   ;; then handed straight into another as a parameter.
+   ["record result becomes a record parameter"
+    (str "(defn mk [] " record-type " (record-new " record-type " 4 9))"
+         " (defn f [r " record-type "] (record-get " record-type " r :a))"
+         " (defn main [] (f (mk)))") 4]
+   ;; The other boundary types admitted alongside records. Each was already a
+   ;; single word INSIDE a function; these rows are what makes "and therefore it
+   ;; can cross a boundary" a measured claim rather than an argument.
+   ;; A bare `:bool` PARAMETER is absent on purpose: the interpreter validates a
+   ;; `:bool` argument as an i64 word (`{:trap :value-type-mismatch :expected
+   ;; :i64}`), so the boundary gates exclude it and there is nothing to execute
+   ;; here. `:bool` results and `:bool` record fields both work and are covered.
+   ;;
+   ;; `(< n 3)` infers `:i64`, not `:bool` -- every comparison in this frontend
+   ;; does -- so a genuine `:bool` result has to come from a literal.
+   ["bool result"
+    (str "(defn f [n] :bool (if (< n 3) true false))"
+         " (defn main [] (if (f 1) 6 7))") 6]
+   ["keyword parameter"
+    (str "(defn f [k :keyword] (string-byte-length (keyword-name k)))"
+         " (defn main [] (f :abc))") 3]
+   ["option parameter"
+    (str "(defn f [m [:option :i64]] (option-value-of [:option :i64] m 7))"
+         " (defn main [] (f (option-some-of [:option :i64] 5)))") 5]
+   ["option parameter, none"
+    (str "(defn f [m [:option :i64]] (option-value-of [:option :i64] m 7))"
+         " (defn main [] (f (option-none-of [:option :i64])))") 7]
+   ["result parameter"
+    (str "(defn f [r [:result :i64 :i64]] (result-value-of [:result :i64 :i64] r 7))"
+         " (defn main [] (f (result-ok-of [:result :i64 :i64] 5)))") 5]
+   ;; A record whose FIELD is an option -- murakumo's `:join/clamp` shape, and
+   ;; the one that made a schema unrepresentable while each of its parts was
+   ;; representable alone. Both field slots are read, so a flattening that lost
+   ;; or reordered the option slot fails here.
+   ["option-typed record field, some"
+    (str "(defn f [r " option-record-type "] (option-value-of [:option :i64]"
+         " (record-get " option-record-type " r :m)"
+         " (record-get " option-record-type " r :x)))"
+         " (defn main [] (f (record-new " option-record-type
+         " (option-some-of [:option :i64] 5) 9)))") 5]
+   ["option-typed record field, none falls back to the sibling field"
+    (str "(defn f [r " option-record-type "] (option-value-of [:option :i64]"
+         " (record-get " option-record-type " r :m)"
+         " (record-get " option-record-type " r :x)))"
+         " (defn main [] (f (record-new " option-record-type
+         " (option-none-of [:option :i64]) 9)))") 9]
    ["option" "(defn main [] (option-value (option-some 5) 0))" 5]
    ["result" "(defn main [] (if (result-ok? (result-ok 5)) 1 0))" 1]
    ["f64 arithmetic" (str "(defn main [] (f64-to-bits (f64-add (f64-from-bits "
