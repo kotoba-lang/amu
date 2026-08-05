@@ -37,9 +37,14 @@
         io.github.kotoba-lang/kotoba-wasm
         {:git/url "https://github.com/kotoba-lang/kotoba-wasm.git"
          :git/sha "b0c9837f2aca8f6bf0376e16d6b889c303a2b4f3"}
+        ;; f35a8ee is kotoba-native ADR 0005: `record-get` whose operand is not
+        ;; syntactically a matching `record-new`. That is the last of the three
+        ;; shapes ADR 0220 left open by name, and it is what takes murakumo's
+        ;; sweep from 30/33 to 33/33 on both ISAs -- measured below, from these
+        ;; pins, with no `:local/root` anywhere.
         io.github.kotoba-lang/kotoba-native
         {:git/url "https://github.com/kotoba-lang/kotoba-native.git"
-         :git/sha "4a5216e6ff1df83c30b86f9ee8db6bd466d94dcd"}
+         :git/sha "f35a8ee66e591e489f16f0addb59cb18932e12e3"}
         io.github.kotoba-lang/kotoba-component
         {:git/url "https://github.com/kotoba-lang/kotoba-component.git"
          :git/sha "35fb4d5941b3d56b35bca71151bdfadf33993d41"}
@@ -50,9 +55,15 @@
         io.github.kotoba-lang/io-multiformats
         {:git/url "https://github.com/kotoba-lang/io-multiformats.git"
          :git/sha "b3b157e683a943d4f2e9362d9366cceefff3f656"}
+        ;; 328dd22 admits the widened `record-get`, and pins `kotoba-native
+        ;; f35a8ee` in its own deps.edn for the reason its ADR gives: it does not
+        ;; merely depend on that backend, it calls it, so admitting a shape while
+        ;; pinned to a backend that refuses it would put the disagreement inside
+        ;; its own closure. This repository pins the same commit, not a
+        ;; descendant -- so the two agree exactly.
         io.github.kotoba-lang/kotoba-verifier
         {:git/url "https://github.com/kotoba-lang/kotoba-verifier.git"
-         :git/sha "6433a81bd23b5328e3da3cfb22be0187dfc41d06"}
+         :git/sha "328dd229bfe5a1eaecb84d9e16c3095ff4af6be5"}
 }
  :aliases {:test {:extra-paths ["test"]
                   :extra-deps
