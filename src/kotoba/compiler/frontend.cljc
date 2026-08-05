@@ -146,11 +146,31 @@
 ;; (interrupt acknowledgement, FIFO pop). It is therefore listed here among
 ;; the privileged operations, never treated as pure, and never oracled -- the
 ;; same treatment `kernel-out-u8` already receives.
+;;
+;; `kernel-read-msr`/`kernel-write-msr` are the model-specific registers, the
+;; other half of x86's out-of-band CPU state. Unlike a port they are not a bus
+;; transaction, but they are privileged for the same reason control registers
+;; are: `rdmsr`/`wrmsr` fault outside ring 0, and what they name -- EFER's NX
+;; enable, the APIC base address, the SYSCALL entry point (STAR/LSTAR/FMASK) --
+;; is machine configuration, not a value.
+;;
+;; `(kernel-read-msr index)` -> the register's 64 bits, arity 1;
+;; `(kernel-write-msr index value)` -> writes them, arity 2, mirroring
+;; `kernel-out-*`. A read is never oracled: the value is whatever the CPU (or
+;; firmware, or a previous write from another core) put there, and a compile
+;; time answer would be an invention.
+;;
+;; The gap this closes is a duplication, not an absence: aiueos carries three
+;; independent `read_msr`/`write_msr` inline-asm pairs -- apic.c, paging.c and
+;; process.c -- because C had no other way to spell it. One primitive replaces
+;; all three, and is what lets the SYSCALL transport setup (STAR, LSTAR, EFER,
+;; FMASK) leave C at all.
 (def kernel-privileged-operations
   '{kernel-boot-info 0 kernel-read-cr2 0 kernel-read-cr3 0 kernel-write-cr3 1 kernel-invlpg 1
     kernel-cli 0 kernel-sti 0 kernel-hlt 0 kernel-pause 0
     kernel-out-u8 2 kernel-out-u32 2
-    kernel-in-u8 1 kernel-in-u32 1})
+    kernel-in-u8 1 kernel-in-u32 1
+    kernel-read-msr 1 kernel-write-msr 2})
 (def list-operations '#{list cons first second rest empty?})
 (def predicate-operations '#{not zero? pos? neg?})
 ;; ADR-2607150000: and/or/when mirror kotoba-lang/kotoba's already-proven
