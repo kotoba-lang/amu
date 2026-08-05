@@ -14,8 +14,12 @@
 
   An ISA runs if a loader can be built and executed for it. The host ISA always
   can; the other needs cross-compilation and emulation, which macOS on Apple
-  silicon has (`cc -arch x86_64` plus Rosetta 2). Missing ones are skipped and
-  named, so a run that covered only one ISA never looks like it covered both."
+  silicon has (`cc -arch x86_64` plus Rosetta 2). The availability set is
+  printed AND asserted to be the full table, because a skipped ISA reads
+  exactly like a passing one in the summary line -- a green
+  \"2 tests, N assertions, 0 failures\" says nothing about how many backends
+  produced it. A host that cannot build both loaders fails this test rather
+  than quietly halving it."
   (:require [clojure.java.io :as io]
             [clojure.java.shell :as shell]
             [clojure.string :as str]
@@ -27,7 +31,26 @@
   {"x86_64" ["x86_64" :x86_64-kotoba-v1]
    "aarch64" ["arm64" :aarch64-kotoba-v1]})
 
-(defn- tmp [name] (io/file (System/getProperty "java.io.tmpdir") name))
+;; Every scratch path this namespace writes is namespaced by process, because
+;; they used to be fixed names in the shared temp directory and that is a race
+;; against any other run of this table on the same machine. `run-native` writes
+;; the program to `kotoba-isa-code-<isa>.bin` and then execs the loader on it,
+;; so a neighbouring process writing the same path in that window makes the
+;; loader run SOMEBODY ELSE'S program and report its result.
+;;
+;; It reads as a wrong answer, not as an error. Observed 2026-08-06 while a
+;; second agent ran this table concurrently: `replace-all: two occurrences`
+;; came back `:result -6`, which is the expected value of the `bit-not` row --
+;; a different row's program, executed under this row's name. With two rows in
+;; the table the window was small enough never to be hit; at 119 it is hit
+;; readily, which is why this had not been noticed before.
+(def ^:private run-token
+  (str (.pid (java.lang.ProcessHandle/current)) "-"
+       (Long/toHexString (System/nanoTime))))
+
+(defn- tmp [name]
+  (doto (io/file (System/getProperty "java.io.tmpdir") (str run-token "-" name))
+    (.deleteOnExit)))
 
 (defn- macos? [] (= "Mac OS X" (System/getProperty "os.name")))
 
@@ -94,7 +117,7 @@
 (def ^:private option-record-type
   "[:record :t/o [[:m [:option :i64]] [:x :i64]]]")
 
-(def ^:private cases
+(def ^:private base-cases
   [["arithmetic" "(defn main [] (+ (* 3 4) (quot 10 2)))" 17]
    ["comparison" "(defn main [] (if (< 1 2) 7 8))" 7]
    ["recursion" (str "(defn f [n] (if (< n 1) 0 (+ n (f (- n 1)))))"
@@ -154,10 +177,10 @@
    ;; The other boundary types admitted alongside records. Each was already a
    ;; single word INSIDE a function; these rows are what makes "and therefore it
    ;; can cross a boundary" a measured claim rather than an argument.
-   ;; A bare `:bool` PARAMETER is absent on purpose: the interpreter validates a
-   ;; `:bool` argument as an i64 word (`{:trap :value-type-mismatch :expected
-   ;; :i64}`), so the boundary gates exclude it and there is nothing to execute
-   ;; here. `:bool` results and `:bool` record fields both work and are covered.
+   ;;
+   ;; A bare `:bool` PARAMETER used to be absent here, because the boundary
+   ;; gates excluded it. kotoba-verifier `6433a81` (its ADR 0003) admits it, so
+   ;; it is no longer absent -- see `bool-parameter-cases` below.
    ;;
    ;; `(< n 3)` infers `:i64`, not `:bool` -- every comparison in this frontend
    ;; does -- so a genuine `:bool` result has to come from a literal.
@@ -223,13 +246,248 @@
    ["keyword-name of a multi-byte name"
     "(defn main [] (string-byte-length (keyword-name :日本)))" 6]])
 
+;; ---------------------------------------------------------------------------
+;; Rows that four separate agents wrote, ran green, and left uncommitted here
+;; because this repository was outside each of their scopes. Each reproduced
+;; its rows in an ADR of the repository it was allowed to touch; the ADR is
+;; cited above each group. They are brought in unchanged rather than
+;; re-derived, so that what runs here is what those ADRs claim ran.
+;; ---------------------------------------------------------------------------
+
+;; kotoba-native ADR 0001 -- a record result is boxed from ANY tail position,
+;; not only when `record-new` is the outermost form of the body. Each row
+;; builds the record where a real module builds one (under a `let`, in either
+;; branch of an `if`) and hands the boxed result straight into a parameter.
+;;
+;; Handing it into a parameter rather than projecting the call's result
+;; directly is not a simplification: a row that ALSO projects the call's result
+;; is still refused by the verifier, which that ADR names as a residual gap and
+;; proves around via the murakumo sweep instead.
+;;
+;; The two projections select DIFFERENT fields for the same reason the
+;; record-parameter rows above do -- a chain walked to the wrong depth still
+;; returns a plausible i64.
+(def ^:private record-result-cases
+  (let [proj (fn [field]
+               (str " (defn f [r " record-type "] (record-get " record-type
+                    " r " field ")) (defn main [] (f (mk)))"))
+        under-let (str "(defn mk [] " record-type " (let [z 1] (record-new "
+                       record-type " 4 9)))")
+        then-branch (str "(defn mk [] " record-type " (if (< 1 2) (record-new "
+                         record-type " 4 9) (record-new " record-type " 0 0)))")
+        else-nested (str "(defn mk [] " record-type " (if (< 2 1) (record-new "
+                         record-type " 0 0) (let [z 1] (record-new "
+                         record-type " 4 9))))")]
+    [["record result built under a let, first field"
+      (str under-let (proj ":a")) 4]
+     ["record result built under a let, second field"
+      (str under-let (proj ":b")) 9]
+     ["record result built in the then branch, second field"
+      (str then-branch (proj ":b")) 9]
+     ["record result built in the else branch under a nested let, first field"
+      (str else-nested (proj ":a")) 4]
+     ["record result built in the else branch under a nested let, second field"
+      (str else-nested (proj ":b")) 9]]))
+
+;; kotoba-native ADR 0002 -- `string-contains?` / `string-replace-all` lower
+;; from the existing string callbacks. Admitted onto the native targets by
+;; kotoba-kir ADR 0222 and kotoba-verifier ADR 0002, so these need nothing
+;; relaxed any more; the ADR ran them under two in-process relaxations because
+;; neither had landed yet.
+;;
+;; Source text is built with `pr-str` rather than hand-escaped, so a row's
+;; multi-byte literals are exactly the characters written here.
+(def ^:private contains-rows
+  ;; why, haystack, needle, expected
+  [["needle at the very start" "abcdef" "abc" 1]
+   ["needle at the very end" "abcdef" "def" 1]
+   ["needle in the middle" "abcdef" "cd" 1]
+   ["needle is the whole haystack" "abc" "abc" 1]
+   ["absent" "abcdef" "xyz" 0]
+   ["absent, but every window shares a prefix with it" "abcde" "cdf" 0]
+   ["needle longer than the haystack" "ab" "abcd" 0]
+   ["empty haystack" "" "a" 0]
+   ["two occurrences, first at offset 0" "abab" "ab" 1]
+   ["overlapping occurrences" "aaa" "aa" 1]
+   ["multi-byte needle inside a multi-byte haystack" "日本語" "本語" 1]
+   ["multi-byte needle absent" "日本語" "日語" 0]
+   ["2-byte needle against a 3-byte-per-code-point haystack" "日本語" "ab" 0]
+   ["mixed-width haystack" "aé日b" "é日" 1]])
+
+(def ^:private replace-rows
+  ;; why, haystack, needle, replacement, expected text
+  [["single occurrence in the middle" "a-b" "-" "+" "a+b"]
+   ["at the very start" "-ab" "-" "+" "+ab"]
+   ["at the very end" "ab-" "-" "+" "ab+"]
+   ["two occurrences" "a,b,c" "," ";" "a;b;c"]
+   ["adjacent occurrences" "--" "-" "+" "++"]
+   ["absent" "abc" "x" "y" "abc"]
+   ["needle longer than the haystack" "ab" "abc" "z" "ab"]
+   ["empty haystack" "" "a" "b" ""]
+   ["needle is the whole haystack" "abc" "abc" "z" "z"]
+   ;; The row that separates a correct scan from one that re-scans what it just
+   ;; wrote: a replacement CONTAINING the needle loops forever if the cursor
+   ;; does not advance past the text it emitted.
+   ["replacement contains the needle" "xax" "a" "aa" "xaax"]
+   ["replacement is the needle doubled" "a.b" "." ".." "a..b"]
+   ["replacement shorter than the needle" "a--b--c" "--" "-" "a-b-c"]
+   ["replacement longer than the needle" "a-b" "-" "===" "a===b"]
+   ["empty replacement" "a-b" "-" "" "ab"]
+   ["overlapping candidates, left to right" "aaa" "aa" "b" "ba"]
+   ["multi-byte needle" "日本語" "本" "X" "日X語"]
+   ["multi-byte replacement" "a-b" "-" "日" "a日b"]])
+
+(defn- utf8-length [^String s] (alength (.getBytes s "UTF-8")))
+
+(def ^:private string-search-cases
+  (vec
+   (concat
+    (for [[why h n expected] contains-rows]
+      [(str "contains?: " why)
+       (str "(defn main [] (if (string-contains? " (pr-str h) " " (pr-str n)
+            ") 1 0))")
+       expected])
+    ;; Each replace-all row runs twice: once comparing the produced text with
+    ;; `string=?`, once measuring its byte length. The content check alone
+    ;; cannot see a result that is right up to a truncation; the length check
+    ;; alone cannot see right-length wrong-bytes.
+    (mapcat
+     (fn [[why h n r expected]]
+       [[(str "replace-all: " why " (content)")
+         (str "(defn main [] (if (string=? (string-replace-all " (pr-str h) " "
+              (pr-str n) " " (pr-str r) ") " (pr-str expected) ") 1 0))")
+         1]
+        [(str "replace-all: " why " (byte length)")
+         (str "(defn main [] (string-byte-length (string-replace-all "
+              (pr-str h) " " (pr-str n) " " (pr-str r) ")))")
+         (utf8-length expected)]])
+     replace-rows))))
+
+;; kotoba-verifier ADR 0003 -- a bare `:bool` PARAMETER is admitted at a
+;; function boundary. Reproduced verbatim from that ADR, which is where they
+;; lived because this repository was out of scope for the agent that ran them.
+;;
+;; Every row carries a `:string` parameter alongside its boolean. That is
+;; LOAD-BEARING, not decoration: kotoba-kir carries `:param-types` into KIR
+;; only when the HIR is typed, so a function whose ONLY typed feature is a
+;; `:bool` parameter loses its table and traps at `:phase :ir` as `:i64`. That
+;; is an open kotoba-kir gap (its ADR 0221) and is deliberately not worked
+;; around here -- do not "simplify" the `:string` away.
+;;
+;; Every row is one half of a `true`/`false` pair returning DIFFERENT values, so
+;; a backend that dropped the argument, passed a constant, or read the wrong
+;; register cannot pass by luck. Ten of them are exactly the rows that trap on
+;; x86-64 against kotoba-native `8e7c053` -- the pin this repository carried
+;; until the change that committed them.
+(def ^:private bool-parameter-cases
+  [["bool parameter as an `if` test, `true`"
+    "(defn f [s :string b :bool] (if b (string-byte-length s) 0))
+     (defn main [] (f \"abcd\" true))" 4]
+   ["bool parameter as an `if` test, `false`"
+    "(defn f [s :string b :bool] (if b (string-byte-length s) 0))
+     (defn main [] (f \"abcd\" false))" 0]
+   ["bool parameter before a string parameter, `true`"
+    "(defn f [b :bool s :string] (if b (string-byte-length s) 99))
+     (defn main [] (f true \"abcd\"))" 4]
+   ["bool parameter before a string parameter, `false`"
+    "(defn f [b :bool s :string] (if b (string-byte-length s) 99))
+     (defn main [] (f false \"abcd\"))" 99]
+   ["bool parameter through `bool-not`, `true`"
+    "(defn f [s :string b :bool] (if (bool-not b) (string-byte-length s) 99))
+     (defn main [] (f \"abcd\" true))" 99]
+   ["bool parameter through `bool-not`, `false`"
+    "(defn f [s :string b :bool] (if (bool-not b) (string-byte-length s) 99))
+     (defn main [] (f \"abcd\" false))" 4]
+   ["bool parameter through `=`, `true`"
+    "(defn f [s :string b :bool] (if (= b true) (string-byte-length s) 99))
+     (defn main [] (f \"abcd\" true))" 4]
+   ["bool parameter through `=`, `false`"
+    "(defn f [s :string b :bool] (if (= b true) (string-byte-length s) 99))
+     (defn main [] (f \"abcd\" false))" 99]
+   ["bool parameter forwarded into another bool parameter, `true`"
+    "(defn g [s :string b :bool] (if b 10 11))
+     (defn f [s :string b :bool] (g s b))
+     (defn main [] (f \"abcd\" true))" 10]
+   ["bool parameter forwarded into another bool parameter, `false`"
+    "(defn g [s :string b :bool] (if b 10 11))
+     (defn f [s :string b :bool] (g s b))
+     (defn main [] (f \"abcd\" false))" 11]
+   ["two bool parameters, `true false`"
+    "(defn f [s :string a :bool b :bool] (if a (if b 3 4) (if b 5 6)))
+     (defn main [] (f \"abcd\" true false))" 4]
+   ["two bool parameters, `false true`"
+    "(defn f [s :string a :bool b :bool] (if a (if b 3 4) (if b 5 6)))
+     (defn main [] (f \"abcd\" false true))" 5]
+   ["bool parameter with a string result, `true`"
+    "(defn f [s :string b :bool] :string (if b \"abc\" \"ab\"))
+     (defn main [] (string-byte-length (f \"x\" true)))" 3]
+   ["bool parameter with a string result, `false`"
+    "(defn f [s :string b :bool] :string (if b \"abc\" \"ab\"))
+     (defn main [] (string-byte-length (f \"x\" false)))" 2]
+   ;; The two rows below and the record-field rows above are DOCUMENTATION, not
+   ;; gates, and the verifier's own tests say so: a `:bool` RESULT and a `:bool`
+   ;; inside a wrapper reach admission by recursion and passed before the
+   ;; widening too. They are here because a reader should not have to infer
+   ;; which of the boundary positions were already open.
+   ["bool parameter returned as a bool result, `true`"
+    "(defn f [s :string b :bool] :bool b)
+     (defn main [] (if (f \"x\" true) 7 6))" 7]
+   ["bool parameter returned as a bool result, `false`"
+    "(defn f [s :string b :bool] :bool b)
+     (defn main [] (if (f \"x\" false) 7 6))" 6]
+   ["tail self-call passing a literal `false`"
+    "(defn f [s :string b :bool] (if b (f s false) 6))
+     (defn main [] (f \"abcd\" true))" 6]])
+
+;; kotoba-native ADR 0003 -- a call argument that is the literal `false` is
+;; emitted like any other argument. `emit-heap-call` walked its arguments with
+;; `if-let`, which tests the BOUND VALUE, so a `false` ended the walk and every
+;; argument after it was never pushed while the pop sequence still popped the
+;; full arity.
+;;
+;; These two rows are the ones that ADR calls reachable on unmodified `main`
+;; with NOTHING relaxed: `option-some-of` / `result-ok-of` lower to
+;; `(pair 1 payload)`, so a `:bool` payload is a boolean literal in a host-call
+;; argument slot and never crosses a function boundary at all. Before the fix
+;; they are 159 bytes where the `true` form is 170 -- one dropped push -- and a
+;; SIGBUS on x86-64 while AArch64 answers correctly.
+;;
+;; The ADR's other rows (a `:bool` in ordinary call and tail-self-call argument
+;; positions) are covered by `bool-parameter-cases` above, which exercises the
+;; same two emit sites through the now-open boundary.
+(def ^:private boolean-literal-argument-cases
+  [["`[:option :bool]` payload in a host-call argument slot, false"
+    (str "(defn main [] (if (option-value-of [:option :bool]"
+         " (option-some-of [:option :bool] false) true) 6 7))") 7]
+   ["`[:option :bool]` payload in a host-call argument slot, true"
+    (str "(defn main [] (if (option-value-of [:option :bool]"
+         " (option-some-of [:option :bool] true) true) 6 7))") 6]
+   ["`[:result :bool :i64]` payload in a host-call argument slot, false"
+    (str "(defn main [] (if (result-value-of [:result :bool :i64]"
+         " (result-ok-of [:result :bool :i64] false) true) 6 7))") 7]
+   ["`[:result :bool :i64]` payload in a host-call argument slot, true"
+    (str "(defn main [] (if (result-value-of [:result :bool :i64]"
+         " (result-ok-of [:result :bool :i64] true) true) 6 7))") 6]])
+
+(def ^:private cases
+  (vec (concat base-cases
+               record-result-cases
+               string-search-cases
+               bool-parameter-cases
+               boolean-literal-argument-cases)))
+
 (deftest the-verified-surface-executes-identically-on-every-available-isa
   (let [available (into {} (remove (comp nil? val) @loaders))
         missing (remove available (keys isas))]
-    (when (seq missing)
-      (println "skipping ISAs with no buildable/runnable loader here:"
-               (str/join ", " missing)))
-    (is (seq available) "at least the host ISA must be runnable")
+    ;; Printed AND asserted. A skipped ISA reads exactly like a passing one in
+    ;; the summary line, so "2 tests, N assertions, 0 failures" is not evidence
+    ;; that both backends ran -- this assertion is.
+    (println "available:" (vec (sort (keys available)))
+             "/ missing (SKIPPED):" (vec (sort missing)))
+    (is (= (set (keys isas)) (set (keys available)))
+        (str "every ISA in the table must be runnable here; a skipped one "
+             "cannot be told from a passing one in the summary line. missing: "
+             (vec (sort missing))))
     (doseq [[isa _] available
             [why source expected] cases]
       (testing (str isa " / " why)
