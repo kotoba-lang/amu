@@ -133,10 +133,24 @@
     ;; argument is checked as a base like every other kernel op's: a derived
     ;; window is only as good as the window it was derived from.
     kernel-subregion 4})
+;; `kernel-in-u8`/`kernel-in-u32` are the READ half of x86 port I/O, and take
+;; only the port -- `(kernel-in-u8 port)` -> the byte that port yields,
+;; zero-extended to i64. Their absence, next to a write half that had been
+;; here from the start, was not a small gap: PCI configuration space is
+;; addressed by WRITING 0xCF8 and then READING 0xCFC, so with port I/O that
+;; could only write, PCI enumeration -- and therefore every device driver --
+;; could not be expressed in Kotoba at all and had to stay in C.
+;;
+;; A port read is an effect in both directions: it observes device state that
+;; may differ on each read, and on many devices reading is itself a write
+;; (interrupt acknowledgement, FIFO pop). It is therefore listed here among
+;; the privileged operations, never treated as pure, and never oracled -- the
+;; same treatment `kernel-out-u8` already receives.
 (def kernel-privileged-operations
   '{kernel-boot-info 0 kernel-read-cr2 0 kernel-read-cr3 0 kernel-write-cr3 1 kernel-invlpg 1
     kernel-cli 0 kernel-sti 0 kernel-hlt 0 kernel-pause 0
-    kernel-out-u8 2 kernel-out-u32 2})
+    kernel-out-u8 2 kernel-out-u32 2
+    kernel-in-u8 1 kernel-in-u32 1})
 (def list-operations '#{list cons first second rest empty?})
 (def predicate-operations '#{not zero? pos? neg?})
 ;; ADR-2607150000: and/or/when mirror kotoba-lang/kotoba's already-proven
