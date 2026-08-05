@@ -123,7 +123,7 @@
            (defn main [] (text/answer))")
     (binding [*out* out]
       (cli/-main "compile" (.getPath root) "--source-path" (.getPath source-directory)
-                 "--target" "js" "--output" (.getPath output)))
+                 "--target" "js" "--output" (.getPath output) "--unpinned"))
     (let [report (edn/read-string (str out))
           manifest (edn/read-string (slurp (str output ".manifest.edn")))]
       (is (:ok report))
@@ -149,7 +149,7 @@
            (defn main [] :i64 (text/answer))")
     (binding [*out* out]
       (cli/-main "compile" (.getPath root) "--source-path" (.getPath source-directory)
-                 "--target" "component" "--output" (.getPath output)))
+                 "--target" "component" "--output" (.getPath output) "--unpinned"))
     (let [report (edn/read-string (str out))]
       (is (:ok report) (str report))
       (is (= :wasm-component-kotoba-v1 (:target report)))
@@ -183,7 +183,7 @@
            (defn main [] :i64 (b/ok? 42))")
     (binding [*out* out]
       (cli/-main "compile" (.getPath root) "--source-path" (.getPath source-directory)
-                 "--target" "component" "--output" (.getPath output)))
+                 "--target" "component" "--output" (.getPath output) "--unpinned"))
     (let [report (edn/read-string (str out))]
       (is (:ok report) (str report))
       (is (.isFile output))
@@ -214,7 +214,7 @@
       (cli/-main "compile" (.getPath root)
                  "--source-path" (.getPath app-root)
                  "--source-path" (.getPath library-root)
-                 "--target" "js" "--output" (.getPath output)))
+                 "--target" "js" "--output" (.getPath output) "--unpinned"))
     (let [report (edn/read-string (str out))]
       (is (:ok report))
       (is (str/includes? (slurp output) "moduleSourceDigests")))))
@@ -240,7 +240,7 @@
       (cli/-main "compile" (.getPath root)
                  "--source-path" (.getPath (first roots))
                  "--source-path" (.getPath (second roots))
-                 "--target" "js"))
+                 "--target" "js" "--unpinned"))
     (let [report (edn/read-string (str err))]
       (is (= 65 @status))
       (is (= :project-link (:error report)))
@@ -264,7 +264,7 @@
     (binding [cli/*exit* #(reset! status %)
               *err* err]
       (cli/-main "compile" (.getPath root) "--source-path" (.getPath directory)
-                 "--target" "js"))
+                 "--target" "js" "--unpinned"))
     (let [report (edn/read-string (str err))]
       (is (= 65 @status))
       (is (= :project-link (:error report)))
@@ -380,3 +380,62 @@
           "CLI output must be the requested target's bytes, not v1 bytes with a v2 label")
       (is (str/starts-with? wit "package aiueos:capability@0.3.0;"))
       (is (str/includes? wit "resource grant;")))))
+
+(defn- multi-module-project! []
+  (let [directory (.toFile (java.nio.file.Files/createTempDirectory
+                            "kotoba-cli-pinned-" (make-array java.nio.file.attribute.FileAttribute 0)))
+        source-directory (io/file directory "src")
+        dependency (io/file source-directory "example/text.kotoba")
+        root (io/file directory "main.kotoba")]
+    (.mkdirs (.getParentFile dependency))
+    (spit dependency "(ns example.text (:export [answer])) (defn answer [] 42)")
+    (spit root
+          "(ns example.app (:require [example.text :as text]) (:export [main]))
+           (defn main [] (text/answer))")
+    {:directory directory :source-directory source-directory :root root}))
+
+(deftest a-multi-module-compile-refuses-ambient-inputs-by-default
+  (testing "path-resolved requires are still available, but no longer the default"
+    (let [{:keys [source-directory root]} (multi-module-project!)
+          status (atom nil)
+          err (StringWriter.)]
+      (binding [cli/*exit* #(reset! status %) *err* err]
+        (cli/-main "compile" (.getPath root)
+                   "--source-path" (.getPath source-directory)
+                   "--target" "js"))
+      (let [report (edn/read-string (str err))]
+        (is (= :compile/unpinned-inputs (get-in report [:details :problem]))
+            (str "expected the unpinned-inputs refusal, got: " (str err)))
+        (is (str/includes? (str (get-in report [:details :override])) "--unpinned")
+            "the refusal names the way through")
+        (is (str/includes? (str (get-in report [:details :pin])) "module-lock")
+            "and the way to stop needing it")))))
+
+(deftest an-unpinned-compile-says-so-in-a-file-next-to-the-artifact
+  (let [{:keys [directory source-directory root]} (multi-module-project!)
+        output (io/file directory "app.mjs")
+        out (StringWriter.)]
+    (binding [*out* out]
+      (cli/-main "compile" (.getPath root)
+                 "--source-path" (.getPath source-directory)
+                 "--target" "js" "--output" (.getPath output) "--unpinned"))
+    (let [report (edn/read-string (str out))
+          inputs (edn/read-string (slurp (str (.getPath output) ".inputs.edn")))]
+      (is (:ok report))
+      (is (= :unpinned-source-path (:kotoba.compile/inputs report))
+          "the mode is on the result line")
+      (is (= :unpinned-source-path (:kotoba.compile/inputs inputs))
+          "and durable beside the artifact")
+      (is (= [(.getPath source-directory)] (:source-paths inputs))
+          "with the roots that were actually searched"))))
+
+(deftest a-single-file-compile-is-unaffected
+  (testing "nothing to pin means nothing to refuse"
+    (let [source (temp-kotoba-source! "(ns solo (:export [main])) (defn main [] 1)")
+          output (java.io.File/createTempFile "kotoba-solo-" ".mjs")
+          out (StringWriter.)]
+      (binding [*out* out]
+        (cli/-main "compile" source "--target" "js" "--output" (.getPath output)))
+      (let [report (edn/read-string (str out))]
+        (is (:ok report))
+        (is (= :single-file (:kotoba.compile/inputs report)))))))
