@@ -473,10 +473,22 @@
             (throw (ex-info "typed values currently require the kotoba-script web target, typed Wasm/CLJS target, or the qualified native one-word string/record/variant/option/result slice"
                             {:phase :target :target target :backend backend
                              :value-profile :kotoba.value/typed-v1})))
+        ;; A library with no entry is admitted on the NATIVE backends too, but
+        ;; only where the target's artifact does not need an entry point to
+        ;; exist. `:x86_64-kotoba-v1`/`:aarch64-kotoba-v1` emit a code image
+        ;; plus an export table, which is exactly what a library is. The aiueos
+        ;; profiles are excluded: `:firmware`/`:kernel`/`:process` artifacts each
+        ;; name a mandatory entry symbol in their target profile (`:efi_main`,
+        ;; `:aiueos_kernel_entry`, `:aiueos_process_entry`), so an entryless
+        ;; module would package into an image whose declared entry does not
+        ;; exist -- rejected here rather than at link time, where the failure
+        ;; would name a missing symbol instead of a missing entry.
         _ (when (and (nil? (:entry hir))
                      (not (contains? #{:js-kotoba-v1 :wasm32-kotoba-v1
-                                      :cljs-kotoba-v1} backend)))
-            (throw (ex-info "entryless libraries currently require the kotoba-script web target or Wasm target"
+                                      :cljs-kotoba-v1} backend))
+                     (not (and (contains? #{:x86_64-kotoba-v1 :aarch64-kotoba-v1} backend)
+                               (nil? (:entry (target-profile/profile target))))))
+            (throw (ex-info "entryless libraries currently require the kotoba-script web target, the Wasm target, or an entryless native target"
                             {:phase :target :target target :backend backend})))
         admission (admit! hir policy)
         kir (ir/lower hir)

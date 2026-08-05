@@ -25,6 +25,14 @@
                        (target/backend %))
           compiler/supported-targets))
 
+(defn- entryless-native-target?
+  "A native target whose artifact needs no entry point, so it can carry a
+  library. The aiueos profiles are excluded because each names a mandatory entry
+  symbol (`:efi_main`, `:aiueos_kernel_entry`, `:aiueos_process_entry`)."
+  [t]
+  (and (contains? #{:x86_64-kotoba-v1 :aarch64-kotoba-v1} (target/backend t))
+       (nil? (:entry (target/profile t)))))
+
 (deftest sealed-multi-arity-resolves-every-call-before-hir
   (let [source "(defn offset ([x] (offset x 1)) ([x delta] (+ x delta)))
                 (defn main [] (offset 40))"
@@ -331,10 +339,17 @@
     (is (= false (ir/execute (:kir compiled) 'same? [:a :b])))
     (is (zero? (:exit result)) (:err result))
     (is (not (re-find #"fnv|1099511628211|3750763034362895579" js-source)))
+    ;; This library is entryless and its boundary types are `:keyword`, which is
+    ;; the one-word pair handle a string already is. Native targets that need no
+    ;; entry point therefore carry it; targets that mandate an entry symbol still
+    ;; refuse it, and the web/Wasm targets were never in this set at all.
     (doseq [target (unsupported-typed-targets)]
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo
-                            #"require the kotoba-script web target"
-                            (compiler/compile-source source target))))))
+      (if (entryless-native-target? target)
+        (is (some? (:artifact (compiler/compile-source source target)))
+            (str "expected " target " to compile an entryless keyword library"))
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                              #"require the kotoba-script web target"
+                              (compiler/compile-source source target)))))))
 
 (deftest keyword-maps-use-owned-typed-operations
   (let [kir (:kir (compiler/compile-source "(defn main [] (get {:a 1} :a))"
