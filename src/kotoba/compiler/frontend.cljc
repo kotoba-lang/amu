@@ -165,12 +165,43 @@
 ;; process.c -- because C had no other way to spell it. One primitive replaces
 ;; all three, and is what lets the SYSCALL transport setup (STAR, LSTAR, EFER,
 ;; FMASK) leave C at all.
+;;
+;; `kernel-cpuid-eax`/`-ebx`/`-ecx`/`-edx` are CPU FEATURE DETECTION, the
+;; question every one of the six `cpuid` sites in aiueos is actually asking:
+;; does this CPU support NX (paging.c), does it support SYSCALL (process.c),
+;; what does this virtio device advertise (pci.c). Each site queries a leaf,
+;; tests a bit, and DECIDES -- and the decision is exactly the part that
+;; belongs in Kotoba rather than in inline asm.
+;;
+;; `(kernel-cpuid-eax leaf subleaf)` -> the EAX the CPU returned for that
+;; (leaf, subleaf), zero-extended to i64; `-ebx`, `-ecx` and `-edx` the same
+;; for their own result register. Arity 2 for all four, because `cpuid` reads
+;; TWO inputs -- the leaf in `eax` and the subleaf in `ecx` -- and a leaf whose
+;; subleaf was whatever happened to be in `ecx` is a different query. Leaves
+;; that ignore the subleaf (0x80000001, the NX one) simply pass 0.
+;;
+;; FOUR primitives, each executing its own `cpuid`, is deliberate. One
+;; instruction writes all four of `eax`/`ebx`/`ecx`/`edx`, so a single
+;; primitive returning all of them would have to return a tuple -- a heap pair
+;; chain, in a language whose kernel profile is trying to avoid exactly that --
+;; or else be four primitives sharing hidden state between calls. Splitting it
+;; keeps each one a PURE FUNCTION OF ITS TWO INPUTS, which is what makes it
+;; safe to admit individually and safe to verify by arity alone. The cost is a
+;; repeated `cpuid`; feature detection runs a handful of times at boot, so it
+;; is not a cost that matters.
+;;
+;; Privileged, and never oracled, for the strongest form of the reason the MSR
+;; read is: a `cpuid` result is a property of the MACHINE, not of the program.
+;; A compile-time answer would not merely be an invention, it would be an
+;; invention that the kernel then branches on -- "this CPU has NX" decided by a
+;; compiler that has never seen the CPU.
 (def kernel-privileged-operations
   '{kernel-boot-info 0 kernel-read-cr2 0 kernel-read-cr3 0 kernel-write-cr3 1 kernel-invlpg 1
     kernel-cli 0 kernel-sti 0 kernel-hlt 0 kernel-pause 0
     kernel-out-u8 2 kernel-out-u32 2
     kernel-in-u8 1 kernel-in-u32 1
-    kernel-read-msr 1 kernel-write-msr 2})
+    kernel-read-msr 1 kernel-write-msr 2
+    kernel-cpuid-eax 2 kernel-cpuid-ebx 2 kernel-cpuid-ecx 2 kernel-cpuid-edx 2})
 (def list-operations '#{list cons first second rest empty?})
 (def predicate-operations '#{not zero? pos? neg?})
 ;; ADR-2607150000: and/or/when mirror kotoba-lang/kotoba's already-proven
