@@ -66,7 +66,13 @@
 
 (def ^:private detail-keys
   #{:phase :target :artifact-target :host-target :entry :arity :limit :status
-    :reason :runtime-sha256 :not-before :expires :now})
+    :reason :runtime-sha256 :not-before :expires :now
+    ;; A refusal that cannot say what to do instead is a wall. These four are
+    ;; the remedy for `:compile/unpinned-inputs` -- a stable problem keyword and
+    ;; three fixed command strings. Nothing here is derived from user input, so
+    ;; admitting them does not widen what an error can leak, which is what this
+    ;; allowlist is for.
+    :problem :pin :then :override})
 
 (defn error-report
   ([error] (error-report error nil))
@@ -342,6 +348,22 @@
     (let [input (when-not (option args "--module-lock") (kotoba-source! (second args)))
           source-roots (options args "--source-path")
           module-lock-path (option args "--module-lock")
+          unpinned? (boolean (some #{"--unpinned"} args))
+          _ (when (and (seq source-roots) (nil? module-lock-path) (not unpinned?))
+              ;; `project-files` resolves `(:require [app.util])` by turning a
+              ;; namespace into a PATH, so what gets compiled depends on what
+              ;; happens to be on disk and the build cannot say which inputs it
+              ;; actually used. That stays available -- it is how a source tree
+              ;; becomes a lock in the first place -- but it stops being the
+              ;; DEFAULT (ADR-2608580000 D5). Saying so costs one flag; not
+              ;; being able to tell afterwards costs the property.
+              (throw (ex-info "a multi-module compile needs pinned inputs"
+                              {:phase :usage
+                               :problem :compile/unpinned-inputs
+                               :source-paths (vec source-roots)
+                               :pin "module-lock <entry> --source-path <dir> --blocks <dir>"
+                               :then "compile --module-lock <lock> --blocks <dir>"
+                               :override "--unpinned"})))
           locked (when module-lock-path
                    (module-lock/load-locked-graph
                     module-lock-path
@@ -459,10 +481,31 @@
                     output (byte-array (map unchecked-byte (:bytes packaged))))
                    (atomic-output/write-edn! output (:artifact result)))
         (atomic-output/write-edn! output (:artifact result)))
-      (let [provenance-output (str output ".provenance.edn")]
+      (let [provenance-output (str output ".provenance.edn")
+            inputs (cond-> {:kotoba.compile/inputs
+                            (cond locked :module-lock
+                                  (seq source-roots) :unpinned-source-path
+                                  :else :single-file)}
+                     locked (assoc :module-lock module-lock-path
+                                   :lock-cid (:lock-cid locked))
+                     (seq source-roots) (assoc :source-paths (vec source-roots)))
+            inputs-output (str output ".inputs.edn")]
         (atomic-output/write-edn! provenance-output (:provenance result))
-        (println (pr-str {:ok true :target target :output output
-                          :provenance-output provenance-output}))))
+        ;; Written BESIDE the provenance rather than into it. `provenance/
+        ;; verify!` requires the descriptor's key set to match exactly, so an
+        ;; extra key would make every artifact fail its own identity check.
+        ;; That means this file is a RECORD, not a seal: it says which way the
+        ;; inputs were found, and it is not evidence the way a hash is. Putting
+        ;; the mode inside the seal needs `build-metadata` threaded through
+        ;; `compile-project`/`compile-source`/`compile-component`, at which
+        ;; point a pinned and an unpinned build of identical source would get
+        ;; different provenance hashes -- which is the correct end state,
+        ;; because they are not the same build.
+        (atomic-output/write-edn! inputs-output inputs)
+        (println (pr-str (merge {:ok true :target target :output output
+                                 :provenance-output provenance-output
+                                 :inputs-output inputs-output}
+                                (select-keys inputs [:kotoba.compile/inputs]))))))
     "package-ios"
     (let [input (bounded-edn/read-file (second args))
           entry (symbol (or (option args "--entry") "main"))
