@@ -158,7 +158,19 @@ still not fully reconciled into one shared grammar spec. See
 `com-junkawasaki/root` ADR-2607141600 / ADR-2607150000 for the fuller
 cross-repo analysis.
 
-### Frontend reconciliation direction
+### Semantic-analysis reconciliation direction
+
+The repository boundary is named **sema**, not frontend. In Kotoba architecture
+`kotoba-sema` means source/forms through name resolution, type/effect checking,
+capability elaboration, and checked HIR. This avoids the Web/app meaning of
+"frontend". Existing internal `kotoba.compiler.frontend` namespace names are
+compatibility implementation details and may move incrementally.
+
+The first machine-IR extraction wave is complete: `kotoba-gmir` owns the
+target-independent closed contract, `kotoba-mir` owns target selection and
+explicit register-allocation state, and `kotoba-native` consumes both while
+retaining MC/layout, byte encoding, ABI integration, and ELF emission. See ADR
+0222 for the dependency graph and the deferred sema/HIR/codegen/object splits.
 
 The reconciliation target is not to expose this compiler's KIR-level
 `cap-call`, numeric capability IDs, WIT imports, or provider callbacks as the
