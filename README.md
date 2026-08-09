@@ -166,11 +166,12 @@ capability elaboration, and checked HIR. This avoids the Web/app meaning of
 "frontend". Existing internal `kotoba.compiler.frontend` namespace names are
 compatibility implementation details and may move incrementally.
 
-The first machine-IR extraction wave is complete: `kotoba-gmir` owns the
-target-independent closed contract, `kotoba-mir` owns target selection and
-explicit register-allocation state, and `kotoba-native` consumes both while
-retaining MC/layout, byte encoding, ABI integration, and ELF emission. See ADR
-0222 for the dependency graph and the deferred sema/HIR/codegen/object splits.
+The semantic and machine-IR extraction waves are complete: `kotoba-sema` owns
+source-to-checked-HIR analysis, `kotoba-hir` owns the validated envelope,
+`kotoba-gmir` owns the target-independent closed contract, and `kotoba-mir`
+owns target selection and explicit register-allocation state. This compiler
+consumes those repositories while retaining orchestration and compatibility
+entry points. See ADR 0222 for the dependency graph.
 
 The reconciliation target is not to expose this compiler's KIR-level
 `cap-call`, numeric capability IDs, WIT imports, or provider callbacks as the
@@ -204,8 +205,9 @@ The first CI7 slice accepts one-argument qualified operations such as
 result type from the enclosing typed context; the elaborated HIR is identical
 to the existing `typed-cap-call` form. The semantic name, source operation,
 effect, and stable compiler wire ID come from the language-owned catalog
-vendored at `resources/kotoba/lang/capability-catalog.edn`. Calls whose result
-has no typed context still fail closed instead of guessing a provider schema.
+vendored by the pinned `kotoba-sema` dependency as
+`kotoba/lang/capability-catalog.edn`. Calls whose result has no typed context
+still fail closed instead of guessing a provider schema.
 
 
 GPU compilation now begins with a separate typed accelerator KIR rather than
@@ -944,9 +946,9 @@ kotoba -M compile examples/capability.kotoba --target wasm32 \
 `cap-call`'s capability id may also be written as a namespaced keyword name
 (ADR-2607182410) instead of a magic integer, e.g. `(cap-call :identity/sign
 value)`. The name is resolved against the language-owned semantic catalog,
-`resources/kotoba/lang/capability-catalog.edn`. The compiler derives its closed
-name-to-wire-id table from that vendored authority at parse time -- before
-anything else in the compiler runs, so
+`kotoba/lang/capability-catalog.edn`, supplied by `kotoba-sema` on the
+classpath. The compiler derives its closed name-to-wire-id table from that
+vendored authority at parse time -- before anything else in the compiler runs, so
 `--policy` still grants/denies by the resolved integer id exactly as before.
 An unregistered name is a hard parse-time error. `examples/capability-named.
 kotoba` / `examples/capability-named.edn` are the named-form counterpart of

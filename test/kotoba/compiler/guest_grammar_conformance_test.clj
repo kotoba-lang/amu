@@ -3,9 +3,10 @@
   guest-grammar.edn is the sole authoritative form catalog; kotoba and
   compiler must consume it rather than silently invent divergent
   forbidden/sugar sets. This locks that kotoba.compiler.frontend/forbidden-heads
-  actually reflects the vendored catalog (resources/kotoba/lang/guest-grammar.edn,
-  refreshed from kotoba-lang/kotoba-lang's lang/guest-grammar.edn when the git
-  pin advances) instead of only the small hand-written baseline set -- a
+  actually reflects the catalog supplied by the pinned kotoba-sema dependency
+  (kotoba/lang/guest-grammar.edn, refreshed from kotoba-lang/kotoba-lang's
+  lang/guest-grammar.edn when the sema pin advances) instead of only the small
+  hand-written baseline set -- a
   regression here means the classpath resource lookup in
   kotoba.compiler.frontend/load-catalog-forbidden silently stopped finding
   the catalog (e.g. a moved/renamed resource) and forbidden-heads quietly
