@@ -63,12 +63,13 @@
         io.github.kotoba-lang/io-multiformats
         {:git/url "https://github.com/kotoba-lang/io-multiformats.git"
          :git/sha "b3b157e683a943d4f2e9362d9366cceefff3f656"}
-        ;; The verifier carries its own minimum native dependency. This direct
-        ;; compiler coordinate intentionally selects the newer compatible
-        ;; backend for the complete compiler closure.
+        ;; 19e662e admits a bounded sealed native fuel contract (ADR 0005) and
+        ;; runs its independent KIR oracle with that exact value. The compiler
+        ;; must pin it in the same change that starts emitting non-default
+        ;; native fuel metadata; an older verifier rejects the artifact ABI.
         io.github.kotoba-lang/kotoba-verifier
         {:git/url "https://github.com/kotoba-lang/kotoba-verifier.git"
-         :git/sha "b39de831407c7999eee14c360aebb6472a8fba21"}
+         :git/sha "19e662e2f6a53680a9ed3bf28ac72d5feb8d7ea4"}
 }
  :aliases {:test {:extra-paths ["test"]
                   :extra-deps

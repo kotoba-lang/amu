@@ -498,6 +498,10 @@
                         (ir/uses-f64? hir) :kotoba.typed/mixed-f64-v2
                         typed-values? :kotoba.typed/externref-v1
                         :else :kotoba.i64/direct-v1)
+        declared-fuel (or (:fuel emit-metadata)
+                          (get-in emit-metadata [:budgets :fuel])
+                          (get-in policy [:budgets :fuel])
+                          512)
         compatibility (compatibility/descriptor
                        {:hir-format (:format hir) :kir-format (:format kir)
                         :target target :target-profile profile :value-abi value-abi})]
@@ -506,10 +510,7 @@
       (let [typed-values? (= :kotoba.kir/v4 (:format kir))
             ;; T7.4: optional `:fuel` in emit-metadata (or policy `:budgets`)
             ;; bakes into the module-private fuel global; default remains 512.
-            fuel (or (:fuel emit-metadata)
-                     (get-in emit-metadata [:budgets :fuel])
-                     (get-in policy [:budgets :fuel])
-                     512)
+            fuel declared-fuel
             emit-opts (cond-> {}
                         fuel (assoc :fuel fuel))]
         {:format :wasm/v1 :target target :target-profile profile
@@ -608,8 +609,8 @@
                                    :x86_64-kotoba-v1 :runtime-sysv-v1
                                    :aarch64-kotoba-v1 :runtime-aapcs64-v1)
                        :fuel-abi (case backend
-                                   :x86_64-kotoba-v1 {:mode :hidden-context-r9 :initial 512}
-                                   :aarch64-kotoba-v1 {:mode :hidden-context-x7 :initial 512})
+                                   :x86_64-kotoba-v1 {:mode :hidden-context-r9 :initial declared-fuel}
+                                   :aarch64-kotoba-v1 {:mode :hidden-context-x7 :initial declared-fuel})
                        :context-abi {:version 3 :fuel-offset 8 :allow-bitmap-offset 16
                                      :allow-bitmap-bytes 32 :cap-call-offset 48
                                      :pair-new-offset 56 :pair-first-offset 64
@@ -633,7 +634,7 @@
                       :effects (:effects hir)
                        :compatibility compatibility
                        :limits {:memory-bytes 65536
-                                :fuel 512
+                                :fuel declared-fuel
                                 :stack-bytes 4096}
                        :code (mapv #(bit-and (int %) 0xff) code)
                        :program program :exports (:exports emitted)})]
