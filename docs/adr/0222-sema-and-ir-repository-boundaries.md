@@ -35,7 +35,7 @@ kotoba-gmir       target-independent machine IR contract (extracted)
 kotoba-mir        target machine IR contract              (extracted)
 kotoba-codegen    MIR -> MC/machine bytes                 (deferred)
 kotoba-wasm       Wasm backend
-kotoba-object     ELF / Mach-O / PE                       (deferred)
+kotoba-object     object-container record contracts       (extracted: ELF64)
 compiler          orchestration and compatibility facade
 ```
 
@@ -60,13 +60,18 @@ executable contract:
 - `kotoba-mir` depends only on `kotoba-gmir` and owns target selection,
   explicit virtual/physical allocation state, and deterministic allocation;
 - `kotoba-native` depends on both and retains KIR-to-GMIR lowering, MC/layout,
-  byte encoding, ABI integration, and ELF emission.
+  byte encoding, ABI integration, and target-specific ELF layout/emission;
+- `kotoba-object` owns validated, target-neutral ELF64 headers, segments,
+  sections, symbols, RELA records, endian encoding, and bounded padding;
+- `kotoba-native` consumes `kotoba-object` while retaining image addresses,
+  relocation selection, entry shims, fuel, capability, and aiueos policy.
 
 The dependency graph is therefore acyclic:
 
 ```text
 kotoba-native -> kotoba-mir -> kotoba-gmir
 kotoba-native -> kotoba-kir
+kotoba-native -> kotoba-object
 ```
 
 `kotoba.native.layout` remains the production MC/layout seam. Repository
@@ -90,6 +95,7 @@ until an explicit, golden-preserving extraction moves it to `kotoba-kir`.
   callers migrate; this ADR governs ownership and future repository naming.
 - Repo count follows stable dependency boundaries rather than an aspirational
   diagram.
-- `kotoba-sema`, `kotoba-hir`, `kotoba-codegen`, and `kotoba-object` remain
-  deferred until their code can move without creating a compatibility-only
-  empty repository.
+- `kotoba-sema`, `kotoba-hir`, and `kotoba-codegen` remain deferred until their
+  code can move without creating a compatibility-only empty repository.
+- `kotoba-object` is now a real dependency of `kotoba-native`, and therefore of
+  the compiler closure; target policy did not move with the record encoders.
