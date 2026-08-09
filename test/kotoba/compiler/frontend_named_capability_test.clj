@@ -16,8 +16,8 @@
        (catch clojure.lang.ExceptionInfo e (ex-message e))))
 
 ;; `:identity/sign` is seeded to id 1 in the language-owned semantic catalog
-;; vendored at resources/kotoba/lang/capability-catalog.edn -- asserted directly
-;; here (not just relied upon) so a future re-numbering of the registry
+;; supplied by kotoba-sema as kotoba/lang/capability-catalog.edn -- asserted
+;; directly here (not just relied upon) so a future re-numbering of the registry
 ;; fails this test loudly instead of silently changing what the other
 ;; assertions below actually exercise.
 (deftest registry-seeds-identity-sign-as-id-1
@@ -213,4 +213,3 @@
            (dissoc named-hir :named-operations)))
     (is (= #{:process/spawn} (:named-operations named-hir)))
     (is (= #{[:cap/call 20]} (:effects named-hir)))))
-

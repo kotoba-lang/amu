@@ -28,7 +28,7 @@ The readable topology and current extraction state are:
 
 ```text
 kotoba-lang       language specification
-kotoba-sema       source/forms -> checked HIR            (deferred)
+kotoba-sema       source/forms -> checked HIR             (extracted)
 kotoba-hir        checked HIR envelope contract           (extracted)
 kotoba-kir        canonical semantic IR and DefCID
 kotoba-gmir       target-independent machine IR contract (extracted)
@@ -56,6 +56,10 @@ Extraction requires all of:
 The first extraction wave completed after the in-repository pilot became an
 executable contract:
 
+- `kotoba-sema` owns the admitted reader, schema validation, type/effect
+  checking, capability elaboration, and the grammar/capability catalogs;
+- compatibility namespaces remain under `kotoba.compiler.*`, but the compiler
+  consumes them from the pinned sema dependency and carries no duplicate source;
 - `kotoba-hir` owns the closed v2/v3 checked-module envelope, function
   annotations, entry/export/effect invariants, and portable form boundary;
 - the compiler frontend validates every produced HIR and `kotoba-kir` validates
@@ -76,7 +80,8 @@ executable contract:
 The dependency graph is therefore acyclic:
 
 ```text
-compiler -> kotoba-hir <- kotoba-kir
+compiler -> kotoba-sema -> kotoba-kir -> kotoba-hir
+compiler -> kotoba-hir
 kotoba-native -> kotoba-mir -> kotoba-gmir
 kotoba-native -> kotoba-kir
 kotoba-native -> kotoba-codegen
@@ -105,8 +110,9 @@ until an explicit, golden-preserving extraction moves it to `kotoba-kir`.
   callers migrate; this ADR governs ownership and future repository naming.
 - Repo count follows stable dependency boundaries rather than an aspirational
   diagram.
-- `kotoba-sema` remains deferred until parsing, schema resolution, and semantic
-  checking can move without a compiler dependency cycle.
+- `kotoba-sema` is now a real source-to-HIR producer boundary. Its legacy
+  namespaces preserve compatibility while `kotoba.sema` provides the canonical
+  public entry; the compiler pins and consumes the repository without a cycle.
 - `kotoba-hir` is now a real producer/consumer boundary shared by the compiler
   frontend and `kotoba-kir`; expression type checking remains a sema proof and
   was not duplicated in the envelope validator.
