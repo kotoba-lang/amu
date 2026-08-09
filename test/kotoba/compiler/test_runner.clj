@@ -117,6 +117,7 @@
             [kotoba.compiler.log-provider-test]
             [kotoba.compiler.provider-conformance-test]
             [kotoba.compiler.isa-execution-test]
+            [kotoba.compiler.native-fuel-metadata-test]
             [kotoba.compiler.wasm-typed-test]
             [kotoba.compiler.verifier-profile-test]))
 
@@ -126,6 +127,7 @@
                                           'kotoba.compiler.value-codec-test
                                           'kotoba.compiler.test-runner-completeness-test
                                           'kotoba.compiler.isa-execution-test
+                                          'kotoba.compiler.native-fuel-metadata-test
                                           'kotoba.compiler.aiueos-target-test
                                           'kotoba.compiler.accelerator-test
                                           'kotoba.compiler.application-syntax-test
