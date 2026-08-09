@@ -8,6 +8,7 @@
   (:require [clojure.set :as set]
             [kotoba.artifact.core :as artifact]
             [kotoba.compiler.schema :as schema]
+            [kotoba.hir :as hir]
             [kotoba.kir.value :as value]
             #?@(:clj [[clojure.tools.reader :as reader]
                       [clojure.tools.reader.reader-types :as rt]]
@@ -8142,16 +8143,17 @@
               (reject! "pure-product profile requires empty effects"
                        {:effects effects}
                        :kotoba.error/pure-product-effects))]
-      {:format (if typed-values? :kotoba.hir/v3 :kotoba.hir/v2)
-       :namespace (:namespace namespace-info)
-       :schemas (:schemas namespace-info)
-       :schema-identities (:schema-identities namespace-info)
-       :entry entry :exports (vec exports)
-       :result (when entry main-result)
-       ;; Admission conservatively covers private functions too: changing an
-       ;; export boundary must never change the authority the module declares.
-       :effects effects
-       ;; W1: semantic ability/operation names after elaboration (no numeric IDs).
-       :named-operations named-operations
-       :language-profile language-profile
-       :functions functions}))))
+      (hir/validate!
+       {:format (if typed-values? :kotoba.hir/v3 :kotoba.hir/v2)
+        :namespace (:namespace namespace-info)
+        :schemas (:schemas namespace-info)
+        :schema-identities (:schema-identities namespace-info)
+        :entry entry :exports (vec exports)
+        :result (when entry main-result)
+        ;; Admission conservatively covers private functions too: changing an
+        ;; export boundary must never change the authority the module declares.
+        :effects effects
+        ;; W1: semantic ability/operation names after elaboration (no numeric IDs).
+        :named-operations named-operations
+        :language-profile language-profile
+        :functions functions})))))

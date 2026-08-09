@@ -29,7 +29,7 @@ The readable topology and current extraction state are:
 ```text
 kotoba-lang       language specification
 kotoba-sema       source/forms -> checked HIR            (deferred)
-kotoba-hir        HIR contract                            (deferred)
+kotoba-hir        checked HIR envelope contract           (extracted)
 kotoba-kir        canonical semantic IR and DefCID
 kotoba-gmir       target-independent machine IR contract (extracted)
 kotoba-mir        target machine IR contract              (extracted)
@@ -56,6 +56,10 @@ Extraction requires all of:
 The first extraction wave completed after the in-repository pilot became an
 executable contract:
 
+- `kotoba-hir` owns the closed v2/v3 checked-module envelope, function
+  annotations, entry/export/effect invariants, and portable form boundary;
+- the compiler frontend validates every produced HIR and `kotoba-kir` validates
+  the same value again before HIR-to-KIR lowering;
 - `kotoba-gmir` owns GMIR v1 validation and has no repository dependencies;
 - `kotoba-mir` depends only on `kotoba-gmir` and owns target selection,
   explicit virtual/physical allocation state, and deterministic allocation;
@@ -72,6 +76,7 @@ executable contract:
 The dependency graph is therefore acyclic:
 
 ```text
+compiler -> kotoba-hir <- kotoba-kir
 kotoba-native -> kotoba-mir -> kotoba-gmir
 kotoba-native -> kotoba-kir
 kotoba-native -> kotoba-codegen
@@ -100,8 +105,11 @@ until an explicit, golden-preserving extraction moves it to `kotoba-kir`.
   callers migrate; this ADR governs ownership and future repository naming.
 - Repo count follows stable dependency boundaries rather than an aspirational
   diagram.
-- `kotoba-sema` and `kotoba-hir` remain deferred until their code can move
-  without creating a compatibility-only empty repository.
+- `kotoba-sema` remains deferred until parsing, schema resolution, and semantic
+  checking can move without a compiler dependency cycle.
+- `kotoba-hir` is now a real producer/consumer boundary shared by the compiler
+  frontend and `kotoba-kir`; expression type checking remains a sema proof and
+  was not duplicated in the envelope validator.
 - `kotoba-codegen` is now a real dependency of all native production emitters;
   target opcode encoding and ABI policy did not move with final layout.
 - `kotoba-object` is now a real dependency of `kotoba-native`, and therefore of
