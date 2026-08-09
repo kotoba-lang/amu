@@ -33,7 +33,7 @@ kotoba-hir        HIR contract                            (deferred)
 kotoba-kir        canonical semantic IR and DefCID
 kotoba-gmir       target-independent machine IR contract (extracted)
 kotoba-mir        target machine IR contract              (extracted)
-kotoba-codegen    MIR -> MC/machine bytes                 (deferred)
+kotoba-codegen    MIR/MC final layout contract            (extracted)
 kotoba-wasm       Wasm backend
 kotoba-object     object-container record contracts       (extracted: ELF64)
 compiler          orchestration and compatibility facade
@@ -59,8 +59,11 @@ executable contract:
 - `kotoba-gmir` owns GMIR v1 validation and has no repository dependencies;
 - `kotoba-mir` depends only on `kotoba-gmir` and owns target selection,
   explicit virtual/physical allocation state, and deterministic allocation;
-- `kotoba-native` depends on both and retains KIR-to-GMIR lowering, MC/layout,
-  byte encoding, ABI integration, and target-specific ELF layout/emission;
+- `kotoba-codegen` owns canonical label/relative-branch tokens and deterministic
+  final layout, including range, alignment, and encoder-width validation;
+- `kotoba-native` depends on the three IR/codegen contracts and retains
+  KIR-to-GMIR lowering, instruction selection/encoding, ABI integration, and
+  target-specific ELF layout/emission;
 - `kotoba-object` owns validated, target-neutral ELF64 headers, segments,
   sections, symbols, RELA records, endian encoding, and bounded padding;
 - `kotoba-native` consumes `kotoba-object` while retaining image addresses,
@@ -71,10 +74,12 @@ The dependency graph is therefore acyclic:
 ```text
 kotoba-native -> kotoba-mir -> kotoba-gmir
 kotoba-native -> kotoba-kir
+kotoba-native -> kotoba-codegen
 kotoba-native -> kotoba-object
 ```
 
-`kotoba.native.layout` remains the production MC/layout seam. Repository
+`kotoba.codegen.layout` is the production MC/layout seam used by the x86-64,
+AArch64, and explicit machine-IR paths. Repository
 creation alone is not evidence that the architecture exists; each extracted
 repo has a closed validator, failure tests, CI, ownership rules, and a real
 production consumer.
@@ -95,7 +100,9 @@ until an explicit, golden-preserving extraction moves it to `kotoba-kir`.
   callers migrate; this ADR governs ownership and future repository naming.
 - Repo count follows stable dependency boundaries rather than an aspirational
   diagram.
-- `kotoba-sema`, `kotoba-hir`, and `kotoba-codegen` remain deferred until their
-  code can move without creating a compatibility-only empty repository.
+- `kotoba-sema` and `kotoba-hir` remain deferred until their code can move
+  without creating a compatibility-only empty repository.
+- `kotoba-codegen` is now a real dependency of all native production emitters;
+  target opcode encoding and ABI policy did not move with final layout.
 - `kotoba-object` is now a real dependency of `kotoba-native`, and therefore of
   the compiler closure; target policy did not move with the record encoders.
