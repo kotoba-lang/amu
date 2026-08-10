@@ -8,9 +8,9 @@
   (get-in (edn/read-string (slurp "deps.edn")) [:deps coordinate :git/sha]))
 
 (deftest pinned-closure-carries-the-scalar-call-boundary
-  (is (= "228e389ccc449d6256a7f6ba0b623203e0a439d9"
+  (is (= "30d4a1fb6f1ccc4e52d5abd11852a7fecf8bcab8"
          (dependency-pin 'io.github.kotoba-lang/kotoba-native)))
-  (is (= "6df0626c78c60d45103d2d18ea23afc8471acf7b"
+  (is (= "f17698b44c4757325972c7340a205960afefe0be"
          (dependency-pin 'io.github.kotoba-lang/kotoba-verifier)))
   (is (= 2 (:abi/version aggregate-abi/contract)))
   (is (= :held (get-in aggregate-abi/contract
@@ -45,4 +45,14 @@
     (is (machine/pilot-module? module))
     (is (= 3 (:gmir/version gmir)))
     (is (= ['inc-one 'main]
-           (mapv :gmir/name (:gmir/functions gmir))))))
+           (mapv :gmir/name (:gmir/functions gmir))))
+    (doseq [target [:x86-64 :aarch64]]
+      (let [mc (machine/compile-gmir target gmir)
+            caller (second (:mc/functions mc))
+            encodings (map :mc/encoding (:mc/instructions caller))]
+        (is (= :call-live (:mc/frame-policy caller)) target)
+        (is (= 1 (:mc/frame-slots caller)) target)
+        (is (= 1 (count (filter #{(keyword (name target) "spill-store")}
+                                encodings))) target)
+        (is (= 1 (count (filter #{(keyword (name target) "spill-load")}
+                                encodings))) target)))))
