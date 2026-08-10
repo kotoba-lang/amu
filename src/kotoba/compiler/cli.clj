@@ -509,13 +509,15 @@
     "package-ios"
     (let [input (bounded-edn/read-file (second args))
           entry (symbol (or (option args "--entry") "main"))
-          output (or (option args "--output") "kotoba-ios-program.S")
+          platform (keyword (or (option args "--platform") "ios"))
+          output (or (option args "--output") "kotoba-ios-program.o")
           manifest-output (or (option args "--manifest-output") (str output ".edn"))
-          packaged (ios-aot/package input entry)]
-      (atomic-output/write-bytes! output (:assembly packaged))
+          packaged (ios-aot/package input entry {:platform platform})]
+      (atomic-output/write-bytes! output (:object packaged))
       (atomic-output/write-edn! manifest-output (:manifest packaged))
       (println (pr-str {:ok true :target (:target input) :entry entry
-                        :output output :manifest-output manifest-output})))
+                        :platform platform :output output
+                        :manifest-output manifest-output})))
     "sbom"
     (let [input (second args)
           output (or (option args "--output") (str input ".spdx"))]

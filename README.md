@@ -513,13 +513,14 @@ iOS now has a static AOT packaging command:
 
 ```bash
 kotoba -M package-ios program.kexe --entry main \
-  --output program.S --manifest-output program.edn
+  --platform ios --output program.o --manifest-output program.edn
 ```
 
-It reverifies the explicit iOS KEXE, emits canonical AArch64 bytes directly in
-Mach-O `__TEXT,__text`, and binds artifact, code, entry, and assembly digests in
-the manifest. Pinned Xcode 16.2 CI builds the text object and a no-JIT static
-host archive twice byte-identically. Device code signing, app embedding, trap
+It reverifies the explicit iOS KEXE, emits a canonical Mach-O `MH_OBJECT` with
+AArch64 bytes in `__TEXT,__text`, and binds artifact, code, entry, platform, and
+object digests in the manifest. `--platform ios-simulator` emits an explicitly
+tagged Simulator object. Pinned Xcode 16.2 CI builds a no-JIT static host archive
+twice byte-identically. Device code signing, app embedding, trap
 isolation, and physical iPhone/iPad execution remain release gates.
 A separate CI job additionally links that same static host archive into a
 plain executable against the `iphonesimulator` SDK and runs it for real inside
