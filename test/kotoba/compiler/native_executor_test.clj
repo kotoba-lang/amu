@@ -645,17 +645,11 @@
     ;; which already supports symbol-bearing records.
     (is (= :wasm/v1 (:format (compiler/compile-source source :wasm32-kotoba-v1))))))
 
-;; ADR 0062 fail-closed requirement (second vector): `record-get`'s value
-;; operand must be a DIRECTLY-nested, same-schema `record-new` --
-;; `emit-record-get-of-new` has no runtime record representation to fall
-;; back on, so anything else must be rejected with a clear compiler error,
-;; not silently miscompiled. This source passes ordinary frontend type
-;; checking (both `if` branches construct the SAME record schema, so the
-;; `if` expression's own inferred type is that schema, same as a bare
-;; `record-new` would be) specifically so it reaches the native backend's
-;; OWN narrow-shape check rather than being rejected earlier by an
-;; unrelated generic type error.
-(deftest native-record-get-over-a-computed-non-nested-value-is-rejected-at-compile-time
+;; Record SROA increment: a directly projected value-position `if` is the same
+;; ordered SSA bundle as the one-let form in the shared ISA gate. Both branches
+;; must construct the same exact scalar record; the verifier re-derives that
+;; shape independently before each target re-emits it.
+(deftest native-record-get-over-a-same-schema-scalar-if-emits-on-both-isas
   (let [schema (pr-str native-record-schema)
         source (str
                 "(defn project-a [flag a b]
@@ -665,9 +659,11 @@
                        (record-new " schema " a b false))
                      :a))
                  (defn main [] 0)")]
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo
-                          #"record-get is only supported directly over a matching record-new construction on the native backend"
-                          (compiler/compile-source source (target))))))
+    (doseq [native-target [:x86_64-kotoba-v1 :aarch64-kotoba-v1]]
+      (let [artifact (:artifact (compiler/compile-source source native-target))]
+        (is (seq (:code artifact)) (name native-target))
+        (is (= :kotoba.kir/v4 (get-in artifact [:program :format]))
+            (name native-target))))))
 
 ;; ADR 0063: the second native (x86-64/aarch64) value-representation
 ;; increment, immediately following ADR 0062's record -- a sealed variant

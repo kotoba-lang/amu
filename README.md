@@ -23,7 +23,12 @@ The pinned native path lowers scalar control values through versioned
 GMIR/MIR. MIR schedules complete single- and multi-phi predecessor edges as
 parallel copies: acyclic joins need no phi frame, while register cycles share
 one bounded temporary slot. Amu executes the resulting bytes on both x86-64
-and AArch64; it does not reconstruct or reorder the schedule.
+and AArch64; it does not reconstruct or reorder the schedule. Non-escaping,
+non-empty fixed records whose fields are only `:i64` or `:bool` are scalar
+replaced into ordered SSA bundles before GMIR, so a record-valued `if` emits one
+phi per field without heap allocation. Escaping, nested, and non-scalar records
+still use the legacy path; this is not a complete aggregate ABI or Rust-wide
+performance-parity claim.
 
 The first reproducible coverage snapshot can be audited with:
 
