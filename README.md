@@ -40,7 +40,9 @@ ordered pair-chain handle, owned by the host context and bounded by 4,096 arena
 cells. It also records that every register in the extracted allocator profile
 is call-clobbered. Scalar direct calls now lower through GMIR/MIR/MC v3 with
 per-function frames, live-value preservation, parallel argument assignment,
-and a single-word return register. Record and variant values remain held at
+and a single-word return register. Straight-line callers now materialize only
+values live across a call; the representative module shrinks from 123 to 84
+bytes on x86-64 and from 108 to 88 bytes on AArch64. Record and variant values remain held at
 function boundaries. The pinned verifier consumes this vocabulary, re-emits a
 two-function module, and keeps its aggregate predicate independently derived.
 
