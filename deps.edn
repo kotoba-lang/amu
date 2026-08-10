@@ -49,16 +49,18 @@
         io.github.kotoba-lang/kotoba-wasm
         {:git/url "https://github.com/kotoba-lang/kotoba-wasm.git"
          :git/sha "b0c9837f2aca8f6bf0376e16d6b889c303a2b4f3"}
-        ;; d2e6878 consumes versioned GMIR merge values and scalar-replaces
+        ;; ceca093 consumes versioned GMIR merge values and scalar-replaces
         ;; non-escaping fixed records plus sealed i64/bool-payload variants
         ;; before GMIR. Aggregate-valued branches emit one phi per transported
         ;; scalar and use MIR's parallel-copy schedule without heap allocation.
-        ;; Escaping, nested, or non-scalar aggregates remain on the legacy path.
+        ;; Its aggregate-boundary contract v1 records that escaping records
+        ;; remain one-word context-owned pair-chain handles and extracted calls
+        ;; stay held until per-function frames and clobber preservation exist.
         ;; Native still owns instruction selection/encoding, entry shims,
         ;; target addresses, and aiueos policy.
         io.github.kotoba-lang/kotoba-native
         {:git/url "https://github.com/kotoba-lang/kotoba-native.git"
-         :git/sha "d2e68785092229fef85e0e18e23534563cd80a82"}
+         :git/sha "ceca09377c53a33c4ea8bcf4a3f2e49f32cdf83d"}
         io.github.kotoba-lang/kotoba-component
         {:git/url "https://github.com/kotoba-lang/kotoba-component.git"
          :git/sha "35fb4d5941b3d56b35bca71151bdfadf33993d41"}
@@ -69,14 +71,14 @@
         io.github.kotoba-lang/io-multiformats
         {:git/url "https://github.com/kotoba-lang/io-multiformats.git"
          :git/sha "b3b157e683a943d4f2e9362d9366cceefff3f656"}
-        ;; 71c680f independently re-derives the exact direct/one-let scalar
+        ;; 2b0d715 independently re-derives the exact direct/one-let scalar
         ;; record and variant IF shapes emitted by the native pin above, in
-        ;; addition to the bounded sealed native fuel contract. Producer and
-        ;; verifier move in the same closure; neither trusts the other's
-        ;; aggregate metadata.
+        ;; addition to gating aggregate-boundary contract v1 without widening
+        ;; its own boundary predicate. Producer and verifier move in the same
+        ;; closure; neither trusts the other's aggregate metadata.
         io.github.kotoba-lang/kotoba-verifier
         {:git/url "https://github.com/kotoba-lang/kotoba-verifier.git"
-         :git/sha "71c680f0c465f12e3d330d31056c413e00d65468"}
+         :git/sha "2b0d715febeb109710f09c279d66a7d10272de96"}
 }
  :aliases {:test {:extra-paths ["test"]
                   :extra-deps
