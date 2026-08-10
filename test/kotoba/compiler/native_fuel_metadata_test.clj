@@ -4,12 +4,11 @@
             [kotoba.compiler.core :as compiler]))
 
 (def ^:private deep-source
-  ;; 512 shallow calls are the first flat witness beyond the target's default
-  ;; budget. A recursive witness tests the JVM's platform-specific thread stack
-  ;; before it reliably tests Kotoba fuel on Linux x86_64.
-  (str "(defn tick [] :i64 0) (defn main [] :i64 (do "
-       (str/join " " (concat (repeat 512 "(tick)") ["1"]))
-       "))"))
+  "(defn spin [n :i64] :i64
+     (if (= n 0) 1 (spin (- n 1))))
+   ;; Two bounded descents exhaust the aggregate default fuel without making
+   ;; the qualification depend on the host JVM's recursion-stack limit.
+   (defn main [] :i64 (+ (spin 300) (spin 300)))")
 
 (deftest declared-native-fuel-drives-sealed-abi-and-oracle
   (testing "the default verifier budget still rejects deeper pure execution"
@@ -20,7 +19,7 @@
         (is (= "fuel-exhausted" (:cause (ex-data error)))))))
   (let [compiled (compiler/compile-source deep-source :aarch64-kotoba-v1
                                           {} {:fuel 1024})]
-    (is (= 1 (get-in compiled [:artifact :value])))
+    (is (= 2 (get-in compiled [:artifact :value])))
     (is (= 1024 (get-in compiled [:artifact :limits :fuel])))
     (is (= {:mode :hidden-context-x7 :initial 1024}
            (get-in compiled [:artifact :fuel-abi])))))
