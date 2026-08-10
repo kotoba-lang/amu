@@ -1,0 +1,36 @@
+{:adr/id :adr-0225-bounded-persistent-compiler
+ :adr/title "Bounded persistent compiler and reproducible compile baseline"
+ :adr/status :accepted
+ :adr/date "2026-08-10"
+ :adr/markdown "0225-bounded-persistent-compiler.md"
+ :adr/decision
+ {:entrypoints {:wasm [:check :wasm32]
+                :native [:aarch64 :x86-64]
+                :target-locked true}
+  :worker {:protocol :ndjson
+           :sequential true
+           :maximum-line-bytes 65536
+           :maximum-args 64
+           :maximum-arg-chars 4096
+           :default-maximum-requests 1000
+           :internal-error :fail-stop}
+  :artifact-cache {:scope :process-local
+                   :replacement :lru
+                   :key [:schema :target :source :policy-presence :policy-text]
+                   :default-entries 128
+                   :default-bytes 67108864
+                   :integrity :sha-256-on-every-hit
+                   :native-insertion-after [:admission :seal :verification :provenance]}
+  :stage-cache {:scope :process-local
+                :hir-key [:schema :source]
+                :kir-key [:schema :serialized-hir]
+                :policy-in-key false
+                :admission-on-every-artifact-miss true
+                :integrity :sha-256-on-every-hit}
+  :benchmark {:format :kotoba.performance-baseline/v1
+              :measurements [:process-cold-wall :loaded-compiler
+                             :entrypoint :phase-timings :warm-worker
+                             :artifact-bytes :provenance-bytes]
+              :universal-threshold false}}
+ :adr/non-claims [:runtime-parity :universal-compile-ceiling
+                  :durable-cache :cross-process-cache]}

@@ -12,6 +12,10 @@ The accepted [worldwide 95% platform coverage roadmap](docs/adr/0001-worldwide-9
 defines the planned native, WebAssembly, GPU, NPU, server, mobile, and IoT
 targets. It is a completion plan, not a claim of current platform support.
 
+Compile latency is measured as a versioned cold-process and persistent-worker
+matrix. See [Compile performance](docs/performance.md) for the bounded worker,
+verified cache contract, phase timing, and reproducible benchmark command.
+
 The first reproducible coverage snapshot can be audited with:
 
 ```bash
@@ -233,11 +237,13 @@ source -> inert reader -> typed/effect HIR -> SSA-like KIR
        -> wasm32 | x86_64 | aarch64 | cljs -> independent verifier -> admission
 ```
 
-## Runtime: nbb-native for wasm32, JVM compat for everything else
+## Runtime: nbb-native for Wasm and ordinary native compile/check
 
-`bin/kotoba compile`/`check` for a `wasm32`/`wasm32-browser`/`wasm32-wasi`
-`--target` runs entirely under `nbb` (ClojureScript on Node) -- **no JVM
-process is spawned at all** for that path, matching this monorepo's
+`bin/kotoba compile`/`check` for `wasm32*` and ordinary `x86_64*`/
+`aarch64*` targets runs entirely under `nbb` (ClojureScript on Node) --
+**no JVM process is spawned at all** for those paths. Target-specific
+entrypoints avoid loading either native emitter for Wasm and avoid loading the
+other ISA emitter for native compilation. This matches the monorepo's
 repo-wide runtime priority (`kotoba wasm runtime` first, JVM/`bb` demoted to
 last-resort compat). The frontend reader/validator
 (`kotoba.compiler.frontend`), the KIR lowering/compile-time oracle
@@ -258,14 +264,15 @@ i64 max/min, add-wraparound, the sleb continuation-bit crossing at 127/128).
 Observable semantics, ABI behavior, resource bounds, and fail-closed rejection
 are the compatibility contract; byte layout is not.
 
-**Every other target (`x86_64*`, `aarch64*`, `aarch64-android`,
-`aarch64-ios`) and every other `kotoba` subcommand** (`package-ios`, `sbom`,
-`attest-release`, `sign`, `run`, receipts, coverage, etc.) still goes through
+The `x86_64-aiueos-*`/`aarch64-aiueos-*` firmware and kernel packaging
+targets, plus every other `kotoba` subcommand (`package-ios`, `sbom`,
+`attest-release`, `sign`, `run`, receipts, coverage, etc.), still go through
 `clojure -M:run` (`kotoba.compiler.cli`, JVM) for compiler commands and
 `clojure -M:native-run` for `measure-runtime` / `run` -- native
-codegen (`backend/x86_64.clj`/`backend/aarch64.clj`), ELF64/PE32+ packaging,
-signing, the independent verifier, and release/coverage evidence are not
-part of this nbb-native slice and remain JVM/compat, honestly, the same way
+ELF64/PE32+ packaging, signing, runtime execution, and release/coverage
+evidence are not part of this nbb-native slice and remain JVM/compat. Ordinary
+native nbb compilation still seals artifacts, runs the independent verifier,
+and emits provenance before writing. The split mirrors the same way
 `kototama`'s own R1 (JVM/Chicory tender) is demoted to "compat suite" behind
 its R2 native-WASM-host path. `bin/kotoba` picks the path automatically
 based on the subcommand and `--target`; nothing about the CLI's argument
