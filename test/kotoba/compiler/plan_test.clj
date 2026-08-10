@@ -2,7 +2,12 @@
   (:require [clojure.test :refer [deftest is]]
             [kotoba.compiler.plan :as plan]))
 
-(def cid "bafycompilerplan")
+(def cid
+  "A real CIDv1 — cidv1-raw(sha2-256(\"compiler/plan\")).
+  It was \"bafycompilerplan\", which is not an identifier;
+  `kotoba.abi.contract/cid?` was `#\"b.+\"` and accepted it
+  (abi 32ee84b, com-junkawasaki ADR-2608100500)."
+  "bafkreihteekkh5xzrg6bat5mjthbtylimi36nifl62c2ladfyftplijcke")
 
 (def input
   {:plan-cid cid :code-closure-cid cid :artifact-cid cid
