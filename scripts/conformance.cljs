@@ -57,9 +57,9 @@
                              (str "KEXE_TRAP {:kind :signal :signal :" signal "}"))
              (str symbol " trap mismatch: " (:stderr result)))))
 
-(defn native-cap-check [artifact isa signal]
+(defn native-cap-check [artifact isa capability-id signal]
   (let [[binary off] (offset artifact isa "helper" "-cap")
-        allowed (run (file "kexe-loader") [binary off "1" isa "7" "41"])
+        allowed (run (file "kexe-loader") [binary off "1" isa (str capability-id) "41"])
         denied (run (file "kexe-loader") [binary off "1" isa "-" "41"]
                     {:allow-failure? true})]
     (ensure! (= "42" (str/trim (:stdout allowed))) "native capability result mismatch")
@@ -171,7 +171,16 @@
       (k "compile" (.join path root "examples" "capability.kotoba") "--target" isa
          "--policy" (.join path root "examples" "capability-policy.edn") "--output" cap)
       (k "verify" cap)
-      (native-cap-check cap isa (if arm? "SIGTRAP" "SIGILL")))
+      (native-cap-check cap isa 7 (if arm? "SIGTRAP" "SIGILL")))
+    ;; This must go through `bin/kotoba`'s nbb-native fast path. Registry IDs
+    ;; are compiler-host numbers, while authored i64 literals are BigInt under
+    ;; nbb; compiling and independently verifying both forms prevents their
+    ;; body/effect representations from drifting apart again.
+    (let [named-cap (file (str isa "-named-cap.kexe"))]
+      (k "compile" (.join path root "examples" "capability-named.kotoba") "--target" isa
+         "--policy" (.join path root "examples" "capability-named.edn") "--output" named-cap)
+      (k "verify" named-cap)
+      (native-cap-check named-cap isa 1 (if arm? "SIGTRAP" "SIGILL")))
     (println (str "conformance: native " isa " runtime vector passed under W^X loader"))))
 
 (try
