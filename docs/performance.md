@@ -132,7 +132,7 @@ ClojureScript:
 
 ```sh
 npm run benchmark-runtime -- \
-  --runs 7 --calls 400 --warmup 10000 --n 200 \
+  --runs 7 --calls 100000 --warmup 10000 --n 200 \
   --output runtime.json
 ```
 
@@ -150,20 +150,22 @@ The measurements are deliberately separated:
 - RSS is the operating system's per-process maximum, not retained heap;
 - artifact bytes are unlike-for-like only within the recorded packaging form.
 
-Wasm's sealed fuel budget permits at most 400 exported calls on the fresh
-measurement instance. Warmup is therefore split across separately admitted
-instances. The native number uses a separate benchmark-only runner that maps
+Wasm's sealed fuel budget permits at most 400 exported calls on each fresh
+instance. Warmup and measurement are therefore split across separately
+admitted instances, and only the call intervals are accumulated. Instance
+creation is represented separately by process wall time. The native number
+uses a separate benchmark-only runner that maps
 the verified extracted code W^X and invokes it directly; it bypasses the
 production fork, supervisor, and sandbox, so it is runtime throughput evidence
 and not a production safety-path claim. The production loader is not modified.
 
 ## Development runtime evidence
 
-Compiler commit `3b45ae1` was measured from a dirty implementation worktree on
+Compiler commit `1ff46c6` was measured from a clean implementation worktree on
 2026-08-10 with seven samples on an Apple M4, Darwin arm64, Node v26.3.0,
 Rust 1.96.0, and Clojure CLI 1.12.5.1654. The common result was 1,830,338,420.
-These provisional figures will be superseded by a clean-commit run before the
-change is merged.
+These 400-call figures exposed excessive timer variance and are intentionally
+superseded by the 100,000-call clean-commit run recorded in the next revision.
 
 | Engine | Steady-state median | Versus Rust | Process median | Maximum RSS median | Artifact |
 |---|---:|---:|---:|---:|---:|

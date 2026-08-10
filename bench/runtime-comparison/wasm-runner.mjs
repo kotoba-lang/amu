@@ -18,7 +18,7 @@ const warmup = positive(warmupText, "warmup");
 const admitted = await instantiateKotoba(readFileSync(artifact));
 if (WebAssembly.Module.imports(admitted.module).length !== 0)
   throw new Error("runtime benchmark fixture unexpectedly requires host imports");
-if (calls > 400) throw new Error("calls exceeds the fresh-instance fuel budget of 400");
+if (calls > 1_000_000) throw new Error("calls exceeds the benchmark total limit");
 const freshKernel = async () => {
   const instance = await WebAssembly.instantiate(admitted.module, {});
   const kernel = instance.exports.kernel;
@@ -33,10 +33,16 @@ while (remainingWarmup > 0) {
   for (let index = 0; index < batch; index += 1) result = warmKernel(BigInt(n));
   remainingWarmup -= batch;
 }
-const kernel = await freshKernel();
-const started = process.hrtime.bigint();
-for (let index = 0; index < calls; index += 1) result = kernel(BigInt(n));
-const elapsed = process.hrtime.bigint() - started;
+let elapsed = 0n;
+let remainingCalls = calls;
+while (remainingCalls > 0) {
+  const kernel = await freshKernel();
+  const batch = Math.min(400, remainingCalls);
+  const started = process.hrtime.bigint();
+  for (let index = 0; index < batch; index += 1) result = kernel(BigInt(n));
+  elapsed += process.hrtime.bigint() - started;
+  remainingCalls -= batch;
+}
 process.stdout.write(`${JSON.stringify({
   format: "kotoba.runtime-sample/v1",
   calls,

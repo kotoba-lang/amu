@@ -161,7 +161,7 @@ function artifact(path) {
 }
 
 const runs = boundedInteger(option("--runs", "5"), "--runs", 30);
-const calls = boundedInteger(option("--calls", "400"), "--calls", 400);
+const calls = boundedInteger(option("--calls", "100000"), "--calls", 1_000_000);
 const warmup = boundedInteger(option("--warmup", "10000"), "--warmup", 1_000_000);
 const n = boundedInteger(option("--n", "200"), "--n", 2_147_483_646);
 const outputPath = option("--output", null);
@@ -218,7 +218,7 @@ try {
       n, calls, warmupCalls: warmup, runs, expectedResult: expected,
       arithmetic: "8 identical quotient/remainder mix rounds stay within exact i64 and JavaScript safe integers",
       timing: "in-process steady state after explicit warmup; process wall and RSS are separate",
-      wasmFuel: "Wasm warmup is split across admitted module instances; measurement uses one fresh instance and at most 400 calls",
+      wasmFuel: "Wasm warmup and measurement are split into fresh admitted instances of at most 400 calls; only call intervals are accumulated",
       nativeBoundary: "benchmark-only direct W^X invocation; no production supervisor or sandbox claim",
       optimization: "each compiler/JIT may optimize the same observable algorithm",
     },

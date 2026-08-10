@@ -29,9 +29,10 @@ supervision and sandboxing. Its output must state that boundary. It cannot be
 selected by the production loader, whose source and path remain unchanged.
 
 The Wasm runner admits the module through `instantiateKotoba`, rejects imports,
-warms across fresh instances, and measures no more than 400 calls on one fresh
-instance because fuel is sealed. No benchmark option may raise or bypass that
-production fuel contract.
+and splits warmup and measurement across fresh instances with no more than 400
+calls each because fuel is sealed. It accumulates only call intervals; process
+wall time separately retains instance-creation cost. No benchmark option may
+raise or bypass the production fuel contract.
 
 ## Consequences
 
