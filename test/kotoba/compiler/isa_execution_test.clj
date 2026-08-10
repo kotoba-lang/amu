@@ -130,6 +130,16 @@
     "(defn main [] :i64 (do (+ 1 2) (quot 8 2) (* 3 4)))" 12]
    ["ordered tail do"
     "(defn main [] :i64 (do (+ 1 2) (quot 8 2) (if (< 1 2) 13 14)))" 13]
+   ["value-position if, then"
+    "(defn main [] :i64 (+ 5 (if (< 1 2) 3 4)))" 8]
+   ["value-position if, else"
+    "(defn main [] :i64 (+ 5 (if (> 1 2) 3 4)))" 9]
+   ["value-position if skips trapping else"
+    "(defn main [] :i64 (+ 1 (if true 7 (quot 1 0))))" 8]
+   ["value-position if skips trapping then"
+    "(defn main [] :i64 (+ 1 (if false (quot 1 0) 7)))" 8]
+   ["nested value-position if"
+    "(defn main [] :i64 (let [x (if true (if false 2 3) 4)] (* x 5)))" 15]
    ["bit-not" "(defn main [] (bit-not 5))" -6]
    ["bit-or" "(defn main [] (bit-or 5 2))" 7]
    ["i64 shift" "(defn main [] (i64-shift-left 1 5))" 32]
