@@ -99,7 +99,14 @@ production consumer.
 HIR/KIR/GMIR/MIR are abstract data contracts. EDN is the human/reference form,
 JSON is an interop projection, and deterministic DAG-CBOR is the content
 identity encoding. `pr-str` and JSON serialization are never IR identity.
-SourceCID, DefCID, BuildCID, and ArtifactCID remain distinct identities.
+SourceCID, DefCID, BuildCID, and ArtifactCID name distinct identities. Which
+of them exist is not uniform, and this line used to imply it was. Surveyed
+2026-08-10: DefCID is implemented in `kotoba-kir`; ArtifactCID appears as a
+field in execution identities; module-level content addressing is real in
+`kotoba.compiler.module-lock`. **BuildCID has no producer and no consumer** —
+it appears in this sentence, in kotoba-kir ADR 0225, and nowhere else in any
+repository. It is an intended identity, not a present one, and naming it beside
+three that exist made it read as shipped.
 The existing `kotoba-lang` language contract remains the sole DefCID authority
 until an explicit, golden-preserving extraction moves it to `kotoba-kir`.
 
