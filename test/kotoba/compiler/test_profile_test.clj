@@ -23,4 +23,7 @@
     (is (:ok report) (pr-str (:failed report)))
     (is (= ['test-pure 'test-ability] (:tests report)))
     (is (= #{:jvm-kir :js :wasm} (set (keys (:results report)))))
-    (is (re-matches #"[0-9a-f]{64}" (:test-definition-cid report)))))
+    (is (re-matches #"[0-9a-f]{64}" (:test-kir-sha256 report))
+        "a 64-character hex digest, which is what a sha2-256 is and what a CID is not")
+    (is (nil? (:test-definition-cid report))
+        "the old name claimed an identity this report does not compute")))
