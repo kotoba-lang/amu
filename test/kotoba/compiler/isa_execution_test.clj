@@ -233,6 +233,22 @@
    ["f64-unordered ordered" (f64c "f64-unordered" f64-one f64-two) 0]
    ["kgraph" (str "(defn main [] (do (kgraph-assert! 1 2 3)"
                   " (kgraph-get 1 2)))") 3]
+   ["private string-index traversal state"
+    (str "(ns native.string-index (:export [main]))"
+         " (defn build [] :string-index"
+         " (string-index-assoc"
+         "  (string-index-assoc (string-index-new) \"bafy-b\" 2)"
+         "  \"bafy-a\" 1))"
+         " (defn replace [index :string-index] :string-index"
+         "  (string-index-assoc index \"bafy-b\" 9))"
+         " (defn main [] :i64"
+         "  (+ (string-index-count (replace (build)))"
+         "     (option-value-of [:option :i64]"
+         "       (string-index-get (replace (build)) \"bafy-b\") 99)"
+         "     (option-value-of [:option :i64]"
+         "       (string-index-get (build) \"missing\") 7)"
+         "     (if (string-index-contains (build) \"bafy-a\") 1 0)))")
+    19]
    ;; Keyword operations, which desugar into the general substring and the
    ;; concatenation rather than needing anything of their own. The content
    ;; comparisons are the point: a length-only check would pass even if the

@@ -307,9 +307,12 @@
     (is (= 2148024320 (ir/execute kir 'next [2147483648])))
     (is (zero? (:exit result)) (:err result))
     (doseq [target-name (unsupported-typed-targets)]
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo
-                            #"require the kotoba-script web target"
-                            (compiler/compile-source source target-name)))))
+      (if (entryless-native-target? target-name)
+        (is (some? (:artifact (compiler/compile-source source target-name)))
+            (str "native i32 slice must compile on " target-name))
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                              #"require the kotoba-script web target"
+                              (compiler/compile-source source target-name))))))
   (doseq [bad ["(defn bad [x :i64 n :i64] :i64 (i32-shift-left x n))"
                "(defn bad [x :i64] :i64 (i32-shift-right x -1))"
                "(defn bad [x :i64] :i64 (u32-shift-right x 32))"]]
@@ -993,8 +996,12 @@
     (is (nil? (get-in compiled [:kir :oracle-value])))
     (is (zero? (:exit result)) (:err result))
     (doseq [target (unsupported-typed-targets)]
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"require the kotoba-script web target"
-                            (compiler/compile-source source target)))))
+      (if (entryless-native-target? target)
+        (is (some? (:artifact (compiler/compile-source source target)))
+            (str "entryless native library must compile on " target))
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                              #"require the kotoba-script web target"
+                              (compiler/compile-source source target))))))
   (is (= "entryless library requires an explicit non-empty namespace export list"
          (rejection-message "(defn add1 [x] (+ x 1))")))
   (is (= "entryless library requires at least one exported function"
@@ -1031,8 +1038,12 @@
                           (ir/execute (:kir compiled) 'greet [(apply str (repeat 65530 "x"))])))
     (is (zero? (:exit result)) (:err result))
     (doseq [target (unsupported-typed-targets)]
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"require the kotoba-script web target"
-                            (compiler/compile-source source target)))))
+      (if (entryless-native-target? target)
+        (is (some? (:artifact (compiler/compile-source source target)))
+            (str "native string boundary must compile on " target))
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                              #"require the kotoba-script web target"
+                              (compiler/compile-source source target))))))
   (is (= "expression type mismatch: expected string, got i64"
          (rejection-message "(ns bad (:export [f])) (defn f [] :string 1)")))
   (is (= "expression type mismatch: expected i64, got string"
