@@ -5,7 +5,10 @@
 (def ^:private deep-source
   "(defn spin [n :i64] :i64
      (if (= n 0) 1 (spin (- n 1))))
-   (defn main [] :i64 (spin 600))")
+   ;; 513 is the first depth beyond the target's default 512-unit budget.
+   ;; Keeping the witness at the boundary avoids making this fuel test depend
+   ;; on the JVM's platform-specific native thread-stack size.
+   (defn main [] :i64 (spin 513))")
 
 (deftest declared-native-fuel-drives-sealed-abi-and-oracle
   (testing "the default verifier budget still rejects deeper pure execution"

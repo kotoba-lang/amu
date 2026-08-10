@@ -101,10 +101,22 @@
           (for [[isa [arch _]] isas]
             [isa (when (buildable-and-runnable? isa arch)
                    (let [loader (tmp (str "kotoba-isa-loader-" isa ".bin"))
-                         command (cc-command isa arch "-std=c11" "-O2"
-                                             "-Wall" "-Wextra" "-Werror"
-                                             "tools/kexe_loader.c"
-                                             "-o" (.getPath loader))
+                         cross-emulated? (and (linux?) (not= isa (host-isa)))
+                         ;; A QEMU user-mode process cannot install the guest
+                         ;; loader's seccomp filter: the kernel observes QEMU's
+                         ;; host-ISA syscalls, so the guest audit architecture
+                         ;; rejects the very next syscall. The outer CI job is
+                         ;; the isolation boundary for this cross-ISA semantics
+                         ;; check; native/production loaders retain all limits.
+                         flags (cond-> ["-std=c11" "-O2" "-Wall" "-Wextra" "-Werror"]
+                                 ;; Reuse the loader's established test-only
+                                 ;; switch for omitting in-process limits. It
+                                 ;; is also used by the sanitizer harness and
+                                 ;; leaves the canonical loader source intact.
+                                 cross-emulated? (conj "-DKEXE_SANITIZER_TEST=1"))
+                         command (apply cc-command isa arch
+                                        (concat flags ["tools/kexe_loader.c"
+                                                       "-o" (.getPath loader)]))
                          build (when command (apply shell/sh command))]
                      (when (zero? (:exit build))
                        (runner-command isa (.getPath loader)))))]))))

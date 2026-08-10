@@ -1,5 +1,6 @@
 (ns kotoba.compiler.packaging.pe32plus
-  (:require [kotoba.artifact.core :as artifact]))
+  (:require [kotoba.artifact.core :as artifact]
+            [kotoba.object.pe32plus :as pe]))
 
 (def ^:private firmware-target :x86_64-aiueos-uefi-v1)
 (def ^:private file-alignment 0x200)
@@ -11,26 +12,17 @@
 (def ^:private text-offset 0x200)
 (def ^:private context-size 80)
 
-(defn- le [n width]
-  (mapv #(bit-and (unsigned-bit-shift-right (long n) (* 8 %)) 0xff)
-        (range width)))
+(def le pe/little-endian)
+(def align pe/align-up)
 
-(defn- align [n alignment]
-  (* alignment (quot (+ n (dec alignment)) alignment)))
-
-(defn- pad-to [bytes size]
-  (when (> (count bytes) size)
-    (throw (ex-info "PE32+ region exceeds its allocation"
-                    {:size size :actual (count bytes)})))
-  (into (vec bytes) (repeat (- size (count bytes)) 0)))
-
-(defn- section-name [name]
-  (pad-to (mapv int (.getBytes name "US-ASCII")) 8))
-
-(defn- section-header [name virtual-size rva raw-size raw-offset characteristics]
-  (vec (concat (section-name name) (le virtual-size 4) (le rva 4)
-               (le raw-size 4) (le raw-offset 4)
-               (repeat 12 0) (le characteristics 4))))
+(defn- signed-le [n width]
+  (let [limit (bit-shift-left 1 (* 8 width))
+        minimum (- (quot limit 2))
+        maximum (dec (quot limit 2))]
+    (when-not (<= minimum n maximum)
+      (throw (ex-info "signed little-endian field is out of range"
+                      {:value n :width width})))
+    (le (if (neg? n) (+ limit n) n) width)))
 
 (defn- entry-shim [source-rva context-rva]
   ;; UEFI invokes this boundary with the Microsoft x64 ABI. Reserve its 32-byte
@@ -41,35 +33,9 @@
         after-call (+ text-rva 16)]
     (vec (concat [0x48 0x83 0xec 0x28
                   0x4c 0x8d 0x0d]
-                 (le (- context-rva after-lea) 4)
-                 [0xe8] (le (- source-rva after-call) 4)
+                 (signed-le (- context-rva after-lea) 4)
+                 [0xe8] (signed-le (- source-rva after-call) 4)
                  [0x48 0x83 0xc4 0x28 0xc3]))))
-
-(defn- optional-header [entry-rva text-size initialized-size image-size reloc-address reloc-size]
-  (let [fixed (vec (concat
-                    (le 0x20b 2) [0 0]                         ; PE32+, linker version
-                    (le (align text-size file-alignment) 4)
-                    (le initialized-size 4) (le 0 4)
-                    (le entry-rva 4) (le text-rva 4)
-                    (le image-base 8)
-                    (le section-alignment 4) (le file-alignment 4)
-                    (le 2 2) (le 0 2) (le 0 2) (le 0 2)       ; OS/image versions
-                    (le 2 2) (le 0 2)                         ; subsystem version
-                    (le 0 4) (le image-size 4) (le 0x200 4)
-                    (le 0 4)                                  ; checksum
-                    (le 10 2)                                 ; EFI application
-                    (le 0x160 2)                              ; ASLR, NX, high entropy VA
-                    (le 0x100000 8) (le 0x1000 8)             ; stack
-                    (le 0x100000 8) (le 0x1000 8)             ; heap
-                    (le 0 4) (le 16 4)))                      ; loader flags, directories
-        directories (mapcat identity
-                            (map-indexed
-                             (fn [index _]
-                               (if (= index 5)
-                                 (concat (le reloc-address 4) (le reloc-size 4))
-                                 (repeat 8 0)))
-                             (range 16)))]
-    (vec (concat fixed directories))))
 
 (defn package-efi
   "Package a sealed aiueos firmware artifact as an import-free PE32+ EFI image.
@@ -106,23 +72,24 @@
           ;; padding entries. All image references are relative, so no fixups exist.
           reloc (vec (concat (le 0 4) (le 12 4) (le 0 2) (le 0 2)))
           reloc-raw-size (align (count reloc) file-alignment)
-          optional (optional-header text-rva (count text)
-                                    (+ data-raw-size reloc-raw-size) 0x4000 reloc-rva (count reloc))
-          coff (vec (concat (le 0x8664 2) (le 3 2) (repeat 12 0)
-                            (le 0xf0 2) (le 0x22 2)))
-          sections (concat
-                    (section-header ".text" (count text) text-rva text-raw-size
-                                    text-offset 0x60000020)
-                    (section-header ".data" context-size data-rva data-raw-size
-                                    data-offset 0xc0000040)
-                    (section-header ".reloc" (count reloc) reloc-rva reloc-raw-size
-                                    reloc-offset 0x42000040))
-          dos (assoc (vec (repeat 0x80 0)) 0 0x4d 1 0x5a
-                     0x3c 0x80)
-          headers (pad-to (concat dos [0x50 0x45 0 0] coff optional sections) text-offset)
-          bytes (vec (concat headers (pad-to text text-raw-size)
-                             (pad-to context data-raw-size)
-                             (pad-to reloc reloc-raw-size)))]
+          bytes (pe/encode-image
+                 {:machine :x86-64 :entry-rva text-rva :text-rva text-rva
+                  :image-base image-base :section-alignment section-alignment
+                  :file-alignment file-alignment :headers-size text-offset
+                  :image-size 0x4000 :subsystem :efi-application
+                  :data-directories {5 {:rva reloc-rva :size (count reloc)}}
+                  :sections [{:name ".text" :virtual-size (count text)
+                              :rva text-rva :raw-size text-raw-size
+                              :raw-offset text-offset :characteristics 0x60000020
+                              :bytes text}
+                             {:name ".data" :virtual-size context-size
+                              :rva data-rva :raw-size data-raw-size
+                              :raw-offset data-offset :characteristics 0xc0000040
+                              :bytes context}
+                             {:name ".reloc" :virtual-size (count reloc)
+                              :rva reloc-rva :raw-size reloc-raw-size
+                              :raw-offset reloc-offset :characteristics 0x42000040
+                              :bytes reloc}]})]
       {:format :pe32+/v1
        :target firmware-target
        :entry :efi_main
@@ -164,7 +131,7 @@
           (let [target (get labels (:rel32 token))]
             (when-not target (throw (ex-info "unknown UEFI loader label" {:label (:rel32 token)})))
             (recur (next remaining) (+ position 4)
-                   (into out (le (- target (+ position 4)) 4))))
+                   (into out (signed-le (- target (+ position 4)) 4))))
 
           :else (recur (next remaining) (inc position) (conj out token)))
         (vec out)))))
@@ -289,23 +256,24 @@
             reloc (vec (concat (le 0 4) (le 12 4) (le 0 2) (le 0 2)))
             reloc-raw-size (align (count reloc) file-alignment)
             image-size (align (+ reloc-address (count reloc)) section-alignment)
-            optional (optional-header text-rva (count text)
-                                      (+ data-raw-size reloc-raw-size) image-size
-                                      reloc-address (count reloc))
-            coff (vec (concat (le 0x8664 2) (le 3 2) (repeat 12 0)
-                              (le 0xf0 2) (le 0x22 2)))
-            sections (concat
-                      (section-header ".text" (count text) text-rva text-raw-size
-                                      text-offset 0x60000020)
-                      (section-header ".data" (count data) data-address data-raw-size
-                                      data-offset 0xc0000040)
-                      (section-header ".reloc" (count reloc) reloc-address reloc-raw-size
-                                      reloc-offset 0x42000040))
-            dos (assoc (vec (repeat 0x80 0)) 0 0x4d 1 0x5a 0x3c 0x80)
-            headers (pad-to (concat dos [0x50 0x45 0 0] coff optional sections) text-offset)
-            bytes (vec (concat headers (pad-to text text-raw-size)
-                               (pad-to data data-raw-size)
-                               (pad-to reloc reloc-raw-size)))]
+            bytes (pe/encode-image
+                   {:machine :x86-64 :entry-rva text-rva :text-rva text-rva
+                    :image-base image-base :section-alignment section-alignment
+                    :file-alignment file-alignment :headers-size text-offset
+                    :image-size image-size :subsystem :efi-application
+                    :data-directories {5 {:rva reloc-address :size (count reloc)}}
+                    :sections [{:name ".text" :virtual-size (count text)
+                                :rva text-rva :raw-size text-raw-size
+                                :raw-offset text-offset :characteristics 0x60000020
+                                :bytes text}
+                               {:name ".data" :virtual-size (count data)
+                                :rva data-address :raw-size data-raw-size
+                                :raw-offset data-offset :characteristics 0xc0000040
+                                :bytes data}
+                               {:name ".reloc" :virtual-size (count reloc)
+                                :rva reloc-address :raw-size reloc-raw-size
+                                :raw-offset reloc-offset :characteristics 0x42000040
+                                :bytes reloc}]})]
         {:format :pe32+-embedded-kernel/v1 :target firmware-target
          :entry :efi_main :entry-rva text-rva :sections [:text :data :reloc]
          :imports [] :embedded-kernel-sha256 (artifact/sha256 kernel)
