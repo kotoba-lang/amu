@@ -33,6 +33,14 @@
   (and (contains? #{:x86_64-kotoba-v1 :aarch64-kotoba-v1} (target/backend t))
        (nil? (:entry (target/profile t)))))
 
+(defn- assert-entryless-native-support-or-rejection! [source t]
+  (if (entryless-native-target? t)
+    (is (= {:format :kexe/v1 :target t}
+           (select-keys (compiler/compile-source source t) [:format :target])))
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                          #"entryless libraries currently require"
+                          (compiler/compile-source source t)))))
+
 (deftest sealed-multi-arity-resolves-every-call-before-hir
   (let [source "(defn offset ([x] (offset x 1)) ([x delta] (+ x delta)))
                 (defn main [] (offset 40))"
@@ -307,9 +315,7 @@
     (is (= 2148024320 (ir/execute kir 'next [2147483648])))
     (is (zero? (:exit result)) (:err result))
     (doseq [target-name (unsupported-typed-targets)]
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo
-                            #"require the kotoba-script web target"
-                            (compiler/compile-source source target-name)))))
+      (assert-entryless-native-support-or-rejection! source target-name)))
   (doseq [bad ["(defn bad [x :i64 n :i64] :i64 (i32-shift-left x n))"
                "(defn bad [x :i64] :i64 (i32-shift-right x -1))"
                "(defn bad [x :i64] :i64 (u32-shift-right x 32))"]]
@@ -993,8 +999,7 @@
     (is (nil? (get-in compiled [:kir :oracle-value])))
     (is (zero? (:exit result)) (:err result))
     (doseq [target (unsupported-typed-targets)]
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"require the kotoba-script web target"
-                            (compiler/compile-source source target)))))
+      (assert-entryless-native-support-or-rejection! source target)))
   (is (= "entryless library requires an explicit non-empty namespace export list"
          (rejection-message "(defn add1 [x] (+ x 1))")))
   (is (= "entryless library requires at least one exported function"
@@ -1031,8 +1036,7 @@
                           (ir/execute (:kir compiled) 'greet [(apply str (repeat 65530 "x"))])))
     (is (zero? (:exit result)) (:err result))
     (doseq [target (unsupported-typed-targets)]
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"require the kotoba-script web target"
-                            (compiler/compile-source source target)))))
+      (assert-entryless-native-support-or-rejection! source target)))
   (is (= "expression type mismatch: expected string, got i64"
          (rejection-message "(ns bad (:export [f])) (defn f [] :string 1)")))
   (is (= "expression type mismatch: expected i64, got string"
