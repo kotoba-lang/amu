@@ -7,21 +7,30 @@
 (def source
   "(defn helper [x] (+ x 1)) (defn main [] (helper 41))")
 
-(deftest packages-verified-ios-code-as-deterministic-static-text
+(deftest packages-verified-ios-code-as-deterministic-macho-object
   (let [ios (:artifact (compiler/compile-source source :aarch64-ios-kotoba-v1))
         first (ios-aot/package ios 'main)
-        second (ios-aot/package ios 'main)
-        assembly (String. ^bytes (:assembly first) "UTF-8")]
-    (is (= (seq (:assembly first)) (seq (:assembly second))))
+        second (ios-aot/package ios 'main)]
+    (is (= (seq (:object first)) (seq (:object second))))
     (is (= (:manifest first) (:manifest second)))
-    (is (= :kotoba.ios-aot/v1 (get-in first [:manifest :format])))
+    (is (= [0xcf 0xfa 0xed 0xfe]
+           (mapv #(bit-and (int %) 0xff) (take 4 (:object first)))))
+    (is (= :kotoba.ios-aot/v2 (get-in first [:manifest :format])))
     (is (= :aarch64-ios-kotoba-v1 (get-in first [:manifest :target])))
+    (is (= :ios (get-in first [:manifest :platform])))
+    (is (= [15 0 0] (get-in first [:manifest :minimum-os])))
     (is (= 0 (get-in first [:manifest :entry :arity])))
-    (is (.contains assembly ".section __TEXT,__text,regular,pure_instructions"))
-    (is (.contains assembly ".globl _kotoba_ios_code_end"))
-    (is (.contains assembly ".no_dead_strip _kotoba_ios_code_end"))
-    (is (.contains assembly ".set _kotoba_ios_entry, _kotoba_ios_code_start + "))
-    (is (.contains assembly ".asciz \"aarch64-ios-kotoba-v1\""))))
+    (is (= (artifact/sha256
+            (mapv #(bit-and (int %) 0xff) (:object first)))
+           (get-in first [:manifest :object-sha256])))))
+
+(deftest packages-device-and-simulator-platforms-explicitly
+  (let [ios (:artifact (compiler/compile-source source :aarch64-ios-kotoba-v1))]
+    (is (= :ios-simulator
+           (get-in (ios-aot/package ios 'main {:platform :ios-simulator})
+                   [:manifest :platform])))
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"platform is unsupported"
+                          (ios-aot/package ios 'main {:platform :invented})))))
 
 (deftest rejects-non-ios-and-substituted-artifacts
   (let [android (:artifact (compiler/compile-source source :aarch64-android-kotoba-v1))

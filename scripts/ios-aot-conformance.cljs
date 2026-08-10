@@ -21,7 +21,6 @@
   (let [nbb-cli (.join path lib/root "node_modules" "nbb" "cli.js")
         kotoba (.join path lib/root "bin" "kotoba")
         kexe (.join path directory "program.kexe")
-        assembly (.join path directory "program.S")
         manifest (.join path directory "program.edn")
         program-object (.join path directory "program.o")
         host-object (.join path directory "host.o")
@@ -30,10 +29,9 @@
                                (.join path lib/root "examples" "structured.kotoba")
                                "--target" "aarch64-ios" "--output" kexe])
     (run! js/process.execPath [nbb-cli kotoba "-M" "package-ios" kexe
-                               "--entry" "main" "--output" assembly
+                               "--entry" "main" "--platform" "ios"
+                               "--output" program-object
                                "--manifest-output" manifest])
-    (run! "xcrun" ["--sdk" "iphoneos" "clang" "-arch" "arm64"
-                    "-miphoneos-version-min=15.0" "-c" assembly "-o" program-object])
     (run! "xcrun" ["--sdk" "iphoneos" "clang" "-arch" "arm64"
                     "-miphoneos-version-min=15.0" "-std=c11" "-O2"
                     "-Wall" "-Wextra" "-Werror" "-fvisibility=hidden"
@@ -41,7 +39,7 @@
                     "-c" (.join path lib/root "runtime" "ios" "kotoba_ios_host.c")
                     "-o" host-object])
     (run! "xcrun" ["libtool" "-static" "-D" "-o" archive program-object host-object])
-    {:assembly assembly :manifest manifest :object program-object :archive archive}))
+    {:manifest manifest :object program-object :archive archive}))
 
 (lib/ensure! (= "darwin" (.-platform js/process)) "ios-aot: macOS host is required")
 (let [identity (str/trim (.-stdout (run! "xcodebuild" ["-version"])))
@@ -50,7 +48,7 @@
   (try
     (let [first-build (build! (.join path tmp "first"))
           second-build (build! (.join path tmp "second"))]
-      (doseq [key [:assembly :manifest :object :archive]]
+      (doseq [key [:manifest :object :archive]]
         (lib/ensure! (= (lib/sha256 (get first-build key))
                         (lib/sha256 (get second-build key)))
                      (str "ios-aot: " (name key) " build is not reproducible")))
@@ -65,8 +63,9 @@
         (doseq [symbol ["_kotoba_ios_code_start" "_kotoba_ios_code_end" "_kotoba_ios_entry"
                         "_kotoba_ios_target_profile" "_kotoba_ios_execute_static_v1"]]
           (lib/ensure! (.includes symbols symbol) (str "ios-aot: missing symbol " symbol)))
-        (doseq [needle [":format :kotoba.ios-aot/v1" ":target :aarch64-ios-kotoba-v1"
-                        ":artifact-sha256" ":code-sha256" ":assembly-sha256"]]
+        (doseq [needle [":format :kotoba.ios-aot/v2" ":target :aarch64-ios-kotoba-v1"
+                        ":platform :ios" ":artifact-sha256" ":code-sha256"
+                        ":object-sha256"]]
           (lib/ensure! (.includes manifest needle) (str "ios-aot: manifest missing " needle)))))
     (println "ios-aot: verified KEXE, reproducible Mach-O text, and static host archive passed")
     (finally (.rmSync fs tmp #js {:recursive true :force true}))))

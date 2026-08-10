@@ -99,7 +99,6 @@
   (let [nbb-cli (.join path lib/root "node_modules" "nbb" "cli.js")
         kotoba (.join path lib/root "bin" "kotoba")
         kexe (.join path directory "program.kexe")
-        assembly (.join path directory "program.S")
         manifest (.join path directory "program.edn")
         program-object (.join path directory "program.o")
         host-object (.join path directory "host.o")
@@ -111,9 +110,9 @@
                    "--target" "aarch64-ios" "--output" kexe]
             policy (into ["--policy" policy])))
     (run! js/process.execPath [nbb-cli kotoba "-M" "package-ios" kexe
-                               "--entry" "main" "--output" assembly
+                               "--entry" "main" "--platform" "ios-simulator"
+                               "--output" program-object
                                "--manifest-output" manifest])
-    (run! "xcrun" (into sim-flags ["-c" assembly "-o" program-object]))
     (run! "xcrun" (into sim-flags ["-std=c11" "-O2" "-Wall" "-Wextra" "-Werror"
                                    "-fvisibility=hidden"
                                    (str "-I" (.join path lib/root "runtime" "ios"))
@@ -156,7 +155,8 @@
                    "ios-simulator: harness is not an arm64 Mach-O executable")
       (lib/ensure! (str/includes? build-info "platform IOSSIMULATOR")
                    "ios-simulator: harness was not linked against the Simulator platform")
-      (doseq [needle [":format :kotoba.ios-aot/v1" ":target :aarch64-ios-kotoba-v1"]]
+      (doseq [needle [":format :kotoba.ios-aot/v2" ":target :aarch64-ios-kotoba-v1"
+                      ":platform :ios-simulator"]]
         (lib/ensure! (str/includes? (lib/read-text manifest) needle)
                      (str "ios-simulator: manifest missing " needle)))
       (let [{:keys [udid booted-by-us?]} (find-or-boot-device!)]
