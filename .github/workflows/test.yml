@@ -96,7 +96,12 @@ jobs:
       - name: murakumo KIR drift gate against this checkout
         working-directory: murakumo
         run: |
-          clojure -Sdeps "{:aliases {:dep {:override-deps {io.github.kotoba-lang/compiler {:local/root \"../compiler\"}}}}}" \
+          # The consumer intentionally pins an older runtime KIR and ABI for
+          # its shipped artifacts.  This gate compiles against this compiler
+          # checkout, so its direct dependency closure must win as a unit;
+          # otherwise tools.deps selects murakumo's older KIR and the current
+          # kotoba-wasm cannot even load kotoba.kir.descriptor.
+          clojure -Sdeps "{:aliases {:dep {:override-deps {io.github.kotoba-lang/compiler {:local/root \"../compiler\"} io.github.kotoba-lang/kotoba-kir {:git/url \"https://github.com/kotoba-lang/kotoba-kir.git\" :git/sha \"03222197b9729819aef0ae6a0b83d9b990d212de\"} io.github.kotoba-lang/abi {:git/url \"https://github.com/kotoba-lang/abi.git\" :git/sha \"4172242a524c8ab88e4b7036e30ae492b46fc484\"}}}}}" \
             -M:test:dep -n murakumo.kotoba-oracle-authority-test
 
   test:
