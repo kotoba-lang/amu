@@ -28,20 +28,20 @@ and machine class are part of the result, not noise to hide.
 
 ### Development evidence
 
-The implementation worktree was measured on 2026-08-10 with three samples on
-Darwin arm64, Node v26.3.0, from base commit `045323e`. The report explicitly
-recorded `compilerDirty: true`; these figures qualify the change under review,
-not a released commit or a portable ceiling.
+Implementation commit `9418758` was measured clean
+(`compilerDirty: false`) on 2026-08-10 with three samples on Darwin arm64 and
+Node v26.3.0. These figures qualify that exact implementation, not a portable
+ceiling.
 
 | Target | Cold-process median | Loaded compiler median | Artifact |
 |---|---:|---:|---:|
-| Wasm32 | 4,073.25 ms | 647.50 ms | 529 B |
-| AArch64 | 5,269.59 ms | 732.07 ms | 4,768 B + 953 B provenance |
+| Wasm32 | 5,141.83 ms | 512.09 ms | 529 B |
+| AArch64 | 5,934.01 ms | 585.83 ms | 4,768 B + 953 B provenance |
 
 | Worker target | Startup | Unchanged cache-hit median | Policy-only change | Spelling-only edit |
 |---|---:|---:|---:|---:|
-| Wasm32 | 4,016.66 ms | 4.04 ms | 14.10 ms | 32.48 ms |
-| AArch64 | 4,531.42 ms | 6.32 ms | 93.14 ms | 124.76 ms |
+| Wasm32 | 4,000.03 ms | 7.11 ms | 22.54 ms | 81.42 ms |
+| AArch64 | 6,134.21 ms | 5.73 ms | 46.73 ms | 133.55 ms |
 
 Worker rows include NDJSON round trip and artifact writes. Policy-only changes
 miss the artifact cache, hit HIR/KIR, and rerun admission. Spelling-only edits
