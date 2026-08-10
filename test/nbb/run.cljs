@@ -47,7 +47,7 @@
           body (get-in hir [:functions 0 :body])
           effect-id (second (first (:effects hir)))
           ok? (and (= 'typed-cap-call (first body))
-                   (= 4 (second body))
+                   (= 4 (js/Number (second body)))
                    (= :i64 (nth body 2))
                    (= :i64 (nth body 3))
                    (= 4 (js/Number effect-id)))]

@@ -102,8 +102,16 @@
 
 (defn- security-classpath-entry [root nbb-cli]
   (let [deps-edn (.join path root "deps.edn")
+        ;; The resolved directories are rooted under GITLIBS. A digest-only
+        ;; cache key lets an isolated clean-clone test publish temporary paths
+        ;; that a later normal invocation reuses after they have been deleted.
+        ;; Bind the cache to the dependency-store identity as well as deps.edn.
+        gitlibs-root (.resolve path (or (.-GITLIBS js/process.env)
+                                        (.join path (.homedir os) ".gitlibs")))
         digest (-> (.createHash crypto "sha256")
                    (.update (.readFileSync fs deps-edn))
+                   (.update "\u0000")
+                   (.update gitlibs-root)
                    (.digest "hex"))
         cache-file (.join path (.tmpdir os) (str "kotoba-security-classpath-" digest ".txt"))]
     (if (.existsSync fs cache-file)
