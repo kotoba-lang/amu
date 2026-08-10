@@ -49,14 +49,15 @@
         io.github.kotoba-lang/kotoba-wasm
         {:git/url "https://github.com/kotoba-lang/kotoba-wasm.git"
          :git/sha "b0c9837f2aca8f6bf0376e16d6b889c303a2b4f3"}
-        ;; 0a58119 consumes versioned GMIR merge values, coalesces proven-safe
-        ;; single-phi transports into physical edge moves, and preserves the
-        ;; frame fallback plus final-layout/ELF64 record contracts. The native
-        ;; repository still owns instruction selection/encoding, entry shims,
-        ;; target addresses, and aiueos policy.
+        ;; 8374a6c consumes versioned GMIR merge values and scalar-replaces
+        ;; non-escaping fixed records before GMIR. Record-valued branches emit
+        ;; one phi per field and use MIR's parallel-copy schedule without heap
+        ;; allocation. Escaping, nested, or non-scalar records remain on the
+        ;; legacy path. Native still owns instruction selection/encoding,
+        ;; entry shims, target addresses, and aiueos policy.
         io.github.kotoba-lang/kotoba-native
         {:git/url "https://github.com/kotoba-lang/kotoba-native.git"
-         :git/sha "5e76bd75f22b2045692f38b83b09a5a922275cf6"}
+         :git/sha "8374a6c4cdd31110363a6996eaba6a737d9d9f02"}
         io.github.kotoba-lang/kotoba-component
         {:git/url "https://github.com/kotoba-lang/kotoba-component.git"
          :git/sha "35fb4d5941b3d56b35bca71151bdfadf33993d41"}
@@ -67,13 +68,13 @@
         io.github.kotoba-lang/io-multiformats
         {:git/url "https://github.com/kotoba-lang/io-multiformats.git"
          :git/sha "b3b157e683a943d4f2e9362d9366cceefff3f656"}
-        ;; 19e662e admits a bounded sealed native fuel contract (ADR 0005) and
-        ;; runs its independent KIR oracle with that exact value. The compiler
-        ;; must pin it in the same change that starts emitting non-default
-        ;; native fuel metadata; an older verifier rejects the artifact ABI.
+        ;; 5f7905d independently re-derives the exact direct/one-let scalar
+        ;; record IF shapes emitted by the native pin above, in addition to the
+        ;; bounded sealed native fuel contract. Producer and verifier move in
+        ;; the same closure; neither trusts the other's aggregate metadata.
         io.github.kotoba-lang/kotoba-verifier
         {:git/url "https://github.com/kotoba-lang/kotoba-verifier.git"
-         :git/sha "cc505e7c03f24ed1cbb42e8dd3fb2f6cd08982f3"}
+         :git/sha "5f7905d8ca3849c857d466aa843b4ddde3b4a472"}
 }
  :aliases {:test {:extra-paths ["test"]
                   :extra-deps

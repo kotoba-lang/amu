@@ -125,6 +125,17 @@
 (def ^:private option-record-type
   "[:record :t/o [[:m [:option :i64]] [:x :i64]]]")
 
+(def ^:private scalar-pair-type
+  "[:record :t/scalar-pair [[:x :i64] [:y :i64]]]")
+
+(defn- scalar-pair-source [tail]
+  (str "(defn select-pair [a :i64] :i64 "
+       "(let [r (if a "
+       "(record-new " scalar-pair-type " 1 2) "
+       "(record-new " scalar-pair-type " 3 4))] "
+       tail ")) "
+       "(defn main [] :i64 0)"))
+
 (def ^:private base-cases
   [["arithmetic" "(defn main [] (+ (* 3 4) (quot 10 2)))" 17]
    ["comparison" "(defn main [] (if (< 1 2) 7 8))" 7]
@@ -577,6 +588,52 @@
         (is (not (str/includes? report "KEXE_TRAP")) (str/trim report))
         (is (str/includes? report (str ":result " expected))
             (str isa " argument=" argument " => " (str/trim report)))))))
+
+(deftest source-record-sroa-has-zero-frame-traffic-and-runs-both-edges
+  (let [body (list '+
+                   (list 'record-get (read-string scalar-pair-type) 'r :x)
+                   (list 'record-get (read-string scalar-pair-type) 'r :y))
+        expression (list 'let
+                         ['r (list 'if 'a
+                                   (list 'record-new (read-string scalar-pair-type) 1 2)
+                                   (list 'record-new (read-string scalar-pair-type) 3 4))]
+                         body)
+        gmir (machine-ir/lower-kir-expression ['a] expression)]
+    (is (= 2 (count (filter #(= :gmir/phi (:gmir/op %))
+                            (:gmir/instructions gmir)))))
+    (doseq [target [:x86-64 :aarch64]]
+      (let [mc (machine-ir/compile-gmir target gmir)
+            encodings (keep :mc/encoding (:mc/instructions mc))]
+        (is (zero? (:mc/frame-slots mc)) target)
+        (is (= 2 (count (filter #(= (keyword (name target) "move") %)
+                                encodings)))
+            target)
+        (is (not-any? #(contains? #{(keyword (name target) "spill-load")
+                                    (keyword (name target) "spill-store")} %)
+                      encodings)
+            target)))
+    (doseq [[isa loader] @loaders :when loader
+            [argument expected] [[1 3] [0 7]]]
+      (let [report (run-native isa (scalar-pair-source
+                                    (str "(+ (record-get " scalar-pair-type
+                                         " r :x) (record-get " scalar-pair-type
+                                         " r :y))"))
+                               "-" {:allow #{}} 'select-pair [argument])]
+        (is (not (str/includes? report "KEXE_TRAP")) (str/trim report))
+        (is (str/includes? report (str ":result " expected))
+            (str isa " argument=" argument " => " (str/trim report)))))))
+
+(deftest record-sroa-preserves-constructor-field-evaluation-order
+  (let [source (str "(defn project-second [d :i64] :i64 "
+                    "(let [r (record-new " scalar-pair-type
+                    " (quot 1 d) 9)] "
+                    "(record-get " scalar-pair-type " r :y))) "
+                    "(defn main [] :i64 0)")]
+    (doseq [[isa loader] @loaders :when loader]
+      (testing isa
+        (let [report (run-native isa source "-" {:allow #{}}
+                                 'project-second [0])]
+          (is (str/includes? report ":status :trap") (str/trim report)))))))
 
 (deftest the-verified-surface-executes-identically-on-every-available-isa
   (let [available (into {} (remove (comp nil? val) @loaders))
