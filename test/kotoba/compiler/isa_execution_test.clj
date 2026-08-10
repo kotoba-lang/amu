@@ -93,16 +93,21 @@
 (defn- run-native
   ([isa source] (run-native isa source "-" {:allow #{}}))
   ([isa source allow policy]
+   (run-native isa source allow policy 'main []))
+  ([isa source allow policy entry args]
    (let [[_ target] (isas isa)
          artifact (:artifact (compiler/compile-source source target policy))
          code (tmp (str "kotoba-isa-code-" isa ".bin"))
-         offset (get-in artifact [:exports 'main :offset])]
+         offset (get-in artifact [:exports entry :offset])]
      (with-open [out (io/output-stream code)]
        (.write out (byte-array (map #(unchecked-byte (bit-and (int %) 0xff))
                                     (:code artifact)))))
-     (:out (shell/sh (@loaders isa) (.getPath code) (str offset) "0" isa allow
-                     :env (assoc (into {} (System/getenv))
-                                 "KEXE_STRUCTURED_REPORT" "1"))))))
+     (:out (apply shell/sh
+                  (concat [(@loaders isa) (.getPath code) (str offset)
+                           (str (count args)) isa allow]
+                          (map str args)
+                          [:env (assoc (into {} (System/getenv))
+                                       "KEXE_STRUCTURED_REPORT" "1")]))))))
 
 (def ^:private f64-one 4607182418800017408)
 (def ^:private f64-two 4611686018427387904)
@@ -519,3 +524,18 @@
         (is (not (str/includes? report "KEXE_TRAP")) (str/trim report))
         ;; The qualification host's cap-call provider adds one.
         (is (str/includes? report ":result 6") (str/trim report))))))
+
+(deftest integer-division-errors-trap-on-every-available-isa
+  ;; x86-64 IDIV traps for both cases in hardware. AArch64 SDIV does not, so
+  ;; its lowering must preserve the language contract with explicit guards.
+  ;; Running the real loader is essential: byte-shape tests cannot prove that
+  ;; the branch targets reach the trap instruction.
+  (let [source (str "(defn divide [x y] (quot x y)) "
+                    "(defn main [] 0)")]
+    (doseq [[isa loader] @loaders :when loader
+            [why args] [["division by zero" [1 0]]
+                        ["signed division overflow"
+                         [Long/MIN_VALUE -1]]]]
+      (testing (str isa " / " why)
+        (let [report (run-native isa source "-" {:allow #{}} 'divide args)]
+          (is (str/includes? report ":status :trap") (str/trim report)))))))

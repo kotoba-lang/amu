@@ -13,7 +13,9 @@ const reportPath = join(directory, "report.json");
 try {
   const run = spawnSync(process.execPath,
     [join(root, "scripts", "runtime-comparison.mjs"),
-      "--runs", "1", "--calls", "20", "--warmup", "5", "--n", "5",
+      // Keep this smoke run short while measuring long enough to exceed the
+      // monotonic-clock resolution used by the fastest macOS runners.
+      "--runs", "1", "--calls", "10000", "--warmup", "1000", "--n", "5",
       "--output", reportPath],
     { cwd: root, encoding: "utf8", timeout: 600_000, maxBuffer: 32 * 1024 * 1024 });
   if (run.error) throw run.error;
