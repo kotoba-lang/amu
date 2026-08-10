@@ -1,0 +1,33 @@
+{:adr/id :adr-0226-cross-language-runtime-evidence
+ :adr/title "Cross-language runtime evidence is workload-bound"
+ :adr/status :accepted
+ :adr/date "2026-08-10"
+ :adr/markdown "0226-cross-language-runtime-evidence.md"
+ :adr/decision
+ {:report-format :kotoba.runtime-comparison/v1
+  :workload :unrolled-modular-mix-v1
+  :engines [:rust :clojure :clojurescript :amu-wasm32 :amu-native]
+  :correctness {:shared-observable-result true
+                :independent-reference true}
+  :measurements [:steady-state-nanoseconds-per-kernel
+                 :process-wall-milliseconds :maximum-rss-bytes
+                 :artifact-bytes :build-milliseconds]
+  :provenance [:host :architecture :tool-versions :compiler-commit
+               :compiler-dirty]
+  :wasm {:admission :instantiate-kotoba
+         :imports :denied
+         :warmup :fresh-instance-batches
+         :measurement :fresh-instance-batches
+         :maximum-calls-per-instance 400
+         :maximum-total-calls 1000000
+         :fuel-bypass false}
+  :native {:mode :separate-benchmark-runner
+           :w-x true
+           :context-abi true
+           :production-loader-modified false
+           :production-supervisor false
+           :production-sandbox false}
+  :ci {:real-engine-smoke true
+       :universal-speed-threshold false}}
+ :adr/non-claims [:universal-language-ranking :whole-application-parity
+                  :production-native-path-latency :production-safety-evidence]}
