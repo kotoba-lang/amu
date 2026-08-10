@@ -161,23 +161,23 @@ and not a production safety-path claim. The production loader is not modified.
 
 ## Development runtime evidence
 
-Compiler commit `1ff46c6` was measured from a clean implementation worktree on
+Compiler commit `d0d5bd8` was measured from a clean implementation worktree on
 2026-08-10 with seven samples on an Apple M4, Darwin arm64, Node v26.3.0,
 Rust 1.96.0, and Clojure CLI 1.12.5.1654. The common result was 1,830,338,420.
-These 400-call figures exposed excessive timer variance and are intentionally
-superseded by the 100,000-call clean-commit run recorded in the next revision.
+Each sample measured 100,000 calls after 10,000 warmup calls; the report marked
+the compiler worktree clean.
 
 | Engine | Steady-state median | Versus Rust | Process median | Maximum RSS median | Artifact |
 |---|---:|---:|---:|---:|---:|
-| Rust | 16.355 ns | 1.00x | 8.46 ms | 1.42 MiB | 350.5 KiB executable |
-| Amu native | 37.5 ns | 2.29x | 11.52 ms | 2.08 MiB | 1.62 KiB code / 7.60 KiB KEXE |
-| Amu Wasm32 | 128.02 ns | 7.83x | 180.17 ms | 52.81 MiB | 593 B Wasm |
-| Clojure | 312.395 ns | 19.10x | 1,399.18 ms | 123.84 MiB | 1.67 KiB source |
-| ClojureScript | 1,131.5625 ns | 69.19x | 136.62 ms | 50.58 MiB | 96.47 KiB JS |
+| Rust | 18.615 ns | 1.00x | 10.24 ms | 1.42 MiB | 350.5 KiB executable |
+| Amu native | 48.23 ns | 2.59x | 14.97 ms | 1.30 MiB | 1.62 KiB code / 7.60 KiB KEXE |
+| Clojure | 79.196 ns | 4.25x | 1,051.15 ms | 123.27 MiB | 1.67 KiB source |
+| Amu Wasm32 | 116.208 ns | 6.24x | 164.28 ms | 57.30 MiB | 593 B Wasm |
+| ClojureScript | 464.983 ns | 24.98x | 173.66 ms | 53.48 MiB | 96.47 KiB JS |
 
-This workload says that Amu native is close enough to Rust to make a concrete
-optimization target visible, and that both Amu targets beat the two dynamic
-language paths on steady-state kernel time here. It does not establish those
-ratios for allocation, collections, strings, capabilities, I/O, concurrency,
-or whole applications. The benchmark contract and raw report are the claim;
-the table is only one machine-specific observation.
+This workload puts Amu native at 2.59x Rust, 1.64x faster than warmed Clojure,
+and 9.64x faster than ClojureScript. Amu Wasm is 1.47x slower than warmed
+Clojure and 4.00x faster than ClojureScript. It does not establish those ratios
+for allocation, collections, strings, capabilities, I/O, concurrency, or whole
+applications. The benchmark contract and raw report are the claim; the table
+is only one machine-specific observation.
