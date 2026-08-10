@@ -34,6 +34,17 @@
 
 (def ^:private ns-pattern #"kotoba\.compiler\.[a-zA-Z0-9._-]+")
 
+;; These namespaces are executable roots selected by bin/kotoba as files. They
+;; intentionally are not required by a test namespace because loading one
+;; consumes command-line arguments and may exit the test JVM/nbb process. Their
+;; behavior is exercised through the launcher by the nbb, worker, benchmark,
+;; and conformance tests; listing the roots here makes the reachability model
+;; represent that real invocation edge.
+(def ^:private executable-roots
+  '#{kotoba.compiler.nbb.wasm-cli
+     kotoba.compiler.nbb.aarch64-cli
+     kotoba.compiler.nbb.x86-64-cli})
+
 (defn- clj-files [root]
   (->> (file-seq (io/file root))
        (filter #(re-find #"\.clj[cs]?$" (.getName ^java.io.File %)))))
@@ -53,7 +64,7 @@
         ;; own mentions would make every finding reachable by the act of
         ;; recording it.
         tests (dissoc (graph "test") 'kotoba.compiler.namespace-reachability-test)
-        reachable (loop [seen #{} todo (mapcat val tests)]
+        reachable (loop [seen #{} todo (concat executable-roots (mapcat val tests))]
                     (if-let [n (first todo)]
                       (if (seen n)
                         (recur seen (rest todo))
