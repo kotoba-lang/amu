@@ -121,6 +121,8 @@
    ["recursion" (str "(defn f [n] (if (< n 1) 0 (+ n (f (- n 1)))))"
                      " (defn main [] (f 5))") 15]
    ["let" "(defn main [] (let [a 3 b 4] (* a b)))" 12]
+   ["ordered scalar do"
+    "(defn main [] :i64 (do (+ 1 2) (quot 8 2) (* 3 4)))" 12]
    ["bit-not" "(defn main [] (bit-not 5))" -6]
    ["bit-or" "(defn main [] (bit-or 5 2))" 7]
    ["i64 shift" "(defn main [] (i64-shift-left 1 5))" 32]
