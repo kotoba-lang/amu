@@ -23,6 +23,7 @@
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]
+            [kotoba.gmir :as gmir]
             [kotoba.native.machine-ir :as machine-ir]))
 
 ;; loader argv name -> [cc -arch value, compiler target]
@@ -91,24 +92,27 @@
                          build (when command (apply shell/sh command))]
                      (when (zero? (:exit build)) (.getPath loader))))]))))
 
+(defn- run-code [isa bytes offset allow args]
+  (let [code (tmp (str "kotoba-isa-code-" isa ".bin"))]
+     (with-open [out (io/output-stream code)]
+       (.write out (byte-array (map #(unchecked-byte (bit-and (int %) 0xff))
+                                    bytes))))
+     (:out (apply shell/sh
+                  (concat [(@loaders isa) (.getPath code) (str offset)
+                           (str (count args)) isa allow]
+                          (map str args)
+                          [:env (assoc (into {} (System/getenv))
+                                       "KEXE_STRUCTURED_REPORT" "1")])))))
+
 (defn- run-native
   ([isa source] (run-native isa source "-" {:allow #{}}))
   ([isa source allow policy]
    (run-native isa source allow policy 'main []))
   ([isa source allow policy entry args]
    (let [[_ target] (isas isa)
-         artifact (:artifact (compiler/compile-source source target policy))
-         code (tmp (str "kotoba-isa-code-" isa ".bin"))
-         offset (get-in artifact [:exports entry :offset])]
-     (with-open [out (io/output-stream code)]
-       (.write out (byte-array (map #(unchecked-byte (bit-and (int %) 0xff))
-                                    (:code artifact)))))
-     (:out (apply shell/sh
-                  (concat [(@loaders isa) (.getPath code) (str offset)
-                           (str (count args)) isa allow]
-                          (map str args)
-                          [:env (assoc (into {} (System/getenv))
-                                       "KEXE_STRUCTURED_REPORT" "1")]))))))
+         artifact (:artifact (compiler/compile-source source target policy))]
+     (run-code isa (:code artifact) (get-in artifact [:exports entry :offset])
+               allow args))))
 
 (def ^:private f64-one 4607182418800017408)
 (def ^:private f64-two 4611686018427387904)
@@ -510,6 +514,37 @@
                bool-parameter-cases
                boolean-literal-argument-cases)))
 
+(def ^:private dual-phi-program
+  (let [[test then-a then-b else-a else-b join-a join-b result]
+        (mapv gmir/vreg (range 8))]
+    {:gmir/version 2
+     :gmir/instructions
+     [{:gmir/op :gmir/argument :gmir/dst test :gmir/index 0}
+      {:gmir/op :gmir/branch-zero :gmir/test test :gmir/target :test.label/else}
+      {:gmir/op :gmir/label :gmir/id :test.label/then}
+      {:gmir/op :gmir/constant :gmir/dst then-a :gmir/value 1}
+      {:gmir/op :gmir/constant :gmir/dst then-b :gmir/value 2}
+      {:gmir/op :gmir/label :gmir/id :test.label/then-exit}
+      {:gmir/op :gmir/jump :gmir/target :test.label/join}
+      {:gmir/op :gmir/label :gmir/id :test.label/else}
+      {:gmir/op :gmir/constant :gmir/dst else-a :gmir/value 3}
+      {:gmir/op :gmir/constant :gmir/dst else-b :gmir/value 4}
+      {:gmir/op :gmir/label :gmir/id :test.label/else-exit}
+      {:gmir/op :gmir/jump :gmir/target :test.label/join}
+      {:gmir/op :gmir/label :gmir/id :test.label/join}
+      {:gmir/op :gmir/phi :gmir/dst join-a
+       :gmir/incomings [{:gmir/predecessor :test.label/then-exit
+                         :gmir/value then-a}
+                        {:gmir/predecessor :test.label/else-exit
+                         :gmir/value else-a}]}
+      {:gmir/op :gmir/phi :gmir/dst join-b
+       :gmir/incomings [{:gmir/predecessor :test.label/then-exit
+                         :gmir/value then-b}
+                        {:gmir/predecessor :test.label/else-exit
+                         :gmir/value else-b}]}
+      {:gmir/op :gmir/add :gmir/dst result :gmir/left join-a :gmir/right join-b}
+      {:gmir/op :gmir/return :gmir/value result}]}))
+
 (deftest value-position-if-consumer-plan-has-zero-phi-frame-traffic
   (let [gmir (machine-ir/lower-kir-expression ['a] '(+ 1 (if a 2 3)))]
     (doseq [target [:x86-64 :aarch64]]
@@ -523,6 +558,25 @@
                       encodings)
             target)
         (is (seq (machine-ir/encode-mc mc)) target)))))
+
+(deftest multi-phi-consumer-plan-and-real-process-have-zero-frame-traffic
+  (doseq [[isa loader] @loaders :when loader
+          :let [target (case isa "x86_64" :x86-64 "aarch64" :aarch64)
+                mc (machine-ir/compile-gmir target dual-phi-program)
+                encodings (keep :mc/encoding (:mc/instructions mc))
+                bytes (machine-ir/encode-mc mc)]]
+    (is (zero? (:mc/frame-slots mc)) target)
+    (is (= 2 (count (filter #(= (keyword (name target) "move") %) encodings)))
+        target)
+    (is (not-any? #(contains? #{(keyword (name target) "spill-load")
+                                (keyword (name target) "spill-store")} %)
+                  encodings)
+        target)
+    (doseq [[argument expected] [[1 3] [0 7]]]
+      (let [report (run-code isa bytes 0 "-" [argument])]
+        (is (not (str/includes? report "KEXE_TRAP")) (str/trim report))
+        (is (str/includes? report (str ":result " expected))
+            (str isa " argument=" argument " => " (str/trim report)))))))
 
 (deftest the-verified-surface-executes-identically-on-every-available-isa
   (let [available (into {} (remove (comp nil? val) @loaders))
