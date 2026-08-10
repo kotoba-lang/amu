@@ -16,7 +16,7 @@ component despite earlier documentation calling it a component profile.
 
 ## Decision
 
-Kotoba will add a Component Model target produced by `kotoba-lang/compiler`.
+Kotoba will add a Component Model target produced by `kotoba-lang/amu`.
 The compiler owns generation of the core module, canonical ABI adapters,
 component type information, and final component artifact. A runtime-specific
 Rust runner is not part of this compilation architecture.

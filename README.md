@@ -1,4 +1,12 @@
-# Kotoba Compiler
+# Amu
+
+Amu is the multi-target, deny-by-default compiler for the safe Kotoba
+language. The repository is `kotoba-lang/amu`; the name evokes Japanese
+「編む」— weaving checked source, typed KIR, and target artifacts together.
+
+The existing `kotoba.compiler.*` namespaces, `kotoba-compiler/1` wire marker,
+and `bin/kotoba-compiler` launcher remain compatibility APIs. New automation
+should use the `io.github.kotoba-lang/amu` dependency coordinate and `bin/amu`.
 
 The accepted [worldwide 95% platform coverage roadmap](docs/adr/0001-worldwide-95-percent-platform-coverage.md)
 defines the planned native, WebAssembly, GPU, NPU, server, mobile, and IoT
@@ -15,8 +23,6 @@ A platform marked `release` is counted only when every manifest evidence digest
 resolves to a currently valid Ed25519 envelope from a trusted, non-revoked
 signer. The signed statement binds the platform, native/Wasm paths, exact target
 profiles, conformance and runtime digests, CI run, test time, and expiry.
-
-The multi-target, deny-by-default compiler for the safe Kotoba language.
 
 ## Execution policy
 

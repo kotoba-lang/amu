@@ -213,7 +213,7 @@ test suite hit (not a routine or blind toolchain refresh):
   the above.
 - Checked for blast radius before touching the machine's shared global
   `wac` binary: this task's own required concurrent-work check
-  (`gh pr list --repo kotoba-lang/compiler --state open`,
+  (`gh pr list --repo kotoba-lang/amu --state open`,
   `git branch -r --sort=-committerdate`) found no other open PR or active
   branch touching Component Model / `wac` / `canonical-abi` /
   `typed-cap-call`; `wac` is invoked nowhere in this codebase outside
