@@ -137,9 +137,19 @@
                       (assoc case :target target)))]
     {:format :kotoba.test-report/v1
      :ok (empty? failed)
-     :test-definition-cid (artifact/sha256
-                           (select-keys kir [:format :exports :signature
-                                             :effects :functions]))
+     ;; NOT a CID, and it was called one until 2026-08-10. It is a sha2-256
+     ;; over selected KIR keys — the same codec-mislabelling
+     ;; `kotoba-lang/lang/code-identity.edn` records as a defect of DefCID
+     ;; payload v1, which addressed pr-str output under a dag-cbor label.
+     ;;
+     ;; A real DefCID seals six inputs, two of which this compiler cannot
+     ;; supply: it computes no desugar-contract-version under any name, and
+     ;; its profile-version disagrees with the release policy's. Naming this
+     ;; field a CID invited exactly the substitution those fields exist to
+     ;; prevent. See com-junkawasaki ADR-2608100400.
+     :test-kir-sha256 (artifact/sha256
+                       (select-keys kir [:format :exports :signature
+                                         :effects :functions]))
      :tests tests
      :targets targets
      :results results
