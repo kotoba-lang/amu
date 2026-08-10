@@ -27,8 +27,12 @@ and AArch64; it does not reconstruct or reorder the schedule. Non-escaping,
 non-empty fixed records whose fields are only `:i64` or `:bool` are scalar
 replaced into ordered SSA bundles before GMIR, so a record-valued `if` emits one
 phi per field without heap allocation. Escaping, nested, and non-scalar records
-still use the legacy path; this is not a complete aggregate ABI or Rust-wide
-performance-parity claim.
+still use the legacy path. Non-escaping sealed variants whose payloads are only
+`:i64` or `:bool` likewise become an internal tag-and-payload SSA bundle;
+variant-valued `if` emits two phis and `variant-match` lowers to target-neutral
+comparison control flow without a variant stack region. Variant boundary
+values, nested/non-scalar payloads, and a general aggregate ABI remain outside
+this slice; this is not a Rust-wide performance-parity claim.
 
 The first reproducible coverage snapshot can be audited with:
 

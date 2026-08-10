@@ -136,6 +136,19 @@
        tail ")) "
        "(defn main [] :i64 0)"))
 
+(def ^:private scalar-variant-type
+  "[:variant :t/scalar-value [[:number :i64] [:flag :bool]]]")
+
+(defn- scalar-variant-source [number-body flag-body]
+  (str "(defn select-variant [a :i64] :i64 "
+       "(let [v (if a "
+       "(variant-new " scalar-variant-type " :number 41) "
+       "(variant-new " scalar-variant-type " :flag false))] "
+       "(variant-match " scalar-variant-type " v "
+       "[[:number payload " number-body "] "
+       "[:flag payload " flag-body "]]))) "
+       "(defn main [] :i64 0)"))
+
 (def ^:private base-cases
   [["arithmetic" "(defn main [] (+ (* 3 4) (quot 10 2)))" 17]
    ["comparison" "(defn main [] (if (< 1 2) 7 8))" 7]
@@ -634,6 +647,63 @@
         (let [report (run-native isa source "-" {:allow #{}}
                                  'project-second [0])]
           (is (str/includes? report ":status :trap") (str/trim report)))))))
+
+(deftest source-variant-sroa-has-zero-frame-traffic-and-runs-both-cases
+  (let [type (read-string scalar-variant-type)
+        expression (list 'let
+                         ['v (list 'if 'a
+                                   (list 'variant-new type :number 41)
+                                   (list 'variant-new type :flag false))]
+                         (list 'variant-match type 'v
+                               [[:number 'payload (list '+ 'payload 1)]
+                                [:flag 'payload (list 'if 'payload 1 7)]]))
+        gmir (machine-ir/lower-kir-expression ['a] expression)]
+    (is (= 4 (count (filter #(= :gmir/phi (:gmir/op %))
+                            (:gmir/instructions gmir)))))
+    (doseq [target [:x86-64 :aarch64]]
+      (let [mc (machine-ir/compile-gmir target gmir)
+            encodings (keep :mc/encoding (:mc/instructions mc))]
+        (is (zero? (:mc/frame-slots mc)) target)
+        (is (not-any? #(contains? #{(keyword (name target) "spill-load")
+                                    (keyword (name target) "spill-store")} %)
+                      encodings)
+            target)))
+    (doseq [[isa loader] @loaders :when loader
+            [argument expected] [[1 42] [0 7]]]
+      (let [report (run-native isa
+                               (scalar-variant-source "(+ payload 1)"
+                                                      "(if payload 1 7)")
+                               "-" {:allow #{}} 'select-variant [argument])]
+        (is (not (str/includes? report "KEXE_TRAP")) (str/trim report))
+        (is (str/includes? report (str ":result " expected))
+            (str isa " argument=" argument " => " (str/trim report)))))))
+
+(deftest variant-sroa-executes-only-the-selected-branch
+  (let [source (str "(defn select [a :i64 d :i64] :i64 "
+                    "(let [v (if a "
+                    "(variant-new " scalar-variant-type " :number 41) "
+                    "(variant-new " scalar-variant-type " :flag false))] "
+                    "(variant-match " scalar-variant-type " v "
+                    "[[:number payload (quot payload d)] "
+                    "[:flag payload 7]]))) "
+                    "(defn main [] :i64 0)")]
+    (doseq [[isa loader] @loaders :when loader]
+      (let [unselected (run-native isa source "-" {:allow #{}} 'select [0 0])
+            selected (run-native isa source "-" {:allow #{}} 'select [1 0])]
+        (is (str/includes? unselected ":result 7") (str/trim unselected))
+        (is (not (str/includes? unselected "KEXE_TRAP")) (str/trim unselected))
+        (is (str/includes? selected ":status :trap") (str/trim selected))))))
+
+(deftest variant-sroa-preserves-constructor-payload-evaluation
+  (let [source (str "(defn project [d :i64] :i64 "
+                    "(let [v (variant-new " scalar-variant-type
+                    " :number (quot 1 d))] "
+                    "(variant-match " scalar-variant-type " v "
+                    "[[:number payload 9] [:flag payload 8]]))) "
+                    "(defn main [] :i64 0)")]
+    (doseq [[isa loader] @loaders :when loader]
+      (let [report (run-native isa source "-" {:allow #{}} 'project [0])]
+        (is (str/includes? report ":status :trap") (str/trim report))))))
 
 (deftest the-verified-surface-executes-identically-on-every-available-isa
   (let [available (into {} (remove (comp nil? val) @loaders))
