@@ -1,25 +1,25 @@
 (ns kotoba.compiler.frontend-limits-test
   (:require [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]
-            [kotoba.compiler.frontend :as frontend]))
+            [kotoba.sema :as sema]))
 
 (defn- rejection [source target]
   (try (compiler/compile-source source target) nil
        (catch clojure.lang.ExceptionInfo error error)))
 
 (deftest program-wide-complexity-budgets-fail-closed
-  (with-redefs [frontend/max-expression-nodes 4]
+  (with-redefs [sema/max-expression-nodes 4]
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #"expression budget"
                           (compiler/check-source "(defn main [] (+ 1 2 3 4))"))))
-  (with-redefs [frontend/max-functions 1]
+  (with-redefs [sema/max-functions 1]
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #"function count"
                           (compiler/check-source
                            "(defn helper [] 1) (defn main [] 0)"))))
-  (with-redefs [frontend/max-bindings 1]
+  (with-redefs [sema/max-bindings 1]
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #"binding count"
                           (compiler/check-source
                            "(defn main [] (let [x 1 y 2] (+ x y)))"))))
-  (with-redefs [frontend/max-lowered-nodes 10]
+  (with-redefs [sema/max-lowered-nodes 10]
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #"lowered program budget"
                           (compiler/check-source
                            "(defn main []
@@ -59,7 +59,7 @@
   (is (thrown-with-msg? clojure.lang.ExceptionInfo #"only a bounded :export vector"
                         (compiler/check-source
                          "(ns pilot (:require [clojure.string :as str])) (defn main [] 0)")))
-  (with-redefs [frontend/max-namespace-docstring-chars 3]
+  (with-redefs [sema/max-namespace-docstring-chars 3]
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #"docstring exceeds admission limit"
                           (compiler/check-source
                            "(ns pilot \"four\") (defn main [] 0)")))))
@@ -73,7 +73,7 @@
                           (defn main \"entry docs\" [] (answer 41))"
                          target)
                         [:kir :oracle-value])))))
-  (with-redefs [frontend/max-function-docstring-chars 3]
+  (with-redefs [sema/max-function-docstring-chars 3]
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #"function docstring exceeds"
                           (compiler/check-source
                            "(defn main \"four\" [] 0)"))))

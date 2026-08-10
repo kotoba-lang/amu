@@ -1,7 +1,7 @@
 (ns kotoba.compiler.project-files
   (:require [clojure.java.io :as io]
             [clojure.string :as str]
-            [kotoba.compiler.frontend :as frontend]
+            [kotoba.sema :as sema]
             [kotoba.compiler.project :as project])
   (:import [java.nio.file Files LinkOption Path]))
 
@@ -64,7 +64,7 @@
                     (reject! "project module escapes the explicit source paths"
                              {:module expected}))
                   (let [source (slurp (.toFile real))
-                        info (project/module-info (frontend/read-forms source))
+                        info (project/module-info (sema/read-forms source))
                         declared (:namespace info)]
                     (when (and expected (not= expected declared))
                       (reject! "resolved path namespace does not match requirement"

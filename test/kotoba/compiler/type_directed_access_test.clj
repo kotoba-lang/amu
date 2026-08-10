@@ -1,7 +1,7 @@
 (ns kotoba.compiler.type-directed-access-test
   (:require [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]
-            [kotoba.compiler.frontend :as frontend]
+            [kotoba.sema :as sema]
             [kotoba.kir :as ir]))
 
 (defn- compile-source [source]
@@ -51,7 +51,7 @@
             #"type mismatch"]]]
     (testing source
       (is (thrown-with-msg? clojure.lang.ExceptionInfo message
-                            (frontend/analyze source))))))
+                            (sema/analyze source))))))
 
 (deftest heterogeneous-nth-admits-a-typed-unreachable-default
   (let [source
@@ -113,7 +113,7 @@
   (is (thrown-with-msg?
        clojure.lang.ExceptionInfo
        #"requires an :or default"
-       (frontend/analyze
+       (sema/analyze
         "(defn main [] :string
            (let [{:keys [name]}
                  (typed-map-new [:map :keyword :string] :name \"Ada\")]
@@ -171,7 +171,7 @@
             #"drop count must be in range"]]]
     (testing source
       (is (thrown-with-msg? clojure.lang.ExceptionInfo message
-                            (frontend/analyze source))))))
+                            (sema/analyze source))))))
 
 (deftest type-directed-get-rejects-schema-erasing-uses
   (doseq [[source message]
@@ -186,4 +186,4 @@
             #"requires a value and one keyword field"]]]
     (testing source
       (is (thrown-with-msg? clojure.lang.ExceptionInfo message
-                            (frontend/analyze source))))))
+                            (sema/analyze source))))))

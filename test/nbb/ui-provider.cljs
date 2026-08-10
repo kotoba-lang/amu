@@ -5,7 +5,7 @@
   Run: `npm run test-nbb-ui-provider`."
   (:require [kotoba.kir.admission :as admission]
             [kotoba.kir.cljs-i64 :as i64]
-            [kotoba.compiler.frontend :as frontend]
+            [kotoba.sema :as sema]
             [kotoba.kir :as ir]
             [provider.ui :as ui]
             [kotoba.compiler.reference-runtime :as runtime]))
@@ -22,7 +22,7 @@
 
 (defn- hosted []
   (let [kit (ui/create-provider)
-        hir (frontend/analyze source)
+        hir (sema/analyze source)
         _ (admission/check hir {:allow #{[:cap/call (js/BigInt 9)]
                                          [:cap/call (js/BigInt 10)]}})
         kir (ir/lower hir)]
@@ -96,7 +96,7 @@
 
 (defn- denial-case []
   (try
-    (let [hir (frontend/analyze source)
+    (let [hir (sema/analyze source)
           _ (admission/check hir {:allow #{[:cap/call (js/BigInt 9)]
                                            [:cap/call (js/BigInt 10)]}})
           kir (ir/lower hir)

@@ -14,14 +14,14 @@
   execute-and-observe path here the way there is for userland artifacts --
   the same bar every other kernel op in this repository is held to."
   (:require [clojure.test :refer [deftest is testing]]
-            [kotoba.compiler.frontend :as frontend]))
+            [kotoba.sema :as sema]))
 
 (defn- provenance-rejection
   "The rejection message when SOURCE is refused for region provenance, or nil
   when admitted. Rethrows any OTHER rejection so a test cannot pass because
   the source was malformed for an unrelated reason."
   [source]
-  (try (frontend/analyze source) nil
+  (try (sema/analyze source) nil
        (catch Exception e
          (if (= :kotoba.error/kernel-region-provenance
                 (:kotoba.error/code (ex-data e)))
@@ -69,12 +69,12 @@
                  (defn main [] 0)")))))
 
 (deftest narrowings-are-reported-with-their-offsets
-  (let [hir (frontend/analyze
+  (let [hir (sema/analyze
              "(defn fnv [base length] (kernel-load-u8 base length 0))
               (defn static [base length] (fnv (kernel-subregion base length 48 16) 16))
               (defn dynamic [base length off] (fnv (kernel-subregion base length off 16) 16))
               (defn main [] 0)")
-        derived (:derived-bases (frontend/kernel-region-report (:functions hir)))
+        derived (:derived-bases (sema/kernel-region-report (:functions hir)))
         by-fn (into {} (map (juxt :function :offset-static?)) derived)]
     (is (= 2 (count derived)))
     (is (true? (get by-fn 'static)))
@@ -84,4 +84,4 @@
 
 (deftest arity-is-enforced
   (is (thrown? Exception
-               (frontend/analyze "(defn f [b l] (kernel-subregion b l 0)) (defn main [] 0)"))))
+               (sema/analyze "(defn f [b l] (kernel-subregion b l 0)) (defn main [] 0)"))))

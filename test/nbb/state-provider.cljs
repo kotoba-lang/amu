@@ -6,7 +6,7 @@
   Run from the repo root: `npm run test-nbb-state-provider`."
   (:require [kotoba.kir.admission :as admission]
             [kotoba.kir.cljs-i64 :as i64]
-            [kotoba.compiler.frontend :as frontend]
+            [kotoba.sema :as sema]
             [kotoba.kir :as ir]
             [provider.state :as state]
             [kotoba.compiler.reference-runtime :as runtime]))
@@ -19,7 +19,7 @@
 
 (defn- host []
   (let [provider (state/provider)
-        hir (frontend/analyze source)
+        hir (sema/analyze source)
         _ (admission/check hir {:allow #{[:cap/call (js/BigInt 8)]}})
         kir (ir/lower hir)]
     (runtime/instantiate kir {:allow #{8} :providers {8 provider}})))
@@ -83,7 +83,7 @@
 
 (defn- denial-case []
   (try
-    (let [hir (frontend/analyze source)
+    (let [hir (sema/analyze source)
           _ (admission/check hir {:allow #{[:cap/call (js/BigInt 8)]}})
           kir (ir/lower hir)
           runtime (runtime/instantiate kir)

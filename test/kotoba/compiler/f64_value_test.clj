@@ -3,7 +3,7 @@
             [clojure.test :refer [deftest is testing]]
             [kotoba.wasm.typed :as typed]
             [kotoba.compiler.core :as compiler]
-            [kotoba.compiler.frontend :as frontend]
+            [kotoba.sema :as sema]
             [kotoba.kir :as ir]
             [kotoba.kir.value :as value]))
 
@@ -20,7 +20,7 @@
   (shell/sh "node" "--input-type=module" "-e" javascript))
 
 (deftest f64-reference-semantics-preserve-special-values-and-bits
-  (let [hir (frontend/analyze source)
+  (let [hir (sema/analyze source)
         kir (ir/lower hir)]
     (is (= :kotoba.hir/v3 (:format hir)))
     (is (= :kotoba.kir/v4 (:format kir)))

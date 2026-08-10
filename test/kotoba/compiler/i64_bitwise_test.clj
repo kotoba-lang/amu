@@ -8,7 +8,7 @@
   emitted opcodes, so a future refactor cannot silently change either."
   (:require [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]
-            [kotoba.compiler.frontend :as frontend]
+            [kotoba.sema :as sema]
             [kotoba.kir :as ir]))
 
 (defn- oracle

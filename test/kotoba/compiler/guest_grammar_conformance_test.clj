@@ -2,19 +2,19 @@
   "ADR-2607180900 (com-junkawasaki/root): kotoba-lang/kotoba-lang's
   guest-grammar.edn is the sole authoritative form catalog; kotoba and
   compiler must consume it rather than silently invent divergent
-  forbidden/sugar sets. This locks that kotoba.compiler.frontend/forbidden-heads
+  forbidden/sugar sets. This locks that kotoba.compiler.sema/forbidden-heads
   actually reflects the catalog supplied by the pinned kotoba-sema dependency
   (kotoba/lang/guest-grammar.edn, refreshed from kotoba-lang/kotoba-lang's
   lang/guest-grammar.edn when the sema pin advances) instead of only the small
   hand-written baseline set -- a
   regression here means the classpath resource lookup in
-  kotoba.compiler.frontend/load-catalog-forbidden silently stopped finding
+  kotoba.compiler.sema/load-catalog-forbidden silently stopped finding
   the catalog (e.g. a moved/renamed resource) and forbidden-heads quietly
   fell back to the narrower hard-coded set."
   (:require [clojure.test :refer [deftest is]]
             [clojure.java.io :as io]
             [clojure.edn :as edn]
-            [kotoba.compiler.frontend :as frontend]))
+            [kotoba.sema :as sema]))
 
 (defn- catalog-forbidden-heads []
   (with-open [r (io/reader (io/resource "kotoba/lang/guest-grammar.edn"))]
@@ -27,7 +27,7 @@
     (is (seq catalog-heads)
         "catalog resource must actually resolve on the classpath -- an empty
          set here means load-catalog-forbidden silently found nothing")
-    (is (= catalog-heads (clojure.set/intersection catalog-heads frontend/forbidden-heads))
+    (is (= catalog-heads (clojure.set/intersection catalog-heads sema/forbidden-heads))
         "every catalog forbidden-head must appear in compiler's admitted
          forbidden-heads; a missing entry here is a silent safety regression,
          not a cosmetic mismatch")))

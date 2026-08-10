@@ -7,7 +7,7 @@
             [clojure.string :as str]
             [clojure.java.shell :as shell]
             [kotoba.compiler.core :as compiler]
-            [kotoba.compiler.frontend :as frontend]
+            [kotoba.sema :as sema]
             [kotoba.kir :as ir]
             [kotoba.kir.target :as target]
             [kotoba.kir.value :as value]))
@@ -36,7 +36,7 @@
 (deftest sealed-multi-arity-resolves-every-call-before-hir
   (let [source "(defn offset ([x] (offset x 1)) ([x delta] (+ x delta)))
                 (defn main [] (offset 40))"
-        hir (frontend/analyze source)
+        hir (sema/analyze source)
         functions (into {} (map (juxt :name identity) (:functions hir)))]
     (is (= 41 (oracle source)))
     (is (= ['offset$arity$1 'offset$arity$2 'main] (:exports hir)))
@@ -803,7 +803,7 @@
   (is (= 2 (oracle "(defn main [] (get (assoc (assoc {:a 1 :b 2} :a 3) :a 4) :b))"))))
 
 (deftest map-entry-count-is-admission-bounded
-  (with-redefs [frontend/max-list-items 1]
+  (with-redefs [sema/max-list-items 1]
     (is (some? (rejection-message "(defn main [] (get {:a 1 :b 2} :a))")))))
 
 (deftest typed-map-does-not-inject-legacy-pair-walk-helpers
@@ -1107,7 +1107,7 @@
       (is (= 31 (get-in compiled [:manifest :kotoba.artifact/limits :typed-map-entries])))
       (is (zero? (:exit probe)) (:err probe)))
     (is (= [[:option :i64] false]
-           (ir/execute (ir/lower (frontend/analyze
+           (ir/execute (ir/lower (sema/analyze
                                   (str "(defn main [] [:option :i64] "
                                        "(typed-map-get " type
                                        " (typed-map-new " type ") :missing))")))
@@ -1131,7 +1131,7 @@
                   (record-get person-type person :age))
                 (defn main [] :i64
                   (age (record person-type 42)))"
-        hir (frontend/analyze source)
+        hir (sema/analyze source)
         age (some #(when (= 'age (:name %)) %) (:functions hir))]
     (is (= 42 (oracle source)))
     (is (= [[:record :demo/person [[:age :i64]]]] (:param-types age))))

@@ -502,7 +502,7 @@
           (kotoba$typed-value! result-type ((:invoke provider) request)))))])
 
 (def default-ns-name
-  "KIR carries no `ns` name (frontend/analyze validates and discards the
+  "KIR carries no `ns` name (sema/analyze validates and discards the
   source `(ns ...)` form, see its own comment) -- every emitted module uses
   this fixed namespace unless the caller renames it in the returned source
   text themselves (an ns-name option is a natural follow-up, not needed for

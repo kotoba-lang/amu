@@ -19,7 +19,7 @@
   Run from the repo root: `npm run test-nbb-clock-transport`."
   (:require [kotoba.kir.admission :as admission]
             [kotoba.kir.cljs-i64 :as i64]
-            [kotoba.compiler.frontend :as frontend]
+            [kotoba.sema :as sema]
             [kotoba.kir :as ir]
             [provider.clock :as clock]
             [provider.clock-transport :as transport]
@@ -33,7 +33,7 @@
 
 (defn- hosted []
   (let [provider (clock/provider (transport/production-clock-source))
-        hir (frontend/analyze source)
+        hir (sema/analyze source)
         _ (admission/check hir {:allow #{[:cap/call (js/BigInt 7)]}})
         kir (ir/lower hir)]
     (runtime/instantiate kir {:allow #{7} :providers {7 provider}})))

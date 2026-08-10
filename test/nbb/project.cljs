@@ -1,5 +1,5 @@
 (ns test.nbb.project
-  (:require [kotoba.compiler.frontend :as frontend]
+  (:require [kotoba.sema :as sema]
             [kotoba.kir :as ir]
             [kotoba.compiler.project :as project]))
 
@@ -13,7 +13,7 @@
 
 (try
   (let [{:keys [source module-order]} (project/link-source sources 'example.app)
-        kir (ir/lower (frontend/analyze source))]
+        kir (ir/lower (sema/analyze source))]
     (assert (= ['example.text 'example.app] module-order))
     (assert (= "こんにちは、言葉" (ir/execute kir 'welcome ["言葉"])))
     (println "PASS safe-project-link"))

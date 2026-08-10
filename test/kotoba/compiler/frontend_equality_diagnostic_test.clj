@@ -5,11 +5,11 @@
   fleet-migration field evidence (com-junkawasaki/root ADR-2607241100 D2)
   showed the bare message costs a compile-debug cycle per project."
   (:require [clojure.test :refer [deftest is testing]]
-            [kotoba.compiler.frontend :as frontend]))
+            [kotoba.sema :as sema]))
 
 (defn- rejection-message [source]
   (try
-    (frontend/analyze source)
+    (sema/analyze source)
     nil
     (catch clojure.lang.ExceptionInfo error
       (ex-message error))))
@@ -33,11 +33,11 @@
 
 (deftest admitted-equality-types-are-unaffected
   (testing "i64 equality still analyzes"
-    (is (some? (frontend/analyze
+    (is (some? (sema/analyze
                 (str "(ns pilot.eq-i64 (:export [check])) "
                      "(defn check [] (if (= 1 2) 1 0))")))))
   (testing "keyword equality still analyzes"
-    (is (some? (frontend/analyze
+    (is (some? (sema/analyze
                 (str "(ns pilot.eq-kw (:export [check])) "
                      "(defn check [] (if (= :a :b) 1 0))")))))
   (testing "mismatched operand types still use the same-type rejection"

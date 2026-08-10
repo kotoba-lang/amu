@@ -6,7 +6,7 @@
   Run: `npm run test-nbb-llm-provider`."
   (:require [kotoba.kir.admission :as admission]
             [kotoba.kir.cljs-i64 :as i64]
-            [kotoba.compiler.frontend :as frontend]
+            [kotoba.sema :as sema]
             [kotoba.kir :as ir]
             [provider.llm :as llm]
             [kotoba.compiler.reference-runtime :as runtime]))
@@ -20,7 +20,7 @@
 (defn- hosted [transport]
   (let [provider (llm/provider {:allowed-models #{:example/text-v1}
                                 :transport transport})
-        hir (frontend/analyze source)
+        hir (sema/analyze source)
         _ (admission/check hir {:allow #{[:cap/call (js/BigInt 11)]}})
         kir (ir/lower hir)]
     (runtime/instantiate kir {:allow #{11} :providers {11 provider}})))
@@ -98,7 +98,7 @@
 
 (defn- denial-case []
   (try
-    (let [hir (frontend/analyze source)
+    (let [hir (sema/analyze source)
           _ (admission/check hir {:allow #{[:cap/call (js/BigInt 11)]}})
           kir (ir/lower hir)
           runtime (runtime/instantiate kir)

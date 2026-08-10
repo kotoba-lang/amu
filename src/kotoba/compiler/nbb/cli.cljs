@@ -19,7 +19,7 @@
   form) -- both are fixed here, not just the one conformance check that
   happened to catch it."
   (:require ["node:path" :as node-path]
-            [kotoba.compiler.frontend :as frontend]
+            [kotoba.sema :as sema]
             [kotoba.kir.admission :as admission]
             [kotoba.artifact.core :as artifact]
             [kotoba.native.aarch64 :as aarch64]
@@ -74,7 +74,7 @@
 ;; fast path reads, same scoping the JVM path's `bounded-edn/read-file`
 ;; has (`.kotoba` SOURCE itself goes through `kr/read-forms` with no depth
 ;; limit either, matching `clojure.tools.reader`'s own unbounded treatment
-;; of source in `kotoba.compiler.frontend`).
+;; of source through the public `kotoba.sema` API).
 (def ^:private max-policy-depth 128)
 (def ^:private max-policy-token-chars 4096)
 (def ^:private max-policy-nodes 200000)
@@ -222,7 +222,7 @@
       "check"
       (let [input (kotoba-source! (second args))
             src (io/read-text-file input)
-            hir (frontend/analyze src)
+            hir (sema/analyze src)
             policy (read-policy args)
             adm (admission/check hir policy)]
         (println (pr-str {:ok true :effects (:effects hir) :admission adm})))
@@ -238,7 +238,7 @@
             output (or (option args "--output")
                        (str input (if (= backend :wasm32-kotoba-v1) ".wasm" ".kexe")))
             src (io/read-text-file input)
-            hir (frontend/analyze src)
+            hir (sema/analyze src)
             policy (read-policy args)]
         (if (= backend :wasm32-kotoba-v1)
           (let [_ (admission/check hir policy)

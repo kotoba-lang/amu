@@ -18,7 +18,7 @@
 ;; go through this same function, so both get the tighter cap). Checked
 ;; against the RAW byte count before UTF-8 decoding, same order the JVM
 ;; path's `read-bytes` uses -- confirmed live: without this, a >1MiB
-;; `.kotoba` source silently reached `frontend/analyze`'s own (differently
+;; `.kotoba` source silently reached `sema/analyze`'s own (differently
 ;; worded) size check instead of failing here with the exact message
 ;; `scripts/conformance.cljs` asserts on.
 (def ^:private max-bytes (* 1024 1024))

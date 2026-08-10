@@ -17,14 +17,14 @@
   in a base position is rejected here as a result."
   (:require [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
-            [kotoba.compiler.frontend :as frontend]))
+            [kotoba.sema :as sema]))
 
 (defn- provenance-rejection
   "The rejection message when SOURCE is refused for region provenance, or nil
   when it is admitted. Rethrows any OTHER rejection so a test can never pass
   because the source was malformed for an unrelated reason."
   [source]
-  (try (frontend/analyze source) nil
+  (try (sema/analyze source) nil
        (catch Exception e
          (if (= :kotoba.error/kernel-region-provenance
                 (:kotoba.error/code (ex-data e)))
@@ -83,11 +83,11 @@
                   (defn main [] 0)"))))))
 
 (deftest report-names-the-abi-boundary
-  (let [hir (frontend/analyze
+  (let [hir (sema/analyze
              "(defn read-byte [base length index] (kernel-load-u8 base length index))
               (defn entry [base length] (read-byte base length 0))
               (defn main [] (kernel-load-u8 167772160 4096 0))")
-        report (frontend/kernel-region-report (:functions hir))]
+        report (sema/kernel-region-report (:functions hir))]
     (testing "literal windows are enumerated"
       (is (contains? (:literal-bases report) 167772160)))
     (testing "a base parameter no internal call supplies is the trust boundary"

@@ -2,7 +2,7 @@
   (:require [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]
-            [kotoba.compiler.frontend :as frontend]
+            [kotoba.sema :as sema]
             [kotoba.kir :as ir]
             [kotoba.compiler.project :as project]))
 
@@ -180,7 +180,7 @@
        (project/link-source
         {'example.text
          (str "(ns example.text "
-              (pr-str (apply str (repeat (inc frontend/max-namespace-docstring-chars) "x")))
+              (pr-str (apply str (repeat (inc sema/max-namespace-docstring-chars) "x")))
               " (:export [greet])) (defn greet [] 0)")}
         'example.text))))
 
@@ -415,12 +415,12 @@
         compiled (compiler/compile-source source :js-kotoba-v1
                                           {:allow #{[:cap/call 9] [:cap/call 10]}})]
     (testing "each module keeps its own declaration"
-      (is (= #{:ui/commit} (:capabilities (project/module-info (frontend/read-forms commit-source)))))
-      (is (= #{:ui/next-event} (:capabilities (project/module-info (frontend/read-forms poll-source)))))
+      (is (= #{:ui/commit} (:capabilities (project/module-info (sema/read-forms commit-source)))))
+      (is (= #{:ui/next-event} (:capabilities (project/module-info (sema/read-forms poll-source)))))
       ;; nil, not #{}: the app module writes no clause at all, and the
       ;; frontend distinguishes "no declaration to check" from "declares that
       ;; it uses nothing".
-      (is (nil? (:capabilities (project/module-info (frontend/read-forms caps-app-source))))))
+      (is (nil? (:capabilities (project/module-info (sema/read-forms caps-app-source))))))
     (testing "the linked namespace carries no :capabilities clause"
       ;; Bodies reach the linked unit already lowered to integer cap-calls,
       ;; which populate no used-keyword set; re-declaring the union would fail

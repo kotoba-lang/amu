@@ -1,6 +1,6 @@
 (ns kotoba.compiler.project
   (:require [clojure.string :as str]
-            [kotoba.compiler.frontend :as frontend]
+            [kotoba.sema :as sema]
             [kotoba.kir.value :as value]))
 
 (def max-project-modules 256)
@@ -23,7 +23,7 @@
   used by filesystem graph discovery; discovery and linking therefore cannot
   disagree on syntax.
 
-  `:capabilities` is admitted here because `frontend/namespace-parts` has
+  `:capabilities` is admitted here because `sema/namespace-parts` has
   always admitted it for a single-module compile -- without this clause a
   project could hold either multiple modules or a capability, never both,
   which put every effectful application outside project mode entirely. The
@@ -47,7 +47,7 @@
                                 [nil raw-clauses])]
       (when-not (and (simple-symbol? name) (not (str/blank? (str name))))
         (reject! "invalid project namespace" {:namespace name}))
-      (when (and docstring (> (count docstring) frontend/max-namespace-docstring-chars))
+      (when (and docstring (> (count docstring) sema/max-namespace-docstring-chars))
         (reject! "namespace docstring exceeds admission limit" {:namespace name}))
       (loop [remaining clauses exports nil requires [] capabilities nil]
         (if-let [clause (first remaining)]
@@ -59,7 +59,7 @@
             (and (seq? clause) (= :capabilities (first clause)) (= 2 (count clause))
                  (set? (second clause)) (nil? capabilities))
             (let [declared (second clause)]
-              (when (or (> (count declared) frontend/max-namespace-capabilities)
+              (when (or (> (count declared) sema/max-namespace-capabilities)
                         (not-every? #(and (keyword? %) (namespace %)) declared))
                 (reject! "namespace :capabilities must be a bounded set of namespaced keywords"
                          {:namespace name :capabilities declared}))
@@ -190,7 +190,7 @@
   always wins over a capability of the same name; a project can never have a
   capability silently displace a module it asked for."
   [op]
-  (contains? frontend/capability-registry
+  (contains? sema/capability-registry
              (keyword (namespace op) (name op))))
 
 (defn- resugar-capability-calls
@@ -319,8 +319,8 @@
         ;; Lambda IDs are artifact data. Give every source module a disjoint
         ;; range so the project-level dispatcher can route a closure back to
         ;; the module whose lifted helper owns that ID.
-        hir (frontend/analyze (source-text augmented)
-                              {:lambda-id-base (* module-index frontend/max-functions)})
+        hir (sema/analyze (source-text augmented)
+                              {:lambda-id-base (* module-index sema/max-functions)})
         stubs (set (vals import->stub))
         locals (vec (remove #(contains? stubs (:name %)) (:functions hir)))
         local-names (into {} (map-indexed (fn [function-index {:keys [name]}]
@@ -401,8 +401,8 @@
                  body
                  (reduce
                   (fn [fallback {:keys [name project-module-index]}]
-                    (let [lower (* project-module-index frontend/max-functions)
-                          upper (+ lower frontend/max-functions)
+                    (let [lower (* project-module-index sema/max-functions)
+                          upper (+ lower sema/max-functions)
                           id (list 'pair-first closure)]
                       (list 'if
                             (list 'and (list '> id lower) (list '<= id upper))
@@ -439,7 +439,7 @@
                   :literal-bytes (volatile! 0)}
         parsed (into {}
                      (map (fn [[declared source]]
-                            (let [forms (frontend/read-forms source)
+                            (let [forms (sema/read-forms source)
                                   _ (admit-project-forms! forms counters)
                                   info (module-info forms)]
                               (when-not (= declared (:namespace info))

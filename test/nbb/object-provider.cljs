@@ -6,7 +6,7 @@
   Linear Component v0.3 handles remain out of this slice.
   Run: `npm run test-nbb-object-provider`."
   (:require [kotoba.kir.admission :as admission]
-            [kotoba.compiler.frontend :as frontend]
+            [kotoba.sema :as sema]
             [kotoba.kir :as ir]
             [provider.object :as object]
             [kotoba.kir.value :as value]
@@ -35,7 +35,7 @@
   (let [kit (object/create-providers
              {:allowed-bindings #{:example/blocks :example/refs}
               :transport transport})
-        hir (frontend/analyze source)
+        hir (sema/analyze source)
         _ (admission/check hir {:allow #{[:cap/call (js/BigInt 14)]
                                          [:cap/call (js/BigInt 15)]
                                          [:cap/call (js/BigInt 16)]}})
@@ -123,7 +123,7 @@
 
 (defn- denial-case []
   (try
-    (let [hir (frontend/analyze source)
+    (let [hir (sema/analyze source)
           _ (admission/check hir {:allow #{[:cap/call (js/BigInt 14)]
                                            [:cap/call (js/BigInt 15)]
                                            [:cap/call (js/BigInt 16)]}})
@@ -261,7 +261,7 @@
   (let [provider (object/get-stream-provider
                   {:allowed-bindings #{:example/blocks}
                    :transport transport})
-        hir (frontend/analyze guest-poll-read-source)
+        hir (sema/analyze guest-poll-read-source)
         _ (admission/check hir {:allow #{[:cap/call (js/BigInt 14)]}})
         kir (ir/lower hir)]
     (runtime/instantiate kir {:allow #{14} :providers {14 provider}})))
@@ -330,7 +330,7 @@
   (let [kit (object/create-providers
              {:allowed-bindings #{:example/blocks :example/refs}
               :transport transport})
-        hir (frontend/analyze product-source)
+        hir (sema/analyze product-source)
         _ (admission/check hir {:allow #{[:cap/call (js/BigInt 14)]
                                          [:cap/call (js/BigInt 15)]
                                          [:cap/call (js/BigInt 16)]}})
