@@ -53,6 +53,7 @@
     (.deleteOnExit)))
 
 (defn- macos? [] (= "Mac OS X" (System/getProperty "os.name")))
+(defn- linux? [] (= "Linux" (System/getProperty "os.name")))
 
 (defn- host-isa []
   (case (str/lower-case (System/getProperty "os.arch"))
@@ -62,13 +63,27 @@
 
 (defn- cc-command
   "Build COMMAND for ISA. Apple's `cc -arch` selects a native/Rosetta slice;
-  GCC and Clang on Linux do not accept `-arch`, so the host ISA uses plain cc
-  there and non-host ISAs remain explicitly unavailable."
+  Linux uses an explicit GNU cross compiler for the non-host ISA. Cross-built
+  loaders are static so QEMU does not depend on a host-specific dynamic sysroot."
   [isa arch & args]
   (cond
     (macos?) (into ["cc" "-arch" arch] args)
     (= isa (host-isa)) (into ["cc"] args)
+    (linux?) (into [(case isa
+                      "x86_64" "x86_64-linux-gnu-gcc"
+                      "aarch64" "aarch64-linux-gnu-gcc")
+                    "-static"] args)
     :else nil))
+
+(defn- runner-command [isa executable & args]
+  (let [prefix (cond
+                 (or (macos?) (= isa (host-isa))) [executable]
+                 (linux?) [(case isa
+                             "x86_64" "qemu-x86_64"
+                             "aarch64" "qemu-aarch64")
+                           executable]
+                 :else nil)]
+    (when prefix (into prefix args))))
 
 (defn- buildable-and-runnable? [isa arch]
   (let [probe (tmp (str "kotoba-isa-probe-" isa ".c"))
@@ -77,7 +92,8 @@
     (spit probe "int main(void){return 7;}")
     (and command
          (zero? (:exit (apply shell/sh command)))
-         (= 7 (:exit (shell/sh (.getPath out)))))))
+         (let [runner (runner-command isa (.getPath out))]
+           (and runner (= 7 (:exit (apply shell/sh runner))))))))
 
 (defonce ^:private loaders
   (delay
@@ -90,7 +106,8 @@
                                              "tools/kexe_loader.c"
                                              "-o" (.getPath loader))
                          build (when command (apply shell/sh command))]
-                     (when (zero? (:exit build)) (.getPath loader))))]))))
+                     (when (zero? (:exit build))
+                       (runner-command isa (.getPath loader)))))]))))
 
 (defn- run-native
   ([isa source] (run-native isa source "-" {:allow #{}}))
@@ -102,9 +119,11 @@
      (with-open [out (io/output-stream code)]
        (.write out (byte-array (map #(unchecked-byte (bit-and (int %) 0xff))
                                     (:code artifact)))))
-     (:out (shell/sh (@loaders isa) (.getPath code) (str offset) "0" isa allow
-                     :env (assoc (into {} (System/getenv))
-                                 "KEXE_STRUCTURED_REPORT" "1"))))))
+     (:out (apply shell/sh
+                  (concat (@loaders isa)
+                          [(.getPath code) (str offset) "0" isa allow
+                           :env (assoc (into {} (System/getenv))
+                                       "KEXE_STRUCTURED_REPORT" "1")]))))))
 
 (def ^:private f64-one 4607182418800017408)
 (def ^:private f64-two 4611686018427387904)

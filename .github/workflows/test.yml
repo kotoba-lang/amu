@@ -121,6 +121,15 @@ jobs:
       - uses: DeLaGuardo/setup-clojure@4c7a6f613e5089821bb3bb2a33a3ee115578580d # 13.6.1
         with:
           cli: 1.12.5.1654
+      - name: Install non-host ISA toolchain
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          if [ "$(uname -m)" = "x86_64" ]; then
+            sudo apt-get install -y gcc-aarch64-linux-gnu qemu-user
+          else
+            sudo apt-get install -y gcc-x86-64-linux-gnu qemu-user
+          fi
       - uses: bytecodealliance/actions/wasm-tools/setup@7ee36389ead2e51422087f820a7e17e39811b05f # main
         with:
           # Must match kotoba.compiler.wasm-tools/version -- the default is
