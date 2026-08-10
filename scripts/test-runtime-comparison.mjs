@@ -9,11 +9,14 @@ import { fileURLToPath } from "node:url";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const directory = mkdtempSync(join(tmpdir(), "amu-runtime-comparison-test-"));
 const reportPath = join(directory, "report.json");
+const calls = 1_000;
+const warmupCalls = 50;
 
 try {
   const run = spawnSync(process.execPath,
     [join(root, "scripts", "runtime-comparison.mjs"),
-      "--runs", "1", "--calls", "20", "--warmup", "5", "--n", "5",
+      "--runs", "1", "--calls", String(calls),
+      "--warmup", String(warmupCalls), "--n", "5",
       "--output", reportPath],
     { cwd: root, encoding: "utf8", timeout: 600_000, maxBuffer: 32 * 1024 * 1024 });
   if (run.error) throw run.error;
@@ -30,6 +33,9 @@ try {
     const engine = report.engines[name];
     if (engine.runs !== 1 || engine.samples.length !== 1)
       throw new Error(`${name} did not produce one real sample`);
+    if (engine.samples[0].calls !== calls
+        || engine.samples[0].warmupCalls !== warmupCalls)
+      throw new Error(`${name} did not report the requested call counts`);
     if (!(engine.steadyStateNanosecondsPerKernel.median > 0)
         || !(engine.processWallMilliseconds.median > 0)
         || !(engine.slowdownVsRust > 0))
