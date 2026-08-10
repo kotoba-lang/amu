@@ -34,14 +34,15 @@ comparison control flow without a variant stack region. Variant boundary
 values, nested/non-scalar payloads, and a general aggregate ABI remain outside
 this slice; this is not a Rust-wide performance-parity claim.
 
-The pinned native closure now publishes aggregate-boundary contract v1. It
+The pinned native closure now publishes aggregate-boundary contract v2. It
 names the existing escaping-record representation precisely: one declaration-
 ordered pair-chain handle, owned by the host context and bounded by 4,096 arena
 cells. It also records that every register in the extracted allocator profile
-is call-clobbered. Extracted calls remain held until per-function frames, live-
-value preservation, parallel argument assignment, and the single-word return
-register are implemented. The pinned verifier consumes this vocabulary but
-keeps its admission predicate independently derived.
+is call-clobbered. Scalar direct calls now lower through GMIR/MIR/MC v3 with
+per-function frames, live-value preservation, parallel argument assignment,
+and a single-word return register. Record and variant values remain held at
+function boundaries. The pinned verifier consumes this vocabulary, re-emits a
+two-function module, and keeps its aggregate predicate independently derived.
 
 The first reproducible coverage snapshot can be audited with:
 
