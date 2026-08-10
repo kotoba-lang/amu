@@ -122,3 +122,60 @@ separate `KOTOBA_WORKER_STAGE_CACHE_ENTRIES` and
 error recovery, byte-identical artifact hits, policy-dependent admission, and
 HIR/KIR reuse. `npm run test-performance-baseline` verifies the report shape
 with real Wasm and host-native compiles.
+
+# Runtime comparison
+
+Amu carries one reproducible, cross-language runtime evidence contract. It
+builds and executes the same eight-round integer quotient/remainder mix in
+Amu native, Amu Wasm32, optimized Rust, warmed Clojure, and advanced-compiled
+ClojureScript:
+
+```sh
+npm run benchmark-runtime -- \
+  --runs 7 --calls 400 --warmup 10000 --n 200 \
+  --output runtime.json
+```
+
+The `kotoba.runtime-comparison/v1` report records every sample, the shared
+result, steady-state median and p95, process wall time, maximum RSS, artifact
+sizes, build durations, tool versions, host identity, compiler commit, and
+dirty-worktree state. The source variants live under
+`bench/runtime-comparison/`; `npm run test-runtime-comparison` builds and runs
+all five rather than accepting fixture JSON.
+
+The measurements are deliberately separated:
+
+- steady-state time covers repeated kernel calls after explicit warmup;
+- process wall time includes startup and is especially material for the JVM;
+- RSS is the operating system's per-process maximum, not retained heap;
+- artifact bytes are unlike-for-like only within the recorded packaging form.
+
+Wasm's sealed fuel budget permits at most 400 exported calls on the fresh
+measurement instance. Warmup is therefore split across separately admitted
+instances. The native number uses a separate benchmark-only runner that maps
+the verified extracted code W^X and invokes it directly; it bypasses the
+production fork, supervisor, and sandbox, so it is runtime throughput evidence
+and not a production safety-path claim. The production loader is not modified.
+
+## Development runtime evidence
+
+Compiler commit `3b45ae1` was measured from a dirty implementation worktree on
+2026-08-10 with seven samples on an Apple M4, Darwin arm64, Node v26.3.0,
+Rust 1.96.0, and Clojure CLI 1.12.5.1654. The common result was 1,830,338,420.
+These provisional figures will be superseded by a clean-commit run before the
+change is merged.
+
+| Engine | Steady-state median | Versus Rust | Process median | Maximum RSS median | Artifact |
+|---|---:|---:|---:|---:|---:|
+| Rust | 16.355 ns | 1.00x | 8.46 ms | 1.42 MiB | 350.5 KiB executable |
+| Amu native | 37.5 ns | 2.29x | 11.52 ms | 2.08 MiB | 1.62 KiB code / 7.60 KiB KEXE |
+| Amu Wasm32 | 128.02 ns | 7.83x | 180.17 ms | 52.81 MiB | 593 B Wasm |
+| Clojure | 312.395 ns | 19.10x | 1,399.18 ms | 123.84 MiB | 1.67 KiB source |
+| ClojureScript | 1,131.5625 ns | 69.19x | 136.62 ms | 50.58 MiB | 96.47 KiB JS |
+
+This workload says that Amu native is close enough to Rust to make a concrete
+optimization target visible, and that both Amu targets beat the two dynamic
+language paths on steady-state kernel time here. It does not establish those
+ratios for allocation, collections, strings, capabilities, I/O, concurrency,
+or whole applications. The benchmark contract and raw report are the claim;
+the table is only one machine-specific observation.
