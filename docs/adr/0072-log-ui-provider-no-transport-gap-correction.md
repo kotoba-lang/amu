@@ -200,7 +200,7 @@ branches also do not touch, and touches none of their files either.
   `src/kotoba/compiler/component_core.clj` (searched for
   `log-provider-wat`/`ui-provider-wat`/`state-provider-wat`) in full — not
   summarized from memory or from this task's own background note.
-- `gh pr list --repo kotoba-lang/compiler --state open` (run before writing
+- `gh pr list --repo kotoba-lang/amu --state open` (run before writing
   any code, from a fresh worktree created off `origin/main`): the only open
   PR is `#196` ("rescue: uncommitted WIP found on detached-HEAD worktree"),
   unrelated to `log`/`ui`/capability providers. No in-flight PR claims this

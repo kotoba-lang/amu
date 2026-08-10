@@ -123,7 +123,7 @@
     (is (= 8 (ir/execute (:kir compiled) 'main [])))))
 
 (deftest project-stubs-cover-scalar-f64-and-f32-export-results
-  ;; Regression for kotoba-lang/compiler#206 Bug 2: a cross-file :require of a
+  ;; Regression for kotoba-lang/amu#206 Bug 2: a cross-file :require of a
   ;; function whose declared result type is scalar :f64 (or :f32) failed at
   ;; :project-link with "project import result type has no closed stub value"
   ;; -- project/stub-value had :vector-f64 but no :f64 / :f32 case. Only the

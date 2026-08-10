@@ -25,7 +25,7 @@ it validates KIR, re-lowers it and requires exact code/hash equality even when
 an attacker has recomputed the outer seal.
 
 `kotoba-lang/num` owns numerical operator selection and runtime buffers;
-`kotoba-lang/compiler` owns typed kernel semantics and code generation. The
+`kotoba-lang/amu` owns typed kernel semantics and code generation. The
 compiler never depends on `num`, avoiding a dependency cycle. `num` pins a
 compiler revision and consumes verified artifacts.
 

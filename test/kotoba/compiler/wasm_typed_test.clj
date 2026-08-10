@@ -601,7 +601,7 @@
     (is (zero? (:exit probe)) (:err probe))))
 
 (deftest f64-scratch-locals-are-fully-declared-before-instantiation
-  ;; Regression for kotoba-lang/compiler#206 Bug 1: a typed function that
+  ;; Regression for kotoba-lang/amu#206 Bug 1: a typed function that
   ;; needs six-or-more f64 scratch locals (each `f64-from-bits` constant
   ;; allocates one for its NaN canonicalization) declared too few of them,
   ;; because the locals declaration read `@locals` before the lazy body
