@@ -3,7 +3,7 @@
   (:require [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]
             [kotoba.compiler.diagnostic :as diagnostic]
-            [kotoba.compiler.frontend :as frontend]
+            [kotoba.sema :as sema]
             [kotoba.kir :as kir]))
 
 (def claim-sub-src
@@ -24,13 +24,13 @@
 
 (defn- analyze-error [source opts]
   (try
-    (frontend/analyze source opts)
+    (sema/analyze source opts)
     nil
     (catch clojure.lang.ExceptionInfo e
       e)))
 
 (deftest pure-product-admits-pva-golden
-  (let [hir (frontend/analyze claim-sub-src {:language-profile :pure-product})]
+  (let [hir (sema/analyze claim-sub-src {:language-profile :pure-product})]
     (is (= :pure-product (:language-profile hir)))
     (is (empty? (:effects hir)))
     (is (some #{'claim-sub} (:exports hir)))))
@@ -68,7 +68,7 @@
   ;; Without pure-product, doseq is not auto-forbidden by this profile gate
   ;; (may still fail other admission). Just ensure analyze without profile
   ;; does not emit pure-product-forbidden for a simple pure program.
-  (let [hir (frontend/analyze
+  (let [hir (sema/analyze
              "(ns t (:export [f]))
 (defn f [x :i64] :i64 (+ x 1))")]
     (is (nil? (:language-profile hir)))

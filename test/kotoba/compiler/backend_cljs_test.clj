@@ -171,7 +171,7 @@
 ;; ───────────────────────── cap-call ─────────────────────────
 
 (deftest cap-call-with-no-dispatcher-installed-is-denied-fail-closed
-  ;; a capability POLICY that admits this cap-call at the frontend/admission
+  ;; a capability POLICY that admits this cap-call at the semantic admission
   ;; level -- so a throw here is genuinely this backend's OWN cljs-side
   ;; capability boundary (kotoba$cap-dispatch defaulting to nil), not the
   ;; earlier, stricter static admission gate short-circuiting first.

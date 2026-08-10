@@ -9,6 +9,17 @@
 (defn- fail! [message data]
   (throw (ex-info message (assoc data :phase :reference-runtime))))
 
+(defn- canonical-capability-id [id]
+  #?(:clj id
+     :cljs (js/BigInt id)))
+
+(defn- canonical-capability-options [allow providers]
+  [(into #{} (map canonical-capability-id) allow)
+   (into {}
+         (map (fn [[id provider]]
+                [(canonical-capability-id id) provider]))
+         providers)])
+
 (defn capability-contracts [kir]
   (let [contracts (->> (:functions kir)
                        (mapcat #(tree-seq coll? seq (:body %)))
@@ -30,9 +41,12 @@
      (fail! "reference runtime options are not exact" {:keys (set (keys options))}))
    (when-not (and (set? allow) (every? #(and (integer? %) (<= 0 % 255)) allow))
      (fail! "allow must be a set of capability ids" {:allow allow}))
-   (when-not (and (map? providers) (<= (count providers) max-providers))
-     (fail! "providers must be a bounded map" {}))
-   (let [contracts (capability-contracts kir)]
+   (when-not (and (map? providers)
+                  (<= (count providers) max-providers)
+                  (every? #(and (integer? %) (<= 0 % 255)) (keys providers)))
+     (fail! "providers must be a bounded map keyed by capability ids" {}))
+   (let [[allow providers] (canonical-capability-options allow providers)
+         contracts (capability-contracts kir)]
      (doseq [[id provider] providers]
        (when-not (and (contains? allow id)
                       (= #{:request-type :result-type :invoke} (set (keys provider)))

@@ -9,7 +9,7 @@
   Run from the repo root: `npm run test-nbb-log-provider`."
   (:require [kotoba.kir.admission :as admission]
             [kotoba.kir.cljs-i64 :as i64]
-            [kotoba.compiler.frontend :as frontend]
+            [kotoba.sema :as sema]
             [kotoba.kir :as ir]
             [provider.log :as log]
             [kotoba.compiler.reference-runtime :as runtime]))
@@ -26,7 +26,7 @@
 
 (defn- hosted []
   (let [kit (log/create-provider)
-        hir (frontend/analyze source)
+        hir (sema/analyze source)
         _ (admission/check hir {:allow #{[:cap/call (js/BigInt 5)] [:cap/call (js/BigInt 6)]}})
         kir (ir/lower hir)]
     {:kit kit
@@ -106,7 +106,7 @@
 
 (defn- denial-case []
   (try
-    (let [hir (frontend/analyze source)
+    (let [hir (sema/analyze source)
           _ (admission/check hir {:allow #{[:cap/call (js/BigInt 5)] [:cap/call (js/BigInt 6)]}})
           kir (ir/lower hir)
           runtime (runtime/instantiate kir)

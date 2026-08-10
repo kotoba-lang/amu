@@ -22,7 +22,7 @@
   (:require [clojure.java.io :as io]
             [clojure.string :as str]
             [kotoba.compiler.bounded-edn :as bounded-edn]
-            [kotoba.compiler.frontend :as frontend]
+            [kotoba.sema :as sema]
             [kotoba.compiler.project :as project]
             [multiformats.core :as mf])
   (:import [java.nio.file Files LinkOption Path]))
@@ -135,7 +135,7 @@
                         (reject! "required module is not pinned by the lock"
                                  {:module namespace}))
                 source (read-verified-source blocks-root cid)
-                info (project/module-info (frontend/read-forms source))
+                info (project/module-info (sema/read-forms source))
                 declared (:namespace info)]
             (when-not (= namespace declared)
               (reject! "locked module declares a different namespace"

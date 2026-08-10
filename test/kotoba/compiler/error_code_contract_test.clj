@@ -2,11 +2,11 @@
   "T3.1: explicit reject! codes + diagnostic preference over coarse phase codes."
   (:require [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.diagnostic :as diagnostic]
-            [kotoba.compiler.frontend :as frontend]))
+            [kotoba.sema :as sema]))
 
 (defn- catch-analyze [source]
   (try
-    (frontend/analyze source)
+    (sema/analyze source)
     nil
     (catch clojure.lang.ExceptionInfo e
       e)))

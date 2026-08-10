@@ -3,7 +3,7 @@
             [clojure.java.io :as io]
             [clojure.test :refer [deftest is]]
             [kotoba.compiler.core :as compiler]
-            [kotoba.compiler.frontend :as frontend]
+            [kotoba.sema :as sema]
             [kotoba.kir :as ir]
             [provider.clock :as clock]
             [provider.conformance :as conformance]
@@ -49,7 +49,7 @@
 (deftest all-reference-kits-share-one-closed-qualification
   (let [manifest (read-resource "kotoba/lang/provider-conformance-v1.edn")
         expected (->> (:kits manifest) (mapcat :capabilities) vec)
-        receipt (conformance/validate-suite! frontend/capability-registry (fixtures))]
+        receipt (conformance/validate-suite! sema/capability-registry (fixtures))]
     (is (= :kotoba.provider-conformance/v1 (:format receipt)))
     (is (= 9 (:capability-count receipt)))
     (is (= (set expected) (set (:capabilities receipt))))
@@ -67,16 +67,16 @@
     (is (thrown-with-msg?
          clojure.lang.ExceptionInfo #"provider map is not exact"
          (conformance/validate-provider!
-          frontend/capability-registry
+          sema/capability-registry
           (update valid :provider assoc :ambient-host true))))
     (is (thrown-with-msg?
          clojure.lang.ExceptionInfo #"not registered exactly"
          (conformance/validate-provider!
-          frontend/capability-registry (assoc valid :id 255))))
+          sema/capability-registry (assoc valid :id 255))))
     (is (thrown-with-msg?
          clojure.lang.ExceptionInfo #"duplicate ids"
          (conformance/validate-suite!
-          frontend/capability-registry [valid (assoc valid :name :clock/now)])))))
+          sema/capability-registry [valid (assoc valid :name :clock/now)])))))
 
 (def probe-request-type
   [:record :kotoba.conformance/request [[:value :string]]])

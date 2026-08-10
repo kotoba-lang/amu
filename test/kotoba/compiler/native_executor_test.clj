@@ -784,7 +784,7 @@
 ;; re-run `verifier/verify-artifact!` (confirmed by reading `signing.clj`),
 ;; and `signing/verify` runs on EVERY execution (`native-executor/execute`
 ;; calls it, not just once at compile time) -- so there is no way, at any
-;; layer, INCLUDING a hand-crafted artifact that bypasses `frontend/analyze`
+;; layer, INCLUDING a hand-crafted artifact that bypasses `sema/analyze`
 ;; entirely, to reach real `kexe-loader` execution with a variant
 ;; discriminant the type system did not itself validate as a declared
 ;; case's ordinal.
@@ -801,7 +801,7 @@
 ;; `@#'executor/run-process` above) with a literal ordinal (99) no admitted
 ;; `.kotoba` program could ever produce for a 3-case dispatch, wraps the
 ;; result in a minimal hand-assembled function (bypassing `emit-function`/
-;; `emit-program`/`frontend/analyze`/`verifier/verify-artifact!` entirely),
+;; `emit-program`/`sema/analyze`/`verifier/verify-artifact!` entirely),
 ;; and runs the resulting bytes through the SAME measured, real `kexe-
 ;; loader` native process every other deftest in this file uses -- proving
 ;; the fallback trap is REAL, present, byte-correct machine code, not merely

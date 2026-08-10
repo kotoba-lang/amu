@@ -1,7 +1,7 @@
 (ns kotoba.compiler.frontend-fuzz-test
   (:require [clojure.test :refer [deftest is]]
             [kotoba.compiler.core :as compiler]
-            [kotoba.compiler.frontend :as frontend]
+            [kotoba.sema :as sema]
             [kotoba.verifier :as verifier])
   (:import [java.util Random]))
 
@@ -27,7 +27,7 @@
 
 (defn- controlled-compile? [source]
   (try
-    (let [hir (frontend/analyze source)
+    (let [hir (sema/analyze source)
           policy {:allow (:effects hir)}
           results (into {} (map (fn [target]
                                   [target (compiler/compile-source source target policy)])
@@ -61,13 +61,13 @@
 
 (deftest frontend-admission-bounds-host-resource-inputs
   (is (thrown-with-msg? clojure.lang.ExceptionInfo #"source must be a string"
-                        (frontend/analyze nil)))
+                        (sema/analyze nil)))
   (is (thrown-with-msg? clojure.lang.ExceptionInfo #"reader nesting"
-                        (frontend/analyze
+                        (sema/analyze
                          (str (apply str (repeat 513 "(")) "0"
                               (apply str (repeat 513 ")"))))))
   (is (thrown-with-msg? clojure.lang.ExceptionInfo #"outside i64"
-                        (frontend/analyze
+                        (sema/analyze
                          "(defn main [] 9223372036854775808)")))
   (is (thrown-with-msg? clojure.lang.ExceptionInfo #"source reader rejected"
-                        (frontend/analyze "(defn main [] \"unterminated)"))))
+                        (sema/analyze "(defn main [] \"unterminated)"))))

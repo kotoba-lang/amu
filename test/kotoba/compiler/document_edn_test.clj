@@ -2,7 +2,7 @@
   (:require [clojure.java.shell :as shell]
             [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]
-            [kotoba.compiler.frontend :as frontend]
+            [kotoba.sema :as sema]
             [kotoba.kir :as ir]))
 
 (def source
@@ -126,7 +126,7 @@
        "console.log('ok');"))
 
 (deftest contextual-document-literal-elaborates-before-kir
-  (let [hir (frontend/analyze source)
+  (let [hir (sema/analyze source)
         bodies (into {} (map (juxt :name :body) (:functions hir)))]
     (is (= (get bodies 'contextual) (get bodies 'contextual-explicit))
         "explicit contextual syntax must elaborate to the constructor tree")
@@ -135,11 +135,11 @@
   (is (thrown-with-msg?
        clojure.lang.ExceptionInfo
        #"document requires exactly one closed literal tree"
-       (frontend/analyze "(defn main [] :document (document))")))
+       (sema/analyze "(defn main [] :document (document))")))
   (is (thrown-with-msg?
        clojure.lang.ExceptionInfo
        #"document literal exceeds depth limit"
-       (frontend/analyze
+       (sema/analyze
         "(defn main [] :document (document [[[[[[[[[nil]]]]]]]]]))"))))
 
 (deftest textual-edn-document-codec-is-backend-identical

@@ -10,13 +10,13 @@
             [clojure.string :as str]
             [kotoba.artifact.core :as artifact]
             [kotoba.compiler.core :as compiler]
-            [kotoba.compiler.frontend :as frontend]
+            [kotoba.sema :as sema]
             [kotoba.kir :as ir]))
 
 (def targets [:jvm-kir :js :wasm])
 
 (defn- harness-source [source]
-  (let [hir (frontend/analyze source)]
+  (let [hir (sema/analyze source)]
     (if (some #(= 'main (:name %)) (:functions hir))
       source
       ;; The admitted Wasm browser host requires the conventional `main`
@@ -119,7 +119,7 @@
   expectations."
   [source]
   (let [source (harness-source source)
-        checked {:hir (frontend/analyze source)}
+        checked {:hir (sema/analyze source)}
         policy (test-policy checked)
         js (compiler/compile-source source :js-kotoba-v1 policy)
         wasm (compiler/compile-source source :wasm32-kotoba-v1 policy)

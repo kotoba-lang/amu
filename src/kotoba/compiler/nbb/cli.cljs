@@ -4,7 +4,7 @@
   x86-64 code and vice versa."
   (:require [kotoba.compiler.nbb.cli-support :as support]
             [kotoba.compiler.nbb.compile-cache :as compile-cache]
-            [kotoba.compiler.frontend :as frontend]
+            [kotoba.sema :as sema]
             [kotoba.compiler.nbb.io :as io]
             [kotoba.kir.admission :as admission]
             [kotoba.artifact.core :as artifact]
@@ -49,7 +49,7 @@
 (defn- resolve-hir! [source stage-cache]
   (support/timed "frontend"
                  #(compile-cache/resolve-stage!
-                   stage-cache :hir source (fn [] (frontend/analyze source)))))
+                   stage-cache :hir source (fn [] (sema/analyze source)))))
 
 (defn- resolve-kir! [hir stage-cache]
   (support/timed "kir-lower"

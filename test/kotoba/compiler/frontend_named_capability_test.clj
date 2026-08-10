@@ -2,14 +2,14 @@
   "Tests for ADR-2607182410: named `cap-call` capabilities. A `.kotoba`
   program may write `(cap-call :identity/sign msg)` instead of a magic
   integer -- the keyword is resolved against
-  `kotoba.compiler.frontend/capability-registry` at parse/desugar time,
+  `kotoba.compiler.sema/capability-registry` at parse/desugar time,
   strictly BEFORE HIR/KIR construction, so every assertion below is really
   checking that nothing downstream (HIR :functions/:effects,
   admission.cljc) can tell the two forms apart."
   (:require [clojure.test :refer [deftest is]]
             [kotoba.abi.contract :as abi]
             [kotoba.compiler.core :as compiler]
-            [kotoba.compiler.frontend :as frontend]))
+            [kotoba.sema :as sema]))
 
 (defn- rejection-message [source]
   (try (compiler/check-source source) nil
@@ -21,25 +21,25 @@
 ;; fails this test loudly instead of silently changing what the other
 ;; assertions below actually exercise.
 (deftest registry-seeds-identity-sign-as-id-1
-  (is (= 1 (get frontend/capability-registry :identity/sign))))
+  (is (= 1 (get sema/capability-registry :identity/sign))))
 
 (deftest registry-covers-the-shared-typed-v03-operation-set
   (is (= abi/typed-capability-ids
-         (->> frontend/capability-registry
+         (->> sema/capability-registry
               (keep (fn [[_ id]]
                       (when (contains? abi/typed-capability-ids id) id)))
               set)))
-  (is (= 13 (get frontend/capability-registry :http/get-stream)))
-  (is (= 16 (get frontend/capability-registry
+  (is (= 13 (get sema/capability-registry :http/get-stream)))
+  (is (= 16 (get sema/capability-registry
                  :object/compare-and-set-ref)))
-  (is (= 17 (get frontend/capability-registry :http/accept)))
-  (is (= 18 (get frontend/capability-registry :http/reply)))
+  (is (= 17 (get sema/capability-registry :http/accept)))
+  (is (= 18 (get sema/capability-registry :http/reply)))
   ;; T8.3 ops kits — catalog authority ids 19–23 (provider kits; ADR 0198)
-  (is (= 19 (get frontend/capability-registry :fs/transact)))
-  (is (= 20 (get frontend/capability-registry :process/spawn)))
-  (is (= 21 (get frontend/capability-registry :secret/get)))
-  (is (= 22 (get frontend/capability-registry :git/run)))
-  (is (= 23 (get frontend/capability-registry :entropy/draw))))
+  (is (= 19 (get sema/capability-registry :fs/transact)))
+  (is (= 20 (get sema/capability-registry :process/spawn)))
+  (is (= 21 (get sema/capability-registry :secret/get)))
+  (is (= 22 (get sema/capability-registry :git/run)))
+  (is (= 23 (get sema/capability-registry :entropy/draw))))
 
 (deftest linear-task-stream-types-are-admitted-only-as-direct-moves
   (let [checked

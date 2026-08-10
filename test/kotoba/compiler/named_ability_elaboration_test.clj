@@ -1,7 +1,7 @@
 (ns kotoba.compiler.named-ability-elaboration-test
   (:require [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]
-            [kotoba.compiler.frontend :as frontend]))
+            [kotoba.sema :as sema]))
 
 (def ^:private schemas
   "(:schemas
@@ -67,7 +67,7 @@
            (let [response (http/post request)] response))"))))
 
 (deftest catalog-drives-both-source-and-wire-resolution
-  (is (= :http/post (get frontend/source-operation-registry 'http/post)))
-  (is (= 4 (get frontend/capability-registry :http/post)))
-  (is (= (set (keys frontend/capability-registry))
-         (set (vals frontend/source-operation-registry)))))
+  (is (= :http/post (get sema/source-operation-registry 'http/post)))
+  (is (= 4 (get sema/capability-registry :http/post)))
+  (is (= (set (keys sema/capability-registry))
+         (set (vals sema/source-operation-registry)))))

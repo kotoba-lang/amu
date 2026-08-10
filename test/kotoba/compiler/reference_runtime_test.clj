@@ -22,6 +22,8 @@
     (is (= "hello!" ((:invoke host) 'invoke ["hello"])))))
 
 (deftest provider-contracts-are-closed-and-deny-by-default
+  (is (thrown-with-msg? clojure.lang.ExceptionInfo #"keyed by capability ids"
+                        (runtime/instantiate (kir) {:providers {:http/post {}}})))
   (is (thrown-with-msg? clojure.lang.ExceptionInfo #"does not match"
                         (runtime/instantiate
                          (kir)

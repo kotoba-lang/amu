@@ -3,8 +3,8 @@
 
   A namespace nothing requires is either dead or untested, and both are worth
   knowing about. This is a require-graph reachability check, not a name-matching
-  one: `kotoba.compiler.frontend` has no `frontend_test.clj` and is nonetheless
-  the most heavily exercised namespace in the repo.
+  one: external `kotoba.sema` owns semantic analysis, while this graph verifies
+  that every orchestration namespace remaining under `src` is exercised.
 
   Measured 2026-07-31: 32 of 34 reachable. The two that were not (named here
   without their prefix on purpose -- see below):
@@ -57,6 +57,24 @@
                    (when-let [n (declared-ns f)]
                      [n (into #{} (map symbol) (re-seq ns-pattern (slurp f)))])))
         (clj-files root)))
+
+(deftest consumers-use-the-public-sema-boundary
+  (let [implementation-ns (str "kotoba.compiler." "frontend")
+        dependency-pattern (re-pattern
+                            (str "\\[" (java.util.regex.Pattern/quote implementation-ns)
+                                 "(?:\\s|\\])"))
+        consumers (concat (clj-files "src")
+                          (remove #(= "namespace_reachability_test.clj"
+                                      (.getName ^java.io.File %))
+                                  (clj-files "test")))
+        violations (->> consumers
+                        (filter #(re-find dependency-pattern (slurp %)))
+                        (map #(.getPath ^java.io.File %))
+                        sort
+                        vec)]
+    (is (empty? violations)
+        (str "consumers must depend on public kotoba.sema, not its implementation: "
+             (pr-str violations)))))
 
 (deftest every-source-namespace-is-reachable-from-the-tests
   (let [src (graph "src")

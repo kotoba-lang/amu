@@ -4,7 +4,7 @@
   `option-value-of` representation."
   (:require [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]
-            [kotoba.compiler.frontend :as frontend]
+            [kotoba.sema :as sema]
             [kotoba.kir :as ir]))
 
 (defn- compile-kir [source]
@@ -49,7 +49,7 @@
         "(ns option.shape (:export [choose]))
          (defn choose [value [:option :string]] :string
            (option-or value \"fallback\"))"
-        hir (frontend/analyze source {:language-profile :pure-product})
+        hir (sema/analyze source {:language-profile :pure-product})
         body (:body (first (:functions hir)))]
     (is (= 'option-value-of (first body)))
     (is (= [:option :string] (second body)))
@@ -75,7 +75,7 @@
              (some entry
                (let [key (hetero-vector-at entry-type entry 0)]
                  (option-or (typed-map-get map-type values key) false)))))"
-        hir (frontend/analyze source {:language-profile :pure-product})
+        hir (sema/analyze source {:language-profile :pure-product})
         body (:body (first (:functions hir)))]
     (is (not-any? #{'option-or} (tree-seq coll? seq body)))
     (is (some #{'option-value-of} (tree-seq coll? seq body)))))
@@ -96,7 +96,7 @@
               (match-variant value variant-type
                 (:present payload (option-or payload 0))
                 (:absent ignored 0)))"]]
-    (let [hir (frontend/analyze source {:language-profile :pure-product})
+    (let [hir (sema/analyze source {:language-profile :pure-product})
           body (:body (first (:functions hir)))]
       (is (not-any? #{'option-or} (tree-seq coll? seq body)))
       (is (some #{'option-value-of} (tree-seq coll? seq body))))))
@@ -105,11 +105,11 @@
   (testing "the type-directed surface fails closed before lowering"
     (is (thrown-with-msg?
          clojure.lang.ExceptionInfo #"option-or requires an option value"
-         (frontend/analyze
+         (sema/analyze
           "(ns bad (:export [f])) (defn f [x :i64] :i64 (option-or x 0))"))))
   (testing "the existing type checker still owns fallback compatibility"
     (is (thrown-with-msg?
          clojure.lang.ExceptionInfo #"expression type mismatch"
-         (frontend/analyze
+         (sema/analyze
           "(ns bad (:export [f]))
            (defn f [x [:option :string]] :string (option-or x 0))")))))

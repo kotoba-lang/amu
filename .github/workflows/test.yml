@@ -148,6 +148,18 @@ jobs:
       - run: npm run test-compile-cache
       - run: npm run test-compiler-worker
       - run: npm run test-performance-baseline
+      - name: Test public sema consumers on the NBB host
+        run: |
+          npm run test-nbb-project
+          npm run test-nbb-clock-transport
+          npm run test-nbb-log-provider
+          npm run test-nbb-http-provider
+          npm run test-nbb-state-provider
+          npm run test-nbb-storage-provider
+          npm run test-nbb-ui-provider
+          npm run test-nbb-llm-provider
+          npm run test-nbb-object-provider
+          npm run test-nbb-http-ingress-provider
       - name: Test canonical ability adapter on ClojureScript
         run: |
           task_classpath="$(clojure -Spath)"

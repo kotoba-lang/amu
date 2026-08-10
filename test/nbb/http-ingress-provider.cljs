@@ -3,7 +3,7 @@
   Status uses JS bigint (canonical i64). Run: `npm run test-nbb-http-ingress-provider`."
   (:require [kotoba.kir.admission :as admission]
             [kotoba.kir.cljs-i64 :as i64]
-            [kotoba.compiler.frontend :as frontend]
+            [kotoba.sema :as sema]
             [kotoba.kir :as ir]
             [provider.http-ingress :as ingress]
             [kotoba.compiler.reference-runtime :as runtime]))
@@ -24,7 +24,7 @@
 
 (defn- hosted []
   (let [kit (ingress/create-provider)
-        hir (frontend/analyze source)
+        hir (sema/analyze source)
         _ (admission/check hir {:allow #{[:cap/call (js/BigInt 17)]
                                          [:cap/call (js/BigInt 18)]}})
         kir (ir/lower hir)]
@@ -108,7 +108,7 @@
 
 (defn- denial-case []
   (try
-    (let [hir (frontend/analyze source)
+    (let [hir (sema/analyze source)
           _ (admission/check hir {:allow #{[:cap/call (js/BigInt 17)]
                                            [:cap/call (js/BigInt 18)]}})
           kir (ir/lower hir)
@@ -128,7 +128,7 @@
 (defn- multi-inflight-case []
   (try
     (let [kit (ingress/create-provider {:max-queue-depth 3})
-          hir (frontend/analyze source)
+          hir (sema/analyze source)
           _ (admission/check hir {:allow #{[:cap/call (js/BigInt 17)]
                                            [:cap/call (js/BigInt 18)]}})
           kir (ir/lower hir)

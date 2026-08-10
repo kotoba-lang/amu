@@ -1,7 +1,7 @@
 (ns kotoba.compiler.typed-capability-test
   (:require [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]
-            [kotoba.compiler.frontend :as frontend]
+            [kotoba.sema :as sema]
             [kotoba.kir :as ir]))
 
 (def source
@@ -80,7 +80,7 @@
            (typed-cap-call :http/post :document :document nil))
          (defn forward [request :document] :document
            (typed-cap-call 4 :document :document request))"
-        hir (frontend/analyze source)
+        hir (sema/analyze source)
         bodies (into {} (map (juxt :name :body) (:functions hir)))
         kir (ir/lower (:hir (compiler/check-source source {:allow #{[:cap/call 4]}})))
         expected (ir/execute kir 'expected [])

@@ -24,7 +24,7 @@
      names, so per-module isolation is unchanged."
   (:require [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]
-            [kotoba.compiler.frontend :as frontend]
+            [kotoba.sema :as sema]
             [kotoba.compiler.project :as project]))
 
 ;; The same program, written once as a single file and once split across two
@@ -77,8 +77,8 @@
     (is (string? (linked-source)))))
 
 (deftest the-typed-ability-and-effect-are-identical-either-way
-  (let [single (frontend/analyze single-source)
-        project (frontend/analyze (linked-source))]
+  (let [single (sema/analyze single-source)
+        project (sema/analyze (linked-source))]
     (testing "inferred effect closure"
       (is (= #{[:cap/call 7]} (:effects single)))
       (is (= (:effects single) (:effects project))))
@@ -91,8 +91,8 @@
             module, exactly as it does through a call within one file"
     (let [entry-effects (fn [hir] (some #(when (= 'main (:name %)) (:effects %))
                                         (:functions hir)))]
-      (is (= #{[:cap/call 7]} (entry-effects (frontend/analyze single-source))))
-      (is (= #{[:cap/call 7]} (entry-effects (frontend/analyze (linked-source))))))))
+      (is (= #{[:cap/call 7]} (entry-effects (sema/analyze single-source))))
+      (is (= #{[:cap/call 7]} (entry-effects (sema/analyze (linked-source))))))))
 
 (defn- admission-missing
   "check-source throws on denial rather than returning a diagnostic, so the
@@ -122,8 +122,8 @@
             still carries. Without it, :named-operations came out empty for a
             project build where a single file reported #{:clock/now}, and a
             diagnostic could not name the operation the author wrote."
-    (let [single (frontend/analyze single-source)
-          project (frontend/analyze (linked-source))]
+    (let [single (sema/analyze single-source)
+          project (sema/analyze (linked-source))]
       (is (= #{:clock/now} (:named-operations single)))
       (is (= (:named-operations single) (:named-operations project)))
       (is (= :clock/now (:source-operation (meta (ability-call single)))))

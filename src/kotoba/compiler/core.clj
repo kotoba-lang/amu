@@ -1,6 +1,6 @@
 (ns kotoba.compiler.core
   (:require [clojure.walk :as walk]
-            [kotoba.compiler.frontend :as frontend]
+            [kotoba.sema :as sema]
             [kotoba.kir.compatibility :as compatibility]
             [kotoba.compiler.provenance :as provenance]
             [kotoba.compiler.cache :as cache]
@@ -251,7 +251,7 @@
          admission-policy (dissoc policy :language-profile)
          analyze-opts (cond-> {}
                         language-profile (assoc :language-profile language-profile))
-         hir (frontend/analyze source analyze-opts)]
+         hir (sema/analyze source analyze-opts)]
      (try
        {:hir hir
         :admission (admit! hir admission-policy)
@@ -303,7 +303,7 @@
   package. This does not claim to emit a Component binary."
   ([source] (compile-component-wit source {}))
   ([source policy]
-   (let [hir (frontend/analyze source)
+   (let [hir (sema/analyze source)
          checked (admit! hir policy)
          kir (component-kir (ir/lower hir))]
      (assoc (component-wit/emit kir) :admission checked))))
@@ -348,7 +348,7 @@
              (throw (ex-info "Component capability mode is unsupported"
                              {:phase :component-capability-mode
                               :capability-mode capability-mode})))
-         hir (frontend/analyze source
+         hir (sema/analyze source
                                (cond-> {}
                                  admit-linked-synthetics?
                                  (assoc :admit-linked-synthetics? true)))
@@ -446,7 +446,7 @@
         backend (target-profile/backend target)
         language-profile (or (:language-profile emit-metadata)
                              (:language-profile policy))
-        hir (frontend/analyze source (cond-> {}
+        hir (sema/analyze source (cond-> {}
                                        language-profile (assoc :language-profile language-profile)
                                        (:admit-linked-synthetics? emit-metadata)
                                        (assoc :admit-linked-synthetics? true)))

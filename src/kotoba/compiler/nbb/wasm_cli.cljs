@@ -4,7 +4,7 @@
   in this namespace's dependency closure."
   (:require [kotoba.compiler.nbb.cli-support :as support]
             [kotoba.compiler.nbb.compile-cache :as compile-cache]
-            [kotoba.compiler.frontend :as frontend]
+            [kotoba.sema :as sema]
             [kotoba.compiler.nbb.io :as io]
             [kotoba.kir :as ir]
             [kotoba.kir.admission :as admission]
@@ -19,7 +19,7 @@
 (defn- resolve-hir! [source stage-cache]
   (support/timed "frontend"
                  #(compile-cache/resolve-stage!
-                   stage-cache :hir source (fn [] (frontend/analyze source)))))
+                   stage-cache :hir source (fn [] (sema/analyze source)))))
 
 (defn- resolve-kir! [hir stage-cache]
   (support/timed "kir-lower"
@@ -42,7 +42,7 @@
       context (assoc :stage-cache {:hir (:cache hir-result)}))))
 
 (defn- compile-uncached! [args target output source]
-  (let [hir (support/timed "frontend" #(frontend/analyze source))
+  (let [hir (support/timed "frontend" #(sema/analyze source))
         policy (support/timed "policy-read" #(support/read-policy args))
         _ (support/timed "admission" #(admission/check hir policy))
         kir (support/timed "kir-lower" #(ir/lower hir))

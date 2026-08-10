@@ -1,6 +1,6 @@
 (ns kotoba.compiler.interface
   (:require [kotoba.artifact.core :as artifact]
-            [kotoba.compiler.frontend :as frontend]))
+            [kotoba.sema :as sema]))
 
 (def schema :kotoba.interface/v1)
 
@@ -8,7 +8,7 @@
   "Return the closed public contract of SOURCE. Bodies, constants, local names,
   paths and host details are deliberately excluded."
   [source]
-  (let [hir (frontend/analyze source)
+  (let [hir (sema/analyze source)
         exports (set (:exports hir))
         functions (->> (:functions hir)
                        (filter #(contains? exports (:name %)))

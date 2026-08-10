@@ -7,7 +7,7 @@
             [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.cli :as cli]
             [kotoba.compiler.core :as compiler]
-            [kotoba.compiler.frontend :as frontend])
+            [kotoba.sema :as sema])
   (:import [java.io StringWriter]))
 
 (defn- temp-kotoba-source!
@@ -43,7 +43,7 @@
 
 (deftest structured-diagnostic-has-stable-code-and-bounded-source-span
   (let [error (try
-                (frontend/analyze
+                (sema/analyze
                  "(defn main []\n  (forbidden-call 1))")
                 nil
                 (catch clojure.lang.ExceptionInfo error error))

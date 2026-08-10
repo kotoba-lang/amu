@@ -5,13 +5,13 @@
   `lang/malicious-source/*` (policy evaluator corpus). This suite pins the
   **compiler frontend** gate for the same security classes on guest source."
   (:require [clojure.test :refer [deftest is testing]]
-            [kotoba.compiler.frontend :as frontend]))
+            [kotoba.sema :as sema]))
 
 (defn- analyze-error
   ([source] (analyze-error source nil))
   ([source opts]
    (try
-     (frontend/analyze source opts)
+     (sema/analyze source opts)
      nil
      (catch clojure.lang.ExceptionInfo e
        e))))

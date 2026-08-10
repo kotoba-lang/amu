@@ -6,7 +6,7 @@
   emitted bytes are deliberately not treated as the language contract.
   Run from the repo root: `nbb test/nbb/run.cljs`."
   (:require ["node:fs" :as fs]
-            [kotoba.compiler.frontend :as frontend]
+            [kotoba.sema :as sema]
             [kotoba.kir.admission :as admission]
             [kotoba.kir :as ir]
             [kotoba.wasm.core :as wasm]
@@ -16,7 +16,7 @@
 
 (defn- compile-case [{:keys [source target policy]}]
   (let [src (.readFileSync fs source "utf8")
-        hir (frontend/analyze src)
+        hir (sema/analyze src)
         policy-value (if policy (first (kr/read-forms (.readFileSync fs policy "utf8"))) {})
         _ (admission/check hir policy-value)
         kir (ir/lower hir)]
@@ -24,7 +24,7 @@
 
 (defn- diagnostic-case []
   (try
-    (frontend/analyze "(defn main []\n  (forbidden-call 1))")
+    (sema/analyze "(defn main []\n  (forbidden-call 1))")
     {:name "structured-diagnostic" :ok? false :detail "unsafe source was admitted"}
     (catch :default error
       (let [value (diagnostic/from-error error "program.cljk")
@@ -41,7 +41,7 @@
 
 (defn- named-operation-case []
   (try
-    (let [hir (frontend/analyze
+    (let [hir (sema/analyze
                "(ns demo (:capabilities #{:http/post}))
                 (defn main [] :i64 (http/post 41))")
           body (get-in hir [:functions 0 :body])

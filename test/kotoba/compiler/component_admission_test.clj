@@ -5,7 +5,7 @@
             [clojure.string :as str]
             [kotoba.component.admission :as admission]
             [kotoba.wasm.core :as wasm]
-            [kotoba.compiler.frontend :as frontend]
+            [kotoba.sema :as sema]
             [kotoba.kir :as ir]
             [kotoba.kir.target :as target-profile]
             [kotoba.compiler.core :as compiler])
@@ -13,7 +13,7 @@
 
 (def ^:private scalar-source "(ns t) (defn main [] 42)")
 
-(defn- kir [source] (ir/lower (frontend/analyze source)))
+(defn- kir [source] (ir/lower (sema/analyze source)))
 
 (defn- hex [bytes]
   (apply str (map #(format "%02x" (bit-and (int %) 0xff)) bytes)))

@@ -6,7 +6,7 @@
   Run: `npm run test-nbb-storage-provider`."
   (:require [kotoba.kir.admission :as admission]
             [kotoba.kir.cljs-i64 :as i64]
-            [kotoba.compiler.frontend :as frontend]
+            [kotoba.sema :as sema]
             [kotoba.kir :as ir]
             [provider.storage :as storage]
             [kotoba.compiler.reference-runtime :as runtime]))
@@ -20,7 +20,7 @@
 (defn- hosted [transport]
   (let [provider (storage/provider {:storage-namespace :example/app-data
                                     :transport transport})
-        hir (frontend/analyze source)
+        hir (sema/analyze source)
         _ (admission/check hir {:allow #{[:cap/call (js/BigInt 12)]}})
         kir (ir/lower hir)]
     (runtime/instantiate kir {:allow #{12} :providers {12 provider}})))
@@ -103,7 +103,7 @@
 
 (defn- denial-case []
   (try
-    (let [hir (frontend/analyze source)
+    (let [hir (sema/analyze source)
           _ (admission/check hir {:allow #{[:cap/call (js/BigInt 12)]}})
           kir (ir/lower hir)
           runtime (runtime/instantiate kir)

@@ -3,7 +3,7 @@
   (:require [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]
             [kotoba.compiler.diagnostic :as diagnostic]
-            [kotoba.compiler.frontend :as frontend]))
+            [kotoba.sema :as sema]))
 
 (def pure-ok
   "(ns demo (:export [main]))\n(defn main [] :i64 (+ 1 2))\n")
@@ -39,7 +39,7 @@
 
 (deftest format-human-includes-code-and-message
   (try
-    (frontend/analyze pure-caps-bad {:language-profile :pure-product})
+    (sema/analyze pure-caps-bad {:language-profile :pure-product})
     (is false)
     (catch clojure.lang.ExceptionInfo e
       (let [s (diagnostic/format-human e "demo.kotoba")]

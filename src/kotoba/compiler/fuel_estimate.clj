@@ -2,7 +2,7 @@
   "T7.3: crude compile-time fuel estimate (function-entry charge model, T7.2).
 
   Best-effort only — not a sound WCET analysis."
-  (:require [kotoba.compiler.frontend :as frontend]
+  (:require [kotoba.sema :as sema]
             [clojure.string :as str]))
 
 (defn- walk-forms [form f]
@@ -35,7 +35,7 @@
      cap-call typed-cap-call})
 
 (defn estimate-hir
-  "Estimate from analyzed HIR map (frontend/analyze result)."
+  "Estimate from analyzed HIR map (sema/analyze result)."
   [hir]
   (let [fns (or (:functions hir) (:defs hir) [])
         ;; frontend analyze returns :functions as map or list depending on path
@@ -69,7 +69,7 @@
   "Analyze source and return crude fuel estimate."
   ([source] (estimate-source source nil))
   ([source opts]
-   (let [hir (frontend/analyze source opts)]
+   (let [hir (sema/analyze source opts)]
      (assoc (estimate-hir hir)
             :exports (:exports hir)
             :language-profile (:language-profile hir)))))

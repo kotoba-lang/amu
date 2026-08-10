@@ -9,7 +9,7 @@
   Run from the repo root: `npm run test-nbb-http-provider`."
   (:require [kotoba.kir.admission :as admission]
             [kotoba.kir.cljs-i64 :as i64]
-            [kotoba.compiler.frontend :as frontend]
+            [kotoba.sema :as sema]
             [kotoba.kir :as ir]
             [provider.http :as http]
             [kotoba.kir.value :as value]
@@ -24,7 +24,7 @@
 (defn- hosted [transport]
   (let [provider (http/provider {:allowed-origins #{"https://api.example.test"}
                                  :transport transport})
-        hir (frontend/analyze source)
+        hir (sema/analyze source)
         _ (admission/check hir {:allow #{[:cap/call (js/BigInt 4)]}})
         kir (ir/lower hir)]
     (runtime/instantiate kir {:allow #{4} :providers {4 provider}})))
@@ -116,7 +116,7 @@
 
 (defn- denial-case []
   (try
-    (let [hir (frontend/analyze source)
+    (let [hir (sema/analyze source)
           _ (admission/check hir {:allow #{[:cap/call (js/BigInt 4)]}})
           kir (ir/lower hir)
           runtime (runtime/instantiate kir)
@@ -143,7 +143,7 @@
 (defn- hosted-get-stream [transport]
   (let [provider (http/get-stream-provider {:allowed-origins #{"https://api.example.test"}
                                             :transport transport})
-        hir (frontend/analyze get-stream-source)
+        hir (sema/analyze get-stream-source)
         _ (admission/check hir {:allow #{[:cap/call (js/BigInt 13)]}})
         kir (ir/lower hir)]
     (runtime/instantiate kir {:allow #{13} :providers {13 provider}})))
@@ -274,7 +274,7 @@
   (let [provider (http/get-stream-provider
                   {:allowed-origins #{"https://api.example.test"}
                    :transport transport})
-        hir (frontend/analyze guest-poll-read-source)
+        hir (sema/analyze guest-poll-read-source)
         _ (admission/check hir {:allow #{[:cap/call (js/BigInt 13)]}})
         kir (ir/lower hir)]
     (runtime/instantiate kir {:allow #{13} :providers {13 provider}})))

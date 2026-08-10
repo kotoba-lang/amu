@@ -1,7 +1,7 @@
 (ns kotoba.compiler.record-protocol-static-dispatch-test
   (:require [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]
-            [kotoba.compiler.frontend :as frontend]
+            [kotoba.sema :as sema]
             [kotoba.compiler.test-profile :as test-profile]
             [kotoba.kir :as ir]))
 
@@ -43,6 +43,8 @@
     (is (= 42 (ir/execute (:kir (compile-fixture source)) 'main [])))))
 
 (deftest record-member-rewrite-respects-lexical-shadowing
+  ;; This is deliberately the one implementation-level compatibility probe;
+  ;; production and ordinary tests enter semantic analysis through kotoba.sema.
   (let [rewrite-member @(ns-resolve 'kotoba.compiler.frontend
                                     'rewrite-record-member-access)
         descriptor [:record 'kotoba.user/Box [[:x :i64]]]]
@@ -115,7 +117,7 @@
 (deftest extend-protocol-default-never-becomes-a-dynamic-fallback
   (is (thrown-with-msg?
        clojure.lang.ExceptionInfo #"statically known implemented record"
-       (frontend/analyze
+       (sema/analyze
         "(defprotocol Value (value [this]))
          (defrecord Box [x])
          (extend-protocol Value default (value [this] 9))
@@ -247,7 +249,7 @@
             #"binding conditional requires one binding and both"]]]
     (testing source
       (is (thrown-with-msg? clojure.lang.ExceptionInfo message
-                            (frontend/analyze source))))))
+                            (sema/analyze source))))))
 
 (deftest wide-defrecord-keeps-direct-and-map-construction-data-shaped
   (let [source
@@ -305,13 +307,13 @@
              [[:entry [:ref :demo.forward/Entry]]]]
             (:entry entry (string-length (:v entry)))))"
         compiled (compile-fixture source)
-        analyzed (frontend/analyze source {:language-profile :pure-product})]
+        analyzed (sema/analyze source {:language-profile :pure-product})]
     (is (= 2 (ir/execute (:kir compiled) 'main [])))
     (is (= [:record :demo.forward/Entry [[:k :string] [:v :string]]]
            (get (:schemas analyzed) :demo.forward/Entry))))
   (is (= [:record :demo.exact/Entry [[:value :string]]]
          (get (:schemas
-               (frontend/analyze
+               (sema/analyze
                 "(ns demo.exact
                    (:schemas {:demo.exact/Entry
                               [:record :demo.exact/Entry [[:value :string]]]
@@ -324,7 +326,7 @@
   (is (thrown-with-msg?
        clojure.lang.ExceptionInfo
        #"forward declaration must match exactly"
-       (frontend/analyze
+       (sema/analyze
         "(ns demo.collision
            (:schemas {:demo.collision/Box
                       [:record :demo.collision/Box [[:x :string]]]}))
@@ -373,4 +375,4 @@
             #"must not collide with declared functions"]]]
     (testing source
       (is (thrown-with-msg? clojure.lang.ExceptionInfo message
-                            (frontend/analyze source))))))
+                            (sema/analyze source))))))
