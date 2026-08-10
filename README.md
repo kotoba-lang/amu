@@ -19,6 +19,12 @@ The same document also defines a five-engine runtime comparison for Amu native,
 Amu Wasm, Rust, Clojure, and ClojureScript. Its ratios are evidence for one
 declared workload and host, not a universal language ranking.
 
+The pinned native path lowers scalar control values through versioned
+GMIR/MIR. MIR schedules complete single- and multi-phi predecessor edges as
+parallel copies: acyclic joins need no phi frame, while register cycles share
+one bounded temporary slot. Amu executes the resulting bytes on both x86-64
+and AArch64; it does not reconstruct or reorder the schedule.
+
 The first reproducible coverage snapshot can be audited with:
 
 ```bash
