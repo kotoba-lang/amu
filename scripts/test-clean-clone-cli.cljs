@@ -15,6 +15,7 @@
 (def fake-bin (.join path tmp "bin"))
 (def isolated-gitlibs (.join path tmp "gitlibs"))
 (def output (.join path tmp "named-capability.kexe"))
+(def normal-output (.join path tmp "named-capability-normal.kexe"))
 
 (defn- run! [command args options]
   (let [result (.spawnSync child command (clj->js args)
@@ -54,6 +55,16 @@
       (throw (js/Error. "clean-clone CLI used the JVM fallback")))
     (when-not (str/includes? stdout ":ok true")
       (throw (js/Error. (str "clean-clone CLI returned no success envelope\n" stdout))))
+    ;; The isolated invocation must not poison the shared classpath cache with
+    ;; paths under TMP, which are deleted when this test exits.
+    (run! (.join path root "bin" "kotoba")
+          ["-M" "compile" "examples/capability-named.kotoba"
+           "--target" "aarch64"
+           "--policy" "examples/capability-named.edn"
+           "--output" normal-output]
+          #js {:cwd root :env js/process.env})
+    (when-not (.existsSync fs normal-output)
+      (throw (js/Error. "normal CLI failed after isolated clean-clone invocation")))
     (println "PASS clean-clone named-capability native CLI without JVM fallback"))
   (finally
     (.rmSync fs tmp #js {:recursive true :force true})))
