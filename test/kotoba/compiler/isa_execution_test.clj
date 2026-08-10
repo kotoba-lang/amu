@@ -22,7 +22,8 @@
             [clojure.java.shell :as shell]
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
-            [kotoba.compiler.core :as compiler]))
+            [kotoba.compiler.core :as compiler]
+            [kotoba.native.machine-ir :as machine-ir]))
 
 ;; loader argv name -> [cc -arch value, compiler target]
 (def ^:private isas
@@ -508,6 +509,20 @@
                string-search-cases
                bool-parameter-cases
                boolean-literal-argument-cases)))
+
+(deftest value-position-if-consumer-plan-has-zero-phi-frame-traffic
+  (let [gmir (machine-ir/lower-kir-expression ['a] '(+ 1 (if a 2 3)))]
+    (doseq [target [:x86-64 :aarch64]]
+      (let [mc (machine-ir/compile-gmir target gmir)
+            encodings (keep :mc/encoding (:mc/instructions mc))]
+        (is (zero? (:mc/frame-slots mc)) target)
+        (is (= 2 (count (filter #(= (keyword (name target) "move") %) encodings)))
+            target)
+        (is (not-any? #(contains? #{(keyword (name target) "spill-load")
+                                    (keyword (name target) "spill-store")} %)
+                      encodings)
+            target)
+        (is (seq (machine-ir/encode-mc mc)) target)))))
 
 (deftest the-verified-surface-executes-identically-on-every-available-isa
   (let [available (into {} (remove (comp nil? val) @loaders))
