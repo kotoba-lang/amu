@@ -33,14 +33,6 @@
   (and (contains? #{:x86_64-kotoba-v1 :aarch64-kotoba-v1} (target/backend t))
        (nil? (:entry (target/profile t)))))
 
-(defn- assert-entryless-native-support-or-rejection! [source t]
-  (if (entryless-native-target? t)
-    (is (= {:format :kexe/v1 :target t}
-           (select-keys (compiler/compile-source source t) [:format :target])))
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo
-                          #"entryless libraries currently require"
-                          (compiler/compile-source source t)))))
-
 (deftest sealed-multi-arity-resolves-every-call-before-hir
   (let [source "(defn offset ([x] (offset x 1)) ([x delta] (+ x delta)))
                 (defn main [] (offset 40))"

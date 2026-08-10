@@ -51,7 +51,6 @@
     (.deleteOnExit)))
 
 (defn- macos? [] (= "Mac OS X" (System/getProperty "os.name")))
-(defn- linux? [] (= "Linux" (System/getProperty "os.name")))
 
 (defn- host-isa []
   (case (str/lower-case (System/getProperty "os.arch"))
@@ -61,27 +60,13 @@
 
 (defn- cc-command
   "Build COMMAND for ISA. Apple's `cc -arch` selects a native/Rosetta slice;
-  Linux uses an explicit GNU cross compiler for the non-host ISA. Cross-built
-  loaders are static so QEMU does not depend on a host-specific dynamic sysroot."
+  GCC and Clang on Linux do not accept `-arch`, so the host ISA uses plain cc
+  there and non-host ISAs remain explicitly unavailable."
   [isa arch & args]
   (cond
     (macos?) (into ["cc" "-arch" arch] args)
     (= isa (host-isa)) (into ["cc"] args)
-    (linux?) (into [(case isa
-                      "x86_64" "x86_64-linux-gnu-gcc"
-                      "aarch64" "aarch64-linux-gnu-gcc")
-                    "-static"] args)
     :else nil))
-
-(defn- runner-command [isa executable & args]
-  (let [prefix (cond
-                 (or (macos?) (= isa (host-isa))) [executable]
-                 (linux?) [(case isa
-                             "x86_64" "qemu-x86_64"
-                             "aarch64" "qemu-aarch64")
-                           executable]
-                 :else nil)]
-    (when prefix (into prefix args))))
 
 (defn- buildable-and-runnable? [isa arch]
   (let [probe (tmp (str "kotoba-isa-probe-" isa ".c"))
@@ -90,8 +75,7 @@
     (spit probe "int main(void){return 7;}")
     (and command
          (zero? (:exit (apply shell/sh command)))
-         (let [runner (runner-command isa (.getPath out))]
-           (and runner (= 7 (:exit (apply shell/sh runner))))))))
+         (= 7 (:exit (shell/sh (.getPath out)))))))
 
 (defonce ^:private loaders
   (delay
@@ -99,25 +83,12 @@
           (for [[isa [arch _]] isas]
             [isa (when (buildable-and-runnable? isa arch)
                    (let [loader (tmp (str "kotoba-isa-loader-" isa ".bin"))
-                         cross-emulated? (and (linux?) (not= isa (host-isa)))
-                         ;; A QEMU user-mode process cannot install the guest
-                         ;; loader's seccomp filter: the kernel observes QEMU's
-                         ;; host-ISA syscalls, so the guest audit architecture
-                         ;; rejects the very next syscall. The outer CI job is
-                         ;; the isolation boundary for this cross-ISA semantics
-                         ;; check; native/production loaders retain all limits.
-                         flags (cond-> ["-std=c11" "-O2" "-Wall" "-Wextra" "-Werror"]
-                                 ;; Reuse the loader's established test-only
-                                 ;; switch for omitting in-process limits. It
-                                 ;; is also used by the sanitizer harness and
-                                 ;; leaves the canonical loader source intact.
-                                 cross-emulated? (conj "-DKEXE_SANITIZER_TEST=1"))
-                         command (apply cc-command isa arch
-                                        (concat flags ["tools/kexe_loader.c"
-                                                       "-o" (.getPath loader)]))
+                         command (cc-command isa arch "-std=c11" "-O2"
+                                             "-Wall" "-Wextra" "-Werror"
+                                             "tools/kexe_loader.c"
+                                             "-o" (.getPath loader))
                          build (when command (apply shell/sh command))]
-                     (when (zero? (:exit build))
-                       (runner-command isa (.getPath loader)))))]))))
+                     (when (zero? (:exit build)) (.getPath loader))))]))))
 
 (defn- run-native
   ([isa source] (run-native isa source "-" {:allow #{}}))
@@ -129,11 +100,9 @@
      (with-open [out (io/output-stream code)]
        (.write out (byte-array (map #(unchecked-byte (bit-and (int %) 0xff))
                                     (:code artifact)))))
-     (:out (apply shell/sh
-                  (concat (@loaders isa)
-                          [(.getPath code) (str offset) "0" isa allow
-                           :env (assoc (into {} (System/getenv))
-                                       "KEXE_STRUCTURED_REPORT" "1")]))))))
+     (:out (shell/sh (@loaders isa) (.getPath code) (str offset) "0" isa allow
+                     :env (assoc (into {} (System/getenv))
+                                 "KEXE_STRUCTURED_REPORT" "1"))))))
 
 (def ^:private f64-one 4607182418800017408)
 (def ^:private f64-two 4611686018427387904)

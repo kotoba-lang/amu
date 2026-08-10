@@ -1,6 +1,5 @@
 (ns kotoba.compiler.native-fuel-metadata-test
-  (:require [clojure.string :as str]
-            [clojure.test :refer [deftest is testing]]
+  (:require [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]))
 
 (def ^:private deep-source
