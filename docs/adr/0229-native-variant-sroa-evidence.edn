@@ -1,0 +1,33 @@
+{:adr/id :adr-0229-native-variant-sroa-evidence
+ :adr/title "Native scalar variant SROA evidence follows the pinned closure"
+ :adr/status :accepted
+ :adr/date "2026-08-11"
+ :adr/markdown "0229-native-variant-sroa-evidence.md"
+ :adr/decision
+ {:pins {:kotoba-native "d2e68785092229fef85e0e18e23534563cd80a82"
+         :kotoba-verifier "71c680f0c465f12e3d330d31056c413e00d65468"
+         :kotoba-codegen "58b923db72d3a1c984155eb93ebdcffbbe8885f2"
+         :kotoba-mir "30f9afacfc1cbbbb41956f893a9eca0a16934c1b"}
+  :variant-family {:escape :denied
+                   :payload-types [:i64 :bool]
+                   :minimum-cases 1
+                   :representation :tag-payload-ssa-bundle
+                   :constructor-evaluation :exactly-once
+                   :match-coverage :declaration-order-exhaustive}
+  :consumer-plan {:phis 4
+                  :frame-slots 0
+                  :spill-traffic 0}
+  :runtime {:branches [{:argument 1 :result 42 :case :number}
+                       {:argument 0 :result 7 :case :flag}]
+            :unselected-branch-trap false
+            :selected-branch-trap true
+            :constructor-payload-trap true
+            :targets [:x86-64 :aarch64]
+            :real-process true}
+  :verification {:tests 940 :assertions 7432 :failures 0 :errors 0}}
+ :adr/non-claims [:variant-boundary-abi
+                  :nested-aggregate-migration
+                  :record-payload-scalarization
+                  :general-aggregate-calling-convention
+                  :rust-wide-performance-parity
+                  :global-register-allocation]}

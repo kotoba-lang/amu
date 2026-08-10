@@ -739,17 +739,9 @@
                           (compiler/compile-source source (target))))
     (is (= :wasm/v1 (:format (compiler/compile-source source :wasm32-kotoba-v1))))))
 
-;; ADR 0063 fail-closed requirement (second vector, mirroring ADR 0062's own
-;; second vector exactly): `variant-match`'s value operand must be a
-;; DIRECTLY-nested, same-schema `variant-new` -- `emit-variant-match-of-new`
-;; has no runtime variant representation to fall back on, so anything else
-;; must be rejected with a clear compiler error, not silently miscompiled.
-;; This source passes ordinary frontend type checking (both `if` branches
-;; construct the SAME variant schema and case, so the `if` expression's own
-;; inferred type is that schema, same as a bare `variant-new` would be)
-;; specifically so it reaches the native backend's OWN narrow-shape check
-;; rather than being rejected earlier by an unrelated generic type error.
-(deftest native-variant-match-over-a-computed-non-nested-value-is-rejected-at-compile-time
+;; ADR 0229 closes ADR 0063's local computed-value gap. A same-schema scalar
+;; variant IF is now a tag/payload SSA bundle and reaches both production ISAs.
+(deftest native-variant-match-over-a-same-schema-scalar-if-emits-on-both-isas
   (let [schema (pr-str native-variant-schema)
         source (str
                 "(defn project [flag n]
@@ -759,9 +751,11 @@
                        (variant-new " schema " :count n))
                      [[:count v v] [:enabled v 0] [:disabled v 0] [:idle v 0]]))
                  (defn main [] 0)")]
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo
-                          #"variant-match is only supported directly over a matching variant-new construction on the native backend"
-                          (compiler/compile-source source (target))))))
+    (doseq [native-target [:x86_64-kotoba-v1 :aarch64-kotoba-v1]]
+      (let [artifact (:artifact (compiler/compile-source source native-target))]
+        (is (seq (:code artifact)) (name native-target))
+        (is (= :kotoba.kir/v4 (get-in artifact [:program :format]))
+            (name native-target))))))
 
 ;; ADR 0063 fail-closed requirement (third vector -- REAL native-process
 ;; trap evidence, not just a compile-time rejection): an out-of-range/
