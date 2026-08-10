@@ -602,6 +602,16 @@
         (is (str/includes? report (str ":result " expected))
             (str isa " argument=" argument " => " (str/trim report)))))))
 
+(deftest scalar-direct-call-preserves-a-live-caller-value
+  (let [source (str "(defn inc-one [x :i64] :i64 (+ x 1)) "
+                    "(defn main [] :i64 "
+                    "(let [live 40] (+ live (inc-one 1))))")]
+    (doseq [[isa loader] @loaders :when loader]
+      (testing isa
+        (let [report (run-native isa source)]
+          (is (not (str/includes? report "KEXE_TRAP")) (str/trim report))
+          (is (str/includes? report ":result 42") (str/trim report)))))))
+
 (deftest source-record-sroa-has-zero-frame-traffic-and-runs-both-edges
   (let [body (list '+
                    (list 'record-get (read-string scalar-pair-type) 'r :x)
