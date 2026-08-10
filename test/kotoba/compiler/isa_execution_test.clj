@@ -128,6 +128,8 @@
    ["let" "(defn main [] (let [a 3 b 4] (* a b)))" 12]
    ["ordered scalar do"
     "(defn main [] :i64 (do (+ 1 2) (quot 8 2) (* 3 4)))" 12]
+   ["ordered tail do"
+    "(defn main [] :i64 (do (+ 1 2) (quot 8 2) (if (< 1 2) 13 14)))" 13]
    ["bit-not" "(defn main [] (bit-not 5))" -6]
    ["bit-or" "(defn main [] (bit-or 5 2))" 7]
    ["i64 shift" "(defn main [] (i64-shift-left 1 5))" 32]
