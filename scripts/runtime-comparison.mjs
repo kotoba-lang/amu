@@ -107,6 +107,8 @@ function timedSample(engine, command, args, expected, env = {}) {
   const run = execute(executable, timedArgs, { env });
   const sample = parseSample(run.stdout, engine, expected);
   return {
+    calls: sample.calls,
+    warmupCalls: sample.warmupCalls,
     elapsedNanoseconds: sample.elapsedNanoseconds,
     nanosecondsPerKernel: sample.elapsedNanoseconds / sample.calls,
     processWallMilliseconds: run.wallMilliseconds,
