@@ -439,3 +439,24 @@
       (let [report (edn/read-string (str out))]
         (is (:ok report))
         (is (= :single-file (:kotoba.compile/inputs report)))))))
+
+(deftest every-dispatched-subcommand-is-in-the-cli-usage
+  ;; bin/kotoba prints the usage; kotoba.compiler.cli dispatches. Nothing kept
+  ;; them in step, and four subcommands had drifted out of --help entirely --
+  ;; test, module-lock, package-aiueos-boot and extract-native. `test` is the
+  ;; official .kotoba harness, so the way to run tests was reachable only by
+  ;; reading the dispatch.
+  ;;
+  ;; `worker` goes the other way and is fine: bin/kotoba routes it to the nbb
+  ;; entrypoint itself, so it never reaches this dispatch.
+  (let [cli-src (slurp (io/file "src/kotoba/compiler/cli.clj"))
+        usage-src (slurp (io/file "bin/kotoba"))
+        dispatched (into #{} (map second)
+                         (re-seq #"(?m)^    \"([a-z-]+)\"$" cli-src))
+        documented (into #{} (map second)
+                         (re-seq #"kotoba -M ([a-z-]+)" usage-src))
+        undocumented (remove documented dispatched)]
+    (is (seq dispatched) "no subcommands parsed out of the dispatch; the test is vacuous")
+    (is (empty? undocumented)
+        (str "subcommands the CLI dispatches but --help never mentions: "
+             (pr-str (sort undocumented))))))
