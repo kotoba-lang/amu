@@ -2,13 +2,16 @@
   "Shared ordinary-native CLI implementation. ISA-specific executable
   entrypoints inject exactly one emitter, so compiling AArch64 never loads
   x86-64 code and vice versa."
-  (:require [kotoba.compiler.nbb.cli-support :as support]
+  (:require [cljs.reader :as reader]
+            [clojure.walk :as walk]
+            [kotoba.compiler.nbb.cli-support :as support]
             [kotoba.compiler.nbb.compile-cache :as compile-cache]
             [kotoba.sema :as sema]
             [kotoba.compiler.nbb.io :as io]
             [kotoba.kir.admission :as admission]
             [kotoba.artifact.core :as artifact]
             [kotoba.kir.compatibility :as compatibility]
+            [kotoba.kir.cljs-i64 :as i64]
             [kotoba.kir :as ir]
             [kotoba.compiler.provenance :as provenance]
             [kotoba.kir.target :as target-profile]
@@ -222,6 +225,26 @@
         (if context
           (compile-cached! args source target backend output emit-program context)
           (compile-uncached! args source target backend output emit-program)))
+
+    "extract-native"
+    (let [input (second args)
+          serialized (reader/read-string (io/read-text-file input))
+          ;; EDN has no i64 type marker: the writer deliberately prints an
+          ;; nbb bigint as the same plain integer token the JVM writes. Restore
+          ;; the oracle value boundary before the CLJS verifier re-executes the
+          ;; entry; structural metadata and machine bytes remain JS numbers.
+          artifact-map (update serialized :value
+                               #(walk/postwalk (fn [x]
+                                                 (if (integer? x) (i64/->bigint x) x))
+                                               %))
+          symbol (symbol (or (support/option args "--symbol") "main"))
+          output (or (support/option args "--output") "program.bin")
+          _ (verifier/verify-artifact! artifact-map)
+          export (get (:exports artifact-map) symbol)]
+      (when-not export
+        (throw (ex-info "unknown native export" {:phase :verify :entry symbol})))
+      (io/write-bytes! output (js/Buffer.from (clj->js (:code artifact-map))))
+      (merge {:ok true :output output :symbol symbol} export))
 
     (support/usage-error!
      (str "error: nbb native path does not cover command " (first args)))))
