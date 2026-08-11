@@ -257,6 +257,23 @@
                           error))
           (throw error))))))
 
+(def ^:private non-capability-policy-keys
+  "Policy keys that are NOT capability grants.
+
+  Admission is deny-by-default AND closed over its key set: an unrecognised key
+  is a `malformed capability policy` error rather than something ignored, which
+  is the right default — a grant nobody understands must not be waved through.
+  The cost is that every non-grant key has to be named here, and until
+  2026-08-11 `:budgets` was not, so a policy declaring `{:budgets {:fuel n}}`
+  was rejected outright even though `compile-source` reads exactly that path to
+  size the artifact's fuel global."
+  #{:language-profile :budgets})
+
+(defn- capability-policy
+  "The capability half of a policy, with the declarative keys removed."
+  [policy]
+  (apply dissoc policy non-capability-policy-keys))
+
 (defn check-source
   "Frontend admit + optional language-profile (T9.2).
 
@@ -267,8 +284,7 @@
   ([source policy opts]
    (let [language-profile (or (:language-profile opts)
                               (:language-profile policy))
-         ;; admission/check only accepts capability policy keys — strip profile.
-         admission-policy (dissoc policy :language-profile)
+         admission-policy (capability-policy policy)
          analyze-opts (cond-> {}
                         language-profile (assoc :language-profile language-profile))
          hir (sema/analyze source analyze-opts)]
@@ -510,7 +526,7 @@
                                (nil? (:entry (target-profile/profile target))))))
             (throw (ex-info "entryless libraries currently require the kotoba-script web target, the Wasm target, or an entryless native target"
                             {:phase :target :target target :backend backend})))
-        admission (admit! hir policy)
+        admission (admit! hir (capability-policy policy))
         kir (ir/lower hir)
         value (:oracle-value kir)
         typed-values? (= :kotoba.kir/v4 (:format kir))
@@ -566,14 +582,18 @@
        :hir hir :kir kir :admission admission
        :compatibility compatibility
        :floating-point-policy floating-point-policy
-       :limits {:fuel 512 :replenishable? false} :source (cljs/emit kir)}
+       ;; declared-fuel, not 512: the budget the caller declared was already
+       ;; resolved above and honoured by the wasm32 branch; this one used to
+       ;; drop it.
+       :limits {:fuel declared-fuel :replenishable? false}
+       :source (cljs/emit kir declared-fuel)}
 
       (= backend :js-kotoba-v1)
       (let [source-digest (text-sha256 source)
             kir-digest (artifact/sha256 kir)
             typed-values? (= :kotoba.kir/v4 (:format kir))
             value-profile (if typed-values? :kotoba.value/typed-v1 :kotoba.value/i64-v1)
-            limits (cond-> {:fuel 512 :replenishable? false}
+            limits (cond-> {:fuel declared-fuel :replenishable? false}
                      typed-values? (assoc :string-literal-bytes 4096
                                           :string-module-literal-bytes 65536
                                           :string-value-bytes 65536
@@ -596,7 +616,16 @@
             js-source (script/emit kir (merge {:source-digest source-digest
                                                :kir-digest kir-digest
                                                :compiler-version compiler-version}
-                                              emit-metadata))
+                                              emit-metadata
+                                              ;; last, so the resolved budget
+                                              ;; wins: `declared-fuel` already
+                                              ;; folded in emit-metadata and the
+                                              ;; policy. Before 2026-08-11 this
+                                              ;; map carried no fuel at all and
+                                              ;; the emitter always wrote 512,
+                                              ;; so `--fuel` was accepted and
+                                              ;; silently ignored on this target.
+                                              {:fuel declared-fuel}))
             output-digest (text-sha256 js-source)]
         {:format :javascript/v1 :target target :target-profile profile
          :hir hir :kir kir :admission admission

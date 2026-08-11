@@ -254,9 +254,9 @@
     (list (if exported? 'defn 'defn-) name (vec params)
           (list* 'do '(kotoba$charge!) (concat parameter-checks [lowered-result])))))
 
-(def ^:private prelude-forms
-  '[(defonce kotoba$fuel (atom 512))
-    (defn- kotoba$charge! []
+(def ^:private prelude-tail-forms
+  "Everything in the prelude that does not depend on the declared budget."
+  '[(defn- kotoba$charge! []
       (let [remaining (swap! kotoba$fuel dec)]
         (when (neg? remaining)
           (throw (ex-info "fuel-exhausted" {:kotoba.cljs/trap :fuel-exhausted})))))
@@ -501,6 +501,38 @@
             (kotoba$typed-fail! "typed provider contract mismatch" {:capability id}))
           (kotoba$typed-value! result-type ((:invoke provider) request)))))])
 
+(def default-fuel
+  "The historical budget, kept as the default so an unparameterised call emits
+  exactly what it did before."
+  512)
+
+(defn- prelude-forms
+  "The runtime prelude for a DECLARED fuel budget.
+
+  The budget used to be hardcoded at 512 here while the rest of the toolchain
+  already carried one — `--fuel`, policy `:budgets {:fuel n}`, and
+  `core/default-component-budgets` — so a caller could declare a budget, watch
+  it be accepted, and receive an artifact that ignored it:
+  `kotoba -M compile --target js --fuel 100000` emitted `fuel=512` (measured
+  2026-08-11). The wasm32 branch has honoured the same value since T7.4; only
+  this backend dropped it on the floor.
+
+  Threading it does not widen what a module MAY DO. Authority is the policy's
+  job — a module that requests no capabilities still cannot observe anything at
+  any budget — and memory stays bounded by the separate `:nodes`/`:bytes` limbs
+  of `:resource-model [:fuel :depth :nodes :bytes :provider-timeout]`. Fuel
+  bounds exactly one thing: how long a call may run before the host gets
+  control back.
+
+  What the old constant DID bound, in practice, was program size. A charge is
+  taken per function ENTRY and `loop`/`recur` desugars to a self-calling helper
+  (ADR 0173 is explicit that zero-charge recur is not claimed), so 512 was a
+  ceiling of ~510 iterations for the life of an instance — measured: a plain
+  countdown returns at n=510 and traps at n=600. Any guest reading input longer
+  than that could not finish, whatever the host was willing to spend."
+  [fuel]
+  (into [(list 'defonce 'kotoba$fuel (list 'atom fuel))] prelude-tail-forms))
+
 (def default-ns-name
   "KIR carries no `ns` name (sema/analyze validates and discards the
   source `(ns ...)` form, see its own comment) -- every emitted module uses
@@ -530,7 +562,8 @@
   see ADR-2607150000), so `main () -> __kotoba_loop_1` is exactly this
   shape. Confirmed live via real `nbb` execution before this fix: `Unable
   to resolve symbol: __kotoba_loop_1`, identically to plain JVM `eval`."
-  [kir]
+  ([kir] (emit kir default-fuel))
+  ([kir fuel]
   (let [fn-names (mapv :name (:functions kir))
         exported-names (set (or (:exports kir) fn-names))
         fn-forms (mapv #(lower-function % (contains? exported-names (:name %)))
@@ -539,9 +572,9 @@
         contracts (reference-runtime/capability-contracts kir)
         forms (concat [(list 'def 'kotoba$schemas (list 'quote schemas))
                        (list 'def 'kotoba$typed-contracts (list 'quote contracts))]
-                      prelude-forms
+                      (prelude-forms fuel)
                        [(list* 'declare fn-names)] fn-forms)]
     (str/join "\n\n"
               (concat [(pr-str (list 'ns default-ns-name))
                        i64-predicate-source vector-index-source]
-                      (map pr-str forms)))))
+                      (map pr-str forms))))))
