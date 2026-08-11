@@ -110,6 +110,14 @@ file whose recorded process no longer exists. Requests remain bounded by the
 worker's 64 KiB / 64 argument / 4,096-character limits and are serialized per
 target.
 
+Implementation commit `7081541` was measured clean on 2026-08-11 on Darwin
+arm64 / Node v26.0.0. A fresh AArch64 daemon compile took 2,489.72 ms. Five
+subsequent ordinary CLI builds took 126.51, 125.87, 115.20, 120.19, and 121.02
+ms (median 121.02 ms). These numbers include the Node launcher, source-integrity
+snapshot, socket round trip, cache integrity checks, artifact and provenance
+writes; they qualify that machine and commit rather than setting a universal
+ceiling.
+
 ## Persistent compiler worker
 
 A target-locked worker accepts sequential newline-delimited JSON:
