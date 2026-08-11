@@ -859,7 +859,8 @@ static int write_supervisor_report(const struct kexe_shared_v3 *shared,
       if (bytes == NULL) {
         static const char trap[] =
             "KEXE_TRAP {:kind :result :reason :invalid-string-handle}\n";
-        (void)write(STDERR_FILENO, trap, sizeof(trap) - 1u);
+        ssize_t written = write(STDERR_FILENO, trap, sizeof(trap) - 1u);
+        (void)written;
         printf("{:status :trap :exit 126 :fuel {:initial 512 :remaining %" PRIu64
                "} :heap {:capacity 4096 :used %" PRIu64 "}}\n",
                shared->context.fuel, shared->pair_used);
