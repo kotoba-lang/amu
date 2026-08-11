@@ -49,7 +49,7 @@
         io.github.kotoba-lang/kotoba-wasm
         {:git/url "https://github.com/kotoba-lang/kotoba-wasm.git"
          :git/sha "b0c9837f2aca8f6bf0376e16d6b889c303a2b4f3"}
-        ;; fad9959 routes production KIR exclusively through whole-module
+        ;; 15b4a0e routes production KIR exclusively through whole-module
         ;; GMIR/MIR/allocated-MC, including word/f64/memory/runtime/capability,
         ;; literal-data, scalar variant, word-field record, and x86 privileged
         ;; operations. Aggregate ABI v5 carries option/result and other
@@ -57,10 +57,11 @@
         ;; exports share one selected layout; IR rejection has no production
         ;; legacy-emitter fallback. Terminal local calls release the current
         ;; frame and branch without linking on both native ISAs. Nested
-        ;; recursive aggregate layouts remain an explicit non-native boundary.
+        ;; recursive aggregate layouts remain an explicit non-native boundary;
+        ;; kernel ELF contexts preserve the artifact's sealed fuel bound.
         io.github.kotoba-lang/kotoba-native
         {:git/url "https://github.com/kotoba-lang/kotoba-native.git"
-         :git/sha "fad9959837ec216f12e4fffccf2b5eae3c06b70e"}
+         :git/sha "15b4a0e24ba2492d741d2f4b40aa7637598d8f84"}
         io.github.kotoba-lang/kotoba-component
         {:git/url "https://github.com/kotoba-lang/kotoba-component.git"
          :git/sha "35fb4d5941b3d56b35bca71151bdfadf33993d41"}

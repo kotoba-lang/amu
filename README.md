@@ -837,11 +837,15 @@ and writes a linkable ELF64 object exporting `kotoba_aiueos_probe`:
 
 ```sh
 bin/kotoba-compiler compile examples/aiueos-probe.kotoba \
-  --target x86_64-aiueos-kernel-v1 --output kotoba_aiueos_probe.o
+  --target x86_64-aiueos-kernel-v1 --fuel 4096 --output kotoba_aiueos_probe.o
 ```
 
 The object is emitted directly by the Kotoba compiler—no generated C or host
 runtime—and is intended to be linked and boot-tested by the aiueos repository.
+For single-source core/native compilation, `--fuel` is build metadata and is
+sealed into the artifact; executable kernel packaging copies that same finite
+value into the hidden machine context. The CLI and the generated image are
+both tested, so a printed request cannot disagree with the executing budget.
 The UEFI profile packages a deterministic PE32+ EFI application with `.text`,
 `.data`, and `.reloc` sections and no import directory. Its entry shim satisfies
 the Microsoft x64 stack/shadow-space boundary only for the language's required
@@ -920,7 +924,8 @@ child. CI independently requires filesystem, network, and process-creation
 probes to be denied on both OS families.
 
 Wasm modules contain a private, non-replenishable i64 fuel global initialized to
-512. Every function entry checks and decrements it before evaluating guest code.
+512 by default (or the finite `--fuel` value). Every function entry checks and
+decrements it before evaluating guest code.
 This permits bounded recursion while guaranteeing that recursive cycles trap.
 x86-64 reserves r9 and AArch64 reserves x7 for a loader-owned fuel-context
 pointer; both charge every function entry before guest instructions. Their real
