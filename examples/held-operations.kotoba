@@ -1,0 +1,29 @@
+(ns examples.held-operations (:export [held-score]))
+
+(defn add [a b] (+ a b))
+
+(defn held-score [] :i64
+  (let [result
+        (variant-new
+         [:variant :example/record-or-count
+          [[:record [:record :example/pair [[:left :i64] [:right :i64]]]]
+           [:count :i64]]]
+         :record
+         (record-new [:record :example/pair [[:left :i64] [:right :i64]]]
+                     20 22))]
+    (+
+     (variant-match
+      [:variant :example/record-or-count
+       [[:record [:record :example/pair [[:left :i64] [:right :i64]]]]
+        [:count :i64]]]
+      result
+      [[:record payload
+        (+ (record-get
+            [:record :example/pair [[:left :i64] [:right :i64]]]
+            payload :left)
+           (record-get
+            [:record :example/pair [[:left :i64] [:right :i64]]]
+            payload :right))]
+       [:count payload payload]])
+     (invoke (fn-ref add) 4 5)
+     (apply (fn-ref add) (list 1 2)))))

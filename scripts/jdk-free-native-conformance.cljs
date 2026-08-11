@@ -56,7 +56,9 @@
             [{:source "structured.kotoba" :symbol "score"
               :arguments ["-7" "2"] :expected "12"}
              {:source "nested-record.kotoba" :symbol "nested-score"
-              :arguments [] :expected "15"}]]
+              :arguments [] :expected "15"}
+             {:source "held-operations.kotoba" :symbol "held-score"
+              :arguments [] :expected "54"}]]
       (let [artifact (file (str symbol ".kexe"))
             binary (file (str symbol ".bin"))]
         (invoke ["compile" (.join path root "examples" source)
@@ -75,7 +77,7 @@
     (when (fs/existsSync marker)
       (throw (js/Error. (str "JVM tool was invoked: " (fs/readFileSync marker "utf8")))))
     (println (str "jdk-free-native: sealed " isa
-                  " scalar and recursive-record artifacts independently extracted"
+                  " scalar, aggregate-variant, callable, bounded-apply artifacts independently extracted"
                   " and executed under W^X loader")))
   (finally
     (fs/rmSync tmp #js {:recursive true :force true})))

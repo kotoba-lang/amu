@@ -12,6 +12,7 @@
 (def kotoba (.join path lib/root "bin" "kotoba"))
 (def source (.join path lib/root "examples" "structured.kotoba"))
 (def nested-source (.join path lib/root "examples" "nested-record.kotoba"))
+(def held-source (.join path lib/root "examples" "held-operations.kotoba"))
 (def arm64? (= "arm64" (.-arch js/process)))
 (def target (if arm64? "aarch64-windows" "x86_64-windows"))
 (def target-profile (if arm64? ":aarch64-windows-kotoba-v1" ":x86_64-windows-kotoba-v1"))
@@ -85,6 +86,11 @@
            "--output" (artifact "nested-record.kexe")])
   (run-k! ["verify" (artifact "nested-record.kexe")])
   (println (str "windows-profile: recursive-record " isa
+                " Windows KEXE verified"))
+  (run-k! ["compile" held-source "--target" target
+           "--output" (artifact "held-operations.kexe")])
+  (run-k! ["verify" (artifact "held-operations.kexe")])
+  (println (str "windows-profile: aggregate-variant callable bounded-apply " isa
                 " Windows KEXE verified"))
   ;; Compile the entryless tagged-value library on every host. Runtime vectors
   ;; still require Windows, but native-library admission is target semantics and
