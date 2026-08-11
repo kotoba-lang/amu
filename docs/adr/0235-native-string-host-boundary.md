@@ -46,7 +46,7 @@ The POSIX source compiles under `clang -std=c11 -Wall -Wextra -Werror`. The
 Windows source mirrors the protocol and changes runtime identity, but is not
 qualified until executed on a Windows fleet node.
 
-With the published artifact and tender pins, Amu passes 950 tests and 7,491
+With the published artifact and tender pins, Amu passes 951 tests and 7,494
 assertions. The native executor namespace contributes 50 tests and 148
 assertions. Moving dynamic-pool result reads one byte forward makes two
 integration assertions fail, proving that the suite observes copied content
