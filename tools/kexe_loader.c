@@ -1069,9 +1069,10 @@ static void install_syscall_sandbox(void) {
   if (result != 0) {
     if (error != NULL) {
       static const char prefix[] = "kexe-loader: sandbox_init: ";
-      (void)write(STDERR_FILENO, prefix, sizeof(prefix) - 1);
-      (void)write(STDERR_FILENO, error, strlen(error));
-      (void)write(STDERR_FILENO, "\n", 1);
+      ssize_t written = write(STDERR_FILENO, prefix, sizeof(prefix) - 1);
+      written = write(STDERR_FILENO, error, strlen(error));
+      written = write(STDERR_FILENO, "\n", 1);
+      (void)written;
       sandbox_free_error(error);
     }
     _exit(125);
