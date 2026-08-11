@@ -1223,6 +1223,20 @@ project execution boundary.
 CI uses an exact Node 24 runtime and Clojure CLI version. Every third-party
 GitHub Action is pinned to a full commit SHA; an NBB workflow lint gate rejects
 mutable tags, unpinned toolchains, and reintroduced `.sh` execution files.
+GitHub also requires action SHA pins at the repository boundary. The exact
+Actions permissions and app-bound, strict `main` checks are versioned in
+[`docs/adr/0249-version-github-merge-governance.edn`](docs/adr/0249-version-github-merge-governance.edn).
+An administrator can audit the live settings without exposing administration
+access to CI:
+
+```bash
+npx nbb scripts/check-github-governance.cljs
+```
+
+The EDN is desired state; only a successful GitHub API readback establishes
+current enforcement. See
+[`ADR 0249`](docs/adr/0249-version-github-merge-governance.md) for the recovery
+rule and blocked-canary evidence.
 
 Linux libFuzzer emits `:kotoba.fuzz-coverage/v1` summaries containing edge
 coverage, feature count, and corpus count. CI compares them with the reviewed
