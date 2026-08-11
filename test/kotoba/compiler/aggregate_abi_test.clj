@@ -8,17 +8,17 @@
   (get-in (edn/read-string (slurp "deps.edn")) [:deps coordinate :git/sha]))
 
 (deftest pinned-closure-carries-the-scalar-call-boundary
-  (is (= "eeae98511a574a1be1280b3b3fbdaa1fbdd6efed"
+  (is (= "c52010003ac525855c3df3ec35dde88a2006b196"
          (dependency-pin 'io.github.kotoba-lang/kotoba-native)))
-  (is (= "6ac32ba544156ee7ff008ce13a8e5375126c223a"
+  (is (= "d58972da61758584a5bec0e863bcb3ea6fdd6c64"
          (dependency-pin 'io.github.kotoba-lang/kotoba-kir)))
-  (is (= "7238e7bd96b891dfec0f7345100f030ac5277743"
+  (is (= "83057552f03a8021c6523e8e38ad7439b1953522"
          (dependency-pin 'io.github.kotoba-lang/kotoba-verifier)))
-  (is (= 2 (:abi/version aggregate-abi/contract)))
+  (is (= 3 (:abi/version aggregate-abi/contract)))
   (is (= :held (get-in aggregate-abi/contract
                         [:extracted :record-boundary])))
-  (is (= :held (get-in aggregate-abi/contract
-                        [:extracted :variant-boundary])))
+  (is (= :scalar-pair-handle-admitted
+         (get-in aggregate-abi/contract [:extracted :variant-boundary])))
   (is (= :scalar-admitted (get-in aggregate-abi/contract
                                    [:extracted :call-admission])))
   (is (= :all-allocator-registers

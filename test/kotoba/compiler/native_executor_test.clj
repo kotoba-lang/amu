@@ -269,6 +269,71 @@
           (is (str/includes? (:stderr process) reason) (name result-type))))
       (finally (delete-tree! (.toFile directory))))))
 
+(deftest scalar-variant-crosses-the-real-native-process-boundary
+  (let [type [:variant :maturity/outcome [[:count :i64] [:ready :bool]]]
+        type-text (pr-str type)
+        run-source
+        (fn [source entry args]
+          (let [{:keys [envelope trust]} (signed source {:allow #{}})
+                {:keys [trust options]} (execution-options trust)]
+            (executor/execute envelope trust {:allow #{}} {:args args}
+                              (assoc options :entry entry))))
+        echo-source (str "(ns maturity.variant-echo (:export [echo]))\n"
+                         "(defn echo [value " type-text "] " type-text " value)")
+        fresh-source (str "(ns maturity.variant-fresh (:export [fresh]))\n"
+                          "(defn fresh [witness :i64] " type-text
+                          " (variant-new " type-text " :ready true))")
+        score-source (str "(ns maturity.variant-score (:export [score]))\n"
+                          "(defn score [value " type-text "] :i64 "
+                          " (match-variant value " type-text
+                          " (:count n n) (:ready b (if b 100 0))))")]
+    (is (= [type :count Long/MIN_VALUE]
+           (get-in (run-source echo-source 'echo
+                               [[type :count Long/MIN_VALUE]])
+                   [:evidence :result])))
+    (is (= [type :ready false]
+           (get-in (run-source echo-source 'echo [[type :ready false]])
+                   [:evidence :result])))
+    (is (= [type :ready true]
+           (get-in (run-source fresh-source 'fresh [0]) [:evidence :result])))
+    (is (= 7 (get-in (run-source score-source 'score [[type :count 7]])
+                     [:evidence :result])))
+    (is (= 100 (get-in (run-source score-source 'score [[type :ready true]])
+                       [:evidence :result])))
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"scalar variant"
+                          (run-source echo-source 'echo [[type :missing 1]])))
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"scalar variant"
+                          (run-source echo-source 'echo [[type :ready 1]])))))
+
+(deftest native-loader-refuses-an-invalid-variant-result-handle
+  (let [artifact (:artifact (compiler/compile-source "(defn main [] 0)" (target)))
+        export (get (:exports artifact) 'main)
+        {:keys [loader-path]} @measured-runtime
+        host-os ((deref #'executor/host-os))
+        run-process (deref #'executor/run-process)
+        runtime-environment (deref #'executor/runtime-environment)
+        delete-tree! (deref #'executor/delete-tree!)
+        type [:variant :maturity/outcome [[:count :i64] [:ready :bool]]]
+        isa (if (= (target) :aarch64-kotoba-v1) "aarch64" "x86_64")
+        directory (java.nio.file.Files/createTempDirectory
+                   "kotoba-invalid-variant-result-"
+                   (make-array java.nio.file.attribute.FileAttribute 0))
+        code-file (java.io.File. (.toFile directory) "program.bin")]
+    (try
+      (atomic-output/write-bytes!
+       (.getPath code-file)
+       (byte-array (map unchecked-byte (:code artifact))))
+      (let [command [loader-path (.getPath code-file) (str (:offset export))
+                     "0" isa "-"]
+            process (run-process command (runtime-environment host-os type)
+                                 {:timeout-ms 5000 :output-limit 65536})
+            report (edn/read-string (str/trim (:stdout process)))]
+        (is (= 130 (:exit process)))
+        (is (= {:status :trap :exit 130}
+               (select-keys report [:status :exit])))
+        (is (str/includes? (:stderr process) ":reason :invalid-variant")))
+      (finally (delete-tree! (.toFile directory))))))
+
 (deftest typed-i64-capability-call-is-qualified-on-native
   (let [source "(defn main [] :i64 (typed-cap-call 4 :i64 :i64 41))"
         policy {:allow #{[:cap/call 4]}}

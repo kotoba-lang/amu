@@ -250,10 +250,35 @@ static int64_t allocate_host_pair(struct kexe_context *ctx,
   return (int64_t)(index + 1u);
 }
 
+static int parse_variant_profile(const char *text, uint64_t *case_count,
+                                 uint64_t *bool_mask) {
+  unsigned long long cases, mask;
+  int consumed = 0;
+  if (sscanf(text, "variant:%llu:%llu%n", &cases, &mask, &consumed) != 2 ||
+      text[consumed] != '\0' || cases == 0 || cases > 32 ||
+      (mask >> cases) != 0) return 0;
+  *case_count = (uint64_t)cases;
+  *bool_mask = (uint64_t)mask;
+  return 1;
+}
+
 static int64_t parse_guest_arg(struct kexe_context *ctx, const char *text) {
   uint64_t start, index, length;
   size_t digits;
   const char *hex;
+  if (strncmp(text, "v:", 2) == 0) {
+    unsigned long long cases, ordinal;
+    long long payload;
+    char kind;
+    int consumed = 0;
+    if (sscanf(text, "v:%llu:%llu:%c:%lld%n", &cases, &ordinal, &kind,
+               &payload, &consumed) != 4 || text[consumed] != '\0' ||
+        cases == 0 || cases > 32 || ordinal >= cases ||
+        (kind != 'i' && kind != 'b') ||
+        (kind == 'b' && payload != 0 && payload != 1))
+      fail_input("invalid scalar variant argument");
+    return allocate_host_pair(ctx, (int64_t)ordinal, (int64_t)payload);
+  }
   if (strcmp(text, "o:none") == 0)
     return allocate_host_pair(ctx, 0, 0);
   if (strncmp(text, "o:some:", 7) == 0)
@@ -368,6 +393,21 @@ static int inspect_tagged_i64_result(const struct kexe_context *ctx,
   if (pair->first != 0 && pair->first != 1) return 0;
   if (option && pair->first == 0 && pair->second != 0) return 0;
   *tag = pair->first;
+  *payload = pair->second;
+  return 1;
+}
+
+static int inspect_variant_result(const struct kexe_context *ctx,
+                                  int64_t handle, uint64_t case_count,
+                                  uint64_t bool_mask, int64_t *ordinal,
+                                  int64_t *payload) {
+  const struct pair_cell *pair;
+  if (handle <= 0 || (uint64_t)handle > ctx->pair_used) return 0;
+  pair = &ctx->pairs[(uint64_t)handle - 1u];
+  if (pair->first < 0 || (uint64_t)pair->first >= case_count) return 0;
+  if (((bool_mask >> (uint64_t)pair->first) & 1u) != 0 &&
+      pair->second != 0 && pair->second != 1) return 0;
+  *ordinal = pair->first;
   *payload = pair->second;
   return 1;
 }
@@ -1204,6 +1244,7 @@ int main(int argc, char **argv) {
   const char *child_contract = getenv("KEXE_APPCONTAINER_CHILD");
   const char *result_type = getenv("KEXE_RESULT_TYPE");
   uint64_t record_field_count = 0;
+  uint64_t variant_case_count = 0, variant_bool_mask = 0;
 
   if (child_contract == NULL) return run_appcontainer_parent(argc, argv);
   require_appcontainer_token();
@@ -1222,6 +1263,10 @@ int main(int argc, char **argv) {
     record_field_count = parse_u64(result_type + 7, "invalid record result type");
     if (record_field_count == 0 || record_field_count > KEXE_RECORD_FIELD_LIMIT)
       fail_input("invalid record result field count");
+  } else if (strncmp(result_type, "variant:", 8) == 0) {
+    if (!parse_variant_profile(result_type, &variant_case_count,
+                               &variant_bool_mask))
+      fail_input("invalid variant result type");
   } else if (strcmp(result_type, "i64") != 0 &&
              strcmp(result_type, "string") != 0 &&
              strcmp(result_type, "option-i64") != 0 &&
@@ -1361,6 +1406,26 @@ int main(int argc, char **argv) {
              ":heap {:capacity 4096 :used %llu}}\n",
              (long long)result, result_type, tag == 1 ? "true" : "false",
              (long long)payload, (unsigned long long)ctx->fuel,
+             (unsigned long long)ctx->pair_used);
+    } else if (variant_case_count > 0) {
+      int64_t ordinal, payload;
+      if (!inspect_variant_result(ctx, result, variant_case_count,
+                                  variant_bool_mask, &ordinal, &payload)) {
+        fprintf(stderr, "KEXE_TRAP {:kind :result :reason :invalid-variant}\n");
+        printf("{:status :trap :exit 130 :fuel {:initial 512 :remaining %llu} "
+               ":heap {:capacity 4096 :used %llu}}\n",
+               (unsigned long long)ctx->fuel, (unsigned long long)ctx->pair_used);
+        SecureZeroMemory(ctx, sizeof(*ctx));
+        VirtualFree(ctx, 0, MEM_RELEASE);
+        VirtualFree(code, 0, MEM_RELEASE);
+        return 130;
+      }
+      printf("{:status :ok :result %lld :result-type :variant "
+             ":result-ordinal %lld :result-word %lld "
+             ":fuel {:initial 512 :remaining %llu} "
+             ":heap {:capacity 4096 :used %llu}}\n",
+             (long long)result, (long long)ordinal, (long long)payload,
+             (unsigned long long)ctx->fuel,
              (unsigned long long)ctx->pair_used);
     } else {
       printf("{:status :ok :result %lld :fuel {:initial 512 :remaining %llu} "
