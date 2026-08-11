@@ -10,7 +10,9 @@
 (deftest pinned-closure-carries-the-scalar-call-boundary
   (is (= "eeae98511a574a1be1280b3b3fbdaa1fbdd6efed"
          (dependency-pin 'io.github.kotoba-lang/kotoba-native)))
-  (is (= "8ced779bb88caf93792b0178da0fdcdaf38930a1"
+  (is (= "6ac32ba544156ee7ff008ce13a8e5375126c223a"
+         (dependency-pin 'io.github.kotoba-lang/kotoba-kir)))
+  (is (= "7238e7bd96b891dfec0f7345100f030ac5277743"
          (dependency-pin 'io.github.kotoba-lang/kotoba-verifier)))
   (is (= 2 (:abi/version aggregate-abi/contract)))
   (is (= :held (get-in aggregate-abi/contract

@@ -1,0 +1,39 @@
+{:adr/id 238
+ :adr/status :accepted
+ :decision :copy-native-monomorphic-option-result-across-process-boundary
+ :boundary {:host {:option-none [false]
+                   :option-some [true :signed-i64]
+                   :result ["ok? boolean" :signed-i64]}
+            :guest :pair-tag-payload-handle
+            :tag #{0 1}
+            :option-none-payload 0
+            :invalid-option-exit 128
+            :invalid-result-exit 129
+            :copy-before-teardown true}
+ :pins {:kotoba-kir "6ac32ba544156ee7ff008ce13a8e5375126c223a"
+        :kotoba-verifier "7238e7bd96b891dfec0f7345100f030ac5277743"
+        :artifact "931f13e11113b5a348e308d845594836a7754d36"
+        :tender-native "12c31f675b2bcea400264c0803f1d2e8685a4088"
+        :posix-loader-source-sha256 "e27104bab983d87ef5b103a49719bc02a28e392ebb70ededd6c65103ecbe529c"
+        :windows-loader-source-sha256 "012bc57116bfc19d43e0909a8d1ca10bb064e0ba7b1210117b06c07f84802b9d"}
+ :coverage {:positive #{:none :some :ok :err :long-min :long-max
+                        :guest-construction :guest-projection :host-roundtrip}
+            :negative #{:non-vector :integer-tag :missing-payload :extra-slot
+                        :noncanonical-none :invalid-option-handle
+                        :invalid-result-handle}
+            :mutation {:reversed-result-tag {:failures 6 :errors 2}}}
+ :verification {:posix {:clang-werror true :fortified-gcc-werror true
+                        :real-process true}
+                :windows {:source-parity true :real-process false}
+                :amu {:tests 956 :assertions 7537}
+                :native-executor {:tests 54 :assertions 178}
+                :tender-native {:tests 7 :assertions 74}
+                :artifact {:tests 11 :assertions 59}
+                :kotoba-kir {:tests 131 :assertions 562}
+                :kotoba-verifier {:tests 40 :assertions 242}}
+ :drift-closed #{:artifact-posix-portability-vs-record-loader
+                 :artifact-tracked-stale-cpcache
+                 :tender-native-tracked-stale-cpcache}
+ :not-claimed #{:parametric-option-result-host-abi :variant-host-abi
+                :vector-host-abi :document-host-abi
+                :windows-runtime-qualification :native-default-target}}
