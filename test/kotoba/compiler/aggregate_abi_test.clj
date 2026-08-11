@@ -8,13 +8,19 @@
   (get-in (edn/read-string (slurp "deps.edn")) [:deps coordinate :git/sha]))
 
 (deftest pinned-closure-carries-the-complete-native-boundary
-  (is (= "6b3a645bb36773a36f400b37bed4e6dcad507e0a"
+  (is (= "8b1e22c9fb645e38ce16c3f2e24fc10468eba14d"
          (dependency-pin 'io.github.kotoba-lang/kotoba-native)))
   (is (= "d58972da61758584a5bec0e863bcb3ea6fdd6c64"
          (dependency-pin 'io.github.kotoba-lang/kotoba-kir)))
-  (is (= "83057552f03a8021c6523e8e38ad7439b1953522"
+  (is (= "e2c0e3f49bd7828cd187aee6a90ba5e6f2474149"
          (dependency-pin 'io.github.kotoba-lang/kotoba-verifier)))
-  (is (= 5 (:abi/version aggregate-abi/contract)))
+  (is (= 6 (:abi/version aggregate-abi/contract)))
+  (is (= :recursive-word-handles
+         (get-in aggregate-abi/contract
+                 [:portable/record :boundary/field-representation])))
+  (is (= 32
+         (get-in aggregate-abi/contract
+                 [:portable/record :boundary/max-nesting-depth])))
   (is (= :word-pair-chain-admitted (get-in aggregate-abi/contract
                         [:extracted :record-boundary])))
   (is (= :scalar-pair-handle-admitted (get-in aggregate-abi/contract

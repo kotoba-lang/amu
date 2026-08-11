@@ -11,6 +11,7 @@
 (def nbb-cli (.join path lib/root "node_modules" "nbb" "cli.js"))
 (def kotoba (.join path lib/root "bin" "kotoba"))
 (def source (.join path lib/root "examples" "structured.kotoba"))
+(def nested-source (.join path lib/root "examples" "nested-record.kotoba"))
 (def arm64? (= "arm64" (.-arch js/process)))
 (def target (if arm64? "aarch64-windows" "x86_64-windows"))
 (def target-profile (if arm64? ":aarch64-windows-kotoba-v1" ":x86_64-windows-kotoba-v1"))
@@ -80,6 +81,11 @@
       (lib/ensure! (.includes text needle) (str "windows-profile: missing binding " needle))))
   (run-k! ["verify" (artifact "first.kexe")])
   (println (str "windows-profile: reproducible " isa " Windows KEXE verified"))
+  (run-k! ["compile" nested-source "--target" target
+           "--output" (artifact "nested-record.kexe")])
+  (run-k! ["verify" (artifact "nested-record.kexe")])
+  (println (str "windows-profile: recursive-record " isa
+                " Windows KEXE verified"))
   ;; Compile the entryless tagged-value library on every host. Runtime vectors
   ;; still require Windows, but native-library admission is target semantics and
   ;; must not regress silently on non-Windows CI nodes.
@@ -114,6 +120,10 @@
       (loader-check! loader raw main-offset main-arity "42")
       (loader-check! loader raw score-offset score-arity "12" "-7" "2")
       (loader-check! loader raw calc-offset calc-arity "21" "20" "4")
+      (let [nested-raw (artifact "nested-record.bin")
+            [nested-offset nested-arity]
+            (extract! (artifact "nested-record.kexe") "nested-score" nested-raw)]
+        (loader-check! loader nested-raw nested-offset nested-arity "15"))
       (let [raw-tagged (artifact "tagged-boundary.bin")
             exports (into {}
                           (map (fn [symbol]

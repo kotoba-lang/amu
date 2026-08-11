@@ -49,19 +49,19 @@
         io.github.kotoba-lang/kotoba-wasm
         {:git/url "https://github.com/kotoba-lang/kotoba-wasm.git"
          :git/sha "b0c9837f2aca8f6bf0376e16d6b889c303a2b4f3"}
-        ;; 15b4a0e routes production KIR exclusively through whole-module
+        ;; Production KIR routes exclusively through whole-module
         ;; GMIR/MIR/allocated-MC, including word/f64/memory/runtime/capability,
         ;; literal-data, scalar variant, word-field record, and x86 privileged
-        ;; operations. Aggregate ABI v5 carries option/result and other
-        ;; one-word fields through declaration-order pair chains. Multiple
-        ;; exports share one selected layout; IR rejection has no production
-        ;; legacy-emitter fallback. Terminal local calls release the current
-        ;; frame and branch without linking on both native ISAs. Nested
-        ;; recursive aggregate layouts remain an explicit non-native boundary;
-        ;; kernel ELF contexts preserve the artifact's sealed fuel bound.
+        ;; operations. Aggregate ABI v6 carries recursively nested record
+        ;; handles plus option/result and other one-word fields through bounded
+        ;; declaration-order pair chains. Multiple exports share one selected
+        ;; layout; IR rejection has no production legacy-emitter fallback.
+        ;; Terminal local calls release the current frame and branch without
+        ;; linking on both native ISAs; kernel ELF contexts preserve the
+        ;; artifact's sealed fuel bound.
         io.github.kotoba-lang/kotoba-native
         {:git/url "https://github.com/kotoba-lang/kotoba-native.git"
-         :git/sha "6b3a645bb36773a36f400b37bed4e6dcad507e0a"}
+         :git/sha "8b1e22c9fb645e38ce16c3f2e24fc10468eba14d"}
         io.github.kotoba-lang/kotoba-component
         {:git/url "https://github.com/kotoba-lang/kotoba-component.git"
          :git/sha "35fb4d5941b3d56b35bca71151bdfadf33993d41"}
@@ -72,17 +72,14 @@
         io.github.kotoba-lang/io-multiformats
         {:git/url "https://github.com/kotoba-lang/io-multiformats.git"
          :git/sha "b3b157e683a943d4f2e9362d9366cceefff3f656"}
-        ;; 8ced779 independently re-derives the exact direct/one-let scalar
-        ;; record and variant IF shapes emitted by the native pin above, in
-        ;; addition to gating the aggregate-boundary contract and re-emitting a
-        ;; scalar call module and requires its liveness-minimal frame plus the
-        ;; four-argument zero-frame and five-argument one-slot entry ABI
-        ;; without widening admission.
+        ;; The verifier independently re-derives aggregate ABI v6, including
+        ;; the 32-level recursive-record bound, and re-emits a sealed nested
+        ;; record module in addition to scalar/variant/call-frame checks.
         ;; Producer and verifier move in the same closure; neither trusts the
         ;; other's aggregate metadata.
         io.github.kotoba-lang/kotoba-verifier
         {:git/url "https://github.com/kotoba-lang/kotoba-verifier.git"
-         :git/sha "83057552f03a8021c6523e8e38ad7439b1953522"}
+         :git/sha "e2c0e3f49bd7828cd187aee6a90ba5e6f2474149"}
 }
  :aliases {:test {:extra-paths ["test"]
                   :extra-deps

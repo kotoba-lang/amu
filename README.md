@@ -259,8 +259,9 @@ entry points. See ADR 0222 for the dependency graph.
 The pinned native closure now routes production KIR exclusively through
 whole-module GMIR, target-selected MIR, allocated MC, and closed target
 encoders. It publishes multiple exports from one layout and carries word-field
-records plus option/result handles under aggregate ABI v5. Retired recursive
-ISA emitters remain test-only; production has no fallback from IR rejection.
+records, recursively nested one-word record handles, and option/result handles
+under aggregate ABI v6. Retired ISA emitters are unreachable from public
+production and test routing; IR rejection has no fallback.
 Terminal local calls release the current native frame and branch without
 linking on both x86-64 and AArch64, so tail recursion no longer grows the stack.
 
