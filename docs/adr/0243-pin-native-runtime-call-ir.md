@@ -9,7 +9,7 @@ encoding. Unknown operations, offset drift, and physical-register drift fail
 closed.
 
 Pin `kotoba-native` at `0ae92d19cda82cc739f764e6bd26578f0bb97b8f`
-and `artifact` at `577d928a3097bb47c7a558d4618e8f5eff7f964a`.
+and `artifact` at `931f13e11113b5a348e308d845594836a7754d36`.
 The x86-64 encoder preserves the hidden `r9` context in a reserved aligned
 call-frame slot. AArch64 preserves `x7` around `blr x16` and saves/restores the
 link register through the call frame. Real loader execution was available for

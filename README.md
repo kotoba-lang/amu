@@ -1104,6 +1104,11 @@ aggregate ABI v2 declaration-order pair chain inside native code. The loader
 accepts exactly the declared host keys, validates an exact-length chain and
 its zero terminator on return, then copies field words before unmapping the
 arena. Raw pair handles never escape the process.
+Monomorphic `:option-i64` and `:result-i64` exports use the same tagged vectors
+as the reference and restricted-ESM hosts. The loader materializes their
+canonical `pair(tag,payload)` handles before entry and validates/copies the
+selected result before teardown. Tags are exact 0/1 words; option none is
+uniquely `(0,0)`.
 Native runtime identity v6 additionally includes the exact explicit target
 profile measured on the host. Execution requires artifact ISA/ABI/OS/runtime
 compatibility, runtime-to-host exact profile equality, and explicit trust in

@@ -204,10 +204,29 @@ static int hex_nibble(char value) {
 
 static int64_t parse_i64(const char *text);
 
+static int64_t allocate_host_pair(struct kexe_context *ctx,
+                                  int64_t first, int64_t second) {
+  uint64_t index;
+  if (ctx->pair_used >= KEXE_PAIR_CAPACITY)
+    fail_input("tagged argument exceeds pair arena");
+  index = ctx->pair_used++;
+  ctx->pairs[index].first = first;
+  ctx->pairs[index].second = second;
+  return (int64_t)(index + 1u);
+}
+
 static int64_t parse_guest_arg(struct kexe_context *ctx, const char *text) {
   uint64_t start, index, length;
   size_t digits;
   const char *hex;
+  if (strcmp(text, "o:none") == 0)
+    return allocate_host_pair(ctx, 0, 0);
+  if (strncmp(text, "o:some:", 7) == 0)
+    return allocate_host_pair(ctx, 1, parse_i64(text + 7));
+  if (strncmp(text, "e:ok:", 5) == 0)
+    return allocate_host_pair(ctx, 1, parse_i64(text + 5));
+  if (strncmp(text, "e:err:", 6) == 0)
+    return allocate_host_pair(ctx, 0, parse_i64(text + 6));
   if (strncmp(text, "r:", 2) == 0) {
     int64_t fields[KEXE_RECORD_FIELD_LIMIT];
     uint64_t count = 0;
@@ -303,6 +322,19 @@ static int inspect_record_result(const struct kexe_context *ctx,
     handle = pair->second;
   }
   return handle == 0;
+}
+
+static int inspect_tagged_i64_result(const struct kexe_context *ctx,
+                                     int64_t handle, int option,
+                                     int64_t *tag, int64_t *payload) {
+  const struct pair_cell *pair;
+  if (handle <= 0 || (uint64_t)handle > ctx->pair_used) return 0;
+  pair = &ctx->pairs[(uint64_t)handle - 1u];
+  if (pair->first != 0 && pair->first != 1) return 0;
+  if (option && pair->first == 0 && pair->second != 0) return 0;
+  *tag = pair->first;
+  *payload = pair->second;
+  return 1;
 }
 
 /* vector-i64 / vector-f64 host table. Mirrors the POSIX loader's
@@ -1156,7 +1188,9 @@ int main(int argc, char **argv) {
     if (record_field_count == 0 || record_field_count > KEXE_RECORD_FIELD_LIMIT)
       fail_input("invalid record result field count");
   } else if (strcmp(result_type, "i64") != 0 &&
-             strcmp(result_type, "string") != 0)
+             strcmp(result_type, "string") != 0 &&
+             strcmp(result_type, "option-i64") != 0 &&
+             strcmp(result_type, "result-i64") != 0)
     fail_input("invalid result type");
 
   {
@@ -1270,6 +1304,29 @@ int main(int argc, char **argv) {
       printf("] :fuel {:initial 512 :remaining %llu} "
              ":heap {:capacity 4096 :used %llu}}\n",
              (unsigned long long)ctx->fuel, (unsigned long long)ctx->pair_used);
+    } else if (strcmp(result_type, "option-i64") == 0 ||
+               strcmp(result_type, "result-i64") == 0) {
+      int option = strcmp(result_type, "option-i64") == 0;
+      int64_t tag, payload;
+      if (!inspect_tagged_i64_result(ctx, result, option, &tag, &payload)) {
+        int trap_exit = option ? 128 : 129;
+        const char *reason = option ? "invalid-option-i64" : "invalid-result-i64";
+        fprintf(stderr, "KEXE_TRAP {:kind :result :reason :%s}\n", reason);
+        printf("{:status :trap :exit %d :fuel {:initial 512 :remaining %llu} "
+               ":heap {:capacity 4096 :used %llu}}\n", trap_exit,
+               (unsigned long long)ctx->fuel, (unsigned long long)ctx->pair_used);
+        SecureZeroMemory(ctx, sizeof(*ctx));
+        VirtualFree(ctx, 0, MEM_RELEASE);
+        VirtualFree(code, 0, MEM_RELEASE);
+        return trap_exit;
+      }
+      printf("{:status :ok :result %lld :result-type :%s "
+             ":result-tag %s :result-word %lld "
+             ":fuel {:initial 512 :remaining %llu} "
+             ":heap {:capacity 4096 :used %llu}}\n",
+             (long long)result, result_type, tag == 1 ? "true" : "false",
+             (long long)payload, (unsigned long long)ctx->fuel,
+             (unsigned long long)ctx->pair_used);
     } else {
       printf("{:status :ok :result %lld :fuel {:initial 512 :remaining %llu} "
              ":heap {:capacity 4096 :used %llu}}\n",
