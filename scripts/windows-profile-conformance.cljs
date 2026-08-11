@@ -8,7 +8,6 @@
             ["node:path" :as path]))
 
 (def tmp (.mkdtempSync fs (.join path (.tmpdir os) "kotoba-windows-profile-")))
-(def nbb-cli (.join path lib/root "node_modules" "nbb" "cli.js"))
 (def kotoba (.join path lib/root "bin" "kotoba"))
 (def source (.join path lib/root "examples" "structured.kotoba"))
 (def nested-source (.join path lib/root "examples" "nested-record.kotoba"))
@@ -20,14 +19,14 @@
 (def context-mode (if arm64? ":hidden-context-x7" ":hidden-context-r9"))
 (defn artifact [name] (.join path tmp name))
 (defn run-k! [args]
-  (let [result (.spawnSync child js/process.execPath (clj->js (into [nbb-cli kotoba "-M"] args))
+  (let [result (.spawnSync child js/process.execPath (clj->js (into [kotoba "-M"] args))
                            #js {:cwd lib/root :encoding "utf8" :maxBuffer 1048576})]
     (when (.-error result) (throw (.-error result)))
     (lib/ensure! (zero? (or (.-status result) 70))
                  (str "windows-profile: command failed: " (.-stderr result)))
     result))
 (defn run-k-fails! [args needle]
-  (let [result (.spawnSync child js/process.execPath (clj->js (into [nbb-cli kotoba "-M"] args))
+  (let [result (.spawnSync child js/process.execPath (clj->js (into [kotoba "-M"] args))
                            #js {:cwd lib/root :encoding "utf8" :maxBuffer 1048576})
         status (or (.-status result) 70)
         stderr (or (.-stderr result) "")]

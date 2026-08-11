@@ -86,6 +86,30 @@ processes; it does not replace the persistent worker. The worker remains the
 path for millisecond-scale repeated builds and retains all bounded-cache and
 fail-stop properties below.
 
+### Transparent compiler daemon
+
+`bin/kotoba` is a small Node launcher and routes ordinary `compile` and `check`
+commands over an owner-only local socket to target-locked persistent workers.
+The first request starts the daemon; idle workers stop after five minutes.
+`KOTOBA_COMPILER_DAEMON=0` forces the one-shot path and
+`KOTOBA_COMPILER_DAEMON_TRACE=1` reports daemon selection. Tests and benchmark
+harnesses can use a 1–32 character `KOTOBA_COMPILER_DAEMON_NAMESPACE` made of
+letters, digits, `_`, or `-` to isolate their cache generation.
+
+The daemon generation binds the launcher and daemon implementation bytes. At
+startup it hashes every compiler source byte. Before each request it compares
+the file identity, size, mode, mtime, and ctime snapshot and re-hashes every
+changed file. A source-tree change closes that generation before compilation;
+the launcher starts a new generation or falls back to the integrity-checked
+one-shot compiler. Compiler diagnostics and non-zero compile results remain
+ordinary worker responses and never trigger a second compilation.
+
+The socket path is short and checkout-specific. On Unix it is mode `0600` and
+its launch lock may only be replaced when it is an owner-controlled regular
+file whose recorded process no longer exists. Requests remain bounded by the
+worker's 64 KiB / 64 argument / 4,096-character limits and are serialized per
+target.
+
 ## Persistent compiler worker
 
 A target-locked worker accepts sequential newline-delimited JSON:

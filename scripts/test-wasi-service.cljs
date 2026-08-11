@@ -7,11 +7,10 @@
             ["node:path" :as path]))
 
 (let [tmp (.mkdtempSync fs (.join path (.tmpdir os) "kotoba-wasi-service-"))
-      nbb-cli (.join path lib/root "node_modules" "nbb" "cli.js")
       kotoba (.join path lib/root "bin" "kotoba")
       compile! (fn [source output & args]
                  (let [result (.spawnSync child js/process.execPath
-                                          (clj->js (into [nbb-cli kotoba "-M" "compile" source
+                                          (clj->js (into [kotoba "-M" "compile" source
                                                           "--target" "wasm32-wasi"
                                                           "--output" output] args))
                                           #js {:cwd lib/root :encoding "utf8" :maxBuffer 1048576})]

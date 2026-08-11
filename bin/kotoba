@@ -1,289 +1,310 @@
-#!/usr/bin/env -S npx --no-install nbb
-(ns kotoba-driver
-  (:require ["node:child_process" :as child]
-            ["node:crypto" :as crypto]
-            ["node:fs" :as fs]
-            ["node:os" :as os]
-            ["node:path" :as path]))
+#!/usr/bin/env node
 
-(def usage
-  ["usage: kotoba -M compile <file.kotoba|file.cljk|file.cljc> --target wasm32-browser|wasm32-wasi|x86_64-linux|x86_64-macos|x86_64-windows|aarch64-linux|aarch64-macos|aarch64-windows|aarch64-android|aarch64-ios|js|js-browser [--policy policy.edn] --output <file>"
-   "       kotoba -M check <file.kotoba|file.cljk|file.cljc> [--policy policy.edn]"
-   "       kotoba -M worker [--target wasm32|x86_64|aarch64]  # bounded NDJSON on stdin/stdout"
-   "       kotoba -M inspect <file.kotoba|file.cljk|file.cljc> [--output interface.edn]"
-   "       kotoba -M test <file.kotoba|file.cljk|file.cljc> [--json]  # runs every test-* export on each qualified target"
-   "       kotoba -M module-lock <file.kotoba> --blocks <dir> --source-path <dir> [--output kotoba.modules.edn]"
-   "       kotoba -M package-aiueos-boot <kernel> [--output BOOTX64.EFI]"
-   "       kotoba -M extract-native <file> [--symbol main] [--output program.bin]"
-   "       kotoba -M package-ios program.kexe [--entry main] --output program.S [--manifest-output program.edn]"
-   "       kotoba -M sbom <artifact> --output artifact.spdx"
-   "       kotoba -M attest-release <artifact> --sbom artifact.spdx --target <target> --key key.edn --not-before <epoch> --expires <epoch> --output release.edn"
-   "       kotoba -M verify-release release.edn --artifact <artifact> --sbom artifact.spdx --trust trust.edn --now <epoch>"
-   "       kotoba -M coverage <coverage-manifest.edn> --dataset <raw-dataset> [--evidence evidence.edn --trust trust.edn --now <epoch>]"
-   "       kotoba -M sign-coverage-evidence <claim.edn> --key <key.edn> --output <evidence.edn>"
-   "       kotoba -M keygen --output key.edn"
-   "       kotoba -M public-key key.edn --output verification-key.edn"
-   "       kotoba -M trust-key verification-key.edn --output trust.edn"
-   "       kotoba -M measure-runtime --output runtime.edn --loader-output kotoba-loader"
-   "       kotoba -M trust-runtime runtime.edn --trust trust.edn --output pinned-trust.edn"
-   "       kotoba -M sign program.kexe --key key.edn --expires <epoch> --output signed.kexe"
-   "       kotoba -M verify-signed signed.kexe --trust trust.edn [--now <epoch>]"
-   "       kotoba -M run signed.kexe --trust trust.edn --runtime runtime.edn --loader kotoba-loader --policy policy.edn --input input.edn --executor-key key.edn --output receipt.edn"
-   "       kotoba -M receipt --signed signed.kexe --trust trust.edn --executor-key key.edn --policy policy.edn --input in.edn --result out.edn ..."
-   "       kotoba -M verify-receipt receipt.edn --signed signed.kexe --trust trust.edn --policy policy.edn --input in.edn --result out.edn --now <epoch>"
-   "       kotoba -M verify-chain receipts.edn --trust trust.edn"
-   "       kotoba -M verify <file>"])
+const child = require("node:child_process");
+const crypto = require("node:crypto");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+const net = require("node:net");
 
-(defn fail! [message code]
-  (.error js/console message)
-  (.exit js/process code))
+const daemonProtocol = "kotoba.compiler-daemon/v1";
+const workerProtocol = "kotoba.compiler-worker/v1";
+const maxDaemonLineBytes = 64 * 1024;
 
-;; The wasm32 and ordinary (non-aiueos) native target names
-;; The split `kotoba.compiler.nbb.wasm-cli` / `kotoba.compiler.nbb.cli`
-;; entrypoints cover the targets below without loading the other backend.
-;; `x86_64-aiueos-*`/`aarch64-aiueos-*` (ELF64/PE32+ firmware/kernel
-;; packaging) stay JVM-only -- see that namespace's own comment for why.
-;; Any other `--target` value, or any subcommand besides `compile`/
-;; `check`, falls through to the JVM `clojure -M:run` path below
-;; unchanged.
-(def ^:private nbb-native-targets
-  #{"wasm32" "wasm32-browser" "wasm32-wasi" nil
-    "x86_64" "x86_64-linux" "x86_64-macos" "x86_64-windows"
-    "aarch64" "aarch64-linux" "aarch64-macos" "aarch64-windows"
-    "aarch64-android" "aarch64-ios"})
+const usage = [
+  "usage: kotoba -M compile <file.kotoba|file.cljk|file.cljc> --target wasm32-browser|wasm32-wasi|x86_64-linux|x86_64-macos|x86_64-windows|aarch64-linux|aarch64-macos|aarch64-windows|aarch64-android|aarch64-ios|js|js-browser [--policy policy.edn] --output <file>",
+  "       kotoba -M check <file.kotoba|file.cljk|file.cljc> [--policy policy.edn]",
+  "       kotoba -M worker [--target wasm32|x86_64|aarch64]  # bounded NDJSON on stdin/stdout",
+  "       kotoba -M inspect <file.kotoba|file.cljk|file.cljc> [--output interface.edn]",
+  "       kotoba -M test <file.kotoba|file.cljk|file.cljc> [--json]  # runs every test-* export on each qualified target",
+  "       kotoba -M module-lock <file.kotoba> --blocks <dir> --source-path <dir> [--output kotoba.modules.edn]",
+  "       kotoba -M package-aiueos-boot <kernel> [--output BOOTX64.EFI]",
+  "       kotoba -M extract-native <file> [--symbol main] [--output program.bin]",
+  "       kotoba -M package-ios program.kexe [--entry main] --output program.S [--manifest-output program.edn]",
+  "       kotoba -M sbom <artifact> --output artifact.spdx",
+  "       kotoba -M attest-release <artifact> --sbom artifact.spdx --target <target> --key key.edn --not-before <epoch> --expires <epoch> --output release.edn",
+  "       kotoba -M verify-release release.edn --artifact <artifact> --sbom artifact.spdx --trust trust.edn --now <epoch>",
+  "       kotoba -M coverage <coverage-manifest.edn> --dataset <raw-dataset> [--evidence evidence.edn --trust trust.edn --now <epoch>]",
+  "       kotoba -M sign-coverage-evidence <claim.edn> --key <key.edn> --output <evidence.edn>",
+  "       kotoba -M keygen --output key.edn",
+  "       kotoba -M public-key key.edn --output verification-key.edn",
+  "       kotoba -M trust-key verification-key.edn --output trust.edn",
+  "       kotoba -M measure-runtime --output runtime.edn --loader-output kotoba-loader",
+  "       kotoba -M trust-runtime runtime.edn --trust trust.edn --output pinned-trust.edn",
+  "       kotoba -M sign program.kexe --key key.edn --expires <epoch> --output signed.kexe",
+  "       kotoba -M verify-signed signed.kexe --trust trust.edn [--now <epoch>]",
+  "       kotoba -M run signed.kexe --trust trust.edn --runtime runtime.edn --loader kotoba-loader --policy policy.edn --input input.edn --executor-key key.edn --output receipt.edn",
+  "       kotoba -M receipt --signed signed.kexe --trust trust.edn --executor-key key.edn --policy policy.edn --input in.edn --result out.edn ...",
+  "       kotoba -M verify-receipt receipt.edn --signed signed.kexe --trust trust.edn --policy policy.edn --input in.edn --result out.edn --now <epoch>",
+  "       kotoba -M verify-chain receipts.edn --trust trust.edn",
+  "       kotoba -M verify <file>",
+];
 
-(defn- option [args flag] (second (drop-while #(not= flag %) args)))
+function fail(message, code) {
+  process.stderr.write(`${message}\n`);
+  process.exit(code);
+}
 
-(defn- nbb-native-eligible? [sub-args]
-  (let [cmd (first sub-args)]
-    (or (contains? #{"check" "extract-native"} cmd)
-        (and (= cmd "worker") (contains? nbb-native-targets (option sub-args "--target")))
-        (and (= cmd "compile") (contains? nbb-native-targets (option sub-args "--target"))))))
+const nbbNativeTargets = new Set([
+  "wasm32", "wasm32-browser", "wasm32-wasi", undefined,
+  "x86_64", "x86_64-linux", "x86_64-macos", "x86_64-windows",
+  "aarch64", "aarch64-linux", "aarch64-macos", "aarch64-windows",
+  "aarch64-android", "aarch64-ios",
+]);
 
-(defn- nbb-entrypoint [root sub-args]
-  (let [command (first sub-args)
-        target (option sub-args "--target")
-        wasm? (or (= command "check")
-                  (nil? target)
-                  (.startsWith target "wasm32"))
-        filename (cond
-                   (= command "extract-native") "x86_64_cli.cljs"
-                   wasm? "wasm_cli.cljs"
-                   (.startsWith target "aarch64") "aarch64_cli.cljs"
-                   :else "x86_64_cli.cljs")]
-    (.join path root "src" "kotoba" "compiler" "nbb" filename)))
+function option(args, flag) {
+  const index = args.indexOf(flag);
+  return index < 0 ? undefined : args[index + 1];
+}
 
-(defn- bundle-key [sub-args]
-  (let [command (first sub-args)
-        target (option sub-args "--target")]
-    (cond
-      (= command "extract-native") "x86_64"
-      (or (= command "check") (nil? target) (.startsWith target "wasm32")) "wasm"
-      (.startsWith target "aarch64") "aarch64"
-      :else "x86_64")))
+function nbbNativeEligible(args) {
+  const command = args[0];
+  return command === "check" || command === "extract-native"
+    || ((command === "worker" || command === "compile")
+      && nbbNativeTargets.has(option(args, "--target")));
+}
 
-(defn- file-digest [p]
-  (-> (.createHash crypto "sha256")
-      (.update (.readFileSync fs p))
-      (.digest "hex")))
+function bundleKey(args) {
+  const command = args[0];
+  const target = option(args, "--target");
+  if (command === "extract-native") return "x86_64";
+  if (command === "check" || target === undefined || target.startsWith("wasm32")) return "wasm";
+  return target.startsWith("aarch64") ? "aarch64" : "x86_64";
+}
 
-(defn- files-below [p]
-  (if (.isDirectory (.statSync fs p))
-    (mapcat (fn [entry]
-              (files-below (.join path p (.-name entry))))
-            (array-seq (.readdirSync fs p #js {:withFileTypes true})))
-    [p]))
+function nbbEntrypoint(root, args) {
+  return path.join(root, "src", "kotoba", "compiler", "nbb", `${bundleKey(args)}_cli.cljs`);
+}
 
-(defn- compiler-source-digest [root]
-  (let [roots (map #(.join path root %)
-                   ["deps.edn" "deps-lock.edn" "package-lock.json"
-                    "src" "resources"])
-        files (sort-by #(.relative path root %) (mapcat files-below roots))
-        hash (.createHash crypto "sha256")]
-    (doseq [p files]
-      (.update hash (.relative path root p))
-      (.update hash "\u0000")
-      (.update hash (.readFileSync fs p))
-      (.update hash "\u0000"))
-    (.digest hash "hex")))
+function fileDigest(filename) {
+  return crypto.createHash("sha256").update(fs.readFileSync(filename)).digest("hex");
+}
 
-(defn- compiler-bundle [root sub-args]
-  (when-not (= "0" (aget js/process.env "KOTOBA_COMPILER_BUNDLE"))
-    (let [directory (.join path root ".tools" "compiler-bundles")
-          manifest-path (.join path directory "manifest.json")]
-      (when (.existsSync fs manifest-path)
-        (try
-          (let [manifest (js->clj (.parse js/JSON
-                                          (.readFileSync fs manifest-path "utf8"))
-                                  :keywordize-keys true)
-                key (keyword (bundle-key sub-args))
-                entry (get-in manifest [:entries key])
-                filename (:file entry)
-                candidate (when filename (.join path directory filename))
-                actual-digest (compiler-source-digest root)
-                expected-filename (str (name key) ".mjs")
-                valid? (and (= "kotoba.compiler-bundles/v2" (:format manifest))
-                            (= actual-digest (:sourceDigest manifest))
-                            (= expected-filename filename)
-                            candidate (.existsSync fs candidate)
-                            (= (:sha256 entry) (file-digest candidate)))]
-            (when (= "1" (aget js/process.env "KOTOBA_COMPILER_BUNDLE_TRACE"))
-              (.error js/console (if valid?
-                                   (str "kotoba: compiler bundle hit " (name key))
-                                   (str "kotoba: compiler bundle stale; using source entrypoint"
-                                        " (expected " (:sourceDigest manifest)
-                                        ", got " actual-digest ")"))))
-            (when valid? candidate))
-          (catch :default _
-            (when (= "1" (aget js/process.env "KOTOBA_COMPILER_BUNDLE_TRACE"))
-              (.error js/console "kotoba: compiler bundle invalid; using source entrypoint"))
-            nil))))))
+function filesBelow(filename) {
+  if (!fs.statSync(filename).isDirectory()) return [filename];
+  return fs.readdirSync(filename, { withFileTypes: true }).flatMap((entry) => {
+    const childPath = path.join(filename, entry.name);
+    return entry.isDirectory() ? filesBelow(childPath) : [childPath];
+  });
+}
 
-;; Both nbb compiler entrypoint families require `kotoba.kir.admission`, whose
-;; transitive dependencies include the shared security controls. nbb has no
-;; concept of `deps.edn`/tools.deps -- it only
-;; resolves namespaces from directories on its own `--classpath`. `clojure
-;; -Spath` is the only thing that (a) fetches those pinned git SHAs into
-;; `~/.gitlibs` if it isn't already cached there and (b) prints the
-;; resulting directories, so it's used here purely as a classpath
-;; resolver, not to run any compiler code on the JVM. Its result is cached
-;; to a temp file keyed by a hash of `deps.edn`'s bytes so the fast path
-;; only pays the JVM-startup + dependency-resolution cost once per distinct
-;; `deps.edn` (e.g. once per CI job's checkout), not once per `compile`/
-;; `check` call -- callers like `scripts/fuzz-native.cljs` invoke this
-;; fast path thousands of times in a loop.
-;;
-;; That is now the FALLBACK. `deps-lock.edn` records the closure `clojure
-;; -Spath` resolved, and `scripts/print-classpath.cljs` reproduces it from git
-;; alone -- so the whole fast path runs with no JDK present, which is what
-;; "the nbb path does not touch the JVM" was always supposed to mean. The lock
-;; is bound to `deps.edn`'s digest and the resolver fails closed on a stale
-;; one, so the fallback is for a checkout whose lock has not been regenerated
-;; yet, not a second way of getting an answer.
-;;
-;; Neither resolver may return "" any more. It used to, and the caller carried
-;; on with a truncated classpath, so a resolution failure surfaced as
-;; `Could not find namespace: kotoba.artifact.core` from somewhere else
-;; entirely -- measured directly by stubbing `clojure` out on a cold cache.
-(defn- resolve-with-lock [root nbb-cli]
-  (let [script (.join path root "scripts" "print-classpath.cljs")]
-    (when (and (.existsSync fs (.join path root "deps-lock.edn"))
-               (.existsSync fs script))
-      (let [result (.spawnSync child js/process.execPath
-                               (clj->js [nbb-cli "--classpath" (.join path root "src")
-                                         script root])
-                               #js {:cwd root :encoding "utf8" :maxBuffer 16777216})]
-        (when (and (not (.-error result)) (zero? (or (.-status result) 1)))
-          (let [joined (-> (.split (.trim (.-stdout result)) "\n")
-                           (.map (fn [line] (.trim line)))
-                           (.filter (fn [line] (not= "" line)))
-                           (.join (.-delimiter path)))]
-            (when (not= "" joined) joined)))))))
+function compilerSourceDigest(root) {
+  const roots = ["deps.edn", "deps-lock.edn", "package-lock.json", "src", "resources"]
+    .map((name) => path.join(root, name));
+  const files = roots.flatMap(filesBelow).sort((left, right) => {
+    const a = path.relative(root, left);
+    const b = path.relative(root, right);
+    return a < b ? -1 : a > b ? 1 : 0;
+  });
+  const hash = crypto.createHash("sha256");
+  for (const filename of files) {
+    hash.update(path.relative(root, filename));
+    hash.update("\0");
+    hash.update(fs.readFileSync(filename));
+    hash.update("\0");
+  }
+  return hash.digest("hex");
+}
 
-(defn- resolve-with-jvm [root]
-  (let [result (.spawnSync child "clojure" (clj->js ["-Spath"])
-                           #js {:cwd root :encoding "utf8" :maxBuffer 16777216})]
-    (when (and (not (.-error result)) (zero? (or (.-status result) 70)))
-      (.trim (.-stdout result)))))
+function compilerBundle(root, args) {
+  if (process.env.KOTOBA_COMPILER_BUNDLE === "0") return undefined;
+  const directory = path.join(root, ".tools", "compiler-bundles");
+  const manifestPath = path.join(directory, "manifest.json");
+  if (!fs.existsSync(manifestPath)) return undefined;
+  try {
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+    const key = bundleKey(args);
+    const entry = manifest.entries?.[key];
+    const expectedFilename = `${key}.mjs`;
+    const candidate = entry?.file === expectedFilename ? path.join(directory, entry.file) : undefined;
+    const actualDigest = compilerSourceDigest(root);
+    const valid = manifest.format === "kotoba.compiler-bundles/v2"
+      && manifest.sourceDigest === actualDigest && candidate && fs.existsSync(candidate)
+      && entry.sha256 === fileDigest(candidate);
+    if (process.env.KOTOBA_COMPILER_BUNDLE_TRACE === "1") {
+      process.stderr.write(valid ? `kotoba: compiler bundle hit ${key}\n`
+        : `kotoba: compiler bundle stale; using source entrypoint (expected ${manifest.sourceDigest}, got ${actualDigest})\n`);
+    }
+    return valid ? candidate : undefined;
+  } catch {
+    if (process.env.KOTOBA_COMPILER_BUNDLE_TRACE === "1")
+      process.stderr.write("kotoba: compiler bundle invalid; using source entrypoint\n");
+    return undefined;
+  }
+}
 
-(defn- security-classpath-entry [root nbb-cli]
-  (let [deps-edn (.join path root "deps.edn")
-        ;; The resolved directories are rooted under GITLIBS. A digest-only
-        ;; cache key lets an isolated clean-clone test publish temporary paths
-        ;; that a later normal invocation reuses after they have been deleted.
-        ;; Bind the cache to the dependency-store identity as well as deps.edn.
-        gitlibs-root (.resolve path (or (.-GITLIBS js/process.env)
-                                        (.join path (.homedir os) ".gitlibs")))
-        digest (-> (.createHash crypto "sha256")
-                   (.update (.readFileSync fs deps-edn))
-                   (.update "\u0000")
-                   (.update gitlibs-root)
-                   (.digest "hex"))
-        cache-file (.join path (.tmpdir os) (str "kotoba-security-classpath-" digest ".txt"))]
-    (if (.existsSync fs cache-file)
-      (.trim (.readFileSync fs cache-file "utf8"))
-      (if-let [resolved (or (resolve-with-lock root nbb-cli)
-                            ;; Say so. A stale lock silently falling back to
-                            ;; the JVM is the JDK-free property disappearing
-                            ;; without anyone noticing -- and this repository
-                            ;; moves dependency pins often enough for that to
-                            ;; be the normal case, not an edge one.
-                            (do (.error js/console
-                                        (str "kotoba: deps-lock.edn is missing or stale; "
-                                             "falling back to `clojure -Spath` (needs a JDK). "
-                                             "Regenerate with: nbb scripts/lock-classpath.cljs"))
-                                (resolve-with-jvm root)))]
-        (do (.writeFileSync fs cache-file resolved) resolved)
-        (fail! (str "error: cannot resolve the compiler's dependency closure.\n"
-                    "  deps-lock.edn resolves it without a JDK; regenerate it with\n"
-                    "    nbb scripts/lock-classpath.cljs\n"
-                    "  (that script needs a JDK once; nothing else on this path does).\n"
-                    "  Diagnose with: nbb --classpath src scripts/print-classpath.cljs")
-               70)))))
+function daemonEndpoint(root) {
+  const script = path.join(root, "scripts", "compiler-daemon.mjs");
+  const namespace = process.env.KOTOBA_COMPILER_DAEMON_NAMESPACE || "";
+  if (!/^[A-Za-z0-9_-]{0,32}$/.test(namespace))
+    throw new Error("invalid KOTOBA_COMPILER_DAEMON_NAMESPACE");
+  const instance = crypto.createHash("sha256")
+    .update(daemonProtocol).update("\0").update(root).update("\0")
+    .update(namespace).update("\0").update(fs.readFileSync(script)).update("\0")
+    .update(fs.readFileSync(__filename))
+    .digest("hex").slice(0, 24);
+  if (process.platform === "win32") return `\\\\.\\pipe\\kotoba-compiler-${instance}`;
+  const uid = typeof process.getuid === "function" ? process.getuid() : "user";
+  return path.join(os.tmpdir(), `kotoba-compiler-${uid}-${instance}.sock`);
+}
 
-(let [args (vec *command-line-args*)
-      boundary (first args)]
-  (cond
-    (contains? #{nil "" "-h" "--help"} boundary)
-    (doseq [line usage] (println line))
+function connectDaemon(endpoint, request) {
+  return new Promise((resolveRequest, reject) => {
+    const socket = net.createConnection(endpoint);
+    let pending = Buffer.alloc(0);
+    socket.on("connect", () => socket.write(`${JSON.stringify(request)}\n`));
+    socket.on("data", (chunk) => {
+      pending = Buffer.concat([pending, chunk]);
+      if (pending.length > maxDaemonLineBytes)
+        socket.destroy(new Error("compiler daemon response too large"));
+    });
+    socket.on("error", reject);
+    socket.on("end", () => {
+      try {
+        const line = pending.toString("utf8");
+        if (!line.endsWith("\n") || line.indexOf("\n") !== line.length - 1) throw new Error();
+        const response = JSON.parse(line.slice(0, -1));
+        if (response.format !== workerProtocol || response.type !== "result"
+            || !Number.isInteger(response.status) || typeof response.stdout !== "string"
+            || typeof response.stderr !== "string") throw new Error();
+        resolveRequest(response);
+      } catch {
+        reject(new Error("compiler daemon response contract mismatch"));
+      }
+    });
+  });
+}
 
-    (contains? #{"-M" "-M:compiler" "-M:compile"} boundary)
-    (let [self (.realpathSync fs *file*)
-          root (.resolve path (.dirname path self) "..")
-          sub-args (subvec args 1)]
-      (if (nbb-native-eligible? sub-args)
-        ;; Fast path: no `clojure` (JVM) process is spawned at all. A fresh
-        ;; nbb process is spawned (not this one) purely so `--classpath`
-        ;; can point at `<root>/src` -- `bin/kotoba` itself is invoked via
-        ;; its shebang with no classpath flags, so it can't `:require`
-        ;; those namespaces directly in its own process. Spawns nbb's own
-        ;; `node_modules/nbb/cli.js` directly via `process.execPath`
-        ;; (same pattern `scripts/browser-matrix.cljs`'s `nbb!` already
-        ;; uses), NOT `npx` -- confirmed live: `spawnSync("npx", ...)`
-        ;; fails on Windows CI ("unable to start nbb-native compiler
-        ;; runtime") because `npx` resolves to `npx.cmd`, which needs
-        ;; shell interpretation `spawnSync` doesn't provide by default;
-        ;; `process.execPath` (the current `node`/`node.exe`) is a real,
-        ;; directly-executable binary on every platform.
-        (let [nbb-cli (.join path root "node_modules" "nbb" "cli.js")
-              bundle (compiler-bundle root sub-args)
-              security-cp (when-not bundle (security-classpath-entry root nbb-cli))
-              ;; `<root>/resources` is joined explicitly rather than relying on
-              ;; the relative `resources` entry `clojure -Spath` happens to
-              ;; emit: the lock records dependency checkouts, and this
-              ;; repository's own directories are not a dependency of itself.
-              classpath (when-not bundle
-                          (str (.join path root "src") (.-delimiter path)
-                               (.join path root "resources") (.-delimiter path)
-                               security-cp))
-              ;; Keep the compiler's recursive closed-form oracle below one
-              ;; explicit, cross-runner budget. Some hosted Node builds expose
-              ;; only ~512 KiB by default, which rejects the admitted lazy
-              ;; sequence fixture before Wasm emission.
-              child-args (if bundle
-                           (into ["--stack-size=4096" bundle] sub-args)
-                           (into ["--stack-size=4096" nbb-cli "--classpath"
-                                  classpath (nbb-entrypoint root sub-args)]
-                                 sub-args))
-              env (if bundle
-                    (js/Object.assign #js {} js/process.env
-                                      #js {:KOTOBA_BUNDLED_ENTRY "1"})
-                    js/process.env)
-              result (.spawnSync child js/process.execPath
-                                 (clj->js child-args)
-                                 #js {:cwd root :stdio "inherit" :env env})]
-          (when (.-error result)
-            (fail! "error: unable to start nbb-native compiler runtime" 70))
-          (.exit js/process (or (.-status result) 70)))
-        (let [alias (if (contains? #{"measure-runtime" "run"} (first sub-args))
-                      "-M:native-run"
-                      "-M:run")
-              result (.spawnSync child "clojure"
-                                 (clj->js (into [alias] sub-args))
-                                 #js {:cwd root :stdio "inherit" :env js/process.env})]
-          (when (.-error result)
-            (fail! "error: unable to start private compiler runtime" 70))
-          (.exit js/process (or (.-status result) 70)))))
+function timeout(promise, milliseconds) {
+  let timer;
+  return Promise.race([promise, new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error("compiler daemon timeout")), milliseconds);
+  })]).finally(() => clearTimeout(timer));
+}
 
-    :else
-    (fail! "error: compiler commands require the -M execution boundary" 2)))
+async function daemonResponse(root, args) {
+  if (process.env.KOTOBA_COMPILER_DAEMON === "0" || !new Set(["compile", "check"]).has(args[0]))
+    return undefined;
+  const script = path.join(root, "scripts", "compiler-daemon.mjs");
+  const endpoint = daemonEndpoint(root);
+  const request = { format: daemonProtocol, op: "compile", target: bundleKey(args), args };
+  let response;
+  try {
+    response = await timeout(connectDaemon(endpoint, request), 120_000);
+  } catch (initial) {
+    const startDaemon = () => {
+      const daemon = child.spawn(process.execPath, [script, "serve", root], {
+        cwd: root, detached: true, stdio: "ignore", env: process.env,
+      });
+      daemon.unref();
+    };
+    startDaemon();
+    let failure = initial;
+    for (let attempt = 0; attempt < 200; attempt += 1) {
+      await new Promise((resolveWait) => setTimeout(resolveWait, 25));
+      if (attempt > 0 && attempt % 40 === 0) startDaemon();
+      try {
+        response = await timeout(connectDaemon(endpoint, request), 120_000);
+        break;
+      } catch (error) {
+        failure = error;
+      }
+    }
+    if (!response) {
+      if (process.env.KOTOBA_COMPILER_DAEMON_TRACE === "1")
+        process.stderr.write(`kotoba: compiler daemon unavailable (${failure.message}); using one-shot compiler\n`);
+      return undefined;
+    }
+  }
+  if (process.env.KOTOBA_COMPILER_DAEMON_TRACE === "1")
+    process.stderr.write(`kotoba: compiler daemon hit ${bundleKey(args)}\n`);
+  return response;
+}
+
+function emitDaemonResponse(response) {
+  if (process.env.KOTOBA_COMPILER_TIMING === "1" && response.timing)
+    process.stderr.write(`KOTOBA_TIMING ${JSON.stringify(response.timing)}\n`);
+  if (response.stdout) process.stdout.write(response.stdout);
+  if (response.stderr) process.stderr.write(response.stderr);
+  process.exit(response.status);
+}
+
+function resolveWithLock(root, nbbCli) {
+  const script = path.join(root, "scripts", "print-classpath.cljs");
+  if (!fs.existsSync(path.join(root, "deps-lock.edn")) || !fs.existsSync(script)) return undefined;
+  const result = child.spawnSync(process.execPath,
+    [nbbCli, "--classpath", path.join(root, "src"), script, root], {
+      cwd: root, encoding: "utf8", maxBuffer: 16 * 1024 * 1024,
+    });
+  if (result.error || result.status !== 0) return undefined;
+  const joined = result.stdout.trim().split(/\r?\n/).map((line) => line.trim())
+    .filter(Boolean).join(path.delimiter);
+  return joined || undefined;
+}
+
+function resolveWithJvm(root) {
+  const result = child.spawnSync("clojure", ["-Spath"], {
+    cwd: root, encoding: "utf8", maxBuffer: 16 * 1024 * 1024,
+  });
+  return !result.error && result.status === 0 ? result.stdout.trim() : undefined;
+}
+
+function securityClasspathEntry(root, nbbCli) {
+  const depsEdn = path.join(root, "deps.edn");
+  const gitlibsRoot = path.resolve(process.env.GITLIBS || path.join(os.homedir(), ".gitlibs"));
+  const digest = crypto.createHash("sha256").update(fs.readFileSync(depsEdn)).update("\0")
+    .update(gitlibsRoot).digest("hex");
+  const cacheFile = path.join(os.tmpdir(), `kotoba-security-classpath-${digest}.txt`);
+  if (fs.existsSync(cacheFile)) return fs.readFileSync(cacheFile, "utf8").trim();
+  let resolved = resolveWithLock(root, nbbCli);
+  if (!resolved) {
+    process.stderr.write("kotoba: deps-lock.edn is missing or stale; falling back to `clojure -Spath` (needs a JDK). Regenerate with: nbb scripts/lock-classpath.cljs\n");
+    resolved = resolveWithJvm(root);
+  }
+  if (!resolved) fail("error: cannot resolve the compiler's dependency closure.\n  Regenerate deps-lock.edn with: nbb scripts/lock-classpath.cljs", 70);
+  fs.writeFileSync(cacheFile, resolved);
+  return resolved;
+}
+
+async function runNbb(root, args) {
+  const response = await daemonResponse(root, args);
+  if (response) emitDaemonResponse(response);
+  const nbbCli = path.join(root, "node_modules", "nbb", "cli.js");
+  const bundle = compilerBundle(root, args);
+  let childArgs;
+  let env = process.env;
+  if (bundle) {
+    childArgs = ["--stack-size=4096", bundle, ...args];
+    env = { ...process.env, KOTOBA_BUNDLED_ENTRY: "1" };
+  } else {
+    const classpath = [path.join(root, "src"), path.join(root, "resources"),
+      securityClasspathEntry(root, nbbCli)].join(path.delimiter);
+    childArgs = ["--stack-size=4096", nbbCli, "--classpath", classpath,
+      nbbEntrypoint(root, args), ...args];
+  }
+  const result = child.spawnSync(process.execPath, childArgs, { cwd: root, stdio: "inherit", env });
+  if (result.error) fail("error: unable to start nbb-native compiler runtime", 70);
+  process.exit(result.status ?? 70);
+}
+
+async function main() {
+  const args = process.argv.slice(2);
+  const boundary = args[0];
+  if (boundary === undefined || boundary === "" || boundary === "-h" || boundary === "--help") {
+    process.stdout.write(`${usage.join("\n")}\n`);
+    return;
+  }
+  if (!["-M", "-M:compiler", "-M:compile"].includes(boundary))
+    fail("error: compiler commands require the -M execution boundary", 2);
+  const root = path.resolve(path.dirname(fs.realpathSync(__filename)), "..");
+  const subArgs = args.slice(1);
+  if (nbbNativeEligible(subArgs)) await runNbb(root, subArgs);
+  const alias = ["measure-runtime", "run"].includes(subArgs[0]) ? "-M:native-run" : "-M:run";
+  const result = child.spawnSync("clojure", [alias, ...subArgs], {
+    cwd: root, stdio: "inherit", env: process.env,
+  });
+  if (result.error) fail("error: unable to start private compiler runtime", 70);
+  process.exit(result.status ?? 70);
+}
+
+main().catch((error) => fail(`error: compiler launcher failed (${error.message})`, 70));

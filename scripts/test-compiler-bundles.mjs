@@ -17,7 +17,8 @@ const manifestPath = join(root, ".tools", "compiler-bundles", "manifest.json");
 function run(args, env = {}) {
   const result = spawnSync(join(root, "bin", "kotoba"), args, {
     cwd: root, encoding: "utf8", timeout: 120_000,
-    env: { ...process.env, ...env }, maxBuffer: 16 * 1024 * 1024,
+    env: { ...process.env, KOTOBA_COMPILER_DAEMON: "0", ...env },
+    maxBuffer: 16 * 1024 * 1024,
   });
   if (result.error) throw result.error;
   if (result.status !== 0)

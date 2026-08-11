@@ -75,32 +75,31 @@
       (lib/ensure! (and (= 1 (count exports))
                         (str/ends-with? (first exports) " kotoba_android_execute_verified_v1"))
                    (str "android-ndk: export surface rejected: " exports)))
-    (let [nbb-cli (.join path lib/root "node_modules" "nbb" "cli.js")
-          kotoba (.join path lib/root "bin" "kotoba")
+    (let [kotoba (.join path lib/root "bin" "kotoba")
           artifact (.join path tmp "android.kexe")
           raw (.join path tmp "android.bin")
           typed-source (.join path tmp "typed-capability.kotoba")
           typed-policy (.join path tmp "typed-policy.edn")
           typed-artifact (.join path tmp "typed-android.kexe")
           typed-raw (.join path tmp "typed-android.bin")]
-      (run! js/process.execPath [nbb-cli kotoba "-M" "compile"
+      (run! js/process.execPath [kotoba "-M" "compile"
                                  (.join path lib/root "examples" "structured.kotoba")
                                  "--target" "aarch64-android" "--output" artifact])
-      (run! js/process.execPath [nbb-cli kotoba "-M" "verify" artifact])
+      (run! js/process.execPath [kotoba "-M" "verify" artifact])
       (.writeFileSync
        fs typed-source
        "(defn main [] :i64\n  (+ (string-byte-length (typed-cap-call 4 :string :string \"hello😀\"))\n     (option-value (typed-cap-call 4 :option-i64 :option-i64 (some 41)) 0)\n     (option-value (typed-cap-call 4 :option-i64 :option-i64 (option-none)) 5)\n     (result-value (typed-cap-call 4 :result-i64 :result-i64 (result-ok 7)) 0)\n     (result-error (typed-cap-call 4 :result-i64 :result-i64 (result-err 9)) 0)))\n")
       (.writeFileSync fs typed-policy "{:allow #{[:cap/call 4]}}\n")
-      (run! js/process.execPath [nbb-cli kotoba "-M" "compile" typed-source
+      (run! js/process.execPath [kotoba "-M" "compile" typed-source
                                  "--target" "aarch64-android" "--policy" typed-policy
                                  "--output" typed-artifact])
-      (run! js/process.execPath [nbb-cli kotoba "-M" "verify" typed-artifact])
-      (let [extracted (run! js/process.execPath [nbb-cli kotoba "-M" "extract-native"
+      (run! js/process.execPath [kotoba "-M" "verify" typed-artifact])
+      (let [extracted (run! js/process.execPath [kotoba "-M" "extract-native"
                                                  artifact "--symbol" "main" "--output" raw])
             [_ offset] (re-find #":offset ([0-9]+)" (.-stdout extracted))
             [_ arity] (re-find #":arity ([0-9]+)" (.-stdout extracted))
             typed-extracted
-            (run! js/process.execPath [nbb-cli kotoba "-M" "extract-native"
+            (run! js/process.execPath [kotoba "-M" "extract-native"
                                        typed-artifact "--symbol" "main" "--output" typed-raw])
             [_ typed-offset] (re-find #":offset ([0-9]+)" (.-stdout typed-extracted))
             [_ typed-arity] (re-find #":arity ([0-9]+)" (.-stdout typed-extracted))]

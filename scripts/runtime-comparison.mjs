@@ -135,9 +135,11 @@ function build(directory, target) {
   };
 
   step("amuWasm", join(root, "bin", "kotoba"),
-    ["-M", "compile", fixture, "--target", "wasm32", "--output", wasm]);
+    ["-M", "compile", fixture, "--target", "wasm32", "--output", wasm],
+    { env: { KOTOBA_COMPILER_DAEMON: "0" } });
   step("amuNative", join(root, "bin", "kotoba"),
-    ["-M", "compile", fixture, "--target", target, "--output", native]);
+    ["-M", "compile", fixture, "--target", target, "--output", native],
+    { env: { KOTOBA_COMPILER_DAEMON: "0" } });
   const extracted = step("amuNativeExtract", join(root, "bin", "kotoba"),
     ["-M", "extract-native", native, "--symbol", "kernel", "--output", rawNative]);
   const offsetMatch = extracted.stdout.match(/:offset\s+([0-9]+)/);

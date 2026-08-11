@@ -37,13 +37,12 @@
 (let [tmp (.mkdtempSync fs (.join path (.tmpdir os) "kotoba-kind-server-"))
       context (.join path tmp "context")
       wasm (.join path context "program.wasm")
-      nbb-cli (.join path lib/root "node_modules" "nbb" "cli.js")
       kotoba (.join path lib/root "bin" "kotoba")]
   (try
     (lib/ensure! (str/starts-with? (str/trim (.-stdout (run! "kind" ["version"]))) "kind v0.32.0")
                  "kind-server: pinned Kind 0.32.0 is required")
     (.mkdirSync fs context #js {:recursive true})
-    (run! js/process.execPath [nbb-cli kotoba "-M" "compile"
+    (run! js/process.execPath [kotoba "-M" "compile"
                                (.join path lib/root "examples" "structured.kotoba")
                                "--target" "wasm32-wasi" "--output" wasm])
     (doseq [[source target]

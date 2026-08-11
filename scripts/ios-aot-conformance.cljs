@@ -18,17 +18,16 @@
 
 (defn build! [directory]
   (.mkdirSync fs directory #js {:recursive true})
-  (let [nbb-cli (.join path lib/root "node_modules" "nbb" "cli.js")
-        kotoba (.join path lib/root "bin" "kotoba")
+  (let [kotoba (.join path lib/root "bin" "kotoba")
         kexe (.join path directory "program.kexe")
         manifest (.join path directory "program.edn")
         program-object (.join path directory "program.o")
         host-object (.join path directory "host.o")
         archive (.join path directory "libkotoba-ios.a")]
-    (run! js/process.execPath [nbb-cli kotoba "-M" "compile"
+    (run! js/process.execPath [kotoba "-M" "compile"
                                (.join path lib/root "examples" "structured.kotoba")
                                "--target" "aarch64-ios" "--output" kexe])
-    (run! js/process.execPath [nbb-cli kotoba "-M" "package-ios" kexe
+    (run! js/process.execPath [kotoba "-M" "package-ios" kexe
                                "--entry" "main" "--platform" "ios"
                                "--output" program-object
                                "--manifest-output" manifest])

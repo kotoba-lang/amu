@@ -67,7 +67,7 @@ function runCompile({ fixture, target, output }) {
       encoding: "utf8",
       timeout: 120_000,
       maxBuffer: 16 * 1024 * 1024,
-      env: { ...process.env, KOTOBA_COMPILER_TIMING: "1" },
+      env: { ...process.env, KOTOBA_COMPILER_TIMING: "1", KOTOBA_COMPILER_DAEMON: "0" },
     });
   const wallMilliseconds = Number(process.hrtime.bigint() - started) / 1e6;
   if (result.error) throw result.error;

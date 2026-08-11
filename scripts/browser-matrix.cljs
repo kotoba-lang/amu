@@ -18,7 +18,8 @@
       (throw (js/Error. (str "browser matrix command failed: " command))))))
 (defn nbb! [args env] (run! js/process.execPath (into [nbb-cli] args) env))
 (defn compile! [source output & more]
-  (nbb! (into [kotoba "-M" "compile" (.join path root source)
+  (run! js/process.execPath
+        (into [kotoba "-M" "compile" (.join path root source)
                "--target" "wasm32-browser" "--output" (.join path tmp output)] more) {}))
 
 (try

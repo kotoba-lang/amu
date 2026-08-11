@@ -1,0 +1,26 @@
+{:adr/id :adr-0248-transparent-compiler-daemon
+ :adr/title "Make persistent compilation transparent without weakening source integrity"
+ :adr/status :accepted
+ :adr/date "2026-08-11"
+ :adr/markdown "0248-transparent-compiler-daemon.md"
+ :adr/decision
+ {:launcher {:runtime :node
+             :nested-nbb-startup false
+             :ordinary-commands [:compile :check]
+             :one-shot-override "KOTOBA_COMPILER_DAEMON=0"
+             :transport-failure :one-shot-fallback
+             :compiler-failure :return-without-retry}
+  :daemon {:transport :owner-only-local-socket
+           :targets [:wasm :aarch64 :x86-64]
+           :serialization :per-target
+           :idle-milliseconds 300000
+           :generation [:protocol :checkout-realpath :namespace :daemon-bytes :launcher-bytes]
+           :source-integrity {:startup :all-source-bytes
+                              :request [:device :inode :size :mode :mtime :ctime]
+                              :changed-file :sha-256
+                              :changed-tree :close-generation}}
+  :bounds {:line-bytes 65536 :arguments 64 :argument-chars 4096}
+  :fallback {:bundle-integrity :sha-256
+             :source-entrypoint true}}
+ :adr/non-claims [:durable-cache :cross-checkout-cache :remote-daemon
+                  :unbounded-lifetime :parallel-same-target-compilation]}

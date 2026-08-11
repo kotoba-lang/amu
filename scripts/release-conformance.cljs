@@ -7,11 +7,10 @@
             ["node:path" :as path]))
 
 (def tmp (.mkdtempSync fs (.join path (.tmpdir os) "kotoba-release-")))
-(def nbb-cli (.join path lib/root "node_modules" "nbb" "cli.js"))
 (def kotoba (.join path lib/root "bin" "kotoba"))
 (defn file [name] (.join path tmp name))
 (defn run-k! [args allow-failure?]
-  (let [result (.spawnSync child js/process.execPath (clj->js (into [nbb-cli kotoba "-M"] args))
+  (let [result (.spawnSync child js/process.execPath (clj->js (into [kotoba "-M"] args))
                            #js {:cwd lib/root :encoding "utf8" :maxBuffer 1048576})]
     (when (.-error result) (throw (.-error result)))
     (when-not (or allow-failure? (zero? (or (.-status result) 70)))

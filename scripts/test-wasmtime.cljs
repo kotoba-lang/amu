@@ -16,10 +16,9 @@
     result))
 
 (defn compile! [source output]
-  (let [nbb-cli (.join path lib/root "node_modules" "nbb" "cli.js")]
-    (run! js/process.execPath
-          [nbb-cli (.join path lib/root "bin" "kotoba") "-M" "compile" source
-           "--target" "wasm32-wasi" "--output" output] false)))
+  (run! js/process.execPath
+        [(.join path lib/root "bin" "kotoba") "-M" "compile" source
+         "--target" "wasm32-wasi" "--output" output] false))
 
 (-> (tool/ensure!)
     (.then

@@ -17,7 +17,7 @@
     (when-not (zero? (or (.-status result) 70))
       (throw (js/Error. "Safari matrix command failed")))))
 (defn compile! [source output & more]
-  (run! (into [nbb-cli kotoba "-M" "compile" (.join path root source)
+  (run! (into [kotoba "-M" "compile" (.join path root source)
                "--target" "wasm32-browser" "--output" (.join path tmp output)] more) {}))
 
 (if (= "1" js/process.env.KOTOBA_SAFARI_STATIC_CHECK)

@@ -96,8 +96,7 @@
 
 (defn build! [directory source policy]
   (.mkdirSync fs directory #js {:recursive true})
-  (let [nbb-cli (.join path lib/root "node_modules" "nbb" "cli.js")
-        kotoba (.join path lib/root "bin" "kotoba")
+  (let [kotoba (.join path lib/root "bin" "kotoba")
         kexe (.join path directory "program.kexe")
         manifest (.join path directory "program.edn")
         program-object (.join path directory "program.o")
@@ -106,10 +105,10 @@
         sim-flags ["--sdk" "iphonesimulator" "clang" "-arch" "arm64"
                    "-mios-simulator-version-min=15.0"]]
     (run! js/process.execPath
-          (cond-> [nbb-cli kotoba "-M" "compile" source
+          (cond-> [kotoba "-M" "compile" source
                    "--target" "aarch64-ios" "--output" kexe]
             policy (into ["--policy" policy])))
-    (run! js/process.execPath [nbb-cli kotoba "-M" "package-ios" kexe
+    (run! js/process.execPath [kotoba "-M" "package-ios" kexe
                                "--entry" "main" "--platform" "ios-simulator"
                                "--output" program-object
                                "--manifest-output" manifest])
