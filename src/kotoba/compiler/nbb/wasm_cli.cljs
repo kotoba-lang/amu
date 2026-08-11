@@ -50,6 +50,16 @@
              :admission result}
       context (assoc :stage-cache {:hir (:cache hir-result)}))))
 
+;; Said in the result, not only in this namespace's docstring. The JVM
+;; `compile` writes <output>.provenance.edn and reports :provenance-output;
+;; this path deliberately keeps provenance out of its dependency closure, so
+;; the artifact is byte-identical and has no sidecar. Measured 2026-08-11:
+;; same source, same target, same 350 bytes, one sealed and one not. A caller
+;; that reads the result map should be able to see which it got.
+(def ^:private provenance-note
+  {:provenance :not-emitted
+   :provenance-note "lean nbb wasm path; use the JVM compile to seal an artifact"})
+
 (defn- compile-uncached! [args target output source]
   (let [hir (support/timed "frontend" #(sema/analyze source))
         policy (support/timed "policy-read" #(support/read-policy args))
@@ -57,7 +67,7 @@
         kir (support/timed "kir-lower" #(ir/lower hir))
         bytes (support/timed "wasm-emit" #(wasm/emit kir target))]
     (support/timed "artifact-write" #(io/write-bytes! output bytes))
-    {:ok true :target target :output output}))
+    (merge {:ok true :target target :output output} provenance-note)))
 
 (defn- compile-cached! [args target output source context]
   ;; Read policy bytes early only to form a cache key. If that read fails, defer
@@ -83,7 +93,8 @@
           (compile-cache/remove! artifact-cache key)
           (throw (ex-info "compiler cache integrity mismatch" {:cache-key key})))
         (support/timed "artifact-write" #(io/write-bytes! output bytes))
-        {:ok true :target target :output output :cache :hit :cache-key key})
+        (merge {:ok true :target target :output output :cache :hit :cache-key key}
+               provenance-note))
       (let [hir-result (resolve-hir! source stage-cache)
             hir (:value hir-result)
             _ (when-let [error (:error policy-attempt)] (throw error))
@@ -98,8 +109,9 @@
         (support/timed "artifact-write" #(io/write-bytes! output bytes))
         (support/timed "cache-store"
                        #(compile-cache/put! artifact-cache key sealed (.-length bytes)))
-        {:ok true :target target :output output :cache :miss :cache-key key
-         :stage-cache (stage-status hir-result kir-result)}))))
+        (merge {:ok true :target target :output output :cache :miss :cache-key key
+                :stage-cache (stage-status hir-result kir-result)}
+               provenance-note)))))
 
 (defn- compile! [args context]
   (let [input (support/timed "source-admit" #(support/source! (second args)))

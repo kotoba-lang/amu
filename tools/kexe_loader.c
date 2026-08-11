@@ -488,7 +488,8 @@ static const uint8_t *resolve_string_bytes(struct kexe_context_v3 *context,
     }
     return context->code_base + offset;
   }
-  uint64_t pool_offset = (uint64_t)(-offset - 1);
+  /* `-(offset + 1)` is defined even for INT64_MIN; `-offset - 1` is not. */
+  uint64_t pool_offset = (uint64_t)(-(offset + 1));
   if (pool_offset + (uint64_t)length > KEXE_STRING_POOL_BYTES ||
       pool_offset + (uint64_t)length < pool_offset) {
     raise(SIGILL);
@@ -523,6 +524,71 @@ static int valid_utf8(const uint8_t *bytes, uint64_t length) {
     return 0;
   }
   return 1;
+}
+
+static int hex_nibble(char value) {
+  if (value >= '0' && value <= '9') return value - '0';
+  if (value >= 'a' && value <= 'f') return value - 'a' + 10;
+  return -1;
+}
+
+/* Host strings cross the process boundary as lowercase UTF-8 hex. They are
+ * decoded into the existing bounded string pool and receive the same
+ * pair(offset,length) representation as guest-created strings. Scalar tokens
+ * retain the historical decimal spelling, so old direct loader callers keep
+ * working. */
+static int parse_guest_arg(struct kexe_shared_v3 *shared,
+                           const char *text, int64_t *value) {
+  if (strncmp(text, "s:", 2) != 0) return parse_i64(text, value);
+  const char *hex = text + 2;
+  size_t digits = strlen(hex);
+  if ((digits & 1u) != 0) return -1;
+  uint64_t length = (uint64_t)(digits / 2u);
+  if (length > KEXE_STRING_POOL_BYTES - shared->string_pool_used ||
+      shared->pair_used >= KEXE_PAIR_CAPACITY) return -1;
+  for (size_t i = 0; i < digits; i++) {
+    if (hex_nibble(hex[i]) < 0) return -1;
+  }
+  uint64_t start = shared->string_pool_used;
+  for (uint64_t i = 0; i < length; i++) {
+    shared->string_pool[start + i] =
+        (uint8_t)((hex_nibble(hex[2u * i]) << 4) |
+                  hex_nibble(hex[2u * i + 1u]));
+  }
+  if (!valid_utf8(shared->string_pool + start, length)) return -1;
+  uint64_t index = shared->pair_used++;
+  shared->pairs[index].first = -((int64_t)start) - 1;
+  shared->pairs[index].second = (int64_t)length;
+  shared->string_pool_used += length;
+  *value = (int64_t)(index + 1u);
+  return 0;
+}
+
+/* Read a returned string without invoking the guest-facing trapping helpers:
+ * this runs in the supervisor after the sandboxed child has exited. It also
+ * requires a pool slice to have actually been allocated, rather than merely
+ * falling somewhere inside the pool capacity. */
+static const uint8_t *inspect_string_result(const struct kexe_shared_v3 *shared,
+                                            int64_t handle, uint64_t *length_out) {
+  if (handle <= 0 || (uint64_t)handle > shared->pair_used) return NULL;
+  const struct kexe_pair_v1 *pair = &shared->pairs[(uint64_t)handle - 1u];
+  if (pair->second < 0) return NULL;
+  uint64_t length = (uint64_t)pair->second;
+  const uint8_t *bytes;
+  if (pair->first >= 0) {
+    uint64_t offset = (uint64_t)pair->first;
+    if (length > shared->context.code_length ||
+        offset > shared->context.code_length - length) return NULL;
+    bytes = shared->context.code_base + offset;
+  } else {
+    uint64_t offset = (uint64_t)(-(pair->first + 1));
+    if (length > shared->string_pool_used ||
+        offset > shared->string_pool_used - length) return NULL;
+    bytes = shared->string_pool + offset;
+  }
+  if (!valid_utf8(bytes, length)) return NULL;
+  *length_out = length;
+  return bytes;
 }
 
 enum kexe_typed_kind_v1 {
@@ -783,18 +849,41 @@ static int supervise(pid_t child) {
   return 123;
 }
 
-static void write_supervisor_report(const struct kexe_shared_v3 *shared,
-                                    int child_status) {
+static int write_supervisor_report(const struct kexe_shared_v3 *shared,
+                                   int child_status,
+                                   const char *result_type) {
   if (child_status == 0 && shared->completed == 1) {
-    printf("{:status :ok :result %" PRId64
-           " :fuel {:initial 512 :remaining %" PRIu64
-           "} :heap {:capacity 4096 :used %" PRIu64 "}}\n",
-           shared->result, shared->context.fuel, shared->pair_used);
+    if (strcmp(result_type, "string") == 0) {
+      uint64_t length = 0;
+      const uint8_t *bytes = inspect_string_result(shared, shared->result, &length);
+      if (bytes == NULL) {
+        static const char trap[] =
+            "KEXE_TRAP {:kind :result :reason :invalid-string-handle}\n";
+        (void)write(STDERR_FILENO, trap, sizeof(trap) - 1u);
+        printf("{:status :trap :exit 126 :fuel {:initial 512 :remaining %" PRIu64
+               "} :heap {:capacity 4096 :used %" PRIu64 "}}\n",
+               shared->context.fuel, shared->pair_used);
+        return 126;
+      }
+      printf("{:status :ok :result %" PRId64
+             " :result-type :string :result-utf8-hex \"",
+             shared->result);
+      for (uint64_t i = 0; i < length; i++) printf("%02x", bytes[i]);
+      printf("\" :fuel {:initial 512 :remaining %" PRIu64
+             "} :heap {:capacity 4096 :used %" PRIu64 "}}\n",
+             shared->context.fuel, shared->pair_used);
+    } else {
+      printf("{:status :ok :result %" PRId64
+             " :fuel {:initial 512 :remaining %" PRIu64
+             "} :heap {:capacity 4096 :used %" PRIu64 "}}\n",
+             shared->result, shared->context.fuel, shared->pair_used);
+    }
   } else {
     printf("{:status :trap :exit %d :fuel {:initial 512 :remaining %" PRIu64
            "} :heap {:capacity 4096 :used %" PRIu64 "}}\n",
            child_status, shared->context.fuel, shared->pair_used);
   }
+  return child_status;
 }
 
 /* Keep post-sandbox output independent of libc stdio's lazy initialization. */
@@ -970,10 +1059,11 @@ int main(int argc, char **argv) {
   if (mprotect(memory, mapped, PROT_READ | PROT_EXEC) != 0) fail("mprotect RX");
   __builtin___clear_cache((char *)memory, (char *)memory + length);
 
+  const char *result_type = getenv("KEXE_RESULT_TYPE");
+  if (result_type == NULL) result_type = "i64";
+  if (strcmp(result_type, "i64") != 0 && strcmp(result_type, "string") != 0)
+    return 2;
   int64_t args[6] = {0, 0, 0, 0, 0, 0};
-  for (unsigned long i = 0; i < arity; i++) {
-    if (parse_i64(argv[6 + i], &args[i]) != 0) return 2;
-  }
   struct kexe_shared_v3 *shared =
       mmap(NULL, sizeof(*shared), PROT_READ | PROT_WRITE,
            MAP_SHARED | MAP_ANONYMOUS, -1, 0);
@@ -1003,13 +1093,17 @@ int main(int argc, char **argv) {
   shared->context.code_base = (const uint8_t *)memory;
   shared->context.code_length = (uint64_t)length;
   if (parse_allow(argv[5], shared->context.allow) != 0) return 2;
+  for (unsigned long i = 0; i < arity; i++) {
+    if (parse_guest_arg(shared, argv[6 + i], &args[i]) != 0) return 2;
+  }
   int structured_report = getenv("KEXE_STRUCTURED_REPORT") != NULL;
 
   pid_t child = fork();
   if (child < 0) fail("fork");
   if (child > 0) {
     int child_status = supervise(child);
-    if (structured_report) write_supervisor_report(shared, child_status);
+    if (structured_report)
+      child_status = write_supervisor_report(shared, child_status, result_type);
     if (munmap(shared, sizeof(*shared)) != 0) fail("supervisor shared munmap");
     if (munmap(memory, mapped) != 0) fail("supervisor munmap");
     return child_status;

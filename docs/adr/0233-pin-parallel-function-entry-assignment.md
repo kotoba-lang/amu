@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted. Its five-argument fallback evidence is superseded by ADR 0234; the
+Accepted. Its five-argument fallback evidence is superseded by ADR 0236; the
 four-argument zero-frame evidence remains current.
 
 ## Context

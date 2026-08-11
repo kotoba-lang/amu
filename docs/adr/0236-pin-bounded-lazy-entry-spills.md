@@ -1,4 +1,4 @@
-# ADR 0234: Pin bounded lazy function-entry spills
+# ADR 0236: Pin bounded lazy function-entry spills
 
 ## Status
 
