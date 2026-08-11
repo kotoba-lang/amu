@@ -1,0 +1,32 @@
+(ns examples.nested-record (:export [nested-score]))
+
+(defn nested-score [] :i64
+  (let [value
+        (record
+         [:record :example/outer
+          [[:inner [:record :example/inner [[:left :i64] [:right :i64]]]]
+           [:bonus :i64]]]
+         (record [:record :example/inner [[:left :i64] [:right :i64]]]
+                 4 5)
+         6)]
+    (+ (record-get
+        [:record :example/inner [[:left :i64] [:right :i64]]]
+        (record-get
+         [:record :example/outer
+          [[:inner [:record :example/inner [[:left :i64] [:right :i64]]]]
+           [:bonus :i64]]]
+         value :inner)
+        :left)
+       (record-get
+        [:record :example/inner [[:left :i64] [:right :i64]]]
+        (record-get
+         [:record :example/outer
+          [[:inner [:record :example/inner [[:left :i64] [:right :i64]]]]
+           [:bonus :i64]]]
+         value :inner)
+        :right)
+       (record-get
+        [:record :example/outer
+         [[:inner [:record :example/inner [[:left :i64] [:right :i64]]]]
+          [:bonus :i64]]]
+        value :bonus))))

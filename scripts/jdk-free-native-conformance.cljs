@@ -49,23 +49,33 @@
                               #js {"PATH" (str shadow (.-delimiter path) (.-PATH js/process.env))
                                    "JAVA_HOME" (.join path tmp "no-java-home")})
         invoke (fn [args] (run js/process.execPath (into [nbb-cli kotoba "-M"] args) env))
-        artifact (file "program.kexe")
-        binary (file "program.bin")
         loader (file "kexe-loader")]
-    (invoke ["compile" (.join path root "examples" "structured.kotoba")
-             "--target" isa "--output" artifact])
-    (let [extracted (:stdout (invoke ["extract-native" artifact "--symbol" "score"
-                                     "--output" binary]))
-          [_ offset] (re-find #":offset ([0-9]+)" extracted)]
-      (ensure! offset "extract-native returned no score offset")
-      (run "cc" ["-std=c11" "-O2" "-Wall" "-Wextra" "-Werror"
-                  (.join path root "tools" "kexe_loader.c") "-o" loader] env)
-      (let [executed (run loader [binary offset "2" isa "-" "-7" "2"] env)]
-        (ensure! (= "12" (str/trim (:stdout executed)))
-                 (str "native score expected 12, got " (str/trim (:stdout executed))))))
+    (run "cc" ["-std=c11" "-O2" "-Wall" "-Wextra" "-Werror"
+                (.join path root "tools" "kexe_loader.c") "-o" loader] env)
+    (doseq [{:keys [source symbol arguments expected]}
+            [{:source "structured.kotoba" :symbol "score"
+              :arguments ["-7" "2"] :expected "12"}
+             {:source "nested-record.kotoba" :symbol "nested-score"
+              :arguments [] :expected "15"}]]
+      (let [artifact (file (str symbol ".kexe"))
+            binary (file (str symbol ".bin"))]
+        (invoke ["compile" (.join path root "examples" source)
+                 "--target" isa "--output" artifact])
+        (let [extracted (:stdout (invoke ["extract-native" artifact "--symbol" symbol
+                                         "--output" binary]))
+              [_ offset] (re-find #":offset ([0-9]+)" extracted)]
+          (ensure! offset (str "extract-native returned no " symbol " offset"))
+          (let [executed (run loader
+                              (into [binary offset (str (count arguments)) isa "-"]
+                                    arguments)
+                              env)]
+            (ensure! (= expected (str/trim (:stdout executed)))
+                     (str "native " symbol " expected " expected ", got "
+                          (str/trim (:stdout executed))))))))
     (when (fs/existsSync marker)
       (throw (js/Error. (str "JVM tool was invoked: " (fs/readFileSync marker "utf8")))))
     (println (str "jdk-free-native: sealed " isa
-                  " artifact independently extracted and executed under W^X loader")))
+                  " scalar and recursive-record artifacts independently extracted"
+                  " and executed under W^X loader")))
   (finally
     (fs/rmSync tmp #js {:recursive true :force true})))
