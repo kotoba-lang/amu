@@ -192,7 +192,9 @@
         (throw (ex-info "embedded kernel PT_LOAD contract rejected" {:segments segments})))
       (let [data-addresses [0 8]
             variables-size 72
-            embedded-offset (align variables-size 16)
+            memory-map-offset (align variables-size 16)
+            memory-map-capacity 16384
+            embedded-offset (align (+ memory-map-offset memory-map-capacity) 16)
             ;; Build once with provisional external RVAs; instruction length is
             ;; independent of displacement values.
             segment-tokens (mapcat (fn [index segment]
@@ -205,11 +207,16 @@
                      0x48 0x83 0xec 0x28 0x49 0x89 0xcc 0x49 0x89 0xd5
                      0x4c 0x8b 0x72 0x60]
                     segment-tokens
-                    ;; AllocatePool(EfiLoaderData,128 KiB,&map-pointer).
-                    [0xb9 2 0 0 0 0xba 0 0 2 0 0x4c 0x8d 0x05] [(rip :map-pointer)]
-                    [0x41 0xff 0x56 0x40 0x48 0x85 0xc0 0x0f 0x85] [(rip :fail)]
+                    ;; The bounded memory map is part of the loader image's RW
+                    ;; section, immediately after boot-info. This makes the
+                    ;; handoff one compiler-owned region: the kernel derives
+                    ;; boot+64 instead of trusting a pointer read from firmware
+                    ;; data as a new memory authority. GetMemoryMap fails closed
+                    ;; when 16 KiB is insufficient.
+                    [0x48 0x8d 0x05] [(rip :memory-map)]
+                    [0x48 0x89 0x05] [(rip :map-pointer)]
                     [(label :get-map)]
-                    [0x48 0xc7 0x05] [(rip :map-size)] [0 0 2 0]
+                    [0x48 0xc7 0x05] [(rip :map-size)] [0 0x40 0 0]
                     [0x48 0x8d 0x0d] [(rip :map-size)]
                     [0x48 0x8b 0x15] [(rip :map-pointer)]
                     [0x4c 0x8d 0x05] [(rip :map-key)]
@@ -232,7 +239,10 @@
                               (le 0x544f4f4245554941 8)
                               (le 1 8)
                               (repeat (- variables-size 32) 0)
-                              (repeat (- embedded-offset variables-size) 0)
+                              (repeat (- memory-map-offset variables-size) 0)
+                              (repeat memory-map-capacity 0)
+                              (repeat (- embedded-offset
+                                         (+ memory-map-offset memory-map-capacity)) 0)
                               kernel))
             data-raw-size (align (count data) file-alignment)
             reloc-address (align (+ data-address (count data)) section-alignment)
@@ -243,7 +253,8 @@
                            :map-size (+ data-address 40)
                            :descriptor-size (+ data-address 48)
                            :descriptor-version (+ data-address 56)
-                           :map-key (+ data-address 64)}
+                           :map-key (+ data-address 64)
+                           :memory-map (+ data-address memory-map-offset)}
                           (into {} (map-indexed
                                     (fn [index segment]
                                       [(keyword (str "segment" index))
@@ -274,7 +285,10 @@
                                 :rva reloc-address :raw-size reloc-raw-size
                                 :raw-offset reloc-offset :characteristics 0x42000040
                                 :bytes reloc}]})]
-        {:format :pe32+-embedded-kernel/v1 :target firmware-target
+        {:format :pe32+-embedded-kernel/v2 :target firmware-target
          :entry :efi_main :entry-rva text-rva :sections [:text :data :reloc]
+         :boot-info-layout {:bytes (+ 64 memory-map-capacity)
+                            :memory-map-offset 64
+                            :memory-map-capacity memory-map-capacity}
          :imports [] :embedded-kernel-sha256 (artifact/sha256 kernel)
          :bytes bytes})))))

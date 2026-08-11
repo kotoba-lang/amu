@@ -5,6 +5,13 @@ Status: accepted, 2026-07-11.
 `kotoba-lang/kotoba` owns language semantics. This repository owns compilation.
 `aiueos` owns process isolation, capability brokerage, loading, and receipts.
 
+These are dependencies, not interchangeable evidence surfaces. Compiler and
+backend tests may establish artifact correctness. Only execution through the
+aiueos C-free bare-metal surface establishes production native-effect runtime
+evidence; hosted VM/VMM and C-reference results remain downstream oracles.
+Qualification reads those receipts after execution and never grants authority
+back to the compiler or backend.
+
 The shared safety pipeline precedes every backend. A backend cannot weaken the
 source subset, inferred effects, resource bounds, or capability requirements.
 Every artifact records its target, KIR digest, declared effects, limits, and
