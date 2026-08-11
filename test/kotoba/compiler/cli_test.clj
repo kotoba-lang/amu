@@ -460,3 +460,33 @@
     (is (empty? undocumented)
         (str "subcommands the CLI dispatches but --help never mentions: "
              (pr-str (sort undocumented))))))
+
+(deftest check-json-has-one-shape-across-both-entrypoints
+  ;; `check` has two implementations: kotoba.compiler.cli on the JVM, and
+  ;; kotoba.compiler.nbb.wasm-cli on the nbb fast path bin/kotoba routes to
+  ;; when no JDK is wanted. Same command, same file -- and the nbb one used to
+  ;; answer with :ok/:effects/:admission only. A consumer keying on :format,
+  ;; which is the versioned output contract, had nothing to key on, and
+  ;; :exports was absent outright.
+  ;;
+  ;; Compared by source rather than by running both, so the suite does not
+  ;; grow a node dependency to check a shape.
+  (let [jvm-src (slurp (io/file "src/kotoba/compiler/cli.clj"))
+        nbb-src (slurp (io/file "src/kotoba/compiler/nbb/wasm_cli.cljs"))
+        keys-near (fn [src anchor]
+                    ;; nil when the anchor is absent, which is itself the
+                    ;; finding -- an entrypoint that emits no :format at all.
+                    (when-let [i (str/index-of src anchor)]
+                      (into #{} (map second)
+                            (re-seq #"(?m)^\s+(:[a-z-]+) "
+                                    (subs src i (min (count src) (+ i 420)))))))
+        jvm-keys (keys-near jvm-src ":format :kotoba.check/v1")
+        nbb-keys (keys-near nbb-src ":format :kotoba.check/v1")]
+    (is (some? jvm-keys) "the JVM check --json no longer emits :format")
+    (is (some? nbb-keys) "the nbb check --json emits no :format at all")
+    (is (contains? jvm-keys ":admission") "the JVM anchor moved; this test is reading the wrong form")
+    (is (contains? (or nbb-keys #{}) ":admission") "the nbb anchor moved; this test is reading the wrong form")
+    (is (= jvm-keys (or nbb-keys #{}))
+        (str "check --json differs between entrypoints. JVM-only: "
+             (pr-str (sort (remove (or nbb-keys #{}) jvm-keys)))
+             "  nbb-only: " (pr-str (sort (remove jvm-keys (or nbb-keys #{}))))))))

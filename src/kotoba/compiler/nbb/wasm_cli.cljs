@@ -38,7 +38,16 @@
         hir (:value hir-result)
         policy (support/timed "policy-read" #(support/read-policy args))
         result (support/timed "admission" #(admission/check hir policy))]
-    (cond-> {:ok true :effects (:effects hir) :admission result}
+    ;; Same keys as the JVM `check --json` in kotoba.compiler.cli. This path
+    ;; used to answer with :ok/:effects/:admission only, so a consumer keying
+    ;; on :format -- the versioned output contract -- saw nothing to key on,
+    ;; and :exports was simply absent. Same command, same file, two shapes.
+    (cond-> {:ok true
+             :format :kotoba.check/v1
+             :language-profile (:language-profile hir)
+             :effects (:effects hir)
+             :exports (:exports hir)
+             :admission result}
       context (assoc :stage-cache {:hir (:cache hir-result)}))))
 
 (defn- compile-uncached! [args target output source]
