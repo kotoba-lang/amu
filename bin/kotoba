@@ -56,7 +56,7 @@
 
 (defn- nbb-native-eligible? [sub-args]
   (let [cmd (first sub-args)]
-    (or (= cmd "check")
+    (or (contains? #{"check" "extract-native"} cmd)
         (and (= cmd "worker") (contains? nbb-native-targets (option sub-args "--target")))
         (and (= cmd "compile") (contains? nbb-native-targets (option sub-args "--target"))))))
 
@@ -67,6 +67,7 @@
                   (nil? target)
                   (.startsWith target "wasm32"))
         filename (cond
+                   (= command "extract-native") "x86_64_cli.cljs"
                    wasm? "wasm_cli.cljs"
                    (.startsWith target "aarch64") "aarch64_cli.cljs"
                    :else "x86_64_cli.cljs")]

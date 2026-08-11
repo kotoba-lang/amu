@@ -80,6 +80,27 @@
       (lib/ensure! (.includes text needle) (str "windows-profile: missing binding " needle))))
   (run-k! ["verify" (artifact "first.kexe")])
   (println (str "windows-profile: reproducible " isa " Windows KEXE verified"))
+  ;; Compile the entryless tagged-value library on every host. Runtime vectors
+  ;; still require Windows, but native-library admission is target semantics and
+  ;; must not regress silently on non-Windows CI nodes.
+  (.writeFileSync
+   fs (artifact "tagged-boundary.kotoba")
+   (str "(ns maturity.windows-tagged\n"
+        "  (:export [echo-option make-none make-some inspect-option\n"
+        "            echo-result make-ok make-err inspect-result]))\n"
+        "(defn echo-option [value :option-i64] :option-i64 value)\n"
+        "(defn make-none [witness :i64] :option-i64 (option-none))\n"
+        "(defn make-some [value :i64] :option-i64 (option-some value))\n"
+        "(defn inspect-option [value :option-i64] :i64 (option-value value 99))\n"
+        "(defn echo-result [value :result-i64] :result-i64 value)\n"
+        "(defn make-ok [value :i64] :result-i64 (result-ok value))\n"
+        "(defn make-err [value :i64] :result-i64 (result-err value))\n"
+        "(defn inspect-result [value :result-i64] :i64\n"
+        "  (+ (result-value value 1000) (result-error value 2000)))\n"))
+  (run-k! ["compile" (artifact "tagged-boundary.kotoba")
+           "--target" target "--output" (artifact "tagged-boundary.kexe")])
+  (run-k! ["verify" (artifact "tagged-boundary.kexe")])
+  (println (str "windows-profile: entryless " isa " Windows library verified"))
   (when (= "win32" (.-platform js/process))
     (let [loader (artifact "kexe-loader-windows.exe")
           raw (artifact "program.bin")
@@ -93,22 +114,6 @@
       (loader-check! loader raw main-offset main-arity "42")
       (loader-check! loader raw score-offset score-arity "12" "-7" "2")
       (loader-check! loader raw calc-offset calc-arity "21" "20" "4")
-      (.writeFileSync
-       fs (artifact "tagged-boundary.kotoba")
-       (str "(ns maturity.windows-tagged\n"
-            "  (:export [echo-option make-none make-some inspect-option\n"
-            "            echo-result make-ok make-err inspect-result]))\n"
-            "(defn echo-option [value :option-i64] :option-i64 value)\n"
-            "(defn make-none [witness :i64] :option-i64 (option-none))\n"
-            "(defn make-some [value :i64] :option-i64 (option-some value))\n"
-            "(defn inspect-option [value :option-i64] :i64 (option-value value 99))\n"
-            "(defn echo-result [value :result-i64] :result-i64 value)\n"
-            "(defn make-ok [value :i64] :result-i64 (result-ok value))\n"
-            "(defn make-err [value :i64] :result-i64 (result-err value))\n"
-            "(defn inspect-result [value :result-i64] :i64\n"
-            "  (+ (result-value value 1000) (result-error value 2000)))\n"))
-      (run-k! ["compile" (artifact "tagged-boundary.kotoba")
-               "--target" target "--output" (artifact "tagged-boundary.kexe")])
       (let [raw-tagged (artifact "tagged-boundary.bin")
             exports (into {}
                           (map (fn [symbol]
