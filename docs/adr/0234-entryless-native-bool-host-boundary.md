@@ -23,10 +23,17 @@ Require an Amu integration test that compiles an entryless two-export Kotoba
 library, signs it, admits it, and invokes both exports through the real native
 loader process. The same test owns the two negative type cases.
 
+Pin sema `bc4fa7f365c3ea4ef9dd3682eb13f89b80d565a9` and tender-native
+`0540da03cd7ebdfa95a9d473571a5821394b1506`. The sema pin is the minimal
+default-branch-reachable descendant of Amu's previous pin; it deliberately
+does not bundle the independent string-predicate migration already present at
+the sema main tip.
+
 ## Evidence
 
-The native executor namespace passes 48 tests and 140 assertions with the
-local sema and tender changes. Inverting boolean word marshalling makes the new
+The published-pin Amu suite passes 948 tests and 7,483 assertions, including
+both available native ISAs. The native executor namespace accounts for 48
+tests and 140 assertions. Inverting boolean word marshalling makes the new
 integration test fail twice (integer result 0 instead of 41, boolean false
 instead of true). Removing boolean parameters from typed-HIR selection makes
 the sema test fail twice because HIR falls to v2 and loses `:param-types`.
