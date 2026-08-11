@@ -1098,6 +1098,12 @@ binary directories, `C` locale, UTC, and fixed reproducibility variables.
 Variables such as `CPATH`, `LIBRARY_PATH`, `SDKROOT`, `LD_PRELOAD`, and
 `DYLD_*` cannot influence measurement. The admitted loader receives only its
 explicit structured-report flag.
+The selected sealed export also owns the typed host framing. Scalar records
+with 1–128 unique `:i64`/`:bool` fields cross as keyword maps, but remain the
+aggregate ABI v2 declaration-order pair chain inside native code. The loader
+accepts exactly the declared host keys, validates an exact-length chain and
+its zero terminator on return, then copies field words before unmapping the
+arena. Raw pair handles never escape the process.
 Native runtime identity v6 additionally includes the exact explicit target
 profile measured on the host. Execution requires artifact ISA/ABI/OS/runtime
 compatibility, runtime-to-host exact profile equality, and explicit trust in

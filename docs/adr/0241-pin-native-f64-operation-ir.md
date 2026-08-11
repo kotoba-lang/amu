@@ -1,4 +1,4 @@
-# ADR 0238: pin native f64 operations through machine IR
+# ADR 0241: pin native f64 operations through machine IR
 
 ## Context
 

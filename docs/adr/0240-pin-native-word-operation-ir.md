@@ -1,4 +1,4 @@
-# ADR 0237: pin native word operations on machine IR
+# ADR 0240: pin native word operations on machine IR
 
 ## Context
 
