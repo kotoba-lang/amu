@@ -154,6 +154,14 @@
    ["comparison" "(defn main [] (if (< 1 2) 7 8))" 7]
    ["recursion" (str "(defn f [n] (if (< n 1) 0 (+ n (f (- n 1)))))"
                      " (defn main [] (f 5))") 15]
+   ["tail recursion releases its frame"
+    (str "(defn count-down [n acc] "
+         "(if (= n 0) acc (count-down (- n 1) (+ acc 1)))) "
+         "(defn main [] (count-down 400 0))") 400]
+   ["mutual tail calls release both frames"
+    (str "(defn even-tail [n] (if (= n 0) 1 (odd-tail (- n 1)))) "
+         "(defn odd-tail [n] (if (= n 0) 0 (even-tail (- n 1)))) "
+         "(defn main [] (even-tail 400))") 1]
    ["let" "(defn main [] (let [a 3 b 4] (* a b)))" 12]
    ["ordered scalar do"
     "(defn main [] :i64 (do (+ 1 2) (quot 8 2) (* 3 4)))" 12]
@@ -538,6 +546,15 @@
                bool-parameter-cases
                boolean-literal-argument-cases)))
 
+(deftest every-admitted-word-operation-uses-production-machine-ir
+  (doseq [form ['(bool-not a) '(bit-not a)
+                '(i64-shift-left a 3) '(i64-shift-right a 3)
+                '(u64-shift-right a 3) '(i32-wrap a) '(u32-wrap a)
+                '(i32-wrapping-add a b) '(i32-wrapping-mul a b)
+                '(i32-xor a b) '(i32-shift-left a 3)
+                '(i32-shift-right a 3) '(u32-shift-right a 3)]]
+    (is (machine-ir/pilot-expression? ['a 'b] form) form)))
+
 (def ^:private dual-phi-program
   (let [[test then-a then-b else-a else-b join-a join-b result]
         (mapv gmir/vreg (range 8))]
@@ -780,3 +797,13 @@
       (testing (str isa " / " why)
         (let [report (run-native isa source "-" {:allow #{}} 'divide args)]
           (is (str/includes? report ":status :trap") (str/trim report)))))))
+
+(deftest every-admitted-f64-form-uses-the-production-machine-ir-route
+  (doseq [form ['(f64-from-bits 1) '(f64-to-bits 1)
+                '(f64-abs 1) '(f64-neg 1) '(f64-sqrt 1)
+                '(f64-add 1 2) '(f64-sub 1 2) '(f64-mul 1 2)
+                '(f64-div 1 2) '(f64-min 1 2) '(f64-max 1 2)
+                '(f64-eq 1 2) '(f64-lt 1 2) '(f64-le 1 2)
+                '(f64-gt 1 2) '(f64-ge 1 2)
+                '(f64-unordered 1 2)]]
+    (is (machine-ir/pilot-expression? [] form) form)))

@@ -7,18 +7,18 @@
 (defn- dependency-pin [coordinate]
   (get-in (edn/read-string (slurp "deps.edn")) [:deps coordinate :git/sha]))
 
-(deftest pinned-closure-carries-the-scalar-call-boundary
-  (is (= "c52010003ac525855c3df3ec35dde88a2006b196"
+(deftest pinned-closure-carries-the-complete-native-boundary
+  (is (= "fad9959837ec216f12e4fffccf2b5eae3c06b70e"
          (dependency-pin 'io.github.kotoba-lang/kotoba-native)))
   (is (= "d58972da61758584a5bec0e863bcb3ea6fdd6c64"
          (dependency-pin 'io.github.kotoba-lang/kotoba-kir)))
   (is (= "83057552f03a8021c6523e8e38ad7439b1953522"
          (dependency-pin 'io.github.kotoba-lang/kotoba-verifier)))
-  (is (= 3 (:abi/version aggregate-abi/contract)))
-  (is (= :held (get-in aggregate-abi/contract
+  (is (= 5 (:abi/version aggregate-abi/contract)))
+  (is (= :word-pair-chain-admitted (get-in aggregate-abi/contract
                         [:extracted :record-boundary])))
-  (is (= :scalar-pair-handle-admitted
-         (get-in aggregate-abi/contract [:extracted :variant-boundary])))
+  (is (= :scalar-pair-handle-admitted (get-in aggregate-abi/contract
+                        [:extracted :variant-boundary])))
   (is (= :scalar-admitted (get-in aggregate-abi/contract
                                    [:extracted :call-admission])))
   (is (= :all-allocator-registers
@@ -32,7 +32,7 @@
   (is (not (machine/pilot-expression? ['x] '(callee x))))
   (try
     (machine/lower-kir-expression ['x] '(callee x))
-    (is false "call-shaped KIR must remain on the established emitter")
+    (is false "standalone call-shaped KIR must require module lowering")
     (catch clojure.lang.ExceptionInfo error
       (is (= :aggregate-abi (:phase (ex-data error))))
       (is (= :call-abi-not-admitted (:problem (ex-data error))))))

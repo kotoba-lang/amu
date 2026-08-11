@@ -71,3 +71,13 @@
                          "(defn main [] 9223372036854775808)")))
   (is (thrown-with-msg? clojure.lang.ExceptionInfo #"source reader rejected"
                         (sema/analyze "(defn main [] \"unterminated)"))))
+
+(deftest extracted-native-phases-have-one-public-ir-diagnostic-boundary
+  (let [source "(defn helper [x] (* 2)) (defn main [] (helper -21))"
+        error (try
+                (compiler/compile-source source :x86_64-kotoba-v1)
+                nil
+                (catch clojure.lang.ExceptionInfo error error))]
+    (is (some? error))
+    (is (= :ir (:phase (ex-data error))))
+    (is (= :aggregate-abi (:ir/phase (ex-data error))))))

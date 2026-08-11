@@ -46,9 +46,16 @@ GMIR/MIR/MC v3 with
 per-function frames, live-value preservation, parallel argument assignment,
 and a single-word return register. Straight-line callers now materialize only
 values live across a call; the representative module shrinks from 123 to 84
-bytes on x86-64 and from 108 to 88 bytes on AArch64. The pinned verifier
-consumes this vocabulary, re-emits a two-function module, and keeps its
-aggregate predicate independently derived.
+bytes on x86-64 and from 108 to 88 bytes on AArch64. Record and variant values remain held at
+function boundaries. The pinned verifier consumes this vocabulary, re-emits a
+two-function module, and keeps its aggregate predicate independently derived.
+Portable bool/bit negation, i64 shifts, and every admitted i32 wrapping
+operation also use this machine-IR path. The i32 names normalize into portable
+word arithmetic and shifts before target selection; the real-loader table
+executes the same rows on both native ISAs.
+Scalar f64 arithmetic, min/max, sqrt, bit-pattern conversion, ordered
+comparisons, and unordered detection now follow that boundary as well. The
+real-loader table includes ordered values and NaN cases on both ISAs.
 
 Entryless native libraries also have a measured scalar host boundary. The
 executor reads parameter and result types from the selected sealed export,
@@ -230,6 +237,14 @@ source-to-checked-HIR analysis, `kotoba-hir` owns the validated envelope,
 owns target selection and explicit register-allocation state. This compiler
 consumes those repositories while retaining orchestration and compatibility
 entry points. See ADR 0222 for the dependency graph.
+
+The pinned native closure now routes production KIR exclusively through
+whole-module GMIR, target-selected MIR, allocated MC, and closed target
+encoders. It publishes multiple exports from one layout and carries word-field
+records plus option/result handles under aggregate ABI v5. Retired recursive
+ISA emitters remain test-only; production has no fallback from IR rejection.
+Terminal local calls release the current native frame and branch without
+linking on both x86-64 and AArch64, so tail recursion no longer grows the stack.
 
 The reconciliation target is not to expose this compiler's KIR-level
 `cap-call`, numeric capability IDs, WIT imports, or provider callbacks as the

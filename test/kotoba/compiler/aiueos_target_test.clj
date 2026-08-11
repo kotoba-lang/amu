@@ -98,9 +98,9 @@
         artifact (:artifact (compiler/compile-source source :x86_64-aiueos-kernel-v1))
         code (:code artifact)]
     (is (empty? (:imports artifact)))
-    (is (some #(= [0x0f 0x20 0xd8] %) (partition 3 1 code)) "mov rax,cr3")
-    (is (some #(= [0x0f 0x22 0xd8] %) (partition 3 1 code)) "mov cr3,rax")
-    (is (some #(= [0x0f 0x01 0x38] %) (partition 3 1 code)) "invlpg [rax]")
+    (is (some #(= [0x41 0x0f 0x20 0xda] %) (partition 4 1 code)) "mov r10,cr3")
+    (is (some #(= [0x41 0x0f 0x22 0xda] %) (partition 4 1 code)) "mov cr3,r10")
+    (is (some #(= [0x41 0x0f 0x01 0x3a] %) (partition 4 1 code)) "invlpg [r10]")
     (is (some #{0xee} code) "out dx,al")
     (is (some #{0xef} code) "out dx,eax")))
 
@@ -108,7 +108,7 @@
   (let [artifact (:artifact (compiler/compile-source
                               "(defn main [] (kernel-boot-info))"
                               :x86_64-aiueos-kernel-v1))]
-    (is (some #(= [0x49 0x8b 0x41 0x50] %)
+    (is (some #(= [0x4d 0x8b 0x51 0x50] %)
               (partition 4 1 (:code artifact))))
     (is (empty? (:imports artifact)))))
 
@@ -190,13 +190,11 @@
         {:keys [offset length]} (get-in artifact [:exports '__kotoba_loop_1])
         helper (subvec (:code artifact) offset (+ offset length))]
     (is (= 190 (:value artifact)))
-    (is (some #(= [0x4c 0x8d 0x9c 0x24] %) (partition 4 1 helper))
-        "tail recur anchors the existing parameter frame")
-    (is (some #(= [0x49 0x89 0x83] %) (partition 3 1 helper))
-        "new loop values replace existing parameter slots")
+    (is (some #(= [0x48 0x81 0xc4] %) (partition 3 1 helper))
+        "tail recur releases the current MIR-owned frame")
     (is (some #(= [0x49 0xff 0x49 0x08] %) (partition 4 1 helper))
         "every back edge still consumes fuel")
-    (is (some #{0xe9} helper) "tail recur jumps back to the expression body")
+    (is (some #{0xe9} helper) "tail recur branches to the function entry")
     (is (not-any? #{0xe8} helper) "tail recur emits no native self-call")))
 
 (deftest x86-non-tail-recursion-remains-a-call
