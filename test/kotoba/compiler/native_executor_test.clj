@@ -192,6 +192,83 @@
                            ":reason :invalid-record-chain")))
       (finally (delete-tree! (.toFile directory))))))
 
+(deftest entryless-native-library-copies-option-and-result-across-the-real-process-boundary
+  (let [source "(ns maturity.native-tagged-library
+                  (:export [echo-option make-none make-some inspect-option
+                            echo-result make-ok make-err inspect-result]))
+                (defn echo-option [value :option-i64] :option-i64 value)
+                (defn make-none [witness :i64] :option-i64 (option-none))
+                (defn make-some [value :i64] :option-i64 (option-some value))
+                (defn inspect-option [value :option-i64] :i64
+                  (option-value value 99))
+                (defn echo-result [value :result-i64] :result-i64 value)
+                (defn make-ok [value :i64] :result-i64 (result-ok value))
+                (defn make-err [value :i64] :result-i64 (result-err value))
+                (defn inspect-result [value :result-i64] :i64
+                  (+ (result-value value 1000) (result-error value 2000)))"
+        {:keys [envelope trust]} (signed source {:allow #{}})
+        {:keys [trust options]} (execution-options trust)
+        run (fn [entry args]
+              (executor/execute envelope trust {:allow #{}} {:args args}
+                                (assoc options :entry entry)))]
+    (is (= [false] (get-in (run 'echo-option [[false]]) [:evidence :result])))
+    (is (= [true Long/MIN_VALUE]
+           (get-in (run 'echo-option [[true Long/MIN_VALUE]])
+                   [:evidence :result])))
+    (is (= [false] (get-in (run 'make-none [0]) [:evidence :result])))
+    (is (= [true Long/MAX_VALUE]
+           (get-in (run 'make-some [Long/MAX_VALUE]) [:evidence :result])))
+    (is (= 99 (get-in (run 'inspect-option [[false]]) [:evidence :result])))
+    (is (= -7 (get-in (run 'inspect-option [[true -7]]) [:evidence :result])))
+    (is (= [true Long/MIN_VALUE]
+           (get-in (run 'echo-result [[true Long/MIN_VALUE]])
+                   [:evidence :result])))
+    (is (= [false Long/MAX_VALUE]
+           (get-in (run 'echo-result [[false Long/MAX_VALUE]])
+                   [:evidence :result])))
+    (is (= [true -9] (get-in (run 'make-ok [-9]) [:evidence :result])))
+    (is (= [false 11] (get-in (run 'make-err [11]) [:evidence :result])))
+    (is (= 2007 (get-in (run 'inspect-result [[true 7]]) [:evidence :result])))
+    (is (= 1008 (get-in (run 'inspect-result [[false 8]]) [:evidence :result])))
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"tagged i64 value"
+                          (run 'echo-option [[false 0]])))
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"tagged i64 value"
+                          (run 'echo-option [[true]])))
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"tagged i64 value"
+                          (run 'echo-result [[1 0]])))))
+
+(deftest native-loader-refuses-invalid-option-and-result-handles
+  (let [artifact (:artifact (compiler/compile-source "(defn main [] 0)" (target)))
+        export (get (:exports artifact) 'main)
+        {:keys [loader-path]} @measured-runtime
+        host-os ((deref #'executor/host-os))
+        run-process (deref #'executor/run-process)
+        runtime-environment (deref #'executor/runtime-environment)
+        delete-tree! (deref #'executor/delete-tree!)
+        isa (if (= (target) :aarch64-kotoba-v1) "aarch64" "x86_64")
+        directory (java.nio.file.Files/createTempDirectory
+                   "kotoba-invalid-tagged-result-"
+                   (make-array java.nio.file.attribute.FileAttribute 0))
+        code-file (java.io.File. (.toFile directory) "program.bin")]
+    (try
+      (atomic-output/write-bytes!
+       (.getPath code-file)
+       (byte-array (map unchecked-byte (:code artifact))))
+      (doseq [[result-type expected-exit reason]
+              [[:option-i64 128 ":reason :invalid-option-i64"]
+               [:result-i64 129 ":reason :invalid-result-i64"]]]
+        (let [command [loader-path (.getPath code-file) (str (:offset export))
+                       "0" isa "-"]
+              process (run-process command
+                                   (runtime-environment host-os result-type)
+                                   {:timeout-ms 5000 :output-limit 65536})
+              report (edn/read-string (str/trim (:stdout process)))]
+          (is (= expected-exit (:exit process)) (name result-type))
+          (is (= {:status :trap :exit expected-exit}
+                 (select-keys report [:status :exit])) (name result-type))
+          (is (str/includes? (:stderr process) reason) (name result-type))))
+      (finally (delete-tree! (.toFile directory))))))
+
 (deftest typed-i64-capability-call-is-qualified-on-native
   (let [source "(defn main [] :i64 (typed-cap-call 4 :i64 :i64 41))"
         policy {:allow #{[:cap/call 4]}}

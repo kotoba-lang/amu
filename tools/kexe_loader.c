@@ -36,6 +36,11 @@ typedef int64_t (*kexe_fn8)(int64_t, int64_t, int64_t, int64_t,
 #define KEXE_KGRAPH_CAPACITY 4096u
 #define KEXE_STRING_POOL_BYTES 65536u
 #define KEXE_RECORD_FIELD_LIMIT 128u
+
+static void write_stderr_checked(const char *bytes, size_t length) {
+  ssize_t written = write(STDERR_FILENO, bytes, length);
+  (void)written;
+}
 /* Vector handles, and the element words they slice. The element arena is
  * deliberately four times `kotoba.kir.value/vector-item-limit` (16384), the
  * longest single vector KIR admits: every operation that changes an element
@@ -533,6 +538,16 @@ static int hex_nibble(char value) {
   return -1;
 }
 
+static int allocate_host_pair(struct kexe_shared_v3 *shared,
+                              int64_t first, int64_t second, int64_t *handle) {
+  if (shared->pair_used >= KEXE_PAIR_CAPACITY) return -1;
+  uint64_t index = shared->pair_used++;
+  shared->pairs[index].first = first;
+  shared->pairs[index].second = second;
+  *handle = (int64_t)(index + 1u);
+  return 0;
+}
+
 /* Host strings cross the process boundary as lowercase UTF-8 hex. They are
  * decoded into the existing bounded string pool and receive the same
  * pair(offset,length) representation as guest-created strings. Scalar tokens
@@ -540,6 +555,20 @@ static int hex_nibble(char value) {
  * working. */
 static int parse_guest_arg(struct kexe_shared_v3 *shared,
                            const char *text, int64_t *value) {
+  if (strcmp(text, "o:none") == 0)
+    return allocate_host_pair(shared, 0, 0, value);
+  if (strncmp(text, "o:some:", 7) == 0) {
+    int64_t payload;
+    if (parse_i64(text + 7, &payload) != 0) return -1;
+    return allocate_host_pair(shared, 1, payload, value);
+  }
+  if (strncmp(text, "e:ok:", 5) == 0 ||
+      strncmp(text, "e:err:", 6) == 0) {
+    int ok = text[2] == 'o';
+    int64_t payload;
+    if (parse_i64(text + (ok ? 5 : 6), &payload) != 0) return -1;
+    return allocate_host_pair(shared, ok ? 1 : 0, payload, value);
+  }
   if (strncmp(text, "r:", 2) == 0) {
     int64_t fields[KEXE_RECORD_FIELD_LIMIT];
     uint64_t count = 0;
@@ -633,6 +662,18 @@ static int inspect_record_result(const struct kexe_shared_v3 *shared,
     handle = pair->second;
   }
   return handle == 0;
+}
+
+static int inspect_tagged_i64_result(const struct kexe_shared_v3 *shared,
+                                     int64_t handle, int option,
+                                     int64_t *tag, int64_t *payload) {
+  if (handle <= 0 || (uint64_t)handle > shared->pair_used) return 0;
+  const struct kexe_pair_v1 *pair = &shared->pairs[(uint64_t)handle - 1u];
+  if (pair->first != 0 && pair->first != 1) return 0;
+  if (option && pair->first == 0 && pair->second != 0) return 0;
+  *tag = pair->first;
+  *payload = pair->second;
+  return 1;
 }
 
 enum kexe_typed_kind_v1 {
@@ -904,7 +945,7 @@ static int write_supervisor_report(const struct kexe_shared_v3 *shared,
       if (bytes == NULL) {
         static const char trap[] =
             "KEXE_TRAP {:kind :result :reason :invalid-string-handle}\n";
-        (void)write(STDERR_FILENO, trap, sizeof(trap) - 1u);
+        write_stderr_checked(trap, sizeof(trap) - 1u);
         printf("{:status :trap :exit 126 :fuel {:initial 512 :remaining %" PRIu64
                "} :heap {:capacity 4096 :used %" PRIu64 "}}\n",
                shared->context.fuel, shared->pair_used);
@@ -923,7 +964,7 @@ static int write_supervisor_report(const struct kexe_shared_v3 *shared,
                                  record_field_count, fields)) {
         static const char trap[] =
             "KEXE_TRAP {:kind :result :reason :invalid-record-chain}\n";
-        (void)write(STDERR_FILENO, trap, sizeof(trap) - 1u);
+        write_stderr_checked(trap, sizeof(trap) - 1u);
         printf("{:status :trap :exit 127 :fuel {:initial 512 :remaining %" PRIu64
                "} :heap {:capacity 4096 :used %" PRIu64 "}}\n",
                shared->context.fuel, shared->pair_used);
@@ -935,6 +976,26 @@ static int write_supervisor_report(const struct kexe_shared_v3 *shared,
         printf(i == 0 ? "%" PRId64 : " %" PRId64, fields[i]);
       printf("] :fuel {:initial 512 :remaining %" PRIu64
              "} :heap {:capacity 4096 :used %" PRIu64 "}}\n",
+             shared->context.fuel, shared->pair_used);
+    } else if (strcmp(result_type, "option-i64") == 0 ||
+               strcmp(result_type, "result-i64") == 0) {
+      int option = strcmp(result_type, "option-i64") == 0;
+      int64_t tag, payload;
+      if (!inspect_tagged_i64_result(shared, shared->result, option,
+                                     &tag, &payload)) {
+        int trap_exit = option ? 128 : 129;
+        const char *reason = option ? "invalid-option-i64" : "invalid-result-i64";
+        fprintf(stderr, "KEXE_TRAP {:kind :result :reason :%s}\n", reason);
+        printf("{:status :trap :exit %d :fuel {:initial 512 :remaining %" PRIu64
+               "} :heap {:capacity 4096 :used %" PRIu64 "}}\n",
+               trap_exit, shared->context.fuel, shared->pair_used);
+        return trap_exit;
+      }
+      printf("{:status :ok :result %" PRId64 " :result-type :%s "
+             ":result-tag %s :result-word %" PRId64
+             " :fuel {:initial 512 :remaining %" PRIu64
+             "} :heap {:capacity 4096 :used %" PRIu64 "}}\n",
+             shared->result, result_type, tag == 1 ? "true" : "false", payload,
              shared->context.fuel, shared->pair_used);
     } else {
       printf("{:status :ok :result %" PRId64
@@ -1067,9 +1128,9 @@ static void install_syscall_sandbox(void) {
   if (result != 0) {
     if (error != NULL) {
       static const char prefix[] = "kexe-loader: sandbox_init: ";
-      (void)write(STDERR_FILENO, prefix, sizeof(prefix) - 1);
-      (void)write(STDERR_FILENO, error, strlen(error));
-      (void)write(STDERR_FILENO, "\n", 1);
+      write_stderr_checked(prefix, sizeof(prefix) - 1);
+      write_stderr_checked(error, strlen(error));
+      write_stderr_checked("\n", 1);
       sandbox_free_error(error);
     }
     _exit(125);
@@ -1131,7 +1192,9 @@ int main(int argc, char **argv) {
         record_field_count == 0 || record_field_count > KEXE_RECORD_FIELD_LIMIT)
       return 2;
   } else if (strcmp(result_type, "i64") != 0 &&
-             strcmp(result_type, "string") != 0) return 2;
+             strcmp(result_type, "string") != 0 &&
+             strcmp(result_type, "option-i64") != 0 &&
+             strcmp(result_type, "result-i64") != 0) return 2;
   int64_t args[6] = {0, 0, 0, 0, 0, 0};
   struct kexe_shared_v3 *shared =
       mmap(NULL, sizeof(*shared), PROT_READ | PROT_WRITE,
