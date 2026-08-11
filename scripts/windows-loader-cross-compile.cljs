@@ -8,7 +8,7 @@
 (def root (.resolve path (.dirname path *file*) ".."))
 (def source (.join path root "tools" "kexe_loader_windows.c"))
 (def zig (or (.-KOTOBA_ZIG (.-env js/process)) "zig"))
-(def expected-zig "0.15.2")
+(def qualified-zig #{"0.15.2" "0.16.0"})
 (def targets [{:triple "x86_64-windows-gnu" :machine 0x8664 :label "x86-64"}
               {:triple "aarch64-windows-gnu" :machine 0xaa64 :label "Arm64"}])
 (def flags ["-std=c11" "-O2" "-Wall" "-Wextra" "-Werror"])
@@ -63,8 +63,10 @@
 (let [tmp (.mkdtempSync fs (.join path (.tmpdir os) "kotoba-windows-cross-"))]
   (try
     (let [version (.trim (.-stdout (run! zig ["version"])))]
-      (ensure! (= expected-zig version)
-               (str "expected Zig " expected-zig ", got " version)))
+      (ensure! (contains? qualified-zig version)
+               (str "unqualified Zig " version "; expected one of "
+                    (pr-str qualified-zig)))
+      (println (str "windows-loader-cross: Zig " version)))
     (doseq [target targets]
       (let [output (compile! tmp target)
             first-bytes (inspect-pe! output target)

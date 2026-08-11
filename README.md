@@ -549,10 +549,11 @@ verified. Native execution and release evidence still fail closed until the
 measured Windows supervisor is trusted for the current host. Historical hosted
 Windows x64 execution remains useful regression evidence, but those GitHub
 Actions runners are no longer the CI authority and the current murakumo fleet
-has no Windows node. Zig 0.15.2 now cross-builds the reviewed loader twice
-byte-identically for x86-64 and Arm64, and the gate independently checks PE32+
-machine identity. That is product portability evidence, not Windows runtime or
-physical-device release evidence.
+has no Windows node. The explicitly qualified Zig 0.15.2 and 0.16.0
+toolchains now cross-build the reviewed loader twice byte-identically for
+x86-64 and Arm64, and the gate independently checks PE32+ machine identity.
+That is product portability evidence, not Windows runtime or physical-device
+release evidence.
 
 The Android and iOS names begin with distinct compile/verify identities.
 They produce equal reviewed AArch64 instructions but distinct sealed artifact

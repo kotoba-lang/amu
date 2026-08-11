@@ -48,8 +48,9 @@ The POSIX loader compiles with both Clang and fortified GCC under
 and two errors in the native executor suite, proving that the semantic tag is
 observed rather than merely accepting a tagged-shaped report.
 
-The Windows loader now also cross-compiles twice byte-identically with Zig
-0.15.2 for both x86-64 and Arm64. The gate parses the products independently as
+The Windows loader now also cross-compiles twice byte-identically with the
+explicitly qualified Zig 0.15.2 and 0.16.0 toolchains for both x86-64 and
+Arm64. The gate parses the products independently as
 PE32+ and checks their machine fields. The Windows-host conformance program has
 the same option/result round trips, signed limits, guest construction and
 projection, and invalid-handle exits ready to run. This proves source and
