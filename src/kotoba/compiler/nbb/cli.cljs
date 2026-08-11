@@ -65,8 +65,14 @@
     (throw (ex-info "typed values currently require the kotoba-script web target, typed Wasm target, or qualified native string/scalar-record/option-i64/result-i64 features"
                     {:phase :target :target target :backend backend
                      :value-profile :kotoba.value/typed-v1})))
-  (when (nil? (:entry hir))
-    (throw (ex-info "entryless libraries currently require the kotoba-script web target"
+  ;; Keep the self-hosted driver aligned with the JVM compiler: ordinary
+  ;; native artifacts are exportable libraries when their target profile does
+  ;; not require an entry symbol. Aiueos firmware/kernel/process profiles still
+  ;; fail closed because their declared entry must exist in the image.
+  (when (and (nil? (:entry hir))
+             (not (and (contains? #{:x86_64-kotoba-v1 :aarch64-kotoba-v1} backend)
+                       (nil? (:entry (target-profile/profile target))))))
+    (throw (ex-info "entryless libraries currently require the kotoba-script web target, the Wasm target, or an entryless native target"
                     {:phase :target :target target :backend backend})))
   (let [admission (support/timed "admission" #(admission/check hir policy))
         kir-result (resolve-kir! hir stage-cache)
