@@ -1,5 +1,7 @@
 #define WIN32_LEAN_AND_MEAN
+#ifndef _WIN32_WINNT
 #define _WIN32_WINNT 0x0A00
+#endif
 #define _CRT_SECURE_NO_WARNINGS
 #include <windows.h>
 #include <rpc.h>
@@ -15,6 +17,39 @@
 #include <string.h>
 #include <errno.h>
 #include <limits.h>
+
+/* MinGW's user-mode WFP declarations lag the Windows SDK: the API structs and
+ * functions are present, but these SDK-owned GUID values and two public flag
+ * constants are absent.  Keep the compatibility names private so a MinGW
+ * release which later adds the SDK declarations cannot collide with them.
+ * Values are the Microsoft win32metadata projection of fwpmu.h/fwpmtypes.h. */
+#if defined(__MINGW32__)
+static const GUID KEXE_LAYER_ALE_AUTH_CONNECT_V4 =
+  {0xc38d57d1, 0x05a7, 0x4c33, {0x90, 0x4f, 0x7f, 0xbc, 0xee, 0xe6, 0x0e, 0x82}};
+static const GUID KEXE_LAYER_ALE_AUTH_CONNECT_V6 =
+  {0x4a72393b, 0x319f, 0x44bc, {0x84, 0xc3, 0xba, 0x54, 0xdc, 0xb3, 0xb6, 0xb4}};
+static const GUID KEXE_LAYER_ALE_AUTH_RECV_ACCEPT_V4 =
+  {0xe1cd9fe7, 0xf4b5, 0x4273, {0x96, 0xc0, 0x59, 0x2e, 0x48, 0x7b, 0x86, 0x50}};
+static const GUID KEXE_LAYER_ALE_AUTH_RECV_ACCEPT_V6 =
+  {0xa3b42c97, 0x9f04, 0x4672, {0xb8, 0x7e, 0xce, 0xe9, 0xc4, 0x83, 0x25, 0x7f}};
+static const GUID KEXE_CONDITION_ALE_APP_ID =
+  {0xd78e1e87, 0x8644, 0x4ea5, {0x94, 0x37, 0xd8, 0x09, 0xec, 0xef, 0xc9, 0x71}};
+static const GUID KEXE_CONDITION_FLAGS =
+  {0x632ce23b, 0x5167, 0x435c, {0x86, 0xd7, 0xe9, 0x03, 0x68, 0x4a, 0xa8, 0x0c}};
+#ifndef FWPM_SESSION_FLAG_DYNAMIC
+#define FWPM_SESSION_FLAG_DYNAMIC 0x00000001u
+#endif
+#ifndef FWPM_FILTER_FLAG_CLEAR_ACTION_RIGHT
+#define FWPM_FILTER_FLAG_CLEAR_ACTION_RIGHT 0x00000008u
+#endif
+#else
+#define KEXE_LAYER_ALE_AUTH_CONNECT_V4 FWPM_LAYER_ALE_AUTH_CONNECT_V4
+#define KEXE_LAYER_ALE_AUTH_CONNECT_V6 FWPM_LAYER_ALE_AUTH_CONNECT_V6
+#define KEXE_LAYER_ALE_AUTH_RECV_ACCEPT_V4 FWPM_LAYER_ALE_AUTH_RECV_ACCEPT_V4
+#define KEXE_LAYER_ALE_AUTH_RECV_ACCEPT_V6 FWPM_LAYER_ALE_AUTH_RECV_ACCEPT_V6
+#define KEXE_CONDITION_ALE_APP_ID FWPM_CONDITION_ALE_APP_ID
+#define KEXE_CONDITION_FLAGS FWPM_CONDITION_FLAGS
+#endif
 
 #if !defined(__clang__)
 #error "Kotoba Windows loader requires Clang"
@@ -713,10 +748,10 @@ static void install_network_denial(void) {
   FWPM_FILTER_CONDITION0 loopback_conditions[2];
   FWPM_FILTER0 filter;
   static const GUID *layers[] = {
-    &FWPM_LAYER_ALE_AUTH_CONNECT_V4,
-    &FWPM_LAYER_ALE_AUTH_CONNECT_V6,
-    &FWPM_LAYER_ALE_AUTH_RECV_ACCEPT_V4,
-    &FWPM_LAYER_ALE_AUTH_RECV_ACCEPT_V6,
+    &KEXE_LAYER_ALE_AUTH_CONNECT_V4,
+    &KEXE_LAYER_ALE_AUTH_CONNECT_V6,
+    &KEXE_LAYER_ALE_AUTH_RECV_ACCEPT_V4,
+    &KEXE_LAYER_ALE_AUTH_RECV_ACCEPT_V6,
   };
   DWORD status;
   size_t i;
@@ -749,14 +784,14 @@ static void install_network_denial(void) {
   if (status != ERROR_SUCCESS) { SetLastError(status); fail_win("FwpmGetAppIdFromFileName0"); }
 
   ZeroMemory(&app_id_condition, sizeof(app_id_condition));
-  app_id_condition.fieldKey = FWPM_CONDITION_ALE_APP_ID;
+  app_id_condition.fieldKey = KEXE_CONDITION_ALE_APP_ID;
   app_id_condition.matchType = FWP_MATCH_EQUAL;
   app_id_condition.conditionValue.type = FWP_BYTE_BLOB_TYPE;
   app_id_condition.conditionValue.byteBlob = app_id;
 
   ZeroMemory(&loopback_conditions, sizeof(loopback_conditions));
   loopback_conditions[0] = app_id_condition;
-  loopback_conditions[1].fieldKey = FWPM_CONDITION_FLAGS;
+  loopback_conditions[1].fieldKey = KEXE_CONDITION_FLAGS;
   loopback_conditions[1].matchType = FWP_MATCH_FLAGS_ALL_SET;
   loopback_conditions[1].conditionValue.type = FWP_UINT32;
   loopback_conditions[1].conditionValue.uint32 =

@@ -546,9 +546,13 @@ compatibility aliases with `:os :unspecified`; they cannot serve as platform
 release evidence. `x86_64-windows` compilation now emits a reproducible KEXE
 whose Windows OS, internal ABI, and supervisor identity are independently
 verified. Native execution and release evidence still fail closed until the
-measured Windows supervisor is trusted for the current host. The same boundary
-is exercised on hosted Windows x64 and Arm64 runners; this is conformance
-evidence, not yet signed installer or physical-device release evidence.
+measured Windows supervisor is trusted for the current host. Historical hosted
+Windows x64 execution remains useful regression evidence, but those GitHub
+Actions runners are no longer the CI authority and the current murakumo fleet
+has no Windows node. Zig 0.15.2 now cross-builds the reviewed loader twice
+byte-identically for x86-64 and Arm64, and the gate independently checks PE32+
+machine identity. That is product portability evidence, not Windows runtime or
+physical-device release evidence.
 
 The Android and iOS names begin with distinct compile/verify identities.
 They produce equal reviewed AArch64 instructions but distinct sealed artifact
@@ -766,19 +770,20 @@ sizes, reconstructs the exact target profile, and applies Ed25519 trust,
 revocation, and validity windows. Artifact, SBOM, target, or statement mutation
 fails closed.
 
-The first Windows supervisor slice now executes verifier-extracted x86-64 KEXE
-code on the Windows CI runner. It maps code RW, copies it, transitions it to RX,
-flushes the instruction cache, then prohibits further dynamic code. A Clang
-`sysv_abi` adapter supplies the hidden `r9` context. A one-process Job Object,
-low-integrity restricted impersonation token, system32-only DLL search, and
-error-mode hardening surround guest entry. Conformance covers runtime arguments,
-transitive calls, fuel reports, capability allow/deny, bounded pairs, and
-filesystem/process denial. The same runner now builds the reviewed loader
-twice, seals the compiler/linker/resource/header closure into runtime identity,
-trusts it, executes a signed KEXE through `kotoba -M run`, and verifies the
-result receipt. Mutated loader bytes and a substituted OS profile fail closed.
-Network denial, child trap isolation, Authenticode/MSIX packaging, and Windows
-Arm64 remain required.
+The first Windows supervisor slice historically executed verifier-extracted
+x86-64 KEXE code on a hosted Windows runner. It maps code RW, copies it,
+transitions it to RX, flushes the instruction cache, then prohibits further
+dynamic code. A Clang `sysv_abi` adapter supplies the hidden `r9` context. A
+one-process Job Object, low-integrity restricted impersonation token,
+system32-only DLL search, and error-mode hardening surround guest entry. That
+run covered runtime arguments, transitive calls, fuel reports, capability
+allow/deny, bounded pairs, filesystem/process/network denial, measured runtime
+trust, signed execution, receipt verification, mutated loader bytes, and a
+substituted OS profile. The Windows-host conformance program now additionally
+covers option/result host round trips, signed limits, guest construction and
+projection, and invalid handles. None of this is claimed as continuously gated
+runtime evidence until a Windows murakumo node runs it. Authenticode/MSIX,
+Windows Arm64 execution, and renewed x64 execution remain required.
 
 WebAssembly is one backend, not the compiler architecture. Native backends emit
 machine instructions directly and never invoke an assembler, LLVM, a JVM JIT,

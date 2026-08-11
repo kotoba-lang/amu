@@ -457,6 +457,14 @@
                                (assoc windows-runtime :loader-source-sha256
                                       runtime-identity/loader-source-sha256))))))))
 
+(deftest windows-loader-source-bytes-match-the-pinned-runtime-identity
+  (let [file-sha256 (deref #'executor/file-sha256)
+        source (java.io.File. "tools/kexe_loader_windows.c")]
+    (is (.isFile source) "the measured Windows loader source must be present")
+    (is (= runtime-identity/windows-loader-source-sha256
+           (file-sha256 source))
+        "runtime trust must name the bytes that the Windows build actually compiles")))
+
 (deftest execution-rejects-a-loader-that-does-not-match-the-approved-bytes
   (let [{:keys [envelope trust]} (signed "(defn main [] 42)" {:allow #{}})
         {:keys [trust options]} (execution-options trust)
