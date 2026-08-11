@@ -30,21 +30,25 @@ phi per field without heap allocation. Escaping, nested, and non-scalar records
 still use the legacy path. Non-escaping sealed variants whose payloads are only
 `:i64` or `:bool` likewise become an internal tag-and-payload SSA bundle;
 variant-valued `if` emits two phis and `variant-match` lowers to target-neutral
-comparison control flow without a variant stack region. Variant boundary
-values, nested/non-scalar payloads, and a general aggregate ABI remain outside
-this slice; this is not a Rust-wide performance-parity claim.
+comparison control flow without a variant stack region. The closed scalar
+subset now also crosses an exported native boundary; nested/non-scalar payloads
+and a general recursive aggregate ABI remain outside this slice. This is not a
+Rust-wide performance-parity claim.
 
-The pinned native closure now publishes aggregate-boundary contract v2. It
+The pinned native closure now publishes aggregate-boundary contract v3. It
 names the existing escaping-record representation precisely: one declaration-
 ordered pair-chain handle, owned by the host context and bounded by 4,096 arena
-cells. It also records that every register in the extracted allocator profile
-is call-clobbered. Scalar direct calls now lower through GMIR/MIR/MC v3 with
+cells. It adds the scalar-variant boundary as a context-owned pair of
+declaration ordinal and payload, while preserving the canonical public value
+`[type case payload]`. It also records that every register in the extracted
+allocator profile is call-clobbered. Scalar direct calls lower through
+GMIR/MIR/MC v3 with
 per-function frames, live-value preservation, parallel argument assignment,
 and a single-word return register. Straight-line callers now materialize only
 values live across a call; the representative module shrinks from 123 to 84
-bytes on x86-64 and from 108 to 88 bytes on AArch64. Record and variant values remain held at
-function boundaries. The pinned verifier consumes this vocabulary, re-emits a
-two-function module, and keeps its aggregate predicate independently derived.
+bytes on x86-64 and from 108 to 88 bytes on AArch64. The pinned verifier
+consumes this vocabulary, re-emits a two-function module, and keeps its
+aggregate predicate independently derived.
 
 Entryless native libraries also have a measured scalar host boundary. The
 executor reads parameter and result types from the selected sealed export,
@@ -55,8 +59,10 @@ Kotoba library and invoking it through the real native loader process. Strings
 now cross that same boundary as bounded canonical UTF-8 copies: inputs are
 placed in the loader arena before guest entry and selected results are copied
 from either code literals or the dynamic pool before process exit. Raw pair
-handles never become host strings. Aggregate host values remain explicitly
-unqualified.
+handles never become host strings. Scalar records cross as exact-key maps, and
+qualified scalar variants cross as exact canonical vectors. The variant loader
+validates its arena handle, declaration ordinal, and boolean payload before a
+typed supervisor report is copied back; raw handles never become host values.
 
 The first reproducible coverage snapshot can be audited with:
 

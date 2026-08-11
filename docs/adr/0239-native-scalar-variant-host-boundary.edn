@@ -1,0 +1,37 @@
+{:adr/id 239
+ :adr/status :accepted
+ :decision :copy-native-scalar-variants-across-process-boundary
+ :boundary {:host [:type :case-keyword :payload]
+            :descriptor {:qualified-name true :cases [1 32]
+                         :unique-cases true :payloads #{:i64 :bool}}
+            :argument-token "v:<case-count>:<ordinal>:<i|b>:<word>"
+            :guest :pair-declaration-ordinal-payload-handle
+            :result-profile "variant:<case-count>:<bool-mask>"
+            :invalid-result-exit 130
+            :copy-before-teardown true}
+ :pins {:kotoba-kir "d58972da61758584a5bec0e863bcb3ea6fdd6c64"
+        :kotoba-native "c52010003ac525855c3df3ec35dde88a2006b196"
+        :kotoba-verifier "83057552f03a8021c6523e8e38ad7439b1953522"
+        :artifact "4f37e47381682f375cadae74cabb5389297b7446"
+        :tender-native "0cf9f4d896798843d5bb5c0482c89631e78fec73"
+        :posix-loader-source-sha256 "f93744ea32b4dc8c085813fc58e0d52ccf955393427dff9f7eb01c87ea6097c3"
+        :windows-loader-source-sha256 "ff30218fe4d2f5b4cb19ef373b5c93d167d34efe80ec78d047f64d1f054d6141"}
+ :coverage {:positive #{:long-min :bool-false :bool-true :host-roundtrip
+                        :guest-construction :guest-dispatch}
+            :negative #{:unknown-case :bool-word-impersonation
+                        :unqualified-descriptor :empty-descriptor
+                        :duplicate-case :nested-payload :non-scalar-payload
+                        :too-many-cases :invalid-result-handle}
+            :mutation {:case-limit-32-to-33 :negative-fails}}
+ :verification {:posix {:warning-free true :real-process true}
+                :windows {:cross-build true :real-process false}
+                :amu {:tests 959 :assertions 7549}
+                :native-executor {:tests 57 :assertions 190}
+                :kotoba-kir {:tests 133 :assertions 571}
+                :kotoba-native {:tests 129 :assertions 1584}
+                :kotoba-verifier {:tests 43 :assertions 248}
+                :tender-native {:tests 9 :assertions 91}
+                :artifact {:tests 11 :assertions 59}}
+ :not-claimed #{:nested-variant-host-abi :recursive-variant-host-abi
+                :non-scalar-variant-payload :windows-runtime-qualification
+                :native-default-target}}

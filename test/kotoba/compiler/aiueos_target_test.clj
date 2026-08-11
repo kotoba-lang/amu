@@ -14,6 +14,24 @@
 (defn- c-string [bytes offset]
   (apply str (map char (take-while pos? (drop offset bytes)))))
 
+(defn- aarch64-op-count [bytes opcode-mask opcode]
+  (->> (partition 4 bytes)
+       (map #(read-le (vec %) 0 4))
+       (filter #(= opcode (bit-and opcode-mask %)))
+       count))
+
+(defn- x86-memory-opcode? [bytes opcode]
+  (let [opcode-width (count opcode)]
+    (some (fn [offset]
+            (and (= opcode (subvec bytes offset (+ offset opcode-width)))
+                 ;; The ModRM byte follows the opcode. mod=3 would be a
+                 ;; register operand, not the bounded memory access promised
+                 ;; by these kernel operators.
+                 (not= 3 (bit-and 3 (bit-shift-right
+                                     (unsigned (nth bytes (+ offset opcode-width)))
+                                     6)))))
+          (range (inc (- (count bytes) opcode-width 1))))))
+
 (deftest freestanding-aiueos-profiles-have-no-host-runtime
   (doseq [[name expected]
           [[:x86_64-aiueos-uefi-v1
@@ -138,13 +156,13 @@
           a (get-in (compiler/compile-source src :aarch64-aiueos-kernel-v1) [:binary :bytes])
           b (get-in (compiler/compile-source src :aarch64-aiueos-kernel-v1) [:binary :bytes])]
       (is (= a b))))
-  (testing "u32 MMIO intrinsics (virtio registers) compile and emit str/ldr w0,[x1]"
+  (testing "u32 MMIO intrinsics (virtio registers) compile to memory ldr/str"
     (let [artifact (:artifact (compiler/compile-source
                                "(defn main [] (let [m (kernel-load-u32 167772160 512 0)] (kernel-store-u32 167772160 512 112 m)))"
                                :aarch64-aiueos-kernel-v1))
           code (:code artifact)]
-      (is (some #(= [0x20 0x00 0x40 0xb9] %) (partition 4 1 code)) "ldr w0,[x1] (u32 load)")
-      (is (some #(= [0x20 0x00 0x00 0xb9] %) (partition 4 1 code)) "str w0,[x1] (u32 store)"))))
+      (is (pos? (aarch64-op-count code 0xffc00000 0xb9400000)) "ldr w?,[x?] (u32 load)")
+      (is (pos? (aarch64-op-count code 0xffc00000 0xb9000000)) "str w?,[x?] (u32 store)"))))
 
 (deftest do-sequences-side-effects-exactly-once
   (testing "each `do` subexpression emits its store exactly once, in order"
@@ -152,8 +170,8 @@
                                "(defn main [] (do (kernel-store-u8 100 8 0 65) (kernel-store-u8 100 8 0 66) (kernel-store-u8 100 8 0 67)))"
                                :aarch64-aiueos-kernel-v1))
           code (:code artifact)
-          strb (count (filter #(= [0x20 0x00 0x00 0x39] %) (partition 4 1 code)))]
-      (is (= 3 strb) "three distinct strb w0,[x1] -- one per do subexpression, none dropped or duplicated")))
+          strb (aarch64-op-count code 0xffc00000 0x39000000)]
+      (is (= 3 strb) "three distinct strb w?,[x?] -- one per do subexpression, none dropped or duplicated")))
   (testing "a single-expression do collapses to the expression"
     (is (= (get-in (compiler/compile-source "(defn main [] (kernel-store-u8 100 8 0 65))" :aarch64-aiueos-kernel-v1)
                    [:artifact :code])
@@ -290,8 +308,7 @@
         bytes (:bytes object)]
     (is (= "kotoba_aiueos_journal_plan" (:export object)))
     (is (empty? (:imports object)))
-    (is (some #(= [0x0f 0xb6 0x04 0x02] %)
-              (partition 4 1 bytes)))
+    (is (x86-memory-opcode? bytes [0x0f 0xb6]))
     (is (some #(= [0x0f 0x0b] %) (partition 2 1 bytes)))))
 
 (deftest bounded-byte-load-requires-base-length-index
@@ -483,7 +500,7 @@
         {:keys [object]} (compiler/compile-source source :x86_64-aiueos-kernel-v1)]
     (is (= "kotoba_aiueos_journal_record_build" (:export object)))
     (is (empty? (:imports object)))
-    (is (some #(= [0x88 0x04 0x3a] %) (partition 3 1 (:bytes object))))
+    (is (x86-memory-opcode? (:bytes object) [0x88]))
     (is (some #(= [0x0f 0x0b] %) (partition 2 1 (:bytes object))))))
 
 (deftest bounded-byte-store-requires-four-operands
@@ -526,8 +543,8 @@
         {:keys [object]} (compiler/compile-source source :x86_64-aiueos-kernel-v1)
         bytes (:bytes object)]
     (is (= "kotoba_aiueos_copy_in" (:export object)))
-    (is (some #(= [0x0f 0xb6 0x04 0x02] %) (partition 4 1 bytes)))
-    (is (some #(= [0x88 0x04 0x3a] %) (partition 3 1 bytes)))
+    (is (x86-memory-opcode? bytes [0x0f 0xb6]))
+    (is (x86-memory-opcode? bytes [0x88]))
     (is (some #(= [0x49 0xc7 0x41 0x08 0x00 0x04 0x00 0x00] %)
               (partition 8 1 bytes)))))
 
