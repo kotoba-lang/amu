@@ -490,3 +490,27 @@
         (str "check --json differs between entrypoints. JVM-only: "
              (pr-str (sort (remove (or nbb-keys #{}) jvm-keys)))
              "  nbb-only: " (pr-str (sort (remove jvm-keys (or nbb-keys #{}))))))))
+
+(deftest compile-says-whether-the-artifact-was-sealed
+  ;; The two compile paths produce the same bytes -- measured 2026-08-11, the
+  ;; same source at wasm32-browser gives 350 identical bytes either way -- but
+  ;; not the same artifacts. The JVM writes <output>.provenance.edn and
+  ;; reports :provenance-output; the lean nbb wasm path keeps provenance out
+  ;; of its dependency closure on purpose and writes no sidecar.
+  ;;
+  ;; That is a fair trade, but it was stated only in a namespace docstring,
+  ;; and the result map a caller actually reads said nothing either way. So
+  ;; each path must now declare what it did: neither is allowed to go quiet.
+  (let [jvm-src (slurp (io/file "src/kotoba/compiler/cli.clj"))
+        nbb-src (slurp (io/file "src/kotoba/compiler/nbb/wasm_cli.cljs"))]
+    (is (str/includes? jvm-src ":provenance-output provenance-output")
+        "the JVM compile no longer reports where it wrote provenance")
+    (is (str/includes? nbb-src ":provenance :not-emitted")
+        "the nbb wasm compile no longer says it emits no provenance")
+    (testing "every nbb compile result carries it, including the cache paths"
+      (let [results (re-seq #"\{:ok true :target target :output output" nbb-src)
+            carrying (re-seq #"(?s)\{:ok true :target target :output output.{0,160}?provenance-note"
+                             nbb-src)]
+        (is (= (count results) (count carrying))
+            (str "nbb compile builds " (count results) " result maps but only "
+                 (count carrying) " carry the provenance note"))))))
