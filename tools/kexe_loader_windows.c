@@ -156,7 +156,8 @@ static const uint8_t *resolve_string_bytes(struct kexe_context *ctx,
       __builtin_trap();
     return ctx->code_base + offset;
   }
-  pool_offset = (uint64_t)(-offset - 1);
+  /* Defined for INT64_MIN, unlike `-offset - 1`. */
+  pool_offset = (uint64_t)(-(offset + 1));
   if (pool_offset + (uint64_t)length > KEXE_STRING_POOL_BYTES ||
       pool_offset + (uint64_t)length < pool_offset)
     __builtin_trap();
@@ -192,6 +193,68 @@ static int valid_utf8(const uint8_t *bytes, uint64_t length) {
     return 0;
   }
   return 1;
+}
+
+static int hex_nibble(char value) {
+  if (value >= '0' && value <= '9') return value - '0';
+  if (value >= 'a' && value <= 'f') return value - 'a' + 10;
+  return -1;
+}
+
+static int64_t parse_i64(const char *text);
+
+static int64_t parse_guest_arg(struct kexe_context *ctx, const char *text) {
+  uint64_t start, index, length;
+  size_t digits;
+  const char *hex;
+  if (strncmp(text, "s:", 2) != 0) return parse_i64(text);
+  hex = text + 2;
+  digits = strlen(hex);
+  if ((digits & 1u) != 0) fail_input("invalid string argument hex");
+  length = (uint64_t)(digits / 2u);
+  if (length > KEXE_STRING_POOL_BYTES - ctx->string_pool_used ||
+      ctx->pair_used >= KEXE_PAIR_CAPACITY)
+    fail_input("string argument exceeds host arena");
+  for (size_t i = 0; i < digits; i++)
+    if (hex_nibble(hex[i]) < 0) fail_input("invalid string argument hex");
+  start = ctx->string_pool_used;
+  for (uint64_t i = 0; i < length; i++)
+    ctx->string_pool[start + i] =
+        (uint8_t)((hex_nibble(hex[2u * i]) << 4) |
+                  hex_nibble(hex[2u * i + 1u]));
+  if (!valid_utf8(ctx->string_pool + start, length))
+    fail_input("string argument is not canonical UTF-8");
+  index = ctx->pair_used++;
+  ctx->pairs[index].first = -((int64_t)start) - 1;
+  ctx->pairs[index].second = (int64_t)length;
+  ctx->string_pool_used += length;
+  return (int64_t)(index + 1u);
+}
+
+static const uint8_t *inspect_string_result(const struct kexe_context *ctx,
+                                            int64_t handle,
+                                            uint64_t *length_out) {
+  const struct pair_cell *pair;
+  const uint8_t *bytes;
+  uint64_t offset, length;
+  if (handle <= 0 || (uint64_t)handle > ctx->pair_used) return NULL;
+  pair = &ctx->pairs[(uint64_t)handle - 1u];
+  if (pair->second < 0) return NULL;
+  length = (uint64_t)pair->second;
+  if (pair->first >= 0) {
+    offset = (uint64_t)pair->first;
+    if (length > ctx->code_length || offset > ctx->code_length - length)
+      return NULL;
+    bytes = ctx->code_base + offset;
+  } else {
+    offset = (uint64_t)(-(pair->first + 1));
+    if (length > ctx->string_pool_used ||
+        offset > ctx->string_pool_used - length) return NULL;
+    bytes = ctx->string_pool + offset;
+  }
+  if (!valid_utf8(bytes, length)) return NULL;
+  *length_out = length;
+  return bytes;
 }
 
 /* vector-i64 / vector-f64 host table. Mirrors the POSIX loader's
@@ -1024,6 +1087,7 @@ int main(int argc, char **argv) {
   HANDLE token;
   int64_t args[5] = {0, 0, 0, 0, 0}, result;
   const char *child_contract = getenv("KEXE_APPCONTAINER_CHILD");
+  const char *result_type = getenv("KEXE_RESULT_TYPE");
 
   if (child_contract == NULL) return run_appcontainer_parent(argc, argv);
   require_appcontainer_token();
@@ -1037,7 +1101,9 @@ int main(int argc, char **argv) {
   offset = parse_u64(argv[2], "invalid offset");
   arity = parse_u64(argv[3], "invalid arity");
   if (arity > 5 || argc != (int)(6 + arity)) fail_input("arity mismatch");
-  for (uint64_t i = 0; i < arity; i++) args[i] = parse_i64(argv[6 + i]);
+  if (result_type == NULL) result_type = "i64";
+  if (strcmp(result_type, "i64") != 0 && strcmp(result_type, "string") != 0)
+    fail_input("invalid result type");
 
   {
     const char *mapping_text = getenv("KEXE_CODE_MAPPING");
@@ -1094,6 +1160,8 @@ int main(int argc, char **argv) {
   ctx->code_base = code;
   ctx->code_length = (uint64_t)length;
   parse_allow(ctx, argv[5]);
+  for (uint64_t i = 0; i < arity; i++)
+    args[i] = parse_guest_arg(ctx, argv[6 + i]);
 
   token = restricted_token();
   if (!SetThreadToken(NULL, token)) fail_win("SetThreadToken restricted");
@@ -1109,10 +1177,33 @@ int main(int argc, char **argv) {
   if (!SetThreadToken(NULL, NULL)) fail_win("clear thread token");
   CloseHandle(token);
 
-  if (getenv("KEXE_STRUCTURED_REPORT") != NULL)
-    printf("{:status :ok :result %lld :fuel {:initial 512 :remaining %llu} :heap {:capacity 4096 :used %llu}}\n",
-           (long long)result, (unsigned long long)ctx->fuel, (unsigned long long)ctx->pair_used);
-  else printf("%lld\n", (long long)result);
+  if (getenv("KEXE_STRUCTURED_REPORT") != NULL) {
+    if (strcmp(result_type, "string") == 0) {
+      uint64_t result_length = 0;
+      const uint8_t *result_bytes = inspect_string_result(ctx, result, &result_length);
+      if (result_bytes == NULL) {
+        fprintf(stderr, "KEXE_TRAP {:kind :result :reason :invalid-string-handle}\n");
+        printf("{:status :trap :exit 66 :fuel {:initial 512 :remaining %llu} "
+               ":heap {:capacity 4096 :used %llu}}\n",
+               (unsigned long long)ctx->fuel, (unsigned long long)ctx->pair_used);
+        SecureZeroMemory(ctx, sizeof(*ctx));
+        VirtualFree(ctx, 0, MEM_RELEASE);
+        VirtualFree(code, 0, MEM_RELEASE);
+        return 66;
+      }
+      printf("{:status :ok :result %lld :result-type :string :result-utf8-hex \"",
+             (long long)result);
+      for (uint64_t i = 0; i < result_length; i++) printf("%02x", result_bytes[i]);
+      printf("\" :fuel {:initial 512 :remaining %llu} "
+             ":heap {:capacity 4096 :used %llu}}\n",
+             (unsigned long long)ctx->fuel, (unsigned long long)ctx->pair_used);
+    } else {
+      printf("{:status :ok :result %lld :fuel {:initial 512 :remaining %llu} "
+             ":heap {:capacity 4096 :used %llu}}\n",
+             (long long)result, (unsigned long long)ctx->fuel,
+             (unsigned long long)ctx->pair_used);
+    }
+  } else printf("%lld\n", (long long)result);
 
   SecureZeroMemory(ctx, sizeof(*ctx));
   VirtualFree(ctx, 0, MEM_RELEASE);

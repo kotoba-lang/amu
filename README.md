@@ -52,7 +52,11 @@ not an absent `main` signature: host booleans cross `:bool` slots as native 0/1
 words and return as booleans, while integer and boolean host values cannot
 impersonate each other. Amu tests this by compiling and signing a two-export
 Kotoba library and invoking it through the real native loader process. Strings
-and aggregates at this host boundary remain explicitly unqualified.
+now cross that same boundary as bounded canonical UTF-8 copies: inputs are
+placed in the loader arena before guest entry and selected results are copied
+from either code literals or the dynamic pool before process exit. Raw pair
+handles never become host strings. Aggregate host values remain explicitly
+unqualified.
 
 The first reproducible coverage snapshot can be audited with:
 
