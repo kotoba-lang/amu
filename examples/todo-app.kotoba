@@ -1,0 +1,251 @@
+(ns todo-app
+  ;; A whole interactive web application, written only in Kotoba.
+  ;;
+  ;; The three exports are the contract `runtime/dom-driver.mjs` drives:
+  ;;
+  ;;   init  ()                              -> state
+  ;;   view  (state)                         -> UI :document
+  ;;   step  (state, target, kind, value)    -> next state
+  ;;
+  ;; All three are pure, so this module compiles with an EMPTY
+  ;; `requiredCapabilities` and the host grants it nothing. There is no DOM
+  ;; name, no host object, and no callback anywhere below -- a node says who it
+  ;; is with `:data-k`, and the host tells us which name was acted on.
+  ;;
+  ;; Three bounds are real, and none of them is hidden:
+  ;;
+  ;;   * Item identity is a letter drawn from `alphabet`, so the model tops out
+  ;;     at 26 items -- Kotoba has no integer-to-string builtin (the same gap
+  ;;     the css migration hit; it read digits out of a literal too). A wider
+  ;;     app wants that builtin, not a workaround.
+  ;;   * The counter shows "9+" past nine, for the same reason.
+  ;;   * The screen fills up first, and much sooner: a `:document` holds 256
+  ;;     nodes, and this layout crosses it (`doc-node-limit`) at about seven
+  ;;     rows. That is the honest ceiling on a Kotoba screen today, and it is a
+  ;;     value-budget question rather than anything this module can fix.
+  (:export [init view step])
+  (:schemas {:todo/render [:record :todo/render
+                           [[:todos :document]
+                            [:i :i64]
+                            [:n :i64]
+                            [:mode :keyword]
+                            [:acc :document]]]}))
+
+;; --- document accessors ---------------------------------------------------
+
+(defn dget [d :document k :keyword] :document
+  (option-value-of [:option :document] (document-get d k) (document-null)))
+
+(defn dstr [d :document] :string
+  (option-value-of [:option :string] (document-string-value d) ""))
+
+(defn dbool [d :document] :bool
+  (option-value-of [:option :bool] (document-bool-value d) false))
+
+(defn dkw [d :document] :keyword
+  (option-value-of [:option :keyword] (document-keyword-value d) :all))
+
+(defn dat [v :document i :i64] :document
+  (option-value-of [:option :document] (document-vector-at v i) (document-null)))
+
+;; --- element builders -----------------------------------------------------
+
+(defn el [tag :string attrs :document children :document] :document
+  (document-map :tag (document-string tag)
+                :attrs attrs
+                :children children))
+
+(defn leaf [tag :string attrs :document text :string] :document
+  (document-map :tag (document-string tag)
+                :attrs attrs
+                :text (document-string text)))
+
+;; --- nominal item identity ------------------------------------------------
+
+(defn alphabet [] :string "abcdefghijklmnopqrstuvwxyz")
+
+(defn digits [] :string "0123456789")
+
+(defn key-at [i :i64] :string
+  (string-substring (alphabet) i (+ i 1)))
+
+(defn key-index-from [k :string i :i64] :i64
+  (cond
+    (>= i 26) -1
+    (string=? (key-at i) k) i
+    :else (key-index-from k (+ i 1))))
+
+(defn key-index [k :string] :i64
+  (key-index-from k 0))
+
+(defn count-label [n :i64] :string
+  (if (< n 10)
+    (string-concat (string-substring (digits) n (+ n 1)) " left")
+    "9+ left"))
+
+;; --- view -----------------------------------------------------------------
+
+(defn visible? [done :bool mode :keyword] :bool
+  (cond
+    (= mode :active) (not done)
+    (= mode :done) done
+    :else true))
+
+(defn item-view [todo :document i :i64] :document
+  (let [text (dstr (dget todo :text))
+        done (dbool (dget todo :done))
+        k (key-at i)]
+    (el "li"
+        (document-map :class (document-string (if done "item done" "item")))
+        (document-vector
+         (leaf "button"
+               (document-map :data-k (document-string (string-concat "t" k))
+                             :type (document-string "button")
+                             :class (document-string "toggle"))
+               (if done "[x]" "[ ]"))
+         (leaf "span"
+               (document-map :class (document-string "text"))
+               text)
+         (leaf "button"
+               (document-map :data-k (document-string (string-concat "d" k))
+                             :type (document-string "button")
+                             :class (document-string "delete"))
+               "Delete")))))
+
+(defn items-from [x [:ref :todo/render]] :document
+  (let [todos (record-get x :todos)
+        i (record-get x :i)
+        n (record-get x :n)
+        mode (record-get x :mode)
+        acc (record-get x :acc)]
+    (if (>= i n)
+      acc
+      (let [todo (dat todos i)
+            keep? (visible? (dbool (dget todo :done)) mode)]
+        (items-from
+         (record-new [:ref :todo/render]
+                     todos (+ i 1) n mode
+                     (if keep?
+                       (document-vector-conj acc (item-view todo i))
+                       acc)))))))
+
+(defn filter-button [k :string label :string mode :keyword want :keyword] :document
+  (leaf "button"
+        (document-map :data-k (document-string k)
+                      :type (document-string "button")
+                      :class (document-string (if (= mode want) "filter on" "filter")))
+        label))
+
+(defn view [state :document] :document
+  (let [todos (dget state :todos)
+        draft (dstr (dget state :draft))
+        mode (dkw (dget state :filter))
+        n (document-count todos)]
+    (el "div"
+        (document-map :class (document-string "app"))
+        (document-vector
+         (leaf "h1" (document-map) "todo")
+         (el "div"
+             (document-map :class (document-string "row"))
+             (document-vector
+              (leaf "input"
+                    (document-map :data-k (document-string "draft")
+                                  :type (document-string "text")
+                                  :value (document-string draft)
+                                  :placeholder (document-string "what needs doing?"))
+                    "")
+              (leaf "button"
+                    (document-map :data-k (document-string "add")
+                                  :type (document-string "button")
+                                  :class (document-string "add"))
+                    "Add")))
+         (el "ul"
+             (document-map :class (document-string "items"))
+             (items-from (record-new [:ref :todo/render]
+                                     todos 0 n mode (document-vector))))
+         (el "div"
+             (document-map :class (document-string "filters"))
+             (document-vector
+              (filter-button "f-all" "All" mode :all)
+              (filter-button "f-active" "Active" mode :active)
+              (filter-button "f-done" "Done" mode :done)))
+         (leaf "p"
+               (document-map :class (document-string "count")
+                             :data-k (document-string "count"))
+               (count-label n))))))
+
+;; --- transitions ----------------------------------------------------------
+
+(defn set-filter [state :document mode :keyword] :document
+  (document-assoc state :filter (document-keyword mode)))
+
+(defn add-todo [state :document] :document
+  (let [draft (dstr (dget state :draft))
+        todos (dget state :todos)]
+    (cond
+      (string=? draft "") state
+      (>= (document-count todos) 26) state
+      :else (document-assoc
+             (document-assoc state :todos
+                             (document-vector-conj
+                              todos
+                              (document-map :text (document-string draft)
+                                            :done (document-bool false))))
+             :draft (document-string "")))))
+
+(defn toggle-at [state :document i :i64] :document
+  (if (< i 0)
+    state
+    (let [todos (dget state :todos)
+          todo (dat todos i)]
+      (document-assoc state :todos
+                      (document-vector-assoc
+                       todos i
+                       (document-assoc todo :done
+                                       (document-bool (not (dbool (dget todo :done))))))))))
+
+(defn delete-at [state :document i :i64] :document
+  (if (< i 0)
+    state
+    (document-assoc state :todos
+                    (document-vector-remove (dget state :todos) i))))
+
+(defn on-item [state :document target :string] :document
+  ;; A one-character target cannot carry both a prefix and a key, so it is not
+  ;; an item action and must not reach `string-substring` as a 1..1 slice.
+  (if (< (string-byte-length target) 2)
+    state
+    (let [prefix (string-substring target 0 1)
+          k (string-substring target 1 (string-byte-length target))]
+      (cond
+        (string=? prefix "t") (toggle-at state (key-index k))
+        (string=? prefix "d") (delete-at state (key-index k))
+        :else state))))
+
+(defn on-click [state :document target :string] :document
+  (cond
+    (string=? target "add") (add-todo state)
+    (string=? target "f-all") (set-filter state :all)
+    (string=? target "f-active") (set-filter state :active)
+    (string=? target "f-done") (set-filter state :done)
+    :else (on-item state target)))
+
+(defn step [state :document target :string kind :string value :string] :document
+  (cond
+    (string=? kind "input") (if (string=? target "draft")
+                       (document-assoc state :draft (document-string value))
+                       state)
+    (string=? kind "click") (on-click state target)
+    :else state))
+
+;; --- initial state --------------------------------------------------------
+
+(defn init [] :document
+  (document-map
+   :todos (document-vector
+           (document-map :text (document-string "render a kotoba document to the DOM")
+                         :done (document-bool true))
+           (document-map :text (document-string "carry a click back to the guest")
+                         :done (document-bool false)))
+   :draft (document-string "")
+   :filter (document-keyword :all)))

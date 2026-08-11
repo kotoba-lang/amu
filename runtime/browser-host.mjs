@@ -2488,6 +2488,156 @@ function uiDocTag(node) {
   return tag;
 }
 
+// `:attrs` reaches the DOM reconciler on the same deny-by-default terms the
+// rest of this bridge already uses. It is NOT new authority: the W4 UI
+// vocabulary already carries `:attrs` and kotoba-lang/html's string renderer
+// already emits it (`render-attrs`/`render-attr-entry` in html_document.kotoba),
+// so a reconciler that ignored attributes made the two renderers disagree on
+// the same guest value -- the dual-renderer parity this bridge exists to hold.
+//
+// The guest still never names a DOM API, holds a handle, or supplies
+// behaviour. An attribute is a string a host may choose to apply; every
+// listener is host-owned (see dom-driver.mjs). ADR 0025's exclusions are kept
+// literally: no HTML injection (`innerHTML` is never written), no CSS
+// evaluation (`style` is denied, not allowlisted), no event handlers (`on*` is
+// denied ahead of the allowlist so a future allowlist edit cannot open it).
+const UI_ATTR_NAME_RE = /^[a-z][a-z0-9-]*$/;
+const UI_ATTR_ALLOWED = new Set([
+  "class", "id", "title", "type", "value", "placeholder", "alt", "role",
+  "for", "name", "lang", "dir", "tabindex", "hidden", "disabled", "checked",
+  "selected", "readonly", "required", "multiple", "maxlength", "rows", "cols",
+  "min", "max", "step", "colspan", "rowspan", "width", "height", "href", "src"
+]);
+// Prefix families carry no behaviour and are the accessibility/nominal-identity
+// surface an application actually needs (`data-k` is how dom-driver.mjs routes
+// an event back to a guest-chosen name).
+const UI_ATTR_ALLOWED_PREFIXES = ["aria-", "data-"];
+// Only `href`/`src` carry a URL. Anything that is not same-document, root- or
+// dot-relative, https/http, or mailto is denied -- which is what closes
+// `javascript:` and `data:` without this file growing a URL parser.
+const UI_ATTR_URL_NAMES = new Set(["href", "src"]);
+const UI_ATTR_SAFE_URL_RE = /^(?:https?:\/\/|\/|\.{1,2}\/|#|mailto:)/;
+const UI_ATTR_MAX_PER_NODE = 32;
+const UI_ATTR_MAX_NAME_BYTES = 64;
+const UI_ATTR_MAX_VALUE_BYTES = 1024;
+
+// The typed-value reader has its own `utf8Length` bound inside its closure;
+// this bridge needs the same measure at module scope. Strings arriving here
+// already passed the guest boundary, so this counts bytes and does not
+// re-validate surrogate pairing.
+const uiUtf8Length = value => new TextEncoder().encode(value).byteLength;
+
+function uiAttrNameAdmitted(name) {
+  if (!UI_ATTR_NAME_RE.test(name)) return false;
+  if (name.startsWith("on")) return false;
+  if (name === "style") return false;
+  if (UI_ATTR_ALLOWED.has(name)) return true;
+  return UI_ATTR_ALLOWED_PREFIXES.some(prefix =>
+    name.startsWith(prefix) && name.length > prefix.length);
+}
+
+/**
+ * Read the `:attrs` map of a UI document node into [name, value] pairs.
+ *
+ * A `["bool", …]` value is an HTML boolean attribute (same reading as
+ * html_document.kotoba's `bool-attr`): true sets it present with an empty
+ * value, false omits it entirely.
+ *
+ * @returns {Array<[string, string]>} admitted attributes, source order
+ */
+function uiDocAttrs(node) {
+  const item = uiDocGet(node, "attrs");
+  if (item === undefined) return [];
+  if (!Array.isArray(item) || item[0] !== "map" || !Array.isArray(item[1]))
+    reject("invalid-ui-document", "UI document :attrs must be a map");
+  const entries = item[1];
+  if (entries.length > UI_ATTR_MAX_PER_NODE)
+    reject("invalid-ui-document", "UI document :attrs budget exceeded");
+  const pairs = [];
+  for (const entry of entries) {
+    if (!Array.isArray(entry) || entry.length !== 2)
+      reject("invalid-ui-document", "UI document :attrs entry must be a pair");
+    const key = entry[0];
+    const raw = Array.isArray(key) && key[0] === "keyword" ? key[1]
+      : typeof key === "string" ? key : null;
+    if (raw === null)
+      reject("invalid-ui-document", "UI document :attrs key must be a keyword");
+    const name = raw.startsWith(":") ? raw.slice(1) : raw;
+    if (uiUtf8Length(name) > UI_ATTR_MAX_NAME_BYTES)
+      reject("invalid-ui-document", `UI document attribute name too long: ${name}`);
+    if (!uiAttrNameAdmitted(name))
+      reject("invalid-ui-document", `UI document attribute is denied: ${name}`);
+    const valueItem = entry[1];
+    if (!Array.isArray(valueItem))
+      reject("invalid-ui-document", `UI document attribute ${name} must be a value`);
+    let value;
+    if (valueItem[0] === "bool") {
+      if (valueItem[1] !== true && valueItem[1] !== false)
+        reject("invalid-ui-document", `UI document attribute ${name} must be a boolean`);
+      if (valueItem[1] === false) continue;
+      value = "";
+    } else if (valueItem[0] === "string" && typeof valueItem[1] === "string") {
+      value = valueItem[1];
+    } else {
+      reject("invalid-ui-document",
+             `UI document attribute ${name} must be a string or boolean`);
+    }
+    if (uiUtf8Length(value) > UI_ATTR_MAX_VALUE_BYTES)
+      reject("invalid-ui-document", `UI document attribute value too long: ${name}`);
+    if (UI_ATTR_URL_NAMES.has(name) && !UI_ATTR_SAFE_URL_RE.test(value))
+      reject("invalid-ui-document", `UI document attribute ${name} has a denied URL scheme`);
+    pairs.push([name, value]);
+  }
+  return pairs;
+}
+
+// Form controls keep a live property that stops tracking its attribute the
+// moment a user edits the field (HTML calls it the dirty value flag). Setting
+// `value="…"` on an input the user has typed into therefore changes nothing on
+// screen -- so a guest that owns the field's contents could never clear it.
+// These tags get the property written as well as the attribute.
+const UI_VALUE_TAGS = new Set(["INPUT", "TEXTAREA", "SELECT"]);
+const UI_CHECKED_TAGS = new Set(["INPUT"]);
+
+/**
+ * Apply admitted attributes to an element and remove the ones this render
+ * dropped. Without the removal half, a reconciled element would accumulate
+ * every attribute any earlier state ever set.
+ */
+function applyUiAttrs(element, pairs) {
+  if (typeof element.setAttribute !== "function" ||
+      typeof element.removeAttribute !== "function")
+    reject("dom-unavailable", "DOM setAttribute/removeAttribute required for :attrs");
+  const wanted = new Map(pairs);
+  const present = typeof element.getAttributeNames === "function"
+    ? element.getAttributeNames() : [];
+  for (const name of present) {
+    // Only attributes this bridge could have written are removable; anything
+    // the host page put on its own mount point is left alone.
+    if (!wanted.has(name) && uiAttrNameAdmitted(name)) element.removeAttribute(name);
+  }
+  for (const [name, value] of wanted) {
+    if (typeof element.getAttribute === "function" &&
+        element.getAttribute(name) === value) continue;
+    element.setAttribute(name, value);
+  }
+  const tag = element.tagName;
+  if (UI_VALUE_TAGS.has(tag)) {
+    // Absent `:value` means the guest is not controlling this field, so its
+    // property is left exactly as the user left it.
+    const value = wanted.has("value") ? wanted.get("value")
+      : present.includes("value") ? "" : undefined;
+    // Compare before writing: assigning `value` unconditionally would move the
+    // caret to the end on every keystroke of a controlled field.
+    if (value !== undefined && element.value !== value) element.value = value;
+  }
+  if (UI_CHECKED_TAGS.has(tag)) {
+    const checked = wanted.has("checked") ? true
+      : present.includes("checked") ? false : undefined;
+    if (checked !== undefined && element.checked !== checked) element.checked = checked;
+  }
+}
+
 /**
  * Reconcile a logical UI :document into a DOM container element.
  *
@@ -2536,7 +2686,11 @@ export function reconcileUiDocument(container, doc, dom = {}) {
 
   const walk = (parent, index, node) => {
     const tag = uiDocTag(node);
+    // Read attributes before touching the DOM: a denied name or URL scheme
+    // must reject the whole reconcile, not leave a half-applied element.
+    const attrs = uiDocAttrs(node);
     const el = ensureChild(parent, index, tag);
+    applyUiAttrs(el, attrs);
     const text = uiDocStringField(node, "text", "");
     const kids = uiDocChildren(node);
     if (kids.length === 0) {
@@ -2574,11 +2728,14 @@ export function createMockDom() {
   };
   const makeEl = tag => {
     const childNodes = [];
+    const attributes = new Map();
+    const listeners = new Map();
     const el = {
       nodeType: 1,
       tagName: String(tag).toUpperCase(),
       id: `mock-${++seq}`,
       childNodes,
+      parentNode: null,
       get children() { return childNodes.filter(c => c.nodeType === 1); },
       get textContent() {
         return childNodes.map(c => c.nodeType === 3 ? c.data : c.textContent).join("");
@@ -2587,26 +2744,78 @@ export function createMockDom() {
         childNodes.length = 0;
         if (v !== "") childNodes.push(makeText(v));
       },
-      appendChild(child) { childNodes.push(child); return child; },
+      appendChild(child) {
+        childNodes.push(child);
+        if (child && typeof child === "object") child.parentNode = el;
+        return child;
+      },
       removeChild(child) {
         const i = childNodes.indexOf(child);
         if (i < 0) throw new Error("not-found");
         childNodes.splice(i, 1);
+        if (child && typeof child === "object") child.parentNode = null;
         return child;
       },
       replaceChild(next, prev) {
         const i = childNodes.indexOf(prev);
         if (i < 0) throw new Error("not-found");
         childNodes[i] = next;
+        if (next && typeof next === "object") next.parentNode = el;
+        if (prev && typeof prev === "object") prev.parentNode = null;
         return prev;
-      }
+      },
+      // Attribute surface used by reconcileUiDocument's `:attrs` support.
+      //
+      // `value` and `checked` are deliberately NOT mirrored from the
+      // attribute. A real form control stops tracking its attribute once the
+      // user edits it, and an earlier version of this mock did mirror -- which
+      // hid a bug where a guest could never clear a field it owned, right up
+      // until the Playwright run caught it in Chromium. A mock that is kinder
+      // than the platform is worse than no mock.
+      value: "",
+      checked: false,
+      setAttribute(name, value) {
+        attributes.set(String(name), String(value));
+      },
+      getAttribute(name) {
+        return attributes.has(String(name)) ? attributes.get(String(name)) : null;
+      },
+      removeAttribute(name) {
+        attributes.delete(String(name));
+      },
+      getAttributeNames() { return [...attributes.keys()]; },
+      hasAttribute(name) { return attributes.has(String(name)); },
+      // Enough of EventTarget for dom-driver.mjs: listeners registered on the
+      // container, events dispatched at a descendant and bubbled up. No
+      // capture phase, no stopPropagation -- the driver uses neither.
+      addEventListener(kind, handler) {
+        const bucket = listeners.get(kind) || [];
+        bucket.push(handler);
+        listeners.set(kind, bucket);
+      },
+      removeEventListener(kind, handler) {
+        const bucket = listeners.get(kind) || [];
+        const i = bucket.indexOf(handler);
+        if (i >= 0) bucket.splice(i, 1);
+      },
+      listeners
     };
     return el;
   };
   return Object.freeze({
     createElement: makeEl,
     createTextNode: makeText,
-    createContainer: () => makeEl("div")
+    createContainer: () => makeEl("div"),
+    // Dispatch `kind` at `target` and let it bubble, the way a real click on a
+    // nested button reaches a container-level listener.
+    dispatch: (target, kind, extra = {}) => {
+      let node = target;
+      while (node) {
+        for (const handler of [...(node.listeners?.get(kind) || [])])
+          handler({ type: kind, target, currentTarget: node, ...extra });
+        node = node.parentNode;
+      }
+    }
   });
 }
 
