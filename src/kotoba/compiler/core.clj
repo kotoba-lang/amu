@@ -617,9 +617,12 @@
                     :kotoba.artifact/effects (:effects kir)}})
 
       :else
-      (let [emitted (emit-native-ir! backend kir)
+      (let [program (select-keys kir [:format :entry :exports :signature :effects :functions])
+            ;; The verifier only receives this closed program from the sealed
+            ;; artifact. Native bytes therefore must be a pure function of the
+            ;; same value, never of compiler-private KIR metadata.
+            emitted (emit-native-ir! backend program)
             code (:code emitted)
-            program (select-keys kir [:format :entry :exports :signature :effects :functions])
             artifact (artifact/seal
                       {:format :kotoba.kexe/v1 :target target :target-profile profile :value value
                        :kir-sha256 (artifact/sha256 program)

@@ -78,9 +78,11 @@
         compat (compatibility/descriptor
                 {:hir-format (:format hir) :kir-format (:format kir)
                  :target target :target-profile profile :value-abi value-abi})
-        emitted (support/timed "native-emit" #(emit-program kir))
-        code (:code emitted)
         program (select-keys kir [:format :entry :exports :signature :effects :functions])
+        ;; Verification re-emits from this closed program. Do not let
+        ;; compiler-private KIR metadata influence the bytes being sealed.
+        emitted (support/timed "native-emit" #(emit-program program))
+        code (:code emitted)
         artifact-map
         (support/timed
          "artifact-seal"
