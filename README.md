@@ -45,6 +45,10 @@ values live across a call; the representative module shrinks from 123 to 84
 bytes on x86-64 and from 108 to 88 bytes on AArch64. Record and variant values remain held at
 function boundaries. The pinned verifier consumes this vocabulary, re-emits a
 two-function module, and keeps its aggregate predicate independently derived.
+Portable bool/bit negation, i64 shifts, and every admitted i32 wrapping
+operation also use this machine-IR path. The i32 names normalize into portable
+word arithmetic and shifts before target selection; the real-loader table
+executes the same rows on both native ISAs.
 
 The first reproducible coverage snapshot can be audited with:
 
