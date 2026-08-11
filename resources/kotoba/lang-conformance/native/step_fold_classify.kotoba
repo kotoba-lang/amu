@@ -1,0 +1,35 @@
+(ns kotoba.lang.conformance.native.step-fold-classify)
+
+;; A fold whose ELEMENTS never cross the boundary.
+;;
+;; Native has bounded homogeneous vectors and a string index, but both are
+;; private handles that may not cross a kexe export -- an external caller
+;; cannot construct, validate, inspect or release one. That restriction is
+;; load-bearing, so a caller-supplied sequence is not the shape to reach for.
+;;
+;; This case pins the shape that works instead: classification keyed by string,
+;; accumulated into a word, exposed as a single `state + event -> state` step.
+;; A host driving the loop cannot mis-classify, mis-assign or mis-union,
+;; because it does none of those. Everything here is word-typed, so the whole
+;; fold qualifies on native ISA.
+;;
+;; Guarded properties: a key outside the table contributes nothing, and the
+;; step is idempotent for a key already accumulated.
+
+(defn classify [key :string] :i64
+  (if (string=? key "alpha") 1
+    (if (string=? key "beta") 2
+    (if (string=? key "gamma") 4
+      0))))
+
+(defn union [a :i64 b :i64] :i64
+  ;; set union over a bounded universe; spelled without bit-or, which the
+  ;; restricted-ESM backend does not carry (kotoba-lang/amu#581)
+  (- (+ a b) (bit-and a b)))
+
+(defn step [acc :i64 key :string] :i64
+  (union acc (classify key)))
+
+(defn main [] :i64
+  ;; 1 | 4 = 5, with an unknown key and a repeat proving both guards
+  (step (step (step (step 0 "alpha") "unknown") "gamma") "alpha"))
