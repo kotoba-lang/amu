@@ -538,6 +538,15 @@
                bool-parameter-cases
                boolean-literal-argument-cases)))
 
+(deftest every-admitted-word-operation-uses-production-machine-ir
+  (doseq [form ['(bool-not a) '(bit-not a)
+                '(i64-shift-left a 3) '(i64-shift-right a 3)
+                '(u64-shift-right a 3) '(i32-wrap a) '(u32-wrap a)
+                '(i32-wrapping-add a b) '(i32-wrapping-mul a b)
+                '(i32-xor a b) '(i32-shift-left a 3)
+                '(i32-shift-right a 3) '(u32-shift-right a 3)]]
+    (is (machine-ir/pilot-expression? ['a 'b] form) form)))
+
 (def ^:private dual-phi-program
   (let [[test then-a then-b else-a else-b join-a join-b result]
         (mapv gmir/vreg (range 8))]
