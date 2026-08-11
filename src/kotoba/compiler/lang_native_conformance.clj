@@ -79,7 +79,8 @@
               {:keys [runtime loader-path]} @measured-runtime
               trust (assoc base-trust :trusted-runtime-sha256
                            #{(runtime-identity/identity-sha256 runtime)})
-              result (execute envelope trust {:allow #{}} {:args []}
+              result (execute envelope trust {:allow #{}}
+                              {:args (vec (or (:args case) []))}
                               {:now 1500
                                :entry (symbol (or (:function case) "main"))
                                :runtime runtime

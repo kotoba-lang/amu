@@ -11,19 +11,34 @@
                 :resolves-to #{:x86_64-kotoba-v1 :aarch64-kotoba-v1}}}
 
  :cases
- [;; A fold whose elements never cross the export boundary: string-keyed
-  ;; classification accumulated into a word, exposed as one step. Pins that
-  ;; this shape qualifies on native ISA, so a host loop over it keeps the
-  ;; decision native rather than forcing a caller-supplied sequence -- which
-  ;; native deliberately cannot take, since vector and string-index handles are
-  ;; private and may not cross a kexe export.
-  {:id :native-step-fold-classify
+ [;; A host-driven fold whose string-keyed transition is exported as one
+  ;; state + event -> state step. These cases cross the real process boundary
+  ;; with typed UTF-8 input and pin accumulation, unknown-event, and idempotent
+  ;; replay behavior without exposing private vector or string-index handles.
+  {:id :native-step-fold-classify-adds-known-event
+   :kind :run
+   :entry "native/step_fold_classify.kotoba"
+   :function "step"
+   :args [1 "gamma"]
+   :expect {:kotoba 5}}
+  {:id :native-step-fold-classify-ignores-unknown-event
+   :kind :run
+   :entry "native/step_fold_classify.kotoba"
+   :function "step"
+   :args [5 "unknown"]
+   :expect {:kotoba 5}}
+  {:id :native-step-fold-classify-is-idempotent
+   :kind :run
+   :entry "native/step_fold_classify.kotoba"
+   :function "step"
+   :args [5 "alpha"]
+   :expect {:kotoba 5}}
+  {:id :native-step-fold-classify-composed
    :kind :run
    :entry "native/step_fold_classify.kotoba"
    :function "main"
    :args []
-   ;; alpha then unknown then gamma then alpha again: 1 | 4 = 5, with the
-   ;; unknown key contributing nothing and the repeat changing nothing
+   ;; alpha then unknown then gamma then alpha again: 1 | 4 = 5.
    :expect {:kotoba 5}}
   {:id :native-f64-add
    :kind :run
