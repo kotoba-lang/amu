@@ -614,7 +614,7 @@
           (is (not (str/includes? report "KEXE_TRAP")) (str/trim report))
           (is (str/includes? report ":result 42") (str/trim report)))))))
 
-(deftest four-argument-entry-and-five-argument-fallback-run-as-real-processes
+(deftest four-argument-entry-and-five-argument-lazy-spill-run-as-real-processes
   (let [programs
         [[(str "(defn sum-four [a :i64 b :i64 c :i64 d :i64] :i64 "
                "(+ (+ a b) (+ c d))) "

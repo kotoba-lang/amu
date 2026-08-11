@@ -342,8 +342,8 @@ same fail-closed posture as fuel/division/capability. See
 
 The extracted native scalar-call path pins canonical parallel function-entry
 assignment. Four live i64 parameters remain zero-frame and spill-free on
-x86-64 and AArch64; the five-live-parameter case retains the safe frame-backed
-fallback. Both paths are executed through real loader subprocesses in the
+x86-64 and AArch64; the five-live-parameter case uses one bounded lazy entry
+spill. Both paths are executed through real loader subprocesses in the
 shared dual-ISA test table.
 
 The restricted JavaScript target is selected with `--target js`. A Web
