@@ -23,6 +23,7 @@
             [kotoba.compiler.document-digest-style-test]
             [kotoba.compiler.document-sha256-test]
             [kotoba.compiler.document-dom-reconcile-test]
+            [kotoba.compiler.dom-app-driver-test]
             [kotoba.compiler.document-dual-renderer-test]
             [kotoba.compiler.document-roundtrip-test]
             [kotoba.compiler.document-edn-test]
