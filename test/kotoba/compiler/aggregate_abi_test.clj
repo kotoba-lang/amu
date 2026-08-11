@@ -8,9 +8,9 @@
   (get-in (edn/read-string (slurp "deps.edn")) [:deps coordinate :git/sha]))
 
 (deftest pinned-closure-carries-the-scalar-call-boundary
-  (is (= "30d4a1fb6f1ccc4e52d5abd11852a7fecf8bcab8"
+  (is (= "7f2120deade9425d7920689b88119790f4bdcea9"
          (dependency-pin 'io.github.kotoba-lang/kotoba-native)))
-  (is (= "f17698b44c4757325972c7340a205960afefe0be"
+  (is (= "f1d8e07c49d90e8670bf1f375cb1bb2155c1a52c"
          (dependency-pin 'io.github.kotoba-lang/kotoba-verifier)))
   (is (= 2 (:abi/version aggregate-abi/contract)))
   (is (= :held (get-in aggregate-abi/contract
@@ -56,3 +56,23 @@
                                 encodings))) target)
         (is (= 1 (count (filter #{(keyword (name target) "spill-load")}
                                 encodings))) target)))))
+
+(deftest pinned-closure-carries-the-zero-frame-four-argument-entry
+  (let [module {:format :kotoba.kir/v4
+                :exports ['main]
+                :functions
+                [{:name 'sum-four :params ['a 'b 'c 'd] :result :i64
+                  :body '(+ (+ a b) (+ c d))}
+                 {:name 'main :params [] :result :i64
+                  :body '(sum-four 1 2 4 8)}]}]
+    (doseq [target [:x86-64 :aarch64]]
+      (let [[callee caller]
+            (:mc/functions (->> module machine/lower-kir-module
+                                (machine/compile-gmir target)))
+            spill-encodings #{(keyword (name target) "spill-store")
+                              (keyword (name target) "spill-load")}]
+        (is (= [0 0] (mapv :mc/frame-slots [callee caller])) target)
+        (is (= [:allocator :call-live]
+               (mapv :mc/frame-policy [callee caller])) target)
+        (is (not-any? #(contains? spill-encodings (:mc/encoding %))
+                      (mapcat :mc/instructions [callee caller])) target)))))
