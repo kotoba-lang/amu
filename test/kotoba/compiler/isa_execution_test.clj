@@ -575,7 +575,8 @@
       (let [mc (machine-ir/compile-gmir target gmir)
             encodings (keep :mc/encoding (:mc/instructions mc))]
         (is (zero? (:mc/frame-slots mc)) target)
-        (is (= 2 (count (filter #(= (keyword (name target) "move") %) encodings)))
+        (is (= (if (= :x86-64 target) 3 2)
+               (count (filter #(= (keyword (name target) "move") %) encodings)))
             target)
         (is (not-any? #(contains? #{(keyword (name target) "spill-load")
                                     (keyword (name target) "spill-store")} %)
@@ -590,7 +591,8 @@
                 encodings (keep :mc/encoding (:mc/instructions mc))
                 bytes (machine-ir/encode-mc mc)]]
     (is (zero? (:mc/frame-slots mc)) target)
-    (is (= 2 (count (filter #(= (keyword (name target) "move") %) encodings)))
+    (is (= (if (= :x86-64 target) 3 2)
+           (count (filter #(= (keyword (name target) "move") %) encodings)))
         target)
     (is (not-any? #(contains? #{(keyword (name target) "spill-load")
                                 (keyword (name target) "spill-store")} %)
@@ -612,6 +614,24 @@
           (is (not (str/includes? report "KEXE_TRAP")) (str/trim report))
           (is (str/includes? report ":result 42") (str/trim report)))))))
 
+(deftest four-argument-entry-and-five-argument-fallback-run-as-real-processes
+  (let [programs
+        [[(str "(defn sum-four [a :i64 b :i64 c :i64 d :i64] :i64 "
+               "(+ (+ a b) (+ c d))) "
+               "(defn main [] :i64 (sum-four 1 2 4 8))")
+          15]
+         [(str "(defn sum-five [a :i64 b :i64 c :i64 d :i64 e :i64] :i64 "
+               "(+ (+ (+ a b) (+ c d)) e)) "
+               "(defn main [] :i64 (sum-five 1 2 4 8 16))")
+          31]]]
+    (doseq [[isa loader] @loaders :when loader
+            [source expected] programs]
+      (testing (str isa " result=" expected)
+        (let [report (run-native isa source)]
+          (is (not (str/includes? report "KEXE_TRAP")) (str/trim report))
+          (is (str/includes? report (str ":result " expected))
+              (str/trim report)))))))
+
 (deftest source-record-sroa-has-zero-frame-traffic-and-runs-both-edges
   (let [body (list '+
                    (list 'record-get (read-string scalar-pair-type) 'r :x)
@@ -628,7 +648,8 @@
       (let [mc (machine-ir/compile-gmir target gmir)
             encodings (keep :mc/encoding (:mc/instructions mc))]
         (is (zero? (:mc/frame-slots mc)) target)
-        (is (= 2 (count (filter #(= (keyword (name target) "move") %)
+        (is (= (if (= :x86-64 target) 3 2)
+               (count (filter #(= (keyword (name target) "move") %)
                                 encodings)))
             target)
         (is (not-any? #(contains? #{(keyword (name target) "spill-load")

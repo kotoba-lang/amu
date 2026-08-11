@@ -340,6 +340,12 @@ value, narrowing the gap from "silently wrong" to "loudly fails," the
 same fail-closed posture as fuel/division/capability. See
 `backend/cljs.clj`'s own docstring for the full, honest scope.
 
+The extracted native scalar-call path pins canonical parallel function-entry
+assignment. Four live i64 parameters remain zero-frame and spill-free on
+x86-64 and AArch64; the five-live-parameter case retains the safe frame-backed
+fallback. Both paths are executed through real loader subprocesses in the
+shared dual-ISA test table.
+
 The restricted JavaScript target is selected with `--target js`. A Web
 library may deliberately omit `main`, but only when its namespace declares a
 non-empty host boundary, for example `(ns example.math (:export [add1]))`.

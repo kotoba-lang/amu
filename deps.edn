@@ -49,7 +49,7 @@
         io.github.kotoba-lang/kotoba-wasm
         {:git/url "https://github.com/kotoba-lang/kotoba-wasm.git"
          :git/sha "b0c9837f2aca8f6bf0376e16d6b889c303a2b4f3"}
-        ;; 30d4a1f consumes versioned GMIR merge values and scalar-replaces
+        ;; 7f2120d consumes versioned GMIR merge values and scalar-replaces
         ;; non-escaping fixed records plus sealed i64/bool-payload variants
         ;; before GMIR. Aggregate-valued branches emit one phi per transported
         ;; scalar and use MIR's parallel-copy schedule without heap allocation.
@@ -57,12 +57,13 @@
         ;; one-word context-owned pair-chain handles while admitting bounded
         ;; scalar direct calls through per-function frames and explicit
         ;; call-clobber preservation. Straight-line callers materialize only
-        ;; values live across a call; CFG/pressure retains the all-vreg path.
+        ;; values live across a call. Four live scalar entry parameters use a
+        ;; zero-frame parallel ABI assignment; five retain all-vreg fallback.
         ;; Native still owns instruction selection/encoding, entry shims,
         ;; target addresses, and aiueos policy.
         io.github.kotoba-lang/kotoba-native
         {:git/url "https://github.com/kotoba-lang/kotoba-native.git"
-         :git/sha "30d4a1fb6f1ccc4e52d5abd11852a7fecf8bcab8"}
+         :git/sha "7f2120deade9425d7920689b88119790f4bdcea9"}
         io.github.kotoba-lang/kotoba-component
         {:git/url "https://github.com/kotoba-lang/kotoba-component.git"
          :git/sha "35fb4d5941b3d56b35bca71151bdfadf33993d41"}
@@ -73,16 +74,16 @@
         io.github.kotoba-lang/io-multiformats
         {:git/url "https://github.com/kotoba-lang/io-multiformats.git"
          :git/sha "b3b157e683a943d4f2e9362d9366cceefff3f656"}
-        ;; f17698b independently re-derives the exact direct/one-let scalar
+        ;; f1d8e07 independently re-derives the exact direct/one-let scalar
         ;; record and variant IF shapes emitted by the native pin above, in
         ;; addition to gating aggregate-boundary contract v2 and re-emitting a
-        ;; scalar call module and requires its liveness-minimal frame without
-        ;; widening its own aggregate predicate.
+        ;; scalar call module and requires its liveness-minimal frame plus the
+        ;; four-argument zero-frame entry ABI without widening admission.
         ;; Producer and verifier move in the same closure; neither trusts the
         ;; other's aggregate metadata.
         io.github.kotoba-lang/kotoba-verifier
         {:git/url "https://github.com/kotoba-lang/kotoba-verifier.git"
-         :git/sha "f17698b44c4757325972c7340a205960afefe0be"}
+         :git/sha "f1d8e07c49d90e8670bf1f375cb1bb2155c1a52c"}
 }
  :aliases {:test {:extra-paths ["test"]
                   :extra-deps
