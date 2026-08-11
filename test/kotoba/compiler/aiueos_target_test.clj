@@ -86,18 +86,22 @@
     (is (= [0x48 0x89 0x3d] (subvec bytes 0x1000 0x1003)))
     (is (= [0x4c 0x8d 0x0d] (subvec bytes 0x1007 0x100a)))
     ;; Context fuel is initialized to 512; no host process populates it.
-    (is (= 512 (read-le bytes (+ 0x8000 8) 8)))))
+    (is (= 512 (read-le bytes (+ 0xa000 8) 8)))))
 
 (deftest kernel-target-lowers-privileged-intrinsics-without-imports
   (let [source (str "(defn main [] "
-                    "(let [cr3 (kernel-read-cr3) "
+                    "(let [cr0 (kernel-read-cr0) "
+                    "      wp (kernel-write-cr0 cr0) "
+                    "      cr3 (kernel-read-cr3) "
                     "      written (kernel-write-cr3 cr3) "
                     "      flushed (kernel-invlpg 4096) "
                     "      marker (kernel-out-u8 233 75)] "
-                    "  (kernel-out-u32 244 (+ cr3 written flushed marker))))")
+                    "  (kernel-out-u32 244 (+ cr0 wp cr3 written flushed marker))))")
         artifact (:artifact (compiler/compile-source source :x86_64-aiueos-kernel-v1))
         code (:code artifact)]
     (is (empty? (:imports artifact)))
+    (is (some #(= [0x41 0x0f 0x20 0xc2] %) (partition 4 1 code)) "mov r10,cr0")
+    (is (some #(= [0x41 0x0f 0x22 0xc2] %) (partition 4 1 code)) "mov cr0,r10")
     (is (some #(= [0x41 0x0f 0x20 0xda] %) (partition 4 1 code)) "mov r10,cr3")
     (is (some #(= [0x41 0x0f 0x22 0xda] %) (partition 4 1 code)) "mov cr3,r10")
     (is (some #(= [0x41 0x0f 0x01 0x3a] %) (partition 4 1 code)) "invlpg [r10]")
