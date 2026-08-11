@@ -125,12 +125,20 @@
         first-image (pe32plus/package-embedded-kernel kernel)
         second-image (pe32plus/package-embedded-kernel kernel)
         bytes (:bytes first-image)]
-    (is (= :pe32+-embedded-kernel/v1 (:format first-image)))
+    (is (= :pe32+-embedded-kernel/v2 (:format first-image)))
+    (is (= {:bytes 16448 :memory-map-offset 64 :memory-map-capacity 16384}
+           (:boot-info-layout first-image)))
     (is (= [0x4d 0x5a] (subvec bytes 0 2)))
     (is (= [0x50 0x45 0 0] (subvec bytes 0x80 0x84)))
     (is (= 3 (read-le bytes (+ 0x84 2) 2)))
     (is (= 10 (read-le bytes (+ 0x98 68) 2)) "EFI application subsystem")
     (is (empty? (:imports first-image)))
+    (is (not-any? #(= [0x41 0xff 0x56 0x40] %)
+                  (partition 4 1 bytes))
+        "the C-free loader does not AllocatePool a second authority region")
+    (is (some #(= [0 0x40 0 0] %)
+              (partition 4 1 bytes))
+        "GetMemoryMap is bounded to the inline 16 KiB region")
     (is (= bytes (:bytes second-image)) "embedded boot image is reproducible")
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #"x86-64 ET_EXEC"
           (pe32plus/package-embedded-kernel (vec (repeat 128 0)))))))

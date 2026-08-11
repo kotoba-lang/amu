@@ -99,6 +99,24 @@ and `aiueos` owns grant decisions, while a small native host independently
 enforces the resulting grant. See
 [`ADR-2607252500`](https://github.com/com-junkawasaki/root/blob/main/90-docs/adr/2607252500-kotoba-wasm-component-first-execution-boundary.edn).
 
+For production native effects, the dependency and evidence direction is
+strictly one-way:
+
+```text
+Kotoba semantics / provider types
+  -> Amu admission and sealed artifact
+  -> kotoba-native machine code and aiueos image ABI
+  -> aiueos C-free boot, kernel, process, capability broker and provider
+  -> Amu backend qualification receipt
+```
+
+`aiueos.vm`, `aiueos.hvt`, Tender, Linux and the retained C kernel may test or
+serve as reference oracles, but their success cannot flow upward as production
+native qualification evidence. Amu owns neither scheduling nor syscalls. The
+current exact gate is `backend-provider-qualification-v2.edn`; native remains
+pending until the aiueos C-free CPL3 path supplies runtime, semantic-vector and
+empty-foreign-code receipts. See ADR 0240 and aiueos ADR-0013.
+
 Project compilation accepts repeated `--source-path ROOT` arguments to link
 explicit package roots into one closed graph. Every dependency remains
 confined to one of those real paths. If the same qualified namespace exists
