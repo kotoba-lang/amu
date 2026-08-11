@@ -4,10 +4,11 @@
   Harder performance evidence for recursive logical documents *before*
   selecting HAMT / vector-trie / arena / rope implementations.
 
-  Sixth slice only recorded a soft 200× render of a 16-leaf tree under 5s.
+  Sixth slice only recorded a 200× render of a 16-leaf tree under a 5s
+  current-thread CPU budget.
   This slice runs a fuller W4 pipeline (construct → HTML → sha256 → print →
   read → equal?) on a larger admitted tree, against KIR (elevated fuel) and
-  restricted ESM (default fuel envelope), with tighter wall-clock budgets.
+  restricted ESM (default fuel envelope), with tighter CPU/process budgets.
 
   Complements slices 1–8. Does not claim HAMT selection or :ui/commit (W5)."
   (:require [clojure.java.shell :as shell]
@@ -108,20 +109,30 @@
 (defn- ms-since [t0]
   (/ (double (- (System/nanoTime) t0)) 1.0e6))
 
+(defn- current-thread-cpu-nanos []
+  (let [bean (java.lang.management.ManagementFactory/getThreadMXBean)]
+    (when-not (.isCurrentThreadCpuTimeSupported bean)
+      (throw (ex-info "current-thread CPU time is unavailable" {})))
+    (when-not (.isThreadCpuTimeEnabled bean)
+      (.setThreadCpuTimeEnabled bean true))
+    (.getCurrentThreadCpuTime bean)))
+
 (defn- truthy? [v]
   (or (true? v) (= v 1) (= v 1N)))
 
 (deftest heavy-document-pipeline-kir-workload
   (let [compiled (compiler/compile-source heavy-source :js-kotoba-v1)
         kir (:kir compiled)
-        _ (run kir 'main)
+        _ (dotimes [_ 5] (run kir 'main))
         kids (run kir 'kids)
         html (run kir 'html)
         dig (run kir 'dig)
         printed (run kir 'printed)
-        t0 (System/nanoTime)
+        wall-t0 (System/nanoTime)
+        cpu-t0 (current-thread-cpu-nanos)
         results (doall (repeatedly 100 #(run kir 'main)))
-        elapsed (ms-since t0)
+        cpu-ms (/ (double (- (current-thread-cpu-nanos) cpu-t0)) 1.0e6)
+        wall-ms (ms-since wall-t0)
         sample (first results)]
     (testing "heavy tree shape is admitted and non-trivial"
       (is (= 4 kids))
@@ -133,9 +144,11 @@
       (is (pos? sample))
       (is (every? #(= sample %) results)))
     (testing "100× construct/print/read/eq under harder budget (elevated fuel)"
-      (is (< elapsed 3000.0)
-          (str "100 pipelines took " elapsed " ms (harder budget 3000 ms)"))
-      (println "W4-ninth KIR heavy pipeline:" elapsed "ms for 100 iters; main=" sample))))
+      (is (< cpu-ms 3000.0)
+          (str "100 pipelines used " cpu-ms " CPU ms and " wall-ms
+               " wall ms (CPU budget 3000 ms)"))
+      (println "W4-ninth KIR heavy pipeline:" cpu-ms "CPU ms;" wall-ms
+               "wall ms for 100 iters; main=" sample))))
 
 (deftest heavy-document-pipeline-esm-workload
   (let [compiled (compiler/compile-source heavy-source :js-kotoba-v1)
@@ -179,7 +192,8 @@
                         [:tag ["string" "g"]]]])
         tree ["map" [[:children ["vector" (mapv group (range 16))]]
                      [:tag ["string" "root"]]]]
-        t0 (System/nanoTime)
+        wall-t0 (System/nanoTime)
+        cpu-t0 (current-thread-cpu-nanos)
         digests (doall
                  (repeatedly 100
                    (fn []
@@ -188,10 +202,13 @@
                            r (value/document-read p)]
                        (assert (= d r))
                        (value/document-sha256-hex r)))))
-        elapsed (ms-since t0)]
+        cpu-ms (/ (double (- (current-thread-cpu-nanos) cpu-t0)) 1.0e6)
+        wall-ms (ms-since wall-t0)]
     (testing "100× host construct/print/read/sha256 under 2s"
       (is (= 1 (count (set digests))))
       (is (re-matches #"[0-9a-f]{64}" (first digests)))
-      (is (< elapsed 2000.0)
-          (str "100 host round-trips took " elapsed " ms (harder budget 2000 ms)"))
-      (println "W4-ninth host value plane:" elapsed "ms for 100 iters"))))
+      (is (< cpu-ms 2000.0)
+          (str "100 host round-trips used " cpu-ms " CPU ms and " wall-ms
+               " wall ms (CPU budget 2000 ms)"))
+      (println "W4-ninth host value plane:" cpu-ms "CPU ms;" wall-ms
+               "wall ms for 100 iters"))))
