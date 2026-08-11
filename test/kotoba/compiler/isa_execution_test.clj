@@ -184,6 +184,20 @@
    ["i32 wrapping" "(defn main [] (i32-wrapping-add 2147483647 1))" -2147483648]
    ["bool-not" "(defn main [] (if (bool-not true) 1 0))" 0]
    ["pair" "(defn main [] (pair-first (pair 9 8)))" 9]
+   ["aggregate-payload variant"
+    (str "(defn main [] "
+         "(variant-match [:variant :t/record-or-count "
+         "[[:record [:record :t/pair [[:a :i64] [:b :i64]]]] [:count :i64]]] "
+         "(variant-new [:variant :t/record-or-count "
+         "[[:record [:record :t/pair [[:a :i64] [:b :i64]]]] [:count :i64]]] "
+         ":record (record-new [:record :t/pair [[:a :i64] [:b :i64]]] 20 22)) "
+         "[[:record payload (+ (record-get [:record :t/pair [[:a :i64] [:b :i64]]] payload :a) "
+         "(record-get [:record :t/pair [[:a :i64] [:b :i64]]] payload :b))] "
+         "[:count payload payload]]))") 42]
+   ["sealed indirect callable"
+    "(defn add [a b] (+ a b)) (defn main [] (invoke (fn-ref add) 20 22))" 42]
+   ["bounded apply"
+    "(defn add [a b] (+ a b)) (defn main [] (apply (fn-ref add) (list 20 22)))" 42]
    ["string=?" "(defn main [] (if (string=? \"ab\" \"ab\") 1 0))" 1]
    ["string-concat" (str "(defn main [] (string-byte-length"
                          " (string-concat \"ab\" \"cde\")))") 5]

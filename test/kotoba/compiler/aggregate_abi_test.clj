@@ -8,13 +8,13 @@
   (get-in (edn/read-string (slurp "deps.edn")) [:deps coordinate :git/sha]))
 
 (deftest pinned-closure-carries-the-complete-native-boundary
-  (is (= "dd7fe0cf8972ef20bcc24894b7c7aaf9d086c1a6"
+  (is (= "a2023fed59208b0b4f48795d6e688f5cbd1aad8e"
          (dependency-pin 'io.github.kotoba-lang/kotoba-native)))
   (is (= "d58972da61758584a5bec0e863bcb3ea6fdd6c64"
          (dependency-pin 'io.github.kotoba-lang/kotoba-kir)))
-  (is (= "e2c0e3f49bd7828cd187aee6a90ba5e6f2474149"
+  (is (= "562fd6ec03c4280ff15b8f9f433353c62b662437"
          (dependency-pin 'io.github.kotoba-lang/kotoba-verifier)))
-  (is (= 6 (:abi/version aggregate-abi/contract)))
+  (is (= 7 (:abi/version aggregate-abi/contract)))
   (is (= :recursive-word-handles
          (get-in aggregate-abi/contract
                  [:portable/record :boundary/field-representation])))
@@ -23,10 +23,19 @@
                  [:portable/record :boundary/max-nesting-depth])))
   (is (= :word-pair-chain-admitted (get-in aggregate-abi/contract
                         [:extracted :record-boundary])))
-  (is (= :scalar-pair-handle-admitted (get-in aggregate-abi/contract
+  (is (= :recursive-payload-pair-handle-admitted (get-in aggregate-abi/contract
                         [:extracted :variant-boundary])))
-  (is (= :scalar-admitted (get-in aggregate-abi/contract
-                                   [:extracted :call-admission])))
+  (is (= :sealed-callable-admitted (get-in aggregate-abi/contract
+                                            [:extracted :call-admission])))
+  (is (= {:indirect :closed-ordinal-dispatch
+          :apply :bounded-pair-chain
+          :max-apply-arguments 4
+          :arbitrary-address false}
+         (get-in aggregate-abi/contract [:extracted :callable-dispatch])))
+  (is (= {:mode :closed-module-graph
+          :ambient-symbols false
+          :unresolved-symbols false}
+         (get-in aggregate-abi/contract [:extracted :linkage])))
   (is (= :all-allocator-registers
          (get-in aggregate-abi/contract
                  [:targets :x86-64 :call-clobbers])))

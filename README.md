@@ -260,8 +260,13 @@ The pinned native closure now routes production KIR exclusively through
 whole-module GMIR, target-selected MIR, allocated MC, and closed target
 encoders. It publishes multiple exports from one layout and carries word-field
 records, recursively nested one-word record handles, and option/result handles
-under aggregate ABI v6. Retired ISA emitters are unreachable from public
-production and test routing; IR rejection has no fallback.
+under aggregate ABI v7. Record-payload variants reuse those handles. Callable
+indirection is a sealed ordinal dispatcher, `apply` is capped at four arguments,
+and native project linkage requires a digest-bound closed graph with no ambient
+or unresolved symbols. Retired ISA emitters are unreachable from public
+production and test routing; IR rejection has no fallback. Arbitrary code
+addresses, open-ended variadic parameters, and dynamic unresolved linkage stay
+rejected.
 Terminal local calls release the current native frame and branch without
 linking on both x86-64 and AArch64, so tail recursion no longer grows the stack.
 

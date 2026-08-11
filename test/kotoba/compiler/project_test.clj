@@ -204,6 +204,11 @@
     (is (= (:project-digest a) (:project-digest b)))
     (is (= (:project-digest a)
            (get-in a [:manifest :kotoba.artifact/module-graph-digest])))
+    (is (= {:mode :closed-module-graph
+            :module-graph-digest (:project-digest a)
+            :unresolved-symbols #{}
+            :ambient-symbols false}
+           (:project-linkage a)))
     (is (= ['example.text 'example.app]
            (get-in a [:project :kotoba.module/order])))
     (is (= #{'example.text 'example.app}
@@ -217,6 +222,21 @@
               (:project-digest changed)))
     (is (not= (get-in a [:manifest :kotoba.artifact/output-digest])
               (get-in changed [:manifest :kotoba.artifact/output-digest])))))
+
+(deftest native-project-linkage-is-statically-resolved-before-emission
+  (let [lib "(ns native.lib (:export [add]))
+             (defn add [a :i64 b :i64] :i64 (+ a b))"
+        app "(ns native.app (:require [native.lib :as lib]) (:export [main]))
+             (defn main [] :i64 (lib/add 20 22))"]
+    (doseq [target [:x86_64-kotoba-v1 :aarch64-kotoba-v1]]
+      (let [compiled (compiler/compile-project
+                      {'native.lib lib 'native.app app} 'native.app target)]
+        (is (= :kexe/v1 (:format compiled)) target)
+        (is (= #{} (get-in compiled [:project-linkage :unresolved-symbols])) target)
+        (is (false? (get-in compiled [:project-linkage :ambient-symbols])) target)
+        (is (= (:project-digest compiled)
+               (get-in compiled [:project-linkage :module-graph-digest])) target)
+        (is (seq (get-in compiled [:artifact :code])) target)))))
 
 (deftest compiler-seals-verified-supply-chain-identity
   (let [digest (fn [character] (apply str (repeat 64 character)))

@@ -18,6 +18,7 @@
             [kotoba.script :as script]
             [kotoba.native.x86-64 :as x86-64]
             [kotoba.native.aarch64 :as aarch64]
+            [kotoba.native.aggregate-abi :as aggregate-abi]
             [kotoba.native.elf64 :as elf64]
             [kotoba.compiler.packaging.pe32plus :as pe32plus]
             [kotoba.artifact.core :as artifact]
@@ -757,6 +758,12 @@
                 :kotoba.module/order (:module-order linked)
                 :kotoba.module/source-digests module-digests}
          graph-digest (artifact/sha256 graph)
+         linkage-evidence {:mode :closed-module-graph
+                           :module-graph-digest graph-digest
+                           :unresolved-symbols #{}
+                           :ambient-symbols false}
+         _ (when (= :native (:execution (target-profile/profile target)))
+             (aggregate-abi/admit-closed-linkage! linkage-evidence))
          project-meta (merge {:module-graph-digest graph-digest
                               :module-source-digests module-digests}
                              supply-chain)
@@ -768,7 +775,8 @@
                     (compile-component (:source linked) policy
                                        (merge {:target target} linked-meta))
                     (compile-source (:source linked) target policy linked-meta))]
-     (cond-> (assoc compiled :project graph :project-digest graph-digest)
+     (cond-> (assoc compiled :project graph :project-digest graph-digest
+                    :project-linkage linkage-evidence)
        (:manifest compiled)
        (update :manifest merge
                (merge {:kotoba.artifact/module-graph-digest graph-digest
