@@ -1,9 +1,10 @@
-{:kotoba.backend-provider-qualification/format :v1
+{:kotoba.backend-provider-qualification/format :v2
  :provider-manifest {:format :kotoba.provider-conformance/v1
                      :sha256 "5d7599b5701b6fb9660de7488afbfa0b85314f90208a3f11b2ea28ca502e476e"
                      :capability-count 9}
  :backends
-  {:wasmtime {:manifest-gate :required
+ {:wasmtime {:manifest-gate :required
+             :execution-surface :wasmtime-component-v1
              :execution-status :pending
              :gaps [:nested-canonical-request-result-abi
                     :recursive-schema-component-representation
@@ -13,12 +14,15 @@
                     :minimum-wasmtime-43]
              :evidence {}}
   :native {:manifest-gate :required
+           :execution-surface :aiueos-c-free-bare-metal-v1
            :execution-status :pending
            :gaps [:typed-provider-syscall-abi
                   :nested-request-result-host-codec
-                  :native-provider-semantic-vectors]
+                  :native-provider-semantic-vectors
+                  :c-free-aiueos-cpl3-syscall-substrate]
            :evidence {}}
   :cljs {:manifest-gate :required
+         :execution-surface :nbb-process-v1
          :execution-status :qualified
          :gaps []
          :evidence {:runtime-boundary "kotoba.compiler.backend-cljs-test/real-nbb-round-trips-full-i64-provider-values"

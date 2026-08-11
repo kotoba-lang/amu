@@ -14,7 +14,7 @@
         (map (fn [[name entry]] [name (:compiler-wire-id entry)]))
         (:capabilities (read-resource "kotoba/lang/capability-catalog.edn"))))
 (def claims
-  (read-resource "kotoba/lang/backend-provider-qualification-v1.edn"))
+  (read-resource "kotoba/lang/backend-provider-qualification-v2.edn"))
 
 (deftest component-model-policy-is-compiler-owned-and-closed
   (let [policy (:component-model
@@ -76,8 +76,10 @@
 (deftest every-backend-is-bound-to-the-same-manifest-gate
   (doseq [backend [:wasmtime :native :cljs]]
     (let [receipt (qualification/verify! backend)]
-      (is (= :kotoba.backend-provider-qualification/receipt-v1 (:format receipt)))
+      (is (= :kotoba.backend-provider-qualification/receipt-v2 (:format receipt)))
       (is (= backend (:backend receipt)))
+      (is (= (get qualification/execution-surfaces backend)
+             (:execution-surface receipt)))
       (is (= 9 (:capability-count receipt)))
       (is (= :passed (:manifest-gate receipt)))
       (if (= :cljs backend)
@@ -96,7 +98,8 @@
          (set (get-in claims [:backends :wasmtime :gaps]))))
   (is (= #{:typed-provider-syscall-abi
            :nested-request-result-host-codec
-           :native-provider-semantic-vectors}
+           :native-provider-semantic-vectors
+           :c-free-aiueos-cpl3-syscall-substrate}
          (set (get-in claims [:backends :native :gaps])))))
 
 (deftest stale-manifest-and-false-qualification-claims-fail-closed
@@ -109,7 +112,23 @@
                         (assoc-in [:backends :native :gaps] []))]
     (is (thrown-with-msg?
          clojure.lang.ExceptionInfo #"lacks closed semantic evidence"
-         (qualification/verify-data! manifest registry false-claim :native)))))
+         (qualification/verify-data! manifest registry false-claim :native))))
+  (let [hosted-c-claim (assoc-in claims [:backends :native :execution-surface]
+                                 :hosted-kexe-c-loader)]
+    (is (thrown-with-msg?
+         clojure.lang.ExceptionInfo #"not the compiler-owned surface"
+         (qualification/verify-data! manifest registry hosted-c-claim :native))))
+  (let [missing-foreign-receipt
+        (-> claims
+            (assoc-in [:backends :native :execution-status] :qualified)
+            (assoc-in [:backends :native :gaps] [])
+            (assoc-in [:backends :native :evidence]
+                      {:runtime-boundary "native/runtime-test"
+                       :semantic-vectors "native/semantic-test"}))]
+    (is (thrown-with-msg?
+         clojure.lang.ExceptionInfo #"lacks closed semantic evidence"
+         (qualification/verify-data! manifest registry
+                                     missing-foreign-receipt :native)))))
 
 (deftest registry-drift-fails-every-backend-gate
   (is (thrown-with-msg?
