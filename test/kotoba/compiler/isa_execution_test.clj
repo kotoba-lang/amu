@@ -789,3 +789,13 @@
       (testing (str isa " / " why)
         (let [report (run-native isa source "-" {:allow #{}} 'divide args)]
           (is (str/includes? report ":status :trap") (str/trim report)))))))
+
+(deftest every-admitted-f64-form-uses-the-production-machine-ir-route
+  (doseq [form ['(f64-from-bits 1) '(f64-to-bits 1)
+                '(f64-abs 1) '(f64-neg 1) '(f64-sqrt 1)
+                '(f64-add 1 2) '(f64-sub 1 2) '(f64-mul 1 2)
+                '(f64-div 1 2) '(f64-min 1 2) '(f64-max 1 2)
+                '(f64-eq 1 2) '(f64-lt 1 2) '(f64-le 1 2)
+                '(f64-gt 1 2) '(f64-ge 1 2)
+                '(f64-unordered 1 2)]]
+    (is (machine-ir/pilot-expression? [] form) form)))

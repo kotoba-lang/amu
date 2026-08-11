@@ -49,7 +49,7 @@
         io.github.kotoba-lang/kotoba-wasm
         {:git/url "https://github.com/kotoba-lang/kotoba-wasm.git"
          :git/sha "b0c9837f2aca8f6bf0376e16d6b889c303a2b4f3"}
-        ;; c1d67be consumes versioned GMIR merge values and scalar-replaces
+        ;; 1eb54af consumes versioned GMIR merge values and scalar-replaces
         ;; non-escaping fixed records plus sealed i64/bool-payload variants
         ;; before GMIR. Aggregate-valued branches emit one phi per transported
         ;; scalar and use MIR's parallel-copy schedule without heap allocation.
@@ -61,11 +61,13 @@
         ;; zero-frame parallel ABI assignment; five retain all-vreg fallback.
         ;; Portable i64/i32 word operations now lower through GMIR/MIR/MC;
         ;; x86-64 preserves CL around shifts and AArch64 selects LSLV/ASRV/LSRV.
+        ;; Scalar f64 bit patterns stay in allocated GPRs; selected SSE2/AArch64
+        ;; FP operations own arithmetic, comparisons, NaN ordering, and sqrt.
         ;; Native still owns instruction selection/encoding, entry shims,
         ;; target addresses, and aiueos policy.
         io.github.kotoba-lang/kotoba-native
         {:git/url "https://github.com/kotoba-lang/kotoba-native.git"
-         :git/sha "c1d67beb48936a77885f2ee0631390a7545129fe"}
+         :git/sha "1eb54af54ce12667af4138bb4fdb0cb02cbe465b"}
         io.github.kotoba-lang/kotoba-component
         {:git/url "https://github.com/kotoba-lang/kotoba-component.git"
          :git/sha "35fb4d5941b3d56b35bca71151bdfadf33993d41"}

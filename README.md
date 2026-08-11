@@ -49,6 +49,9 @@ Portable bool/bit negation, i64 shifts, and every admitted i32 wrapping
 operation also use this machine-IR path. The i32 names normalize into portable
 word arithmetic and shifts before target selection; the real-loader table
 executes the same rows on both native ISAs.
+Scalar f64 arithmetic, min/max, sqrt, bit-pattern conversion, ordered
+comparisons, and unordered detection now follow that boundary as well. The
+real-loader table includes ordered values and NaN cases on both ISAs.
 
 The first reproducible coverage snapshot can be audited with:
 
