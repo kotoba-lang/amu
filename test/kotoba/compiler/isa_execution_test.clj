@@ -154,6 +154,14 @@
    ["comparison" "(defn main [] (if (< 1 2) 7 8))" 7]
    ["recursion" (str "(defn f [n] (if (< n 1) 0 (+ n (f (- n 1)))))"
                      " (defn main [] (f 5))") 15]
+   ["tail recursion releases its frame"
+    (str "(defn count-down [n acc] "
+         "(if (= n 0) acc (count-down (- n 1) (+ acc 1)))) "
+         "(defn main [] (count-down 400 0))") 400]
+   ["mutual tail calls release both frames"
+    (str "(defn even-tail [n] (if (= n 0) 1 (odd-tail (- n 1)))) "
+         "(defn odd-tail [n] (if (= n 0) 0 (even-tail (- n 1)))) "
+         "(defn main [] (even-tail 400))") 1]
    ["let" "(defn main [] (let [a 3 b 4] (* a b)))" 12]
    ["ordered scalar do"
     "(defn main [] :i64 (do (+ 1 2) (quot 8 2) (* 3 4)))" 12]

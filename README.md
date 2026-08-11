@@ -232,6 +232,14 @@ owns target selection and explicit register-allocation state. This compiler
 consumes those repositories while retaining orchestration and compatibility
 entry points. See ADR 0222 for the dependency graph.
 
+The pinned native closure now routes production KIR exclusively through
+whole-module GMIR, target-selected MIR, allocated MC, and closed target
+encoders. It publishes multiple exports from one layout and carries word-field
+records plus option/result handles under aggregate ABI v5. Retired recursive
+ISA emitters remain test-only; production has no fallback from IR rejection.
+Terminal local calls release the current native frame and branch without
+linking on both x86-64 and AArch64, so tail recursion no longer grows the stack.
+
 The reconciliation target is not to expose this compiler's KIR-level
 `cap-call`, numeric capability IDs, WIT imports, or provider callbacks as the
 preferred Kotoba source language. `kotoba-lang/kotoba-lang`'s

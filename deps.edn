@@ -49,31 +49,18 @@
         io.github.kotoba-lang/kotoba-wasm
         {:git/url "https://github.com/kotoba-lang/kotoba-wasm.git"
          :git/sha "b0c9837f2aca8f6bf0376e16d6b889c303a2b4f3"}
-        ;; 0ae92d1 consumes versioned GMIR merge values and scalar-replaces
-        ;; non-escaping fixed records plus sealed i64/bool-payload variants
-        ;; before GMIR. Aggregate-valued branches emit one phi per transported
-        ;; scalar and use MIR's parallel-copy schedule without heap allocation.
-        ;; Its aggregate-boundary contract v2 keeps escaping records as
-        ;; one-word context-owned pair-chain handles while admitting bounded
-        ;; scalar direct calls through per-function frames and explicit
-        ;; call-clobber preservation. Straight-line callers materialize only
-        ;; values live across a call. Four live scalar entry parameters use a
-        ;; zero-frame parallel ABI assignment; a fifth uses one bounded lazy
-        ;; entry spill rather than whole-function all-vreg materialization.
-        ;; Portable i64/i32 word operations now lower through GMIR/MIR/MC;
-        ;; x86-64 preserves CL around shifts and AArch64 selects LSLV/ASRV/LSRV.
-        ;; Scalar f64 bit patterns stay in allocated GPRs; selected SSE2/AArch64
-        ;; FP operations own arithmetic, comparisons, NaN ordering, and sqrt.
-        ;; Bounded kernel u8/u32 loads, stores, and subregions preserve the GMIR
-        ;; maximum through MIR/MC and use final-layout trap branches.
-        ;; Pair, graph, string, and vector host callbacks now use a closed GMIR
-        ;; runtime-call operation, MIR-owned context offsets and ABI registers,
-        ;; and MC encoders that preserve r9/x7 across the indirect host call.
-        ;; Native still owns instruction selection/encoding, entry shims,
-        ;; target addresses, and aiueos policy.
+        ;; fad9959 routes production KIR exclusively through whole-module
+        ;; GMIR/MIR/allocated-MC, including word/f64/memory/runtime/capability,
+        ;; literal-data, scalar variant, word-field record, and x86 privileged
+        ;; operations. Aggregate ABI v5 carries option/result and other
+        ;; one-word fields through declaration-order pair chains. Multiple
+        ;; exports share one selected layout; IR rejection has no production
+        ;; legacy-emitter fallback. Terminal local calls release the current
+        ;; frame and branch without linking on both native ISAs. Nested
+        ;; recursive aggregate layouts remain an explicit non-native boundary.
         io.github.kotoba-lang/kotoba-native
         {:git/url "https://github.com/kotoba-lang/kotoba-native.git"
-         :git/sha "0ae92d19cda82cc739f764e6bd26578f0bb97b8f"}
+         :git/sha "fad9959837ec216f12e4fffccf2b5eae3c06b70e"}
         io.github.kotoba-lang/kotoba-component
         {:git/url "https://github.com/kotoba-lang/kotoba-component.git"
          :git/sha "35fb4d5941b3d56b35bca71151bdfadf33993d41"}
@@ -86,7 +73,7 @@
          :git/sha "b3b157e683a943d4f2e9362d9366cceefff3f656"}
         ;; 8ced779 independently re-derives the exact direct/one-let scalar
         ;; record and variant IF shapes emitted by the native pin above, in
-        ;; addition to gating aggregate-boundary contract v2 and re-emitting a
+        ;; addition to gating the aggregate-boundary contract and re-emitting a
         ;; scalar call module and requires its liveness-minimal frame plus the
         ;; four-argument zero-frame and five-argument one-slot entry ABI
         ;; without widening admission.

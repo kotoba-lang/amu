@@ -237,6 +237,26 @@
         (rethrow-admission! e)
         (throw e)))))
 
+(defn- emit-native-ir!
+  "Keep extracted native-layer detail while presenting one stable compiler IR
+  phase to callers. GMIR, MIR, MC, layout, and KIR-to-GMIR are implementation
+  boundaries, not new public diagnostic phases."
+  [backend kir]
+  (try
+    ((case backend
+       :x86_64-kotoba-v1 x86-64/emit-program
+       :aarch64-kotoba-v1 aarch64/emit-program) kir)
+    (catch clojure.lang.ExceptionInfo error
+      (let [data (ex-data error)
+            phase (:phase data)]
+        (if (contains? #{:kir-to-gmir :gmir :mir :mc :mc-encode :aggregate-abi
+                         :record-boundary :variant-boundary}
+                       phase)
+          (throw (ex-info (ex-message error)
+                          (assoc data :phase :ir :ir/phase phase)
+                          error))
+          (throw error))))))
+
 (defn check-source
   "Frontend admit + optional language-profile (T9.2).
 
@@ -597,9 +617,7 @@
                     :kotoba.artifact/effects (:effects kir)}})
 
       :else
-      (let [emitted ((case backend
-                       :x86_64-kotoba-v1 x86-64/emit-program
-                       :aarch64-kotoba-v1 aarch64/emit-program) kir)
+      (let [emitted (emit-native-ir! backend kir)
             code (:code emitted)
             program (select-keys kir [:format :entry :exports :signature :effects :functions])
             artifact (artifact/seal
