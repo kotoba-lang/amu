@@ -73,6 +73,72 @@
                    :else "x86_64_cli.cljs")]
     (.join path root "src" "kotoba" "compiler" "nbb" filename)))
 
+(defn- bundle-key [sub-args]
+  (let [command (first sub-args)
+        target (option sub-args "--target")]
+    (cond
+      (= command "extract-native") "x86_64"
+      (or (= command "check") (nil? target) (.startsWith target "wasm32")) "wasm"
+      (.startsWith target "aarch64") "aarch64"
+      :else "x86_64")))
+
+(defn- file-digest [p]
+  (-> (.createHash crypto "sha256")
+      (.update (.readFileSync fs p))
+      (.digest "hex")))
+
+(defn- files-below [p]
+  (if (.isDirectory (.statSync fs p))
+    (mapcat (fn [entry]
+              (files-below (.join path p (.-name entry))))
+            (array-seq (.readdirSync fs p #js {:withFileTypes true})))
+    [p]))
+
+(defn- compiler-source-digest [root]
+  (let [roots (map #(.join path root %)
+                   ["deps.edn" "deps-lock.edn" "package-lock.json"
+                    "src" "resources"])
+        files (sort-by #(.relative path root %) (mapcat files-below roots))
+        hash (.createHash crypto "sha256")]
+    (doseq [p files]
+      (.update hash (.relative path root p))
+      (.update hash "\u0000")
+      (.update hash (.readFileSync fs p))
+      (.update hash "\u0000"))
+    (.digest hash "hex")))
+
+(defn- compiler-bundle [root sub-args]
+  (when-not (= "0" (aget js/process.env "KOTOBA_COMPILER_BUNDLE"))
+    (let [directory (.join path root ".tools" "compiler-bundles")
+          manifest-path (.join path directory "manifest.json")]
+      (when (.existsSync fs manifest-path)
+        (try
+          (let [manifest (js->clj (.parse js/JSON
+                                          (.readFileSync fs manifest-path "utf8"))
+                                  :keywordize-keys true)
+                key (keyword (bundle-key sub-args))
+                entry (get-in manifest [:entries key])
+                filename (:file entry)
+                candidate (when filename (.join path directory filename))
+                actual-digest (compiler-source-digest root)
+                expected-filename (str (name key) ".mjs")
+                valid? (and (= "kotoba.compiler-bundles/v2" (:format manifest))
+                            (= actual-digest (:sourceDigest manifest))
+                            (= expected-filename filename)
+                            candidate (.existsSync fs candidate)
+                            (= (:sha256 entry) (file-digest candidate)))]
+            (when (= "1" (aget js/process.env "KOTOBA_COMPILER_BUNDLE_TRACE"))
+              (.error js/console (if valid?
+                                   (str "kotoba: compiler bundle hit " (name key))
+                                   (str "kotoba: compiler bundle stale; using source entrypoint"
+                                        " (expected " (:sourceDigest manifest)
+                                        ", got " actual-digest ")"))))
+            (when valid? candidate))
+          (catch :default _
+            (when (= "1" (aget js/process.env "KOTOBA_COMPILER_BUNDLE_TRACE"))
+              (.error js/console "kotoba: compiler bundle invalid; using source entrypoint"))
+            nil))))))
+
 ;; Both nbb compiler entrypoint families require `kotoba.kir.admission`, whose
 ;; transitive dependencies include the shared security controls. nbb has no
 ;; concept of `deps.edn`/tools.deps -- it only
@@ -180,25 +246,32 @@
         ;; `process.execPath` (the current `node`/`node.exe`) is a real,
         ;; directly-executable binary on every platform.
         (let [nbb-cli (.join path root "node_modules" "nbb" "cli.js")
-              security-cp (security-classpath-entry root nbb-cli)
+              bundle (compiler-bundle root sub-args)
+              security-cp (when-not bundle (security-classpath-entry root nbb-cli))
               ;; `<root>/resources` is joined explicitly rather than relying on
               ;; the relative `resources` entry `clojure -Spath` happens to
               ;; emit: the lock records dependency checkouts, and this
               ;; repository's own directories are not a dependency of itself.
-              classpath (str (.join path root "src") (.-delimiter path)
-                             (.join path root "resources") (.-delimiter path)
-                             security-cp)
+              classpath (when-not bundle
+                          (str (.join path root "src") (.-delimiter path)
+                               (.join path root "resources") (.-delimiter path)
+                               security-cp))
               ;; Keep the compiler's recursive closed-form oracle below one
               ;; explicit, cross-runner budget. Some hosted Node builds expose
               ;; only ~512 KiB by default, which rejects the admitted lazy
               ;; sequence fixture before Wasm emission.
+              child-args (if bundle
+                           (into ["--stack-size=4096" bundle] sub-args)
+                           (into ["--stack-size=4096" nbb-cli "--classpath"
+                                  classpath (nbb-entrypoint root sub-args)]
+                                 sub-args))
+              env (if bundle
+                    (js/Object.assign #js {} js/process.env
+                                      #js {:KOTOBA_BUNDLED_ENTRY "1"})
+                    js/process.env)
               result (.spawnSync child js/process.execPath
-                                 (clj->js (into ["--stack-size=4096"
-                                                 nbb-cli "--classpath"
-                                                 classpath
-                                                 (nbb-entrypoint root sub-args)]
-                                                sub-args))
-                                 #js {:cwd root :stdio "inherit" :env js/process.env})]
+                                 (clj->js child-args)
+                                 #js {:cwd root :stdio "inherit" :env env})]
           (when (.-error result)
             (fail! "error: unable to start nbb-native compiler runtime" 70))
           (.exit js/process (or (.-status result) 70)))

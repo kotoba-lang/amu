@@ -139,12 +139,17 @@
     (support/usage-error!
      (str "error: nbb Wasm path does not cover command " (first args)))))
 
-(if (= "worker" (first *command-line-args*))
-  (let [target-name (or (support/option *command-line-args* "--target") "wasm32")
+(defn main! [args]
+  (if (= "worker" (first args))
+    (let [target-name (or (support/option args "--target") "wasm32")
         target (get targets target-name)
         _ (when-not target
             (support/usage-error!
              (str "error: nbb Wasm worker does not cover target " target-name)))
         context (assoc (compile-cache/create-context) :target target)]
-    (support/serve! #(run! % context) target))
-  (support/execute! #(run! % nil)))
+      (support/serve! #(run! % context) target))
+    (support/execute! #(run! % nil) args)))
+
+(main! (if (= "1" (aget js/process.env "KOTOBA_BUNDLED_ENTRY"))
+         (vec (.slice js/process.argv 2))
+         (vec *command-line-args*)))

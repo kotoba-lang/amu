@@ -70,6 +70,22 @@ The launcher selects the compiler dependency closure before Node loads it:
 This reduces target-irrelevant namespace load without changing the public
 artifact, policy, or error contracts.
 
+### Preloaded target bundles
+
+`npm run build-compiler-bundles` serializes the Wasm, AArch64, and x86-64
+namespace closures under `.tools/compiler-bundles/`. Ordinary `bin/kotoba`
+compile/check/worker commands select a bundle automatically only when its
+manifest digest matches the exact `src`, `resources`, dependency lock, and npm
+lock bytes, and the selected bundle matches its own SHA-256. Missing, modified,
+malformed, or stale bundles fall back to the source entrypoint;
+`KOTOBA_COMPILER_BUNDLE=0` forces that path. Set
+`KOTOBA_COMPILER_BUNDLE_TRACE=1` to report the decision.
+
+The bundle amortizes classpath discovery and namespace file loading for cold
+processes; it does not replace the persistent worker. The worker remains the
+path for millisecond-scale repeated builds and retains all bounded-cache and
+fail-stop properties below.
+
 ## Persistent compiler worker
 
 A target-locked worker accepts sequential newline-delimited JSON:

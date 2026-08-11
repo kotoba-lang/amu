@@ -134,13 +134,15 @@
   [run! args]
   (invoke* run! args true))
 
-(defn execute! [run!]
-  (let [{:keys [status stdout stderr timing]}
-        (invoke* run! (vec *command-line-args*) false)]
-    (emit-timing! timing)
-    (when (seq stdout) (.write js/process.stdout stdout))
-    (when (seq stderr) (.write js/process.stderr stderr))
-    (when-not (zero? status) (.exit js/process status))))
+(defn execute!
+  ([run!] (execute! run! (vec *command-line-args*)))
+  ([run! args]
+   (let [{:keys [status stdout stderr timing]}
+         (invoke* run! (vec args) false)]
+     (emit-timing! timing)
+     (when (seq stdout) (.write js/process.stdout stdout))
+     (when (seq stderr) (.write js/process.stderr stderr))
+     (when-not (zero? status) (.exit js/process status)))))
 
 (def ^:private max-worker-line-bytes (* 64 1024))
 (def ^:private max-worker-args 64)
