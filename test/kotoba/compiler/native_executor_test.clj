@@ -846,10 +846,13 @@
 
 (deftest string-equal-compares-content-not-handle-identity
   (let [{:keys [envelope trust]}
-        (signed "(defn same [] (string=? \"same\" \"same\"))
-                 (defn different-content [] (string=? \"abc\" \"xyz\"))
-                 (defn different-length [] (string=? \"ab\" \"abc\"))
-                 (defn main [] (+ (same) (+ (different-content) (different-length))))"
+        (signed "(defn same [] :bool (string=? \"same\" \"same\"))
+                 (defn different-content [] :bool (string=? \"abc\" \"xyz\"))
+                 (defn different-length [] :bool (string=? \"ab\" \"abc\"))
+                 (defn main []
+                   (+ (if (same) 1 0)
+                      (+ (if (different-content) 1 0)
+                         (if (different-length) 1 0))))"
                {:allow #{}})
         {:keys [trust options]} (execution-options trust)
         result (executor/execute envelope trust {:allow #{}} {:args []} options)]
@@ -863,7 +866,7 @@
   (let [{:keys [envelope trust]}
         (signed "(defn main []
                    (+ (string-byte-length (string-concat \"foo\" \"bar\"))
-                      (string=? (string-concat \"foo\" \"bar\") \"foobar\")))"
+                      (if (string=? (string-concat \"foo\" \"bar\") \"foobar\") 1 0)))"
                {:allow #{}})
         {:keys [trust options]} (execution-options trust)
         result (executor/execute envelope trust {:allow #{}} {:args []} options)]

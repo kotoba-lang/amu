@@ -1011,7 +1011,7 @@
   (let [source (str "(ns pilot.text (:export [greet byte-length same?])) "
                     "(defn greet [name :string] :string (string-concat \"こんにちは、\" name)) "
                     "(defn byte-length [value :string] (string-byte-length value)) "
-                    "(defn same? [left :string right :string] (string=? left right))")
+                    "(defn same? [left :string right :string] :bool (string=? left right))")
         checked (compiler/check-source source)
         compiled (compiler/compile-source source :js-kotoba-v1)
         js-source (:source compiled)
@@ -1021,7 +1021,7 @@
                    "').then(m=>{const x=m.instantiateKotoba({});"
                    "if(x.greet('言葉')!=='こんにちは、言葉')process.exit(2);"
                    "if(x['byte-length']('言葉')!==6n)process.exit(3);"
-                   "if(x['same?']('言葉','言葉')!==1n||x['same?']('言葉','ことば')!==0n)process.exit(4)})")
+                   "if(x['same?']('言葉','言葉')!==true||x['same?']('言葉','ことば')!==false)process.exit(4)})")
         result (shell/sh "node" "--input-type=module" "-e" probe)]
     (is (= :kotoba.hir/v3 (get-in checked [:hir :format])))
     (is (= :kotoba.kir/v4 (get-in compiled [:kir :format])))

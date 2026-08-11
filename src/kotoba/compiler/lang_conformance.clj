@@ -118,7 +118,7 @@
 
 (defn run-wasm32
   "Compile to wasm32-kotoba-v1 and execute `main` via Node browser-host runtime.
-  Returns {:backend :wasm32-kotoba-v1 :ok? bool :result long-or-nil :error ...}.
+  Returns {:backend :wasm32-kotoba-v1 :ok? bool :result scalar-or-nil :error ...}.
   Optional 2nd arg is a case map (or {:fuel n}) — fuel is baked into wasm."
   ([source] (run-wasm32 source {}))
   ([source case-or-opts]
@@ -133,13 +133,16 @@
            probe (str "import('./runtime/browser-host.mjs').then(async m=>{"
                       "const h=await m.instantiateKotoba(Buffer.from(process.argv[1],'base64'));"
                       "const value=h.instance.exports.main();"
-                      "if(typeof value!=='bigint' && typeof value!=='number')process.exit(2);"
+                      "if(typeof value!=='bigint' && typeof value!=='number' && typeof value!=='boolean')process.exit(2);"
                       "console.log(String(value))})")
            res (shell/sh "node" "--input-type=module" "-e" probe encoded
                          :dir (.getAbsolutePath root))]
        (if (zero? (:exit res))
          (let [out (str/trim (:out res))
-               parsed (try (Long/parseLong out) (catch Exception _ out))]
+               parsed (case out
+                        "true" true
+                        "false" false
+                        (try (Long/parseLong out) (catch Exception _ out)))]
            {:backend :wasm32-kotoba-v1
             :ok? true
             :result parsed
