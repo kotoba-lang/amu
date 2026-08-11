@@ -5,6 +5,8 @@
             [kotoba.artifact.core :as artifact]
             [kotoba.compiler.core :as compiler]
             [kotoba.kir :as ir]
+            [kotoba.native.aarch64 :as aarch64]
+            [kotoba.native.x86-64 :as x86-64]
             [kotoba.compiler.provenance :as provenance]
             [kotoba.verifier :as verifier]))
 
@@ -14,6 +16,26 @@
    (defn abs [x] (if (< x 0) (- x) x))
    (defn score [x bonus] (let [m (* x 2) total (+ m bonus)] (abs total)))
    (defn main [] (score -20 -2))")
+
+(def capability-source
+  "(ns deterministic.native (:export [audit helper main])
+       (:capabilities #{:identity/sign}))
+   (defn audit [value] (cap-call :identity/sign value))
+   (defn helper [value] (+ (audit value) 1))
+   (defn main [] 42)")
+
+(deftest native-artifact-bytes-are-derived-from-the-sealed-program
+  (doseq [[target emit-program]
+          [[:x86_64-kotoba-v1 x86-64/emit-program]
+           [:aarch64-kotoba-v1 aarch64/emit-program]]]
+    (let [compiled (compiler/compile-source capability-source target
+                                             {:allow #{[:cap/call 1]}})
+          artifact (:artifact compiled)
+          re-emitted (emit-program (:program artifact))]
+      (is (= (:code artifact) (:code re-emitted))
+          (str target " code must be reproducible from the sealed program"))
+      (is (= (:exports artifact) (:exports re-emitted))
+          (str target " export layout must be reproducible from the sealed program")))))
 
 (deftest compilation-provenance-binds-input-policy-pipeline-and-every-output
   (doseq [target [:wasm32-kotoba-v1 :js-kotoba-v1 :cljs-kotoba-v1
