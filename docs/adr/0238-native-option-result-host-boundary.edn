@@ -12,10 +12,10 @@
             :copy-before-teardown true}
  :pins {:kotoba-kir "6ac32ba544156ee7ff008ce13a8e5375126c223a"
         :kotoba-verifier "7238e7bd96b891dfec0f7345100f030ac5277743"
-        :artifact "931f13e11113b5a348e308d845594836a7754d36"
+        :artifact "83005415ef2f8479d4ca28d5d3c94ac1157ef89e"
         :tender-native "12c31f675b2bcea400264c0803f1d2e8685a4088"
         :posix-loader-source-sha256 "e27104bab983d87ef5b103a49719bc02a28e392ebb70ededd6c65103ecbe529c"
-        :windows-loader-source-sha256 "012bc57116bfc19d43e0909a8d1ca10bb064e0ba7b1210117b06c07f84802b9d"}
+        :windows-loader-source-sha256 "2bfb0ff8cc19b5856c82cd86235e0eaaa0de8854054b8b46aeb317464aee6483"}
  :coverage {:positive #{:none :some :ok :err :long-min :long-max
                         :guest-construction :guest-projection :host-roundtrip}
             :negative #{:non-vector :integer-tag :missing-payload :extra-slot
@@ -34,6 +34,11 @@
  :drift-closed #{:artifact-posix-portability-vs-record-loader
                  :artifact-tracked-stale-cpcache
                  :tender-native-tracked-stale-cpcache}
+ :windows-cross-build {:toolchains #{"zig 0.15.2" "zig 0.16.0"}
+                       :targets #{:x86_64-windows-gnu :aarch64-windows-gnu}
+                       :warnings :errors
+                       :pe32+-machine-verified true
+                       :reproducible true}
  :not-claimed #{:parametric-option-result-host-abi :variant-host-abi
                 :vector-host-abi :document-host-abi
-                :windows-runtime-qualification :native-default-target}}
+                :windows-runtime-execution-qualification :native-default-target}}

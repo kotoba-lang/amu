@@ -46,8 +46,17 @@ handle zero to trap separately for option and result.
 The POSIX loader compiles with both Clang and fortified GCC under
 `-Wall -Wextra -Werror`. Reversing only the reported tag produces six failures
 and two errors in the native executor suite, proving that the semantic tag is
-observed rather than merely accepting a tagged-shaped report. Windows source
-parity is maintained but runtime qualification remains pending.
+observed rather than merely accepting a tagged-shaped report.
+
+The Windows loader now also cross-compiles twice byte-identically with the
+explicitly qualified Zig 0.15.2 and 0.16.0 toolchains for both x86-64 and
+Arm64. The gate parses the products independently as
+PE32+ and checks their machine fields. The Windows-host conformance program has
+the same option/result round trips, signed limits, guest construction and
+projection, and invalid-handle exits ready to run. This proves source and
+product portability, but not AppContainer/WFP execution: the current murakumo
+fleet has no Windows node, so Windows runtime execution remains explicitly
+pending.
 
 The final pinned closure passes 956 Amu tests and 7,537 assertions. The native
 executor contributes 54 tests and 178 assertions.
@@ -56,4 +65,6 @@ executor contributes 54 tests and 178 assertions.
 
 Native host boundaries now cover `:i64`, `:bool`, `:string`, bounded scalar
 records, `:option-i64`, and `:result-i64`. Scalar variants, parametric ADTs,
-vectors, and documents remain explicit gaps.
+vectors, and documents remain explicit gaps. Windows x86-64 and Arm64 loaders
+are reproducible cross-build products; neither is counted as runtime-qualified
+until the conformance program executes on a Windows fleet node.
