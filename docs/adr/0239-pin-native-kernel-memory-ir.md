@@ -1,4 +1,4 @@
-# ADR 0236: pin bounded kernel memory through machine IR
+# ADR 0239: pin bounded kernel memory through machine IR
 
 ## Context
 

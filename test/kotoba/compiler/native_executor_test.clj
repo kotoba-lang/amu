@@ -56,6 +56,80 @@
            (:report result)))
     (is (<= (:started-at result) (:finished-at result)))))
 
+(deftest entryless-native-library-preserves-the-bool-host-boundary
+  (let [source "(ns maturity.native-library (:export [choose negate]))
+                (defn choose [enabled :bool value :i64] :i64
+                  (if enabled value 0))
+                (defn negate [value :bool witness :i64] :bool
+                  (if value false true))"
+        {:keys [envelope trust]} (signed source {:allow #{}})
+        {:keys [trust options]} (execution-options trust)
+        run (fn [entry args]
+              (executor/execute envelope trust {:allow #{}} {:args args}
+                                (assoc options :entry entry)))]
+    (is (= 41 (get-in (run 'choose [true 41]) [:evidence :result]))
+        "a host boolean enters an entryless native export as a typed :bool")
+    (is (true? (get-in (run 'negate [false 0]) [:evidence :result]))
+        "a :bool result from the selected export leaves as a host boolean")
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"entry arguments"
+                          (run 'choose [1 41]))
+        "the old raw 0/1 word spelling cannot impersonate a host boolean")
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"entry arguments"
+                          (run 'choose [true true]))
+        "a host boolean cannot cross an :i64 slot")))
+
+(deftest entryless-native-library-copies-strings-across-the-real-process-boundary
+  (let [source "(ns maturity.native-string-library (:export [echo decorate literal]))
+                (defn echo [value :string] :string value)
+                (defn decorate [value :string] :string
+                  (string-concat \"[\" (string-concat value \"]\")))
+                (defn literal [witness :i64] :string \"日本😀\")"
+        {:keys [envelope trust]} (signed source {:allow #{}})
+        {:keys [trust options]} (execution-options trust)
+        run (fn [entry args]
+              (executor/execute envelope trust {:allow #{}} {:args args}
+                                (assoc options :entry entry)))]
+    (is (= "hi\u0000😀" (get-in (run 'echo ["hi\u0000😀"]) [:evidence :result]))
+        "host UTF-8, including NUL, is copied into the bounded native arena")
+    (is (= "[言葉]" (get-in (run 'decorate ["言葉"]) [:evidence :result]))
+        "a dynamic string-pool result is copied before the loader exits")
+    (is (= "日本😀" (get-in (run 'literal [0]) [:evidence :result]))
+        "a code-region literal result crosses the same inspected boundary")
+    (is (= "" (get-in (run 'echo [""]) [:evidence :result]))
+        "the empty string retains a real handle and is not confused with nil")
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"entry arguments"
+                          (run 'echo [1]))
+        "an integer handle cannot impersonate a host string")))
+
+(deftest native-loader-refuses-an-invalid-string-result-handle
+  (let [artifact (:artifact (compiler/compile-source "(defn main [] 0)" (target)))
+        export (get (:exports artifact) 'main)
+        {:keys [loader-path]} @measured-runtime
+        host-os ((deref #'executor/host-os))
+        run-process (deref #'executor/run-process)
+        runtime-environment (deref #'executor/runtime-environment)
+        delete-tree! (deref #'executor/delete-tree!)
+        isa (if (= (target) :aarch64-kotoba-v1) "aarch64" "x86_64")
+        directory (java.nio.file.Files/createTempDirectory
+                   "kotoba-invalid-string-result-"
+                   (make-array java.nio.file.attribute.FileAttribute 0))
+        code-file (java.io.File. (.toFile directory) "program.bin")]
+    (try
+      (atomic-output/write-bytes!
+       (.getPath code-file)
+       (byte-array (map unchecked-byte (:code artifact))))
+      (let [command [loader-path (.getPath code-file) (str (:offset export))
+                     "0" isa "-"]
+            process (run-process command (runtime-environment host-os :string)
+                                 {:timeout-ms 5000 :output-limit 160000})
+            report (edn/read-string (str/trim (:stdout process)))]
+        (is (= 126 (:exit process)))
+        (is (= {:status :trap :exit 126}
+               (select-keys report [:status :exit])))
+        (is (str/includes? (:stderr process)
+                           ":reason :invalid-string-handle")))
+      (finally (delete-tree! (.toFile directory))))))
+
 (deftest typed-i64-capability-call-is-qualified-on-native
   (let [source "(defn main [] :i64 (typed-cap-call 4 :i64 :i64 41))"
         policy {:allow #{[:cap/call 4]}}

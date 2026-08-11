@@ -53,6 +53,18 @@ Scalar f64 arithmetic, min/max, sqrt, bit-pattern conversion, ordered
 comparisons, and unordered detection now follow that boundary as well. The
 real-loader table includes ordered values and NaN cases on both ISAs.
 
+Entryless native libraries also have a measured scalar host boundary. The
+executor reads parameter and result types from the selected sealed export,
+not an absent `main` signature: host booleans cross `:bool` slots as native 0/1
+words and return as booleans, while integer and boolean host values cannot
+impersonate each other. Amu tests this by compiling and signing a two-export
+Kotoba library and invoking it through the real native loader process. Strings
+now cross that same boundary as bounded canonical UTF-8 copies: inputs are
+placed in the loader arena before guest entry and selected results are copied
+from either code literals or the dynamic pool before process exit. Raw pair
+handles never become host strings. Aggregate host values remain explicitly
+unqualified.
+
 The first reproducible coverage snapshot can be audited with:
 
 ```bash
@@ -349,8 +361,8 @@ same fail-closed posture as fuel/division/capability. See
 
 The extracted native scalar-call path pins canonical parallel function-entry
 assignment. Four live i64 parameters remain zero-frame and spill-free on
-x86-64 and AArch64; the five-live-parameter case retains the safe frame-backed
-fallback. Both paths are executed through real loader subprocesses in the
+x86-64 and AArch64; the five-live-parameter case uses one bounded lazy entry
+spill. Both paths are executed through real loader subprocesses in the
 shared dual-ISA test table.
 
 The restricted JavaScript target is selected with `--target js`. A Web
