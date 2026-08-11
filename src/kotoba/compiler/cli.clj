@@ -405,6 +405,14 @@
             (option args "--capability-mode")
             (assoc :capability-mode
                    (keyword (option args "--capability-mode"))))
+          ;; compile-source takes build metadata separately from policy.
+          ;; Previously --fuel was threaded only through compile-component,
+          ;; so the CLI accepted it for a native/core artifact while silently
+          ;; sealing the historical 512 instead.
+          source-opts
+          (cond-> {}
+            (option args "--fuel")
+            (assoc :fuel (Long/parseLong (option args "--fuel"))))
           result (cond
                    ;; CID-pinned graph. Identical downstream to the path-
                    ;; resolved cases below: only how the sources were found,
@@ -441,7 +449,8 @@
                      (compiler/compile-project sources root target policy))
 
                    :else
-                   (compiler/compile-source (bounded-edn/read-text-file input) target policy))]
+                   (compiler/compile-source (bounded-edn/read-text-file input)
+                                            target policy source-opts))]
       (case (:format result)
         :wasm/v1 (atomic-output/write-bytes! output (:bytes result))
         ;; The component artifact is three files: the binary, the WIT world it

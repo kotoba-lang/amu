@@ -8,7 +8,8 @@
             [kotoba.compiler.cli :as cli]
             [kotoba.compiler.core :as compiler]
             [kotoba.sema :as sema])
-  (:import [java.io StringWriter]))
+  (:import [java.io StringWriter]
+           [java.nio ByteBuffer ByteOrder]))
 
 (defn- temp-kotoba-source!
   ([contents] (temp-kotoba-source! contents ".kotoba"))
@@ -334,6 +335,26 @@
       (is (= [0x7f 0x45 0x4c 0x46]
              (mapv #(bit-and % 0xff) (take 4 bytes))))
       (is (= 2 (bit-and (aget bytes 16) 0xff)) "ET_EXEC, not ET_REL"))))
+
+(deftest compile-cli-threads-fuel-into-native-image
+  (let [source (temp-kotoba-source! "(defn main [] (kernel-out-u32 244 16))")
+        output (.getPath (doto (java.io.File/createTempFile
+                                "kotoba-aiueos-kernel-fuel-" ".elf")
+                           (.deleteOnExit)))
+        out (StringWriter.)]
+    (binding [*out* out]
+      (cli/-main "compile" source "--target" "x86_64-aiueos-kernel-v1"
+                 "--artifact" "image" "--fuel" "4096" "--output" output))
+    (let [bytes (java.nio.file.Files/readAllBytes (.toPath (java.io.File. output)))
+          buffer (doto (ByteBuffer/wrap bytes) (.order ByteOrder/LITTLE_ENDIAN))
+          program-header-offset (.getLong buffer 32)
+          program-header-size (.getShort buffer 54)
+          ;; The kernel packager emits RX first and RW context second. p_offset
+          ;; is the third field in an ELF64 program header.
+          rw-header (+ program-header-offset program-header-size)
+          rw-offset (.getLong buffer (+ rw-header 8))]
+      (is (= 4096 (.getLong buffer (+ rw-offset 8)))
+          "--fuel must reach the sealed native context, not only admission"))))
 
 (deftest compile-wasm-target-is-unaffected-by-the-cljs-output-fix
   (let [source (temp-kotoba-source! "(defn main [] (let [x 40 y 2] (+ x y)))")
