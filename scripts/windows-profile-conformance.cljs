@@ -1,6 +1,7 @@
 #!/usr/bin/env nbb
 (ns windows-profile-conformance
-  (:require [scripts.lib :as lib]
+  (:require [cljs.reader :as reader]
+            [scripts.lib :as lib]
             ["node:child_process" :as child]
             ["node:fs" :as fs]
             ["node:os" :as os]
@@ -55,6 +56,15 @@
   (let [result (run-external loader (into [raw offset arity isa "-"] args))]
     (lib/ensure! (= expected (.trim (.-stdout result)))
                  (str "windows-profile: runtime result mismatch, expected " expected))))
+(defn loader-report! [loader raw offset arity result-type args]
+  (let [result (run-external loader (into [raw offset arity isa "-"] args)
+                             {:KEXE_STRUCTURED_REPORT "1"
+                              :KEXE_RESULT_TYPE result-type}
+                             false)
+        report (reader/read-string (.trim (.-stdout result)))]
+    (lib/ensure! (= :ok (:status report))
+                 (str "windows-profile: tagged runtime did not report :ok: " report))
+    report))
 
 (try
   (run-k! ["compile" source "--target" target "--output" (artifact "first.kexe")])
@@ -83,6 +93,91 @@
       (loader-check! loader raw main-offset main-arity "42")
       (loader-check! loader raw score-offset score-arity "12" "-7" "2")
       (loader-check! loader raw calc-offset calc-arity "21" "20" "4")
+      (.writeFileSync
+       fs (artifact "tagged-boundary.kotoba")
+       (str "(ns maturity.windows-tagged\n"
+            "  (:export [echo-option make-none make-some inspect-option\n"
+            "            echo-result make-ok make-err inspect-result]))\n"
+            "(defn echo-option [value :option-i64] :option-i64 value)\n"
+            "(defn make-none [witness :i64] :option-i64 (option-none))\n"
+            "(defn make-some [value :i64] :option-i64 (option-some value))\n"
+            "(defn inspect-option [value :option-i64] :i64 (option-value value 99))\n"
+            "(defn echo-result [value :result-i64] :result-i64 value)\n"
+            "(defn make-ok [value :i64] :result-i64 (result-ok value))\n"
+            "(defn make-err [value :i64] :result-i64 (result-err value))\n"
+            "(defn inspect-result [value :result-i64] :i64\n"
+            "  (+ (result-value value 1000) (result-error value 2000)))\n"))
+      (run-k! ["compile" (artifact "tagged-boundary.kotoba")
+               "--target" target "--output" (artifact "tagged-boundary.kexe")])
+      (let [raw-tagged (artifact "tagged-boundary.bin")
+            exports (into {}
+                          (map (fn [symbol]
+                                 [symbol (extract! (artifact "tagged-boundary.kexe")
+                                                   symbol raw-tagged)]))
+                          ["echo-option" "make-none" "make-some" "inspect-option"
+                           "echo-result" "make-ok" "make-err" "inspect-result"])
+            tagged (fn [symbol result-type args]
+                     (let [[offset arity] (get exports symbol)]
+                       (loader-report! loader raw-tagged offset arity result-type args)))
+            word (fn [report]
+                   (select-keys report [:status :result-type :result-tag :result-word]))]
+        (lib/ensure!
+         (= {:status :ok :result-type :option-i64 :result-tag false :result-word 0}
+            (word (tagged "echo-option" "option-i64" ["o:none"])))
+         "windows-profile: option none did not cross the host boundary")
+        (lib/ensure!
+         (= {:status :ok :result-type :option-i64 :result-tag true
+             :result-word -9223372036854775808}
+            (word (tagged "echo-option" "option-i64"
+                          ["o:some:-9223372036854775808"])))
+         "windows-profile: option some/MIN did not cross the host boundary")
+        (lib/ensure!
+         (= {:status :ok :result-type :option-i64 :result-tag false :result-word 0}
+            (word (tagged "make-none" "option-i64" ["0"])))
+         "windows-profile: guest option-none construction was not observed")
+        (lib/ensure!
+         (= {:status :ok :result-type :option-i64 :result-tag true
+             :result-word 9223372036854775807}
+            (word (tagged "make-some" "option-i64" ["9223372036854775807"])))
+         "windows-profile: guest option-some/MAX construction was not observed")
+        (let [[offset arity] (get exports "inspect-option")]
+          (loader-check! loader raw-tagged offset arity "99" "o:none")
+          (loader-check! loader raw-tagged offset arity "-7" "o:some:-7"))
+        (lib/ensure!
+         (= {:status :ok :result-type :result-i64 :result-tag true
+             :result-word -9223372036854775808}
+            (word (tagged "echo-result" "result-i64"
+                          ["e:ok:-9223372036854775808"])))
+         "windows-profile: result ok/MIN did not cross the host boundary")
+        (lib/ensure!
+         (= {:status :ok :result-type :result-i64 :result-tag false
+             :result-word 9223372036854775807}
+            (word (tagged "echo-result" "result-i64"
+                          ["e:err:9223372036854775807"])))
+         "windows-profile: result err/MAX did not cross the host boundary")
+        (lib/ensure!
+         (= {:status :ok :result-type :result-i64 :result-tag true :result-word -9}
+            (word (tagged "make-ok" "result-i64" ["-9"])))
+         "windows-profile: guest result-ok construction was not observed")
+        (lib/ensure!
+         (= {:status :ok :result-type :result-i64 :result-tag false :result-word 11}
+            (word (tagged "make-err" "result-i64" ["11"])))
+         "windows-profile: guest result-err construction was not observed")
+        (let [[offset arity] (get exports "inspect-result")]
+          (loader-check! loader raw-tagged offset arity "2007" "e:ok:7")
+          (loader-check! loader raw-tagged offset arity "1008" "e:err:8"))
+        (doseq [[result-type expected-exit reason]
+                [["option-i64" 128 ":reason :invalid-option-i64"]
+                 ["result-i64" 129 ":reason :invalid-result-i64"]]]
+          (let [invalid (run-external loader [raw main-offset main-arity isa "-"]
+                                      {:KEXE_STRUCTURED_REPORT "1"
+                                       :KEXE_RESULT_TYPE result-type}
+                                      true)]
+            (lib/ensure! (= expected-exit (.-status invalid))
+                         (str "windows-profile: " result-type " invalid handle exit mismatch"))
+            (lib/ensure! (.includes (or (.-stderr invalid) "") reason)
+                         (str "windows-profile: " result-type " invalid handle reason missing"))))
+        (println "windows-profile: option/result host boundary vectors passed"))
       (let [structured (run-external loader [raw main-offset main-arity isa "-"]
                                              {:KEXE_STRUCTURED_REPORT "1"} false)]
         (lib/ensure! (= "{:status :ok :result 42 :fuel {:initial 512 :remaining 509} :heap {:capacity 4096 :used 0}}"

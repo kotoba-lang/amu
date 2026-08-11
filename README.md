@@ -30,15 +30,19 @@ phi per field without heap allocation. Escaping, nested, and non-scalar records
 still use the legacy path. Non-escaping sealed variants whose payloads are only
 `:i64` or `:bool` likewise become an internal tag-and-payload SSA bundle;
 variant-valued `if` emits two phis and `variant-match` lowers to target-neutral
-comparison control flow without a variant stack region. Variant boundary
-values, nested/non-scalar payloads, and a general aggregate ABI remain outside
-this slice; this is not a Rust-wide performance-parity claim.
+comparison control flow without a variant stack region. The closed scalar
+subset now also crosses an exported native boundary; nested/non-scalar payloads
+and a general recursive aggregate ABI remain outside this slice. This is not a
+Rust-wide performance-parity claim.
 
-The pinned native closure now publishes aggregate-boundary contract v2. It
+The pinned native closure now publishes aggregate-boundary contract v3. It
 names the existing escaping-record representation precisely: one declaration-
 ordered pair-chain handle, owned by the host context and bounded by 4,096 arena
-cells. It also records that every register in the extracted allocator profile
-is call-clobbered. Scalar direct calls now lower through GMIR/MIR/MC v3 with
+cells. It adds the scalar-variant boundary as a context-owned pair of
+declaration ordinal and payload, while preserving the canonical public value
+`[type case payload]`. It also records that every register in the extracted
+allocator profile is call-clobbered. Scalar direct calls lower through
+GMIR/MIR/MC v3 with
 per-function frames, live-value preservation, parallel argument assignment,
 and a single-word return register. Straight-line callers now materialize only
 values live across a call; the representative module shrinks from 123 to 84
@@ -62,8 +66,10 @@ Kotoba library and invoking it through the real native loader process. Strings
 now cross that same boundary as bounded canonical UTF-8 copies: inputs are
 placed in the loader arena before guest entry and selected results are copied
 from either code literals or the dynamic pool before process exit. Raw pair
-handles never become host strings. Aggregate host values remain explicitly
-unqualified.
+handles never become host strings. Scalar records cross as exact-key maps, and
+qualified scalar variants cross as exact canonical vectors. The variant loader
+validates its arena handle, declaration ordinal, and boolean payload before a
+typed supervisor report is copied back; raw handles never become host values.
 
 The first reproducible coverage snapshot can be audited with:
 
@@ -561,9 +567,14 @@ compatibility aliases with `:os :unspecified`; they cannot serve as platform
 release evidence. `x86_64-windows` compilation now emits a reproducible KEXE
 whose Windows OS, internal ABI, and supervisor identity are independently
 verified. Native execution and release evidence still fail closed until the
-measured Windows supervisor is trusted for the current host. The same boundary
-is exercised on hosted Windows x64 and Arm64 runners; this is conformance
-evidence, not yet signed installer or physical-device release evidence.
+measured Windows supervisor is trusted for the current host. Historical hosted
+Windows x64 execution remains useful regression evidence, but those GitHub
+Actions runners are no longer the CI authority and the current murakumo fleet
+has no Windows node. The explicitly qualified Zig 0.15.2 and 0.16.0
+toolchains now cross-build the reviewed loader twice byte-identically for
+x86-64 and Arm64, and the gate independently checks PE32+ machine identity.
+That is product portability evidence, not Windows runtime or physical-device
+release evidence.
 
 The Android and iOS names begin with distinct compile/verify identities.
 They produce equal reviewed AArch64 instructions but distinct sealed artifact
@@ -781,19 +792,20 @@ sizes, reconstructs the exact target profile, and applies Ed25519 trust,
 revocation, and validity windows. Artifact, SBOM, target, or statement mutation
 fails closed.
 
-The first Windows supervisor slice now executes verifier-extracted x86-64 KEXE
-code on the Windows CI runner. It maps code RW, copies it, transitions it to RX,
-flushes the instruction cache, then prohibits further dynamic code. A Clang
-`sysv_abi` adapter supplies the hidden `r9` context. A one-process Job Object,
-low-integrity restricted impersonation token, system32-only DLL search, and
-error-mode hardening surround guest entry. Conformance covers runtime arguments,
-transitive calls, fuel reports, capability allow/deny, bounded pairs, and
-filesystem/process denial. The same runner now builds the reviewed loader
-twice, seals the compiler/linker/resource/header closure into runtime identity,
-trusts it, executes a signed KEXE through `kotoba -M run`, and verifies the
-result receipt. Mutated loader bytes and a substituted OS profile fail closed.
-Network denial, child trap isolation, Authenticode/MSIX packaging, and Windows
-Arm64 remain required.
+The first Windows supervisor slice historically executed verifier-extracted
+x86-64 KEXE code on a hosted Windows runner. It maps code RW, copies it,
+transitions it to RX, flushes the instruction cache, then prohibits further
+dynamic code. A Clang `sysv_abi` adapter supplies the hidden `r9` context. A
+one-process Job Object, low-integrity restricted impersonation token,
+system32-only DLL search, and error-mode hardening surround guest entry. That
+run covered runtime arguments, transitive calls, fuel reports, capability
+allow/deny, bounded pairs, filesystem/process/network denial, measured runtime
+trust, signed execution, receipt verification, mutated loader bytes, and a
+substituted OS profile. The Windows-host conformance program now additionally
+covers option/result host round trips, signed limits, guest construction and
+projection, and invalid handles. None of this is claimed as continuously gated
+runtime evidence until a Windows murakumo node runs it. Authenticode/MSIX,
+Windows Arm64 execution, and renewed x64 execution remain required.
 
 WebAssembly is one backend, not the compiler architecture. Native backends emit
 machine instructions directly and never invoke an assembler, LLVM, a JVM JIT,

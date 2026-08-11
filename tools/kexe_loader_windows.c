@@ -1,5 +1,7 @@
 #define WIN32_LEAN_AND_MEAN
+#ifndef _WIN32_WINNT
 #define _WIN32_WINNT 0x0A00
+#endif
 #define _CRT_SECURE_NO_WARNINGS
 #include <windows.h>
 #include <rpc.h>
@@ -15,6 +17,39 @@
 #include <string.h>
 #include <errno.h>
 #include <limits.h>
+
+/* MinGW's user-mode WFP declarations lag the Windows SDK: the API structs and
+ * functions are present, but these SDK-owned GUID values and two public flag
+ * constants are absent.  Keep the compatibility names private so a MinGW
+ * release which later adds the SDK declarations cannot collide with them.
+ * Values are the Microsoft win32metadata projection of fwpmu.h/fwpmtypes.h. */
+#if defined(__MINGW32__)
+static const GUID KEXE_LAYER_ALE_AUTH_CONNECT_V4 =
+  {0xc38d57d1, 0x05a7, 0x4c33, {0x90, 0x4f, 0x7f, 0xbc, 0xee, 0xe6, 0x0e, 0x82}};
+static const GUID KEXE_LAYER_ALE_AUTH_CONNECT_V6 =
+  {0x4a72393b, 0x319f, 0x44bc, {0x84, 0xc3, 0xba, 0x54, 0xdc, 0xb3, 0xb6, 0xb4}};
+static const GUID KEXE_LAYER_ALE_AUTH_RECV_ACCEPT_V4 =
+  {0xe1cd9fe7, 0xf4b5, 0x4273, {0x96, 0xc0, 0x59, 0x2e, 0x48, 0x7b, 0x86, 0x50}};
+static const GUID KEXE_LAYER_ALE_AUTH_RECV_ACCEPT_V6 =
+  {0xa3b42c97, 0x9f04, 0x4672, {0xb8, 0x7e, 0xce, 0xe9, 0xc4, 0x83, 0x25, 0x7f}};
+static const GUID KEXE_CONDITION_ALE_APP_ID =
+  {0xd78e1e87, 0x8644, 0x4ea5, {0x94, 0x37, 0xd8, 0x09, 0xec, 0xef, 0xc9, 0x71}};
+static const GUID KEXE_CONDITION_FLAGS =
+  {0x632ce23b, 0x5167, 0x435c, {0x86, 0xd7, 0xe9, 0x03, 0x68, 0x4a, 0xa8, 0x0c}};
+#ifndef FWPM_SESSION_FLAG_DYNAMIC
+#define FWPM_SESSION_FLAG_DYNAMIC 0x00000001u
+#endif
+#ifndef FWPM_FILTER_FLAG_CLEAR_ACTION_RIGHT
+#define FWPM_FILTER_FLAG_CLEAR_ACTION_RIGHT 0x00000008u
+#endif
+#else
+#define KEXE_LAYER_ALE_AUTH_CONNECT_V4 FWPM_LAYER_ALE_AUTH_CONNECT_V4
+#define KEXE_LAYER_ALE_AUTH_CONNECT_V6 FWPM_LAYER_ALE_AUTH_CONNECT_V6
+#define KEXE_LAYER_ALE_AUTH_RECV_ACCEPT_V4 FWPM_LAYER_ALE_AUTH_RECV_ACCEPT_V4
+#define KEXE_LAYER_ALE_AUTH_RECV_ACCEPT_V6 FWPM_LAYER_ALE_AUTH_RECV_ACCEPT_V6
+#define KEXE_CONDITION_ALE_APP_ID FWPM_CONDITION_ALE_APP_ID
+#define KEXE_CONDITION_FLAGS FWPM_CONDITION_FLAGS
+#endif
 
 #if !defined(__clang__)
 #error "Kotoba Windows loader requires Clang"
@@ -215,10 +250,35 @@ static int64_t allocate_host_pair(struct kexe_context *ctx,
   return (int64_t)(index + 1u);
 }
 
+static int parse_variant_profile(const char *text, uint64_t *case_count,
+                                 uint64_t *bool_mask) {
+  unsigned long long cases, mask;
+  int consumed = 0;
+  if (sscanf(text, "variant:%llu:%llu%n", &cases, &mask, &consumed) != 2 ||
+      text[consumed] != '\0' || cases == 0 || cases > 32 ||
+      (mask >> cases) != 0) return 0;
+  *case_count = (uint64_t)cases;
+  *bool_mask = (uint64_t)mask;
+  return 1;
+}
+
 static int64_t parse_guest_arg(struct kexe_context *ctx, const char *text) {
   uint64_t start, index, length;
   size_t digits;
   const char *hex;
+  if (strncmp(text, "v:", 2) == 0) {
+    unsigned long long cases, ordinal;
+    long long payload;
+    char kind;
+    int consumed = 0;
+    if (sscanf(text, "v:%llu:%llu:%c:%lld%n", &cases, &ordinal, &kind,
+               &payload, &consumed) != 4 || text[consumed] != '\0' ||
+        cases == 0 || cases > 32 || ordinal >= cases ||
+        (kind != 'i' && kind != 'b') ||
+        (kind == 'b' && payload != 0 && payload != 1))
+      fail_input("invalid scalar variant argument");
+    return allocate_host_pair(ctx, (int64_t)ordinal, (int64_t)payload);
+  }
   if (strcmp(text, "o:none") == 0)
     return allocate_host_pair(ctx, 0, 0);
   if (strncmp(text, "o:some:", 7) == 0)
@@ -333,6 +393,21 @@ static int inspect_tagged_i64_result(const struct kexe_context *ctx,
   if (pair->first != 0 && pair->first != 1) return 0;
   if (option && pair->first == 0 && pair->second != 0) return 0;
   *tag = pair->first;
+  *payload = pair->second;
+  return 1;
+}
+
+static int inspect_variant_result(const struct kexe_context *ctx,
+                                  int64_t handle, uint64_t case_count,
+                                  uint64_t bool_mask, int64_t *ordinal,
+                                  int64_t *payload) {
+  const struct pair_cell *pair;
+  if (handle <= 0 || (uint64_t)handle > ctx->pair_used) return 0;
+  pair = &ctx->pairs[(uint64_t)handle - 1u];
+  if (pair->first < 0 || (uint64_t)pair->first >= case_count) return 0;
+  if (((bool_mask >> (uint64_t)pair->first) & 1u) != 0 &&
+      pair->second != 0 && pair->second != 1) return 0;
+  *ordinal = pair->first;
   *payload = pair->second;
   return 1;
 }
@@ -713,10 +788,10 @@ static void install_network_denial(void) {
   FWPM_FILTER_CONDITION0 loopback_conditions[2];
   FWPM_FILTER0 filter;
   static const GUID *layers[] = {
-    &FWPM_LAYER_ALE_AUTH_CONNECT_V4,
-    &FWPM_LAYER_ALE_AUTH_CONNECT_V6,
-    &FWPM_LAYER_ALE_AUTH_RECV_ACCEPT_V4,
-    &FWPM_LAYER_ALE_AUTH_RECV_ACCEPT_V6,
+    &KEXE_LAYER_ALE_AUTH_CONNECT_V4,
+    &KEXE_LAYER_ALE_AUTH_CONNECT_V6,
+    &KEXE_LAYER_ALE_AUTH_RECV_ACCEPT_V4,
+    &KEXE_LAYER_ALE_AUTH_RECV_ACCEPT_V6,
   };
   DWORD status;
   size_t i;
@@ -749,14 +824,14 @@ static void install_network_denial(void) {
   if (status != ERROR_SUCCESS) { SetLastError(status); fail_win("FwpmGetAppIdFromFileName0"); }
 
   ZeroMemory(&app_id_condition, sizeof(app_id_condition));
-  app_id_condition.fieldKey = FWPM_CONDITION_ALE_APP_ID;
+  app_id_condition.fieldKey = KEXE_CONDITION_ALE_APP_ID;
   app_id_condition.matchType = FWP_MATCH_EQUAL;
   app_id_condition.conditionValue.type = FWP_BYTE_BLOB_TYPE;
   app_id_condition.conditionValue.byteBlob = app_id;
 
   ZeroMemory(&loopback_conditions, sizeof(loopback_conditions));
   loopback_conditions[0] = app_id_condition;
-  loopback_conditions[1].fieldKey = FWPM_CONDITION_FLAGS;
+  loopback_conditions[1].fieldKey = KEXE_CONDITION_FLAGS;
   loopback_conditions[1].matchType = FWP_MATCH_FLAGS_ALL_SET;
   loopback_conditions[1].conditionValue.type = FWP_UINT32;
   loopback_conditions[1].conditionValue.uint32 =
@@ -1169,6 +1244,7 @@ int main(int argc, char **argv) {
   const char *child_contract = getenv("KEXE_APPCONTAINER_CHILD");
   const char *result_type = getenv("KEXE_RESULT_TYPE");
   uint64_t record_field_count = 0;
+  uint64_t variant_case_count = 0, variant_bool_mask = 0;
 
   if (child_contract == NULL) return run_appcontainer_parent(argc, argv);
   require_appcontainer_token();
@@ -1187,6 +1263,10 @@ int main(int argc, char **argv) {
     record_field_count = parse_u64(result_type + 7, "invalid record result type");
     if (record_field_count == 0 || record_field_count > KEXE_RECORD_FIELD_LIMIT)
       fail_input("invalid record result field count");
+  } else if (strncmp(result_type, "variant:", 8) == 0) {
+    if (!parse_variant_profile(result_type, &variant_case_count,
+                               &variant_bool_mask))
+      fail_input("invalid variant result type");
   } else if (strcmp(result_type, "i64") != 0 &&
              strcmp(result_type, "string") != 0 &&
              strcmp(result_type, "option-i64") != 0 &&
@@ -1326,6 +1406,26 @@ int main(int argc, char **argv) {
              ":heap {:capacity 4096 :used %llu}}\n",
              (long long)result, result_type, tag == 1 ? "true" : "false",
              (long long)payload, (unsigned long long)ctx->fuel,
+             (unsigned long long)ctx->pair_used);
+    } else if (variant_case_count > 0) {
+      int64_t ordinal, payload;
+      if (!inspect_variant_result(ctx, result, variant_case_count,
+                                  variant_bool_mask, &ordinal, &payload)) {
+        fprintf(stderr, "KEXE_TRAP {:kind :result :reason :invalid-variant}\n");
+        printf("{:status :trap :exit 130 :fuel {:initial 512 :remaining %llu} "
+               ":heap {:capacity 4096 :used %llu}}\n",
+               (unsigned long long)ctx->fuel, (unsigned long long)ctx->pair_used);
+        SecureZeroMemory(ctx, sizeof(*ctx));
+        VirtualFree(ctx, 0, MEM_RELEASE);
+        VirtualFree(code, 0, MEM_RELEASE);
+        return 130;
+      }
+      printf("{:status :ok :result %lld :result-type :variant "
+             ":result-ordinal %lld :result-word %lld "
+             ":fuel {:initial 512 :remaining %llu} "
+             ":heap {:capacity 4096 :used %llu}}\n",
+             (long long)result, (long long)ordinal, (long long)payload,
+             (unsigned long long)ctx->fuel,
              (unsigned long long)ctx->pair_used);
     } else {
       printf("{:status :ok :result %lld :fuel {:initial 512 :remaining %llu} "

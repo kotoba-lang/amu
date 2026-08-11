@@ -548,6 +548,18 @@ static int allocate_host_pair(struct kexe_shared_v3 *shared,
   return 0;
 }
 
+static int parse_variant_profile(const char *text, uint64_t *case_count,
+                                 uint64_t *bool_mask) {
+  unsigned long long cases, mask;
+  int consumed = 0;
+  if (sscanf(text, "variant:%llu:%llu%n", &cases, &mask, &consumed) != 2 ||
+      text[consumed] != '\0' || cases == 0 || cases > 32 ||
+      (mask >> cases) != 0) return 0;
+  *case_count = (uint64_t)cases;
+  *bool_mask = (uint64_t)mask;
+  return 1;
+}
+
 /* Host strings cross the process boundary as lowercase UTF-8 hex. They are
  * decoded into the existing bounded string pool and receive the same
  * pair(offset,length) representation as guest-created strings. Scalar tokens
@@ -555,6 +567,18 @@ static int allocate_host_pair(struct kexe_shared_v3 *shared,
  * working. */
 static int parse_guest_arg(struct kexe_shared_v3 *shared,
                            const char *text, int64_t *value) {
+  if (strncmp(text, "v:", 2) == 0) {
+    unsigned long long cases, ordinal;
+    long long payload;
+    char kind;
+    int consumed = 0;
+    if (sscanf(text, "v:%llu:%llu:%c:%lld%n", &cases, &ordinal, &kind,
+               &payload, &consumed) != 4 || text[consumed] != '\0' ||
+        cases == 0 || cases > 32 || ordinal >= cases ||
+        (kind != 'i' && kind != 'b') ||
+        (kind == 'b' && payload != 0 && payload != 1)) return -1;
+    return allocate_host_pair(shared, (int64_t)ordinal, (int64_t)payload, value);
+  }
   if (strcmp(text, "o:none") == 0)
     return allocate_host_pair(shared, 0, 0, value);
   if (strncmp(text, "o:some:", 7) == 0) {
@@ -672,6 +696,20 @@ static int inspect_tagged_i64_result(const struct kexe_shared_v3 *shared,
   if (pair->first != 0 && pair->first != 1) return 0;
   if (option && pair->first == 0 && pair->second != 0) return 0;
   *tag = pair->first;
+  *payload = pair->second;
+  return 1;
+}
+
+static int inspect_variant_result(const struct kexe_shared_v3 *shared,
+                                  int64_t handle, uint64_t case_count,
+                                  uint64_t bool_mask, int64_t *ordinal,
+                                  int64_t *payload) {
+  if (handle <= 0 || (uint64_t)handle > shared->pair_used) return 0;
+  const struct kexe_pair_v1 *pair = &shared->pairs[(uint64_t)handle - 1u];
+  if (pair->first < 0 || (uint64_t)pair->first >= case_count) return 0;
+  if (((bool_mask >> (uint64_t)pair->first) & 1u) != 0 &&
+      pair->second != 0 && pair->second != 1) return 0;
+  *ordinal = pair->first;
   *payload = pair->second;
   return 1;
 }
@@ -937,7 +975,9 @@ static int supervise(pid_t child) {
 static int write_supervisor_report(const struct kexe_shared_v3 *shared,
                                    int child_status,
                                    const char *result_type,
-                                   uint64_t record_field_count) {
+                                   uint64_t record_field_count,
+                                   uint64_t variant_case_count,
+                                   uint64_t variant_bool_mask) {
   if (child_status == 0 && shared->completed == 1) {
     if (strcmp(result_type, "string") == 0) {
       uint64_t length = 0;
@@ -997,6 +1037,25 @@ static int write_supervisor_report(const struct kexe_shared_v3 *shared,
              "} :heap {:capacity 4096 :used %" PRIu64 "}}\n",
              shared->result, result_type, tag == 1 ? "true" : "false", payload,
              shared->context.fuel, shared->pair_used);
+    } else if (variant_case_count > 0) {
+      int64_t ordinal, payload;
+      if (!inspect_variant_result(shared, shared->result, variant_case_count,
+                                  variant_bool_mask, &ordinal, &payload)) {
+        static const char trap[] =
+            "KEXE_TRAP {:kind :result :reason :invalid-variant}\n";
+        write_stderr_checked(trap, sizeof(trap) - 1u);
+        printf("{:status :trap :exit 130 :fuel {:initial 512 :remaining %" PRIu64
+               "} :heap {:capacity 4096 :used %" PRIu64 "}}\n",
+               shared->context.fuel, shared->pair_used);
+        return 130;
+      }
+      printf("{:status :ok :result %" PRId64
+             " :result-type :variant :result-ordinal %" PRId64
+             " :result-word %" PRId64
+             " :fuel {:initial 512 :remaining %" PRIu64
+             "} :heap {:capacity 4096 :used %" PRIu64 "}}\n",
+             shared->result, ordinal, payload, shared->context.fuel,
+             shared->pair_used);
     } else {
       printf("{:status :ok :result %" PRId64
              " :fuel {:initial 512 :remaining %" PRIu64
@@ -1186,11 +1245,15 @@ int main(int argc, char **argv) {
 
   const char *result_type = getenv("KEXE_RESULT_TYPE");
   unsigned long record_field_count = 0;
+  uint64_t variant_case_count = 0, variant_bool_mask = 0;
   if (result_type == NULL) result_type = "i64";
   if (strncmp(result_type, "record:", 7) == 0) {
     if (parse_ulong_decimal(result_type + 7, &record_field_count) != 0 ||
         record_field_count == 0 || record_field_count > KEXE_RECORD_FIELD_LIMIT)
       return 2;
+  } else if (strncmp(result_type, "variant:", 8) == 0) {
+    if (!parse_variant_profile(result_type, &variant_case_count,
+                               &variant_bool_mask)) return 2;
   } else if (strcmp(result_type, "i64") != 0 &&
              strcmp(result_type, "string") != 0 &&
              strcmp(result_type, "option-i64") != 0 &&
@@ -1236,7 +1299,9 @@ int main(int argc, char **argv) {
     int child_status = supervise(child);
     if (structured_report)
       child_status = write_supervisor_report(shared, child_status, result_type,
-                                             record_field_count);
+                                             record_field_count,
+                                             variant_case_count,
+                                             variant_bool_mask);
     if (munmap(shared, sizeof(*shared)) != 0) fail("supervisor shared munmap");
     if (munmap(memory, mapped) != 0) fail("supervisor munmap");
     return child_status;
