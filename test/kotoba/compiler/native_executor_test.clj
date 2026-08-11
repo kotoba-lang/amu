@@ -130,6 +130,68 @@
                            ":reason :invalid-string-handle")))
       (finally (delete-tree! (.toFile directory))))))
 
+(deftest entryless-native-library-copies-scalar-records-across-the-real-process-boundary
+  (let [record-type "[:record :maturity/pair [[:left :i64] [:ready :bool]]]"
+        source (str "(ns maturity.native-record-library (:export [echo fresh score]))\n"
+                    "(defn echo [value " record-type "] " record-type " value)\n"
+                    "(defn fresh [witness :i64] " record-type
+                    " (record-new " record-type " -9 false))\n"
+                    "(defn score [value " record-type "] :i64 "
+                    " (+ (record-get value :left)"
+                    " (if (record-get value :ready) 100 0)))")
+        {:keys [envelope trust]} (signed source {:allow #{}})
+        {:keys [trust options]} (execution-options trust)
+        run (fn [entry args]
+              (executor/execute envelope trust {:allow #{}} {:args args}
+                                (assoc options :entry entry)))]
+    (is (= {:left Long/MIN_VALUE :ready true}
+           (get-in (run 'echo [{:ready true :left Long/MIN_VALUE}])
+                   [:evidence :result]))
+        "field order comes from the sealed descriptor, not host map order")
+    (is (= {:left -9 :ready false}
+           (get-in (run 'fresh [0]) [:evidence :result]))
+        "guest-allocated records are copied before the loader exits")
+    (is (= 107 (get-in (run 'score [{:left 7 :ready true}])
+                       [:evidence :result]))
+        "a host record is materialized as the native pair chain")
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"record fields"
+                          (run 'echo [{:left 7}])))
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"record fields"
+                          (run 'echo [{:left 7 :ready true :extra 0}])))
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"record field"
+                          (run 'echo [{:left 7 :ready 1}])))))
+
+(deftest native-loader-refuses-an-invalid-record-result-chain
+  (let [artifact (:artifact (compiler/compile-source "(defn main [] 0)" (target)))
+        export (get (:exports artifact) 'main)
+        {:keys [loader-path]} @measured-runtime
+        host-os ((deref #'executor/host-os))
+        run-process (deref #'executor/run-process)
+        runtime-environment (deref #'executor/runtime-environment)
+        delete-tree! (deref #'executor/delete-tree!)
+        record-type [:record :maturity/pair [[:left :i64] [:ready :bool]]]
+        isa (if (= (target) :aarch64-kotoba-v1) "aarch64" "x86_64")
+        directory (java.nio.file.Files/createTempDirectory
+                   "kotoba-invalid-record-result-"
+                   (make-array java.nio.file.attribute.FileAttribute 0))
+        code-file (java.io.File. (.toFile directory) "program.bin")]
+    (try
+      (atomic-output/write-bytes!
+       (.getPath code-file)
+       (byte-array (map unchecked-byte (:code artifact))))
+      (let [command [loader-path (.getPath code-file) (str (:offset export))
+                     "0" isa "-"]
+            process (run-process command
+                                 (runtime-environment host-os record-type)
+                                 {:timeout-ms 5000 :output-limit 65536})
+            report (edn/read-string (str/trim (:stdout process)))]
+        (is (= 127 (:exit process)))
+        (is (= {:status :trap :exit 127}
+               (select-keys report [:status :exit])))
+        (is (str/includes? (:stderr process)
+                           ":reason :invalid-record-chain")))
+      (finally (delete-tree! (.toFile directory))))))
+
 (deftest typed-i64-capability-call-is-qualified-on-native
   (let [source "(defn main [] :i64 (typed-cap-call 4 :i64 :i64 41))"
         policy {:allow #{[:cap/call 4]}}

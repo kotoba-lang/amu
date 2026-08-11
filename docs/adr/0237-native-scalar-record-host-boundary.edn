@@ -1,0 +1,31 @@
+{:adr/id 237
+ :adr/status :accepted
+ :decision :copy-native-scalar-records-across-process-boundary
+ :boundary {:parameter {:type :scalar-record
+                        :host :exact-keyword-map
+                        :transport :declaration-order-decimal-words
+                        :guest :zero-terminated-pair-chain}
+            :result {:contract-source :selected-sealed-export
+                     :copy-before-unmap true
+                     :exact-chain-length true
+                     :zero-terminator-required true
+                     :invalid-chain-trap-exit 127}
+            :limits {:fields 128 :pair-cells 4096}
+            :field-types #{:i64 :bool}}
+ :coverage {:host-input #{:unordered-map :long-min :bool-true :bool-false}
+            :guest #{:projection :construction :roundtrip}
+            :negative #{:missing-key :extra-key :bool-word-impersonation
+                        :invalid-result-chain :field-count-mismatch}}
+ :pins {:artifact "aa3e4486a13098adcb92c245de2aa1124c9b86c5"
+        :tender-native "fe175ca0b83f6d1e97668f86f93ad5431ef12bf2"
+        :posix-loader-source-sha256 "be07e1cb5d67130c8bc6826923ba5690a5c437158be4bee3fb983cae309ae68c"
+        :windows-loader-source-sha256 "e9718dda8621c91353dec6d69e7801bacf510779b9d4a72cad528c57a4377c02"}
+ :verification {:posix {:compiled-with #{:-Wall :-Wextra :-Werror}
+                        :real-process true}
+                :windows {:source-parity true :real-process false}
+                :amu {:tests 953 :assertions 7503}
+                :native-executor {:tests 52 :assertions 157}
+                :reversed-result-field-order-mutation-errors 2}
+ :not-claimed #{:nested-record-host-abi :vector-host-abi
+                :option-result-host-abi :document-host-abi
+                :windows-runtime-qualification :native-default-target}}
