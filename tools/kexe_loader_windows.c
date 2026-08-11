@@ -32,6 +32,7 @@
 #define KEXE_MAX_CODE (1024u * 1024u)
 #define KEXE_PAIR_CAPACITY 4096u
 #define KEXE_STRING_POOL_BYTES 65536u
+#define KEXE_RECORD_FIELD_LIMIT 128u
 #define KEXE_VECTOR_CAPACITY 4096u
 #define KEXE_VECTOR_ITEM_CAPACITY 65536u
 #define KEXE_VECTOR_LENGTH_LIMIT 16384u
@@ -207,6 +208,39 @@ static int64_t parse_guest_arg(struct kexe_context *ctx, const char *text) {
   uint64_t start, index, length;
   size_t digits;
   const char *hex;
+  if (strncmp(text, "r:", 2) == 0) {
+    int64_t fields[KEXE_RECORD_FIELD_LIMIT];
+    uint64_t count = 0;
+    const char *cursor = text + 2;
+    int64_t handle = 0;
+    if (*cursor == '\0') fail_input("empty record argument");
+    while (*cursor != '\0') {
+      char *end = NULL;
+      long long field;
+      if (count >= KEXE_RECORD_FIELD_LIMIT)
+        fail_input("record argument exceeds field limit");
+      if ((*cursor != '-' && (*cursor < '0' || *cursor > '9')) ||
+          (*cursor == '-' && (cursor[1] < '0' || cursor[1] > '9')))
+        fail_input("invalid record argument");
+      errno = 0;
+      field = strtoll(cursor, &end, 10);
+      if (errno == ERANGE || end == cursor || (*end != ',' && *end != '\0'))
+        fail_input("invalid record argument");
+      fields[count++] = (int64_t)field;
+      if (*end == '\0') break;
+      cursor = end + 1;
+      if (*cursor == '\0') fail_input("invalid record argument");
+    }
+    if (count > KEXE_PAIR_CAPACITY - ctx->pair_used)
+      fail_input("record argument exceeds pair arena");
+    for (uint64_t i = count; i > 0; i--) {
+      index = ctx->pair_used++;
+      ctx->pairs[index].first = fields[i - 1u];
+      ctx->pairs[index].second = handle;
+      handle = (int64_t)(index + 1u);
+    }
+    return handle;
+  }
   if (strncmp(text, "s:", 2) != 0) return parse_i64(text);
   hex = text + 2;
   digits = strlen(hex);
@@ -255,6 +289,20 @@ static const uint8_t *inspect_string_result(const struct kexe_context *ctx,
   if (!valid_utf8(bytes, length)) return NULL;
   *length_out = length;
   return bytes;
+}
+
+static int inspect_record_result(const struct kexe_context *ctx,
+                                 int64_t handle, uint64_t field_count,
+                                 int64_t fields[KEXE_RECORD_FIELD_LIMIT]) {
+  const struct pair_cell *pair;
+  if (field_count == 0 || field_count > KEXE_RECORD_FIELD_LIMIT) return 0;
+  for (uint64_t i = 0; i < field_count; i++) {
+    if (handle <= 0 || (uint64_t)handle > ctx->pair_used) return 0;
+    pair = &ctx->pairs[(uint64_t)handle - 1u];
+    fields[i] = pair->first;
+    handle = pair->second;
+  }
+  return handle == 0;
 }
 
 /* vector-i64 / vector-f64 host table. Mirrors the POSIX loader's
@@ -1088,6 +1136,7 @@ int main(int argc, char **argv) {
   int64_t args[5] = {0, 0, 0, 0, 0}, result;
   const char *child_contract = getenv("KEXE_APPCONTAINER_CHILD");
   const char *result_type = getenv("KEXE_RESULT_TYPE");
+  uint64_t record_field_count = 0;
 
   if (child_contract == NULL) return run_appcontainer_parent(argc, argv);
   require_appcontainer_token();
@@ -1102,7 +1151,12 @@ int main(int argc, char **argv) {
   arity = parse_u64(argv[3], "invalid arity");
   if (arity > 5 || argc != (int)(6 + arity)) fail_input("arity mismatch");
   if (result_type == NULL) result_type = "i64";
-  if (strcmp(result_type, "i64") != 0 && strcmp(result_type, "string") != 0)
+  if (strncmp(result_type, "record:", 7) == 0) {
+    record_field_count = parse_u64(result_type + 7, "invalid record result type");
+    if (record_field_count == 0 || record_field_count > KEXE_RECORD_FIELD_LIMIT)
+      fail_input("invalid record result field count");
+  } else if (strcmp(result_type, "i64") != 0 &&
+             strcmp(result_type, "string") != 0)
     fail_input("invalid result type");
 
   {
@@ -1195,6 +1249,25 @@ int main(int argc, char **argv) {
              (long long)result);
       for (uint64_t i = 0; i < result_length; i++) printf("%02x", result_bytes[i]);
       printf("\" :fuel {:initial 512 :remaining %llu} "
+             ":heap {:capacity 4096 :used %llu}}\n",
+             (unsigned long long)ctx->fuel, (unsigned long long)ctx->pair_used);
+    } else if (record_field_count > 0) {
+      int64_t fields[KEXE_RECORD_FIELD_LIMIT];
+      if (!inspect_record_result(ctx, result, record_field_count, fields)) {
+        fprintf(stderr, "KEXE_TRAP {:kind :result :reason :invalid-record-chain}\n");
+        printf("{:status :trap :exit 127 :fuel {:initial 512 :remaining %llu} "
+               ":heap {:capacity 4096 :used %llu}}\n",
+               (unsigned long long)ctx->fuel, (unsigned long long)ctx->pair_used);
+        SecureZeroMemory(ctx, sizeof(*ctx));
+        VirtualFree(ctx, 0, MEM_RELEASE);
+        VirtualFree(code, 0, MEM_RELEASE);
+        return 127;
+      }
+      printf("{:status :ok :result %lld :result-type :record :result-words [",
+             (long long)result);
+      for (uint64_t i = 0; i < record_field_count; i++)
+        printf(i == 0 ? "%lld" : " %lld", (long long)fields[i]);
+      printf("] :fuel {:initial 512 :remaining %llu} "
              ":heap {:capacity 4096 :used %llu}}\n",
              (unsigned long long)ctx->fuel, (unsigned long long)ctx->pair_used);
     } else {

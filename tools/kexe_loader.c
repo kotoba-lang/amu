@@ -35,6 +35,7 @@ typedef int64_t (*kexe_fn8)(int64_t, int64_t, int64_t, int64_t,
 #define KEXE_PAIR_CAPACITY 4096u
 #define KEXE_KGRAPH_CAPACITY 4096u
 #define KEXE_STRING_POOL_BYTES 65536u
+#define KEXE_RECORD_FIELD_LIMIT 128u
 /* Vector handles, and the element words they slice. The element arena is
  * deliberately four times `kotoba.kir.value/vector-item-limit` (16384), the
  * longest single vector KIR admits: every operation that changes an element
@@ -539,6 +540,36 @@ static int hex_nibble(char value) {
  * working. */
 static int parse_guest_arg(struct kexe_shared_v3 *shared,
                            const char *text, int64_t *value) {
+  if (strncmp(text, "r:", 2) == 0) {
+    int64_t fields[KEXE_RECORD_FIELD_LIMIT];
+    uint64_t count = 0;
+    const char *cursor = text + 2;
+    if (*cursor == '\0') return -1;
+    while (*cursor != '\0') {
+      if (count >= KEXE_RECORD_FIELD_LIMIT) return -1;
+      if ((*cursor != '-' && (*cursor < '0' || *cursor > '9')) ||
+          (*cursor == '-' && (cursor[1] < '0' || cursor[1] > '9'))) return -1;
+      char *end = NULL;
+      errno = 0;
+      long long field = strtoll(cursor, &end, 10);
+      if (errno == ERANGE || end == cursor || (*end != ',' && *end != '\0'))
+        return -1;
+      fields[count++] = (int64_t)field;
+      if (*end == '\0') break;
+      cursor = end + 1;
+      if (*cursor == '\0') return -1;
+    }
+    if (count > KEXE_PAIR_CAPACITY - shared->pair_used) return -1;
+    int64_t handle = 0;
+    for (uint64_t i = count; i > 0; i--) {
+      uint64_t index = shared->pair_used++;
+      shared->pairs[index].first = fields[i - 1u];
+      shared->pairs[index].second = handle;
+      handle = (int64_t)(index + 1u);
+    }
+    *value = handle;
+    return 0;
+  }
   if (strncmp(text, "s:", 2) != 0) return parse_i64(text, value);
   const char *hex = text + 2;
   size_t digits = strlen(hex);
@@ -589,6 +620,19 @@ static const uint8_t *inspect_string_result(const struct kexe_shared_v3 *shared,
   if (!valid_utf8(bytes, length)) return NULL;
   *length_out = length;
   return bytes;
+}
+
+static int inspect_record_result(const struct kexe_shared_v3 *shared,
+                                 int64_t handle, uint64_t field_count,
+                                 int64_t fields[KEXE_RECORD_FIELD_LIMIT]) {
+  if (field_count == 0 || field_count > KEXE_RECORD_FIELD_LIMIT) return 0;
+  for (uint64_t i = 0; i < field_count; i++) {
+    if (handle <= 0 || (uint64_t)handle > shared->pair_used) return 0;
+    const struct kexe_pair_v1 *pair = &shared->pairs[(uint64_t)handle - 1u];
+    fields[i] = pair->first;
+    handle = pair->second;
+  }
+  return handle == 0;
 }
 
 enum kexe_typed_kind_v1 {
@@ -851,7 +895,8 @@ static int supervise(pid_t child) {
 
 static int write_supervisor_report(const struct kexe_shared_v3 *shared,
                                    int child_status,
-                                   const char *result_type) {
+                                   const char *result_type,
+                                   uint64_t record_field_count) {
   if (child_status == 0 && shared->completed == 1) {
     if (strcmp(result_type, "string") == 0) {
       uint64_t length = 0;
@@ -871,6 +916,25 @@ static int write_supervisor_report(const struct kexe_shared_v3 *shared,
              shared->result);
       for (uint64_t i = 0; i < length; i++) printf("%02x", bytes[i]);
       printf("\" :fuel {:initial 512 :remaining %" PRIu64
+             "} :heap {:capacity 4096 :used %" PRIu64 "}}\n",
+             shared->context.fuel, shared->pair_used);
+    } else if (record_field_count > 0) {
+      int64_t fields[KEXE_RECORD_FIELD_LIMIT];
+      if (!inspect_record_result(shared, shared->result,
+                                 record_field_count, fields)) {
+        static const char trap[] =
+            "KEXE_TRAP {:kind :result :reason :invalid-record-chain}\n";
+        (void)write(STDERR_FILENO, trap, sizeof(trap) - 1u);
+        printf("{:status :trap :exit 127 :fuel {:initial 512 :remaining %" PRIu64
+               "} :heap {:capacity 4096 :used %" PRIu64 "}}\n",
+               shared->context.fuel, shared->pair_used);
+        return 127;
+      }
+      printf("{:status :ok :result %" PRId64
+             " :result-type :record :result-words [", shared->result);
+      for (uint64_t i = 0; i < record_field_count; i++)
+        printf(i == 0 ? "%" PRId64 : " %" PRId64, fields[i]);
+      printf("] :fuel {:initial 512 :remaining %" PRIu64
              "} :heap {:capacity 4096 :used %" PRIu64 "}}\n",
              shared->context.fuel, shared->pair_used);
     } else {
@@ -1061,9 +1125,14 @@ int main(int argc, char **argv) {
   __builtin___clear_cache((char *)memory, (char *)memory + length);
 
   const char *result_type = getenv("KEXE_RESULT_TYPE");
+  unsigned long record_field_count = 0;
   if (result_type == NULL) result_type = "i64";
-  if (strcmp(result_type, "i64") != 0 && strcmp(result_type, "string") != 0)
-    return 2;
+  if (strncmp(result_type, "record:", 7) == 0) {
+    if (parse_ulong_decimal(result_type + 7, &record_field_count) != 0 ||
+        record_field_count == 0 || record_field_count > KEXE_RECORD_FIELD_LIMIT)
+      return 2;
+  } else if (strcmp(result_type, "i64") != 0 &&
+             strcmp(result_type, "string") != 0) return 2;
   int64_t args[6] = {0, 0, 0, 0, 0, 0};
   struct kexe_shared_v3 *shared =
       mmap(NULL, sizeof(*shared), PROT_READ | PROT_WRITE,
@@ -1104,7 +1173,8 @@ int main(int argc, char **argv) {
   if (child > 0) {
     int child_status = supervise(child);
     if (structured_report)
-      child_status = write_supervisor_report(shared, child_status, result_type);
+      child_status = write_supervisor_report(shared, child_status, result_type,
+                                             record_field_count);
     if (munmap(shared, sizeof(*shared)) != 0) fail("supervisor shared munmap");
     if (munmap(memory, mapped) != 0) fail("supervisor munmap");
     return child_status;
