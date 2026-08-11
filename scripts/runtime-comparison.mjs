@@ -122,7 +122,9 @@ function build(directory, target) {
   const native = join(directory, "kernel.kexe");
   const rawNative = join(directory, "kernel.bin");
   const nativeRunner = join(directory, "kexe-benchmark");
-  const rust = join(directory, "kernel-rust");
+  const rustO0 = join(directory, "kernel-rust-o0");
+  const rustO2 = join(directory, "kernel-rust-o2");
+  const rust = join(directory, "kernel-rust-o3");
   const cljs = join(directory, "kernel-cljs.cjs");
   const cljsOutputDir = join(directory, "cljs-out");
   const durations = {};
@@ -144,15 +146,21 @@ function build(directory, target) {
   step("nativeBenchmarkRunner", "cc",
     ["-std=c11", "-O3", "-Wall", "-Wextra", "-Werror",
       join(benchRoot, "kexe-benchmark.c"), "-o", nativeRunner]);
-  step("rust", "rustc",
-    ["--edition", "2021", "-C", "opt-level=3", "-C", "codegen-units=1",
-      "-C", "strip=symbols", join(benchRoot, "kernel.rs"), "-o", rust]);
+  for (const [name, level, outputPath] of [
+    ["rustLlvmO0", "0", rustO0],
+    ["rustLlvmO2", "2", rustO2],
+    ["rust", "3", rust],
+  ]) {
+    step(name, "rustc",
+      ["--edition", "2021", "-C", `opt-level=${level}`, "-C", "codegen-units=1",
+        "-C", "strip=symbols", join(benchRoot, "kernel.rs"), "-o", outputPath]);
+  }
   step("clojurescript", "clojure",
     ["-M:runtime-bench", "-m", "cljs.main", "-O", "advanced", "-t", "node",
       "-d", cljsOutputDir, "-o", cljs, "-c", "bench.runtime-kernel"],
     { timeout: 300_000 });
   return {
-    paths: { fixture, wasm, native, rawNative, nativeRunner, rust, cljs },
+    paths: { fixture, wasm, native, rawNative, nativeRunner, rustO0, rustO2, rust, cljs },
     nativeOffset,
     durations,
   };
@@ -179,6 +187,8 @@ try {
   const built = build(directory, target);
   const common = [String(n), String(calls), String(warmup)];
   const definitions = {
+    "rust-llvm-o0": [built.paths.rustO0, common, {}],
+    "rust-llvm-o2": [built.paths.rustO2, common, {}],
     rust: [built.paths.rust, common, {}],
     clojure: ["clojure", ["-M", join(benchRoot, "kernel.clj"), ...common], {}],
     clojurescript: [process.execPath, [built.paths.cljs, ...common], {}],
@@ -223,6 +233,7 @@ try {
       wasmFuel: "Wasm warmup and measurement are split into fresh admitted instances of at most 400 calls; only call intervals are accumulated",
       nativeBoundary: "benchmark-only direct W^X invocation; no production supervisor or sandbox claim",
       optimization: "each compiler/JIT may optimize the same observable algorithm",
+      rustProfiles: "rust-llvm-o0 and rust-llvm-o2 expose LLVM optimization stages; rust remains the backward-compatible LLVM O3 baseline",
     },
     environment: {
       platform: process.platform,
@@ -232,12 +243,15 @@ try {
       totalMemoryBytes: totalmem(),
       node: process.version,
       rustc: output("rustc", ["--version"]),
+      rustcVerbose: output("rustc", ["-vV"]),
       clojure: output("clojure", ["-Sdescribe"]),
       compilerCommit: output("git", ["rev-parse", "HEAD"]),
       compilerDirty: Boolean(output("git", ["-c", "core.fsmonitor=false", "status", "--porcelain"])),
     },
     buildMilliseconds: built.durations,
     artifacts: {
+      rustLlvmO0: artifact(built.paths.rustO0),
+      rustLlvmO2: artifact(built.paths.rustO2),
       rust: artifact(built.paths.rust),
       clojureSource: artifact(join(benchRoot, "kernel.clj")),
       clojurescript: artifact(built.paths.cljs),

@@ -127,8 +127,8 @@ with real Wasm and host-native compiles.
 
 Amu carries one reproducible, cross-language runtime evidence contract. It
 builds and executes the same eight-round integer quotient/remainder mix in
-Amu native, Amu Wasm32, optimized Rust, warmed Clojure, and advanced-compiled
-ClojureScript:
+Amu native, Amu Wasm32, Rust/LLVM at `-O0`, `-O2`, and `-O3`, warmed Clojure,
+and advanced-compiled ClojureScript:
 
 ```sh
 npm run benchmark-runtime -- \
@@ -139,9 +139,12 @@ npm run benchmark-runtime -- \
 The `kotoba.runtime-comparison/v1` report records every sample, the shared
 result, steady-state median and p95, process wall time, maximum RSS, artifact
 sizes, build durations, tool versions, host identity, compiler commit, and
-dirty-worktree state. The source variants live under
+dirty-worktree state. `rust` remains the backward-compatible LLVM `-O3`
+baseline while `rust-llvm-o0` and `rust-llvm-o2` expose backend optimization
+quality separately; the report records `rustc -vV`, including its LLVM
+version. The source variants live under
 `bench/runtime-comparison/`; `npm run test-runtime-comparison` builds and runs
-all five rather than accepting fixture JSON.
+all seven rather than accepting fixture JSON.
 
 The measurements are deliberately separated:
 

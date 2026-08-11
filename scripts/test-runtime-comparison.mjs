@@ -26,7 +26,12 @@ try {
   if (report.contract.expectedResult !== 516860764) throw new Error("wrong common-kernel result");
   if (!report.contract.nativeBoundary.includes("no production supervisor"))
     throw new Error("native benchmark boundary is not explicit");
-  const names = ["rust", "clojure", "clojurescript", "amu-wasm32", "amu-native"];
+  if (!report.contract.rustProfiles.includes("LLVM O3 baseline"))
+    throw new Error("LLVM optimization profiles are not explicit");
+  if (!report.environment.rustcVerbose.includes("LLVM version"))
+    throw new Error("rustc LLVM backend version is not recorded");
+  const names = ["rust-llvm-o0", "rust-llvm-o2", "rust",
+    "clojure", "clojurescript", "amu-wasm32", "amu-native"];
   if (JSON.stringify(Object.keys(report.engines)) !== JSON.stringify(names))
     throw new Error("runtime engine matrix changed");
   for (const name of names) {
@@ -46,7 +51,7 @@ try {
   for (const artifact of Object.values(report.artifacts))
     if (!Number.isSafeInteger(artifact.bytes) || artifact.bytes < 1)
       throw new Error("artifact size evidence is invalid");
-  process.stdout.write("runtime-comparison: 5 real engines, shared result, timing, RSS, and artifacts OK\n");
+  process.stdout.write("runtime-comparison: 7 real engines including LLVM O0/O2/O3, shared result, timing, RSS, and artifacts OK\n");
 } finally {
   rmSync(directory, { recursive: true, force: true });
 }
