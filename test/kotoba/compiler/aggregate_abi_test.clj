@@ -8,9 +8,9 @@
   (get-in (edn/read-string (slurp "deps.edn")) [:deps coordinate :git/sha]))
 
 (deftest pinned-closure-carries-the-scalar-call-boundary
-  (is (= "7f2120deade9425d7920689b88119790f4bdcea9"
+  (is (= "eeae98511a574a1be1280b3b3fbdaa1fbdd6efed"
          (dependency-pin 'io.github.kotoba-lang/kotoba-native)))
-  (is (= "f1d8e07c49d90e8670bf1f375cb1bb2155c1a52c"
+  (is (= "8ced779bb88caf93792b0178da0fdcdaf38930a1"
          (dependency-pin 'io.github.kotoba-lang/kotoba-verifier)))
   (is (= 2 (:abi/version aggregate-abi/contract)))
   (is (= :held (get-in aggregate-abi/contract
@@ -76,3 +76,28 @@
                (mapv :mc/frame-policy [callee caller])) target)
         (is (not-any? #(contains? spill-encodings (:mc/encoding %))
                       (mapcat :mc/instructions [callee caller])) target)))))
+
+(deftest pinned-closure-carries-the-one-slot-five-argument-entry
+  (let [module {:format :kotoba.kir/v4
+                :exports ['main]
+                :functions
+                [{:name 'sum-five :params ['a 'b 'c 'd 'e] :result :i64
+                  :body '(+ (+ (+ a b) (+ c d)) e)}
+                 {:name 'main :params ['a 'b 'c 'd 'e] :result :i64
+                  :body '(sum-five a b c d e)}]}]
+    (doseq [target [:x86-64 :aarch64]]
+      (let [[callee caller]
+            (:mc/functions (->> module machine/lower-kir-module
+                                (machine/compile-gmir target)))
+            functions [callee caller]
+            store-encoding (keyword (name target) "spill-store")
+            load-encoding (keyword (name target) "spill-load")]
+        (is (= [1 1] (mapv :mc/frame-slots functions)) target)
+        (is (= [:allocator :call-live]
+               (mapv :mc/frame-policy functions)) target)
+        (doseq [function functions]
+          (let [encodings (map :mc/encoding (:mc/instructions function))]
+            (is (= 1 (count (filter #{store-encoding} encodings)))
+                [target (:mc/name function)])
+            (is (= 1 (count (filter #{load-encoding} encodings)))
+                [target (:mc/name function)])))))))
