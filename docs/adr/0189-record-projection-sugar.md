@@ -59,6 +59,11 @@ only the 3-arity form.
   `dual-renderer-soft-performance-workload`, a wall-clock soft budget that also
   fails on pristine `main` under load.
 
+Follow-up (2026-08-11): in-process KIR and host-value performance gates now use
+current-thread CPU time while retaining wall time as diagnostic output. This
+keeps the original 5s/3s/2s computational budgets without treating unrelated
+scheduler pauses as compiler regressions; subprocess ESM remains wall-clock.
+
 ## Not in scope
 
 The other half of the kotoba-lang ADR — making `<`/`<=`/`>`/`>=`/`=` return

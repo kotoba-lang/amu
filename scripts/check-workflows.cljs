@@ -44,5 +44,15 @@
   (lib/ensure! (.includes test-workflow "cli: 1.12.5.1654")
                "workflow-lint: Clojure CLI is not exactly pinned"))
 
+(doseq [name ["test.yml" "browser-matrix.yml"]
+        :let [workflow (lib/read-text (lib/join workflow-dir name))]]
+  (lib/ensure! (.includes workflow "push:\n    branches: [main]")
+               (str "workflow-lint: feature-branch pushes duplicate pull-request CI in " name))
+  (lib/ensure! (.includes workflow
+                          "group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}")
+               (str "workflow-lint: missing ref-scoped concurrency group in " name))
+  (lib/ensure! (.includes workflow "cancel-in-progress: true")
+               (str "workflow-lint: superseded runs are not cancelled in " name)))
+
 (println (str "workflow-lint: " (count workflows) " workflows and " @action-count
-              " action references use commit pins and pinned toolchains"))
+              " action references use commit pins, pinned toolchains, and deduplicated CI"))

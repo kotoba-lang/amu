@@ -12,8 +12,8 @@
   holds a host object; handles stay host-side. After a persistent
   `document-assoc` update of a leaf, both renderers agree on the new structure.
   A lightweight performance workload (repeated build+render of a bounded tree)
-  records that construction/render stays under a soft wall-clock budget before
-  any HAMT/arena selection — the other remaining W4 exit item.
+  records that construction/render stays under a current-thread CPU budget
+  before any HAMT/arena selection — the other remaining W4 exit item.
 
   Complements slices 1–5. Does not claim full :ui/commit kit qualification (W5)."
   (:require [clojure.string :as str]
@@ -187,18 +187,31 @@
       (is (zero? (:exit probe)) (str (:err probe) (:out probe)))
       (is (= "ok\n" (:out probe))))))
 
+(defn- current-thread-cpu-nanos []
+  (let [bean (java.lang.management.ManagementFactory/getThreadMXBean)]
+    (when-not (.isCurrentThreadCpuTimeSupported bean)
+      (throw (ex-info "current-thread CPU time is unavailable" {})))
+    (when-not (.isThreadCpuTimeEnabled bean)
+      (.setThreadCpuTimeEnabled bean true))
+    (.getCurrentThreadCpuTime bean)))
+
 (deftest dual-renderer-soft-performance-workload
   (let [wasm (compiler/compile-source perf-source :wasm32-kotoba-v1 {})
         kir (:kir wasm)
-        t0 (System/nanoTime)
+        _ (dotimes [_ 20] (ir/execute kir 'html []))
+        wall-t0 (System/nanoTime)
+        cpu-t0 (current-thread-cpu-nanos)
         _ (dotimes [_ 200] (ir/execute kir 'html []))
-        elapsed-ms (/ (double (- (System/nanoTime) t0)) 1.0e6)
+        cpu-ms (/ (double (- (current-thread-cpu-nanos) cpu-t0)) 1.0e6)
+        wall-ms (/ (double (- (System/nanoTime) wall-t0)) 1.0e6)
         sample (ir/execute kir 'html [])]
     (testing "build+render 200× of a 16-leaf tree stays under soft budget"
       (is (string? sample))
       (is (str/includes? sample "<li>item-00</li>"))
       (is (str/includes? sample "<li>item-15</li>"))
-      ;; Soft budget: 5s on a developer laptop / CI agent. Far above expected
-      ;; (~tens of ms) so flaky only on extreme load; records the workload.
-      (is (< elapsed-ms 5000.0)
-          (str "200 renders took " elapsed-ms " ms (soft budget 5000 ms)")))))
+      ;; CPU time measures the single-threaded guest evaluator itself. Wall time
+      ;; remains diagnostic evidence, but scheduler pauses cannot fail the gate.
+      (is (< cpu-ms 5000.0)
+          (str "200 renders used " cpu-ms " CPU ms and " wall-ms
+               " wall ms (CPU budget 5000 ms)"))
+      (println "W4-sixth KIR render:" cpu-ms "CPU ms;" wall-ms "wall ms"))))
