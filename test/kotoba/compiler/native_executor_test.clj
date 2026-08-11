@@ -56,6 +56,28 @@
            (:report result)))
     (is (<= (:started-at result) (:finished-at result)))))
 
+(deftest entryless-native-library-preserves-the-bool-host-boundary
+  (let [source "(ns maturity.native-library (:export [choose negate]))
+                (defn choose [enabled :bool value :i64] :i64
+                  (if enabled value 0))
+                (defn negate [value :bool witness :i64] :bool
+                  (if value false true))"
+        {:keys [envelope trust]} (signed source {:allow #{}})
+        {:keys [trust options]} (execution-options trust)
+        run (fn [entry args]
+              (executor/execute envelope trust {:allow #{}} {:args args}
+                                (assoc options :entry entry)))]
+    (is (= 41 (get-in (run 'choose [true 41]) [:evidence :result]))
+        "a host boolean enters an entryless native export as a typed :bool")
+    (is (true? (get-in (run 'negate [false 0]) [:evidence :result]))
+        "a :bool result from the selected export leaves as a host boolean")
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"entry arguments"
+                          (run 'choose [1 41]))
+        "the old raw 0/1 word spelling cannot impersonate a host boolean")
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"entry arguments"
+                          (run 'choose [true true]))
+        "a host boolean cannot cross an :i64 slot")))
+
 (deftest typed-i64-capability-call-is-qualified-on-native
   (let [source "(defn main [] :i64 (typed-cap-call 4 :i64 :i64 41))"
         policy {:allow #{[:cap/call 4]}}
