@@ -27,7 +27,30 @@
   '#{:string-contains-kit :string-fold-case-kit :string-replace-kit :if-some-kit
      :typed-map-kit :string-split-count-kit :typed-map-dissoc-kit :when-ext-kit
      :if-some-string-kit :option-result-kit :type-directed-heterogeneous-nth
-     :nested-typed-destructuring :nested-let-destructuring :wide-nominal-records})
+     :nested-typed-destructuring :nested-let-destructuring :wide-nominal-records
+     ;; Added after the first full run. The initial fourteen were seeded from a
+     ;; truncated probe -- the count said eighteen and the names said fourteen,
+     ;; and only running it reconciled them. Seeding a register from a summary
+     ;; line is how a register starts lying.
+     :record-kit :typed-defrecord-fields :composed-surface-kit
+     :record-protocol-static-dispatch})
+
+;; Cases the cljs backend ACCEPTS and then cannot run: the emitted source calls
+;; runtime helpers it never defines, so nbb fails with "Unable to resolve
+;; symbol". Measured 2026-08-12, first full run of this harness.
+;;
+;; These are defects, not coverage statements, and the distinction matters:
+;; `cljs-refused` records a backend declining work it does not claim, while
+;; this records a backend claiming work it cannot do. The list may only
+;; shrink. Do not add to it to make a run green -- a new entry here means a
+;; case that used to execute on cljs no longer does.
+;;
+;;   i64-shift-left / i64-shift-right : shift-kit, shift-right-kit, thread-kit
+;;   u64-shift-right                  : when-let-u64-kit, loop-deep-kit
+;;   string-code-point-at             : string-code-point-kit
+(def cljs-emitted-but-unrunnable
+  '#{:shift-kit :shift-right-kit :thread-kit :when-let-u64-kit :loop-deep-kit
+     :string-code-point-kit})
 
 (defn- pure-cases []
   (->> (lc/load-manifest) :cases (filter #(= :pure-product-run (:class %)))))
@@ -48,6 +71,16 @@
 ;; additional coverage.
 (def ^:private outcomes* (delay (outcomes)))
 
+(deftest cljs-emitted-but-unrunnable-is-exactly-the-recorded-set
+  (let [broken (into #{} (keep (fn [{:keys [id refused cljs]}]
+                                 (when (and (not refused) (not (:ok? cljs))) id)))
+                     @outcomes*)]
+    (is (empty? (set/difference broken cljs-emitted-but-unrunnable))
+        (str "newly unrunnable on cljs: " (set/difference broken cljs-emitted-but-unrunnable)))
+    (is (empty? (set/difference cljs-emitted-but-unrunnable broken))
+        (str "now runnable, remove from the register: "
+             (set/difference cljs-emitted-but-unrunnable broken)))))
+
 (deftest cljs-refusals-are-exactly-the-recorded-set
   (let [results @outcomes*
         refused (into #{} (keep #(when (:refused %) (:id %))) results)]
@@ -60,7 +93,8 @@
 
 (deftest cljs-and-kir-agree-on-every-case-cljs-accepts
   (doseq [{:keys [id refused cljs kir expect]} @outcomes*
-          :when (not refused)]
+          :when (and (not refused)
+                     (not (contains? cljs-emitted-but-unrunnable id)))]
     (testing (name id)
       (is (:ok? cljs) (pr-str cljs))
       (is (:ok? kir) (pr-str kir))
