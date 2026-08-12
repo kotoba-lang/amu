@@ -1,0 +1,24 @@
+{:adr/id 255
+ :status :accepted
+ :decision :provenance-bound-output-admission
+ :primary-front :bin/amu
+ :command :amu/verify-output-set
+ :result-format :kotoba.output-admission/v1
+ :ordered-gates [:committed-output-set
+                 :closed-sealed-provenance
+                 :provenance-artifact-identity
+                 :target-artifact-verification]
+ :target-verification
+ {:wasm [:declared-target :byte-size :sha256 :webassembly-validate]
+  :ordinary-native [:bounded-kexe :declared-target :sealed-identity
+                    :independent-native-verifier]}
+ :assurance {:committed true
+             :provenance-sealed true
+             :artifact-identity-verified true
+             :target-verification [:webassembly-validate
+                                   :independent-native-verifier]
+             :publisher-authenticated false}
+ :required-ci #{:test-policy-bound-provenance :test-nbb-io
+                :test-amu-launcher :test-clean-clone-cli}
+ :non-claims #{:publisher-authentication :key-trust :release-trust
+               :wasm-source-equivalence}}
