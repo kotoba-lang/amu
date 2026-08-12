@@ -43,6 +43,7 @@ jobs:
         with:
           cli: 1.12.5.1654
       - run: npm ci
+      - run: npm run test-nbb-io
       - run: npm run test-windows-profile
   android-ndk:
     runs-on: ubuntu-24.04
@@ -135,6 +136,8 @@ jobs:
       - run: npm ci
       - run: npm run test-ci-dependency-prefetch
       - run: npx nbb scripts/check-workflows.cljs
+      - run: npm run test-nbb-classpath-hermetic
+      - run: npm run test-jdk-free-native
       - run: npm run test-browser-host
       - run: npm run test-worker-host
       - run: npm run test-wasi-host
@@ -154,6 +157,7 @@ jobs:
           KOTOBA_FUZZ_SEED: "5426643073673934426"
           KOTOBA_FUZZ_CASES: "1000"
       - run: npm run test-nbb-wasm32
+      - run: npm run test-nbb-io
       - run: npm run test-compile-cache
       - run: npm run test-compiler-worker
       - run: npm run test-performance-baseline

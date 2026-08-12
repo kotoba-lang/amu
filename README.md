@@ -9,6 +9,12 @@ and `bin/kotoba` launcher remain compatibility APIs. New automation should use
 the `io.github.kotoba-lang/amu` dependency coordinate and the plain-Node
 `bin/amu` front; `bin/kotoba-compiler` delegates to it.
 
+That primary Node front resolves its pinned source closure from
+`deps-lock.edn`, bound to the exact `deps.edn` digest. Amu CI checks the lock
+hermetically and compiles/executes a representative native artifact with JVM
+executables removed from `PATH`; every dependency pin change must regenerate
+the lock with `nbb scripts/lock-classpath.cljs`.
+
 The accepted [worldwide 95% platform coverage roadmap](docs/adr/0001-worldwide-95-percent-platform-coverage.md)
 defines the planned native, WebAssembly, GPU, NPU, server, mobile, and IoT
 targets. It is a completion plan, not a claim of current platform support.

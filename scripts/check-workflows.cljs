@@ -50,7 +50,13 @@
                           "node scripts/ci-dependency-prefetch.mjs --alias test")
                "workflow-lint: test dependency prefetch is missing")
   (lib/ensure! (.includes test-workflow "npm run test-ci-dependency-prefetch")
-               "workflow-lint: dependency prefetch regression test is missing"))
+               "workflow-lint: dependency prefetch regression test is missing")
+  (lib/ensure! (>= (count (re-seq #"npm run test-nbb-io" test-workflow)) 2)
+               "workflow-lint: primary Node output publication test is missing from full or Windows CI")
+  (lib/ensure! (.includes test-workflow "npm run test-nbb-classpath-hermetic")
+               "workflow-lint: dependency lock digest gate is missing")
+  (lib/ensure! (.includes test-workflow "npm run test-jdk-free-native")
+               "workflow-lint: JDK-free native compiler conformance is missing"))
 
 (doseq [name ["test.yml" "browser-matrix.yml"]
         :let [workflow (lib/read-text (lib/join workflow-dir name))]]
