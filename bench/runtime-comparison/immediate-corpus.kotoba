@@ -1,0 +1,15 @@
+(ns bench.aarch64-immediate-corpus)
+
+(defn add-small [n] (+ n 7))
+(defn add-negative [n] (+ n -7))
+(defn sub-shifted [n] (- n 4096))
+(defn branch-small [n] (if n (+ n 7) (- n 7)))
+(defn repeated-constant [n]
+  (let [a (+ n 7)] (+ a 7)))
+
+(defn main []
+  (+ (add-small 5)
+     (add-negative 5)
+     (sub-shifted 5000)
+     (branch-small 5)
+     (repeated-constant 5)))
