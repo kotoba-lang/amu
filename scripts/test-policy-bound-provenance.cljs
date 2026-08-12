@@ -47,6 +47,9 @@
         primary (run! js/process.execPath
                       [(lib/join lib/root "bin" "amu") "compile" fixture
                        "--target" "wasm32" "--policy" policy "--output" amu])
+        committed (run! js/process.execPath
+                        [(lib/join lib/root "bin" "amu")
+                         "verify-output-set" amu])
         pure-result (invoke js/process.execPath
                             [(lib/join lib/root "bin" "amu") "compile" pure-source
                              "--target" "wasm32" "--policy" pure-policy
@@ -78,8 +81,11 @@
                              (str default-fuel ".provenance.edn")))
                  "changing policy did not change sealed Wasm provenance")
     (lib/ensure! (and (.includes (.-stdout primary) ":provenance-output")
+                      (.includes (.-stdout primary) ":publication-output")
                       (not (.includes (.-stdout primary) ":not-emitted")))
-                 "primary compiler did not report its Wasm provenance sidecar")
+                 "primary compiler did not report its committed Wasm output set")
+    (lib/ensure! (.includes (.-stdout committed) ":kotoba.output-set/v1")
+                 "primary compiler could not verify its committed output set")
     (lib/ensure! (.validate js/WebAssembly (.readFileSync fs amu))
                  "policy-bound primary output is not valid Wasm")
     (lib/ensure! (>= (.-size (.statSync fs (str amu ".provenance.edn"))) 128)
@@ -89,6 +95,9 @@
     (lib/ensure! (same? (str amu-native ".provenance.edn")
                         (str jvm-native ".provenance.edn"))
                  "primary Node native provenance differs from the JVM contract")
+    (doseq [output [amu default-fuel amu-native]]
+      (lib/ensure! (.isFile (.statSync fs (str output ".publication.edn")))
+                   (str "primary compiler omitted output-set commit marker for " output)))
     (lib/ensure! (and (= 65 (.-status pure-result))
                       (.includes (.-stderr pure-result)
                                  ":kotoba.error/pure-product-capabilities"))
@@ -97,6 +106,32 @@
                       (.includes (.-stderr excessive-result)
                                  "native fuel budget is not admitted"))
                  "primary native compiler admitted fuel beyond the verifier bound")
+    (let [extra-argument (invoke js/process.execPath
+                                 [(lib/join lib/root "bin" "amu")
+                                  "verify-output-set" amu "unexpected"])]
+      (lib/ensure! (and (= 64 (.-status extra-argument))
+                        (.includes (.-stderr extra-argument)
+                                   "exactly one artifact path"))
+                   "output-set verifier accepted ambiguous extra arguments"))
+    (let [marker-path (str amu ".publication.edn")
+          marker-text (.readFileSync fs marker-path "utf8")]
+      (.writeFileSync fs marker-path "[]")
+      (let [malformed (invoke js/process.execPath
+                              [(lib/join lib/root "bin" "amu")
+                               "verify-output-set" amu])]
+        (lib/ensure! (and (= 65 (.-status malformed))
+                          (.includes (.-stderr malformed)
+                                     "output set is not committed"))
+                     "malformed output-set marker escaped the verify boundary"))
+      (.writeFileSync fs marker-path marker-text))
+    (.appendFileSync fs amu (.from js/Buffer #js [0]))
+    (let [tampered (invoke js/process.execPath
+                           [(lib/join lib/root "bin" "amu")
+                            "verify-output-set" amu])]
+      (lib/ensure! (and (= 65 (.-status tampered))
+                        (.includes (.-stderr tampered)
+                                   "output set is not committed"))
+                   "output-set verification admitted mutated artifact bytes"))
     (println "policy-bound-provenance: fuel, language profile, Wasm/native bytes, and sealed provenance match policy"))
   (finally
     (.rmSync fs directory #js {:recursive true :force true})))

@@ -85,6 +85,7 @@ function runCompile({ fixture, target, output }) {
     phases: compilerTiming.phases,
     artifactBytes: statSync(output).size,
     provenanceBytes: statSync(`${output}.provenance.edn`).size,
+    publicationBytes: statSync(`${output}.publication.edn`).size,
   };
 }
 
@@ -107,6 +108,7 @@ function benchmarkTarget({ fixture, target, runs, directory }) {
     processAndNamespaceStartup: summary(samples.map((sample) => sample.startupMilliseconds)),
     artifactBytes: samples[0].artifactBytes,
     provenanceBytes: samples[0].provenanceBytes,
+    publicationBytes: samples[0].publicationBytes,
     samples,
   };
 }
@@ -168,6 +170,7 @@ async function benchmarkWorker({ fixture, target, runs, directory }) {
       artifactBytes: statSync(output).size,
       output,
       provenanceOutput: `${output}.provenance.edn`,
+      publicationOutput: `${output}.publication.edn`,
       stdout: response.stdout,
     };
   };
@@ -183,6 +186,9 @@ async function benchmarkWorker({ fixture, target, runs, directory }) {
       if (warmup.provenanceOutput
           && !readFileSync(warmup.provenanceOutput).equals(readFileSync(sample.provenanceOutput))) {
         throw new Error(`${target} cache hit changed provenance bytes`);
+      }
+      if (!readFileSync(sample.publicationOutput, "utf8").includes(":kotoba.output-set/v1")) {
+        throw new Error(`${target} cache hit omitted its output-set commit marker`);
       }
       samples.push({ roundTripMilliseconds: sample.roundTripMilliseconds,
         compilerMilliseconds: sample.compilerMilliseconds,

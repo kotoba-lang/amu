@@ -8,6 +8,7 @@
             [kotoba.compiler.nbb.compile-cache :as compile-cache]
             [kotoba.sema :as sema]
             [kotoba.compiler.nbb.io :as io]
+            [kotoba.compiler.nbb.output-set :as output-set]
             [kotoba.artifact.core :as artifact]
             [kotoba.compiler.provenance :as provenance]
             [kotoba.kir :as ir]
@@ -95,11 +96,16 @@
                      #(pr-str (artifact/edn-safe (:provenance result))))})
 
 (defn- write-wasm! [output {:keys [bytes provenance-text]}]
-  (let [provenance-output (str output ".provenance.edn")]
-    (support/timed "artifact-write" #(io/write-bytes! output bytes))
-    (support/timed "provenance-write"
-                   #(io/write-text! provenance-output provenance-text))
-    provenance-output))
+  (let [provenance-output (str output ".provenance.edn")
+        publication-output (str output ".publication.edn")
+        publication-text (output-set/serialize output bytes provenance-text)]
+    (support/timed
+     "output-set-write"
+     #(io/write-set! [{:path output :bytes bytes}
+                      {:path provenance-output :text provenance-text}
+                      {:path publication-output :text publication-text}]))
+    {:provenance-output provenance-output
+     :publication-output publication-output}))
 
 (defn- check! [args context]
   (let [input (support/timed "source-admit" #(support/source! (second args)))
@@ -131,9 +137,11 @@
         kir (support/timed "kir-lower" #(ir/lower hir))
         serialized (serialized-wasm
                     (compile-wasm! source target policy hir admission-result kir))
-        provenance-output (write-wasm! output serialized)]
+        {:keys [provenance-output publication-output]}
+        (write-wasm! output serialized)]
     {:ok true :target target :output output
-     :provenance-output provenance-output}))
+     :provenance-output provenance-output
+     :publication-output publication-output}))
 
 (defn- compile-cached! [args target output source context]
   ;; Policy material is part of artifact identity. Declarative policy controls
@@ -164,9 +172,12 @@
         (when-not (and artifact-valid? provenance-valid?)
           (compile-cache/remove! artifact-cache key)
           (throw (ex-info "compiler cache integrity mismatch" {:cache-key key})))
-        (let [provenance-output (write-wasm! output cached)]
+        (let [{:keys [provenance-output publication-output]}
+              (write-wasm! output cached)]
           {:ok true :target target :output output
-           :provenance-output provenance-output :cache :hit :cache-key key}))
+           :provenance-output provenance-output
+           :publication-output publication-output
+           :cache :hit :cache-key key}))
       (let [_ (when-let [error (:error policy-attempt)] (throw error))
             policy (support/timed "policy-decode"
                                   #(support/parse-policy-material material))
@@ -181,7 +192,8 @@
             serialized (serialized-wasm
                         (compile-wasm! source target policy hir admission-result kir))
             bytes (:bytes serialized)
-            provenance-output (write-wasm! output serialized)
+            {:keys [provenance-output publication-output]}
+            (write-wasm! output serialized)
             sealed (assoc serialized
                           :sha256 (compile-cache/sha256 bytes)
                           :provenance-sha256
@@ -191,7 +203,9 @@
         (support/timed "cache-store"
                        #(compile-cache/put! artifact-cache key sealed size))
         {:ok true :target target :output output
-         :provenance-output provenance-output :cache :miss :cache-key key
+         :provenance-output provenance-output
+         :publication-output publication-output
+         :cache :miss :cache-key key
          :stage-cache (stage-status hir-result kir-result)}))))
 
 (defn- compile! [args context]

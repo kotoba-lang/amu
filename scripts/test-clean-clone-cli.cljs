@@ -14,6 +14,7 @@
 (def checkout (.join path tmp "compiler"))
 (def fake-bin (.join path tmp "bin"))
 (def isolated-gitlibs (.join path tmp "gitlibs"))
+(def isolated-npmrc (.join path tmp "npmrc"))
 (def output (.join path tmp "named-capability.kexe"))
 (def normal-output (.join path tmp "named-capability-normal.kexe"))
 
@@ -32,7 +33,14 @@
 (try
   (run! "git" ["clone" "--quiet" "--local" "--no-hardlinks" root checkout]
         #js {:cwd tmp})
-  (run! "npm" ["ci" "--ignore-scripts"] #js {})
+  ;; User-level npm policy must not affect this clean-clone proof. In
+  ;; particular npm 11 rejects a user `allow-scripts` list during a
+  ;; project-scoped install, even though this test explicitly ignores scripts.
+  (.writeFileSync fs isolated-npmrc "")
+  (run! "npm" ["ci" "--ignore-scripts"]
+        #js {:env (js/Object.assign
+                   #js {} js/process.env
+                   #js {:NPM_CONFIG_USERCONFIG isolated-npmrc})})
   (.mkdirSync fs fake-bin #js {:recursive true})
   (let [clojure-stub (.join path fake-bin "clojure")]
     (.writeFileSync fs clojure-stub "#!/bin/sh\nexit 99\n")

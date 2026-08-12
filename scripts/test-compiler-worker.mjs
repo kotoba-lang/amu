@@ -87,8 +87,14 @@ try {
       || !readFileSync(join(directory, "valid.wasm"))
         .equals(readFileSync(join(directory, "cached.wasm")))
       || !readFileSync(join(directory, "valid.wasm.provenance.edn"))
-        .equals(readFileSync(join(directory, "cached.wasm.provenance.edn")))) {
-    throw new Error("content-addressed cache hit changed Wasm or provenance bytes");
+        .equals(readFileSync(join(directory, "cached.wasm.provenance.edn")))
+      || !readFileSync(join(directory, "cached.wasm.publication.edn"), "utf8")
+        .includes(":kotoba.output-set/v1")
+      || !readFileSync(join(directory, "cached.wasm.publication.edn"), "utf8")
+        .includes(':name "cached.wasm"')
+      || readFileSync(join(directory, "cached.wasm.publication.edn"), "utf8")
+        .includes(':name "valid.wasm"')) {
+    throw new Error("content-addressed cache hit omitted committed Wasm/provenance output");
   }
 
   const editedSource = join(directory, "i64-semantics-whitespace.kotoba");
@@ -126,6 +132,10 @@ try {
   if (!readFileSync(join(directory, "policy-miss.wasm.provenance.edn"))
     .equals(readFileSync(join(directory, "policy-hit.wasm.provenance.edn")))) {
     throw new Error("policy cache hit changed Wasm provenance bytes");
+  }
+  if (!readFileSync(join(directory, "policy-hit.wasm.publication.edn"), "utf8")
+    .includes(":kotoba.output-set/v1")) {
+    throw new Error("policy cache hit omitted its output-set commit marker");
   }
 
   send({ id: "capability-allowed",

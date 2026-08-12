@@ -8,6 +8,7 @@
             [kotoba.compiler.nbb.compile-cache :as compile-cache]
             [kotoba.sema :as sema]
             [kotoba.compiler.nbb.io :as io]
+            [kotoba.compiler.nbb.output-set :as output-set]
             [kotoba.kir.admission :as admission]
             [kotoba.artifact.core :as artifact]
             [kotoba.kir.compatibility :as compatibility]
@@ -171,18 +172,27 @@
                        #(pr-str (artifact/edn-safe (:provenance provenance-result))))}))
 
 (defn- write-native! [output {:keys [artifact-text provenance-text]}]
-  (let [provenance-output (str output ".provenance.edn")]
-    (support/timed "artifact-write" #(io/write-text! output artifact-text))
-    (support/timed "provenance-write" #(io/write-text! provenance-output provenance-text))
-    provenance-output))
+  (let [provenance-output (str output ".provenance.edn")
+        publication-output (str output ".publication.edn")
+        publication-text (output-set/serialize output artifact-text provenance-text)]
+    (support/timed
+     "output-set-write"
+     #(io/write-set! [{:path output :text artifact-text}
+                      {:path provenance-output :text provenance-text}
+                      {:path publication-output :text publication-text}]))
+    {:provenance-output provenance-output
+     :publication-output publication-output}))
 
 (defn- compile-uncached! [args source target backend output emit-program]
   (let [policy (support/timed "policy-read" #(support/read-policy args))
         hir (:value (resolve-hir! source policy nil))
         result (compile-native! hir target backend policy emit-program nil)
         serialized (serialized-native source policy result)
-        provenance-output (write-native! output serialized)]
-    {:ok true :target target :output output :provenance-output provenance-output}))
+        {:keys [provenance-output publication-output]}
+        (write-native! output serialized)]
+    {:ok true :target target :output output
+     :provenance-output provenance-output
+     :publication-output publication-output}))
 
 (defn- compile-cached! [args source target backend output emit-program context]
   (let [policy-attempt (support/timed
@@ -209,8 +219,11 @@
         (when-not (and artifact-valid? provenance-valid?)
           (compile-cache/remove! artifact-cache key)
           (throw (ex-info "compiler cache integrity mismatch" {:cache-key key})))
-        (let [provenance-output (write-native! output cached)]
-          {:ok true :target target :output output :provenance-output provenance-output
+        (let [{:keys [provenance-output publication-output]}
+              (write-native! output cached)]
+          {:ok true :target target :output output
+           :provenance-output provenance-output
+           :publication-output publication-output
            :cache :hit :cache-key key}))
       (let [_ (when-let [error (:error policy-attempt)] (throw error))
             policy (support/timed "policy-decode"
@@ -219,14 +232,17 @@
             hir (:value hir-result)
             result (compile-native! hir target backend policy emit-program stage-cache)
             serialized (serialized-native source policy result)
-            provenance-output (write-native! output serialized)
+            {:keys [provenance-output publication-output]}
+            (write-native! output serialized)
             sealed (assoc serialized
                           :artifact-sha256 (compile-cache/sha256 (:artifact-text serialized))
                           :provenance-sha256 (compile-cache/sha256 (:provenance-text serialized)))
             size (+ (.byteLength js/Buffer (:artifact-text serialized) "utf8")
                     (.byteLength js/Buffer (:provenance-text serialized) "utf8"))]
         (support/timed "cache-store" #(compile-cache/put! artifact-cache key sealed size))
-        {:ok true :target target :output output :provenance-output provenance-output
+        {:ok true :target target :output output
+         :provenance-output provenance-output
+         :publication-output publication-output
          :cache :miss :cache-key key
          :stage-cache {:hir (:cache hir-result)
                        :kir (get-in result [:stage-cache :kir])}}))))

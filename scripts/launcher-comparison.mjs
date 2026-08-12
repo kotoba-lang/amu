@@ -52,8 +52,11 @@ function compile(kind, fixture, target, output) {
   if (result.error) throw result.error;
   if (result.status !== 0)
     throw new Error(`${kind} ${target} failed (${result.status})\n${result.stdout}${result.stderr}`);
+  const publication = readFileSync(`${output}.publication.edn`, "utf8");
   return { milliseconds, artifactSha256: digest(output), artifactBytes: statSync(output).size,
-    provenanceSha256: digest(`${output}.provenance.edn`) };
+    provenanceSha256: digest(`${output}.provenance.edn`),
+    publicationBytes: statSync(`${output}.publication.edn`).size,
+    publicationCommitted: publication.includes(":kotoba.output-set/v1") };
 }
 
 const runs = positiveInteger(option("--runs", "5"), "--runs");
@@ -74,7 +77,8 @@ try {
   const reference = samples.legacyNbbFront[0];
   for (const sample of [...samples.legacyNbbFront, ...samples.amuNodeFront]) {
     if (sample.artifactSha256 !== reference.artifactSha256
-        || sample.provenanceSha256 !== reference.provenanceSha256)
+        || sample.provenanceSha256 !== reference.provenanceSha256
+        || !sample.publicationCommitted || sample.publicationBytes <= 0)
       throw new Error("launcher choice changed artifact or provenance bytes");
   }
   const legacySummary = summary(samples.legacyNbbFront.map(({ milliseconds }) => milliseconds));

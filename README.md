@@ -21,7 +21,11 @@ rather than admission alone, and every compile publishes the same sealed
 `:kotoba.provenance/v1` sidecar as the JVM compatibility path.
 `:language-profile` controls semantic analysis and HIR-cache identity rather
 than being mistaken for a capability grant. Worker cache hits integrity-check
-and reproduce both Wasm output files.
+and reproduce both Wasm output files. Primary compiles stage and `fsync` the
+artifact, provenance, and a deterministic `:kotoba.output-set/v1` marker in one
+private directory, then publish the marker last. `amu verify-output-set FILE`
+rejects absent, stale, basename-renamed, or byte-mutated sets; the marker is commit
+evidence, not a publisher signature.
 
 The accepted [worldwide 95% platform coverage roadmap](docs/adr/0001-worldwide-95-percent-platform-coverage.md)
 defines the planned native, WebAssembly, GPU, NPU, server, mobile, and IoT
@@ -941,6 +945,10 @@ bin/amu verify app.kexe
 npm ci
 npm run conformance
 ```
+
+The checked-in `.npmrc` permits no dependency lifecycle scripts. This keeps
+`npm ci` fail-closed and makes npm 11 bootstrap behavior independent of a
+developer's user-level `allow-scripts` list.
 
 The canonical `bin/amu` front runs on plain Node and starts the selected NBB
 compiler runtime once. The compatibility `bin/kotoba` driver and conformance

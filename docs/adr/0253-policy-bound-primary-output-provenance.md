@@ -56,6 +56,7 @@ The compiler-worker and performance harnesses require cache hits to preserve
 the new Wasm provenance bytes.
 
 This proves policy-bound identity for the single-file Wasm and ordinary-native
-slices. It does not make the artifact and sidecar a crash-atomic multi-file
-transaction, sign the
-provenance, or extend the Node front to Component/JVM-only packaging commands.
+slices. ADR 0254 later adds a crash-consistent committed-set marker around the
+artifact and sidecar; it does not make their filesystem names simultaneously
+visible, sign the provenance, or extend the Node front to Component/JVM-only
+packaging commands.
