@@ -108,6 +108,28 @@
     (is (some #{0xee} code) "out dx,al")
     (is (some #{0xef} code) "out dx,eax")))
 
+(deftest kernel-target-seals-page-fault-handler-idt-and-three-probes
+  (let [source (str "(defn main [] "
+                    "(let [handler (kernel-page-fault-handler-address) "
+                    "      cs (kernel-read-cs) "
+                    "      loaded (kernel-load-idt handler 10)] "
+                    "  (+ loaded cs (kernel-probe-guard-write) "
+                    "     (kernel-probe-text-write) (kernel-probe-nx-execute))))")
+        artifact (:artifact (compiler/compile-source source :x86_64-aiueos-kernel-v1))
+        code (:code artifact)
+        contains-bytes? (fn [needle]
+                          (boolean (some #{needle} (partition (count needle) 1 code))))]
+    (is (empty? (:imports artifact)))
+    (is (contains-bytes? [0x41 0x0f 0x20 0xd2 0x4c 0x8b 0x1c 0x24])
+        "handler reads CR2 and the CPU-pushed error code")
+    (is (contains-bytes? [0x66 0x41 0x8c 0xca]) "current CS selector")
+    (is (contains-bytes? [0x41 0x0f 0x01 0x1a]) "lidt [r10]")
+    (is (contains-bytes? [0x0f 0x01 0x0c 0x24]) "sidt readback")
+    (is (contains-bytes? [0xc6 0x04 0x25 0x00 0x00 0x10 0x00 0x00]) "guard write")
+    (is (contains-bytes? [0xc6 0x04 0x25 0x00 0x10 0x10 0x00 0x00]) "text write")
+    (is (contains-bytes? [0x49 0xba 0x00 0xa0 0x10 0x00 0x00 0x00 0x00 0x00])
+        "NX execute target")))
+
 (deftest kernel-target-loads-versioned-boot-info-from-its-private-context
   (let [artifact (:artifact (compiler/compile-source
                               "(defn main [] (kernel-boot-info))"
