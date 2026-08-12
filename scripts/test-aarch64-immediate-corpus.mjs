@@ -21,10 +21,10 @@ function run(command, args, options = {}) {
 }
 
 const kernels = [
-  ["add-small", 32, 5, 12],
-  ["add-negative", 32, 5, -2],
-  ["sub-shifted", 32, 5, -4091],
-  ["branch-small", 48, 5, 12],
+  ["add-small", 28, 5, 12],
+  ["add-negative", 28, 5, -2],
+  ["sub-shifted", 28, 5, -4091],
+  ["branch-small", 40, 5, 12],
   ["repeated-constant", 36, 5, 19],
 ];
 
@@ -34,7 +34,7 @@ try {
     join(root, "bench", "runtime-comparison", "immediate-corpus.kotoba"),
     "--target", "aarch64", "--output", artifact],
   { env: { ...process.env, KOTOBA_COMPILER_DAEMON: "0" } });
-  if (statSync(artifact).size > 3696)
+  if (statSync(artifact).size > 3676)
     throw new Error("AArch64 immediate corpus KEXE regressed beyond its landed size");
 
   let runner = null;
