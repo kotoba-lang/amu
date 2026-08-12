@@ -1,0 +1,33 @@
+{:adr/id :adr-0252-aarch64-leaf-constant-cache
+ :adr/title "Cache repeated constants in branchless AArch64 leaf functions"
+ :adr/status :accepted
+ :adr/date "2026-08-12"
+ :adr/markdown "0252-aarch64-leaf-constant-cache.md"
+ :adr/decision
+ {:pins {:kotoba-native "2fa12812356d472757f52b06193c8b7e738902ac"}
+  :constant-cache {:registers [:aarch64/x13 :aarch64/x14 :aarch64/x15]
+                   :scope :branchless-leaf
+                   :selection :largest-byte-saving-first
+                   :maximum-values 3
+                   :closed-safe-encoding-set true}
+  :reciprocal-cache {:register :aarch64/x16
+                     :correction-register :allocated-destination
+                     :reload-after-clobber true}
+  :unchanged [:gmir-schema :mir-schema :mc-schema :x86-64]}
+ :adr/evidence
+ {:host :apple-m1-max
+  :calls-per-sample 10000000
+  :warmup-calls 1000000
+  :same-process-paired-runs 21
+  :old {:amu-native-ns 11.028442
+        :raw-code-bytes 484 :symbol-bytes 444 :kexe-bytes 4123}
+  :new {:amu-native-ns 10.895367
+        :raw-code-bytes 316 :symbol-bytes 276 :kexe-bytes 3543}
+  :paired-speedup 1.033523
+  :llvm-o3 {:amu-median-ns 21.344 :llvm-median-ns 15.825375
+            :paired-amu-slowdown 1.378799}
+  :verification {:kotoba-native {:tests 145 :assertions 2020}
+                 :amu {:tests 964 :assertions 7608}
+                 :full-conformance true :jdk-free-wx true
+                 :compiler-bundle-parity true :runtime-engines 7
+                 :worker true :daemon true}}}
