@@ -1,0 +1,27 @@
+(ns bench.aarch64-pressure-call-corpus)
+
+(defn add-one [n] (+ n 1))
+
+(defn local-call-live-constant [n]
+  (let [live 10]
+    (+ live (add-one n))))
+
+(defn register-pressure [n]
+  (let [a (+ n 1)
+        b (+ n 2)
+        c (+ n 3)
+        d (+ n 4)
+        e (+ n 5)
+        f (+ n 6)]
+    (+ (* a b) (* c d) (* e f))))
+
+(defn sum-five [a b c d e]
+  (+ a b c d e))
+
+(defn tail-call-five [n]
+  (sum-five n 2 3 4 5))
+
+(defn main []
+  (+ (local-call-live-constant 5)
+     (register-pressure 5)
+     (tail-call-five 5)))
