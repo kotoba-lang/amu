@@ -1,0 +1,24 @@
+{:adr/id :adr-0255-aarch64-direct-result-coalescing
+ :adr/title "Coalesce AArch64 phi edges and returns into direct results"
+ :adr/status :accepted
+ :adr/date "2026-08-12"
+ :adr/markdown "0255-aarch64-direct-result-coalescing.md"
+ :adr/decision
+ {:pins {:kotoba-native "19351d082bfa0c3683d60327e941189fe96a77be"}
+  :selection {:phase :post-allocation-pre-mc
+              :return-target :aarch64/x0
+              :phi-edge-shape [:producer :optional-labels :move :jump]
+              :safety [:closed-direct-result-op-set
+                       :target-block-source-not-live-before-redefinition]}
+  :unchanged [:gmir-schema :mir-schema :mc-schema :verifier-schema :x86-64]}
+ :adr/evidence
+ {:kexe-bytes {:before 3696 :after 3676}
+  :kernels [{:name :add-small :before 32 :after 28}
+            {:name :add-negative :before 32 :after 28}
+            {:name :sub-shifted :before 32 :after 28}
+            {:name :branch-small :before 48 :after 40}
+            {:name :repeated-constant :before 36 :after 36 :control true}]
+  :verification {:kotoba-native {:tests 153 :assertions 2129}
+                 :amu {:tests 970 :assertions 7658}
+                 :corpus-code-size-contracts 5
+                 :corpus-wx-executions 5}}}
