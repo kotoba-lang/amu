@@ -12,6 +12,29 @@
 (defn- kir []
   (ir/lower (:hir (compiler/check-source source {:allow #{[:cap/call 4]}}))))
 
+(def scope
+  {:capability 4 :action :http/post :resource "https://api.example.test/messages"})
+
+(def authority-context
+  {:format :kotoba.authority-context/v1
+   :principal {:format :kotoba.principal/v1
+               :id "did:key:z6Mk-test"
+               :proof-sha256 (apply str (repeat 64 "a"))}
+   :grant {:format :kotoba.authority-grant/v1
+           :id "grant:message-post"
+           :subject "did:key:z6Mk-test"
+           :audience "amu://reference-runtime"
+           :not-before 100 :expires 200
+           :capabilities #{scope}
+           :evidence-sha256 (apply str (repeat 64 "b"))}
+   :local-policy {:format :kotoba.authority-policy/v1
+                  :id "policy:reference-runtime"
+                  :audience "amu://reference-runtime"
+                  :principals #{"did:key:z6Mk-test"}
+                  :capabilities #{scope}}
+   :audience "amu://reference-runtime"
+   :now 150})
+
 (deftest portable-reference-runtime-dispatches-an-exact-provider
   (let [host (runtime/instantiate
               (kir)
@@ -32,4 +55,51 @@
                                          :invoke identity}}})))
   (let [host (runtime/instantiate (kir))]
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #"capability denied"
+                          ((:invoke host) 'invoke ["hello"])))))
+
+(deftest dynamic-authority-is-intersected-at-provider-invocation
+  (let [host (runtime/instantiate
+              (kir)
+              {:allow #{4}
+               :authority authority-context
+               :providers {4 {:request-type :string :result-type :string
+                              :scope (constantly scope)
+                              :invoke #(str % "!")}}})
+        {:keys [result authority-decisions]}
+        ((:invoke-authorized host) 'invoke ["hello"])
+        decision (first authority-decisions)]
+    (is (= "hello!" result))
+    (is (= 1 (count authority-decisions)))
+    (is (= "did:key:z6Mk-test" (:principal decision)))
+    (is (= (select-keys scope [:capability :action :resource])
+           (select-keys decision [:capability :action :resource])))
+    (is (= "grant:message-post" (:grant-id decision)))
+    (is (= "policy:reference-runtime" (:policy-id decision)))))
+
+(deftest dynamic-authority-denies-before-provider-side-effects
+  (let [invoked? (atom false)
+        host (runtime/instantiate
+              (kir)
+              {:allow #{4}
+               :authority authority-context
+               :providers {4 {:request-type :string :result-type :string
+                              :scope (fn [_]
+                                       (assoc scope :resource
+                                              "https://api.example.test/admin"))
+                              :invoke (fn [request]
+                                        (reset! invoked? true)
+                                        request)}}})]
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"delegated authority"
+                          ((:invoke host) 'invoke ["hello"])))
+    (is (false? @invoked?))))
+
+(deftest expired-dynamic-authority-fails-closed-at-use-time
+  (let [host (runtime/instantiate
+              (kir)
+              {:allow #{4}
+               :authority (assoc authority-context :now 200)
+               :providers {4 {:request-type :string :result-type :string
+                              :scope (constantly scope)
+                              :invoke identity}}})]
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"grant rejected"
                           ((:invoke host) 'invoke ["hello"])))))

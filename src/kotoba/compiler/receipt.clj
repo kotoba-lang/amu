@@ -1,22 +1,29 @@
 (ns kotoba.compiler.receipt
-  (:require [kotoba.kir.admission :as admission]
+  (:require [kotoba.compiler.authority :as authority]
+            [kotoba.kir.admission :as admission]
             [kotoba.artifact.core :as artifact]
             [kotoba.artifact.runtime-identity :as runtime-identity]
             [kotoba.verifier.signing :as signing]))
 
 (def statuses #{:ok :trap :denied})
-(def ^:private receipt-fields
+(def ^:private receipt-fields-v1
   #{:format :artifact-envelope-sha256 :artifact-sha256 :signer :target :entry
     :required-effects :policy-sha256 :input-sha256 :output-sha256 :fuel :status
     :started-at :finished-at :parent :admission-sha256 :receipt-sha256 :executor})
+(def ^:private receipt-fields-v2 (conj receipt-fields-v1 :authority-decision))
 
 (defn- verify-schema! [receipt]
-  (when-not (and (map? receipt)
-                 (= receipt-fields (set (keys receipt)))
-                 (= :kotoba.run-receipt/v1 (:format receipt))
+  (let [fields (case (:format receipt)
+                 :kotoba.run-receipt/v1 receipt-fields-v1
+                 :kotoba.run-receipt/v2 receipt-fields-v2
+                 nil)]
+    (when-not (and (map? receipt)
+                 (= fields (set (keys receipt)))
                  (map? (:fuel receipt))
                  (= #{:initial :remaining :consumed} (set (keys (:fuel receipt)))))
-    (throw (ex-info "run receipt schema rejected" {:phase :receipt})))
+      (throw (ex-info "run receipt schema rejected" {:phase :receipt})))
+    (when (= :kotoba.run-receipt/v2 (:format receipt))
+      (authority/validate-decision! (:authority-decision receipt))))
   receipt)
 
 (defn- receipt-hash [receipt]
@@ -48,7 +55,7 @@
 (defn create
   [envelope trust policy input output
    {:keys [now started-at finished-at status target entry fuel-initial fuel-remaining parent
-           executor-key]}]
+           executor-key authority-decision]}]
   (let [{kexe :artifact signer :signer} (signing/verify envelope trust now)
         required (:effects kexe)
         policy-result (admission/check {:effects required} policy)
@@ -73,7 +80,11 @@
                       {:phase :receipt :target target :entry entry})))
     (when-not (signing/valid-key? executor-key)
       (throw (ex-info "receipt requires a valid executor signing key" {:phase :receipt})))
-    (let [body {:format :kotoba.run-receipt/v1
+    (when authority-decision
+      (authority/validate-decision! authority-decision))
+    (let [body (cond-> {:format (if authority-decision
+                                 :kotoba.run-receipt/v2
+                                 :kotoba.run-receipt/v1)
                 :artifact-envelope-sha256 (artifact/sha256 envelope)
                 :artifact-sha256 (:sha256 kexe)
                 :signer signer
@@ -87,6 +98,8 @@
                 :status status :started-at started-at :finished-at finished-at
                 :parent parent-sha
                 :admission-sha256 (artifact/sha256 policy-result)}
+                 authority-decision
+                 (assoc :authority-decision authority-decision))
           receipt-sha (artifact/sha256 body)
           executor-statement {:format :kotoba.receipt-attestation/v1
                               :receipt-sha256 receipt-sha
@@ -97,7 +110,7 @@
                         :signature (signing/sign-value executor-key executor-statement)}))))
 
 (defn verify
-  [receipt envelope trust policy input output {:keys [now parent]}]
+  [receipt envelope trust policy input output {:keys [now parent authority-decision]}]
   (verify-schema! receipt)
   (when-not (valid-hash? receipt)
     (throw (ex-info "receipt integrity mismatch" {:phase :receipt})))
@@ -121,6 +134,7 @@
                    (= (:admission-sha256 receipt) (artifact/sha256 policy-result))
                    (= (:input-sha256 receipt) (artifact/sha256 input))
                    (= (:output-sha256 receipt) (artifact/sha256 output))
+                   (= (:authority-decision receipt) authority-decision)
                    (= (:parent receipt) expected-parent)
                    (contains? statuses (:status receipt))
                    (integer? (:started-at receipt)) (integer? (:finished-at receipt))
@@ -129,8 +143,9 @@
                    (<= 0 (:remaining fuel) (:initial fuel))
                    (= (:consumed fuel) (- (:initial fuel) (:remaining fuel))))
       (throw (ex-info "receipt evidence mismatch" {:phase :receipt})))
-    {:verified? true :receipt-sha256 (:receipt-sha256 receipt)
-     :artifact-sha256 (:artifact-sha256 receipt) :status (:status receipt)}))
+    (cond-> {:verified? true :receipt-sha256 (:receipt-sha256 receipt)
+             :artifact-sha256 (:artifact-sha256 receipt) :status (:status receipt)}
+      authority-decision (assoc :authority-decision authority-decision))))
 
 (defn verify-chain [receipts trust]
   (when-not (vector? receipts)

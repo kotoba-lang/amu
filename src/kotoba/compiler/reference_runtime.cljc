@@ -1,7 +1,8 @@
 (ns kotoba.compiler.reference-runtime
   "Portable CLJ/CLJS reference application runtime. This is the executable
   language oracle; AOT/JIT backends qualify against the same KIR and vectors."
-  (:require [kotoba.kir :as ir]))
+  (:require [kotoba.compiler.authority :as authority]
+            [kotoba.kir :as ir]))
 
 (def runtime-format :kotoba.reference-runtime/v1)
 (def max-providers 256)
@@ -34,10 +35,12 @@
 (defn instantiate
   "Instantiates checked KIR with an exact, deny-by-default typed provider
   registry. Providers are maps containing :request-type, :result-type and
-  :invoke. Their declared contract must equal the guest's sealed contract."
+  :invoke. When :authority is installed, each provider must also derive an
+  exact dynamic :scope from the request before invocation."
   ([kir] (instantiate kir {}))
-  ([kir {:keys [allow providers] :or {allow #{} providers {}} :as options}]
-   (when-not (every? #{:allow :providers} (keys options))
+  ([kir {:keys [allow providers authority]
+         :or {allow #{} providers {}} :as options}]
+   (when-not (every? #{:allow :providers :authority} (keys options))
      (fail! "reference runtime options are not exact" {:keys (set (keys options))}))
    (when-not (and (set? allow) (every? #(and (integer? %) (<= 0 % 255)) allow))
      (fail! "allow must be a set of capability ids" {:allow allow}))
@@ -45,30 +48,48 @@
                   (<= (count providers) max-providers)
                   (every? #(and (integer? %) (<= 0 % 255)) (keys providers)))
      (fail! "providers must be a bounded map keyed by capability ids" {}))
-   (let [[allow providers] (canonical-capability-options allow providers)
+   (let [authority-allow allow
+         [allow providers] (canonical-capability-options allow providers)
          contracts (capability-contracts kir)]
      (doseq [[id provider] providers]
-       (when-not (and (contains? allow id)
-                      (= #{:request-type :result-type :invoke} (set (keys provider)))
+       (let [provider-fields (if authority
+                               #{:request-type :result-type :scope :invoke}
+                               #{:request-type :result-type :invoke})]
+         (when-not (and (contains? allow id)
+                      (= provider-fields (set (keys provider)))
+                      (or (nil? authority) (ifn? (:scope provider)))
                       (ifn? (:invoke provider)))
-         (fail! "provider is not exactly admitted" {:capability id})))
+           (fail! "provider is not exactly admitted" {:capability id}))))
      (doseq [[id contract] contracts]
        (when-let [provider (get providers id)]
          (when-not (= contract (select-keys provider [:request-type :result-type]))
            (fail! "provider contract does not match guest contract"
                   {:capability id :guest contract
                    :provider (select-keys provider [:request-type :result-type])}))))
-     (let [typed-dispatch
-           (fn [id request-type result-type request]
-             (when-not (contains? allow id)
-               (fail! "capability denied" {:capability id}))
-             (let [provider (or (get providers id)
-                                (fail! "capability provider is not installed"
-                                       {:capability id}))]
-               ((:invoke provider) request)))]
+     (let [invoke*
+           (fn [function-name args include-authority?]
+             (let [decisions (volatile! [])
+                   typed-dispatch
+                   (fn [id request-type result-type request]
+                     (when-not (contains? allow id)
+                       (fail! "capability denied" {:capability id}))
+                     (let [provider (or (get providers id)
+                                        (fail! "capability provider is not installed"
+                                               {:capability id}))]
+                       (when authority
+                         (vswap! decisions conj
+                                 (authority/intersect! authority authority-allow
+                                                       ((:scope provider) request))))
+                       ((:invoke provider) request)))
+                   result (ir/execute kir function-name args
+                                      {:typed-cap-call typed-dispatch})]
+               (if include-authority?
+                 {:result result :authority-decisions @decisions}
+                 result)))]
        {:format runtime-format
         :contracts contracts
         :exports (set (:exports kir))
         :invoke (fn [function-name args]
-                  (ir/execute kir function-name args
-                              {:typed-cap-call typed-dispatch}))}))))
+                  (invoke* function-name args false))
+        :invoke-authorized (fn [function-name args]
+                             (invoke* function-name args true))}))))
