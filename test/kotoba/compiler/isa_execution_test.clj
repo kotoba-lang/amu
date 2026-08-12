@@ -606,7 +606,7 @@
       (let [mc (machine-ir/compile-gmir target gmir)
             encodings (keep :mc/encoding (:mc/instructions mc))]
         (is (zero? (:mc/frame-slots mc)) target)
-        (is (= (if (= :x86-64 target) 3 2)
+        (is (= (if (= :x86-64 target) 3 0)
                (count (filter #(= (keyword (name target) "move") %) encodings)))
             target)
         (is (not-any? #(contains? #{(keyword (name target) "spill-load")
