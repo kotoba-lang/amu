@@ -43,7 +43,8 @@
 (def ^:private executable-roots
   '#{kotoba.compiler.nbb.wasm-cli
      kotoba.compiler.nbb.aarch64-cli
-     kotoba.compiler.nbb.x86-64-cli})
+     kotoba.compiler.nbb.x86-64-cli
+     kotoba.compiler.nbb.output-set-cli})
 
 (defn- clj-files [root]
   (->> (file-seq (io/file root))

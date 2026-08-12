@@ -24,9 +24,10 @@ Security invariants:
 9. Source size is not the only compilation budget: function, ABI arity,
    binding, expression-node, and post-`let` lowering costs are bounded before
    backend allocation or code emission.
-10. CLI outputs never expose partial artifacts through their final path;
-    destination symlinks are not followed, and generated private keys require
-    owner-only filesystem permissions.
+10. A successful single-file CLI publication never exposes partial bytes
+    through its final path; primary artifact/provenance sets are committed by
+    a digest-bound marker published last. Destination symlinks are not
+    followed, and generated private keys require owner-only permissions.
 11. A valid attacker-recomputed artifact hash grants no trust to embedded KIR;
     the verifier independently checks its AST, effect closure, ABI shape, and
     resource budgets before invoking a backend for byte-for-byte regeneration.
@@ -46,10 +47,15 @@ Security invariants:
 The primary JDK-free `bin/amu` path applies invariant 10 to Wasm, KEXE,
 extracted native bytes, and KEXE provenance with OS-exclusive private staging,
 exclusive/no-follow file creation, a complete write, file `fsync`, close, and
-same-filesystem atomic rename. Failure preserves the previously published
-artifact and removes staging. This is a per-file guarantee: the Node path does
-not generate private keys and does not claim a multi-file transaction between
-a KEXE and its provenance sidecar.
+same-filesystem atomic rename. Failure before rename preserves the previously
+published artifact and removes staging. For Wasm/KEXE compiles, every member is
+staged and `fsync`ed before publication; a deterministic
+`:kotoba.output-set/v1` marker binding artifact and provenance names, sizes,
+and SHA-256 identities is renamed last. A crash or rename failure may leave
+mixed payload files, but cannot leave a matching new marker. `amu
+verify-output-set` therefore rejects the set fail-closed. This is crash
+consistency, not simultaneous multi-file namespace visibility, and the Node
+path still does not generate private keys.
 
 The same primary path binds Wasm emission and the ordinary-native fuel ABI to
 the admitted policy's fuel budget and publishes sealed provenance over the
@@ -58,8 +64,9 @@ output bytes. Artifact-cache hits verify independent SHA-256 identities for
 the Wasm module and provenance.
 Declarative policy keys are removed only from the capability-grant view;
 language profile remains an input to semantic analysis and HIR cache identity.
-Each artifact and its provenance remain independently published and are not
-yet a crash-atomic multi-file transaction.
+Artifact and provenance retain independent rename boundaries, while the final
+marker is their sole committed-set boundary. The marker is not signed and does
+not replace sealed provenance verification.
 
 Arithmetic is specified independently of the JVM compiler host: i64
 add/subtract/multiply wrap modulo 2^64, while invalid signed division traps. A

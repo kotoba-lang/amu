@@ -29,7 +29,8 @@ if (typeof report.environment.compilerDirty !== "boolean") {
 }
 
 for (const target of report.targets) {
-  if (target.runs !== 1 || target.samples.length !== 1 || target.artifactBytes <= 0) {
+  if (target.runs !== 1 || target.samples.length !== 1 || target.artifactBytes <= 0
+      || target.provenanceBytes <= 0 || target.publicationBytes <= 0) {
     throw new Error(`invalid sample metadata for ${target.target}`);
   }
   const sample = target.samples[0];

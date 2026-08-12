@@ -36,6 +36,7 @@ owner-only POSIX mode. Workflow wiring makes that suite mandatory on all three
 full test hosts and the Windows ARM host; the symlink fixture may report an
 explicit skip when the Windows runner does not grant symlink privileges.
 
-This decision provides durable publication for each output file. It does not
-claim that a KEXE and its provenance sidecar are a multi-file transaction; each
-file retains an independent atomic publication boundary.
+This decision provides durable publication for each output file. It did not
+originally claim that a KEXE and its provenance sidecar were a multi-file
+transaction. ADR 0254 later adds a last-writer commit marker over those
+independent atomic publication boundaries.

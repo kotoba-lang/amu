@@ -1,0 +1,26 @@
+{:adr/id 254
+ :status :accepted
+ :decision :crash-consistent-primary-output-set
+ :primary-front :bin/amu
+ :format :kotoba.output-set/v1
+ :members [:artifact :kotoba.provenance/v1 :commit-marker]
+ :publication [:one-private-same-filesystem-stage
+               :complete-all-writes
+               :fsync-all-files
+               :close-all-files
+               :rename-payloads
+               :fsync-payload-directory-entries-on-posix
+               :rename-marker-last
+               :fsync-marker-directory-entry-on-posix]
+ :marker-binds [:destination-basenames :byte-sizes :sha256]
+ :verification {:command :amu/verify-output-set
+                :success :exact-marker-match
+                :failure :fail-closed}
+ :required-ci #{:test-nbb-io :test-policy-bound-provenance
+                :test-compiler-worker :test-performance-baseline
+                :test-amu-launcher}
+ :non-claims #{:simultaneous-multi-file-visibility
+               :windows-directory-entry-power-loss-durability
+               :publisher-authentication
+               :crash-rollback
+               :provenance-replacement}}
