@@ -5,8 +5,9 @@ language. The repository is `kotoba-lang/amu`; the name evokes Japanese
 「編む」— weaving checked source, typed KIR, and target artifacts together.
 
 The existing `kotoba.compiler.*` namespaces, `kotoba-compiler/1` wire marker,
-and `bin/kotoba-compiler` launcher remain compatibility APIs. New automation
-should use the `io.github.kotoba-lang/amu` dependency coordinate and `bin/amu`.
+and `bin/kotoba` launcher remain compatibility APIs. New automation should use
+the `io.github.kotoba-lang/amu` dependency coordinate and the plain-Node
+`bin/amu` front; `bin/kotoba-compiler` delegates to it.
 
 The accepted [worldwide 95% platform coverage roadmap](docs/adr/0001-worldwide-95-percent-platform-coverage.md)
 defines the planned native, WebAssembly, GPU, NPU, server, mobile, and IoT
@@ -326,7 +327,7 @@ source -> inert reader -> typed/effect HIR -> SSA-like KIR
 
 ## Runtime: nbb-native for Wasm and ordinary native compile/check
 
-`bin/kotoba compile`/`check` for `wasm32*` and ordinary `x86_64*`/
+`bin/amu compile`/`check` for `wasm32*` and ordinary `x86_64*`/
 `aarch64*` targets runs entirely under `nbb` (ClojureScript on Node) --
 **no JVM process is spawned at all** for those paths. Target-specific
 entrypoints avoid loading either native emitter for Wasm and avoid loading the
@@ -361,7 +362,7 @@ evidence are not part of this nbb-native slice and remain JVM/compat. Ordinary
 native nbb compilation still seals artifacts, runs the independent verifier,
 and emits provenance before writing. The split mirrors the same way
 `kototama`'s own R1 (JVM/Chicory tender) is demoted to "compat suite" behind
-its R2 native-WASM-host path. `bin/kotoba` picks the path automatically
+its R2 native-WASM-host path. `bin/amu` picks the path automatically
 based on the subcommand and `--target`; nothing about the CLI's argument
 shape changes.
 
@@ -908,17 +909,19 @@ the estimated `let`-elided lowering size are checked before backend emission;
 compact substitution chains cannot amplify into unbounded native code.
 
 ```bash
-bin/kotoba -M compile example.kotoba --target wasm32 --output app.wasm
-bin/kotoba -M compile example.kotoba --target wasm32-wasi --output service.wasm
-bin/kotoba -M compile example.kotoba --target x86_64 --output app.kexe
-bin/kotoba -M compile example.kotoba --target x86_64-windows --output app-windows.kexe
-bin/kotoba -M verify app.kexe
+bin/amu compile example.kotoba --target wasm32 --output app.wasm
+bin/amu compile example.kotoba --target wasm32-wasi --output service.wasm
+bin/amu compile example.kotoba --target x86_64 --output app.kexe
+bin/amu compile example.kotoba --target x86_64-windows --output app-windows.kexe
+bin/amu verify app.kexe
 npm ci
 npm run conformance
 ```
 
-The public `bin/kotoba` driver and conformance orchestrator run on NBB rather
-than POSIX shell. Clojure remains a private compiler implementation detail.
+The canonical `bin/amu` front runs on plain Node and starts the selected NBB
+compiler runtime once. The compatibility `bin/kotoba` driver and conformance
+orchestrator run on NBB rather than POSIX shell. Clojure remains a private
+compiler implementation detail.
 On x86-64 Linux and AArch64 macOS/Linux, `npm run conformance` additionally compiles the small
 auditable loader in `tools/kexe_loader.c`, maps verified code RW, transitions it
 to RX with `mprotect`, and executes a runtime arithmetic/comparison vector. No
@@ -1081,10 +1084,10 @@ kotoba -M compile examples/capability-named.kotoba --target wasm32 \
   --policy examples/capability-named.edn --output capability-named.wasm
 ```
 
-After putting `bin/kotoba` on `PATH`, the public command is simply
-`kotoba -M ...`. The bootstrap currently uses Clojure internally, but that is
-not part of the compiler CLI contract and can be replaced by the self-hosted
-Kotoba driver without changing user commands.
+After putting `bin/amu` on `PATH`, the canonical command is `amu ...`.
+`kotoba -M ...` remains accepted as a compatibility API. JVM-only operations
+remain private implementation paths and can be replaced without changing the
+Amu command contract.
 
 Failures emit exactly one EDN value on stderr and no host stack trace:
 

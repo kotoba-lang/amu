@@ -60,8 +60,8 @@ function timingFrom(stderr) {
 
 function runCompile({ fixture, target, output }) {
   const started = process.hrtime.bigint();
-  const result = spawnSync(join(root, "bin", "kotoba"),
-    ["-M", "compile", fixture, "--target", target, "--output", output],
+  const result = spawnSync(process.execPath,
+    [join(root, "bin", "amu"), "compile", fixture, "--target", target, "--output", output],
     {
       cwd: root,
       encoding: "utf8",
@@ -128,7 +128,8 @@ async function nextWorkerMessage(iterator, stderr) {
 
 async function benchmarkWorker({ fixture, target, runs, directory }) {
   const started = process.hrtime.bigint();
-  const child = spawn(join(root, "bin", "kotoba"), ["-M", "worker", "--target", target], {
+  const child = spawn(process.execPath,
+    [join(root, "bin", "amu"), "worker", "--target", target], {
     cwd: root,
     stdio: ["pipe", "pipe", "pipe"],
     env: { ...process.env, KOTOBA_COMPILER_TIMING: "1",

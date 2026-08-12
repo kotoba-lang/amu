@@ -132,12 +132,12 @@ function build(directory, target) {
     return result;
   };
 
-  step("amuWasm", join(root, "bin", "kotoba"),
-    ["-M", "compile", fixture, "--target", "wasm32", "--output", wasm]);
-  step("amuNative", join(root, "bin", "kotoba"),
-    ["-M", "compile", fixture, "--target", target, "--output", native]);
-  const extracted = step("amuNativeExtract", join(root, "bin", "kotoba"),
-    ["-M", "extract-native", native, "--symbol", "kernel", "--output", rawNative]);
+  step("amuWasm", process.execPath,
+    [join(root, "bin", "amu"), "compile", fixture, "--target", "wasm32", "--output", wasm]);
+  step("amuNative", process.execPath,
+    [join(root, "bin", "amu"), "compile", fixture, "--target", target, "--output", native]);
+  const extracted = step("amuNativeExtract", process.execPath,
+    [join(root, "bin", "amu"), "extract-native", native, "--symbol", "kernel", "--output", rawNative]);
   const offsetMatch = extracted.stdout.match(/:offset\s+([0-9]+)/);
   if (!offsetMatch) throw new Error("native extraction omitted kernel offset");
   const nativeOffset = offsetMatch[1];

@@ -26,6 +26,21 @@ npm run benchmark-compile -- --runs 7
 There is deliberately no universal default ceiling: hosted-runner contention
 and machine class are part of the result, not noise to hide.
 
+## Launcher startup comparison
+
+The canonical plain-Node front can be compared with the NBB compatibility
+front using alternating process-cold samples:
+
+```sh
+npm run benchmark-launcher -- --runs 7 --output launcher.json
+```
+
+The `amu.launcher-comparison/v1` report records the host, Node version, exact
+commit and dirty state, every sample, median and p95, plus artifact and
+provenance digests. It fails if the launcher choice changes either output.
+This isolates the extra NBB interpreter used by the compatibility front; it
+does not measure generated-program runtime or claim a faster compiler core.
+
 ### Development evidence
 
 Implementation commit `9418758` was measured clean
@@ -75,7 +90,7 @@ artifact, policy, or error contracts.
 A target-locked worker accepts sequential newline-delimited JSON:
 
 ```sh
-bin/kotoba -M worker --target wasm32
+bin/amu worker --target wasm32
 ```
 
 After the `ready` response, a request carries ordinary CLI arguments:

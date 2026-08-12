@@ -10,8 +10,7 @@
 (def tmp (.mkdtempSync fs (.join path (.tmpdir os) "amu-jdk-free-native-")))
 (def shadow (.join path tmp "shadow"))
 (def marker (.join path tmp "jvm-invoked.log"))
-(def nbb-cli (.join path root "node_modules" "nbb" "cli.js"))
-(def kotoba (.join path root "bin" "kotoba"))
+(def amu (.join path root "bin" "amu"))
 (defn file [name] (.join path tmp name))
 (defn ensure! [condition message] (when-not condition (throw (js/Error. message))))
 
@@ -48,7 +47,7 @@
         env (js/Object.assign #js {} js/process.env
                               #js {"PATH" (str shadow (.-delimiter path) (.-PATH js/process.env))
                                    "JAVA_HOME" (.join path tmp "no-java-home")})
-        invoke (fn [args] (run js/process.execPath (into [nbb-cli kotoba "-M"] args) env))
+        invoke (fn [args] (run js/process.execPath (into [amu] args) env))
         loader (file "kexe-loader")]
     (run "cc" ["-std=c11" "-O2" "-Wall" "-Wextra" "-Werror"
                 (.join path root "tools" "kexe_loader.c") "-o" loader] env)
