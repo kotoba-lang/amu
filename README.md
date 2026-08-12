@@ -100,6 +100,16 @@ and `aiueos` owns grant decisions, while a small native host independently
 enforces the resulting grant. See
 [`ADR-2607252500`](https://github.com/com-junkawasaki/root/blob/main/90-docs/adr/2607252500-kotoba-wasm-component-first-execution-boundary.edn).
 
+The portable reference runtime also defines the identity-to-capability
+boundary. A host resolves and verifies an identity proof (DID or another URI
+scheme) and supplies a sealed principal, delegated grant, local policy and
+evidence hashes. Immediately before each provider call, Amu intersects the
+exact request scope with the program's admitted capability set, the delegated
+grant and local policy. The runtime does not resolve DIDs or expose ambient
+identity authority. An authorized call can emit a
+`kotoba.run-receipt/v2` whose executor signature binds the resulting authority
+decision; receipts without dynamic authority remain compatible v1 receipts.
+
 For production native effects, the dependency and evidence direction is
 strictly one-way:
 

@@ -19,6 +19,18 @@
            :target :x86_64-kotoba-v1 :entry 'main
            :fuel-initial 256 :fuel-remaining 255 :parent nil})
 
+(def authority-decision
+  {:format :kotoba.authority-decision/v1
+   :principal "did:key:z6Mk-test"
+   :audience "amu://reference-runtime"
+   :capability 4
+   :action :http/post
+   :resource "https://api.example.test/messages"
+   :grant-id "grant:message-post"
+   :policy-id "policy:reference-runtime"
+   :grant-evidence-sha256 (apply str (repeat 64 "a"))
+   :principal-proof-sha256 (apply str (repeat 64 "b"))})
+
 (deftest receipt-binds-verified-execution-evidence
   (let [{:keys [envelope key trust policy input output]} (fixture)
         value (receipt/create envelope trust policy input output (assoc opts :executor-key key))
@@ -49,6 +61,27 @@
                                           (assoc trust :revoked-signers
                                                  #{(get-in envelope [:statement :signer])})
                                           policy input output {:now 1500 :parent nil})))))
+
+(deftest receipt-v2-binds-the-authority-decision
+  (let [{:keys [envelope key trust policy input output]} (fixture)
+        value (receipt/create envelope trust policy input output
+                              (assoc opts :executor-key key
+                                     :authority-decision authority-decision))
+        verified (receipt/verify value envelope trust policy input output
+                                 {:now 1500 :parent nil
+                                  :authority-decision authority-decision})]
+    (is (= :kotoba.run-receipt/v2 (:format value)))
+    (is (= authority-decision (:authority-decision verified)))
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"evidence mismatch"
+                          (receipt/verify value envelope trust policy input output
+                                          {:now 1500 :parent nil})))
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"integrity mismatch"
+                          (receipt/verify
+                           (assoc-in value [:authority-decision :resource]
+                                     "https://api.example.test/admin")
+                           envelope trust policy input output
+                           {:now 1500 :parent nil
+                            :authority-decision authority-decision})))))
 
 (deftest receipt-schema-rejects-unknown-fields-before-hash-or-signature
   (let [{:keys [envelope key trust policy input output]} (fixture)
