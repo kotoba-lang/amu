@@ -35,7 +35,7 @@ required because the same physical register name may represent distinct
 allocations after control-flow joins.
 
 Amu pins `kotoba-native`
-`19351d082bfa0c3683d60327e941189fe96a77be`. GMIR, MIR, MC, verifier schemas,
+`a3ed13b114e806cf005cdf6122ea4c3a630e733f`. GMIR, MIR, MC, verifier schemas,
 and x86-64 selection remain unchanged.
 
 ## Evidence
@@ -57,7 +57,7 @@ by this local shape.
 
 Verification passed:
 
-- `kotoba-native`: 153 tests, 2,129 assertions;
+- `kotoba-native`: 153 tests, 2,145 assertions;
 - Amu: 970 tests, 7,658 assertions;
 - five exact symbol-size contracts and five real AArch64 W^X executions;
 - a negative liveness test that retains the move when its source is live at
