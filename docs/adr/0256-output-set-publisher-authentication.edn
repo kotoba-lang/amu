@@ -1,0 +1,38 @@
+{:adr/id 256
+ :status :accepted
+ :decision :output-set-publisher-authentication
+ :primary-front :bin/amu
+ :commands {:sign [:amu/sign-output-set
+                   :artifact
+                   :key
+                   :not-before
+                   :expires]
+            :verify [:amu/verify-output-set
+                     :attestation
+                     :trust
+                     :now]}
+ :formats {:envelope :kotoba.output-attestation/v1
+           :statement :kotoba.output-attestation-statement/v1
+           :trust :kotoba.trust/v1}
+ :signed-identities [:output-set-sha256 :provenance-sha256
+                     :artifact-sha256 :target]
+ :ordered-verification [:committed-output-set
+                        :provenance-bound-output-admission
+                        :closed-attestation-schema
+                        :ed25519-signature
+                        :trusted-and-not-revoked-signer
+                        :not-revoked-output-identities
+                        :validity-interval
+                        :exact-admitted-identities]
+ :success {:publisher-authenticated true
+           :publisher :ed25519-signer-id
+           :publisher-attestation :kotoba.output-attestation/v1}
+ :required-ci #{:test-policy-bound-provenance
+                :test-output-set-publisher-auth}
+ :non-claims #{:human-or-legal-identity
+               :repository-control
+               :source-review
+               :reproducible-build
+               :cross-target-equivalence
+               :trusted-timestamp
+               :key-custody}}

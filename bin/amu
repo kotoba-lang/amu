@@ -26,7 +26,8 @@ const usage = [
   "       amu sign program.kexe --key key.edn --expires <epoch> --output signed.kexe",
   "       amu run signed.kexe --trust trust.edn --runtime runtime.edn --loader kotoba-loader ...",
   "       amu verify <file>",
-  "       amu verify-output-set <artifact>  # committed + provenance-bound; not publisher authentication",
+  "       amu sign-output-set <artifact> --key key.edn --not-before <epoch> --expires <epoch>",
+  "       amu verify-output-set <artifact> [--attestation FILE --trust FILE --now <epoch>]",
   "       amu <other compiler command> ...",
 ];
 
@@ -50,7 +51,7 @@ function option(args, flag) {
 function nbbNativeEligible(args) {
   const command = args[0];
   return command === "check" || command === "extract-native"
-    || command === "verify-output-set"
+    || command === "verify-output-set" || command === "sign-output-set"
     || (command === "worker" && nbbNativeTargets.has(option(args, "--target")))
     || (command === "compile" && nbbNativeTargets.has(option(args, "--target")));
 }
@@ -59,7 +60,7 @@ function nbbEntrypoint(root, args) {
   const command = args[0];
   const target = option(args, "--target");
   const wasm = command === "check" || target === undefined || target.startsWith("wasm32");
-  const filename = command === "verify-output-set" ? "output_set_cli.cljs"
+  const filename = ["verify-output-set", "sign-output-set"].includes(command) ? "output_set_cli.cljs"
     : command === "extract-native" ? "x86_64_cli.cljs"
     : wasm ? "wasm_cli.cljs"
       : target.startsWith("aarch64") ? "aarch64_cli.cljs" : "x86_64_cli.cljs";

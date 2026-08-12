@@ -29,9 +29,12 @@ the closed, sealed provenance schema against the exact artifact. Wasm must have
 the declared byte identity and validate as WebAssembly; native KEXE must have
 the declared sealed identity and pass independent native verification. Its
 `:kotoba.output-admission/v1` result names the target-specific verification
-performed and deliberately reports
-`:publisher-authenticated false`: this is committed artifact integrity, not a
-publisher signature or trust decision.
+performed. Without an attestation it deliberately reports
+`:publisher-authenticated false`. A publisher can sign the admitted set with
+`amu sign-output-set`; verification with an explicit attestation, trust policy,
+and evaluation time returns `:publisher-authenticated true` only after checking
+the Ed25519 signature, trust, revocation, validity interval, and exact marker,
+provenance, artifact, and target identities.
 
 The accepted [worldwide 95% platform coverage roadmap](docs/adr/0001-worldwide-95-percent-platform-coverage.md)
 defines the planned native, WebAssembly, GPU, NPU, server, mobile, and IoT
@@ -1080,6 +1083,26 @@ before any signing operation. `public-key` emits a separate
 its algorithm, encoding, fingerprint, and exact shape before provisioning
 trust. Direct provisioning from a validated signing key remains supported for
 bootstrap compatibility but is discouraged outside local setup.
+
+The primary output-set path authenticates Wasm and ordinary-native publications
+without wrapping or changing the artifact bytes. It signs the already admitted
+commit marker, sealed provenance identity, primary artifact identity, and
+target. The same `:kotoba.trust/v1` signer and artifact-revocation policy is
+used, and all three verification options are mandatory together so an omitted
+trust input cannot silently downgrade a requested authenticated verification.
+
+```bash
+amu sign-output-set app.wasm --key key.edn \
+  --not-before 1900000000 --expires 2000000000 \
+  --output app.wasm.attestation.edn
+amu verify-output-set app.wasm \
+  --attestation app.wasm.attestation.edn --trust trust.edn --now 1950000000
+```
+
+An attestation is an endorsement of that exact committed output set, not proof
+that the publisher controlled the source repository or that Wasm and native
+targets are semantically equivalent. Key custody, signer provisioning, and
+revocation policy remain deployment responsibilities.
 
 Verified executions can produce `kotoba.run-receipt/v1`. Its hash binds the
 signed envelope and artifact, signer, target/entry, required effects, exact
