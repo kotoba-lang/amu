@@ -1,0 +1,32 @@
+{:adr/id :adr-0253-aarch64-reciprocal-shifted-correction
+ :adr/title "Combine AArch64 reciprocal sign correction into shifted ADD"
+ :adr/status :accepted
+ :adr/date "2026-08-12"
+ :adr/markdown "0253-aarch64-reciprocal-shifted-correction.md"
+ :adr/decision
+ {:pins {:kotoba-native "81ba705d48295cccb6f192af29c764bac8bfcf45"}
+  :replacement {:old [:lsr-sign :add-sign]
+                :new :add-shifted-register-lsr-63}
+  :cached-reciprocal-register :aarch64/x16
+  :rejected-alternative {:kind :mersenne-product-shift-subtract
+                         :paired-speedup 0.913211
+                         :reason :runtime-regression}
+  :unchanged [:gmir-schema :mir-schema :mc-schema :verifier-schema :x86-64]}
+ :adr/evidence
+ {:host :apple-m1-max
+  :fine-grained-pairs 31
+  :blocks-per-pair 100
+  :calls-per-block 100000
+  :old {:raw-code-bytes 316 :symbol-bytes 276 :kexe-bytes 3543
+        :median-ns 19.372717}
+  :new {:raw-code-bytes 284 :symbol-bytes 244 :kexe-bytes 3447
+        :median-ns 19.267004}
+  :paired-speedup 1.002410
+  :new-wins 16
+  :llvm-o3 {:same-process true :amu-median-ns 11.690154
+            :llvm-median-ns 11.578571 :paired-amu-slowdown 1.008324}
+  :verification {:kotoba-native {:tests 146 :assertions 2023}
+                 :amu {:tests 964 :assertions 7608}
+                 :full-conformance true :jdk-free-wx true
+                 :compiler-bundle-parity true :runtime-engines 7
+                 :worker true :daemon true}}}
