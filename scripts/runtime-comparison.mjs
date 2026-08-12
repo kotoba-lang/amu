@@ -2,7 +2,7 @@
 
 import { spawnSync } from "node:child_process";
 import {
-  mkdtempSync, readFileSync, rmSync, statSync, writeFileSync,
+  mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync,
 } from "node:fs";
 import { tmpdir, cpus, totalmem } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -125,6 +125,7 @@ function build(directory, target) {
   const rust = join(directory, "kernel-rust");
   const cljs = join(directory, "kernel-cljs.cjs");
   const cljsOutputDir = join(directory, "cljs-out");
+  mkdirSync(cljsOutputDir, { recursive: true });
   const durations = {};
   const step = (name, command, args, options) => {
     const result = execute(command, args, options);
