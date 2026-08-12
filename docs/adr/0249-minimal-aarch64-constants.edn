@@ -1,0 +1,28 @@
+{:adr/id :adr-0249-minimal-aarch64-constants
+ :adr/title "Materialize AArch64 i64 constants with the shortest wide-move sequence"
+ :adr/status :accepted
+ :adr/date "2026-08-12"
+ :adr/markdown "0249-minimal-aarch64-constants.md"
+ :adr/decision
+ {:pins {:kotoba-native "1df2e7eb91e6f1da796dbbc335e24ef6a29e3161"
+         :kotoba-verifier "e67c50bb50bc7b4806dd7447ea07276ead6c022c"}
+  :encoding {:seeds [:movz :movn]
+             :choose :fewest-wide-move-words
+             :patch :movk-non-fill-lanes
+             :tie-break :movz}
+  :fixed-width-sites [:local-branch-guard :deferred-data-address]}
+ :adr/evidence
+ {:host :apple-m1-max
+  :calls 1000000
+  :warmup-calls 100000
+  :runs 5
+  :old {:amu-native-ns 21.293 :llvm-o3-ns 9.553750
+        :slowdown-vs-llvm-o3 2.228758 :raw-code-bytes 880 :kexe-bytes 5344}
+  :new {:amu-native-ns 18.312 :llvm-o3-ns 9.696958
+        :slowdown-vs-llvm-o3 1.888427 :raw-code-bytes 580 :kexe-bytes 4437}
+  :verification {:kotoba-native {:tests 139 :assertions 1999}
+                 :kotoba-verifier {:tests 46 :assertions 261}
+                 :amu {:tests 964 :assertions 7608}
+                 :runtime-engines 7
+                 :full-conformance true
+                 :jdk-free-wx true}}}
