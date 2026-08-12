@@ -15,6 +15,14 @@ hermetically and compiles/executes a representative native artifact with JVM
 executables removed from `PATH`; every dependency pin change must regenerate
 the lock with `nbb scripts/lock-classpath.cljs`.
 
+Primary Wasm and ordinary-native compilation are policy-bound as well:
+`:budgets :fuel` controls the emitted Wasm module or sealed native fuel ABI
+rather than admission alone, and every compile publishes the same sealed
+`:kotoba.provenance/v1` sidecar as the JVM compatibility path.
+`:language-profile` controls semantic analysis and HIR-cache identity rather
+than being mistaken for a capability grant. Worker cache hits integrity-check
+and reproduce both Wasm output files.
+
 The accepted [worldwide 95% platform coverage roadmap](docs/adr/0001-worldwide-95-percent-platform-coverage.md)
 defines the planned native, WebAssembly, GPU, NPU, server, mobile, and IoT
 targets. It is a completion plan, not a claim of current platform support.

@@ -53,7 +53,7 @@ function compile(kind, fixture, target, output) {
   if (result.status !== 0)
     throw new Error(`${kind} ${target} failed (${result.status})\n${result.stdout}${result.stderr}`);
   return { milliseconds, artifactSha256: digest(output), artifactBytes: statSync(output).size,
-    provenanceSha256: target === "wasm32" ? null : digest(`${output}.provenance.edn`) };
+    provenanceSha256: digest(`${output}.provenance.edn`) };
 }
 
 const runs = positiveInteger(option("--runs", "5"), "--runs");

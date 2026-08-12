@@ -85,8 +85,10 @@ try {
   const cached = await next();
   if (cached.status !== 0 || !cached.stdout.includes(":cache :hit")
       || !readFileSync(join(directory, "valid.wasm"))
-        .equals(readFileSync(join(directory, "cached.wasm")))) {
-    throw new Error("content-addressed cache hit changed Wasm bytes");
+        .equals(readFileSync(join(directory, "cached.wasm")))
+      || !readFileSync(join(directory, "valid.wasm.provenance.edn"))
+        .equals(readFileSync(join(directory, "cached.wasm.provenance.edn")))) {
+    throw new Error("content-addressed cache hit changed Wasm or provenance bytes");
   }
 
   const editedSource = join(directory, "i64-semantics-whitespace.kotoba");
@@ -120,6 +122,10 @@ try {
   const policyHit = await next();
   if (policyHit.status !== 0 || !policyHit.stdout.includes(":cache :hit")) {
     throw new Error("identical explicit policy did not hit the cache");
+  }
+  if (!readFileSync(join(directory, "policy-miss.wasm.provenance.edn"))
+    .equals(readFileSync(join(directory, "policy-hit.wasm.provenance.edn")))) {
+    throw new Error("policy cache hit changed Wasm provenance bytes");
   }
 
   send({ id: "capability-allowed",

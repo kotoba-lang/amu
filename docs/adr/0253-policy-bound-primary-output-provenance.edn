@@ -1,0 +1,19 @@
+{:adr/id 253
+ :status :accepted
+ :decision :policy-bound-primary-output-provenance
+ :primary-front :bin/amu
+ :effective-fuel [:policy/budgets-fuel :default-512]
+ :policy-partition {:compiler-controls #{:budgets :language-profile}
+                    :admission :capability-keys-only
+                    :hir-cache-key [:source :language-profile]}
+ :outputs [:wasm :ordinary-native :kotoba.provenance/v1]
+ :native-fuel {:range [1 1048576]
+               :node-normalization :checked-exact-bigint-to-number}
+ :cache {:identity [:target :source :exact-policy-material]
+         :integrity [:wasm-sha256 :provenance-sha256]
+         :accounting :combined-bytes
+         :corruption :evict-and-fail}
+ :required-ci :test-policy-bound-provenance
+ :non-claims #{:crash-atomic-multi-file-publication
+               :signed-provenance
+               :component-node-front}}
