@@ -77,13 +77,20 @@ function spawn(command, args, options = {}) {
 function resolveWithLock(root, nbbCli) {
   const script = path.join(root, "scripts", "print-classpath.cljs");
   if (!fs.existsSync(path.join(root, "deps-lock.edn")) || !fs.existsSync(script)) return null;
-  const result = spawn(process.execPath,
-    [nbbCli, "--classpath", path.join(root, "src"), script, root], {
-      cwd: root, encoding: "utf8", maxBuffer: 16 * 1024 * 1024,
-    });
-  if (result.error || result.status !== 0) return null;
-  const entries = result.stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-  return entries.length === 0 ? null : entries;
+  // A cold hosted runner clones the pinned closure from GitHub. A transient
+  // fetch failure must not silently demote an otherwise valid lock to the JVM
+  // path; git's content-addressed partial progress makes a bounded retry safe.
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const result = spawn(process.execPath,
+      [nbbCli, "--classpath", path.join(root, "src"), script, root], {
+        cwd: root, encoding: "utf8", maxBuffer: 16 * 1024 * 1024,
+      });
+    if (!result.error && result.status === 0) {
+      const entries = result.stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+      if (entries.length > 0) return entries;
+    }
+  }
+  return null;
 }
 
 function resolveWithJvm(root) {

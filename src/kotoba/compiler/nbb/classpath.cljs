@@ -83,16 +83,25 @@
   (let [dir (checkout-dir coordinate git-sha)]
     (when-not (.existsSync fs dir)
       (.mkdirSync fs dir #js {:recursive true})
-      (let [clone (git! ["clone" "--quiet" "--no-checkout" git-url dir] {})]
-        (when-not (git-ok? clone)
-          (throw (ex-info "git clone failed"
-                          {:phase :fetch :coordinate coordinate :url git-url
-                           :stderr (some-> (.-stderr clone) str/trim)}))))
-      (let [checkout (git! ["-C" dir "checkout" "--quiet" git-sha] {})]
-        (when-not (git-ok? checkout)
-          (throw (ex-info "git checkout of the pinned commit failed"
-                          {:phase :fetch :coordinate coordinate :sha git-sha
-                           :stderr (some-> (.-stderr checkout) str/trim)})))))
+      (let [complete? (atom false)]
+        (try
+          (let [clone (git! ["clone" "--quiet" "--no-checkout" git-url dir] {})]
+            (when-not (git-ok? clone)
+              (throw (ex-info "git clone failed"
+                              {:phase :fetch :coordinate coordinate :url git-url
+                               :stderr (some-> (.-stderr clone) str/trim)}))))
+          (let [checkout (git! ["-C" dir "checkout" "--quiet" git-sha] {})]
+            (when-not (git-ok? checkout)
+              (throw (ex-info "git checkout of the pinned commit failed"
+                              {:phase :fetch :coordinate coordinate :sha git-sha
+                               :stderr (some-> (.-stderr checkout) str/trim)}))))
+          (reset! complete? true)
+          (finally
+            ;; `git clone` leaves its destination behind on transport failure.
+            ;; Remove only the fresh, exact content-addressed directory we
+            ;; created so the launcher's bounded retry can actually retry.
+            (when-not @complete?
+              (.rmSync fs dir #js {:recursive true :force true}))))))
     dir))
 
 (defn- entry-directories [{:keys [coordinate git-sha paths] :as entry}]
