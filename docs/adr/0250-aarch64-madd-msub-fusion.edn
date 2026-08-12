@@ -1,0 +1,36 @@
+{:adr/id :adr-0250-aarch64-madd-msub-fusion
+ :adr/title "Fuse safe allocated AArch64 multiply-add and multiply-subtract pairs"
+ :adr/status :accepted
+ :adr/date "2026-08-12"
+ :adr/markdown "0250-aarch64-madd-msub-fusion.md"
+ :adr/decision
+ {:pins {:kotoba-mir "3d2673472b6100d2928ac998c02709b4238c0058"
+         :kotoba-codegen "c85088bfe9dd85e9c6a65d986f34a651b2af7d13"
+         :kotoba-native "98dd22a63044ce9cd5ddb7babb3efc7cdcddcbbe"
+         :kotoba-verifier "1c28555e57a3c26c531353f8b86ac32c6f263455"}
+  :operations [:aarch64/multiply-add :aarch64/multiply-subtract]
+  :fusion {:stage :allocated-mir-to-mc
+           :transparent-intervening-operation :constant
+           :requires [:adjacent-consumer-after-constants
+                      :unclobbered-product-and-inputs
+                      :distinct-product-and-addend]
+           :subtract-shape :addend-minus-product
+           :x86-64 :unchanged}}
+ :adr/evidence
+ {:host :apple-m1-max
+  :calls-per-sample 10000000
+  :warmup-calls 1000000
+  :alternating-runs 15
+  :old {:amu-native-ns 22.7294 :raw-code-bytes 580 :kexe-bytes 4437}
+  :new {:amu-native-ns 19.0757 :raw-code-bytes 516 :kexe-bytes 4259}
+  :speedup 1.191537
+  :time-reduction 0.160748
+  :llvm-o3 {:median-ns 14.6846583 :amu-slowdown 1.566724}
+  :verification {:kotoba-mir {:tests 31 :assertions 898}
+                 :kotoba-codegen {:tests 20 :assertions 118}
+                 :kotoba-native {:tests 142 :assertions 2010}
+                 :kotoba-verifier {:tests 46 :assertions 261}
+                 :amu {:tests 964 :assertions 7608}
+                 :runtime-engines 7
+                 :full-conformance true
+                 :jdk-free-wx true}}}
