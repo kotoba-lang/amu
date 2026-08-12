@@ -84,7 +84,7 @@ function runCompile({ fixture, target, output }) {
     startupMilliseconds: wallMilliseconds - commandPhase.milliseconds,
     phases: compilerTiming.phases,
     artifactBytes: statSync(output).size,
-    provenanceBytes: target === "wasm32" ? 0 : statSync(`${output}.provenance.edn`).size,
+    provenanceBytes: statSync(`${output}.provenance.edn`).size,
   };
 }
 
@@ -167,7 +167,7 @@ async function benchmarkWorker({ fixture, target, runs, directory }) {
       compilerMilliseconds: command.milliseconds,
       artifactBytes: statSync(output).size,
       output,
-      provenanceOutput: target === "wasm32" ? null : `${output}.provenance.edn`,
+      provenanceOutput: `${output}.provenance.edn`,
       stdout: response.stdout,
     };
   };

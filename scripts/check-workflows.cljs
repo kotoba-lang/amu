@@ -56,7 +56,9 @@
   (lib/ensure! (.includes test-workflow "npm run test-nbb-classpath-hermetic")
                "workflow-lint: dependency lock digest gate is missing")
   (lib/ensure! (.includes test-workflow "npm run test-jdk-free-native")
-               "workflow-lint: JDK-free native compiler conformance is missing"))
+               "workflow-lint: JDK-free native compiler conformance is missing")
+  (lib/ensure! (.includes test-workflow "npm run test-policy-bound-provenance")
+               "workflow-lint: policy-bound output provenance parity gate is missing"))
 
 (doseq [name ["test.yml" "browser-matrix.yml"]
         :let [workflow (lib/read-text (lib/join workflow-dir name))]]

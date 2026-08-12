@@ -70,6 +70,10 @@ altered nothing on the `:clj` side.
 
 ## Non-goals
 
+Update: ADR 0253 later moved Wasm provenance and policy-bound fuel emission
+into the primary Node path. The historical non-goal below describes this
+ADR's original 2026-07-16 boundary, not the current compiler.
+
 x86_64/aarch64 native codegen, ELF64/PE32+ packaging, signing, the
 independent verifier, release/coverage evidence, and every `kotoba.compiler.
 cli` subcommand besides `compile`/`check` are unchanged and remain JVM-only

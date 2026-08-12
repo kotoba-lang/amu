@@ -40,6 +40,23 @@
    "aarch64-android" :aarch64-android-kotoba-v1
    "aarch64-ios" :aarch64-ios-kotoba-v1})
 
+(def ^:private max-native-fuel 1048576)
+
+(defn- native-fuel! [policy]
+  (let [declared (or (get-in policy [:budgets :fuel]) 512)
+        ;; Bounded EDN preserves integer literals as BigInt on the Node path.
+        ;; The native ABI and KIR oracle use plain host integers, while the
+        ;; verifier admits at most 2^20. Converting only after this bound check
+        ;; is exact in JavaScript and preserves the original policy value for
+        ;; provenance hashing.
+        fuel (if (i64/bigint-value? declared) (js/Number declared) declared)]
+    (when-not (and (js/Number.isSafeInteger fuel)
+                   (<= 1 fuel max-native-fuel))
+      (throw (ex-info "native fuel budget is not admitted"
+                      {:phase :verify :fuel declared
+                       :maximum max-native-fuel})))
+    fuel))
+
 ;; Mirrors `kotoba.compiler.core/compile-source*`'s `:else` (native) branch
 ;; byte-for-byte -- same sealed `:kotoba.kexe/v1` shape, same
 ;; `fuel-abi`/`context-abi`/`limits` constants, same pre-checks -- so a
@@ -49,10 +66,13 @@
 ;; Deliberately does NOT replicate the `x86_64-aiueos-*`/`aarch64-aiueos-*`
 ;; `:binary`/`:object` packaging step (see `targets`' own comment above for
 ;; why that stays out of scope).
-(defn- resolve-hir! [source stage-cache]
+(defn- resolve-hir! [source policy stage-cache]
   (support/timed "frontend"
                  #(compile-cache/resolve-stage!
-                   stage-cache :hir source (fn [] (sema/analyze source)))))
+                   stage-cache :hir
+                   (pr-str [:kotoba.hir-cache/v2 source
+                            (:language-profile policy)])
+                   (fn [] (sema/analyze source (support/analyze-options policy))))))
 
 (defn- resolve-kir! [hir stage-cache]
   (support/timed "kir-lower"
@@ -77,7 +97,9 @@
                        (nil? (:entry (target-profile/profile target))))))
     (throw (ex-info "entryless libraries currently require the kotoba-script web target, the Wasm target, or an entryless native target"
                     {:phase :target :target target :backend backend})))
-  (let [admission (support/timed "admission" #(admission/check hir policy))
+  (let [admission (support/timed
+                   "admission"
+                   #(admission/check hir (support/capability-policy policy)))
         kir-result (resolve-kir! hir stage-cache)
         kir (:value kir-result)
         value (:oracle-value kir)
@@ -88,6 +110,7 @@
                 {:hir-format (:format hir) :kir-format (:format kir)
                  :target target :target-profile profile :value-abi value-abi})
         program (select-keys kir [:format :entry :exports :signature :effects :functions])
+        declared-fuel (native-fuel! policy)
         ;; Verification re-emits from this closed program. Do not let
         ;; compiler-private KIR metadata influence the bytes being sealed.
         emitted (support/timed "native-emit" #(emit-program program))
@@ -103,8 +126,10 @@
                          :x86_64-kotoba-v1 :runtime-sysv-v1
                          :aarch64-kotoba-v1 :runtime-aapcs64-v1)
              :fuel-abi (case backend
-                         :x86_64-kotoba-v1 {:mode :hidden-context-r9 :initial 512}
-                         :aarch64-kotoba-v1 {:mode :hidden-context-x7 :initial 512})
+                         :x86_64-kotoba-v1
+                         {:mode :hidden-context-r9 :initial declared-fuel}
+                         :aarch64-kotoba-v1
+                         {:mode :hidden-context-x7 :initial declared-fuel})
              :context-abi {:version 3 :fuel-offset 8 :allow-bitmap-offset 16
                            :allow-bitmap-bytes 32 :cap-call-offset 48
                            :pair-new-offset 56 :pair-first-offset 64
@@ -127,7 +152,7 @@
                            :vector-item-capacity 65536}
              :effects (:effects hir)
              :compatibility compat
-             :limits {:memory-bytes 65536 :fuel 512 :stack-bytes 4096}
+             :limits {:memory-bytes 65536 :fuel declared-fuel :stack-bytes 4096}
              :code (mapv #(bit-and (int %) 0xff) code)
              :program program :exports (:exports emitted)})))]
     (support/timed "native-verify" #(verifier/verify-artifact! artifact-map))
@@ -152,8 +177,8 @@
     provenance-output))
 
 (defn- compile-uncached! [args source target backend output emit-program]
-  (let [hir (:value (resolve-hir! source nil))
-        policy (support/timed "policy-read" #(support/read-policy args))
+  (let [policy (support/timed "policy-read" #(support/read-policy args))
+        hir (:value (resolve-hir! source policy nil))
         result (compile-native! hir target backend policy emit-program nil)
         serialized (serialized-native source policy result)
         provenance-output (write-native! output serialized)]
@@ -187,11 +212,11 @@
         (let [provenance-output (write-native! output cached)]
           {:ok true :target target :output output :provenance-output provenance-output
            :cache :hit :cache-key key}))
-      (let [hir-result (resolve-hir! source stage-cache)
-            hir (:value hir-result)
-            _ (when-let [error (:error policy-attempt)] (throw error))
+      (let [_ (when-let [error (:error policy-attempt)] (throw error))
             policy (support/timed "policy-decode"
                                   #(support/parse-policy-material material))
+            hir-result (resolve-hir! source policy stage-cache)
+            hir (:value hir-result)
             result (compile-native! hir target backend policy emit-program stage-cache)
             serialized (serialized-native source policy result)
             provenance-output (write-native! output serialized)

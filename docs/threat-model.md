@@ -51,6 +51,16 @@ artifact and removes staging. This is a per-file guarantee: the Node path does
 not generate private keys and does not claim a multi-file transaction between
 a KEXE and its provenance sidecar.
 
+The same primary path binds Wasm emission and the ordinary-native fuel ABI to
+the admitted policy's fuel budget and publishes sealed provenance over the
+exact source, policy, HIR, KIR, target profile, compatibility descriptor, and
+output bytes. Artifact-cache hits verify independent SHA-256 identities for
+the Wasm module and provenance.
+Declarative policy keys are removed only from the capability-grant view;
+language profile remains an input to semantic analysis and HIR cache identity.
+Each artifact and its provenance remain independently published and are not
+yet a crash-atomic multi-file transaction.
+
 Arithmetic is specified independently of the JVM compiler host: i64
 add/subtract/multiply wrap modulo 2^64, while invalid signed division traps. A
 bounded KIR reference executor plus cross-backend boundary vectors guard against

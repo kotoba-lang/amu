@@ -95,6 +95,21 @@
 (defn read-policy [args]
   (parse-policy-material (read-policy-material args)))
 
+(def ^:private declarative-policy-keys
+  "Policy controls consumed by the compiler rather than capability admission.
+  Keep this aligned with `kotoba.compiler.core/capability-policy`: admission is
+  deliberately closed over its own key set and must not reject known compiler
+  controls as malformed grants."
+  #{:language-profile :budgets})
+
+(defn capability-policy [policy]
+  (apply dissoc policy declarative-policy-keys))
+
+(defn analyze-options [policy]
+  (cond-> {}
+    (:language-profile policy)
+    (assoc :language-profile (:language-profile policy))))
+
 (defn- exit-code [phase]
   (case phase
     :usage 64

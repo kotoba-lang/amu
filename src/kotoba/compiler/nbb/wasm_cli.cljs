@@ -1,25 +1,34 @@
 (ns kotoba.compiler.nbb.wasm-cli
-  "Lean nbb entrypoint for `check` and Wasm compilation. Native emitters,
-  artifact sealing, provenance, and the native verifier are intentionally not
-  in this namespace's dependency closure."
+  "Primary JDK-free entrypoint for `check` and Wasm compilation. Native
+  emitters and the native verifier stay outside this namespace's dependency
+  closure, while Wasm provenance is emitted from the same checked HIR/KIR,
+  policy, target profile, compatibility descriptor, and bytes as the JVM
+  compiler."
   (:require [kotoba.compiler.nbb.cli-support :as support]
             [kotoba.compiler.nbb.compile-cache :as compile-cache]
             [kotoba.sema :as sema]
             [kotoba.compiler.nbb.io :as io]
+            [kotoba.artifact.core :as artifact]
+            [kotoba.compiler.provenance :as provenance]
             [kotoba.kir :as ir]
             [kotoba.kir.admission :as admission]
+            [kotoba.kir.compatibility :as compatibility]
             [kotoba.kir.target :as target-profile]
-            [kotoba.wasm.core :as wasm]))
+            [kotoba.wasm.core :as wasm]
+            [kotoba.wasm.typed :as typed]))
 
 (def targets
   {"wasm32" :wasm32-kotoba-v1
    "wasm32-browser" :wasm32-browser-kotoba-v1
    "wasm32-wasi" :wasm32-wasi-kotoba-v1})
 
-(defn- resolve-hir! [source stage-cache]
+(defn- resolve-hir! [source policy stage-cache]
   (support/timed "frontend"
                  #(compile-cache/resolve-stage!
-                   stage-cache :hir source (fn [] (sema/analyze source)))))
+                   stage-cache :hir
+                   (pr-str [:kotoba.hir-cache/v2 source
+                            (:language-profile policy)])
+                   (fn [] (sema/analyze source (support/analyze-options policy))))))
 
 (defn- resolve-kir! [hir stage-cache]
   (support/timed "kir-lower"
@@ -31,13 +40,76 @@
 (defn- stage-status [hir-result kir-result]
   {:hir (:cache hir-result) :kir (:cache kir-result)})
 
+(def ^:private floating-point-policy
+  :kotoba.floating-point/ieee-754-f32-f64-v7)
+
+(defn- compile-wasm!
+  "Keep the primary Node result and provenance identity aligned with
+  `kotoba.compiler.core/compile-source*`'s Wasm branch. In particular, the
+  policy fuel budget is an emitter input, not admission-only metadata."
+  [source target policy hir admission-result kir]
+  (let [profile (target-profile/profile target)
+        typed-values? (= :kotoba.kir/v4 (:format kir))
+        value-abi (cond (ir/uses-f32? hir) :kotoba.typed/mixed-f32-f64-v3
+                        (ir/uses-f64? hir) :kotoba.typed/mixed-f64-v2
+                        typed-values? :kotoba.typed/externref-v1
+                        :else :kotoba.i64/direct-v1)
+        fuel (or (get-in policy [:budgets :fuel]) 512)
+        compat (compatibility/descriptor
+                {:hir-format (:format hir) :kir-format (:format kir)
+                 :target target :target-profile profile :value-abi value-abi})
+        result {:format :wasm/v1 :target target :target-profile profile
+                :hir hir :kir kir :admission admission-result
+                :compatibility compat
+                :floating-point-policy floating-point-policy
+                :value-profile (if typed-values?
+                                 :kotoba.value/typed-v1 :kotoba.value/i64-v1)
+                :value-abi value-abi
+                :wasm-features (cond-> #{}
+                                 (typed/requires-host-runtime? kir)
+                                 (conj :reference-types)
+                                 (ir/uses-f32? kir) (conj :ieee-754-f32)
+                                 (ir/uses-f64? kir) (conj :ieee-754-f64))
+                :limits (cond-> {:fuel fuel :replenishable? false}
+                          typed-values?
+                          (assoc :parametric-adt-depth 12
+                                 :parametric-adt-nodes 64
+                                 :variant-cases 32
+                                 :heterogeneous-vector-items 32
+                                 :typed-set-items 32
+                                 :typed-map-entries 31
+                                 :record-fields 32
+                                 :vector-i64-items 16384
+                                 :vector-f64-items 16384
+                                 :compact-graph-items 128
+                                 :string-index-key-bytes 65536))
+                :bytes (support/timed "wasm-emit"
+                                      #(wasm/emit kir target {:fuel fuel}))}]
+    (support/timed "provenance"
+                   #(provenance/attach source policy {} result))))
+
+(defn- serialized-wasm [result]
+  {:bytes (.from js/Buffer (:bytes result))
+   :provenance-text (support/timed
+                     "provenance-serialize"
+                     #(pr-str (artifact/edn-safe (:provenance result))))})
+
+(defn- write-wasm! [output {:keys [bytes provenance-text]}]
+  (let [provenance-output (str output ".provenance.edn")]
+    (support/timed "artifact-write" #(io/write-bytes! output bytes))
+    (support/timed "provenance-write"
+                   #(io/write-text! provenance-output provenance-text))
+    provenance-output))
+
 (defn- check! [args context]
   (let [input (support/timed "source-admit" #(support/source! (second args)))
         source (support/timed "source-read" #(io/read-text-file input))
-        hir-result (resolve-hir! source (:stages context))
-        hir (:value hir-result)
         policy (support/timed "policy-read" #(support/read-policy args))
-        result (support/timed "admission" #(admission/check hir policy))]
+        hir-result (resolve-hir! source policy (:stages context))
+        hir (:value hir-result)
+        result (support/timed
+                "admission"
+                #(admission/check hir (support/capability-policy policy)))]
     ;; Same keys as the JVM `check --json` in kotoba.compiler.cli. This path
     ;; used to answer with :ok/:effects/:admission only, so a consumer keying
     ;; on :format -- the versioned output contract -- saw nothing to key on,
@@ -50,29 +122,23 @@
              :admission result}
       context (assoc :stage-cache {:hir (:cache hir-result)}))))
 
-;; Said in the result, not only in this namespace's docstring. The JVM
-;; `compile` writes <output>.provenance.edn and reports :provenance-output;
-;; this path deliberately keeps provenance out of its dependency closure, so
-;; the artifact is byte-identical and has no sidecar. Measured 2026-08-11:
-;; same source, same target, same 350 bytes, one sealed and one not. A caller
-;; that reads the result map should be able to see which it got.
-(def ^:private provenance-note
-  {:provenance :not-emitted
-   :provenance-note "lean nbb wasm path; use the JVM compile to seal an artifact"})
-
 (defn- compile-uncached! [args target output source]
-  (let [hir (support/timed "frontend" #(sema/analyze source))
-        policy (support/timed "policy-read" #(support/read-policy args))
-        _ (support/timed "admission" #(admission/check hir policy))
+  (let [policy (support/timed "policy-read" #(support/read-policy args))
+        hir (:value (resolve-hir! source policy nil))
+        admission-result (support/timed
+                          "admission"
+                          #(admission/check hir (support/capability-policy policy)))
         kir (support/timed "kir-lower" #(ir/lower hir))
-        bytes (support/timed "wasm-emit" #(wasm/emit kir target))]
-    (support/timed "artifact-write" #(io/write-bytes! output bytes))
-    (merge {:ok true :target target :output output} provenance-note)))
+        serialized (serialized-wasm
+                    (compile-wasm! source target policy hir admission-result kir))
+        provenance-output (write-wasm! output serialized)]
+    {:ok true :target target :output output
+     :provenance-output provenance-output}))
 
 (defn- compile-cached! [args target output source context]
-  ;; Read policy bytes early only to form a cache key. If that read fails, defer
-  ;; the exception until after frontend analysis so cache misses preserve the
-  ;; ordinary CLI's source-before-policy error precedence.
+  ;; Policy material is part of artifact identity. Declarative policy controls
+  ;; also affect HIR and emission, so decode them before consulting either
+  ;; stage cache; otherwise a language-profile change could reuse the wrong HIR.
   (let [policy-attempt (support/timed
                         "policy-read"
                         #(try {:material (support/read-policy-material args)}
@@ -87,31 +153,46 @@
                                         #(compile-cache/lookup! artifact-cache key)))]
     (if cached
       (let [bytes (:bytes cached)
-            valid? (support/timed "cache-integrity"
-                                  #(= (:sha256 cached) (compile-cache/sha256 bytes)))]
-        (when-not valid?
+            artifact-valid? (support/timed
+                             "cache-artifact-integrity"
+                             #(= (:sha256 cached) (compile-cache/sha256 bytes)))
+            provenance-valid? (support/timed
+                               "cache-provenance-integrity"
+                               #(= (:provenance-sha256 cached)
+                                   (compile-cache/sha256
+                                    (:provenance-text cached))))]
+        (when-not (and artifact-valid? provenance-valid?)
           (compile-cache/remove! artifact-cache key)
           (throw (ex-info "compiler cache integrity mismatch" {:cache-key key})))
-        (support/timed "artifact-write" #(io/write-bytes! output bytes))
-        (merge {:ok true :target target :output output :cache :hit :cache-key key}
-               provenance-note))
-      (let [hir-result (resolve-hir! source stage-cache)
-            hir (:value hir-result)
-            _ (when-let [error (:error policy-attempt)] (throw error))
+        (let [provenance-output (write-wasm! output cached)]
+          {:ok true :target target :output output
+           :provenance-output provenance-output :cache :hit :cache-key key}))
+      (let [_ (when-let [error (:error policy-attempt)] (throw error))
             policy (support/timed "policy-decode"
                                   #(support/parse-policy-material material))
-            _ (support/timed "admission" #(admission/check hir policy))
+            hir-result (resolve-hir! source policy stage-cache)
+            hir (:value hir-result)
+            admission-result (support/timed
+                              "admission"
+                              #(admission/check hir
+                                                (support/capability-policy policy)))
             kir-result (resolve-kir! hir stage-cache)
             kir (:value kir-result)
-            emitted (support/timed "wasm-emit" #(wasm/emit kir target))
-            bytes (.from js/Buffer emitted)
-            sealed {:bytes bytes :sha256 (compile-cache/sha256 bytes)}]
-        (support/timed "artifact-write" #(io/write-bytes! output bytes))
+            serialized (serialized-wasm
+                        (compile-wasm! source target policy hir admission-result kir))
+            bytes (:bytes serialized)
+            provenance-output (write-wasm! output serialized)
+            sealed (assoc serialized
+                          :sha256 (compile-cache/sha256 bytes)
+                          :provenance-sha256
+                          (compile-cache/sha256 (:provenance-text serialized)))
+            size (+ (.-length bytes)
+                    (.byteLength js/Buffer (:provenance-text serialized) "utf8"))]
         (support/timed "cache-store"
-                       #(compile-cache/put! artifact-cache key sealed (.-length bytes)))
-        (merge {:ok true :target target :output output :cache :miss :cache-key key
-                :stage-cache (stage-status hir-result kir-result)}
-               provenance-note)))))
+                       #(compile-cache/put! artifact-cache key sealed size))
+        {:ok true :target target :output output
+         :provenance-output provenance-output :cache :miss :cache-key key
+         :stage-cache (stage-status hir-result kir-result)}))))
 
 (defn- compile! [args context]
   (let [input (support/timed "source-admit" #(support/source! (second args)))
