@@ -43,6 +43,14 @@ Security invariants:
     interpreting subsets, and native oracle metadata is recomputed from sealed
     KIR rather than trusted as attacker-controlled descriptive data.
 
+The primary JDK-free `bin/amu` path applies invariant 10 to Wasm, KEXE,
+extracted native bytes, and KEXE provenance with OS-exclusive private staging,
+exclusive/no-follow file creation, a complete write, file `fsync`, close, and
+same-filesystem atomic rename. Failure preserves the previously published
+artifact and removes staging. This is a per-file guarantee: the Node path does
+not generate private keys and does not claim a multi-file transaction between
+a KEXE and its provenance sidecar.
+
 Arithmetic is specified independently of the JVM compiler host: i64
 add/subtract/multiply wrap modulo 2^64, while invalid signed division traps. A
 bounded KIR reference executor plus cross-backend boundary vectors guard against

@@ -65,8 +65,16 @@
 (defn- origin-url [coordinate sha]
   (let [[group artifact] (str/split coordinate #"/")
         dir (.join node-path (gitlibs-root) "libs" group artifact sha)]
-    (or (git-out ["-C" dir "remote" "get-url" "origin"])
-        (fail! (str "cannot read the origin URL of " coordinate " at " sha)))))
+    (if-let [url (git-out ["-C" dir "remote" "get-url" "origin"])]
+      ;; tools.deps and the JDK-free resolver can populate the same checkout
+      ;; with GitHub origins that differ only by a trailing `.git`. Without
+      ;; normalization, regenerating an otherwise identical lock depends on
+      ;; which resolver first warmed ~/.gitlibs.
+      (if (and (str/starts-with? url "https://github.com/")
+               (not (str/ends-with? url ".git")))
+        (str url ".git")
+        url)
+      (fail! (str "cannot read the origin URL of " coordinate " at " sha)))))
 
 (defn -main [& args]
   (let [root (.resolve node-path (or (first args) "."))
