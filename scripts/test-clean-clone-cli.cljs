@@ -41,8 +41,8 @@
              #js {} js/process.env
              #js {:GITLIBS isolated-gitlibs
                   :PATH (str fake-bin (.-delimiter path) (.-PATH js/process.env))})
-        result (run! (.join path checkout "bin" "kotoba")
-                     ["-M" "compile" "examples/capability-named.kotoba"
+        result (run! js/process.execPath
+                     [(.join path checkout "bin" "amu") "compile" "examples/capability-named.kotoba"
                       "--target" "aarch64"
                       "--policy" "examples/capability-named.edn"
                       "--output" output]
@@ -57,8 +57,8 @@
       (throw (js/Error. (str "clean-clone CLI returned no success envelope\n" stdout))))
     ;; The isolated invocation must not poison the shared classpath cache with
     ;; paths under TMP, which are deleted when this test exits.
-    (run! (.join path root "bin" "kotoba")
-          ["-M" "compile" "examples/capability-named.kotoba"
+    (run! js/process.execPath
+          [(.join path root "bin" "amu") "compile" "examples/capability-named.kotoba"
            "--target" "aarch64"
            "--policy" "examples/capability-named.edn"
            "--output" normal-output]

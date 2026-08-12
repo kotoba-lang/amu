@@ -1,4 +1,223 @@
-#!/bin/sh
-set -eu
-HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-exec "$HERE/kotoba" -M "$@"
+#!/usr/bin/env node
+"use strict";
+
+const { spawnSync } = require("node:child_process");
+const { createHash, randomBytes } = require("node:crypto");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+
+const usage = [
+  "usage: amu compile <file.kotoba|file.cljk|file.cljc> --target <target> [--policy policy.edn] --output <file>",
+  "       amu check <file.kotoba|file.cljk|file.cljc> [--policy policy.edn]",
+  "       amu worker [--target wasm32|x86_64|aarch64]",
+  "       amu inspect <file.kotoba|file.cljk|file.cljc> [--output interface.edn]",
+  "       amu test <file.kotoba|file.cljk|file.cljc> [--json]",
+  "       amu module-lock <file.kotoba> --blocks <dir> --source-path <dir>",
+  "       amu package-aiueos-boot <kernel> [--output BOOTX64.EFI]",
+  "       amu extract-native <file> [--symbol main] [--output program.bin]",
+  "       amu package-ios program.kexe [--entry main] --output program.S",
+  "       amu sbom <artifact> --output artifact.spdx",
+  "       amu attest-release <artifact> --sbom artifact.spdx --target <target> ...",
+  "       amu verify-release release.edn --artifact <artifact> --sbom artifact.spdx --trust trust.edn",
+  "       amu coverage <coverage-manifest.edn> --dataset <raw-dataset>",
+  "       amu keygen --output key.edn",
+  "       amu measure-runtime --output runtime.edn --loader-output kotoba-loader",
+  "       amu sign program.kexe --key key.edn --expires <epoch> --output signed.kexe",
+  "       amu run signed.kexe --trust trust.edn --runtime runtime.edn --loader kotoba-loader ...",
+  "       amu verify <file>",
+  "       amu <other compiler command> ...",
+];
+
+const nbbNativeTargets = new Set([
+  undefined, "wasm32", "wasm32-browser", "wasm32-wasi",
+  "x86_64", "x86_64-linux", "x86_64-macos", "x86_64-windows",
+  "aarch64", "aarch64-linux", "aarch64-macos", "aarch64-windows",
+  "aarch64-android", "aarch64-ios",
+]);
+
+function fail(message, code) {
+  console.error(message);
+  process.exit(code);
+}
+
+function option(args, flag) {
+  const index = args.indexOf(flag);
+  return index < 0 ? undefined : args[index + 1];
+}
+
+function nbbNativeEligible(args) {
+  const command = args[0];
+  return command === "check" || command === "extract-native"
+    || (command === "worker" && nbbNativeTargets.has(option(args, "--target")))
+    || (command === "compile" && nbbNativeTargets.has(option(args, "--target")));
+}
+
+function nbbEntrypoint(root, args) {
+  const command = args[0];
+  const target = option(args, "--target");
+  const wasm = command === "check" || target === undefined || target.startsWith("wasm32");
+  const filename = command === "extract-native" ? "x86_64_cli.cljs"
+    : wasm ? "wasm_cli.cljs"
+      : target.startsWith("aarch64") ? "aarch64_cli.cljs" : "x86_64_cli.cljs";
+  return path.join(root, "src", "kotoba", "compiler", "nbb", filename);
+}
+
+function spawn(command, args, options = {}) {
+  return spawnSync(command, args, {
+    cwd: options.cwd,
+    encoding: options.encoding,
+    maxBuffer: options.maxBuffer,
+    stdio: options.stdio,
+    env: process.env,
+    shell: false,
+  });
+}
+
+function resolveWithLock(root, nbbCli) {
+  const script = path.join(root, "scripts", "print-classpath.cljs");
+  if (!fs.existsSync(path.join(root, "deps-lock.edn")) || !fs.existsSync(script)) return null;
+  const result = spawn(process.execPath,
+    [nbbCli, "--classpath", path.join(root, "src"), script, root], {
+      cwd: root, encoding: "utf8", maxBuffer: 16 * 1024 * 1024,
+    });
+  if (result.error || result.status !== 0) return null;
+  const entries = result.stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  return entries.length === 0 ? null : entries;
+}
+
+function resolveWithJvm(root) {
+  const result = spawn("clojure", ["-Spath"], {
+    cwd: root, encoding: "utf8", maxBuffer: 16 * 1024 * 1024,
+  });
+  if (result.error || result.status !== 0) return null;
+  const entries = result.stdout.trim().split(path.delimiter).map((entry) => entry.trim()).filter(Boolean);
+  return entries.length === 0 ? null : entries;
+}
+
+function readProtectedCache(cacheFile) {
+  let descriptor;
+  try {
+    const noFollow = process.platform === "win32" ? 0 : fs.constants.O_NOFOLLOW;
+    descriptor = fs.openSync(cacheFile, fs.constants.O_RDONLY | noFollow);
+    const info = fs.fstatSync(descriptor);
+    if (!info.isFile()) return null;
+    if (process.platform !== "win32"
+        && (info.uid !== process.getuid() || (info.mode & 0o022) !== 0)) return null;
+    return fs.readFileSync(descriptor, "utf8");
+  } catch (_) {
+    return null;
+  } finally {
+    if (descriptor !== undefined) fs.closeSync(descriptor);
+  }
+}
+
+function admittedClasspath(entries, base, allowedRoots) {
+  if (entries.length === 0) return null;
+  let roots;
+  try {
+    roots = allowedRoots.filter((root) => fs.existsSync(root)).map((root) => fs.realpathSync(root));
+  } catch (_) {
+    return null;
+  }
+  if (roots.length === 0) return null;
+  const admitted = [];
+  for (const entry of entries) {
+    try {
+      const absolute = path.isAbsolute(entry) ? entry : path.resolve(base, entry);
+      if (!fs.existsSync(absolute)) return null;
+      const resolved = fs.realpathSync(absolute);
+      if (!roots.some((root) => resolved === root || resolved.startsWith(`${root}${path.sep}`))) {
+        return null;
+      }
+      admitted.push(resolved);
+    } catch (_) {
+      return null;
+    }
+  }
+  return admitted.join(path.delimiter);
+}
+
+function cachedClasspath(encoded) {
+  const entries = encoded.split(path.delimiter).map((entry) => entry.trim()).filter(Boolean);
+  if (entries.length === 0
+      || entries.some((entry) => !path.isAbsolute(entry) || !fs.existsSync(entry))) return null;
+  return entries.join(path.delimiter);
+}
+
+function publishPrivateCache(cacheFile, value) {
+  const temporary = `${cacheFile}.${process.pid}.${randomBytes(8).toString("hex")}.tmp`;
+  try {
+    fs.writeFileSync(temporary, value, { encoding: "utf8", mode: 0o600, flag: "wx" });
+    fs.renameSync(temporary, cacheFile);
+  } finally {
+    fs.rmSync(temporary, { force: true });
+  }
+}
+
+function securityClasspath(root, nbbCli) {
+  const depsEdn = path.join(root, "deps.edn");
+  const gitlibsRoot = path.resolve(process.env.GITLIBS || path.join(os.homedir(), ".gitlibs"));
+  const allowedRoots = [gitlibsRoot, root, path.join(os.homedir(), ".m2", "repository")];
+  const digest = createHash("sha256")
+    .update(fs.readFileSync(depsEdn)).update("\0").update(gitlibsRoot).digest("hex");
+  const cacheFile = path.join(os.tmpdir(), `amu-security-classpath-${digest}.txt`);
+  const cacheContents = readProtectedCache(cacheFile);
+  if (cacheContents !== null) {
+    // The protected file can only have been published from a fully admitted
+    // closure by this user. Recheck liveness without repeating every realpath
+    // on each compiler invocation.
+    const cached = cachedClasspath(cacheContents);
+    if (cached) return cached;
+  }
+
+  let entries = resolveWithLock(root, nbbCli);
+  if (!entries) {
+    console.error("amu: deps-lock.edn is missing or stale; falling back to `clojure -Spath` "
+      + "(needs a JDK). Regenerate with: nbb scripts/lock-classpath.cljs");
+    entries = resolveWithJvm(root);
+  }
+  const resolved = entries && admittedClasspath(entries, root, allowedRoots);
+  if (!resolved) {
+    fail("error: cannot resolve Amu's dependency closure.\n"
+      + "  Regenerate deps-lock.edn with: nbb scripts/lock-classpath.cljs\n"
+      + "  Diagnose with: nbb --classpath src scripts/print-classpath.cljs", 70);
+  }
+  try {
+    publishPrivateCache(cacheFile, resolved);
+  } catch (_) {
+    // The cache is only an optimization. A hostile or broken shared temp
+    // directory may deny publication, but must not deny compilation.
+  }
+  return resolved;
+}
+
+function runCompiler(root, args) {
+  if (nbbNativeEligible(args)) {
+    const nbbCli = path.join(root, "node_modules", "nbb", "cli.js");
+    const classpath = [path.join(root, "src"), path.join(root, "resources"),
+      securityClasspath(root, nbbCli)].join(path.delimiter);
+    const result = spawn(process.execPath,
+      ["--stack-size=4096", nbbCli, "--classpath", classpath, nbbEntrypoint(root, args), ...args], {
+        cwd: root, stdio: "inherit",
+      });
+    if (result.error) fail("error: unable to start the NBB compiler runtime", 70);
+    process.exit(result.status ?? 70);
+  }
+
+  const alias = ["measure-runtime", "run"].includes(args[0]) ? "-M:native-run" : "-M:run";
+  const result = spawn("clojure", [alias, ...args], { cwd: root, stdio: "inherit" });
+  if (result.error) fail("error: unable to start the private compiler runtime", 70);
+  process.exit(result.status ?? 70);
+}
+
+const rawArgs = process.argv.slice(2);
+if (rawArgs.length === 0 || ["-h", "--help"].includes(rawArgs[0])) {
+  process.stdout.write(`${usage.join("\n")}\n`);
+  process.exit(0);
+}
+const boundaries = new Set(["-M", "-M:compiler", "-M:compile"]);
+const args = boundaries.has(rawArgs[0]) ? rawArgs.slice(1) : rawArgs;
+if (args.length === 0) fail("error: missing Amu compiler command", 2);
+const root = path.resolve(path.dirname(fs.realpathSync(__filename)), "..");
+runCompiler(root, args);

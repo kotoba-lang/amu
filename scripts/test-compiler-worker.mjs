@@ -9,7 +9,8 @@ import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const directory = mkdtempSync(join(tmpdir(), "kotoba-worker-test-"));
-const worker = spawn(join(root, "bin", "kotoba"), ["-M", "worker", "--target", "wasm32"], {
+const worker = spawn(process.execPath,
+  [join(root, "bin", "amu"), "worker", "--target", "wasm32"], {
   cwd: root,
   stdio: ["pipe", "pipe", "pipe"],
   env: { ...process.env, KOTOBA_COMPILER_TIMING: "1", KOTOBA_WORKER_MAX_REQUESTS: "11" },
@@ -154,8 +155,8 @@ try {
 
 // A line without a newline must be rejected while bytes are still arriving;
 // otherwise a nominal post-read limit would permit unbounded buffering.
-const oversizedWorker = spawn(join(root, "bin", "kotoba"),
-  ["-M", "worker", "--target", "wasm32"],
+const oversizedWorker = spawn(process.execPath,
+  [join(root, "bin", "amu"), "worker", "--target", "wasm32"],
   { cwd: root, stdio: ["pipe", "pipe", "pipe"] });
 const oversizedLines = createInterface({ input: oversizedWorker.stdout, crlfDelay: Infinity });
 const oversizedIterator = oversizedLines[Symbol.asyncIterator]();
