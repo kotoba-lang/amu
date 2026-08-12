@@ -152,6 +152,38 @@
           :ok? false
           :error (str "wasm exit " (:exit res) ": " (:err res) (:out res))})))))
 
+(defn run-cljs
+  "Compile to cljs-kotoba-v1 and execute the case function on a real
+  ClojureScript host (nbb).
+
+  Returns the same shape as `run-kir` / `run-wasm32`, plus `:refused` when the
+  compiler declines the source for this target rather than failing on it. That
+  distinction matters: `:cljs-kotoba-v1` admits typed values only where
+  `only-cljs-implemented-typed-features?` holds, so a refusal is a statement
+  about the backend's coverage, not about the case. Measured 2026-08-12, 42 of
+  the 60 pure-product cases compile and 18 are refused.
+
+  The emitted source carries reader conditionals, so it is written as `.cljc`
+  -- ClojureScript proper only admits them there, and nbb follows that."
+  [source function args]
+  (let [compiled (try {:ok (compiler/compile-source source :cljs-kotoba-v1)}
+                      (catch Exception e {:refused e}))]
+    (if-let [e (:refused compiled)]
+      {:backend :cljs-kotoba-v1 :ok? false :refused true
+       :error (.getMessage e)}
+      (let [file (doto (java.io.File/createTempFile "kotoba-cljs-case-" ".cljc")
+                   (.deleteOnExit))
+            call (str "(" function " " (str/join " " (map pr-str (or args []))) ")")]
+        (spit file (str (get-in compiled [:ok :source]) "\n"
+                        "(println (pr-str " call "))\n"))
+        (let [res (shell/sh "nbb" (.getPath file))]
+          (if (zero? (:exit res))
+            (let [out (str/trim (:out res))
+                  parsed (try (Long/parseLong out) (catch Exception _ out))]
+              {:backend :cljs-kotoba-v1 :ok? true :result parsed :raw-out out})
+            {:backend :cljs-kotoba-v1 :ok? false
+             :error (str "nbb exit " (:exit res) ": " (:err res))}))))))
+
 (defn run-case
   "Run one pure-product case on required backends. Returns result map.
   Cases may declare `:fuel` (positive int) for deep loop / T7.4 envelopes."
