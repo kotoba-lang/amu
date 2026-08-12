@@ -41,14 +41,13 @@ provenance digests. It fails if the launcher choice changes either output.
 This isolates the extra NBB interpreter used by the compatibility front; it
 does not measure generated-program runtime or claim a faster compiler core.
 
-Implementation commit `5009258` was measured clean on 2026-08-12 with eleven
-alternating samples on Darwin arm64 and Node v26.3.0. Wasm32 cold compile fell
-from a 3,592.39 ms compatibility-front median to 3,202.52 ms through Amu
-(389.87 ms saved, 1.12x). Native medians on the same busy host were 3,724.54 ms
-and 3,835.08 ms respectively, so this run does **not** establish a native cold
-compile improvement. Both matrices retained byte-identical artifacts, and the
-native matrix also retained byte-identical provenance. These host-local results
-qualify only the recorded implementation and workload.
+Implementation commit `17a4e5e` was measured clean on 2026-08-12 with seven
+alternating samples on a busy Darwin arm64 host and Node v26.3.0. Wasm32 cold
+compile fell from a 5,106.96 ms compatibility-front median to 4,610.81 ms
+through Amu (496.15 ms saved, 1.11x) with byte-identical artifacts. An earlier
+native run retained byte-identical artifact and provenance bytes but did not
+establish a median improvement, so no native speedup is claimed. These
+host-local results qualify only the recorded implementation and workload.
 
 ### Development evidence
 
