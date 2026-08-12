@@ -1,0 +1,18 @@
+{:adr/id :adr-0257-aarch64-call-constant-rematerialization
+ :adr/title "Rematerialize a lone AArch64 constant across local calls"
+ :adr/status :accepted
+ :adr/date "2026-08-12"
+ :adr/markdown "0257-aarch64-call-constant-rematerialization.md"
+ :adr/decision
+ {:pin "d7c82c87c7b831125e8a8b6ac36fe529507f74dd"
+  :scope {:frame-slots 1
+          :shape [:constant :spill-store :call :spill-load]
+          :slot 0
+          :call-argument false
+          :replacement [:call :constant]}
+  :unchanged [:x86-64 :allocator-contract :ir-schemas :verifier-schema]}
+ :adr/evidence
+ {:local-call-symbol-bytes {:before 64 :after 44}
+  :controls {:add-one 28 :register-pressure 264 :sum-five 56 :tail-call-five 100}
+  :corpus {:functions 5 :wx-executions 3 :landed-kexe-ceiling 4666}
+  :verification {:kotoba-native {:tests 155 :assertions 2149}}}}
