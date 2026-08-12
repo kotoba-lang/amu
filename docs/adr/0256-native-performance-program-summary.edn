@@ -1,0 +1,29 @@
+{:adr/id :adr-0256-native-performance-program-summary
+ :adr/title "Summarize the Amu native performance program through AArch64 coalescing"
+ :adr/status :accepted
+ :adr/date "2026-08-12"
+ :adr/markdown "0256-native-performance-program-summary.md"
+ :adr/decision
+ {:comparison-level :llvm-code-generation
+  :language-comparison {:rust-c-cpp :end-to-end-products
+                        :llvm :backend-code-quality-reference}
+  :current-path [:kotoba-source :amu :gmir :mir :allocated-mc :kexe :wx-loader]
+  :optimization-order
+  [:constant-divisor-selection
+   :dead-divisor-elimination
+   :minimal-constant-materialization
+   :multiply-add-subtract-fusion
+   :logical-immediate-selection
+   :leaf-constant-caching
+   :reciprocal-sign-correction-fusion
+   :add-subtract-immediate-selection
+   :direct-result-coalescing]
+  :safety-floor [:closed-ir :definition-aware-liveness :wx-execution
+                 :bounded-spills :no-verifier-schema-relaxation]
+  :pin-after-summary "d7c82c87c7b831125e8a8b6ac36fe529507f74dd"}
+ :adr/evidence
+ {:llvm-o3-same-process {:amu-ns 11.6902 :llvm-ns 11.5786 :ratio 1.0083}
+  :immediate-corpus {:kernels 5 :kexe-before 3760 :kexe-after 3676
+                     :wx-executions 5}
+  :current-verification {:kotoba-native {:tests 155 :assertions 2149}
+                         :amu-before-continuation {:tests 970 :assertions 7658}}}}
