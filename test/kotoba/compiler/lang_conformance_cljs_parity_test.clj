@@ -45,11 +45,35 @@
 ;; shrink. Do not add to it to make a run green -- a new entry here means a
 ;; case that used to execute on cljs no longer does.
 ;;
-;;   i64-shift-left / i64-shift-right : shift-kit, shift-right-kit, thread-kit
-;;   u64-shift-right                  : when-let-u64-kit, loop-deep-kit
-;;   string-code-point-at             : string-code-point-kit
+;; The unresolved symbols observed across these five, NOT attributed per case:
+;;   i64-shift-left  i64-shift-right  u64-shift-right  string-code-point-at
+;;
+;; The first version of this list also carried :thread-kit, mapped there by
+;; counting symbol occurrences in a log rather than by which case produced
+;; them. :thread-kit runs. The two-way check is what caught it -- a register
+;; that only grew would have kept a working case marked broken indefinitely,
+;; which is the same defect as marking a broken one working.
+;; :thread-kit is NOT registered anywhere, deliberately, and this comment is
+;; why. It compiles to cljs, runs to completion, and returns 336 where KIR
+;; returns 36 -- the manifest's expect. A wrong answer, silently.
+;;
+;; It was briefly listed as unrunnable because the first pass mapped log
+;; symbols to cases by counting rather than by reading; removing it from that
+;; list is what let the comparison reach it.
+;;
+;; It is not registered because a register normalises what it holds.
+;; `cljs-refused` says a backend declines work it does not claim;
+;; `cljs-emitted-but-unrunnable` says a backend claims work it cannot do; both
+;; are statements about coverage. A backend that claims work, does it, and
+;; returns the wrong number is a correctness defect, and a suite that goes
+;; green over it teaches the next reader that 336 is acceptable.
+;;
+;; So this test stays red until the backend is fixed or an owner decides
+;; otherwise. The redness is the finding. The old suite compared KIR against
+;; wasm32 and each against a literal, which is why this was invisible: nothing
+;; ever compared cljs to anything.
 (def cljs-emitted-but-unrunnable
-  '#{:shift-kit :shift-right-kit :thread-kit :when-let-u64-kit :loop-deep-kit
+  '#{:shift-kit :shift-right-kit :when-let-u64-kit :loop-deep-kit
      :string-code-point-kit})
 
 (defn- pure-cases []
