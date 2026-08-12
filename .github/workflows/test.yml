@@ -26,6 +26,8 @@ jobs:
       - uses: DeLaGuardo/setup-clojure@4c7a6f613e5089821bb3bb2a33a3ee115578580d # 13.6.1
         with:
           cli: 1.12.5.1654
+      - name: Prepare pinned compiler dependencies with bounded transient retries
+        run: node scripts/ci-dependency-prefetch.mjs
       - run: clojure -M -m kotoba.compiler.backend-qualification verify ${{ matrix.backend }}
   windows-arm64:
     runs-on: windows-11-arm
@@ -120,6 +122,8 @@ jobs:
       - uses: DeLaGuardo/setup-clojure@4c7a6f613e5089821bb3bb2a33a3ee115578580d # 13.6.1
         with:
           cli: 1.12.5.1654
+      - name: Prepare pinned test dependencies with bounded transient retries
+        run: node scripts/ci-dependency-prefetch.mjs --alias test
       - uses: bytecodealliance/actions/wasm-tools/setup@7ee36389ead2e51422087f820a7e17e39811b05f # main
         with:
           # Must match kotoba.compiler.wasm-tools/version -- the default is
@@ -129,6 +133,7 @@ jobs:
       - name: Install pinned Component composition tool
         run: cargo install --locked --version 0.10.1 wac-cli
       - run: npm ci
+      - run: npm run test-ci-dependency-prefetch
       - run: npx nbb scripts/check-workflows.cljs
       - run: npm run test-browser-host
       - run: npm run test-worker-host

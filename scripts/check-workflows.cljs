@@ -42,7 +42,15 @@
                (str "workflow-lint: Node runtime is not exactly pinned in " workflow)))
 (let [test-workflow (lib/read-text (lib/join workflow-dir "test.yml"))]
   (lib/ensure! (.includes test-workflow "cli: 1.12.5.1654")
-               "workflow-lint: Clojure CLI is not exactly pinned"))
+               "workflow-lint: Clojure CLI is not exactly pinned")
+  (lib/ensure! (.includes test-workflow
+                          "node scripts/ci-dependency-prefetch.mjs\n")
+               "workflow-lint: provider dependency prefetch is missing")
+  (lib/ensure! (.includes test-workflow
+                          "node scripts/ci-dependency-prefetch.mjs --alias test")
+               "workflow-lint: test dependency prefetch is missing")
+  (lib/ensure! (.includes test-workflow "npm run test-ci-dependency-prefetch")
+               "workflow-lint: dependency prefetch regression test is missing"))
 
 (doseq [name ["test.yml" "browser-matrix.yml"]
         :let [workflow (lib/read-text (lib/join workflow-dir name))]]
