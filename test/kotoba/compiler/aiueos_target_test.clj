@@ -11,6 +11,23 @@
                                  (* 8 index))))
           0 (range width)))
 
+(defn- le-bytes [n width]
+  (mapv #(bit-and 0xff (bit-shift-right (long n) (* 8 %)))
+        (range width)))
+
+(defn- elf64-load-segments [bytes]
+  (let [program-offset (read-le bytes 32 8)
+        entry-size (read-le bytes 54 2)
+        entry-count (read-le bytes 56 2)]
+    (->> (range entry-count)
+         (map (fn [index]
+                (let [offset (+ program-offset (* index entry-size))]
+                  {:type (read-le bytes offset 4)
+                   :flags (read-le bytes (+ offset 4) 4)
+                   :offset (read-le bytes (+ offset 8) 8)
+                   :vaddr (read-le bytes (+ offset 16) 8)})))
+         (filterv #(= 1 (:type %))))))
+
 (defn- c-string [bytes offset]
   (apply str (map char (take-while pos? (drop offset bytes)))))
 
@@ -69,7 +86,8 @@
                                                   :x86_64-aiueos-kernel-v1)
         bytes (:bytes binary)
         section-offset (read-le bytes 40 8)
-        section-count (read-le bytes 60 2)]
+        section-count (read-le bytes 60 2)
+        rw-segment (some #(when (= 6 (:flags %)) %) (elf64-load-segments bytes))]
     (is (= [0x7f 0x45 0x4c 0x46] (subvec bytes 0 4)))
     (is (= 2 (nth bytes 4)) "ELFCLASS64")
     (is (= 2 (read-le bytes 16 2)) "ET_EXEC, not a host-linked object")
@@ -86,7 +104,8 @@
     (is (= [0x48 0x89 0x3d] (subvec bytes 0x1000 0x1003)))
     (is (= [0x4c 0x8d 0x0d] (subvec bytes 0x1007 0x100a)))
     ;; Context fuel is initialized to 512; no host process populates it.
-    (is (= 512 (read-le bytes (+ 0xb000 8) 8)))))
+    (is (some? rw-segment) "RW context PT_LOAD exists")
+    (is (= 512 (read-le bytes (+ (:offset rw-segment) 8) 8)))))
 
 (deftest kernel-target-lowers-privileged-intrinsics-without-imports
   (let [source (str "(defn main [] "
@@ -115,8 +134,10 @@
                     "      loaded (kernel-load-idt handler 10)] "
                     "  (+ loaded cs (kernel-probe-guard-write) "
                     "     (kernel-probe-text-write) (kernel-probe-nx-execute))))")
-        artifact (:artifact (compiler/compile-source source :x86_64-aiueos-kernel-v1))
+        {:keys [artifact binary]} (compiler/compile-source source :x86_64-aiueos-kernel-v1)
         code (:code artifact)
+        rw-segment (some #(when (= 6 (:flags %)) %)
+                         (elf64-load-segments (:bytes binary)))
         contains-bytes? (fn [needle]
                           (boolean (some #{needle} (partition (count needle) 1 code))))]
     (is (empty? (:imports artifact)))
@@ -127,7 +148,8 @@
     (is (contains-bytes? [0x0f 0x01 0x0c 0x24]) "sidt readback")
     (is (contains-bytes? [0xc6 0x04 0x25 0x00 0x00 0x10 0x00 0x00]) "guard write")
     (is (contains-bytes? [0xc6 0x04 0x25 0x00 0x10 0x10 0x00 0x00]) "text write")
-    (is (contains-bytes? [0x49 0xba 0x00 0xb0 0x10 0x00 0x00 0x00 0x00 0x00])
+    (is (some? rw-segment) "RW context PT_LOAD exists")
+    (is (contains-bytes? (into [0x49 0xba] (le-bytes (:vaddr rw-segment) 8)))
         "NX execute target")))
 
 (deftest kernel-target-loads-versioned-boot-info-from-its-private-context
