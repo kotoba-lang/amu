@@ -50,3 +50,7 @@ distribution channel. Consumers requiring publisher trust must use the signed
 KEXE/release trust commands and current revocation policy. It also does not
 claim Wasm semantic equivalence to source; the Wasm gate proves format validity
 and exact provenance identity.
+
+ADR 0256 adds optional publisher authentication over this exact admission
+result. The unsigned form defined here remains available and continues to
+report the weaker assurance explicitly.

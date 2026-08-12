@@ -114,6 +114,7 @@
   (case phase
     :usage 64
     (:decode :read :subset :admission :verify) 65
+    (:signature :trust) 77
     :output 74
     70))
 
