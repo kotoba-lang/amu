@@ -3,6 +3,7 @@
   (:require [clojure.string :as str]
             [scripts.lib :as lib]
             ["node:child_process" :as child]
+            ["node:crypto" :as crypto]
             ["node:fs" :as fs]
             ["node:os" :as os]
             ["node:path" :as path]))
@@ -28,6 +29,18 @@
 
 (defn- same? [left right]
   (.equals (.readFileSync fs left) (.readFileSync fs right)))
+
+(defn- sha256 [value]
+  (-> (.createHash crypto "sha256") (.update value) (.digest "hex")))
+
+(defn- replace-last-self-seal [marker-text]
+  (.replace marker-text #", :sha256 \"[0-9a-f]{64}\"}$" "}"))
+
+(defn- reseal-marker [marker-text old-member-sha new-member-sha]
+  (let [payload (-> (replace-last-self-seal marker-text)
+                    (.replace old-member-sha new-member-sha))]
+    (str (subs payload 0 (dec (count payload)))
+         ", :sha256 \"" (sha256 payload) "\"}")))
 
 (try
   (let [fixture (lib/join lib/root "examples" "fuel.kotoba")
@@ -67,6 +80,16 @@
     (run! js/process.execPath
           [(lib/join lib/root "bin" "amu") "compile" native-fixture
            "--target" "aarch64" "--policy" policy "--output" amu-native])
+    (let [native-admitted (run! js/process.execPath
+                                [(lib/join lib/root "bin" "amu")
+                                 "verify-output-set" amu-native])]
+      (lib/ensure! (and (.includes (.-stdout native-admitted)
+                                  ":kotoba.output-admission/v1")
+                        (.includes (.-stdout native-admitted)
+                                  ":artifact-identity-verified true")
+                        (.includes (.-stdout native-admitted)
+                                  ":publisher-authenticated false"))
+                   "primary compiler did not integrity-admit native output with an explicit trust boundary"))
     (run! "clojure" ["-M:run" "compile" native-fixture "--target" "aarch64"
                      "--policy" policy "--output" jvm-native])
 
@@ -84,8 +107,12 @@
                       (.includes (.-stdout primary) ":publication-output")
                       (not (.includes (.-stdout primary) ":not-emitted")))
                  "primary compiler did not report its committed Wasm output set")
-    (lib/ensure! (.includes (.-stdout committed) ":kotoba.output-set/v1")
-                 "primary compiler could not verify its committed output set")
+    (lib/ensure! (and (.includes (.-stdout committed) ":kotoba.output-set/v1")
+                      (.includes (.-stdout committed)
+                                 ":kotoba.output-admission/v1")
+                      (.includes (.-stdout committed)
+                                 ":publisher-authenticated false"))
+                 "primary compiler could not integrity-admit its committed output set")
     (lib/ensure! (.validate js/WebAssembly (.readFileSync fs amu))
                  "policy-bound primary output is not valid Wasm")
     (lib/ensure! (>= (.-size (.statSync fs (str amu ".provenance.edn"))) 128)
@@ -123,6 +150,30 @@
                           (.includes (.-stderr malformed)
                                      "output set is not committed"))
                      "malformed output-set marker escaped the verify boundary"))
+      (.writeFileSync fs marker-path marker-text))
+    (let [provenance-path (str amu ".provenance.edn")
+          marker-path (str amu ".publication.edn")
+          provenance-text (.readFileSync fs provenance-path "utf8")
+          marker-text (.readFileSync fs marker-path "utf8")
+          old-member-sha (sha256 provenance-text)
+          ;; Keep byte size stable, but invalidate the provenance's own seal.
+          forged-provenance (.replace provenance-text
+                                      ":builder :kotoba-compiler/v1"
+                                      ":builder :kotoba-compiler/v2")
+          new-member-sha (sha256 forged-provenance)]
+      ;; A marker is an unkeyed commit point. Recomputing it around a newly
+      ;; committed lie must not turn that lie into sealed provenance.
+      (.writeFileSync fs provenance-path forged-provenance)
+      (.writeFileSync fs marker-path
+                      (reseal-marker marker-text old-member-sha new-member-sha))
+      (let [forged (invoke js/process.execPath
+                           [(lib/join lib/root "bin" "amu")
+                            "verify-output-set" amu])]
+        (lib/ensure! (and (= 65 (.-status forged))
+                          (.includes (.-stderr forged)
+                                     "output-set provenance rejected"))
+                     "re-sealed provenance and recomputed marker replaced artifact identity"))
+      (.writeFileSync fs provenance-path provenance-text)
       (.writeFileSync fs marker-path marker-text))
     (.appendFileSync fs amu (.from js/Buffer #js [0]))
     (let [tampered (invoke js/process.execPath

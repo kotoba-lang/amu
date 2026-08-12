@@ -24,8 +24,14 @@ than being mistaken for a capability grant. Worker cache hits integrity-check
 and reproduce both Wasm output files. Primary compiles stage and `fsync` the
 artifact, provenance, and a deterministic `:kotoba.output-set/v1` marker in one
 private directory, then publish the marker last. `amu verify-output-set FILE`
-rejects absent, stale, basename-renamed, or byte-mutated sets; the marker is commit
-evidence, not a publisher signature.
+first rejects absent, stale, basename-renamed, or byte-mutated sets, then admits
+the closed, sealed provenance schema against the exact artifact. Wasm must have
+the declared byte identity and validate as WebAssembly; native KEXE must have
+the declared sealed identity and pass independent native verification. Its
+`:kotoba.output-admission/v1` result names the target-specific verification
+performed and deliberately reports
+`:publisher-authenticated false`: this is committed artifact integrity, not a
+publisher signature or trust decision.
 
 The accepted [worldwide 95% platform coverage roadmap](docs/adr/0001-worldwide-95-percent-platform-coverage.md)
 defines the planned native, WebAssembly, GPU, NPU, server, mobile, and IoT

@@ -41,6 +41,10 @@ byte-mutated set.
 Worker cache hits regenerate the marker for the requested output basename;
 the marker is not cached as though paths were artifact identity.
 
+ADR 0255 subsequently strengthens the public CLI command with a second,
+ordered provenance/artifact admission gate. The low-level marker verifier in
+this decision remains commit-consistency evidence only.
+
 ## Evidence and boundary
 
 The NBB-only I/O regression injects failure at the second rename after the

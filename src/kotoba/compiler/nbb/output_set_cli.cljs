@@ -1,6 +1,7 @@
 (ns kotoba.compiler.nbb.output-set-cli
   (:require [kotoba.compiler.nbb.cli-support :as support]
             [kotoba.compiler.nbb.io :as io]
+            [kotoba.compiler.nbb.output-admission :as admission]
             [kotoba.compiler.nbb.output-set :as output-set]))
 
 (def ^:private max-artifact-bytes (* 64 1024 1024))
@@ -31,10 +32,16 @@
                         publication-output
                         (io/read-bounded-bytes-file publication-output
                                                     max-metadata-bytes))})]
+    ;; Commit consistency is checked before interpreting either member.  A
+    ;; success result then means the sealed provenance also names the exact
+    ;; verified artifact; publisher identity remains an explicit non-claim.
     (output-set/verify! output artifact-bytes provenance-text marker)
-    {:ok true :format output-set/format :output output
-     :provenance-output provenance-output
-     :publication-output publication-output}))
+    (let [provenance (support/parse-policy-material
+                      {:present? true :text provenance-text})]
+      (merge {:ok true :output-set-format output-set/format :output output
+              :provenance-output provenance-output
+              :publication-output publication-output}
+             (admission/admit! artifact-bytes provenance)))))
 
 (support/execute!
  #(case (first %)
