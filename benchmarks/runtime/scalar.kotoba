@@ -1,0 +1,24 @@
+(ns benchmarks.runtime.scalar)
+
+(defn scalar [iterations]
+  (loop [index 0 total 0]
+    (if (= index iterations)
+      total
+      (recur (+ index 1) (+ total (* 6 7))))))
+
+(defn branch [iterations]
+  (let [half (quot iterations 2)]
+    (loop [index 0 total 0]
+      (if (= index iterations)
+        total
+        (recur (+ index 1)
+               (+ total (if (< index half) 41 43)))))))
+
+(defn mix [iterations]
+  (loop [index 0 state 2463534242]
+    (if (= index iterations)
+      state
+      (recur (+ index 1) (xorshift32 state)))))
+
+(defn main []
+  (scalar 1))

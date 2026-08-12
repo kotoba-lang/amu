@@ -33,6 +33,18 @@
   (and (contains? #{:x86_64-kotoba-v1 :aarch64-kotoba-v1} (target/backend t))
        (nil? (:entry (target/profile t)))))
 
+(defn- assert-entryless-native-routing [source]
+  (doseq [target-name (unsupported-typed-targets)]
+    (if (entryless-native-target? target-name)
+      (let [compiled (compiler/compile-source source target-name)]
+        (is (= (set (get-in compiled [:hir :exports]))
+               (set (keys (get-in compiled [:artifact :exports]))))
+            (str target-name " must preserve the verified library export surface")))
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                            #"entryless libraries currently require"
+                            (compiler/compile-source source target-name))
+          (str target-name " mandates an artifact entry symbol")))))
+
 (deftest sealed-multi-arity-resolves-every-call-before-hir
   (let [source "(defn offset ([x] (offset x 1)) ([x delta] (+ x delta)))
                 (defn main [] (offset 40))"
@@ -306,10 +318,7 @@
     (is (= 270369 (ir/execute kir 'next [1])))
     (is (= 2148024320 (ir/execute kir 'next [2147483648])))
     (is (zero? (:exit result)) (:err result))
-    (doseq [target-name (unsupported-typed-targets)]
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo
-                            #"require the kotoba-script web target"
-                            (compiler/compile-source source target-name)))))
+    (assert-entryless-native-routing source))
   (doseq [bad ["(defn bad [x :i64 n :i64] :i64 (i32-shift-left x n))"
                "(defn bad [x :i64] :i64 (i32-shift-right x -1))"
                "(defn bad [x :i64] :i64 (u32-shift-right x 32))"]]
@@ -977,7 +986,7 @@
   (is (= "only a bounded :export vector is admitted in namespace clauses"
          (rejection-message "(ns bad (:require [ambient])) (defn main [] 0)"))))
 
-(deftest entryless-library-compiles-and-runs-through-kotoba-script
+(deftest entryless-library-compiles-through-web-and-qualified-native
   (let [source "(ns pilot.library (:export [add1])) (defn add1 [x] (+ x 1))"
         checked (compiler/check-source source)
         compiled (compiler/compile-source source :js-kotoba-v1)
@@ -992,15 +1001,13 @@
     (is (= ['add1] (get-in compiled [:kir :exports])))
     (is (nil? (get-in compiled [:kir :oracle-value])))
     (is (zero? (:exit result)) (:err result))
-    (doseq [target (unsupported-typed-targets)]
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"require the kotoba-script web target"
-                            (compiler/compile-source source target)))))
+    (assert-entryless-native-routing source))
   (is (= "entryless library requires an explicit non-empty namespace export list"
          (rejection-message "(defn add1 [x] (+ x 1))")))
   (is (= "entryless library requires at least one exported function"
          (rejection-message "(ns empty.library (:export [])) (defn- hidden [] 0)"))))
 
-(deftest typed-bounded-strings-remain-strings-through-checked-kir-and-web
+(deftest typed-bounded-strings-remain-strings-through-web-and-qualified-native
   (let [source (str "(ns pilot.text (:export [greet byte-length same?])) "
                     "(defn greet [name :string] :string (string-concat \"こんにちは、\" name)) "
                     "(defn byte-length [value :string] (string-byte-length value)) "
@@ -1030,9 +1037,7 @@
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #"string exceeds UTF-8 byte limit"
                           (ir/execute (:kir compiled) 'greet [(apply str (repeat 65530 "x"))])))
     (is (zero? (:exit result)) (:err result))
-    (doseq [target (unsupported-typed-targets)]
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"require the kotoba-script web target"
-                            (compiler/compile-source source target)))))
+    (assert-entryless-native-routing source))
   (is (= "expression type mismatch: expected string, got i64"
          (rejection-message "(ns bad (:export [f])) (defn f [] :string 1)")))
   (is (= "expression type mismatch: expected i64, got string"

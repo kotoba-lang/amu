@@ -1,4 +1,12 @@
-# Kotoba Compiler
+# Amu
+
+Amu is the multi-target, deny-by-default compiler for the safe Kotoba
+language. The repository is `kotoba-lang/amu`; the name evokes Japanese
+「編む」— weaving checked source, typed KIR, and target artifacts together.
+
+The existing `kotoba.compiler.*` namespaces, `kotoba-compiler/1` wire marker,
+and `bin/kotoba-compiler` launcher remain compatibility APIs. New automation
+should use the `io.github.kotoba-lang/amu` dependency coordinate and `bin/amu`.
 
 The accepted [worldwide 95% platform coverage roadmap](docs/adr/0001-worldwide-95-percent-platform-coverage.md)
 defines the planned native, WebAssembly, GPU, NPU, server, mobile, and IoT
@@ -15,8 +23,6 @@ A platform marked `release` is counted only when every manifest evidence digest
 resolves to a currently valid Ed25519 envelope from a trusted, non-revoked
 signer. The signed statement binds the platform, native/Wasm paths, exact target
 profiles, conformance and runtime digests, CI run, test time, and expiry.
-
-The multi-target, deny-by-default compiler for the safe Kotoba language.
 
 ## Execution policy
 
@@ -213,11 +219,11 @@ source -> inert reader -> typed/effect HIR -> SSA-like KIR
        -> wasm32 | x86_64 | aarch64 | cljs -> independent verifier -> admission
 ```
 
-## Runtime: nbb-native for wasm32, JVM compat for everything else
+## Runtime: nbb-native for Wasm and ordinary native targets
 
-`bin/kotoba compile`/`check` for a `wasm32`/`wasm32-browser`/`wasm32-wasi`
-`--target` runs entirely under `nbb` (ClojureScript on Node) -- **no JVM
-process is spawned at all** for that path, matching this monorepo's
+`bin/kotoba compile`/`check` for a `wasm32*`, ordinary `x86_64*`, or ordinary
+`aarch64*` `--target` runs entirely under `nbb` (ClojureScript on Node) --
+**no JVM process is spawned at all** for that path, matching this monorepo's
 repo-wide runtime priority (`kotoba wasm runtime` first, JVM/`bb` demoted to
 last-resort compat). The frontend reader/validator
 (`kotoba.compiler.frontend`), the KIR lowering/compile-time oracle
@@ -238,14 +244,72 @@ i64 max/min, add-wraparound, the sleb continuation-bit crossing at 127/128).
 Observable semantics, ABI behavior, resource bounds, and fail-closed rejection
 are the compatibility contract; byte layout is not.
 
-**Every other target (`x86_64*`, `aarch64*`, `aarch64-android`,
-`aarch64-ios`) and every other `kotoba` subcommand** (`package-ios`, `sbom`,
+Compile performance is measured as both end-to-end fresh-process wall time and
+loaded-compiler phase time. `npm run benchmark-compiler` emits a versioned JSON
+report for Wasm and the host-native target; opt-in phase instrumentation and
+comparison rules are documented in [`docs/performance.md`](docs/performance.md).
+The launcher chooses separate Wasm, AArch64, and x86-64 nbb entrypoints before
+namespace loading, so no compile loads an unused machine-code backend.
+For editors and project builds, `bin/kotoba -M worker --target <target>` keeps
+that target-locked compiler loaded behind a bounded sequential NDJSON protocol;
+small-module warm compiles are measured separately from cold CLI startup.
+Workers maintain a bounded content-addressed LRU keyed by source, exact policy,
+and target. Only admitted, fully emitted—and for native, independently
+verified—artifacts enter it; SHA-256 integrity is checked again on every hit.
+On policy-only changes, a separate integrity-checked HIR/KIR cache reuses the
+policy-independent compiler stages while capability admission still runs for
+the new policy before any KIR-backed artifact can be emitted.
+`npm run benchmark-runtime` also builds and checksum-verifies a five-workload,
+seven-lane matrix. Scalar multiplication, a balanced branch, and a
+data-dependent xorshift32 integer mix run on Kotoba V8, Wasmtime, and
+supervised native; primitive and boxed Clojure; advanced ClojureScript; and
+release Rust. A fourth xorshift-indexed vector construction/read workload
+exposes aggregate representation cost. The current candidate scalar-replaces
+proven non-escaping `vector-at`/`vector-count` literal uses into checked Wasm
+locals while escaping or
+wide values retain the bounded typed-host path. A fifth row observes the
+vector across a source function boundary, forcing materialization through one
+bounded scratch-memory bulk copy and separating that cost from scalar
+replacement. The native cell for that row is explicitly unsupported until
+the published KIR/verifier pins admit vector parameters/results. The candidate
+path admits them across private `defn-` calls. Its first public ownership slice
+also admits only a zero-argument, non-entry export returning `:vector-i64` or
+`:vector-f64`: the guest's context handle remains private, while the parent
+supervisor validates the complete bounded slice and atomically writes
+`KXVEC01\\0` copy-v1 little-endian wire data. Vector parameters and entry
+results remain fail-closed. Pass `--native-kir-root`, `--native-verifier-root`, and
+`--native-backend-root` together to benchmark that atomic candidate. The
+harness rejects partial overrides and records exact commits, cleanliness, and
+classpath verification. Native steady state is measured inside the production
+fork-supervised sandbox: an opt-in repeat mode accepts only an empty capability
+allowlist, resets fuel and every bounded arena before each invocation, requires
+identical results, and reports the child-side monotonic interval. The original
+256-iteration startup-inclusive batch remains a separate upper bound.
+Cold startup, warmed throughput, peak RSS, and payload sizes are separated per
+workload; Wasmtime CLI remains honestly marked without steady-state numbers.
+Current measurements are in
+[`docs/performance.md`](docs/performance.md), ADR 0222, and its
+[machine-readable EDN companion](docs/adr/0222-reproducible-cross-language-runtime-baseline.edn).
+The repeat/copy-v1-capable loader has source identity
+`94fd2a6c…`; until the coordinated `kotoba-lang/artifact` identity change is
+published and this repository's artifact pin/lock advance, attested candidate
+conformance must set `KOTOBA_ARTIFACT_ROOT=/absolute/path/to/artifact` and the
+default pinned identity correctly rejects the changed loader.
+Before a local `kotoba-wasm` candidate is promoted, `npm run
+qualify-wasm-backend -- --wasm-root /absolute/path --require-clean
+--require-pinned --require-published` independently requires JVM/nbb byte identity, `wasm-tools`
+validation, scalar and vector checksums, a clean published backend tree,
+matching `deps.edn`/`deps-lock.edn` pins, and a configured remote ref advertising the
+commit. Its versioned JSON distinguishes
+candidate qualification from actual promotion readiness.
+
+**The `*-aiueos-*` firmware/kernel packaging targets and every other `kotoba`
+subcommand** (`package-ios`, `sbom`,
 `attest-release`, `sign`, `run`, receipts, coverage, etc.) still goes through
 `clojure -M:run` (`kotoba.compiler.cli`, JVM) for compiler commands and
 `clojure -M:native-run` for `measure-runtime` / `run` -- native
-codegen (`backend/x86_64.clj`/`backend/aarch64.clj`), ELF64/PE32+ packaging,
-signing, the independent verifier, and release/coverage evidence are not
-part of this nbb-native slice and remain JVM/compat, honestly, the same way
+ELF64/PE32+ packaging, signing, and release/coverage evidence are not part of
+this nbb-native slice and remain JVM/compat, honestly, the same way
 `kototama`'s own R1 (JVM/Chicory tender) is demoted to "compat suite" behind
 its R2 native-WASM-host path. `bin/kotoba` picks the path automatically
 based on the subcommand and `--target`; nothing about the CLI's argument
@@ -715,7 +779,7 @@ kernel profile packages its sealed x86-64 code as an import-free ELF64 image
 and writes a linkable ELF64 object exporting `kotoba_aiueos_probe`:
 
 ```sh
-bin/kotoba-compiler compile examples/aiueos-probe.kotoba \
+bin/amu compile examples/aiueos-probe.kotoba \
   --target x86_64-aiueos-kernel-v1 --output kotoba_aiueos_probe.o
 ```
 

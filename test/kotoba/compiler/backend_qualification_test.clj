@@ -21,7 +21,7 @@
                 (read-resource "kotoba/lang/application-language.edn"))
         contract (read-resource "kotoba/lang/component-model-v1.edn")]
     (is (= :specified (:status policy)))
-    (is (= :kotoba-lang/compiler (:artifact-owner policy)))
+    (is (= :kotoba-lang/amu (:artifact-owner policy)))
     (is (= :declared-typed-capabilities-only (get-in policy [:world :imports])))
     (is (= :reject (get-in policy [:world :undeclared-imports])))
     (is (false? (get-in policy [:wasi :application-ambient-authority])))

@@ -1,0 +1,14 @@
+(ns benchmarks.runtime.vector)
+
+(defn vector-alloc [iterations]
+  (loop [index 0 state 2463534242 total 0]
+    (if (= index iterations)
+      total
+      (let [values [3 5 8 13 21 34 55 89]
+            next (xorshift32 state)]
+        (recur (+ index 1)
+               next
+               (+ total (vector-at values (bit-and next 7))))))))
+
+(defn main []
+  (vector-alloc 8))

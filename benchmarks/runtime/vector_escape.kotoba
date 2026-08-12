@@ -1,0 +1,23 @@
+(ns benchmarks.runtime.vector-escape)
+
+(defn- retain-vector [values :vector-i64] :vector-i64
+  values)
+
+(defn vector-escape [iterations]
+  (loop [index 0 state 2463534242 total 0]
+    (if (= index iterations)
+      total
+      ;; Crossing an ordinary function boundary every 512th iteration makes
+      ;; the binding genuinely escape scalar replacement while staying under
+      ;; the fixed 512-call fuel budget across warmup plus measurement.
+      (let [values [3 5 8 13 21 34 55 89]
+            next (xorshift32 state)]
+        (recur (+ index 1)
+               next
+               (+ total
+                  (if (= (bit-and index 511) 0)
+                    (vector-at (retain-vector values) (bit-and next 7))
+                    (vector-at values (bit-and next 7)))))))))
+
+(defn main []
+  (vector-escape 8))

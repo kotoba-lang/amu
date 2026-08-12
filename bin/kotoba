@@ -9,6 +9,7 @@
 (def usage
   ["usage: kotoba -M compile <file.kotoba|file.cljk|file.cljc> --target wasm32-browser|wasm32-wasi|x86_64-linux|x86_64-macos|x86_64-windows|aarch64-linux|aarch64-macos|aarch64-windows|aarch64-android|aarch64-ios|js|js-browser [--policy policy.edn] --output <file>"
    "       kotoba -M check <file.kotoba|file.cljk|file.cljc> [--policy policy.edn]"
+   "       kotoba -M worker [--target wasm32|x86_64|aarch64]  # bounded NDJSON on stdin/stdout"
    "       kotoba -M inspect <file.kotoba|file.cljk|file.cljc> [--output interface.edn]"
    "       kotoba -M package-ios program.kexe [--entry main] --output program.S [--manifest-output program.edn]"
    "       kotoba -M sbom <artifact> --output artifact.spdx"
@@ -34,7 +35,8 @@
   (.exit js/process code))
 
 ;; The wasm32 and ordinary (non-aiueos) native target names
-;; `kotoba.compiler.nbb.cli` covers (mirrors its own `targets` table).
+;; The split `kotoba.compiler.nbb.wasm-cli` / `kotoba.compiler.nbb.cli`
+;; entrypoints cover the targets below without loading the other backend.
 ;; `x86_64-aiueos-*`/`aarch64-aiueos-*` (ELF64/PE32+ firmware/kernel
 ;; packaging) stay JVM-only -- see that namespace's own comment for why.
 ;; Any other `--target` value, or any subcommand besides `compile`/
@@ -51,9 +53,23 @@
 (defn- nbb-native-eligible? [sub-args]
   (let [cmd (first sub-args)]
     (or (= cmd "check")
+        (and (= cmd "worker") (contains? nbb-native-targets (option sub-args "--target")))
         (and (= cmd "compile") (contains? nbb-native-targets (option sub-args "--target"))))))
 
-;; `kotoba.compiler.nbb.cli` requires `kotoba.kir.admission`, whose
+(defn- nbb-entrypoint [root sub-args]
+  (let [command (first sub-args)
+        target (option sub-args "--target")
+        wasm? (or (= command "check")
+                  (nil? target)
+                  (.startsWith target "wasm32"))
+        filename (cond
+                   wasm? "wasm_cli.cljs"
+                   (.startsWith target "aarch64") "aarch64_cli.cljs"
+                   :else "x86_64_cli.cljs")]
+    (.join path root "src" "kotoba" "compiler" "nbb"
+           filename)))
+
+;; Both nbb compiler entrypoints require `kotoba.kir.admission`, whose
 ;; transitive dependencies include the shared security controls. nbb has no
 ;; concept of `deps.edn`/tools.deps -- it only
 ;; resolves namespaces from directories on its own `--classpath`. `clojure
@@ -168,7 +184,7 @@
                                  (clj->js (into ["--stack-size=4096"
                                                  nbb-cli "--classpath"
                                                  classpath
-                                                 (.join path root "src" "kotoba" "compiler" "nbb" "cli.cljs")]
+                                                 (nbb-entrypoint root sub-args)]
                                                 sub-args))
                                  #js {:cwd root :stdio "inherit" :env js/process.env})]
           (when (.-error result)

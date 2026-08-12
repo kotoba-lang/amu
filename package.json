@@ -1,5 +1,5 @@
 {
-  "name": "kotoba-compiler-tooling",
+  "name": "amu-tooling",
   "private": true,
   "dependencies": {
     "@noble/hashes": "2.0.1"
@@ -10,6 +10,14 @@
   },
   "scripts": {
     "test-nbb-wasm32": "nbb --classpath . scripts/test-nbb-wasm32.cljs",
+    "benchmark-compiler": "node scripts/performance-baseline.mjs",
+    "benchmark-runtime": "node scripts/runtime-comparison.mjs",
+    "qualify-wasm-backend": "node scripts/qualify-wasm-backend.mjs",
+    "test-performance-baseline": "node scripts/test-performance-baseline.mjs",
+    "test-runtime-comparison": "node scripts/test-runtime-comparison.mjs",
+    "test-wasm-backend-qualification": "node scripts/test-wasm-backend-qualification.mjs",
+    "test-compiler-worker": "node scripts/test-compiler-worker.mjs",
+    "test-compile-cache": "nbb --classpath src:test test/nbb/compile_cache.cljs",
     "test-nbb-project": "nbb --classpath .:src test/nbb/project.cljs",
     "test-nbb-classpath": "nbb --classpath src test/nbb/classpath.cljs",
     "lock-classpath": "nbb scripts/lock-classpath.cljs",
@@ -23,11 +31,11 @@
     "test-nbb-object-provider": "nbb --classpath . scripts/test-nbb-object-provider.cljs",
     "test-nbb-http-ingress-provider": "nbb --classpath . scripts/test-nbb-http-ingress-provider.cljs",
     "conformance": "nbb scripts/conformance.cljs",
-    "sanitizer": "nbb scripts/sanitizer.cljs",
-    "fuzz": "nbb scripts/fuzz-native.cljs",
+    "sanitizer": "nbb --classpath . scripts/sanitizer.cljs",
+    "fuzz": "nbb --classpath . scripts/fuzz-native.cljs",
     "review-fuzz": "nbb scripts/review-fuzz-corpus.cljs",
     "test-review-fuzz": "nbb scripts/test-review-fuzz-corpus.cljs",
-    "check-workflows": "nbb scripts/check-workflows.cljs",
+    "check-workflows": "nbb --classpath . scripts/check-workflows.cljs",
     "test-browser-host": "nbb scripts/test-browser-host.cljs",
     "test-worker-host": "nbb scripts/test-worker-host.cljs",
     "test-wasi-host": "nbb scripts/test-wasi-host.cljs",

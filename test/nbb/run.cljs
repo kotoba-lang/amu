@@ -1,7 +1,10 @@
 (ns test.nbb.run
   "Repeatable, JVM-free regression test for the nbb-native wasm32
-  compile/check path (`kotoba.compiler.nbb.cli`, spawned by `bin/kotoba` for
-  `wasm32*` targets -- see its own comment). Every case must emit valid Wasm.
+  compile/check path (`kotoba.compiler.nbb.wasm-cli`, spawned by `bin/kotoba`
+  for `wasm32*` targets). The same routing matrix exercises the ISA-specific
+  `kotoba.compiler.nbb.aarch64-cli` and
+  `kotoba.compiler.nbb.x86-64-cli` through the performance/conformance gates.
+  Every case must emit valid Wasm.
   Semantic, ABI, and rejection behavior is covered by the conformance suites;
   emitted bytes are deliberately not treated as the language contract.
   Run from the repo root: `nbb test/nbb/run.cljs`."

@@ -1,0 +1,281 @@
+{:adr/id :adr-0222-reproducible-cross-language-runtime-baseline
+ :adr/title "Reproducible cross-language runtime baseline"
+ :adr/status :accepted
+ :adr/date "2026-08-09"
+ :adr/markdown "0222-reproducible-cross-language-runtime-baseline.md"
+ :adr/decision
+ {:report-format :kotoba.runtime-comparison/v7
+  :benchmark :runtime-workload-matrix
+  :workloads [:scalar-multiply :balanced-branch :integer-mix
+              :vector-allocate-scan :vector-materialize-scan]
+  :lanes [:kotoba-wasm-v8 :kotoba-wasm-wasmtime
+          :kotoba-native-supervised :clojure-hotspot
+          :clojure-hotspot-boxed :clojurescript-v8-advanced
+          :rust-native-release]
+  :separate-measurements [:cold-process-wall
+                          :steady-nanoseconds-per-iteration
+                          :supervised-child-steady
+                          :supervised-batch-wall-including-startup
+                          :peak-resident-set-bytes :artifact-bytes]
+  :native-steady-state :production-supervisor-child-timer
+  :wasmtime-cli-vector-state :supported-when-scalar-replaced-otherwise-unsupported
+  :pinned-maximum-iterations 5000
+  :candidate-maximum-iterations 10000000
+  :vector-iteration-ceilings {:pinned 256 :candidate 100000}}
+ :adr/workload-contracts
+ [{:workload :scalar-multiply :operation "sum 6 * 7 for N iterations"
+   :checksum "42 * N" :cold-iterations 1}
+  {:workload :balanced-branch
+   :operation "sum 41 for the first half and 43 for the second half of even N"
+   :checksum "42 * N for even N" :requires-even-iterations true
+   :cold-iterations 2}
+  {:workload :integer-mix
+   :operation "apply xorshift32 to loop-carried state N times"
+   :checksum "xorshift32^N(2463534242)" :closed-form-resistant true
+   :cold-iterations 1}
+  {:workload :vector-allocate-scan
+   :operation "construct eight immutable i64 items and xorshift32-select one per iteration"
+   :checksum "sum values[xorshift32^i(seed) & 7]"
+   :scalar-replacement-eligible true :closed-form-resistant true :cold-iterations 8}
+  {:workload :vector-materialize-scan
+   :operation "construct eight immutable i64 items, cross a source vector function boundary every 512th iteration, and xorshift32-select one"
+   :checksum "sum values[xorshift32^i(seed) & 7], retaining values when i mod 512 = 0"
+   :materialization-required true :function-boundary true
+   :native-support :private-internal-candidate
+   :exported-native-boundary-supported false
+   :closed-form-resistant true :cold-iterations 8}]
+ :adr/pinned-measurement
+ {:generated-at "2026-08-09T01:19:47.399Z"
+  :samples 5 :iterations 5000 :vector-iterations 256
+  :results
+  {:scalar-multiply
+   {:kotoba-wasm-v8 {:steady-ns-iteration 12.54 :rust-ratio 5.17}
+    :clojure-hotspot {:steady-ns-iteration 14.73 :rust-ratio 6.08}
+    :clojure-hotspot-boxed {:steady-ns-iteration 228.96 :rust-ratio 94.42}
+    :clojurescript-v8-advanced {:steady-ns-iteration 12.13 :rust-ratio 5.00}
+    :rust-native-release {:steady-ns-iteration 2.43 :rust-ratio 1.0}}
+   :balanced-branch
+   {:kotoba-wasm-v8 {:steady-ns-iteration 15.86 :rust-ratio 3.66}
+    :clojure-hotspot {:steady-ns-iteration 16.23 :rust-ratio 3.74}
+    :clojure-hotspot-boxed {:steady-ns-iteration 179.77 :rust-ratio 41.49}
+    :clojurescript-v8-advanced {:steady-ns-iteration 11.48 :rust-ratio 2.65}
+    :rust-native-release {:steady-ns-iteration 4.33 :rust-ratio 1.0}}
+   :integer-mix
+   {:kotoba-wasm-v8 {:steady-ns-iteration 24.40 :rust-ratio 8.46}
+    :clojure-hotspot {:steady-ns-iteration 43.32 :rust-ratio 15.02}
+    :clojure-hotspot-boxed {:steady-ns-iteration 121.37 :rust-ratio 42.09}
+    :clojurescript-v8-advanced {:steady-ns-iteration 42.36 :rust-ratio 14.69}
+    :rust-native-release {:steady-ns-iteration 2.88 :rust-ratio 1.0}}
+   :vector-allocate-scan
+   {:kotoba-wasm-v8 {:steady-ns-iteration 7777.99 :rust-ratio 2812.38}
+    :kotoba-wasm-wasmtime {:supported false :reason :missing-typed-externref-host}
+    :clojure-hotspot {:steady-ns-iteration 2868.65 :rust-ratio 1037.25}
+    :clojure-hotspot-boxed {:steady-ns-iteration 3079.75 :rust-ratio 1113.58}
+    :clojurescript-v8-advanced {:steady-ns-iteration 462.73 :rust-ratio 167.31}
+    :rust-native-release {:steady-ns-iteration 2.77 :rust-ratio 1.0}}}
+  :artifacts {:scalar-wasm-bytes 708 :vector-wasm-bytes 2063
+              :scalar-kexe-bytes 9480 :vector-kexe-bytes 7884
+              :clojurescript-advanced-bytes 93203
+              :rust-release-bytes 487992}}
+ :adr/structured-loop-candidate
+ {:status :unpublished :base-commit "b0c9837f" :pin-contains-candidate false
+  :classpath-verified true :dirty true
+  :generated-at "2026-08-09T01:24:45.861Z"
+  :iterations 10000000 :warmup-iterations 1000000
+  :vector-iterations 100000 :vector-warmup-iterations 100000 :samples 5
+  :artifacts {:scalar {:bytes 731
+                       :sha256 "b828c616fc6d724e95ac1ec5e837c205e92931beb4643cee1c2c959a04098464"}
+              :vector {:bytes 2056
+                       :sha256 "5f1aa6e8f257cb701fb7b46bc1527e4bb17620c3675044a73879e89e998b64ff"}}
+  :results
+  {:scalar-multiply {:steady-ns-iteration 0.68 :rust-ns-iteration 2.25
+                     :rust-ratio 0.30 :speedup-vs-pinned 18.4}
+   :balanced-branch {:steady-ns-iteration 1.06 :rust-ns-iteration 5.35
+                     :rust-ratio 0.20 :speedup-vs-pinned 15.0}
+   :integer-mix {:steady-ns-iteration 3.05 :rust-ns-iteration 3.90
+                 :rust-ratio 0.78 :speedup-vs-pinned 8.0}
+   :vector-allocate-scan {:steady-ns-iteration 5998.10
+                          :rust-ns-iteration 4.03 :rust-ratio 1489.75
+                          :clojure-ns-iteration 269.38
+                          :clojurescript-ns-iteration 29.98}}}
+ :adr/scalar-replacement-candidate
+ {:status :unpublished :base-commit "b0c9837f" :dirty true
+  :generated-at "2026-08-09T11:46:18.762Z"
+  :scope :non-escaping-let-bound-vector-i64-literal
+  :eligible-operations [:vector-at :vector-count]
+  :maximum-items 32 :preserves-evaluation-order true
+  :checked-index true :fallback :bounded-typed-host-externref
+  :iterations 100000 :warmup-iterations 100000 :samples 5
+  :artifact {:bytes 652
+             :sha256 "b3b00cce8c6fa1235f995c73f616b0c4c6fbe92e9f676baef3b1c32501ad718e"
+             :typed-host-imports false}
+  :results {:kotoba-wasm-v8 {:steady-ns-iteration 15.36
+                             :rust-ratio 5.94
+                             :speedup-vs-materialized-candidate 390.4
+                             :speedup-vs-pinned 506.3}
+            :kotoba-wasm-wasmtime {:supported true :checksum 2847627}
+            :clojure-hotspot {:steady-ns-iteration 404.27}
+            :clojure-hotspot-boxed {:steady-ns-iteration 317.57}
+            :clojurescript-v8-advanced {:steady-ns-iteration 34.16}
+            :rust-native-release {:steady-ns-iteration 2.59}}}
+ :adr/bulk-materialization-candidate
+ {:status :unpublished :base-commit "b0c9837f" :dirty true
+  :generated-at "2026-08-10T01:21:35.632Z"
+  :scope :literal-vector-i64-requiring-materialization
+  :scratch {:pages 2 :bytes 131072 :maximum-items 16384
+            :allocation :private-lifo-bump :exported false
+            :reentrant-slices-disjoint true :trap-behavior :fail-closed
+            :imports-required-as-pair true
+            :non-bulk-typed-pages 0}
+  :host-copy {:calls-per-literal 1 :synchronous true
+              :validates [:descriptor :integer-range :alignment :item-limit
+                          :safe-end :actual-memory-length]
+              :retains-memory-view false}
+  :iterations 100000 :warmup-iterations 100000 :samples 5
+  :artifact {:bytes 2282
+             :sha256 "9fe581a86a959375d3e82b95338ec1bf0b04c44bede840be8805251c262c828d"
+             :typed-host-imports true
+             :scratch-memory-exported false}
+  :results {:kotoba-wasm-v8 {:steady-ns-iteration 967.69
+                             :rust-ratio 369.00
+                             :speedup-vs-pre-bulk-candidate 6.20
+                             :speedup-vs-pinned-materialized 8.04}
+            :kotoba-wasm-wasmtime {:supported false
+                                   :reason :missing-typed-externref-host}
+            :kotoba-native-supervised
+            {:supported false :reason :vector-function-boundary-not-admitted}
+            :clojure-hotspot {:steady-ns-iteration 244.19}
+            :clojure-hotspot-boxed {:steady-ns-iteration 237.68}
+            :clojurescript-v8-advanced {:steady-ns-iteration 22.83}
+            :rust-native-release {:steady-ns-iteration 2.62}}}
+ :adr/private-native-vector-boundary-candidate
+ {:status :unpublished
+  :generated-at "2026-08-10T03:01:29.500Z"
+  :samples 5 :requested-iterations 5000
+  :boundary {:visibility :private :types [:vector-i64 :vector-f64]
+             :representation :context-owned-i64-handle
+             :exported-parameter-result :rejected
+             :entry-result :rejected}
+  :components
+  {:kotoba-kir {:commit "5cff10e9397613e1997a7c3e62205fb28ce7b9b6" :clean true}
+   :kotoba-verifier {:commit "e6d275e298aff9a98af9c6fe78bdf630e1d04ea9" :clean true}
+   :kotoba-native {:commit "ef2df69305acbf83c6b7bc6466b7746c1f3f7428" :clean true}}
+  :classpath-verified true
+  :native-steady-state
+  {:measured true :timer :child-monotonic :process-startup-excluded true
+   :warmup-invocations 10 :measured-invocations 100
+   :workload-iterations-per-invocation 256
+   :allowlist :empty :deterministic-result-required true
+   :reset-per-invocation [:fuel :pairs :kgraph :string-pool
+                          :vectors :vector-items]}
+  :supervised-batch {:iterations 256 :includes-process-startup true
+                     :bounded-by-fixed-fuel 512}
+  :results
+  {:scalar-multiply {:cold-ms 14.29 :steady-ns-iteration 13.40
+                     :rust-ratio 5.54
+                     :batch-ns-iteration-including-startup 69367.51
+                     :rss-bytes 4308992 :artifact-bytes 9480}
+   :balanced-branch {:cold-ms 12.87 :steady-ns-iteration 15.55
+                     :rust-ratio 7.23
+                     :batch-ns-iteration-including-startup 61364.75
+                     :rss-bytes 4276224 :artifact-bytes 9480}
+   :integer-mix {:cold-ms 14.81 :steady-ns-iteration 22.93
+                 :rust-ratio 8.96
+                 :batch-ns-iteration-including-startup 56612.14
+                 :rss-bytes 4276224 :artifact-bytes 9480}
+   :vector-allocate-scan {:cold-ms 33.96 :steady-ns-iteration 74.10
+                          :rust-ratio 28.59
+                          :batch-ns-iteration-including-startup 56660.32
+                          :rss-bytes 4341760 :artifact-bytes 7884}
+   :vector-materialize-scan {:cold-ms 12.17 :steady-ns-iteration 63.01
+                             :rust-ratio 24.23
+                             :batch-ns-iteration-including-startup 43719.08
+                             :rss-bytes 4325376 :artifact-bytes 8903}}
+  :claim "workload-specific supervised steady throughput, not general Rust parity"}
+ :adr/native-export-copy-v1-candidate
+ {:status :unpublished
+  :surface {:visibility :non-entry-export :arity 0
+            :results [:vector-i64 :vector-f64]
+            :vector-parameters :rejected :entry-result :rejected}
+  :descriptor {:format :kotoba.kexe-export/copy-v1
+               :ownership :invocation-copy :maximum-items 16384}
+  :loader-gates {:structured-report true :allowlist :empty
+                 :supervised-repeat false}
+  :wire {:magic-bytes [75 88 86 69 67 48 49 0] :endianness :little
+         :header [:magic-u8x8 :kind-u64 :count-u64]
+         :kinds {:vector-i64 1 :vector-f64 2}
+         :item :raw-u64 :temporary-mode "0600" :publish :atomic-rename}
+  :ownership {:guest-handle-exposed false :host-path-visible-to-child false
+              :validation [:handle :vector-table-bound :slice-bound
+                           :item-count-bound]}
+  :observed {:isas [:x86_64 :aarch64]
+             :i64-items [1 -2 3] :byte-identical-across-isas true
+             :f64-raw-bits [9223372036854775808 9221120237041090560
+                            4609434218613702656]
+             :invalid-handle-exit 126 :invalid-handle-published-file false}
+  :remaining [:tender-native-integration :vector-input-marshalling
+              :entry-result-abi :windows-parity]}
+ :adr/runtime-identity-candidate
+ {:loader-source-sha256 "94fd2a6cbe0fcfb9f5ead80190c8104ca75336671d8e28427dee469b772a5244"
+  :artifact-local-candidate true :artifact-published false
+  :compiler-pin-advanced false :lock-regenerated false
+  :default-pin-fails-closed true
+  :candidate-command "KOTOBA_ARTIFACT_ROOT=/absolute/path/to/artifact nbb scripts/conformance.cljs"
+  :candidate-conformance-passed true
+  :candidate-compiler-tests {:tests 931 :assertions 7342
+                             :failures 0 :errors 0}}
+ :adr/claim-boundaries
+ {:rust-parity false :workload-specific-only true
+  :integer-mix-is-stronger-scalar-optimizer-signal true
+  :materialized-allocation-gap-material true
+  :native-private-vector-function-boundary-supported true
+  :native-exported-vector-result-copy-v1-supported true
+  :native-exported-vector-parameter-supported false
+  :native-vector-entry-result-supported false
+  :native-steady-state-measured true
+  :non-escaping-vector-rust-ratio 5.94
+  :cold-ratios-comparable-across-workloads false
+  :pinned-stack-depth-workload-dependent true}
+ :adr/backend-promotion-gate
+ {:format :kotoba.wasm-backend-qualification/v2
+  :command "npm run qualify-wasm-backend -- --wasm-root PATH --require-clean --require-pinned --require-published"
+  :candidate-checks [:exact-src-on-classpath :jvm-nbb-byte-identity
+                     :wasm-tools-validation :integer-mix-checksum
+                     :vector-scalar-replacement-checksum
+                     :vector-bulk-materialization-checksum]
+  :promotion-checks [:candidate-qualified :backend-clean
+                     :remote-ref-advertises-commit :deps-pin-equals-commit
+                     :lock-pin-equals-commit]
+  :observed {:generated-at "2026-08-10T01:01:00.404Z"
+             :candidate-qualified true :promotion-ready false
+             :publication-checked false :backend-clean false
+             :pins-agree true :compiler-pins-base-head true
+             :candidate-tree-published false}}
+ :adr/safety
+ {:native-loader [:write-xor-execute :fork-supervised :bounded-context
+                  :fuel :bounded-vector-arena :empty-allowlist-repeat
+                  :per-invocation-state-reset :deterministic-result-check
+                  :child-monotonic-timer :parent-validated-vector-copy
+                  :atomic-output-rename]
+  :wasm-bulk-vector [:fixed-imported-memory :private-lifo-bump
+                     :wrap-check :capacity-check :host-range-validation
+                     :synchronous-copy :no-memory-export]
+  :unsafe-direct-native-benchmark false}
+ :adr/verification
+ {:commands ["npm run test-runtime-comparison"
+             "npm run test-wasm-backend-qualification"
+             "npm run fuzz" "npm run sanitizer"
+             "KOTOBA_ARTIFACT_ROOT=PATH nbb scripts/conformance.cljs"
+             "clojure -Sdeps ARTIFACT_LOCAL_ROOT -M:test"]
+  :matrix-shape [5 7]
+  :checks [:checksums :support-state :cold :steady-or-explicitly-unmeasured
+           :supervised-native-steady :supervised-native-batch
+           :rust-ratios :peak-rss :artifact-size
+           :native-safety]}
+ :adr/remaining-workloads
+ [:recursion :vector-map-reduce :immutable-list-tree :string-scan
+  :mutation-derived-vector :exported-vector-input-marshalling
+  :tender-native-copy-v1 :windows-copy-v1
+  :allocation-region-teardown :capability-calls
+  :embedded-typed-wasmtime :chicory
+  :packaged-clojure-aot]}

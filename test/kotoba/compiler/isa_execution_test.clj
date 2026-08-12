@@ -20,7 +20,8 @@
   \"2 tests, N assertions, 0 failures\" says nothing about how many backends
   produced it. A host that cannot build both loaders fails this test rather
   than quietly halving it."
-  (:require [clojure.java.io :as io]
+  (:require [clojure.edn :as edn]
+            [clojure.java.io :as io]
             [clojure.java.shell :as shell]
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
@@ -95,6 +96,8 @@
 (defn- run-native
   ([isa source] (run-native isa source "-" {:allow #{}}))
   ([isa source allow policy]
+   (run-native isa source allow policy {}))
+  ([isa source allow policy extra-env]
    (let [[_ target] (isas isa)
          artifact (:artifact (compiler/compile-source source target policy))
          code (tmp (str "kotoba-isa-code-" isa ".bin"))
@@ -103,8 +106,9 @@
        (.write out (byte-array (map #(unchecked-byte (bit-and (int %) 0xff))
                                     (:code artifact)))))
      (:out (shell/sh (@loaders isa) (.getPath code) (str offset) "0" isa allow
-                     :env (assoc (into {} (System/getenv))
-                                 "KEXE_STRUCTURED_REPORT" "1"))))))
+                     :env (merge (into {} (System/getenv))
+                                 {"KEXE_STRUCTURED_REPORT" "1"}
+                                 extra-env))))))
 
 (def ^:private f64-one 4607182418800017408)
 (def ^:private f64-two 4611686018427387904)
@@ -505,3 +509,45 @@
         (is (not (str/includes? report "KEXE_TRAP")) (str/trim report))
         ;; The qualification host's cap-call provider adds one.
         (is (str/includes? report ":result 6") (str/trim report))))))
+
+(deftest supervised-repeat-resets-bounded-state-on-every-available-isa
+  ;; One literal allocates enough vector handles/items that 1,000 invocations
+  ;; would exhaust the fixed arenas if cursor state leaked between calls.
+  (doseq [[isa loader] @loaders :when loader]
+    (testing isa
+      (let [report (edn/read-string
+                    (run-native isa
+                                "(defn main [] (vector-at [3 5 8 13 21 34 55 89] 4))"
+                                "-" {:allow #{}}
+                                {"KEXE_SUPERVISED_REPEAT" "1000"
+                                 "KEXE_SUPERVISED_WARMUP" "10"}))
+            repeated (:supervised-repeat report)]
+        (is (= :ok (:status report)) report)
+        (is (= 21 (:result report)) report)
+        (is (= 10 (:warmup-invocations repeated)) report)
+        (is (= 1000 (:measured-invocations repeated)) report)
+        (is (pos? (:elapsed-nanoseconds repeated)) report)
+        (is (pos? (:fuel-consumed repeated)) report)
+        ;; The final invocation owns exactly one literal, not all prior ones.
+        (is (= {:pairs 0 :kgraph-datoms 0 :string-bytes 0
+                :vectors 9 :vector-items 8}
+               (:final-arena-used repeated))
+            report)))))
+
+(deftest vector-copy-out-fails-closed-when-an-export-did-not-return-a-handle
+  ;; The positive end-to-end row is pinned in the unpublished candidate
+  ;; closure because the published KIR/verifier pins still reject this export
+  ;; shape. This negative row is dependency-independent and protects the
+  ;; loader itself: opting a scalar export into copy-v1 must not turn its word
+  ;; into an arena index or leave a partial host file behind.
+  (doseq [[isa loader] @loaders :when loader]
+    (testing isa
+      (let [output (tmp (str "kotoba-copy-v1-invalid-" isa ".vec"))
+            report (edn/read-string
+                    (run-native isa "(defn main [] 0)" "-" {:allow #{}}
+                                {"KEXE_MARSHAL_RESULT" "vector-i64"
+                                 "KEXE_MARSHAL_OUTPUT" (.getPath output)}))]
+        (is (= :trap (:status report)) report)
+        (is (= 126 (:exit report)) report)
+        (is (false? (.exists output))
+            "failed validation must not publish an output file")))))

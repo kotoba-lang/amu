@@ -141,7 +141,7 @@ their files either.
   storage}-v1.edn`, `docs/adr/{0060,0061,0064}-*.md`, and `docs/adr/0049-
   component-application-language-gap-ledger.md` in full — not summarized
   from memory or from this task's own background note.
-- `gh pr list --repo kotoba-lang/compiler --search "state provider"` /
+- `gh pr list --repo kotoba-lang/amu --search "state provider"` /
   `--search "state capability"` (run before writing any code): PR #219
   ("implement first real (non-identity) state provider through Canonical
   ABI", ADR 0060) and PR #226 ("grow state-v1 real provider to full

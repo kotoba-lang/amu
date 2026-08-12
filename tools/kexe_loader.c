@@ -14,6 +14,7 @@
 #include <stddef.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
+#include <time.h>
 #include <unistd.h>
 
 #if defined(__APPLE__)
@@ -44,6 +45,9 @@ typedef int64_t (*kexe_fn8)(int64_t, int64_t, int64_t, int64_t,
  * string pool above already makes, in bytes rather than words. */
 #define KEXE_VECTOR_CAPACITY 4096u
 #define KEXE_VECTOR_ITEM_CAPACITY 65536u
+#define KEXE_VECTOR_VALUE_MAX_ITEMS 16384u
+#define KEXE_MAX_SUPERVISED_INVOCATIONS 1000000u
+#define KEXE_INITIAL_FUEL 512u
 
 struct kexe_context_v3 {
   uint64_t version;
@@ -139,6 +143,12 @@ struct kexe_shared_v3 {
   struct kexe_vector_v1 vectors[KEXE_VECTOR_CAPACITY];
   uint64_t vector_item_used;
   int64_t vector_items[KEXE_VECTOR_ITEM_CAPACITY];
+  /* Supervisor-only benchmark evidence. These fields are outside the guest
+   * context ABI and are written only by the already sandboxed child. */
+  uint64_t measured_invocations;
+  uint64_t warmup_invocations;
+  uint64_t elapsed_nanoseconds;
+  uint64_t measured_fuel_consumed;
 };
 
 _Static_assert(offsetof(struct kexe_context_v3, fuel) == 8, "fuel ABI drift");
@@ -201,6 +211,21 @@ static int parse_i64(const char *text, int64_t *value) {
   long long parsed = strtoll(text, &end, 10);
   if (errno == ERANGE || end == text || *end != '\0') return -1;
   *value = (int64_t)parsed;
+  return 0;
+}
+
+static int parse_supervised_count(const char *name, uint64_t *value,
+                                  int required) {
+  const char *text = getenv(name);
+  if (text == NULL) {
+    if (required) return -1;
+    *value = 0;
+    return 0;
+  }
+  if (parse_u64(text, value) != 0 || *value > KEXE_MAX_SUPERVISED_INVOCATIONS ||
+      (required && *value == 0)) {
+    return -1;
+  }
   return 0;
 }
 
@@ -784,17 +809,158 @@ static int supervise(pid_t child) {
 }
 
 static void write_supervisor_report(const struct kexe_shared_v3 *shared,
-                                    int child_status) {
+                                    int child_status, int repeated,
+                                    int marshalled) {
   if (child_status == 0 && shared->completed == 1) {
-    printf("{:status :ok :result %" PRId64
-           " :fuel {:initial 512 :remaining %" PRIu64
-           "} :heap {:capacity 4096 :used %" PRIu64 "}}\n",
-           shared->result, shared->context.fuel, shared->pair_used);
+    printf("{:status :ok :result ");
+    if (marshalled) {
+      printf(":marshalled");
+    } else {
+      printf("%" PRId64, shared->result);
+    }
+    printf(" :fuel {:initial 512 :remaining %" PRIu64
+           "} :heap {:capacity 4096 :used %" PRIu64 "}",
+           shared->context.fuel, shared->pair_used);
+    if (repeated) {
+      printf(" :supervised-repeat {:warmup-invocations %" PRIu64
+             " :measured-invocations %" PRIu64
+             " :elapsed-nanoseconds %" PRIu64
+             " :fuel-consumed %" PRIu64
+             " :final-arena-used {:pairs %" PRIu64
+             " :kgraph-datoms %" PRIu64
+             " :string-bytes %" PRIu64
+             " :vectors %" PRIu64
+             " :vector-items %" PRIu64 "}}",
+             shared->warmup_invocations, shared->measured_invocations,
+             shared->elapsed_nanoseconds, shared->measured_fuel_consumed,
+             shared->pair_used, shared->kgraph_used, shared->string_pool_used,
+             shared->vector_used, shared->vector_item_used);
+    }
+    printf("}\n");
   } else {
     printf("{:status :trap :exit %d :fuel {:initial 512 :remaining %" PRIu64
            "} :heap {:capacity 4096 :used %" PRIu64 "}}\n",
            child_status, shared->context.fuel, shared->pair_used);
   }
+}
+
+static void encode_le64(uint8_t output[8], uint64_t value) {
+  for (unsigned int i = 0; i < 8; i++) {
+    output[i] = (uint8_t)(value >> (i * 8));
+  }
+}
+
+static int write_all(int fd, const uint8_t *bytes, size_t length) {
+  while (length != 0) {
+    ssize_t written = write(fd, bytes, length);
+    if (written < 0) {
+      if (errno == EINTR) continue;
+      return -1;
+    }
+    if (written == 0) { errno = EIO; return -1; }
+    bytes += (size_t)written;
+    length -= (size_t)written;
+  }
+  return 0;
+}
+
+/* Copy-v1 is deliberately a supervisor operation. The guest returns its
+ * context-owned handle to the parent through shared state, then the parent
+ * validates the complete slice before it opens the requested host path. The
+ * guest therefore receives neither that path nor an output buffer pointer.
+ *
+ * Wire layout (all integers little-endian):
+ *   8 bytes  "KXVEC01\\0"
+ *   u64      kind (1 = vector-i64, 2 = vector-f64 raw IEEE-754 words)
+ *   u64      item count
+ *   u64[]    item words
+ */
+static int copy_marshaled_vector(const struct kexe_shared_v3 *shared,
+                                  uint64_t kind, const char *output_path) {
+  if (shared->vector_used > KEXE_VECTOR_CAPACITY ||
+      shared->vector_item_used > KEXE_VECTOR_ITEM_CAPACITY ||
+      shared->result <= 0 ||
+      (uint64_t)shared->result > shared->vector_used) {
+    errno = EINVAL;
+    return -1;
+  }
+  const struct kexe_vector_v1 *vector =
+      &shared->vectors[(uint64_t)shared->result - 1u];
+  if (vector->length > KEXE_VECTOR_VALUE_MAX_ITEMS ||
+      vector->offset > shared->vector_item_used ||
+      vector->length > shared->vector_item_used - vector->offset) {
+    errno = EINVAL;
+    return -1;
+  }
+
+  size_t path_length = strlen(output_path);
+  if (path_length == 0 || path_length > SIZE_MAX - 48u) {
+    errno = ENAMETOOLONG;
+    return -1;
+  }
+  char *temporary = malloc(path_length + 48u);
+  if (temporary == NULL) return -1;
+  int formatted = snprintf(temporary, path_length + 48u, "%s.tmp.%ld",
+                           output_path, (long)getpid());
+  if (formatted < 0 || (size_t)formatted >= path_length + 48u) {
+    free(temporary);
+    errno = ENAMETOOLONG;
+    return -1;
+  }
+
+  int fd = open(temporary, O_WRONLY | O_CREAT | O_EXCL, 0600);
+  if (fd < 0) { free(temporary); return -1; }
+  static const uint8_t magic[8] = {'K', 'X', 'V', 'E', 'C', '0', '1', 0};
+  uint8_t header[24];
+  memcpy(header, magic, sizeof(magic));
+  encode_le64(header + 8, kind);
+  encode_le64(header + 16, vector->length);
+
+  int ok = write_all(fd, header, sizeof(header));
+  uint8_t word[8];
+  for (uint64_t i = 0; ok == 0 && i < vector->length; i++) {
+    encode_le64(word, (uint64_t)shared->vector_items[vector->offset + i]);
+    ok = write_all(fd, word, sizeof(word));
+  }
+  if (ok == 0 && fsync(fd) != 0) ok = -1;
+  if (close(fd) != 0) ok = -1;
+  if (ok == 0 && rename(temporary, output_path) != 0) ok = -1;
+  if (ok != 0) {
+    int saved_errno = errno;
+    (void)unlink(temporary);
+    errno = saved_errno;
+  }
+  free(temporary);
+  return ok;
+}
+
+static void reset_invocation_state(struct kexe_shared_v3 *shared) {
+  shared->context.fuel = KEXE_INITIAL_FUEL;
+  shared->pair_used = 0;
+  shared->kgraph_used = 0;
+  shared->string_pool_used = 0;
+  shared->vector_used = 0;
+  shared->vector_item_used = 0;
+}
+
+static uint64_t monotonic_nanoseconds(void) {
+  struct timespec value;
+  if (clock_gettime(CLOCK_MONOTONIC, &value) != 0) raise(SIGILL);
+  return (uint64_t)value.tv_sec * UINT64_C(1000000000) +
+         (uint64_t)value.tv_nsec;
+}
+
+static int64_t invoke_guest(const char *isa, void *memory, uint64_t offset,
+                            const int64_t args[6],
+                            struct kexe_context_v3 *context) {
+  if (strcmp(isa, "x86_64") == 0) {
+    kexe_fn6 fn = (kexe_fn6)((uint8_t *)memory + offset);
+    return fn(args[0], args[1], args[2], args[3], args[4],
+              (int64_t)(uintptr_t)context);
+  }
+  kexe_fn8 fn = (kexe_fn8)((uint8_t *)memory + offset);
+  return fn(args[0], args[1], args[2], args[3], args[4], 0, 0,
+            (int64_t)(uintptr_t)context);
 }
 
 /* Keep post-sandbox output independent of libc stdio's lazy initialization. */
@@ -866,7 +1032,7 @@ static void install_limits(void) {
   BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, (number), 0, 1), \
   BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW)
 
-static void install_syscall_sandbox(void) {
+static void install_syscall_sandbox(int allow_clock) {
 #if defined(__x86_64__)
   const uint32_t expected_arch = AUDIT_ARCH_X86_64;
 #elif defined(__aarch64__)
@@ -887,6 +1053,11 @@ static void install_syscall_sandbox(void) {
       ALLOW_SYSCALL(__NR_getpid),
       ALLOW_SYSCALL(__NR_gettid),
       ALLOW_SYSCALL(__NR_tgkill),
+#if defined(__NR_clock_gettime)
+      BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_clock_gettime, 0, 1),
+      BPF_STMT(BPF_RET | BPF_K,
+               allow_clock ? SECCOMP_RET_ALLOW : SECCOMP_RET_TRAP),
+#endif
       ALLOW_SYSCALL(__NR_munmap),
       ALLOW_SYSCALL(__NR_brk),
       BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_TRAP),
@@ -899,7 +1070,8 @@ static void install_syscall_sandbox(void) {
   if (prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &program) != 0) fail("seccomp");
 }
 #elif defined(__APPLE__) && !defined(KEXE_SANITIZER_TEST)
-static void install_syscall_sandbox(void) {
+static void install_syscall_sandbox(int allow_clock) {
+  (void)allow_clock;
   static const char profile[] =
       "(version 1)"
       "(deny default)"
@@ -924,7 +1096,7 @@ static void install_syscall_sandbox(void) {
 #pragma clang diagnostic pop
 }
 #else
-static void install_syscall_sandbox(void) {}
+static void install_syscall_sandbox(int allow_clock) { (void)allow_clock; }
 #endif
 
 static void probe_denied(const char *reason) {
@@ -1004,12 +1176,66 @@ int main(int argc, char **argv) {
   shared->context.code_length = (uint64_t)length;
   if (parse_allow(argv[5], shared->context.allow) != 0) return 2;
   int structured_report = getenv("KEXE_STRUCTURED_REPORT") != NULL;
+  const char *repeat_text = getenv("KEXE_SUPERVISED_REPEAT");
+  const char *warmup_text = getenv("KEXE_SUPERVISED_WARMUP");
+  const char *marshal_result_text = getenv("KEXE_MARSHAL_RESULT");
+  const char *marshal_output = getenv("KEXE_MARSHAL_OUTPUT");
+  int repeated = repeat_text != NULL;
+  int marshalled = marshal_result_text != NULL || marshal_output != NULL;
+  uint64_t marshal_kind = 0;
+  uint64_t measured_invocations = 1;
+  uint64_t warmup_invocations = 0;
+  if ((repeated && (parse_supervised_count("KEXE_SUPERVISED_REPEAT",
+                                          &measured_invocations, 1) != 0 ||
+                    !structured_report || strcmp(argv[5], "-") != 0)) ||
+      (warmup_text != NULL &&
+       (!repeated || parse_supervised_count("KEXE_SUPERVISED_WARMUP",
+                                            &warmup_invocations, 0) != 0))) {
+    fprintf(stderr,
+            "kexe-loader: supervised repeat requires a structured report, an "
+            "empty allowlist, repeat 1..%u, and warmup 0..%u\n",
+            KEXE_MAX_SUPERVISED_INVOCATIONS,
+            KEXE_MAX_SUPERVISED_INVOCATIONS);
+    return 2;
+  }
+  if (marshalled) {
+    if (marshal_result_text == NULL || marshal_output == NULL ||
+        *marshal_output == '\0' || !structured_report || repeated || arity != 0 ||
+        strcmp(argv[5], "-") != 0) {
+      fprintf(stderr,
+              "kexe-loader: copy-v1 requires result and output together, a "
+              "structured report, zero arguments, an empty allowlist, and no "
+              "supervised repeat\n");
+      return 2;
+    }
+    if (strcmp(marshal_result_text, "vector-i64") == 0) {
+      marshal_kind = 1;
+    } else if (strcmp(marshal_result_text, "vector-f64") == 0) {
+      marshal_kind = 2;
+    } else {
+      fprintf(stderr,
+              "kexe-loader: copy-v1 result must be vector-i64 or vector-f64\n");
+      return 2;
+    }
+  }
 
   pid_t child = fork();
   if (child < 0) fail("fork");
   if (child > 0) {
     int child_status = supervise(child);
-    if (structured_report) write_supervisor_report(shared, child_status);
+    int marshal_succeeded = 0;
+    if (child_status == 0 && shared->completed == 1 && marshalled) {
+      if (copy_marshaled_vector(shared, marshal_kind, marshal_output) == 0) {
+        marshal_succeeded = 1;
+      } else {
+        fprintf(stderr, "kexe-loader: copy-v1 output failed: %s\n",
+                strerror(errno));
+        child_status = 126;
+      }
+    }
+    if (structured_report) {
+      write_supervisor_report(shared, child_status, repeated, marshal_succeeded);
+    }
     if (munmap(shared, sizeof(*shared)) != 0) fail("supervisor shared munmap");
     if (munmap(memory, mapped) != 0) fail("supervisor munmap");
     return child_status;
@@ -1022,7 +1248,7 @@ int main(int argc, char **argv) {
     }
   }
   install_limits();
-  install_syscall_sandbox();
+  install_syscall_sandbox(repeated);
   if (getenv("KEXE_FILESYSTEM_PROBE") != NULL) {
     int probe = open("/etc/passwd", O_RDONLY);
     if (probe >= 0) {
@@ -1064,14 +1290,30 @@ int main(int argc, char **argv) {
     probe_denied("process-denied");
   }
   int64_t result;
-  if (strcmp(isa, "x86_64") == 0) {
-    kexe_fn6 fn = (kexe_fn6)((uint8_t *)memory + offset);
-    result = fn(args[0], args[1], args[2], args[3], args[4],
-                (int64_t)(uintptr_t)&shared->context);
+  if (repeated) {
+    int64_t reference_result = 0;
+    uint64_t total_invocations = warmup_invocations + measured_invocations;
+    uint64_t started = 0;
+    for (uint64_t invocation = 0; invocation < total_invocations; invocation++) {
+      reset_invocation_state(shared);
+      if (invocation == warmup_invocations) started = monotonic_nanoseconds();
+      result = invoke_guest(isa, memory, offset, args, &shared->context);
+      if (invocation == 0) {
+        reference_result = result;
+      } else if (result != reference_result) {
+        raise(SIGILL);
+      }
+      if (invocation >= warmup_invocations) {
+        shared->measured_fuel_consumed +=
+            KEXE_INITIAL_FUEL - shared->context.fuel;
+      }
+    }
+    uint64_t finished = monotonic_nanoseconds();
+    shared->warmup_invocations = warmup_invocations;
+    shared->measured_invocations = measured_invocations;
+    shared->elapsed_nanoseconds = finished - started;
   } else {
-    kexe_fn8 fn = (kexe_fn8)((uint8_t *)memory + offset);
-    result = fn(args[0], args[1], args[2], args[3], args[4], 0, 0,
-                (int64_t)(uintptr_t)&shared->context);
+    result = invoke_guest(isa, memory, offset, args, &shared->context);
   }
   shared->result = result;
   shared->completed = 1;

@@ -9,6 +9,15 @@
 (def root (.resolve path (.dirname path *file*) ".."))
 (def tmp (.mkdtempSync fs (.join path (.tmpdir os) "kotoba-conformance-")))
 (def kotoba (.join path root "bin" "kotoba"))
+(def artifact-candidate-root
+  (when-let [candidate (aget js/process.env "KOTOBA_ARTIFACT_ROOT")]
+    (.resolve path candidate)))
+(def artifact-candidate-sdeps
+  (when artifact-candidate-root
+    (str "{:deps {io.github.kotoba-lang/artifact {:local/root "
+         (pr-str artifact-candidate-root) "}}}")))
+(def artifact-identity-commands
+  #{"measure-runtime" "trust-runtime" "run" "verify-receipt" "verify-chain"})
 (defn file [name] (.join path tmp name))
 (defn write! [name value] (.writeFileSync fs (file name) value))
 (defn read! [name] (.readFileSync fs (file name) "utf8"))
@@ -29,7 +38,13 @@
                               "\n" (:stderr value)))))
      value)))
 
-(defn k [& args] (run "nbb" (into [kotoba "-M"] args)))
+(defn k [& args]
+  (if (and artifact-candidate-root
+           (contains? artifact-identity-commands (first args)))
+    (let [alias (if (contains? #{"measure-runtime" "run"} (first args))
+                  "-M:native-run" "-M:run")]
+      (run "clojure" (into ["-Sdeps" artifact-candidate-sdeps alias] args)))
+    (run "nbb" (into [kotoba "-M"] args))))
 (defn k-fail [& args]
   (run "nbb" (into [kotoba "-M"] args) {:allow-failure? true}))
 (defn contains-text? [text needle] (not= -1 (.indexOf text needle)))
@@ -92,6 +107,22 @@
                 (str/trim (:stdout result)))
              "native structured report mismatch")))
 
+(defn native-repeat-gates [artifact isa]
+  (let [[binary off] (offset artifact isa "main" "-repeat-gates")
+        cases [[{:KEXE_SUPERVISED_REPEAT "2"} "repeat without structured report"]
+               [{:KEXE_STRUCTURED_REPORT "1" :KEXE_SUPERVISED_REPEAT "2"
+                 :allow "1"} "repeat with capability allowlist"]
+               [{:KEXE_STRUCTURED_REPORT "1" :KEXE_SUPERVISED_WARMUP "1"}
+                "warmup without repeat"]]]
+    (doseq [[env why] cases]
+      (let [allow (or (:allow env) "-")
+            env (dissoc env :allow)
+            result (run (file "kexe-loader") [binary off "0" isa allow]
+                        {:env env :allow-failure? true})]
+        (ensure! (and (= 2 (:status result))
+                      (contains-text? (:stderr result) "supervised repeat requires"))
+                 (str "native loader accepted " why))))))
+
 (defn attested-run [signed isa]
   (k "measure-runtime" "--output" (file (str isa "-runtime.edn"))
      "--loader-output" (file (str isa "-attested-loader")))
@@ -141,6 +172,7 @@
                 (.join path root "tools" "kexe_loader.c") "-o" (file "kexe-loader")])
     (native-timeout artifact isa)
     (native-report artifact isa)
+    (native-repeat-gates artifact isa)
     (when arm?
       (k "sign" artifact "--key" (file "signing-key.edn") "--not-before" "1000"
          "--expires" "2000" "--output" (file "aarch64.signed.kexe")))
@@ -188,7 +220,7 @@
   ;; kotoba.compiler.bounded-edn-test's "rejects-structural-resource-attacks"
   ;; cases exactly (same depth/token/node/string limits, now enforced on
   ;; BOTH the JVM path -- bounded-edn/read-file -- and this repo's
-  ;; nbb-native fast path -- kotoba.compiler.nbb.cli/read-edn-form! --
+  ;; nbb-native fast path -- kotoba.compiler.nbb.cli-support/read-edn-form! --
   ;; whichever `bin/kotoba` dispatches `check` to, since it always does for
   ;; this command; see that namespace's own comment for the specific gap
   ;; this closed).
@@ -208,7 +240,7 @@
     (ensure! (= 65 (:status result)) "too-many-nodes policy exit must be 65")
     (ensure! (contains-text? (:stderr result) "too many nodes")
              "too-many-nodes policy diagnostic mismatch"))
-  ;; NOT tested here: kotoba.compiler.nbb.cli/validate-edn-shape!'s
+  ;; NOT tested here: kotoba.compiler.nbb.cli-support/validate-edn-shape!'s
   ;; max-string-chars check (mirrors bounded-edn's own `max-string-chars`,
   ;; also 1MiB) is real but PROVABLY UNREACHABLE through this CLI as
   ;; currently configured -- `nbb.io/read-text-file`'s overall file-byte

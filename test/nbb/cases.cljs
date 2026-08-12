@@ -9,7 +9,7 @@
 
 ;; `:target` is the short CLI name (`kotoba.compiler.cli`'s `parse-target`
 ;; input shape, e.g. what a user passes to `--target`); `target-keyword`
-;; below maps it to the resolved profile keyword `kotoba.compiler.nbb.cli`'s
+;; below maps it to the resolved profile keyword `kotoba.compiler.nbb.wasm-cli`'s
 ;; own (identically-valued, deliberately not `:require`d here -- that ns
 ;; runs its dispatch as an unconditional side effect at load time, wrong to
 ;; pull in as a library) `targets` table uses.

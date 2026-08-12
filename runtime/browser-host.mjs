@@ -6,6 +6,8 @@ const MIN_TYPED_ABI_VERSION = 5;
 const COMPATIBILITY_SECTION = "kotoba.compatibility";
 const COMPATIBILITY_VERSION = 1;
 const MAX_TYPED_DESCRIPTORS = 64;
+const TYPED_VECTOR_ITEM_LIMIT = 16384;
+const TYPED_SCRATCH_PAGES = 2;
 const ALLOWED_IMPORTS = new Set([
   "kotoba:cap/call/function",
   "kotoba:heap/pair/function",
@@ -40,6 +42,8 @@ const ALLOWED_IMPORTS = new Set([
   "kotoba:typed/vector-at-f64/function",
   "kotoba:typed/vector-assoc-f64/function",
   "kotoba:typed/vector-conj-f64/function",
+  "kotoba:typed/vector-from-memory-i64/function",
+  "kotoba:typed/scratch/memory",
   "kotoba:typed/set-op-i64/function",
   "kotoba:typed/set-op-ref/function",
   "kotoba:typed/set-contains-i64/function",
@@ -355,17 +359,27 @@ function parseCompatibility(module) {
 }
 
 function validateModule(module) {
+  const importIdentities = new Set();
   for (const entry of WebAssembly.Module.imports(module)) {
     const identity = `${entry.module}/${entry.name}/${entry.kind}`;
     if (!ALLOWED_IMPORTS.has(identity))
       reject("forbidden-import", `Wasm import is outside the Kotoba browser profile: ${identity}`);
+    importIdentities.add(identity);
   }
+  const importsBulkVector = importIdentities.has("kotoba:typed/vector-from-memory-i64/function");
+  const importsTypedScratch = importIdentities.has("kotoba:typed/scratch/memory");
+  if (importsBulkVector !== importsTypedScratch)
+    reject("invalid-module", "bulk vector function and typed scratch memory must be imported together");
   const exports = WebAssembly.Module.exports(module);
   if (!exports.some(entry => entry.name === "main" && entry.kind === "function"))
     reject("invalid-module", "Kotoba browser module must export a main function");
   if (exports.some(entry => entry.kind === "memory" || entry.kind === "table" || entry.kind === "global"))
     reject("forbidden-export", "Kotoba browser module may export functions only");
-  return Object.freeze({ typedAbi: parseTypedMetadata(module), compatibility: parseCompatibility(module) });
+  return Object.freeze({
+    typedAbi: parseTypedMetadata(module),
+    compatibility: parseCompatibility(module),
+    needsTypedScratch: importsTypedScratch,
+  });
 }
 
 function createHeap() {
@@ -389,8 +403,17 @@ function createHeap() {
   };
 }
 
-function createTypedRuntime(abi, typedCapCall, allow) {
+function createTypedRuntime(abi, typedCapCall, allow, needsScratch = false) {
   if (abi === null) return null;
+  // Per-instance, fixed 128 KiB scratch: exactly one maximum vector-i64.
+  // The guest can write it but cannot export or grow it; bulk constructors
+  // copy synchronously into immutable host values before returning.
+  const scratch = needsScratch
+    ? new WebAssembly.Memory({
+      initial: TYPED_SCRATCH_PAGES,
+      maximum: TYPED_SCRATCH_PAGES,
+    })
+    : null;
   // Copy mutable Map containers before exposing parsed metadata to callers.
   // Runtime authority must remain sealed even if a consumer mutates the
   // diagnostic `typedAbi.schemas` or `typedAbi.contracts` maps.
@@ -1383,6 +1406,7 @@ function createTypedRuntime(abi, typedCapCall, allow) {
       ? [descriptor, true, value] : [descriptor, false]));
   };
   const imports = Object.freeze({
+    ...(scratch === null ? {} : { scratch }),
     "cap-call"(id, request) {
       if (!Number.isInteger(id) || id < 0 || id > 255 || !allow.has(id))
         reject("capability-denied", "runtime capability policy denied the typed call");
@@ -1739,8 +1763,29 @@ function createTypedRuntime(abi, typedCapCall, allow) {
       if (descriptor[0] !== "vector-i64")
         reject("invalid-typed-operation", "vector-conj requires vector-i64");
       const checked = assertValue(descriptor, value);
-      if (checked.length >= 16385) reject("invalid-typed-value", "vector-i64 item budget exceeded");
+      if (checked.length >= TYPED_VECTOR_ITEM_LIMIT + 1)
+        reject("invalid-typed-value", "vector-i64 item budget exceeded");
       return admitValue(descriptor, Object.freeze([...checked, i64(item)]));
+    },
+    "vector-from-memory-i64"(descriptorId, rawOffset, rawCount) {
+      const descriptor = descriptorAt(descriptorId);
+      if (descriptor[0] !== "vector-i64")
+        reject("invalid-typed-operation", "bulk vector constructor requires vector-i64");
+      if (!Number.isInteger(rawOffset) || !Number.isInteger(rawCount)
+          || rawOffset < 0 || rawCount < 0 || rawCount > TYPED_VECTOR_ITEM_LIMIT
+          || rawOffset % 8 !== 0) {
+        reject("invalid-typed-operation", "bulk vector scratch range is invalid");
+      }
+      const byteCount = rawCount * 8;
+      const end = rawOffset + byteCount;
+      if (!Number.isSafeInteger(end) || end > scratch.buffer.byteLength)
+        reject("invalid-typed-operation", "bulk vector scratch range is out of bounds");
+      const view = new DataView(scratch.buffer, rawOffset, byteCount);
+      const result = new Array(rawCount + 1);
+      result[0] = descriptor;
+      for (let index = 0; index < rawCount; index += 1)
+        result[index + 1] = view.getBigInt64(index * 8, true);
+      return admitValue(descriptor, Object.freeze(result));
     },
     "vector-at-f64"(descriptorId, value, rawIndex) {
       const descriptor = descriptorAt(descriptorId);
@@ -2304,7 +2349,7 @@ function createTypedRuntime(abi, typedCapCall, allow) {
   const hostVector = items => {
     if (vectorDescriptor === undefined)
       reject("invalid-typed-value", "module does not admit vector-i64 values");
-    if (!Array.isArray(items) || items.length > 16384)
+    if (!Array.isArray(items) || items.length > TYPED_VECTOR_ITEM_LIMIT)
       reject("invalid-typed-value", "host vector-i64 input is invalid or oversized");
     return admitValue(vectorDescriptor,
       Object.freeze([vectorDescriptor, ...items.map(i64)]));
@@ -2314,7 +2359,7 @@ function createTypedRuntime(abi, typedCapCall, allow) {
   const hostVectorF64 = items => {
     if (vectorF64Descriptor === undefined)
       reject("invalid-typed-value", "module does not admit vector-f64 values");
-    if (!Array.isArray(items) || items.length > 16384)
+    if (!Array.isArray(items) || items.length > TYPED_VECTOR_ITEM_LIMIT)
       reject("invalid-typed-value", "host vector-f64 input is invalid or oversized");
     return admitValue(vectorF64Descriptor,
       Object.freeze([vectorF64Descriptor, ...items.map(f64)]));
@@ -2357,7 +2402,8 @@ function createTypedRuntime(abi, typedCapCall, allow) {
     disjointSetI64: hostDisjointSet,
     document: hostDocument,
     bytes(items) {
-      if (!(Array.isArray(items) || ArrayBuffer.isView(items)) || items.length > 16384)
+      if (!(Array.isArray(items) || ArrayBuffer.isView(items))
+          || items.length > TYPED_VECTOR_ITEM_LIMIT)
         reject("invalid-typed-value", "host byte input is invalid or oversized");
       return hostVector(Array.from(items, item => {
         if (!Number.isInteger(item) || item < 0 || item > 255)
@@ -2395,7 +2441,9 @@ export async function instantiateKotoba(source, rawOptions) {
   const admission = validateModule(module);
   const typedAbi = admission.typedAbi;
   const compatibility = admission.compatibility;
-  const typed = createTypedRuntime(typedAbi, options.typedCapCall, allow);
+  const typed = createTypedRuntime(
+    typedAbi, options.typedCapCall, allow, admission.needsTypedScratch
+  );
   const heap = createHeap();
   const cap = Object.freeze({
     call(id, value) {
@@ -2426,6 +2474,7 @@ export async function instantiateKotoba(source, rawOptions) {
     sha256: digest,
     typedAbi,
     typedValues: typed?.values ?? null,
+    typedScratchPages: admission.needsTypedScratch ? TYPED_SCRATCH_PAGES : 0,
     compatibility,
     report: () => Object.freeze({ heap: heap.report() })
   });
@@ -2615,6 +2664,8 @@ export const browserProfile = Object.freeze({
   maxModuleBytes: MAX_MODULE_BYTES,
   pairCapacity: PAIR_CAPACITY,
   typedAbiVersion: TYPED_ABI_VERSION,
+  typedVectorItemLimit: TYPED_VECTOR_ITEM_LIMIT,
+  typedScratchPages: TYPED_SCRATCH_PAGES,
   compatibilityVersion: COMPATIBILITY_VERSION,
   imports: Object.freeze(Array.from(ALLOWED_IMPORTS).sort())
 });
