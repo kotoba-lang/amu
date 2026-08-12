@@ -1,0 +1,35 @@
+{:adr/id :adr-0251-aarch64-logical-immediates
+ :adr/title "Select compact AArch64 logical immediates for integer constants"
+ :adr/status :accepted
+ :adr/date "2026-08-12"
+ :adr/markdown "0251-aarch64-logical-immediates.md"
+ :adr/decision
+ {:pins {:kotoba-native "b11f869d06a955fd7a47d5ecdb800718df7c6419"}
+  :selection {:operation :orr-xzr-immediate
+              :admitted-shapes :aarch64-replicated-rotated-run-of-ones
+              :choose-when :strictly-shorter-than-wide-moves
+              :tie :wide-move
+              :fixed-layout-sites :unchanged}
+  :cross-runtime-input :four-u16-chunks}
+ :adr/evidence
+ {:host :apple-m1-max
+  :calls-per-sample 10000000
+  :warmup-calls 1000000
+  :alternating-runs 15
+  :old {:amu-native-ns 15.1363
+        :raw-code-bytes 516
+        :symbol-bytes 476
+        :kexe-bytes 4259}
+  :new {:amu-native-ns 14.6365
+        :raw-code-bytes 484
+        :symbol-bytes 444
+        :kexe-bytes 4123}
+  :speedup 1.034148
+  :time-reduction 0.033020
+  :llvm-o3 {:median-ns 9.6792416 :amu-median-ns 14.3947
+            :amu-slowdown 1.487172}
+  :verification {:kotoba-native {:tests 143 :assertions 2014}
+                 :amu {:tests 964 :assertions 7608}
+                 :full-conformance true
+                 :jdk-free-wx true
+                 :compiler-bundle-parity true}}}
