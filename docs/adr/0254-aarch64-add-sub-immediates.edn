@@ -1,0 +1,37 @@
+{:adr/id :adr-0254-aarch64-add-sub-immediates
+ :adr/title "Fold single-use AArch64 add and subtract immediates"
+ :adr/status :accepted
+ :adr/date "2026-08-12"
+ :adr/markdown "0254-aarch64-add-sub-immediates.md"
+ :adr/decision
+ {:pins {:kotoba-native "9e32a479419ffe28ae533aecdeea24fd51f609d9"}
+  :selection {:scope :adjacent-single-definition
+              :liveness :until-next-physical-register-definition
+              :forms [:unsigned-imm12 :unsigned-imm12-lsl12]
+              :negative-constant :invert-add-subtract
+              :constant-minus-register :unchanged}
+  :corpus {:fixture "bench/runtime-comparison/immediate-corpus.kotoba"
+           :smoke "scripts/test-aarch64-immediate-corpus.mjs"
+           :kernels 5 :wx-on-aarch64 true}
+  :unchanged [:gmir-schema :mir-schema :mc-schema :verifier-schema :x86-64]}
+ :adr/evidence
+ {:host :apple-m1-max
+  :fine-grained-pairs 31
+  :blocks-per-pair 100
+  :calls-per-block 100000
+  :kexe-bytes {:old 3760 :new 3696}
+  :kernels [{:name :add-small :old-symbol-bytes 36 :new-symbol-bytes 32
+             :paired-speedup 1.003374}
+            {:name :add-negative :old-symbol-bytes 36 :new-symbol-bytes 32
+             :paired-speedup 1.001960}
+            {:name :sub-shifted :old-symbol-bytes 36 :new-symbol-bytes 32
+             :paired-speedup 0.994552}
+            {:name :branch-small :old-symbol-bytes 56 :new-symbol-bytes 48
+             :paired-speedup 1.002152}
+            {:name :repeated-constant :old-symbol-bytes 36 :new-symbol-bytes 36
+             :paired-speedup 0.993637 :control true}]
+  :verification {:kotoba-native {:tests 148 :assertions 2033}
+                 :amu {:tests 964 :assertions 7608}
+                 :corpus-wx 5 :full-conformance true :jdk-free-wx true
+                 :compiler-bundle-parity true :runtime-engines 7
+                 :worker true :daemon true}}}
