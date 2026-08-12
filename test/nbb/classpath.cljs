@@ -109,6 +109,17 @@
     (check "the fetched checkout is at the pinned commit"
            (= sha (classpath/head-sha (classpath/checkout-dir "io.example/dep" sha)))))
 
+  (let [missing-sha (apply str (repeat 40 "f"))
+        missing-dir (classpath/checkout-dir "io.example/missing" missing-sha)
+        root (write-fixture! [{:coordinate "io.example/missing"
+                               :git-url "file:///definitely-not-an-amu-repository"
+                               :git-sha missing-sha
+                               :paths ["src"]}])]
+    (check "a failed clone reports the fetch phase"
+           (= :fetch (phase-of #(classpath/resolve-directories root))))
+    (check "a failed clone removes its incomplete checkout for retry"
+           (not (.existsSync fs missing-dir))))
+
   ;; A directory named after a commit is not evidence that it holds that
   ;; commit. Claim a different sha over the checkout that is really there.
   (let [wrong-sha (apply str (repeat 40 "a"))
