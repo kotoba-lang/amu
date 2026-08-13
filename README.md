@@ -137,8 +137,8 @@ amu      編む   project link — many sources, one cloth
 kototama 言霊   runtime link — admitted imports, granted providers only
 ```
 
-`aiueos` owns grant decisions. A small native host (kototama's native host,
-GitHub alias `tender-native`) independently enforces the resulting grant. See
+`aiueos` owns grant decisions. A small native host (`kototama-native`)
+independently enforces the resulting grant. See
 [`ADR-2607252500`](https://github.com/com-junkawasaki/root/blob/main/90-docs/adr/2607252500-kotoba-wasm-component-first-execution-boundary.edn).
 
 The portable reference runtime also defines the identity-to-capability

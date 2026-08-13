@@ -29,9 +29,9 @@
         (requiring-resolve (symbol "kototama.native.executor" (name operation)))
         (catch java.io.FileNotFoundException _ nil))
       (throw (ex-info
-              "native execution requires the kotoba-lang/tender-native plugin"
+              "native execution requires the kotoba-lang/kototama-native plugin"
               {:phase :native-executor :operation operation
-               :dependency 'io.github.kotoba-lang/tender-native}))))
+               :dependency 'io.github.kotoba-lang/kototama-native}))))
 
 (defn- parse-target [s]
   (case s "wasm32" :wasm32-kotoba-v1 "x86_64" :x86_64-kotoba-v1
