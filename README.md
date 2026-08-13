@@ -2,7 +2,15 @@
 
 Amu is the multi-target, deny-by-default compiler for the safe Kotoba
 language. The repository is `kotoba-lang/amu`; the name evokes Japanese
-「編む」— weaving checked source, typed KIR, and target artifacts together.
+「編む」— weaving checked source, typed KIR, and target artifacts into one
+cloth.
+
+Project linking (many `.kotoba` roots → one closed graph) is part of
+weaving and lives here. Runtime linking (artifact imports → granted
+providers) is [`kototama`](https://github.com/kotoba-lang/kototama) (言霊).
+Backends (`kotoba-wasm`, `kotoba-native`, `kotoba-script`,
+`kotoba-component`) are 綾 — patterns in this weave, not beings.
+See root ADR-2608139980.
 
 The existing `kotoba.compiler.*` namespaces, `kotoba-compiler/1` wire marker,
 and `bin/kotoba` launcher remain compatibility APIs. New automation should use
@@ -122,9 +130,15 @@ profile rejects ambient WASI imports and expects a closed capability adapter.
 Direct x86-64/AArch64 AOT remains a supported backend for aiueos boot/kernel,
 engine, driver, root-key adapter, and explicitly trusted low-level primitives.
 It is not the default route for an ordinary Kotoba application. The compiler
-must not duplicate runtime policy: `kototama` owns component linking/execution
-and `aiueos` owns grant decisions, while a small native host independently
-enforces the resulting grant. See
+must not duplicate runtime policy. Two linkers, two authorities:
+
+```text
+amu      編む   project link — many sources, one cloth
+kototama 言霊   runtime link — admitted imports, granted providers only
+```
+
+`aiueos` owns grant decisions. A small native host (kototama's native host,
+GitHub alias `tender-native`) independently enforces the resulting grant. See
 [`ADR-2607252500`](https://github.com/com-junkawasaki/root/blob/main/90-docs/adr/2607252500-kotoba-wasm-component-first-execution-boundary.edn).
 
 The portable reference runtime also defines the identity-to-capability
