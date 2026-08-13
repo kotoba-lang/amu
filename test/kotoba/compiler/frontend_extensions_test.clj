@@ -549,6 +549,43 @@
     (is (= "yes" some-rec))
     (is (= "fallback" none-rec))))
 
+(deftest option-some?-on-option-string-is-bool-and-composes
+  ;; kotoba-sema 1b83233 rewrites bare `option-some?` on `[:option T]` to
+  ;; `option-some?-of`. Decision cores were forced to write the `-of` form
+  ;; and wrap `and` in `(if … true false)` until this pin.
+  (let [source "(ns fleet.present
+                  (:schemas
+                   {:fleet/actor
+                    [:record :fleet/actor
+                     [[:endpoint [:option :string]]
+                      [:health-path [:option :string]]]]})
+                  (:export [callable? probeable?]))
+                (defn callable? [a [:ref :fleet/actor]] :bool
+                  (option-some? (record-get a :endpoint)))
+                (defn probeable? [a [:ref :fleet/actor]] :bool
+                  (and (option-some? (record-get a :endpoint))
+                       (option-some? (record-get a :health-path))))"
+        rec [:record :fleet/actor
+             [[:endpoint [:option :string]]
+              [:health-path [:option :string]]]]
+        kir (:kir (compiler/compile-source source :wasm32-kotoba-v1 {}))
+        present [rec [[:option :string] true "https://example"]
+                     [[:option :string] true "/health"]]
+        endpoint-only [rec [[:option :string] true "https://example"]
+                           [[:option :string] false]]
+        absent [rec [[:option :string] false]
+                    [[:option :string] false]]
+        p (->> (:functions (sema/analyze source))
+               (filter #(= 'callable? (:name %))) first)]
+    (is (= :bool (:result p)))
+    (is (some #{'option-some?-of}
+              (into [] (comp (filter seq?) (map first))
+                    (tree-seq coll? seq (:body p)))))
+    (is (= true (ir/execute kir 'callable? [present])))
+    (is (= false (ir/execute kir 'callable? [absent])))
+    (is (= true (ir/execute kir 'probeable? [present])))
+    (is (= false (ir/execute kir 'probeable? [endpoint-only])))))
+
 (deftest heterogeneous-vectors-are-exact-statically-indexed-and-persistent
   (let [type [:vector [:i64 :string :bool]]
         source "(ns vector.heterogeneous (:export [make name rename count-items same?]))
