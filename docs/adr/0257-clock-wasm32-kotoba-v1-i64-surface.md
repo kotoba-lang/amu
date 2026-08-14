@@ -44,8 +44,9 @@ i64 host has no kit semantics for those ids and fail-closes
 ## What this does NOT claim
 
 - kit variant/record marshalling on **native** (still pending)
-- `:wasm-aot :implemented` on http / http-ingress / storage / llm / ui
-  (clock: ADR 0258; state/log: ADR 0259)
+- `:wasm-aot :implemented` on http / llm
+  (clock: ADR 0258; state/log: ADR 0259; ui: ADR 0260;
+  http-ingress: ADR 0261; storage: ADR 0262)
 - `:wasm32-kotoba-v1 :implemented` on the other seven application kits
 - a public CLI off the JVM (`kbb`)
 

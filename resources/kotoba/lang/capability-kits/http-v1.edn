@@ -25,5 +25,8 @@
    [:error [:record :kotoba.http/error
              [[:code :keyword] [:message :string] [:retryable :bool]]]]]]
  :qualification {:reference :implemented :wasm-aot :pending
+                 ;; WASI 0.3 `wasi:http/client` is async func + streams.
+                 ;; Hand WAT cannot do that (`:bounded-wasi-0.3-async`).
+                 ;; 0.2 `outgoing-handler` is a forbidden spelling. ADR 0261.
                  :wasm32-kotoba-v1 :pending
                  :native-aot :pending :jit :pending}}
