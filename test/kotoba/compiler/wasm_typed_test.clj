@@ -653,3 +653,24 @@
           probe (node-probe compiled
                             "if(h.instance.exports.main()!==42n)process.exit(2);")]
       (is (zero? (:exit probe)) (:err probe)))))
+
+(deftest clock-now-wasm32-imports-kotoba-cap-and-validates
+  ;; amu elaborates `(clock/now seed)` to `(typed-cap-call 7 :i64 :i64 seed)`.
+  ;; After kotoba-wasm aac02618 that is a valid `kotoba:cap`/`call` module,
+  ;; not the ill-typed `kotoba:typed`/`cap-call` externref fallback.
+  (let [source (str "(ns t (:export [main]) (:capabilities #{:clock/now}))\n"
+                    "(defn main [] (clock/now 0))\n")
+        compiled (compiler/compile-source source :wasm32-kotoba-v1
+                                          {:allow #{[:cap/call 7]}})
+        text (String. (byte-array (map unchecked-byte (:bytes compiled)))
+                      "ISO-8859-1")
+        tmp (java.io.File/createTempFile "amu-clock-now-" ".wasm")]
+    (try
+      (with-open [out (java.io.FileOutputStream. tmp)]
+        (.write out ^bytes (:bytes compiled)))
+      (is (str/includes? text (str "kotoba:cap" (char 4) "call")))
+      (is (not (str/includes? text (str "kotoba:typed" (char 8) "cap-call"))))
+      (let [validated (shell/sh "wasm-tools" "validate" (.getPath tmp))]
+        (is (zero? (:exit validated)) (:err validated)))
+      (finally
+        (.delete tmp)))))
