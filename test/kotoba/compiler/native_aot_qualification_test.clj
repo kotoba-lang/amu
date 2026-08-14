@@ -1,0 +1,39 @@
+(ns kotoba.compiler.native-aot-qualification-test
+  "Locks native-aot / jit as pending on every application kit.
+
+  The C-free aiueos typed-provider syscall substrate is still missing
+  (`backend-provider-qualification-v2.edn` native gaps). Hosted kexe C
+  loader is a rejected surface. Flipping a kit flag without closing those
+  gaps is theater (ADR 0265)."
+  (:require [clojure.edn :as edn]
+            [clojure.java.io :as io]
+            [clojure.test :refer [deftest is testing]]))
+
+(def application-kit-files
+  ["clock-v1.edn" "http-v1.edn" "http-ingress-v1.edn" "storage-v1.edn"
+   "log-v1.edn" "llm-v1.edn" "ui-v1.edn" "state-v1.edn"])
+
+(def native-gaps
+  #{:typed-provider-syscall-abi
+    :nested-request-result-host-codec
+    :native-provider-semantic-vectors
+    :c-free-aiueos-cpl3-syscall-substrate})
+
+(defn- load-kit [filename]
+  (edn/read-string
+   (slurp (io/resource (str "kotoba/lang/capability-kits/" filename)))))
+
+(deftest every-application-kit-keeps-native-aot-and-jit-pending
+  (doseq [filename application-kit-files]
+    (testing filename
+      (let [q (:qualification (load-kit filename))]
+        (is (= :pending (:native-aot q)))
+        (is (= :pending (:jit q)))))))
+
+(deftest native-backend-still-names-the-c-free-syscall-gaps
+  (let [claims (edn/read-string
+                (slurp (io/resource "kotoba/lang/backend-provider-qualification-v2.edn")))
+        native (get-in claims [:backends :native])]
+    (is (= :pending (:execution-status native)))
+    (is (= :aiueos-c-free-bare-metal-v1 (:execution-surface native)))
+    (is (= native-gaps (set (:gaps native))))))

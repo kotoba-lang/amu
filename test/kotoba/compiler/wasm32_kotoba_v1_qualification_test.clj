@@ -36,17 +36,17 @@
 (def wasm-aot-implemented-kits
   "Clock: WASI 0.3 host time (ADR 0258). State/log: in-component store/ring
    (ADR 0259). UI: host enqueue slot (ADR 0260). Http-ingress: host inject
-   slot (ADR 0261). Storage: in-component KV (ADR 0262). HTTP post and LLM
-   stay pending."
+   slot (ADR 0261). Storage: in-component KV (ADR 0262). HTTP post / LLM:
+   sync kit-shaped host + echo stub (ADR 0263 / 0264)."
   #{"clock-v1.edn" "state-v1.edn" "log-v1.edn" "ui-v1.edn"
-    "http-ingress-v1.edn" "storage-v1.edn"})
+    "http-ingress-v1.edn" "storage-v1.edn" "http-v1.edn" "llm-v1.edn"})
 
 (deftest other-application-kits-keep-wasm32-kotoba-v1-pending
   (doseq [filename (remove #{"clock-v1.edn"} application-kit-files)]
     (testing filename
       (is (= :pending (:wasm32-kotoba-v1 (:qualification (load-kit filename))))))))
 
-(deftest wasm-aot-is-clock-state-log-ui-ingress-and-storage
+(deftest wasm-aot-matches-the-implemented-kit-set
   (doseq [filename application-kit-files]
     (testing filename
       (is (= (if (wasm-aot-implemented-kits filename) :implemented :pending)
