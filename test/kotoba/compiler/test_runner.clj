@@ -122,6 +122,9 @@
             [kotoba.compiler.native-fuel-metadata-test]
             [kotoba.compiler.wasm-typed-test]
             [kotoba.compiler.wasm32-kotoba-v1-qualification-test]
+            [kotoba.compiler.clock-wasm-aot-qualification-test]
+            [kotoba.compiler.state-wasm-aot-qualification-test]
+            [kotoba.compiler.log-wasm-aot-qualification-test]
             [kotoba.compiler.verifier-profile-test]))
 
 (defn -main [& _]
@@ -239,6 +242,9 @@
                                           'kotoba.compiler.provider-conformance-test
                                           'kotoba.compiler.wasm-typed-test
                                           'kotoba.compiler.wasm32-kotoba-v1-qualification-test
+                                          'kotoba.compiler.clock-wasm-aot-qualification-test
+                                          'kotoba.compiler.state-wasm-aot-qualification-test
+                                          'kotoba.compiler.log-wasm-aot-qualification-test
                                           'kotoba.compiler.native-executor-test
                                           'kotoba.compiler.receipt-test
                                           'kotoba.compiler.release-test
