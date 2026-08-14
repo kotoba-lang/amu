@@ -35,15 +35,16 @@
 
 (def wasm-aot-implemented-kits
   "Clock: WASI 0.3 host time (ADR 0258). State/log: in-component store/ring
-   with wasmtime semantic vectors (ADR 0259). Transport kits stay pending."
-  #{"clock-v1.edn" "state-v1.edn" "log-v1.edn"})
+   (ADR 0259). UI: host enqueue slot (ADR 0260). Remaining transport kits
+   stay pending."
+  #{"clock-v1.edn" "state-v1.edn" "log-v1.edn" "ui-v1.edn"})
 
 (deftest other-application-kits-keep-wasm32-kotoba-v1-pending
   (doseq [filename (remove #{"clock-v1.edn"} application-kit-files)]
     (testing filename
       (is (= :pending (:wasm32-kotoba-v1 (:qualification (load-kit filename))))))))
 
-(deftest wasm-aot-is-clock-state-and-log-only
+(deftest wasm-aot-is-clock-state-log-and-ui
   (doseq [filename application-kit-files]
     (testing filename
       (is (= (if (wasm-aot-implemented-kits filename) :implemented :pending)

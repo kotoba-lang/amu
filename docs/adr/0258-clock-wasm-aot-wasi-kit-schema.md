@@ -37,8 +37,8 @@ a downstream anecdote.
 
 ## What this does NOT claim
 
-- `:wasm-aot` on http / http-ingress / storage / llm / ui
-  (state and log: ADR 0259)
+- `:wasm-aot` on http / http-ingress / storage / llm
+  (state and log: ADR 0259; ui: ADR 0260)
 - `:wasm32-kotoba-v1` on those seven kits
 - backend-wide wasmtime `:qualified` in
   `backend-provider-qualification-v2.edn` (other kits still synthetic;
