@@ -19,4 +19,12 @@
    [:error [:record :kotoba.clock/error
              [[:code :keyword] [:message :string]]]]]]
  :qualification {:reference :implemented :wasm-aot :pending
-                 :native-aot :pending :jit :pending}}
+                 :wasm32-kotoba-v1 :implemented
+                 :native-aot :pending :jit :pending}
+ ;; i64 elaboration host-time path. Distinct from the kit :request/:result
+ ;; variant schema that :wasm-aot still names. See ADR 0257.
+ :wasm32-kotoba-v1-surface {:import ["kotoba:cap" "call"]
+                            :signature [:i64 :i64 :i64]
+                            :capability-id 7
+                            :grant :clock-monotonic
+                            :elaboration "(typed-cap-call 7 :i64 :i64 seed)"}}
