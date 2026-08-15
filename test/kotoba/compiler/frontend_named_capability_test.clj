@@ -39,7 +39,9 @@
   (is (= 20 (get sema/capability-registry :process/spawn)))
   (is (= 21 (get sema/capability-registry :secret/get)))
   (is (= 22 (get sema/capability-registry :git/run)))
-  (is (= 23 (get sema/capability-registry :entropy/draw))))
+  (is (= 23 (get sema/capability-registry :entropy/draw)))
+  ;; Dataspace kit — catalog authority id 24 (root ADR-2608154100)
+  (is (= 24 (get sema/capability-registry :dataspace/transact))))
 
 (deftest linear-task-stream-types-are-admitted-only-as-direct-moves
   (let [checked
@@ -213,3 +215,18 @@
            (dissoc named-hir :named-operations)))
     (is (= #{:process/spawn} (:named-operations named-hir)))
     (is (= #{[:cap/call 20]} (:effects named-hir)))))
+
+(deftest dataspace-kit-named-cap-call-lowers-like-int-form
+  "ADR-2608154100: named :dataspace/transact lowers identically to numeric id 24."
+  (let [named-source "(defn publish [x] (cap-call :dataspace/transact x))
+                       (defn main [] (publish 0))"
+        int-source "(defn publish [x] (cap-call 24 x))
+                     (defn main [] (publish 0))"
+        named-hir (:hir (compiler/check-source named-source {:allow #{[:cap/call 24]}}))
+        int-hir (:hir (compiler/check-source int-source {:allow #{[:cap/call 24]}}))]
+    (is (= (dissoc int-hir :named-operations)
+           (dissoc named-hir :named-operations)))
+    (is (= #{:dataspace/transact} (:named-operations named-hir)))
+    (is (= #{[:cap/call 24]} (:effects named-hir)))
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"denies required effects"
+                          (compiler/check-source named-source)))))
