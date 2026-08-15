@@ -1,15 +1,19 @@
 (ns kotoba.compiler.dataspace-provider-test
+  "Compiler injects kotoba-lang/provider's dataspace host (ADR-2608154100 gap 2).
+
+  Guest uses named :dataspace/transact. The in-memory reference host no longer
+  lives in this repo."
   (:require [clojure.edn :as edn]
             [clojure.test :refer [deftest is]]
             [kotoba.compiler.core :as compiler]
-            [kotoba.compiler.dataspace.provider :as dataspace]
             [kotoba.kir :as ir]
-            [kotoba.compiler.reference-runtime :as runtime]))
+            [kotoba.compiler.reference-runtime :as runtime]
+            [provider.dataspace :as dataspace]))
 
 (def source
-  (str "(ns app.dataspace (:export [coord]))"
+  (str "(ns app.dataspace (:export [coord]) (:capabilities #{:dataspace/transact}))"
        "(defn coord [request " (pr-str dataspace/request-type) "] "
-       (pr-str dataspace/result-type) " (typed-cap-call 24 "
+       (pr-str dataspace/result-type) " (typed-cap-call :dataspace/transact "
        (pr-str dataspace/request-type) " " (pr-str dataspace/result-type)
        " request))"))
 
@@ -24,9 +28,6 @@
 
 (defn- assert-req [edn facet]
   [dataspace/request-type :assert [dataspace/assert-type edn facet]])
-
-(defn- retract-req [edn facet]
-  [dataspace/request-type :retract [dataspace/retract-type edn facet]])
 
 (defn- observe-req [edn facet]
   [dataspace/request-type :observe [dataspace/observe-type edn facet]])
