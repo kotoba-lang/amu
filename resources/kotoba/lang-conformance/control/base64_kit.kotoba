@@ -1,0 +1,75 @@
+(ns kotoba.lang.conformance.base64-kit (:export [main]))
+
+;; i64 シフトと typed vector が実際の codec になることの証明 (RFC 4648 §4)。
+;;
+;; bit-and/or/xor だけでは base64 は書けない —— 3 バイトを 4 つの 6bit に
+;; 組み替える操作がシフトそのものだからである。この kit が緑なら、
+;; その組み替えが両バックエンドで成立している。
+;;
+;; main は "foobar" の先頭 6/5/4 バイトを符号化する —— パディングが 0/1/2 個の
+;; 三通り。各ケースで `長さ*1000 + 一致文字数` を足すので、正解は 3*(8000+8)
+;; = 24024。1 バイトでも違えば下 3 桁が減り、長さが変われば上位が動く。
+
+(defn sextet-0 [b0 :i64] :i64
+  (u64-shift-right b0 2))
+
+(defn sextet-1 [b0 :i64 b1 :i64] :i64
+  (bit-or (i64-shift-left (bit-and b0 3) 4) (u64-shift-right b1 4)))
+
+(defn sextet-2 [b1 :i64 b2 :i64] :i64
+  (bit-or (i64-shift-left (bit-and b1 15) 2) (u64-shift-right b2 6)))
+
+(defn sextet-3 [b2 :i64] :i64
+  (bit-and b2 63))
+
+(defn alphabet-at [i :i64] :i64
+  (if (< i 26) (+ 65 i)
+    (if (< i 52) (+ 97 (- i 26))
+      (if (< i 62) (+ 48 (- i 52))
+        (if (= i 62) 43 47)))))
+
+(defn encode-from [xs :vector-i64 i :i64 acc :vector-i64] :vector-i64
+  (if (>= i (vector-count xs))
+    acc
+    (let [n (- (vector-count xs) i)
+          b0 (vector-at xs i)
+          b1 (if (> n 1) (vector-at xs (+ i 1)) 0)
+          b2 (if (> n 2) (vector-at xs (+ i 2)) 0)
+          c0 (alphabet-at (sextet-0 b0))
+          c1 (alphabet-at (sextet-1 b0 b1))
+          c2 (if (> n 1) (alphabet-at (sextet-2 b1 b2)) 61)
+          c3 (if (> n 2) (alphabet-at (sextet-3 b2)) 61)]
+      (encode-from xs (+ i 3)
+                   (vector-conj (vector-conj (vector-conj (vector-conj acc c0) c1) c2) c3)))))
+
+;; 入力は "foobar" の先頭 n バイト。n=6/5/4 で **パディング 0/1/2 個**の
+;; 三通りを全部通す —— 最初の版は n=6 だけで、パディングの分岐を一度も
+;; 実行しないまま「base64 が動く」と主張していた(変異で実測)。
+(defn input-at [i :i64] :i64
+  (if (= i 0) 102 (if (= i 1) 111 (if (= i 2) 111 (if (= i 3) 98 (if (= i 4) 97 114))))))
+
+(defn build-input [n :i64 i :i64 acc :vector-i64] :vector-i64
+  (if (>= i n) acc (build-input n (+ i 1) (vector-conj acc (input-at i)))))
+
+;; n=6 -> "Zm9vYmFy" / n=5 -> "Zm9vYmE=" / n=4 -> "Zm9vYg=="
+(defn expected-at [n :i64 i :i64] :i64
+  (if (< i 5)
+    (if (= i 0) 90 (if (= i 1) 109 (if (= i 2) 57 (if (= i 3) 118 89))))
+    (if (= n 6)
+      (if (= i 5) 109 (if (= i 6) 70 121))
+      (if (= n 5)
+        (if (= i 5) 109 (if (= i 6) 69 61))
+        (if (= i 5) 103 61)))))
+
+(defn count-matches [n :i64 out :vector-i64 i :i64 acc :i64] :i64
+  (if (>= i (vector-count out))
+    acc
+    (count-matches n out (+ i 1)
+                   (if (= (vector-at out i) (expected-at n i)) (+ acc 1) acc))))
+
+(defn case-score [n :i64] :i64
+  (let [out (encode-from (build-input n 0 (vector-new)) 0 (vector-new))]
+    (+ (* 1000 (vector-count out)) (count-matches n out 0 0))))
+
+(defn main [] :i64
+  (+ (case-score 6) (+ (case-score 5) (case-score 4))))
