@@ -1,10 +1,11 @@
 (ns kotoba.compiler.native-aot-qualification-test
   "Locks native-aot / jit as pending on every application kit.
 
-  The C-free aiueos typed-provider syscall substrate is still missing
-  (`backend-provider-qualification-v2.edn` native gaps). Hosted kexe C
-  loader is a rejected surface. Flipping a kit flag without closing those
-  gaps is theater (ADR 0265)."
+  Production native-aot is C-free aiueos (ADR 0265 / 0266). Hosted kexe C
+  loader is a rejected production surface. The hosted clock-v1 oracle in
+  `clock-native-kexe-oracle-test` does not close the four native backend
+  gaps and must not flip a kit flag (ADR 0266). `:jit` is a future
+  KIR→native runtime compiler, not wasmtime Cranelift."
   (:require [clojure.edn :as edn]
             [clojure.java.io :as io]
             [clojure.test :refer [deftest is testing]]))

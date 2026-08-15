@@ -25,6 +25,10 @@ Evidence that this decision is load-bearing:
 `native-aot-qualification-test` asserts pending on every application kit
 and that the four native gaps remain named.
 
+ADR 0266 adds a hosted kexe clock-v1 **oracle** (nested codec + host
+time) without flipping those flags. That oracle is not production
+native-aot.
+
 ## What this does NOT claim
 
 - A native clock, http, or llm provider
