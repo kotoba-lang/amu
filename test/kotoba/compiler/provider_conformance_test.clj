@@ -7,6 +7,7 @@
             [kotoba.kir :as ir]
             [provider.clock :as clock]
             [provider.conformance :as conformance]
+            [provider.dataspace :as dataspace]
             [provider.http :as http]
             [provider.llm :as llm]
             [provider.log :as log]
@@ -44,14 +45,15 @@
       :provider (clock/provider {:wall-now (constantly 0)
                                  :monotonic-now (constantly 0)})}
      {:name :log/read :id 5 :provider (get-in log-kit [:providers 5])}
-     {:name :log/append :id 6 :provider (get-in log-kit [:providers 6])}]))
+     {:name :log/append :id 6 :provider (get-in log-kit [:providers 6])}
+     {:name :dataspace/transact :id 24 :provider (dataspace/provider)}]))
 
 (deftest all-reference-kits-share-one-closed-qualification
   (let [manifest (read-resource "kotoba/lang/provider-conformance-v1.edn")
         expected (->> (:kits manifest) (mapcat :capabilities) vec)
         receipt (conformance/validate-suite! sema/capability-registry (fixtures))]
     (is (= :kotoba.provider-conformance/v1 (:format receipt)))
-    (is (= 9 (:capability-count receipt)))
+    (is (= 10 (:capability-count receipt)))
     (is (= (set expected) (set (:capabilities receipt))))
     (doseq [{:keys [name version resource capabilities]} (:kits manifest)]
       (let [kit (read-resource resource)

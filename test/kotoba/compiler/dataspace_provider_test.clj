@@ -1,12 +1,12 @@
 (ns kotoba.compiler.dataspace-provider-test
-  "Compiler injects kotoba-lang/provider's dataspace host (ADR-2608154100 gap 2).
+  "Compiler injects kotoba-lang/provider's dataspace host (ADR-2608154100).
 
-  Guest uses named :dataspace/transact. The in-memory reference host no longer
-  lives in this repo."
+  Guest uses named :dataspace/transact. Assertions are inert documents."
   (:require [clojure.edn :as edn]
             [clojure.test :refer [deftest is]]
             [kotoba.compiler.core :as compiler]
             [kotoba.kir :as ir]
+            [kotoba.kir.value :as value]
             [kotoba.compiler.reference-runtime :as runtime]
             [provider.dataspace :as dataspace]))
 
@@ -21,10 +21,10 @@
   (str "(ns app.dataspace.surface "
        "(:export [publish publish-in retract subscribe enter leave]) "
        "(:capabilities #{:dataspace/transact}))"
-       "(defn publish [assertion :string] (assert! assertion))"
-       "(defn publish-in [assertion :string facet :i64] (assert! assertion facet))"
-       "(defn retract [assertion :string facet :i64] (retract! assertion facet))"
-       "(defn subscribe [pattern :string] (observe! pattern))"
+       "(defn publish [assertion :document] (assert! assertion))"
+       "(defn publish-in [assertion :document facet :i64] (assert! assertion facet))"
+       "(defn retract [assertion :document facet :i64] (retract! assertion facet))"
+       "(defn subscribe [pattern :document] (observe! pattern))"
        "(defn enter [] (facet-enter!))"
        "(defn leave [facet :i64] (facet-leave! facet))"))
 
@@ -42,40 +42,50 @@
 (defn- invoke-surface [runtime function args]
   ((:invoke runtime) function args))
 
+(defn- edn-doc [form]
+  (value/document-edn-read (if (string? form) form (pr-str form))))
+
+(defn- doc-edn [doc]
+  (edn/read-string (value/document-edn-print doc)))
+
 (defn- assert-req [edn facet]
-  [dataspace/request-type :assert [dataspace/assert-type edn facet]])
+  [dataspace/request-type :assert [dataspace/assert-type (edn-doc edn) facet]])
 
 (defn- observe-req [edn facet]
-  [dataspace/request-type :observe [dataspace/observe-type edn facet]])
+  [dataspace/request-type :observe [dataspace/observe-type (edn-doc edn) facet]])
+
+(deftest abi-assertions-are-documents-not-edn-strings
+  (is (= :document (second (first (nth dataspace/assert-type 2)))))
+  (is (= :document (second (first (nth dataspace/observe-type 2))))))
 
 (deftest observe-pattern-binds-and-fires-on-matching-assert
   (let [runtime (host)
         observed (invoke runtime (observe-req "[:temperature :room/a ?t]" 0))
         asserted (invoke runtime (assert-req "[:temperature :room/a 21]" 0))]
     (is (= :matches (second observed)))
-    (is (= "[]" (last (nth observed 2))))
+    (is (= [] (doc-edn (last (nth observed 2)))))
     (is (= :asserted (second asserted)))
-    (is (= [{'?t 21}] (edn/read-string (last (nth asserted 2)))))
+    (is (= [{'?t 21}] (doc-edn (last (nth asserted 2)))))
     (let [again (invoke runtime (observe-req "[:temperature :room/a ?t]" 0))]
-      (is (= [{'?t 21}] (edn/read-string (last (nth again 2))))))))
+      (is (= [{'?t 21}] (doc-edn (last (nth again 2))))))))
 
 (deftest native-source-forms-cross-hir-kir-and-provider
   (let [checked (compiler/check-source surface-source
                                        {:allow #{[:cap/call 24]}})
         kir (ir/lower (:hir checked))
         runtime (host surface-source)
-        pattern "[:temperature :room/a ?t]"
-        assertion "[:temperature :room/a 21]"]
+        pattern (edn-doc "[:temperature :room/a ?t]")
+        assertion (edn-doc "[:temperature :room/a 21]")]
     (is (= #{[:cap/call 24]} (get-in checked [:hir :effects])))
     (is (= :kotoba.kir/v4 (:format kir)))
     (is (= [] (-> (invoke-surface runtime 'subscribe [pattern])
-                  (nth 2) last edn/read-string)))
+                  (nth 2) last doc-edn)))
     (is (= [{'?t 21}]
            (-> (invoke-surface runtime 'publish [assertion])
-               (nth 2) last edn/read-string)))
+               (nth 2) last doc-edn)))
     (is (= [{'?t 21}]
            (-> (invoke-surface runtime 'subscribe [pattern])
-               (nth 2) last edn/read-string)))))
+               (nth 2) last doc-edn)))))
 
 (deftest native-source-forms-cannot-launder-the-dataspace-effect
   (is (thrown-with-msg?
@@ -86,15 +96,15 @@
   (let [runtime (host surface-source)
         entered (invoke-surface runtime 'enter [])
         facet (-> entered (nth 2) last)
-        assertion "[:presence :room/a :alice]"]
+        assertion (edn-doc "[:presence :room/a :alice]")]
     (is (= :facet (second entered)))
     (is (= :asserted
            (second (invoke-surface runtime 'publish-in [assertion facet]))))
     (is (= :retracted
            (second (invoke-surface runtime 'leave [facet]))))
     (is (= [] (-> (invoke-surface runtime 'subscribe
-                                  ["[:presence :room/a ?who]"])
-                  (nth 2) last edn/read-string)))))
+                                  [(edn-doc "[:presence :room/a ?who]")])
+                  (nth 2) last doc-edn)))))
 
 (deftest facet-exit-retracts-owned-assertions-and-drops-observations
   (let [runtime (host)
@@ -107,7 +117,7 @@
           remaining (invoke runtime (observe-req "[:temperature :room/a ?t]" 0))]
       (is (= :retracted (second left)))
       (is (= 1 (last (nth left 2))))
-      (is (= [] (edn/read-string (last (nth remaining 2))))))))
+      (is (= [] (doc-edn (last (nth remaining 2))))))))
 
 (deftest missing-grant-denies-before-provider-invoke
   (let [kir (ir/lower (:hir (compiler/check-source
@@ -120,22 +130,25 @@
          clojure.lang.ExceptionInfo #"capability denied"
          (invoke runtime (observe-req "[:temperature :room/a ?t]" 0))))))
 
-(deftest copied-assertion-edn-does-not-grant-observe
+(deftest copied-assertion-document-does-not-grant-observe
   (let [left (host)
         right (host)
-        assertion "[:temperature :room/a 21]"]
-    (invoke left (assert-req assertion 0))
-    (let [stolen (vec (edn/read-string assertion))
-          other (invoke right (observe-req (pr-str stolen) 0))]
-      (is (= [:temperature :room/a 21] stolen))
-      (is (= [] (edn/read-string (last (nth other 2))))))))
+        assertion (edn-doc "[:temperature :room/a 21]")]
+    (invoke left (assert-req "[:temperature :room/a 21]" 0))
+    (let [other (invoke right (observe-req assertion 0))]
+      (is (= [:temperature :room/a 21] (doc-edn assertion)))
+      (is (= [] (doc-edn (last (nth other 2))))))))
 
-(deftest tagged-cap-literal-cannot-mint-authority
-  (let [runtime (host)
-        tagged (invoke runtime (assert-req "#cap \"dataspace\"" 0))
-        observed (invoke runtime (observe-req "#cap-ref \"dataspace\"" 0))]
-    (is (= :dataspace/tagged-rejected (second (nth tagged 2))))
-    (is (= :dataspace/tagged-rejected (second (nth observed 2))))))
+(deftest non-document-assertion-is-rejected
+  (let [runtime (host)]
+    (is (thrown-with-msg?
+         clojure.lang.ExceptionInfo #"value is not a tagged document node"
+         (invoke runtime [dataspace/request-type :assert
+                          [dataspace/assert-type "#cap \"dataspace\"" 0]])))
+    (is (thrown-with-msg?
+         clojure.lang.ExceptionInfo #"value is not a tagged document node"
+         (invoke runtime [dataspace/request-type :observe
+                          [dataspace/observe-type "#cap-ref \"dataspace\"" 0]])))))
 
 (deftest forged-facet-handle-is-rejected
   (let [runtime (host)
@@ -150,7 +163,7 @@
         stored (invoke runtime (assert-req forged-map 0))
         seen (invoke runtime (observe-req "{:cap/kind :dataspace/transact}" 0))]
     (is (= :asserted (second stored)))
-    (is (= [{}] (edn/read-string (last (nth seen 2)))))
+    (is (= [{}] (doc-edn (last (nth seen 2)))))
     (is (thrown-with-msg?
          clojure.lang.ExceptionInfo #"capability denied"
          (invoke (runtime/instantiate
