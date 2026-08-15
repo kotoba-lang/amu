@@ -1,6 +1,8 @@
 (ns kotoba.compiler.dataspace-match-test
+  "Matcher lives in kotoba-lang/provider; this ns proves the compiler test
+  classpath can still see it after the host move (ADR-2608154100 gap 2)."
   (:require [clojure.test :refer [deftest is]]
-            [kotoba.compiler.dataspace.match :as match]))
+            [provider.dataspace-match :as match]))
 
 (deftest temperature-tuple-binds-and-wildcards
   (is (= {'?t 21}
