@@ -1,0 +1,53 @@
+{:kotoba.capability-kit/name :stream-ingress
+ :kotoba.capability-kit/version 1
+ :semantics {:direction :host-injects-guest-polls
+             :ambient-listen false
+             :listen-authority :host-only
+             ;; http-ingress pairs one accept to one reply. A stream does not:
+             ;; frames arrive and leave continuously and independently, and what
+             ;; ends a turn is silence rather than a response. A guest may send
+             ;; nothing, or fifty frames, for one it received.
+             :pairing :unpaired-bidirectional
+             :ordering :per-stream-monotonic
+             ;; Overflow CLOSES the stream rather than dropping frames. A dropped
+             ;; audio frame is a glitch that looks like nothing happened -- the
+             ;; failure is inaudible to the program and audible only to the person
+             ;; on the other end. A closed stream is a fact the guest can act on.
+             :on-queue-overflow :close-stream
+             :max-open-streams 4
+             :max-queue-depth 64
+             :execution :synchronous-reference}
+ ;; 64 frames is 1.28s at the 20ms framing telephony uses; http-ingress's depth
+ ;; of 8 would be 160ms, which a single scheduling hiccup exceeds. The payload
+ ;; ceiling matches http-ingress's body so a stream is never the wider hole.
+ :limits {:payload-bytes 65536 :streams [1 64] :queue-depth [1 1024]
+          :frame-sequence [0 9223372036854775807]}
+ ;; Payloads are text. Binary transports (a carrier's media stream is 8 kHz
+ ;; mu-law) base64 the frame, and a guest decodes it -- see the :base64-kit
+ ;; conformance case, which exists because that decode has to be writable in
+ ;; the language for this kit to be usable rather than merely declared.
+ :capabilities
+ [{:name :stream/accept :id 25
+   :request
+   [:record :kotoba.stream/accept-request [[:slot :i64]]]
+   :result
+   [:option
+    [:variant :kotoba.stream/event
+     [[:opened [:record :kotoba.stream/opened
+                [[:stream :i64] [:kind :keyword]]]]
+      [:frame [:record :kotoba.stream/frame
+               [[:stream :i64] [:payload :string] [:sequence :i64]]]]
+      ;; A gap in :sequence is how a guest learns frames were lost. Without it
+      ;; a lossy stream and a quiet one are the same observation.
+      [:closed [:record :kotoba.stream/closed
+                [[:stream :i64] [:reason :keyword]]]]]]]}
+  {:name :stream/send :id 26
+   ;; A separate capability, not a second case of the one above: a guest allowed
+   ;; to HEAR a stream has not thereby been allowed to SPEAK into it, and a
+   ;; single :stream/transact would have made those one grant.
+   :request
+   [:record :kotoba.stream/outbound
+    [[:stream :i64] [:payload :string] [:final :bool]]]
+   :result :bool}]
+ :qualification {:reference :implemented :wasm-aot :pending
+                 :native-aot :pending :jit :pending}}
