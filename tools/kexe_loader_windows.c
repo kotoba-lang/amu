@@ -582,19 +582,111 @@ static int valid_typed_value(struct kexe_context *ctx,
     if (pair->first != 0 && pair->first != 1) return 0;
     return kind != 2 || pair->first != 0 || pair->second == 0;
   }
+  if (kind == 4) {
+    int64_t ordinal = 0, payload = 0, fields[KEXE_RECORD_FIELD_LIMIT];
+    if (inspect_variant_result(ctx, value, 2, 3u, &ordinal, &payload)) return 1;
+    if (!inspect_variant_result(ctx, value, 3, 0, &ordinal, &payload)) return 0;
+    if (ordinal == 0 || ordinal == 1) {
+      if (!inspect_record_result(ctx, payload, 2, fields)) return 0;
+      return fields[0] >= 0 && fields[1] > 0;
+    }
+    if (ordinal == 2) return inspect_record_result(ctx, payload, 2, fields);
+    return 0;
+  }
+  return 0;
+}
+
+static int64_t intern_pool_string(struct kexe_context *ctx, const char *text) {
+  size_t n;
+  uint64_t off;
+  if (ctx == NULL || text == NULL) __builtin_trap();
+  n = strlen(text);
+  if (n > KEXE_STRING_POOL_BYTES ||
+      ctx->string_pool_used + n > KEXE_STRING_POOL_BYTES) __builtin_trap();
+  off = ctx->string_pool_used;
+  memcpy(ctx->string_pool + off, text, n);
+  ctx->string_pool_used += n;
+  return pair_new(ctx, -((int64_t)off) - 1, (int64_t)n);
+}
+
+static int read_wall_millis(int64_t *out) {
+  FILETIME ft;
+  ULARGE_INTEGER t;
+  GetSystemTimeAsFileTime(&ft);
+  t.LowPart = ft.dwLowDateTime;
+  t.HighPart = ft.dwHighDateTime;
+  if (t.QuadPart < 116444736000000000ULL) return -1;
+  *out = (int64_t)((t.QuadPart - 116444736000000000ULL) / 10000ULL);
+  return 0;
+}
+
+static int read_monotonic_nanos(int64_t *out) {
+  LARGE_INTEGER freq, now;
+  int64_t sec, rem;
+  if (!QueryPerformanceFrequency(&freq) || !QueryPerformanceCounter(&now) ||
+      freq.QuadPart <= 0) return -1;
+  sec = now.QuadPart / freq.QuadPart;
+  rem = now.QuadPart % freq.QuadPart;
+  if (sec > (INT64_MAX - (rem * 1000000000LL / freq.QuadPart)) / 1000000000LL)
+    return -1;
+  *out = sec * 1000000000LL + rem * 1000000000LL / freq.QuadPart;
+  return 0;
+}
+
+static int64_t clock_error_result(struct kexe_context *ctx,
+                                  const char *code, const char *message) {
+  int64_t code_handle = intern_pool_string(ctx, code);
+  int64_t message_handle = intern_pool_string(ctx, message);
+  int64_t record = pair_new(ctx, message_handle, 0);
+  record = pair_new(ctx, code_handle, record);
+  return pair_new(ctx, 2, record);
+}
+
+static int64_t hosted_clock_v1(struct kexe_context *ctx, int64_t request) {
+  static int64_t observation_sequence = 0;
+  static int64_t last_monotonic = -1;
+  int64_t ordinal = 0, payload = 0, tick = 0, record;
+  if (!inspect_variant_result(ctx, request, 2, 3u, &ordinal, &payload))
+    __builtin_trap();
+  if (observation_sequence == INT64_MAX) __builtin_trap();
+  if (ordinal == 0) {
+    if (read_wall_millis(&tick) != 0 || tick < 0)
+      return clock_error_result(ctx, ":clock/source", "clock source failed");
+    record = pair_new(ctx, ++observation_sequence, 0);
+    record = pair_new(ctx, tick, record);
+    return pair_new(ctx, 0, record);
+  }
+  if (ordinal == 1) {
+    if (read_monotonic_nanos(&tick) != 0 || tick < 0)
+      return clock_error_result(ctx, ":clock/source", "clock source failed");
+    if (last_monotonic >= 0 && tick < last_monotonic)
+      return clock_error_result(ctx, ":clock/regressed",
+                                "monotonic clock regressed");
+    last_monotonic = tick;
+    record = pair_new(ctx, ++observation_sequence, 0);
+    record = pair_new(ctx, tick, record);
+    return pair_new(ctx, 1, record);
+  }
+  __builtin_trap();
   return 0;
 }
 
 static int64_t SYSV typed_cap_call(struct kexe_context *ctx, uint64_t id,
                                    uint64_t request_kind, uint64_t result_kind,
                                    int64_t request) {
-  int64_t result = request;
+  int64_t result;
   if (ctx == NULL || ctx->version != 3 || id > 255 ||
       !(ctx->allow[id / 8] & (1u << (id % 8))) ||
       request_kind != result_kind ||
-      !valid_typed_value(ctx, request_kind, request) ||
-      !valid_typed_value(ctx, result_kind, result))
+      !valid_typed_value(ctx, request_kind, request))
     __builtin_trap();
+  if (request_kind == 4) {
+    if (id != 7) __builtin_trap();
+    result = hosted_clock_v1(ctx, request);
+  } else {
+    result = request;
+  }
+  if (!valid_typed_value(ctx, result_kind, result)) __builtin_trap();
   return result;
 }
 

@@ -9,13 +9,13 @@ Status: accepted
 | Surface | Shape | Status |
 | --- | --- | --- |
 | `:reference` | kit `:request`/`:result` (variant + record) | `:implemented` (cljs/nbb provider) |
-| `:wasm-aot` | that same kit schema on wasm component / WASI clocks | `:pending` (ADR 0084) |
+| `:wasm-aot` | that same kit schema on wasm component / WASI clocks | `:implemented` (ADR 0258) |
 | `:wasm32-kotoba-v1` | guest sugar `(clock/now seed)` → `(typed-cap-call 7 :i64 :i64 seed)` → import `kotoba:cap`/`call` | `:implemented` |
 
-`:wasm-aot` stays pending. Flipping it would claim the variant kit schema
-runs on wasm-aot, which it does not.
+`:wasm-aot` is the kit variant schema on WASI 0.3, not this i64 path.
+Do not collapse the two (ADR 0258).
 
-`:wasm32-kotoba-v1 :implemented` is the production host-time path:
+`:wasm32-kotoba-v1 :implemented` is the production i64 host-time path:
 
 - amu/kotoba-wasm emit `kotoba:cap`/`call (i64,i64)->i64` (not `kotoba:typed`)
 - kototama.tender always links that import; id 7 requires `:clock-monotonic`
@@ -43,10 +43,11 @@ i64 host has no kit semantics for those ids and fail-closes
 
 ## What this does NOT claim
 
-- kit variant/record marshalling on wasm or native
-- `:wasm-aot :implemented` on any kit
+- kit variant/record marshalling on **native** (still pending)
+- `:wasm-aot :implemented` on http / llm
+  (clock: ADR 0258; state/log: ADR 0259; ui: ADR 0260;
+  http-ingress: ADR 0261; storage: ADR 0262)
 - `:wasm32-kotoba-v1 :implemented` on the other seven application kits
-- production WASI clocks (ADR 0084)
 - a public CLI off the JVM (`kbb`)
 
 ## Evidence

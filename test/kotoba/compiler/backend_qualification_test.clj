@@ -61,9 +61,9 @@
     (is (every? #(and (string? (:interface %))
                       (string? (:function %))
                       (vector? (:provider-wasi %))) entries))
-    (is (= ["wasi:http/outgoing-handler@0.3.0"]
+    (is (= ["wasi:http/client@0.3.0"]
            (:provider-wasi (first (filter #(= :http/post (:name %)) entries)))))
-    (is (= #{"wasi:clocks/wall-clock@0.3.0"
+    (is (= #{"wasi:clocks/system-clock@0.3.0"
              "wasi:clocks/monotonic-clock@0.3.0"}
            (set (:provider-wasi
                  (first (filter #(= :clock/now (:name %)) entries)))))
