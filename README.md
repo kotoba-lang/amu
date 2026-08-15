@@ -12,6 +12,22 @@ Backends (`kotoba-wasm`, `kotoba-native`, `kotoba-script`,
 `kotoba-component`) are 綾 — patterns in this weave, not beings.
 See root ADR-2608139980.
 
+Amu already produces the build-side half of an **addressed execution**: the
+sealed `:kotoba.output-set/v1` marker, the `:kotoba.provenance/v1` sidecar and
+`amu sign-output-set` together make a build a value with an identity, a
+publisher and a verification. Root ADR-2608160200 names the runtime half —
+`{program, input, state, runtime, policy, effects} → CID` — and says the two
+sit on **one** physical plane: an artifact, a receipt and a database state are
+IPLD values in the same CARv2 packs on the same object store (root
+ADR-2608160100). **There is no separate artifact store to add.** An artifact's
+identity remains its own CID; packing changes where it is, never what it is.
+
+The 綾 — `kotoba-wasm`, `kotoba-native`, `kotoba-script`, `kotoba-component` —
+differ in lowering only. A backend does not define its own artifact identity,
+its own physical layer, or its own capability model, and a target where
+something is not yet qualified is an implementation gap rather than a reason
+for that target to carry a different IR.
+
 The existing `kotoba.compiler.*` namespaces, `kotoba-compiler/1` wire marker,
 and `bin/kotoba` launcher remain compatibility APIs. New automation should use
 the `io.github.kotoba-lang/amu` dependency coordinate and the plain-Node
