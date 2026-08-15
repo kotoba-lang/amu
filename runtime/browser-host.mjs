@@ -11,6 +11,11 @@ const ALLOWED_IMPORTS = new Set([
   "kotoba:heap/pair/function",
   "kotoba:heap/pair-first/function",
   "kotoba:heap/pair-second/function",
+  "kotoba:value-runtime/intern/function",
+  "kotoba:value-runtime/hydrate/function",
+  "kotoba:value-runtime/resolve/function",
+  "kotoba:value-runtime/cid-of/function",
+  "kotoba:value-runtime/release/function",
   "kotoba:typed/literal/function",
   "kotoba:typed/new/function",
   "kotoba:typed/push-i64/function",
@@ -131,7 +136,8 @@ function exactOptions(options) {
   if (options === undefined) return {};
   if (options === null || typeof options !== "object" || Array.isArray(options))
     reject("invalid-options", "browser host options must be an object");
-  const allowed = new Set(["allowCapabilities", "capCall", "typedCapCall", "expectedSha256"]);
+  const allowed = new Set(["allowCapabilities", "capCall", "typedCapCall", "valueCall",
+                           "expectedSha256"]);
   for (const key of Object.keys(options))
     if (!allowed.has(key)) reject("invalid-options", `unknown browser host option: ${key}`);
   return options;
@@ -387,6 +393,49 @@ function createHeap() {
     }),
     report() { return Object.freeze({ capacity: PAIR_CAPACITY, used: cells.length }); }
   };
+}
+
+export function createValueRuntime(valueCall) {
+  const call = (operation, payload) => {
+    if (typeof valueCall !== "function")
+      reject("value-runtime-unavailable", "no immutable value runtime is installed");
+    return valueCall(operation, payload);
+  };
+  const handle = value => {
+    if ((typeof value !== "bigint" && !Number.isSafeInteger(value)) ||
+        BigInt(value) <= 0n || BigInt(value) > 9223372036854775807n)
+      reject("invalid-value-handle", "value runtime returned an invalid handle");
+    return BigInt(value);
+  };
+  const requestHandle = value => {
+    if (typeof value !== "bigint" || value <= 0n)
+      reject("invalid-value-handle", "guest supplied an invalid value handle");
+    return value;
+  };
+  const bytes = value => {
+    if (!ArrayBuffer.isView(value) || value.byteLength > 1024 * 1024)
+      reject("invalid-value-bytes", "value runtime bytes are invalid or oversized");
+    return new Uint8Array(value.buffer, value.byteOffset, value.byteLength).slice();
+  };
+  const cid = value => {
+    if (typeof value !== "string" || !/^b[a-z2-7]{58}$/u.test(value))
+      reject("invalid-value-cid", "value runtime CID is not canonical CID text");
+    return value;
+  };
+  return Object.freeze({
+    imports: Object.freeze({
+      intern(value) { return handle(call("value/intern", bytes(value))); },
+      hydrate(value) { return handle(call("value/hydrate", cid(value))); },
+      resolve(value) { return bytes(call("value/resolve", requestHandle(value))); },
+      "cid-of"(value) { return cid(call("value/cid-of", requestHandle(value))); },
+      release(value) {
+        const result = call("value/release", requestHandle(value));
+        if (result !== 1 && result !== 1n && result !== true)
+          reject("invalid-value-release", "value runtime release did not succeed");
+        return 1n;
+      }
+    })
+  });
 }
 
 function createTypedRuntime(abi, typedCapCall, allow) {
@@ -2385,6 +2434,8 @@ export async function instantiateKotoba(source, rawOptions) {
     reject("invalid-policy", "capCall must be a function");
   if (options.typedCapCall !== undefined && typeof options.typedCapCall !== "function")
     reject("invalid-policy", "typedCapCall must be a function");
+  if (options.valueCall !== undefined && typeof options.valueCall !== "function")
+    reject("invalid-policy", "valueCall must be a function");
   const bytes = copiedBytes(source);
   const digest = await sha256(bytes);
   if (options.expectedSha256 !== undefined && options.expectedSha256 !== digest)
@@ -2397,6 +2448,7 @@ export async function instantiateKotoba(source, rawOptions) {
   const compatibility = admission.compatibility;
   const typed = createTypedRuntime(typedAbi, options.typedCapCall, allow);
   const heap = createHeap();
+  const valueRuntime = createValueRuntime(options.valueCall);
   const cap = Object.freeze({
     call(id, value) {
       if (typeof id !== "bigint" || id < 0n || id > 255n || !allow.has(Number(id)))
@@ -2414,6 +2466,7 @@ export async function instantiateKotoba(source, rawOptions) {
     instance = await WebAssembly.instantiate(module, {
       "kotoba:cap": cap,
       "kotoba:heap": heap.imports,
+      "kotoba:value-runtime": valueRuntime.imports,
       "kotoba:typed": typed?.imports ?? Object.freeze({})
     });
   } catch (error) {

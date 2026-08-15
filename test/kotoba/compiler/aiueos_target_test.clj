@@ -100,9 +100,13 @@
     (is (empty? (:imports binary)))
     (is (nil? (:interpreter binary)))
     (is (= :aiueos_kernel_entry (:entry binary)))
-    ;; Entry shim preserves loader rdi in context+80, then initializes r9.
-    (is (= [0x48 0x89 0x3d] (subvec bytes 0x1000 0x1003)))
-    (is (= [0x4c 0x8d 0x0d] (subvec bytes 0x1007 0x100a)))
+    ;; Entry shim installs its own stack/GDT/TSS before preserving loader rdi
+    ;; and initializing r9.
+    (is (= [0xfa 0x48 0x8d 0x25] (subvec bytes 0x1000 0x1004)))
+    (is (= [0x0f 0x01 0x15] (subvec bytes 0x100c 0x100f)))
+    (is (= [0x0f 0x00 0xd8] (subvec bytes 0x1033 0x1036)))
+    (is (= [0x48 0x89 0x3d] (subvec bytes 0x1036 0x1039)))
+    (is (= [0x4c 0x8d 0x0d] (subvec bytes 0x103d 0x1040)))
     ;; Context fuel is initialized to 512; no host process populates it.
     (is (some? rw-segment) "RW context PT_LOAD exists")
     (is (= 512 (read-le bytes (+ (:offset rw-segment) 8) 8)))))
@@ -158,6 +162,24 @@
                               :x86_64-aiueos-kernel-v1))]
     (is (some #(= [0x4d 0x8b 0x51 0x50] %)
               (partition 4 1 (:code artifact))))
+    (is (empty? (:imports artifact)))))
+
+(deftest kernel-target-publishes-the-current-domain-to-private-context
+  (let [artifact (:artifact (compiler/compile-source
+                              "(defn main [] (kernel-publish-current-domain 4))"
+                              :x86_64-aiueos-kernel-v1))]
+    (is (some #(= [0x45 0x89 0x91 0x10 0x01 0x00 0x00] %)
+              (partition 7 1 (:code artifact)))
+        "stores the scheduler-owned domain at context+0x110")
+    (is (empty? (:imports artifact)))))
+
+(deftest kernel-target-derives-the-private-value-capability-table
+  (let [artifact (:artifact (compiler/compile-source
+                              "(defn main [] (kernel-value-runtime-capability-table))"
+                              :x86_64-aiueos-kernel-v1))]
+    (is (some #(= [0x4d 0x8d 0x91 0x00 0x10 0x00 0x00] %)
+              (partition 7 1 (:code artifact)))
+        "derives context+0x1000 without accepting a caller pointer")
     (is (empty? (:imports artifact)))))
 
 (deftest privileged-intrinsics-are-rejected-outside-the-kernel-target
@@ -575,6 +597,34 @@
             "kotoba_aiueos_copy_in"]
            ['aiueos-capability-plan '[slot generation type state-rights request]
             "kotoba_aiueos_capability_plan"]
+           ['aiueos-value-handle-plan '[operation next-handle live-count handle entry-state]
+            "kotoba_aiueos_value_handle_plan"]
+           ['aiueos-value-handle-arena '[arena arena-length operation handle descriptor]
+            "kotoba_aiueos_value_handle_arena"]
+           ['aiueos-value-runtime-dispatch '[arena profile request cap-table cap-handle]
+            "kotoba_aiueos_value_runtime_dispatch"]
+           ['aiueos-value-runtime-entry '[arena entry-profile user-page kernel-request cap-table]
+            "kotoba_aiueos_value_runtime_entry"]
+           ['aiueos-value-runtime-syscall-plan '[number domain pointer user-rip user-rsp]
+            "kotoba_aiueos_value_runtime_syscall_plan"]
+           ['aiueos-value-runtime-publish-domain '[domain]
+            "kotoba_aiueos_value_runtime_publish_domain"]
+           ['aiueos-value-runtime-capability-mutate
+            '[action slot generation rights owner]
+            "kotoba_aiueos_value_runtime_capability_mutate"]
+           ['aiueos-value-runtime-provider-status '[generation active]
+            "kotoba_aiueos_value_runtime_provider_status"]
+           ['aiueos-value-runtime-capability-grant
+            '[action slot generation rights owner]
+            "kotoba_aiueos_value_runtime_capability_grant"]
+           ['aiueos-value-runtime-provider-complete
+            '[ticket route-domain block block-length descriptor]
+            "kotoba_aiueos_value_runtime_provider_complete"]
+           ['aiueos-value-runtime-provider-claim '[]
+            "kotoba_aiueos_value_runtime_provider_claim"]
+           ['aiueos-value-runtime-cas-verify
+            '[block block-length expected output workspace]
+            "kotoba_aiueos_value_runtime_cas_verify"]
            ['aiueos-service-lifecycle '[generation restarts event budget]
             "kotoba_aiueos_service_lifecycle"]
            ['aiueos-service-registry-build '[base length sequence state0 state1]
@@ -601,6 +651,21 @@
     (is (x86-memory-opcode? bytes [0x88]))
     (is (some #(= [0x49 0xc7 0x41 0x08 0x00 0x04 0x00 0x00] %)
               (partition 8 1 bytes)))))
+
+(deftest kernel-target-emits-bounded-atomic-handle-lock
+  (let [source "(defn aiueos-value-handle-arena [arena arena-length operation handle descriptor] (kernel-compare-exchange-u32 arena arena-length 0 0 1)) (defn main [] 0)"
+        {:keys [object]} (compiler/compile-source source :x86_64-aiueos-kernel-v1)
+        bytes (:bytes object)]
+    (is (= "kotoba_aiueos_value_handle_arena" (:export object)))
+    (is (empty? (:imports object)))
+    (is (some #{[0xf0 0x45 0x0f 0xb1 0x13]}
+              (partition 5 1 bytes))
+        "LOCK CMPXCHG dword ptr [r11],r10d")
+    (is (some #{[0x0f 0x0b]} (partition 2 1 bytes))
+        "invalid bounded regions trap before the atomic access")
+    (is (thrown-with-msg?
+         clojure.lang.ExceptionInfo #"requires the aiueos kernel target"
+         (compiler/compile-source source :x86_64-aiueos-user-v1)))))
 
 
 (deftest firmware-target-emits-a-real-import-free-pe32+-efi-image
