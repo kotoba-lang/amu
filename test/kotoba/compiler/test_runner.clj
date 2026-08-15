@@ -111,6 +111,7 @@
             [kotoba.compiler.object-product-vertical-test]
             [kotoba.compiler.object-transport-test]
             [kotoba.compiler.http-ingress-provider-test]
+            [kotoba.compiler.stream-ingress-provider-test]
             [kotoba.compiler.storage-provider-test]
             [kotoba.compiler.storage-transport-test]
             [kotoba.compiler.clock-provider-test]
@@ -233,6 +234,7 @@
                                           'kotoba.compiler.object-product-vertical-test
                                           'kotoba.compiler.object-transport-test
                                           'kotoba.compiler.http-ingress-provider-test
+                                          'kotoba.compiler.stream-ingress-provider-test
                                           'kotoba.compiler.storage-provider-test
                                           'kotoba.compiler.storage-transport-test
                                           'kotoba.compiler.clock-provider-test
