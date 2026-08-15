@@ -7,37 +7,37 @@
              :ambient-access false
              :resource :dataspace
              :operations [:assert :retract :observe :facet-enter :facet-leave]
-             :assertions :edn-inert
+             :assertions :document-inert
              :pattern-bindings "?symbol-or-:?keyword"
              :wildcard #{_ :_}
              :maps :keys-present-extra-ok
              :observe-model :host-owned-match-returns-inert-bindings
              :facet-exit :retracts-owned-assertions-and-drops-observations
              :authority "Lexical/argument possession of this capability. Serializing an assertion or writing #cap does not restore authority."
-             :encoding :in-process-edn
+             :encoding :in-process-document
              :wire :kotoba.value.v1
              :not :preserves}
  :limits {:assertions 256
           :observers 64
           :facets 32
-          :assertion :bounded-edn-string
-          :pattern :bounded-edn-string}
+          :assertion :document
+          :pattern :document}
  :request
  [:variant :kotoba.dataspace/request
   [[:assert [:record :kotoba.dataspace/assert
-             [[:assertion :string] [:facet :i64]]]]
+             [[:assertion :document] [:facet :i64]]]]
    [:retract [:record :kotoba.dataspace/retract
-              [[:assertion :string] [:facet :i64]]]]
+              [[:assertion :document] [:facet :i64]]]]
    [:observe [:record :kotoba.dataspace/observe
-              [[:pattern :string] [:facet :i64]]]]
+              [[:pattern :document] [:facet :i64]]]]
    [:facet-enter :bool]
    [:facet-leave :i64]]]
  :result
  [:variant :kotoba.dataspace/result
   [[:asserted [:record :kotoba.dataspace/asserted
-               [[:count :i64] [:notices :string]]]]
+               [[:count :i64] [:notices :document]]]]
    [:retracted [:record :kotoba.dataspace/retracted [[:count :i64]]]]
-   [:matches [:record :kotoba.dataspace/matches [[:bindings :string]]]]
+   [:matches [:record :kotoba.dataspace/matches [[:bindings :document]]]]
    [:facet [:record :kotoba.dataspace/facet [[:id :i64]]]]
    [:error [:record :kotoba.dataspace/error
             [[:code :keyword] [:message :string]]]]]]

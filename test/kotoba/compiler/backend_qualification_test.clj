@@ -57,13 +57,14 @@
         actual (->> (:capabilities contract) (map #(select-keys % [:name :id])) set)
         entries (:capabilities contract)]
     (is (= expected actual))
+    (is (contains? actual {:id 24 :name :dataspace/transact}))
     (is (= (count entries) (count (set (map (juxt :interface :function) entries)))))
     (is (every? #(and (string? (:interface %))
                       (string? (:function %))
                       (vector? (:provider-wasi %))) entries))
-    (is (= ["wasi:http/outgoing-handler@0.3.0"]
+    (is (= ["wasi:http/client@0.3.0"]
            (:provider-wasi (first (filter #(= :http/post (:name %)) entries)))))
-    (is (= #{"wasi:clocks/wall-clock@0.3.0"
+    (is (= #{"wasi:clocks/system-clock@0.3.0"
              "wasi:clocks/monotonic-clock@0.3.0"}
            (set (:provider-wasi
                  (first (filter #(= :clock/now (:name %)) entries)))))
@@ -80,7 +81,7 @@
       (is (= backend (:backend receipt)))
       (is (= (get qualification/execution-surfaces backend)
              (:execution-surface receipt)))
-      (is (= 9 (:capability-count receipt)))
+      (is (= 10 (:capability-count receipt)))
       (is (= :passed (:manifest-gate receipt)))
       (if (= :cljs backend)
         (do (is (= :qualified (:execution-status receipt)))
@@ -129,6 +130,12 @@
          clojure.lang.ExceptionInfo #"lacks closed semantic evidence"
          (qualification/verify-data! manifest registry
                                      missing-foreign-receipt :native)))))
+
+(deftest stale-capability-count-nine-fails-closed
+  (let [false-count (assoc-in claims [:provider-manifest :capability-count] 9)]
+    (is (thrown-with-msg?
+         clojure.lang.ExceptionInfo #"not bound to this provider manifest"
+         (qualification/verify-data! manifest registry false-count :cljs)))))
 
 (deftest registry-drift-fails-every-backend-gate
   (is (thrown-with-msg?
