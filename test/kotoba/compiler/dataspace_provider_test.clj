@@ -17,14 +17,30 @@
        (pr-str dataspace/request-type) " " (pr-str dataspace/result-type)
        " request))"))
 
-(defn- host []
-  (let [kir (ir/lower (:hir (compiler/check-source
-                             source {:allow #{[:cap/call 24]}})))]
-    (runtime/instantiate kir {:allow #{24}
-                              :providers {24 (dataspace/provider)}})))
+(def surface-source
+  (str "(ns app.dataspace.surface "
+       "(:export [publish publish-in retract subscribe enter leave]) "
+       "(:capabilities #{:dataspace/transact}))"
+       "(defn publish [assertion :string] (assert! assertion))"
+       "(defn publish-in [assertion :string facet :i64] (assert! assertion facet))"
+       "(defn retract [assertion :string facet :i64] (retract! assertion facet))"
+       "(defn subscribe [pattern :string] (observe! pattern))"
+       "(defn enter [] (facet-enter!))"
+       "(defn leave [facet :i64] (facet-leave! facet))"))
+
+(defn- host
+  ([] (host source))
+  ([source-text]
+   (let [kir (ir/lower (:hir (compiler/check-source
+                              source-text {:allow #{[:cap/call 24]}})))]
+     (runtime/instantiate kir {:allow #{24}
+                               :providers {24 (dataspace/provider)}}))))
 
 (defn- invoke [runtime request]
   ((:invoke runtime) 'coord [request]))
+
+(defn- invoke-surface [runtime function args]
+  ((:invoke runtime) function args))
 
 (defn- assert-req [edn facet]
   [dataspace/request-type :assert [dataspace/assert-type edn facet]])
@@ -42,6 +58,43 @@
     (is (= [{'?t 21}] (edn/read-string (last (nth asserted 2)))))
     (let [again (invoke runtime (observe-req "[:temperature :room/a ?t]" 0))]
       (is (= [{'?t 21}] (edn/read-string (last (nth again 2))))))))
+
+(deftest native-source-forms-cross-hir-kir-and-provider
+  (let [checked (compiler/check-source surface-source
+                                       {:allow #{[:cap/call 24]}})
+        kir (ir/lower (:hir checked))
+        runtime (host surface-source)
+        pattern "[:temperature :room/a ?t]"
+        assertion "[:temperature :room/a 21]"]
+    (is (= #{[:cap/call 24]} (get-in checked [:hir :effects])))
+    (is (= :kotoba.kir/v4 (:format kir)))
+    (is (= [] (-> (invoke-surface runtime 'subscribe [pattern])
+                  (nth 2) last edn/read-string)))
+    (is (= [{'?t 21}]
+           (-> (invoke-surface runtime 'publish [assertion])
+               (nth 2) last edn/read-string)))
+    (is (= [{'?t 21}]
+           (-> (invoke-surface runtime 'subscribe [pattern])
+               (nth 2) last edn/read-string)))))
+
+(deftest native-source-forms-cannot-launder-the-dataspace-effect
+  (is (thrown-with-msg?
+       clojure.lang.ExceptionInfo #"capability policy denies required effects"
+       (compiler/check-source surface-source {:allow #{}}))))
+
+(deftest native-facet-forms-clean-up-owned-state
+  (let [runtime (host surface-source)
+        entered (invoke-surface runtime 'enter [])
+        facet (-> entered (nth 2) last)
+        assertion "[:presence :room/a :alice]"]
+    (is (= :facet (second entered)))
+    (is (= :asserted
+           (second (invoke-surface runtime 'publish-in [assertion facet]))))
+    (is (= :retracted
+           (second (invoke-surface runtime 'leave [facet]))))
+    (is (= [] (-> (invoke-surface runtime 'subscribe
+                                  ["[:presence :room/a ?who]"])
+                  (nth 2) last edn/read-string)))))
 
 (deftest facet-exit-retracts-owned-assertions-and-drops-observations
   (let [runtime (host)
