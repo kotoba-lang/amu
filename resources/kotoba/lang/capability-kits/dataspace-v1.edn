@@ -42,5 +42,15 @@
    [:facet [:record :kotoba.dataspace/facet [[:id :i64]]]]
    [:error [:record :kotoba.dataspace/error
             [[:code :keyword] [:message :string]]]]]]
- :qualification {:reference :implemented :wasm-aot :pending
-                 :native-aot :pending :jit :pending}}
+ :qualification {:reference :implemented
+                 :wasm-aot :implemented
+                 :wasm32-kotoba-v1 :pending
+                 :native-aot :pending
+                 :jit :pending}
+ ;; Typed kit ABI on the browser wasm host (kotoba:typed/cap-call). Distinct
+ ;; from clock's i64 kotoba:cap/call surface that :wasm32-kotoba-v1 names.
+ :wasm-aot-surface {:import ["kotoba:typed" "cap-call"]
+                    :capability-id 24
+                    :grant :dataspace/transact
+                    :target :wasm32-browser-kotoba-v1
+                    :elaboration "(typed-cap-call :dataspace/transact request-type result-type request)"}}
