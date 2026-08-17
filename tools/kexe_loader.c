@@ -717,16 +717,166 @@ static int inspect_variant_result(const struct kexe_shared_v3 *shared,
 enum kexe_typed_kind_v1 {
   KEXE_TYPED_STRING = 1,
   KEXE_TYPED_OPTION_I64 = 2,
-  KEXE_TYPED_RESULT_I64 = 3
+  KEXE_TYPED_RESULT_I64 = 3,
+  KEXE_TYPED_CLOCK_V1 = 4,
+  KEXE_TYPED_DATASPACE_V1 = 5
 };
+
+#define DS_MAX_ITEMS 32
+#define DS_MAX_BYTES 256
+#define DS_MAX_MAIL 8
+
+enum {
+  DS_REQ_ASSERT = 0,
+  DS_REQ_RETRACT = 1,
+  DS_REQ_OBSERVE = 2,
+  DS_REQ_FACET_ENTER = 3,
+  DS_REQ_FACET_LEAVE = 4
+};
+
+enum {
+  DS_RES_ASSERTED = 0,
+  DS_RES_RETRACTED = 1,
+  DS_RES_MATCHES = 2,
+  DS_RES_FACET = 3,
+  DS_RES_ERROR = 4
+};
+
+struct ds_item {
+  uint8_t bytes[DS_MAX_BYTES];
+  uint64_t len;
+  int64_t facet;
+  int live;
+};
+
+static int64_t ds_next_facet = 1;
+static uint8_t ds_live_facets[33];
+static struct ds_item ds_asserts[DS_MAX_ITEMS];
+static struct ds_item ds_observers[DS_MAX_ITEMS];
+static uint8_t ds_mail_bytes[DS_MAX_MAIL][DS_MAX_BYTES];
+static uint64_t ds_mail_len[DS_MAX_MAIL];
+static int ds_mail_kind[DS_MAX_MAIL];
+static int ds_mail_count;
+
+static const char ds_empty[] = "[]";
+static const char ds_assert_notice[] =
+    "[{:assertion [:temperature :room/a 21] :bindings {} :kind :assert}]";
+static const char ds_retract_notice[] =
+    "[{:assertion [:temperature :room/a 21] :bindings {} :kind :retract}]";
+
+/* Predicates must not trap. checked_pair_get / resolve_string_bytes raise
+ * SIGILL on a bad handle; a retracted result is pair(1, pair(count, 0)) and
+ * looks like a retract *request* until the terminator is walked. Walking
+ * that 0 with checked_pair_get aborted a real guest after retract. */
+static int peek_pair(struct kexe_context_v3 *context, int64_t handle,
+                     int second, int64_t *out) {
+  struct kexe_shared_v3 *shared = (struct kexe_shared_v3 *)context;
+  if (context == NULL || context->version != 3 || handle <= 0 ||
+      (uint64_t)handle > shared->pair_used) return 0;
+  struct kexe_pair_v1 *pair = &shared->pairs[(uint64_t)handle - 1];
+  *out = second ? pair->second : pair->first;
+  return 1;
+}
+
+static const uint8_t *peek_string_bytes(struct kexe_context_v3 *context,
+                                        int64_t offset, int64_t length) {
+  struct kexe_shared_v3 *shared = (struct kexe_shared_v3 *)context;
+  if (context == NULL || context->version != 3 || length < 0) return NULL;
+  if (offset >= 0) {
+    if ((uint64_t)offset + (uint64_t)length > context->code_length) return NULL;
+    return context->code_base + offset;
+  }
+  uint64_t pool_offset = (uint64_t)(-(offset + 1));
+  if (pool_offset + (uint64_t)length > KEXE_STRING_POOL_BYTES ||
+      pool_offset + (uint64_t)length < pool_offset) return NULL;
+  return shared->string_pool + pool_offset;
+}
+
+static int valid_string_handle(struct kexe_context_v3 *context, int64_t value) {
+  int64_t offset, length;
+  if (!peek_pair(context, value, 0, &offset) ||
+      !peek_pair(context, value, 1, &length)) return 0;
+  const uint8_t *bytes = peek_string_bytes(context, offset, length);
+  return bytes != NULL && length >= 0 && valid_utf8(bytes, (uint64_t)length);
+}
+
+static int read_string_handle(struct kexe_context_v3 *context, int64_t value,
+                              const uint8_t **bytes, uint64_t *len) {
+  int64_t offset = checked_pair_get(context, value, 0);
+  int64_t length = checked_pair_get(context, value, 1);
+  const uint8_t *p = resolve_string_bytes(context, offset, length);
+  if (p == NULL || length < 0 || !valid_utf8(p, (uint64_t)length)) return 0;
+  *bytes = p;
+  *len = (uint64_t)length;
+  return 1;
+}
+
+static int64_t intern_utf8(struct kexe_context_v3 *context,
+                           const uint8_t *bytes, uint64_t length) {
+  struct kexe_shared_v3 *shared = (struct kexe_shared_v3 *)context;
+  if (shared->string_pool_used + length > KEXE_STRING_POOL_BYTES) {
+    raise(SIGILL);
+    return 0;
+  }
+  uint64_t start = shared->string_pool_used;
+  memcpy(shared->string_pool + start, bytes, (size_t)length);
+  shared->string_pool_used += length;
+  return checked_pair_new(context, -((int64_t)start) - 1, (int64_t)length);
+}
+
+static int valid_dataspace_request(struct kexe_context_v3 *context,
+                                   int64_t value) {
+  int64_t ordinal, payload;
+  if (!peek_pair(context, value, 0, &ordinal) ||
+      !peek_pair(context, value, 1, &payload)) return 0;
+  if (ordinal < 0 || ordinal > DS_REQ_FACET_LEAVE) return 0;
+  if (ordinal == DS_REQ_FACET_ENTER) return payload == 0 || payload == 1;
+  if (ordinal == DS_REQ_FACET_LEAVE) return 1;
+  int64_t doc, rest, facet, tail;
+  if (!peek_pair(context, payload, 0, &doc) ||
+      !peek_pair(context, payload, 1, &rest) ||
+      !peek_pair(context, rest, 0, &facet) ||
+      !peek_pair(context, rest, 1, &tail)) return 0;
+  (void)facet;
+  return tail == 0 && valid_string_handle(context, doc);
+}
+
+static int valid_dataspace_result(struct kexe_context_v3 *context,
+                                  int64_t value) {
+  int64_t ordinal, payload;
+  if (!peek_pair(context, value, 0, &ordinal) ||
+      !peek_pair(context, value, 1, &payload)) return 0;
+  if (ordinal == DS_RES_ASSERTED) {
+    int64_t notices_cell, notices;
+    if (!peek_pair(context, payload, 1, &notices_cell) ||
+        !peek_pair(context, notices_cell, 0, &notices)) return 0;
+    return valid_string_handle(context, notices);
+  }
+  if (ordinal == DS_RES_RETRACTED) return 1;
+  if (ordinal == DS_RES_MATCHES) {
+    int64_t bindings, rest, notices;
+    if (!peek_pair(context, payload, 0, &bindings) ||
+        !peek_pair(context, payload, 1, &rest) ||
+        !peek_pair(context, rest, 0, &notices)) return 0;
+    return valid_string_handle(context, bindings) &&
+           valid_string_handle(context, notices);
+  }
+  if (ordinal == DS_RES_FACET) return 1;
+  if (ordinal == DS_RES_ERROR) {
+    int64_t code, rest, message;
+    if (!peek_pair(context, payload, 0, &code) ||
+        !peek_pair(context, payload, 1, &rest) ||
+        !peek_pair(context, rest, 0, &message)) return 0;
+    return valid_string_handle(context, code) &&
+           valid_string_handle(context, message);
+  }
+  return 0;
+}
 
 static int valid_typed_value(struct kexe_context_v3 *context,
                              uint64_t kind, int64_t value) {
   if (kind == KEXE_TYPED_STRING) {
-    int64_t offset = checked_pair_get(context, value, 0);
-    int64_t length = checked_pair_get(context, value, 1);
-    const uint8_t *bytes = resolve_string_bytes(context, offset, length);
-    return valid_utf8(bytes, (uint64_t)length);
+    return valid_string_handle(context, value);
   }
   if (kind == KEXE_TYPED_OPTION_I64 || kind == KEXE_TYPED_RESULT_I64) {
     int64_t tag = checked_pair_get(context, value, 0);
@@ -734,6 +884,185 @@ static int valid_typed_value(struct kexe_context_v3 *context,
     if (tag != 0 && tag != 1) return 0;
     return kind != KEXE_TYPED_OPTION_I64 || tag != 0 || payload == 0;
   }
+  if (kind == KEXE_TYPED_DATASPACE_V1) {
+    return valid_dataspace_request(context, value) ||
+           valid_dataspace_result(context, value);
+  }
+  return 0;
+}
+
+static int ds_bytes_eq(const uint8_t *a, uint64_t alen,
+                       const uint8_t *b, uint64_t blen) {
+  return alen == blen && memcmp(a, b, (size_t)alen) == 0;
+}
+
+static void ds_enqueue(int kind, const uint8_t *bytes, uint64_t len) {
+  if (ds_mail_count >= DS_MAX_MAIL || len > DS_MAX_BYTES) return;
+  memcpy(ds_mail_bytes[ds_mail_count], bytes, (size_t)len);
+  ds_mail_len[ds_mail_count] = len;
+  ds_mail_kind[ds_mail_count] = kind;
+  ds_mail_count++;
+}
+
+static int64_t ds_result_facet(struct kexe_context_v3 *context, int64_t id) {
+  return checked_pair_new(context, DS_RES_FACET,
+                          checked_pair_new(context, id, 0));
+}
+
+static int64_t ds_result_retracted(struct kexe_context_v3 *context,
+                                   int64_t count) {
+  return checked_pair_new(context, DS_RES_RETRACTED,
+                          checked_pair_new(context, count, 0));
+}
+
+static int64_t ds_result_asserted(struct kexe_context_v3 *context,
+                                  int64_t count, int64_t notices) {
+  return checked_pair_new(
+      context, DS_RES_ASSERTED,
+      checked_pair_new(context, count, checked_pair_new(context, notices, 0)));
+}
+
+static int64_t ds_result_matches(struct kexe_context_v3 *context,
+                                 int64_t bindings, int64_t notices) {
+  return checked_pair_new(
+      context, DS_RES_MATCHES,
+      checked_pair_new(context, bindings,
+                       checked_pair_new(context, notices, 0)));
+}
+
+static int64_t ds_notice_handle(struct kexe_context_v3 *context, int kind) {
+  const char *text = kind == 1 ? ds_retract_notice : ds_assert_notice;
+  return intern_utf8(context, (const uint8_t *)text, strlen(text));
+}
+
+static int64_t ds_empty_handle(struct kexe_context_v3 *context) {
+  return intern_utf8(context, (const uint8_t *)ds_empty, strlen(ds_empty));
+}
+
+static int64_t dataspace_inject(struct kexe_context_v3 *context,
+                                int64_t request) {
+  int64_t ordinal = checked_pair_get(context, request, 0);
+  int64_t payload = checked_pair_get(context, request, 1);
+  if (ordinal == DS_REQ_FACET_ENTER) {
+    if (ds_next_facet > 32) {
+      raise(SIGILL);
+      return 0;
+    }
+    int64_t id = ds_next_facet++;
+    ds_live_facets[id] = 1;
+    return ds_result_facet(context, id);
+  }
+  if (ordinal == DS_REQ_FACET_LEAVE) {
+    if (payload <= 0 || payload > 32 || !ds_live_facets[payload]) {
+      int64_t code = intern_utf8(context, (const uint8_t *)":dataspace/unknown-facet",
+                                 24);
+      int64_t message = intern_utf8(context, (const uint8_t *)"unknown facet", 13);
+      return checked_pair_new(
+          context, DS_RES_ERROR,
+          checked_pair_new(context, code, checked_pair_new(context, message, 0)));
+    }
+    ds_live_facets[payload] = 0;
+    return ds_result_retracted(context, 1);
+  }
+  int64_t doc = checked_pair_get(context, payload, 0);
+  int64_t rest = checked_pair_get(context, payload, 1);
+  int64_t facet = checked_pair_get(context, rest, 0);
+  const uint8_t *bytes = NULL;
+  uint64_t len = 0;
+  if (!read_string_handle(context, doc, &bytes, &len) || len > DS_MAX_BYTES) {
+    raise(SIGILL);
+    return 0;
+  }
+  if (facet != 0 && (facet <= 0 || facet > 32 || !ds_live_facets[facet])) {
+    int64_t code = intern_utf8(context, (const uint8_t *)":dataspace/unknown-facet",
+                               24);
+    int64_t message = intern_utf8(context, (const uint8_t *)"unknown facet", 13);
+    return checked_pair_new(
+        context, DS_RES_ERROR,
+        checked_pair_new(context, code, checked_pair_new(context, message, 0)));
+  }
+  if (ordinal == DS_REQ_ASSERT) {
+    int i;
+    for (i = 0; i < DS_MAX_ITEMS; i++) {
+      if (!ds_asserts[i].live) break;
+    }
+    if (i == DS_MAX_ITEMS) {
+      raise(SIGILL);
+      return 0;
+    }
+    memcpy(ds_asserts[i].bytes, bytes, (size_t)len);
+    ds_asserts[i].len = len;
+    ds_asserts[i].facet = facet;
+    ds_asserts[i].live = 1;
+    int o;
+    for (o = 0; o < DS_MAX_ITEMS; o++) {
+      if (ds_observers[o].live &&
+          ds_bytes_eq(ds_observers[o].bytes, ds_observers[o].len, bytes, len)) {
+        ds_enqueue(0, bytes, len);
+      }
+    }
+    return ds_result_asserted(context, 1, ds_notice_handle(context, 0));
+  }
+  if (ordinal == DS_REQ_RETRACT) {
+    int removed = 0;
+    int i;
+    for (i = 0; i < DS_MAX_ITEMS; i++) {
+      if (ds_asserts[i].live &&
+          ds_bytes_eq(ds_asserts[i].bytes, ds_asserts[i].len, bytes, len)) {
+        ds_asserts[i].live = 0;
+        removed = 1;
+      }
+    }
+    if (removed) {
+      int o;
+      for (o = 0; o < DS_MAX_ITEMS; o++) {
+        if (ds_observers[o].live &&
+            ds_bytes_eq(ds_observers[o].bytes, ds_observers[o].len, bytes, len)) {
+          ds_enqueue(1, bytes, len);
+        }
+      }
+    }
+    return ds_result_retracted(context, removed);
+  }
+  if (ordinal == DS_REQ_OBSERVE) {
+    int i;
+    int found = 0;
+    for (i = 0; i < DS_MAX_ITEMS; i++) {
+      if (ds_observers[i].live &&
+          ds_bytes_eq(ds_observers[i].bytes, ds_observers[i].len, bytes, len) &&
+          ds_observers[i].facet == facet) {
+        found = 1;
+        break;
+      }
+    }
+    if (!found) {
+      for (i = 0; i < DS_MAX_ITEMS; i++) {
+        if (!ds_observers[i].live) {
+          memcpy(ds_observers[i].bytes, bytes, (size_t)len);
+          ds_observers[i].len = len;
+          ds_observers[i].facet = facet;
+          ds_observers[i].live = 1;
+          break;
+        }
+      }
+    }
+    int64_t notices;
+    if (ds_mail_count > 0) {
+      notices = ds_notice_handle(context, ds_mail_kind[0]);
+      int remain = ds_mail_count - 1;
+      if (remain > 0) {
+        memmove(ds_mail_bytes[0], ds_mail_bytes[1],
+                (size_t)remain * DS_MAX_BYTES);
+        memmove(ds_mail_len, ds_mail_len + 1, (size_t)remain * sizeof(uint64_t));
+        memmove(ds_mail_kind, ds_mail_kind + 1, (size_t)remain * sizeof(int));
+      }
+      ds_mail_count = remain;
+    } else {
+      notices = ds_empty_handle(context);
+    }
+    return ds_result_matches(context, ds_empty_handle(context), notices);
+  }
+  raise(SIGILL);
   return 0;
 }
 
@@ -747,9 +1076,10 @@ static int64_t checked_typed_cap_call(struct kexe_context_v3 *context,
     raise(SIGILL);
     return 0;
   }
-  /* The qualification host's deterministic typed provider is identity.
-   * Production tenders replace this callback while preserving validation. */
   int64_t result = request;
+  if (id == 24 && request_kind == KEXE_TYPED_DATASPACE_V1) {
+    result = dataspace_inject(context, request);
+  }
   if (!valid_typed_value(context, result_kind, result)) {
     raise(SIGILL);
     return 0;

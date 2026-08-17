@@ -5,8 +5,8 @@
 
   :wasm-aot names that typed kit ABI (kotoba:typed/cap-call, id 24).
   It is not clock's i64 kotoba:cap/call surface (:wasm32-kotoba-v1).
-  :native-aot / :jit stay pending. Matcher stays .cljc (:document is
-  not a native-word type in kotoba-kir)."
+  :native-aot / :jit are proved in dataspace-native-aot-test and
+  dataspace-jit-test. Matcher stays .cljc."
   (:require [clojure.edn :as edn]
             [clojure.java.io :as io]
             [clojure.java.shell :as shell]
@@ -178,8 +178,8 @@
     (is (= :implemented (:wasm-aot q)))
     (is (= :pending (:wasm32-kotoba-v1 q))
         "i64 kotoba:cap/call is not this kit ABI")
-    (is (= :pending (:native-aot q)))
-    (is (= :pending (:jit q)))
+    (is (= :implemented (:native-aot q)))
+    (is (= :implemented (:jit q)))
     (is (= ["kotoba:typed" "cap-call"] (:import surface)))
     (is (= 24 (:capability-id surface)))
     (is (= :dataspace/transact (:grant surface)))
