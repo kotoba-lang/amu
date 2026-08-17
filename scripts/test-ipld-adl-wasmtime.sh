@@ -65,7 +65,7 @@ wasm-tools validate "$tmp/kotoba-byte-at-3.wasm"
 clojure -Sdeps '{:paths ["src" "resources" "scripts"]}' -M \
   -m ipld-adl-source-compile "$tmp/kotoba-byte-at-cbor.wasm" byte-at-cbor
 wasm-tools validate "$tmp/kotoba-byte-at-cbor.wasm"
-for slice in slice slice-empty join join-double composed slice-of-join; do
+for slice in slice slice-empty join join-double composed slice-of-join noncanonical; do
   clojure -Sdeps '{:paths ["src" "resources" "scripts"]}' -M \
     -m ipld-adl-source-compile "$tmp/kotoba-$slice.wasm" "$slice"
   wasm-tools validate "$tmp/kotoba-$slice.wasm"
@@ -246,5 +246,13 @@ clojure -M:ipld-adl-conformance \
 # the CBOR byte string holding 0x05.
 clojure -M:ipld-adl-conformance \
   "$tmp/runner" "$tmp/kotoba-slice.wasm" 05 4105
+# The grammar is closed over bytes, so a perfectly faithful lowering can still
+# return something canonical DAG-CBOR would not have written. 18 05 decodes as
+# the integer 5, so decoding alone accepts it; the roundtrip does not.
+# Requiring the capability's own reason, not merely a refusal, is deliberate:
+# ipld.schema refuses this too, so an assertion that only checked "something
+# threw" would keep passing with the capability's check deleted.
+clojure -M:ipld-adl-conformance \
+  "$tmp/runner" "$tmp/kotoba-noncanonical.wasm" "reject:not canonical DAG-CBOR" 1805
 
-echo "ipld-adl-wasmtime: Kotoba-source input-dependent validation, indexed unsigned byte reads, bounded subrange views, per-byte joins, and composed expressions allocating above every live operand, with operand-length bounds traps, non-identity projection, engine fuel, timeout, import denial, memory, and output bounds passed"
+echo "ipld-adl-wasmtime: Kotoba-source input-dependent validation, indexed unsigned byte reads, bounded subrange views, per-byte joins, and composed expressions allocating above every live operand, with operand-length bounds traps, canonical-codec refusal, non-identity projection, engine fuel, timeout, import denial, memory, and output bounds passed"

@@ -132,6 +132,18 @@
    (defn encode [value :bytes] :bytes value)
    (defn validate-logical [value :bytes] :bool true)")
 
+;; A faithfully lowered transform whose output the codec would never have
+;; written. For the two-byte value 0x18 0x05 the encoding is 42 18 05, and
+;; [1,3) is 18 05 -- which *decodes* cleanly as the integer 5 and is therefore
+;; accepted by decoding alone, while canonical DAG-CBOR writes 5 as 05.
+(def ^:private noncanonical-source
+  "(ns adl.noncanonical
+       (:export [validate-representation decode encode validate-logical]))
+   (defn validate-representation [value :bytes] :bool true)
+   (defn decode [value :bytes] :bytes (bytes-slice value 1 3))
+   (defn encode [value :bytes] :bytes value)
+   (defn validate-logical [value :bytes] :bool true)")
+
 (defn -main [& [output profile]]
   (when-not output
     (throw (ex-info "output path required" {:phase :ipld-adl-source-compile})))
@@ -149,6 +161,7 @@
                           "join-double" join-double-source
                           "composed" composed-source
                           "slice-of-join" slice-of-join-source
+                          "noncanonical" noncanonical-source
                           "byte-at-3" byte-at-3-source
                           identity-source)))
                (make-array java.nio.file.OpenOption 0)))
