@@ -38,6 +38,14 @@
    (defn encode [value :bytes] :bytes value)
    (defn validate-logical [value :bytes] :bool (= (bytes-at value 0) 161))")
 
+(def slice-source
+  "(ns adl.slice
+       (:export [validate-representation decode encode validate-logical]))
+   (defn validate-representation [value :bytes] :bool true)
+   (defn decode [value :bytes] :bytes (bytes-slice value 1 3))
+   (defn encode [value :bytes] :bytes value)
+   (defn validate-logical [value :bytes] :bool true)")
+
 (deftest kotoba-source-compiles-to-the-closed-adl-abi
   (let [compiled (compiler/compile-ipld-adl-source identity-source)
         module (Files/createTempFile "kotoba-adl-source-" ".wasm"
@@ -109,6 +117,37 @@
         (is (not (re-find #"\(import " text))))
       (finally (Files/deleteIfExists module)))))
 
+(deftest subrange-transform-is-preserved-in-kir-and-wasm
+  (let [compiled (compiler/compile-ipld-adl-source slice-source)]
+    (is (= :input-bytes-v1 (get-in compiled [:adl :profile])))
+    (is (= [:input-subrange 1 3] (get-in compiled [:kir :plan :decode])))
+    (is (= :identity (get-in compiled [:kir :plan :encode])))
+    (is (= (:provenance compiled)
+           (provenance/verify! slice-source {} compiled)))))
+
+(deftest subrange-transform-is-a-bounded-view-not-a-copy
+  (let [compiled (compiler/compile-ipld-adl-source slice-source)
+        module (Files/createTempFile "kotoba-adl-slice-" ".wasm"
+                                     (make-array FileAttribute 0))]
+    (try
+      (Files/write module (:bytes compiled) (make-array java.nio.file.OpenOption 0))
+      (let [validation (shell/sh "wasm-tools" "validate" (str module))
+            text (:out (shell/sh "wasm-tools" "print" (str module)))]
+        (is (zero? (:exit validation)) (:err validation))
+        ;; The guard has to compare the requested end against the ABI length
+        ;; (local 2) and trap. Comparing against the memory size, or omitting
+        ;; the compare, still validates as Wasm and still returns a pointer --
+        ;; into bytes that are not the operand.
+        (is (re-find #"(?s)local\.get 2.*i32\.lt_u.*unreachable" text)
+            "the bound is the operand's length, not the memory's size")
+        ;; A view, not a copy: the result is the operand's own pointer moved
+        ;; forward, so the module never writes to linear memory. That is the
+        ;; alias rule, and it is checkable.
+        (is (not (re-find #"i32\.store|i64\.store|memory\.copy|memory\.fill" text))
+            "a subrange aliases the operand instead of being copied out")
+        (is (not (re-find #"\(import " text))))
+      (finally (Files/deleteIfExists module)))))
+
 (deftest profile-rejects-source-it-cannot-faithfully-lower
   (testing "a changed body is not silently compiled as identity"
     (is (thrown-with-msg?
@@ -166,4 +205,33 @@
          (compiler/compile-ipld-adl-source
           (.replace byte-at-source
                     "(bytes-at value 0)"
-                    "(bytes-at value (bytes-count value))"))))))
+                    "(bytes-at value (bytes-count value))")))))
+  (testing "an inverted or negative subrange is refused by name"
+    (is (thrown-with-msg?
+         clojure.lang.ExceptionInfo #"subrange offsets must satisfy 0 <= start <= end"
+         (compiler/compile-ipld-adl-source
+          (.replace slice-source "(bytes-slice value 1 3)" "(bytes-slice value 3 1)"))))
+    (is (thrown-with-msg?
+         clojure.lang.ExceptionInfo #"subrange offsets must satisfy 0 <= start <= end"
+         (compiler/compile-ipld-adl-source
+          (.replace slice-source "(bytes-slice value 1 3)" "(bytes-slice value -1 3)")))))
+  (testing "a subrange the fixed memory could never satisfy is refused"
+    ;; Two pages leave 130048 bytes for input, so a slice ending past that can
+    ;; never be in range at run time. Rejecting it at compile time is the
+    ;; lowering half of the max-output bound; the runner enforces the other.
+    (is (thrown-with-msg?
+         clojure.lang.ExceptionInfo #"subrange exceeds the module's input capacity"
+         (compiler/compile-ipld-adl-source
+          (.replace slice-source "(bytes-slice value 1 3)" "(bytes-slice value 0 130049)"))))
+    (is (thrown-with-msg?
+         clojure.lang.ExceptionInfo #"subrange exceeds the module's input capacity"
+         (compiler/compile-ipld-adl-source
+          (.replace slice-source "(bytes-slice value 1 3)" "(bytes-slice value 0 65000)")
+          {:memory-pages 1}))))
+  (testing "a computed offset is outside this closed profile"
+    (is (thrown-with-msg?
+         clojure.lang.ExceptionInfo #"unsupported IPLD ADL operation body"
+         (compiler/compile-ipld-adl-source
+          (.replace slice-source
+                    "(bytes-slice value 1 3)"
+                    "(bytes-slice value 1 (bytes-count value))"))))))
