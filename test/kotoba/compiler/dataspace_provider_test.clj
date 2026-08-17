@@ -61,6 +61,15 @@
 (defn- matches-notices [result]
   (doc-edn (nth (nth result 2) 2)))
 
+(defn- assert-notice [assertion bindings]
+  {:kind :assert :assertion assertion :bindings bindings})
+
+(defn- retract-notice [assertion bindings]
+  {:kind :retract :assertion assertion :bindings bindings})
+
+(defn- retract-req [edn facet]
+  [dataspace/request-type :retract [dataspace/retract-type (edn-doc edn) facet]])
+
 (deftest abi-assertions-are-documents-not-edn-strings
   (is (= :document (second (first (nth dataspace/assert-type 2)))))
   (is (= :document (second (first (nth dataspace/observe-type 2)))))
@@ -77,7 +86,7 @@
     (is (= [{'?t 21}] (doc-edn (last (nth asserted 2)))))
     (let [again (invoke runtime (observe-req "[:temperature :room/a ?t]" 0))]
       (is (= [{'?t 21}] (matches-bindings again)))
-      (is (= [{:assertion [:temperature :room/a 21] :bindings {'?t 21}}]
+      (is (= [{:kind :assert :assertion [:temperature :room/a 21] :bindings {'?t 21}}]
              (matches-notices again))))))
 
 (deftest matching-assert-delivers-document-notice-to-observer
@@ -85,7 +94,7 @@
     (invoke runtime (observe-req "[:temperature :room/a ?t]" 0))
     (invoke runtime (assert-req "[:temperature :room/a 21]" 0))
     (let [delivered (invoke runtime (observe-req "[:temperature :room/a ?t]" 0))]
-      (is (= [{:assertion [:temperature :room/a 21] :bindings {'?t 21}}]
+      (is (= [{:kind :assert :assertion [:temperature :room/a 21] :bindings {'?t 21}}]
              (matches-notices delivered)))
       (is (= [] (matches-notices
                  (invoke runtime (observe-req "[:temperature :room/a ?t]" 0))))))))
@@ -117,7 +126,7 @@
                (nth 2) last doc-edn)))
     (let [again (invoke-surface runtime 'subscribe [pattern])]
       (is (= [{'?t 21}] (matches-bindings again)))
-      (is (= [{:assertion [:temperature :room/a 21] :bindings {'?t 21}}]
+      (is (= [{:kind :assert :assertion [:temperature :room/a 21] :bindings {'?t 21}}]
              (matches-notices again))))
     (is (= [] (matches-notices (invoke-surface runtime 'subscribe [pattern])))
         "next observe! drains the mailbox")))
@@ -155,7 +164,7 @@
     (is (= :retracted (second (invoke-surface runtime 'leave [facet]))))
     (let [remaining (invoke-surface runtime 'subscribe [pattern])]
       (is (= [{'?t 21}] (matches-bindings remaining)))
-      (is (= [{:assertion [:temperature :room/a 21] :bindings {'?t 21}}]
+      (is (= [{:kind :assert :assertion [:temperature :room/a 21] :bindings {'?t 21}}]
              (matches-notices remaining))
           "facet-leave drops the child's mailbox; a new observe! replays the live current-set"))))
 
@@ -166,11 +175,49 @@
     (is (= :asserted (second (invoke-surface runtime 'publish [assertion]))))
     (let [first-obs (invoke-surface runtime 'subscribe [pattern])]
       (is (= [{'?t 21}] (matches-bindings first-obs)))
-      (is (= [{:assertion [:temperature :room/a 21] :bindings {'?t 21}}]
+      (is (= [{:kind :assert :assertion [:temperature :room/a 21] :bindings {'?t 21}}]
              (matches-notices first-obs))
           "observe! after a matching assert delivers current-set :document notices"))
     (is (= [] (matches-notices (invoke-surface runtime 'subscribe [pattern])))
         "current-set replay is not re-enqueued")))
+
+(deftest sugar-observe-delivers-retraction-notices
+  (let [runtime (host surface-source)
+        pattern (edn-doc "[:temperature :room/a ?t]")
+        assertion (edn-doc "[:temperature :room/a 21]")]
+    (is (= [] (matches-notices (invoke-surface runtime 'subscribe [pattern]))))
+    (is (= :asserted (second (invoke-surface runtime 'publish [assertion]))))
+    (is (= [(assert-notice [:temperature :room/a 21] {'?t 21})]
+           (matches-notices (invoke-surface runtime 'subscribe [pattern]))))
+    (is (= :retracted (second (invoke-surface runtime 'retract [assertion 0]))))
+    (let [delivered (invoke-surface runtime 'subscribe [pattern])]
+      (is (= [] (matches-bindings delivered)))
+      (is (= [(retract-notice [:temperature :room/a 21] {'?t 21})]
+             (matches-notices delivered))
+          "observe! after a matching retract drains a :retract :document notice"))
+    (is (= [] (matches-notices (invoke-surface runtime 'subscribe [pattern])))
+        "next observe! drains the retraction notice")))
+
+(deftest sugar-retract-of-non-matching-assertion-does-not-notify
+  (let [runtime (host surface-source)
+        pattern (edn-doc "[:temperature :room/a ?t]")
+        humidity (edn-doc "[:humidity :room/a 40]")]
+    (invoke-surface runtime 'subscribe [pattern])
+    (invoke-surface runtime 'publish [humidity])
+    (invoke-surface runtime 'retract [humidity 0])
+    (is (= [] (matches-notices (invoke-surface runtime 'subscribe [pattern])))
+        "retract of a non-matching assertion does not notify that observer")))
+
+(deftest coord-matching-retract-delivers-document-notice
+  (let [runtime (host)]
+    (invoke runtime (observe-req "[:temperature :room/a ?t]" 0))
+    (invoke runtime (assert-req "[:temperature :room/a 21]" 0))
+    (invoke runtime (observe-req "[:temperature :room/a ?t]" 0))
+    (invoke runtime (retract-req "[:temperature :room/a 21]" 0))
+    (let [delivered (invoke runtime (observe-req "[:temperature :room/a ?t]" 0))]
+      (is (= [] (matches-bindings delivered)))
+      (is (= [(retract-notice [:temperature :room/a 21] {'?t 21})]
+             (matches-notices delivered))))))
 
 (deftest facet-exit-retracts-owned-assertions-and-drops-observations
   (let [runtime (host)
