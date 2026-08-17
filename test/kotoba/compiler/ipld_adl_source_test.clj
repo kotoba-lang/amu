@@ -46,6 +46,26 @@
    (defn encode [value :bytes] :bytes value)
    (defn validate-logical [value :bytes] :bool true)")
 
+;; Rotates the four-byte ABI input: bytes [1,3) then byte [0,1). The second
+;; source byte is the one a destination that overlapped the input would have
+;; destroyed before reading it, which is what makes this fixture discriminate.
+(def join-source
+  "(ns adl.join
+       (:export [validate-representation decode encode validate-logical]))
+   (defn validate-representation [value :bytes] :bool true)
+   (defn decode [value :bytes] :bytes
+     (bytes-concat (bytes-slice value 1 3) (bytes-slice value 0 1)))
+   (defn encode [value :bytes] :bytes value)
+   (defn validate-logical [value :bytes] :bool true)")
+
+(def join-double-source
+  "(ns adl.join-double
+       (:export [validate-representation decode encode validate-logical]))
+   (defn validate-representation [value :bytes] :bool true)
+   (defn decode [value :bytes] :bytes (bytes-concat value value))
+   (defn encode [value :bytes] :bytes value)
+   (defn validate-logical [value :bytes] :bool true)")
+
 (deftest kotoba-source-compiles-to-the-closed-adl-abi
   (let [compiled (compiler/compile-ipld-adl-source identity-source)
         module (Files/createTempFile "kotoba-adl-source-" ".wasm"
@@ -148,6 +168,44 @@
         (is (not (re-find #"\(import " text))))
       (finally (Files/deleteIfExists module)))))
 
+(deftest join-transform-is-preserved-in-kir-and-wasm
+  (let [compiled (compiler/compile-ipld-adl-source join-source)]
+    (is (= :input-bytes-v1 (get-in compiled [:adl :profile])))
+    (is (= [:input-join [[:sub 1 3] [:sub 0 1]]]
+           (get-in compiled [:kir :plan :decode])))
+    (is (= (:provenance compiled)
+           (provenance/verify! join-source {} compiled))))
+  (let [compiled (compiler/compile-ipld-adl-source join-double-source)]
+    (is (= [:input-join [[:whole] [:whole]]]
+           (get-in compiled [:kir :plan :decode])))))
+
+(deftest join-writes-past-the-operand-and-pays-per-byte
+  (let [compiled (compiler/compile-ipld-adl-source join-source)
+        module (Files/createTempFile "kotoba-adl-join-" ".wasm"
+                                     (make-array FileAttribute 0))]
+    (try
+      (Files/write module (:bytes compiled) (make-array java.nio.file.OpenOption 0))
+      (let [validation (shell/sh "wasm-tools" "validate" (str module))
+            text (:out (shell/sh "wasm-tools" "print" (str module)))]
+        (is (zero? (:exit validation)) (:err validation))
+        ;; Unlike a subrange, a join must write. So "contains no store" is no
+        ;; longer the alias rule -- "the destination starts past the operand"
+        ;; is. The write cursor is initialised from pointer + length before any
+        ;; store, which is what keeps a source byte from being overwritten
+        ;; before it is read.
+        (is (re-find #"(?s)local\.get 1.*local\.get 2.*i32\.add.*local\.set 3.*i32\.store8" text)
+            "the destination cursor starts past the operand")
+        ;; Room for operand + result is checked before the first store, so the
+        ;; write cannot leave the module's own memory.
+        (is (re-find #"(?s)i32\.gt_u.*unreachable.*i32\.store8" text)
+            "the combined length is bounded before anything is written")
+        ;; A bulk copy would move the same bytes for one instruction's fuel.
+        (is (not (re-find #"memory\.copy|memory\.fill" text))
+            "the join pays per byte moved, not per instruction")
+        (is (re-find #"i32\.load8_u" text))
+        (is (not (re-find #"\(import " text))))
+      (finally (Files/deleteIfExists module)))))
+
 (deftest profile-rejects-source-it-cannot-faithfully-lower
   (testing "a changed body is not silently compiled as identity"
     (is (thrown-with-msg?
@@ -234,4 +292,23 @@
          (compiler/compile-ipld-adl-source
           (.replace slice-source
                     "(bytes-slice value 1 3)"
-                    "(bytes-slice value 1 (bytes-count value))"))))))
+                    "(bytes-slice value 1 (bytes-count value))")))))
+  (testing "a nested join is the closed expression grammar, not this profile"
+    (is (thrown-with-msg?
+         clojure.lang.ExceptionInfo #"unsupported IPLD ADL operation body"
+         (compiler/compile-ipld-adl-source
+          (.replace join-source
+                    "(bytes-slice value 1 3) (bytes-slice value 0 1)"
+                    "(bytes-concat value value) (bytes-slice value 0 1)")))))
+  (testing "a join whose constant part alone cannot fit is refused"
+    (is (thrown-with-msg?
+         clojure.lang.ExceptionInfo #"join exceeds the module's input capacity"
+         (compiler/compile-ipld-adl-source
+          (.replace join-source
+                    "(bytes-slice value 1 3) (bytes-slice value 0 1)"
+                    "(bytes-slice value 0 70000) (bytes-slice value 0 70000)")))))
+  (testing "an inverted offset inside a join is still refused by name"
+    (is (thrown-with-msg?
+         clojure.lang.ExceptionInfo #"subrange offsets must satisfy 0 <= start <= end"
+         (compiler/compile-ipld-adl-source
+          (.replace join-source "(bytes-slice value 1 3)" "(bytes-slice value 3 1)"))))))

@@ -65,7 +65,7 @@ wasm-tools validate "$tmp/kotoba-byte-at-3.wasm"
 clojure -Sdeps '{:paths ["src" "resources" "scripts"]}' -M \
   -m ipld-adl-source-compile "$tmp/kotoba-byte-at-cbor.wasm" byte-at-cbor
 wasm-tools validate "$tmp/kotoba-byte-at-cbor.wasm"
-for slice in slice slice-empty; do
+for slice in slice slice-empty join join-double; do
   clojure -Sdeps '{:paths ["src" "resources" "scripts"]}' -M \
     -m ipld-adl-source-compile "$tmp/kotoba-$slice.wasm" "$slice"
   wasm-tools validate "$tmp/kotoba-$slice.wasm"
@@ -156,6 +156,42 @@ if $tmp/runner "$tmp/kotoba-slice.wasm" "$tmp/empty.cbor" "$tmp/out" \
 if $tmp/runner "$tmp/kotoba-slice.wasm" "$tmp/input.cbor" "$tmp/out" \
   1 100000 1 2 1000 1048576 | grep -q '"code":"output-limit-exceeded"'; then :; else exit 1; fi
 
+# bytes-concat is the first body that has to write. Rotating the input proves
+# the destination does not overlap it: byte 0 is copied *after* bytes 1..2, so
+# a destination starting at the operand would have destroyed it first.
+$tmp/runner "$tmp/kotoba-join.wasm" "$tmp/input.cbor" "$tmp/kotoba-output.cbor" \
+  1 100000 1024 2 1000 1048576 >/dev/null
+printf 'aa\241' | cmp - "$tmp/kotoba-output.cbor"
+# The operand itself is untouched: encode is identity in the same module.
+$tmp/runner "$tmp/kotoba-join.wasm" "$tmp/input.cbor" "$tmp/kotoba-output.cbor" \
+  2 100000 1024 2 1000 1048576 >/dev/null
+cmp "$tmp/input.cbor" "$tmp/kotoba-output.cbor"
+# An offset past the operand traps before anything is written.
+if $tmp/runner "$tmp/kotoba-join.wasm" "$tmp/short.cbor" "$tmp/out" \
+  1 100000 1024 2 1000 1048576 | grep -q '"code":"guest-trap"'; then :; else exit 1; fi
+
+# The join pays per byte moved. Same module, same fuel, two input sizes: the
+# small one completes and the large one runs out. A bulk-copy lowering would
+# complete both, which is exactly the hole this checks for. The budget below
+# was chosen by measuring both ends rather than guessed; do not treat it as a
+# fixed cost, since it depends on the engine version. Re-measure by running
+# either case with a large budget and reading fuelUsed.
+head -c 4096 /dev/zero > "$tmp/mid.cbor"
+$tmp/runner "$tmp/kotoba-join-double.wasm" "$tmp/input.cbor" "$tmp/kotoba-output.cbor" \
+  1 50000 65536 2 1000 1048576 >/dev/null
+test "$(wc -c < "$tmp/kotoba-output.cbor")" -eq 8
+if $tmp/runner "$tmp/kotoba-join-double.wasm" "$tmp/mid.cbor" "$tmp/out" \
+  1 50000 65536 2 1000 1048576 | grep -q '"code":"fuel-exhausted"'; then :; else exit 1; fi
+# With fuel to match the work, the same large input completes at 2x length.
+$tmp/runner "$tmp/kotoba-join-double.wasm" "$tmp/mid.cbor" "$tmp/kotoba-output.cbor" \
+  1 10000000 65536 2 1000 1048576 >/dev/null
+test "$(wc -c < "$tmp/kotoba-output.cbor")" -eq 8192
+# Operand plus result must fit the module's own memory: 3x50000 exceeds the
+# two-page input capacity, and the check runs before the first store.
+head -c 50000 /dev/zero > "$tmp/big50.cbor"
+if $tmp/runner "$tmp/kotoba-join-double.wasm" "$tmp/big50.cbor" "$tmp/out" \
+  1 10000000 1048576 2 1000 1048576 | grep -q '"code":"guest-trap"'; then :; else exit 1; fi
+
 # Non-identity source semantics: decode returns the canonical empty bytes node,
 # encode stays identity, and validate-logical returns canonical false.
 $tmp/runner "$tmp/kotoba-closed.wasm" "$tmp/input.cbor" "$tmp/kotoba-output.cbor" \
@@ -194,4 +230,4 @@ clojure -M:ipld-adl-conformance \
 clojure -M:ipld-adl-conformance \
   "$tmp/runner" "$tmp/kotoba-slice.wasm" 05 4105
 
-echo "ipld-adl-wasmtime: Kotoba-source input-dependent validation, indexed unsigned byte reads and bounded subrange views with operand-length bounds traps, non-identity projection, engine fuel, timeout, import denial, memory, and output bounds passed"
+echo "ipld-adl-wasmtime: Kotoba-source input-dependent validation, indexed unsigned byte reads, bounded subrange views, and per-byte joins written past the operand, with operand-length bounds traps, non-identity projection, engine fuel, timeout, import denial, memory, and output bounds passed"
