@@ -56,6 +56,15 @@ wasm-tools validate "$tmp/kotoba-projection.wasm"
 clojure -Sdeps '{:paths ["src" "resources" "scripts"]}' -M \
   -m ipld-adl-source-compile "$tmp/kotoba-input-count.wasm" input-count
 wasm-tools validate "$tmp/kotoba-input-count.wasm"
+clojure -Sdeps '{:paths ["src" "resources" "scripts"]}' -M \
+  -m ipld-adl-source-compile "$tmp/kotoba-byte-at.wasm" byte-at
+wasm-tools validate "$tmp/kotoba-byte-at.wasm"
+clojure -Sdeps '{:paths ["src" "resources" "scripts"]}' -M \
+  -m ipld-adl-source-compile "$tmp/kotoba-byte-at-3.wasm" byte-at-3
+wasm-tools validate "$tmp/kotoba-byte-at-3.wasm"
+clojure -Sdeps '{:paths ["src" "resources" "scripts"]}' -M \
+  -m ipld-adl-source-compile "$tmp/kotoba-byte-at-cbor.wasm" byte-at-cbor
+wasm-tools validate "$tmp/kotoba-byte-at-cbor.wasm"
 
 printf '\241aa\001' > "$tmp/input.cbor"
 receipt=$($tmp/runner "$tmp/identity.wasm" "$tmp/input.cbor" "$tmp/output.cbor" \
@@ -87,6 +96,38 @@ for operation in 0 3; do
   printf '\364' | cmp - "$tmp/kotoba-output.cbor"
 done
 
+# bytes-at reads one unsigned byte out of the ABI input. The bound is the
+# input length, not the linear memory size: the input sits at offset 1024 of a
+# two-page memory, so an out-of-range index would otherwise read whatever
+# follows it and answer confidently.
+printf '\100' > "$tmp/short.cbor"
+: > "$tmp/empty.cbor"
+head -c 200000 /dev/zero > "$tmp/big.cbor"
+for operation in 0 3; do
+  # Byte 0 of the four-byte input is 0xA1 = 161.
+  $tmp/runner "$tmp/kotoba-byte-at.wasm" "$tmp/input.cbor" "$tmp/kotoba-output.cbor" \
+    "$operation" 100000 1024 2 1000 1048576 >/dev/null
+  printf '\365' | cmp - "$tmp/kotoba-output.cbor"
+  # Byte 0 of the one-byte input is 0x40: in range, and a well-formed false.
+  $tmp/runner "$tmp/kotoba-byte-at.wasm" "$tmp/short.cbor" "$tmp/kotoba-output.cbor" \
+    "$operation" 100000 1024 2 1000 1048576 >/dev/null
+  printf '\364' | cmp - "$tmp/kotoba-output.cbor"
+  # Byte 3 of the four-byte input is 0x01.
+  $tmp/runner "$tmp/kotoba-byte-at-3.wasm" "$tmp/input.cbor" "$tmp/kotoba-output.cbor" \
+    "$operation" 100000 1024 2 1000 1048576 >/dev/null
+  printf '\365' | cmp - "$tmp/kotoba-output.cbor"
+  # Index 3 of a one-byte input traps rather than reading past the operand.
+  if $tmp/runner "$tmp/kotoba-byte-at-3.wasm" "$tmp/short.cbor" "$tmp/out" \
+    "$operation" 100000 1024 2 1000 1048576 | grep -q '"code":"guest-trap"'; then :; else exit 1; fi
+  # Every index is out of range for an empty input, including index 0.
+  if $tmp/runner "$tmp/kotoba-byte-at.wasm" "$tmp/empty.cbor" "$tmp/out" \
+    "$operation" 100000 1024 2 1000 1048576 | grep -q '"code":"guest-trap"'; then :; else exit 1; fi
+  # An input larger than the fixed allocation traps in adl_alloc, before any
+  # byte is read.
+  if $tmp/runner "$tmp/kotoba-byte-at.wasm" "$tmp/big.cbor" "$tmp/out" \
+    "$operation" 100000 1024 2 1000 1048576 | grep -q '"code":"allocation-trap"'; then :; else exit 1; fi
+done
+
 # Non-identity source semantics: decode returns the canonical empty bytes node,
 # encode stays identity, and validate-logical returns canonical false.
 $tmp/runner "$tmp/kotoba-closed.wasm" "$tmp/input.cbor" "$tmp/kotoba-output.cbor" \
@@ -114,5 +155,10 @@ clojure -M:ipld-adl-conformance \
   "$tmp/runner" "$tmp/identity.wasm"
 clojure -M:ipld-adl-conformance \
   "$tmp/runner" "$tmp/kotoba-projection.wasm" empty
+# The indexed-byte lowering also runs through the schema capability, so its
+# bounded execution is covered by the same signed measured receipts. Note the
+# operand there is the DAG-CBOR encoded node, not the payload bytes.
+clojure -M:ipld-adl-conformance \
+  "$tmp/runner" "$tmp/kotoba-byte-at-cbor.wasm"
 
-echo "ipld-adl-wasmtime: Kotoba-source input-dependent validation, non-identity projection, engine fuel, timeout, import denial, memory, and output bounds passed"
+echo "ipld-adl-wasmtime: Kotoba-source input-dependent validation, indexed unsigned byte reads with operand-length bounds traps, non-identity projection, engine fuel, timeout, import denial, memory, and output bounds passed"
