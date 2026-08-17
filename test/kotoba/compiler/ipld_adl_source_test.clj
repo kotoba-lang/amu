@@ -22,6 +22,14 @@
    (defn encode [value :bytes] :bytes value)
    (defn validate-logical [value :bytes] :bool false)")
 
+(def input-count-source
+  "(ns adl.input-count
+       (:export [validate-representation decode encode validate-logical]))
+   (defn validate-representation [value :bytes] :bool (= (bytes-count value) 4))
+   (defn decode [value :bytes] :bytes value)
+   (defn encode [value :bytes] :bytes value)
+   (defn validate-logical [value :bytes] :bool (= (bytes-count value) 4))")
+
 (deftest kotoba-source-compiles-to-the-closed-adl-abi
   (let [compiled (compiler/compile-ipld-adl-source identity-source)
         module (Files/createTempFile "kotoba-adl-source-" ".wasm"
@@ -51,6 +59,16 @@
     (is (= (:provenance compiled)
            (provenance/verify! closed-source {} compiled)))))
 
+(deftest input-byte-count-validator-is-preserved-in-kir-and-wasm
+  (let [compiled (compiler/compile-ipld-adl-source input-count-source)]
+    (is (= :input-bytes-v1 (get-in compiled [:adl :profile])))
+    (is (= [:input-byte-count-eq 4]
+           (get-in compiled [:kir :plan :validate-representation])))
+    (is (= [:input-byte-count-eq 4]
+           (get-in compiled [:kir :plan :validate-logical])))
+    (is (= (:provenance compiled)
+           (provenance/verify! input-count-source {} compiled)))))
+
 (deftest profile-rejects-source-it-cannot-faithfully-lower
   (testing "a changed body is not silently compiled as identity"
     (is (thrown-with-msg?
@@ -65,4 +83,11 @@
          (compiler/compile-ipld-adl-source
           (.replace identity-source
                     "validate-logical]))"
-                    "validate-logical extra]))\n(defn extra [] 1)"))))))
+                    "validate-logical extra]))\n(defn extra [] 1)")))))
+  (testing "unbounded or reordered byte expressions are not admitted"
+    (is (thrown-with-msg?
+         clojure.lang.ExceptionInfo #"unsupported IPLD ADL operation body"
+         (compiler/compile-ipld-adl-source
+          (.replace input-count-source
+                    "(= (bytes-count value) 4)"
+                    "(= 4 (bytes-count value))"))))))

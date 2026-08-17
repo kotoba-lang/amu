@@ -2,8 +2,9 @@
   "Fail-closed Kotoba-source compiler for the ipld-adl-wasm-v1 guest ABI.
 
   The profile is deliberately closed: byte transforms may return their input
-  or the canonical empty bytes value, and validators may return literal true or
-  false. It is still a real source compiler--the admitted Kotoba HIR is the
+  or the canonical empty bytes value, and validators may return literals or a
+  bounded comparison of the actual input byte count. It is still a real source
+  compiler--the admitted Kotoba HIR is the
   authority--and unsupported bodies are rejected instead of being silently
   replaced by another transform."
   (:require [kotoba.sema :as sema]
@@ -50,12 +51,18 @@
   (bit-or (bit-shift-left (long pointer) 32) (long length)))
 
 (defn- emit-result [result]
-  (case result
-    :true (concat [0x42] (sleb (packed 0 1)))
-    :false (concat [0x42] (sleb (packed 1 1)))
-    :empty-bytes (concat [0x42] (sleb (packed 2 1)))
-    :identity [0x20 0x01 0xad 0x42 0x20 0x86
-               0x20 0x02 0xad 0x84]))
+  (if (and (vector? result) (= :input-byte-count-eq (first result)))
+    ;; The ABI supplies input length as local 2. Return canonical DAG-CBOR true
+    ;; or false without reading guest memory or importing a host function.
+    (concat [0x20 0x02 0x41] (sleb (second result)) [0x46 0x04 0x7e]
+            [0x42] (sleb (packed 0 1)) [0x05]
+            [0x42] (sleb (packed 1 1)) [0x0b])
+    (case result
+      :true (concat [0x42] (sleb (packed 0 1)))
+      :false (concat [0x42] (sleb (packed 1 1)))
+      :empty-bytes (concat [0x42] (sleb (packed 2 1)))
+      :identity [0x20 0x01 0xad 0x42 0x20 0x86
+                 0x20 0x02 0xad 0x84])))
 
 (defn- emit-dispatch [entries]
   (if-let [[operation result] (first entries)]
@@ -114,11 +121,28 @@
       (reject! "unsupported IPLD ADL operation body"
                {:operation name :profile :pure-closed-v1 :body (:body function)})))
 
+(defn- validator-plan [function name]
+  (when-not (exact-function-shape? function :bool)
+    (reject! "unsupported IPLD ADL operation signature"
+             {:operation name :profile :pure-closed-v1}))
+  (let [body (:body function)]
+    (cond
+      (= true body) :true
+      (= false body) :false
+      (and (seq? body) (= '= (first body)) (= 3 (count body))
+           (= '(bytes-count value) (second body))
+           (integer? (nth body 2)) (<= 0 (nth body 2) Integer/MAX_VALUE))
+      [:input-byte-count-eq (nth body 2)]
+      :else
+      (reject! "unsupported IPLD ADL operation body"
+               {:operation name :profile :pure-closed-v1 :body body}))))
+
 (defn compile-source
   "Compile the closed pure bytes ADL Kotoba profile to ipld-adl-wasm-v1.
 
-  Validators accept literal true/false. Decode and encode accept the input value
-  or `(bytes)`, which lowers to canonical DAG-CBOR empty bytes (0x40).
+  Validators accept literal true/false or `(= (bytes-count value) N)`. Decode
+  and encode accept the input value or `(bytes)`, which lowers to canonical
+  DAG-CBOR empty bytes (0x40).
   MEMORY-PAGES is fixed in the emitted module (1..64; default 2)."
   ([source] (compile-source source {}))
   ([source {:keys [memory-pages] :or {memory-pages 2} :as options}]
@@ -136,19 +160,21 @@
        (reject! "IPLD ADL source must contain only the four ABI operations"
                 {:expected (set required-exports) :actual (set (keys by-name))}))
      (let [plan {:validate-representation
-                 (operation-plan (get by-name 'validate-representation)
-                                 'validate-representation :bool {true :true false :false})
+                 (validator-plan (get by-name 'validate-representation)
+                                 'validate-representation)
                  :decode (operation-plan (get by-name 'decode) 'decode :bytes
                                          {'value :identity '(bytes-empty) :empty-bytes})
                  :encode (operation-plan (get by-name 'encode) 'encode :bytes
                                          {'value :identity '(bytes-empty) :empty-bytes})
                  :validate-logical
-                 (operation-plan (get by-name 'validate-logical)
-                                 'validate-logical :bool {true :true false :false})}
-           profile (if (= {:validate-representation :true :decode :identity
-                           :encode :identity :validate-logical :true}
-                          plan)
-                     :pure-identity-v1 :pure-closed-v1)
+                 (validator-plan (get by-name 'validate-logical)
+                                 'validate-logical)}
+           profile (cond
+                     (= {:validate-representation :true :decode :identity
+                         :encode :identity :validate-logical :true} plan)
+                     :pure-identity-v1
+                     (some vector? (vals plan)) :input-bytes-v1
+                     :else :pure-closed-v1)
            kir {:format :kotoba.ipld-adl-kir/v1
                 :profile profile :operations required-exports :plan plan}
            compatible (assoc

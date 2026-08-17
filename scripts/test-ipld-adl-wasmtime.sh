@@ -53,6 +53,9 @@ wasm-tools validate "$tmp/kotoba-closed.wasm"
 clojure -Sdeps '{:paths ["src" "resources" "scripts"]}' -M \
   -m ipld-adl-source-compile "$tmp/kotoba-projection.wasm" projection
 wasm-tools validate "$tmp/kotoba-projection.wasm"
+clojure -Sdeps '{:paths ["src" "resources" "scripts"]}' -M \
+  -m ipld-adl-source-compile "$tmp/kotoba-input-count.wasm" input-count
+wasm-tools validate "$tmp/kotoba-input-count.wasm"
 
 printf '\241aa\001' > "$tmp/input.cbor"
 receipt=$($tmp/runner "$tmp/identity.wasm" "$tmp/input.cbor" "$tmp/output.cbor" \
@@ -71,6 +74,17 @@ for operation in 0 3; do
   $tmp/runner "$tmp/kotoba-identity.wasm" "$tmp/input.cbor" "$tmp/kotoba-output.cbor" \
     "$operation" 100000 1024 2 1000 1048576 >/dev/null
   printf '\365' | cmp - "$tmp/kotoba-output.cbor"
+done
+
+# The validator result is derived from the actual ABI input length.
+for operation in 0 3; do
+  $tmp/runner "$tmp/kotoba-input-count.wasm" "$tmp/input.cbor" "$tmp/kotoba-output.cbor" \
+    "$operation" 100000 1024 2 1000 1048576 >/dev/null
+  printf '\365' | cmp - "$tmp/kotoba-output.cbor"
+  printf '\100' > "$tmp/short.cbor"
+  $tmp/runner "$tmp/kotoba-input-count.wasm" "$tmp/short.cbor" "$tmp/kotoba-output.cbor" \
+    "$operation" 100000 1024 2 1000 1048576 >/dev/null
+  printf '\364' | cmp - "$tmp/kotoba-output.cbor"
 done
 
 # Non-identity source semantics: decode returns the canonical empty bytes node,
@@ -101,4 +115,4 @@ clojure -M:ipld-adl-conformance \
 clojure -M:ipld-adl-conformance \
   "$tmp/runner" "$tmp/kotoba-projection.wasm" empty
 
-echo "ipld-adl-wasmtime: Kotoba-source non-identity projection, engine fuel, timeout, import denial, memory, and output bounds passed"
+echo "ipld-adl-wasmtime: Kotoba-source input-dependent validation, non-identity projection, engine fuel, timeout, import denial, memory, and output bounds passed"
