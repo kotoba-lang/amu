@@ -1357,6 +1357,50 @@ function createTypedRuntime(abi, typedCapCall, allow) {
     try { return assertValue(descriptor, value); }
     catch (error) { trustedValues.delete(value); throw error; }
   };
+  // typedCapCall is the host provider. Guest compounds must be interned
+  // through builders; the host inject is allowed to return a new tree.
+  // Echoing an already-admitted request still works (http wasm proof).
+  const admitHostResult = (descriptor, value) => {
+    if (value !== null && typeof value === "object" && trustedValues.has(value))
+      return assertValue(descriptor, value);
+    if (descriptor === "document" || (Array.isArray(descriptor) && descriptor[0] === "document"))
+      return admitDocument(value);
+    if (typeof descriptor === "string")
+      return assertValue(descriptor, value);
+    const kind = Array.isArray(descriptor) ? descriptor[0] : descriptor;
+    if (kind === "variant") {
+      if (!Array.isArray(value) || value.length !== 3)
+        reject("invalid-typed-value", "variant shape, descriptor, or tag is invalid");
+      const tag = value[1];
+      const member = descriptor[2].find(([name]) => name === tag);
+      if (member === undefined)
+        reject("invalid-typed-value", "variant shape, descriptor, or tag is invalid");
+      const payload = admitHostResult(member[1], value[2]);
+      return admitValue(descriptor, Object.freeze([descriptor, tag, payload]));
+    }
+    if (kind === "record") {
+      if (!Array.isArray(value) || value.length !== descriptor[2].length + 1)
+        reject("invalid-typed-value", "record shape is invalid");
+      const fields = descriptor[2].map(([, type], index) =>
+        admitHostResult(type, value[index + 1]));
+      return admitValue(descriptor, Object.freeze([descriptor, ...fields]));
+    }
+    if (kind === "option") {
+      if (!Array.isArray(value) || typeof value[1] !== "boolean")
+        reject("invalid-typed-value", "generic option shape or descriptor is invalid");
+      if (!value[1])
+        return admitValue(descriptor, Object.freeze([descriptor, false]));
+      const inner = admitHostResult(descriptor[1], value[2]);
+      return admitValue(descriptor, Object.freeze([descriptor, true, inner]));
+    }
+    if (kind === "result") {
+      if (!Array.isArray(value) || typeof value[0] !== "boolean" || value.length !== 2)
+        reject("invalid-typed-value", "parametric result shape is invalid");
+      const inner = admitHostResult(value[0] ? descriptor[1] : descriptor[2], value[1]);
+      return admitValue(descriptor, Object.freeze([value[0], inner]));
+    }
+    return admitValue(descriptor, Array.isArray(value) ? Object.freeze(value) : value);
+  };
   const documentEntries = value => {
     value = assertDocument(value);
     if (value[0] !== "map") reject("invalid-typed-operation", "document map required");
@@ -1395,7 +1439,7 @@ function createTypedRuntime(abi, typedCapCall, allow) {
       const result = typedCapCall(id, checkedRequest, Object.freeze({
         request: descriptorAt(contract.request), result: descriptorAt(contract.result)
       }));
-      return assertValue(descriptorAt(contract.result), result);
+      return admitHostResult(descriptorAt(contract.result), result);
     },
     literal: literalAt,
     "keyword-from-string"(descriptorId, value) {

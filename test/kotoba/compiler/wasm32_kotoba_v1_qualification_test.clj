@@ -3,15 +3,17 @@
 
   Clock guest sugar elaborates to `(typed-cap-call 7 :i64 :i64 seed)` and
   that path is E2E on kototama.tender / wasm-webcomponent. The kit's own
-  variant/record request-result schema is still :wasm-aot :pending
-  (ADR 0084 / 0257). Flipping :wasm-aot would claim the wrong ABI."
+  variant/record request-result schema stays :wasm-aot :pending for clock
+  (ADR 0084 / 0257). Dataspace is the first kit whose variant/record ABI
+  runs on kotoba:typed/cap-call (wasm32-browser); that is :wasm-aot, not
+  :wasm32-kotoba-v1."
   (:require [clojure.edn :as edn]
             [clojure.java.io :as io]
             [clojure.test :refer [deftest is testing]]))
 
 (def application-kit-files
   ["clock-v1.edn" "http-v1.edn" "http-ingress-v1.edn" "storage-v1.edn"
-   "log-v1.edn" "llm-v1.edn" "ui-v1.edn" "state-v1.edn"])
+   "log-v1.edn" "llm-v1.edn" "ui-v1.edn" "state-v1.edn" "dataspace-v1.edn"])
 
 (defn- load-kit [filename]
   (edn/read-string
@@ -37,9 +39,13 @@
     (testing filename
       (let [q (:qualification (load-kit filename))]
         (is (= :pending (:wasm32-kotoba-v1 q)))
-        (is (= :pending (:wasm-aot q)))))))
+        (when (not= filename "dataspace-v1.edn")
+          (is (= :pending (:wasm-aot q))))))))
 
-(deftest no-application-kit-claims-wasm-aot
+(deftest only-dataspace-claims-typed-kit-wasm-aot
   (doseq [filename application-kit-files]
     (testing filename
-      (is (= :pending (:wasm-aot (:qualification (load-kit filename))))))))
+      (let [claimed (:wasm-aot (:qualification (load-kit filename)))]
+        (if (= filename "dataspace-v1.edn")
+          (is (= :implemented claimed))
+          (is (= :pending claimed)))))))

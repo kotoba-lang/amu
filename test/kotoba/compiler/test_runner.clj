@@ -121,6 +121,7 @@
             [kotoba.compiler.log-provider-test]
             [kotoba.compiler.dataspace-match-test]
             [kotoba.compiler.dataspace-provider-test]
+            [kotoba.compiler.dataspace-wasm-aot-test]
             [kotoba.compiler.provider-conformance-test]
             [kotoba.compiler.aggregate-abi-test]
             [kotoba.compiler.isa-execution-test]
@@ -244,6 +245,7 @@
                                           'kotoba.compiler.log-provider-test
                                           'kotoba.compiler.dataspace-match-test
                                           'kotoba.compiler.dataspace-provider-test
+                                          'kotoba.compiler.dataspace-wasm-aot-test
                                           'kotoba.compiler.provider-conformance-test
                                           'kotoba.compiler.wasm-typed-test
                                           'kotoba.compiler.wasm32-kotoba-v1-qualification-test
