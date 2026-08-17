@@ -71,3 +71,11 @@ io-ipld capability. io-ipld independently re-derives the raw module CID,
 checks canonical output, charges measured fuel, and records module/input/output
 CIDs. Run `npm run test-ipld-adl-wasmtime` for success plus fuel exhaustion,
 timeout, import denial, memory cap, output cap, and projection receipt evidence.
+
+`kotoba.compiler.core/compile-ipld-adl-source` removes the need to author this
+guest ABI as WAT. Its initial fail-closed `:pure-identity-v1` profile accepts
+exactly four pure Kotoba functions: total representation/logical validators and
+identity decode/encode byte transforms. It emits the three ABI exports above,
+fixed bounded memory, canonical DAG-CBOR `true` validator results, and no
+imports. Any body outside that implemented source slice is rejected rather than
+being mislabeled as an identity transform.

@@ -43,6 +43,11 @@ make_wasm growing '(module
     i32.const 1 memory.grow drop i32.const 0)
   (func (export "adl_transform") (param i32 i32 i32) (result i64) i64.const 0))'
 
+# Compile the same ABI from Kotoba source, not a hand-authored Wasm fixture.
+clojure -Sdeps '{:paths ["src" "resources" "scripts"]}' -M \
+  -m ipld-adl-source-compile "$tmp/kotoba-identity.wasm"
+wasm-tools validate "$tmp/kotoba-identity.wasm"
+
 printf '\241aa\001' > "$tmp/input.cbor"
 receipt=$($tmp/runner "$tmp/identity.wasm" "$tmp/input.cbor" "$tmp/output.cbor" \
   1 100000 1024 2 1000 1048576)
@@ -50,6 +55,17 @@ cmp "$tmp/input.cbor" "$tmp/output.cbor"
 printf '%s' "$receipt" | grep -q '"status":"ok"'
 printf '%s' "$receipt" | grep -q '"fuelUsed":'
 printf '%s' "$receipt" | grep -q '"memoryPages":1'
+
+for operation in 1 2; do
+  $tmp/runner "$tmp/kotoba-identity.wasm" "$tmp/input.cbor" "$tmp/kotoba-output.cbor" \
+    "$operation" 100000 1024 2 1000 1048576 >/dev/null
+  cmp "$tmp/input.cbor" "$tmp/kotoba-output.cbor"
+done
+for operation in 0 3; do
+  $tmp/runner "$tmp/kotoba-identity.wasm" "$tmp/input.cbor" "$tmp/kotoba-output.cbor" \
+    "$operation" 100000 1024 2 1000 1048576 >/dev/null
+  printf '\365' | cmp - "$tmp/kotoba-output.cbor"
+done
 
 if $tmp/runner "$tmp/forever.wasm" "$tmp/input.cbor" "$tmp/out" \
   1 5 1024 1 1000 1048576 | grep -q '"code":"fuel-exhausted"'; then :; else exit 1; fi
@@ -65,4 +81,4 @@ if $tmp/runner "$tmp/identity.wasm" "$tmp/input.cbor" "$tmp/out" \
 clojure -M:ipld-adl-conformance \
   "$tmp/runner" "$tmp/identity.wasm"
 
-echo "ipld-adl-wasmtime: identity, engine fuel, timeout, import denial, memory, and output bounds passed"
+echo "ipld-adl-wasmtime: Kotoba-source ABI, identity, engine fuel, timeout, import denial, memory, and output bounds passed"
