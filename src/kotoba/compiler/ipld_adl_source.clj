@@ -2,9 +2,10 @@
   "Fail-closed Kotoba-source compiler for the ipld-adl-wasm-v1 guest ABI.
 
   The profile is deliberately closed: byte transforms may return their input
-  or the canonical empty bytes value, and validators may return literals or a
-  bounded comparison of the actual input byte count. It is still a real source
-  compiler--the admitted Kotoba HIR is the
+  or the canonical empty bytes value, and validators may return literals, a
+  bounded comparison of the actual input byte count, or a bounded comparison
+  of one byte read out of the input at a literal index. It is still a real
+  source compiler--the admitted Kotoba HIR is the
   authority--and unsupported bodies are rejected instead of being silently
   replaced by another transform."
   (:require [kotoba.sema :as sema]
@@ -50,13 +51,35 @@
 (defn- packed [pointer length]
   (bit-or (bit-shift-left (long pointer) 32) (long length)))
 
+(defn- emit-bool [condition]
+  ;; CONDITION leaves one i32 on the stack; select the canonical DAG-CBOR
+  ;; true/false node already present in the data segment.
+  (concat condition [0x04 0x7e]
+          [0x42] (sleb (packed 0 1)) [0x05]
+          [0x42] (sleb (packed 1 1)) [0x0b]))
+
 (defn- emit-result [result]
-  (if (and (vector? result) (= :input-byte-count-eq (first result)))
+  (cond
+    (and (vector? result) (= :input-byte-count-eq (first result)))
     ;; The ABI supplies input length as local 2. Return canonical DAG-CBOR true
     ;; or false without reading guest memory or importing a host function.
-    (concat [0x20 0x02 0x41] (sleb (second result)) [0x46 0x04 0x7e]
-            [0x42] (sleb (packed 0 1)) [0x05]
-            [0x42] (sleb (packed 1 1)) [0x0b])
+    (emit-bool (concat [0x20 0x02 0x41] (sleb (second result)) [0x46]))
+
+    (and (vector? result) (= :input-byte-at-eq (first result)))
+    (let [[_ index expected] result]
+      (concat
+       ;; The bound that matters is the operand's length, not the memory's
+       ;; size. Linear memory is two pages and the input is copied in at 1024,
+       ;; so an index past the input still lands inside memory and would read
+       ;; whatever follows it. `length <= index` therefore has to trap here,
+       ;; before the load, rather than being left to Wasm's own bounds check.
+       [0x20 0x02 0x41] (sleb index) [0x4d 0x04 0x40 0x00 0x0b]
+       ;; i32.load8_u align=0 offset=index, folded onto the ABI pointer. The
+       ;; unsigned load is what makes 0xFF read as 255 instead of -1.
+       (emit-bool (concat [0x20 0x01 0x2d 0x00] (uleb index)
+                          [0x41] (sleb expected) [0x46]))))
+
+    :else
     (case result
       :true (concat [0x42] (sleb (packed 0 1)))
       :false (concat [0x42] (sleb (packed 1 1)))
@@ -121,6 +144,35 @@
       (reject! "unsupported IPLD ADL operation body"
                {:operation name :profile :pure-closed-v1 :body (:body function)})))
 
+(defn- byte-at-plan
+  "`(= (bytes-at value I) N)` -> `[:input-byte-at-eq I N]`, else nil.
+
+  Returning nil means \"some other body shape\", which the caller reports
+  generically. Two well-shaped bodies are rejected here by name instead,
+  because a generic message would hide what is actually wrong with them:
+
+  - a negative index is not an index;
+  - `bytes-at` yields an unsigned byte, so comparing against anything outside
+    0..255 is constantly false. Lowering it would turn a source mistake into a
+    validator that quietly always answers no.
+
+  The index must be a literal. That is this profile's restriction, not the
+  language's -- `bytes-at` types an arbitrary i64 index -- and it is what keeps
+  the emitted bounds check decidable at compile time."
+  [body name]
+  (let [[op read expected] (when (and (seq? body) (= 3 (count body))) body)]
+    (when (and (= '= op) (seq? read) (= 3 (count read))
+               (= 'bytes-at (first read)) (= 'value (second read))
+               (integer? (nth read 2)) (integer? expected))
+      (let [index (nth read 2)]
+        (when-not (<= 0 index Integer/MAX_VALUE)
+          (reject! "IPLD ADL byte index must be a non-negative int32"
+                   {:operation name :profile :pure-closed-v1 :index index}))
+        (when-not (<= 0 expected 255)
+          (reject! "IPLD ADL byte comparison must be an unsigned byte"
+                   {:operation name :profile :pure-closed-v1 :expected expected}))
+        [:input-byte-at-eq index expected]))))
+
 (defn- validator-plan [function name]
   (when-not (exact-function-shape? function :bool)
     (reject! "unsupported IPLD ADL operation signature"
@@ -134,13 +186,15 @@
            (integer? (nth body 2)) (<= 0 (nth body 2) Integer/MAX_VALUE))
       [:input-byte-count-eq (nth body 2)]
       :else
-      (reject! "unsupported IPLD ADL operation body"
-               {:operation name :profile :pure-closed-v1 :body body}))))
+      (or (byte-at-plan body name)
+          (reject! "unsupported IPLD ADL operation body"
+                   {:operation name :profile :pure-closed-v1 :body body})))))
 
 (defn compile-source
   "Compile the closed pure bytes ADL Kotoba profile to ipld-adl-wasm-v1.
 
-  Validators accept literal true/false or `(= (bytes-count value) N)`. Decode
+  Validators accept literal true/false, `(= (bytes-count value) N)`, or
+  `(= (bytes-at value I) N)` for a literal index and an unsigned byte. Decode
   and encode accept the input value or `(bytes)`, which lowers to canonical
   DAG-CBOR empty bytes (0x40).
   MEMORY-PAGES is fixed in the emitted module (1..64; default 2)."

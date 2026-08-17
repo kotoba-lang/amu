@@ -30,6 +30,14 @@
    (defn encode [value :bytes] :bytes value)
    (defn validate-logical [value :bytes] :bool (= (bytes-count value) 4))")
 
+(def byte-at-source
+  "(ns adl.byte-at
+       (:export [validate-representation decode encode validate-logical]))
+   (defn validate-representation [value :bytes] :bool (= (bytes-at value 0) 161))
+   (defn decode [value :bytes] :bytes value)
+   (defn encode [value :bytes] :bytes value)
+   (defn validate-logical [value :bytes] :bool (= (bytes-at value 0) 161))")
+
 (deftest kotoba-source-compiles-to-the-closed-adl-abi
   (let [compiled (compiler/compile-ipld-adl-source identity-source)
         module (Files/createTempFile "kotoba-adl-source-" ".wasm"
@@ -69,6 +77,38 @@
     (is (= (:provenance compiled)
            (provenance/verify! input-count-source {} compiled)))))
 
+(deftest indexed-byte-validator-is-preserved-in-kir-and-wasm
+  (let [compiled (compiler/compile-ipld-adl-source byte-at-source)]
+    (is (= :input-bytes-v1 (get-in compiled [:adl :profile])))
+    (is (= [:input-byte-at-eq 0 161]
+           (get-in compiled [:kir :plan :validate-representation])))
+    (is (= [:input-byte-at-eq 0 161]
+           (get-in compiled [:kir :plan :validate-logical])))
+    (is (= (:provenance compiled)
+           (provenance/verify! byte-at-source {} compiled)))))
+
+(deftest indexed-byte-validator-emits-a-bounds-check-before-the-load
+  (let [compiled (compiler/compile-ipld-adl-source byte-at-source)
+        module (Files/createTempFile "kotoba-adl-byte-at-" ".wasm"
+                                     (make-array FileAttribute 0))]
+    (try
+      (Files/write module (:bytes compiled) (make-array java.nio.file.OpenOption 0))
+      (let [validation (shell/sh "wasm-tools" "validate" (str module))
+            text (:out (shell/sh "wasm-tools" "print" (str module)))]
+        (is (zero? (:exit validation)) (:err validation))
+        (is (re-find #"i32\.load8_u" text)
+            "the byte is read unsigned, so 0xFF is 255 rather than -1")
+        (is (re-find #"unreachable" text)
+            "an out-of-range index traps instead of reading past the operand")
+        ;; The guard has to compare against the ABI length (local 2). Comparing
+        ;; against the pointer, or omitting the compare and trusting the linear
+        ;; memory bound, both still validate as Wasm -- and both read whatever
+        ;; happens to sit after the input.
+        (is (re-find #"(?s)local\.get 2.*i32\.le_u.*unreachable.*i32\.load8_u" text)
+            "the bound is the operand's length, not the memory's size")
+        (is (not (re-find #"\(import " text))))
+      (finally (Files/deleteIfExists module)))))
+
 (deftest profile-rejects-source-it-cannot-faithfully-lower
   (testing "a changed body is not silently compiled as identity"
     (is (thrown-with-msg?
@@ -90,4 +130,40 @@
          (compiler/compile-ipld-adl-source
           (.replace input-count-source
                     "(= (bytes-count value) 4)"
-                    "(= 4 (bytes-count value))"))))))
+                    "(= 4 (bytes-count value))")))))
+  (testing "a reordered indexed byte comparison is not admitted"
+    (is (thrown-with-msg?
+         clojure.lang.ExceptionInfo #"unsupported IPLD ADL operation body"
+         (compiler/compile-ipld-adl-source
+          (.replace byte-at-source
+                    "(= (bytes-at value 0) 161)"
+                    "(= 161 (bytes-at value 0))")))))
+  (testing "a negative byte index is refused by name, not lowered"
+    (is (thrown-with-msg?
+         clojure.lang.ExceptionInfo #"byte index must be a non-negative int32"
+         (compiler/compile-ipld-adl-source
+          (.replace byte-at-source
+                    "(bytes-at value 0)"
+                    "(bytes-at value -1)")))))
+  (testing "a comparison outside 0..255 can never hold, so it is refused"
+    ;; bytes-at yields an unsigned byte. Admitting 256 would compile a source
+    ;; mistake into a validator that silently always answers false.
+    (is (thrown-with-msg?
+         clojure.lang.ExceptionInfo #"byte comparison must be an unsigned byte"
+         (compiler/compile-ipld-adl-source
+          (.replace byte-at-source
+                    "(bytes-at value 0) 161)"
+                    "(bytes-at value 0) 256)"))))
+    (is (thrown-with-msg?
+         clojure.lang.ExceptionInfo #"byte comparison must be an unsigned byte"
+         (compiler/compile-ipld-adl-source
+          (.replace byte-at-source
+                    "(bytes-at value 0) 161)"
+                    "(bytes-at value 0) -1)")))))
+  (testing "a computed index is outside this closed profile"
+    (is (thrown-with-msg?
+         clojure.lang.ExceptionInfo #"unsupported IPLD ADL operation body"
+         (compiler/compile-ipld-adl-source
+          (.replace byte-at-source
+                    "(bytes-at value 0)"
+                    "(bytes-at value (bytes-count value))"))))))
