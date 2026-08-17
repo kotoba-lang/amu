@@ -2,6 +2,7 @@
   (:require [ipld.schema :as schema]
             [ipld.schema-dsl :as dsl]
             [kotoba.compiler.ipld-adl :as adl]
+            [kotoba.verifier.signing :as signing]
             [multiformats.core :as mf])
   (:import (java.nio.file Files Paths)))
 
@@ -11,11 +12,18 @@
 (defn -main [runner module-path]
   (let [module (Files/readAllBytes (Paths/get module-path (make-array String 0)))
         module-cid (mf/cidv1-raw module)
+        executor-key (signing/generate-keypair)
+        trust {:format :kotoba.trust/v1
+               :trusted-signers #{(:signer executor-key)}
+               :revoked-signers #{} :revoked-artifacts #{}}
+        runner-policy {:trusted-runner-sha256 #{(adl/runner-sha256 runner)}}
+        execution-receipts (atom [])
         capability (adl/wasmtime-capability
                     {:runner runner :module-bytes module :module-cid module-cid
                      :operations #{:validate-representation :decode :encode
                                    :validate-logical}
-                     :timeout-ms 1000})
+                     :timeout-ms 1000 :executor-key executor-key
+                     :receipt-sink #(swap! execution-receipts conj %)})
         compiled (schema/compile-schema
                   (dsl/parse "advanced Identity\ntype Item bytes representation advanced Identity"))
         limits {:max-depth 8 :max-nodes 16
@@ -36,5 +44,13 @@
                            (pos? (:fuel %)))
                     receipts)
              "ADL engine receipt mismatch")
-    (println "ipld-adl-wasmtime: io-ipld projection and measured receipts passed")
+    (ensure! (seq @execution-receipts) "signed ADL execution receipts missing")
+    (ensure! (every? #(and (:verified? (adl/verify-execution-receipt!
+                                        % trust runner-policy))
+                           (= module-cid (:module-cid %)))
+                    @execution-receipts)
+             "signed ADL execution receipt verification failed")
+    (ensure! (= 1 (count (set (map :runner-sha256 @execution-receipts))))
+             "ADL runner artifact identity changed during execution")
+    (println "ipld-adl-wasmtime: io-ipld projection and signed measured receipts passed")
     (shutdown-agents)))
