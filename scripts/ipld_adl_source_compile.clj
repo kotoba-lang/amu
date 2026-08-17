@@ -11,9 +11,29 @@
    (defn encode [value :bytes] :bytes value)
    (defn validate-logical [value :bytes] :bool true)")
 
-(defn -main [& [output]]
+(def ^:private closed-source
+  "(ns adl.closed
+       (:export [validate-representation decode encode validate-logical]))
+   (defn validate-representation [value :bytes] :bool true)
+   (defn decode [value :bytes] :bytes (bytes))
+   (defn encode [value :bytes] :bytes value)
+   (defn validate-logical [value :bytes] :bool false)")
+
+(def ^:private projection-source
+  "(ns adl.projection
+       (:export [validate-representation decode encode validate-logical]))
+   (defn validate-representation [value :bytes] :bool true)
+   (defn decode [value :bytes] :bytes (bytes))
+   (defn encode [value :bytes] :bytes value)
+   (defn validate-logical [value :bytes] :bool true)")
+
+(defn -main [& [output profile]]
   (when-not output
     (throw (ex-info "output path required" {:phase :ipld-adl-source-compile})))
   (Files/write (Paths/get output (make-array String 0))
-               (:bytes (compiler/compile-ipld-adl-source identity-source))
+               (:bytes (compiler/compile-ipld-adl-source
+                        (case profile
+                          "closed" closed-source
+                          "projection" projection-source
+                          identity-source)))
                (make-array java.nio.file.OpenOption 0)))

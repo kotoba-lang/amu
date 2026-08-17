@@ -47,6 +47,12 @@ make_wasm growing '(module
 clojure -Sdeps '{:paths ["src" "resources" "scripts"]}' -M \
   -m ipld-adl-source-compile "$tmp/kotoba-identity.wasm"
 wasm-tools validate "$tmp/kotoba-identity.wasm"
+clojure -Sdeps '{:paths ["src" "resources" "scripts"]}' -M \
+  -m ipld-adl-source-compile "$tmp/kotoba-closed.wasm" closed
+wasm-tools validate "$tmp/kotoba-closed.wasm"
+clojure -Sdeps '{:paths ["src" "resources" "scripts"]}' -M \
+  -m ipld-adl-source-compile "$tmp/kotoba-projection.wasm" projection
+wasm-tools validate "$tmp/kotoba-projection.wasm"
 
 printf '\241aa\001' > "$tmp/input.cbor"
 receipt=$($tmp/runner "$tmp/identity.wasm" "$tmp/input.cbor" "$tmp/output.cbor" \
@@ -67,6 +73,18 @@ for operation in 0 3; do
   printf '\365' | cmp - "$tmp/kotoba-output.cbor"
 done
 
+# Non-identity source semantics: decode returns the canonical empty bytes node,
+# encode stays identity, and validate-logical returns canonical false.
+$tmp/runner "$tmp/kotoba-closed.wasm" "$tmp/input.cbor" "$tmp/kotoba-output.cbor" \
+  1 100000 1024 2 1000 1048576 >/dev/null
+printf '\100' | cmp - "$tmp/kotoba-output.cbor"
+$tmp/runner "$tmp/kotoba-closed.wasm" "$tmp/input.cbor" "$tmp/kotoba-output.cbor" \
+  2 100000 1024 2 1000 1048576 >/dev/null
+cmp "$tmp/input.cbor" "$tmp/kotoba-output.cbor"
+$tmp/runner "$tmp/kotoba-closed.wasm" "$tmp/input.cbor" "$tmp/kotoba-output.cbor" \
+  3 100000 1024 2 1000 1048576 >/dev/null
+printf '\364' | cmp - "$tmp/kotoba-output.cbor"
+
 if $tmp/runner "$tmp/forever.wasm" "$tmp/input.cbor" "$tmp/out" \
   1 5 1024 1 1000 1048576 | grep -q '"code":"fuel-exhausted"'; then :; else exit 1; fi
 if $tmp/runner "$tmp/forever.wasm" "$tmp/input.cbor" "$tmp/out" \
@@ -80,5 +98,7 @@ if $tmp/runner "$tmp/identity.wasm" "$tmp/input.cbor" "$tmp/out" \
 
 clojure -M:ipld-adl-conformance \
   "$tmp/runner" "$tmp/identity.wasm"
+clojure -M:ipld-adl-conformance \
+  "$tmp/runner" "$tmp/kotoba-projection.wasm" empty
 
-echo "ipld-adl-wasmtime: Kotoba-source ABI, identity, engine fuel, timeout, import denial, memory, and output bounds passed"
+echo "ipld-adl-wasmtime: Kotoba-source non-identity projection, engine fuel, timeout, import denial, memory, and output bounds passed"
