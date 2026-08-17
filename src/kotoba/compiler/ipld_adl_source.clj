@@ -79,6 +79,21 @@
        (emit-bool (concat [0x20 0x01 0x2d 0x00] (uleb index)
                           [0x41] (sleb expected) [0x46]))))
 
+    (and (vector? result) (= :input-subrange (first result)))
+    (let [[_ start end] result]
+      (concat
+       ;; Same bound as bytes-at, and for the same reason: an end past the
+       ;; operand still lands inside the two-page memory, so Wasm would happily
+       ;; return a pointer to bytes that are not the input. `length < end`
+       ;; traps. `0 <= start <= end` is already decided at compile time.
+       [0x20 0x02 0x41] (sleb end) [0x49 0x04 0x40 0x00 0x0b]
+       ;; The result is the operand's own pointer moved forward by START, with
+       ;; length END-START. It is a view: nothing is copied, and the module
+       ;; never writes to memory. The host must therefore read the output out
+       ;; before it reuses the input buffer, which is what the runner does.
+       [0x20 0x01 0x41] (sleb start) [0x6a 0xad 0x42 0x20 0x86]
+       [0x42] (sleb (- end start)) [0x84]))
+
     :else
     (case result
       :true (concat [0x42] (sleb (packed 0 1)))
@@ -136,11 +151,32 @@
        (= result (:result function))
        (empty? (:effects function))))
 
+(defn- subrange-plan
+  "`(bytes-slice value START END)` -> `[:input-subrange START END]`, else nil.
+
+  An inverted or negative subrange is refused by name rather than reported
+  generically, because `0 <= start <= end` is the half of the bound that *is*
+  decidable here -- `end <= count` is not, and is emitted as a run-time trap.
+
+  The offsets must be literals. As with `bytes-at`, that is this profile's
+  restriction rather than the language's, and it is what lets the emitted
+  bound and the capacity check below be decided at compile time."
+  [body name]
+  (let [[op value start end] (when (and (seq? body) (= 4 (count body))) body)]
+    (when (and (= 'bytes-slice op) (= 'value value)
+               (integer? start) (integer? end))
+      (when-not (and (<= 0 start end) (<= end Integer/MAX_VALUE))
+        (reject! "IPLD ADL subrange offsets must satisfy 0 <= start <= end"
+                 {:operation name :profile :pure-closed-v1
+                  :start start :end end}))
+      [:input-subrange start end])))
+
 (defn- operation-plan [function name result allowed]
   (when-not (exact-function-shape? function result)
     (reject! "unsupported IPLD ADL operation signature"
              {:operation name :profile :pure-closed-v1}))
   (or (get allowed (:body function))
+      (subrange-plan (:body function) name)
       (reject! "unsupported IPLD ADL operation body"
                {:operation name :profile :pure-closed-v1 :body (:body function)})))
 
@@ -195,8 +231,9 @@
 
   Validators accept literal true/false, `(= (bytes-count value) N)`, or
   `(= (bytes-at value I) N)` for a literal index and an unsigned byte. Decode
-  and encode accept the input value or `(bytes)`, which lowers to canonical
-  DAG-CBOR empty bytes (0x40).
+  and encode accept the input value, `(bytes)`, which lowers to canonical
+  DAG-CBOR empty bytes (0x40), or `(bytes-slice value START END)` for literal
+  offsets, which lowers to a bounded view into the input.
   MEMORY-PAGES is fixed in the emitted module (1..64; default 2)."
   ([source] (compile-source source {}))
   ([source {:keys [memory-pages] :or {memory-pages 2} :as options}]
@@ -223,6 +260,21 @@
                  :validate-logical
                  (validator-plan (get by-name 'validate-logical)
                                  'validate-logical)}
+           ;; The lowering half of the max-output bound. Input capacity is
+           ;; fixed in the emitted module, so a subrange ending past it can
+           ;; never be in range at run time -- that is decidable now, and a
+           ;; module whose only possible outcome is a trap should not be built.
+           ;; The runner still enforces its own `max_output` at execution time;
+           ;; neither check subsumes the other, because this one cannot see the
+           ;; host's limit and the host cannot see the source's offsets.
+           capacity (- (* memory-pages 65536) 1024)
+           _ (doseq [[operation entry] plan
+                     :when (and (vector? entry) (= :input-subrange (first entry)))]
+               (when-not (<= (nth entry 2) capacity)
+                 (reject! "IPLD ADL subrange exceeds the module's input capacity"
+                          {:operation operation :profile :pure-closed-v1
+                           :end (nth entry 2) :capacity capacity
+                           :memory-pages memory-pages})))
            profile (cond
                      (= {:validate-representation :true :decode :identity
                          :encode :identity :validate-logical :true} plan)

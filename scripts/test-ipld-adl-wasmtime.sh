@@ -65,6 +65,11 @@ wasm-tools validate "$tmp/kotoba-byte-at-3.wasm"
 clojure -Sdeps '{:paths ["src" "resources" "scripts"]}' -M \
   -m ipld-adl-source-compile "$tmp/kotoba-byte-at-cbor.wasm" byte-at-cbor
 wasm-tools validate "$tmp/kotoba-byte-at-cbor.wasm"
+for slice in slice slice-empty; do
+  clojure -Sdeps '{:paths ["src" "resources" "scripts"]}' -M \
+    -m ipld-adl-source-compile "$tmp/kotoba-$slice.wasm" "$slice"
+  wasm-tools validate "$tmp/kotoba-$slice.wasm"
+done
 
 printf '\241aa\001' > "$tmp/input.cbor"
 receipt=$($tmp/runner "$tmp/identity.wasm" "$tmp/input.cbor" "$tmp/output.cbor" \
@@ -128,6 +133,29 @@ for operation in 0 3; do
     "$operation" 100000 1024 2 1000 1048576 | grep -q '"code":"allocation-trap"'; then :; else exit 1; fi
 done
 
+# bytes-slice returns a bounded view into the ABI input: the operand's own
+# pointer moved forward, never a copy. Decode is [1,3) of the four-byte input.
+$tmp/runner "$tmp/kotoba-slice.wasm" "$tmp/input.cbor" "$tmp/kotoba-output.cbor" \
+  1 100000 1024 2 1000 1048576 >/dev/null
+printf 'aa' | cmp - "$tmp/kotoba-output.cbor"
+# encode stays identity, so the same module does not slice both directions.
+$tmp/runner "$tmp/kotoba-slice.wasm" "$tmp/input.cbor" "$tmp/kotoba-output.cbor" \
+  2 100000 1024 2 1000 1048576 >/dev/null
+cmp "$tmp/input.cbor" "$tmp/kotoba-output.cbor"
+# An empty subrange is a well-formed answer, not a trap: start = end is in range.
+$tmp/runner "$tmp/kotoba-slice-empty.wasm" "$tmp/input.cbor" "$tmp/kotoba-output.cbor" \
+  1 100000 1024 2 1000 1048576 >/dev/null
+test ! -s "$tmp/kotoba-output.cbor"
+# An end past the operand traps rather than returning a pointer into whatever
+# follows the input inside the two-page memory.
+if $tmp/runner "$tmp/kotoba-slice.wasm" "$tmp/short.cbor" "$tmp/out" \
+  1 100000 1024 2 1000 1048576 | grep -q '"code":"guest-trap"'; then :; else exit 1; fi
+if $tmp/runner "$tmp/kotoba-slice.wasm" "$tmp/empty.cbor" "$tmp/out" \
+  1 100000 1024 2 1000 1048576 | grep -q '"code":"guest-trap"'; then :; else exit 1; fi
+# The runner's own output bound still applies to a view it did not choose.
+if $tmp/runner "$tmp/kotoba-slice.wasm" "$tmp/input.cbor" "$tmp/out" \
+  1 100000 1 2 1000 1048576 | grep -q '"code":"output-limit-exceeded"'; then :; else exit 1; fi
+
 # Non-identity source semantics: decode returns the canonical empty bytes node,
 # encode stays identity, and validate-logical returns canonical false.
 $tmp/runner "$tmp/kotoba-closed.wasm" "$tmp/input.cbor" "$tmp/kotoba-output.cbor" \
@@ -160,5 +188,10 @@ clojure -M:ipld-adl-conformance \
 # operand there is the DAG-CBOR encoded node, not the payload bytes.
 clojure -M:ipld-adl-conformance \
   "$tmp/runner" "$tmp/kotoba-byte-at-cbor.wasm"
+# A subrange round-trips through the schema only when the subrange is itself a
+# node: 42 41 05 is the encoding of the two-byte value 0x41 0x05, and [1,3) is
+# the CBOR byte string holding 0x05.
+clojure -M:ipld-adl-conformance \
+  "$tmp/runner" "$tmp/kotoba-slice.wasm" 05 4105
 
-echo "ipld-adl-wasmtime: Kotoba-source input-dependent validation, indexed unsigned byte reads with operand-length bounds traps, non-identity projection, engine fuel, timeout, import denial, memory, and output bounds passed"
+echo "ipld-adl-wasmtime: Kotoba-source input-dependent validation, indexed unsigned byte reads and bounded subrange views with operand-length bounds traps, non-identity projection, engine fuel, timeout, import denial, memory, and output bounds passed"

@@ -69,6 +69,22 @@
    (defn encode [value :bytes] :bytes value)
    (defn validate-logical [value :bytes] :bool (= (bytes-at value 3) 1))")
 
+(def ^:private slice-source
+  "(ns adl.slice
+       (:export [validate-representation decode encode validate-logical]))
+   (defn validate-representation [value :bytes] :bool true)
+   (defn decode [value :bytes] :bytes (bytes-slice value 1 3))
+   (defn encode [value :bytes] :bytes value)
+   (defn validate-logical [value :bytes] :bool true)")
+
+(def ^:private slice-empty-source
+  "(ns adl.slice-empty
+       (:export [validate-representation decode encode validate-logical]))
+   (defn validate-representation [value :bytes] :bool true)
+   (defn decode [value :bytes] :bytes (bytes-slice value 2 2))
+   (defn encode [value :bytes] :bytes value)
+   (defn validate-logical [value :bytes] :bool true)")
+
 (defn -main [& [output profile]]
   (when-not output
     (throw (ex-info "output path required" {:phase :ipld-adl-source-compile})))
@@ -80,6 +96,8 @@
                           "input-count" input-count-source
                           "byte-at" byte-at-source
                           "byte-at-cbor" byte-at-cbor-source
+                          "slice" slice-source
+                          "slice-empty" slice-empty-source
                           "byte-at-3" byte-at-3-source
                           identity-source)))
                (make-array java.nio.file.OpenOption 0)))
