@@ -19,12 +19,13 @@
 
 (def surface-source
   (str "(ns app.dataspace.surface "
-       "(:export [publish publish-in retract subscribe enter leave]) "
+       "(:export [publish publish-in retract subscribe subscribe-in enter leave]) "
        "(:capabilities #{:dataspace/transact}))"
        "(defn publish [assertion :document] (assert! assertion))"
        "(defn publish-in [assertion :document facet :i64] (assert! assertion facet))"
        "(defn retract [assertion :document facet :i64] (retract! assertion facet))"
        "(defn subscribe [pattern :document] (observe! pattern))"
+       "(defn subscribe-in [pattern :document facet :i64] (observe! pattern facet))"
        "(defn enter [] (facet-enter!))"
        "(defn leave [facet :i64] (facet-leave! facet))"))
 
@@ -95,17 +96,31 @@
         kir (ir/lower (:hir checked))
         runtime (host surface-source)
         pattern (edn-doc "[:temperature :room/a ?t]")
-        assertion (edn-doc "[:temperature :room/a 21]")]
+        assertion (edn-doc "[:temperature :room/a 21]")
+        subscribe (->> (get-in checked [:hir :functions])
+                       (filter #(= 'subscribe (:name %)))
+                       first)
+        result-type (nth (:body subscribe) 3)
+        matches-case (some #(when (= :matches (first %)) %)
+                           (nth result-type 2))]
     (is (= #{[:cap/call 24]} (get-in checked [:hir :effects])))
     (is (= :kotoba.kir/v4 (:format kir)))
-    (is (= [] (matches-bindings (invoke-surface runtime 'subscribe [pattern]))))
+    (is (= [[:bindings :document] [:notices :document]]
+           (nth (second matches-case) 2))
+        "sugar observe! elaborates the provider notices mailbox, not only :matches snapshot")
+    (let [empty (invoke-surface runtime 'subscribe [pattern])]
+      (is (= [] (matches-bindings empty)))
+      (is (= [] (matches-notices empty))
+          "empty mailbox when nothing matched"))
     (is (= [{'?t 21}]
            (-> (invoke-surface runtime 'publish [assertion])
                (nth 2) last doc-edn)))
     (let [again (invoke-surface runtime 'subscribe [pattern])]
       (is (= [{'?t 21}] (matches-bindings again)))
       (is (= [{:assertion [:temperature :room/a 21] :bindings {'?t 21}}]
-             (matches-notices again))))))
+             (matches-notices again))))
+    (is (= [] (matches-notices (invoke-surface runtime 'subscribe [pattern])))
+        "next observe! drains the mailbox")))
 
 (deftest native-source-forms-cannot-launder-the-dataspace-effect
   (is (thrown-with-msg?
@@ -124,6 +139,24 @@
            (second (invoke-surface runtime 'leave [facet]))))
     (is (= [] (matches-bindings (invoke-surface runtime 'subscribe
                                                [(edn-doc "[:presence :room/a ?who]")]))))))
+
+(deftest sugar-observe-facet-leave-drops-undelivered-mail
+  "Observe on a child facet, assert on root, then leave without draining.
+  The root assertion survives; the child's undelivered notices do not."
+  (let [runtime (host surface-source)
+        entered (invoke-surface runtime 'enter [])
+        facet (-> entered (nth 2) last)
+        pattern (edn-doc "[:temperature :room/a ?t]")
+        assertion (edn-doc "[:temperature :room/a 21]")]
+    (is (= :facet (second entered)))
+    (is (= [] (matches-notices (invoke-surface runtime 'subscribe-in
+                                              [pattern facet]))))
+    (is (= :asserted (second (invoke-surface runtime 'publish [assertion]))))
+    (is (= :retracted (second (invoke-surface runtime 'leave [facet]))))
+    (let [remaining (invoke-surface runtime 'subscribe [pattern])]
+      (is (= [{'?t 21}] (matches-bindings remaining)))
+      (is (= [] (matches-notices remaining))
+          "facet-leave drops undelivered mail; a new observe! starts empty"))))
 
 (deftest facet-exit-retracts-owned-assertions-and-drops-observations
   (let [runtime (host)
