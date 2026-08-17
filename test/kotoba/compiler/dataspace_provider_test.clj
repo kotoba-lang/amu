@@ -155,8 +155,22 @@
     (is (= :retracted (second (invoke-surface runtime 'leave [facet]))))
     (let [remaining (invoke-surface runtime 'subscribe [pattern])]
       (is (= [{'?t 21}] (matches-bindings remaining)))
-      (is (= [] (matches-notices remaining))
-          "facet-leave drops undelivered mail; a new observe! starts empty"))))
+      (is (= [{:assertion [:temperature :room/a 21] :bindings {'?t 21}}]
+             (matches-notices remaining))
+          "facet-leave drops the child's mailbox; a new observe! replays the live current-set"))))
+
+(deftest sugar-observe-replays-current-matching-assertions
+  (let [runtime (host surface-source)
+        pattern (edn-doc "[:temperature :room/a ?t]")
+        assertion (edn-doc "[:temperature :room/a 21]")]
+    (is (= :asserted (second (invoke-surface runtime 'publish [assertion]))))
+    (let [first-obs (invoke-surface runtime 'subscribe [pattern])]
+      (is (= [{'?t 21}] (matches-bindings first-obs)))
+      (is (= [{:assertion [:temperature :room/a 21] :bindings {'?t 21}}]
+             (matches-notices first-obs))
+          "observe! after a matching assert delivers current-set :document notices"))
+    (is (= [] (matches-notices (invoke-surface runtime 'subscribe [pattern])))
+        "current-set replay is not re-enqueued")))
 
 (deftest facet-exit-retracts-owned-assertions-and-drops-observations
   (let [runtime (host)
