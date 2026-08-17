@@ -95,6 +95,7 @@
             [kotoba.compiler.project-test]
             [kotoba.compiler.receipt-test]
             [kotoba.compiler.ipld-adl-test]
+            [kotoba.compiler.ipld-adl-source-test]
             [kotoba.compiler.release-test]
             [kotoba.compiler.security-fuzz-test]
             [kotoba.compiler.signing-test]
@@ -249,6 +250,7 @@
                                           'kotoba.compiler.native-executor-test
                                           'kotoba.compiler.receipt-test
                                           'kotoba.compiler.ipld-adl-test
+                                          'kotoba.compiler.ipld-adl-source-test
                                           'kotoba.compiler.release-test
                                           'kotoba.compiler.security-fuzz-test
                                           'kotoba.compiler.verifier-profile-test

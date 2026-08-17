@@ -3,6 +3,7 @@
             [kotoba.sema :as sema]
             [kotoba.kir.compatibility :as compatibility]
             [kotoba.compiler.provenance :as provenance]
+            [kotoba.compiler.ipld-adl-source :as ipld-adl-source]
             [kotoba.compiler.cache :as cache]
             [kotoba.compiler.project :as project]
             [kotoba.kir :as ir]
@@ -713,6 +714,13 @@
   ([source target policy emit-metadata]
    (provenance/attach source policy emit-metadata
                       (compile-source* source target policy emit-metadata))))
+
+(defn compile-ipld-adl-source
+  "Compile the fail-closed Kotoba ADL authoring profile to ipld-adl-wasm-v1."
+  ([source] (compile-ipld-adl-source source {}))
+  ([source options]
+   (provenance/attach source {} options
+                      (ipld-adl-source/compile-source source options))))
 
 (defn compile-source-cached
   [source target policy build-metadata cache-entry trust now]
