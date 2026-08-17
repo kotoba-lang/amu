@@ -54,20 +54,40 @@
 (defn- observe-req [edn facet]
   [dataspace/request-type :observe [dataspace/observe-type (edn-doc edn) facet]])
 
+(defn- matches-bindings [result]
+  (doc-edn (nth (nth result 2) 1)))
+
+(defn- matches-notices [result]
+  (doc-edn (nth (nth result 2) 2)))
+
 (deftest abi-assertions-are-documents-not-edn-strings
   (is (= :document (second (first (nth dataspace/assert-type 2)))))
-  (is (= :document (second (first (nth dataspace/observe-type 2))))))
+  (is (= :document (second (first (nth dataspace/observe-type 2)))))
+  (is (= :document (second (second (nth dataspace/matches-type 2))))))
 
 (deftest observe-pattern-binds-and-fires-on-matching-assert
   (let [runtime (host)
         observed (invoke runtime (observe-req "[:temperature :room/a ?t]" 0))
         asserted (invoke runtime (assert-req "[:temperature :room/a 21]" 0))]
     (is (= :matches (second observed)))
-    (is (= [] (doc-edn (last (nth observed 2)))))
+    (is (= [] (matches-bindings observed)))
+    (is (= [] (matches-notices observed)))
     (is (= :asserted (second asserted)))
     (is (= [{'?t 21}] (doc-edn (last (nth asserted 2)))))
     (let [again (invoke runtime (observe-req "[:temperature :room/a ?t]" 0))]
-      (is (= [{'?t 21}] (doc-edn (last (nth again 2))))))))
+      (is (= [{'?t 21}] (matches-bindings again)))
+      (is (= [{:assertion [:temperature :room/a 21] :bindings {'?t 21}}]
+             (matches-notices again))))))
+
+(deftest matching-assert-delivers-document-notice-to-observer
+  (let [runtime (host)]
+    (invoke runtime (observe-req "[:temperature :room/a ?t]" 0))
+    (invoke runtime (assert-req "[:temperature :room/a 21]" 0))
+    (let [delivered (invoke runtime (observe-req "[:temperature :room/a ?t]" 0))]
+      (is (= [{:assertion [:temperature :room/a 21] :bindings {'?t 21}}]
+             (matches-notices delivered)))
+      (is (= [] (matches-notices
+                 (invoke runtime (observe-req "[:temperature :room/a ?t]" 0))))))))
 
 (deftest native-source-forms-cross-hir-kir-and-provider
   (let [checked (compiler/check-source surface-source
@@ -78,14 +98,14 @@
         assertion (edn-doc "[:temperature :room/a 21]")]
     (is (= #{[:cap/call 24]} (get-in checked [:hir :effects])))
     (is (= :kotoba.kir/v4 (:format kir)))
-    (is (= [] (-> (invoke-surface runtime 'subscribe [pattern])
-                  (nth 2) last doc-edn)))
+    (is (= [] (matches-bindings (invoke-surface runtime 'subscribe [pattern]))))
     (is (= [{'?t 21}]
            (-> (invoke-surface runtime 'publish [assertion])
                (nth 2) last doc-edn)))
-    (is (= [{'?t 21}]
-           (-> (invoke-surface runtime 'subscribe [pattern])
-               (nth 2) last doc-edn)))))
+    (let [again (invoke-surface runtime 'subscribe [pattern])]
+      (is (= [{'?t 21}] (matches-bindings again)))
+      (is (= [{:assertion [:temperature :room/a 21] :bindings {'?t 21}}]
+             (matches-notices again))))))
 
 (deftest native-source-forms-cannot-launder-the-dataspace-effect
   (is (thrown-with-msg?
@@ -102,9 +122,8 @@
            (second (invoke-surface runtime 'publish-in [assertion facet]))))
     (is (= :retracted
            (second (invoke-surface runtime 'leave [facet]))))
-    (is (= [] (-> (invoke-surface runtime 'subscribe
-                                  [(edn-doc "[:presence :room/a ?who]")])
-                  (nth 2) last doc-edn)))))
+    (is (= [] (matches-bindings (invoke-surface runtime 'subscribe
+                                               [(edn-doc "[:presence :room/a ?who]")]))))))
 
 (deftest facet-exit-retracts-owned-assertions-and-drops-observations
   (let [runtime (host)
@@ -117,7 +136,8 @@
           remaining (invoke runtime (observe-req "[:temperature :room/a ?t]" 0))]
       (is (= :retracted (second left)))
       (is (= 1 (last (nth left 2))))
-      (is (= [] (doc-edn (last (nth remaining 2))))))))
+      (is (= [] (matches-bindings remaining)))
+      (is (= [] (matches-notices remaining))))))
 
 (deftest missing-grant-denies-before-provider-invoke
   (let [kir (ir/lower (:hir (compiler/check-source
@@ -137,7 +157,7 @@
     (invoke left (assert-req "[:temperature :room/a 21]" 0))
     (let [other (invoke right (observe-req assertion 0))]
       (is (= [:temperature :room/a 21] (doc-edn assertion)))
-      (is (= [] (doc-edn (last (nth other 2))))))))
+      (is (= [] (matches-bindings other))))))
 
 (deftest non-document-assertion-is-rejected
   (let [runtime (host)]
@@ -163,7 +183,7 @@
         stored (invoke runtime (assert-req forged-map 0))
         seen (invoke runtime (observe-req "{:cap/kind :dataspace/transact}" 0))]
     (is (= :asserted (second stored)))
-    (is (= [{}] (doc-edn (last (nth seen 2)))))
+    (is (= [{}] (matches-bindings seen)))
     (is (thrown-with-msg?
          clojure.lang.ExceptionInfo #"capability denied"
          (invoke (runtime/instantiate
