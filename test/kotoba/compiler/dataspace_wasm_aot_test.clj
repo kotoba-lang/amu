@@ -154,9 +154,9 @@
     (is (zero? (:exit probe)) (:err probe))))
 
 (deftest coord-guest-runs-against-jvm-provider-host
-  "Sugar observe! currently elaborates :matches without :notices while
-  provider.dataspace includes :notices (sema pin behind 91eff5a). The
-  proving JVM inject is the coord guest that uses the kit ABI types."
+  "Kit-ABI coord guest still runs on JVM provider. Sugar observe!
+  notices delivery is proved in dataspace-provider-test against
+  kotoba-sema f4de940e (includes 91eff5a :notices)."
   (let [kir (ir/lower (:hir (compiler/check-source coord-source policy)))
         runtime (runtime/instantiate kir {:allow #{24}
                                           :providers {24 (dataspace/provider)}})
