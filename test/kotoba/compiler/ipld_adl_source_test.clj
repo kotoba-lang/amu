@@ -14,6 +14,14 @@
    (defn encode [value :bytes] :bytes value)
    (defn validate-logical [value :bytes] :bool true)")
 
+(def closed-source
+  "(ns adl.closed
+       (:export [validate-representation decode encode validate-logical]))
+   (defn validate-representation [value :bytes] :bool true)
+   (defn decode [value :bytes] :bytes (bytes))
+   (defn encode [value :bytes] :bytes value)
+   (defn validate-logical [value :bytes] :bool false)")
+
 (deftest kotoba-source-compiles-to-the-closed-adl-abi
   (let [compiled (compiler/compile-ipld-adl-source identity-source)
         module (Files/createTempFile "kotoba-adl-source-" ".wasm"
@@ -34,6 +42,15 @@
              (provenance/verify! identity-source {} compiled)))
       (finally (Files/deleteIfExists module)))))
 
+(deftest non-identity-closed-plan-is-preserved-in-kir-and-wasm
+  (let [compiled (compiler/compile-ipld-adl-source closed-source)]
+    (is (= :pure-closed-v1 (get-in compiled [:adl :profile])))
+    (is (= {:validate-representation :true :decode :empty-bytes
+            :encode :identity :validate-logical :false}
+           (get-in compiled [:kir :plan])))
+    (is (= (:provenance compiled)
+           (provenance/verify! closed-source {} compiled)))))
+
 (deftest profile-rejects-source-it-cannot-faithfully-lower
   (testing "a changed body is not silently compiled as identity"
     (is (thrown-with-msg?
@@ -41,7 +58,7 @@
          (compiler/compile-ipld-adl-source
           (.replace identity-source
                     "(defn decode [value :bytes] :bytes value)"
-                    "(defn decode [value :bytes] :bytes (bytes))")))))
+                    "(defn decode [value :bytes] :bytes (if true value (bytes)))")))))
   (testing "extra exports cannot enlarge the ABI"
     (is (thrown-with-msg?
          clojure.lang.ExceptionInfo #"exact operation set"

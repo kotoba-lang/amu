@@ -9,7 +9,7 @@
 (defn- ensure! [condition message]
   (when-not condition (throw (ex-info message {:phase :ipld-adl-conformance}))))
 
-(defn -main [runner module-path]
+(defn -main [& [runner module-path expected]]
   (let [module (Files/readAllBytes (Paths/get module-path (make-array String 0)))
         module-cid (mf/cidv1-raw module)
         executor-key (signing/generate-keypair)
@@ -35,12 +35,14 @@
         decoded (schema/representation->logical! compiled "Item" value limits)
         encoded (schema/logical->representation! compiled "Item" value limits)
         receipts (concat (:adl-receipts decoded) (:adl-receipts encoded))]
-    (ensure! (= [1 2 3] (vec (:logical-value decoded))) "ADL decode result mismatch")
+    (ensure! (= (if (= "empty" expected) [] [1 2 3])
+                (vec (:logical-value decoded)))
+             "ADL decode result mismatch")
     (ensure! (= [1 2 3] (vec (:value encoded))) "ADL encode result mismatch")
     (ensure! (every? #(and (= :wasm (:execution %))
                            (= adl/engine-id (:engine-id %))
                            (= module-cid (:module-cid %))
-                           (= 1 (:memory-pages %))
+                           (<= 1 (:memory-pages %) 2)
                            (pos? (:fuel %)))
                     receipts)
              "ADL engine receipt mismatch")

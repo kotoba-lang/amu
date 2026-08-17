@@ -73,12 +73,13 @@ CIDs. Run `npm run test-ipld-adl-wasmtime` for success plus fuel exhaustion,
 timeout, import denial, memory cap, output cap, and projection receipt evidence.
 
 `kotoba.compiler.core/compile-ipld-adl-source` removes the need to author this
-guest ABI as WAT. Its initial fail-closed `:pure-identity-v1` profile accepts
-exactly four pure Kotoba functions: total representation/logical validators and
-identity decode/encode byte transforms. It emits the three ABI exports above,
-fixed bounded memory, canonical DAG-CBOR `true` validator results, and no
-imports. Any body outside that implemented source slice is rejected rather than
-being mislabeled as an identity transform.
+guest ABI as WAT. Its fail-closed source profiles accept exactly four pure
+Kotoba functions. `:pure-identity-v1` preserves bytes with total validators;
+`:pure-closed-v1` additionally lowers literal true/false validators and
+per-operation identity or `(bytes)` results (the latter becomes canonical
+DAG-CBOR empty bytes, `0x40`). Both emit the three ABI exports above, fixed
+bounded memory, and no imports. Any body outside that implemented source slice
+is rejected rather than being mislabeled as another transform.
 
 For distributed execution, pass an Ed25519 `:executor-key` and a
 `:receipt-sink` to `wasmtime-capability`. The adapter snapshots the admitted
