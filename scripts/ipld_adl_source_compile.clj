@@ -107,6 +107,31 @@
    (defn encode [value :bytes] :bytes value)
    (defn validate-logical [value :bytes] :bool true)")
 
+;; Composition arranged so buffer discipline is observable. The inner join
+;; materialises at the cursor; the outer join then copies a *later* piece of
+;; the operand first, so a destination that reused the inner result's space
+;; would overwrite it before reading it and return different bytes.
+(def ^:private composed-source
+  "(ns adl.composed
+       (:export [validate-representation decode encode validate-logical]))
+   (defn validate-representation [value :bytes] :bool true)
+   (defn decode [value :bytes] :bytes
+     (bytes-concat (bytes-slice value 3 4)
+                   (bytes-concat (bytes-slice value 1 3) (bytes-slice value 0 1))))
+   (defn encode [value :bytes] :bytes value)
+   (defn validate-logical [value :bytes] :bool true)")
+
+;; A subrange of a materialised result: the bound is the join's length, not
+;; the operand's.
+(def ^:private slice-of-join-source
+  "(ns adl.slice-of-join
+       (:export [validate-representation decode encode validate-logical]))
+   (defn validate-representation [value :bytes] :bool true)
+   (defn decode [value :bytes] :bytes
+     (bytes-slice (bytes-concat value value) 2 5))
+   (defn encode [value :bytes] :bytes value)
+   (defn validate-logical [value :bytes] :bool true)")
+
 (defn -main [& [output profile]]
   (when-not output
     (throw (ex-info "output path required" {:phase :ipld-adl-source-compile})))
@@ -122,6 +147,8 @@
                           "slice-empty" slice-empty-source
                           "join" join-source
                           "join-double" join-double-source
+                          "composed" composed-source
+                          "slice-of-join" slice-of-join-source
                           "byte-at-3" byte-at-3-source
                           identity-source)))
                (make-array java.nio.file.OpenOption 0)))

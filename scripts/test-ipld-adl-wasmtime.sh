@@ -65,7 +65,7 @@ wasm-tools validate "$tmp/kotoba-byte-at-3.wasm"
 clojure -Sdeps '{:paths ["src" "resources" "scripts"]}' -M \
   -m ipld-adl-source-compile "$tmp/kotoba-byte-at-cbor.wasm" byte-at-cbor
 wasm-tools validate "$tmp/kotoba-byte-at-cbor.wasm"
-for slice in slice slice-empty join join-double; do
+for slice in slice slice-empty join join-double composed slice-of-join; do
   clojure -Sdeps '{:paths ["src" "resources" "scripts"]}' -M \
     -m ipld-adl-source-compile "$tmp/kotoba-$slice.wasm" "$slice"
   wasm-tools validate "$tmp/kotoba-$slice.wasm"
@@ -192,6 +192,23 @@ head -c 50000 /dev/zero > "$tmp/big50.cbor"
 if $tmp/runner "$tmp/kotoba-join-double.wasm" "$tmp/big50.cbor" "$tmp/out" \
   1 10000000 1048576 2 1000 1048576 | grep -q '"code":"guest-trap"'; then :; else exit 1; fi
 
+# Composition. The operand is A1 61 61 01. The inner join builds 61 61 A1 at
+# the cursor; the outer join writes 01 first and then copies that result, so a
+# destination reusing the inner buffer would clobber it and yield 01 01 61 A1.
+$tmp/runner "$tmp/kotoba-composed.wasm" "$tmp/input.cbor" "$tmp/kotoba-output.cbor" \
+  1 100000 1024 2 1000 1048576 >/dev/null
+printf '\001aa\241' | cmp - "$tmp/kotoba-output.cbor"
+# A subrange of a materialised result: bytes [2,5) of the operand doubled.
+$tmp/runner "$tmp/kotoba-slice-of-join.wasm" "$tmp/input.cbor" "$tmp/kotoba-output.cbor" \
+  1 100000 1024 2 1000 1048576 >/dev/null
+printf 'a\001\241' | cmp - "$tmp/kotoba-output.cbor"
+# Every offset in a composed expression is still bounded by the length of the
+# thing it indexes, so a short operand traps rather than reading a stale buffer.
+if $tmp/runner "$tmp/kotoba-composed.wasm" "$tmp/short.cbor" "$tmp/out" \
+  1 100000 1024 2 1000 1048576 | grep -q '"code":"guest-trap"'; then :; else exit 1; fi
+if $tmp/runner "$tmp/kotoba-slice-of-join.wasm" "$tmp/empty.cbor" "$tmp/out" \
+  1 100000 1024 2 1000 1048576 | grep -q '"code":"guest-trap"'; then :; else exit 1; fi
+
 # Non-identity source semantics: decode returns the canonical empty bytes node,
 # encode stays identity, and validate-logical returns canonical false.
 $tmp/runner "$tmp/kotoba-closed.wasm" "$tmp/input.cbor" "$tmp/kotoba-output.cbor" \
@@ -230,4 +247,4 @@ clojure -M:ipld-adl-conformance \
 clojure -M:ipld-adl-conformance \
   "$tmp/runner" "$tmp/kotoba-slice.wasm" 05 4105
 
-echo "ipld-adl-wasmtime: Kotoba-source input-dependent validation, indexed unsigned byte reads, bounded subrange views, and per-byte joins written past the operand, with operand-length bounds traps, non-identity projection, engine fuel, timeout, import denial, memory, and output bounds passed"
+echo "ipld-adl-wasmtime: Kotoba-source input-dependent validation, indexed unsigned byte reads, bounded subrange views, per-byte joins, and composed expressions allocating above every live operand, with operand-length bounds traps, non-identity projection, engine fuel, timeout, import denial, memory, and output bounds passed"
