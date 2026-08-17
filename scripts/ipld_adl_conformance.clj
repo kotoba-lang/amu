@@ -1,5 +1,6 @@
 (ns ipld-adl-conformance
-  (:require [ipld.schema :as schema]
+  (:require [clojure.string :as str]
+            [ipld.schema :as schema]
             [ipld.schema-dsl :as dsl]
             [kotoba.compiler.ipld-adl :as adl]
             [kotoba.verifier.signing :as signing]
@@ -16,8 +17,14 @@
   "RUNNER MODULE [EXPECTED [VALUE-HEX]].
 
    EXPECTED is the logical value the ADL should decode to: `empty`, a hex byte
-   string, or omitted for \"the input value unchanged\". VALUE-HEX is the
-   representation fed to the schema, defaulting to 01 02 03. Both are
+   string, `reject:<text>` to require the roundtrip to refuse the output with
+   that text in its reason, or omitted for \"the input value unchanged\".
+
+   The reason rather than a code, because the schema boundary does not pass an
+   ADL's ex-data through: it keeps the message under `:message` and reports its
+   own `:problem`. The structured code is asserted where it is raised, in
+   `kotoba.compiler.ipld-adl-test`. VALUE-HEX is
+   the representation fed to the schema, defaulting to 01 02 03. Both are
    parameters rather than constants because a subrange only round-trips
    through the schema when the subrange is itself a DAG-CBOR node, which
    depends on the value."
@@ -43,15 +50,42 @@
                 :max-adl-fuel 100000 :max-adl-output-nodes 16
                 :max-adl-output-bytes 128 :max-adl-module-bytes 1048576
                 :max-adl-memory-pages 2 :check-adl-determinism? true}
+        reject-reason (when (and (seq expected) (str/starts-with? expected "reject:"))
+                        (subs expected (count "reject:")))
         value-bytes (if (seq value-hex) (hex->vec value-hex) [1 2 3])
         value (byte-array value-bytes)
         expected-logical (cond
+                           reject-reason nil
                            (= "empty" expected) []
                            (seq expected) (hex->vec expected)
                            :else value-bytes)
-        decoded (schema/representation->logical! compiled "Item" value limits)
-        encoded (schema/logical->representation! compiled "Item" value limits)
+        refusal (when reject-reason
+                  (let [thrown (try (schema/representation->logical!
+                                     compiled "Item" value limits)
+                                    nil
+                                    (catch clojure.lang.ExceptionInfo error error))
+                        data (ex-data thrown)]
+                    (ensure! (some? thrown)
+                             "ADL output was accepted but should have been refused")
+                    ;; The reason has to be the one the roundtrip gives, not
+                    ;; merely "something threw": a wrong expectation, a fuel
+                    ;; exhaustion and a refused output otherwise look identical
+                    ;; from here.
+                    (ensure! (= :adl-capability-failed (:problem data))
+                             (str "ADL refusal problem mismatch: "
+                                  (pr-str (:problem data))))
+                    (ensure! (and (string? (:message data))
+                                  (str/includes? (:message data) reject-reason))
+                             (str "ADL refusal reason mismatch: "
+                                  (pr-str (:message data))))
+                    (println "ipld-adl-conformance: refused --" (:message data))
+                    thrown))
+        decoded (when-not reject-reason
+                  (schema/representation->logical! compiled "Item" value limits))
+        encoded (when-not reject-reason
+                  (schema/logical->representation! compiled "Item" value limits))
         receipts (concat (:adl-receipts decoded) (:adl-receipts encoded))]
+    (when refusal (System/exit 0))
     (ensure! (= expected-logical (vec (:logical-value decoded)))
              "ADL decode result mismatch")
     (ensure! (= value-bytes (vec (:value encoded))) "ADL encode result mismatch")

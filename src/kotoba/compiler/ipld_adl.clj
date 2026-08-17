@@ -16,6 +16,49 @@
 (def ^:private operation-code
   {:validate-representation 0 :decode 1 :encode 2 :validate-logical 3})
 
+(defn- canonical-node-bytes!
+  "Require the guest's output to be exactly what canonical DAG-CBOR would have
+   written for the value it denotes.
+
+   The source grammar is closed over byte strings, so a transform can be
+   lowered perfectly faithfully and still hand back something the codec never
+   produced. Decoding alone does not separate those cases: it rejects
+   truncation and trailing bytes, but a non-canonical encoding decodes cleanly
+   to the value it denotes -- `18 05` reads as the integer 5 -- so only
+   re-encoding shows that DAG-CBOR would have written `05`.
+
+   `ipld.schema` already refuses such an output on its own way in, so this is
+   not the difference between accepting and rejecting *there*. It is the
+   difference at two other places, and both were open:
+
+   - the receipt. Signing happens here, so without this check the executor
+     attests that the module produced these bytes and only afterwards does a
+     consumer decide they are not a node. A receipt should not vouch for bytes
+     the codec refuses.
+   - every consumer that is not `ipld.schema`. The capability is a public
+     entry point returning raw output bytes, and the engine path beneath it has
+     no codec check at all.
+
+   Being raised here also names the ADL as the source, which a reader throwing
+   on its own cannot: that says some CBOR was bad, not whose."
+  [operation output]
+  (let [value (try (ipld/decode output)
+                   (catch Exception error
+                     (throw (ex-info "ADL output is not DAG-CBOR"
+                                     {:phase :ipld-adl
+                                      :code :adl-output-not-a-node
+                                      :operation operation
+                                      :reason (.getMessage error)}))))
+        re-encoded (ipld/encode value)]
+    (when-not (java.util.Arrays/equals ^bytes output ^bytes re-encoded)
+      (throw (ex-info "ADL output is not canonical DAG-CBOR"
+                      {:phase :ipld-adl
+                       :code :adl-output-not-canonical
+                       :operation operation
+                       :output-bytes (alength ^bytes output)
+                       :canonical-bytes (alength ^bytes re-encoded)})))
+    output))
+
 (defn- byte-array-value [value]
   (cond
     (instance? (Class/forName "[B") value) value
@@ -163,6 +206,10 @@
           (when-not (= (alength output) (:outputBytes receipt))
             (throw (ex-info "Wasmtime ADL output receipt mismatch"
                             {:phase :ipld-adl :code :output-receipt-mismatch})))
+          ;; Checked before the receipt is signed: a receipt attests that this
+          ;; module produced these bytes, and it should not attest to bytes the
+          ;; codec would refuse.
+          (canonical-node-bytes! operation output)
           (let [response {:status :ok :engine-id engine-id :module-cid module-cid
                           :output-bytes output :fuel-used (:fuelUsed receipt)
                           :memory-pages (:memoryPages receipt)
