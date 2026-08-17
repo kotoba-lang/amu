@@ -4,7 +4,8 @@
   The profile is deliberately closed: byte transforms may return their input
   or the canonical empty bytes value, and validators may return literals, a
   bounded comparison of the actual input byte count, or a bounded comparison
-  of one byte read out of the input at a literal index. It is still a real
+  of one byte read out of the input at a literal index. Transforms may also
+  join two such pieces, which is the only body that writes to memory. It is still a real
   source compiler--the admitted Kotoba HIR is the
   authority--and unsupported bodies are rejected instead of being silently
   replaced by another transform."
@@ -44,9 +45,12 @@
 (defn- export-entry [name kind index]
   (concat (name-bytes name) [kind] (uleb index)))
 
-(defn- function-body [instructions]
-  (let [body (concat [0] instructions [0x0b])]
-    (concat (uleb (count body)) body)))
+(defn- function-body
+  ([instructions] (function-body 0 instructions))
+  ([i32-locals instructions]
+   (let [declarations (if (zero? i32-locals) [0] [1 i32-locals 0x7f])
+         body (concat declarations instructions [0x0b])]
+     (concat (uleb (count body)) body))))
 
 (defn- packed [pointer length]
   (bit-or (bit-shift-left (long pointer) 32) (long length)))
@@ -58,7 +62,80 @@
           [0x42] (sleb (packed 0 1)) [0x05]
           [0x42] (sleb (packed 1 1)) [0x0b]))
 
-(defn- emit-result [result]
+;; Locals used only by the join lowering. 0..2 are the ABI parameters.
+(def ^:private local-dst 3)
+(def ^:private local-src 4)
+(def ^:private local-remaining 5)
+
+(defn- part-length
+  "Instructions leaving one part's byte length on the stack as i32."
+  [part]
+  (case (first part)
+    :whole [0x20 0x02]
+    :empty (concat [0x41] (sleb 0))
+    :sub (concat [0x41] (sleb (- (nth part 2) (nth part 1))))))
+
+(defn- part-source
+  "Instructions leaving one part's source pointer on the stack as i32."
+  [part]
+  (case (first part)
+    :whole [0x20 0x01]
+    :empty [0x20 0x01]
+    :sub (concat [0x20 0x01 0x41] (sleb (nth part 1)) [0x6a])))
+
+(defn- emit-total-length
+  "Instructions leaving the joined length on the stack as i32.
+
+   Every part is either the whole operand or a compile-time constant, and the
+   operand is itself capped by `adl_alloc`, so this sum cannot overflow i32."
+  [parts]
+  (reduce (fn [out part] (concat out (part-length part) [0x6a]))
+          (part-length (first parts))
+          (rest parts)))
+
+(defn- emit-copy-part
+  "Copy one part to `local-dst`, one byte at a time, advancing `local-dst`.
+
+   The loop is deliberate. `memory.copy` would move the same bytes for the
+   price of a single instruction, which is exactly the fuel hole this profile
+   must not have: the cost charged has to grow with the bytes moved."
+  [part]
+  (when-not (= :empty (first part))
+    (concat
+     (part-source part) [0x21 local-src]
+     (part-length part) [0x21 local-remaining]
+     [0x02 0x40 0x03 0x40]
+     [0x20 local-remaining 0x45 0x0d 0x01]
+     [0x20 local-dst 0x20 local-src 0x2d 0x00 0x00 0x3a 0x00 0x00]
+     [0x20 local-dst 0x41 0x01 0x6a 0x21 local-dst]
+     [0x20 local-src 0x41 0x01 0x6a 0x21 local-src]
+     [0x20 local-remaining 0x41 0x01 0x6b 0x21 local-remaining]
+     [0x0c 0x00 0x0b 0x0b])))
+
+(defn- emit-join [parts capacity]
+  (let [subranges (filter #(= :sub (first %)) parts)]
+    (concat
+     ;; Same operand-length bound as the subrange lowering, once per part that
+     ;; names an offset.
+     (mapcat (fn [part]
+               (concat [0x20 0x02 0x41] (sleb (nth part 2))
+                       [0x49 0x04 0x40 0x00 0x0b]))
+             subranges)
+     ;; The result is written immediately after the operand, so the space it
+     ;; needs is operand + joined length. Checking it here is what keeps the
+     ;; store below inside the module's own memory.
+     [0x20 0x02] (emit-total-length parts) [0x6a]
+     [0x41] (sleb capacity) [0x4b 0x04 0x40 0x00 0x0b]
+     ;; dst = pointer + length: past the operand, so no source byte is ever
+     ;; overwritten before it is read.
+     [0x20 0x01 0x20 0x02 0x6a 0x21 local-dst]
+     (mapcat emit-copy-part parts)
+     ;; packed(pointer + length, joined length). local-dst has advanced, so the
+     ;; output pointer is recomputed rather than read back.
+     [0x20 0x01 0x20 0x02 0x6a 0xad 0x42 0x20 0x86]
+     (emit-total-length parts) [0xad 0x84])))
+
+(defn- emit-result [result capacity]
   (cond
     (and (vector? result) (= :input-byte-count-eq (first result)))
     ;; The ABI supplies input length as local 2. Return canonical DAG-CBOR true
@@ -78,6 +155,9 @@
        ;; unsigned load is what makes 0xFF read as 255 instead of -1.
        (emit-bool (concat [0x20 0x01 0x2d 0x00] (uleb index)
                           [0x41] (sleb expected) [0x46]))))
+
+    (and (vector? result) (= :input-join (first result)))
+    (emit-join (second result) capacity)
 
     (and (vector? result) (= :input-subrange (first result)))
     (let [[_ start end] result]
@@ -102,11 +182,14 @@
       :identity [0x20 0x01 0xad 0x42 0x20 0x86
                  0x20 0x02 0xad 0x84])))
 
-(defn- emit-dispatch [entries]
+(defn- joins? [plan]
+  (boolean (some #(and (vector? %) (= :input-join (first %))) (vals plan))))
+
+(defn- emit-dispatch [entries capacity]
   (if-let [[operation result] (first entries)]
     (concat [0x20 0x00 0x41] (sleb operation) [0x46 0x04 0x7e]
-            (emit-result result) [0x05]
-            (emit-dispatch (next entries)) [0x0b])
+            (emit-result result capacity) [0x05]
+            (emit-dispatch (next entries) capacity) [0x0b])
     ;; Invalid operation: trap. The unreachable instruction is polymorphic;
     ;; the dead i64.const keeps the block's result shape explicit to validators.
     [0x00 0x42 0x00]))
@@ -129,8 +212,10 @@
         transform (emit-dispatch
                    [[0 (:validate-representation plan)]
                     [1 (:decode plan)] [2 (:encode plan)]
-                    [3 (:validate-logical plan)]])
-        code (concat [2] (function-body alloc) (function-body transform))
+                    [3 (:validate-logical plan)]]
+                   capacity)
+        code (concat [2] (function-body alloc)
+                     (function-body (if (joins? plan) 3 0) transform))
         ;; canonical DAG-CBOR true, false, and empty byte string.
         data [1 0 0x41 0 0x0b 3 0xf5 0xf4 0x40]
         custom (concat (name-bytes "kotoba.ipld-adl")
@@ -171,12 +256,33 @@
                   :start start :end end}))
       [:input-subrange start end])))
 
+(defn- concat-part
+  "One join operand -> `[:whole]` / `[:empty]` / `[:sub START END]`, else nil.
+
+  Deliberately not recursive: a nested join would need its own destination and
+  a second copy, which is the closed expression grammar (P0-4), not this."
+  [form name]
+  (cond
+    (= 'value form) [:whole]
+    (= '(bytes-empty) form) [:empty]
+    :else (when-let [[_ start end] (subrange-plan form name)] [:sub start end])))
+
+(defn- join-plan
+  "`(bytes-concat A B)` -> `[:input-join [partA partB]]`, else nil."
+  [body name]
+  (let [[op left right] (when (and (seq? body) (= 3 (count body))) body)]
+    (when (= 'bytes-concat op)
+      (when-let [parts (let [a (concat-part left name) b (concat-part right name)]
+                         (when (and a b) [a b]))]
+        [:input-join parts]))))
+
 (defn- operation-plan [function name result allowed]
   (when-not (exact-function-shape? function result)
     (reject! "unsupported IPLD ADL operation signature"
              {:operation name :profile :pure-closed-v1}))
   (or (get allowed (:body function))
       (subrange-plan (:body function) name)
+      (join-plan (:body function) name)
       (reject! "unsupported IPLD ADL operation body"
                {:operation name :profile :pure-closed-v1 :body (:body function)})))
 
@@ -232,8 +338,10 @@
   Validators accept literal true/false, `(= (bytes-count value) N)`, or
   `(= (bytes-at value I) N)` for a literal index and an unsigned byte. Decode
   and encode accept the input value, `(bytes)`, which lowers to canonical
-  DAG-CBOR empty bytes (0x40), or `(bytes-slice value START END)` for literal
-  offsets, which lowers to a bounded view into the input.
+  DAG-CBOR empty bytes (0x40), `(bytes-slice value START END)` for literal
+  offsets, which lowers to a bounded view into the input, or
+  `(bytes-concat A B)` joining two of those, which lowers to a bounded
+  byte-at-a-time copy written past the input.
   MEMORY-PAGES is fixed in the emitted module (1..64; default 2)."
   ([source] (compile-source source {}))
   ([source {:keys [memory-pages] :or {memory-pages 2} :as options}]
@@ -274,6 +382,29 @@
                  (reject! "IPLD ADL subrange exceeds the module's input capacity"
                           {:operation operation :profile :pure-closed-v1
                            :end (nth entry 2) :capacity capacity
+                           :memory-pages memory-pages})))
+           ;; The same bound for joins, on the part that is knowable now. A
+           ;; join's length is `constant + k * operand`, and the operand is not
+           ;; known until run time -- but if the constant alone already exceeds
+           ;; capacity the module can only ever trap, so it should not be built.
+           ;; The emitted check covers the operand-dependent remainder, and the
+           ;; runner's own `max_output` covers what neither of them can see.
+           _ (doseq [[operation entry] plan
+                     :when (and (vector? entry) (= :input-join (first entry)))
+                     :let [parts (second entry)
+                           constant (reduce + 0 (for [[kind start end] parts
+                                                      :when (= :sub kind)]
+                                                  (- end start)))]]
+               (doseq [[kind _ end] parts :when (= :sub kind)]
+                 (when-not (<= end capacity)
+                   (reject! "IPLD ADL subrange exceeds the module's input capacity"
+                            {:operation operation :profile :pure-closed-v1
+                             :end end :capacity capacity
+                             :memory-pages memory-pages})))
+               (when-not (<= constant capacity)
+                 (reject! "IPLD ADL join exceeds the module's input capacity"
+                          {:operation operation :profile :pure-closed-v1
+                           :constant-length constant :capacity capacity
                            :memory-pages memory-pages})))
            profile (cond
                      (= {:validate-representation :true :decode :identity
