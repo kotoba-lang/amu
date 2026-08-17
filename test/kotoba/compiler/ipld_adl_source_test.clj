@@ -66,6 +66,29 @@
    (defn encode [value :bytes] :bytes value)
    (defn validate-logical [value :bytes] :bool true)")
 
+;; Composition, arranged so that getting the buffer discipline wrong returns
+;; different bytes. The inner join materialises at the cursor; the outer join
+;; then copies a *later* piece of the operand first, so a destination that
+;; reused the inner result's space would overwrite it before reading it.
+(def composed-source
+  "(ns adl.composed
+       (:export [validate-representation decode encode validate-logical]))
+   (defn validate-representation [value :bytes] :bool true)
+   (defn decode [value :bytes] :bytes
+     (bytes-concat (bytes-slice value 3 4)
+                   (bytes-concat (bytes-slice value 1 3) (bytes-slice value 0 1))))
+   (defn encode [value :bytes] :bytes value)
+   (defn validate-logical [value :bytes] :bool true)")
+
+(def slice-of-join-source
+  "(ns adl.slice-of-join
+       (:export [validate-representation decode encode validate-logical]))
+   (defn validate-representation [value :bytes] :bool true)
+   (defn decode [value :bytes] :bytes
+     (bytes-slice (bytes-concat value value) 2 5))
+   (defn encode [value :bytes] :bytes value)
+   (defn validate-logical [value :bytes] :bool true)")
+
 (deftest kotoba-source-compiles-to-the-closed-adl-abi
   (let [compiled (compiler/compile-ipld-adl-source identity-source)
         module (Files/createTempFile "kotoba-adl-source-" ".wasm"
@@ -140,7 +163,8 @@
 (deftest subrange-transform-is-preserved-in-kir-and-wasm
   (let [compiled (compiler/compile-ipld-adl-source slice-source)]
     (is (= :input-bytes-v1 (get-in compiled [:adl :profile])))
-    (is (= [:input-subrange 1 3] (get-in compiled [:kir :plan :decode])))
+    (is (= [:input-expression [:sub [:whole] 1 3]]
+           (get-in compiled [:kir :plan :decode])))
     (is (= :identity (get-in compiled [:kir :plan :encode])))
     (is (= (:provenance compiled)
            (provenance/verify! slice-source {} compiled)))))
@@ -158,8 +182,9 @@
         ;; (local 2) and trap. Comparing against the memory size, or omitting
         ;; the compare, still validates as Wasm and still returns a pointer --
         ;; into bytes that are not the operand.
-        (is (re-find #"(?s)local\.get 2.*i32\.lt_u.*unreachable" text)
-            "the bound is the operand's length, not the memory's size")
+        (is (re-find #"(?s)local\.get 2\s+local\.set (\d+).*local\.get \1\s+i32\.const 3\s+i32\.lt_u.*unreachable"
+                     text)
+            "the bound is the slot holding the operand's length, not the memory's size")
         ;; A view, not a copy: the result is the operand's own pointer moved
         ;; forward, so the module never writes to linear memory. That is the
         ;; alias rule, and it is checkable.
@@ -171,12 +196,12 @@
 (deftest join-transform-is-preserved-in-kir-and-wasm
   (let [compiled (compiler/compile-ipld-adl-source join-source)]
     (is (= :input-bytes-v1 (get-in compiled [:adl :profile])))
-    (is (= [:input-join [[:sub 1 3] [:sub 0 1]]]
+    (is (= [:input-expression [:join [:sub [:whole] 1 3] [:sub [:whole] 0 1]]]
            (get-in compiled [:kir :plan :decode])))
     (is (= (:provenance compiled)
            (provenance/verify! join-source {} compiled))))
   (let [compiled (compiler/compile-ipld-adl-source join-double-source)]
-    (is (= [:input-join [[:whole] [:whole]]]
+    (is (= [:input-expression [:join [:whole] [:whole]]]
            (get-in compiled [:kir :plan :decode])))))
 
 (deftest join-writes-past-the-operand-and-pays-per-byte
@@ -193,8 +218,9 @@
         ;; is. The write cursor is initialised from pointer + length before any
         ;; store, which is what keeps a source byte from being overwritten
         ;; before it is read.
-        (is (re-find #"(?s)local\.get 1.*local\.get 2.*i32\.add.*local\.set 3.*i32\.store8" text)
-            "the destination cursor starts past the operand")
+        (is (re-find #"(?s)local\.get 1\s+local\.get 2\s+i32\.add\s+local\.set 3.*local\.get 3\s+local\.set 4.*i32\.store8"
+                     text)
+            "the write cursor is taken from a bump cursor that starts past the operand")
         ;; Room for operand + result is checked before the first store, so the
         ;; write cannot leave the module's own memory.
         (is (re-find #"(?s)i32\.gt_u.*unreachable.*i32\.store8" text)
@@ -204,6 +230,46 @@
             "the join pays per byte moved, not per instruction")
         (is (re-find #"i32\.load8_u" text))
         (is (not (re-find #"\(import " text))))
+      (finally (Files/deleteIfExists module)))))
+
+(deftest expressions-compose-and-are-preserved-in-kir
+  (testing "a join may hold a join: what the previous slice refused is the point"
+    (let [compiled (compiler/compile-ipld-adl-source composed-source)]
+      (is (= [:input-expression
+              [:join [:sub [:whole] 3 4]
+                     [:join [:sub [:whole] 1 3] [:sub [:whole] 0 1]]]]
+             (get-in compiled [:kir :plan :decode])))
+      (is (= (:provenance compiled)
+             (provenance/verify! composed-source {} compiled)))))
+  (testing "a subrange may be taken of a materialised result"
+    (let [compiled (compiler/compile-ipld-adl-source slice-of-join-source)]
+      (is (= [:input-expression [:sub [:join [:whole] [:whole]] 2 5]]
+             (get-in compiled [:kir :plan :decode])))
+      (is (= (:provenance compiled)
+             (provenance/verify! slice-of-join-source {} compiled))))))
+
+(deftest composed-expressions-allocate-above-every-live-operand
+  (let [compiled (compiler/compile-ipld-adl-source composed-source)
+        module (Files/createTempFile "kotoba-adl-composed-" ".wasm"
+                                     (make-array FileAttribute 0))]
+    (try
+      (Files/write module (:bytes compiled) (make-array java.nio.file.OpenOption 0))
+      (let [validation (shell/sh "wasm-tools" "validate" (str module))
+            text (:out (shell/sh "wasm-tools" "print" (str module)))]
+        (is (zero? (:exit validation)) (:err validation))
+        ;; Every materialised result is taken from the same cursor and the
+        ;; cursor is only ever advanced by what was written, so no destination
+        ;; can land on a buffer that is still an operand. Two joins, two takes.
+        (is (= 2 (count (re-seq #"local\.get 3\s+local\.set 4" text)))
+            "each join takes its destination from the bump cursor")
+        (is (= 2 (count (re-seq #"local\.get 4\s+local\.set 3" text)))
+            "and returns the cursor advanced by exactly what it wrote")
+        ;; The cursor is never lowered: nothing assigns local 3 except its
+        ;; initialisation past the operand and the advance after a write.
+        (is (= 3 (count (re-seq #"local\.set 3" text)))
+            "the cursor is initialised once and only ever advanced")
+        (is (not (re-find #"memory\.copy|memory\.fill" text))
+            "composition still pays per byte moved"))
       (finally (Files/deleteIfExists module)))))
 
 (deftest profile-rejects-source-it-cannot-faithfully-lower
@@ -293,16 +359,9 @@
           (.replace slice-source
                     "(bytes-slice value 1 3)"
                     "(bytes-slice value 1 (bytes-count value))")))))
-  (testing "a nested join is the closed expression grammar, not this profile"
+  (testing "an expression whose constant part alone cannot fit is refused"
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"unsupported IPLD ADL operation body"
-         (compiler/compile-ipld-adl-source
-          (.replace join-source
-                    "(bytes-slice value 1 3) (bytes-slice value 0 1)"
-                    "(bytes-concat value value) (bytes-slice value 0 1)")))))
-  (testing "a join whose constant part alone cannot fit is refused"
-    (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"join exceeds the module's input capacity"
+         clojure.lang.ExceptionInfo #"expression exceeds the module's input capacity"
          (compiler/compile-ipld-adl-source
           (.replace join-source
                     "(bytes-slice value 1 3) (bytes-slice value 0 1)"
@@ -311,4 +370,25 @@
     (is (thrown-with-msg?
          clojure.lang.ExceptionInfo #"subrange offsets must satisfy 0 <= start <= end"
          (compiler/compile-ipld-adl-source
-          (.replace join-source "(bytes-slice value 1 3)" "(bytes-slice value 3 1)"))))))
+          (.replace join-source "(bytes-slice value 1 3)" "(bytes-slice value 3 1)")))))
+  (testing "an inverted offset nested inside a composed expression is too"
+    (is (thrown-with-msg?
+         clojure.lang.ExceptionInfo #"subrange offsets must satisfy 0 <= start <= end"
+         (compiler/compile-ipld-adl-source
+          (.replace composed-source "(bytes-slice value 1 3)" "(bytes-slice value 3 1)")))))
+  (testing "the expression node budget is a bound, not a suggestion"
+    (let [deep (reduce (fn [form _] (str "(bytes-concat " form " value)"))
+                       "value" (range 40))]
+      (is (thrown-with-msg?
+           clojure.lang.ExceptionInfo #"expression exceeds the node budget"
+           (compiler/compile-ipld-adl-source
+            (.replace composed-source
+                      "(bytes-concat (bytes-slice value 3 4)\n                   (bytes-concat (bytes-slice value 1 3) (bytes-slice value 0 1)))"
+                      deep))))))
+  (testing "a computed offset stays outside the grammar however deeply nested"
+    (is (thrown-with-msg?
+         clojure.lang.ExceptionInfo #"unsupported IPLD ADL operation body"
+         (compiler/compile-ipld-adl-source
+          (.replace composed-source
+                    "(bytes-slice value 1 3)"
+                    "(bytes-slice value 1 (bytes-count value))"))))))
