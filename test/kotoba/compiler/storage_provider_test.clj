@@ -53,15 +53,20 @@
            ((:invoke runtime) 'transact
             [[storage/request-type :get [storage/get-type :profile/name]]])))))
 
+;; Same reason as object-provider-test: the denial is `:code` in ex-data and
+;; the message is prose the provider reworded to "storage request denied".
+(defn- denial-code [f]
+  (try (f) nil
+       (catch clojure.lang.ExceptionInfo e (:code (ex-data e)))))
+
 (deftest invalid-conditional-versions-fail-before-the-transport
   (let [called? (atom false)
         runtime (hosted (fn [_] (reset! called? true)))]
-    (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"expected version is invalid"
-         ((:invoke runtime) 'transact
-          [[storage/request-type :delete
-            [storage/delete-type :profile/name
-             [storage/expected-version-type true 0]]]])))
+    (is (= :storage/invalid-version
+           (denial-code #((:invoke runtime) 'transact
+                          [[storage/request-type :delete
+                            [storage/delete-type :profile/name
+                             [storage/expected-version-type true 0]]]]))))
     (is (false? @called?))))
 
 (deftest missing-grant-denies-before-provider-invoke
