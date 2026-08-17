@@ -27,6 +27,14 @@
    (defn encode [value :bytes] :bytes value)
    (defn validate-logical [value :bytes] :bool true)")
 
+(def ^:private input-count-source
+  "(ns adl.input-count
+       (:export [validate-representation decode encode validate-logical]))
+   (defn validate-representation [value :bytes] :bool (= (bytes-count value) 4))
+   (defn decode [value :bytes] :bytes value)
+   (defn encode [value :bytes] :bytes value)
+   (defn validate-logical [value :bytes] :bool (= (bytes-count value) 4))")
+
 (defn -main [& [output profile]]
   (when-not output
     (throw (ex-info "output path required" {:phase :ipld-adl-source-compile})))
@@ -35,5 +43,6 @@
                         (case profile
                           "closed" closed-source
                           "projection" projection-source
+                          "input-count" input-count-source
                           identity-source)))
                (make-array java.nio.file.OpenOption 0)))
