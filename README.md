@@ -67,9 +67,11 @@ targets. It is a completion plan, not a claim of current platform support.
 Compile latency is measured as a versioned cold-process and persistent-worker
 matrix. See [Compile performance](docs/performance.md) for the bounded worker,
 verified cache contract, phase timing, and reproducible benchmark command.
-The same document also defines a five-engine runtime comparison for Amu native,
-Amu Wasm, Rust, Clojure, and ClojureScript. Its ratios are evidence for one
-declared workload and host, not a universal language ranking.
+The same document also defines a ten-engine runtime comparison: Amu native,
+Amu Wasm, Rust, Clojure, ClojureScript, Go, Mojo, CPython, and TypeScript on
+both Node and Deno. Engines whose toolchain is absent are named in
+`skippedEngines` rather than dropped. Its ratios are evidence for one declared
+workload and host, not a universal language ranking.
 
 The pinned native path lowers scalar control values through versioned
 GMIR/MIR. MIR schedules complete single- and multi-phi predecessor edges as

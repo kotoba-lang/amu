@@ -150,8 +150,8 @@ with real Wasm and host-native compiles.
 
 Amu carries one reproducible, cross-language runtime evidence contract. It
 builds and executes the same eight-round integer quotient/remainder mix in
-Amu native, Amu Wasm32, optimized Rust, warmed Clojure, and advanced-compiled
-ClojureScript:
+Amu native, Amu Wasm32, optimized Rust, warmed Clojure, advanced-compiled
+ClojureScript, Go, Mojo, CPython, and TypeScript on both Node and Deno:
 
 ```sh
 npm run benchmark-runtime -- \
@@ -164,7 +164,14 @@ result, steady-state median and p95, process wall time, maximum RSS, artifact
 sizes, build durations, tool versions, host identity, compiler commit, and
 dirty-worktree state. The source variants live under
 `bench/runtime-comparison/`; `npm run test-runtime-comparison` builds and runs
-all five rather than accepting fixture JSON.
+them rather than accepting fixture JSON.
+
+Rust, Clojure and ClojureScript are required: they are the normalization
+baseline and the two reference JVM/JS lowerings. Go, Mojo, CPython and the two
+TypeScript hosts are measured when their toolchain is on `PATH` and otherwise
+recorded by name and reason in `skippedEngines`. An engine that could not be
+measured must not read like an engine that was measured and did fine, so the
+report never simply omits it.
 
 The measurements are deliberately separated:
 
@@ -204,3 +211,45 @@ Clojure and 4.00x faster than ClojureScript. It does not establish those ratios
 for allocation, collections, strings, capabilities, I/O, concurrency, or whole
 applications. The benchmark contract and raw report are the claim; the table
 is only one machine-specific observation.
+
+## Ten-engine runtime evidence
+
+Compiler commit `c38f79d` with the five added engines, measured on 2026-08-17
+with five samples on an Apple M4, Darwin arm64, Node v26.3.0, rustc 1.97.1,
+Go 1.25.6, Mojo 1.0.0, CPython 3.14.5, tsc 5.9.2 and Deno 2.4.5. The common
+result was again 1,830,338,420; 100,000 calls after 10,000 warmup calls;
+`skippedEngines` was empty. The worktree was dirty — it carried the four new
+kernels — which the report records rather than hides.
+
+**The host was under load average 30-50 throughout.** This machine runs many
+concurrent build and inference jobs. Contended samples inflate every engine, so
+read the ordering and the order of magnitude, not the third digit.
+
+| Engine | Steady-state median | Versus Rust | Process median | Maximum RSS median | Artifact |
+|---|---:|---:|---:|---:|---:|
+| Rust | 16.412 ns | 1.00x | 12.78 ms | 1.38 MiB | 350.53 KiB executable |
+| Amu native | 31.470 ns | 1.92x | 12.08 ms | 1.25 MiB | 1.20 KiB code / 6.33 KiB KEXE |
+| Go | 32.572 ns | 1.98x | 13.95 ms | 3.77 MiB | 2,365.21 KiB executable |
+| Mojo | 32.650 ns | 1.99x | 24.02 ms | 11.00 MiB | 64.12 KiB executable |
+| TypeScript (Deno) | 51.210 ns | 3.12x | 63.38 ms | 55.61 MiB | 1.91 KiB source |
+| TypeScript (Node) | 100.418 ns | 6.12x | 139.96 ms | 53.41 MiB | 1.90 KiB JS |
+| Amu Wasm32 | 147.541 ns | 8.99x | 204.75 ms | 57.16 MiB | 593 B Wasm |
+| Clojure | 166.771 ns | 10.16x | 2,030.30 ms | 114.02 MiB | 1.67 KiB source |
+| ClojureScript | 1,221.555 ns | 74.43x | 318.54 ms | 53.50 MiB | 96.47 KiB JS |
+| CPython | 1,727.784 ns | 105.28x | 258.27 ms | 14.55 MiB | 1.52 KiB source |
+
+On this kernel Amu native lands between Rust and Go and holds the smallest
+maximum RSS of any engine measured, Rust included. Read the Amu/Go/Mojo band as
+"the same class" rather than as a win: three engines inside 1.92x-1.99x on a
+contended host are not separated by this experiment.
+
+Amu Wasm32 reads 8.99x here against 6.24x in the five-engine run above, and the
+reason is in the contract rather than in the code generator. The sealed fuel
+budget caps a fresh instance at 400 exported calls, so 100,000 calls are spread
+across 250 admitted instances and those instantiations land inside the measured
+span. The honest way to read Amu's Wasm output is against another compiler's
+Wasm output on one engine in one process — that comparison is not in this table.
+
+Artifact bytes are not comparable across rows. 593 B of Wasm is a module that
+requires a host; 350 KiB of Rust and 2.3 MiB of Go are self-contained
+executables. The Wasm number says what Amu emitted, not what it costs to run.

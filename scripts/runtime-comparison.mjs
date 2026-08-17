@@ -59,6 +59,21 @@ function output(command, args) {
   catch (_) { return null; }
 }
 
+// Engines whose toolchain is not installed are skipped by name and reason, not
+// dropped. A comparison that silently omits an engine reads exactly like one
+// where that engine was measured and did fine.
+const optionalEngines = [
+  { name: "go", probe: ["go", ["version"]] },
+  { name: "mojo", probe: ["mojo", ["--version"]] },
+  { name: "python", probe: ["python3", ["--version"]] },
+  { name: "typescript-node", probe: ["tsc", ["--version"]] },
+  { name: "typescript-deno", probe: ["deno", ["--version"]] },
+];
+
+function available(probe) {
+  return output(probe[0], probe[1]) !== null;
+}
+
 function hostNativeTarget() {
   if (process.arch === "arm64") return "aarch64";
   if (process.arch === "x64") return "x86_64";
@@ -152,10 +167,30 @@ function build(directory, target) {
     ["-M:runtime-bench", "-m", "cljs.main", "-O", "advanced", "-t", "node",
       "-d", cljsOutputDir, "-o", cljs, "-c", "bench.runtime-kernel"],
     { timeout: 300_000 });
+
+  const go = join(directory, "kernel-go");
+  const mojo = join(directory, "kernel-mojo");
+  const typescript = join(directory, "kernel-ts.js");
+  const skipped = {};
+  for (const engine of optionalEngines) {
+    if (!available(engine.probe)) skipped[engine.name] = `${engine.probe[0]} not on PATH`;
+  }
+  if (!skipped.go) {
+    step("go", "go", ["build", "-o", go, join(benchRoot, "kernel.go")]);
+  }
+  if (!skipped.mojo) {
+    step("mojo", "mojo", ["build", join(benchRoot, "kernel.mojo"), "-o", mojo]);
+  }
+  if (!skipped["typescript-node"]) {
+    step("typescript", "tsc",
+      [join(benchRoot, "kernel.ts"), "--outFile", typescript,
+        "--target", "es2022", "--lib", "es2022,dom"]);
+  }
   return {
-    paths: { fixture, wasm, native, rawNative, nativeRunner, rust, cljs },
+    paths: { fixture, wasm, native, rawNative, nativeRunner, rust, cljs, go, mojo, typescript },
     nativeOffset,
     durations,
+    skipped,
   };
 }
 
@@ -189,6 +224,18 @@ try {
       [built.paths.rawNative, built.nativeOffset, target, String(n),
         String(calls), String(warmup)], {}],
   };
+  if (!built.skipped.go) definitions.go = [built.paths.go, common, {}];
+  if (!built.skipped.mojo) definitions.mojo = [built.paths.mojo, common, {}];
+  if (!built.skipped.python) {
+    definitions.python = ["python3", [join(benchRoot, "kernel.py"), ...common], {}];
+  }
+  if (!built.skipped["typescript-node"]) {
+    definitions["typescript-node"] = [process.execPath, [built.paths.typescript, ...common], {}];
+  }
+  if (!built.skipped["typescript-deno"]) {
+    definitions["typescript-deno"] =
+      ["deno", ["run", "--quiet", join(benchRoot, "kernel.ts"), ...common], {}];
+  }
   const names = Object.keys(definitions);
   const raw = Object.fromEntries(names.map(name => [name, []]));
   // Rotate order per sample so a fixed engine is not always hottest or coldest.
@@ -234,6 +281,11 @@ try {
       node: process.version,
       rustc: output("rustc", ["--version"]),
       clojure: output("clojure", ["-Sdescribe"]),
+      go: output("go", ["version"]),
+      mojo: output("mojo", ["--version"]),
+      python: output("python3", ["--version"]),
+      typescript: output("tsc", ["--version"]),
+      deno: output("deno", ["--version"]),
       compilerCommit: output("git", ["rev-parse", "HEAD"]),
       compilerDirty: Boolean(output("git", ["-c", "core.fsmonitor=false", "status", "--porcelain"])),
     },
@@ -246,7 +298,13 @@ try {
       amuNativeKexe: artifact(built.paths.native),
       amuNativeCode: artifact(built.paths.rawNative),
       amuNativeProvenance: artifact(`${built.paths.native}.provenance.edn`),
+      go: built.skipped.go ? null : artifact(built.paths.go),
+      mojo: built.skipped.mojo ? null : artifact(built.paths.mojo),
+      typescript: built.skipped["typescript-node"] ? null : artifact(built.paths.typescript),
+      pythonSource: artifact(join(benchRoot, "kernel.py")),
+      typescriptSource: artifact(join(benchRoot, "kernel.ts")),
     },
+    skippedEngines: built.skipped,
     engines,
   };
   const encoded = `${JSON.stringify(report, null, 2)}\n`;

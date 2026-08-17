@@ -26,9 +26,27 @@ try {
   if (report.contract.expectedResult !== 516860764) throw new Error("wrong common-kernel result");
   if (!report.contract.nativeBoundary.includes("no production supervisor"))
     throw new Error("native benchmark boundary is not explicit");
-  const names = ["rust", "clojure", "clojurescript", "amu-wasm32", "amu-native"];
-  if (JSON.stringify(Object.keys(report.engines)) !== JSON.stringify(names))
-    throw new Error("runtime engine matrix changed");
+  // Required engines are the normalization baseline and the two reference
+  // lowerings; they may never be absent. Optional engines depend on a
+  // toolchain the host may not have, so each must be either measured or named
+  // in skippedEngines with a reason — an engine that vanishes from the report
+  // is indistinguishable from one that was measured and did fine.
+  const required = ["rust", "clojure", "clojurescript", "amu-wasm32", "amu-native"];
+  const optional = ["go", "mojo", "python", "typescript-node", "typescript-deno"];
+  const measured = Object.keys(report.engines);
+  for (const name of required)
+    if (!measured.includes(name)) throw new Error(`required engine ${name} is missing`);
+  const skipped = report.skippedEngines ?? {};
+  for (const name of optional) {
+    const isMeasured = measured.includes(name);
+    const isSkipped = typeof skipped[name] === "string" && skipped[name].length > 0;
+    if (isMeasured === isSkipped)
+      throw new Error(`optional engine ${name} must be measured or skipped with a reason`);
+  }
+  for (const name of measured)
+    if (!required.includes(name) && !optional.includes(name))
+      throw new Error(`unknown engine ${name} in report`);
+  const names = measured;
   for (const name of names) {
     const engine = report.engines[name];
     if (engine.runs !== 1 || engine.samples.length !== 1)
@@ -43,10 +61,16 @@ try {
     if (engine.maxRssBytes === null || !(engine.maxRssBytes.median > 0))
       throw new Error(`${name} omitted measured RSS`);
   }
-  for (const artifact of Object.values(report.artifacts))
+  // A skipped engine contributes a null artifact rather than disappearing.
+  for (const [name, artifact] of Object.entries(report.artifacts)) {
+    if (artifact === null) continue;
     if (!Number.isSafeInteger(artifact.bytes) || artifact.bytes < 1)
-      throw new Error("artifact size evidence is invalid");
-  process.stdout.write("runtime-comparison: 5 real engines, shared result, timing, RSS, and artifacts OK\n");
+      throw new Error(`artifact size evidence is invalid for ${name}`);
+  }
+  process.stdout.write(
+    `runtime-comparison: ${names.length} real engines `
+    + `(${Object.keys(skipped).length} skipped), shared result, timing, RSS, `
+    + "and artifacts OK\n");
 } finally {
   rmSync(directory, { recursive: true, force: true });
 }
