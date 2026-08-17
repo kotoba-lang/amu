@@ -4,12 +4,26 @@
             [clojure.java.shell :as shell]
             [clojure.string :as str]
             [clojure.tools.reader :as reader]
-            [clojure.test :refer [deftest is testing]]
+            [clojure.test :refer [deftest is testing use-fixtures]]
             [kotoba.compiler.cli :as cli]
             [kotoba.compiler.core :as compiler]
             [kotoba.sema :as sema])
   (:import [java.io StringWriter]
            [java.nio ByteBuffer ByteOrder]))
+
+;; `kotoba.compiler.cli` reports an error by printing an envelope and calling
+;; `*exit*`, which is `System/exit` unless something rebinds it. In production
+;; that is right. Here it ends the JVM, and with it every namespace the runner
+;; had not reached yet — a suite-wide outage that looks like silence rather
+;; than like a failure. Tests that mean to observe an exit status rebind this
+;; themselves and shadow the fixture; for every other test an exit is a defect,
+;; so it surfaces as one.
+(use-fixtures :each
+  (fn [run]
+    (binding [cli/*exit* (fn [status]
+                          (throw (ex-info "cli exited during a test that did not expect it"
+                                          {:status status})))]
+      (run))))
 
 (defn- temp-kotoba-source!
   ([contents] (temp-kotoba-source! contents ".kotoba"))
