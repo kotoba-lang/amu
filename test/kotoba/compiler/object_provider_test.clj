@@ -7,6 +7,15 @@
             [kotoba.kir.value :as value]
             [kotoba.compiler.reference-runtime :as runtime]))
 
+;; The denial these assert is carried by `:code` in ex-data; the message is
+;; a human sentence the provider is free to reword, and did — it now says
+;; "object request denied" for every denial and puts the reason in the code.
+;; A prose matcher therefore reported a working fail-closed path as broken.
+;; Assert the contract.
+(defn- denial-code [f]
+  (try (f) nil
+       (catch clojure.lang.ExceptionInfo e (:code (ex-data e)))))
+
 (def source
   (str "(ns app.object (:export [get-stream put-block compare-and-set-ref]) "
        "(:capabilities #{:object/get-stream :object/put-block :object/compare-and-set-ref}))"
@@ -61,16 +70,16 @@
 (deftest bindings-and-empty-fields-fail-closed
   (let [called? (atom false)
         runtime (hosted (fn [_] (reset! called? true) true))]
-    (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"binding is not allowed"
-         ((:invoke runtime) 'put-block
-          [[object/put-block-request-type
-            :example/other "sha256:x" (value/utf8-string->bytes "p")]])))
-    (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"digest must be non-empty"
-         ((:invoke runtime) 'put-block
-          [[object/put-block-request-type
-            :example/blocks "" (value/utf8-string->bytes "p")]])))
+    (is (= :object/binding-not-allowed
+           (denial-code #((:invoke runtime) 'put-block
+                          [[object/put-block-request-type
+                            :example/other "sha256:x"
+                            (value/utf8-string->bytes "p")]]))))
+    (is (= :object/empty-digest
+           (denial-code #((:invoke runtime) 'put-block
+                          [[object/put-block-request-type
+                            :example/blocks ""
+                            (value/utf8-string->bytes "p")]]))))
     (is (false? @called?))))
 
 (deftest transport-exceptions-are-redacted
@@ -121,10 +130,9 @@
 (deftest get-stream-binding-denial-and-transport-redaction
   (let [called? (atom false)
         runtime (hosted (fn [_] (reset! called? true) {:bytes (byte-array 0)}))]
-    (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"binding is not allowed"
-         ((:invoke runtime) 'get-stream
-          [[object/get-stream-request-type :example/other "k"]])))
+    (is (= :object/binding-not-allowed
+           (denial-code #((:invoke runtime) 'get-stream
+                          [[object/get-stream-request-type :example/other "k"]]))))
     (is (false? @called?)))
   (let [runtime (hosted (fn [_] (throw (ex-info "secret object URL" {}))))]
     (is (thrown-with-msg?

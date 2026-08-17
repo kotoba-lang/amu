@@ -3,19 +3,33 @@
   (:require [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.lang-conformance :as lc]))
 
+;; The size of the pilot is a ratchet: a case is added deliberately and these
+;; numbers move with it in the same commit. They are stated once, here, because
+;; the same three literals used to appear in five assertions across two
+;; namespaces, and every one of them was stale — the manifest had grown to 61
+;; while the tests still read 60. Nothing noticed, because nothing could reach
+;; this namespace: the suite was ending in an earlier one. Everything below
+;; that can be derived from the manifest now is.
+(def ^:private expected-cases {:total 61 :pure-product 56 :portable 5})
+
 (deftest pilot-manifest-loads
   (let [m (lc/load-manifest)]
     (is (= 2 (:kotoba.lang.conformance/version m)))
     (is (= "T1.3" (:kotoba.lang.conformance/wbs m)))
-    (is (= 60 (count (lc/pure-product-cases m))))))
+    (is (= (:total expected-cases) (count (lc/pure-product-cases m))))
+    (is (= (:total expected-cases)
+           (+ (:pure-product expected-cases) (:portable expected-cases)))
+        "the profile split has to account for every case in the pilot")))
 
 (deftest pure-product-required-backends
   (is (= #{:kir :wasm32-kotoba-v1} lc/pure-product-required)))
 
 (deftest dual-backend-pilot-suite-green
-  (let [report (lc/run-suite)]
+  (let [report (lc/run-suite)
+        cases (count (lc/pure-product-cases (lc/load-manifest)))]
     (is (pos? (:total report)))
-    (is (= 60 (:total report)))
+    (is (= cases (:total report))
+        "the suite has to run every case the manifest declares")
     (is (true? (:ok? report))
         (str "failed: " (pr-str (:failed report))))
     (is (= (:total report) (:passed report)))
@@ -43,8 +57,8 @@
           cases (lc/pure-product-cases m)
           pure (filter #(= :pure-product (lc/case-language-profile %)) cases)
           portable (filter #(= :portable (lc/case-language-profile %)) cases)]
-      (is (= 55 (count pure)))
-      (is (= 5 (count portable))
+      (is (= (:pure-product expected-cases) (count pure)))
+      (is (= (:portable expected-cases) (count portable))
           "dotimes / condp / defmethod / cond->> / -> are portable-only surface")
       (doseq [c pure]
         (testing (str (:id c))
@@ -64,7 +78,7 @@
 
 (deftest suite-reports-profile-split
   (let [report (lc/run-suite)]
-    (is (= 55 (:pure-product-passed report)))
-    (is (= 5 (:portable-passed report)))
+    (is (= (:pure-product expected-cases) (:pure-product-passed report)))
+    (is (= (:portable expected-cases) (:portable-passed report)))
     (is (= (:passed report)
            (+ (:pure-product-passed report) (:portable-passed report))))))
