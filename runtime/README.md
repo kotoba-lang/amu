@@ -79,3 +79,14 @@ identity decode/encode byte transforms. It emits the three ABI exports above,
 fixed bounded memory, canonical DAG-CBOR `true` validator results, and no
 imports. Any body outside that implemented source slice is rejected rather than
 being mislabeled as an identity transform.
+
+For distributed execution, pass an Ed25519 `:executor-key` and a
+`:receipt-sink` to `wasmtime-capability`. The adapter snapshots the admitted
+runner bytes, executes that snapshot, and emits a closed
+`kotoba.ipld-adl-execution-receipt/v1` binding the runner SHA-256,
+module/input/output CIDs, operation, engine version, declared limits, and
+measured fuel/memory/output. `verify-execution-receipt!` checks its canonical
+hash, signer trust/revocation, Ed25519 signature, schema, resource inequalities,
+and an explicit `:trusted-runner-sha256` allowlist (obtain the expected value
+with `runner-sha256`). Private key material is closure-local and is never
+included in the capability or receipt.
