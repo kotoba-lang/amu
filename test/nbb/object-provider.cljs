@@ -81,26 +81,34 @@
       (check "cljs-cas-wins-and-loses-are-typed-bools" false (.-message e)))))
 
 (defn- binding-case []
+  ;; The assertion is the typed denial CODE, not a message substring. Both
+  ;; refusals now come out of the provider's pure policy as `deny!`, whose
+  ;; message is the generic "object request denied" while the specific reason
+  ;; rides in ex-data. Matching the old wire-boundary wording made this case
+  ;; fail while the property in its own name -- refused, and the transport
+  ;; never called -- still held. Matching the code also stops the case passing
+  ;; on some unrelated throw.
   (try
     (let [called? (atom false)
           runtime (hosted (fn [_] (reset! called? true) true))
-          binding-threw?
-          (try
-            ((:invoke runtime) 'put-block
-             [[object/put-block-request-type :example/other "sha256:x" (value/utf8-string->bytes "p")]])
-            false
-            (catch :default e
-              (boolean (re-find #"binding is not allowed" (.-message e)))))
-          empty-threw?
-          (try
-            ((:invoke runtime) 'put-block
-             [[object/put-block-request-type :example/blocks "" (value/utf8-string->bytes "p")]])
-            false
-            (catch :default e
-              (boolean (re-find #"digest must be non-empty" (.-message e)))))]
+          denial (fn [request]
+                   (try
+                     ((:invoke runtime) 'put-block [request])
+                     nil
+                     (catch :default e (ex-data e))))
+          binding-denial
+          (denial [object/put-block-request-type :example/other "sha256:x"
+                   (value/utf8-string->bytes "p")])
+          empty-denial
+          (denial [object/put-block-request-type :example/blocks ""
+                   (value/utf8-string->bytes "p")])]
       (check "cljs-bindings-and-empty-fields-fail-closed"
-             (and binding-threw? empty-threw? (false? @called?))
-             (pr-str {:binding-threw? binding-threw? :empty-threw? empty-threw?
+             (and (= :object-provider (:phase binding-denial))
+                  (= :object/binding-not-allowed (:code binding-denial))
+                  (= :object-provider (:phase empty-denial))
+                  (= :object/empty-digest (:code empty-denial))
+                  (false? @called?))
+             (pr-str {:binding-denial binding-denial :empty-denial empty-denial
                       :called? @called?})))
     (catch :default e
       (check "cljs-bindings-and-empty-fields-fail-closed" false (.-message e)))))
