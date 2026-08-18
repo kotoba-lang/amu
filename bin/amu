@@ -78,12 +78,32 @@ function spawn(command, args, options = {}) {
   });
 }
 
+function resolverFailure(result) {
+  if (result.error) return result.error.message;
+  const stderr = (result.stderr || "").trim().split(/\r?\n/).map((l) => l.trim())
+    .filter(Boolean).slice(-3).join(" / ");
+  return (stderr || `exit ${result.status}`).slice(0, 400);
+}
+
+// Answers `{entries}` or `{reason}`. The reason matters: the resolver
+// distinguishes a missing lock, a lock whose digest no longer matches
+// deps.edn, a pinned checkout that is not at its commit, and a git clone that
+// failed -- and only two of those are fixed by regenerating the lock. Reporting
+// all four as "missing or stale" sent a Windows runner's transient clone
+// failure to the wrong fix (measured 2026-08-18: the lock was byte-fresh, the
+// job before it on the same image had resolved the same lock fine).
 function resolveWithLock(root, nbbCli) {
   const script = path.join(root, "scripts", "print-classpath.cljs");
-  if (!fs.existsSync(path.join(root, "deps-lock.edn")) || !fs.existsSync(script)) return null;
+  if (!fs.existsSync(path.join(root, "deps-lock.edn"))) {
+    return { entries: null, reason: "deps-lock.edn is not present" };
+  }
+  if (!fs.existsSync(script)) {
+    return { entries: null, reason: "scripts/print-classpath.cljs is not present" };
+  }
   // A cold hosted runner clones the pinned closure from GitHub. A transient
   // fetch failure must not silently demote an otherwise valid lock to the JVM
   // path; git's content-addressed partial progress makes a bounded retry safe.
+  let last = "no attempt ran";
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const result = spawn(process.execPath,
       [nbbCli, "--classpath", path.join(root, "src"), script, root], {
@@ -91,10 +111,13 @@ function resolveWithLock(root, nbbCli) {
       });
     if (!result.error && result.status === 0) {
       const entries = result.stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-      if (entries.length > 0) return entries;
+      if (entries.length > 0) return { entries, reason: null };
+      last = "the resolver printed no entries";
+    } else {
+      last = resolverFailure(result);
     }
   }
-  return null;
+  return { entries: null, reason: `the lock resolver failed three times: ${last}` };
 }
 
 function resolveWithJvm(root) {
@@ -182,10 +205,13 @@ function securityClasspath(root, nbbCli) {
     if (cached) return cached;
   }
 
-  let entries = resolveWithLock(root, nbbCli);
+  const lockAttempt = resolveWithLock(root, nbbCli);
+  let entries = lockAttempt.entries;
   if (!entries) {
-    console.error("amu: deps-lock.edn is missing or stale; falling back to `clojure -Spath` "
-      + "(needs a JDK). Regenerate with: nbb scripts/lock-classpath.cljs");
+    console.error("amu: could not resolve the dependency closure from deps-lock.edn: "
+      + lockAttempt.reason
+      + "\n  falling back to `clojure -Spath` (needs a JDK)."
+      + "\n  If a pin in deps.edn moved, regenerate the lock: nbb scripts/lock-classpath.cljs");
     entries = resolveWithJvm(root);
   }
   const resolved = entries && admittedClasspath(entries, root, allowedRoots);
