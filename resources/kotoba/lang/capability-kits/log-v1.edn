@@ -34,6 +34,32 @@
                  [:set
                   [:record :kotoba.log/field
                    [[:key :keyword] [:value :string]]]]]]]]]]]}
- :qualification {:reference :implemented :wasm-aot :pending
+ :qualification {:reference :implemented :wasm-aot :implemented
                  :wasm32-kotoba-v1 :pending
-                 :native-aot :pending :jit :pending}}
+                 :native-aot :pending :jit :implemented}
+ ;; Typed kit ABI on the browser wasm host (kotoba:typed/cap-call), same seam
+ ;; dataspace's :wasm-aot names. Measured 2026-08-18: the compiled module's
+ ;; only capability import is kotoba:typed/cap-call. kotoba:cap/call -- clock's
+ ;; i64 host-time surface -- is absent, which is why :wasm32-kotoba-v1 stays
+ ;; :pending here rather than following :wasm-aot.
+ ;;
+ ;; Two capabilities, so the surface is per grant; clock and dataspace each
+ ;; carry exactly one. `request-type`/`result-type` in each elaboration are
+ ;; this kit's own :append / :read :request and :result, unmodified.
+ ;;
+ ;; :native-aot stays :pending on a measured rejection, not an untried guess.
+ ;; Compiling the same guest to :aarch64-kotoba-v1 fails at {:phase :target
+ ;; :value-profile :kotoba.value/typed-v1} with "typed values currently
+ ;; require the kotoba-script web target, typed Wasm/CLJS target, or the
+ ;; qualified native one-word string/record/variant/option/result slice".
+ ;; :fields is [:set [:record ...]] and :entries is [:set [:record ...]];
+ ;; neither is a one-word value, so this kit cannot reach the native slice
+ ;; without narrowing its own schema.
+ :wasm-aot-surface {:import ["kotoba:typed" "cap-call"]
+                    :target :wasm32-browser-kotoba-v1
+                    :grants [{:capability-id 6 :grant :log/append
+                              :elaboration
+                              "(typed-cap-call :log/append request-type result-type request)"}
+                             {:capability-id 5 :grant :log/read
+                              :elaboration
+                              "(typed-cap-call :log/read request-type result-type request)"}]}}
