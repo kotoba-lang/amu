@@ -201,9 +201,16 @@
         (println "windows-profile: option/result host boundary vectors passed"))
       (let [structured (run-external loader [raw main-offset main-arity isa "-"]
                                              {:KEXE_STRUCTURED_REPORT "1"} false)]
+        ;; Left at 509 deliberately. The same assertion in scripts/conformance.cljs
+        ;; measured 510 on this host after kotoba-native ADR 0034 stopped
+        ;; charging entry fuel on an acyclic leaf, and this one is very likely
+        ;; the same number -- but "very likely" is not a measurement, and no
+        ;; Windows host was available to take one. The message now reports what
+        ;; the supervisor actually printed, so the next CI run answers it.
         (lib/ensure! (= "{:status :ok :result 42 :fuel {:initial 512 :remaining 509} :heap {:capacity 4096 :used 0}}"
                         (.trim (.-stdout structured)))
-                     "windows-profile: structured supervisor report mismatch"))
+                     (str "windows-profile: structured supervisor report mismatch: "
+                          (pr-str (.trim (.-stdout structured))))))
       (.writeFileSync
        fs (artifact "typed-capability.kotoba")
        "(defn main [] :i64\n  (+ (string-byte-length (typed-cap-call 4 :string :string \"hello😀\"))\n     (option-value (typed-cap-call 4 :option-i64 :option-i64 (some 41)) 0)\n     (option-value (typed-cap-call 4 :option-i64 :option-i64 (option-none)) 5)\n     (result-value (typed-cap-call 4 :result-i64 :result-i64 (result-ok 7)) 0)\n     (result-error (typed-cap-call 4 :result-i64 :result-i64 (result-err 9)) 0)))\n")

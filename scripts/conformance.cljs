@@ -88,9 +88,14 @@
   (let [[binary off] (offset artifact isa "main" "-report")
         result (run (file "kexe-loader") [binary off "0" isa "-"]
                     {:env {:KEXE_STRUCTURED_REPORT "1"}})]
-    (ensure! (= "{:status :ok :result 42 :fuel {:initial 512 :remaining 509} :heap {:capacity 4096 :used 0}}"
+    ;; 510, not 509: an acyclic leaf spends no entry fuel (kotoba-native ADR
+    ;; 0034, arriving here with the pin advance to 69e364e). The message
+    ;; carries what was actually read, because a mismatch whose value is
+    ;; discarded costs a second run to diagnose -- this one did.
+    (ensure! (= "{:status :ok :result 42 :fuel {:initial 512 :remaining 510} :heap {:capacity 4096 :used 0}}"
                 (str/trim (:stdout result)))
-             "native structured report mismatch")))
+             (str "native structured report mismatch: "
+                  (pr-str (str/trim (:stdout result)))))))
 
 (defn attested-run [signed isa]
   (k "measure-runtime" "--output" (file (str isa "-runtime.edn"))
@@ -114,7 +119,9 @@
                     ":linker-binary-sha256" ":compiler-resource-sha256"
                     ":system-header-closure-sha256"]]
       (ensure! (contains-text? result needle) (str "attested result missing " needle)))
-    (ensure! (contains-text? receipt ":remaining 509") "receipt fuel mismatch")))
+    (ensure! (contains-text? receipt ":remaining 510")
+             (str "receipt fuel mismatch: "
+                  (pr-str (re-find #":remaining \d+" receipt))))))
 
 (defn compile-artifacts! []
   (k "compile" (.join path root "examples" "capability.kotoba") "--target" "wasm32"
