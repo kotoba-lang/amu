@@ -854,3 +854,66 @@
         (let [report (run-native isa source)]
           (is (not (str/includes? report "KEXE_TRAP")) (str/trim report))
           (is (str/includes? report ":result 282") (str/trim report)))))))
+
+(deftest a-value-live-across-a-call-survives-into-a-branch-arm
+  ;; Ten values defined before a call and read only after it, inside an arm of
+  ;; an `if`. `clobber` exists to occupy the caller-saved tier, so a value left
+  ;; there does not survive the call by luck.
+  ;;
+  ;; At the pin in deps.edn this function takes the conservative all-vreg path
+  ;; and every value gets a slot, so today this passes for an uninteresting
+  ;; reason. It is here for the pin that does not do that: kotoba-mir ADR 0012
+  ;; routes calls-plus-control-flow to the linear scanner, where live-across
+  ;; values prefer a preserved register and the rest are stored at their
+  ;; DEFINITION -- which dominates every reload, including an arm that does not
+  ;; contain the call.
+  ;;
+  ;; It discriminates against that implementation, which is why it is worth
+  ;; landing before the pin moves: built against ADR 0012 with the
+  ;; store-at-definition deleted, this returns 1861461900 on AArch64 and
+  ;; -3652320519930723447 on x86-64 in place of 811.
+  ;;
+  ;; ADR 0012 is currently :accepted-defective for an unrelated reason -- it
+  ;; miscompiles string search -- and this test does NOT catch that one.
+  (let [source (str "(defn clobber [x :i64] :i64 "
+                    "  (let [a (* x 3) b (* x 5) c (* x 7) d (* x 11) "
+                    "        e (* x 13) f (* x 17) g (* x 19) h (* x 23)] "
+                    "    (+ (+ (+ a b) (+ c d)) (+ (+ e f) (+ g h))))) "
+                    "(defn main [] :i64 "
+                    "  (let [n 7 "
+                    "        v1 (+ n 1) v2 (+ n 2) v3 (+ n 3) v4 (+ n 4) v5 (+ n 5) "
+                    "        v6 (+ n 6) v7 (+ n 7) v8 (+ n 8) v9 (+ n 9) v10 (+ n 10) "
+                    "        r (clobber n)] "
+                    "    (if (= n 0) "
+                    "      0 "
+                    "      (+ r (+ (+ (+ v1 v2) (+ v3 v4)) "
+                    "              (+ (+ v5 v6) (+ (+ v7 v8) (+ v9 v10))))))))")]
+    (doseq [[isa loader] @loaders :when loader]
+      (testing isa
+        (let [report (run-native isa source)]
+          (is (not (str/includes? report "KEXE_TRAP")) (str/trim report))
+          (is (str/includes? report ":result 811") (str/trim report)))))))
+
+(deftest a-call-result-live-across-a-second-call-survives
+  ;; Two calls, with the first call's result and one earlier value both live
+  ;; across the second, then read in a branch arm.
+  ;;
+  ;; Recorded honestly: this one does NOT discriminate the store. Under ADR
+  ;; 0012 two live values fit the preserved tier, so no slot is involved and
+  ;; deleting the store leaves it at 1577. It covers the tier-preference path
+  ;; -- a result that is itself live across a later call -- and is not a guard
+  ;; for spill placement. `a-value-live-across-a-call-survives-into-a-branch-arm`
+  ;; is that guard. Both are kept because they cover different shapes, not
+  ;; because both are guards.
+  (let [source (str "(defn clobber [x :i64] :i64 "
+                    "  (let [a (* x 3) b (* x 5) c (* x 7) d (* x 11) "
+                    "        e (* x 13) f (* x 17) g (* x 19) h (* x 23)] "
+                    "    (+ (+ (+ a b) (+ c d)) (+ (+ e f) (+ g h))))) "
+                    "(defn main [] :i64 "
+                    "  (let [n 7 keep (+ n 100) r1 (clobber n) r2 (clobber (+ n 1))] "
+                    "    (if (= n 0) 0 (+ keep (+ r1 r2)))))")]
+    (doseq [[isa loader] @loaders :when loader]
+      (testing isa
+        (let [report (run-native isa source)]
+          (is (not (str/includes? report "KEXE_TRAP")) (str/trim report))
+          (is (str/includes? report ":result 1577") (str/trim report)))))))
