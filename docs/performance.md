@@ -241,6 +241,43 @@ lives in the shared allocator rather than in either encoder.
 free.** Nothing above this section is wrong; it is measured on the case that
 hides the largest remaining difference.
 
+## The pool grows on demand
+
+The four registers were not a hardware limit. Both ABIs make more available,
+and the allocator now takes them in two tiers behind the original four: a
+**leaf** tier of caller-saved registers offered only to functions that call
+nothing, which costs nothing to use, and a **preserved** tier of callee-saved
+ones available everywhere, which costs a save and a restore in the frame for
+exactly the registers a body names.
+
+They are handed out one at a time and only once the free list is empty and
+there is no dying operand to reuse. Offering the whole pool up front would move
+every value in every small body, and would walk a three-register body across
+the pool into the preserved tier to pay for saves it never needed.
+
+Measured 2026-08-18, 21 rotated samples per pair on an Apple M4, each pair
+built from the same amu and differing only in the allocator:
+
+| workload | ISA | before | after | |
+|---|---|---:|---:|---|
+| kernel | AArch64 | 272 bytes | 272 bytes | byte-identical |
+| kernel | x86-64 | 474 bytes | 474 bytes | byte-identical |
+| **kernel_wide** | **AArch64** | **1940 bytes / 41.4 ns** | **612 bytes / 10.0 ns** | **4.15x** |
+| **kernel_wide** | **x86-64 (Rosetta)** | **3793 bytes / 78.2 ns** | **1044 bytes / 25.5 ns** | **3.07x** |
+
+Byte-identical for the kernel that already fit is the point of growing on
+demand rather than widening: nothing that was in range moved.
+
+Against LLVM on the same rotation, AArch64 native: `kernel_wide` is **1.62x**
+where it was 9.10x, and the narrow `kernel` is 1.37x. The eight-lane kernel now
+runs at roughly the speed of the one-lane kernel despite doing eight times the
+arithmetic, because the lanes are independent and all of them are in registers.
+
+**The cliff is moved, not removed.** `allocate-without-spills` still fails
+whole and `allocate-with-spills` still gives every value a slot; a body needing
+twelve live values on x86-64 or twenty on AArch64 falls the same distance it
+used to fall at five. Proportional spilling is a separate piece of work.
+
 ## Ten-engine runtime evidence
 
 Compiler commit `c38f79d` with the five added engines, measured on 2026-08-17

@@ -11,6 +11,26 @@
                                  (* 8 index))))
           0 (range width)))
 
+(defn- compares-against-bound?
+  "Does the code compare some register against BOUND? `cmp r/m64, imm32` is
+   REX.W, 0x81, a ModRM with mod=11 and reg=7, then the immediate -- and the
+   low three bits of that ModRM, plus REX.B, name whichever register the
+   allocator put the length in. Which register that is is not the bound check;
+   pinning it made these tests fail when the allocator gained registers, while
+   the check itself was still there on RDX and R8."
+  [bytes bound]
+  (let [imm [(bit-and bound 0xff) (bit-and (bit-shift-right bound 8) 0xff)
+             (bit-and (bit-shift-right bound 16) 0xff)
+             (bit-and (bit-shift-right bound 24) 0xff)]]
+    (boolean
+     (some (fn [[rex opcode modrm & immediate]]
+             (and (contains? #{0x48 0x49} (unsigned rex))
+                  (= 0x81 (unsigned opcode))
+                  (= 0xf8 (bit-and (unsigned modrm) 0xf8))
+                  (= imm (mapv unsigned immediate))))
+           (partition 7 1 bytes)))))
+
+
 (defn- le-bytes [n width]
   (mapv #(bit-and 0xff (bit-shift-right (long n) (* 8 %)))
         (range width)))
@@ -387,8 +407,7 @@
     (is (some #(= [0x48 0x81 0xf9 0x00 0x40 0x00 0x00] %)
               (partition 7 1 bytes))
         "the SHA input primitive admits at most 16 KiB")
-    (is (some #(= [0x48 0x81 0xf9 0x00 0x02 0x00 0x00] %)
-              (partition 7 1 bytes))
+    (is (compares-against-bound? bytes 0x200)
         "the output store retains the 512-byte bound")
     (is (some #(= [0x49 0xc7 0x41 0x08 0x80 0x96 0x98 0x00] %)
               (partition 8 1 bytes))
@@ -400,8 +419,7 @@
         bytes (:bytes object)]
     (is (= "kotoba_aiueos_rsa2048_sha256_verify" (:export object)))
     (is (empty? (:imports object)))
-    (is (some #(= [0x48 0x81 0xf9 0x00 0x10 0x00 0x00] %)
-              (partition 7 1 bytes))
+    (is (compares-against-bound? bytes 0x1000)
         "RSA inputs and workspace retain the compiler's 4 KiB bound")
     (is (some #(= [0x49 0xc7 0x41 0x08 0x80 0xb2 0xe6 0x0e] %)
               (partition 8 1 bytes))
@@ -413,8 +431,7 @@
         bytes (:bytes object)]
     (is (= "kotoba_aiueos_digest_equal" (:export object)))
     (is (empty? (:imports object)))
-    (is (some #(= [0x48 0x81 0xf9 0x00 0x02 0x00 0x00] %)
-              (partition 7 1 bytes))
+    (is (compares-against-bound? bytes 0x200)
         "digest inputs retain the compiler's 512-byte bound")
     (is (some #(= [0x49 0xc7 0x41 0x08 0x00 0x04 0x00 0x00] %)
               (partition 8 1 bytes))
@@ -426,8 +443,7 @@
         bytes (:bytes object)]
     (is (= "kotoba_aiueos_app_catalog_valid" (:export object)))
     (is (empty? (:imports object)))
-    (is (some #(= [0x48 0x81 0xf9 0x00 0x02 0x00 0x00] %)
-              (partition 7 1 bytes))
+    (is (compares-against-bound? bytes 0x200)
         "catalog reads retain the compiler's 512-byte bound")
     (is (some #(= [0x49 0xc7 0x41 0x08 0x00 0x04 0x00 0x00] %)
               (partition 8 1 bytes))
@@ -439,8 +455,7 @@
         bytes (:bytes object)]
     (is (= "kotoba_aiueos_app_lookup_plan" (:export object)))
     (is (empty? (:imports object)))
-    (is (some #(= [0x48 0x81 0xf9 0x00 0x02 0x00 0x00] %)
-              (partition 7 1 bytes)))
+    (is (compares-against-bound? bytes 0x200))
     (is (some #(= [0x49 0xc7 0x41 0x08 0x00 0x04 0x00 0x00] %)
               (partition 8 1 bytes)))))
 
@@ -461,8 +476,7 @@
         bytes (:bytes object)]
     (is (= "kotoba_aiueos_user_context_build" (:export object)))
     (is (empty? (:imports object)))
-    (is (some #(= [0x48 0x81 0xf9 0x00 0x10 0x00 0x00] %)
-              (partition 7 1 bytes)))
+    (is (compares-against-bound? bytes 0x1000))
     (is (some #(= [0x49 0xc7 0x41 0x08 0x00 0x00 0x01 0x00] %)
               (partition 8 1 bytes)))))
 
@@ -478,8 +492,7 @@
         bytes (:bytes object)]
     (is (= "kotoba_aiueos_process_create_plan" (:export object)))
     (is (empty? (:imports object)))
-    (is (some #(= [0x48 0x81 0xf9 0x00 0x02 0x00 0x00] %)
-              (partition 7 1 bytes)))))
+    (is (compares-against-bound? bytes 0x200))))
 
 (deftest kernel-target-exports-process-teardown-plan
   (let [source "(defn aiueos-process-teardown-plan [domain reaped revoked reclaimed stage] (+ domain (+ reaped (+ revoked (+ reclaimed stage))))) (defn main [] 0)"
