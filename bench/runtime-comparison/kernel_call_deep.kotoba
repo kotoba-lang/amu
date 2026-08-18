@@ -1,0 +1,10 @@
+;; Twenty-four values live across twenty-four calls, straight-line.
+(ns kernel-call-deep (:export [kernel]))
+
+(defn step [x :i64] :i64
+  (let [v (+ (* x 48271) 1)]
+    (- v (* (quot v 2147483647) 2147483647))))
+
+(defn kernel [n :i64] :i64
+  (let [v00 (step (+ n 0)) v01 (step (+ n 1)) v02 (step (+ n 2)) v03 (step (+ n 3)) v04 (step (+ n 4)) v05 (step (+ n 5)) v06 (step (+ n 6)) v07 (step (+ n 7)) v08 (step (+ n 8)) v09 (step (+ n 9)) v10 (step (+ n 10)) v11 (step (+ n 11)) v12 (step (+ n 12)) v13 (step (+ n 13)) v14 (step (+ n 14)) v15 (step (+ n 15)) v16 (step (+ n 16)) v17 (step (+ n 17)) v18 (step (+ n 18)) v19 (step (+ n 19)) v20 (step (+ n 20)) v21 (step (+ n 21)) v22 (step (+ n 22)) v23 (step (+ n 23))]
+    (+ (+ (+ (+ (+ (+ (+ (+ (+ (+ (+ (+ (+ (+ (+ (+ (+ (+ (+ (+ (+ (+ (+ v00 v01) v02) v03) v04) v05) v06) v07) v08) v09) v10) v11) v12) v13) v14) v15) v16) v17) v18) v19) v20) v21) v22) v23)))

@@ -1,0 +1,13 @@
+;; The same eight lanes as kernel_wide, but each step is a real call rather
+;; than inlined arithmetic. Straight-line, so the allocator takes the path that
+;; materializes only values live across a call.
+(ns kernel-call (:export [kernel]))
+
+(defn step [x :i64] :i64
+  (let [v (+ (* x 48271) 1)]
+    (- v (* (quot v 2147483647) 2147483647))))
+
+(defn kernel [n :i64] :i64
+  (let [a (step n) b (step (+ n 1)) c (step (+ n 2)) d (step (+ n 3))
+        e (step a) f (step b) g (step c) h (step d)]
+    (+ (+ (+ a b) (+ c d)) (+ (+ e f) (+ g h)))))
