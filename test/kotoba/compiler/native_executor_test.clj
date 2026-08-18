@@ -50,8 +50,13 @@
     (is (every? #(re-matches #"[0-9a-f]{64}" %)
                 (vals (dissoc (get-in result [:evidence :runtime])
                               :format :target-profile))))
+    ;; 512, not 511. `(defn main [] 42)` is an acyclic leaf: it cannot
+    ;; re-enter guest or host work, so it is finite without an entry
+    ;; decrement and kotoba-native stopped charging one (codegen
+    ;; co-scientist iteration 11). A leaf that spends fuel here again is a
+    ;; regression, not a rounding difference.
     (is (= {:status :ok :result 42
-            :fuel {:initial 512 :remaining 511}
+            :fuel {:initial 512 :remaining 512}
             :heap {:capacity 4096 :used 0}}
            (:report result)))
     (is (<= (:started-at result) (:finished-at result)))))

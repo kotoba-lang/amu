@@ -298,6 +298,44 @@ moves with contention, the direction does not.
 Byte-identical for everything that already fit. The two workloads inside the
 pool do not touch this path at all.
 
+### Most of that 1.44x was the benchmark runner
+
+The runner resolved its ISA argument with `strcmp` inside the timed loop. On a
+4-byte `ret` that cost ~5 ns per call; on `kernel_wide` it cost 2.8. Hoisting it
+out and re-running the same rotation, AArch64 native, `kernel_wide`:
+
+| | min ns/call | |
+|---|---:|---:|
+| LLVM `rustc --edition 2021 -C opt-level=3` | 6.36 | 1.00x |
+| Amu native | 6.45 | **1.015x** |
+
+Measured 2026-08-18 at load average 18-21, 60 rotated samples each, 100,000
+calls after 20,000 warmup, every sample agreeing with the reference
+interpreter at 5,224,842,816. Re-run with the rotation order reversed: 6.450
+and 6.356, ratio 1.015.
+
+**The reference is the anchor, and it is why these numbers can be believed on a
+loaded host.** The LLVM binary is the same source built with the same flags as
+the 1.44x rotation, so its correct value is already known: 6.42. It reads 6.36
+here, one percent apart, which is what says these samples caught uncontended
+slices rather than that contention flattered Amu. Amu's own change over the
+same interval is 9.22 to 6.45 — 2.77 ns, against the 2.8 ns of `strcmp` that
+was removed. Both quantities land where they were predicted to.
+
+Three earlier attempts at this rematch did not have that anchor and were wrong
+in both directions. Building the reference with `-O` instead of `-C
+opt-level=3` made Amu look level at 11 ns each. Lengthening the timed region to
+2,000,000 calls drove the ratio to exactly 1.000 at 10 ns each -- on a
+heterogeneous CPU under load, a longer run is more contaminated, not less,
+because the scheduler migrates it onto efficiency cores. **A contended
+measurement compresses ratios toward parity, so on this host a favourable
+result needs more scrutiny than an unfavourable one, not less.**
+
+What is left is 1.5% on an eight-lane leaf, which this experiment does not
+separate from measurement noise. It is not a claim that Amu matches LLVM in
+general: it is one kernel, one ISA, and the workload that still has a real gap
+is the one below, where functions that call something take the other path.
+
 ### Functions that call something have their own path, and it is the old one
 
 Every ratio above this line is from a leaf. A function containing both calls
