@@ -170,7 +170,12 @@ function build(directory, target) {
 
   const go = join(directory, "kernel-go");
   const mojo = join(directory, "kernel-mojo");
-  const typescript = join(directory, "kernel-ts.js");
+  // `--outDir`, not `--outFile`: TypeScript 6 removed the latter outright
+  // (`error TS5102: Option 'outFile' has been removed`), which is why this
+  // step failed on the Ubuntu runners while macOS, on tsc 5.x, still passed.
+  // One input file plus an output directory emits `kernel.js` inside it.
+  const typescriptDir = join(directory, "kernel-ts");
+  const typescript = join(typescriptDir, "kernel.js");
   const skipped = {};
   for (const engine of optionalEngines) {
     if (!available(engine.probe)) skipped[engine.name] = `${engine.probe[0]} not on PATH`;
@@ -183,7 +188,7 @@ function build(directory, target) {
   }
   if (!skipped["typescript-node"]) {
     step("typescript", "tsc",
-      [join(benchRoot, "kernel.ts"), "--outFile", typescript,
+      [join(benchRoot, "kernel.ts"), "--outDir", typescriptDir,
         "--target", "es2022", "--lib", "es2022,dom"]);
   }
   return {

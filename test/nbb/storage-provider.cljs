@@ -83,21 +83,32 @@
       (check "cljs-backend-exceptions-are-redacted-and-typed" false (.-message e)))))
 
 (defn- invalid-version-case []
+  ;; The assertion is the typed denial CODE, not a message substring. Version 0
+  ;; is refused twice over: `validate-delete` answers :storage/invalid-version
+  ;; in the pure policy, and `expected-version` throws "storage expected
+  ;; version is invalid" at the wire boundary behind it. This case used to
+  ;; match the second message, so when the pure policy caught it first the
+  ;; denial arrived as "storage request denied" and the case failed while the
+  ;; property it names -- refused, and the transport never called -- still
+  ;; held. A message is not the contract; `{:phase :storage-provider :code
+  ;; :storage/invalid-version}` is, and asserting on it also keeps the case
+  ;; from passing on some unrelated throw.
   (try
     (let [called? (atom false)
           runtime (hosted (fn [_] (reset! called? true) {:tag :missing}))
-          threw?
+          denial
           (try
             ((:invoke runtime) 'transact
              [[storage/request-type :delete
                [storage/delete-type :profile/name
                 [storage/expected-version-type true i64/zero]]]])
-            false
-            (catch :default e
-              (boolean (re-find #"expected version is invalid" (.-message e)))))]
+            nil
+            (catch :default e (ex-data e)))]
       (check "cljs-invalid-conditional-versions-fail-before-the-transport"
-             (and threw? (false? @called?))
-             (pr-str {:threw? threw? :called? @called?})))
+             (and (= :storage-provider (:phase denial))
+                  (= :storage/invalid-version (:code denial))
+                  (false? @called?))
+             (pr-str {:denial denial :called? @called?})))
     (catch :default e
       (check "cljs-invalid-conditional-versions-fail-before-the-transport" false (.-message e)))))
 
