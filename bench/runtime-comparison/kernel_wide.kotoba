@@ -1,0 +1,41 @@
+;; Eight independent lanes, each stepped twice, all eight live until the final
+;; sum. The existing benchmark kernel keeps one value live and fits the four
+;; registers the x86-64 allocator hands out; this one cannot, so whatever the
+;; allocator does about that becomes visible instead of hypothetical.
+(ns kernel-wide (:export [kernel]))
+
+(defn kernel [n :i64] :i64
+  (let [
+        v_a0 (+ (* n 48271) 1)
+        a0 (- v_a0 (* (quot v_a0 2147483647) 2147483647))
+        v_b0 (+ (* (+ n 1) 48271) 1)
+        b0 (- v_b0 (* (quot v_b0 2147483647) 2147483647))
+        v_c0 (+ (* (+ n 2) 48271) 1)
+        c0 (- v_c0 (* (quot v_c0 2147483647) 2147483647))
+        v_d0 (+ (* (+ n 3) 48271) 1)
+        d0 (- v_d0 (* (quot v_d0 2147483647) 2147483647))
+        v_e0 (+ (* (+ n 4) 48271) 1)
+        e0 (- v_e0 (* (quot v_e0 2147483647) 2147483647))
+        v_f0 (+ (* (+ n 5) 48271) 1)
+        f0 (- v_f0 (* (quot v_f0 2147483647) 2147483647))
+        v_g0 (+ (* (+ n 6) 48271) 1)
+        g0 (- v_g0 (* (quot v_g0 2147483647) 2147483647))
+        v_h0 (+ (* (+ n 7) 48271) 1)
+        h0 (- v_h0 (* (quot v_h0 2147483647) 2147483647))
+        v_a1 (+ (* a0 48271) 1)
+        a1 (- v_a1 (* (quot v_a1 2147483647) 2147483647))
+        v_b1 (+ (* b0 48271) 1)
+        b1 (- v_b1 (* (quot v_b1 2147483647) 2147483647))
+        v_c1 (+ (* c0 48271) 1)
+        c1 (- v_c1 (* (quot v_c1 2147483647) 2147483647))
+        v_d1 (+ (* d0 48271) 1)
+        d1 (- v_d1 (* (quot v_d1 2147483647) 2147483647))
+        v_e1 (+ (* e0 48271) 1)
+        e1 (- v_e1 (* (quot v_e1 2147483647) 2147483647))
+        v_f1 (+ (* f0 48271) 1)
+        f1 (- v_f1 (* (quot v_f1 2147483647) 2147483647))
+        v_g1 (+ (* g0 48271) 1)
+        g1 (- v_g1 (* (quot v_g1 2147483647) 2147483647))
+        v_h1 (+ (* h0 48271) 1)
+        h1 (- v_h1 (* (quot v_h1 2147483647) 2147483647))]
+    (+ (+ (+ a1 b1) (+ c1 d1)) (+ (+ e1 f1) (+ g1 h1)))))
