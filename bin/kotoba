@@ -99,25 +99,59 @@
 ;; on with a truncated classpath, so a resolution failure surfaced as
 ;; `Could not find namespace: kotoba.artifact.core` from somewhere else
 ;; entirely -- measured directly by stubbing `clojure` out on a cold cache.
-(defn- resolve-with-lock [root nbb-cli]
+(defn- resolver-failure [result]
+  (if-let [error (.-error result)]
+    (.-message error)
+    (let [lines (-> (or (.-stderr result) "")
+                    .trim
+                    (.split "\n")
+                    (.map (fn [line] (.trim line)))
+                    (.filter (fn [line] (not= "" line))))
+          tail (.join (.slice lines -3) " / ")]
+      (.slice (if (= "" tail) (str "exit " (.-status result)) tail) 0 400))))
+
+(defn- resolve-with-lock
+  "Answers {:classpath s} or {:reason s}.
+
+  The reason matters. `kotoba.compiler.nbb.classpath` distinguishes a missing
+  lock, a digest that no longer matches deps.edn, a pinned checkout that is not
+  at its commit, a lock path that does not exist, and a git clone that failed --
+  and only two of those are fixed by regenerating the lock. Collapsing all of
+  them into \"missing or stale\" sent a Windows runner's transient clone failure
+  to the wrong fix (measured 2026-08-18: the lock was byte-fresh, and the job
+  ten minutes earlier on the same image resolved it without complaint)."
+  [root nbb-cli]
   (let [script (.join path root "scripts" "print-classpath.cljs")]
-    (when (and (.existsSync fs (.join path root "deps-lock.edn"))
-               (.existsSync fs script))
+    (cond
+      (not (.existsSync fs (.join path root "deps-lock.edn")))
+      {:reason "deps-lock.edn is not present"}
+
+      (not (.existsSync fs script))
+      {:reason "scripts/print-classpath.cljs is not present"}
+
+      :else
       ;; Cold hosted runners clone the pinned closure. Preserve git's safe,
       ;; content-addressed partial progress across bounded transient retries
       ;; before considering the JVM fallback.
-      (loop [attempt 0]
+      (loop [attempt 0 last "no attempt ran"]
         (let [result (.spawnSync child js/process.execPath
                                  (clj->js [nbb-cli "--classpath" (.join path root "src")
                                            script root])
-                                 #js {:cwd root :encoding "utf8" :maxBuffer 16777216})]
-          (if (and (not (.-error result)) (zero? (or (.-status result) 1)))
-            (let [joined (-> (.split (.trim (.-stdout result)) "\n")
-                             (.map (fn [line] (.trim line)))
-                             (.filter (fn [line] (not= "" line)))
-                             (.join (.-delimiter path)))]
-              (when (not= "" joined) joined))
-            (when (< attempt 2) (recur (inc attempt)))))))))
+                                 #js {:cwd root :encoding "utf8" :maxBuffer 16777216})
+              ok? (and (not (.-error result)) (zero? (or (.-status result) 1)))
+              joined (when ok?
+                       (-> (.split (.trim (.-stdout result)) "\n")
+                           (.map (fn [line] (.trim line)))
+                           (.filter (fn [line] (not= "" line)))
+                           (.join (.-delimiter path))))
+              last (cond (not ok?) (resolver-failure result)
+                         (= "" joined) "the resolver printed no entries"
+                         :else last)]
+          (if (and ok? (not= "" joined))
+            {:classpath joined}
+            (if (< attempt 2)
+              (recur (inc attempt) last)
+              {:reason (str "the lock resolver failed three times: " last)})))))))
 
 (defn- resolve-with-jvm [root]
   (let [result (.spawnSync child "clojure" (clj->js ["-Spath"])
@@ -141,17 +175,20 @@
         cache-file (.join path (.tmpdir os) (str "kotoba-security-classpath-" digest ".txt"))]
     (if (.existsSync fs cache-file)
       (.trim (.readFileSync fs cache-file "utf8"))
-      (if-let [resolved (or (resolve-with-lock root nbb-cli)
-                            ;; Say so. A stale lock silently falling back to
-                            ;; the JVM is the JDK-free property disappearing
-                            ;; without anyone noticing -- and this repository
-                            ;; moves dependency pins often enough for that to
-                            ;; be the normal case, not an edge one.
-                            (do (.error js/console
-                                        (str "kotoba: deps-lock.edn is missing or stale; "
-                                             "falling back to `clojure -Spath` (needs a JDK). "
-                                             "Regenerate with: nbb scripts/lock-classpath.cljs"))
-                                (resolve-with-jvm root)))]
+      (if-let [resolved (let [attempt (resolve-with-lock root nbb-cli)]
+                          (or (:classpath attempt)
+                              ;; Say so, and say WHICH. A lock failure silently
+                              ;; falling back to the JVM is the JDK-free
+                              ;; property disappearing without anyone noticing;
+                              ;; naming the wrong cause is the same loss with a
+                              ;; wasted fix attached.
+                              (do (.error js/console
+                                          (str "kotoba: could not resolve the dependency "
+                                               "closure from deps-lock.edn: " (:reason attempt)
+                                               "\n  falling back to `clojure -Spath` (needs a JDK)."
+                                               "\n  If a pin in deps.edn moved, regenerate the "
+                                               "lock: nbb scripts/lock-classpath.cljs"))
+                                  (resolve-with-jvm root))))]
         (do (.writeFileSync fs cache-file resolved) resolved)
         (fail! (str "error: cannot resolve the compiler's dependency closure.\n"
                     "  deps-lock.edn resolves it without a JDK; regenerate it with\n"
