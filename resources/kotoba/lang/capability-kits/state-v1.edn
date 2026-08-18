@@ -19,4 +19,55 @@
    [:written [:record :kotoba.state/entry [[:key :keyword] [:value :string] [:version :i64]]]]
    [:deleted :bool]
    [:error [:record :kotoba.state/error [[:code :keyword] [:message :string]]]]]]
- :qualification {:reference :implemented :wasm-aot :pending :wasm32-kotoba-v1 :pending :native-aot :pending :jit :pending}}
+ :qualification {:reference :implemented
+                 :wasm-aot :implemented
+                 :wasm32-kotoba-v1 :pending
+                 :native-aot :pending
+                 :jit :implemented}
+ ;; Typed kit ABI on the browser wasm host (kotoba:typed/cap-call, id 8).
+ ;; Distinct from clock's i64 kotoba:cap/call surface, which is what
+ ;; :wasm32-kotoba-v1 names -- this guest does compile to that target, but
+ ;; compiling to a target is not the same claim as running on its host-time
+ ;; surface, so that key stays :pending.
+ ;;
+ ;; What crosses whole is this kit's own :request / :result, named below:
+ ;; variants over records carrying :keyword, :string and :i64, plus two arms
+ ;; (:missing, :deleted) whose WHOLE payload is a bare :bool. The bool is
+ ;; what this kit turns on that storage's [:option :i64] did not: the guest's
+ ;; `erase` returns 1 or 0 purely from the :deleted payload, so a host that
+ ;; dropped or widened it cannot produce the round trip's 1/0 alternation.
+ ;;
+ ;; The record arities are this kit's and not storage's -- :put is
+ ;; [key value] where storage's is [key value expected-version], and :delete
+ ;; is [key] where storage's is [key expected-version]. The test's host
+ ;; inject counts them, so a schema copied from the neighbouring kit exits
+ ;; rather than passing.
+ ;;
+ ;; :native-aot is :pending because the native targets REFUSE this ABI, on
+ ;; all four of :x86_64-kotoba-v1 / :aarch64-kotoba-v1 /
+ ;; :x86_64-macos-kotoba-v1 / :aarch64-macos-kotoba-v1, measured 2026-08-18:
+ ;;
+ ;;   "typed values currently require the kotoba-script web target, typed
+ ;;    Wasm/CLJS target, or the qualified native one-word
+ ;;    string/record/variant/option/result slice"
+ ;;   {:phase :target :target <target> :backend <backend>
+ ;;    :value-profile :kotoba.value/typed-v1}
+ ;;
+ ;; This was tried, not assumed: dataspace-v1 IS qualified on native, so
+ ;; native is not categorically closed to kits. It is closed to THIS one
+ ;; because kotoba.kir/only-native-word-typed-features? admits a
+ ;; typed-cap-call only when its [request result] pair is one of
+ ;; [:i64 :i64] / [:string :string] / [:option-i64 :option-i64] /
+ ;; [:result-i64 :result-i64], or when native-provider-contract? matches --
+ ;; and that predicate is a two-entry allowlist naming capability 7 (clock)
+ ;; and capability 24 (dataspace) with their exact schemas. Capability 8 is
+ ;; in neither set, so no rewriting of the guest reaches native while the
+ ;; kit's own variant request/result is what crosses. See
+ ;; state-wasm-aot-test/native-aot-refuses-the-state-kit-abi.
+ :wasm-aot-surface {:import ["kotoba:typed" "cap-call"]
+                    :capability-id 8
+                    :grant :state/transact
+                    :target :wasm32-browser-kotoba-v1
+                    :request-schema :kotoba.state/request
+                    :result-schema :kotoba.state/result
+                    :elaboration "(typed-cap-call :state/transact request-type result-type request)"}}

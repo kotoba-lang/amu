@@ -25,6 +25,10 @@
     dataspace-v1.edn  kotoba.compiler.dataspace-wasm-aot-test
     storage-v1.edn    kotoba.compiler.storage-wasm-aot-test
     log-v1.edn        kotoba.compiler.log-wasm-aot-test
+    http-v1.edn       kotoba.compiler.http-wasm-aot-test
+    llm-v1.edn        kotoba.compiler.llm-wasm-aot-test
+    state-v1.edn      kotoba.compiler.state-wasm-aot-test
+    ui-v1.edn         kotoba.compiler.ui-wasm-aot-test
 
   Kits declare capabilities in two shapes -- :capability for one, :capabilities
   for several -- and their surfaces mirror that, flat or under :grants. The
@@ -52,7 +56,8 @@
 (def typed-kit-abi-wasm-aot-kits
   "Adding a name here without a test that actually runs the guest is the
   failure this file exists to prevent."
-  #{"dataspace-v1.edn" "storage-v1.edn" "log-v1.edn"})
+  #{"dataspace-v1.edn" "storage-v1.edn" "log-v1.edn"
+    "http-v1.edn" "llm-v1.edn" "state-v1.edn" "ui-v1.edn"})
 
 (defn- kit-files-on-disk []
   (->> (io/file (io/resource "kotoba/lang/capability-kits"))

@@ -24,6 +24,44 @@
            [:body :string]]]]
    [:error [:record :kotoba.http/error
              [[:code :keyword] [:message :string] [:retryable :bool]]]]]]
- :qualification {:reference :implemented :wasm-aot :pending
+ :qualification {:reference :implemented
+                 :wasm-aot :implemented
                  :wasm32-kotoba-v1 :pending
-                 :native-aot :pending :jit :pending}}
+                 :native-aot :pending
+                 :jit :implemented}
+ ;; Typed kit ABI on the browser wasm host (kotoba:typed/cap-call, id 4).
+ ;; Distinct from clock's i64 kotoba:cap/call surface, which is what
+ ;; :wasm32-kotoba-v1 names -- this guest does compile to that target, but
+ ;; compiling to a target is not the same claim as running on its host-time
+ ;; surface, so that key stays :pending. The compiled browser module imports
+ ;; kotoba:typed/cap-call and NO kotoba:cap/call at all.
+ ;;
+ ;; What crosses whole is this kit's own :request / :result, named below: a
+ ;; record whose :headers field is a [:set [:record :kotoba.http/header ...]],
+ ;; and a variant whose :ok arm carries that SAME set-of-record type back. The
+ ;; set of nominal records in both directions is what no earlier kit exercised
+ ;; here. Measured 2026-08-18 on node: the host inject reads the guest's
+ ;; :content-type header text out of the request set and returns it in the
+ ;; response body, and builds a ONE-item response set out of the request's
+ ;; :accept header record where the guest sent two -- so neither side can be
+ ;; inventing the value locally. :jit is the same guest and the same inject
+ ;; through kotoba-script :js-kotoba-v1 under V8.
+ ;;
+ ;; The guest membership-tests the response set with typed-set-contains rather
+ ;; than indexing it with typed-set-nth because kotoba-script has no
+ ;; typed-set-nth: it fails with "unsupported KIR node" / :phase :kotoba-script
+ ;; on the [:set [:record :kotoba.http/header ...]] node. See
+ ;; http-wasm-aot-test/kotoba-script-has-no-typed-set-nth.
+ ;;
+ ;; :native-aot is :pending because BOTH native targets REFUSE this ABI --
+ ;; "typed values currently require the kotoba-script web target, typed
+ ;; Wasm/CLJS target, or the qualified native one-word ... slice" at
+ ;; :phase :target with :value-profile :kotoba.value/typed-v1 -- not because
+ ;; nobody tried. See http-wasm-aot-test/native-aot-refuses-the-http-kit-abi.
+ :wasm-aot-surface {:import ["kotoba:typed" "cap-call"]
+                    :capability-id 4
+                    :grant :http/post
+                    :target :wasm32-browser-kotoba-v1
+                    :request-schema :kotoba.http/post-request
+                    :result-schema :kotoba.http/result
+                    :elaboration "(typed-cap-call :http/post request-type result-type request)"}}
