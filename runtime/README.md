@@ -54,7 +54,7 @@ HTTP deployment profile.
 
 `ipld-adl-wasmtime.c` is the synchronous reference engine for io-ipld's
 `ipld-adl-wasm-v1` host port. Build it with
-`scripts/build-ipld-adl-wasmtime.sh`. Each call creates a fresh Wasmtime Store,
+`scripts/build-ipld-adl-wasmtime.cljs`. Each call creates a fresh Wasmtime Store,
 admits a core Wasm module with zero imports, and enforces Store fuel, linear
 memory, output-byte, and epoch deadline limits. The receipt's fuel and memory
 values come from Wasmtime after execution; guest output cannot supply them.
