@@ -122,6 +122,11 @@
             [kotoba.compiler.log-provider-test]
             [kotoba.compiler.log-wasm-aot-test]
             [kotoba.compiler.log-jit-test]
+            [kotoba.compiler.http-wasm-aot-test]
+            [kotoba.compiler.llm-wasm-aot-test]
+            [kotoba.compiler.state-wasm-aot-test]
+            [kotoba.compiler.ui-wasm-aot-test]
+            [kotoba.compiler.ui-jit-test]
             [kotoba.compiler.dataspace-match-test]
             [kotoba.compiler.dataspace-provider-test]
             [kotoba.compiler.dataspace-wasm-aot-test]
@@ -253,6 +258,11 @@
    'kotoba.compiler.log-provider-test
    'kotoba.compiler.log-wasm-aot-test
    'kotoba.compiler.log-jit-test
+   'kotoba.compiler.http-wasm-aot-test
+   'kotoba.compiler.llm-wasm-aot-test
+   'kotoba.compiler.state-wasm-aot-test
+   'kotoba.compiler.ui-wasm-aot-test
+   'kotoba.compiler.ui-jit-test
    'kotoba.compiler.dataspace-match-test
    'kotoba.compiler.dataspace-provider-test
    'kotoba.compiler.dataspace-wasm-aot-test

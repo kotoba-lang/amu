@@ -22,6 +22,41 @@
                     [[:input-tokens :i64] [:output-tokens :i64]]]]]]]
    [:error [:record :kotoba.llm/error
              [[:code :keyword] [:message :string] [:retryable :bool]]]]]]
- :qualification {:reference :implemented :wasm-aot :pending
+ :qualification {:reference :implemented
+                 :wasm-aot :implemented
                  :wasm32-kotoba-v1 :pending
-                 :native-aot :pending :jit :pending}}
+                 :native-aot :pending
+                 :jit :implemented}
+ ;; Typed kit ABI on the browser wasm host (kotoba:typed/cap-call, id 11).
+ ;; Distinct from clock's i64 kotoba:cap/call surface, which is what
+ ;; :wasm32-kotoba-v1 names -- this guest does compile to that target, but
+ ;; compiling to a target is not the same claim as running on its host-time
+ ;; surface, so that key stays :pending. The compiled module carries no
+ ;; kotoba:cap/call import at all; llm-wasm-aot-test measures that.
+ ;;
+ ;; What crosses whole is this kit's own :request / :result, named below.
+ ;; The part no earlier kit exercised on this seam is DEPTH: the :ok arm is
+ ;; a record (:kotoba.llm/completion) that itself carries a record
+ ;; (:kotoba.llm/usage). The guest reads :input-tokens and :output-tokens
+ ;; back out of that inner record and the inject answers 11 and 42, so a
+ ;; host that flattened the nesting could not produce both.
+ ;;
+ ;; :wasm-aot and :jit were measured with a HOST INJECT returning fixed
+ ;; values -- no model, no transport. :semantics says the credentials and
+ ;; the SDK are host-owned and the execution is :synchronous-reference; a
+ ;; real provider call is nondeterministic and would prove nothing about
+ ;; the ABI. The inject asserts all five request fields instead.
+ ;;
+ ;; :native-aot is :pending because all four native targets REFUSE this ABI
+ ;; -- "typed values currently require the kotoba-script web target, typed
+ ;; Wasm/CLJS target, or the qualified native one-word
+ ;; string/record/variant/option/result slice" at :phase :target with
+ ;; :value-profile :kotoba.value/typed-v1 -- not because nobody tried. See
+ ;; llm-wasm-aot-test/native-aot-refuses-the-llm-kit-abi.
+ :wasm-aot-surface {:import ["kotoba:typed" "cap-call"]
+                    :capability-id 11
+                    :grant :llm/generate
+                    :target :wasm32-browser-kotoba-v1
+                    :request-schema :kotoba.llm/generate-request
+                    :result-schema :kotoba.llm/result
+                    :elaboration "(typed-cap-call :llm/generate request-type result-type request)"}}
