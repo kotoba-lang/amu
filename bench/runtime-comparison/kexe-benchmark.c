@@ -56,19 +56,10 @@ static uint64_t nanoseconds(void) {
          (uint64_t)value.tv_nsec;
 }
 
-static int64_t invoke(const char *isa, void *memory, uint64_t offset,
-                      int64_t input, struct benchmark_context_v3 *context) {
-  if (strcmp(isa, "x86_64") == 0) {
-    kexe_fn6 fn = (kexe_fn6)((uint8_t *)memory + offset);
-    return fn(input, 0, 0, 0, 0, (int64_t)(uintptr_t)context);
-  }
-  if (strcmp(isa, "aarch64") == 0) {
-    kexe_fn8 fn = (kexe_fn8)((uint8_t *)memory + offset);
-    return fn(input, 0, 0, 0, 0, 0, 0, (int64_t)(uintptr_t)context);
-  }
-  fprintf(stderr, "isa must be x86_64 or aarch64\n");
-  exit(2);
-}
+/* Resolve isa once. strcmp inside the timed loop was ~5 ns on a 4-byte
+ * `ret` identity (codegen co-scientist iteration 13). That is harness
+ * overhead, not guest work. Fuel is still stored every call so recursive
+ * exports keep a bound; a leaf does not read it. */
 
 int main(int argc, char **argv) {
   if (argc != 7) {
@@ -77,6 +68,11 @@ int main(int argc, char **argv) {
     return 2;
   }
   uint64_t offset = bounded(argv[2], "offset", 1, UINT64_MAX);
+  int aarch64 = strcmp(argv[3], "aarch64") == 0;
+  if (!aarch64 && strcmp(argv[3], "x86_64") != 0) {
+    fprintf(stderr, "isa must be x86_64 or aarch64\n");
+    return 2;
+  }
   int64_t input = (int64_t)bounded(argv[4], "n", 0, UINT64_C(2147483646));
   uint64_t calls = bounded(argv[5], "calls", 0, UINT64_C(100000000));
   uint64_t warmup = bounded(argv[6], "warmup", 0, UINT64_C(100000000));
@@ -113,16 +109,33 @@ int main(int argc, char **argv) {
   struct benchmark_context_v3 context = {0};
   context.version = 3;
   int64_t result = 0;
-  for (uint64_t index = 0; index < warmup; index++) {
-    context.fuel = 512;
-    result = invoke(argv[3], memory, offset, input, &context);
+  uint64_t started;
+  uint64_t elapsed;
+  if (aarch64) {
+    kexe_fn8 fn = (kexe_fn8)((uint8_t *)memory + offset);
+    for (uint64_t index = 0; index < warmup; index++) {
+      context.fuel = 512;
+      result = fn(input, 0, 0, 0, 0, 0, 0, (int64_t)(uintptr_t)&context);
+    }
+    started = nanoseconds();
+    for (uint64_t index = 0; index < calls; index++) {
+      context.fuel = 512;
+      result = fn(input, 0, 0, 0, 0, 0, 0, (int64_t)(uintptr_t)&context);
+    }
+    elapsed = nanoseconds() - started;
+  } else {
+    kexe_fn6 fn = (kexe_fn6)((uint8_t *)memory + offset);
+    for (uint64_t index = 0; index < warmup; index++) {
+      context.fuel = 512;
+      result = fn(input, 0, 0, 0, 0, (int64_t)(uintptr_t)&context);
+    }
+    started = nanoseconds();
+    for (uint64_t index = 0; index < calls; index++) {
+      context.fuel = 512;
+      result = fn(input, 0, 0, 0, 0, (int64_t)(uintptr_t)&context);
+    }
+    elapsed = nanoseconds() - started;
   }
-  uint64_t started = nanoseconds();
-  for (uint64_t index = 0; index < calls; index++) {
-    context.fuel = 512;
-    result = invoke(argv[3], memory, offset, input, &context);
-  }
-  uint64_t elapsed = nanoseconds() - started;
   struct rusage usage;
   if (getrusage(RUSAGE_SELF, &usage) != 0) fail("getrusage");
 #if defined(__APPLE__)
