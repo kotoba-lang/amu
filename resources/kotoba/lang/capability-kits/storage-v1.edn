@@ -30,6 +30,31 @@
                 [[:key :keyword] [:current-version [:option :i64]]]]]
    [:error [:record :kotoba.storage/error
              [[:code :keyword] [:message :string] [:retryable :bool]]]]]]
- :qualification {:reference :implemented :wasm-aot :pending
+ :qualification {:reference :implemented
+                 :wasm-aot :implemented
                  :wasm32-kotoba-v1 :pending
-                 :native-aot :pending :jit :pending}}
+                 :native-aot :pending
+                 :jit :implemented}
+ ;; Typed kit ABI on the browser wasm host (kotoba:typed/cap-call, id 12).
+ ;; Distinct from clock's i64 kotoba:cap/call surface, which is what
+ ;; :wasm32-kotoba-v1 names -- this guest does compile to that target, but
+ ;; compiling to a target is not the same claim as running on its host-time
+ ;; surface, so that key stays :pending.
+ ;;
+ ;; What crosses whole is this kit's own :request / :result, named below:
+ ;; variants over records carrying :keyword, :string, :i64 and an
+ ;; [:option :i64] (put/delete expected-version, conflict current-version).
+ ;; The option is the part no earlier kit exercised here.
+ ;;
+ ;; :native-aot is :pending because the native targets REFUSE this ABI --
+ ;; "typed values currently require the kotoba-script web target, typed
+ ;; Wasm/CLJS target, or the qualified native one-word ... slice" at
+ ;; :phase :target -- not because nobody tried. See
+ ;; storage-wasm-aot-test/native-aot-refuses-the-storage-kit-abi.
+ :wasm-aot-surface {:import ["kotoba:typed" "cap-call"]
+                    :capability-id 12
+                    :grant :storage/transact
+                    :target :wasm32-browser-kotoba-v1
+                    :request-schema :kotoba.storage/request
+                    :result-schema :kotoba.storage/result
+                    :elaboration "(typed-cap-call :storage/transact request-type result-type request)"}}

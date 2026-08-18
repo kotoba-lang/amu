@@ -116,9 +116,12 @@
             [kotoba.compiler.stream-ingress-provider-test]
             [kotoba.compiler.storage-provider-test]
             [kotoba.compiler.storage-transport-test]
+            [kotoba.compiler.storage-wasm-aot-test]
             [kotoba.compiler.clock-provider-test]
             [kotoba.compiler.clock-transport-test]
             [kotoba.compiler.log-provider-test]
+            [kotoba.compiler.log-wasm-aot-test]
+            [kotoba.compiler.log-jit-test]
             [kotoba.compiler.dataspace-match-test]
             [kotoba.compiler.dataspace-provider-test]
             [kotoba.compiler.dataspace-wasm-aot-test]
@@ -244,9 +247,12 @@
    'kotoba.compiler.stream-ingress-provider-test
    'kotoba.compiler.storage-provider-test
    'kotoba.compiler.storage-transport-test
+   'kotoba.compiler.storage-wasm-aot-test
    'kotoba.compiler.clock-provider-test
    'kotoba.compiler.clock-transport-test
    'kotoba.compiler.log-provider-test
+   'kotoba.compiler.log-wasm-aot-test
+   'kotoba.compiler.log-jit-test
    'kotoba.compiler.dataspace-match-test
    'kotoba.compiler.dataspace-provider-test
    'kotoba.compiler.dataspace-wasm-aot-test
