@@ -825,3 +825,32 @@
                 '(f64-gt 1 2) '(f64-ge 1 2)
                 '(f64-unordered 1 2)]]
     (is (machine-ir/pilot-expression? [] form) form)))
+
+(deftest a-value-spilled-in-one-branch-arm-survives-into-the-other
+  ;; Twelve values defined before an `if`, read only in the arm that runs, with
+  ;; enough pressure in the arm that does not run to make the allocator evict
+  ;; them there. A spill store left where the register ran out is inside the arm
+  ;; that never executes; the reload is in the arm that does, and reads a slot
+  ;; nothing wrote.
+  ;;
+  ;; This ran as a real process and printed 6171913639 instead of 282, on a
+  ;; compiler whose whole test suite was green -- every check of the allocator
+  ;; was structural, and the arithmetic of a taken branch is not structural.
+  (let [source (str "(defn main [] :i64 "
+                    "(let [n 7 "
+                    "      b1 (+ n 11) b2 (+ n 12) b3 (+ n 13) b4 (+ n 14) "
+                    "      b5 (+ n 15) b6 (+ n 16) b7 (+ n 17) b8 (+ n 18) "
+                    "      b9 (+ n 19) b10 (+ n 20) b11 (+ n 21) b12 (+ n 22)] "
+                    "  (if (= n 0) "
+                    "    (let [x1 (* n 3) x2 (* n 5) x3 (* n 7) x4 (* n 11) "
+                    "          x5 (* n 13) x6 (* n 17) x7 (* n 19) x8 (* n 23) "
+                    "          x9 (* n 29) x10 (* n 31) x11 (* n 37) x12 (* n 41)] "
+                    "      (+ (+ (+ x1 x2) (+ x3 x4)) "
+                    "         (+ (+ x5 x6) (+ (+ x7 x8) (+ (+ x9 x10) (+ x11 x12)))))) "
+                    "    (+ (+ (+ b1 b2) (+ b3 b4)) "
+                    "       (+ (+ b5 b6) (+ (+ b7 b8) (+ (+ b9 b10) (+ b11 b12))))))))")]
+    (doseq [[isa loader] @loaders :when loader]
+      (testing isa
+        (let [report (run-native isa source)]
+          (is (not (str/includes? report "KEXE_TRAP")) (str/trim report))
+          (is (str/includes? report ":result 282") (str/trim report)))))))

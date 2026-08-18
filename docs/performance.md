@@ -273,10 +273,43 @@ where it was 9.10x, and the narrow `kernel` is 1.37x. The eight-lane kernel now
 runs at roughly the speed of the one-lane kernel despite doing eight times the
 arithmetic, because the lanes are independent and all of them are in registers.
 
-**The cliff is moved, not removed.** `allocate-without-spills` still fails
-whole and `allocate-with-spills` still gives every value a slot; a body needing
-twelve live values on x86-64 or twenty on AArch64 falls the same distance it
-used to fall at five. Proportional spilling is a separate piece of work.
+## Spilling is proportional
+
+The cliff is gone. Running out of registers used to reject the whole function
+and send it to a path that gave every value its own stack slot, so one value
+past the pool cost the same as a hundred. The scan now evicts one value at a
+time -- the one wanted furthest in the future -- and leaves the rest in
+registers.
+
+`kernel_deep.kotoba` is twenty-four independent lanes, above the pool on both
+targets (x86-64 offers eleven registers to a leaf, AArch64 nineteen). Measured
+2026-08-18, 21 rotated samples per pair, each built from the same amu:
+
+| workload | ISA | before | after | |
+|---|---|---:|---:|---:|
+| kernel, kernel_wide | both | — | — | byte-identical |
+| **kernel_deep** | **AArch64** | **3404 B / 81.6 ns** | **1096 B / 14.9 ns** | **5.5x** |
+| **kernel_deep** | **x86-64** (Rosetta) | **6545 B / 116.5 ns** | **2202 B / 34.1 ns** | **3.4x** |
+
+Against LLVM on the same rotation, AArch64 native: **1.44x**, where it was
+7.87x. A second rotation under heavier load read 1.67x and 8.47x; the ratio
+moves with contention, the direction does not.
+
+Byte-identical for everything that already fit. The two workloads inside the
+pool do not touch this path at all.
+
+### The store goes at the definition
+
+A spill store left where the register ran out can sit inside one arm of a
+branch while the reload lands in the other -- a slot written on a path that was
+not taken. That is not hypothetical: a build with that placement returned
+6171913639 where the answer is 282, with `:status :ok`, and its whole test
+suite was green. Every check of the allocator was structural, and the
+arithmetic of a taken branch is not structural.
+
+A definition dominates every use of its value, so that is where the store goes.
+The regression test executes the program
+(`a-value-spilled-in-one-branch-arm-survives-into-the-other`).
 
 ## Ten-engine runtime evidence
 

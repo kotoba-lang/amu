@@ -1,0 +1,73 @@
+use std::env;
+use std::hint::black_box;
+use std::time::Instant;
+
+// Twenty-four independent lanes; the same shape as kernel_deep.kotoba.
+fn kernel(n: i64) -> i64 {
+    let v_a = (n + 0) * 48271 + 1;
+    let a = v_a - (v_a / 2147483647) * 2147483647;
+    let v_b = (n + 1) * 48271 + 1;
+    let b = v_b - (v_b / 2147483647) * 2147483647;
+    let v_c = (n + 2) * 48271 + 1;
+    let c = v_c - (v_c / 2147483647) * 2147483647;
+    let v_d = (n + 3) * 48271 + 1;
+    let d = v_d - (v_d / 2147483647) * 2147483647;
+    let v_e = (n + 4) * 48271 + 1;
+    let e = v_e - (v_e / 2147483647) * 2147483647;
+    let v_f = (n + 5) * 48271 + 1;
+    let f = v_f - (v_f / 2147483647) * 2147483647;
+    let v_g = (n + 6) * 48271 + 1;
+    let g = v_g - (v_g / 2147483647) * 2147483647;
+    let v_h = (n + 7) * 48271 + 1;
+    let h = v_h - (v_h / 2147483647) * 2147483647;
+    let v_i = (n + 8) * 48271 + 1;
+    let i = v_i - (v_i / 2147483647) * 2147483647;
+    let v_j = (n + 9) * 48271 + 1;
+    let j = v_j - (v_j / 2147483647) * 2147483647;
+    let v_k = (n + 10) * 48271 + 1;
+    let k = v_k - (v_k / 2147483647) * 2147483647;
+    let v_l = (n + 11) * 48271 + 1;
+    let l = v_l - (v_l / 2147483647) * 2147483647;
+    let v_m = (n + 12) * 48271 + 1;
+    let m = v_m - (v_m / 2147483647) * 2147483647;
+    let v_n = (n + 13) * 48271 + 1;
+    let n = v_n - (v_n / 2147483647) * 2147483647;
+    let v_o = (n + 14) * 48271 + 1;
+    let o = v_o - (v_o / 2147483647) * 2147483647;
+    let v_p = (n + 15) * 48271 + 1;
+    let p = v_p - (v_p / 2147483647) * 2147483647;
+    let v_q = (n + 16) * 48271 + 1;
+    let q = v_q - (v_q / 2147483647) * 2147483647;
+    let v_r = (n + 17) * 48271 + 1;
+    let r = v_r - (v_r / 2147483647) * 2147483647;
+    let v_s = (n + 18) * 48271 + 1;
+    let s = v_s - (v_s / 2147483647) * 2147483647;
+    let v_t = (n + 19) * 48271 + 1;
+    let t = v_t - (v_t / 2147483647) * 2147483647;
+    let v_u = (n + 20) * 48271 + 1;
+    let u = v_u - (v_u / 2147483647) * 2147483647;
+    let v_v = (n + 21) * 48271 + 1;
+    let v = v_v - (v_v / 2147483647) * 2147483647;
+    let v_w = (n + 22) * 48271 + 1;
+    let w = v_w - (v_w / 2147483647) * 2147483647;
+    let v_x = (n + 23) * 48271 + 1;
+    let x = v_x - (v_x / 2147483647) * 2147483647;
+    (((((((((((((((((((((((a + b) + c) + d) + e) + f) + g) + h) + i) + j) + k) + l) + m) + n) + o) + p) + q) + r) + s) + t) + u) + v) + w) + x)
+}
+
+fn positive_arg(index: usize, name: &str) -> u64 {
+    let value = env::args().nth(index).unwrap_or_else(|| panic!("missing {}", name));
+    value.parse::<u64>().ok().filter(|v| *v > 0)
+        .unwrap_or_else(|| panic!("{} must be a positive integer", name))
+}
+
+fn main() {
+    let n = positive_arg(1, "n") as i64;
+    let calls = positive_arg(2, "calls");
+    let warmup = positive_arg(3, "warmup");
+    let mut result = 0_i64;
+    for _ in 0..warmup { result = black_box(kernel(black_box(n))); }
+    let started = Instant::now();
+    for _ in 0..calls { result = black_box(kernel(black_box(n))); }
+    println!("{{\"format\":\"kotoba.runtime-sample/v1\",\"calls\":{calls},\"warmupCalls\":{warmup},\"elapsedNanoseconds\":{},\"result\":{result}}}", started.elapsed().as_nanos());
+}
