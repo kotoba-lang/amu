@@ -194,3 +194,12 @@
 
 (deftest typed-map-destructuring-agrees-with-reference-execution
   (is (= 3 (oracle "(defn main [] (let [{:keys [a b]} {:a 1 :b 2}] (+ a b)))"))))
+
+(deftest runtime-kernel-bench-repeats-the-leaf-from-n
+  (let [program (ir/lower (:hir (compiler/check-source
+                                 (slurp "bench/runtime-comparison/kernel.kotoba")))))
+        once (ir/execute program 'kernel [200])]
+    (is (= 1830338420 once))
+    (is (= once (ir/execute program 'bench [200 1])))
+    (is (= once (ir/execute program 'bench [200 3]))
+        "each iteration starts from n, not from the previous remainder")))
