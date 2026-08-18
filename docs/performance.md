@@ -212,6 +212,35 @@ for allocation, collections, strings, capabilities, I/O, concurrency, or whole
 applications. The benchmark contract and raw report are the claim; the table
 is only one machine-specific observation.
 
+## A second workload, because the first one fits in four registers
+
+`bench/runtime-comparison/kernel.kotoba` keeps one value live. The x86-64
+allocator hands out four registers, so that kernel never needs a fifth and
+never spills, and every number above it is measured on code where allocation
+costs nothing. `kernel_wide.kotoba` is the same eight-round Lehmer step run in
+eight independent lanes, all live until a final sum, so it cannot fit.
+
+What that changes, measured 2026-08-18, 21 rotated samples per pair, all three
+implementations agreeing on 5224842816:
+
+| workload | ISA | amu | rustc -> LLVM | ratio |
+|---|---|---:|---:|---:|
+| kernel (fits) | x86-64 (Rosetta) | 14.9 ns | 12.4 ns | 1.20x |
+| **kernel_wide** | **x86-64 (Rosetta)** | **85.1 ns** | **9.4 ns** | **9.07x** |
+| **kernel_wide** | **AArch64 (native)** | **59.2 ns** | **6.5 ns** | **9.10x** |
+
+The instruction mix says where it goes. On `kernel_wide`, amu's x86-64 output is
+671 instructions of which **221 are stack loads, 166 are stack stores and 80 are
+push/pop — 70% memory traffic**. LLVM's output for the same source performs zero
+stack loads, because x86-64 has sixteen general registers and eight lanes fit.
+
+Both ISAs show the same factor, which is what you would expect from a cost that
+lives in the shared allocator rather than in either encoder.
+
+**Read the narrow kernel's ratios as what this compiler does when allocation is
+free.** Nothing above this section is wrong; it is measured on the case that
+hides the largest remaining difference.
+
 ## Ten-engine runtime evidence
 
 Compiler commit `c38f79d` with the five added engines, measured on 2026-08-17
