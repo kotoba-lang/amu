@@ -201,13 +201,13 @@
         (println "windows-profile: option/result host boundary vectors passed"))
       (let [structured (run-external loader [raw main-offset main-arity isa "-"]
                                              {:KEXE_STRUCTURED_REPORT "1"} false)]
-        ;; Left at 509 deliberately. The same assertion in scripts/conformance.cljs
-        ;; measured 510 on this host after kotoba-native ADR 0034 stopped
-        ;; charging entry fuel on an acyclic leaf, and this one is very likely
-        ;; the same number -- but "very likely" is not a measurement, and no
-        ;; Windows host was available to take one. The message now reports what
-        ;; the supervisor actually printed, so the next CI run answers it.
-        (lib/ensure! (= "{:status :ok :result 42 :fuel {:initial 512 :remaining 509} :heap {:capacity 4096 :used 0}}"
+        ;; 510 measured, not assumed. The previous commit left this at 509 on
+        ;; purpose and made the message report what the supervisor printed,
+        ;; because no Windows host was available here; the windows-arm64 job
+        ;; then answered 510 -- the same value scripts/conformance.cljs measured
+        ;; on macOS, and the same +1 kotoba-native ADR 0034 produces by not
+        ;; charging entry fuel on a function that cannot re-enter.
+        (lib/ensure! (= "{:status :ok :result 42 :fuel {:initial 512 :remaining 510} :heap {:capacity 4096 :used 0}}"
                         (.trim (.-stdout structured)))
                      (str "windows-profile: structured supervisor report mismatch: "
                           (pr-str (.trim (.-stdout structured))))))
@@ -249,9 +249,15 @@
       (let [[offset arity] (extract! (artifact "heap.kexe") "main" (artifact "heap.bin"))
             report (run-external loader [(artifact "heap.bin") offset arity isa "-"]
                                  {:KEXE_STRUCTURED_REPORT "1"} false)]
+        ;; This one is NOT changed. It reports a different program -- two heap
+        ;; words used -- and the assertion above it was the only one the job had
+        ;; reached, so 511 has never been contradicted by a measurement. If ADR
+        ;; 0034 moves it too, the message now says so instead of withholding the
+        ;; number the way the first one did.
         (lib/ensure! (= "{:status :ok :result 42 :fuel {:initial 512 :remaining 511} :heap {:capacity 4096 :used 2}}"
                         (.trim (.-stdout report)))
-                     "windows-profile: bounded heap report mismatch"))
+                     (str "windows-profile: bounded heap report mismatch: "
+                          (pr-str (.trim (.-stdout report))))))
       (run-k! ["compile" (.join path lib/root "tests/browser/capability.kotoba")
                "--target" target "--policy" (.join path lib/root "examples/capability-policy.edn")
                "--output" (artifact "capability.kexe")])
