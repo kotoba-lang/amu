@@ -298,6 +298,46 @@ moves with contention, the direction does not.
 Byte-identical for everything that already fit. The two workloads inside the
 pool do not touch this path at all.
 
+### Functions that call something have their own path, and it is the old one
+
+Every ratio above this line is from a leaf. A function containing both calls
+and control flow does not reach the allocator described here at all: it goes to
+the conservative path, where every value gets a stack slot whether or not
+anything was short of registers.
+
+Four fixtures isolate what that costs. Each pair runs identical arithmetic
+through identical calls; the only difference is one `if` whose taken arm is the
+same expression, which is enough to change which path the function takes.
+Measured 2026-08-18, 21 rotated samples, both agreeing with the reference
+interpreter (6210431302 and 21432348):
+
+| live values across calls | ISA | straight-line | with one `if` | |
+|---|---|---:|---:|---:|
+| 8 | AArch64 | 27.3 ns / 260 B | 28.8 ns / 392 B | +6% |
+| 8 | x86-64 (Rosetta) | 38.5 ns | 39.6 ns | +3% |
+| **24** | **AArch64** | **62.2 ns / 828 B** | **82.5 ns / 1344 B** | **+33%** |
+| **24** | **x86-64** (Rosetta) | **95.3 ns** | **126.7 ns** | **+33%** |
+
+The cost scales with how many values are live across the calls: nothing at
+eight, a third at twenty-four, and the same factor on both ISAs -- the
+signature of a cost in the shared allocator rather than either encoder. At 24
+values the conservative path takes 99 stack slots against 24, and 325
+instructions against 190.
+
+The fix is not a new mechanism. Values live across a call have to survive
+caller-saved registers being clobbered, and the preserved tier is exactly a
+set of registers that survives a call. What is missing is call-clobber handling
+in the scan, so that a function with calls and branches can use it.
+
+### Reading these numbers back
+
+`extract-native` reports `:offset`, and it is not always zero -- a module whose
+first function is a helper puts the exported kernel after it. Passing zero to
+the benchmark runner runs the helper. That produced three rounds of plausible
+timings here, all agreeing with each other and all measuring the wrong
+function, before the reference interpreter disagreed with them. Check the
+result against `ir/execute` before believing a duration.
+
 ### The store goes at the definition
 
 A spill store left where the register ran out can sit inside one arm of a

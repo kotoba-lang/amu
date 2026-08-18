@@ -1,0 +1,17 @@
+;; The same calls and the same executed arithmetic as kernel_call, with one
+;; `if` around it whose taken arm is identical. Nothing about the work differs;
+;; the only difference is that this function contains control flow as well as
+;; calls, which sends it to the conservative all-vreg path where every value
+;; gets a stack slot whether or not anything was short of registers.
+(ns kernel-call-branch (:export [kernel]))
+
+(defn step [x :i64] :i64
+  (let [v (+ (* x 48271) 1)]
+    (- v (* (quot v 2147483647) 2147483647))))
+
+(defn kernel [n :i64] :i64
+  (let [a (step n) b (step (+ n 1)) c (step (+ n 2)) d (step (+ n 3))
+        e (step a) f (step b) g (step c) h (step d)]
+    (if (= n 0)
+      0
+      (+ (+ (+ a b) (+ c d)) (+ (+ e f) (+ g h))))))
