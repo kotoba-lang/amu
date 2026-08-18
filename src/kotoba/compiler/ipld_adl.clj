@@ -223,7 +223,7 @@
 (defn wasmtime-capability
   "Create an `ipld-adl-wasm-v1` capability backed by RUNNER.
 
-  RUNNER is the binary built by `scripts/build-ipld-adl-wasmtime.sh`. Every
+  RUNNER is the binary built by `scripts/build-ipld-adl-wasmtime.cljs`. Every
   invocation uses a fresh Wasmtime Store, admits no guest imports, enforces the
   request fuel/output/memory limits in the engine, and interrupts at TIMEOUT-MS.
   MODULE-CID remains independently re-derived by io-ipld before this adapter is
