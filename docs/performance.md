@@ -298,43 +298,37 @@ moves with contention, the direction does not.
 Byte-identical for everything that already fit. The two workloads inside the
 pool do not touch this path at all.
 
-### Most of that 1.44x was the benchmark runner
+### Most of that 1.44x was the benchmark runner, and the rest is inside noise
 
 The runner resolved its ISA argument with `strcmp` inside the timed loop. On a
-4-byte `ret` that cost ~5 ns per call; on `kernel_wide` it cost 2.8. Hoisting it
-out and re-running the same rotation, AArch64 native, `kernel_wide`:
+4-byte `ret` that cost ~5 ns per call; on `kernel_wide` it cost 2.8. With it
+hoisted out, `kernel_wide` on AArch64 was re-measured twice, independently:
 
-| | min ns/call | |
-|---|---:|---:|
-| LLVM `rustc --edition 2021 -C opt-level=3` | 6.36 | 1.00x |
-| Amu native | 6.45 | **1.015x** |
+| | host | load | Amu | LLVM `-C opt-level=3` |
+|---|---|---:|---:|---:|
+| codegen co-scientist 14 | judah, Apple M4 mini | quiet | 5.85 ns | 5.80 ns |
+| codegen co-scientist 15 | this workstation | 18-21 | 6.45 ns | 6.36 ns |
 
-Measured 2026-08-18 at load average 18-21, 60 rotated samples each, 100,000
-calls after 20,000 warmup, every sample agreeing with the reference
-interpreter at 5,224,842,816. Re-run with the rotation order reversed: 6.450
-and 6.356, ratio 1.015.
+**`perfgate.core/qualify` refuses to certify a difference here, and that
+refusal is the result.** On the quiet host: mean improvement -1.05%, gap
+0.062 ns against a summed standard deviation of 0.240, `:qualified? false`,
+no claim artifact. Amu and LLVM are not separated by this experiment. The
+standing 1.44x is superseded because 2.77 ns of it was the harness -- not
+because anything overtook anything.
 
-**The reference is the anchor, and it is why these numbers can be believed on a
-loaded host.** The LLVM binary is the same source built with the same flags as
-the 1.44x rotation, so its correct value is already known: 6.42. It reads 6.36
-here, one percent apart, which is what says these samples caught uncontended
-slices rather than that contention flattered Amu. Amu's own change over the
-same interval is 9.22 to 6.45 — 2.77 ns, against the 2.8 ns of `strcmp` that
-was removed. Both quantities land where they were predicted to.
+Both rows used 100,000 calls after warmup with every sample agreeing with the
+reference interpreter at 5,224,842,816.
 
-Three earlier attempts at this rematch did not have that anchor and were wrong
-in both directions. Building the reference with `-O` instead of `-C
-opt-level=3` made Amu look level at 11 ns each. Lengthening the timed region to
-2,000,000 calls drove the ratio to exactly 1.000 at 10 ns each -- on a
-heterogeneous CPU under load, a longer run is more contaminated, not less,
-because the scheduler migrates it onto efficiency cores. **A contended
-measurement compresses ratios toward parity, so on this host a favourable
-result needs more scrutiny than an unfavourable one, not less.**
-
-What is left is 1.5% on an eight-lane leaf, which this experiment does not
-separate from measurement noise. It is not a claim that Amu matches LLVM in
-general: it is one kernel, one ISA, and the workload that still has a real gap
-is the one below, where functions that call something take the other path.
+**On a loaded host, read a favourable ratio with more suspicion than an
+unfavourable one.** Contention compresses ratios toward 1.000, so parity is
+what a contaminated measurement looks like. Three attempts here read parity
+and were all wrong: the reference built with `-O` instead of `-C opt-level=3`
+(worth 2 ns), a 2,000,000-call timed region that the scheduler migrated onto
+efficiency cores and that drove the ratio to exactly 1.000, and a rotation
+whose reference alone moved 39% between runs. What made the fourth readable
+was measuring, in the same rotation, a quantity whose correct value was
+already known: the same LLVM binary that read 6.42 in the 1.44x rotation reads
+6.36 here.
 
 ### Functions that call something have their own path, and it is the old one
 
