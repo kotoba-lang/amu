@@ -24,6 +24,7 @@
             [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]
             [kotoba.gmir :as gmir]
+            [kotoba.mir :as mir]
             [kotoba.native.machine-ir :as machine-ir]))
 
 ;; loader argv name -> [cc -arch value, compiler target]
@@ -917,3 +918,84 @@
         (let [report (run-native isa source)]
           (is (not (str/includes? report "KEXE_TRAP")) (str/trim report))
           (is (str/includes? report ":result 1577") (str/trim report)))))))
+
+(def ^:private call-and-back-edge-module
+  "Same shape as kotoba-mir/test `call-and-back-edge-module`: a compiled
+  function with a call and a backward jump, `acc` live across both.
+  Kotoba `loop/recur` is a recursive helper, so source tests do not span this."
+  (let [n0 (gmir/vreg 0)
+        acc0 (gmir/vreg 1)
+        n (gmir/vreg 2)
+        acc (gmir/vreg 3)
+        one (gmir/vreg 4)
+        stepped (gmir/vreg 5)
+        acc1 (gmir/vreg 6)
+        n1 (gmir/vreg 7)]
+    {:gmir/version 3
+     :gmir/entry 'count-loop
+     :gmir/functions
+     [{:gmir/name 'id :gmir/arity 1
+       :gmir/instructions
+       [{:gmir/op :gmir/argument :gmir/dst (gmir/vreg 0) :gmir/index 0}
+        {:gmir/op :gmir/return :gmir/value (gmir/vreg 0)}]}
+      {:gmir/name 'count-loop :gmir/arity 1
+       :gmir/instructions
+       [{:gmir/op :gmir/label :gmir/id :test.label/preheader}
+        {:gmir/op :gmir/argument :gmir/dst n0 :gmir/index 0}
+        {:gmir/op :gmir/constant :gmir/dst acc0 :gmir/value 0}
+        {:gmir/op :gmir/jump :gmir/target :test.label/header}
+        {:gmir/op :gmir/label :gmir/id :test.label/header}
+        {:gmir/op :gmir/phi :gmir/dst n
+         :gmir/incomings [{:gmir/predecessor :test.label/preheader :gmir/value n0}
+                          {:gmir/predecessor :test.label/latch :gmir/value n1}]}
+        {:gmir/op :gmir/phi :gmir/dst acc
+         :gmir/incomings [{:gmir/predecessor :test.label/preheader :gmir/value acc0}
+                          {:gmir/predecessor :test.label/latch :gmir/value acc1}]}
+        {:gmir/op :gmir/branch-zero :gmir/test n :gmir/target :test.label/done}
+        {:gmir/op :gmir/label :gmir/id :test.label/body}
+        {:gmir/op :gmir/constant :gmir/dst one :gmir/value 1}
+        {:gmir/op :gmir/call :gmir/dst stepped :gmir/callee 'id
+         :gmir/arguments [one]}
+        {:gmir/op :gmir/add :gmir/dst acc1 :gmir/left acc :gmir/right stepped}
+        {:gmir/op :gmir/subtract :gmir/dst n1 :gmir/left n :gmir/right one}
+        {:gmir/op :gmir/label :gmir/id :test.label/latch}
+        {:gmir/op :gmir/jump :gmir/target :test.label/header}
+        {:gmir/op :gmir/label :gmir/id :test.label/done}
+        {:gmir/op :gmir/return :gmir/value acc}]}]}))
+
+(defn- run-call-and-back-edge [isa n]
+  (let [target (case isa "x86_64" :x86-64 "aarch64" :aarch64)
+        encoded (machine-ir/encode-mc-module
+                 (machine-ir/compile-gmir target call-and-back-edge-module))
+        offset (get-in encoded [:exports 'count-loop :offset])]
+    (run-code isa (:code encoded) offset "-" [n])))
+
+(deftest a-call-and-a-back-edge-in-one-function-execute
+  ;; Iteration 21: do not remove back-edge? against a corpus that has no
+  ;; compiled call+loop. This is that function. The predicate still fires;
+  ;; turning it off does not change the policy, because the linear scanner
+  ;; cannot complete the loop and spill-falls back to the same all-vreg
+  ;; path. That is why this file does not remove the predicate.
+  (let [target-mc (fn [target]
+                    (let [looper (->> (machine-ir/compile-gmir target call-and-back-edge-module)
+                                      :mc/functions
+                                      (filter #(= 'count-loop (:mc/name %)))
+                                      first)]
+                      ((juxt :mc/frame-policy :mc/frame-slots) looper)))
+        calls (atom 0)]
+    (is (= [:all-vregs 8] (target-mc :aarch64)))
+    (is (= [:all-vregs 8] (target-mc :x86-64)))
+    (is (= [:all-vregs 8]
+           (with-redefs [mir/back-edge? (fn [_]
+                                          (swap! calls inc)
+                                          false)]
+             (target-mc :aarch64)))
+        "scanner spill-fallback, not back-edge?, selects all-vreg on this loop")
+    (is (pos? @calls) "the override ran; green is not an unapplied redef"))
+  (doseq [[isa loader] @loaders :when loader
+          [n expected] [[0 0] [1 1] [5 5] [50 50]]]
+    (testing (str isa " n=" n)
+      (let [report (run-call-and-back-edge isa n)]
+        (is (not (str/includes? report "KEXE_TRAP")) (str/trim report))
+        (is (str/includes? report (str ":result " expected))
+            (str/trim report))))))
