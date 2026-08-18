@@ -8,7 +8,7 @@
   (get-in (edn/read-string (slurp "deps.edn")) [:deps coordinate :git/sha]))
 
 (deftest pinned-closure-carries-the-complete-native-boundary
-  (is (= "40de27fd0c5f0fe624c59f7d3289267d926c62ef"
+  (is (= "3590be305f52ed28ac33a19f00eed454fd4afc47"
          (dependency-pin 'io.github.kotoba-lang/kotoba-native)))
   (is (= "f3d255b52f85040815057426f5da557714b09b3a"
          (dependency-pin 'io.github.kotoba-lang/kotoba-kir)))
@@ -94,7 +94,7 @@
         (is (not-any? #(contains? spill-encodings (:mc/encoding %))
                       (mapcat :mc/instructions [callee caller])) target)))))
 
-(deftest pinned-closure-carries-the-one-slot-five-argument-entry
+(deftest five-argument-entries-no-longer-spill-the-excess-input
   (let [module {:format :kotoba.kir/v4
                 :exports ['main]
                 :functions
@@ -109,12 +109,17 @@
             functions [callee caller]
             store-encoding (keyword (name target) "spill-store")
             load-encoding (keyword (name target) "spill-load")]
-        (is (= [1 1] (mapv :mc/frame-slots functions)) target)
+        ;; A fifth live argument used to exhaust the four-register allocator
+        ;; and get backed directly from its ABI register: one slot, one store,
+        ;; one lazy reload, in each of the two functions. The pool now reaches
+        ;; past four, so five arguments all arrive in registers and neither
+        ;; function touches the stack.
+        (is (= [0 0] (mapv :mc/frame-slots functions)) target)
         (is (= [:allocator :call-live]
                (mapv :mc/frame-policy functions)) target)
         (doseq [function functions]
           (let [encodings (map :mc/encoding (:mc/instructions function))]
-            (is (= 1 (count (filter #{store-encoding} encodings)))
+            (is (zero? (count (filter #{store-encoding} encodings)))
                 [target (:mc/name function)])
-            (is (= 1 (count (filter #{load-encoding} encodings)))
+            (is (zero? (count (filter #{load-encoding} encodings)))
                 [target (:mc/name function)])))))))

@@ -606,7 +606,11 @@
       (let [mc (machine-ir/compile-gmir target gmir)
             encodings (keep :mc/encoding (:mc/instructions mc))]
         (is (zero? (:mc/frame-slots mc)) target)
-        (is (= (if (= :x86-64 target) 3 2)
+        ;; None on AArch64: its leaf tier is wide enough that both edges of the
+        ;; join already reach the register the phi wants, so the transports
+        ;; disappear rather than being scheduled. x86-64 offers two leaf
+        ;; registers and still needs its three.
+        (is (= (if (= :x86-64 target) 3 0)
                (count (filter #(= (keyword (name target) "move") %) encodings)))
             target)
         (is (not-any? #(contains? #{(keyword (name target) "spill-load")
