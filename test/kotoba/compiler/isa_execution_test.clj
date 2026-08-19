@@ -940,9 +940,12 @@
         {:gmir/op :gmir/return :gmir/value (gmir/vreg 0)}]}
       {:gmir/name 'count-loop :gmir/arity 1
        :gmir/instructions
-       [{:gmir/op :gmir/label :gmir/id :test.label/preheader}
-        {:gmir/op :gmir/argument :gmir/dst n0 :gmir/index 0}
+       ;; Iteration 24: argument + acc0 are a prefix so entry-argument-plan
+       ;; can start. Phi predecessors stay :test.label/preheader. The jump
+       ;; still sits in the preheader block (label then jump).
+       [{:gmir/op :gmir/argument :gmir/dst n0 :gmir/index 0}
         {:gmir/op :gmir/constant :gmir/dst acc0 :gmir/value 0}
+        {:gmir/op :gmir/label :gmir/id :test.label/preheader}
         {:gmir/op :gmir/jump :gmir/target :test.label/header}
         {:gmir/op :gmir/label :gmir/id :test.label/header}
         {:gmir/op :gmir/phi :gmir/dst n
@@ -971,11 +974,8 @@
     (run-code isa (:code encoded) offset "-" [n])))
 
 (deftest a-call-and-a-back-edge-in-one-function-execute
-  ;; Iteration 21: do not remove back-edge? against a corpus that has no
-  ;; compiled call+loop. This is that function. The predicate still fires;
-  ;; turning it off does not change the policy, because the linear scanner
-  ;; cannot complete the loop and spill-falls back to the same all-vreg
-  ;; path. That is why this file does not remove the predicate.
+  ;; Iteration 24 located :non-prefix-argument on this loop. This file
+  ;; executes the scanner path with that prefix. Do not remove back-edge?.
   (let [target-mc (fn [target]
                     (let [looper (->> (machine-ir/compile-gmir target call-and-back-edge-module)
                                       :mc/functions
@@ -985,17 +985,25 @@
         calls (atom 0)]
     (is (= [:all-vregs 8] (target-mc :aarch64)))
     (is (= [:all-vregs 8] (target-mc :x86-64)))
-    (is (= [:all-vregs 8]
-           (with-redefs [mir/back-edge? (fn [_]
-                                          (swap! calls inc)
-                                          false)]
-             (target-mc :aarch64)))
-        "scanner spill-fallback, not back-edge?, selects all-vreg on this loop")
-    (is (pos? @calls) "the override ran; green is not an unapplied redef"))
+    (with-redefs [mir/back-edge? (fn [_]
+                                   (swap! calls inc)
+                                   false)]
+      (is (= :call-live (first (target-mc :aarch64)))
+          "scanner path policy; slot count is not the claim")
+      (is (= :call-live (first (target-mc :x86-64)))
+          "scanner path policy; slot count is not the claim")
+      (doseq [[isa loader] @loaders :when loader
+              n [0 1 5 50]]
+        (testing (str isa " scanner n=" n)
+          (let [report (run-call-and-back-edge isa n)]
+            (is (not (str/includes? report "KEXE_TRAP")) (str/trim report))
+            (is (str/includes? report (str ":result " n))
+                (str/trim report)))))
+      (is (pos? @calls) "the override ran; green is not an unapplied redef")))
   (doseq [[isa loader] @loaders :when loader
-          [n expected] [[0 0] [1 1] [5 5] [50 50]]]
-    (testing (str isa " n=" n)
+          n [0 1 5 50]]
+    (testing (str isa " production n=" n)
       (let [report (run-call-and-back-edge isa n)]
         (is (not (str/includes? report "KEXE_TRAP")) (str/trim report))
-        (is (str/includes? report (str ":result " expected))
+        (is (str/includes? report (str ":result " n))
             (str/trim report))))))
