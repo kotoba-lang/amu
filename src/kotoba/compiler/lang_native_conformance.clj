@@ -112,9 +112,35 @@
                                (not= :skipped (:status %)))
                          results)
          passed (count (filter :ok? results))]
-     {:ok? (and (empty? failed)
-                (or (seq skipped) ; skip-all is soft ok when dep missing
-                    (= passed (count cases))))
+     {;; `:ok?` is a claim about the NATIVE BACKEND, so it may only be true when
+      ;; the backend was actually exercised. Two ways it used to be true without
+      ;; that, both measured 2026-08-19 on this suite:
+      ;;
+      ;;   nothing ran   `tender-native-available?` false -> all 20 cases return
+      ;;                 :skipped, `failed` is empty, and the old
+      ;;                 `(or (seq skipped) ...)` made :ok? TRUE with passed 0.
+      ;;   nothing to run  `(run-suite {:cases []})` -> passed 0, (count cases) 0,
+      ;;                 `(= passed (count cases))` is true, so :ok? TRUE again.
+      ;;
+      ;; Both are ADR-2608136000's first two questions -- what does this check
+      ;; return when its input is absent, and when it cannot execute at all? A
+      ;; value equal to a pass is the defect. `-main` exited 0 in both cases, and
+      ;; the test guarded its own count assertion behind `(when-not (:skipped?
+      ;; report))`, so the one assertion that would have caught it was skipped by
+      ;; the same condition that caused it.
+      ;;
+      ;; Latent rather than active: measured on this workstation the suite really
+      ;; does run 20/20 against :aarch64-kotoba-v1. The `:test` alias carries
+      ;; kototama-native as an extra-dep, so the skip path is reached only when
+      ;; that dependency cannot be resolved -- which is exactly when a green
+      ;; would be worth least.
+      :status (cond (empty? cases) :no-cases
+                    (seq skipped) :could-not-measure
+                    :else :measured)
+      :ok? (boolean (and (empty? failed)
+                         (seq cases)
+                         (empty? skipped)
+                         (= passed (count cases))))
       :skipped? (boolean (seq skipped))
       :total (count results)
       :passed passed
@@ -127,13 +153,23 @@
 
 (defn -main
   "CLI: clojure -M:test -m kotoba.compiler.lang-native-conformance
-   (needs tender-native on classpath — use :test or :native-run alias)"
+   (needs tender-native on classpath — use :test or :native-run alias)
+
+   Exit codes: 0 measured and passed, 1 measured and failed, 2 could not
+   measure. The third is the point: 'the native backend is fine' and 'the
+   native backend was never reached' must not leave by the same door."
   [& _]
-  (let [report (run-suite)]
+  (let [report (run-suite)
+        measured? (= :measured (:status report))]
     (println "lang-conformance T1.4 pure-native:"
              (:passed report) "/" (:total report)
-             (if (:skipped? report) "(skipped tender-native)" "passed")
+             (case (:status report)
+               :measured (if (:ok? report) "passed" "FAILED")
+               :could-not-measure "COULD NOT MEASURE (tender-native absent)"
+               :no-cases "COULD NOT MEASURE (manifest has no cases)")
              "target" (:target report))
     (doseq [f (:failed report)]
       (println " FAIL" (pr-str f)))
-    (System/exit (if (:ok? report) 0 1))))
+    (System/exit (cond (not measured?) 2
+                       (:ok? report) 0
+                       :else 1))))
