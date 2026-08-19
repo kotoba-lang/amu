@@ -234,20 +234,35 @@ static struct kexe_shared_v3 *fuzz_open(struct fuzz_cursor *cursor,
   struct kexe_shared_v3 *shared = (struct kexe_shared_v3 *)malloc(sizeof *shared);
   if (shared == NULL) return NULL;
   memset(shared, 0, sizeof *shared);
-  uint64_t code_length = (uint64_t)(take_u8(cursor) % 129u);
+  /* At least one byte, never zero -- `main` refuses `length <= 0` before it
+   * maps anything, so a live context always has a non-NULL `code_base` over at
+   * least one byte. An empty region is a state the loader cannot be in, and
+   * constructing one here made the harness report a defect that production
+   * cannot reach: with `code_base` NULL and a zero-length string handle,
+   * `resolve_string_bytes` evaluates `code_base + 0`, and UBSan called it
+   * `applying zero offset to null pointer`.
+   *
+   * That report is version-dependent, which is the more useful half of the
+   * lesson. C23 made `NULL + 0` well defined; Apple clang 21 on the authoring
+   * workstation says nothing, Apple clang 17 on fleet node simeon fails the
+   * run. The gate was green locally and red on the fleet for a difference that
+   * is neither in the loader nor in the input. `scripts/fuzz-native.cljs` now
+   * records the compiler in the summary so a verdict carries the toolchain
+   * that produced it.
+   *
+   * The repair is fidelity, not suppression: remove the unreachable state
+   * rather than teach the loader about a NULL it never receives. */
+  uint64_t code_length = 1u + (uint64_t)(take_u8(cursor) % 128u);
   /* Half the artifacts carry ASCII literal data. Uniformly random bytes fail
    * `valid_utf8` almost always, and every string operation checks it before
    * touching a byte, so an all-random region would leave those bodies
    * unreached -- the same blindness the reach counters exist to catch. */
   int ascii = (take_u8(cursor) & 1u) != 0;
-  uint8_t *code = NULL;
-  if (code_length > 0) {
-    code = (uint8_t *)malloc((size_t)code_length);
-    if (code == NULL) { free(shared); return NULL; }
-    for (uint64_t i = 0; i < code_length; i++) {
-      uint8_t byte = take_u8(cursor);
-      code[i] = ascii ? (uint8_t)(0x20u + (byte % 0x5fu)) : byte;
-    }
+  uint8_t *code = (uint8_t *)malloc((size_t)code_length);
+  if (code == NULL) { free(shared); return NULL; }
+  for (uint64_t i = 0; i < code_length; i++) {
+    uint8_t byte = take_u8(cursor);
+    code[i] = ascii ? (uint8_t)(0x20u + (byte % 0x5fu)) : byte;
   }
   shared->context.version = 3;
   shared->context.fuel = 512;

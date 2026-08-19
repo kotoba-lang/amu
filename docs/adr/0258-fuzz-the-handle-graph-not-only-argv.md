@@ -122,11 +122,48 @@ it claims to test, and the report named that thing:
 Unmodified, 20,000 deterministic ASan/UBSan cases pass with every reach counter
 non-zero.
 
-`scripts/fleet-ci/gates/amu-native-fuzz-check.cljs` could not be run end to end
-on the authoring workstation: npm 11.12.1 breaks `npx --yes nbb <args>`, the
-known local defect. The wrapper's own assertions were exercised with `npx`
-swapped for the local `nbb` and passed; the wrapper itself is unchanged and the
-fleet nodes run it.
+`scripts/fleet-ci/gates/amu-native-fuzz-check.cljs` runs end to end on fleet
+node simeon against this tree: exit 0, `OK — native parser baseline fresh +
+20,000 sanitized fuzz cases passed`. It still cannot be run on the authoring
+workstation, where npm 11.12.1 breaks `npx --yes nbb <args>`; a node with a
+working npx is where that verification belongs.
+
+## Correction, 2026-08-19: the harness built a state the loader cannot be in
+
+The gate passed here and **failed on the fleet** on its first real run
+(`amu-native-fuzz :fail ac3a117`, node simeon). Reproduced by shipping the tree
+to that node:
+
+    kexe_loader.c:495:31: runtime error: applying zero offset to null pointer
+      #0 resolve_string_bytes
+      #1 checked_string_substring kexe_loader.c:1157
+
+This is **not a loader defect, and it is not reachable in production**. `main`
+refuses `length <= 0` before it maps anything, so a live context always has a
+non-NULL `code_base` over at least one byte. `fuzz_open` drew `code_length` from
+`% 129`, so one input in 129 handed the loader a NULL region -- a context the
+loader cannot be handed. With `code_base` NULL and a zero-length string handle,
+`resolve_string_bytes` evaluates `code_base + 0`.
+
+The repair is fidelity: the region is now `1 + (byte % 128)` and always
+allocated. Teaching `resolve_string_bytes` about a NULL it never receives would
+have added dead code, changed `kexe_loader.c`, and invalidated its baseline
+sha -- for a state that does not exist.
+
+**The version dependence is the more useful half.** C23 made `NULL + 0` well
+defined. Apple clang 21 on the authoring workstation says nothing; Apple clang
+17 on simeon fails the run. Same source, same seed, same 20,000 inputs, same
+architecture -- **green here, red there, for a difference in neither the loader
+nor the input**. This is CLAUDE.md's "ローカルで緑 は fleet で緑 ではない" in a
+form that tree-shape reasoning does not cover: nothing about what was shipped
+explains it.
+
+So `scripts/fuzz-native.cljs` now records the compiler in the summary. A
+sanitizer verdict is a property of the toolchain as much as of the code, and a
+receipt that does not name the compiler cannot be compared with one from
+another node. Measured after the fix, the reach counters are **byte-identical**
+under clang 17 and clang 21 -- the run is deterministic across both; only the
+sanitizer's opinion differed.
 
 ## What this does NOT claim
 
