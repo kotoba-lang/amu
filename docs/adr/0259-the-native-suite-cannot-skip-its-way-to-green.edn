@@ -1,0 +1,26 @@
+{:adr/id 259
+ :status :accepted
+ :decision :the-native-suite-cannot-skip-its-way-to-green
+ :subject "kotoba.compiler.lang-native-conformance"
+ :defect-class :could-not-measure-returns-what-a-pass-returns
+ :related {:superproject "ADR-2608136000" :sibling-fix "amu ADR 0258 reach floor"}
+ :was {:ok?-when-all-skipped true
+       :ok?-when-manifest-empty true
+       :ok?-type :not-a-boolean-the-seq-of-skipped-cases
+       :main-exit 0
+       :test-guard "(when-not (:skipped? report) ...) hid the count assertion"}
+ :now {:status #{:measured :could-not-measure :no-cases}
+       :ok?-requires [:no-failures :at-least-one-case :no-skips :all-passed]
+       :main-exit {:measured-pass 0 :measured-fail 1 :could-not-measure 2}}
+ :latent? true
+ :latent-because :workstation-runs-20-of-20-on-aarch64-kotoba-v1
+ :observed :mechanism-driven-with-redefs-not-a-ci-receipt
+ :evidence {:tests 3 :assertions 35
+            :paths {:dependency-absent :could-not-measure
+                    :empty-manifest :no-cases
+                    :two-failing-cases :measured-and-false}
+            :discrimination "restoring the old :ok? fails exactly the two new assertions"
+            :full-suite {:tests 1099 :assertions 8302 :failures 0}}
+ :non-claims #{:a-false-green-was-emitted-in-ci
+               :change-to-native-coverage
+               :other-conformance-suites-audited}}
