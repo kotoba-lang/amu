@@ -974,35 +974,20 @@
     (run-code isa (:code encoded) offset "-" [n])))
 
 (deftest a-call-and-a-back-edge-in-one-function-execute
-  ;; Iteration 24 located :non-prefix-argument on this loop. This file
-  ;; executes the scanner path with that prefix. Do not remove back-edge?.
+  ;; Iteration 24 located :non-prefix-argument on this loop. Iteration 27
+  ;; showed the production all-vreg asserts were the only suite delta with
+  ;; back-edge? false. Production is the scanner path.
   (let [target-mc (fn [target]
                     (let [looper (->> (machine-ir/compile-gmir target call-and-back-edge-module)
                                       :mc/functions
                                       (filter #(= 'count-loop (:mc/name %)))
                                       first)]
-                      ((juxt :mc/frame-policy :mc/frame-slots) looper)))
-        calls (atom 0)]
-    (is (= [:all-vregs 8] (target-mc :aarch64)))
-    (is (= [:all-vregs 8] (target-mc :x86-64)))
-    (with-redefs [mir/back-edge? (fn [_]
-                                   (swap! calls inc)
-                                   false)]
-      (is (= :call-live (first (target-mc :aarch64)))
-          "scanner path policy; slot count is not the claim")
-      (is (= :call-live (first (target-mc :x86-64)))
-          "scanner path policy; slot count is not the claim")
-      (doseq [[isa loader] @loaders :when loader
-              n [0 1 5 50]]
-        (testing (str isa " scanner n=" n)
-          (let [report (run-call-and-back-edge isa n)]
-            (is (not (str/includes? report "KEXE_TRAP")) (str/trim report))
-            (is (str/includes? report (str ":result " n))
-                (str/trim report)))))
-      (is (pos? @calls) "the override ran; green is not an unapplied redef")))
+                      ((juxt :mc/frame-policy :mc/frame-slots) looper)))]
+    (is (= [:call-live 0] (target-mc :aarch64)))
+    (is (= [:call-live 0] (target-mc :x86-64))))
   (doseq [[isa loader] @loaders :when loader
           n [0 1 5 50]]
-    (testing (str isa " production n=" n)
+    (testing (str isa " n=" n)
       (let [report (run-call-and-back-edge isa n)]
         (is (not (str/includes? report "KEXE_TRAP")) (str/trim report))
         (is (str/includes? report (str ":result " n))
@@ -1107,30 +1092,25 @@
   ;; Iteration 25 executed the scanner path with no pressure spill.
   ;; This file puts five loop-invariants whose last-use is after the latch
   ;; so the interval covers the back-edge, then exhausts the scratch tier.
-  ;; Do not remove back-edge?. Slot count is not the claim; presence of
-  ;; spill-store/load under the override is.
-  (let [calls (atom 0)]
-    (is (= :all-vregs (:mc/frame-policy (pressure-looper :aarch64))))
-    (is (= :all-vregs (:mc/frame-policy (pressure-looper :x86-64))))
-    (with-redefs [mir/back-edge? (fn [_]
-                                   (swap! calls inc)
-                                   false)]
-      (with-scratch-tier-only
-        (doseq [target [:aarch64 :x86-64]]
-          (let [looper (pressure-looper target)
-                [stores loads] (spill-op-counts target looper)]
-            (is (= :call-live (:mc/frame-policy looper)) target)
-            (is (pos? stores) (str target " must store; otherwise this is not a spill"))
-            (is (pos? loads) (str target " must load; otherwise this is not a spill"))))
-        (doseq [[isa loader] @loaders :when loader
-                n [0 1 5 50]]
-          (testing (str isa " scanner-spill n=" n)
-            (let [report (run-pressure-loop isa n)
-                  expected (+ n 31)]
-              (is (not (str/includes? report "KEXE_TRAP")) (str/trim report))
-              (is (str/includes? report (str ":result " expected))
-                  (str/trim report))))))
-      (is (pos? @calls) "the override ran; green is not an unapplied redef")))
+  ;; Production is :call-live. Slot count is not the claim; presence of
+  ;; spill-store/load under the scratch-only pool is.
+  (is (= :call-live (:mc/frame-policy (pressure-looper :aarch64))))
+  (is (= :call-live (:mc/frame-policy (pressure-looper :x86-64))))
+  (with-scratch-tier-only
+    (doseq [target [:aarch64 :x86-64]]
+      (let [looper (pressure-looper target)
+            [stores loads] (spill-op-counts target looper)]
+        (is (= :call-live (:mc/frame-policy looper)) target)
+        (is (pos? stores) (str target " must store; otherwise this is not a spill"))
+        (is (pos? loads) (str target " must load; otherwise this is not a spill"))))
+    (doseq [[isa loader] @loaders :when loader
+            n [0 1 5 50]]
+      (testing (str isa " scanner-spill n=" n)
+        (let [report (run-pressure-loop isa n)
+              expected (+ n 31)]
+          (is (not (str/includes? report "KEXE_TRAP")) (str/trim report))
+          (is (str/includes? report (str ":result " expected))
+              (str/trim report))))))
   (doseq [[isa loader] @loaders :when loader
           n [0 1 5 50]]
     (testing (str isa " production n=" n)
