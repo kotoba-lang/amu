@@ -32,6 +32,19 @@
 (defn- check [name ok? detail]
   {:name name :ok? (boolean ok?) :detail (when-not ok? detail)})
 
+(defn- refusal
+  "What THUNK refused with: the exception's ex-data plus its :message, or nil
+  when it did not refuse.
+
+  Cases assert the structured keys where the provider carries one that
+  identifies the guard -- :phase plus the operand it rejected -- and the
+  message only where it does not. A message is not the contract: measured
+  2026-08-18, three cases in this directory matched wording that belonged to a
+  guard behind the one that actually fired, and failed while the property in
+  their own name still held."
+  [thunk]
+  (try (thunk) nil (catch :default e (assoc (or (ex-data e) {}) :message (.-message e)))))
+
 (defn- declarative-case []
   (try
     (let [{:keys [kit runtime]} (hosted)
@@ -61,15 +74,19 @@
 (defn- stale-revision-case []
   (try
     (let [{:keys [runtime]} (hosted)
-          threw?
-          (try
-            ((:invoke runtime) 'commit
-             [[ui/commit-request-type i64/one [ui/node-set-type []]]])
-            false
-            (catch :default e
-              (boolean (re-find #"revision conflict" (.-message e)))))]
-      (check "cljs-stale-view-revisions-fail-closed" threw?
-             (pr-str {:threw? threw?})))
+          denial
+          (refusal #((:invoke runtime) 'commit
+                     [[ui/commit-request-type i64/one [ui/node-set-type []]]]))]
+      (check "cljs-stale-view-revisions-fail-closed"
+             ;; The revisions it compared, not the wording -- and the pair is
+             ;; worth pinning because the names read the other way round from
+             ;; the guest's side: measured 2026-08-18, :expected is the view's
+             ;; current revision (0) and :actual is the one the request carried
+             ;; (1), not the reverse.
+             (and (= :ui-provider (:phase denial))
+                  (= i64/zero (:expected denial))
+                  (= i64/one (:actual denial)))
+             (pr-str {:denial denial})))
     (catch :default e
       (check "cljs-stale-view-revisions-fail-closed" false (.-message e)))))
 
@@ -80,17 +97,21 @@
                         [ui/node-type (keyword "n" (str i))
                          [ui/parent-type false] :ui/text "x"])
                       (range (inc ui/max-nodes)))
-          threw?
-          (try
-            ((:invoke runtime) 'commit
-             [[ui/commit-request-type i64/zero [ui/node-set-type nodes]]])
-            false
-            (catch :default e
-              (boolean (re-find #"(node limit|typed set)" (.-message e)))))
+          denial
+          (refusal #((:invoke runtime) 'commit
+                     [[ui/commit-request-type i64/zero [ui/node-set-type nodes]]]))
           snap ((:snapshot kit))]
       (check "cljs-node-limit-fails-before-mutation"
-             (and threw? (= i64/zero (:revision snap)))
-             (pr-str {:threw? threw? :revision (:revision snap)})))
+             ;; The alternation this replaced -- #"(node limit|typed set)" --
+             ;; admitted two wordings because it was not settled which guard
+             ;; fires. It is the value codec, not the provider: measured
+             ;; 2026-08-18 the refusal is {:phase :value, :limit 32}, and 32 is
+             ;; ui/max-nodes, so the bound is asserted from the authority
+             ;; rather than from a literal.
+             (and (= :value (:phase denial))
+                  (= ui/max-nodes (:limit denial))
+                  (= i64/zero (:revision snap)))
+             (pr-str {:denial denial :revision (:revision snap)})))
     (catch :default e
       (check "cljs-node-limit-fails-before-mutation" false (.-message e)))))
 
@@ -101,22 +122,20 @@
                                            [:cap/call (js/BigInt 10)]}})
           kir (ir/lower hir)
           runtime (runtime/instantiate kir)
-          commit-denied?
-          (try
-            ((:invoke runtime) 'commit
-             [[ui/commit-request-type i64/zero [ui/node-set-type []]]])
-            false
-            (catch :default e
-              (boolean (re-find #"capability denied" (.-message e)))))
-          event-denied?
-          (try
-            ((:invoke runtime) 'next-event [[ui/event-request-type i64/zero]])
-            false
-            (catch :default e
-              (boolean (re-find #"capability denied" (.-message e)))))]
+          commit-denial
+          (refusal #((:invoke runtime) 'commit
+                     [[ui/commit-request-type i64/zero [ui/node-set-type []]]]))
+          event-denial
+          (refusal #((:invoke runtime) 'next-event
+                     [[ui/event-request-type i64/zero]]))]
       (check "cljs-missing-grant-denies-before-provider-invoke"
-             (and commit-denied? event-denied?)
-             (pr-str {:commit-denied? commit-denied? :event-denied? event-denied?})))
+             ;; WHICH capability each call was denied for: capability-kits/
+             ;; ui-v1.edn assigns :ui/commit id 9 and :ui/next-event id 10.
+             (and (= :reference-runtime (:phase commit-denial))
+                  (= (js/BigInt 9) (:capability commit-denial))
+                  (= :reference-runtime (:phase event-denial))
+                  (= (js/BigInt 10) (:capability event-denial)))
+             (pr-str {:commit commit-denial :event event-denial})))
     (catch :default e
       (check "cljs-missing-grant-denies-before-provider-invoke" false (.-message e)))))
 

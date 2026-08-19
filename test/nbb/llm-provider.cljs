@@ -28,6 +28,19 @@
 (defn- check [name ok? detail]
   {:name name :ok? (boolean ok?) :detail (when-not ok? detail)})
 
+(defn- refusal
+  "What THUNK refused with: the exception's ex-data plus its :message, or nil
+  when it did not refuse.
+
+  Cases assert the structured keys where the provider carries one that
+  identifies the guard -- :phase plus the operand it rejected -- and the
+  message only where it does not. A message is not the contract: measured
+  2026-08-18, three cases in this directory matched wording that belonged to a
+  guard behind the one that actually fired, and failed while the property in
+  their own name still held."
+  [thunk]
+  (try (thunk) nil (catch :default e (assoc (or (ex-data e) {}) :message (.-message e)))))
+
 (defn- generation-case []
   (try
     (let [seen (atom nil)
@@ -55,23 +68,23 @@
     (let [called? (atom false)
           runtime (hosted (fn [_] (reset! called? true) {:text "" :finish-reason :llm/stop
                                                          :input-tokens 0 :output-tokens 0}))
-          model-threw?
-          (try
-            ((:invoke runtime) 'generate
-             [[llm/request-type :example/other "" "hello" (js/BigInt 64) i64/zero]])
-            false
-            (catch :default e
-              (boolean (re-find #"model is not allowed" (.-message e)))))
-          budget-threw?
-          (try
-            ((:invoke runtime) 'generate
-             [[llm/request-type :example/text-v1 "" "hello" (js/BigInt 4097) i64/zero]])
-            false
-            (catch :default e
-              (boolean (re-find #"token budget is outside" (.-message e)))))]
+          model-denial
+          (refusal #((:invoke runtime) 'generate
+                     [[llm/request-type :example/other "" "hello"
+                       (js/BigInt 64) i64/zero]]))
+          budget-denial
+          (refusal #((:invoke runtime) 'generate
+                     [[llm/request-type :example/text-v1 "" "hello"
+                       (js/BigInt 4097) i64/zero]]))]
       (check "cljs-models-and-budgets-fail-closed"
-             (and model-threw? budget-threw? (false? @called?))
-             (pr-str {:model-threw? model-threw? :budget-threw? budget-threw?
+             ;; The rejected operand, not the wording: :model and
+             ;; :max-output-tokens are what separate these two guards.
+             (and (= :llm-provider (:phase model-denial))
+                  (= :example/other (:model model-denial))
+                  (= :llm-provider (:phase budget-denial))
+                  (= (js/BigInt 4097) (:max-output-tokens budget-denial))
+                  (false? @called?))
+             (pr-str {:model model-denial :budget budget-denial
                       :called? @called?})))
     (catch :default e
       (check "cljs-models-and-budgets-fail-closed" false (.-message e)))))
@@ -102,16 +115,15 @@
           _ (admission/check hir {:allow #{[:cap/call (js/BigInt 11)]}})
           kir (ir/lower hir)
           runtime (runtime/instantiate kir)
-          denied?
-          (try
-            ((:invoke runtime) 'generate
-             [[llm/request-type :example/text-v1 "" "hello" (js/BigInt 64) i64/zero]])
-            false
-            (catch :default e
-              (boolean (re-find #"capability denied" (.-message e)))))]
+          denial
+          (refusal #((:invoke runtime) 'generate
+                     [[llm/request-type :example/text-v1 "" "hello"
+                       (js/BigInt 64) i64/zero]]))]
       (check "cljs-missing-grant-denies-before-provider-invoke"
-             denied?
-             (pr-str {:denied? denied?})))
+             ;; WHICH capability, not merely that something was denied.
+             (and (= :reference-runtime (:phase denial))
+                  (= (js/BigInt 11) (:capability denial)))
+             (pr-str {:denial denial})))
     (catch :default e
       (check "cljs-missing-grant-denies-before-provider-invoke" false (.-message e)))))
 

@@ -45,6 +45,19 @@
 (defn- check [name ok? detail]
   {:name name :ok? (boolean ok?) :detail (when-not ok? detail)})
 
+(defn- refusal
+  "What THUNK refused with: the exception's ex-data plus its :message, or nil
+  when it did not refuse.
+
+  Cases assert the structured keys where the provider carries one that
+  identifies the guard -- :phase plus the operand it rejected -- and the
+  message only where it does not. A message is not the contract: measured
+  2026-08-18, three cases in this directory matched wording that belonged to a
+  guard behind the one that actually fired, and failed while the property in
+  their own name still held."
+  [thunk]
+  (try (thunk) nil (catch :default e (assoc (or (ex-data e) {}) :message (.-message e)))))
+
 (defn- put-boundary-case []
   (try
     (let [seen (atom nil)
@@ -116,16 +129,19 @@
 (defn- redaction-case []
   (try
     (let [runtime (hosted (fn [_] (throw (js/Error. "secret object URL"))))
-          threw?
-          (try
-            ((:invoke runtime) 'put-block
-             [[object/put-block-request-type :example/blocks "sha256:x" (value/utf8-string->bytes "p")]])
-            false
-            (catch :default e
-              (boolean (re-find #"object provider failed" (.-message e)))))]
+          denial
+          (refusal #((:invoke runtime) 'put-block
+                     [[object/put-block-request-type :example/blocks "sha256:x"
+                       (value/utf8-string->bytes "p")]]))]
       (check "cljs-transport-exceptions-are-redacted"
-             threw?
-             (pr-str {:threw? threw?})))
+             ;; Here the generic message IS the contract, so it stays -- but
+             ;; the property in the name is that the transport's text does not
+             ;; escape, and matching the replacement never checked that. The
+             ;; secret must be absent from everything the refusal carries.
+             (and (= :object-provider (:phase denial))
+                  (= "object provider failed" (:message denial))
+                  (not (re-find #"secret object URL" (pr-str denial))))
+             (pr-str {:denial denial})))
     (catch :default e
       (check "cljs-transport-exceptions-are-redacted" false (.-message e)))))
 
@@ -137,16 +153,16 @@
                                            [:cap/call (js/BigInt 16)]}})
           kir (ir/lower hir)
           runtime (runtime/instantiate kir)
-          denied?
-          (try
-            ((:invoke runtime) 'put-block
-             [[object/put-block-request-type :example/blocks "sha256:x" (value/utf8-string->bytes "p")]])
-            false
-            (catch :default e
-              (boolean (re-find #"capability denied" (.-message e)))))]
+          denial
+          (refusal #((:invoke runtime) 'put-block
+                     [[object/put-block-request-type :example/blocks "sha256:x"
+                       (value/utf8-string->bytes "p")]]))]
       (check "cljs-missing-grant-denies-before-provider-invoke"
-             denied?
-             (pr-str {:denied? denied?})))
+             ;; WHICH capability: three ids are granted above and
+             ;; capability-kits/stream-object-v1.edn gives :object/put-block 15.
+             (and (= :reference-runtime (:phase denial))
+                  (= (js/BigInt 15) (:capability denial)))
+             (pr-str {:denial denial})))
     (catch :default e
       (check "cljs-missing-grant-denies-before-provider-invoke" false (.-message e)))))
 
