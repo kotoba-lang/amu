@@ -1007,3 +1007,135 @@
         (is (not (str/includes? report "KEXE_TRAP")) (str/trim report))
         (is (str/includes? report (str ":result " n))
             (str/trim report))))))
+
+(defmacro ^:private with-scratch-tier-only
+  "Run BODY with only the always-available scratch tier. Same contract as
+  kotoba-mir-test/with-scratch-tier-only: pressure tests have to be able to
+  exhaust the profile."
+  [& body]
+  `(with-redefs [mir/leaf-registers {:x86-64 [] :aarch64 []}
+                 mir/preserved-registers {:x86-64 [] :aarch64 []}]
+     ~@body))
+
+(def ^:private pressure-loop-module
+  "count-loop plus five loop-invariant constants used after the latch, so
+  their textual last-use covers the back-edge. Sum is 31; return is n+31.
+  Under the scratch tier those five plus n/acc do not fit, so the scanner
+  must spill. Iteration 25 executed the no-spill scanner path; this module
+  is the spill-across-back-edge hole."
+  (let [n0 (gmir/vreg 0)
+        acc0 (gmir/vreg 1)
+        k0 (gmir/vreg 2)
+        k1 (gmir/vreg 3)
+        k2 (gmir/vreg 4)
+        k3 (gmir/vreg 5)
+        k4 (gmir/vreg 6)
+        n (gmir/vreg 7)
+        acc (gmir/vreg 8)
+        one (gmir/vreg 9)
+        stepped (gmir/vreg 10)
+        acc1 (gmir/vreg 11)
+        n1 (gmir/vreg 12)
+        t0 (gmir/vreg 13)
+        t1 (gmir/vreg 14)
+        t2 (gmir/vreg 15)
+        t3 (gmir/vreg 16)
+        ret (gmir/vreg 17)]
+    {:gmir/version 3
+     :gmir/entry 'count-loop
+     :gmir/functions
+     [{:gmir/name 'id :gmir/arity 1
+       :gmir/instructions
+       [{:gmir/op :gmir/argument :gmir/dst (gmir/vreg 0) :gmir/index 0}
+        {:gmir/op :gmir/return :gmir/value (gmir/vreg 0)}]}
+      {:gmir/name 'count-loop :gmir/arity 1
+       :gmir/instructions
+       [{:gmir/op :gmir/argument :gmir/dst n0 :gmir/index 0}
+        {:gmir/op :gmir/constant :gmir/dst acc0 :gmir/value 0}
+        {:gmir/op :gmir/constant :gmir/dst k0 :gmir/value 1}
+        {:gmir/op :gmir/constant :gmir/dst k1 :gmir/value 2}
+        {:gmir/op :gmir/constant :gmir/dst k2 :gmir/value 4}
+        {:gmir/op :gmir/constant :gmir/dst k3 :gmir/value 8}
+        {:gmir/op :gmir/constant :gmir/dst k4 :gmir/value 16}
+        {:gmir/op :gmir/label :gmir/id :test.label/preheader}
+        {:gmir/op :gmir/jump :gmir/target :test.label/header}
+        {:gmir/op :gmir/label :gmir/id :test.label/header}
+        {:gmir/op :gmir/phi :gmir/dst n
+         :gmir/incomings [{:gmir/predecessor :test.label/preheader :gmir/value n0}
+                          {:gmir/predecessor :test.label/latch :gmir/value n1}]}
+        {:gmir/op :gmir/phi :gmir/dst acc
+         :gmir/incomings [{:gmir/predecessor :test.label/preheader :gmir/value acc0}
+                          {:gmir/predecessor :test.label/latch :gmir/value acc1}]}
+        {:gmir/op :gmir/branch-zero :gmir/test n :gmir/target :test.label/done}
+        {:gmir/op :gmir/label :gmir/id :test.label/body}
+        {:gmir/op :gmir/constant :gmir/dst one :gmir/value 1}
+        {:gmir/op :gmir/call :gmir/dst stepped :gmir/callee 'id
+         :gmir/arguments [one]}
+        {:gmir/op :gmir/add :gmir/dst acc1 :gmir/left acc :gmir/right stepped}
+        {:gmir/op :gmir/subtract :gmir/dst n1 :gmir/left n :gmir/right one}
+        {:gmir/op :gmir/label :gmir/id :test.label/latch}
+        {:gmir/op :gmir/jump :gmir/target :test.label/header}
+        {:gmir/op :gmir/label :gmir/id :test.label/done}
+        {:gmir/op :gmir/add :gmir/dst t0 :gmir/left k0 :gmir/right k1}
+        {:gmir/op :gmir/add :gmir/dst t1 :gmir/left k2 :gmir/right k3}
+        {:gmir/op :gmir/add :gmir/dst t2 :gmir/left t0 :gmir/right t1}
+        {:gmir/op :gmir/add :gmir/dst t3 :gmir/left t2 :gmir/right k4}
+        {:gmir/op :gmir/add :gmir/dst ret :gmir/left acc :gmir/right t3}
+        {:gmir/op :gmir/return :gmir/value ret}]}]}))
+
+(defn- pressure-looper [target]
+  (->> (machine-ir/compile-gmir target pressure-loop-module)
+       :mc/functions
+       (filter #(= 'count-loop (:mc/name %)))
+       first))
+
+(defn- spill-op-counts [target looper]
+  (let [store (keyword (name target) "spill-store")
+        load (keyword (name target) "spill-load")
+        ins (:mc/instructions looper)]
+    [(count (filter #(= store (:mc/encoding %)) ins))
+     (count (filter #(= load (:mc/encoding %)) ins))]))
+
+(defn- run-pressure-loop [isa n]
+  (let [target (case isa "x86_64" :x86-64 "aarch64" :aarch64)
+        encoded (machine-ir/encode-mc-module
+                 (machine-ir/compile-gmir target pressure-loop-module))
+        offset (get-in encoded [:exports 'count-loop :offset])]
+    (run-code isa (:code encoded) offset "-" [n])))
+
+(deftest a-call-and-a-back-edge-across-a-spill-execute
+  ;; Iteration 25 executed the scanner path with no pressure spill.
+  ;; This file puts five loop-invariants whose last-use is after the latch
+  ;; so the interval covers the back-edge, then exhausts the scratch tier.
+  ;; Do not remove back-edge?. Slot count is not the claim; presence of
+  ;; spill-store/load under the override is.
+  (let [calls (atom 0)]
+    (is (= :all-vregs (:mc/frame-policy (pressure-looper :aarch64))))
+    (is (= :all-vregs (:mc/frame-policy (pressure-looper :x86-64))))
+    (with-redefs [mir/back-edge? (fn [_]
+                                   (swap! calls inc)
+                                   false)]
+      (with-scratch-tier-only
+        (doseq [target [:aarch64 :x86-64]]
+          (let [looper (pressure-looper target)
+                [stores loads] (spill-op-counts target looper)]
+            (is (= :call-live (:mc/frame-policy looper)) target)
+            (is (pos? stores) (str target " must store; otherwise this is not a spill"))
+            (is (pos? loads) (str target " must load; otherwise this is not a spill"))))
+        (doseq [[isa loader] @loaders :when loader
+                n [0 1 5 50]]
+          (testing (str isa " scanner-spill n=" n)
+            (let [report (run-pressure-loop isa n)
+                  expected (+ n 31)]
+              (is (not (str/includes? report "KEXE_TRAP")) (str/trim report))
+              (is (str/includes? report (str ":result " expected))
+                  (str/trim report))))))
+      (is (pos? @calls) "the override ran; green is not an unapplied redef")))
+  (doseq [[isa loader] @loaders :when loader
+          n [0 1 5 50]]
+    (testing (str isa " production n=" n)
+      (let [report (run-pressure-loop isa n)
+            expected (+ n 31)]
+        (is (not (str/includes? report "KEXE_TRAP")) (str/trim report))
+        (is (str/includes? report (str ":result " expected))
+            (str/trim report))))))
