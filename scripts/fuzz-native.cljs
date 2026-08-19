@@ -46,6 +46,34 @@
                 (.copyFileSync fs candidate (lib/join corpus name))
                 (recur (next remaining) next-count next-total)))))))))
 
+;; The fuzz target prints one reach line at exit, counting how many inputs
+;; actually arrived inside each family it claims to test. A target that never
+;; reaches the function it names answers "no defect" for the same reason a
+;; check with no input does, and is indistinguishable from the outside -- which
+;; is not hypothetical here: the first draft drew the result handle as a raw
+;; 64-bit word, landed inside the 32-entry pair table roughly never, and a
+;; deliberately broken `inspect_string_result` survived all 20,000 cases.
+;;
+;; The floor is presence and non-zero, not a tuned threshold: a number invented
+;; without a measurement would be the same failure in a new place.
+(def reach-keys
+  [:inputs :ops-completed :ops-trapped :string-bytes-read :dataspace-calls
+   :string-result :record-result :tagged-result :variant-result :string-handle])
+
+(defn reach! [log]
+  (let [line (last (filter #(.includes % ":kotoba.fuzz-reach/v1") (str/split-lines log)))]
+    (when-not line (throw (js/Error. "native-fuzz: target emitted no reach line")))
+    (let [reach (reader/read-string (str/trim line))]
+      (lib/ensure! (= :kotoba.fuzz-reach/v1 (:format reach))
+                   "native-fuzz: reach line is not :kotoba.fuzz-reach/v1")
+      (lib/ensure! (= (set reach-keys) (disj (set (keys reach)) :format))
+                   "native-fuzz: reach line does not carry every counter")
+      (doseq [k reach-keys]
+        (lib/ensure! (and (integer? (get reach k)) (pos? (get reach k)))
+                     (str "native-fuzz: nothing reached " k
+                          " -- refusing to report a pass over an unexercised target")))
+      (str "{" (str/join " " (map #(str % " " (get reach %)) reach-keys)) "}"))))
+
 (defn number-field [text pattern label]
   (let [[_ value] (re-find pattern text)]
     (when-not value (throw (js/Error. (str "native-fuzz: missing " label))))
@@ -93,6 +121,7 @@
       [(str "{:format :kotoba.fuzz-coverage/v1 :engine :libfuzzer :arch " architecture
             " :seed " seed
             " :cov " cov " :features " features " :corpus " corpus-count
+            " :reach " (reach! log)
             " :limit \"" label "\"}") label "coverage-guided"])))
 
 (defn macos-fuzz! [binary]
@@ -100,12 +129,14 @@
                     "-fsanitize=address,undefined" "-fno-omit-frame-pointer"
                     (str "-I" (lib/join lib/root "tools"))
                     (lib/join lib/root "tools" "kexe_parser_fuzz.c") "-o" binary])
-  (lib/run binary (into [runs] (entries corpus))
-           {:env {:ASAN_OPTIONS "detect_leaks=0:abort_on_error=1"
-                  :UBSAN_OPTIONS "halt_on_error=1:print_stacktrace=1"}
-            :max-buffer (* 16 1024 1024)})
-  [(str "{:format :kotoba.fuzz-coverage/v1 :engine :deterministic-sanitized :cases " runs "}")
-   runs "deterministic-sanitized"])
+  (let [result (lib/run binary (into [runs] (entries corpus))
+                        {:env {:ASAN_OPTIONS "detect_leaks=0:abort_on_error=1"
+                               :UBSAN_OPTIONS "halt_on_error=1:print_stacktrace=1"}
+                         :max-buffer (* 16 1024 1024)})
+        log (str (:stdout result) (:stderr result))]
+    [(str "{:format :kotoba.fuzz-coverage/v1 :engine :deterministic-sanitized"
+          " :cases " runs " :reach " (reach! log) "}")
+     runs "deterministic-sanitized"]))
 
 (try
   (.mkdirSync fs corpus #js {:recursive true})
