@@ -74,6 +74,18 @@
                           " -- refusing to report a pass over an unexercised target")))
       (str "{" (str/join " " (map #(str % " " (get reach %)) reach-keys)) "}"))))
 
+;; The compiler goes in the summary because a sanitizer verdict is a property of
+;; the toolchain as much as of the code. Measured 2026-08-19: an `applying zero
+;; offset to null pointer` report appeared on fleet node simeon (Apple clang 17)
+;; and not on the authoring workstation (Apple clang 21), because C23 made
+;; `NULL + 0` well defined. The gate was green here and red there with the same
+;; source, the same seed and the same 20,000 inputs. A receipt that does not say
+;; which compiler judged cannot be compared with one from another node.
+(defn compiler-id []
+  (let [{:keys [stdout stderr]} (lib/run "clang" ["--version"] {:allow-failure? true})
+        line (first (str/split-lines (str (or stdout "") (or stderr ""))))]
+    (if (str/blank? line) "unknown" (str/trim line))))
+
 (defn number-field [text pattern label]
   (let [[_ value] (re-find pattern text)]
     (when-not value (throw (js/Error. (str "native-fuzz: missing " label))))
@@ -122,6 +134,7 @@
             " :seed " seed
             " :cov " cov " :features " features " :corpus " corpus-count
             " :reach " (reach! log)
+            " :compiler \"" (compiler-id) "\""
             " :limit \"" label "\"}") label "coverage-guided"])))
 
 (defn macos-fuzz! [binary]
@@ -135,7 +148,8 @@
                          :max-buffer (* 16 1024 1024)})
         log (str (:stdout result) (:stderr result))]
     [(str "{:format :kotoba.fuzz-coverage/v1 :engine :deterministic-sanitized"
-          " :cases " runs " :reach " (reach! log) "}")
+          " :cases " runs " :reach " (reach! log)
+          " :compiler \"" (compiler-id) "\"}")
      runs "deterministic-sanitized"]))
 
 (try

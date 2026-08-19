@@ -37,6 +37,20 @@
                :cases 20000 :outcome :pass}
  :gate-wrapper-run-locally? false
  :gate-wrapper-blocked-by :npm-11-12-1-npx-arg-defect
+ :gate-wrapper-verified-on {:node "simeon" :exit 0 :date "2026-08-19"}
+ :correction-2026-08-19
+ {:symptom :gate-passed-locally-failed-on-fleet
+  :report "kexe_loader.c:495 applying zero offset to null pointer"
+  :cause :harness-built-an-empty-code-region
+  :production-reachable? false
+  :production-reason :main-refuses-length-le-0-so-code-base-is-never-null
+  :repair :code-region-is-now-at-least-one-byte
+  :repair-rejected :teach-resolve-string-bytes-about-a-null-it-never-receives
+  :version-dependence {:c23 :null-plus-zero-is-well-defined
+                       :apple-clang-21 :silent
+                       :apple-clang-17 :fails-the-run}
+  :consequence :summary-now-records-the-compiler
+  :determinism :reach-counters-byte-identical-across-both-compilers}
  :non-claims #{:emitted-machine-code-is-verified
                :kexe-container-coverage
                :elf-macho-emission-coverage
