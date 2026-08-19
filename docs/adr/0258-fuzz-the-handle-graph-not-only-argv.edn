@@ -1,0 +1,45 @@
+{:adr/id 258
+ :status :accepted
+ :decision :fuzz-the-handle-graph-not-only-argv
+ :target "tools/kexe_parser_fuzz.c"
+ :loader-modified? false
+ :loader-source-sha256-changed? false
+ :defects-found-in-loader 0
+ :was {:functions-reached #{:parse-u64 :parse-ulong-decimal :parse-i64 :parse-allow}
+       :corpus-seeds 5}
+ :now {:sub-targets #{:parsers :handle-graph :result-inspection}
+       :corpus-seeds 13
+       :adds #{:checked-context-abi :resolve-string-bytes :typed-cap-call
+               :dataspace-provider :inspect-string-result :inspect-record-result
+               :inspect-tagged-i64-result :inspect-variant-result
+               :valid-string-handle :peek-pair :valid-utf8
+               :parse-variant-profile :parse-guest-arg}}
+ :fidelity {:trap-model :siglongjmp-past-the-helper-never-return
+            :trap-rationale :raise-sigill-ends-the-process-in-production
+            :arena-rewind :watermarks-restored-to-pre-operation
+            :operand-bias :live-handles-and-bounded-words-with-minority-raw
+            :poison #{:unallocated-pair-tail}
+            :poison-rejected #{:string-pool-above-watermark}
+            :poison-rejected-because :peek-and-resolve-bound-by-capacity-on-purpose}
+ :reach-floor {:format :kotoba.fuzz-reach/v1
+               :rule :every-counter-must-be-non-zero
+               :not :a-tuned-threshold
+               :enforced-in "scripts/fuzz-native.cljs"
+               :motivation :first-draft-reached-inspect-string-result-never}
+ :libfuzzer-baseline :unchanged
+ :libfuzzer-baseline-because :floors-are-for-the-linux-path-and-the-fleet-is-macos
+ :discrimination {:inspect-string-result-code-bound :heap-buffer-overflow
+                  :resolve-string-bytes-code-bound :heap-buffer-overflow
+                  :parse-guest-arg-field-bound :ubsan-index-out-of-bounds-seed-only
+                  :inspect-record-result-watermark :use-after-poison
+                  :raw-result-handle :reach-floor-refuses}
+ :measured-on {:date "2026-08-19" :arch :arm64 :engine :deterministic-sanitized
+               :cases 20000 :outcome :pass}
+ :gate-wrapper-run-locally? false
+ :gate-wrapper-blocked-by :npm-11-12-1-npx-arg-defect
+ :non-claims #{:emitted-machine-code-is-verified
+               :kexe-container-coverage
+               :elf-macho-emission-coverage
+               :aiueos-kernel-or-user-target-coverage
+               :windows-loader-coverage
+               :new-libfuzzer-coverage-floors}}
