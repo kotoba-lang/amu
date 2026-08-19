@@ -27,6 +27,19 @@
 (defn- check [name ok? detail]
   {:name name :ok? (boolean ok?) :detail (when-not ok? detail)})
 
+(defn- refusal
+  "What THUNK refused with: the exception's ex-data plus its :message, or nil
+  when it did not refuse.
+
+  Cases assert the structured keys where the provider carries one that
+  identifies the guard -- :phase plus the operand it rejected -- and the
+  message only where it does not. A message is not the contract: measured
+  2026-08-18, three cases in this directory matched wording that belonged to a
+  guard behind the one that actually fired, and failed while the property in
+  their own name still held."
+  [thunk]
+  (try (thunk) nil (catch :default e (assoc (or (ex-data e) {}) :message (.-message e)))))
+
 (defn- round-trip-case []
   (try
     (let [runtime (host)
@@ -87,23 +100,23 @@
           _ (admission/check hir {:allow #{[:cap/call (js/BigInt 8)]}})
           kir (ir/lower hir)
           runtime (runtime/instantiate kir)
-          put-denied?
-          (try
-            ((:invoke runtime) 'transact
-             [[state/request-type :put [state/put-type :profile/name "x"]]])
-            false
-            (catch :default e
-              (boolean (re-find #"capability denied" (.-message e)))))
-          get-denied?
-          (try
-            ((:invoke runtime) 'transact
-             [[state/request-type :get [state/get-type :profile/name]]])
-            false
-            (catch :default e
-              (boolean (re-find #"capability denied" (.-message e)))))]
+          put-denial
+          (refusal #((:invoke runtime) 'transact
+                     [[state/request-type :put
+                       [state/put-type :profile/name "x"]]]))
+          get-denial
+          (refusal #((:invoke runtime) 'transact
+                     [[state/request-type :get
+                       [state/get-type :profile/name]]]))]
       (check "cljs-missing-grant-denies-before-provider-invoke"
-             (and put-denied? get-denied?)
-             (pr-str {:put-denied? put-denied? :get-denied? get-denied?})))
+             ;; Both operations cross one capability -- state-v1.edn declares a
+             ;; single :state/transact at id 8 -- so both denials name it, and
+             ;; that is what they assert rather than the shared wording.
+             (and (= :reference-runtime (:phase put-denial))
+                  (= (js/BigInt 8) (:capability put-denial))
+                  (= :reference-runtime (:phase get-denial))
+                  (= (js/BigInt 8) (:capability get-denial)))
+             (pr-str {:put put-denial :get get-denial})))
     (catch :default e
       (check "cljs-missing-grant-denies-before-provider-invoke" false (.-message e)))))
 

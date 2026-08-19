@@ -36,6 +36,19 @@
 (defn- check [name ok? detail]
   {:name name :ok? (boolean ok?) :detail (when-not ok? detail)})
 
+(defn- refusal
+  "What THUNK refused with: the exception's ex-data plus its :message, or nil
+  when it did not refuse.
+
+  Cases assert the structured keys where the provider carries one that
+  identifies the guard -- :phase plus the operand it rejected -- and the
+  message only where it does not. A message is not the contract: measured
+  2026-08-18, three cases in this directory matched wording that belonged to a
+  guard behind the one that actually fired, and failed while the property in
+  their own name still held."
+  [thunk]
+  (try (thunk) nil (catch :default e (assoc (or (ex-data e) {}) :message (.-message e)))))
+
 (defn- round-trip-case []
   (try
     (let [{:keys [kit runtime]} (hosted)
@@ -71,38 +84,38 @@
 (defn- pairing-case []
   (try
     (let [{:keys [kit runtime]} (hosted)
-          bare-reply-threw?
-          (try
-            ((:invoke runtime) 'reply
-             [[ingress/reply-request-type (js/BigInt 200)
-               [ingress/header-set-type []] ""]])
-            false
-            (catch :default e
-              (boolean (re-find #"reply requires a prior accept" (.-message e)))))
+          bare-reply
+          (refusal #((:invoke runtime) 'reply
+                     [[ingress/reply-request-type (js/BigInt 200)
+                       [ingress/header-set-type []] ""]]))
           _ ((:enqueue! kit) :http/get "/a" {} "")
           _ ((:invoke runtime) 'accept [[ingress/accept-request-type i64/zero]])
-          double-accept-threw?
-          (try
-            ((:invoke runtime) 'accept [[ingress/accept-request-type i64/zero]])
-            false
-            (catch :default e
-              (boolean (re-find #"reply before next accept" (.-message e)))))
-          bad-status-threw?
-          (try
-            ((:invoke runtime) 'reply
-             [[ingress/reply-request-type (js/BigInt 99)
-               [ingress/header-set-type []] ""]])
-            false
-            (catch :default e
-              (boolean (re-find #"status is outside" (.-message e)))))
+          double-accept
+          (refusal #((:invoke runtime) 'accept
+                     [[ingress/accept-request-type i64/zero]]))
+          bad-status
+          (refusal #((:invoke runtime) 'reply
+                     [[ingress/reply-request-type (js/BigInt 99)
+                       [ingress/header-set-type []] ""]]))
           ok ((:invoke runtime) 'reply
                                 [[ingress/reply-request-type (js/BigInt 204)
                                   [ingress/header-set-type []] ""]])]
       (check "cljs-pairing-and-bounds-fail-closed"
-             (and bare-reply-threw? double-accept-threw? bad-status-threw? (true? ok))
-             (pr-str {:bare-reply-threw? bare-reply-threw?
-                      :double-accept-threw? double-accept-threw?
-                      :bad-status-threw? bad-status-threw? :ok ok})))
+             ;; The two pairing refusals carry only :phase -- measured
+             ;; 2026-08-18, ex-data is {:phase :http-ingress-provider} for both
+             ;; -- so the message is the only thing that tells them apart and
+             ;; it stays. :phase is asserted with it, so a same-worded throw
+             ;; from another layer cannot satisfy either. The bounds refusal
+             ;; carries the operand it rejected, so that is what it asserts.
+             (and (= :http-ingress-provider (:phase bare-reply))
+                  (re-find #"reply requires a prior accept" (:message bare-reply))
+                  (= :http-ingress-provider (:phase double-accept))
+                  (re-find #"reply before next accept" (:message double-accept))
+                  (= :http-ingress-provider (:phase bad-status))
+                  (= (js/BigInt 99) (:status bad-status))
+                  (true? ok))
+             (pr-str {:bare-reply bare-reply :double-accept double-accept
+                      :bad-status bad-status :ok ok})))
     (catch :default e
       (check "cljs-pairing-and-bounds-fail-closed" false (.-message e)))))
 
@@ -113,15 +126,14 @@
                                            [:cap/call (js/BigInt 18)]}})
           kir (ir/lower hir)
           runtime (runtime/instantiate kir)
-          denied?
-          (try
-            ((:invoke runtime) 'accept [[ingress/accept-request-type i64/zero]])
-            false
-            (catch :default e
-              (boolean (re-find #"capability denied" (.-message e)))))]
+          denial
+          (refusal #((:invoke runtime) 'accept
+                     [[ingress/accept-request-type i64/zero]]))]
       (check "cljs-missing-grant-denies-before-provider-invoke"
-             denied?
-             (pr-str {:denied? denied?})))
+             ;; WHICH capability, not merely that something was denied.
+             (and (= :reference-runtime (:phase denial))
+                  (= (js/BigInt 17) (:capability denial)))
+             (pr-str {:denial denial})))
     (catch :default e
       (check "cljs-missing-grant-denies-before-provider-invoke" false (.-message e)))))
 

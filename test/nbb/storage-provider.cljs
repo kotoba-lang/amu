@@ -28,6 +28,19 @@
 (defn- check [name ok? detail]
   {:name name :ok? (boolean ok?) :detail (when-not ok? detail)})
 
+(defn- refusal
+  "What THUNK refused with: the exception's ex-data plus its :message, or nil
+  when it did not refuse.
+
+  Cases assert the structured keys where the provider carries one that
+  identifies the guard -- :phase plus the operand it rejected -- and the
+  message only where it does not. A message is not the contract: measured
+  2026-08-18, three cases in this directory matched wording that belonged to a
+  guard behind the one that actually fired, and failed while the property in
+  their own name still held."
+  [thunk]
+  (try (thunk) nil (catch :default e (assoc (or (ex-data e) {}) :message (.-message e)))))
+
 (defn- put-boundary-case []
   (try
     (let [seen (atom nil)
@@ -118,16 +131,15 @@
           _ (admission/check hir {:allow #{[:cap/call (js/BigInt 12)]}})
           kir (ir/lower hir)
           runtime (runtime/instantiate kir)
-          denied?
-          (try
-            ((:invoke runtime) 'transact
-             [[storage/request-type :get [storage/get-type :profile/name]]])
-            false
-            (catch :default e
-              (boolean (re-find #"capability denied" (.-message e)))))]
+          denial
+          (refusal #((:invoke runtime) 'transact
+                     [[storage/request-type :get
+                       [storage/get-type :profile/name]]]))]
       (check "cljs-missing-grant-denies-before-provider-invoke"
-             denied?
-             (pr-str {:denied? denied?})))
+             ;; WHICH capability: :storage/transact is id 12.
+             (and (= :reference-runtime (:phase denial))
+                  (= (js/BigInt 12) (:capability denial)))
+             (pr-str {:denial denial})))
     (catch :default e
       (check "cljs-missing-grant-denies-before-provider-invoke" false (.-message e)))))
 

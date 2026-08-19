@@ -35,6 +35,19 @@
 (defn- check [name ok? detail]
   {:name name :ok? (boolean ok?) :detail (when-not ok? detail)})
 
+(defn- refusal
+  "What THUNK refused with: the exception's ex-data plus its :message, or nil
+  when it did not refuse.
+
+  Cases assert the structured keys where the provider carries one that
+  identifies the guard -- :phase plus the operand it rejected -- and the
+  message only where it does not. A message is not the contract: measured
+  2026-08-18, three cases in this directory matched wording that belonged to a
+  guard behind the one that actually fired, and failed while the property in
+  their own name still held."
+  [thunk]
+  (try (thunk) nil (catch :default e (assoc (or (ex-data e) {}) :message (.-message e)))))
+
 (defn- append-and-read-case []
   (try
     (let [{:keys [runtime]} (hosted)
@@ -58,30 +71,30 @@
           fields (mapv (fn [index]
                          [log/field-type (keyword "field" (str index)) "value"])
                        (range 5))
-          append-threw?
-          (try
-            ((:invoke runtime) 'append
-             [[log/append-request-type :log/info :app/event "message"
-               [log/field-set-type fields]]])
-            false
-            (catch :default e
-              (boolean (re-find #"field limit" (.-message e)))))
-          read-threw?
-          (try
-            ((:invoke runtime) 'read [[log/read-request-type i64/zero (js/BigInt 9)]])
-            false
-            (catch :default e
-              (boolean (re-find #"read limit" (.-message e)))))
-          cursor-threw?
-          (try
-            ((:invoke runtime) 'read [[log/read-request-type (js/BigInt -1) i64/one]])
-            false
-            (catch :default e
-              (boolean (re-find #"cursor must be non-negative" (.-message e)))))]
+          append-denial
+          (refusal #((:invoke runtime) 'append
+                     [[log/append-request-type :log/info :app/event "message"
+                       [log/field-set-type fields]]]))
+          read-denial
+          (refusal #((:invoke runtime) 'read
+                     [[log/read-request-type i64/zero (js/BigInt 9)]]))
+          cursor-denial
+          (refusal #((:invoke runtime) 'read
+                     [[log/read-request-type (js/BigInt -1) i64/one]]))]
       (check "cljs-field-and-read-limits-fail-before-mutation"
-             (and append-threw? read-threw? cursor-threw? (empty? ((:snapshot kit))))
-             (pr-str {:append-threw? append-threw? :read-threw? read-threw?
-                      :cursor-threw? cursor-threw? :snapshot ((:snapshot kit))})))
+             ;; The two read refusals carry the operand they rejected, so that
+             ;; is what they assert. The field-limit refusal carries only
+             ;; :phase (measured 2026-08-18), so its message stays -- with
+             ;; :phase beside it, which the wording alone did not check.
+             (and (= :log-provider (:phase append-denial))
+                  (re-find #"field limit" (:message append-denial))
+                  (= :log-provider (:phase read-denial))
+                  (= (js/BigInt 9) (:limit read-denial))
+                  (= :log-provider (:phase cursor-denial))
+                  (= (js/BigInt -1) (:after-sequence cursor-denial))
+                  (empty? ((:snapshot kit))))
+             (pr-str {:append append-denial :read read-denial
+                      :cursor cursor-denial :snapshot ((:snapshot kit))})))
     (catch :default e
       (check "cljs-field-and-read-limits-fail-before-mutation" false (.-message e)))))
 
@@ -110,23 +123,24 @@
           _ (admission/check hir {:allow #{[:cap/call (js/BigInt 5)] [:cap/call (js/BigInt 6)]}})
           kir (ir/lower hir)
           runtime (runtime/instantiate kir)
-          append-denied?
-          (try
-            ((:invoke runtime) 'append
-             [[log/append-request-type :log/info :app/started "ready"
-               [log/field-set-type []]]])
-            false
-            (catch :default e
-              (boolean (re-find #"capability denied" (.-message e)))))
-          read-denied?
-          (try
-            ((:invoke runtime) 'read [[log/read-request-type i64/zero i64/one]])
-            false
-            (catch :default e
-              (boolean (re-find #"capability denied" (.-message e)))))]
+          append-denial
+          (refusal #((:invoke runtime) 'append
+                     [[log/append-request-type :log/info :app/started "ready"
+                       [log/field-set-type []]]]))
+          read-denial
+          (refusal #((:invoke runtime) 'read
+                     [[log/read-request-type i64/zero i64/one]]))]
       (check "cljs-missing-grant-denies-before-provider-invoke"
-             (and append-denied? read-denied?)
-             (pr-str {:append-denied? append-denied? :read-denied? read-denied?})))
+             ;; WHICH capability each call was denied for. Two ids are in play
+             ;; and they are NOT in the order the `#{:log/append :log/read}`
+             ;; literal above reads: capability-kits/log-v1.edn assigns
+             ;; :log/read id 5 and :log/append id 6, which is what the denials
+             ;; carry. Matching only the message could never have said so.
+             (and (= :reference-runtime (:phase append-denial))
+                  (= (js/BigInt 6) (:capability append-denial))
+                  (= :reference-runtime (:phase read-denial))
+                  (= (js/BigInt 5) (:capability read-denial)))
+             (pr-str {:append append-denial :read read-denial})))
     (catch :default e
       (check "cljs-missing-grant-denies-before-provider-invoke" false (.-message e)))))
 

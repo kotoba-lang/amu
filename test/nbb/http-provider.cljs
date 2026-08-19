@@ -32,6 +32,19 @@
 (defn- check [name ok? detail]
   {:name name :ok? (boolean ok?) :detail (when-not ok? detail)})
 
+(defn- refusal
+  "What THUNK refused with: the exception's ex-data plus its :message, or nil
+  when it did not refuse.
+
+  Cases assert the structured keys where the provider carries one that
+  identifies the guard -- :phase plus the operand it rejected -- and the
+  message only where it does not. A message is not the contract: measured
+  2026-08-18, three cases in this directory matched wording that belonged to a
+  guard behind the one that actually fired, and failed while the property in
+  their own name still held."
+  [thunk]
+  (try (thunk) nil (catch :default e (assoc (or (ex-data e) {}) :message (.-message e)))))
+
 (defn- post-bounded-ok-case []
   (try
     (let [seen (atom nil)
@@ -61,25 +74,23 @@
   (try
     (let [called? (atom false)
           runtime (hosted (fn [_] (reset! called? true) {:status 200 :headers {} :body ""}))
-          origin-threw?
-          (try
-            ((:invoke runtime) 'post
-             [[http/request-type "https://other.example.test/path"
-               [http/header-set-type []] "" (js/BigInt 1000)]])
-            false
-            (catch :default e
-              (boolean (re-find #"origin is not allowed" (.-message e)))))
-          timeout-threw?
-          (try
-            ((:invoke runtime) 'post
-             [[http/request-type "https://api.example.test/path"
-               [http/header-set-type []] "" i64/zero]])
-            false
-            (catch :default e
-              (boolean (re-find #"timeout is outside" (.-message e)))))]
+          origin-denial
+          (refusal #((:invoke runtime) 'post
+                     [[http/request-type "https://other.example.test/path"
+                       [http/header-set-type []] "" (js/BigInt 1000)]]))
+          timeout-denial
+          (refusal #((:invoke runtime) 'post
+                     [[http/request-type "https://api.example.test/path"
+                       [http/header-set-type []] "" i64/zero]]))]
       (check "cljs-destinations-and-timeouts-fail-closed"
-             (and origin-threw? timeout-threw? (false? @called?))
-             (pr-str {:origin-threw? origin-threw? :timeout-threw? timeout-threw?
+             ;; The rejected operand, not the wording: :origin and :timeout-ms
+             ;; are what separate these two guards, and they survive a reword.
+             (and (= :http-provider (:phase origin-denial))
+                  (= "https://other.example.test" (:origin origin-denial))
+                  (= :http-provider (:phase timeout-denial))
+                  (= i64/zero (:timeout-ms timeout-denial))
+                  (false? @called?))
+             (pr-str {:origin origin-denial :timeout timeout-denial
                       :called? @called?})))
     (catch :default e
       (check "cljs-destinations-and-timeouts-fail-closed" false (.-message e)))))
@@ -120,17 +131,17 @@
           _ (admission/check hir {:allow #{[:cap/call (js/BigInt 4)]}})
           kir (ir/lower hir)
           runtime (runtime/instantiate kir)
-          denied?
-          (try
-            ((:invoke runtime) 'post
-             [[http/request-type "https://api.example.test/path"
-               [http/header-set-type []] "" (js/BigInt 1000)]])
-            false
-            (catch :default e
-              (boolean (re-find #"capability denied" (.-message e)))))]
+          denial
+          (refusal #((:invoke runtime) 'post
+                     [[http/request-type "https://api.example.test/path"
+                       [http/header-set-type []] "" (js/BigInt 1000)]]))]
       (check "cljs-missing-grant-denies-before-provider-invoke"
-             denied?
-             (pr-str {:denied? denied?})))
+             ;; WHICH capability, not merely that something was denied: the old
+             ;; assertion passed on any "capability denied" message, including
+             ;; one raised for an id other than the grant under test.
+             (and (= :reference-runtime (:phase denial))
+                  (= (js/BigInt 4) (:capability denial)))
+             (pr-str {:denial denial})))
     (catch :default e
       (check "cljs-missing-grant-denies-before-provider-invoke" false (.-message e)))))
 
