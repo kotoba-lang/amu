@@ -19,6 +19,11 @@
 (def pilot-root-resource "kotoba/lang-conformance/")
 (def pure-product-required #{:kir :wasm32-kotoba-v1})
 
+;; Every backend `run-case` knows how to drive. A `:required-backends` entry
+;; outside this set cannot be honoured, and silence about that is what makes it
+;; dangerous -- see `run-case`'s own note.
+(def known-backends #{:kir :wasm32-kotoba-v1})
+
 (defn load-manifest
   "Load pilot or caller-supplied manifest EDN text/map."
   ([]
@@ -169,12 +174,36 @@
                     (run-kir source (:function case) (:args case) case))
               wasm (when (contains? required :wasm32-kotoba-v1)
                      (run-wasm32 source case))
+              ;; `nil` means "this case does not require that backend", which is a
+              ;; legitimate reason not to fail. What is NOT legitimate is every
+              ;; backend being nil: the case then asserts nothing and reported
+              ;; :passed.
+              ;;
+              ;; Reachable by a plain typo, and measured 2026-08-19 rather than
+              ;; reasoned about: giving a real case `:required-backends #{:typo}`
+              ;; yields `{:ok? true :status :passed :kir nil :wasm32-kotoba-v1 nil}`.
+              ;; The case stays in the suite -- `pure-product-cases` also selects
+              ;; on `:class :pure-product-run`, which all 61 cases carry -- so the
+              ;; total does not move either. A renamed backend would convert
+              ;; cases into green no-ops without changing a single count.
+              ;;
+              ;; Unknown names are named rather than merely counted, because
+              ;; "nothing ran" and "you asked for a backend that does not exist"
+              ;; want different repairs. ADR 0260; same class as ADR 0259.
+              unknown (into (sorted-set) (remove known-backends required))
+              ran (cond-> #{} kir (conj :kir) wasm (conj :wasm32-kotoba-v1))
               kir-ok? (or (nil? kir) (and (:ok? kir) (= expect (:result kir))))
               wasm-ok? (or (nil? wasm) (and (:ok? wasm) (= expect (:result wasm))))
-              ok? (and kir-ok? wasm-ok?)]
+              ok? (boolean (and kir-ok? wasm-ok? (seq ran) (empty? unknown)))]
           {:id id
            :ok? ok?
-           :status (if ok? :passed :failed)
+           :status (cond (seq unknown) :unknown-backend
+                         (empty? ran) :no-backend-ran
+                         ok? :passed
+                         :else :failed)
+           :required required
+           :ran ran
+           :unknown-backends unknown
            :language-profile (case-language-profile case)
            :expect expect
            :fuel (case-fuel case)
@@ -203,7 +232,11 @@
          results (mapv run-case cases)
          passed (count (filter :ok? results))
          failed (filterv (complement :ok?) results)]
-     {:ok? (empty? failed)
+     {;; An empty case list used to satisfy `(empty? failed)` and report a pass
+      ;; over nothing, the same way ADR 0259's sibling did. Measured:
+      ;; `(run-suite {:cases []})` -> `{:ok? true :total 0 :passed 0}`.
+      :ok? (boolean (and (seq cases) (empty? failed)))
+      :status (if (empty? cases) :no-cases :measured)
       :total (count results)
       :passed passed
       :failed-count (count failed)

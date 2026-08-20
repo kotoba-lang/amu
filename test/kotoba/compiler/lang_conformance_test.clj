@@ -82,3 +82,50 @@
     (is (= (:portable expected-cases) (:portable-passed report)))
     (is (= (:passed report)
            (+ (:pure-product-passed report) (:portable-passed report))))))
+
+(deftest a-case-that-ran-nothing-is-not-a-pass
+  ;; ADR 0260, the sibling of ADR 0259 one layer down: there the SUITE could
+  ;; report ok having executed nothing, here a single CASE could.
+  ;;
+  ;; `nil` for a backend legitimately means "this case does not require it", so
+  ;; the old per-backend `(or (nil? kir) ...)` is right on its own. What was
+  ;; missing is that every backend being nil left `ok?` true, and the case then
+  ;; asserted nothing while reporting :passed.
+  (let [real (first (lc/pure-product-cases (lc/load-manifest)))]
+    (testing "a backend name that does not exist"
+      ;; Measured before the fix: {:ok? true :status :passed :kir nil
+      ;; :wasm32-kotoba-v1 nil}. The case is still SELECTED, because
+      ;; pure-product-cases also matches on :class :pure-product-run, which all
+      ;; 61 carry — so a renamed backend would turn cases into green no-ops
+      ;; without moving a single count.
+      (let [r (lc/run-case (assoc real :required-backends #{:wasm32-kotoba-v1-TYPO}))]
+        (is (false? (:ok? r)))
+        (is (= :unknown-backend (:status r)))
+        (is (= #{:wasm32-kotoba-v1-TYPO} (set (:unknown-backends r)))
+            "the unknown name is reported, not just the emptiness — a typo and
+             an empty requirement want different repairs")
+        (is (empty? (:ran r)))))
+    (testing "an empty requirement"
+      (let [r (lc/run-case (assoc real :required-backends #{}))]
+        (is (false? (:ok? r)))
+        (is (= :no-backend-ran (:status r)))))
+    (testing "the real case still passes on both backends"
+      ;; The floor must not cost a genuine pass.
+      (let [r (lc/run-case real)]
+        (is (true? (:ok? r)))
+        (is (= :passed (:status r)))
+        (is (= #{:kir :wasm32-kotoba-v1} (set (:ran r))))))))
+
+(deftest an-empty-manifest-is-not-a-pass
+  ;; `(empty? failed)` was satisfied by having no cases at all.
+  (let [report (lc/run-suite {:cases []})]
+    (is (false? (:ok? report)))
+    (is (= :no-cases (:status report)))
+    (is (zero? (:total report)))))
+
+(deftest the-real-suite-is-measured
+  (let [report (lc/run-suite)]
+    (is (= :measured (:status report)))
+    (is (true? (:ok? report)))
+    (is (pos? (:total report)))
+    (is (= (:total report) (:passed report)))))
