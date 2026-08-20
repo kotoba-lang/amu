@@ -12,7 +12,7 @@
          (dependency-pin 'io.github.kotoba-lang/kotoba-native)))
   (is (= "e5b71f4961e8c21a335bb1daa29b3740bbc8acd9"
          (dependency-pin 'io.github.kotoba-lang/kotoba-kir)))
-  (is (= "b1b94e0e45738921d0b41eadb8b1dc45426b20b8"
+  (is (= "d90ff41d2006d476b6e6d6ccb3a8c8715d43a7a6"
          (dependency-pin 'io.github.kotoba-lang/kotoba-verifier)))
   (is (= 7 (:abi/version aggregate-abi/contract)))
   (is (= :recursive-word-handles
