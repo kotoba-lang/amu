@@ -10,7 +10,7 @@
 (deftest pinned-closure-carries-the-complete-native-boundary
   (is (= "1d51768edb8f84dc42d10ab9bcf922caa79293f3"
          (dependency-pin 'io.github.kotoba-lang/kotoba-native)))
-  (is (= "f3d255b52f85040815057426f5da557714b09b3a"
+  (is (= "e5b71f4961e8c21a335bb1daa29b3740bbc8acd9"
          (dependency-pin 'io.github.kotoba-lang/kotoba-kir)))
   (is (= "b1b94e0e45738921d0b41eadb8b1dc45426b20b8"
          (dependency-pin 'io.github.kotoba-lang/kotoba-verifier)))
