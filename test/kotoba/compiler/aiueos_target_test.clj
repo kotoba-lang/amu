@@ -693,3 +693,34 @@
                                    "  (bit-xor seed byte))"
                                    "(defn main [] :i64 0)")
                               :x86_64-aiueos-kernel-v1)))))))
+
+;; aiueos ADR-0054's export class, from the side that can check it. Two of the
+;; three objects carry `:native {:export "..."}` in their own contract, so
+;; `kernel-object-entries` transcribes those symbols rather than choosing them
+;; -- and this asserts the transcription, so dropping an entry is a red test
+;; rather than a silent return to `kotoba_aiueos_probe`.
+;;
+;; The sources here mirror the real ones' ns/export/arity. The end-to-end check
+;; against `os/aiueos/kotoba/value-runtime-syscall-plan.kotoba` itself lives in
+;; aiueos, which is where that file is.
+(deftest contract-declared-value-runtime-entries-carry-their-own-symbol
+  (is (= "kotoba_aiueos_value_runtime_syscall_plan"
+         (:export (:object (compiler/compile-source
+                            (str "(ns aiueos.value-runtime-syscall-plan"
+                                 "  (:export [aiueos-value-runtime-syscall-plan main]))"
+                                 "(defn aiueos-value-runtime-syscall-plan"
+                                 "  [number :i64 domain :i64 pointer :i64"
+                                 "   user-rip :i64 user-rsp :i64] :i64"
+                                 "  (if (= number 5) domain 0))"
+                                 "(defn main [] :i64 0)")
+                            :x86_64-aiueos-kernel-v1)))))
+  (is (= "kotoba_aiueos_value_runtime_cas_verify"
+         (:export (:object (compiler/compile-source
+                            (str "(ns aiueos.value-runtime-cas-verify"
+                                 "  (:export [aiueos-value-runtime-cas-verify main]))"
+                                 "(defn aiueos-value-runtime-cas-verify"
+                                 "  [block :i64 block-length :i64 expected :i64"
+                                 "   output :i64 workspace :i64] :i64"
+                                 "  (if (> block-length 0) 1 0))"
+                                 "(defn main [] :i64 0)")
+                            :x86_64-aiueos-kernel-v1))))))
