@@ -1,0 +1,73 @@
+{:adr/id 261
+ :status :accepted
+ :decision :clock-native-aot-is-blocked-on-host-authority-not-schema
+ :subject "resources/kotoba/lang/capability-kits/clock-v1.edn"
+ :defect-class :two-unlike-reasons-recorded-in-one-word
+ :rule-instance {:superproject-adr "2608650000"
+                 :rule "a permanent constraint and an unfinished backend must not be recorded the same way"}
+ :was {:native-aot :pending
+       :prose-claimed "every :native-aot :pending is a schema statement"
+       :prose-location "wasm32_kotoba_v1_qualification_test.clj ns docstring"
+       :true-for #{"log-v1.edn" "storage-v1.edn"}
+       :false-for #{"clock-v1.edn"}}
+ :now {:native-aot :pending
+       :sibling-key :native-aot-blocked-by
+       :kind :undecided-host-authority
+       :new-qualification-value? false}
+ :measured {:target :aarch64-kotoba-v1
+            :os :macos
+            :compiles true
+            :admitted-by "kotoba.kir native-provider-contract? (kotoba-kir ADR 0227)"
+            :gmir-kind 4
+            :process-result :SIGILL
+            :trapped-in "checked_typed_cap_call request validation"
+            :cause "valid_typed_value has no KEXE_TYPED_CLOCK_V1 case"
+            :constant-reserved-by "be2130e"}
+ :refusals {:real-os-clock {:adr 240
+                            :because :c-loader-runs-are-oracles-only
+                            :production-surface :aiueos-c-free-bare-metal-v1
+                            :seccomp-allows #{:write :exit :exit_group :rt_sigreturn
+                                              :rt_sigprocmask :getpid :gettid :tgkill
+                                              :munmap :brk}
+                            :clock_gettime-allowed? false
+                            :macos-profile "(deny default)"}
+            :synthetic-clock {:adr 84
+                              :because :packaging-evidence-is-not-production-host-time
+                              :precedent "$wall 1700000000000 +1, $mono +1000, key stayed :pending"}}
+ :dataspace-is-not-a-precedent {:effect :in-process-memory-only
+                                :new-syscalls 0
+                                :semantics :real-not-synthetic}
+ :vocabulary {:chosen :additive-sibling-key
+              :status-values-in-use #{:implemented :pending}
+              :non-status-values-seen #{:direct-move-only :task-stream-handle-slice}
+              :non-status-values-belong-to "stream-object-v1.edn"
+              :qualification-key-count 5
+              :existing-sibling-precedent #{:wasm32-kotoba-v1-surface :wasm-aot-surface}
+              :could-mis-read "a reader consulting only :qualification still sees clock and storage as identical"}
+ :exit-condition "capability 7 served over :aiueos-c-free-bare-metal-v1 with a runtime vector"
+ :left-open {:question "what does a native clock return for :wall"
+             :because "aiueos grants :clock/monotonic only and its control loop has no wall clock, yet the sealed native request variant has a :wall case"}
+ :corrections {:live-emitter {:is "kotoba-native machine_ir.cljc"
+                              :not "the legacy cond in aarch64.cljc / x86_64.cljc"
+                              :superseded-by [241 242 243 244]}
+               :windows-loader {:omits :dataspace
+                                :deliberate? true
+                                :pinned-in "kotoba-lang/artifact runtime_identity.clj"}
+               :loader-edit-cost {:repos 3
+                                  :chain ["amu" "artifact" "amu deps pin"]
+                                  :enforced-by "build-runtime! loader-source-sha256"}}
+ :evidence {:new-tests 2
+            :new-assertions 19
+            :namespace-before {:tests 11 :assertions 84}
+            :namespace-after {:tests 13 :assertions 103 :failures 0}
+            :discrimination {:block-deleted {:failures 7 :errors 0}
+                             :block-copied-onto-storage {:failures 2 :errors 0}
+                             :both-kept-the-file-valid-edn true
+                             :first-attempt-was-wrong "removed one brace too many; 9 reader errors prove broken EDN, not a firing guard"}
+            :full-suite-before {:tests 1102 :assertions 8318 :failures 0}
+            :full-suite-after {:tests 1104 :assertions 8337 :failures 0}}
+ :non-claims #{:a-native-clock-is-impossible
+               :clock_gettime-in-the-loader-is-wrong-on-the-merits
+               :wasm-aot-changed
+               :the-other-pending-kits-were-audited-for-which-kind}
+ :related [240 84 227 257 29 73 259 260]}

@@ -17,8 +17,21 @@
   storage does exactly that -- so compiling somewhere is never the claim.
 
   Native is a third, independent seam, and it is NOT closed to kits: dataspace
-  is qualified on it. The kits at :native-aot :pending are pending because of
-  their own schemas, not because the backend is unavailable.
+  is qualified on it. But :pending there does not have ONE meaning, and this
+  file used to say it did. Two reasons are live, and a reader who cannot tell
+  them apart keeps a self-restriction after the thing that caused it is gone
+  (superproject ADR-2608650000):
+
+    schema           log and storage are refused at :phase :target because
+                     their own request/result types are not one-word values.
+                     Narrowing the schema moves the key.
+    host authority   clock's schema is SEALED and admitted, the backend emits
+                     it, and it compiles -- the kexe loader simply has no clock
+                     source and no ADR grants it one (ADR 0261). Nothing about
+                     clock-v1.edn can move that key.
+
+  So a kit at :native-aot :pending must say WHICH, and the second kind carries
+  a :native-aot-blocked-by block naming the ADRs and the exit condition.
 
   Proved on the typed kit ABI, each by a named test:
 
@@ -138,9 +151,16 @@
 (def native-aot-kits
   "Kits proved on a native target, by kotoba.compiler.dataspace-native-aot-test.
   Native is NOT categorically closed to capability kits -- dataspace crosses it
-  -- so a kit sitting at :pending here is a statement about that kit's own
-  schema, never about the backend."
+  -- so a kit sitting at :pending here is never a statement about the backend
+  being absent. It is a statement about that kit's own schema, or about host
+  authority nobody has granted; see the two-reason table above."
   #{"dataspace-v1.edn"})
+
+(def native-aot-blocked-kits
+  "Kits whose :native-aot :pending is NOT about their own schema, and which
+  therefore must carry a :native-aot-blocked-by block. Adding a name here
+  without a measured trap and named ADRs is the failure this guards."
+  #{"clock-v1.edn"})
 
 (deftest native-aot-is-claimed-only-where-a-native-test-ran
   (doseq [filename application-kit-files]
@@ -156,10 +176,45 @@
   :entries are [:set [:record ...]], storage's expected-version is
   [:option :i64]. Each records that measured rejection in a test, so the gap
   cannot be read as a backend nobody tried. Whoever narrows one of those
-  schemas is the one who gets to move the key."
+  schemas is the one who gets to move the key.
+
+  These two, and only these two, are the schema kind. Clock is not here: its
+  schema is admitted and it reaches a real process (ADR 0261)."
   (doseq [filename ["log-v1.edn" "storage-v1.edn"]]
     (testing filename
-      (is (= :pending (:native-aot (:qualification (load-kit filename))))))))
+      (is (= :pending (:native-aot (:qualification (load-kit filename)))))
+      (is (nil? (:native-aot-blocked-by (load-kit filename)))
+          "a schema-pending kit must not claim a host-authority blocker"))))
+
+(deftest clock-is-pending-on-native-for-a-host-authority-reason
+  "The distinction ADR 0261 exists to make visible. Clock compiles to the
+  native ISA and traps in the loader, so :pending here is not the same fact
+  as log's and storage's :pending, and must not be recorded as though it were.
+  The block has to name what would clear it, or it is a shrug with citations."
+  (let [kit (load-kit "clock-v1.edn")
+        blocked (:native-aot-blocked-by kit)]
+    (is (= :pending (:native-aot (:qualification kit))))
+    (is (some? blocked) "clock must say WHY it is pending on native")
+    (is (= :undecided-host-authority (:kind blocked)))
+    (is (= :schema (:not blocked))
+        "the one reading it must be told which reason this is NOT")
+    (is (= :SIGILL (:process-result (:measured blocked)))
+        "the claim is measured -- a real process ran and trapped")
+    (is (every? (set (:adr blocked)) [261 240 84 227])
+        "the refusal must cite the decisions it rests on")
+    (is (string? (:exit-condition blocked))
+        "a blocker with no exit condition is permanent by accident")))
+
+(deftest only-blocked-kits-carry-a-native-aot-blocked-by-block
+  "Block and claim move together, the same rule :wasm-aot-surface follows: a
+  kit that reaches :implemented, or that is pending for its own schema, must
+  not leave a stale blocker behind explaining a gap that closed."
+  (doseq [filename application-kit-files]
+    (testing filename
+      (let [blocked (:native-aot-blocked-by (load-kit filename))]
+        (if (native-aot-blocked-kits filename)
+          (is (some? blocked))
+          (is (nil? blocked)))))))
 
 (deftest every-kit-on-disk-is-either-governed-here-or-named-as-out-of-scope
   "The list above is hand-kept, so this is what stops a new kit from carrying

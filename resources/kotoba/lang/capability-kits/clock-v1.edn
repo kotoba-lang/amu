@@ -27,4 +27,26 @@
                             :signature [:i64 :i64 :i64]
                             :capability-id 7
                             :grant :clock-monotonic
-                            :elaboration "(typed-cap-call 7 :i64 :i64 seed)"}}
+                            :elaboration "(typed-cap-call 7 :i64 :i64 seed)"}
+ ;; Why :native-aot is :pending. Not a schema gap and not an unwritten
+ ;; backend -- both of those are already done. See ADR 0261.
+ :native-aot-blocked-by
+ {:kind :undecided-host-authority
+  :adr [261 240 84 227]
+  :not :schema
+  :measured {:compiles-to :aarch64-kotoba-v1
+             :admitted-by "kotoba.kir native-provider-contract? (KIR ADR 0227)"
+             :wire-kind 4
+             :process-result :SIGILL
+             :trapped-in "checked_typed_cap_call request validation"}
+  :reason "tools/kexe_loader.c has no clock source, and no ADR grants it one.
+           ADR 0240 makes every C loader run an oracle, never a production
+           native-effect surface; ADR 0084 already refused to flip this kit
+           on a synthetic clock built for a different surface."
+  :seccomp-allows #{:write :exit :exit_group :rt_sigreturn :rt_sigprocmask
+                    :getpid :gettid :tgkill :munmap :brk}
+  :exit-condition "cap 7 served over :aiueos-c-free-bare-metal-v1 with a
+                   runtime vector, per ADR 0240's dependency chain."
+  :open-sub-question "aiueos grants :clock/monotonic only, yet the sealed
+                      native request variant has a :wall case. What native
+                      returns for :wall is undecided."}}
