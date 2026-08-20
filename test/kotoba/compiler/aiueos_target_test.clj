@@ -650,3 +650,46 @@
   (is (thrown-with-msg? clojure.lang.ExceptionInfo #"zero (arguments|arity)"
                         (compiler/compile-source "(defn main [image] image)"
                                                  :x86_64-aiueos-uefi-v1))))
+
+;; amu#626 / aiueos ADR-0054. `kotoba.native.elf64`'s `kernel-object-entries`
+;; is the whole rule for a kernel object's public symbol, and it used to hand
+;; the probe's contract to anything it did not list. That is not a fallback but
+;; a collision: three of aiueos's `value-*` objects each compiled to a
+;; valid-looking ET_REL exporting `kotoba_aiueos_probe`, colliding with
+;; `kernel-probe` and with each other, and the compile said nothing. The rule
+;; was undiscoverable for exactly that reason -- every minimal source anyone
+;; wrote to find it got the generic symbol, and the real file did not.
+;;
+;; Both directions live in one deftest deliberately. The refusal alone would
+;; pass just as well if packaging had stopped admitting anything at all.
+(deftest kernel-object-with-an-unlisted-aiueos-export-is-refused-not-given-the-probe-symbol
+  (testing "an unlisted aiueos-* export is refused, and names itself"
+    (let [thrown (try (compiler/compile-source
+                       (str "(ns aiueos.not-a-real-object"
+                            "  (:export [aiueos-not-in-the-table main]))"
+                            "(defn aiueos-not-in-the-table [n :i64] :i64 n)"
+                            "(defn main [] :i64 0)")
+                       :x86_64-aiueos-kernel-v1)
+                      (catch clojure.lang.ExceptionInfo e e))]
+      (is (instance? clojure.lang.ExceptionInfo thrown)
+          "packaging must refuse rather than emit a colliding symbol")
+      (is (re-find #"no admitted symbol" (ex-message thrown)))
+      (is (= '[aiueos-not-in-the-table] (:unlisted-exports (ex-data thrown)))
+          "the refusal names the export that has no entry")))
+  (testing "a source claiming no aiueos name still packages as the probe"
+    (is (= "kotoba_aiueos_probe"
+           (:export (:object (compiler/compile-source "(defn main [] 42)"
+                                                      :x86_64-aiueos-kernel-v1)))))
+    (is (= "kotoba_aiueos_probe"
+           (:export (:object (compiler/compile-source
+                              "(defn fact [n] (if (= n 0) 1 (* n (fact (- n 1))))) (defn main [] (fact 5))"
+                              :x86_64-aiueos-kernel-v1))))
+        "helper exports are not an aiueos identity claim"))
+  (testing "a listed entry still gets its own symbol"
+    (is (= "kotoba_aiueos_fnv1a"
+           (:export (:object (compiler/compile-source
+                              (str "(ns aiueos.fnv1a (:export [aiueos-fnv1a main]))"
+                                   "(defn aiueos-fnv1a [seed :i64 byte :i64] :i64"
+                                   "  (bit-xor seed byte))"
+                                   "(defn main [] :i64 0)")
+                              :x86_64-aiueos-kernel-v1)))))))
