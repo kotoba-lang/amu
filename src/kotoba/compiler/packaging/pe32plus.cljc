@@ -15,8 +15,19 @@
 (def le pe/little-endian)
 (def align pe/align-up)
 
+;; 2^(8*width) for the widths this packager emits. Written as literals rather
+;; than `(bit-shift-left 1 (* 8 width))`, which is NOT portable: JavaScript
+;; shift counts are taken mod 32, so on ClojureScript `(bit-shift-left 1 32)`
+;; is 1, not 2^32. Measured 2026-08-20 under nbb -- `limit` came out 1, so
+;; `maximum` was 0 and every nonzero field was rejected as "out of range",
+;; including a relocation displacement of 4085. Both bounds below are powers of
+;; two, exact as a JVM long and as a JS double alike.
+(def ^:private signed-limit {1 256 2 65536 4 4294967296 8 18446744073709551616})
+
 (defn- signed-le [n width]
-  (let [limit (bit-shift-left 1 (* 8 width))
+  (let [limit (or (signed-limit width)
+                  (throw (ex-info "unsupported signed little-endian width"
+                                  {:width width})))
         minimum (- (quot limit 2))
         maximum (dec (quot limit 2))]
     (when-not (<= minimum n maximum)
