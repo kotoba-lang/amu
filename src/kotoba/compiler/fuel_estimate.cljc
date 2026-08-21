@@ -3,7 +3,31 @@
 
   Best-effort only — not a sound WCET analysis."
   (:require [kotoba.sema :as sema]
-            [clojure.string :as str]))
+            [clojure.string :as str]
+            #?@(:cljs [["node:fs" :as node-fs]])))
+
+;; `System/exit` is JVM-only and `*err*` does not exist in ClojureScript. Both
+;; appear solely in `-main` below -- the estimator itself is pure -- so the
+;; namespace only needed a portable way to leave and to write a usage line.
+;; Node's exitCode is the peer of System/exit: setting it lets the process end
+;; normally with that status, which is also what a caller of `-main` in an
+;; embedded context wants rather than a hard exit.
+(defn- exit! [code]
+  #?(:clj (System/exit code)
+     :cljs (set! (.-exitCode js/process) code)))
+
+;; Reading the file named on the command line. `slurp` is not portable -- nbb
+;; does not provide it -- and this is a CLI entry point reading its own
+;; argument, which is host work by definition, so a reader conditional is the
+;; right shape here rather than the `fs`/IFilesystem seam that library code
+;; should take.
+(defn- read-source [path]
+  #?(:clj (slurp path)
+     :cljs (.readFileSync node-fs path "utf8")))
+
+(defn- warn! [line]
+  #?(:clj (binding [*out* *err*] (println line))
+     :cljs (.error js/console line)))
 
 (defn- walk-forms [form f]
   (f form)
@@ -82,10 +106,18 @@
                    [:expr (second args)]
                    [:file (first args)])]
     (when-not a
-      (binding [*out* *err*]
-        (println "usage: fuel-estimate <file.kotoba> | --expr <source>"))
-      (System/exit 2))
-    (let [src (if (= mode :expr) a (slurp a))
+      (warn! "usage: fuel-estimate <file.kotoba> | --expr <source>")
+      (exit! 2))
+    (let [src (if (= mode :expr) a (read-source a))
           report (estimate-source src)]
       (prn report)
-      (System/exit (if (:within-default-budget? report) 0 0)))))
+      ;; NOTE: both branches are 0, so this CLI cannot report an over-budget
+      ;; estimate through its exit status. That is how it was written in its
+      ;; first and only commit (b6b00ee), not a regression, and `(if pred 0 0)`
+      ;; is not how one spells "always zero" -- it reads as an unfinished
+      ;; `(if pred 0 1)`. Left exactly as it was: changing a CLI's exit
+      ;; contract is a decision for whoever wants the estimate to gate
+      ;; something, and this ns's own docstring calls the model "best-effort
+      ;; only -- not a sound WCET analysis", which is a reason someone might
+      ;; deliberately never fail on it.
+      (exit! (if (:within-default-budget? report) 0 0)))))
