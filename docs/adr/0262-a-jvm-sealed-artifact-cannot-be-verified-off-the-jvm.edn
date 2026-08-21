@@ -1,0 +1,65 @@
+{:adr/id 262
+ :status :accepted
+ :date "2026-08-21"
+ :decision :a-jvm-sealed-artifact-cannot-be-verified-off-the-jvm
+ :subject "src/kotoba/compiler/ios_aot.cljc"
+ :defect-class :no-canonical-value-codec-across-runtimes
+ :rule-instance {:superproject-adr "2608198300"
+                 :rule "loading a namespace is not evidence that it runs"}
+
+ :port {:from "src/kotoba/compiler/ios_aot.clj"
+        :to "src/kotoba/compiler/ios_aot.cljc"
+        :edits [{:site "ascii-bytes"
+                 :was ".getBytes with StandardCharsets/US_ASCII"
+                 :now "reader conditional; :cljs uses TextEncoder"
+                 :mirrors ["kotoba.native.aarch64/utf8-bytes"
+                           "kotoba.native.elf64/utf8-bytes"]}
+                {:site ":object return value"
+                 :was "(byte-array (map unchecked-byte object-vector))"
+                 :now "#?(:clj <unchanged> :cljs object-vector)"
+                 :why "cli writes :object to a file and the JVM tests read it as
+                       bytes; the JVM shape must not change. object-vector is
+                       already unsigned ints and already what :object-sha256 is
+                       computed from."}]}
+
+ :evidence {:nbb {:runner "run-portable-surface.cljs"
+                  :tests 6 :assertions 14 :failures 0 :jvm-required false}
+            :jvm {:runner "clojure -M:test"
+                  :tests 1115 :assertions 8369 :failures 0
+                  :namespaces "140 of 140"}
+            :differential {:object-bytes 544
+                           :object-sha256 "def77da7ef69f5407818d7dcd84dbc5402445312129e883f0b242d26d4c7eceb"
+                           :identical-across-runtimes true}
+            :discrimination [{:break "truncate the :cljs ascii-bytes branch"
+                              :result "1 failure"}
+                             {:break "make :object unconditionally byte-array"
+                              :result "cljs cannot resolve the symbol"}]}
+
+ :finding
+ {:what "a JVM-sealed artifact is rejected by the verifier under nbb"
+  :rejection "native artifact oracle value rejected"
+  :cause "pr-str prints a JVM i64 as `42`; the ClojureScript KIR interpreter
+          answers with a BigInt; (= 42n 42) is false"
+  :not-caused-by :the-packager
+  :specified-in "orgs/kotoba-lang/kotoba-lang/lang/value-codec.edn"
+  :implemented-in nil
+  :consequence "verification is not reproducible off the JVM today, which is a
+                precondition for a third party verifying an artifact without one"
+  :test-handling "the fixture reader restores the dropped type and says why;
+                  scoped to the transport, not to the code under test"}
+
+ :corrected-measurement
+ {:claimed "emit-program diverges across runtimes: 48 bytes on JVM, 100 on nbb"
+  :actual "identical sources emit identical bytes"
+  :cause "clojure -Spath resolves kotoba-native from a pinned git dep
+          (95fd4b19, ~/.gitlibs); the hand-built nbb classpath pointed at the
+          working checkout orgs/kotoba-lang/kotoba-native"
+  :caught-before-reporting true
+  :standing-fact "the orgs/ checkout and the dependency amu builds against are
+                  not the same code"
+  :prescribed-form "nbb --classpath \"src:test:$(clojure -Spath -M:test)\""}
+
+ :remaining {:clj-files-in-src 18
+             :groups [:file-io :byte-charset :crypto :json]
+             :blocked-on ["IFilesystem" "a canonical JSON choice"
+                          "a cljs crypto provider"]}}

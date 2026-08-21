@@ -2,7 +2,14 @@
   (:require [kotoba.artifact.core :as artifact]
             [kotoba.object.macho64 :as macho]
             [kotoba.verifier :as verifier])
-  (:import [java.nio.charset StandardCharsets]))
+  #?(:clj (:import [java.nio.charset StandardCharsets])))
+
+;; ASCII text as bytes. `.getBytes` is JVM-only; the string this is applied to
+;; is the fixed target-profile label, so the two agree byte for byte. Mirrors
+;; the `utf8-bytes` helpers in kotoba.native.aarch64 and .elf64.
+(defn- ascii-bytes [^String s]
+  #?(:clj (.getBytes s StandardCharsets/US_ASCII)
+     :cljs (js/Array.from (.encode (js/TextEncoder.) s))))
 
 (def ^:private ios-target :aarch64-ios-kotoba-v1)
 
@@ -29,7 +36,7 @@
        (reject! "iOS AOT entry is not exported" {:entry entry}))
      (let [code (:code kexe)
            offset (:offset export)
-           target-profile (.getBytes "aarch64-ios-kotoba-v1" StandardCharsets/US_ASCII)
+           target-profile (ascii-bytes "aarch64-ios-kotoba-v1")
            object-vector (macho/encode-object
                           {:machine :aarch64
                            :platform platform
@@ -50,7 +57,14 @@
                                       :value offset :external? true :description 0x20}
                                      {:name "_kotoba_ios_target_profile" :section 2
                                       :value 0 :external? true :description 0x20}]})
-           object (byte-array (map unchecked-byte object-vector))
+           ;; The JVM shape is unchanged on purpose: `cli` writes `:object`
+           ;; straight to a file and the existing tests read it as bytes, so
+           ;; making it portable must not alter what a JVM caller receives.
+           ;; `byte-array`/`unchecked-byte` have no ClojureScript equivalent,
+           ;; and `object-vector` -- already unsigned ints, and already what
+           ;; `:object-sha256` below is computed from -- is the natural peer.
+           object #?(:clj (byte-array (map unchecked-byte object-vector))
+                     :cljs object-vector)
            manifest {:format :kotoba.ios-aot/v2
                      :target ios-target
                      :platform platform
