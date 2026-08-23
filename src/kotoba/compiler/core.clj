@@ -16,6 +16,7 @@
             [kotoba.component.admission :as component-admission]
             [kotoba.abi.contract :as abi]
             [kotoba.compiler.backend.cljs :as cljs]
+            [kotoba.compiler.backend.evm :as evm]
             [kotoba.script :as script]
             [kotoba.native.x86-64 :as x86-64]
             [kotoba.native.aarch64 :as aarch64]
@@ -646,6 +647,15 @@
                     :kotoba.artifact/target target
                     :kotoba.artifact/target-profile profile
                     :kotoba.artifact/effects (:effects kir)}})
+
+      (= backend :evm256-kotoba-v1)
+      (let [artifact (evm/emit kir)]
+        (evm/verify-artifact! artifact)
+        (assoc artifact
+               :hir hir
+               :admission admission
+               :compatibility compatibility
+               :floating-point-policy floating-point-policy))
 
       :else
       (let [program (select-keys kir [:format :entry :exports :signature :effects :functions])

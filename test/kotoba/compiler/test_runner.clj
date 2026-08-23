@@ -78,6 +78,7 @@
             [kotoba.compiler.frontend-named-capability-test]
             [kotoba.compiler.linear-resource-test]
             [kotoba.compiler.backend-cljs-test]
+            [kotoba.compiler.backend-evm-test]
             [kotoba.compiler.backend-cljs-portable-test]
             [kotoba.compiler.portable-surface-test]
             [kotoba.compiler.backend-qualification-test]
@@ -225,6 +226,7 @@
    'kotoba.compiler.frontend-named-capability-test
    'kotoba.compiler.linear-resource-test
    'kotoba.compiler.backend-cljs-test
+   'kotoba.compiler.backend-evm-test
    'kotoba.compiler.backend-cljs-portable-test
    'kotoba.compiler.portable-surface-test
    'kotoba.compiler.backend-qualification-test
