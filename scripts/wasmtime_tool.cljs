@@ -5,16 +5,24 @@
             ["node:fs" :as fs]
             ["node:path" :as path]))
 
-(def version "42.0.1")
+;; 43, not 42, because kotoba-component's component-model-v1.edn declares
+;; :minimum-wasmtime-major 43 for WASI 0.3 and the clock kit's qualification
+;; suite reads that number rather than hard-coding one. Pinned at 42 the
+;; suite could not pass anywhere -- not locally and not in CI, which
+;; provisions through this same table -- so the gate would have been
+;; permanently red rather than discriminating. v43.0.2 is the lowest patch
+;; of the lowest major that satisfies the declared baseline; the four
+;; digests below were taken with shasum -a 256 over the downloaded archives.
+(def version "43.0.2")
 (def releases
-  {"linux-x64" {:archive "wasmtime-v42.0.1-x86_64-linux.tar.xz"
-                 :sha256 "dd5253f3cb521bb094f9951c3d2c45c746b31e5723b07ce56f162ec9bab44d59"}
-   "linux-arm64" {:archive "wasmtime-v42.0.1-aarch64-linux.tar.xz"
-                   :sha256 "fa9b7e09f49f75c17acf2c018a4286cdbeffb4c1f3ee9e72c48b6a42c1deceda"}
-   "darwin-arm64" {:archive "wasmtime-v42.0.1-aarch64-macos.tar.xz"
-                    :sha256 "69c56932453483f31cac7636f850bbd3bf884eaa7315b2c3b92857a2b0c6762e"}
-   "darwin-x64" {:archive "wasmtime-v42.0.1-x86_64-macos.tar.xz"
-                  :sha256 "13465d6c3f35b2872f9168df19b74af6140b4f1a3a11d8a397950777ecfae858"}})
+  {"linux-x64" {:archive "wasmtime-v43.0.2-x86_64-linux.tar.xz"
+                 :sha256 "06a0b36fd70b6fe4efc3a52325907cbfbb7513c9e1faced9b12e1113d3b89980"}
+   "linux-arm64" {:archive "wasmtime-v43.0.2-aarch64-linux.tar.xz"
+                   :sha256 "2febb5cdbe18992e5a87598e4f58afddb4509b4ae9a1b0ebe7af4e56e14039e8"}
+   "darwin-arm64" {:archive "wasmtime-v43.0.2-aarch64-macos.tar.xz"
+                    :sha256 "cbe9eeb255f128d0f7eca1b05c081b5fb825ecbcba9dfd2d8c53faa668ada85b"}
+   "darwin-x64" {:archive "wasmtime-v43.0.2-x86_64-macos.tar.xz"
+                  :sha256 "34e3ad503a5cf2578489d5aa998ef1038bfb862aebc593a4411daf9f2851c34d"}})
 
 (def root (.join path lib/root ".tools" "wasmtime"))
 (def executable (.join path root "wasmtime"))

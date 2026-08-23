@@ -129,6 +129,15 @@
             [kotoba.compiler.llm-wasm-aot-test]
             [kotoba.compiler.state-wasm-aot-test]
             [kotoba.compiler.ui-wasm-aot-test]
+            [kotoba.compiler.clock-native-kexe-oracle-test]
+            [kotoba.compiler.http-ingress-wasm-aot-qualification-test]
+            [kotoba.compiler.http-wasm-aot-qualification-test]
+            [kotoba.compiler.llm-wasm-aot-qualification-test]
+            [kotoba.compiler.log-wasm-aot-qualification-test]
+            [kotoba.compiler.native-aot-qualification-test]
+            [kotoba.compiler.state-wasm-aot-qualification-test]
+            [kotoba.compiler.storage-wasm-aot-qualification-test]
+            [kotoba.compiler.ui-wasm-aot-qualification-test]
             [kotoba.compiler.ui-jit-test]
             [kotoba.compiler.dataspace-match-test]
             [kotoba.compiler.dataspace-provider-test]
@@ -268,6 +277,15 @@
    'kotoba.compiler.llm-wasm-aot-test
    'kotoba.compiler.state-wasm-aot-test
    'kotoba.compiler.ui-wasm-aot-test
+   'kotoba.compiler.clock-native-kexe-oracle-test
+   'kotoba.compiler.http-ingress-wasm-aot-qualification-test
+   'kotoba.compiler.http-wasm-aot-qualification-test
+   'kotoba.compiler.llm-wasm-aot-qualification-test
+   'kotoba.compiler.log-wasm-aot-qualification-test
+   'kotoba.compiler.native-aot-qualification-test
+   'kotoba.compiler.state-wasm-aot-qualification-test
+   'kotoba.compiler.storage-wasm-aot-qualification-test
+   'kotoba.compiler.ui-wasm-aot-qualification-test
    'kotoba.compiler.ui-jit-test
    'kotoba.compiler.dataspace-match-test
    'kotoba.compiler.dataspace-provider-test
