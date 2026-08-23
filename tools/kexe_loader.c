@@ -12,6 +12,7 @@
 #include <sys/wait.h>
 #include <signal.h>
 #include <stddef.h>
+#include <time.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <unistd.h>
@@ -873,6 +874,118 @@ static int valid_dataspace_result(struct kexe_context_v3 *context,
   return 0;
 }
 
+
+#define KEXE_CLOCK_CAPABILITY_ID 7u
+#define KEXE_CLOCK_CASE_WALL 0
+#define KEXE_CLOCK_CASE_MONOTONIC 1
+#define KEXE_CLOCK_CASE_ERROR 2
+
+static int64_t intern_pool_string(struct kexe_context_v3 *context,
+                                  const char *text) {
+  struct kexe_shared_v3 *shared = (struct kexe_shared_v3 *)context;
+  size_t n = strlen(text);
+  if (context == NULL || text == NULL ||
+      n > KEXE_STRING_POOL_BYTES ||
+      shared->string_pool_used + n > KEXE_STRING_POOL_BYTES) {
+    raise(SIGILL);
+    return 0;
+  }
+  uint64_t off = shared->string_pool_used;
+  memcpy(shared->string_pool + off, text, n);
+  shared->string_pool_used += n;
+  return checked_pair_new(context, -((int64_t)off) - 1, (int64_t)n);
+}
+
+static int valid_clock_request(const struct kexe_shared_v3 *shared, int64_t value,
+                               int64_t *ordinal, int64_t *payload) {
+  /* Both request cases carry a bool payload (mask 0b11). */
+  return inspect_variant_result(shared, value, 2, 3u, ordinal, payload);
+}
+
+static int valid_clock_result(const struct kexe_shared_v3 *shared, int64_t value) {
+  int64_t ordinal = 0, payload = 0, fields[KEXE_RECORD_FIELD_LIMIT];
+  if (!inspect_variant_result(shared, value, 3, 0, &ordinal, &payload)) return 0;
+  if (ordinal == KEXE_CLOCK_CASE_WALL || ordinal == KEXE_CLOCK_CASE_MONOTONIC) {
+    if (!inspect_record_result(shared, payload, 2, fields)) return 0;
+    return fields[0] >= 0 && fields[1] > 0;
+  }
+  if (ordinal == KEXE_CLOCK_CASE_ERROR) {
+    return inspect_record_result(shared, payload, 2, fields);
+  }
+  return 0;
+}
+
+static int read_wall_millis(int64_t *out) {
+  struct timespec ts;
+  if (clock_gettime(CLOCK_REALTIME, &ts) != 0) return -1;
+  if (ts.tv_sec < 0 || ts.tv_nsec < 0) return -1;
+  if (ts.tv_sec > (INT64_MAX - ts.tv_nsec / 1000000) / 1000) return -1;
+  *out = ts.tv_sec * (int64_t)1000 + ts.tv_nsec / 1000000;
+  return 0;
+}
+
+static int read_monotonic_nanos(int64_t *out) {
+  struct timespec ts;
+  if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0) return -1;
+  if (ts.tv_sec < 0 || ts.tv_nsec < 0) return -1;
+  if (ts.tv_sec > (INT64_MAX - ts.tv_nsec) / 1000000000LL) return -1;
+  *out = ts.tv_sec * 1000000000LL + ts.tv_nsec;
+  return 0;
+}
+
+static int64_t clock_error_result(struct kexe_context_v3 *context,
+                                  const char *code, const char *message) {
+  int64_t code_handle = intern_pool_string(context, code);
+  int64_t message_handle = intern_pool_string(context, message);
+  int64_t record = checked_pair_new(context, message_handle, 0);
+  record = checked_pair_new(context, code_handle, record);
+  return checked_pair_new(context, KEXE_CLOCK_CASE_ERROR, record);
+}
+
+static int64_t clock_success_result(struct kexe_context_v3 *context,
+                                    int64_t ordinal, int64_t tick,
+                                    int64_t sequence) {
+  int64_t record = checked_pair_new(context, sequence, 0);
+  record = checked_pair_new(context, tick, record);
+  return checked_pair_new(context, ordinal, record);
+}
+
+static int64_t hosted_clock_v1(struct kexe_context_v3 *context, int64_t request) {
+  struct kexe_shared_v3 *shared = (struct kexe_shared_v3 *)context;
+  static int64_t observation_sequence = 0;
+  static int64_t last_monotonic = -1;
+  int64_t ordinal = 0, payload = 0, tick = 0;
+  if (!valid_clock_request(shared, request, &ordinal, &payload)) {
+    raise(SIGILL);
+    return 0;
+  }
+  if (observation_sequence == INT64_MAX) {
+    raise(SIGILL);
+    return 0;
+  }
+  if (ordinal == KEXE_CLOCK_CASE_WALL) {
+    if (read_wall_millis(&tick) != 0 || tick < 0) {
+      return clock_error_result(context, ":clock/source", "clock source failed");
+    }
+    return clock_success_result(context, KEXE_CLOCK_CASE_WALL, tick,
+                                ++observation_sequence);
+  }
+  if (ordinal == KEXE_CLOCK_CASE_MONOTONIC) {
+    if (read_monotonic_nanos(&tick) != 0 || tick < 0) {
+      return clock_error_result(context, ":clock/source", "clock source failed");
+    }
+    if (last_monotonic >= 0 && tick < last_monotonic) {
+      return clock_error_result(context, ":clock/regressed",
+                                "monotonic clock regressed");
+    }
+    last_monotonic = tick;
+    return clock_success_result(context, KEXE_CLOCK_CASE_MONOTONIC, tick,
+                                ++observation_sequence);
+  }
+  raise(SIGILL);
+  return 0;
+}
+
 static int valid_typed_value(struct kexe_context_v3 *context,
                              uint64_t kind, int64_t value) {
   if (kind == KEXE_TYPED_STRING) {
@@ -883,6 +996,12 @@ static int valid_typed_value(struct kexe_context_v3 *context,
     int64_t payload = checked_pair_get(context, value, 1);
     if (tag != 0 && tag != 1) return 0;
     return kind != KEXE_TYPED_OPTION_I64 || tag != 0 || payload == 0;
+  }
+  if (kind == KEXE_TYPED_CLOCK_V1) {
+    struct kexe_shared_v3 *shared = (struct kexe_shared_v3 *)context;
+    int64_t ordinal = 0, payload = 0;
+    return valid_clock_request(shared, value, &ordinal, &payload) ||
+           valid_clock_result(shared, value);
   }
   if (kind == KEXE_TYPED_DATASPACE_V1) {
     return valid_dataspace_request(context, value) ||
@@ -1076,9 +1195,22 @@ static int64_t checked_typed_cap_call(struct kexe_context_v3 *context,
     raise(SIGILL);
     return 0;
   }
-  int64_t result = request;
-  if (id == 24 && request_kind == KEXE_TYPED_DATASPACE_V1) {
+  int64_t result;
+  if (request_kind == KEXE_TYPED_CLOCK_V1) {
+    /* Hosted oracle for the nested clock-v1 codec. Identity would echo the
+     * request pair and cannot produce a wall record; production native-aot
+     * remains the C-free aiueos syscall (ADR 0271). */
+    if (id != KEXE_CLOCK_CAPABILITY_ID) {
+      raise(SIGILL);
+      return 0;
+    }
+    result = hosted_clock_v1(context, request);
+  } else if (id == 24 && request_kind == KEXE_TYPED_DATASPACE_V1) {
     result = dataspace_inject(context, request);
+  } else {
+    /* The qualification host's deterministic typed provider is identity
+     * for the one-word string/option/result slice. */
+    result = request;
   }
   if (!valid_typed_value(context, result_kind, result)) {
     raise(SIGILL);
@@ -1492,6 +1624,7 @@ static void install_syscall_sandbox(void) {
       ALLOW_SYSCALL(__NR_tgkill),
       ALLOW_SYSCALL(__NR_munmap),
       ALLOW_SYSCALL(__NR_brk),
+      ALLOW_SYSCALL(__NR_clock_gettime),
       BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_TRAP),
   };
   struct sock_fprog program = {
@@ -1509,7 +1642,8 @@ static void install_syscall_sandbox(void) {
       "(allow file-write-data)"
       "(allow signal (target self))"
       "(allow process-info-pidinfo)"
-      "(allow process-info-setcontrol)";
+      "(allow process-info-setcontrol)"
+      "(allow sysctl-read)";
   char *error = NULL;
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"

@@ -72,6 +72,30 @@
   #{"dataspace-v1.edn" "storage-v1.edn" "log-v1.edn"
     "http-v1.edn" "llm-v1.edn" "state-v1.edn" "ui-v1.edn"})
 
+(def wasmtime-component-wasm-aot-kits
+  "A THIRD seam, and the same rule: a name here needs a test that runs the
+  guest on it. These two kits reach :wasm-aot not through the browser typed
+  ABI above but through a wasm COMPONENT executed by wasmtime, so they carry
+  no :wasm-aot-surface -- that block describes kotoba:typed/cap-call, and
+  describing this seam with it would be false in a way nothing else here
+  would catch.
+
+    http-ingress-v1.edn  host inject -> accept over a closed composition.
+                         kotoba.compiler.http-ingress-wasm-aot-qualification-test
+
+  The suite fails rather than skips on an under-spec engine, so a name here
+  cannot stay green on a machine that never ran the component.
+
+  clock-v1.edn is deliberately NOT here. ADR 0263 proposes it and a suite was
+  written for it, but the composed component does not link on wasmtime 43.0.2
+  or 45.0.3 -- instance export `now` has the wrong type -- so the claim has no
+  run behind it. See the note in clock-v1.edn."
+  #{"http-ingress-v1.edn"})
+
+(defn- wasm-aot-proved? [filename]
+  (or (typed-kit-abi-wasm-aot-kits filename)
+      (wasmtime-component-wasm-aot-kits filename)))
+
 (defn- kit-files-on-disk []
   (->> (io/file (io/resource "kotoba/lang/capability-kits"))
        .listFiles
@@ -117,7 +141,7 @@
     (testing filename
       (let [q (:qualification (load-kit filename))]
         (is (= :pending (:wasm32-kotoba-v1 q)))
-        (when-not (typed-kit-abi-wasm-aot-kits filename)
+        (when-not (wasm-aot-proved? filename)
           (is (= :pending (:wasm-aot q))))))))
 
 (deftest only-proved-kits-claim-typed-kit-wasm-aot
@@ -125,7 +149,7 @@
     (testing filename
       (let [kit (load-kit filename)
             claimed (:wasm-aot (:qualification kit))]
-        (if (typed-kit-abi-wasm-aot-kits filename)
+        (if (wasm-aot-proved? filename)
           (is (= :implemented claimed))
           (is (= :pending claimed)))))))
 

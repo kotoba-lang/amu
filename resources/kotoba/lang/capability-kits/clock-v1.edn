@@ -22,7 +22,18 @@
                  :wasm32-kotoba-v1 :implemented
                  :native-aot :pending :jit :pending}
  ;; i64 elaboration host-time path. Distinct from the kit :request/:result
- ;; variant schema that :wasm-aot still names. See ADR 0257.
+ ;; variant schema that :wasm-aot would name on WASI 0.3 (ADR 0263).
+ ;;
+ ;; :wasm-aot stays :pending. ADR 0263 proposes the WASI 0.3 seam and a suite
+ ;; was written for it, but measured 2026-08-24 the composed component does
+ ;; not link on wasmtime 43.0.2 OR 45.0.3:
+ ;;   component imports instance `wasi:clocks/system-clock@0.3.0`, but a
+ ;;   matching implementation was not found in the linker
+ ;;     instance export `now` has the wrong type
+ ;; Identical on both engines, so this is not a version floor -- the WIT that
+ ;; package-clock-wasi-provider emits disagrees with what wasmtime implements
+ ;; for that interface. Which WASI 0.3 revision the kit targets is ADR 0263's
+ ;; question, not something a merge can settle.
  :wasm32-kotoba-v1-surface {:import ["kotoba:cap" "call"]
                             :signature [:i64 :i64 :i64]
                             :capability-id 7
