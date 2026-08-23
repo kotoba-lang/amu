@@ -62,6 +62,18 @@
   (testing "kernel-boot-info"
     (is (nil? (provenance-rejection
                "(defn main [] (kernel-load-u8 (kernel-boot-info) 4096 0))"))))
+  (testing "private ValueRuntime capability table"
+    (is (nil? (provenance-rejection
+               "(defn main [] (kernel-load-u8-4k (kernel-value-runtime-capability-table) 4096 0))"))))
+  (testing "private ValueRuntime provider queue"
+    (is (nil? (provenance-rejection
+               "(defn main [] (kernel-load-u8 (kernel-value-provider-queue) 512 0))"))))
+  (testing "private ValueRuntime Handle arena"
+    (is (nil? (provenance-rejection
+               "(defn main [] (kernel-load-u8-4k (kernel-value-runtime-arena) 4096 0))"))))
+  (testing "private ValueRuntime CAS scratch"
+    (is (nil? (provenance-rejection
+               "(defn main [] (kernel-load-u8 (kernel-value-runtime-cas-scratch) 384 0))"))))
   (testing "sub-window of a validated region, the pattern in six aiueos
             objects -- now spelled as the checked narrowing, since bare `+`
             in a base position is rejected (kernel-subregion-test)"
@@ -95,6 +107,17 @@
           "the C kernel hands `entry` its region; that is unverifiable here")
       (is (nil? (get (:abi-boundary report) 'read-byte))
           "an internally-supplied parameter is not a boundary"))))
+
+(deftest report-names-private-value-runtime-regions
+  (let [hir (sema/analyze
+             "(defn q [] (kernel-load-u8 (kernel-value-provider-queue) 512 0))
+              (defn a [] (kernel-load-u8-4k (kernel-value-runtime-arena) 4096 0))
+              (defn s [] (kernel-load-u8 (kernel-value-runtime-cas-scratch) 384 0))
+              (defn main [] 0)")
+        report (sema/kernel-region-report (:functions hir))]
+    (is (true? (:uses-private-value-provider-queue? report)))
+    (is (true? (:uses-private-value-runtime-arena? report)))
+    (is (true? (:uses-private-value-runtime-cas-scratch? report)))))
 
 (deftest modules-without-kernel-ops-are-untouched
   (is (nil? (provenance-rejection "(defn main [] (+ 1 2))"))))
