@@ -42,6 +42,8 @@
         "js" :js-kotoba-v1
         "javascript" :js-kotoba-v1
         "js-browser" :js-browser-kotoba-v1
+        "evm" :evm256-kotoba-v1
+        "evm256" :evm256-kotoba-v1
         "wasm32-browser" :wasm32-browser-kotoba-v1
         "wasm32-wasi" :wasm32-wasi-kotoba-v1
         "x86_64-linux" :x86_64-linux-kotoba-v1
@@ -381,6 +383,7 @@
                             :component ".component.wasm"
                             :cljs ".cljs"
                             :javascript ".mjs"
+                            :evm ".evm"
                             :kernel ".o"
                             :process ".elf"
                             ".kexe")))
@@ -480,6 +483,20 @@
                                           :key-fn (fn [k] (if (keyword? k)
                                                             (subs (str k) 1)
                                                             (str k))))))
+        :evm/v1 (do
+                  (atomic-output/write-bytes!
+                   output (byte-array (map unchecked-byte (:creation-bytes result))))
+                  (atomic-output/write-text!
+                   (str output ".abi.json")
+                   (json/write-str (:abi result)
+                                   :key-fn (fn [k] (if (keyword? k)
+                                                     (subs (str k) 1)
+                                                     (str k)))))
+                  (atomic-output/write-edn!
+                   (str output ".manifest.edn")
+                   (select-keys result [:format :target :target-profile :selector
+                                        :kir-sha256 :runtime-sha256
+                                        :creation-sha256 :limits])))
         :kexe/v1 (if-let [packaged (case artifact-kind
                                     "image" (:binary result)
                                     "object" (:object result)

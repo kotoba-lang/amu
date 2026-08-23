@@ -391,8 +391,27 @@ the full Clojure/ClojureScript reader, reader conditionals, or ambient host APIs
 
 ```text
 source -> inert reader -> typed/effect HIR -> SSA-like KIR
-       -> wasm32 | x86_64 | aarch64 | cljs -> independent verifier -> admission
+       -> wasm32 | x86_64 | aarch64 | cljs | evm -> independent verifier -> admission
 ```
+
+## Bounded EVM target
+
+`--target evm` lowers the ordinary Kotoba S-expression pipeline through
+semantic analysis, capability admission, and checked KIR directly to EVM
+creation bytecode. It does not translate through Solidity and has no Filecoin
+runtime or storage dependency. The first `:evm256-kotoba-v1` slice deliberately
+admits one pure, zero-argument `main() -> int64` using bounded i64 literals,
+addition, and multiplication; storage, external calls, capabilities, parameters,
+extra functions, and every unsupported KIR expression fail closed.
+
+```bash
+clojure -M:run compile examples/evm-answer.kotoba \
+  --target evm --output answer.evm
+```
+
+The raw `answer.evm` creation bytecode deploys a standard Ethereum ABI
+`main()` dispatcher. The compiler also writes `answer.evm.abi.json` and a
+digest-bound `answer.evm.manifest.edn`; an unknown selector reverts.
 
 ## Runtime: nbb-native for Wasm and ordinary native compile/check
 
