@@ -11,6 +11,7 @@
             [kotoba.kir :as ir]
             [kotoba.wasm.core :as wasm]
             [kotoba.compiler.diagnostic :as diagnostic]
+            [kotoba.compiler.backend.evm :as evm]
             [kotoba.compiler.kotoba-reader :as kr]
             [test.nbb.cases :as cases]))
 
@@ -57,6 +58,49 @@
       {:name "named-operation-elaboration" :ok? false
        :detail (str "threw: " (.-message error))})))
 
+(def ^:private evm-source
+  "(ns evm.big)\n(defn main [] (+ 1234605616436508552 1))")
+
+;; The bytes and digest the JVM emits for `evm-source`, measured 2026-08-25.
+;; Pinned rather than recomputed, because a parity case that computes both
+;; sides with the same code proves only that the code is deterministic.
+(def ^:private evm-jvm-creation-sha256
+  "8af8c288de346d0ad1f404c2bb344038dd69ba193619f33310225c2a923c2bbc")
+
+(def ^:private evm-jvm-push8-operand
+  [0x11 0x22 0x33 0x44 0x55 0x66 0x77 0x88])
+
+(defn- evm-case
+  "`kotoba.compiler.backend.evm` on the second runtime, against the JVM's bytes.
+
+  This backend is `.cljc`, so it claims both runtimes, and until 2026-08-25 the
+  claim was false: `Long/MIN_VALUE` in a `:clj`-only form meant the namespace
+  did not load here at all. Fixing the load surfaced two more, and neither
+  would have failed loudly -- `integer?` does not recognise a bigint, and cljs
+  bitwise shifts wrap at 32, so the PUSH8 operand came out as the low four
+  bytes twice. The second of those was a bug in `kotoba.kir.cljs-i64/ashr`
+  itself, which had one caller (`sleb128`, which shifts by 7) and so had never
+  been asked for a shift of 32 or more.
+
+  The literal is 0x1122334455667788 for that reason: all eight bytes differ, so
+  a wrapped shift shows up instead of being coincidentally right. Every case in
+  the JVM's own `backend-evm-test` uses values below 256, where every one of
+  these three defects is invisible."
+  []
+  (try
+    (let [artifact (evm/emit (ir/lower (sema/analyze evm-source)))
+          runtime (:runtime-bytes artifact)
+          push8 (vec (take 8 (drop (inc (.indexOf (to-array runtime) 0x67)) runtime)))
+          ok? (and (= evm-jvm-creation-sha256 (:creation-sha256 artifact))
+                   (= evm-jvm-push8-operand push8))]
+      {:name "evm-matches-jvm-bytes" :ok? ok?
+       :detail (when-not ok?
+                 (pr-str {:creation-sha256 (:creation-sha256 artifact)
+                          :push8 push8}))})
+    (catch :default error
+      {:name "evm-matches-jvm-bytes" :ok? false
+       :detail (str "threw: " (.-message error))})))
+
 (let [results
       (conj
        (vec
@@ -69,7 +113,8 @@
             (catch :default e
               {:name name :ok? false :detail (str "threw: " (.-message e))}))))
        (diagnostic-case)
-       (named-operation-case))
+       (named-operation-case)
+       (evm-case))
       failures (remove :ok? results)]
   (doseq [{:keys [name ok? detail]} results]
     (println (if ok? "PASS" "FAIL") name (or detail "")))

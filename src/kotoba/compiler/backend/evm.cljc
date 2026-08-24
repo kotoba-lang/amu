@@ -8,7 +8,8 @@
   deploys a conventional EVM runtime with a selector dispatcher, ABI-word
   return, and revert-on-unknown-selector behavior."
   (:require [kotoba.artifact.core :as artifact]
-            [kotoba.kir.target :as target]))
+            [kotoba.kir.target :as target]
+            #?@(:cljs [[kotoba.kir.cljs-i64 :as i64]])))
 
 (def target-name :evm256-kotoba-v1)
 (def selector-main [0xdf 0xfe 0xad 0xd0])
@@ -24,15 +25,46 @@
   (throw (ex-info message (merge {:phase :evm-lowering :target target-name}
                                  data))))
 
+;; This file is .cljc, so it claims both runtimes. Until 2026-08-25 the two
+;; functions below were written only for the JVM and the claim was false in
+;; three separate ways, none of which the JVM suite could see:
+;;
+;;   1. `Long/MIN_VALUE` is not a symbol ClojureScript can resolve, so the
+;;      namespace did not even LOAD there -- measured with the resolved
+;;      classpath, the only one of amu's fifteen .cljc namespaces that failed.
+;;      Its neighbours use the same constant and load fine because theirs sit
+;;      inside `#?(:clj ...)`, which the cljs reader strips before it is read.
+;;   2. `integer?` does not recognise a JS bigint, and on ClojureScript every
+;;      .kotoba integer VALUE is a bigint (`kotoba.kir.cljs-i64`'s docstring
+;;      states this and gives the reason: plain cljs numbers are doubles and
+;;      lose precision above 2^53). So `i64?` would have answered false for
+;;      every literal it was handed.
+;;   3. cljs bitwise ops coerce to int32, so `unsigned-bit-shift-right` by 56
+;;      is a shift by 24 -- `56 & 31`. That one is the dangerous kind: it
+;;      returns a number rather than failing, and would have emitted wrong
+;;      PUSH8 operands silently.
+;;
+;; Both branches are held to byte-for-byte identity by
+;; `test/nbb/run.cljs`'s evm case against the JVM's pinned bytes.
+
 (defn- i64? [value]
-  (and (integer? value)
-       (<= Long/MIN_VALUE value Long/MAX_VALUE)))
+  #?(:clj  (and (integer? value)
+                (<= Long/MIN_VALUE value Long/MAX_VALUE))
+     :cljs (and (or (i64/bigint-value? value) (integer? value))
+                (i64/in-i64-range? (i64/->bigint value)))))
 
 (defn- i64-bytes [value]
-  (let [word (long value)]
-    (mapv (fn [shift]
-            (bit-and 0xff (unsigned-bit-shift-right word shift)))
-          (range 56 -1 -8))))
+  #?(:clj  (let [word (long value)]
+             (mapv (fn [shift]
+                     (bit-and 0xff (unsigned-bit-shift-right word shift)))
+                   (range 56 -1 -8)))
+     ;; `ashr` is arithmetic, so it sign-extends where the JVM's unsigned
+     ;; shift zero-fills; `asUintN 8` takes the low eight bits of the result,
+     ;; which are the same eight bits either way.
+     :cljs (let [word (i64/wrap-i64 (i64/->bigint value))]
+             (mapv (fn [shift]
+                     (js/Number (js/BigInt.asUintN 8 (i64/ashr word shift))))
+                   (range 56 -1 -8)))))
 
 (defn- expression-shape
   ([form] (expression-shape form 0))
