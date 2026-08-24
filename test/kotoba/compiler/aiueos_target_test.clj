@@ -2,6 +2,7 @@
   (:require [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]
             [kotoba.compiler.packaging.pe32plus :as pe32plus]
+            [kotoba.compiler.packaging.elf-fixture :as elf-fixture]
             [kotoba.kir.target :as target]))
 
 (defn- unsigned [n] (bit-and (int n) 0xff))
@@ -210,6 +211,19 @@
     (is (= bytes (:bytes second-image)) "embedded boot image is reproducible")
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #"x86-64 ET_EXEC"
           (pe32plus/package-embedded-kernel (vec (repeat 128 0)))))))
+
+(deftest pe32plus-refuses-a-paddr-outside-the-pt-load-contract
+  ;; The JVM twin of `test/nbb/run.cljs`'s pe32plus case. Same fixture bytes,
+  ;; same assertion. This side has always been correct; it is here so that the
+  ;; two runtimes are held to one statement rather than to two descriptions of
+  ;; one, and so the fixture has a caller that fails if its shape drifts.
+  (let [error (is (thrown-with-msg?
+                   clojure.lang.ExceptionInfo #"PT_LOAD contract rejected"
+                   (pe32plus/package-embedded-kernel
+                    (elf-fixture/kernel-with-out-of-range-paddr))))]
+    (is (= elf-fixture/paddr-above-the-bound
+           (:paddr (first (:segments (ex-data error)))))
+        "refusing for the right reason means having read all eight bytes")))
 
 (deftest aarch64-kernel-target-packages-a-freestanding-elf
   (testing "a bounded-store Kotoba kernel compiles to an EM_AARCH64 ELF64"

@@ -112,9 +112,33 @@
        :relocations {:format :pe-base-relocation/v1 :fixups 0 :position-independent true}
        :bytes bytes})))
 
-(defn- read-le [bytes offset width]
+;; 2^(8*i) for i in 0..7, for the same reason the bounds above are literals:
+;; `(bit-shift-left 1 32)` is 1 on ClojureScript. Each is a power of two, exact
+;; as a JVM long and as a JS double alike.
+(def ^:private byte-scale
+  [1 256 65536 16777216 4294967296 1099511627776 281474976710656 72057594037927936])
+
+(defn- read-le
+  "WIDTH little-endian bytes at OFFSET, as one number.
+
+  This used to accumulate with `(bit-shift-left byte (* 8 index))`, which is
+  the very hazard the comment above this file's bounds was written about, at a
+  width the comment's author was not looking at: the six ELF fields read here
+  with width 8 need shifts of 32, 40, 48 and 56, and cljs takes shift counts
+  mod 32. Bytes 4 through 7 of every 64-bit field were folded into the LOW
+  bits.
+
+  It was inert for legal input -- the PT_LOAD contract caps paddr at
+  0x40000000 and memsz at 0x100000, so those four bytes are zero in every
+  kernel this packager is supposed to see. It was NOT inert for input the
+  contract exists to refuse. Measured 2026-08-25 with
+  `kotoba.compiler.packaging.elf-fixture`, whose first segment sits at
+  0x0001000000100000: the JVM read 281474977759232 and rejected the kernel;
+  nbb read 1114112, passed every bound check, and emitted a boot image.
+  The admission check failed open on the second runtime."
+  [bytes offset width]
   (reduce (fn [value index]
-            (+ value (bit-shift-left (long (nth bytes (+ offset index))) (* 8 index))))
+            (+ value (* (nth bytes (+ offset index)) (nth byte-scale index))))
           0 (range width)))
 
 (defn- code-size [tokens]

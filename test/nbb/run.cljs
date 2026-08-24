@@ -12,6 +12,8 @@
             [kotoba.wasm.core :as wasm]
             [kotoba.compiler.diagnostic :as diagnostic]
             [kotoba.compiler.backend.evm :as evm]
+            [kotoba.compiler.packaging.elf-fixture :as elf-fixture]
+            [kotoba.compiler.packaging.pe32plus :as pe32plus]
             [kotoba.compiler.kotoba-reader :as kr]
             [test.nbb.cases :as cases]))
 
@@ -101,6 +103,33 @@
       {:name "evm-matches-jvm-bytes" :ok? false
        :detail (str "threw: " (.-message error))})))
 
+(defn- pe32plus-admission-case
+  "`package-embedded-kernel` refusing a kernel it must refuse, on THIS runtime.
+
+  The JVM has always refused it. Until 2026-08-25 nbb accepted it and emitted a
+  26 KB boot image, because `read-le` accumulated with `bit-shift-left` and
+  cljs takes shift counts mod 32 -- the high bytes of every 64-bit ELF field
+  landed in the low bits. See `kotoba.compiler.packaging.elf-fixture`.
+
+  The assertion is on the VALUE the packager read, not merely on the refusal.
+  The first version of the fixture was refused here even with the wrong value,
+  because that particular misreading happened not to be page-aligned; a
+  negative case that passes for a reason other than the one it names would
+  have recorded that as a pass."
+  []
+  (try
+    (pe32plus/package-embedded-kernel (elf-fixture/kernel-with-out-of-range-paddr))
+    {:name "pe32plus-refuses-an-out-of-range-paddr" :ok? false
+     :detail "a kernel outside the PT_LOAD contract was packaged"}
+    (catch :default error
+      (let [read-back (:paddr (first (:segments (ex-data error))))
+            ok? (= elf-fixture/paddr-above-the-bound read-back)]
+        {:name "pe32plus-refuses-an-out-of-range-paddr" :ok? ok?
+         :detail (when-not ok?
+                   (if (= elf-fixture/paddr-as-misread-by-a-wrapped-shift read-back)
+                     "refused, but read the shift-wrapped paddr"
+                     (pr-str {:paddr read-back :message (.-message error)})))}))))
+
 (let [results
       (conj
        (vec
@@ -114,7 +143,8 @@
               {:name name :ok? false :detail (str "threw: " (.-message e))}))))
        (diagnostic-case)
        (named-operation-case)
-       (evm-case))
+       (evm-case)
+       (pe32plus-admission-case))
       failures (remove :ok? results)]
   (doseq [{:keys [name ok? detail]} results]
     (println (if ok? "PASS" "FAIL") name (or detail "")))
