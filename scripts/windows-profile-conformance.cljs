@@ -63,10 +63,29 @@
                              {:KEXE_STRUCTURED_REPORT "1"
                               :KEXE_RESULT_TYPE result-type}
                              false)
-        report (reader/read-string (.trim (.-stdout result)))]
+        text (.trim (.-stdout result))
+        report (reader/read-string text)
+        ;; The word, as the loader WROTE it. `read-string` turns it into a
+        ;; ClojureScript number, and a ClojureScript number is a double: near
+        ;; 2^63 the spacing is 2048, so the parsed value cannot tell i64 MAX
+        ;; from i64 MAX-1. Measured 2026-08-25 under nbb -- both
+        ;; `(edn/read-string "9223372036854775807")` and
+        ;; `(edn/read-string "9223372036854775806")` are 9223372036854776000,
+        ;; and both are `=` to the literal 9223372036854775807 in this file.
+        ;;
+        ;; So the four assertions below that name i64 MIN and MAX as NUMBERS
+        ;; were comparing two roundings of each other. A loader that returned
+        ;; MAX-1 for MAX would have been reported conformant, on the one value
+        ;; the option/result boundary tests exist to check.
+        ;;
+        ;; `scripts/conformance.cljs` never had this: it passes those bounds as
+        ;; strings and compares strings. This now does the same.
+        [_ word-text] (re-find #":result-word\s+(-?\d+)" text)]
     (lib/ensure! (= :ok (:status report))
                  (str "windows-profile: tagged runtime did not report :ok: " report))
-    report))
+    (lib/ensure! word-text
+                 (str "windows-profile: report carried no :result-word: " text))
+    (assoc report :result-word-text word-text)))
 
 (try
   (run-k! ["compile" source "--target" target "--output" (artifact "first.kexe")])
@@ -113,6 +132,22 @@
            "--target" target "--output" (artifact "tagged-boundary.kexe")])
   (run-k! ["verify" (artifact "tagged-boundary.kexe")])
   (println (str "windows-profile: entryless " isa " Windows library verified"))
+  ;; Everything below runs the compiled Windows artifacts, which needs a
+  ;; Windows host. On any other platform this script checks that the artifacts
+  ;; COMPILE and are well-formed, and stops -- exiting 0, as it should.
+  ;;
+  ;; It used to stop silently. `npm run test-windows-profile` on macOS printed
+  ;; four "verified" lines and returned success, and nothing in that output
+  ;; distinguished "ran every check" from "ran the third of them that do not
+  ;; need Windows". Measured 2026-08-25: two runs of this script, one with a
+  ;; deliberately wrong expectation inside the skipped section, produced
+  ;; byte-identical output and both exited 0.
+  (when-not (= "win32" (.-platform js/process))
+    (println (str "windows-profile: SKIPPED the runtime section -- it executes "
+                  "the Windows artifacts and this host is "
+                  (.-platform js/process)
+                  ". Compile-time checks above ran; the option/result boundary, "
+                  "the measured trust-runtime and the signed product run did not.")))
   (when (= "win32" (.-platform js/process))
     (let [loader (artifact "kexe-loader-windows.exe")
           raw (artifact "program.bin")
@@ -140,25 +175,27 @@
             tagged (fn [symbol result-type args]
                      (let [[offset arity] (get exports symbol)]
                        (loader-report! loader raw-tagged offset arity result-type args)))
+            ;; `:result-word-text`, not `:result-word`: see `loader-report!`.
             word (fn [report]
-                   (select-keys report [:status :result-type :result-tag :result-word]))]
+                   (select-keys report
+                                [:status :result-type :result-tag :result-word-text]))]
         (lib/ensure!
-         (= {:status :ok :result-type :option-i64 :result-tag false :result-word 0}
+         (= {:status :ok :result-type :option-i64 :result-tag false :result-word-text "0"}
             (word (tagged "echo-option" "option-i64" ["o:none"])))
          "windows-profile: option none did not cross the host boundary")
         (lib/ensure!
          (= {:status :ok :result-type :option-i64 :result-tag true
-             :result-word -9223372036854775808}
+             :result-word-text "-9223372036854775808"}
             (word (tagged "echo-option" "option-i64"
                           ["o:some:-9223372036854775808"])))
          "windows-profile: option some/MIN did not cross the host boundary")
         (lib/ensure!
-         (= {:status :ok :result-type :option-i64 :result-tag false :result-word 0}
+         (= {:status :ok :result-type :option-i64 :result-tag false :result-word-text "0"}
             (word (tagged "make-none" "option-i64" ["0"])))
          "windows-profile: guest option-none construction was not observed")
         (lib/ensure!
          (= {:status :ok :result-type :option-i64 :result-tag true
-             :result-word 9223372036854775807}
+             :result-word-text "9223372036854775807"}
             (word (tagged "make-some" "option-i64" ["9223372036854775807"])))
          "windows-profile: guest option-some/MAX construction was not observed")
         (let [[offset arity] (get exports "inspect-option")]
@@ -166,22 +203,22 @@
           (loader-check! loader raw-tagged offset arity "-7" "o:some:-7"))
         (lib/ensure!
          (= {:status :ok :result-type :result-i64 :result-tag true
-             :result-word -9223372036854775808}
+             :result-word-text "-9223372036854775808"}
             (word (tagged "echo-result" "result-i64"
                           ["e:ok:-9223372036854775808"])))
          "windows-profile: result ok/MIN did not cross the host boundary")
         (lib/ensure!
          (= {:status :ok :result-type :result-i64 :result-tag false
-             :result-word 9223372036854775807}
+             :result-word-text "9223372036854775807"}
             (word (tagged "echo-result" "result-i64"
                           ["e:err:9223372036854775807"])))
          "windows-profile: result err/MAX did not cross the host boundary")
         (lib/ensure!
-         (= {:status :ok :result-type :result-i64 :result-tag true :result-word -9}
+         (= {:status :ok :result-type :result-i64 :result-tag true :result-word-text "-9"}
             (word (tagged "make-ok" "result-i64" ["-9"])))
          "windows-profile: guest result-ok construction was not observed")
         (lib/ensure!
-         (= {:status :ok :result-type :result-i64 :result-tag false :result-word 11}
+         (= {:status :ok :result-type :result-i64 :result-tag false :result-word-text "11"}
             (word (tagged "make-err" "result-i64" ["11"])))
          "windows-profile: guest result-err construction was not observed")
         (let [[offset arity] (get exports "inspect-result")]
