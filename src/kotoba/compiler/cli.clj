@@ -321,15 +321,24 @@
     "package-aiueos-boot"
     (let [input (second args)
           output (or (option args "--output") "BOOTX64.EFI")
+          payload-path (option args "--payload")
           raw (java.nio.file.Files/readAllBytes
                (java.nio.file.Paths/get input (make-array String 0)))
           kernel (mapv #(bit-and (int %) 0xff) raw)
-          packaged (pe32plus/package-embedded-kernel kernel)]
+          payload (if payload-path
+                    (mapv #(bit-and (int %) 0xff)
+                          (java.nio.file.Files/readAllBytes
+                           (java.nio.file.Paths/get payload-path
+                                                    (make-array String 0))))
+                    [])
+          packaged (pe32plus/package-embedded-kernel kernel payload)]
       (atomic-output/write-bytes! output
         (byte-array (map unchecked-byte (:bytes packaged))))
       (println (pr-str {:ok true :target :x86_64-aiueos-uefi-v1
                         :kernel input :output output
-                        :kernel-sha256 (:embedded-kernel-sha256 packaged)})))
+                        :kernel-sha256 (:embedded-kernel-sha256 packaged)
+                        :payload payload-path
+                        :payload-sha256 (:embedded-payload-sha256 packaged)})))
     "module-lock"
     ;; Pin a path-resolved project once so every later compile of it resolves
     ;; by CID instead of by whatever is on disk.

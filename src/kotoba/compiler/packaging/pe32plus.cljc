@@ -189,8 +189,12 @@
   compiler-produced aiueos kernel ELF. No C object, CRT, import, or linker is
   involved. The current hard-flip contract admits exactly two bounded PT_LOAD
   segments and transfers control after ExitBootServices."
-  [kernel]
-  (let [kernel (vec kernel)]
+  ([kernel] (package-embedded-kernel kernel []))
+  ([kernel payload]
+  (let [kernel (vec kernel)
+        payload (vec payload)]
+    (when (> (count payload) 16384)
+      (throw (ex-info "embedded RT payload exceeds 16 KiB" {:bytes (count payload)})))
     (when-not (and (= [0x7f 0x45 0x4c 0x46] (subvec kernel 0 4))
                    (= 2 (read-le kernel 16 2)) (= 0x3e (read-le kernel 18 2)))
       (throw (ex-info "embedded kernel must be x86-64 ET_EXEC" {})))
@@ -226,10 +230,13 @@
                      (= [5 6] (mapv :flags segments)) entry-segment non-overlap)
         (throw (ex-info "embedded kernel PT_LOAD contract rejected" {:segments segments})))
       (let [data-addresses [0 8]
-            variables-size 72
+            payload? (seq payload)
+            variables-size (if payload? 88 72)
             memory-map-offset (align variables-size 16)
             memory-map-capacity 16384
             embedded-offset (align (+ memory-map-offset memory-map-capacity) 16)
+            payload-offset embedded-offset
+            kernel-offset (align (+ payload-offset (count payload)) 16)
             ;; Build once with provisional external RVAs; instruction length is
             ;; independent of displacement values.
             segment-tokens (mapcat (fn [index segment]
@@ -242,6 +249,11 @@
                      0x48 0x83 0xec 0x28 0x49 0x89 0xcc 0x49 0x89 0xd5
                      0x4c 0x8b 0x72 0x60]
                     segment-tokens
+                    (when payload?
+                      (concat [0x48 0x8d 0x05] [(rip :payload)]
+                              [0x48 0x89 0x05] [(rip :payload-pointer)]
+                              [0xb8] (le (count payload) 4)
+                              [0x48 0x89 0x05] [(rip :payload-length)]))
                     ;; The bounded memory map is part of the loader image's RW
                     ;; section, immediately after boot-info. This makes the
                     ;; handoff one compiler-owned region: the kernel derives
@@ -251,7 +263,8 @@
                     [0x48 0x8d 0x05] [(rip :memory-map)]
                     [0x48 0x89 0x05] [(rip :map-pointer)]
                     [(label :get-map)]
-                    [0x48 0xc7 0x05] [(rip :map-size)] [0 0x40 0 0]
+                    [0xb8 0x00 0x40 0x00 0x00]
+                    [0x48 0x89 0x05] [(rip :map-size)]
                     [0x48 0x8d 0x0d] [(rip :map-size)]
                     [0x48 0x8b 0x15] [(rip :map-pointer)]
                     [0x4c 0x8d 0x05] [(rip :map-key)]
@@ -272,12 +285,15 @@
             data-address (align (+ text-rva text-size) section-alignment)
             data (vec (concat (mapcat #(le (:paddr %) 8) segments)
                               (le 0x544f4f4245554941 8)
-                              (le 1 8)
+                              (le (if payload? 2 1) 8)
                               (repeat (- variables-size 32) 0)
                               (repeat (- memory-map-offset variables-size) 0)
                               (repeat memory-map-capacity 0)
                               (repeat (- embedded-offset
                                          (+ memory-map-offset memory-map-capacity)) 0)
+                              payload
+                              (repeat (- kernel-offset
+                                         (+ payload-offset (count payload))) 0)
                               kernel))
             data-raw-size (align (count data) file-alignment)
             reloc-address (align (+ data-address (count data)) section-alignment)
@@ -289,11 +305,14 @@
                            :descriptor-size (+ data-address 48)
                            :descriptor-version (+ data-address 56)
                            :map-key (+ data-address 64)
-                           :memory-map (+ data-address memory-map-offset)}
+                           :memory-map (+ data-address memory-map-offset)
+                           :payload-pointer (+ data-address 72)
+                           :payload-length (+ data-address 80)
+                           :payload (+ data-address payload-offset)}
                           (into {} (map-indexed
                                     (fn [index segment]
                                       [(keyword (str "segment" index))
-                                       (+ data-address embedded-offset (:offset segment))])
+                                       (+ data-address kernel-offset (:offset segment))])
                                     segments)))
             text (finalize-loader tokens labels)
             text-raw-size (align (count text) file-alignment)
@@ -322,8 +341,14 @@
                                 :bytes reloc}]})]
         {:format :pe32+-embedded-kernel/v2 :target firmware-target
          :entry :efi_main :entry-rva text-rva :sections [:text :data :reloc]
-         :boot-info-layout {:bytes (+ 64 memory-map-capacity)
-                            :memory-map-offset 64
-                            :memory-map-capacity memory-map-capacity}
+         :boot-info-layout (cond->
+                            {:bytes (+ (- memory-map-offset 16)
+                                       memory-map-capacity (count payload))
+                             :memory-map-offset (- memory-map-offset 16)
+                             :memory-map-capacity memory-map-capacity}
+                             payload?
+                             (assoc :payload-offset (- payload-offset 16)
+                                    :payload-bytes (count payload)))
          :imports [] :embedded-kernel-sha256 (artifact/sha256 kernel)
-         :bytes bytes})))))
+         :embedded-payload-sha256 (when payload? (artifact/sha256 payload))
+         :bytes bytes}))))))
