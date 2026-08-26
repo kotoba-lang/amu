@@ -46,7 +46,8 @@
                   {:type (read-le bytes offset 4)
                    :flags (read-le bytes (+ offset 4) 4)
                    :offset (read-le bytes (+ offset 8) 8)
-                   :vaddr (read-le bytes (+ offset 16) 8)})))
+                   :vaddr (read-le bytes (+ offset 16) 8)
+                   :memsz (read-le bytes (+ offset 40) 8)})))
          (filterv #(= 1 (:type %))))))
 
 (defn- c-string [bytes offset]
@@ -121,9 +122,15 @@
     (is (empty? (:imports binary)))
     (is (nil? (:interpreter binary)))
     (is (= :aiueos_kernel_entry (:entry binary)))
-    ;; Entry shim preserves loader rdi in context+80, then initializes r9.
-    (is (= [0x48 0x89 0x3d] (subvec bytes 0x1000 0x1003)))
-    (is (= [0x4c 0x8d 0x0d] (subvec bytes 0x1007 0x100a)))
+    ;; Live-boot shim in elf64.clj: cli; lea rsp,[rip+disp]. rdi preservation
+    ;; and r9 init still happen, later in the same 144-byte slot, after GDT.
+    (is (= [0xfa 0x48 0x8d 0x25] (subvec bytes 0x1000 0x1004))
+        "cli; lea rsp,[rip+disp]")
+    (let [text (subvec bytes 0x1000 (+ 0x1000 144))]
+      (is (some #(= [0x48 0x89 0x3d] %) (partition 3 1 text))
+          "preserves loader rdi in context+80")
+      (is (some #(= [0x4c 0x8d 0x0d] %) (partition 3 1 text))
+          "initializes r9 from the image context"))
     ;; Context fuel is initialized to 512; no host process populates it.
     (is (some? rw-segment) "RW context PT_LOAD exists")
     (is (= 512 (read-le bytes (+ (:offset rw-segment) 8) 8)))))
@@ -170,8 +177,17 @@
     (is (contains-bytes? [0xc6 0x04 0x25 0x00 0x00 0x10 0x00 0x00]) "guard write")
     (is (contains-bytes? [0xc6 0x04 0x25 0x00 0x10 0x10 0x00 0x00]) "text write")
     (is (some? rw-segment) "RW context PT_LOAD exists")
-    (is (contains-bytes? (into [0x49 0xba] (le-bytes (:vaddr rw-segment) 8)))
-        "NX execute target")))
+    ;; The NX probe still loads 0x110000 (machine_ir / x86_64). elf64.clj
+    ;; places the RW PT_LOAD at a dynamic data offset (minimum 0x108000), so
+    ;; the encoding is not the segment start. 0x110000 must still fall inside
+    ;; that mapping or the probe executes a page the image did not mark NX.
+    (let [nx-addr 0x110000]
+      (is (contains-bytes? (into [0x49 0xba] (le-bytes nx-addr 8)))
+          "NX execute target 0x110000")
+      (is (<= (:vaddr rw-segment) nx-addr)
+          "NX address at or after RW vaddr")
+      (is (< nx-addr (+ (:vaddr rw-segment) (:memsz rw-segment)))
+          "NX address inside RW PT_LOAD"))))
 
 (deftest kernel-target-loads-versioned-boot-info-from-its-private-context
   (let [artifact (:artifact (compiler/compile-source

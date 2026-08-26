@@ -1,10 +1,14 @@
 (ns kotoba.compiler.native-aot-qualification-test
-  "Locks native-aot as pending on every application kit.
+  "Locks native-aot as pending on the application kits that still lack a
+  hosted kexe process proof.
 
   Production native-aot is C-free aiueos (ADR 0270 / 0266). Hosted kexe C
-  loader is a rejected production surface. The hosted clock-v1 oracle in
-  `clock-native-kexe-oracle-test` does not close the four native backend
-  gaps and must not flip a kit flag (ADR 0271).
+  loader is a rejected production surface. dataspace and ui are the
+  exceptions: each has a real-process test, the same way, and lives in
+  wasm32-kotoba-v1-qualification-test/native-aot-kits (ADR 0272). The
+  hosted clock-v1 oracle in `clock-native-kexe-oracle-test` does not
+  close the four native backend gaps and must not flip a kit flag
+  (ADR 0271).
 
   This file deliberately says nothing about `:jit`. It once asserted `:jit`
   was pending everywhere, on the reading that `:jit` names a future
@@ -21,7 +25,7 @@
 
 (def application-kit-files
   ["clock-v1.edn" "http-v1.edn" "http-ingress-v1.edn" "storage-v1.edn"
-   "log-v1.edn" "llm-v1.edn" "ui-v1.edn" "state-v1.edn"])
+   "log-v1.edn" "llm-v1.edn" "state-v1.edn"])
 
 (def native-gaps
   #{:typed-provider-syscall-abi

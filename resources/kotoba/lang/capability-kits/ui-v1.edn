@@ -23,23 +23,23 @@
                            [[:revision :i64] [:target :keyword]
                             [:kind :keyword] [:value :string]]]]}
 
- :qualification {:reference :implemented, :wasm-aot :implemented, :wasm32-kotoba-v1 :pending, :native-aot :pending, :jit :implemented}
+ :qualification {:reference :implemented, :wasm-aot :implemented, :wasm32-kotoba-v1 :pending, :native-aot :implemented, :jit :implemented}
  ;; Typed kit ABI on the browser wasm host (kotoba:typed/cap-call),
  ;; ids 9 and 10 -- the same seam log and dataspace were qualified on.
  ;; Measured 2026-08-18: the compiled browser module imports
  ;; kotoba:typed/cap-call and no kotoba:cap/call at all, which is why
  ;; :wasm32-kotoba-v1 (clock i64 surface) stays :pending.
  ;;
- ;; This kit s second wire answers with an [:option record], so the host
+ ;; This kit's second wire answers with an [:option record], so the host
  ;; carries a present/absent discriminant and not just a payload. poll
  ;; (some) and pending (none) are asserted separately on both backends;
  ;; an inject stuck on either answer fails one of them.
  ;;
- ;; :native-aot :pending on a measured rejection at :phase :target with
- ;; :value-profile :kotoba.value/typed-v1 -- the node set is
- ;; [:set [:record ...]] and the event is [:option [:record ...]],
- ;; neither a one-word value. Not an untried backend: dataspace IS
- ;; qualified on native.
+ ;; :native-aot follows dataspace: a hosted kexe process proof
+ ;; (kotoba.compiler.ui-native-aot-test), not clock's host-authority block
+ ;; and not ADR 0270's remaining application-kit list. Production C-free
+ ;; aiueos is still not claimed (ADR 0272). Measured 2026-08-26: packed
+ ;; result 15 from executor/execute.
  :wasm-aot-surface {:import ["kotoba:typed" "cap-call"]
                     :target :wasm32-browser-kotoba-v1
                     :grants [{:capability-id 9 :grant :ui/commit
