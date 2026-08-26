@@ -11,6 +11,34 @@ import { fileURLToPath } from "node:url";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const benchRoot = join(root, "bench", "runtime-comparison");
 
+const FIXTURES = {
+  kernel: {
+    kotoba: "kernel.kotoba",
+    rust: "kernel.rs",
+    benchmark: "unrolled-modular-mix-v1",
+    engines: ["rust", "clojure", "clojurescript", "amu-wasm32", "amu-native"],
+    arithmetic: "8 identical quotient/remainder mix rounds stay within exact i64 and JavaScript safe integers",
+    expected(n) {
+      let expected = n;
+      for (let round = 0; round < 8; round += 1) {
+        const value = (expected * 48_271) + 1;
+        expected = value - (Math.trunc(value / 2_147_483_647) * 2_147_483_647);
+      }
+      return expected;
+    },
+  },
+  kernel_loop_call: {
+    kotoba: "kernel_loop_call.kotoba",
+    rust: "kernel_loop_call.rs",
+    benchmark: "loop-call-mix-v1",
+    engines: ["rust", "amu-wasm32", "amu-native"],
+    arithmetic: "n iterations; each calls id(1) and accumulates — acc and counter live across call and back edge",
+    expected(n) {
+      return n;
+    },
+  },
+};
+
 function option(name, fallback) {
   const index = process.argv.indexOf(name);
   return index < 0 ? fallback : process.argv[index + 1];
@@ -131,8 +159,9 @@ function timedSample(engine, command, args, expected, env = {}) {
   };
 }
 
-function build(directory, target) {
-  const fixture = join(benchRoot, "kernel.kotoba");
+function build(directory, target, fixtureSpec) {
+  const fixture = join(benchRoot, fixtureSpec.kotoba);
+  const enabled = new Set(fixtureSpec.engines);
   const wasm = join(directory, "kernel.wasm");
   const native = join(directory, "kernel.kexe");
   const rawNative = join(directory, "kernel.bin");
@@ -152,7 +181,7 @@ function build(directory, target) {
     [join(root, "bin", "amu"), "compile", fixture, "--target", "wasm32", "--output", wasm]);
   step("amuNative", process.execPath,
     [join(root, "bin", "amu"), "compile", fixture, "--target", target, "--output", native]);
-  const extracted = step("amuNativeExtract", process.execPath,
+  const extracted =   step("amuNativeExtract", process.execPath,
     [join(root, "bin", "amu"), "extract-native", native, "--symbol", "kernel", "--output", rawNative]);
   const offsetMatch = extracted.stdout.match(/:offset\s+([0-9]+)/);
   if (!offsetMatch) throw new Error("native extraction omitted kernel offset");
@@ -160,13 +189,17 @@ function build(directory, target) {
   step("nativeBenchmarkRunner", "cc",
     ["-std=c11", "-O3", "-Wall", "-Wextra", "-Werror",
       join(benchRoot, "kexe-benchmark.c"), "-o", nativeRunner]);
-  step("rust", "rustc",
-    ["--edition", "2021", "-C", "opt-level=3", "-C", "codegen-units=1",
-      "-C", "strip=symbols", join(benchRoot, "kernel.rs"), "-o", rust]);
-  step("clojurescript", "clojure",
-    ["-M:runtime-bench", "-m", "cljs.main", "-O", "advanced", "-t", "node",
-      "-d", cljsOutputDir, "-o", cljs, "-c", "bench.runtime-kernel"],
-    { timeout: 300_000 });
+  if (enabled.has("rust")) {
+    step("rust", "rustc",
+      ["--edition", "2021", "-C", "opt-level=3", "-C", "codegen-units=1",
+        "-C", "strip=symbols", join(benchRoot, fixtureSpec.rust), "-o", rust]);
+  }
+  if (enabled.has("clojurescript")) {
+    step("clojurescript", "clojure",
+      ["-M:runtime-bench", "-m", "cljs.main", "-O", "advanced", "-t", "node",
+        "-d", cljsOutputDir, "-o", cljs, "-c", "bench.runtime-kernel"],
+      { timeout: 300_000 });
+  }
 
   const go = join(directory, "kernel-go");
   const mojo = join(directory, "kernel-mojo");
@@ -180,16 +213,18 @@ function build(directory, target) {
   for (const engine of optionalEngines) {
     if (!available(engine.probe)) skipped[engine.name] = `${engine.probe[0]} not on PATH`;
   }
-  if (!skipped.go) {
-    step("go", "go", ["build", "-o", go, join(benchRoot, "kernel.go")]);
-  }
-  if (!skipped.mojo) {
-    step("mojo", "mojo", ["build", join(benchRoot, "kernel.mojo"), "-o", mojo]);
-  }
-  if (!skipped["typescript-node"]) {
-    step("typescript", "tsc",
-      [join(benchRoot, "kernel.ts"), "--outDir", typescriptDir,
-        "--target", "es2022", "--lib", "es2022,dom"]);
+  if (fixtureSpec === FIXTURES.kernel) {
+    if (!skipped.go) {
+      step("go", "go", ["build", "-o", go, join(benchRoot, "kernel.go")]);
+    }
+    if (!skipped.mojo) {
+      step("mojo", "mojo", ["build", join(benchRoot, "kernel.mojo"), "-o", mojo]);
+    }
+    if (!skipped["typescript-node"]) {
+      step("typescript", "tsc",
+        [join(benchRoot, "kernel.ts"), "--outDir", typescriptDir,
+          "--target", "es2022", "--lib", "es2022,dom"]);
+    }
   }
   return {
     paths: { fixture, wasm, native, rawNative, nativeRunner, rust, cljs, go, mojo, typescript },
@@ -208,38 +243,49 @@ const calls = boundedInteger(option("--calls", "100000"), "--calls", 1_000_000);
 const warmup = boundedInteger(option("--warmup", "10000"), "--warmup", 1_000_000);
 const n = boundedInteger(option("--n", "200"), "--n", 2_147_483_646);
 const outputPath = option("--output", null);
-let expected = n;
-for (let round = 0; round < 8; round += 1) {
-  const value = (expected * 48_271) + 1;
-  expected = value - (Math.trunc(value / 2_147_483_647) * 2_147_483_647);
+const fixtureName = option("--fixture", "kernel");
+const fixtureSpec = FIXTURES[fixtureName];
+if (!fixtureSpec) {
+  throw new Error(`unknown --fixture ${fixtureName}; expected one of ${Object.keys(FIXTURES).join(", ")}`);
 }
+const expected = fixtureSpec.expected(n);
 const directory = mkdtempSync(join(tmpdir(), "amu-runtime-comparison-"));
 
 try {
   const target = hostNativeTarget();
-  const built = build(directory, target);
+  const built = build(directory, target, fixtureSpec);
   const common = [String(n), String(calls), String(warmup)];
-  const definitions = {
-    rust: [built.paths.rust, common, {}],
-    clojure: ["clojure", ["-M", join(benchRoot, "kernel.clj"), ...common], {}],
-    clojurescript: [process.execPath, [built.paths.cljs, ...common], {}],
-    "amu-wasm32": [process.execPath,
-      [join(benchRoot, "wasm-runner.mjs"), built.paths.wasm, ...common], {}],
-    "amu-native": [built.paths.nativeRunner,
+  const enabled = new Set(fixtureSpec.engines);
+  const definitions = {};
+  if (enabled.has("rust")) definitions.rust = [built.paths.rust, common, {}];
+  if (enabled.has("clojure")) {
+    definitions.clojure = ["clojure", ["-M", join(benchRoot, "kernel.clj"), ...common], {}];
+  }
+  if (enabled.has("clojurescript")) {
+    definitions.clojurescript = [process.execPath, [built.paths.cljs, ...common], {}];
+  }
+  if (enabled.has("amu-wasm32")) {
+    definitions["amu-wasm32"] = [process.execPath,
+      [join(benchRoot, "wasm-runner.mjs"), built.paths.wasm, ...common], {}];
+  }
+  if (enabled.has("amu-native")) {
+    definitions["amu-native"] = [built.paths.nativeRunner,
       [built.paths.rawNative, built.nativeOffset, target, String(n),
-        String(calls), String(warmup)], {}],
-  };
-  if (!built.skipped.go) definitions.go = [built.paths.go, common, {}];
-  if (!built.skipped.mojo) definitions.mojo = [built.paths.mojo, common, {}];
-  if (!built.skipped.python) {
-    definitions.python = ["python3", [join(benchRoot, "kernel.py"), ...common], {}];
+        String(calls), String(warmup)], {}];
   }
-  if (!built.skipped["typescript-node"]) {
-    definitions["typescript-node"] = [process.execPath, [built.paths.typescript, ...common], {}];
-  }
-  if (!built.skipped["typescript-deno"]) {
-    definitions["typescript-deno"] =
-      ["deno", ["run", "--quiet", join(benchRoot, "kernel.ts"), ...common], {}];
+  if (fixtureName === "kernel") {
+    if (!built.skipped.go) definitions.go = [built.paths.go, common, {}];
+    if (!built.skipped.mojo) definitions.mojo = [built.paths.mojo, common, {}];
+    if (!built.skipped.python) {
+      definitions.python = ["python3", [join(benchRoot, "kernel.py"), ...common], {}];
+    }
+    if (!built.skipped["typescript-node"]) {
+      definitions["typescript-node"] = [process.execPath, [built.paths.typescript, ...common], {}];
+    }
+    if (!built.skipped["typescript-deno"]) {
+      definitions["typescript-deno"] =
+        ["deno", ["run", "--quiet", join(benchRoot, "kernel.ts"), ...common], {}];
+    }
   }
   const names = Object.keys(definitions);
   const raw = Object.fromEntries(names.map(name => [name, []]));
@@ -268,12 +314,13 @@ try {
 
   const report = {
     format: "kotoba.runtime-comparison/v1",
-    benchmark: "unrolled-modular-mix-v1",
+    fixture: fixtureName,
+    benchmark: fixtureSpec.benchmark,
     contract: {
       n, calls, warmupCalls: warmup, runs, expectedResult: expected,
-      arithmetic: "8 identical quotient/remainder mix rounds stay within exact i64 and JavaScript safe integers",
+      arithmetic: fixtureSpec.arithmetic,
       timing: "in-process steady state after explicit warmup; process wall and RSS are separate",
-      wasmFuel: "Wasm warmup and measurement are split into fresh admitted instances of at most 400 calls; only call intervals are accumulated",
+      wasmFuel: "Wasm warmup and measurement are split into fresh admitted instances of at most 64 calls per instance (fuel 512); only call intervals are accumulated",
       nativeBoundary: "benchmark-only direct W^X invocation; no production supervisor or sandbox claim",
       optimization: "each compiler/JIT may optimize the same observable algorithm",
     },
@@ -296,18 +343,21 @@ try {
     },
     buildMilliseconds: built.durations,
     artifacts: {
-      rust: artifact(built.paths.rust),
-      clojureSource: artifact(join(benchRoot, "kernel.clj")),
-      clojurescript: artifact(built.paths.cljs),
+      ...(enabled.has("rust") ? { rust: artifact(built.paths.rust) } : {}),
+      kotobaSource: artifact(built.paths.fixture),
+      ...(enabled.has("clojure") ? { clojureSource: artifact(join(benchRoot, "kernel.clj")) } : {}),
+      ...(enabled.has("clojurescript") ? { clojurescript: artifact(built.paths.cljs) } : {}),
       amuWasm32: artifact(built.paths.wasm),
       amuNativeKexe: artifact(built.paths.native),
       amuNativeCode: artifact(built.paths.rawNative),
       amuNativeProvenance: artifact(`${built.paths.native}.provenance.edn`),
-      go: built.skipped.go ? null : artifact(built.paths.go),
-      mojo: built.skipped.mojo ? null : artifact(built.paths.mojo),
-      typescript: built.skipped["typescript-node"] ? null : artifact(built.paths.typescript),
-      pythonSource: artifact(join(benchRoot, "kernel.py")),
-      typescriptSource: artifact(join(benchRoot, "kernel.ts")),
+      ...(fixtureName === "kernel" ? {
+        go: built.skipped.go ? null : artifact(built.paths.go),
+        mojo: built.skipped.mojo ? null : artifact(built.paths.mojo),
+        typescript: built.skipped["typescript-node"] ? null : artifact(built.paths.typescript),
+        pythonSource: artifact(join(benchRoot, "kernel.py")),
+        typescriptSource: artifact(join(benchRoot, "kernel.ts")),
+      } : {}),
     },
     skippedEngines: built.skipped,
     engines,
