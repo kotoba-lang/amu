@@ -720,7 +720,9 @@ enum kexe_typed_kind_v1 {
   KEXE_TYPED_OPTION_I64 = 2,
   KEXE_TYPED_RESULT_I64 = 3,
   KEXE_TYPED_CLOCK_V1 = 4,
-  KEXE_TYPED_DATASPACE_V1 = 5
+  KEXE_TYPED_DATASPACE_V1 = 5,
+  KEXE_TYPED_UI_COMMIT_V1 = 6,
+  KEXE_TYPED_UI_EVENT_V1 = 7
 };
 
 #define DS_MAX_ITEMS 32
@@ -776,6 +778,19 @@ static int peek_pair(struct kexe_context_v3 *context, int64_t handle,
       (uint64_t)handle > shared->pair_used) return 0;
   struct kexe_pair_v1 *pair = &shared->pairs[(uint64_t)handle - 1];
   *out = second ? pair->second : pair->first;
+  return 1;
+}
+
+static int peek_vector(struct kexe_context_v3 *context, int64_t handle,
+                       uint64_t *length, const int64_t **items) {
+  struct kexe_shared_v3 *shared = (struct kexe_shared_v3 *)context;
+  struct kexe_vector_v1 *vector;
+  if (context == NULL || context->version != 3) return 0;
+  vector = resolve_vector(shared, handle);
+  if (vector == NULL) return 0;
+  if (vector->offset + vector->length > KEXE_VECTOR_ITEM_CAPACITY) return 0;
+  *length = vector->length;
+  *items = shared->vector_items + vector->offset;
   return 1;
 }
 
@@ -874,6 +889,91 @@ static int valid_dataspace_result(struct kexe_context_v3 *context,
   return 0;
 }
 
+static int valid_ui_node(struct kexe_context_v3 *context, int64_t node) {
+  int64_t id, rest, parent, rest2, kind, rest3, text, tail;
+  int64_t parent_tag, parent_payload;
+  if (!peek_pair(context, node, 0, &id) ||
+      !peek_pair(context, node, 1, &rest) ||
+      !peek_pair(context, rest, 0, &parent) ||
+      !peek_pair(context, rest, 1, &rest2) ||
+      !peek_pair(context, rest2, 0, &kind) ||
+      !peek_pair(context, rest2, 1, &rest3) ||
+      !peek_pair(context, rest3, 0, &text) ||
+      !peek_pair(context, rest3, 1, &tail)) return 0;
+  if (tail != 0) return 0;
+  if (!valid_string_handle(context, id) ||
+      !valid_string_handle(context, kind) ||
+      !valid_string_handle(context, text)) return 0;
+  if (!peek_pair(context, parent, 0, &parent_tag) ||
+      !peek_pair(context, parent, 1, &parent_payload)) return 0;
+  if (parent_tag != 0 && parent_tag != 1) return 0;
+  if (parent_tag == 0) return parent_payload == 0;
+  return valid_string_handle(context, parent_payload);
+}
+
+static int valid_ui_nodes(struct kexe_context_v3 *context, int64_t nodes) {
+  uint64_t length = 0, i;
+  const int64_t *items = NULL;
+  if (!peek_vector(context, nodes, &length, &items) || length > 32) return 0;
+  for (i = 0; i < length; i++) {
+    if (!valid_ui_node(context, items[i])) return 0;
+  }
+  return 1;
+}
+
+static int valid_ui_commit_request(struct kexe_context_v3 *context,
+                                   int64_t value) {
+  int64_t base_rev, rest, nodes, tail;
+  if (!peek_pair(context, value, 0, &base_rev) ||
+      !peek_pair(context, value, 1, &rest) ||
+      !peek_pair(context, rest, 0, &nodes) ||
+      !peek_pair(context, rest, 1, &tail)) return 0;
+  return tail == 0 && valid_ui_nodes(context, nodes);
+}
+
+static int valid_ui_commit_result(struct kexe_context_v3 *context,
+                                  int64_t value) {
+  int64_t revision, rest, count, tail;
+  if (!peek_pair(context, value, 0, &revision) ||
+      !peek_pair(context, value, 1, &rest) ||
+      !peek_pair(context, rest, 0, &count) ||
+      !peek_pair(context, rest, 1, &tail)) return 0;
+  return tail == 0 && revision > 0 && count >= 0;
+}
+
+static int valid_ui_event_request(struct kexe_context_v3 *context,
+                                  int64_t value) {
+  int64_t after, tail;
+  if (!peek_pair(context, value, 0, &after) ||
+      !peek_pair(context, value, 1, &tail)) return 0;
+  return tail == 0;
+}
+
+static int valid_ui_event(struct kexe_context_v3 *context, int64_t value) {
+  int64_t revision, rest, target, rest2, kind, rest3, event_value, tail;
+  if (!peek_pair(context, value, 0, &revision) ||
+      !peek_pair(context, value, 1, &rest) ||
+      !peek_pair(context, rest, 0, &target) ||
+      !peek_pair(context, rest, 1, &rest2) ||
+      !peek_pair(context, rest2, 0, &kind) ||
+      !peek_pair(context, rest2, 1, &rest3) ||
+      !peek_pair(context, rest3, 0, &event_value) ||
+      !peek_pair(context, rest3, 1, &tail)) return 0;
+  return tail == 0 && revision > 0 &&
+         valid_string_handle(context, target) &&
+         valid_string_handle(context, kind) &&
+         valid_string_handle(context, event_value);
+}
+
+static int valid_ui_event_result(struct kexe_context_v3 *context,
+                                 int64_t value) {
+  int64_t tag, payload;
+  if (!peek_pair(context, value, 0, &tag) ||
+      !peek_pair(context, value, 1, &payload)) return 0;
+  if (tag == 0) return payload == 0;
+  if (tag == 1) return valid_ui_event(context, payload);
+  return 0;
+}
 
 #define KEXE_CLOCK_CAPABILITY_ID 7u
 #define KEXE_CLOCK_CASE_WALL 0
@@ -1006,6 +1106,14 @@ static int valid_typed_value(struct kexe_context_v3 *context,
   if (kind == KEXE_TYPED_DATASPACE_V1) {
     return valid_dataspace_request(context, value) ||
            valid_dataspace_result(context, value);
+  }
+  if (kind == KEXE_TYPED_UI_COMMIT_V1) {
+    return valid_ui_commit_request(context, value) ||
+           valid_ui_commit_result(context, value);
+  }
+  if (kind == KEXE_TYPED_UI_EVENT_V1) {
+    return valid_ui_event_request(context, value) ||
+           valid_ui_event_result(context, value);
   }
   return 0;
 }
@@ -1185,6 +1293,73 @@ static int64_t dataspace_inject(struct kexe_context_v3 *context,
   return 0;
 }
 
+static int64_t ui_revision;
+static int ui_event_live;
+static int64_t ui_event_revision;
+static int64_t ui_event_target;
+static int64_t ui_event_kind;
+static int64_t ui_event_value;
+
+static int64_t ui_commit_inject(struct kexe_context_v3 *context,
+                                int64_t request) {
+  int64_t base_rev, rest, nodes, tail;
+  uint64_t length = 0;
+  const int64_t *items = NULL;
+  if (!peek_pair(context, request, 0, &base_rev) ||
+      !peek_pair(context, request, 1, &rest) ||
+      !peek_pair(context, rest, 0, &nodes) ||
+      !peek_pair(context, rest, 1, &tail) || tail != 0 ||
+      !peek_vector(context, nodes, &length, &items)) {
+    raise(SIGILL);
+    return 0;
+  }
+  if (base_rev != ui_revision) {
+    raise(SIGILL);
+    return 0;
+  }
+  ui_revision += 1;
+  if (length > 0) {
+    int64_t id = 0, node_rest = 0, text_cell = 0, text_rest = 0, text = 0;
+    if (peek_pair(context, items[0], 0, &id) &&
+        peek_pair(context, items[0], 1, &node_rest) &&
+        peek_pair(context, node_rest, 1, &text_rest) &&
+        peek_pair(context, text_rest, 1, &text_cell) &&
+        peek_pair(context, text_cell, 0, &text)) {
+      ui_event_live = 1;
+      ui_event_revision = ui_revision;
+      ui_event_target = id;
+      ui_event_kind = intern_utf8(context, (const uint8_t *)":ui/committed", 13);
+      ui_event_value = text;
+    }
+  }
+  return checked_pair_new(
+      context, ui_revision,
+      checked_pair_new(context, (int64_t)length, 0));
+}
+
+static int64_t ui_event_inject(struct kexe_context_v3 *context,
+                               int64_t request) {
+  int64_t after, tail;
+  if (!peek_pair(context, request, 0, &after) ||
+      !peek_pair(context, request, 1, &tail) || tail != 0) {
+    raise(SIGILL);
+    return 0;
+  }
+  if (!ui_event_live || ui_event_revision <= after) {
+    return checked_pair_new(context, 0, 0);
+  }
+  ui_event_live = 0;
+  return checked_pair_new(
+      context, 1,
+      checked_pair_new(
+          context, ui_event_revision,
+          checked_pair_new(
+              context, ui_event_target,
+              checked_pair_new(
+                  context, ui_event_kind,
+                  checked_pair_new(context, ui_event_value, 0)))));
+}
+
 static int64_t checked_typed_cap_call(struct kexe_context_v3 *context,
                                       uint64_t id, uint64_t request_kind,
                                       uint64_t result_kind, int64_t request) {
@@ -1207,6 +1382,10 @@ static int64_t checked_typed_cap_call(struct kexe_context_v3 *context,
     result = hosted_clock_v1(context, request);
   } else if (id == 24 && request_kind == KEXE_TYPED_DATASPACE_V1) {
     result = dataspace_inject(context, request);
+  } else if (id == 9 && request_kind == KEXE_TYPED_UI_COMMIT_V1) {
+    result = ui_commit_inject(context, request);
+  } else if (id == 10 && request_kind == KEXE_TYPED_UI_EVENT_V1) {
+    result = ui_event_inject(context, request);
   } else {
     /* The qualification host's deterministic typed provider is identity
      * for the one-word string/option/result slice. */

@@ -17,7 +17,7 @@
   storage does exactly that -- so compiling somewhere is never the claim.
 
   Native is a third, independent seam, and it is NOT closed to kits: dataspace
-  is qualified on it. But :pending there does not have ONE meaning, and this
+  and ui are qualified on it. But :pending there does not have ONE meaning, and this
   file used to say it did. Two reasons are live, and a reader who cannot tell
   them apart keeps a self-restriction after the thing that caused it is gone
   (superproject ADR-2608650000):
@@ -173,12 +173,14 @@
       (is (nil? (:wasm-aot-surface (load-kit filename)))))))
 
 (def native-aot-kits
-  "Kits proved on a native target, by kotoba.compiler.dataspace-native-aot-test.
-  Native is NOT categorically closed to capability kits -- dataspace crosses it
-  -- so a kit sitting at :pending here is never a statement about the backend
-  being absent. It is a statement about that kit's own schema, or about host
-  authority nobody has granted; see the two-reason table above."
-  #{"dataspace-v1.edn"})
+  "Kits proved on a native target by a named process test:
+  dataspace-v1.edn  kotoba.compiler.dataspace-native-aot-test
+  ui-v1.edn         kotoba.compiler.ui-native-aot-test
+  Native is NOT categorically closed to capability kits -- dataspace and ui
+  cross it -- so a kit sitting at :pending here is never a statement about
+  the backend being absent. It is a statement about that kit's own schema,
+  or about host authority nobody has granted; see the two-reason table above."
+  #{"dataspace-v1.edn" "ui-v1.edn"})
 
 (def native-aot-blocked-kits
   "Kits whose :native-aot :pending is NOT about their own schema, and which

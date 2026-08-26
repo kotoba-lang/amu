@@ -135,7 +135,7 @@
   (let [kit (edn/read-string
              (slurp (io/resource "kotoba/lang/capability-kits/ui-v1.edn")))]
     (is (= :implemented (get-in kit [:qualification :wasm-aot])))
-    (is (= :pending (get-in kit [:qualification :native-aot])))
+    (is (= :implemented (get-in kit [:qualification :native-aot])))
     (is (= :implemented (get-in kit [:qualification :jit]))
         "kotoba-script :js-kotoba-v1 under V8; measured on the default
          branch by the jit round-trip deftest for this kit")))

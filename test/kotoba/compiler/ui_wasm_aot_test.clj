@@ -17,9 +17,8 @@
   `poll` (some) and `pending` (none) are both exported and both asserted --
   an inject stuck on either answer fails one of them.
 
-  :native-aot stays :pending and `native-aot-target-still-refuses-this-kit`
-  pins the reason, so the gap is a recorded rejection rather than an
-  untried backend.
+  :native-aot is proved by kotoba.compiler.ui-native-aot-test on a real
+  kexe process, the same way dataspace was qualified.
 
   Break: return a bare 5n from the commit inject instead of the sealed
   record and `guest-runs-both-ui-capabilities` fails on result admission."
@@ -164,21 +163,6 @@
                     "catch(e){if(e.code!=='invalid-typed-value')process.exit(5)}"))]
     (is (zero? (:exit probe)) (:err probe))))
 
-(deftest native-aot-target-still-refuses-this-kit
-  "Records the measured reason :native-aot is :pending, so the gap cannot be
-  mistaken for a backend nobody tried."
-  (let [target (if (contains? #{"aarch64" "arm64"}
-                              (.toLowerCase (System/getProperty "os.arch")))
-                 :aarch64-kotoba-v1
-                 :x86_64-kotoba-v1)
-        thrown (try (compiler/compile-source guest-source target policy)
-                    nil
-                    (catch clojure.lang.ExceptionInfo e e))]
-    (is (some? thrown) "native backend unexpectedly admitted a set-valued kit")
-    (is (= :target (:phase (ex-data thrown))))
-    (is (= :kotoba.value/typed-v1 (:value-profile (ex-data thrown))))
-    (is (= :pending (:native-aot (:qualification (load-kit)))))))
-
 (deftest ui-kit-wasm-aot-surface-matches-what-the-compiler-elaborates
   (let [kit (load-kit)
         q (:qualification kit)
@@ -188,7 +172,7 @@
     (is (= :implemented (:wasm-aot q)))
     (is (= :pending (:wasm32-kotoba-v1 q))
         "i64 kotoba:cap/call is not this kit ABI")
-    (is (= :pending (:native-aot q)))
+    (is (= :implemented (:native-aot q)))
     (is (= :implemented (:jit q)))
     (is (= ["kotoba:typed" "cap-call"] (:import surface)))
     (is (= :wasm32-browser-kotoba-v1 (:target surface)))
