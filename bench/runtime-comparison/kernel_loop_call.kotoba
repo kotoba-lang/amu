@@ -1,0 +1,15 @@
+;; Count-down loop with a real call each iteration. `acc` and `i` stay live
+;; across the call and the back edge — the shape kotoba-mir ADR 0012 targets.
+(ns kernel-loop-call (:export [kernel main]))
+
+(defn id [x :i64] :i64 x)
+
+(defn kernel [n :i64] :i64
+  (loop [i n acc 0]
+    (if (= i 0)
+      acc
+      (let [stepped (id 1)]
+        (recur (- i 1) (+ acc stepped))))))
+
+(defn main [] :i64
+  (kernel 0))
