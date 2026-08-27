@@ -15,13 +15,21 @@ supervisor boundary whose cost must not be silently mixed into a kernel claim.
 
 ## Decision
 
-Amu owns a versioned `kotoba.runtime-comparison/v1` harness. It builds and runs
-one source-controlled arithmetic kernel across optimized Rust, warmed Clojure,
-advanced ClojureScript, admitted Amu Wasm32, and Amu native code. Every sample
-must produce the same independently calculated result. Engine order rotates by
-run, and the report binds the exact host, toolchain, compiler commit, dirty
-state, build times, artifact sizes, process wall time, maximum RSS, and
-steady-state call time.
+Amu owns a versioned `kotoba.runtime-comparison/v2` harness with two explicit
+suites. The default `core` suite builds and runs source-controlled kernels only
+through admitted Amu Wasm32 and Amu native code. It neither requires nor probes
+Rust or another comparison toolchain. The `competitive` suite adds optimized
+Rust, warmed Clojure, advanced ClojureScript, Go, Mojo, Python and TypeScript as
+optional adapters. Every sample must produce the same independently calculated
+result. Engine order rotates by run, and the report binds the exact host,
+measured toolchains, compiler commit, dirty state, build times, artifact sizes,
+process wall time, maximum RSS, and steady-state call time.
+
+An unavailable or deliberately disabled comparison adapter is recorded in
+`skippedEngines`. Rust normalization is `measured`, `unavailable`, or
+`not-requested`; `slowdownVsRust` is null unless Rust was actually measured.
+Therefore Rust can support a competitive claim but cannot become an Amu build,
+test, runtime, or release dependency.
 
 The native direct-call runner is a separate benchmark-only C program. It
 retains W^X mapping and the context ABI but deliberately bypasses production
@@ -29,17 +37,18 @@ supervision and sandboxing. Its output must state that boundary. It cannot be
 selected by the production loader, whose source and path remain unchanged.
 
 The Wasm runner admits the module through `instantiateKotoba`, rejects imports,
-and splits warmup and measurement across fresh instances with no more than 400
-calls each because fuel is sealed. It accumulates only call intervals; process
-wall time separately retains instance-creation cost. No benchmark option may
-raise or bypass the production fuel contract.
+and calibrates a safe batch on fresh instances outside timed intervals because
+fuel is sealed. It accumulates only call intervals; process wall time separately
+retains instance-creation cost. Benchmark fuel is explicit, sealed into the
+artifact, recorded in the report, and matched by the native benchmark context.
 
 ## Consequences
 
 Performance discussion can cite a reproducible ratio for a named workload and
-machine without turning it into a universal language ranking. CI smoke-tests
-all five real engines and the report schema, but does not enforce a universal
-speed threshold.
+machine without turning it into a universal language ranking. The core gate
+smoke-tests both Amu backends and proves the no-Rust boundary. Competitive
+adapter tests are separate and do not gate Amu qualification when a toolchain
+is absent. Neither suite enforces a universal speed threshold.
 
 The first kernel does not cover allocation, collections, strings,
 capabilities, I/O, concurrency, or whole applications. More workload families

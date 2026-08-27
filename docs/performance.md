@@ -148,10 +148,9 @@ with real Wasm and host-native compiles.
 
 # Runtime comparison
 
-Amu carries one reproducible, cross-language runtime evidence contract. It
-builds and executes the same eight-round integer quotient/remainder mix in
-Amu native, Amu Wasm32, optimized Rust, warmed Clojure, advanced-compiled
-ClojureScript, Go, Mojo, CPython, and TypeScript on both Node and Deno:
+Amu carries a Rust-independent core runtime contract and a separate optional
+competitive-comparison contract. The default builds and executes the same
+kernel in Amu native and Amu Wasm32 only:
 
 ```sh
 npm run benchmark-runtime -- \
@@ -159,19 +158,28 @@ npm run benchmark-runtime -- \
   --output runtime.json
 ```
 
-The `kotoba.runtime-comparison/v1` report records every sample, the shared
-result, steady-state median and p95, process wall time, maximum RSS, artifact
+External adapters are requested explicitly:
+
+```sh
+npm run benchmark-runtime-competitive -- \
+  --runs 7 --calls 100000 --warmup 10000 --n 200 \
+  --output competitive-runtime.json
+```
+
+The `kotoba.runtime-comparison/v2` report records its `core` or `competitive`
+suite, every sample, the independently calculated shared result, steady-state
+median and p95, process wall time, maximum RSS, artifact
 sizes, build durations, tool versions, host identity, compiler commit, and
 dirty-worktree state. The source variants live under
 `bench/runtime-comparison/`; `npm run test-runtime-comparison` builds and runs
 them rather than accepting fixture JSON.
 
-Rust, Clojure and ClojureScript are required: they are the normalization
-baseline and the two reference JVM/JS lowerings. Go, Mojo, CPython and the two
-TypeScript hosts are measured when their toolchain is on `PATH` and otherwise
-recorded by name and reason in `skippedEngines`. An engine that could not be
-measured must not read like an engine that was measured and did fine, so the
-report never simply omits it.
+No external language toolchain is required by the core suite, and it does not
+probe `rustc`. In the competitive suite Rust, Clojure, ClojureScript, Go, Mojo,
+CPython and the TypeScript hosts are optional adapters. Missing or disabled
+adapters are recorded by name and reason in `skippedEngines`. `slowdownVsRust`
+is `null` unless Rust was actually measured, so a Rust-relative claim cannot be
+manufactured from a core or incomplete competitive report.
 
 The measurements are deliberately separated:
 
@@ -196,9 +204,10 @@ and not a production safety-path claim. The production loader is not modified.
 `--fixture kernel_loop_call` adds a count-down loop whose accumulator and
 counter cross both a real helper call and the loop back edge. The Rust helper
 contains a compiler barrier because `#[inline(never)]` alone still allowed LLVM
-to replace the whole loop with `return n`. The smoke test inspects optimized
-Rust assembly and fails unless the helper call remains, then executes the
-default `n=200` workload through Rust, Amu Wasm32, and Amu native.
+to replace the whole loop with `return n`. Only the explicitly requested
+competitive adapter test inspects optimized Rust assembly. The default core
+smoke executes `n=200` through Amu Wasm32 and Amu native and additionally proves
+that a disabled Rust adapter yields an explicit skip and no Rust-relative ratio.
 
 ## Development runtime evidence
 
