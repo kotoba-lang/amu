@@ -1,0 +1,30 @@
+{:adr/id 275
+ :adr/status :accepted
+ :decision :post-allocation-cfg-scheduling
+ :pins {:kotoba-mir "ad739526d9f80cdda76fd8de3239acb4c07a8f58"
+        :kotoba-native "7b757f79e9d3fcafacd277ce3883a11faba35ff3"
+        :kotoba-native-transitive-mir-override true}
+ :contract {:scope :consecutive-pure-integer-ssa
+            :function-scope :per-basic-block
+            :scheduling-phase :after-physical-allocation
+            :control-flow-functions :scheduled-per-block
+            :pre-allocation-cfg-scheduling :rejected
+            :effect-barriers true
+            :trap-barriers true
+            :aarch64-fusion-candidates :preserved
+            :deterministic true
+            :targets #{:x86-64 :aarch64}}
+ :evidence {:cfg-spill-branch {:program :a-value-spilled-in-one-branch-arm-survives-into-the-other
+                               :result 282
+                               :real-process true}
+            :straight-line {:program :scheduled-independent-integer-work
+                            :superseded-by :0274
+                            :withdrawn true}
+            :kotoba-mir {:tests 57 :assertions 1117 :failures 0}
+            :kotoba-native {:tests 184 :assertions 2278 :failures 0}
+            :amu {:tests 1148 :assertions 8491 :failures 0
+                  :available-isas #{:x86-64 :aarch64}}}
+ :claims {:instruction-scheduling true
+          :semantic-execution-evidence true
+          :runtime-speed-improvement false
+          :rust-performance-parity false}}
