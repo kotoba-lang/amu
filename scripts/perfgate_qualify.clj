@@ -75,13 +75,55 @@
      :candidate (:observation/summary candidate)
      :verdict verdict}))
 
+(defn qualify-domain [report domain]
+  (let [id (:id domain)
+        plan-id (keyword "runtime-multidomain" id)
+        source (str "scripts/runtime-multidomain-suite.mjs domain=" id)
+        samples (fn [engine]
+                  (mapv :nanosecondsPerKernel
+                        (get-in domain [:engines engine :samples])))
+        baseline (observation :wasm-baseline plan-id :runtime :ns
+                              (samples :amu-wasm32) source)
+        candidate (observation :native-candidate plan-id :runtime :ns
+                               (samples :amu-native) source)
+        raw (g/qualify candidate baseline)
+        qualified-host? (boolean (get-in report [:qualification :hostLoadQualified]))
+        verdict (if qualified-host?
+                  raw
+                  (assoc raw :qualified? false :verdict :unqualified-host-load
+                         :reason "multidomain host-load gate failed"))]
+    {:id id
+     :fixture (:fixture domain)
+     :plan-id plan-id
+     :baseline (:observation/summary baseline)
+     :candidate (:observation/summary candidate)
+     :verdict verdict}))
+
+(defn qualify-multidomain [report]
+  (let [domains (mapv #(qualify-domain report %) (:domains report))
+        host? (boolean (get-in report [:qualification :hostLoadQualified]))
+        complete? (boolean (get-in report [:contract :complete]))]
+    {:format "amu.multidomain-perfgate-qualification/v1"
+     :suite (:suite report)
+     :host-load-qualified? host?
+     :domain-set-complete? complete?
+     :domains domains
+     :all-domains-perfgate-qualified?
+     (and host? complete? (every? #(get-in % [:verdict :qualified?]) domains))
+     :broad-fastest-claim-qualified? false
+     :reason "core evidence has no external comparator covering every required domain"}))
+
 (defn -main [& args]
   (let [input (first args)]
     (when-not (and (string? input) (seq input))
       (binding [*out* *err*]
         (println "usage: perfgate-qualify <benchmark.json>"))
       (System/exit 2))
-    (let [report (json/read-str (slurp input) :key-fn keyword)
+    (let [report (json/read-str (slurp input) :key-fn keyword)]
+      (if (= "kotoba.runtime-multidomain-report/v1" (:format report))
+        (println (json/write-str (qualify-multidomain report)
+                                :value-fn (fn [_ v] (if (keyword? v) (json-keyword v) v))))
+        (let [
           fixture (:fixture report)
           target (:target report)
           plan-id (keyword "postalloc-scheduling" (str fixture "." target))
@@ -92,7 +134,7 @@
                              (not (:error (:compile report)))
                              (get-in report [:compile :baseline :samples]))
                     (qualify-arm :compile :compile :compileWallMilliseconds :compile :ms plan-id source report))]
-      (println (json/write-str
+          (println (json/write-str
                 {:format "amu.perfgate-qualification/v1"
                  :fixture fixture
                  :target target
@@ -104,4 +146,4 @@
                  :any-qualified? (and (host-load-qualified? report)
                                       (or (:qualified? (:verdict runtime))
                                           (boolean (and compile (:qualified? (:verdict compile))))))}
-                :value-fn (fn [_ v] (if (keyword? v) (json-keyword v) v)))))))
+                    :value-fn (fn [_ v] (if (keyword? v) (json-keyword v) v)))))))))

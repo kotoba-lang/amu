@@ -54,10 +54,11 @@ function validateReport(report, { suite, required, optional, expectedResult }) {
       throw new Error(`unknown engine ${name} in report`);
   for (const name of measured) {
     const engine = report.engines[name];
-    if (engine.runs !== 1 || engine.samples.length !== 1)
-      throw new Error(`${name} did not produce one real sample`);
-    if (engine.samples[0].calls !== calls
-        || engine.samples[0].warmupCalls !== warmupCalls)
+    const expectedSamples = suite === "core" ? 2 : 1;
+    if (engine.runs !== expectedSamples || engine.samples.length !== expectedSamples)
+      throw new Error(`${name} did not produce ${expectedSamples} real samples`);
+    if (engine.samples.some(sample => sample.calls !== calls
+        || sample.warmupCalls !== warmupCalls))
       throw new Error(`${name} did not report the requested call counts`);
     if (!(engine.steadyStateNanosecondsPerKernel.median > 0)
         || !(engine.processWallMilliseconds.median > 0))
@@ -77,7 +78,15 @@ function validateReport(report, { suite, required, optional, expectedResult }) {
     if (artifact === null) continue;
     if (!Number.isSafeInteger(artifact.bytes) || artifact.bytes < 1)
       throw new Error(`artifact size evidence is invalid for ${name}`);
+    if (!/^[0-9a-f]{64}$/.test(artifact.sha256))
+      throw new Error(`artifact SHA-256 evidence is invalid for ${name}`);
   }
+  if (report.contract.rotation !== (suite === "core" ? "ABBA/BAAB per run pair" : "balanced cyclic"))
+    throw new Error("sampling rotation contract is missing");
+  if (typeof report.environment.hostLoadQualified !== "boolean"
+      || report.qualification.performance.verdict
+        !== (report.environment.hostLoadQualified ? "eligible-for-perfgate" : "unqualified-host-load"))
+    throw new Error("host load qualification does not fail closed");
   return { measured, skipped };
 }
 

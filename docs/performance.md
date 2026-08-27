@@ -209,6 +209,34 @@ competitive adapter test inspects optimized Rust assembly. The default core
 smoke executes `n=200` through Amu Wasm32 and Amu native and additionally proves
 that a disabled Rust adapter yields an explicit skip and no Rust-relative ratio.
 
+## Multi-domain qualification floor
+
+A result from `kernel` alone is narrow arithmetic evidence, not evidence for a
+language-wide speed claim. The public
+`bench/runtime-comparison/multidomain-suite.json` manifest therefore requires
+all six currently executable native/Wasm domains: narrow arithmetic, wide
+register pressure, deep spill pressure, call preservation, branch plus call,
+and loop plus call across a back edge.
+
+```sh
+npm run benchmark-runtime-multidomain -- \
+  --runs 5 --calls 100000 --n 200 --output multidomain.json
+npm run test-runtime-multidomain
+```
+
+Every domain must return its independently calculated known answer from both
+core engines. Reports seal source, Wasm, KEXE, extracted native code, and native
+provenance with SHA-256; use paired ABBA/BAAB order; and pass their samples to
+`perfgate.core/qualify`. Load1 must be at most 75% of logical CPUs both before
+and after a domain, with at most 10% drift. Otherwise the harness reduces the
+requested work and records `unqualified-host-load`; perfgate then fails closed.
+
+The core suite deliberately has no external comparator. Rust and LLVM remain
+optional experiment adapters, never compiler or runtime dependencies. A broad
+"fastest" claim stays false until an external comparator covers every required
+domain on qualified hosts and architectures. Per-domain parity or a win in one
+fixture cannot satisfy that gate.
+
 ## Development runtime evidence
 
 Compiler commit `d0d5bd8` was measured from a clean implementation worktree on

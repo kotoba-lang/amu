@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
   mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync,
 } from "node:fs";
-import { tmpdir, cpus, totalmem } from "node:os";
+import { tmpdir, cpus, loadavg, totalmem } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -42,7 +43,59 @@ const FIXTURES = {
       return n;
     },
   },
+  kernel_wide: {
+    kotoba: "kernel_wide.kotoba",
+    rust: "kernel_wide.rs",
+    benchmark: "wide-register-pressure-v1",
+    comparators: ["rust"],
+    arithmetic: "eight independent two-step modular-mix lanes stay live until one reduction",
+    expected(n) {
+      return Array.from({ length: 8 }, (_, i) => modularStep(modularStep(n + i)))
+        .reduce((sum, value) => sum + value, 0);
+    },
+  },
+  kernel_deep: {
+    kotoba: "kernel_deep.kotoba",
+    benchmark: "deep-spill-pressure-v1",
+    comparators: [],
+    arithmetic: "twenty-four independent modular-mix lanes exceed both target register pools",
+    expected(n) {
+      // The fixture intentionally names lane 13 `n`, shadowing the argument;
+      // lanes 14..23 therefore start from that bound value. Mirror the source
+      // exactly instead of silently benchmarking a cleaner, different kernel.
+      const first = Array.from({ length: 14 }, (_, i) => modularStep(n + i));
+      const shadowedN = first.at(-1);
+      const rest = Array.from({ length: 10 }, (_, i) => modularStep(shadowedN + 14 + i));
+      return [...first, ...rest].reduce((sum, value) => sum + value, 0);
+    },
+  },
+  kernel_call: {
+    kotoba: "kernel_call.kotoba",
+    benchmark: "call-preservation-v1",
+    comparators: [],
+    arithmetic: "eight values survive real local calls before reduction",
+    expected(n) {
+      const first = Array.from({ length: 4 }, (_, i) => modularStep(n + i));
+      return [...first, ...first.map(modularStep)].reduce((sum, value) => sum + value, 0);
+    },
+  },
+  kernel_call_branch: {
+    kotoba: "kernel_call_branch.kotoba",
+    benchmark: "branch-call-preservation-v1",
+    comparators: [],
+    arithmetic: "the call-preservation workload crosses an explicit control-flow join",
+    expected(n) {
+      if (n === 0) return 0;
+      const first = Array.from({ length: 4 }, (_, i) => modularStep(n + i));
+      return [...first, ...first.map(modularStep)].reduce((sum, value) => sum + value, 0);
+    },
+  },
 };
+
+function modularStep(value) {
+  const mixed = (value * 48_271) + 1;
+  return mixed - (Math.trunc(mixed / 2_147_483_647) * 2_147_483_647);
+}
 
 function option(name, fallback) {
   const index = process.argv.lastIndexOf(name);
@@ -174,6 +227,13 @@ function timedSample(engine, command, args, expected, env = {}) {
 
 function build(directory, target, fixtureSpec, enabled, skipped) {
   const fixture = join(benchRoot, fixtureSpec.kotoba);
+  const fixtureSource = readFileSync(fixture, "utf8");
+  const wasmFixture = fixtureSource.includes("(defn main") ? fixture : join(directory, "wasm-fixture.kotoba");
+  if (wasmFixture !== fixture) {
+    const source = fixtureSource.replace(/\(:export \[kernel\]\)/, "(:export [kernel main])")
+      + "\n(defn main [] :i64 (kernel 1))\n";
+    writeFileSync(wasmFixture, source);
+  }
   const wasm = join(directory, "kernel.wasm");
   const native = join(directory, "kernel.kexe");
   const rawNative = join(directory, "kernel.bin");
@@ -189,14 +249,17 @@ function build(directory, target, fixtureSpec, enabled, skipped) {
     return result;
   };
 
-  step("amuWasm", process.execPath,
-    [join(root, "bin", "amu"), "compile", fixture, "--target", "wasm32",
+  // Keep runtime evidence on one canonical compiler entrypoint. Launcher
+  // conformance is measured separately and must not select a different
+  // code-generation path inside one comparison report.
+  step("amuWasm", "clojure",
+    ["-M:run", "compile", wasmFixture, "--target", "wasm32",
       "--fuel", String(benchmarkFuel), "--output", wasm]);
-  step("amuNative", process.execPath,
-    [join(root, "bin", "amu"), "compile", fixture, "--target", target,
+  step("amuNative", "clojure",
+    ["-M:run", "compile", fixture, "--target", target,
       "--fuel", String(benchmarkFuel), "--output", native]);
-  const extracted =   step("amuNativeExtract", process.execPath,
-    [join(root, "bin", "amu"), "extract-native", native, "--symbol", "kernel", "--output", rawNative]);
+  const extracted = step("amuNativeExtract", "clojure",
+    ["-M:run", "extract-native", native, "--symbol", "kernel", "--output", rawNative]);
   const offsetMatch = extracted.stdout.match(/:offset\s+([0-9]+)/);
   if (!offsetMatch) throw new Error("native extraction omitted kernel offset");
   const nativeOffset = offsetMatch[1];
@@ -237,7 +300,7 @@ function build(directory, target, fixtureSpec, enabled, skipped) {
     }
   }
   return {
-    paths: { fixture, wasm, native, rawNative, nativeRunner, rust, cljs, go, mojo, typescript },
+    paths: { fixture, wasmFixture, wasm, native, rawNative, nativeRunner, rust, cljs, go, mojo, typescript },
     nativeOffset,
     durations,
     skipped,
@@ -245,7 +308,11 @@ function build(directory, target, fixtureSpec, enabled, skipped) {
 }
 
 function artifact(path) {
-  return { bytes: statSync(path).size };
+  const bytes = readFileSync(path);
+  return {
+    bytes: statSync(path).size,
+    sha256: createHash("sha256").update(bytes).digest("hex"),
+  };
 }
 
 const runs = boundedInteger(option("--runs", "5"), "--runs", 30);
@@ -280,6 +347,8 @@ if (suite === "competitive") {
 }
 const expected = fixtureSpec.expected(n);
 const directory = mkdtempSync(join(tmpdir(), "amu-runtime-comparison-"));
+const logicalCpus = cpus().length;
+const loadBefore = loadavg();
 
 try {
   const target = hostNativeTarget();
@@ -320,10 +389,16 @@ try {
   }
   const names = Object.keys(definitions);
   const raw = Object.fromEntries(names.map(name => [name, []]));
-  // Rotate order per sample so a fixed engine is not always hottest or coldest.
+  // The Rust-independent core has exactly two arms and uses paired ABBA/BAAB
+  // blocks. Competitive adapters use a balanced cyclic rotation because an
+  // ABBA block is defined only for a pair.
   for (let run = 0; run < runs; run += 1) {
-    for (let index = 0; index < names.length; index += 1) {
-      const name = names[(run + index) % names.length];
+    const sequence = suite === "core"
+      ? (run % 2 === 0
+        ? [names[0], names[1], names[1], names[0]]
+        : [names[1], names[0], names[0], names[1]])
+      : names.map((_, index) => names[(run + index) % names.length]);
+    for (const name of sequence) {
       const [command, args, env] = definitions[name];
       raw[name].push(timedSample(name, command, args, expected, env));
     }
@@ -331,7 +406,7 @@ try {
   const engines = Object.fromEntries(names.map(name => {
     const samples = raw[name];
     return [name, {
-      runs,
+      runs: samples.length,
       steadyStateNanosecondsPerKernel: summary(samples.map(sample => sample.nanosecondsPerKernel)),
       processWallMilliseconds: summary(samples.map(sample => sample.processWallMilliseconds)),
       maxRssBytes: samples.every(sample => sample.maxRssBytes !== null)
@@ -344,6 +419,11 @@ try {
     value.slowdownVsRust = rustMedian === null
       ? null : value.steadyStateNanosecondsPerKernel.median / rustMedian;
 
+  const loadAfter = loadavg();
+  const loadLimit = logicalCpus * 0.75;
+  const hostLoadQualified = loadBefore[0] <= loadLimit
+    && loadAfter[0] <= loadLimit
+    && Math.abs(loadAfter[0] - loadBefore[0]) <= logicalCpus * 0.10;
   const report = {
     format: "kotoba.runtime-comparison/v2",
     suite,
@@ -354,11 +434,14 @@ try {
       : { engine: "rust", status: "measured" },
     contract: {
       n, calls, warmupCalls: warmup, runs, expectedResult: expected,
+      samplesPerEngine: raw[names[0]].length,
+      rotation: suite === "core" ? "ABBA/BAAB per run pair" : "balanced cyclic",
       arithmetic: fixtureSpec.arithmetic,
       enginePolicy: suite === "core"
         ? "Rust-independent Amu native/Wasm semantic and execution evidence"
         : "optional comparison adapters; unavailable engines are explicit and produce no ratio",
       timing: "in-process steady state after explicit warmup; process wall and RSS are separate",
+      compilerLauncher: "clojure -M:run canonical compiler entrypoint",
       fuelPerInstance: benchmarkFuel,
       wasmMaxCallsPerInstance: raw["amu-wasm32"]?.[0]?.maxCallsPerInstance ?? null,
       wasmFuel: "Wasm calibrates a workload-specific safe batch on fresh admitted instances before timing; native resets the same benchmark fuel before each call; only call intervals are accumulated",
@@ -369,7 +452,11 @@ try {
       platform: process.platform,
       architecture: process.arch,
       cpu: cpus()[0]?.model ?? null,
-      logicalCpus: cpus().length,
+      logicalCpus,
+      loadAverageBefore: loadBefore,
+      loadAverageAfter: loadAfter,
+      hostLoadLimit: loadLimit,
+      hostLoadQualified,
       totalMemoryBytes: totalmem(),
       node: process.version,
       rustc: enabled.has("rust") ? output("rustc", ["--version"]) : null,
@@ -387,6 +474,7 @@ try {
     artifacts: {
       ...(enabled.has("rust") ? { rust: artifact(built.paths.rust) } : {}),
       kotobaSource: artifact(built.paths.fixture),
+      kotobaWasmSource: artifact(built.paths.wasmFixture),
       ...(enabled.has("clojure") ? { clojureSource: artifact(join(benchRoot, "kernel.clj")) } : {}),
       ...(enabled.has("clojurescript") ? { clojurescript: artifact(built.paths.cljs) } : {}),
       amuWasm32: artifact(built.paths.wasm),
@@ -403,6 +491,15 @@ try {
       } : {}),
     },
     skippedEngines: built.skipped,
+    qualification: {
+      hostLoad: {
+        qualified: hostLoadQualified,
+        policy: "load1 before and after <= 75% of logical CPUs and drift <= 10% of logical CPUs",
+      },
+      performance: {
+        verdict: hostLoadQualified ? "eligible-for-perfgate" : "unqualified-host-load",
+      },
+    },
     engines,
   };
   const encoded = `${JSON.stringify(report, null, 2)}\n`;
