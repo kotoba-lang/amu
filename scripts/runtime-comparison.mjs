@@ -11,13 +11,17 @@ import { fileURLToPath } from "node:url";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const benchRoot = join(root, "bench", "runtime-comparison");
 const benchmarkFuel = 1_048_576;
+const coreEngines = ["amu-wasm32", "amu-native"];
 
 const FIXTURES = {
   kernel: {
     kotoba: "kernel.kotoba",
     rust: "kernel.rs",
     benchmark: "unrolled-modular-mix-v1",
-    engines: ["rust", "clojure", "clojurescript", "amu-wasm32", "amu-native"],
+    comparators: [
+      "rust", "clojure", "clojurescript", "go", "mojo", "python",
+      "typescript-node", "typescript-deno",
+    ],
     arithmetic: "8 identical quotient/remainder mix rounds stay within exact i64 and JavaScript safe integers",
     expected(n) {
       let expected = n;
@@ -32,7 +36,7 @@ const FIXTURES = {
     kotoba: "kernel_loop_call.kotoba",
     rust: "kernel_loop_call.rs",
     benchmark: "loop-call-mix-v1",
-    engines: ["rust", "amu-wasm32", "amu-native"],
+    comparators: ["rust"],
     arithmetic: "n iterations; each calls id(1) and accumulates — acc and counter live across call and back edge",
     expected(n) {
       return n;
@@ -88,16 +92,19 @@ function output(command, args) {
   catch (_) { return null; }
 }
 
-// Engines whose toolchain is not installed are skipped by name and reason, not
-// dropped. A comparison that silently omits an engine reads exactly like one
-// where that engine was measured and did fine.
-const optionalEngines = [
-  { name: "go", probe: ["go", ["version"]] },
-  { name: "mojo", probe: ["mojo", ["--version"]] },
-  { name: "python", probe: ["python3", ["--version"]] },
-  { name: "typescript-node", probe: ["tsc", ["--version"]] },
-  { name: "typescript-deno", probe: ["deno", ["--version"]] },
-];
+// Comparison adapters are not compiler dependencies. The core suite never
+// probes them. The competitive suite records every unavailable or deliberately
+// disabled adapter by name instead of silently dropping it.
+const comparatorTools = {
+  rust: ["rustc", ["--version"]],
+  clojure: ["clojure", ["-Sdescribe"]],
+  clojurescript: ["clojure", ["-Sdescribe"]],
+  go: ["go", ["version"]],
+  mojo: ["mojo", ["--version"]],
+  python: ["python3", ["--version"]],
+  "typescript-node": ["tsc", ["--version"]],
+  "typescript-deno": ["deno", ["--version"]],
+};
 
 function available(probe) {
   return output(probe[0], probe[1]) !== null;
@@ -165,9 +172,8 @@ function timedSample(engine, command, args, expected, env = {}) {
   };
 }
 
-function build(directory, target, fixtureSpec) {
+function build(directory, target, fixtureSpec, enabled, skipped) {
   const fixture = join(benchRoot, fixtureSpec.kotoba);
-  const enabled = new Set(fixtureSpec.engines);
   const wasm = join(directory, "kernel.wasm");
   const native = join(directory, "kernel.kexe");
   const rawNative = join(directory, "kernel.bin");
@@ -217,18 +223,14 @@ function build(directory, target, fixtureSpec) {
   // One input file plus an output directory emits `kernel.js` inside it.
   const typescriptDir = join(directory, "kernel-ts");
   const typescript = join(typescriptDir, "kernel.js");
-  const skipped = {};
-  for (const engine of optionalEngines) {
-    if (!available(engine.probe)) skipped[engine.name] = `${engine.probe[0]} not on PATH`;
-  }
   if (fixtureSpec === FIXTURES.kernel) {
-    if (!skipped.go) {
+    if (enabled.has("go")) {
       step("go", "go", ["build", "-o", go, join(benchRoot, "kernel.go")]);
     }
-    if (!skipped.mojo) {
+    if (enabled.has("mojo")) {
       step("mojo", "mojo", ["build", join(benchRoot, "kernel.mojo"), "-o", mojo]);
     }
-    if (!skipped["typescript-node"]) {
+    if (enabled.has("typescript-node")) {
       step("typescript", "tsc",
         [join(benchRoot, "kernel.ts"), "--outDir", typescriptDir,
           "--target", "es2022", "--lib", "es2022,dom"]);
@@ -252,6 +254,9 @@ const warmup = boundedInteger(option("--warmup", "10000"), "--warmup", 1_000_000
 const n = boundedInteger(option("--n", "200"), "--n", 2_147_483_646);
 const outputPath = option("--output", null);
 const fixtureName = option("--fixture", "kernel");
+const suite = option("--suite", "core");
+if (!new Set(["core", "competitive"]).has(suite))
+  throw new Error("--suite must be core or competitive");
 const fixtureSpec = FIXTURES[fixtureName];
 if (!fixtureSpec) {
   throw new Error(`unknown --fixture ${fixtureName}; expected one of ${Object.keys(FIXTURES).join(", ")}`);
@@ -259,15 +264,28 @@ if (!fixtureSpec) {
 if (fixtureName === "kernel_loop_call" && n + 2 > benchmarkFuel) {
   throw new Error(`--n must be at most ${benchmarkFuel - 2} for the loop-call fuel contract`);
 }
+const disabled = new Set(option("--disable-engines", "").split(",").filter(Boolean));
+const unknownDisabled = [...disabled].filter(name => !(name in comparatorTools));
+if (unknownDisabled.length > 0)
+  throw new Error(`unknown --disable-engines value(s): ${unknownDisabled.join(", ")}`);
+const enabled = new Set(coreEngines);
+const skipped = {};
+if (suite === "competitive") {
+  for (const name of fixtureSpec.comparators) {
+    const probe = comparatorTools[name];
+    if (disabled.has(name)) skipped[name] = "disabled by request";
+    else if (available(probe)) enabled.add(name);
+    else skipped[name] = `${probe[0]} not on PATH`;
+  }
+}
 const expected = fixtureSpec.expected(n);
 const directory = mkdtempSync(join(tmpdir(), "amu-runtime-comparison-"));
 
 try {
   const target = hostNativeTarget();
-  const built = build(directory, target, fixtureSpec);
+  const built = build(directory, target, fixtureSpec, enabled, skipped);
   const common = [String(n), String(calls), String(warmup)];
   const wasmBatchCalibrationLimit = Math.max(calls, warmup);
-  const enabled = new Set(fixtureSpec.engines);
   const definitions = {};
   if (enabled.has("rust")) definitions.rust = [built.paths.rust, common, {}];
   if (enabled.has("clojure")) {
@@ -287,15 +305,15 @@ try {
         String(calls), String(warmup), String(benchmarkFuel)], {}];
   }
   if (fixtureName === "kernel") {
-    if (!built.skipped.go) definitions.go = [built.paths.go, common, {}];
-    if (!built.skipped.mojo) definitions.mojo = [built.paths.mojo, common, {}];
-    if (!built.skipped.python) {
+    if (enabled.has("go")) definitions.go = [built.paths.go, common, {}];
+    if (enabled.has("mojo")) definitions.mojo = [built.paths.mojo, common, {}];
+    if (enabled.has("python")) {
       definitions.python = ["python3", [join(benchRoot, "kernel.py"), ...common], {}];
     }
-    if (!built.skipped["typescript-node"]) {
+    if (enabled.has("typescript-node")) {
       definitions["typescript-node"] = [process.execPath, [built.paths.typescript, ...common], {}];
     }
-    if (!built.skipped["typescript-deno"]) {
+    if (enabled.has("typescript-deno")) {
       definitions["typescript-deno"] =
         ["deno", ["run", "--quiet", join(benchRoot, "kernel.ts"), ...common], {}];
     }
@@ -321,17 +339,25 @@ try {
       samples,
     }];
   }));
-  const rustMedian = engines.rust.steadyStateNanosecondsPerKernel.median;
+  const rustMedian = engines.rust?.steadyStateNanosecondsPerKernel.median ?? null;
   for (const value of Object.values(engines))
-    value.slowdownVsRust = value.steadyStateNanosecondsPerKernel.median / rustMedian;
+    value.slowdownVsRust = rustMedian === null
+      ? null : value.steadyStateNanosecondsPerKernel.median / rustMedian;
 
   const report = {
-    format: "kotoba.runtime-comparison/v1",
+    format: "kotoba.runtime-comparison/v2",
+    suite,
     fixture: fixtureName,
     benchmark: fixtureSpec.benchmark,
+    normalization: rustMedian === null
+      ? { engine: "rust", status: suite === "core" ? "not-requested" : "unavailable" }
+      : { engine: "rust", status: "measured" },
     contract: {
       n, calls, warmupCalls: warmup, runs, expectedResult: expected,
       arithmetic: fixtureSpec.arithmetic,
+      enginePolicy: suite === "core"
+        ? "Rust-independent Amu native/Wasm semantic and execution evidence"
+        : "optional comparison adapters; unavailable engines are explicit and produce no ratio",
       timing: "in-process steady state after explicit warmup; process wall and RSS are separate",
       fuelPerInstance: benchmarkFuel,
       wasmMaxCallsPerInstance: raw["amu-wasm32"]?.[0]?.maxCallsPerInstance ?? null,
@@ -346,13 +372,14 @@ try {
       logicalCpus: cpus().length,
       totalMemoryBytes: totalmem(),
       node: process.version,
-      rustc: output("rustc", ["--version"]),
-      clojure: output("clojure", ["-Sdescribe"]),
-      go: output("go", ["version"]),
-      mojo: output("mojo", ["--version"]),
-      python: output("python3", ["--version"]),
-      typescript: output("tsc", ["--version"]),
-      deno: output("deno", ["--version"]),
+      rustc: enabled.has("rust") ? output("rustc", ["--version"]) : null,
+      clojure: enabled.has("clojure") || enabled.has("clojurescript")
+        ? output("clojure", ["-Sdescribe"]) : null,
+      go: enabled.has("go") ? output("go", ["version"]) : null,
+      mojo: enabled.has("mojo") ? output("mojo", ["--version"]) : null,
+      python: enabled.has("python") ? output("python3", ["--version"]) : null,
+      typescript: enabled.has("typescript-node") ? output("tsc", ["--version"]) : null,
+      deno: enabled.has("typescript-deno") ? output("deno", ["--version"]) : null,
       compilerCommit: output("git", ["rev-parse", "HEAD"]),
       compilerDirty: Boolean(output("git", ["-c", "core.fsmonitor=false", "status", "--porcelain"])),
     },
@@ -366,12 +393,13 @@ try {
       amuNativeKexe: artifact(built.paths.native),
       amuNativeCode: artifact(built.paths.rawNative),
       amuNativeProvenance: artifact(`${built.paths.native}.provenance.edn`),
-      ...(fixtureName === "kernel" ? {
-        go: built.skipped.go ? null : artifact(built.paths.go),
-        mojo: built.skipped.mojo ? null : artifact(built.paths.mojo),
-        typescript: built.skipped["typescript-node"] ? null : artifact(built.paths.typescript),
-        pythonSource: artifact(join(benchRoot, "kernel.py")),
-        typescriptSource: artifact(join(benchRoot, "kernel.ts")),
+      ...(suite === "competitive" && fixtureName === "kernel" ? {
+        go: enabled.has("go") ? artifact(built.paths.go) : null,
+        mojo: enabled.has("mojo") ? artifact(built.paths.mojo) : null,
+        typescript: enabled.has("typescript-node") ? artifact(built.paths.typescript) : null,
+        pythonSource: enabled.has("python") ? artifact(join(benchRoot, "kernel.py")) : null,
+        typescriptSource: enabled.has("typescript-node") || enabled.has("typescript-deno")
+          ? artifact(join(benchRoot, "kernel.ts")) : null,
       } : {}),
     },
     skippedEngines: built.skipped,

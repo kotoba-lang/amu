@@ -4,9 +4,14 @@
  :adr/date "2026-08-10"
  :adr/markdown "0226-cross-language-runtime-evidence.md"
  :adr/decision
- {:report-format :kotoba.runtime-comparison/v1
+ {:report-format :kotoba.runtime-comparison/v2
+  :suites {:core {:engines [:amu-wasm32 :amu-native]
+                  :external-toolchains :not-probed}
+           :competitive {:adapters [:rust :clojure :clojurescript :go :mojo
+                                     :python :typescript-node :typescript-deno]
+                         :availability :optional
+                         :missing :explicit-skip}}
   :workload :unrolled-modular-mix-v1
-  :engines [:rust :clojure :clojurescript :amu-wasm32 :amu-native]
   :correctness {:shared-observable-result true
                 :independent-reference true}
   :measurements [:steady-state-nanoseconds-per-kernel
@@ -14,11 +19,14 @@
                  :artifact-bytes :build-milliseconds]
   :provenance [:host :architecture :tool-versions :compiler-commit
                :compiler-dirty]
+  :normalization {:rust [:measured :unavailable :not-requested]
+                  :ratio-without-measurement nil}
   :wasm {:admission :instantiate-kotoba
          :imports :denied
          :warmup :fresh-instance-batches
          :measurement :fresh-instance-batches
-         :maximum-calls-per-instance 400
+         :batch-size :calibrated-outside-timing
+         :benchmark-fuel :explicit-and-sealed
          :maximum-total-calls 1000000
          :fuel-bypass false}
   :native {:mode :separate-benchmark-runner
@@ -27,7 +35,9 @@
            :production-loader-modified false
            :production-supervisor false
            :production-sandbox false}
-  :ci {:real-engine-smoke true
+  :ci {:core-real-engine-smoke true
+       :rust-required false
+       :competitive-adapter-test :separate
        :universal-speed-threshold false}}
  :adr/non-claims [:universal-language-ranking :whole-application-parity
                   :production-native-path-latency :production-safety-evidence]}
