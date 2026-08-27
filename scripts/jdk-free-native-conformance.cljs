@@ -52,7 +52,12 @@
     (run "cc" ["-std=c11" "-O2" "-Wall" "-Wextra" "-Werror"
                 (.join path root "tools" "kexe_loader.c") "-o" loader] env)
     (doseq [{:keys [source symbol arguments expected]}
-            [{:source "structured.kotoba" :symbol "score"
+            [;; A zero i64 literal reaches MIR as a JavaScript BigInt under
+             ;; nbb. Keep this first so register classification can never
+             ;; regress into hashing that primitive as a physical register.
+             {:source "i64-semantics.kotoba" :symbol "main"
+              :arguments [] :expected "0"}
+             {:source "structured.kotoba" :symbol "score"
               :arguments ["-7" "2"] :expected "12"}
              {:source "nested-record.kotoba" :symbol "nested-score"
               :arguments [] :expected "15"}
