@@ -87,7 +87,8 @@
         candidate (observation :native-candidate plan-id :runtime :ns
                                (samples :amu-native) source)
         raw (g/qualify candidate baseline)
-        qualified-host? (boolean (get-in report [:qualification :hostLoadQualified]))
+        qualified-host? (and (boolean (get-in report [:qualification :hostLoadQualified]))
+                             (boolean (get-in domain [:qualification :hostLoad :qualified])))
         verdict (if qualified-host?
                   raw
                   (assoc raw :qualified? false :verdict :unqualified-host-load
@@ -101,7 +102,8 @@
 
 (defn qualify-multidomain [report]
   (let [domains (mapv #(qualify-domain report %) (:domains report))
-        host? (boolean (get-in report [:qualification :hostLoadQualified]))
+        host? (and (boolean (get-in report [:qualification :hostLoadQualified]))
+                   (every? #(get-in % [:qualification :hostLoad :qualified]) (:domains report)))
         complete? (boolean (get-in report [:contract :complete]))]
     {:format "amu.multidomain-perfgate-qualification/v1"
      :suite (:suite report)
