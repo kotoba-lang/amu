@@ -51,6 +51,11 @@
       (when-not (host-load-qualified? report) "unqualified-host-load")
       "deferred-quiet-host-rerun"))
 
+(defn json-keyword [value]
+  (if-let [ns (namespace value)]
+    (str ns "/" (name value))
+    (name value)))
+
 (defn qualify-arm [label report-key metric-key metric unit plan-id source report]
   (let [baseline-samples (mapv metric-key (get-in report [report-key :baseline :samples]))
         candidate-samples (mapv metric-key (get-in report [report-key :candidate :samples]))
@@ -99,4 +104,4 @@
                  :any-qualified? (and (host-load-qualified? report)
                                       (or (:qualified? (:verdict runtime))
                                           (boolean (and compile (:qualified? (:verdict compile))))))}
-                :value-fn (fn [_ v] (if (keyword? v) (name v) v)))))))
+                :value-fn (fn [_ v] (if (keyword? v) (json-keyword v) v)))))))
