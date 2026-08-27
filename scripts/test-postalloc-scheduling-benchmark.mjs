@@ -4,7 +4,7 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   fileSha256,
   filesByteIdentical,
@@ -20,6 +20,13 @@ function assert(condition, message) {
 }
 
 try {
+  const benchmarkModule = join(root, "scripts", "postalloc-scheduling-benchmark.mjs");
+  const imported = spawnSync(process.execPath,
+    ["--input-type=module", "--eval", `await import(${JSON.stringify(pathToFileURL(benchmarkModule).href)})`],
+    { cwd: root, encoding: "utf8", timeout: 30_000 });
+  assert(imported.status === 0, `benchmark helper import failed\n${imported.stdout}${imported.stderr}`);
+  assert(imported.stdout === "", "importing benchmark helpers must not execute the benchmark");
+
   const left = join(directory, "left.bin");
   const right = join(directory, "right.bin");
   const sameSize = join(directory, "same-size.bin");
@@ -60,6 +67,28 @@ try {
   if (!report.qualification?.fixture?.verdict) throw new Error("missing fixture verdict");
   if (report.qualification.fixture.verdict !== "non-sensitive") {
     throw new Error("same-root rerun must be fixture non-sensitive");
+  }
+
+  const bridgeInput = join(directory, "perfgate-unqualified.json");
+  writeFileSync(bridgeInput, `${JSON.stringify({
+    ...report,
+    environment: { ...report.environment, hostLoadQualified: false },
+    qualification: {
+      ...report.qualification,
+      hostLoad: { ...report.qualification.hostLoad, qualified: false },
+      performance: { verdict: "unqualified-host-load" },
+    },
+  })}\n`);
+  const bridge = spawnSync("bash", [join(root, "scripts", "perfgate-qualify.sh"), bridgeInput],
+    { cwd: root, encoding: "utf8", timeout: 300_000, maxBuffer: 32 * 1024 * 1024 });
+  if (bridge.status !== 0) throw new Error(`perfgate bridge failed\n${bridge.stdout}${bridge.stderr}`);
+  const qualified = JSON.parse(bridge.stdout);
+  if (qualified["plan-id"] !== `postalloc-scheduling/kernel_cfg_call.${report.target}`) {
+    throw new Error(`perfgate bridge lost namespaced plan id: ${qualified["plan-id"]}`);
+  }
+  if (qualified["host-load-qualified?"] || qualified["any-qualified?"]
+      || qualified.runtime.verdict["qualified?"]) {
+    throw new Error("perfgate bridge must fail closed for an overloaded host");
   }
   console.log("postalloc-scheduling-benchmark: ok");
 } finally {

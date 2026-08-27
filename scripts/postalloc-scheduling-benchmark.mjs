@@ -9,7 +9,8 @@ import { tmpdir, cpus, totalmem, loadavg } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const scriptRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const scriptPath = fileURLToPath(import.meta.url);
+const scriptRoot = resolve(dirname(scriptPath), "..");
 const benchRoot = join(scriptRoot, "bench", "runtime-comparison");
 const benchmarkFuel = 1_048_576;
 
@@ -161,7 +162,7 @@ function parseSample(stdout, arm, expected) {
   return sample;
 }
 
-function timedSample(arm, runner, rawNative, offset, target, n, calls, warmup, fuel) {
+function timedSample(arm, runner, rawNative, offset, target, n, calls, warmup, fuel, expected) {
   const args = [rawNative, offset, target, String(n), String(calls), String(warmup), String(fuel)];
   let executable = runner;
   let timedArgs = args;
@@ -179,7 +180,7 @@ function timedSample(arm, runner, rawNative, offset, target, n, calls, warmup, f
     timedArgs = wrappedRun[1];
   }
   const run = execute(executable, timedArgs);
-  const sample = parseSample(run.stdout, arm, FIXTURES[fixtureName].expected(n));
+  const sample = parseSample(run.stdout, arm, expected);
   return {
     calls: sample.calls,
     warmupCalls: sample.warmupCalls,
@@ -255,6 +256,7 @@ function compileColdWallMilliseconds(root, target, fixtureFile, output) {
   return sample;
 }
 
+export function main() {
 const logicalCpus = cpus().length;
 const loadAverage = loadavg();
 const hostLoadGate = hostLoadQualified(logicalCpus, loadAverage);
@@ -299,7 +301,7 @@ try {
     for (const arm of sequence) {
       const artifacts = arm === "baseline" ? baselineArtifacts : candidateArtifacts;
       const sample = timedSample(arm, artifacts.nativeRunner, artifacts.rawNative,
-        artifacts.nativeOffset, target, n, calls, warmup, benchmarkFuel);
+        artifacts.nativeOffset, target, n, calls, warmup, benchmarkFuel, expected);
       (arm === "baseline" ? baselineRuntime : candidateRuntime).push(sample);
       order.push({ run, arm, nanosecondsPerKernel: sample.nanosecondsPerKernel });
     }
@@ -443,3 +445,6 @@ try {
 } finally {
   rmSync(directory, { recursive: true, force: true });
 }
+}
+
+if (process.argv[1] && resolve(process.argv[1]) === resolve(scriptPath)) main();
