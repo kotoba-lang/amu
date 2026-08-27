@@ -2,8 +2,7 @@
 
 ## Decision
 
-Pin kotoba-mir `ad739526`, overriding kotoba-native `7b757f7`'s transitive
-`699ead0` pin until kotoba-native main consumes the MIR advance. Integer
+Pin kotoba-mir `ad739526` through kotoba-native `542ad8e1`. Integer
 scheduling now runs after register allocation on physical MIR. Each basic block
 is scheduled independently; labels, branches, spills, moves, calls, and every
 other non-schedulable operation remain hard barriers. Pre-allocation CFG
