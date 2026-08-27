@@ -973,6 +973,25 @@
         offset (get-in encoded [:exports 'count-loop :offset])]
     (run-code isa (:code encoded) offset "-" [n])))
 
+(defn- with-all-vreg-fallback
+  "Execute THUNK with the conservative MIR fallback selected explicitly.
+  This is execution evidence for the fallback's frame layout, not a production
+  routing change: production still prefers the call-live scanner."
+  [thunk]
+  (let [lower-phis @#'kotoba.mir/lower-phis
+        allocate-with-spills @#'kotoba.mir/allocate-with-spills
+        force-fallback
+        (fn [program]
+          (let [{:keys [program merge-dst-by-slot]} (lower-phis program)
+                calls? (boolean
+                        (some #(contains? #{:mir/call :mir/runtime-call
+                                            :mir/capability-call :mir/tail-call}
+                                          (:mir/op %))
+                              (:mir/instructions program)))]
+            [(allocate-with-spills program merge-dst-by-slot)
+             (if calls? :all-vregs :allocator)]))]
+    (with-redefs-fn {#'kotoba.mir/allocate-with-policy force-fallback} thunk)))
+
 (deftest a-call-and-a-back-edge-in-one-function-execute
   ;; Iteration 24 located :non-prefix-argument on this loop. Iteration 27
   ;; showed the production all-vreg asserts were the only suite delta with
@@ -992,6 +1011,28 @@
         (is (not (str/includes? report "KEXE_TRAP")) (str/trim report))
         (is (str/includes? report (str ":result " n))
             (str/trim report))))))
+
+(deftest cfg-colored-all-vreg-call-loop-executes
+  (let [target-mc
+        (fn [target]
+          (with-all-vreg-fallback
+            #(let [looper (->> (machine-ir/compile-gmir target
+                                                        call-and-back-edge-module)
+                               :mc/functions
+                               (filter (fn [function]
+                                         (= 'count-loop (:mc/name function))))
+                               first)]
+               ((juxt :mc/frame-policy :mc/frame-slots) looper))))]
+    (is (= [:all-vregs 4] (target-mc :aarch64)))
+    (is (= [:all-vregs 4] (target-mc :x86-64))))
+  (with-all-vreg-fallback
+    #(doseq [[isa loader] @loaders :when loader
+             n [0 1 5 50]]
+       (testing (str isa " cfg-colored-all-vregs n=" n)
+         (let [report (run-call-and-back-edge isa n)]
+           (is (not (str/includes? report "KEXE_TRAP")) (str/trim report))
+           (is (str/includes? report (str ":result " n))
+               (str/trim report)))))))
 
 (defmacro ^:private with-scratch-tier-only
   "Run BODY with only the always-available scratch tier. Same contract as
