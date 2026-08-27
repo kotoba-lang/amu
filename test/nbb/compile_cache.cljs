@@ -13,12 +13,15 @@
       no-policy {:present? false :text ""}
       explicit-policy {:present? true :text "{}\n"}
       key-a (cache/key-for :wasm32-kotoba-v1 "source-a" no-policy)
+      key-fuel (cache/key-for :wasm32-kotoba-v1 "source-a" no-policy
+                              {:fuel (js/BigInt "1048576")})
       key-policy (cache/key-for :wasm32-kotoba-v1 "source-a" explicit-policy)
       key-target (cache/key-for :aarch64-kotoba-v1 "source-a" no-policy)
       key-b (cache/key-for :wasm32-kotoba-v1 "source-b" no-policy)
       key-c (cache/key-for :wasm32-kotoba-v1 "source-c" no-policy)]
-  (ensure! (and (not= key-a key-policy) (not= key-a key-target))
-           "policy presence and target must be part of the cache key")
+  (ensure! (and (not= key-a key-policy) (not= key-a key-target)
+                (not= key-a key-fuel))
+           "policy, build metadata, and target must be part of the cache key")
   (cache/put! store key-a :a 4)
   (cache/put! store key-b :b 4)
   (ensure! (= :a (cache/lookup! store key-a)) "cache lookup failed")

@@ -95,6 +95,23 @@
 (defn read-policy [args]
   (parse-policy-material (read-policy-material args)))
 
+(defn emit-metadata
+  "Build metadata carried outside capability policy, matching the JVM CLI's
+  compile-source call. Keep the integer as BigInt so provenance hashes and
+  Wasm i64 emission stay exact beyond JavaScript's safe-integer range."
+  [args]
+  (if (some #(= "--fuel" %) args)
+    (let [text (option args "--fuel")]
+      (when-not (and text (re-matches #"[0-9]+" text))
+        (throw (ex-info "--fuel must be a positive decimal integer"
+                        {:phase :usage :fuel text})))
+      (let [fuel (js/BigInt text)]
+        (when (zero? fuel)
+          (throw (ex-info "--fuel must be a positive decimal integer"
+                          {:phase :usage :fuel text})))
+        {:fuel fuel}))
+    {}))
+
 (def ^:private declarative-policy-keys
   "Policy controls consumed by the compiler rather than capability admission.
   Keep this aligned with `kotoba.compiler.core/capability-policy`: admission is

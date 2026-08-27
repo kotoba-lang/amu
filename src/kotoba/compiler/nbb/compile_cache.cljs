@@ -32,14 +32,18 @@
       (.update value)
       (.digest "hex")))
 
-(defn key-for [target source policy-material]
-  (sha256
-   (.stringify js/JSON
-               (clj->js ["kotoba.compile-cache/v1"
-                         (name target)
-                         source
-                         (boolean (:present? policy-material))
-                         (:text policy-material)]))))
+(defn key-for
+  ([target source policy-material]
+   (key-for target source policy-material {}))
+  ([target source policy-material emit-metadata]
+   (sha256
+    (.stringify js/JSON
+                (clj->js ["kotoba.compile-cache/v2"
+                          (name target)
+                          source
+                          (boolean (:present? policy-material))
+                          (:text policy-material)
+                          (pr-str emit-metadata)])))))
 
 (defn stage-key-for [stage material]
   (sha256

@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const benchRoot = join(root, "bench", "runtime-comparison");
+const benchmarkFuel = 1_048_576;
 
 const FIXTURES = {
   kernel: {
@@ -40,7 +41,7 @@ const FIXTURES = {
 };
 
 function option(name, fallback) {
-  const index = process.argv.indexOf(name);
+  const index = process.argv.lastIndexOf(name);
   return index < 0 ? fallback : process.argv[index + 1];
 }
 
@@ -156,6 +157,11 @@ function timedSample(engine, command, args, expected, env = {}) {
     nanosecondsPerKernel: sample.elapsedNanoseconds / sample.calls,
     processWallMilliseconds: run.wallMilliseconds,
     maxRssBytes: maximumRss(run.stderr) ?? sample.maxRssBytes ?? null,
+    ...(sample.fuelPerInstance === undefined ? {}
+      : { fuelPerInstance: sample.fuelPerInstance }),
+    ...(sample.maxCallsPerInstance === undefined ? {}
+      : { maxCallsPerInstance: sample.maxCallsPerInstance }),
+    ...(sample.fuelPerCall === undefined ? {} : { fuelPerCall: sample.fuelPerCall }),
   };
 }
 
@@ -178,9 +184,11 @@ function build(directory, target, fixtureSpec) {
   };
 
   step("amuWasm", process.execPath,
-    [join(root, "bin", "amu"), "compile", fixture, "--target", "wasm32", "--output", wasm]);
+    [join(root, "bin", "amu"), "compile", fixture, "--target", "wasm32",
+      "--fuel", String(benchmarkFuel), "--output", wasm]);
   step("amuNative", process.execPath,
-    [join(root, "bin", "amu"), "compile", fixture, "--target", target, "--output", native]);
+    [join(root, "bin", "amu"), "compile", fixture, "--target", target,
+      "--fuel", String(benchmarkFuel), "--output", native]);
   const extracted =   step("amuNativeExtract", process.execPath,
     [join(root, "bin", "amu"), "extract-native", native, "--symbol", "kernel", "--output", rawNative]);
   const offsetMatch = extracted.stdout.match(/:offset\s+([0-9]+)/);
@@ -248,6 +256,9 @@ const fixtureSpec = FIXTURES[fixtureName];
 if (!fixtureSpec) {
   throw new Error(`unknown --fixture ${fixtureName}; expected one of ${Object.keys(FIXTURES).join(", ")}`);
 }
+if (fixtureName === "kernel_loop_call" && n + 2 > benchmarkFuel) {
+  throw new Error(`--n must be at most ${benchmarkFuel - 2} for the loop-call fuel contract`);
+}
 const expected = fixtureSpec.expected(n);
 const directory = mkdtempSync(join(tmpdir(), "amu-runtime-comparison-"));
 
@@ -255,6 +266,7 @@ try {
   const target = hostNativeTarget();
   const built = build(directory, target, fixtureSpec);
   const common = [String(n), String(calls), String(warmup)];
+  const wasmBatchCalibrationLimit = Math.max(calls, warmup);
   const enabled = new Set(fixtureSpec.engines);
   const definitions = {};
   if (enabled.has("rust")) definitions.rust = [built.paths.rust, common, {}];
@@ -266,12 +278,13 @@ try {
   }
   if (enabled.has("amu-wasm32")) {
     definitions["amu-wasm32"] = [process.execPath,
-      [join(benchRoot, "wasm-runner.mjs"), built.paths.wasm, ...common], {}];
+      [join(benchRoot, "wasm-runner.mjs"), built.paths.wasm, ...common,
+        String(benchmarkFuel), String(wasmBatchCalibrationLimit)], {}];
   }
   if (enabled.has("amu-native")) {
     definitions["amu-native"] = [built.paths.nativeRunner,
       [built.paths.rawNative, built.nativeOffset, target, String(n),
-        String(calls), String(warmup)], {}];
+        String(calls), String(warmup), String(benchmarkFuel)], {}];
   }
   if (fixtureName === "kernel") {
     if (!built.skipped.go) definitions.go = [built.paths.go, common, {}];
@@ -320,7 +333,9 @@ try {
       n, calls, warmupCalls: warmup, runs, expectedResult: expected,
       arithmetic: fixtureSpec.arithmetic,
       timing: "in-process steady state after explicit warmup; process wall and RSS are separate",
-      wasmFuel: "Wasm warmup and measurement are split into fresh admitted instances of at most 64 calls per instance (fuel 512); only call intervals are accumulated",
+      fuelPerInstance: benchmarkFuel,
+      wasmMaxCallsPerInstance: raw["amu-wasm32"]?.[0]?.maxCallsPerInstance ?? null,
+      wasmFuel: "Wasm calibrates a workload-specific safe batch on fresh admitted instances before timing; native resets the same benchmark fuel before each call; only call intervals are accumulated",
       nativeBoundary: "benchmark-only direct W^X invocation; no production supervisor or sandbox claim",
       optimization: "each compiler/JIT may optimize the same observable algorithm",
     },

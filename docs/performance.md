@@ -180,14 +180,25 @@ The measurements are deliberately separated:
 - RSS is the operating system's per-process maximum, not retained heap;
 - artifact bytes are unlike-for-like only within the recorded packaging form.
 
-Wasm's sealed fuel budget permits at most 400 exported calls on each fresh
-instance. Warmup and measurement are therefore split across separately
-admitted instances, and only the call intervals are accumulated. Instance
-creation is represented separately by process wall time. The native number
-uses a separate benchmark-only runner that maps
+The harness compiles benchmark artifacts with an explicit 1,048,576-unit fuel
+budget. Wasm fuel is private to an instance and cannot be replenished, so each
+artifact/input pair is calibrated on fresh instances before timing to find the
+largest batch that completes. Warmup and measurement are then split across
+separately admitted instances at that batch size, and only call intervals are
+accumulated. Native resets the same explicit benchmark fuel before each call.
+The effective Wasm batch and fuel are recorded in the report; instance creation
+is represented separately by process wall time. The native number uses a
+separate benchmark-only runner that maps
 the verified extracted code W^X and invokes it directly; it bypasses the
 production fork, supervisor, and sandbox, so it is runtime throughput evidence
 and not a production safety-path claim. The production loader is not modified.
+
+`--fixture kernel_loop_call` adds a count-down loop whose accumulator and
+counter cross both a real helper call and the loop back edge. The Rust helper
+contains a compiler barrier because `#[inline(never)]` alone still allowed LLVM
+to replace the whole loop with `return n`. The smoke test inspects optimized
+Rust assembly and fails unless the helper call remains, then executes the
+default `n=200` workload through Rust, Amu Wasm32, and Amu native.
 
 ## Development runtime evidence
 
