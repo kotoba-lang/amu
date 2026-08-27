@@ -1,0 +1,24 @@
+{:adr/id 273
+ :adr/status :accepted
+ :decision :cfg-colored-all-vreg-fallback
+ :pins {:kotoba-mir "2d7f0c006371d1c5cac600d7bdee98395fd245e5"
+        :kotoba-native "368f7ee2ce0df2661011709789e1a91b975a3fa0"}
+ :contract {:production-preference :call-live
+            :fallback-policy :all-vregs
+            :fallback-slot-policy :cfg-live-range-coloring
+            :color-order :ssa-definition-order
+            :slot-choice :lowest-available
+            :targets #{:x86-64 :aarch64}}
+ :evidence {:straight-line {:ssa-definitions 5 :frame-slots 2}
+            :call-loop {:ssa-definitions 8
+                        :frame-slots {:before 8 :after 4}
+                        :inputs #{0 1 5 50}
+                        :result :input
+                        :real-process true}
+            :kotoba-mir {:tests 51 :assertions 1075 :failures 0}
+            :kotoba-native {:tests 184 :assertions 2278 :failures 0}
+            :amu {:tests 1148 :assertions 8491 :failures 0}}
+ :claims {:spill-slot-coloring true
+          :spill-instruction-elimination false
+          :runtime-speed-improvement false
+          :rust-performance-parity false}}
