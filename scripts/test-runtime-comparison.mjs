@@ -54,7 +54,9 @@ function validateReport(report, { suite, required, optional, expectedResult }) {
       throw new Error(`unknown engine ${name} in report`);
   for (const name of measured) {
     const engine = report.engines[name];
-    const expectedSamples = suite === "core" ? 2 : 1;
+    const expectedSamples = report.contract.samplesPerEngine;
+    if (!Number.isSafeInteger(expectedSamples) || expectedSamples < 2)
+      throw new Error("paired sample count is invalid");
     if (engine.runs !== expectedSamples || engine.samples.length !== expectedSamples)
       throw new Error(`${name} did not produce ${expectedSamples} real samples`);
     if (engine.samples.some(sample => sample.calls !== calls
@@ -81,7 +83,7 @@ function validateReport(report, { suite, required, optional, expectedResult }) {
     if (!/^[0-9a-f]{64}$/.test(artifact.sha256))
       throw new Error(`artifact SHA-256 evidence is invalid for ${name}`);
   }
-  if (report.contract.rotation !== (suite === "core" ? "ABBA/BAAB per run pair" : "balanced cyclic"))
+  if (report.contract.rotation !== "all-engine-pairs ABBA/BAAB per run")
     throw new Error("sampling rotation contract is missing");
   if (typeof report.environment.hostLoadQualified !== "boolean"
       || report.qualification.performance.verdict
