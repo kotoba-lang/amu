@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { spawnSync } from "node:child_process";
-import { readFileSync, mkdtempSync, rmSync } from "node:fs";
+import { readFileSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -48,6 +48,35 @@ try {
   if (!report.qualification.hostLoadQualified
       && (gate["host-load-qualified?"] || gate["all-domains-perfgate-qualified?"]))
     throw new Error("perfgate did not fail closed under host load");
+
+  const tamperedInput = join(directory, "perfgate-domain-host-load.json");
+  writeFileSync(tamperedInput, `${JSON.stringify({
+    format: "kotoba.runtime-multidomain-report/v1",
+    suite: "amu-native-core-multidomain-v1",
+    contract: { complete: true },
+    qualification: { hostLoadQualified: true },
+    domains: [{
+      id: "narrow-arithmetic",
+      fixture: "kernel",
+      qualification: { hostLoad: { qualified: false } },
+      engines: {
+        "amu-wasm32": { samples: Array.from({ length: 5 }, () => ({ nanosecondsPerKernel: 100 })) },
+        "amu-native": { samples: Array.from({ length: 5 }, () => ({ nanosecondsPerKernel: 90 })) },
+      },
+    }],
+  })}\n`);
+  const tamperedBridge = spawnSync("bash",
+    [join(root, "scripts", "perfgate-qualify.sh"), tamperedInput],
+    { cwd: root, encoding: "utf8", timeout: 300_000, maxBuffer: 32 * 1024 * 1024 });
+  if (tamperedBridge.status !== 0)
+    throw new Error(`perfgate bridge failed on tampered report\n${tamperedBridge.stdout}${tamperedBridge.stderr}`);
+  const tamperedGate = JSON.parse(tamperedBridge.stdout);
+  if (tamperedGate["host-load-qualified?"]
+      || tamperedGate["all-domains-perfgate-qualified?"]
+      || tamperedGate.domains[0].verdict["qualified?"]) {
+    throw new Error("perfgate must fail closed when a domain host-load gate is false");
+  }
+
   process.stdout.write("runtime-multidomain: 6 domains, known answers, hashes, rotation, host gate and perfgate OK\n");
 } finally {
   rmSync(directory, { recursive: true, force: true });
