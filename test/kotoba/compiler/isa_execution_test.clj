@@ -152,6 +152,11 @@
 
 (def ^:private base-cases
   [["arithmetic" "(defn main [] (+ (* 3 4) (quot 10 2)))" 17]
+   ["scheduled independent integer work preserves the result"
+    (str "(defn scheduled [a b c d] "
+         "(let [x (* a b) dependent (* x c) independent (+ c d)] "
+         "(+ dependent independent))) "
+         "(defn main [] (scheduled 2 3 4 5))") 33]
    ["comparison" "(defn main [] (if (< 1 2) 7 8))" 7]
    ["recursion" (str "(defn f [n] (if (< n 1) 0 (+ n (f (- n 1)))))"
                      " (defn main [] (f 5))") 15]
