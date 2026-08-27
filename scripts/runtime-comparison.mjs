@@ -3,7 +3,7 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
-  mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync,
+  existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync,
 } from "node:fs";
 import { tmpdir, cpus, loadavg, totalmem } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -56,8 +56,9 @@ const FIXTURES = {
   },
   kernel_deep: {
     kotoba: "kernel_deep.kotoba",
+    rust: "kernel_deep.rs",
     benchmark: "deep-spill-pressure-v1",
-    comparators: [],
+    comparators: ["rust"],
     arithmetic: "twenty-four independent modular-mix lanes exceed both target register pools",
     expected(n) {
       // The fixture intentionally names lane 13 `n`, shadowing the argument;
@@ -71,8 +72,9 @@ const FIXTURES = {
   },
   kernel_call: {
     kotoba: "kernel_call.kotoba",
+    rust: "kernel_call.rs",
     benchmark: "call-preservation-v1",
-    comparators: [],
+    comparators: ["rust"],
     arithmetic: "eight values survive real local calls before reduction",
     expected(n) {
       const first = Array.from({ length: 4 }, (_, i) => modularStep(n + i));
@@ -81,8 +83,9 @@ const FIXTURES = {
   },
   kernel_call_branch: {
     kotoba: "kernel_call_branch.kotoba",
+    rust: "kernel_call_branch.rs",
     benchmark: "branch-call-preservation-v1",
-    comparators: [],
+    comparators: ["rust"],
     arithmetic: "the call-preservation workload crosses an explicit control-flow join",
     expected(n) {
       if (n === 0) return 0;
@@ -211,6 +214,7 @@ function timedSample(engine, command, args, expected, env = {}) {
   const run = execute(executable, timedArgs, { env });
   const sample = parseSample(run.stdout, engine, expected);
   return {
+    result: sample.result,
     calls: sample.calls,
     warmupCalls: sample.warmupCalls,
     elapsedNanoseconds: sample.elapsedNanoseconds,
@@ -341,6 +345,9 @@ if (suite === "competitive") {
   for (const name of fixtureSpec.comparators) {
     const probe = comparatorTools[name];
     if (disabled.has(name)) skipped[name] = "disabled by request";
+    else if (name === "rust"
+        && (!fixtureSpec.rust || !existsSync(join(benchRoot, fixtureSpec.rust))))
+      skipped[name] = "Rust semantic-twin fixture not present";
     else if (available(probe)) enabled.add(name);
     else skipped[name] = `${probe[0]} not on PATH`;
   }
@@ -389,15 +396,17 @@ try {
   }
   const names = Object.keys(definitions);
   const raw = Object.fromEntries(names.map(name => [name, []]));
-  // The Rust-independent core has exactly two arms and uses paired ABBA/BAAB
-  // blocks. Competitive adapters use a balanced cyclic rotation because an
-  // ABBA block is defined only for a pair.
+  // Every comparison is made inside an ABBA/BAAB pair.  For competitive runs
+  // enumerate all engine pairs, so adding an optional adapter cannot weaken
+  // the ordering contract or give one engine a fixed thermal position.
   for (let run = 0; run < runs; run += 1) {
-    const sequence = suite === "core"
-      ? (run % 2 === 0
-        ? [names[0], names[1], names[1], names[0]]
-        : [names[1], names[0], names[0], names[1]])
-      : names.map((_, index) => names[(run + index) % names.length]);
+    const pairs = [];
+    for (let left = 0; left < names.length; left += 1)
+      for (let right = left + 1; right < names.length; right += 1)
+        pairs.push([names[left], names[right]]);
+    const sequence = pairs.flatMap(([left, right]) => run % 2 === 0
+      ? [left, right, right, left]
+      : [right, left, left, right]);
     for (const name of sequence) {
       const [command, args, env] = definitions[name];
       raw[name].push(timedSample(name, command, args, expected, env));
@@ -435,7 +444,7 @@ try {
     contract: {
       n, calls, warmupCalls: warmup, runs, expectedResult: expected,
       samplesPerEngine: raw[names[0]].length,
-      rotation: suite === "core" ? "ABBA/BAAB per run pair" : "balanced cyclic",
+      rotation: "all-engine-pairs ABBA/BAAB per run",
       arithmetic: fixtureSpec.arithmetic,
       enginePolicy: suite === "core"
         ? "Rust-independent Amu native/Wasm semantic and execution evidence"
@@ -447,6 +456,9 @@ try {
       wasmFuel: "Wasm calibrates a workload-specific safe batch on fresh admitted instances before timing; native resets the same benchmark fuel before each call; only call intervals are accumulated",
       nativeBoundary: "benchmark-only direct W^X invocation; no production supervisor or sandbox claim",
       optimization: "each compiler/JIT may optimize the same observable algorithm",
+      rustOptimization: enabled.has("rust")
+        ? "rustc --edition 2021 -C opt-level=3 -C codegen-units=1 -C strip=symbols"
+        : null,
     },
     environment: {
       platform: process.platform,
@@ -473,6 +485,7 @@ try {
     buildMilliseconds: built.durations,
     artifacts: {
       ...(enabled.has("rust") ? { rust: artifact(built.paths.rust) } : {}),
+      ...(enabled.has("rust") ? { rustSource: artifact(join(benchRoot, fixtureSpec.rust)) } : {}),
       kotobaSource: artifact(built.paths.fixture),
       kotobaWasmSource: artifact(built.paths.wasmFixture),
       ...(enabled.has("clojure") ? { clojureSource: artifact(join(benchRoot, "kernel.clj")) } : {}),

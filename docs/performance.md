@@ -221,6 +221,8 @@ and loop plus call across a back edge.
 ```sh
 npm run benchmark-runtime-multidomain -- \
   --runs 5 --calls 100000 --n 200 --output multidomain.json
+npm run benchmark-runtime-multidomain -- \
+  --suite competitive --runs 5 --calls 100000 --n 200 --output multidomain-rust.json
 npm run test-runtime-multidomain
 ```
 
@@ -231,11 +233,22 @@ provenance with SHA-256; use paired ABBA/BAAB order; and pass their samples to
 and after a domain, with at most 10% drift. Otherwise the harness reduces the
 requested work and records `unqualified-host-load`; perfgate then fails closed.
 
-The core suite deliberately has no external comparator. Rust and LLVM remain
-optional experiment adapters, never compiler or runtime dependencies. A broad
-"fastest" claim stays false until an external comparator covers every required
-domain on qualified hosts and architectures. Per-domain parity or a win in one
-fixture cannot satisfy that gate.
+The core suite deliberately has no external comparator. The optional
+competitive suite has exact Rust semantic twins for all six domains and builds
+each with `rustc -C opt-level=3`. It records the Rust source and executable
+SHA-256, one consistent `rustc --version`, known-answer results, and pairwise
+ABBA/BAAB samples. A missing domain or wrong result makes Rust coverage
+incomplete instead of silently shrinking the domain set. If `rustc` is absent,
+the report records it as unavailable and the core suite remains usable.
+
+Rust and LLVM remain optional experiment adapters, never compiler or runtime
+dependencies. Six qualified Rust comparisons can establish only the bounded
+claim represented by `rustComparisonQualified`: Amu versus Rust on this named
+suite, host, and architecture. They cannot establish a world-wide or broad
+"fastest" claim. That broader claim stays false until a separately
+prespecified competitor universe is complete. Every native-versus-comparator
+result must also pass `perfgate.core/qualify`; per-domain parity or a win in one
+fixture cannot satisfy even the bounded Rust gate.
 
 ## Development runtime evidence
 

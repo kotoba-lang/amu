@@ -6,6 +6,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { cpus, loadavg, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { assessComparatorCoverage } from "./runtime-multidomain-evidence.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const manifestPath = join(root, "bench", "runtime-comparison", "multidomain-suite.json");
@@ -28,6 +29,10 @@ function execute(command, args, timeout = 600_000) {
 }
 
 const outputPath = option("--output", null);
+const suite = option("--suite", "core");
+if (!new Set(["core", "competitive"]).has(suite))
+  throw new Error("--suite must be core or competitive");
+const disabledEngines = option("--disable-engines", "");
 const requestedRuns = Number(option("--runs", "5"));
 const requestedCalls = Number(option("--calls", "100000"));
 const n = Number(option("--n", "200"));
@@ -49,9 +54,10 @@ try {
   for (const domain of manifest.requiredDomains) {
     const reportPath = join(directory, `${domain.id}.json`);
     execute(process.execPath, [join(root, "scripts", "runtime-comparison.mjs"),
-      "--suite", "core", "--fixture", domain.fixture,
+      "--suite", suite, "--fixture", domain.fixture,
       "--runs", String(runs), "--calls", String(calls),
-      "--warmup", String(warmup), "--n", String(n), "--output", reportPath]);
+      "--warmup", String(warmup), "--n", String(n), "--output", reportPath,
+      ...(disabledEngines ? ["--disable-engines", disabledEngines] : [])]);
     const report = JSON.parse(readFileSync(reportPath, "utf8"));
     if (report.benchmark !== domain.knownAnswer)
       throw new Error(`${domain.id} benchmark identity drifted`);
@@ -69,6 +75,7 @@ try {
         runs: report.contract.runs,
         samplesPerEngine: report.contract.samplesPerEngine,
         calls: report.contract.calls,
+        rustOptimization: report.contract.rustOptimization,
       },
       artifacts: report.artifacts,
       environment: report.environment,
@@ -79,6 +86,13 @@ try {
 
   const hostLoadQualified = initialLoadQualified
     && domains.every(domain => domain.qualification.hostLoad.qualified);
+  const rustCoverage = suite === "competitive"
+    ? assessComparatorCoverage(manifest, domains, "rust")
+    : {
+        status: "not-requested", requiredDomainCount: manifest.requiredDomains.length,
+        measuredDomainCount: 0, missingDomains: [], toolVersion: null,
+        complete: false, evidence: [],
+      };
   const report = {
     format: "kotoba.runtime-multidomain-report/v1",
     suite: manifest.id,
@@ -91,7 +105,9 @@ try {
       measuredDomainCount: domains.length,
       complete: domains.length === manifest.requiredDomains.length,
       reducedUnderHostLoad: !initialLoadQualified,
-      externalComparators: "not requested; optional adapters are outside the core dependency closure",
+      externalComparators: suite === "core"
+        ? "not requested; optional adapters are outside the core dependency closure"
+        : "optional adapters measured outside the compiler and runtime dependency closure",
     },
     qualification: {
       hostLoadQualified,
@@ -101,12 +117,21 @@ try {
         ? "core domains complete; no external comparator covers every required domain"
         : "host load failed closed; timings are diagnostic only",
     },
+    externalComparators: { rust: rustCoverage },
     domains,
   };
   const perfgateInput = join(directory, "multidomain-input.json");
   writeFileSync(perfgateInput, `${JSON.stringify(report, null, 2)}\n`);
   report.qualification.perfgate = JSON.parse(execute("bash",
     [join(root, "scripts", "perfgate-qualify.sh"), perfgateInput]));
+  report.qualification.rustComparisonQualified
+    = report.qualification.perfgate["rust-comparison-qualified?"];
+  report.qualification.broadFastestClaimQualified = false;
+  report.qualification.reason = report.qualification.rustComparisonQualified
+    ? "qualified against Rust on all six domains; broad competitor universe remains incomplete"
+    : rustCoverage.complete
+      ? "Rust covers every domain, but host/perfgate qualification is incomplete"
+      : "no external comparator has complete qualified coverage";
   const encoded = `${JSON.stringify(report, null, 2)}\n`;
   if (outputPath) writeFileSync(resolve(outputPath), encoded);
   process.stdout.write(encoded);

@@ -100,11 +100,43 @@
      :candidate (:observation/summary candidate)
      :verdict verdict}))
 
+(defn qualify-rust-domain [report domain]
+  (when (get-in domain [:engines :rust])
+    (let [id (:id domain)
+          plan-id (keyword "runtime-multidomain-rust" id)
+          source (str "scripts/runtime-multidomain-suite.mjs comparator=rust domain=" id)
+          samples (fn [engine]
+                    (mapv :nanosecondsPerKernel
+                          (get-in domain [:engines engine :samples])))
+          baseline (observation :rust-baseline plan-id :runtime :ns
+                                (samples :rust) source)
+          candidate (observation :amu-native-candidate plan-id :runtime :ns
+                                 (samples :amu-native) source)
+          raw (g/qualify candidate baseline)
+          qualified-host? (and (boolean (get-in report [:qualification :hostLoadQualified]))
+                               (boolean (get-in domain [:qualification :hostLoad :qualified])))
+          verdict (if qualified-host?
+                    raw
+                    (assoc raw :qualified? false :verdict :unqualified-host-load
+                           :reason "multidomain host-load gate failed"))]
+      {:id id
+       :fixture (:fixture domain)
+       :plan-id plan-id
+       :baseline (:observation/summary baseline)
+       :candidate (:observation/summary candidate)
+       :verdict verdict})))
+
 (defn qualify-multidomain [report]
   (let [domains (mapv #(qualify-domain report %) (:domains report))
+        rust-domains (->> (:domains report)
+                          (keep #(qualify-rust-domain report %))
+                          vec)
         host? (and (boolean (get-in report [:qualification :hostLoadQualified]))
                    (every? #(get-in % [:qualification :hostLoad :qualified]) (:domains report)))
-        complete? (boolean (get-in report [:contract :complete]))]
+        complete? (boolean (get-in report [:contract :complete]))
+        rust-complete? (boolean (get-in report [:externalComparators :rust :complete]))
+        rust-qualified? (and host? rust-complete?
+                             (every? #(get-in % [:verdict :qualified?]) rust-domains))]
     {:format "amu.multidomain-perfgate-qualification/v1"
      :suite (:suite report)
      :host-load-qualified? host?
@@ -112,8 +144,20 @@
      :domains domains
      :all-domains-perfgate-qualified?
      (and host? complete? (every? #(get-in % [:verdict :qualified?]) domains))
+     :external-comparators
+     {:rust {:domain-set-complete? rust-complete?
+             :domains rust-domains
+             :all-domains-perfgate-qualified? rust-qualified?
+             :rust-comparison-qualified? rust-qualified?}}
+     :rust-comparison-qualified? rust-qualified?
+     ;; Six Rust twins qualify only this prespecified Amu-vs-Rust suite.  They
+     ;; do not define, much less exhaust, the universe needed for "world's
+     ;; fastest" or another broad superlative.
      :broad-fastest-claim-qualified? false
-     :reason "core evidence has no external comparator covering every required domain"}))
+     :reason (cond
+               rust-qualified? "Amu native qualified against Rust on all six required domains; broad competitor universe remains incomplete"
+               rust-complete? "Rust domain set is complete but not fully qualified"
+               :else "no external comparator covers every required domain")}))
 
 (defn -main [& args]
   (let [input (first args)]
