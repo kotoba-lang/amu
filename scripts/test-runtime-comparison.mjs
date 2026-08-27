@@ -28,6 +28,11 @@ function validateReport(report, { required, optional, expectedResult }) {
   if (report.contract.expectedResult !== expectedResult) throw new Error("wrong kernel result");
   if (!report.contract.nativeBoundary.includes("no production supervisor"))
     throw new Error("native benchmark boundary is not explicit");
+  if (report.contract.fuelPerInstance !== 1_048_576)
+    throw new Error("benchmark fuel contract is missing");
+  if (!Number.isSafeInteger(report.contract.wasmMaxCallsPerInstance)
+      || report.contract.wasmMaxCallsPerInstance < 1)
+    throw new Error("Wasm batch contract is invalid");
   const measured = Object.keys(report.engines);
   for (const name of required)
     if (!measured.includes(name)) throw new Error(`required engine ${name} is missing`);
@@ -64,6 +69,19 @@ function validateReport(report, { required, optional, expectedResult }) {
 }
 
 try {
+  const assemblyPath = join(directory, "kernel-loop-call.s");
+  const assemblyBuild = spawnSync("rustc",
+    ["--edition", "2021", "-C", "opt-level=3", "-C", "codegen-units=1",
+      "--emit", "asm", join(root, "bench", "runtime-comparison", "kernel_loop_call.rs"),
+      "-o", assemblyPath],
+    { cwd: root, encoding: "utf8", timeout: 120_000 });
+  if (assemblyBuild.error) throw assemblyBuild.error;
+  if (assemblyBuild.status !== 0)
+    throw new Error(`Rust loop-call assembly build failed\n${assemblyBuild.stderr}`);
+  const assembly = readFileSync(assemblyPath, "utf8");
+  if (!/(?:callq?|bl)\s+_?kotoba_bench_id\b/.test(assembly))
+    throw new Error("Rust optimized away the loop-call comparison call");
+
   const kernelReport = runComparison(join(directory, "report.json"), []);
   const kernel = validateReport(kernelReport, {
     required: ["rust", "clojure", "clojurescript", "amu-wasm32", "amu-native"],
@@ -71,14 +89,20 @@ try {
     expectedResult: 516860764,
   });
   const loopReport = runComparison(join(directory, "loop-call.json"),
-    ["--fixture", "kernel_loop_call"]);
+    ["--fixture", "kernel_loop_call", "--n", "200"]);
   if (loopReport.fixture !== "kernel_loop_call") throw new Error("loop-call fixture not recorded");
   if (loopReport.benchmark !== "loop-call-mix-v1") throw new Error("loop-call benchmark id missing");
   const loop = validateReport(loopReport, {
     required: ["rust", "amu-wasm32", "amu-native"],
     optional: [],
-    expectedResult: 5,
+    expectedResult: 200,
   });
+  if (loopReport.contract.wasmMaxCallsPerInstance !== calls)
+    throw new Error("Wasm --fuel did not reach the emitted loop-call artifact");
+  if (loopReport.engines["amu-wasm32"].samples[0].fuelPerInstance !== 1_048_576)
+    throw new Error("Wasm sample omitted its sealed benchmark fuel");
+  if (loopReport.engines["amu-native"].samples[0].fuelPerCall !== 1_048_576)
+    throw new Error("native sample omitted its reset benchmark fuel");
   process.stdout.write(
     `runtime-comparison: kernel ${kernel.measured.length} engines `
     + `(${Object.keys(kernel.skipped).length} skipped); `

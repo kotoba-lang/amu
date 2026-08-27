@@ -456,10 +456,14 @@
              "(record-new " record-type " 7)) "
              "[:option " record-type "] "
              "(none 0) (some person (record-get " record-type " person :age))))")]
-    (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo
-         #"typed values currently require"
-         (compiler/compile-source source (target))))))
+    (let [error (try
+                  (compiler/compile-source source (target))
+                  nil
+                  (catch clojure.lang.ExceptionInfo error error))]
+      (is (instance? clojure.lang.ExceptionInfo error))
+      (is (= :scalar-value-required (:problem (ex-data error))))
+      (is (= :kir-to-gmir (:ir/phase (ex-data error))))
+      (is (re-find #"machine IR rejected" (.getMessage error))))))
 
 (deftest execution-rejects-before-entering-untrusted-or-unauthorized-code
   (let [{:keys [envelope trust]} (signed "(defn main [] 42)" {:allow #{}})

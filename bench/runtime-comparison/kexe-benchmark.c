@@ -62,9 +62,9 @@ static uint64_t nanoseconds(void) {
  * exports keep a bound; a leaf does not read it. */
 
 int main(int argc, char **argv) {
-  if (argc != 7) {
+  if (argc != 8) {
     fprintf(stderr,
-            "usage: kexe-benchmark <raw-code> <offset> <isa> <n> <calls> <warmup>\n");
+            "usage: kexe-benchmark <raw-code> <offset> <isa> <n> <calls> <warmup> <fuel>\n");
     return 2;
   }
   uint64_t offset = bounded(argv[2], "offset", 1, UINT64_MAX);
@@ -76,6 +76,7 @@ int main(int argc, char **argv) {
   int64_t input = (int64_t)bounded(argv[4], "n", 0, UINT64_C(2147483646));
   uint64_t calls = bounded(argv[5], "calls", 0, UINT64_C(100000000));
   uint64_t warmup = bounded(argv[6], "warmup", 0, UINT64_C(100000000));
+  uint64_t fuel = bounded(argv[7], "fuel", 0, UINT64_C(1048576));
   int fd = open(argv[1], O_RDONLY);
   if (fd < 0) fail("open");
   struct stat metadata;
@@ -114,24 +115,24 @@ int main(int argc, char **argv) {
   if (aarch64) {
     kexe_fn8 fn = (kexe_fn8)((uint8_t *)memory + offset);
     for (uint64_t index = 0; index < warmup; index++) {
-      context.fuel = 512;
+      context.fuel = fuel;
       result = fn(input, 0, 0, 0, 0, 0, 0, (int64_t)(uintptr_t)&context);
     }
     started = nanoseconds();
     for (uint64_t index = 0; index < calls; index++) {
-      context.fuel = 512;
+      context.fuel = fuel;
       result = fn(input, 0, 0, 0, 0, 0, 0, (int64_t)(uintptr_t)&context);
     }
     elapsed = nanoseconds() - started;
   } else {
     kexe_fn6 fn = (kexe_fn6)((uint8_t *)memory + offset);
     for (uint64_t index = 0; index < warmup; index++) {
-      context.fuel = 512;
+      context.fuel = fuel;
       result = fn(input, 0, 0, 0, 0, (int64_t)(uintptr_t)&context);
     }
     started = nanoseconds();
     for (uint64_t index = 0; index < calls; index++) {
-      context.fuel = 512;
+      context.fuel = fuel;
       result = fn(input, 0, 0, 0, 0, (int64_t)(uintptr_t)&context);
     }
     elapsed = nanoseconds() - started;
@@ -146,8 +147,8 @@ int main(int argc, char **argv) {
   printf("{\"format\":\"kotoba.runtime-sample/v1\","
          "\"calls\":%" PRIu64 ",\"warmupCalls\":%" PRIu64 ","
          "\"elapsedNanoseconds\":%" PRIu64 ",\"result\":%" PRId64 ","
-         "\"maxRssBytes\":%" PRIu64 "}\n",
-         calls, warmup, elapsed, result, rss);
+         "\"maxRssBytes\":%" PRIu64 ",\"fuelPerCall\":%" PRIu64 "}\n",
+         calls, warmup, elapsed, result, rss, fuel);
   if (munmap(memory, mapped) != 0) fail("munmap");
   return 0;
 }

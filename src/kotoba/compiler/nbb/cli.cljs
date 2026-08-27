@@ -82,7 +82,7 @@
                    ;; admitted HIR is byte-for-byte semantically identical.
                    stage-cache :kir (pr-str hir) (fn [] (ir/lower hir)))))
 
-(defn- compile-native! [hir target backend policy emit-program stage-cache]
+(defn- compile-native! [hir target backend policy emit-metadata emit-program stage-cache]
   (when (and (= :kotoba.hir/v3 (:format hir))
              (not (and (contains? #{:x86_64-kotoba-v1 :aarch64-kotoba-v1} backend)
                        (ir/only-native-word-typed-features? hir))))
@@ -111,7 +111,10 @@
                 {:hir-format (:format hir) :kir-format (:format kir)
                  :target target :target-profile profile :value-abi value-abi})
         program (select-keys kir [:format :entry :exports :signature :effects :functions])
-        declared-fuel (native-fuel! policy)
+        declared-fuel (native-fuel!
+                       (cond-> policy
+                         (:fuel emit-metadata)
+                         (assoc-in [:budgets :fuel] (:fuel emit-metadata))))
         ;; Verification re-emits from this closed program. Do not let
         ;; compiler-private KIR metadata influence the bytes being sealed.
         emitted (support/timed "native-emit" #(emit-program program))
@@ -161,9 +164,9 @@
      :admission admission :artifact artifact-map :compatibility compat
      :stage-cache {:kir (:cache kir-result)}}))
 
-(defn- serialized-native [source policy result]
+(defn- serialized-native [source policy emit-metadata result]
   (let [provenance-result (support/timed "provenance"
-                                         #(provenance/attach source policy {} result))]
+                                         #(provenance/attach source policy emit-metadata result))]
     {:artifact-text (support/timed
                      "artifact-serialize"
                      #(pr-str (artifact/edn-safe (:artifact provenance-result))))
@@ -185,9 +188,10 @@
 
 (defn- compile-uncached! [args source target backend output emit-program]
   (let [policy (support/timed "policy-read" #(support/read-policy args))
+        emit-metadata (support/emit-metadata args)
         hir (:value (resolve-hir! source policy nil))
-        result (compile-native! hir target backend policy emit-program nil)
-        serialized (serialized-native source policy result)
+        result (compile-native! hir target backend policy emit-metadata emit-program nil)
+        serialized (serialized-native source policy emit-metadata result)
         {:keys [provenance-output publication-output]}
         (write-native! output serialized)]
     {:ok true :target target :output output
@@ -200,9 +204,11 @@
                         #(try {:material (support/read-policy-material args)}
                               (catch :default error {:error error})))
         material (:material policy-attempt)
+        emit-metadata (support/emit-metadata args)
         key (when material
               (support/timed "cache-key"
-                             #(compile-cache/key-for target source material)))
+                             #(compile-cache/key-for target source material
+                                                     emit-metadata)))
         artifact-cache (:artifacts context)
         stage-cache (:stages context)
         cached (when key (support/timed "cache-lookup"
@@ -230,8 +236,9 @@
                                   #(support/parse-policy-material material))
             hir-result (resolve-hir! source policy stage-cache)
             hir (:value hir-result)
-            result (compile-native! hir target backend policy emit-program stage-cache)
-            serialized (serialized-native source policy result)
+            result (compile-native! hir target backend policy emit-metadata
+                                    emit-program stage-cache)
+            serialized (serialized-native source policy emit-metadata result)
             {:keys [provenance-output publication-output]}
             (write-native! output serialized)
             sealed (assoc serialized

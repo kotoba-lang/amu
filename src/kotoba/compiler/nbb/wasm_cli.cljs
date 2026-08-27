@@ -47,15 +47,16 @@
 (defn- compile-wasm!
   "Keep the primary Node result and provenance identity aligned with
   `kotoba.compiler.core/compile-source*`'s Wasm branch. In particular, the
-  policy fuel budget is an emitter input, not admission-only metadata."
-  [source target policy hir admission-result kir]
+  CLI build-metadata fuel and policy fuel budget are emitter inputs, not
+  admission-only metadata."
+  [source target policy emit-metadata hir admission-result kir]
   (let [profile (target-profile/profile target)
         typed-values? (= :kotoba.kir/v4 (:format kir))
         value-abi (cond (ir/uses-f32? hir) :kotoba.typed/mixed-f32-f64-v3
                         (ir/uses-f64? hir) :kotoba.typed/mixed-f64-v2
                         typed-values? :kotoba.typed/externref-v1
                         :else :kotoba.i64/direct-v1)
-        fuel (or (get-in policy [:budgets :fuel]) 512)
+        fuel (or (:fuel emit-metadata) (get-in policy [:budgets :fuel]) 512)
         compat (compatibility/descriptor
                 {:hir-format (:format hir) :kir-format (:format kir)
                  :target target :target-profile profile :value-abi value-abi})
@@ -87,7 +88,7 @@
                 :bytes (support/timed "wasm-emit"
                                       #(wasm/emit kir target {:fuel fuel}))}]
     (support/timed "provenance"
-                   #(provenance/attach source policy {} result))))
+                   #(provenance/attach source policy emit-metadata result))))
 
 (defn- serialized-wasm [result]
   {:bytes (.from js/Buffer (:bytes result))
@@ -130,13 +131,15 @@
 
 (defn- compile-uncached! [args target output source]
   (let [policy (support/timed "policy-read" #(support/read-policy args))
+        emit-metadata (support/emit-metadata args)
         hir (:value (resolve-hir! source policy nil))
         admission-result (support/timed
                           "admission"
                           #(admission/check hir (support/capability-policy policy)))
         kir (support/timed "kir-lower" #(ir/lower hir))
         serialized (serialized-wasm
-                    (compile-wasm! source target policy hir admission-result kir))
+                    (compile-wasm! source target policy emit-metadata
+                                   hir admission-result kir))
         {:keys [provenance-output publication-output]}
         (write-wasm! output serialized)]
     {:ok true :target target :output output
@@ -152,9 +155,11 @@
                         #(try {:material (support/read-policy-material args)}
                               (catch :default error {:error error})))
         material (:material policy-attempt)
+        emit-metadata (support/emit-metadata args)
         key (when material
               (support/timed "cache-key"
-                             #(compile-cache/key-for target source material)))
+                             #(compile-cache/key-for target source material
+                                                     emit-metadata)))
         artifact-cache (:artifacts context)
         stage-cache (:stages context)
         cached (when key (support/timed "cache-lookup"
@@ -190,7 +195,8 @@
             kir-result (resolve-kir! hir stage-cache)
             kir (:value kir-result)
             serialized (serialized-wasm
-                        (compile-wasm! source target policy hir admission-result kir))
+                        (compile-wasm! source target policy emit-metadata
+                                       hir admission-result kir))
             bytes (:bytes serialized)
             {:keys [provenance-output publication-output]}
             (write-wasm! output serialized)

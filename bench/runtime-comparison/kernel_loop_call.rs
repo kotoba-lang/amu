@@ -2,16 +2,20 @@ use std::env;
 use std::hint::black_box;
 use std::time::Instant;
 
+// Keep the call opaque to rustc/LLVM without adding a runtime operation to
+// the identity body on supported targets. `inline(never)` alone is not enough:
+// LLVM can otherwise prove that the complete loop returns `n` and delete it.
 #[inline(never)]
-fn id(x: i64) -> i64 {
-    x
+#[no_mangle]
+pub extern "C" fn kotoba_bench_id(x: i64) -> i64 {
+    black_box(x)
 }
 
 fn kernel(n: i64) -> i64 {
     let mut i = n;
     let mut acc = 0_i64;
     while i != 0 {
-        let stepped = id(1);
+        let stepped = kotoba_bench_id(1);
         acc += stepped;
         i -= 1;
     }

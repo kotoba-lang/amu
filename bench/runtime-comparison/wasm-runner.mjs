@@ -10,14 +10,16 @@ function positive(value, name) {
   return parsed;
 }
 
-const [artifact, nText, callsText, warmupText] = process.argv.slice(2);
-if (!artifact) throw new Error("usage: wasm-runner.mjs <artifact> <n> <calls> <warmup>");
+const [artifact, nText, callsText, warmupText, fuelText, batchText] = process.argv.slice(2);
+if (!artifact) {
+  throw new Error(
+    "usage: wasm-runner.mjs <artifact> <n> <calls> <warmup> <fuel> <max-calls-per-instance>");
+}
 const n = positive(nText, "n");
 const calls = positive(callsText, "calls");
 const warmup = positive(warmupText, "warmup");
-// Fuel is sealed at 512 per instance. Loop+call kernels can exhaust it well
-// before 400 invocations; 64 keeps measurement batches inside the contract.
-const maxCallsPerInstance = 64;
+const fuel = positive(fuelText, "fuel");
+const requestedMaxCallsPerInstance = positive(batchText, "max-calls-per-instance");
 const admitted = await instantiateKotoba(readFileSync(artifact));
 if (WebAssembly.Module.imports(admitted.module).length !== 0)
   throw new Error("runtime benchmark fixture unexpectedly requires host imports");
@@ -28,6 +30,36 @@ const freshKernel = async () => {
   if (typeof kernel !== "function") throw new Error("Wasm artifact omitted kernel export");
   return kernel;
 };
+// Fuel is module-private and non-replenishable. Calibrate the largest safe
+// batch against a fresh instance before timing; this follows the emitted code
+// when its charge model changes instead of encoding a stale calls-per-kernel
+// estimate in the harness.
+const calibrationLimit = Math.min(requestedMaxCallsPerInstance, Math.max(calls, warmup));
+const batchSucceeds = async count => {
+  const kernel = await freshKernel();
+  try {
+    for (let index = 0; index < count; index += 1) kernel(BigInt(n));
+    return true;
+  } catch (error) {
+    if (error instanceof WebAssembly.RuntimeError) return false;
+    throw error;
+  }
+};
+if (!(await batchSucceeds(1))) {
+  throw new Error(`one Wasm kernel invocation exceeds the sealed fuel ${fuel}`);
+}
+let safe = 1;
+let unsafe = calibrationLimit + 1;
+if (calibrationLimit > 1 && await batchSucceeds(calibrationLimit)) {
+  safe = calibrationLimit;
+} else {
+  while (safe + 1 < unsafe) {
+    const candidate = safe + Math.floor((unsafe - safe) / 2);
+    if (await batchSucceeds(candidate)) safe = candidate;
+    else unsafe = candidate;
+  }
+}
+const maxCallsPerInstance = safe;
 let result = 0n;
 let remainingWarmup = warmup;
 while (remainingWarmup > 0) {
@@ -52,4 +84,6 @@ process.stdout.write(`${JSON.stringify({
   warmupCalls: warmup,
   elapsedNanoseconds: Number(elapsed),
   result: Number(result),
+  fuelPerInstance: fuel,
+  maxCallsPerInstance,
 })}\n`);

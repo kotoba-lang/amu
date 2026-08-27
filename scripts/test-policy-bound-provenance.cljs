@@ -53,10 +53,14 @@
                               "pure-product-policy.edn")
         amu (lib/join directory "amu.wasm")
         jvm (lib/join directory "jvm.wasm")
+        cli-fuel-amu (lib/join directory "cli-fuel-amu.wasm")
+        cli-fuel-jvm (lib/join directory "cli-fuel-jvm.wasm")
         default-fuel (lib/join directory "default.wasm")
         native-fixture (lib/join lib/root "examples" "w1-pure.kotoba")
         amu-native (lib/join directory "amu.kexe")
         jvm-native (lib/join directory "jvm.kexe")
+        cli-fuel-amu-native (lib/join directory "cli-fuel-amu.kexe")
+        cli-fuel-jvm-native (lib/join directory "cli-fuel-jvm.kexe")
         primary (run! js/process.execPath
                       [(lib/join lib/root "bin" "amu") "compile" fixture
                        "--target" "wasm32" "--policy" policy "--output" amu])
@@ -76,6 +80,11 @@
                      "--policy" policy "--output" jvm])
     (run! js/process.execPath
           [(lib/join lib/root "bin" "amu") "compile" fixture
+           "--target" "wasm32" "--fuel" "1048576" "--output" cli-fuel-amu])
+    (run! "clojure" ["-M:run" "compile" fixture "--target" "wasm32"
+                     "--fuel" "1048576" "--output" cli-fuel-jvm])
+    (run! js/process.execPath
+          [(lib/join lib/root "bin" "amu") "compile" fixture
            "--target" "wasm32" "--output" default-fuel])
     (run! js/process.execPath
           [(lib/join lib/root "bin" "amu") "compile" native-fixture
@@ -92,6 +101,12 @@
                    "primary compiler did not integrity-admit native output with an explicit trust boundary"))
     (run! "clojure" ["-M:run" "compile" native-fixture "--target" "aarch64"
                      "--policy" policy "--output" jvm-native])
+    (run! js/process.execPath
+          [(lib/join lib/root "bin" "amu") "compile" native-fixture
+           "--target" "aarch64" "--fuel" "1048576"
+           "--output" cli-fuel-amu-native])
+    (run! "clojure" ["-M:run" "compile" native-fixture "--target" "aarch64"
+                     "--fuel" "1048576" "--output" cli-fuel-jvm-native])
 
     (lib/ensure! (same? amu jvm)
                  "primary Node Wasm bytes ignored or changed policy-bound JVM emission")
@@ -103,6 +118,11 @@
     (lib/ensure! (not (same? (str amu ".provenance.edn")
                              (str default-fuel ".provenance.edn")))
                  "changing policy did not change sealed Wasm provenance")
+    (lib/ensure! (same? cli-fuel-amu cli-fuel-jvm)
+                 "primary Node Wasm --fuel bytes differ from the JVM contract")
+    (lib/ensure! (same? (str cli-fuel-amu ".provenance.edn")
+                        (str cli-fuel-jvm ".provenance.edn"))
+                 "primary Node Wasm --fuel provenance differs from the JVM contract")
     (lib/ensure! (and (.includes (.-stdout primary) ":provenance-output")
                       (.includes (.-stdout primary) ":publication-output")
                       (not (.includes (.-stdout primary) ":not-emitted")))
@@ -122,6 +142,11 @@
     (lib/ensure! (same? (str amu-native ".provenance.edn")
                         (str jvm-native ".provenance.edn"))
                  "primary Node native provenance differs from the JVM contract")
+    (lib/ensure! (same? cli-fuel-amu-native cli-fuel-jvm-native)
+                 "primary Node native --fuel artifact differs from the JVM contract")
+    (lib/ensure! (same? (str cli-fuel-amu-native ".provenance.edn")
+                        (str cli-fuel-jvm-native ".provenance.edn"))
+                 "primary Node native --fuel provenance differs from the JVM contract")
     (doseq [output [amu default-fuel amu-native]]
       (lib/ensure! (.isFile (.statSync fs (str output ".publication.edn")))
                    (str "primary compiler omitted output-set commit marker for " output)))
