@@ -1,0 +1,28 @@
+{
+  "format": "kotoba.runtime-multidomain-manifest/v1",
+  "id": "amu-native-core-multidomain-v1",
+  "purpose": "A broad runtime claim requires evidence from every required domain; no single arithmetic kernel can qualify it.",
+  "requiredDomains": [
+    { "id": "narrow-arithmetic", "fixture": "kernel", "knownAnswer": "unrolled-modular-mix-v1" },
+    { "id": "wide-register-pressure", "fixture": "kernel_wide", "knownAnswer": "wide-register-pressure-v1" },
+    { "id": "deep-spill-pressure", "fixture": "kernel_deep", "knownAnswer": "deep-spill-pressure-v1" },
+    { "id": "call-preservation", "fixture": "kernel_call", "knownAnswer": "call-preservation-v1" },
+    { "id": "branch-call-control-flow", "fixture": "kernel_call_branch", "knownAnswer": "branch-call-preservation-v1" },
+    { "id": "loop-call-back-edge", "fixture": "kernel_loop_call", "knownAnswer": "loop-call-mix-v1" }
+  ],
+  "requiredEvidence": [
+    "known-answer-result",
+    "source-sha256",
+    "native-kexe-sha256",
+    "native-code-sha256",
+    "native-provenance-sha256",
+    "wasm-sha256",
+    "ABBA/BAAB",
+    "perfgate.core/qualify",
+    "qualified-host-load"
+  ],
+  "externalComparators": {
+    "policy": "optional build and runtime adapters; never compiler or runtime dependencies",
+    "broadFastestClaim": "requires a comparator covering every required domain"
+  }
+}
