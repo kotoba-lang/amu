@@ -1,0 +1,16 @@
+;; Eight live values across calls with one `if` whose taken arm runs the same
+;; arithmetic as the straight-line call kernel. Post-allocation per-basic-block
+;; integer scheduling applies inside each arm; calls and the branch remain
+;; hard barriers.
+(ns bench.kernel-cfg-call (:export [kernel]))
+
+(defn step [x]
+  (let [v (+ (* x 48271) 1)]
+    (- v (* (quot v 2147483647) 2147483647))))
+
+(defn kernel [n]
+  (let [a (step n) b (step (+ n 1)) c (step (+ n 2)) d (step (+ n 3))
+        e (step a) f (step b) g (step c) h (step d)]
+    (if (= n 0)
+      0
+      (+ (+ (+ a b) (+ c d)) (+ (+ e f) (+ g h))))))
