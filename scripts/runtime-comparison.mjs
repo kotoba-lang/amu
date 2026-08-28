@@ -3,7 +3,7 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
-  existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync,
+  existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync,
 } from "node:fs";
 import { tmpdir, cpus, loadavg, totalmem } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -230,8 +230,9 @@ function timedSample(engine, command, args, expected, env = {}) {
 }
 
 function build(directory, target, fixtureSpec, enabled, skipped) {
-  const fixture = join(benchRoot, fixtureSpec.kotoba);
-  const fixtureSource = readFileSync(fixture, "utf8");
+  const fixtureSource = readFileSync(join(benchRoot, fixtureSpec.kotoba), "utf8");
+  const fixture = join(directory, "source.kotoba");
+  writeFileSync(fixture, fixtureSource);
   const wasmFixture = fixtureSource.includes("(defn main") ? fixture : join(directory, "wasm-fixture.kotoba");
   if (wasmFixture !== fixture) {
     const source = fixtureSource.replace(/\(:export \[kernel\]\)/, "(:export [kernel main])")
@@ -242,6 +243,11 @@ function build(directory, target, fixtureSpec, enabled, skipped) {
   const native = join(directory, "kernel.kexe");
   const rawNative = join(directory, "kernel.bin");
   const nativeRunner = join(directory, "kexe-benchmark");
+  const wasmRunner = join(directory, "wasm-runner.mjs");
+  const browserHost = join(directory, "browser-host.mjs");
+  writeFileSync(browserHost, readFileSync(join(root, "runtime", "browser-host.mjs")));
+  writeFileSync(wasmRunner, readFileSync(join(benchRoot, "wasm-runner.mjs"), "utf8")
+    .replace("../../runtime/browser-host.mjs", "./browser-host.mjs"));
   const rust = join(directory, "kernel-rust");
   const cljs = join(directory, "kernel-cljs.cjs");
   const cljsOutputDir = join(directory, "cljs-out");
@@ -304,7 +310,8 @@ function build(directory, target, fixtureSpec, enabled, skipped) {
     }
   }
   return {
-    paths: { fixture, wasmFixture, wasm, native, rawNative, nativeRunner, rust, cljs, go, mojo, typescript },
+    paths: { fixture, wasmFixture, wasm, native, rawNative, nativeRunner, wasmRunner,
+      browserHost, rust, cljs, go, mojo, typescript },
     nativeOffset,
     durations,
     skipped,
@@ -319,11 +326,79 @@ function artifact(path) {
   };
 }
 
+function bundleFile(bundlePath, relative) {
+  if (typeof relative !== "string" || relative.length === 0 || relative.startsWith("/"))
+    throw new Error("prepared bundle contains an invalid path");
+  const path = resolve(bundlePath, relative);
+  if (!path.startsWith(`${resolve(bundlePath)}/`))
+    throw new Error(`prepared bundle path escapes its root: ${relative}`);
+  return path;
+}
+
+function verifyPreparedBundle(bundlePath, expectedContract, expectedDigest) {
+  const metadataPath = join(bundlePath, "bundle.json");
+  const metadataBytes = readFileSync(metadataPath);
+  const digest = createHash("sha256").update(metadataBytes).digest("hex");
+  if (!expectedDigest || digest !== expectedDigest)
+    throw new Error(`prepared bundle manifest SHA-256 ${digest} does not match caller-bound digest`);
+  const metadata = JSON.parse(metadataBytes);
+  if (metadata.format !== "kotoba.runtime-prepared-bundle/v1")
+    throw new Error("prepared bundle has an unsupported format");
+  for (const relative of Object.values(metadata.built.paths)) bundleFile(bundlePath, relative);
+  for (const [key, value] of Object.entries(expectedContract)) {
+    if (metadata.contract[key] !== value)
+      throw new Error(`prepared bundle ${key} ${metadata.contract[key]} != requested ${value}`);
+  }
+  for (const [relative, sealed] of Object.entries(metadata.files)) {
+    const path = bundleFile(bundlePath, relative);
+    if (!existsSync(path)) throw new Error(`prepared bundle omitted ${relative}`);
+    const actual = artifact(path);
+    if (actual.bytes !== sealed.bytes || actual.sha256 !== sealed.sha256)
+      throw new Error(`prepared bundle hash mismatch: ${relative}`);
+  }
+  const source = metadata.files[metadata.built.paths.fixture]?.sha256;
+  const provenanceText = readFileSync(bundleFile(bundlePath,
+    metadata.built.paths.nativeProvenance), "utf8");
+  const provenanceSource = provenanceText.match(/:source-sha256\s+"([0-9a-f]{64})"/)?.[1];
+  if (!source || provenanceSource !== source)
+    throw new Error("prepared bundle provenance does not identify its sealed source");
+  return metadata;
+}
+
+function writePreparedBundle(bundlePath, contract, built, enabled) {
+  const relativePaths = Object.fromEntries(Object.entries(built.paths)
+    .filter(([, path]) => existsSync(path))
+    .map(([name, path]) => [name, path.slice(bundlePath.length + 1)]));
+  const provenance = `${built.paths.native}.provenance.edn`;
+  relativePaths.nativeProvenance = provenance.slice(bundlePath.length + 1);
+  const files = Object.fromEntries(Object.values(relativePaths)
+    .map(relative => [relative, artifact(join(bundlePath, relative))]));
+  const metadata = {
+    format: "kotoba.runtime-prepared-bundle/v1",
+    contract,
+    preparedAt: new Date().toISOString(),
+    compiler: {
+      commit: output("git", ["rev-parse", "HEAD"]),
+      dirty: Boolean(output("git", ["-c", "core.fsmonitor=false", "status", "--porcelain"])),
+    },
+    enabled: [...enabled],
+    built: { paths: relativePaths, nativeOffset: built.nativeOffset, durations: built.durations,
+      skipped: built.skipped },
+    files,
+  };
+  writeFileSync(join(bundlePath, "bundle.json"), `${JSON.stringify(metadata, null, 2)}\n`);
+  return { metadata, digest: artifact(join(bundlePath, "bundle.json")).sha256 };
+}
+
 const runs = boundedInteger(option("--runs", "5"), "--runs", 30);
 const calls = boundedInteger(option("--calls", "100000"), "--calls", 1_000_000);
 const warmup = boundedInteger(option("--warmup", "10000"), "--warmup", 1_000_000);
 const n = boundedInteger(option("--n", "200"), "--n", 2_147_483_646);
 const outputPath = option("--output", null);
+const preparePath = option("--prepare", null);
+const measurePath = option("--measure", null);
+const expectedBundleDigest = option("--bundle-sha256", null);
+if (preparePath && measurePath) throw new Error("--prepare and --measure are mutually exclusive");
 const fixtureName = option("--fixture", "kernel");
 const suite = option("--suite", "core");
 if (!new Set(["core", "competitive"]).has(suite))
@@ -353,13 +428,54 @@ if (suite === "competitive") {
   }
 }
 const expected = fixtureSpec.expected(n);
-const directory = mkdtempSync(join(tmpdir(), "amu-runtime-comparison-"));
+const directory = preparePath ? resolve(preparePath)
+  : measurePath ? resolve(measurePath)
+    : mkdtempSync(join(tmpdir(), "amu-runtime-comparison-"));
+const temporaryDirectory = !preparePath && !measurePath;
 const logicalCpus = cpus().length;
 const loadBefore = loadavg();
+class PreparationComplete extends Error {
+  constructor(encoded) { super("preparation complete"); this.encoded = encoded; }
+}
 
 try {
   const target = hostNativeTarget();
-  const built = build(directory, target, fixtureSpec, enabled, skipped);
+  let built;
+  let preparedMetadata = null;
+  if (measurePath) {
+    preparedMetadata = verifyPreparedBundle(directory,
+      { fixture: fixtureName, suite, n, target, benchmark: fixtureSpec.benchmark },
+      expectedBundleDigest);
+    enabled.clear();
+    for (const name of preparedMetadata.enabled) enabled.add(name);
+    built = {
+      paths: Object.fromEntries(Object.entries(preparedMetadata.built.paths)
+        .filter(([name]) => name !== "nativeProvenance")
+        .map(([name, relative]) => [name, bundleFile(directory, relative)])),
+      nativeOffset: preparedMetadata.built.nativeOffset,
+      durations: preparedMetadata.built.durations,
+      skipped: preparedMetadata.built.skipped,
+    };
+  } else {
+    if (preparePath && existsSync(directory) && readdirSync(directory).length !== 0)
+      throw new Error("--prepare directory must be absent or empty");
+    mkdirSync(directory, { recursive: true });
+    built = build(directory, target, fixtureSpec, enabled, skipped);
+    if (preparePath) {
+      const sealed = writePreparedBundle(directory,
+        { fixture: fixtureName, suite, n, target, benchmark: fixtureSpec.benchmark }, built, enabled);
+      const encoded = `${JSON.stringify({
+        format: "kotoba.runtime-prepare-report/v1",
+        bundle: directory,
+        bundleSha256: sealed.digest,
+        contract: sealed.metadata.contract,
+        files: sealed.metadata.files,
+        buildMilliseconds: built.durations,
+      }, null, 2)}\n`;
+      if (outputPath) writeFileSync(resolve(outputPath), encoded);
+      throw new PreparationComplete(encoded);
+    }
+  }
   const common = [String(n), String(calls), String(warmup)];
   const wasmBatchCalibrationLimit = Math.max(calls, warmup);
   const definitions = {};
@@ -372,7 +488,7 @@ try {
   }
   if (enabled.has("amu-wasm32")) {
     definitions["amu-wasm32"] = [process.execPath,
-      [join(benchRoot, "wasm-runner.mjs"), built.paths.wasm, ...common,
+      [built.paths.wasmRunner, built.paths.wasm, ...common,
         String(benchmarkFuel), String(wasmBatchCalibrationLimit)], {}];
   }
   if (enabled.has("amu-native")) {
@@ -479,8 +595,15 @@ try {
       python: enabled.has("python") ? output("python3", ["--version"]) : null,
       typescript: enabled.has("typescript-node") ? output("tsc", ["--version"]) : null,
       deno: enabled.has("typescript-deno") ? output("deno", ["--version"]) : null,
-      compilerCommit: output("git", ["rev-parse", "HEAD"]),
-      compilerDirty: Boolean(output("git", ["-c", "core.fsmonitor=false", "status", "--porcelain"])),
+      compilerCommit: preparedMetadata?.compiler.commit ?? output("git", ["rev-parse", "HEAD"]),
+      compilerDirty: preparedMetadata?.compiler.dirty
+        ?? Boolean(output("git", ["-c", "core.fsmonitor=false", "status", "--porcelain"])),
+      preparedBundle: preparedMetadata === null ? null : {
+        format: preparedMetadata.format,
+        preparedAt: preparedMetadata.preparedAt,
+        verifiedFileCount: Object.keys(preparedMetadata.files).length,
+        buildPhaseEnteredDuringMeasure: false,
+      },
     },
     buildMilliseconds: built.durations,
     artifacts: {
@@ -518,6 +641,9 @@ try {
   const encoded = `${JSON.stringify(report, null, 2)}\n`;
   if (outputPath) writeFileSync(resolve(outputPath), encoded);
   process.stdout.write(encoded);
+} catch (error) {
+  if (error instanceof PreparationComplete) process.stdout.write(error.encoded);
+  else throw error;
 } finally {
-  rmSync(directory, { recursive: true, force: true });
+  if (temporaryDirectory) rmSync(directory, { recursive: true, force: true });
 }

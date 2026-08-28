@@ -219,19 +219,36 @@ register pressure, deep spill pressure, call preservation, branch plus call,
 and loop plus call across a back edge.
 
 ```sh
+# Phase 1 may run on a busy build host. The target must be absent or empty.
 npm run benchmark-runtime-multidomain -- \
-  --runs 5 --calls 100000 --n 200 --output multidomain.json
+  --n 200 --prepare prepared-runtime --output prepared.json
+
+# Carry the printed digest across the phase boundary (shown literally here).
 npm run benchmark-runtime-multidomain -- \
-  --suite competitive --runs 5 --calls 100000 --n 200 --output multidomain-rust.json
+  --n 200 --measure prepared-runtime --bundle-sha256 <sha256-from-prepared.json> \
+  --runs 5 --calls 100000 --output multidomain.json
+
+# Rust remains optional; prepare and measure it as a separate competitive bundle.
+npm run benchmark-runtime-multidomain -- \
+  --suite competitive --n 200 --prepare prepared-runtime-rust --output prepared-rust.json
+npm run benchmark-runtime-multidomain -- \
+  --suite competitive --n 200 --measure prepared-runtime-rust \
+  --bundle-sha256 <sha256-from-prepared-rust.json> \
+  --runs 5 --calls 100000 --output multidomain-rust.json
 npm run test-runtime-multidomain
 ```
 
 Every domain must return its independently calculated known answer from both
-core engines. Reports seal source, Wasm, KEXE, extracted native code, and native
-provenance with SHA-256; use paired ABBA/BAAB order; and pass their samples to
-`perfgate.core/qualify`. Load1 must be at most 75% of logical CPUs both before
-and after a domain, with at most 10% drift. Otherwise the harness reduces the
-requested work and records `unqualified-host-load`; perfgate then fails closed.
+core engines. Reports seal source, Wasm, KEXE, extracted native code, native
+provenance, and measurement runners with SHA-256; use paired ABBA/BAAB order;
+and pass their samples to
+`perfgate.core/qualify`. Measure accepts only the caller-bound prepared-index
+digest, which in turn binds every per-domain manifest and artifact hash. It
+never enters the compiler build path. Before timing, load1 must remain at most
+75% of logical CPUs for three consecutive samples; the quiet wait is bounded at
+60 seconds. Load1 must also satisfy the per-domain pre/post limit with at most
+10% drift. Otherwise the harness reduces the requested work and records
+`unqualified-host-load`; perfgate then fails closed.
 
 The core suite deliberately has no external comparator. The optional
 competitive suite has exact Rust semantic twins for all six domains and builds
