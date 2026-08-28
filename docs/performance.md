@@ -267,6 +267,18 @@ prespecified competitor universe is complete. Every native-versus-comparator
 result must also pass `perfgate.core/qualify`; per-domain parity or a win in one
 fixture cannot satisfy even the bounded Rust gate.
 
+The dated `claimContract` currently enumerates exactly one comparator (Rust)
+and one physical target profile (Darwin/arm64/native). Its only allowed
+superlative is the literal, scoped sentence “fastest among the enumerated
+universe”; this is not a language-general, multi-host, multi-ISA, or world
+fastest claim. The bridge re-reads and hashes the canonical manifest, derives
+domain/comparator/target completeness instead of trusting report booleans,
+and binds the recorded machine, ISA, plan, unit, direction, policy, clean
+compiler commit, and 24-hour evidence window. Only a clean, fresh result that
+beats Rust independently in all six domains emits a SHA-256-addressed bounded
+claim. Missing, duplicate, dirty, stale, noisy, overloaded, or out-of-profile
+evidence emits no claim artifact; `broadFastestClaimQualified` remains false.
+
 ## Development runtime evidence
 
 Compiler commit `d0d5bd8` was measured from a clean implementation worktree on

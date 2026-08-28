@@ -2,6 +2,31 @@
   "format": "kotoba.runtime-multidomain-manifest/v1",
   "id": "amu-native-core-multidomain-v1",
   "purpose": "A broad runtime claim requires evidence from every required domain; no single arithmetic kernel can qualify it.",
+  "claimContract": {
+    "format": "amu.bounded-fastest-claim-contract/v1",
+    "id": "amu-native-enumerated-rust-darwin-arm64-2026-08-28",
+    "asOf": "2026-08-28",
+    "allowedSentence": "Amu native is fastest among the enumerated universe (Rust) on the six required domains, on one recorded Darwin arm64 machine using native execution, under the named perfgate policy.",
+    "candidate": "amu-native",
+    "metric": "steady-state-runtime",
+    "unit": "nanoseconds-per-kernel",
+    "direction": "lower-is-better",
+    "aggregationPolicy": "the candidate must independently beat every required comparator in every required domain; no aggregate may hide a loss, missing arm, or unqualified arm",
+    "perfgatePolicyId": "kotoba.perfgate.policy/default-v1",
+    "evidenceMaxAgeHours": 24,
+    "worldFastestClaimQualified": false
+  },
+  "requiredEngines": ["amu-native"],
+  "requiredComparators": ["rust"],
+  "requiredTargets": [
+    {
+      "id": "darwin-arm64-native",
+      "os": "darwin",
+      "architecture": "arm64",
+      "isa": "aarch64",
+      "execution": "native"
+    }
+  ],
   "requiredDomains": [
     { "id": "narrow-arithmetic", "fixture": "kernel", "knownAnswer": "unrolled-modular-mix-v1" },
     { "id": "wide-register-pressure", "fixture": "kernel_wide", "knownAnswer": "wide-register-pressure-v1" },

@@ -5,6 +5,12 @@ function requireSha256(value, label) {
 }
 
 export function assessComparatorCoverage(manifest, domains, comparator = "rust") {
+  const ids = domains.map(domain => domain.id);
+  if (new Set(ids).size !== ids.length)
+    throw new Error("comparator evidence contains duplicate domain IDs");
+  const requiredIds = manifest.requiredDomains.map(domain => domain.id);
+  if (new Set(requiredIds).size !== requiredIds.length)
+    throw new Error("manifest contains duplicate required domain IDs");
   const byId = new Map(domains.map(domain => [domain.id, domain]));
   const missingDomains = [];
   const evidence = [];

@@ -155,6 +155,13 @@ try {
     domains.push({
       id: domain.id,
       fixture: domain.fixture,
+      target: {
+        os: report.environment.platform,
+        architecture: report.environment.architecture,
+        isa: report.environment.architecture === "arm64" ? "aarch64"
+          : report.environment.architecture === "x64" ? "x86-64" : null,
+        execution: "native",
+      },
       knownAnswer: {
         benchmark: report.benchmark,
         n: report.contract.n,
@@ -186,12 +193,18 @@ try {
       };
   const report = {
     format: "kotoba.runtime-multidomain-report/v1",
+    generatedAt: new Date().toISOString(),
     suite: manifest.id,
     manifest: {
       path: "bench/runtime-comparison/multidomain-suite.json",
       sha256: createHash("sha256").update(manifestBytes).digest("hex"),
     },
     contract: {
+      mode: suite,
+      claimContract: manifest.claimContract,
+      requiredEngines: manifest.requiredEngines,
+      requiredComparators: manifest.requiredComparators,
+      requiredTargets: manifest.requiredTargets,
       requiredDomainCount: manifest.requiredDomains.length,
       measuredDomainCount: domains.length,
       complete: domains.length === manifest.requiredDomains.length,
