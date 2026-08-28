@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
-test "$#" -gt 0 || { echo "usage: perfgate-qualify.sh <benchmark.json> | --validate-manifest-v1 <manifest.json>" >&2; exit 2; }
+test "$#" -gt 0 || { echo "usage: perfgate-qualify.sh <benchmark.json> | --validate-manifest-v2 <manifest.json>" >&2; exit 2; }
 exec clojure -Sdeps "$(cat <<'EOF'
 {:paths ["scripts"]
  :deps {org.clojure/clojure {:mvn/version "1.12.0"}

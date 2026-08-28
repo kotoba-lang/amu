@@ -15,6 +15,15 @@ const benchmarkFuel = 1_048_576;
 const coreEngines = ["amu-wasm32", "amu-native"];
 const nativeArtifactAbi = "kotoba.native-artifact-i64x8-to-i64-indirect/v1";
 const rustOptimization = "rustc --edition 2021 --crate-type cdylib -C opt-level=3 -C codegen-units=1 -C strip=symbols";
+const nativeComparators = ["rust", "clang-c11", "zig", "go", "swift"];
+const nativeComparatorSet = new Set(nativeComparators);
+const comparatorBuilds = {
+  rust: rustOptimization,
+  "clang-c11": "Apple Clang -std=c11 -O3 -DNDEBUG -fno-lto -fPIC -dynamiclib",
+  zig: "zig build-lib -dynamic -O ReleaseFast",
+  go: "go build -buildmode=c-shared -trimpath (includes the cgo export boundary)",
+  swift: "swiftc -O -emit-library -parse-as-library",
+};
 const nativeRunnerCompiler = "cc -std=c11 -O3 -Wall -Wextra -Werror";
 const nativeArtifactArgMap = ["input", "zero", "zero", "zero", "zero",
   "x86_64-context-or-zero", "zero", "aarch64-context-or-zero"];
@@ -24,8 +33,9 @@ const FIXTURES = {
     kotoba: "kernel.kotoba",
     rust: "kernel.rs",
     benchmark: "unrolled-modular-mix-v1",
+    nativeSymbol: "kotoba_bench_kernel",
     comparators: [
-      "rust", "clojure", "clojurescript", "go", "mojo", "python",
+      ...nativeComparators, "clojure", "clojurescript", "mojo", "python",
       "typescript-node", "typescript-deno",
     ],
     arithmetic: "8 identical quotient/remainder mix rounds stay within exact i64 and JavaScript safe integers",
@@ -43,7 +53,8 @@ const FIXTURES = {
     kotoba: "kernel_loop_call.kotoba",
     rust: "kernel_loop_call.rs",
     benchmark: "loop-call-mix-v1",
-    comparators: ["rust"],
+    nativeSymbol: "kotoba_bench_kernel_loop_call",
+    comparators: nativeComparators,
     arithmetic: "n iterations; each calls id(1) and accumulates — acc and counter live across call and back edge",
     verificationInputs: [0, 1, 2, 199, 200, 201, 510],
     expected(n) {
@@ -69,7 +80,8 @@ const FIXTURES = {
     kotoba: "kernel_wide.kotoba",
     rust: "kernel_wide.rs",
     benchmark: "wide-register-pressure-v1",
-    comparators: ["rust"],
+    nativeSymbol: "kotoba_bench_kernel_wide",
+    comparators: nativeComparators,
     arithmetic: "eight independent two-step modular-mix lanes stay live until one reduction",
     verificationInputs: [0, 1, 2, 199, 200, 201],
     expected(n) {
@@ -81,7 +93,8 @@ const FIXTURES = {
     kotoba: "kernel_deep.kotoba",
     rust: "kernel_deep.rs",
     benchmark: "deep-spill-pressure-v1",
-    comparators: ["rust"],
+    nativeSymbol: "kotoba_bench_kernel_deep",
+    comparators: nativeComparators,
     arithmetic: "twenty-four independent modular-mix lanes exceed both target register pools",
     verificationInputs: [0, 1, 2, 199, 200, 201],
     expected(n) {
@@ -98,7 +111,8 @@ const FIXTURES = {
     kotoba: "kernel_call.kotoba",
     rust: "kernel_call.rs",
     benchmark: "call-preservation-v1",
-    comparators: ["rust"],
+    nativeSymbol: "kotoba_bench_kernel_call",
+    comparators: nativeComparators,
     arithmetic: "eight values survive real local calls before reduction",
     verificationInputs: [0, 1, 2, 199, 200, 201],
     expected(n) {
@@ -110,7 +124,8 @@ const FIXTURES = {
     kotoba: "kernel_call_branch.kotoba",
     rust: "kernel_call_branch.rs",
     benchmark: "branch-call-preservation-v1",
-    comparators: ["rust"],
+    nativeSymbol: "kotoba_bench_kernel_call_branch",
+    comparators: nativeComparators,
     arithmetic: "the call-preservation workload crosses an explicit control-flow join",
     verificationInputs: [0, 1, 2, 199, 200, 201],
     expected(n) {
@@ -179,6 +194,9 @@ function output(command, args) {
 // disabled adapter by name instead of silently dropping it.
 const comparatorTools = {
   rust: ["rustc", ["--version"]],
+  "clang-c11": ["cc", ["--version"]],
+  zig: ["zig", ["version"]],
+  swift: ["swiftc", ["--version"]],
   clojure: ["clojure", ["-Sdescribe"]],
   clojurescript: ["clojure", ["-Sdescribe"]],
   go: ["go", ["version"]],
@@ -233,7 +251,7 @@ function parseSample(stdout, engine, expected, batchIterations = null, requireTi
         || sample.fuelConsumed !== batchIterations + 2
         || sample.fuelRemaining !== 0))
     throw new Error("amu-native did not consume the exact sealed batch fuel");
-  if (batchIterations === null && (engine === "amu-native" || engine === "rust")
+  if (batchIterations === null && (engine === "amu-native" || nativeComparatorSet.has(engine))
       && sample.nativeArtifactAbi !== nativeArtifactAbi)
     throw new Error(`${engine} did not cross the common native artifact ABI`);
   return sample;
@@ -306,6 +324,18 @@ function build(directory, target, fixtureSpec, enabled, skipped, fuel) {
   }
   const rust = join(directory, fixtureSpec.metric === "artifact-batch" ? "kernel-rust"
     : process.platform === "darwin" ? "kernel-rust.dylib" : "kernel-rust.so");
+  const rustSource = join(directory, "rust-source.rs");
+  const clangSource = join(directory, "clang-c11-source.c");
+  const zigSource = join(directory, "zig-source.zig");
+  const goSource = join(directory, "go-source.go");
+  const swiftSource = join(directory, "swift-source.swift");
+  const swiftHelperSource = join(directory, "swift-helper-source.swift");
+  const dylibExtension = process.platform === "darwin" ? "dylib" : "so";
+  const clang = join(directory, `kernel-clang-c11.${dylibExtension}`);
+  const zig = join(directory, `kernel-zig.${dylibExtension}`);
+  const goDylib = join(directory, `kernel-go.${dylibExtension}`);
+  const swift = join(directory, `kernel-swift.${dylibExtension}`);
+  const swiftHelper = join(directory, `libkernels-swift-helper.${dylibExtension}`);
   const cljs = join(directory, "kernel-cljs.cjs");
   const cljsOutputDir = join(directory, "cljs-out");
   mkdirSync(cljsOutputDir, { recursive: true });
@@ -340,11 +370,37 @@ function build(directory, target, fixtureSpec, enabled, skipped, fuel) {
       "-o", nativeRunner, ...(process.platform === "linux" && fixtureSpec.metric !== "artifact-batch"
         ? ["-ldl"] : [])]);
   if (enabled.has("rust")) {
+    writeFileSync(rustSource, readFileSync(join(benchRoot, fixtureSpec.rust)));
     step("rust", "rustc",
       ["--edition", "2021", ...(fixtureSpec.metric === "artifact-batch"
         ? [] : ["--crate-type", "cdylib"]),
         "-C", "opt-level=3", "-C", "codegen-units=1",
-        "-C", "strip=symbols", join(benchRoot, fixtureSpec.rust), "-o", rust]);
+        "-C", "strip=symbols", rustSource, "-o", rust]);
+  }
+  if (!batchMode && enabled.has("clang-c11")) {
+    writeFileSync(clangSource, readFileSync(join(benchRoot, "kernels.c")));
+    step("clang-c11", "cc", ["-std=c11", "-O3", "-DNDEBUG", "-fno-lto", "-fPIC",
+      ...(process.platform === "darwin" ? ["-dynamiclib"] : ["-shared"]),
+      clangSource, "-o", clang]);
+  }
+  if (!batchMode && enabled.has("zig")) {
+    writeFileSync(zigSource, readFileSync(join(benchRoot, "kernels.zig")));
+    step("zig", "zig", ["build-lib", "-dynamic", "-O", "ReleaseFast",
+      zigSource, `-femit-bin=${zig}`]);
+  }
+  if (!batchMode && enabled.has("go")) {
+    writeFileSync(goSource, readFileSync(join(benchRoot, "kernels.go")));
+    step("go", "go", ["build", "-buildmode=c-shared", "-trimpath", "-o", goDylib,
+      goSource]);
+  }
+  if (!batchMode && enabled.has("swift")) {
+    writeFileSync(swiftSource, readFileSync(join(benchRoot, "kernels.swift")));
+    writeFileSync(swiftHelperSource, readFileSync(join(benchRoot, "kernels-swift-helper.swift")));
+    step("swiftHelper", "swiftc", ["-O", "-emit-library", "-parse-as-library",
+      swiftHelperSource, "-o", swiftHelper]);
+    step("swift", "swiftc", ["-O", "-emit-library", "-parse-as-library",
+      swiftSource, "-L", directory, "-lkernels-swift-helper",
+      "-Xlinker", "-rpath", "-Xlinker", "@loader_path", "-o", swift]);
   }
   if (enabled.has("clojurescript")) {
     step("clojurescript", "clojure",
@@ -353,7 +409,6 @@ function build(directory, target, fixtureSpec, enabled, skipped, fuel) {
       { timeout: 300_000 });
   }
 
-  const go = join(directory, "kernel-go");
   const mojo = join(directory, "kernel-mojo");
   // `--outDir`, not `--outFile`: TypeScript 6 removed the latter outright
   // (`error TS5102: Option 'outFile' has been removed`), which is why this
@@ -362,9 +417,6 @@ function build(directory, target, fixtureSpec, enabled, skipped, fuel) {
   const typescriptDir = join(directory, "kernel-ts");
   const typescript = join(typescriptDir, "kernel.js");
   if (fixtureSpec === FIXTURES.kernel) {
-    if (enabled.has("go")) {
-      step("go", "go", ["build", "-o", go, join(benchRoot, "kernel.go")]);
-    }
     if (enabled.has("mojo")) {
       step("mojo", "mojo", ["build", join(benchRoot, "kernel.mojo"), "-o", mojo]);
     }
@@ -385,6 +437,13 @@ function build(directory, target, fixtureSpec, enabled, skipped, fuel) {
         String(input), "100", "0", String(fuel)];
       arms.rust = parseSample(execute(nativeRunner, rustArgs).stdout, "rust", expected, null, false);
     }
+    for (const [name, path] of [["clang-c11", clang], ["zig", zig], ["go", goDylib],
+      ["swift", swift]]) {
+      if (!enabled.has(name)) continue;
+      const args = ["dylib", path, fixtureSpec.nativeSymbol, target,
+        String(input), "100", "0", String(fuel)];
+      arms[name] = parseSample(execute(nativeRunner, args).stdout, name, expected, null, false);
+    }
     return { input, expectedResult: expected, verifiedBy: Object.keys(arms), arms };
   });
   return {
@@ -392,7 +451,10 @@ function build(directory, target, fixtureSpec, enabled, skipped, fuel) {
       fixture,
       ...(fixtureSpec.metric === "artifact-batch" ? {}
         : { wasmFixture, wasm, wasmRunner, browserHost }),
-      native, rawNative, nativeRunner, nativeRunnerSource, rust, cljs, go, mojo, typescript,
+      native, rawNative, nativeRunner, nativeRunnerSource,
+      rust, rustSource, clang, clangSource, zig, zigSource, goDylib, goSource,
+      swift, swiftSource, swiftHelper, swiftHelperSource,
+      cljs, go, mojo, typescript,
     },
     nativeOffset,
     durations,
@@ -468,6 +530,9 @@ function writePreparedBundle(bundlePath, contract, built, enabled) {
       rustc: enabled.has("rust") ? output("rustc", ["--version"]) : null,
       rustcVerbose: enabled.has("rust") ? output("rustc", ["-vV"]) : null,
       cc: output("cc", ["--version"]),
+      zig: enabled.has("zig") ? output("zig", ["version"]) : null,
+      go: enabled.has("go") ? output("go", ["version"]) : null,
+      swift: enabled.has("swift") ? output("swiftc", ["--version"]) : null,
     },
     enabled: [...enabled],
     built: { paths: relativePaths, nativeOffset: built.nativeOffset, durations: built.durations,
@@ -578,6 +643,14 @@ try {
     : [built.paths.nativeRunner,
       ["dylib", built.paths.rust, "kotoba_bench_kernel", target,
         String(n), String(calls), String(warmup), String(fixtureFuel)], {}];
+  if (!batchMode) {
+    for (const [name, path] of [["clang-c11", built.paths.clang], ["zig", built.paths.zig],
+      ["go", built.paths.goDylib], ["swift", built.paths.swift]]) {
+      if (enabled.has(name)) definitions[name] = [built.paths.nativeRunner,
+        ["dylib", path, fixtureSpec.nativeSymbol, target,
+          String(n), String(calls), String(warmup), String(fixtureFuel)], {}];
+    }
+  }
   if (enabled.has("clojure")) {
     definitions.clojure = ["clojure", ["-M", join(benchRoot, "kernel.clj"), ...common], {}];
   }
@@ -598,7 +671,6 @@ try {
           String(calls), String(warmup), String(fixtureFuel)], {}];
   }
   if (fixtureName === "kernel") {
-    if (enabled.has("go")) definitions.go = [built.paths.go, common, {}];
     if (enabled.has("mojo")) definitions.mojo = [built.paths.mojo, common, {}];
     if (enabled.has("python")) {
       definitions.python = ["python3", [join(benchRoot, "kernel.py"), ...common], {}];
@@ -681,7 +753,7 @@ try {
       enginePolicy: suite === "core"
         ? (batchMode ? "Rust-independent Amu native artifact-batch evidence"
           : "Rust-independent Amu native/Wasm semantic and execution evidence")
-        : "optional comparison adapters; unavailable engines are explicit and produce no ratio",
+        : "optional comparison adapters; native claim arms share one runtime-resolved eight-i64 ABI; unavailable engines are explicit",
       timing: batchMode
         ? "one timed call crosses into each compiled artifact; the complete iteration loop is inside that artifact"
         : "in-process steady state after explicit warmup; process wall and RSS are separate",
@@ -701,13 +773,15 @@ try {
       nativeArtifactTarget: batchMode ? null : target,
       semanticVectors: batchMode ? null : built.semanticVectors,
       nativeArtifactInvocation: batchMode ? null
-        : "the same external C runner invokes Amu raw code and Rust cdylib through one runtime-resolved indirect eight-i64-argument function pointer; timing excludes loading and symbol resolution",
+        : "the same external C runner invokes Amu raw code and every native comparator dylib through one runtime-resolved indirect eight-i64-argument function pointer; timing excludes loading and symbol resolution",
       optimization: "each compiler/JIT may optimize the same observable algorithm",
       rustOptimization: enabled.has("rust")
         ? (batchMode
           ? "rustc --edition 2021 -C opt-level=3 -C codegen-units=1 -C strip=symbols"
           : rustOptimization)
         : null,
+      comparatorBuilds: Object.fromEntries(nativeComparators.filter(name => enabled.has(name))
+        .map(name => [name, comparatorBuilds[name]])),
     },
     environment: {
       platform: process.platform,
@@ -725,9 +799,16 @@ try {
       rustcVerbose: enabled.has("rust")
         ? (preparedMetadata?.toolchains?.rustcVerbose ?? output("rustc", ["-vV"])) : null,
       cc: preparedMetadata?.toolchains?.cc ?? output("cc", ["--version"]),
+      "clang-c11": enabled.has("clang-c11")
+        ? (preparedMetadata?.toolchains?.cc ?? output("cc", ["--version"])) : null,
+      zig: enabled.has("zig")
+        ? (preparedMetadata?.toolchains?.zig ?? output("zig", ["version"])) : null,
       clojure: enabled.has("clojure") || enabled.has("clojurescript")
         ? output("clojure", ["-Sdescribe"]) : null,
-      go: enabled.has("go") ? output("go", ["version"]) : null,
+      go: enabled.has("go")
+        ? (preparedMetadata?.toolchains?.go ?? output("go", ["version"])) : null,
+      swift: enabled.has("swift")
+        ? (preparedMetadata?.toolchains?.swift ?? output("swiftc", ["--version"])) : null,
       mojo: enabled.has("mojo") ? output("mojo", ["--version"]) : null,
       python: enabled.has("python") ? output("python3", ["--version"]) : null,
       typescript: enabled.has("typescript-node") ? output("tsc", ["--version"]) : null,
@@ -745,7 +826,17 @@ try {
     buildMilliseconds: built.durations,
     artifacts: {
       ...(enabled.has("rust") ? { rust: artifact(built.paths.rust) } : {}),
-      ...(enabled.has("rust") ? { rustSource: artifact(join(benchRoot, fixtureSpec.rust)) } : {}),
+      ...(enabled.has("rust") ? { rustSource: artifact(built.paths.rustSource) } : {}),
+      ...(enabled.has("clang-c11") ? { "clang-c11": artifact(built.paths.clang),
+        "clang-c11Source": artifact(built.paths.clangSource) } : {}),
+      ...(enabled.has("zig") ? { zig: artifact(built.paths.zig),
+        zigSource: artifact(built.paths.zigSource) } : {}),
+      ...(enabled.has("go") ? { go: artifact(built.paths.goDylib),
+        goSource: artifact(built.paths.goSource) } : {}),
+      ...(enabled.has("swift") ? { swift: artifact(built.paths.swift),
+        swiftHelper: artifact(built.paths.swiftHelper),
+        swiftSource: artifact(built.paths.swiftSource),
+        swiftHelperSource: artifact(built.paths.swiftHelperSource) } : {}),
       kotobaSource: artifact(built.paths.fixture),
       ...(batchMode ? {} : { kotobaWasmSource: artifact(built.paths.wasmFixture) }),
       ...(enabled.has("clojure") ? { clojureSource: artifact(join(benchRoot, "kernel.clj")) } : {}),
@@ -757,7 +848,6 @@ try {
       ...(batchMode ? {} : { nativeBenchmarkRunner: artifact(built.paths.nativeRunner) }),
       ...(batchMode ? {} : { nativeBenchmarkRunnerSource: artifact(built.paths.nativeRunnerSource) }),
       ...(suite === "competitive" && fixtureName === "kernel" ? {
-        go: enabled.has("go") ? artifact(built.paths.go) : null,
         mojo: enabled.has("mojo") ? artifact(built.paths.mojo) : null,
         typescript: enabled.has("typescript-node") ? artifact(built.paths.typescript) : null,
         pythonSource: enabled.has("python") ? artifact(join(benchRoot, "kernel.py")) : null,
