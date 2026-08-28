@@ -16,6 +16,7 @@ const manifest = JSON.parse(readFileSync(join(root, "bench", "runtime-comparison
   "multidomain-suite.json"), "utf8"));
 const manifestSha256 = createHash("sha256").update(readFileSync(join(root, "bench",
   "runtime-comparison", "multidomain-suite.json"))).digest("hex");
+const nativeArtifactAbi = "kotoba.native-artifact-i64x8-to-i64-indirect/v1";
 
 function syntheticRustDomain(required) {
   const hash = "a".repeat(64);
@@ -23,10 +24,11 @@ function syntheticRustDomain(required) {
     id: required.id, fixture: required.fixture,
     knownAnswer: { benchmark: required.knownAnswer, result: 42, verifiedBy: ["rust"] },
     contract: { rotation: "all-engine-pairs ABBA/BAAB per run",
-      rustOptimization: "rustc --edition 2021 -C opt-level=3 -C codegen-units=1 -C strip=symbols" },
+      nativeArtifactAbi,
+      rustOptimization: "rustc --edition 2021 --crate-type cdylib -C opt-level=3 -C codegen-units=1 -C strip=symbols" },
     artifacts: { rust: { sha256: hash }, rustSource: { sha256: hash } },
     environment: { rustc: "rustc test-version" },
-    engines: { rust: { samples: [{ result: 42 }] } },
+    engines: { rust: { samples: [{ result: 42, nativeArtifactAbi }] } },
   };
 }
 
@@ -46,8 +48,11 @@ function run(args, env = {}, expectSuccess = true) {
 function syntheticCompetitiveReport() {
   const generatedAt = new Date().toISOString();
   const hash = "b".repeat(64);
-  const samples = value => Array.from({ length: 5 }, () => ({
-    result: 42, nanosecondsPerKernel: value,
+  const samples = (value, artifactKind, fuelConsumed) => Array.from({ length: 5 }, () => ({
+    result: 42, nanosecondsPerKernel: value, nativeArtifactAbi,
+    artifactKind,
+    contextFuelBefore: 1_048_576, contextFuelAfter: 1_048_576 - fuelConsumed,
+    contextFuelConsumed: fuelConsumed,
   }));
   return {
     format: "kotoba.runtime-multidomain-report/v1",
@@ -60,6 +65,7 @@ function syntheticCompetitiveReport() {
       requiredEngines: manifest.requiredEngines,
       requiredComparators: manifest.requiredComparators,
       requiredTargets: manifest.requiredTargets,
+      preparedIndexSha256: hash,
       // These booleans are deliberately false: the bridge must derive completeness.
       complete: false,
     },
@@ -69,25 +75,45 @@ function syntheticCompetitiveReport() {
       id: required.id,
       fixture: required.fixture,
       target: { os: "darwin", architecture: "arm64", isa: "aarch64", execution: "native" },
-      knownAnswer: { benchmark: required.knownAnswer, result: 42,
+      knownAnswer: { benchmark: required.knownAnswer, n: 200, result: 42,
         verifiedBy: ["amu-wasm32", "amu-native", "rust"] },
       contract: { rotation: "all-engine-pairs ABBA/BAAB per run",
-        rustOptimization: "rustc --edition 2021 -C opt-level=3 -C codegen-units=1 -C strip=symbols" },
+        nativeArtifactAbi,
+        nativeArtifactArgMap: manifest.claimContract.nativeArtifactArgMap,
+        nativeRunnerCompiler: manifest.claimContract.nativeRunnerCompiler,
+        fuelPerInstance: 1_048_576,
+        nativeArtifactTarget: "aarch64",
+        preparedBundleSha256: hash,
+        semanticVectors: required.verificationInputs.map((input, index) => ({
+          input, expectedResult: required.verificationResults[index],
+          verifiedBy: ["amu-native", "rust"],
+          arms: {
+            "amu-native": { result: required.verificationResults[index], nativeArtifactAbi,
+              artifactKind: "raw", contextFuelConsumed: required.verificationAmuFuelConsumed[index] },
+            rust: { result: required.verificationResults[index], nativeArtifactAbi,
+              artifactKind: "dylib", contextFuelConsumed: 0 },
+          },
+        })),
+        rustOptimization: "rustc --edition 2021 --crate-type cdylib -C opt-level=3 -C codegen-units=1 -C strip=symbols" },
       artifacts: {
         amuNativeKexe: { sha256: hash }, amuNativeCode: { sha256: hash },
         amuNativeProvenance: { sha256: hash }, rust: { sha256: hash },
-        rustSource: { sha256: hash },
+        rustSource: { sha256: hash }, nativeBenchmarkRunner: { sha256: hash },
+        nativeBenchmarkRunnerSource: { sha256: hash },
       },
       environment: {
         platform: "darwin", architecture: "arm64", cpu: "Synthetic Apple M4",
         logicalCpus: 10, compilerCommit: "c".repeat(40), compilerDirty: false,
+        rustcVerbose: "rustc test-version\nhost: aarch64-apple-darwin",
+        cc: "Apple clang version test",
         preparedBundle: { preparedAt: generatedAt, buildPhaseEnteredDuringMeasure: false },
       },
       qualification: { hostLoad: { qualified: true } },
       engines: {
-        "amu-wasm32": { samples: samples(120) },
-        "amu-native": { samples: samples(80) },
-        rust: { samples: samples(100) },
+        "amu-wasm32": { samples: samples(120, "wasm", 0) },
+        "amu-native": { samples: samples(80, "raw",
+          required.verificationAmuFuelConsumed[required.verificationInputs.indexOf(200)]) },
+        rust: { samples: samples(100, "dylib", 0) },
       },
     })),
   };
@@ -168,8 +194,16 @@ try {
     throw new Error("manifest identity is not sealed");
   for (const domain of report.domains) {
     if (domain.contract.rotation !== "all-engine-pairs ABBA/BAAB per run"
-        || domain.contract.samplesPerEngine !== 2)
+        || domain.contract.samplesPerEngine !== 2
+        || domain.contract.nativeArtifactAbi !== nativeArtifactAbi)
       throw new Error(`${domain.id} did not use the paired rotation`);
+    if (domain.engines["amu-native"].samples.some(
+      sample => sample.nativeArtifactAbi !== nativeArtifactAbi || sample.artifactKind !== "raw"))
+      throw new Error(`${domain.id} Amu did not cross the common native artifact ABI`);
+    if (domain.contract.semanticVectors.map(vector => vector.input).join(",")
+        !== manifest.requiredDomains.find(required => required.id === domain.id)
+          .verificationInputs.join(","))
+      throw new Error(`${domain.id} semantic vector corpus drifted`);
     if (domain.knownAnswer.verifiedBy.join(",") !== "amu-wasm32,amu-native")
       throw new Error(`${domain.id} did not verify both core engines`);
     if (domain.environment.preparedBundle?.buildPhaseEnteredDuringMeasure !== false)
@@ -237,6 +271,24 @@ try {
   const missingComparator = syntheticCompetitiveReport();
   delete missingComparator.domains[0].engines.rust;
   bridgeReport(missingComparator, false);
+
+  const directComparator = syntheticCompetitiveReport();
+  delete directComparator.domains[0].engines.rust.samples[0].nativeArtifactAbi;
+  bridgeReport(directComparator, false);
+
+  const driftedAbi = syntheticCompetitiveReport();
+  driftedAbi.domains[0].contract.nativeArtifactAbi = "direct-rust-call/v0";
+  bridgeReport(driftedAbi, false);
+
+  const constantComparator = syntheticCompetitiveReport();
+  for (const vector of constantComparator.domains[0].contract.semanticVectors)
+    vector.arms.rust.result = constantComparator.domains[0].contract.semanticVectors[0].expectedResult;
+  bridgeReport(constantComparator, false);
+
+  const wrongFuel = syntheticCompetitiveReport();
+  wrongFuel.domains.at(-1).contract.semanticVectors.at(-1)
+    .arms["amu-native"].contextFuelConsumed -= 1;
+  bridgeReport(wrongFuel, false);
 
   const staleManifest = syntheticCompetitiveReport();
   staleManifest.manifest.sha256 = "0".repeat(64);

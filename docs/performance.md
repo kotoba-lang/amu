@@ -203,9 +203,9 @@ and not a production safety-path claim. The production loader is not modified.
 
 `--fixture kernel_loop_call` adds a count-down loop whose accumulator and
 counter cross both a real helper call and the loop back edge. The Rust helper
-contains a compiler barrier because `#[inline(never)]` alone still allowed LLVM
-to replace the whole loop with `return n`. Only the explicitly requested
-competitive adapter test inspects optimized Rust assembly. The default core
+uses a zero-instruction AArch64 value barrier because `#[inline(never)]` alone
+still allowed LLVM to replace the whole loop with `return n`; optimized
+assembly is checked for the real helper call. The default core
 smoke executes `n=200` through Amu Wasm32 and Amu native and additionally proves
 that a disabled Rust adapter yields an explicit skip and no Rust-relative ratio.
 
@@ -283,12 +283,25 @@ never enters the compiler build path. Before timing, load1 must remain at most
 `unqualified-host-load`; perfgate then fails closed.
 
 The core suite deliberately has no external comparator. The optional
-competitive suite has exact Rust semantic twins for all six domains and builds
-each with `rustc -C opt-level=3`. It records the Rust source and executable
-SHA-256, one consistent `rustc --version`, known-answer results, and pairwise
-ABBA/BAAB samples. A missing domain or wrong result makes Rust coverage
-incomplete instead of silently shrinking the domain set. If `rustc` is absent,
-the report records it as unavailable and the core suite remains usable.
+competitive suite has exact Rust semantic twins for all six domains. Rust is a
+kernel-only `cdylib`: it contains no `main`, clock, warmup, or measurement loop.
+The same external C runner invokes Amu raw code and the Rust dynamic library
+through the runtime-resolved
+`kotoba.native-artifact-i64x8-to-i64-indirect/v1` function-pointer boundary.
+Mapping, loading, and symbol lookup finish before timing. This prevents Rust
+from gaining comparator-only inlining or constant-hoisting across its former
+private measurement loop.
+
+Preparation also executes a manifest-bound input corpus (`0, 1, 2, 199, 200,
+201`, plus `510` for loop-call) through every available native claim arm. Exact
+results and Amu fuel consumption are part of the manifest. A constant-return
+artifact, a direct-call comparator, a different argument map, missing context
+reset evidence, or a changed fuel rule fails before timing evidence can qualify.
+Reports seal the common runner source and binary, child bundles, root bundle
+index, Rust source and `cdylib`; record exact compiler flags, `cc --version`,
+`rustc -vV`, and target; and require one identical runner/toolchain receipt
+across all domains. If `rustc` is absent, the report records it as unavailable
+and the core suite remains usable.
 
 Rust and LLVM remain optional experiment adapters, never compiler or runtime
 dependencies. Six qualified Rust comparisons can establish only the bounded

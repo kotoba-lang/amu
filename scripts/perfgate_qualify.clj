@@ -135,6 +135,15 @@
               "v1 direction is unsupported" {})
     (require! (= "kotoba.perfgate.policy/default-v1" (:perfgatePolicyId claim))
               "claim contract names an unsupported perfgate policy" {})
+    (require! (= "kotoba.native-artifact-i64x8-to-i64-indirect/v1"
+                 (:nativeArtifactAbi claim))
+              "claim contract does not require the common native artifact ABI" {})
+    (require! (= ["input" "zero" "zero" "zero" "zero"
+                  "x86_64-context-or-zero" "zero" "aarch64-context-or-zero"]
+                 (:nativeArtifactArgMap claim))
+              "claim contract native artifact argument map drifted" {})
+    (require! (= "cc -std=c11 -O3 -Wall -Wextra -Werror" (:nativeRunnerCompiler claim))
+              "claim contract native runner compiler drifted" {})
     (require! (and (pos-int? (:evidenceMaxAgeHours claim))
                    (false? (:worldFastestClaimQualified claim)))
               "v1 freshness/world-fastest boundary is invalid" {})
@@ -180,6 +189,9 @@
               "report required comparator set drifted" {})
     (require! (= required-targets (get-in report [:contract :requiredTargets]))
               "report required target set drifted" {})
+    (require! (boolean (re-matches sha256-pattern
+                                   (or (get-in report [:contract :preparedIndexSha256]) "")))
+              "root prepared bundle index is not sealed by SHA-256" {})
     (require! (unique? report-domain-ids) "report contains duplicate domain IDs"
               {:ids report-domain-ids})
     (require! (= required-domain-ids report-domain-ids)
@@ -199,6 +211,65 @@
                 "core semantic baseline is missing" {:domain (:id required)})
       (require! (= "all-engine-pairs ABBA/BAAB per run" (get-in domain [:contract :rotation]))
                 "domain rotation policy drifted" {:domain (:id required)})
+      (require! (= (:nativeArtifactAbi claim) (get-in domain [:contract :nativeArtifactAbi]))
+                "domain did not use the claim contract's common native artifact ABI"
+                {:domain (:id required)})
+      (require! (= (:nativeArtifactArgMap claim) (get-in domain [:contract :nativeArtifactArgMap]))
+                "domain native artifact argument map drifted" {:domain (:id required)})
+      (require! (= (:nativeRunnerCompiler claim) (get-in domain [:contract :nativeRunnerCompiler]))
+                "domain native runner compiler drifted" {:domain (:id required)})
+      (require! (= "aarch64" (get-in domain [:contract :nativeArtifactTarget]))
+                "bounded v1 evidence did not execute the aarch64 artifact ABI"
+                {:domain (:id required)})
+      (require! (boolean (re-matches sha256-pattern
+                                     (or (get-in domain [:contract :preparedBundleSha256]) "")))
+                "child prepared bundle is not sealed by SHA-256" {:domain (:id required)})
+      (let [vectors (get-in domain [:contract :semanticVectors])
+            claim-arms (concat required-engines (when (= "competitive" mode)
+                                                  required-comparators))]
+        (require! (= (:verificationInputs required) (mapv :input vectors))
+                  "domain semantic vector corpus drifted" {:domain (:id required)})
+        (require! (= (:verificationResults required) (mapv :expectedResult vectors))
+                  "domain semantic vector expected results drifted" {:domain (:id required)})
+        (require! (> (count (set (map :expectedResult vectors))) 1)
+                  "domain semantic vectors do not reject a constant-return artifact"
+                  {:domain (:id required)})
+        (doseq [[vector amu-fuel] (map vector vectors (:verificationAmuFuelConsumed required))]
+          (require! (every? #(contains? (set (:verifiedBy vector)) %) claim-arms)
+                    "semantic vector was not verified by every claim arm"
+                    {:domain (:id required) :input (:input vector)})
+          (doseq [engine claim-arms
+                  :let [sample (get-in vector [:arms (keyword engine)])]]
+            (require! (and (= (:expectedResult vector) (:result sample))
+                           (= (:nativeArtifactAbi claim) (:nativeArtifactAbi sample))
+                           (= (if (= engine "rust") "dylib" "raw") (:artifactKind sample))
+                           (= (if (= engine "rust") 0 amu-fuel)
+                              (:contextFuelConsumed sample)))
+                      "semantic vector did not cross the common runner correctly"
+                      {:domain (:id required) :input (:input vector) :engine engine}))))
+      (doseq [engine (concat required-engines (when (= "competitive" mode)
+                                                required-comparators))
+              sample (get-in domain [:engines (keyword engine) :samples])]
+        (require! (= (:nativeArtifactAbi claim) (:nativeArtifactAbi sample))
+                  "claim arm sample did not cross the common native artifact ABI"
+                  {:domain (:id required) :engine engine})
+        (require! (= (if (= engine "rust") "dylib" "raw") (:artifactKind sample))
+                  "claim arm artifact kind did not use the common runner"
+                  {:domain (:id required) :engine engine})
+        (let [before (:contextFuelBefore sample)
+              after (:contextFuelAfter sample)
+              consumed (:contextFuelConsumed sample)
+              n (get-in domain [:knownAnswer :n])
+              expected-amu-fuel (:contextFuelConsumed
+                                 (get-in (first (filter #(= n (:input %))
+                                                       (get-in domain [:contract :semanticVectors])))
+                                         [:arms :amu-native]))]
+          (require! (and (= before (get-in domain [:contract :fuelPerInstance]))
+                         (nat-int? after) (<= after before)
+                         (= consumed (- before after))
+                         (= consumed (if (= engine "rust") 0 expected-amu-fuel)))
+                    "claim arm omitted common-runner context fuel evidence"
+                    {:domain (:id required) :engine engine})))
       (require! (every? #(contains? (set (get-in domain [:knownAnswer :verifiedBy])) %)
                         (concat required-engines (when (= "competitive" mode)
                                                    required-comparators)))
@@ -210,7 +281,8 @@
                        (every? #(= (get-in domain [:knownAnswer :result]) (:result %)) samples))
                   "claim arm failed its recorded known answer"
                   {:domain (:id required) :engine engine}))
-      (doseq [artifact-key (concat [:amuNativeKexe :amuNativeCode :amuNativeProvenance]
+      (doseq [artifact-key (concat [:amuNativeKexe :amuNativeCode :amuNativeProvenance
+                                    :nativeBenchmarkRunner :nativeBenchmarkRunnerSource]
                                    (when (= "competitive" mode) [:rust :rustSource]))]
         (require! (boolean (re-matches sha256-pattern
                                        (or (get-in domain [:artifacts artifact-key :sha256]) "")))
@@ -218,12 +290,18 @@
                   {:domain (:id required) :artifact artifact-key}))
       (require! (false? (get-in domain [:environment :preparedBundle :buildPhaseEnteredDuringMeasure]))
                 "measurement entered the build phase" {:domain (:id required)})
+      (require! (and (string? (get-in domain [:environment :cc]))
+                     (seq (get-in domain [:environment :cc])))
+                "native runner compiler version receipt is missing" {:domain (:id required)})
       (when (= "competitive" mode)
         (require! (every? #(get-in domain [:engines (keyword %)]) required-comparators)
                   "required comparator is missing" {:domain (:id required)})
-        (require! (= "rustc --edition 2021 -C opt-level=3 -C codegen-units=1 -C strip=symbols"
+        (require! (= "rustc --edition 2021 --crate-type cdylib -C opt-level=3 -C codegen-units=1 -C strip=symbols"
                      (get-in domain [:contract :rustOptimization]))
-                  "Rust optimization policy drifted" {:domain (:id required)}))
+                  "Rust optimization policy drifted" {:domain (:id required)})
+        (require! (and (string? (get-in domain [:environment :rustcVerbose]))
+                       (re-find #"(?m)^host: .+$" (get-in domain [:environment :rustcVerbose])))
+                  "Rust verbose toolchain/target receipt is missing" {:domain (:id required)}))
       (let [target (target-without-id (:target domain))
             environment (:environment domain)
             expected {:os (:platform environment)
@@ -238,9 +316,22 @@
                   {:domain (:id required) :target target :expected expected})))
     (let [machines (mapv #(select-keys (:environment %)
                                       [:platform :architecture :cpu :logicalCpus])
-                         (:domains report))]
+                         (:domains report))
+          runner-shas (set (map #(get-in % [:artifacts :nativeBenchmarkRunner :sha256])
+                                (:domains report)))
+          runner-source-shas (set (map #(get-in % [:artifacts :nativeBenchmarkRunnerSource :sha256])
+                                       (:domains report)))
+          cc-versions (set (map #(get-in % [:environment :cc]) (:domains report)))
+          rust-receipts (set (map #(get-in % [:environment :rustcVerbose]) (:domains report)))]
       (require! (= 1 (count (set machines)))
-                "domains were recorded on different machines/ISAs" {:machines machines}))
+                "domains were recorded on different machines/ISAs" {:machines machines})
+      (require! (and (= 1 (count runner-shas)) (= 1 (count runner-source-shas))
+                     (= 1 (count cc-versions)))
+                "domains did not share one sealed native runner/toolchain"
+                {:runner-shas runner-shas :runner-source-shas runner-source-shas})
+      (when (= "competitive" mode)
+        (require! (= 1 (count rust-receipts))
+                  "Rust verbose toolchain receipt changed inside one suite" {})))
     {:claim claim :mode mode :required-domain-ids required-domain-ids
      :required-comparators required-comparators :required-targets required-targets}))
 

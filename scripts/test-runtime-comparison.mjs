@@ -67,6 +67,10 @@ function validateReport(report, { suite, required, optional, expectedResult }) {
       throw new Error(`${name} emitted an invalid timing`);
     if (engine.maxRssBytes === null || !(engine.maxRssBytes.median > 0))
       throw new Error(`${name} omitted measured RSS`);
+    if ((name === "amu-native" || name === "rust")
+        && engine.samples.some(sample => sample.nativeArtifactAbi
+          !== "kotoba.native-artifact-i64x8-to-i64-indirect/v1"))
+      throw new Error(`${name} bypassed the common native artifact ABI`);
   }
   const rustMeasured = measured.includes("rust");
   if (rustMeasured !== (report.normalization.status === "measured"))
@@ -158,7 +162,8 @@ try {
     if (rustProbe.status === 0) {
       const assemblyPath = join(directory, "kernel-loop-call.s");
       const assemblyBuild = spawnSync("rustc",
-        ["--edition", "2021", "-C", "opt-level=3", "-C", "codegen-units=1",
+        ["--edition", "2021", "--crate-type", "cdylib",
+          "-C", "opt-level=3", "-C", "codegen-units=1",
           "--emit", "asm", join(root, "bench", "runtime-comparison", "kernel_loop_call.rs"),
           "-o", assemblyPath],
         { cwd: root, encoding: "utf8", timeout: 120_000 });
