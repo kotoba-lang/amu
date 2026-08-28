@@ -30,7 +30,9 @@ fixtures contain no `black_box` operation.
 
 This removes a known comparator-only inline and constant-hoisting advantage.
 It does not show that Amu wins any domain. A bounded claim still requires all
-six fresh, clean, host-qualified perfgate wins. The competitor universe remains
+six fresh, clean, host-qualified perfgate wins. Host qualification requires
+three consecutive load1 samples at or below the lower of 1.0 and 10% of the
+logical CPU count; ordinary spare capacity is not sufficient. The competitor universe remains
 Rust only, and the broad or world-fastest flag remains false.
 
 The compiler/runtime remains independent of Rust. Rust and the system C

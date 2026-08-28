@@ -277,7 +277,8 @@ and pass their samples to
 `perfgate.core/qualify`. Measure accepts only the caller-bound prepared-index
 digest, which in turn binds every per-domain manifest and artifact hash. It
 never enters the compiler build path. Before timing, load1 must remain at most
-75% of logical CPUs for three consecutive samples; the quiet wait is bounded at
+the lower of 1.0 and 10% of logical CPUs for three consecutive samples; the
+quiet wait is bounded at
 60 seconds. Load1 must also satisfy the per-domain pre/post limit with at most
 10% drift. Otherwise the harness reduces the requested work and records
 `unqualified-host-load`; perfgate then fails closed.

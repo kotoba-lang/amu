@@ -188,7 +188,10 @@ try {
       || report.contract.measuredDomainCount !== 6)
     throw new Error("required multidomain set is incomplete");
   if (report.contract.workflow !== "prepare-all -> bounded quiet gate -> measure sealed bundles"
-      || report.qualification.quietGate.samples.length < 3)
+      || report.qualification.quietGate.samples.length < 3
+      || report.qualification.quietGate.limit !== Math.min(1, cpus().length * 0.10)
+      || report.qualification.quietGate.policy
+        !== "load1 <= min(1.0, logical-cpus * 0.10)")
     throw new Error("two-phase quiet gate was not recorded");
   if (!/^[0-9a-f]{64}$/.test(report.manifest.sha256))
     throw new Error("manifest identity is not sealed");
@@ -388,7 +391,8 @@ try {
   writeFileSync(metadataPath, metadataBytes);
   writeFileSync(indexPath, indexBytes);
 
-  const high = String(cpus().length * 2);
+  // A host that would have passed the old 75%-of-CPU threshold must now fail.
+  const high = String(Math.min(1, cpus().length * 0.10) + 0.01);
   const overloadedPath = join(directory, "overloaded.json");
   run(["--runs", "2", "--calls", "2000", "--n", "200", "--measure", bundle,
     "--bundle-sha256", preparedReport.bundleSha256,
