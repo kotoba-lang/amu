@@ -8,7 +8,7 @@
   (get-in (edn/read-string (slurp "deps.edn")) [:deps coordinate :git/sha]))
 
 (deftest pinned-closure-carries-the-complete-native-boundary
-  (is (= "62aaadcd626cd0d15c4fce01c7a1d7bf3e34859a"
+  (is (= "704d02ed0732cfc2d10b126266137da8045d4b00"
          (dependency-pin 'io.github.kotoba-lang/kotoba-native)))
   (is (= "099c627609ad506babf05f2d5e9a73b95c1b026b"
          (dependency-pin 'io.github.kotoba-lang/kotoba-kir)))
@@ -42,6 +42,25 @@
   (is (= :all-allocator-registers
          (get-in aggregate-abi/contract
                  [:targets :aarch64 :call-clobbers]))))
+
+(deftest pinned-aarch64-constant-selector-is-small-and-bounded
+  (let [magic -9223372032559808509
+        chunks (#'machine/a64-constant-chunks magic)
+        recognize (var-get #'machine/a64-logical-immediate-fields)
+        probes (atom 0)]
+    (is (= [0xe0 0x0b 0x41 0xb2 0x20 0x00 0xc0 0xf2]
+           (#'machine/a64-constant :aarch64/x0 magic))
+        "the modular-mix reciprocal is exactly one logical seed plus one MOVK")
+    (is (nil? (ns-resolve 'kotoba.native.machine-ir
+                          'a64-logical-seed-index))
+        "the pin does not restore the cold global candidate index")
+    (with-redefs [machine/a64-logical-immediate-fields
+                  (fn [candidate]
+                    (swap! probes inc)
+                    (recognize candidate))]
+      (is (some? (#'machine/a64-logical-seed-plan chunks)))
+      (is (<= @probes 8)
+          "four lanes times zero/full replacement is the structural ceiling"))))
 
 (deftest standalone-expressions-still-reject-calls-but-modules-admit-them
   (is (not (machine/pilot-expression? ['x] '(callee x))))
