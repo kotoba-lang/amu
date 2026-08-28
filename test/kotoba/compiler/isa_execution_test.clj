@@ -115,6 +115,13 @@
      (run-code isa (:code artifact) (get-in artifact [:exports entry :offset])
                allow args))))
 
+(defn- a64-le-words [bytes]
+  (mapv (fn [word]
+          (reduce-kv (fn [value index byte]
+                       (bit-or value (bit-shift-left byte (* 8 index))))
+                     0 (vec word)))
+        (partition 4 bytes)))
+
 (def ^:private f64-one 4607182418800017408)
 (def ^:private f64-two 4611686018427387904)
 (def ^:private f64-nan 9221120237041090560)
@@ -805,7 +812,42 @@
         (let [exhausted (run-native isa source "-" {:allow #{}} 'kernel [511])]
           (is (str/includes? exhausted ":status :trap")
               (str "kernel wrapper + loop entry + 511 iterations exceed sealed fuel: "
+                   (str/trim exhausted)))
+          (is (str/includes? exhausted ":remaining 0")
+              (str "exhaustion must not wrap and store UINT64_MAX: "
                    (str/trim exhausted))))))))
+
+(deftest full-compile-source-loop-call-is-one-direct-aarch64-cbnz
+  (let [source (slurp "bench/runtime-comparison/kernel_loop_call.kotoba")
+        compiled (compiler/compile-source source :aarch64-kotoba-v1)
+        artifact (:artifact compiled)
+        words (a64-le-words (:code artifact))
+        module (->> (:kir compiled)
+                    machine-ir/lower-kir-module
+                    (machine-ir/compile-gmir :aarch64))
+        loop-function (->> (:mc/functions module)
+                           (filter #(some (fn [instruction]
+                                            (= :mc/branch-nonzero
+                                               (:mc/op instruction)))
+                                          (:mc/instructions %)))
+                           first)
+        loop-instructions (:mc/instructions loop-function)
+        cbnz-x19? #(= 0xb5000013 (bit-and % 0xff00001f))]
+    (is (= 192 (count (:code artifact)))
+        "real compiler fixture drops four AArch64 words from the 208-byte baseline")
+    (is (= 1 (count (filter cbnz-x19? words)))
+        "the preserved loop counter reaches one direct CBNZ x19 in the artifact")
+    (is (not-any? #{0xeb01001f 0x9a9f17e2} words)
+        "the former CMP x0,x1 and CSET x2,eq are absent")
+    (is loop-function "the compiled module carries an explicit branch-nonzero")
+    (is (= 1 (count (filter #(= :mc/branch-nonzero (:mc/op %))
+                            loop-instructions))))
+    (is (not-any? #(and (= :aarch64/constant (:mc/encoding %))
+                        (zero? (:mir/value %)))
+                  loop-instructions))
+    (is (not-any? #(contains? #{:aarch64/equal :mc/branch-zero}
+                              (or (:mc/encoding %) (:mc/op %)))
+                  loop-instructions))))
 
 (deftest a-capability-call-executes-on-every-available-isa
   (doseq [[isa loader] @loaders :when loader]
