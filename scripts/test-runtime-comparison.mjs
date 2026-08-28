@@ -12,6 +12,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const directory = mkdtempSync(join(tmpdir(), "amu-runtime-comparison-test-"));
 const calls = 1_000;
 const warmupCalls = 50;
+const nativeComparators = ["rust", "clang-c11", "zig", "go", "swift"];
 
 function runComparison(outputPath, extraArgs, env = {}) {
   const run = spawnSync(process.execPath,
@@ -67,7 +68,7 @@ function validateReport(report, { suite, required, optional, expectedResult }) {
       throw new Error(`${name} emitted an invalid timing`);
     if (engine.maxRssBytes === null || !(engine.maxRssBytes.median > 0))
       throw new Error(`${name} omitted measured RSS`);
-    if ((name === "amu-native" || name === "rust")
+    if ((name === "amu-native" || nativeComparators.includes(name))
         && engine.samples.some(sample => sample.nativeArtifactAbi
           !== "kotoba.native-artifact-i64x8-to-i64-indirect/v1"))
       throw new Error(`${name} bypassed the common native artifact ABI`);
@@ -101,8 +102,10 @@ function validateCoreBoundary(report) {
     throw new Error("core suite must not probe or skip comparison adapters");
   if (report.normalization.status !== "not-requested")
     throw new Error("core suite requested an external normalization engine");
-  if (report.environment.rustc !== null || "rust" in report.artifacts)
-    throw new Error("core suite touched the Rust adapter boundary");
+  if (nativeComparators.some(name => name === "rust"
+    ? report.environment.rustc !== null || name in report.artifacts
+    : report.environment[name] !== null || name in report.artifacts))
+    throw new Error("core suite touched a native comparator boundary");
 }
 
 try {
@@ -146,7 +149,7 @@ try {
     ["--suite", "competitive", "--fixture", "kernel_loop_call", "--n", "200",
       "--disable-engines", "rust"], noRustEnvironment);
   validateReport(noRustReport, {
-    suite: "competitive", required: coreEngines, optional: ["rust"],
+    suite: "competitive", required: coreEngines, optional: nativeComparators,
     expectedResult: 200,
   });
   if (noRustReport.skippedEngines.rust !== "disabled by request"
@@ -177,10 +180,11 @@ try {
     const competitiveReport = runComparison(join(directory, "competitive-loop-call.json"),
       ["--suite", "competitive", "--fixture", "kernel_loop_call", "--n", "200"]);
     const result = validateReport(competitiveReport, {
-      suite: "competitive", required: coreEngines, optional: ["rust"],
+      suite: "competitive", required: coreEngines, optional: nativeComparators,
       expectedResult: 200,
     });
-    competitive = result.measured.includes("rust") ? "Rust measured" : "Rust skipped";
+    competitive = `${nativeComparators.filter(name => result.measured.includes(name)).length}`
+      + " native comparators measured";
   }
   process.stdout.write(
     `runtime-comparison: Rust-independent core kernel ${kernel.measured.length} engines; `

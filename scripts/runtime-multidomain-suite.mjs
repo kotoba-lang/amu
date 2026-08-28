@@ -181,6 +181,7 @@ try {
         samplesPerEngine: report.contract.samplesPerEngine,
         calls: report.contract.calls,
         rustOptimization: report.contract.rustOptimization,
+        comparatorBuilds: report.contract.comparatorBuilds,
         nativeArtifactAbi: report.contract.nativeArtifactAbi,
         nativeArtifactInvocation: report.contract.nativeArtifactInvocation,
         nativeArtifactArgMap: report.contract.nativeArtifactArgMap,
@@ -199,15 +200,17 @@ try {
 
   const hostLoadQualified = quietGate.qualified
     && domains.every(domain => domain.qualification.hostLoad.qualified);
-  const rustCoverage = suite === "competitive"
-    ? assessComparatorCoverage(manifest, domains, "rust")
-    : {
-        status: "not-requested", requiredDomainCount: manifest.requiredDomains.length,
-        measuredDomainCount: 0, missingDomains: [], toolVersion: null,
-        complete: false, evidence: [],
-      };
+  const emptyCoverage = {
+    status: "not-requested", requiredDomainCount: manifest.requiredDomains.length,
+    measuredDomainCount: 0, missingDomains: [], toolVersion: null,
+    complete: false, evidence: [],
+  };
+  const comparatorCoverage = Object.fromEntries(manifest.requiredComparators.map(comparator => [
+    comparator,
+    suite === "competitive" ? assessComparatorCoverage(manifest, domains, comparator) : emptyCoverage,
+  ]));
   const report = {
-    format: "kotoba.runtime-multidomain-report/v1",
+    format: "kotoba.runtime-multidomain-report/v2",
     generatedAt: new Date().toISOString(),
     suite: manifest.id,
     manifest: {
@@ -240,21 +243,21 @@ try {
         ? "core domains complete; no external comparator covers every required domain"
         : "host load failed closed; timings are diagnostic only",
     },
-    externalComparators: { rust: rustCoverage },
+    externalComparators: comparatorCoverage,
     domains,
   };
   const perfgateInput = join(directory, "multidomain-input.json");
   writeFileSync(perfgateInput, `${JSON.stringify(report, null, 2)}\n`);
   report.qualification.perfgate = JSON.parse(execute("bash",
     [join(root, "scripts", "perfgate-qualify.sh"), perfgateInput]));
-  report.qualification.rustComparisonQualified
-    = report.qualification.perfgate["rust-comparison-qualified?"];
+  report.qualification.comparatorSetQualified
+    = report.qualification.perfgate["comparator-set-qualified?"];
   report.qualification.broadFastestClaimQualified = false;
-  report.qualification.reason = report.qualification.rustComparisonQualified
-    ? "qualified against Rust on all six domains; broad competitor universe remains incomplete"
-    : rustCoverage.complete
-      ? "Rust covers every domain, but host/perfgate qualification is incomplete"
-      : "no external comparator has complete qualified coverage";
+  report.qualification.reason = report.qualification.comparatorSetQualified
+    ? manifest.claimContract.allowedSentence
+    : Object.values(comparatorCoverage).every(value => value.complete)
+      ? "all enumerated comparators cover every domain, but host/perfgate qualification is incomplete"
+      : "the required comparator set does not have complete coverage";
   const encoded = `${JSON.stringify(report, null, 2)}\n`;
   if (outputPath) writeFileSync(resolve(outputPath), encoded);
   process.stdout.write(encoded);

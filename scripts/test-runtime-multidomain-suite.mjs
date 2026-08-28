@@ -17,6 +17,14 @@ const manifest = JSON.parse(readFileSync(join(root, "bench", "runtime-comparison
 const manifestSha256 = createHash("sha256").update(readFileSync(join(root, "bench",
   "runtime-comparison", "multidomain-suite.json"))).digest("hex");
 const nativeArtifactAbi = "kotoba.native-artifact-i64x8-to-i64-indirect/v1";
+const comparators = manifest.requiredComparators;
+const comparatorBuilds = {
+  rust: "rustc --edition 2021 --crate-type cdylib -C opt-level=3 -C codegen-units=1 -C strip=symbols",
+  "clang-c11": "Apple Clang -std=c11 -O3 -DNDEBUG -fno-lto -fPIC -dynamiclib",
+  zig: "zig build-lib -dynamic -O ReleaseFast",
+  go: "go build -buildmode=c-shared -trimpath (includes the cgo export boundary)",
+  swift: "swiftc -O -emit-library -parse-as-library",
+};
 
 function syntheticRustDomain(required) {
   const hash = "a".repeat(64);
@@ -25,7 +33,8 @@ function syntheticRustDomain(required) {
     knownAnswer: { benchmark: required.knownAnswer, result: 42, verifiedBy: ["rust"] },
     contract: { rotation: "all-engine-pairs ABBA/BAAB per run",
       nativeArtifactAbi,
-      rustOptimization: "rustc --edition 2021 --crate-type cdylib -C opt-level=3 -C codegen-units=1 -C strip=symbols" },
+      comparatorBuilds,
+      rustOptimization: comparatorBuilds.rust },
     artifacts: { rust: { sha256: hash }, rustSource: { sha256: hash } },
     environment: { rustc: "rustc test-version" },
     engines: { rust: { samples: [{ result: 42, nativeArtifactAbi }] } },
@@ -55,7 +64,7 @@ function syntheticCompetitiveReport() {
     contextFuelConsumed: fuelConsumed,
   }));
   return {
-    format: "kotoba.runtime-multidomain-report/v1",
+    format: "kotoba.runtime-multidomain-report/v2",
     generatedAt,
     suite: manifest.id,
     manifest: { path: "bench/runtime-comparison/multidomain-suite.json", sha256: manifestSha256 },
@@ -70,13 +79,13 @@ function syntheticCompetitiveReport() {
       complete: false,
     },
     qualification: { hostLoadQualified: true },
-    externalComparators: { rust: { complete: false } },
+    externalComparators: Object.fromEntries(comparators.map(name => [name, { complete: false }])),
     domains: manifest.requiredDomains.map(required => ({
       id: required.id,
       fixture: required.fixture,
       target: { os: "darwin", architecture: "arm64", isa: "aarch64", execution: "native" },
       knownAnswer: { benchmark: required.knownAnswer, n: 200, result: 42,
-        verifiedBy: ["amu-wasm32", "amu-native", "rust"] },
+        verifiedBy: ["amu-wasm32", "amu-native", ...comparators] },
       contract: { rotation: "all-engine-pairs ABBA/BAAB per run",
         nativeArtifactAbi,
         nativeArtifactArgMap: manifest.claimContract.nativeArtifactArgMap,
@@ -86,25 +95,34 @@ function syntheticCompetitiveReport() {
         preparedBundleSha256: hash,
         semanticVectors: required.verificationInputs.map((input, index) => ({
           input, expectedResult: required.verificationResults[index],
-          verifiedBy: ["amu-native", "rust"],
+          verifiedBy: ["amu-native", ...comparators],
           arms: {
             "amu-native": { result: required.verificationResults[index], nativeArtifactAbi,
               artifactKind: "raw", contextFuelConsumed: required.verificationAmuFuelConsumed[index] },
-            rust: { result: required.verificationResults[index], nativeArtifactAbi,
-              artifactKind: "dylib", contextFuelConsumed: 0 },
+            ...Object.fromEntries(comparators.map(name => [name, {
+              result: required.verificationResults[index], nativeArtifactAbi,
+              artifactKind: "dylib", contextFuelConsumed: 0,
+            }])),
           },
         })),
-        rustOptimization: "rustc --edition 2021 --crate-type cdylib -C opt-level=3 -C codegen-units=1 -C strip=symbols" },
+        comparatorBuilds,
+        rustOptimization: comparatorBuilds.rust },
       artifacts: {
         amuNativeKexe: { sha256: hash }, amuNativeCode: { sha256: hash },
         amuNativeProvenance: { sha256: hash }, rust: { sha256: hash },
         rustSource: { sha256: hash }, nativeBenchmarkRunner: { sha256: hash },
         nativeBenchmarkRunnerSource: { sha256: hash },
+        swiftHelper: { sha256: hash }, swiftHelperSource: { sha256: hash },
+        ...Object.fromEntries(comparators.flatMap(name => [
+          [name, { sha256: hash }], [`${name}Source`, { sha256: hash }],
+        ])),
       },
       environment: {
         platform: "darwin", architecture: "arm64", cpu: "Synthetic Apple M4",
         logicalCpus: 10, compilerCommit: "c".repeat(40), compilerDirty: false,
         rustcVerbose: "rustc test-version\nhost: aarch64-apple-darwin",
+        "clang-c11": "Apple clang test-version", zig: "0.test", go: "go test-version",
+        swift: "Swift test-version",
         cc: "Apple clang version test",
         preparedBundle: { preparedAt: generatedAt, buildPhaseEnteredDuringMeasure: false },
       },
@@ -113,7 +131,7 @@ function syntheticCompetitiveReport() {
         "amu-wasm32": { samples: samples(120, "wasm", 0) },
         "amu-native": { samples: samples(80, "raw",
           required.verificationAmuFuelConsumed[required.verificationInputs.indexOf(200)]) },
-        rust: { samples: samples(100, "dylib", 0) },
+        ...Object.fromEntries(comparators.map(name => [name, { samples: samples(100, "dylib", 0) }])),
       },
     })),
   };
@@ -131,30 +149,30 @@ function bridgeReport(report, expectSuccess = true) {
   return expectSuccess ? JSON.parse(result.stdout) : result;
 }
 
-function validateManifestV1(value, expectSuccess = true) {
+function validateManifestV2(value, expectSuccess = true) {
   const input = join(directory, `manifest-${Math.random().toString(16).slice(2)}.json`);
   writeFileSync(input, `${JSON.stringify(value)}\n`);
   const result = spawnSync("bash", [join(root, "scripts", "perfgate-qualify.sh"),
-    "--validate-manifest-v1", input],
+    "--validate-manifest-v2", input],
   { cwd: root, encoding: "utf8", timeout: 300_000, maxBuffer: 32 * 1024 * 1024 });
   if (expectSuccess && result.status !== 0)
-    throw new Error(`v1 manifest validation failed\n${result.stdout}${result.stderr}`);
+    throw new Error(`v2 manifest validation failed\n${result.stdout}${result.stderr}`);
   if (!expectSuccess && result.status === 0)
-    throw new Error("v1 manifest validator accepted an expanded contract");
+    throw new Error("v2 manifest validator accepted a changed contract");
 }
 
 try {
-  validateManifestV1(manifest);
+  validateManifestV2(manifest);
   const otherComparator = structuredClone(manifest);
   otherComparator.requiredComparators = ["go"];
-  validateManifestV1(otherComparator, false);
+  validateManifestV2(otherComparator, false);
   const otherEngine = structuredClone(manifest);
   otherEngine.requiredEngines = ["amu-wasm32"];
-  validateManifestV1(otherEngine, false);
+  validateManifestV2(otherEngine, false);
   const multipleTargets = structuredClone(manifest);
   multipleTargets.requiredTargets.push({ id: "darwin-x86-64-native", os: "darwin",
     architecture: "x64", isa: "x86-64", execution: "native" });
-  validateManifestV1(multipleTargets, false);
+  validateManifestV2(multipleTargets, false);
 
   const prepared = run(["--n", "200", "--prepare", bundle]);
   const preparedReport = JSON.parse(prepared.stdout);
@@ -182,7 +200,7 @@ try {
   { AMU_BENCH_TEST_LOAD_SAMPLES: "0,0,0", PATH: `${tools}:${process.env.PATH}` });
   if (existsSync(marker)) throw new Error("a compiler ran during measure");
   const report = JSON.parse(readFileSync(output, "utf8"));
-  if (report.format !== "kotoba.runtime-multidomain-report/v1")
+  if (report.format !== "kotoba.runtime-multidomain-report/v2")
     throw new Error("wrong multidomain report format");
   if (!report.contract.complete || report.contract.requiredDomainCount !== 6
       || report.contract.measuredDomainCount !== 6)
@@ -218,7 +236,7 @@ try {
     }
   }
   const gate = report.qualification.perfgate;
-  if (gate.format !== "amu.multidomain-perfgate-qualification/v1"
+  if (gate.format !== "amu.multidomain-perfgate-qualification/v2"
       || gate.domains.length !== 6 || gate["domain-set-complete?"] !== true)
     throw new Error("perfgate did not cover the complete domain set");
   if (report.qualification.broadFastestClaimQualified !== false

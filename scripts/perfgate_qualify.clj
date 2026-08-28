@@ -65,8 +65,9 @@
 
 (def manifest-path "bench/runtime-comparison/multidomain-suite.json")
 (def sha256-pattern #"[0-9a-f]{64}")
-(def bounded-fastest-v1-sentence
-  "Amu native is fastest among the enumerated universe (Rust) on the six required domains, on one recorded Darwin arm64 machine using native execution, under the named perfgate policy.")
+(def required-polyglot-comparators ["rust" "clang-c11" "zig" "go" "swift"])
+(def bounded-fastest-v2-sentence
+  "Amu native is fastest among the enumerated implementations (rustc, Apple Clang C11, Zig, Go c-shared, and Swift) on all six required domains, on one recorded Darwin arm64 machine using native execution, under the named perfgate policy.")
 
 (defn sha256-bytes [bytes]
   (let [digest (.digest (MessageDigest/getInstance "SHA-256") bytes)]
@@ -110,29 +111,29 @@
       (throw (ex-info (str label " is not an ISO-8601 instant")
                       {:phase :bounded-fastest/validation :value value})))))
 
-(defn validate-manifest-v1! [manifest]
+(defn validate-manifest-v2! [manifest]
   (let [claim (:claimContract manifest)
         required-domain-ids (mapv :id (:requiredDomains manifest))
         required-engines (:requiredEngines manifest)
         required-comparators (:requiredComparators manifest)
         required-targets (:requiredTargets manifest)]
-    (require! (= "kotoba.runtime-multidomain-manifest/v1" (:format manifest))
+    (require! (= "kotoba.runtime-multidomain-manifest/v2" (:format manifest))
               "multidomain manifest format is unsupported" {})
-    (require! (= "amu.bounded-fastest-claim-contract/v1" (:format claim))
+    (require! (= "amu.bounded-fastest-claim-contract/v2" (:format claim))
               "claim contract format is unsupported" {})
     (require! (and (string? (:asOf claim))
                    (re-matches #"\d{4}-\d{2}-\d{2}" (:asOf claim)))
               "claim contract needs an explicit date" {})
-    (require! (= bounded-fastest-v1-sentence (:allowedSentence claim))
-              "v1 claim wording is not the exact bounded sentence" {})
+    (require! (= bounded-fastest-v2-sentence (:allowedSentence claim))
+              "v2 claim wording is not the exact bounded sentence" {})
     (require! (= "amu-native" (:candidate claim))
-              "v1 candidate is not amu-native" {})
+              "v2 candidate is not amu-native" {})
     (require! (= "steady-state-runtime" (:metric claim))
-              "v1 metric is unsupported" {})
+              "v2 metric is unsupported" {})
     (require! (= "nanoseconds-per-kernel" (:unit claim))
-              "v1 unit is unsupported" {})
+              "v2 unit is unsupported" {})
     (require! (= "lower-is-better" (:direction claim))
-              "v1 direction is unsupported" {})
+              "v2 direction is unsupported" {})
     (require! (= "kotoba.perfgate.policy/default-v1" (:perfgatePolicyId claim))
               "claim contract names an unsupported perfgate policy" {})
     (require! (= "kotoba.native-artifact-i64x8-to-i64-indirect/v1"
@@ -146,21 +147,18 @@
               "claim contract native runner compiler drifted" {})
     (require! (and (pos-int? (:evidenceMaxAgeHours claim))
                    (false? (:worldFastestClaimQualified claim)))
-              "v1 freshness/world-fastest boundary is invalid" {})
-    ;; This bridge implements one candidate and one comparator.  Generalizing
-    ;; the manifest without a new bridge/version would make its hard-coded
-    ;; Rust qualification silently describe a different universe.
+              "v2 freshness/world-fastest boundary is invalid" {})
     (require! (= ["amu-native"] required-engines)
-              "v1 requiredEngines must be exactly [amu-native]"
+              "v2 requiredEngines must be exactly [amu-native]"
               {:actual required-engines})
-    (require! (= ["rust"] required-comparators)
-              "v1 requiredComparators must be exactly [rust]"
+    (require! (= required-polyglot-comparators required-comparators)
+              "v2 requiredComparators must be the exact enumerated polyglot set"
               {:actual required-comparators})
     (require! (= [{:id "darwin-arm64-native"
                    :os "darwin" :architecture "arm64"
                    :isa "aarch64" :execution "native"}]
                  required-targets)
-              "v1 requiredTargets must contain exactly the Darwin arm64 native profile"
+              "v2 requiredTargets must contain exactly the Darwin arm64 native profile"
               {:actual required-targets})
     (require! (and (seq required-domain-ids) (unique? required-domain-ids))
               "manifest requirement IDs must be non-empty and unique"
@@ -168,7 +166,7 @@
     manifest))
 
 (defn validate-multidomain! [report manifest manifest-sha]
-  (validate-manifest-v1! manifest)
+  (validate-manifest-v2! manifest)
   (let [claim (:claimContract manifest)
         required-domain-ids (mapv :id (:requiredDomains manifest))
         report-domain-ids (mapv :id (:domains report))
@@ -219,7 +217,7 @@
       (require! (= (:nativeRunnerCompiler claim) (get-in domain [:contract :nativeRunnerCompiler]))
                 "domain native runner compiler drifted" {:domain (:id required)})
       (require! (= "aarch64" (get-in domain [:contract :nativeArtifactTarget]))
-                "bounded v1 evidence did not execute the aarch64 artifact ABI"
+                "bounded v2 evidence did not execute the aarch64 artifact ABI"
                 {:domain (:id required)})
       (require! (boolean (re-matches sha256-pattern
                                      (or (get-in domain [:contract :preparedBundleSha256]) "")))
@@ -242,8 +240,8 @@
                   :let [sample (get-in vector [:arms (keyword engine)])]]
             (require! (and (= (:expectedResult vector) (:result sample))
                            (= (:nativeArtifactAbi claim) (:nativeArtifactAbi sample))
-                           (= (if (= engine "rust") "dylib" "raw") (:artifactKind sample))
-                           (= (if (= engine "rust") 0 amu-fuel)
+                           (= (if (= engine "amu-native") "raw" "dylib") (:artifactKind sample))
+                           (= (if (= engine "amu-native") amu-fuel 0)
                               (:contextFuelConsumed sample)))
                       "semantic vector did not cross the common runner correctly"
                       {:domain (:id required) :input (:input vector) :engine engine}))))
@@ -253,7 +251,7 @@
         (require! (= (:nativeArtifactAbi claim) (:nativeArtifactAbi sample))
                   "claim arm sample did not cross the common native artifact ABI"
                   {:domain (:id required) :engine engine})
-        (require! (= (if (= engine "rust") "dylib" "raw") (:artifactKind sample))
+        (require! (= (if (= engine "amu-native") "raw" "dylib") (:artifactKind sample))
                   "claim arm artifact kind did not use the common runner"
                   {:domain (:id required) :engine engine})
         (let [before (:contextFuelBefore sample)
@@ -267,7 +265,7 @@
           (require! (and (= before (get-in domain [:contract :fuelPerInstance]))
                          (nat-int? after) (<= after before)
                          (= consumed (- before after))
-                         (= consumed (if (= engine "rust") 0 expected-amu-fuel)))
+                         (= consumed (if (= engine "amu-native") expected-amu-fuel 0)))
                     "claim arm omitted common-runner context fuel evidence"
                     {:domain (:id required) :engine engine})))
       (require! (every? #(contains? (set (get-in domain [:knownAnswer :verifiedBy])) %)
@@ -283,7 +281,12 @@
                   {:domain (:id required) :engine engine}))
       (doseq [artifact-key (concat [:amuNativeKexe :amuNativeCode :amuNativeProvenance
                                     :nativeBenchmarkRunner :nativeBenchmarkRunnerSource]
-                                   (when (= "competitive" mode) [:rust :rustSource]))]
+                                   (when (= "competitive" mode)
+                                     (concat
+                                      (mapcat (fn [name]
+                                                [(keyword name) (keyword (str name "Source"))])
+                                              required-comparators)
+                                      [:swiftHelper :swiftHelperSource])))]
         (require! (boolean (re-matches sha256-pattern
                                        (or (get-in domain [:artifacts artifact-key :sha256]) "")))
                   "claim artifact input is not sealed by SHA-256"
@@ -296,6 +299,9 @@
       (when (= "competitive" mode)
         (require! (every? #(get-in domain [:engines (keyword %)]) required-comparators)
                   "required comparator is missing" {:domain (:id required)})
+        (require! (= (set required-comparators)
+                     (set (map name (keys (get-in domain [:contract :comparatorBuilds])))))
+                  "comparator build contract is not exact" {:domain (:id required)})
         (require! (= "rustc --edition 2021 --crate-type cdylib -C opt-level=3 -C codegen-units=1 -C strip=symbols"
                      (get-in domain [:contract :rustOptimization]))
                   "Rust optimization policy drifted" {:domain (:id required)})
@@ -322,7 +328,11 @@
           runner-source-shas (set (map #(get-in % [:artifacts :nativeBenchmarkRunnerSource :sha256])
                                        (:domains report)))
           cc-versions (set (map #(get-in % [:environment :cc]) (:domains report)))
-          rust-receipts (set (map #(get-in % [:environment :rustcVerbose]) (:domains report)))]
+          comparator-receipts
+          (into {} (for [name required-comparators]
+                     [name (set (map #(get-in % [:environment (keyword (if (= name "rust")
+                                                                       "rustcVerbose" name))])
+                                         (:domains report))) ]))]
       (require! (= 1 (count (set machines)))
                 "domains were recorded on different machines/ISAs" {:machines machines})
       (require! (and (= 1 (count runner-shas)) (= 1 (count runner-source-shas))
@@ -330,8 +340,10 @@
                 "domains did not share one sealed native runner/toolchain"
                 {:runner-shas runner-shas :runner-source-shas runner-source-shas})
       (when (= "competitive" mode)
-        (require! (= 1 (count rust-receipts))
-                  "Rust verbose toolchain receipt changed inside one suite" {})))
+        (doseq [[name receipts] comparator-receipts]
+          (require! (and (= 1 (count receipts)) (string? (first receipts)) (seq (first receipts)))
+                    "comparator toolchain receipt changed or is missing inside one suite"
+                    {:comparator name}))))
     {:claim claim :mode mode :required-domain-ids required-domain-ids
      :required-comparators required-comparators :required-targets required-targets}))
 
@@ -405,18 +417,19 @@
      :candidate (:observation/summary candidate)
      :verdict verdict}))
 
-(defn qualify-rust-domain [report domain claim manifest-sha target-id]
-  (when (get-in domain [:engines :rust])
+(defn qualify-comparator-domain [report domain comparator claim manifest-sha target-id]
+  (let [comparator-key (keyword comparator)]
+   (when (get-in domain [:engines comparator-key])
     (let [id (:id domain)
-          plan-id (keyword (:id claim) (str target-id "." id))
+          plan-id (keyword (:id claim) (str target-id "." comparator "." id))
           machine (recorded-machine domain)
-          source (str "scripts/runtime-multidomain-suite.mjs comparator=rust domain=" id)
+          source (str "scripts/runtime-multidomain-suite.mjs comparator=" comparator " domain=" id)
           samples (fn [engine]
                     (mapv :nanosecondsPerKernel
                           (get-in domain [:engines engine :samples])))
-          baseline (observation-on machine :rust-baseline plan-id
+          baseline (observation-on machine (keyword comparator "baseline") plan-id
                                    (keyword (:metric claim)) (keyword (:unit claim))
-                                   (samples :rust) (str source " manifest-sha256=" manifest-sha)
+                                   (samples comparator-key) (str source " manifest-sha256=" manifest-sha)
                                    (= "lower-is-better" (:direction claim)))
           candidate (observation-on machine :amu-native-candidate plan-id
                                     (keyword (:metric claim)) (keyword (:unit claim))
@@ -440,7 +453,8 @@
        :baseline (:observation/summary baseline)
        :candidate (:observation/summary candidate)
        :verdict verdict
-       :claim (when (:qualified? verdict) (g/claim verdict candidate baseline))})))
+       :comparator comparator
+       :claim (when (:qualified? verdict) (g/claim verdict candidate baseline))}))))
 
 (defn qualify-multidomain [report]
   (let [{:keys [sha256 value]} (canonical-manifest)
@@ -450,22 +464,33 @@
                                 (set (map (comp target-without-id :target) (:domains report))))
         state (evidence-state report claim)
         domains (mapv #(qualify-domain report % sha256) (:domains report))
-        rust-domains (if (= "competitive" mode)
-                       (mapv #(qualify-rust-domain report % claim sha256 target-id)
-                             (:domains report))
-                       [])
+        comparator-domains (if (= "competitive" mode)
+                             (into {} (for [comparator (:requiredComparators value)]
+                                        [comparator
+                                         (mapv #(qualify-comparator-domain
+                                                 report % comparator claim sha256 target-id)
+                                               (:domains report))]))
+                             {})
         host? (and (boolean (get-in report [:qualification :hostLoadQualified]))
                    (every? #(get-in % [:qualification :hostLoad :qualified]) (:domains report)))
         complete? (= (mapv :id (:requiredDomains value)) (mapv :id (:domains report)))
-        rust-complete? (and (= "competitive" mode)
-                            (= (count rust-domains) (count (:requiredDomains value))))
-        rust-qualified? (and host? complete? rust-complete? target-set-complete?
-                             (:fresh? state) (:clean? state)
-                             (every? #(get-in % [:verdict :qualified?]) rust-domains))
+        comparator-complete?
+        (into {} (for [[name results] comparator-domains]
+                   [name (= (count results) (count (:requiredDomains value)))]))
+        comparator-qualified?
+        (into {} (for [[name results] comparator-domains]
+                   [name (and host? complete? (get comparator-complete? name)
+                              target-set-complete? (:fresh? state) (:clean? state)
+                              (every? #(get-in % [:verdict :qualified?]) results))]))
+        comparator-set-qualified? (and (= "competitive" mode)
+                                       (= (set (keys comparator-qualified?))
+                                          (set (:requiredComparators value)))
+                                       (every? true? (vals comparator-qualified?)))
         machine (when (seq (:domains report)) (recorded-machine (first (:domains report))))
         evidence-report-sha256 (sha256-string (m/canonical-string report))
-        claim-body (when rust-qualified?
-                     {:format "amu.bounded-fastest-claim/v1"
+        all-comparator-domains (vec (mapcat second comparator-domains))
+        claim-body (when comparator-set-qualified?
+                     {:format "amu.bounded-fastest-claim/v2"
                       :claim-contract claim
                       :allowed-sentence (:allowedSentence claim)
                       :manifest {:id (:id value) :sha256 sha256}
@@ -479,19 +504,20 @@
                                                        [:platform :architecture :cpu :logicalCpus])}
                       :compiler-commit (:compiler-commit state)
                       :generated-at (:generated-at state)
-                      :plan-ids (mapv #(json-keyword (:plan-id %)) rust-domains)
+                      :comparators (:requiredComparators value)
+                      :plan-ids (mapv #(json-keyword (:plan-id %)) all-comparator-domains)
                       :metric (:metric claim)
                       :unit (:unit claim)
                       :direction (:direction claim)
                       :policy-id (:perfgatePolicyId claim)
                       :aggregation-policy (:aggregationPolicy claim)
-                      :domain-claims (mapv :claim rust-domains)})
+                      :domain-claims (mapv :claim all-comparator-domains)})
         claim-artifact (when claim-body
-                         {:format "amu.content-addressed-bounded-fastest-claim/v1"
+                         {:format "amu.content-addressed-bounded-fastest-claim/v2"
                           :content-encoding "machine.core/canonical-string-v1"
                           :sha256 (sha256-string (m/canonical-string claim-body))
                           :body claim-body})]
-    {:format "amu.multidomain-perfgate-qualification/v1"
+    {:format "amu.multidomain-perfgate-qualification/v2"
      :suite (:suite report)
      :manifest-sha256 sha256
      :claim-contract-id (:id claim)
@@ -504,40 +530,41 @@
      :all-domains-perfgate-qualified?
      (and host? complete? (every? #(get-in % [:verdict :qualified?]) domains))
      :external-comparators
-     {:rust {:domain-set-complete? rust-complete?
-             :domains (mapv #(dissoc % :claim) rust-domains)
-             :all-domains-perfgate-qualified? rust-qualified?
-             :rust-comparison-qualified? rust-qualified?}}
-     :rust-comparison-qualified? rust-qualified?
-     :bounded-fastest-claim-qualified? rust-qualified?
+     (into {} (for [[name results] comparator-domains]
+                [(keyword name) {:domain-set-complete? (get comparator-complete? name)
+                                 :domains (mapv #(dissoc % :claim) results)
+                                 :all-domains-perfgate-qualified? (get comparator-qualified? name)}]))
+     :comparator-set-qualified? comparator-set-qualified?
+     :bounded-fastest-claim-qualified? comparator-set-qualified?
      :bounded-fastest-claim claim-artifact
-     ;; Six Rust twins qualify only this prespecified Amu-vs-Rust suite.  They
-     ;; do not define, much less exhaust, the universe needed for "world's
-     ;; fastest" or another broad superlative.
+     ;; This exact five-comparator set is still an enumerated implementation
+     ;; universe, not an exhaustive proof about every language implementation.
      :broad-fastest-claim-qualified? false
      :reason (cond
-               rust-qualified? (:allowedSentence claim)
+               comparator-set-qualified? (:allowedSentence claim)
                (not (:clean? state)) "compiler evidence is dirty; no claim artifact emitted"
                (not (:fresh? state)) "benchmark evidence is stale; no claim artifact emitted"
                (not target-set-complete?) "recorded physical target is outside the bounded claim contract"
-               rust-complete? "Rust domain set is complete but not fully qualified; no claim artifact emitted"
-               :else "no external comparator covers every required domain")}))
+               (and (= "competitive" mode)
+                    (every? true? (vals comparator-complete?)))
+               "all comparator domain sets are complete but not fully qualified; no claim artifact emitted"
+               :else "the required comparator set does not cover every required domain")}))
 
 (defn -main [& args]
   (let [input (first args)]
     (when-not (and (string? input) (seq input))
       (binding [*out* *err*]
-        (println "usage: perfgate-qualify <benchmark.json> | --validate-manifest-v1 <manifest.json>"))
+        (println "usage: perfgate-qualify <benchmark.json> | --validate-manifest-v2 <manifest.json>"))
       (System/exit 2))
-    (if (= "--validate-manifest-v1" input)
+    (if (= "--validate-manifest-v2" input)
       (let [path (second args)]
         (require! (and (string? path) (seq path))
-                  "--validate-manifest-v1 requires a manifest path" {})
-        (validate-manifest-v1! (json/read-str (slurp path) :key-fn keyword))
-        (println (json/write-str {:format "amu.bounded-fastest-manifest-validation/v1"
+                  "--validate-manifest-v2 requires a manifest path" {})
+        (validate-manifest-v2! (json/read-str (slurp path) :key-fn keyword))
+        (println (json/write-str {:format "amu.bounded-fastest-manifest-validation/v2"
                                  :valid? true})))
       (let [report (json/read-str (slurp input) :key-fn keyword)]
-        (if (= "kotoba.runtime-multidomain-report/v1" (:format report))
+        (if (= "kotoba.runtime-multidomain-report/v2" (:format report))
           (println (json/write-str (qualify-multidomain report)
                                   :value-fn (fn [_ v] (if (keyword? v) (json-keyword v) v))))
           (let [fixture (:fixture report)

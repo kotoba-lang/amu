@@ -260,13 +260,14 @@ npm run benchmark-runtime-multidomain -- \
   --n 200 --measure prepared-runtime --bundle-sha256 <sha256-from-prepared.json> \
   --runs 5 --calls 100000 --output multidomain.json
 
-# Rust remains optional; prepare and measure it as a separate competitive bundle.
+# All external comparators remain optional dependencies; competitive mode
+# requires the exact v2 set when producing a bounded claim.
 npm run benchmark-runtime-multidomain -- \
-  --suite competitive --n 200 --prepare prepared-runtime-rust --output prepared-rust.json
+  --suite competitive --n 200 --prepare prepared-runtime-polyglot --output prepared-polyglot.json
 npm run benchmark-runtime-multidomain -- \
-  --suite competitive --n 200 --measure prepared-runtime-rust \
-  --bundle-sha256 <sha256-from-prepared-rust.json> \
-  --runs 5 --calls 100000 --output multidomain-rust.json
+  --suite competitive --n 200 --measure prepared-runtime-polyglot \
+  --bundle-sha256 <sha256-from-prepared-polyglot.json> \
+  --runs 5 --calls 100000 --output multidomain-polyglot.json
 npm run test-runtime-multidomain
 ```
 
@@ -284,14 +285,15 @@ quiet wait is bounded at
 `unqualified-host-load`; perfgate then fails closed.
 
 The core suite deliberately has no external comparator. The optional
-competitive suite has exact Rust semantic twins for all six domains. Rust is a
-kernel-only `cdylib`: it contains no `main`, clock, warmup, or measurement loop.
-The same external C runner invokes Amu raw code and the Rust dynamic library
-through the runtime-resolved
+competitive v2 suite has semantic twins for Rust, Apple Clang C11, Zig, Go,
+and Swift across all six domains. Every comparator is a native dynamic library
+with no clock, warmup, or measurement loop. Go uses `-buildmode=c-shared`, so
+its measured result intentionally includes the cgo export boundary. Swift's
+opaque call helpers are a separately sealed Swift dylib, preventing whole-file
+constant folding while retaining a real Swift call. The same external C runner
+invokes Amu raw code and every comparator library through the runtime-resolved
 `kotoba.native-artifact-i64x8-to-i64-indirect/v1` function-pointer boundary.
-Mapping, loading, and symbol lookup finish before timing. This prevents Rust
-from gaining comparator-only inlining or constant-hoisting across its former
-private measurement loop.
+Mapping, loading, and symbol lookup finish before timing.
 
 Preparation also executes a manifest-bound input corpus (`0, 1, 2, 199, 200,
 201`, plus `510` for loop-call) through every available native claim arm. Exact
@@ -299,30 +301,30 @@ results and Amu fuel consumption are part of the manifest. A constant-return
 artifact, a direct-call comparator, a different argument map, missing context
 reset evidence, or a changed fuel rule fails before timing evidence can qualify.
 Reports seal the common runner source and binary, child bundles, root bundle
-index, Rust source and `cdylib`; record exact compiler flags, `cc --version`,
-`rustc -vV`, and target; and require one identical runner/toolchain receipt
-across all domains. If `rustc` is absent, the report records it as unavailable
-and the core suite remains usable.
+index, every comparator source and dynamic library; record exact compiler
+flags and toolchain versions; and require one identical runner/toolchain
+receipt across all domains. A source file that changes after prepare fails the
+bundle hash gate. If an external toolchain is absent, the report records it as
+unavailable and the core suite remains usable.
 
-Rust and LLVM remain optional experiment adapters, never compiler or runtime
-dependencies. Six qualified Rust comparisons can establish only the bounded
-claim represented by `rustComparisonQualified`: Amu versus Rust on this named
-suite, host, and architecture. They cannot establish a world-wide or broad
-"fastest" claim. That broader claim stays false until a separately
-prespecified competitor universe is complete. Every native-versus-comparator
-result must also pass `perfgate.core/qualify`; per-domain parity or a win in one
-fixture cannot satisfy even the bounded Rust gate.
+Rust/LLVM, Clang, Zig, Go, and Swift remain optional experiment adapters, never
+compiler or runtime dependencies. The v2 comparator set is qualified only when
+all 30 candidate/comparator/domain pairs independently pass
+`perfgate.core/qualify`; parity, one-domain wins, or an average rank cannot
+satisfy the gate. Success establishes only the exact enumerated-implementation
+sentence in the manifest, not a world-wide or language-general claim.
 
-The dated `claimContract` currently enumerates exactly one comparator (Rust)
-and one physical target profile (Darwin/arm64/native). Its only allowed
-superlative is the literal, scoped sentence “fastest among the enumerated
-universe”; this is not a language-general, multi-host, multi-ISA, or world
-fastest claim. The bridge re-reads and hashes the canonical manifest, derives
+The dated v2 `claimContract` enumerates exactly five comparator implementations
+(rustc, Apple Clang C11, Zig, Go c-shared, and Swift) and one physical target
+profile (Darwin/arm64/native). Its only allowed superlative is the literal,
+scoped sentence recorded in that manifest; this is not a language-general,
+multi-host, multi-ISA, or world-fastest claim. The bridge re-reads and hashes
+the canonical manifest, derives
 domain/comparator/target completeness instead of trusting report booleans,
 and binds the recorded machine, ISA, plan, unit, direction, policy, clean
 compiler commit, and 24-hour evidence window. Only a clean, fresh result that
-beats Rust independently in all six domains emits a SHA-256-addressed bounded
-claim. Missing, duplicate, dirty, stale, noisy, overloaded, or out-of-profile
+beats every enumerated comparator independently in all six domains emits a
+SHA-256-addressed bounded claim. Missing, duplicate, dirty, stale, noisy, overloaded, or out-of-profile
 evidence emits no claim artifact; `broadFastestClaimQualified` remains false.
 The claim binds the canonical parsed evidence report by SHA-256, including its
 known answers and artifact hashes. The raw report must therefore be retained
