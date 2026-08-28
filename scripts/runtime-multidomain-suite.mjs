@@ -63,7 +63,10 @@ function sleep(milliseconds) {
 }
 
 function waitForQuiet() {
-  const limit = logicalCpus * 0.75;
+  // Claim evidence needs an actually idle host, not merely one with spare
+  // scheduler capacity.  Cap load1 at one runnable task and at ten percent of
+  // the reported logical CPUs, whichever is lower.
+  const limit = Math.min(1, logicalCpus * 0.10);
   const injected = process.env.AMU_BENCH_TEST_LOAD_SAMPLES?.split(",").map(Number) ?? null;
   const samples = [];
   const started = Date.now();
@@ -75,9 +78,13 @@ function waitForQuiet() {
     samples.push({ elapsedMilliseconds: Date.now() - started, load1: value,
       qualified: value <= limit });
     consecutive = value <= limit ? consecutive + 1 : 0;
-    if (consecutive >= 3) return { qualified: true, limit, requiredConsecutive: 3, samples };
+    if (consecutive >= 3) return { qualified: true, limit,
+      policy: "load1 <= min(1.0, logical-cpus * 0.10)",
+      requiredConsecutive: 3, samples };
     if (Date.now() - started >= quietWaitMilliseconds)
-      return { qualified: false, limit, requiredConsecutive: 3, samples,
+      return { qualified: false, limit,
+        policy: "load1 <= min(1.0, logical-cpus * 0.10)",
+        requiredConsecutive: 3, samples,
         reason: "quiet-host-timeout" };
     sleep(Math.min(injected ? 1 : 1_000, quietWaitMilliseconds - (Date.now() - started)));
   }
