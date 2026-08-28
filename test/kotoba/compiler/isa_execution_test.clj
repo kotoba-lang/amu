@@ -843,14 +843,26 @@
           (let [report (run-native isa source "-" {:allow #{}} 'kernel [n])]
             (is (not (str/includes? report ":status :trap")) (str/trim report))
             (is (str/includes? report (str ":result " expected))
-                (str "n=" n " => " (str/trim report)))))
+                (str "n=" n " => " (str/trim report)))
+            (is (str/includes? report (str ":remaining " (- 510 n)))
+                (str "wrapper + exact n+1 kernel charge for n=" n ": "
+                     (str/trim report)))))
         (let [exhausted (run-native isa source "-" {:allow #{}} 'kernel [511])]
           (is (str/includes? exhausted ":status :trap")
               (str "kernel wrapper + loop entry + 511 iterations exceed sealed fuel: "
                    (str/trim exhausted)))
           (is (str/includes? exhausted ":remaining 0")
               (str "exhaustion must not wrap and store UINT64_MAX: "
-                   (str/trim exhausted))))))))
+                   (str/trim exhausted))))
+        (when (= isa :aarch64)
+          (doseq [counter [-1 Long/MIN_VALUE]
+                  fuel [1 2]]
+            (let [report (run-native isa source "-" {:allow #{}}
+                                     'kernel [counter] fuel)]
+              (is (str/includes? report ":status :trap")
+                  [counter fuel (str/trim report)])
+              (is (str/includes? report ":remaining 0")
+                  [counter fuel "cold charged loop-call copy must not wrap"]))))))))
 
 (deftest aarch64-proven-countdown-bulk-fuel-preserves-exact-boundaries
   (when (@loaders :aarch64)
@@ -939,11 +951,29 @@
                                           (:mc/instructions %)))
                            first)
         loop-instructions (:mc/instructions loop-function)
-        cbnz-x19? #(= 0xb5000013 (bit-and % 0xff00001f))]
-    (is (= 184 (count (:code artifact)))
-        "real compiler fixture drops six AArch64 words from the 208-byte baseline")
-    (is (= 1 (count (filter cbnz-x19? words)))
-        "the preserved loop counter reaches one direct CBNZ x19 in the artifact")
+        cbz-x19? #(= 0xb4000013 (bit-and % 0xff00001f))
+        cbnz-x19? #(= 0xb5000013 (bit-and % 0xff00001f))
+        backward-b-indexes
+        (keep-indexed
+         (fn [index word]
+           (when (and (= 0x14000000 (bit-and word 0xfc000000))
+                      (let [imm26 (bit-and word 0x03ffffff)
+                            signed (if (>= imm26 0x02000000)
+                                     (- imm26 0x04000000)
+                                     imm26)]
+                        (neg? signed)))
+             index))
+         words)
+        {:keys [offset length]} (get-in artifact [:exports 'main])]
+    (is (= 284 (count (:code artifact)))
+        "bulk fuel adds a complete cold negative fallback to the primary path")
+    (is (= 2 (count (filter cbz-x19? words)))
+        "primary and cold fallback enter their bodies through CBZ x19")
+    (is (= 2 (count (filter cbnz-x19? words)))
+        "primary and cold fallback rotate their latches to bottom CBNZ x19")
+    (is (= 1 (count backward-b-indexes)))
+    (is (every? #(< offset (* 4 %) (+ offset length)) backward-b-indexes)
+        "the only backward B is main's public tail-call; no loop latch B remains")
     (is (not-any? #{0xeb01001f 0x9a9f17e2} words)
         "the former CMP x0,x1 and CSET x2,eq are absent")
     (is loop-function "the compiled module carries an explicit branch-nonzero")
