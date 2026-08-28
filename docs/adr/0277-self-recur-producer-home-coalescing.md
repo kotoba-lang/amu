@@ -36,6 +36,9 @@ Fuel boundary execution still passes on both available macOS ISA loaders. The
 x86-64 artifact remains byte-identical at 256 bytes with SHA-256
 `b6da0619229eaf96a8edef7f25443a9565e57c7761b79fa466775f186bab79f2`.
 
-These are structural and semantic-execution results, not qualified wall-clock
-evidence. They do not establish a runtime speed improvement, Rust/LLVM parity,
-or a “world fastest” claim.
+A clean-tree competitive measurement passed the host-load gate (`load1` 6.754
+before and 6.854 after, limit 7.5). On that broader modular-mix fixture,
+Amu-native's median was 10.46 ns versus Rust's 10.12708 ns (1.03287x Rust) and
+Go's 10.86333 ns. This measurement is qualified but is not an old/new paired
+measurement of this loop transform: it therefore does not establish transform
+speedup, Rust/LLVM parity, or a “world fastest” claim.
