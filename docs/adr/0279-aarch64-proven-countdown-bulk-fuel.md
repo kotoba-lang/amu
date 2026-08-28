@@ -43,8 +43,13 @@ W^X checks pass.
 ## Claim boundary
 
 This decision establishes fuel equivalence, fail-closed fallback, and removal
-of recurring fuel memory traffic only for the admitted shape. A loaded-host
-diagnostic showed the intended reduction but failed the host-load gate. It is
-not evidence of a qualified speedup, Rust/LLVM parity, or a "world fastest"
-claim. Rust and LLVM remain optional comparators, not build or runtime
-dependencies.
+of recurring fuel memory traffic only for the admitted shape. A clean sealed
+fair-batch run passed the host-load gate (`load1` 6.199, limit 7.5) and consumed
+exactly 100,002 fuel units per Amu sample. The sealed prepared-bundle digest is
+`d82f2c53fd9490edd957ac426e5403e4f8416d3f8a5e9a281425182ead155d90`.
+Its median was 5.24 ns/iteration; the optional Rust comparator measured
+3.88416 ns/iteration, making Amu 1.349x slower on this fixture. Perfgate was not
+run, so this is host-load-qualified diagnostic evidence, not a qualified
+performance claim. It is evidence against a fastest claim, not evidence of a
+speedup or Rust/LLVM parity. Rust and LLVM remain optional comparators, not
+build or runtime dependencies.
