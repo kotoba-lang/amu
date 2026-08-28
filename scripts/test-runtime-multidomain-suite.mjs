@@ -14,6 +14,8 @@ const bundle = join(directory, "prepared");
 const script = join(root, "scripts", "runtime-multidomain-suite.mjs");
 const manifest = JSON.parse(readFileSync(join(root, "bench", "runtime-comparison",
   "multidomain-suite.json"), "utf8"));
+const manifestSha256 = createHash("sha256").update(readFileSync(join(root, "bench",
+  "runtime-comparison", "multidomain-suite.json"))).digest("hex");
 
 function syntheticRustDomain(required) {
   const hash = "a".repeat(64);
@@ -41,7 +43,93 @@ function run(args, env = {}, expectSuccess = true) {
   return result;
 }
 
+function syntheticCompetitiveReport() {
+  const generatedAt = new Date().toISOString();
+  const hash = "b".repeat(64);
+  const samples = value => Array.from({ length: 5 }, () => ({
+    result: 42, nanosecondsPerKernel: value,
+  }));
+  return {
+    format: "kotoba.runtime-multidomain-report/v1",
+    generatedAt,
+    suite: manifest.id,
+    manifest: { path: "bench/runtime-comparison/multidomain-suite.json", sha256: manifestSha256 },
+    contract: {
+      mode: "competitive",
+      claimContract: manifest.claimContract,
+      requiredEngines: manifest.requiredEngines,
+      requiredComparators: manifest.requiredComparators,
+      requiredTargets: manifest.requiredTargets,
+      // These booleans are deliberately false: the bridge must derive completeness.
+      complete: false,
+    },
+    qualification: { hostLoadQualified: true },
+    externalComparators: { rust: { complete: false } },
+    domains: manifest.requiredDomains.map(required => ({
+      id: required.id,
+      fixture: required.fixture,
+      target: { os: "darwin", architecture: "arm64", isa: "aarch64", execution: "native" },
+      knownAnswer: { benchmark: required.knownAnswer, result: 42,
+        verifiedBy: ["amu-wasm32", "amu-native", "rust"] },
+      contract: { rotation: "all-engine-pairs ABBA/BAAB per run",
+        rustOptimization: "rustc --edition 2021 -C opt-level=3 -C codegen-units=1 -C strip=symbols" },
+      artifacts: {
+        amuNativeKexe: { sha256: hash }, amuNativeCode: { sha256: hash },
+        amuNativeProvenance: { sha256: hash }, rust: { sha256: hash },
+        rustSource: { sha256: hash },
+      },
+      environment: {
+        platform: "darwin", architecture: "arm64", cpu: "Synthetic Apple M4",
+        logicalCpus: 10, compilerCommit: "c".repeat(40), compilerDirty: false,
+        preparedBundle: { preparedAt: generatedAt, buildPhaseEnteredDuringMeasure: false },
+      },
+      qualification: { hostLoad: { qualified: true } },
+      engines: {
+        "amu-wasm32": { samples: samples(120) },
+        "amu-native": { samples: samples(80) },
+        rust: { samples: samples(100) },
+      },
+    })),
+  };
+}
+
+function bridgeReport(report, expectSuccess = true) {
+  const input = join(directory, `perfgate-${Math.random().toString(16).slice(2)}.json`);
+  writeFileSync(input, `${JSON.stringify(report)}\n`);
+  const result = spawnSync("bash", [join(root, "scripts", "perfgate-qualify.sh"), input],
+    { cwd: root, encoding: "utf8", timeout: 300_000, maxBuffer: 32 * 1024 * 1024 });
+  if (expectSuccess && result.status !== 0)
+    throw new Error(`perfgate bridge failed\n${result.stdout}${result.stderr}`);
+  if (!expectSuccess && result.status === 0)
+    throw new Error("perfgate bridge accepted adversarial evidence");
+  return expectSuccess ? JSON.parse(result.stdout) : result;
+}
+
+function validateManifestV1(value, expectSuccess = true) {
+  const input = join(directory, `manifest-${Math.random().toString(16).slice(2)}.json`);
+  writeFileSync(input, `${JSON.stringify(value)}\n`);
+  const result = spawnSync("bash", [join(root, "scripts", "perfgate-qualify.sh"),
+    "--validate-manifest-v1", input],
+  { cwd: root, encoding: "utf8", timeout: 300_000, maxBuffer: 32 * 1024 * 1024 });
+  if (expectSuccess && result.status !== 0)
+    throw new Error(`v1 manifest validation failed\n${result.stdout}${result.stderr}`);
+  if (!expectSuccess && result.status === 0)
+    throw new Error("v1 manifest validator accepted an expanded contract");
+}
+
 try {
+  validateManifestV1(manifest);
+  const otherComparator = structuredClone(manifest);
+  otherComparator.requiredComparators = ["go"];
+  validateManifestV1(otherComparator, false);
+  const otherEngine = structuredClone(manifest);
+  otherEngine.requiredEngines = ["amu-wasm32"];
+  validateManifestV1(otherEngine, false);
+  const multipleTargets = structuredClone(manifest);
+  multipleTargets.requiredTargets.push({ id: "darwin-x86-64-native", os: "darwin",
+    architecture: "x64", isa: "x86-64", execution: "native" });
+  validateManifestV1(multipleTargets, false);
+
   const prepared = run(["--n", "200", "--prepare", bundle]);
   const preparedReport = JSON.parse(prepared.stdout);
   if (preparedReport.domainCount !== 6)
@@ -100,35 +188,92 @@ try {
       || gate["broad-fastest-claim-qualified?"] !== false)
     throw new Error("core evidence manufactured a broad fastest claim");
 
-  const perfgateInput = join(directory, "perfgate-domain-host-load.json");
-  writeFileSync(perfgateInput, `${JSON.stringify({
-    format: "kotoba.runtime-multidomain-report/v1", suite: manifest.id,
-    contract: { complete: true }, qualification: { hostLoadQualified: true },
-    externalComparators: { rust: { complete: true } },
-    domains: [{ id: "narrow-arithmetic", fixture: "kernel",
-      qualification: { hostLoad: { qualified: false } },
-      engines: {
-        "amu-wasm32": { samples: Array.from({ length: 5 }, () => ({ nanosecondsPerKernel: 100 })) },
-        "amu-native": { samples: Array.from({ length: 5 }, () => ({ nanosecondsPerKernel: 90 })) },
-        rust: { samples: Array.from({ length: 5 }, () => ({ nanosecondsPerKernel: 100 })) },
-      } }],
-  })}\n`);
-  const bridge = spawnSync("bash", [join(root, "scripts", "perfgate-qualify.sh"), perfgateInput],
-    { cwd: root, encoding: "utf8", timeout: 300_000, maxBuffer: 32 * 1024 * 1024 });
-  if (bridge.status !== 0) throw new Error(`perfgate bridge failed\n${bridge.stdout}${bridge.stderr}`);
-  const tamperedGate = JSON.parse(bridge.stdout);
-  if (tamperedGate["host-load-qualified?"] || tamperedGate["all-domains-perfgate-qualified?"]
-      || tamperedGate.domains[0].verdict["qualified?"]
-      || tamperedGate["rust-comparison-qualified?"]
-      || tamperedGate["broad-fastest-claim-qualified?"]
-      || tamperedGate["external-comparators"].rust.domains[0].verdict["qualified?"])
-    throw new Error("perfgate must fail closed when a domain host-load gate is false");
+  const qualifiedEvidence = syntheticCompetitiveReport();
+  const qualifiedGate = bridgeReport(qualifiedEvidence);
+  if (!qualifiedGate["bounded-fastest-claim-qualified?"]
+      || !/^[0-9a-f]{64}$/.test(qualifiedGate["bounded-fastest-claim"]?.sha256 ?? "")
+      || qualifiedGate["bounded-fastest-claim"].body["allowed-sentence"]
+        !== manifest.claimContract.allowedSentence
+      || qualifiedGate["broad-fastest-claim-qualified?"] !== false)
+    throw new Error("fully bound enumerated-universe evidence did not emit exactly one bounded claim");
+
+  const originalClaim = qualifiedGate["bounded-fastest-claim"];
+  const artifactChanged = structuredClone(qualifiedEvidence);
+  artifactChanged.domains[0].artifacts.rust.sha256 = "d".repeat(64);
+  const artifactChangedClaim = bridgeReport(artifactChanged)["bounded-fastest-claim"];
+  if (artifactChangedClaim.body["evidence-report"].sha256
+        === originalClaim.body["evidence-report"].sha256
+      || artifactChangedClaim.sha256 === originalClaim.sha256)
+    throw new Error("artifact SHA substitution did not change the evidence and claim addresses");
+
+  const knownAnswerChanged = structuredClone(qualifiedEvidence);
+  knownAnswerChanged.domains[0].knownAnswer.result = 43;
+  for (const engine of Object.values(knownAnswerChanged.domains[0].engines))
+    for (const sample of engine.samples) sample.result = 43;
+  const knownAnswerChangedClaim = bridgeReport(knownAnswerChanged)["bounded-fastest-claim"];
+  if (knownAnswerChangedClaim.body["evidence-report"].sha256
+        === originalClaim.body["evidence-report"].sha256
+      || knownAnswerChangedClaim.sha256 === originalClaim.sha256)
+    throw new Error("known-answer substitution did not change the evidence and claim addresses");
+
+  const oneDomain = syntheticCompetitiveReport();
+  oneDomain.contract.complete = true;
+  oneDomain.externalComparators.rust.complete = true;
+  oneDomain.domains = oneDomain.domains.slice(0, 1);
+  bridgeReport(oneDomain, false);
+
+  const duplicate = syntheticCompetitiveReport();
+  duplicate.domains[duplicate.domains.length - 1] = structuredClone(duplicate.domains[0]);
+  bridgeReport(duplicate, false);
+
+  const missingTargetEngine = syntheticCompetitiveReport();
+  delete missingTargetEngine.domains[0].engines["amu-native"];
+  bridgeReport(missingTargetEngine, false);
+
+  const missingPhysicalTarget = syntheticCompetitiveReport();
+  delete missingPhysicalTarget.domains[0].target;
+  bridgeReport(missingPhysicalTarget, false);
+
+  const missingComparator = syntheticCompetitiveReport();
+  delete missingComparator.domains[0].engines.rust;
+  bridgeReport(missingComparator, false);
+
+  const staleManifest = syntheticCompetitiveReport();
+  staleManifest.manifest.sha256 = "0".repeat(64);
+  bridgeReport(staleManifest, false);
+
+  const dirty = syntheticCompetitiveReport();
+  dirty.domains[0].environment.compilerDirty = true;
+  const dirtyGate = bridgeReport(dirty);
+  if (dirtyGate["bounded-fastest-claim-qualified?"]
+      || dirtyGate["bounded-fastest-claim"] !== null || dirtyGate["evidence-clean?"])
+    throw new Error("dirty evidence emitted a bounded claim");
+
+  const staleReport = syntheticCompetitiveReport();
+  const staleAt = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+  staleReport.generatedAt = staleAt;
+  for (const domain of staleReport.domains) domain.environment.preparedBundle.preparedAt = staleAt;
+  const staleGate = bridgeReport(staleReport);
+  if (staleGate["bounded-fastest-claim-qualified?"]
+      || staleGate["bounded-fastest-claim"] !== null || staleGate["evidence-fresh?"])
+    throw new Error("stale evidence emitted a bounded claim");
+
+  const hostLoad = syntheticCompetitiveReport();
+  hostLoad.domains[0].qualification.hostLoad.qualified = false;
+  const hostGate = bridgeReport(hostLoad);
+  if (hostGate["bounded-fastest-claim-qualified?"]
+      || hostGate["bounded-fastest-claim"] !== null)
+    throw new Error("host-load failure emitted a bounded claim");
 
   const synthetic = manifest.requiredDomains.map(syntheticRustDomain);
   if (!assessComparatorCoverage(manifest, synthetic).complete)
     throw new Error("complete Rust coverage was rejected");
   if (assessComparatorCoverage(manifest, synthetic.slice(0, -1)).complete)
     throw new Error("missing Rust domain was accepted");
+  let duplicateRejected = false;
+  try { assessComparatorCoverage(manifest, [...synthetic, synthetic[0]]); }
+  catch (error) { duplicateRejected = /duplicate domain IDs/.test(error.message); }
+  if (!duplicateRejected) throw new Error("duplicate comparator domain was accepted");
   const wrong = structuredClone(synthetic);
   wrong[2].engines.rust.samples[0].result = 41;
   let wrongRejected = false;
@@ -204,7 +349,7 @@ try {
       || overloaded.qualification.perfgate["all-domains-perfgate-qualified?"])
     throw new Error("timeout/high-load evidence did not fail closed");
 
-  process.stdout.write("runtime-multidomain: sealed prepare/measure, tamper, provenance, quiet timeout, compiler-free timing, known answers, rotation and perfgate OK\n");
+  process.stdout.write("runtime-multidomain: sealed prepare/measure, exact enumerated-universe claim, adversarial completeness, dirty/stale refusal, tamper, provenance, quiet timeout, compiler-free timing, known answers, rotation and perfgate OK\n");
 } finally {
   rmSync(directory, { recursive: true, force: true });
 }

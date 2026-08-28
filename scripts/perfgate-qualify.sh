@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
-input="${1:?usage: perfgate-qualify.sh <benchmark.json>}"
+test "$#" -gt 0 || { echo "usage: perfgate-qualify.sh <benchmark.json> | --validate-manifest-v1 <manifest.json>" >&2; exit 2; }
 exec clojure -Sdeps "$(cat <<'EOF'
 {:paths ["scripts"]
  :deps {org.clojure/clojure {:mvn/version "1.12.0"}
@@ -13,4 +13,4 @@ exec clojure -Sdeps "$(cat <<'EOF'
         {:git/url "https://github.com/kotoba-lang/machine.git"
          :git/sha "e7235657c6f6bc4e43e7e6126c1c0912e8dbf5f4"}}}
 EOF
-)" -M -m perfgate-qualify "$input"
+)" -M -m perfgate-qualify "$@"
