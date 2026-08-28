@@ -1,0 +1,39 @@
+{:adr/id 276
+ :adr/status :accepted
+ :decision :allocator-explicit-aarch64-self-reentry
+ :pins {:kotoba-mir "be01f15d91700a6140972d8d33a1879c8c54f3d3"
+        :kotoba-codegen "54a3f3b1c335cae69b7ac15744831c0a2c8ddd7c"
+        :kotoba-native "821fa0f87086281e2596b41fd17cf0466b4893ec"}
+ :contract {:target :aarch64
+            :self-tail-only true
+            :parameter-homes :allocator-explicit
+            :parallel-copy :cycle-safe
+            :entry-materialization :one-time
+            :site-fallback :public-abi
+            :fuel-charge :every-recur
+            :x86-64 :unchanged}
+ :rejected {:encoder-move-pattern
+            {:reason :partial-abi-staging-left-stale-parameter
+             :counterexamples #{:string-index-find :count-down}}}
+ :evidence {:kotoba-mir {:tests 73 :assertions 1233 :failures 0 :errors 0}
+            :kotoba-codegen {:tests 22 :assertions 149 :failures 0 :errors 0}
+            :kotoba-native {:tests 190 :assertions 2322 :failures 0 :errors 0}
+            :kotoba-native-nbb {:tests 5 :assertions 10 :failures 0 :errors 0}
+            :amu {:namespaces 151 :tests 1150 :assertions 8514
+                  :failures 0 :errors 0
+                  :available-isas #{:x86-64 :aarch64}}
+            :competitive-benchmark
+            {:fixture :kernel-loop-call
+             :prepared-bundle-sha256 "327cee336784779a4432d79fb90439c7f2185ddbbadefbc69204d4a43438ee62"
+             :runs 7 :samples-per-engine 28
+             :amu-native-median-ns 269.93
+             :rust-median-ns 170.81958
+             :qualified false
+             :verdict :unqualified-host-load
+             :load1-before 7.52734375
+             :load1-limit 7.5}}
+ :claims {:dynamic-entry-home-moves-avoided 2
+          :semantic-execution-evidence true
+          :runtime-speed-improvement false
+          :rust-performance-parity false
+          :world-fastest false}}
