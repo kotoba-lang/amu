@@ -93,17 +93,47 @@
                          build (when command (apply shell/sh command))]
                      (when (zero? (:exit build)) (.getPath loader))))]))))
 
-(defn- run-code [isa bytes offset allow args]
+(defonce ^:private fuel-loaders
+  ;; Boundary-only adversarial harness.  The production loader deliberately
+  ;; fixes fuel at 512; compile an otherwise byte-identical temporary loader
+  ;; whose initial word comes from KEXE_TEST_FUEL so 1/2-unit trap boundaries
+  ;; can be executed without changing the sealed production-loader identity.
+  (delay
+    (into {}
+          (for [[isa [arch _]] isas]
+            [isa (when (buildable-and-runnable? isa arch)
+                   (let [source (tmp (str "kotoba-fuel-loader-" isa ".c"))
+                         loader (tmp (str "kotoba-fuel-loader-" isa ".bin"))
+                         original (slurp "tools/kexe_loader.c")
+                         patched (str/replace
+                                  original
+                                  "shared->context.fuel = 512;"
+                                  (str "const char *test_fuel = getenv(\"KEXE_TEST_FUEL\");\n"
+                                       "  shared->context.fuel = test_fuel == NULL ? 512 : "
+                                       "(uint64_t)strtoull(test_fuel, NULL, 10);"))
+                         _ (spit source patched)
+                         command (cc-command isa arch "-std=c11" "-O2"
+                                             "-Wall" "-Wextra" "-Werror"
+                                             (.getPath source)
+                                             "-o" (.getPath loader))
+                         build (when command (apply shell/sh command))]
+                     (when (zero? (:exit build)) (.getPath loader))))]))))
+
+(defn- run-code
+  ([isa bytes offset allow args] (run-code isa bytes offset allow args nil))
+  ([isa bytes offset allow args fuel]
   (let [code (tmp (str "kotoba-isa-code-" isa ".bin"))]
      (with-open [out (io/output-stream code)]
        (.write out (byte-array (map #(unchecked-byte (bit-and (int %) 0xff))
                                     bytes))))
      (:out (apply shell/sh
-                  (concat [(@loaders isa) (.getPath code) (str offset)
+                  (concat [((if fuel @fuel-loaders @loaders) isa)
+                           (.getPath code) (str offset)
                            (str (count args)) isa allow]
                           (map str args)
                           [:env (assoc (into {} (System/getenv))
-                                       "KEXE_STRUCTURED_REPORT" "1")])))))
+                                       "KEXE_STRUCTURED_REPORT" "1"
+                                       "KEXE_TEST_FUEL" (str (or fuel 512)))]))))))
 
 (defn- run-native
   ([isa source] (run-native isa source "-" {:allow #{}}))
@@ -113,7 +143,12 @@
    (let [[_ target] (isas isa)
          artifact (:artifact (compiler/compile-source source target policy))]
      (run-code isa (:code artifact) (get-in artifact [:exports entry :offset])
-               allow args))))
+               allow args)))
+  ([isa source allow policy entry args fuel]
+   (let [[_ target] (isas isa)
+         artifact (:artifact (compiler/compile-source source target policy))]
+     (run-code isa (:code artifact) (get-in artifact [:exports entry :offset])
+               allow args fuel))))
 
 (defn- a64-le-words [bytes]
   (mapv (fn [word]
@@ -816,6 +851,78 @@
           (is (str/includes? exhausted ":remaining 0")
               (str "exhaustion must not wrap and store UINT64_MAX: "
                    (str/trim exhausted))))))))
+
+(deftest aarch64-proven-countdown-bulk-fuel-preserves-exact-boundaries
+  (when (@loaders :aarch64)
+    (let [source (slurp "bench/runtime-comparison/kernel_batch.kotoba")
+          zero (run-native :aarch64 source "-" {:allow #{}} 'kernel [7 0])
+          one (run-native :aarch64 source "-" {:allow #{}} 'kernel [7 1])
+          exact (run-native :aarch64 source "-" {:allow #{}} 'kernel [7 510])
+          insufficient (run-native :aarch64 source "-" {:allow #{}}
+                                   'kernel [7 511])]
+      (is (str/includes? zero ":status :ok") (str/trim zero))
+      (is (str/includes? zero ":remaining 510")
+          "wrapper plus zero-iteration helper consume exactly two fuel")
+      (is (str/includes? one ":status :ok") (str/trim one))
+      (is (str/includes? one ":remaining 509")
+          "counter=1 precharges helper entry plus its one recur exactly")
+      (is (str/includes? exact ":status :ok") (str/trim exact))
+      (is (str/includes? exact ":remaining 0")
+          "entry precharge consumes the same exact 512 units as edge charging")
+      (is (str/includes? insufficient ":status :trap")
+          "an N+2=513 call traps before its pure body executes")
+      (is (str/includes? insufficient ":remaining 0")
+          "insufficient bulk charge saturates remaining fuel at zero"))))
+
+(deftest aarch64-countdown-negative-and-large-inputs-fail-closed
+  (when (and (@loaders :aarch64) (@fuel-loaders :aarch64))
+    (let [source (str "(ns bulk-fallback (:export [down])) "
+                      "(defn down [remaining :i64 acc :i64] :i64 "
+                      "(if (= remaining 0) acc "
+                      "(down (- remaining 1) (+ acc 1))))")]
+      (doseq [[why counter] [["negative uses per-edge fallback" -1]
+                             ["minimum i64 cannot wrap into a bulk amount" Long/MIN_VALUE]
+                             ["maximum i64 bulk amount cannot fit available fuel" Long/MAX_VALUE]]]
+        (let [report (run-native :aarch64 source "-" {:allow #{}}
+                                 'down [counter 0])]
+          (is (str/includes? report ":status :trap") [why (str/trim report)])
+          (is (str/includes? report ":remaining 0")
+              [why "fuel exhaustion must saturate at zero"])))
+      (doseq [fuel [1 2]]
+        (let [report (run-native :aarch64 source "-" {:allow #{}}
+                                 'down [Long/MIN_VALUE 0] fuel)]
+          (is (str/includes? report ":status :trap")
+              ["MIN remains on the charged fallback" fuel (str/trim report)])
+          (is (str/includes? report ":remaining 0")
+              ["no wrap can escape the charged fallback" fuel
+               (str/trim report)]))))))
+
+(deftest aarch64-fifth-counter-and-high-pressure-allocation-preserve-fuel
+  (when (@fuel-loaders :aarch64)
+    (let [fifth-source
+          (str "(ns fifth-counter (:export [down])) "
+               "(defn down [a :i64 b :i64 c :i64 d :i64 counter :i64] :i64 "
+               "(if (= counter 0) a "
+               "(down (+ a 1) b c d (- counter 1))))")
+          fifth (run-native :aarch64 fifth-source "-" {:allow #{}}
+                            'down [7 0 0 0 1] 2)
+          names (mapv #(str "v" %) (range 30))
+          bindings (str/join " "
+                             (map-indexed #(str %2 " (+ acc " %1 ")") names))
+          sum (reduce #(str "(+ " %1 " " %2 ")") "acc" names)
+          pressure-source
+          (str "(ns pressure-count (:export [kernel])) "
+               "(defn kernel [i :i64 b :i64 c :i64 d :i64 acc :i64] :i64 "
+               "(if (= i 0) acc (let [" bindings "] "
+               "(kernel (- i 1) b c d " sum "))))")
+          pressure (run-native :aarch64 pressure-source "-" {:allow #{}}
+                               'kernel [2 0 0 0 1] 3)]
+      (is (str/includes? fifth ":status :ok") (str/trim fifth))
+      (is (str/includes? fifth ":initial 2 :remaining 0")
+          "the fifth ABI argument x4 supplies the exact one-iteration charge")
+      (is (str/includes? pressure ":status :ok") (str/trim pressure))
+      (is (str/includes? pressure ":initial 3 :remaining 0")
+          "a public-tail allocation falls back: n+1 ordinary charges succeed"))))
 
 (deftest full-compile-source-loop-call-is-one-direct-aarch64-cbnz
   (let [source (slurp "bench/runtime-comparison/kernel_loop_call.kotoba")

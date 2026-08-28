@@ -1,0 +1,49 @@
+{:adr/id 279
+ :adr/status :accepted
+ :decision :aarch64-proven-countdown-bulk-fuel
+ :pins {:kotoba-mir "7f248d578455185a1d801e11183c696f7e9f81ab"
+        :kotoba-native "1bcac520fcd84dab5914c68f102c57b85d9c1eaf"}
+ :contract {:target :aarch64
+            :countdown :exact-counter-minus-one
+            :mir-proof {:self-recur-sites :exactly-one
+                        :base-returns :exactly-one
+                        :body :closed-pure-nontrapping
+                        :calls false
+                        :memory false
+                        :capabilities false
+                        :data-dependent-exits false}
+            :post-allocation-gate {:mc-recur :exactly-one
+                                   :mc-reentry :exactly-one
+                                   :self-public-tail-call false}
+            :positive-charge :counter-plus-entry
+            :hot-recur-charge :omitted
+            :negative-path :separate-ordinary-charged-duplicate
+            :insufficient {:remaining 0 :result :trap}
+            :fallback :ordinary-per-edge-instrumentation
+            :non-aarch64 :unchanged}
+ :adversarial-boundaries #{:zero :one :insufficient :negative :i64-min :i64-max
+                           :i64-min-fuel-one :i64-min-fuel-two
+                           :fifth-argument-x4 :high-register-pressure-public-tail
+                           :calls :data-exit :unsafe-division :nested-recur
+                           :multiple-recur-sites}
+ :evidence {:kotoba-mir {:tests 78 :assertions 1258 :failures 0 :errors 0}
+            :kotoba-native {:tests 196 :assertions 2356 :failures 0 :errors 0}
+            :amu-full-jvm {:namespaces 151 :tests 1154 :assertions 8519
+                           :failures 0 :errors 0
+                           :available-isas #{:x86-64 :aarch64}}
+            :amu-nbb {:project :pass
+                      :locked-classpath :pass
+                      :wasm32-cross-runtime :pass}
+            :runtime-batch {:exact-fuel :pass
+                            :checksum :pass
+                            :tamper-rejection :pass}
+            :jdk-free-native-wx :pass
+            :performance {:qualified false
+                          :rejection :unqualified-host-load}}
+ :dependencies {:rust false :llvm false}
+ :claims {:fuel-equivalence true
+          :fail-closed true
+          :hot-edge-fuel-memory-traffic-removed true
+          :runtime-speed-improvement false
+          :rust-performance-parity false
+          :world-fastest false}}
