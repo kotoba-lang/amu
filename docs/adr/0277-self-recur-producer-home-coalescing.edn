@@ -1,0 +1,41 @@
+{:adr/id 277
+ :adr/status :accepted
+ :decision :self-recur-producer-home-coalescing
+ :pins {:kotoba-mir "1677cb0ddb6949ef371c4b7a05735435afd43861"
+        :kotoba-native "62aaadcd626cd0d15c4fce01c7a1d7bf3e34859a"}
+ :contract {:target :aarch64
+            :phase :ssa-aware-register-allocation
+            :producer-ops :nontrapping-integer-only
+            :self-recur-sites :exactly-one
+            :argument-use :whole-function-unique
+            :argument-occurrence :unique
+            :argument-home-arity :exact
+            :suffix :straight-line-no-call-or-control-boundary
+            :home-availability :free-or-final-operand-use
+            :fallback :parallel-copy
+            :fuel-charge :unchanged
+            :x86-64 :byte-identical}
+ :fallback-corpus #{:duplicate :multi-use :b-and-a-plus-b :swap-cycle
+                    :interference :multiple-recur-sites :backed-value
+                    :call-boundary :control-boundary}
+ :evidence {:kotoba-mir {:tests 76 :assertions 1245 :failures 0 :errors 0}
+            :kotoba-native {:tests 190 :assertions 2322 :failures 0 :errors 0}
+            :kotoba-native-nbb {:tests 5 :assertions 10 :failures 0 :errors 0}
+            :amu {:namespaces 151 :tests 1150 :assertions 8515
+                  :failures 0 :errors 0
+                  :available-isas #{:x86-64 :aarch64}}
+            :production-loop-call
+            {:aarch64-bytes 184
+             :baseline-aarch64-bytes 208
+             :previous-aarch64-bytes 192
+             :hot-edge-moves 0
+             :fuel-boundary-executed true}
+            :x86-64-parity
+            {:bytes 256
+             :before-sha256 "b6da0619229eaf96a8edef7f25443a9565e57c7761b79fa466775f186bab79f2"
+             :after-sha256 "b6da0619229eaf96a8edef7f25443a9565e57c7761b79fa466775f186bab79f2"}}
+ :claims {:structural-hot-edge-moves-removed 2
+          :semantic-execution-evidence true
+          :runtime-speed-improvement false
+          :rust-performance-parity false
+          :world-fastest false}}

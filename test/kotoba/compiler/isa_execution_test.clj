@@ -833,8 +833,8 @@
                            first)
         loop-instructions (:mc/instructions loop-function)
         cbnz-x19? #(= 0xb5000013 (bit-and % 0xff00001f))]
-    (is (= 192 (count (:code artifact)))
-        "real compiler fixture drops four AArch64 words from the 208-byte baseline")
+    (is (= 184 (count (:code artifact)))
+        "real compiler fixture drops six AArch64 words from the 208-byte baseline")
     (is (= 1 (count (filter cbnz-x19? words)))
         "the preserved loop counter reaches one direct CBNZ x19 in the artifact")
     (is (not-any? #{0xeb01001f 0x9a9f17e2} words)
@@ -842,6 +842,15 @@
     (is loop-function "the compiled module carries an explicit branch-nonzero")
     (is (= 1 (count (filter #(= :mc/branch-nonzero (:mc/op %))
                             loop-instructions))))
+    (let [reentry-index (first (keep-indexed
+                                #(when (= :mc/reentry (:mc/op %2)) %1)
+                                loop-instructions))
+          recur-index (first (keep-indexed
+                              #(when (= :mc/recur (:mc/op %2)) %1)
+                              loop-instructions))]
+      (is (not-any? #(= :aarch64/move (:mc/encoding %))
+                    (subvec loop-instructions (inc reentry-index) recur-index))
+          "both unique-use producers write x19/x20 directly on the real edge"))
     (is (not-any? #(and (= :aarch64/constant (:mc/encoding %))
                         (zero? (:mir/value %)))
                   loop-instructions))
