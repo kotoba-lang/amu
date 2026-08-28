@@ -1,0 +1,55 @@
+{:adr/id 278
+ :adr/status :accepted
+ :decision :aarch64-logical-seeded-constant-selection
+ :pins {:kotoba-native "704d02ed0732cfc2d10b126266137da8045d4b00"}
+ :contract {:target :aarch64
+            :seed :logical-immediate
+            :patch {:operation :movk
+                    :lanes 1
+                    :seed-lane-values #{0 65535}}
+            :maximum-recognizer-probes 8
+            :global-candidate-index false
+            :selection :strictly-shorter-only
+            :tie :movz-movn
+            :fixed-width-branches :unchanged
+            :non-aarch64 :unchanged}
+ :evidence {:kotoba-native {:tests 192 :assertions 2336
+                            :failures 0 :errors 0}
+            :kotoba-native-nbb {:tests 6 :assertions 12
+                                :failures 0 :errors 0}
+            :amu-focused {:tests 5 :assertions 49
+                          :failures 0 :errors 0}
+            :amu-full-jvm {:namespaces 151 :tests 1151 :assertions 8519
+                           :failures 0 :errors 0
+                           :available-isas #{:x86-64 :aarch64}}
+            :amu-nbb {:project :pass
+                      :locked-classpath :pass
+                      :jdk-free-native-wx :pass}
+            :constant-selector-cold-diagnostic
+            {:jvm-ms 5.96 :nbb-ms 8.07 :ci-threshold false}
+            :modular-mix-reciprocal
+            {:value-hex "8000000100000003"
+             :before-words 3
+             :after-words 2}
+            :core-benchmark-artifact
+            {:before-bytes 732
+             :after-bytes 724
+             :removed-occurrences 2}
+            :fresh-wx-known-answer
+            {:target :aarch64
+             :artifact-bytes 724
+             :artifact-sha256
+             "9f89d5ab9fdf9f941cd87d20028d8717370dc15a37dce116d56e0ba4e6fc22ea"
+             :bundle-sha256
+             "7f2b1041ea40c53cfbd3109a38633fc298e78f00385adc249731f83bb404cb82"
+             :result 1830338420
+             :timing-qualified false
+             :timing-rejection :unqualified-host-load}}
+ :dependencies {:rust false :llvm false}
+ :claims {:structural-instruction-reduction true
+          :bounded-cold-selection true
+          :semantic-execution-evidence true
+          :runtime-speed-improvement false
+          :rust-performance-parity false
+          :bounded-fastest :separate-content-addressed-perfgate
+          :world-fastest false}}

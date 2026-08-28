@@ -60,7 +60,7 @@
         ;; Terminal local calls release the current frame and branch without
         ;; linking on both native ISAs; kernel ELF contexts preserve the
         ;; artifact's sealed fuel bound.
-        ;; ADR-0276: kotoba-native 62aaadc carries allocator-explicit AArch64
+        ;; ADR-0278: kotoba-native 704d02e carries allocator-explicit AArch64
         ;; self reentry on top of merged virtual MIR branch fusion and
         ;; post-allocation per-basic-block scheduling with WAR/WAW dependency
         ;; edges, preserved-register reuse, and the NBB BigInt immediate guard.
@@ -76,10 +76,13 @@
         ;; emitting one direct CBNZ. A unique-use integer producer in one closed
         ;; self-recur suffix may write an interference-free parameter home
         ;; directly; call-crossing and ambiguous sites keep the parallel-copy
-        ;; fallback. x86 retains its canonical TEST/JZ path.
+        ;; fallback. x86 retains its canonical TEST/JZ path. A profitable
+        ;; AArch64 constant may use one logical-immediate seed plus one MOVK;
+        ;; the closed selector has no global index and probes at most the four
+        ;; lanes under each of the zero/full replacement hypotheses.
         io.github.kotoba-lang/kotoba-native
         {:git/url "https://github.com/kotoba-lang/kotoba-native.git"
-         :git/sha "62aaadcd626cd0d15c4fce01c7a1d7bf3e34859a"}
+         :git/sha "704d02ed0732cfc2d10b126266137da8045d4b00"}
         io.github.kotoba-lang/kotoba-component
         {:git/url "https://github.com/kotoba-lang/kotoba-component.git"
          :git/sha "68acc7237aec7b24b683304db8e87d14ec1be745"}
