@@ -105,7 +105,31 @@ function bridgeReport(report, expectSuccess = true) {
   return expectSuccess ? JSON.parse(result.stdout) : result;
 }
 
+function validateManifestV1(value, expectSuccess = true) {
+  const input = join(directory, `manifest-${Math.random().toString(16).slice(2)}.json`);
+  writeFileSync(input, `${JSON.stringify(value)}\n`);
+  const result = spawnSync("bash", [join(root, "scripts", "perfgate-qualify.sh"),
+    "--validate-manifest-v1", input],
+  { cwd: root, encoding: "utf8", timeout: 300_000, maxBuffer: 32 * 1024 * 1024 });
+  if (expectSuccess && result.status !== 0)
+    throw new Error(`v1 manifest validation failed\n${result.stdout}${result.stderr}`);
+  if (!expectSuccess && result.status === 0)
+    throw new Error("v1 manifest validator accepted an expanded contract");
+}
+
 try {
+  validateManifestV1(manifest);
+  const otherComparator = structuredClone(manifest);
+  otherComparator.requiredComparators = ["go"];
+  validateManifestV1(otherComparator, false);
+  const otherEngine = structuredClone(manifest);
+  otherEngine.requiredEngines = ["amu-wasm32"];
+  validateManifestV1(otherEngine, false);
+  const multipleTargets = structuredClone(manifest);
+  multipleTargets.requiredTargets.push({ id: "darwin-x86-64-native", os: "darwin",
+    architecture: "x64", isa: "x86-64", execution: "native" });
+  validateManifestV1(multipleTargets, false);
+
   const prepared = run(["--n", "200", "--prepare", bundle]);
   const preparedReport = JSON.parse(prepared.stdout);
   if (preparedReport.domainCount !== 6)
@@ -164,13 +188,33 @@ try {
       || gate["broad-fastest-claim-qualified?"] !== false)
     throw new Error("core evidence manufactured a broad fastest claim");
 
-  const qualifiedGate = bridgeReport(syntheticCompetitiveReport());
+  const qualifiedEvidence = syntheticCompetitiveReport();
+  const qualifiedGate = bridgeReport(qualifiedEvidence);
   if (!qualifiedGate["bounded-fastest-claim-qualified?"]
       || !/^[0-9a-f]{64}$/.test(qualifiedGate["bounded-fastest-claim"]?.sha256 ?? "")
       || qualifiedGate["bounded-fastest-claim"].body["allowed-sentence"]
         !== manifest.claimContract.allowedSentence
       || qualifiedGate["broad-fastest-claim-qualified?"] !== false)
     throw new Error("fully bound enumerated-universe evidence did not emit exactly one bounded claim");
+
+  const originalClaim = qualifiedGate["bounded-fastest-claim"];
+  const artifactChanged = structuredClone(qualifiedEvidence);
+  artifactChanged.domains[0].artifacts.rust.sha256 = "d".repeat(64);
+  const artifactChangedClaim = bridgeReport(artifactChanged)["bounded-fastest-claim"];
+  if (artifactChangedClaim.body["evidence-report"].sha256
+        === originalClaim.body["evidence-report"].sha256
+      || artifactChangedClaim.sha256 === originalClaim.sha256)
+    throw new Error("artifact SHA substitution did not change the evidence and claim addresses");
+
+  const knownAnswerChanged = structuredClone(qualifiedEvidence);
+  knownAnswerChanged.domains[0].knownAnswer.result = 43;
+  for (const engine of Object.values(knownAnswerChanged.domains[0].engines))
+    for (const sample of engine.samples) sample.result = 43;
+  const knownAnswerChangedClaim = bridgeReport(knownAnswerChanged)["bounded-fastest-claim"];
+  if (knownAnswerChangedClaim.body["evidence-report"].sha256
+        === originalClaim.body["evidence-report"].sha256
+      || knownAnswerChangedClaim.sha256 === originalClaim.sha256)
+    throw new Error("known-answer substitution did not change the evidence and claim addresses");
 
   const oneDomain = syntheticCompetitiveReport();
   oneDomain.contract.complete = true;

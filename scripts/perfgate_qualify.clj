@@ -65,6 +65,8 @@
 
 (def manifest-path "bench/runtime-comparison/multidomain-suite.json")
 (def sha256-pattern #"[0-9a-f]{64}")
+(def bounded-fastest-v1-sentence
+  "Amu native is fastest among the enumerated universe (Rust) on the six required domains, on one recorded Darwin arm64 machine using native execution, under the named perfgate policy.")
 
 (defn sha256-bytes [bytes]
   (let [digest (.digest (MessageDigest/getInstance "SHA-256") bytes)]
@@ -108,7 +110,56 @@
       (throw (ex-info (str label " is not an ISO-8601 instant")
                       {:phase :bounded-fastest/validation :value value})))))
 
+(defn validate-manifest-v1! [manifest]
+  (let [claim (:claimContract manifest)
+        required-domain-ids (mapv :id (:requiredDomains manifest))
+        required-engines (:requiredEngines manifest)
+        required-comparators (:requiredComparators manifest)
+        required-targets (:requiredTargets manifest)]
+    (require! (= "kotoba.runtime-multidomain-manifest/v1" (:format manifest))
+              "multidomain manifest format is unsupported" {})
+    (require! (= "amu.bounded-fastest-claim-contract/v1" (:format claim))
+              "claim contract format is unsupported" {})
+    (require! (and (string? (:asOf claim))
+                   (re-matches #"\d{4}-\d{2}-\d{2}" (:asOf claim)))
+              "claim contract needs an explicit date" {})
+    (require! (= bounded-fastest-v1-sentence (:allowedSentence claim))
+              "v1 claim wording is not the exact bounded sentence" {})
+    (require! (= "amu-native" (:candidate claim))
+              "v1 candidate is not amu-native" {})
+    (require! (= "steady-state-runtime" (:metric claim))
+              "v1 metric is unsupported" {})
+    (require! (= "nanoseconds-per-kernel" (:unit claim))
+              "v1 unit is unsupported" {})
+    (require! (= "lower-is-better" (:direction claim))
+              "v1 direction is unsupported" {})
+    (require! (= "kotoba.perfgate.policy/default-v1" (:perfgatePolicyId claim))
+              "claim contract names an unsupported perfgate policy" {})
+    (require! (and (pos-int? (:evidenceMaxAgeHours claim))
+                   (false? (:worldFastestClaimQualified claim)))
+              "v1 freshness/world-fastest boundary is invalid" {})
+    ;; This bridge implements one candidate and one comparator.  Generalizing
+    ;; the manifest without a new bridge/version would make its hard-coded
+    ;; Rust qualification silently describe a different universe.
+    (require! (= ["amu-native"] required-engines)
+              "v1 requiredEngines must be exactly [amu-native]"
+              {:actual required-engines})
+    (require! (= ["rust"] required-comparators)
+              "v1 requiredComparators must be exactly [rust]"
+              {:actual required-comparators})
+    (require! (= [{:id "darwin-arm64-native"
+                   :os "darwin" :architecture "arm64"
+                   :isa "aarch64" :execution "native"}]
+                 required-targets)
+              "v1 requiredTargets must contain exactly the Darwin arm64 native profile"
+              {:actual required-targets})
+    (require! (and (seq required-domain-ids) (unique? required-domain-ids))
+              "manifest requirement IDs must be non-empty and unique"
+              {:set :required-domains :ids required-domain-ids})
+    manifest))
+
 (defn validate-multidomain! [report manifest manifest-sha]
+  (validate-manifest-v1! manifest)
   (let [claim (:claimContract manifest)
         required-domain-ids (mapv :id (:requiredDomains manifest))
         report-domain-ids (mapv :id (:domains report))
@@ -116,23 +167,6 @@
         required-engines (:requiredEngines manifest)
         required-targets (:requiredTargets manifest)
         mode (get-in report [:contract :mode])]
-    (require! (= "amu.bounded-fastest-claim-contract/v1" (:format claim))
-              "claim contract format is unsupported" {})
-    (require! (and (string? (:asOf claim))
-                   (re-matches #"\d{4}-\d{2}-\d{2}" (:asOf claim)))
-              "claim contract needs an explicit date" {})
-    (require! (and (str/includes? (:allowedSentence claim) "fastest among the enumerated universe")
-                   (not (str/includes? (str/lower-case (:allowedSentence claim)) "world fastest"))
-                   (false? (:worldFastestClaimQualified claim)))
-              "claim wording exceeds the bounded enumerated universe" {})
-    (require! (= "kotoba.perfgate.policy/default-v1" (:perfgatePolicyId claim))
-              "claim contract names an unsupported perfgate policy" {})
-    (doseq [[label values] [[:required-domains required-domain-ids]
-                            [:required-engines required-engines]
-                            [:required-comparators required-comparators]
-                            [:required-targets (mapv :id required-targets)]]]
-      (require! (and (seq values) (unique? values))
-                "manifest requirement IDs must be non-empty and unique" {:set label :ids values}))
     (require! (= (:id manifest) (:suite report)) "report suite does not identify the manifest" {})
     (require! (= manifest-sha (get-in report [:manifest :sha256]))
               "report manifest identity is stale or fabricated" {})
@@ -338,11 +372,15 @@
                              (:fresh? state) (:clean? state)
                              (every? #(get-in % [:verdict :qualified?]) rust-domains))
         machine (when (seq (:domains report)) (recorded-machine (first (:domains report))))
+        evidence-report-sha256 (sha256-string (m/canonical-string report))
         claim-body (when rust-qualified?
                      {:format "amu.bounded-fastest-claim/v1"
                       :claim-contract claim
                       :allowed-sentence (:allowedSentence claim)
                       :manifest {:id (:id value) :sha256 sha256}
+                      :evidence-report {:format (:format report)
+                                        :suite (:suite report)
+                                        :sha256 evidence-report-sha256}
                       :target (first required-targets)
                       :machine {:id (:machine/id machine)
                                 :fingerprint (m/fingerprint machine)
@@ -398,33 +436,39 @@
   (let [input (first args)]
     (when-not (and (string? input) (seq input))
       (binding [*out* *err*]
-        (println "usage: perfgate-qualify <benchmark.json>"))
+        (println "usage: perfgate-qualify <benchmark.json> | --validate-manifest-v1 <manifest.json>"))
       (System/exit 2))
-    (let [report (json/read-str (slurp input) :key-fn keyword)]
-      (if (= "kotoba.runtime-multidomain-report/v1" (:format report))
-        (println (json/write-str (qualify-multidomain report)
-                                :value-fn (fn [_ v] (if (keyword? v) (json-keyword v) v))))
-        (let [
-          fixture (:fixture report)
-          target (:target report)
-          plan-id (keyword "postalloc-scheduling" (str fixture "." target))
-          source (str "scripts/postalloc-scheduling-benchmark.mjs --fixture " fixture
-                      " --target " target)
-          runtime (qualify-arm :runtime :runtime :nanosecondsPerKernel :runtime :ns plan-id source report)
-          compile (when (and (:compile report)
-                             (not (:error (:compile report)))
-                             (get-in report [:compile :baseline :samples]))
-                    (qualify-arm :compile :compile :compileWallMilliseconds :compile :ms plan-id source report))]
-          (println (json/write-str
-                {:format "amu.perfgate-qualification/v1"
-                 :fixture fixture
-                 :target target
-                 :plan-id plan-id
-                 :host-load-qualified? (host-load-qualified? report)
-                 :performance-verdict (performance-verdict report)
-                 :runtime runtime
-                 :compile compile
-                 :any-qualified? (and (host-load-qualified? report)
-                                      (or (:qualified? (:verdict runtime))
-                                          (boolean (and compile (:qualified? (:verdict compile))))))}
-                    :value-fn (fn [_ v] (if (keyword? v) (json-keyword v) v)))))))))
+    (if (= "--validate-manifest-v1" input)
+      (let [path (second args)]
+        (require! (and (string? path) (seq path))
+                  "--validate-manifest-v1 requires a manifest path" {})
+        (validate-manifest-v1! (json/read-str (slurp path) :key-fn keyword))
+        (println (json/write-str {:format "amu.bounded-fastest-manifest-validation/v1"
+                                 :valid? true})))
+      (let [report (json/read-str (slurp input) :key-fn keyword)]
+        (if (= "kotoba.runtime-multidomain-report/v1" (:format report))
+          (println (json/write-str (qualify-multidomain report)
+                                  :value-fn (fn [_ v] (if (keyword? v) (json-keyword v) v))))
+          (let [fixture (:fixture report)
+                target (:target report)
+                plan-id (keyword "postalloc-scheduling" (str fixture "." target))
+                source (str "scripts/postalloc-scheduling-benchmark.mjs --fixture " fixture
+                            " --target " target)
+                runtime (qualify-arm :runtime :runtime :nanosecondsPerKernel :runtime :ns plan-id source report)
+                compile (when (and (:compile report)
+                                   (not (:error (:compile report)))
+                                   (get-in report [:compile :baseline :samples]))
+                          (qualify-arm :compile :compile :compileWallMilliseconds :compile :ms plan-id source report))]
+            (println (json/write-str
+                      {:format "amu.perfgate-qualification/v1"
+                       :fixture fixture
+                       :target target
+                       :plan-id plan-id
+                       :host-load-qualified? (host-load-qualified? report)
+                       :performance-verdict (performance-verdict report)
+                       :runtime runtime
+                       :compile compile
+                       :any-qualified? (and (host-load-qualified? report)
+                                            (or (:qualified? (:verdict runtime))
+                                                (boolean (and compile (:qualified? (:verdict compile))))))}
+                      :value-fn (fn [_ v] (if (keyword? v) (json-keyword v) v))))))))))

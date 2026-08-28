@@ -310,6 +310,11 @@ compiler commit, and 24-hour evidence window. Only a clean, fresh result that
 beats Rust independently in all six domains emits a SHA-256-addressed bounded
 claim. Missing, duplicate, dirty, stale, noisy, overloaded, or out-of-profile
 evidence emits no claim artifact; `broadFastestClaimQualified` remains false.
+The claim binds the canonical parsed evidence report by SHA-256, including its
+known answers and artifact hashes. The raw report must therefore be retained
+beside the claim for later verification; a claim whose raw report was not
+saved preserves an address but cannot independently reconstruct or re-check
+the underlying evidence.
 
 ## Development runtime evidence
 
