@@ -409,6 +409,9 @@ function build(directory, target, fixtureSpec, enabled, skipped, fuel) {
       { timeout: 300_000 });
   }
 
+  // Legacy narrow-kernel reporting still exposes this path even though the
+  // bounded v2 claim uses the c-shared Go library below.
+  const go = join(directory, "kernel-go");
   const mojo = join(directory, "kernel-mojo");
   // `--outDir`, not `--outFile`: TypeScript 6 removed the latter outright
   // (`error TS5102: Option 'outFile' has been removed`), which is why this
