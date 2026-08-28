@@ -1,0 +1,11 @@
+;; One host call executes the complete batch. The returned recurrence state is
+;; the observable checksum, so the loop cannot be removed as dead work.
+(ns kernel-batch (:export [kernel]))
+
+(defn kernel [n :i64 iterations :i64] :i64
+  (loop [remaining iterations checksum n]
+    (if (= remaining 0)
+      checksum
+      (let [mixed (+ (* checksum 48271) 1)
+            next (- mixed (* (quot mixed 2147483647) 2147483647))]
+        (recur (- remaining 1) next)))))

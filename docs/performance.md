@@ -209,6 +209,38 @@ competitive adapter test inspects optimized Rust assembly. The default core
 smoke executes `n=200` through Amu Wasm32 and Amu native and additionally proves
 that a disabled Rust adapter yields an explicit skip and no Rust-relative ratio.
 
+### Artifact-batch comparison (separate metric)
+
+`--fixture kernel_batch` does not replace the per-call ABI metric above. It
+measures a separate `artifact-batch-nanoseconds-per-iteration` metric: each
+sample crosses the host/artifact boundary exactly once, then the compiled Amu
+or Rust artifact executes the same declared number of modular-mix iterations.
+The final recurrence state is checked against an independently calculated
+answer. Rust receives opaque inputs and returns the result through
+`black_box`; Amu returns the checksum through its exported ABI, so neither
+side can delete the loop as unobservable.
+
+The Amu artifact is sealed with exactly `iterations + 2` fuel units: one for
+the exported wrapper, one for loop entry, and one for every recurrence. Every
+sample must finish with zero fuel remaining and report the exact consumed
+amount. Preparation builds and hashes the sources, native code, runner, and
+Rust executable. Measurement requires the caller-bound bundle digest, verifies
+all hashes, and does not enter any compiler tool.
+
+```sh
+npm run benchmark-runtime -- --suite competitive --fixture kernel_batch \
+  --n 200 --iterations 100000 --prepare prepared-batch --output prepared.json
+npm run benchmark-runtime -- --suite competitive --fixture kernel_batch \
+  --n 200 --iterations 100000 --measure prepared-batch \
+  --bundle-sha256 <sha256-from-prepared.json> --runs 5 --output batch.json
+npm run test-runtime-batch-comparison
+```
+
+This fixture removes repeated host-call overhead from the compared loop, but
+it is still one arithmetic workload on one recorded host. Host-load and
+`perfgate.core/qualify` gates remain required for a bounded performance claim;
+the fixture alone does not support a broad or “fastest” claim.
+
 ## Multi-domain qualification floor
 
 A result from `kernel` alone is narrow arithmetic evidence, not evidence for a

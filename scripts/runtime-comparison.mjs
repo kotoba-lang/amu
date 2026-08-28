@@ -43,6 +43,21 @@ const FIXTURES = {
       return n;
     },
   },
+  kernel_batch: {
+    kotoba: "kernel_batch.kotoba",
+    rust: "kernel_batch.rs",
+    benchmark: "artifact-batch-modular-mix-v1",
+    metric: "artifact-batch",
+    engines: ["amu-native"],
+    comparators: ["rust"],
+    arithmetic: "one artifact call performs the declared recurrence count and returns its final state as a checksum",
+    expected(n, iterations) {
+      let expected = n;
+      for (let index = 0; index < iterations; index += 1)
+        expected = modularStep(expected);
+      return expected;
+    },
+  },
   kernel_wide: {
     kotoba: "kernel_wide.kotoba",
     rust: "kernel_wide.rs",
@@ -184,7 +199,7 @@ function maximumRss(stderr) {
   return null;
 }
 
-function parseSample(stdout, engine, expected) {
+function parseSample(stdout, engine, expected, batchIterations = null) {
   const line = stdout.split(/\r?\n/).map(value => value.trim())
     .filter(value => value.startsWith("{")).at(-1);
   if (!line) throw new Error(`${engine} emitted no JSON sample`);
@@ -198,10 +213,19 @@ function parseSample(stdout, engine, expected) {
     throw new Error(`${engine} result ${sample.result} != ${expected}`);
   if (sample.elapsedNanoseconds < 1)
     throw new Error(`${engine} elapsedNanoseconds must be positive`);
+  if (batchIterations !== null
+      && (sample.calls !== 1 || sample.warmupCalls !== 0
+        || sample.iterations !== batchIterations || sample.hostCalls !== 1))
+    throw new Error(`${engine} violated the one-boundary artifact-batch contract`);
+  if (batchIterations !== null && engine === "amu-native"
+      && (sample.fuelInitial !== batchIterations + 2
+        || sample.fuelConsumed !== batchIterations + 2
+        || sample.fuelRemaining !== 0))
+    throw new Error("amu-native did not consume the exact sealed batch fuel");
   return sample;
 }
 
-function timedSample(engine, command, args, expected, env = {}) {
+function timedSample(engine, command, args, expected, env = {}, batchIterations = null) {
   let executable = command;
   let timedArgs = args;
   if (process.platform === "darwin") {
@@ -212,13 +236,18 @@ function timedSample(engine, command, args, expected, env = {}) {
     timedArgs = ["-v", command, ...args];
   }
   const run = execute(executable, timedArgs, { env });
-  const sample = parseSample(run.stdout, engine, expected);
+  const sample = parseSample(run.stdout, engine, expected, batchIterations);
   return {
     result: sample.result,
     calls: sample.calls,
     warmupCalls: sample.warmupCalls,
     elapsedNanoseconds: sample.elapsedNanoseconds,
     nanosecondsPerKernel: sample.elapsedNanoseconds / sample.calls,
+    ...(batchIterations === null ? {} : {
+      iterations: sample.iterations,
+      hostCalls: sample.hostCalls,
+      nanosecondsPerIteration: sample.elapsedNanoseconds / sample.iterations,
+    }),
     processWallMilliseconds: run.wallMilliseconds,
     maxRssBytes: maximumRss(run.stderr) ?? sample.maxRssBytes ?? null,
     ...(sample.fuelPerInstance === undefined ? {}
@@ -226,15 +255,18 @@ function timedSample(engine, command, args, expected, env = {}) {
     ...(sample.maxCallsPerInstance === undefined ? {}
       : { maxCallsPerInstance: sample.maxCallsPerInstance }),
     ...(sample.fuelPerCall === undefined ? {} : { fuelPerCall: sample.fuelPerCall }),
+    ...(sample.fuelInitial === undefined ? {} : { fuelInitial: sample.fuelInitial }),
+    ...(sample.fuelRemaining === undefined ? {} : { fuelRemaining: sample.fuelRemaining }),
+    ...(sample.fuelConsumed === undefined ? {} : { fuelConsumed: sample.fuelConsumed }),
   };
 }
 
-function build(directory, target, fixtureSpec, enabled, skipped) {
+function build(directory, target, fixtureSpec, enabled, skipped, fuel) {
   const fixtureSource = readFileSync(join(benchRoot, fixtureSpec.kotoba), "utf8");
   const fixture = join(directory, "source.kotoba");
   writeFileSync(fixture, fixtureSource);
   const wasmFixture = fixtureSource.includes("(defn main") ? fixture : join(directory, "wasm-fixture.kotoba");
-  if (wasmFixture !== fixture) {
+  if (fixtureSpec.metric !== "artifact-batch" && wasmFixture !== fixture) {
     const source = fixtureSource.replace(/\(:export \[kernel\]\)/, "(:export [kernel main])")
       + "\n(defn main [] :i64 (kernel 1))\n";
     writeFileSync(wasmFixture, source);
@@ -245,9 +277,11 @@ function build(directory, target, fixtureSpec, enabled, skipped) {
   const nativeRunner = join(directory, "kexe-benchmark");
   const wasmRunner = join(directory, "wasm-runner.mjs");
   const browserHost = join(directory, "browser-host.mjs");
-  writeFileSync(browserHost, readFileSync(join(root, "runtime", "browser-host.mjs")));
-  writeFileSync(wasmRunner, readFileSync(join(benchRoot, "wasm-runner.mjs"), "utf8")
-    .replace("../../runtime/browser-host.mjs", "./browser-host.mjs"));
+  if (fixtureSpec.metric !== "artifact-batch") {
+    writeFileSync(browserHost, readFileSync(join(root, "runtime", "browser-host.mjs")));
+    writeFileSync(wasmRunner, readFileSync(join(benchRoot, "wasm-runner.mjs"), "utf8")
+      .replace("../../runtime/browser-host.mjs", "./browser-host.mjs"));
+  }
   const rust = join(directory, "kernel-rust");
   const cljs = join(directory, "kernel-cljs.cjs");
   const cljsOutputDir = join(directory, "cljs-out");
@@ -262,12 +296,14 @@ function build(directory, target, fixtureSpec, enabled, skipped) {
   // Keep runtime evidence on one canonical compiler entrypoint. Launcher
   // conformance is measured separately and must not select a different
   // code-generation path inside one comparison report.
-  step("amuWasm", "clojure",
-    ["-M:run", "compile", wasmFixture, "--target", "wasm32",
-      "--fuel", String(benchmarkFuel), "--output", wasm]);
+  if (fixtureSpec.metric !== "artifact-batch") {
+    step("amuWasm", "clojure",
+      ["-M:run", "compile", wasmFixture, "--target", "wasm32",
+        "--fuel", String(fuel), "--output", wasm]);
+  }
   step("amuNative", "clojure",
     ["-M:run", "compile", fixture, "--target", target,
-      "--fuel", String(benchmarkFuel), "--output", native]);
+      "--fuel", String(fuel), "--output", native]);
   const extracted = step("amuNativeExtract", "clojure",
     ["-M:run", "extract-native", native, "--symbol", "kernel", "--output", rawNative]);
   const offsetMatch = extracted.stdout.match(/:offset\s+([0-9]+)/);
@@ -275,7 +311,8 @@ function build(directory, target, fixtureSpec, enabled, skipped) {
   const nativeOffset = offsetMatch[1];
   step("nativeBenchmarkRunner", "cc",
     ["-std=c11", "-O3", "-Wall", "-Wextra", "-Werror",
-      join(benchRoot, "kexe-benchmark.c"), "-o", nativeRunner]);
+      join(benchRoot, fixtureSpec.metric === "artifact-batch"
+        ? "kexe-batch-benchmark.c" : "kexe-benchmark.c"), "-o", nativeRunner]);
   if (enabled.has("rust")) {
     step("rust", "rustc",
       ["--edition", "2021", "-C", "opt-level=3", "-C", "codegen-units=1",
@@ -310,8 +347,12 @@ function build(directory, target, fixtureSpec, enabled, skipped) {
     }
   }
   return {
-    paths: { fixture, wasmFixture, wasm, native, rawNative, nativeRunner, wasmRunner,
-      browserHost, rust, cljs, go, mojo, typescript },
+    paths: {
+      fixture,
+      ...(fixtureSpec.metric === "artifact-batch" ? {}
+        : { wasmFixture, wasm, wasmRunner, browserHost }),
+      native, rawNative, nativeRunner, rust, cljs, go, mojo, typescript,
+    },
     nativeOffset,
     durations,
     skipped,
@@ -381,6 +422,9 @@ function writePreparedBundle(bundlePath, contract, built, enabled) {
       commit: output("git", ["rev-parse", "HEAD"]),
       dirty: Boolean(output("git", ["-c", "core.fsmonitor=false", "status", "--porcelain"])),
     },
+    toolchains: {
+      rustc: enabled.has("rust") ? output("rustc", ["--version"]) : null,
+    },
     enabled: [...enabled],
     built: { paths: relativePaths, nativeOffset: built.nativeOffset, durations: built.durations,
       skipped: built.skipped },
@@ -394,6 +438,7 @@ const runs = boundedInteger(option("--runs", "5"), "--runs", 30);
 const calls = boundedInteger(option("--calls", "100000"), "--calls", 1_000_000);
 const warmup = boundedInteger(option("--warmup", "10000"), "--warmup", 1_000_000);
 const n = boundedInteger(option("--n", "200"), "--n", 2_147_483_646);
+const iterations = boundedInteger(option("--iterations", "100000"), "--iterations", 1_048_574);
 const outputPath = option("--output", null);
 const preparePath = option("--prepare", null);
 const measurePath = option("--measure", null);
@@ -407,6 +452,8 @@ const fixtureSpec = FIXTURES[fixtureName];
 if (!fixtureSpec) {
   throw new Error(`unknown --fixture ${fixtureName}; expected one of ${Object.keys(FIXTURES).join(", ")}`);
 }
+const batchMode = fixtureSpec.metric === "artifact-batch";
+const fixtureFuel = batchMode ? iterations + 2 : benchmarkFuel;
 if (fixtureName === "kernel_loop_call" && n + 2 > benchmarkFuel) {
   throw new Error(`--n must be at most ${benchmarkFuel - 2} for the loop-call fuel contract`);
 }
@@ -414,9 +461,9 @@ const disabled = new Set(option("--disable-engines", "").split(",").filter(Boole
 const unknownDisabled = [...disabled].filter(name => !(name in comparatorTools));
 if (unknownDisabled.length > 0)
   throw new Error(`unknown --disable-engines value(s): ${unknownDisabled.join(", ")}`);
-const enabled = new Set(coreEngines);
+const enabled = new Set(fixtureSpec.engines ?? coreEngines);
 const skipped = {};
-if (suite === "competitive") {
+if (suite === "competitive" && !measurePath) {
   for (const name of fixtureSpec.comparators) {
     const probe = comparatorTools[name];
     if (disabled.has(name)) skipped[name] = "disabled by request";
@@ -427,7 +474,7 @@ if (suite === "competitive") {
     else skipped[name] = `${probe[0]} not on PATH`;
   }
 }
-const expected = fixtureSpec.expected(n);
+const expected = fixtureSpec.expected(n, iterations);
 const directory = preparePath ? resolve(preparePath)
   : measurePath ? resolve(measurePath)
     : mkdtempSync(join(tmpdir(), "amu-runtime-comparison-"));
@@ -444,7 +491,8 @@ try {
   let preparedMetadata = null;
   if (measurePath) {
     preparedMetadata = verifyPreparedBundle(directory,
-      { fixture: fixtureName, suite, n, target, benchmark: fixtureSpec.benchmark },
+      { fixture: fixtureName, suite, n, iterations: batchMode ? iterations : null,
+        fuel: fixtureFuel, target, benchmark: fixtureSpec.benchmark },
       expectedBundleDigest);
     enabled.clear();
     for (const name of preparedMetadata.enabled) enabled.add(name);
@@ -460,10 +508,11 @@ try {
     if (preparePath && existsSync(directory) && readdirSync(directory).length !== 0)
       throw new Error("--prepare directory must be absent or empty");
     mkdirSync(directory, { recursive: true });
-    built = build(directory, target, fixtureSpec, enabled, skipped);
+    built = build(directory, target, fixtureSpec, enabled, skipped, fixtureFuel);
     if (preparePath) {
       const sealed = writePreparedBundle(directory,
-        { fixture: fixtureName, suite, n, target, benchmark: fixtureSpec.benchmark }, built, enabled);
+        { fixture: fixtureName, suite, n, iterations: batchMode ? iterations : null,
+          fuel: fixtureFuel, target, benchmark: fixtureSpec.benchmark }, built, enabled);
       const encoded = `${JSON.stringify({
         format: "kotoba.runtime-prepare-report/v1",
         bundle: directory,
@@ -479,7 +528,8 @@ try {
   const common = [String(n), String(calls), String(warmup)];
   const wasmBatchCalibrationLimit = Math.max(calls, warmup);
   const definitions = {};
-  if (enabled.has("rust")) definitions.rust = [built.paths.rust, common, {}];
+  if (enabled.has("rust")) definitions.rust = [built.paths.rust,
+    batchMode ? [String(n), String(iterations)] : common, {}];
   if (enabled.has("clojure")) {
     definitions.clojure = ["clojure", ["-M", join(benchRoot, "kernel.clj"), ...common], {}];
   }
@@ -493,8 +543,11 @@ try {
   }
   if (enabled.has("amu-native")) {
     definitions["amu-native"] = [built.paths.nativeRunner,
-      [built.paths.rawNative, built.nativeOffset, target, String(n),
-        String(calls), String(warmup), String(benchmarkFuel)], {}];
+      batchMode
+        ? [built.paths.rawNative, built.nativeOffset, target, String(n),
+          String(iterations), String(fixtureFuel), String(fixtureFuel)]
+        : [built.paths.rawNative, built.nativeOffset, target, String(n),
+          String(calls), String(warmup), String(fixtureFuel)], {}];
   }
   if (fixtureName === "kernel") {
     if (enabled.has("go")) definitions.go = [built.paths.go, common, {}];
@@ -520,29 +573,41 @@ try {
     for (let left = 0; left < names.length; left += 1)
       for (let right = left + 1; right < names.length; right += 1)
         pairs.push([names[left], names[right]]);
-    const sequence = pairs.flatMap(([left, right]) => run % 2 === 0
-      ? [left, right, right, left]
-      : [right, left, left, right]);
+    const sequence = pairs.length === 0 ? names
+      : pairs.flatMap(([left, right]) => run % 2 === 0
+        ? [left, right, right, left]
+        : [right, left, left, right]);
     for (const name of sequence) {
       const [command, args, env] = definitions[name];
-      raw[name].push(timedSample(name, command, args, expected, env));
+      raw[name].push(timedSample(name, command, args, expected, env,
+        batchMode ? iterations : null));
     }
   }
   const engines = Object.fromEntries(names.map(name => {
     const samples = raw[name];
+    const timing = batchMode
+      ? {
+        artifactBatchNanoseconds: summary(samples.map(sample => sample.elapsedNanoseconds)),
+        nanosecondsPerIteration: summary(samples.map(sample => sample.nanosecondsPerIteration)),
+      }
+      : { steadyStateNanosecondsPerKernel:
+          summary(samples.map(sample => sample.nanosecondsPerKernel)) };
     return [name, {
       runs: samples.length,
-      steadyStateNanosecondsPerKernel: summary(samples.map(sample => sample.nanosecondsPerKernel)),
+      ...timing,
       processWallMilliseconds: summary(samples.map(sample => sample.processWallMilliseconds)),
       maxRssBytes: samples.every(sample => sample.maxRssBytes !== null)
         ? summary(samples.map(sample => sample.maxRssBytes)) : null,
       samples,
     }];
   }));
-  const rustMedian = engines.rust?.steadyStateNanosecondsPerKernel.median ?? null;
+  const rustMedian = batchMode
+    ? engines.rust?.nanosecondsPerIteration.median ?? null
+    : engines.rust?.steadyStateNanosecondsPerKernel.median ?? null;
   for (const value of Object.values(engines))
     value.slowdownVsRust = rustMedian === null
-      ? null : value.steadyStateNanosecondsPerKernel.median / rustMedian;
+      ? null : (batchMode ? value.nanosecondsPerIteration.median
+        : value.steadyStateNanosecondsPerKernel.median) / rustMedian;
 
   const loadAfter = loadavg();
   const loadLimit = logicalCpus * 0.75;
@@ -554,22 +619,33 @@ try {
     suite,
     fixture: fixtureName,
     benchmark: fixtureSpec.benchmark,
+    metric: batchMode ? "artifact-batch-nanoseconds-per-iteration"
+      : "per-call-abi-nanoseconds-per-kernel",
     normalization: rustMedian === null
       ? { engine: "rust", status: suite === "core" ? "not-requested" : "unavailable" }
       : { engine: "rust", status: "measured" },
     contract: {
-      n, calls, warmupCalls: warmup, runs, expectedResult: expected,
+      n, calls: batchMode ? 1 : calls, warmupCalls: batchMode ? 0 : warmup,
+      iterations: batchMode ? iterations : null, runs, expectedResult: expected,
       samplesPerEngine: raw[names[0]].length,
       rotation: "all-engine-pairs ABBA/BAAB per run",
       arithmetic: fixtureSpec.arithmetic,
       enginePolicy: suite === "core"
-        ? "Rust-independent Amu native/Wasm semantic and execution evidence"
+        ? (batchMode ? "Rust-independent Amu native artifact-batch evidence"
+          : "Rust-independent Amu native/Wasm semantic and execution evidence")
         : "optional comparison adapters; unavailable engines are explicit and produce no ratio",
-      timing: "in-process steady state after explicit warmup; process wall and RSS are separate",
+      timing: batchMode
+        ? "one timed call crosses into each compiled artifact; the complete iteration loop is inside that artifact"
+        : "in-process steady state after explicit warmup; process wall and RSS are separate",
       compilerLauncher: "clojure -M:run canonical compiler entrypoint",
-      fuelPerInstance: benchmarkFuel,
+      fuelPerInstance: fixtureFuel,
       wasmMaxCallsPerInstance: raw["amu-wasm32"]?.[0]?.maxCallsPerInstance ?? null,
-      wasmFuel: "Wasm calibrates a workload-specific safe batch on fresh admitted instances before timing; native resets the same benchmark fuel before each call; only call intervals are accumulated",
+      wasmFuel: batchMode ? null
+        : "Wasm calibrates a workload-specific safe batch on fresh admitted instances before timing; native resets the same benchmark fuel before each call; only call intervals are accumulated",
+      hostCallsPerSample: batchMode ? 1 : calls,
+      fuelContract: batchMode
+        ? "exact: exported wrapper + loop entry + one charge per recurrence; fuel = iterations + 2"
+        : "fixed benchmark fuel, reset or freshly instantiated as documented",
       nativeBoundary: "benchmark-only direct W^X invocation; no production supervisor or sandbox claim",
       optimization: "each compiler/JIT may optimize the same observable algorithm",
       rustOptimization: enabled.has("rust")
@@ -587,7 +663,8 @@ try {
       hostLoadQualified,
       totalMemoryBytes: totalmem(),
       node: process.version,
-      rustc: enabled.has("rust") ? output("rustc", ["--version"]) : null,
+      rustc: enabled.has("rust")
+        ? (preparedMetadata?.toolchains?.rustc ?? output("rustc", ["--version"])) : null,
       clojure: enabled.has("clojure") || enabled.has("clojurescript")
         ? output("clojure", ["-Sdescribe"]) : null,
       go: enabled.has("go") ? output("go", ["version"]) : null,
@@ -610,10 +687,10 @@ try {
       ...(enabled.has("rust") ? { rust: artifact(built.paths.rust) } : {}),
       ...(enabled.has("rust") ? { rustSource: artifact(join(benchRoot, fixtureSpec.rust)) } : {}),
       kotobaSource: artifact(built.paths.fixture),
-      kotobaWasmSource: artifact(built.paths.wasmFixture),
+      ...(batchMode ? {} : { kotobaWasmSource: artifact(built.paths.wasmFixture) }),
       ...(enabled.has("clojure") ? { clojureSource: artifact(join(benchRoot, "kernel.clj")) } : {}),
       ...(enabled.has("clojurescript") ? { clojurescript: artifact(built.paths.cljs) } : {}),
-      amuWasm32: artifact(built.paths.wasm),
+      ...(batchMode ? {} : { amuWasm32: artifact(built.paths.wasm) }),
       amuNativeKexe: artifact(built.paths.native),
       amuNativeCode: artifact(built.paths.rawNative),
       amuNativeProvenance: artifact(`${built.paths.native}.provenance.edn`),
