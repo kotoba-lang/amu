@@ -793,6 +793,20 @@
           (is (str/includes? report (str ":result " expected))
               (str isa " " why " => " (str/trim report))))))))
 
+(deftest loop-call-zero-positive-and-fuel-boundary-run-on-every-available-isa
+  (let [source (slurp "bench/runtime-comparison/kernel_loop_call.kotoba")]
+    (doseq [[isa loader] @loaders :when loader]
+      (testing isa
+        (doseq [[n expected] [[0 0] [200 200] [510 510]]]
+          (let [report (run-native isa source "-" {:allow #{}} 'kernel [n])]
+            (is (not (str/includes? report ":status :trap")) (str/trim report))
+            (is (str/includes? report (str ":result " expected))
+                (str "n=" n " => " (str/trim report)))))
+        (let [exhausted (run-native isa source "-" {:allow #{}} 'kernel [511])]
+          (is (str/includes? exhausted ":status :trap")
+              (str "kernel wrapper + loop entry + 511 iterations exceed sealed fuel: "
+                   (str/trim exhausted))))))))
+
 (deftest a-capability-call-executes-on-every-available-isa
   (doseq [[isa loader] @loaders :when loader]
     (testing isa
