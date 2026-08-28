@@ -60,18 +60,19 @@
         ;; Terminal local calls release the current frame and branch without
         ;; linking on both native ISAs; kernel ELF contexts preserve the
         ;; artifact's sealed fuel bound.
-        ;; ADR-0275: kotoba-native 100fb7a8 carries kotoba-mir be416103
+        ;; ADR-0275: kotoba-native 93c41f9d carries merged virtual MIR branch fusion
         ;; post-allocation per-basic-block scheduling with WAR/WAW dependency
         ;; edges, preserved-register reuse, and the NBB BigInt immediate guard.
         ;; AArch64 self tail calls recharge fuel and re-enter after one frame
         ;; prologue; x86 retains its independently qualified teardown path.
         ;; Call-crossing loop parameters stay in preserved registers instead of
         ;; storing and loading them on every iteration on both targets. A
-        ;; proven adjacent AArch64 zero-equality branch emits direct CBNZ while
-        ;; retaining its zero definition until CFG reaching-def proof exists.
+        ;; proven adjacent AArch64 zero-equality branch is fused while virtual
+        ;; SSA identity is available, removing both definitions before RA and
+        ;; emitting one direct CBNZ. x86 retains its canonical TEST/JZ path.
         io.github.kotoba-lang/kotoba-native
         {:git/url "https://github.com/kotoba-lang/kotoba-native.git"
-         :git/sha "100fb7a84070b90444d5d8035770c34ef563c7c1"}
+         :git/sha "93c41f9da53cd7d9829d64f3eff71eacc9e8fff1"}
         io.github.kotoba-lang/kotoba-component
         {:git/url "https://github.com/kotoba-lang/kotoba-component.git"
          :git/sha "68acc7237aec7b24b683304db8e87d14ec1be745"}

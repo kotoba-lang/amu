@@ -8,7 +8,7 @@
   (get-in (edn/read-string (slurp "deps.edn")) [:deps coordinate :git/sha]))
 
 (deftest pinned-closure-carries-the-complete-native-boundary
-  (is (= "100fb7a84070b90444d5d8035770c34ef563c7c1"
+  (is (= "93c41f9da53cd7d9829d64f3eff71eacc9e8fff1"
          (dependency-pin 'io.github.kotoba-lang/kotoba-native)))
   (is (= "099c627609ad506babf05f2d5e9a73b95c1b026b"
          (dependency-pin 'io.github.kotoba-lang/kotoba-kir)))
