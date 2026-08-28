@@ -174,6 +174,14 @@ try {
         samplesPerEngine: report.contract.samplesPerEngine,
         calls: report.contract.calls,
         rustOptimization: report.contract.rustOptimization,
+        nativeArtifactAbi: report.contract.nativeArtifactAbi,
+        nativeArtifactInvocation: report.contract.nativeArtifactInvocation,
+        nativeArtifactArgMap: report.contract.nativeArtifactArgMap,
+        nativeRunnerCompiler: report.contract.nativeRunnerCompiler,
+        nativeArtifactTarget: report.contract.nativeArtifactTarget,
+        fuelPerInstance: report.contract.fuelPerInstance,
+        semanticVectors: report.contract.semanticVectors,
+        preparedBundleSha256: sealed.bundleSha256,
       },
       artifacts: report.artifacts,
       environment: report.environment,
@@ -209,6 +217,8 @@ try {
       measuredDomainCount: domains.length,
       complete: domains.length === manifest.requiredDomains.length,
       workflow: "prepare-all -> bounded quiet gate -> measure sealed bundles",
+      preparedIndexSha256: createHash("sha256").update(
+        readFileSync(join(directory, "multidomain-bundle.json"))).digest("hex"),
       reducedUnderHostLoad: !quietGate.qualified,
       externalComparators: suite === "core"
         ? "not requested; optional adapters are outside the core dependency closure"

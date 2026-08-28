@@ -34,9 +34,11 @@ export function assessComparatorCoverage(manifest, domains, comparator = "rust")
       throw new Error(`${required.id} ${comparator} is not a known-answer verifier`);
     if (domain.contract.rotation !== "all-engine-pairs ABBA/BAAB per run")
       throw new Error(`${required.id} ${comparator} lacks ABBA/BAAB evidence`);
+    if (domain.contract.nativeArtifactAbi !== manifest.claimContract.nativeArtifactAbi)
+      throw new Error(`${required.id} ${comparator} lacks the common native artifact ABI`);
     if (comparator === "rust"
         && domain.contract.rustOptimization
-          !== "rustc --edition 2021 -C opt-level=3 -C codegen-units=1 -C strip=symbols")
+          !== "rustc --edition 2021 --crate-type cdylib -C opt-level=3 -C codegen-units=1 -C strip=symbols")
       throw new Error(`${required.id} Rust optimization contract drifted`);
     requireSha256(domain.artifacts?.[comparator]?.sha256,
       `${required.id} ${comparator} binary`);
@@ -55,6 +57,7 @@ export function assessComparatorCoverage(manifest, domains, comparator = "rust")
       binarySha256: domain.artifacts[comparator].sha256,
       toolVersion,
       optimization: domain.contract.rustOptimization,
+      nativeArtifactAbi: domain.contract.nativeArtifactAbi,
       rotation: domain.contract.rotation,
     });
   }

@@ -163,7 +163,7 @@ function parseSample(stdout, arm, expected) {
 }
 
 function timedSample(arm, runner, rawNative, offset, target, n, calls, warmup, fuel, expected) {
-  const args = [rawNative, offset, target, String(n), String(calls), String(warmup), String(fuel)];
+  const args = ["raw", rawNative, offset, target, String(n), String(calls), String(warmup), String(fuel)];
   let executable = runner;
   let timedArgs = args;
   if (process.platform === "darwin") {

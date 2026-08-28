@@ -13,6 +13,11 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const benchRoot = join(root, "bench", "runtime-comparison");
 const benchmarkFuel = 1_048_576;
 const coreEngines = ["amu-wasm32", "amu-native"];
+const nativeArtifactAbi = "kotoba.native-artifact-i64x8-to-i64-indirect/v1";
+const rustOptimization = "rustc --edition 2021 --crate-type cdylib -C opt-level=3 -C codegen-units=1 -C strip=symbols";
+const nativeRunnerCompiler = "cc -std=c11 -O3 -Wall -Wextra -Werror";
+const nativeArtifactArgMap = ["input", "zero", "zero", "zero", "zero",
+  "x86_64-context-or-zero", "zero", "aarch64-context-or-zero"];
 
 const FIXTURES = {
   kernel: {
@@ -24,6 +29,7 @@ const FIXTURES = {
       "typescript-node", "typescript-deno",
     ],
     arithmetic: "8 identical quotient/remainder mix rounds stay within exact i64 and JavaScript safe integers",
+    verificationInputs: [0, 1, 2, 199, 200, 201],
     expected(n) {
       let expected = n;
       for (let round = 0; round < 8; round += 1) {
@@ -39,6 +45,7 @@ const FIXTURES = {
     benchmark: "loop-call-mix-v1",
     comparators: ["rust"],
     arithmetic: "n iterations; each calls id(1) and accumulates — acc and counter live across call and back edge",
+    verificationInputs: [0, 1, 2, 199, 200, 201, 510],
     expected(n) {
       return n;
     },
@@ -64,6 +71,7 @@ const FIXTURES = {
     benchmark: "wide-register-pressure-v1",
     comparators: ["rust"],
     arithmetic: "eight independent two-step modular-mix lanes stay live until one reduction",
+    verificationInputs: [0, 1, 2, 199, 200, 201],
     expected(n) {
       return Array.from({ length: 8 }, (_, i) => modularStep(modularStep(n + i)))
         .reduce((sum, value) => sum + value, 0);
@@ -75,6 +83,7 @@ const FIXTURES = {
     benchmark: "deep-spill-pressure-v1",
     comparators: ["rust"],
     arithmetic: "twenty-four independent modular-mix lanes exceed both target register pools",
+    verificationInputs: [0, 1, 2, 199, 200, 201],
     expected(n) {
       // The fixture intentionally names lane 13 `n`, shadowing the argument;
       // lanes 14..23 therefore start from that bound value. Mirror the source
@@ -91,6 +100,7 @@ const FIXTURES = {
     benchmark: "call-preservation-v1",
     comparators: ["rust"],
     arithmetic: "eight values survive real local calls before reduction",
+    verificationInputs: [0, 1, 2, 199, 200, 201],
     expected(n) {
       const first = Array.from({ length: 4 }, (_, i) => modularStep(n + i));
       return [...first, ...first.map(modularStep)].reduce((sum, value) => sum + value, 0);
@@ -102,6 +112,7 @@ const FIXTURES = {
     benchmark: "branch-call-preservation-v1",
     comparators: ["rust"],
     arithmetic: "the call-preservation workload crosses an explicit control-flow join",
+    verificationInputs: [0, 1, 2, 199, 200, 201],
     expected(n) {
       if (n === 0) return 0;
       const first = Array.from({ length: 4 }, (_, i) => modularStep(n + i));
@@ -199,7 +210,7 @@ function maximumRss(stderr) {
   return null;
 }
 
-function parseSample(stdout, engine, expected, batchIterations = null) {
+function parseSample(stdout, engine, expected, batchIterations = null, requireTiming = true) {
   const line = stdout.split(/\r?\n/).map(value => value.trim())
     .filter(value => value.startsWith("{")).at(-1);
   if (!line) throw new Error(`${engine} emitted no JSON sample`);
@@ -211,7 +222,7 @@ function parseSample(stdout, engine, expected, batchIterations = null) {
       throw new Error(`${engine} emitted invalid ${field}`);
   if (sample.result !== expected)
     throw new Error(`${engine} result ${sample.result} != ${expected}`);
-  if (sample.elapsedNanoseconds < 1)
+  if (requireTiming && sample.elapsedNanoseconds < 1)
     throw new Error(`${engine} elapsedNanoseconds must be positive`);
   if (batchIterations !== null
       && (sample.calls !== 1 || sample.warmupCalls !== 0
@@ -222,6 +233,9 @@ function parseSample(stdout, engine, expected, batchIterations = null) {
         || sample.fuelConsumed !== batchIterations + 2
         || sample.fuelRemaining !== 0))
     throw new Error("amu-native did not consume the exact sealed batch fuel");
+  if (batchIterations === null && (engine === "amu-native" || engine === "rust")
+      && sample.nativeArtifactAbi !== nativeArtifactAbi)
+    throw new Error(`${engine} did not cross the common native artifact ABI`);
   return sample;
 }
 
@@ -258,6 +272,13 @@ function timedSample(engine, command, args, expected, env = {}, batchIterations 
     ...(sample.fuelInitial === undefined ? {} : { fuelInitial: sample.fuelInitial }),
     ...(sample.fuelRemaining === undefined ? {} : { fuelRemaining: sample.fuelRemaining }),
     ...(sample.fuelConsumed === undefined ? {} : { fuelConsumed: sample.fuelConsumed }),
+    ...(sample.nativeArtifactAbi === undefined ? {}
+      : { nativeArtifactAbi: sample.nativeArtifactAbi, artifactKind: sample.artifactKind }),
+    ...(sample.contextFuelBefore === undefined ? {} : {
+      contextFuelBefore: sample.contextFuelBefore,
+      contextFuelAfter: sample.contextFuelAfter,
+      contextFuelConsumed: sample.contextFuelConsumed,
+    }),
   };
 }
 
@@ -275,6 +296,7 @@ function build(directory, target, fixtureSpec, enabled, skipped, fuel) {
   const native = join(directory, "kernel.kexe");
   const rawNative = join(directory, "kernel.bin");
   const nativeRunner = join(directory, "kexe-benchmark");
+  const nativeRunnerSource = join(directory, "native-artifact-runner.c");
   const wasmRunner = join(directory, "wasm-runner.mjs");
   const browserHost = join(directory, "browser-host.mjs");
   if (fixtureSpec.metric !== "artifact-batch") {
@@ -282,7 +304,8 @@ function build(directory, target, fixtureSpec, enabled, skipped, fuel) {
     writeFileSync(wasmRunner, readFileSync(join(benchRoot, "wasm-runner.mjs"), "utf8")
       .replace("../../runtime/browser-host.mjs", "./browser-host.mjs"));
   }
-  const rust = join(directory, "kernel-rust");
+  const rust = join(directory, fixtureSpec.metric === "artifact-batch" ? "kernel-rust"
+    : process.platform === "darwin" ? "kernel-rust.dylib" : "kernel-rust.so");
   const cljs = join(directory, "kernel-cljs.cjs");
   const cljsOutputDir = join(directory, "cljs-out");
   mkdirSync(cljsOutputDir, { recursive: true });
@@ -309,13 +332,18 @@ function build(directory, target, fixtureSpec, enabled, skipped, fuel) {
   const offsetMatch = extracted.stdout.match(/:offset\s+([0-9]+)/);
   if (!offsetMatch) throw new Error("native extraction omitted kernel offset");
   const nativeOffset = offsetMatch[1];
+  const runnerSource = join(benchRoot, fixtureSpec.metric === "artifact-batch"
+    ? "kexe-batch-benchmark.c" : "kexe-benchmark.c");
+  writeFileSync(nativeRunnerSource, readFileSync(runnerSource));
   step("nativeBenchmarkRunner", "cc",
-    ["-std=c11", "-O3", "-Wall", "-Wextra", "-Werror",
-      join(benchRoot, fixtureSpec.metric === "artifact-batch"
-        ? "kexe-batch-benchmark.c" : "kexe-benchmark.c"), "-o", nativeRunner]);
+    ["-std=c11", "-O3", "-Wall", "-Wextra", "-Werror", nativeRunnerSource,
+      "-o", nativeRunner, ...(process.platform === "linux" && fixtureSpec.metric !== "artifact-batch"
+        ? ["-ldl"] : [])]);
   if (enabled.has("rust")) {
     step("rust", "rustc",
-      ["--edition", "2021", "-C", "opt-level=3", "-C", "codegen-units=1",
+      ["--edition", "2021", ...(fixtureSpec.metric === "artifact-batch"
+        ? [] : ["--crate-type", "cdylib"]),
+        "-C", "opt-level=3", "-C", "codegen-units=1",
         "-C", "strip=symbols", join(benchRoot, fixtureSpec.rust), "-o", rust]);
   }
   if (enabled.has("clojurescript")) {
@@ -346,16 +374,30 @@ function build(directory, target, fixtureSpec, enabled, skipped, fuel) {
           "--target", "es2022", "--lib", "es2022,dom"]);
     }
   }
+  const semanticVectors = (fixtureSpec.verificationInputs ?? []).map(input => {
+    const expected = fixtureSpec.expected(input);
+    const arms = {};
+    const amuArgs = ["raw", rawNative, nativeOffset, target, String(input), "100", "0", String(fuel)];
+    arms["amu-native"] = parseSample(execute(nativeRunner, amuArgs).stdout,
+      "amu-native", expected, null, false);
+    if (enabled.has("rust")) {
+      const rustArgs = ["dylib", rust, "kotoba_bench_kernel", target,
+        String(input), "100", "0", String(fuel)];
+      arms.rust = parseSample(execute(nativeRunner, rustArgs).stdout, "rust", expected, null, false);
+    }
+    return { input, expectedResult: expected, verifiedBy: Object.keys(arms), arms };
+  });
   return {
     paths: {
       fixture,
       ...(fixtureSpec.metric === "artifact-batch" ? {}
         : { wasmFixture, wasm, wasmRunner, browserHost }),
-      native, rawNative, nativeRunner, rust, cljs, go, mojo, typescript,
+      native, rawNative, nativeRunner, nativeRunnerSource, rust, cljs, go, mojo, typescript,
     },
     nativeOffset,
     durations,
     skipped,
+    semanticVectors,
   };
 }
 
@@ -424,10 +466,12 @@ function writePreparedBundle(bundlePath, contract, built, enabled) {
     },
     toolchains: {
       rustc: enabled.has("rust") ? output("rustc", ["--version"]) : null,
+      rustcVerbose: enabled.has("rust") ? output("rustc", ["-vV"]) : null,
+      cc: output("cc", ["--version"]),
     },
     enabled: [...enabled],
     built: { paths: relativePaths, nativeOffset: built.nativeOffset, durations: built.durations,
-      skipped: built.skipped },
+      skipped: built.skipped, semanticVectors: built.semanticVectors },
     files,
   };
   writeFileSync(join(bundlePath, "bundle.json"), `${JSON.stringify(metadata, null, 2)}\n`);
@@ -503,6 +547,7 @@ try {
       nativeOffset: preparedMetadata.built.nativeOffset,
       durations: preparedMetadata.built.durations,
       skipped: preparedMetadata.built.skipped,
+      semanticVectors: preparedMetadata.built.semanticVectors,
     };
   } else {
     if (preparePath && existsSync(directory) && readdirSync(directory).length !== 0)
@@ -528,8 +573,11 @@ try {
   const common = [String(n), String(calls), String(warmup)];
   const wasmBatchCalibrationLimit = Math.max(calls, warmup);
   const definitions = {};
-  if (enabled.has("rust")) definitions.rust = [built.paths.rust,
-    batchMode ? [String(n), String(iterations)] : common, {}];
+  if (enabled.has("rust")) definitions.rust = batchMode
+    ? [built.paths.rust, [String(n), String(iterations)], {}]
+    : [built.paths.nativeRunner,
+      ["dylib", built.paths.rust, "kotoba_bench_kernel", target,
+        String(n), String(calls), String(warmup), String(fixtureFuel)], {}];
   if (enabled.has("clojure")) {
     definitions.clojure = ["clojure", ["-M", join(benchRoot, "kernel.clj"), ...common], {}];
   }
@@ -546,7 +594,7 @@ try {
       batchMode
         ? [built.paths.rawNative, built.nativeOffset, target, String(n),
           String(iterations), String(fixtureFuel), String(fixtureFuel)]
-        : [built.paths.rawNative, built.nativeOffset, target, String(n),
+        : ["raw", built.paths.rawNative, built.nativeOffset, target, String(n),
           String(calls), String(warmup), String(fixtureFuel)], {}];
   }
   if (fixtureName === "kernel") {
@@ -647,9 +695,18 @@ try {
         ? "exact: exported wrapper + loop entry + one charge per recurrence; fuel = iterations + 2"
         : "fixed benchmark fuel, reset or freshly instantiated as documented",
       nativeBoundary: "benchmark-only direct W^X invocation; no production supervisor or sandbox claim",
+      nativeArtifactAbi: batchMode ? null : nativeArtifactAbi,
+      nativeArtifactArgMap: batchMode ? null : nativeArtifactArgMap,
+      nativeRunnerCompiler: batchMode ? null : nativeRunnerCompiler,
+      nativeArtifactTarget: batchMode ? null : target,
+      semanticVectors: batchMode ? null : built.semanticVectors,
+      nativeArtifactInvocation: batchMode ? null
+        : "the same external C runner invokes Amu raw code and Rust cdylib through one runtime-resolved indirect eight-i64-argument function pointer; timing excludes loading and symbol resolution",
       optimization: "each compiler/JIT may optimize the same observable algorithm",
       rustOptimization: enabled.has("rust")
-        ? "rustc --edition 2021 -C opt-level=3 -C codegen-units=1 -C strip=symbols"
+        ? (batchMode
+          ? "rustc --edition 2021 -C opt-level=3 -C codegen-units=1 -C strip=symbols"
+          : rustOptimization)
         : null,
     },
     environment: {
@@ -665,6 +722,9 @@ try {
       node: process.version,
       rustc: enabled.has("rust")
         ? (preparedMetadata?.toolchains?.rustc ?? output("rustc", ["--version"])) : null,
+      rustcVerbose: enabled.has("rust")
+        ? (preparedMetadata?.toolchains?.rustcVerbose ?? output("rustc", ["-vV"])) : null,
+      cc: preparedMetadata?.toolchains?.cc ?? output("cc", ["--version"]),
       clojure: enabled.has("clojure") || enabled.has("clojurescript")
         ? output("clojure", ["-Sdescribe"]) : null,
       go: enabled.has("go") ? output("go", ["version"]) : null,
@@ -694,6 +754,8 @@ try {
       amuNativeKexe: artifact(built.paths.native),
       amuNativeCode: artifact(built.paths.rawNative),
       amuNativeProvenance: artifact(`${built.paths.native}.provenance.edn`),
+      ...(batchMode ? {} : { nativeBenchmarkRunner: artifact(built.paths.nativeRunner) }),
+      ...(batchMode ? {} : { nativeBenchmarkRunnerSource: artifact(built.paths.nativeRunnerSource) }),
       ...(suite === "competitive" && fixtureName === "kernel" ? {
         go: enabled.has("go") ? artifact(built.paths.go) : null,
         mojo: enabled.has("mojo") ? artifact(built.paths.mojo) : null,
