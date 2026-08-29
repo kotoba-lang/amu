@@ -1,0 +1,51 @@
+;; kotoba/pure route response for a REAL cloud-itonami-app route
+;; (cloud.itonami.app.health.v1), served on THIS standalone http-service.mjs
+;; demo host -- not a live cloud-itonami-app process.
+;;
+;; ADR-2608760000 addendum 1: this is the "next slice" that ADR named --
+;; porting one already-decision-cored, unauthenticated GET route from
+;; cloud-itonami-app onto amu's JVM-free host, as the first pressure test
+;; with production logic rather than a synthetic demo.
+;;
+;; ## What is real vs. representative here
+;;
+;; The JSON SHAPE (`ok`/`service`/`schema`/`store`/`drive-store` keys) is the
+;; real shape `cloud.itonami.app.server/handler`'s `process-liveness?` branch
+;; sends (`src/cloud/itonami/app/server.clj`, confirmed 2026-08-29 by curling
+;; a live cloud-itonami-app process on 127.0.0.1:1338 and reading server.clj
+;; directly). `service` and `schema` are real, fixed constants copied
+;; verbatim. `store` and `drive-store` on a REAL server are
+;; `(config/store-fingerprint)` and `(name (documents/selected-store-kind))`
+;; -- this process's data-directory fingerprint and selected drive backend.
+;; THIS host has neither: it is a bare demo process with no data directory
+;; and no store. Fabricating a plausible-looking fingerprint here would be
+;; exactly the "genuinely fake" health check ADR-2608760000's honesty
+;; standard forbids, so both fields say so literally instead of a made-up
+;; value.
+;;
+;; ## What is NOT proven by wiring this route
+;;
+;; The admission DECISION (is this GET /health) on cloud-itonami-app's real
+;; server is `health_core.kotoba`'s `health-route?`, called by
+;; `cloud.itonami.app.kotoba-oracle` through the JVM/KIR interpreter. THIS
+;; host's admission decision for GET /health is amu's own shared
+;; `runtime/http/route-decide.kotoba` (unmodified, table-lookup based) --
+;; the same core every other route on this host uses. The two decision cores
+;; happen to agree that GET /health is admitted and everything else is not,
+;; but this route wiring does not exercise `health_core.kotoba` at all.
+;; That comparison is a SEPARATE, more precise claim proven by
+;; `scripts/cloud-itonami-health-parity.cljs`: it compiles the same
+;; `health_core.kotoba` source (read byte-for-byte from a
+;; cloud-itonami-app checkout, unmodified) to this host's `:js-kotoba-v1`
+;; target and checks its `health-route?` against the JVM/KIR-interpreter
+;; oracle path across a battery of (method, path) inputs.
+(ns examples.cloud-itonami-health-route
+  (:export [health]))
+
+(defn health
+  []
+  :string
+  (string-concat "{\"ok\":true,\"service\":\"cloud-itonami-app\","
+    (string-concat "\"schema\":\"cloud.itonami.app.health.v1\","
+      (string-concat "\"store\":\"representative-not-a-live-store-standalone-amu-http-service-demo\","
+        "\"drive-store\":\"representative-no-store-on-this-host\"}"))))
