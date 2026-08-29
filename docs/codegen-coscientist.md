@@ -491,6 +491,27 @@ as before.
   this domain yet; that comparison and the manifest registration are the
   next state-domain steps.
 
+- **36 (2026-08-29, the state domain meets the unmetered natives — and
+  loses)**: Ladder B on kernel_state, clang and rustc as native
+  dylib-extracted raw arms through the identical runner:
+  **amu 201.6 ns/call, clang 188.3 (−7.1%), rustc 181.8 (−10.9%)**,
+  both separated. The mechanism is visible in the comparator bytes:
+  rustc lowers the DFA's match to a **jump table** — one indirect branch
+  per transition — where amu's nested if-tree pays several unpredictable
+  branches each. **H-G filed**: recognize dense data-dependent selection
+  trees and lower them to a table or branchless form; note the contrast
+  with iteration 26, where csel was a separated null on *predicted*
+  branches — on entropy branches the branchless form is exactly what
+  pays. The two-ladder split earns its keep on this domain: metered
+  universe +8% win, unmetered universe −7/−11% loss, both true.
+  A third silent-measurement defect was also caught by known answers:
+  rustc's jump table lives in `__TEXT,__const`, so a text-section-only
+  raw extraction produced *deterministic wrong answers* (off by small
+  state drifts, no crash); comparator extraction now takes the whole
+  `__TEXT` segment with layout preserved, entry at the symbol's segment
+  offset. Ladder-B scoreboard grows to 7 domains: 21 + 3 wins, 2 losses,
+  9 parities of 35 pairs — the losses are the domain doing its job.
+
 ## Standing honesty constraints
 
 Every number above is one host on one day; the falsification numbers are
