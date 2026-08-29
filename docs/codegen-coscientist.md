@@ -632,6 +632,25 @@ as before.
   remaining domains (wide/deep spill shapes still lack SIMD parking's
   SSE analogue; call shapes untested there).
 
+- **43 (2026-08-29, the x86 sweep finds a correctness bug)**: extending
+  the real-x86 baseline to the remaining domains stopped at the known
+  answers: **kernel_wide and kernel_deep return wrong results on
+  x86-64** — reproduced identically on gad's AMD hardware and under
+  Rosetta, while narrow stays correct. The pre-steering pin reproduces
+  it with a *different* wrong value, which exonerates iteration 42's
+  steering and dates the defect earlier: a miscompile in the x86
+  backend's high-pressure path (both fixtures overflow the pool into
+  spills; the wrong value shifting with allocation points there), which
+  **no existing suite executes on x86** — the kotoba-native suite is
+  encodings-only by its own docstring, and the amu execution tests never
+  ran these shapes on the second ISA. Today's first real-x86 execution
+  of the high-pressure fixtures is what found it. Also noted: gcc's
+  call-shaped twins can't run as raw extractions from a PIC `.so`
+  (PLT-routed calls); `-fno-plt` or a static build is the fix when those
+  domains measure. **Next: minimal reproduction and disassembly of the
+  wide x86 emission — correctness outranks every performance item in
+  the queue.**
+
 ## Standing honesty constraints
 
 Every number above is one host on one day; the falsification numbers are
