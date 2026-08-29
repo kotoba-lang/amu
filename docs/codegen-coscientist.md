@@ -460,6 +460,113 @@ as before.
   systems on five of six domains on the recorded host; the sixth leads
   by ~+60% but its measurement carries a disclosed asymmetry.*
 
+- **34 (2026-08-29, Ladder A replicates on a second host)**: the same
+  artifacts (wasm twins are portable; amu raw code is aarch64) and the
+  same protocol on **dan** — a different Mac16,10 machine with a
+  *different wasmtime* (48.0.1 against levi's 47.0.3), fuel-exhaustion
+  trap re-demonstrated there, every known answer verified — and the
+  matrix re-adjudicated with a dan `:measured` descriptor:
+  **12 of 12 pairs perfgate-qualified again**, +16.8% to +73.0%, every
+  margin within about one point of levi's. The fastest-and-safe
+  sentence now holds on two recorded hosts and across a comparator
+  runtime version bump. Host expansion continues per the charter: more
+  M4 minis are cheap replicas; the real second ISA waits on the x86-64
+  backend catch-up and the gad measurement path.
+
+- **35 (2026-08-29, Wave 1 opens: the state-machine domain)**:
+  `bench/runtime-comparison/kernel_state.kotoba` — a five-state DFA
+  driven by a Lehmer stream's low two bits, 64 transitions per call.
+  Every transition is a data-dependent branch tree, which no existing
+  domain exercises: the six inherited domains all branch predictably.
+  Known answers came from an independent nbb oracle before any arm was
+  timed; amu native, the zig twin and the rust twin all agree on every
+  manifest input. First measurements (levi): **amu 201.4 ns/call vs
+  zig-wasm 221.7 and rustc-wasm 220.8 — perfgate-qualified +8.1% and
+  +7.8%**, Ladder A's seventh domain and seventh win. Sequencing note:
+  string-search was examined first and deferred — native strings live
+  behind host context callbacks that the benchmark runner's minimal
+  context does not provide, so that domain needs a runner extension
+  before it can be timed, and a domain that cannot run yet is a work
+  item, not a skipped row. Ladder B (unmetered natives) has not measured
+  this domain yet; that comparison and the manifest registration are the
+  next state-domain steps.
+
+- **36 (2026-08-29, the state domain meets the unmetered natives — and
+  loses)**: Ladder B on kernel_state, clang and rustc as native
+  dylib-extracted raw arms through the identical runner:
+  **amu 201.6 ns/call, clang 188.3 (−7.1%), rustc 181.8 (−10.9%)**,
+  both separated. The mechanism is visible in the comparator bytes:
+  rustc lowers the DFA's match to a **jump table** — one indirect branch
+  per transition — where amu's nested if-tree pays several unpredictable
+  branches each. **H-G filed**: recognize dense data-dependent selection
+  trees and lower them to a table or branchless form; note the contrast
+  with iteration 26, where csel was a separated null on *predicted*
+  branches — on entropy branches the branchless form is exactly what
+  pays. The two-ladder split earns its keep on this domain: metered
+  universe +8% win, unmetered universe −7/−11% loss, both true.
+  A third silent-measurement defect was also caught by known answers:
+  rustc's jump table lives in `__TEXT,__const`, so a text-section-only
+  raw extraction produced *deterministic wrong answers* (off by small
+  state drifts, no crash); comparator extraction now takes the whole
+  `__TEXT` segment with layout preserved, entry at the symbol's segment
+  offset. Ladder-B scoreboard grows to 7 domains: 21 + 3 wins, 2 losses,
+  9 parities of 35 pairs — the losses are the domain doing its job.
+
+- **37 (2026-08-29, H-G hand-falsified — branchless beats the jump
+  table)**: the whole 5x4 DFA packs into one 60-bit constant, three bits
+  per entry, and `state' = (TABLE >> ((state*4+sym)*3)) & 7` leaves the
+  loop's own back edge as the only branch. Measured three ways on the
+  identical runner, every arm agreeing with the oracle:
+  **branchless-C 176.3 ns — rustc's jump table 183.2 — amu's if-tree
+  202.9.** No branches beats one indirect branch beats a tree of
+  unpredictable ones, as predicted. So H-G's payoff is bounded: it turns
+  the state domain's two losses into roughly a qualified win over clang
+  (~+6%) and a parity with rustc (+3.7%, under the threshold). Two
+  facts for the implementation: (a) the lowering must live in the
+  compiler — **the source language currently admits no shift
+  signature** (`bit-shift-right`/`unsigned-bit-shift-right` are
+  subset-rejected; the MIR/native shift encodings exist), so a
+  table-form fixture cannot even be written from source today; (b) the
+  recognition target is a nested if-tree whose leaves are small
+  constants over a dense product of two bounded discriminants — exactly
+  what `kernel_state` is. Filed as the next compiler slice, fail-closed
+  like the Mersenne chain test.
+
+- **38 (2026-08-29, H-G refuted by its own soundness requirement)**: the
+  176.3 ns table form of iteration 37 is **not a lawful compiler
+  output** — on negative discriminants the raw index reads garbage bits
+  where the if-tree's else arms have defined answers, so tree and table
+  disagree outside the manifest inputs (caught in design review, before
+  any landing; the falsification had only checked manifest inputs — the
+  whole-domain check is now part of the method). The semantically
+  equivalent branchless form maps each discriminant through
+  compare+select into a dense slot — proved equal to the tree on 2,121
+  cases including negatives, one conditional branch left (the back
+  edge) — and it measures **217.0 ns: slower than the if-tree's 201.4**.
+  The slot-mapping csets cost more than the mispredictions they remove.
+  **H-G is refuted.** The lawful best remains rustc's shape — a
+  range-guarded jump table (181.8) — filed as H-G′ with its payoff
+  bounded: it would turn the state domain's two losses into a rustc
+  parity and a below-threshold +3.4% on clang, not wins. Given that
+  bound, H-G′ ranks below the x86-64 backend catch-up and the
+  string-callback runner extension in the queue.
+
+- **39 (2026-08-29, the second ISA opens — and the baseline is honest)**:
+  amu's x86-64 output executed on real x86 hardware for the first time —
+  **gad**, an AMD Ryzen AI MAX+ 395 running Ubuntu (32 cores; the
+  benchmark runner ported with zero changes beyond its existing
+  `__APPLE__` rusage-units guard), every manifest input verified. The
+  first Ladder-B baseline there: **amu 17.47 ns/call vs gcc 13.3's
+  14.09 — a −25.6% deficit** on the narrow kernel, with the artifact
+  itself telling the story (461 bytes against AArch64's 244 for the
+  same source: the serial-chain Mersenne, parallel sign correction and
+  SIMD parking landed AArch64-only). The x86 catch-up queue now has a
+  measured starting line instead of an assumption. Environment notes:
+  gad has egress and sudo (rustc/clang installable for the full
+  comparator set), gcc is a new comparator this workspace had never
+  measured, and Rosetta numbers are retired from x86 claims now that
+  real hardware answers.
+
 ## Standing honesty constraints
 
 Every number above is one host on one day; the falsification numbers are
