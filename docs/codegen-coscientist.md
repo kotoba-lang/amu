@@ -185,11 +185,21 @@ that domain is unreachable for anyone, and recording that is a result.
   79/1,261, kotoba-native 201/2,401, amu 1,154/8,526, all green — the
   slot-shape pins across three repos now pin the preserved shape, split by
   target where x86-64's documented scratch-first entry plan differs.
-- **22 (next)**: six-domain re-score on this pin. call-preservation
-  entered the loop at −5.0/−5.7% and its fixture now measures ~6% ahead of
-  both; branch-call and loop-call also contain calls and may move. Then
-  rank what remains from the fresh matrix (deep-spill vs rustc/zig was
-  −3.8/−2.6%).
+- **22 (2026-08-29, measured)**: six-domain re-score, fully
+  host-qualified. **call-preservation flipped sign**: amu 4.79 ns against
+  clang 5.05 (**+5.2%**, refused only as not-separated-from-noise) and
+  rustc 5.04 (**+4.8%**, 0.2 points under the threshold). The domain
+  entered the loop at −5.0/−5.7%. Score stays 18/30, but the loss ledger
+  is now: deep-spill vs rustc −4.1% / vs zig −3.6%, branch-call vs clang
+  −3.7%, and parities everywhere else. Amu is ahead or within noise of
+  every comparator on four of six domains and sweeps wide outright.
+- **23 (next)**: deep-spill vs rustc (−4.1%) is the largest remaining
+  deficit — instruction-diff `kernel_deep` against rustc's emission
+  (twenty-four lanes over both register pools; the interesting part is
+  spill-slot choice and reload scheduling). Falsify by hand first.
+  call-preservation's two near-misses ride along on any future re-score:
+  the gap is real in three independent measurements and only separation
+  is missing.
 
 ## Standing honesty constraints
 
