@@ -679,6 +679,27 @@ as before.
   baselines were never recorded as wins, and the sweep that found this
   is the reason the ladder demands execution on every ISA it names.**
 
+- **45 (2026-08-30, the first correct x86 six-domain baseline)**: with the
+  transparency fix landed, all six domains pass every known answer on
+  real AMD hardware -- 18/18 for the amu arms, and 36/36 including the
+  gcc arms once the call-shaped twins were rebuilt with
+  `-fvisibility=hidden -fno-plt` (the PLT-routed calls that refused the
+  raw extraction now compile to direct relative calls; the one PLT call
+  left lives in `__do_global_dtors_aux`, outside every measured path).
+  ABBA x10 per domain, KA asserted on every timed sample, plain
+  per-call nanoseconds (elapsed/calls -- not the two-count slope the
+  narrow parity measurement used, so compare ratios, not absolute
+  numbers), load 0.82/32: narrow 1.042 (parity within spread), wide
+  **0.972** (the one domain amu leads), deep **1.38**, call 1.094,
+  call_branch 1.117, loop_call **1.82**. The ranking writes itself:
+  deep pays for the 39 restored save bytes (78 stack operations of
+  correctness the elision may not touch -- the lawful remedy is keeping
+  lane values out of RAX/RDX entirely, or saving to a scratch register
+  instead of the stack), and loop_call measures the absence of the
+  preserved-tier call crossing that AArch64 has had since iteration 38.
+  Those are the two levers; wide's lead says the high-pressure
+  straight-line story is already sound.
+
 ## Standing honesty constraints
 
 Every number above is one host on one day; the falsification numbers are
