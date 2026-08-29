@@ -277,12 +277,16 @@ provenance, and measurement runners with SHA-256; use paired ABBA/BAAB order;
 and pass their samples to
 `perfgate.core/qualify`. Measure accepts only the caller-bound prepared-index
 digest, which in turn binds every per-domain manifest and artifact hash. It
-never enters the compiler build path. Before timing, load1 must remain at most
-the lower of 1.0 and 10% of logical CPUs for three consecutive samples; the
-quiet wait is bounded at
-60 seconds. Load1 must also satisfy the per-domain pre/post limit with at most
-10% drift. Otherwise the harness reduces the requested work and records
-`unqualified-host-load`; perfgate then fails closed.
+never enters the compiler build path. Before timing, the measured busy-CPU
+fraction — aggregate non-idle ticks over each one-second window — must stay at
+or below 0.10 for three consecutive samples (ADR 0282: this measures directly
+the quantity load1 was a proxy for, at the same ten-percent strictness; ADR
+0281 showed macOS load1 has a floor above its own limit on hosts whose CPUs
+are demonstrably idle, so the proxy was unsatisfiable where the quantity is
+not). load1 is recorded in every sample as a diagnostic. The quiet wait is
+bounded at 60 seconds. Load1 must also satisfy the per-domain pre/post limit
+with at most 10% drift. Otherwise the harness reduces the requested work and
+records `unqualified-host-load`; perfgate then fails closed.
 
 The core suite deliberately has no external comparator. The optional
 competitive v2 suite has semantic twins for Rust, Apple Clang C11, Zig, Go,
