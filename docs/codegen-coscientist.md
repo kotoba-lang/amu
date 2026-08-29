@@ -607,6 +607,31 @@ as before.
   not this pin's; documented rather than chased, per the
   closure-assertion precedent.
 
+- **42 (2026-08-29, H-X1 completes — real-x86 parity with gcc)**:
+  part 1 landed as kotoba-mir #41/#42 — quotient-bearing **straight-line**
+  leaves draw from a pool with RAX/RDX demoted to last-resort scratch,
+  arming #88's dead-save elision. The straight-line guard exists because
+  its absence was *measured*: the first cut steered branchy leaves too,
+  and `rebuild-pool-lists` splits pools by position at label boundaries,
+  which produced two new variant-sroa execution failures against the
+  main baseline — caught by diffing failure sets, fixed, and the fixture
+  recovered. Chain verified: kotoba-mir 80/1,263 with both steering
+  directions asserted, kotoba-native 204/2,418 (the division-window byte
+  test now pins the steered emission; its implicit-register invariant is
+  unchanged), aarch64 byte-identical, amu suite equal to the documented
+  main-red baseline plus zero. Measured on gad, calm rotations:
+
+  | narrow x86 | median | vs gcc |
+  |---|---:|---|
+  | iteration 39 baseline | 17.47 | −25.6% |
+  | + parallel sign correction | 16.06 | ≈−13% |
+  | + steered pool & elision | **14.48** | **+0.1% — parity, ahead on mins** |
+
+  Two iterations of ported+new work recovered the entire 25.6-point
+  deficit on the first x86 domain. The x86 catch-up continues with the
+  remaining domains (wide/deep spill shapes still lack SIMD parking's
+  SSE analogue; call shapes untested there).
+
 ## Standing honesty constraints
 
 Every number above is one host on one day; the falsification numbers are
