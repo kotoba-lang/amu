@@ -551,6 +551,22 @@ as before.
   bound, H-G′ ranks below the x86-64 backend catch-up and the
   string-callback runner extension in the queue.
 
+- **39 (2026-08-29, the second ISA opens — and the baseline is honest)**:
+  amu's x86-64 output executed on real x86 hardware for the first time —
+  **gad**, an AMD Ryzen AI MAX+ 395 running Ubuntu (32 cores; the
+  benchmark runner ported with zero changes beyond its existing
+  `__APPLE__` rusage-units guard), every manifest input verified. The
+  first Ladder-B baseline there: **amu 17.47 ns/call vs gcc 13.3's
+  14.09 — a −25.6% deficit** on the narrow kernel, with the artifact
+  itself telling the story (461 bytes against AArch64's 244 for the
+  same source: the serial-chain Mersenne, parallel sign correction and
+  SIMD parking landed AArch64-only). The x86 catch-up queue now has a
+  measured starting line instead of an assumption. Environment notes:
+  gad has egress and sudo (rustc/clang installable for the full
+  comparator set), gcc is a new comparator this workspace had never
+  measured, and Rosetta numbers are retired from x86 claims now that
+  real hardware answers.
+
 ## Standing honesty constraints
 
 Every number above is one host on one day; the falsification numbers are
