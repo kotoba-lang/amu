@@ -115,12 +115,29 @@ that domain is unreachable for anyone, and recording that is a result.
   been red on main since the effaba5 advance — the exact failure shape
   d214e495 documented in August — and now names 7eb40720.
 
-- **18 (next)**: H-C2 — the −4.4% narrow-chain residue vs clang-raw with
-  near-identical instruction streams (61 vs 61 words after the dead
-  materialization drop), so the residue is scheduling/front-end shaped.
-  Generate from an instruction-order diff of the two streams; falsify by
-  hand-reordering before touching the scheduler. Separately: re-run the
-  six-domain suite to re-score the 30-pair matrix with this pin.
+- **18 (2026-08-29, landed)**: H-C2 resolved — and it was one dependency
+  edge, not scheduling. The two streams' opcode sequences were *identical*
+  (61 words each); the only structural difference was the quotient tail:
+  amu serialized `ASR x17→x17` then read the shifted value for the sign
+  correction, Clang reads the **unshifted** value so the correction runs in
+  parallel with the shift (the sign bit is unchanged by an arithmetic
+  shift). Hand-falsified first: **+4.20% separated**, medians landing at
+  **6.41 vs 6.41 ns — parity with Clang's own bytes** through the identical
+  runner; this one stage was the entire remaining narrow-chain gap.
+  kotoba-native #84 (`ASR dst,x17,#s; ADD dst,dst,x17,LSR#63`, same two
+  instructions, same registers); compiler output byte-identical to the
+  measured mutant; the byte test that pinned the serialized tail now pins
+  the parallel one and rejects the old encoding. Through the amu pin: wide
+  changed bytes (its 16 quotient tails) and reads **+0.97%** (not
+  separated, direction favorable — the swept domain is intact). amu suite:
+  1,154 tests / 8,528 assertions, 0 failures, 0 errors.
+- **19 (next)**: re-run the six-domain competitive suite on this pin to
+  re-score the 30-pair matrix — narrow-arithmetic entered this loop at
+  −6.5/−6.9/−7.7% vs rustc/clang/swift and its emission now matches
+  clang-raw at parity, so the question is what perfgate certifies on the
+  full harness. Then rank the next gap from the fresh matrix
+  (call-preservation −5.0/−5.7% is the largest remaining claim-relevant
+  deficit; its fixtures also contain quotient tails).
 
 ## Standing honesty constraints
 
