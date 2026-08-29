@@ -8,7 +8,7 @@
   (get-in (edn/read-string (slurp "deps.edn")) [:deps coordinate :git/sha]))
 
 (deftest pinned-closure-carries-the-complete-native-boundary
-  (is (= "8b78230ba5790c67526bad9e0fdbdef0c18fa905"
+  (is (= "1fd9c22fb40da42c15ae1b099f7d277a65028dd6"
          (dependency-pin 'io.github.kotoba-lang/kotoba-native)))
   (is (= "099c627609ad506babf05f2d5e9a73b95c1b026b"
          (dependency-pin 'io.github.kotoba-lang/kotoba-kir)))
@@ -87,11 +87,12 @@
             caller (second (:mc/functions mc))
             encodings (map :mc/encoding (:mc/instructions caller))]
         (is (= :call-live (:mc/frame-policy caller)) target)
-        (is (= 1 (:mc/frame-slots caller)) target)
-        (is (= 1 (count (filter #{(keyword (name target) "spill-store")}
-                                encodings))) target)
-        (is (= 1 (count (filter #{(keyword (name target) "spill-load")}
-                                encodings))) target)))))
+        (is (zero? (:mc/frame-slots caller)) target)
+        (is (not-any? #{(keyword (name target) "spill-store")
+                        (keyword (name target) "spill-load")}
+                      encodings)
+            [target "the call-crossing value is preserved, not spilled
+                     (kotoba-mir 8a2bc4d via kotoba-native 1fd9c22)"])))))
 
 (deftest pinned-closure-carries-the-zero-frame-four-argument-entry
   (let [module {:format :kotoba.kir/v4
