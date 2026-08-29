@@ -526,6 +526,29 @@ A definition dominates every use of its value, so that is where the store goes.
 The regression test executes the program
 (`a-value-spilled-in-one-branch-arm-survives-into-the-other`).
 
+## What the gate says today, and what it cannot say
+
+**ADR 0281 (2026-08-29): the quiet-host requirement is not satisfiable on the
+murakumo fleet.** Sampled with the gate's own criterion on every reachable
+Darwin arm64 host, none produced a single `load1` sample at or below the
+limit, while `top` reported every process idle and no thread uninterruptible.
+The floor is a property of macOS `loadavg` on those machines, not of a busy
+scheduler. **No bounded-fastest claim artifact can be emitted from this fleet
+at all**, whatever the compiler does — read every ratio below with that in
+mind.
+
+On the same day, all six per-call domains plus `kernel_batch` were run against
+rustc, Apple Clang C11, Zig, Go and Swift and passed to
+`perfgate.core/qualify` in both directions. **On every domain whose host load
+qualified, Amu native and rustc/Clang were not separated** —
+`:not-separated-from-noise` and `:improvement-below-threshold`, both ways.
+"Not separated" is the absence of a result, not a finding of equality. The
+two domains that did produce a winner failed the host-load check and point in
+opposite directions. `kernel_batch` was refused outright as `:too-noisy`.
+
+Do not copy those figures here; they are one host on one day and live in the
+ADR with their conditions attached.
+
 ## Ten-engine runtime evidence
 
 Compiler commit `c38f79d` with the five added engines, measured on 2026-08-17
