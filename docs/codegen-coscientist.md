@@ -268,6 +268,29 @@ that domain is unreachable for anyone, and recording that is a result.
   substantive mechanisms on the board are the NEON reduction for
   deep-spill (larger project, noted at iteration 23) and protecting the
   two swept domains with byte-accurate regressions.
+- **28 (2026-08-29, ceiling analysis)**: the NEON reduction demotes
+  without being built, because **rustc is the measured endpoint of that
+  mechanism family**: its deep-spill emission already banks lanes in SIMD
+  *and* reduces with `add.2d`, and it reads 9.03 against amu's 9.04.
+  Building the same machinery buys parity amu already has, not the +5%
+  a win requires. More broadly, three domains now show the shape the
+  charter named a **proven ceiling**: on narrow-arithmetic, deep-spill
+  and loop-call-back-edge, three independently developed compilers
+  (amu, rustc/LLVM, Apple Clang) sit within ~1% of each other, and on
+  narrow the instruction streams are isomorphic — these domains are at
+  the microarchitectural floor of their shapes, and a strict ≥5% win
+  there is unreachable for *any* entrant, not just amu. With branch-call's
+  residue distributed (iteration 27), the honest standing of the bounded
+  claim is: **21/30 qualified, two domains swept, and the rest at
+  measured parity floors** — the claim's own contract (beat everyone
+  everywhere by ≥5%, separated) cannot be satisfied on these six domains
+  by any compiler in this comparison, amu included. The sentence the
+  evidence does support: *on every measured domain amu native is at or
+  above parity with rustc and Clang, ahead outright on two domains of
+  six, with metering on.* Remaining loop work: keep the wins protected
+  (the byte-shape tests landed with iterations 17–24 do this), and
+  re-score periodically to confirm 21/30 is stable rather than a
+  favorable rotation.
 
 ## Standing honesty constraints
 
