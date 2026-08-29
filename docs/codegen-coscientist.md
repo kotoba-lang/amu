@@ -378,6 +378,38 @@ as before.
   twins, a rustc→wasm32-wasi arm (needs rustup or zig-built std), and
   the Ladder-A claim contract manifest with safety preconditions.
 
+- **31 (2026-08-29, Ladder A: first full six-domain sweep)**: the five
+  remaining zig twins built, every one verified against the manifest
+  known answers before timing, and measured on levi with both systems'
+  shipped metering on:
+
+  | domain | amu native+fuel | zig-wasm+wasmtime-fuel | verdict |
+  |---|---:|---:|---|
+  | narrow | 6.42 ns | 7.95 | +18.7% separated |
+  | wide | 5.47 | 7.00 | +21.8% separated |
+  | deep | 8.96 | 12.13 | +26.1% separated |
+  | call | 4.73 | 18.11 | **+73.9% separated** |
+  | branch | 4.90 | 18.07 | **+72.9% separated** |
+  | loop-call | 140.5 | 336.6 | +58.3% separated¹ |
+
+  **Six of six, all separated** — the metered universe sweeps on the
+  first full pass, with the call-shaped domains showing wasmtime's
+  per-call cost most strongly. Two measurement defects were caught by
+  their own impossibility and fixed before recording: LLVM deleted the
+  loop-call twin's calls by *return-value propagation without inlining*
+  (0.167 ns/call, checksum still verifying on the folded loop — the
+  checks-that-could-not-answer shape again), fixed with a volatile
+  round trip inside the callee and the surviving `call` verified in the
+  emitted wat. ¹That barrier costs the wasm arm a store+load per
+  iteration that the Rust native twin's empty asm barrier does not —
+  the loop-call margin is disclosed as barrier-asymmetric and is not
+  claim-grade until a costless wasm barrier exists. Also still open
+  before a Ladder-A claim can seal: a second comparator (rustc-wasm),
+  perfgate adjudication instead of mean-and-stdev, and the Ladder-A
+  manifest with safety preconditions. Methodology: amu in-process
+  steady state; wasmtime per-call by slope (2M to 20M in-module calls;
+  50k to 500k for loop-call), fuel exhaustion verified to trap.
+
 ## Standing honesty constraints
 
 Every number above is one host on one day; the falsification numbers are
