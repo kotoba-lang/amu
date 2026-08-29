@@ -222,10 +222,25 @@ that domain is unreachable for anyone, and recording that is a result.
   refusals asserted; amu 1,154/8,526 both ISAs (one Rosetta trap under
   load-30 reproduced as flake: same suite green on rerun, and the
   transform is AArch64-only so x86 bytes are unchanged).
-- **25 (next)**: re-score. deep-spill's rustc gap was −4.1% and the fix
-  measured +2.6%, so the domain should land near parity; the loss ledger
-  after that is branch-call vs clang (−3.7%) and the two call-preservation
-  near-misses waiting on separation.
+- **25 (2026-08-29, measured)**: re-score, fully host-qualified — **21 of
+  30, and a second swept domain**. call-preservation qualified against
+  all five comparators (vs clang **+5.4% WIN**, vs rustc **+5.8% WIN** —
+  the domain entered the loop at −5.0/−5.7%). deep-spill beat clang
+  outright (+6.0% WIN) and closed rustc/zig to −0.2/+0.1 parity. The
+  matrix now reads: two swept domains (wide, call-preservation), one loss
+  anywhere (branch-call vs clang −3.8%), and eight parities within ±1%.
+
+  | score | 16 → 18 → 18 → **21** / 30 |
+  |---|---|
+  | swept domains | wide → wide + **call-preservation** |
+  | worst deficit anywhere | −7.7% → **−3.8%** |
+
+- **26 (next)**: branch-call vs clang (−3.8%) is the only loss left —
+  `kernel_call_branch` is `kernel_call` plus one `if`, so diff amu's
+  emission against clang's twin around the branch. The eight ±1%
+  parities need per-domain discoveries of what LLVM left on the table;
+  the honest terminal state (a proven ceiling) remains a possible verdict
+  for narrow and loop-call, where three compilers agree within 1%.
 
 ## Standing honesty constraints
 
