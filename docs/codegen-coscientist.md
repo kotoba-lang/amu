@@ -34,7 +34,7 @@ that domain is unreachable for anyone, and recording that is a result.
 | id | hypothesis | status | evidence |
 |---|---|---|---|
 | H-A | the quiet gate reads a proxy (load1) with a floor above its own limit; read the intended quantity (busy-CPU fraction) directly at the same strictness | **executed — iteration 16** (ADR 0282) | fleet measurement 2026-08-29: load1 criterion 0/7 hosts ever qualified; busy-fraction criterion qualified 2 hosts outright, near-qualified 3, and rejected exactly the one host running a persistent workload |
-| H-C | narrow-arithmetic gap vs Clang: Clang strength-reduces `q*(2^31-1)` to `sub‑lsl + add`, taking one multiply off the mul pipes per round; amu emits `msub` | **confirmed direction, below threshold — evolve** | instruction diff: amu 54 instrs (6/round), clang 61 (7/round) yet clang faster; hand-patched amu code (byte-identical reconstruction, 8 substitutions): +2.46% mean, medians 6.86→6.70 ns, mins 6.85→6.68, 42 ABBA samples/arm on levi, both arms answering 1830338420. Explains ~⅓ of the ~7% clang gap |
+| H-C | narrow-arithmetic gap vs Clang: Clang strength-reduces `q*(2^31-1)` to `sub‑lsl + add`, taking one multiply off the mul pipes per round; amu emits `msub` | **landed — kotoba-native #83, gated on one serial chain** | instruction diff: amu 54 instrs (6/round), clang 61 (7/round) yet clang faster; hand-patched amu code (byte-identical reconstruction, 8 substitutions): +2.46% mean, medians 6.86→6.70 ns, mins 6.85→6.68, 42 ABBA samples/arm on levi, both arms answering 1830338420. Explains ~⅓ of the ~7% clang gap |
 | H-C2 | the remaining ~4.4% vs Clang on `kernel` after H-C: the mutated stream and clang's are now near-identical in shape (62 vs 61 instructions; amu-mut still loads the now-dead `0x7fffffff` constant), so the residue is scheduling/front-end shaped | open — generate from an instruction-order diff | pending |
 | H-D | `kernel_batch` loop-path remainder (~8% vs Rust diagnostic, refused `:too-noisy` in ADR 0281): body scheduling / per-iteration instruction mix | open; measurement first needs the noise fixed (H-B) or the loop lengthened | ADR 0279 measured 1.349x behind pre-#653..#660; levi 2026-08-29 read 1.08x diagnostic |
 | H-B | batch-fixture noise (rsd 0.47 vs policy 0.10) is scheduler migration of a long single-call region across P/E cores; pin the timed region's QoS | open | performance.md already documents an E-core migration incident |
@@ -97,6 +97,30 @@ that domain is unreachable for anyone, and recording that is a result.
   C, extracted and run through the identical raw W^X runner — the first
   same-harness comparator baseline, retained with the evidence. Remaining
   narrow-chain residue after the transform: −4.40% vs clang-raw (H-C2).
+
+  **Implementation landed the same day** (kotoba-native #83, amu pin
+  7eb40720): the Mersenne profitability decision gains a latency arm beside
+  its size arm — fire also when the leaf's MSUBs form one serial dependence
+  chain. The chain test is order-independent value reachability with
+  occurrences named by *position*: the first draft keyed occurrences by
+  instruction map and silently never fired, because two rotating destination
+  registers make the same MSUB map recur verbatim every other round — found
+  only because the landed-state probe was run before trusting the green
+  suite. Verified through the pin: production narrow kernel 244 B / 0 MSUBs
+  (was 216 B / 8), every manifest input answered; production wide kernel
+  byte-identical; +2.50% on the narrow chain in a 42-sample rotation (third
+  agreeing measurement). kotoba-native: 201 tests / 2,401 assertions with
+  both discriminator directions asserted. amu: 1,154 tests / 8,528
+  assertions, 0 failures, 0 errors, both ISAs. The closure assertion had
+  been red on main since the effaba5 advance — the exact failure shape
+  d214e495 documented in August — and now names 7eb40720.
+
+- **18 (next)**: H-C2 — the −4.4% narrow-chain residue vs clang-raw with
+  near-identical instruction streams (61 vs 61 words after the dead
+  materialization drop), so the residue is scheduling/front-end shaped.
+  Generate from an instruction-order diff of the two streams; falsify by
+  hand-reordering before touching the scheduler. Separately: re-run the
+  six-domain suite to re-score the 30-pair matrix with this pin.
 
 ## Standing honesty constraints
 
