@@ -1,205 +1,38 @@
 #!/usr/bin/env nbb
-;; Admission-decision parity, not "it runs": proves the SAME compiled
-;; decision core -- cloud-itonami-app's `oauth_resource_core.kotoba`, the
-;; real RFC 9728 protected-resource gate cloud-itonami-app's production
-;; server calls via `cloud.itonami.app.kotoba-oracle` -- gives IDENTICAL
-;; admission answers under two independent runtimes:
+;; Admission-decision parity for cloud-itonami-app's
+;; `oauth_resource_core.kotoba` -- the RFC 9728 protected-resource gate for
+;; `GET /.well-known/oauth-protected-resource/mcp`. ADR-2608760000 addendum 2.
 ;;
-;;   1. the JVM/KIR-interpreter oracle path cloud-itonami-app runs today
-;;      (`cloud.itonami.app.oauth-resource/oauth-resource-route?`, calling
-;;      `kotoba.kir/execute` on the shipped `resources/.../oauth-resource
-;;      .kir.edn`)
-;;   2. this repo's `:js-kotoba-v1` restricted-ESM target
-;;      (`amu compile --target js`), which `runtime/http-service.mjs` hosts
-;;      JVM-free on Node
+;; THIS IS NOW A DELEGATOR. The harness -- compile, run both runtimes,
+;; compare, the positive-admitted floor, cross-admission coverage, the
+;; mutation hook -- lives once in `scripts/cloud-itonami-route-parity.cljs`,
+;; and this route's battery (28 cases, verbatim as landed) lives in that
+;; script's registry under the id `oauth-resource`. Addendum 2 itself called
+;; for this extraction at the third route rather than a third copy of the
+;; mechanism.
 ;;
-;; ADR-2608760000 addendum 2. Sibling of
-;; scripts/cloud-itonami-health-parity.cljs (addendum 1), which proved the
-;; same property for `health_core.kotoba`. This is the second of
-;; cloud-itonami-app's ~30 routes.
+;; Equivalent to:
+;;   scripts/cloud-itonami-route-parity.cljs --route oauth-resource --app-dir <dir>
 ;;
-;; The battery deliberately includes CROSS-ADMISSION cases -- `/health` and
-;; `/healthz` -- because these two cores are siblings by design
-;; (oauth_resource_core.kotoba's own header calls itself "Sibling of
-;; health_core.kotoba ... not a second liveness probe"). A core that
-;; admitted its sibling's path would be a real defect that a battery of
-;; only its own path could never see.
-;;
-;; cloud-itonami-app is NOT modified by this script: its
-;; `oauth_resource_core.kotoba` source is read byte-for-byte from a checkout
-;; named by CLOUD_ITONAMI_APP_DIR (or --app-dir), and its JVM-side answers
-;; come from running the UNMODIFIED, ALREADY-SHIPPED
-;; `cloud.itonami.app.oauth-resource` namespace via `clojure -M` in that
-;; checkout -- the exact code path the real server calls on every request.
+;; Both floors this script introduced over addendum 1's are now enforced by
+;; the harness FOR EVERY ROUTE, not just this one: the positive case must be
+;; admitted by both runtimes (checked separately from mismatch counting), and
+;; the detector is mutation-verified via `--mutant-replace` / `--mutant-with`.
 (ns cloud-itonami-oauth-resource-parity
   (:require ["node:child_process" :as child]
-            ["node:fs" :as fs]
-            ["node:os" :as os]
             ["node:path" :as path]))
 
-(def root (.resolve path (.dirname path *file*) ".."))
-(def kotoba (.join path root "bin" "kotoba"))
-(def nbb-cli (.join path root "node_modules" "nbb" "cli.js"))
+(def here (.dirname path *file*))
+(def harness (.join path here "cloud-itonami-route-parity.cljs"))
+(def nbb-cli (.join path here ".." "node_modules" "nbb" "cli.js"))
 
-(defn arg [flag]
-  (let [args (vec (.slice js/process.argv 2))
-        i (.indexOf args flag)]
-    (when (and (>= i 0) (< (inc i) (count args))) (nth args (inc i)))))
+;; `--route oauth-resource` FIRST: the harness reads the first occurrence of
+;; a flag, so this route cannot be overridden by a trailing `--route`.
+(def result
+  (.spawnSync child js/process.execPath
+              (.concat #js [nbb-cli harness "--route" "oauth-resource"]
+                       (.slice js/process.argv 2))
+              #js {:stdio "inherit"}))
 
-(def app-dir
-  (or (arg "--app-dir") (aget js/process.env "CLOUD_ITONAMI_APP_DIR")))
-
-(when-not app-dir
-  (.error js/console
-    (str "cloud-itonami-oauth-resource-parity: need a cloud-itonami-app checkout.\n"
-         "  pass --app-dir <path> or set CLOUD_ITONAMI_APP_DIR"))
-  (.exit js/process 2))
-
-(def app-dir-real (.resolve path app-dir))
-(def core-source
-  (.join path app-dir-real "src" "cloud" "itonami" "app" "oauth_resource_core.kotoba"))
-
-(when-not (.existsSync fs core-source)
-  (.error js/console (str "cloud-itonami-oauth-resource-parity: not found: " core-source))
-  (.exit js/process 2))
-
-(def admitted "/.well-known/oauth-protected-resource/mcp")
-
-;; -- the battery: positive, wrong method, wrong path (case, trailing
-;;    slash, whitespace, query, traversal), prefix/suffix truncations of the
-;;    admitted path, unrelated paths, and CROSS-ADMISSION against the
-;;    sibling health core's routes.
-(def cases
-  [["GET" admitted]
-   ["POST" admitted]
-   ["DELETE" admitted]
-   ["PUT" admitted]
-   ["HEAD" admitted]
-   ["OPTIONS" admitted]
-   ["get" admitted]
-   ["Get" admitted]
-   ["GET" "/.well-known/oauth-protected-resource/MCP"]
-   ["GET" "/.WELL-KNOWN/oauth-protected-resource/mcp"]
-   ["GET" "/.well-known/oauth-protected-resource/mcp/"]
-   ["GET" "/.well-known/oauth-protected-resource/mcp "]
-   ["GET" " /.well-known/oauth-protected-resource/mcp"]
-   ["GET" "/.well-known/oauth-protected-resource/mcp?x=1"]
-   ["GET" "/.well-known/oauth-protected-resource"]
-   ["GET" "/.well-known/oauth-protected-resource/"]
-   ["GET" "/.well-known/oauth-protected-resource/mcp/extra"]
-   ["GET" "/.well-known/oauth-protected-resource/a2a"]
-   ["GET" "/well-known/oauth-protected-resource/mcp"]
-   ["GET" "/.well-known/oauth-protected-resource/../oauth-protected-resource/mcp"]
-   ;; cross-admission: the sibling health core's routes must NOT be admitted
-   ["GET" "/health"]
-   ["GET" "/healthz"]
-   ["GET" "/mcp"]
-   ["GET" "/"]
-   ["GET" ""]
-   ["GET" "/nope"]
-   ["" ""]
-   ["" admitted]])
-
-(def tmp (.mkdtempSync fs (.join path (.tmpdir os) "kotoba-cloud-itonami-oauth-resource-parity-")))
-(def cases-json-path (.join path tmp "cases.json"))
-(.writeFileSync fs cases-json-path (js/JSON.stringify (clj->js cases)))
-
-;; ---------------------------------------------------------------------
-;; 1. compile oauth_resource_core.kotoba (unmodified, verbatim) to js
-;; ---------------------------------------------------------------------
-(println "cloud-itonami-oauth-resource-parity: compiling oauth_resource_core.kotoba to --target js")
-(def compiled-path (.join path tmp "oauth-resource-core-js.mjs"))
-(let [result (.spawnSync child js/process.execPath
-                         #js [nbb-cli kotoba "-M" "compile" core-source
-                              "--target" "js" "--output" compiled-path]
-                         #js {:cwd root :stdio "inherit"})]
-  (when (.-error result) (throw (.-error result)))
-  (when-not (zero? (or (.-status result) 70))
-    (throw (js/Error. "compile failed"))))
-
-;; ---------------------------------------------------------------------
-;; 2. JS-side answers: import the compiled module, call the export
-;; ---------------------------------------------------------------------
-(def js-runner-path (.join path tmp "js-runner.mjs"))
-(.writeFileSync fs js-runner-path
-  (str "import fs from 'node:fs';\n"
-       "const cases = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));\n"
-       "const mod = await import(process.argv[3]);\n"
-       "const inst = mod.instantiateKotoba({});\n"
-       "const out = cases.map(([m, p]) => inst['oauth-resource-route?'](m, p));\n"
-       "process.stdout.write(JSON.stringify(out));\n"))
-
-(def js-answers
-  (let [result (.spawnSync child js/process.execPath
-                           #js [js-runner-path cases-json-path compiled-path]
-                           #js {:encoding "utf8"})]
-    (when (.-error result) (throw (.-error result)))
-    (when-not (zero? (or (.-status result) 70))
-      (throw (js/Error. (str "js runner failed: " (.-stderr result)))))
-    (js->clj (js/JSON.parse (.-stdout result)))))
-
-;; ---------------------------------------------------------------------
-;; 3. JVM-side answers: the REAL, UNMODIFIED production oracle path.
-;; ---------------------------------------------------------------------
-(println "cloud-itonami-oauth-resource-parity: running the JVM/KIR-interpreter oracle path in cloud-itonami-app")
-(def jvm-expr
-  (str "(require (quote clojure.data.json) (quote cloud.itonami.app.oauth-resource))"
-       "(let [cases (clojure.data.json/read-str (slurp \"" cases-json-path "\"))]"
-       "  (print (clojure.data.json/write-str"
-       "           (mapv (fn [[m p]] (cloud.itonami.app.oauth-resource/oauth-resource-route? m p)) cases))))"))
-
-(def jvm-answers
-  (let [result (.spawnSync child "clojure" #js ["-M" "-e" jvm-expr]
-                           #js {:cwd app-dir-real :encoding "utf8" :timeout 300000})]
-    (when (.-error result) (throw (.-error result)))
-    (when-not (zero? (or (.-status result) 70))
-      (do (.error js/console (.-stderr result))
-          (throw (js/Error. "jvm oracle path failed"))))
-    ;; clojure -M prints warnings to stdout before the payload on this repo's
-    ;; classpath -- take the LAST line, which is the JSON from `print`.
-    (let [lines (-> (.-stdout result) (.trim) (.split "\n"))
-          last-line (last lines)]
-      (js->clj (js/JSON.parse last-line)))))
-
-;; ---------------------------------------------------------------------
-;; 4. compare, case by case, and report honestly.
-;; ---------------------------------------------------------------------
-(println (str "\n" (count cases) " cases:\n"))
-(def mismatches (atom []))
-(doseq [i (range (count cases))]
-  (let [[m p] (nth cases i)
-        js-a (nth js-answers i)
-        jvm-a (nth jvm-answers i)
-        agree? (= js-a jvm-a)]
-    (println (str (if agree? "AGREE " "MISMATCH ")
-                   (pr-str [m p]) " js=" js-a " jvm=" jvm-a))
-    (when-not agree? (swap! mismatches conj [m p js-a jvm-a]))))
-
-;; A battery on which BOTH runtimes answer false everywhere would "agree"
-;; while proving nothing. Require the positive case to actually be admitted
-;; by both -- the floor that separates parity from two silent refusals.
-(def positive-admitted?
-  (and (true? (first js-answers)) (true? (first jvm-answers))))
-
-(.rmSync fs tmp #js {:recursive true :force true})
-
-(cond
-  (not positive-admitted?)
-  (do (println (str "\ncloud-itonami-oauth-resource-parity: FAIL -- the positive case "
-                    (pr-str (first cases)) " was not admitted by both runtimes"
-                    " (js=" (first js-answers) " jvm=" (first jvm-answers) ")."
-                    " A battery that refuses everything agrees with itself and proves nothing."))
-      (.exit js/process 1))
-
-  (seq @mismatches)
-  (do (println (str "\ncloud-itonami-oauth-resource-parity: FAIL -- " (count @mismatches)
-                     "/" (count cases) " mismatches:"))
-      (doseq [[m p js-a jvm-a] @mismatches]
-        (println (str "  " (pr-str [m p]) " js=" js-a " jvm=" jvm-a)))
-      (.exit js/process 1))
-
-  :else
-  (do (println (str "\ncloud-itonami-oauth-resource-parity: PASS -- " (count cases)
-                     " cases, 0 mismatches (js target vs JVM/KIR-interpreter oracle),"
-                     " positive case admitted by both"))
-      (.exit js/process 0)))
+(when (.-error result) (throw (.-error result)))
+(.exit js/process (or (.-status result) 70))
