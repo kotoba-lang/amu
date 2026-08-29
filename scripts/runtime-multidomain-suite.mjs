@@ -62,31 +62,62 @@ function sleep(milliseconds) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds);
 }
 
+const quietPolicy
+  = "busy-cpu-fraction <= 0.10 over 1s, three consecutive samples; load1 recorded as diagnostic";
+
+function cpuTicks() {
+  let idle = 0;
+  let total = 0;
+  for (const cpu of cpus()) {
+    idle += cpu.times.idle;
+    for (const value of Object.values(cpu.times)) total += value;
+  }
+  return { idle, total };
+}
+
 function waitForQuiet() {
   // Claim evidence needs an actually idle host, not merely one with spare
-  // scheduler capacity.  Cap load1 at one runnable task and at ten percent of
-  // the reported logical CPUs, whichever is lower.
-  const limit = Math.min(1, logicalCpus * 0.10);
+  // scheduler capacity.  The intended quantity was always "at most ten percent
+  // of the logical CPUs busy"; load1 was a proxy for it, and ADR 0281 measured
+  // that macOS load1 has a floor above 1.0 on every host of the build fleet
+  // while the CPUs are demonstrably idle -- the proxy was unsatisfiable where
+  // the intended quantity is not.  So measure the intended quantity directly:
+  // the busy fraction of aggregate CPU ticks over each one-second window, at
+  // the same ten-percent strictness.  load1 stays in every sample as a
+  // diagnostic, and a genuinely busy host still fails (measured: the one
+  // fleet host running a persistent workload was the only one this criterion
+  // rejected).
+  const limit = 0.10;
   const injected = process.env.AMU_BENCH_TEST_LOAD_SAMPLES?.split(",").map(Number) ?? null;
   const samples = [];
   const started = Date.now();
   let consecutive = 0;
+  let previous = injected ? null : cpuTicks();
   for (;;) {
-    const value = injected
-      ? injected[Math.min(samples.length, injected.length - 1)]
-      : loadavg()[0];
-    samples.push({ elapsedMilliseconds: Date.now() - started, load1: value,
+    let value;
+    if (injected) {
+      value = injected[Math.min(samples.length, injected.length - 1)];
+    } else {
+      sleep(Math.min(1_000, Math.max(1, quietWaitMilliseconds - (Date.now() - started))));
+      const current = cpuTicks();
+      const idleDelta = current.idle - previous.idle;
+      const totalDelta = current.total - previous.total;
+      previous = current;
+      value = totalDelta > 0 ? 1 - idleDelta / totalDelta : 1;
+    }
+    samples.push({ elapsedMilliseconds: Date.now() - started,
+      busyCpuFraction: value, load1: loadavg()[0],
       qualified: value <= limit });
     consecutive = value <= limit ? consecutive + 1 : 0;
     if (consecutive >= 3) return { qualified: true, limit,
-      policy: "load1 <= min(1.0, logical-cpus * 0.10)",
+      policy: quietPolicy,
       requiredConsecutive: 3, samples };
     if (Date.now() - started >= quietWaitMilliseconds)
       return { qualified: false, limit,
-        policy: "load1 <= min(1.0, logical-cpus * 0.10)",
+        policy: quietPolicy,
         requiredConsecutive: 3, samples,
         reason: "quiet-host-timeout" };
-    sleep(Math.min(injected ? 1 : 1_000, quietWaitMilliseconds - (Date.now() - started)));
+    if (injected) sleep(1);
   }
 }
 

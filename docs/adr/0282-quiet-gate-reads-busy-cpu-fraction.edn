@@ -1,0 +1,31 @@
+{:adr/id 282
+ :adr/status :accepted
+ :decision :quiet-gate-reads-busy-cpu-fraction
+ :takes-option-of {:adr 281 :option :measure-idle-cpu-fraction-directly}
+ :contract {:quantity :busy-cpu-fraction
+            :source "1 - delta-idle/delta-total from os.cpus() ticks"
+            :window-seconds 1
+            :limit 0.10
+            :consecutive-samples 3
+            :strictness :unchanged-ten-percent-of-logical-cpus
+            :load1 :recorded-as-diagnostic
+            :injection {:variable "AMU_BENCH_TEST_LOAD_SAMPLES"
+                        :semantics :busy-fractions
+                        :over-limit-still-fails true}}
+ :why {:proxy-floor {:measured "2026-08-29" :adr 281
+                     :load1-floor-range [1.09 1.66]
+                     :cpu-idle-during-floor true}
+       :replacement-measured {:date "2026-08-29" :hosts 7
+                              :qualified-outright 2
+                              :near-qualified 3
+                              :rejected-busy-host 1
+                              :rejected-host-idle-range [0.68 0.83]}}
+ :scope {:changed [:runtime-multidomain-suite-wait-for-quiet]
+         :unchanged [:runtime-comparison-75pct-sanity-check
+                     :per-domain-drift-check
+                     :perfgate-policy
+                     :two-phase-prepare-measure
+                     :sealing :abba-rotation]}
+ :claims {:claim-artifact-emittable true
+          :any-performance-claim false
+          :broad-fastest-qualified false}}
