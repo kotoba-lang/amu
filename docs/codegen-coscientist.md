@@ -473,6 +473,24 @@ as before.
   M4 minis are cheap replicas; the real second ISA waits on the x86-64
   backend catch-up and the gad measurement path.
 
+- **35 (2026-08-29, Wave 1 opens: the state-machine domain)**:
+  `bench/runtime-comparison/kernel_state.kotoba` — a five-state DFA
+  driven by a Lehmer stream's low two bits, 64 transitions per call.
+  Every transition is a data-dependent branch tree, which no existing
+  domain exercises: the six inherited domains all branch predictably.
+  Known answers came from an independent nbb oracle before any arm was
+  timed; amu native, the zig twin and the rust twin all agree on every
+  manifest input. First measurements (levi): **amu 201.4 ns/call vs
+  zig-wasm 221.7 and rustc-wasm 220.8 — perfgate-qualified +8.1% and
+  +7.8%**, Ladder A's seventh domain and seventh win. Sequencing note:
+  string-search was examined first and deferred — native strings live
+  behind host context callbacks that the benchmark runner's minimal
+  context does not provide, so that domain needs a runner extension
+  before it can be timed, and a domain that cannot run yet is a work
+  item, not a skipped row. Ladder B (unmetered natives) has not measured
+  this domain yet; that comparison and the manifest registration are the
+  next state-domain steps.
+
 ## Standing honesty constraints
 
 Every number above is one host on one day; the falsification numbers are
