@@ -37,6 +37,13 @@ const ALLOWED_IMPORTS = new Set([
   "kotoba:typed/vector-at-i64/function",
   "kotoba:typed/vector-assoc-i64/function",
   "kotoba:typed/vector-conj-i64/function",
+  "kotoba:typed/vector-from-memory-i64/function",
+  // A MEMORY import, not a function. The bulk vector path writes its
+  // items into a scratch memory the HOST owns and then asks the host to
+  // read them back in one call. Importing it is what keeps that inside
+  // the profile: validateModule still refuses a module that EXPORTS a
+  // memory, and this one is never the guest's to export.
+  "kotoba:typed/scratch/memory",
   "kotoba:typed/vector-at-f64/function",
   "kotoba:typed/vector-assoc-f64/function",
   "kotoba:typed/vector-conj-f64/function",
@@ -1426,7 +1433,13 @@ function createTypedRuntime(abi, typedCapCall, allow) {
     return admitValue(descriptor, Object.freeze(present
       ? [descriptor, true, value] : [descriptor, false]));
   };
+  // Two pages, fixed, matching kotoba-wasm's `typed-scratch-pages`. The guest
+  // bounds-checks its own bump pointer against that capacity before every
+  // bulk write, so a larger or growable memory would silently widen a limit
+  // the guest is enforcing on itself.
+  const scratch = new WebAssembly.Memory({ initial: 2, maximum: 2 });
   const imports = Object.freeze({
+    scratch,
     "cap-call"(id, request) {
       if (!Number.isInteger(id) || id < 0 || id > 255 || !allow.has(id))
         reject("capability-denied", "runtime capability policy denied the typed call");
@@ -1785,6 +1798,33 @@ function createTypedRuntime(abi, typedCapCall, allow) {
       const checked = assertValue(descriptor, value);
       if (checked.length >= 16385) reject("invalid-typed-value", "vector-i64 item budget exceeded");
       return admitValue(descriptor, Object.freeze([...checked, i64(item)]));
+    },
+    // The bulk counterpart of vector-conj-i64: the guest has already written
+    // `count` i64s into the scratch memory at `offset`, and this reads them
+    // back as one value instead of one host call per item.
+    //
+    // Missing until 2026-08-29, which made every vector kit in amu's
+    // conformance suite fail with `forbidden-import` -- kotoba-wasm c7d3514
+    // replayed the emitter half of this path without the host half.
+    "vector-from-memory-i64"(descriptorId, offset, count) {
+      const descriptor = descriptorAt(descriptorId);
+      if (descriptor[0] !== "vector-i64")
+        reject("invalid-typed-operation", "vector-from-memory requires vector-i64");
+      const items = Number(count);
+      const start = Number(offset);
+      // Same item budget as vector-conj-i64, so the two ways of building the
+      // same value cannot disagree about how large it may be.
+      if (!Number.isInteger(items) || items < 0 || items > 16384)
+        reject("invalid-typed-value", "vector-i64 item budget exceeded");
+      const span = items * 8;
+      if (!Number.isInteger(start) || start < 0 || start + span > scratch.buffer.byteLength)
+        reject("invalid-typed-operation", "vector-from-memory range is outside the scratch memory");
+      const view = new DataView(scratch.buffer);
+      const result = new Array(items + 1);
+      result[0] = descriptor;
+      for (let index = 0; index < items; index += 1)
+        result[index + 1] = view.getBigInt64(start + index * 8, true);
+      return admitValue(descriptor, Object.freeze(result));
     },
     "vector-at-f64"(descriptorId, value, rawIndex) {
       const descriptor = descriptorAt(descriptorId);
