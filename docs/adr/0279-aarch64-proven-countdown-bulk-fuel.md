@@ -53,3 +53,9 @@ run, so this is host-load-qualified diagnostic evidence, not a qualified
 performance claim. It is evidence against a fastest claim, not evidence of a
 speedup or Rust/LLVM parity. Rust and LLVM remain optional comparators, not
 build or runtime dependencies.
+
+> **Superseded in part by ADR 0281 (2026-08-29).** The `1.349x` ratio in
+> this section is withdrawn: re-measured on a host-load-qualified run, both
+> arms of this fixture carry a relative standard deviation near 0.47, which
+> `perfgate.core/qualify` refuses as `:too-noisy`. The fuel-equivalence and
+> fail-closed claims above are untouched.

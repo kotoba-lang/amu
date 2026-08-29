@@ -1,0 +1,89 @@
+{:adr/id 281
+ :adr/status :accepted
+ :decision :fleet-quiet-gate-unsatisfiable-and-domains-not-separated
+ :measured-on "2026-08-29"
+ :compiler {:commit "d63740aca007df0890ee5f0a24fd323b1faa6be8" :dirty false}
+ :quiet-gate {:policy "load1 <= min(1.0, logical-cpus * 0.10), three consecutive samples"
+              :limit-on-ten-core-host 1.0
+              :method "the gate own criterion, 120 samples at 1 Hz per host"
+              :hosts {:benjamin {:cores 10 :min-load1 1.09 :max-consecutive-under-limit 0}
+                      :dan      {:cores 10 :min-load1 1.30 :max-consecutive-under-limit 0}
+                      :asher    {:cores 10 :min-load1 1.35 :max-consecutive-under-limit 0}
+                      :levi     {:cores 10 :min-load1 1.41 :max-consecutive-under-limit 0}
+                      :judah    {:cores 10 :min-load1 1.63 :max-consecutive-under-limit 0}
+                      :joseph   {:cores 10 :min-load1 1.66 :max-consecutive-under-limit 0}
+                      :simeon   {:cores 10 :min-load1 1.66 :max-consecutive-under-limit 0}}
+              :cpu-idle-during-floor true
+              :uninterruptible-threads 0
+              :spotlight-disabled-experiment {:hosts #{:benjamin :asher :dan}
+                                              :effect :none
+                                              :restored true}
+              :satisfiable-on-fleet false
+              :consequence :no-bounded-fastest-claim-emittable-from-this-fleet}
+ :drift-check-inversion {:policy "abs(load1-after - load1-before) <= logical-cpus * 0.10"
+                         :sampled-around :whole-run-including-comparator-builds
+                         :busy-host-passes true
+                         :quiet-host-fails true
+                         :observed {:levi-before 2.36 :levi-after 6.38 :limit 1.0}
+                         :prior-passes-explained #{279 277}
+                         :already-solved-by :two-phase-prepare-measure}
+ :host {:id "levi-mac16-10-apple-m4"
+        :machine-provenance :measured
+        :cpu "Apple M4" :model "Mac16,10"
+        :cores 10 :performance-cores 4 :efficiency-cores 6
+        :cache-line-bytes 128 :page-bytes 16384
+        :os "macOS 26.2" :arch "arm64"}
+ :toolchains {:rustc "1.98.0" :clang "Apple clang 1700.6.4.2" :zig "0.16.0"
+              :go "1.27.0" :swift "6.2.4"}
+ :method {:runs 7 :calls 100000 :warmup 10000 :n 200
+          :adjudicator :perfgate.core/qualify
+          :policy :kotoba.perfgate.policy/default-v1
+          :both-directions true
+          :known-answers :all-engines-agree
+          :raw-reports-committed false}
+ :domains
+ [{:id :kernel :host-load-qualified false :reason :drift
+   :amu-median-ns 6.93 :rust-median-ns 6.47 :clang-median-ns 6.42
+   :verdict-vs-rust :rust-qualified :verdict-vs-clang :clang-qualified}
+  {:id :kernel-wide :host-load-qualified false :reason :drift
+   :amu-median-ns 5.52 :rust-median-ns 5.90 :clang-median-ns 6.16
+   :verdict-vs-rust :amu-qualified :verdict-vs-clang :amu-qualified}
+  {:id :kernel-deep :host-load-qualified true
+   :amu-median-ns 9.38 :rust-median-ns 9.11 :clang-median-ns 9.67
+   :verdict-vs-rust :not-separated :verdict-vs-clang :not-separated}
+  {:id :kernel-call :host-load-qualified true
+   :amu-median-ns 5.43 :rust-median-ns 5.06 :clang-median-ns 5.04
+   :verdict-vs-rust :not-separated :verdict-vs-clang :not-separated}
+  {:id :kernel-call-branch :host-load-qualified true
+   :amu-median-ns 4.97 :rust-median-ns 4.95 :clang-median-ns 4.76
+   :verdict-vs-rust :not-separated :verdict-vs-clang :not-separated}
+  {:id :kernel-loop-call :host-load-qualified true
+   :amu-median-ns 140.77 :rust-median-ns 140.40 :clang-median-ns 139.91
+   :verdict-vs-rust :not-separated :verdict-vs-clang :not-separated}
+  {:id :kernel-batch :host-load-qualified true
+   :metric :artifact-batch-nanoseconds-per-iteration
+   :amu-median-ns-per-iteration 4.58 :rust-median-ns-per-iteration 4.23667
+   :amu-relative-stdev 0.471 :rust-relative-stdev 0.481
+   :policy-max-relative-stdev 0.10
+   :verdict-vs-rust :refused-too-noisy
+   :checksums-agree true}]
+ :withdrawn {:adr 279
+             :field :performance/amu-native-slowdown-vs-rust
+             :value 1.349069039380458
+             :why "median ratio of a sample set this policy rejects as too noisy; ADR 279 states perfgate was not run"
+             :untouched #{:fuel-equivalence :fail-closed
+                          :hot-edge-fuel-memory-traffic-removed}}
+ :open-question {:id :what-quantity-should-the-quiet-gate-read
+                 :options [:measure-idle-cpu-fraction-directly
+                           :qualify-a-host-class-that-reaches-the-threshold
+                           :accept-that-no-claim-is-emittable]
+                 :taken :none
+                 :belongs-in :its-own-adr}
+ :dependencies {:rust false :llvm false :clang false :zig false :go false :swift false}
+ :claims {:runtime-speed-improvement false
+          :rust-performance-parity false
+          :clang-performance-parity false
+          :not-separated-is-not-equality true
+          :quiet-gate-satisfiable-on-fleet false
+          :broad-fastest-qualified false
+          :world-fastest false}}
