@@ -307,6 +307,61 @@ that domain is unreachable for anyone, and recording that is a result.
   protection re-scores periodically; new wins require either new
   mechanisms beyond what three compilers currently know, or new domains.
 
+## Contract v3 — the two ladders (adopted 2026-08-29, owner direction)
+
+The owner's direction: *be able to say fastest-and-safe on more
+environments, and fastest across more domains — grow the contract.* The
+2026-08-29 session proved the constraint that shapes how: against
+unmetered native compilers, domains converge to parity floors that no
+entrant can beat by the contract's ≥5%. So the claim splits into two
+ladders, and neither may borrow the other's evidence.
+
+**Ladder A — fastest among safe execution systems (the winning ladder).**
+A new comparator universe: systems that execute with metering and
+isolation *on* — semantic twins compiled to wasm32-wasi by rustc/zig and
+run under wasmtime with fuel enabled, against amu native with its sealed
+fuel. This is the universe where amu's differentiator is priced in for
+everyone, and the one it can honestly sweep. The safety side becomes
+contract *preconditions*, not prose: a Ladder-A claim seals only with
+metering verified on for every arm, amu's provenance verification green,
+and the conformance suite green at the measured pin. The sentence it can
+earn: *fastest among metered execution systems on the enumerated
+domains and hosts.*
+
+**Ladder B — at-or-above parity with unmetered natives (the holding
+ladder).** The existing rustc/clang/zig/go/swift universe. Expansion
+grows this ladder's honest sentence (*no measured domain where amu is
+behind by the threshold*), and parity floors are recorded as results,
+never hidden.
+
+**Domain expansion comes in principled waves, never cherry-picked:**
+- Wave 1 (native can run today): string search (`string_search.cljc` /
+  `string_index.cljc` exist), record/handle access, branch-dense state
+  machines, self-recursion shapes.
+- Wave 2 (unlocked by native backend features): collections, documents —
+  the admission gate (`only-native-word-typed-features?`) is the
+  roadmap; a domain that cannot compile yet is a backend work item, not
+  a skipped row.
+- Every added domain lands with manifest known answers for all
+  verification inputs, both-direction perfgate adjudication, and its
+  result recorded whether amu wins, ties, or loses.
+
+**Host expansion:** (1) same-ISA multi-host on the fleet's M4 minis;
+(2) **gad — a real x86_64 Linux host, 32 cores, near idle (measured
+2026-08-29)** — makes an honest second-ISA target possible, which first
+requires porting the four landed AArch64 wins (Mersenne chain, parallel
+sign correction, SIMD parking; preserved crossing already covers x86
+bodies) and building the Linux measurement path. Rosetta numbers are
+never labeled x86 hardware. Feasibility measured on levi: wasmtime
+47.0.3 present, zig ships wasm32 targets; homebrew rustc's wasm std is
+unverified (rustup or zig twins until then).
+
+**Priority order:** A-prototype (zig-wasm+wasmtime-fuel vs amu-native
+on the existing six domains) → Wave-1 domains on both ladders →
+multi-host M4 evidence → x86-64 backend catch-up and gad measurement
+path → Wave-2 backend features. One iteration = one measured verdict,
+as before.
+
 ## Standing honesty constraints
 
 Every number above is one host on one day; the falsification numbers are
