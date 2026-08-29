@@ -512,6 +512,26 @@ as before.
   offset. Ladder-B scoreboard grows to 7 domains: 21 + 3 wins, 2 losses,
   9 parities of 35 pairs — the losses are the domain doing its job.
 
+- **37 (2026-08-29, H-G hand-falsified — branchless beats the jump
+  table)**: the whole 5x4 DFA packs into one 60-bit constant, three bits
+  per entry, and `state' = (TABLE >> ((state*4+sym)*3)) & 7` leaves the
+  loop's own back edge as the only branch. Measured three ways on the
+  identical runner, every arm agreeing with the oracle:
+  **branchless-C 176.3 ns — rustc's jump table 183.2 — amu's if-tree
+  202.9.** No branches beats one indirect branch beats a tree of
+  unpredictable ones, as predicted. So H-G's payoff is bounded: it turns
+  the state domain's two losses into roughly a qualified win over clang
+  (~+6%) and a parity with rustc (+3.7%, under the threshold). Two
+  facts for the implementation: (a) the lowering must live in the
+  compiler — **the source language currently admits no shift
+  signature** (`bit-shift-right`/`unsigned-bit-shift-right` are
+  subset-rejected; the MIR/native shift encodings exist), so a
+  table-form fixture cannot even be written from source today; (b) the
+  recognition target is a nested if-tree whose leaves are small
+  constants over a dense product of two bounded discriminants — exactly
+  what `kernel_state` is. Filed as the next compiler slice, fail-closed
+  like the Mersenne chain test.
+
 ## Standing honesty constraints
 
 Every number above is one host on one day; the falsification numbers are
