@@ -35,7 +35,7 @@ that domain is unreachable for anyone, and recording that is a result.
 |---|---|---|---|
 | H-A | the quiet gate reads a proxy (load1) with a floor above its own limit; read the intended quantity (busy-CPU fraction) directly at the same strictness | **executed — iteration 16** (ADR 0282) | fleet measurement 2026-08-29: load1 criterion 0/7 hosts ever qualified; busy-fraction criterion qualified 2 hosts outright, near-qualified 3, and rejected exactly the one host running a persistent workload |
 | H-C | narrow-arithmetic gap vs Clang: Clang strength-reduces `q*(2^31-1)` to `sub‑lsl + add`, taking one multiply off the mul pipes per round; amu emits `msub` | **confirmed direction, below threshold — evolve** | instruction diff: amu 54 instrs (6/round), clang 61 (7/round) yet clang faster; hand-patched amu code (byte-identical reconstruction, 8 substitutions): +2.46% mean, medians 6.86→6.70 ns, mins 6.85→6.68, 42 ABBA samples/arm on levi, both arms answering 1830338420. Explains ~⅓ of the ~7% clang gap |
-| H-C2 | the remaining ~4.5% vs Clang on `kernel` after H-C: candidate mechanisms are inter-call overlap shape and port mix of the remaining round | open — generate from a diff of the H-C-mutated stream against clang's | pending |
+| H-C2 | the remaining ~4.4% vs Clang on `kernel` after H-C: the mutated stream and clang's are now near-identical in shape (62 vs 61 instructions; amu-mut still loads the now-dead `0x7fffffff` constant), so the residue is scheduling/front-end shaped | open — generate from an instruction-order diff | pending |
 | H-D | `kernel_batch` loop-path remainder (~8% vs Rust diagnostic, refused `:too-noisy` in ADR 0281): body scheduling / per-iteration instruction mix | open; measurement first needs the noise fixed (H-B) or the loop lengthened | ADR 0279 measured 1.349x behind pre-#653..#660; levi 2026-08-29 read 1.08x diagnostic |
 | H-B | batch-fixture noise (rsd 0.47 vs policy 0.10) is scheduler migration of a long single-call region across P/E cores; pin the timed region's QoS | open | performance.md already documents an E-core migration incident |
 | H-E | functions with calls + branches take the conservative all-vreg path (+33% at 24 live values); add call-clobber handling to the scan | open — the fix is already named in performance.md; the six claim domains exercise it lightly | measured 2026-08-18 tables in performance.md |
@@ -74,10 +74,29 @@ that domain is unreachable for anyone, and recording that is a result.
   needed swing is therefore 9–13%. `comparatorSetQualified` remains false and
   no claim artifact was emitted; the machinery that could emit one is now
   proven end-to-end (raw report retained beside this state).
-- **17 (next)**: H-C in the compiler — kotoba-native constant-multiply
-  strength reduction for `msub` by `2^k−1` in dependent chains — combined
-  with an H-C2 mechanism, because +2.46% alone cannot qualify. Gate: paired
-  before/after on the emitted bytes, then the six-domain suite.
+- **17 (in progress; Reflect executed 2026-08-29)**: the transform must be
+  **context-gated, and the gate is now measured, not argued.** The same
+  substitution hand-patched into both kernels, 42 rotated samples per arm on
+  levi, every sample agreeing with the manifest's known answers, both
+  verdicts separated from noise:
+
+  | workload | mut vs orig | clang-raw vs orig (same runner) |
+  |---|---|---|
+  | kernel (one dependent chain) | **+2.56%**, separated | clang +6.68% ahead |
+  | kernel_wide (eight independent lanes) | **−5.06%**, separated — regression | **amu −11.45% ahead of clang's own bytes** |
+
+  A latency-bound chain wants the multiply off the critical resource; a
+  throughput-bound body pays for the extra instruction. An unconditional
+  transform would trade the one domain amu already sweeps (wide, 5/5
+  qualified) for a third of the narrow gap — strictly worse under the claim
+  contract. The compiler change in kotoba-native therefore needs a
+  discriminator (does this `msub` sit on the block's serial recurrence, or
+  beside independent live chains) before it may fire; positive and negative
+  fixtures are both already in the bench tree (`kernel`, `kernel_wide`).
+  `clang-raw` here is Apple Clang's exact emitted bytes for the semantic-twin
+  C, extracted and run through the identical raw W^X runner — the first
+  same-harness comparator baseline, retained with the evidence. Remaining
+  narrow-chain residue after the transform: −4.40% vs clang-raw (H-C2).
 
 ## Standing honesty constraints
 
