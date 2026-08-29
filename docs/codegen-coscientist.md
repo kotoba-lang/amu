@@ -585,6 +585,28 @@ as before.
   was green on rerun: 1,154/8,526/0/0. **H-X1 is next** — the push/pop
   traffic is now the largest named x86 mechanism.
 
+- **41 (2026-08-29, H-X1 part 2 lands — and is null until part 1)**:
+  kotoba-native #88 adds `x86-elide-dead-quotient-saves`, a forward
+  read-before-write scan deciding each of RAX/RDX's saves independently,
+  refusing anything outside a closed straight-line set. Fail-closed and
+  green (204/2,418 with all four directions asserted) — and **measured
+  null on the kernel**: 461 → 453 bytes only, gad medians statistically
+  unchanged, because the allocator itself parks the recurrence value in
+  RAX, so the saves are mostly *legitimate*. The mechanism is the
+  receiver; the trigger is **part 1: steer quotient-crossing values away
+  from RAX/RDX in the kotoba-mir pool** — filed as the next slice.
+  AArch64 emission verified byte-identical against the parent pin.
+  Two repairs while landing: the parallel session's `io.github.
+  kotoba-lang/json` dependency landed URL-inferred with a broken
+  `.gitlibs` worktree, so `lock-classpath` failed closed and main's lock
+  ships without it — this branch adds the explicit `:git/url`, refetches
+  the cache entry, and regenerates a 20-dependency lock. Separately,
+  **origin/main is currently red on 28 execution tests** (dag-cbor guest
+  output ×6, storage transport, workerd host) — reproduced identically
+  on a pristine main worktree, so it is the parallel landings' breakage,
+  not this pin's; documented rather than chased, per the
+  closure-assertion precedent.
+
 ## Standing honesty constraints
 
 Every number above is one host on one day; the falsification numbers are
