@@ -1,0 +1,62 @@
+;; kotoba/pure route response for a REAL cloud-itonami-app route -- the
+;; RFC 9728 protected-resource metadata document served at
+;; GET /.well-known/oauth-protected-resource/mcp -- on THIS standalone
+;; http-service.mjs demo host, not a live cloud-itonami-app process.
+;;
+;; ADR-2608760000 addendum 2. Sibling of
+;; examples/cloud-itonami-health-route.kotoba (addendum 1), and the same
+;; kind of claim: the JSON SHAPE is real, the host is not.
+;;
+;; ## What is real vs. representative here
+;;
+;; The shape comes from `cloud.itonami.app.oauth-resource/metadata*`
+;; (src/cloud/itonami/app/oauth_resource.clj, read 2026-08-29), which
+;; builds exactly five keys: `resource`, `resource_name`,
+;; `bearer_methods_supported`, `scopes_supported`, `authorization_servers`.
+;;
+;; THREE of those five are fixed constants in that file and are copied here
+;; VERBATIM, so they are real, not representative:
+;;   - `resource_name`             "Itonami Cloud MCP"
+;;   - `bearer_methods_supported`  ["header"]
+;;   - `scopes_supported`          the `scopes` def: mcp:tools,
+;;                                 tenant:connect, repository:read,
+;;                                 repository:write
+;;
+;; TWO are derived from a live deployment's configuration and CANNOT be
+;; honestly reproduced by a bare demo process:
+;;   - `resource`               `(resource-url configuration)` -- the
+;;                              deployment's own MCP resource URL.
+;;   - `authorization_servers`  `(authorization-servers configuration)`.
+;;
+;; The second one deserves emphasis, because it makes this route a WEAKER
+;; standalone reproduction than /health was: `metadata*` THROWS
+;; (`:oauth-resource/no-authorization-server`) when `servers` is empty. A
+;; real cloud-itonami-app with no configured authorization server does not
+;; serve a degraded document -- it refuses to serve this route at all. This
+;; host has no configuration and therefore no authorization server, so what
+;; it serves here is a shape demonstration; a real deployment in the same
+;; state would 500, not 200. Both fields say `representative-` literally
+;; rather than carrying a plausible-looking invented URL.
+;;
+;; ## What is NOT proven by wiring this route
+;;
+;; The admission DECISION (is this GET /.well-known/oauth-protected-
+;; resource/mcp) on cloud-itonami-app's real server is
+;; `oauth_resource_core.kotoba`'s `oauth-resource-route?`, called through
+;; `cloud.itonami.app.kotoba-oracle` on the JVM/KIR interpreter. THIS host's
+;; admission decision is amu's own shared `runtime/http/route-decide.kotoba`
+;; (unmodified, table-lookup based) -- the same core every other route here
+;; uses. The two agree, but this wiring does not exercise
+;; `oauth_resource_core.kotoba` at all. That separate, more precise claim is
+;; proven by scripts/cloud-itonami-oauth-resource-parity.cljs.
+(ns examples.cloud-itonami-oauth-resource-route
+  (:export [oauth-protected-resource]))
+
+(defn oauth-protected-resource
+  []
+  :string
+  (string-concat "{\"resource\":\"representative-no-resource-url-configured-standalone-amu-http-service-demo\","
+    (string-concat "\"resource_name\":\"Itonami Cloud MCP\","
+      (string-concat "\"bearer_methods_supported\":[\"header\"],"
+        (string-concat "\"scopes_supported\":[\"mcp:tools\",\"tenant:connect\",\"repository:read\",\"repository:write\"],"
+          "\"authorization_servers\":[\"representative-no-authorization-server-configured-on-this-host\"]}")))))
