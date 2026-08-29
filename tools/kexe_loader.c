@@ -17,6 +17,12 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
+#if defined(__aarch64__)
+#include <arm_neon.h>
+#elif defined(__SSE2__)
+#include <emmintrin.h>
+#endif
+
 #if defined(__APPLE__)
 #include <sandbox.h>
 #endif
@@ -1398,6 +1404,29 @@ static int64_t checked_typed_cap_call(struct kexe_context_v3 *context,
   return result;
 }
 
+/* Explicit 16-byte equality lane used by every native string comparison.
+ * `memcmp` is still the bounded scalar/tail oracle, but the hot body no longer
+ * depends on a libc implementation choosing SIMD for these short guest
+ * strings. Unaligned loads are intentional: string views may begin at any
+ * validated UTF-8 boundary. */
+static int simd_bytes_equal(const uint8_t *a, const uint8_t *b, size_t length) {
+  size_t i = 0;
+#if defined(__aarch64__)
+  for (; i + 16u <= length; i += 16u) {
+    uint8x16_t av = vld1q_u8(a + i);
+    uint8x16_t bv = vld1q_u8(b + i);
+    if (vminvq_u8(vceqq_u8(av, bv)) != UINT8_MAX) return 0;
+  }
+#elif defined(__SSE2__)
+  for (; i + 16u <= length; i += 16u) {
+    __m128i av = _mm_loadu_si128((const __m128i *)(const void *)(a + i));
+    __m128i bv = _mm_loadu_si128((const __m128i *)(const void *)(b + i));
+    if (_mm_movemask_epi8(_mm_cmpeq_epi8(av, bv)) != 0xffff) return 0;
+  }
+#endif
+  return memcmp(a + i, b + i, length - i) == 0;
+}
+
 static int64_t checked_string_equal(struct kexe_context_v3 *context,
                                     int64_t handle_a, int64_t handle_b) {
   if (context == NULL || context->version != 3) { raise(SIGILL); return 0; }
@@ -1408,7 +1437,7 @@ static int64_t checked_string_equal(struct kexe_context_v3 *context,
   if (length_a != length_b) return 0;
   const uint8_t *a = resolve_string_bytes(context, offset_a, length_a);
   const uint8_t *b = resolve_string_bytes(context, offset_b, length_b);
-  return memcmp(a, b, (size_t)length_a) == 0 ? 1 : 0;
+  return simd_bytes_equal(a, b, (size_t)length_a) ? 1 : 0;
 }
 
 static int64_t checked_string_concat(struct kexe_context_v3 *context,

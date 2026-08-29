@@ -468,7 +468,8 @@
 (deftest execution-rejects-before-entering-untrusted-or-unauthorized-code
   (let [{:keys [envelope trust]} (signed "(defn main [] 42)" {:allow #{}})
         tampered (assoc-in envelope [:artifact :code 0] 255)
-        {:keys [runtime loader-path]} @measured-runtime]
+        {:keys [runtime loader-path]} @measured-runtime
+        {trusted-trust :trust trusted-options :options} (execution-options trust)]
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #"runtime identity is not trusted"
                           (executor/execute envelope trust {:allow #{}} {:args []}
                                             {:now 1500 :entry 'main :runtime runtime
@@ -477,13 +478,14 @@
                           (executor/execute tampered trust {:allow #{}} {:args []}
                                             {:now 1500 :entry 'main})))
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #"entry arity"
-                          (executor/execute envelope trust {:allow #{}} {:args [1]}
-                                            {:now 1500 :entry 'main}))))
+                          (executor/execute envelope trusted-trust {:allow #{}}
+                                            {:args [1]} trusted-options))))
   (let [policy {:allow #{[:cap/call 7]}}
-        {:keys [envelope trust]} (signed "(defn main [] (cap-call 7 41))" policy)]
+        {:keys [envelope trust]} (signed "(defn main [] (cap-call 7 41))" policy)
+        {trusted-trust :trust options :options} (execution-options trust)]
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #"denies required effects"
-                          (executor/execute envelope trust {:allow #{}} {:args []}
-                                            {:now 1500 :entry 'main})))))
+                          (executor/execute envelope trusted-trust {:allow #{}}
+                                            {:args []} options)))))
 
 (deftest execution-rejects-a-valid-artifact-sealed-for-another-os
   (let [isa (if (= (target) :aarch64-kotoba-v1) "aarch64" "x86_64")

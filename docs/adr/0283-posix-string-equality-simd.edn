@@ -1,0 +1,17 @@
+{:adr/id 283
+ :adr/status :accepted
+ :decision :posix-string-equality-uses-explicit-16-byte-simd
+ :contract {:validation :unchanged
+            :chunk-bytes 16
+            :aarch64 [:neon :compare-equal :horizontal-min]
+            :x86-64 [:sse2 :compare-equal :movemask]
+            :tail :bounded-memcmp
+            :other-architectures :scalar-memcmp
+            :context-abi :unchanged
+            :windows-loader :unchanged}
+ :verification {:compile-flags ["-O3" "-Wall" "-Wextra" "-Werror"]
+                :optimized-assembly-instruction-family true
+                :semantic-string-vectors :unchanged}
+ :claims {:simd-emitted true
+          :performance-qualified false
+          :broad-fastest-qualified false}}
