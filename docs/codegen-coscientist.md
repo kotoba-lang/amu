@@ -235,12 +235,22 @@ that domain is unreachable for anyone, and recording that is a result.
   | swept domains | wide → wide + **call-preservation** |
   | worst deficit anywhere | −7.7% → **−3.8%** |
 
-- **26 (next)**: branch-call vs clang (−3.8%) is the only loss left —
-  `kernel_call_branch` is `kernel_call` plus one `if`, so diff amu's
-  emission against clang's twin around the branch. The eight ±1%
-  parities need per-domain discoveries of what LLVM left on the table;
-  the honest terminal state (a proven ceiling) remains a possible verdict
-  for narrow and loop-call, where three compilers agree within 1%.
+- **26 (2026-08-29, Reflect executed — hypothesis refuted)**: the visible
+  structural differences on branch-call are **not** the −3.8%. clang
+  if-converts to `csel` with a single epilogue; amu emits CBNZ with two
+  exit blocks, one `mov` round trip, and three unfused `add #k; mov`
+  pairs. A hand mutant with clang's whole structure — csel, single
+  epilogue, fused adds, no round trip, 284 → 244 bytes, byte-identical
+  helper and fuel preamble — measured **+0.01%, a separated null**: on a
+  predicted branch the M4 charges nothing for any of it. The residue
+  lives somewhere subtler (callee-side per-call cost, or call-boundary
+  shape); a clang-raw same-runner probe of the branch fixture hung in
+  the harness and was parked rather than chased. Filed for 27: isolate
+  the callee — measure amu's `step` leaf against clang's `step_c`
+  through the identical raw runner before touching anything else.
+  The eight ±1% parities need per-domain discoveries of what LLVM left
+  on the table; a proven ceiling remains a possible verdict for narrow
+  and loop-call, where three compilers agree within 1%.
 
 ## Standing honesty constraints
 
