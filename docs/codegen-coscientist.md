@@ -700,6 +700,21 @@ as before.
   Those are the two levers; wide's lead says the high-pressure
   straight-line story is already sound.
 
+- **46 (2026-08-30, the second miscompile: the reciprocal cache held a
+  set where r10 holds one value)**: a three-quotient fixture
+  (`quot n 7`, `quot (+ n 1) 9`, `quot (+ n 2) 7`) returned 61 where
+  the answer is 78 -- `x86-hoist-repeated-reciprocal` recorded every
+  divisor it had ever loaded as "cached", but r10 is a single register,
+  so after the 9-magic displaced the 7-magic the third quotient
+  multiplied by the wrong reciprocal. Fixed in kotoba-native #92
+  (85f8c07e): the pass now tracks exactly one current divisor, resets
+  to nil on any encoding outside the safe set and on magicless
+  divisors, and the safe set gained the fixed-RSP spill moves -- which
+  is also what removed kernel_deep's 24 movabs reloads. Suite green,
+  KAs pass on all six domains. Same lesson as iteration 44: the sweep
+  that found it was hand-run adversarial input selection, not the
+  perfgate.
+
 - **47 (2026-08-30, the multiply-port hypothesis is refuted)**: implemented
   the shifted-Mersenne second multiply on x86 (`imul $(2^k-1)` ->
   `mov+shl+sub` when the registers are distinct -- the byte-level twin
@@ -720,6 +735,29 @@ as before.
   against iteration 45 (14.0 vs 28.6 ns for the same gcc narrow arm) --
   cross-run absolutes on gad are not comparable; only within-run ABBA
   ratios carry.
+
+- **48 (2026-08-30, the counters name the wall and the lever lands)**:
+  `perf stat` on gad answered what two null levers could not: deep's
+  amu arm retires at IPC 5.74 on Zen -- the retire-width ceiling -- so
+  the domain is bound by pure instruction count (500/call vs gcc's
+  337), not decode, not ports, not the save traffic's latency.
+  The count lever: `x86-quotient-steered-pool` in kotoba-mir now
+  excludes RAX/RDX entirely (kotoba-mir #42, 3f88f71b), so leaf
+  straight-line quotient lanes never park values in the registers the
+  division idiom clobbers, and the push/pop save pairs vanish instead
+  of being elided after the fact. Measured on gad, ABBA x12, KA
+  asserted on every timed sample, rsd 0.066: deep **500 -> 407
+  instructions/call, ratio 1.387 -> 1.2325** -- an 11% move, clear of
+  the 5% bar and of the spread. Wide holds 0.9664; narrow is
+  byte-identical. Landed through the full chain: kotoba-native #93
+  (3dab370e, suite 217/2464) and amu #703 (5a2d188e, closure + lock,
+  suite at baseline with the same 17 pre-existing red names), west
+  pins advanced. The residue is named: 407/337 = 1.21 remaining count
+  ratio -- one redundant mov per quotient expansion (amu spends 3
+  moves per lane where gcc's 12-insn idiom spends 2, fusing the
+  high-add via `lea (rdx,rcx)`), plus spill round trips that pulled
+  IPC down to 5.02 on the new arm. Both are count levers; the next
+  iteration starts there.
 
 ## Standing honesty constraints
 
