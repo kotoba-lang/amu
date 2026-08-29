@@ -99,9 +99,12 @@
         ;; functions through the linear scanner: call-crossing values live in
         ;; preserved registers instead of stable slots (+6.66% measured on
         ;; the qualified call fixture).
+        ;; 689757a parks an AArch64 leaf's spill slots in caller-saved SIMD
+        ;; registers (+3.21% measured on the deep-spill fixture; fail-closed
+        ;; to the stack shape for calls, >16 slots, or non-AArch64).
         io.github.kotoba-lang/kotoba-native
         {:git/url "https://github.com/kotoba-lang/kotoba-native.git"
-         :git/sha "1fd9c22fb40da42c15ae1b099f7d277a65028dd6"}
+         :git/sha "689757abb6e68fbe29b1fa3fef6f8c278977ea86"}
         io.github.kotoba-lang/kotoba-component
         {:git/url "https://github.com/kotoba-lang/kotoba-component.git"
          :git/sha "68acc7237aec7b24b683304db8e87d14ec1be745"}

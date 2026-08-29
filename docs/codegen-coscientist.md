@@ -207,9 +207,25 @@ that domain is unreachable for anyone, and recording that is a result.
   aarch64-only, fail-closed to the stack shape for non-leaves or larger
   frames. The vectorized reduction is noted and deliberately not taken
   (NEON codegen is a different, larger decision).
-- **24 (next)**: implement H-D2 in kotoba-native's frame/encode layer,
-  regression-gate wide/narrow byte-identity (they spill nothing), then
-  re-score. call-preservation's two near-misses ride along.
+- **24 (2026-08-29, landed)**: H-D2 implemented — kotoba-native #86 parks
+  an AArch64 leaf's spill slots in caller-saved SIMD registers
+  (`FMOV d16+slot`), fail-closed: 1–16 slots, no call-shaped instruction
+  anywhere (SIMD is caller-saved), otherwise today's stack shape. The
+  parked frame zeroes, so the SP adjustment disappears with the slots;
+  the new encodings join both leaf-pass safety sets so constant caching
+  still fires (found by reading the pass gates before landing — a parked
+  leaf outside those sets would have silently lost its constant cache).
+  Verified through the amu pin on levi: narrow and wide byte-identical,
+  deep 972 → 964 bytes, every manifest input intact, **+2.62% separated**
+  (9.24 → 9.00 ns) — within noise of the hand mutant's 8.97.
+  kotoba-native 202/2,408 with both park directions and all three
+  refusals asserted; amu 1,154/8,526 both ISAs (one Rosetta trap under
+  load-30 reproduced as flake: same suite green on rerun, and the
+  transform is AArch64-only so x86 bytes are unchanged).
+- **25 (next)**: re-score. deep-spill's rustc gap was −4.1% and the fix
+  measured +2.6%, so the domain should land near parity; the loss ledger
+  after that is branch-call vs clang (−3.7%) and the two call-preservation
+  near-misses waiting on separation.
 
 ## Standing honesty constraints
 
