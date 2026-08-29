@@ -72,6 +72,75 @@ checks canonical output, charges measured fuel, and records module/input/output
 CIDs. Run `npm run test-ipld-adl-wasmtime` for success plus fuel exhaustion,
 timeout, import denial, memory cap, output cap, and projection receipt evidence.
 
+## JVM-free HTTP service host (`http-service.mjs`)
+
+`http-service.mjs` is a multi-route Node `node:http` host for compiled Kotoba
+guests, built on the `:js-kotoba-v1` restricted-ESM compile target
+(`amu compile --target js`) rather than `wasm32-wasi`. It generalizes
+`wasi-service.mjs` in two directions: an arbitrary-size route table instead
+of one fixed `POST /v1/run` entry, and request/response bodies carrying
+arbitrary syntactically-valid JSON text instead of five fixed i64 decimals.
+Startup still seals every module (route guests and the decision core) behind
+a pinned sha256 digest read before import, and this host grants every guest
+zero capabilities -- no DOM, no fs, no network, no clock -- so a module
+declaring a capability requirement is refused at startup, not at request
+time.
+
+Unlike `wasi-service.mjs`, request handling does not run in a
+`worker_threads.Worker`. A wasm32-wasi module is a black box that could spin
+forever without a hard OS-level cutoff, which is why wasi-service isolates
+each call in its own worker. A `:js-kotoba-v1` restricted-ESM instance
+carries a fixed, non-replenishing fuel budget instead (see
+`instantiateKotoba()` in `dom-driver.mjs`): a guest call either returns or
+traps with `fuel-exhausted`, so it cannot hold the event loop open. A fresh
+instance per call (the same pattern dom-driver already uses) is therefore
+both correct and simpler -- no worker thread, no `postMessage`, no
+serialization boundary for the plain strings/i64/bool/keyword values that
+cross directly as JS values.
+
+### The decision/mechanism split
+
+Which HTTP method+path this host treats as a route, which outcome a request
+produces, and which HTTP status that outcome maps to are not decided by a
+`cond` inside `http-service.mjs`. They are decided by
+`runtime/http/route-decide.kotoba`, compiled ahead of time to
+`runtime/http/route-decide.mjs` and called on every request -- mirroring the
+decision/mechanism boundary `kotoba-lang/mesh`'s `route.kotoba` draws for its
+JVM+Chicory-hosted router (ADR-2608112100). What stays in the `.mjs` host,
+and why: the route TABLE itself (a collection that grows as routes are
+added -- the decision core is only ever handed a boolean saying whether a
+route is bound, never the table), reading a guest's return value out of its
+restricted-ESM instance, and writing the socket. Those are effects and a
+growing collection, not a decision. The shipped `route-decide.mjs` is
+committed alongside its `.provenance.edn`/`.inputs.edn`/`.manifest.edn`
+sidecars; `scripts/http-service-e2e.cljs` recompiles the `.kotoba` source
+fresh on every run and fails loudly if the shipped artifact has drifted from
+it.
+
+### What this does NOT do
+
+Named explicitly, not left to be discovered by absence:
+
+- No path parameters or wildcards -- routes are exact `(method, path)` pairs.
+- No sessions, cookies, or streaming request/response bodies.
+- No structural JSON parsing *inside* the guest. A request/response body
+  crosses the host/guest boundary as a validated-syntactically-JSON
+  `:string`; a guest that wants specific fields must do its own string work
+  today (or, once `kotoba-lang/json` has a `.kotoba` port, use that).
+
+This is a foundational host library, not an application: no product routes
+are ported here, and no capability package (e.g. a future
+`capability-http-serve`) is introduced by it -- every guest this host loads
+runs with zero granted capabilities.
+
+Run `node scripts/http-service-e2e.cljs`-style orchestration via
+`node node_modules/nbb/cli.js scripts/http-service-e2e.cljs`, which
+recompiles the decision core and two fixture guests fresh, then drives
+`test/http/http_service_test.mjs` -- a real `node:http` server answering
+real `fetch` requests over a real socket -- through health/echo/404/
+malformed-body/oversize-body/delegation/digest-mismatch/capability-refusal
+assertions.
+
 `kotoba.compiler.core/compile-ipld-adl-source` removes the need to author this
 guest ABI as WAT. Its fail-closed source profiles accept exactly four pure
 Kotoba functions. `:pure-identity-v1` preserves bytes with total validators;

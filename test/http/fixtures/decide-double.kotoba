@@ -1,0 +1,49 @@
+;; A decision core with the SAME exports as http-route-decide.kotoba but
+;; deliberately different answers, for the delegation test: a host that had
+;; kept its own status-code `cond` would still say 404/204 here. Only a host
+;; that actually calls into the compiled core follows this to 410/200.
+(ns probe.decide-double
+  (:export [route-key builtin-kind outcome answer? status-for]))
+
+(defn route-key
+  [method :string path :string]
+  :string
+  (string-concat method (string-concat " " path)))
+
+(defn builtin-kind
+  [method :string path :string]
+  :keyword
+  (if (string=? method "GET")
+    (if (string=? path "/healthz")
+      :health
+      (if (string=? path "/metrics")
+        :metrics
+        :route))
+    :route))
+
+(defn outcome
+  [kind :keyword bound? :bool answered? :bool]
+  :keyword
+  (if (= kind :health)
+    :health-ok
+    (if (= kind :metrics)
+      :metrics-ok
+      (if bound?
+        (if answered? :answer :no-answer)
+        :route-not-bound))))
+
+(defn answer?
+  [written :i64]
+  :bool
+  (if (> written 0) true false))
+
+;; Deliberately different from the shipped core: no-answer -> 200 (not 204),
+;; route-not-bound -> 410 (not 404).
+(defn status-for
+  [outcome :keyword]
+  :i64
+  (if (= outcome :no-answer)
+    200
+    (if (= outcome :route-not-bound)
+      410
+      200)))
