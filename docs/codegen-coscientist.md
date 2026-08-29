@@ -532,6 +532,25 @@ as before.
   what `kernel_state` is. Filed as the next compiler slice, fail-closed
   like the Mersenne chain test.
 
+- **38 (2026-08-29, H-G refuted by its own soundness requirement)**: the
+  176.3 ns table form of iteration 37 is **not a lawful compiler
+  output** — on negative discriminants the raw index reads garbage bits
+  where the if-tree's else arms have defined answers, so tree and table
+  disagree outside the manifest inputs (caught in design review, before
+  any landing; the falsification had only checked manifest inputs — the
+  whole-domain check is now part of the method). The semantically
+  equivalent branchless form maps each discriminant through
+  compare+select into a dense slot — proved equal to the tree on 2,121
+  cases including negatives, one conditional branch left (the back
+  edge) — and it measures **217.0 ns: slower than the if-tree's 201.4**.
+  The slot-mapping csets cost more than the mispredictions they remove.
+  **H-G is refuted.** The lawful best remains rustc's shape — a
+  range-guarded jump table (181.8) — filed as H-G′ with its payoff
+  bounded: it would turn the state domain's two losses into a rustc
+  parity and a below-threshold +3.4% on clang, not wins. Given that
+  bound, H-G′ ranks below the x86-64 backend catch-up and the
+  string-callback runner extension in the queue.
+
 ## Standing honesty constraints
 
 Every number above is one host on one day; the falsification numbers are
