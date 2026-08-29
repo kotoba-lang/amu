@@ -193,13 +193,23 @@ that domain is unreachable for anyone, and recording that is a result.
   is now: deep-spill vs rustc −4.1% / vs zig −3.6%, branch-call vs clang
   −3.7%, and parities everywhere else. Amu is ahead or within noise of
   every comparator on four of six domains and sweeps wide outright.
-- **23 (next)**: deep-spill vs rustc (−4.1%) is the largest remaining
-  deficit — instruction-diff `kernel_deep` against rustc's emission
-  (twenty-four lanes over both register pools; the interesting part is
-  spill-slot choice and reload scheduling). Falsify by hand first.
-  call-preservation's two near-misses ride along on any future re-score:
-  the gap is real in three independent measurements and only separation
-  is missing.
+- **23 (2026-08-29, Reflect executed)**: the deep-spill diff found where
+  LLVM banks its lanes — **the SIMD register file**. rustc's kernel_deep
+  emission carries 25 `fmov` and zero GPR stack spills: overflow lanes
+  park in vector registers (1-instruction GPR↔SIMD moves) instead of
+  memory, and the final 24-lane sum is reduced with `add.2d`. amu's
+  proportional spilling already got the deficit down to 7 STR + 7 LDR;
+  hand-substituting exactly those 14 instructions with `fmov d16+slot`
+  parks (1:1, same length, frame ops NOPed) measured **+3.21% separated**
+  (9.25 → 8.95 ns), 0.4% from rustc's 8.91, every manifest input intact.
+  H-D2 filed: in kotoba-native, a leaf whose spill slots number ≤16 parks
+  them in caller-saved SIMD registers instead of a stack frame —
+  aarch64-only, fail-closed to the stack shape for non-leaves or larger
+  frames. The vectorized reduction is noted and deliberately not taken
+  (NEON codegen is a different, larger decision).
+- **24 (next)**: implement H-D2 in kotoba-native's frame/encode layer,
+  regression-gate wide/narrow byte-identity (they spill nothing), then
+  re-score. call-preservation's two near-misses ride along.
 
 ## Standing honesty constraints
 
