@@ -460,6 +460,19 @@ as before.
   systems on five of six domains on the recorded host; the sixth leads
   by ~+60% but its measurement carries a disclosed asymmetry.*
 
+- **34 (2026-08-29, Ladder A replicates on a second host)**: the same
+  artifacts (wasm twins are portable; amu raw code is aarch64) and the
+  same protocol on **dan** — a different Mac16,10 machine with a
+  *different wasmtime* (48.0.1 against levi's 47.0.3), fuel-exhaustion
+  trap re-demonstrated there, every known answer verified — and the
+  matrix re-adjudicated with a dan `:measured` descriptor:
+  **12 of 12 pairs perfgate-qualified again**, +16.8% to +73.0%, every
+  margin within about one point of levi's. The fastest-and-safe
+  sentence now holds on two recorded hosts and across a comparator
+  runtime version bump. Host expansion continues per the charter: more
+  M4 minis are cheap replicas; the real second ISA waits on the x86-64
+  backend catch-up and the gad measurement path.
+
 ## Standing honesty constraints
 
 Every number above is one host on one day; the falsification numbers are
