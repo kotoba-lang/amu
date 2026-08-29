@@ -248,9 +248,26 @@ that domain is unreachable for anyone, and recording that is a result.
   the harness and was parked rather than chased. Filed for 27: isolate
   the callee — measure amu's `step` leaf against clang's `step_c`
   through the identical raw runner before touching anything else.
+- **27 (2026-08-29, measured — the residue has no single owner)**: four
+  mechanisms, four verdicts, all on the branch fixture through one
+  runner. (a) The earlier probe's hang explained: an unlinked `.o`'s
+  relocated `bl` disassembles as branch-to-self — extracting from the
+  *linked* dylib fixes it, and **clang's exact bytes read 4.61 vs amu's
+  4.92 same-runner: the gap is real**, not harness asymmetry. (b) The
+  callee's serialized `mov+msub` tail swapped to the shifted form:
+  **+0.26%, null** — across a call boundary the OOO window hides one
+  chain stage. (c) Fuel, quantified by NOPing the preamble (diagnostic
+  only, never landable): **0.80%** — the metering cost on this fixture,
+  real but small. (d) With structure (iteration 26), callee, and fuel
+  all accounted, ~4% remains **distributed across per-call costs with no
+  single mechanism above 1%**. Branch-call demotes in the ranking: the
+  remaining forensics cost more than the other eight parities.
   The eight ±1% parities need per-domain discoveries of what LLVM left
   on the table; a proven ceiling remains a possible verdict for narrow
-  and loop-call, where three compilers agree within 1%.
+  and loop-call, where three compilers agree within 1%. The next
+  substantive mechanisms on the board are the NEON reduction for
+  deep-spill (larger project, noted at iteration 23) and protecting the
+  two swept domains with byte-accurate regressions.
 
 ## Standing honesty constraints
 
