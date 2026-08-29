@@ -186,6 +186,13 @@ try {
       "--runs", String(runs), "--calls", String(calls),
       "--warmup", String(warmup), "--n", String(n), "--measure", bundlePath,
       "--bundle-sha256", sealed.bundleSha256,
+      // --disable-engines was already accepted and forwarded at prepare time;
+      // dropping it at the phase that actually times things was an oversight.
+      // The claim contract's comparator universe is the manifest's
+      // requiredComparators, so informative arms (JVM Clojure, CPython, ...)
+      // can be excluded from the claim path -- their own startup load is what
+      // repeatedly failed the first domain's pre/post drift check.
+      ...(disabledEngines ? ["--disable-engines", disabledEngines] : []),
       "--output", reportPath]);
     const report = JSON.parse(readFileSync(reportPath, "utf8"));
     if (report.benchmark !== domain.knownAnswer)
