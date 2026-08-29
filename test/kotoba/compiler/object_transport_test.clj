@@ -1,7 +1,7 @@
 (ns kotoba.compiler.object-transport-test
   "Production object-store transport (ADR 0129) — host-configured endpoint,
   fixed-path JSON, get-stream / put-block / CAS through typed providers."
-  (:require [clojure.data.json :as json]
+  (:require [json.data-json :as json]
             [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]
             [kotoba.kir :as ir]

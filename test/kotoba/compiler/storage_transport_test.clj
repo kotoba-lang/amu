@@ -26,7 +26,7 @@
      protocol is designed to be pinned against -- see
      docs/adr/0071-production-storage-transport-host-configured-kv-endpoint.md
      'Remaining gaps'."
-  (:require [clojure.data.json :as json]
+  (:require [json.data-json :as json]
             [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]
             [kotoba.kir :as ir]

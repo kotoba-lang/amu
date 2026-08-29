@@ -128,9 +128,9 @@
 ;; ---------------------------------------------------------------------
 (println "cloud-itonami-health-parity: running the JVM/KIR-interpreter oracle path in cloud-itonami-app")
 (def jvm-expr
-  (str "(require (quote clojure.data.json) (quote cloud.itonami.app.health))"
-       "(let [cases (clojure.data.json/read-str (slurp \"" cases-json-path "\"))]"
-       "  (print (clojure.data.json/write-str"
+  (str "(require (quote json.data-json) (quote cloud.itonami.app.health))"
+       "(let [cases (json.data-json/read-str (slurp \"" cases-json-path "\"))]"
+       "  (print (json.data-json/write-str"
        "           (mapv (fn [[m p]] (cloud.itonami.app.health/health-route? m p)) cases))))"))
 
 (def jvm-answers

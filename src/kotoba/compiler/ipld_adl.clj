@@ -1,6 +1,6 @@
 (ns kotoba.compiler.ipld-adl
   "Synchronous io-ipld ADL capability backed by the bounded Wasmtime C engine."
-  (:require [clojure.data.json :as json]
+  (:require [json.data-json :as json]
             [clojure.java.shell :as shell]
             [ipld.core :as ipld]
             [ipld.schema :as schema]

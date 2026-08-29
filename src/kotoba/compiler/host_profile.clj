@@ -3,7 +3,7 @@
 
   Applications receive a closed capability object, never the ambient Worker
   env. Generated JavaScript is an artifact; the EDN profile is authoritative."
-  (:require [clojure.data.json :as json]
+  (:require [json.data-json :as json]
             [clojure.string :as str]
             [kotoba.artifact.core :as artifact]))
 
