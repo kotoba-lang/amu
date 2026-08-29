@@ -442,6 +442,24 @@ as before.
   the pin), host set, and evidence freshness — in the shape the Ladder-B
   contract already has.
 
+- **33 (2026-08-29, the Ladder-A contract seals)**:
+  `bench/runtime-comparison/ladder-a-manifest.json` — the metered
+  universe's claim contract in the Ladder-B shape. Its distinctive
+  parts: **safety preconditions are refusal conditions** (candidate and
+  comparator metering verified on, fuel-exhaustion trap demonstrated,
+  provenance and conformance green, every timed sample equal to its
+  known answer — a missing check refuses the claim rather than
+  footnoting it), and the **barrier disclosure is contract text** (a
+  domain whose margin depends on the wasm barrier asymmetry is excluded
+  from the sealed sentence, which today holds back loop-call and leaves
+  the sentence covering five of six domains at +17.7% to +73.2%, all
+  perfgate-qualified against both enumerated systems).
+  `worldFastestClaimQualified` is permanently false here as everywhere.
+  The honest sentence now sealed by contract + evidence: *amu native
+  with sealed fuel is fastest among the enumerated metered execution
+  systems on five of six domains on the recorded host; the sixth leads
+  by ~+60% but its measurement carries a disclosed asymmetry.*
+
 ## Standing honesty constraints
 
 Every number above is one host on one day; the falsification numbers are
