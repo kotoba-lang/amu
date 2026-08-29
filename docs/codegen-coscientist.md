@@ -292,6 +292,21 @@ that domain is unreachable for anyone, and recording that is a result.
   re-score periodically to confirm 21/30 is stable rather than a
   favorable rotation.
 
+- **29 (2026-08-29, confirmation)**: a second fully host-qualified
+  re-score on the same sealed bundle reproduces **21/30 exactly**, with
+  every key margin intact: call-preservation +5.5/+5.4% over rustc/clang
+  (both WIN), deep-spill +5.3% over clang (WIN), wide +7.2/+11.5% (WIN).
+  The score is stable, not a favorable rotation. **This closes the
+  loop's 2026-08-29 session**: fourteen iterations, five landed compiler
+  changes (serial-chain Mersenne, parallel sign correction, preserved
+  call crossing, SIMD spill parking, plus the busy-fraction gate that
+  made any of it claimable), score 16 → 21 of 30, two swept domains,
+  worst deficit −7.7% → −3.8% with its residue characterized, and three
+  domains documented at their measured parity floors. Resume point for a
+  future session: the ranking stands as written at iterations 27–28 —
+  protection re-scores periodically; new wins require either new
+  mechanisms beyond what three compilers currently know, or new domains.
+
 ## Standing honesty constraints
 
 Every number above is one host on one day; the falsification numbers are
