@@ -700,6 +700,27 @@ as before.
   Those are the two levers; wide's lead says the high-pressure
   straight-line story is already sound.
 
+- **47 (2026-08-30, the multiply-port hypothesis is refuted)**: implemented
+  the shifted-Mersenne second multiply on x86 (`imul $(2^k-1)` ->
+  `mov+shl+sub` when the registers are distinct -- the byte-level twin
+  of the AArch64 `SUB Xd,Xn,Xn,LSL#k` form, whole-domain by wraparound
+  algebra, suite and every KA green). **Measured effect on deep: none**
+  (ratio 1.387 vs 1.39; narrow and wide moved only within a noisy run's
+  spread, rsd 0.12-0.17), and the form costs three bytes per site. Not
+  landed -- the branch exists for the record
+  (kotoba-native agent/x86-mersenne-multiply, local only). Two levers
+  are now in (iteration 46's reload elimination, this one) and deep's
+  ratio has not moved through either, which also retires the
+  decode-bound story. What remains structurally different is the
+  save traffic (53 push + 53 pop against gcc's zero) and the total
+  instruction count. Next: stop guessing -- gad has sudo and perf;
+  read uops, cycles and stall causes off the hardware for both deep
+  arms, then pick the lever the counters name. Note for the metering
+  record: this run's absolute per-call numbers halved on both arms
+  against iteration 45 (14.0 vs 28.6 ns for the same gcc narrow arm) --
+  cross-run absolutes on gad are not comparable; only within-run ABBA
+  ratios carry.
+
 ## Standing honesty constraints
 
 Every number above is one host on one day; the falsification numbers are
