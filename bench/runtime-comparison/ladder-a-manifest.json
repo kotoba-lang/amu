@@ -1,0 +1,51 @@
+{
+  "format": "kotoba.runtime-ladder-a-manifest/v1",
+  "id": "amu-native-metered-universe-darwin-arm64",
+  "purpose": "The fastest-and-safe claim: every arm executes with its shipped metering ON. Unmetered comparators are Ladder B and may never appear here.",
+  "claimContract": {
+    "format": "amu.ladder-a-claim-contract/v1",
+    "asOf": "2026-08-29",
+    "allowedSentence": "Amu native with sealed fuel is fastest among the enumerated metered execution systems (zig->wasm32 and rustc->wasm32, each under wasmtime with fuel enabled) on all six required domains, on the recorded Darwin arm64 hosts, under the named perfgate policy.",
+    "candidate": "amu-native-sealed-fuel",
+    "metric": "steady-state-runtime",
+    "unit": "nanoseconds-per-kernel",
+    "direction": "lower-is-better",
+    "aggregationPolicy": "the candidate must independently beat every enumerated system in every required domain via perfgate.core/qualify; no aggregate may hide a loss or an unqualified arm",
+    "perfgatePolicyId": "kotoba.perfgate.policy/default-v1",
+    "evidenceMaxAgeHours": 24,
+    "worldFastestClaimQualified": false
+  },
+  "safetyPreconditions": {
+    "policy": "a Ladder-A claim seals only when every one of these held during the measured run; a missing check is refusal, not a footnote",
+    "candidateMeteringOn": "amu artifact sealed with an explicit fuel budget; the runner records contextFuelConsumed matching the fixture's fuel rule",
+    "comparatorMeteringOn": "wasmtime invoked with -W fuel; fuel exhaustion demonstrated to trap on the comparator arm during the session",
+    "candidateProvenance": "amu compile emits and verifies provenance at the measured pin",
+    "conformance": "the amu suite is green at the measured pin on the measuring host class",
+    "knownAnswers": "every timed sample's result equals the manifest's known answer for its input"
+  },
+  "measurementConventions": {
+    "candidate": "in-process steady state via the raw W^X runner (100k calls after 10k warmup)",
+    "comparators": "per-call by slope between two in-module call counts, cancelling process, compile and instantiation costs",
+    "barrierDisclosure": "wasm twins that need a call-preserving barrier use a volatile round trip inside the callee, which the native asm barrier does not pay; any domain whose margin depends on that asymmetry is footnoted and excluded from the sealed sentence until a costless wasm barrier exists"
+  },
+  "requiredSystems": [
+    { "id": "zig-wasm32-wasmtime-fuel", "toolchain": "zig -target wasm32-freestanding -O ReleaseFast", "runtime": "wasmtime -W fuel" },
+    { "id": "rustc-wasm32-wasmtime-fuel", "toolchain": "rustc --target wasm32-unknown-unknown -C opt-level=3 -C panic=abort -C codegen-units=1 (no_std)", "runtime": "wasmtime -W fuel" }
+  ],
+  "requiredTargets": [
+    { "id": "darwin-arm64-native", "os": "darwin", "architecture": "arm64", "isa": "aarch64", "execution": "native" }
+  ],
+  "requiredDomains": [
+    { "id": "narrow-arithmetic", "fixture": "kernel", "verificationInputs": [1, 2, 199, 200, 201], "verificationResults": [1392962038, 100194896, 975621915, 1830338420, 537571278] },
+    { "id": "wide-register-pressure", "fixture": "kernel_wide", "verificationInputs": [1, 2, 199, 200, 201], "verificationResults": [6574194760, 8035041112, 5911480111, 5224842816, 6685689168] },
+    { "id": "deep-spill-pressure", "fixture": "kernel_deep", "verificationInputs": [1, 2, 199, 200, 201], "verificationResults": [4104456014, 5931189748, 725515356, 2552249090, 4378982824] },
+    { "id": "call-preservation", "fixture": "kernel_call", "verificationInputs": [1, 2, 199, 200, 201], "verificationResults": [1826733742, 2557350002, 2607348873, 1190481486, 1921097746] },
+    { "id": "branch-call-control-flow", "fixture": "kernel_call_branch", "verificationInputs": [1, 2, 199, 200, 201], "verificationResults": [1826733742, 2557350002, 2607348873, 1190481486, 1921097746] },
+    { "id": "loop-call-back-edge", "fixture": "kernel_loop_call", "verificationInputs": [1, 2, 199, 200, 201], "verificationResults": [1, 2, 199, 200, 201], "barrierAsymmetric": true, "note": "margin footnoted per measurementConventions.barrierDisclosure; excluded from the sealed sentence" }
+  ],
+  "standing": {
+    "measured": "2026-08-29 on levi (Mac16,10 Apple M4), amu pin e2e7f32",
+    "result": "12 of 12 system/domain pairs perfgate-qualified, +17.7% to +73.2%; loop-call margins footnoted as barrier-asymmetric",
+    "sealedSentenceCoverage": "five of six domains claim-grade; loop-call held back by the barrier asymmetry alone"
+  }
+}
