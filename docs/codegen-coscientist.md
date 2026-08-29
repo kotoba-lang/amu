@@ -49,9 +49,31 @@ that domain is unreachable for anyone, and recording that is a result.
   producer home coalescing, logical-seeded constants, countdown bulk fuel —
   see kotoba-native/kotoba-mir ADRs and `docs/performance.md`.
 - **16 (2026-08-29, this change)**: H-A executed. ADR 0282; the multidomain
-  quiet gate now measures busy-CPU fraction directly. Blocker removed: a
-  claim artifact is now *emittable* on a genuinely quiet host, where before
-  no host could ever qualify (ADR 0281).
+  quiet gate now measures busy-CPU fraction directly, and `--disable-engines`
+  is forwarded at measure time so the claim path can exclude informative arms
+  (whose own startup load structurally failed the first domain's drift check
+  in every run). Verdict, same day, on levi: `quietGate` qualified for the
+  first time in the project's history (busy 3–5% while load1 read 1.29–1.43 —
+  the old proxy would have refused the same window), all six per-domain
+  host-load checks green, `hostLoadQualified: true`, and perfgate delivered
+  the first fully host-qualified 30-pair matrix:
+
+  | domain | vs rustc | vs clang | vs zig | vs go | vs swift |
+  |---|---|---|---|---|---|
+  | narrow-arithmetic | −6.5% | −6.9% | **won** | **won** | −7.7% |
+  | **wide-register-pressure** | **won +6.9%** | **won +10.1%** | **won** | **won** | **won** |
+  | deep-spill-pressure | −4.0% | not sep. | −3.2% | **won** | **won** |
+  | call-preservation | −5.0% | −5.7% | **won** | **won** | **won** |
+  | branch-call-control-flow | not sep. | −4.9% | **won** | **won** | **won** |
+  | loop-call-back-edge | parity | parity | **won** | **won** | **won** |
+
+  **16 of 30 pairs qualified.** One domain — wide-register-pressure — already
+  meets the claim's requirement outright: amu independently beats all five
+  comparators there, perfgate-qualified. The 14 missing pairs are all rustc /
+  clang / swift on latency-shaped domains, where amu is 4–8% behind and the
+  needed swing is therefore 9–13%. `comparatorSetQualified` remains false and
+  no claim artifact was emitted; the machinery that could emit one is now
+  proven end-to-end (raw report retained beside this state).
 - **17 (next)**: H-C in the compiler — kotoba-native constant-multiply
   strength reduction for `msub` by `2^k−1` in dependent chains — combined
   with an H-C2 mechanism, because +2.46% alone cannot qualify. Gate: paired
