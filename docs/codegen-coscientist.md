@@ -410,6 +410,38 @@ as before.
   steady state; wasmtime per-call by slope (2M to 20M in-module calls;
   50k to 500k for loop-call), fuel exhaustion verified to trap.
 
+- **32 (2026-08-29, Ladder A: perfgate-qualified double sweep)**: the
+  second comparator landed — rustc 1.98 via rustup-minimal targeting
+  wasm32-unknown-unknown, `no_std` twins with the same barrier
+  conventions as the zig arm, all six verified against the manifest
+  known answers — and the whole matrix went through
+  `perfgate.core/qualify` with the `:measured` levi descriptor, the
+  same adjudicator Ladder B uses:
+
+  | domain | vs zig-wasm | vs rustc-wasm |
+  |---|---|---|
+  | kernel | +18.5% QUALIFIED | +17.7% QUALIFIED |
+  | wide | +21.4% QUALIFIED | +22.8% QUALIFIED |
+  | deep | +24.4% QUALIFIED | +24.7% QUALIFIED |
+  | call | +73.2% QUALIFIED | +73.0% QUALIFIED |
+  | branch | +72.0% QUALIFIED | +71.9% QUALIFIED |
+  | loop-call | +60.3% QUALIFIED¹ | +59.9% QUALIFIED¹ |
+
+  **12 of 12 pairs qualified** — Ladder A sweeps both comparators under
+  the full gate, not the mean-and-stdev shorthand. The two wasm arms
+  agree within ~2% everywhere (the cranelift path dominates), which is
+  itself evidence the twins measure the runtime, not the source
+  compiler. ¹The loop-call barrier asymmetry stands disclosed; even
+  charging the whole barrier (~0.5 ns × 200 iterations) against the
+  margin leaves roughly +40%, so the direction survives the worst-case
+  accounting, but the number stays footnoted until a costless wasm
+  barrier exists. Remaining before the Ladder-A claim seals: the
+  manifest itself — enumerated universe (zig-wasm+wasmtime, rustc-wasm+
+  wasmtime), safety preconditions (metering verified on for every arm,
+  fuel-exhaustion trap demonstrated, provenance and conformance green at
+  the pin), host set, and evidence freshness — in the shape the Ladder-B
+  contract already has.
+
 ## Standing honesty constraints
 
 Every number above is one host on one day; the falsification numbers are
