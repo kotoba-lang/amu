@@ -651,6 +651,34 @@ as before.
   wide x86 emission — correctness outranks every performance item in
   the queue.**
 
+- **44 (2026-08-30, the miscompile is caught, named, and fixed)**: the
+  wide/deep x86 wrong answers came apart under a lane sweep and one
+  control build. Reduced fixtures (2..8 lanes) all passed at head --
+  because a parallel sema advance (`8676e3d6`, map-reduce fusion) had
+  changed the IR shape; restoring the old sema pin reproduced
+  yesterday's broken binary **byte-identically**. Old-sema IR executed
+  correctly on aarch64, so the IR was lawful and the x86 backend was
+  the defect. A post-allocation instruction trace located it in
+  iteration 41's dead-quotient-save scan: the rule "a later
+  quotient-constant rewrites RAX/RDX before reading them" treats a
+  **saved** quotient as a kill, but a saved quotient pushes the
+  register before its internal clobber and pops it after -- it is
+  transparent, and whether it saves is exactly what the pass itself
+  decides. A lane value the allocator parked in RAX (defined at
+  instruction 9, read at 39, seven quotients between) lost its save and
+  was destroyed; some sites survived only because immediate-folded
+  instructions carry stale register keys the scan miscounts as reads.
+  Fix (kotoba-native #90, `fbe93200`): decide quotients **back to
+  front** -- a later quotient that kept its save is transparent, one
+  that elided it is a kill. The discriminating unit test fails on the
+  old code for the named reason; wide/deep/narrow KAs pass x3 inputs
+  under Rosetta; the measured narrow kernel's hot function is
+  **byte-identical**, so iteration 42's gcc parity stands unre-measured.
+  deep keeps 39 more save bytes (1843 -> 1882) -- the price of being
+  right. **The barrier disclosure holds: yesterday's x86 wide/deep
+  baselines were never recorded as wins, and the sweep that found this
+  is the reason the ladder demands execution on every ISA it names.**
+
 ## Standing honesty constraints
 
 Every number above is one host on one day; the falsification numbers are
