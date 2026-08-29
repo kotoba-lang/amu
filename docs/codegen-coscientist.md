@@ -38,7 +38,7 @@ that domain is unreachable for anyone, and recording that is a result.
 | H-C2 | the remaining ~4.4% vs Clang on `kernel` after H-C: the mutated stream and clang's are now near-identical in shape (62 vs 61 instructions; amu-mut still loads the now-dead `0x7fffffff` constant), so the residue is scheduling/front-end shaped | open — generate from an instruction-order diff | pending |
 | H-D | `kernel_batch` loop-path remainder (~8% vs Rust diagnostic, refused `:too-noisy` in ADR 0281): body scheduling / per-iteration instruction mix | open; measurement first needs the noise fixed (H-B) or the loop lengthened | ADR 0279 measured 1.349x behind pre-#653..#660; levi 2026-08-29 read 1.08x diagnostic |
 | H-B | batch-fixture noise (rsd 0.47 vs policy 0.10) is scheduler migration of a long single-call region across P/E cores; pin the timed region's QoS | open | performance.md already documents an E-core migration incident |
-| H-E | functions with calls + branches take the conservative all-vreg path (+33% at 24 live values); add call-clobber handling to the scan | open — the fix is already named in performance.md; the six claim domains exercise it lightly | measured 2026-08-18 tables in performance.md |
+| H-E | call-crossing values go to stack slots instead of the callee-saved registers the prologue already spends: `kernel_call` saves x19–x26 yet stores/loads all eight call results through the stack (8 STR + 11 LDR + 3 constant-mov round-trips) | **hand-falsified — iteration 20: +6.66% separated (5.19 → 4.84 ns), fuel contract intact, past clang's 5.03**. Compiler work: assign call-crossing values to the preserved tier in the scan | performance.md's conservative-path tables; iteration-20 fixture retained in `levi:~/amu-evidence/` |
 | H-F | protect domains where amu already leads (kernel_wide +7% vs rustc diagnostic) with byte-accurate regressions | standing | #637–#639 pattern |
 
 ## Iteration log
@@ -151,11 +151,25 @@ that domain is unreachable for anyone, and recording that is a result.
   on the table, domain by domain. Largest remaining deficits: deep-spill
   vs rustc (−3.8%), call-preservation vs clang (−3.4%). Raw report
   retained beside the iteration-16 evidence.
-- **20 (next)**: Generate from instruction diffs of the call-preservation
-  and deep-spill fixtures against their best comparator emissions (both
-  fixtures contain quotient tails, already improved; the residue is in
-  call-crossing preservation shape and spill placement). Falsify by hand
-  before any compiler change, as iterations 17/18 did.
+- **20 (2026-08-29, Reflect executed)**: H-E located and hand-falsified.
+  The `kernel_call` emission saves five pairs of callee-saved registers and
+  then uses them only as scratch for the final adds — every call-crossing
+  value goes through a stack slot (8 STR + 11 LDR), and `n` is reloaded
+  before each of three `mov #k; add` round-trips that are one ADD-immediate.
+  A hand-written module with the byte-identical helper and fuel preamble,
+  keeping the eight results in x19–x25/x0 and `n` in x27: **+6.66%
+  separated** (5.19 → 4.84 ns means, 42 samples/arm), every manifest input
+  and the one-fuel-per-call contract intact — and past clang's measured
+  5.03 on the same domain. The compiler change is the one performance.md
+  already names: call-clobber handling in the scan so call-crossing values
+  can sit in the preserved tier. That is allocator-core work in
+  kotoba-mir/kotoba-native, not an emission patch; it lands only with the
+  conservative path's own regression corpus green and the wide/deep
+  domains byte-identical.
+- **21 (next)**: read the allocator's call handling and design the
+  narrowest admissible slice of preserved-tier assignment for
+  call-crossing values; fail-closed for anything unprovable, as the
+  Mersenne chain test did.
 
 ## Standing honesty constraints
 
