@@ -362,6 +362,22 @@ multi-host M4 evidence → x86-64 backend catch-up and gad measurement
 path → Wave-2 backend features. One iteration = one measured verdict,
 as before.
 
+- **30 (2026-08-29, Ladder A prototype — first metered-universe win)**:
+  narrow-arithmetic, both systems with their shipped metering on. The
+  zig semantic twin compiled to wasm32-freestanding (`-O ReleaseFast`,
+  volatile call boundary against loop folding) under wasmtime 47.0.3
+  with `-W fuel` — exhaustion verified to trap, checksum verified at
+  every sample — against amu native with its sealed fuel:
+  **amu 6.42 ns/call vs 7.95 ns/call, +18.7% separated (1.23x)**.
+  Methodology: amu in-process steady state (the existing runner);
+  wasmtime per-call by slope over 2M→20M in-module calls (cancels
+  process, compile and instantiation costs; sample stdev 0.023 ns).
+  The same domain that is a parity floor against unmetered rustc/clang
+  is an 18.7% win in the universe where everyone pays for safety —
+  Ladder A behaves as designed. Next: the remaining five domains as zig
+  twins, a rustc→wasm32-wasi arm (needs rustup or zig-built std), and
+  the Ladder-A claim contract manifest with safety preconditions.
+
 ## Standing honesty constraints
 
 Every number above is one host on one day; the falsification numbers are
