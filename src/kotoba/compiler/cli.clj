@@ -20,7 +20,7 @@
             [kotoba.compiler.source-path :as source-path]
             [kotoba.kir.target :as target-profile]
             [kotoba.verifier :as verifier]
-            [clojure.data.json :as json]
+            [json.data-json :as json]
             [clojure.string :as str])
   (:gen-class))
 

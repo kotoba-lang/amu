@@ -5,7 +5,7 @@
   pass only when they return i64 1. `test-handler(cap-id,value)` is an optional
   Kotoba-defined deterministic ability handler used by every target. The same
   checked KIR is executed by the JVM oracle, restricted ESM, and Wasm."
-  (:require [clojure.data.json :as json]
+  (:require [json.data-json :as json]
             [clojure.java.shell :as shell]
             [clojure.string :as str]
             [kotoba.artifact.core :as artifact]

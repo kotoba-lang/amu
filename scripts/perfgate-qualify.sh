@@ -5,7 +5,7 @@ test "$#" -gt 0 || { echo "usage: perfgate-qualify.sh <benchmark.json> | --valid
 exec clojure -Sdeps "$(cat <<'EOF'
 {:paths ["scripts"]
  :deps {org.clojure/clojure {:mvn/version "1.12.0"}
-        org.clojure/data.json {:mvn/version "2.5.1"}
+        io.github.kotoba-lang/json {:git/sha "b47b06486b3ad53051bc7d8bf361f4176f467202"}
         io.github.kotoba-lang/perfgate
         {:git/url "https://github.com/kotoba-lang/perfgate.git"
          :git/sha "d4417d77c2333047dd4e478675e5ed13e1c6b1b8"}
