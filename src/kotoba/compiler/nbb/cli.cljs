@@ -43,6 +43,33 @@
 
 (def ^:private max-native-fuel 1048576)
 
+(defn native-value-abi
+  "The value ABI stamped into a native artifact's compatibility descriptor.
+
+  This mirrored only the last two branches. `kotoba.compiler.core` (the JVM
+  compiler), `kotoba.compiler.nbb.wasm-cli` and `kotoba.verifier` all select
+  from FOUR, so any program carrying floating point compiled through this
+  JDK-free driver stamped `:kotoba.typed/externref-v1` while the verifier
+  re-derived `:kotoba.typed/mixed-f64-v2` and refused the artifact with
+  `native compatibility metadata rejected` -- a diagnostic that names the
+  metadata rather than the missing branch, so it reads as an unsupported
+  program rather than a driver that cannot describe it.
+
+  Measured 2026-08-30: a `vector-f64` module reached this path and was refused
+  exactly so. It is not vector-specific; `uses-f64?` is true for any f64
+  literal, since the frontend desugars one into `f64-from-bits`.
+
+  Derived from the KIR rather than the HIR because the KIR is what the
+  verifier reads back out of the sealed artifact. `kotoba.compiler.core`
+  derives the same answer from the HIR; deriving it here from the value the
+  checker actually inspects removes the possibility of the two disagreeing."
+  [kir typed-values?]
+  (cond
+    (ir/uses-f32? kir) :kotoba.typed/mixed-f32-f64-v3
+    (ir/uses-f64? kir) :kotoba.typed/mixed-f64-v2
+    typed-values? :kotoba.typed/externref-v1
+    :else :kotoba.i64/direct-v1))
+
 (defn- native-fuel! [policy]
   (let [declared (or (get-in policy [:budgets :fuel]) 512)
         ;; Bounded EDN preserves integer literals as BigInt on the Node path.
@@ -106,7 +133,7 @@
         value (:oracle-value kir)
         profile (target-profile/profile target)
         typed-values? (= :kotoba.kir/v4 (:format kir))
-        value-abi (if typed-values? :kotoba.typed/externref-v1 :kotoba.i64/direct-v1)
+        value-abi (native-value-abi kir typed-values?)
         compat (compatibility/descriptor
                 {:hir-format (:format hir) :kir-format (:format kir)
                  :target target :target-profile profile :value-abi value-abi})
