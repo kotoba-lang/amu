@@ -986,6 +986,15 @@ both sides and additionally requires a none option's payload to be zero. Wasm
 uses equivalent `kotoba:heap` imports, whose host implementation must enforce
 the same contract.
 
+On POSIX native hosts, checked string equality validates both bounded handles
+and canonical UTF-8 exactly as before, then compares equal-length payloads in
+explicit 16-byte chunks: NEON on AArch64 and SSE2 on x86-64, followed by a
+bounded scalar tail. This changes neither the context ABI nor string meaning;
+unsupported architectures retain the scalar library comparison. The loader
+source hash in `kotoba-lang/artifact` binds the implementation, and the test
+suite requires both a warning-clean compile and the expected SIMD instruction
+family in optimized assembly. See ADR 0283.
+
 The empty list is the i64 value zero. Non-empty lists are immutable pair chains;
 projection from zero or any forged handle traps. `list` is capped at 128 items
 and is expanded before structural and lowering budgets are checked, so surface

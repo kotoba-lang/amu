@@ -29,6 +29,11 @@ production-strength VM sandbox remain absent.
 
 ### Current capabilities (state so far)
 
+- **Explicit POSIX string SIMD** — checked native string equality retains its
+  bounded-handle and canonical UTF-8 validation, then compares 16-byte chunks
+  with NEON on AArch64 or SSE2 on x86-64. The loader identity, executor pin,
+  dependency lock, assembly gate, and cross-ISA semantic vectors advance as
+  one closure; Windows remains separately pinned and unchanged.
 - **Multi-target ahead-of-time compilation** from a single `.kotoba` source
   pipeline (`source -> inert reader -> typed/effect HIR -> SSA-like KIR ->
   backend`) to `wasm32` / `wasm32-browser` / `wasm32-wasi`, `x86_64` (incl.

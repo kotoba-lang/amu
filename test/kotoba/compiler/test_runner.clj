@@ -147,6 +147,7 @@
             [kotoba.compiler.ui-native-aot-test]
             [kotoba.compiler.provider-conformance-test]
             [kotoba.compiler.aggregate-abi-test]
+            [kotoba.compiler.string-simd-loader-test]
             [kotoba.compiler.isa-execution-test]
             [kotoba.compiler.native-fuel-metadata-test]
             [kotoba.compiler.wasm-typed-test]
@@ -161,6 +162,7 @@
    'kotoba.compiler.value-codec-test
    'kotoba.compiler.test-runner-completeness-test
    'kotoba.compiler.aggregate-abi-test
+   'kotoba.compiler.string-simd-loader-test
    'kotoba.compiler.isa-execution-test
    'kotoba.compiler.native-fuel-metadata-test
    'kotoba.compiler.aiueos-target-test
