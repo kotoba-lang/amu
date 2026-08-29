@@ -131,13 +131,31 @@ that domain is unreachable for anyone, and recording that is a result.
   changed bytes (its 16 quotient tails) and reads **+0.97%** (not
   separated, direction favorable — the swept domain is intact). amu suite:
   1,154 tests / 8,528 assertions, 0 failures, 0 errors.
-- **19 (next)**: re-run the six-domain competitive suite on this pin to
-  re-score the 30-pair matrix — narrow-arithmetic entered this loop at
-  −6.5/−6.9/−7.7% vs rustc/clang/swift and its emission now matches
-  clang-raw at parity, so the question is what perfgate certifies on the
-  full harness. Then rank the next gap from the fresh matrix
-  (call-preservation −5.0/−5.7% is the largest remaining claim-relevant
-  deficit; its fixtures also contain quotient tails).
+- **19 (2026-08-29, measured)**: six-domain re-score on the iteration-18
+  pin, fully host-qualified (quiet gate 3–5% busy, all six per-domain
+  checks green). **18 of 30 pairs qualified**, and the loss column is
+  empty: no comparator beats amu by 5% anywhere anymore.
+
+  | domain | vs rustc | vs clang | vs zig | vs go | vs swift |
+  |---|---|---|---|---|---|
+  | narrow-arithmetic | **+0.5% parity** (was −6.5) | **−0.2% parity** (was −6.9) | **won** | **won** | **−0.9% parity** (was −7.7) |
+  | **wide-register-pressure** | **won +7.1%** | **won +10.3%** | **won** | **won** | **won** |
+  | deep-spill-pressure | −3.8% | +2.5% | −2.6% | **won** | **won** |
+  | call-preservation | −2.6% | −3.4% | **won** | **won** | **won** |
+  | branch-call-control-flow | +0.8% | −3.0% | **won** | **won** | **won** |
+  | loop-call-back-edge | parity | parity | **won** | **won** | **won** |
+
+  Two iterations of codegen moved narrow-arithmetic from three 6–8%
+  losses to three parities. The 12 unqualified pairs are all within ±3.8%
+  — inside the territory where a win requires finding something LLVM left
+  on the table, domain by domain. Largest remaining deficits: deep-spill
+  vs rustc (−3.8%), call-preservation vs clang (−3.4%). Raw report
+  retained beside the iteration-16 evidence.
+- **20 (next)**: Generate from instruction diffs of the call-preservation
+  and deep-spill fixtures against their best comparator emissions (both
+  fixtures contain quotient tails, already improved; the residue is in
+  call-crossing preservation shape and spill placement). Falsify by hand
+  before any compiler change, as iterations 17/18 did.
 
 ## Standing honesty constraints
 
