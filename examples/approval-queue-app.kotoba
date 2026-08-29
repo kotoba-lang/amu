@@ -1,0 +1,443 @@
+(ns approval-queue-app
+  ;; A governed approval queue, written only in Kotoba, served over HTTP by
+  ;; `runtime/http-service.mjs`.
+  ;;
+  ;; The three exports are the contract the host drives -- the same contract
+  ;; `examples/todo-app.kotoba` gives `runtime/dom-driver.mjs`, with the
+  ;; screen replaced by a socket:
+  ;;
+  ;;   init  ()                       -> state
+  ;;   step  (state, event)           -> next state
+  ;;   view  (state)                  -> the answer to send
+  ;;
+  ;; This is an APPLICATION, not an admission predicate. Nothing here returns
+  ;; `:bool` to a host that then decides what it meant. The guest holds the
+  ;; queue, folds a decision into it, and says what the queue now amounts to.
+  ;; The host holds the socket, the bytes, and the cell the state lives in
+  ;; between requests -- mechanism only. It never reads a field of the state.
+  ;;
+  ;; ## Why the values cross as JSON text
+  ;;
+  ;; `http-service.mjs` makes a FRESH `:js-kotoba-v1` instance per call (fuel
+  ;; is a per-instance budget, spent and never replenished). A `:document` or
+  ;; a record is a value inside one instance; it cannot be handed to the next
+  ;; one. So `state` crosses the boundary as JSON text and this module reads
+  ;; its own state and its own request body. That is the gap
+  ;; ADR-2608760000's addendum 4 named -- "an application that cannot read
+  ;; its own request body has nothing to be an application about" -- and the
+  ;; reason it can be closed now is `kotoba-lang/json`'s `json_scalar.kotoba`
+  ;; (ADR-2608292330), whose scanning algorithm the `--- json ---` section
+  ;; below carries.
+  ;;
+  ;; ## What is REAL here, and what is this module's own
+  ;;
+  ;; REAL, read byte-for-byte out of `cloud-itonami/cloud-itonami-app` and
+  ;; NOT modified (that repo is read-only input to this example):
+  ;;
+  ;;   * The tally rule, from `src/cloud/itonami/app/approval_core.kotoba`'s
+  ;;     `status`: veto first. "A rejection under veto mode outranks any
+  ;;     number of approvals, including a satisfied minimum -- reversing
+  ;;     these two branches is the failure this ordering exists to prevent."
+  ;;   * Content binding, from the same file's header: "a decision bound to
+  ;;     DIFFERENT content does not count. Approving revision A must not
+  ;;     approve revision B, so the content hash is part of eligibility, not
+  ;;     metadata beside it."
+  ;;   * Dedupe-by-actor, from `work_governance.cljc`'s `approval-state`,
+  ;;     which folds approvals with `(reduce (fn [m d] (assoc m actor d)) {})`
+  ;;     so one actor approving twice counts once, and files ineligible
+  ;;     decisions under `:ignored` rather than dropping them silently.
+  ;;
+  ;; That third item is the point of this slice. `approval_core.kotoba`'s own
+  ;; header says the folding stays in `work_governance.cljc` because "those
+  ;; are collections" -- true when the core was a word-typed decision core
+  ;; beside a JVM that owned the socket. `:js-kotoba-v1` admits collections,
+  ;; so the fold moves into the guest here.
+  ;;
+  ;; THIS MODULE'S OWN, and not to be read as ported: it is an amu-side
+  ;; REFERENCE application in the `todo-app.kotoba` tradition. `server.clj`
+  ;; has no approval-queue HTTP endpoint, so this replaces nothing and is not
+  ;; a port of any route. Of the ten facts `approval_core.kotoba`'s
+  ;; `:approval/eligibility` record carries, this models five -- the ones an
+  ;; event can establish on its own: same-work-item, same-content-hash,
+  ;; actor-is-person, has-eligible-role, and separation-of-duties. The other
+  ;; five (same-organization, same-capability, requires-user-verification,
+  ;; user-verified, actor-is-submitter as a lookup) need an organization
+  ;; graph this application does not have and does not fake.
+  ;;
+  ;; ## Bounds, all real and none hidden
+  ;;
+  ;;   * Actor names must be "simple": non-empty and free of `"`, `\`, `,`
+  ;;     and control bytes. `,` is the list separator and the other two would
+  ;;     produce a response the host rejects as invalid JSON. A decision from
+  ;;     a non-simple actor is IGNORED, which is the same bucket
+  ;;     `approval-state` uses -- it is refused, not silently dropped.
+  ;;   * The rendered state is capped at `state-limit` bytes. A decision that
+  ;;     would push it past that is ignored rather than growing without
+  ;;     bound, so the host's cell has a ceiling the guest itself enforces.
+  ;;   * Only top-level string members are read, so every state and event
+  ;;     field is a JSON string -- counts and flags included ("2", "true").
+  ;;     `json_scalar.kotoba` reads string members only, and this module
+  ;;     parses its own decimals in `to-i64`.
+  ;;   * Fuel is charged per function entry and the scan enters a function
+  ;;     per code point, so the traversable input is fixed at COMPILE time by
+  ;;     `--fuel`. See the ADR addendum for the measured number and the body
+  ;;     bound it was chosen against.
+  (:export [init step view]))
+
+;; --- json: the scanning algorithm of kotoba-lang/json's json_scalar.kotoba -
+;;
+;; Carried here rather than required, because `http-service.mjs` seals and
+;; loads exactly ONE module per route and its config has no multi-module
+;; (`--source-path` / `--module-lock`) path. Sharing it is the obvious next
+;; cleanup; inlining it is not a claim that it is this module's own work.
+;; Only the parts this application needs are carried: escape DECODING is
+;; dropped, and a value containing any `\` escape returns none rather than a
+;; possibly-wrong answer.
+
+(defn cp-width [cp :i64] :i64
+  (cond
+    (< cp 128) 1
+    (< cp 2048) 2
+    (< cp 65536) 3
+    :else 4))
+
+(defn ws? [cp :i64] :bool
+  (or (= cp 32) (= cp 9) (= cp 10) (= cp 13)))
+
+(defn skip-ws [doc :string i :i64 len :i64] :i64
+  (if (>= i len)
+    i
+    (if (ws? (string-code-point-at doc i))
+      (skip-ws doc (+ i 1) len)
+      i)))
+
+;; Byte offset of the closing quote of the JSON string whose first CONTENT
+;; byte is I, or -1. A backslash consumes the next byte, always ASCII in
+;; JSON, so +2 stays on a code-point boundary.
+(defn scan-string-end [doc :string i :i64 len :i64] :i64
+  (if (>= i len)
+    -1
+    (let [cp (string-code-point-at doc i)]
+      (cond
+        (= cp 34) i
+        (= cp 92) (scan-string-end doc (+ i 2) len)
+        :else (scan-string-end doc (+ i (cp-width cp)) len)))))
+
+;; End (exclusive) of the bracketed value starting at I. Strings are scanned
+;; as units, so a brace inside a string cannot change DEPTH.
+(defn scan-balanced [doc :string i :i64 len :i64 depth :i64] :i64
+  (if (>= i len)
+    -1
+    (let [cp (string-code-point-at doc i)]
+      (cond
+        (= cp 34) (let [e (scan-string-end doc (+ i 1) len)]
+                    (if (< e 0) -1 (scan-balanced doc (+ e 1) len depth)))
+        (or (= cp 123) (= cp 91)) (scan-balanced doc (+ i 1) len (+ depth 1))
+        (or (= cp 125) (= cp 93)) (if (= depth 1)
+                                    (+ i 1)
+                                    (scan-balanced doc (+ i 1) len (- depth 1)))
+        :else (scan-balanced doc (+ i (cp-width cp)) len depth)))))
+
+;; End (exclusive) of a number/true/false/null: up to `,` `}` `]` or space.
+(defn scan-scalar-end [doc :string i :i64 len :i64] :i64
+  (if (>= i len)
+    i
+    (let [cp (string-code-point-at doc i)]
+      (if (or (= cp 44) (= cp 125) (= cp 93) (ws? cp))
+        i
+        (scan-scalar-end doc (+ i (cp-width cp)) len)))))
+
+;; End (exclusive) of a value of any kind starting at I, or -1.
+(defn skip-value [doc :string i :i64 len :i64] :i64
+  (if (>= i len)
+    -1
+    (let [cp (string-code-point-at doc i)]
+      (cond
+        (= cp 34) (let [e (scan-string-end doc (+ i 1) len)]
+                    (if (< e 0) -1 (+ e 1)))
+        (or (= cp 123) (= cp 91)) (scan-balanced doc i len 0)
+        :else (scan-scalar-end doc i len)))))
+
+(defn has-escape? [doc :string i :i64 end :i64] :bool
+  (if (>= i end)
+    false
+    (let [cp (string-code-point-at doc i)]
+      (if (= cp 92)
+        true
+        (has-escape? doc (+ i (cp-width cp)) end)))))
+
+(defn found [s :string] [:option :string]
+  (option-some-of [:option :string] s))
+
+(defn absent [] [:option :string]
+  (option-none-of [:option :string]))
+
+;; The member value whose first byte is I, if that value is an escape-free
+;; JSON string.
+(defn value-at [doc :string i :i64 len :i64] [:option :string]
+  (if (not= (string-code-point-at doc i) 34)
+    (absent)
+    (let [e (scan-string-end doc (+ i 1) len)]
+      (if (< e 0)
+        (absent)
+        (let [s (+ i 1)]
+          (if (has-escape? doc s e)
+            (absent)
+            (found (string-substring doc s e))))))))
+
+;; Walk members from byte I, which is just past `{` or just past a `,`.
+;; Members before the wanted key are skipped STRUCTURALLY, so a nested
+;; object, an array, or a string containing `{` `}` `,` or `:` cannot
+;; desynchronise the scan.
+(defn member-scan [doc :string key :string i :i64 len :i64] [:option :string]
+  (let [a (skip-ws doc i len)]
+    (if (>= a len)
+      (absent)
+      (if (not= (string-code-point-at doc a) 34)
+        (absent)
+        (let [ke (scan-string-end doc (+ a 1) len)]
+          (if (< ke 0)
+            (absent)
+            (let [kraw (string-substring doc (+ a 1) ke)
+                  b (skip-ws doc (+ ke 1) len)]
+              (if (or (>= b len) (not= (string-code-point-at doc b) 58))
+                (absent)
+                (let [c (skip-ws doc (+ b 1) len)]
+                  (if (>= c len)
+                    (absent)
+                    (if (string=? kraw key)
+                      (value-at doc c len)
+                      (let [nx (skip-value doc c len)]
+                        (if (< nx 0)
+                          (absent)
+                          (let [d (skip-ws doc nx len)]
+                            (if (>= d len)
+                              (absent)
+                              (if (= (string-code-point-at doc d) 44)
+                                (member-scan doc key (+ d 1) len)
+                                (absent)))))))))))))))))
+
+(defn json-string-field [doc :string key :string] [:option :string]
+  (let [len (string-byte-length doc)
+        i (skip-ws doc 0 len)]
+    (if (>= i len)
+      (absent)
+      (if (not= (string-code-point-at doc i) 123)
+        (absent)
+        (member-scan doc key (+ i 1) len)))))
+
+;; The string value of top-level member KEY, or "" when absent. Every field
+;; this application reads is optional in exactly this sense: a missing field
+;; reads as empty and fails its own check, rather than trapping.
+(defn field [doc :string key :string] :string
+  (option-value-of [:option :string] (json-string-field doc key) ""))
+
+;; --- small decoders -------------------------------------------------------
+
+(defn flag? [doc :string key :string] :bool
+  (string=? (field doc key) "true"))
+
+(defn digit-value [cp :i64] :i64
+  (if (or (< cp 48) (> cp 57)) -1 (- cp 48)))
+
+(defn to-i64-from [s :string i :i64 len :i64 acc :i64] :i64
+  (if (>= i len)
+    acc
+    (let [d (digit-value (string-code-point-at s i))]
+      (if (< d 0)
+        -1
+        (to-i64-from s (+ i 1) len (+ (* acc 10) d))))))
+
+;; A non-negative decimal, or -1 if the text is empty or not all digits.
+(defn to-i64 [s :string] :i64
+  (let [len (string-byte-length s)]
+    (if (= len 0) -1 (to-i64-from s 0 len 0))))
+
+;; --- the actor list -------------------------------------------------------
+;;
+;; A comma-separated list of actor names, which is what dedupe-by-actor needs
+;; and nothing more: membership, append-if-absent, and a count.
+
+(defn seg-end [s :string i :i64 len :i64] :i64
+  (if (>= i len)
+    len
+    (if (= (string-code-point-at s i) 44)
+      i
+      (seg-end s (+ i (cp-width (string-code-point-at s i))) len))))
+
+(defn member-from [s :string name :string i :i64 len :i64] :bool
+  (let [e (seg-end s i len)]
+    (if (string=? (string-substring s i e) name)
+      true
+      (if (>= e len)
+        false
+        (member-from s name (+ e 1) len)))))
+
+(defn member? [s :string name :string] :bool
+  (let [len (string-byte-length s)]
+    (if (= len 0) false (member-from s name 0 len))))
+
+(defn count-from [s :string i :i64 len :i64 acc :i64] :i64
+  (let [e (seg-end s i len)]
+    (if (>= e len)
+      (+ acc 1)
+      (count-from s (+ e 1) len (+ acc 1)))))
+
+(defn list-count [s :string] :i64
+  (let [len (string-byte-length s)]
+    (if (= len 0) 0 (count-from s 0 len 0))))
+
+;; Append-if-absent. This IS the dedupe `approval-state` does by reducing
+;; decisions into a map keyed by actor: one actor approving twice counts once.
+(defn list-add [s :string name :string] :string
+  (if (member? s name)
+    s
+    (if (= (string-byte-length s) 0)
+      name
+      (string-concat s (string-concat "," name)))))
+
+;; --- actor names ----------------------------------------------------------
+
+(defn simple-cp? [cp :i64] :bool
+  (if (< cp 32)
+    false
+    (not (or (= cp 34) (= cp 92) (= cp 44)))))
+
+(defn simple-from? [s :string i :i64 len :i64] :bool
+  (if (>= i len)
+    true
+    (let [cp (string-code-point-at s i)]
+      (if (simple-cp? cp)
+        (simple-from? s (+ i (cp-width cp)) len)
+        false))))
+
+(defn simple-name? [s :string] :bool
+  (let [len (string-byte-length s)]
+    (if (= len 0) false (simple-from? s 0 len))))
+
+;; --- rendering ------------------------------------------------------------
+
+(defn jkv [k :string v :string] :string
+  (string-concat "\"" (string-concat k (string-concat "\":\"" (string-concat v "\"")))))
+
+(defn jsep [a :string b :string] :string
+  (string-concat a (string-concat "," b)))
+
+;; --- the queue ------------------------------------------------------------
+
+(defn state-limit [] :i64 1024)
+
+;; Rebuild the whole state document. Six fields are carried through
+;; unchanged (the item under review and the policy governing it); three are
+;; the queue's accumulated answer.
+(defn render-state [item :string content-hash :string policy :string lists :string] :string
+  (string-concat "{" (string-concat (jsep (jsep (jkv "item" item) (jkv "hash" content-hash))
+                                          (jsep policy lists))
+                                    "}")))
+
+(defn render-policy [minimum :string veto :string separation :string submitter :string] :string
+  (jsep (jsep (jkv "minimum" minimum) (jkv "veto" veto))
+        (jsep (jkv "separation" separation) (jkv "submitter" submitter))))
+
+(defn render-lists [approved :string rejected :string ignored :i64] :string
+  (jsep (jsep (jkv "approved" approved) (jkv "rejected" rejected))
+        (jkv "ignored" (string-from-i64 ignored))))
+
+;; The state with its three accumulated fields replaced.
+(defn with-lists [state :string approved :string rejected :string ignored :i64] :string
+  (render-state (field state "item")
+                (field state "hash")
+                (render-policy (field state "minimum") (field state "veto")
+                               (field state "separation") (field state "submitter"))
+                (render-lists approved rejected ignored)))
+
+;; A refused decision is COUNTED, never dropped -- the `:ignored` bucket
+;; `approval-state` builds for exactly this reason.
+(defn ignore-one [state :string] :string
+  (with-lists state (field state "approved") (field state "rejected")
+    (+ (to-i64 (field state "ignored")) 1)))
+
+;; Eligibility: the five of `:approval/eligibility`'s ten facts an event can
+;; establish on its own. Spelled out rather than folded, so that adding a
+;; condition is a visible edit -- `approval_core.kotoba`'s own reason.
+(defn bound-to-item? [state :string event :string] :bool
+  (and (string=? (field event "item") (field state "item"))
+       (string=? (field event "hash") (field state "hash"))))
+
+(defn actor-eligible? [state :string event :string] :bool
+  (and (flag? event "person")
+       (and (flag? event "role")
+            (if (flag? state "separation")
+              (not (string=? (field event "actor") (field state "submitter")))
+              true))))
+
+(defn eligible? [state :string event :string] :bool
+  (and (simple-name? (field event "actor"))
+       (and (bound-to-item? state event)
+            (actor-eligible? state event))))
+
+;; Fold one decision in. An eligible approval or rejection joins its list
+;; (deduped by actor); anything else is ignored and counted.
+(defn record-decision [state :string event :string] :string
+  (let [actor (field event "actor")
+        decision (field event "decision")
+        approved (field state "approved")
+        rejected (field state "rejected")
+        ignored (to-i64 (field state "ignored"))]
+    (cond
+      (string=? decision "approved") (with-lists state (list-add approved actor) rejected ignored)
+      (string=? decision "rejected") (with-lists state approved (list-add rejected actor) ignored)
+      :else (ignore-one state))))
+
+;; state + event -> next state.
+(defn step [state :string event :string] :string
+  (if (not (eligible? state event))
+    (ignore-one state)
+    (let [next (record-decision state event)]
+      ;; The guest enforces its own ceiling: a decision that would push the
+      ;; state past `state-limit` is refused into `:ignored` rather than
+      ;; growing the host's cell without bound.
+      (if (> (string-byte-length next) (state-limit))
+        (ignore-one state)
+        next))))
+
+;; --- what the queue amounts to -------------------------------------------
+
+;; Veto first. A rejection under veto mode outranks any number of approvals,
+;; including a satisfied minimum. Reversing these two branches is the failure
+;; this ordering exists to prevent (approval_core.kotoba, `status`).
+(defn status-label [veto :bool rejected-count :i64 approved-count :i64 minimum :i64] :string
+  (cond
+    (and veto (> rejected-count 0)) "rejected"
+    (>= approved-count minimum) "approved"
+    :else "pending"))
+
+(defn render-answer [status :string counts :string lists :string item :string] :string
+  (string-concat "{" (string-concat (jsep (jsep (jkv "item" item) (jkv "status" status))
+                                          (jsep counts lists))
+                                    "}")))
+
+(defn view [state :string] :string
+  (let [approved (field state "approved")
+        rejected (field state "rejected")
+        minimum (to-i64 (field state "minimum"))
+        approved-count (list-count approved)
+        rejected-count (list-count rejected)]
+    (render-answer (status-label (flag? state "veto") rejected-count approved-count minimum)
+                   (jsep (jsep (jkv "approved_count" (string-from-i64 approved-count))
+                               (jkv "rejected_count" (string-from-i64 rejected-count)))
+                         (jsep (jkv "required" (string-from-i64 minimum))
+                               (jkv "ignored" (field state "ignored"))))
+                   (jsep (jkv "approved_by" approved) (jkv "rejected_by" rejected))
+                   (field state "item"))))
+
+;; --- the queue this reference deployment starts with ----------------------
+;;
+;; One work item under review, under a veto policy needing two approvals,
+;; with separation of duties on and `carol` recorded as the submitter -- so
+;; carol approving her own item is refused, which is a rule worth being able
+;; to watch work.
+(defn init [] :string
+  (render-state "work-1" "sha256-a1"
+                (render-policy "2" "true" "true" "carol")
+                (render-lists "" "" 0)))

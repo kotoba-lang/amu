@@ -479,19 +479,32 @@
                                                    (:manifest result))
                          (atomic-output/write-text!
                           (str output ".manifest.json")
+                          ;; `json.data-json/write-str` takes ONE options MAP,
+                          ;; unlike `clojure.data.json/write-str`'s variadic
+                          ;; kwargs, despite the shim's docstring claiming the
+                          ;; same contract. Called the old way this is 3 args
+                          ;; against arities 1 and 2, so it throws an
+                          ;; ArityException -- not an ExceptionInfo, so the
+                          ;; CLI's `catch Throwable` reported "internal
+                          ;; compiler error" and exit 70 AFTER the artifact
+                          ;; and the .manifest.edn had already been written.
+                          ;; Measured 2026-08-29: every `compile --target js`
+                          ;; exited 70 while emitting a perfectly good module,
+                          ;; which also broke scripts/http-service-e2e.cljs.
                           (json/write-str (:manifest result)
-                                          :key-fn (fn [k] (if (keyword? k)
-                                                            (subs (str k) 1)
-                                                            (str k))))))
+                                          {:key-fn (fn [k] (if (keyword? k)
+                                                             (subs (str k) 1)
+                                                             (str k)))})))
         :evm/v1 (do
                   (atomic-output/write-bytes!
                    output (byte-array (map unchecked-byte (:creation-bytes result))))
                   (atomic-output/write-text!
                    (str output ".abi.json")
+                   ;; Same shim signature as the :javascript/v1 branch above.
                    (json/write-str (:abi result)
-                                   :key-fn (fn [k] (if (keyword? k)
-                                                     (subs (str k) 1)
-                                                     (str k)))))
+                                   {:key-fn (fn [k] (if (keyword? k)
+                                                      (subs (str k) 1)
+                                                      (str k)))}))
                   (atomic-output/write-edn!
                    (str output ".manifest.edn")
                    (select-keys result [:format :target :target-profile :selector

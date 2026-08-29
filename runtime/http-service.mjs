@@ -38,15 +38,53 @@
  * therefore both correct and simple: no worker, no postMessage, no
  * serialization boundary for plain strings/i64/bool/keyword values.
  *
+ * ## Two kinds of guest: `routes` (pure) and `apps` (stateful)
+ *
+ * A `routes` entry is the original shape: one export, `:string -> :string`,
+ * no state, fresh instance per call.
+ *
+ * An `apps` entry is a `kotoba/app` in the sense of ADR-2607201300 and
+ * ADR-2608261100 -- an application, not an admission predicate. It exports
+ * the same three functions `runtime/dom-driver.mjs` drives, with the screen
+ * replaced by a socket:
+ *
+ *     init  ()                 -> state
+ *     step  (state, event)     -> next state
+ *     view  (state)            -> the answer to send
+ *
+ * The split is the same one this file already keeps. The GUEST holds the
+ * product semantics: what a state is, what an event means, which events
+ * change it, and what the state amounts to. The HOST holds mechanism only --
+ * the socket, the instantiate, the bytes, and the cell the state lives in
+ * between requests. It never reads a field of the state: the state is an
+ * opaque JSON string it hands back to the guest unexamined.
+ *
+ * State is a `:string` for the same reason a fresh instance is made per
+ * call: fuel is a per-instance budget, spent and never replenished, so a
+ * `:document` or a record is a value inside ONE instance and cannot be
+ * handed to the next one. Text is what survives the instance boundary. That
+ * makes the guest read its own state and its own request body, which is only
+ * possible because `kotoba-lang/json`'s `json_scalar.kotoba` exists
+ * (ADR-2608292330) -- see `examples/approval-queue-app.kotoba`.
+ *
+ * A guest that scans its own body spends fuel per code point, so an app's
+ * traversable input is fixed at COMPILE time by `amu compile --fuel N`, not
+ * by anything this host can raise later. An app therefore declares
+ * `maxBodyBytes`/`maxStateBytes` it was compiled to afford, and this host
+ * enforces both -- a body it admits that the guest cannot afford to scan
+ * would trap rather than answer.
+ *
  * ## What this does NOT do (named explicitly, not silently)
  *
  * - No path parameters / wildcards. Routes are exact (method, path) pairs.
- * - No sessions, cookies, or streaming request/response bodies.
- * - No structural JSON parsing *inside* the guest. The body crosses the
- *   boundary as a validated-syntactically-JSON `:string`; a guest that wants
- *   to inspect fields must do its own string work (or, once
- *   `kotoba-lang/json` has a `.kotoba` port, use that). Today's guests can
- *   validate/pass-through/emit fixed JSON text, not parse arbitrary keys.
+ * - No sessions, cookies, or streaming request/response bodies. An app's
+ *   state is ONE cell shared by every caller, not a per-client session.
+ * - A `routes` (pure) guest still does no structural JSON parsing: its body
+ *   crosses as a validated-syntactically-JSON `:string` and it must do its
+ *   own string work. An `apps` guest does exactly that string work, in the
+ *   guest, and that is the point of the shape.
+ * - No persistence. An app's state lives in memory and starts again from
+ *   `init()` when the process restarts.
  */
 
 import fs from "node:fs";
@@ -55,7 +93,9 @@ import { createHash } from "node:crypto";
 
 const MAX_CONCURRENCY = 8;
 const MAX_BODY_BYTES_CEILING = 65536; // == kotobaArtifact.stringLimits.valueBytes (measured)
+const MAX_STATE_BYTES_CEILING = 65536; // same ceiling: state crosses as a :string too
 const MAX_ROUTES = 256;
+const MAX_APPS = 32;
 const ENTRY_NAME = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/;
 const METHODS = new Set(["GET", "POST"]);
 
@@ -109,6 +149,25 @@ function freshInstance(mod) {
   return mod.instantiateKotoba({});
 }
 
+/**
+ * Bound a state value the host is about to carry: it must be a string, must
+ * fit the app's declared ceiling, and must be syntactically JSON. Returns
+ * null when admissible, otherwise a reason.
+ *
+ * This is the host bounding an opaque value, NOT the host reading it. It
+ * never looks at a field: what the state means is entirely the guest's.
+ * JSON-parsing it is the same syntactic check already applied to request and
+ * response bodies, so a guest cannot hand back bytes the next `step` could
+ * not scan.
+ */
+function admissibleState(value, app) {
+  if (typeof value !== "string") return "state-not-a-string";
+  const bytes = Buffer.byteLength(value, "utf8");
+  if (bytes > app.maxStateBytes) return "state-too-large";
+  try { JSON.parse(value); } catch { return "state-not-json"; }
+  return null;
+}
+
 function requireExport(instance, name, modulePath) {
   if (typeof instance?.[name] !== "function")
     throw new ConfigError(`${modulePath}: module does not export ${name}`);
@@ -123,8 +182,12 @@ function requireExport(instance, name, modulePath) {
 export async function createHttpService(config) {
   if (!isPlainObject(config)) throw new ConfigError("config must be a plain object");
   if (!isPlainObject(config.decide)) throw new ConfigError("config.decide must be a plain object");
-  if (!Array.isArray(config.routes) || config.routes.length === 0)
-    throw new ConfigError("config.routes must be a non-empty array");
+  // `routes` may be empty when the service's routes all come from `apps`.
+  // What must not be empty is the SERVICE: a host answering nothing but its
+  // own built-ins is a misconfiguration, so that is checked once both
+  // sources have been read, rather than requiring either one specifically.
+  if (!Array.isArray(config.routes))
+    throw new ConfigError("config.routes must be an array");
   if (config.routes.length > MAX_ROUTES)
     throw new ConfigError(`config.routes exceeds the admitted ceiling of ${MAX_ROUTES}`);
 
@@ -165,8 +228,76 @@ export async function createHttpService(config) {
 
     const key = `${method} ${path}`;
     if (routeTable.has(key)) throw new ConfigError(`duplicate route: ${key}`);
-    routeTable.set(key, { method, path, mod: entry.mod, export: exportName, hasBody, maxBodyBytes });
+    routeTable.set(key, { kind: "pure", method, path, mod: entry.mod, export: exportName, hasBody, maxBodyBytes });
   }
+
+  // -- apps: init/step/view guests whose state the host carries between
+  // requests. The host never inspects the state; it only bounds it.
+  const apps = [];
+  const rawApps = config.apps ?? [];
+  if (!Array.isArray(rawApps)) throw new ConfigError("config.apps must be an array");
+  if (rawApps.length > MAX_APPS) throw new ConfigError(`config.apps exceeds the admitted ceiling of ${MAX_APPS}`);
+
+  for (const raw of rawApps) {
+    if (!isPlainObject(raw)) throw new ConfigError("each app must be a plain object");
+    const { name, module: modulePath, sha256 } = raw;
+    if (!ENTRY_NAME.test(name ?? "")) throw new ConfigError(`app ${JSON.stringify(name)}: name is not admitted`);
+    const initName = raw.init ?? "init";
+    const stepName = raw.step ?? "step";
+    const viewName = raw.view ?? "view";
+    for (const n of [initName, stepName, viewName])
+      if (!ENTRY_NAME.test(n)) throw new ConfigError(`app ${name}: export name ${JSON.stringify(n)} is not admitted`);
+
+    const maxStateBytes = raw.maxStateBytes ?? MAX_STATE_BYTES_CEILING;
+    if (!Number.isInteger(maxStateBytes) || maxStateBytes < 1 || maxStateBytes > MAX_STATE_BYTES_CEILING)
+      throw new ConfigError(`app ${name}: maxStateBytes must be in [1, ${MAX_STATE_BYTES_CEILING}]`);
+
+    let entry = moduleCache.get(modulePath);
+    if (entry === undefined) {
+      const mod = await loadPureModule(modulePath, sha256);
+      entry = { mod, sha256 };
+      moduleCache.set(modulePath, entry);
+    } else if (entry.sha256 !== sha256) {
+      throw new ConfigError(`app ${name}: ${modulePath} was already pinned to a different sha256`);
+    }
+    {
+      const probe = freshInstance(entry.mod);
+      for (const n of [initName, stepName, viewName]) requireExport(probe, n, modulePath);
+    }
+
+    // Seed the cell by asking the guest, at startup, what a fresh state is.
+    // A guest that cannot produce an admissible initial state is a config
+    // error, not a runtime surprise on the first request.
+    let initial;
+    try { initial = freshInstance(entry.mod)[initName](); }
+    catch (error) { throw new ConfigError(`app ${name}: ${initName}() trapped (${error.message})`); }
+    const app = { name, mod: entry.mod, step: stepName, view: viewName, maxStateBytes, state: null };
+    const seeded = admissibleState(initial, app);
+    if (seeded !== null) throw new ConfigError(`app ${name}: ${initName}() returned ${seeded}`);
+    app.state = initial;
+
+    if (!Array.isArray(raw.routes) || raw.routes.length === 0)
+      throw new ConfigError(`app ${name}: routes must be a non-empty array`);
+    for (const r of raw.routes) {
+      if (!isPlainObject(r)) throw new ConfigError(`app ${name}: each route must be a plain object`);
+      const { method, path } = r;
+      if (!METHODS.has(method)) throw new ConfigError(`app ${name}: route method must be GET or POST`);
+      if (typeof path !== "string" || !path.startsWith("/") || path.length > 256 || path.includes("?"))
+        throw new ConfigError(`app ${name}: route path ${JSON.stringify(path)} is not an admitted absolute path`);
+      const event = r.event ?? false;
+      if (typeof event !== "boolean") throw new ConfigError(`app ${name} route ${path}: event must be a boolean`);
+      const maxBodyBytes = r.maxBodyBytes ?? MAX_BODY_BYTES_CEILING;
+      if (!Number.isInteger(maxBodyBytes) || maxBodyBytes < 1 || maxBodyBytes > MAX_BODY_BYTES_CEILING)
+        throw new ConfigError(`app ${name} route ${path}: maxBodyBytes must be in [1, ${MAX_BODY_BYTES_CEILING}]`);
+      const key = `${method} ${path}`;
+      if (routeTable.has(key)) throw new ConfigError(`duplicate route: ${key}`);
+      routeTable.set(key, { kind: "app", method, path, app, hasBody: event, event, maxBodyBytes });
+    }
+    apps.push(app);
+  }
+
+  if (routeTable.size === 0)
+    throw new ConfigError("config must declare at least one route, in routes or apps");
 
   const metrics = { requests: 0, success: 0, rejected: 0, busy: 0, traps: 0 };
   let active = 0;
@@ -285,8 +416,27 @@ export async function createHttpService(config) {
     try {
       let result;
       try {
-        const instance = freshInstance(route.mod);
-        result = route.hasBody ? instance[route.export](bodyText) : instance[route.export]();
+        if (route.kind === "app") {
+          const app = route.app;
+          // The read-modify-write below is synchronous with no `await`
+          // between reading the cell and assigning it, so two concurrent
+          // requests cannot interleave inside it. The body `await` already
+          // happened above.
+          if (route.event) {
+            const next = freshInstance(app.mod)[app.step](app.state, bodyText);
+            const reason = admissibleState(next, app);
+            if (reason !== null) {
+              metrics.rejected += 1;
+              respond(response, 500, { format: "kotoba.http-service-error/v1", error: reason });
+              return;
+            }
+            app.state = next;
+          }
+          result = freshInstance(app.mod)[app.view](app.state);
+        } else {
+          const instance = freshInstance(route.mod);
+          result = route.hasBody ? instance[route.export](bodyText) : instance[route.export]();
+        }
       } catch (error) {
         metrics.traps += 1;
         metrics.rejected += 1;
@@ -332,6 +482,7 @@ export async function createHttpService(config) {
     server,
     metrics,
     routeCount: routeTable.size,
+    appCount: apps.length,
     listen(port = 0) {
       return new Promise((resolve, reject) => {
         server.once("error", reject);
