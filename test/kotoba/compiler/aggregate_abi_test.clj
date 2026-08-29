@@ -87,11 +87,12 @@
             caller (second (:mc/functions mc))
             encodings (map :mc/encoding (:mc/instructions caller))]
         (is (= :call-live (:mc/frame-policy caller)) target)
-        (is (= 1 (:mc/frame-slots caller)) target)
-        (is (= 1 (count (filter #{(keyword (name target) "spill-store")}
-                                encodings))) target)
-        (is (= 1 (count (filter #{(keyword (name target) "spill-load")}
-                                encodings))) target)))))
+        (is (zero? (:mc/frame-slots caller)) target)
+        (is (not-any? #{(keyword (name target) "spill-store")
+                        (keyword (name target) "spill-load")}
+                      encodings)
+            [target "the call-crossing value is preserved, not spilled
+                     (kotoba-mir 8a2bc4d via kotoba-native 1fd9c22)"])))))
 
 (deftest pinned-closure-carries-the-zero-frame-four-argument-entry
   (let [module {:format :kotoba.kir/v4

@@ -166,10 +166,30 @@ that domain is unreachable for anyone, and recording that is a result.
   kotoba-mir/kotoba-native, not an emission patch; it lands only with the
   conservative path's own regression corpus green and the wide/deep
   domains byte-identical.
-- **21 (next)**: read the allocator's call handling and design the
-  narrowest admissible slice of preserved-tier assignment for
-  call-crossing values; fail-closed for anything unprovable, as the
-  Mersenne chain test did.
+- **21 (2026-08-29, landed)**: the preserved-tier machinery already
+  existed in full — the linear scanner keeps preserved assignments alive
+  across calls, moves a call-crossing call result into the preserved tier,
+  and prefers preserved registers for crossing definitions. What kept
+  `kernel_call` on the slot shape was the *dispatcher*: straight-line call
+  functions tried the older `allocate-call-live` first, which wipes the
+  whole assignment at every call, and it always succeeded. kotoba-mir #40
+  sends every call function to the scanner (which carries its own
+  conservative fallback) and deletes the superseded allocator (−150
+  lines); kotoba-native #85 and the amu pin carry it through. Measured on
+  the qualified fixture: **+8.97% separated** over the slot shape (5.21 →
+  4.74 ns), 2.2% past the iteration-20 hand mutant — the scanner consumes
+  a first-call result directly as the second call's argument, which the
+  hand version did not — and past clang's 5.03 / rustc's 5.07 from the
+  iteration-19 matrix. Every manifest input and the one-fuel-per-call
+  contract intact; kernel_call shrinks 260 → 204 bytes. Suites: kotoba-mir
+  79/1,261, kotoba-native 201/2,401, amu 1,154/8,526, all green — the
+  slot-shape pins across three repos now pin the preserved shape, split by
+  target where x86-64's documented scratch-first entry plan differs.
+- **22 (next)**: six-domain re-score on this pin. call-preservation
+  entered the loop at −5.0/−5.7% and its fixture now measures ~6% ahead of
+  both; branch-call and loop-call also contain calls and may move. Then
+  rank what remains from the fresh matrix (deep-spill vs rustc/zig was
+  −3.8/−2.6%).
 
 ## Standing honesty constraints
 
