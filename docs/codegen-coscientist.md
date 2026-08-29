@@ -567,6 +567,24 @@ as before.
   measured, and Rosetta numbers are retired from x86 claims now that
   real hardware answers.
 
+- **40 (2026-08-29, x86 catch-up begins — the deficit halves)**: the
+  emission diff on gad named two x86-specific mechanisms: **H-X1**, four
+  push/pop pairs per quotient (32 stack round trips per kernel call)
+  protecting RAX/RDX from `imul r10`'s implicit clobber, and **H-X2**,
+  the serialized sign-correction tail — the same shape iteration 18
+  fixed on AArch64. H-X2 landed first (kotoba-native #87: copy the
+  unshifted value into RDX *before* SAR so SAR and SHR run in parallel;
+  two lines swapped, a new byte test pins the parallel tail and rejects
+  the serialized one). Measured on gad across three rotations, calm-load
+  medians 17.58 → 16.15 ns: **about +8%, direction unanimous** (the
+  separation heuristic stays unmet under Ryzen boost-state variance, so
+  the number is reported as a consistent diagnostic, not a qualified
+  claim). The gcc deficit narrows from −25.6% to ≈−13% — one ported
+  transform recovered half. The amu suite flaked 6 execution tests under
+  load-34 (f64 and aarch64 paths this x86-only change cannot touch) and
+  was green on rerun: 1,154/8,526/0/0. **H-X1 is next** — the push/pop
+  traffic is now the largest named x86 mechanism.
+
 ## Standing honesty constraints
 
 Every number above is one host on one day; the falsification numbers are
