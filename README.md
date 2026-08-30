@@ -5,6 +5,20 @@ language. The repository is `kotoba-lang/amu`; the name evokes Japanese
 「編む」— weaving checked source, typed KIR, and target artifacts into one
 cloth.
 
+## Content-bound logic manifest
+
+`kotoba.compiler.logic-manifest/build!` projects checked KIR into
+`:kotoba.logic-manifest/v1`. It recomputes the transitive semantic effect row
+from KIR, binds it to definition/artifact/compiler/semantics/world CIDs, and
+emits bounded `amu:` n-ary facts for a runtime authorizer. Callers supply
+immutable identities and resource bounds; they cannot supply or widen effects.
+
+`authorizer-evidence!` binds those facts to the CID of the persisted IPLD
+manifest. CID shape and manifest content hash are checked here. Storage
+readback and compiler attestation/proof verification remain host admission
+responsibilities. The envelope contains no Biscuit bearer token and mints no
+authority.
+
 Project linking (many `.kotoba` roots → one closed graph) is part of
 weaving and lives here. Runtime linking (artifact imports → granted
 providers) is [`kototama`](https://github.com/kotoba-lang/kototama) (言霊).
