@@ -468,6 +468,17 @@ its R2 native-WASM-host path. `bin/amu` picks the path automatically
 based on the subcommand and `--target`; nothing about the CLI's argument
 shape changes.
 
+Migration and release gates that must not depend on a locally installed JVM
+pass `--jvm-free`. In that mode Amu never invokes `clojure`: a missing or
+invalid `deps-lock.edn`, a project/linker invocation, or an unsupported
+command/target fails closed instead of falling back to the JVM compatibility
+path.
+
+```sh
+bin/amu check component.cljk --jvm-free
+bin/amu compile component.cljk --target wasm32 --jvm-free --output component.wasm
+```
+
 `cljs` (ADR-2607151500) is a genuinely different kind of backend from the
 other three: it lowers KIR to plain ClojureScript SOURCE TEXT, not machine
 code or a WASM binary. `:cljs-kotoba-v1` (with `:cljs-node-kotoba-v1`/
