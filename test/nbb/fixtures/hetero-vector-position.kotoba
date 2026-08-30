@@ -1,0 +1,40 @@
+;; A structural position inside a heterogeneous value is a KIR i64 LITERAL:
+;; a Long on the JVM, a JavaScript BigInt under cljs/nbb. The Wasm emitter
+;; used that literal directly as a host `nth` index to select the member
+;; type, which is a no-op cast on the JVM and a hard throw on cljs -- so the
+;; whole nbb path answered `:kotoba/internal-error` for any source using
+;; `hetero-vector-at` or `hetero-vector-assoc`, while the JVM path compiled
+;; the same source without complaint.
+;;
+;; Positions here are non-zero and the members carry DIFFERENT values and
+;; DIFFERENT types, so reading the wrong position shows up as a wrong result
+;; and as a wrong Wasm member type -- not only as a throw. `main` folds three
+;; positions into one i64 so a host that can only call `main` still sees a
+;; value that changes if any position is misread.
+(ns hetero.position
+  (:export [main tail head swapped-tail]))
+
+(def pair-type [:vector [:i64 :f64]])
+(def triple-type [:vector [:i64 :i64 :i64]])
+
+(defn tail
+  [a :i64 b :f64] :f64
+  (hetero-vector-at pair-type (hetero-vector pair-type a b) 1))
+
+(defn head
+  [a :i64 b :f64] :i64
+  (hetero-vector-at pair-type (hetero-vector pair-type a b) 0))
+
+(defn swapped-tail
+  [a :i64 b :f64 c :f64] :f64
+  (hetero-vector-at pair-type
+    (hetero-vector-assoc pair-type (hetero-vector pair-type a b) 1 c)
+    1))
+
+(defn main
+  [] :i64
+  (+ (* 100 (hetero-vector-at triple-type (hetero-vector triple-type 1 2 3) 2))
+     (* 10 (hetero-vector-at triple-type (hetero-vector triple-type 1 2 3) 1))
+     (hetero-vector-at triple-type
+       (hetero-vector-assoc triple-type (hetero-vector triple-type 1 2 3) 0 7)
+       0)))

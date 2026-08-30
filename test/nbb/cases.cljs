@@ -81,4 +81,21 @@
    {:name "xml-query" :source "test/nbb/fixtures/xml-query.kotoba" :target "wasm32-browser" :policy nil}
    ;; ADR 0019: bounded decimal parsing and its conditional typed import.
    {:name "decimal-f64" :source "test/nbb/fixtures/decimal-f64.kotoba" :target "wasm32-browser" :policy nil}
-   {:name "decimal-f64x3" :source "test/nbb/fixtures/decimal-f64x3.kotoba" :target "wasm32-browser" :policy nil}])
+   {:name "decimal-f64x3" :source "test/nbb/fixtures/decimal-f64x3.kotoba" :target "wasm32-browser" :policy nil}
+   ;; ADR 0286: a structural position inside a heterogeneous value arrives as
+   ;; a KIR i64 literal, which is a Long on the JVM and a JavaScript BigInt
+   ;; here. The Wasm emitter fed it straight to `nth`, so THIS runtime threw
+   ;; `Index argument to nth must be a number` -- reported by the CLI as
+   ;; `:kotoba/internal-error`, exit 70 -- for every source using
+   ;; `hetero-vector-at` or `hetero-vector-assoc`, while the JVM compiled the
+   ;; same source without complaint. No `examples/*.kotoba` fixture and no
+   ;; case above uses either operation, which is why the whole non-JVM path
+   ;; was closed to existing admitted guest code and nothing here noticed.
+   ;; Both targets: the defect was reported against `wasm32`, and every other
+   ;; case in this manifest is `wasm32-browser`.
+   {:name "hetero-vector-position"
+    :source "test/nbb/fixtures/hetero-vector-position.kotoba"
+    :target "wasm32-browser" :policy nil}
+   {:name "hetero-vector-position-wasm32"
+    :source "test/nbb/fixtures/hetero-vector-position.kotoba"
+    :target "wasm32" :policy nil}])

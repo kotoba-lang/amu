@@ -1,0 +1,61 @@
+{:adr/id 286
+ :adr/status :accepted
+ :decision :structural-positions-need-a-host-index-conversion
+ :classification :defect-not-policy-refusal
+ :pins {:kotoba-wasm-before "a739f379f76967e8cd2cfc8909dc98e4c72570e0"
+        :kotoba-wasm-after "87a5c0b3dc932db55508d61576500e347efb9e3a"
+        :amu-base "5a2d188"}
+ :fault {:where "kotoba.wasm.core hetero-vector-at/hetero-vector-assoc, kotoba.wasm.typed/infer-type"
+         :cause :kir-i64-literal-is-a-bigint-under-cljs
+         :thrown "Index argument to nth must be a number"
+         :ex-data nil
+         :reported {:exit 70 :error :internal :code :kotoba/internal-error}
+         :path :nbb-jdk-free-wasm-cli
+         :jvm-affected? false}
+ :controls {:amu-check {:exit 0}
+            :aarch64 {:exit 70 :code :kotoba/target-rejected :named? true}
+            :jvm-emit {:threw? false}}
+ :fix {:repo "kotoba-lang/kotoba-wasm" :adr 47
+       :added #{"kotoba.wasm.typed/host-index" "kotoba.wasm.typed/hetero-item-type"}
+       :refusal-phase :wasm-typed-lowering
+       :admission-gate-widened? false}
+ :falsification {:suite "npm run test-nbb-wasm32"
+                 :cases 42
+                 :with-fix {:failed 0}
+                 :without-fix {:failed 2
+                               :names #{"hetero-vector-position"
+                                        "hetero-vector-position-wasm32"}
+                               :message "Index argument to nth must be a number"}
+                 :controls-still-green 40}
+ :behaviour {:fixture "test/nbb/fixtures/hetero-vector-position.kotoba"
+             :target :wasm32-browser-kotoba-v1
+             :sha256-jvm "748ad1c19831da8b12989396fbcd48d2c4fd74c76056fb3b8b53eceb4d52ec93"
+             :sha256-nbb "748ad1c19831da8b12989396fbcd48d2c4fd74c76056fb3b8b53eceb4d52ec93"
+             :byte-identical? true
+             :host "runtime/browser-host.mjs"
+             :called-by :export-name
+             :exports [main tail head swapped-tail]
+             :kir-reference {:main 327 :head 3 :tail 2.5 :swapped-tail 9.25}
+             :wasm-observed {:main 327 :head 3 :tail 2.5 :swapped-tail 9.25}
+             :agree? true}
+ :suites {:kotoba-wasm {:tests 119 :assertions 525 :failures 0}
+          :amu-nbb-wasm32 {:cases 42 :failed 0}
+          :amu-wasm-typed-test {:tests 28 :assertions 79 :failures 0 :errors 0}
+          :amu-full-jvm {:status :did-not-finish
+                         :reason "host load average 449-498 from other sessions"
+                         :observed-red "kotoba.compiler.isa-execution-test"}}
+ :pre-existing-red {:namespace "kotoba.compiler.isa-execution-test"
+                    :control "same classpath, kotoba-wasm at old pin a739f379"
+                    :result {:tests 25 :assertions 760 :fail 15 :error 0}
+                    :symptom "{:status :trap :exit 120 :fuel {:initial 512 :remaining 512}}"
+                    :caused-by-this-change? false
+                    :cause :not-investigated}
+ :not-done {:other-host-index-operands :read-but-not-tested
+            :cljs-runner-in-kotoba-wasm :not-added
+            :h264-module-execution :not-run
+            :affected-guest-code-count :unmeasured-scan-timed-out-at-280s
+            :dash-o-flag-silently-ignored :observed-not-fixed}
+ :limits {:behaviour-scope "four exports, one fixture, one host, one target"
+          :byte-identity-scope "that one fixture only"
+          :wasm32-wasi :not-executed
+          :refusal-paths "JVM assertions only; unreachable from admitted source"}}

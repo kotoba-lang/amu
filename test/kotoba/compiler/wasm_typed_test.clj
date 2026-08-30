@@ -674,3 +674,58 @@
         (is (zero? (:exit validated)) (:err validated)))
       (finally
         (.delete tmp)))))
+
+;; ADR 0286. A structural position inside a heterogeneous value arrives as a
+;; KIR i64 literal. The Wasm emitter used it directly as a host `nth` index,
+;; which is a no-op cast here and a throw on cljs, so `bin/amu compile
+;; --target wasm32` answered `:kotoba/internal-error` for every source using
+;; `hetero-vector-at`/`hetero-vector-assoc` while this runtime compiled the
+;; same source fine.
+;;
+;; These assertions cannot see that defect -- nothing on the JVM could, which
+;; is why it lasted. The falsifying test is `test/nbb`'s
+;; `hetero-vector-position` case, on the runtime that was broken. What this
+;; test establishes instead is the thing exit 0 does not: that the emitted
+;; module AGREES WITH THE KIR REFERENCE INTERPRETER, at every export, by
+;; export NAME rather than by a guessed offset.
+(def ^:private hetero-position-fixture
+  "test/nbb/fixtures/hetero-vector-position.kotoba")
+
+(def ^:private hetero-position-arguments
+  "Arguments per export. Positions in the fixture are non-zero and its members
+  differ in both value and type, so a misread position is a wrong result here,
+  not merely a throw."
+  {'main [] 'head [3 2.5] 'tail [3 2.5] 'swapped-tail [3 2.5 9.25]})
+
+(defn- javascript-argument [value]
+  (if (integer? value) (str value "n") (str value)))
+
+(deftest heterogeneous-positions-agree-with-the-kir-interpreter
+  (let [source (slurp hetero-position-fixture)
+        compiled (compiler/compile-source source :wasm32-browser-kotoba-v1)
+        exports (:exports (:kir compiled))
+        expected (into {} (for [name exports]
+                            [(str name)
+                             (str (ir/execute (:kir compiled) name
+                                              (get hetero-position-arguments name)))]))
+        ;; Call by the name the ARTIFACT declares, not by a guessed position:
+        ;; calling index 0 would silently exercise a different function.
+        calls (str/join
+               (for [name exports]
+                 (str "console.log(" (pr-str (str name)) "+'='+String(x["
+                      (pr-str (str name)) "]("
+                      (str/join "," (map javascript-argument
+                                         (get hetero-position-arguments name)))
+                      ")));")))
+        probe (node-probe compiled (str "const x=h.instance.exports;" calls))
+        observed (into {} (for [line (str/split-lines (str/trim (:out probe)))
+                                :when (str/includes? line "=")]
+                            (let [[k v] (str/split line #"=" 2)] [k v])))]
+    (testing "every export the artifact declares is exercised"
+      (is (= #{'main 'head 'tail 'swapped-tail} (set exports)))
+      (is (every? hetero-position-arguments exports)))
+    (testing "the reference interpreter reads the positions the fixture names"
+      (is (= {"main" "327" "head" "3" "tail" "2.5" "swapped-tail" "9.25"} expected)))
+    (testing "the emitted module returns what the reference interpreter returns"
+      (is (zero? (:exit probe)) (:err probe))
+      (is (= expected observed) (:out probe)))))
