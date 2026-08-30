@@ -40,6 +40,8 @@ that domain is unreachable for anyone, and recording that is a result.
 | H-B | batch-fixture noise (rsd 0.47 vs policy 0.10) is scheduler migration of a long single-call region across P/E cores; pin the timed region's QoS | open | performance.md already documents an E-core migration incident |
 | H-E | call-crossing values go to stack slots instead of the callee-saved registers the prologue already spends: `kernel_call` saves x19–x26 yet stores/loads all eight call results through the stack (8 STR + 11 LDR + 3 constant-mov round-trips) | **hand-falsified — iteration 20: +6.66% separated (5.19 → 4.84 ns), fuel contract intact, past clang's 5.03**. Compiler work: assign call-crossing values to the preserved tier in the scan | performance.md's conservative-path tables; iteration-20 fixture retained in `levi:~/amu-evidence/` |
 | H-F | protect domains where amu already leads (kernel_wide +7% vs rustc diagnostic) with byte-accurate regressions | standing | #637–#639 pattern |
+| H-Y1 | wasm32 pays a host crossing per iteration merely to CARRY a reference-typed parameter (`typed-assert-ref` prologue), and self-recursion pays it per iteration where `loop`/`recur` pays it once | **counted — iteration 51** (ADR 0285) | 4096 element visits: self-recursion 4227 `assert-ref`, `loop`/`recur` 129; 2.032 vs 1.032 crossings/element, identical KIR-verified return values |
+| H-Y2 | a pixel-domain carrier must be guest-addressable memory indexed by the guest's own load; making the existing carrier merely bigger does not reach a usable cost | **open — reflect stage measured NULL, iteration 51**; needs a quiet window before compiler work | hand-encoded `slice-at` vs identical loop: gap 0.296 ns against summed stdev 0.489, `:not-separated-from-noise` at load1 506-554 |
 
 ## Iteration log
 
@@ -817,6 +819,70 @@ as before.
   kotoba-native and amu tips already carried it. loop_call remains the
   widest x86 gap on the table -- the residue is now the per-iteration
   guest-call ABI around the body call, not the crossing.
+- **51 (2026-08-30, a seventh domain is opened, and its carrier is gated
+  on crossings rather than capacity)**: new research line, stated as its own
+  goal because the existing one is six arithmetic kernels against five
+  comparators: *a pixel-domain workload executes with no JVM at run time, at a
+  per-element cost within a stated factor of C at `-O3`, with every element the
+  guest touches reached by its own load or store rather than by a call or an
+  intrinsic.* Generated from two measured artifacts, not intuition: ADR 0284's
+  per-element cost, and the utsushi attribution (`bench/decode-cost-attribution`,
+  merge 42bd12d). ADR 0285.
+  **Counted first, because a count does not drift with load and this
+  workstation ran at load1 12-700.** Wrapping every `kotoba:typed` import
+  (`bench/bulk-carrier/crossings.cljs`) over 4096 element visits: a wasm32 loop
+  that merely **carries** a `:vector-i64` and never reads it pays **1.032 host
+  crossings per element** -- `kotoba.wasm.core` emits a `typed-assert-ref`
+  prologue per reference-typed parameter, so a recursive function re-proves the
+  type of an externref its own caller already asserted. Reading one element adds
+  a second: **2.032**. The same three arms rewritten with `loop`/`recur` instead
+  of self-recursion read **1.032 / 0.016 / 0** -- `assert-ref` 4227 -> 129,
+  because `structured-loop?` requires `loop-helper-name?` and only a frontend
+  loop helper becomes a real wasm loop. **Both spellings are admitted guest
+  grammar, both KIR-verified to return identical values, and nothing tells the
+  author that one costs twice as much.** That is a counted 2x available today
+  with no compiler change, and by this loop's own tiebreak it outranks the
+  carrier.
+  **Reflect, and the verdict is null.** Before any compiler work the proposed
+  `slice-at` was hand-encoded as a wasm module (`gen_slice_wasm.cljs`): two arms
+  of byte-identical loop shape, one summing `i`, one summing an
+  unsigned-bounds-tested `i64.load`, the control returning 129024 and the load
+  arm 133120 -- the values `kotoba.kir/execute` gives for the Kotoba arms, which
+  is how we know it is the same loop computing the same function. At load1
+  506-554, n=21: 1.576 vs 1.872 ns/element, gap 0.296 against summed stdev
+  0.489. **`:not-separated-from-noise`, plus `:too-noisy` on both arms.** Under
+  this loop's rules that is the absence of a result, and no compiler change
+  follows it. It needs a quiet window; per ADR 0281 no fleet host reaches one.
+  Diagnostic timings that did qualify, load1 12-23, n=9: wasm `vector-at`
+  1033.53 ns/element (2720x C `-O3`), carry-only 488.22 (1285x), the identical
+  loop with no vector 6.72 (17.7x, itself refused `:too-noisy` at rsd 0.116
+  despite a gap 55x its summed stdev). In C over the loader's own arena layout,
+  the `checked_vector_at` body **inlined** costs 0.727 ns against 0.380 plain
+  and 1.617 through a pointer -- inlining qualified at 55.1%, the bounds check
+  and arena indirection at 47.7%. Our indirect arm is same-TU through a
+  `volatile` pointer and reads 1.617 where ADR 0284 read 4.547, so it
+  understates the call and the inlining figure is conservative.
+  Timed at load1 ~490, n=7, the `loop`/`recur` fixture reads 1608 / 22.9 / 1.2
+  ns/element against the self-recursion fixture's 3150 / 1477 / 17.0 at load1
+  394-613 -- not divisible across runs, but directionally matching the counts on
+  the two arms the counts govern, and exposing a third effect they do not: both
+  `noref` arms make zero crossings, so the ~14x between them is a chain of wasm
+  calls against a real wasm loop.
+  
+  **The design conclusion is that capacity is the wrong gate.** ADR 0284's
+  middle row and the utsushi attribution meet from opposite sides: the native
+  loop *alone* is 11.2x C, the wasm loop alone 17.7x, and with an unlimited
+  `vector-i64` a per-macroblock residual addition is still 1.9x worse than host
+  arrays -- 1.0x, bare parity, even with the call removed entirely. So
+  frame-scale pixel data in the guest is refused by measurement, the
+  230,400-sample derivation belongs to an architecture that refusal rejects, and
+  the capacity is derived instead from the largest per-block working set
+  (deblocking window (16+8)^2 = 576, MC reference patch (16+5)^2 = 441; bound
+  4096). **4096 < 16384, so authorization to raise the ceilings was given and is
+  not needed** -- loader image, verifier limits and pinned identity SHA all stay
+  put, which is the cheapest available way not to repeat ADR 0284's
+  co-movement defect. The carrier is designed and measured, **not implemented**:
+  landing a subset would be a gate admitting what nothing can lower.
 
 ## Standing honesty constraints
 

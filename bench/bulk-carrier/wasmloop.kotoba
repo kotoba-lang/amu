@@ -1,0 +1,39 @@
+(ns bench.wasmloop
+  (:export [main run-touch run-base run-noref]))
+
+;; The same three arms as bench.wasmvec, written with `loop`/`recur` instead of
+;; self-recursion.  The wasm backend lowers a frontend loop helper to a REAL
+;; wasm loop (`structured-loop?`), whose reference-parameter `assert-ref`
+;; prologue therefore runs once per helper entry rather than once per iteration.
+;; Self-recursion does not qualify, so bench.wasmvec pays that host crossing on
+;; every iteration.  Both spellings are admitted guest grammar, so the
+;; difference between these two files is a cost the source author pays without
+;; being told.
+
+(defn touch-pass [v :vector-i64] :i64
+  (loop [i 0 acc 0]
+    (if (< i 64) (recur (+ i 1) (+ acc (vector-at v i))) acc)))
+
+(defn base-pass [v :vector-i64] :i64
+  (loop [i 0 acc 0]
+    (if (< i 64) (recur (+ i 1) (+ acc i)) acc)))
+
+(defn noref-pass [] :i64
+  (loop [i 0 acc 0]
+    (if (< i 64) (recur (+ i 1) (+ acc i)) acc)))
+
+(defn run-touch [outer :i64] :i64
+  (let [v (vector-new 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64)]
+    (loop [k 0 acc 0]
+      (if (< k (* outer 64)) (recur (+ k 1) (+ acc (touch-pass v))) acc))))
+
+(defn run-base [outer :i64] :i64
+  (let [v (vector-new 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64)]
+    (loop [k 0 acc 0]
+      (if (< k (* outer 64)) (recur (+ k 1) (+ acc (base-pass v))) acc))))
+
+(defn run-noref [outer :i64] :i64
+  (loop [k 0 acc 0]
+    (if (< k (* outer 64)) (recur (+ k 1) (+ acc (noref-pass))) acc)))
+
+(defn main [] :i64 0)
