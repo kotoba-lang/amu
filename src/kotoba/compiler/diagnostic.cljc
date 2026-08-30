@@ -18,7 +18,15 @@
    :internal :kotoba/internal-error
    :effect-ceiling :kotoba/effect-ceiling
    :target :kotoba/target-rejected
-   :target-routing :kotoba/target-routing})
+   :target-routing :kotoba/target-routing
+   ;; `:project-link` was dispatched (`exit-code` maps it to 65) and refused
+   ;; with a specific message -- "required module is missing from the explicit
+   ;; source paths" -- but had no entry here, so the STRUCTURED diagnostic fell
+   ;; through to `:kotoba/internal-error`. A consumer reading `:diagnostic
+   ;; :code` could not tell a project that names a module it does not ship
+   ;; from a compiler crash. Measured 2026-08-30 through `amu check
+   ;; --source-path` on a project whose one `:require` resolves to nothing.
+   :project-link :kotoba/project-link-failed})
 
 (declare refine refined-message)
 

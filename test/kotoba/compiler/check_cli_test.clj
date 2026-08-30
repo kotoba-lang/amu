@@ -3,6 +3,7 @@
   (:require [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]
             [kotoba.compiler.diagnostic :as diagnostic]
+            [kotoba.compiler.project :as project]
             [kotoba.sema :as sema]))
 
 (def pure-ok
@@ -57,8 +58,14 @@
 (def require-module
   "(ns app.root (:require [app.util :as util]) (:export [main]))\n(defn main [] :i64 (util/answer))\n")
 
+;; `or` matters: `project/link-source` re-emits the desugared form as a
+;; `__kotoba_or_*` synthetic, which is the reserved prefix authored source may
+;; not use. Without it this module links to source containing no synthetic at
+;; all, and the check-project test below passes whether or not `check-source`
+;; can accept one -- measured 2026-08-30, the first version of that test did
+;; exactly that.
 (def util-module
-  "(ns app.util (:export [answer]))\n(defn answer [] :i64 42)\n")
+  "(ns app.util (:export [answer]))\n(defn answer [] :i64 (if (or (< 1 0) (> 1 999)) 0 42))\n")
 
 (defn- analyze-error [source]
   (try (sema/analyze source {}) nil
@@ -74,7 +81,7 @@
     (is (= :kotoba.error/namespace-require-needs-project
            (:code (diagnostic/from-error e "root.kotoba"))))
     (is (re-find #"multi-file project" (:message refined)))
-    ;; Every command named here is measured working in ADR 0285.
+    ;; Every command named here is measured working in ADR 0287.
     (is (= "module-lock <entry> --source-path <dir> --blocks <dir>"
            (get-in refined [:details :pin])))
     (is (= "compile --module-lock <lock> --blocks <dir>"
@@ -102,8 +109,16 @@
   ;; Same link `compile-project` performs, stopped before lowering. Without
   ;; `:admit-linked-synthetics?` this refuses its own linker's output with
   ;; "symbol uses the reserved __kotoba_ prefix" (measured before the fix).
-  (let [r (compiler/check-project {'app.root require-module 'app.util util-module}
+  ;;
+  ;; The first assertion is the discrimination floor: if linking ever stops
+  ;; emitting a reserved-prefix symbol for this input, the rest of this test
+  ;; would still pass while testing nothing.
+  (let [linked (project/link-source {'app.root require-module 'app.util util-module}
+                                    'app.root)
+        r (compiler/check-project {'app.root require-module 'app.util util-module}
                                   'app.root)]
+    (is (re-find #"__kotoba_" (:source linked))
+        "linking no longer emits a reserved-prefix synthetic; this test no longer discriminates")
     (is (true? (get-in r [:admission :admitted?])))
     (is (= 'app.root (:root r)))
     (is (= ['app.util 'app.root] (:module-order r)))
@@ -117,3 +132,18 @@
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #"eval|forbidden|ambient"
           (compiler/check-project {'app.root require-module 'app.util bad}
                                   'app.root)))))
+
+(deftest project-link-refusals-are-not-reported-as-internal-errors
+  ;; `amu check <entry> --source-path <dir>` on a project naming a module it
+  ;; does not ship exits 65 with :error :project-link and a specific message,
+  ;; but the structured :diagnostic :code fell through to
+  ;; :kotoba/internal-error -- indistinguishable from a compiler crash.
+  (let [d (diagnostic/from-error
+           (ex-info "required module is missing from the explicit source paths"
+                    {:phase :project-link :module 'app.gone})
+           "root.kotoba")]
+    (is (= :kotoba/project-link-failed (:code d)))
+    (is (not= :kotoba/internal-error (:code d))))
+  ;; The fallback itself must survive: an error with no phase is still internal.
+  (is (= :kotoba/internal-error
+         (:code (diagnostic/from-error (ex-info "boom" {}) "root.kotoba")))))

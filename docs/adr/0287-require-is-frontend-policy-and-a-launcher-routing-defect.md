@@ -1,4 +1,4 @@
-# ADR 0285: `(:require ...)` is frontend policy, and the wall in front of it was a launcher routing defect
+# ADR 0287: `(:require ...)` is frontend policy, and the wall in front of it was a launcher routing defect
 
 - Status: accepted
 - Date: 2026-08-30
@@ -113,6 +113,64 @@ packages on L3)" is a description of `module-lock`, the path this ADR
 surfaces. The authority is therefore silent on the clause, and the frontend's
 refusal is `kotoba-sema`'s own policy (`frontend.cljc` `namespace-parts`:
 "Import/require clauses remain fail-closed"), not an authority requirement.
+
+**One further defect was found by the missing-module control.**
+`amu check <entry> --source-path <dir>` on a project whose one `:require`
+resolves to nothing exits 65 with `:error :project-link` and the specific
+message "required module is missing from the explicit source paths" — but
+`:project-link` had no entry in `diagnostic/phase-codes`, so the *structured*
+`:diagnostic :code` fell through to `:kotoba/internal-error`. A machine
+consumer reading that field could not tell a project naming a module it does
+not ship from a compiler crash. Now `:kotoba/project-link-failed`.
+
+### Falsification
+
+Each change was reverted in an isolated copy of the tree and
+`kotoba.compiler.check-cli-test` was run against it (`java -cp` from that
+copy's directory, so the relative `test:src:resources` classpath entries
+resolve there). Control and all three reverts ran at load1 425-540.
+
+| tree | result |
+|---|---|
+| **control** (this branch) | 10 tests, 39 assertions, **0 failures, 0 errors** |
+| revert: `refine` unwired from `from-error` / `format-human` | **3 failures**, all in `require-clause-rejection-names-the-project-path`: the code stays `namespace-export-clause` and the human line carries neither `namespace-require-needs-project` nor `--source-path` |
+| revert: `check-source` ignores `:admit-linked-synthetics?` | **1 error** in `check-project-admits-a-linked-closed-graph`: `symbol uses the reserved __kotoba_ prefix`, `:form __kotoba_or_2`, at `frontend.cljc:806` |
+| revert: `:project-link` removed from `phase-codes` | **2 failures** in `project-link-refusals-are-not-reported-as-internal-errors`, both reporting `:kotoba/internal-error` |
+
+**The second row is the finding, not the assertion.** Its *first* version did
+not discriminate: reverting `:admit-linked-synthetics?` left the test at 0
+failures, because the two-module toy project contained no `or` and therefore
+linked to source carrying no `__kotoba_` synthetic at all. The test was
+asserting on a program that never reached the seam it names. It now puts `or`
+in the dependency — which `link-source` re-emits as `__kotoba_or_*` — and
+opens with an assertion that the linked source actually contains the reserved
+prefix, so the test fails loudly if it ever stops exercising that seam rather
+than passing vacuously.
+
+### Suite
+
+Three runs, agreeing:
+
+| run | tree | result |
+|---|---|---|
+| full suite, 152 namespaces | this branch | 1159 tests, 8481 assertions, 15 failures, 9 errors |
+| 12 namespaces (every namespace containing one of those 24, plus `cli`/`core`/`project`/`check-cli`) | this branch | 139 tests, 604 assertions, 15 failures, 9 errors |
+| the same 12 namespaces | `kotoba-lang/main` at `5a2d188`, unmodified | 135 tests, 579 assertions, **the identical 15 failures and 9 errors** |
+
+The failure *identities* were compared, not just the counts: the sorted
+`FAIL in` / `ERROR in` lines are byte-identical across all three. So every
+failure on this branch is pre-existing on `main`, and the full-suite run says
+no other namespace fails. They sit in `storage-transport` (live wire calls),
+`ipld-adl`, `host-profile` (workerd generation), `object-transport`,
+`test-profile`, `record-protocol-static-dispatch` and
+`lang-conformance-golden` — none of which this change touches. The branch adds
+4 tests and 25 assertions over `main` and no failures.
+
+A full-suite run on unmodified `main` was attempted twice and abandoned both
+times: this host held load1 495-673 from concurrent sessions and the runner
+was getting under 5% CPU, so the 12-namespace comparison stands in for it. The
+comparison is narrower than a full baseline, and that narrowness is stated
+rather than papered over.
 
 ### What was NOT done, and why
 

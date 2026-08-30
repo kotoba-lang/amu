@@ -1,4 +1,4 @@
-{:adr/id 285
+{:adr/id 287
  :adr/status :accepted
  :decision :require-is-frontend-policy-the-wall-was-launcher-routing
  :pins {:kotoba-sema "8676e3d60a8372667b3b427b01d214f7684d443f"}
@@ -58,7 +58,53 @@
   {:what :check-source-refused-its-own-linker-output
    :symptom "symbol uses the reserved __kotoba_ prefix at sps.kotoba:4:113"
    :fix :check-source-reads-admit-linked-synthetics-from-opts
-   :reached-only-via :check-project}}
+   :reached-only-via :check-project}
+  :second-incidental-defect
+  {:what :project-link-phase-had-no-structured-diagnostic-code
+   :before :kotoba/internal-error
+   :after :kotoba/project-link-failed
+   :found-by "amu check --source-path on a project whose :require resolves to nothing"
+   :observed {:exit 65 :error :project-link
+              :message "required module is missing from the explicit source paths"}}}
+
+ :falsification
+ {:method "revert one change in an isolated copy; run kotoba.compiler.check-cli-test from that copy"
+  :load1 "425-540"
+  :control {:tests 10 :assertions 39 :failures 0 :errors 0}
+  :reverts
+  [{:change :refine-unwired-from-from-error-and-format-human
+    :failures 3 :errors 0
+    :test :require-clause-rejection-names-the-project-path}
+   {:change :check-source-ignores-admit-linked-synthetics
+    :failures 0 :errors 1
+    :test :check-project-admits-a-linked-closed-graph
+    :reason "symbol uses the reserved __kotoba_ prefix"
+    :form :__kotoba_or_2 :site "frontend.cljc:806"}
+   {:change :project-link-removed-from-phase-codes
+    :failures 2 :errors 0
+    :test :project-link-refusals-are-not-reported-as-internal-errors}]
+  :non-discriminating-first-version
+  {:test :check-project-admits-a-linked-closed-graph
+   :symptom "reverting the fix left it at 0 failures"
+   :cause "the toy project had no `or`, so linking emitted no __kotoba_ synthetic"
+   :repair "put `or` in the dependency; assert the linked source contains the reserved prefix"}}
+
+ :suite
+ [{:scope :full-152-namespaces :tree :branch
+   :tests 1159 :assertions 8481 :failures 15 :errors 9}
+  {:scope :twelve-namespaces :tree :branch
+   :tests 139 :assertions 604 :failures 15 :errors 9}
+  {:scope :twelve-namespaces :tree "kotoba-lang/main 5a2d188"
+   :tests 135 :assertions 579 :failures 15 :errors 9}]
+ :suite-comparison
+ {:failure-identities :byte-identical-across-all-three
+  :new-failures 0 :added-tests 4 :added-assertions 25
+  :pre-existing-namespaces #{:storage-transport :ipld-adl :ipld-adl-source
+                             :host-profile :object-transport :test-profile
+                             :record-protocol-static-dispatch
+                             :lang-conformance-golden}
+  :full-baseline-run :abandoned
+  :abandoned-because "host held load1 495-673 from concurrent sessions; runner got under 5% CPU"}
 
  :authority
  {:consulted "kotoba-lang/lang/guest-grammar.edn"
