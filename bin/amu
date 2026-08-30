@@ -287,9 +287,33 @@ function resolveCallerPaths(args, cwd) {
   });
 }
 
+// `--prelude` is honoured only by the CLJS backend
+// (src/kotoba/compiler/backend/cljs.cljc). None of the nbb entry points
+// under kotoba.compiler.nbb.* parses it, so on every route this launcher
+// sends there the flag changes nothing -- and reports :ok true while doing
+// so. Measured 2026-08-30 on 2cb7d3f: a single file calling a
+// `lang/stdlib/core.kotoba`-only name (`comp2`) is rejected :subset-reject
+// with the flag exactly as it is without it, and `grep -c prelude` over
+// wasm_cli / x86_64_cli / aarch64_cli is 0 for each.
+//
+// An ignored flag that leaves a green build behind is the shape this
+// workspace keeps paying for: the caller believes the standard library is
+// linked and nothing in the output says otherwise. Refuse instead, and name
+// the mechanism that does exist.
+function preludeIsIgnored(args) {
+  return args.includes("--prelude");
+}
+
 function runCompiler(root, rawArgs, jvmFree) {
   const args = resolveCallerPaths(rawArgs, process.cwd());
   if (nbbNativeEligible(args)) {
+    if (preludeIsIgnored(args)) {
+      fail("error: --prelude is not implemented on this route and would be "
+        + "silently ignored; only the CLJS backend reads it. To share "
+        + "definitions across modules use the project route "
+        + "(--source-path / --module-lock), which links a closed module "
+        + "graph.", 64);
+    }
     const nbbCli = path.join(root, "node_modules", "nbb", "cli.js");
     const classpath = [path.join(root, "src"), path.join(root, "resources"),
       securityClasspath(root, nbbCli, jvmFree)].join(path.delimiter);
