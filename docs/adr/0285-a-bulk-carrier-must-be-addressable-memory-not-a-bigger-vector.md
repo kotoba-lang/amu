@@ -266,6 +266,45 @@ residual block 16. Round to **4096** for headroom over larger transform sizes an
 chroma formats. 4096 < 16384, so **today's per-vector bound already covers it and
 does not move.**
 
+### Records already cover part of this, which narrows the claim
+
+The native backends accept a sealed `:i64` record where they reject
+`:vector-i64`, and a record reaches a native **export** where a vector cannot.
+So some per-block data can enter a native guest today with no new type — and
+that is not hypothetical: a parallel agent ran H.264 §8.5.12's inverse residual
+transform and §8.5.9's dequant chain on three paths, including aarch64 machine
+code through the kexe loader, with `java`/`javac`/`clojure`/`clj` shadowed by
+exit-127 stubs, against an oracle of 317 coefficient blocks from real libx264
+bitstreams. A 4x4 block is 16 values, and the transform is naturally unrolled.
+
+**Two limits decide how far that reaches, and both are in KIR, not the loader.**
+
+1. **`record-field-limit` is 32** (`kotoba.kir.value`). The loader's 128-field
+   argument bound is looser and therefore not the binding one.
+2. **`record-get` takes a literal keyword, never a runtime index.** The native
+   admission gate requires `(keyword? field)` and that the field be declared in
+   the record type. **There is no indexed record accessor at all**, so a record
+   cannot be traversed by a loop — every access must be written out.
+
+So records cover exactly: **working sets of at most 32 elements, accessed at
+statically known positions.** That is the 4x4 transform, and it is roughly the
+2% of decode CPU the utsushi attribution puts in transforms.
+
+**The slice's justification is therefore narrower than this ADR first implied,
+and worth stating rather than leaving implied.** It is needed for, and only for:
+
+- working sets above 32 — a 16x16 macroblock is 256, a quarter-pel MC reference
+  patch 441, a deblocking window across an edge 576;
+- **access at a runtime index, at any size** — motion compensation indexes by a
+  motion vector, intra prediction selects neighbours by mode. Neither is a
+  literal keyword, so no record expresses them however small the block;
+- anything written as a loop rather than unrolled.
+
+Between them those are residual addition (~49% of decode CPU), motion
+compensation and deblocking — every operation the attribution marks eligible
+**except** the transforms records already carry. The carrier is not needed to
+start; it is needed to get past 2%.
+
 ### What the carrier must not be
 
 Each restriction is what buys the load:

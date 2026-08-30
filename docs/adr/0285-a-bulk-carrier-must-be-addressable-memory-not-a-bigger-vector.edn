@@ -105,6 +105,23 @@
                          :gate :loop-helper-name?
                          :blockers [:prologue-fuel-charge-must-move-into-the-loop
                                     :assert-ref-coverage-narrows]}
+ :records-already-cover
+ {:what :sealed-i64-records-reach-a-native-export-where-vectors-cannot
+  :demonstrated-by {:agent :decode-kernel :scope "H.264 8.5.12 + 8.5.9"
+                    :paths [:kir-interpreter :wasm32-zero-host-import :aarch64-kexe]
+                    :oracle {:blocks 317 :source :libx264 :mismatches 0}}
+  :binding-limits {:record-field-limit 32
+                   :source :kotoba.kir.value
+                   :loader-argument-fields 128
+                   :note :loader-bound-is-looser-so-kir-binds
+                   :record-get-field :literal-keyword-only
+                   :indexed-record-accessor :does-not-exist}
+  :so-records-cover {:elements :at-most-32 :positions :statically-known
+                     :example :four-by-four-transform
+                     :share-of-decode-cpu 0.02}
+  :so-the-slice-is-needed-for {:above-32-elements [:macroblock-256 :mc-patch-441 :deblock-window-576]
+                               :runtime-index-at-any-size [:motion-compensation :intra-prediction]
+                               :loops-rather-than-unrolled true}}
  :not-done {:carrier-implementation :would-be-a-gate-without-lowering
             :assert-ref-prologue-removal :wants-its-own-iteration
             :structured-loop-widening :wants-its-own-iteration}
