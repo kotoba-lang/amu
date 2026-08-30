@@ -1,0 +1,82 @@
+{:kotoba.capability-kit/name :link-frame
+ :kotoba.capability-kit/version 1
+ :capability {:name :link/frame :id 28}
+ :semantics {:layer :ethernet-l2
+             :addressing :ethertype-not-ip
+             :destination-authority :host-exact-mac-and-ethertype-allowlist
+             :ordering :none
+             :delivery :best-effort
+             :ambient-network false
+             :execution :synchronous-reference}
+ :limits {:payload-bytes 1500
+          :interface-allowlist-shape :host-exact-interface-name-set
+          :ethertype-allowlist-shape :host-exact-ethertype-set
+          :timeout-ms [1 30000]}
+ ;; 1500 = the standard Ethernet MTU for the frame payload after the 14-byte
+ ;; (dest-mac + src-mac + ethertype) header this kit's own :send-request /
+ ;; :received already carry as separate typed fields -- the guest never
+ ;; assembles or parses the header itself. IEC 61850 GOOSE and Sampled
+ ;; Values frames both fit well inside this bound in normal operation; a
+ ;; provider wanting jumbo frames or 802.1Q tags is a different, wider kit,
+ ;; not a looser limit on this one.
+ :request
+ [:variant :kotoba.link.frame/request
+  [[:send [:record :kotoba.link.frame/send-request
+           [[:interface :string] [:ethertype :i64]
+            [:destination-mac :string] [:payload :bytes]]]]
+   [:receive [:record :kotoba.link.frame/receive-request
+              [[:interface :string] [:ethertype :i64]
+               [:max-bytes :i64] [:timeout-ms :i64]]]]]]
+ :result
+ [:variant :kotoba.link.frame/result
+  [[:sent [:record :kotoba.link.frame/sent [[:bytes-sent :i64]]]]
+   [:received [:record :kotoba.link.frame/received
+               [[:interface :string] [:source-mac :string]
+                [:ethertype :i64] [:payload :bytes]]]]
+   [:error [:record :kotoba.link.frame/error
+            [[:code :keyword] [:message :string] [:retryable :bool]]]]]]
+ ;; `:ethertype` is carried as `:i64` (0..65535 admitted by the provider,
+ ;; not by the KIR type system -- same convention as clock/http/storage
+ ;; kits, which bound i64 fields at the provider, not the schema). MAC
+ ;; addresses are `:string` in canonical lower-case colon-hex form
+ ;; ("01:0c:cd:01:00:01"), validated and canonicalized by the provider the
+ ;; same way http's provider canonicalizes URL origins before comparing
+ ;; against its allowlist.
+ :qualification {:reference :implemented
+                 :wasm-aot :pending
+                 :wasm32-kotoba-v1 :pending
+                 :native-aot :pending
+                 :jit :pending}
+ ;; :reference :implemented -- measured 2026-08-30, same method as
+ ;; datagram-v1 and can-frame-v1: a KIR-lowered guest calling
+ ;; `typed-cap-call :link/frame ...` was instantiated against a provider for
+ ;; this schema (id 28, `:allow #{28}`) and exercised for the positive
+ ;; send/receive path, EtherType/MAC allowlist denial before the transport
+ ;; is invoked, transport-exception redaction, and the payload-bytes limit.
+ ;; See test/kotoba/compiler/link_frame_provider_test.clj in this repo. The
+ ;; transport in that test is an injected host function (a plain Clojure fn
+ ;; standing in for a real `AF_PACKET`/raw-socket send), the same pattern
+ ;; every OTHER kit's reference test in this repo uses (http_provider_test,
+ ;; storage_provider_test, ...) -- it proves the capability boundary and
+ ;; typed dispatch are real, not that this session opened a real raw
+ ;; Ethernet socket. (net/datagram's reference test additionally wires a
+ ;; real OS socket for its highest-priority capability; this kit does not.)
+ ;;
+ ;; :wasm-aot / :jit / :wasm32-kotoba-v1 / :native-aot are :pending because
+ ;; none was attempted -- and unlike net/datagram, there is a real
+ ;; ceiling on some of these even in principle: raw L2 sockets are not
+ ;; something a browser or WASI sandbox can expose at all (there is no
+ ;; portable JS/WASI raw-Ethernet API the way Node's `dgram` exists for
+ ;; UDP), so :wasm-aot is not merely untested here, it names a target this
+ ;; capability cannot honestly reach without a native host process behind
+ ;; it. :native-aot has no such ceiling in principle (a native process CAN
+ ;; open AF_PACKET/BPF), but building that provider and the native-AOT ABI
+ ;; plumbing for it was not attempted in this session.
+ :wasm-aot-surface {:import ["kotoba:typed" "cap-call"]
+                    :capability-id 28
+                    :grant :link/frame
+                    :target :wasm32-browser-kotoba-v1
+                    :request-schema :kotoba.link.frame/request
+                    :result-schema :kotoba.link.frame/result
+                    :elaboration "(typed-cap-call :link/frame request-type result-type request)"
+                    :status :not-reachable-from-a-browser-or-wasi-sandbox-without-a-native-host-process}}

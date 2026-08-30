@@ -158,6 +158,32 @@ bare parity, even at the 3.678 ns loop-only figure with the call removed
 entirely. **Frame-scale pixel data in the guest is refused by measurement from
 two directions, and capacity is not what refuses it.**
 
+**Where that attribution and this ADR disagree, stated rather than glossed.**
+Its measurements and mine agree on everything that was measured: the carrier
+must be guest-addressable memory the guest indexes with its own loads, capacity
+alone does not clear the bar, plane assembly (~21% of decode CPU) **must stay in
+the host**, and a per-block guest is not viable at today's per-element cost. We
+differ on the *recommendation*. It concludes "capacity still has to move", with
+the target a decoder's minimum working set — the current picture plus one
+reference picture, 230,400 samples at 320x240, against a present cap of 16,384
+(7.1%). This ADR concludes the cap should not move.
+
+The reason is that document's own eligibility table. Every operation it marks
+**eligible** already fits: residual addition (~49%) at 256 samples in and 256
+out is, in its words, "64x under the cap"; the inverse transforms (~2%) are 16.
+The operation that needs 230,400 is plane assembly — the one the same table
+marks "must stay in the host". A reference *picture* is only a guest working set
+if motion compensation reads it in the guest; under a per-block split the guest
+derives the motion vector and the host extracts the (16+5)² = 441-sample patch,
+so the guest addresses the patch and never the picture.
+
+Its 10.6x figure is what settles it: with an **unlimited** carrier, touching
+each sample of one frame exactly once already costs 10.6x ffmpeg's entire frame
+decode. A cap sized for an architecture that measurement rejects buys nothing,
+and buying it means moving the loader memory image, the verifier's derived
+limits and the pinned runtime identity SHA together. Both readings rest on the
+same numbers; this one declines to pay for the architecture those numbers refuse.
+
 So the capacity must not be derived from a frame. The 230,400-sample figure
 (current plus reference picture at 320x240) is the working set of an
 architecture these measurements reject.
@@ -185,6 +211,50 @@ Each restriction is what buys the load:
 
 Bounds remain exact-checked, the guest cannot influence them, and the loader's
 `_Static_assert`ed image is untouched because no number changes.
+
+### The loop spelling is also a capability limit, not only a cost
+
+wasm32 does not turn guest self-tail-recursion into a loop, so a self-recursive
+traversal is bounded by the **host** call stack. Measured with a fresh instance
+per probe (a trap leaves the scratch bump global unrestored, so a reused
+instance reports a ceiling of 1 regardless of the real one):
+
+| spelling | outer=1000 | 3000 | 6000 | 12000 | 40000 |
+|---|---|---|---|---|---|
+| self-recursion | ok | ok | ok | **`RangeError: Maximum call stack size exceeded`** | — |
+| `loop`/`recur` | ok | — | — | ok | ok (163M element visits) |
+
+So a guest traversal spelled as self-recursion stops somewhere between 6,128 and
+12,128 iterations, and **what stops it is a host `RangeError`, not a Kotoba
+diagnostic** — it does not present as a language limit at all. One 1920-sample
+row survives; anything frame-shaped does not. `loop`/`recur` is O(1) in depth
+and did not trap.
+
+### Why the lowering is not simply widened, which is the next iteration's work
+
+`structured-loop?` is `(and (loop-helper-name? …) (structured-loop-body? …)
+(not (reference-type? result)))`. **`structured-loop-body?` — the tail-position
+analysis, which is the hard part — is already general**: it takes the function
+name, parameter count and body, is written for any self-call, and fails closed
+to the historical call lowering on anything it does not recognise. Only the
+**name check** confines the lowering to frontend `__kotoba_loop_N` helpers.
+
+Two things stop that name check simply being dropped, and both are why this
+wants its own iteration rather than a one-line change:
+
+1. **Fuel is charged in the prologue.** `charge` is emitted once per function
+   entry and skipped for loop helpers, so today a self-recursive call costs one
+   fuel per call and a `recur` costs none — matching KIR trampoline re-entry.
+   Turning a self-recursive function into a loop without moving the charge would
+   make its iterations free, weakening a resource bound. Preserving the count
+   exactly means emitting the charge at the top of the loop body instead, where
+   one iteration charges one unit, exactly as one call does now.
+2. **`assert-ref` coverage narrows.** The prologue would run once instead of per
+   call, so recursive arguments that are themselves references would no longer
+   be re-asserted. `loop`/`recur` already has exactly this exposure and is
+   accepted, so the change is consistent with landed behaviour — but it is a
+   reduction in checking, and inferring that a security check is redundant is
+   not something to do as a side effect of a codegen win.
 
 ### What was NOT done, and why
 

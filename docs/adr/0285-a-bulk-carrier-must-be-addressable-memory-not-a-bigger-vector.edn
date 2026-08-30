@@ -49,10 +49,30 @@
                  :utsushi {:artifact "bench/decode-cost-attribution" :merge "42bd12d"
                            :residual-addition-vs-host-arrays 1.9
                            :with-call-removed 1.0
-                           :eligible-fraction-upper-bound 0.51}}
+                           :eligible-fraction-upper-bound 0.51
+                           :plane-assembly-share 0.21
+                           :plane-assembly-verdict :must-stay-in-host
+                           :residual-addition-share 0.49
+                           :residual-addition-fits-cap :sixty-four-times-under
+                           :unlimited-carrier-one-touch-per-sample 10.6
+                           :agreement [:carrier-must-be-guest-addressable
+                                       :capacity-alone-insufficient
+                                       :per-block-guest-not-viable-today]
+                           :disagreement {:their-recommendation :raise-cap-to-230400
+                                          :ours :do-not-move-the-cap
+                                          :because :every-eligible-operation-already-fits}}}
  :ranking [[1 :front-door-blockers :gates-every-other-claim]
            [2 :loop-recur-vs-self-recursion :counted-two-times-no-compiler-change]
            [3 :the-carrier :needs-a-quiet-window-first]]
+ :depth-ceiling {:self-recursion {:ok-at 6000 :traps-at 12000
+                                  :trap :host-range-error-not-a-kotoba-diagnostic}
+                 :loop-recur {:depth :constant :ok-at 40000}
+                 :probe :fresh-instance-per-attempt}
+ :widening-the-lowering {:already-general :structured-loop-body?
+                         :gate :loop-helper-name?
+                         :blockers [:prologue-fuel-charge-must-move-into-the-loop
+                                    :assert-ref-coverage-narrows]}
  :not-done {:carrier-implementation :would-be-a-gate-without-lowering
-            :assert-ref-prologue-removal :wants-its-own-iteration}
+            :assert-ref-prologue-removal :wants-its-own-iteration
+            :structured-loop-widening :wants-its-own-iteration}
  :observed-not-pursued {:scratch-bump-global :not-restored-on-trap}}
