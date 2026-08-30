@@ -62,3 +62,17 @@ compile to. Its control arm returns 129024 and its load arm 133120 — the KIR
 values for the Kotoba arms — which is how we know it is the same loop computing
 the same function. It is a stand-in for a lowering that does not exist, and is
 not evidence that the compiler can emit it.
+
+## The loop spelling is a capability limit too
+
+```sh
+nbb depth.cljs wasmvec.kotoba.wasm  run-noref 6000 12000   # self-recursion
+nbb depth.cljs wasmloop.kotoba.wasm run-noref 12000 40000  # loop/recur
+```
+
+Self-recursion stops between 6,128 and 12,128 iterations with a host
+`RangeError`, not a Kotoba diagnostic, so it does not present as a language
+limit. `loop`/`recur` is O(1) in depth and did not trap at 163M element visits.
+A fresh instance per probe is not optional: a trap leaves the scratch bump
+global unrestored, so a reused instance reports a ceiling of 1 whatever the real
+one is.

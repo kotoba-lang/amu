@@ -186,6 +186,50 @@ Each restriction is what buys the load:
 Bounds remain exact-checked, the guest cannot influence them, and the loader's
 `_Static_assert`ed image is untouched because no number changes.
 
+### The loop spelling is also a capability limit, not only a cost
+
+wasm32 does not turn guest self-tail-recursion into a loop, so a self-recursive
+traversal is bounded by the **host** call stack. Measured with a fresh instance
+per probe (a trap leaves the scratch bump global unrestored, so a reused
+instance reports a ceiling of 1 regardless of the real one):
+
+| spelling | outer=1000 | 3000 | 6000 | 12000 | 40000 |
+|---|---|---|---|---|---|
+| self-recursion | ok | ok | ok | **`RangeError: Maximum call stack size exceeded`** | — |
+| `loop`/`recur` | ok | — | — | ok | ok (163M element visits) |
+
+So a guest traversal spelled as self-recursion stops somewhere between 6,128 and
+12,128 iterations, and **what stops it is a host `RangeError`, not a Kotoba
+diagnostic** — it does not present as a language limit at all. One 1920-sample
+row survives; anything frame-shaped does not. `loop`/`recur` is O(1) in depth
+and did not trap.
+
+### Why the lowering is not simply widened, which is the next iteration's work
+
+`structured-loop?` is `(and (loop-helper-name? …) (structured-loop-body? …)
+(not (reference-type? result)))`. **`structured-loop-body?` — the tail-position
+analysis, which is the hard part — is already general**: it takes the function
+name, parameter count and body, is written for any self-call, and fails closed
+to the historical call lowering on anything it does not recognise. Only the
+**name check** confines the lowering to frontend `__kotoba_loop_N` helpers.
+
+Two things stop that name check simply being dropped, and both are why this
+wants its own iteration rather than a one-line change:
+
+1. **Fuel is charged in the prologue.** `charge` is emitted once per function
+   entry and skipped for loop helpers, so today a self-recursive call costs one
+   fuel per call and a `recur` costs none — matching KIR trampoline re-entry.
+   Turning a self-recursive function into a loop without moving the charge would
+   make its iterations free, weakening a resource bound. Preserving the count
+   exactly means emitting the charge at the top of the loop body instead, where
+   one iteration charges one unit, exactly as one call does now.
+2. **`assert-ref` coverage narrows.** The prologue would run once instead of per
+   call, so recursive arguments that are themselves references would no longer
+   be re-asserted. `loop`/`recur` already has exactly this exposure and is
+   accepted, so the change is consistent with landed behaviour — but it is a
+   reduction in checking, and inferring that a security check is redundant is
+   not something to do as a side effect of a codegen win.
+
 ### What was NOT done, and why
 
 **The carrier is designed and measured, not implemented.** Implementing it spans
