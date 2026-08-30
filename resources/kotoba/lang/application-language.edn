@@ -22,7 +22,17 @@
          :storage {:version 1 :status :reference-implemented}
          :clock {:version 1 :status :reference-implemented}
          :log {:version 1 :status :reference-implemented}
-         :dataspace {:version 1 :status :reference-implemented}}
+         :dataspace {:version 1 :status :reference-implemented}
+         ;; net/datagram, link/frame, can/frame (2026-08-30): :status here
+         ;; means reference-runtime qualification only -- see each kit's
+         ;; own :qualification map (resources/kotoba/lang/capability-kits/
+         ;; datagram-v1.edn, link-frame-v1.edn, can-frame-v1.edn) for the
+         ;; per-backend (:wasm-aot/:jit/:wasm32-kotoba-v1/:native-aot)
+         ;; breakdown, all :pending. :execution-order above lists
+         ;; :reference-implemented as the FIRST rung, not the only one.
+         :datagram {:version 1 :status :reference-implemented}
+         :link-frame {:version 1 :status :reference-implemented}
+         :can-frame {:version 1 :status :reference-implemented}}
   :lifecycle [:validate-request :invoke-provider :validate-result]
   :resource-model [:fuel :depth :nodes :bytes :provider-timeout]}
  :reference-runtime

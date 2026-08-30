@@ -120,6 +120,9 @@
             [kotoba.compiler.storage-provider-test]
             [kotoba.compiler.storage-transport-test]
             [kotoba.compiler.storage-wasm-aot-test]
+            [kotoba.compiler.net-datagram-provider-test]
+            [kotoba.compiler.link-frame-provider-test]
+            [kotoba.compiler.can-frame-provider-test]
             [kotoba.compiler.clock-provider-test]
             [kotoba.compiler.clock-transport-test]
             [kotoba.compiler.log-provider-test]
@@ -271,6 +274,9 @@
    'kotoba.compiler.storage-provider-test
    'kotoba.compiler.storage-transport-test
    'kotoba.compiler.storage-wasm-aot-test
+   'kotoba.compiler.net-datagram-provider-test
+   'kotoba.compiler.link-frame-provider-test
+   'kotoba.compiler.can-frame-provider-test
    'kotoba.compiler.clock-provider-test
    'kotoba.compiler.clock-transport-test
    'kotoba.compiler.log-provider-test

@@ -1,0 +1,76 @@
+{:kotoba.capability-kit/name :can-frame
+ :kotoba.capability-kit/version 1
+ :capability {:name :can/frame :id 29}
+ :semantics {:standard :can-2.0b
+             :addressing :arbitration-id-on-a-shared-bus
+             :identifier-bits 29
+             :destination-authority :host-exact-interface-allowlist
+             :ordering :none
+             :delivery :best-effort
+             :ambient-network false
+             :execution :synchronous-reference}
+ :limits {:payload-bytes 8
+          :can-id-max 536870911
+          :interface-allowlist-shape :host-exact-interface-name-set
+          :timeout-ms [1 30000]}
+ ;; payload-bytes 8 and can-id-max (2^29 - 1) are not policy choices, they
+ ;; are what a well-formed classic CAN 2.0B frame is: the data field is
+ ;; wire-bounded at 8 bytes (unlike CAN-FD's up to 64, which this kit does
+ ;; not admit -- J1939 does not need it) and a 29-bit extended identifier
+ ;; cannot exceed 2^29 - 1 by construction. The provider rejects any
+ ;; :send-request whose :can-id exceeds this bound (or, when :extended is
+ ;; false, the 11-bit standard-frame bound of 2047) before the transport
+ ;; is invoked.
+ :request
+ [:variant :kotoba.can.frame/request
+  [[:send [:record :kotoba.can.frame/send-request
+           [[:interface :string] [:can-id :i64] [:extended :bool]
+            [:payload :bytes]]]]
+   [:receive [:record :kotoba.can.frame/receive-request
+              [[:interface :string] [:timeout-ms :i64]]]]]]
+ :result
+ [:variant :kotoba.can.frame/result
+  [[:sent :bool]
+   [:received [:record :kotoba.can.frame/received
+               [[:interface :string] [:can-id :i64] [:extended :bool]
+                [:payload :bytes]]]]
+   [:error [:record :kotoba.can.frame/error
+            [[:code :keyword] [:message :string] [:retryable :bool]]]]]]
+ ;; `:sent` is a bare `:bool`, not a record -- CAN has no per-frame
+ ;; acknowledgement payload to report back beyond "the frame reached the
+ ;; bus without an arbitration/ack error" (a provider that observes a bus
+ ;; error returns `:error`, not `:sent false`). `:receive` has no
+ ;; `:max-bytes` field the way datagram/link-frame do, because a CAN 2.0B
+ ;; frame's data length is already bounded by the wire protocol at 8 bytes
+ ;; -- there is nothing narrower a caller could ask for.
+ :qualification {:reference :implemented
+                 :wasm-aot :pending
+                 :wasm32-kotoba-v1 :pending
+                 :native-aot :pending
+                 :jit :pending}
+ ;; :reference :implemented -- measured 2026-08-30, same method as
+ ;; datagram-v1 and link-frame-v1: a KIR-lowered guest calling
+ ;; `typed-cap-call :can/frame ...` was instantiated against a provider for
+ ;; this schema (id 29, `:allow #{29}`) and exercised for the positive
+ ;; send/receive path, interface-allowlist denial before the transport is
+ ;; invoked, out-of-range 29-bit and 11-bit CAN-id rejection, the 8-byte
+ ;; payload bound, and transport-exception redaction. See
+ ;; test/kotoba/compiler/can_frame_provider_test.clj in this repo. As with
+ ;; link/frame, the transport in that test is an injected host function
+ ;; standing in for a real SocketCAN/vendor-driver send -- this session did
+ ;; not open a real CAN bus.
+ ;;
+ ;; :wasm-aot / :jit / :wasm32-kotoba-v1 / :native-aot are :pending for the
+ ;; same reason as link/frame: none was attempted, and a raw CAN bus
+ ;; (SocketCAN on Linux, a vendor driver elsewhere) is not something a
+ ;; browser or WASI sandbox exposes, so :wasm-aot names a target this
+ ;; capability cannot honestly reach without a native host process behind
+ ;; it. :native-aot has no such ceiling in principle but was not attempted.
+ :wasm-aot-surface {:import ["kotoba:typed" "cap-call"]
+                    :capability-id 29
+                    :grant :can/frame
+                    :target :wasm32-browser-kotoba-v1
+                    :request-schema :kotoba.can.frame/request
+                    :result-schema :kotoba.can.frame/result
+                    :elaboration "(typed-cap-call :can/frame request-type result-type request)"
+                    :status :not-reachable-from-a-browser-or-wasi-sandbox-without-a-native-host-process}}

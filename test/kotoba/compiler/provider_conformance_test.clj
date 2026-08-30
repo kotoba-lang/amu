@@ -14,6 +14,9 @@
             [provider.state :as state]
             [provider.storage :as storage]
             [provider.ui :as ui]
+            [kotoba.compiler.support.net-datagram-provider :as datagram]
+            [kotoba.compiler.support.link-frame-provider :as link-frame]
+            [kotoba.compiler.support.can-frame-provider :as can-frame]
             [kotoba.compiler.reference-runtime :as runtime]))
 
 (defn- read-resource [path]
@@ -46,14 +49,32 @@
                                  :monotonic-now (constantly 0)})}
      {:name :log/read :id 5 :provider (get-in log-kit [:providers 5])}
      {:name :log/append :id 6 :provider (get-in log-kit [:providers 6])}
-     {:name :dataspace/transact :id 24 :provider (dataspace/provider)}]))
+     {:name :dataspace/transact :id 24 :provider (dataspace/provider)}
+     {:name :net/datagram :id 27
+      :provider (datagram/provider
+                 {:allowed-destinations #{}
+                  :transport (fn [_] {:error {:code :net.datagram/disabled
+                                              :message "disabled"
+                                              :retryable false}})})}
+     {:name :link/frame :id 28
+      :provider (link-frame/provider
+                 {:allowed-frames #{}
+                  :transport (fn [_] {:error {:code :link.frame/disabled
+                                              :message "disabled"
+                                              :retryable false}})})}
+     {:name :can/frame :id 29
+      :provider (can-frame/provider
+                 {:allowed-interfaces #{}
+                  :transport (fn [_] {:error {:code :can.frame/disabled
+                                              :message "disabled"
+                                              :retryable false}})})}]))
 
 (deftest all-reference-kits-share-one-closed-qualification
   (let [manifest (read-resource "kotoba/lang/provider-conformance-v1.edn")
         expected (->> (:kits manifest) (mapcat :capabilities) vec)
         receipt (conformance/validate-suite! sema/capability-registry (fixtures))]
     (is (= :kotoba.provider-conformance/v1 (:format receipt)))
-    (is (= 10 (:capability-count receipt)))
+    (is (= 13 (:capability-count receipt)))
     (is (= (set expected) (set (:capabilities receipt))))
     (doseq [{:keys [name version resource capabilities]} (:kits manifest)]
       (let [kit (read-resource resource)
