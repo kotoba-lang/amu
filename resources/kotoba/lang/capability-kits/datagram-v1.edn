@@ -1,0 +1,87 @@
+{:kotoba.capability-kit/name :datagram
+ :kotoba.capability-kit/version 1
+ :capability {:name :net/datagram :id 27}
+ :semantics {:transport :udp
+             :connectionless true
+             :destination-authority :host-exact-address-allowlist
+             :ordering :none
+             :delivery :best-effort
+             :ambient-network false
+             :execution :synchronous-reference}
+ :limits {:payload-bytes 1472
+          :timeout-ms [1 30000]
+          :destination-allowlist-shape :host-colon-port-exact-set}
+ ;; 1472 = Ethernet MTU 1500 - 20 (IPv4) - 8 (UDP), the largest UDP payload
+ ;; that stays inside one Ethernet frame without IP fragmentation on the
+ ;; common path. The kernel's UDP payload ceiling (65507) is a weaker bound
+ ;; than this kit wants: several of the wire-codec libraries this kit exists
+ ;; to unblock (CoAP, SNMP, RADIUS) are themselves specified to avoid
+ ;; fragmentation, so admitting a fragmenting payload here would let a
+ ;; guest build a request its own protocol layer says not to send. Also
+ ;; well under the KIR ABI's global :bytes leaf limit (65536,
+ ;; kotoba.kir.value/bytes-value-byte-limit) so the bound is enforceable at
+ ;; both layers, not just documented at this one.
+ :request
+ [:variant :kotoba.net.datagram/request
+  [[:send [:record :kotoba.net.datagram/send-request
+           [[:host :string] [:port :i64] [:payload :bytes] [:timeout-ms :i64]]]]
+   [:receive [:record :kotoba.net.datagram/receive-request
+              [[:host :string] [:port :i64] [:max-bytes :i64] [:timeout-ms :i64]]]]]]
+ :result
+ [:variant :kotoba.net.datagram/result
+  [[:sent [:record :kotoba.net.datagram/sent [[:bytes-sent :i64]]]]
+   [:received [:record :kotoba.net.datagram/received
+               [[:host :string] [:port :i64] [:payload :bytes]]]]
+   [:error [:record :kotoba.net.datagram/error
+            [[:code :keyword] [:message :string] [:retryable :bool]]]]]]
+ ;; `:receive` is a bind-and-wait-for-one-datagram shape (host, port,
+ ;; max-bytes, timeout-ms in; one datagram's source host/port/payload out),
+ ;; not a long-lived listening socket handle -- there is no ambient socket
+ ;; the guest can hold open past one call, matching :ambient-network false
+ ;; and this kit's :execution :synchronous-reference the same way http's
+ ;; :post is one call per HTTP request rather than a held connection.
+ :qualification {:reference :implemented
+                 :wasm-aot :pending
+                 :wasm32-kotoba-v1 :pending
+                 :native-aot :pending
+                 :jit :pending}
+ ;; :reference :implemented -- measured 2026-08-30. A KIR-lowered guest
+ ;; (`(ns app.datagram (:export [send receive]) (:capabilities #{:net/datagram}))`,
+ ;; calling `typed-cap-call :net/datagram <request-type> <result-type> request`
+ ;; for both ops) was instantiated with `kotoba.compiler.reference-runtime`
+ ;; against a provider built for this exact request/result schema, id 27,
+ ;; `:allow #{27}`. Positive-path, denial, redaction, and limit-boundary
+ ;; tests all pass under `clojure -M:test` --
+ ;; test/kotoba/compiler/net_datagram_provider_test.clj in this repo.
+ ;; A second test in the same file (`send-round-trips-over-a-real-loopback-udp-socket`)
+ ;; wires the SAME provider's transport function to a real JVM
+ ;; `java.net.DatagramSocket` bound on 127.0.0.1 instead of an in-memory
+ ;; mock, and confirms bytes sent through `typed-cap-call` are the exact
+ ;; bytes a real OS UDP socket receives on the loopback interface. No other
+ ;; kit's reference test in this repo exercises a real OS socket; this one
+ ;; does because `net/datagram` is the highest-priority of the three
+ ;; capabilities this kit-set adds (WHY note in the accompanying capability
+ ;; repository, kotoba-lang/capability-net-datagram).
+ ;;
+ ;; :wasm-aot / :jit / :wasm32-kotoba-v1 / :native-aot are :pending because
+ ;; none was attempted in this session -- not because any of them refused
+ ;; the ABI shape the way http's :native-aot / storage's :native-aot did.
+ ;; This kit's request/result shape (variant-of-record, :bytes leaf,
+ ;; :string, :i64, :keyword, :bool) is a strict subset of what http-v1 and
+ ;; storage-v1 already cross wasm-aot and jit successfully, so there is no
+ ;; known type-system obstacle -- the work not done is building and running
+ ;; a host-side UDP transport for a wasm/JS target (browsers and the WASI
+ ;; host in this repo both deny ambient sockets by design; see
+ ;; runtime/wasi-host.mjs's comment on wasi_snapshot_preview1/sockets, and
+ ;; runtime/browser-host.mjs's typed-cap-call dispatch would need an
+ ;; embedder-supplied JS transport, e.g. Node's `dgram`, the same way an
+ ;; embedder supplies `fetch` for http/post) and compiling + running a
+ ;; guest against it, which this session did not do.
+ :wasm-aot-surface {:import ["kotoba:typed" "cap-call"]
+                    :capability-id 27
+                    :grant :net/datagram
+                    :target :wasm32-browser-kotoba-v1
+                    :request-schema :kotoba.net.datagram/request
+                    :result-schema :kotoba.net.datagram/result
+                    :elaboration "(typed-cap-call :net/datagram request-type result-type request)"
+                    :status :untested-in-this-session}}
