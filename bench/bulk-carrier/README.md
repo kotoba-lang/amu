@@ -76,3 +76,26 @@ limit. `loop`/`recur` is O(1) in depth and did not trap at 163M element visits.
 A fresh instance per probe is not optional: a trap leaves the scratch bump
 global unrestored, so a reused instance reports a ceiling of 1 whatever the real
 one is.
+
+## Quiet-host samples
+
+`samples-levi-wasm.edn` and `samples-levi-c.edn` are the run ADR 0285's
+correction rests on: levi (`Mac16,10`, M4) at load1 1.78-2.14, n=15, per-arm
+outer counts sized so every sample integrates at least 3 ms of CPU, explicit
+warmup for every arm before any sampling.
+
+```sh
+nbb --classpath <perfgate>/src:<machine>/src gate.cljs \
+    samples-levi-wasm.edn samples-levi-c.edn \
+    k-loop-touch:k-rec-touch k-loop-base:k-rec-base k-loop-noref:k-rec-noref \
+    h-noref:h-slice c-inline:c-indirect c-plain:c-inline
+```
+
+Five qualify. `h-noref:h-slice` refuses with `:not-separated-from-noise`, and
+that refusal is the point: the bounds test plus `i64.load` cannot be told apart
+from the loop it sits in, while the `vector-at` it would replace costs 381.72
+ns/element.
+
+Do not compare the wasm arms to the C arms as equals: the C arms carry a
+compiler barrier on the accumulator (without it clang folds the plain arm to
+0.0013 ns) and the wasm arms have no equivalent.

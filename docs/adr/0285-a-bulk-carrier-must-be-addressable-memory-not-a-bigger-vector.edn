@@ -9,6 +9,39 @@
             :frame-scale-data-in-guest :refused-by-measurement
             :implementation :not-built
             :reflect-stage-verdict :not-separated}
+ :quiet-host-remeasurement
+ {:host {:model "Mac16,10" :cpu "Apple M4" :cores 10 :name "levi"
+         :provenance :measured :load1 "1.78-2.14"}
+  :method {:interleaved true :per-arm-outer-sized-for :at-least-3ms-cpu
+           :warmup :every-arm-before-any-sampling :samples 15
+           :oracle :kotoba.kir/execute}
+  :ns-per-element {:vector-at-self-recursion 753.41
+                   :carry-only-self-recursion 362.96
+                   :loop-only-self-recursion 5.026
+                   :vector-at-loop-recur 387.43
+                   :carry-only-loop-recur 5.704
+                   :loop-only-loop-recur 0.2371
+                   :hand-loop 0.3935
+                   :hand-loop-plus-bounds-and-load 0.4249
+                   :c-plain 0.2390 :c-inlined-arena-access 0.4938
+                   :c-indirect-call 1.0815}
+  :qualified [[:loop-recur-vs-self-recursion-touch 0.4858]
+              [:loop-recur-vs-self-recursion-carry 0.9843]
+              [:loop-recur-vs-self-recursion-loop 0.9528]
+              [:c-inlined-vs-indirect 0.5434]
+              [:c-plain-vs-inlined 0.5161]]
+  :refused [[:hand-written-slice-at :not-separated-from-noise
+             {:gap 0.0314 :summed-stdev 0.0441
+              :note :both-arms-individually-clean-the-gap-is-below-their-spread}]]
+  :design-numbers {:marginal-vector-at-best-spelling 381.72
+                   :marginal-proposed-load :not-separable-from-zero}
+  :corrections {:loop-only-over-c {:was 17.7 :now 0.99
+                                   :cause :self-recursion-spelling-on-a-loaded-host
+                                   :consequence :necessary-and-not-sufficient-was-wrong-for-wasm32}}
+  :caveat {:c-arm-carries-a-compiler-barrier true
+           :wasm-arm-does-not true
+           :so :do-not-read-0.99x-as-parity}
+  :not-measured {:composite-loop-plus-load 0.27 :status :inferred-by-composition}}
  :measurement {:host {:model "MacBookPro18,4" :cpu "Apple M1 Max" :cores 10
                       :provenance :measured
                       :source "sysctl -n hw.model hw.ncpu hw.cachelinesize hw.pagesize hw.l1dcachesize hw.l2cachesize"}

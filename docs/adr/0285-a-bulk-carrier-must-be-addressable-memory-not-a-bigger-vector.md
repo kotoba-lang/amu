@@ -17,8 +17,11 @@
    derived limits and the pinned runtime identity SHA do not move together —
    which is the cheapest possible way to avoid a second instance of the
    co-movement defect ADR 0284 found.
-3. **Frame-scale pixel data does not enter the guest.** Two independent
-   measurements refuse it, and neither is about capacity.
+3. **Frame-scale pixel data does not enter the guest**, on the evidence
+   available. Two independent measurements refuse it, and neither is about
+   capacity. **Corrected 2026-08-30 on a quiet host: that refusal rests on
+   native measurements, and wasm32 does not share the premise** — see "What a
+   quiet host changed" below. The wasm32 half of this decision is now open.
 
 The ordering matters and is the ranking: the two front-door blockers gate every
 other claim, `loop`/`recur` is a **counted 2x** available today with no compiler
@@ -138,6 +141,72 @@ no-load arm returns 129024 and its load arm returns 133120 — the values
 `kotoba.kir/execute` gives for the Kotoba `noref` and `touch` arms — so the
 hand-written loop is the same loop and the load arm computes the same function
 as `vector-at`.
+
+### What a quiet host changed, and what it corrected
+
+Everything above was measured on this workstation at load1 12-700. Re-measured
+on **levi** (`Mac16,10`, Apple M4, 10 cores) at **load1 1.78-2.14**, all arms
+interleaved in one process, per-arm outer counts chosen so every sample
+integrates at least 3 ms of CPU, explicit warmup for every arm before any
+sampling, values checked against `kotoba.kir/execute` first, n=15:
+
+| arm | ns/element | rel-stdev | vs C `-O3` |
+|---|---|---|---|
+| `vector-at`, self-recursion | 753.41 | 0.011 | 3153x |
+| carries the vector, self-recursion | 362.96 | 0.016 | 1519x |
+| loop only, self-recursion | 5.026 | 0.009 | 21.0x |
+| `vector-at`, `loop`/`recur` | 387.43 | 0.029 | 1621x |
+| carries the vector, `loop`/`recur` | 5.704 | 0.016 | 23.9x |
+| **loop only, `loop`/`recur`** | **0.2371** | 0.010 | **0.99x** |
+| hand-written loop | 0.3935 | 0.050 | 1.65x |
+| hand-written loop + bounds + `i64.load` | 0.4249 | 0.057 | 1.78x |
+| C `-O3` `acc += a[i]` | 0.2390 | 0.003 | 1.00x |
+| C, inlined arena access | 0.4938 | 0.015 | 2.07x |
+| C, indirect call | 1.0815 | 0.012 | 4.53x |
+
+Qualified by `perfgate.core/qualify`, default policy, `reasons []`:
+`loop`/`recur` over self-recursion — **48.6%** on the touch arm, **98.4%** on
+the carry arm, **95.3%** on the loop arm; C inlined over indirect 54.3%; C plain
+over inlined 51.6%.
+
+**The correction.** This ADR said the loop alone reads 17.7x C and concluded
+that removing the crossing is "necessary and not sufficient". That 17.7x was the
+**self-recursion spelling on a loaded host**, and it was not a property of the
+backend. On a quiet host the same loop written `loop`/`recur` costs **0.2371
+ns/element** — about one cycle, against 0.2390 for the C arm. For wasm32 the
+loop is not the bottleneck and the carrier is very nearly the whole cost.
+ADR 0284's 11.2x is a **native** measurement and stands; the two backends differ here,
+and this ADR previously generalised one to the other.
+
+**Do not read 0.99x as "amu equals C".** The C arm carries a compiler barrier on
+its accumulator — without it clang folds the loop to 0.0013 ns, a measurement of
+nothing — and the wasm arm has no equivalent, so the C arm is serialised on a
+dependency chain the wasm arm may not be. The defensible statements are the two
+that need no cross-language comparison: `loop`/`recur` beats self-recursion on
+the pure loop by **21x, qualified**, and the loop costs about one cycle per
+element.
+
+**The two numbers the design rests on, from the same run:**
+
+- marginal cost of today's `vector-at`, best spelling: **381.72 ns/element**
+  (387.43 − 5.70), separated from noise by four orders of magnitude.
+- marginal cost of the proposed bounds-tested `i64.load`: **0.0314
+  ns/element** — and `perfgate` **refuses** it, `:not-separated-from-noise`,
+  gap 0.031 against summed stdev 0.044. Both arms are individually clean
+  (rel-stdev 0.050 and 0.057, inside the 0.10 policy); the arms are simply
+  closer together than their own spread.
+
+**That refusal is the result, not a failure to get one.** The claim the design
+needs is not a ratio between those two numbers. It is that today's element
+access costs 381.72 ns and is comfortably separated, while the proposed one
+cannot be told apart from doing nothing at all.
+
+**What this does not settle.** A composite figure of 0.237 + 0.031 ≈ 0.27
+ns/element for a `loop`/`recur` guest reading through a load is **inferred by
+adding a marginal measured in one loop shape to a cost measured in another** —
+no arm measured it. Building it is what would measure it. And the native side is
+untouched: ADR 0284's 11.2x loop-only figure is why the frame-scale conclusion
+above still holds there.
 
 ### Why the type should exist, and why not for frames
 
