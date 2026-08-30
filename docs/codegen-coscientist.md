@@ -955,6 +955,37 @@ as before.
   This is ADR 0230's producer/verifier independence doing its job: the verifier
   refused to trust a table it could not rebuild.
 
+- **51 (2026-08-30, the strings domain opens -- and loses honestly)**:
+  the seventh domain exists. What blocked it was never the language or
+  the backend -- string ops (`string-concat`/`-substring`/`-code-point-at`/
+  `string=?`/`-byte-length`) have been in the native backend as v3
+  context callbacks all along, and raw extraction already appends
+  literal data past the code -- it was the benchmark harness, whose
+  context carried only version and fuel, so the first `pair_new` boxing
+  a literal dereferenced NULL. kexe-benchmark.c now carries the
+  pair/string slots of the real v3 contract (ported from
+  tools/kexe_loader.c, same SIGILL-on-violation semantics, ABI offsets
+  asserted; pair and pool cursors reset per call so every timed call is
+  a fresh instance). Fixture `kernel_strings.kotoba`: substring view ->
+  build-by-concat -> code-point scan -> head compare, every step mod
+  1000003 so no backend's overflow behaviour is in play; per-call fuel
+  varies with n, so the manifest asserts fuel per input. KA: 6/6
+  against a JVM `quot`/`subs`/`reduce` oracle on Rosetta AND on gad,
+  both arms (12/12 on hardware). First standings, ABBA x12, KA per
+  sample, load 0.96: **amu 5511 ns/call, gcc twin 511 ns/call --
+  ratio 10.77** (rsd 0.010/0.063). The residue is named and structural:
+  `checked_string_code_point_at` revalidates the WHOLE string's UTF-8
+  on every access, so a scan is O(n^2) in host byte checks, and every
+  character crossing is an indirect call -- gcc's arm is a direct byte
+  load. The lawful levers, in counter order: validate-once-per-pair
+  (amortize valid_utf8 at creation), then a guest-visible byte plane.
+  Registered as an INCUBATING domain, not a required one -- a required
+  domain binds the claim contract to every comparator arm, and only the
+  C twin exists; promotion needs rust/zig/go/swift twins and both ISAs
+  measured. The aarch64 bounded claim is untouched by today's loss,
+  and saying otherwise would be the aggregate hiding a loss -- the
+  thing the contract's aggregation policy exists to forbid.
+
 ## Standing honesty constraints
 
 Every number above is one host on one day; the falsification numbers are

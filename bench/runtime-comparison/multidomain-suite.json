@@ -14,14 +14,31 @@
     "aggregationPolicy": "the candidate must independently beat every required comparator in every required domain; no aggregate may hide a loss, missing arm, or unqualified arm",
     "nativeArtifactAbi": "kotoba.native-artifact-i64x8-to-i64-indirect/v1",
     "nativeArtifactInvocation": "one external C runner invokes both candidate and comparator through the same eight-i64-argument indirect-call boundary; loading, mapping and symbol resolution occur before timing",
-    "nativeArtifactArgMap": ["input", "zero", "zero", "zero", "zero", "x86_64-context-or-zero", "zero", "aarch64-context-or-zero"],
+    "nativeArtifactArgMap": [
+      "input",
+      "zero",
+      "zero",
+      "zero",
+      "zero",
+      "x86_64-context-or-zero",
+      "zero",
+      "aarch64-context-or-zero"
+    ],
     "nativeRunnerCompiler": "cc -std=c11 -O3 -Wall -Wextra -Werror",
     "perfgatePolicyId": "kotoba.perfgate.policy/default-v1",
     "evidenceMaxAgeHours": 24,
     "worldFastestClaimQualified": false
   },
-  "requiredEngines": ["amu-native"],
-  "requiredComparators": ["rust", "clang-c11", "zig", "go", "swift"],
+  "requiredEngines": [
+    "amu-native"
+  ],
+  "requiredComparators": [
+    "rust",
+    "clang-c11",
+    "zig",
+    "go",
+    "swift"
+  ],
   "requiredTargets": [
     {
       "id": "darwin-arm64-native",
@@ -32,12 +49,183 @@
     }
   ],
   "requiredDomains": [
-    { "id": "narrow-arithmetic", "fixture": "kernel", "knownAnswer": "unrolled-modular-mix-v1", "verificationInputs": [0, 1, 2, 199, 200, 201], "verificationResults": [538245533, 1392962038, 100194896, 975621915, 1830338420, 537571278], "verificationAmuFuelConsumed": [0, 0, 0, 0, 0, 0] },
-    { "id": "wide-register-pressure", "fixture": "kernel_wide", "knownAnswer": "wide-register-pressure-v1", "verificationInputs": [0, 1, 2, 199, 200, 201], "verificationResults": [5113348408, 6574194760, 8035041112, 5911480111, 5224842816, 6685689168], "verificationAmuFuelConsumed": [0, 0, 0, 0, 0, 0] },
-    { "id": "deep-spill-pressure", "fixture": "kernel_deep", "knownAnswer": "deep-spill-pressure-v1", "verificationInputs": [0, 1, 2, 199, 200, 201], "verificationResults": [2277722280, 4104456014, 5931189748, 725515356, 2552249090, 4378982824], "verificationAmuFuelConsumed": [0, 0, 0, 0, 0, 0] },
-    { "id": "call-preservation", "fixture": "kernel_call", "knownAnswer": "call-preservation-v1", "verificationInputs": [0, 1, 2, 199, 200, 201], "verificationResults": [1096117482, 1826733742, 2557350002, 2607348873, 1190481486, 1921097746], "verificationAmuFuelConsumed": [1, 1, 1, 1, 1, 1] },
-    { "id": "branch-call-control-flow", "fixture": "kernel_call_branch", "knownAnswer": "branch-call-preservation-v1", "verificationInputs": [0, 1, 2, 199, 200, 201], "verificationResults": [0, 1826733742, 2557350002, 2607348873, 1190481486, 1921097746], "verificationAmuFuelConsumed": [1, 1, 1, 1, 1, 1] },
-    { "id": "loop-call-back-edge", "fixture": "kernel_loop_call", "knownAnswer": "loop-call-mix-v1", "verificationInputs": [0, 1, 2, 199, 200, 201, 510], "verificationResults": [0, 1, 2, 199, 200, 201, 510], "verificationAmuFuelConsumed": [2, 3, 4, 201, 202, 203, 512] }
+    {
+      "id": "narrow-arithmetic",
+      "fixture": "kernel",
+      "knownAnswer": "unrolled-modular-mix-v1",
+      "verificationInputs": [
+        0,
+        1,
+        2,
+        199,
+        200,
+        201
+      ],
+      "verificationResults": [
+        538245533,
+        1392962038,
+        100194896,
+        975621915,
+        1830338420,
+        537571278
+      ],
+      "verificationAmuFuelConsumed": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "wide-register-pressure",
+      "fixture": "kernel_wide",
+      "knownAnswer": "wide-register-pressure-v1",
+      "verificationInputs": [
+        0,
+        1,
+        2,
+        199,
+        200,
+        201
+      ],
+      "verificationResults": [
+        5113348408,
+        6574194760,
+        8035041112,
+        5911480111,
+        5224842816,
+        6685689168
+      ],
+      "verificationAmuFuelConsumed": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "deep-spill-pressure",
+      "fixture": "kernel_deep",
+      "knownAnswer": "deep-spill-pressure-v1",
+      "verificationInputs": [
+        0,
+        1,
+        2,
+        199,
+        200,
+        201
+      ],
+      "verificationResults": [
+        2277722280,
+        4104456014,
+        5931189748,
+        725515356,
+        2552249090,
+        4378982824
+      ],
+      "verificationAmuFuelConsumed": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "call-preservation",
+      "fixture": "kernel_call",
+      "knownAnswer": "call-preservation-v1",
+      "verificationInputs": [
+        0,
+        1,
+        2,
+        199,
+        200,
+        201
+      ],
+      "verificationResults": [
+        1096117482,
+        1826733742,
+        2557350002,
+        2607348873,
+        1190481486,
+        1921097746
+      ],
+      "verificationAmuFuelConsumed": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "id": "branch-call-control-flow",
+      "fixture": "kernel_call_branch",
+      "knownAnswer": "branch-call-preservation-v1",
+      "verificationInputs": [
+        0,
+        1,
+        2,
+        199,
+        200,
+        201
+      ],
+      "verificationResults": [
+        0,
+        1826733742,
+        2557350002,
+        2607348873,
+        1190481486,
+        1921097746
+      ],
+      "verificationAmuFuelConsumed": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "id": "loop-call-back-edge",
+      "fixture": "kernel_loop_call",
+      "knownAnswer": "loop-call-mix-v1",
+      "verificationInputs": [
+        0,
+        1,
+        2,
+        199,
+        200,
+        201,
+        510
+      ],
+      "verificationResults": [
+        0,
+        1,
+        2,
+        199,
+        200,
+        201,
+        510
+      ],
+      "verificationAmuFuelConsumed": [
+        2,
+        3,
+        4,
+        201,
+        202,
+        203,
+        512
+      ]
+    }
   ],
   "requiredEvidence": [
     "known-answer-result",
@@ -54,5 +242,41 @@
   "externalComparators": {
     "policy": "optional build and runtime adapters; never compiler or runtime dependencies",
     "broadFastestClaim": "requires a comparator covering every required domain"
-  }
+  },
+  "incubatingDomains": [
+    {
+      "id": "strings-build-scan",
+      "fixture": "kernel_strings",
+      "knownAnswer": "strings-build-scan-v1",
+      "verificationInputs": [
+        0,
+        1,
+        2,
+        199,
+        200,
+        201
+      ],
+      "verificationResults": [
+        95351,
+        374831,
+        488388,
+        147903,
+        799811,
+        429739
+      ],
+      "verificationAmuFuelConsumed": [
+        75,
+        84,
+        93,
+        138,
+        75,
+        84
+      ],
+      "incubation": {
+        "opened": "2026-08-30",
+        "why-not-required": "A required domain binds the standing claim contract, which demands every comparator arm on every required target; only the clang/gcc C twin exists today. Promote to requiredDomains when rust/zig/go/swift twins exist and both ISAs have measured arms.",
+        "harness": "needs the pair/string v3 context slots kexe-benchmark.c gained on 2026-08-30; per-call fuel varies with n (the build/scan loops are n-dependent), so fuel is asserted per input, not as a constant."
+      }
+    }
+  ]
 }

@@ -4,6 +4,8 @@
 #include <dlfcn.h>
 #include <fcntl.h>
 #include <inttypes.h>
+#include <signal.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -14,20 +16,267 @@
 #include <time.h>
 #include <unistd.h>
 
+#if defined(__aarch64__)
+#include <arm_neon.h>
+#elif defined(__SSE2__)
+#include <emmintrin.h>
+#endif
+
 typedef int64_t (*kexe_fn8)(int64_t, int64_t, int64_t, int64_t, int64_t,
                             int64_t, int64_t, int64_t);
 
 static const char *const native_artifact_abi =
     "kotoba.native-artifact-i64x8-to-i64-indirect/v1";
 
-/* This pure kernel consumes only version and fuel. The buffer is deliberately
- * large enough for the complete v3 context, but this remains benchmark
+/* The benchmark context now carries the pair/string slots of the real v3
+ * contract (ABI offsets asserted below, mirroring tools/kexe_loader.c), so
+ * string-bearing kernels can run under the same harness as arithmetic ones.
+ * kgraph/vector/cap slots stay NULL: a guest touching them crashes loudly
+ * instead of being silently mis-measured. This remains benchmark
  * scaffolding, not an alternate production loader or safety boundary. */
-struct benchmark_context_v3 {
+struct kexe_context_v3 {
   uint64_t version;
   uint64_t fuel;
-  uint64_t remaining_context[30];
+  uint64_t allow[4];
+  int64_t (*cap_call)(struct kexe_context_v3 *, uint64_t, int64_t);
+  int64_t (*pair_new)(struct kexe_context_v3 *, int64_t, int64_t);
+  int64_t (*pair_first)(struct kexe_context_v3 *, int64_t);
+  int64_t (*pair_second)(struct kexe_context_v3 *, int64_t);
+  int64_t (*kgraph_assert)(struct kexe_context_v3 *, int64_t, int64_t, int64_t);
+  int64_t (*kgraph_get)(struct kexe_context_v3 *, int64_t, int64_t);
+  int64_t (*kgraph_count)(struct kexe_context_v3 *, int64_t);
+  int64_t (*kgraph_entity_at)(struct kexe_context_v3 *, int64_t, int64_t);
+  int64_t (*string_equal)(struct kexe_context_v3 *, int64_t, int64_t);
+  int64_t (*string_concat)(struct kexe_context_v3 *, int64_t, int64_t);
+  int64_t (*typed_cap_call)(struct kexe_context_v3 *, uint64_t, uint64_t,
+                            uint64_t, int64_t);
+  int64_t (*string_substring)(struct kexe_context_v3 *, int64_t, int64_t,
+                              int64_t);
+  int64_t (*string_code_point_at)(struct kexe_context_v3 *, int64_t, int64_t);
+  int64_t (*vector_new_empty)(struct kexe_context_v3 *);
+  int64_t (*vector_conj)(struct kexe_context_v3 *, int64_t, int64_t);
+  int64_t (*vector_count)(struct kexe_context_v3 *, int64_t);
+  int64_t (*vector_at)(struct kexe_context_v3 *, int64_t, int64_t);
+  int64_t (*vector_assoc)(struct kexe_context_v3 *, int64_t, int64_t, int64_t);
+  int64_t (*vector_drop)(struct kexe_context_v3 *, int64_t, int64_t);
+  const uint8_t *code_base;
+  uint64_t code_length;
 };
+
+_Static_assert(offsetof(struct kexe_context_v3, fuel) == 8, "fuel ABI drift");
+_Static_assert(offsetof(struct kexe_context_v3, allow) == 16, "allow ABI drift");
+_Static_assert(offsetof(struct kexe_context_v3, cap_call) == 48, "cap ABI drift");
+_Static_assert(offsetof(struct kexe_context_v3, pair_new) == 56, "pair ABI drift");
+_Static_assert(offsetof(struct kexe_context_v3, pair_first) == 64, "pair ABI drift");
+_Static_assert(offsetof(struct kexe_context_v3, pair_second) == 72, "pair ABI drift");
+_Static_assert(offsetof(struct kexe_context_v3, string_equal) == 112, "string ABI drift");
+_Static_assert(offsetof(struct kexe_context_v3, string_concat) == 120, "string ABI drift");
+_Static_assert(offsetof(struct kexe_context_v3, typed_cap_call) == 128, "typed cap ABI drift");
+_Static_assert(offsetof(struct kexe_context_v3, string_substring) == 136, "string ABI drift");
+_Static_assert(offsetof(struct kexe_context_v3, string_code_point_at) == 144, "string ABI drift");
+
+#define BENCH_PAIR_CAPACITY 4096u
+#define BENCH_STRING_POOL_BYTES 65536u
+
+struct kexe_pair_v1 { int64_t first; int64_t second; };
+
+struct bench_shared {
+  struct kexe_context_v3 context;
+  uint64_t pair_used;
+  struct kexe_pair_v1 pairs[BENCH_PAIR_CAPACITY];
+  uint64_t string_pool_used;
+  uint8_t string_pool[BENCH_STRING_POOL_BYTES];
+};
+
+/* pair/string machinery ported from tools/kexe_loader.c: same trapping
+ * behaviour (raise(SIGILL) on contract violation), same one-byte-space
+ * addressing (non-negative offsets index code+literal data, negative
+ * offsets index the dynamic pool via -offset - 1). */
+
+static int64_t checked_pair_new(struct kexe_context_v3 *context,
+                                int64_t first, int64_t second) {
+  struct bench_shared *shared = (struct bench_shared *)context;
+  if (context == NULL || context->version != 3 ||
+      shared->pair_used >= BENCH_PAIR_CAPACITY) {
+    raise(SIGILL);
+    return 0;
+  }
+  uint64_t index = shared->pair_used++;
+  shared->pairs[index].first = first;
+  shared->pairs[index].second = second;
+  return (int64_t)(index + 1);
+}
+
+static int64_t checked_pair_get(struct kexe_context_v3 *context,
+                                int64_t handle, int second) {
+  struct bench_shared *shared = (struct bench_shared *)context;
+  if (context == NULL || context->version != 3 || handle <= 0 ||
+      (uint64_t)handle > shared->pair_used) {
+    raise(SIGILL);
+    return 0;
+  }
+  struct kexe_pair_v1 *pair = &shared->pairs[(uint64_t)handle - 1];
+  return second ? pair->second : pair->first;
+}
+
+static int64_t checked_pair_first(struct kexe_context_v3 *context, int64_t handle) {
+  return checked_pair_get(context, handle, 0);
+}
+
+static int64_t checked_pair_second(struct kexe_context_v3 *context, int64_t handle) {
+  return checked_pair_get(context, handle, 1);
+}
+
+static const uint8_t *resolve_string_bytes(struct kexe_context_v3 *context,
+                                           int64_t offset, int64_t length) {
+  struct bench_shared *shared = (struct bench_shared *)context;
+  if (length < 0) { raise(SIGILL); return NULL; }
+  if (offset >= 0) {
+    if ((uint64_t)offset + (uint64_t)length > context->code_length) {
+      raise(SIGILL);
+      return NULL;
+    }
+    return context->code_base + offset;
+  }
+  uint64_t pool_offset = (uint64_t)(-(offset + 1));
+  if (pool_offset + (uint64_t)length > BENCH_STRING_POOL_BYTES ||
+      pool_offset + (uint64_t)length < pool_offset) {
+    raise(SIGILL);
+    return NULL;
+  }
+  return shared->string_pool + pool_offset;
+}
+
+static int valid_utf8(const uint8_t *bytes, uint64_t length) {
+  uint64_t i = 0;
+  while (i < length) {
+    uint8_t a = bytes[i++];
+    if (a <= 0x7f) continue;
+    if (a >= 0xc2 && a <= 0xdf) {
+      if (i >= length || (bytes[i++] & 0xc0) != 0x80) return 0;
+      continue;
+    }
+    if (a >= 0xe0 && a <= 0xef) {
+      if (i + 1 >= length) return 0;
+      uint8_t b = bytes[i++], c = bytes[i++];
+      if ((b & 0xc0) != 0x80 || (c & 0xc0) != 0x80 ||
+          (a == 0xe0 && b < 0xa0) || (a == 0xed && b >= 0xa0)) return 0;
+      continue;
+    }
+    if (a >= 0xf0 && a <= 0xf4) {
+      if (i + 2 >= length) return 0;
+      uint8_t b = bytes[i++], c = bytes[i++], d = bytes[i++];
+      if ((b & 0xc0) != 0x80 || (c & 0xc0) != 0x80 || (d & 0xc0) != 0x80 ||
+          (a == 0xf0 && b < 0x90) || (a == 0xf4 && b >= 0x90)) return 0;
+      continue;
+    }
+    return 0;
+  }
+  return 1;
+}
+
+static int simd_bytes_equal(const uint8_t *a, const uint8_t *b, size_t length) {
+  size_t i = 0;
+#if defined(__aarch64__)
+  for (; i + 16u <= length; i += 16u) {
+    uint8x16_t av = vld1q_u8(a + i);
+    uint8x16_t bv = vld1q_u8(b + i);
+    if (vminvq_u8(vceqq_u8(av, bv)) != UINT8_MAX) return 0;
+  }
+#elif defined(__SSE2__)
+  for (; i + 16u <= length; i += 16u) {
+    __m128i av = _mm_loadu_si128((const __m128i *)(const void *)(a + i));
+    __m128i bv = _mm_loadu_si128((const __m128i *)(const void *)(b + i));
+    if (_mm_movemask_epi8(_mm_cmpeq_epi8(av, bv)) != 0xffff) return 0;
+  }
+#endif
+  return memcmp(a + i, b + i, length - i) == 0;
+}
+
+static int64_t checked_string_equal(struct kexe_context_v3 *context,
+                                    int64_t handle_a, int64_t handle_b) {
+  if (context == NULL || context->version != 3) { raise(SIGILL); return 0; }
+  int64_t offset_a = checked_pair_get(context, handle_a, 0);
+  int64_t length_a = checked_pair_get(context, handle_a, 1);
+  int64_t offset_b = checked_pair_get(context, handle_b, 0);
+  int64_t length_b = checked_pair_get(context, handle_b, 1);
+  if (length_a != length_b) return 0;
+  const uint8_t *a = resolve_string_bytes(context, offset_a, length_a);
+  const uint8_t *b = resolve_string_bytes(context, offset_b, length_b);
+  return simd_bytes_equal(a, b, (size_t)length_a) ? 1 : 0;
+}
+
+static int64_t checked_string_concat(struct kexe_context_v3 *context,
+                                     int64_t handle_a, int64_t handle_b) {
+  struct bench_shared *shared = (struct bench_shared *)context;
+  if (context == NULL || context->version != 3) { raise(SIGILL); return 0; }
+  int64_t offset_a = checked_pair_get(context, handle_a, 0);
+  int64_t length_a = checked_pair_get(context, handle_a, 1);
+  int64_t offset_b = checked_pair_get(context, handle_b, 0);
+  int64_t length_b = checked_pair_get(context, handle_b, 1);
+  if (length_a < 0 || length_b < 0 || length_a > INT64_MAX - length_b) {
+    raise(SIGILL);
+    return 0;
+  }
+  int64_t total = length_a + length_b;
+  if (shared->string_pool_used + (uint64_t)total > BENCH_STRING_POOL_BYTES ||
+      shared->string_pool_used + (uint64_t)total < shared->string_pool_used) {
+    raise(SIGILL);
+    return 0;
+  }
+  const uint8_t *a = resolve_string_bytes(context, offset_a, length_a);
+  const uint8_t *b = resolve_string_bytes(context, offset_b, length_b);
+  uint64_t pool_offset = shared->string_pool_used;
+  memcpy(shared->string_pool + pool_offset, a, (size_t)length_a);
+  memcpy(shared->string_pool + pool_offset + (uint64_t)length_a, b, (size_t)length_b);
+  shared->string_pool_used += (uint64_t)total;
+  return checked_pair_new(context, -((int64_t)pool_offset) - 1, total);
+}
+
+static int64_t checked_string_substring(struct kexe_context_v3 *context,
+                                        int64_t handle, int64_t start,
+                                        int64_t end) {
+  if (context == NULL || context->version != 3) { raise(SIGILL); return 0; }
+  int64_t offset = checked_pair_get(context, handle, 0);
+  int64_t length = checked_pair_get(context, handle, 1);
+  if (length < 0 || start < 0 || end < start || end > length) {
+    raise(SIGILL);
+    return 0;
+  }
+  const uint8_t *bytes = resolve_string_bytes(context, offset, length);
+  if (bytes == NULL) { raise(SIGILL); return 0; }
+  if (!valid_utf8(bytes, (uint64_t)length)) { raise(SIGILL); return 0; }
+  if (start < length && (bytes[start] & 0xc0) == 0x80) { raise(SIGILL); return 0; }
+  if (end < length && (bytes[end] & 0xc0) == 0x80) { raise(SIGILL); return 0; }
+  int64_t result_offset = offset >= 0 ? offset + start : offset - start;
+  return checked_pair_new(context, result_offset, end - start);
+}
+
+static int64_t checked_string_code_point_at(struct kexe_context_v3 *context,
+                                            int64_t handle, int64_t byte_offset) {
+  if (context == NULL || context->version != 3) { raise(SIGILL); return 0; }
+  int64_t offset = checked_pair_get(context, handle, 0);
+  int64_t length = checked_pair_get(context, handle, 1);
+  if (length < 0 || byte_offset < 0 || byte_offset >= length) {
+    raise(SIGILL);
+    return 0;
+  }
+  const uint8_t *bytes = resolve_string_bytes(context, offset, length);
+  if (bytes == NULL) { raise(SIGILL); return 0; }
+  if (!valid_utf8(bytes, (uint64_t)length)) { raise(SIGILL); return 0; }
+  const uint8_t *p = bytes + byte_offset;
+  uint8_t a = p[0];
+  if ((a & 0xc0) == 0x80) { raise(SIGILL); return 0; }
+  if (a <= 0x7f) return a;
+  if (a >= 0xc2 && a <= 0xdf) return ((int64_t)(a & 0x1f) << 6) | (p[1] & 0x3f);
+  if (a >= 0xe0 && a <= 0xef)
+    return ((int64_t)(a & 0x0f) << 12) | ((int64_t)(p[1] & 0x3f) << 6) | (p[2] & 0x3f);
+  if (a >= 0xf0 && a <= 0xf4)
+    return ((int64_t)(a & 0x07) << 18) | ((int64_t)(p[1] & 0x3f) << 12) |
+           ((int64_t)(p[2] & 0x3f) << 6) | (p[3] & 0x3f);
+  raise(SIGILL);
+  return 0;
+}
 
 static void fail(const char *operation) {
   perror(operation);
@@ -61,7 +310,12 @@ static uint64_t nanoseconds(void) {
 /* Resolve isa once. strcmp inside the timed loop was ~5 ns on a 4-byte
  * `ret` identity (codegen co-scientist iteration 13). That is harness
  * overhead, not guest work. Fuel is still stored every call so recursive
- * exports keep a bound; a leaf does not read it. */
+ * exports keep a bound; a leaf does not read it. Pair and string-pool
+ * cursors are likewise reset every call: each timed call runs as a fresh
+ * instance, which is also what keeps a million-call loop from exhausting
+ * the bounded arenas. */
+
+static struct bench_shared shared;
 
 int main(int argc, char **argv) {
   if (argc != 9) {
@@ -85,6 +339,7 @@ int main(int argc, char **argv) {
   uint64_t warmup = bounded(argv[7], "warmup", 1, UINT64_C(100000000));
   uint64_t fuel = bounded(argv[8], "fuel", 0, UINT64_C(1048576));
   size_t mapped = 0;
+  size_t artifact_bytes = 0;
   void *memory = NULL;
   void *library = NULL;
   kexe_fn8 fn = NULL;
@@ -100,7 +355,8 @@ int main(int argc, char **argv) {
     }
     long page = sysconf(_SC_PAGESIZE);
     if (page <= 0) fail("sysconf");
-    mapped = ((size_t)metadata.st_size + (size_t)page - 1) /
+    artifact_bytes = (size_t)metadata.st_size;
+    mapped = (artifact_bytes + (size_t)page - 1) /
              (size_t)page * (size_t)page;
 #if defined(MAP_ANONYMOUS)
     int anonymous = MAP_ANONYMOUS;
@@ -111,9 +367,9 @@ int main(int argc, char **argv) {
                   MAP_PRIVATE | anonymous, -1, 0);
     if (memory == MAP_FAILED) fail("mmap");
     size_t consumed = 0;
-    while (consumed < (size_t)metadata.st_size) {
+    while (consumed < artifact_bytes) {
       ssize_t count = read(fd, (uint8_t *)memory + consumed,
-                           (size_t)metadata.st_size - consumed);
+                           artifact_bytes - consumed);
       if (count <= 0) fail("read");
       consumed += (size_t)count;
     }
@@ -135,30 +391,49 @@ int main(int argc, char **argv) {
     }
   }
 
-  struct benchmark_context_v3 context = {0};
-  context.version = 3;
+  memset(&shared, 0, sizeof(shared));
+  struct kexe_context_v3 *context = &shared.context;
+  context->version = 3;
+  context->pair_new = checked_pair_new;
+  context->pair_first = checked_pair_first;
+  context->pair_second = checked_pair_second;
+  context->string_equal = checked_string_equal;
+  context->string_concat = checked_string_concat;
+  context->string_substring = checked_string_substring;
+  context->string_code_point_at = checked_string_code_point_at;
+  /* String literals resolve into the mapped artifact itself: raw extraction
+   * appends literal data past the last function's code, so the whole file is
+   * the code+literal-data region. dylib twins are plain C and never receive
+   * this context, so the zero length there just means any stray string call
+   * traps instead of reading wild memory. */
+  context->code_base = (const uint8_t *)memory;
+  context->code_length = raw ? (uint64_t)artifact_bytes : 0;
   int64_t result = 0;
   uint64_t started;
   uint64_t elapsed;
   for (uint64_t index = 0; index < warmup; index++) {
-    context.fuel = fuel;
+    context->fuel = fuel;
+    shared.pair_used = 0;
+    shared.string_pool_used = 0;
     if (aarch64) {
-      result = fn(input, 0, 0, 0, 0, 0, 0, (int64_t)(uintptr_t)&context);
+      result = fn(input, 0, 0, 0, 0, 0, 0, (int64_t)(uintptr_t)context);
     } else {
-      result = fn(input, 0, 0, 0, 0, (int64_t)(uintptr_t)&context, 0, 0);
+      result = fn(input, 0, 0, 0, 0, (int64_t)(uintptr_t)context, 0, 0);
     }
   }
   started = nanoseconds();
   for (uint64_t index = 0; index < calls; index++) {
-    context.fuel = fuel;
+    context->fuel = fuel;
+    shared.pair_used = 0;
+    shared.string_pool_used = 0;
     if (aarch64) {
-      result = fn(input, 0, 0, 0, 0, 0, 0, (int64_t)(uintptr_t)&context);
+      result = fn(input, 0, 0, 0, 0, 0, 0, (int64_t)(uintptr_t)context);
     } else {
-      result = fn(input, 0, 0, 0, 0, (int64_t)(uintptr_t)&context, 0, 0);
+      result = fn(input, 0, 0, 0, 0, (int64_t)(uintptr_t)context, 0, 0);
     }
   }
   elapsed = nanoseconds() - started;
-  uint64_t context_fuel_after = context.fuel;
+  uint64_t context_fuel_after = context->fuel;
   uint64_t context_fuel_consumed = fuel >= context_fuel_after
                                      ? fuel - context_fuel_after : 0;
   struct rusage usage;
