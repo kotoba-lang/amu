@@ -794,6 +794,30 @@ as before.
   failed until another session freed space -- and the m2 cache had to be
   re-fetched; neither affected any measurement, which all ran on gad.)
 
+- **50 (2026-08-30, the call crossing arrives on x86 -- measured, not
+  assumed)**: kotoba-mir #43 (3aea0ac, landed upstream by a parallel
+  session) gives x86 a deliberately narrow slice of the preserved-tier
+  direct reentry AArch64 has had since iteration 38: parameters of a
+  self-tail function with no runtime/capability callback are admitted to
+  the preserved tier and the recur edge stays inside one frame. The pin
+  advance had merged into kotoba-native main underneath iteration 49's
+  emission change without either session running the combined suite --
+  this iteration closed that hole first (218/2477 green on the merged
+  tip). Emitted shape: kernel_loop_call's worker now parks its
+  parameters in RBX/R12, sets the frame up once, and the binary is 58
+  bytes smaller; results AND per-iteration fuel (n+2) match the manifest
+  on both the old and new binaries, on Rosetta and on gad. The lever,
+  measured the way iteration 49's metrology rule demands (same-run
+  candidate-vs-candidate ABBA x16, KA on every sample, clock-ramped):
+  **new/old 0.8743 -- a 12.6% move, rsd 0.0061/0.055 -- clear of the 5%
+  bar and far clear of the spread.** Day standings vs gcc: 1.4885
+  (from 1.82 on iteration 45's table; that leg ran with rsd 0.30 as the
+  box loaded up, so it is a standings indication, not a calibrated
+  ratio). Landed: west kotoba-mir pin advanced to 3aea0ac; the
+  kotoba-native and amu tips already carried it. loop_call remains the
+  widest x86 gap on the table -- the residue is now the per-iteration
+  guest-call ABI around the body call, not the crossing.
+
 ## Standing honesty constraints
 
 Every number above is one host on one day; the falsification numbers are
