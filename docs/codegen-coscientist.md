@@ -986,6 +986,35 @@ as before.
   and saying otherwise would be the aggregate hiding a loss -- the
   thing the contract's aggregation policy exists to forbid.
 
+- **52 (2026-08-30, Wave-2 opens: the collections domain, and its gate
+  was already unlocked)**: the eighth domain. The record had carried
+  "collections/documents, gated on native backend features" -- measured
+  today, that gate was already open: `vector-i64` is a context-owned
+  one-word handle the KIR gate admits, the native backend lowers all
+  six operations (`vector-conj/-count/-at/-assoc/-drop/-get`), and the
+  production loader has carried the arena implementation since
+  ADR-2608030300. What was actually missing was the same thing that
+  blocked strings: six NULL slots in the benchmark context.
+  kexe-benchmark.c now carries the vector machinery too (ported from
+  tools/kexe_loader.c: immutable handles over a shared arena, in-place
+  conj only at the arena top, copy-on-assoc, drop as a view; arenas
+  reset per call). Fixture `kernel_collections.kotoba`: fill by conj ->
+  hash walk by vector-at -> one assoc -> suffix drop view -> second
+  walk, mod 1000003 throughout; JVM `mapv`/`assoc`/`subvec` oracle,
+  6/6 on Rosetta and on gad, both arms. First standings, ABBA x12, KA
+  per sample, load 0.64: **amu 2203 ns/call, gcc twin 1141 ns/call --
+  ratio 1.93** (rsd 0.039/0.032). The contrast with strings' 10.77 is
+  itself the finding: vector callbacks validate handles in O(1), so
+  what remains is almost purely the ~170 indirect callback crossings
+  per call against gcc's direct array code. The lawful levers, in
+  order: `reduce`-desugared walks (T4.5's zero-charge loop, an amu-arm
+  change measurable same-run against today's binary), then inlining
+  bounds-checked element loads into guest code -- the same
+  guest-visible-plane lever family strings needs. Registered as the
+  second INCUBATING domain, same promotion bar (rust/zig/go/swift
+  twins, both ISAs). Documents (`document-*` ops) stay queued as the
+  next Wave-2 slice.
+
 ## Standing honesty constraints
 
 Every number above is one host on one day; the falsification numbers are
