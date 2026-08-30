@@ -31,7 +31,7 @@ static const char *const native_artifact_abi =
 /* The benchmark context now carries the pair/string slots of the real v3
  * contract (ABI offsets asserted below, mirroring tools/kexe_loader.c), so
  * string-bearing kernels can run under the same harness as arithmetic ones.
- * kgraph/vector/cap slots stay NULL: a guest touching them crashes loudly
+ * kgraph/cap slots stay NULL: a guest touching them crashes loudly
  * instead of being silently mis-measured. This remains benchmark
  * scaffolding, not an alternate production loader or safety boundary. */
 struct kexe_context_v3 {
@@ -77,8 +77,11 @@ _Static_assert(offsetof(struct kexe_context_v3, string_code_point_at) == 144, "s
 
 #define BENCH_PAIR_CAPACITY 4096u
 #define BENCH_STRING_POOL_BYTES 65536u
+#define BENCH_VECTOR_CAPACITY 4096u
+#define BENCH_VECTOR_ITEM_CAPACITY 65536u
 
 struct kexe_pair_v1 { int64_t first; int64_t second; };
+struct kexe_vector_v1 { uint64_t offset; uint64_t length; };
 
 struct bench_shared {
   struct kexe_context_v3 context;
@@ -86,6 +89,10 @@ struct bench_shared {
   struct kexe_pair_v1 pairs[BENCH_PAIR_CAPACITY];
   uint64_t string_pool_used;
   uint8_t string_pool[BENCH_STRING_POOL_BYTES];
+  uint64_t vector_used;
+  struct kexe_vector_v1 vectors[BENCH_VECTOR_CAPACITY];
+  uint64_t vector_item_used;
+  int64_t vector_items[BENCH_VECTOR_ITEM_CAPACITY];
 };
 
 /* pair/string machinery ported from tools/kexe_loader.c: same trapping
@@ -278,6 +285,125 @@ static int64_t checked_string_code_point_at(struct kexe_context_v3 *context,
   return 0;
 }
 
+/* vector-i64/f64 machinery ported from tools/kexe_loader.c: handles are
+ * immutable values over a shared arena; conj appends in place only when the
+ * slice already ends at the arena top, and copies otherwise. */
+
+static struct kexe_vector_v1 *resolve_vector(struct bench_shared *shared,
+                                             int64_t handle) {
+  if (handle <= 0 || (uint64_t)handle > shared->vector_used) return NULL;
+  return &shared->vectors[(uint64_t)handle - 1];
+}
+
+static int64_t intern_vector(struct bench_shared *shared,
+                             uint64_t offset, uint64_t length) {
+  if (shared->vector_used >= BENCH_VECTOR_CAPACITY) return 0;
+  uint64_t index = shared->vector_used++;
+  shared->vectors[index].offset = offset;
+  shared->vectors[index].length = length;
+  return (int64_t)(index + 1);
+}
+
+static int64_t checked_vector_new_empty(struct kexe_context_v3 *context) {
+  struct bench_shared *shared = (struct bench_shared *)context;
+  if (context == NULL || context->version != 3) { raise(SIGILL); return 0; }
+  int64_t handle = intern_vector(shared, shared->vector_item_used, 0);
+  if (handle == 0) { raise(SIGILL); return 0; }
+  return handle;
+}
+
+static int64_t checked_vector_count(struct kexe_context_v3 *context,
+                                    int64_t handle) {
+  struct bench_shared *shared = (struct bench_shared *)context;
+  if (context == NULL || context->version != 3) { raise(SIGILL); return 0; }
+  struct kexe_vector_v1 *vector = resolve_vector(shared, handle);
+  if (vector == NULL) { raise(SIGILL); return 0; }
+  return (int64_t)vector->length;
+}
+
+static int64_t checked_vector_at(struct kexe_context_v3 *context,
+                                 int64_t handle, int64_t index) {
+  struct bench_shared *shared = (struct bench_shared *)context;
+  if (context == NULL || context->version != 3) { raise(SIGILL); return 0; }
+  struct kexe_vector_v1 *vector = resolve_vector(shared, handle);
+  if (vector == NULL || index < 0 || (uint64_t)index >= vector->length) {
+    raise(SIGILL);
+    return 0;
+  }
+  return shared->vector_items[vector->offset + (uint64_t)index];
+}
+
+static int64_t checked_vector_conj(struct kexe_context_v3 *context,
+                                   int64_t handle, int64_t item) {
+  struct bench_shared *shared = (struct bench_shared *)context;
+  if (context == NULL || context->version != 3) { raise(SIGILL); return 0; }
+  struct kexe_vector_v1 *vector = resolve_vector(shared, handle);
+  if (vector == NULL) { raise(SIGILL); return 0; }
+  uint64_t offset = vector->offset;
+  uint64_t length = vector->length;
+  if (length >= 16384u) { raise(SIGILL); return 0; }
+  if (offset + length != shared->vector_item_used) {
+    if (shared->vector_item_used + length + 1u > BENCH_VECTOR_ITEM_CAPACITY) {
+      raise(SIGILL);
+      return 0;
+    }
+    uint64_t destination = shared->vector_item_used;
+    memmove(&shared->vector_items[destination], &shared->vector_items[offset],
+            (size_t)length * sizeof(int64_t));
+    shared->vector_item_used += length;
+    offset = destination;
+  }
+  if (shared->vector_item_used >= BENCH_VECTOR_ITEM_CAPACITY) {
+    raise(SIGILL);
+    return 0;
+  }
+  shared->vector_items[shared->vector_item_used++] = item;
+  int64_t result = intern_vector(shared, offset, length + 1u);
+  if (result == 0) { raise(SIGILL); return 0; }
+  return result;
+}
+
+static int64_t checked_vector_assoc(struct kexe_context_v3 *context,
+                                    int64_t handle, int64_t index,
+                                    int64_t item) {
+  struct bench_shared *shared = (struct bench_shared *)context;
+  if (context == NULL || context->version != 3) { raise(SIGILL); return 0; }
+  struct kexe_vector_v1 *vector = resolve_vector(shared, handle);
+  if (vector == NULL || index < 0 || (uint64_t)index >= vector->length) {
+    raise(SIGILL);
+    return 0;
+  }
+  uint64_t offset = vector->offset;
+  uint64_t length = vector->length;
+  if (shared->vector_item_used + length > BENCH_VECTOR_ITEM_CAPACITY) {
+    raise(SIGILL);
+    return 0;
+  }
+  uint64_t destination = shared->vector_item_used;
+  memmove(&shared->vector_items[destination], &shared->vector_items[offset],
+          (size_t)length * sizeof(int64_t));
+  shared->vector_items[destination + (uint64_t)index] = item;
+  shared->vector_item_used += length;
+  int64_t result = intern_vector(shared, destination, length);
+  if (result == 0) { raise(SIGILL); return 0; }
+  return result;
+}
+
+static int64_t checked_vector_drop(struct kexe_context_v3 *context,
+                                   int64_t handle, int64_t count) {
+  struct bench_shared *shared = (struct bench_shared *)context;
+  if (context == NULL || context->version != 3) { raise(SIGILL); return 0; }
+  struct kexe_vector_v1 *vector = resolve_vector(shared, handle);
+  if (vector == NULL || count < 0 || (uint64_t)count > vector->length) {
+    raise(SIGILL);
+    return 0;
+  }
+  int64_t result = intern_vector(shared, vector->offset + (uint64_t)count,
+                                 vector->length - (uint64_t)count);
+  if (result == 0) { raise(SIGILL); return 0; }
+  return result;
+}
+
 static void fail(const char *operation) {
   perror(operation);
   exit(1);
@@ -401,6 +527,12 @@ int main(int argc, char **argv) {
   context->string_concat = checked_string_concat;
   context->string_substring = checked_string_substring;
   context->string_code_point_at = checked_string_code_point_at;
+  context->vector_new_empty = checked_vector_new_empty;
+  context->vector_conj = checked_vector_conj;
+  context->vector_count = checked_vector_count;
+  context->vector_at = checked_vector_at;
+  context->vector_assoc = checked_vector_assoc;
+  context->vector_drop = checked_vector_drop;
   /* String literals resolve into the mapped artifact itself: raw extraction
    * appends literal data past the last function's code, so the whole file is
    * the code+literal-data region. dylib twins are plain C and never receive
@@ -415,6 +547,8 @@ int main(int argc, char **argv) {
     context->fuel = fuel;
     shared.pair_used = 0;
     shared.string_pool_used = 0;
+    shared.vector_used = 0;
+    shared.vector_item_used = 0;
     if (aarch64) {
       result = fn(input, 0, 0, 0, 0, 0, 0, (int64_t)(uintptr_t)context);
     } else {
@@ -426,6 +560,8 @@ int main(int argc, char **argv) {
     context->fuel = fuel;
     shared.pair_used = 0;
     shared.string_pool_used = 0;
+    shared.vector_used = 0;
+    shared.vector_item_used = 0;
     if (aarch64) {
       result = fn(input, 0, 0, 0, 0, 0, 0, (int64_t)(uintptr_t)context);
     } else {
