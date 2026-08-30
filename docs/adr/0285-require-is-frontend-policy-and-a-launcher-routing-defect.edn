@@ -1,0 +1,89 @@
+{:adr/id 285
+ :adr/status :accepted
+ :decision :require-is-frontend-policy-the-wall-was-launcher-routing
+ :pins {:kotoba-sema "8676e3d60a8372667b3b427b01d214f7684d443f"}
+ :contract
+ {:scope :multi-file-guest-projects
+  :ns-require-clause {:single-module-frontend :refused
+                      :project-linker :admitted
+                      :change :none}
+  :check-project-mode #{:source-path :module-lock}
+  :launcher-routing {:before :nbb-entrypoint-drops-project-flags
+                     :after :project-flags-force-jvm-entrypoint
+                     :fronts #{"bin/amu" "bin/kotoba"}}
+  :diagnostic {:from :kotoba.error/namespace-export-clause
+               :to :kotoba.error/namespace-require-needs-project
+               :layer :reporting-boundary-only
+               :ex-data-code :unchanged
+               :not-refined #{:import :use :malformed-export}}
+  :admission-widened false}
+
+ :measurement
+ {:host {:model "MacBookPro18,4" :os "macOS" :provenance :measured}
+  :clock :wall
+  :load1 {:range "10-370" :note "concurrent sessions; timings bound termination, not cost"}
+  :sources {:repo "kotoba-lang/org-iso-h264"
+            :entry "src/h264/sps.kotoba"
+            :requires #{"h264.expgolomb" "h264.rbsp"}
+            :modules 3}
+  :before
+  [{:command "amu check sps.kotoba" :exit 65
+    :code :kotoba.error/namespace-export-clause}
+   {:command "amu compile sps.kotoba --source-path src --unpinned --target wasm32"
+    :exit 65 :code :kotoba.error/namespace-export-clause
+    :finding :project-flags-silently-dropped-by-nbb-routing}
+   {:command "clojure -M:run compile sps.kotoba --source-path src --unpinned --target wasm32"
+    :exit 0 :artifact-bytes 6561 :wall-s 10.3 :load1 27.21
+    :finding :same-arguments-jvm-entrypoint-succeeds}]
+  :after
+  [{:command "amu check sps.kotoba --source-path src" :exit 0 :wall-s 8.6 :load1 11.2
+    :exports ["parse-baseline" "parse-ebsp-baseline"] :effects #{}
+    :modules ["h264.expgolomb" "h264.rbsp" "h264.sps"]}
+   {:command "amu module-lock sps.kotoba --source-path src --blocks <dir>"
+    :exit 0 :wall-s 6.8 :load1 10.4 :modules 3
+    :lock-cid "bafkreigxpr7hfgw34doohso5intzzzrbcujz5hfw5cfmujlxjcdk4nh54y"}
+   {:command "amu check --module-lock <lock> --blocks <dir>" :exit 0 :wall-s 7.4 :load1 10.4}
+   {:command "amu compile --module-lock <lock> --blocks <dir> --target wasm32"
+    :exit 0 :wall-s 8.2 :load1 10.4 :inputs :module-lock}
+   {:command "amu compile sps.kotoba --source-path src --unpinned --target wasm32"
+    :exit 0 :wall-s 7.5 :load1 12.9 :artifact-bytes 6561 :inputs :unpinned-source-path}
+   {:command "amu compile sps.kotoba --source-path src --unpinned --target js"
+    :exit 0 :wall-s 9.2 :load1 26.0}
+   {:command "kotoba -M check sps.kotoba --source-path src" :exit 0}]
+  :control
+  [{:source "(ns t (:import [java.lang String]) (:export [f]))"
+    :exit 65 :code :kotoba.error/namespace-export-clause
+    :finding :refinement-does-not-reach-forbidden-clauses}]
+  :incidental-defect
+  {:what :check-source-refused-its-own-linker-output
+   :symptom "symbol uses the reserved __kotoba_ prefix at sps.kotoba:4:113"
+   :fix :check-source-reads-admit-linked-synthetics-from-opts
+   :reached-only-via :check-project}}
+
+ :authority
+ {:consulted "kotoba-lang/lang/guest-grammar.edn"
+  :ns-require-clause :absent
+  :require-entry :forbidden-heads-call-head-not-ns-clause
+  :hint "forbidden: guests cannot require; use host imports + package-lock (CID packages on L3)"
+  :reading :authority-is-silent-on-the-clause
+  :frontend-policy-source "kotoba-sema frontend.cljc namespace-parts: Import/require clauses remain fail-closed"}
+
+ :not-done
+ {:frontend-admits-require {:reason :no-lowering-behind-it-in-that-path
+                            :rule "ADR 0284 -- a gate admitting what nothing can lower is the defect"}
+  :nbb-project-linker {:reason :would-duplicate-project-files-in-a-second-language
+                       :consequence :project-mode-requires-a-jdk}
+  :check-requires-unpinned {:reason :check-emits-no-artifact-so-no-provenance-claim-to-falsify
+                            :alternative "check --module-lock"}
+  :schemas-in-project-mode {:reason :collision-rule-undecided :status :still-refused}}
+
+ :limits
+ {:decoder-correctness :not-measured
+  :bitstream-decoded false
+  :artifacts-executed false
+  :graph {:modules 3 :edges 2 :max-project-modules 256 :max-project-depth 64
+          :diamond false :cycle false :cross-root false}
+  :targets-compiled-from-project #{:wasm32 :js}
+  :targets-not-run #{:component :native :evm}
+  :no-jdk-path :not-measured
+  :timings :wall-clock-on-a-contended-host}}

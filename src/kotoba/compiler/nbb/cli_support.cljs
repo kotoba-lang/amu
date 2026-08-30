@@ -137,12 +137,20 @@
 
 (defn- error-report [error source-name]
   (let [data (ex-data error)
-        phase (or (:phase data) :internal)]
-    {:format :kotoba.cli-error/v1
-     :ok false
-     :error phase
-     :diagnostic (diagnostic/from-error error source-name)
-     :message (if (= phase :internal) "internal compiler error" (.-message error))}))
+        phase (or (:phase data) :internal)
+        ;; Same refinement the JVM CLI applies (kotoba.compiler.diagnostic).
+        ;; This path never links a project, so a module rejected here for
+        ;; declaring `(:require ...)` is exactly the caller who needs to be
+        ;; told which invocation does.
+        refined (when (not= phase :internal) (diagnostic/refine error))]
+    (cond-> {:format :kotoba.cli-error/v1
+             :ok false
+             :error phase
+             :diagnostic (diagnostic/from-error error source-name)
+             :message (if (= phase :internal)
+                        "internal compiler error"
+                        (diagnostic/refined-message error (.-message error)))}
+      (:details refined) (assoc :details (:details refined)))))
 
 (defn- invoke* [run! args reset?]
   (when reset? (reset-timing!))

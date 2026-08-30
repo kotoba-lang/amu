@@ -73,20 +73,29 @@
     ;; the remedy for `:compile/unpinned-inputs` -- a stable problem keyword and
     ;; three fixed command strings. Nothing here is derived from user input, so
     ;; admitting them does not widen what an error can leak, which is what this
-    ;; allowlist is for.
-    :problem :pin :then :override})
+    ;; allowlist is for. `:check` joined them for the same reason on 2026-08-30:
+    ;; a module rejected for declaring `(:require ...)` needs to be told which
+    ;; invocation links its project.
+    :problem :pin :then :override :check})
 
 (defn error-report
   ([error] (error-report error nil))
   ([error source-name]
   (let [data (ex-data error)
         phase (or (:phase data) :internal)
-        details (select-keys data detail-keys)]
+        details (merge (select-keys data detail-keys)
+                       ;; A refusal that names no working path is a wall
+                       ;; (same reason `:compile/unpinned-inputs` carries its
+                       ;; remedy above). Fixed strings, so redaction holds.
+                       (when (not= phase :internal)
+                         (:details (diagnostic/refine error))))]
     (cond-> {:format :kotoba.cli-error/v1
              :ok false
              :error phase
              :diagnostic (diagnostic/from-error error source-name)
-             :message (if (= phase :internal) "internal compiler error" (ex-message error))}
+             :message (if (= phase :internal)
+                        "internal compiler error"
+                        (diagnostic/refined-message error (ex-message error)))}
       (seq details) (assoc :details details)))))
 
 (defn exit-code [phase]
@@ -265,26 +274,57 @@
     "check"
     ;; T9.2 / T3.4: frontend admit + optional --profile pure-product.
     ;; Default human pretty errors; --json for machine envelope.
-    (let [input (kotoba-source! (second args))
+    ;;
+    ;; A module that declares `(:require ...)` is not checkable one file at a
+    ;; time -- and before 2026-08-30 there was no other way to ask: `compile`
+    ;; took `--source-path` / `--module-lock`, `check` took neither, so a
+    ;; multi-file guest could be built but never checked, and the entry module
+    ;; came back reported as a malformed `:export`. `check` now links the same
+    ;; closed graph `compile` links, through the same `project/link-source`,
+    ;; and admits the linked source. Nothing new is admitted: this is strictly
+    ;; the frontend half of a compile that already works.
+    ;;
+    ;; `--source-path` needs no `--unpinned` here, unlike `compile`. That flag
+    ;; exists (ADR-2608580000 D5) because a path-resolved ARTIFACT cannot say
+    ;; which inputs produced it. `check` writes no artifact, so there is no
+    ;; provenance record for an unpinned read to falsify.
+    (let [input (when-not (option args "--module-lock") (kotoba-source! (second args)))
+          source-roots (options args "--source-path")
+          module-lock-path (option args "--module-lock")
           policy-path (option args "--policy")
           profile-s (option args "--profile")
           json? (some #{"--json"} args)
           policy (cond-> (if policy-path (bounded-edn/read-file policy-path) {})
                    profile-s (assoc :language-profile (keyword profile-s)))
-          source (bounded-edn/read-text-file input)]
+          locked (when module-lock-path
+                   (module-lock/load-locked-graph
+                    module-lock-path
+                    (or (option args "--blocks")
+                        (throw (ex-info "--module-lock requires --blocks <dir>"
+                                        {:phase :usage})))))
+          graph (cond
+                  locked {:sources (:sources locked) :root (:root locked)}
+                  (seq source-roots) (project-files/load-closed-graph input source-roots)
+                  :else nil)
+          modules (when graph (vec (sort (map str (keys (:sources graph))))))]
       (try
-        (let [result (compiler/check-source source policy)]
+        (let [result (if graph
+                       (compiler/check-project (:sources graph) (:root graph) policy)
+                       (compiler/check-source (bounded-edn/read-text-file input) policy))]
           (if json?
-            (println (pr-str {:ok true
-                              :format :kotoba.check/v1
-                              :language-profile (:language-profile result)
-                              :effects (get-in result [:hir :effects])
-                              :exports (get-in result [:hir :exports])
-                              :admission (:admission result)}))
-            (do (println "ok"
-                         (str "profile=" (or (some-> (:language-profile result) name) "default"))
-                         (str "effects=" (pr-str (get-in result [:hir :effects] #{})))
-                         (str "exports=" (pr-str (get-in result [:hir :exports] []))))
+            (println (pr-str (cond-> {:ok true
+                                      :format :kotoba.check/v1
+                                      :language-profile (:language-profile result)
+                                      :effects (get-in result [:hir :effects])
+                                      :exports (get-in result [:hir :exports])
+                                      :admission (:admission result)}
+                               graph (assoc :root (str (:root graph)) :modules modules))))
+            (do (apply println
+                       (cond-> ["ok"
+                                (str "profile=" (or (some-> (:language-profile result) name) "default"))
+                                (str "effects=" (pr-str (get-in result [:hir :effects] #{})))
+                                (str "exports=" (pr-str (get-in result [:hir :exports] [])))]
+                         graph (conj (str "modules=" (pr-str modules)))))
                 (flush))))
         (catch Exception e
           (if json?

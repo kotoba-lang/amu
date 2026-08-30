@@ -10,6 +10,11 @@ const path = require("node:path");
 const usage = [
   "usage: amu compile <file.kotoba|file.cljk|file.cljc> --target <target> [--policy policy.edn] --output <file>",
   "       amu check <file.kotoba|file.cljk|file.cljc> [--policy policy.edn]",
+  "  multi-file (a module declaring (:require [ns :as alias])):",
+  "       amu module-lock <entry> --source-path <dir> --blocks <dir>",
+  "       amu compile --module-lock <lock> --blocks <dir> --target <target> --output <file>",
+  "       amu check <entry> --source-path <dir>            # links, emits nothing",
+  "       amu compile <entry> --source-path <dir> --unpinned --target <target> --output <file>",
   "       amu worker [--target wasm32|x86_64|aarch64]",
   "       amu inspect <file.kotoba|file.cljk|file.cljc> [--output interface.edn]",
   "       amu test <file.kotoba|file.cljk|file.cljc> [--json]",
@@ -48,8 +53,22 @@ function option(args, flag) {
   return index < 0 ? undefined : args[index + 1];
 }
 
+// The nbb Wasm/native path compiles exactly the one file it is handed: there
+// is no project linker under `kotoba.compiler.nbb.*`. Routing a project-mode
+// invocation there does not fail loudly -- it silently drops --source-path /
+// --module-lock, admits the entry module alone, and reports that module's
+// `(:require ...)` clause as a malformed `:export`. Measured 2026-08-30 on
+// org-iso-h264/src/h264/sps.kotoba: `compile --source-path <src> --unpinned
+// --target wasm32` exited 65 with :kotoba.error/namespace-export-clause
+// through this launcher, and exited 0 with a 6561-byte .wasm when the same
+// arguments went to the JVM entry point that owns the linker.
+function projectMode(args) {
+  return args.includes("--source-path") || args.includes("--module-lock");
+}
+
 function nbbNativeEligible(args) {
   const command = args[0];
+  if (projectMode(args)) return false;
   return command === "check" || command === "extract-native"
     || command === "verify-output-set" || command === "sign-output-set"
     || (command === "worker" && nbbNativeTargets.has(option(args, "--target")))

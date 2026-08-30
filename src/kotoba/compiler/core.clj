@@ -281,7 +281,13 @@
   "Frontend admit + optional language-profile (T9.2).
 
   `policy` may include `:language-profile :pure-product` (or pass via
-  3-arity `opts`). Returns {:hir :admission :language-profile}."
+  3-arity `opts`). Returns {:hir :admission :language-profile}.
+
+  `opts` may carry `:admit-linked-synthetics?`, the same seam `compile-source`
+  reads from its build metadata: `project/link-source` renames cross-module
+  symbols with a reserved `__kotoba_` prefix that authored source may not use,
+  so a linked source is only admissible with the flag the linker's own output
+  earns. Callers pass it by going through `check-project`, never by hand."
   ([source] (check-source source {} {}))
   ([source policy] (check-source source policy {}))
   ([source policy opts]
@@ -289,7 +295,9 @@
                               (:language-profile policy))
          admission-policy (capability-policy policy)
          analyze-opts (cond-> {}
-                        language-profile (assoc :language-profile language-profile))
+                        language-profile (assoc :language-profile language-profile)
+                        (:admit-linked-synthetics? opts)
+                        (assoc :admit-linked-synthetics? true))
          hir (sema/analyze source analyze-opts)]
      (try
        {:hir hir
@@ -738,6 +746,25 @@
     (cache/admit! source target policy build-metadata cache-entry trust now)
     {:hit? false
      :result (compile-source source target policy build-metadata)}))
+
+(defn check-project
+  "Frontend admit for a closed namespace-symbol -> source-text map: exactly the
+  link `compile-project` performs, stopped before lowering.
+
+  This exists because a module that declares `(:require [ns :as alias])` cannot
+  be checked one file at a time, and until 2026-08-30 there was no other way to
+  ask -- `compile` took `--source-path`/`--module-lock` and `check` took
+  neither, so a multi-file guest could be built but never checked. Admits
+  nothing `compile-project` does not already admit through the same
+  `project/link-source`; it emits no artifact, so it makes no provenance claim.
+
+  Returns `check-source`'s map plus `:root` and `:module-order`."
+  ([sources root] (check-project sources root {}))
+  ([sources root policy]
+   (let [linked (project/link-source sources root)]
+     (assoc (check-source (:source linked) policy {:admit-linked-synthetics? true})
+            :root root
+            :module-order (:module-order linked)))))
 
 (defn compile-project
   "Compile a closed namespace-symbol -> source-text map without ambient lookup.
