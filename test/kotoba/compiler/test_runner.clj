@@ -31,6 +31,7 @@
             [kotoba.compiler.recursive-tree-value-test]
             [kotoba.compiler.recursive-tree-update-test]
             [kotoba.compiler.plan-test]
+            [kotoba.compiler.logic-manifest-test]
             [kotoba.compiler.string-operation-test]
             [kotoba.compiler.ci7-elaboration-parity-test]
             [kotoba.compiler.w1-elaboration-test]
@@ -194,6 +195,7 @@
    'kotoba.compiler.recursive-tree-value-test
    'kotoba.compiler.recursive-tree-update-test
    'kotoba.compiler.plan-test
+   'kotoba.compiler.logic-manifest-test
    'kotoba.compiler.string-operation-test
    'kotoba.compiler.ci7-elaboration-parity-test
    'kotoba.compiler.w1-elaboration-test
