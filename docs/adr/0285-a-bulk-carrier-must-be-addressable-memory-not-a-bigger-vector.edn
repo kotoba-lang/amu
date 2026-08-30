@@ -1,0 +1,58 @@
+{:adr/id 285
+ :adr/status :accepted
+ :decision :bulk-carrier-is-addressable-memory-and-the-ceilings-do-not-move
+ :pins {:kotoba-wasm "a739f37" :kotoba-kir "099c627" :kotoba-native "3dab370"}
+ :contract {:carrier :slice-distinct-from-vector-i64
+            :element-access :load-not-crossing
+            :capacity-ceilings :unchanged
+            :capacity-derivation :largest-per-block-working-set
+            :frame-scale-data-in-guest :refused-by-measurement
+            :implementation :not-built
+            :reflect-stage-verdict :not-separated}
+ :measurement {:host {:model "MacBookPro18,4" :cpu "Apple M1 Max" :cores 10
+                      :provenance :measured
+                      :source "sysctl -n hw.model hw.ncpu hw.cachelinesize hw.pagesize hw.l1dcachesize hw.l2cachesize"}
+               :claim-grade false
+               :load1 {:counts :irrelevant :wasm-timings "12-23" :c-timings "12-15"
+                       :hand-written-arms "506-554"
+                       :disqualified-run {:load1 "394-613" :symptom :three-times-inflation-and-negative-slopes}}
+               :crossings-per-element {:self-recursion {:touch 2.032 :carry-only 1.032 :no-vector 0}
+                                       :loop-recur {:touch 1.032 :carry-only 0.016 :no-vector 0}
+                                       :assert-ref-calls {:self-recursion 4227 :loop-recur 129}
+                                       :elements 4096}
+               :ns-per-element {:wasm-vector-at 1033.53 :wasm-carry-only 488.22 :wasm-loop-only 6.72
+                                :c-plain 0.3800 :c-inlined-arena-access 0.7268 :c-indirect-call 1.6174
+                                :hand-loop-only 1.576 :hand-loop-plus-bounds-and-load 1.872}
+               :ratios-vs-c-plain {:wasm-vector-at 2720.0 :wasm-carry-only 1284.9 :wasm-loop-only 17.7
+                                   :c-inlined-arena-access 1.9 :c-indirect-call 4.3}
+               :perfgate {:policy :default
+                          :qualified [[:c-inlined-vs-indirect 0.5506]
+                                      [:c-plain-vs-inlined 0.4772]
+                                      [:wasm-carry-only-vs-touch 0.5276]]
+                          :refused [[:wasm-loop-only-vs-touch :too-noisy 0.1162]
+                                    [:wasm-loop-only-vs-carry-only :too-noisy 0.1162]
+                                    [:hand-written-slice-at :not-separated-from-noise
+                                     {:gap 0.296 :summed-stdev 0.489}]]}
+               :oracle {:interpreter :kotoba.kir/execute
+                        :agreement {:touch-outer-1 133120 :base-outer-1 129024 :noref-outer-1 129024
+                                    :touch-outer-2 266240 :base-outer-2 258048 :noref-outer-2 258048}
+                        :hand-written-module {:no-load-arm 129024 :load-arm 133120}
+                        :both-loop-spellings-agree true}}
+ :derivation {:per-block-working-set {:deblocking-window 576 :mc-reference-patch 441
+                                      :luma-macroblock 256 :residual-block 16}
+              :chosen-bound 4096
+              :existing-vector-item-limit 16384
+              :headroom-factor 4
+              :rejected {:frame-working-set 230400
+                         :reason :architecture-refused-by-measurement}}
+ :corroboration {:adr-0284 {:native-vector-at-over-c 21.1 :native-loop-only-over-c 11.2}
+                 :utsushi {:artifact "bench/decode-cost-attribution" :merge "42bd12d"
+                           :residual-addition-vs-host-arrays 1.9
+                           :with-call-removed 1.0
+                           :eligible-fraction-upper-bound 0.51}}
+ :ranking [[1 :front-door-blockers :gates-every-other-claim]
+           [2 :loop-recur-vs-self-recursion :counted-two-times-no-compiler-change]
+           [3 :the-carrier :needs-a-quiet-window-first]]
+ :not-done {:carrier-implementation :would-be-a-gate-without-lowering
+            :assert-ref-prologue-removal :wants-its-own-iteration}
+ :observed-not-pursued {:scratch-bump-global :not-restored-on-trap}}
