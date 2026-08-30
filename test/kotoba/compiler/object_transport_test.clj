@@ -33,7 +33,7 @@
      (reify HttpHandler
        (handle [_ ex]
          (let [raw (slurp (.getRequestBody ex))
-               req (json/read-str raw :key-fn keyword)
+               req (json/read-str raw {:key-fn keyword})
                op (keyword (:operation req))
                binding (:binding req)]
            (try

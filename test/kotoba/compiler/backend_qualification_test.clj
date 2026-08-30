@@ -36,9 +36,24 @@
     (is (= :reject-v1 (get-in contract [:types :recursive-schema :disposition])))
     (is (= :not-required (get-in contract [:limits :wit-bounded-list-feature])))))
 
+(def component-model-runtime-inventory-only-ids
+  "The datagram/link-frame/can-frame kits (ids 27-29, added by ececbcd) are
+  RUNTIME inventory only: their hosts are this repository's own test-tree
+  reference-runtime providers (test/kotoba/compiler/support/*-provider.clj),
+  not components, and no WIT world imports them -- kotoba-component's
+  component-model-v1.edn closes at id 24 (measured 2026-08-30). They belong
+  to the provider-conformance manifest and the capability registry, so the
+  qualification gate and provider-conformance-test count them; this
+  component-model inventory test does not."
+  #{27 28 29})
+
 (deftest component-capability-inventory-and-provider-authority-are-closed
   (let [contract (read-resource "kotoba/lang/component-model-v1.edn")
-        expected (into (->> (:kits manifest) (mapcat :capabilities) set)
+        expected (into (->> (:kits manifest)
+                            (mapcat :capabilities)
+                            (remove #(contains? component-model-runtime-inventory-only-ids
+                                                (:id %)))
+                            set)
                        [{:id 1 :name :identity/sign}
                         {:id 2 :name :identity/verify}
                         {:id 3 :name :hash/sha256}
@@ -81,7 +96,7 @@
       (is (= backend (:backend receipt)))
       (is (= (get qualification/execution-surfaces backend)
              (:execution-surface receipt)))
-      (is (= 10 (:capability-count receipt)))
+      (is (= 13 (:capability-count receipt)))
       (is (= :passed (:manifest-gate receipt)))
       (if (= :cljs backend)
         (do (is (= :qualified (:execution-status receipt)))
