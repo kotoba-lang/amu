@@ -40,8 +40,8 @@ that domain is unreachable for anyone, and recording that is a result.
 | H-B | batch-fixture noise (rsd 0.47 vs policy 0.10) is scheduler migration of a long single-call region across P/E cores; pin the timed region's QoS | open | performance.md already documents an E-core migration incident |
 | H-E | call-crossing values go to stack slots instead of the callee-saved registers the prologue already spends: `kernel_call` saves x19–x26 yet stores/loads all eight call results through the stack (8 STR + 11 LDR + 3 constant-mov round-trips) | **hand-falsified — iteration 20: +6.66% separated (5.19 → 4.84 ns), fuel contract intact, past clang's 5.03**. Compiler work: assign call-crossing values to the preserved tier in the scan | performance.md's conservative-path tables; iteration-20 fixture retained in `levi:~/amu-evidence/` |
 | H-F | protect domains where amu already leads (kernel_wide +7% vs rustc diagnostic) with byte-accurate regressions | standing | #637–#639 pattern |
-| H-Y1 | wasm32 pays a host crossing per iteration merely to CARRY a reference-typed parameter (`typed-assert-ref` prologue), and self-recursion pays it per iteration where `loop`/`recur` pays it once | **counted — iteration 50** (ADR 0285) | 4096 element visits: self-recursion 4227 `assert-ref`, `loop`/`recur` 129; 2.032 vs 1.032 crossings/element, identical KIR-verified return values |
-| H-Y2 | a pixel-domain carrier must be guest-addressable memory indexed by the guest's own load; making the existing carrier merely bigger does not reach a usable cost | **open — reflect stage measured NULL, iteration 50**; needs a quiet window before compiler work | hand-encoded `slice-at` vs identical loop: gap 0.296 ns against summed stdev 0.489, `:not-separated-from-noise` at load1 506-554 |
+| H-Y1 | wasm32 pays a host crossing per iteration merely to CARRY a reference-typed parameter (`typed-assert-ref` prologue), and self-recursion pays it per iteration where `loop`/`recur` pays it once | **counted — iteration 51** (ADR 0285) | 4096 element visits: self-recursion 4227 `assert-ref`, `loop`/`recur` 129; 2.032 vs 1.032 crossings/element, identical KIR-verified return values |
+| H-Y2 | a pixel-domain carrier must be guest-addressable memory indexed by the guest's own load; making the existing carrier merely bigger does not reach a usable cost | **open — reflect stage measured NULL, iteration 51**; needs a quiet window before compiler work | hand-encoded `slice-at` vs identical loop: gap 0.296 ns against summed stdev 0.489, `:not-separated-from-noise` at load1 506-554 |
 
 ## Iteration log
 
@@ -796,7 +796,30 @@ as before.
   failed until another session freed space -- and the m2 cache had to be
   re-fetched; neither affected any measurement, which all ran on gad.)
 
-- **50 (2026-08-30, a seventh domain is opened, and its carrier is gated
+- **50 (2026-08-30, the call crossing arrives on x86 -- measured, not
+  assumed)**: kotoba-mir #43 (3aea0ac, landed upstream by a parallel
+  session) gives x86 a deliberately narrow slice of the preserved-tier
+  direct reentry AArch64 has had since iteration 38: parameters of a
+  self-tail function with no runtime/capability callback are admitted to
+  the preserved tier and the recur edge stays inside one frame. The pin
+  advance had merged into kotoba-native main underneath iteration 49's
+  emission change without either session running the combined suite --
+  this iteration closed that hole first (218/2477 green on the merged
+  tip). Emitted shape: kernel_loop_call's worker now parks its
+  parameters in RBX/R12, sets the frame up once, and the binary is 58
+  bytes smaller; results AND per-iteration fuel (n+2) match the manifest
+  on both the old and new binaries, on Rosetta and on gad. The lever,
+  measured the way iteration 49's metrology rule demands (same-run
+  candidate-vs-candidate ABBA x16, KA on every sample, clock-ramped):
+  **new/old 0.8743 -- a 12.6% move, rsd 0.0061/0.055 -- clear of the 5%
+  bar and far clear of the spread.** Day standings vs gcc: 1.4885
+  (from 1.82 on iteration 45's table; that leg ran with rsd 0.30 as the
+  box loaded up, so it is a standings indication, not a calibrated
+  ratio). Landed: west kotoba-mir pin advanced to 3aea0ac; the
+  kotoba-native and amu tips already carried it. loop_call remains the
+  widest x86 gap on the table -- the residue is now the per-iteration
+  guest-call ABI around the body call, not the crossing.
+- **51 (2026-08-30, a seventh domain is opened, and its carrier is gated
   on crossings rather than capacity)**: new research line, stated as its own
   goal because the existing one is six arithmetic kernels against five
   comparators: *a pixel-domain workload executes with no JVM at run time, at a
