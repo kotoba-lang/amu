@@ -156,6 +156,12 @@ Three runs, agreeing:
 | full suite, 152 namespaces | this branch | 1159 tests, 8481 assertions, 15 failures, 9 errors |
 | 12 namespaces (every namespace containing one of those 24, plus `cli`/`core`/`project`/`check-cli`) | this branch | 139 tests, 604 assertions, 15 failures, 9 errors |
 | the same 12 namespaces | `kotoba-lang/main` at `5a2d188`, unmodified | 135 tests, 579 assertions, **the identical 15 failures and 9 errors** |
+| the same 12 namespaces, after merging `kotoba-lang/main` at `3f4d7cf` | this branch | 140 tests, 584 assertions, **the identical 15 failures and 9 errors** |
+
+The last row was run after merging `main` forward, so the comparison covers
+what actually lands. Assertion counts move between rows for reasons unrelated
+to this change — `main` moved five commits during the work — so the identity
+comparison, not the count, is the claim.
 
 The failure *identities* were compared, not just the counts: the sorted
 `FAIL in` / `ERROR in` lines are byte-identical across all three. So every
