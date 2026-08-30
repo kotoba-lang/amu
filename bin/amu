@@ -8,8 +8,8 @@ const os = require("node:os");
 const path = require("node:path");
 
 const usage = [
-  "usage: amu compile <file.kotoba|file.cljk|file.cljc> --target <target> [--policy policy.edn] --output <file>",
-  "       amu check <file.kotoba|file.cljk|file.cljc> [--policy policy.edn]",
+  "usage: amu compile <file.kotoba|file.cljk|file.cljc> --target <target> [--policy policy.edn] [--jvm-free] --output <file>",
+  "       amu check <file.kotoba|file.cljk|file.cljc> [--policy policy.edn] [--jvm-free]",
   "  multi-file (a module declaring (:require [ns :as alias])):",
   "       amu module-lock <entry> --source-path <dir> --blocks <dir>",
   "       amu compile --module-lock <lock> --blocks <dir> --target <target> --output <file>",
@@ -208,7 +208,7 @@ function publishPrivateCache(cacheFile, value) {
   }
 }
 
-function securityClasspath(root, nbbCli) {
+function securityClasspath(root, nbbCli, jvmFree) {
   const depsEdn = path.join(root, "deps.edn");
   const gitlibsRoot = path.resolve(process.env.GITLIBS || path.join(os.homedir(), ".gitlibs"));
   const allowedRoots = [gitlibsRoot, root, path.join(os.homedir(), ".m2", "repository")];
@@ -227,6 +227,12 @@ function securityClasspath(root, nbbCli) {
   const lockAttempt = resolveWithLock(root, nbbCli);
   let entries = lockAttempt.entries;
   if (!entries) {
+    if (jvmFree) {
+      fail("error: --jvm-free requires dependency resolution from deps-lock.edn; "
+        + lockAttempt.reason
+        + "\n  JVM fallback is forbidden. Regenerate the lock with: "
+        + "nbb scripts/lock-classpath.cljs", 70);
+    }
     console.error("amu: could not resolve the dependency closure from deps-lock.edn: "
       + lockAttempt.reason
       + "\n  falling back to `clojure -Spath` (needs a JDK)."
@@ -248,17 +254,22 @@ function securityClasspath(root, nbbCli) {
   return resolved;
 }
 
-function runCompiler(root, args) {
+function runCompiler(root, args, jvmFree) {
   if (nbbNativeEligible(args)) {
     const nbbCli = path.join(root, "node_modules", "nbb", "cli.js");
     const classpath = [path.join(root, "src"), path.join(root, "resources"),
-      securityClasspath(root, nbbCli)].join(path.delimiter);
+      securityClasspath(root, nbbCli, jvmFree)].join(path.delimiter);
     const result = spawn(process.execPath,
       ["--stack-size=4096", nbbCli, "--classpath", classpath, nbbEntrypoint(root, args), ...args], {
         cwd: root, stdio: "inherit",
       });
     if (result.error) fail("error: unable to start the NBB compiler runtime", 70);
     process.exit(result.status ?? 70);
+  }
+
+  if (jvmFree) {
+    fail("error: this Amu command or target has no JVM-free implementation; "
+      + "refusing to invoke the Clojure/JVM compatibility path", 64);
   }
 
   const alias = ["measure-runtime", "run"].includes(args[0]) ? "-M:native-run" : "-M:run";
@@ -273,7 +284,9 @@ if (rawArgs.length === 0 || ["-h", "--help"].includes(rawArgs[0])) {
   process.exit(0);
 }
 const boundaries = new Set(["-M", "-M:compiler", "-M:compile"]);
-const args = boundaries.has(rawArgs[0]) ? rawArgs.slice(1) : rawArgs;
+const unwrappedArgs = boundaries.has(rawArgs[0]) ? rawArgs.slice(1) : rawArgs;
+const jvmFree = unwrappedArgs.includes("--jvm-free");
+const args = unwrappedArgs.filter((arg) => arg !== "--jvm-free");
 if (args.length === 0) fail("error: missing Amu compiler command", 2);
 const root = path.resolve(path.dirname(fs.realpathSync(__filename)), "..");
-runCompiler(root, args);
+runCompiler(root, args, jvmFree);
