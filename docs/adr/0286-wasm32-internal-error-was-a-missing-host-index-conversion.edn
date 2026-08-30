@@ -1,4 +1,4 @@
-{:adr/id 285
+{:adr/id 286
  :adr/status :accepted
  :decision :structural-positions-need-a-host-index-conversion
  :classification :defect-not-policy-refusal
@@ -39,7 +39,17 @@
              :wasm-observed {:main 327 :head 3 :tail 2.5 :swapped-tail 9.25}
              :agree? true}
  :suites {:kotoba-wasm {:tests 119 :assertions 525 :failures 0}
-          :amu-nbb-wasm32 {:cases 42 :failed 0}}
+          :amu-nbb-wasm32 {:cases 42 :failed 0}
+          :amu-wasm-typed-test {:tests 28 :assertions 79 :failures 0 :errors 0}
+          :amu-full-jvm {:status :did-not-finish
+                         :reason "host load average 449-498 from other sessions"
+                         :observed-red "kotoba.compiler.isa-execution-test"}}
+ :pre-existing-red {:namespace "kotoba.compiler.isa-execution-test"
+                    :control "same classpath, kotoba-wasm at old pin a739f379"
+                    :result {:tests 25 :assertions 760 :fail 15 :error 0}
+                    :symptom "{:status :trap :exit 120 :fuel {:initial 512 :remaining 512}}"
+                    :caused-by-this-change? false
+                    :cause :not-investigated}
  :not-done {:other-host-index-operands :read-but-not-tested
             :cljs-runner-in-kotoba-wasm :not-added
             :h264-module-execution :not-run

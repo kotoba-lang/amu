@@ -82,7 +82,7 @@
    ;; ADR 0019: bounded decimal parsing and its conditional typed import.
    {:name "decimal-f64" :source "test/nbb/fixtures/decimal-f64.kotoba" :target "wasm32-browser" :policy nil}
    {:name "decimal-f64x3" :source "test/nbb/fixtures/decimal-f64x3.kotoba" :target "wasm32-browser" :policy nil}
-   ;; ADR 0285: a structural position inside a heterogeneous value arrives as
+   ;; ADR 0286: a structural position inside a heterogeneous value arrives as
    ;; a KIR i64 literal, which is a Long on the JVM and a JavaScript BigInt
    ;; here. The Wasm emitter fed it straight to `nth`, so THIS runtime threw
    ;; `Index argument to nth must be a number` -- reported by the CLI as

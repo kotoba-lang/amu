@@ -675,7 +675,7 @@
       (finally
         (.delete tmp)))))
 
-;; ADR 0285. A structural position inside a heterogeneous value arrives as a
+;; ADR 0286. A structural position inside a heterogeneous value arrives as a
 ;; KIR i64 literal. The Wasm emitter used it directly as a host `nth` index,
 ;; which is a no-op cast here and a throw on cljs, so `bin/amu compile
 ;; --target wasm32` answered `:kotoba/internal-error` for every source using

@@ -1,4 +1,4 @@
-# ADR 0285: The wasm32 internal error was a missing host-index conversion, not a refusal
+# ADR 0286: The wasm32 internal error was a missing host-index conversion, not a refusal
 
 - Status: accepted
 - Date: 2026-08-30
@@ -94,8 +94,31 @@ runtimes. `kotoba.compiler.wasm-typed-test/heterogeneous-positions-agree-with-th
 pins that comparison here.
 
 **Suites.** `kotoba-wasm` after its fix: 119 tests / 525 assertions / 0
-failures. This repository's nbb wasm32 suite: 42 cases / 0 failed. The
-original repro now compiles through `bin/amu` end to end: exit 0, 3,030 bytes.
+failures. This repository's nbb wasm32 suite: 42 cases / 0 failed.
+`kotoba.compiler.wasm-typed-test`, the JVM namespace this change touches:
+28 tests / 79 assertions / 0 failures / 0 errors. The original repro now
+compiles through `bin/amu` end to end: exit 0, 3,030 bytes.
+
+**The full JVM suite did not finish, and the one red namespace observed in it
+is pre-existing.** This host sat at load average 449-498 throughout (other
+sessions), with one document-render test alone taking 134 s wall for 3.8 s of
+CPU. Two attempts at `clojure -M:test` (152 namespaces) were still in the
+first ten namespaces after an hour. What ran showed
+`kotoba.compiler.isa-execution-test` failing. That namespace is native
+(`kexe`) and is not on the Wasm backend's path at all, but "not on the path"
+is an argument, not a measurement, so it was measured: the same namespace was
+run against the **unmodified** dependency closure -- identical classpath with
+`kotoba-wasm` at the old pin `a739f379` -- and failed **15 assertions of 760
+across 6 tests** (`the-verified-surface-executes-identically-on-every-available-isa`,
+`a-call-and-a-back-edge-in-one-function-execute`,
+`a-call-and-a-back-edge-across-a-spill-execute`,
+`a-value-spilled-in-one-branch-arm-survives-into-the-other`,
+`multi-phi-consumer-plan-and-real-process-have-zero-frame-traffic`,
+`scalar-direct-call-preserves-a-live-caller-value`,
+`source-record-sroa-has-zero-frame-traffic-and-runs-both-edges`), every one
+of them `{:status :trap :exit 120 :fuel {:initial 512 :remaining 512}}` -- a
+trap before any fuel was consumed. It is red without this change. **No claim
+is made here about why it is red**, only that this change is not the cause.
 
 **One unrelated defect observed and not fixed.** `-o` is not a recognised flag
 on either path -- `--output` is the only spelling, and no `"-o"` appears
@@ -147,6 +170,9 @@ case used either operation -- which is why nothing here noticed.
   a host that can only call `main`, but 327 is one value: a permutation that
   happened to sum the same would not be caught. The per-export comparisons are
   what actually distinguish the positions.
+- The full JVM suite is unmeasured, not green. Only
+  `kotoba.compiler.wasm-typed-test` was run to completion here, plus the
+  `isa-execution-test` control at the old pin.
 - The `:phase :wasm-typed-lowering` refusals are covered by JVM assertions in
   `kotoba-wasm` only. They have never been exercised on cljs, because no
   admitted source reaches them -- the frontend does not emit a non-literal or
