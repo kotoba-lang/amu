@@ -58,7 +58,7 @@
     (when-not (zero? (:exit result))
       (throw (ex-info "Kotoba target test process failed"
                       {:phase :test :target target :stderr (:err result)})))
-    (json/read-str (:out result) :key-fn keyword)))
+    (json/read-str (:out result) {:key-fn keyword})))
 
 (defn- encoded-text [text]
   (.encodeToString (java.util.Base64/getEncoder)

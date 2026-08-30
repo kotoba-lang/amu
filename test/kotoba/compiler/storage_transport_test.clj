@@ -153,7 +153,7 @@
   [store]
   (fn [exchange]
     (let [seen-headers (.getRequestHeaders exchange)
-          parsed (json/read-str (slurp (.getRequestBody exchange)) :key-fn keyword)
+          parsed (json/read-str (slurp (.getRequestBody exchange)) {:key-fn keyword})
           store-key [(:namespace parsed) (:key parsed)]
           reply
           (case (:operation parsed)

@@ -63,6 +63,19 @@
     (str ns "/" (name value))
     (name value)))
 
+(defn keywordify-values
+  "Pre-write transform standing in for clojure.data.json's :value-fn: the
+  json.data-json shim takes only [x] / [x opts-map], and json.core writes
+  keyword VALUES as bare names (\":\" x\" -> \"x\"), so keyword values are
+  stringified with their namespace first, exactly like json-keyword did."
+  [x]
+  (cond
+    (map? x) (update-vals x keywordify-values)
+    (vector? x) (mapv keywordify-values x)
+    (sequential? x) (mapv keywordify-values x)
+    (keyword? x) (json-keyword x)
+    :else x))
+
 (def manifest-path "bench/runtime-comparison/multidomain-suite.json")
 (def sha256-pattern #"[0-9a-f]{64}")
 (def required-polyglot-comparators ["rust" "clang-c11" "zig" "go" "swift"])
@@ -86,7 +99,7 @@
   (let [bytes (java.nio.file.Files/readAllBytes (.toPath (io/file manifest-path)))]
     {:bytes bytes
      :sha256 (sha256-bytes bytes)
-     :value (json/read-str (String. bytes StandardCharsets/UTF_8) :key-fn keyword)}))
+     :value (json/read-str (String. bytes StandardCharsets/UTF_8) {:key-fn keyword})}))
 
 (defn target-without-id [target]
   (select-keys target [:os :architecture :isa :execution]))
@@ -560,13 +573,12 @@
       (let [path (second args)]
         (require! (and (string? path) (seq path))
                   "--validate-manifest-v2 requires a manifest path" {})
-        (validate-manifest-v2! (json/read-str (slurp path) :key-fn keyword))
+        (validate-manifest-v2! (json/read-str (slurp path) {:key-fn keyword}))
         (println (json/write-str {:format "amu.bounded-fastest-manifest-validation/v2"
                                  :valid? true})))
-      (let [report (json/read-str (slurp input) :key-fn keyword)]
+      (let [report (json/read-str (slurp input) {:key-fn keyword})]
         (if (= "kotoba.runtime-multidomain-report/v2" (:format report))
-          (println (json/write-str (qualify-multidomain report)
-                                  :value-fn (fn [_ v] (if (keyword? v) (json-keyword v) v))))
+          (println (json/write-str (keywordify-values (qualify-multidomain report))))
           (let [fixture (:fixture report)
                 target (:target report)
                 plan-id (keyword "postalloc-scheduling" (str fixture "." target))
@@ -578,7 +590,7 @@
                                    (get-in report [:compile :baseline :samples]))
                           (qualify-arm :compile :compile :compileWallMilliseconds :compile :ms plan-id source report))]
             (println (json/write-str
-                      {:format "amu.perfgate-qualification/v1"
+                      (keywordify-values {:format "amu.perfgate-qualification/v1"
                        :fixture fixture
                        :target target
                        :plan-id plan-id
@@ -588,5 +600,4 @@
                        :compile compile
                        :any-qualified? (and (host-load-qualified? report)
                                             (or (:qualified? (:verdict runtime))
-                                                (boolean (and compile (:qualified? (:verdict compile))))))}
-                      :value-fn (fn [_ v] (if (keyword? v) (json-keyword v) v))))))))))
+                                                (boolean (and compile (:qualified? (:verdict compile))))))})))))))))

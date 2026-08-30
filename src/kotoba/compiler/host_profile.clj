@@ -232,7 +232,11 @@
      :vars (normalize-vars (or (:vars profile) {})))))
 
 (defn- json-text [value]
-  (json/write-str value :escape-slash false))
+  ;; `json.data-json/write-str` takes ONE options map (see the note at the
+  ;; :javascript/v1 branch in cli.clj). json.core never escapes `/`, so the
+  ;; old `:escape-slash false` is a no-op here -- an empty options map keeps
+  ;; the exact same output.
+  (json/write-str value {}))
 
 (defn- js-config [profile]
   (let [http (:http profile)

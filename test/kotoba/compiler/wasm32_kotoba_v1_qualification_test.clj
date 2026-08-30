@@ -56,7 +56,8 @@
 (def application-kit-files
   ["clock-v1.edn" "http-v1.edn" "http-ingress-v1.edn" "storage-v1.edn"
    "log-v1.edn" "llm-v1.edn" "ui-v1.edn" "state-v1.edn" "dataspace-v1.edn"
-   "stream-ingress-v1.edn"])
+   "stream-ingress-v1.edn" "datagram-v1.edn" "link-frame-v1.edn"
+   "can-frame-v1.edn"])
 
 (def kits-outside-this-vocabulary
   "stream-object-v1 answers a different question -- :wit-03, :ownership-check,
@@ -167,10 +168,30 @@
             "the surface must cover exactly the capabilities the kit declares")))))
 
 (deftest kits-without-a-typed-wasm-aot-claim-carry-no-surface-block
-  "The two must move together, so a leftover block cannot outlive its claim."
+  "The two must move together, so a leftover block cannot outlive its claim.
+  Exception: datagram/link-frame/can-frame (ids 27-29, ececbcd) carry a
+  SELF-DECLARED :wasm-aot-surface with an honest :status -- either
+  :untested-in-this-session or :not-reachable-from-a-browser-or-wasi-sandbox-
+  without-a-native-host-process -- while the :wasm-aot key itself stays
+  :pending. A self-declared block gets seam-name and target verification
+  (so it cannot silently drift into a claim it did not measure), not the
+  closed-coverage demand a :wasm-aot :implemented claim earns."
   (doseq [filename (remove typed-kit-abi-wasm-aot-kits application-kit-files)]
     (testing filename
-      (is (nil? (:wasm-aot-surface (load-kit filename)))))))
+      (let [kit (load-kit filename)
+            surface (:wasm-aot-surface kit)
+            self-declared (contains?
+                           #{:untested-in-this-session
+                             :not-reachable-from-a-browser-or-wasi-sandbox-without-a-native-host-process}
+                           (:status surface))]
+        (if self-declared
+          (do (is (= ["kotoba:typed" "cap-call"] (:import surface))
+                  "a self-declared surface still names the typed kit ABI seam")
+              (is (= :wasm32-browser-kotoba-v1 (:target surface))
+                  "and the browser wasm32 target")
+              (is (= :pending (:wasm-aot (:qualification kit)))
+                  "a self-declared surface is not a :wasm-aot claim"))
+          (is (nil? surface)))))))
 
 (def native-aot-kits
   "Kits proved on a native target by a named process test:

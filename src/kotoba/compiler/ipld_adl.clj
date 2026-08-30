@@ -181,7 +181,7 @@
                              (str max-output-bytes) (str max-memory-pages)
                              (str timeout-ms) (str module-size))
             receipt (try
-                      (json/read-str (:out result) :key-fn keyword)
+                      (json/read-str (:out result) {:key-fn keyword})
                       (catch Exception _ nil))]
         (when-not (and (zero? (:exit result))
                        (= #{:format :status :engineId :engineVersion :fuelUsed
