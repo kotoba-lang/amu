@@ -9,6 +9,10 @@
 (def usage
   ["usage: kotoba -M compile <file.kotoba|file.cljk|file.cljc> --target wasm32-browser|wasm32-wasi|x86_64-linux|x86_64-macos|x86_64-windows|aarch64-linux|aarch64-macos|aarch64-windows|aarch64-android|aarch64-ios|js|js-browser|evm [--policy policy.edn] --output <file>"
    "       kotoba -M check <file.kotoba|file.cljk|file.cljc> [--policy policy.edn]"
+   "  multi-file (a module declaring (:require [ns :as alias])):"
+   "       kotoba -M module-lock <entry> --source-path <dir> --blocks <dir>"
+   "       kotoba -M compile --module-lock <lock> --blocks <dir> --target <target> --output <file>"
+   "       kotoba -M check <entry> --source-path <dir>  # links the closed graph, emits nothing"
    "       kotoba -M worker [--target wasm32|x86_64|aarch64]  # bounded NDJSON on stdin/stdout"
    "       kotoba -M inspect <file.kotoba|file.cljk|file.cljc> [--output interface.edn]"
    "       kotoba -M test <file.kotoba|file.cljk|file.cljc> [--json]  # runs every test-* export on each qualified target"
@@ -54,11 +58,20 @@
 
 (defn- option [args flag] (second (drop-while #(not= flag %) args)))
 
+(defn- project-mode? [sub-args]
+  ;; Neither nbb entrypoint links a project: they compile the one file handed
+  ;; to them. Routing a project-mode invocation there drops --source-path /
+  ;; --module-lock silently and reports the entry module's `(:require ...)`
+  ;; clause as a malformed `:export`. Same guard as bin/amu's `projectMode`.
+  (boolean (some #{"--source-path" "--module-lock"} sub-args)))
+
 (defn- nbb-native-eligible? [sub-args]
   (let [cmd (first sub-args)]
-    (or (contains? #{"check" "extract-native"} cmd)
-        (and (= cmd "worker") (contains? nbb-native-targets (option sub-args "--target")))
-        (and (= cmd "compile") (contains? nbb-native-targets (option sub-args "--target"))))))
+    (and
+     (not (project-mode? sub-args))
+     (or (contains? #{"check" "extract-native"} cmd)
+         (and (= cmd "worker") (contains? nbb-native-targets (option sub-args "--target")))
+         (and (= cmd "compile") (contains? nbb-native-targets (option sub-args "--target")))))))
 
 (defn- nbb-entrypoint [root sub-args]
   (let [command (first sub-args)
