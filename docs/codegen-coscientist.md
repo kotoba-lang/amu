@@ -922,6 +922,39 @@ as before.
   rather than appended to, per this file's own rule that the table is what gets
   corrected.
 
+- **53 (2026-08-30, the native export-table rejection is bisected to one pin,
+  and it is not the obvious one)**: `amu extract-native` rejects both H.264
+  native kernels on main with `:kotoba/verification-failed "native export table
+  rejected"`. Bisected to **`kotoba-mir` `3f88f71` -> `3aea0ac`**, reached
+  through `kotoba-native` `3162d868` which this repo pins. Rolling back **that
+  one coordinate alone**, leaving `kotoba-native` at `3162d868`, makes both
+  kernels extract cleanly (`group-idx` offset 332 len 48; `idct4-1d` offset 116
+  len 220). ADR 0288.
+  **The obvious suspect is cleared.** ADR 0284's `:vector-i64` boundary spelling
+  (`a8f8cfe`) is the one commit in the 55-commit range that changes which types
+  cross a native function boundary, and it tests **GOOD** -- as do `85f8c07`,
+  `3dab370`, `da3b56b` and iteration 49's `16572dc`. The BAD point is `3162d868`,
+  a merge **whose two parents are both GOOD**, which is what localised it: its
+  diff against `16572dc` is a `kotoba-mir` pin advance plus one line choosing
+  `:x86-64/jmp-rel32` over `:aarch64/b-imm26` on x86, and the kernels are
+  aarch64, so only the pin can reach them.
+  Ruled out first, because two defects landed today with exactly that shape
+  (ADR 0286, ADR 0287): this is **not** an nbb/JVM divergence -- `./bin/amu` and
+  `clojure -M:run` reject the same artifact identically. Also not iterations 51
+  or 52, which touched `docs/` and `bench/bulk-carrier/`, and `bench/bulk-carrier`
+  is on no classpath (`:paths ["src" "resources"]`, and the only bench path in any
+  alias is `bench/runtime-comparison/cljs`).
+  **Mechanism, inferred not measured**: the verifier re-emits from the artifact's
+  own stored KIR and compares export tables, and verify-time emission is
+  deterministic, so compile-time emission must consume state the stored KIR does
+  not carry. Layout does move (`group-idx` sits at 332 rolled back, 416 at the
+  pre-range pin). Demonstrating it means dumping and diffing both export tables;
+  that was not done. **Not fixed**: `kotoba-mir` is outside this repo and the
+  available mitigation -- reverting the pin -- would undo the x86 preserved-tier
+  direct reentry that landed with it. Recorded for the owner rather than taken.
+  This is ADR 0230's producer/verifier independence doing its job: the verifier
+  refused to trust a table it could not rebuild.
+
 ## Standing honesty constraints
 
 Every number above is one host on one day; the falsification numbers are
