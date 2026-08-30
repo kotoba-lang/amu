@@ -1,0 +1,39 @@
+{:adr/id 288
+ :adr/status :accepted
+ :decision :native-export-table-regression-is-a-kotoba-mir-pin
+ :culprit {:repo "kotoba-lang/kotoba-mir"
+           :from "3f88f71bea809d39e3dd77841127644b2af1b5f8"
+           :to "3aea0acc1e897f6b45befc769bbb8dda294577d1"
+           :reached-through {:repo "kotoba-lang/kotoba-native" :sha "3162d86879a30eaa4e85abc5d3a5a159bc5a8a0b"}}
+ :cleared {:adr-0284-vector-i64-boundary-fix "a8f8cfe3a74d5ca1a952255d2c8a753d95e84a03"
+           :iterations-51-and-52 :docs-and-off-classpath-bench-only
+           :nbb-jvm-divergence :both-entrypoints-reject-identically}
+ :reproduction {:repo "kotoba-lang/org-iso-h264" :main "2736765"
+                :files ["test/h264/kotoba-compiler-repro/native-export-table-rejected.kotoba"
+                        "src/h264/transform.kotoba"]
+                :compile {:command ["compile" "--target" "aarch64"] :exit 0}
+                :extract {:command ["extract-native" "--symbol" "group-idx"] :exit 65
+                          :message "native export table rejected"}}
+ :failure-sets {:current-main #{:quant-copy :transform}
+                :kotoba-mir-rolled-back #{}}
+ :bisect [["100fb7a84070b90444d5d8035770c34ef563c7c1" :good :pre-range]
+          ["85f8c07e3b9135f079845b254ecd200505d6ffb5" :good]
+          ["a8f8cfe3a74d5ca1a952255d2c8a753d95e84a03" :good :adr-0284-vector-i64-fix]
+          ["3dab370ed6232e47b55ce4559272ba2e738a95da" :good]
+          ["da3b56b7bbbdcd47da97452bc2a399eabc255c89" :good]
+          ["16572dc14d91a879af065d952ccba8c6d1fd5879" :good :iteration-49]
+          ["3162d86879a30eaa4e85abc5d3a5a159bc5a8a0b" :bad :merge-of-two-good-parents]]
+ :isolation {:method :override-kotoba-mir-alone-leaving-kotoba-native-at-3162d868
+             :result :both-kernels-extract-cleanly
+             :offsets {:group-idx {:offset 332 :length 48 :arity 2}
+                       :idct4-1d {:offset 116 :length 220 :arity 5}}}
+ :mechanism {:measured :compile-time-and-verify-time-emission-disagree
+             :verify-time-emission :deterministic
+             :inferred :compile-time-consumes-state-the-stored-kir-does-not-carry
+             :not-demonstrated :export-table-diff-was-not-dumped}
+ :not-done {:fix :kotoba-mir-is-outside-this-repo
+            :pin-revert :would-undo-x86-preserved-tier-direct-reentry
+            :decision :owner}
+ :limits {:targets #{:aarch64} :kernels 2 :hosts 1
+          :bisect-points 7 :range-size 55
+          :mechanism :inferred-not-measured}}
