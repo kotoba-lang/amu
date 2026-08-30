@@ -748,7 +748,11 @@ as before.
   of being elided after the fact. Measured on gad, ABBA x12, KA
   asserted on every timed sample, rsd 0.066: deep **500 -> 407
   instructions/call, ratio 1.387 -> 1.2325** -- an 11% move, clear of
-  the 5% bar and of the spread. Wide holds 0.9664; narrow is
+  the 5% bar and of the spread. [Iteration 49 caveat: the 1.387 came from
+  iteration 47's run and the 1.2325 from this one -- a cross-RUN ratio
+  comparison, which 49's metrology finding shows can drift by 10+ points
+  day over day. The count evidence (500 -> 407) stands; the time delta
+  should be read as directional, not as a calibrated 11%.] Wide holds 0.9664; narrow is
   byte-identical. Landed through the full chain: kotoba-native #93
   (3dab370e, suite 217/2464) and amu #703 (5a2d188e, closure + lock,
   suite at baseline with the same 17 pre-existing red names), west
@@ -759,10 +763,45 @@ as before.
   IPC down to 5.02 on the new arm. Both are count levers; the next
   iteration starts there.
 
+- **49 (2026-08-30, the redundant move falls, and the metrology tightens)**:
+  two count levers in `x86-quotient-constant` (kotoba-native #95,
+  3162d868), both at the residue iteration 48 named. First: a numerator
+  outside RAX/RDX survives `imul r10`, so the add-numerator correction is
+  one `lea r11,[rdx+left]` -- gcc's own fusion -- and the staging
+  `mov r11,left` disappears (the subtract correction reads `left`
+  directly). Second: the `mov rdx,r11` feeding the sign correction is
+  needed only on the add branch -- the subtract branch computes IN rdx
+  and the plain branch copies FROM rdx, so on those paths the copy was a
+  round trip of the same value. Correctness: suite 218/2476 with a
+  both-directions discriminator; KA 72/72 on gad (six domains, six
+  inputs, both arms); a new 5-point negative-numerator fixture matches
+  the JVM `quot` oracle across all three magic branches (the bench
+  runner rejects negative n, so the fixture computes `(- 0 n)` inside
+  the kernel). Count: deep **407 -> 379.2 instructions/call** (hardware
+  counter), **-48 bytes**. Time: same-run ABBA vs the iteration-48
+  binaries -- deep **-4.5%** (x16, rsd 0.051, clock-ramped), narrow
+  -0.9%, wide -1.7% -- directional and consistent, but under the 5% bar,
+  so this lands as a count lever and **no speed claim advances**.
+  The metrology finding is the bigger result: today the *iteration-48*
+  deep binary measured **1.365 vs gcc** in-run (rsd 0.054) where
+  iteration 48's run had said 1.2325 -- byte-similar binaries, ten
+  points apart, both runs internally clean. **Within-run A/B ratios are
+  only comparable inside one run; day-over-day, even ratios drift.** A
+  lever's verdict must come from a same-run candidate-vs-candidate A/B;
+  vs-gcc ratios are standings for that day's table, not calibrated
+  constants. (Also for the record: this iteration began by finding the
+  workstation's root volume at 0 bytes free -- every shell command
+  failed until another session freed space -- and the m2 cache had to be
+  re-fetched; neither affected any measurement, which all ran on gad.)
+
 ## Standing honesty constraints
 
 Every number above is one host on one day; the falsification numbers are
 diagnostic (levi's ambient load ~1.8, below the 7.5 sanity limit but not a
-claim-grade quiet window). No entry in this file is a claim; claims are
+claim-grade quiet window). Cross-run absolutes on gad are not comparable
+(observed 2x), and iteration 49 showed within-run vs-gcc RATIOS drift
+day over day as well (1.2325 vs 1.365 for byte-similar binaries) -- a
+lever's verdict requires a same-run candidate-vs-candidate A/B. No entry
+in this file is a claim; claims are
 sealed artifacts that only the gated pipeline emits. If an iteration's
 measured verdict contradicts this table, the table is what gets edited.
