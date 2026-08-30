@@ -41,7 +41,7 @@ that domain is unreachable for anyone, and recording that is a result.
 | H-E | call-crossing values go to stack slots instead of the callee-saved registers the prologue already spends: `kernel_call` saves x19–x26 yet stores/loads all eight call results through the stack (8 STR + 11 LDR + 3 constant-mov round-trips) | **hand-falsified — iteration 20: +6.66% separated (5.19 → 4.84 ns), fuel contract intact, past clang's 5.03**. Compiler work: assign call-crossing values to the preserved tier in the scan | performance.md's conservative-path tables; iteration-20 fixture retained in `levi:~/amu-evidence/` |
 | H-F | protect domains where amu already leads (kernel_wide +7% vs rustc diagnostic) with byte-accurate regressions | standing | #637–#639 pattern |
 | H-Y1 | wasm32 pays a host crossing per iteration merely to CARRY a reference-typed parameter (`typed-assert-ref` prologue), and self-recursion pays it per iteration where `loop`/`recur` pays it once | **counted — iteration 51** (ADR 0285); widening the lowering is the open follow-up | 4096 element visits: self-recursion 4227 `assert-ref`, `loop`/`recur` 129; 2.032 vs 1.032 crossings/element, identical KIR-verified return values. Also a capability limit: self-recursion traps `RangeError: Maximum call stack size exceeded` between 6,128 and 12,128 iterations, `loop`/`recur` is O(1) depth. `structured-loop-body?` is already general — only `loop-helper-name?` gates it — but the prologue fuel charge must move into the loop to keep one iteration at one unit |
-| H-Y2 | a pixel-domain carrier must be guest-addressable memory indexed by the guest's own load; making the existing carrier merely bigger does not reach a usable cost | **open — reflect stage measured NULL, iteration 51**; needs a quiet window before compiler work | hand-encoded `slice-at` vs identical loop: gap 0.296 ns against summed stdev 0.489, `:not-separated-from-noise` at load1 506-554 |
+| H-Y2 | a pixel-domain carrier must be guest-addressable memory indexed by the guest's own load; making the existing carrier merely bigger does not reach a usable cost | **reflect stage re-run on a quiet host, iteration 52 — still `:not-separated-from-noise`, and that is the result** | on levi at load1 1.78-2.14, n=15: today's `vector-at` marginal 381.72 ns/element (separated by 4 orders of magnitude), proposed load marginal 0.0314 ns/element (gap 0.031 vs summed stdev 0.044, refused). The cost to remove is measured; the cost to add is below the floor |
 
 ## Iteration log
 
@@ -883,6 +883,44 @@ as before.
   put, which is the cheapest available way not to repeat ADR 0284's
   co-movement defect. The carrier is designed and measured, **not implemented**:
   landing a subset would be a gate admitting what nothing can lower.
+
+- **52 (2026-08-30, a quiet host corrects iteration 51, and the loop turns out
+  not to be the wall)**: iteration 51's timings were taken on this workstation
+  at load1 12-700 and one of them was wrong in a way that changed a conclusion.
+  Re-measured on **levi** (`Mac16,10`, M4) at **load1 1.78-2.14**, arms
+  interleaved in one process, per-arm outer counts sized so every sample
+  integrates >=3 ms of CPU, explicit warmup for every arm before any sampling,
+  values checked against `kotoba.kir/execute` first, n=15.
+  **The correction.** Iteration 51 read the wasm loop alone at 17.7x C and
+  concluded that removing the crossing was "necessary and not sufficient". That
+  17.7x was the **self-recursion spelling on a loaded host**, not a property of
+  the backend. On a quiet host the same loop written `loop`/`recur` costs
+  **0.2371 ns/element** (rsd 0.010) against the C `-O3` arm's 0.2390 -- about one
+  cycle per element. For wasm32 the loop is not the wall; the carrier is nearly
+  all of it. ADR 0284's 11.2x is a **native** number and stands, so the two
+  backends differ here and iteration 51 generalised one to the other.
+  **Do not read 0.99x as parity**: the C arm carries a compiler barrier on its
+  accumulator (without it clang folds the loop to 0.0013 ns) and the wasm arm has
+  no equivalent, so C is serialised on a dependency chain wasm may not be. The
+  claims that need no cross-language comparison are the qualified ones:
+  `loop`/`recur` over self-recursion, **48.6%** on the touch arm, **98.4%** on
+  carry-only, **95.3%** on the loop arm, `reasons []` on all three; plus C
+  inlined over indirect 54.3% and C plain over inlined 51.6%.
+  **The two numbers the carrier design rests on**, same run: today's `vector-at`
+  in its best spelling has a marginal cost of **381.72 ns/element** (387.43 -
+  5.70), separated from noise by four orders of magnitude; the proposed
+  bounds-tested `i64.load` has a marginal cost of **0.0314 ns/element** and
+  perfgate **refuses** it, `:not-separated-from-noise`, gap 0.031 against summed
+  stdev 0.044 -- both arms individually clean (rsd 0.050, 0.057), simply closer
+  together than their own spread. That refusal is the result: the design does not
+  need a ratio between those two, it needs the fact that one costs 381.72 ns and
+  is comfortably separated while the other cannot be told apart from doing
+  nothing. **Not measured**: a composite 0.237 + 0.031 = 0.27 ns/element for a
+  `loop`/`recur` guest reading through a load is inferred by adding a marginal
+  from one loop shape to a cost from another; building it is what would measure
+  it. Samples landed at `bench/bulk-carrier/samples-levi-*.edn`. ADR 0285 edited
+  rather than appended to, per this file's own rule that the table is what gets
+  corrected.
 
 ## Standing honesty constraints
 

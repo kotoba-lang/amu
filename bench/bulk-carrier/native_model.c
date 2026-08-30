@@ -56,6 +56,16 @@ int main(int argc, char **argv) {
   S.vector_used = 1;
   int64_t *a = S.vector_items;
 
+  /* Explicit warmup for every arm before any sampling. On this hardware the
+   * first rounds read 5x the settled value while the CPU clock ramps; warming
+   * all three arms first removes that symmetrically instead of discarding
+   * samples after the fact, which would be choosing which data to believe. */
+  { int64_t acc = 0;
+    for (long k = 0; k < reps; k++) for (int64_t i = 0; i < N; i++) { acc += a[i]; BARRIER(acc); }
+    for (long k = 0; k < reps; k++) for (int64_t i = 0; i < N; i++) { acc += checked_vector_at(&S, 0, i); BARRIER(acc); }
+    for (long k = 0; k < reps; k++) for (int64_t i = 0; i < N; i++) { acc += indirect(&S, 0, i); BARRIER(acc); }
+    sink = acc; }
+
   printf("{\"plain\":[");
   double *sp=malloc(rounds*sizeof(double)),*si=malloc(rounds*sizeof(double)),*sx=malloc(rounds*sizeof(double));
   for (int r = 0; r < rounds; r++) {
