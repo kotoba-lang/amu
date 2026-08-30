@@ -1015,6 +1015,28 @@ as before.
   twins, both ISAs). Documents (`document-*` ops) stay queued as the
   next Wave-2 slice.
 
+- **53 (2026-08-30, two refusals, both measured)**: first, the documents
+  half of Wave-2 is genuinely gated -- unlike vectors, whose gate turned
+  out to be six NULL harness slots. A `document-vector`/`document-count`
+  kernel is rejected by the x86_64 target with the compiler's own words
+  (`:kotoba/target-rejected` -- "typed values currently require ... the
+  qualified native one-word string/record/variant/option/result slice")
+  while the SAME source compiles `:ok true` on wasm32: the language is
+  complete, the native backend's qualified slice does not include
+  structural document values (native `:document` is only a pair over
+  canonical EDN bytes, with `document-edn-read`/`-print` as identity
+  casts). The domain opens when document-get/-count/-vector-at gain
+  native admission -- filed, not worked around. Second, iteration 52's
+  first lever is REFUTED: rewriting the collections walks as `reduce`
+  (KAs and per-input fuel byte-identical, binary 66 bytes smaller)
+  measured **28.6% SLOWER** than the hand recursion, same-run ABBA x12
+  (2831 vs 2201 ns, rsd 0.027/0.018, load 0.49). T4.5's "zero-charge"
+  is a fuel property, not a speed property: on native the reducing
+  closure pays a call per element that the self-recursive walk does
+  not. The fixture stays as written; the variant is not landed. What
+  survives as the collections lever queue: guest-visible bounds-checked
+  element loads -- the same plane strings needs for its 10.77.
+
 ## Standing honesty constraints
 
 Every number above is one host on one day; the falsification numbers are
