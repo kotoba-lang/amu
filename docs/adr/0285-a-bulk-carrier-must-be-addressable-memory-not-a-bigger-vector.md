@@ -158,6 +158,32 @@ bare parity, even at the 3.678 ns loop-only figure with the call removed
 entirely. **Frame-scale pixel data in the guest is refused by measurement from
 two directions, and capacity is not what refuses it.**
 
+**Where that attribution and this ADR disagree, stated rather than glossed.**
+Its measurements and mine agree on everything that was measured: the carrier
+must be guest-addressable memory the guest indexes with its own loads, capacity
+alone does not clear the bar, plane assembly (~21% of decode CPU) **must stay in
+the host**, and a per-block guest is not viable at today's per-element cost. We
+differ on the *recommendation*. It concludes "capacity still has to move", with
+the target a decoder's minimum working set — the current picture plus one
+reference picture, 230,400 samples at 320x240, against a present cap of 16,384
+(7.1%). This ADR concludes the cap should not move.
+
+The reason is that document's own eligibility table. Every operation it marks
+**eligible** already fits: residual addition (~49%) at 256 samples in and 256
+out is, in its words, "64x under the cap"; the inverse transforms (~2%) are 16.
+The operation that needs 230,400 is plane assembly — the one the same table
+marks "must stay in the host". A reference *picture* is only a guest working set
+if motion compensation reads it in the guest; under a per-block split the guest
+derives the motion vector and the host extracts the (16+5)² = 441-sample patch,
+so the guest addresses the patch and never the picture.
+
+Its 10.6x figure is what settles it: with an **unlimited** carrier, touching
+each sample of one frame exactly once already costs 10.6x ffmpeg's entire frame
+decode. A cap sized for an architecture that measurement rejects buys nothing,
+and buying it means moving the loader memory image, the verifier's derived
+limits and the pinned runtime identity SHA together. Both readings rest on the
+same numbers; this one declines to pay for the architecture those numbers refuse.
+
 So the capacity must not be derived from a frame. The 230,400-sample figure
 (current plus reference picture at 320x240) is the working set of an
 architecture these measurements reject.
