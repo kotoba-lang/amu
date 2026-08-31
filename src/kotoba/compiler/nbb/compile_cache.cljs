@@ -33,17 +33,25 @@
       (.digest "hex")))
 
 (defn key-for
+  ;; `linked?` is in the key because it changes what the frontend ADMITS, not
+  ;; how it is spelled: a linked project carries :admit-linked-synthetics?.
+  ;; The rest of the frontend options are a function of the policy text, which
+  ;; is already here. Version tag raised to v3, so entries written under the
+  ;; old key miss rather than being read under the new meaning.
   ([target source policy-material]
-   (key-for target source policy-material {}))
+   (key-for target source policy-material {} false))
   ([target source policy-material emit-metadata]
+   (key-for target source policy-material emit-metadata false))
+  ([target source policy-material emit-metadata linked?]
    (sha256
     (.stringify js/JSON
-                (clj->js ["kotoba.compile-cache/v2"
+                (clj->js ["kotoba.compile-cache/v3"
                           (name target)
                           source
                           (boolean (:present? policy-material))
                           (:text policy-material)
-                          (pr-str emit-metadata)])))))
+                          (pr-str emit-metadata)
+                          (boolean linked?)])))))
 
 (defn stage-key-for [stage material]
   (sha256

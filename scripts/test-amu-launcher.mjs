@@ -48,9 +48,14 @@ try {
   const fakeClojure = join(fakeBin, "clojure");
   writeFileSync(fakeClojure, `#!/bin/sh\ntouch '${marker}'\nexit 99\n`);
   chmodSync(fakeClojure, 0o755);
+  // --module-lock is still JVM-only: kotoba.compiler.module-lock has no Node
+  // twin, and serving a lock-pinned build from the path resolver would drop
+  // the pinning without saying so. Refusing loudly is the point.
   const rejected = spawnSync(process.execPath,
     [join(root, "bin", "amu"), "compile", "examples/w1-pure.kotoba",
-      "--source-path", "examples", "--unpinned", "--target", "wasm32",
+      "--module-lock", join(directory, "absent-lock.edn"),
+      "--blocks", join(directory, "absent-blocks"),
+      "--target", "wasm32",
       "--jvm-free", "--output", join(directory, "forbidden.wasm")],
     { cwd: root, encoding: "utf8", timeout: 120_000, maxBuffer: 16 * 1024 * 1024,
       env: { ...process.env, PATH: `${fakeBin}${delimiter}${process.env.PATH}` } });
@@ -59,6 +64,38 @@ try {
       || !rejected.stderr.includes("refusing to invoke the Clojure/JVM compatibility path"))
     throw new Error(`--jvm-free did not fail closed\n${rejected.stdout}${rejected.stderr}`);
   if (existsSync(marker)) throw new Error("--jvm-free invoked clojure");
+
+  // --source-path no longer forces the JVM. This is the half a .cljc port
+  // needs, since a component that declares (:require ...) is a project, and
+  // until the Node resolver landed every such build had to be flattened into
+  // one namespace or leave the JDK-free route.
+  //
+  // The marker check is the load-bearing half of this case: without it,
+  // "exit 0 through the JVM" and "exit 0 without one" are the same assertion.
+  const projectRoot = join(directory, "project");
+  mkdirSync(projectRoot);
+  writeFileSync(join(projectRoot, "util.cljk"),
+    "(ns util (:export [twice]))\n(defn twice [x :i64] :i64 (* 2 x))\n");
+  writeFileSync(join(projectRoot, "main.cljk"),
+    "(ns main (:require [util :as u]) (:export [run]))\n"
+    + "(defn run [x :i64] :i64 (+ 1 (u/twice x)))\n");
+  const projectOutput = join(directory, "project.wasm");
+  const linked = spawnSync(process.execPath,
+    [join(root, "bin", "amu"), "compile", join(projectRoot, "main.cljk"),
+      "--source-path", projectRoot, "--target", "wasm32",
+      "--jvm-free", "--output", projectOutput],
+    { cwd: root, encoding: "utf8", timeout: 120_000, maxBuffer: 16 * 1024 * 1024,
+      env: { ...process.env, PATH: `${fakeBin}${delimiter}${process.env.PATH}` } });
+  if (linked.error) throw linked.error;
+  if (linked.status !== 0 || !linked.stdout.includes(":ok true"))
+    throw new Error(`--source-path --jvm-free failed\n${linked.stdout}${linked.stderr}`);
+  if (existsSync(marker)) throw new Error("--source-path --jvm-free invoked clojure");
+
+  // And that the OTHER module is what ran, not an entry module admitted alone.
+  const linkedBytes = readFileSync(projectOutput);
+  const { instance } = await WebAssembly.instantiate(linkedBytes, {});
+  if (instance.exports.run(5n) !== 11n)
+    throw new Error(`linked project computed ${instance.exports.run(5n)}, expected 11n`);
 
   // `--prelude` reaches only the CLJS backend. On every route this launcher
   // sends to nbb it changed nothing and still reported `:ok true`, so a

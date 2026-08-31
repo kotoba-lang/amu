@@ -8,6 +8,8 @@
             [kotoba.compiler.nbb.compile-cache :as compile-cache]
             [kotoba.sema :as sema]
             [kotoba.compiler.nbb.io :as io]
+            [kotoba.compiler.nbb.project-files :as project-files]
+            [kotoba.compiler.project :as project]
             [kotoba.compiler.nbb.output-set :as output-set]
             [kotoba.artifact.core :as artifact]
             [kotoba.compiler.provenance :as provenance]
@@ -23,13 +25,55 @@
    "wasm32-browser" :wasm32-browser-kotoba-v1
    "wasm32-wasi" :wasm32-wasi-kotoba-v1})
 
-(defn- resolve-hir! [source policy stage-cache]
+(defn- analyze-opts [policy linked?]
+  (cond-> (support/analyze-options policy)
+    linked? (assoc :admit-linked-synthetics? true)))
+
+(defn- resolve-hir! [source opts stage-cache]
   (support/timed "frontend"
                  #(compile-cache/resolve-stage!
                    stage-cache :hir
-                   (pr-str [:kotoba.hir-cache/v2 source
-                            (:language-profile policy)])
-                   (fn [] (sema/analyze source (support/analyze-options policy))))))
+                   ;; The whole options map, not just :language-profile: a
+                   ;; linked project adds :admit-linked-synthetics?, and a key
+                   ;; blind to it would answer a linked question with an
+                   ;; unlinked HIR. Tag raised to v3 so older entries miss.
+                   (pr-str [:kotoba.hir-cache/v3 source opts])
+                   (fn [] (sema/analyze source opts)))))
+
+(defn- resolve-source!
+  "Answer the source text to compile and whether it came from a linked graph.
+
+  A guest that declares `(:require ...)` is a module of a project, so it is
+  read as a closed graph from the explicit `--source-path` roots and linked
+  into one bounded unit by `project/link-source` -- the same linker the JVM
+  path uses. That linker is portable `.cljc` and was already reachable from
+  here; only the path resolution beneath it was JVM-only, which is why this
+  route used to refuse the whole command rather than just that half.
+
+  `--module-lock` is deliberately NOT handled here. Its resolver is still
+  JVM-only, and answering a lock-pinned build from the path resolver would
+  quietly drop the pinning -- the bytes-from-disk ambience the lock exists to
+  remove. `bin/amu` keeps that flag on the JVM route.
+
+  Reads no policy: the caller owns when policy is decoded, and that ordering
+  is load-bearing for the artifact cache."
+  [args]
+  (let [source-roots (support/options args "--source-path")
+        input (support/timed "source-admit" #(support/source! (second args)))]
+    (if (seq source-roots)
+      (let [graph (support/timed "project-load"
+                                 #(project-files/load-closed-graph input source-roots))
+            linked (support/timed "project-link"
+                                  #(project/link-source (:sources graph) (:root graph)))]
+        {:input input
+         :source (:source linked)
+         :linked? true
+         :project {:root (:root graph)
+                   :module-order (:module-order linked)
+                   :paths (:paths graph)}})
+      {:input input
+       :source (support/timed "source-read" #(io/read-text-file input))
+       :linked? false})))
 
 (defn- resolve-kir! [hir stage-cache]
   (support/timed "kir-lower"
@@ -109,10 +153,12 @@
      :publication-output publication-output}))
 
 (defn- check! [args context]
-  (let [input (support/timed "source-admit" #(support/source! (second args)))
-        source (support/timed "source-read" #(io/read-text-file input))
+  (let [resolved (resolve-source! args)
+        source (:source resolved)
         policy (support/timed "policy-read" #(support/read-policy args))
-        hir-result (resolve-hir! source policy (:stages context))
+        hir-result (resolve-hir! source
+                                 (analyze-opts policy (:linked? resolved))
+                                 (:stages context))
         hir (:value hir-result)
         result (support/timed
                 "admission"
@@ -127,12 +173,16 @@
              :effects (:effects hir)
              :exports (:exports hir)
              :admission result}
+      ;; A linked answer says so. Without this a caller cannot tell a one-file
+      ;; check from a check of a graph that happened to link -- the difference
+      ;; between "this module is admitted" and "these N modules are".
+      (:project resolved) (assoc :project (:project resolved))
       context (assoc :stage-cache {:hir (:cache hir-result)}))))
 
-(defn- compile-uncached! [args target output source]
+(defn- compile-uncached! [args target output source linked?]
   (let [policy (support/timed "policy-read" #(support/read-policy args))
         emit-metadata (support/emit-metadata args)
-        hir (:value (resolve-hir! source policy nil))
+        hir (:value (resolve-hir! source (analyze-opts policy linked?) nil))
         admission-result (support/timed
                           "admission"
                           #(admission/check hir (support/capability-policy policy)))
@@ -146,7 +196,7 @@
      :provenance-output provenance-output
      :publication-output publication-output}))
 
-(defn- compile-cached! [args target output source context]
+(defn- compile-cached! [args target output source linked? context]
   ;; Policy material is part of artifact identity. Declarative policy controls
   ;; also affect HIR and emission, so decode them before consulting either
   ;; stage cache; otherwise a language-profile change could reuse the wrong HIR.
@@ -159,7 +209,7 @@
         key (when material
               (support/timed "cache-key"
                              #(compile-cache/key-for target source material
-                                                     emit-metadata)))
+                                                     emit-metadata linked?)))
         artifact-cache (:artifacts context)
         stage-cache (:stages context)
         cached (when key (support/timed "cache-lookup"
@@ -186,7 +236,7 @@
       (let [_ (when-let [error (:error policy-attempt)] (throw error))
             policy (support/timed "policy-decode"
                                   #(support/parse-policy-material material))
-            hir-result (resolve-hir! source policy stage-cache)
+            hir-result (resolve-hir! source (analyze-opts policy linked?) stage-cache)
             hir (:value hir-result)
             admission-result (support/timed
                               "admission"
@@ -215,8 +265,7 @@
          :stage-cache (stage-status hir-result kir-result)}))))
 
 (defn- compile! [args context]
-  (let [input (support/timed "source-admit" #(support/source! (second args)))
-        target-name (or (support/option args "--target") "wasm32")
+  (let [target-name (or (support/option args "--target") "wasm32")
         target (get targets target-name)
         _ (when-not target
             (support/usage-error!
@@ -227,11 +276,14 @@
         backend (target-profile/backend target)
         _ (when-not (= :wasm32-kotoba-v1 backend)
             (support/usage-error! (str "error: target is not Wasm: " target-name)))
-        output (or (support/option args "--output") (str input ".wasm"))
-        source (support/timed "source-read" #(io/read-text-file input))]
+        resolved (resolve-source! args)
+        input (:input resolved)
+        source (:source resolved)
+        linked? (:linked? resolved)
+        output (or (support/option args "--output") (str input ".wasm"))]
     (if context
-      (compile-cached! args target output source context)
-      (compile-uncached! args target output source))))
+      (compile-cached! args target output source linked? context)
+      (compile-uncached! args target output source linked?))))
 
 (defn- run! [args context]
   (case (first args)

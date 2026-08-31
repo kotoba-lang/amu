@@ -45,6 +45,15 @@
 
 (defn option [args flag] (second (drop-while #(not= flag %) args)))
 
+;; Repeated flags. `--source-path` may appear more than once and each
+;; occurrence is a separate package root, so taking only the first would
+;; silently compile against a subset of the roots the caller named -- the
+;; graph would still link if the missing root happened to be unused, which is
+;; the failure that looks like a pass.
+(defn options [args flag]
+  (into [] (keep (fn [[a b]] (when (= a flag) b)))
+        (partition 2 1 args)))
+
 (defn usage-error! [message]
   (throw (ex-info message {:phase :usage})))
 
@@ -130,7 +139,12 @@
 (defn- exit-code [phase]
   (case phase
     :usage 64
-    (:decode :read :subset :admission :verify) 65
+    ;; :project-link joined this list when the linker became reachable from
+    ;; here. The JVM CLI has always mapped it to 65; without it a rejected
+    ;; graph exited 70 (internal), so "your source paths are wrong" and "the
+    ;; compiler broke" were the same answer on this route and a different
+    ;; answer than the JVM gave for the same input.
+    (:decode :read :subset :admission :verify :project-link) 65
     (:signature :trust) 77
     :output 74
     70))
@@ -139,9 +153,10 @@
   (let [data (ex-data error)
         phase (or (:phase data) :internal)
         ;; Same refinement the JVM CLI applies (kotoba.compiler.diagnostic).
-        ;; This path never links a project, so a module rejected here for
-        ;; declaring `(:require ...)` is exactly the caller who needs to be
-        ;; told which invocation does.
+        ;; This path links a project when `--source-path` is given, so a
+        ;; module rejected here for declaring `(:require ...)` is a caller who
+        ;; did NOT name their source roots -- still exactly the caller who
+        ;; needs to be told which invocation does.
         refined (when (not= phase :internal) (diagnostic/refine error))]
     (cond-> {:format :kotoba.cli-error/v1
              :ok false
