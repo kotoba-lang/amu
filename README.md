@@ -527,8 +527,9 @@ zero-argument `main`. Missing, empty, private, duplicate, or unknown exports
 fail closed before lowering.
 
 The Web target also carries the first non-i64 value profile without erasing
-types. Typed parameters use alternating name/type pairs and an optional result
-type follows the parameter vector:
+types. A parameter is written `name` or `name :type`, per parameter, in any
+mixture; an unannotated parameter is `:i64`. An optional result type follows
+the parameter vector, and an absent one is inferred from the body:
 
 ```clojure
 (ns example.text (:export [greet]))
