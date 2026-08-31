@@ -53,22 +53,29 @@ function option(args, flag) {
   return index < 0 ? undefined : args[index + 1];
 }
 
-// The nbb Wasm/native path compiles exactly the one file it is handed: there
-// is no project linker under `kotoba.compiler.nbb.*`. Routing a project-mode
-// invocation there does not fail loudly -- it silently drops --source-path /
-// --module-lock, admits the entry module alone, and reports that module's
-// `(:require ...)` clause as a malformed `:export`. Measured 2026-08-30 on
-// org-iso-h264/src/h264/sps.kotoba: `compile --source-path <src> --unpinned
-// --target wasm32` exited 65 with :kotoba.error/namespace-export-clause
-// through this launcher, and exited 0 with a 6561-byte .wasm when the same
-// arguments went to the JVM entry point that owns the linker.
-function projectMode(args) {
-  return args.includes("--source-path") || args.includes("--module-lock");
+// Project mode used to send every invocation to the JVM, because the nbb
+// Wasm/native path compiled exactly the one file it was handed and dropping
+// --source-path there did not fail loudly: it admitted the entry module alone
+// and reported that module's `(:require ...)` clause as a malformed
+// `:export`. Measured 2026-08-30 on org-iso-h264/src/h264/sps.kotoba:
+// `compile --source-path <src> --unpinned --target wasm32` exited 65 with
+// :kotoba.error/namespace-export-clause through this launcher, and exited 0
+// with a 6561-byte .wasm through the JVM entry point that owns the linker.
+//
+// `kotoba.compiler.nbb.project-files` now resolves the closed graph on this
+// route and hands it to the same portable `project/link-source`, so
+// --source-path no longer forces the JVM. --module-lock still does: its
+// resolver (`kotoba.compiler.module-lock`) is JVM-only, and serving a
+// lock-pinned build from the path resolver would silently drop the pinning,
+// which is the ambience the lock exists to remove. Answering the wrong
+// question quietly is worse than refusing loudly, so it stays refused.
+function jvmOnlyProjectMode(args) {
+  return args.includes("--module-lock");
 }
 
 function nbbNativeEligible(args) {
   const command = args[0];
-  if (projectMode(args)) return false;
+  if (jvmOnlyProjectMode(args)) return false;
   return command === "check" || command === "extract-native"
     || command === "verify-output-set" || command === "sign-output-set"
     || (command === "worker" && nbbNativeTargets.has(option(args, "--target")))

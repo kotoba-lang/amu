@@ -1,7 +1,11 @@
 (ns test.nbb.project
   (:require [kotoba.sema :as sema]
             [kotoba.kir :as ir]
-            [kotoba.compiler.project :as project]))
+            [kotoba.compiler.project :as project]
+            [kotoba.compiler.nbb.project-files :as project-files]
+            ["node:fs" :as fs]
+            ["node:os" :as os]
+            ["node:path" :as path]))
 
 (def sources
   {'example.text
@@ -51,3 +55,116 @@
       ;; And it must still mean what it meant.
       (let [kir (ir/lower (sema/analyze source))]
         (assert (= 43 (js/Number (ir/execute kir 'compute [21]))))))))
+
+;; ---------------------------------------------------------------------------
+;; Filesystem graph discovery
+;;
+;; `link-source` above takes a source MAP, so everything above this line passes
+;; whether or not a namespace can be found on disk. Resolution is the half that
+;; was JVM-only, and it is also the half that carries the confinement rules --
+;; which means until now nothing on this runtime exercised them.
+;;
+;; Each rejection below asserts the MESSAGE, not merely that something threw.
+;; A control that only checks for failure counts a run that died for an
+;; unrelated reason as a success, and these five failures are easy to confuse:
+;; they all end with a module that did not load.
+
+(defn- tmpdir []
+  (.mkdtempSync fs (.join path (.tmpdir os) "kotoba-project-files-")))
+
+(defn- spit! [dir name text]
+  (.mkdirSync fs dir #js {:recursive true})
+  (let [p (.join path dir name)]
+    (.writeFileSync fs p text "utf8")
+    p))
+
+(def ^:private entry
+  "(ns main (:require [util :as u]) (:export [run]))
+   (defn run [x :i64] :i64 (+ 1 (u/twice x)))")
+
+(defn- util [factor]
+  (str "(ns util (:export [twice]))\n(defn twice [x :i64] :i64 (* " factor " x))"))
+
+(defn- rejects [thunk expected]
+  (try (thunk)
+       (str "expected a rejection carrying " (pr-str expected) ", got none")
+       (catch :default error
+         (when-not (= expected (.-message error))
+           (str "expected " (pr-str expected) ", got " (pr-str (.-message error)))))))
+
+(check "filesystem-graph-links-and-runs"
+  (fn []
+    (let [root (tmpdir)
+          main (spit! root "main.cljk" entry)
+          _ (spit! root "util.cljk" (util 2))
+          graph (project-files/load-closed-graph main [root])
+          {:keys [source module-order]} (project/link-source (:sources graph) (:root graph))]
+      (assert (= 'main (:root graph)))
+      (assert (= ['util 'main] module-order))
+      ;; Not just that it linked -- that the OTHER module's code is what ran.
+      (let [kir (ir/lower (sema/analyze source {:admit-linked-synthetics? true}))]
+        (assert (= 11 (js/Number (ir/execute kir 'run [5]))))))))
+
+(check "missing-module-is-named"
+  (fn []
+    (let [root (tmpdir)
+          main (spit! root "main.cljk" entry)]
+      (when-let [failure (rejects #(project-files/load-closed-graph main [root])
+                                  "required module is missing from the explicit source paths")]
+        (throw (js/Error. failure))))))
+
+(check "namespace-in-two-roots-is-ambiguous-not-ordered"
+  (fn []
+    (let [a (tmpdir) b (tmpdir)
+          main (spit! a "main.cljk" entry)
+          _ (spit! a "util.cljk" (util 2))
+          _ (spit! b "util.cljk" (util 3))]
+      ;; Both argument orders, because "first root wins" would pass one of them.
+      (doseq [roots [[a b] [b a]]]
+        (when-let [failure (rejects #(project-files/load-closed-graph main roots)
+                                    "namespace resolves from multiple explicit source paths")]
+          (throw (js/Error. failure)))))))
+
+(check "symlink-out-of-the-root-is-refused"
+  (fn []
+    (let [root (tmpdir) outside (tmpdir)
+          main (spit! root "main.cljk" entry)
+          target (spit! outside "util.cljk" (util 9))]
+      (.symlinkSync fs target (.join path root "util.cljk"))
+      (when-let [failure (rejects #(project-files/load-closed-graph main [root])
+                                  "project module escapes the explicit source paths")]
+        (throw (js/Error. failure))))))
+
+(check "sibling-directory-sharing-a-prefix-is-outside"
+  (fn []
+    ;; The control the plain string comparison fails. `<tmp>/src-evil` starts
+    ;; with `<tmp>/src`, so a prefix test admits it; containment is per path
+    ;; SEGMENT. Verified by breaking it: with `str/starts-with?` alone this
+    ;; case links and exits 0.
+    (let [base (tmpdir)
+          root (.join path base "src")
+          evil (.join path base "src-evil")
+          main (spit! root "main.cljk" entry)
+          target (spit! evil "util.cljk" (util 7))]
+      (.symlinkSync fs target (.join path root "util.cljk"))
+      (when-let [failure (rejects #(project-files/load-closed-graph main [root])
+                                  "project module escapes the explicit source paths")]
+        (throw (js/Error. failure))))))
+
+(check "declared-namespace-must-match-the-requirement"
+  (fn []
+    (let [root (tmpdir)
+          main (spit! root "main.cljk" entry)
+          _ (spit! root "util.cljk" "(ns other (:export [twice]))\n(defn twice [x :i64] :i64 (* 2 x))")]
+      (when-let [failure (rejects #(project-files/load-closed-graph main [root])
+                                  "resolved path namespace does not match requirement")]
+        (throw (js/Error. failure))))))
+
+(check "source-root-must-be-a-directory"
+  (fn []
+    (let [root (tmpdir)
+          main (spit! root "main.cljk" entry)
+          file (spit! root "util.cljk" (util 2))]
+      (when-let [failure (rejects #(project-files/load-closed-graph main [file])
+                                  "source path must be a readable directory")]
+        (throw (js/Error. failure))))))
