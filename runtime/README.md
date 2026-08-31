@@ -21,6 +21,13 @@ try {
 }
 ```
 
+`instantiateKotoba` also accepts an already-compiled `WebAssembly.Module` in
+place of bytes, for hosts that cannot compile at runtime — Cloudflare Workers
+admit a module only when it arrives through the bundler as an import. In that
+form there are no bytes left to hash, so `expectedSha256` is refused
+(`digest-unverifiable`) rather than silently skipped, and `sha256` on the
+result is `null`. Verify the identity where the bytes still exist.
+
 The host copies and caps module bytes, verifies an optional SHA-256 identity,
 allows only the versioned Kotoba function imports, denies capabilities unless
 their numeric IDs are explicitly admitted, and owns a fixed 4,096-cell

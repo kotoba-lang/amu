@@ -102,6 +102,34 @@ await assert.rejects(
   error => normalizeKotobaTrap(error).code === "forbidden-import"
 );
 
+// A pre-compiled module, for hosts that cannot compile at runtime. Cloudflare
+// Workers admit a module only through the bundler; measured 2026-08-31, passing
+// bytes to a deployed Worker fails with `invalid-module / Wasm compilation
+// failed` whatever the bytes are.
+const preCompiled = await WebAssembly.compile(main42);
+const fromModule = await instantiateKotoba(preCompiled, {});
+assert.equal(fromModule.instance.exports.main(), 42n);
+// Null, not a digest and not a lie: the bytes are gone, so the identity was
+// never computed and nothing should read one.
+assert.equal(fromModule.sha256, null);
+// And an identity that cannot be checked is refused rather than skipped --
+// otherwise `expectedSha256` would be a field that sometimes checks nothing.
+await assert.rejects(
+  instantiateKotoba(preCompiled, { expectedSha256: hosted.sha256 }),
+  error => normalizeKotobaTrap(error).code === "digest-unverifiable"
+);
+// The bytes path keeps checking, so this is a widening and not a hole.
+await assert.rejects(
+  instantiateKotoba(main42, { expectedSha256: "0".repeat(64) }),
+  error => normalizeKotobaTrap(error).code === "digest-mismatch"
+);
+// Admission is unchanged for a module: a forbidden import is still refused
+// after compilation, not only during it.
+await assert.rejects(
+  WebAssembly.compile(forbiddenImport).then(m => instantiateKotoba(m, {})),
+  error => normalizeKotobaTrap(error).code === "forbidden-import"
+);
+
 assert.equal(browserProfile.format, "kotoba.browser-host/v1");
 assert.equal(browserProfile.maxModuleBytes, 1048576);
 assert.equal(browserProfile.pairCapacity, 4096);
