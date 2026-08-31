@@ -140,6 +140,14 @@ struct kexe_shared_v3 {
   uint64_t completed;
   uint64_t pair_used;
   struct kexe_pair_v1 pairs[KEXE_PAIR_CAPACITY];
+  /* One flag per pair handle: the (offset, length) bytes this handle
+   * addresses are known-valid canonical UTF-8. Sound because the bytes a
+   * handle covers never change after it is minted -- code+literal data is
+   * read-only and the string pool is append-only -- so validity, once
+   * established, holds for the handle's lifetime. This turns the
+   * per-access whole-string valid_utf8 in substring/code-point-at (an
+   * O(n^2) cost for a scan) into one validation per handle. */
+  uint8_t pair_validated[KEXE_PAIR_CAPACITY];
   uint64_t kgraph_used;
   struct kexe_datom_v1 datoms[KEXE_KGRAPH_CAPACITY];
   uint64_t string_pool_used;
@@ -241,6 +249,7 @@ static int64_t checked_pair_new(struct kexe_context_v3 *context,
   uint64_t index = shared->pair_used++;
   shared->pairs[index].first = first;
   shared->pairs[index].second = second;
+  shared->pair_validated[index] = 0;
   return (int64_t)(index + 1);
 }
 
@@ -539,6 +548,27 @@ static int valid_utf8(const uint8_t *bytes, uint64_t length) {
   return 1;
 }
 
+/* Validate the string behind HANDLE once and remember it on the handle.
+ * See pair_validated's comment for why this is sound. */
+static int ensure_valid_string(struct kexe_context_v3 *context, int64_t handle,
+                               const uint8_t *bytes, int64_t length) {
+  struct kexe_shared_v3 *shared = (struct kexe_shared_v3 *)context;
+  uint64_t index = (uint64_t)handle - 1;
+  if (shared->pair_validated[index]) return 1;
+  if (!valid_utf8(bytes, (uint64_t)length)) return 0;
+  shared->pair_validated[index] = 1;
+  return 1;
+}
+
+/* Mark a freshly minted handle whose validity holds by construction: a
+ * code-point-bounded view of a validated string, or a concatenation of two
+ * validated strings. */
+static int64_t mark_validated(struct kexe_context_v3 *context, int64_t handle) {
+  struct kexe_shared_v3 *shared = (struct kexe_shared_v3 *)context;
+  if (handle > 0) shared->pair_validated[(uint64_t)handle - 1] = 1;
+  return handle;
+}
+
 static int hex_nibble(char value) {
   if (value >= '0' && value <= '9') return value - '0';
   if (value >= 'a' && value <= 'f') return value - 'a' + 10;
@@ -551,6 +581,7 @@ static int allocate_host_pair(struct kexe_shared_v3 *shared,
   uint64_t index = shared->pair_used++;
   shared->pairs[index].first = first;
   shared->pairs[index].second = second;
+  shared->pair_validated[index] = 0;
   *handle = (int64_t)(index + 1u);
   return 0;
 }
@@ -625,6 +656,7 @@ static int parse_guest_arg(struct kexe_shared_v3 *shared,
       uint64_t index = shared->pair_used++;
       shared->pairs[index].first = fields[i - 1u];
       shared->pairs[index].second = handle;
+      shared->pair_validated[index] = 0;
       handle = (int64_t)(index + 1u);
     }
     *value = handle;
@@ -650,6 +682,7 @@ static int parse_guest_arg(struct kexe_shared_v3 *shared,
   uint64_t index = shared->pair_used++;
   shared->pairs[index].first = -((int64_t)start) - 1;
   shared->pairs[index].second = (int64_t)length;
+  shared->pair_validated[index] = 1;
   shared->string_pool_used += length;
   *value = (int64_t)(index + 1u);
   return 0;
@@ -819,7 +852,12 @@ static int valid_string_handle(struct kexe_context_v3 *context, int64_t value) {
   if (!peek_pair(context, value, 0, &offset) ||
       !peek_pair(context, value, 1, &length)) return 0;
   const uint8_t *bytes = peek_string_bytes(context, offset, length);
-  return bytes != NULL && length >= 0 && valid_utf8(bytes, (uint64_t)length);
+  if (bytes == NULL || length < 0) return 0;
+  struct kexe_shared_v3 *shared = (struct kexe_shared_v3 *)context;
+  if (shared->pair_validated[(uint64_t)value - 1]) return 1;
+  if (!valid_utf8(bytes, (uint64_t)length)) return 0;
+  shared->pair_validated[(uint64_t)value - 1] = 1;
+  return 1;
 }
 
 static int read_string_handle(struct kexe_context_v3 *context, int64_t value,
@@ -827,7 +865,8 @@ static int read_string_handle(struct kexe_context_v3 *context, int64_t value,
   int64_t offset = checked_pair_get(context, value, 0);
   int64_t length = checked_pair_get(context, value, 1);
   const uint8_t *p = resolve_string_bytes(context, offset, length);
-  if (p == NULL || length < 0 || !valid_utf8(p, (uint64_t)length)) return 0;
+  if (p == NULL || length < 0 ||
+      !ensure_valid_string(context, value, p, length)) return 0;
   *bytes = p;
   *len = (uint64_t)length;
   return 1;
@@ -1466,11 +1505,17 @@ static int64_t checked_string_concat(struct kexe_context_v3 *context,
   }
   const uint8_t *a = resolve_string_bytes(context, offset_a, length_a);
   const uint8_t *b = resolve_string_bytes(context, offset_b, length_b);
+  int inputs_validated =
+      shared->pair_validated[(uint64_t)handle_a - 1] &&
+      shared->pair_validated[(uint64_t)handle_b - 1];
   uint64_t pool_offset = shared->string_pool_used;
   memcpy(shared->string_pool + pool_offset, a, (size_t)length_a);
   memcpy(shared->string_pool + pool_offset + (uint64_t)length_a, b, (size_t)length_b);
   shared->string_pool_used += (uint64_t)total;
-  return checked_pair_new(context, -((int64_t)pool_offset) - 1, total);
+  int64_t result = checked_pair_new(context, -((int64_t)pool_offset) - 1, total);
+  /* Concatenation of two valid UTF-8 strings is valid UTF-8. */
+  if (inputs_validated) mark_validated(context, result);
+  return result;
 }
 
 /* Mirrors backend/cljs.clj's kotoba$utf8-substring, which is the oracle for
@@ -1496,7 +1541,7 @@ static int64_t checked_string_substring(struct kexe_context_v3 *context,
   }
   const uint8_t *bytes = resolve_string_bytes(context, offset, length);
   if (bytes == NULL) { raise(SIGILL); return 0; }
-  if (!valid_utf8(bytes, (uint64_t)length)) { raise(SIGILL); return 0; }
+  if (!ensure_valid_string(context, handle, bytes, length)) { raise(SIGILL); return 0; }
   if (start < length && (bytes[start] & 0xc0) == 0x80) { raise(SIGILL); return 0; }
   if (end < length && (bytes[end] & 0xc0) == 0x80) { raise(SIGILL); return 0; }
   /* No copy and no pool allocation: the result addresses the source's own
@@ -1507,7 +1552,9 @@ static int64_t checked_string_substring(struct kexe_context_v3 *context,
    * overflow: resolve_string_bytes has already established that the whole
    * [offset, offset+length) range lies inside its half, and start <= length. */
   int64_t result_offset = offset >= 0 ? offset + start : offset - start;
-  return checked_pair_new(context, result_offset, end - start);
+  /* A code-point-bounded view of a valid string is itself valid. */
+  return mark_validated(context,
+                        checked_pair_new(context, result_offset, end - start));
 }
 
 /* Mirrors kotoba.kir.value/utf8-code-point-at!: the offset must be a
@@ -1528,7 +1575,7 @@ static int64_t checked_string_code_point_at(struct kexe_context_v3 *context,
   }
   const uint8_t *bytes = resolve_string_bytes(context, offset, length);
   if (bytes == NULL) { raise(SIGILL); return 0; }
-  if (!valid_utf8(bytes, (uint64_t)length)) { raise(SIGILL); return 0; }
+  if (!ensure_valid_string(context, handle, bytes, length)) { raise(SIGILL); return 0; }
   const uint8_t *p = bytes + byte_offset;
   uint8_t a = p[0];
   if ((a & 0xc0) == 0x80) { raise(SIGILL); return 0; }

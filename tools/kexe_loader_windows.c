@@ -103,6 +103,10 @@ struct kexe_context {
   void *vector_drop;
   uint64_t pair_used;
   struct pair_cell pairs[KEXE_PAIR_CAPACITY];
+  /* One flag per pair handle: the bytes this handle addresses are
+   * known-valid canonical UTF-8. Sound for the same reason as in
+   * kexe_loader.c: a handle's bytes never change after it is minted. */
+  uint8_t pair_validated[KEXE_PAIR_CAPACITY];
   uint64_t string_pool_used;
   uint8_t string_pool[KEXE_STRING_POOL_BYTES];
   uint64_t vector_used;
@@ -171,6 +175,7 @@ static int64_t SYSV pair_new(struct kexe_context *ctx, int64_t first, int64_t se
   index = ctx->pair_used++;
   ctx->pairs[index].first = first;
   ctx->pairs[index].second = second;
+  ctx->pair_validated[index] = 0;
   return (int64_t)(index + 1);
 }
 
@@ -247,6 +252,7 @@ static int64_t allocate_host_pair(struct kexe_context *ctx,
   index = ctx->pair_used++;
   ctx->pairs[index].first = first;
   ctx->pairs[index].second = second;
+  ctx->pair_validated[index] = 0;
   return (int64_t)(index + 1u);
 }
 
@@ -316,6 +322,7 @@ static int64_t parse_guest_arg(struct kexe_context *ctx, const char *text) {
       index = ctx->pair_used++;
       ctx->pairs[index].first = fields[i - 1u];
       ctx->pairs[index].second = handle;
+      ctx->pair_validated[index] = 0;
       handle = (int64_t)(index + 1u);
     }
     return handle;
@@ -340,6 +347,7 @@ static int64_t parse_guest_arg(struct kexe_context *ctx, const char *text) {
   index = ctx->pair_used++;
   ctx->pairs[index].first = -((int64_t)start) - 1;
   ctx->pairs[index].second = (int64_t)length;
+  ctx->pair_validated[index] = 1;
   ctx->string_pool_used += length;
   return (int64_t)(index + 1u);
 }
@@ -502,6 +510,22 @@ static int64_t SYSV string_equal(struct kexe_context *ctx,
   return memcmp(a_bytes, b_bytes, (size_t)a->second) == 0 ? 1 : 0;
 }
 
+/* Validate the string behind HANDLE once and remember it on the handle;
+ * see pair_validated's comment for the soundness argument. */
+static int ensure_valid_string(struct kexe_context *ctx, int64_t handle,
+                               const uint8_t *bytes, int64_t length) {
+  uint64_t index = (uint64_t)handle - 1;
+  if (ctx->pair_validated[index]) return 1;
+  if (!valid_utf8(bytes, (uint64_t)length)) return 0;
+  ctx->pair_validated[index] = 1;
+  return 1;
+}
+
+static int64_t mark_validated(struct kexe_context *ctx, int64_t handle) {
+  if (handle > 0) ctx->pair_validated[(uint64_t)handle - 1] = 1;
+  return handle;
+}
+
 static int64_t SYSV string_concat(struct kexe_context *ctx,
                                   int64_t left, int64_t right) {
   struct pair_cell *a = checked_pair(ctx, left);
@@ -522,7 +546,14 @@ static int64_t SYSV string_concat(struct kexe_context *ctx,
   memcpy(ctx->string_pool + start + (uint64_t)a->second,
          b_bytes, (size_t)b->second);
   ctx->string_pool_used += (uint64_t)total;
-  return pair_new(ctx, -((int64_t)start) - 1, total);
+  {
+    /* Concatenation of two valid UTF-8 strings is valid UTF-8. */
+    int inputs_validated = ctx->pair_validated[(uint64_t)left - 1] &&
+                           ctx->pair_validated[(uint64_t)right - 1];
+    int64_t result = pair_new(ctx, -((int64_t)start) - 1, total);
+    if (inputs_validated) mark_validated(ctx, result);
+    return result;
+  }
 }
 
 /* See kexe_loader.c's checked_string_substring for why the two failures and
@@ -537,11 +568,13 @@ static int64_t SYSV string_substring(struct kexe_context *ctx, int64_t handle,
   if (length < 0 || start < 0 || end < start || end > length)
     __builtin_trap();
   bytes = resolve_string_bytes(ctx, offset, length);
-  if (!valid_utf8(bytes, (uint64_t)length)) __builtin_trap();
+  if (!ensure_valid_string(ctx, handle, bytes, length)) __builtin_trap();
   if (start < length && (bytes[start] & 0xc0) == 0x80) __builtin_trap();
   if (end < length && (bytes[end] & 0xc0) == 0x80) __builtin_trap();
-  return pair_new(ctx, offset >= 0 ? offset + start : offset - start,
-                  end - start);
+  /* A code-point-bounded view of a valid string is itself valid. */
+  return mark_validated(ctx,
+                        pair_new(ctx, offset >= 0 ? offset + start : offset - start,
+                                 end - start));
 }
 
 /* See kexe_loader.c's checked_string_code_point_at: offset must be a
@@ -556,7 +589,7 @@ static int64_t SYSV string_code_point_at(struct kexe_context *ctx, int64_t handl
   uint8_t a;
   if (length < 0 || byte_offset < 0 || byte_offset >= length) __builtin_trap();
   bytes = resolve_string_bytes(ctx, offset, length);
-  if (!valid_utf8(bytes, (uint64_t)length)) __builtin_trap();
+  if (!ensure_valid_string(ctx, handle, bytes, length)) __builtin_trap();
   p = bytes + byte_offset;
   a = p[0];
   if ((a & 0xc0) == 0x80) __builtin_trap();
@@ -576,7 +609,7 @@ static int valid_typed_value(struct kexe_context *ctx,
   struct pair_cell *pair = checked_pair(ctx, value);
   if (kind == 1) {
     const uint8_t *bytes = resolve_string_bytes(ctx, pair->first, pair->second);
-    return valid_utf8(bytes, (uint64_t)pair->second);
+    return ensure_valid_string(ctx, value, bytes, pair->second);
   }
   if (kind == 2 || kind == 3) {
     if (pair->first != 0 && pair->first != 1) return 0;

@@ -254,7 +254,41 @@ function securityClasspath(root, nbbCli, jvmFree) {
   return resolved;
 }
 
-function runCompiler(root, args, jvmFree) {
+// Extensions this CLI is handed as filesystem paths. A bare word like
+// `compile` or `wasm32-browser` has none and is left alone.
+const PATH_EXTENSIONS = [
+  ".kotoba", ".edn", ".json", ".wasm", ".wat", ".mjs", ".js", ".cljs", ".cljc",
+  ".clj", ".lock", ".txt", ".md", ".c", ".h", ".o", ".a", ".so", ".dylib", ".exe"
+];
+
+/**
+ * Make caller-relative paths absolute before the backend is spawned.
+ *
+ * Both spawns below set `cwd: root` — the Amu checkout — so a relative path
+ * from the caller was being resolved against THIS repository instead of the
+ * directory the user is standing in. The failure is quiet and misdirected:
+ * measured 2026-08-31, the same bytes compiled from `/tmp` and failed from a
+ * consumer repository with `:decode / "input could not be read"`, which reads
+ * as "your source is malformed" when what happened is "I looked somewhere
+ * else". A tool that cannot find a file should not describe the file.
+ *
+ * Only arguments that look like paths are touched: something carrying a
+ * separator, or ending in an extension this CLI takes. Subcommands, flags and
+ * flag values like `wasm32-browser` match neither and pass through untouched.
+ * An argument that is already absolute is left as it is.
+ */
+function resolveCallerPaths(args, cwd) {
+  return args.map(arg => {
+    if (typeof arg !== "string" || arg.startsWith("-")) return arg;
+    if (path.isAbsolute(arg)) return arg;
+    const looksLikePath = arg.includes("/") || arg.includes("\\")
+      || PATH_EXTENSIONS.some(ext => arg.endsWith(ext));
+    return looksLikePath ? path.resolve(cwd, arg) : arg;
+  });
+}
+
+function runCompiler(root, rawArgs, jvmFree) {
+  const args = resolveCallerPaths(rawArgs, process.cwd());
   if (nbbNativeEligible(args)) {
     const nbbCli = path.join(root, "node_modules", "nbb", "cli.js");
     const classpath = [path.join(root, "src"), path.join(root, "resources"),
