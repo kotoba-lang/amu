@@ -1085,8 +1085,16 @@
          (rejection-message "(ns bad (:export [f])) (defn f [] :string 1)")))
   (is (= "expression type mismatch: expected i64, got string"
          (rejection-message "(defn main [] (+ \"not-an-integer\" 1))")))
-  (is (= "typed parameters require alternating name/type pairs"
-         (rejection-message "(ns bad (:export [f])) (defn f [x :string y] :string x)")))
+  ;; `[x :string y]` is now legal: annotations are per parameter, and `y` is
+  ;; `:i64` exactly as an unannotated parameter has always been. What is still
+  ;; refused is a type with nothing to annotate.
+  (is (nil? (rejection-message "(ns bad (:export [f])) (defn f [x :string y] :string x)")))
+  (is (= "parameter name expected, found a type"
+         (rejection-message "(ns bad (:export [f])) (defn f [x :string :i64] :string x)")))
+  ;; And the relaxation is grammar only -- absence still means `:i64`, so a
+  ;; string operation on an unannotated parameter is still a type error.
+  (is (= "expression type mismatch: expected string, got i64"
+         (rejection-message "(ns bad (:export [f])) (defn f [x :string y] :i64 (string-length y))")))
   (is (= "string exceeds UTF-8 byte limit"
          (rejection-message
           (str "(ns bad (:export [f])) (defn f [] :string \""
