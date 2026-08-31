@@ -10,7 +10,16 @@
 (deftest pinned-closure-carries-the-complete-native-boundary
   (is (= "9ca7a2fc192d2283a6ac9a6a5b19d04146688345"
          (dependency-pin 'io.github.kotoba-lang/kotoba-native)))
-  (is (= "099c627609ad506babf05f2d5e9a73b95c1b026b"
+  ;; Advanced 2026-08-31 for two more instances of ADR-0286's class -- a KIR
+  ;; i64 is a BigInt under ClojureScript and reached a host operation that
+  ;; cannot take one. There, `hetero-vector-at`; here, `uleb` (every
+  ;; capability contract writes one) and, in kotoba-wasm, the `[:capability
+  ;; id]` import key, which ClojureScript cannot hash at all. Together they
+  ;; made `compile --jvm-free --target wasm32-browser` an internal compiler
+  ;; error for any guest declaring a capability, while `check --jvm-free`
+  ;; passed. The same advance also drops an npm package (`@noble/hashes`) out
+  ;; of `kotoba.kir.value`'s ClojureScript require graph.
+  (is (= "ff7a3ae2672f8ecdda54aa1abba3d480a2963733"
          (dependency-pin 'io.github.kotoba-lang/kotoba-kir)))
   (is (= "d007aa108d1eab91172c763a1c9d3cb2a0803a9e"
          (dependency-pin 'io.github.kotoba-lang/kotoba-verifier)))
