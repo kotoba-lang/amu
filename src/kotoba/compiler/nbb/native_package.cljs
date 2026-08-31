@@ -28,6 +28,30 @@
    :x86_64-aiueos-user-v1    {:image  elf64/package-user}
    :x86_64-aiueos-uefi-v1    {:image  pe32plus/package-efi}})
 
+(def ^:private divergent-twins
+  "`kotoba.native.elf64` is a TWIN: a `.clj` the JVM loads and a `.cljc` this
+  route loads (kotoba-native ADR-0036), and the ADR keeps them apart on purpose
+  -- the live-boot GDT/TSS shim lives only in the JVM file, which also lays the
+  kernel RW context at a different offset.
+
+  Measured 2026-08-31 on one source: the x86-64 kernel IMAGE is 65,904 bytes
+  here and 110,872 through the JVM. The object, the CPL3 user image, the UEFI
+  application and the AArch64 kernel image are byte-identical across both
+  routes; this one is not, and it is not a bug to fix here -- the divergence is
+  the ADR's decision.
+
+  So it is refused rather than served. Producing a materially different kernel
+  image under a flag whose whole value is that it refuses instead of falling
+  back would be the exact failure this route was added to remove: a quiet wrong
+  answer where the caller asked for an equivalent one."
+  {[:x86_64-aiueos-kernel-v1 :image]
+   (str "the portable elf64 twin does not carry the live-boot GDT/TSS shim, so "
+        "this route's x86-64 kernel image is not the JVM's (65,904 vs 110,872 "
+        "bytes measured 2026-08-31). kotoba-native ADR-0036 keeps the two files "
+        "apart deliberately. Build the kernel image through the JVM entry point; "
+        "the kernel OBJECT, the CPL3 user image, the UEFI application and the "
+        "AArch64 kernel image are byte-identical on this route.")})
+
 (defn package
   "Select and run the packager exactly as `kotoba.compiler.cli`'s `:kexe/v1`
   branch does, and return a Buffer, or nil when the artifact EDN is what
@@ -46,7 +70,14 @@
                    "object" (:object kit)
                    (or (:object kit)
                        (when (= :process (:execution (target-profile/profile target)))
-                         (:image kit))))]
+                         (:image kit))))
+        selected-kind (cond (= packager (:image kit)) :image
+                            (= packager (:object kit)) :object)]
+    (when-let [reason (get divergent-twins [target selected-kind])]
+      (throw (ex-info (str "no JVM-free implementation: " reason)
+                      {:phase :artifact-target :target target
+                       :artifact selected-kind
+                       :reason :packager-twin-divergence})))
     (when packager
       (let [packaged (packager artifact)]
         (js/Buffer.from (clj->js (mapv #(bit-and (int %) 0xff) (:bytes packaged))))))))
