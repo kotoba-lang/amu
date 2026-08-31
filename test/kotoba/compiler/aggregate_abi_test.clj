@@ -8,7 +8,17 @@
   (get-in (edn/read-string (slurp "deps.edn")) [:deps coordinate :git/sha]))
 
 (deftest pinned-closure-carries-the-complete-native-boundary
-  (is (= "9ca7a2fc192d2283a6ac9a6a5b19d04146688345"
+  ;; Advanced 2026-08-31: `elf64.clj` and `elf64.cljc` are a twin and the JVM
+  ;; loads the `.clj`, but nothing measured that they agreed. They had drifted
+  ;; to 74 entries against 69 -- three names only in `.cljc`, eight only in
+  ;; `.clj` -- and because the JVM packager is the one that runs, the three it
+  ;; was missing made three aiueos kernel objects stop building. They surfaced
+  ;; as `:kotoba/internal-error`, "internal compiler error", which reads like a
+  ;; crash in THIS compiler and is not one. Both tables now carry the union,
+  ;; and `elf64-twin-parity-test` keeps them there. The advance also upstreams
+  ;; the three ecdsa entries aiueos was patching in locally and puts the ecdsa
+  ;; objects in the fuel tier a scalar multiplication needs.
+  (is (= "db7b711946495b96d25a39390bcb71797461e261"
          (dependency-pin 'io.github.kotoba-lang/kotoba-native)))
   ;; Advanced 2026-08-31 for two more instances of ADR-0286's class -- a KIR
   ;; i64 is a BigInt under ClojureScript and reached a host operation that
