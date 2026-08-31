@@ -2469,13 +2469,35 @@ export async function instantiateKotoba(source, rawOptions) {
     reject("invalid-policy", "capCall must be a function");
   if (options.typedCapCall !== undefined && typeof options.typedCapCall !== "function")
     reject("invalid-policy", "typedCapCall must be a function");
-  const bytes = copiedBytes(source);
-  const digest = await sha256(bytes);
-  if (options.expectedSha256 !== undefined && options.expectedSha256 !== digest)
-    reject("digest-mismatch", "Wasm module SHA-256 does not match expectedSha256");
+  // A pre-compiled module is admitted as well as bytes, because some hosts
+  // cannot compile at all. Cloudflare Workers refuse `WebAssembly.compile` at
+  // runtime -- a module has to arrive through the bundler as an import -- and
+  // measured 2026-08-31 against a deployed Worker, passing bytes there fails
+  // with `invalid-module / Wasm compilation failed` no matter what the bytes
+  // are. Everything below this point is unchanged: the same import allowlist,
+  // the same capability denial, the same typed ABI admission.
   let module;
-  try { module = await WebAssembly.compile(bytes); }
-  catch (error) { reject("invalid-module", "Wasm compilation failed", error); }
+  let digest = null;
+  if (source instanceof WebAssembly.Module) {
+    // A Module cannot be hashed: its bytes are gone. Rather than quietly
+    // treating an unverifiable identity as a verified one -- which would make
+    // `expectedSha256` a field that sometimes checks nothing -- this refuses,
+    // and `sha256` on the result is null so no reader mistakes absence for a
+    // digest. A caller that needs the identity check must hash the bytes
+    // before compiling them, where the bytes still exist.
+    if (options.expectedSha256 !== undefined)
+      reject("digest-unverifiable",
+             "expectedSha256 cannot be checked against a pre-compiled WebAssembly.Module; "
+             + "verify the bytes before compiling them");
+    module = source;
+  } else {
+    const bytes = copiedBytes(source);
+    digest = await sha256(bytes);
+    if (options.expectedSha256 !== undefined && options.expectedSha256 !== digest)
+      reject("digest-mismatch", "Wasm module SHA-256 does not match expectedSha256");
+    try { module = await WebAssembly.compile(bytes); }
+    catch (error) { reject("invalid-module", "Wasm compilation failed", error); }
+  }
   const admission = validateModule(module);
   const typedAbi = admission.typedAbi;
   const compatibility = admission.compatibility;
