@@ -60,6 +60,29 @@ try {
     throw new Error(`--jvm-free did not fail closed\n${rejected.stdout}${rejected.stderr}`);
   if (existsSync(marker)) throw new Error("--jvm-free invoked clojure");
 
+  // `--prelude` reaches only the CLJS backend. On every route this launcher
+  // sends to nbb it changed nothing and still reported `:ok true`, so a
+  // caller could believe `lang/stdlib/core.kotoba` was linked when it was
+  // not. Refusing is the point; this asserts the refusal and, below, that
+  // the same command without the flag is unaffected.
+  const preludeRejected = spawnSync(process.execPath,
+    [join(root, "bin", "amu"), "check", "examples/w1-pure.kotoba",
+      "--prelude", "lang/stdlib/core.kotoba", "--jvm-free"],
+    { cwd: root, encoding: "utf8", timeout: 120_000, maxBuffer: 16 * 1024 * 1024,
+      env: { ...process.env, PATH: `${fakeBin}${delimiter}${process.env.PATH}` } });
+  if (preludeRejected.error) throw preludeRejected.error;
+  if (preludeRejected.status !== 64
+      || !preludeRejected.stderr.includes("--prelude is not implemented on this route"))
+    throw new Error(`--prelude did not fail closed\n${preludeRejected.stdout}${preludeRejected.stderr}`);
+  if (existsSync(marker)) throw new Error("--prelude rejection invoked clojure");
+
+  const preludeAbsent = spawnSync(process.execPath,
+    [join(root, "bin", "amu"), "check", "examples/w1-pure.kotoba", "--jvm-free"],
+    { cwd: root, encoding: "utf8", timeout: 120_000, maxBuffer: 16 * 1024 * 1024 });
+  if (preludeAbsent.error) throw preludeAbsent.error;
+  if (preludeAbsent.status !== 0 || !preludeAbsent.stdout.includes(":ok true"))
+    throw new Error(`the prelude guard rejected a command that does not use it\n${preludeAbsent.stdout}${preludeAbsent.stderr}`);
+
   const locklessRoot = join(directory, "lockless-amu");
   mkdirSync(join(locklessRoot, "bin"), { recursive: true });
   copyFileSync(join(root, "bin", "amu"), join(locklessRoot, "bin", "amu"));
