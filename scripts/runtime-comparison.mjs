@@ -331,6 +331,11 @@ function build(directory, target, fixtureSpec, enabled, skipped, fuel) {
   const swiftSource = join(directory, "swift-source.swift");
   const swiftHelperSource = join(directory, "swift-helper-source.swift");
   const dylibExtension = process.platform === "darwin" ? "dylib" : "so";
+  // Mach-O spells "the directory holding me" @loader_path; ELF spells it
+  // $ORIGIN. spawnSync passes argv straight to execvp with no shell, so
+  // $ORIGIN reaches the linker literally instead of expanding to nothing.
+  const loaderRelativeRpath =
+    process.platform === "darwin" ? "@loader_path" : "$ORIGIN";
   const clang = join(directory, `kernel-clang-c11.${dylibExtension}`);
   const zig = join(directory, `kernel-zig.${dylibExtension}`);
   const goDylib = join(directory, `kernel-go.${dylibExtension}`);
@@ -400,7 +405,7 @@ function build(directory, target, fixtureSpec, enabled, skipped, fuel) {
       swiftHelperSource, "-o", swiftHelper]);
     step("swift", "swiftc", ["-O", "-emit-library", "-parse-as-library",
       swiftSource, "-L", directory, "-lkernels-swift-helper",
-      "-Xlinker", "-rpath", "-Xlinker", "@loader_path", "-o", swift]);
+      "-Xlinker", "-rpath", "-Xlinker", loaderRelativeRpath, "-o", swift]);
   }
   if (enabled.has("clojurescript")) {
     step("clojurescript", "clojure",
