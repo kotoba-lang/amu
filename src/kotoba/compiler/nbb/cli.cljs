@@ -39,7 +39,19 @@
    "aarch64-macos" :aarch64-macos-kotoba-v1
    "aarch64-windows" :aarch64-windows-kotoba-v1
    "aarch64-android" :aarch64-android-kotoba-v1
-   "aarch64-ios" :aarch64-ios-kotoba-v1})
+   "aarch64-ios" :aarch64-ios-kotoba-v1
+   ;; The aiueos profiles reach the same two ISA emitters as the entries above
+   ;; -- `target/backend` maps every one of them to :x86_64-kotoba-v1 or
+   ;; :aarch64-kotoba-v1 -- so nothing about code generation kept them off this
+   ;; route. What kept them off was that this driver had no packaging step, and
+   ;; admitting a kernel target without one would have written artifact EDN to
+   ;; a path named `.o`: a silent wrong answer rather than a refusal. With
+   ;; `kotoba.compiler.nbb.native-package` supplying the same ELF64/PE32+
+   ;; packagers the JVM CLI calls, the object build no longer needs a JDK.
+   "x86_64-aiueos-kernel-v1" :x86_64-aiueos-kernel-v1
+   "x86_64-aiueos-user-v1" :x86_64-aiueos-user-v1
+   "x86_64-aiueos-uefi-v1" :x86_64-aiueos-uefi-v1
+   "aarch64-aiueos-kernel-v1" :aarch64-aiueos-kernel-v1})
 
 (def ^:private max-native-fuel 1048576)
 
@@ -191,51 +203,74 @@
      :admission admission :artifact artifact-map :compatibility compat
      :stage-cache {:kir (:cache kir-result)}}))
 
-(defn- serialized-native [source policy emit-metadata result]
+(defn- serialized-native [source policy emit-metadata result package artifact-kind]
   (let [provenance-result (support/timed "provenance"
                                          #(provenance/attach source policy emit-metadata result))]
-    {:artifact-text (support/timed
-                     "artifact-serialize"
-                     #(pr-str (artifact/edn-safe (:artifact provenance-result))))
-     :provenance-text (support/timed
-                       "provenance-serialize"
-                       #(pr-str (artifact/edn-safe (:provenance provenance-result))))}))
+    (cond-> {:artifact-text (support/timed
+                             "artifact-serialize"
+                             #(pr-str (artifact/edn-safe (:artifact provenance-result))))
+             :provenance-text (support/timed
+                               "provenance-serialize"
+                               #(pr-str (artifact/edn-safe (:provenance provenance-result))))}
+      ;; Packaged from the sealed artifact map, never from the EDN text above.
+      ;; `artifact/edn-safe` prints an i64 as a plain integer token, so text
+      ;; that round-trips is not the same value -- packaging the reparse would
+      ;; be packaging a lossy copy of what was verified.
+      package (assoc :binary (support/timed
+                              "native-package"
+                              #(package (:target result) (:artifact result)
+                                        artifact-kind))))))
 
-(defn- write-native! [output {:keys [artifact-text provenance-text]}]
+(defn- write-native! [output {:keys [artifact-text provenance-text binary]}]
   (let [provenance-output (str output ".provenance.edn")
         publication-output (str output ".publication.edn")
-        publication-text (output-set/serialize output artifact-text provenance-text)]
+        ;; When a target packages, `--output` holds the ELF64/PE32+ bytes and
+        ;; the artifact EDN is not published at all -- the JVM CLI's behaviour
+        ;; exactly. The output set therefore identifies what was written, not
+        ;; what it was derived from; `output-set/descriptor` hashes a Buffer
+        ;; and a string the same way, and `verify-output-set` already reads
+        ;; every member as bytes, so neither end needed a binary special case.
+        published (or binary artifact-text)
+        publication-text (output-set/serialize output published provenance-text)]
     (support/timed
      "output-set-write"
-     #(io/write-set! [{:path output :text artifact-text}
+     #(io/write-set! [(if binary
+                        {:path output :bytes binary}
+                        {:path output :text artifact-text})
                       {:path provenance-output :text provenance-text}
                       {:path publication-output :text publication-text}]))
-    {:provenance-output provenance-output
-     :publication-output publication-output}))
+    (cond-> {:provenance-output provenance-output
+             :publication-output publication-output}
+      binary (assoc :artifact-bytes (.-length binary)))))
 
-(defn- compile-uncached! [args source target backend output emit-program]
+(defn- compile-uncached! [args source target backend output emit-program package]
   (let [policy (support/timed "policy-read" #(support/read-policy args))
         emit-metadata (support/emit-metadata args)
+        artifact-kind (support/option args "--artifact")
         hir (:value (resolve-hir! source policy nil))
         result (compile-native! hir target backend policy emit-metadata emit-program nil)
-        serialized (serialized-native source policy emit-metadata result)
-        {:keys [provenance-output publication-output]}
+        serialized (serialized-native source policy emit-metadata result
+                                      package artifact-kind)
+        {:keys [provenance-output publication-output artifact-bytes]}
         (write-native! output serialized)]
-    {:ok true :target target :output output
-     :provenance-output provenance-output
-     :publication-output publication-output}))
+    (cond-> {:ok true :target target :output output
+             :provenance-output provenance-output
+             :publication-output publication-output}
+      artifact-bytes (assoc :artifact-bytes artifact-bytes))))
 
-(defn- compile-cached! [args source target backend output emit-program context]
+(defn- compile-cached! [args source target backend output emit-program package context]
   (let [policy-attempt (support/timed
                         "policy-read"
                         #(try {:material (support/read-policy-material args)}
                               (catch :default error {:error error})))
         material (:material policy-attempt)
         emit-metadata (support/emit-metadata args)
+        artifact-kind (support/option args "--artifact")
         key (when material
               (support/timed "cache-key"
                              #(compile-cache/key-for target source material
-                                                     emit-metadata)))
+                                                     emit-metadata false
+                                                     artifact-kind)))
         artifact-cache (:artifacts context)
         stage-cache (:stages context)
         cached (when key (support/timed "cache-lookup"
@@ -248,16 +283,30 @@
             provenance-valid? (support/timed
                                "cache-provenance-integrity"
                                #(= (:provenance-sha256 cached)
-                                   (compile-cache/sha256 (:provenance-text cached))))]
-        (when-not (and artifact-valid? provenance-valid?)
+                                   (compile-cache/sha256 (:provenance-text cached))))
+            ;; A packaged target's `--output` is the ELF64/PE32+ bytes, so a
+            ;; hit that restored only the two EDN texts would republish the
+            ;; artifact EDN under a path named `.o`. Cached base64 is checked
+            ;; on the same footing as the texts: a cache that cannot prove
+            ;; what it holds is evicted, never served short.
+            binary-valid? (support/timed
+                           "cache-binary-integrity"
+                           #(or (nil? (:binary-base64 cached))
+                                (= (:binary-sha256 cached)
+                                   (compile-cache/sha256 (:binary-base64 cached)))))]
+        (when-not (and artifact-valid? provenance-valid? binary-valid?)
           (compile-cache/remove! artifact-cache key)
           (throw (ex-info "compiler cache integrity mismatch" {:cache-key key})))
-        (let [{:keys [provenance-output publication-output]}
-              (write-native! output cached)]
-          {:ok true :target target :output output
-           :provenance-output provenance-output
-           :publication-output publication-output
-           :cache :hit :cache-key key}))
+        (let [restored (cond-> cached
+                         (:binary-base64 cached)
+                         (assoc :binary (js/Buffer.from (:binary-base64 cached) "base64")))
+              {:keys [provenance-output publication-output artifact-bytes]}
+              (write-native! output restored)]
+          (cond-> {:ok true :target target :output output
+                   :provenance-output provenance-output
+                   :publication-output publication-output
+                   :cache :hit :cache-key key}
+            artifact-bytes (assoc :artifact-bytes artifact-bytes))))
       (let [_ (when-let [error (:error policy-attempt)] (throw error))
             policy (support/timed "policy-decode"
                                   #(support/parse-policy-material material))
@@ -265,23 +314,35 @@
             hir (:value hir-result)
             result (compile-native! hir target backend policy emit-metadata
                                     emit-program stage-cache)
-            serialized (serialized-native source policy emit-metadata result)
-            {:keys [provenance-output publication-output]}
+            serialized (serialized-native source policy emit-metadata result
+                                          package artifact-kind)
+            {:keys [provenance-output publication-output artifact-bytes]}
             (write-native! output serialized)
-            sealed (assoc serialized
-                          :artifact-sha256 (compile-cache/sha256 (:artifact-text serialized))
-                          :provenance-sha256 (compile-cache/sha256 (:provenance-text serialized)))
+            binary-base64 (some-> (:binary serialized) (.toString "base64"))
+            sealed (cond-> (assoc (dissoc serialized :binary)
+                                  :artifact-sha256 (compile-cache/sha256 (:artifact-text serialized))
+                                  :provenance-sha256 (compile-cache/sha256 (:provenance-text serialized)))
+                     binary-base64 (assoc :binary-base64 binary-base64
+                                          :binary-sha256 (compile-cache/sha256 binary-base64)))
             size (+ (.byteLength js/Buffer (:artifact-text serialized) "utf8")
-                    (.byteLength js/Buffer (:provenance-text serialized) "utf8"))]
+                    (.byteLength js/Buffer (:provenance-text serialized) "utf8")
+                    (if binary-base64
+                      (.byteLength js/Buffer binary-base64 "utf8")
+                      0))]
         (support/timed "cache-store" #(compile-cache/put! artifact-cache key sealed size))
-        {:ok true :target target :output output
-         :provenance-output provenance-output
-         :publication-output publication-output
-         :cache :miss :cache-key key
-         :stage-cache {:hir (:cache hir-result)
-                       :kir (get-in result [:stage-cache :kir])}}))))
+        (cond-> {:ok true :target target :output output
+                 :provenance-output provenance-output
+                 :publication-output publication-output
+                 :cache :miss :cache-key key
+                 :stage-cache {:hir (:cache hir-result)
+                               :kir (get-in result [:stage-cache :kir])}}
+          artifact-bytes (assoc :artifact-bytes artifact-bytes))))))
 
-(defn run! [args expected-backend emit-program context]
+(defn run!
+  "`package` is the ISA entrypoint's artifact packager (or nil for a driver
+  that has none). Supplied rather than required here so the Wasm driver, which
+  shares this namespace, does not load two native packagers it never calls."
+  [args expected-backend emit-program package context]
   (case (first args)
     "compile"
     (let [input (support/timed "source-admit" #(support/source! (second args)))
@@ -297,11 +358,17 @@
             _ (when-not (= expected-backend backend)
                 (support/usage-error!
                  (str "error: target " target-name " does not match loaded native ISA")))
+            ;; Rejected before any compilation, matching the JVM CLI: an
+            ;; unknown `--artifact` must not be discovered after the work.
+            _ (when-not (contains? #{nil "object" "image"} (support/option args "--artifact"))
+                (throw (ex-info "unknown native artifact kind"
+                                {:phase :artifact-target
+                                 :artifact (support/option args "--artifact")})))
             output (or (support/option args "--output") (str input ".kexe"))
             source (support/timed "source-read" #(io/read-text-file input))]
         (if context
-          (compile-cached! args source target backend output emit-program context)
-          (compile-uncached! args source target backend output emit-program)))
+          (compile-cached! args source target backend output emit-program package context)
+          (compile-uncached! args source target backend output emit-program package)))
 
     "extract-native"
     (let [input (second args)

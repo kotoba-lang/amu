@@ -78,10 +78,61 @@
             (ensure! (= expected (str/trim (:stdout executed)))
                      (str "native " symbol " expected " expected ", got "
                           (str/trim (:stdout executed))))))))
+    ;; The aiueos target profiles package the sealed artifact into an ELF64 or
+    ;; PE32+ container. Until `kotoba.compiler.nbb.native-package` existed this
+    ;; driver had no packaging step at all, so `os/aiueos` built all 67 of its
+    ;; kernel objects through `clojure` -- not because code generation needed a
+    ;; JVM (these targets reach the same two emitters exercised above) but
+    ;; because only the JVM CLI ran the packager.
+    ;;
+    ;; Asserted on the container bytes rather than on the exit status, because
+    ;; the failure this guards against is not a crash: admitting the target
+    ;; without a packager would have written artifact EDN to a path named `.o`
+    ;; and reported :ok true. A wrong answer, delivered quietly.
+    (let [magic (fn [p] (let [b (fs/readFileSync p)]
+                          {:head (.toString (.subarray b 0 4) "latin1")
+                           :type (.readUInt16LE b 16)
+                           :machine (.readUInt16LE b 18)}))]
+      (doseq [{:keys [target artifact-kind expect-type expect-machine label]}
+              [{:target "x86_64-aiueos-kernel-v1" :artifact-kind nil
+                :expect-type 1 :expect-machine 0x3e :label "kernel object (ET_REL, EM_X86_64)"}
+               {:target "x86_64-aiueos-kernel-v1" :artifact-kind "image"
+                :expect-type 2 :expect-machine 0x3e :label "kernel image (ET_EXEC, EM_X86_64)"}
+               {:target "aarch64-aiueos-kernel-v1" :artifact-kind "image"
+                :expect-type 2 :expect-machine 0xb7 :label "kernel image (ET_EXEC, EM_AARCH64)"}]]
+        (let [out (file (str "aiueos-" target "-" (or artifact-kind "default") ".o"))]
+          (invoke (cond-> ["compile" (.join path root "examples" "i64-semantics.kotoba")
+                           "--target" target "--output" out]
+                    artifact-kind (into ["--artifact" artifact-kind])))
+          (let [{:keys [head type machine]} (magic out)]
+            (ensure! (= "\u007fELF" head)
+                     (str "aiueos " label " is not ELF64; got " (pr-str head)
+                          " -- artifact EDN written where a container belongs"))
+            (ensure! (= expect-type type)
+                     (str "aiueos " label " has e_type " type))
+            (ensure! (= expect-machine machine)
+                     (str "aiueos " label " has e_machine " machine)))))
+      (let [efi (file "aiueos-uefi.efi")]
+        (invoke ["compile" (.join path root "examples" "i64-semantics.kotoba")
+                 "--target" "x86_64-aiueos-uefi-v1" "--artifact" "image" "--output" efi])
+        (ensure! (= "MZ" (.toString (.subarray (fs/readFileSync efi) 0 2) "latin1"))
+                 "aiueos UEFI image is not a PE32+ application"))
+      ;; An unknown --artifact must be refused BEFORE the work, not discovered
+      ;; after it, and must not fall through to writing the artifact EDN.
+      (let [rejected (run js/process.execPath
+                          [amu "compile" (.join path root "examples" "i64-semantics.kotoba")
+                           "--target" "x86_64-aiueos-kernel-v1" "--artifact" "sections"
+                           "--output" (file "rejected.o")]
+                          env true)]
+        (ensure! (not= 0 (:status rejected))
+                 "an unknown --artifact kind was accepted")
+        (ensure! (not (fs/existsSync (file "rejected.o")))
+                 "an unknown --artifact kind still wrote an output file")))
+
     (when (fs/existsSync marker)
       (throw (js/Error. (str "JVM tool was invoked: " (fs/readFileSync marker "utf8")))))
     (println (str "jdk-free-native: sealed " isa
                   " scalar, aggregate-variant, callable, bounded-apply artifacts independently extracted"
-                  " and executed under W^X loader")))
+                  " and executed under W^X loader; aiueos ELF64 object/image and PE32+ image packaged")))
   (finally
     (fs/rmSync tmp #js {:recursive true :force true})))
