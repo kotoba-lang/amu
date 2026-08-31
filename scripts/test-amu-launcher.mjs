@@ -73,6 +73,33 @@ try {
       || !lockless.stderr.includes("JVM fallback is forbidden"))
     throw new Error(`--jvm-free accepted a missing dependency lock\n${lockless.stdout}${lockless.stderr}`);
   if (existsSync(marker)) throw new Error("--jvm-free lock failure invoked clojure");
+  // A caller-relative path resolves against the CALLER's directory, not the Amu
+  // checkout. Both spawns in bin/amu set `cwd: root`, so before this was fixed
+  // the backend looked for the source inside Amu and reported
+  // `:decode / "input could not be read"` -- "your file is malformed" for a
+  // file it never opened. Run from a directory that is not the repository, with
+  // a bare filename, which is the shape every consumer types.
+  const elsewhere = mkdtempSync(join(tmpdir(), "amu-cwd-test-"));
+  try {
+    writeFileSync(join(elsewhere, "probe.kotoba"),
+      "(ns probe.cwd (:export [main]))\n(defn main [] 7)\n");
+    const relative = spawnSync(process.execPath,
+      [join(root, "bin", "amu"), "compile", "probe.kotoba",
+       "--target", "wasm32-browser", "--output", "out.wasm"],
+      { cwd: elsewhere, encoding: "utf8", timeout: 180_000 });
+    if (relative.status !== 0)
+      throw new Error(`a caller-relative source was not found\n${relative.stdout}${relative.stderr}`);
+    // The output is the caller's too: writing it into the Amu checkout would be
+    // the same mistake pointed the other way.
+    if (!existsSync(join(elsewhere, "out.wasm")))
+      throw new Error("a caller-relative --output did not land in the caller's directory");
+    if (existsSync(join(root, "out.wasm")))
+      throw new Error("--output landed inside the Amu checkout");
+  } finally {
+    rmSync(elsewhere, { recursive: true, force: true });
+  }
+  process.stdout.write("amu-launcher: caller-relative source and output paths resolve against the caller\n");
+
   process.stdout.write("amu-launcher: direct and -M commands preserve native artifact/provenance parity\n");
   process.stdout.write("amu-launcher: --jvm-free compiles on nbb and rejects JVM-only routes\n");
 } finally {
