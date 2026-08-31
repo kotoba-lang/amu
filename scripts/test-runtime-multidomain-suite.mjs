@@ -140,7 +140,7 @@ function syntheticCompetitiveReport() {
 function bridgeReport(report, expectSuccess = true) {
   const input = join(directory, `perfgate-${Math.random().toString(16).slice(2)}.json`);
   writeFileSync(input, `${JSON.stringify(report)}\n`);
-  const result = spawnSync("bash", [join(root, "scripts", "perfgate-qualify.sh"), input],
+  const result = spawnSync("nbb", [join(root, "scripts", "perfgate-qualify.cljs"), input],
     { cwd: root, encoding: "utf8", timeout: 300_000, maxBuffer: 32 * 1024 * 1024 });
   if (expectSuccess && result.status !== 0)
     throw new Error(`perfgate bridge failed\n${result.stdout}${result.stderr}`);
@@ -152,7 +152,7 @@ function bridgeReport(report, expectSuccess = true) {
 function validateManifestV2(value, expectSuccess = true) {
   const input = join(directory, `manifest-${Math.random().toString(16).slice(2)}.json`);
   writeFileSync(input, `${JSON.stringify(value)}\n`);
-  const result = spawnSync("bash", [join(root, "scripts", "perfgate-qualify.sh"),
+  const result = spawnSync("nbb", [join(root, "scripts", "perfgate-qualify.cljs"),
     "--validate-manifest-v2", input],
   { cwd: root, encoding: "utf8", timeout: 300_000, maxBuffer: 32 * 1024 * 1024 });
   if (expectSuccess && result.status !== 0)
