@@ -1037,6 +1037,35 @@ as before.
   survives as the collections lever queue: guest-visible bounds-checked
   element loads -- the same plane strings needs for its 10.77.
 
+- **54 (2026-08-31, validate-once lands through the pinned loader chain --
+  strings 10.77 -> 2.17)**: the O(n^2) residue iteration 51 named is
+  gone. Per-handle UTF-8 validation memoisation (`pair_validated`):
+  every mint clears its flag, the s: argument parse mints pre-validated,
+  a code-point-bounded substring view of a validated string is valid by
+  construction, concat propagates validity when both inputs carry it,
+  and an unvalidated handle still validates -- and traps on bad bytes --
+  at first access. No trap is removed; what changes is only how often a
+  string that has already proven itself is re-proven. Lever verdict,
+  measured the honest way (same guest binary, harness-v4 vs harness-v3,
+  ABBA x12, KA per sample): **0.213 -- the strings arm fell from 5427 to
+  1156 ns/call** (rsd 0.037/0.008), far clear of every bar. New day
+  standings vs gcc: **2.17** (1146 vs 528 ns, rsd 0.021/0.058) -- from
+  10.77 at opening. The remaining 2.17 is the per-character callback
+  crossing, the same residue class as collections' 1.93, which points
+  both domains at the same next lever (guest-visible bounds-checked
+  loads). Landing this took the whole identity chain, by design: the
+  loaders are SHA-256-pinned reviewed sources, so the first suite run
+  answered with 46 red names -- `native loader source identity
+  mismatch`, expected e1f32ab9, actual 636ba814 -- which is the drift
+  detector doing its job. The change is ported to BOTH loaders (the
+  Windows twin mechanically, compile-unverified here, stated in the pin
+  docstring per that pin's own convention), both pins advanced in
+  kotoba-lang/artifact (its suite 11/59 green) with dated docstring
+  amendments, amu's artifact dep and fuzz baseline advanced, and the amu
+  suite closed **fully green -- 1189 tests, 8675 assertions, 0 failures**
+  (the 17 long-standing reds were fixed upstream by parallel sessions in
+  the same window).
+
 ## Standing honesty constraints
 
 Every number above is one host on one day; the falsification numbers are
