@@ -34,7 +34,22 @@
   ;; objects on both routes and diffing the bytes. `elf64-twin-parity-test` now
   ;; compares the tier arms with their four fuel bytes, so the cheap
   ;; source-level guard catches the next drift earlier.
-  (is (= "0daafbf7f2b48a02d3d6acccc6c0912a9daf0c17"
+  ;;
+  ;; Advanced 2026-08-31 for a fourth instance of ADR-0286's class, this one
+  ;; in the AArch64 leaf-constant cache. `a64-cache-leaf-constants` grouped
+  ;; constant occurrences in a map keyed by the raw i64, and a ClojureScript
+  ;; i64 is a BigInt primitive that `goog.getUid` cannot hash. Eight or fewer
+  ;; entries is an array map, which compares with `=` and never hashes, so the
+  ;; throw stayed invisible until a leaf carried more than eight distinct
+  ;; constants -- and `kernel_deep.kotoba` and `kernel_wide.kotoba`, two of
+  ;; this repository's own runtime-comparison fixtures, do. Both answered
+  ;; "internal compiler error" on the NBB front while the JVM front compiled
+  ;; them, so `--jvm-free` could not build the fixtures the codegen
+  ;; co-scientist loop ranks this compiler on. `const-key` already existed for
+  ;; exactly this, added for the x86-64 path; AArch64 had not adopted it.
+  ;; The emitted kexe is byte-identical to the JVM front's, and the JVM
+  ;; front's own output is byte-identical across the advance.
+  (is (= "b77496b80a43a65e7ec7aec1ec3ea1dad884a655"
          (dependency-pin 'io.github.kotoba-lang/kotoba-native)))
   ;; Advanced 2026-08-31 for two more instances of ADR-0286's class -- a KIR
   ;; i64 is a BigInt under ClojureScript and reached a host operation that
