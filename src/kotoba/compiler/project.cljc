@@ -1,7 +1,9 @@
 (ns kotoba.compiler.project
   (:require [clojure.string :as str]
             [kotoba.sema :as sema]
-            [kotoba.kir.value :as value]))
+            [kotoba.kir.value :as value]
+            #?@(:cljs [[clojure.walk :as walk]
+                       [kotoba.kir.cljs-i64 :as i64]])))
 
 (def max-project-modules 256)
 (def max-project-functions 1024)
@@ -263,8 +265,38 @@
 (defn- closure-apply-name? [name]
   (= '__kotoba_closure_apply name))
 
+;; `source-text` emits the linked module graph as text the reader has to read
+;; back, so anything it prints unreadably breaks linking rather than merely
+;; looking odd.
+;;
+;; On ClojureScript that is every integer. `kotoba.compiler.kotoba-reader`
+;; returns integer literals as JS `BigInt`, `pr-str` renders a BigInt as
+;; `#object[BigInt 42]`, and the reader answers `unsupported reader dispatch`
+;; on the way back in. So `link-source` failed for every project it would
+;; otherwise have linked -- measured 2026-08-31 against aiueos's 83 `.kotoba`
+;; objects, where the seven that got as far as this step all died here and the
+;; other 76 only looked healthier because they had already been rejected for
+;; a real reason. That is the JVM-free project linker gap the workspace Q9
+;; rule names, and it is one printer.
+;;
+;; The substitution is deliberately narrow: only integers are replaced, with a
+;; value whose whole behaviour is to print its own digits, and `pr-str` still
+;; decides how every collection, string, keyword and symbol is written. A
+;; global BigInt print handler would have reached `(pr-str hir)`, which
+;; `kotoba.compiler.nbb.compile-cache` uses as a cache KEY.
+#?(:cljs
+   (deftype IntegerLiteral [text]
+     IPrintWithWriter
+     (-pr-writer [_ writer _opts] (-write writer text))))
+
+#?(:cljs
+   (defn- readable-integers [form]
+     (walk/postwalk (fn [x] (if (i64/bigint-value? x) (IntegerLiteral. (str x)) x))
+                    form)))
+
 (defn- source-text [forms]
-  (str (str/join "\n" (map pr-str forms)) "\n"))
+  (str (str/join "\n" (map #(pr-str #?(:clj % :cljs (readable-integers %))) forms))
+       "\n"))
 
 (defn- admit-project-forms!
   [forms counters]
