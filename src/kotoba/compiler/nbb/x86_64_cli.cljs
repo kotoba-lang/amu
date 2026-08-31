@@ -3,11 +3,13 @@
   (:require [kotoba.compiler.nbb.cli :as native-cli]
             [kotoba.compiler.nbb.cli-support :as support]
             [kotoba.compiler.nbb.compile-cache :as compile-cache]
+            [kotoba.compiler.nbb.native-package :as native-package]
             [kotoba.kir.target :as target-profile]
             [kotoba.native.x86-64 :as x86-64]))
 
 (defn- run! [args context]
-  (native-cli/run! args :x86_64-kotoba-v1 x86-64/emit-program context))
+  (native-cli/run! args :x86_64-kotoba-v1 x86-64/emit-program
+                   native-package/package context))
 
 (if (= "worker" (first *command-line-args*))
   (let [target-name (support/option *command-line-args* "--target")
