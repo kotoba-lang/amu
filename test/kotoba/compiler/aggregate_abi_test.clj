@@ -18,7 +18,38 @@
   ;; and `elf64-twin-parity-test` keeps them there. The advance also upstreams
   ;; the three ecdsa entries aiueos was patching in locally and puts the ecdsa
   ;; objects in the fuel tier a scalar multiplication needs.
-  (is (= "db7b711946495b96d25a39390bcb71797461e261"
+  ;;
+  ;; Advanced again 2026-08-31 to `0daafbf`: the table was not the only axis
+  ;; the twins had drifted on. `package-kernel-object` picks its fuel immediate
+  ;; from a per-object tier table, and the `.clj` had four arms to the `.cljc`'s
+  ;; six -- missing `ecdsa-fuel?` and `dhcp-fuel?`. So the JVM packager gave
+  ;; `aiueos-ecdsa-p256-sha256-verify` 250,000,000 instead of 2,147,483,647 and
+  ;; both DHCP objects the 1,024 default instead of 65,536, 64x less. The
+  ;; shipped objects say which file was right: at file offset 75 all three
+  ;; carry the `.cljc` values.
+  ;;
+  ;; Found from OUTSIDE. Clojure loads the `.clj` for that namespace and nbb
+  ;; loads the `.cljc`, so no single runtime can call both packagers and no
+  ;; test inside either one can compare them. It took building all 66 aiueos
+  ;; objects on both routes and diffing the bytes. `elf64-twin-parity-test` now
+  ;; compares the tier arms with their four fuel bytes, so the cheap
+  ;; source-level guard catches the next drift earlier.
+  ;;
+  ;; Advanced 2026-08-31 for a fourth instance of ADR-0286's class, this one
+  ;; in the AArch64 leaf-constant cache. `a64-cache-leaf-constants` grouped
+  ;; constant occurrences in a map keyed by the raw i64, and a ClojureScript
+  ;; i64 is a BigInt primitive that `goog.getUid` cannot hash. Eight or fewer
+  ;; entries is an array map, which compares with `=` and never hashes, so the
+  ;; throw stayed invisible until a leaf carried more than eight distinct
+  ;; constants -- and `kernel_deep.kotoba` and `kernel_wide.kotoba`, two of
+  ;; this repository's own runtime-comparison fixtures, do. Both answered
+  ;; "internal compiler error" on the NBB front while the JVM front compiled
+  ;; them, so `--jvm-free` could not build the fixtures the codegen
+  ;; co-scientist loop ranks this compiler on. `const-key` already existed for
+  ;; exactly this, added for the x86-64 path; AArch64 had not adopted it.
+  ;; The emitted kexe is byte-identical to the JVM front's, and the JVM
+  ;; front's own output is byte-identical across the advance.
+  (is (= "b77496b80a43a65e7ec7aec1ec3ea1dad884a655"
          (dependency-pin 'io.github.kotoba-lang/kotoba-native)))
   ;; Advanced 2026-08-31 for two more instances of ADR-0286's class -- a KIR
   ;; i64 is a BigInt under ClojureScript and reached a host operation that

@@ -36,11 +36,19 @@ const usage = [
   "       amu <other compiler command> ...",
 ];
 
+// The aiueos profiles joined this set once the nbb driver gained a packaging
+// step (kotoba/compiler/nbb/native_package.cljs). Until then `os/aiueos` built
+// every kernel object through `clojure`, not because code generation needed a
+// JVM -- these targets reach the same two ISA emitters as the plain ones --
+// but because only the JVM CLI ran `elf64/package-kernel-object` on the sealed
+// artifact. Both packagers are portable .cljc and load unchanged under nbb.
 const nbbNativeTargets = new Set([
   undefined, "wasm32", "wasm32-browser", "wasm32-wasi",
   "x86_64", "x86_64-linux", "x86_64-macos", "x86_64-windows",
   "aarch64", "aarch64-linux", "aarch64-macos", "aarch64-windows",
   "aarch64-android", "aarch64-ios",
+  "x86_64-aiueos-kernel-v1", "x86_64-aiueos-user-v1", "x86_64-aiueos-uefi-v1",
+  "aarch64-aiueos-kernel-v1",
 ]);
 
 function fail(message, code) {
@@ -73,11 +81,35 @@ function jvmOnlyProjectMode(args) {
   return args.includes("--module-lock");
 }
 
+// The two `kotoba.native.elf64` twins genuinely disagree about ONE container:
+// the x86-64 kernel image, 65,904 bytes from the portable file against 110,872
+// from the JVM one, because kotoba-native ADR-0036 keeps the live-boot GDT/TSS
+// shim in the JVM twin deliberately.
+//
+// So routing decides, not the packager. Without --jvm-free this still reaches
+// the JVM and still produces the live-boot image, exactly as before; with
+// --jvm-free it is refused below, naming why. Making the packager refuse
+// unconditionally would have broken a working command for callers who never
+// asked for a JDK-free build.
+function divergentAiueosKernelImage(args) {
+  return option(args, "--target") === "x86_64-aiueos-kernel-v1"
+    && option(args, "--artifact") === "image";
+}
+
+const divergentImageReason =
+  "the portable elf64 twin does not carry the live-boot GDT/TSS shim, so this "
+  + "route's x86-64 kernel image is not the JVM's (65,904 vs 110,872 bytes "
+  + "measured 2026-08-31). kotoba-native ADR-0036 keeps the two files apart "
+  + "deliberately. The kernel OBJECT, the CPL3 user image, the UEFI application "
+  + "and the AArch64 kernel image are byte-identical on this route.";
+
 function nbbNativeEligible(args) {
   const command = args[0];
   if (jvmOnlyProjectMode(args)) return false;
+  if (command === "compile" && divergentAiueosKernelImage(args)) return false;
   return command === "check" || command === "extract-native"
     || command === "verify-output-set" || command === "sign-output-set"
+
     || (command === "worker" && nbbNativeTargets.has(option(args, "--target")))
     || (command === "compile" && nbbNativeTargets.has(option(args, "--target")));
 }
@@ -333,6 +365,9 @@ function runCompiler(root, rawArgs, jvmFree) {
   }
 
   if (jvmFree) {
+    if (args[0] === "compile" && divergentAiueosKernelImage(args)) {
+      fail("error: no JVM-free implementation: " + divergentImageReason, 64);
+    }
     fail("error: this Amu command or target has no JVM-free implementation; "
       + "refusing to invoke the Clojure/JVM compatibility path", 64);
   }

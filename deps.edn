@@ -108,6 +108,13 @@
         ;; unshifted value before SAR, so SAR and SHR run in parallel).
         ;; a59b8b2 elides a quotient's RAX/RDX saves when provably dead
         ;; (straight-line scan, fail-closed).
+        ;; 0daafbf brings the two `elf64` twins into agreement about FUEL, not
+        ;; just about the entry table db7b711 settled. The `.clj` the JVM loads
+        ;; was missing `ecdsa-fuel?` and `dhcp-fuel?`, so it under-fuelled three
+        ;; shipping aiueos objects -- ecdsa by 8.6x and both DHCP objects by 64x
+        ;; -- and the shipped bytes prove the portable file was the right one.
+        ;; Found only by comparing the two routes' output, because no single
+        ;; runtime can load both files.
         io.github.kotoba-lang/kotoba-native
         {:git/url "https://github.com/kotoba-lang/kotoba-native.git"
          :git/sha "b77496b80a43a65e7ec7aec1ec3ea1dad884a655"}

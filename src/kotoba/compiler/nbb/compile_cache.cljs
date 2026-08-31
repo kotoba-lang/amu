@@ -43,15 +43,25 @@
   ([target source policy-material emit-metadata]
    (key-for target source policy-material emit-metadata false))
   ([target source policy-material emit-metadata linked?]
+   (key-for target source policy-material emit-metadata linked? nil))
+  ;; `artifact-kind` selects WHICH packaged form `--output` receives for the
+  ;; aiueos targets, so two invocations differing only in `--artifact` produce
+  ;; different bytes from identical source, policy and metadata. It is not part
+  ;; of provenance -- packaging is not a compile input, and the JVM does not
+  ;; seal it either -- but it must be part of the cache key, or the second
+  ;; invocation is served the first one's answer. Version tag raised to v4 so
+  ;; entries written under v3 miss rather than being read under the new meaning.
+  ([target source policy-material emit-metadata linked? artifact-kind]
    (sha256
     (.stringify js/JSON
-                (clj->js ["kotoba.compile-cache/v3"
+                (clj->js ["kotoba.compile-cache/v4"
                           (name target)
                           source
                           (boolean (:present? policy-material))
                           (:text policy-material)
                           (pr-str emit-metadata)
-                          (boolean linked?)])))))
+                          (boolean linked?)
+                          artifact-kind])))))
 
 (defn stage-key-for [stage material]
   (sha256

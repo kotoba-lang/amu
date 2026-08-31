@@ -26,7 +26,16 @@
    ;; :code` could not tell a project that names a module it does not ship
    ;; from a compiler crash. Measured 2026-08-30 through `amu check
    ;; --source-path` on a project whose one `:require` resolves to nothing.
-   :project-link :kotoba/project-link-failed})
+   :project-link :kotoba/project-link-failed
+   ;; Same shape as `:project-link` above, and it predates the JDK-free route:
+   ;; the JVM CLI has thrown `{:phase :artifact-target}` for an unknown
+   ;; `--artifact` since that flag existed, and it reported
+   ;; `:kotoba/internal-error` -- a caller who typed `--artifact sections`
+   ;; could not tell a typo from a compiler crash. Measured 2026-08-31 while
+   ;; adding the aiueos packagers to the JDK-free driver, which throws through
+   ;; the same phase when a container is refused because the two elf64 twins
+   ;; genuinely disagree about it.
+   :artifact-target :kotoba/artifact-target-rejected})
 
 (declare refine refined-message)
 
