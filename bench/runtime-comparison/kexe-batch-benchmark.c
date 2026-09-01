@@ -18,7 +18,7 @@ typedef int64_t (*kexe_fn6)(int64_t, int64_t, int64_t, int64_t, int64_t,
 typedef int64_t (*kexe_fn8)(int64_t, int64_t, int64_t, int64_t, int64_t,
                             int64_t, int64_t, int64_t);
 
-struct benchmark_context_v3 {
+struct benchmark_context_v4 {
   uint64_t version;
   uint64_t fuel;
   uint64_t remaining_context[30];
@@ -104,8 +104,8 @@ int main(int argc, char **argv) {
   if (close(fd) != 0) fail("close");
   if (mprotect(memory, mapped, PROT_READ | PROT_EXEC) != 0) fail("mprotect");
 
-  struct benchmark_context_v3 context = {0};
-  context.version = 3;
+  struct benchmark_context_v4 context = {0};
+  context.version = 4;
   context.fuel = fuel;
   int64_t result;
   uint64_t started = nanoseconds();

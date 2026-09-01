@@ -92,7 +92,7 @@ struct kexe_context {
   void *string_substring;
   void *string_code_point_at;
   /* vector-i64 / vector-f64 (ADR-2608030300). Same six slots, same meaning
-   * and same offsets as the POSIX loader's kexe_context_v3 -- the ABI is the
+   * and same offsets as the POSIX loader's kexe_context_v4 -- the ABI is the
    * contract, not either host. See that file for why a vector value is a
    * one-word handle and why conj can append in place. */
   void *vector_new_empty;
@@ -101,6 +101,16 @@ struct kexe_context {
   void *vector_at;
   void *vector_assoc;
   void *vector_drop;
+  /* ABI v4 (superproject ADR-2609010200). Same two slots, same meaning and
+   * same offsets as the POSIX loader's kexe_context_v4. `vector_alloc` is n
+   * zeros in one call, because `vector-new` is variadic and a million-slot
+   * allocation cannot be a literal. `vector_assoc_in_place` is the same
+   * update lowered to a STORE, returning the SAME handle: legal exactly when
+   * no other live handle spans the word, which the compiler proves
+   * (`kotoba.compiler.affine` behind `check-affine-writes!`) and this host
+   * does not repeat. Memory safety is still checked here, unconditionally. */
+  void *vector_alloc;
+  void *vector_assoc_in_place;
   uint64_t pair_used;
   struct pair_cell pairs[KEXE_PAIR_CAPACITY];
   /* One flag per pair handle: the bytes this handle addresses are
@@ -134,6 +144,8 @@ _Static_assert(offsetof(struct kexe_context, vector_count) == 168, "vector ABI")
 _Static_assert(offsetof(struct kexe_context, vector_at) == 176, "vector ABI");
 _Static_assert(offsetof(struct kexe_context, vector_assoc) == 184, "vector ABI");
 _Static_assert(offsetof(struct kexe_context, vector_drop) == 192, "vector ABI");
+_Static_assert(offsetof(struct kexe_context, vector_alloc) == 200, "vector ABI");
+_Static_assert(offsetof(struct kexe_context, vector_assoc_in_place) == 208, "vector ABI");
 
 static void fail_win(const char *message) {
   fprintf(stderr, "kexe-loader-windows: %s: win32=%lu\n", message, (unsigned long)GetLastError());
@@ -159,7 +171,7 @@ static HANDLE create_guest_job(void) {
 }
 
 static int64_t SYSV cap_call(struct kexe_context *ctx, uint32_t id, int64_t value) {
-  if (ctx == NULL || ctx->version != 3 || id > 255 || !(ctx->allow[id / 8] & (1u << (id % 8))))
+  if (ctx == NULL || ctx->version != 4 || id > 255 || !(ctx->allow[id / 8] & (1u << (id % 8))))
     __builtin_trap();
   return value + 1;
 }
@@ -190,7 +202,7 @@ static int64_t SYSV pair_second(struct kexe_context *ctx, int64_t handle) {
 static const uint8_t *resolve_string_bytes(struct kexe_context *ctx,
                                            int64_t offset, int64_t length) {
   uint64_t pool_offset;
-  if (ctx == NULL || ctx->version != 3 || length < 0) __builtin_trap();
+  if (ctx == NULL || ctx->version != 4 || length < 0) __builtin_trap();
   if (offset >= 0) {
     if ((uint64_t)offset + (uint64_t)length > ctx->code_length ||
         (uint64_t)offset + (uint64_t)length < (uint64_t)offset)
@@ -428,7 +440,7 @@ static int inspect_variant_result(const struct kexe_context *ctx,
  * hosts implement one ABI and must not drift. */
 
 static struct vector_cell *checked_vector(struct kexe_context *ctx, int64_t handle) {
-  if (ctx == NULL || ctx->version != 3 || handle <= 0 ||
+  if (ctx == NULL || ctx->version != 4 || handle <= 0 ||
       (uint64_t)handle > ctx->vector_used) __builtin_trap();
   return &ctx->vectors[(uint64_t)handle - 1];
 }
@@ -443,7 +455,7 @@ static int64_t intern_vector(struct kexe_context *ctx, uint64_t offset, uint64_t
 }
 
 static int64_t SYSV vector_new_empty(struct kexe_context *ctx) {
-  if (ctx == NULL || ctx->version != 3) __builtin_trap();
+  if (ctx == NULL || ctx->version != 4) __builtin_trap();
   return intern_vector(ctx, ctx->vector_item_used, 0);
 }
 
@@ -490,6 +502,26 @@ static int64_t SYSV vector_assoc(struct kexe_context *ctx, int64_t handle,
   ctx->vector_items[destination + (uint64_t)index] = item;
   ctx->vector_item_used += length;
   return intern_vector(ctx, destination, length);
+}
+
+static int64_t SYSV vector_alloc(struct kexe_context *ctx, int64_t count) {
+  uint64_t offset;
+  uint64_t i;
+  if (ctx == NULL || ctx->version != 4) __builtin_trap();
+  if (count < 0 || (uint64_t)count > KEXE_VECTOR_LENGTH_LIMIT) __builtin_trap();
+  if (ctx->vector_item_used + (uint64_t)count > KEXE_VECTOR_ITEM_CAPACITY) __builtin_trap();
+  offset = ctx->vector_item_used;
+  for (i = 0; i < (uint64_t)count; i++) ctx->vector_items[offset + i] = 0;
+  ctx->vector_item_used += (uint64_t)count;
+  return intern_vector(ctx, offset, (uint64_t)count);
+}
+
+static int64_t SYSV vector_assoc_in_place(struct kexe_context *ctx, int64_t handle,
+                                          int64_t index, int64_t item) {
+  struct vector_cell *vector = checked_vector(ctx, handle);
+  if (index < 0 || (uint64_t)index >= vector->length) __builtin_trap();
+  ctx->vector_items[vector->offset + (uint64_t)index] = item;
+  return handle;
 }
 
 static int64_t SYSV vector_drop(struct kexe_context *ctx, int64_t handle, int64_t count) {
@@ -708,7 +740,7 @@ static int64_t SYSV typed_cap_call(struct kexe_context *ctx, uint64_t id,
                                    uint64_t request_kind, uint64_t result_kind,
                                    int64_t request) {
   int64_t result;
-  if (ctx == NULL || ctx->version != 3 || id > 255 ||
+  if (ctx == NULL || ctx->version != 4 || id > 255 ||
       !(ctx->allow[id / 8] & (1u << (id % 8))) ||
       request_kind != result_kind ||
       !valid_typed_value(ctx, request_kind, request))
@@ -1433,7 +1465,7 @@ int main(int argc, char **argv) {
   ctx = (struct kexe_context *)VirtualAlloc(NULL, sizeof(*ctx), MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
   if (ctx == NULL) fail_win("VirtualAlloc context");
   ZeroMemory(ctx, sizeof(*ctx));
-  ctx->version = 3;
+  ctx->version = 4;
   ctx->fuel = 512;
   ctx->cap_call = (void *)&cap_call;
   ctx->pair_new = (void *)&pair_new;
@@ -1450,6 +1482,8 @@ int main(int argc, char **argv) {
   ctx->vector_at = (void *)&vector_at;
   ctx->vector_assoc = (void *)&vector_assoc;
   ctx->vector_drop = (void *)&vector_drop;
+  ctx->vector_alloc = (void *)&vector_alloc;
+  ctx->vector_assoc_in_place = (void *)&vector_assoc_in_place;
   ctx->code_base = code;
   ctx->code_length = (uint64_t)length;
   parse_allow(ctx, argv[5]);

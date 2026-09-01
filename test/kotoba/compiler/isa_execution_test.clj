@@ -596,12 +596,45 @@
     (str "(defn main [] (if (result-value-of [:result :bool :i64]"
          " (result-ok-of [:result :bool :i64] true) true) 6 7))") 6]])
 
+;; Context ABI v4: `vector-alloc` at slot 200 and `vector-assoc!` at 208
+;; (superproject ADR-2609010200). Here rather than only in
+;; `native-executor-test` because that file runs on the HOST ISA only, and
+;; this table is the one place a program is executed as a real process on
+;; both -- the exact gap that let the signed-disp8 bug ship twice. Both new
+;; offsets are past 127, so they take the same disp32 form that bug was about.
+;;
+;; The second row is the one that separates the store from the copy. The
+;; element arena is bump-only and never reclaimed (65536 words), so a copying
+;; update caps a 256-slot vector's whole-program write count at
+;; `(65536 - 256) / 256` = 255. 300 writes is past that on purpose: it
+;; returns 299 through `vector-assoc!` and traps through `vector-assoc`, so a
+;; lowering that sent the bang to the copying slot fails this row on both
+;; ISAs. The first row would not notice -- a copy and an in-place write are
+;; indistinguishable on a handle that is dead afterwards, which is the whole
+;; argument for admitting the bang.
+(def ^:private abi-v4-vector-cases
+  [["vector-alloc zeroes, and an in-place write lands in the named slot"
+    (str "(defn main [] :i64 "
+         "(let [v (vector-alloc 8) w (vector-assoc! v 5 41)] "
+         "(+ (vector-at w 5) (vector-count w))))") 49]
+   ["300 in-place writes over 256 slots outlive the copying arena budget"
+    ;; `go` must NOT be exported: a vector handle is one machine word at an
+    ;; internal call boundary and is deliberately not a host ABI
+    ;; (`native-private-handle-type?`). Without the `:export` list every
+    ;; function is exported and target selection refuses the whole module.
+    (str "(ns fixtures.isa-slab (:export [main])) "
+         "(defn go [items :vector-i64 i :i64 n :i64] :i64 "
+         "(if (>= i n) (vector-at items 0) "
+         "(go (vector-assoc! items 0 i) (+ i 1) n))) "
+         "(defn main [] :i64 (go (vector-alloc 256) 0 300))") 299]])
+
 (def ^:private cases
   (vec (concat base-cases
                record-result-cases
                string-search-cases
                bool-parameter-cases
-               boolean-literal-argument-cases)))
+               boolean-literal-argument-cases
+               abi-v4-vector-cases)))
 
 (deftest every-admitted-word-operation-uses-production-machine-ir
   (doseq [form ['(bool-not a) '(bit-not a)

@@ -42,9 +42,13 @@
         io.github.kotoba-lang/kotoba-object
         {:git/url "https://github.com/kotoba-lang/kotoba-object.git"
          :git/sha "8070c4b3adb327f1a783cf27f39e5ea1e72f1cf2"}
+        ;; 9007989 pins the context ABI v4 loader identity for both hosts.
+        ;; A loader source hash is what binds an artifact to the host that can
+        ;; run it, so this pin and tools/kexe_loader.c move in the same commit
+        ;; or execution refuses before the guest starts.
         io.github.kotoba-lang/artifact
         {:git/url "https://github.com/kotoba-lang/artifact.git"
-         :git/sha "3ed1533c00d77c9a141e1f787b62c2302f3157e6"}
+         :git/sha "912ca0d60f4a9b5d3617a43d1d42560477d7894f"}
         io.github.kotoba-lang/io-ipld
         {:git/url "https://github.com/kotoba-lang/io-ipld.git"
          :git/sha "1a2e10cf8038155de210357e637eac4102de89cb"}
@@ -115,9 +119,13 @@
         ;; -- and the shipped bytes prove the portable file was the right one.
         ;; Found only by comparing the two routes' output, because no single
         ;; runtime can load both files.
+        ;; 4a4c4c3 lowers `vector-alloc` (context slot 200) and
+        ;; `vector-assoc!` (slot 208) on both ISAs, via kotoba-gmir 682a0d5
+        ;; (the arities) and kotoba-mir 9b3a42e (the offsets). Superproject
+        ;; ADR-2609010200.
         io.github.kotoba-lang/kotoba-native
         {:git/url "https://github.com/kotoba-lang/kotoba-native.git"
-         :git/sha "b77496b80a43a65e7ec7aec1ec3ea1dad884a655"}
+         :git/sha "4a4c4c342a5c5318b96c9493abc5c61b5fad020d"}
         io.github.kotoba-lang/kotoba-component
         {:git/url "https://github.com/kotoba-lang/kotoba-component.git"
          :git/sha "68acc7237aec7b24b683304db8e87d14ec1be745"}
@@ -133,9 +141,11 @@
         ;; in addition to scalar/variant/call-frame checks.
         ;; Producer and verifier move in the same closure; neither trusts the
         ;; other's aggregate metadata.
+        ;; 58a02b4 re-derives the two new arities and the v4 expected context
+        ;; ABI, which is what makes a mismatched ABI an explicit refusal.
         io.github.kotoba-lang/kotoba-verifier
         {:git/url "https://github.com/kotoba-lang/kotoba-verifier.git"
-         :git/sha "d007aa108d1eab91172c763a1c9d3cb2a0803a9e"}
+         :git/sha "58a02b4b04f0b5b81aabbd50cffabf5bbfc6061a"}
 }
  :aliases {:test {:extra-paths ["test"]
                   :extra-deps

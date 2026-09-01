@@ -2,3 +2,19 @@
 # Never allow checkout configuration to rewrite reviewed loader sources.
 tools/kexe_loader.c text eol=lf
 tools/kexe_loader_windows.c text eol=lf
+
+# `deps.edn` is measured byte-for-byte too, and had no such protection.
+# `kotoba.compiler.nbb.classpath/deps-digest` is sha256 over the FILE'S BYTES,
+# and `deps-lock.edn` pins that digest -- so a checkout that rewrites the line
+# endings makes the lock look stale on that host and only on that host. The
+# failure names the one thing that did not happen (`deps.edn changed since the
+# lock was generated`), and the fallback it triggers is `clojure -Spath`, i.e.
+# the JDK-free property ADR-0202 exists to keep, lost on Windows.
+#
+# Observed 2026-09-01 on `browser-matrix (windows-2025)`: expected
+# 4167621b..., actual 91188971..., and 91188971 is exactly sha256 of that same
+# file with LF rewritten to CRLF. Earlier heads of the same branch passed on
+# Windows with byte-identical content, so the conversion is a property of the
+# runner rather than of the commit -- which is the argument for pinning it
+# here instead of hoping.
+deps.edn text eol=lf

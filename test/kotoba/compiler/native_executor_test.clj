@@ -1284,3 +1284,151 @@
     (is (= {:status :ok :result expected}
            (select-keys (f64-compare-result op a b) [:status :result]))
         (str op " " a " " b))))
+
+;; ---------------------------------------------------------------------------
+;; Context ABI v4: vector-alloc (offset 200) and vector-assoc! (offset 208)
+;; ---------------------------------------------------------------------------
+;;
+;; Two operations `kotoba-kir` has declared and `only-native-word-typed-
+;; features?` has admitted since kotoba-kir b6bfe23, with nothing on native to
+;; emit them and no host slot to call. Superproject ADR-2609010200.
+;;
+;; ## Why the third deftest is the one that pins the LOWERING
+;;
+;; A copy and an in-place write are INDISTINGUISHABLE on a handle the caller
+;; has proved dead afterwards. That is the whole argument for admitting
+;; `vector-assoc!`, and the KIR interpreter refuses to tell them apart for
+;; exactly that reason -- so the round-trip deftest below would return the
+;; same answer if `vector-assoc!` were lowered to the copying slot at 184. It
+;; pins correctness, not the lowering.
+;;
+;; What DOES separate them is the arena, and it separates them at a number
+;; this file can compute in advance. The element arena is bump-only and never
+;; reclaimed (`KEXE_VECTOR_ITEM_CAPACITY` 65536 words), so a copying update
+;; caps a vector's whole-program write count at `(capacity - length) / length`.
+;; For a 256-slot vector that is exactly 255 writes. The in-place store
+;; allocates nothing, so its count is not bounded by the arena at all.
+;;
+;; So: same program, same numbers, one head changed. 300 writes over 256 slots
+;; is `:ok` through `vector-assoc!` and a trap through `vector-assoc`.
+
+(def ^:private slab-source
+  "The shape a struct of arrays actually writes: a vector threaded through a
+  tail-recursive parameter, read in the base case and consumed in the step.
+  `%s` is the update head, the only thing that differs between the two runs.
+
+  `go` is not exported, which is what lets it take a `:vector-i64` at all --
+  a vector handle is one machine word at an internal call boundary and is
+  deliberately not a host ABI (`native-private-handle-type?`)."
+  "(ns pilot.native-slab (:export [fill]))
+   (defn go [items :vector-i64 i :i64 n :i64] :i64
+     (if (>= i n)
+       (vector-at items 0)
+       (go (%s items 0 i) (+ i 1) n)))
+   (defn fill [length :i64 n :i64] :i64
+     (go (vector-alloc length) 0 n))")
+
+(defn- run-slab [head length writes]
+  (let [{:keys [envelope trust]} (signed (format slab-source head) {:allow #{}})
+        {:keys [trust options]} (execution-options trust)]
+    (executor/execute envelope trust {:allow #{}} {:args [length writes]}
+                      (assoc options :entry 'fill))))
+
+(deftest native-vector-alloc-and-in-place-write-round-trip-through-real-kexe-loader
+  (let [{:keys [envelope trust]}
+        (signed "(ns pilot.native-slab (:export [write-and-read]))
+                 (defn write-and-read [slots :i64 index :i64 value :i64] :i64
+                   (let [fresh (vector-alloc slots)
+                         filled (vector-assoc! fresh index value)]
+                     (+ (vector-at filled index) (vector-count filled))))"
+                {:allow #{}})
+        {:keys [trust options]} (execution-options trust)
+        result (executor/execute envelope trust {:allow #{}} {:args [8 5 41]}
+                                 (assoc options :entry 'write-and-read))]
+    ;; 41 written into slot 5 of an 8-slot allocation, read back, plus the
+    ;; count. Predicted before running: 41 + 8 = 49.
+    (is (= {:status :ok :result 49}
+           (select-keys (:evidence result) [:status :result])))))
+
+(deftest native-vector-alloc-zeroes-the-slots-it-allocates
+  ;; The store writes ONE word, not a region: every slot the write did not
+  ;; name still holds the zero `vector-alloc` put there.
+  (let [{:keys [envelope trust]}
+        (signed "(ns pilot.native-slab (:export [neighbour]))
+                 (defn neighbour [slots :i64 written :i64 read :i64] :i64
+                   (let [fresh (vector-alloc slots)
+                         filled (vector-assoc! fresh written 41)]
+                     (vector-at filled read)))"
+                {:allow #{}})
+        {:keys [trust options]} (execution-options trust)
+        at (fn [written read]
+             (select-keys (:evidence (executor/execute
+                                      envelope trust {:allow #{}}
+                                      {:args [8 written read]}
+                                      (assoc options :entry 'neighbour)))
+                          [:status :result]))]
+    (is (= {:status :ok :result 41} (at 5 5)) "the slot that was written")
+    (doseq [read [0 4 6 7]]
+      (is (= {:status :ok :result 0} (at 5 read))
+          (str "slot " read " beside the written one is still zero")))))
+
+(deftest the-in-place-store-is-what-lets-a-slab-be-written-more-than-the-arena-allows
+  ;; 255 = (65536 - 256) / 256, the copying update's whole-program write
+  ;; budget for a 256-slot vector. 300 is past it on purpose.
+  (let [in-place (run-slab "vector-assoc!" 256 300)
+        copying (run-slab "vector-assoc" 256 300)]
+    (is (= {:status :ok :result 299}
+           (select-keys (:evidence in-place) [:status :result]))
+        "300 in-place writes finish, and the last one is what index 0 reads")
+    (is (= :trap (get-in copying [:report :status]))
+        "the same 300 writes exhaust the element arena when each one copies")
+    ;; Not a fuel difference. Both runs charge the same iterations, and the
+    ;; copying run stops with MORE fuel left than the run that completed --
+    ;; it ran out of arena, not out of budget. Stated because "it trapped"
+    ;; would otherwise be consistent with the loop simply being too long.
+    (is (pos? (get-in copying [:report :fuel :remaining]))
+        "the copying run trapped with fuel remaining, so this is the arena")
+    (is (< (get-in in-place [:report :fuel :remaining])
+           (get-in copying [:report :fuel :remaining]))
+        "and it stopped EARLIER than the run that completed")))
+
+(deftest the-affine-gate-refuses-an-in-place-write-to-a-handle-that-is-read-after
+  ;; The claim the bang makes is checked, not assumed. Here the handle written
+  ;; in place is read again afterwards, which is precisely the program an
+  ;; in-place store would corrupt -- so it is refused at compile time rather
+  ;; than lowered to the copying slot as a silent fallback.
+  (is (thrown-with-msg?
+       clojure.lang.ExceptionInfo #"vector-assoc! requires a linear handle"
+       (compiler/compile-source
+        "(ns pilot.native-slab (:export [leak]))
+         (defn leak [slots :i64] :i64
+           (let [fresh (vector-alloc slots)
+                 filled (vector-assoc! fresh 0 7)]
+             (+ (vector-at fresh 0) (vector-at filled 0))))"
+        (target) {:allow #{}}))))
+
+;; The host bound is the only one that can answer here. `n` arrives as an
+;; entry ARGUMENT, so the compile-time KIR oracle -- which refuses a literal
+;; `(vector-alloc 20000)` with `:vector-alloc-out-of-range` before any code is
+;; emitted -- has nothing to fold, and `checked_vector_alloc`'s own
+;; re-derivation of `vector-item-limit` is what decides. That re-derivation is
+;; the thing being tested: 16384 is the limit, so 16384 must be ADMITTED and
+;; 16385 refused. A bound checked with `>=` instead of `>` passes every
+;; too-large case and still refuses one program that should run.
+(deftest native-vector-alloc-fails-closed-at-the-item-limit-the-host-re-derives
+  (let [{:keys [envelope trust]}
+        (signed "(ns pilot.native-slab (:export [alloc-count]))
+                 (defn alloc-count [n :i64] :i64 (vector-count (vector-alloc n)))"
+                {:allow #{}})
+        {:keys [trust options]} (execution-options trust)
+        run (fn [n] (executor/execute envelope trust {:allow #{}} {:args [n]}
+                                      (assoc options :entry 'alloc-count)))]
+    (is (= {:status :ok :result 0} (select-keys (:evidence (run 0)) [:status :result]))
+        "zero slots is a real handle over an empty slice, not an error")
+    (is (= {:status :ok :result 16384}
+           (select-keys (:evidence (run 16384)) [:status :result]))
+        "the limit itself is admitted -- an off-by-one here refuses a legal program")
+    (is (= :trap (get-in (run 16385) [:report :status]))
+        "one past the limit is refused by the host, not by the oracle")
+    (is (= :trap (get-in (run -1) [:report :status]))
+        "a negative count is refused before it is widened to a length")))

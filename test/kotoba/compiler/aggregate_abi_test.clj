@@ -49,7 +49,12 @@
   ;; exactly this, added for the x86-64 path; AArch64 had not adopted it.
   ;; The emitted kexe is byte-identical to the JVM front's, and the JVM
   ;; front's own output is byte-identical across the advance.
-  (is (= "b77496b80a43a65e7ec7aec1ec3ea1dad884a655"
+  ;;
+  ;; Advanced 2026-09-01 for context ABI v4: this backend now lowers
+  ;; `vector-alloc` (slot 200) and `vector-assoc!` (slot 208), the two heads
+  ;; KIR has declared and admitted since b6bfe23 with nothing on native to
+  ;; emit them. Superproject ADR-2609010200.
+  (is (= "4a4c4c342a5c5318b96c9493abc5c61b5fad020d"
          (dependency-pin 'io.github.kotoba-lang/kotoba-native)))
   ;; Advanced 2026-08-31 for two more instances of ADR-0286's class -- a KIR
   ;; i64 is a BigInt under ClojureScript and reached a host operation that
@@ -62,7 +67,11 @@
   ;; of `kotoba.kir.value`'s ClojureScript require graph.
   (is (= "b6bfe238396631ff4b61934264a919f8ae5236b7"
          (dependency-pin 'io.github.kotoba-lang/kotoba-kir)))
-  (is (= "d007aa108d1eab91172c763a1c9d3cb2a0803a9e"
+  ;; Advanced 2026-09-01 alongside the backend: the verifier re-derives the
+  ;; two new arities and the v4 `expected-context`, and is what turns a
+  ;; mismatched ABI into an explicit refusal rather than a v3 artifact
+  ;; hunting for slots that are not there.
+  (is (= "58a02b4b04f0b5b81aabbd50cffabf5bbfc6061a"
          (dependency-pin 'io.github.kotoba-lang/kotoba-verifier)))
   (is (= 7 (:abi/version aggregate-abi/contract)))
   (is (= :recursive-word-handles

@@ -1,5 +1,7 @@
 (ns kotoba.compiler.admission-test
   (:require [clojure.test :refer [deftest is]]
+            [kotoba.artifact.core :as artifact]
+            [kotoba.verifier :as verifier]
             [kotoba.compiler.core :as compiler]))
 
 (def effect-source
@@ -131,7 +133,7 @@
     (let [artifact (:artifact (compiler/compile-source effect-source target
                                                        {:allow #{[:cap/call 7]}}))]
       (is (= #{[:cap/call 7]} (:effects artifact)))
-      (is (= {:version 3 :fuel-offset 8 :allow-bitmap-offset 16
+      (is (= {:version 4 :fuel-offset 8 :allow-bitmap-offset 16
               :allow-bitmap-bytes 32 :cap-call-offset 48
               :pair-new-offset 56 :pair-first-offset 64
               :pair-second-offset 72 :pair-capacity 4096
@@ -149,9 +151,42 @@
               :vector-at-offset 176
               :vector-assoc-offset 184
               :vector-drop-offset 192
+              :vector-alloc-offset 200
+              :vector-assoc-in-place-offset 208
               :vector-capacity 4096
               :vector-item-capacity 65536}
              (:context-abi artifact))))))
+
+;; The version field is not decoration. A v3 host has no slots at 200-208, so
+;; v4-compiled code that called them would jump through uninitialised memory --
+;; the one-directional hazard the bump exists for. The loader's half is that
+;; every `checked_*` refuses a context whose version is not exactly its own;
+;; this is the other half, and it fires EARLIER: an artifact naming any other
+;; ABI is refused before a loader is ever handed it.
+;;
+;; The three mutations are three mistakes a producer can make, not three
+;; independent gates -- `kotoba.verifier` compares the whole context-abi map
+;; for equality, so one check answers all of them. They are listed separately
+;; because a reader looking for "is a downgraded version caught" should find
+;; that question asked in those words.
+(deftest a-context-abi-that-is-not-v4-is-refused-by-name
+  (let [kexe (:artifact (compiler/compile-source "(defn main [] 42)"
+                                                 :aarch64-kotoba-v1 {}))
+        refusal (fn [m]
+                  (try (verifier/verify-artifact! (artifact/seal (dissoc m :sha256)))
+                       :ACCEPTED
+                       (catch clojure.lang.ExceptionInfo e (ex-message e))))]
+    (is (= 4 (get-in kexe [:context-abi :version])))
+    (is (= "execution context ABI is not admitted"
+           (refusal (assoc-in kexe [:context-abi :version] 3)))
+        "a downgraded version field")
+    (is (= "execution context ABI is not admitted"
+           (refusal (update kexe :context-abi dissoc
+                            :vector-alloc-offset :vector-assoc-in-place-offset)))
+        "a table without the two new slots, which is what a v3 producer emits")
+    (is (= "execution context ABI is not admitted"
+           (refusal (assoc-in kexe [:context-abi :vector-alloc-offset] 184)))
+        "the in-place store must not be admitted at the copying slot")))
 
 (deftest mutual-call-effects-reach-fixpoint
   (let [source "(defn left [x] (if (= x 0) (cap-call 3 x) (right (- x 1))))
