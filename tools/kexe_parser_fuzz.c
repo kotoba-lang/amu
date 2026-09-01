@@ -228,10 +228,10 @@ static void ds_clear(void) {
  * here and merely reads padding there -- but it is a defect either way, since
  * `code_length` is the whole bound `resolve_string_bytes` and
  * `inspect_string_result` are given to work with. */
-static struct kexe_shared_v3 *fuzz_open(struct fuzz_cursor *cursor,
+static struct kexe_shared_v4 *fuzz_open(struct fuzz_cursor *cursor,
                                         uint8_t **code_out,
                                         uint64_t *code_length_out) {
-  struct kexe_shared_v3 *shared = (struct kexe_shared_v3 *)malloc(sizeof *shared);
+  struct kexe_shared_v4 *shared = (struct kexe_shared_v4 *)malloc(sizeof *shared);
   if (shared == NULL) return NULL;
   memset(shared, 0, sizeof *shared);
   /* At least one byte, never zero -- `main` refuses `length <= 0` before it
@@ -264,7 +264,7 @@ static struct kexe_shared_v3 *fuzz_open(struct fuzz_cursor *cursor,
     uint8_t byte = take_u8(cursor);
     code[i] = ascii ? (uint8_t)(0x20u + (byte % 0x5fu)) : byte;
   }
-  shared->context.version = 3;
+  shared->context.version = 4;
   shared->context.fuel = 512;
   shared->context.code_base = code;
   shared->context.code_length = code_length;
@@ -277,7 +277,7 @@ static struct kexe_shared_v3 *fuzz_open(struct fuzz_cursor *cursor,
   return shared;
 }
 
-static void fuzz_close(struct kexe_shared_v3 *shared, uint8_t *code) {
+static void fuzz_close(struct kexe_shared_v4 *shared, uint8_t *code) {
   free(code);
   free(shared);
 }
@@ -306,7 +306,7 @@ struct fuzz_marks {
   uint64_t vector_item_used;
 };
 
-static void marks_save(const struct kexe_shared_v3 *shared,
+static void marks_save(const struct kexe_shared_v4 *shared,
                        struct fuzz_marks *marks) {
   marks->pair_used = shared->pair_used;
   marks->kgraph_used = shared->kgraph_used;
@@ -315,7 +315,7 @@ static void marks_save(const struct kexe_shared_v3 *shared,
   marks->vector_item_used = shared->vector_item_used;
 }
 
-static void marks_restore(struct kexe_shared_v3 *shared,
+static void marks_restore(struct kexe_shared_v4 *shared,
                           const struct fuzz_marks *marks) {
   shared->pair_used = marks->pair_used;
   shared->kgraph_used = marks->kgraph_used;
@@ -331,7 +331,7 @@ static int64_t fuzz_value(struct fuzz_cursor *cursor, const int64_t *registers) 
 }
 
 static int64_t fuzz_handle(struct fuzz_cursor *cursor, const int64_t *registers,
-                           const struct kexe_shared_v3 *shared,
+                           const struct kexe_shared_v4 *shared,
                            enum fuzz_arena arena) {
   uint8_t selector = take_u8(cursor);
   if (selector >= 0xf0) return (int64_t)take_u64(cursor);
@@ -345,9 +345,9 @@ static int64_t fuzz_handle(struct fuzz_cursor *cursor, const int64_t *registers,
 }
 
 static int64_t fuzz_dispatch(struct fuzz_cursor *cursor, int64_t *registers,
-                             struct kexe_shared_v3 *shared, uint8_t operation) {
-  struct kexe_context_v3 *context = &shared->context;
-  switch (operation % 20u) {
+                             struct kexe_shared_v4 *shared, uint8_t operation) {
+  struct kexe_context_v4 *context = &shared->context;
+  switch (operation % 22u) {
     case 0:
       return checked_pair_new(context, fuzz_value(cursor, registers),
                               fuzz_value(cursor, registers));
@@ -421,6 +421,23 @@ static int64_t fuzz_dispatch(struct fuzz_cursor *cursor, int64_t *registers,
           context, (uint64_t)take_u8(cursor), request_kind, result_kind,
           fuzz_handle(cursor, registers, shared, FUZZ_ARENA_PAIR));
     }
+    /* ABI v4. Reached rather than merely present: a fuzz target that never
+     * reaches the function it names answers "no defect" for a function it
+     * never called, which is what the reach counters above exist to catch.
+     *
+     * `checked_vector_assoc_in_place` is the one operation in the table that
+     * WRITES inside a slice an existing handle could span, so it is the one
+     * whose bounds argument the fuzzer has the most to say about: it gets the
+     * same `fuzz_handle` (in-range and forged) and the same unconstrained
+     * index every other vector operation gets. The aliasing claim is not
+     * fuzzable here and is not meant to be -- that is the compiler's, and the
+     * loader deliberately does not repeat it. */
+    case 19:
+      return checked_vector_alloc(context, fuzz_value(cursor, registers));
+    case 20:
+      return checked_vector_assoc_in_place(
+          context, fuzz_handle(cursor, registers, shared, FUZZ_ARENA_VECTOR),
+          fuzz_value(cursor, registers), fuzz_value(cursor, registers));
     default: {
       /* A literal string handle as `emit-string-literal` builds one: a pair
        * over the artifact's own code+literal region. Sometimes in range,
@@ -437,7 +454,7 @@ static void fuzz_handle_graph(const uint8_t *data, size_t size) {
   struct fuzz_cursor cursor = {data, size, 0};
   uint8_t *code = NULL;
   uint64_t code_length = 0;
-  struct kexe_shared_v3 *shared = fuzz_open(&cursor, &code, &code_length);
+  struct kexe_shared_v4 *shared = fuzz_open(&cursor, &code, &code_length);
   if (shared == NULL) return;
 
   int64_t registers[FUZZ_REGISTERS];
@@ -501,7 +518,7 @@ static void fuzz_result_inspection(const uint8_t *data, size_t size) {
   struct fuzz_cursor cursor = {data, size, 0};
   uint8_t *code = NULL;
   uint64_t code_length = 0;
-  struct kexe_shared_v3 *shared = fuzz_open(&cursor, &code, &code_length);
+  struct kexe_shared_v4 *shared = fuzz_open(&cursor, &code, &code_length);
   if (shared == NULL) return;
   fuzz_arm_reach_report();
 
@@ -658,10 +675,10 @@ static void fuzz_parsers(const uint8_t *data, size_t size) {
   uint64_t case_count = 0, bool_mask = 0;
   (void)parse_variant_profile(text, &case_count, &bool_mask);
 
-  struct kexe_shared_v3 *shared = (struct kexe_shared_v3 *)malloc(sizeof *shared);
+  struct kexe_shared_v4 *shared = (struct kexe_shared_v4 *)malloc(sizeof *shared);
   if (shared != NULL) {
     memset(shared, 0, sizeof *shared);
-    shared->context.version = 3;
+    shared->context.version = 4;
     int64_t value = 0;
     (void)parse_guest_arg(shared, text, &value);
     free(shared);
