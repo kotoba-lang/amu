@@ -10,7 +10,7 @@
   "(ns demo (:export [main]))\n(defn main [] :i64 (+ 1 2))\n")
 
 (def pure-eval-bad
-  "(ns demo (:export [main]))\n(defn main [] (eval 1))\n")
+  "(ns demo (:export [run]))\n(defn run [request :document] :i64 (eval request))\n")
 
 (def pure-caps-bad
   "(ns demo (:export [main]) (:capabilities #{:clock/now}))\n(defn main [] 0)\n")
@@ -27,8 +27,12 @@
     (is (true? (get-in r [:admission :admitted?])))))
 
 (deftest check-source-pure-product-rejects-eval
-  (is (thrown-with-msg? clojure.lang.ExceptionInfo #"pure-product|eval|forbidden"
-        (compiler/check-source pure-eval-bad {:language-profile :pure-product}))))
+  (try
+    (compiler/check-source pure-eval-bad {:language-profile :pure-product})
+    (is false "expected typed eval to be effectful")
+    (catch clojure.lang.ExceptionInfo e
+      (is (= :kotoba.error/pure-product-effects
+             (:kotoba.error/code (ex-data e)))))))
 
 (deftest check-source-pure-product-rejects-capabilities
   (try
@@ -128,8 +132,8 @@
 (deftest check-project-still-refuses-a-module-it-should
   ;; The gate is not widened by linking: a forbidden head inside a dependency
   ;; is still refused, and refused for its own reason.
-  (let [bad "(ns app.util (:export [answer]))\n(defn answer [] :i64 (eval 1))\n"]
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"eval|forbidden|ambient"
+  (let [bad "(ns app.util (:export [answer]))\n(defn answer [] :i64 (load-string \"(+ 1 2)\"))\n"]
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"load-string|forbidden|ambient"
           (compiler/check-project {'app.root require-module 'app.util bad}
                                   'app.root)))))
 

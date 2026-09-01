@@ -18,8 +18,8 @@
 
 (def ambient-cases
   "Stable table: [id source expected-code-or-nil]."
-  [[:eval
-    "(ns t (:export [f])) (defn f [] (eval 1))"
+  [[:load-string
+    "(ns t (:export [f])) (defn f [] (load-string \"(+ 1 2)\"))"
     :kotoba.error/ambient-forbidden]
    [:require
     "(ns t (:export [f])) (defn f [] (require 'foo))"
@@ -70,18 +70,14 @@
           (is (= expected-code (:kotoba.error/code (ex-data e)))
               (str id " code " (pr-str (ex-data e)))))))))
 
-(deftest pure-product-also-rejects-ambient
-  (testing "pure-product profile keeps ambient reject (profile gate may fire first)"
+(deftest pure-product-rejects-typed-eval-effects
+  (testing "typed eval remains unavailable to the pure-product profile"
     (let [e (analyze-error
-             "(ns t (:export [f])) (defn f [] (eval 1))"
+             "(ns t (:export [f])) (defn f [request :document] :i64 (eval request))"
              {:language-profile :pure-product})
           code (:kotoba.error/code (ex-data e))]
       (is (some? e))
-      ;; pure-product-disallowed-heads / ambient both fail closed; either code is fine.
-      (is (contains? #{:kotoba.error/ambient-forbidden
-                       :kotoba.error/pure-product-forbidden}
-                     code)
-          (str "got " code)))))
+      (is (= :kotoba.error/pure-product-effects code) (str "got " code)))))
 
 (deftest pure-product-rejects-cap-call-and-doseq
   ;; Cross-link T2.1 living gate — must stay red under pure-product.
