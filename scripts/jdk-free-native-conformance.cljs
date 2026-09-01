@@ -62,7 +62,23 @@
              {:source "nested-record.kotoba" :symbol "nested-score"
               :arguments [] :expected "15"}
              {:source "held-operations.kotoba" :symbol "held-score"
-              :arguments [] :expected "54"}]]
+              :arguments [] :expected "54"}
+             ;; More than eight DISTINCT constants in one branchless leaf.
+             ;; The case above guards a single i64 literal against being hashed
+             ;; as a register; one literal cannot grow a map past the
+             ;; PersistentArrayMap boundary, so it structurally could not see
+             ;; the sibling failure: `a64-cache-leaf-constants` keyed its
+             ;; occurrences map by the raw i64, and past eight entries the map
+             ;; hashes a BigInt primitive and throws. `kernel_deep.kotoba` and
+             ;; `kernel_wide.kotoba` -- the two fixtures this repository
+             ;; benchmarks itself on -- could not be built through `bin/amu`
+             ;; while the JVM front compiled both.
+             ;;
+             ;; Eight lanes is the measured threshold on the broken backend:
+             ;; four compile clean, eight do not. Expected value measured by
+             ;; executing the artifact, not computed and trusted.
+             {:source "many-constants.kotoba" :symbol "many-constants"
+              :arguments ["1"] :expected "1737764"}]]
       (let [artifact (file (str symbol ".kexe"))
             binary (file (str symbol ".bin"))]
         (invoke ["compile" (.join path root "examples" source)
