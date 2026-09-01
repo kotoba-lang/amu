@@ -1232,9 +1232,19 @@ kotoba -M compile examples/capability.kotoba --target wasm32 \
 value)`. The name is resolved against the language-owned semantic catalog,
 `kotoba/lang/capability-catalog.edn`, supplied by `kotoba-sema` on the
 classpath. The compiler derives its closed name-to-wire-id table from that
-vendored authority at parse time -- before anything else in the compiler runs, so
-`--policy` still grants/denies by the resolved integer id exactly as before.
-An unregistered name is a hard parse-time error. `examples/capability-named.
+vendored authority at parse time -- before anything else in the compiler runs.
+An unregistered name is a hard parse-time error.
+
+Since 2026-09-01 the `--policy` file may be written in those names too:
+`{:allow #{[:cap/call :identity/sign]}}` and `{:allow #{[:cap/call 1]}}` are the
+same policy. `check` answers in names as well -- its `:effects`,
+`:admission :required` and `:admission :minimal-policy` are spelled with catalog
+names, and it additionally reports `:named-operations`, so the `:minimal-policy`
+it prints can be pasted straight into a policy file. The wire id is unchanged
+underneath: names are resolved before admission and before provenance, so the
+two spellings hash to the same `:policy-sha256` and build the same artifact,
+byte for byte. `lang/capability-catalog.edn` declares `:numeric-id
+:not-user-facing`; the integer remains the ABI, not the user surface. `examples/capability-named.
 kotoba` / `examples/capability-named.edn` are the named-form counterpart of
 the pair above, and additionally show the optional `ns` `(:capabilities
 #{...})` declaration, which the compiler checks is an exact match (declared

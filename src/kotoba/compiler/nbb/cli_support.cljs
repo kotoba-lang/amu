@@ -103,7 +103,21 @@
     {:present? true :text (io/read-text-file path)}
     {:present? false :text ""}))
 
-(defn parse-policy-material [material]
+(defn parse-policy-material
+  "Decode policy EDN. This is decoding only: a `:allow` grant written with a
+  catalog NAME (`[:cap/call :hash/sha256]`) is canonicalised to its wire id by
+  `kotoba.compiler.capability-names/wire-policy`, which the source-consuming
+  entrypoints apply immediately around this call.
+
+  Why not here, where the single decode boundary is. `capability-names` reads
+  the catalog through `kotoba.sema`, and requiring `kotoba.sema` from this
+  namespace would pull the whole frontend into the load closure of every
+  entrypoint that requires this one -- including `output-set-cli`, which never
+  reads Kotoba source. Measured 2026-09-01 under nbb on this workstation:
+  loading `kotoba.compiler.diagnostic` alone took 2.1s wall, loading
+  `kotoba.sema` took 15.8s. `verify-output-set` would have paid that to gain
+  nothing."
+  [material]
   (if (:present? material)
     (read-edn-form! (:text material))
     {}))

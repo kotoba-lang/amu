@@ -57,6 +57,7 @@
             [kotoba.compiler.lang-conformance-golden-test]
             [kotoba.compiler.lang-native-conformance-test]
             [kotoba.compiler.fuel-estimate-test]
+            [kotoba.compiler.capability-names-test]
             [kotoba.compiler.check-cli-test]
             [kotoba.compiler.capability-deny-test]
             [kotoba.compiler.kir-trap-source-test]
@@ -221,6 +222,7 @@
    'kotoba.compiler.lang-conformance-golden-test
    'kotoba.compiler.lang-native-conformance-test
    'kotoba.compiler.fuel-estimate-test
+   'kotoba.compiler.capability-names-test
    'kotoba.compiler.check-cli-test
    'kotoba.compiler.capability-deny-test
    'kotoba.compiler.kernel-region-provenance-test

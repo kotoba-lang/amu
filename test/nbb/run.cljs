@@ -10,6 +10,7 @@
             [kotoba.kir.admission :as admission]
             [kotoba.kir :as ir]
             [kotoba.wasm.core :as wasm]
+            [kotoba.compiler.capability-names :as cap-names]
             [kotoba.compiler.diagnostic :as diagnostic]
             [kotoba.compiler.backend.evm :as evm]
             [kotoba.compiler.packaging.elf-fixture :as elf-fixture]
@@ -71,6 +72,55 @@
 
 (def ^:private evm-jvm-push8-operand
   [0x11 0x22 0x33 0x44 0x55 0x66 0x77 0x88])
+
+(defn- capability-name-cases
+  "`kotoba.compiler.capability-names` on THIS runtime.
+
+  The JVM twin (kotoba.compiler.capability-names-test) asserts the same values,
+  and would not have caught the one failure mode that only exists here: under
+  nbb a policy read through `kotoba.compiler.kotoba-reader` carries its integer
+  literals as BigInt, and so does the effect row
+  (`kotoba.compiler.frontend/effect-capability-id`). `kotoba.kir.admission`
+  decides by `set/difference`, and `[:cap/call 3]` with a plain number is not
+  equal to `[:cap/call 3n]`. Measured 2026-09-01: writing the id as a plain
+  number made every NAMED policy read as denying the very effect it granted.
+
+  These are hand-rolled rather than `clojure.test` because this harness reports
+  `{:name :ok? :detail}` maps; the duplication with the JVM namespace is the
+  price of running the same claim on both runtimes."
+  []
+  (let [hir (sema/analyze
+             "(ns demo (:export [main]))\n(defn main [] :string (hash/sha256 \"x\"))\n")
+        named-policy (first (kr/read-forms "{:allow #{[:cap/call :hash/sha256]}}"))
+        numeric-policy (first (kr/read-forms "{:allow #{[:cap/call 3]}}"))
+        wired (cap-names/wire-policy named-policy)
+        reported (cap-names/name-grants (:effects hir))
+        admitted (try {:value (admission/check hir wired)}
+                      (catch :default e {:error (.-message e)}))
+        numeric-unchanged? (= numeric-policy (cap-names/wire-policy numeric-policy))
+        unregistered (try (cap-names/wire-policy
+                           (first (kr/read-forms "{:allow #{[:cap/call :hash/sha257]}}")))
+                          {:message nil}
+                          (catch :default e {:message (.-message e)}))]
+    [{:name "capability-names-reports-the-catalog-name"
+      :ok? (= #{[:cap/call :hash/sha256]} reported)
+      :detail (when-not (= #{[:cap/call :hash/sha256]} reported) (pr-str reported))}
+     {:name "capability-names-admits-a-named-policy-on-this-runtime"
+      ;; The claim that fails when the id is not a BigInt here.
+      :ok? (true? (get-in admitted [:value :admitted?]))
+      :detail (when-not (true? (get-in admitted [:value :admitted?]))
+                (pr-str admitted))}
+     {:name "capability-names-leaves-a-numeric-policy-unchanged"
+      :ok? numeric-unchanged?
+      :detail (when-not numeric-unchanged?
+                (pr-str {:before numeric-policy
+                         :after (cap-names/wire-policy numeric-policy)}))}
+     {:name "capability-names-refuses-an-unregistered-name-by-that-name"
+      :ok? (= "policy names an unregistered capability: :hash/sha257"
+              (:message unregistered))
+      :detail (when-not (= "policy names an unregistered capability: :hash/sha257"
+                           (:message unregistered))
+                (pr-str unregistered))}]))
 
 (defn- evm-case
   "`kotoba.compiler.backend.evm` on the second runtime, against the JVM's bytes.
@@ -145,6 +195,7 @@
        (named-operation-case)
        (evm-case)
        (pe32plus-admission-case))
+      results (into results (capability-name-cases))
       failures (remove :ok? results)]
   (doseq [{:keys [name ok? detail]} results]
     (println (if ok? "PASS" "FAIL") name (or detail "")))
