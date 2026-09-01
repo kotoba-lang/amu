@@ -1,0 +1,70 @@
+{:adr/id 289
+ :adr/status :accepted
+ :decision :collections-residual-is-out-of-line-division-not-callback-crossings
+ :supersedes-claim
+ {:where "docs/codegen-coscientist.md iterations 52/53/54"
+  :claim "what remains is almost purely the ~170 indirect callback crossings per call against gcc's direct array code"
+  :verdict :not-supported
+  :replacement "per-element out-of-line imod carrying a hardware sdiv on the loop-carried chain"}
+ :stage :reflect
+ :grade :diagnostic
+ :host {:machine "this workstation (Apple arm64)" :load1 47 :note "not a claim-grade quiet window; ratios only, no absolutes"}
+
+ :control-1
+ {:question "does an indirect callback crossing, by itself, cost what the residual costs?"
+  :method "two C arms, same kernel, same data, differing only in whether each element read crosses an indirect function pointer mirroring checked_vector_at (context/version check, handle resolve, bounds check, arena load)"
+  :faithfulness-correction
+  {:first-attempt :same-translation-unit
+   :defect "LLVM could see the callee body and schedule around it; arithmetic exposed it -- 108 crossings at 5.9 ns total is 0.055 ns/call, below one indirect call"
+   :fix :callback-in-separate-tu-no-lto}
+  :crossings-per-call 107.5
+  :dynamic-verification {:counter "XCALLS" :observed 17255040 :predicted 17255040 :match true}
+  :result {:ratio 1.002 :cost-ns-per-call 1.6}
+  :reading "~108 opaque indirect crossings are ~free here: the loop is latency-bound on a serial dependency chain and the calls retire in its shadow"}
+
+ :control-2
+ {:question "then where does the 1.93 live?"
+  :method "compile bench/runtime-comparison/kernel_collections.kotoba to aarch64-kotoba-v1 and read the emitted walk loop"
+  :artifact {:target :aarch64-kotoba-v1 :code-bytes 872 :instructions 218
+             :fuel-abi {:mode :hidden-context-x7 :initial 512}}
+  :walk-loop {:span "0x13c..0x1ac" :instructions-per-element 29
+              :breakdown {:vector-at-crossing 9
+                          :fuel-read-modify-write 5
+                          :imod-call-and-constant-rebuild 6
+                          :loop-and-arithmetic 9}}
+  :callee {:symbol "imod" :offset 0 :instructions 18
+           :verified-by {:instruction "bl at 0x18c" :word "0x97ffff9d" :displacement -99 :target "0x0"}
+           :contains :sdiv
+           :also "rebuilds INT64_MIN and -1 from immediates every call for the overflow guard (8 of the 18)"}
+  :total-per-element {:amu 47 :amu-includes-hardware-division true}}
+
+ :twin-contrast
+ {:c-twin {:constant-divisors :strength-reduced-to-smulh-plus-asr
+           :dynamic-sdiv-per-call 1
+           :which "imod(s1, len) -- len is runtime, so this one is a real division"}
+  :amu {:dynamic-sdiv-per-call "~165 (fill 1/element, two walks 1/element each)"
+        :why "imod is a user function; it is not inlined and its divisor is not known constant at the call site"}
+  :note "static sdiv count is 1 in BOTH and is not the discriminator; the dynamic count is"}
+
+ :consequence
+ {:lever-redirect
+  {:was :guest-visible-bounds-checked-load
+   :status "not refuted as a win, but not the dominant term either -- the crossing it removes is 9 of 47 instructions and measured ~free in isolation"
+   :now-ranked-above [:inline-small-user-functions
+                      :constant-divisor-strength-reduction
+                      :bulk-fuel-in-loop-bodies]}
+  :reasoning "a lever that removes a term the control measured at ~1% cannot be the largest remaining lever while a hardware division sits on the loop-carried chain once per element"}
+
+ :not-claimed
+ {:absolute-numbers "one machine, one day, under load 47"
+  :amu-vs-gcc-same-run "not performed here; controls are C-vs-C and static instruction counts"
+  :strings-domain "kernel_strings.kotoba not disassembled; whether its 2.17 shares this cause is UNMEASURED, not assumed"
+  :quiet-host "no levi/gad measurement in this iteration"}
+
+ :disposition-finding
+ {:question "is 'the guest cannot load a byte' a safety invariant or a backend gap?"
+  :answer :backend-gap
+  :method "lang/surface-status.edn shielding axes on origin/main"
+  :axes-checked [:code-identity :dispatch-bypass :authority :control-effect-tracking :resource-bounds]
+  :result "a bounds-checked element load manufactures no code, bypasses no dispatch, mutates nothing and spawns nothing; it is covered by no shielded surface"
+  :hazard-hit "the local kotoba-lang checkout was 14 commits behind and contained NO :shielding-axis key at all; reading it would have produced the opposite conclusion"}}

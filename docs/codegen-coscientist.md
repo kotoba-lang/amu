@@ -1010,7 +1010,8 @@ as before.
   order: `reduce`-desugared walks (T4.5's zero-charge loop, an amu-arm
   change measurable same-run against today's binary), then inlining
   bounds-checked element loads into guest code -- the same
-  guest-visible-plane lever family strings needs. Registered as the
+  guest-visible-plane lever family strings needs. (Iteration 55 refutes
+  the crossing attribution behind this ranking -- ADR 0289.) Registered as the
   second INCUBATING domain, same promotion bar (rust/zig/go/swift
   twins, both ISAs). Documents (`document-*` ops) stay queued as the
   next Wave-2 slice.
@@ -1035,7 +1036,9 @@ as before.
   closure pays a call per element that the self-recursive walk does
   not. The fixture stays as written; the variant is not landed. What
   survives as the collections lever queue: guest-visible bounds-checked
-  element loads -- the same plane strings needs for its 10.77.
+  element loads -- the same plane strings needs for its 10.77. **Superseded by
+  iteration 55**: the crossing is ~1% in a same-kernel control; the
+  per-element `sdiv` is the large term.
 
 - **54 (2026-08-31, validate-once lands through the pinned loader chain --
   strings 10.77 -> 2.17)**: the O(n^2) residue iteration 51 named is
@@ -1053,7 +1056,8 @@ as before.
   10.77 at opening. The remaining 2.17 is the per-character callback
   crossing, the same residue class as collections' 1.93, which points
   both domains at the same next lever (guest-visible bounds-checked
-  loads). Landing this took the whole identity chain, by design: the
+  loads) -- **an attribution iteration 55 refutes for
+  collections and leaves unmeasured for strings**. Landing this took the whole identity chain, by design: the
   loaders are SHA-256-pinned reviewed sources, so the first suite run
   answered with 46 red names -- `native loader source identity
   mismatch`, expected e1f32ab9, actual 636ba814 -- which is the drift
@@ -1065,6 +1069,45 @@ as before.
   suite closed **fully green -- 1189 tests, 8675 assertions, 0 failures**
   (the 17 long-standing reds were fixed upstream by parallel sessions in
   the same window).
+
+- **55 (2026-08-31, the named cause for BOTH open residuals is refuted)**:
+  iterations 52-54 attribute collections' 1.93 and strings' 2.17 to the same
+  thing -- "almost purely the ~170 indirect callback crossings per call" --
+  and point both at one lever. Two controls say otherwise (ADR 0289).
+  **Control 1**: two C arms, same kernel and data, differing only in whether
+  each element read crosses an indirect pointer mirroring
+  `checked_vector_at`. Ratio **1.002 (1.6 ns/call)**. The first build of this
+  control was WRONG and the arithmetic caught it -- one translation unit let
+  LLVM see the clobber set, and 108 crossings at 5.9 ns is 0.055 ns each,
+  below one indirect call; rebuilt with the callback in a separate TU and
+  `-fno-lto`, the answer did not move. Crossings were counted, not assumed:
+  `XCALLS = 17,255,040` against a predicted 17,255,040. They are ~free
+  because the loop is latency-bound on the serial `imod` chain and the calls
+  retire in its shadow. **Control 2**: the emitted `walk` loop
+  (`aarch64-kotoba-v1`, `0x13c..0x1ac`) is **29 instructions per element** --
+  9 for the `vector-at` crossing including spilling `x7` around the call, 5
+  for a fuel read-modify-write, 6 for the `imod` call, 9 of real work -- plus
+  an out-of-line `imod` of **18 instructions containing a hardware `sdiv`**
+  (`bl` at `0x18c`, word `0x97ffff9d`, displacement -99, target `0x0`,
+  decoded rather than symbolized). ~47 instructions and one division per
+  element against the twin's ~6-8. The discriminator is dynamic, not static:
+  both binaries hold exactly one `sdiv`, but the twin strength-reduces every
+  constant divisor and executes its one division ~1x per call, while amu's
+  shared `imod` runs ~165x. **Lever re-ranking**: guest-visible
+  bounds-checked loads remove 9 of 47 instructions and measured ~1% in
+  isolation, so they are no longer the largest remaining lever; above them
+  now sit (i) inlining small user functions, (ii) constant-divisor strength
+  reduction, (iii) bulk fuel in loop bodies. Diagnostic only -- one
+  workstation at load1 47, no quiet-host run, no amu-vs-gcc same-run A/B.
+  **strings was NOT disassembled**; whether its 2.17 shares this cause is
+  unmeasured, not assumed. Separately, the lever itself is cleared as a
+  backend gap rather than a security constraint: a bounds-checked load
+  crosses none of `surface-status.edn`'s five shielding axes, and
+  `vector-region`'s literal path already emits the check
+  (`(if (>= i 0) (if (< i n) sel (quot 1 0)) (quot 1 0))`) -- only the load
+  is missing. The local `kotoba-lang` checkout was 14 commits behind and
+  carried no `:shielding-axis` key at all, which would have produced the
+  opposite conclusion silently.
 
 ## Standing honesty constraints
 
