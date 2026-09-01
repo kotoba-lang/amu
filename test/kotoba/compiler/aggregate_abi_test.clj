@@ -60,7 +60,7 @@
   ;; error for any guest declaring a capability, while `check --jvm-free`
   ;; passed. The same advance also drops an npm package (`@noble/hashes`) out
   ;; of `kotoba.kir.value`'s ClojureScript require graph.
-  (is (= "ff7a3ae2672f8ecdda54aa1abba3d480a2963733"
+  (is (= "b6bfe238396631ff4b61934264a919f8ae5236b7"
          (dependency-pin 'io.github.kotoba-lang/kotoba-kir)))
   (is (= "d007aa108d1eab91172c763a1c9d3cb2a0803a9e"
          (dependency-pin 'io.github.kotoba-lang/kotoba-verifier)))

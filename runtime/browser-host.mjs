@@ -443,13 +443,20 @@ function createTypedRuntime(abi, typedCapCall, allow) {
   // Still a limit, and still fail-closed. An i64 array of this length is 8 MB
   // per field, which is a real cost a host must be willing to pay, and a guest
   // that asks for more is refused rather than allowed to exhaust the host.
-  const VECTOR_ITEM_BUDGET = 1048576;
+  // 2026-09-01: back to 16384, matching kotoba.kir.value/vector-item-limit.
+  // A host that admits a million while the compiler refuses past 16,384 is
+  // not more permissive, it is a second bound nobody reads -- the guest is
+  // already refused before it arrives, so this one never fires and stops
+  // being evidence of anything. Raise both, the native arena and amu's
+  // component test together.
+  const VECTOR_ITEM_BUDGET = 16384;
   // How many vector items one instance may allocate IN TOTAL.
   //
   // The per-vector budget bounds one value; this bounds the instance. Without
-  // it a guest calls `vector-alloc` in a loop and takes 8 MB per call for as
-  // long as it likes -- survivable while one vector was 16,384 items, not now
-  // that it is a million.
+  // it a guest calls `vector-alloc` in a loop and takes 128 KB per call for as
+  // long as it likes. It mattered more when one vector could be a million
+  // items; it is still the only thing bounding the instance rather than the
+  // value.
   //
   // TOTAL, not live: nothing here is freed, and calling it a live budget would
   // promise a reclamation that does not exist. The native arena is bump-only
