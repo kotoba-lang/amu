@@ -4,10 +4,12 @@
   closure, while Wasm provenance is emitted from the same checked HIR/KIR,
   policy, target profile, compatibility descriptor, and bytes as the JVM
   compiler."
-  (:require [kotoba.compiler.nbb.cli-support :as support]
+  (:require ["node:path" :as node-path]
+            [kotoba.compiler.nbb.cli-support :as support]
             [kotoba.compiler.nbb.compile-cache :as compile-cache]
             [kotoba.sema :as sema]
             [kotoba.compiler.nbb.io :as io]
+            [kotoba.compiler.nbb.module-lock :as module-lock]
             [kotoba.compiler.nbb.project-files :as project-files]
             [kotoba.compiler.project :as project]
             [kotoba.compiler.nbb.output-set :as output-set]
@@ -50,18 +52,44 @@
   here; only the path resolution beneath it was JVM-only, which is why this
   route used to refuse the whole command rather than just that half.
 
-  `--module-lock` is deliberately NOT handled here. Its resolver is still
-  JVM-only, and answering a lock-pinned build from the path resolver would
-  quietly drop the pinning -- the bytes-from-disk ambience the lock exists to
-  remove. `bin/amu` keeps that flag on the JVM route.
+  `--module-lock` is the same shape with the resolution step replaced. The
+  lock names every module in the closed graph by CID and the bytes are
+  rejected unless they hash to the name they were asked for, so nothing is
+  found by searching a path. Both resolvers hand the same `{:sources :root}`
+  to the same `project/link-source`; only whether the finding was verified
+  differs. The two are mutually exclusive here rather than combined: a lock
+  that fell back to a path search for anything it did not pin would be a lock
+  in name only.
 
   Reads no policy: the caller owns when policy is decoded, and that ordering
   is load-bearing for the artifact cache."
   [args]
-  (let [source-roots (support/options args "--source-path")
-        input (support/timed "source-admit" #(support/source! (second args)))]
-    (if (seq source-roots)
-      (let [graph (support/timed "project-load"
+  (let [lock-path (support/option args "--module-lock")
+        source-roots (support/options args "--source-path")]
+    (cond
+      lock-path
+      (let [blocks (or (support/option args "--blocks")
+                       (support/usage-error! "--module-lock requires --blocks <dir>"))
+            graph (support/timed
+                   "module-lock-load"
+                   #(module-lock/load-locked-graph lock-path blocks))
+            linked (support/timed "project-link"
+                                  #(project/link-source (:sources graph) (:root graph)))]
+        {;; A pinned build has no input PATH to name the artifact after --
+         ;; that is the point -- so the root namespace does, exactly as the
+         ;; JVM CLI does it.
+         :input (str (:root graph))
+         :source (:source linked)
+         :linked? true
+         :lock {:module-lock lock-path :lock-cid (:lock-cid graph)}
+         :project {:root (:root graph)
+                   :module-order (:module-order linked)
+                   :modules (:modules graph)
+                   :lock-cid (:lock-cid graph)}})
+
+      (seq source-roots)
+      (let [input (support/timed "source-admit" #(support/source! (second args)))
+            graph (support/timed "project-load"
                                  #(project-files/load-closed-graph input source-roots))
             linked (support/timed "project-link"
                                   #(project/link-source (:sources graph) (:root graph)))]
@@ -71,9 +99,12 @@
          :project {:root (:root graph)
                    :module-order (:module-order linked)
                    :paths (:paths graph)}})
-      {:input input
-       :source (support/timed "source-read" #(io/read-text-file input))
-       :linked? false})))
+
+      :else
+      (let [input (support/timed "source-admit" #(support/source! (second args)))]
+        {:input input
+         :source (support/timed "source-read" #(io/read-text-file input))
+         :linked? false}))))
 
 (defn- resolve-kir! [hir stage-cache]
   (support/timed "kir-lower"
@@ -280,15 +311,66 @@
         input (:input resolved)
         source (:source resolved)
         linked? (:linked? resolved)
-        output (or (support/option args "--output") (str input ".wasm"))]
-    (if context
-      (compile-cached! args target output source linked? context)
-      (compile-uncached! args target output source linked?))))
+        output (or (support/option args "--output") (str input ".wasm"))
+        result (if context
+                 (compile-cached! args target output source linked? context)
+                 (compile-uncached! args target output source linked?))]
+    ;; How the inputs were found, in the answer rather than only in the shell
+    ;; history. The JVM CLI writes this beside the artifact as `.inputs.edn`;
+    ;; this route cannot, because its output set is a two-file commit marker
+    ;; and a third member would make every artifact fail its own verification.
+    ;; So it is reported instead -- and `:lock-cid` is the value that actually
+    ;; identifies the pinned input set, which the JVM's record also carries.
+    (merge result
+           (if-let [lock (:lock resolved)]
+             {:kotoba.compile/inputs :module-lock
+              :module-lock (:module-lock lock)
+              :lock-cid (:lock-cid lock)}
+             {:kotoba.compile/inputs (if linked?
+                                       :unpinned-source-path
+                                       :single-file)}))))
+
+(defn- module-lock!
+  "Pin a path-resolved project once so every later compile of it resolves by
+  CID instead of by whatever is on disk.
+
+  Producing the lock and consuming it are separate commands on purpose, and
+  until now they were on separate RUNTIMES too -- production was JVM-only, so
+  a JDK-free consumer still needed a JDK somewhere upstream to get its lock.
+  That is the whole of the Q9 objection, moved rather than removed, so both
+  halves run here."
+  [args]
+  (let [input (support/timed "source-admit" #(support/source! (second args)))
+        source-roots (support/options args "--source-path")
+        blocks (or (support/option args "--blocks")
+                   (support/usage-error! "--blocks <dir> is required"))
+        _ (when (empty? source-roots)
+            (support/usage-error! "--source-path is required"))
+        ;; The JVM twin's default is the bare name `kotoba.modules.edn`,
+        ;; resolved against the process CWD -- which, through `bin/amu`, is
+        ;; the Amu checkout rather than the caller's directory. Anchoring it
+        ;; to the entry module puts the lock beside the sources it pins. Pass
+        ;; --output to say otherwise.
+        output (or (support/option args "--output")
+                   (.join node-path (.dirname node-path input) "kotoba.modules.edn"))
+        lock (support/timed
+              "module-lock-derive"
+              #(module-lock/lock-from-source-paths
+                project-files/load-closed-graph input source-roots blocks))]
+    (support/timed "module-lock-write"
+                   #(io/write-text! output (pr-str (dissoc lock :lock-cid))))
+    {:ok true :lock output :blocks blocks
+     :root (:root lock) :modules (count (:modules lock))
+     :lock-cid (:lock-cid lock)}))
 
 (defn- run! [args context]
   (case (first args)
     "check" (check! args context)
     "compile" (compile! args context)
+    ;; `bin/amu` routes every target-less command here, the same way `check`
+    ;; arrives. A lock is target-independent, so there is nothing for the
+    ;; native entry points to answer differently.
+    "module-lock" (module-lock! args)
     (support/usage-error!
      (str "error: nbb Wasm path does not cover command " (first args)))))
 
