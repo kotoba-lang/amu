@@ -36,6 +36,7 @@ const ALLOWED_IMPORTS = new Set([
   "kotoba:typed/vector-drop/function",
   "kotoba:typed/vector-at-i64/function",
   "kotoba:typed/vector-assoc-i64/function",
+  "kotoba:typed/vector-assoc-in-place-i64/function",
   "kotoba:typed/vector-conj-i64/function",
   "kotoba:typed/vector-from-memory-i64/function",
   // A MEMORY import, not a function. The bulk vector path writes its
@@ -406,6 +407,25 @@ function createTypedRuntime(abi, typedCapCall, allow) {
   const builders = new WeakSet();
   const trustedDescriptors = new WeakSet();
   const trustedValues = new WeakSet();
+  // Arrays a LINEAR handle owns, which `vector-assoc-in-place-i64` writes
+  // through instead of copying.
+  //
+  // Every other compound value is frozen, and the freeze is what makes
+  // `assertValue` mean something: a value validated once must not become a
+  // different value afterwards, or the check happened on something nobody
+  // holds any more. That argument needs the value to be REACHABLE from more
+  // than one place, and a linear one is not -- the frontend refuses
+  // `vector-assoc!` unless the handle is dead after the write
+  // (`kotoba.compiler.affine`, superproject ADR-2609010200), so there is no
+  // second reference for a mutation to surprise.
+  //
+  // What this gives up, stated: a module NOT produced by this compiler can
+  // import `vector-assoc-in-place-i64` and mutate a value another handle
+  // points to. It cannot reach anything outside the guest -- no host object
+  // is exposed -- so the blast radius is the guest's own data, which is the
+  // same radius as any other way a guest can compute the wrong answer. The
+  // frozen default stays for everything else.
+  const linearValues = new WeakSet();
   const trustDescriptor = descriptor => {
     if (!Array.isArray(descriptor) || trustedDescriptors.has(descriptor)) return;
     trustedDescriptors.add(descriptor);
@@ -1249,7 +1269,7 @@ function createTypedRuntime(abi, typedCapCall, allow) {
       }
       const kind = descriptor[0];
       if (kind === "document") return assertDocument(value);
-      if (!Array.isArray(value) || !Object.isFrozen(value))
+      if (!Array.isArray(value) || !(Object.isFrozen(value) || linearValues.has(value)))
         reject("invalid-typed-value", "compound typed value must be a frozen array");
       if (!trustedValues.has(value))
         reject("invalid-typed-value", "forged compound typed value rejected");
@@ -1790,6 +1810,39 @@ function createTypedRuntime(abi, typedCapCall, allow) {
       const result = [...checked];
       result[Number(index) + 1] = i64(replacement);
       return admitValue(descriptor, Object.freeze(result));
+    },
+    // The same operation as vector-assoc-i64, lowered to a store.
+    //
+    // `vector-assoc-i64` above does `[...checked]` and freezes the result, so
+    // one element write costs a copy of the whole vector. That is why a struct
+    // of arrays could not be written in Kotoba: an order book has about a
+    // million slots per field and a write per order (ADR-2609010200).
+    //
+    // The guest only reaches this through `vector-assoc!`, which the frontend
+    // refuses unless the handle is dead after the write. The KIR interpreter
+    // treats `vector-assoc` and `vector-assoc!` as ONE operation for the same
+    // reason, so the reference semantics cannot drift from this lowering.
+    //
+    // The FIRST write to a frozen vector copies -- everything the copying path
+    // built is frozen and a frozen array cannot be written, silently in sloppy
+    // mode and loudly in strict, and a silent no-op here is a store that did
+    // not happen. Every later write to that result is in place. So a vector
+    // allocated once and written N times costs one copy rather than N.
+    "vector-assoc-in-place-i64"(descriptorId, value, rawIndex, replacement) {
+      const descriptor = descriptorAt(descriptorId);
+      if (descriptor[0] !== "vector-i64")
+        reject("invalid-typed-operation", "vector-assoc! requires vector-i64");
+      const checked = assertValue(descriptor, value);
+      const index = i64(rawIndex);
+      if (index < 0n || index >= BigInt(checked.length - 1))
+        reject("invalid-typed-operation", "vector-i64 assoc index is out of range");
+      let target = checked;
+      if (!linearValues.has(target)) {
+        target = [...checked];
+        linearValues.add(target);
+      }
+      target[Number(index) + 1] = i64(replacement);
+      return admitValue(descriptor, target);
     },
     "vector-conj-i64"(descriptorId, value, item) {
       const descriptor = descriptorAt(descriptorId);
