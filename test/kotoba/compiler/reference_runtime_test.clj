@@ -57,6 +57,31 @@
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #"capability denied"
                           ((:invoke host) 'invoke ["hello"])))))
 
+(deftest lisp-eval-is-the-exact-typed-code-eval-provider
+  (let [source "(ns app.eval (:export [run]) (:capabilities #{:code/eval}))
+                (defn run [request :document] :i64 (eval request))"
+        kir (ir/lower
+             (:hir (compiler/check-source source {:allow #{[:cap/call 30]}})))
+        body (-> kir :functions first :body)
+        request ["map" []]]
+    (is (= '(typed-cap-call 30 :document :i64 request) body))
+    (is (thrown-with-msg?
+         clojure.lang.ExceptionInfo #"capability denied"
+         ((:invoke (runtime/instantiate kir)) 'run [request])))
+    (let [host (runtime/instantiate
+                kir {:allow #{30}
+                     :providers
+                     {30 {:request-type :document :result-type :i64
+                          :invoke (fn [_] 42)}}})]
+      (is (= 42 ((:invoke host) 'run [request]))))
+    (is (thrown-with-msg?
+         clojure.lang.ExceptionInfo #"does not match"
+         (runtime/instantiate
+          kir {:allow #{30}
+               :providers
+               {30 {:request-type :string :result-type :i64
+                    :invoke (fn [_] 42)}}})))))
+
 (deftest dynamic-authority-is-intersected-at-provider-invocation
   (let [host (runtime/instantiate
               (kir)

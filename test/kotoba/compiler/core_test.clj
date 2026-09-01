@@ -435,7 +435,7 @@
           "contains an AArch64 BL imm26 opcode"))))
 
 (deftest fails-closed
-  (doseq [bad ["(defn main [] (eval '(+ 1 2)))"
+  (doseq [bad ["(defn main [] (read-string \"(+ 1 2)\"))"
                "#=(java.lang.System/exit 0)"
                "(defn main [] (slurp \"/etc/passwd\"))"
                "(defn main [x] x)"
