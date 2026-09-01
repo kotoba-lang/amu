@@ -1,0 +1,42 @@
+(ns examples.many-constants)
+
+;; Eight independent Park-Miller lanes: the smallest shape that reaches the
+;; AArch64 leaf-constant cache with more than eight DISTINCT constants.
+;;
+;; `a64-cache-leaf-constants` groups constant occurrences in a map, and under
+;; ClojureScript an i64 is a BigInt primitive `goog.getUid` cannot hash. Eight
+;; or fewer entries is a PersistentArrayMap, which compares with `=` and never
+;; hashes; past eight it becomes a hash map and throws. So the fixture needs
+;; more than eight constants that actually materialize, and the count is the
+;; whole point of it.
+;;
+;; The threshold was measured, not reasoned: on the backend before the fix,
+;; four lanes compile clean and eight answer "internal compiler error". An
+;; earlier version of this fixture used twelve distinct constants in one serial
+;; chain and compiled clean on that same broken backend -- it would have been a
+;; test that could never go red. Do not simplify the shape without re-measuring
+;; it against a backend that has the bug.
+;;
+;; This is why `kernel_deep.kotoba` and `kernel_wide.kotoba`, the two fixtures
+;; this repository benchmarks itself on, could not be built through `bin/amu`
+;; while the JVM front compiled both.
+(defn many-constants [x]
+  (let [t0 (+ (* (+ x 0) 48271) 1)
+        v0 (- t0 (* (quot t0 2147483647) 2147483647))
+        t1 (+ (* (+ x 1) 48271) 1)
+        v1 (- t1 (* (quot t1 2147483647) 2147483647))
+        t2 (+ (* (+ x 2) 48271) 1)
+        v2 (- t2 (* (quot t2 2147483647) 2147483647))
+        t3 (+ (* (+ x 3) 48271) 1)
+        v3 (- t3 (* (quot t3 2147483647) 2147483647))
+        t4 (+ (* (+ x 4) 48271) 1)
+        v4 (- t4 (* (quot t4 2147483647) 2147483647))
+        t5 (+ (* (+ x 5) 48271) 1)
+        v5 (- t5 (* (quot t5 2147483647) 2147483647))
+        t6 (+ (* (+ x 6) 48271) 1)
+        v6 (- t6 (* (quot t6 2147483647) 2147483647))
+        t7 (+ (* (+ x 7) 48271) 1)
+        v7 (- t7 (* (quot t7 2147483647) 2147483647))]
+    (+ (+ (+ (+ (+ (+ (+ v0 v1) v2) v3) v4) v5) v6) v7)))
+
+(defn main [] (many-constants 0))
