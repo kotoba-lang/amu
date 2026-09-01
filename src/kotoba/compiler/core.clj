@@ -1,5 +1,6 @@
 (ns kotoba.compiler.core
   (:require [clojure.walk :as walk]
+            [kotoba.compiler.capability-names :as cap-names]
             [kotoba.sema :as sema]
             [kotoba.kir.compatibility :as compatibility]
             [kotoba.compiler.provenance :as provenance]
@@ -190,12 +191,23 @@
 
 
 (defn- capability-deny-message
-  "T3.2: name missing grant / effect / policy in admission denials."
+  "T3.2: name missing grant / effect / policy in admission denials.
+
+  The grants are spelled with their catalog NAMES here, not their wire ids.
+  This message is the one place a caller is told what to put in `--policy`, so
+  it is the most user-facing text the compiler emits about capabilities, and
+  `lang/capability-catalog.edn` says `:numeric-id :not-user-facing`. Measured
+  2026-08-31 it read `missing grants #{[:cap/call 3]}` -- a number the caller
+  then had to look up in order to act on the very sentence telling them to act.
+
+  `ex-data` is deliberately NOT renamed: `:missing`/`:required`/`:allowed` stay
+  in the wire form a machine consumer already keys on. Prose gets names, data
+  keeps ids."
   [error]
   (let [d (ex-data error)
-        missing (:missing d)
-        required (:required d)
-        allowed (:allowed d)
+        missing (cap-names/name-grants (:missing d))
+        required (cap-names/name-grants (:required d))
+        allowed (cap-names/name-grants (:allowed d))
         base (or (ex-message error) "capability denied")]
     (cond
       (seq missing)

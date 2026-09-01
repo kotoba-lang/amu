@@ -4,6 +4,7 @@
   x86-64 code and vice versa."
   (:require [cljs.reader :as reader]
             [clojure.walk :as walk]
+            [kotoba.compiler.capability-names :as cap-names]
             [kotoba.compiler.nbb.cli-support :as support]
             [kotoba.compiler.nbb.compile-cache :as compile-cache]
             [kotoba.sema :as sema]
@@ -96,6 +97,17 @@
                       {:phase :verify :fuel declared
                        :maximum max-native-fuel})))
     fuel))
+
+(defn- read-policy!
+  "`--policy`, with named grants canonicalised to wire ids. Same seam and same
+  reason as `kotoba.compiler.nbb.wasm-cli/read-policy!`."
+  [args]
+  (cap-names/wire-policy (support/read-policy args)))
+
+(defn- decode-policy!
+  "The cached-compile counterpart of `read-policy!`, for already-read material."
+  [material]
+  (cap-names/wire-policy (support/parse-policy-material material)))
 
 ;; Mirrors `kotoba.compiler.core/compile-source*`'s `:else` (native) branch
 ;; byte-for-byte -- same sealed `:kotoba.kexe/v1` shape, same
@@ -244,7 +256,7 @@
       binary (assoc :artifact-bytes (.-length binary)))))
 
 (defn- compile-uncached! [args source target backend output emit-program package]
-  (let [policy (support/timed "policy-read" #(support/read-policy args))
+  (let [policy (support/timed "policy-read" #(read-policy! args))
         emit-metadata (support/emit-metadata args)
         artifact-kind (support/option args "--artifact")
         hir (:value (resolve-hir! source policy nil))
@@ -309,7 +321,7 @@
             artifact-bytes (assoc :artifact-bytes artifact-bytes))))
       (let [_ (when-let [error (:error policy-attempt)] (throw error))
             policy (support/timed "policy-decode"
-                                  #(support/parse-policy-material material))
+                                  #(decode-policy! material))
             hir-result (resolve-hir! source policy stage-cache)
             hir (:value hir-result)
             result (compile-native! hir target backend policy emit-metadata

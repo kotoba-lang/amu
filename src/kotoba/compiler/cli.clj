@@ -2,6 +2,7 @@
   (:require [kotoba.compiler.atomic-output :as atomic-output]
             [kotoba.artifact.core :as artifact]
             [kotoba.compiler.bounded-edn :as bounded-edn]
+            [kotoba.compiler.capability-names :as cap-names]
             [kotoba.compiler.core :as compiler]
             [kotoba.compiler.coverage :as coverage]
             [kotoba.compiler.coverage-evidence :as coverage-evidence]
@@ -294,7 +295,8 @@
           policy-path (option args "--policy")
           profile-s (option args "--profile")
           json? (some #{"--json"} args)
-          policy (cond-> (if policy-path (bounded-edn/read-file policy-path) {})
+          policy (cond-> (cap-names/wire-policy
+                          (if policy-path (bounded-edn/read-file policy-path) {}))
                    profile-s (assoc :language-profile (keyword profile-s)))
           locked (when module-lock-path
                    (module-lock/load-locked-graph
@@ -310,19 +312,31 @@
       (try
         (let [result (if graph
                        (compiler/check-project (:sources graph) (:root graph) policy)
-                       (compiler/check-source (bounded-edn/read-text-file input) policy))]
+                       (compiler/check-source (bounded-edn/read-text-file input) policy))
+              ;; The reporting boundary. The wire id stays in HIR, in the
+              ;; admission decision and in any artifact a later `compile`
+              ;; emits, and stops on these three lines.
+              ;; `lang/capability-catalog.edn` says
+              ;; `:numeric-id :not-user-facing`; before 2026-09-01 both this
+              ;; envelope and the human line below handed it out anyway.
+              ;; `:named-operations` is what ability elaboration already
+              ;; computed -- it was in HIR and simply never reported.
+              effects (cap-names/name-grants (get-in result [:hir :effects] #{}))
+              operations (get-in result [:hir :named-operations])
+              admission (cap-names/name-grants (:admission result))]
           (if json?
             (println (pr-str (cond-> {:ok true
                                       :format :kotoba.check/v1
                                       :language-profile (:language-profile result)
-                                      :effects (get-in result [:hir :effects])
+                                      :effects effects
+                                      :named-operations operations
                                       :exports (get-in result [:hir :exports])
-                                      :admission (:admission result)}
+                                      :admission admission}
                                graph (assoc :root (str (:root graph)) :modules modules))))
             (do (apply println
                        (cond-> ["ok"
                                 (str "profile=" (or (some-> (:language-profile result) name) "default"))
-                                (str "effects=" (pr-str (get-in result [:hir :effects] #{})))
+                                (str "effects=" (pr-str effects))
                                 (str "exports=" (pr-str (get-in result [:hir :exports] [])))]
                          graph (conj (str "modules=" (pr-str modules)))))
                 (flush))))
@@ -429,7 +443,13 @@
                             ".kexe")))
           component-target? (= :component (:execution (target-profile/profile target)))
           policy-path (option args "--policy")
-          policy (if policy-path (bounded-edn/read-file policy-path) {})
+          ;; Canonicalised at decode so admission, the emitters and provenance
+          ;; all see the wire form whichever spelling the file used: two
+          ;; spellings of one policy hash to the same `:policy-sha256` and
+          ;; build the same artifact, rather than forking artifact identity on
+          ;; notation.
+          policy (cap-names/wire-policy
+                  (if policy-path (bounded-edn/read-file policy-path) {}))
           artifact-kind (option args "--artifact")
           _ (when-not (contains? #{nil "object" "image"} artifact-kind)
               (throw (ex-info "unknown native artifact kind"

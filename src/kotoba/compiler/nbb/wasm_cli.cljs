@@ -4,7 +4,8 @@
   closure, while Wasm provenance is emitted from the same checked HIR/KIR,
   policy, target profile, compatibility descriptor, and bytes as the JVM
   compiler."
-  (:require [kotoba.compiler.nbb.cli-support :as support]
+  (:require [kotoba.compiler.capability-names :as cap-names]
+            [kotoba.compiler.nbb.cli-support :as support]
             [kotoba.compiler.nbb.compile-cache :as compile-cache]
             [kotoba.sema :as sema]
             [kotoba.compiler.nbb.io :as io]
@@ -24,6 +25,22 @@
   {"wasm32" :wasm32-kotoba-v1
    "wasm32-browser" :wasm32-browser-kotoba-v1
    "wasm32-wasi" :wasm32-wasi-kotoba-v1})
+
+(defn- read-policy!
+  "`--policy`, with named grants canonicalised to wire ids.
+
+  Applied at every place this entrypoint decodes a capability policy -- before
+  admission AND before provenance -- so `[:cap/call :hash/sha256]` and
+  `[:cap/call 3]` are the same policy: same `:policy-sha256`, same artifact,
+  byte for byte. See `kotoba.compiler.nbb.cli-support/parse-policy-material`
+  for why the canonicalisation is here rather than in that shared decoder."
+  [args]
+  (cap-names/wire-policy (support/read-policy args)))
+
+(defn- decode-policy!
+  "The cached-compile counterpart of `read-policy!`, for already-read material."
+  [material]
+  (cap-names/wire-policy (support/parse-policy-material material)))
 
 (defn- analyze-opts [policy linked?]
   (cond-> (support/analyze-options policy)
@@ -155,7 +172,7 @@
 (defn- check! [args context]
   (let [resolved (resolve-source! args)
         source (:source resolved)
-        policy (support/timed "policy-read" #(support/read-policy args))
+        policy (support/timed "policy-read" #(read-policy! args))
         hir-result (resolve-hir! source
                                  (analyze-opts policy (:linked? resolved))
                                  (:stages context))
@@ -167,12 +184,19 @@
     ;; used to answer with :ok/:effects/:admission only, so a consumer keying
     ;; on :format -- the versioned output contract -- saw nothing to key on,
     ;; and :exports was simply absent. Same command, same file, two shapes.
+    ;;
+    ;; `cap-names/name-grants` is applied to everything a person reads here.
+    ;; The wire id stays in HIR, in the admission decision, in KIR and in the
+    ;; emitted bytes; it stops at this line. `:named-operations` is what the
+    ;; frontend already computed during ability elaboration -- it was present
+    ;; in HIR and simply never reported.
     (cond-> {:ok true
              :format :kotoba.check/v1
              :language-profile (:language-profile hir)
-             :effects (:effects hir)
+             :effects (cap-names/name-grants (:effects hir))
+             :named-operations (:named-operations hir)
              :exports (:exports hir)
-             :admission result}
+             :admission (cap-names/name-grants result)}
       ;; A linked answer says so. Without this a caller cannot tell a one-file
       ;; check from a check of a graph that happened to link -- the difference
       ;; between "this module is admitted" and "these N modules are".
@@ -180,7 +204,7 @@
       context (assoc :stage-cache {:hir (:cache hir-result)}))))
 
 (defn- compile-uncached! [args target output source linked?]
-  (let [policy (support/timed "policy-read" #(support/read-policy args))
+  (let [policy (support/timed "policy-read" #(read-policy! args))
         emit-metadata (support/emit-metadata args)
         hir (:value (resolve-hir! source (analyze-opts policy linked?) nil))
         admission-result (support/timed
@@ -235,7 +259,7 @@
            :cache :hit :cache-key key}))
       (let [_ (when-let [error (:error policy-attempt)] (throw error))
             policy (support/timed "policy-decode"
-                                  #(support/parse-policy-material material))
+                                  #(decode-policy! material))
             hir-result (resolve-hir! source (analyze-opts policy linked?) stage-cache)
             hir (:value hir-result)
             admission-result (support/timed
