@@ -87,19 +87,8 @@
   {:source-operation stream/send :effect :stream/send
    :compiler-wire-id 26
    :source-status :friendly-qualified}
-  ;; Transport kits added by this repository's `agent/transport-capabilities`
-  ;; branch (2026-08-30): net/datagram (UDP), link/frame (raw L2 Ethernet by
-  ;; EtherType, for IEC 61850 GOOSE/SV), can/frame (CAN 2.0B extended, for
-  ;; SAE J1939). NOT yet reflected in kotoba-lang/kotoba-lang's authority
-  ;; copy of this catalog -- this file is amu's own
-  ;; `resources/kotoba/lang/capability-catalog.edn`, which shadows the
-  ;; vendored copy kotoba-sema ships (both are on the classpath under the
-  ;; same resource path; `clojure.java.io/resource` returns the first match,
-  ;; and amu's own `:paths` precede its `:deps` on the classpath). Upstream
-  ;; registration in kotoba-lang/kotoba-lang is out of scope for this
-  ;; change; until that lands, `net/datagram`/`link/frame`/`can/frame` are
-  ;; usable from `.kotoba` source built against THIS repository's classpath
-  ;; only, not against a plain kotoba-sema checkout.
+  ;; Transport kits. Datagram, raw link, and CAN frame access remain distinct
+  ;; authorities even when one provider implements more than one of them.
   :net/datagram
   {:source-operation net/datagram :effect :net/datagram :compiler-wire-id 27
    :source-status :friendly-qualified}
@@ -108,7 +97,15 @@
    :source-status :friendly-qualified}
   :can/frame
   {:source-operation can/frame :effect :can/frame :compiler-wire-id 29
-   :source-status :friendly-qualified}}
+   :source-status :friendly-qualified}
+  ;; Lisp-facing `eval` is syntax sugar for this typed, host-bound operation.
+  ;; The request names a checked definition by CID; it is never source text or
+  ;; an ambient namespace lookup.
+  :code/eval
+  {:source-operation code/eval :effect :code/eval
+   :compiler-wire-id 30
+   :source-status :friendly-unqualified-alias
+   :source-alias eval}}
  :invariants
  [:semantic-name-is-qualified-keyword
   :source-operation-is-qualified-symbol

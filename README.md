@@ -159,6 +159,15 @@ typed WIT imports, and receives no authority except the capabilities admitted
 by its host. `wasm32-wasi` does **not** mean ambient WASI access: the current
 profile rejects ambient WASI imports and expects a closed capability adapter.
 
+Kotoba's Lisp-facing `(eval request)` uses that same pipeline rather than a
+second evaluator. Semantic analysis lowers it to typed capability 30
+(`:code/eval`) with a bounded `:document` request and a context-derived result
+type. The compiler emits ordinary checked KIR; a host provider must resolve a
+DefCID, bind interface/effects/allowance/limits as an AdmissionCID, and persist
+the typed output as a ValueCID. Without that provider the capability traps.
+`apply` remains bounded closed-module closure invocation, while source strings,
+reader evaluation, ambient namespaces, and host `eval` remain unavailable.
+
 Direct x86-64/AArch64 AOT remains a supported backend for aiueos boot/kernel,
 engine, driver, root-key adapter, and explicitly trusted low-level primitives.
 It is not the default route for an ordinary Kotoba application. The compiler
@@ -304,7 +313,7 @@ section, which now states this attribution correctly) — not
 
 | safe-Kotoba gate | Theorem | This repo |
 |---|---|---|
-| Subset | no ambient code/effect | `forbidden-heads` (`eval`/`require`/`import`/`set!`/`defmacro`/reflection/... rejected in `validate-expr`) |
+| Subset | no ambient code/effect | `forbidden-heads` (`load-string`/`read-string`/`require`/`import`/`set!`/`defmacro`/reflection/... rejected in `validate-expr`) |
 | Capability | T3 — Capability Confinement | `cap-call` (a typed, arity-checked capability invocation form) |
 | Effect | T2 — Effect Soundness | `direct-facts` + `infer-effects` (interprocedural fixpoint over `:calls`, converges through mutual recursion) |
 
