@@ -26,13 +26,19 @@ struct shared { struct ctx context; uint64_t vector_used;
                 int64_t vector_items[ITEM_CAPACITY]; };
 static struct shared S;
 
-/* byte-for-byte the loader's resolve_vector + checked_vector_at guards */
+/* byte-for-byte the loader's resolve_vector + checked_vector_at guards.
+   The version this models moved to 4 with the ABI (superproject
+   ADR-2609010200). This file links against nothing and no guest calls it --
+   it sets and checks its own field -- so 3 would still have run. It is
+   updated because the comment above claims fidelity to the loader, and a
+   model that quietly stops matching the thing it models is worth less than
+   no model. */
 static inline struct kvec *resolve_vector(struct shared *s, int64_t handle) {
   if (handle < 0 || (uint64_t)handle >= s->vector_used) return NULL;
   return &s->vectors[handle];
 }
 static int64_t checked_vector_at(struct shared *s, int64_t handle, int64_t index) {
-  if (s == NULL || s->context.version != 3) { raise(SIGILL); return 0; }
+  if (s == NULL || s->context.version != 4) { raise(SIGILL); return 0; }
   struct kvec *v = resolve_vector(s, handle);
   if (v == NULL || index < 0 || (uint64_t)index >= v->length) { raise(SIGILL); return 0; }
   return s->vector_items[v->offset + (uint64_t)index];
@@ -50,7 +56,7 @@ int main(int argc, char **argv) {
   long reps = atol(argv[1]);
   int rounds = atoi(argv[2]);
   const int64_t N = 64;                       /* ADR 0284's L1-resident vector */
-  S.context.version = 3;
+  S.context.version = 4;
   for (int64_t i = 0; i < N; i++) S.vector_items[i] = i + 1;
   S.vectors[0].offset = 0; S.vectors[0].length = (uint64_t)N;
   S.vector_used = 1;
