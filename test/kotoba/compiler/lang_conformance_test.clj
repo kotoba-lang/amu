@@ -10,7 +10,7 @@
 ;; while the tests still read 60. Nothing noticed, because nothing could reach
 ;; this namespace: the suite was ending in an earlier one. Everything below
 ;; that can be derived from the manifest now is.
-(def ^:private expected-cases {:total 61 :pure-product 56 :portable 5})
+(def ^:private expected-cases {:total 62 :pure-product 57 :portable 5})
 
 (deftest pilot-manifest-loads
   (let [m (lc/load-manifest)]

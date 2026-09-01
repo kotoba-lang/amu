@@ -573,5 +573,20 @@
    :args []
    :expect {:kotoba 14}
    :note "T1.3 when-let + u64-shr + false + <=/>= dual-backend"}
+  {:id :bounded-control-match-and-pure-desugar
+   :class :pure-product-run
+   :required-backends #{:kir :wasm32-kotoba-v1}
+   :kind :run
+   :entry "control/match_desugar.kotoba"
+   :function "main"
+   :args []
+   :expect {:kotoba 21}
+   :note "The authority's own case, verbatim. It exercises the BOUNDED map --
+          what a bare {:value 9} literal desugars to -- which wasm32 refused
+          until kotoba-wasm lowered it onto the canonical typed map. Measured
+          2026-09-01 against amu 27d82d8: the fixture exited 70 with
+          `unsupported typed Wasm expression` while `(match 5 0 100 5 200
+          :else 300)`, with no map in it, compiled and answered 200. The
+          refusal was the map, not match."}
 ]
 }
