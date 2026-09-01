@@ -1091,10 +1091,19 @@
   (is (nil? (rejection-message "(ns bad (:export [f])) (defn f [x :string y] :string x)")))
   (is (= "parameter name expected, found a type"
          (rejection-message "(ns bad (:export [f])) (defn f [x :string :i64] :string x)")))
-  ;; And the relaxation is grammar only -- absence still means `:i64`, so a
-  ;; string operation on an unannotated parameter is still a type error.
+  ;; This asserted that absence meant `:i64` FULL STOP, which was true when
+  ;; per-parameter annotation landed and is what `infer-absent-parameter-types`
+  ;; then deliberately replaced: absence is provisional, and a use that
+  ;; requires a type supplies it. So `y` is a string here now.
+  (is (nil? (rejection-message "(ns bad (:export [f])) (defn f [x :string y] :i64 (string-length y))")))
+  ;; What did not change, and is the reason inference is safe to have: a
+  ;; WRITTEN annotation is never refined.
   (is (= "expression type mismatch: expected string, got i64"
-         (rejection-message "(ns bad (:export [f])) (defn f [x :string y] :i64 (string-length y))")))
+         (rejection-message "(ns bad (:export [f])) (defn f [x :i64] :i64 (string-length x))")))
+  ;; Nor is a parameter whose uses disagree: it falls back to `:i64` and fails
+  ;; where it failed before.
+  (is (= "expression type mismatch: expected string, got i64"
+         (rejection-message "(ns bad (:export [f])) (defn f [x] :i64 (if (> x 0) (string-length x) 0))")))
   (is (= "string exceeds UTF-8 byte limit"
          (rejection-message
           (str "(ns bad (:export [f])) (defn f [] :string \""
