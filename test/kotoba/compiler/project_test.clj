@@ -622,7 +622,7 @@
           app (str "(ns wide.root (:require [wide.lib :as l]) (:export [main]))"
                    "(defn main [] :i64"
                    "  (+ (l/f) (+ (l/f 1) (+ (l/f 1 2) (+ (l/f 1 2 3)"
-                   "     (+ (l/f 1 2 3 4) (l/f 1 2 3 4 5))))))")
+                   "     (+ (l/f 1 2 3 4) (l/f 1 2 3 4 5)))))))")
           compiled (compiler/compile-project {'wide.lib lib 'wide.root app}
                                              'wide.root :js-kotoba-v1)]
       ;; 0 + 1 + 3 + 6 + 10 + 15
