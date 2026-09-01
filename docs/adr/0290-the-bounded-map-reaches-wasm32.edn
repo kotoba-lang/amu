@@ -1,0 +1,82 @@
+{:adr/id 290
+ :adr/status :accepted
+ :adr/date "2026-09-01"
+ :decision :bounded-map-reaches-wasm32-and-its-conformance-case-passes
+
+ :case
+ {:id :bounded-control-match-and-pure-desugar
+  :authority "kotoba-lang/kotoba-lang lang/conformance/manifest.edn"
+  :entry "control/match_desugar.kotoba"
+  :required-backends #{:kir :wasm32-kotoba-v1}
+  :expect 21
+  :before {:kir :green :wasm32 :refused}
+  :after {:kir :green :wasm32 :green}}
+
+ :cause
+ {:not :match
+  :is :the-bounded-map-value-type
+  :measured "2026-09-01, amu 27d82d8, bin/amu compile --target wasm32"
+  :rows
+  [{:source "(defn main [] (match 5 0 100 5 200 :else 300))"
+    :exit 0 :note :control-no-map-anywhere :executed 200}
+   {:source "(defn main [] (get {:value 9} :value))"
+    :exit 70 :message "typed Wasm operation is not qualified"
+    :operation map-get :site "kotoba.wasm.core emit* fallthrough"}
+   {:source "(defn main [] (match {:value 9} {:value n} n :else 0))"
+    :exit 70 :message "unsupported typed Wasm expression"
+    :operation map-new :site "kotoba.wasm.typed infer-type"}
+   {:source "lang/conformance/control/match_desugar.kotoba"
+    :exit 70 :message "unsupported typed Wasm expression"
+    :operation map-new :site "kotoba.wasm.typed infer-type"}]
+  :two-sites-not-one
+  "Closing either alone left the other standing. map-get reaches the emitter
+   fallthrough; map-new reaches type inference, which a let consults for the
+   static type of its init. match lowers its scrutinee to a let, which is the
+   only reason rows 2 and 3 differ."}
+
+ :why-unnoticed
+ "Every map fixture in this pilot writes typed-map-* explicitly, which is the
+  canonical parametric map and has been emitted since the typed value ABI
+  landed. kotoba-wasm's own suite contained no map-new at all. A bare map
+  literal had never been asked of this backend."
+
+ :change
+ {:kotoba-wasm
+  {:merge "cc23ea35bc284d08cf5fc2f57dfcc10ce431a23b"
+   :adr "0048"
+   :function "kotoba.wasm.typed/lower-bounded-maps"
+   :rewrite {:map-new :typed-map-new :map-get :typed-map-get-plus-option-value-of
+             :map-assoc :typed-map-assoc :signature-type-map [:map :keyword :i64]}
+   :note
+   "The bounded map already IS that descriptor: kotoba.compiler.frontend
+    checks every key as :keyword and every value as :i64. No new map
+    representation was added to the backend."}
+  :amu {:pin-advanced :kotoba-wasm :lock-regenerated true
+        :pilot-case-added :bounded-control-match-and-pure-desugar}}
+
+ :evidence
+ {:conformance {:before "61 / 61 passed (56 pure-product, 5 portable)"
+                :after "62 / 62 passed (57 pure-product, 5 portable)"}
+  :goldens {:rows-added 1 :existing-digests-changed 0
+            :reading "the lowering is a no-op for every module without a
+                      bounded map, and 61 pre-existing cases prove it byte for
+                      byte"
+            :new-row {:kir-sha256 "a43416af320aebe76860af661aa9f9e1e6743bc6bb7f218ea30cc6348dd0ce13"
+                      :wasm-sha256 "ef5e8fc8bbc0cb2dce5d810a9ebdcfe870feca7e59baee5308bc1b950cc58c8d"
+                      :wasm-byte-count 2193}}
+  :direct-execution
+  {:host "runtime/browser-host.mjs on Node"
+   :results [{:program "(get {:value 9} :value)" :wasm 9 :kir 9}
+             {:program "(match {:value 9} {:value n} n :else 0)" :wasm 9 :kir 9}
+             {:program "control/match_desugar.kotoba" :wasm 21 :kir 21}]}}
+
+ :not-carried
+ {:entry-ceiling
+  {:kir-oracle 128 :typed-value-runtime 31
+   :refusal "bounded map exceeds the typed map entry budget"
+   :where :compile-time
+   :claim "wasm32 carries the bounded map up to 31 entries; 32..128 are
+           admitted by the frontend and by KIR and refused by the backend"
+   :status :recorded-not-closed}
+  :unmeasured #{:wasm32-browser-kotoba-v1 :wasm32-wasi-kotoba-v1
+                :component-path :browser-engine :native-x86_64 :native-aarch64}}}
