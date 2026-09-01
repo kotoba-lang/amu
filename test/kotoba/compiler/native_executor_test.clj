@@ -1392,6 +1392,63 @@
            (get-in copying [:report :fuel :remaining]))
         "and it stopped EARLIER than the run that completed")))
 
+;; ## The fused read-modify-write shape (kotoba-sema `fused-rmw?`)
+;;
+;; `slab-source` above writes a CONSTANT into slot 0 every iteration --
+;; `(vector-assoc! items 0 i)` -- which was already admitted before
+;; `fused-rmw?` landed (kotoba-sema, superproject ADR-2609010500 wall 2). It
+;; proves the plain bang form lowers to a real store, not that a READ fused
+;; with the write does.
+;;
+;; `v[k] += delta` -- read the slot, then write it in the SAME compound
+;; expression -- has no OTHER Kotoba expression (`torihiki.book`'s
+;; `slab/add!`, two call sites, is exactly this shape) and was refused
+;; outright before `fused-rmw?`: two calls on one handle, counted as two
+;; uses regardless of what either call did. This deftest is the same
+;; differential as the one above, over the fused shape instead of the plain
+;; one, to confirm the fusion is not merely ADMITTED at the frontend gate
+;; (kotoba-sema's own test suite already shows that) but LOWERED to a real
+;; store: an in-place run must survive past the copying run's arena budget,
+;; on the real kexe_loader native process, not a stand-in for it.
+
+(def ^:private slab-rmw-source
+  "Same shape as `slab-source`, except the step consumes the OLD value of
+  slot 0 to compute the new one -- `items[0] += 1` fused into the update
+  head itself. `%s` is still the only thing that differs between the two
+  runs."
+  "(ns pilot.native-slab (:export [fill]))
+   (defn go [items :vector-i64 i :i64 n :i64] :i64
+     (if (>= i n)
+       (vector-at items 0)
+       (go (%s items 0 (+ (vector-at items 0) 1)) (+ i 1) n)))
+   (defn fill [length :i64 n :i64] :i64
+     (go (vector-alloc length) 0 n))")
+
+(defn- run-slab-rmw [head length writes]
+  (let [{:keys [envelope trust]} (signed (format slab-rmw-source head) {:allow #{}})
+        {:keys [trust options]} (execution-options trust)]
+    (executor/execute envelope trust {:allow #{}} {:args [length writes]}
+                      (assoc options :entry 'fill))))
+
+(deftest fused-read-modify-write-is-what-lets-a-slab-be-written-more-than-the-arena-allows
+  ;; Same arithmetic as the constant-write differential above: 255 is the
+  ;; copying update's whole-program write budget for a 256-slot vector, 300
+  ;; is past it on purpose. Here every write also READS the slot it is about
+  ;; to replace, in the same compound expression -- the shape `fused-rmw?`
+  ;; exists to admit.
+  (let [in-place (run-slab-rmw "vector-assoc!" 256 300)
+        copying (run-slab-rmw "vector-assoc" 256 300)]
+    (is (= {:status :ok :result 300}
+           (select-keys (:evidence in-place) [:status :result]))
+        "300 fused increments of slot 0, starting from the zero vector-alloc puts there, finish and read back 300")
+    (is (= :trap (get-in copying [:report :status]))
+        "the same 300 fused read-then-write operations exhaust the element arena when each write copies")
+    (is (pos? (get-in copying [:report :fuel :remaining]))
+        "the copying run trapped with fuel remaining, so this is the arena, not the loop being too long")
+    (is (< (get-in in-place [:report :fuel :remaining])
+           (get-in copying [:report :fuel :remaining]))
+        "and it stopped EARLIER than the run that completed")))
+
 (deftest the-affine-gate-refuses-an-in-place-write-to-a-handle-that-is-read-after
   ;; The claim the bang makes is checked, not assumed. Here the handle written
   ;; in place is read again afterwards, which is precisely the program an
