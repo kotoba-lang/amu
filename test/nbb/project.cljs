@@ -420,3 +420,113 @@
         (let [{:keys [source]} (project/link-source (:sources graph) (:root graph))
               kir (ir/lower (sema/analyze source {:admit-linked-synthetics? true}))]
           (assert (= 11 (js/Number (ir/execute kir 'run [5])))))))))
+
+;; ---------------------------------------------------------------------------
+;; Multi-arity exports across a module boundary
+;;
+;; A .cljc module routinely publishes a multi-arity function, and until this
+;; landed a project could not export one: the analysed module's functions are
+;; already `twice$arity$1` / `twice$arity$2`, the `:export` vector still says
+;; `twice`, and the linker looked one up among the other and refused with
+;; "export does not name a declared function" -- naming a cause that was not
+;; the cause. Both controls were measured before the fix: the same project
+;; with a SINGLE-arity `twice` linked and ran, and the same multi-arity
+;; `twice` in a single file (no project) compiled and reported
+;; `:exports [twice$arity$1 twice$arity$2]`.
+;;
+;; What is asserted here is not that it links. It is that BOTH arities run and
+;; return the value each clause defines -- a wrapper that routes every call to
+;; one clause would link, export two names, and still be wrong.
+
+(def ^:private multi-arity-sources
+  {'ma.lib
+   "(ns ma.lib (:export [twice]))
+    (defn twice
+      ([x :i64] :i64 (* 2 x))
+      ([x :i64 y :i64] :i64 (* y x)))"
+   'app.main
+   "(ns app.main (:require [ma.lib :as l]) (:export [main twice]))
+    (defn main [] :i64 (l/twice 5))
+    (defn twice
+      ([x :i64] :i64 (l/twice x))
+      ([x :i64 y :i64] :i64 (l/twice x y)))"})
+
+(check "multi-arity-export-runs-at-every-arity"
+  (fn []
+    (let [{:keys [source module-order]} (project/link-source multi-arity-sources 'app.main)
+          kir (ir/lower (sema/analyze source {:admit-linked-synthetics? true}))]
+      (assert (= ['ma.lib 'app.main] module-order))
+      ;; The same export surface a single-file compile of the same function
+      ;; gives. `twice` itself is not an export: it is the source name the two
+      ;; ABI names were derived from.
+      (assert (= ['main 'twice$arity$1 'twice$arity$2] (vec (:exports kir)))
+              (str "exports were " (pr-str (:exports kir))))
+      ;; The clause bodies differ, so a wrapper collapsing them shows up here.
+      (assert (= 10 (js/Number (ir/execute kir 'twice$arity$1 [5]))))
+      (assert (= 15 (js/Number (ir/execute kir 'twice$arity$2 [5 3]))))
+      ;; And the cross-module call the root makes reaches the 1-arity clause.
+      (assert (= 10 (js/Number (ir/execute kir 'main [])))))))
+
+(check "the-import-stub-does-not-survive-linking"
+  (fn []
+    ;; The stub is a multi-arity `defn-` now, which the frontend splits into
+    ;; one function per arity. Those carry generated names, so filtering the
+    ;; stub out of a module's locals by `:name` misses them and emits them
+    ;; into the linked source as real functions returning a stub value -- 0
+    ;; here, which would have made `main` return 0 instead of 10 above.
+    (let [{:keys [source]} (project/link-source multi-arity-sources 'app.main)]
+      (assert (not (re-find #"kotoba_import__" source))
+              (str "an import stub reached the linked source: " source)))))
+
+(check "an-imported-multi-arity-export-is-callable-at-each-declared-arity-only"
+  (fn []
+    ;; The refusal must be the frontend's own arity message. Before this
+    ;; landed, EVERY arity of an imported multi-arity export failed, and it
+    ;; failed with the export message rather than this one.
+    (when-let [failure
+               (rejects #(project/link-source
+                          (assoc multi-arity-sources
+                                 'app.main
+                                 "(ns app.main (:require [ma.lib :as l]) (:export [main]))
+                                  (defn main [] :i64 (l/twice 1 2 3))")
+                          'app.main)
+                        "no matching multi-arity clause")]
+      (throw (js/Error. failure)))))
+
+(check "multi-arity-clauses-keep-their-own-result-types"
+  (fn []
+    ;; Each clause is monomorphic, so one export can return :i64, :string and
+    ;; :bool at three arities. The import stub has to carry all three, or the
+    ;; importing module type-checks against the wrong one.
+    (let [{:keys [source]}
+          (project/link-source
+           {'ma.lib "(ns ma.lib (:export [f]))
+                     (defn f
+                       ([x :i64] :i64 (* 2 x))
+                       ([x :i64 y :i64] :string (string-from-i64 (+ x y)))
+                       ([x :i64 y :i64 z :i64] :bool (> (+ x y) z)))"
+            'app.main "(ns app.main (:require [ma.lib :as l]) (:export [a b c]))
+                       (defn a [] :i64 (l/f 3))
+                       (defn b [] :string (l/f 1 2))
+                       (defn c [] :bool (l/f 1 2 0))"}
+           'app.main)
+          kir (ir/lower (sema/analyze source {:admit-linked-synthetics? true}))]
+      (assert (= 6 (js/Number (ir/execute kir 'a []))))
+      (assert (= "3" (ir/execute kir 'b [])))
+      (assert (true? (ir/execute kir 'c []))))))
+
+(check "a-multi-arity-export-crosses-more-than-one-module-boundary"
+  (fn []
+    ;; The middle module both imports a multi-arity export and publishes one.
+    (let [{:keys [source module-order]}
+          (project/link-source
+           {'m.base "(ns m.base (:export [f]))
+                     (defn f ([x :i64] :i64 (+ x 1)) ([x :i64 y :i64] :i64 (+ x y)))"
+            'm.mid "(ns m.mid (:require [m.base :as b]) (:export [g]))
+                    (defn g ([x :i64] :i64 (b/f x)) ([x :i64 y :i64] :i64 (b/f x y)))"
+            'm.top "(ns m.top (:require [m.mid :as m]) (:export [main]))
+                    (defn main [] :i64 (+ (m/g 1) (m/g 10 20)))"}
+           'm.top)
+          kir (ir/lower (sema/analyze source {:admit-linked-synthetics? true}))]
+      (assert (= ['m.base 'm.mid 'm.top] module-order))
+      (assert (= 32 (js/Number (ir/execute kir 'main [])))))))

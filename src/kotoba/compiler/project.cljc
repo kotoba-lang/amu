@@ -105,6 +105,22 @@
             form))
         forms))
 
+;; A module's `:interface` maps one EXPORTED SOURCE NAME to the vector of
+;; clauses that name denotes, ordered by arity. A single-arity export is a
+;; one-element vector, so the shape does not branch on how the author wrote
+;; the function.
+;;
+;; It used to map an export to one clause, which is why a project could not
+;; export a multi-arity function at all: the analysed module's functions are
+;; already named `twice$arity$1` / `twice$arity$2` by the frontend, the
+;; `:export` vector still carries the source name `twice` the author wrote,
+;; and looking one up among the other rejected every multi-arity export with
+;; "export does not name a declared function" -- a message that sends the
+;; reader hunting for a typo when the function is right there.
+;;
+;; The frontend solves the same problem in `expand-export`, by grouping its
+;; def-parts on `:source-name`. This does the same thing on the same key
+;; rather than teaching the linker to spell `$arity$` for itself.
 (defn- interface-of [{:keys [name params param-types result effects
                              callable-param-contracts callable-result-contract]}
                      linked-name]
@@ -115,6 +131,24 @@
     (assoc :callable-param-contracts callable-param-contracts)
     callable-result-contract
     (assoc :callable-result-contract callable-result-contract)))
+
+(defn- arity-of
+  "The clause's arity: one entry per parameter part, which is what the
+  frontend's `:logical-arity` counts and what call resolution dispatches on.
+  `:params` holds exactly the bound names, so a clause carrying types (which
+  `typed-params` interleaves back into the emitted vector) is not counted
+  twice."
+  [clause]
+  (count (:params clause)))
+
+(defn- source-name-of
+  "The name the author wrote for an analysed function.
+
+  Every function the frontend builds from a `defn`/`defn-` carries
+  `:source-name`; synthesized loop and lambda helpers do not, and fall back to
+  their own generated name, which no export or import stub can collide with."
+  [function]
+  (or (:source-name function) (:name function)))
 
 (defn- typed-params
   ([params types] (typed-params params types nil))
@@ -164,19 +198,50 @@
     :else (reject! "project import result type has no closed stub value"
                    {:type type})))
 
+(defn- clause-params [{:keys [params param-types callable-param-contracts]}]
+  (typed-params params param-types callable-param-contracts))
+
+(defn- clause-result [{:keys [result callable-result-contract]}]
+  (or callable-result-contract result))
+
+(defn- arity-declaration
+  "Emit one `defn`/`defn-` for a source name that denotes CLAUSES.
+
+  One clause is written as the ordinary single-arity form, so every project
+  that linked before this function existed emits byte-identical text. Two or
+  more are written as the frontend's own multi-arity declaration -- a clause
+  list of `([params] result body)` -- which `expand-defn-parts` then splits
+  back into one monomorphic function per arity under the `$arity$` ABI names.
+
+  The linker never spells an `$arity$` name itself. It hands the frontend the
+  same syntax an author would write and reads the answer back off
+  `:source-name`, so the two paths cannot drift into two conventions."
+  [op name clauses body-of]
+  (if (= 1 (count clauses))
+    (let [clause (first clauses)]
+      (list op name (clause-params clause) (clause-result clause) (body-of clause)))
+    (list* op name
+           (map (fn [clause]
+                  (list (clause-params clause) (clause-result clause) (body-of clause)))
+                clauses))))
+
+(defn- stub-body [{:keys [result callable-result-contract]}]
+  (if callable-result-contract
+    ;; The stub exists only for isolated type/effect analysis and is
+    ;; removed before linking. Its explicit result contract supplies
+    ;; the closure refinement without inventing a lambda ID/helper that
+    ;; could be mistaken for executable project code.
+    0
+    (stub-value result)))
+
 (defn- stub-form
-  [stub {:keys [params param-types result callable-param-contracts
-                callable-result-contract]}]
-  (list 'defn- stub
-        (typed-params params param-types callable-param-contracts)
-        (or callable-result-contract result)
-        (if callable-result-contract
-          ;; The stub exists only for isolated type/effect analysis and is
-          ;; removed before linking. Its explicit result contract supplies
-          ;; the closure refinement without inventing a lambda ID/helper that
-          ;; could be mistaken for executable project code.
-          0
-          (stub-value result))))
+  "The import stub an importing module analyses in place of a dependency.
+
+  A multi-arity export needs a multi-arity stub, or the importing module can
+  call it at exactly one arity: the stub is what its own call resolution sees,
+  and the frontend rejects `no matching multi-arity clause` for the others."
+  [stub clauses]
+  (arity-declaration 'defn- stub clauses stub-body))
 
 (defn- capability-operation?
   "True for a friendly capability operation such as `clock/now`.
@@ -337,24 +402,51 @@
                           (when-not dependency
                             (reject! "imported namespace was not resolved"
                                      {:module (:namespace info) :dependency dep-name}))
-                          (map (fn [[export interface]]
-                                 [(symbol (str alias) (str export)) interface])
+                          (map (fn [[export clauses]]
+                                 [(symbol (str alias) (str export)) clauses])
                                (:interface dependency))))
                       (:requires info)))
-        stub-pairs (map-indexed (fn [index [qualified interface]]
-                                  [qualified (symbol (str "kotoba_import__" index)) interface])
+        stub-pairs (map-indexed (fn [index [qualified clauses]]
+                                  [qualified (symbol (str "kotoba_import__" index)) clauses])
                                 (sort-by (comp str key) available))
         import->stub (into {} (map (fn [[qualified stub _]] [qualified stub]) stub-pairs))
-        stub->target (into {} (map (fn [[_ stub interface]] [stub (:linked-name interface)]) stub-pairs))
+        ;; One stub name per import, and within it one linked target per
+        ;; arity. The stub name is the `:source-name` the frontend will put on
+        ;; every clause it splits out of the emitted `defn-`, so the two are
+        ;; joined below without either side parsing an `$arity$` suffix.
+        stub-targets (into {}
+                           (map (fn [[_ stub clauses]]
+                                  [stub (into {} (map (juxt arity-of :linked-name)) clauses)]))
+                           stub-pairs)
+        stub-source-names (into #{} (map second) stub-pairs)
         rewritten (mapv #(rewrite-import-calls % import->stub) (without-requires forms))
-        augmented (into rewritten (map (fn [[_ stub interface]] (stub-form stub interface)) stub-pairs))
+        augmented (into rewritten (map (fn [[_ stub clauses]] (stub-form stub clauses)) stub-pairs))
         ;; Lambda IDs are artifact data. Give every source module a disjoint
         ;; range so the project-level dispatcher can route a closure back to
         ;; the module whose lifted helper owns that ID.
         hir (sema/analyze (source-text augmented)
                               {:lambda-id-base (* module-index sema/max-functions)})
-        stubs (set (vals import->stub))
-        locals (vec (remove #(contains? stubs (:name %)) (:functions hir)))
+        ;; Matched on `:source-name`, not `:name`: a multi-arity stub is one
+        ;; `defn-` that the frontend has already split into several functions
+        ;; with generated names. Filtering on `:name` would leave those in
+        ;; `locals`, where they would be emitted into the linked source as
+        ;; real functions returning a stub value.
+        stub-functions (filter #(contains? stub-source-names (source-name-of %))
+                               (:functions hir))
+        locals (vec (remove #(contains? stub-source-names (source-name-of %))
+                            (:functions hir)))
+        stub->target
+        (into {}
+              (map (fn [function]
+                     (let [target (get-in stub-targets
+                                          [(source-name-of function) (arity-of function)])]
+                       (when-not target
+                         (reject! "linked import stub has no target for its arity"
+                                  {:module (:namespace info)
+                                   :stub (source-name-of function)
+                                   :arity (arity-of function)}))
+                       [(:name function) target])))
+              stub-functions)
         local-names (into {} (map-indexed (fn [function-index {:keys [name]}]
                                             [name (symbol (str "kotoba_module__"
                                                                module-index "__"
@@ -395,26 +487,35 @@
                               (closure-apply-name? original-name)
                               (assoc :project-closure-apply? true))))
                         locals)
-        by-name (into {} (map (juxt :name identity) locals))
+        ;; Grouped on the AUTHORED name. `:export` carries what the author
+        ;; wrote; a multi-arity function reaches here as one analysed function
+        ;; per arity, none of which is called that.
+        by-source-name (group-by source-name-of locals)
         interface
         (into {}
               (map (fn [export]
-                     (let [function (get by-name export)]
-                       (when-not function
+                     (let [clauses (sort-by arity-of (get by-source-name export))]
+                       (when-not (seq clauses)
                          (reject! "export does not name a declared function"
                                   {:module (:namespace info) :export export}))
-                       [export (interface-of function (get local-names export))])))
+                       [export (mapv #(interface-of % (get local-names (:name %)))
+                                     clauses)])))
               (:exports info))]
     {:namespace (:namespace info) :requires (:requires info)
      :functions functions :interface interface}))
 
 (defn- wrapper-form
-  [[export {:keys [linked-name params param-types result callable-param-contracts
-                   callable-result-contract]}]]
-  (list 'defn export
-        (typed-params params param-types callable-param-contracts)
-        (or callable-result-contract result)
-        (list* linked-name params)))
+  "The public `defn` the linked namespace exports for one of the root's
+  exports.
+
+  A multi-arity export becomes a multi-arity wrapper, so the linked
+  single-unit source says what the author's module said. Compiling that unit
+  re-derives the same `$arity$` export names a single-file compile of the same
+  function produces -- the two routes agree on the artifact's export surface
+  rather than one of them being unable to describe it."
+  [[export clauses]]
+  (arity-declaration 'defn export clauses
+                     (fn [{:keys [linked-name params]}] (list* linked-name params))))
 
 (defn- typed-trap [result-type]
   (if (= :bool result-type)
@@ -506,10 +607,22 @@
     (let [root-module (get @linked root)
           module-functions (vec (mapcat #(get-in @linked [% :functions]) @order))
           functions (into module-functions (project-dispatchers module-functions))
-          export-count (reduce + (map #(count (get-in @linked [% :interface])) @order))
+          ;; Clauses, not export names. `max-project-exports` bounds the
+          ;; exported FUNCTION surface, and a multi-arity export is several
+          ;; functions -- the artifact carries `twice$arity$1` and
+          ;; `twice$arity$2`, not `twice`. Counting names would let a project
+          ;; carry several times the bound while reporting it was under it.
+          ;; Single-arity exports are one clause each, so no project that
+          ;; linked before this counts differently now.
+          export-count (reduce + (map (fn [module]
+                                        (reduce + (map count (vals (get-in @linked [module :interface])))))
+                                      @order))
           exports (sort-by (comp str key) (:interface root-module))
           wrappers (mapv wrapper-form exports)
-          function-count (+ (count functions) (count wrappers))
+          ;; Same reason: one multi-arity wrapper form is several functions
+          ;; against `max-project-functions`.
+          wrapper-function-count (reduce + (map (comp count val) exports))
+          function-count (+ (count functions) wrapper-function-count)
           ;; The linked namespace deliberately carries NO `:capabilities`
           ;; clause even when its modules declared one. That clause is a
           ;; source-level declare-then-check, and it has already run once per
