@@ -1,6 +1,7 @@
 (ns kotoba.compiler.aiueos-target-test
   (:require [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]
+            [kotoba.artifact.core :as artifact]
             [kotoba.compiler.packaging.pe32plus :as pe32plus]
             [kotoba.compiler.packaging.elf-fixture :as elf-fixture]
             [kotoba.kir.target :as target]))
@@ -35,6 +36,10 @@
 (defn- le-bytes [n width]
   (mapv #(bit-and 0xff (bit-shift-right (long n) (* 8 %)))
         (range width)))
+
+(defn- byte-sequence-offset [bytes needle]
+  (first (filter #(= needle (subvec bytes % (+ % (count needle))))
+                 (range (inc (- (count bytes) (count needle)))))))
 
 (defn- elf64-load-segments [bytes]
   (let [program-offset (read-le bytes 32 8)
@@ -227,6 +232,34 @@
     (is (= bytes (:bytes second-image)) "embedded boot image is reproducible")
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #"x86-64 ET_EXEC"
           (pe32plus/package-embedded-kernel (vec (repeat 128 0)))))))
+
+(deftest compiler-packages-a-bounded-external-rt-payload
+  (let [kernel (get-in (compiler/compile-source
+                        "(defn main [] (kernel-out-u32 244 16))"
+                        :x86_64-aiueos-kernel-v1) [:binary :bytes])
+        payload (vec (range 128))
+        image (pe32plus/package-embedded-kernel kernel payload)
+        bytes (:bytes image)
+        pe-offset (read-le bytes 0x3c 4)
+        section-table (+ pe-offset 24 (read-le bytes (+ pe-offset 20) 2))
+        text-rva (read-le bytes (+ section-table 12) 4)
+        text-raw (read-le bytes (+ section-table 20) 4)
+        data-rva (read-le bytes (+ section-table 40 12) 4)
+        store-prefix [0xb8 0x80 0x00 0x00 0x00 0x48 0x89 0x05]
+        store-offset (byte-sequence-offset bytes store-prefix)
+        displacement (read-le bytes (+ store-offset 8) 4)
+        store-next-rva (+ text-rva (- (+ store-offset 12) text-raw))]
+    (is (= {:bytes 16592 :memory-map-offset 80
+            :memory-map-capacity 16384 :payload-offset 16464
+            :payload-bytes 128}
+           (:boot-info-layout image)))
+    (is (= (artifact/sha256 payload) (:embedded-payload-sha256 image)))
+    (is (= (+ data-rva 80) (+ store-next-rva displacement))
+        "payload length store names boot-info offset 64, not four bytes later")
+    (is (= (:bytes image)
+           (:bytes (pe32plus/package-embedded-kernel kernel payload))))
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"exceeds 16 KiB"
+          (pe32plus/package-embedded-kernel kernel (vec (repeat 16385 0)))))))
 
 (deftest pe32plus-refuses-a-paddr-outside-the-pt-load-contract
   ;; The JVM twin of `test/nbb/run.cljs`'s pe32plus case. Same fixture bytes,
