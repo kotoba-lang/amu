@@ -509,3 +509,133 @@
                               "(:capabilities #{:ui/commit})"
                               "(:capabilities #{:ui/commit}) (:schemas {})"))
           'caps.app)))))
+
+;; ---------------------------------------------------------------------------
+;; Multi-arity exports across a module boundary
+;;
+;; `.cljc` modules routinely publish multi-arity functions, and a project
+;; module could not export one. The analysed module's functions are already
+;; `twice$arity$1` / `twice$arity$2`; the `:export` vector still carries the
+;; source name `twice`; the linker looked one up among the other and refused
+;; with "export does not name a declared function", which reads as a typo and
+;; is not one. Both controls were measured before the fix: the same project
+;; with a single-arity `twice` linked and ran, and the same multi-arity
+;; `twice` in ONE file compiled and exported `twice$arity$1 twice$arity$2`.
+
+(deftest project-exports-a-multi-arity-function-at-every-arity
+  (let [lib "(ns ma.lib (:export [twice]))
+             (defn twice
+               ([x :i64] :i64 (* 2 x))
+               ([x :i64 y :i64] :i64 (* y x)))"
+        app "(ns app.main (:require [ma.lib :as l]) (:export [main twice]))
+             (defn main [] :i64 (l/twice 5))
+             (defn twice
+               ([x :i64] :i64 (l/twice x))
+               ([x :i64 y :i64] :i64 (l/twice x y)))"
+        compiled (compiler/compile-project {'ma.lib lib 'app.main app}
+                                           'app.main :js-kotoba-v1)]
+    (testing "the artifact carries the export surface a single file would give"
+      (is (= ['main 'twice$arity$1 'twice$arity$2]
+             (vec (get-in compiled [:kir :exports])))))
+    (testing "each clause runs, so a wrapper collapsing them would show here"
+      (is (= 10 (ir/execute (:kir compiled) 'twice$arity$1 [5])))
+      (is (= 15 (ir/execute (:kir compiled) 'twice$arity$2 [5 3]))))
+    (testing "and the cross-module call reaches the arity it was written at"
+      (is (= 10 (ir/execute (:kir compiled) 'main []))))
+    (testing "no import stub survives into the linked source"
+      ;; The stub is a multi-arity `defn-`, which the frontend splits into one
+      ;; function per arity under generated names. Filtering it out of a
+      ;; module's locals by `:name` misses those, and they are emitted as real
+      ;; functions returning a stub value -- 0 here, so `main` would be 0.
+      (is (not (str/includes?
+                (:source (project/link-source {'ma.lib lib 'app.main app} 'app.main))
+                "kotoba_import__"))))))
+
+(deftest project-multi-arity-import-is-callable-at-its-declared-arities-only
+  (let [lib "(ns ma.lib (:export [twice]))
+             (defn twice
+               ([x :i64] :i64 (* 2 x))
+               ([x :i64 y :i64] :i64 (* y x)))"]
+    (is (thrown-with-msg?
+         clojure.lang.ExceptionInfo #"no matching multi-arity clause"
+         (project/link-source
+          {'ma.lib lib
+           'app.main "(ns app.main (:require [ma.lib :as l]) (:export [main]))
+                      (defn main [] :i64 (l/twice 1 2 3))"}
+          'app.main)))))
+
+(deftest project-multi-arity-clauses-keep-their-own-result-types
+  ;; Each clause is monomorphic, so one export can answer :i64, :string and
+  ;; :bool at three arities. The import stub has to carry all three or the
+  ;; importing module type-checks its calls against the wrong one.
+  (let [compiled
+        (compiler/compile-project
+         {'ma.lib "(ns ma.lib (:export [f]))
+                   (defn f
+                     ([x :i64] :i64 (* 2 x))
+                     ([x :i64 y :i64] :string (string-from-i64 (+ x y)))
+                     ([x :i64 y :i64 z :i64] :bool (> (+ x y) z)))"
+          'app.main "(ns app.main (:require [ma.lib :as l]) (:export [a b c]))
+                     (defn a [] :i64 (l/f 3))
+                     (defn b [] :string (l/f 1 2))
+                     (defn c [] :bool (l/f 1 2 0))"}
+         'app.main :js-kotoba-v1)]
+    (is (= 6 (ir/execute (:kir compiled) 'a [])))
+    (is (= "3" (ir/execute (:kir compiled) 'b [])))
+    (is (true? (ir/execute (:kir compiled) 'c [])))))
+
+(deftest project-multi-arity-export-crosses-more-than-one-boundary
+  ;; The middle module both imports a multi-arity export and publishes one.
+  (let [compiled
+        (compiler/compile-project
+         {'m.base "(ns m.base (:export [f]))
+                   (defn f ([x :i64] :i64 (+ x 1)) ([x :i64 y :i64] :i64 (+ x y)))"
+          'm.mid "(ns m.mid (:require [m.base :as b]) (:export [g]))
+                  (defn g ([x :i64] :i64 (b/f x)) ([x :i64 y :i64] :i64 (b/f x y)))"
+          'm.top "(ns m.top (:require [m.mid :as m]) (:export [main]))
+                  (defn main [] :i64 (+ (m/g 1) (m/g 10 20)))"}
+         'm.top :js-kotoba-v1)]
+    (is (= ['m.base 'm.mid 'm.top]
+           (get-in compiled [:project :kotoba.module/order])))
+    (is (= 32 (ir/execute (:kir compiled) 'main [])))))
+
+(deftest project-multi-arity-exports-respect-the-frontend-arity-limits
+  ;; The two limits the linker has to respect belong to the frontend:
+  ;; `expand-defn-parts` caps the clause count and the HIR builder caps a
+  ;; clause at `max-parameters` ABI arguments. The linker does not mirror
+  ;; either number; it emits the stub and the wrapper from clauses the
+  ;; frontend already admitted, and the emitted forms are re-read by the same
+  ;; frontend. This pins both directions of that arrangement.
+  (testing "every distinct arity the parameter cap allows survives the boundary"
+    ;; Distinct arities are what a multi-arity declaration can hold, and with
+    ;; a five-parameter cap that is 0..5 -- six clauses, more than any project
+    ;; can reach by adding clauses alone.
+    (let [lib (str "(ns wide.lib (:export [f]))"
+                   "(defn f"
+                   "  ([] :i64 0)"
+                   "  ([a :i64] :i64 a)"
+                   "  ([a :i64 b :i64] :i64 (+ a b))"
+                   "  ([a :i64 b :i64 c :i64] :i64 (+ a (+ b c)))"
+                   "  ([a :i64 b :i64 c :i64 d :i64] :i64 (+ a (+ b (+ c d))))"
+                   "  ([a :i64 b :i64 c :i64 d :i64 e :i64] :i64"
+                   "     (+ a (+ b (+ c (+ d e))))))")
+          app (str "(ns wide.root (:require [wide.lib :as l]) (:export [main]))"
+                   "(defn main [] :i64"
+                   "  (+ (l/f) (+ (l/f 1) (+ (l/f 1 2) (+ (l/f 1 2 3)"
+                   "     (+ (l/f 1 2 3 4) (l/f 1 2 3 4 5))))))")
+          compiled (compiler/compile-project {'wide.lib lib 'wide.root app}
+                                             'wide.root :js-kotoba-v1)]
+      ;; 0 + 1 + 3 + 6 + 10 + 15
+      (is (= 35 (ir/execute (:kir compiled) 'main [])))))
+  (testing "a clause past the parameter cap is refused, by the cap's own name"
+    (is (thrown-with-msg?
+         clojure.lang.ExceptionInfo #"function parameters exceed ABI-supported arity"
+         (project/link-source
+          {'wide.lib (str "(ns wide.lib (:export [f]))"
+                          "(defn f"
+                          "  ([a :i64] :i64 a)"
+                          "  ([a :i64 b :i64 c :i64 d :i64 e :i64 g :i64] :i64"
+                          "     (+ a (+ b (+ c (+ d (+ e g))))))) ")
+           'wide.root (str "(ns wide.root (:require [wide.lib :as l]) (:export [main]))"
+                           "(defn main [] :i64 (l/f 1))")}
+          'wide.root)))))
