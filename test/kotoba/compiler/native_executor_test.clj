@@ -1406,3 +1406,29 @@
                  filled (vector-assoc! fresh 0 7)]
              (+ (vector-at fresh 0) (vector-at filled 0))))"
         (target) {:allow #{}}))))
+
+;; The host bound is the only one that can answer here. `n` arrives as an
+;; entry ARGUMENT, so the compile-time KIR oracle -- which refuses a literal
+;; `(vector-alloc 20000)` with `:vector-alloc-out-of-range` before any code is
+;; emitted -- has nothing to fold, and `checked_vector_alloc`'s own
+;; re-derivation of `vector-item-limit` is what decides. That re-derivation is
+;; the thing being tested: 16384 is the limit, so 16384 must be ADMITTED and
+;; 16385 refused. A bound checked with `>=` instead of `>` passes every
+;; too-large case and still refuses one program that should run.
+(deftest native-vector-alloc-fails-closed-at-the-item-limit-the-host-re-derives
+  (let [{:keys [envelope trust]}
+        (signed "(ns pilot.native-slab (:export [alloc-count]))
+                 (defn alloc-count [n :i64] :i64 (vector-count (vector-alloc n)))"
+                {:allow #{}})
+        {:keys [trust options]} (execution-options trust)
+        run (fn [n] (executor/execute envelope trust {:allow #{}} {:args [n]}
+                                      (assoc options :entry 'alloc-count)))]
+    (is (= {:status :ok :result 0} (select-keys (:evidence (run 0)) [:status :result]))
+        "zero slots is a real handle over an empty slice, not an error")
+    (is (= {:status :ok :result 16384}
+           (select-keys (:evidence (run 16384)) [:status :result]))
+        "the limit itself is admitted -- an off-by-one here refuses a legal program")
+    (is (= :trap (get-in (run 16385) [:report :status]))
+        "one past the limit is refused by the host, not by the oracle")
+    (is (= :trap (get-in (run -1) [:report :status]))
+        "a negative count is refused before it is widened to a length")))
