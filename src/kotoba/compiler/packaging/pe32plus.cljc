@@ -188,7 +188,31 @@
   "Generate a position-independent PE32+ UEFI transition loader around a
   compiler-produced aiueos kernel ELF. No C object, CRT, import, or linker is
   involved. The current hard-flip contract admits exactly two bounded PT_LOAD
-  segments and transfers control after ExitBootServices."
+  segments and transfers control after ExitBootServices.
+
+  ⚠ NOT PORTABLE, measured 2026-08-31. This function emits different bytes
+  under ClojureScript than under the JVM. Given one identical kernel it
+  produced 129,024 bytes on both, differing in exactly two, inside an
+  eight-byte run the JVM writes as `AIUEBOOT` and cljs as a NUL followed by
+  `HUEBOOT`; read as one little-endian word the two differ by 321. Both routes reported
+  the same kernel sha256, so both had read the same input.
+
+  `package-efi` in this same namespace IS byte-identical across the two, so
+  this is one function, not the file. That is also why `bin/amu`'s JDK-free
+  route serves `--target x86_64-aiueos-uefi-v1` and refuses
+  `package-aiueos-boot`: the boot command was implemented on that route,
+  measured, and reverted rather than shipped.
+
+  No test guards this, and one cannot be written here. Clojure and nbb each
+  load their own runtime; a comparison has to build the same input under BOTH
+  and diff the bytes, which is what aiueos's
+  `os/aiueos/scripts/verify-jvm-free-object-parity.cljs` does for kernel
+  objects. Whoever narrows this down should do the same for the boot image.
+
+  This file has ZERO reader conditionals. That was taken as evidence it was
+  portable; it is evidence that nobody wrote one. Suspect the arithmetic --
+  cljs bitwise operators truncate to int32, and the values here (entry points,
+  paddrs, segment sizes) are 64-bit. See aiueos ADR-0130."
   [kernel]
   (let [kernel (vec kernel)]
     (when-not (and (= [0x7f 0x45 0x4c 0x46] (subvec kernel 0 4))
