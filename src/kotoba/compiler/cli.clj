@@ -101,7 +101,8 @@
 (defn exit-code [phase]
   (case phase
     :usage 64
-    (:decode :read :subset :admission :ir :verify :coverage :project-link) 65
+    (:decode :read :subset :admission :ir :verify :coverage :project-link
+     :module-lock) 65
     (:signature :trust :runtime-identity) 77
     :output 74
     :execute 69

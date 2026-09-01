@@ -230,6 +230,13 @@ error rather than a reason to go looking. `module-lock/lock-cid` gives the whole
 resolved input set one identity, so a receipt can bind a value that changes
 whenever any input does.
 
+Both halves run without a JDK. `kotoba.compiler.nbb.module-lock` is the Node
+twin of the resolver and `bin/amu` routes `module-lock` and
+`compile --module-lock` there, so `--jvm-free` covers pinning a project as
+well as compiling from the pin. Leaving lock PRODUCTION on the JVM would only
+have moved the JDK one step upstream of every pinned build, which is the Q9
+objection restated rather than answered.
+
 This is deliberately distinct from the semantic definition CIDs in
 `kotoba-lang/codebase`. A source-tree CID says which bytes were compiled; a
 definition CID says what a definition *means*. Conflating them would let a

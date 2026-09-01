@@ -91,6 +91,13 @@
       (throw (ex-info "EDN input contains trailing forms" {:phase :decode})))
     (validate-edn-shape! (first forms))))
 
+;; The module lock is the other EDN file this route is handed. Same reader and
+;; same bounds as `--policy`: it arrives from the caller, and a lock is
+;; supposed to make a build MORE constrained, so it must not be the one input
+;; read without limits.
+(defn read-edn-file! [path]
+  (read-edn-form! (io/read-text-file path)))
+
 (defn read-policy-material [args]
   (if-let [path (option args "--policy")]
     {:present? true :text (io/read-text-file path)}
@@ -144,7 +151,14 @@
     ;; graph exited 70 (internal), so "your source paths are wrong" and "the
     ;; compiler broke" were the same answer on this route and a different
     ;; answer than the JVM gave for the same input.
-    (:decode :read :subset :admission :verify :project-link) 65
+    ;; :module-lock joins for the same reason :project-link did. A lock that
+    ;; does not pin a dependency, or a block that does not hash to its name,
+    ;; is a caller telling the compiler something wrong -- not the compiler
+    ;; breaking. Without this both answered 70, which is the code reserved for
+    ;; "internal compiler error", so a CI job could not tell the two apart.
+    ;; `kotoba.compiler.cli/exit-code` carries the same entry, so the JVM and
+    ;; Node routes still answer identically.
+    (:decode :read :subset :admission :verify :project-link :module-lock) 65
     (:signature :trust) 77
     :output 74
     70))
