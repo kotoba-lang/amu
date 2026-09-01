@@ -24,9 +24,22 @@
    :expect 1}
   {:id :nominal-record
    :source "(defn main [] (record-get [:record :conformance/person [[:name :string] [:age :i64]]] (record [:record :conformance/person [[:name :string] [:age :i64]]] \"Kotoba\" 7) :age))"
-   :expect 7}]
+   :expect 7}
+  ;; In-place vector update. Present here because a lowering to a STORE is
+  ;; only indistinguishable from a copy when the handle is dead afterwards,
+  ;; and "indistinguishable" is a claim about three runtimes agreeing rather
+  ;; than about one of them working.
+  {:id :linear-vector-in-place
+   :source "(defn main [] (let [v (vector-alloc 4) a (vector-assoc! v 0 7) b (vector-assoc! a 1 9)] (+ (vector-at b 0) (vector-at b 1))))"
+   :expect 16}]
  :negative
- [{:id :option-payload-mismatch
+ [;; The same program with one name un-threaded: `v` is written twice, so the
+  ;; second store would land on what the first consumed. Refused at check
+  ;; time, which is what makes the positive case above a lowering choice
+  ;; rather than a hazard.
+  {:id :non-linear-in-place-write
+   :source "(defn main [] (let [v (vector-alloc 4) a (vector-assoc! v 0 7) b (vector-assoc! v 1 9)] (vector-at b 0)))"}
+  {:id :option-payload-mismatch
    :source "(defn main [] [:option :string] (option-some-of [:option :string] 7))"}
   {:id :result-non-exhaustive
    :source "(defn main [value [:result :i64 :string]] (match-result value [:result :i64 :string] (ok x x)))"}
