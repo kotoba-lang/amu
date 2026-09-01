@@ -444,6 +444,22 @@ function createTypedRuntime(abi, typedCapCall, allow) {
   // per field, which is a real cost a host must be willing to pay, and a guest
   // that asks for more is refused rather than allowed to exhaust the host.
   const VECTOR_ITEM_BUDGET = 1048576;
+  // How many vector items one instance may allocate IN TOTAL.
+  //
+  // The per-vector budget bounds one value; this bounds the instance. Without
+  // it a guest calls `vector-alloc` in a loop and takes 8 MB per call for as
+  // long as it likes -- survivable while one vector was 16,384 items, not now
+  // that it is a million.
+  //
+  // TOTAL, not live: nothing here is freed, and calling it a live budget would
+  // promise a reclamation that does not exist. The native arena is bump-only
+  // for the same reason, and an instance is the unit that goes away.
+  //
+  // Eight of the largest vector, because a struct of arrays is several fields
+  // over one slot count and `torihiki.book` has more than one. A ninth is
+  // refused rather than allowed to exhaust the host.
+  const VECTOR_TOTAL_ITEM_BUDGET = VECTOR_ITEM_BUDGET * 8;
+  let vectorItemsAllocated = 0;
   const trustDescriptor = descriptor => {
     if (!Array.isArray(descriptor) || trustedDescriptors.has(descriptor)) return;
     trustedDescriptors.add(descriptor);
@@ -1880,6 +1896,9 @@ function createTypedRuntime(abi, typedCapCall, allow) {
       const count = i64(rawCount);
       if (count < 0n || count > BigInt(VECTOR_ITEM_BUDGET))
         reject("invalid-typed-value", "vector-i64 item budget exceeded");
+      vectorItemsAllocated += Number(count);
+      if (vectorItemsAllocated > VECTOR_TOTAL_ITEM_BUDGET)
+        reject("invalid-typed-value", "typed vector total item budget exceeded");
       const items = new Array(Number(count) + 1);
       items[0] = descriptor;
       items.fill(0n, 1);
