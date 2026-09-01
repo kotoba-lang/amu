@@ -13,6 +13,7 @@ const usage = [
   "  multi-file (a module declaring (:require [ns :as alias])):",
   "       amu module-lock <entry> --source-path <dir> --blocks <dir>",
   "       amu compile --module-lock <lock> --blocks <dir> --target <target> --output <file>",
+  "       (both halves run without a JDK; add --jvm-free to prove it)",
   "       amu check <entry> --source-path <dir>            # links, emits nothing",
   "       amu compile <entry> --source-path <dir> --unpinned --target <target> --output <file>",
   "       amu worker [--target wasm32|x86_64|aarch64]",
@@ -70,16 +71,20 @@ function option(args, flag) {
 // :kotoba.error/namespace-export-clause through this launcher, and exited 0
 // with a 6561-byte .wasm through the JVM entry point that owns the linker.
 //
-// `kotoba.compiler.nbb.project-files` now resolves the closed graph on this
-// route and hands it to the same portable `project/link-source`, so
-// --source-path no longer forces the JVM. --module-lock still does: its
-// resolver (`kotoba.compiler.module-lock`) is JVM-only, and serving a
-// lock-pinned build from the path resolver would silently drop the pinning,
-// which is the ambience the lock exists to remove. Answering the wrong
-// question quietly is worse than refusing loudly, so it stays refused.
-function jvmOnlyProjectMode(args) {
-  return args.includes("--module-lock");
-}
+// `kotoba.compiler.nbb.project-files` resolved that half on 2026-08-31.
+// --module-lock stayed on the JVM afterwards, and the refusal was right while
+// it lasted: serving a lock-pinned build from the PATH resolver would have
+// dropped the pinning without saying so, which is the ambience the lock
+// exists to remove. But the consequence was that reproducible and JDK-free
+// were mutually exclusive, and Q9 forbids a JVM build dependency -- so the
+// answer was to remove the reason for the refusal rather than the refusal.
+// `kotoba.compiler.nbb.module-lock` is the CID resolver, and `module-lock`
+// itself (which PRODUCES a lock) runs here too: leaving production on the JVM
+// would only have moved the JDK one step upstream of every pinned build.
+//
+// Nothing about project mode forces the JVM now. This function is gone rather
+// than left returning false, because a predicate that always answers the same
+// way is a claim nobody rechecks.
 
 // The two `kotoba.native.elf64` twins genuinely disagree about ONE container:
 // the x86-64 kernel image, 65,904 bytes from the portable file against 110,872
@@ -105,9 +110,9 @@ const divergentImageReason =
 
 function nbbNativeEligible(args) {
   const command = args[0];
-  if (jvmOnlyProjectMode(args)) return false;
   if (command === "compile" && divergentAiueosKernelImage(args)) return false;
   return command === "check" || command === "extract-native"
+    || command === "module-lock"
     || command === "verify-output-set" || command === "sign-output-set"
 
     || (command === "worker" && nbbNativeTargets.has(option(args, "--target")))
@@ -293,6 +298,11 @@ function securityClasspath(root, nbbCli, jvmFree) {
   return resolved;
 }
 
+// Flags whose value is always a filesystem location, including ones with no
+// extension to recognise it by.
+const PATH_VALUED_FLAGS = new Set(["--blocks", "--source-path", "--module-lock",
+  "--output", "--policy"]);
+
 // Extensions this CLI is handed as filesystem paths. A bare word like
 // `compile` or `wasm32-browser` has none and is left alone.
 const PATH_EXTENSIONS = [
@@ -317,9 +327,15 @@ const PATH_EXTENSIONS = [
  * An argument that is already absolute is left as it is.
  */
 function resolveCallerPaths(args, cwd) {
-  return args.map(arg => {
+  return args.map((arg, index) => {
     if (typeof arg !== "string" || arg.startsWith("-")) return arg;
     if (path.isAbsolute(arg)) return arg;
+    // A DIRECTORY name has neither a separator nor an extension, so the
+    // heuristic below cannot see it: `--blocks blocks` and `--source-path src`
+    // both read as bare words and were left relative, then resolved against
+    // the Amu checkout by the spawn's `cwd: root`. The flag says what the next
+    // argument is; use it rather than guessing from the spelling.
+    if (PATH_VALUED_FLAGS.has(args[index - 1])) return path.resolve(cwd, arg);
     const looksLikePath = arg.includes("/") || arg.includes("\\")
       || PATH_EXTENSIONS.some(ext => arg.endsWith(ext));
     return looksLikePath ? path.resolve(cwd, arg) : arg;

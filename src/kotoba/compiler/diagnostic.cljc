@@ -35,7 +35,16 @@
    ;; adding the aiueos packagers to the JDK-free driver, which throws through
    ;; the same phase when a container is refused because the two elf64 twins
    ;; genuinely disagree about it.
-   :artifact-target :kotoba/artifact-target-rejected})
+   :artifact-target :kotoba/artifact-target-rejected
+   ;; Third instance of the same shape. `:module-lock` refusals are specific
+   ;; and actionable -- a dependency the lock does not pin, a block whose
+   ;; bytes do not hash to the CID they are filed under -- but the structured
+   ;; diagnostic reported `:kotoba/internal-error`, so a CI job reading
+   ;; `:diagnostic :code` could not tell a tampered block store from a
+   ;; compiler crash. Measured 2026-09-01 while porting the resolver to Node;
+   ;; the JVM route has answered the same way since the flag existed, and both
+   ;; read this map.
+   :module-lock :kotoba/module-lock-failed})
 
 (declare refine refined-message)
 

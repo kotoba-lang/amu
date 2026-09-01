@@ -1,0 +1,86 @@
+{:adr/id 289
+ :adr/status :accepted
+ :adr/date "2026-09-01"
+ :decision :module-lock-runs-without-a-jdk
+ :base "93c49982be32459b7671d70a308f0b8998b67477"
+ :why {:constraint "kotoba-lang/kotoba-lang lang/q9-migration.edn forbids a JVM build dependency"
+       :consequence-before "reproducible (--module-lock) and JDK-free (--jvm-free) were mutually exclusive"
+       :prior-refusal-was-correct true
+       :prior-refusal "serving a lock-pinned build from the path resolver would drop the pinning silently"
+       :principle "remove the reason for the refusal, not the refusal"}
+ :ported {:consumer "kotoba.compiler.nbb.module-lock/load-locked-graph"
+          :producer "kotoba.compiler.nbb.module-lock/lock-from-source-paths (amu module-lock)"
+          :both-halves-reason "leaving production on the JVM moves the JDK one step upstream of every pinned build"
+          :launcher "bin/amu jvmOnlyProjectMode removed; module-lock added to nbbNativeEligible"}
+ :digest {:assembled-from ["node:crypto sha256" "multiformats.base32"]
+          :not-used "multiformats.core/cidv1-raw"
+          :not-used-reason "its cljs branch needs @noble/hashes, an npm package amu does not depend on"
+          :prefix [1 85 18 32]
+          :pinned-against-jvm-in "test/nbb/project.cljs cid-matches-the-jvm-twin"}
+ :refusals-preserved
+ {"required module is not pinned by the lock" :unpinned-dependency
+  "locked module block does not hash to its CID" :tampered-or-wrong-block
+  "locked module block is missing from the block store" :absent-block
+  "module CID is not a plain base32 CIDv1" :cid-is-a-path
+  "locked module declares a different namespace" :block-declares-another-namespace
+  "module lock does not pin its own root" :root-not-pinned
+  "unknown module lock schema" :bad-schema
+  "module lock must pin at least one module" :empty-lock
+  "module lock entry must pin a CID" :entry-without-cid
+  "module lock exceeds the project module limit" :over-ceiling
+  "block store is not readable" :unreadable-store
+  "existing block has different bytes for its CID" :store-disagrees
+  "--module-lock requires --blocks <dir>" :usage}
+ :corrections
+ {:exit-code {:phase :module-lock :was 70 :now 65
+              :diagnostic-code {:was :kotoba/internal-error :now :kotoba/module-lock-failed}
+              :applies-to :both-routes
+              :files ["src/kotoba/compiler/cli.clj"
+                      "src/kotoba/compiler/nbb/cli_support.cljs"
+                      "src/kotoba/compiler/diagnostic.cljc"]}
+  :caller-paths {:flags ["--blocks" "--source-path"]
+                 :was "a bare directory name has no separator and no extension, so it survived resolveCallerPaths and was resolved against the amu checkout"}
+  :default-output {:command "module-lock" :now :beside-the-entry-module
+                   :jvm-default "kotoba.modules.edn relative to the process cwd, which through bin/amu is the amu checkout"
+                   :deliberate-divergence true}}
+ :measured
+ {:no-jvm {:path-contained ["node" "sh" "cat" "env" "git"]
+           :java-home "/nonexistent"
+           :clojure :absent :java :absent
+           :module-lock-exit 0 :compile-exit 0
+           :lock-cid "bafkreibhyfwgozu7dmqhxz2fq7h2xkhmcnmwie4duqf56hx6v2bjy7szvy"
+           :artifact-ran "run(5) => 11n, and twice/1 lives in the other module"}
+  :jvm-parity {:lock-edn :byte-identical
+               :block-cids :identical
+               :artifact :byte-identical
+               :artifact-sha256 "9b7065359439fb0fa6b8b8b8b777ef7e6c2e196487473da4ad6006863c9d399b"
+               :provenance :differs
+               :provenance-field :build-metadata-sha256
+               :jvm "8c3cd1aba24af56d0e80e4ee86cc968a521cfbc89fcc7bf01832766fd2aa74c4"
+               :node "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+               :node-value-is "sha256 of {}"
+               :pre-existing true
+               :pre-existing-control "the same two files through --source-path show the same artifact sha256 and the same two build-metadata digests"
+               :cause "core/compile-project threads module-graph-digest/module-source-digests/admit-linked-synthetics? as build metadata; the nbb route passes only emit-metadata"
+               :not-fixed-here "it arrived with the path-resolver port and belongs to it"}
+  :inputs-edn {:written-by-jvm true :written-by-node false
+               :reason "the node output set is a two-file commit marker; a third member makes every artifact fail its own verification"
+               :instead "reported in stdout as :kotoba.compile/inputs and :lock-cid"}
+  :break-unbreak
+  [{:revert "drop the (= cid actual) check"
+    :red "a-block-that-does-not-hash-to-its-cid-is-refused"
+    :by :message :others :green}
+   {:revert "CID prefix raw 0x55 -> dag-cbor 0x71"
+    :red "cid-matches-the-jvm-twin"
+    :control-for "a self-consistent but wrong digest -- every other case still passes"}]
+  :launcher-refusals {:tampered-block {:exit 65 :artifact-written false :clojure-spawned false}
+                      :missing-blocks {:exit 64 :clojure-spawned false}}}
+ :suites {"test/nbb/project.cljs" {:branch "25 cases, 0 failed" :base "9 cases, 0 failed"}
+          "scripts/test-nbb-wasm32.cljs" {:branch "42 cases, 0 failed" :base "42 cases, 0 failed"}
+          "scripts/test-amu-launcher.mjs" {:branch :pass :base :pass}}
+ :limits ["two modules, one edge; max-project-modules is 256 and nothing near it was tried"
+          "only wasm32 was compiled from a lock on this route"
+          "no component or --target js compile from a lock was run here"
+          "the provenance divergence is measured, not fixed"
+          "--unpinned is still not enforced on the nbb route"]
+ :related [287 240]}
