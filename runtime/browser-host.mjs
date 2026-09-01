@@ -36,6 +36,8 @@ const ALLOWED_IMPORTS = new Set([
   "kotoba:typed/vector-drop/function",
   "kotoba:typed/vector-at-i64/function",
   "kotoba:typed/vector-assoc-i64/function",
+  "kotoba:typed/vector-assoc-in-place-i64/function",
+  "kotoba:typed/vector-alloc-i64/function",
   "kotoba:typed/vector-conj-i64/function",
   "kotoba:typed/vector-from-memory-i64/function",
   // A MEMORY import, not a function. The bulk vector path writes its
@@ -406,6 +408,65 @@ function createTypedRuntime(abi, typedCapCall, allow) {
   const builders = new WeakSet();
   const trustedDescriptors = new WeakSet();
   const trustedValues = new WeakSet();
+  // Arrays a LINEAR handle owns, which `vector-assoc-in-place-i64` writes
+  // through instead of copying.
+  //
+  // Every other compound value is frozen, and the freeze is what makes
+  // `assertValue` mean something: a value validated once must not become a
+  // different value afterwards, or the check happened on something nobody
+  // holds any more. That argument needs the value to be REACHABLE from more
+  // than one place, and a linear one is not -- the frontend refuses
+  // `vector-assoc!` unless the handle is dead after the write
+  // (`kotoba.compiler.affine`, superproject ADR-2609010200), so there is no
+  // second reference for a mutation to surprise.
+  //
+  // What this gives up, stated: a module NOT produced by this compiler can
+  // import `vector-assoc-in-place-i64` and mutate a value another handle
+  // points to. It cannot reach anything outside the guest -- no host object
+  // is exposed -- so the blast radius is the guest's own data, which is the
+  // same radius as any other way a guest can compute the wrong answer. The
+  // frozen default stays for everything else.
+  const linearValues = new WeakSet();
+  // How many items one vector may hold.
+  //
+  // 16,384 while every element write copied the whole vector: a bigger vector
+  // only bought a bigger copy, so raising it would have made programs slower
+  // rather than possible. In-place writes remove that, and the scan skip above
+  // removes the other O(length) per operation, so the number can now be set by
+  // what the guest needs instead of by what a copy costs.
+  //
+  // 1,048,576 because that is `torihiki.book`'s default `cap` -- a struct of
+  // arrays with a slot per resting order (superproject ADR-2609010200). Chosen
+  // against a real program rather than rounded up: a limit nobody's workload
+  // explains is a limit nobody can argue with when it is wrong.
+  //
+  // Still a limit, and still fail-closed. An i64 array of this length is 8 MB
+  // per field, which is a real cost a host must be willing to pay, and a guest
+  // that asks for more is refused rather than allowed to exhaust the host.
+  // 2026-09-01: back to 16384, matching kotoba.kir.value/vector-item-limit.
+  // A host that admits a million while the compiler refuses past 16,384 is
+  // not more permissive, it is a second bound nobody reads -- the guest is
+  // already refused before it arrives, so this one never fires and stops
+  // being evidence of anything. Raise both, the native arena and amu's
+  // component test together.
+  const VECTOR_ITEM_BUDGET = 16384;
+  // How many vector items one instance may allocate IN TOTAL.
+  //
+  // The per-vector budget bounds one value; this bounds the instance. Without
+  // it a guest calls `vector-alloc` in a loop and takes 128 KB per call for as
+  // long as it likes. It mattered more when one vector could be a million
+  // items; it is still the only thing bounding the instance rather than the
+  // value.
+  //
+  // TOTAL, not live: nothing here is freed, and calling it a live budget would
+  // promise a reclamation that does not exist. The native arena is bump-only
+  // for the same reason, and an instance is the unit that goes away.
+  //
+  // Eight of the largest vector, because a struct of arrays is several fields
+  // over one slot count and `torihiki.book` has more than one. A ninth is
+  // refused rather than allowed to exhaust the host.
+  const VECTOR_TOTAL_ITEM_BUDGET = VECTOR_ITEM_BUDGET * 8;
+  let vectorItemsAllocated = 0;
   const trustDescriptor = descriptor => {
     if (!Array.isArray(descriptor) || trustedDescriptors.has(descriptor)) return;
     trustedDescriptors.add(descriptor);
@@ -1249,16 +1310,33 @@ function createTypedRuntime(abi, typedCapCall, allow) {
       }
       const kind = descriptor[0];
       if (kind === "document") return assertDocument(value);
-      if (!Array.isArray(value) || !Object.isFrozen(value))
+      if (!Array.isArray(value) || !(Object.isFrozen(value) || linearValues.has(value)))
         reject("invalid-typed-value", "compound typed value must be a frozen array");
       if (!trustedValues.has(value))
         reject("invalid-typed-value", "forged compound typed value rejected");
       if (kind === "vector-i64") {
-        if (!sameTrustedDescriptor(value[0], descriptor) || value.length > 16385)
+        if (!sameTrustedDescriptor(value[0], descriptor) || value.length > VECTOR_ITEM_BUDGET + 1)
           reject("invalid-typed-value", "vector-i64 shape or item budget is invalid");
-        for (let index = 1; index < value.length; index += 1) i64(value[index]);
+        // Every element, on every operation -- which makes a single element
+        // write O(length) even after the copy is gone. Measured before this
+        // guard: 20 writes to a 64-item vector scanned 4,032 elements, so
+        // removing the copy alone bought nothing at scale. With it: 192.
+        //
+        // A linear vector is exempt because the scan is redundant for it, not
+        // because it is trusted more. It was scanned in full when it entered
+        // `linearValues` -- the first write copies a frozen array and that copy
+        // goes through this path -- and the ONLY way its contents change
+        // afterwards is `vector-assoc-in-place-i64`, which validates the
+        // element it writes with `i64(replacement)` before storing it. Every
+        // element has been through `i64` exactly as if this loop had run.
+        //
+        // Shape is still checked on every operation: the descriptor must match
+        // and the length must be inside the budget. What is skipped is
+        // re-deriving a fact already established per element.
+        if (!linearValues.has(value))
+          for (let index = 1; index < value.length; index += 1) i64(value[index]);
       } else if (kind === "vector-f64") {
-        if (!sameTrustedDescriptor(value[0], descriptor) || value.length > 16385)
+        if (!sameTrustedDescriptor(value[0], descriptor) || value.length > VECTOR_ITEM_BUDGET + 1)
           reject("invalid-typed-value", "vector-f64 shape or item budget is invalid");
         for (let index = 1; index < value.length; index += 1) f64(value[index]);
       } else if (kind === "string-index") {
@@ -1791,12 +1869,71 @@ function createTypedRuntime(abi, typedCapCall, allow) {
       result[Number(index) + 1] = i64(replacement);
       return admitValue(descriptor, Object.freeze(result));
     },
+    // The same operation as vector-assoc-i64, lowered to a store.
+    //
+    // `vector-assoc-i64` above does `[...checked]` and freezes the result, so
+    // one element write costs a copy of the whole vector. That is why a struct
+    // of arrays could not be written in Kotoba: an order book has about a
+    // million slots per field and a write per order (ADR-2609010200).
+    //
+    // The guest only reaches this through `vector-assoc!`, which the frontend
+    // refuses unless the handle is dead after the write. The KIR interpreter
+    // treats `vector-assoc` and `vector-assoc!` as ONE operation for the same
+    // reason, so the reference semantics cannot drift from this lowering.
+    //
+    // The FIRST write to a frozen vector copies -- everything the copying path
+    // built is frozen and a frozen array cannot be written, silently in sloppy
+    // mode and loudly in strict, and a silent no-op here is a store that did
+    // not happen. Every later write to that result is in place. So a vector
+    // allocated once and written N times costs one copy rather than N.
+    // `(vector-alloc n)` -- n zeros.
+    //
+    // `vector-new` is variadic, so a million-slot struct of arrays would need
+    // a million arguments in source and the literal limit refuses that long
+    // before the item budget does. Correct, and it left no way to allocate one
+    // at all.
+    //
+    // Admitted LINEAR from birth: nothing else holds it, so the first write
+    // does not have to copy a frozen array before it can store. Allocating and
+    // writing N times now costs zero copies rather than one.
+    "vector-alloc-i64"(descriptorId, rawCount) {
+      const descriptor = descriptorAt(descriptorId);
+      if (descriptor[0] !== "vector-i64")
+        reject("invalid-typed-operation", "vector-alloc requires vector-i64");
+      const count = i64(rawCount);
+      if (count < 0n || count > BigInt(VECTOR_ITEM_BUDGET))
+        reject("invalid-typed-value", "vector-i64 item budget exceeded");
+      vectorItemsAllocated += Number(count);
+      if (vectorItemsAllocated > VECTOR_TOTAL_ITEM_BUDGET)
+        reject("invalid-typed-value", "typed vector total item budget exceeded");
+      const items = new Array(Number(count) + 1);
+      items[0] = descriptor;
+      items.fill(0n, 1);
+      linearValues.add(items);
+      return admitValue(descriptor, items);
+    },
+    "vector-assoc-in-place-i64"(descriptorId, value, rawIndex, replacement) {
+      const descriptor = descriptorAt(descriptorId);
+      if (descriptor[0] !== "vector-i64")
+        reject("invalid-typed-operation", "vector-assoc! requires vector-i64");
+      const checked = assertValue(descriptor, value);
+      const index = i64(rawIndex);
+      if (index < 0n || index >= BigInt(checked.length - 1))
+        reject("invalid-typed-operation", "vector-i64 assoc index is out of range");
+      let target = checked;
+      if (!linearValues.has(target)) {
+        target = [...checked];
+        linearValues.add(target);
+      }
+      target[Number(index) + 1] = i64(replacement);
+      return admitValue(descriptor, target);
+    },
     "vector-conj-i64"(descriptorId, value, item) {
       const descriptor = descriptorAt(descriptorId);
       if (descriptor[0] !== "vector-i64")
         reject("invalid-typed-operation", "vector-conj requires vector-i64");
       const checked = assertValue(descriptor, value);
-      if (checked.length >= 16385) reject("invalid-typed-value", "vector-i64 item budget exceeded");
+      if (checked.length > VECTOR_ITEM_BUDGET) reject("invalid-typed-value", "vector-i64 item budget exceeded");
       return admitValue(descriptor, Object.freeze([...checked, i64(item)]));
     },
     // The bulk counterpart of vector-conj-i64: the guest has already written
