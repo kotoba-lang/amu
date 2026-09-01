@@ -1,0 +1,25 @@
+;; In-place vector writes, admitted only because the handle is threaded
+;; through distinct names and is dead after each write. `vector-assoc!` is a
+;; claim about liveness, and `check-affine-writes!` is where the claim is
+;; checked -- rewrite `(vector-assoc! a 1 2)` below to take `v` instead and
+;; this fixture stops compiling, which is the discrimination it is here for.
+(ns fixtures.vector-linear (:export [main sum-to]))
+
+(defn write-two [] :i64
+  (let [v (vector-alloc 4)
+        a (vector-assoc! v 0 7)
+        b (vector-assoc! a 1 9)]
+    (+ (vector-at b 0) (vector-at b 1))))
+
+;; A parameter threaded through tail recursion: the shape a struct of arrays
+;; is actually filled with, and the one a copying lowering makes O(n^2).
+(defn fill [v :vector-i64 i :i64 n :i64] :i64
+  (if (< i n)
+    (fill (vector-assoc! v i i) (+ i 1) n)
+    (vector-at v 0)))
+
+(defn sum-to [n :i64] :i64
+  (fill (vector-alloc 64) 0 n))
+
+(defn main [] :i64
+  (+ (write-two) (sum-to 8)))
