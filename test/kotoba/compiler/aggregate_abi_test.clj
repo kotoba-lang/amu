@@ -109,7 +109,7 @@
   ;; abort slice 1, type-directed arithmetic) and kotoba-hir ac8e7051 (a row
   ;; may hold the bare keyword `:abort`). The ten frozen identity vectors are
   ;; unchanged by that advance.
-  (is (= "1e00f830e96bf762a95085f2eb5741d470d26ee6"
+  (is (= "08bdab8b1084160dcb58ac291a002b140a5abf13"
          (dependency-pin 'io.github.kotoba-lang/kotoba-kir)))
   ;; Advanced 2026-09-01 alongside the backend: the verifier re-derives the
   ;; two new arities and the v4 `expected-context`, and is what turns a
@@ -134,7 +134,7 @@
   ;;            time (this repo's ADR-0293).
   ;; The pin is the branch tip, which also carries the interrupt entry address
   ;; gate.
-  (is (= "4b2d2f1f164453d55b94e998afdea919cb997d89"
+  (is (= "5a16ecbb2ed066a89e2fdea0e1d2d98be7e91a0f"
          (dependency-pin 'io.github.kotoba-lang/kotoba-verifier)))
   (is (= 7 (:abi/version aggregate-abi/contract)))
   (is (= :recursive-word-handles

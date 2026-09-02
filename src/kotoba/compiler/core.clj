@@ -569,6 +569,9 @@
         ;; every target, because the frontend has never seen a target keyword.
         ;; This is the layer that has.
         _ (uefi/reject-outside-uefi-target! target hir)
+        ;; boot-lit: and the literal pool, which is gated to a WIDER set of
+        ;; targets for a different reason -- see the two docstrings.
+        _ (uefi/reject-rodata-literals-outside-native-targets! target hir)
         admission (admit! hir (capability-policy policy))
         kir (ir/lower hir)
         value (:oracle-value kir)
