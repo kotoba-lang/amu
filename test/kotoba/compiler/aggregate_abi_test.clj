@@ -76,6 +76,10 @@
   ;; context callback in the loop. Both are in this SHA; it is main, and it was
   ;; checked with `merge-base --is-ancestor` against each stream's own merge
   ;; rather than assumed to contain them.
+  ;;
+  ;; qwen  -- 2026-09-02: the three Qwen3.5 forward-pass kernel objects
+  ;;           (aiueos-qwen35-dot-f32 / -dequant-row / -matvec) enter
+  ;;           kernel-object-entries with measured fuel tiers (kotoba-native#113).
   (is (= "24f43e212085d5e22bc01ab4f478f9971fd9b72d"
          (dependency-pin 'io.github.kotoba-lang/kotoba-native)))
   ;; Advanced 2026-08-31 for two more instances of ADR-0286's class -- a KIR
