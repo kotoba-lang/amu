@@ -266,6 +266,14 @@
              (subvec diagnostic-bytes exit-boot-offset
                      (+ exit-boot-offset 6)))
           "the non-K16 rel32 branch lands at the ExitBootServices path")
+      (is (some #(= (utf16-bytes "AIUEOS K16 PREFLIGHT ENTER\r\n") %)
+                (partition (count (utf16-bytes
+                                   "AIUEOS K16 PREFLIGHT ENTER\r\n"))
+                           1 diagnostic-bytes)))
+      (is (some #(= (utf16-bytes "AIUEOS K16 PREFLIGHT RTL8125\r\n") %)
+                (partition (count (utf16-bytes
+                                   "AIUEOS K16 PREFLIGHT RTL8125\r\n"))
+                           1 diagnostic-bytes)))
       (is (some #(= (utf16-bytes "AIUEOS K16 PREFLIGHT STATUS 00\r\n") %)
                 (partition (count (utf16-bytes
                                    "AIUEOS K16 PREFLIGHT STATUS 00\r\n"))

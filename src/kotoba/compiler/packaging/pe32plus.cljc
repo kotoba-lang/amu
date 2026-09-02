@@ -216,6 +216,16 @@
    ;; callers currently convert r15d, which holds the kernel return status.
    (when (not (= source :r15d)) [0xcc])))
 
+(defn- uefi-output-string-tokens [message-label return-label]
+  (concat
+   ;; EFI_SYSTEM_TABLE.ConOut is at +0x40 and SIMPLE_TEXT_OUTPUT.OutputString
+   ;; is at +0x08. Keep each checkpoint optional when firmware exposes no
+   ;; console, so the headless boot path remains valid.
+   [0x49 0x8b 0x4d 0x40 0x48 0x85 0xc9 0x0f 0x84] [(rip return-label)]
+   [0x48 0x8d 0x15] [(rip message-label)]
+   [0x48 0x8b 0x41 0x08 0xff 0xd0]
+   [(label return-label)]))
+
 (defn- k16-preflight-tokens [entry]
   (concat
    ;; Read 02:00.0 through PCI mechanism #1. Only the explicit K16 diagnostic
@@ -223,6 +233,7 @@
    [0x66 0xba 0xf8 0x0c 0xb8 0x00 0x00 0x02 0x80 0xef
     0x66 0xba 0xfc 0x0c 0xed 0x3d 0xec 0x10 0x25 0x81
     0x0f 0x85] [(rip :exit-boot)]
+   (uefi-output-string-tokens :rtl-message :rtl-message-return)
    [0x48 0x8d 0x3d] [(rip :boot-info)]
    [0x48 0xb8] (le entry 8) [0xff 0xd0 0x49 0x89 0xc7]
    (store-status-nibble :r15d 4 :status-high-digit :status-high-store
@@ -326,9 +337,17 @@
             payload-offset embedded-offset
             kernel-offset (align (+ payload-offset (count payload)) 16)
             status-prefix "AIUEOS K16 PREFLIGHT STATUS "
+            enter-message (if k16-preflight?
+                            (utf16z "AIUEOS K16 PREFLIGHT ENTER\r\n") [])
+            rtl-message (if k16-preflight?
+                          (utf16z "AIUEOS K16 PREFLIGHT RTL8125\r\n") [])
             status-message (if k16-preflight?
                              (utf16z (str status-prefix "00\r\n")) [])
-            status-message-offset (align (+ kernel-offset (count kernel)) 16)
+            enter-message-offset (align (+ kernel-offset (count kernel)) 16)
+            rtl-message-offset (align (+ enter-message-offset
+                                         (count enter-message)) 16)
+            status-message-offset (align (+ rtl-message-offset
+                                            (count rtl-message)) 16)
             ;; Build once with provisional external RVAs; instruction length is
             ;; independent of displacement values.
             segment-tokens (mapcat (fn [index segment]
@@ -340,6 +359,9 @@
                     [0x41 0x54 0x41 0x55 0x41 0x56 0x41 0x57
                      0x48 0x83 0xec 0x28 0x49 0x89 0xcc 0x49 0x89 0xd5
                      0x4c 0x8b 0x72 0x60]
+                    (when k16-preflight?
+                      (uefi-output-string-tokens :enter-message
+                                                 :enter-message-return))
                     segment-tokens
                     ;; AllocateAnyPages/EfiLoaderData. The returned physical
                     ;; address is explicit boot authority, so no fixed low-RAM
@@ -407,8 +429,16 @@
                               kernel
                               (when k16-preflight?
                                 (concat
-                                 (repeat (- status-message-offset
+                                 (repeat (- enter-message-offset
                                             (+ kernel-offset (count kernel))) 0)
+                                 enter-message
+                                 (repeat (- rtl-message-offset
+                                            (+ enter-message-offset
+                                               (count enter-message))) 0)
+                                 rtl-message
+                                 (repeat (- status-message-offset
+                                            (+ rtl-message-offset
+                                               (count rtl-message))) 0)
                                  status-message))))
             data-raw-size (align (count data) file-alignment)
             reloc-address (align (+ data-address (count data)) section-alignment)
@@ -429,7 +459,9 @@
                            :payload-length (+ data-address 120)
                            :payload (+ data-address payload-offset)}
                           (when k16-preflight?
-                            {:status-message (+ data-address status-message-offset)
+                            {:enter-message (+ data-address enter-message-offset)
+                             :rtl-message (+ data-address rtl-message-offset)
+                             :status-message (+ data-address status-message-offset)
                              :status-high (+ data-address status-message-offset
                                              (* 2 (count status-prefix)))
                              :status-low (+ data-address status-message-offset
