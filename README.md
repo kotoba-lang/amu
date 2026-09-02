@@ -32,7 +32,7 @@ compile is served from cache and reports `:definitions-recompiled 0`; changing a
 body moves the CIDs and recompiles. The metric is definitions, never wall clock.
 Exported names and declaration order are part of the key because both are in the
 emitted bytes — measured, not assumed. See
-`docs/adr/0295-definition-cids-are-computed-by-the-compiler-and-key-the-cache.md`.
+`docs/adr/0300-definition-cids-are-computed-by-the-compiler-and-key-the-cache.md`.
 
 ## Content-bound logic manifest
 

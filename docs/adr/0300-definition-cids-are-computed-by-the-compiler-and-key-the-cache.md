@@ -1,4 +1,4 @@
-# ADR-0295: definition CIDs are computed by the compiler, and they key the cache
+# ADR-0300: definition CIDs are computed by the compiler, and they key the cache
 
 - Status: accepted
 - Date: 2026-09-02
@@ -257,7 +257,7 @@ with
                  "kotoba-lang/amu test/kotoba/compiler/definition_identity_test.clj"
                  "kotoba-lang/amu scripts/test-definition-cid-parity.cljs"
                  "kotoba-lang/amu scripts/test-definition-cid-cache.cljs"
-                 "kotoba-lang/amu docs/adr/0295-definition-cids-are-computed-by-the-compiler-and-key-the-cache.md"]
+                 "kotoba-lang/amu docs/adr/0300-definition-cids-are-computed-by-the-compiler-and-key-the-cache.md"]
       :note "The compiler mints a payload-v2 DefCID per top-level function on
              both the JVM and the JDK-free nbb route, byte-identical across the
              two (five fixtures: plain, let-binders, mutual recursion, a literal

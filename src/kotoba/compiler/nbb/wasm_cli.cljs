@@ -71,7 +71,7 @@
   "The cache key for Wasm EMISSION: the module's definition graph plus every
   emitter input that is not part of it.
 
-  This is the ADR 0295 extension of the existing cache, and it is a SECOND
+  This is the ADR 0300 extension of the existing cache, and it is a SECOND
   stage inside `compile-cache`, not a second cache. The artifact entry above
   stays keyed on source text, because it also carries the `.provenance.edn`
   sidecar and provenance seals `:source-sha256` -- serving a rename the old
@@ -223,7 +223,7 @@
     ;; frontend already computed during ability elaboration -- it was present
     ;; in HIR and simply never reported.
     ;;
-    ;; `:definitions` is ADR 0295: same key, same shape and the same CIDs as
+    ;; `:definitions` is ADR 0300: same key, same shape and the same CIDs as
     ;; the JVM `check --json`, which `scripts/test-definition-cid-parity.cljs`
     ;; asserts definition by definition.
     (cond-> {:ok true
@@ -241,7 +241,7 @@
       context (assoc :stage-cache {:hir (:cache hir-result)}))))
 
 (defn- definition-cids!
-  "ADR 0295. One CID per top-level function, in declaration order.
+  "ADR 0300. One CID per top-level function, in declaration order.
 
   Same report, same keys and same CIDs as the JVM twin in
   `kotoba.compiler.cli`; `definition_identity_parity_test` asserts the two

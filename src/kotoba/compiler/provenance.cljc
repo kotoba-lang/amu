@@ -69,7 +69,7 @@
     :target-profile-sha256 (artifact/sha256 (or (:target-profile result)
                                                 (get-in result [:artifact :target-profile])))
     :compatibility-sha256 (artifact/sha256 (:compatibility result))
-    ;; ADR 0295. The definition graph, addressed by content: one CID per
+    ;; ADR 0300. The definition graph, addressed by content: one CID per
     ;; top-level function, its direct dependencies as CIDs, and the effect row
     ;; that CID seals. `:hir-sha256` and `:kir-sha256` above are hashes of one
     ;; whole-module value, so they answer "is this the same build?" and nothing

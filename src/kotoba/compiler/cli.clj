@@ -71,7 +71,7 @@
 (defn- kotoba-source! [path] (source-path/admit! path))
 
 (defn- check-definitions
-  "Per-definition CIDs for a checked module (ADR 0295).
+  "Per-definition CIDs for a checked module (ADR 0300).
 
   `check` does not emit, but a definition CID is defined on typed KIR, so
   answering the question means lowering. That lowering is discarded; the only
@@ -297,7 +297,7 @@
       (println (pr-str {:ok true :output output
                         :evidence-sha256 (artifact/sha256 (:statement envelope))})))
     "definition-cids"
-    ;; ADR 0295. One CID per top-level function, in declaration order.
+    ;; ADR 0300. One CID per top-level function, in declaration order.
     ;;
     ;; No admission runs here, on either route. A definition CID is IDENTITY,
     ;; never authority -- kotoba-lang lang/code-identity.edn is explicit that
@@ -386,7 +386,7 @@
               operations (get-in result [:hir :named-operations])
               admission (cap-names/name-grants (:admission result))
               exports (get-in result [:hir :exports])
-              ;; ADR 0295: one CID per top-level function, the same map the
+              ;; ADR 0300: one CID per top-level function, the same map the
               ;; nbb `check --json` emits under the same key.
               definitions (check-definitions (:hir result))]
           (if json?

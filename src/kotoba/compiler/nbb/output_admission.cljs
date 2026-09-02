@@ -20,7 +20,7 @@
   purpose: a record with an extra key is a record this verifier does not
   understand, and admitting it would mean admitting whatever the extra key
   said. `:definitions` joined the set when the compiler began sealing the
-  definition graph (ADR 0295) -- and this line is where that change was
+  definition graph (ADR 0300) -- and this line is where that change was
   caught, by a verifier that refused rather than by a test that noticed."
   #{:format :builder :compiler :language :source-sha256 :policy-sha256
     :build-metadata-sha256 :hir-sha256 :kir-sha256 :target
@@ -52,7 +52,7 @@
                    (= #{:primary} (set (keys (:outputs decoded))))
                    ;; The definition graph must be PRESENT and must say which
                    ;; contract it speaks. An absent key would mean an artifact
-                   ;; built before ADR 0295 -- or one whose identity step was
+                   ;; built before ADR 0300 -- or one whose identity step was
                    ;; skipped -- and those must not verify as though they had
                    ;; been measured.
                    (map? (:definitions decoded))

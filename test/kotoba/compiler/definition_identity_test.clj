@@ -1,5 +1,5 @@
 (ns kotoba.compiler.definition-identity-test
-  "ADR 0295. What a definition CID is allowed to depend on, and what it is not.
+  "ADR 0300. What a definition CID is allowed to depend on, and what it is not.
 
   Every case here is a claim about the SEALED payload, so each one is written
   as a pair: two modules that must agree, or two that must differ. A test that

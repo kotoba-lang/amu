@@ -1,5 +1,5 @@
 #!/usr/bin/env nbb
-;; ADR 0295. The four claims the definition-CID-keyed emission cache makes,
+;; ADR 0300. The four claims the definition-CID-keyed emission cache makes,
 ;; asked of a REAL worker over its NDJSON protocol rather than of the cache
 ;; namespace in isolation -- the interesting failure is not "the map does not
 ;; remember", it is "the key does not say what the compiler thought it said".

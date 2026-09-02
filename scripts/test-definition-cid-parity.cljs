@@ -1,5 +1,5 @@
 #!/usr/bin/env nbb
-;; ADR 0295. The JVM route and the JDK-free nbb route must mint the SAME
+;; ADR 0300. The JVM route and the JDK-free nbb route must mint the SAME
 ;; definition CID for the same source.
 ;;
 ;; This is the claim the whole mechanism rests on. A definition CID that
