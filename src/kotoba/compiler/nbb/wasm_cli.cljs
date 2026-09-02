@@ -17,7 +17,7 @@
             [kotoba.artifact.core :as artifact]
             [kotoba.compiler.provenance :as provenance]
             [kotoba.kir :as ir]
-            [kotoba.kir.admission :as admission]
+            [kotoba.compiler.effect-row :as effect-row]
             [kotoba.kir.compatibility :as compatibility]
             [kotoba.kir.target :as target-profile]
             [kotoba.wasm.core :as wasm]
@@ -142,7 +142,7 @@
         hir (:value hir-result)
         result (support/timed
                 "admission"
-                #(admission/check hir (support/capability-policy policy)))]
+                #(effect-row/check hir (support/capability-policy policy)))]
     ;; Same keys as the JVM `check --json` in kotoba.compiler.cli. This path
     ;; used to answer with :ok/:effects/:admission only, so a consumer keying
     ;; on :format -- the versioned output contract -- saw nothing to key on,
@@ -172,7 +172,7 @@
         hir (:value (resolve-hir! source (project-source/analyze-opts policy linked?) nil))
         admission-result (support/timed
                           "admission"
-                          #(admission/check hir (support/capability-policy policy)))
+                          #(effect-row/check hir (support/capability-policy policy)))
         kir (support/timed "kir-lower" #(ir/lower hir))
         serialized (serialized-wasm
                     (compile-wasm! source target policy emit-metadata
@@ -227,7 +227,7 @@
             hir (:value hir-result)
             admission-result (support/timed
                               "admission"
-                              #(admission/check hir
+                              #(effect-row/check hir
                                                 (support/capability-policy policy)))
             kir-result (resolve-kir! hir stage-cache)
             kir (:value kir-result)

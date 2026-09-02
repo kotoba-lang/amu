@@ -11,6 +11,7 @@
             [kotoba.kir :as ir]
             [kotoba.wasm.core :as wasm]
             [kotoba.compiler.capability-names :as cap-names]
+            [kotoba.compiler.effect-row :as effect-row]
             [kotoba.compiler.diagnostic :as diagnostic]
             [kotoba.compiler.backend.evm :as evm]
             [kotoba.compiler.packaging.elf-fixture :as elf-fixture]
@@ -22,7 +23,9 @@
   (let [src (.readFileSync fs source "utf8")
         hir (sema/analyze src)
         policy-value (if policy (first (kr/read-forms (.readFileSync fs policy "utf8"))) {})
-        _ (admission/check hir policy-value)
+        ;; The same seam `bin/amu` compiles through: admission decides on the
+        ;; row's grants, not on its control effects (ADR 0294).
+        _ (effect-row/check hir policy-value)
         kir (ir/lower hir)]
     (wasm/emit kir (get cases/target-keyword target))))
 
@@ -180,6 +183,43 @@
                      "refused, but read the shift-wrapped paddr"
                      (pr-str {:paddr read-back :message (.-message error)})))}))))
 
+(defn- abort-row-cases
+  "`kotoba.compiler.effect-row` on THIS runtime, against the row the frontend
+  actually infers for a module whose helper throws (ADR 0294).
+
+  Three claims, each of which was false or unmeasured on 2026-09-02 at the
+  kotoba-sema e42b74ef pin bump: the module row carries the bare keyword
+  `:abort`; the seam admits that row under the empty policy and decides on an
+  EMPTY required set; and `kotoba.kir.admission/check`, handed the raw row,
+  still refuses it by name. The third is pinned on purpose. It is what makes
+  the seam necessary, and the day it goes red is the day the seam can go."
+  []
+  (try
+    (let [hir (sema/analyze (.readFileSync fs "test/nbb/fixtures/abort-callee.kotoba" "utf8"))
+          row (:effects hir)
+          seamed (try {:value (effect-row/check hir {})}
+                      (catch :default e {:error (.-message e)}))
+          raw (try {:value (admission/check hir {})}
+                   (catch :default e {:error (.-message e) :missing (:missing (ex-data e))}))]
+      [{:name "abort-row-is-inferred-on-the-module"
+        :ok? (= #{:abort} row)
+        :detail (when-not (= #{:abort} row) (pr-str row))}
+       {:name "abort-row-is-admitted-with-nothing-to-grant"
+        :ok? (and (true? (get-in seamed [:value :admitted?]))
+                  (= #{} (get-in seamed [:value :required])))
+        :detail (when-not (and (true? (get-in seamed [:value :admitted?]))
+                               (= #{} (get-in seamed [:value :required])))
+                  (pr-str seamed))}
+       {:name "abort-row-is-still-refused-by-raw-admission"
+        :ok? (and (= "capability policy denies required effects" (:error raw))
+                  (= #{:abort} (:missing raw)))
+        :detail (when-not (and (= "capability policy denies required effects" (:error raw))
+                               (= #{:abort} (:missing raw)))
+                  (pr-str raw))}])
+    (catch :default error
+      [{:name "abort-row-cases" :ok? false
+        :detail (str "threw: " (.-message error))}])))
+
 (let [results
       (conj
        (vec
@@ -196,6 +236,7 @@
        (evm-case)
        (pe32plus-admission-case))
       results (into results (capability-name-cases))
+      results (into results (abort-row-cases))
       failures (remove :ok? results)]
   (doseq [{:keys [name ok? detail]} results]
     (println (if ok? "PASS" "FAIL") name (or detail "")))

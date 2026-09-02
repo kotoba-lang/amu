@@ -11,7 +11,7 @@
             [kotoba.compiler.nbb.io :as io]
             [kotoba.compiler.nbb.output-set :as output-set]
             [kotoba.compiler.nbb.project-source :as project-source]
-            [kotoba.kir.admission :as admission]
+            [kotoba.compiler.effect-row :as effect-row]
             [kotoba.artifact.core :as artifact]
             [kotoba.kir.compatibility :as compatibility]
             [kotoba.kir.cljs-i64 :as i64]
@@ -163,7 +163,7 @@
   (uefi/reject-outside-uefi-target! target hir)
   (let [admission (support/timed
                    "admission"
-                   #(admission/check hir (support/capability-policy policy)))
+                   #(effect-row/check hir (support/capability-policy policy)))
         kir-result (resolve-kir! hir stage-cache)
         kir (:value kir-result)
         value (:oracle-value kir)
