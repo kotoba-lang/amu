@@ -29,11 +29,11 @@
         ;; kotoba-sema repository boundary and public semantic-analysis API.
         io.github.kotoba-lang/kotoba-sema
         {:git/url "https://github.com/kotoba-lang/kotoba-sema.git"
-         :git/sha "e42b74eff72fdea0f55ec883a293c937421ca571"}
+         :git/sha "f932c61ae7347fcc5417af13a4d248f87d77dd96"}
         ;; ADR-2607266000 Phase B: these responsibilities moved out of this repo.
         io.github.kotoba-lang/kotoba-kir
         {:git/url "https://github.com/kotoba-lang/kotoba-kir.git"
-         :git/sha "1e00f830e96bf762a95085f2eb5741d470d26ee6"}
+         :git/sha "08bdab8b1084160dcb58ac291a002b140a5abf13"}
         ;; The frontend is an HIR producer and KIR lowering is its consumer;
         ;; both validate the same checked envelope.
         io.github.kotoba-lang/kotoba-hir
@@ -123,18 +123,6 @@
         ;; `vector-assoc!` (slot 208) on both ISAs, via kotoba-gmir 682a0d5
         ;; (the arities) and kotoba-mir 9b3a42e (the offsets). Superproject
         ;; ADR-2609010200.
-        ;; This SHA also contains a27651c (checked with `merge-base
-        ;; --is-ancestor`, not assumed), which repairs `f64-min`/`f64-max` on
-        ;; x86-64. MINSD/MAXSD compute `(a < b) ? a : b`, so they return the
-        ;; SECOND operand whenever the comparison is false -- which is exactly
-        ;; the two cases where the first must win: either input NaN, and
-        ;; (-0.0, +0.0). Executed through the loaders in `isa_execution_test`
-        ;; on 2026-09-02 that was six wrong answers in the eighteen
-        ;; NaN/signed-zero rows on x86-64, and none in AArch64's twenty-four;
-        ;; the rows are in that table now, so it cannot go backwards without
-        ;; the suite saying so. Its ADR 0050 -- numbered 0046 inside this SHA's
-        ;; tree, renumbered by kotoba-native #121 later the same day because a
-        ;; second decision had taken 0046 two minutes earlier.
         io.github.kotoba-lang/kotoba-native
         {:git/url "https://github.com/kotoba-lang/kotoba-native.git"
          :git/sha "24f43e212085d5e22bc01ab4f478f9971fd9b72d"}
@@ -166,7 +154,7 @@
         ;; (7070ec0) -- all fast-forward ancestors of this pin.
         io.github.kotoba-lang/kotoba-verifier
         {:git/url "https://github.com/kotoba-lang/kotoba-verifier.git"
-         :git/sha "4b2d2f1f164453d55b94e998afdea919cb997d89"}
+         :git/sha "5a16ecbb2ed066a89e2fdea0e1d2d98be7e91a0f"}
 }
  :aliases {:test {:extra-paths ["test"]
                   :extra-deps

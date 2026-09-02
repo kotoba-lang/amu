@@ -161,6 +161,9 @@
   ;; not a gate -- this driver serves `--target x86_64-aiueos-uefi-v1
   ;; --artifact image` and would otherwise be the way around it.
   (uefi/reject-outside-uefi-target! target hir)
+  ;; boot-lit: and the literal pool. Gated on both routes, for the reason the
+  ;; line above is gated on both.
+  (uefi/reject-rodata-literals-outside-native-targets! target hir)
   (let [admission (support/timed
                    "admission"
                    #(effect-row/check hir (support/capability-policy policy)))
