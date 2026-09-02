@@ -7,10 +7,23 @@
 (def ^:private section-alignment 0x1000)
 (def ^:private image-base 0x400000)
 (def ^:private text-rva 0x1000)
-(def ^:private data-rva 0x2000)
-(def ^:private reloc-rva 0x3000)
+;; boot: `data-rva 0x2000` and `reloc-rva 0x3000` used to be constants here,
+;; and `image-size` was the constant 0x4000 at the call. That froze `.text` at
+;; ONE PAGE. A Kotoba UEFI application whose code exceeded 4096 bytes was
+;; packaged without complaint and had its `.data` mapped over the tail of its
+;; own code -- silent corruption at load time, not a refusal at build time,
+;; because `kotoba.object.pe32plus/encode-image` validated raw file offsets
+;; and had no opinion about RVAs at all (fixed there the same day, ADR-0002).
+;; `package-embedded-kernel` below never had the defect: it computed its
+;; addresses from the real text size, which is what this now does too.
 (def ^:private text-offset 0x200)
-(def ^:private context-size 80)
+;; boot: 96, not 80. The two-arity EFI entry contract parks the ImageHandle at
+;; context+0x50 and the SystemTable at +0x58, so the last addressed byte is 95.
+;; The zero-arity contract gets the same 96 bytes rather than a second layout:
+;; its extra 16 bytes are zero, which is strictly better than what it had --
+;; `kernel-boot-info` reads [r9+0x50], which under an 80-byte virtual size was
+;; a read one byte PAST the section.
+(def ^:private context-size 96)
 
 (def le pe/little-endian)
 (def align pe/align-up)
@@ -35,23 +48,85 @@
                       {:value n :width width})))
     (le (if (neg? n) (+ limit n) n) width)))
 
-(defn- entry-shim [source-rva context-rva]
-  ;; UEFI invokes this boundary with the Microsoft x64 ABI. Reserve its 32-byte
-  ;; shadow space plus alignment, initialize Kotoba's hidden r9 context, call a
-  ;; zero-arity internal entry, and return its rax as EFI_STATUS. This is an ABI
-  ;; adapter, not a claim that the internal Kotoba lowering is Microsoft x64.
-  (let [after-lea (+ text-rva 11)
-        after-call (+ text-rva 16)]
-    (vec (concat [0x48 0x83 0xec 0x28
-                  0x4c 0x8d 0x0d]
-                 (signed-le (- context-rva after-lea) 4)
-                 [0xe8] (signed-le (- source-rva after-call) 4)
-                 [0x48 0x83 0xc4 0x28 0xc3]))))
+(def ^:private zero-arity-shim-size 21)
+;; boot: sub rsp,0x28 / lea r9 / two stores / two argument moves / call /
+;; add rsp,0x28 / ret. Fixed, like the zero-arity one, so the context RVA can
+;; be computed before the shim that references it is built.
+(def ^:private two-arity-shim-size 35)
+
+(defn- entry-shim
+  "The Microsoft x64 -> Kotoba adapter at the image entry point.
+
+  UEFI enters an EFI application with `(EFI_HANDLE ImageHandle,
+  EFI_SYSTEM_TABLE *SystemTable)` in RCX and RDX. The zero-arity shim
+  DISCARDED both, which is why a Kotoba program compiled for this target could
+  not reach the console, boot services or the memory map, and why aiueos's
+  BOOTX64.EFI is still C.
+
+  The two-arity shim parks them in the hidden context at +0x50 and +0x58 --
+  where `kernel-boot-info` and `kernel-system-table` read them -- AND passes
+  them positionally in RDI and RSI, which is where the internal Kotoba ABI
+  takes its first two parameters. Both, deliberately: the entry reads them as
+  parameters, and anything it calls reads them out of the context without
+  having to thread them through every signature.
+
+  Neither shim is a claim that the internal lowering is Microsoft x64. It is
+  not; this is the adapter that makes that irrelevant."
+  [arity source-rva context-rva]
+  (case arity
+    0 (let [after-lea (+ text-rva 11)
+            after-call (+ text-rva 16)]
+        (vec (concat [0x48 0x83 0xec 0x28
+                      0x4c 0x8d 0x0d]
+                     (signed-le (- context-rva after-lea) 4)
+                     [0xe8] (signed-le (- source-rva after-call) 4)
+                     [0x48 0x83 0xc4 0x28 0xc3])))
+    2 (let [after-lea (+ text-rva 11)
+            after-call (+ text-rva 30)]
+        (vec (concat [0x48 0x83 0xec 0x28]        ; sub rsp,0x28
+                     [0x4c 0x8d 0x0d]             ; lea r9,[rip+ctx]
+                     (signed-le (- context-rva after-lea) 4)
+                     [0x49 0x89 0x49 0x50]        ; mov [r9+0x50],rcx
+                     [0x49 0x89 0x51 0x58]        ; mov [r9+0x58],rdx
+                     [0x48 0x89 0xcf]             ; mov rdi,rcx
+                     [0x48 0x89 0xd6]             ; mov rsi,rdx
+                     [0xe8] (signed-le (- source-rva after-call) 4)
+                     [0x48 0x83 0xc4 0x28]        ; add rsp,0x28
+                     [0xc3])))
+    (throw (ex-info "UEFI boundary has no shim for this entry arity"
+                    {:arity arity}))))
+
+(def ^:private entry-contracts
+  {0 {:contract :microsoft-x64-zero-arity-efi-status-v1 :size zero-arity-shim-size}
+   2 {:contract :microsoft-x64-two-arity-efi-status-v2 :size two-arity-shim-size}})
+
+;; boot: the two-arity entry is a named EXPORT rather than `main`, and the
+;; name is the one the target profile already declares (`:entry :efi_main`).
+;;
+;; It is not a style choice. `kotoba.compiler.frontend` rejects any `main` that
+;; takes arguments -- "main must take zero arguments" -- for every target,
+;; because `main` is the guest entry every OTHER backend calls with no
+;; arguments. Relaxing that globally to admit one target's firmware ABI would
+;; be a language change made by a packager, which is the wrong direction; the
+;; profile already had a name for this boundary, so this uses it.
+;;
+;; A module with no `efi-main` still packages through its `main`, on the
+;; zero-arity contract, exactly as before.
+(def ^:private efi-entry-name 'efi-main)
 
 (defn package-efi
   "Package a sealed aiueos firmware artifact as an import-free PE32+ EFI image.
-  The Microsoft x64 boundary supports a zero-arity Kotoba entry returning an
-  EFI_STATUS-sized integer; internal functions retain the compiler context ABI."
+
+  Two entry contracts. A zero-arity Kotoba entry returning an EFI_STATUS-sized
+  integer is v1 and still works; a two-arity entry -- `(defn main
+  [image-handle system-table] ...)` -- is v2, and is the one a program that
+  intends to talk to the firmware wants. The contract is chosen BY THE ENTRY'S
+  ARITY rather than by a flag, so there is nothing to keep in step.
+
+  Section placement is derived from the real code and context sizes. It used
+  to be three frozen RVAs and a frozen SizeOfImage, which put a 4096-byte
+  ceiling on `.text` that nothing checked: past it, `.data` was mapped over
+  the tail of the code and the image was still a byte-valid PE."
   [artifact]
   (when-not (artifact/valid-seal? artifact)
     (throw (ex-info "PE32+ EFI packaging requires a sealed artifact" {})))
@@ -62,16 +137,28 @@
                  (false? (get-in artifact [:target-profile :ambient-syscalls])))
     (throw (ex-info "PE32+ EFI packaging requires a freestanding profile"
                     {:target-profile (:target-profile artifact)})))
-  (let [source-entry (get-in artifact [:program :entry])
-        export (get-in artifact [:exports source-entry])]
+  (let [exports (:exports artifact)
+        source-entry (if (contains? exports efi-entry-name)
+                       efi-entry-name
+                       (get-in artifact [:program :entry]))
+        export (get exports source-entry)]
     (when-not export
       (throw (ex-info "Kotoba firmware entry is not exported" {:entry source-entry})))
-    (when-not (zero? (:arity export))
-      (throw (ex-info "UEFI boundary requires a zero-arity Kotoba entry"
-                      {:entry source-entry :arity (:arity export)})))
-    (let [shim-size 21
+    (when-not (contains? entry-contracts (:arity export))
+      (throw (ex-info "UEFI boundary requires a zero-arity entry or a two-arity `efi-main`"
+                      {:entry source-entry :arity (:arity export)
+                       :admitted (sort (keys entry-contracts))})))
+    (let [{:keys [contract] shim-size :size} (get entry-contracts (:arity export))
           source-rva (+ text-rva shim-size (:offset export))
-          shim (entry-shim source-rva data-rva)
+          text-size (+ shim-size (count (:code artifact)))
+          ;; boot: derived, not frozen. A section's mapped span is its virtual
+          ;; size rounded up to the section alignment, which is the
+          ;; granularity the loader assigns pages at -- the same rule
+          ;; `encode-image` now enforces, computed here rather than assumed.
+          data-rva (align (+ text-rva text-size) section-alignment)
+          reloc-rva (align (+ data-rva context-size) section-alignment)
+          image-size (align (+ reloc-rva 12) section-alignment)
+          shim (entry-shim (:arity export) source-rva data-rva)
           text (into shim (:code artifact))
           context (into (vec (repeat 8 0))
                         (concat (le 512 8) (repeat (- context-size 16) 0)))
@@ -87,7 +174,7 @@
                  {:machine :x86-64 :entry-rva text-rva :text-rva text-rva
                   :image-base image-base :section-alignment section-alignment
                   :file-alignment file-alignment :headers-size text-offset
-                  :image-size 0x4000 :subsystem :efi-application
+                  :image-size image-size :subsystem :efi-application
                   :data-directories {5 {:rva reloc-rva :size (count reloc)}}
                   :sections [{:name ".text" :virtual-size (count text)
                               :rva text-rva :raw-size text-raw-size
@@ -101,12 +188,22 @@
                               :rva reloc-rva :raw-size reloc-raw-size
                               :raw-offset reloc-offset :characteristics 0x42000040
                               :bytes reloc}]})]
+      (when-not (= text-size (count text))
+        (throw (ex-info "UEFI entry shim size disagrees with its declaration"
+                        {:declared shim-size :emitted (- (count text)
+                                                         (count (:code artifact)))})))
       {:format :pe32+/v1
        :target firmware-target
        :entry :efi_main
        :source-entry source-entry
        :entry-rva text-rva
-       :entry-contract :microsoft-x64-zero-arity-efi-status-v1
+       :entry-contract contract
+       :entry-arity (:arity export)
+       :context-size context-size
+       :section-layout {:text {:rva text-rva :virtual-size (count text)}
+                        :data {:rva data-rva :virtual-size context-size}
+                        :reloc {:rva reloc-rva :virtual-size (count reloc)}
+                        :image-size image-size}
        :sections [:text :data :reloc]
        :imports []
        :relocations {:format :pe-base-relocation/v1 :fixups 0 :position-independent true}
