@@ -32,6 +32,21 @@ aborting definition is identifiable now.
 binding position is refused as `:kotoba.error/local-state-atom-position` where
 it used to fall to the generic `:kotoba.error/ambient-forbidden`.
 
+## What main did about it while this branch was in flight
+
+**The definition-identity stream reached the same conclusion independently.**
+amu `011fd00f` replaced `abort-callee.kotoba` with an `unbridgeable-module`
+helper built on exactly the refusal named below -- a `cap-call` whose wire id
+the catalog cannot name -- and adjudicated the held kotoba-kir pin in
+`c3e48d0e`. This branch took main's version of that test wholesale on the
+merge and deleted its own fixture. What survives here is the ambient row, the
+measurement, and the record; the identity half is theirs and was better placed
+with them.
+
+Two streams converging on the same replacement fixture, from opposite
+directions and without coordinating, is the strongest evidence available that
+it is the right one.
+
 ## Decision
 
 **The ambient row is updated, not relaxed.** The claim that suite makes is that
@@ -39,20 +54,15 @@ ambient forms always REJECT, and they do; `(some? e)` is what carries it. Only
 the code is more precise. Relaxing the assertion to accept either code would
 lose the thing the row is for.
 
-**The four identity tests keep their purpose and change their fixture.** They
-exist to prove that an unbridgeable row is REFUSED with a marker rather than
-given an invented name, and that purpose is still reachable -- through the
-other refusal the same upstream docstring names: "a wire id the catalog does
-not name is refused ... the only way to reach such an id is a literal
-`(cap-call N x)` in source, and a name invented for it would be a lie sealed
-into an identity". `test/nbb/fixtures/unbridged-effect.kotoba` is that program.
+**The four identity tests are main's.** They exist to prove that an
+unbridgeable row is REFUSED with a marker rather than given an invented name,
+and that purpose is still reachable -- through the other refusal the same
+upstream docstring names: "a wire id the catalog does not name is refused ...
+the only way to reach such an id is a literal `(cap-call N x)` in source, and a
+name invented for it would be a lie sealed into an identity". This branch built
+that fixture, then found main had built the same one, and took main's.
 
-The behaviour that replaced the old premise is asserted in its own right --
-`an-aborting-definition-is-identifiable-now` -- rather than left implicit in
-the absence of a test. A rule that changed should be visible as a rule, not as
-a gap.
-
-## A marker this leaves unreachable, and it is not this stream's to fix
+## A marker this may leave unreachable, and it is not this stream's to fix
 
 `:dependency-unavailable` marks a definition that is unidentifiable *because a
 callee is*. The old fixture reached it because `:abort` does NOT propagate -- a
@@ -61,11 +71,11 @@ was merely blocked by it. A capability effect DOES propagate, so under the new
 fixture `main` carries the unnamed wire id itself and is refused under
 `:unbridged-effect`.
 
-Nothing in this suite reaches `:dependency-unavailable` any more. Reaching it
-needs a callee whose row is unbridgeable and a caller whose row is not, and a
-propagating effect cannot produce that pair. Recorded here and left in the test
-as a named gap rather than papered over with a marker assertion that would pass
-for the wrong reason.
+Reaching it needs a callee whose row is unbridgeable and a caller whose row is
+not, and a propagating effect cannot produce that pair -- which is what this
+branch measured before taking main's test. Recorded here rather than asserted,
+because the suite is the identity stream's and the observation may already be
+answered in it.
 
 ## Consequences
 

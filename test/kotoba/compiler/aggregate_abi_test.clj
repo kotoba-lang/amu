@@ -115,6 +115,18 @@
   ;; abort slice 1, type-directed arithmetic) and kotoba-hir ac8e7051 (a row
   ;; may hold the bare keyword `:abort`). The ten frozen identity vectors are
   ;; unchanged by that advance.
+  ;;
+  ;; Advanced 2026-09-02: `kotoba.kir.alpha-normalization`. The five-binder
+  ;; walk was implemented in this repository AND in kotoba.codebase.typed-code
+  ;; -- the same algorithm over the same KIR, with neither copy the authority,
+  ;; which kotoba-lang lang/code-identity.edn recorded as a residual risk of
+  ;; :ci8. It is now kir's and both consumers delegate. `definition-cid` still
+  ;; does not normalize internally, so the ten frozen identity vectors are
+  ;; unchanged by this advance too.
+  ;;
+  ;; This advance also carries 984a507, whose `:abort` decision ADR 0314 held
+  ;; this pin to await. deps.edn records the adjudication and its three reasons.
+  ;;
   ;; Advanced 2026-09-02 again (boot-scratch, ADR-0242): the two heads that
   ;; name a place in the IMAGE -- its `.data` reservation and its function
   ;; labels -- refuse under `:image-address-unavailable` rather than under the
@@ -144,6 +156,13 @@
   ;;            time (this repo's ADR-0293).
   ;; The pin is the branch tip, which also carries the interrupt entry address
   ;; gate.
+  ;;   slice -- the same independence a fourth time: the verifier keeps its OWN
+  ;;            copy of the erased-source-carrier list and refuses a `[:slice T]`
+  ;;            at a function boundary by name (kotoba-verifier ADR 0028). That
+  ;;            commit also unsticks this repository's sibling: kotoba-verifier
+  ;;            had been pinned to kotoba-native a2023fed for 302 commits
+  ;;            because three tests pinned SPILL SLOTS as literals across an
+  ;;            allocator that gained a callee-saved tier (ADR 0027).
   ;;   boot-scratch -- the arity row for `kernel-scratch-region` and, for
   ;;            `kernel-function-address`, a check on the NAME. Its argument is
   ;;            source text and is not walked, so with the name unchecked

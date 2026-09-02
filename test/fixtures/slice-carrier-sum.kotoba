@@ -1,0 +1,53 @@
+(ns amu.slice-carrier-sum)
+
+;; slice-value / ADR 0285: the carrier as a VALUE, on the freestanding aiueos
+;; kernel target.
+;;
+;; `sum-slice` takes ONE parameter for the region -- `s`, a `[:slice :u8]` --
+;; where `test/fixtures/slice-sum-u8.kotoba` takes two, `base` and `length`,
+;; and re-proves the base's provenance at every call site. That is the whole
+;; difference this fixture exists to show. `kotoba.compiler.frontend` erases
+;; the slice into two i64 parameters before HIR, so the emitted bytes are the
+;; same bytes; what changes is what the SOURCE has to carry, and that a
+;; parameter slot out of five is not spent naming a length that the region
+;; already knows.
+;;
+;; `length` counts ELEMENTS -- bytes here, since the element is a u8 -- and is
+;; bounded by 2^40 rather than by a window profile. The ceiling arrives as a
+;; `movabs`, which is the visible sign that it is an address-space bound: it
+;; does not fit an imm32, and a window tier does.
+;;
+;; `sum-slice` is `defn-` deliberately. A slice parameter is two machine words
+;; and an export's callers spell one word per argument, so the frontend refuses
+;; a slice on an exported function -- the carrier is for an internal traversal
+;; handed a region by the module's own entry point, which is exactly the shape
+;; below.
+
+(defn- sum-slice [s [:slice :u8] index :i64 total :i64]
+  (if (< index (slice-length s))
+    (sum-slice s (+ index 1) (+ total (slice-get s index)))
+    total))
+
+;; The same traversal at the widest element, so the emitted SIB scale is
+;; visible: `leaq (%rbx,%r13,8), %r11` rather than `leaq (%rbx,%r13), %r11`.
+;; One field is the whole difference between an element index and a byte
+;; offset, and the source says `slice-get` in both cases -- the width comes
+;; from the slice's type, not from the operation's name.
+
+(defn- sum-words [s [:slice :u64] index :i64 total :i64]
+  (if (< index (slice-length s))
+    (sum-words s (+ index 1) (+ total (slice-get s index)))
+    total))
+
+;; A CHECKED narrowing. `slice-sub` is written in elements and lowers to
+;; `kernel-subregion`, which traps unless the offset lies inside the parent and
+;; the count inside the remainder -- so a derived window is rooted AND bounded,
+;; and the caller never computes an address.
+
+(defn- sum-tail [s [:slice :u8]]
+  (sum-slice (slice-sub s 16 32) 0 0))
+
+(defn main []
+  (+ (+ (sum-slice (slice-of-u8 (kernel-boot-info) 4096) 0 0)
+        (sum-words (slice-of-u64 (kernel-boot-info) 512) 0 0))
+     (sum-tail (slice-of-u8 (kernel-boot-info) 4096))))
