@@ -65,6 +65,7 @@
             [kotoba.compiler.capability-deny-test]
             [kotoba.compiler.kir-trap-source-test]
             [kotoba.compiler.kernel-region-provenance-test]
+            [kotoba.compiler.slice-carrier-test]
             [kotoba.compiler.kernel-subregion-test]
             [kotoba.compiler.error-code-contract-test]
             [kotoba.compiler.frontend-condp-test]
@@ -232,6 +233,7 @@
    'kotoba.compiler.check-cli-test
    'kotoba.compiler.capability-deny-test
    'kotoba.compiler.kernel-region-provenance-test
+   'kotoba.compiler.slice-carrier-test
    'kotoba.compiler.kernel-subregion-test
    'kotoba.compiler.kir-trap-source-test
    'kotoba.compiler.error-code-contract-test

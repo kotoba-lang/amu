@@ -64,19 +64,33 @@
   ;;   boot -- the four UEFI firmware-boundary encodings (kotoba-native
   ;;           ADR-0039): :system-table, :load-ptr, :uefi-call2 and :jump-to,
   ;;           the four things a BOOTX64.EFI written in Kotoba has to name.
-  ;; Advanced 2026-09-02 to a27651c: `f64-min`/`f64-max` on x86-64 emitted one
-  ;; instruction each, and MINSD/MAXSD compute `(a < b) ? a : b` -- they return
-  ;; the SECOND operand on every false comparison, which is exactly the two
-  ;; cases where the first must win: either input NaN, and (-0.0, +0.0).
-  ;; AArch64's FMIN/FMAX have neither hole, so nothing that ran on one ISA
-  ;; could see it. Executed through this repository's own `isa_execution_test`
-  ;; loaders -- AArch64 natively, x86-64 under Rosetta 2 -- that was six wrong
-  ;; answers in x86-64's eighteen NaN/signed-zero rows and none in AArch64's
-  ;; twenty-four. The rows are in that table now, so the pin cannot go
-  ;; backwards without the suite saying so. kotoba-native ADR 0050 (numbered
-  ;; 0046 inside this pin's own tree; renumbered the same day because a second
-  ;; decision had taken 0046 two minutes earlier).
-  (is (= "a27651c24c99aafb874e79158c9da1b3eec4b841"
+  ;;
+  ;; boot: advanced 2026-09-02 for the four UEFI firmware-boundary encodings
+  ;; (kotoba-native ADR-0039) -- :system-table, :load-ptr, :uefi-call2 and
+  ;; :jump-to, the four things a BOOTX64.EFI written in Kotoba has to name.
+  ;;
+  ;; memwidth: and for four transfer widths by four window tiers instead of
+  ;; seven hand-listed combinations (ADR 0042), a natural-alignment check on
+  ;; every access wider than a byte, and the element-indexed slice family from
+  ;; ADR 0285 -- one unsigned compare and one scaled `mov` per element, with no
+  ;; context callback in the loop. Both are in this SHA; it is main, and it was
+  ;; checked with `merge-base --is-ancestor` against each stream's own merge
+  ;; rather than assumed to contain them.
+  ;;
+  ;; f64 min/max: and for a27651c, which this SHA contains -- checked with
+  ;; `merge-base --is-ancestor`, not assumed. `f64-min`/`f64-max` on x86-64
+  ;; emitted one instruction each, and MINSD/MAXSD compute `(a < b) ? a : b`:
+  ;; they return the SECOND operand on every false comparison, which is exactly
+  ;; the two cases where the first must win -- either input NaN, and
+  ;; (-0.0, +0.0). AArch64's FMIN/FMAX have neither hole, so nothing that ran
+  ;; on one ISA could see it. Executed through this repository's own
+  ;; `isa_execution_test` loaders (AArch64 natively, x86-64 under Rosetta 2)
+  ;; that was six wrong answers in x86-64's eighteen NaN/signed-zero rows and
+  ;; none in AArch64's twenty-four. Those rows are in that table now, so the
+  ;; pin cannot go backwards without the suite saying so. kotoba-native ADR
+  ;; 0050 -- numbered 0046 inside this SHA's tree, renumbered later the same
+  ;; day because a second decision had taken 0046 two minutes earlier.
+  (is (= "24f43e212085d5e22bc01ab4f478f9971fd9b72d"
          (dependency-pin 'io.github.kotoba-lang/kotoba-native)))
   ;; Advanced 2026-08-31 for two more instances of ADR-0286's class -- a KIR
   ;; i64 is a BigInt under ClojureScript and reached a host operation that
@@ -93,6 +107,13 @@
   ;;           implements the whole family (kotoba-kir#58).
   ;;   boot -- the UEFI entry contract v2 on the firmware target profile, and
   ;;           the four operations' oracle refusals (ADR-0229).
+  ;;
+  ;; memwidth: and `kernel-memory-profile` as four widths by four tiers,
+  ;; `slice-memory-profile` as the ADR 0285 carrier's oracle, and
+  ;; `word-load`/`word-byte-at` replacing a helper whose ClojureScript branch
+  ;; used a THIRTY-TWO bit shift -- correct only because nothing had ever asked
+  ;; it for a byte above the fourth. A u64 store asks.
+  ;;
   ;; Advanced 2026-09-02 again (ADR 0294): `definition-identity/effect-row-from-hir`,
   ;; the wire-row -> named-row adapter, alongside kotoba-sema e42b74ef (typed
   ;; abort slice 1, type-directed arithmetic) and kotoba-hir ac8e7051 (a row
@@ -123,7 +144,7 @@
   ;;            time (this repo's ADR-0293).
   ;; The pin is the branch tip, which also carries the interrupt entry address
   ;; gate.
-  (is (= "c2ce475a7f4d083a259b6b626a5ece765057fac4"
+  (is (= "4b2d2f1f164453d55b94e998afdea919cb997d89"
          (dependency-pin 'io.github.kotoba-lang/kotoba-verifier)))
   (is (= 7 (:abi/version aggregate-abi/contract)))
   (is (= :recursive-word-handles
