@@ -29,6 +29,14 @@
         ;; kotoba-sema repository boundary and public semantic-analysis API.
         io.github.kotoba-lang/kotoba-sema
         {:git/url "https://github.com/kotoba-lang/kotoba-sema.git"
+         ;; Advanced past main's 196d5817 to the tip: 93790c4b (integer and
+         ;; string map keys through the friendly surface), ff3032ee (a loop
+         ;; carries the type its accumulator has), and ed185bdc (a call with
+         ;; more arguments than the callee takes is refused, where the extras
+         ;; used to be dropped in silence). Measured at 011fd00f: both of the
+         ;; first two were refused by `amu check` here while being fixed in
+         ;; sema, which is what a pin four commits behind a fix looks like from
+         ;; the CLI.
          :git/sha "1a07385368e5efb09aed4d194df03d5110f2f2d8"}
         ;; ADR-2607266000 Phase B: these responsibilities moved out of this repo.
         ;;
@@ -67,6 +75,12 @@
         ;; being implemented twice, exists only at afd117d2 and later.
         io.github.kotoba-lang/kotoba-kir
         {:git/url "https://github.com/kotoba-lang/kotoba-kir.git"
+         ;; Advanced past main's ad6db332 to the tip. 2cfa97ae computes the
+         ;; i64 key order without `clojure.core/compare` -- the runtime half of
+         ;; sema 93790c4b, since a frontend that admits `{3 30 1 10}` is worth
+         ;; nothing if nothing can order those keys portably. Also carries the
+         ;; four codebook dequant formats (95ed4bc8) and ADR-0266's sealed
+         ;; control-effect vocabulary.
          :git/sha "b2e5d9c445b5a3553059b4f7cfcbfe54c5db7786"}
         ;; The frontend is an HIR producer and KIR lowering is its consumer;
         ;; both validate the same checked envelope.
@@ -159,7 +173,7 @@
         ;; ADR-2609010200.
         io.github.kotoba-lang/kotoba-native
         {:git/url "https://github.com/kotoba-lang/kotoba-native.git"
-         :git/sha "24f43e212085d5e22bc01ab4f478f9971fd9b72d"}
+         :git/sha "91033a9ddcbedb216156df583805e0748a4f8a0d"}
         io.github.kotoba-lang/kotoba-component
         {:git/url "https://github.com/kotoba-lang/kotoba-component.git"
          :git/sha "68acc7237aec7b24b683304db8e87d14ec1be745"}
@@ -188,7 +202,7 @@
         ;; (7070ec0) -- all fast-forward ancestors of this pin.
         io.github.kotoba-lang/kotoba-verifier
         {:git/url "https://github.com/kotoba-lang/kotoba-verifier.git"
-         :git/sha "7a8cdcd98227b86af18e0c6e4d33a3e51eff17ff"}
+         :git/sha "6a743c3054e824e72ce703fde4f2ed7a59a404c3"}
 }
  :aliases {:test {:extra-paths ["test"]
                   :extra-deps

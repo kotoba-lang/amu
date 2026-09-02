@@ -27,15 +27,15 @@
    [:load
     "(ns t (:export [f])) (defn f [] (load \"x\"))"
     :kotoba.error/ambient-forbidden]
-   ;; `atom` left :forbidden-heads on 2026-09-02 (kotoba-lang f6440aa1, the
-   ;; second widening path on :no-ambient-mutation; kotoba-sema 30106c30, local
-   ;; state slice 1). It is not admitted -- a function-local atom is compiled
-   ;; away into threaded values, and everything else about `atom` is still
-   ;; refused -- but the refusal now names WHERE the form was, not that the
-   ;; head exists. The four heads are held by `reserved-function-names` so a
-   ;; guest cannot shadow them. Pinning the new code literally is the point:
-   ;; if this ever falls back to admitting `(atom 1)` in expression position,
-   ;; the assertion below fails rather than passing on a renamed reason.
+   ;; boot-scratch: `:kotoba.error/local-state-atom-position`, not
+   ;; `:ambient-forbidden`. kotoba-sema's local-state slice gave this form a
+   ;; SPECIFIC refusal -- an `atom` outside a `let` binding position -- where
+   ;; it used to fall to the generic one. The claim this suite makes is
+   ;; unchanged and is the one that matters: the form still rejects, and the
+   ;; assertion above (`(some? e)`) is what carries it. Only the code is more
+   ;; precise, which is why the row is updated rather than the check relaxed.
+   ;; The four heads are additionally held by `reserved-function-names`, so a
+   ;; guest cannot recover the old surface by defining its own `atom`.
    [:atom
     "(ns t (:export [f])) (defn f [] (atom 1))"
     :kotoba.error/local-state-atom-position]

@@ -31,7 +31,21 @@
      ;; boot-lit: the two wider calls. Same gate, same reason -- they call
      ;; through a pointer read out of firmware memory, and the only difference
      ;; from `kernel-uefi-call2` is how many arguments go with it.
-     kernel-uefi-call4 kernel-uefi-call6})
+     kernel-uefi-call4 kernel-uefi-call6
+     ;; boot-scratch: the writable region's base (kotoba-gmir ADR-0013). It is
+     ;; here rather than with the literals below, and the reason is MEASURED
+     ;; rather than chosen: the backend emits `lea r10,[r9+0x60]`, a
+     ;; displacement off the hidden context, and in the aiueos KERNEL image
+     ;; that displacement is the GLOBAL DESCRIPTOR TABLE
+     ;; (`kotoba.native.elf64/kernel-gdt-offset` is 96, with the GDTR at 152
+     ;; and the TSS at 168). A kernel that asked for scratch there would be
+     ;; handed its own segment descriptors and would write over them.
+     ;;
+     ;; So this is not "the backend cannot answer" -- it answers, and the
+     ;; answer is wrong for every target but the one whose packager reserves
+     ;; the bytes. That is the same sentence `kernel-system-table` gets, which
+     ;; reads a context slot only the two-arity EFI entry shim writes.
+     kernel-scratch-region})
 
 ;; boot-lit: read-only literals are gated too, but not to the same target and
 ;; not for the same reason.
@@ -52,7 +66,19 @@
 ;; -- an admission of a gap, and refusing here says so one layer earlier and
 ;; with the target named.
 (def rodata-literal-operations
-  '#{ucs2 guid bytes-literal bytes-literal-length})
+  '#{ucs2 guid bytes-literal bytes-literal-length
+     ;; boot-scratch: `(kernel-function-address f)` needs exactly what the
+     ;; literals need and nothing more -- a backend that resolves a label with
+     ;; `lea dst,[rip+disp32]`. It is not dangerous, it reads no firmware
+     ;; memory and it calls nothing; on the Wasm, kotoba-script and CLJS
+     ;; backends it would lower to nothing at all.
+     ;;
+     ;; The set below is therefore the right one: the aiueos x86-64 native
+     ;; targets, firmware AND kernel. A kernel image resolves its own function
+     ;; labels exactly as a firmware image does -- which is the difference
+     ;; between this head and `kernel-scratch-region` above, whose answer is
+     ;; wrong outside the UEFI packager rather than absent.
+     kernel-function-address})
 
 ;; Derived from `kotoba.kir.target`'s own profiles rather than written out, so
 ;; a new aiueos x86-64 target does not silently lack the literal pool its
@@ -112,7 +138,7 @@
   [target module]
   (let [used (heads-used rodata-literal-operations module)]
     (when (and (seq used) (not (contains? rodata-literal-targets target)))
-      (throw (ex-info "read-only literals require a native aiueos x86-64 target"
+      (throw (ex-info "an image-resolved address requires a native aiueos x86-64 target"
                       {:phase :target :target target
                        :admitted (vec (sort rodata-literal-targets))
                        :operations used})))
