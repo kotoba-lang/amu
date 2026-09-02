@@ -64,7 +64,19 @@
   ;;   boot -- the four UEFI firmware-boundary encodings (kotoba-native
   ;;           ADR-0039): :system-table, :load-ptr, :uefi-call2 and :jump-to,
   ;;           the four things a BOOTX64.EFI written in Kotoba has to name.
-  (is (= "a5ddd788d22bd213f3d848c0e9dcc060c8b35d55"
+  ;;
+  ;; boot: advanced 2026-09-02 for the four UEFI firmware-boundary encodings
+  ;; (kotoba-native ADR-0039) -- :system-table, :load-ptr, :uefi-call2 and
+  ;; :jump-to, the four things a BOOTX64.EFI written in Kotoba has to name.
+  ;;
+  ;; memwidth: and for four transfer widths by four window tiers instead of
+  ;; seven hand-listed combinations (ADR 0042), a natural-alignment check on
+  ;; every access wider than a byte, and the element-indexed slice family from
+  ;; ADR 0285 -- one unsigned compare and one scaled `mov` per element, with no
+  ;; context callback in the loop. Both are in this SHA; it is main, and it was
+  ;; checked with `merge-base --is-ancestor` against each stream's own merge
+  ;; rather than assumed to contain them.
+  (is (= "24f43e212085d5e22bc01ab4f478f9971fd9b72d"
          (dependency-pin 'io.github.kotoba-lang/kotoba-native)))
   ;; Advanced 2026-08-31 for two more instances of ADR-0286's class -- a KIR
   ;; i64 is a BigInt under ClojureScript and reached a host operation that
@@ -81,6 +93,13 @@
   ;;           implements the whole family (kotoba-kir#58).
   ;;   boot -- the UEFI entry contract v2 on the firmware target profile, and
   ;;           the four operations' oracle refusals (ADR-0229).
+  ;;
+  ;; memwidth: and `kernel-memory-profile` as four widths by four tiers,
+  ;; `slice-memory-profile` as the ADR 0285 carrier's oracle, and
+  ;; `word-load`/`word-byte-at` replacing a helper whose ClojureScript branch
+  ;; used a THIRTY-TWO bit shift -- correct only because nothing had ever asked
+  ;; it for a byte above the fourth. A u64 store asks.
+  ;;
   ;; Advanced 2026-09-02 again (ADR 0294): `definition-identity/effect-row-from-hir`,
   ;; the wire-row -> named-row adapter, alongside kotoba-sema e42b74ef (typed
   ;; abort slice 1, type-directed arithmetic) and kotoba-hir ac8e7051 (a row
@@ -111,7 +130,7 @@
   ;;            time (this repo's ADR-0293).
   ;; The pin is the branch tip, which also carries the interrupt entry address
   ;; gate.
-  (is (= "c2ce475a7f4d083a259b6b626a5ece765057fac4"
+  (is (= "4b2d2f1f164453d55b94e998afdea919cb997d89"
          (dependency-pin 'io.github.kotoba-lang/kotoba-verifier)))
   (is (= 7 (:abi/version aggregate-abi/contract)))
   (is (= :recursive-word-handles
