@@ -110,25 +110,37 @@
                tier, and r10,7 for the per-access alignment, an unscaled add"
     :restored :green}}
   :full-suite
-  {:status :complete-159-of-159
-   :runs [{:n 1 :tests 1234 :assertions 8969 :fail 6}
-          {:n 2 :tests 1234 :assertions 8974 :fail 1}]
+  {:status :complete-161-of-161
+   :tests 1248 :assertions 9085
    :all-failures-in kotoba.compiler.isa-execution-test
-   :not-reproducible "the two runs failed DIFFERENT assertions: six on the
-                      first (recursion, mutual tail calls, keyword parameter,
-                      four-argument entry), one on the second
-                      (source-variant-sroa)"
-   :standalone [{:n 1 :tests 25 :assertions 768 :fail 0}
-                {:n 2 :tests 25 :assertions 768 :fail 0}]
+   :measurements
+   [{:run 1 :scope :full :fail 6 :isa :x86_64
+     :cases ["recursion" "mutual tail calls" "keyword parameter"
+             "four-argument entry"]}
+    {:run 2 :scope :full :fail 1 :isa :x86_64 :cases ["source-variant-sroa"]}
+    {:run 3 :scope :standalone :fail 0 :tests 25 :assertions 768}
+    {:run 4 :scope :standalone :fail 0 :tests 25 :assertions 768}
+    {:run 5 :scope :full :fail 2 :isa :aarch64
+     :cases ["bool parameter before a string parameter"]}
+    {:run 6 :scope :standalone :fail 1 :isa :aarch64
+     :cases ["replace-all: absent (byte length)"]}]
    :shape "{:status :trap :exit 120 :fuel {:initial 512 :remaining 512}} --
            fuel untouched, so the process never executed an instruction"
-   :arm-affected :x86_64-only
-   :mechanism "x86_64 runs the emitted binary through Rosetta 2 on this Apple
-               Silicon host (cc -arch x86_64); the aarch64 arm never failed"
-   :conclusion :process-launch-under-contention-not-codegen
-   :host-load "112-211 throughout, other streams' JVMs resident (one 1d19h)"
-   :why-four-measurements "a single green run and a single red run are each
-                           equally consistent with the wrong conclusion"}
+   :no-two-runs-fail-the-same-case true
+   :correction
+   {:said-after-runs-1-4 {:arm :x86_64-only :mechanism :rosetta-2
+                          :condition :full-suite-contention-only}
+    :falsified-by {:runs [5 6]
+                   :run-5 "fails on aarch64, the NATIVE arm -- not Rosetta"
+                   :run-6 "fails STANDALONE -- not full-suite contention"}
+    :what-survives "the harness spawns a real process per case; on this host
+                    (load 154-200, other streams' JVMs resident) process launch
+                    intermittently fails before the binary runs"
+    :recorded-rather-than-replaced true}
+   :cannot-be-codegen "a wrong encoding fails the same case every time; it does
+                       not move between ISAs and does not pass 768 assertions
+                       twice"
+   :touched-namespaces-always-green {:tests 18 :assertions 177 :fail 0}}
   :legacy-full-suite-note "superseded by :full-suite above"
   :tests 1220
   :assertions 8872

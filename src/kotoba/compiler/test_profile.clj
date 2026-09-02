@@ -10,6 +10,7 @@
             [clojure.string :as str]
             [kotoba.artifact.core :as artifact]
             [kotoba.compiler.core :as compiler]
+            [kotoba.compiler.effect-row :as effect-row]
             [kotoba.sema :as sema]
             [kotoba.kir :as ir]))
 
@@ -37,9 +38,11 @@
                                      {:phase :test :test test-name})))
                    test-name))))))
 
-(defn- test-policy [checked]
-  {:allow (set (filter #(= :cap/call (first %))
-                       (get-in checked [:hir :effects])))})
+(defn- test-policy
+  "A policy granting exactly the row's capability calls. `:abort` is not a
+  grant (see `kotoba.compiler.effect-row`) and has no `first` to compare."
+  [checked]
+  {:allow (effect-row/grants (get-in checked [:hir :effects]))})
 
 (defn- jvm-results [kir tests]
   (letfn [(handler [cap-id value]
@@ -64,9 +67,14 @@
   (.encodeToString (java.util.Base64/getEncoder)
                    (.getBytes ^String text "UTF-8")))
 
-(defn- capability-ids [kir]
+(defn- capability-ids
+  "The wire ids the js/wasm probes must serve. Only `[:cap/call id]` members
+  carry one; a control effect such as `:abort` is a keyword and destructuring
+  it as a pair would throw before the first test ran."
+  [kir]
   (->> (:effects kir)
-       (keep (fn [[effect id]] (when (= :cap/call effect) id)))
+       (filter effect-row/grant?)
+       (map second)
        distinct
        sort
        vec))

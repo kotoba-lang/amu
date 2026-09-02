@@ -9,7 +9,7 @@
             [kotoba.compiler.cache :as cache]
             [kotoba.compiler.project :as project]
             [kotoba.kir :as ir]
-            [kotoba.kir.admission :as admission]
+            [kotoba.compiler.effect-row :as effect-row]
             [kotoba.wasm.core :as wasm]
             [kotoba.wasm.typed :as typed]
             [kotoba.component.wit :as component-wit]
@@ -247,7 +247,7 @@
 (defn- admit!
   [hir policy]
   (try
-    (admission/check hir policy)
+    (effect-row/check hir policy)
     (catch clojure.lang.ExceptionInfo e
       (if (= :admission (:phase (ex-data e)))
         (rethrow-admission! e)

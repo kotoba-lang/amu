@@ -76,7 +76,7 @@
   ;; context callback in the loop. Both are in this SHA; it is main, and it was
   ;; checked with `merge-base --is-ancestor` against each stream's own merge
   ;; rather than assumed to contain them.
-  (is (= "a5ddd788d22bd213f3d848c0e9dcc060c8b35d55"
+  (is (= "24f43e212085d5e22bc01ab4f478f9971fd9b72d"
          (dependency-pin 'io.github.kotoba-lang/kotoba-native)))
   ;; Advanced 2026-08-31 for two more instances of ADR-0286's class -- a KIR
   ;; i64 is a BigInt under ClojureScript and reached a host operation that
@@ -94,15 +94,18 @@
   ;;   boot -- the UEFI entry contract v2 on the firmware target profile, and
   ;;           the four operations' oracle refusals (ADR-0229).
   ;;
-  ;; boot: advanced 2026-09-02 for the UEFI entry contract v2 on the firmware
-  ;; target profile, and the four operations' oracle refusals.
-  ;;
-  ;; memwidth: and for `kernel-memory-profile` as four widths by four tiers,
+  ;; memwidth: and `kernel-memory-profile` as four widths by four tiers,
   ;; `slice-memory-profile` as the ADR 0285 carrier's oracle, and
   ;; `word-load`/`word-byte-at` replacing a helper whose ClojureScript branch
   ;; used a THIRTY-TWO bit shift -- correct only because nothing had ever asked
   ;; it for a byte above the fourth. A u64 store asks.
-  (is (= "c4149fb120ece017ce87d0ef5e40547a2e6f3ee3"
+  ;;
+  ;; Advanced 2026-09-02 again (ADR 0294): `definition-identity/effect-row-from-hir`,
+  ;; the wire-row -> named-row adapter, alongside kotoba-sema e42b74ef (typed
+  ;; abort slice 1, type-directed arithmetic) and kotoba-hir ac8e7051 (a row
+  ;; may hold the bare keyword `:abort`). The ten frozen identity vectors are
+  ;; unchanged by that advance.
+  (is (= "1e00f830e96bf762a95085f2eb5741d470d26ee6"
          (dependency-pin 'io.github.kotoba-lang/kotoba-kir)))
   ;; Advanced 2026-09-01 alongside the backend: the verifier re-derives the
   ;; two new arities and the v4 `expected-context`, and is what turns a
@@ -127,7 +130,7 @@
   ;;            time (this repo's ADR-0293).
   ;; The pin is the branch tip, which also carries the interrupt entry address
   ;; gate.
-  (is (= "a87d2b0623c625f47009f5877bc50c385dfb3026"
+  (is (= "4b2d2f1f164453d55b94e998afdea919cb997d89"
          (dependency-pin 'io.github.kotoba-lang/kotoba-verifier)))
   (is (= 7 (:abi/version aggregate-abi/contract)))
   (is (= :recursive-word-handles
