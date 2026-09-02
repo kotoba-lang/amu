@@ -218,7 +218,8 @@
         bytes (:bytes first-image)]
     (is (= :pe32+-embedded-kernel/v2 (:format first-image)))
     (is (= {:bytes 16464 :memory-map-offset 80 :memory-map-capacity 16384
-            :rx-limit-offset 56 :rw-start-offset 64 :rw-end-offset 72}
+            :rx-limit-offset 56 :rw-start-offset 64 :rw-end-offset 72
+            :kernel-scratch-base :rw-end :kernel-scratch-pages 14}
            (:boot-info-layout first-image)))
     (is (= [0x4d 0x5a] (subvec bytes 0 2)))
     (is (= [0x50 0x45 0 0] (subvec bytes 0x80 0x84)))
@@ -231,6 +232,9 @@
     (is (some #(= [0 0x40 0 0] %)
               (partition 4 1 bytes))
         "GetMemoryMap is bounded to the inline 16 KiB region")
+    (is (some #(= [0x41 0xb8 0x21 0x00 0x00 0x00] %)
+              (partition 6 1 bytes))
+        "RW PT_LOAD allocation includes fourteen loader-owned scratch pages")
     (is (= bytes (:bytes second-image)) "embedded boot image is reproducible")
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #"x86-64 ET_EXEC"
           (pe32plus/package-embedded-kernel (vec (repeat 128 0)))))))
@@ -254,6 +258,7 @@
     (is (= {:bytes 16608 :memory-map-offset 96
             :memory-map-capacity 16384
             :rx-limit-offset 56 :rw-start-offset 64 :rw-end-offset 72
+            :kernel-scratch-base :rw-end :kernel-scratch-pages 14
             :payload-offset 16480
             :payload-bytes 128}
            (:boot-info-layout image)))

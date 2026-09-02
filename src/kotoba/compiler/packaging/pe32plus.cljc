@@ -188,6 +188,12 @@
    [0x41 0xb8] (le size 4)
    [0x41 0xff 0x96 0x60 0x01 0x00 0x00]))
 
+;; The pure AIUEOS kernel needs page-table, exception, allocator, and RTL8125
+;; DMA storage after ExitBootServices. Reserve it while UEFI still owns the
+;; memory map instead of asking the kernel to infer ownership from whatever
+;; EfiConventionalMemory happens to remain on a particular machine.
+(def ^:private kernel-scratch-pages 14)
+
 (defn package-embedded-kernel
   "Generate a position-independent PE32+ UEFI transition loader around a
   compiler-produced aiueos kernel ELF. No C object, CRT, import, or linker is
@@ -243,10 +249,12 @@
             entry-segment (some #(and (= 5 (:flags %))
                                       (<= (:paddr %) entry)
                                       (< entry (+ (:paddr %) (:memsz %)))) segments)
+            second-pages (quot (+ (:memsz second-segment) 4095) 4096)
+            second-reserved-end (+ (:paddr second-segment)
+                                   (* (+ second-pages kernel-scratch-pages) 4096))
             non-overlap (or (<= (+ (:paddr first-segment) (:memsz first-segment))
                                 (:paddr second-segment))
-                            (<= (+ (:paddr second-segment) (:memsz second-segment))
-                                (:paddr first-segment)))]
+                            (<= second-reserved-end (:paddr first-segment)))]
       (when-not (and (= 2 phnum) (= 56 phentsize)
                      (every? #(and (= 1 (:type %)) (pos? (:filesz %))
                                    (= (:filesz %) (:memsz %))
@@ -255,7 +263,8 @@
                                    (<= (:paddr %) (- 0x40000000 (:memsz %)))
                                    (zero? (mod (:paddr %) 4096))
                                    (<= (+ (:offset %) (:filesz %)) (count kernel))) segments)
-                     (= [5 6] (mapv :flags segments)) entry-segment non-overlap)
+                     (= [5 6] (mapv :flags segments)) entry-segment non-overlap
+                     (<= second-reserved-end 0x40000000))
         (throw (ex-info "embedded kernel PT_LOAD contract rejected" {:segments segments})))
       (let [data-addresses [0 8]
             rx-limit (align (+ (:paddr first-segment) (:memsz first-segment)) 4096)
@@ -277,7 +286,8 @@
             ;; independent of displacement values.
             segment-tokens (mapcat (fn [index segment]
                                      (allocate-segment (keyword (str "address" index))
-                                      (quot (+ (:memsz segment) 4095) 4096)
+                                      (+ (quot (+ (:memsz segment) 4095) 4096)
+                                         (if (= index 1) kernel-scratch-pages 0))
                                       (keyword (str "segment" index)) (:filesz segment)))
                                    (range) segments)
             tokens (vec (concat
@@ -393,7 +403,9 @@
                              :memory-map-capacity memory-map-capacity
                              :rx-limit-offset 56
                              :rw-start-offset 64
-                             :rw-end-offset 72}
+                             :rw-end-offset 72
+                             :kernel-scratch-base :rw-end
+                             :kernel-scratch-pages kernel-scratch-pages}
                              payload?
                              (assoc :payload-offset (- payload-offset 16)
                                     :payload-bytes (count payload)))
