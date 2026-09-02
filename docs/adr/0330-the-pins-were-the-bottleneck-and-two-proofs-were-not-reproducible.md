@@ -191,10 +191,28 @@ changes, not only a pin.
 
 Deliberately out of scope:
 
-- The ATTEST stream's finding that rebuilding `sha256.o` at any amu newer than
-  `9cf3a0ac` yields an object that traps mid-instruction. BISECT-SHA256 owns it
-  and object rebuilds are frozen until it is named. **No aiueos `.o` is rebuilt
-  by this commit** — the change is pins, lock and the tests the pins move.
+- Rebuilding aiueos objects. **No aiueos `.o` is rebuilt by this commit** — the
+  change is pins, lock and the tests the pins move.
+
+  This one needs an update, because the answer landed while the commit was in
+  test. ATTEST (aiueos ADR-0150) found that rebuilding `sha256.o` at any amu
+  newer than `9cf3a0ac` produced an object that traps, and could not name the
+  cause; BISECT-SHA256 named it on 2026-09-03 in aiueos ADR-0190. It is
+  kotoba-native `da3b56b` ("Optimize x86 direct self reentry"): kotoba-mir's
+  `store-at-definition` splices a spill store at a value's definition on the
+  reasoning that *a definition dominates every use*, and `:mir/recur` is the one
+  edge for which that is false — it redefines the parameter homes and branches
+  back **after** the entry plan, so the store runs once and every reload in the
+  body reads the entry value forever. `round-block`'s loop counter therefore
+  never reached 64; the object did not compute a wrong hash, it spun and died at
+  whichever fuel guard was executing when the budget ran out. (ADR-0150 read the
+  moving trap address as evidence *against* fuel. It is what a non-terminating
+  loop looks like.)
+
+  The fix is kotoba-mir `0bb174c8`, pinned by kotoba-native `d710558`, and
+  `d710558` is an ancestor of `452422f5` — so **this pin advance carries the
+  repair**, and aiueos ADR-0190 reports the full 93-object rebuild booting at
+  it. Landing those objects is still the attestation stream's, not this one's.
 - `io-ipld`, held; ADR 0331.
 
 ## Consequences
