@@ -109,7 +109,15 @@
   ;; abort slice 1, type-directed arithmetic) and kotoba-hir ac8e7051 (a row
   ;; may hold the bare keyword `:abort`). The ten frozen identity vectors are
   ;; unchanged by that advance.
-  (is (= "08bdab8b1084160dcb58ac291a002b140a5abf13"
+  ;;
+  ;; Advanced 2026-09-02 once more: `kotoba.kir.alpha-normalization`. The
+  ;; five-binder walk was implemented in this repository AND in
+  ;; kotoba.codebase.typed-code -- the same algorithm over the same KIR, with
+  ;; neither copy the authority, which kotoba-lang lang/code-identity.edn
+  ;; recorded as a residual risk of :ci8. It is now kir's and both consumers
+  ;; delegate. `definition-cid` still does not normalize internally, so the ten
+  ;; frozen identity vectors are unchanged by this advance too.
+  (is (= "afd117d2533ed0b30eb5a4848083a94e25b01b40"
          (dependency-pin 'io.github.kotoba-lang/kotoba-kir)))
   ;; Advanced 2026-09-01 alongside the backend: the verifier re-derives the
   ;; two new arities and the v4 `expected-context`, and is what turns a
