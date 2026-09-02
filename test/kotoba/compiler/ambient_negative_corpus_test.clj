@@ -27,9 +27,16 @@
    [:load
     "(ns t (:export [f])) (defn f [] (load \"x\"))"
     :kotoba.error/ambient-forbidden]
+   ;; boot-scratch: `:kotoba.error/local-state-atom-position`, not
+   ;; `:ambient-forbidden`. kotoba-sema's local-state slice gave this form a
+   ;; SPECIFIC refusal -- an `atom` outside a `let` binding position -- where
+   ;; it used to fall to the generic one. The claim this suite makes is
+   ;; unchanged and is the one that matters: the form still rejects, and the
+   ;; assertion above (`(some? e)`) is what carries it. Only the code is more
+   ;; precise, which is why the row is updated rather than the check relaxed.
    [:atom
     "(ns t (:export [f])) (defn f [] (atom 1))"
-    :kotoba.error/ambient-forbidden]
+    :kotoba.error/local-state-atom-position]
    [:future
     "(ns t (:export [f])) (defn f [] (future 1))"
     :kotoba.error/ambient-forbidden]

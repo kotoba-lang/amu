@@ -1,0 +1,207 @@
+;; boot-scratch: a BOOTX64.EFI that writes, and a jump that arrives.
+;;
+;; `examples/aiueos-uefi-literals.kotoba` (ADR-0299) closed with two things it
+;; could not do, and both were the same missing noun -- an ADDRESS the program
+;; is allowed to name.
+;;
+;;   * Every remaining UEFI boot service takes an OUT-POINTER. `.text`, where
+;;     the literal pool lives, is 0x60000020 -- read and execute -- and
+;;     `kernel-boot-info` answers with the ImageHandle the firmware handed
+;;     over, not with the address of the context slot it was parked in.
+;;     `OpenProtocol` worked only because EFI_OPEN_PROTOCOL_TEST_PROTOCOL
+;;     makes the firmware ignore its `Interface` out-parameter.
+;;   * `kernel-jump-to` was encoded, gated and NEVER EXECUTED, because nothing
+;;     produced the address of a Kotoba function.
+;;
+;; Every marker byte on the QEMU debug console at port 0xe9 is one assertion
+;; the machine answered. `K H S T C U G L W O Z` are the eleven ADR-0299
+;; proved and are re-run here unchanged; the new ones are:
+;;
+;;   R  the scratch region is writable and is OURS. A word is stored at
+;;      offset 0 through the checked family and read back through it.
+;;   A  BS->AllocatePages(AllocateAnyPages, EfiLoaderData, 1, &addr) wrote its
+;;      out-pointer INTO the scratch region. The slot is ZEROED first, so a
+;;      nonzero 4 KiB-aligned word there afterwards can only have been
+;;      written by the firmware through our pointer. The page is not written
+;;      to: see the note above `aiueos-uefi-scratch-round-trip`, a measured
+;;      limit of the region-provenance rule rather than of this fixture.
+;;   P  BS->HandleProtocol(ImageHandle, &EFI_LOADED_IMAGE_PROTOCOL_GUID,
+;;      &iface) wrote its out-pointer into scratch, and
+;;      LoadedImage->ImageBase is this image's own base -- checked by reading
+;;      the `MZ` signature at that address.
+;;   M  BS->GetMemoryMap(&size, map, &key, &descsize, &descversion) wrote
+;;      THREE out-pointers into scratch. The map is asked for with a zero
+;;      size first, which is the call that makes the firmware report the size
+;;      it needs; the required size is nonzero, the descriptor size is at
+;;      least 48 and divides the required size exactly.
+;;   J  `(kernel-jump-to (kernel-function-address aiueos-uefi-scratch-second)
+;;      image-handle)` ARRIVED. The marker is written by that other function,
+;;      and so is the `out 0xf4` that ends the run -- so a run that leaves
+;;      through the entry's own exit is a different observation from a run
+;;      that leaves through the jump target's.
+;;
+;; then `out 0xf4, 16` from the SECOND function, which is QEMU's
+;; isa-debug-exit: the process leaves with status (16 << 1) | 1 = 33.
+
+(defn aiueos-uefi-scratch-mark [byte]
+  (kernel-out-u8 233 byte))
+
+(defn aiueos-uefi-scratch-mark-when [flag byte]
+  (if (= flag 1) (kernel-out-u8 233 byte) 0))
+
+(defn aiueos-uefi-scratch-present [word]
+  (if (= word 0) 0 1))
+
+(defn aiueos-uefi-scratch-equal [a b]
+  (if (= a b) 1 0))
+
+(defn aiueos-uefi-scratch-at-least [value floor]
+  (if (< value floor) 0 1))
+
+;; MEASURED LIMIT, and the reason marker A reads the allocated page rather
+;; than writing it.
+;;
+;; The page `AllocatePages` returns is an address the FIRMWARE chose, so it
+;; reaches this program through a load -- and the region-provenance rule
+;; refuses a base that came from one, in the caller as well as in the callee:
+;; passing it into a helper whose parameter is base-tainted is refused at the
+;; CALL SITE, because the taint propagates by fixpoint. That is the rule
+;; working, not a bug in it: an address that came from data is exactly what it
+;; exists to refuse.
+;;
+;; The consequence is that a Kotoba UEFI application can allocate a page and
+;; cannot WRITE it. Reading is expressible, because `kernel-load-ptr` is the
+;; unchecked read the firmware boundary already has; there is no unchecked
+;; store to match it, and the checked family cannot take this base.
+
+;; The jump target. It writes `J` and leaves through its OWN `out 0xf4`, so
+;; the exit status is evidence that control arrived here: an entry that fell
+;; through instead would leave through the entry's exit, and there is none.
+(defn aiueos-uefi-scratch-second [handle]
+  (let [m (kernel-out-u8 233 74)]
+    (kernel-out-u32 244 16)))
+
+(defn efi-main [image-handle system-table]
+  (let [m0 (aiueos-uefi-scratch-mark 75)
+        m1 (aiueos-uefi-scratch-mark-when
+             (aiueos-uefi-scratch-present image-handle) 72)
+        m2 (aiueos-uefi-scratch-mark-when
+             (aiueos-uefi-scratch-present system-table) 83)
+        ;; "IBI SYST", little endian, is 0x5453595320494249.
+        signature (kernel-load-ptr system-table 0)
+        m3 (aiueos-uefi-scratch-mark-when
+             (aiueos-uefi-scratch-equal signature 6076298535811760713) 84)
+        con-out (kernel-load-ptr system-table 64)
+        m4 (aiueos-uefi-scratch-mark-when
+             (aiueos-uefi-scratch-present con-out) 67)
+        printed (kernel-uefi-call2 con-out 8 con-out (ucs2 "AIUEOS\r\n"))
+        m5 (aiueos-uefi-scratch-mark-when
+             (aiueos-uefi-scratch-equal printed 0) 85)
+        guid-head (kernel-load-ptr
+                    (guid "5B1B31A1-9562-11D2-8E3F-00A0C969723B") 0)
+        m6 (aiueos-uefi-scratch-mark-when
+             (aiueos-uefi-scratch-equal guid-head 1284253093421855137) 71)
+        byte-head (kernel-load-ptr (bytes-literal "0102030405060708") 0)
+        m7 (aiueos-uefi-scratch-mark-when
+             (if (= byte-head 578437695752307201)
+               (aiueos-uefi-scratch-equal
+                 (bytes-literal-length "0102030405060708") 8)
+               0)
+             76)
+        boot-services (kernel-load-ptr system-table 96)
+        watchdog (kernel-uefi-call4 boot-services 256 0 0 0 0)
+        m8 (aiueos-uefi-scratch-mark-when
+             (aiueos-uefi-scratch-equal watchdog 0) 87)
+        opened (kernel-uefi-call6
+                 boot-services 280
+                 image-handle
+                 (guid "5B1B31A1-9562-11D2-8E3F-00A0C969723B")
+                 0 image-handle 0 4)
+        m9 (aiueos-uefi-scratch-mark-when
+             (aiueos-uefi-scratch-equal opened 0) 79)
+        parked (kernel-system-table)
+        m10 (aiueos-uefi-scratch-mark-when
+              (aiueos-uefi-scratch-equal parked system-table) 90)
+
+        ;; R -- the region is ours and it is writable. A store and a load
+        ;; through the CHECKED family, so the window is declared and the
+        ;; emitted bounds check is in the path.
+        scratch (kernel-scratch-region)
+        wrote (kernel-store-u64-16k scratch 16384 0 8241)
+        m11 (aiueos-uefi-scratch-mark-when
+              (aiueos-uefi-scratch-equal
+                (kernel-load-u64-16k scratch 16384 0) 8241) 82)
+
+        ;; A -- AllocatePages(AllocateAnyPages=0, EfiLoaderData=2, 1, &addr)
+        ;; at EFI_BOOT_SERVICES+0x28. The out-pointer is scratch+64, and it is
+        ;; ZEROED first: a nonzero, page-aligned word there afterwards can
+        ;; only have been written by the firmware THROUGH OUR POINTER, which
+        ;; is the whole assertion. Slot 0x40 is AllocatePool, and calling it
+        ;; by mistake is how this marker first went missing.
+        cleared (kernel-store-u64-16k scratch 16384 64 0)
+        allocated (kernel-uefi-call4 boot-services 40
+                                     0 2 1
+                                     (kernel-subregion scratch 16384 64 8))
+        page (kernel-load-u64-16k scratch 16384 64)
+        m12 (aiueos-uefi-scratch-mark-when
+              (if (= allocated 0)
+                (if (= (aiueos-uefi-scratch-present page) 1)
+                  (aiueos-uefi-scratch-equal (bit-and page 4095) 0)
+                  0)
+                0)
+              65)
+
+        ;; P -- HandleProtocol(ImageHandle, &guid, &iface) at +0x98. The
+        ;; out-pointer is scratch+128, zeroed first for the reason above;
+        ;; EFI_LOADED_IMAGE_PROTOCOL's ImageBase is at +0x40 (+0x20 is
+        ;; FilePath, and reading it is how this marker first went missing).
+        ;; "MZ" is 0x5a4d, the first two bytes of our own PE image.
+        cleared-iface (kernel-store-u64-16k scratch 16384 128 0)
+        handled (kernel-uefi-call4 boot-services 152
+                                   image-handle
+                                   (guid "5B1B31A1-9562-11D2-8E3F-00A0C969723B")
+                                   (kernel-subregion scratch 16384 128 8)
+                                   0)
+        loaded-image (kernel-load-u64-16k scratch 16384 128)
+        image-base (kernel-load-ptr loaded-image 64)
+        m13 (aiueos-uefi-scratch-mark-when
+              (if (= handled 0)
+                (if (= (aiueos-uefi-scratch-present loaded-image) 1)
+                  (if (= (bit-and (kernel-load-ptr image-base 0) 65535) 23117)
+                    1 0)
+                  0)
+                0)
+              80)
+
+        ;; M -- GetMemoryMap(&size, map, &key, &descsize, &descversion), with
+        ;; the size asked for as zero so the firmware reports what it needs.
+        ;; Out-pointers at scratch+192 (size), +200 (key), +208 (descsize),
+        ;; +216 (version); the buffer itself at +256.
+        zeroed (kernel-store-u64-16k scratch 16384 192 0)
+        mapped (kernel-uefi-call6 boot-services 56
+                                  (kernel-subregion scratch 16384 192 8)
+                                  (kernel-subregion scratch 16384 256 8)
+                                  (kernel-subregion scratch 16384 200 8)
+                                  (kernel-subregion scratch 16384 208 8)
+                                  (kernel-subregion scratch 16384 216 8)
+                                  0)
+        map-size (kernel-load-u64-16k scratch 16384 192)
+        descriptor-size (kernel-load-u64-16k scratch 16384 208)
+        m14 (aiueos-uefi-scratch-mark-when
+              (if (= (aiueos-uefi-scratch-present map-size) 1)
+                (if (= (aiueos-uefi-scratch-at-least descriptor-size 48) 1)
+                  (aiueos-uefi-scratch-equal
+                    (- map-size (* descriptor-size (quot map-size descriptor-size)))
+                    0)
+                  0)
+                0)
+              77)]
+
+    ;; J -- and this call does not come back. The marker and the exit both
+    ;; belong to the other function.
+    (kernel-jump-to (kernel-function-address aiueos-uefi-scratch-second)
+                    image-handle)))
+
+;; The frontend requires a zero-arity `main` for every target; `package-efi`
+;; takes `efi-main` when the module exports it.
+(defn main [] 0)

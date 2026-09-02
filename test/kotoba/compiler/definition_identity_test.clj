@@ -141,19 +141,47 @@
 ;; Refusals are answers, and they are not CIDs
 
 (deftest an-unbridgeable-effect-row-is-refused-with-a-marker
-  (testing "`:abort` is a tracked control effect: it names no authority, so the
-  identity's effect-row bridge has no catalog keyword for it and refuses. The
-  compiler records the refusal instead of inventing a row."
-    (let [entries (:entries (report (slurp (io/file "test/nbb/fixtures/abort-callee.kotoba"))))]
-      (is (= :unbridged-effect (:definition-cid (get entries "safe-div"))))
-      (is (nil? (:cid (get entries "safe-div")))
+  (testing "a `cap-call` whose wire id the catalog does not name has no
+  bridgeable row: a name invented for it would be a lie sealed into an
+  identity. The compiler records the refusal instead of inventing a row.
+
+  This used to be `abort-callee.kotoba`, on the grounds that `:abort` names no
+  authority. kotoba-kir reversed that deliberately -- `effect-row-from-hir`
+  now passes a member of `control-effects` through unchanged, because it
+  carries no wire id and so there is no catalog lookup to get wrong. The
+  positive direction is asserted below; this keeps the refusal reachable."
+    (let [entries (:entries (report (slurp (io/file "test/nbb/fixtures/unbridged-effect.kotoba"))))]
+      (is (= :unbridged-effect
+             (:definition-cid (get entries "reads-an-unnamed-capability"))))
+      (is (nil? (:cid (get entries "reads-an-unnamed-capability")))
           "a refusal never carries a CID as well as a marker")
-      (is (= :dependency-unavailable (:definition-cid (get entries "main")))
+      ;; `main` is unidentifiable too, and under the fixture's own marker
+      ;; rather than `:dependency-unavailable`. A capability effect PROPAGATES
+      ;; to the caller, so `main`'s own row carries the unnamed wire id and is
+      ;; refused in its own right. `:abort` did not propagate -- a call never
+      ;; put it on a row -- which is why the old fixture reached the
+      ;; dependency marker and this one cannot.
+      ;;
+      ;; GAP, for whoever owns definition identity: with `:abort` bridged,
+      ;; nothing in this suite reaches `:dependency-unavailable` any more. It
+      ;; needs a callee whose row is unbridgeable and a caller whose row is
+      ;; not, and a propagating effect cannot produce that pair.
+      (is (= :unbridged-effect (:definition-cid (get entries "main")))
           "a caller of an unidentifiable definition is unidentifiable too")
       (is (nil? (:cid (get entries "main")))))))
 
+(deftest an-aborting-definition-is-identifiable-now
+  ;; The behaviour the tests above used to rest on, asserted in its own right
+  ;; rather than left implicit in their absence. kotoba-kir's bridge passes
+  ;; `:abort` through unchanged; a module that throws and catches therefore
+  ;; seals like any other.
+  (let [entries (:entries (report (slurp (io/file "test/nbb/fixtures/abort-callee.kotoba"))))]
+    (is (some? (:cid (get entries "safe-div"))))
+    (is (some? (:cid (get entries "main"))))
+    (is (nil? (:definition-cid (get entries "safe-div"))))))
+
 (deftest a-module-with-a-refused-definition-yields-no-cache-material
-  (let [source (slurp (io/file "test/nbb/fixtures/abort-callee.kotoba"))
+  (let [source (slurp (io/file "test/nbb/fixtures/unbridged-effect.kotoba"))
         hir (sema/analyze source {})]
     (is (nil? (di/cache-material (di/definitions hir (ir/lower hir)) (:exports hir)))
         "a partial identity is not an identity; a cache keyed on one would serve
@@ -161,14 +189,14 @@
 
 (deftest the-scanned-floor-distinguishes-nothing-identified-from-all-identified
   (let [clean (report base)
-        refused (report (slurp (io/file "test/nbb/fixtures/abort-callee.kotoba")))]
+        refused (report (slurp (io/file "test/nbb/fixtures/unbridged-effect.kotoba")))]
     (is (= "SCANNED\t2/2" (di/scanned-line clean)))
     (is (= "SCANNED\t0/2" (di/scanned-line refused)))
     (is (not= (di/scanned-line clean) (di/scanned-line refused)))))
 
 (deftest a-refused-definition-is-listed-rather-than-omitted
   (let [lines (di/format-lines
-               (report (slurp (io/file "test/nbb/fixtures/abort-callee.kotoba"))))]
+               (report (slurp (io/file "test/nbb/fixtures/unbridged-effect.kotoba"))))]
     (is (= 2 (count lines)) "a listing that dropped what it could not identify
         would report a clean module")
     (is (every? #(str/includes? % "REFUSED:") lines))))

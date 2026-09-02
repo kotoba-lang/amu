@@ -1,0 +1,17 @@
+;; boot-scratch: a row the catalog cannot name.
+;;
+;; `abort-callee.kotoba` used to be this fixture. It is not any more:
+;; kotoba-kir's effect-row bridge now says, in `effect-row-from-hir`'s own
+;; docstring, that "a member of `control-effects` (today `:abort`) passes
+;; through unchanged: it carries no wire id, so there is no catalog lookup to
+;; make and nothing a lookup could get wrong". An aborting definition is
+;; therefore identifiable, and the tests that used it to reach the refusal
+;; needed a row that is still unbridgeable.
+;;
+;; The same docstring names the one that is: "a wire id the catalog does not
+;; name is refused ... the only way to reach such an id is a literal
+;; `(cap-call N x)` in source, and a name invented for it would be a lie
+;; sealed into an identity". 200 is that id.
+(ns unbridged.effect (:export [main]))
+(defn- reads-an-unnamed-capability [n :i64] :i64 (cap-call 200 n))
+(defn main [] :i64 (reads-an-unnamed-capability 1))

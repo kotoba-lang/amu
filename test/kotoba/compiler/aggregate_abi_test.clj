@@ -80,7 +80,13 @@
   ;; qwen  -- 2026-09-02: the three Qwen3.5 forward-pass kernel objects
   ;;           (aiueos-qwen35-dot-f32 / -dequant-row / -matvec) enter
   ;;           kernel-object-entries with measured fuel tiers (kotoba-native#113).
-  (is (= "24f43e212085d5e22bc01ab4f478f9971fd9b72d"
+  ;; boot-scratch -- 2026-09-02: `:scratch-region` (`lea r10,[r9+0x60]`, four
+  ;;           bytes) and `:x86-64/function-address` (`lea dst,[rip+disp32]`,
+  ;;           resolved against the same label table a call uses), plus
+  ;;           `kotoba.native.image-scratch` -- the offset and the 16 KiB
+  ;;           reservation, read by the encoder AND by this repository's PE32+
+  ;;           packager (kotoba-native ADR-0068/0069).
+  (is (= "91033a9ddcbedb216156df583805e0748a4f8a0d"
          (dependency-pin 'io.github.kotoba-lang/kotoba-native)))
   ;; Advanced 2026-08-31 for two more instances of ADR-0286's class -- a KIR
   ;; i64 is a BigInt under ClojureScript and reached a host operation that
@@ -109,7 +115,11 @@
   ;; abort slice 1, type-directed arithmetic) and kotoba-hir ac8e7051 (a row
   ;; may hold the bare keyword `:abort`). The ten frozen identity vectors are
   ;; unchanged by that advance.
-  (is (= "08bdab8b1084160dcb58ac291a002b140a5abf13"
+  ;; Advanced 2026-09-02 again (boot-scratch, ADR-0242): the two heads that
+  ;; name a place in the IMAGE -- its `.data` reservation and its function
+  ;; labels -- refuse under `:image-address-unavailable` rather than under the
+  ;; literal pool's keyword, and both mark a module kernel-native.
+  (is (= "ad6db332a06d52bdb037536ad191d48dc1d5f394"
          (dependency-pin 'io.github.kotoba-lang/kotoba-kir)))
   ;; Advanced 2026-09-01 alongside the backend: the verifier re-derives the
   ;; two new arities and the v4 `expected-context`, and is what turns a
@@ -134,7 +144,12 @@
   ;;            time (this repo's ADR-0293).
   ;; The pin is the branch tip, which also carries the interrupt entry address
   ;; gate.
-  (is (= "5a16ecbb2ed066a89e2fdea0e1d2d98be7e91a0f"
+  ;;   boot-scratch -- the arity row for `kernel-scratch-region` and, for
+  ;;            `kernel-function-address`, a check on the NAME. Its argument is
+  ;;            source text and is not walked, so with the name unchecked
+  ;;            nothing in that file stands between a misspelling and a backend
+  ;;            `lea` at a label it would have to invent (ADR-0044).
+  (is (= "6a743c3054e824e72ce703fde4f2ed7a59a404c3"
          (dependency-pin 'io.github.kotoba-lang/kotoba-verifier)))
   (is (= 7 (:abi/version aggregate-abi/contract)))
   (is (= :recursive-word-handles
