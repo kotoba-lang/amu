@@ -1,6 +1,6 @@
 (ns kotoba.compiler.receipt
   (:require [kotoba.compiler.authority :as authority]
-            [kotoba.kir.admission :as admission]
+            [kotoba.compiler.effect-row :as effect-row]
             [kotoba.artifact.core :as artifact]
             [kotoba.artifact.runtime-identity :as runtime-identity]
             [kotoba.verifier.signing :as signing]))
@@ -58,7 +58,7 @@
            executor-key authority-decision]}]
   (let [{kexe :artifact signer :signer} (signing/verify envelope trust now)
         required (:effects kexe)
-        policy-result (admission/check {:effects required} policy)
+        policy-result (effect-row/check {:effects required} policy)
         parent-sha (when parent
                      (do (verify-schema! parent)
                          (when-not (valid-hash? parent)
@@ -116,7 +116,7 @@
     (throw (ex-info "receipt integrity mismatch" {:phase :receipt})))
   (let [{kexe :artifact signer :signer} (signing/verify envelope trust now)
         required (:effects kexe)
-        policy-result (admission/check {:effects required} policy)
+        policy-result (effect-row/check {:effects required} policy)
         expected-parent (some-> parent :receipt-sha256)
         fuel (:fuel receipt)]
     (when-let [runtime (and (map? output) (:runtime output))]

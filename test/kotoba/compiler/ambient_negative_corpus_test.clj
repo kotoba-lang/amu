@@ -42,9 +42,13 @@
    [:set-bang
     "(ns t (:export [f])) (defn f [] (set! x 1))"
     :kotoba.error/ambient-forbidden]
-   [:throw
-    "(ns t (:export [f])) (defn f [] (throw 1))"
-    :kotoba.error/ambient-forbidden]
+   ;; `throw` left this corpus on 2026-09-02 (ADR 0294): kotoba-sema e42b74ef
+   ;; admits it as the typed abort ability's sugar, and kotoba-lang 9336e582's
+   ;; `lang/guest-grammar.edn` no longer lists `throw try catch` under
+   ;; `:forbidden-heads`. Its own refusals -- unhandled at an export boundary,
+   ;; two error types in one function, outside tail/let position -- are pinned
+   ;; by exact text in kotoba-sema's abort_ability_test, and the export-boundary
+   ;; one again in kotoba.compiler.effect-row-test on this side.
    [:resolve
     "(ns t (:export [f])) (defn f [] (resolve 'x))"
     :kotoba.error/ambient-forbidden]
