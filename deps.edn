@@ -123,9 +123,17 @@
         ;; `vector-assoc!` (slot 208) on both ISAs, via kotoba-gmir 682a0d5
         ;; (the arities) and kotoba-mir 9b3a42e (the offsets). Superproject
         ;; ADR-2609010200.
+        ;; a27651c repairs `f64-min`/`f64-max` on x86-64. MINSD/MAXSD compute
+        ;; `(a < b) ? a : b`, so they return the SECOND operand whenever the
+        ;; comparison is false -- which is exactly the two cases where the
+        ;; first must win: either input NaN, and (-0.0, +0.0). Executed through
+        ;; the loaders in `isa_execution_test` on 2026-09-02 that was six wrong
+        ;; answers in twelve NaN/signed-zero rows on x86-64 and none on
+        ;; AArch64; the rows are in that table now, so this pin cannot go
+        ;; backwards without the suite saying so. Its ADR 0046.
         io.github.kotoba-lang/kotoba-native
         {:git/url "https://github.com/kotoba-lang/kotoba-native.git"
-         :git/sha "a5ddd788d22bd213f3d848c0e9dcc060c8b35d55"}
+         :git/sha "a27651c24c99aafb874e79158c9da1b3eec4b841"}
         io.github.kotoba-lang/kotoba-component
         {:git/url "https://github.com/kotoba-lang/kotoba-component.git"
          :git/sha "68acc7237aec7b24b683304db8e87d14ec1be745"}

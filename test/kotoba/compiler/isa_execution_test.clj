@@ -160,6 +160,16 @@
 (def ^:private f64-one 4607182418800017408)
 (def ^:private f64-two 4611686018427387904)
 (def ^:private f64-nan 9221120237041090560)
+(def ^:private f64-negative-zero -9223372036854775808)
+
+(defn- f64b
+  "A program returning the BIT PATTERN of `(op a b)`, so a NaN and a signed
+  zero are distinguishable from every other answer. `(f64-to-bits x)` prints
+  0x7ff8000000000000 for NaN and 0x8000000000000000 for -0.0; a printed float
+  would show `NaN` and `0.0` and hide exactly what these rows are about."
+  [op a b]
+  (str "(defn main [] (f64-to-bits (" op " (f64-from-bits " a
+       ") (f64-from-bits " b "))))"))
 
 (defn- f64c [op a b] (str "(defn main [] (if (" op " (f64-from-bits " a
                           ") (f64-from-bits " b ")) 1 0))"))
@@ -342,6 +352,31 @@
    ["f64-ge NaN" (f64c "f64-ge" f64-nan f64-one) 0]
    ["f64-unordered NaN" (f64c "f64-unordered" f64-nan f64-one) 1]
    ["f64-unordered ordered" (f64c "f64-unordered" f64-one f64-two) 0]
+   ;; f64-min / f64-max, which are NOT the instructions of the same name.
+   ;;
+   ;; `minsd xmm0, xmm1` computes `(a < b) ? a : b`, so it returns the SECOND
+   ;; operand on every false comparison -- and the two cases where the first
+   ;; must win are exactly the ones where the comparison is false: either
+   ;; input NaN, and (-0.0, +0.0). AArch64's FMIN/FMAX have neither hole.
+   ;;
+   ;; The definition is the KIR interpreter (`Math/min`/`Math/max` on the JVM,
+   ;; `js/Math.min`/`js/Math.max` on cljs; both arms read on 2026-09-02 and in
+   ;; agreement on every row here). Run against kotoba-native before the repair
+   ;; these six rows failed on x86-64 and passed on AArch64, which is the whole
+   ;; reason the table is shared between the two ISAs.
+   ;;
+   ;; The two ordered rows are not filler: a sequence that unconditionally
+   ;; returned the first operand would satisfy every NaN row above.
+   ["f64-min NaN first" (f64b "f64-min" f64-nan f64-one) f64-nan]
+   ["f64-min NaN second" (f64b "f64-min" f64-one f64-nan) f64-nan]
+   ["f64-min -0.0 first" (f64b "f64-min" f64-negative-zero 0) f64-negative-zero]
+   ["f64-min -0.0 second" (f64b "f64-min" 0 f64-negative-zero) f64-negative-zero]
+   ["f64-min ordered, larger first" (f64b "f64-min" f64-two f64-one) f64-one]
+   ["f64-max NaN first" (f64b "f64-max" f64-nan f64-one) f64-nan]
+   ["f64-max NaN second" (f64b "f64-max" f64-one f64-nan) f64-nan]
+   ["f64-max -0.0 first" (f64b "f64-max" f64-negative-zero 0) 0]
+   ["f64-max -0.0 second" (f64b "f64-max" 0 f64-negative-zero) 0]
+   ["f64-max ordered, smaller first" (f64b "f64-max" f64-one f64-two) f64-two]
    ["kgraph" (str "(defn main [] (do (kgraph-assert! 1 2 3)"
                   " (kgraph-get 1 2)))") 3]
    ["private string-index traversal state"

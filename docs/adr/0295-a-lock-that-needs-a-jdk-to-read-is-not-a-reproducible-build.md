@@ -1,4 +1,4 @@
-# ADR 0289: a lock that needs a JDK to read is not a reproducible build
+# ADR 0295: a lock that needs a JDK to read is not a reproducible build
 
 - Status: accepted
 - Date: 2026-09-01
