@@ -27,7 +27,7 @@
    {:target :x86_64-aiueos-uefi-v1
     :target-profile {:runtime :none :ambient-syscalls false}
     :program {:entry 'main}
-    :exports {'main {:offset 0 :arity 0}}
+    :exports {'main {:offset 0 :arity 2}}
     :limits {:fuel 4096}
     :fuel-abi {:initial 4096}
     :code [0xc3]}))

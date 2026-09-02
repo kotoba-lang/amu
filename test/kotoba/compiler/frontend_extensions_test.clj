@@ -25,6 +25,16 @@
                        (target/backend %))
           compiler/supported-targets))
 
+(defn- source-for-target
+  "Give the UEFI profile its real two-argument firmware entry while preserving
+  the historical zero-argument `main` used by every other target in these
+  cross-target language-surface tests."
+  [source target-name]
+  (if (= :x86_64-aiueos-uefi-v1 target-name)
+    (str/replace source "(defn main []"
+                 "(defn main [image-handle system-table]")
+    source))
+
 (defn- entryless-native-target?
   "A native target whose artifact needs no entry point, so it can carry a
   library. The aiueos profiles are excluded because each names a mandatory entry
@@ -79,7 +89,7 @@
         ;; Every target that compile-source emits directly. A component target
         ;; is lifted by compile-component instead, and is covered separately
         ;; below so this sweep still reaches every declared target.
-        results (mapv #(compiler/compile-source source %)
+        results (mapv #(compiler/compile-source (source-for-target source %) %)
                       compiler/source-compilable-targets)
         component-targets (remove compiler/source-compilable-targets
                                   compiler/supported-targets)
@@ -223,7 +233,9 @@
     (doseq [target-name (unsupported-typed-targets)]
       (is (thrown-with-msg? clojure.lang.ExceptionInfo
                             #"require the kotoba-script web target"
-                            (compiler/compile-source source target-name))))))
+                            (compiler/compile-source
+                             (source-for-target source target-name)
+                             target-name))))))
 
 (deftest vector-i64-constructor-is-explicit-and-bounded
   (let [checked (compiler/check-source
@@ -383,7 +395,10 @@
   (is (some? (rejection-message "(defn bad [] (result-ok true))")))
   (doseq [target (unsupported-typed-targets)]
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #"require the kotoba-script web target"
-                          (compiler/compile-source "(defn main [] :result-i64 (result-ok 1))" target)))))
+                          (compiler/compile-source
+                           (source-for-target
+                            "(defn main [] :result-i64 (result-ok 1))" target)
+                           target)))))
 
 (deftest parametric-result-types-preserve-nested-payloads-and-budgets
   (let [type [:result :string [:result :i64 :bool]]
@@ -411,7 +426,9 @@
   (doseq [target (unsupported-typed-targets)]
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #"require the kotoba-script web target"
                           (compiler/compile-source
-                           "(defn main [] [:result :i64 :bool] (result-ok-of [:result :i64 :bool] 1))"
+                           (source-for-target
+                            "(defn main [] [:result :i64 :bool] (result-ok-of [:result :i64 :bool] 1))"
+                            target)
                            target)))))
 
 (deftest match-result-is-exhaustive-scoped-typed-and-lazy
@@ -522,7 +539,9 @@
     (is (thrown-with-msg? clojure.lang.ExceptionInfo
                           #"require the kotoba-script web target"
                           (compiler/compile-source
-                           "(defn main [] [:option :string] (option-none-of [:option :string]))"
+                           (source-for-target
+                            "(defn main [] [:option :string] (option-none-of [:option :string]))"
+                            target-name)
                            target-name)))))
 
 (deftest if-some-on-record-option-string-field
@@ -638,7 +657,9 @@
     (is (thrown-with-msg? clojure.lang.ExceptionInfo
                           #"require the kotoba-script web target"
                           (compiler/compile-source
-                           "(defn main [] [:vector [:i64 :string]] (hetero-vector [:vector [:i64 :string]] 1 \"x\"))"
+                           (source-for-target
+                            "(defn main [] [:vector [:i64 :string]] (hetero-vector [:vector [:i64 :string]] 1 \"x\"))"
+                            target-name)
                            target-name)))))
 
 (deftest typed-sets-are-unique-canonically-ordered-and-persistent
@@ -688,7 +709,9 @@
     (is (thrown-with-msg? clojure.lang.ExceptionInfo
                           #"require the kotoba-script web target"
                           (compiler/compile-source
-                           "(defn main [] [:set :i64] (typed-set [:set :i64] 1 2))"
+                           (source-for-target
+                            "(defn main [] [:set :i64] (typed-set [:set :i64] 1 2))"
+                            target-name)
                            target-name)))))
 
 (deftest bounded-records-own-nominal-schema-and-persistent-fields
@@ -736,7 +759,9 @@
     (is (thrown-with-msg? clojure.lang.ExceptionInfo
                           #"require the kotoba-script web target"
                           (compiler/compile-source
-                           "(defn main [] [:record :demo/one [[:x :i64]]] (record [:record :demo/one [[:x :i64]]] 1))"
+                           (source-for-target
+                            "(defn main [] [:record :demo/one [[:x :i64]]] (record [:record :demo/one [[:x :i64]]] 1))"
+                            target-name)
                            target-name)))))
 
 (deftest bounded-map-host-abi-runs-through-compiler-and-kotoba-script
@@ -1135,7 +1160,9 @@
     (is (= 2 (ir/execute (:kir compiled) 'main [])))
     (doseq [target (unsupported-typed-targets)]
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"require the kotoba-script web target"
-                            (compiler/compile-source source target))))))
+                            (compiler/compile-source
+                             (source-for-target source target)
+                             target))))))
 
 (deftest map-assoc-reference-and-kotoba-script-agree
   (is (= 2 (oracle "(defn main [] (get (assoc {:a 1} :b 2) :b))"))))

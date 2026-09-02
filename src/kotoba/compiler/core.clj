@@ -506,6 +506,8 @@
         language-profile (or (:language-profile emit-metadata)
                              (:language-profile policy))
         hir (sema/analyze source (cond-> {}
+                                       (= :firmware (:execution profile))
+                                       (assoc :main-arity 2)
                                        language-profile (assoc :language-profile language-profile)
                                        (:admit-linked-synthetics? emit-metadata)
                                        (assoc :admit-linked-synthetics? true)))
