@@ -1257,6 +1257,13 @@ kotoba -M compile examples/capability-named.kotoba --target wasm32 \
   --policy examples/capability-named.edn --output capability-named.wasm
 ```
 
+Since 2026-09-02 (ADR 0294) a row may also hold the bare keyword `:abort`:
+the typed abort ability's mark on a function that `throw`s, which the frontend
+has already lowered to `[:result T E]`. It is a tracked control effect, not an
+authority -- `check` reports it in `:effects` as-is, and admission does not ask
+for a grant it would be impossible to write. A module whose `main` catches what
+a helper throws compiles with no `--policy` at all.
+
 After putting `bin/amu` on `PATH`, the canonical command is `amu ...`.
 `kotoba -M ...` remains accepted as a compatibility API. JVM-only operations
 remain private implementation paths and can be replaced without changing the

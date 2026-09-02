@@ -81,7 +81,12 @@
   ;;           implements the whole family (kotoba-kir#58).
   ;;   boot -- the UEFI entry contract v2 on the firmware target profile, and
   ;;           the four operations' oracle refusals (ADR-0229).
-  (is (= "c4149fb120ece017ce87d0ef5e40547a2e6f3ee3"
+  ;; Advanced 2026-09-02 again (ADR 0294): `definition-identity/effect-row-from-hir`,
+  ;; the wire-row -> named-row adapter, alongside kotoba-sema e42b74ef (typed
+  ;; abort slice 1, type-directed arithmetic) and kotoba-hir ac8e7051 (a row
+  ;; may hold the bare keyword `:abort`). The ten frozen identity vectors are
+  ;; unchanged by that advance.
+  (is (= "1e00f830e96bf762a95085f2eb5741d470d26ee6"
          (dependency-pin 'io.github.kotoba-lang/kotoba-kir)))
   ;; Advanced 2026-09-01 alongside the backend: the verifier re-derives the
   ;; two new arities and the v4 `expected-context`, and is what turns a

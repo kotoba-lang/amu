@@ -99,4 +99,15 @@
     :target "wasm32-browser" :policy nil}
    {:name "hetero-vector-position-wasm32"
     :source "test/nbb/fixtures/hetero-vector-position.kotoba"
-    :target "wasm32" :policy nil}])
+    :target "wasm32" :policy nil}
+   ;; ADR 0294: the typed abort ability (kotoba-sema e42b74ef) puts the bare
+   ;; keyword `:abort` on the row of a function that throws, and the module
+   ;; row is the union of function rows. A helper that throws and a `main`
+   ;; that catches is the smallest module whose row is `#{:abort}` -- with no
+   ;; `:policy`, because there is nothing to grant. Every case above has a row
+   ;; of grants only, which is why `compile-case` could hand the raw row to
+   ;; `kotoba.kir.admission/check` for a year and nothing here noticed.
+   {:name "abort-callee" :source "test/nbb/fixtures/abort-callee.kotoba"
+    :target "wasm32" :policy nil}
+   {:name "abort-callee-browser" :source "test/nbb/fixtures/abort-callee.kotoba"
+    :target "wasm32-browser" :policy nil}])
