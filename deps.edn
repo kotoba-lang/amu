@@ -141,11 +141,20 @@
         ;; in addition to scalar/variant/call-frame checks.
         ;; Producer and verifier move in the same closure; neither trusts the
         ;; other's aggregate metadata.
-        ;; 58a02b4 re-derives the two new arities and the v4 expected context
-        ;; ABI, which is what makes a mismatched ABI an explicit refusal.
+        ;; This pin's reason to move is 3d7a6f0, which re-derives the i64/i32
+        ;; shift-count literal rule with a predicate that recognizes a guest
+        ;; literal on BOTH compiler hosts (its ADR-0022). Before it, the gate
+        ;; was bare `integer?` -- false for the JavaScript bigint every
+        ;; .kotoba literal is under nbb -- so no artifact using a shift could
+        ;; be built on this CLI's JDK-free route while the JVM route compiled
+        ;; the same program. It also carries the earlier aggregate-ABI arities
+        ;; and v4 expected context ABI, the memory widths / window tiers /
+        ;; slice family, the firmware boundary that marks a module
+        ;; kernel-native (8158aa8), and the interrupt entry address gate
+        ;; (7070ec0) -- all fast-forward ancestors of this pin.
         io.github.kotoba-lang/kotoba-verifier
         {:git/url "https://github.com/kotoba-lang/kotoba-verifier.git"
-         :git/sha "3d7a6f031bdb131e46db6dbf62db13bbcbcf8896"}
+         :git/sha "c2ce475a7f4d083a259b6b626a5ece765057fac4"}
 }
  :aliases {:test {:extra-paths ["test"]
                   :extra-deps
