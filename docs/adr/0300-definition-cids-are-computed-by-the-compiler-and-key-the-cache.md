@@ -241,6 +241,16 @@ than assumed.
   question (`ir/uses-f32?`) on both routes, rather than by a per-literal test
   only one route can ask.
 
+`scripts/test-compiler-worker.mjs` asserted the exact literal
+`:stage-cache {:hir :miss, :kir :hit}`, so adding a stage broke it — measured on
+CI, on all three platforms, and it was the only step that broke. It now asserts
+the three-stage shape including the `:wasm` verdict: a whitespace-only edit
+reaches the same KIR and therefore the same definition CIDs, so emission is
+served from its content key (`:wasm :hit`, `:definitions-recompiled 0`), while a
+policy change misses it (`:wasm :miss`) because the policy text carries the fuel
+budget, which is an emitter input. Both verdicts are asserted rather than
+tolerated: a looser match would hide the defect where emission stopped hitting.
+
 ## What kotoba-lang should record (not edited here)
 
 `lang/code-identity.edn` `:stages` / `:implementation` should gain
