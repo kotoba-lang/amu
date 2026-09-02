@@ -80,7 +80,27 @@
   ;; qwen  -- 2026-09-02: the three Qwen3.5 forward-pass kernel objects
   ;;           (aiueos-qwen35-dot-f32 / -dequant-row / -matvec) enter
   ;;           kernel-object-entries with measured fuel tiers (kotoba-native#113).
-  (is (= "24f43e212085d5e22bc01ab4f478f9971fd9b72d"
+  ;;
+  ;; Advanced 2026-09-03 by the pin-consolidation stream (ADR 0330). Forty-four
+  ;; merges had landed behind this one pin while every K16 stream was told the
+  ;; amu bump was batched, and two QEMU proofs were unreproducible from landed
+  ;; code because of it: both `AIUEOS_DOT_F32_QEMU_OK` and
+  ;; `AIUEOS_DEQUANT_KQUANT_QEMU_OK` answered `COULD-NOT-RUN compile-failed`
+  ;; against this repository's main and reproduced only against private
+  ;; branches. Every claim below was checked with `compare` against this SHA:
+  ;;   279fbc3  a bounded store answers with the word it STORED.
+  ;;   da3593b5 kernel-read-cr4 / kernel-write-cr4 / kernel-xsetbv -- the
+  ;;            "aggregate ABI rejected: call-abi-not-admitted" the dot-f32
+  ;;            probe was hitting.
+  ;;   a727bf7  six RTL8125 driver symbols and the FIFO-drain fuel tier.
+  ;;   1baa450  three SHA-256 symbols for a message arriving in pieces.
+  ;;   70984ea / 2c4d6c3 / 449792d  Qwen3.5 export names and measured fuel
+  ;;            tiers, tranches two and three.
+  ;;   1072816 / bbeed36 / a63faa6  Q4_K and Q6_K EMIT, thirty-two groups
+  ;;            unrolled; the four codebook formats refused BY NAME.
+  ;;   91033a9  the writable region is an lea, a function's address is a label.
+  ;;   d710558  a reentry parameter's home is stored inside the loop.
+  (is (= "452422f5caad1a40e7b1a793a59f93f44abe94a7"
          (dependency-pin 'io.github.kotoba-lang/kotoba-native)))
   ;; Advanced 2026-08-31 for two more instances of ADR-0286's class -- a KIR
   ;; i64 is a BigInt under ClojureScript and reached a host operation that
@@ -120,7 +140,13 @@
   ;;
   ;; This advance also carries 984a507, whose `:abort` decision ADR 0314 held
   ;; this pin to await. deps.edn records the adjudication and its three reasons.
-  (is (= "afd117d2533ed0b30eb5a4848083a94e25b01b40"
+  ;;
+  ;; Advanced 2026-09-03 (ADR 0330) to b2e5d9c: d809f28 the four codebook
+  ;; dequant formats with their six grid tables, 268e28b the fused
+  ;; dequantize-and-dot oracle the QEMU K-quant smoke checks its digits
+  ;; against, 18f7c3a the sealed control-effect vocabulary as this
+  ;; repository's export rather than a second derivation.
+  (is (= "b2e5d9c445b5a3553059b4f7cfcbfe54c5db7786"
          (dependency-pin 'io.github.kotoba-lang/kotoba-kir)))
   ;; Advanced 2026-09-01 alongside the backend: the verifier re-derives the
   ;; two new arities and the v4 `expected-context`, and is what turns a
@@ -152,7 +178,14 @@
   ;;            had been pinned to kotoba-native a2023fed for 302 commits
   ;;            because three tests pinned SPILL SLOTS as literals across an
   ;;            allocator that gained a callee-saved tier (ADR 0027).
-  (is (= "7a8cdcd98227b86af18e0c6e4d33a3e51eff17ff"
+  ;;   dequant -- the fifth and sixth instances of the same independence:
+  ;;            b58c009 re-derives the fused dequantize-and-dot family and
+  ;;            bcea4a1 the four codebook formats on this side of the
+  ;;            boundary, so a format kotoba.kir admits and this repository
+  ;;            does not is a green `check` and a refusal at compile time
+  ;;            rather than a wrong artifact. 6a743c3 adds the image-symbol
+  ;;            name check (ADR 0330).
+  (is (= "6c66e8b7028cfd7c527f888c110d8abcb2936e2e"
          (dependency-pin 'io.github.kotoba-lang/kotoba-verifier)))
   (is (= 7 (:abi/version aggregate-abi/contract)))
   (is (= :recursive-word-handles
