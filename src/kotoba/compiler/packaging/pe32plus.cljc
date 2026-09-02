@@ -252,14 +252,13 @@
    (store-status-nibble :r15d 0 :status-low-digit :status-low-store
                         :status-low)
    [0x49 0x8b 0x4d 0x40 0x48 0x85 0xc9 0x0f 0x84]
-   [(rip :preflight-return)]
+   [(rip :preflight-hold)]
    [0x48 0x8d 0x15] [(rip :status-message)]
    [0x48 0x8b 0x41 0x08 0xff 0xd0]
-   [(label :preflight-return)]
-   ;; Return before ExitBootServices so firmware can recover/retry PXE after
-   ;; the one-shot diagnostic. Restore the Microsoft x64 entry frame exactly.
-   [0xb8 0x01 0x00 0x00 0x00 0x48 0x83 0xc4 0x28
-    0x41 0x5f 0x41 0x5e 0x41 0x5d 0x41 0x5c 0xc3]))
+   [(label :preflight-hold)]
+   ;; Keep the physical diagnostic visible. Returning EFI_LOAD_ERROR made the
+   ;; K16 immediately retry PXE and erase STATUS before it could be recorded.
+   [0xfa 0xf4 0xeb 0xfd]))
 
 (defn package-embedded-kernel
   "Generate a position-independent PE32+ UEFI transition loader around a

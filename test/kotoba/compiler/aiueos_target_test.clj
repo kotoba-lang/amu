@@ -295,7 +295,10 @@
       (is (some #(= (utf16-bytes "AIUEOS K16 PREFLIGHT STATUS 00\r\n") %)
                 (partition (count (utf16-bytes
                                    "AIUEOS K16 PREFLIGHT STATUS 00\r\n"))
-                           1 diagnostic-bytes))))
+                           1 diagnostic-bytes)))
+      (is (some #(= [0xfa 0xf4 0xeb 0xfd] %)
+                (partition 4 1 diagnostic-bytes))
+          "physical preflight holds the status screen instead of retrying PXE"))
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #"x86-64 ET_EXEC"
           (pe32plus/package-embedded-kernel (vec (repeat 128 0)))))))
 
