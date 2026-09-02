@@ -43,21 +43,28 @@
         ;; elaboration). Resyncing this repository's copy alone would have left
         ;; the classpath holding two grammars, so the pin moves with it.
         ;;
-        ;; TWO COMMITS BEHIND ON PURPOSE at merge time, 2026-09-03 (ADR 0330).
-        ;; kotoba-sema `62ecebf0` resynced the vendored grammar again, to
-        ;; kotoba-lang `ca2e595a` (sha256 67561e57). The wave is still moving,
-        ;; and the copy in this repository has to equal the copy in the sema
-        ;; that is PINNED here -- not the newest one -- or the classpath
-        ;; shadowing in ADR 0327 puts two grammars on one classpath again.
-        ;; So this is the matching pair, measured:
+        ;; THE PIN AND THE VENDORED GRAMMAR MOVE TOGETHER (ADR 0330's
+        ;; postscript, which records the merge that proved it). The copy
+        ;; in this repository's `resources/` SHADOWS kotoba-sema's own copy on
+        ;; the classpath, so the two have to be the same bytes or the compiler
+        ;; reads a grammar its frontend was not built against (ADR 0327).
         ;;
-        ;;   this repository's resources/kotoba/lang/guest-grammar.edn  3e3f9748
-        ;;   kotoba-sema @1a073853                                      3e3f9748
+        ;; This is not a hypothetical: on 2026-09-03 #762 landed the pair at
+        ;; sha256 3e3f9748 and #761 landed the NEXT resync of the copy alone,
+        ;; minutes apart. Each was green on its own base; the merge of the two
+        ;; was red, on the only test that compares them, and nothing ran that
+        ;; test on the combination until after it was main.
         ;;
-        ;; The next resync moves both together, or neither.
+        ;; The pair, measured 2026-09-03:
+        ;;
+        ;;   this repository's resources/kotoba/lang/guest-grammar.edn  6e1202fd
+        ;;   kotoba-sema @1587f573                                      6e1202fd
+        ;;
+        ;; `guest_grammar_vendor_test/authority-grammar-sha256` pins the same
+        ;; digest, so the three move in one commit or the suite goes red.
         io.github.kotoba-lang/kotoba-sema
         {:git/url "https://github.com/kotoba-lang/kotoba-sema.git"
-         :git/sha "1a07385368e5efb09aed4d194df03d5110f2f2d8"}
+         :git/sha "1587f573bde8bb3ef1b7682acf415a9752b30a2f"}
         ;; ADR-2607266000 Phase B: these responsibilities moved out of this repo.
         ;;
         ;; The slice-value stream held this pin on purpose (ADR 0314), because

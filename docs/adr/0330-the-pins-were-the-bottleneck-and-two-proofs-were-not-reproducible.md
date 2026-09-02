@@ -225,3 +225,100 @@ Deliberately out of scope:
 - `aggregate_abi_test` asserts three pins as literals. That is what turns a
   forgotten pin into a red required check rather than a silent divergence, and
   it earned its keep here: a partial local run never touches it; CI does.
+
+---
+
+## Postscript, 2026-09-03: this merge left main red for one commit
+
+The pin/grammar pair this ADR argues for was landed as a pair, and then broken
+by the next commit — not by a mistake in either commit, but because two green
+branches produce a merged tree no check has seen. Recorded here rather than in
+its own ADR because it is this commit's immediate consequence, and repaired in
+the commit that follows it.
+
+### What happened
+
+On 2026-09-03, within about twenty minutes:
+
+| | change | grammar copy here | `kotoba-sema` pin | its copy |
+|---|---|---|---|---|
+| `b8e8cc39` | main before both | `61e0f867` | `196d5817` | `1dfb0bb5` |
+| #762 `69e922ee` | pins + resync, as a **pair** | `3e3f9748` | `1a073853` | `3e3f9748` |
+| #761 `b822a01b` | resync of the **copy alone** | `67561e57` | `196d5817` | *unchanged* |
+| `6c245f69` | main after both | `67561e57` | `1a073853` | `3e3f9748` |
+
+Both pull requests were green. #762's thirteen required checks all passed on
+`69e922ee`, and its `deps.edn` said in as many words that the copy and the pin
+move together or neither moves. #761 was green on `b8e8cc39`, where
+`guest_grammar_vendor_test` **did not yet exist** — that file arrived with #762.
+
+The merge of the two is red, on exactly the test that compares them:
+
+```
+FAIL in (every-classpath-copy-of-the-grammar-is-the-same-grammar)
+two classpath copies of the grammar disagree; which one the compiler reads is
+decided by classpath order
+  .../amu/resources/kotoba/lang/guest-grammar.edn                67561e57…
+  .../kotoba-sema/1a073853/resources/kotoba/lang/guest-grammar.edn 3e3f9748…
+  differing heads: {}
+
+FAIL in (every-classpath-copy-is-the-authority-of-the-resync-wave)
+  expected 3e3f9748…   actual 67561e57…
+```
+
+`differing heads: {}` is the mercy: the two copies name the same
+`:forbidden-heads` and the same `:admitted-builtins`, so no program compiled
+differently in the window. The 191-line difference is the documentation
+`ba9766b0` added to `:admitted-builtins`. The suite on main was `1303 tests /
+9453 assertions / 2 failures`, and both failures are these.
+
+### Why no check could have caught it
+
+Neither branch was wrong. Neither branch was untested. **The combination was
+never tested, because GitHub's required checks test a head against its own base,
+and the merge produces a tree that no run has seen.** A branch protection rule
+that required a rebuild against current main would have caught this one; this
+repository does not have one, and adding one is a policy question with its own
+costs (every merge serialises behind a 20-minute matrix).
+
+That is the general shape and it is not fixable inside either PR. What *is*
+fixable is the specific coupling that made a merge-skew into a red suite: two
+files in two repositories that must hold the same bytes, moved by different
+commits.
+
+### The decision this adds
+
+**The `kotoba-sema` pin, this repository's vendored `guest-grammar.edn`, and
+`guest_grammar_vendor_test/authority-grammar-sha256` are one edit.** Any commit
+that moves one of the three moves all three, in the same commit. Repaired here
+by taking the current consistent triple:
+
+| | sha256 |
+|---|---|
+| `resources/kotoba/lang/guest-grammar.edn` | `6e1202fd` |
+| `kotoba-sema` `1587f573` (the new pin) | `6e1202fd` |
+| `authority-grammar-sha256` | `6e1202fd` |
+
+That digest moved **three times in one day** — `3e3f9748`, `67561e57`,
+`6e1202fd` — which is why the rule has to be about the edit rather than about
+any particular value.
+
+Note what the test does *not* do, deliberately: it never reads kotoba-lang's
+live authority. It compares the copies that are actually on this classpath
+against a literal. So a consistent triple stays green while the wave keeps
+moving, and goes red only when someone moves one leg of it. That is the correct
+sensitivity — a wave in flight is not this repository's emergency, but a
+classpath with two answers on it is.
+
+### Consequences of that rule
+
+- A resync PR that touches only `resources/kotoba/lang/guest-grammar.edn` is
+  incomplete by construction, and this ADR is what to point at when refusing
+  one.
+- The window in which main was red is recorded rather than quietly closed:
+  `6c245f69`, two failing assertions, no semantic drift, repaired in the next
+  commit. Rewriting history to hide it would have cost the next reader the
+  measurement that produced this rule.
+- The general problem — merged trees no check has seen — is left open here on
+  purpose. It is a branch-protection decision, not a grammar one.
+
