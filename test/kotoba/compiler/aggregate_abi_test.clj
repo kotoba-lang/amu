@@ -91,12 +91,23 @@
   ;;          x86_64-aiueos-kernel-v1` refuses both objects with "Kotoba kernel
   ;;          object declares an aiueos export with no admitted symbol".
   ;;
-  ;;          The SHA below is 2c4d6c3 and not kotoba-native's current tip: it
-  ;;          is the revision both objects were compiled at, verified
-  ;;          byte-identical across the JVM and --jvm-free routes, and run on a
-  ;;          CPU under QEMU. Pinning the tip would record a number nobody
-  ;;          measured. It is an ancestor of that tip.
-  (is (= "2c4d6c3ffd115b4be3e6f4f2a4af8343197f00c0"
+  ;; boot-scratch -- 2026-09-02: `:scratch-region` (`lea r10,[r9+0x60]`, four
+  ;;           bytes) and `:x86-64/function-address` (`lea dst,[rip+disp32]`,
+  ;;           resolved against the same label table a call uses), plus
+  ;;           `kotoba.native.image-scratch` -- the offset and the 16 KiB
+  ;;           reservation, read by the encoder AND by this repository's PE32+
+  ;;           packager (kotoba-native ADR-0068/0069).
+  ;;
+  ;;          The SHA below is 452422f, which is kotoba-native's main and not
+  ;;          either stream's own merge: 2c4d6c3 (qwen3) and 91033a9
+  ;;          (boot-scratch) are on different lines of that history and neither
+  ;;          contains the other. Both were checked with
+  ;;          `merge-base --is-ancestor` against 452422f rather than assumed to
+  ;;          be in it. Both Qwen objects were then RE-COMPILED at 452422f and
+  ;;          reproduce the committed aiueos bytes exactly -- 5cd0baa6... at
+  ;;          17,872 and 23308afe... at 6,808 -- so this pin is measured and
+  ;;          not merely reachable.
+  (is (= "452422f5caad1a40e7b1a793a59f93f44abe94a7"
          (dependency-pin 'io.github.kotoba-lang/kotoba-native)))
   ;; Advanced 2026-08-31 for two more instances of ADR-0286's class -- a KIR
   ;; i64 is a BigInt under ClojureScript and reached a host operation that
@@ -136,7 +147,12 @@
   ;;
   ;; This advance also carries 984a507, whose `:abort` decision ADR 0314 held
   ;; this pin to await. deps.edn records the adjudication and its three reasons.
-  (is (= "afd117d2533ed0b30eb5a4848083a94e25b01b40"
+  ;;
+  ;; Advanced 2026-09-02 again (boot-scratch, ADR-0242): the two heads that
+  ;; name a place in the IMAGE -- its `.data` reservation and its function
+  ;; labels -- refuse under `:image-address-unavailable` rather than under the
+  ;; literal pool's keyword, and both mark a module kernel-native.
+  (is (= "ad6db332a06d52bdb037536ad191d48dc1d5f394"
          (dependency-pin 'io.github.kotoba-lang/kotoba-kir)))
   ;; Advanced 2026-09-01 alongside the backend: the verifier re-derives the
   ;; two new arities and the v4 `expected-context`, and is what turns a
@@ -168,7 +184,12 @@
   ;;            had been pinned to kotoba-native a2023fed for 302 commits
   ;;            because three tests pinned SPILL SLOTS as literals across an
   ;;            allocator that gained a callee-saved tier (ADR 0027).
-  (is (= "7a8cdcd98227b86af18e0c6e4d33a3e51eff17ff"
+  ;;   boot-scratch -- the arity row for `kernel-scratch-region` and, for
+  ;;            `kernel-function-address`, a check on the NAME. Its argument is
+  ;;            source text and is not walked, so with the name unchecked
+  ;;            nothing in that file stands between a misspelling and a backend
+  ;;            `lea` at a label it would have to invent (ADR-0044).
+  (is (= "6a743c3054e824e72ce703fde4f2ed7a59a404c3"
          (dependency-pin 'io.github.kotoba-lang/kotoba-verifier)))
   (is (= 7 (:abi/version aggregate-abi/contract)))
   (is (= :recursive-word-handles
