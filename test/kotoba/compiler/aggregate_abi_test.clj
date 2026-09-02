@@ -120,7 +120,15 @@
   ;;
   ;; This advance also carries 984a507, whose `:abort` decision ADR 0314 held
   ;; this pin to await. deps.edn records the adjudication and its three reasons.
-  (is (= "afd117d2533ed0b30eb5a4848083a94e25b01b40"
+  ;;
+  ;; Advanced 2026-09-03: `2cfa97ae`, which computes the i64 key order without
+  ;; `clojure.core/compare`. That is the KIR half of kotoba-sema 93790c4b
+  ;; (integer and string map keys through the friendly surface): the frontend
+  ;; admitting `{3 30 1 10}` is worth nothing if the runtime cannot order those
+  ;; keys portably. The pin also carries the four codebook dequant formats
+  ;; (95ed4bc8) and ADR-0266's sealed control-effect vocabulary. The ten frozen
+  ;; identity vectors below are unchanged by this advance.
+  (is (= "b2e5d9c445b5a3553059b4f7cfcbfe54c5db7786"
          (dependency-pin 'io.github.kotoba-lang/kotoba-kir)))
   ;; Advanced 2026-09-01 alongside the backend: the verifier re-derives the
   ;; two new arities and the v4 `expected-context`, and is what turns a

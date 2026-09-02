@@ -642,11 +642,16 @@
                            target-name)))))
 
 (deftest typed-sets-are-unique-canonically-ordered-and-persistent
+  ;; The membership export is `has-item`, not `contains?`: kotoba-sema 93790c4b
+  ;; added `map-presence-operations` (`contains?`, `dissoc`) to the friendly map
+  ;; surface and therefore to `reserved-function-names`, so a guest function
+  ;; named `contains?` would silently shadow a head. The refusal is the point;
+  ;; this fixture just stopped asking for the name.
   (let [type [:set :i64]
-        source "(ns set.typed (:export [make duplicate contains? add remove count-items same?]))
+        source "(ns set.typed (:export [make duplicate has-item add remove count-items same?]))
                 (defn make [] [:set :i64] (typed-set [:set :i64] 3 1 2))
                 (defn duplicate [] [:set :i64] (typed-set [:set :i64] 1 1))
-                (defn contains? [value [:set :i64] item :i64] :bool
+                (defn has-item [value [:set :i64] item :i64] :bool
                   (typed-set-contains [:set :i64] value item))
                 (defn add [value [:set :i64] item :i64] [:set :i64]
                   (typed-set-conj [:set :i64] value item))
@@ -663,16 +668,16 @@
         probe (str "import('data:text/javascript;base64," encoded
                    "').then(m=>{const x=m.instantiateKotoba({}),t=Object.freeze(['set','i64']);"
                    "const a=x.make(),b=x.add(a,4n),c=x.remove(b,2n);"
-                   "if(a[1].join(',')!=='1,2,3'||!x['contains?'](a,2n)||x['contains?'](a,9n)||x['count-items'](a)!==3n)process.exit(2);"
+                   "if(a[1].join(',')!=='1,2,3'||!x['has-item'](a,2n)||x['has-item'](a,9n)||x['count-items'](a)!==3n)process.exit(2);"
                    "if(a[1].length!==3||b[1].join(',')!=='1,2,3,4'||c[1].join(',')!=='1,3,4'||!Object.isFrozen(c[1]))process.exit(3);"
                    "if(x['same?'](a,[t,[3n,2n,1n]])!==1n||x['same?'](a,b)!==0n)process.exit(4);"
                    "try{x.duplicate();process.exit(5)}catch(e){if(e.message!=='duplicate-set-item')process.exit(6)}"
-                   "try{x['contains?']([Object.freeze(['set','string']),['1']],1n);process.exit(7)}"
+                   "try{x['has-item']([Object.freeze(['set','string']),['1']],1n);process.exit(7)}"
                    "catch(e){if(e.message!=='invalid-typed-set')process.exit(8)}})")
         node-result (shell/sh "node" "--input-type=module" "-e" probe)]
     (is (= [type [1 2 3]] (ir/execute kir 'make [])))
-    (is (true? (ir/execute kir 'contains? [[type [3 1 2]] 2])))
-    (is (false? (ir/execute kir 'contains? [[type [3 1 2]] 9])))
+    (is (true? (ir/execute kir 'has-item [[type [3 1 2]] 2])))
+    (is (false? (ir/execute kir 'has-item [[type [3 1 2]] 9])))
     (is (= [type [1 2 3 4]] (ir/execute kir 'add [[type [3 1 2]] 4])))
     (is (= [type [1 3]] (ir/execute kir 'remove [[type [3 1 2]] 2])))
     (is (= 1 (ir/execute kir 'same? [[type [3 1 2]] [type [1 2 3]]])))

@@ -349,13 +349,46 @@
     (is (zero? (:exit probe)) (:err probe))))
 
 (deftest direct-floating-ordered-collections-fail-closed
-  (doseq [type ["[:set :f64]" "[:map :keyword :f64]" "[:map :f32 :i64]"]]
-    (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo
-         #"direct floating"
-         (compiler/compile-source
-          (str "(defn main [] " type " 0)")
-          :wasm32-browser-kotoba-v1)))))
+  ;; kotoba-sema 93790c4b split one message into three facts, because one
+  ;; message covering all of them told the reader none of them: a floating SET
+  ;; ITEM has no ordering, a floating map VALUE is outside the structured
+  ;; scalar ABI, and a floating map KEY additionally has no identity to be a
+  ;; key by. The codes are what this pins -- a shared `#"direct floating"`
+  ;; regex could not tell the key refusal from the value one, and would have
+  ;; gone on passing if the key case silently started refusing for the value
+  ;; case's reason.
+  (doseq [[type code fragment]
+          [["[:set :f64]" :kotoba.error/floating-set-item "set items"]
+           ["[:map :keyword :f64]" :kotoba.error/floating-map-kv "map value type"]
+           ["[:map :f32 :i64]" :kotoba.error/floating-map-kv "map key type"]]]
+    (let [e (try (compiler/compile-source
+                  (str "(defn main [] " type " 0)")
+                  :wasm32-browser-kotoba-v1)
+                 nil
+                 (catch clojure.lang.ExceptionInfo e e))]
+      (is (some? e) (str type " must be refused"))
+      (is (= code (:kotoba.error/code (ex-data e)))
+          (str type " refused for " (pr-str (ex-data e))))
+      (is (.contains (str (ex-message e)) ^String fragment)
+          (str type " message was " (pr-str (ex-message e))))))
+  ;; The control: swap the float for an i64 and the SAME source gets past type
+  ;; validation entirely -- it is refused later, by the body check, for a
+  ;; mismatch between `0` and the declared type. So the three refusals above
+  ;; are about the float and not about the collection shape. `[:map :i64 :i64]`
+  ;; passing validation here is also the type-level half of kotoba-sema
+  ;; 93790c4b: an integer map key is a key.
+  (doseq [type ["[:set :i64]" "[:map :keyword :i64]" "[:map :i64 :i64]"]]
+    (let [e (try (compiler/compile-source
+                  (str "(defn main [] " type " 0)")
+                  :wasm32-browser-kotoba-v1)
+                 nil
+                 (catch clojure.lang.ExceptionInfo e e))]
+      (is (some? e) (str type " with an i64 body is still a mismatch"))
+      (is (= :kotoba.error/subset-reject (:kotoba.error/code (ex-data e)))
+          (str type " refused for " (pr-str (ex-data e))))
+      (is (.contains (str (ex-message e)) "expression type mismatch")
+          (str type " must reach the body check, not the type gate; got "
+               (pr-str (ex-message e)))))))
 
 (deftest algebraic-operations-have-sealed-wasm-runtime-parity
   (let [source

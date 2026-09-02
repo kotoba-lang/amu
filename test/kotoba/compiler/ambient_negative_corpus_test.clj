@@ -27,9 +27,18 @@
    [:load
     "(ns t (:export [f])) (defn f [] (load \"x\"))"
     :kotoba.error/ambient-forbidden]
+   ;; `atom` left :forbidden-heads on 2026-09-02 (kotoba-lang f6440aa1, the
+   ;; second widening path on :no-ambient-mutation; kotoba-sema 30106c30, local
+   ;; state slice 1). It is not admitted -- a function-local atom is compiled
+   ;; away into threaded values, and everything else about `atom` is still
+   ;; refused -- but the refusal now names WHERE the form was, not that the
+   ;; head exists. The four heads are held by `reserved-function-names` so a
+   ;; guest cannot shadow them. Pinning the new code literally is the point:
+   ;; if this ever falls back to admitting `(atom 1)` in expression position,
+   ;; the assertion below fails rather than passing on a renamed reason.
    [:atom
     "(ns t (:export [f])) (defn f [] (atom 1))"
-    :kotoba.error/ambient-forbidden]
+    :kotoba.error/local-state-atom-position]
    [:future
     "(ns t (:export [f])) (defn f [] (future 1))"
     :kotoba.error/ambient-forbidden]
@@ -63,7 +72,19 @@
     :kotoba.error/namespace-export-clause]
    [:max-parameters-6
     "(ns t (:export [f])) (defn f [a b c d e g] :i64 0)"
-    :kotoba.error/max-parameters]])
+    :kotoba.error/max-parameters]
+   ;; The other three heads of local-state slice 1. Without these, the `:atom`
+   ;; row above would be the only thing standing between a widened head and an
+   ;; unnoticed admission.
+   [:swap-bang
+    "(ns t (:export [f])) (defn f [] (swap! x inc))"
+    nil]
+   [:reset-bang
+    "(ns t (:export [f])) (defn f [] (reset! x 1))"
+    nil]
+   [:deref
+    "(ns t (:export [f])) (defn f [] (deref x))"
+    nil]])
 
 (deftest ambient-and-forbidden-forms-always-reject
   (doseq [[id source expected-code] ambient-cases]
