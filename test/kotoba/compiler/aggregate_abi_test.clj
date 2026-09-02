@@ -80,7 +80,23 @@
   ;; qwen  -- 2026-09-02: the three Qwen3.5 forward-pass kernel objects
   ;;           (aiueos-qwen35-dot-f32 / -dequant-row / -matvec) enter
   ;;           kernel-object-entries with measured fuel tiers (kotoba-native#113).
-  (is (= "24f43e212085d5e22bc01ab4f478f9971fd9b72d"
+  ;;
+  ;; qwen3 -- 2026-09-03: `aiueos-qwen35-attention` and
+  ;;          `aiueos-qwen35-recurrent-step`, the fused softmax of
+  ;;          `full_attention` and the gated DeltaNet step, with fuel tiers
+  ;;          measured by bisection in the KIR interpreter and extrapolated to
+  ;;          the ceiling each object ADMITS rather than to the geometry K16
+  ;;          passes -- 33,554,432 and 4,194,304 (kotoba-native#133/#134,
+  ;;          aiueos ADR-0175). Without these two rows `amu compile --target
+  ;;          x86_64-aiueos-kernel-v1` refuses both objects with "Kotoba kernel
+  ;;          object declares an aiueos export with no admitted symbol".
+  ;;
+  ;;          The SHA below is 2c4d6c3 and not kotoba-native's current tip: it
+  ;;          is the revision both objects were compiled at, verified
+  ;;          byte-identical across the JVM and --jvm-free routes, and run on a
+  ;;          CPU under QEMU. Pinning the tip would record a number nobody
+  ;;          measured. It is an ancestor of that tip.
+  (is (= "2c4d6c3ffd115b4be3e6f4f2a4af8343197f00c0"
          (dependency-pin 'io.github.kotoba-lang/kotoba-native)))
   ;; Advanced 2026-08-31 for two more instances of ADR-0286's class -- a KIR
   ;; i64 is a BigInt under ClojureScript and reached a host operation that
