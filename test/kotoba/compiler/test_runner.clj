@@ -11,6 +11,7 @@
             [kotoba.compiler.application-syntax-test]
             [kotoba.compiler.cli-test]
             [kotoba.compiler.core-test]
+            [kotoba.compiler.definition-identity-test]
             [kotoba.compiler.coverage-test]
             [kotoba.compiler.coverage-evidence-test]
             [kotoba.compiler.bounded-edn-test]
@@ -184,6 +185,7 @@
    'kotoba.compiler.application-syntax-test
    'kotoba.compiler.cli-test
    'kotoba.compiler.core-test
+   'kotoba.compiler.definition-identity-test
    'kotoba.compiler.coverage-test
    'kotoba.compiler.coverage-evidence-test
    'kotoba.compiler.bounded-edn-test

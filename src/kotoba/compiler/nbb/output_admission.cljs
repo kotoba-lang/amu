@@ -16,9 +16,15 @@
 (def format :kotoba.output-admission/v1)
 
 (def ^:private provenance-keys
+  "The CLOSED set of keys a sealed provenance record may carry. Closed on
+  purpose: a record with an extra key is a record this verifier does not
+  understand, and admitting it would mean admitting whatever the extra key
+  said. `:definitions` joined the set when the compiler began sealing the
+  definition graph (ADR 0300) -- and this line is where that change was
+  caught, by a verifier that refused rather than by a test that noticed."
   #{:format :builder :compiler :language :source-sha256 :policy-sha256
     :build-metadata-sha256 :hir-sha256 :kir-sha256 :target
-    :target-profile-sha256 :compatibility-sha256 :outputs :sha256})
+    :target-profile-sha256 :compatibility-sha256 :definitions :outputs :sha256})
 
 (def ^:private wasm-targets
   #{:wasm32-kotoba-v1 :wasm32-browser-kotoba-v1 :wasm32-wasi-kotoba-v1})
@@ -44,6 +50,14 @@
                                           :kir-sha256 :target-profile-sha256
                                           :compatibility-sha256) decoded))
                    (= #{:primary} (set (keys (:outputs decoded))))
+                   ;; The definition graph must be PRESENT and must say which
+                   ;; contract it speaks. An absent key would mean an artifact
+                   ;; built before ADR 0300 -- or one whose identity step was
+                   ;; skipped -- and those must not verify as though they had
+                   ;; been measured.
+                   (map? (:definitions decoded))
+                   (= :kotoba.definition-identity/v1
+                      (:contract (:definitions decoded)))
                    (map? primary))
       (reject! :malformed-provenance))
     decoded))

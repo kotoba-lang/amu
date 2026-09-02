@@ -15,6 +15,7 @@ const usage = [
   "       amu compile --module-lock <lock> --blocks <dir> --target <target> --output <file>",
   "       (both halves run without a JDK; add --jvm-free to prove it)",
   "       amu check <entry> --source-path <dir>            # links, emits nothing",
+  "       amu definition-cids <file> [--source-path <dir>]  # one CID per definition",
   "       amu compile <entry> --source-path <dir> --unpinned --target <target> --output <file>",
   "       amu worker [--target wasm32|x86_64|aarch64]",
   "       amu inspect <file.kotoba|file.cljk|file.cljc> [--output interface.edn]",
@@ -112,6 +113,7 @@ function nbbNativeEligible(args) {
   const command = args[0];
   if (command === "compile" && divergentAiueosKernelImage(args)) return false;
   return command === "check" || command === "extract-native"
+    || command === "definition-cids"
     || command === "module-lock"
     || command === "verify-output-set" || command === "sign-output-set"
 
@@ -122,7 +124,8 @@ function nbbNativeEligible(args) {
 function nbbEntrypoint(root, args) {
   const command = args[0];
   const target = option(args, "--target");
-  const wasm = command === "check" || target === undefined || target.startsWith("wasm32");
+  const wasm = command === "check" || command === "definition-cids"
+    || target === undefined || target.startsWith("wasm32");
   const filename = ["verify-output-set", "sign-output-set"].includes(command) ? "output_set_cli.cljs"
     : command === "extract-native" ? "x86_64_cli.cljs"
     : wasm ? "wasm_cli.cljs"
