@@ -1,0 +1,33 @@
+(ns examples.i64-shift)
+
+;; A shift count is a guest literal, and the two compiler hosts represent a
+;; guest literal differently: a `long` on the JVM, a JavaScript `bigint` under
+;; nbb. `kotoba-verifier` re-derives the "count must be an integer LITERAL in
+;; [0,63]" rule -- the restriction that lets the native backends lower these
+;; onto CL / x1 with no range check -- and until kotoba-verifier 3d7a6f0 it
+;; re-derived it with bare `integer?`, which is false for a bigint. So on the
+;; JDK-free route the count of EVERY shift failed the literal test and NO
+;; artifact using one could be built, while `clojure -M:run` compiled the same
+;; source. This file is the fixture that makes that route regression visible.
+;;
+;; All three i64 shifts, because they are three separate table entries. The
+;; argument is signed and the counts differ so that the three cannot be
+;; confused for each other: at x = -8 the result is
+;;   (-8 << 3) + ((-8 >> 1) + (u64(-8) >>> 63)) = -64 + -4 + 1 = -67
+;; and the `+1` is contributed only by the LOGICAL right shift -- swap
+;; `u64-shift-right` for `i64-shift-right` and it becomes -68. Measured by
+;; executing the artifact under the W^X loader, not computed and trusted.
+;;
+;; i32 shifts are deliberately absent: their gate had the identical defect and
+;; is fixed with the same predicate, but `:i32` typed values are not admitted
+;; on native at all ("typed values currently require the kotoba-script web
+;; target, typed Wasm target, or qualified native ... features"), so there is
+;; no native artifact to execute. That half is pinned in kotoba-verifier's own
+;; `verifier_shift_literal_test.cljc`, which runs on both hosts.
+
+(defn mixed [x]
+  (+ (i64-shift-left x 3)
+     (+ (i64-shift-right x 1)
+        (u64-shift-right x 63))))
+
+(defn main [] (mixed -8))

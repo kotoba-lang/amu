@@ -79,7 +79,14 @@
   ;; boot: advanced 2026-09-02 so the firmware target may name the machine
   ;; (ADR-0020). Refusing :x86_64-aiueos-uefi-v1 a port write refused the
   ;; target its own profile describes, and is why BOOTX64.EFI was still C.
-  (is (= "8158aa866f6ccdd7d712270d5158547f7534556f"
+  ;; shift: advanced 2026-09-02 so a shift count is recognized as a literal on
+  ;; BOTH compiler hosts (ADR-0022, verifier 3d7a6f0). The gate was bare
+  ;; `integer?`, false for the JavaScript bigint every guest literal is under
+  ;; nbb, so no artifact using an i64 or i32 shift could be built on the
+  ;; JDK-free route while the JVM route compiled the same source (this repo's
+  ;; ADR-0292). The pin itself is the branch tip, which also carries the
+  ;; interrupt entry address gate.
+  (is (= "c2ce475a7f4d083a259b6b626a5ece765057fac4"
          (dependency-pin 'io.github.kotoba-lang/kotoba-verifier)))
   (is (= 7 (:abi/version aggregate-abi/contract)))
   (is (= :recursive-word-handles

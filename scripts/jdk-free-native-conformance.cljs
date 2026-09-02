@@ -78,7 +78,21 @@
              ;; four compile clean, eight do not. Expected value measured by
              ;; executing the artifact, not computed and trusted.
              {:source "many-constants.kotoba" :symbol "many-constants"
-              :arguments ["1"] :expected "1737764"}]]
+              :arguments ["1"] :expected "1737764"}
+             ;; All three i64 shifts. `kotoba-verifier` re-derives the "shift
+             ;; count must be an integer LITERAL in [0,63]" rule, and until
+             ;; 3d7a6f0 it re-derived it with bare `integer?` -- false for the
+             ;; JavaScript bigint every guest literal is under nbb. The count
+             ;; of every shift therefore failed the literal test and NO
+             ;; artifact using one could be built HERE, while `clojure -M:run`
+             ;; compiled the same source. Neither the JVM suite nor the JVM
+             ;; route of `bin/amu` could see it; only this driver can.
+             ;;
+             ;; The `+1` at x = -8 is contributed only by the logical right
+             ;; shift, so the three entries cannot be confused for each other.
+             ;; Measured by executing the artifact, not computed and trusted.
+             {:source "i64-shift.kotoba" :symbol "mixed"
+              :arguments ["-8"] :expected "-67"}]]
       (let [artifact (file (str symbol ".kexe"))
             binary (file (str symbol ".bin"))]
         (invoke ["compile" (.join path root "examples" source)
