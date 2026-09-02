@@ -5,6 +5,8 @@
             [kotoba.compiler.value-codec-test]
             [kotoba.compiler.test-runner-completeness-test]
             [kotoba.compiler.aiueos-target-test]
+            ;; boot: the UEFI firmware boundary's target gate.
+            [kotoba.compiler.uefi-target-gate-test]
             [kotoba.compiler.accelerator-test]
             [kotoba.compiler.application-syntax-test]
             [kotoba.compiler.cli-test]
@@ -171,6 +173,7 @@
    'kotoba.compiler.isa-execution-test
    'kotoba.compiler.native-fuel-metadata-test
    'kotoba.compiler.aiueos-target-test
+   'kotoba.compiler.uefi-target-gate-test
    'kotoba.compiler.accelerator-test
    'kotoba.compiler.application-syntax-test
    'kotoba.compiler.cli-test

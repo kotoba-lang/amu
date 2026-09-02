@@ -17,6 +17,7 @@
             [kotoba.kir.cljs-i64 :as i64]
             [kotoba.kir :as ir]
             [kotoba.compiler.provenance :as provenance]
+            [kotoba.compiler.uefi-operations :as uefi]
             [kotoba.kir.target :as target-profile]
             [kotoba.verifier :as verifier]))
 
@@ -156,6 +157,10 @@
                        (nil? (:entry (target-profile/profile target))))))
     (throw (ex-info "entryless libraries currently require the kotoba-script web target, the Wasm target, or an entryless native target"
                     {:phase :target :target target :backend backend})))
+  ;; boot: the same target gate the JVM route applies. A gate on one route is
+  ;; not a gate -- this driver serves `--target x86_64-aiueos-uefi-v1
+  ;; --artifact image` and would otherwise be the way around it.
+  (uefi/reject-outside-uefi-target! target hir)
   (let [admission (support/timed
                    "admission"
                    #(admission/check hir (support/capability-policy policy)))

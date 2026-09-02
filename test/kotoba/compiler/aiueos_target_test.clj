@@ -1,5 +1,6 @@
 (ns kotoba.compiler.aiueos-target-test
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [clojure.string :as str]
+            [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]
             [kotoba.artifact.core :as artifact]
             [kotoba.compiler.packaging.pe32plus :as pe32plus]
@@ -81,7 +82,12 @@
           [[:x86_64-aiueos-uefi-v1
            {:execution :firmware :artifact :pe32+ :subsystem :efi-application
              :entry :efi_main :abi :microsoft-x64
-             :entry-contract :microsoft-x64-zero-arity-efi-status-v1}]
+             ;; boot: v2 is the default a new program gets. v1 is still
+             ;; packageable and still tested -- `:entry-contracts` below is
+             ;; the pair, and the packager chooses by the entry's arity.
+             :entry-contract :microsoft-x64-two-arity-efi-status-v2
+             :entry-contracts {0 :microsoft-x64-zero-arity-efi-status-v1
+                               2 :microsoft-x64-two-arity-efi-status-v2}}]
            [:x86_64-aiueos-kernel-v1
             {:execution :kernel :artifact :elf64
              :entry :aiueos_kernel_entry :abi :aiueos-kernel-v1}]
@@ -203,10 +209,25 @@
     (is (empty? (:imports artifact)))))
 
 (deftest privileged-intrinsics-are-rejected-outside-the-kernel-target
-  (doseq [target [:x86_64-linux-kotoba-v1 :x86_64-aiueos-user-v1
-                  :x86_64-aiueos-uefi-v1]]
+  ;; boot: `:x86_64-aiueos-uefi-v1` left this list on 2026-09-02. It is now
+  ;; admitted (kotoba-verifier ADR-0020) and the case below asserts that,
+  ;; because dropping a target from a refusal list and asserting nothing in
+  ;; its place is how a rule stops being tested without anyone noticing. The
+  ;; rule the verifier now draws is FIRMWARE-or-kernel versus ordinary
+  ;; native, and `:x86_64-aiueos-user-v1` -- `:execution :process` -- stays
+  ;; on the refused side, which is what keeps the two apart.
+  (doseq [target [:x86_64-linux-kotoba-v1 :x86_64-aiueos-user-v1]]
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #"requires the aiueos kernel target"
           (compiler/compile-source "(defn main [] (kernel-read-cr3))" target)))))
+
+(deftest the-firmware-target-may-name-the-machine
+  ;; The other half of the list above. A UEFI application runs at CPL0 with
+  ;; boot services live, so it may read a control register and write a port --
+  ;; and must, or a bootloader cannot say anything at all.
+  (doseq [source ["(defn main [] (kernel-read-cr3))"
+                  "(defn main [] (kernel-out-u8 233 75))"]]
+    (is (some? (:binary (compiler/compile-source source :x86_64-aiueos-uefi-v1)))
+        source)))
 
 (deftest compiler-packages-an-embedded-kernel-uefi-boot-application
   (let [kernel (get-in (compiler/compile-source
@@ -697,6 +718,10 @@
     (is (= 0x1000 (read-le bytes (+ optional 16) 4)) "entry RVA")
     (is (= 0 (read-le bytes (+ directories 8) 4)) "import directory RVA")
     (is (= 0 (read-le bytes (+ directories 12) 4)) "import directory size")
+    ;; boot: derived, not frozen. This fixture's `.text` is small, so the
+    ;; layout still comes out at 0x1000/0x2000/0x3000 -- what changed is that
+    ;; the packager now COMPUTES it. `firmware-text-may-outgrow-one-page`
+    ;; below is the case that separates the two.
     (is (= 0x3000 (read-le bytes (+ directories (* 5 8)) 4)) "relocation RVA")
     (is (= 12 (read-le bytes (+ directories (* 5 8) 4) 4)))
     (is (= [:text :data :reloc] (:sections binary)))
@@ -714,17 +739,93 @@
                         (compiler/compile-source "(defn main [image] image)"
                                                  :x86_64-aiueos-uefi-v1))))
 
-;; amu#626 / aiueos ADR-0054. `kotoba.native.elf64`'s `kernel-object-entries`
-;; is the whole rule for a kernel object's public symbol, and it used to hand
-;; the probe's contract to anything it did not list. That is not a fallback but
-;; a collision: three of aiueos's `value-*` objects each compiled to a
-;; valid-looking ET_REL exporting `kotoba_aiueos_probe`, colliding with
-;; `kernel-probe` and with each other, and the compile said nothing. The rule
-;; was undiscoverable for exactly that reason -- every minimal source anyone
-;; wrote to find it got the generic symbol, and the real file did not.
-;;
-;; Both directions live in one deftest deliberately. The refusal alone would
-;; pass just as well if packaging had stopped admitting anything at all.
+;; ---------------------------------------------------------------------------
+;; boot: the two-arity EFI entry contract, and section placement that is
+;; computed rather than frozen.
+;; ---------------------------------------------------------------------------
+
+(defn- efi-binary [source]
+  (:binary (compiler/compile-source source :x86_64-aiueos-uefi-v1)))
+
+(deftest firmware-entry-contract-follows-the-entry-arity
+  (testing "a module with no efi-main keeps the zero-arity contract"
+    (let [binary (efi-binary "(defn main [] 0)")]
+      (is (= :microsoft-x64-zero-arity-efi-status-v1 (:entry-contract binary)))
+      (is (= 0 (:entry-arity binary)))
+      (is (= (quote main) (:source-entry binary)))))
+  (testing "a two-arity efi-main takes the v2 contract"
+    (let [binary (efi-binary
+                  "(defn efi-main [image-handle system-table] system-table) (defn main [] 0)")]
+      (is (= :microsoft-x64-two-arity-efi-status-v2 (:entry-contract binary)))
+      (is (= 2 (:entry-arity binary)))
+      (is (= (quote efi-main) (:source-entry binary))))))
+
+(deftest the-two-arity-shim-keeps-rcx-and-rdx-instead-of-discarding-them
+  ;; This is the whole reason the contract exists. The v1 shim reserved shadow
+  ;; space, loaded the context and called a zero-arity entry -- RCX
+  ;; (ImageHandle) and RDX (SystemTable) were simply never read, so a Kotoba
+  ;; program on this target could not reach the firmware at all.
+  (let [bytes (:bytes (efi-binary
+                       "(defn efi-main [image-handle system-table] system-table) (defn main [] 0)"))
+        shim (subvec bytes 0x200 (+ 0x200 35))]
+    (testing "the context pointer is still established first"
+      (is (= [0x48 0x83 0xec 0x28] (subvec shim 0 4)))
+      (is (= [0x4c 0x8d 0x0d] (subvec shim 4 7))))
+    (testing "ImageHandle is parked at context+0x50, where kernel-boot-info reads"
+      (is (= [0x49 0x89 0x49 0x50] (subvec shim 11 15))))
+    (testing "SystemTable at context+0x58, where kernel-system-table reads"
+      (is (= [0x49 0x89 0x51 0x58] (subvec shim 15 19))))
+    (testing "and both are passed positionally in the internal ABI's rdi/rsi"
+      (is (= [0x48 0x89 0xcf] (subvec shim 19 22)))
+      (is (= [0x48 0x89 0xd6] (subvec shim 22 25))))
+    (testing "then call, unwind, return the status"
+      (is (= 0xe8 (nth shim 25)))
+      (is (= [0x48 0x83 0xc4 0x28 0xc3] (subvec shim 30 35))))
+    (testing "the v1 shim did none of that"
+      (let [v1 (subvec (:bytes (efi-binary "(defn main [] 0)")) 0x200 (+ 0x200 21))]
+        (is (not= [0x49 0x89 0x49 0x50] (subvec v1 11 15)))))))
+
+(deftest the-context-is-large-enough-for-the-slots-the-shim-writes
+  ;; 0x58 + 8 = 96. At 80 the SystemTable store wrote past the section, and
+  ;; `kernel-boot-info` -- which has always read [r9+0x50] -- read past it.
+  (let [binary (efi-binary "(defn main [] 0)")]
+    (is (= 96 (:context-size binary)))
+    (is (<= (+ 0x58 8) (:context-size binary)))))
+
+(deftest firmware-text-may-outgrow-one-page
+  ;; The defect this closes: `.data` was frozen at RVA 0x2000, so a `.text`
+  ;; over 4096 bytes was mapped over by its own context section. The image was
+  ;; still a byte-valid PE -- nothing refused it -- so the failure appeared on
+  ;; the machine, not in the build.
+  ;;
+  ;; `main` is trivial and the 400 helpers are unreachable from it ON PURPOSE.
+  ;; Every declared function is laid out and exported, so this crosses the page
+  ;; on code SIZE with nothing else varying -- and a deep call chain cannot be
+  ;; used for it anyway: `(boot-link-142 (boot-link-141 ...))` hits "expression
+  ;; nesting exceeds admission limit" long before the page.
+  (let [links (map #(str "(defn boot-link-" % " [a b] "
+                         "(+ (bit-xor a " % ") (bit-and b " % ")))")
+                   (range 400))
+        binary (efi-binary (str (str/join " " links) " (defn main [] 0)"))
+        layout (:section-layout binary)]
+    (testing "the fixture really does exceed one page of code"
+      (is (< 0x1000 (get-in layout [:text :virtual-size]))))
+    (testing "and .data is placed after it, not on top of it"
+      (is (<= (+ (get-in layout [:text :rva]) (get-in layout [:text :virtual-size]))
+              (get-in layout [:data :rva]))))
+    (testing "with .reloc after that and SizeOfImage covering everything"
+      (is (<= (+ (get-in layout [:data :rva]) (get-in layout [:data :virtual-size]))
+              (get-in layout [:reloc :rva])))
+      (is (<= (+ (get-in layout [:reloc :rva]) (get-in layout [:reloc :virtual-size]))
+              (:image-size layout))))
+    (testing "every placement is section-aligned"
+      (doseq [section [:text :data :reloc]]
+        (is (zero? (mod (get-in layout [section :rva]) 0x1000)) section))
+      (is (zero? (mod (:image-size layout) 0x1000))))
+    (testing "and the frozen layout would have overlapped, which is the point"
+      (is (< 0x2000 (+ (get-in layout [:text :rva])
+                       (get-in layout [:text :virtual-size])))))))
+
 (deftest kernel-object-with-an-unlisted-aiueos-export-is-refused-not-given-the-probe-symbol
   (testing "an unlisted aiueos-* export is refused, and names itself"
     (let [thrown (try (compiler/compile-source
