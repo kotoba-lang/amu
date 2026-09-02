@@ -95,6 +95,7 @@
             [kotoba.compiler.ios-aot-test]
             [kotoba.compiler.interface-test]
             [kotoba.compiler.native-executor-test]
+            [kotoba.compiler.f32-native-execution-test]
             [kotoba.compiler.admission-test]
             [kotoba.compiler.guest-grammar-conformance-test]
             [kotoba.compiler.property-test]
@@ -313,6 +314,7 @@
    'kotoba.compiler.wasm-typed-test
    'kotoba.compiler.wasm32-kotoba-v1-qualification-test
    'kotoba.compiler.native-executor-test
+   'kotoba.compiler.f32-native-execution-test
    'kotoba.compiler.receipt-test
    'kotoba.compiler.ipld-adl-test
    'kotoba.compiler.ipld-adl-source-test

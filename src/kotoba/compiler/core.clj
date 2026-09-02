@@ -510,12 +510,27 @@
                                        language-profile (assoc :language-profile language-profile)
                                        (:admit-linked-synthetics? emit-metadata)
                                        (assoc :admit-linked-synthetics? true)))
-        ;; f32 and f64 gated separately: kotoba-native implements f64 scalar
-        ;; arithmetic (ADR-2608030300) and no f32 at all, so admitting them
-        ;; together would route f32 to a backend that cannot emit it.
+        ;; f32 and f64 were gated separately because kotoba-native implemented
+        ;; f64 scalar arithmetic (ADR-2608030300) and no f32 at all, so
+        ;; admitting them together would have routed f32 to a backend that
+        ;; could not emit it. Both widths now reach both native ISAs
+        ;; (kotoba-lang docs/adr/ADR-kotoba-floating-point-on-native.md, landed
+        ;; through kotoba-gmir / kotoba-mir / kotoba-codegen / kotoba-native),
+        ;; so the two sets are the same set and the gates are kept separate only
+        ;; because the two REFUSALS still have to name their own width.
+        ;;
+        ;; What is admitted on native is narrower than "f32", and the narrowing
+        ;; lives one layer down rather than here: `ir/only-native-word-typed-
+        ;; features?` refuses f32-min/f32-max (x86 MINSS/MAXSS return the second
+        ;; operand on NaN where AArch64 and the oracle return the NaN), the
+        ;; `-checked` conversions (they trap in the oracle and no backend emits
+        ;; the check), and the truncating float-to-int conversions (three
+        ;; answers out of domain). A gate here would have to duplicate that list
+        ;; and could then disagree with it.
         _ (when (and (ir/uses-f32? hir)
-                     (not (contains? #{:js-kotoba-v1 :wasm32-kotoba-v1} backend)))
-            (throw (ex-info "f32 values require the kotoba-script or Wasm target"
+                     (not (contains? #{:js-kotoba-v1 :wasm32-kotoba-v1
+                                       :x86_64-kotoba-v1 :aarch64-kotoba-v1} backend)))
+            (throw (ex-info "f32 values require the kotoba-script, Wasm or native target"
                             {:phase :target :target target :backend backend
                              :floating-point-policy floating-point-policy})))
         _ (when (and (ir/uses-f64? hir)

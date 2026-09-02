@@ -54,10 +54,17 @@
   ;; `vector-alloc` (slot 200) and `vector-assoc!` (slot 208), the two heads
   ;; KIR has declared and admitted since b6bfe23 with nothing on native to
   ;; emit them. Superproject ADR-2609010200.
-  ;; boot: advanced 2026-09-02 for the four UEFI firmware-boundary encodings
-  ;; (kotoba-native ADR-0039) -- :system-table, :load-ptr, :uefi-call2 and
-  ;; :jump-to, the four things a BOOTX64.EFI written in Kotoba has to name.
-  (is (= "4ccb2b5a707bc9dc1064ff4c68f3d86e3d1c81df"
+  ;; Advanced 2026-09-02 twice over, by two streams, and resolved to the tip
+  ;; that contains both:
+  ;;   f32  -- the KIR-to-GMIR lowering and both ISAs' encoders for the binary32
+  ;;           family, with byte goldens that assert the single-precision opcode
+  ;;           is present AND its double-precision twin is not. ADDSS and ADDSD
+  ;;           are one prefix byte apart and a program built from the wrong one
+  ;;           still returns a number (kotoba-native#104).
+  ;;   boot -- the four UEFI firmware-boundary encodings (kotoba-native
+  ;;           ADR-0039): :system-table, :load-ptr, :uefi-call2 and :jump-to,
+  ;;           the four things a BOOTX64.EFI written in Kotoba has to name.
+  (is (= "a5ddd788d22bd213f3d848c0e9dcc060c8b35d55"
          (dependency-pin 'io.github.kotoba-lang/kotoba-native)))
   ;; Advanced 2026-08-31 for two more instances of ADR-0286's class -- a KIR
   ;; i64 is a BigInt under ClojureScript and reached a host operation that
@@ -68,18 +75,29 @@
   ;; error for any guest declaring a capability, while `check --jvm-free`
   ;; passed. The same advance also drops an npm package (`@noble/hashes`) out
   ;; of `kotoba.kir.value`'s ClojureScript require graph.
-  ;; boot: advanced 2026-09-02 for the UEFI entry contract v2 on the firmware
-  ;; target profile, and the four operations' oracle refusals (ADR-0229).
-  (is (= "246b3814e58e10bf03f8bb807a7a0772f6651311"
+  ;; Advanced 2026-09-02 by the same two streams:
+  ;;   f32  -- the native admission, which carried the line "f32 is deliberately
+  ;;           absent: neither backend implements it" over an interpreter that
+  ;;           implements the whole family (kotoba-kir#58).
+  ;;   boot -- the UEFI entry contract v2 on the firmware target profile, and
+  ;;           the four operations' oracle refusals (ADR-0229).
+  (is (= "c4149fb120ece017ce87d0ef5e40547a2e6f3ee3"
          (dependency-pin 'io.github.kotoba-lang/kotoba-kir)))
   ;; Advanced 2026-09-01 alongside the backend: the verifier re-derives the
   ;; two new arities and the v4 `expected-context`, and is what turns a
   ;; mismatched ABI into an explicit refusal rather than a v3 artifact
   ;; hunting for slots that are not there.
-  ;; boot: advanced 2026-09-02 so the firmware target may name the machine
-  ;; (ADR-0020). Refusing :x86_64-aiueos-uefi-v1 a port write refused the
-  ;; target its own profile describes, and is why BOOTX64.EFI was still C.
-  (is (= "8158aa866f6ccdd7d712270d5158547f7534556f"
+  ;; Advanced 2026-09-02 by the same two streams:
+  ;;   f32  -- this verifier re-derives the admitted operation set INDEPENDENTLY
+  ;;           of kotoba.kir, so f32 admitted there and absent here produced a
+  ;;           green `check` and `{:error :verify, :message "runtime KIR
+  ;;           operation rejected"}` on compile. That is how the gap was found,
+  ;;           and it is why the two omission lists have to stay identical
+  ;;           across two repositories (kotoba-verifier#31).
+  ;;   boot -- so the firmware target may name the machine (ADR-0020). Refusing
+  ;;           :x86_64-aiueos-uefi-v1 a port write refused the target its own
+  ;;           profile describes, and is why BOOTX64.EFI was still C.
+  (is (= "3d7a6f031bdb131e46db6dbf62db13bbcbcf8896"
          (dependency-pin 'io.github.kotoba-lang/kotoba-verifier)))
   (is (= 7 (:abi/version aggregate-abi/contract)))
   (is (= :recursive-word-handles

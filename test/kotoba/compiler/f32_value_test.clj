@@ -149,10 +149,54 @@
     (is (zero? (:exit js-result)) (:err js-result))
     (is (zero? (:exit wasm-result)) (:err wasm-result))))
 
-(deftest f32-fails-closed-on-native-and-inside-structured-values
-  (testing "native targets never reinterpret f32 through i64"
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"f32 values require"
-                          (compiler/compile-source source :x86_64-kotoba-v1))))
+(deftest f32-reaches-native-but-only-the-agreed-operations
+  ;; This namespace used to assert "native targets never reinterpret f32
+  ;; through i64", and that is now exactly what they do: an f32 is one machine
+  ;; word holding its binary32 pattern sign-extended from bit 31 (kotoba-lang
+  ;; docs/adr/ADR-kotoba-floating-point-on-native.md, this repository's ADR
+  ;; 0292). The assertion is replaced rather than deleted, because what it was
+  ;; protecting -- that f32 does not reach a backend which cannot emit it --
+  ;; still holds for THREE families, and those are where the refusal moved.
+  (testing "the f32 slice both native backends implement compiles"
+    (doseq [target [:x86_64-kotoba-v1 :aarch64-kotoba-v1]]
+      (is (some? (:artifact
+                  (compiler/compile-source
+                   (str "(defn step [a :i64 b :i64] :i64"
+                        "  (f32-to-bits (f32-add (f32-from-bits a) (f32-from-bits b))))"
+                        "(defn main [] :i64 (step 1065353216 1073741824))")
+                   target)))
+          (str target " must emit binary32 arithmetic"))))
+  ;; Each of these is refused for its OWN measured reason, not as a class.
+  ;; Pinning them here means the ADR's list and the compiler's cannot drift
+  ;; apart silently -- admitting any one of them makes this test red.
+  (testing "min/max stay out: x86 MINSS/MAXSS return the second operand on NaN
+            while AArch64 FMIN and the KIR oracle return the NaN"
+    (doseq [op ["f32-min" "f32-max"]]
+      (is (thrown? clojure.lang.ExceptionInfo
+                   (compiler/compile-source
+                    (str "(defn step [a :i64 b :i64] :i64"
+                         "  (f32-to-bits (" op " (f32-from-bits a) (f32-from-bits b))))"
+                         "(defn main [] :i64 (step 0 0))")
+                    :x86_64-kotoba-v1))
+          op)))
+  (testing "the checked conversions stay out: they trap in the oracle on
+            inexactness and no backend emits the check"
+    (doseq [op ["i64-to-f32-checked"]]
+      (is (thrown? clojure.lang.ExceptionInfo
+                   (compiler/compile-source
+                    (str "(defn step [a :i64] :i64 (f32-to-bits (" op " a)))"
+                         "(defn main [] :i64 (step 1))")
+                    :x86_64-kotoba-v1))
+          op)))
+  (testing "the truncating float-to-int conversions stay out: x86 yields the
+            integer indefinite value, AArch64 saturates, the oracle traps"
+    (doseq [op ["f32-to-i64-truncating" "f32-to-i64-checked"]]
+      (is (thrown? clojure.lang.ExceptionInfo
+                   (compiler/compile-source
+                    (str "(defn step [a :i64] :i64 (" op " (f32-from-bits a)))"
+                         "(defn main [] :i64 (step 0))")
+                    :x86_64-kotoba-v1))
+          op)))
   (testing "the initial profile remains scalar-only"
     (is (thrown? clojure.lang.ExceptionInfo
                  (compiler/compile-source

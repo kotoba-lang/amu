@@ -1,0 +1,69 @@
+;; A binary32 dot product over i64-encoded inputs, which is the shape a
+;; dequantised inference kernel has: words come out of memory, become floats,
+;; multiply-accumulate, and the answer goes back out as a word.
+;;
+;; Everything here is deliberate about the native f32 contract
+;; (kotoba-lang docs/adr/ADR-kotoba-floating-point-on-native.md):
+;;
+;;   * The boundary is BITS, not floats. `:f32` is not a native function
+;;     parameter type -- the kexe export ABI passes i64 words -- so the inputs
+;;     arrive as patterns and `f32-from-bits` reads them.
+;;
+;;   * `i32-wrap` before `f32-from-bits`. A word that came from
+;;     `kernel-load-u32` is ZERO-extended, so every negative float's pattern is
+;;     above Integer/MAX_VALUE and the KIR oracle refuses it outright
+;;     ("f32 bit pattern is not signed i32"). The wrap is what makes the same
+;;     program mean the same thing to the oracle and to the machine.
+;;
+;;   * The literal is `0.0`, which is exact in binary32. An inexact literal such
+;;     as `0.1` is refused by the frontend rather than silently double-rounded;
+;;     the explicit spelling is `(f64-to-f32-rounded 0.1)`.
+;;
+;;   * `i64-to-f32-rounded` is here because it is the conversion an inference
+;;     kernel actually needs -- an integer quantised weight becoming a float.
+;;     Its inverse is NOT here: `f32-to-i64-truncating` has three different
+;;     answers out of domain (x86 yields INT64_MIN, AArch64 saturates, the
+;;     oracle traps) and is refused on native for that reason.
+
+(defn scaled [pattern :i64 scale :i64] :i64
+  ;; (float(bits) * float(scale)) as a pattern.
+  (f32-to-bits
+   (f32-mul (f32-from-bits (i32-wrap pattern))
+            (i64-to-f32-rounded scale))))
+
+(defn fma [acc :i64 x :i64 y :i64] :i64
+  ;; The inner loop of every dot product, as one function: accumulate
+  ;; x*y into acc, all three carried as patterns. No contraction -- the
+  ;; multiply rounds before the add sees it, which is the language's contract
+  ;; and what makes this answer identical on both ISAs and on the oracle. A
+  ;; fused multiply-add would give a DIFFERENT answer and is forbidden until it
+  ;; is a named operation of its own.
+  (f32-to-bits
+   (f32-add (f32-from-bits (i32-wrap acc))
+            (f32-mul (f32-from-bits (i32-wrap x))
+                     (f32-from-bits (i32-wrap y))))))
+
+(defn dot2 [a0 :i64 a1 :i64 b0 :i64 b1 :i64] :i64
+  ;; Four parameters, not six: the guest ABI bounds arity at five, so a real
+  ;; kernel accumulates through `fma` over a slice rather than taking its
+  ;; operands as arguments. This is the two-term case written out.
+  (fma (fma (f32-to-bits (f32-from-bits 0)) a0 b0) a1 b1))
+
+(defn norm3 [a0 :i64 a1 :i64 a2 :i64] :i64
+  ;; sqrt of the self dot product, and a comparison that observes NaN. Both are
+  ;; single-precision: the whole point of the byte goldens downstream is that
+  ;; SQRTSS and SQRTSD are one prefix byte apart.
+  (let [d (f32-from-bits (i32-wrap (fma (dot2 a0 a1 a0 a1) a2 a2)))]
+    (if (f32-unordered d d)
+      0
+      (f32-to-bits (f32-sqrt d)))))
+
+(defn widened [pattern :i64] :i64
+  ;; Widening is exact and total, so it round-trips. Narrowing is
+  ;; round-to-nearest-even, and it is spelled out loud.
+  (f32-to-bits (f64-to-f32-rounded (f32-to-f64-exact (f32-from-bits (i32-wrap pattern))))))
+
+(defn main [] :i64
+  ;; 1.0f = 0x3F800000, 2.0f = 0x40000000, 3.0f = 0x40400000.
+  ;; 1*1 + 2*2 + 3*3 = 14.0f = 0x41600000 = 1096810496.
+  (norm3 1065353216 1073741824 1077936128))
