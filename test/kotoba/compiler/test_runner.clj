@@ -65,11 +65,14 @@
             [kotoba.compiler.capability-deny-test]
             [kotoba.compiler.kir-trap-source-test]
             [kotoba.compiler.kernel-region-provenance-test]
+            [kotoba.compiler.native-device-io-test]
             [kotoba.compiler.slice-carrier-test]
             [kotoba.compiler.kernel-subregion-test]
             [kotoba.compiler.error-code-contract-test]
             [kotoba.compiler.frontend-condp-test]
             [kotoba.compiler.frontend-doseq-test]
+            ;; a let body is an implicit do; every form reaches the object
+            [kotoba.compiler.let-body-sequencing-test]
             [kotoba.compiler.frontend-dotimes-test]
             [kotoba.compiler.f64-value-test]
             [kotoba.compiler.f32-value-test]
@@ -233,12 +236,14 @@
    'kotoba.compiler.check-cli-test
    'kotoba.compiler.capability-deny-test
    'kotoba.compiler.kernel-region-provenance-test
+   'kotoba.compiler.native-device-io-test
    'kotoba.compiler.slice-carrier-test
    'kotoba.compiler.kernel-subregion-test
    'kotoba.compiler.kir-trap-source-test
    'kotoba.compiler.error-code-contract-test
    'kotoba.compiler.frontend-condp-test
    'kotoba.compiler.frontend-doseq-test
+   'kotoba.compiler.let-body-sequencing-test
    'kotoba.compiler.frontend-dotimes-test
    'kotoba.compiler.f64-value-test
    'kotoba.compiler.f32-value-test
