@@ -13,6 +13,7 @@
             [kotoba.compiler.core :as compiler]
             [kotoba.compiler.definition-identity :as di]
             [kotoba.kir :as ir]
+            [kotoba.kir.alpha-normalization :as an]
             [kotoba.kir.definition-identity :as kir-id]
             [kotoba.sema :as sema]))
 
@@ -34,10 +35,18 @@
 (deftest kir-normalize-alone-leaks-binder-names
   (testing "kotoba.kir.definition-identity/normalize is a canonical ENCODER, not
   an alpha-normalizer: it maps a symbol to its own name. Two bodies differing
-  only in a binder therefore hash differently, which is why the compiler
-  renames binders before handing anything to it. If this ever goes green,
-  kir has grown de Bruijn normalization and `alpha-normalize` here can be
-  reconsidered -- not before."
+  only in a binder therefore hash differently, which is why binders are renamed
+  before anything is handed to it.
+
+  Still true after the 2026-09-02 convergence, and that is the point. The walk
+  moved into kotoba-kir as `kotoba.kir.alpha-normalization`, a SEPARATE
+  namespace that `definition-cid` deliberately does not call: identity hashes a
+  payload whose :kir may be a const or a do-block, renaming must precede
+  dependency linking rather than follow it, and verification needs the caller's
+  call targets. So normalization is still an explicit step, and this is still
+  the measurement that says why it has to be one. If it ever goes green,
+  `definition-cid` has started normalizing internally and the ordering above
+  needs re-deciding -- not before."
     (let [payload (fn [body]
                     {:definition/profile-version 6
                      :definition/desugar-contract-version 1
@@ -141,87 +150,106 @@
 ;; ---------------------------------------------------------------------------
 ;; Refusals are answers, and they are not CIDs
 
-;; ---------------------------------------------------------------------------
-;; `:abort` in the sealed row -- ADJUDICATED 2026-09-03
-;;
-;; ADR-0300 section 4 said "`:abort` has no keyword the bridge can seal", and
-;; the eight assertions below asserted the consequence: an aborting function
-;; got `:definition-cid :unbridged-effect`, its caller got
-;; `:dependency-unavailable`, the module yielded no cache material, and
-;; `scanned-line` reported `SCANNED 0/2`.
-;;
-;; kotoba-kir 984a507 decided the opposite on the SAME DAY -- `:abort` bridges
-;; through as itself, from a closed set `control-effects` -- and this
-;; repository's kotoba-kir pin was held one commit short of it for that
-;; reason, with the disagreement written into `deps.edn`.
-;;
-;; kotoba-lang adjudicated it in
-;; `docs/adr/ADR-abort-reaches-the-sealed-effect-row.md`, from the authority
-;; rather than from preference: `lang/surface-status.edn` `:explicit-errors`
-;; makes `:effect-row-integration` a NAMED PRECONDITION of the sanctioned
-;; widening path, and a row member that cannot reach a definition identity is
-;; refused at the row's boundary rather than integrated into it. Under the
-;; refusal reading no aborting definition could ever be pinned by a lock or
-;; served from a definition-keyed cache -- which closes the path the
-;; precondition exists to open. The shielding axis is
-;; :control-effect-tracking, and the identity is the last boundary the effect
-;; crosses.
-;;
-;; What section 4 got right survives and is asserted below: a CID is still
-;; never invented for a hole (passing `:abort` through invents nothing -- the
-;; keyword IS the sealed vocabulary), and a partial identity is still not an
-;; identity (every member outside `control-effects` is still refused, still
-;; blocks its callers, still yields no cache material, still prints
-;; `SCANNED 0/2`). Section 4 was a true MEASUREMENT of the bridge at
-;; kotoba-kir 1e00f830 written up as a decision about the language; the
-;; measurement is what moved. See ADR-0326.
+(def ^:private unnameable-capability-id
+  "A wire id no capability catalog entry names. The effect-row bridge refuses a
+  member it cannot translate, which is the only remaining way to reach the
+  refusal markers from this side -- see `abort-now-reaches-the-sealed-row`."
+  9999)
 
-(deftest an-aborting-definition-has-an-identity-and-it-is-not-the-pure-ones
-  (testing "`:abort` reaches the sealed row, so an aborting function is
-  identifiable -- and identifiable AS ABORTING. That second half is the point:
-  a function that can abort has interface [:result T E] where one that cannot
-  has T, so had the bridge STRIPPED the keyword instead, the two would have
-  shared an identity and a lock pinning the pure one would admit the aborting
-  one."
-    (let [entries (:entries (report (slurp (io/file "test/nbb/fixtures/abort-callee.kotoba"))))
-          safe-div (get entries "safe-div")
-          main (get entries "main")]
-      (is (string? (:cid safe-div))
-          "the aborting callee has a definition CID")
-      (is (nil? (:definition-cid safe-div))
-          "and no refusal marker: a CID and a marker are never both present")
-      (is (string? (:cid main))
-          "so its caller is identifiable too -- the closure has no hole in it")
-      (is (nil? (:definition-cid main)))
-      (is (not= (:cid safe-div) (:cid main)))))
-  (testing "the row that reaches the payload holds the keyword itself"
-    (let [hir (sema/analyze (slurp (io/file "test/nbb/fixtures/abort-callee.kotoba")) {})
-          safe-div (first (filter #(= 'safe-div (:name %)) (:functions (ir/lower hir))))]
-      (is (contains? (:effects safe-div) :abort)
-          "the fixture must actually carry :abort, or this file proves nothing")
-      (is (= #{:abort}
-             (kir-id/effect-row-from-hir {:effects (:effects safe-div)}
-                                         {:id->name {}}))))))
+(defn- unbridgeable-module
+  "A two-function module whose callee carries an untranslatable effect row.
+
+  Synthetic rather than compiled from source, for the same reason the schema
+  tests are: no `.kotoba` program produces a wire id the catalog does not name,
+  which is exactly what makes the refusal worth pinning."
+  []
+  {:hir {:named-operations #{} :exports '[main]}
+   :kir {:functions [{:name 'callee :params '[x] :param-types [:i64]
+                      :result :i64 :effects #{[:cap/call unnameable-capability-id]}
+                      :body '(+ x 1)}
+                     ;; main's own row is empty on purpose: its only problem is
+                     ;; that its callee has no identity, so the marker it gets
+                     ;; distinguishes :dependency-unavailable from
+                     ;; :unbridged-effect rather than conflating them.
+                     {:name 'main :params '[] :param-types []
+                      :result :i64 :effects #{}
+                      :body '(callee 3)}]}})
+
+(defn- unbridgeable-report []
+  (let [m (unbridgeable-module)] (di/definitions (:hir m) (:kir m))))
+
+(deftest an-unbridgeable-effect-row-is-refused-with-a-marker
+  (testing "the row the identity seals is the SEMANTIC vocabulary -- named
+  operations as keywords -- so a wire id the catalog cannot name has no
+  translation. The compiler records the refusal instead of inventing a row, and
+  a marker is not a CID: :cid is absent, so a consumer reading it gets nothing
+  rather than something plausible."
+    (let [entries (:entries (unbridgeable-report))]
+      (is (= :unbridged-effect (:definition-cid (get entries "callee"))))
+      (is (nil? (:cid (get entries "callee")))
+          "a refusal never carries a CID as well as a marker")
+      (is (= :dependency-unavailable (:definition-cid (get entries "main")))
+          "a caller of an unidentifiable definition is unidentifiable too")
+      (is (nil? (:cid (get entries "main")))))))
+
+(deftest abort-now-reaches-the-sealed-row
+  (testing "MEASURED 2026-09-02, and this test was the opposite assertion until
+  then. `:abort` was refused as `not a wire capability call`, and these tests
+  used an aborting fixture to reach the refusal markers. kotoba-kir d082a57
+  made control effects bridge through unchanged: `:abort` has no capability and
+  no wire id because there is no numeric ABI behind a control effect, but the
+  difference between a function that can leave its caller by aborting and one
+  that cannot is semantic -- their interfaces are `[:result T E]` against `T` --
+  so it must reach the sealed row. Restating the old refusal here would be
+  asserting something the upstream change deliberately made false."
+    (let [entries (:entries (report (slurp (io/file "test/nbb/fixtures/abort-callee.kotoba"))))]
+      (is (every? string? (map :cid (vals entries)))
+          "every definition in an aborting module is identified")
+      (is (every? nil? (map :definition-cid (vals entries)))
+          "and none of them carries a refusal marker")))
+  (testing "and it is sealed, not merely tolerated: the same body with and
+  without the ability is two definitions"
+    (let [module (fn [effects]
+                   {:hir {:named-operations #{} :exports '[f]}
+                    :kir {:functions [{:name 'f :params '[x] :param-types [:i64]
+                                       :result :i64 :effects effects
+                                       :body '(+ x 1)}]}})
+          cid (fn [m] (get-in (di/definitions (:hir m) (:kir m)) [:entries "f" :cid]))]
+      (is (string? (cid (module #{:abort}))))
+      (is (not= (cid (module #{})) (cid (module #{:abort})))))))
 
 (deftest the-sealed-control-effect-vocabulary-agrees-across-the-pin
-  ;; HYGIENE-1's shape (kotoba-native ADR-0050, kotoba-verifier ADR-0024): the
-  ;; producer exports the set it branches on, the consumer derives its OWN and
-  ;; asserts equality across the pin. Neither repository imports the other's
-  ;; answer, so the comparison is real -- and the day one side moves, the pin
-  ;; advance that carries the move is what goes red, rather than a test
-  ;; stranded behind a pin nobody dares advance. That is exactly what happened
-  ;; here between 2026-09-02 and 2026-09-03, for want of this test.
+  ;; `abort-now-reaches-the-sealed-row` above states what is true of `:abort`
+  ;; TODAY. It does not stop the two repositories disagreeing about it again,
+  ;; and they did disagree: on 2026-09-02 kotoba-kir 984a507 and ADR-0300
+  ;; section 4 decided the same question in opposite directions, hours apart,
+  ;; and neither knew about the other. The pin sat one commit short for a day.
   ;;
-  ;; Placed here rather than in kotoba-verifier, which HYGIENE-1 used, because
-  ;; kotoba-verifier has no part in definition identity at all. The consumer
-  ;; that diverged is the one that has to compare.
+  ;; HYGIENE-1's shape closes that (kotoba-native ADR-0050, kotoba-verifier
+  ;; ADR-0024): the producer EXPORTS the set it branches on, and the consumer
+  ;; derives its OWN and asserts equality across the pin. Neither repository
+  ;; imports the other's answer -- importing would make them agree by
+  ;; construction and prove nothing -- so a divergence is caught by the pin
+  ;; advance that carries it rather than by a stranded test.
+  ;;
+  ;; Placed here rather than in kotoba-verifier, the repository HYGIENE-1 used,
+  ;; because kotoba-verifier has no part in definition identity at all. The
+  ;; consumer that diverged is the one that has to compare.
+  ;;
+  ;; The ruling and its authority: kotoba-lang
+  ;; `docs/adr/ADR-abort-reaches-the-sealed-effect-row.md`, from
+  ;; `lang/surface-status.edn` `:explicit-errors` -- `:effect-row-integration`
+  ;; is a NAMED PRECONDITION of the sanctioned widening path, so a row member
+  ;; that cannot reach a definition identity is refused at the row's boundary
+  ;; rather than integrated into it. Recorded there as
+  ;; `:effect-row-integration :adjudication`, and in ADR-0326 here.
   (let [expected #{:abort}
         actual kir-id/control-effects]
     (println (format "COMPARED\t%d\tsealed control effects against kotoba-kir"
                      (count actual)))
     (is (seq actual)
-        "kotoba.kir.definition-identity/control-effects is empty; an empty set
-         would make every control effect unbridgeable again, and a comparison
+        "kotoba.kir.definition-identity/control-effects is empty; that would
+         make every control effect unbridgeable again, and a comparison
          against nothing is not a comparison")
     (is (= expected actual)
         (str "this repository and kotoba-kir disagree about which effect-row "
@@ -230,82 +258,50 @@
              "  only in kotoba-kir: " (pr-str (set/difference actual expected)) "\n"
              "Adjudicate it (kotoba-lang lang/surface-status.edn "
              ":explicit-errors :widening-path) before advancing the pin."))
-    (testing "the set is closed: it is not merely non-empty, it is exactly this"
+    (testing "closed, and closed against the shape it is not"
       (is (every? keyword? actual))
       (is (not (contains? actual :cap/call))))))
 
-(deftest a-member-outside-the-closed-set-is-still-refused
-  ;; ADR-0300's refusal machinery is not deleted, it is given a correct
-  ;; domain. A keyword the compiler did not mean as a control effect still
-  ;; gets no CID, still blocks its callers, and still says so by name.
+(deftest the-two-unbridgeable-reasons-are-different-reasons
+  ;; The refusal machinery ADR-0300 built is not deleted by the adjudication,
+  ;; it is given a correct domain. Both remaining paths are pinned by their
+  ;; exact text, so a change that collapsed them into one message would be
+  ;; caught -- a marker that cannot say WHICH problem it found is halfway back
+  ;; to no marker at all.
   (let [catalog {8 :state/transact}
         bridge (fn [effects]
                  (try (kir-id/effect-row-from-hir {:effects effects} {:id->name catalog})
                       (catch clojure.lang.ExceptionInfo e
                         {:message (ex-message e) :problem (:problem (ex-data e))})))]
-    (is (= #{:abort} (bridge #{:abort})))
+    (is (= #{:abort} (bridge #{:abort}))
+        "the control effect passes through as itself")
     (let [refused (bridge #{:not/a-control-effect})]
       (is (str/includes? (:message refused) "not a wire capability call")
-          "the reason literal, pinned: a widening of the closed set must be a
-           decision and not a keyword arriving")
+          "a keyword outside the closed set: widening it must be a decision,
+           not something a stray keyword can do by arriving")
       (is (= :definition/effect-row-unbridged (:problem refused))))
     (let [refused (bridge #{[:cap/call 4242]})]
       (is (str/includes? (:message refused) "has no catalog name")
-          "an unknown wire id is a different refusal with a different reason"))))
+          "an unknown wire id is a DIFFERENT refusal with a different reason"))))
 
 (deftest a-module-with-a-refused-definition-yields-no-cache-material
-  ;; The claim ADR-0300 made -- "a partial identity is not an identity; a cache
-  ;; keyed on one would serve one module's artifact for another" -- survives
-  ;; the adjudication untouched. What changed is which rows are partial.
-  ;; Built from synthetic KIR, because after the adjudication no COMPILABLE
-  ;; source produces an unbridgeable row: `cap-call` with a literal id is the
-  ;; only way to reach one, and the fixture that used to do this with `:abort`
-  ;; is now identifiable.
-  (let [hir {:named-operations #{} :exports '[caller]}
-        kir {:functions [{:name 'callee :params '[] :result :i64
-                          :effects #{[:cap/call 4242]} :body '(quote 1)}
-                         {:name 'caller :params '[] :result :i64
-                          :effects #{} :body '(callee)}]}
-        entries (:entries (di/definitions hir kir))]
-    (is (= :unbridged-effect (:definition-cid (get entries "callee")))
-        "a wire id no catalog names is unbridgeable")
-    (is (nil? (:cid (get entries "callee")))
-        "a refusal never carries a CID as well as a marker")
-    (is (= :dependency-unavailable (:definition-cid (get entries "caller")))
-        "a caller of an unidentifiable definition is unidentifiable too")
-    (is (nil? (di/cache-material (di/definitions hir kir) (:exports hir)))
+  (let [m (unbridgeable-module)]
+    (is (nil? (di/cache-material (di/definitions (:hir m) (:kir m)) (:exports (:hir m))))
         "a partial identity is not an identity; a cache keyed on one would serve
         one module's artifact for another")))
 
 (deftest the-scanned-floor-distinguishes-nothing-identified-from-all-identified
   (let [clean (report base)
-        aborting (report (slurp (io/file "test/nbb/fixtures/abort-callee.kotoba")))
-        refused (di/definitions {:named-operations #{} :exports '[caller]}
-                                {:functions [{:name 'callee :params '[] :result :i64
-                                              :effects #{[:cap/call 4242]} :body '(quote 1)}
-                                             {:name 'caller :params '[] :result :i64
-                                              :effects #{} :body '(callee)}]})]
+        refused (unbridgeable-report)]
     (is (= "SCANNED\t2/2" (di/scanned-line clean)))
-    (is (= "SCANNED\t2/2" (di/scanned-line aborting))
-        "an aborting module is fully identified after the adjudication")
     (is (= "SCANNED\t0/2" (di/scanned-line refused)))
     (is (not= (di/scanned-line clean) (di/scanned-line refused)))))
 
 (deftest a-refused-definition-is-listed-rather-than-omitted
-  (let [lines (di/format-lines
-               (di/definitions {:named-operations #{} :exports '[caller]}
-                               {:functions [{:name 'callee :params '[] :result :i64
-                                             :effects #{[:cap/call 4242]} :body '(quote 1)}
-                                            {:name 'caller :params '[] :result :i64
-                                             :effects #{} :body '(callee)}]}))]
+  (let [lines (di/format-lines (unbridgeable-report))]
     (is (= 2 (count lines)) "a listing that dropped what it could not identify
         would report a clean module")
-    (is (every? #(str/includes? % "REFUSED:") lines)))
-  (testing "and the aborting fixture is now listed with CIDs, not refusals"
-    (let [lines (di/format-lines
-                 (report (slurp (io/file "test/nbb/fixtures/abort-callee.kotoba"))))]
-      (is (= 2 (count lines)))
-      (is (not-any? #(str/includes? % "REFUSED:") lines)))))
+    (is (every? #(str/includes? % "REFUSED:") lines))))
 
 (deftest describe-names-its-reason-rather-than-reporting-an-empty-module
   (is (= {:contract :kotoba.definition-identity/v1 :entries :unavailable :reason :no-hir}
@@ -365,13 +361,39 @@
           grammar, and expect every definition CID to move -- that is what the
           sealed input means"))))
 
-(deftest desugar-contract-version-is-pinned-because-no-authority-declares-one
-  (testing "MEASURED GAP 2026-09-02: nothing in this repository, kotoba-sema or
-  kotoba-lang numbers the desugar contract. The value is 1 because the frozen
-  vectors in kotoba-lang lang/code-identity-vectors.edn use 1. This test exists
-  so that the day an authority does declare a version, the choice is reviewed
-  rather than quietly left behind."
-    (is (= 1 di/desugar-contract-version))))
+(deftest desugar-contract-version-matches-the-elaboration-pipeline-authority
+  (testing "was `desugar-contract-version-is-pinned-because-no-authority-
+  declares-one`, and the gap that named it was mis-stated. kotoba-lang
+  lang/elaboration-pipeline.edn [:contract-versions :desugar-contract] had
+  declared this number since W0 and had read 2 since 2026-09-01, when `eval`
+  moved out of :forbidden-heads and into the desugar table. So the compiler was
+  not sealing an unowned number; it was sealing a STALE one, and two definitions
+  compiled either side of a desugar change claimed one identity. This is now the
+  same assertion profile-version has: read the resource, compare the constant."
+    (let [pipeline (edn/read-string
+                    (slurp (io/resource "kotoba/lang/elaboration-pipeline.edn")))]
+      (is (= (get-in pipeline [:contract-versions :desugar-contract])
+             di/desugar-contract-version)
+          "bump `kotoba.compiler.definition-identity/desugar-contract-version`
+          with the authority, and expect every definition CID to move -- that is
+          what the sealed input means"))))
+
+(deftest the-frozen-vectors-never-declared-a-desugar-contract-version
+  (testing "the retired pin read 1 `because the frozen vectors use 1`. They do
+  not declare a current value: a vector carries the version as an INPUT and pins
+  the CID it produces, and two of them carry different inputs on purpose. This
+  is the reason raising the authority moved every CID this compiler mints and
+  not one frozen vector."
+    (let [payload (fn [desugar]
+                    {:definition/profile-version 6
+                     :definition/desugar-contract-version desugar
+                     :definition/kir {:op :const :value 1}
+                     :definition/effect-row #{}
+                     :definition/interface {:arity 0 :result :i64}
+                     :definition/dependencies []})]
+      (is (not= (kir-id/definition-cid (payload 1))
+                (kir-id/definition-cid (payload 2)))
+          "both are valid inputs with valid CIDs; neither is `the` version"))))
 
 (deftest both-versions-are-sealed-so-changing-either-moves-every-cid
   (let [payload (fn [profile desugar]
@@ -438,3 +460,25 @@
     (is (= :kotoba.definition-identity/v1 (:contract definitions)))
     (is (= (cids base) (into {} (map (fn [[k v]] [k (:cid v)])) (:entries definitions))))
     (is (= ["helper" "main"] (:order definitions)))))
+
+(deftest alpha-normalization-is-delegated-not-reimplemented
+  (testing "this namespace and kotoba.codebase.typed-code each carried the same
+  five-binder walk against the same KIR, which kotoba-lang lang/code-identity.edn
+  recorded as a residual risk of :ci8. The walk now lives in kotoba-kir. What
+  stays here is the leaf -- under nbb a .kotoba integer literal is a JavaScript
+  BigInt, which is neither integer? nor number?, so a walk that left it alone
+  would refuse every module loudly for the wrong reason -- and it is passed as
+  an argument, not reimplemented around a private copy."
+    (is (= (an/alpha-normalize {:params '[x] :body '(+ x 1)}
+                               {:scalar #'kotoba.compiler.definition-identity/canonical-value})
+           (di/alpha-normalize {:params '[x] :body '(+ x 1)}))
+        "the compiler's alpha-normalize IS kir's, with this repository's leaf")
+    (is (= '[k0] (:params (di/alpha-normalize {:params '[x] :body 'x})))))
+  (testing "the refusal keeps this namespace's problem keyword"
+    (let [ex (try (#'di/verify-normalized!
+                   (di/alpha-normalize {:params '[] :body '(pair (let [a 1] a) a)})
+                   #{})
+                  nil
+                  (catch Exception e e))]
+      (is (some? ex) "refused")
+      (is (= :definition/binder-not-normalized (:problem (ex-data ex)))))))

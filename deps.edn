@@ -28,49 +28,58 @@
         ;; ADR-0222: source reading and semantic analysis live behind the
         ;; kotoba-sema repository boundary and public semantic-analysis API.
         ;;
-        ;; Advanced 2026-09-03 to 1a073853 (this repo's ADR 0327). kotoba-sema
-        ;; also ships a byte copy of kotoba-lang's `lang/guest-grammar.edn` at
-        ;; the same resource path this repository does, so TWO copies are on
-        ;; this classpath and `io/resource` answers with whichever comes
-        ;; first. Nothing compared them until
+        ;; Advanced 2026-09-03 to 1a073853 (ADR 0327). kotoba-sema also ships a
+        ;; byte copy of kotoba-lang's `lang/guest-grammar.edn` at the same
+        ;; resource path this repository does, so TWO copies are on this
+        ;; classpath and `io/resource` answers with whichever comes first.
+        ;; Nothing compared them until
         ;; `guest-grammar-vendor-test/every-classpath-copy-of-the-grammar-is-the-same-grammar`,
         ;; and when it was written the two disagreed: this repository's copy
         ;; was one change behind (local-state slice 1 -- it still forbade
         ;; `atom`/`swap!`/`reset!`, which the authority now admits by
-        ;; elaboration). Resyncing this repository's copy alone would have
-        ;; left the classpath holding two grammars, so the pin moves with it.
+        ;; elaboration). Resyncing this repository's copy alone would have left
+        ;; the classpath holding two grammars, so the pin moves with it.
         io.github.kotoba-lang/kotoba-sema
         {:git/url "https://github.com/kotoba-lang/kotoba-sema.git"
          :git/sha "1a07385368e5efb09aed4d194df03d5110f2f2d8"}
         ;; ADR-2607266000 Phase B: these responsibilities moved out of this repo.
         ;;
-        ;; This pin was HELD at 08bdab8b from 2026-09-02 to 2026-09-03, one
-        ;; commit short of kotoba-kir 984a507 ("control effects bridge through
-        ;; as keywords, so `:abort` reaches the sealed row"), because that
-        ;; commit and this repository's `definition_identity_test` (ADR 0300
-        ;; section 4, "`:abort` names no authority, so the bridge has no
-        ;; catalog keyword for it and refuses") decided the same question in
-        ;; opposite directions on the same day. Advancing it turned 8
-        ;; assertions in that test red, so the pin waited for an adjudication
-        ;; rather than forcing one.
+        ;; The slice-value stream held this pin on purpose (ADR 0314), because
+        ;; kotoba-kir 984a507 ("control effects bridge through as keywords, so
+        ;; `:abort` reaches the sealed row") and this repository's
+        ;; `definition_identity_test` (ADR 0300, "`:abort` names no authority,
+        ;; so the bridge has no catalog keyword for it and refuses") decided the
+        ;; same question in opposite directions on 2026-09-02, and it said the
+        ;; pin waits for that adjudication rather than forcing it.
         ;;
-        ;; Adjudicated 2026-09-03 by kotoba-lang
-        ;; `docs/adr/ADR-abort-reaches-the-sealed-effect-row.md`, from
-        ;; `lang/surface-status.edn`: `:effect-row-integration` is a NAMED
-        ;; PRECONDITION of the sanctioned widening path, and a row member that
-        ;; cannot reach a definition identity is refused at the row's boundary
-        ;; rather than integrated into it. kotoba-kir's reading wins; ADR 0300
-        ;; section 4 is amended in place and ADR 0326 records the flip. The
-        ;; eight assertions now pin the pass-through, in both directions.
+        ;; ADJUDICATED 2026-09-02, in kotoba-kir's favour, and this advance is
+        ;; that adjudication rather than a stream forcing past it. Three reasons:
         ;;
-        ;; `the-sealed-control-effect-vocabulary-agrees-across-the-pin` in that
-        ;; same test file compares this repository's own expectation of the
-        ;; sealed vocabulary against `kotoba.kir.definition-identity/control-effects`
-        ;; THROUGH THIS PIN, so the next divergence is caught by the pin
-        ;; advance that carries it rather than by a stranded test.
+        ;;  - kotoba-lang lang/code-identity.edn names
+        ;;    :kotoba.kir/definition-identity the :authority for what a sealed
+        ;;    row contains. ADR 0300 described that authority's behaviour; it did
+        ;;    not own it.
+        ;;  - the row is part of the sealed INTERFACE, and a function that can
+        ;;    leave its caller by aborting has interface `[:result T E]` where
+        ;;    one that cannot has `T`. Those are two definitions. Refusing to
+        ;;    identify either is not neutral between them.
+        ;;  - the refusal identified NOTHING in an aborting module, so every
+        ;;    such module was unidentified and uncacheable. Identifying them
+        ;;    differently is strictly more information than identifying neither.
+        ;;
+        ;; The 8 assertions ADR 0314 measured are not deleted. Four now state
+        ;; what is true of `:abort`, and the refusal path they used to reach --
+        ;; :unbridged-effect, :dependency-unavailable, SCANNED 0/2, the REFUSED
+        ;; listing -- is reached by a synthetic module carrying a wire id no
+        ;; catalog entry names, which is the only remaining unbridgeable row.
+        ;;
+        ;; The advance itself is required by this stream and not optional:
+        ;; kotoba.kir.alpha-normalization, the single five-binder walk that
+        ;; kotoba-lang lang/code-identity.edn :ci8 named as the fix for the walk
+        ;; being implemented twice, exists only at afd117d2 and later.
         io.github.kotoba-lang/kotoba-kir
         {:git/url "https://github.com/kotoba-lang/kotoba-kir.git"
-         :git/sha "ad6db332a06d52bdb037536ad191d48dc1d5f394"}
+         :git/sha "afd117d2533ed0b30eb5a4848083a94e25b01b40"}
         ;; The frontend is an HIR producer and KIR lowering is its consumer;
         ;; both validate the same checked envelope.
         io.github.kotoba-lang/kotoba-hir

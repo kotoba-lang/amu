@@ -110,24 +110,17 @@
   ;; may hold the bare keyword `:abort`). The ten frozen identity vectors are
   ;; unchanged by that advance.
   ;;
-  ;; NOT advanced by the slice-value stream, on purpose (this repo's ADR 0314).
-  ;; kotoba-kir 061283e9 carries the named refusal for a `[:slice T]` that
-  ;; reached KIR (kotoba-kir ADR 0240) -- but it also carries 984a507, which
-  ;; decided that `:abort` DOES bridge into a sealed effect row, the opposite
-  ;; of what `definition_identity_test` (ADR 0300) decided the same day.
-  ;; Advancing past it turned 8 assertions there red, so the pin waited for an
-  ;; adjudication rather than forcing one.
+  ;; Advanced 2026-09-02: `kotoba.kir.alpha-normalization`. The five-binder
+  ;; walk was implemented in this repository AND in kotoba.codebase.typed-code
+  ;; -- the same algorithm over the same KIR, with neither copy the authority,
+  ;; which kotoba-lang lang/code-identity.edn recorded as a residual risk of
+  ;; :ci8. It is now kir's and both consumers delegate. `definition-cid` still
+  ;; does not normalize internally, so the ten frozen identity vectors are
+  ;; unchanged by this advance too.
   ;;
-  ;; ADVANCED 2026-09-03 to ad6db332 (this repo's ADR 0326). kotoba-lang
-  ;; `docs/adr/ADR-abort-reaches-the-sealed-effect-row.md` adjudicated it from
-  ;; `lang/surface-status.edn`: `:effect-row-integration` is a named
-  ;; precondition of the sanctioned widening path, so a row member that cannot
-  ;; reach a definition identity is refused at the row's boundary rather than
-  ;; integrated into it. kotoba-kir's reading wins and the eight assertions now
-  ;; pin the pass-through. The advance also picks up the alpha-normalization
-  ;; move (e917e20), a ClojureScript-safe i64 ordering (2cfa97a) and two ADR
-  ;; renumberings -- all of which had been stranded behind that one decision.
-  (is (= "ad6db332a06d52bdb037536ad191d48dc1d5f394"
+  ;; This advance also carries 984a507, whose `:abort` decision ADR 0314 held
+  ;; this pin to await. deps.edn records the adjudication and its three reasons.
+  (is (= "afd117d2533ed0b30eb5a4848083a94e25b01b40"
          (dependency-pin 'io.github.kotoba-lang/kotoba-kir)))
   ;; Advanced 2026-09-01 alongside the backend: the verifier re-derives the
   ;; two new arities and the v4 `expected-context`, and is what turns a
