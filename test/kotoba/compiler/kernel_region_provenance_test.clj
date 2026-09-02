@@ -98,3 +98,72 @@
 
 (deftest modules-without-kernel-ops-are-untouched
   (is (nil? (provenance-rejection "(defn main [] (+ 1 2))"))))
+
+;; ---------------------------------------------------------------------------
+;; memwidth: the same rule, at every transfer width and for the ADR 0285 slice
+;; family.
+;;
+;; The provenance walk reads `kernel-memory-operations`, so widening that table
+;; is what gave the new widths this rule -- nothing was written for them. That
+;; makes it worth asserting rather than assuming: if a later change adds a
+;; width to the ARITY table alone, or splits the slice family into a second
+;; table beside it, every test above stays green and only these fail.
+;; ---------------------------------------------------------------------------
+
+(def ^:private memwidth-loads
+  (concat (for [w ["u8" "u16" "u32" "u64"]
+                t ["" "-4k" "-16k" "-64k"]]
+            (str "kernel-load-" w t))
+          (for [w ["u8" "u16" "u32" "u64"]] (str "slice-load-" w))))
+
+(def ^:private memwidth-stores
+  (concat (for [w ["u8" "u16" "u32" "u64"]
+                t ["" "-4k" "-16k" "-64k"]]
+            (str "kernel-store-" w t))
+          (for [w ["u8" "u16" "u32" "u64"]] (str "slice-store-" w))))
+
+(deftest every-width-refuses-a-base-conjured-from-memory-content
+  (is (= 20 (count memwidth-loads)) "16 window tiers plus 4 slice widths")
+  (doseq [op memwidth-loads]
+    (is (some? (provenance-rejection
+                (str "(defn f [buf length] (" op " (kernel-load-u8 buf length 0) 4096 0))
+                      (defn main [] 0)")))
+        (str op " must refuse a loaded byte as an address")))
+  (doseq [op memwidth-stores]
+    (is (some? (provenance-rejection
+                (str "(defn f [buf length] (" op " (kernel-load-u8 buf length 0) 4096 0 7))
+                      (defn main [] 0)")))
+        (str op " must refuse it on the store side too"))))
+
+(deftest every-width-refuses-a-computed-base-and-admits-a-narrowed-one
+  (doseq [op memwidth-loads]
+    (is (some? (provenance-rejection
+                (str "(defn f [base length] (" op " (+ base 1) length 0))
+                      (defn main [] 0)")))
+        (str op " must refuse bare arithmetic in a base position"))
+    (is (nil? (provenance-rejection
+               (str "(defn f [base length] (" op " (kernel-subregion base length 48 16) 16 0))
+                     (defn main [] 0)")))
+        (str op " must admit a checked narrowing"))
+    (is (nil? (provenance-rejection
+               (str "(defn main [] (" op " (kernel-boot-info) 4096 0))")))
+        (str op " must admit kernel-boot-info"))))
+
+(deftest a-slice-base-is-an-abi-boundary-like-any-other
+  ;; A slice is host-supplied memory (ADR 0285: "the host supplies a read-only
+  ;; in-slice"), so its base parameter is exactly the trust boundary
+  ;; `report-names-the-abi-boundary` describes for the window family -- and it
+  ;; is reported as one without a line of code for slices.
+  (let [hir (sema/analyze
+             "(defn sum-step [base length index total]
+                (if (< index length)
+                  (sum-step base length (+ index 1)
+                            (+ total (slice-load-u8 base length index)))
+                  total))
+              (defn entry [base length] (sum-step base length 0 0))
+              (defn main [] 0)")
+        report (sema/kernel-region-report (:functions hir))]
+    (is (= '[base] (get (:abi-boundary report) 'entry))
+        "the host hands `entry` the slice; that is unverifiable here")
+    (is (nil? (get (:abi-boundary report) 'sum-step))
+        "the recursive step is supplied internally and is not a boundary")))
