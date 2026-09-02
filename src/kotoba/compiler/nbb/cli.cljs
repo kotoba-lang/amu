@@ -10,6 +10,7 @@
             [kotoba.sema :as sema]
             [kotoba.compiler.nbb.io :as io]
             [kotoba.compiler.nbb.output-set :as output-set]
+            [kotoba.compiler.nbb.project-source :as project-source]
             [kotoba.kir.admission :as admission]
             [kotoba.artifact.core :as artifact]
             [kotoba.kir.compatibility :as compatibility]
@@ -119,13 +120,19 @@
 ;; Deliberately does NOT replicate the `x86_64-aiueos-*`/`aarch64-aiueos-*`
 ;; `:binary`/`:object` packaging step (see `targets`' own comment above for
 ;; why that stays out of scope).
-(defn- resolve-hir! [source policy stage-cache]
+(defn- resolve-hir! [source opts stage-cache]
   (support/timed "frontend"
                  #(compile-cache/resolve-stage!
                    stage-cache :hir
-                   (pr-str [:kotoba.hir-cache/v2 source
-                            (:language-profile policy)])
-                   (fn [] (sema/analyze source (support/analyze-options policy))))))
+                   ;; The whole options map, not just :language-profile. A
+                   ;; linked project carries :admit-linked-synthetics?, and a
+                   ;; key blind to it would answer a linked question with an
+                   ;; unlinked HIR -- inside one worker process, where the two
+                   ;; kinds of compile share a stage cache. Tag raised to v3 so
+                   ;; entries written under the old key miss rather than being
+                   ;; read under the new meaning.
+                   (pr-str [:kotoba.hir-cache/v3 source opts])
+                   (fn [] (sema/analyze source opts)))))
 
 (defn- resolve-kir! [hir stage-cache]
   (support/timed "kir-lower"
@@ -262,11 +269,12 @@
              :publication-output publication-output}
       binary (assoc :artifact-bytes (.-length binary)))))
 
-(defn- compile-uncached! [args source target backend output emit-program package]
+(defn- compile-uncached! [args source linked? target backend output emit-program package]
   (let [policy (support/timed "policy-read" #(read-policy! args))
         emit-metadata (support/emit-metadata args)
         artifact-kind (support/option args "--artifact")
-        hir (:value (resolve-hir! source policy nil))
+        hir (:value (resolve-hir! source
+                                  (project-source/analyze-opts policy linked?) nil))
         result (compile-native! hir target backend policy emit-metadata emit-program nil)
         serialized (serialized-native source policy emit-metadata result
                                       package artifact-kind)
@@ -277,7 +285,7 @@
              :publication-output publication-output}
       artifact-bytes (assoc :artifact-bytes artifact-bytes))))
 
-(defn- compile-cached! [args source target backend output emit-program package context]
+(defn- compile-cached! [args source linked? target backend output emit-program package context]
   (let [policy-attempt (support/timed
                         "policy-read"
                         #(try {:material (support/read-policy-material args)}
@@ -288,7 +296,7 @@
         key (when material
               (support/timed "cache-key"
                              #(compile-cache/key-for target source material
-                                                     emit-metadata false
+                                                     emit-metadata linked?
                                                      artifact-kind)))
         artifact-cache (:artifacts context)
         stage-cache (:stages context)
@@ -329,7 +337,9 @@
       (let [_ (when-let [error (:error policy-attempt)] (throw error))
             policy (support/timed "policy-decode"
                                   #(decode-policy! material))
-            hir-result (resolve-hir! source policy stage-cache)
+            hir-result (resolve-hir! source
+                                     (project-source/analyze-opts policy linked?)
+                                     stage-cache)
             hir (:value hir-result)
             result (compile-native! hir target backend policy emit-metadata
                                     emit-program stage-cache)
@@ -364,8 +374,7 @@
   [args expected-backend emit-program package context]
   (case (first args)
     "compile"
-    (let [input (support/timed "source-admit" #(support/source! (second args)))
-            target-name (support/option args "--target")
+    (let [target-name (support/option args "--target")
             target (get targets target-name)
             _ (when-not target
                 (support/usage-error!
@@ -383,11 +392,24 @@
                 (throw (ex-info "unknown native artifact kind"
                                 {:phase :artifact-target
                                  :artifact (support/option args "--artifact")})))
+            ;; A module declaring `(:require ...)` is resolved and linked the
+            ;; same way the Wasm driver resolves one, through the same shared
+            ;; `project-source/resolve-source!`. This used to read the entry
+            ;; file alone: `--source-path` and `--module-lock` were accepted on
+            ;; the command line and never looked at, so a kernel object could
+            ;; not import anything and every helper had to be copied into every
+            ;; source that needed it.
+            resolved (project-source/resolve-source! args)
+            input (:input resolved)
+            source (:source resolved)
+            linked? (:linked? resolved)
             output (or (support/option args "--output") (str input ".kexe"))
-            source (support/timed "source-read" #(io/read-text-file input))]
-        (if context
-          (compile-cached! args source target backend output emit-program package context)
-          (compile-uncached! args source target backend output emit-program package)))
+            result (if context
+                     (compile-cached! args source linked? target backend output
+                                      emit-program package context)
+                     (compile-uncached! args source linked? target backend output
+                                        emit-program package))]
+        (merge result (project-source/inputs-record resolved)))
 
     "extract-native"
     (let [input (second args)
