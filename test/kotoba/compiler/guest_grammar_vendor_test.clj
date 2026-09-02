@@ -57,8 +57,14 @@
 
 (def authority-grammar-sha256
   "sha256 of kotoba-lang `lang/guest-grammar.edn` at the 2026-09-03 resync
-  wave. Change it only as part of that wave, in all four repositories."
-  "3e3f9748e245386fc2c89bbadabddfebb4bf02190e137494feacec6a12b4500a")
+  wave. Change it only as part of that wave, in all four repositories.
+
+  Advanced three times on 2026-09-03 as the wave moved: 3e3f9748 (the pair
+  #762 landed), 67561e57 (kotoba-lang ca2e595a, which #761 carried into this
+  repository's copy alone -- and that skew is what made main red), and this
+  one, kotoba-sema 1587f573. Each advance moves the `deps.edn` pin, the
+  vendored copy and this literal in ONE commit; ADR 0330 postscript is why."
+  "6e1202fd23bc5a2ed6ef432114585c1813f5143d643eb4c8ee9a00b6e798b922")
 
 (def ^:private resource-path "kotoba/lang/guest-grammar.edn")
 
@@ -133,8 +139,17 @@
                      builtins)]
     (println (format "SCANNED\t%d\tadmitted-builtins (%d kernel heads)"
                      (count builtins) (count kernel)))
-    (is (= 114 (count kernel))
-        "kotoba-sema 1afff23 admitted 114 kernel heads on 2026-09-03")
+    ;; 114 -> 115 on 2026-09-03 with the third resync of the wave. The head
+    ;; is `kernel-uefi-alloc-region`, and it is a real addition rather than a
+    ;; drifting number: kotoba-sema 727f9d6 (its ADR-0030) makes it a
+    ;; PROVENANCE ROOT beside `kernel-boot-info` and `kernel-scratch-region`,
+    ;; because `AllocatePages` answers through a load and `traceable-base?`
+    ;; refuses a base that came from one -- so a Kotoba UEFI application could
+    ;; allocate a page and then not write it. Measured across the resync:
+    ;; ADDED (kernel-uefi-alloc-region), REMOVED (), so the count moved by
+    ;; exactly the head that was added and no family was dropped.
+    (is (= 115 (count kernel))
+        "kotoba-sema 1587f57 admitted 115 kernel heads on 2026-09-03")
     (testing "local-state slice 1 reached this copy: atom/swap!/reset! are
               admitted by elaboration and are no longer forbidden heads"
       (let [forbidden (head-names (:forbidden-heads grammar))]
