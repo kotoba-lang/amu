@@ -109,7 +109,13 @@
   ;; abort slice 1, type-directed arithmetic) and kotoba-hir ac8e7051 (a row
   ;; may hold the bare keyword `:abort`). The ten frozen identity vectors are
   ;; unchanged by that advance.
-  (is (= "1e00f830e96bf762a95085f2eb5741d470d26ee6"
+  ;;
+  ;; Advanced 2026-09-02 again (this repo's ADR 0296): `native-boundary-type-refusal`
+  ;; and `native-erased-source-carrier-types` -- the NAMED refusal for a
+  ;; `[:slice T]` that reached KIR, which can only happen if kotoba-sema's
+  ;; erasure did not run. Refusal by absence was already correct; what this
+  ;; adds is a reason a caller can read (kotoba-kir ADR 0240).
+  (is (= "061283e9cb7d819bf96ae0c28d0afbbd52195b6a"
          (dependency-pin 'io.github.kotoba-lang/kotoba-kir)))
   ;; Advanced 2026-09-01 alongside the backend: the verifier re-derives the
   ;; two new arities and the v4 `expected-context`, and is what turns a
@@ -134,7 +140,14 @@
   ;;            time (this repo's ADR-0293).
   ;; The pin is the branch tip, which also carries the interrupt entry address
   ;; gate.
-  (is (= "4b2d2f1f164453d55b94e998afdea919cb997d89"
+  ;;   slice -- the same independence a fourth time: the verifier keeps its OWN
+  ;;            copy of the erased-source-carrier list and refuses a `[:slice T]`
+  ;;            at a function boundary by name (kotoba-verifier ADR 0028). That
+  ;;            commit also unsticks this repository's sibling: kotoba-verifier
+  ;;            had been pinned to kotoba-native a2023fed for 302 commits
+  ;;            because three tests pinned SPILL SLOTS as literals across an
+  ;;            allocator that gained a callee-saved tier (ADR 0027).
+  (is (= "7a8cdcd98227b86af18e0c6e4d33a3e51eff17ff"
          (dependency-pin 'io.github.kotoba-lang/kotoba-verifier)))
   (is (= 7 (:abi/version aggregate-abi/contract)))
   (is (= :recursive-word-handles

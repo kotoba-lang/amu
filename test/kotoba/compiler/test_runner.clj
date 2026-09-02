@@ -66,6 +66,8 @@
             [kotoba.compiler.kir-trap-source-test]
             [kotoba.compiler.kernel-region-provenance-test]
             [kotoba.compiler.slice-carrier-test]
+            ;; slice-value: the ADR 0285 carrier as a value, and its cost in bytes
+            [kotoba.compiler.slice-value-test]
             [kotoba.compiler.kernel-subregion-test]
             [kotoba.compiler.error-code-contract-test]
             [kotoba.compiler.frontend-condp-test]
@@ -236,6 +238,7 @@
    'kotoba.compiler.capability-deny-test
    'kotoba.compiler.kernel-region-provenance-test
    'kotoba.compiler.slice-carrier-test
+   'kotoba.compiler.slice-value-test
    'kotoba.compiler.kernel-subregion-test
    'kotoba.compiler.kir-trap-source-test
    'kotoba.compiler.error-code-contract-test
