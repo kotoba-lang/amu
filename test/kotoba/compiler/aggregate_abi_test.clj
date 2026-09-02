@@ -80,17 +80,6 @@
   ;; qwen  -- 2026-09-02: the three Qwen3.5 forward-pass kernel objects
   ;;           (aiueos-qwen35-dot-f32 / -dequant-row / -matvec) enter
   ;;           kernel-object-entries with measured fuel tiers (kotoba-native#113).
-  ;;
-  ;; qwen3 -- 2026-09-03: `aiueos-qwen35-attention` and
-  ;;          `aiueos-qwen35-recurrent-step`, the fused softmax of
-  ;;          `full_attention` and the gated DeltaNet step, with fuel tiers
-  ;;          measured by bisection in the KIR interpreter and extrapolated to
-  ;;          the ceiling each object ADMITS rather than to the geometry K16
-  ;;          passes -- 33,554,432 and 4,194,304 (kotoba-native#133/#134,
-  ;;          aiueos ADR-0175). Without these two rows `amu compile --target
-  ;;          x86_64-aiueos-kernel-v1` refuses both objects with "Kotoba kernel
-  ;;          object declares an aiueos export with no admitted symbol".
-  ;;
   ;; boot-scratch -- 2026-09-02: `:scratch-region` (`lea r10,[r9+0x60]`, four
   ;;           bytes) and `:x86-64/function-address` (`lea dst,[rip+disp32]`,
   ;;           resolved against the same label table a call uses), plus
@@ -98,15 +87,33 @@
   ;;           reservation, read by the encoder AND by this repository's PE32+
   ;;           packager (kotoba-native ADR-0068/0069).
   ;;
-  ;;          The SHA below is 452422f, which is kotoba-native's main and not
-  ;;          either stream's own merge: 2c4d6c3 (qwen3) and 91033a9
-  ;;          (boot-scratch) are on different lines of that history and neither
-  ;;          contains the other. Both were checked with
-  ;;          `merge-base --is-ancestor` against 452422f rather than assumed to
-  ;;          be in it. Both Qwen objects were then RE-COMPILED at 452422f and
-  ;;          reproduce the committed aiueos bytes exactly -- 5cd0baa6... at
-  ;;          17,872 and 23308afe... at 6,808 -- so this pin is measured and
-  ;;          not merely reachable.
+  ;; Advanced 2026-09-03 by the pin-consolidation stream (ADR 0330). Forty-four
+  ;; merges had landed behind this one pin while every K16 stream was told the
+  ;; amu bump was batched, and two QEMU proofs were unreproducible from landed
+  ;; code because of it: both `AIUEOS_DOT_F32_QEMU_OK` and
+  ;; `AIUEOS_DEQUANT_KQUANT_QEMU_OK` answered `COULD-NOT-RUN compile-failed`
+  ;; against this repository's main and reproduced only against private
+  ;; branches. Every claim below was checked with `compare` against this SHA:
+  ;;   279fbc3  a bounded store answers with the word it STORED.
+  ;;   da3593b5 kernel-read-cr4 / kernel-write-cr4 / kernel-xsetbv -- the
+  ;;            "aggregate ABI rejected: call-abi-not-admitted" the dot-f32
+  ;;            probe was hitting.
+  ;;   a727bf7  six RTL8125 driver symbols and the FIFO-drain fuel tier.
+  ;;   1baa450  three SHA-256 symbols for a message arriving in pieces.
+  ;;   70984ea / 2c4d6c3 / 449792d  Qwen3.5 export names and measured fuel
+  ;;            tiers, tranches two and three.
+  ;;   1072816 / bbeed36 / a63faa6  Q4_K and Q6_K EMIT, thirty-two groups
+  ;;            unrolled; the four codebook formats refused BY NAME.
+  ;;   91033a9  the writable region is an lea, a function's address is a label.
+  ;;   d710558  a reentry parameter's home is stored inside the loop.
+  ;;
+  ;; And REPRODUCED, not only contained: `compare` above answers whether a SHA
+  ;; is reachable from this pin, which is a different question from whether the
+  ;; artifacts still come out the same. Both Qwen3.5 tranche-three objects were
+  ;; recompiled at 452422f and reproduce the bytes committed on aiueos main
+  ;; exactly -- 5cd0baa6... at 17,872 and 23308afe... at 6,808 -- and neither
+  ;; had been built with d710558 in its closure, so the reentry-spill repair
+  ;; does not reach those two (aiueos ADR-0175).
   (is (= "452422f5caad1a40e7b1a793a59f93f44abe94a7"
          (dependency-pin 'io.github.kotoba-lang/kotoba-native)))
   ;; Advanced 2026-08-31 for two more instances of ADR-0286's class -- a KIR
@@ -152,7 +159,12 @@
   ;; name a place in the IMAGE -- its `.data` reservation and its function
   ;; labels -- refuse under `:image-address-unavailable` rather than under the
   ;; literal pool's keyword, and both mark a module kernel-native.
-  (is (= "ad6db332a06d52bdb037536ad191d48dc1d5f394"
+  ;; Advanced 2026-09-03 (ADR 0330) to b2e5d9c: d809f28 the four codebook
+  ;; dequant formats with their six grid tables, 268e28b the fused
+  ;; dequantize-and-dot oracle the QEMU K-quant smoke checks its digits
+  ;; against, 18f7c3a the sealed control-effect vocabulary as this
+  ;; repository's export rather than a second derivation.
+  (is (= "b2e5d9c445b5a3553059b4f7cfcbfe54c5db7786"
          (dependency-pin 'io.github.kotoba-lang/kotoba-kir)))
   ;; Advanced 2026-09-01 alongside the backend: the verifier re-derives the
   ;; two new arities and the v4 `expected-context`, and is what turns a
@@ -189,7 +201,14 @@
   ;;            source text and is not walked, so with the name unchecked
   ;;            nothing in that file stands between a misspelling and a backend
   ;;            `lea` at a label it would have to invent (ADR-0044).
-  (is (= "6a743c3054e824e72ce703fde4f2ed7a59a404c3"
+  ;;   dequant -- the fifth and sixth instances of the same independence:
+  ;;            b58c009 re-derives the fused dequantize-and-dot family and
+  ;;            bcea4a1 the four codebook formats on this side of the
+  ;;            boundary, so a format kotoba.kir admits and this repository
+  ;;            does not is a green `check` and a refusal at compile time
+  ;;            rather than a wrong artifact. 6a743c3 adds the image-symbol
+  ;;            name check (ADR 0330).
+  (is (= "6c66e8b7028cfd7c527f888c110d8abcb2936e2e"
          (dependency-pin 'io.github.kotoba-lang/kotoba-verifier)))
   (is (= 7 (:abi/version aggregate-abi/contract)))
   (is (= :recursive-word-handles
