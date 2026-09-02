@@ -87,12 +87,35 @@ holds the base case *does* move both CIDs. A component larger than the bound is
 **refused** with `:definition-cid :recursive-group-too-large`; a cheaper
 ordering rule would be a different identity wearing the same shape.
 
-**4. `:abort` has no keyword the bridge can seal.** `effect-row-from-hir` admits
-`[:cap/call <id>]` and nothing else, and ADR-0294's tracked control effect is a
-bare keyword naming no authority. Such a function gets
-`:definition-cid :unbridged-effect`, its callers get
+**4. A row member the bridge cannot seal gets a marker, not a CID.**
+`effect-row-from-hir` admits `[:cap/call <id>]` and the members of kotoba-kir's
+closed `control-effects` set, and nothing else. A function whose row holds
+anything else gets `:definition-cid :unbridged-effect`, its callers get
 `:definition-cid :dependency-unavailable`, and the module yields no cache
 material at all. A CID is never invented for a hole.
+
+> **Amended 2026-09-03 — ADR-0326.** This paragraph originally read
+> "`:abort` has no keyword the bridge can seal", and named the tracked control
+> effect as the example of a hole. That was a true **measurement of
+> kotoba-kir at `1e00f830`** written up as a decision about the language, and
+> kotoba-kir `984a507` decided it the other way on 2026-09-02. kotoba-lang
+> adjudicated in favour of kotoba-kir
+> (`docs/adr/ADR-abort-reaches-the-sealed-effect-row.md`): `:effect-row-integration`
+> is a named precondition of the sanctioned widening path, so a row member
+> that cannot reach a definition identity is refused at the row's boundary
+> rather than integrated into it.
+>
+> `:abort` therefore **has** an identity, and an aborting definition's
+> identity differs from a pure one's — which is the point, since their
+> interfaces differ (`[:result T E]` against `T`). The claim above survives
+> with a corrected domain: what still gets a marker is a wire id no catalog
+> names, and any keyword outside the closed set. Both arguments this section
+> rested on survive too — passing `:abort` through invents nothing, because
+> the keyword IS the sealed vocabulary; and a partial identity is still not an
+> identity.
+>
+> The pin held at `08bdab8b` on account of this paragraph is advanced to
+> `ad6db332`.
 
 ## What the interface seals
 

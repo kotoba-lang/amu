@@ -115,9 +115,19 @@
   ;; reached KIR (kotoba-kir ADR 0240) -- but it also carries 984a507, which
   ;; decided that `:abort` DOES bridge into a sealed effect row, the opposite
   ;; of what `definition_identity_test` (ADR 0300) decided the same day.
-  ;; Advancing past it turns 8 assertions there red. Nothing here needs the
-  ;; kotoba-kir side of the slice work, so the pin waits for that adjudication.
-  (is (= "08bdab8b1084160dcb58ac291a002b140a5abf13"
+  ;; Advancing past it turned 8 assertions there red, so the pin waited for an
+  ;; adjudication rather than forcing one.
+  ;;
+  ;; ADVANCED 2026-09-03 to ad6db332 (this repo's ADR 0326). kotoba-lang
+  ;; `docs/adr/ADR-abort-reaches-the-sealed-effect-row.md` adjudicated it from
+  ;; `lang/surface-status.edn`: `:effect-row-integration` is a named
+  ;; precondition of the sanctioned widening path, so a row member that cannot
+  ;; reach a definition identity is refused at the row's boundary rather than
+  ;; integrated into it. kotoba-kir's reading wins and the eight assertions now
+  ;; pin the pass-through. The advance also picks up the alpha-normalization
+  ;; move (e917e20), a ClojureScript-safe i64 ordering (2cfa97a) and two ADR
+  ;; renumberings -- all of which had been stranded behind that one decision.
+  (is (= "ad6db332a06d52bdb037536ad191d48dc1d5f394"
          (dependency-pin 'io.github.kotoba-lang/kotoba-kir)))
   ;; Advanced 2026-09-01 alongside the backend: the verifier re-derives the
   ;; two new arities and the v4 `expected-context`, and is what turns a

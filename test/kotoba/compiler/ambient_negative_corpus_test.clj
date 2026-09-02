@@ -27,8 +27,30 @@
    [:load
     "(ns t (:export [f])) (defn f [] (load \"x\"))"
     :kotoba.error/ambient-forbidden]
-   [:atom
+   ;; `atom` left `:forbidden-heads` on 2026-09-02 (local-state slice 1,
+   ;; kotoba-lang `lang/local-state.edn`): a NON-ESCAPING, function-local cell
+   ;; is admitted by elaboration -- it becomes ordinary `let` rebindings, needs
+   ;; no grant and adds nothing to the effect row. So this source is still
+   ;; refused, but by the position rule rather than by the head, and the code
+   ;; that names WHY is `:local-state-atom-position`: an atom must be the init
+   ;; of a `let` binding.
+   ;;
+   ;; Pinned to the new code deliberately. `:ambient-forbidden` here would now
+   ;; be a claim about a head that is no longer forbidden, and a corpus that
+   ;; accepted either code would stop discriminating between "refused because
+   ;; ambient mutation is banned" and "refused because this atom escapes" --
+   ;; which is the whole content of the slice.
+   [:atom-outside-a-let-init
     "(ns t (:export [f])) (defn f [] (atom 1))"
+    :kotoba.error/local-state-atom-position]
+   ;; The seven heads with no ability model decided. These are still refused
+   ;; BY THE HEAD, and this is the control for the entry above: if `ref` ever
+   ;; starts reporting a position code too, the distinction has been lost.
+   [:ref
+    "(ns t (:export [f])) (defn f [] (ref 1))"
+    :kotoba.error/ambient-forbidden]
+   [:volatile
+    "(ns t (:export [f])) (defn f [] (volatile! 1))"
     :kotoba.error/ambient-forbidden]
    [:future
     "(ns t (:export [f])) (defn f [] (future 1))"
