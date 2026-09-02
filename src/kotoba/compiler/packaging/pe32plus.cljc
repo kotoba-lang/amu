@@ -249,12 +249,10 @@
             entry-segment (some #(and (= 5 (:flags %))
                                       (<= (:paddr %) entry)
                                       (< entry (+ (:paddr %) (:memsz %)))) segments)
-            second-pages (quot (+ (:memsz second-segment) 4095) 4096)
-            second-reserved-end (+ (:paddr second-segment)
-                                   (* (+ second-pages kernel-scratch-pages) 4096))
             non-overlap (or (<= (+ (:paddr first-segment) (:memsz first-segment))
                                 (:paddr second-segment))
-                            (<= second-reserved-end (:paddr first-segment)))]
+                            (<= (+ (:paddr second-segment) (:memsz second-segment))
+                                (:paddr first-segment)))]
       (when-not (and (= 2 phnum) (= 56 phentsize)
                      (every? #(and (= 1 (:type %)) (pos? (:filesz %))
                                    (= (:filesz %) (:memsz %))
@@ -263,8 +261,7 @@
                                    (<= (:paddr %) (- 0x40000000 (:memsz %)))
                                    (zero? (mod (:paddr %) 4096))
                                    (<= (+ (:offset %) (:filesz %)) (count kernel))) segments)
-                     (= [5 6] (mapv :flags segments)) entry-segment non-overlap
-                     (<= second-reserved-end 0x40000000))
+                     (= [5 6] (mapv :flags segments)) entry-segment non-overlap)
         (throw (ex-info "embedded kernel PT_LOAD contract rejected" {:segments segments})))
       (let [data-addresses [0 8]
             rx-limit (align (+ (:paddr first-segment) (:memsz first-segment)) 4096)
@@ -272,11 +269,10 @@
             rw-end (+ rw-start (:memsz second-segment))
             payload? (seq payload)
             ;; Two loader-private segment destinations precede boot-info.
-            ;; Boot-info v2 is then 80 bytes: the original 56-byte firmware
-            ;; map record plus the page-aligned RX limit and exact RW range.
-            ;; An optional payload pointer/length follows boot-info rather
-            ;; than occupying those W^X boundary slots.
-            variables-size (if payload? 112 96)
+            ;; Boot-info v4 is 96 bytes without a payload: the original
+            ;; firmware-map and W^X fields followed by a loader-owned scratch
+            ;; address/page count. An optional payload pointer/length follows.
+            variables-size (if payload? 128 112)
             memory-map-offset (align variables-size 16)
             memory-map-capacity 16384
             embedded-offset (align (+ memory-map-offset memory-map-capacity) 16)
@@ -286,8 +282,7 @@
             ;; independent of displacement values.
             segment-tokens (mapcat (fn [index segment]
                                      (allocate-segment (keyword (str "address" index))
-                                      (+ (quot (+ (:memsz segment) 4095) 4096)
-                                         (if (= index 1) kernel-scratch-pages 0))
+                                      (quot (+ (:memsz segment) 4095) 4096)
                                       (keyword (str "segment" index)) (:filesz segment)))
                                    (range) segments)
             tokens (vec (concat
@@ -295,6 +290,14 @@
                      0x48 0x83 0xec 0x28 0x49 0x89 0xcc 0x49 0x89 0xd5
                      0x4c 0x8b 0x72 0x60]
                     segment-tokens
+                    ;; AllocateAnyPages/EfiLoaderData. The returned physical
+                    ;; address is explicit boot authority, so no fixed low-RAM
+                    ;; hole or conventional-memory scan is required on K16.
+                    [0xb9 0 0 0 0 0xba 2 0 0 0 0x41 0xb8]
+                    (le kernel-scratch-pages 4)
+                    [0x4c 0x8d 0x0d] [(rip :scratch-address)]
+                    [0x41 0xff 0x56 0x28 0x48 0x85 0xc0 0x0f 0x85]
+                    [(rip :fail)]
                     (when payload?
                       (concat [0x48 0x8d 0x05] [(rip :payload)]
                               [0x48 0x89 0x05] [(rip :payload-pointer)]
@@ -331,13 +334,15 @@
             data-address (align (+ text-rva text-size) section-alignment)
             data (vec (concat (mapcat #(le (:paddr %) 8) segments)
                               (le 0x544f4f4245554941 8)
-                              (le (if payload? 3 2) 8)
+                              (le 4 8)
                               ;; map pointer/size/key/descriptor fields are
                               ;; populated by the loader before handoff.
                               (repeat 40 0)
                               (le rx-limit 8)
                               (le rw-start 8)
                               (le rw-end 8)
+                              (repeat 8 0)
+                              (le kernel-scratch-pages 8)
                               (when payload? (repeat 16 0))
                               (repeat (- memory-map-offset variables-size) 0)
                               (repeat memory-map-capacity 0)
@@ -360,9 +365,10 @@
                            :rx-limit (+ data-address 72)
                            :rw-start (+ data-address 80)
                            :rw-end (+ data-address 88)
+                           :scratch-address (+ data-address 96)
                            :memory-map (+ data-address memory-map-offset)
-                           :payload-pointer (+ data-address 96)
-                           :payload-length (+ data-address 104)
+                           :payload-pointer (+ data-address 112)
+                           :payload-length (+ data-address 120)
                            :payload (+ data-address payload-offset)}
                           (into {} (map-indexed
                                     (fn [index segment]
@@ -394,7 +400,7 @@
                                 :rva reloc-address :raw-size reloc-raw-size
                                 :raw-offset reloc-offset :characteristics 0x42000040
                                 :bytes reloc}]})]
-        {:format :pe32+-embedded-kernel/v2 :target firmware-target
+        {:format :pe32+-embedded-kernel/v3 :target firmware-target
          :entry :efi_main :entry-rva text-rva :sections [:text :data :reloc]
          :boot-info-layout (cond->
                             {:bytes (+ (- memory-map-offset 16)
@@ -404,7 +410,8 @@
                              :rx-limit-offset 56
                              :rw-start-offset 64
                              :rw-end-offset 72
-                             :kernel-scratch-base :rw-end
+                             :kernel-scratch-address-offset 80
+                             :kernel-scratch-pages-offset 88
                              :kernel-scratch-pages kernel-scratch-pages}
                              payload?
                              (assoc :payload-offset (- payload-offset 16)

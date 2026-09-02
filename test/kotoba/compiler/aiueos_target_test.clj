@@ -216,10 +216,11 @@
         first-image (pe32plus/package-embedded-kernel kernel)
         second-image (pe32plus/package-embedded-kernel kernel)
         bytes (:bytes first-image)]
-    (is (= :pe32+-embedded-kernel/v2 (:format first-image)))
-    (is (= {:bytes 16464 :memory-map-offset 80 :memory-map-capacity 16384
+    (is (= :pe32+-embedded-kernel/v3 (:format first-image)))
+    (is (= {:bytes 16480 :memory-map-offset 96 :memory-map-capacity 16384
             :rx-limit-offset 56 :rw-start-offset 64 :rw-end-offset 72
-            :kernel-scratch-base :rw-end :kernel-scratch-pages 14}
+            :kernel-scratch-address-offset 80
+            :kernel-scratch-pages-offset 88 :kernel-scratch-pages 14}
            (:boot-info-layout first-image)))
     (is (= [0x4d 0x5a] (subvec bytes 0 2)))
     (is (= [0x50 0x45 0 0] (subvec bytes 0x80 0x84)))
@@ -232,9 +233,10 @@
     (is (some #(= [0 0x40 0 0] %)
               (partition 4 1 bytes))
         "GetMemoryMap is bounded to the inline 16 KiB region")
-    (is (some #(= [0x41 0xb8 0x21 0x00 0x00 0x00] %)
-              (partition 6 1 bytes))
-        "RW PT_LOAD allocation includes fourteen loader-owned scratch pages")
+    (is (some #(= [0xb9 0 0 0 0 0xba 2 0 0 0
+                    0x41 0xb8 0x0e 0 0 0] %)
+              (partition 16 1 bytes))
+        "AllocateAnyPages reserves fourteen loader-owned scratch pages")
     (is (= bytes (:bytes second-image)) "embedded boot image is reproducible")
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #"x86-64 ET_EXEC"
           (pe32plus/package-embedded-kernel (vec (repeat 128 0)))))))
@@ -255,16 +257,17 @@
         store-offset (byte-sequence-offset bytes store-prefix)
         displacement (read-le bytes (+ store-offset 8) 4)
         store-next-rva (+ text-rva (- (+ store-offset 12) text-raw))]
-    (is (= {:bytes 16608 :memory-map-offset 96
+    (is (= {:bytes 16624 :memory-map-offset 112
             :memory-map-capacity 16384
             :rx-limit-offset 56 :rw-start-offset 64 :rw-end-offset 72
-            :kernel-scratch-base :rw-end :kernel-scratch-pages 14
-            :payload-offset 16480
+            :kernel-scratch-address-offset 80
+            :kernel-scratch-pages-offset 88 :kernel-scratch-pages 14
+            :payload-offset 16496
             :payload-bytes 128}
            (:boot-info-layout image)))
     (is (= (artifact/sha256 payload) (:embedded-payload-sha256 image)))
-    (is (= (+ data-rva 104) (+ store-next-rva displacement))
-        "payload length store follows the v2 W^X boundary fields")
+    (is (= (+ data-rva 120) (+ store-next-rva displacement))
+        "payload length store follows the v4 scratch authority fields")
     (is (= (:bytes image)
            (:bytes (pe32plus/package-embedded-kernel kernel payload))))
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #"exceeds 16 KiB"
