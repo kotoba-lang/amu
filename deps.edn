@@ -29,8 +29,21 @@
         ;; kotoba-sema repository boundary and public semantic-analysis API.
         io.github.kotoba-lang/kotoba-sema
         {:git/url "https://github.com/kotoba-lang/kotoba-sema.git"
-         :git/sha "f932c61ae7347fcc5417af13a4d248f87d77dd96"}
+         :git/sha "bb0d47c6c9caadd37adec1d2e2ca6ce61c783a88"}
         ;; ADR-2607266000 Phase B: these responsibilities moved out of this repo.
+        ;; slice-value: deliberately LEFT where main has it, and the reason is
+        ;; a collision between two changes that both landed 2026-09-02 and
+        ;; belong to neither this stream nor each other. kotoba-kir 984a507
+        ;; ("control effects bridge through as keywords, so `:abort` reaches
+        ;; the sealed row") and this repository's `definition_identity_test`
+        ;; (ADR 0300, "`:abort` names no authority, so the bridge has no
+        ;; catalog keyword for it and refuses") decided the same question in
+        ;; opposite directions. Advancing this pin past 984a507 turns 8
+        ;; assertions in that test red; nothing in this repository needs the
+        ;; kotoba-kir side of the slice work (the carrier is erased in
+        ;; kotoba-sema, and `native-boundary-type-refusal` is a refusal for a
+        ;; shape that cannot arrive), so the pin waits for that adjudication
+        ;; rather than forcing it.
         io.github.kotoba-lang/kotoba-kir
         {:git/url "https://github.com/kotoba-lang/kotoba-kir.git"
          :git/sha "08bdab8b1084160dcb58ac291a002b140a5abf13"}
@@ -154,7 +167,7 @@
         ;; (7070ec0) -- all fast-forward ancestors of this pin.
         io.github.kotoba-lang/kotoba-verifier
         {:git/url "https://github.com/kotoba-lang/kotoba-verifier.git"
-         :git/sha "5a16ecbb2ed066a89e2fdea0e1d2d98be7e91a0f"}
+         :git/sha "7a8cdcd98227b86af18e0c6e4d33a3e51eff17ff"}
 }
  :aliases {:test {:extra-paths ["test"]
                   :extra-deps
