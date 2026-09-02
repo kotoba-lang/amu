@@ -19,7 +19,7 @@ resolver, not two.
 
 Nothing about a kernel object made it single-file. `project/link-source` is
 portable `.cljc`, both resolvers beneath it already ran on Node (amu#717 for
-the PATH resolver, ADR 0295 for the lock), and every aiueos profile reaches
+the PATH resolver, ADR 0298 for the lock), and every aiueos profile reaches
 the same two ISA emitters as the ordinary native targets. The function that
 called them was simply written inside the Wasm driver.
 

@@ -77,6 +77,9 @@
   ;; checked with `merge-base --is-ancestor` against each stream's own merge
   ;; rather than assumed to contain them.
   ;;
+  ;; qwen  -- 2026-09-02: the three Qwen3.5 forward-pass kernel objects
+  ;;           (aiueos-qwen35-dot-f32 / -dequant-row / -matvec) enter
+  ;;           kernel-object-entries with measured fuel tiers (kotoba-native#113).
   ;; f64 min/max: and for a27651c, which this SHA contains -- checked with
   ;; `merge-base --is-ancestor`, not assumed. `f64-min`/`f64-max` on x86-64
   ;; emitted one instruction each, and MINSD/MAXSD compute `(a < b) ? a : b`:
