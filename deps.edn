@@ -51,13 +51,24 @@
         ;; shadowing in ADR 0327 puts two grammars on one classpath again.
         ;; So this is the matching pair, measured:
         ;;
-        ;;   this repository's resources/kotoba/lang/guest-grammar.edn  3e3f9748
-        ;;   kotoba-sema @1a073853                                      3e3f9748
+        ;;   this repository's resources/kotoba/lang/guest-grammar.edn  6e1202fd
+        ;;   kotoba-sema @1587f573                                      6e1202fd
         ;;
         ;; The next resync moves both together, or neither.
+        ;;
+        ;; fwstore, 2026-09-03: that resync is this one. kotoba-lang's
+        ;; authority gained `kernel-uefi-alloc-region` (6e1202fd), and the pin
+        ;; moves to the kotoba-sema that carries the same bytes AND the
+        ;; provenance root the head is for (kotoba-sema ADR-0030 -- pages the
+        ;; firmware allocated are a base the checked memory family may take).
+        ;; The pair above was written as 3e3f9748/3e3f9748 and was already
+        ;; 67561e57/67561e57 at merge time: ADR 0330 moved the files and left
+        ;; both digests behind, which
+        ;; `every-classpath-copy-is-the-authority-of-the-resync-wave` was red
+        ;; about on main.
         io.github.kotoba-lang/kotoba-sema
         {:git/url "https://github.com/kotoba-lang/kotoba-sema.git"
-         :git/sha "1a07385368e5efb09aed4d194df03d5110f2f2d8"}
+         :git/sha "1587f573bde8bb3ef1b7682acf415a9752b30a2f"}
         ;; ADR-2607266000 Phase B: these responsibilities moved out of this repo.
         ;;
         ;; The slice-value stream held this pin on purpose (ADR 0314), because
@@ -103,7 +114,7 @@
         ;; export rather than something the compiler re-derives.
         io.github.kotoba-lang/kotoba-kir
         {:git/url "https://github.com/kotoba-lang/kotoba-kir.git"
-         :git/sha "b2e5d9c445b5a3553059b4f7cfcbfe54c5db7786"}
+         :git/sha "233bd6bb6b15912679c529611a42c8af15f2354c"}
         ;; The frontend is an HIR producer and KIR lowering is its consumer;
         ;; both validate the same checked envelope.
         io.github.kotoba-lang/kotoba-hir
@@ -243,7 +254,7 @@
         ;; those three are transitive here and only deps-lock.edn names them.
         io.github.kotoba-lang/kotoba-native
         {:git/url "https://github.com/kotoba-lang/kotoba-native.git"
-         :git/sha "452422f5caad1a40e7b1a793a59f93f44abe94a7"}
+         :git/sha "adeb1b0fa5bcd2dd18a657c7e3bd3c4acbd630ae"}
         io.github.kotoba-lang/kotoba-component
         {:git/url "https://github.com/kotoba-lang/kotoba-component.git"
          :git/sha "68acc7237aec7b24b683304db8e87d14ec1be745"}
@@ -285,7 +296,7 @@
         ;; the first time. 6a743c3 adds the image-symbol name check.
         io.github.kotoba-lang/kotoba-verifier
         {:git/url "https://github.com/kotoba-lang/kotoba-verifier.git"
-         :git/sha "6c66e8b7028cfd7c527f888c110d8abcb2936e2e"}
+         :git/sha "96edd345ce46bc2e2c3c4ae9b4f4cdc26484f188"}
 }
  :aliases {:test {:extra-paths ["test"]
                   :extra-deps

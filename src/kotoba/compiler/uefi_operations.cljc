@@ -45,7 +45,15 @@
      ;; answer is wrong for every target but the one whose packager reserves
      ;; the bytes. That is the same sentence `kernel-system-table` gets, which
      ;; reads a context slot only the two-arity EFI entry shim writes.
-     kernel-scratch-region})
+     kernel-scratch-region
+     ;; fwstore: the allocation that answers with an address (kotoba-gmir
+     ;; ADR-0030). The NARROW set, and for the sharpest form of
+     ;; `kernel-uefi-call2`'s reason: it calls through a pointer read out of
+     ;; firmware memory AND it hands back an address that kotoba-sema then
+     ;; certifies as a region-provenance root. Under any other entry contract
+     ;; the boot services table it indexes is not there, so the call is
+     ;; through a wild pointer and the root is over whatever came back.
+     kernel-uefi-alloc-region})
 
 ;; boot-lit: read-only literals are gated too, but not to the same target and
 ;; not for the same reason.

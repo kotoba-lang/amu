@@ -106,7 +106,19 @@
   ;;            unrolled; the four codebook formats refused BY NAME.
   ;;   91033a9  the writable region is an lea, a function's address is a label.
   ;;   d710558  a reentry parameter's home is stored inside the loop.
-  (is (= "452422f5caad1a40e7b1a793a59f93f44abe94a7"
+  ;;
+  ;; fwstore: advanced 2026-09-03 to adeb1b0f for ONE encoding,
+  ;; `:uefi-alloc-region` (kotoba-native ADR-0080). It is `x86-uefi-call-wide`'s
+  ;; frame with the fifth-argument slot repurposed as the out-word
+  ;; `AllocatePages` writes through, so the address the firmware chose comes
+  ;; back in a register instead of through a load -- which is what makes the
+  ;; pages a region-provenance root rather than an address the program has to
+  ;; be trusted about. The failure answer is `xor r11,r11` / `test rax,rax` /
+  ;; `cmovne r10,r11`, and `cmove` is one bit away and inverts the whole
+  ;; operation with nothing faulting to say so, which is why the suite pins
+  ;; that byte as an explicit `not`. Checked with `merge-base --is-ancestor`
+  ;; against 452422f.
+  (is (= "adeb1b0fa5bcd2dd18a657c7e3bd3c4acbd630ae"
          (dependency-pin 'io.github.kotoba-lang/kotoba-native)))
   ;; Advanced 2026-08-31 for two more instances of ADR-0286's class -- a KIR
   ;; i64 is a BigInt under ClojureScript and reached a host operation that
@@ -156,7 +168,25 @@
   ;; dequantize-and-dot oracle the QEMU K-quant smoke checks its digits
   ;; against, 18f7c3a the sealed control-effect vocabulary as this
   ;; repository's export rather than a second derivation.
-  (is (= "b2e5d9c445b5a3553059b4f7cfcbfe54c5db7786"
+  ;;
+  ;; fwstore: advanced 2026-09-03 to d8b0e679 for one set membership
+  ;; (kotoba-kir ADR-0269). `kernel-uefi-alloc-region` refuses at the oracle
+  ;; under `:kernel-privileged-unavailable` and marks a module kernel-native.
+  ;; The decision recorded there is that it does NOT answer zero: zero is
+  ;; available in a way no other refusal's answer is -- "no firmware, so
+  ;; nothing was allocated" -- and it is the answer this operation gives for a
+  ;; FAILED allocation, so folding it turns a program's allocation into a
+  ;; compile-time null and every access through it into a trap the source
+  ;; never wrote. Checked with `merge-base --is-ancestor` against b2e5d9c.
+  ;;
+  ;; The pin is 233bd6bb rather than fwstore's own d8b0e679, and it is not a
+  ;; choice: 233bd6bb is kotoba-kir's main and CONTAINS d8b0e679. It also
+  ;; carries fuel64's `max-fuel` export (kotoba-kir ADR 0268), which the
+  ;; kotoba-verifier pinned below now READS rather than restating -- so
+  ;; pinning d8b0e679 here resolves a kotoba-kir without that var and the
+  ;; verifier fails to load with `No such var: ir/max-fuel`. Measured, not
+  ;; reasoned about.
+  (is (= "233bd6bb6b15912679c529611a42c8af15f2354c"
          (dependency-pin 'io.github.kotoba-lang/kotoba-kir)))
   ;; Advanced 2026-09-01 alongside the backend: the verifier re-derives the
   ;; two new arities and the v4 `expected-context`, and is what turns a
@@ -200,7 +230,19 @@
   ;;            does not is a green `check` and a refusal at compile time
   ;;            rather than a wrong artifact. 6a743c3 adds the image-symbol
   ;;            name check (ADR 0330).
-  (is (= "6c66e8b7028cfd7c527f888c110d8abcb2936e2e"
+  ;;   fwstore -- 2026-09-03, 96edd345: the four rows for
+  ;;            `kernel-uefi-alloc-region` (kotoba-verifier ADR-0050). Its
+  ;;            arity is the one in that table whose consequence is worst if
+  ;;            it is wrong, and it is one that file cannot see -- the operand
+  ;;            that matters is the one that is NOT there, because the
+  ;;            out-pointer belongs to the emitted frame. A miscounted operand
+  ;;            list does not fail to compile: it shifts every argument by one
+  ;;            and hands `AllocatePages` a page count that was meant to be a
+  ;;            memory type. That commit also advances the verifier's OWN
+  ;;            kotoba-native pin to adeb1b0f, so this repository resolves one
+  ;;            kotoba-native across both pins rather than an older one behind
+  ;;            its own.
+  (is (= "96edd345ce46bc2e2c3c4ae9b4f4cdc26484f188"
          (dependency-pin 'io.github.kotoba-lang/kotoba-verifier)))
   (is (= 7 (:abi/version aggregate-abi/contract)))
   (is (= :recursive-word-handles

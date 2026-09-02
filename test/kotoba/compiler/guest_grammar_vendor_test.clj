@@ -57,8 +57,20 @@
 
 (def authority-grammar-sha256
   "sha256 of kotoba-lang `lang/guest-grammar.edn` at the 2026-09-03 resync
-  wave. Change it only as part of that wave, in all four repositories."
-  "3e3f9748e245386fc2c89bbadabddfebb4bf02190e137494feacec6a12b4500a")
+  wave. Change it only as part of that wave, in all four repositories.
+
+  fwstore, 2026-09-03: 6e1202fd is the authority with
+  `kernel-uefi-alloc-region` in `:admitted-builtins`. It is carried here,
+  into kotoba-lang, into kotoba-sema (whose pin above moves with it) and into
+  kotoba's OWED digest, in one wave.
+
+  This literal was `3e3f9748` at merge time and the copies on the classpath
+  were already `67561e57` -- ADR 0330's resync moved the FILES and left the
+  digest behind, so `every-classpath-copy-is-the-authority-of-the-resync-wave`
+  was red on main. The `COMPARED`/byte-equality half was green throughout,
+  which is exactly what it is for: the two copies agreed with each other while
+  both disagreed with the number that ties them to the authority."
+  "6e1202fd23bc5a2ed6ef432114585c1813f5143d643eb4c8ee9a00b6e798b922")
 
 (def ^:private resource-path "kotoba/lang/guest-grammar.edn")
 
@@ -133,8 +145,9 @@
                      builtins)]
     (println (format "SCANNED\t%d\tadmitted-builtins (%d kernel heads)"
                      (count builtins) (count kernel)))
-    (is (= 114 (count kernel))
-        "kotoba-sema 1afff23 admitted 114 kernel heads on 2026-09-03")
+    (is (= 115 (count kernel))
+        "kotoba-sema 1afff23 admitted 114 kernel heads on 2026-09-03, and 115
+         since fwstore's `kernel-uefi-alloc-region`")
     (testing "local-state slice 1 reached this copy: atom/swap!/reset! are
               admitted by elaboration and are no longer forbidden heads"
       (let [forbidden (head-names (:forbidden-heads grammar))]
