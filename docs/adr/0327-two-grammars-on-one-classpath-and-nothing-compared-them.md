@@ -98,6 +98,39 @@ That last one is the one worth keeping in view. A negative test whose only
 assertion is a substring of the shared prefix is a test that has not asserted
 its own reason, which is the failure ADR-2608136000 names.
 
+## The constant moved backwards, and a single constant could not see it
+
+Measured 2026-09-03, after the first version of this change landed. The
+authority moved three times in an afternoon — kotoba-lang `543fa62a`
+(`3e3f9748`), `904ad318` (`67561e57`), `911c9143` (`6e1202fd`), each an
+ancestor of the next — and two PRs here set the constant independently an hour
+apart. #761 vendored `67561e57`; #762 then wrote the constant back to
+`3e3f9748`, **a grammar older than the copy already in the tree**. main went
+red, and the failure said only that the copy and the constant disagreed — not
+which of the two had gone backwards.
+
+A single constant compared against a single copy is consistent with itself at
+*any* value, so it cannot tell a resync from a regression.
+`authority-digest-history` is a vector, oldest first, and
+`the-authority-digest-never-moves-backwards` refuses a copy whose digest is in
+the vector but not at the end, naming its position. Appending is how the file
+changes; substituting is the defect.
+
+## The count was a literal, and a literal is not a comparison
+
+The first version pinned `114` kernel heads, measured against kotoba-sema
+`1afff23`. It went red one authority edit later, when `alloc-region` made it
+115 — and that red said nothing about drift, only that the number was an hour
+old.
+
+It is now DERIVED from `kotoba.sema/kernel-operation-heads` across the
+`deps.edn` pin, so the assertion is the one only this repository can make: the
+grammar amu **reads** names exactly the heads the frontend amu **uses**
+admits. The accessor was added to kotoba-sema for it (`df383ba0`) because
+requiring `kotoba.compiler.frontend` here is what
+`namespace-reachability-test/consumers-use-the-public-sema-boundary` refuses —
+and that check caught the attempt.
+
 ## Verification
 
 ```

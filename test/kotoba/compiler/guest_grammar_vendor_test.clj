@@ -53,12 +53,36 @@
   (:require [clojure.edn :as edn]
             [clojure.set :as set]
             [clojure.string :as str]
-            [clojure.test :refer [deftest is testing]]))
+            [clojure.test :refer [deftest is testing]]
+            [kotoba.sema :as sema]))
+
+(def authority-digest-history
+  "Every value this repository has carried for kotoba-lang
+  `lang/guest-grammar.edn`, oldest first. The current one is the LAST.
+
+  A vector rather than a single constant, and the reason is a measured
+  regression in this repository. On 2026-09-03 the authority moved three times
+  in an afternoon -- kotoba-lang `543fa62a` (3e3f9748), `904ad318` (67561e57),
+  `911c9143` (6e1202fd), each an ancestor of the next -- and two PRs here set
+  the constant independently an hour apart. #761 vendored 67561e57; #762 then
+  wrote the constant back to 3e3f9748, a grammar OLDER than the copy already
+  in the tree. main went red, and the failure said only that the copy and the
+  constant disagreed -- not which of the two had gone backwards.
+
+  A single constant compared against a single copy is consistent with itself
+  at ANY value, so it cannot tell a resync from a regression. The history can:
+  going back is a value already in the vector and not at the end.
+
+  APPEND to this vector; never substitute. The last entry is the current
+  authority, and the same wave carries those bytes to kotoba-lang, kotoba-sema
+  and kotoba."
+  ["3e3f9748e245386fc2c89bbadabddfebb4bf02190e137494feacec6a12b4500a"
+   "67561e57ad2b135d848eac75b46ab430d4404a463159f43775e01134e569988f"
+   "6e1202fd23bc5a2ed6ef432114585c1813f5143d643eb4c8ee9a00b6e798b922"])
 
 (def authority-grammar-sha256
-  "sha256 of kotoba-lang `lang/guest-grammar.edn` at the 2026-09-03 resync
-  wave. Change it only as part of that wave, in all four repositories."
-  "67561e57ad2b135d848eac75b46ab430d4404a463159f43775e01134e569988f")
+  "The current authority digest: the last entry of `authority-digest-history`."
+  (peek authority-digest-history))
 
 (def ^:private resource-path "kotoba/lang/guest-grammar.edn")
 
@@ -120,21 +144,68 @@
                "Resync from kotoba-lang lang/guest-grammar.edn and carry the"
                " digest to kotoba-lang, amu, kotoba-sema and kotoba together.")))))
 
+(deftest the-authority-digest-never-moves-backwards
+  ;; What `every-classpath-copy-is-the-authority-of-the-resync-wave` cannot
+  ;; say. That test compares the copies to the constant, so it reports a
+  ;; disagreement without saying which side moved -- and on 2026-09-03 the
+  ;; side that moved was the CONSTANT, backwards, past a copy that was already
+  ;; newer. This one names it.
+  (let [current (peek authority-digest-history)
+        superseded (set (butlast authority-digest-history))
+        copies (classpath-copies)]
+    (println (format "SCANNED\t%d\tauthority digests in the history, current %s"
+                     (count authority-digest-history) (subs current 0 12)))
+    (is (seq copies) "no copy on the classpath; this run measured nothing")
+    (is (= (count authority-digest-history) (count (set authority-digest-history)))
+        "a digest appears twice in the history, so the constant went back to
+         bytes this repository had already left")
+    (doseq [{:keys [url sha256]} copies]
+      (is (not (contains? superseded sha256))
+          (str "a classpath copy is a SUPERSEDED authority digest\n"
+               "  copy   " url "\n"
+               "  sha256 " (subs sha256 0 12) " -- position "
+               (.indexOf ^java.util.List authority-digest-history sha256)
+               " of " (count authority-digest-history) "\n"
+               "Resync FORWARD to " (subs current 0 12)
+               "; do not vendor bytes this repository has already moved past.")))))
+
 (deftest the-grammar-this-repository-reads-names-the-kernel-families
   ;; `io/resource` is what `kotoba.compiler.sema/load-catalog-forbidden`
   ;; actually calls, so this asserts the copy that WINS, not merely a copy.
-  ;; The equality against kotoba-sema's frontend tables is asserted there,
-  ;; where the tables are; here the counts are pinned so a resync that dropped
-  ;; a family is loud in this repository too.
+  ;;
+  ;; The count is DERIVED from kotoba-sema's frontend tables across the
+  ;; `deps.edn` pin, not written here as a literal. A literal was written here
+  ;; first -- 114, measured against kotoba-sema 1afff23 -- and it went red one
+  ;; authority edit later, when `alloc-region` made it 115. That red said
+  ;; nothing about drift; it said the number in this file was from Tuesday.
+  ;;
+  ;; Deriving it makes the assertion the one that matters and the one only
+  ;; this repository can make: the grammar amu READS names exactly the heads
+  ;; the frontend amu USES admits. kotoba-sema asserts the same equality
+  ;; against its own copy; here it crosses the pin.
   (let [grammar (edn/read-string (slurp (clojure.java.io/resource resource-path)))
         builtins (head-names (:admitted-builtins grammar))
         kernel (into #{} (filter #(or (str/starts-with? % "kernel-")
                                       (str/starts-with? % "slice-")))
-                     builtins)]
-    (println (format "SCANNED\t%d\tadmitted-builtins (%d kernel heads)"
-                     (count builtins) (count kernel)))
-    (is (= 114 (count kernel))
-        "kotoba-sema 1afff23 admitted 114 kernel heads on 2026-09-03")
+                     builtins)
+        ;; Through kotoba-sema's PUBLIC boundary. Requiring
+        ;; `kotoba.compiler.frontend` here is what
+        ;; `namespace-reachability-test/consumers-use-the-public-sema-boundary`
+        ;; refuses, and it caught the first draft of this file doing exactly
+        ;; that. `kernel-operation-heads` was added there for this comparison
+        ;; (kotoba-sema df383ba0).
+        admitted (head-names sema/kernel-operation-heads)]
+    (println (format "SCANNED\t%d\tadmitted-builtins (%d kernel heads; the pinned frontend admits %d)"
+                     (count builtins) (count kernel) (count admitted)))
+    (is (pos? (count admitted))
+        "the pinned frontend admits no kernel head at all; the tables were not
+         read, and an empty set would make every comparison below vacuous")
+    (is (empty? (set/difference admitted kernel))
+        (str "the pinned frontend admits heads the grammar this repository "
+             "reads does not name: " (pr-str (sort (set/difference admitted kernel)))))
+    (is (empty? (set/difference kernel admitted))
+        (str "the grammar names heads the pinned frontend does not admit: "
+             (pr-str (sort (set/difference kernel admitted)))))
     (testing "local-state slice 1 reached this copy: atom/swap!/reset! are
               admitted by elaboration and are no longer forbidden heads"
       (let [forbidden (head-names (:forbidden-heads grammar))]

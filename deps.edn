@@ -56,18 +56,20 @@
         ;;
         ;; The next resync moves both together, or neither.
         ;;
-        ;; Advanced 2026-09-03 to 5bdf5914 (ADR 0327), a fast-forward from
-        ;; 1a073853. kotoba-sema ships a byte copy of kotoba-lang's
+        ;; Advanced 2026-09-03 to df383ba0 (ADR 0327), a fast-forward.
+        ;; kotoba-sema ships a byte copy of kotoba-lang's
         ;; `lang/guest-grammar.edn` at the same resource path this repository
         ;; does, so TWO copies are on this classpath and `io/resource` answers
         ;; with whichever comes first. At 1a073853 that copy was 3e3f9748 while
         ;; `resources/` here had been resynced to 67561e57 -- the classpath held
         ;; two grammars and which one governed admission was decided by
-        ;; classpath order. `guest-grammar-vendor-test/every-classpath-copy-of-the-grammar-is-the-same-grammar`
-        ;; is what makes that visible; before it, nothing compared them.
+        ;; classpath order. This pin carries kotoba-sema's copy at 6e1202fd,
+        ;; the same bytes `resources/` now holds.
+        ;; `guest-grammar-vendor-test/every-classpath-copy-of-the-grammar-is-the-same-grammar`
+        ;; is what makes a mismatch visible; before it, nothing compared them.
         io.github.kotoba-lang/kotoba-sema
         {:git/url "https://github.com/kotoba-lang/kotoba-sema.git"
-         :git/sha "5bdf5914deee448fd2f0dfd5b2f19cd1cb2433c1"}
+         :git/sha "df383ba057e4e7da8542abf160d739a33ffc115b"}
         ;; ADR-2607266000 Phase B: these responsibilities moved out of this repo.
         ;;
         ;; The slice-value stream held this pin on purpose (ADR 0314), because
