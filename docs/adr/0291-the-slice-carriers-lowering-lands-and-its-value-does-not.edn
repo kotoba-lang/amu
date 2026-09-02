@@ -1,0 +1,118 @@
+{:adr/id 291
+ :adr/status :accepted
+ :adr/date "2026-09-02"
+ :adr/follows [284 285]
+ :decision :the-slice-carriers-lowering-lands-and-its-value-does-not
+
+ :adr-0285-decisions
+ [{:n 1
+   :decision "a distinct carrier whose element access lowers to a load"
+   :status :landed-at-the-machine-layer
+   :as #{slice-load-u8 slice-store-u8 slice-load-u16 slice-store-u16
+         slice-load-u32 slice-store-u32 slice-load-u64 slice-store-u64}
+   :element-cost "one unsigned compare and one scaled mov; no context callback"
+   :ceiling 1099511627776}
+  {:n 2
+   :decision "do not raise vector-item-limit, :vector-item-capacity, :vector-capacity"
+   :status :honoured-literally
+   :unchanged {:vector-item-limit 16384
+               :vector-item-capacity 65536
+               :vector-capacity 4096
+               :max-value-bytes 65536}}
+  {:n 3
+   :decision "frame-scale pixel data does not enter the guest"
+   :status :untouched
+   :note "nothing here is evidence for or against it"}]
+
+ :not-landed
+ {:what "[:slice T] as a VALUE -- a two-word carrier a let binds, a parameter
+         carries, and slice-sub narrows"
+  :why-not-admitted "an admission gate that admits what nothing can lower is
+                     the defect ADR 0284 named; ADR 0285's own closing section
+                     refuses to create a second instance of it"
+  :gates-deliberately-closed #{kotoba.kir/native-word-value-type?
+                               kotoba.kir/only-native-word-typed-features?}
+  :remaining-work
+  [{:where "kotoba.native.machine-ir/pilot-expression?"
+    :gap "knows exactly one value shape, :scalar; `value` returns a register,
+          not a register pair"}
+   {:where "kotoba.native.x86-64 fallback path"
+    :gap "keeps every value in RAX with stack pushes"}
+   {:where "kotoba.gmir / kotoba.mir"
+    :gap "need a two-register SSA value, OR the frontend erases slices into two
+          i64s before KIR (scalar replacement, which the record path already
+          does for a directly nested record-new)"}
+   {:where "kotoba.compiler.frontend"
+    :gap "needs [:slice T] in the type system, construction restricted to a
+          parameter, a kernel-boot-info-derived region, or slice-sub"}]
+  :cheapest-route :erasure-into-two-i64s
+  :cheapest-route-note "needs no new IR value: a slice parameter becomes two
+                        i64 parameters and a slice let becomes two bindings --
+                        exactly the shape the landed operations already take"
+  :authority-diff "kotoba-native docs/lang-authority-diff.md"
+  :f32-element {:status :declared-not-admitted :owner :f32-stream}}
+
+ :emitted-evidence
+ {:fixture "test/fixtures/slice-sum-u8.kotoba"
+  :command "amu compile --target x86_64-aiueos-kernel-v1 --jvm-free"
+  :result {:ok true :artifact-bytes 1336}
+  :disassembler "llvm-objdump, LLVM 22.1.7"
+  :u8-loop
+  ["49 ba 00 00 00 00 00 01 00 00  movabsq $0x10000000000, %r10"
+   "4d 39 d4                       cmpq    %r10, %r12"
+   "0f 87 ...                      ja      trap"
+   "48 85 db                       testq   %rbx, %rbx"
+   "0f 84 ...                      je      trap"
+   "4d 39 e5                       cmpq    %r12, %r13"
+   "0f 83 ...                      jae     trap"
+   "4e 8d 1c 2b                    leaq    (%rbx,%r13), %r11"
+   "45 0f b6 03                    movzbl  (%r11), %r8d"]
+  :u64-loop
+  ["4e 8d 1c eb                    leaq    (%rbx,%r13,8), %r11"
+   "4d 8b 03                       movq    (%r11), %r8"]
+  :pinned
+  [{:fact :ceiling-needs-movabs
+    :means "an address-space bound, not a window profile: a window tier is a
+            cmp r64, imm32"}
+   {:fact :index-scaled-in-the-addressing-mode
+    :means "the guest computes no byte offset"}
+   {:fact :zero-indirect-calls
+    :measured "llvm-objdump | grep -c 'callq *\\*' = 0 across the object; the
+               three direct callq are probe/entry plumbing, outside both loops"}]
+  :not-measured
+  {:what :timing
+   :why "ADR 0285's own Reflect stage refused the comparison
+         (:not-separated-from-noise, gap 0.031 against summed stdev 0.044) and
+         this change does not re-run it"
+   :claim-is :structural-and-counted}}
+
+ :gate-that-had-not-opened
+ {:symptom "{:error :verify, :message \"runtime KIR operation rejected\"}"
+  :when "the first compile of the fixture"
+  :already-open #{kotoba.compiler.frontend kotoba.kir
+                  kotoba.native.x86-64 kotoba.native.aarch64}
+  :still-closed kotoba.verifier
+  :why "that repository rejects by ABSENCE and re-derives its own tables on
+        purpose; both gates have to open"
+  :precedent "kotoba-kir ADR 0222, string-contains?"}
+
+ :evidence
+ {:suite "clojure -M:test"
+  :tests 1220
+  :assertions 8870
+  :namespaces 157
+  :provenance-coverage
+  {:loads 20 :stores 20
+   :refused #{loaded-byte-as-address computed-base}
+   :admitted #{kernel-subregion-narrowing kernel-boot-info}
+   :abi-boundary "a slice base parameter is reported as one without a line
+                  written for slices, because the provenance walk reads
+                  kernel-memory-operations"}}
+
+ :pins
+ [{:repo "kotoba-sema" :from "74ac0d7" :to "87f7d32"}
+  {:repo "kotoba-kir" :from "b6bfe23" :to "7aa6d2d"}
+  {:repo "kotoba-native" :from "4a4c4c3" :to "3b7a426"}
+  {:repo "kotoba-verifier" :from "58a02b4" :to "6ef43bd"}]
+ :lock "deps-lock.edn regenerated with nbb scripts/lock-classpath.cljs"
+ :pin-check "each bump verified with git merge-base --is-ancestor, not assumed"}

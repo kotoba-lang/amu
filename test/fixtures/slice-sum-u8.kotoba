@@ -1,0 +1,37 @@
+(ns amu.slice-sum-u8)
+
+;; memwidth / ADR 0285: sum a byte region through the slice family, on the
+;; freestanding aiueos kernel target.
+;;
+;; `base` reaches `slice-load-u8` as a PARAMETER, which is what makes it a
+;; legitimate region root: `kotoba.compiler.frontend`'s provenance rule admits
+;; a literal, `kernel-boot-info`, a parameter, or a `kernel-subregion`
+;; narrowing of one, and refuses `(+ base 1)`. That rule reads
+;; `kernel-memory-operations`, so the slice family inherited it by being in the
+;; same table rather than by anything written for it --
+;; `kernel_region_provenance_test` pins that for every width.
+;;
+;; `length` counts ELEMENTS -- bytes here, since the element is a u8 -- and is
+;; bounded by `slice-item-limit` (2^40) rather than by a window profile. The
+;; ceiling arrives as a `movabs`, which is the visible sign that it is an
+;; address-space bound: it does not fit an imm32, and a window tier does.
+
+(defn sum-bytes [base length index total]
+  (if (< index length)
+    (sum-bytes base length (+ index 1)
+               (+ total (slice-load-u8 base length index)))
+    total))
+
+;; The same traversal at the widest element, so the emitted SIB scale is
+;; visible: `leaq (%rbx,%r13,8), %r11` rather than `leaq (%rbx,%r13), %r11`.
+;; That one field is the whole difference between an element index and a byte
+;; offset, and it is what a `[:slice :u64]` would compile to.
+(defn sum-words [base length index total]
+  (if (< index length)
+    (sum-words base length (+ index 1)
+               (+ total (slice-load-u64 base length index)))
+    total))
+
+(defn main []
+  (+ (sum-bytes (kernel-boot-info) 4096 0 0)
+     (sum-words (kernel-boot-info) 512 0 0)))

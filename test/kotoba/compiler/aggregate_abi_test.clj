@@ -54,7 +54,13 @@
   ;; `vector-alloc` (slot 200) and `vector-assoc!` (slot 208), the two heads
   ;; KIR has declared and admitted since b6bfe23 with nothing on native to
   ;; emit them. Superproject ADR-2609010200.
-  (is (= "4a4c4c342a5c5318b96c9493abc5c61b5fad020d"
+  ;;
+  ;; Advanced 2026-09-02 for memwidth (kotoba-native ADR 0042): four transfer
+  ;; widths by four window tiers instead of seven hand-listed combinations, a
+  ;; natural-alignment check on every access wider than a byte, and the
+  ;; element-indexed slice family from ADR 0285 -- one unsigned compare and one
+  ;; scaled `mov` per element, with no context callback in the loop.
+  (is (= "3b7a426f8c90d38198bc924bb1b9c17d4470e0e1"
          (dependency-pin 'io.github.kotoba-lang/kotoba-native)))
   ;; Advanced 2026-08-31 for two more instances of ADR-0286's class -- a KIR
   ;; i64 is a BigInt under ClojureScript and reached a host operation that
@@ -65,13 +71,24 @@
   ;; error for any guest declaring a capability, while `check --jvm-free`
   ;; passed. The same advance also drops an npm package (`@noble/hashes`) out
   ;; of `kotoba.kir.value`'s ClojureScript require graph.
-  (is (= "b6bfe238396631ff4b61934264a919f8ae5236b7"
+  ;;
+  ;; Advanced 2026-09-02 for memwidth: `kernel-memory-profile` is four widths
+  ;; by four tiers, `slice-memory-profile` is the ADR 0285 carrier's oracle,
+  ;; and `word-load`/`word-byte-at` replace a helper whose ClojureScript
+  ;; branch used a THIRTY-TWO bit shift -- correct only because nothing had
+  ;; asked it for a byte above the fourth. A u64 store asks.
+  (is (= "7aa6d2d0c1465011d8455d1dd7c8db5e042c6f4d"
          (dependency-pin 'io.github.kotoba-lang/kotoba-kir)))
   ;; Advanced 2026-09-01 alongside the backend: the verifier re-derives the
   ;; two new arities and the v4 `expected-context`, and is what turns a
   ;; mismatched ABI into an explicit refusal rather than a v3 artifact
   ;; hunting for slots that are not there.
-  (is (= "58a02b4b04f0b5b81aabbd50cffabf5bbfc6061a"
+  ;;
+  ;; Advanced 2026-09-02 for memwidth, and the advance is the reason that
+  ;; repository exists: with the frontend, KIR and both backends already
+  ;; admitting `slice-load-u8`, `amu compile` still refused it here with
+  ;; "runtime KIR operation rejected". Both gates have to open.
+  (is (= "6ef43bd4e32cce88106f0a01c458c8a4e669fdf5"
          (dependency-pin 'io.github.kotoba-lang/kotoba-verifier)))
   (is (= 7 (:abi/version aggregate-abi/contract)))
   (is (= :recursive-word-handles
