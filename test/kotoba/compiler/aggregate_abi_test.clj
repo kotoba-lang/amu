@@ -64,7 +64,19 @@
   ;;   boot -- the four UEFI firmware-boundary encodings (kotoba-native
   ;;           ADR-0039): :system-table, :load-ptr, :uefi-call2 and :jump-to,
   ;;           the four things a BOOTX64.EFI written in Kotoba has to name.
-  (is (= "a5ddd788d22bd213f3d848c0e9dcc060c8b35d55"
+  ;; Advanced 2026-09-02 to a27651c: `f64-min`/`f64-max` on x86-64 emitted one
+  ;; instruction each, and MINSD/MAXSD compute `(a < b) ? a : b` -- they return
+  ;; the SECOND operand on every false comparison, which is exactly the two
+  ;; cases where the first must win: either input NaN, and (-0.0, +0.0).
+  ;; AArch64's FMIN/FMAX have neither hole, so nothing that ran on one ISA
+  ;; could see it. Executed through this repository's own `isa_execution_test`
+  ;; loaders -- AArch64 natively, x86-64 under Rosetta 2 -- that was six wrong
+  ;; answers in x86-64's eighteen NaN/signed-zero rows and none in AArch64's
+  ;; twenty-four. The rows are in that table now, so the pin cannot go
+  ;; backwards without the suite saying so. kotoba-native ADR 0050 (numbered
+  ;; 0046 inside this pin's own tree; renumbered the same day because a second
+  ;; decision had taken 0046 two minutes earlier).
+  (is (= "a27651c24c99aafb874e79158c9da1b3eec4b841"
          (dependency-pin 'io.github.kotoba-lang/kotoba-native)))
   ;; Advanced 2026-08-31 for two more instances of ADR-0286's class -- a KIR
   ;; i64 is a BigInt under ClojureScript and reached a host operation that
