@@ -227,7 +227,7 @@
 ;;
 ;; Cross-ISA evidence is `kotoba.compiler.isa-execution-test`, which runs the
 ;; same rows through the Rosetta loader as well. Repaired in kotoba-native
-;; a27651c (its ADR 0046).
+;; a27651c (its ADR 0050).
 
 (defn- binary64
   "`(op (f64-from-bits <l>) (f64-from-bits <r>))` to bits."
