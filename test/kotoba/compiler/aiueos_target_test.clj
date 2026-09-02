@@ -81,7 +81,7 @@
           [[:x86_64-aiueos-uefi-v1
            {:execution :firmware :artifact :pe32+ :subsystem :efi-application
              :entry :efi_main :abi :microsoft-x64
-             :entry-contract :microsoft-x64-zero-arity-efi-status-v1}]
+             :entry-contract :microsoft-x64-two-arity-efi-status-v2}]
            [:x86_64-aiueos-kernel-v1
             {:execution :kernel :artifact :elf64
              :entry :aiueos_kernel_entry :abi :aiueos-kernel-v1}]

@@ -1,0 +1,127 @@
+{:adr/id 291
+ :adr/status :accepted
+ :adr/date "2026-09-02"
+ :decision :f32-reaches-native-through-six-gates-not-one
+
+ :semantics-authority
+ {:repo "kotoba-lang/kotoba-lang"
+  :document "docs/adr/ADR-kotoba-floating-point-on-native.md"
+  :rounding :round-to-nearest-ties-to-even
+  :contraction :forbidden
+  :fast-math :forbidden
+  :special-values-in-computation #{:nan :positive-infinity :negative-infinity
+                                   :negative-zero}
+  :special-values-on-the-wire :still-rejected-by-value-codec}
+
+ :gate-removed
+ {:file "src/kotoba/compiler/core.clj"
+  :was "f32 values require the kotoba-script or Wasm target"
+  :now-admits #{:js-kotoba-v1 :wasm32-kotoba-v1
+                :x86_64-kotoba-v1 :aarch64-kotoba-v1}
+  :note "the same set the f64 gate beside it already admitted; the two stay
+         separate only so each refusal names its own width"}
+
+ ;; Removing the throw moved the refusal one layer down, six times. Each was
+ ;; found by running the next command, not by reading.
+ :gates-discovered
+ [{:n 1 :repo "kotoba-lang/kotoba-kir" :site "only-native-word-typed-features?"
+   :refusal "admitted nothing f32"
+   :comment-it-carried "f32 is deliberately absent: neither backend implements it"}
+  {:n 2 :repo "kotoba-lang/kotoba-sema" :site "desugar-expr* literal branch"
+   :refusal "(f32-add 1.5 2.5) became (f64-from-bits ...), so every f32
+             operation rejected its own literal argument as the wrong type"}
+  {:n 3 :repo "kotoba-lang/kotoba-gmir" :site "instruction-keysets"
+   :refusal "no :gmir/f32-* operation existed to lower into"}
+  {:n 4 :repo "kotoba-lang/kotoba-mir" :site "op keyset / allocator value set / physical selection"}
+  {:n 5 :repo "kotoba-lang/kotoba-codegen" :site "selected-keysets"
+   :refusal "MC rejected: non-canonical-selected-instruction {:mc/encoding :aarch64/f32-add}"}
+  {:n 6 :repo "kotoba-lang/kotoba-verifier" :site "verify-expr!"
+   :refusal "{:error :verify :message \"runtime KIR operation rejected\"}"
+   :why-it-matters "kotoba.verifier re-derives the admitted set INDEPENDENTLY
+                    of kotoba.kir, by design -- stricter is sound, looser is
+                    not. So the two omission lists live in separate
+                    repositories and must stay identical, and nothing checks
+                    that they do. A compile that reaches :error :verify after a
+                    green check is what that drift looks like."}]
+
+ :second-finding
+ {:claim "the stack emitters in kotoba-native are not on the compile path"
+  :measured "x86-64/emit-program and its AArch64 twin are, in full,
+             machine-ir/compile-kir-module. The stack emitters below them --
+             including their f64 tables -- are reachable only from tests; amu
+             calls emit-program and nothing else."
+  :consequence "a first draft added f32 to those tables and was dead code; it
+                was reverted. Extending the native surface starts in
+                machine_ir.cljc."}
+
+ :admitted-on-native
+ {:arithmetic #{f32-add f32-sub f32-mul f32-div}
+  :unary #{f32-neg f32-abs f32-sqrt}
+  :comparison #{f32-eq f32-lt f32-le f32-gt f32-ge f32-unordered}
+  :reinterpretation #{f32-from-bits f32-to-bits}
+  :conversion #{f32-to-f64-exact f64-to-f32-rounded
+                i64-to-f32-rounded i64-to-f64-rounded}}
+
+ :refused-on-native
+ {:min-max {:heads #{f32-min f32-max}
+            :reason "x86 MINSS/MAXSS return the SECOND operand when either
+                     input is NaN; AArch64 FMIN/FMAX and the oracle's Math/min
+                     return the NaN"
+            :pre-existing-defect "the f64 twins ARE implemented on both, so x86
+                                  already disagrees with the oracle on code
+                                  shipped since ADR-2608030300. Recorded, not
+                                  repaired -- repairing it moves f64 goldens."}
+  :checked-conversions {:reason "they trap in the oracle on inexactness and no
+                                 backend emits the check"}
+  :truncating-float-to-int {:reason "three answers out of domain: x86 yields
+                                     the integer indefinite value, AArch64
+                                     saturates, the oracle traps"}}
+
+ :representation
+ {:carrier :one-machine-word
+  :encoding :binary32-pattern-sign-extended-from-bit-31
+  :to-bits :identity
+  :from-bits :sign-extends
+  :memory-composition "(f32-from-bits (i32-wrap (kernel-load-u32 base len index)))"
+  :boundary-type :not-admitted
+  :boundary-note "neither :f32 nor :f64 is a native function-boundary type; the
+                  kexe export ABI passes i64 words and floats cross as their bit
+                  pattern. Named as a gap rather than left silent -- it applies
+                  equally to f64."}
+
+ :evidence
+ {:host "macOS / arm64, 2026-09-02"
+  :check {:command "bin/amu check examples/f32-dot-product.kotoba --jvm-free"
+          :result :ok}
+  :compile
+  [{:target :x86_64 :jvm-free true :code-bytes 839
+    :present #{"addss f3 0f 58 c1" "mulss" "sqrtss" "ucomiss" "cvtss2sd" "cvtsi2ss"}
+    :absent #{"ADDSD" "MULSD"}}
+   {:target :aarch64 :jvm-free true :code-bytes 520
+    :present #{"FADD S 1e212800" "FMUL S" "FSQRT S" "FCMP S" "FCVT D,S" "SCVTF S"}
+    :absent #{"FADD D" "FMUL D"}}]
+  :execute-and-observe
+  {:suite "test/kotoba/compiler/f32_native_execution_test.clj"
+   :tests 7 :assertions 81 :failures 0
+   :what "real machine code, signed, verified and EXECUTED through
+          kototama.native.executor on this host, every case compared
+          bit-for-bit against the KIR reference interpreter rather than against
+          a number written down in the test"
+   :notable-vectors ["0.1f + 0.2f = 0x3E99999A"
+                     "NaN unordered on all six comparisons"
+                     "i64-to-f32-rounded 16777217 = 0x4B800000 (round-to-nearest-even)"]}
+  :discrimination
+  {:break "deleted the sign extension from a64-f32-binary"
+   :observed "(not (= -1082130432 3212836864))"
+   :meaning "the signed/zero-extended divergence the representation exists to
+             prevent"
+   :restored :passes-unchanged
+   :also "one expectation (sqrt(14.0f)) was written down wrong and was caught by
+          the oracle comparison, which is why the comparison is against the
+          oracle and not against constants"}}
+
+ :not-done
+ #{:packed-simd
+   :xmm-ymm-register-allocation
+   :float-function-boundary-type-at-either-width
+   :machine-check-that-kir-and-verifier-omission-lists-agree}}
