@@ -254,8 +254,16 @@
                      (= [5 6] (mapv :flags segments)) entry-segment non-overlap)
         (throw (ex-info "embedded kernel PT_LOAD contract rejected" {:segments segments})))
       (let [data-addresses [0 8]
+            rx-limit (align (+ (:paddr first-segment) (:memsz first-segment)) 4096)
+            rw-start (:paddr second-segment)
+            rw-end (+ rw-start (:memsz second-segment))
             payload? (seq payload)
-            variables-size (if payload? 88 72)
+            ;; Two loader-private segment destinations precede boot-info.
+            ;; Boot-info v2 is then 80 bytes: the original 56-byte firmware
+            ;; map record plus the page-aligned RX limit and exact RW range.
+            ;; An optional payload pointer/length follows boot-info rather
+            ;; than occupying those W^X boundary slots.
+            variables-size (if payload? 112 96)
             memory-map-offset (align variables-size 16)
             memory-map-capacity 16384
             embedded-offset (align (+ memory-map-offset memory-map-capacity) 16)
@@ -309,8 +317,14 @@
             data-address (align (+ text-rva text-size) section-alignment)
             data (vec (concat (mapcat #(le (:paddr %) 8) segments)
                               (le 0x544f4f4245554941 8)
-                              (le (if payload? 2 1) 8)
-                              (repeat (- variables-size 32) 0)
+                              (le (if payload? 3 2) 8)
+                              ;; map pointer/size/key/descriptor fields are
+                              ;; populated by the loader before handoff.
+                              (repeat 40 0)
+                              (le rx-limit 8)
+                              (le rw-start 8)
+                              (le rw-end 8)
+                              (when payload? (repeat 16 0))
                               (repeat (- memory-map-offset variables-size) 0)
                               (repeat memory-map-capacity 0)
                               (repeat (- embedded-offset
@@ -329,9 +343,12 @@
                            :descriptor-size (+ data-address 48)
                            :descriptor-version (+ data-address 56)
                            :map-key (+ data-address 64)
+                           :rx-limit (+ data-address 72)
+                           :rw-start (+ data-address 80)
+                           :rw-end (+ data-address 88)
                            :memory-map (+ data-address memory-map-offset)
-                           :payload-pointer (+ data-address 72)
-                           :payload-length (+ data-address 80)
+                           :payload-pointer (+ data-address 96)
+                           :payload-length (+ data-address 104)
                            :payload (+ data-address payload-offset)}
                           (into {} (map-indexed
                                     (fn [index segment]
@@ -369,7 +386,10 @@
                             {:bytes (+ (- memory-map-offset 16)
                                        memory-map-capacity (count payload))
                              :memory-map-offset (- memory-map-offset 16)
-                             :memory-map-capacity memory-map-capacity}
+                             :memory-map-capacity memory-map-capacity
+                             :rx-limit-offset 56
+                             :rw-start-offset 64
+                             :rw-end-offset 72}
                              payload?
                              (assoc :payload-offset (- payload-offset 16)
                                     :payload-bytes (count payload)))
