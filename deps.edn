@@ -19,17 +19,45 @@
         io.github.kotoba-lang/abi {:git/url "https://github.com/kotoba-lang/abi.git"
                                    :git/sha "32ee84b2efc92478c846629c8d8319280eed506c"}
         org.clojure/tools.reader {:mvn/version "1.5.2"}
+        ;; Advanced 2026-09-03 (ADR 0330) with kotoba-lang/provider f040fc0,
+        ;; which retires org.clojure/data.json for this namespace and needs
+        ;; d5137c7's kwargs surface to be a drop-in.
         io.github.kotoba-lang/json
         {:git/url "https://github.com/kotoba-lang/json.git"
-         :git/sha "840c35b59f6f259c9349611b08611667f37c2be8"}
+         :git/sha "d5137c7bbd029e4c09964e8241899d2c286302bf"}
         io.github.kotoba-lang/kotoba-script
         {:git/url "https://github.com/kotoba-lang/kotoba-script.git"
          :git/sha "b72a333878a70954274162ce8ce09e480824ac59"}
         ;; ADR-0222: source reading and semantic analysis live behind the
         ;; kotoba-sema repository boundary and public semantic-analysis API.
+        ;;
+        ;; Advanced 2026-09-03 to 1a073853 (ADR 0327). kotoba-sema also ships a
+        ;; byte copy of kotoba-lang's `lang/guest-grammar.edn` at the same
+        ;; resource path this repository does, so TWO copies are on this
+        ;; classpath and `io/resource` answers with whichever comes first.
+        ;; Nothing compared them until
+        ;; `guest-grammar-vendor-test/every-classpath-copy-of-the-grammar-is-the-same-grammar`,
+        ;; and when it was written the two disagreed: this repository's copy
+        ;; was one change behind (local-state slice 1 -- it still forbade
+        ;; `atom`/`swap!`/`reset!`, which the authority now admits by
+        ;; elaboration). Resyncing this repository's copy alone would have left
+        ;; the classpath holding two grammars, so the pin moves with it.
+        ;;
+        ;; TWO COMMITS BEHIND ON PURPOSE at merge time, 2026-09-03 (ADR 0330).
+        ;; kotoba-sema `62ecebf0` resynced the vendored grammar again, to
+        ;; kotoba-lang `ca2e595a` (sha256 67561e57). The wave is still moving,
+        ;; and the copy in this repository has to equal the copy in the sema
+        ;; that is PINNED here -- not the newest one -- or the classpath
+        ;; shadowing in ADR 0327 puts two grammars on one classpath again.
+        ;; So this is the matching pair, measured:
+        ;;
+        ;;   this repository's resources/kotoba/lang/guest-grammar.edn  3e3f9748
+        ;;   kotoba-sema @1a073853                                      3e3f9748
+        ;;
+        ;; The next resync moves both together, or neither.
         io.github.kotoba-lang/kotoba-sema
         {:git/url "https://github.com/kotoba-lang/kotoba-sema.git"
-         :git/sha "196d5817cebb9ad6165ecea2c9c3166f8983dc79"}
+         :git/sha "1a07385368e5efb09aed4d194df03d5110f2f2d8"}
         ;; ADR-2607266000 Phase B: these responsibilities moved out of this repo.
         ;;
         ;; The slice-value stream held this pin on purpose (ADR 0314), because
@@ -65,11 +93,19 @@
         ;; kotoba.kir.alpha-normalization, the single five-binder walk that
         ;; kotoba-lang lang/code-identity.edn :ci8 named as the fix for the walk
         ;; being implemented twice, exists only at afd117d2 and later.
+        ;;
+        ;; Advanced again 2026-09-03 (ADR 0330) to b2e5d9c. d809f28 adds the
+        ;; four codebook dequant formats and their six grid tables and 268e28b
+        ;; the fused dequantize-and-dot oracle -- that oracle is the answer the
+        ;; QEMU K-quant smoke compares its eight digits against, so without this
+        ;; pin `AIUEOS_DEQUANT_KQUANT_QEMU_OK` has nothing to disagree with.
+        ;; 18f7c3a makes the sealed control-effect vocabulary this repository's
+        ;; export rather than something the compiler re-derives.
         io.github.kotoba-lang/kotoba-kir
         {:git/url "https://github.com/kotoba-lang/kotoba-kir.git"
          ;; fuel64: 233bd6bb exports `max-fuel` (kotoba-kir ADR 0268), the fuel
          ;; ceiling `kotoba.compiler.nbb.cli` and `kotoba.verifier` now read.
-         ;; Fast-forward: ahead_by 11, behind_by 0.
+         ;; Fast-forward from the pin main now carries (b2e5d9c): ahead 5, behind 0.
          :git/sha "233bd6bb6b15912679c529611a42c8af15f2354c"}
         ;; The frontend is an HIR producer and KIR lowering is its consumer;
         ;; both validate the same checked envelope.
@@ -86,6 +122,28 @@
         io.github.kotoba-lang/artifact
         {:git/url "https://github.com/kotoba-lang/artifact.git"
          :git/sha "912ca0d60f4a9b5d3617a43d1d42560477d7894f"}
+        ;; HELD at 1a2e10c on 2026-09-03 (ADR 0331), 28 commits behind its main,
+        ;; while every other pin in this file moved to the tip. The reason, so
+        ;; that a lagging pin and a pin with an argument behind it stay
+        ;; distinguishable from the outside:
+        ;;
+        ;; io-ipld 01b6453 makes the DAG-CBOR DECODER enforce canonical form.
+        ;; `ipld-adl-test/guest-output-must-be-canonical-dag-cbor` proves the
+        ;; opposite layering -- that a guest can emit bytes which decode cleanly
+        ;; and are STILL refused, because only re-encoding shows the codec would
+        ;; have written something shorter. Its fixture is `18 05`, a non-minimal
+        ;; encoding of 5. Measured at 48ba404 that fixture stops reaching the
+        ;; ADL check at all: the decoder refuses first, so the case answers
+        ;; `:adl-output-not-a-node` and `:adl-output-not-canonical` is left with
+        ;; no input that can produce it.
+        ;;
+        ;; Making the test expect the new code would leave this repository with
+        ;; a refusal nothing can trigger -- a check that cannot fire, which is
+        ;; the shape ADR-2608136000 exists to refuse. Deciding whether the ADL
+        ;; canonicality check is genuinely subsumed by the decoder, or whether a
+        ;; non-canonical form still exists that decodes at 48ba404, is a
+        ;; question for io-ipld's owner and not for a pin-consolidation commit.
+        ;; Nothing in the K16 native programme depends on this advance.
         io.github.kotoba-lang/io-ipld
         {:git/url "https://github.com/kotoba-lang/io-ipld.git"
          :git/sha "1a2e10cf8038155de210357e637eac4102de89cb"}
@@ -160,12 +218,41 @@
         ;; `vector-assoc!` (slot 208) on both ISAs, via kotoba-gmir 682a0d5
         ;; (the arities) and kotoba-mir 9b3a42e (the offsets). Superproject
         ;; ADR-2609010200.
+        ;;
+        ;; Advanced 2026-09-03 (ADR 0330) past 44 commits that had accumulated
+        ;; behind this one pin while every K16 stream was told the amu bump was
+        ;; batched. Containment was checked with `compare` per stream, not
+        ;; assumed:
+        ;;   279fbc3  a bounded store answers with the word it STORED, not with
+        ;;            the incoming base (x86) or a register nothing wrote
+        ;;            (aarch64).
+        ;;   da3593b5 kernel-read-cr4 / kernel-write-cr4 / kernel-xsetbv.
+        ;;            Without these `AIUEOS_DOT_F32_QEMU_OK` was
+        ;;            `COULD-NOT-RUN compile-failed ... aggregate ABI rejected:
+        ;;            call-abi-not-admitted` against this repository's main,
+        ;;            and reproduced only against an unlanded branch.
+        ;;   a727bf7  six RTL8125 driver symbols and the FIFO-drain fuel tier.
+        ;;   1baa450  three SHA-256 symbols for a message arriving in pieces.
+        ;;   70984ea / 2c4d6c3 / 449792d  the Qwen3.5 export names and the
+        ;;            measured fuel tiers for the second and third tranches.
+        ;;   1072816 / bbeed36 / a63faa6  Q4_K and Q6_K EMIT (thirty-two groups
+        ;;            unrolled) and the four codebook formats refused BY NAME.
+        ;;            This is what `AIUEOS_DEQUANT_KQUANT_QEMU_OK` needs.
+        ;;   91033a9  the writable region is an lea, a function's address is a
+        ;;            label.
+        ;;   d710558  a reentry parameter's home is stored inside the loop.
+        ;; The advance carries kotoba-gmir fe23816 -> 323bfc0, kotoba-mir
+        ;; e266a86 -> 0bb174c and kotoba-codegen 68d409f -> 3a7d7fc with it;
+        ;; those three are transitive here and only deps-lock.edn names them.
         io.github.kotoba-lang/kotoba-native
         {:git/url "https://github.com/kotoba-lang/kotoba-native.git"
          ;; fuel64: c31cf87b widens the object replenish to a 64-bit budget
          ;; (kotoba-native ADR 0078) and exports `max-object-fuel`. No shipped
          ;; object's bytes move -- 108 digests taken before the change are
-         ;; re-derived by that repo's suite. Fast-forward: ahead_by 18.
+         ;; re-derived by that repo's suite; and ADR 0079, where `package-user`
+         ;; read the constant 512 instead of the declared budget -- the same
+         ;; defect this repo's PE32+ packager had. Fast-forward from the pin
+         ;; main now carries (452422f): ahead 5, behind 0.
          :git/sha "95361f3f1dada3c94dc0f1ba9df0030505f51436"}
         io.github.kotoba-lang/kotoba-component
         {:git/url "https://github.com/kotoba-lang/kotoba-component.git"
@@ -174,9 +261,14 @@
         ;; bytes it read are the ones the lock names, and that is a hash, not a
         ;; path check. Same pin the codebase/semantic layers use, so a source
         ;; CID means the same thing on both sides of the boundary.
+        ;;
+        ;; Advanced 2026-09-03 (ADR 0330) to 561fe7d, which replaces the npm
+        ;; package `@noble/hashes` with kotoba-lang/org-nist-sha2 -- already in
+        ;; this closure, so the change removes a second sha2 implementation
+        ;; rather than adding a dependency.
         io.github.kotoba-lang/io-multiformats
         {:git/url "https://github.com/kotoba-lang/io-multiformats.git"
-         :git/sha "c5963264a8da78ece878b04da18225abdbb84457"}
+         :git/sha "561fe7dfada3db852b127f06d41750dabd3cead9"}
         ;; The verifier independently re-derives aggregate ABI v7, including
         ;; recursive record-payload variants, and re-emits the widened boundary
         ;; in addition to scalar/variant/call-frame checks.
@@ -193,19 +285,28 @@
         ;; slice family, the firmware boundary that marks a module
         ;; kernel-native (8158aa8), and the interrupt entry address gate
         ;; (7070ec0) -- all fast-forward ancestors of this pin.
+        ;;
+        ;; Advanced 2026-09-03 (ADR 0330) for the fifth and sixth instances of
+        ;; that same independence: b58c009 re-derives the fused
+        ;; dequantize-and-dot family and bcea4a1 the four codebook formats, each
+        ;; on this side of the boundary. A format admitted by kotoba.kir and
+        ;; absent here is a green `check` and "runtime KIR operation rejected"
+        ;; on compile -- which is exactly how the kernel-dot-f32 gap was found
+        ;; the first time. 6a743c3 adds the image-symbol name check.
         io.github.kotoba-lang/kotoba-verifier
         {:git/url "https://github.com/kotoba-lang/kotoba-verifier.git"
          ;; fuel64: d1985d62 reads the fuel ceiling from kotoba.kir instead of
          ;; carrying 2^20 (kotoba-verifier ADR 0049). Required WITH the two
          ;; pins above, not optional: this driver would otherwise admit a
-         ;; budget the pinned verifier refuses. Fast-forward: ahead_by 6.
+         ;; budget the pinned verifier refuses. Fast-forward from the pin main
+         ;; now carries (6c66e8b): ahead 2, behind 0.
          :git/sha "d1985d62a114a1958c686e3d79477bf236d2b495"}
 }
  :aliases {:test {:extra-paths ["test"]
                   :extra-deps
                   {io.github.kotoba-lang/provider
                    {:git/url "https://github.com/kotoba-lang/provider.git"
-                    :git/sha "407d5af1b28b55a506fcd47b50a54224fc5482b2"}
+                    :git/sha "f040fc07675b0ef68b6e638a856cd20b65dba125"}
                    io.github.kotoba-lang/kototama-native
                    {:git/url "https://github.com/kotoba-lang/kototama-native.git"
                     :git/sha "ec4d182e5f0118ecaca54b66295eb6a9cf3f9536"}}
@@ -229,7 +330,7 @@
               :git/sha "ec4d182e5f0118ecaca54b66295eb6a9cf3f9536"}
              io.github.kotoba-lang/provider
              {:git/url "https://github.com/kotoba-lang/provider.git"
-              :git/sha "407d5af1b28b55a506fcd47b50a54224fc5482b2"}}
+              :git/sha "f040fc07675b0ef68b6e638a856cd20b65dba125"}}
             :extra-paths ["test"]
             :main-opts ["-m" "kotoba.compiler.lang-native-conformance"]}
            :fuel-estimate

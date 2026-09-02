@@ -27,16 +27,36 @@
    [:load
     "(ns t (:export [f])) (defn f [] (load \"x\"))"
     :kotoba.error/ambient-forbidden]
-   ;; boot-scratch: `:kotoba.error/local-state-atom-position`, not
-   ;; `:ambient-forbidden`. kotoba-sema's local-state slice gave this form a
-   ;; SPECIFIC refusal -- an `atom` outside a `let` binding position -- where
-   ;; it used to fall to the generic one. The claim this suite makes is
-   ;; unchanged and is the one that matters: the form still rejects, and the
-   ;; assertion above (`(some? e)`) is what carries it. Only the code is more
-   ;; precise, which is why the row is updated rather than the check relaxed.
-   [:atom
+   ;; `atom` left `:forbidden-heads` on 2026-09-02 (local-state slice 1,
+   ;; kotoba-lang `lang/local-state.edn`): a NON-ESCAPING, function-local cell
+   ;; is admitted by elaboration -- it becomes ordinary `let` rebindings, needs
+   ;; no grant and adds nothing to the effect row. So this source is still
+   ;; refused, but by the position rule rather than by the head, and the code
+   ;; that names WHY is `:local-state-atom-position`: an atom must be the init
+   ;; of a `let` binding.
+   ;;
+   ;; Pinned to the new code deliberately. `:ambient-forbidden` here would now
+   ;; be a claim about a head that is no longer forbidden, and a corpus that
+   ;; accepted either code would stop discriminating between "refused because
+   ;; ambient mutation is banned" and "refused because this atom escapes" --
+   ;; which is the whole content of the slice.
+   ;;
+   ;; (The boot-scratch stream made the same repair independently on
+   ;; 2026-09-02 and said the other half of it: the claim this suite makes
+   ;; is carried by `(some? e)` above, and only the code got more precise.
+   ;; This row is the union -- its wording plus the two controls.)
+   [:atom-outside-a-let-init
     "(ns t (:export [f])) (defn f [] (atom 1))"
     :kotoba.error/local-state-atom-position]
+   ;; The seven heads with no ability model decided. These are still refused
+   ;; BY THE HEAD, and this is the control for the entry above: if `ref` ever
+   ;; starts reporting a position code too, the distinction has been lost.
+   [:ref
+    "(ns t (:export [f])) (defn f [] (ref 1))"
+    :kotoba.error/ambient-forbidden]
+   [:volatile
+    "(ns t (:export [f])) (defn f [] (volatile! 1))"
+    :kotoba.error/ambient-forbidden]
    [:future
     "(ns t (:export [f])) (defn f [] (future 1))"
     :kotoba.error/ambient-forbidden]

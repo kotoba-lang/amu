@@ -349,13 +349,33 @@
     (is (zero? (:exit probe)) (:err probe))))
 
 (deftest direct-floating-ordered-collections-fail-closed
-  (doseq [type ["[:set :f64]" "[:map :keyword :f64]" "[:map :f32 :i64]"]]
-    (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo
-         #"direct floating"
-         (compiler/compile-source
-          (str "(defn main [] " type " 0)")
-          :wasm32-browser-kotoba-v1)))))
+  ;; Each case pins its OWN code and its own reason, rather than one loose
+  ;; `#"direct floating"` across all three. Measured 2026-09-03 at kotoba-sema
+  ;; 1a073853: the map cases had stopped saying "direct floating" -- the typed
+  ;; map key work replaced the shared sentence with two specific ones, and the
+  ;; key case now explains WHY a float key is undecidable rather than only
+  ;; that it is outside the ABI. The old regex matched the shared prefix, so
+  ;; it went red on a message that had become BETTER.
+  ;;
+  ;; A regex broad enough to survive that would have been broad enough to
+  ;; accept any refusal at all, which is the failure mode ADR-2608136000 calls
+  ;; a negative test that never asserted its own reason.
+  (doseq [[type code fragment]
+          [["[:set :f64]" :kotoba.error/floating-set-item
+            "direct floating set items are outside the structured scalar ABI"]
+           ["[:map :keyword :f64]" :kotoba.error/floating-map-kv
+            "map value type :f64 is outside the structured scalar ABI"]
+           ["[:map :f32 :i64]" :kotoba.error/floating-map-kv
+            "map key type :f32 has no portable key identity"]]]
+    (testing type
+      (let [e (try (compiler/compile-source
+                    (str "(defn main [] " type " 0)")
+                    :wasm32-browser-kotoba-v1)
+                   nil
+                   (catch clojure.lang.ExceptionInfo e e))]
+        (is (some? e) (str type " must be refused"))
+        (is (= code (:kotoba.error/code (ex-data e))) (pr-str (ex-data e)))
+        (is (str/includes? (ex-message e) fragment) (ex-message e))))))
 
 (deftest algebraic-operations-have-sealed-wasm-runtime-parity
   (let [source

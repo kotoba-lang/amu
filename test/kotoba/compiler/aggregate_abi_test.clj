@@ -86,6 +86,37 @@
   ;;           `kotoba.native.image-scratch` -- the offset and the 16 KiB
   ;;           reservation, read by the encoder AND by this repository's PE32+
   ;;           packager (kotoba-native ADR-0068/0069).
+  ;;
+  ;; Advanced 2026-09-03 by the pin-consolidation stream (ADR 0330). Forty-four
+  ;; merges had landed behind this one pin while every K16 stream was told the
+  ;; amu bump was batched, and two QEMU proofs were unreproducible from landed
+  ;; code because of it: both `AIUEOS_DOT_F32_QEMU_OK` and
+  ;; `AIUEOS_DEQUANT_KQUANT_QEMU_OK` answered `COULD-NOT-RUN compile-failed`
+  ;; against this repository's main and reproduced only against private
+  ;; branches. Every claim below was checked with `compare` against this SHA:
+  ;;   279fbc3  a bounded store answers with the word it STORED.
+  ;;   da3593b5 kernel-read-cr4 / kernel-write-cr4 / kernel-xsetbv -- the
+  ;;            "aggregate ABI rejected: call-abi-not-admitted" the dot-f32
+  ;;            probe was hitting.
+  ;;   a727bf7  six RTL8125 driver symbols and the FIFO-drain fuel tier.
+  ;;   1baa450  three SHA-256 symbols for a message arriving in pieces.
+  ;;   70984ea / 2c4d6c3 / 449792d  Qwen3.5 export names and measured fuel
+  ;;            tiers, tranches two and three.
+  ;;   1072816 / bbeed36 / a63faa6  Q4_K and Q6_K EMIT, thirty-two groups
+  ;;            unrolled; the four codebook formats refused BY NAME.
+  ;;   91033a9  the writable region is an lea, a function's address is a label.
+  ;;   d710558  a reentry parameter's home is stored inside the loop.
+  ;;
+  ;; fuel64 -- 2026-09-03: the object replenish is no longer an imm32.
+  ;;           `replenish-bytes` picks between `mov qword [r9+8],imm32` and
+  ;;           `movabs r10,imm64; mov [r9+8],r10`, so a per-call budget past
+  ;;           2,147,483,647 can exist at all (ADR 0078). Every shipped tier
+  ;;           still fits the narrow form: that repo carries the SHA-256 of
+  ;;           all 108 packaged objects taken BEFORE the change and
+  ;;           re-derives them, so this advance moves no object bytes.
+  ;;           95361f3 also carries ADR 0079 -- `package-user` read the
+  ;;           constant 512 instead of the declared budget, the same defect
+  ;;           this repository's PE32+ packager had.
   (is (= "95361f3f1dada3c94dc0f1ba9df0030505f51436"
          (dependency-pin 'io.github.kotoba-lang/kotoba-native)))
   ;; Advanced 2026-08-31 for two more instances of ADR-0286's class -- a KIR
@@ -131,6 +162,18 @@
   ;; name a place in the IMAGE -- its `.data` reservation and its function
   ;; labels -- refuse under `:image-address-unavailable` rather than under the
   ;; literal pool's keyword, and both mark a module kernel-native.
+  ;; Advanced 2026-09-03 (ADR 0330) to b2e5d9c: d809f28 the four codebook
+  ;; dequant formats with their six grid tables, 268e28b the fused
+  ;; dequantize-and-dot oracle the QEMU K-quant smoke checks its digits
+  ;; against, 18f7c3a the sealed control-effect vocabulary as this
+  ;; repository's export rather than a second derivation.
+  ;; Advanced 2026-09-03 again (fuel64, kotoba-kir ADR 0268): `max-fuel` is
+  ;; exported from there, because the ceiling on an execution budget is a
+  ;; property of the counter and the counter is that namespace's. 2^53-1 --
+  ;; `charge!` is a plain host number, a double on Node, and `x - 1 === x` is
+  ;; already true at 2^53+4. `execute` refuses outside the range by name
+  ;; rather than clamping, and a `:fuel-exhausted` trap now reports the budget
+  ;; the run actually had instead of the historical 512.
   (is (= "233bd6bb6b15912679c529611a42c8af15f2354c"
          (dependency-pin 'io.github.kotoba-lang/kotoba-kir)))
   ;; Advanced 2026-09-01 alongside the backend: the verifier re-derives the
@@ -168,6 +211,21 @@
   ;;            source text and is not walked, so with the name unchecked
   ;;            nothing in that file stands between a misspelling and a backend
   ;;            `lea` at a label it would have to invent (ADR-0044).
+  ;;   dequant -- the fifth and sixth instances of the same independence:
+  ;;            b58c009 re-derives the fused dequantize-and-dot family and
+  ;;            bcea4a1 the four codebook formats on this side of the
+  ;;            boundary, so a format kotoba.kir admits and this repository
+  ;;            does not is a green `check` and a refusal at compile time
+  ;;            rather than a wrong artifact. 6a743c3 adds the image-symbol
+  ;;            name check (ADR 0330).
+  ;;   fuel64  -- the same independence, decided the OTHER way. `max-native-fuel`
+  ;;            was 2^20 there and 2^20 in this repository's JVM-free driver,
+  ;;            while the object route shipped tiers of 250,000,000 and
+  ;;            2,147,483,647 past both without ever meeting them. The verifier
+  ;;            now READS `kotoba.kir/max-fuel`: re-deriving a SET has a safe
+  ;;            direction, but a CEILING does not -- admitting less refuses
+  ;;            valid artifacts and admitting more ratifies a budget the oracle
+  ;;            cannot decrement (kotoba-verifier ADR 0049).
   (is (= "d1985d62a114a1958c686e3d79477bf236d2b495"
          (dependency-pin 'io.github.kotoba-lang/kotoba-verifier)))
   (is (= 7 (:abi/version aggregate-abi/contract)))

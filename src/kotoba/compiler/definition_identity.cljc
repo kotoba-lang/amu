@@ -56,10 +56,19 @@
 
   Every function this namespace cannot identify gets an explicit marker
   instead of a CID -- `:definition-cid :unbridged-effect` for a row the
-  identity's effect-row bridge refuses (today: a row carrying the tracked
-  control effect `:abort`, which `kotoba.compiler.effect-row` describes and
-  the bridge admits no keyword for), `:dependency-unavailable` for a function
-  whose closure contains one, and so on. A marker is not a CID and cannot be
+  identity's effect-row bridge refuses, `:dependency-unavailable` for a
+  function whose closure contains one, and so on.
+
+  Which rows the bridge refuses moved on 2026-09-03. It used to refuse every
+  member that was not `[:cap/call <id>]`, and the tracked control effect
+  `:abort` was therefore unbridgeable -- ADR-0300 section 4 recorded that, and
+  it is why an aborting function had no identity. kotoba-lang
+  `docs/adr/ADR-abort-reaches-the-sealed-effect-row.md` adjudicated it the
+  other way: `:abort` is already the sealed vocabulary and passes through
+  unchanged, from the closed set `kotoba.kir.definition-identity/control-effects`.
+  What still reaches this marker is a wire id no catalog names -- reachable
+  only from a literal `(cap-call N x)` in source -- and any keyword outside
+  that closed set. See ADR-0326. A marker is not a CID and cannot be
   mistaken for one: `:definitions` carries `:cid` on success and
   `:definition-cid <marker>` on refusal, so a consumer that reads `:cid`
   gets nothing rather than something plausible."
@@ -313,8 +322,11 @@
 (defn- effect-row-of
   "The named-operation row for one function, through the identity's own
   bridge. Throws (with `:problem :definition/effect-row-unbridged`) for a row
-  the bridge refuses -- today, any row carrying the tracked control effect
-  `:abort`, which names no capability and therefore no catalog keyword."
+  the bridge refuses -- a wire id the catalog cannot name, or a keyword
+  outside kotoba-kir's closed `control-effects` set. `:abort` is IN that set
+  since the 2026-09-03 adjudication (ADR-0326) and bridges through as itself:
+  it names no capability, so there is nothing to translate and no lookup to
+  get wrong."
   [function named-operations]
   (kir-id/effect-row-from-hir
    {:effects (:effects function) :named-operations named-operations}

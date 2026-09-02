@@ -111,6 +111,7 @@
             [kotoba.compiler.f32-native-execution-test]
             [kotoba.compiler.admission-test]
             [kotoba.compiler.guest-grammar-conformance-test]
+            [kotoba.compiler.guest-grammar-vendor-test]
             [kotoba.compiler.property-test]
             [kotoba.compiler.module-lock-test]
             [kotoba.compiler.project-test]
@@ -284,6 +285,7 @@
    'kotoba.compiler.interface-test
    'kotoba.compiler.admission-test
    'kotoba.compiler.guest-grammar-conformance-test
+   'kotoba.compiler.guest-grammar-vendor-test
    'kotoba.compiler.signing-test
    'kotoba.compiler.source-path-test
    'kotoba.compiler.typed-value-conformance-test
