@@ -65,6 +65,7 @@
             [kotoba.compiler.capability-deny-test]
             [kotoba.compiler.kir-trap-source-test]
             [kotoba.compiler.kernel-region-provenance-test]
+            [kotoba.compiler.native-device-io-test]
             [kotoba.compiler.slice-carrier-test]
             ;; slice-value: the ADR 0285 carrier as a value, and its cost in bytes
             [kotoba.compiler.slice-value-test]
@@ -237,6 +238,7 @@
    'kotoba.compiler.check-cli-test
    'kotoba.compiler.capability-deny-test
    'kotoba.compiler.kernel-region-provenance-test
+   'kotoba.compiler.native-device-io-test
    'kotoba.compiler.slice-carrier-test
    'kotoba.compiler.slice-value-test
    'kotoba.compiler.kernel-subregion-test
