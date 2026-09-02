@@ -54,6 +54,16 @@
   ;; `vector-alloc` (slot 200) and `vector-assoc!` (slot 208), the two heads
   ;; KIR has declared and admitted since b6bfe23 with nothing on native to
   ;; emit them. Superproject ADR-2609010200.
+  ;; Advanced 2026-09-02 twice over, by two streams, and resolved to the tip
+  ;; that contains both:
+  ;;   f32  -- the KIR-to-GMIR lowering and both ISAs' encoders for the binary32
+  ;;           family, with byte goldens that assert the single-precision opcode
+  ;;           is present AND its double-precision twin is not. ADDSS and ADDSD
+  ;;           are one prefix byte apart and a program built from the wrong one
+  ;;           still returns a number (kotoba-native#104).
+  ;;   boot -- the four UEFI firmware-boundary encodings (kotoba-native
+  ;;           ADR-0039): :system-table, :load-ptr, :uefi-call2 and :jump-to,
+  ;;           the four things a BOOTX64.EFI written in Kotoba has to name.
   ;;
   ;; boot: advanced 2026-09-02 for the four UEFI firmware-boundary encodings
   ;; (kotoba-native ADR-0039) -- :system-table, :load-ptr, :uefi-call2 and
@@ -77,6 +87,12 @@
   ;; error for any guest declaring a capability, while `check --jvm-free`
   ;; passed. The same advance also drops an npm package (`@noble/hashes`) out
   ;; of `kotoba.kir.value`'s ClojureScript require graph.
+  ;; Advanced 2026-09-02 by the same two streams:
+  ;;   f32  -- the native admission, which carried the line "f32 is deliberately
+  ;;           absent: neither backend implements it" over an interpreter that
+  ;;           implements the whole family (kotoba-kir#58).
+  ;;   boot -- the UEFI entry contract v2 on the firmware target profile, and
+  ;;           the four operations' oracle refusals (ADR-0229).
   ;;
   ;; boot: advanced 2026-09-02 for the UEFI entry contract v2 on the firmware
   ;; target profile, and the four operations' oracle refusals.
@@ -92,16 +108,26 @@
   ;; two new arities and the v4 `expected-context`, and is what turns a
   ;; mismatched ABI into an explicit refusal rather than a v3 artifact
   ;; hunting for slots that are not there.
-  ;;
-  ;; boot: advanced 2026-09-02 so the firmware target may name the machine
-  ;; (ADR-0020). Refusing :x86_64-aiueos-uefi-v1 a port write refused the
-  ;; target its own profile describes, and is why BOOTX64.EFI was still C.
-  ;;
-  ;; memwidth: and the advance is the reason that repository exists -- with the
-  ;; frontend, KIR and both backends already admitting `slice-load-u8`,
-  ;; `amu compile` still refused it there with "runtime KIR operation
-  ;; rejected". Both gates have to open.
-  (is (= "3d7a6f031bdb131e46db6dbf62db13bbcbcf8896"
+  ;; Advanced 2026-09-02 by three streams:
+  ;;   f32   -- this verifier re-derives the admitted operation set INDEPENDENTLY
+  ;;            of kotoba.kir, so f32 admitted there and absent here produced a
+  ;;            green `check` and `{:error :verify, :message "runtime KIR
+  ;;            operation rejected"}` on compile. That is how the gap was found,
+  ;;            and it is why the two omission lists have to stay identical
+  ;;            across two repositories (kotoba-verifier#31).
+  ;;   boot  -- so the firmware target may name the machine (ADR-0020). Refusing
+  ;;            :x86_64-aiueos-uefi-v1 a port write refused the target its own
+  ;;            profile describes, and is why BOOTX64.EFI was still C.
+  ;;   shift -- so a shift count is recognized as a literal on BOTH compiler
+  ;;            hosts (kotoba-verifier ADR-0022, 3d7a6f0). The gate was bare
+  ;;            `integer?`, false for the JavaScript bigint every guest literal
+  ;;            is under nbb, so no artifact using an i64 or i32 shift could be
+  ;;            built on the JDK-free route while the JVM route compiled the
+  ;;            same source -- the same independence, the same shape, a third
+  ;;            time (this repo's ADR-0293).
+  ;; The pin is the branch tip, which also carries the interrupt entry address
+  ;; gate.
+  (is (= "a87d2b0623c625f47009f5877bc50c385dfb3026"
          (dependency-pin 'io.github.kotoba-lang/kotoba-verifier)))
   (is (= 7 (:abi/version aggregate-abi/contract)))
   (is (= :recursive-word-handles
