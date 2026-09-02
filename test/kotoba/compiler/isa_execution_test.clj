@@ -160,9 +160,15 @@
 (def ^:private f64-one 4607182418800017408)
 (def ^:private f64-two 4611686018427387904)
 (def ^:private f64-nan 9221120237041090560)
+(def ^:private f32-one 1065353216)
+(def ^:private f32-two 1073741824)
+(def ^:private f32-nan 2143289344)
 
 (defn- f64c [op a b] (str "(defn main [] (if (" op " (f64-from-bits " a
                           ") (f64-from-bits " b ")) 1 0))"))
+
+(defn- f32c [op a b] (str "(defn main [] (if (" op " (f32-from-bits " a
+                          ") (f32-from-bits " b ")) 1 0))"))
 
 (def ^:private record-type "[:record :t/r [[:a :i64] [:b :i64]]]")
 (def ^:private option-record-type
@@ -342,6 +348,17 @@
    ["f64-ge NaN" (f64c "f64-ge" f64-nan f64-one) 0]
    ["f64-unordered NaN" (f64c "f64-unordered" f64-nan f64-one) 1]
    ["f64-unordered ordered" (f64c "f64-unordered" f64-one f64-two) 0]
+   ["f32 arithmetic" (str "(defn main [] (f32-to-bits (f32-add (f32-from-bits "
+                          f32-one ") (f32-from-bits " f32-one "))))") f32-two]
+   ["f32-lt" (f32c "f32-lt" f32-one f32-two) 1]
+   ["f32-gt ordered" (f32c "f32-gt" f32-one f32-two) 0]
+   ["f32-eq" (f32c "f32-eq" f32-one f32-one) 1]
+   ["f32-eq NaN" (f32c "f32-eq" f32-nan f32-nan) 0]
+   ["f32-lt NaN" (f32c "f32-lt" f32-nan f32-one) 0]
+   ["f32-le NaN" (f32c "f32-le" f32-nan f32-one) 0]
+   ["f32-ge NaN" (f32c "f32-ge" f32-nan f32-one) 0]
+   ["f32-unordered NaN" (f32c "f32-unordered" f32-nan f32-one) 1]
+   ["f32-unordered ordered" (f32c "f32-unordered" f32-one f32-two) 0]
    ["kgraph" (str "(defn main [] (do (kgraph-assert! 1 2 3)"
                   " (kgraph-get 1 2)))") 3]
    ["private string-index traversal state"

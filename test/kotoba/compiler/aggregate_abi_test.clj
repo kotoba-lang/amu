@@ -54,7 +54,11 @@
   ;; `vector-alloc` (slot 200) and `vector-assoc!` (slot 208), the two heads
   ;; KIR has declared and admitted since b6bfe23 with nothing on native to
   ;; emit them. Superproject ADR-2609010200.
-  (is (= "4a4c4c342a5c5318b96c9493abc5c61b5fad020d"
+  ;;
+  ;; Advanced 2026-09-02 for the closed scalar f32 family used by native
+  ;; inference. The same producer commit carries the GMIR, MIR and MC pins;
+  ;; this assertion prevents Amu from admitting f32 against the old emitter.
+  (is (= "b85b6008a1b7dcd47194e92ba45b419fbd3912ab"
          (dependency-pin 'io.github.kotoba-lang/kotoba-native)))
   ;; Advanced 2026-08-31 for two more instances of ADR-0286's class -- a KIR
   ;; i64 is a BigInt under ClojureScript and reached a host operation that
@@ -65,13 +69,15 @@
   ;; error for any guest declaring a capability, while `check --jvm-free`
   ;; passed. The same advance also drops an npm package (`@noble/hashes`) out
   ;; of `kotoba.kir.value`'s ClojureScript require graph.
-  (is (= "b6bfe238396631ff4b61934264a919f8ae5236b7"
+  (is (= "cc06df0d6df3b38f3853485483306dd2522e8a7c"
          (dependency-pin 'io.github.kotoba-lang/kotoba-kir)))
   ;; Advanced 2026-09-01 alongside the backend: the verifier re-derives the
   ;; two new arities and the v4 `expected-context`, and is what turns a
   ;; mismatched ABI into an explicit refusal rather than a v3 artifact
   ;; hunting for slots that are not there.
-  (is (= "58a02b4b04f0b5b81aabbd50cffabf5bbfc6061a"
+  ;; The independent verifier advances with scalar f32 arities; it still
+  ;; derives the accepted operation family rather than trusting the emitter.
+  (is (= "db2c046e461c34403c178077167ff89c6191503a"
          (dependency-pin 'io.github.kotoba-lang/kotoba-verifier)))
   (is (= 7 (:abi/version aggregate-abi/contract)))
   (is (= :recursive-word-handles
