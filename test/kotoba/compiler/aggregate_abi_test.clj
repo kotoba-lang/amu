@@ -80,6 +80,12 @@
   ;; qwen  -- 2026-09-02: the three Qwen3.5 forward-pass kernel objects
   ;;           (aiueos-qwen35-dot-f32 / -dequant-row / -matvec) enter
   ;;           kernel-object-entries with measured fuel tiers (kotoba-native#113).
+  ;; boot-scratch -- 2026-09-02: `:scratch-region` (`lea r10,[r9+0x60]`, four
+  ;;           bytes) and `:x86-64/function-address` (`lea dst,[rip+disp32]`,
+  ;;           resolved against the same label table a call uses), plus
+  ;;           `kotoba.native.image-scratch` -- the offset and the 16 KiB
+  ;;           reservation, read by the encoder AND by this repository's PE32+
+  ;;           packager (kotoba-native ADR-0068/0069).
   ;;
   ;; Advanced 2026-09-03 by the pin-consolidation stream (ADR 0330). Forty-four
   ;; merges had landed behind this one pin while every K16 stream was told the
@@ -141,6 +147,10 @@
   ;; This advance also carries 984a507, whose `:abort` decision ADR 0314 held
   ;; this pin to await. deps.edn records the adjudication and its three reasons.
   ;;
+  ;; Advanced 2026-09-02 again (boot-scratch, ADR-0242): the two heads that
+  ;; name a place in the IMAGE -- its `.data` reservation and its function
+  ;; labels -- refuse under `:image-address-unavailable` rather than under the
+  ;; literal pool's keyword, and both mark a module kernel-native.
   ;; Advanced 2026-09-03 (ADR 0330) to b2e5d9c: d809f28 the four codebook
   ;; dequant formats with their six grid tables, 268e28b the fused
   ;; dequantize-and-dot oracle the QEMU K-quant smoke checks its digits
@@ -178,6 +188,11 @@
   ;;            had been pinned to kotoba-native a2023fed for 302 commits
   ;;            because three tests pinned SPILL SLOTS as literals across an
   ;;            allocator that gained a callee-saved tier (ADR 0027).
+  ;;   boot-scratch -- the arity row for `kernel-scratch-region` and, for
+  ;;            `kernel-function-address`, a check on the NAME. Its argument is
+  ;;            source text and is not walked, so with the name unchecked
+  ;;            nothing in that file stands between a misspelling and a backend
+  ;;            `lea` at a label it would have to invent (ADR-0044).
   ;;   dequant -- the fifth and sixth instances of the same independence:
   ;;            b58c009 re-derives the fused dequantize-and-dot family and
   ;;            bcea4a1 the four codebook formats on this side of the

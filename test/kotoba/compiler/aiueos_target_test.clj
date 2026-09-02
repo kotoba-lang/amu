@@ -718,11 +718,21 @@
     (is (= 0x1000 (read-le bytes (+ optional 16) 4)) "entry RVA")
     (is (= 0 (read-le bytes (+ directories 8) 4)) "import directory RVA")
     (is (= 0 (read-le bytes (+ directories 12) 4)) "import directory size")
-    ;; boot: derived, not frozen. This fixture's `.text` is small, so the
-    ;; layout still comes out at 0x1000/0x2000/0x3000 -- what changed is that
-    ;; the packager now COMPUTES it. `firmware-text-may-outgrow-one-page`
-    ;; below is the case that separates the two.
-    (is (= 0x3000 (read-le bytes (+ directories (* 5 8)) 4)) "relocation RVA")
+    ;; boot: derived, not frozen. The packager COMPUTES this;
+    ;; `firmware-text-may-outgrow-one-page` below is the case that separates
+    ;; the two.
+    ;;
+    ;; boot-scratch: and it is computed from the RESERVATION now. `.data` is
+    ;; the 96-byte context plus 16 KiB of writable scratch, so it spans five
+    ;; pages and `.reloc` follows at 0x7000 rather than 0x3000. Derived here
+    ;; rather than written as 0x7000, so the assertion stays true if the
+    ;; reservation ever changes -- and stays FALSE if the packager stops
+    ;; reserving.
+    (is (= (+ 0x2000 (* 0x1000 (quot (+ (get-in binary [:section-layout :data :virtual-size])
+                                        0xfff)
+                                     0x1000)))
+           (read-le bytes (+ directories (* 5 8)) 4))
+        "relocation RVA")
     (is (= 12 (read-le bytes (+ directories (* 5 8) 4) 4)))
     (is (= [:text :data :reloc] (:sections binary)))
     (is (empty? (:imports binary)))
@@ -790,7 +800,15 @@
   ;; `kernel-boot-info` -- which has always read [r9+0x50] -- read past it.
   (let [binary (efi-binary "(defn main [] 0)")]
     (is (= 96 (:context-size binary)))
-    (is (<= (+ 0x58 8) (:context-size binary)))))
+    (is (<= (+ 0x58 8) (:context-size binary)))
+    ;; boot-scratch: the reservation is DECLARED, in the section's virtual
+    ;; size and in the packager's own report -- not implied by a section that
+    ;; happens to be large. `kernel-scratch-region` lowers to
+    ;; `lea r10,[r9+<offset>]`, so the region has to begin exactly where the
+    ;; context ends or the encoder and the packager disagree silently.
+    (is (= {:offset 96 :bytes 16384 :rva (+ 0x2000 96)} (:scratch binary)))
+    (is (= (+ (:context-size binary) (get-in binary [:scratch :bytes]))
+           (get-in binary [:section-layout :data :virtual-size])))))
 
 (deftest firmware-text-may-outgrow-one-page
   ;; The defect this closes: `.data` was frozen at RVA 0x2000, so a `.text`

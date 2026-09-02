@@ -40,6 +40,11 @@
    ;; accepted either code would stop discriminating between "refused because
    ;; ambient mutation is banned" and "refused because this atom escapes" --
    ;; which is the whole content of the slice.
+   ;;
+   ;; (The boot-scratch stream made the same repair independently on
+   ;; 2026-09-02 and said the other half of it: the claim this suite makes
+   ;; is carried by `(some? e)` above, and only the code got more precise.
+   ;; This row is the union -- its wording plus the two controls.)
    [:atom-outside-a-let-init
     "(ns t (:export [f])) (defn f [] (atom 1))"
     :kotoba.error/local-state-atom-position]

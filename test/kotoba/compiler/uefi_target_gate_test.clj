@@ -22,11 +22,16 @@
    ;; "function parameters exceed ABI-supported arity", which has nothing to do
    ;; with the gate.
    'kernel-uefi-call4   "(defn main [] (kernel-uefi-call4 4096 8 1 2 3 4))"
-   'kernel-uefi-call6   "(defn main [] (kernel-uefi-call6 4096 8 1 2 3 4 5 6))"})
+   'kernel-uefi-call6   "(defn main [] (kernel-uefi-call6 4096 8 1 2 3 4 5 6))"
+   ;; boot-scratch: the writable region. It is gated to the UEFI target and
+   ;; NOT to the wider native set the literals get, and the reason is
+   ;; measured: the backend emits `lea r10,[r9+0x60]`, and in the aiueos
+   ;; KERNEL image that displacement is the global descriptor table.
+   'kernel-scratch-region "(defn main [] (kernel-scratch-region))"})
 
 (deftest the-set-is-closed-and-named
   (is (= '#{kernel-system-table kernel-load-ptr kernel-uefi-call2 kernel-jump-to
-            kernel-uefi-call4 kernel-uefi-call6}
+            kernel-uefi-call4 kernel-uefi-call6 kernel-scratch-region}
          uefi/uefi-only-operations))
   (is (= :x86_64-aiueos-uefi-v1 uefi/uefi-target))
   (is (= (sort (keys bodies)) (sort uefi/uefi-only-operations))
@@ -112,7 +117,13 @@
   {'ucs2 "(defn main [] (ucs2 \"AIUEOS\"))"
    'guid "(defn main [] (guid \"5B1B31A1-9562-11D2-8E3F-00A0C969723B\"))"
    'bytes-literal "(defn main [] (bytes-literal \"deadbeef\"))"
-   'bytes-literal-length "(defn main [] (bytes-literal-length \"deadbeef\"))"})
+   'bytes-literal-length "(defn main [] (bytes-literal-length \"deadbeef\"))"
+   ;; boot-scratch: a function's address needs exactly what a literal's does
+   ;; -- a backend that resolves a label with `lea dst,[rip+disp32]` -- and
+   ;; nothing more. So it shares this gate rather than the UEFI one: a kernel
+   ;; image resolves its own function labels exactly as a firmware image
+   ;; does.
+   'kernel-function-address "(defn main [] (kernel-function-address main))"})
 
 (deftest boot-lit-a-literal-pool-is-gated-to-the-native-aiueos-targets
   ;; A WIDER set than the firmware boundary's, and a different sentence.
@@ -120,7 +131,8 @@
   ;; `(guid "...")` on the Wasm target is a program the backend has no way to
   ;; compile at all, and saying "require the aiueos UEFI target" about it would
   ;; name the wrong requirement.
-  (is (= '#{ucs2 guid bytes-literal bytes-literal-length}
+  (is (= '#{ucs2 guid bytes-literal bytes-literal-length
+            kernel-function-address}
          uefi/rodata-literal-operations))
   (is (= #{:x86_64-aiueos-uefi-v1 :x86_64-aiueos-kernel-v1}
          uefi/rodata-literal-targets))
@@ -131,7 +143,7 @@
       (let [thrown (try (compiler/compile-source source target) nil
                         (catch clojure.lang.ExceptionInfo e e))]
         (is (some? thrown) (str op " reached " target))
-        (is (= "read-only literals require a native aiueos x86-64 target"
+        (is (= "an image-resolved address requires a native aiueos x86-64 target"
                (ex-message thrown)))
         (is (= [op] (:operations (ex-data thrown))))))))
 
@@ -152,6 +164,45 @@
                     nil
                     (catch clojure.lang.ExceptionInfo e e))]
     (is (some? thrown))
-    (is (= "read-only literals require a native aiueos x86-64 target"
+    (is (= "an image-resolved address requires a native aiueos x86-64 target"
            (ex-message thrown)))
     (is (= '[ucs2] (:operations (ex-data thrown))))))
+
+;; boot-scratch ───────────────────────────────────────────────────────────────
+
+(deftest boot-scratch-the-region-is-gated-more-narrowly-than-the-literals
+  ;; Two gates, two sentences, and this is the pair that shows why. Both heads
+  ;; arrived in the same change; one is admitted on the aiueos KERNEL target
+  ;; and the other is not, because the backend's answer for the region is
+  ;; WRONG there rather than absent -- `lea r10,[r9+0x60]` names the global
+  ;; descriptor table in a kernel image.
+  (is (contains? uefi/uefi-only-operations 'kernel-scratch-region))
+  (is (not (contains? uefi/rodata-literal-operations 'kernel-scratch-region)))
+  (is (contains? uefi/rodata-literal-operations 'kernel-function-address))
+  (is (not (contains? uefi/uefi-only-operations 'kernel-function-address)))
+  (testing "so the kernel target admits one and refuses the other"
+    (is (some? (:binary (compiler/compile-source
+                         "(defn main [] (kernel-function-address main))"
+                         :x86_64-aiueos-kernel-v1))))
+    (let [thrown (try (compiler/compile-source
+                       "(defn main [] (kernel-scratch-region))"
+                       :x86_64-aiueos-kernel-v1)
+                      nil
+                      (catch clojure.lang.ExceptionInfo e e))]
+      (is (some? thrown))
+      (is (= "UEFI firmware operations require the aiueos UEFI target"
+             (ex-message thrown)))
+      (is (= '[kernel-scratch-region] (:operations (ex-data thrown)))))))
+
+(deftest boot-scratch-the-frontend-and-the-packager-agree-on-the-reservation
+  ;; The frontend ADMITS a window over the region up to `image-scratch-bytes`;
+  ;; the packager RESERVES `image-scratch/bytes-reserved`. If the first is
+  ;; larger, a program compiles with a window past the end of `.data` and no
+  ;; emitted check catches it -- the emitted check compares an index against
+  ;; the length the source declared, and the source would be right about a
+  ;; region that is not there. amu is the only repository with both on its
+  ;; classpath, which is why the assertion lives here.
+  (is (= @(requiring-resolve 'kotoba.compiler.frontend/image-scratch-bytes)
+         @(requiring-resolve 'kotoba.native.image-scratch/bytes-reserved)))
+  (testing "and the offset the encoder assumes is where the context ends"
+    (is (= 96 @(requiring-resolve 'kotoba.native.image-scratch/offset)))))
