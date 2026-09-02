@@ -67,7 +67,10 @@
         ;; being implemented twice, exists only at afd117d2 and later.
         io.github.kotoba-lang/kotoba-kir
         {:git/url "https://github.com/kotoba-lang/kotoba-kir.git"
-         :git/sha "ad6db332a06d52bdb037536ad191d48dc1d5f394"}
+         ;; fuel64: 233bd6bb exports `max-fuel` (kotoba-kir ADR 0268), the fuel
+         ;; ceiling `kotoba.compiler.nbb.cli` and `kotoba.verifier` now read.
+         ;; Fast-forward: ahead_by 11, behind_by 0.
+         :git/sha "233bd6bb6b15912679c529611a42c8af15f2354c"}
         ;; The frontend is an HIR producer and KIR lowering is its consumer;
         ;; both validate the same checked envelope.
         io.github.kotoba-lang/kotoba-hir
@@ -159,7 +162,11 @@
         ;; ADR-2609010200.
         io.github.kotoba-lang/kotoba-native
         {:git/url "https://github.com/kotoba-lang/kotoba-native.git"
-         :git/sha "91033a9ddcbedb216156df583805e0748a4f8a0d"}
+         ;; fuel64: c31cf87b widens the object replenish to a 64-bit budget
+         ;; (kotoba-native ADR 0078) and exports `max-object-fuel`. No shipped
+         ;; object's bytes move -- 108 digests taken before the change are
+         ;; re-derived by that repo's suite. Fast-forward: ahead_by 18.
+         :git/sha "95361f3f1dada3c94dc0f1ba9df0030505f51436"}
         io.github.kotoba-lang/kotoba-component
         {:git/url "https://github.com/kotoba-lang/kotoba-component.git"
          :git/sha "68acc7237aec7b24b683304db8e87d14ec1be745"}
@@ -188,7 +195,11 @@
         ;; (7070ec0) -- all fast-forward ancestors of this pin.
         io.github.kotoba-lang/kotoba-verifier
         {:git/url "https://github.com/kotoba-lang/kotoba-verifier.git"
-         :git/sha "6a743c3054e824e72ce703fde4f2ed7a59a404c3"}
+         ;; fuel64: d1985d62 reads the fuel ceiling from kotoba.kir instead of
+         ;; carrying 2^20 (kotoba-verifier ADR 0049). Required WITH the two
+         ;; pins above, not optional: this driver would otherwise admit a
+         ;; budget the pinned verifier refuses. Fast-forward: ahead_by 6.
+         :git/sha "d1985d62a114a1958c686e3d79477bf236d2b495"}
 }
  :aliases {:test {:extra-paths ["test"]
                   :extra-deps

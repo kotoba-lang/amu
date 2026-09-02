@@ -86,7 +86,7 @@
   ;;           `kotoba.native.image-scratch` -- the offset and the 16 KiB
   ;;           reservation, read by the encoder AND by this repository's PE32+
   ;;           packager (kotoba-native ADR-0068/0069).
-  (is (= "91033a9ddcbedb216156df583805e0748a4f8a0d"
+  (is (= "95361f3f1dada3c94dc0f1ba9df0030505f51436"
          (dependency-pin 'io.github.kotoba-lang/kotoba-native)))
   ;; Advanced 2026-08-31 for two more instances of ADR-0286's class -- a KIR
   ;; i64 is a BigInt under ClojureScript and reached a host operation that
@@ -131,7 +131,7 @@
   ;; name a place in the IMAGE -- its `.data` reservation and its function
   ;; labels -- refuse under `:image-address-unavailable` rather than under the
   ;; literal pool's keyword, and both mark a module kernel-native.
-  (is (= "ad6db332a06d52bdb037536ad191d48dc1d5f394"
+  (is (= "233bd6bb6b15912679c529611a42c8af15f2354c"
          (dependency-pin 'io.github.kotoba-lang/kotoba-kir)))
   ;; Advanced 2026-09-01 alongside the backend: the verifier re-derives the
   ;; two new arities and the v4 `expected-context`, and is what turns a
@@ -168,7 +168,7 @@
   ;;            source text and is not walked, so with the name unchecked
   ;;            nothing in that file stands between a misspelling and a backend
   ;;            `lea` at a label it would have to invent (ADR-0044).
-  (is (= "6a743c3054e824e72ce703fde4f2ed7a59a404c3"
+  (is (= "d1985d62a114a1958c686e3d79477bf236d2b495"
          (dependency-pin 'io.github.kotoba-lang/kotoba-verifier)))
   (is (= 7 (:abi/version aggregate-abi/contract)))
   (is (= :recursive-word-handles
