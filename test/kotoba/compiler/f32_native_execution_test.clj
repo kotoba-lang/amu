@@ -18,7 +18,12 @@
   0x3FD3333333333334 in binary64, and no amount of printing shows the
   difference.
 
-  Decided by kotoba-lang docs/adr/ADR-kotoba-floating-point-on-native.md."
+  Decided by kotoba-lang docs/adr/ADR-kotoba-floating-point-on-native.md.
+
+  One binary64 block lives here too, at the end. It is not a stray: this is the
+  only namespace whose harness compares a native answer against `ir/execute`
+  computed AT TEST TIME, and `f64-min`/`f64-max` are the two operations whose
+  defect a written-down expectation could have been quietly adjusted to fit."
   (:require [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.atomic-output :as atomic-output]
             [kotoba.compiler.core :as compiler]
@@ -206,3 +211,50 @@
       "SCANNED: a native target was selected for this host")
   (is (some? (:runtime @measured-runtime))
       "SCANNED: the native runtime was measured, so execution really ran"))
+
+
+;; ---------------------------------------------------------------------------
+;; binary64 min/max -- the two operations MINSD/MAXSD do not compute
+;; ---------------------------------------------------------------------------
+;;
+;; `minsd xmm0, xmm1` computes `(a < b) ? a : b`, so it returns the SECOND
+;; operand on every false comparison -- and the two cases where the first must
+;; win are exactly the ones where the comparison is false: either input NaN, and
+;; (-0.0, +0.0). AArch64's FMIN/FMAX have neither hole, so on an arm64 host this
+;; block is a regression guard; on an x86-64 host it is the defect detector, and
+;; it needs no expectation written down for either, because the oracle is
+;; consulted at test time.
+;;
+;; Cross-ISA evidence is `kotoba.compiler.isa-execution-test`, which runs the
+;; same rows through the Rosetta loader as well. Repaired in kotoba-native
+;; a27651c (its ADR 0050).
+
+(defn- binary64
+  "`(op (f64-from-bits <l>) (f64-from-bits <r>))` to bits."
+  [op l r]
+  (str "(defn step [a :i64 b :i64] :i64"
+       "  (f64-to-bits (" op " (f64-from-bits a) (f64-from-bits b))))"
+       "(defn main [] :i64 (step " l " " r "))"))
+
+(def ^:private f64-bits-one 4607182418800017408)          ; 1.0
+(def ^:private f64-bits-two 4611686018427387904)          ; 2.0
+(def ^:private f64-bits-qnan 9221120237041090560)         ; 0x7FF8000000000000
+(def ^:private f64-bits-negative-zero -9223372036854775808) ; 0x8000000000000000
+
+(deftest f64-min-max-execute-and-agree-with-the-oracle-on-nan-and-signed-zero
+  (testing "NaN propagates, whichever operand carries it"
+    (is (= f64-bits-qnan (both (binary64 "f64-min" f64-bits-qnan f64-bits-one))))
+    (is (= f64-bits-qnan (both (binary64 "f64-min" f64-bits-one f64-bits-qnan))))
+    (is (= f64-bits-qnan (both (binary64 "f64-max" f64-bits-qnan f64-bits-one))))
+    (is (= f64-bits-qnan (both (binary64 "f64-max" f64-bits-one f64-bits-qnan)))))
+  (testing "-0.0 is below +0.0, in both operand orders"
+    (is (= f64-bits-negative-zero
+           (both (binary64 "f64-min" f64-bits-negative-zero 0))))
+    (is (= f64-bits-negative-zero
+           (both (binary64 "f64-min" 0 f64-bits-negative-zero))))
+    (is (= 0 (both (binary64 "f64-max" f64-bits-negative-zero 0))))
+    (is (= 0 (both (binary64 "f64-max" 0 f64-bits-negative-zero)))))
+  (testing "and the ordered answers, which a sequence that always returned its
+            first operand would need in order to be caught"
+    (is (= f64-bits-one (both (binary64 "f64-min" f64-bits-two f64-bits-one))))
+    (is (= f64-bits-two (both (binary64 "f64-max" f64-bits-one f64-bits-two))))))

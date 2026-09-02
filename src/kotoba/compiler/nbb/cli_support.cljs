@@ -173,6 +173,10 @@
     ;; `kotoba.compiler.cli/exit-code` carries the same entry, so the JVM and
     ;; Node routes still answer identically.
     (:decode :read :subset :admission :verify :project-link :module-lock) 65
+    ;; `kotoba.compiler.cli/exit-code` carries this entry too. Neither 0 nor
+    ;; 65: a REFUSED definition is an answer (listed with its marker, exit 0),
+    ;; and this is the other thing -- no identity could be computed at all.
+    :definition-identity 66
     (:signature :trust) 77
     :output 74
     70))

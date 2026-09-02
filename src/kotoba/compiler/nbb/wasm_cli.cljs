@@ -7,6 +7,7 @@
   (:require ["node:path" :as node-path]
             [kotoba.compiler.capability-names :as cap-names]
             [kotoba.compiler.nbb.cli-support :as support]
+            [kotoba.compiler.definition-identity :as definition-identity]
             [kotoba.compiler.nbb.compile-cache :as compile-cache]
             [kotoba.sema :as sema]
             [kotoba.compiler.nbb.io :as io]
@@ -62,18 +63,70 @@
                    ;; equivalent edit still reruns admission, then reuses KIR.
                    stage-cache :kir (pr-str hir) (fn [] (ir/lower hir)))))
 
-(defn- stage-status [hir-result kir-result]
-  {:hir (:cache hir-result) :kir (:cache kir-result)})
+(defn- stage-status [hir-result kir-result emit-result]
+  (cond-> {:hir (:cache hir-result) :kir (:cache kir-result)}
+    emit-result (assoc :wasm (:cache emit-result))))
+
+(defn- emit-material
+  "The cache key for Wasm EMISSION: the module's definition graph plus every
+  emitter input that is not part of it.
+
+  This is the ADR 0300 extension of the existing cache, and it is a SECOND
+  stage inside `compile-cache`, not a second cache. The artifact entry above
+  stays keyed on source text, because it also carries the `.provenance.edn`
+  sidecar and provenance seals `:source-sha256` -- serving a rename the old
+  provenance would be a wrong answer, not a fast one. Emission has no such
+  obligation: it is a function of the code and the target.
+
+  `definition-identity/cache-material` supplies the ordered definition CIDs
+  and the export names; both halves were measured against emitted bytes on
+  2026-09-02 (see the ADR): renaming a NON-exported function leaves the
+  `.wasm` byte-identical, swapping two private functions' declaration order
+  does NOT, and an exported name is in the bytes. Returns nil when any
+  definition lacks a CID, and a nil material means this stage is skipped
+  entirely rather than keyed on a partial identity."
+  [report hir target fuel value-abi wasm-features policy-material lock-cid kir-format]
+  (when-let [material (definition-identity/cache-material report (:exports hir))]
+    {:definition-count (definition-identity/definition-count material)
+     :text (pr-str [:kotoba.wasm-emit-cache/v1
+                    material
+                    (name target)
+                    fuel
+                    value-abi
+                    (vec (sort (map name wasm-features)))
+                    kir-format
+                    compatibility/compiler-version
+                    (:text policy-material)
+                    lock-cid])}))
 
 (def ^:private floating-point-policy
   :kotoba.floating-point/ieee-754-f32-f64-v7)
+
+(defn- definitions-recompiled
+  "How many definitions this compile actually re-emitted.
+
+  The unit is deliberately DEFINITIONS, not milliseconds: wall clock on this
+  machine is a measurement of how many other agents are running, and a cache
+  that is reported in seconds cannot be told apart from a machine that got
+  quieter. `0` means the emission stage was served from its CID key; `n` means
+  the module's n definitions were emitted.
+
+  `:unmeasured` when no cache material could be built -- a module with a
+  refused definition has no identity to key on, and reporting `n` for it would
+  say the cache had been asked and missed when it was never asked."
+  [material emit-result]
+  (cond
+    (nil? material) :unmeasured
+    (= :hit (:cache emit-result)) 0
+    :else (:definition-count material)))
 
 (defn- compile-wasm!
   "Keep the primary Node result and provenance identity aligned with
   `kotoba.compiler.core/compile-source*`'s Wasm branch. In particular, the
   CLI build-metadata fuel and policy fuel budget are emitter inputs, not
   admission-only metadata."
-  [source target policy emit-metadata hir admission-result kir]
+  [source target policy emit-metadata hir admission-result kir
+   {:keys [stage-cache policy-material lock-cid]}]
   (let [profile (target-profile/profile target)
         typed-values? (= :kotoba.kir/v4 (:format kir))
         value-abi (cond (ir/uses-f32? hir) :kotoba.typed/mixed-f32-f64-v3
@@ -109,10 +162,24 @@
                                  :vector-f64-items 16384
                                  :compact-graph-items 128
                                  :string-index-key-bytes 65536))
-                :bytes (support/timed "wasm-emit"
-                                      #(wasm/emit kir target {:fuel fuel}))}]
-    (support/timed "provenance"
-                   #(provenance/attach source policy emit-metadata result))))
+                :bytes nil}
+        wasm-features (:wasm-features result)
+        ;; Computed ONCE and carried on the result, so `provenance/descriptor`
+        ;; reuses it rather than hashing every definition a second time.
+        report (definition-identity/describe {:hir hir :kir kir})
+        result (assoc result :definitions report)
+        material (emit-material report hir target fuel value-abi wasm-features
+                                policy-material lock-cid (:format kir))
+        emit-result (support/timed
+                     "wasm-emit"
+                     #(compile-cache/resolve-stage!
+                       (when material stage-cache) :wasm (:text material)
+                       (fn [] (wasm/emit kir target {:fuel fuel}))))
+        result (assoc result :bytes (:value emit-result))]
+    {:result (support/timed "provenance"
+                            #(provenance/attach source policy emit-metadata result))
+     :emit emit-result
+     :material material}))
 
 (defn- serialized-wasm [result]
   {:bytes (.from js/Buffer (:bytes result))
@@ -142,7 +209,9 @@
         hir (:value hir-result)
         result (support/timed
                 "admission"
-                #(effect-row/check hir (support/capability-policy policy)))]
+                #(effect-row/check hir (support/capability-policy policy)))
+        definitions (definition-identity/describe
+                     {:hir hir :kir (try (ir/lower hir) (catch :default _ nil))})]
     ;; Same keys as the JVM `check --json` in kotoba.compiler.cli. This path
     ;; used to answer with :ok/:effects/:admission only, so a consumer keying
     ;; on :format -- the versioned output contract -- saw nothing to key on,
@@ -153,12 +222,17 @@
     ;; emitted bytes; it stops at this line. `:named-operations` is what the
     ;; frontend already computed during ability elaboration -- it was present
     ;; in HIR and simply never reported.
+    ;;
+    ;; `:definitions` is ADR 0300: same key, same shape and the same CIDs as
+    ;; the JVM `check --json`, which `scripts/test-definition-cid-parity.cljs`
+    ;; asserts definition by definition.
     (cond-> {:ok true
              :format :kotoba.check/v1
              :language-profile (:language-profile hir)
              :effects (cap-names/name-grants (:effects hir))
              :named-operations (:named-operations hir)
              :exports (:exports hir)
+             :definitions definitions
              :admission (cap-names/name-grants result)}
       ;; A linked answer says so. Without this a caller cannot tell a one-file
       ;; check from a check of a graph that happened to link -- the difference
@@ -166,7 +240,30 @@
       (:project resolved) (assoc :project (:project resolved))
       context (assoc :stage-cache {:hir (:cache hir-result)}))))
 
-(defn- compile-uncached! [args target output source linked?]
+(defn- definition-cids!
+  "ADR 0300. One CID per top-level function, in declaration order.
+
+  Same report, same keys and same CIDs as the JVM twin in
+  `kotoba.compiler.cli`; `definition_identity_parity_test` asserts the two
+  routes agree definition by definition."
+  [args]
+  (let [resolved (project-source/resolve-source! args)
+        policy (support/timed "policy-read" #(read-policy! args))
+        hir (:value (resolve-hir! (:source resolved)
+                                  (project-source/analyze-opts policy (:linked? resolved))
+                                  nil))
+        report (definition-identity/describe
+                {:hir hir :kir (try (ir/lower hir) (catch :default _ nil))})]
+    (when-not (map? (:entries report))
+      (throw (ex-info "no definition identity is available for this module"
+                      {:phase :definition-identity :reason (:reason report)})))
+    (assoc report
+           :ok true
+           :format :kotoba.definition-cids/v1
+           :lines (definition-identity/format-lines report)
+           :scanned (definition-identity/scanned-line report))))
+
+(defn- compile-uncached! [args target output source linked? lock-cid]
   (let [policy (support/timed "policy-read" #(read-policy! args))
         emit-metadata (support/emit-metadata args)
         hir (:value (resolve-hir! source (project-source/analyze-opts policy linked?) nil))
@@ -174,16 +271,21 @@
                           "admission"
                           #(effect-row/check hir (support/capability-policy policy)))
         kir (support/timed "kir-lower" #(ir/lower hir))
-        serialized (serialized-wasm
-                    (compile-wasm! source target policy emit-metadata
-                                   hir admission-result kir))
+        compiled (compile-wasm! source target policy emit-metadata
+                                hir admission-result kir
+                                {:stage-cache nil :lock-cid lock-cid})
+        serialized (serialized-wasm (:result compiled))
         {:keys [provenance-output publication-output]}
         (write-wasm! output serialized)]
     {:ok true :target target :output output
      :provenance-output provenance-output
-     :publication-output publication-output}))
+     :publication-output publication-output
+     ;; No worker context means no cache at all, so every definition in the
+     ;; module was emitted. Reported anyway: "the cache was not consulted" and
+     ;; "the cache missed" are different facts and must not print the same.
+     :definitions-recompiled (definitions-recompiled (:material compiled) nil)}))
 
-(defn- compile-cached! [args target output source linked? context]
+(defn- compile-cached! [args target output source linked? context lock-cid]
   ;; Policy material is part of artifact identity. Declarative policy controls
   ;; also affect HIR and emission, so decode them before consulting either
   ;; stage cache; otherwise a language-profile change could reuse the wrong HIR.
@@ -219,7 +321,9 @@
           {:ok true :target target :output output
            :provenance-output provenance-output
            :publication-output publication-output
-           :cache :hit :cache-key key}))
+           :cache :hit :cache-key key
+           ;; A whole-artifact hit re-emitted nothing.
+           :definitions-recompiled 0}))
       (let [_ (when-let [error (:error policy-attempt)] (throw error))
             policy (support/timed "policy-decode"
                                   #(decode-policy! material))
@@ -231,9 +335,12 @@
                                                 (support/capability-policy policy)))
             kir-result (resolve-kir! hir stage-cache)
             kir (:value kir-result)
-            serialized (serialized-wasm
-                        (compile-wasm! source target policy emit-metadata
-                                       hir admission-result kir))
+            compiled (compile-wasm! source target policy emit-metadata
+                                    hir admission-result kir
+                                    {:stage-cache stage-cache
+                                     :policy-material material
+                                     :lock-cid lock-cid})
+            serialized (serialized-wasm (:result compiled))
             bytes (:bytes serialized)
             {:keys [provenance-output publication-output]}
             (write-wasm! output serialized)
@@ -249,7 +356,16 @@
          :provenance-output provenance-output
          :publication-output publication-output
          :cache :miss :cache-key key
-         :stage-cache (stage-status hir-result kir-result)}))))
+         :definitions-recompiled (definitions-recompiled (:material compiled)
+                                                         (:emit compiled))
+         ;; The emission stage's key, in the answer. Reported because the
+         ;; interesting claim about a cache is not "it remembered" but "the key
+         ;; says what the compiler thinks it says": two compiles that must
+         ;; share an artifact have to share this string, and two that must not
+         ;; have to differ in it. A test that can only observe hit/miss cannot
+         ;; tell a correct key from a fresh cache.
+         :emit-cache-key (:cache-key (:emit compiled))
+         :stage-cache (stage-status hir-result kir-result (:emit compiled))}))))
 
 (defn- compile! [args context]
   (let [target-name (or (support/option args "--target") "wasm32")
@@ -268,9 +384,10 @@
         source (:source resolved)
         linked? (:linked? resolved)
         output (or (support/option args "--output") (str input ".wasm"))
+        lock-cid (get-in resolved [:lock :lock-cid])
         result (if context
-                 (compile-cached! args target output source linked? context)
-                 (compile-uncached! args target output source linked?))]
+                 (compile-cached! args target output source linked? context lock-cid)
+                 (compile-uncached! args target output source linked? lock-cid))]
     (merge result (project-source/inputs-record resolved))))
 
 (defn- module-lock!
@@ -309,6 +426,7 @@
 (defn- run! [args context]
   (case (first args)
     "check" (check! args context)
+    "definition-cids" (definition-cids! args)
     "compile" (compile! args context)
     ;; `bin/amu` routes every target-less command here, the same way `check`
     ;; arrives. A lock is target-independent, so there is nothing for the

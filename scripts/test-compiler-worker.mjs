@@ -105,7 +105,13 @@ try {
       "--output", join(directory, "semantic-edit.wasm")] });
   const semanticEdit = await next();
   if (semanticEdit.status !== 0 || !semanticEdit.stdout.includes(":cache :miss")
-      || !semanticEdit.stdout.includes(":stage-cache {:hir :miss, :kir :hit}")
+      // ADR 0300 added a third stage. A whitespace-only edit reaches the same
+      // KIR and therefore the same definition CIDs, so emission is served from
+      // its content key too -- the :wasm verdict is asserted rather than
+      // tolerated, because :hit is the claim and :miss would be a defect that
+      // a looser match would hide.
+      || !semanticEdit.stdout.includes(":stage-cache {:hir :miss, :kir :hit, :wasm :hit}")
+      || !semanticEdit.stdout.includes(":definitions-recompiled 0")
       || !readFileSync(join(directory, "valid.wasm"))
         .equals(readFileSync(join(directory, "semantic-edit.wasm")))) {
     throw new Error("frontend-equivalent source edit did not reuse verified KIR");
@@ -118,7 +124,11 @@ try {
       "--policy", policy, "--output", join(directory, "policy-miss.wasm")] });
   const policyMiss = await next();
   if (policyMiss.status !== 0 || !policyMiss.stdout.includes(":cache :miss")
-      || !policyMiss.stdout.includes(":stage-cache {:hir :hit, :kir :hit}")) {
+      // The policy TEXT is in the emission key (a policy carries the fuel
+      // budget, which is an emitter input), so a policy change misses the
+      // :wasm stage even though the definitions are identical. That is the
+      // conservative direction and it is asserted, not assumed.
+      || !policyMiss.stdout.includes(":stage-cache {:hir :hit, :kir :hit, :wasm :miss}")) {
     throw new Error("policy change did not reuse policy-independent HIR/KIR stages");
   }
 

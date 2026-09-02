@@ -1,4 +1,4 @@
-# ADR-0295: A BOOTX64.EFI that names strings, GUIDs and bytes
+# ADR-0299: A BOOTX64.EFI that names strings, GUIDs and bytes
 
 - Status: accepted
 - Date: 2026-09-02

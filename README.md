@@ -5,6 +5,35 @@ language. The repository is `kotoba-lang/amu`; the name evokes Japanese
 「編む」— weaving checked source, typed KIR, and target artifacts into one
 cloth.
 
+## Definition CIDs (compile once per hash)
+
+Every top-level function gets a content identity — the payload-v2 definition
+CID of `kotoba.kir.definition-identity`, over the six inputs kotoba-lang
+`lang/code-identity.edn` seals: typed KIR, profile version, desugar contract
+version, effect row, interface, and the CIDs of the functions it directly
+calls. The interface is arity, parameter types, result type and the transitive
+schema definitions those reach — widening a record changes what every function
+taking one means, even when no body changes. `amu definition-cids <file>` lists them, `amu check --json` and every
+`.provenance.edn` carry them, and the JVM route and the JDK-free nbb route mint
+byte-identical CIDs for the same source. Names are not in the hash on either
+side of a call: binders are renamed to de Bruijn positions before hashing (the
+identity library is a canonical encoder, not a binder-aware normalization, so
+this step is the compiler's), and a callee symbol is replaced by its CID.
+Mutual recursion follows `scc-v1` — the cycle is hashed as a unit, with its
+member ordering chosen from the canonical bytes rather than from the names.
+A definition the identity cannot seal — today, one whose effect row carries the
+tracked control effect `:abort`, which names no capability — is listed with an
+explicit `:definition-cid :unbridged-effect` marker; a CID is never invented for
+a hole.
+
+That closure keys Wasm emission. Renaming a private function and its call sites
+leaves the definition CIDs, and therefore the emitted bytes, unchanged, so the
+compile is served from cache and reports `:definitions-recompiled 0`; changing a
+body moves the CIDs and recompiles. The metric is definitions, never wall clock.
+Exported names and declaration order are part of the key because both are in the
+emitted bytes — measured, not assumed. See
+`docs/adr/0300-definition-cids-are-computed-by-the-compiler-and-key-the-cache.md`.
+
 ## Content-bound logic manifest
 
 `kotoba.compiler.logic-manifest/build!` projects checked KIR into
