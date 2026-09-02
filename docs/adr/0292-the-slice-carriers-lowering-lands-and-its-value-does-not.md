@@ -1,4 +1,4 @@
-# ADR 0291: The slice carrier's lowering lands, and its value does not
+# ADR 0292: The slice carrier's lowering lands, and its value does not
 
 - Status: accepted
 - Date: 2026-09-02
@@ -137,7 +137,30 @@ kotoba-kir ADR 0222).
 
 ## Evidence
 
-- `clojure -M:test` — 1220 tests, 8870 assertions across 157 namespaces.
+- The four namespaces this change touches —
+  `kotoba.compiler.slice-carrier-test`,
+  `kotoba.compiler.kernel-region-provenance-test`,
+  `kotoba.compiler.aggregate-abi-test` (the pin assertions) and
+  `kotoba.compiler.test-runner-completeness-test` (which refuses a test
+  namespace missing from the runner) — **18 tests, 177 assertions, 0
+  failures**, run on the merged pins.
+
+  Discriminated rather than asserted: replacing `slice-load-u64` with
+  `kernel-load-u64-4k` in the fixture turns
+  `an-element-access-is-one-compare-and-one-scaled-mov` red on exactly the
+  scaled-address assertion, and the dumped bytes show the window family's
+  sequence in its place — `cmp r12, imm32` for the tier, `and r10, 7` for the
+  per-access alignment, and an unscaled `add`. Restored: 0 failures.
+
+  ⚠ The **full** 159-namespace suite was last observed complete before the
+  final pin merge (1220 tests / 8872 assertions, failing only the three pin
+  assertions this change updates). Two attempts to re-run it on the merged pins
+  were killed by the host at load average 155–211 with several other streams'
+  JVMs resident, one of them 1 day 19 hours old. That is stated rather than
+  rounded up: the full suite is **not** re-verified at this SHA, and the
+  repository's own runner reports `test-runner: INCOMPLETE -- finished N of
+  159` rather than a count, which is why a partial run cannot be mistaken for
+  one.
 - The fixture compiles under `--jvm-free`, which is the acceptance rule: no
   `java`, no `clojure`, in the compile path.
 - `kotoba.compiler.kernel-region-provenance-test` now covers all twenty loads

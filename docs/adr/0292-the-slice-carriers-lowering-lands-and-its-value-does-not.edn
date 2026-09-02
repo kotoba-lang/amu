@@ -1,4 +1,4 @@
-{:adr/id 291
+{:adr/id 292
  :adr/status :accepted
  :adr/date "2026-09-02"
  :adr/follows [284 285]
@@ -97,10 +97,31 @@
   :precedent "kotoba-kir ADR 0222, string-contains?"}
 
  :evidence
- {:suite "clojure -M:test"
+ {:touched-namespaces
+  {:ran #{kotoba.compiler.slice-carrier-test
+          kotoba.compiler.kernel-region-provenance-test
+          kotoba.compiler.aggregate-abi-test
+          kotoba.compiler.test-runner-completeness-test}
+   :tests 18 :assertions 177 :fail 0 :error 0
+   :discriminated
+   {:break "slice-load-u64 -> kernel-load-u64-4k in the fixture"
+    :red-on :an-element-access-is-one-compare-and-one-scaled-mov
+    :observed "the window family's sequence in its place: cmp r12,imm32 for the
+               tier, and r10,7 for the per-access alignment, an unscaled add"
+    :restored :green}}
+  :full-suite
+  {:status :not-re-verified-at-this-sha
+   :last-complete {:before :the-final-pin-merge :tests 1220 :assertions 8872
+                   :failing-only :the-three-pin-assertions-this-change-updates}
+   :why "two attempts killed by the host at load average 155-211, with several
+         other streams' JVMs resident (one 1d19h old)"
+   :note "the repository's runner prints `test-runner: INCOMPLETE -- finished N
+          of 159` rather than a count, so a partial run cannot be mistaken for
+          a result"}
+  :legacy-full-suite-note "superseded by :full-suite above"
   :tests 1220
-  :assertions 8870
-  :namespaces 157
+  :assertions 8872
+  :namespaces 159
   :provenance-coverage
   {:loads 20 :stores 20
    :refused #{loaded-byte-as-address computed-base}

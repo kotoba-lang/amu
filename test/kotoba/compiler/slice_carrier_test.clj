@@ -1,5 +1,5 @@
 (ns kotoba.compiler.slice-carrier-test
-  "memwidth / ADR 0291: what the ADR 0285 carrier's lowering actually emits.
+  "memwidth / ADR 0292: what the ADR 0285 carrier's lowering actually emits.
 
   The prose claim is that an element access is one unsigned compare and one
   scaled `mov`, with no context callback in the loop. That is a claim about

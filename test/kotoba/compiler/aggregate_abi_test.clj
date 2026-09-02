@@ -55,12 +55,18 @@
   ;; KIR has declared and admitted since b6bfe23 with nothing on native to
   ;; emit them. Superproject ADR-2609010200.
   ;;
-  ;; Advanced 2026-09-02 for memwidth (kotoba-native ADR 0042): four transfer
-  ;; widths by four window tiers instead of seven hand-listed combinations, a
-  ;; natural-alignment check on every access wider than a byte, and the
-  ;; element-indexed slice family from ADR 0285 -- one unsigned compare and one
-  ;; scaled `mov` per element, with no context callback in the loop.
-  (is (= "3b7a426f8c90d38198bc924bb1b9c17d4470e0e1"
+  ;; boot: advanced 2026-09-02 for the four UEFI firmware-boundary encodings
+  ;; (kotoba-native ADR-0039) -- :system-table, :load-ptr, :uefi-call2 and
+  ;; :jump-to, the four things a BOOTX64.EFI written in Kotoba has to name.
+  ;;
+  ;; memwidth: and for four transfer widths by four window tiers instead of
+  ;; seven hand-listed combinations (ADR 0042), a natural-alignment check on
+  ;; every access wider than a byte, and the element-indexed slice family from
+  ;; ADR 0285 -- one unsigned compare and one scaled `mov` per element, with no
+  ;; context callback in the loop. Both are in this SHA; it is main, and it was
+  ;; checked with `merge-base --is-ancestor` against each stream's own merge
+  ;; rather than assumed to contain them.
+  (is (= "a5ddd788d22bd213f3d848c0e9dcc060c8b35d55"
          (dependency-pin 'io.github.kotoba-lang/kotoba-native)))
   ;; Advanced 2026-08-31 for two more instances of ADR-0286's class -- a KIR
   ;; i64 is a BigInt under ClojureScript and reached a host operation that
@@ -72,23 +78,30 @@
   ;; passed. The same advance also drops an npm package (`@noble/hashes`) out
   ;; of `kotoba.kir.value`'s ClojureScript require graph.
   ;;
-  ;; Advanced 2026-09-02 for memwidth: `kernel-memory-profile` is four widths
-  ;; by four tiers, `slice-memory-profile` is the ADR 0285 carrier's oracle,
-  ;; and `word-load`/`word-byte-at` replace a helper whose ClojureScript
-  ;; branch used a THIRTY-TWO bit shift -- correct only because nothing had
-  ;; asked it for a byte above the fourth. A u64 store asks.
-  (is (= "7aa6d2d0c1465011d8455d1dd7c8db5e042c6f4d"
+  ;; boot: advanced 2026-09-02 for the UEFI entry contract v2 on the firmware
+  ;; target profile, and the four operations' oracle refusals.
+  ;;
+  ;; memwidth: and for `kernel-memory-profile` as four widths by four tiers,
+  ;; `slice-memory-profile` as the ADR 0285 carrier's oracle, and
+  ;; `word-load`/`word-byte-at` replacing a helper whose ClojureScript branch
+  ;; used a THIRTY-TWO bit shift -- correct only because nothing had ever asked
+  ;; it for a byte above the fourth. A u64 store asks.
+  (is (= "c4149fb120ece017ce87d0ef5e40547a2e6f3ee3"
          (dependency-pin 'io.github.kotoba-lang/kotoba-kir)))
   ;; Advanced 2026-09-01 alongside the backend: the verifier re-derives the
   ;; two new arities and the v4 `expected-context`, and is what turns a
   ;; mismatched ABI into an explicit refusal rather than a v3 artifact
   ;; hunting for slots that are not there.
   ;;
-  ;; Advanced 2026-09-02 for memwidth, and the advance is the reason that
-  ;; repository exists: with the frontend, KIR and both backends already
-  ;; admitting `slice-load-u8`, `amu compile` still refused it here with
-  ;; "runtime KIR operation rejected". Both gates have to open.
-  (is (= "6ef43bd4e32cce88106f0a01c458c8a4e669fdf5"
+  ;; boot: advanced 2026-09-02 so the firmware target may name the machine
+  ;; (ADR-0020). Refusing :x86_64-aiueos-uefi-v1 a port write refused the
+  ;; target its own profile describes, and is why BOOTX64.EFI was still C.
+  ;;
+  ;; memwidth: and the advance is the reason that repository exists -- with the
+  ;; frontend, KIR and both backends already admitting `slice-load-u8`,
+  ;; `amu compile` still refused it there with "runtime KIR operation
+  ;; rejected". Both gates have to open.
+  (is (= "3d7a6f031bdb131e46db6dbf62db13bbcbcf8896"
          (dependency-pin 'io.github.kotoba-lang/kotoba-verifier)))
   (is (= 7 (:abi/version aggregate-abi/contract)))
   (is (= :recursive-word-handles
