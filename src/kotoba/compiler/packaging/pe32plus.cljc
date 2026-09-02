@@ -37,12 +37,15 @@
 
 (defn- entry-shim [source-rva context-rva]
   ;; UEFI invokes this boundary with the Microsoft x64 ABI. Reserve its 32-byte
-  ;; shadow space plus alignment, initialize Kotoba's hidden r9 context, call a
-  ;; zero-arity internal entry, and return its rax as EFI_STATUS. This is an ABI
-  ;; adapter, not a claim that the internal Kotoba lowering is Microsoft x64.
-  (let [after-lea (+ text-rva 11)
-        after-call (+ text-rva 16)]
+  ;; shadow space plus alignment, move ImageHandle/SystemTable from RCX/RDX to
+  ;; Kotoba's first two integer homes RDI/RSI, initialize the hidden r9 context,
+  ;; call the internal entry, and return its rax as EFI_STATUS. This is an ABI
+  ;; adapter, not a claim that internal Kotoba lowering is Microsoft x64.
+  (let [after-lea (+ text-rva 17)
+        after-call (+ text-rva 22)]
     (vec (concat [0x48 0x83 0xec 0x28
+                  0x48 0x89 0xcf
+                  0x48 0x89 0xd6
                   0x4c 0x8d 0x0d]
                  (signed-le (- context-rva after-lea) 4)
                  [0xe8] (signed-le (- source-rva after-call) 4)
@@ -50,8 +53,9 @@
 
 (defn package-efi
   "Package a sealed aiueos firmware artifact as an import-free PE32+ EFI image.
-  The Microsoft x64 boundary supports a zero-arity Kotoba entry returning an
-  EFI_STATUS-sized integer; internal functions retain the compiler context ABI."
+  The Microsoft x64 boundary passes ImageHandle and SystemTable to a two-arity
+  Kotoba entry returning an EFI_STATUS-sized integer; internal functions retain
+  the compiler context ABI."
   [artifact]
   (when-not (artifact/valid-seal? artifact)
     (throw (ex-info "PE32+ EFI packaging requires a sealed artifact" {})))
@@ -66,10 +70,10 @@
         export (get-in artifact [:exports source-entry])]
     (when-not export
       (throw (ex-info "Kotoba firmware entry is not exported" {:entry source-entry})))
-    (when-not (zero? (:arity export))
-      (throw (ex-info "UEFI boundary requires a zero-arity Kotoba entry"
+    (when-not (= 2 (:arity export))
+      (throw (ex-info "UEFI boundary requires a two-arity Kotoba entry"
                       {:entry source-entry :arity (:arity export)})))
-    (let [shim-size 21
+    (let [shim-size 27
           source-rva (+ text-rva shim-size (:offset export))
           shim (entry-shim source-rva data-rva)
           text (into shim (:code artifact))
@@ -106,7 +110,7 @@
        :entry :efi_main
        :source-entry source-entry
        :entry-rva text-rva
-       :entry-contract :microsoft-x64-zero-arity-efi-status-v1
+       :entry-contract :microsoft-x64-two-arity-efi-status-v2
        :sections [:text :data :reloc]
        :imports []
        :relocations {:format :pe-base-relocation/v1 :fixups 0 :position-independent true}

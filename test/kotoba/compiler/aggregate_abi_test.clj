@@ -58,9 +58,10 @@
   ;; Advanced 2026-09-02 for the closed scalar f32 family used by native
   ;; inference. The same producer commit carries the GMIR, MIR and MC pins;
   ;; this assertion prevents Amu from admitting f32 against the old emitter.
-  ;; 01756a6 also preserves a kernel store's expression result when register
-  ;; allocation assigns it separately from the value being written.
-  (is (= "01756a619ad543d270b8ba9a38b7f6543bea5b20"
+  ;; ce85a36 advances to the complete native memwidth/firmware boundary and
+  ;; preserves both window and slice store expression results when register
+  ;; allocation assigns them separately from the value being written.
+  (is (= "ce85a36d5307e7e019c304caa17daf237abb9b9b"
          (dependency-pin 'io.github.kotoba-lang/kotoba-native)))
   ;; Advanced 2026-08-31 for two more instances of ADR-0286's class -- a KIR
   ;; i64 is a BigInt under ClojureScript and reached a host operation that
@@ -71,7 +72,7 @@
   ;; error for any guest declaring a capability, while `check --jvm-free`
   ;; passed. The same advance also drops an npm package (`@noble/hashes`) out
   ;; of `kotoba.kir.value`'s ClojureScript require graph.
-  (is (= "cc06df0d6df3b38f3853485483306dd2522e8a7c"
+  (is (= "1f1a9202ae0d82a39c6c50c3a44239e4576fc1a3"
          (dependency-pin 'io.github.kotoba-lang/kotoba-kir)))
   ;; Advanced 2026-09-01 alongside the backend: the verifier re-derives the
   ;; two new arities and the v4 `expected-context`, and is what turns a
@@ -79,7 +80,7 @@
   ;; hunting for slots that are not there.
   ;; The independent verifier advances with scalar f32 arities; it still
   ;; derives the accepted operation family rather than trusting the emitter.
-  (is (= "db2c046e461c34403c178077167ff89c6191503a"
+  (is (= "1bbdf5d27192328b1678a9cca38f552e9c69873a"
          (dependency-pin 'io.github.kotoba-lang/kotoba-verifier)))
   (is (= 7 (:abi/version aggregate-abi/contract)))
   (is (= :recursive-word-handles

@@ -81,7 +81,7 @@
           [[:x86_64-aiueos-uefi-v1
            {:execution :firmware :artifact :pe32+ :subsystem :efi-application
              :entry :efi_main :abi :microsoft-x64
-             :entry-contract :microsoft-x64-zero-arity-efi-status-v1}]
+             :entry-contract :microsoft-x64-two-arity-efi-status-v2}]
            [:x86_64-aiueos-kernel-v1
             {:execution :kernel :artifact :elf64
              :entry :aiueos_kernel_entry :abi :aiueos-kernel-v1}]
@@ -98,15 +98,17 @@
         (is (= expected (select-keys profile (keys expected))))))))
 
 (deftest aiueos-targets-bind-profile-identity-into-artifacts
-  (let [source "(defn main [] (+ 40 2))"]
-    (doseq [name [:x86_64-aiueos-uefi-v1 :x86_64-aiueos-kernel-v1
-                  :x86_64-aiueos-user-v1]]
-      (let [artifact (:artifact (compiler/compile-source source name))]
+  (doseq [name [:x86_64-aiueos-uefi-v1 :x86_64-aiueos-kernel-v1
+                :x86_64-aiueos-user-v1]]
+    (let [source (if (= name :x86_64-aiueos-uefi-v1)
+                   "(defn main [image system-table] (+ image (* 0 system-table)))"
+                   "(defn main [] (+ 40 2))")
+          artifact (:artifact (compiler/compile-source source name))]
         (is (= name (:target artifact)))
         (is (= (target/profile name) (:target-profile artifact)))
         (is (= (if (= name :x86_64-aiueos-user-v1)
                  :kotoba-aiueos-user-v1 :none)
-               (get-in artifact [:target-profile :runtime])))))))
+               (get-in artifact [:target-profile :runtime]))))))
 
 (deftest kernel-target-emits-a-real-freestanding-elf64-image
   (let [{:keys [binary]} (compiler/compile-source "(defn main [] (+ 40 2))"
@@ -203,8 +205,7 @@
     (is (empty? (:imports artifact)))))
 
 (deftest privileged-intrinsics-are-rejected-outside-the-kernel-target
-  (doseq [target [:x86_64-linux-kotoba-v1 :x86_64-aiueos-user-v1
-                  :x86_64-aiueos-uefi-v1]]
+  (doseq [target [:x86_64-linux-kotoba-v1 :x86_64-aiueos-user-v1]]
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #"requires the aiueos kernel target"
           (compiler/compile-source "(defn main [] (kernel-read-cr3))" target)))))
 
@@ -304,7 +305,14 @@
                                :aarch64-aiueos-kernel-v1))
           code (:code artifact)]
       (is (pos? (aarch64-op-count code 0xffc00000 0xb9400000)) "ldr w?,[x?] (u32 load)")
-      (is (pos? (aarch64-op-count code 0xffc00000 0xb9000000)) "str w?,[x?] (u32 store)"))))
+      (is (pos? (aarch64-op-count code 0xffc00000 0xb9000000)) "str w?,[x?] (u32 store)")))
+  (testing "u16 MMIO intrinsics compile to real halfword transfers"
+    (let [artifact (:artifact (compiler/compile-source
+                               "(defn main [] (let [m (kernel-load-u16 167772160 512 2)] (kernel-store-u16 167772160 512 144 m)))"
+                               :aarch64-aiueos-kernel-v1))
+          code (:code artifact)]
+      (is (pos? (aarch64-op-count code 0xffc00000 0x79400000)) "ldrh w?,[x?]")
+      (is (pos? (aarch64-op-count code 0xffc00000 0x79000000)) "strh w?,[x?]"))))
 
 (deftest do-sequences-side-effects-exactly-once
   (testing "each `do` subexpression emits its store exactly once, in order"
@@ -683,7 +691,7 @@
 
 
 (deftest firmware-target-emits-a-real-import-free-pe32+-efi-image
-  (let [{:keys [binary]} (compiler/compile-source "(defn main [] 0)"
+  (let [{:keys [binary]} (compiler/compile-source "(defn main [image system-table] 0)"
                                                   :x86_64-aiueos-uefi-v1)
         bytes (:bytes binary)
         pe-offset (read-le bytes 0x3c 4)
@@ -706,14 +714,16 @@
     (is (empty? (:imports binary)))
     (is (= {:format :pe-base-relocation/v1 :fixups 0 :position-independent true}
            (:relocations binary)))
-    (is (= :microsoft-x64-zero-arity-efi-status-v1 (:entry-contract binary)))
+    (is (= :microsoft-x64-two-arity-efi-status-v2 (:entry-contract binary)))
     ;; sub rsp,40 reserves Microsoft shadow space and aligns before the call.
     (is (= [0x48 0x83 0xec 0x28] (subvec bytes 0x200 0x204)))
+    (is (= [0x48 0x89 0xcf 0x48 0x89 0xd6] (subvec bytes 0x204 0x20a))
+        "RCX/RDX firmware handles move into Kotoba's RDI/RSI homes")
     ;; Three complete 40-byte section headers fit before SizeOfHeaders.
     (is (<= (+ section-table (* 3 40)) 0x200))))
 
 (deftest efi-packaging-rejects-an-entry-that-cannot-satisfy-its-boundary-contract
-  (is (thrown-with-msg? clojure.lang.ExceptionInfo #"zero (arguments|arity)"
+  (is (thrown-with-msg? clojure.lang.ExceptionInfo #"(two-arity|take 2 arguments)"
                         (compiler/compile-source "(defn main [image] image)"
                                                  :x86_64-aiueos-uefi-v1))))
 
