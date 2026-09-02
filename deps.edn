@@ -34,11 +34,12 @@
         ;; classpath and `io/resource` answers with whichever comes first.
         ;; Nothing compared them until
         ;; `guest-grammar-vendor-test/every-classpath-copy-of-the-grammar-is-the-same-grammar`,
-        ;; and when it was written the two disagreed: this repository's copy
-        ;; was one change behind (local-state slice 1 -- it still forbade
-        ;; `atom`/`swap!`/`reset!`, which the authority now admits by
-        ;; elaboration). Resyncing this repository's copy alone would have left
-        ;; the classpath holding two grammars, so the pin moves with it.
+        ;; and the comparison is what makes resyncing this repository's copy
+        ;; without moving the pin visible: at 196d5817 that copy was still the
+        ;; pre-wave bytes while `resources/` had been resynced to 67561e57, so
+        ;; the classpath held two grammars and which one governed admission was
+        ;; decided by classpath order. 196d5817 is an ancestor of 5bdf5914
+        ;; (checked with `merge-base --is-ancestor`), so this is a fast-forward.
         io.github.kotoba-lang/kotoba-sema
         {:git/url "https://github.com/kotoba-lang/kotoba-sema.git"
          :git/sha "5bdf5914deee448fd2f0dfd5b2f19cd1cb2433c1"}
@@ -79,7 +80,7 @@
         ;; being implemented twice, exists only at afd117d2 and later.
         io.github.kotoba-lang/kotoba-kir
         {:git/url "https://github.com/kotoba-lang/kotoba-kir.git"
-         :git/sha "afd117d2533ed0b30eb5a4848083a94e25b01b40"}
+         :git/sha "ad6db332a06d52bdb037536ad191d48dc1d5f394"}
         ;; The frontend is an HIR producer and KIR lowering is its consumer;
         ;; both validate the same checked envelope.
         io.github.kotoba-lang/kotoba-hir
@@ -171,7 +172,7 @@
         ;; ADR-2609010200.
         io.github.kotoba-lang/kotoba-native
         {:git/url "https://github.com/kotoba-lang/kotoba-native.git"
-         :git/sha "24f43e212085d5e22bc01ab4f478f9971fd9b72d"}
+         :git/sha "91033a9ddcbedb216156df583805e0748a4f8a0d"}
         io.github.kotoba-lang/kotoba-component
         {:git/url "https://github.com/kotoba-lang/kotoba-component.git"
          :git/sha "68acc7237aec7b24b683304db8e87d14ec1be745"}
@@ -200,7 +201,7 @@
         ;; (7070ec0) -- all fast-forward ancestors of this pin.
         io.github.kotoba-lang/kotoba-verifier
         {:git/url "https://github.com/kotoba-lang/kotoba-verifier.git"
-         :git/sha "7a8cdcd98227b86af18e0c6e4d33a3e51eff17ff"}
+         :git/sha "6a743c3054e824e72ce703fde4f2ed7a59a404c3"}
 }
  :aliases {:test {:extra-paths ["test"]
                   :extra-deps

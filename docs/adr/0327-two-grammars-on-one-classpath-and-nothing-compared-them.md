@@ -4,7 +4,7 @@
 - Date: 2026-09-03
 - Authority: kotoba-lang
   `docs/adr/ADR-the-authority-names-every-head-the-frontend-admits.md`.
-- Pin advanced: `io.github.kotoba-lang/kotoba-sema` `bb0d47c6` → `5bdf5914`.
+- Pin advanced: `io.github.kotoba-lang/kotoba-sema` `196d5817` → `5bdf5914`.
 
 ## The measurement
 
