@@ -110,14 +110,17 @@
   ;; may hold the bare keyword `:abort`). The ten frozen identity vectors are
   ;; unchanged by that advance.
   ;;
-  ;; NOT advanced by the slice-value stream, on purpose (this repo's ADR 0314).
-  ;; kotoba-kir 061283e9 carries the named refusal for a `[:slice T]` that
-  ;; reached KIR (kotoba-kir ADR 0240) -- but it also carries 984a507, which
-  ;; decided that `:abort` DOES bridge into a sealed effect row, the opposite
-  ;; of what `definition_identity_test` (ADR 0300) decided the same day.
-  ;; Advancing past it turns 8 assertions there red. Nothing here needs the
-  ;; kotoba-kir side of the slice work, so the pin waits for that adjudication.
-  (is (= "08bdab8b1084160dcb58ac291a002b140a5abf13"
+  ;; Advanced 2026-09-02: `kotoba.kir.alpha-normalization`. The five-binder
+  ;; walk was implemented in this repository AND in kotoba.codebase.typed-code
+  ;; -- the same algorithm over the same KIR, with neither copy the authority,
+  ;; which kotoba-lang lang/code-identity.edn recorded as a residual risk of
+  ;; :ci8. It is now kir's and both consumers delegate. `definition-cid` still
+  ;; does not normalize internally, so the ten frozen identity vectors are
+  ;; unchanged by this advance too.
+  ;;
+  ;; This advance also carries 984a507, whose `:abort` decision ADR 0314 held
+  ;; this pin to await. deps.edn records the adjudication and its three reasons.
+  (is (= "afd117d2533ed0b30eb5a4848083a94e25b01b40"
          (dependency-pin 'io.github.kotoba-lang/kotoba-kir)))
   ;; Advanced 2026-09-01 alongside the backend: the verifier re-derives the
   ;; two new arities and the v4 `expected-context`, and is what turns a
