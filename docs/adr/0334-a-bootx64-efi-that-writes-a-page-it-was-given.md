@@ -37,8 +37,11 @@ through a wild pointer and the root is over whatever came back.
 ## Evidence
 
 `examples/aiueos-uefi-scratch.kotoba` gains two markers and keeps ADR-0318's
-sixteen. It compiles to a **24,576-byte** PE32+ EFI application (sha256
-`b0630cf94f49ee5cc48a06716d8cf5c74f937f35804fa22ffb61879ecb63bc5f`) and was
+sixteen. It compiles to a **24,576-byte** PE32+ EFI application on both
+routes, **byte-identical** (sha256
+`b0630cf94f49ee5cc48a06716d8cf5c74f937f35804fa22ffb61879ecb63bc5f`,
+`clojure -M:run compile` and `bin/amu … --jvm-free`) -- so the two compilers
+agree on the new encoding and not merely on accepting it -- and was
 **booted** on 2026-09-03 under QEMU with OVMF
 (`/opt/homebrew/share/qemu/edk2-x86_64-code.fd`), `q35`, `accel=tcg`, the
 image on a `fat:rw:` ESP as `/EFI/BOOT/BOOTX64.EFI`. The `isa-debugcon` at
