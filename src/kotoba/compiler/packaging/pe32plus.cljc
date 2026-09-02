@@ -15,6 +15,9 @@
 (def le pe/little-endian)
 (def align pe/align-up)
 
+(defn- utf16z [value]
+  (vec (mapcat #(le (int %) 2) (concat value [\u0000]))))
+
 ;; 2^(8*width) for the widths this packager emits. Written as literals rather
 ;; than `(bit-shift-left 1 (* 8 width))`, which is NOT portable: JavaScript
 ;; shift counts are taken mod 32, so on ClojureScript `(bit-shift-left 1 32)`
@@ -194,6 +197,41 @@
 ;; EfiConventionalMemory happens to remain on a particular machine.
 (def ^:private kernel-scratch-pages 14)
 
+(defn- store-status-nibble [source shift digit-label store-label target-label]
+  (concat
+   [0x44 0x89 0xf8]
+   (when (pos? shift) [0xc1 0xe8 shift])
+   [0x83 0xe0 0x0f 0x83 0xf8 0x0a 0x0f 0x8c] [(rip digit-label)]
+   [0x83 0xc0 0x37 0xe9] [(rip store-label)]
+   [(label digit-label)] [0x83 0xc0 0x30]
+   [(label store-label)] [0x66 0x89 0x05] [(rip target-label)]
+   ;; Retain the explicit source register in this helper's contract. Both
+   ;; callers currently convert r15d, which holds the kernel return status.
+   (when (not (= source :r15d)) [0xcc])))
+
+(defn- k16-preflight-tokens [entry]
+  (concat
+   ;; Read 02:00.0 through PCI mechanism #1. Only the explicit K16 diagnostic
+   ;; profile calls the kernel while Boot Services and ConOut are still live.
+   [0x66 0xba 0xf8 0x0c 0xb8 0x00 0x00 0x02 0x80 0xef
+    0x66 0xba 0xfc 0x0c 0xed 0x3d 0xec 0x10 0x25 0x81
+    0x0f 0x85] [(rip :exit-boot)]
+   [0x48 0x8d 0x3d] [(rip :boot-info)]
+   [0x48 0xb8] (le entry 8) [0xff 0xd0 0x49 0x89 0xc7]
+   (store-status-nibble :r15d 4 :status-high-digit :status-high-store
+                        :status-high)
+   (store-status-nibble :r15d 0 :status-low-digit :status-low-store
+                        :status-low)
+   [0x49 0x8b 0x4d 0x40 0x48 0x85 0xc9 0x0f 0x84]
+   [(rip :preflight-return)]
+   [0x48 0x8d 0x15] [(rip :status-message)]
+   [0x48 0x8b 0x41 0x08 0xff 0xd0]
+   [(label :preflight-return)]
+   ;; Return before ExitBootServices so firmware can recover/retry PXE after
+   ;; the one-shot diagnostic. Restore the Microsoft x64 entry frame exactly.
+   [0xb8 0x01 0x00 0x00 0x00 0x48 0x83 0xc4 0x28
+    0x41 0x5f 0x41 0x5e 0x41 0x5d 0x41 0x5c 0xc3]))
+
 (defn package-embedded-kernel
   "Generate a position-independent PE32+ UEFI transition loader around a
   compiler-produced aiueos kernel ELF. No C object, CRT, import, or linker is
@@ -223,10 +261,12 @@
   portable; it is evidence that nobody wrote one. Suspect the arithmetic --
   cljs bitwise operators truncate to int32, and the values here (entry points,
   paddrs, segment sizes) are 64-bit. See aiueos ADR-0130."
-  ([kernel] (package-embedded-kernel kernel []))
-  ([kernel payload]
+  ([kernel] (package-embedded-kernel kernel [] {}))
+  ([kernel payload] (package-embedded-kernel kernel payload {}))
+  ([kernel payload options]
   (let [kernel (vec kernel)
-        payload (vec payload)]
+        payload (vec payload)
+        k16-preflight? (true? (:k16-preflight? options))]
     (when (> (count payload) 16384)
       (throw (ex-info "embedded RT payload exceeds 16 KiB" {:bytes (count payload)})))
     (when-not (and (= [0x7f 0x45 0x4c 0x46] (subvec kernel 0 4))
@@ -278,6 +318,10 @@
             embedded-offset (align (+ memory-map-offset memory-map-capacity) 16)
             payload-offset embedded-offset
             kernel-offset (align (+ payload-offset (count payload)) 16)
+            status-prefix "AIUEOS K16 PREFLIGHT STATUS "
+            status-message (if k16-preflight?
+                             (utf16z (str status-prefix "00\r\n")) [])
+            status-message-offset (align (+ kernel-offset (count kernel)) 16)
             ;; Build once with provisional external RVAs; instruction length is
             ;; independent of displacement values.
             segment-tokens (mapcat (fn [index segment]
@@ -321,6 +365,8 @@
                     [0x48 0x8d 0x05] [(rip :descriptor-version)]
                     [0x48 0x89 0x44 0x24 0x20 0x41 0xff 0x56 0x38
                      0x48 0x85 0xc0 0x0f 0x85] [(rip :fail)]
+                    (when k16-preflight? (k16-preflight-tokens entry))
+                    [(label :exit-boot)]
                     [0x4c 0x89 0xe1 0x48 0x8b 0x15] [(rip :map-key)]
                     [0x41 0xff 0x96 0xe8 0x00 0x00 0x00 0x48 0x85 0xc0
                      0x0f 0x85] [(rip :get-map)]
@@ -351,7 +397,12 @@
                               payload
                               (repeat (- kernel-offset
                                          (+ payload-offset (count payload))) 0)
-                              kernel))
+                              kernel
+                              (when k16-preflight?
+                                (concat
+                                 (repeat (- status-message-offset
+                                            (+ kernel-offset (count kernel))) 0)
+                                 status-message))))
             data-raw-size (align (count data) file-alignment)
             reloc-address (align (+ data-address (count data)) section-alignment)
             labels (merge {:address0 (+ data-address (nth data-addresses 0))
@@ -370,6 +421,12 @@
                            :payload-pointer (+ data-address 112)
                            :payload-length (+ data-address 120)
                            :payload (+ data-address payload-offset)}
+                          (when k16-preflight?
+                            {:status-message (+ data-address status-message-offset)
+                             :status-high (+ data-address status-message-offset
+                                             (* 2 (count status-prefix)))
+                             :status-low (+ data-address status-message-offset
+                                            (* 2 (inc (count status-prefix))))})
                           (into {} (map-indexed
                                     (fn [index segment]
                                       [(keyword (str "segment" index))
@@ -418,4 +475,5 @@
                                     :payload-bytes (count payload)))
          :imports [] :embedded-kernel-sha256 (artifact/sha256 kernel)
          :embedded-payload-sha256 (when payload? (artifact/sha256 payload))
+         :k16-preflight? k16-preflight?
          :bytes bytes}))))))

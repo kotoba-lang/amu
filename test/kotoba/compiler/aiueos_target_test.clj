@@ -37,6 +37,9 @@
   (mapv #(bit-and 0xff (bit-shift-right (long n) (* 8 %)))
         (range width)))
 
+(defn- utf16-bytes [value]
+  (vec (mapcat #(le-bytes (int %) 2) value)))
+
 (defn- byte-sequence-offset [bytes needle]
   (first (filter #(= needle (subvec bytes % (+ % (count needle))))
                  (range (inc (- (count bytes) (count needle)))))))
@@ -238,6 +241,19 @@
               (partition 16 1 bytes))
         "AllocateAnyPages reserves fourteen loader-owned scratch pages")
     (is (= bytes (:bytes second-image)) "embedded boot image is reproducible")
+    (let [diagnostic (pe32plus/package-embedded-kernel
+                      kernel [] {:k16-preflight? true})
+          diagnostic-bytes (:bytes diagnostic)]
+      (is (:k16-preflight? diagnostic))
+      (is (some #(= [0x66 0xba 0xf8 0x0c 0xb8 0x00 0x00 0x02 0x80
+                      0xef 0x66 0xba 0xfc 0x0c 0xed 0x3d
+                      0xec 0x10 0x25 0x81] %)
+                (partition 20 1 diagnostic-bytes))
+          "K16 preflight is gated by exact 02:00.0 RTL8125 identity")
+      (is (some #(= (utf16-bytes "AIUEOS K16 PREFLIGHT STATUS 00\r\n") %)
+                (partition (count (utf16-bytes
+                                   "AIUEOS K16 PREFLIGHT STATUS 00\r\n"))
+                           1 diagnostic-bytes))))
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #"x86-64 ET_EXEC"
           (pe32plus/package-embedded-kernel (vec (repeat 128 0)))))))
 

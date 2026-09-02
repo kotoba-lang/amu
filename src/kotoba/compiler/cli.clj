@@ -377,6 +377,7 @@
     (let [input (second args)
           output (or (option args "--output") "BOOTX64.EFI")
           payload-path (option args "--payload")
+          k16-preflight? (boolean (some #{"--k16-preflight"} args))
           raw (java.nio.file.Files/readAllBytes
                (java.nio.file.Paths/get input (make-array String 0)))
           kernel (mapv #(bit-and (int %) 0xff) raw)
@@ -386,13 +387,15 @@
                            (java.nio.file.Paths/get payload-path
                                                     (make-array String 0))))
                     [])
-          packaged (pe32plus/package-embedded-kernel kernel payload)]
+          packaged (pe32plus/package-embedded-kernel
+                    kernel payload {:k16-preflight? k16-preflight?})]
       (atomic-output/write-bytes! output
         (byte-array (map unchecked-byte (:bytes packaged))))
       (println (pr-str {:ok true :target :x86_64-aiueos-uefi-v1
                         :kernel input :output output
                         :kernel-sha256 (:embedded-kernel-sha256 packaged)
                         :payload payload-path
+                        :k16-preflight? k16-preflight?
                         :payload-sha256 (:embedded-payload-sha256 packaged)})))
     "module-lock"
     ;; Pin a path-resolved project once so every later compile of it resolves
