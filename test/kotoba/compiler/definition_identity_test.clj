@@ -7,6 +7,7 @@
   hashed the source text."
   (:require [clojure.edn :as edn]
             [clojure.java.io :as io]
+            [clojure.set :as set]
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]
@@ -216,6 +217,72 @@
           cid (fn [m] (get-in (di/definitions (:hir m) (:kir m)) [:entries "f" :cid]))]
       (is (string? (cid (module #{:abort}))))
       (is (not= (cid (module #{})) (cid (module #{:abort})))))))
+
+(deftest the-sealed-control-effect-vocabulary-agrees-across-the-pin
+  ;; `abort-now-reaches-the-sealed-row` above states what is true of `:abort`
+  ;; TODAY. It does not stop the two repositories disagreeing about it again,
+  ;; and they did disagree: on 2026-09-02 kotoba-kir 984a507 and ADR-0300
+  ;; section 4 decided the same question in opposite directions, hours apart,
+  ;; and neither knew about the other. The pin sat one commit short for a day.
+  ;;
+  ;; HYGIENE-1's shape closes that (kotoba-native ADR-0050, kotoba-verifier
+  ;; ADR-0024): the producer EXPORTS the set it branches on, and the consumer
+  ;; derives its OWN and asserts equality across the pin. Neither repository
+  ;; imports the other's answer -- importing would make them agree by
+  ;; construction and prove nothing -- so a divergence is caught by the pin
+  ;; advance that carries it rather than by a stranded test.
+  ;;
+  ;; Placed here rather than in kotoba-verifier, the repository HYGIENE-1 used,
+  ;; because kotoba-verifier has no part in definition identity at all. The
+  ;; consumer that diverged is the one that has to compare.
+  ;;
+  ;; The ruling and its authority: kotoba-lang
+  ;; `docs/adr/ADR-abort-reaches-the-sealed-effect-row.md`, from
+  ;; `lang/surface-status.edn` `:explicit-errors` -- `:effect-row-integration`
+  ;; is a NAMED PRECONDITION of the sanctioned widening path, so a row member
+  ;; that cannot reach a definition identity is refused at the row's boundary
+  ;; rather than integrated into it. Recorded there as
+  ;; `:effect-row-integration :adjudication`, and in ADR-0326 here.
+  (let [expected #{:abort}
+        actual kir-id/control-effects]
+    (println (format "COMPARED\t%d\tsealed control effects against kotoba-kir"
+                     (count actual)))
+    (is (seq actual)
+        "kotoba.kir.definition-identity/control-effects is empty; that would
+         make every control effect unbridgeable again, and a comparison
+         against nothing is not a comparison")
+    (is (= expected actual)
+        (str "this repository and kotoba-kir disagree about which effect-row "
+             "members bridge as themselves.\n"
+             "  only here: " (pr-str (set/difference expected actual)) "\n"
+             "  only in kotoba-kir: " (pr-str (set/difference actual expected)) "\n"
+             "Adjudicate it (kotoba-lang lang/surface-status.edn "
+             ":explicit-errors :widening-path) before advancing the pin."))
+    (testing "closed, and closed against the shape it is not"
+      (is (every? keyword? actual))
+      (is (not (contains? actual :cap/call))))))
+
+(deftest the-two-unbridgeable-reasons-are-different-reasons
+  ;; The refusal machinery ADR-0300 built is not deleted by the adjudication,
+  ;; it is given a correct domain. Both remaining paths are pinned by their
+  ;; exact text, so a change that collapsed them into one message would be
+  ;; caught -- a marker that cannot say WHICH problem it found is halfway back
+  ;; to no marker at all.
+  (let [catalog {8 :state/transact}
+        bridge (fn [effects]
+                 (try (kir-id/effect-row-from-hir {:effects effects} {:id->name catalog})
+                      (catch clojure.lang.ExceptionInfo e
+                        {:message (ex-message e) :problem (:problem (ex-data e))})))]
+    (is (= #{:abort} (bridge #{:abort}))
+        "the control effect passes through as itself")
+    (let [refused (bridge #{:not/a-control-effect})]
+      (is (str/includes? (:message refused) "not a wire capability call")
+          "a keyword outside the closed set: widening it must be a decision,
+           not something a stray keyword can do by arriving")
+      (is (= :definition/effect-row-unbridged (:problem refused))))
+    (let [refused (bridge #{[:cap/call 4242]})]
+      (is (str/includes? (:message refused) "has no catalog name")
+          "an unknown wire id is a DIFFERENT refusal with a different reason"))))
 
 (deftest a-module-with-a-refused-definition-yields-no-cache-material
   (let [m (unbridgeable-module)]
