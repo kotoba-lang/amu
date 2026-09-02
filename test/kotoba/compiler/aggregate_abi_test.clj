@@ -54,7 +54,10 @@
   ;; `vector-alloc` (slot 200) and `vector-assoc!` (slot 208), the two heads
   ;; KIR has declared and admitted since b6bfe23 with nothing on native to
   ;; emit them. Superproject ADR-2609010200.
-  (is (= "4a4c4c342a5c5318b96c9493abc5c61b5fad020d"
+  ;; boot: advanced 2026-09-02 for the four UEFI firmware-boundary encodings
+  ;; (kotoba-native ADR-0039) -- :system-table, :load-ptr, :uefi-call2 and
+  ;; :jump-to, the four things a BOOTX64.EFI written in Kotoba has to name.
+  (is (= "4ccb2b5a707bc9dc1064ff4c68f3d86e3d1c81df"
          (dependency-pin 'io.github.kotoba-lang/kotoba-native)))
   ;; Advanced 2026-08-31 for two more instances of ADR-0286's class -- a KIR
   ;; i64 is a BigInt under ClojureScript and reached a host operation that
@@ -65,13 +68,18 @@
   ;; error for any guest declaring a capability, while `check --jvm-free`
   ;; passed. The same advance also drops an npm package (`@noble/hashes`) out
   ;; of `kotoba.kir.value`'s ClojureScript require graph.
-  (is (= "b6bfe238396631ff4b61934264a919f8ae5236b7"
+  ;; boot: advanced 2026-09-02 for the UEFI entry contract v2 on the firmware
+  ;; target profile, and the four operations' oracle refusals (ADR-0229).
+  (is (= "246b3814e58e10bf03f8bb807a7a0772f6651311"
          (dependency-pin 'io.github.kotoba-lang/kotoba-kir)))
   ;; Advanced 2026-09-01 alongside the backend: the verifier re-derives the
   ;; two new arities and the v4 `expected-context`, and is what turns a
   ;; mismatched ABI into an explicit refusal rather than a v3 artifact
   ;; hunting for slots that are not there.
-  (is (= "58a02b4b04f0b5b81aabbd50cffabf5bbfc6061a"
+  ;; boot: advanced 2026-09-02 so the firmware target may name the machine
+  ;; (ADR-0020). Refusing :x86_64-aiueos-uefi-v1 a port write refused the
+  ;; target its own profile describes, and is why BOOTX64.EFI was still C.
+  (is (= "8158aa866f6ccdd7d712270d5158547f7534556f"
          (dependency-pin 'io.github.kotoba-lang/kotoba-verifier)))
   (is (= 7 (:abi/version aggregate-abi/contract)))
   (is (= :recursive-word-handles
