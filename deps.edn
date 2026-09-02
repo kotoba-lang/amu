@@ -29,8 +29,42 @@
         ;; kotoba-sema repository boundary and public semantic-analysis API.
         io.github.kotoba-lang/kotoba-sema
         {:git/url "https://github.com/kotoba-lang/kotoba-sema.git"
-         :git/sha "f932c61ae7347fcc5417af13a4d248f87d77dd96"}
+         :git/sha "bb0d47c6c9caadd37adec1d2e2ca6ce61c783a88"}
         ;; ADR-2607266000 Phase B: these responsibilities moved out of this repo.
+        ;;
+        ;; The slice-value stream held this pin on purpose (ADR 0314), because
+        ;; kotoba-kir 984a507 ("control effects bridge through as keywords, so
+        ;; `:abort` reaches the sealed row") and this repository's
+        ;; `definition_identity_test` (ADR 0300, "`:abort` names no authority,
+        ;; so the bridge has no catalog keyword for it and refuses") decided the
+        ;; same question in opposite directions on 2026-09-02, and it said the
+        ;; pin waits for that adjudication rather than forcing it.
+        ;;
+        ;; ADJUDICATED 2026-09-02, in kotoba-kir's favour, and this advance is
+        ;; that adjudication rather than a stream forcing past it. Three reasons:
+        ;;
+        ;;  - kotoba-lang lang/code-identity.edn names
+        ;;    :kotoba.kir/definition-identity the :authority for what a sealed
+        ;;    row contains. ADR 0300 described that authority's behaviour; it did
+        ;;    not own it.
+        ;;  - the row is part of the sealed INTERFACE, and a function that can
+        ;;    leave its caller by aborting has interface `[:result T E]` where
+        ;;    one that cannot has `T`. Those are two definitions. Refusing to
+        ;;    identify either is not neutral between them.
+        ;;  - the refusal identified NOTHING in an aborting module, so every
+        ;;    such module was unidentified and uncacheable. Identifying them
+        ;;    differently is strictly more information than identifying neither.
+        ;;
+        ;; The 8 assertions ADR 0314 measured are not deleted. Four now state
+        ;; what is true of `:abort`, and the refusal path they used to reach --
+        ;; :unbridged-effect, :dependency-unavailable, SCANNED 0/2, the REFUSED
+        ;; listing -- is reached by a synthetic module carrying a wire id no
+        ;; catalog entry names, which is the only remaining unbridgeable row.
+        ;;
+        ;; The advance itself is required by this stream and not optional:
+        ;; kotoba.kir.alpha-normalization, the single five-binder walk that
+        ;; kotoba-lang lang/code-identity.edn :ci8 named as the fix for the walk
+        ;; being implemented twice, exists only at afd117d2 and later.
         io.github.kotoba-lang/kotoba-kir
         {:git/url "https://github.com/kotoba-lang/kotoba-kir.git"
          :git/sha "afd117d2533ed0b30eb5a4848083a94e25b01b40"}
@@ -154,7 +188,7 @@
         ;; (7070ec0) -- all fast-forward ancestors of this pin.
         io.github.kotoba-lang/kotoba-verifier
         {:git/url "https://github.com/kotoba-lang/kotoba-verifier.git"
-         :git/sha "5a16ecbb2ed066a89e2fdea0e1d2d98be7e91a0f"}
+         :git/sha "7a8cdcd98227b86af18e0c6e4d33a3e51eff17ff"}
 }
  :aliases {:test {:extra-paths ["test"]
                   :extra-deps

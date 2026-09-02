@@ -110,13 +110,16 @@
   ;; may hold the bare keyword `:abort`). The ten frozen identity vectors are
   ;; unchanged by that advance.
   ;;
-  ;; Advanced 2026-09-02 once more: `kotoba.kir.alpha-normalization`. The
-  ;; five-binder walk was implemented in this repository AND in
-  ;; kotoba.codebase.typed-code -- the same algorithm over the same KIR, with
-  ;; neither copy the authority, which kotoba-lang lang/code-identity.edn
-  ;; recorded as a residual risk of :ci8. It is now kir's and both consumers
-  ;; delegate. `definition-cid` still does not normalize internally, so the ten
-  ;; frozen identity vectors are unchanged by this advance too.
+  ;; Advanced 2026-09-02: `kotoba.kir.alpha-normalization`. The five-binder
+  ;; walk was implemented in this repository AND in kotoba.codebase.typed-code
+  ;; -- the same algorithm over the same KIR, with neither copy the authority,
+  ;; which kotoba-lang lang/code-identity.edn recorded as a residual risk of
+  ;; :ci8. It is now kir's and both consumers delegate. `definition-cid` still
+  ;; does not normalize internally, so the ten frozen identity vectors are
+  ;; unchanged by this advance too.
+  ;;
+  ;; This advance also carries 984a507, whose `:abort` decision ADR 0314 held
+  ;; this pin to await. deps.edn records the adjudication and its three reasons.
   (is (= "afd117d2533ed0b30eb5a4848083a94e25b01b40"
          (dependency-pin 'io.github.kotoba-lang/kotoba-kir)))
   ;; Advanced 2026-09-01 alongside the backend: the verifier re-derives the
@@ -142,7 +145,14 @@
   ;;            time (this repo's ADR-0293).
   ;; The pin is the branch tip, which also carries the interrupt entry address
   ;; gate.
-  (is (= "5a16ecbb2ed066a89e2fdea0e1d2d98be7e91a0f"
+  ;;   slice -- the same independence a fourth time: the verifier keeps its OWN
+  ;;            copy of the erased-source-carrier list and refuses a `[:slice T]`
+  ;;            at a function boundary by name (kotoba-verifier ADR 0028). That
+  ;;            commit also unsticks this repository's sibling: kotoba-verifier
+  ;;            had been pinned to kotoba-native a2023fed for 302 commits
+  ;;            because three tests pinned SPILL SLOTS as literals across an
+  ;;            allocator that gained a callee-saved tier (ADR 0027).
+  (is (= "7a8cdcd98227b86af18e0c6e4d33a3e51eff17ff"
          (dependency-pin 'io.github.kotoba-lang/kotoba-verifier)))
   (is (= 7 (:abi/version aggregate-abi/contract)))
   (is (= :recursive-word-handles
