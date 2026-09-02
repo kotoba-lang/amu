@@ -58,7 +58,9 @@
   ;; Advanced 2026-09-02 for the closed scalar f32 family used by native
   ;; inference. The same producer commit carries the GMIR, MIR and MC pins;
   ;; this assertion prevents Amu from admitting f32 against the old emitter.
-  (is (= "b85b6008a1b7dcd47194e92ba45b419fbd3912ab"
+  ;; 01756a6 also preserves a kernel store's expression result when register
+  ;; allocation assigns it separately from the value being written.
+  (is (= "01756a619ad543d270b8ba9a38b7f6543bea5b20"
          (dependency-pin 'io.github.kotoba-lang/kotoba-native)))
   ;; Advanced 2026-08-31 for two more instances of ADR-0286's class -- a KIR
   ;; i64 is a BigInt under ClojureScript and reached a host operation that
