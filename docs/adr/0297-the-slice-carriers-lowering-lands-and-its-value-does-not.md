@@ -1,4 +1,4 @@
-# ADR 0292: The slice carrier's lowering lands, and its value does not
+# ADR 0297: The slice carrier's lowering lands, and its value does not
 
 - Status: accepted
 - Date: 2026-09-02
