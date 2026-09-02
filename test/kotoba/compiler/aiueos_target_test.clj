@@ -61,6 +61,7 @@
                    :flags (read-le bytes (+ offset 4) 4)
                    :offset (read-le bytes (+ offset 8) 8)
                    :vaddr (read-le bytes (+ offset 16) 8)
+                   :paddr (read-le bytes (+ offset 24) 8)
                    :memsz (read-le bytes (+ offset 40) 8)})))
          (filterv #(= 1 (:type %))))))
 
@@ -250,6 +251,15 @@
     (let [diagnostic (pe32plus/package-embedded-kernel
                       kernel [] {:k16-preflight? true})
           diagnostic-bytes (:bytes diagnostic)
+          kernel-entry (read-le kernel 24 8)
+          kernel-entry-segment (some #(when (= 5 (:flags %)) %)
+                                     (elf64-load-segments kernel))
+          kernel-entry-offset (+ (:offset kernel-entry-segment)
+                                 (- kernel-entry (:paddr kernel-entry-segment)))
+          returnable-entry (+ kernel-entry 73
+                              (read-i32 kernel (+ kernel-entry-offset 69)))
+          context-address (+ kernel-entry 68
+                             (read-i32 kernel (+ kernel-entry-offset 64)))
           pci-probe [0x66 0xba 0xf8 0x0c 0xb8 0x00 0x00 0x02 0x80
                      0xef 0x66 0xba 0xfc 0x0c 0xed 0x3d
                      0xec 0x10 0x25 0x81]
@@ -258,6 +268,14 @@
           exit-boot-offset (+ branch-offset 6
                               (read-i32 diagnostic-bytes (+ branch-offset 2)))]
       (is (:k16-preflight? diagnostic))
+      (is (= returnable-entry (:k16-preflight-returnable-entry diagnostic)))
+      (is (= context-address (:k16-preflight-context-address diagnostic)))
+      (is (some #(= (vec (concat [0x49 0xb9] (le-bytes context-address 8)
+                                  [0x49 0x89 0x79 0x50 0x48 0xb8]
+                                  (le-bytes returnable-entry 8)
+                                  [0xff 0xd0])) %)
+                (partition 26 1 diagnostic-bytes))
+          "preflight installs the kernel context and calls returnable main")
       (is (some? probe-offset)
           "K16 preflight is gated by exact 02:00.0 RTL8125 identity")
       (is (= [0x0f 0x85] (subvec diagnostic-bytes branch-offset

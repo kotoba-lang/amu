@@ -148,6 +148,12 @@
             (+ value (* (nth bytes (+ offset index)) (nth byte-scale index))))
           0 (range width)))
 
+(defn- read-i32 [bytes offset]
+  (let [value (read-le bytes offset 4)]
+    (if (>= value 2147483648)
+      (- value 4294967296)
+      value)))
+
 (defn- code-size [tokens]
   (reduce (fn [size token]
             (+ size (cond
@@ -226,7 +232,7 @@
    [0x48 0x8b 0x41 0x08 0xff 0xd0]
    [(label return-label)]))
 
-(defn- k16-preflight-tokens [entry]
+(defn- k16-preflight-tokens [returnable-entry context-address]
   (concat
    ;; Read 02:00.0 through PCI mechanism #1. Only the explicit K16 diagnostic
    ;; profile calls the kernel while Boot Services and ConOut are still live.
@@ -235,7 +241,12 @@
     0x0f 0x85] [(rip :exit-boot)]
    (uefi-output-string-tokens :rtl-message :rtl-message-return)
    [0x48 0x8d 0x3d] [(rip :boot-info)]
-   [0x48 0xb8] (le entry 8) [0xff 0xd0 0x49 0x89 0xc7]
+   ;; The normal ELF entry deliberately halts after main returns. Preflight
+   ;; instead calls the compiler's returnable main wrapper and establishes the
+   ;; two context values normally installed by that ELF entry shim.
+   [0x49 0xb9] (le context-address 8)
+   [0x49 0x89 0x79 0x50]
+   [0x48 0xb8] (le returnable-entry 8) [0xff 0xd0 0x49 0x89 0xc7]
    (store-status-nibble :r15d 4 :status-high-digit :status-high-store
                         :status-high)
    (store-status-nibble :r15d 0 :status-low-digit :status-low-store
@@ -304,9 +315,11 @@
                               :memsz (read-le kernel (+ offset 40) 8)}))
                          (range phnum))]
       (let [first-segment (first segments) second-segment (second segments)
-            entry-segment (some #(and (= 5 (:flags %))
-                                      (<= (:paddr %) entry)
-                                      (< entry (+ (:paddr %) (:memsz %)))) segments)
+            entry-segment (some #(when (and (= 5 (:flags %))
+                                            (<= (:paddr %) entry)
+                                            (< entry (+ (:paddr %) (:memsz %))))
+                                   %)
+                                segments)
             non-overlap (or (<= (+ (:paddr first-segment) (:memsz first-segment))
                                 (:paddr second-segment))
                             (<= (+ (:paddr second-segment) (:memsz second-segment))
@@ -321,7 +334,26 @@
                                    (<= (+ (:offset %) (:filesz %)) (count kernel))) segments)
                      (= [5 6] (mapv :flags segments)) entry-segment non-overlap)
         (throw (ex-info "embedded kernel PT_LOAD contract rejected" {:segments segments})))
-      (let [data-addresses [0 8]
+      (let [entry-file-offset (+ (:offset entry-segment)
+                                 (- entry (:paddr entry-segment)))
+            entry-shim? (and (<= (+ entry-file-offset 73) (count kernel))
+                             (= [0x48 0x89 0x3d]
+                                (subvec kernel (+ entry-file-offset 54)
+                                        (+ entry-file-offset 57)))
+                             (= [0x4c 0x8d 0x0d]
+                                (subvec kernel (+ entry-file-offset 61)
+                                        (+ entry-file-offset 64)))
+                             (= 0xe8 (nth kernel (+ entry-file-offset 68))))
+            context-address (when entry-shim?
+                              (+ entry 68
+                                 (read-i32 kernel (+ entry-file-offset 64))))
+            returnable-entry (when entry-shim?
+                               (+ entry 73
+                                  (read-i32 kernel (+ entry-file-offset 69))))
+            _ (when (and k16-preflight? (not entry-shim?))
+                (throw (ex-info "K16 preflight requires the returnable AIUEOS kernel entry shim"
+                                {:entry entry :entry-file-offset entry-file-offset})))
+            data-addresses [0 8]
             rx-limit (align (+ (:paddr first-segment) (:memsz first-segment)) 4096)
             rw-start (:paddr second-segment)
             rw-end (+ rw-start (:memsz second-segment))
@@ -394,7 +426,8 @@
                     [0x48 0x8d 0x05] [(rip :descriptor-version)]
                     [0x48 0x89 0x44 0x24 0x20 0x41 0xff 0x56 0x38
                      0x48 0x85 0xc0 0x0f 0x85] [(rip :fail)]
-                    (when k16-preflight? (k16-preflight-tokens entry))
+                    (when k16-preflight?
+                      (k16-preflight-tokens returnable-entry context-address))
                     [(label :exit-boot)]
                     [0x4c 0x89 0xe1 0x48 0x8b 0x15] [(rip :map-key)]
                     [0x41 0xff 0x96 0xe8 0x00 0x00 0x00 0x48 0x85 0xc0
@@ -515,4 +548,6 @@
          :imports [] :embedded-kernel-sha256 (artifact/sha256 kernel)
          :embedded-payload-sha256 (when payload? (artifact/sha256 payload))
          :k16-preflight? k16-preflight?
+         :k16-preflight-returnable-entry (when k16-preflight? returnable-entry)
+         :k16-preflight-context-address (when k16-preflight? context-address)
          :bytes bytes}))))))
