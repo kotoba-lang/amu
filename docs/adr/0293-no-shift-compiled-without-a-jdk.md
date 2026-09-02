@@ -102,6 +102,13 @@ the PersistentArrayMap boundary. Same host difference, different symptom.
   gate names it, it is a driver a person or an agent runs, not an automated
   gate — and stating that is the point, because an unwired script described as
   a gate is the failure mode this ADR is about.
+- By the time this branch merged, `main` had already moved the verifier pin to
+  `3d7a6f0` on its own — two other streams bumped it the same day for their own
+  reasons. So the shift defect was already fixed here before this ADR landed,
+  and what this PR actually contributes is the pin's remaining distance to the
+  tip plus **the two gates**. That is the useful reading of it: a fix arrives
+  in a pin bump whether or not anyone knows what it fixed, and the thing that
+  keeps it from silently going away again is the fixture.
 - The pin advance spans more than this fix, because it goes to the branch tip
   rather than to the fix. Between `58a02b4` and `c2ce475` sit the boot stream's
   firmware boundary (`8158aa8`, kotoba-verifier ADR-0020, this repo's
