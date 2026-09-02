@@ -1,7 +1,9 @@
 (ns kotoba.compiler.provenance
   #?(:clj (:require [kotoba.artifact.core :as artifact]
+                    [kotoba.compiler.definition-identity :as definition-identity]
                     [kotoba.kir.compatibility :as compatibility])
      :cljs (:require [kotoba.artifact.core :as artifact]
+                     [kotoba.compiler.definition-identity :as definition-identity]
                      [kotoba.kir.compatibility :as compatibility]
                      ["node:crypto" :as crypto]))
   #?(:clj (:import (java.nio.charset StandardCharsets)
@@ -67,6 +69,15 @@
     :target-profile-sha256 (artifact/sha256 (or (:target-profile result)
                                                 (get-in result [:artifact :target-profile])))
     :compatibility-sha256 (artifact/sha256 (:compatibility result))
+    ;; ADR 0295. The definition graph, addressed by content: one CID per
+    ;; top-level function, its direct dependencies as CIDs, and the effect row
+    ;; that CID seals. `:hir-sha256` and `:kir-sha256` above are hashes of one
+    ;; whole-module value, so they answer "is this the same build?" and nothing
+    ;; smaller; this answers "which of these definitions are the same code",
+    ;; which is the question a rename asks and the one a cache has to key on.
+    ;; A backend whose result carries no typed KIR gets a named reason rather
+    ;; than an empty map -- see `definition-identity/describe`.
+    :definitions (definition-identity/describe result)
     :outputs (outputs result)})))
 
 (defn attach [source policy build-metadata result]

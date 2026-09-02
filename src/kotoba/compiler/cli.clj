@@ -6,6 +6,7 @@
             [kotoba.compiler.core :as compiler]
             [kotoba.compiler.coverage :as coverage]
             [kotoba.compiler.coverage-evidence :as coverage-evidence]
+            [kotoba.compiler.definition-identity :as definition-identity]
             [kotoba.compiler.diagnostic :as diagnostic]
             [kotoba.compiler.ios-aot :as ios-aot]
             [kotoba.compiler.interface :as interface]
@@ -19,7 +20,9 @@
             [kotoba.artifact.runtime-identity :as runtime-identity]
             [kotoba.verifier.signing :as signing]
             [kotoba.compiler.source-path :as source-path]
+            [kotoba.kir :as ir]
             [kotoba.kir.target :as target-profile]
+            [kotoba.sema :as sema]
             [kotoba.verifier :as verifier]
             [json.data-json :as json]
             [clojure.string :as str])
@@ -67,6 +70,20 @@
 
 (defn- kotoba-source! [path] (source-path/admit! path))
 
+(defn- check-definitions
+  "Per-definition CIDs for a checked module (ADR 0295).
+
+  `check` does not emit, but a definition CID is defined on typed KIR, so
+  answering the question means lowering. That lowering is discarded; the only
+  thing kept is the identity report. A lowering failure downgrades the answer
+  to a named `:unavailable` reason rather than failing the check -- `check`
+  admits the frontend, and a KIR defect is not an admission verdict -- but it
+  is never reported as an empty definition set."
+  [hir]
+  (definition-identity/describe
+   {:hir hir
+    :kir (try (ir/lower hir) (catch Exception _ nil))}))
+
 (def ^:private detail-keys
   #{:phase :target :artifact-target :host-target :entry :arity :limit :status
     :reason :runtime-sha256 :not-before :expires :now
@@ -104,6 +121,12 @@
     :usage 64
     (:decode :read :subset :admission :ir :verify :coverage :project-link
      :module-lock) 65
+    ;; Neither 0 nor 65. A refused definition is an ANSWER -- the report lists
+    ;; it with its marker and exits 0 -- so this code is reserved for the
+    ;; other thing: no identity could be computed at all. Without a distinct
+    ;; code the two are indistinguishable to a caller, which is the failure
+    ;; where a check that could not measure returns what a passing check does.
+    :definition-identity 66
     (:signature :trust :runtime-identity) 77
     :output 74
     :execute 69
@@ -273,6 +296,43 @@
       (atomic-output/write-edn! output [envelope])
       (println (pr-str {:ok true :output output
                         :evidence-sha256 (artifact/sha256 (:statement envelope))})))
+    "definition-cids"
+    ;; ADR 0295. One CID per top-level function, in declaration order.
+    ;;
+    ;; No admission runs here, on either route. A definition CID is IDENTITY,
+    ;; never authority -- kotoba-lang lang/code-identity.edn is explicit that
+    ;; evaluating an effectful definition by CID needs a receipt the identity
+    ;; does not grant -- so asking what a module's definitions ARE cannot
+    ;; require a grant to run them. The first version of this command went
+    ;; through `check-source` and therefore refused a module that names a
+    ;; capability without a `--policy`, while the nbb twin answered; the two
+    ;; routes gave different answers to the same question.
+    ;;
+    ;; `--policy` is still read, for the DECLARATIVE half only: a language
+    ;; profile changes the HIR, and therefore the KIR, and therefore the CIDs.
+    (let [input (kotoba-source! (second args))
+          source-roots (options args "--source-path")
+          profile-s (option args "--profile")
+          policy (if-let [pp (option args "--policy")] (bounded-edn/read-file pp) {})
+          graph (when (seq source-roots)
+                  (project-files/load-closed-graph input source-roots))
+          linked (when graph (project/link-source (:sources graph) (:root graph)))
+          text (if linked (:source linked) (bounded-edn/read-text-file input))
+          opts (cond-> {}
+                 (:language-profile policy)
+                 (assoc :language-profile (:language-profile policy))
+                 profile-s (assoc :language-profile (keyword profile-s))
+                 linked (assoc :admit-linked-synthetics? true))
+          report (check-definitions (sema/analyze text opts))]
+      (when-not (map? (:entries report))
+        (throw (ex-info "no definition identity is available for this module"
+                        {:phase :definition-identity :reason (:reason report)})))
+      (println (pr-str (assoc report
+                              :ok true
+                              :format :kotoba.definition-cids/v1
+                              :lines (definition-identity/format-lines report)
+                              :scanned (definition-identity/scanned-line report)))))
+
     "check"
     ;; T9.2 / T3.4: frontend admit + optional --profile pure-product.
     ;; Default human pretty errors; --json for machine envelope.
@@ -324,21 +384,26 @@
               ;; computed -- it was in HIR and simply never reported.
               effects (cap-names/name-grants (get-in result [:hir :effects] #{}))
               operations (get-in result [:hir :named-operations])
-              admission (cap-names/name-grants (:admission result))]
+              admission (cap-names/name-grants (:admission result))
+              exports (get-in result [:hir :exports])
+              ;; ADR 0295: one CID per top-level function, the same map the
+              ;; nbb `check --json` emits under the same key.
+              definitions (check-definitions (:hir result))]
           (if json?
             (println (pr-str (cond-> {:ok true
                                       :format :kotoba.check/v1
                                       :language-profile (:language-profile result)
                                       :effects effects
                                       :named-operations operations
-                                      :exports (get-in result [:hir :exports])
+                                      :exports exports
+                                      :definitions definitions
                                       :admission admission}
                                graph (assoc :root (str (:root graph)) :modules modules))))
             (do (apply println
                        (cond-> ["ok"
                                 (str "profile=" (or (some-> (:language-profile result) name) "default"))
                                 (str "effects=" (pr-str effects))
-                                (str "exports=" (pr-str (get-in result [:hir :exports] [])))]
+                                (str "exports=" (pr-str (or exports [])))]
                          graph (conj (str "modules=" (pr-str modules)))))
                 (flush))))
         (catch Exception e
