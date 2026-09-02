@@ -41,6 +41,19 @@
     (is (bytes? (:bytes compiled)))
     (is (pos? (alength ^bytes (:bytes compiled))))))
 
+(deftest compile-project-threads-native-fuel
+  (let [lib "(ns native.fuel.lib (:export [answer]))
+             (defn answer [] 42)"
+        app "(ns native.fuel.root
+               (:require [native.fuel.lib :as lib])
+               (:export [main]))
+             (defn main [] (lib/answer))"
+        compiled (compiler/compile-project
+                  {'native.fuel.lib lib 'native.fuel.root app}
+                  'native.fuel.root :x86_64-aiueos-kernel-v1 {} {}
+                  {:fuel 4096})]
+    (is (= 4096 (get-in compiled [:artifact :limits :fuel])))))
+
 (deftest compile-project-component-admits-linked-or-synthetics
   "T8.3: linked monomorph re-emits desugared `or` as __kotoba_or_*; second
   frontend pass must admit those synthetics (user source still cannot invent them)."
