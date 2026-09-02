@@ -110,14 +110,25 @@
                tier, and r10,7 for the per-access alignment, an unscaled add"
     :restored :green}}
   :full-suite
-  {:status :not-re-verified-at-this-sha
-   :last-complete {:before :the-final-pin-merge :tests 1220 :assertions 8872
-                   :failing-only :the-three-pin-assertions-this-change-updates}
-   :why "two attempts killed by the host at load average 155-211, with several
-         other streams' JVMs resident (one 1d19h old)"
-   :note "the repository's runner prints `test-runner: INCOMPLETE -- finished N
-          of 159` rather than a count, so a partial run cannot be mistaken for
-          a result"}
+  {:status :complete-159-of-159
+   :runs [{:n 1 :tests 1234 :assertions 8969 :fail 6}
+          {:n 2 :tests 1234 :assertions 8974 :fail 1}]
+   :all-failures-in kotoba.compiler.isa-execution-test
+   :not-reproducible "the two runs failed DIFFERENT assertions: six on the
+                      first (recursion, mutual tail calls, keyword parameter,
+                      four-argument entry), one on the second
+                      (source-variant-sroa)"
+   :standalone [{:n 1 :tests 25 :assertions 768 :fail 0}
+                {:n 2 :tests 25 :assertions 768 :fail 0}]
+   :shape "{:status :trap :exit 120 :fuel {:initial 512 :remaining 512}} --
+           fuel untouched, so the process never executed an instruction"
+   :arm-affected :x86_64-only
+   :mechanism "x86_64 runs the emitted binary through Rosetta 2 on this Apple
+               Silicon host (cc -arch x86_64); the aarch64 arm never failed"
+   :conclusion :process-launch-under-contention-not-codegen
+   :host-load "112-211 throughout, other streams' JVMs resident (one 1d19h)"
+   :why-four-measurements "a single green run and a single red run are each
+                           equally consistent with the wrong conclusion"}
   :legacy-full-suite-note "superseded by :full-suite above"
   :tests 1220
   :assertions 8872

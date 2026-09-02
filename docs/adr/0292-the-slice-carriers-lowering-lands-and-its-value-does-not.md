@@ -152,15 +152,30 @@ kotoba-kir ADR 0222).
   sequence in its place — `cmp r12, imm32` for the tier, `and r10, 7` for the
   per-access alignment, and an unscaled `add`. Restored: 0 failures.
 
-  ⚠ The **full** 159-namespace suite was last observed complete before the
-  final pin merge (1220 tests / 8872 assertions, failing only the three pin
-  assertions this change updates). Two attempts to re-run it on the merged pins
-  were killed by the host at load average 155–211 with several other streams'
-  JVMs resident, one of them 1 day 19 hours old. That is stated rather than
-  rounded up: the full suite is **not** re-verified at this SHA, and the
-  repository's own runner reports `test-runner: INCOMPLETE -- finished N of
-  159` rather than a count, which is why a partial run cannot be mistaken for
-  one.
+- The **full** 159-namespace suite, on the merged pins:
+  `test-runner: COMPLETE -- 159 of 159`, **1234 tests / 8969 assertions** on the
+  first run and **1234 / 8974** on the second.
+
+  Both runs failed only inside `kotoba.compiler.isa-execution-test`, and **the
+  two runs failed different assertions** — six on the first (`recursion`,
+  `mutual tail calls`, `keyword parameter`, the four-argument entry), one on the
+  second (`source-variant-sroa`). Run standalone, that namespace passes **twice
+  over: 25 tests, 768 assertions, 0 failures each time.**
+
+  Every failure has the same shape:
+  `{:status :trap :exit 120 :fuel {:initial 512 :remaining 512}}` — fuel
+  untouched, so the process never executed an instruction — and every one is on
+  the **x86_64** arm, which on this Apple Silicon host runs the emitted binary
+  through **Rosetta 2** (`cc -arch x86_64`, `isa_execution_test.clj:17,70`). The
+  aarch64 arm never failed.
+
+  So this is process launch under contention, not codegen: a deterministic
+  defect fails the same assertion every time, and would not disappear when the
+  namespace runs alone. The host carried load average 112–211 throughout, with
+  several other streams' JVMs resident (one 1 day 19 hours old). Four
+  measurements are recorded rather than one, because a single green run and a
+  single red run are each equally consistent with the wrong conclusion.
+
 - The fixture compiles under `--jvm-free`, which is the acceptance rule: no
   `java`, no `clojure`, in the compile path.
 - `kotoba.compiler.kernel-region-provenance-test` now covers all twenty loads
