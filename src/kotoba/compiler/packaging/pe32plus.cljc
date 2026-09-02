@@ -1,5 +1,6 @@
 (ns kotoba.compiler.packaging.pe32plus
   (:require [kotoba.artifact.core :as artifact]
+            [kotoba.native.image-scratch :as image-scratch]
             [kotoba.object.pe32plus :as pe]))
 
 (def ^:private firmware-target :x86_64-aiueos-uefi-v1)
@@ -24,6 +25,30 @@
 ;; `kernel-boot-info` reads [r9+0x50], which under an 80-byte virtual size was
 ;; a read one byte PAST the section.
 (def ^:private context-size 96)
+;; boot-scratch: the writable area this packager reserves for the guest, past
+;; the context (kotoba-gmir ADR-0013, kotoba-native ADR-0068).
+;;
+;; It is DECLARED, not implied. `.data`'s virtual size is `context-size +
+;; scratch-size`, the raw bytes are emitted rather than left to the loader's
+;; zero-fill, and the numbers come from `kotoba.native.image-scratch` -- the
+;; namespace the ENCODER reads to build `lea r10,[r9+0x60]`. One var, two
+;; readers, the discipline `kotoba.native.interrupt-abi` established.
+;;
+;; UNCONDITIONAL. Every UEFI image gets the reservation whether or not its
+;; program names the region. Sizing it by what the program uses would make the
+;; operation lie in exactly the case that matters -- a module that gains a
+;; `(kernel-scratch-region)` after the packager decided it needed none -- and
+;; 16 KiB of zeros is a cheap price for the operation always being true.
+(def ^:private scratch-offset image-scratch/offset)
+(def ^:private scratch-size image-scratch/bytes-reserved)
+(def ^:private data-size (+ context-size scratch-size))
+
+;; The offset the encoder assumes has to BE the end of the context. If the
+;; context ever grows past it the scratch would overlap the context's last
+;; slots, silently: the emitted `lea` does not know how big the context is.
+(when-not (= scratch-offset context-size)
+  (throw (ex-info "the scratch region must begin where the context ends"
+                  {:context-size context-size :scratch-offset scratch-offset})))
 
 (def le pe/little-endian)
 (def align pe/align-up)
@@ -156,15 +181,15 @@
           ;; granularity the loader assigns pages at -- the same rule
           ;; `encode-image` now enforces, computed here rather than assumed.
           data-rva (align (+ text-rva text-size) section-alignment)
-          reloc-rva (align (+ data-rva context-size) section-alignment)
+          reloc-rva (align (+ data-rva data-size) section-alignment)
           image-size (align (+ reloc-rva 12) section-alignment)
           shim (entry-shim (:arity export) source-rva data-rva)
           text (into shim (:code artifact))
           context (into (vec (repeat 8 0))
-                        (concat (le 512 8) (repeat (- context-size 16) 0)))
+                        (concat (le 512 8) (repeat (- data-size 16) 0)))
           text-raw-size (align (count text) file-alignment)
           data-offset (+ text-offset text-raw-size)
-          data-raw-size (align context-size file-alignment)
+          data-raw-size (align data-size file-alignment)
           reloc-offset (+ data-offset data-raw-size)
           ;; A legal relocation directory containing two IMAGE_REL_BASED_ABSOLUTE
           ;; padding entries. All image references are relative, so no fixups exist.
@@ -180,7 +205,7 @@
                               :rva text-rva :raw-size text-raw-size
                               :raw-offset text-offset :characteristics 0x60000020
                               :bytes text}
-                             {:name ".data" :virtual-size context-size
+                             {:name ".data" :virtual-size data-size
                               :rva data-rva :raw-size data-raw-size
                               :raw-offset data-offset :characteristics 0xc0000040
                               :bytes context}
@@ -200,8 +225,10 @@
        :entry-contract contract
        :entry-arity (:arity export)
        :context-size context-size
+       :scratch {:offset scratch-offset :bytes scratch-size
+                 :rva (+ data-rva scratch-offset)}
        :section-layout {:text {:rva text-rva :virtual-size (count text)}
-                        :data {:rva data-rva :virtual-size context-size}
+                        :data {:rva data-rva :virtual-size data-size}
                         :reloc {:rva reloc-rva :virtual-size (count reloc)}
                         :image-size image-size}
        :sections [:text :data :reloc]
