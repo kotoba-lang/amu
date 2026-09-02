@@ -361,9 +361,11 @@
    ;;
    ;; The definition is the KIR interpreter (`Math/min`/`Math/max` on the JVM,
    ;; `js/Math.min`/`js/Math.max` on cljs; both arms read on 2026-09-02 and in
-   ;; agreement on every row here). Run against kotoba-native before the repair
-   ;; these six rows failed on x86-64 and passed on AArch64, which is the whole
-   ;; reason the table is shared between the two ISAs.
+   ;; agreement on every row here). Run against kotoba-native before the repair,
+   ;; over twelve operand pairs times two operations times two ISAs = 48
+   ;; observations, six were wrong: six of the eighteen NaN/signed-zero rows on
+   ;; x86-64, and none of AArch64's twenty-four. That is the whole reason the
+   ;; table is shared between the two ISAs.
    ;;
    ;; The two ordered rows are not filler: a sequence that unconditionally
    ;; returned the first operand would satisfy every NaN row above.
