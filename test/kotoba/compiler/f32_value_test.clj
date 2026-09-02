@@ -149,10 +149,18 @@
     (is (zero? (:exit js-result)) (:err js-result))
     (is (zero? (:exit wasm-result)) (:err wasm-result))))
 
-(deftest f32-fails-closed-on-native-and-inside-structured-values
-  (testing "native targets never reinterpret f32 through i64"
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"f32 values require"
-                          (compiler/compile-source source :x86_64-kotoba-v1))))
+(deftest scalar-f32-compiles-for-native-while-structured-values-fail-closed
+  (testing "native targets carry scalar f32 bits without inventing a public f32 ABI"
+    (doseq [target [:x86_64-kotoba-v1 :aarch64-kotoba-v1]]
+      (let [artifact (:artifact
+                      (compiler/compile-source
+                       (str "(defn main [] :i64 "
+                            "(f32-to-bits "
+                            " (f32-add (f32-from-bits 1065353216) "
+                            "          (f32-from-bits 1065353216))))")
+                       target))]
+        (is (seq (:code artifact)) (name target))
+        (is (contains? (:exports artifact) 'main) (name target)))))
   (testing "the initial profile remains scalar-only"
     (is (thrown? clojure.lang.ExceptionInfo
                  (compiler/compile-source

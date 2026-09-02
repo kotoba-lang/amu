@@ -509,12 +509,15 @@
                                        language-profile (assoc :language-profile language-profile)
                                        (:admit-linked-synthetics? emit-metadata)
                                        (assoc :admit-linked-synthetics? true)))
-        ;; f32 and f64 gated separately: kotoba-native implements f64 scalar
-        ;; arithmetic (ADR-2608030300) and no f32 at all, so admitting them
-        ;; together would route f32 to a backend that cannot emit it.
+        ;; The native backends implement the closed scalar IEEE-754 f32/f64
+        ;; operation families.  Aggregate layouts and public native f32
+        ;; boundaries remain governed independently by the typed-value and
+        ;; verifier gates below; admitting scalar f32 here must not silently
+        ;; invent an ABI for either of them.
         _ (when (and (ir/uses-f32? hir)
-                     (not (contains? #{:js-kotoba-v1 :wasm32-kotoba-v1} backend)))
-            (throw (ex-info "f32 values require the kotoba-script or Wasm target"
+                     (not (contains? #{:js-kotoba-v1 :wasm32-kotoba-v1
+                                       :x86_64-kotoba-v1 :aarch64-kotoba-v1} backend)))
+            (throw (ex-info "f32 values require the kotoba-script, Wasm or native target"
                             {:phase :target :target target :backend backend
                              :floating-point-policy floating-point-policy})))
         _ (when (and (ir/uses-f64? hir)
