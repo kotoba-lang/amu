@@ -95,11 +95,18 @@ so no existing program's emitted bytes move.
 ## Consequences
 
 - Source that relied on the truncation changes meaning. That source was
-  already wrong — it contained forms that never ran. The workaround the
-  defect taught authors is in the tree: `aiueos/os/aiueos/kotoba/sha256.kotoba`
-  binds each store to a `let` name and adds `(* 0 (+ s0 (+ s1 s2)))` to the
-  result to keep them alive. That idiom is now redundant rather than
-  load-bearing.
+  already wrong — it contained forms that never ran.
+- A `let` body that could hold only one expression left effects in non-final
+  position with nowhere to go, and the shape authors reached for is in the
+  tree: `aiueos/os/aiueos/kotoba/sha256.kotoba` binds each store to a `let`
+  name and then adds `(* 0 (+ s0 (+ s1 s2)))` to the result so the bindings
+  are referenced. Six `.kotoba` objects under `os/aiueos/kotoba/` carry that
+  idiom. Those stores can now be written as body forms instead.
+  **This does not say the existing idiom is safe to delete in place.**
+  Binding values were never the thing being dropped, and whether an unused
+  binding survives is a separate question that has not been measured here;
+  anyone removing a `(* 0 …)` should measure the emitted object before and
+  after.
 - A four-argument `if` that compiled before now refuses with
   `:kotoba.error/if-arity`. This widens refusal, not admission.
 - `test/kotoba/compiler/aggregate_abi_test.clj`'s kotoba-kir pin assertion
