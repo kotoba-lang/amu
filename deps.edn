@@ -31,9 +31,22 @@
         {:git/url "https://github.com/kotoba-lang/kotoba-sema.git"
          :git/sha "bb0d47c6c9caadd37adec1d2e2ca6ce61c783a88"}
         ;; ADR-2607266000 Phase B: these responsibilities moved out of this repo.
+        ;; slice-value: deliberately LEFT where main has it, and the reason is
+        ;; a collision between two changes that both landed 2026-09-02 and
+        ;; belong to neither this stream nor each other. kotoba-kir 984a507
+        ;; ("control effects bridge through as keywords, so `:abort` reaches
+        ;; the sealed row") and this repository's `definition_identity_test`
+        ;; (ADR 0300, "`:abort` names no authority, so the bridge has no
+        ;; catalog keyword for it and refuses") decided the same question in
+        ;; opposite directions. Advancing this pin past 984a507 turns 8
+        ;; assertions in that test red; nothing in this repository needs the
+        ;; kotoba-kir side of the slice work (the carrier is erased in
+        ;; kotoba-sema, and `native-boundary-type-refusal` is a refusal for a
+        ;; shape that cannot arrive), so the pin waits for that adjudication
+        ;; rather than forcing it.
         io.github.kotoba-lang/kotoba-kir
         {:git/url "https://github.com/kotoba-lang/kotoba-kir.git"
-         :git/sha "061283e9cb7d819bf96ae0c28d0afbbd52195b6a"}
+         :git/sha "08bdab8b1084160dcb58ac291a002b140a5abf13"}
         ;; The frontend is an HIR producer and KIR lowering is its consumer;
         ;; both validate the same checked envelope.
         io.github.kotoba-lang/kotoba-hir

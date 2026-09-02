@@ -1,4 +1,4 @@
-# ADR-0296: The slice carrier costs nothing
+# ADR-0314: The slice carrier costs nothing
 
 - Status: accepted
 - Date: 2026-09-02
@@ -21,7 +21,7 @@ objects do.
 
 ## Decision
 
-kotoba-sema ADR 0009 gives `[:slice T]` a value in the **source syntax only**,
+kotoba-sema ADR 0022 gives `[:slice T]` a value in the **source syntax only**,
 erased into those two i64 words before HIR. This repository's part is the
 evidence that the erasure is free and the pins that carry it.
 
@@ -97,9 +97,21 @@ traversal bounds against — not the parent's.
 
 | dependency | from | to | why |
 |---|---|---|---|
-| kotoba-sema | `e42b74ef` | `bb0d47c6` | the carrier (ADR 0009) |
-| kotoba-kir | `1e00f830` | `061283e9` | the named refusal for a slice that reached KIR (ADR 0240) |
+| kotoba-sema | `e42b74ef` | `bb0d47c6` | the carrier (kotoba-sema ADR 0022) |
+| kotoba-kir | `1e00f830` | *unchanged at main's `08bdab8b`* | see below |
 | kotoba-verifier | `4b2d2f1f` | `7a8cdcd9` | the same refusal, re-derived (ADR 0028); and that commit unsticks kotoba-verifier's own 302-commit-stale kotoba-native pin (ADR 0027) |
+
+**kotoba-kir is deliberately not advanced**, and the reason is a collision
+between two changes that landed 2026-09-02 and belong to neither this stream
+nor each other. kotoba-kir `984a507` ("control effects bridge through as
+keywords, so `:abort` reaches the sealed row") and this repository's
+`definition_identity_test` (ADR 0300: "`:abort` names no authority, so the
+bridge has no catalog keyword for it and refuses") decided the same question
+in opposite directions. Advancing this pin past `984a507` turns **8
+assertions** in that test red — measured, not predicted. Nothing here needs
+the kotoba-kir side of the slice work: the carrier is erased in kotoba-sema,
+and `native-boundary-type-refusal` names a shape that cannot arrive if that
+erasure ran. So the pin waits for that adjudication rather than forcing it.
 
 `kotoba-native` is **not** advanced here. It needs nothing: `pilot-expression?`
 already answers `:scalar` for a four-operand `slice-load-u8`, and no head is

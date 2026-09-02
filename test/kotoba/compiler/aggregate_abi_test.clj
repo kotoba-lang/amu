@@ -110,12 +110,14 @@
   ;; may hold the bare keyword `:abort`). The ten frozen identity vectors are
   ;; unchanged by that advance.
   ;;
-  ;; Advanced 2026-09-02 again (this repo's ADR 0296): `native-boundary-type-refusal`
-  ;; and `native-erased-source-carrier-types` -- the NAMED refusal for a
-  ;; `[:slice T]` that reached KIR, which can only happen if kotoba-sema's
-  ;; erasure did not run. Refusal by absence was already correct; what this
-  ;; adds is a reason a caller can read (kotoba-kir ADR 0240).
-  (is (= "061283e9cb7d819bf96ae0c28d0afbbd52195b6a"
+  ;; NOT advanced by the slice-value stream, on purpose (this repo's ADR 0314).
+  ;; kotoba-kir 061283e9 carries the named refusal for a `[:slice T]` that
+  ;; reached KIR (kotoba-kir ADR 0240) -- but it also carries 984a507, which
+  ;; decided that `:abort` DOES bridge into a sealed effect row, the opposite
+  ;; of what `definition_identity_test` (ADR 0300) decided the same day.
+  ;; Advancing past it turns 8 assertions there red. Nothing here needs the
+  ;; kotoba-kir side of the slice work, so the pin waits for that adjudication.
+  (is (= "08bdab8b1084160dcb58ac291a002b140a5abf13"
          (dependency-pin 'io.github.kotoba-lang/kotoba-kir)))
   ;; Advanced 2026-09-01 alongside the backend: the verifier re-derives the
   ;; two new arities and the v4 `expected-context`, and is what turns a
