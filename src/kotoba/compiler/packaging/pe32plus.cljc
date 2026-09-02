@@ -159,8 +159,15 @@
 (defn- finalize-loader [tokens external-labels]
   (let [labels (loop [remaining tokens position text-rva out external-labels]
                  (if-let [token (first remaining)]
-                   (if-let [label (and (map? token) (:label token))]
-                     (recur (next remaining) position (assoc out label position))
+                   (cond
+                     (and (map? token) (:label token))
+                     (recur (next remaining) position
+                            (assoc out (:label token) position))
+
+                     (and (map? token) (:rel32 token))
+                     (recur (next remaining) (+ position 4) out)
+
+                     :else
                      (recur (next remaining) (inc position) out))
                    out))]
     (loop [remaining tokens position text-rva out []]

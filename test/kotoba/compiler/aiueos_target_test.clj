@@ -13,6 +13,12 @@
                                  (* 8 index))))
           0 (range width)))
 
+(defn- read-i32 [bytes offset]
+  (let [value (read-le bytes offset 4)]
+    (if (>= value 0x80000000)
+      (- value 0x100000000)
+      value)))
+
 (defn- compares-against-bound?
   "Does the code compare some register against BOUND? `cmp r/m64, imm32` is
    REX.W, 0x81, a ModRM with mod=11 and reg=7, then the immediate -- and the
@@ -243,13 +249,23 @@
     (is (= bytes (:bytes second-image)) "embedded boot image is reproducible")
     (let [diagnostic (pe32plus/package-embedded-kernel
                       kernel [] {:k16-preflight? true})
-          diagnostic-bytes (:bytes diagnostic)]
+          diagnostic-bytes (:bytes diagnostic)
+          pci-probe [0x66 0xba 0xf8 0x0c 0xb8 0x00 0x00 0x02 0x80
+                     0xef 0x66 0xba 0xfc 0x0c 0xed 0x3d
+                     0xec 0x10 0x25 0x81]
+          probe-offset (byte-sequence-offset diagnostic-bytes pci-probe)
+          branch-offset (+ probe-offset (count pci-probe))
+          exit-boot-offset (+ branch-offset 6
+                              (read-i32 diagnostic-bytes (+ branch-offset 2)))]
       (is (:k16-preflight? diagnostic))
-      (is (some #(= [0x66 0xba 0xf8 0x0c 0xb8 0x00 0x00 0x02 0x80
-                      0xef 0x66 0xba 0xfc 0x0c 0xed 0x3d
-                      0xec 0x10 0x25 0x81] %)
-                (partition 20 1 diagnostic-bytes))
+      (is (some? probe-offset)
           "K16 preflight is gated by exact 02:00.0 RTL8125 identity")
+      (is (= [0x0f 0x85] (subvec diagnostic-bytes branch-offset
+                                  (+ branch-offset 2))))
+      (is (= [0x4c 0x89 0xe1 0x48 0x8b 0x15]
+             (subvec diagnostic-bytes exit-boot-offset
+                     (+ exit-boot-offset 6)))
+          "the non-K16 rel32 branch lands at the ExitBootServices path")
       (is (some #(= (utf16-bytes "AIUEOS K16 PREFLIGHT STATUS 00\r\n") %)
                 (partition (count (utf16-bytes
                                    "AIUEOS K16 PREFLIGHT STATUS 00\r\n"))
