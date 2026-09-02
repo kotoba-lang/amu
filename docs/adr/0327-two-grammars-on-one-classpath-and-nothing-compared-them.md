@@ -4,7 +4,7 @@
 - Date: 2026-09-03
 - Authority: kotoba-lang
   `docs/adr/ADR-the-authority-names-every-head-the-frontend-admits.md`.
-- Pin advanced: `io.github.kotoba-lang/kotoba-sema` `bb0d47c6` → `1a073853`.
+- Pin advanced: `io.github.kotoba-lang/kotoba-sema` `bb0d47c6` → `5bdf5914`.
 
 ## The measurement
 
@@ -51,7 +51,7 @@ of a check that ran and found nothing wrong.
 ## Decision
 
 1. **Resync this repository's copy** to the widened authority
-   (sha256 `3e3f9748…`).
+   (sha256 `67561e57…`).
 2. **Advance the kotoba-sema pin with it.** Resyncing this copy alone would
    leave two different grammars on one classpath, with which one wins decided
    by classpath order.
@@ -115,7 +115,7 @@ the test failed on its first run and named the drift:
 ```
 two classpath copies of the grammar disagree; which one the compiler reads is
 decided by classpath order
-  amu/resources/…              3e3f9748…
+  amu/resources/…              67561e57…
   kotoba-sema bb0d47c6/…       61e0f867…
   differing heads:
     :admitted-builtins  only-in-first  (111 kernel heads)
