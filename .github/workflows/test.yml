@@ -100,10 +100,15 @@ jobs:
       - uses: DeLaGuardo/setup-clojure@4c7a6f613e5089821bb3bb2a33a3ee115578580d # 13.6.1
         with:
           cli: 1.12.5.1654
+      # The pinned KIR must stay >= this checkout's own deps.edn pin: the gate
+      # builds amu from ../amu, so a KIR older than the namespaces that source
+      # requires cannot load it, and the gate fails for a reason that has
+      # nothing to do with murakumo drift. Advanced 2026-09-02 with deps.edn to
+      # afd117d2 (kotoba.kir.alpha-normalization).
       - name: murakumo KIR drift gate against this checkout
         working-directory: murakumo
         run: |
-          clojure -Sdeps "{:aliases {:dep {:override-deps {io.github.kotoba-lang/amu {:local/root \"../amu\"} io.github.kotoba-lang/kotoba-kir {:git/url \"https://github.com/kotoba-lang/kotoba-kir.git\" :git/sha \"45d23aa0a6ece3fb4bffe2879dfabebdd1c17e60\"}}}}}" \
+          clojure -Sdeps "{:aliases {:dep {:override-deps {io.github.kotoba-lang/amu {:local/root \"../amu\"} io.github.kotoba-lang/kotoba-kir {:git/url \"https://github.com/kotoba-lang/kotoba-kir.git\" :git/sha \"afd117d2533ed0b30eb5a4848083a94e25b01b40\"}}}}}" \
             -M:test:dep -n murakumo.kotoba-oracle-authority-test
 
   test:
