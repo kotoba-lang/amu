@@ -52,6 +52,36 @@
         "the kernel OBJECT, the CPL3 user image, the UEFI application and the "
         "AArch64 kernel image are byte-identical on this route.")})
 
+(defn- refusal-is-not-a-defect
+  "Run a packager, giving its deliberate refusals a `:phase` so the CLI can
+  tell them apart from a crash.
+
+  `kotoba.native.elf64` refuses a source claiming an `aiueos-*` export with no
+  admitted symbol, and the PE32+ packager refuses a malformed image; both raise
+  `ex-info` carrying data but no `:phase`. `cli-support/exit-code` reads
+  `:phase`, so every one of those arrived as `:internal`, exit 70, and the
+  refusal's own sentence was replaced by the words `internal compiler error`.
+  Measured 2026-09-02 on b1fdaad2, single-file and project route alike: a
+  module exporting `aiueos-not-a-symbol` was told the compiler had broken.
+
+  Only an error CARRYING `ex-data` is re-tagged: raising `ex-info` is how a
+  packager says it decided to refuse. A `TypeError` out of a packager IS a
+  compiler defect and has to keep saying so -- re-tagging everything would
+  turn every internal packaging bug into `your source is wrong`, which is the
+  same mistake pointed the other way."
+  [target artifact-kind thunk]
+  (try
+    (thunk)
+    (catch :default error
+      (if-let [data (ex-data error)]
+        (if (:phase data)
+          (throw error)
+          (throw (ex-info (ex-message error)
+                          (assoc data :phase :artifact-target
+                                      :target target
+                                      :artifact artifact-kind))))
+        (throw error)))))
+
 (defn package
   "Select and run the packager exactly as `kotoba.compiler.cli`'s `:kexe/v1`
   branch does, and return a Buffer, or nil when the artifact EDN is what
@@ -79,5 +109,6 @@
                        :artifact selected-kind
                        :reason :packager-twin-divergence})))
     (when packager
-      (let [packaged (packager artifact)]
+      (let [packaged (refusal-is-not-a-defect
+                      target selected-kind #(packager artifact))]
         (js/Buffer.from (clj->js (mapv #(bit-and (int %) 0xff) (:bytes packaged))))))))

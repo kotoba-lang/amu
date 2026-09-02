@@ -1,0 +1,108 @@
+{:adr/id 292
+ :adr/status :accepted
+ :adr/date "2026-09-02"
+ :decision :the-project-route-reaches-the-native-driver
+
+ :change
+ {:moved {:from "kotoba.compiler.nbb.wasm-cli/resolve-source!"
+          :to "kotoba.compiler.nbb.project-source/resolve-source!"
+          :required-by #{"kotoba.compiler.nbb.wasm-cli"
+                         "kotoba.compiler.nbb.cli"}
+          :why-not-cli-support
+          "link-source requires kotoba.sema, and cli-support keeps the frontend
+           out of its load closure so output-set-cli does not pay 15.8s to
+           verify a signature"}
+  :also {:ns "kotoba.compiler.nbb.native-package"
+         :added "refusal-is-not-a-defect"
+         :effect "a packager's ex-info gains :phase :artifact-target (exit 65)
+                  instead of arriving as :internal (exit 70) with its message
+                  replaced by the words 'internal compiler error'"
+         :not-re-tagged "an error carrying no ex-data -- a TypeError out of a
+                         packager is a compiler defect and must keep saying so"}}
+
+ :before
+ {:measured "2026-09-02, amu b1fdaad2, bin/amu compile --jvm-free"
+  :fixture "two modules: kproj.helper exports [twice aiueos-not-a-symbol];
+            kproj.entry requires it and exports [main aiueos-fnv1a]"
+  :rows
+  [{:invocation "compile entry.kotoba --target x86_64-aiueos-kernel-v1"
+    :exit 65 :code :kotoba.error/namespace-require-needs-project}
+   {:invocation "compile entry.kotoba --source-path src --unpinned --target x86_64-aiueos-kernel-v1"
+    :exit 65 :code :kotoba.error/namespace-require-needs-project
+    :note "byte-identical body and span to the row above: the flag was read and discarded"}
+   {:invocation "compile --module-lock lock.edn --blocks blocks --target x86_64-aiueos-kernel-v1"
+    :exit 64 :message "source input must use .kotoba, .cljk, or .cljc"
+    :note "--module-lock was being read as the input path"}
+   {:invocation "compile entry.kotoba --source-path src --unpinned --target wasm32"
+    :exit 0 :note "the same graph, on the driver where the resolver lived"}]}
+
+ :after
+ {:targets-accepting-source-path
+  #{"x86_64-aiueos-kernel-v1" "x86_64-aiueos-user-v1" "x86_64-aiueos-uefi-v1"
+    "aarch64-aiueos-kernel-v1" "x86_64" "x86_64-linux" "x86_64-macos"
+    "x86_64-windows" "aarch64" "aarch64-linux" "aarch64-macos"
+    "aarch64-windows" "aarch64-android" "aarch64-ios"
+    "wasm32" "wasm32-browser" "wasm32-wasi"}
+  :still-refused {"x86_64-aiueos-kernel-v1 --artifact image"
+                  "kotoba-native ADR-0036 live-boot GDT/TSS twin divergence, unchanged"}}
+
+ :single-export-contract
+ {:rule "exactly one GLOBAL FUNC in .symtab (os/aiueos/scripts/verify-kotoba-kernel-object.py)"
+  :holds-because "link-source emits every non-root function as defn-, so a
+                  dependency's exports are not exports of the linked unit"
+  :measured {:check-exports "[aiueos-fnv1a main]"
+             :symtab-entries 5
+             :global-funcs ["kotoba_aiueos_fnv1a"]
+             :dependency-export-present? false}}
+
+ :byte-identity
+ {:object-sha256 "d80560c76c119fc0447ca28f1c7d2314ebe9e3518a3caa862748c461d14d6ef9"
+  :produced-by #{"--source-path (nbb)" "--module-lock (nbb)"
+                 "clojure -M:run compile --source-path (JVM)"}
+  :single-file-unchanged
+  {:source "examples/i64-semantics.kotoba"
+   :target "x86_64-aiueos-kernel-v1"
+   :sha256 "093ac51c18dd79e96839390dbee36d08db3eae1c76ce9a57a10d268850f27562"
+   :routes #{"b1fdaad2" "this branch"}
+   :provenance-edn :identical
+   :publication-edn :identical}
+  :wasm-unchanged {:single-file "8d62236925cb3fd9c040fa46d74eee5c18f17a864b46fd384b6cc0e1d0674a11"
+                   :project "afe2bdb24d2a3feb509b16f2b807f26794afe12cd6ffc2333e4ba82e9d7b5277"}}
+
+ :gates
+ {:where "scripts/jdk-free-native-conformance.cljs, sections 1-8"
+  :broken-and-observed
+  [{:break "drop refusal-is-not-a-defect"
+    :fired "the unlisted-export refusal named a different cause: :error :internal"}
+   {:break "swallow a graph that will not load"
+    :fired "the pinned literal 'required module is missing from the explicit
+            source paths' is absent; the run dies as 'project source map is
+            empty' instead -- a different cause, which is why the literal is pinned"}
+   {:break "link-source exports every module's interface"
+    :fired ":exports [aiueos-fnv1a aiueos-not-a-symbol main twice]"}
+   {:break "the two resolvers hand the linker different sources"
+    :fired "two distinct .o hashes where the gate requires one"}]
+  :removed-before-landing
+  {:assertion "no .symtab symbol contains the dependency's export name"
+   :why "it cannot fail -- a kernel object names one public symbol and
+         kotoba_source_entry whatever the Kotoba exports were, so it passes by
+         construction. Replaced by an assertion on check --source-path exports,
+         which can go red."}}
+
+ :not-done
+ [{:gap :build-metadata-sha256-differs-across-routes
+   :jvm "4731c3f7f17f6eec8e5b5f2bb54086a1d69f2046ae2ca25cc9d4066821db5cb7"
+   :node "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+   :cause "compile-project passes :module-graph-digest and
+           :module-source-digests as build metadata; the Node route passes only
+           --fuel"
+   :pre-existing? true
+   :why-not-here "closing it changes the provenance hash of every existing
+                  project-route Wasm artifact"}
+  {:gap :nbb-does-not-enforce-unpinned
+   :measured "compile --source-path without --unpinned exits 0 on Node and is
+              refused on the JVM with 'a multi-module compile needs pinned inputs'"
+   :pre-existing? true
+   :since "amu#717"}]
+
+ :related {:adr #{287 289} :issues #{717} :consumer "kotoba-lang/aiueos os/aiueos/kotoba"}}

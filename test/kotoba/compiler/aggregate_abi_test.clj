@@ -87,17 +87,26 @@
   ;; two new arities and the v4 `expected-context`, and is what turns a
   ;; mismatched ABI into an explicit refusal rather than a v3 artifact
   ;; hunting for slots that are not there.
-  ;; Advanced 2026-09-02 by the same two streams:
-  ;;   f32  -- this verifier re-derives the admitted operation set INDEPENDENTLY
-  ;;           of kotoba.kir, so f32 admitted there and absent here produced a
-  ;;           green `check` and `{:error :verify, :message "runtime KIR
-  ;;           operation rejected"}` on compile. That is how the gap was found,
-  ;;           and it is why the two omission lists have to stay identical
-  ;;           across two repositories (kotoba-verifier#31).
-  ;;   boot -- so the firmware target may name the machine (ADR-0020). Refusing
-  ;;           :x86_64-aiueos-uefi-v1 a port write refused the target its own
-  ;;           profile describes, and is why BOOTX64.EFI was still C.
-  (is (= "3d7a6f031bdb131e46db6dbf62db13bbcbcf8896"
+  ;; Advanced 2026-09-02 by three streams:
+  ;;   f32   -- this verifier re-derives the admitted operation set INDEPENDENTLY
+  ;;            of kotoba.kir, so f32 admitted there and absent here produced a
+  ;;            green `check` and `{:error :verify, :message "runtime KIR
+  ;;            operation rejected"}` on compile. That is how the gap was found,
+  ;;            and it is why the two omission lists have to stay identical
+  ;;            across two repositories (kotoba-verifier#31).
+  ;;   boot  -- so the firmware target may name the machine (ADR-0020). Refusing
+  ;;            :x86_64-aiueos-uefi-v1 a port write refused the target its own
+  ;;            profile describes, and is why BOOTX64.EFI was still C.
+  ;;   shift -- so a shift count is recognized as a literal on BOTH compiler
+  ;;            hosts (kotoba-verifier ADR-0022, 3d7a6f0). The gate was bare
+  ;;            `integer?`, false for the JavaScript bigint every guest literal
+  ;;            is under nbb, so no artifact using an i64 or i32 shift could be
+  ;;            built on the JDK-free route while the JVM route compiled the
+  ;;            same source -- the same independence, the same shape, a third
+  ;;            time (this repo's ADR-0293).
+  ;; The pin is the branch tip, which also carries the interrupt entry address
+  ;; gate.
+  (is (= "c2ce475a7f4d083a259b6b626a5ece765057fac4"
          (dependency-pin 'io.github.kotoba-lang/kotoba-verifier)))
   (is (= 7 (:abi/version aggregate-abi/contract)))
   (is (= :recursive-word-handles
