@@ -64,7 +64,7 @@
   ;;   boot -- the four UEFI firmware-boundary encodings (kotoba-native
   ;;           ADR-0039): :system-table, :load-ptr, :uefi-call2 and :jump-to,
   ;;           the four things a BOOTX64.EFI written in Kotoba has to name.
-  (is (= "a5ddd788d22bd213f3d848c0e9dcc060c8b35d55"
+  (is (= "24f43e212085d5e22bc01ab4f478f9971fd9b72d"
          (dependency-pin 'io.github.kotoba-lang/kotoba-native)))
   ;; Advanced 2026-08-31 for two more instances of ADR-0286's class -- a KIR
   ;; i64 is a BigInt under ClojureScript and reached a host operation that
@@ -86,7 +86,7 @@
   ;; abort slice 1, type-directed arithmetic) and kotoba-hir ac8e7051 (a row
   ;; may hold the bare keyword `:abort`). The ten frozen identity vectors are
   ;; unchanged by that advance.
-  (is (= "1e00f830e96bf762a95085f2eb5741d470d26ee6"
+  (is (= "08bdab8b1084160dcb58ac291a002b140a5abf13"
          (dependency-pin 'io.github.kotoba-lang/kotoba-kir)))
   ;; Advanced 2026-09-01 alongside the backend: the verifier re-derives the
   ;; two new arities and the v4 `expected-context`, and is what turns a
@@ -111,7 +111,7 @@
   ;;            time (this repo's ADR-0293).
   ;; The pin is the branch tip, which also carries the interrupt entry address
   ;; gate.
-  (is (= "c2ce475a7f4d083a259b6b626a5ece765057fac4"
+  (is (= "5a16ecbb2ed066a89e2fdea0e1d2d98be7e91a0f"
          (dependency-pin 'io.github.kotoba-lang/kotoba-verifier)))
   (is (= 7 (:abi/version aggregate-abi/contract)))
   (is (= :recursive-word-handles

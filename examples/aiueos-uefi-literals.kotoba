@@ -1,0 +1,107 @@
+;; boot-lit: a BOOTX64.EFI that names strings, GUIDs and bytes.
+;;
+;; `examples/aiueos-uefi-console.kotoba` (ADR-0291) proved the entry contract
+;; and one firmware call. It could not call `ConOut->OutputString`, because
+;; that takes a `CHAR16 *` and Kotoba had no way to obtain the address of
+;; anything; and it could not call `AllocatePages` or `OpenProtocol`, because a
+;; firmware call carried exactly two arguments.
+;;
+;; Each marker byte on the QEMU debug console at port 0xe9 is one assertion the
+;; firmware answered:
+;;
+;;   K  the image entry ran at all
+;;   H  RCX (ImageHandle) survived the entry shim
+;;   S  RDX (SystemTable) survived it too
+;;   T  kernel-load-ptr reads real firmware memory: the EFI_SYSTEM_TABLE
+;;      signature "IBI SYST" is where the specification says it is
+;;   C  ConOut is at SystemTable+0x40 and is not null
+;;   U  ConOut->OutputString(ConOut, (ucs2 "AIUEOS")) returned EFI_SUCCESS.
+;;      The firmware read UTF-16LE code units out of THIS image and rendered
+;;      them; the string also appears on the serial console, which is a second
+;;      and independent observation of the same bytes.
+;;   G  the first eight bytes of (guid EFI_LOADED_IMAGE_PROTOCOL_GUID) are the
+;;      MIXED-ENDIAN ones, read back through kernel-load-ptr on the machine
+;;      that is running. A hex decode of the canonical text would be
+;;      0x5b1b31a1..., not 0xd2119562_5b1b31a1.
+;;   L  (bytes-literal "...") and (bytes-literal-length "...") agree: the bytes
+;;      are where the address says and there are as many as the count says.
+;;   W  BS->SetWatchdogTimer(0, 0, 0, 0) through kernel-uefi-call4 returned
+;;      EFI_SUCCESS -- four UEFI arguments, six operands.
+;;   O  BS->OpenProtocol(ImageHandle, that GUID, 0, ImageHandle, 0,
+;;      EFI_OPEN_PROTOCOL_TEST_PROTOCOL) through kernel-uefi-call6 returned
+;;      EFI_SUCCESS -- six UEFI arguments, eight operands. This is the strong
+;;      GUID assertion: the firmware compared our sixteen bytes against the
+;;      protocol installed on our own image handle, and a wrong byte order
+;;      answers EFI_UNSUPPORTED.
+;;   Z  kernel-system-table still answers after all of that, so R9 -- the
+;;      guest's hidden context -- survived three Microsoft x64 calls, two of
+;;      them through the new wider frame.
+;;
+;; then `out 0xf4, 16`, which is QEMU's isa-debug-exit: the process leaves with
+;; status (16 << 1) | 1 = 33. A hang, a fault or a triple fault all look
+;; different from that, so the exit status is itself an assertion.
+
+(defn aiueos-uefi-lit-mark [byte]
+  (kernel-out-u8 233 byte))
+
+(defn aiueos-uefi-lit-mark-when [flag byte]
+  (if (= flag 1) (kernel-out-u8 233 byte) 0))
+
+(defn aiueos-uefi-lit-present [word]
+  (if (= word 0) 0 1))
+
+(defn aiueos-uefi-lit-equal [a b]
+  (if (= a b) 1 0))
+
+(defn efi-main [image-handle system-table]
+  (let [m0 (aiueos-uefi-lit-mark 75)
+        m1 (aiueos-uefi-lit-mark-when (aiueos-uefi-lit-present image-handle) 72)
+        m2 (aiueos-uefi-lit-mark-when (aiueos-uefi-lit-present system-table) 83)
+        ;; "IBI SYST", little endian, is 0x5453595320494249.
+        signature (kernel-load-ptr system-table 0)
+        m3 (aiueos-uefi-lit-mark-when
+             (aiueos-uefi-lit-equal signature 6076298535811760713) 84)
+        con-out (kernel-load-ptr system-table 64)
+        m4 (aiueos-uefi-lit-mark-when (aiueos-uefi-lit-present con-out) 67)
+        ;; EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL: Reset +0x00, OutputString +0x08.
+        printed (kernel-uefi-call2 con-out 8 con-out (ucs2 "AIUEOS\r\n"))
+        m5 (aiueos-uefi-lit-mark-when (aiueos-uefi-lit-equal printed 0) 85)
+        ;; The GUID's first eight bytes as one little-endian word:
+        ;; a1 31 1b 5b 62 95 d2 11 -> 0x11d295625b1b31a1 = 1284253093421855137.
+        guid-head (kernel-load-ptr
+                    (guid "5B1B31A1-9562-11D2-8E3F-00A0C969723B") 0)
+        m6 (aiueos-uefi-lit-mark-when
+             (aiueos-uefi-lit-equal guid-head 1284253093421855137) 71)
+        ;; 0x0807060504030201, read back from the address the pool gave, and
+        ;; eight bytes long.
+        byte-head (kernel-load-ptr (bytes-literal "0102030405060708") 0)
+        m7 (aiueos-uefi-lit-mark-when
+             (if (= byte-head 578437695752307201)
+               (aiueos-uefi-lit-equal
+                 (bytes-literal-length "0102030405060708") 8)
+               0)
+             76)
+        ;; EFI_BOOT_SERVICES at SystemTable+0x60; SetWatchdogTimer at +0x100,
+        ;; OpenProtocol at +0x118.
+        boot-services (kernel-load-ptr system-table 96)
+        watchdog (kernel-uefi-call4 boot-services 256 0 0 0 0)
+        m8 (aiueos-uefi-lit-mark-when (aiueos-uefi-lit-equal watchdog 0) 87)
+        ;; EFI_OPEN_PROTOCOL_TEST_PROTOCOL is 4, and with it the firmware
+        ;; ignores the Interface out-parameter -- which is why this call needs
+        ;; no writable memory of its own.
+        opened (kernel-uefi-call6
+                 boot-services 280
+                 image-handle
+                 (guid "5B1B31A1-9562-11D2-8E3F-00A0C969723B")
+                 0 image-handle 0 4)
+        m9 (aiueos-uefi-lit-mark-when (aiueos-uefi-lit-equal opened 0) 79)
+        parked (kernel-system-table)
+        m10 (aiueos-uefi-lit-mark-when
+              (aiueos-uefi-lit-equal parked system-table) 90)
+        m11 (kernel-out-u32 244 16)]
+    0))
+
+;; The frontend requires a zero-arity `main` for every target, so this module
+;; has one. It is not the EFI entry: `package-efi` takes `efi-main` when the
+;; module exports it.
+(defn main [] 0)
