@@ -1,7 +1,10 @@
-# ADR-0292: No shift compiled without a JDK, and nothing here could see it
+# ADR-0293: No shift compiled without a JDK, and nothing here could see it
 
 - Status: accepted
 - Date: 2026-09-02
+- Numbered 0293 at merge time: 0291 went to the boot stream, and 0292 was
+  taken twice on the same day (the kernel-object-import and f32 streams).
+  Three concurrent streams, one hand-picked counter.
 
 ## Context
 

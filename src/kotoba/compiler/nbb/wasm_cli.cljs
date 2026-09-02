@@ -12,7 +12,7 @@
             [kotoba.compiler.nbb.io :as io]
             [kotoba.compiler.nbb.module-lock :as module-lock]
             [kotoba.compiler.nbb.project-files :as project-files]
-            [kotoba.compiler.project :as project]
+            [kotoba.compiler.nbb.project-source :as project-source]
             [kotoba.compiler.nbb.output-set :as output-set]
             [kotoba.artifact.core :as artifact]
             [kotoba.compiler.provenance :as provenance]
@@ -44,10 +44,6 @@
   [material]
   (cap-names/wire-policy (support/parse-policy-material material)))
 
-(defn- analyze-opts [policy linked?]
-  (cond-> (support/analyze-options policy)
-    linked? (assoc :admit-linked-synthetics? true)))
-
 (defn- resolve-hir! [source opts stage-cache]
   (support/timed "frontend"
                  #(compile-cache/resolve-stage!
@@ -58,70 +54,6 @@
                    ;; unlinked HIR. Tag raised to v3 so older entries miss.
                    (pr-str [:kotoba.hir-cache/v3 source opts])
                    (fn [] (sema/analyze source opts)))))
-
-(defn- resolve-source!
-  "Answer the source text to compile and whether it came from a linked graph.
-
-  A guest that declares `(:require ...)` is a module of a project, so it is
-  read as a closed graph from the explicit `--source-path` roots and linked
-  into one bounded unit by `project/link-source` -- the same linker the JVM
-  path uses. That linker is portable `.cljc` and was already reachable from
-  here; only the path resolution beneath it was JVM-only, which is why this
-  route used to refuse the whole command rather than just that half.
-
-  `--module-lock` is the same shape with the resolution step replaced. The
-  lock names every module in the closed graph by CID and the bytes are
-  rejected unless they hash to the name they were asked for, so nothing is
-  found by searching a path. Both resolvers hand the same `{:sources :root}`
-  to the same `project/link-source`; only whether the finding was verified
-  differs. The two are mutually exclusive here rather than combined: a lock
-  that fell back to a path search for anything it did not pin would be a lock
-  in name only.
-
-  Reads no policy: the caller owns when policy is decoded, and that ordering
-  is load-bearing for the artifact cache."
-  [args]
-  (let [lock-path (support/option args "--module-lock")
-        source-roots (support/options args "--source-path")]
-    (cond
-      lock-path
-      (let [blocks (or (support/option args "--blocks")
-                       (support/usage-error! "--module-lock requires --blocks <dir>"))
-            graph (support/timed
-                   "module-lock-load"
-                   #(module-lock/load-locked-graph lock-path blocks))
-            linked (support/timed "project-link"
-                                  #(project/link-source (:sources graph) (:root graph)))]
-        {;; A pinned build has no input PATH to name the artifact after --
-         ;; that is the point -- so the root namespace does, exactly as the
-         ;; JVM CLI does it.
-         :input (str (:root graph))
-         :source (:source linked)
-         :linked? true
-         :lock {:module-lock lock-path :lock-cid (:lock-cid graph)}
-         :project {:root (:root graph)
-                   :module-order (:module-order linked)
-                   :modules (:modules graph)
-                   :lock-cid (:lock-cid graph)}})
-
-      (seq source-roots)
-      (let [input (support/timed "source-admit" #(support/source! (second args)))
-            graph (support/timed "project-load"
-                                 #(project-files/load-closed-graph input source-roots))
-            linked (support/timed "project-link"
-                                  #(project/link-source (:sources graph) (:root graph)))]
-        {:input input
-         :source (:source linked)
-         :linked? true
-         :project {:root (:root graph)
-                   :module-order (:module-order linked)
-                   :paths (:paths graph)}})
-
-      :else
-      (let [input (support/timed "source-admit" #(support/source! (second args)))]
-        {:input input
-         :source (support/timed "source-read" #(io/read-text-file input))
-         :linked? false}))))
 
 (defn- resolve-kir! [hir stage-cache]
   (support/timed "kir-lower"
@@ -201,11 +133,11 @@
      :publication-output publication-output}))
 
 (defn- check! [args context]
-  (let [resolved (resolve-source! args)
+  (let [resolved (project-source/resolve-source! args)
         source (:source resolved)
         policy (support/timed "policy-read" #(read-policy! args))
         hir-result (resolve-hir! source
-                                 (analyze-opts policy (:linked? resolved))
+                                 (project-source/analyze-opts policy (:linked? resolved))
                                  (:stages context))
         hir (:value hir-result)
         result (support/timed
@@ -237,7 +169,7 @@
 (defn- compile-uncached! [args target output source linked?]
   (let [policy (support/timed "policy-read" #(read-policy! args))
         emit-metadata (support/emit-metadata args)
-        hir (:value (resolve-hir! source (analyze-opts policy linked?) nil))
+        hir (:value (resolve-hir! source (project-source/analyze-opts policy linked?) nil))
         admission-result (support/timed
                           "admission"
                           #(admission/check hir (support/capability-policy policy)))
@@ -291,7 +223,7 @@
       (let [_ (when-let [error (:error policy-attempt)] (throw error))
             policy (support/timed "policy-decode"
                                   #(decode-policy! material))
-            hir-result (resolve-hir! source (analyze-opts policy linked?) stage-cache)
+            hir-result (resolve-hir! source (project-source/analyze-opts policy linked?) stage-cache)
             hir (:value hir-result)
             admission-result (support/timed
                               "admission"
@@ -331,7 +263,7 @@
         backend (target-profile/backend target)
         _ (when-not (= :wasm32-kotoba-v1 backend)
             (support/usage-error! (str "error: target is not Wasm: " target-name)))
-        resolved (resolve-source! args)
+        resolved (project-source/resolve-source! args)
         input (:input resolved)
         source (:source resolved)
         linked? (:linked? resolved)
@@ -339,20 +271,7 @@
         result (if context
                  (compile-cached! args target output source linked? context)
                  (compile-uncached! args target output source linked?))]
-    ;; How the inputs were found, in the answer rather than only in the shell
-    ;; history. The JVM CLI writes this beside the artifact as `.inputs.edn`;
-    ;; this route cannot, because its output set is a two-file commit marker
-    ;; and a third member would make every artifact fail its own verification.
-    ;; So it is reported instead -- and `:lock-cid` is the value that actually
-    ;; identifies the pinned input set, which the JVM's record also carries.
-    (merge result
-           (if-let [lock (:lock resolved)]
-             {:kotoba.compile/inputs :module-lock
-              :module-lock (:module-lock lock)
-              :lock-cid (:lock-cid lock)}
-             {:kotoba.compile/inputs (if linked?
-                                       :unpinned-source-path
-                                       :single-file)}))))
+    (merge result (project-source/inputs-record resolved))))
 
 (defn- module-lock!
   "Pin a path-resolved project once so every later compile of it resolves by
