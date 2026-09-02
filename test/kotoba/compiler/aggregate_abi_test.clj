@@ -64,7 +64,10 @@
   ;;   boot -- the four UEFI firmware-boundary encodings (kotoba-native
   ;;           ADR-0039): :system-table, :load-ptr, :uefi-call2 and :jump-to,
   ;;           the four things a BOOTX64.EFI written in Kotoba has to name.
-  (is (= "a5ddd788d22bd213f3d848c0e9dcc060c8b35d55"
+  ;;   qwen  -- 2026-09-02: the three Qwen3.5 forward-pass kernel objects
+  ;;           (aiueos-qwen35-dot-f32 / -dequant-row / -matvec) enter
+  ;;           kernel-object-entries with measured fuel tiers (kotoba-native#113).
+  (is (= "24f43e212085d5e22bc01ab4f478f9971fd9b72d"
          (dependency-pin 'io.github.kotoba-lang/kotoba-native)))
   ;; Advanced 2026-08-31 for two more instances of ADR-0286's class -- a KIR
   ;; i64 is a BigInt under ClojureScript and reached a host operation that
