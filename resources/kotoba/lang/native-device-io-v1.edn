@@ -1,0 +1,27 @@
+{:format :kotoba.native-device-io/v1
+ :target :x86_64-aiueos-kernel-v1
+ :authority-boundaries
+ {:link-frame :link/frame
+  :dma-region :dma/map
+  :mmio-region :mmio/map
+  :transport :net/transport}
+ :memory-region
+ {:base :rooted-or-kernel-subregion
+  :length :carried-at-every-access
+  :invalid-access :trap-before-load-or-store}
+ :mmio
+ {:width-bits [8 16 32]
+  :natural-alignment-required true
+  :operations [kernel-load-u8 kernel-load-u16 kernel-load-u32
+               kernel-store-u8 kernel-store-u16 kernel-store-u32]}
+ :dma-publication
+ {:release-fence {:x86-64 kernel-cpuid-eax}
+  :tx [:write-extension :write-address :release-fence :set-owner
+       :release-fence :doorbell]
+  :rx [:write-extension :write-address :release-fence :set-owner
+       :release-fence]}
+ :ethernet
+ {:header-bytes 14
+  :minimum-pre-fcs-bytes 60
+  :maximum-untagged-pre-fcs-bytes 1514
+  :padding :outside-network-layer-lengths}}
