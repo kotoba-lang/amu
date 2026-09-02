@@ -1,4 +1,4 @@
-# ADR 0291: f32 reaches native, through six gates and not one
+# ADR 0292: f32 reaches native, through six gates and not one
 
 - Status: accepted
 - Date: 2026-09-02

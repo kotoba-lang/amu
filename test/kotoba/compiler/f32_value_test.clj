@@ -154,7 +154,7 @@
   ;; through i64", and that is now exactly what they do: an f32 is one machine
   ;; word holding its binary32 pattern sign-extended from bit 31 (kotoba-lang
   ;; docs/adr/ADR-kotoba-floating-point-on-native.md, this repository's ADR
-  ;; 0291). The assertion is replaced rather than deleted, because what it was
+  ;; 0292). The assertion is replaced rather than deleted, because what it was
   ;; protecting -- that f32 does not reach a backend which cannot emit it --
   ;; still holds for THREE families, and those are where the refusal moved.
   (testing "the f32 slice both native backends implement compiles"

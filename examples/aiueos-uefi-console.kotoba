@@ -1,0 +1,49 @@
+;; boot: a BOOTX64.EFI written in Kotoba.
+;;
+;; Everything below runs under UEFI boot services on a real firmware. What it
+;; proves, one marker byte at a time on the QEMU debug console at port 0xe9:
+;;
+;;   K  the image entry ran at all
+;;   H  RCX (ImageHandle) survived the entry shim -- v1's shim discarded it
+;;   S  RDX (SystemTable) survived it too
+;;   T  kernel-load-ptr reads real firmware memory: the EFI_SYSTEM_TABLE
+;;      signature "IBI SYST" is where the specification says it is
+;;   C  ConOut is at SystemTable+0x40 and is not null
+;;   A  kernel-uefi-call2 called firmware and got EFI_SUCCESS back
+;;   Z  R9 -- the guest's hidden context -- survived a Microsoft x64 call, so
+;;      kernel-system-table still answers with the pointer the shim parked
+;;
+;; then `out 0xf4, 16`, which is QEMU's isa-debug-exit: the process leaves with
+;; status (16 << 1) | 1 = 33. A hang, a fault or a triple fault all look
+;; different from that, so the exit status is itself an assertion.
+
+(defn aiueos-uefi-mark [byte]
+  (kernel-out-u8 233 byte))
+
+(defn aiueos-uefi-mark-when [flag byte]
+  (if (= flag 1) (kernel-out-u8 233 byte) 0))
+
+(defn aiueos-uefi-present [word]
+  (if (= word 0) 0 1))
+
+(defn efi-main [image-handle system-table]
+  (let [m0 (aiueos-uefi-mark 75)
+        m1 (aiueos-uefi-mark-when (aiueos-uefi-present image-handle) 72)
+        m2 (aiueos-uefi-mark-when (aiueos-uefi-present system-table) 83)
+        signature (kernel-load-ptr system-table 0)
+        m3 (aiueos-uefi-mark-when
+             (if (= signature 6076298535811760713) 1 0) 84)
+        con-out (kernel-load-ptr system-table 64)
+        m4 (aiueos-uefi-mark-when (aiueos-uefi-present con-out) 67)
+        status (kernel-uefi-call2 con-out 40 con-out 15)
+        m5 (aiueos-uefi-mark-when (if (= status 0) 1 0) 65)
+        parked (kernel-system-table)
+        m6 (aiueos-uefi-mark-when (if (= parked system-table) 1 0) 90)
+        m7 (kernel-out-u32 244 16)]
+    0))
+
+;; The frontend requires a zero-arity `main` for every target, so this module
+;; has one. It is not the EFI entry: `package-efi` takes `efi-main` when the
+;; module exports it, which is the name the target profile already declares
+;; (`:entry :efi_main`). Reached only if something calls it, and nothing does.
+(defn main [] 0)

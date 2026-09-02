@@ -4,6 +4,7 @@
             [kotoba.sema :as sema]
             [kotoba.kir.compatibility :as compatibility]
             [kotoba.compiler.provenance :as provenance]
+            [kotoba.compiler.uefi-operations :as uefi]
             [kotoba.compiler.ipld-adl-source :as ipld-adl-source]
             [kotoba.compiler.cache :as cache]
             [kotoba.compiler.project :as project]
@@ -564,6 +565,10 @@
                                (nil? (:entry (target-profile/profile target))))))
             (throw (ex-info "entryless libraries currently require the kotoba-script web target, the Wasm target, or an entryless native target"
                             {:phase :target :target target :backend backend})))
+        ;; boot: the UEFI firmware boundary is admitted by the frontend for
+        ;; every target, because the frontend has never seen a target keyword.
+        ;; This is the layer that has.
+        _ (uefi/reject-outside-uefi-target! target hir)
         admission (admit! hir (capability-policy policy))
         kir (ir/lower hir)
         value (:oracle-value kir)
