@@ -497,7 +497,8 @@
                                                         :admit-linked-synthetics? true)))
 
                    locked
-                   (compiler/compile-project (:sources locked) (:root locked) target policy)
+                   (compiler/compile-project (:sources locked) (:root locked)
+                                             target policy {} source-opts)
 
                    ;; Multi-file closed graph → link → compile-component (T8.3
                    ;; multi-file project kit body first slice). Same Canonical
@@ -519,7 +520,7 @@
 
                    (seq source-roots)
                    (let [{:keys [sources root]} (project-files/load-closed-graph input source-roots)]
-                     (compiler/compile-project sources root target policy))
+                     (compiler/compile-project sources root target policy {} source-opts))
 
                    :else
                    (compiler/compile-source (bounded-edn/read-text-file input)

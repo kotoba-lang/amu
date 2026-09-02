@@ -795,6 +795,8 @@
   ([sources root target] (compile-project sources root target {}))
   ([sources root target policy] (compile-project sources root target policy {}))
   ([sources root target policy supply-chain]
+   (compile-project sources root target policy supply-chain {}))
+  ([sources root target policy supply-chain build-metadata]
    (let [allowed-keys #{:package-lock-digest :trust-policy-digest
                         :package-receipt-digest}
          values (when (map? supply-chain) (vals supply-chain))
@@ -810,6 +812,14 @@
        (throw (ex-info "invalid verified supply-chain identity"
                        {:phase :project-link
                         :reason :invalid-supply-chain-identity}))))
+   (when-not (and (map? build-metadata)
+                  (every? #{:fuel} (keys build-metadata))
+                  (or (not (contains? build-metadata :fuel))
+                      (and (integer? (:fuel build-metadata))
+                           (pos? (:fuel build-metadata)))))
+     (throw (ex-info "invalid project build metadata"
+                     {:phase :project-link
+                      :reason :invalid-build-metadata})))
    (let [linked (project/link-source sources root)
          module-digests (into (sorted-map)
                               (map (fn [[namespace source]]
@@ -830,7 +840,8 @@
                               :module-source-digests module-digests}
                              supply-chain)
          component-target? (= :component (:execution (target-profile/profile target)))
-         linked-meta (assoc project-meta :admit-linked-synthetics? true)
+         linked-meta (merge project-meta build-metadata
+                            {:admit-linked-synthetics? true})
          compiled (if component-target?
                     ;; Component opts are target + project digests only here;
                     ;; CLI attaches fuel/profile via direct compile-component.
