@@ -129,6 +129,11 @@
         ;; export rather than something the compiler re-derives.
         io.github.kotoba-lang/kotoba-kir
         {:git/url "https://github.com/kotoba-lang/kotoba-kir.git"
+         ;; fuel64: 233bd6bb exports `max-fuel` (kotoba-kir ADR 0268), the fuel
+         ;; ceiling `kotoba.compiler.nbb.cli` and `kotoba.verifier` now read.
+         ;; Advanced by this stream and independently adopted by #767, so the
+         ;; SHA below is main's as well as this branch's -- only the reason was
+         ;; missing from main.
          :git/sha "233bd6bb6b15912679c529611a42c8af15f2354c"}
         ;; The frontend is an HIR producer and KIR lowering is its consumer;
         ;; both validate the same checked envelope.
@@ -269,7 +274,14 @@
         ;; those three are transitive here and only deps-lock.edn names them.
         io.github.kotoba-lang/kotoba-native
         {:git/url "https://github.com/kotoba-lang/kotoba-native.git"
-         :git/sha "452422f5caad1a40e7b1a793a59f93f44abe94a7"}
+         ;; fuel64: c31cf87b widens the object replenish to a 64-bit budget
+         ;; (kotoba-native ADR 0078) and exports `max-object-fuel`. No shipped
+         ;; object's bytes move -- 108 digests taken before the change are
+         ;; re-derived by that repo's suite; and ADR 0079, where `package-user`
+         ;; read the constant 512 instead of the declared budget -- the same
+         ;; defect this repo's PE32+ packager had. Fast-forward from the pin
+         ;; main now carries (452422f): ahead 5, behind 0.
+         :git/sha "95361f3f1dada3c94dc0f1ba9df0030505f51436"}
         io.github.kotoba-lang/kotoba-component
         {:git/url "https://github.com/kotoba-lang/kotoba-component.git"
          :git/sha "68acc7237aec7b24b683304db8e87d14ec1be745"}
@@ -311,7 +323,12 @@
         ;; the first time. 6a743c3 adds the image-symbol name check.
         io.github.kotoba-lang/kotoba-verifier
         {:git/url "https://github.com/kotoba-lang/kotoba-verifier.git"
-         :git/sha "6c66e8b7028cfd7c527f888c110d8abcb2936e2e"}
+         ;; fuel64: d1985d62 reads the fuel ceiling from kotoba.kir instead of
+         ;; carrying 2^20 (kotoba-verifier ADR 0049). Required WITH the two
+         ;; pins above, not optional: this driver would otherwise admit a
+         ;; budget the pinned verifier refuses. Fast-forward from the pin main
+         ;; now carries (6c66e8b): ahead 2, behind 0.
+         :git/sha "d1985d62a114a1958c686e3d79477bf236d2b495"}
 }
  :aliases {:test {:extra-paths ["test"]
                   :extra-deps
