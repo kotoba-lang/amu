@@ -1300,6 +1300,17 @@ as before.
   highest expected qualified gain × probability; ~4.4% residual vs Clang on
   `kernel` with near-identical static shape, separable).
 
+- **77 (2026-09-04 00:58 JST, rank-only pass; host busy, no measurement)**:
+  load1 36.85 / 5min 28.28 / 15min 21.26 (up 10 days, 11 users) — above the
+  7.5 quiet limit by a wide margin, so no bench, perfgate, or falsify run was
+  attempted. Fetch: no new commits past dd9bb23d; working tree unchanged
+  (untracked jb_imod_control.c). No new evidence against any open
+  hypothesis; no re-rank, no status transition, no new hypothesis — a re-rank
+  without measured numbers would be fabrication.
+  Population unchanged: H-C2, H-D, H-B, H-Y1 open. NEXT: H-C2 (unchanged —
+  highest expected qualified gain × probability; ~4.4% residual vs Clang on
+  `kernel` with near-identical static shape, separable).
+
 ## Standing honesty constraints
 
 Every number above is one host on one day; the falsification numbers are
