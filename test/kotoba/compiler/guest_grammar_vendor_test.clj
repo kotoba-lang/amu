@@ -59,17 +59,18 @@
   "sha256 of kotoba-lang `lang/guest-grammar.edn` at the 2026-09-03 resync
   wave. Change it only as part of that wave, in all four repositories.
 
-  fwstore, 2026-09-03: 6e1202fd is the authority with
-  `kernel-uefi-alloc-region` in `:admitted-builtins`. It is carried here,
-  into kotoba-lang, into kotoba-sema (whose pin above moves with it) and into
-  kotoba's OWED digest, in one wave.
+  Advanced three times on 2026-09-03 as the wave moved: 3e3f9748 (the pair
+  #762 landed), 67561e57 (kotoba-lang ca2e595a, which #761 carried into this
+  repository's copy alone -- and that skew is what made main red), and this
+  one, kotoba-sema 1587f573. Each advance moves the `deps.edn` pin, the
+  vendored copy and this literal in ONE commit; ADR 0330 postscript is why.
 
-  This literal was `3e3f9748` at merge time and the copies on the classpath
-  were already `67561e57` -- ADR 0330's resync moved the FILES and left the
-  digest behind, so `every-classpath-copy-is-the-authority-of-the-resync-wave`
-  was red on main. The `COMPARED`/byte-equality half was green throughout,
-  which is exactly what it is for: the two copies agreed with each other while
-  both disagreed with the number that ties them to the authority."
+  NOT advanced by the 2026-09-03 pin advance to kotoba-sema df383ba0. That
+  advance carries `conj`/`disj` lowerings, the declared-type guards and the
+  exposed kernel heads, and its copy of the grammar is byte-identical to the
+  one vendored here -- so the pin moved and this digest did not, which is
+  allowed and is the reason `deps-edn-claim` below recomputes rather than
+  assuming the two always move together."
   "6e1202fd23bc5a2ed6ef432114585c1813f5143d643eb4c8ee9a00b6e798b922")
 
 (def ^:private resource-path "kotoba/lang/guest-grammar.edn")
@@ -145,9 +146,17 @@
                      builtins)]
     (println (format "SCANNED\t%d\tadmitted-builtins (%d kernel heads)"
                      (count builtins) (count kernel)))
+    ;; 114 -> 115 on 2026-09-03 with the third resync of the wave. The head
+    ;; is `kernel-uefi-alloc-region`, and it is a real addition rather than a
+    ;; drifting number: kotoba-sema 727f9d6 (its ADR-0030) makes it a
+    ;; PROVENANCE ROOT beside `kernel-boot-info` and `kernel-scratch-region`,
+    ;; because `AllocatePages` answers through a load and `traceable-base?`
+    ;; refuses a base that came from one -- so a Kotoba UEFI application could
+    ;; allocate a page and then not write it. Measured across the resync:
+    ;; ADDED (kernel-uefi-alloc-region), REMOVED (), so the count moved by
+    ;; exactly the head that was added and no family was dropped.
     (is (= 115 (count kernel))
-        "kotoba-sema 1afff23 admitted 114 kernel heads on 2026-09-03, and 115
-         since fwstore's `kernel-uefi-alloc-region`")
+        "kotoba-sema 1587f57 admitted 115 kernel heads on 2026-09-03")
     (testing "local-state slice 1 reached this copy: atom/swap!/reset! are
               admitted by elaboration and are no longer forbidden heads"
       (let [forbidden (head-names (:forbidden-heads grammar))]
@@ -155,3 +164,90 @@
             "this copy is behind the authority by local-state slice 1")
         (is (set/subset? #{"ref" "dosync" "volatile!" "binding" "var"} forbidden)
             "the seven heads with no ability model must still be forbidden")))))
+
+;; ---------------------------------------------------------------------------
+;; The claim `deps.edn` makes about the file it pins
+;; ---------------------------------------------------------------------------
+;;
+;; The two tests above compare the classpath copies to each other and to
+;; `authority-grammar-sha256`. Neither reads `deps.edn`, so the SENTENCE
+;; `deps.edn` writes about the grammar was unchecked prose, and it drifted:
+;; measured 2026-09-03 at 6c245f69, the comment asserted 3e3f9748 while the
+;; file on disk hashed to 67561e57, and the suite was green. A digest stated
+;; in a comment is a claim; a claim nothing recomputes is decoration.
+;;
+;; This closes the three ways the triple can come apart:
+;;
+;;   1. the digest `deps.edn` states vs. the bytes actually vendored
+;;   2. the digest `deps.edn` states vs. `authority-grammar-sha256` above
+;;   3. the kotoba-sema sha `deps.edn` states in prose vs. its real `:git/sha`
+;;
+;; It parses the three `;;   <key>  <value>` lines of the THE PAIR, MEASURED
+;; block. Parsing prose is normally a bad bargain, but the alternative is to
+;; move the digest out of the comment -- and the comment is exactly the thing
+;; that drifted, so it is the thing that has to be pinned. An unparseable or
+;; absent block is REFUSED rather than skipped (ADR-2608136000): a run that
+;; could not find the claim must not return the value of a run that found the
+;; claim correct.
+
+(def ^:private deps-edn-file (java.io.File. "deps.edn"))
+
+(defn- stated-claims
+  "The `;;   key  value` lines of deps.edn's THE PAIR, MEASURED block."
+  [text]
+  (into {}
+        (keep (fn [line]
+                (when-let [[_ k v] (re-matches #"\s*;;\s{3}(grammar-sha256|kotoba-sema-pin)\s+(\S+)\s*" line)]
+                  [(keyword k) v])))
+        (str/split-lines text)))
+
+(deftest deps-edn-claim
+  (is (.isFile deps-edn-file)
+      "deps.edn is not readable from the test working directory, so its claim about
+       the vendored grammar cannot be checked; refusing rather than reporting a pass")
+  (let [text (slurp deps-edn-file)
+        claims (stated-claims text)
+        copies (classpath-copies)]
+    (println (format "CLAIMS\t%d\tparsed from deps.edn (%s)"
+                     (count claims) (pr-str (sort (map name (keys claims)))))) 
+    ;; Evidence floor: both keys must be found. If the comment is reworded so
+    ;; the block no longer parses, this goes red and someone re-anchors it --
+    ;; which is the point. Silently finding nothing would restore exactly the
+    ;; unchecked-prose state this test exists to end.
+    (is (= #{:grammar-sha256 :kotoba-sema-pin} (set (keys claims)))
+        (str "deps.edn's THE PAIR, MEASURED block did not parse; found "
+             (pr-str claims) ". Expected two lines of the form"
+             " `;;   grammar-sha256    <64 hex>` and `;;   kotoba-sema-pin   <40 hex>`."
+             " Refusing to report a pass on a claim that could not be located."))
+
+    (testing "the digest deps.edn states is the digest of the bytes vendored here"
+      (when-let [stated (:grammar-sha256 claims)]
+        (doseq [{:keys [url sha256]} copies]
+          (is (= stated sha256)
+              (str "deps.edn states a sha256 that does not describe the file\n"
+                   "  copy    " url "\n"
+                   "  deps.edn states " stated "\n"
+                   "  measured        " sha256 "\n"
+                   "The pin, the vendored copy and this digest move in ONE commit"
+                   " (ADR 0330 postscript).")))))
+
+    (testing "deps.edn and authority-grammar-sha256 state the same digest"
+      (when-let [stated (:grammar-sha256 claims)]
+        (is (= authority-grammar-sha256 stated)
+            (str "deps.edn's stated digest and this namespace's"
+                 " `authority-grammar-sha256` disagree\n"
+                 "  deps.edn                 " stated "\n"
+                 "  authority-grammar-sha256 " authority-grammar-sha256 "\n"
+                 "Two literals for one measurement is how the first one drifted."))))
+
+    (testing "the kotoba-sema sha deps.edn states in prose is the sha it pins"
+      (when-let [stated (:kotoba-sema-pin claims)]
+        ;; Same shape `aggregate-abi-test/dependency-pin` reads.
+        (let [pinned (get-in (edn/read-string text)
+                             [:deps 'io.github.kotoba-lang/kotoba-sema :git/sha])]
+          (is (some? pinned)
+              "could not locate io.github.kotoba-lang/kotoba-sema's :git/sha in deps.edn")
+          (is (= stated pinned)
+              (str "deps.edn's prose names a different kotoba-sema commit than it pins\n"
+                   "  prose says " stated "\n"
+                   "  :git/sha   " pinned)))))))

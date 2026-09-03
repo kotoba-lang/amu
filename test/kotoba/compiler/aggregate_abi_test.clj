@@ -168,24 +168,22 @@
   ;; dequantize-and-dot oracle the QEMU K-quant smoke checks its digits
   ;; against, 18f7c3a the sealed control-effect vocabulary as this
   ;; repository's export rather than a second derivation.
-  ;;
-  ;; fwstore: advanced 2026-09-03 to d8b0e679 for one set membership
-  ;; (kotoba-kir ADR-0269). `kernel-uefi-alloc-region` refuses at the oracle
-  ;; under `:kernel-privileged-unavailable` and marks a module kernel-native.
-  ;; The decision recorded there is that it does NOT answer zero: zero is
-  ;; available in a way no other refusal's answer is -- "no firmware, so
-  ;; nothing was allocated" -- and it is the answer this operation gives for a
-  ;; FAILED allocation, so folding it turns a program's allocation into a
-  ;; compile-time null and every access through it into a trap the source
-  ;; never wrote. Checked with `merge-base --is-ancestor` against b2e5d9c.
-  ;;
-  ;; The pin is 233bd6bb rather than fwstore's own d8b0e679, and it is not a
-  ;; choice: 233bd6bb is kotoba-kir's main and CONTAINS d8b0e679. It also
-  ;; carries fuel64's `max-fuel` export (kotoba-kir ADR 0268), which the
-  ;; kotoba-verifier pinned below now READS rather than restating -- so
-  ;; pinning d8b0e679 here resolves a kotoba-kir without that var and the
-  ;; verifier fails to load with `No such var: ir/max-fuel`. Measured, not
-  ;; reasoned about.
+  ;; Advanced 2026-09-03 to 233bd6bb by two decisions, both of which put a
+  ;; number or an answer where the thing that produces it lives:
+  ;;   b4d9d494 (ADR 0268) -- `execute` bounds a declared fuel budget at
+  ;;     2^53-1, decided at the counter rather than inherited from
+  ;;     `kotoba.native.elf64`'s `mov qword [r9+8], imm32` sign-extended
+  ;;     immediate. `charge!` is `(vswap! fuel dec)` on a host double, so
+  ;;     above that line the decrement is a no-op and the interpreter would
+  ;;     answer `:ok` for a program that never terminates. Not
+  ;;     `kotoba.wasm/max-fuel` (2^62-1), whose counter is i64 throughout.
+  ;;   5f3f961f (ADR-0269) -- `kernel-uefi-alloc-region` traps
+  ;;     `:kernel-privileged-unavailable` rather than folding to zero. Zero is
+  ;;     the answer for a FAILED allocation, so answering it for "no firmware
+  ;;     here" would make the two indistinguishable and turn every access
+  ;;     through the result into a trap the source never wrote.
+  ;; That head is the same one kotoba-sema 727f9d6 made a provenance root,
+  ;; which is what moved `guest-grammar-vendor-test`'s kernel count to 115.
   (is (= "233bd6bb6b15912679c529611a42c8af15f2354c"
          (dependency-pin 'io.github.kotoba-lang/kotoba-kir)))
   ;; Advanced 2026-09-01 alongside the backend: the verifier re-derives the
