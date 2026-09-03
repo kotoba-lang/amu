@@ -4,7 +4,9 @@
 - Date: 2026-09-03
 - Authority: kotoba-lang
   `docs/adr/ADR-the-authority-names-every-head-the-frontend-admits.md`.
-- Pin advanced: `io.github.kotoba-lang/kotoba-sema` `bb0d47c6` → `1a073853`.
+- Amended 2026-09-03 (see the last two sections): the wave's pin and
+  digest are now carried by ADR 0330's rule, and this ADR keeps the two
+  checks that make a backwards move visible.
 
 ## The measurement
 
@@ -51,7 +53,7 @@ of a check that ran and found nothing wrong.
 ## Decision
 
 1. **Resync this repository's copy** to the widened authority
-   (sha256 `3e3f9748…`).
+   (sha256 `67561e57…`).
 2. **Advance the kotoba-sema pin with it.** Resyncing this copy alone would
    leave two different grammars on one classpath, with which one wins decided
    by classpath order.
@@ -98,6 +100,52 @@ That last one is the one worth keeping in view. A negative test whose only
 assertion is a substring of the shared prefix is a test that has not asserted
 its own reason, which is the failure ADR-2608136000 names.
 
+## What a stale copy actually does, which is worse than a stale description
+
+Measured by the AMU-PINS stream, 2026-09-03: this repository's `resources/`
+copy **shadows** kotoba-sema's on the classpath — `io/resource` answers with
+the first — and `sema/forbidden-heads` is that repository's literal set
+**union** this resource. So a copy that has gone backwards does not merely
+describe the language wrongly: it **re-imposes the old language on the JVM
+route**, while the nbb route follows the pinned frontend. The two routes then
+compile different languages out of the same tree, and the only thing that
+would say so is a comparison of the copies.
+
+That is why the guard below is about *direction* and not only about equality.
+
+## The constant moved backwards, and a single constant could not see it
+
+Measured 2026-09-03, after the first version of this change landed. The
+authority moved three times in an afternoon — kotoba-lang `543fa62a`
+(`3e3f9748`), `904ad318` (`67561e57`), `911c9143` (`6e1202fd`), each an
+ancestor of the next — and two PRs here set the constant independently an hour
+apart. #761 vendored `67561e57`; #762 then wrote the constant back to
+`3e3f9748`, **a grammar older than the copy already in the tree**. main went
+red, and the failure said only that the copy and the constant disagreed — not
+which of the two had gone backwards.
+
+A single constant compared against a single copy is consistent with itself at
+*any* value, so it cannot tell a resync from a regression.
+`authority-digest-history` is a vector, oldest first, and
+`the-authority-digest-never-moves-backwards` refuses a copy whose digest is in
+the vector but not at the end, naming its position. Appending is how the file
+changes; substituting is the defect.
+
+## The count was a literal, and a literal is not a comparison
+
+The first version pinned `114` kernel heads, measured against kotoba-sema
+`1afff23`. It went red one authority edit later, when `alloc-region` made it
+115 — and that red said nothing about drift, only that the number was an hour
+old.
+
+It is now DERIVED from `kotoba.sema/kernel-operation-heads` across the
+`deps.edn` pin, so the assertion is the one only this repository can make: the
+grammar amu **reads** names exactly the heads the frontend amu **uses**
+admits. The accessor was added to kotoba-sema for it (`df383ba0`) because
+requiring `kotoba.compiler.frontend` here is what
+`namespace-reachability-test/consumers-use-the-public-sema-boundary` refuses —
+and that check caught the attempt.
+
 ## Verification
 
 ```
@@ -115,7 +163,7 @@ the test failed on its first run and named the drift:
 ```
 two classpath copies of the grammar disagree; which one the compiler reads is
 decided by classpath order
-  amu/resources/…              3e3f9748…
+  amu/resources/…              67561e57…
   kotoba-sema bb0d47c6/…       61e0f867…
   differing heads:
     :admitted-builtins  only-in-first  (111 kernel heads)
