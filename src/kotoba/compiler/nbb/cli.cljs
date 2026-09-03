@@ -56,7 +56,13 @@
    "x86_64-aiueos-uefi-v1" :x86_64-aiueos-uefi-v1
    "aarch64-aiueos-kernel-v1" :aarch64-aiueos-kernel-v1})
 
-(def ^:private max-native-fuel 1048576)
+;; fuel64: the same ceiling `kotoba.verifier` enforces, which is
+;; `kotoba.kir/max-fuel` -- read rather than copied, because a JVM-free route
+;; that admitted a different budget from the verifier would produce artifacts
+;; the verifier then refused, and the diagnostic would name the artifact rather
+;; than the disagreement. 2^20 until 2026-09-03; see the ADR.
+(def ^:private max-native-fuel ir/max-fuel)
+
 
 (defn native-value-abi
   "The value ABI stamped into a native artifact's compatibility descriptor.
@@ -88,10 +94,18 @@
 (defn- native-fuel! [policy]
   (let [declared (or (get-in policy [:budgets :fuel]) 512)
         ;; Bounded EDN preserves integer literals as BigInt on the Node path.
-        ;; The native ABI and KIR oracle use plain host integers, while the
-        ;; verifier admits at most 2^20. Converting only after this bound check
-        ;; is exact in JavaScript and preserves the original policy value for
-        ;; provenance hashing.
+        ;; The native ABI and KIR oracle use plain host integers. Converting
+        ;; only after this bound check is exact in JavaScript and preserves the
+        ;; original policy value for provenance hashing.
+        ;;
+        ;; fuel64: `Number.isSafeInteger` was ALREADY enforcing the ceiling
+        ;; this stream went on to choose. It is `<= 2^53-1` by definition, so
+        ;; the JVM-free route has refused anything the KIR counter could not
+        ;; decrement since the day it was written -- the `max-native-fuel` test
+        ;; beside it (2^20) was simply four hundred million times tighter and
+        ;; hid it. The ceiling is not an invention; it is the number this line
+        ;; already implemented, now written down where the other routes can
+        ;; read it.
         fuel (if (i64/bigint-value? declared) (js/Number declared) declared)]
     (when-not (and (js/Number.isSafeInteger fuel)
                    (<= 1 fuel max-native-fuel))

@@ -1,1 +1,22 @@
-{:budgets {:fuel 1048577}}
+;; fuel64: ONE PAST THE CEILING, and the ceiling moved on 2026-09-03.
+;;
+;; This was 1048577 -- one past `max-native-fuel` when that was 2^20. It is now
+;; 9007199254740992 = 2^53, one past `kotoba.kir/max-fuel`, which is where the
+;; ceiling lives (kotoba-kir ADR 0268) because it is a property of the counter:
+;; `charge!` is a plain host number, a double on Node, and 2^53-1 is the last
+;; budget from which every decrement to zero is exact.
+;;
+;; The number has to be one past the CURRENT ceiling or the fixture stops
+;; testing anything: `test-policy-bound-provenance` asserts that this policy is
+;; REFUSED with "native fuel budget is not admitted", and a value the compiler
+;; now admits turns that assertion into a report that the refusal is gone.
+;; Which is exactly what happened -- CI caught this, and it is the FIFTH place
+;; the old ceiling was written down (after kotoba-native's replenish,
+;; kotoba-verifier, kotoba.compiler.nbb.cli and the interrupt entry). A search
+;; of `src/` found four; this one lives under `test/`.
+;;
+;; 2^53 is refused on BOTH routes, for reasons that happen to differ and that
+;; is worth knowing: the JVM route fails `kotoba.verifier`'s range check, and
+;; the Node route fails `js/Number.isSafeInteger` before the range check is
+;; reached, since MAX_SAFE_INTEGER is 2^53-1.
+{:budgets {:fuel 9007199254740992}}

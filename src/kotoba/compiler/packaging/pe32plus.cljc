@@ -137,6 +137,46 @@
 ;;
 ;; A module with no `efi-main` still packages through its `main`, on the
 ;; zero-arity contract, exactly as before.
+;; fuel64: the budget this image starts life with, and the reason it is read
+;; from the artifact rather than written as a constant.
+;;
+;; It WAS the constant 512, and had been since this packager existed. Every
+;; UEFI image ran on 512 no matter what `--fuel` said -- the flag is parsed,
+;; validated, sealed into `:limits :fuel` and `:fuel-abi :initial`, and then
+;; the one place that decides what the machine actually gets ignored it.
+;;
+;; Measured 2026-09-03: `--fuel 512` and `--fuel 1048576` produce
+;; BYTE-IDENTICAL images (sha256 fc742834811b3118...), a 2048x difference that
+;; changes nothing. `--fuel 250000000` was refused, so the flag was reaching
+;; the verifier; it simply never reached the image. Found by the LOADER stream
+;; from the other end, where `sha256-region` costs 1,772 fuel per 64-byte
+;; block, so ONE SHA-256 BLOCK could not fit in 512 and the loader's
+;; `integrity` module had never returned. Four in-guest boots bisected it
+;; before the cause was known -- scratch write/read-back, a 64-byte
+;; `kernel-subregion` of a `bytes-literal`, `store32`/`load32` and `sha-init`
+;; all pass, and only `sha-block` fails.
+;;
+;; This is the same class as the imm32 replenish ceiling one layer down
+;; (kotoba-native ADR 0078): a budget that cannot be raised past 2^31, and a
+;; budget that is silently ignored, are both "the number the machine runs on is
+;; not the number anybody wrote".
+;;
+;; The two checks are `kotoba.native.elf64/artifact-fuel`'s, restated rather
+;; than shared because this repository owns the PE32+ route and that one owns
+;; ELF: the budget must be a positive integer, and `:limits :fuel` must AGREE
+;; with `:fuel-abi :initial`. The agreement check is what makes this a seam
+;; rather than a second opinion -- the verifier re-derives `:fuel-abi` from
+;; `:limits`, so a packager that read one of the two could ship an image whose
+;; running budget contradicts its own receipt.
+(defn- artifact-fuel [artifact]
+  (let [fuel (get-in artifact [:limits :fuel])
+        abi-fuel (get-in artifact [:fuel-abi :initial])]
+    (when-not (and (integer? fuel) (pos? fuel) (= fuel abi-fuel))
+      (throw (ex-info "PE32+ EFI packaging requires one valid sealed fuel bound"
+                      {:reason :efi-fuel-bound-invalid
+                       :fuel fuel :fuel-abi-initial abi-fuel})))
+    fuel))
+
 (def ^:private efi-entry-name 'efi-main)
 
 (defn package-efi
@@ -186,7 +226,8 @@
           shim (entry-shim (:arity export) source-rva data-rva)
           text (into shim (:code artifact))
           context (into (vec (repeat 8 0))
-                        (concat (le 512 8) (repeat (- data-size 16) 0)))
+                        (concat (le (artifact-fuel artifact) 8)
+                                (repeat (- data-size 16) 0)))
           text-raw-size (align (count text) file-alignment)
           data-offset (+ text-offset text-raw-size)
           data-raw-size (align data-size file-alignment)

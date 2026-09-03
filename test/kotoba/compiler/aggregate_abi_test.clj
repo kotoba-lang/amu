@@ -107,6 +107,17 @@
   ;;   91033a9  the writable region is an lea, a function's address is a label.
   ;;   d710558  a reentry parameter's home is stored inside the loop.
   ;;
+  ;; fuel64 -- 2026-09-03: the object replenish is no longer an imm32.
+  ;;           `replenish-bytes` picks between `mov qword [r9+8],imm32` and
+  ;;           `movabs r10,imm64; mov [r9+8],r10`, so a per-call budget past
+  ;;           2,147,483,647 can exist at all (ADR 0078). Every shipped tier
+  ;;           still fits the narrow form: that repo carries the SHA-256 of
+  ;;           all 108 packaged objects taken BEFORE the change and
+  ;;           re-derives them, so this advance moves no object bytes.
+  ;;           95361f3 also carries ADR 0079 -- `package-user` read the
+  ;;           constant 512 instead of the declared budget, the same defect
+  ;;           this repository's PE32+ packager had.
+  ;;
   ;; fwstore: advanced 2026-09-03 to adeb1b0f for ONE encoding,
   ;; `:uefi-alloc-region` (kotoba-native ADR-0080). It is `x86-uefi-call-wide`'s
   ;; frame with the fifth-argument slot repurposed as the out-word
@@ -228,6 +239,14 @@
   ;;            does not is a green `check` and a refusal at compile time
   ;;            rather than a wrong artifact. 6a743c3 adds the image-symbol
   ;;            name check (ADR 0330).
+  ;;   fuel64  -- the same independence, decided the OTHER way. `max-native-fuel`
+  ;;            was 2^20 there and 2^20 in this repository's JVM-free driver,
+  ;;            while the object route shipped tiers of 250,000,000 and
+  ;;            2,147,483,647 past both without ever meeting them. The verifier
+  ;;            now READS `kotoba.kir/max-fuel`: re-deriving a SET has a safe
+  ;;            direction, but a CEILING does not -- admitting less refuses
+  ;;            valid artifacts and admitting more ratifies a budget the oracle
+  ;;            cannot decrement (kotoba-verifier ADR 0049).
   ;;   fwstore -- 2026-09-03, 96edd345: the four rows for
   ;;            `kernel-uefi-alloc-region` (kotoba-verifier ADR-0050). Its
   ;;            arity is the one in that table whose consequence is worst if
