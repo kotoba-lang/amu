@@ -35,9 +35,9 @@ that domain is unreachable for anyone, and recording that is a result.
 |---|---|---|---|
 | H-A | the quiet gate reads a proxy (load1) with a floor above its own limit; read the intended quantity (busy-CPU fraction) directly at the same strictness | **executed — iteration 16** (ADR 0282) | fleet measurement 2026-08-29: load1 criterion 0/7 hosts ever qualified; busy-fraction criterion qualified 2 hosts outright, near-qualified 3, and rejected exactly the one host running a persistent workload |
 | H-C | narrow-arithmetic gap vs Clang: Clang strength-reduces `q*(2^31-1)` to `sub‑lsl + add`, taking one multiply off the mul pipes per round; amu emits `msub` | **landed — kotoba-native #83, gated on one serial chain** | instruction diff: amu 54 instrs (6/round), clang 61 (7/round) yet clang faster; hand-patched amu code (byte-identical reconstruction, 8 substitutions): +2.46% mean, medians 6.86→6.70 ns, mins 6.85→6.68, 42 ABBA samples/arm on levi, both arms answering 1830338420. Explains ~⅓ of the ~7% clang gap |
-| H-C2 | the remaining ~4.4% vs Clang on `kernel` after H-C: the mutated stream and clang's are now near-identical in shape (62 vs 61 instructions; amu-mut still loads the now-dead `0x7fffffff` constant), so the residue is scheduling/front-end shaped | open — generate from an instruction-order diff | pending |
+| H-C2 | the remaining ~4.4% vs Clang on `kernel` after H-C: the mutated stream and clang's are now near-identical in shape (62 vs 61 instructions; amu-mut still loads the now-dead `0x7fffffff` constant), so the residue is scheduling/front-end shaped | open — generate from an instruction-order diff | pending; 2026-09-03 10:16 JST falsify tick: host busy (load1 48.01), no measurement attempted | 2026-09-03 10:31 JST falsify tick: host busy (load1 38.40, 1min avg over 10-day uptime), no measurement attempted | 2026-09-03 10:52 JST falsify tick: host busy (load1 28.49, load15 33.90), no measurement attempted; NEXT は H-C2 のまま | 2026-09-03 11:27 JST falsify tick: host busy (load1 29.81, load15 35.26), no measurement attempted; NEXT は H-C2 のまま | 2026-09-03 13:33 JST bench tick: host busy (load1 23.21, load5 17.62, load15 17.86, up 10 days), no measurement attempted; NEXT は H-C2 のまま | 2026-09-03 13:34 JST falsify tick: host busy (load1 16.07), no measurement attempted | 2026-09-03 15:08 JST falsify tick: host busy (load1 27.24, load5 20.98, load15 18.49, up 10 days), no measurement attempted; NEXT は H-C2 のまま | 2026-09-03 16:00 JST falsify tick: host busy (load1 12.74, load5 14.16, load15 17.30, up 10 days), no measurement attempted; NEXT は H-C2 のまま | 2026-09-03 17:40 JST bench tick: host busy (load1 35.54, load5 35.97, load15 28.99, up 10 days, 10 CPUs), no measurement attempted; NEXT は H-C2 のまま | 2026-09-03 18:37 JST falsify tick: host busy (load1 19.32, load5 16.19, load15 16.23, up 10 days, 10 CPUs), no measurement attempted; NEXT は H-C2 のまま | 2026-09-03 19:13 JST bench tick: host busy (load1 14.80, load5 15.08, load15 17.02, up 10 days, 10 CPUs), no measurement attempted; NEXT は H-C2 のまま | 2026-09-03 19:20 JST falsify tick: host busy (load1 15.78, load5 17.17, load15 17.41, up 10 days, 10 CPUs), no measurement attempted; NEXT は H-C2 のまま | 2026-09-03 19:50 JST bench tick: host busy (load1 13.64, load5 13.92, load15 15.25, up 10 days, 11:38, 10 CPUs), no measurement attempted; NEXT は H-C2 のまま | 2026-09-03 20:46 JST falsify tick: host busy (load1 15.18, load5 16.38, load15 18.98, up 10 days, 12:34, 13 users), no measurement attempted; NEXT は H-C2 のまま | 2026-09-03 20:57 JST falsify tick: host busy (load1 15.18, load5 18.75, load15 19.72, up 10 days, 12:45, 13 users), no measurement attempted; NEXT は H-C2 のまま | 2026-09-03 21:07 JST bench tick: host busy (load1 11.04, load5 15.25, load15 17.22, up 10 days, 12:55, 13 users), no measurement attempted; NEXT は H-C2 のまま | 2026-09-03 23:17 JST falsify tick: host busy (load1 17.75, load5 16.84, load15 16.84, up 10 days, 15:05, 11 users, 10 CPUs), no measurement attempted; NEXT は H-C2 のまま |
 | H-D | `kernel_batch` loop-path remainder (~8% vs Rust diagnostic, refused `:too-noisy` in ADR 0281): body scheduling / per-iteration instruction mix | open; measurement first needs the noise fixed (H-B) or the loop lengthened | ADR 0279 measured 1.349x behind pre-#653..#660; levi 2026-08-29 read 1.08x diagnostic |
-| H-B | batch-fixture noise (rsd 0.47 vs policy 0.10) is scheduler migration of a long single-call region across P/E cores; pin the timed region's QoS | open | performance.md already documents an E-core migration incident |
+| H-B | batch-fixture noise (rsd 0.47 vs policy 0.10) is scheduler migration of a long single-call region across P/E cores; pin the timed region's QoS | open | performance.md already documents an E-core migration incident; 2026-09-03 10:00 JST falsify tick: host busy (load1 82.83), no measurement attempted |
 | H-E | call-crossing values go to stack slots instead of the callee-saved registers the prologue already spends: `kernel_call` saves x19–x26 yet stores/loads all eight call results through the stack (8 STR + 11 LDR + 3 constant-mov round-trips) | **hand-falsified — iteration 20: +6.66% separated (5.19 → 4.84 ns), fuel contract intact, past clang's 5.03**. Compiler work: assign call-crossing values to the preserved tier in the scan | performance.md's conservative-path tables; iteration-20 fixture retained in `levi:~/amu-evidence/` |
 | H-F | protect domains where amu already leads (kernel_wide +7% vs rustc diagnostic) with byte-accurate regressions | standing | #637–#639 pattern |
 | H-Y1 | wasm32 pays a host crossing per iteration merely to CARRY a reference-typed parameter (`typed-assert-ref` prologue), and self-recursion pays it per iteration where `loop`/`recur` pays it once | **counted — iteration 51** (ADR 0285); widening the lowering is the open follow-up | 4096 element visits: self-recursion 4227 `assert-ref`, `loop`/`recur` 129; 2.032 vs 1.032 crossings/element, identical KIR-verified return values. Also a capability limit: self-recursion traps `RangeError: Maximum call stack size exceeded` between 6,128 and 12,128 iterations, `loop`/`recur` is O(1) depth. `structured-loop-body?` is already general — only `loop-helper-name?` gates it — but the prologue fuel charge must move into the loop to keep one iteration at one unit |
@@ -308,6 +308,10 @@ that domain is unreachable for anyone, and recording that is a result.
   future session: the ranking stands as written at iterations 27–28 —
   protection re-scores periodically; new wins require either new
   mechanisms beyond what three compilers currently know, or new domains.
+
+- **30 (2026-09-03 09:52 JST, amu-bench cron, measurement refused)**:
+  host busy (load1 53.02 / 5m 62.90 / 15m 63.15, threshold 7.5) — no
+  bench/perfgate run, no numbers. No status transitions without numbers.
 
 ## Contract v3 — the two ladders (adopted 2026-08-29, owner direction)
 
@@ -1108,6 +1112,193 @@ as before.
   is missing. The local `kotoba-lang` checkout was 14 commits behind and
   carried no `:shielding-axis` key at all, which would have produced the
   opposite conclusion silently.
+
+- **56 (2026-09-03, rank-only pass; host busy, no measurement)**: load1
+  41.93 / 5min 55.90 / 15min 60.25 (up 10 days) — far above the 7.5 quiet
+  limit, so no falsification or bench run was attempted. No hypothesis was
+  re-ranked, no status transitioned, no new hypothesis registered: there is
+  no new measurement to rank on. Population state unchanged; H-C2, H-D, H-B,
+  H-Y1 remain open. NEXT: H-C2 (highest expected qualified gain × probability
+  among open hypotheses; the remaining ~4.4% vs Clang on `kernel` with
+  near-identical static shape is the closest to a separable win).
+
+- **57 (2026-09-03, host busy, no measurement)**: load1 54.75 / 5min 53.70 /
+  15min 57.72 (up 10 days) — far above the 7.5 quiet limit, so no bench or
+  perfgate run was attempted. amu-falsify evidence checked: no new
+  "要 quiet-host 測定" item pending. Population state unchanged; H-C2, H-D,
+  H-B, H-Y1 remain open. NEXT: H-C2 (unchanged).
+
+- **58 (2026-09-03 10:28 JST, rank-only pass; host busy, no measurement)**:
+  load1 30.42 / 5min 37.26 / 15min 43.77 (up 10 days) — still far above the
+  7.5 quiet limit; no bench, perfgate, or falsify run attempted. Evidence
+  reviewed: only more busy ticks since entry 57 (amu-bench iteration 30,
+  falsify ticks on H-C2 and H-B) — no new numbers, so no re-rank, no status
+  transition, no new hypothesis. Population unchanged: H-C2, H-D, H-B, H-Y1
+  open. NEXT: H-C2 (unchanged — highest expected qualified gain ×
+ probability; near-identical static shape vs Clang at ~4.4% residual).
+
+- **59 (2026-09-03 10:26 JST, host busy, no measurement)**: load1 33.49 /
+  5min 36.53 / 15min 42.57 (up 10 days) — far above the 7.5 quiet limit; no
+  bench, perfgate, or falsify run attempted. amu-falsify evidence checked:
+  no new "要 quiet-host 測定" item pending. Population unchanged: H-C2, H-D,
+  H-B, H-Y1 open. NEXT: H-C2 (unchanged).
+
+- **60 (2026-09-03 10:43 JST, rank-only pass; host busy, no measurement)**:
+  load1 35.61 / 5min 37.61 / 15min 39.00 (up 10 days) — far above the 7.5
+  quiet limit; no bench, perfgate, or falsify run attempted. Evidence since
+  entry 59 reviewed: only busy falsify ticks on H-C2 (10:16, 10:31 JST) and
+  H-B (10:00 JST) and amu-bench iteration 30's refusal — no new numbers, so
+  no re-rank, no status transition, no new hypothesis. Population unchanged:
+  H-C2, H-D, H-B, H-Y1 open. NEXT: H-C2 (unchanged — highest expected
+  qualified gain × probability; near-identical static shape vs Clang at
+  ~4.4% residual on `kernel`).
+
+- **61 (2026-09-03 10:45 JST, host busy, no measurement)**: load1 29.34 /
+  5min 36.21 / 15min 38.37 (up 10 days) — far above the 7.5 quiet limit; no
+  bench, perfgate, or falsify run attempted. amu-falsify evidence checked:
+  no new "要 quiet-host 測定" item pending. Population unchanged: H-C2, H-D,
+  H-B, H-Y1 open. NEXT: H-C2 (unchanged — highest expected qualified gain ×
+  probability; near-identical static shape vs Clang at ~4.4% residual on
+  `kernel`).
+
+- **62 (2026-09-03 11:02 JST, rank-only pass; host busy, no measurement)**:
+  load1 31.19 / 5min 35.06 / 15min 36.30 (up 10 days) — far above the 7.5
+  quiet limit; no bench, perfgate, or falsify run attempted. No new evidence
+  since entry 61 (no new falsify/bench numbers): no re-rank, no status
+  transition, no new hypothesis. Population unchanged: H-C2, H-D, H-B, H-Y1
+  open. NEXT: H-C2 (unchanged — highest expected qualified gain ×
+  probability; near-identical static shape vs Clang at ~4.4% residual on
+  `kernel`).
+
+- **63 (2026-09-03 11:03 JST, host busy, no measurement)**: load1 38.51 /
+  5min 36.51 / 15min 36.74 (up 10 days) — far above the 7.5 quiet limit; no
+  bench, perfgate, or falsify run attempted. amu-falsify evidence checked:
+  no new "要 quiet-host 測定" item pending. Population unchanged: H-C2, H-D,
+  H-B, H-Y1 open. NEXT: H-C2 (unchanged — highest expected qualified gain ×
+  probability; near-identical static shape vs Clang at ~4.4% residual on
+  `kernel`).
+
+- **64 (2026-09-03 11:26 JST, host busy, no measurement)**: load1 28.40 /
+  5min 34.58 / 15min 35.52 (up 10 days) — far above the 7.5 quiet limit; no
+  bench, perfgate, or falsify run attempted. amu-falsify evidence checked:
+  no new "要 quiet-host 測定" item pending. Population unchanged: H-C2, H-D,
+  H-B, H-Y1 open. NEXT: H-C2 (unchanged — highest expected qualified gain ×
+  probability; near-identical static shape vs Clang at ~4.4% residual on
+  `kernel`).
+
+- **65 (2026-09-03 13:33 JST, rank-only pass; host busy, no measurement)**:
+  load1 23.21 / 5min 17.62 / 15min 17.86 (up 10 days) — above the 7.5
+  quiet limit, so no bench or perfgate run was attempted. amu-falsify
+  evidence checked: no new "要 quiet-host 測定" item pending. Population
+  unchanged: H-C2, H-D, H-B, H-Y1 open. NEXT: H-C2 (unchanged).
+
+- **66 (2026-09-03 13:58 JST, rank-only pass; host busy, no measurement)**:
+  load1 37.79 / load5 23.00 / load15 21.02 (up 10 days) — above the 7.5
+  quiet limit, so no bench, perfgate, or falsify run attempted. Evidence
+  since entry 65 reviewed: origin/main advanced (PR #769 grammar
+  vendoring; ADR 0327/0330/0331 amendments, #766 UEFI fuel) but the
+  fetched diff contains no new perfgate/bench numbers against any open
+  hypothesis, so there is nothing to re-rank on. No status transition,
+  no new hypothesis. Population unchanged: H-C2, H-D, H-B, H-Y1 open.
+  NEXT: H-C2 (unchanged — highest expected qualified gain × probability;
+  ~4.4% residual vs Clang on `kernel` with near-identical static shape,
+  separable).
+
+- **67 (2026-09-03 15:07 JST, host busy, no measurement)**: load1 25.51 /
+  5min 19.63 / 15min 17.88 (up 10 days) — above the 7.5 quiet limit, so no
+  bench, perfgate, or falsify run attempted. amu-falsify evidence checked:
+  no new "要 quiet-host 測定" item pending. Population unchanged: H-C2, H-D,
+  H-B, H-Y1 open. NEXT: H-C2 (unchanged).
+
+- **68 (2026-09-03 15:49 JST, rank-only pass; host busy, no measurement)**:
+  load1 13.83 / 5min 17.07 / 15min 20.84 (up 10 days) — above the 7.5 quiet
+  limit, so no bench, perfgate, or falsify run attempted. Evidence since
+  entry 67 reviewed: one more busy falsify tick on H-C2 (15:08 JST); the
+  fetch brought origin/main +24 commits (#769 grammar vendoring removed,
+  #770 frontend/KIR consume + catalog resync, UEFI BOOTX64.EFI page-write
+  with fuel ADR 0332/0333/0334, authority-digest monotonicity) — all
+  pin/fuel/correctness work, none carrying perfgate/bench numbers against
+  an open hypothesis, so there is nothing to re-rank on. No status
+  transition, no new hypothesis. Population unchanged: H-C2, H-D, H-B,
+  H-Y1 open. NEXT: H-C2 (unchanged — highest expected qualified gain ×
+  probability; ~4.4% residual vs Clang on `kernel` with near-identical
+  static shape, separable).
+
+- **69 (2026-09-03 15:58 JST, bench pass; host busy, no measurement)**:
+  load1 12.79 / 5min 14.45 / 15min 17.75 (up 10 days) — above the 7.5 quiet
+  limit, so no bench/perfgate run attempted; nothing to add to H-C2
+  evidence. Population unchanged: H-C2, H-D, H-B, H-Y1 open. NEXT: H-C2
+  (unchanged).
+
+- **70 (2026-09-03 17:58 JST, bench pass; host busy, no measurement)**:
+  load1 14.04 / 5min 16.10 / 15min 20.92 (up 10 days) — above the 7.5 quiet
+  limit, so no bench/perfgate run attempted; nothing to add to H-C2
+  evidence. Population unchanged: H-C2, H-D, H-B, H-Y1 open. NEXT: H-C2
+  (unchanged).
+
+- **71 (2026-09-03 17:59 JST, rank-only pass; host busy, no measurement)**:
+  load1 12.71 / 5min 15.63 / 15min 20.61 (up 10 days) — above the 7.5 quiet
+  limit, so no bench, perfgate, or falsify run attempted. Evidence since
+  entry 70 reviewed: fetch clean (already up to date), working tree carries
+  only the busy-tick log growth and two untracked files (jb_imod_control.c,
+  jit-cosientist.md) — no new perfgate/bench numbers against any open
+  hypothesis, so there is nothing to re-rank on. No status transition, no
+  new hypothesis. Population unchanged: H-C2, H-D, H-B, H-Y1 open. NEXT:
+  H-C2 (unchanged — highest expected qualified gain × probability; ~4.4%
+  residual vs Clang on `kernel` with near-identical static shape,
+  separable).
+
+- **72 (2026-09-03 18:40 JST, rank-only pass; host busy, no measurement)**:
+  load1 16.94 / 5min 17.66 / 15min 16.93 (up 10 days, 14 users) — above
+  the 7.5 quiet limit, so no bench, perfgate, or falsify run attempted.
+  Fetch clean (57ba0ee0, already up to date). Working tree unchanged from
+  entry 71: busy-tick log growth plus untracked jb_imod_control.c and
+  jit-cosientist.md — no new measured evidence against any open
+  hypothesis, so no re-rank, no status transition, no new hypothesis.
+  Population unchanged: H-C2, H-D, H-B, H-Y1 open. NEXT: H-C2 (unchanged
+  — highest expected qualified gain × probability; ~4.4% residual vs
+  Clang on `kernel` with near-identical static shape, separable).
+
+- **73 (2026-09-03 19:29 JST, rank-only pass; host busy, no measurement)**:
+  load1 10.33 / 5min 13.45 / 15min 15.76 (up 10 days) — above the 7.5 quiet
+  limit, so no bench, perfgate, or falsify run was attempted. Fetch pulled
+  origin/main to 764a6dba (#770 frontend/KIR consume + catalog resync, fuel64
+  ceiling/EFI-budget tests) — pin/fuel/correctness work, no perfgate/bench
+  numbers against any open hypothesis, so nothing to re-rank on. No status
+  transition, no new hypothesis. Population unchanged: H-C2, H-D, H-B, H-Y1
+  open. NEXT: H-C2 (unchanged — highest expected qualified gain ×
+  probability; ~4.4% residual vs Clang on `kernel` with near-identical
+  static shape, separable).
+
+
+- **74 (2026-09-03 21:49 JST, rank-only pass; host busy, no measurement)**:
+  load1 20.35 / 5min 20.85 / 15min 21.23 (up 10 days, 11 users) — above the
+  7.5 quiet limit, so no bench, perfgate, or falsify run was attempted.
+  No new evidence against any open hypothesis; no re-rank, no status
+  transition, no new hypothesis. Population unchanged: H-C2, H-D, H-B, H-Y1
+  open. NEXT: H-C2 (unchanged — highest expected qualified gain ×
+  probability; ~4.4% residual vs Clang on `kernel` with near-identical
+  static shape, separable).
+
+- **75 (2026-09-03 22:29 JST, rank-only pass; host busy, no measurement)**:
+  load1 17.83 / 5min 15.84 / 15min 18.89 (up 10 days, 11 users) — above the
+  7.5 quiet limit, so no bench, perfgate, or falsify run was attempted.
+  Fetch: no new commits past 764a6dba; working tree unchanged from entry 71
+  (untracked jb_imod_control.c, jit-cosientist.md). No new evidence against
+  any open hypothesis; no re-rank, no status transition, no new hypothesis.
+  Population unchanged: H-C2, H-D, H-B, H-Y1 open. NEXT: H-C2 (unchanged —
+  highest expected qualified gain × probability; ~4.4% residual vs Clang on
+  `kernel` with near-identical static shape, separable).
+
+- **76 (2026-09-04 00:22 JST, rank-only pass; host busy, no measurement)**:
+  load1 9.35 / 5min 14.56 / 15min 15.77 (up 10 days, 11 users) — above the
+  7.5 quiet limit, so no bench, perfgate, or falsify run was attempted.
+  Fetch: no new commits past 764a6dba; working tree unchanged from entry 75
+  (untracked jb_imod_control.c, jit-cosientist.md). No new evidence against
+  any open hypothesis; no re-rank, no status transition, no new hypothesis.
+  Population unchanged: H-C2, H-D, H-B, H-Y1 open. NEXT: H-C2 (unchanged —
+  highest expected qualified gain × probability; ~4.4% residual vs Clang on
+  `kernel` with near-identical static shape, separable).
 
 ## Standing honesty constraints
 
