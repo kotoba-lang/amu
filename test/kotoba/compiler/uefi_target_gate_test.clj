@@ -27,11 +27,20 @@
    ;; NOT to the wider native set the literals get, and the reason is
    ;; measured: the backend emits `lea r10,[r9+0x60]`, and in the aiueos
    ;; KERNEL image that displacement is the global descriptor table.
-   'kernel-scratch-region "(defn main [] (kernel-scratch-region))"})
+   'kernel-scratch-region "(defn main [] (kernel-scratch-region))"
+   ;; fwstore: the allocation that answers with an address. The NARROW set,
+   ;; for the sharpest form of `kernel-uefi-call2`'s reason -- it calls
+   ;; through a pointer read out of firmware memory AND hands back an address
+   ;; kotoba-sema then certifies as a region-provenance root. The page count
+   ;; is a literal because kotoba-sema requires one; the rest are literals for
+   ;; the parameter-count reason above.
+   'kernel-uefi-alloc-region
+   "(defn main [] (kernel-uefi-alloc-region 4096 40 0 2 1 0))"})
 
 (deftest the-set-is-closed-and-named
   (is (= '#{kernel-system-table kernel-load-ptr kernel-uefi-call2 kernel-jump-to
-            kernel-uefi-call4 kernel-uefi-call6 kernel-scratch-region}
+            kernel-uefi-call4 kernel-uefi-call6 kernel-scratch-region
+            kernel-uefi-alloc-region}
          uefi/uefi-only-operations))
   (is (= :x86_64-aiueos-uefi-v1 uefi/uefi-target))
   (is (= (sort (keys bodies)) (sort uefi/uefi-only-operations))
@@ -64,7 +73,7 @@
            (ex-message thrown)))
     (is (= '[kernel-load-ptr] (:operations (ex-data thrown))))))
 
-(deftest the-firmware-target-admits-all-four
+(deftest the-firmware-target-admits-every-gated-head
   ;; The other direction, in the same file: a gate that refused everything
   ;; would pass every assertion above.
   (doseq [[op source] bodies]

@@ -117,7 +117,19 @@
   ;;           95361f3 also carries ADR 0079 -- `package-user` read the
   ;;           constant 512 instead of the declared budget, the same defect
   ;;           this repository's PE32+ packager had.
-  (is (= "95361f3f1dada3c94dc0f1ba9df0030505f51436"
+  ;;
+  ;; fwstore: advanced 2026-09-03 to adeb1b0f for ONE encoding,
+  ;; `:uefi-alloc-region` (kotoba-native ADR-0080). It is `x86-uefi-call-wide`'s
+  ;; frame with the fifth-argument slot repurposed as the out-word
+  ;; `AllocatePages` writes through, so the address the firmware chose comes
+  ;; back in a register instead of through a load -- which is what makes the
+  ;; pages a region-provenance root rather than an address the program has to
+  ;; be trusted about. The failure answer is `xor r11,r11` / `test rax,rax` /
+  ;; `cmovne r10,r11`, and `cmove` is one bit away and inverts the whole
+  ;; operation with nothing faulting to say so, which is why the suite pins
+  ;; that byte as an explicit `not`. Checked with `merge-base --is-ancestor`
+  ;; against 452422f.
+  (is (= "adeb1b0fa5bcd2dd18a657c7e3bd3c4acbd630ae"
          (dependency-pin 'io.github.kotoba-lang/kotoba-native)))
   ;; Advanced 2026-08-31 for two more instances of ADR-0286's class -- a KIR
   ;; i64 is a BigInt under ClojureScript and reached a host operation that
@@ -235,7 +247,19 @@
   ;;            direction, but a CEILING does not -- admitting less refuses
   ;;            valid artifacts and admitting more ratifies a budget the oracle
   ;;            cannot decrement (kotoba-verifier ADR 0049).
-  (is (= "d1985d62a114a1958c686e3d79477bf236d2b495"
+  ;;   fwstore -- 2026-09-03, 96edd345: the four rows for
+  ;;            `kernel-uefi-alloc-region` (kotoba-verifier ADR-0050). Its
+  ;;            arity is the one in that table whose consequence is worst if
+  ;;            it is wrong, and it is one that file cannot see -- the operand
+  ;;            that matters is the one that is NOT there, because the
+  ;;            out-pointer belongs to the emitted frame. A miscounted operand
+  ;;            list does not fail to compile: it shifts every argument by one
+  ;;            and hands `AllocatePages` a page count that was meant to be a
+  ;;            memory type. That commit also advances the verifier's OWN
+  ;;            kotoba-native pin to adeb1b0f, so this repository resolves one
+  ;;            kotoba-native across both pins rather than an older one behind
+  ;;            its own.
+  (is (= "96edd345ce46bc2e2c3c4ae9b4f4cdc26484f188"
          (dependency-pin 'io.github.kotoba-lang/kotoba-verifier)))
   (is (= 7 (:abi/version aggregate-abi/contract)))
   (is (= :recursive-word-handles

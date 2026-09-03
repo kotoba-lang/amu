@@ -281,7 +281,14 @@
          ;; read the constant 512 instead of the declared budget -- the same
          ;; defect this repo's PE32+ packager had. Fast-forward from the pin
          ;; main now carries (452422f): ahead 5, behind 0.
-         :git/sha "95361f3f1dada3c94dc0f1ba9df0030505f51436"}
+         ;;
+         ;; fwstore: and adeb1b0f, which is kotoba-native's MAIN and contains
+         ;; fuel64's 95361f3f -- the `:uefi-alloc-region` lowering landed on
+         ;; top of it (kotoba-native ADR-0080). Taking 95361f3f here would
+         ;; leave this compiler admitting a head in the frontend with no
+         ;; encoding behind it, which is the gap AMU-PINS measured and which
+         ;; aiueos main now has a CONSUMER for.
+         :git/sha "adeb1b0fa5bcd2dd18a657c7e3bd3c4acbd630ae"}
         io.github.kotoba-lang/kotoba-component
         {:git/url "https://github.com/kotoba-lang/kotoba-component.git"
          :git/sha "68acc7237aec7b24b683304db8e87d14ec1be745"}
@@ -328,7 +335,12 @@
          ;; pins above, not optional: this driver would otherwise admit a
          ;; budget the pinned verifier refuses. Fast-forward from the pin main
          ;; now carries (6c66e8b): ahead 2, behind 0.
-         :git/sha "d1985d62a114a1958c686e3d79477bf236d2b495"}
+         ;;
+         ;; fwstore: and 96edd345, kotoba-verifier's MAIN, which contains
+         ;; d1985d62 and adds the four rows for `kernel-uefi-alloc-region`
+         ;; (kotoba-verifier ADR-0050). This verifier rejects by ABSENCE, so
+         ;; the older pin refuses the head the frontend admits.
+         :git/sha "96edd345ce46bc2e2c3c4ae9b4f4cdc26484f188"}
 }
  :aliases {:test {:extra-paths ["test"]
                   :extra-deps
