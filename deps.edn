@@ -31,33 +31,52 @@
         ;; ADR-0222: source reading and semantic analysis live behind the
         ;; kotoba-sema repository boundary and public semantic-analysis API.
         ;;
-        ;; Advanced 2026-09-03 to 1a073853 (ADR 0327). kotoba-sema also ships a
-        ;; byte copy of kotoba-lang's `lang/guest-grammar.edn` at the same
-        ;; resource path this repository does, so TWO copies are on this
-        ;; classpath and `io/resource` answers with whichever comes first.
-        ;; Nothing compared them until
-        ;; `guest-grammar-vendor-test/every-classpath-copy-of-the-grammar-is-the-same-grammar`,
-        ;; and when it was written the two disagreed: this repository's copy
-        ;; was one change behind (local-state slice 1 -- it still forbade
-        ;; `atom`/`swap!`/`reset!`, which the authority now admits by
-        ;; elaboration). Resyncing this repository's copy alone would have left
-        ;; the classpath holding two grammars, so the pin moves with it.
+        ;; THIS REPOSITORY SHIPS NO COPY OF THE GRAMMAR (2026-09-03).
+        ;; It reads kotoba-sema's, across this pin.
         ;;
-        ;; TWO COMMITS BEHIND ON PURPOSE at merge time, 2026-09-03 (ADR 0330).
-        ;; kotoba-sema `62ecebf0` resynced the vendored grammar again, to
-        ;; kotoba-lang `ca2e595a` (sha256 67561e57). The wave is still moving,
-        ;; and the copy in this repository has to equal the copy in the sema
-        ;; that is PINNED here -- not the newest one -- or the classpath
-        ;; shadowing in ADR 0327 puts two grammars on one classpath again.
-        ;; So this is the matching pair, measured:
+        ;; It used to ship one at `resources/kotoba/lang/guest-grammar.edn`.
+        ;; `:paths` precedes the dependency closure, so that copy SHADOWED
+        ;; kotoba-sema's -- and kotoba-sema owns `kotoba.compiler.frontend`,
+        ;; whose `load-catalog-forbidden` is the production reader. The
+        ;; frontend's refusal set was therefore decided by a file in a
+        ;; different repository, updated in a different commit (ADR 0327).
         ;;
-        ;;   this repository's resources/kotoba/lang/guest-grammar.edn  3e3f9748
-        ;;   kotoba-sema @1a073853                                      3e3f9748
+        ;; ADR 0330's postscript recorded the cost: the pin and the vendored
+        ;; grammar had to move in ONE commit, and on 2026-09-03 #762 landed the
+        ;; pair at 3e3f9748 while #761 landed the next resync of the copy alone
+        ;; minutes apart -- each green on its own base, the merge red, and
+        ;; nothing ran the comparing test on the combination until it was main.
         ;;
-        ;; The next resync moves both together, or neither.
+        ;; Nothing under `src/` ever read the resource (measured 2026-09-03),
+        ;; and the `bin/amu` JDK-free route has no classpath reader at all --
+        ;; which is why `definition-identity/profile-version` repeats the
+        ;; number as a constant. So the copy's only effect was deciding which
+        ;; grammar the frontend read. With it deleted, THE GRAMMAR AND THE
+        ;; FRONTEND TRAVEL IN ONE PIN: a pin left behind is an older language
+        ;; compiled coherently, not a frontend reading a grammar it was not
+        ;; built against.
+        ;;
+        ;; Pin held at df383ba0 across that deletion: kotoba-sema @df383ba0's
+        ;; grammar is byte-identical to the copy that was deleted, so the
+        ;; digest below did not move and the deletion changed no bytes the
+        ;; compiler reads.
+        ;;
+        ;; THE GRAMMAR, MEASURED -- these two lines are PARSED by
+        ;; `guest_grammar_vendor_test/deps-edn-claim`, which recomputes the
+        ;; digest of the copy on the classpath and refuses if this comment and
+        ;; the file disagree. Before that test existed this comment drifted: it
+        ;; read 3e3f9748 while the file on disk hashed to 67561e57, and nothing
+        ;; said so.
+        ;;
+        ;;   grammar-sha256    6e1202fd23bc5a2ed6ef432114585c1813f5143d643eb4c8ee9a00b6e798b922
+        ;;   kotoba-sema-pin   df383ba057e4e7da8542abf160d739a33ffc115b
+        ;;
+        ;; `guest_grammar_vendor_test/authority-digest-history` ends with the
+        ;; same digest, so the pin, the prose and the history move in one
+        ;; commit or the suite goes red.
         io.github.kotoba-lang/kotoba-sema
         {:git/url "https://github.com/kotoba-lang/kotoba-sema.git"
-         :git/sha "1a07385368e5efb09aed4d194df03d5110f2f2d8"}
+         :git/sha "df383ba057e4e7da8542abf160d739a33ffc115b"}
         ;; ADR-2607266000 Phase B: these responsibilities moved out of this repo.
         ;;
         ;; The slice-value stream held this pin on purpose (ADR 0314), because
@@ -103,7 +122,12 @@
         ;; export rather than something the compiler re-derives.
         io.github.kotoba-lang/kotoba-kir
         {:git/url "https://github.com/kotoba-lang/kotoba-kir.git"
-         :git/sha "b2e5d9c445b5a3553059b4f7cfcbfe54c5db7786"}
+         ;; fuel64: 233bd6bb exports `max-fuel` (kotoba-kir ADR 0268), the fuel
+         ;; ceiling `kotoba.compiler.nbb.cli` and `kotoba.verifier` now read.
+         ;; Advanced by this stream and independently adopted by #767, so the
+         ;; SHA below is main's as well as this branch's -- only the reason was
+         ;; missing from main.
+         :git/sha "233bd6bb6b15912679c529611a42c8af15f2354c"}
         ;; The frontend is an HIR producer and KIR lowering is its consumer;
         ;; both validate the same checked envelope.
         io.github.kotoba-lang/kotoba-hir
@@ -243,7 +267,21 @@
         ;; those three are transitive here and only deps-lock.edn names them.
         io.github.kotoba-lang/kotoba-native
         {:git/url "https://github.com/kotoba-lang/kotoba-native.git"
-         :git/sha "452422f5caad1a40e7b1a793a59f93f44abe94a7"}
+         ;; fuel64: c31cf87b widens the object replenish to a 64-bit budget
+         ;; (kotoba-native ADR 0078) and exports `max-object-fuel`. No shipped
+         ;; object's bytes move -- 108 digests taken before the change are
+         ;; re-derived by that repo's suite; and ADR 0079, where `package-user`
+         ;; read the constant 512 instead of the declared budget -- the same
+         ;; defect this repo's PE32+ packager had. Fast-forward from the pin
+         ;; main now carries (452422f): ahead 5, behind 0.
+         ;;
+         ;; fwstore: and adeb1b0f, which is kotoba-native's MAIN and contains
+         ;; fuel64's 95361f3f -- the `:uefi-alloc-region` lowering landed on
+         ;; top of it (kotoba-native ADR-0080). Taking 95361f3f here would
+         ;; leave this compiler admitting a head in the frontend with no
+         ;; encoding behind it, which is the gap AMU-PINS measured and which
+         ;; aiueos main now has a CONSUMER for.
+         :git/sha "adeb1b0fa5bcd2dd18a657c7e3bd3c4acbd630ae"}
         io.github.kotoba-lang/kotoba-component
         {:git/url "https://github.com/kotoba-lang/kotoba-component.git"
          :git/sha "68acc7237aec7b24b683304db8e87d14ec1be745"}
@@ -285,7 +323,17 @@
         ;; the first time. 6a743c3 adds the image-symbol name check.
         io.github.kotoba-lang/kotoba-verifier
         {:git/url "https://github.com/kotoba-lang/kotoba-verifier.git"
-         :git/sha "6c66e8b7028cfd7c527f888c110d8abcb2936e2e"}
+         ;; fuel64: d1985d62 reads the fuel ceiling from kotoba.kir instead of
+         ;; carrying 2^20 (kotoba-verifier ADR 0049). Required WITH the two
+         ;; pins above, not optional: this driver would otherwise admit a
+         ;; budget the pinned verifier refuses. Fast-forward from the pin main
+         ;; now carries (6c66e8b): ahead 2, behind 0.
+         ;;
+         ;; fwstore: and 96edd345, kotoba-verifier's MAIN, which contains
+         ;; d1985d62 and adds the four rows for `kernel-uefi-alloc-region`
+         ;; (kotoba-verifier ADR-0050). This verifier rejects by ABSENCE, so
+         ;; the older pin refuses the head the frontend admits.
+         :git/sha "96edd345ce46bc2e2c3c4ae9b4f4cdc26484f188"}
 }
  :aliases {:test {:extra-paths ["test"]
                   :extra-deps

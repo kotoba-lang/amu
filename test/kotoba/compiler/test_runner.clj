@@ -60,6 +60,11 @@
             [kotoba.compiler.lang-conformance-golden-test]
             [kotoba.compiler.lang-native-conformance-test]
             [kotoba.compiler.fuel-estimate-test]
+            ;; fuel64: the four statements of the fuel ceiling, compared here
+            ;; because amu is the only classpath that holds more than two
+            [kotoba.compiler.fuel64-ceiling-test]
+            ;; fuel64: --fuel must reach the UEFI image, not stop at the seal
+            [kotoba.compiler.fuel64-efi-budget-test]
             [kotoba.compiler.capability-names-test]
             [kotoba.compiler.effect-row-test]
             [kotoba.compiler.check-cli-test]
@@ -236,6 +241,8 @@
    'kotoba.compiler.lang-conformance-golden-test
    'kotoba.compiler.lang-native-conformance-test
    'kotoba.compiler.fuel-estimate-test
+   'kotoba.compiler.fuel64-ceiling-test
+   'kotoba.compiler.fuel64-efi-budget-test
    'kotoba.compiler.capability-names-test
    'kotoba.compiler.effect-row-test
    'kotoba.compiler.check-cli-test

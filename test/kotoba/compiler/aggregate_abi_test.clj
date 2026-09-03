@@ -113,8 +113,33 @@
   ;; recompiled at 452422f and reproduce the bytes committed on aiueos main
   ;; exactly -- 5cd0baa6... at 17,872 and 23308afe... at 6,808 -- and neither
   ;; had been built with d710558 in its closure, so the reentry-spill repair
-  ;; does not reach those two (aiueos ADR-0175).
-  (is (= "452422f5caad1a40e7b1a793a59f93f44abe94a7"
+  ;; does not reach those two (aiueos ADR-0175). 452422f is an ancestor of the
+  ;; pin below (`merge-base --is-ancestor`), so the reproduction claim stays
+  ;; covered by the advance.
+  ;;
+  ;; fuel64 -- 2026-09-03: the object replenish is no longer an imm32.
+  ;;           `replenish-bytes` picks between `mov qword [r9+8],imm32` and
+  ;;           `movabs r10,imm64; mov [r9+8],r10`, so a per-call budget past
+  ;;           2,147,483,647 can exist at all (ADR 0078). Every shipped tier
+  ;;           still fits the narrow form: that repo carries the SHA-256 of
+  ;;           all 108 packaged objects taken BEFORE the change and
+  ;;           re-derives them, so this advance moves no object bytes.
+  ;;           95361f3 also carries ADR 0079 -- `package-user` read the
+  ;;           constant 512 instead of the declared budget, the same defect
+  ;;           this repository's PE32+ packager had.
+  ;;
+  ;; fwstore: advanced 2026-09-03 to adeb1b0f for ONE encoding,
+  ;; `:uefi-alloc-region` (kotoba-native ADR-0080). It is `x86-uefi-call-wide`'s
+  ;; frame with the fifth-argument slot repurposed as the out-word
+  ;; `AllocatePages` writes through, so the address the firmware chose comes
+  ;; back in a register instead of through a load -- which is what makes the
+  ;; pages a region-provenance root rather than an address the program has to
+  ;; be trusted about. The failure answer is `xor r11,r11` / `test rax,rax` /
+  ;; `cmovne r10,r11`, and `cmove` is one bit away and inverts the whole
+  ;; operation with nothing faulting to say so, which is why the suite pins
+  ;; that byte as an explicit `not`. Checked with `merge-base --is-ancestor`
+  ;; against 452422f.
+  (is (= "adeb1b0fa5bcd2dd18a657c7e3bd3c4acbd630ae"
          (dependency-pin 'io.github.kotoba-lang/kotoba-native)))
   ;; Advanced 2026-08-31 for two more instances of ADR-0286's class -- a KIR
   ;; i64 is a BigInt under ClojureScript and reached a host operation that
@@ -164,7 +189,23 @@
   ;; dequantize-and-dot oracle the QEMU K-quant smoke checks its digits
   ;; against, 18f7c3a the sealed control-effect vocabulary as this
   ;; repository's export rather than a second derivation.
-  (is (= "b2e5d9c445b5a3553059b4f7cfcbfe54c5db7786"
+  ;; Advanced 2026-09-03 to 233bd6bb by two decisions, both of which put a
+  ;; number or an answer where the thing that produces it lives:
+  ;;   b4d9d494 (ADR 0268) -- `execute` bounds a declared fuel budget at
+  ;;     2^53-1, decided at the counter rather than inherited from
+  ;;     `kotoba.native.elf64`'s `mov qword [r9+8], imm32` sign-extended
+  ;;     immediate. `charge!` is `(vswap! fuel dec)` on a host double, so
+  ;;     above that line the decrement is a no-op and the interpreter would
+  ;;     answer `:ok` for a program that never terminates. Not
+  ;;     `kotoba.wasm/max-fuel` (2^62-1), whose counter is i64 throughout.
+  ;;   5f3f961f (ADR-0269) -- `kernel-uefi-alloc-region` traps
+  ;;     `:kernel-privileged-unavailable` rather than folding to zero. Zero is
+  ;;     the answer for a FAILED allocation, so answering it for "no firmware
+  ;;     here" would make the two indistinguishable and turn every access
+  ;;     through the result into a trap the source never wrote.
+  ;; That head is the same one kotoba-sema 727f9d6 made a provenance root,
+  ;; which is what moved `guest-grammar-vendor-test`'s kernel count to 115.
+  (is (= "233bd6bb6b15912679c529611a42c8af15f2354c"
          (dependency-pin 'io.github.kotoba-lang/kotoba-kir)))
   ;; Advanced 2026-09-01 alongside the backend: the verifier re-derives the
   ;; two new arities and the v4 `expected-context`, and is what turns a
@@ -208,7 +249,27 @@
   ;;            does not is a green `check` and a refusal at compile time
   ;;            rather than a wrong artifact. 6a743c3 adds the image-symbol
   ;;            name check (ADR 0330).
-  (is (= "6c66e8b7028cfd7c527f888c110d8abcb2936e2e"
+  ;;   fuel64  -- the same independence, decided the OTHER way. `max-native-fuel`
+  ;;            was 2^20 there and 2^20 in this repository's JVM-free driver,
+  ;;            while the object route shipped tiers of 250,000,000 and
+  ;;            2,147,483,647 past both without ever meeting them. The verifier
+  ;;            now READS `kotoba.kir/max-fuel`: re-deriving a SET has a safe
+  ;;            direction, but a CEILING does not -- admitting less refuses
+  ;;            valid artifacts and admitting more ratifies a budget the oracle
+  ;;            cannot decrement (kotoba-verifier ADR 0049).
+  ;;   fwstore -- 2026-09-03, 96edd345: the four rows for
+  ;;            `kernel-uefi-alloc-region` (kotoba-verifier ADR-0050). Its
+  ;;            arity is the one in that table whose consequence is worst if
+  ;;            it is wrong, and it is one that file cannot see -- the operand
+  ;;            that matters is the one that is NOT there, because the
+  ;;            out-pointer belongs to the emitted frame. A miscounted operand
+  ;;            list does not fail to compile: it shifts every argument by one
+  ;;            and hands `AllocatePages` a page count that was meant to be a
+  ;;            memory type. That commit also advances the verifier's OWN
+  ;;            kotoba-native pin to adeb1b0f, so this repository resolves one
+  ;;            kotoba-native across both pins rather than an older one behind
+  ;;            its own.
+  (is (= "96edd345ce46bc2e2c3c4ae9b4f4cdc26484f188"
          (dependency-pin 'io.github.kotoba-lang/kotoba-verifier)))
   (is (= 7 (:abi/version aggregate-abi/contract)))
   (is (= :recursive-word-handles

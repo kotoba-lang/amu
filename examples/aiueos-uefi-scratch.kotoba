@@ -34,6 +34,22 @@
 ;;      size first, which is the call that makes the firmware report the size
 ;;      it needs; the required size is nonzero, the descriptor size is at
 ;;      least 48 and divides the required size exactly.
+;;   F  THE PAGE IS WRITABLE. `(kernel-uefi-alloc-region boot-services 40 0 2
+;;      32 0)` allocates 32 pages and answers with their BASE, not with a
+;;      status -- so the base is a region-provenance root and the checked
+;;      family takes it. An eight-byte pattern is stored through
+;;      `kernel-store-u64-4k` and read back through `kernel-load-u64-4k`.
+;;      Marker `A` above allocates the same way through `kernel-uefi-call4`
+;;      and CANNOT do this: its answer arrives through a load.
+;;   D  A MEMORY MAP DESCRIPTOR OUT OF THAT PAGE.
+;;      `BS->GetMemoryMap(&size, page, &key, &descsize, &descversion)` fills
+;;      the firmware-allocated buffer -- `size` is set to 131072 first, which
+;;      is the whole allocation -- and descriptor 0 is walked out of it:
+;;      `NumberOfPages` at +24 is non-zero and is no longer the sentinel
+;;      stored there before the call, `PhysicalStart` at +8 is 4 KiB aligned,
+;;      `Type` at +0 is below 16, and the descriptor size is at least 48.
+;;      Marker `M` above asks the firmware how big the map is; this one reads
+;;      the map itself.
 ;;   J  `(kernel-jump-to (kernel-function-address aiueos-uefi-scratch-second)
 ;;      image-handle)` ARRIVED. The marker is written by that other function,
 ;;      and so is the `out 0xf4` that ends the run -- so a run that leaves
@@ -58,6 +74,15 @@
 (defn aiueos-uefi-scratch-at-least [value floor]
   (if (< value floor) 0 1))
 
+;; fwstore: markers F and D each stand on four or five separate facts, and a
+;; five-deep `if` nest is where one of them gets dropped without anyone
+;; noticing.
+(defn aiueos-uefi-scratch-both [a b]
+  (if (= a 1) (if (= b 1) 1 0) 0))
+
+(defn aiueos-uefi-scratch-below [value ceiling]
+  (if (< value ceiling) 1 0))
+
 ;; MEASURED LIMIT, and the reason marker A reads the allocated page rather
 ;; than writing it.
 ;;
@@ -73,6 +98,15 @@
 ;; cannot WRITE it. Reading is expressible, because `kernel-load-ptr` is the
 ;; unchecked read the firmware boundary already has; there is no unchecked
 ;; store to match it, and the checked family cannot take this base.
+;;
+;; fwstore: THAT IS STILL TRUE OF THIS SPELLING, and markers F and D below are
+;; the other one. `kernel-uefi-alloc-region` makes the ALLOCATION the producer
+;; of the address, so nothing has to be loaded and nothing has to be trusted:
+;; the out-word the firmware writes through belongs to the emitted call's own
+;; frame, and the length is the page count the call passed. Marker A is left
+;; exactly as it was, reading rather than writing, because the two markers
+;; together are the measurement -- the same allocation, one spelling that can
+;; write it and one that cannot.
 
 ;; The jump target. It writes `J` and leaves through its OWN `out 0xf4`, so
 ;; the exit status is evidence that control arrived here: an entry that fell
@@ -195,7 +229,57 @@
                     0)
                   0)
                 0)
-              77)]
+              77)
+
+        ;; F -- the page is WRITABLE, because the head that allocated it is
+        ;; the head that answered with it. 32 pages, so the 131072-byte
+        ;; buffer marker D asks the firmware to fill is one allocation.
+        ;; 81985529216486895 is 0x0123456789ABCDEF; freshly allocated
+        ;; firmware memory does not contain it.
+        owned (kernel-uefi-alloc-region boot-services 40 0 2 32 0)
+        sentinel (kernel-store-u64-4k owned 4096 24 81985529216486895)
+        m15 (aiueos-uefi-scratch-mark-when
+              (aiueos-uefi-scratch-both
+                (aiueos-uefi-scratch-present owned)
+                (aiueos-uefi-scratch-equal
+                  (kernel-load-u64-4k owned 4096 24) 81985529216486895))
+              70)
+
+        ;; D -- and the firmware will fill it. GetMemoryMap's four scalar
+        ;; out-pointers go to scratch (+320 size, +328 key, +336 descriptor
+        ;; size, +344 version); the MAP goes to the pages above. The size is
+        ;; set to the whole allocation first, which is the call that asks for
+        ;; the map rather than for its size.
+        offered (kernel-store-u64-16k scratch 16384 320 131072)
+        filled (kernel-uefi-call6 boot-services 56
+                                  (kernel-subregion scratch 16384 320 8)
+                                  owned
+                                  (kernel-subregion scratch 16384 328 8)
+                                  (kernel-subregion scratch 16384 336 8)
+                                  (kernel-subregion scratch 16384 344 8)
+                                  0)
+        filled-bytes (kernel-load-u64-16k scratch 16384 320)
+        filled-descriptor (kernel-load-u64-16k scratch 16384 336)
+        first-type (kernel-load-u32-4k owned 4096 0)
+        first-start (kernel-load-u64-4k owned 4096 8)
+        first-pages (kernel-load-u64-4k owned 4096 24)
+        m16 (aiueos-uefi-scratch-mark-when
+              (aiueos-uefi-scratch-both
+                (aiueos-uefi-scratch-both
+                  (aiueos-uefi-scratch-equal filled 0)
+                  (aiueos-uefi-scratch-at-least filled-descriptor 48))
+                (aiueos-uefi-scratch-both
+                  (aiueos-uefi-scratch-both
+                    (aiueos-uefi-scratch-present first-pages)
+                    ;; the sentinel is gone, so these bytes are the
+                    ;; firmware's and not ours
+                    (aiueos-uefi-scratch-equal
+                      (aiueos-uefi-scratch-equal
+                        first-pages 81985529216486895) 0))
+                  (aiueos-uefi-scratch-both
+                    (aiueos-uefi-scratch-equal (bit-and first-start 4095) 0)
+                    (aiueos-uefi-scratch-below first-type 16))))
+              68)]
 
     ;; J -- and this call does not come back. The marker and the exit both
     ;; belong to the other function.
