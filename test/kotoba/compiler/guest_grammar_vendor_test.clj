@@ -82,7 +82,8 @@
   APPEND to this vector; never substitute."
   ["3e3f9748e245386fc2c89bbadabddfebb4bf02190e137494feacec6a12b4500a"
    "67561e57ad2b135d848eac75b46ab430d4404a463159f43775e01134e569988f"
-   "6e1202fd23bc5a2ed6ef432114585c1813f5143d643eb4c8ee9a00b6e798b922"])
+   "6e1202fd23bc5a2ed6ef432114585c1813f5143d643eb4c8ee9a00b6e798b922"
+   "871f3873ae30a33ba7461c8664094b42396c0c4d79612668d11b0b29a2c0172f"])
 
 (def authority-grammar-sha256
   "sha256 of the grammar this repository reads -- kotoba-sema's copy, at the

@@ -68,15 +68,40 @@
         ;; read 3e3f9748 while the file on disk hashed to 67561e57, and nothing
         ;; said so.
         ;;
-        ;;   grammar-sha256    6e1202fd23bc5a2ed6ef432114585c1813f5143d643eb4c8ee9a00b6e798b922
-        ;;   kotoba-sema-pin   df383ba057e4e7da8542abf160d739a33ffc115b
+        ;;   grammar-sha256    871f3873ae30a33ba7461c8664094b42396c0c4d79612668d11b0b29a2c0172f
+        ;;   kotoba-sema-pin   63d76616e35347dacc8db57a81a6d58cca4ff633
         ;;
         ;; `guest_grammar_vendor_test/authority-digest-history` ends with the
         ;; same digest, so the pin, the prose and the history move in one
         ;; commit or the suite goes red.
+        ;;
+        ;; Advanced 2026-09-03, df383ba0 -> 63d76616, and the grammar moved with
+        ;; it (6e1202fd -> 871f3873) -- which is the case the history vector was
+        ;; written for, so 871f3873 is APPENDED there rather than substituted.
+        ;; What the advance buys, and why it is not optional:
+        ;;
+        ;;  - 72c2577 gives `peek`, `pop`, `keys` and `vals` primitives. Without
+        ;;    it the frontend answers all four with `operation has no admitted
+        ;;    lowering`, measured on the old pin at exit 65.
+        ;;  - c0dfa84 refuses a malformed top-level declaration instead of
+        ;;    crashing on its name. `(defn 42 [] 0)` was an exit-70 internal
+        ;;    compiler error on the old pin, measured; it is a diagnostic now.
+        ;;  - b43d3fb refuses a declaration that compiled and was then silently
+        ;;    dropped.
+        ;;  - 63d76616 resyncs kotoba-sema's copy of
+        ;;    `lang/capability-catalog.edn` from the authority. THIS
+        ;;    REPOSITORY'S copy of that same authority, at
+        ;;    `resources/kotoba/lang/capability-catalog.edn`, SHADOWS
+        ;;    kotoba-sema's on this classpath, so it is resynced in this commit
+        ;;    too -- FROM THE AUTHORITY, not from kotoba-sema. It carries
+        ;;    `:screen/observe` (31) and `:screen/act` (32), which kotoba-sema
+        ;;    c823461 had added to its own vendored copy while the authority
+        ;;    named neither; resyncing the shadowing copy from the copy it
+        ;;    shadows would have carried that misplacement into a third
+        ;;    repository (kotoba-lang 5b54e5e3, ADR-2609031100).
         io.github.kotoba-lang/kotoba-sema
         {:git/url "https://github.com/kotoba-lang/kotoba-sema.git"
-         :git/sha "df383ba057e4e7da8542abf160d739a33ffc115b"}
+         :git/sha "63d76616e35347dacc8db57a81a6d58cca4ff633"}
         ;; ADR-2607266000 Phase B: these responsibilities moved out of this repo.
         ;;
         ;; The slice-value stream held this pin on purpose (ADR 0314), because
@@ -127,7 +152,16 @@
          ;; Advanced by this stream and independently adopted by #767, so the
          ;; SHA below is main's as well as this branch's -- only the reason was
          ;; missing from main.
-         :git/sha "233bd6bb6b15912679c529611a42c8af15f2354c"}
+         ;;
+         ;; Advanced 2026-09-03, 233bd6bb -> b021a0d1, for 41341bd: the five
+         ;; collection primitives. THIS PIN IS NOT OPTIONAL WHEN THE KOTOBA-SEMA
+         ;; PIN MOVES, and the failure is specific enough to be worth naming --
+         ;; measured with the kotoba-sema pin advanced and this one left behind,
+         ;; the frontend ADMITS `pop` and KIR then traps `:unknown-function`.
+         ;; A frontend that admits a head its lowering has never heard of is a
+         ;; worse state than either pin alone: the refusal moves from compile
+         ;; time to run time. The two pins move in one commit.
+         :git/sha "b021a0d179fb983e8ad7da702252cfa764cd2fc2"}
         ;; The frontend is an HIR producer and KIR lowering is its consumer;
         ;; both validate the same checked envelope.
         io.github.kotoba-lang/kotoba-hir

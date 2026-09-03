@@ -195,7 +195,18 @@
   ;;     through the result into a trap the source never wrote.
   ;; That head is the same one kotoba-sema 727f9d6 made a provenance root,
   ;; which is what moved `guest-grammar-vendor-test`'s kernel count to 115.
-  (is (= "233bd6bb6b15912679c529611a42c8af15f2354c"
+  ;; Advanced 2026-09-03 to b021a0d1 for 41341bd, the five collection
+  ;; primitives, and it moves in the SAME COMMIT as the kotoba-sema pin
+  ;; because the two are not independent. Measured on this branch with the
+  ;; kotoba-sema pin advanced and this one held at 233bd6bb, `(pop [7 8 9])`
+  ;; compiles to `{:error :ir, :code :kotoba/lowering-failed, :message
+  ;; "unknown-function"}` at exit 70: the frontend ADMITS the head and the
+  ;; lowering has never heard of it. That is worse than either pin alone,
+  ;; because it moves the refusal from compile time to a name KIR cannot
+  ;; resolve. With both pins advanced the same program refuses at
+  ;; `:wasm-typed-lowering`, which is an emitter gap in a fourth repository
+  ;; and is recorded as such rather than papered over.
+  (is (= "b021a0d179fb983e8ad7da702252cfa764cd2fc2"
          (dependency-pin 'io.github.kotoba-lang/kotoba-kir)))
   ;; Advanced 2026-09-01 alongside the backend: the verifier re-derives the
   ;; two new arities and the v4 `expected-context`, and is what turns a
