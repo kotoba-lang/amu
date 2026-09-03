@@ -156,7 +156,23 @@
   ;; dequantize-and-dot oracle the QEMU K-quant smoke checks its digits
   ;; against, 18f7c3a the sealed control-effect vocabulary as this
   ;; repository's export rather than a second derivation.
-  (is (= "b2e5d9c445b5a3553059b4f7cfcbfe54c5db7786"
+  ;; Advanced 2026-09-03 to 233bd6bb by two decisions, both of which put a
+  ;; number or an answer where the thing that produces it lives:
+  ;;   b4d9d494 (ADR 0268) -- `execute` bounds a declared fuel budget at
+  ;;     2^53-1, decided at the counter rather than inherited from
+  ;;     `kotoba.native.elf64`'s `mov qword [r9+8], imm32` sign-extended
+  ;;     immediate. `charge!` is `(vswap! fuel dec)` on a host double, so
+  ;;     above that line the decrement is a no-op and the interpreter would
+  ;;     answer `:ok` for a program that never terminates. Not
+  ;;     `kotoba.wasm/max-fuel` (2^62-1), whose counter is i64 throughout.
+  ;;   5f3f961f (ADR-0269) -- `kernel-uefi-alloc-region` traps
+  ;;     `:kernel-privileged-unavailable` rather than folding to zero. Zero is
+  ;;     the answer for a FAILED allocation, so answering it for "no firmware
+  ;;     here" would make the two indistinguishable and turn every access
+  ;;     through the result into a trap the source never wrote.
+  ;; That head is the same one kotoba-sema 727f9d6 made a provenance root,
+  ;; which is what moved `guest-grammar-vendor-test`'s kernel count to 115.
+  (is (= "233bd6bb6b15912679c529611a42c8af15f2354c"
          (dependency-pin 'io.github.kotoba-lang/kotoba-kir)))
   ;; Advanced 2026-09-01 alongside the backend: the verifier re-derives the
   ;; two new arities and the v4 `expected-context`, and is what turns a

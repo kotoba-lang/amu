@@ -4,7 +4,9 @@
 - Date: 2026-09-03
 - Authority: kotoba-lang
   `docs/adr/ADR-the-authority-names-every-head-the-frontend-admits.md`.
-- Pin advanced: `io.github.kotoba-lang/kotoba-sema` `196d5817` → `5bdf5914`.
+- Amended 2026-09-03 (see the last two sections): the wave's pin and
+  digest are now carried by ADR 0330's rule, and this ADR keeps the two
+  checks that make a backwards move visible.
 
 ## The measurement
 
@@ -97,6 +99,19 @@ words. All four are corrected rather than loosened:
 That last one is the one worth keeping in view. A negative test whose only
 assertion is a substring of the shared prefix is a test that has not asserted
 its own reason, which is the failure ADR-2608136000 names.
+
+## What a stale copy actually does, which is worse than a stale description
+
+Measured by the AMU-PINS stream, 2026-09-03: this repository's `resources/`
+copy **shadows** kotoba-sema's on the classpath — `io/resource` answers with
+the first — and `sema/forbidden-heads` is that repository's literal set
+**union** this resource. So a copy that has gone backwards does not merely
+describe the language wrongly: it **re-imposes the old language on the JVM
+route**, while the nbb route follows the pinned frontend. The two routes then
+compile different languages out of the same tree, and the only thing that
+would say so is a comparison of the copies.
+
+That is why the guard below is about *direction* and not only about equality.
 
 ## The constant moved backwards, and a single constant could not see it
 
