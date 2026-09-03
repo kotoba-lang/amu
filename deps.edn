@@ -31,7 +31,7 @@
         ;; ADR-0222: source reading and semantic analysis live behind the
         ;; kotoba-sema repository boundary and public semantic-analysis API.
         ;;
-        ;; Advanced 2026-09-03 to 1a073853 (ADR 0327). kotoba-sema also ships a
+        ;; ADR 0327 named the shadowing problem. kotoba-sema also ships a
         ;; byte copy of kotoba-lang's `lang/guest-grammar.edn` at the same
         ;; resource path this repository does, so TWO copies are on this
         ;; classpath and `io/resource` answers with whichever comes first.
@@ -55,16 +55,35 @@
         ;; was red, on the only test that compares them, and nothing ran that
         ;; test on the combination until after it was main.
         ;;
-        ;; The pair, measured 2026-09-03:
+        ;; Advanced 2026-09-03 to df383ba0, which carries three things no
+        ;; compiler consumed while this pin sat at 1587f573: `conj`/`disj`
+        ;; lowerings for a typed set (there was no arm at all, and both are now
+        ;; reserved names so `(defn conj ...)` can no longer silently shadow),
+        ;; guards on every head that takes a declared type, and the admitted
+        ;; kernel heads exposed through the public boundary.
         ;;
-        ;;   this repository's resources/kotoba/lang/guest-grammar.edn  6e1202fd
-        ;;   kotoba-sema @1587f573                                      6e1202fd
+        ;; The guards are why `option-value-of` with a malformed declared type
+        ;; now answers `:kotoba.error/subset-reject` with the operation named,
+        ;; where it used to escape as exit 70 `internal compiler error` with an
+        ;; empty diagnostic. The grammar did NOT move across this advance:
+        ;; kotoba-sema @df383ba0's copy is byte-identical to the one already
+        ;; vendored here, so the digest below is unchanged from 1587f573.
+        ;;
+        ;; THE PAIR, MEASURED -- these three lines are PARSED by
+        ;; `guest_grammar_vendor_test/deps-edn-claim`, which recomputes the
+        ;; digest and refuses if this comment and the file disagree. Before
+        ;; that test existed this comment drifted: it read 3e3f9748 while the
+        ;; file on disk hashed to 67561e57, and nothing said so.
+        ;;
+        ;;   grammar-sha256    6e1202fd23bc5a2ed6ef432114585c1813f5143d643eb4c8ee9a00b6e798b922
+        ;;   grammar-copies    this repository's resources/ AND kotoba-sema's, byte-identical
+        ;;   kotoba-sema-pin   df383ba057e4e7da8542abf160d739a33ffc115b
         ;;
         ;; `guest_grammar_vendor_test/authority-grammar-sha256` pins the same
         ;; digest, so the three move in one commit or the suite goes red.
         io.github.kotoba-lang/kotoba-sema
         {:git/url "https://github.com/kotoba-lang/kotoba-sema.git"
-         :git/sha "1587f573bde8bb3ef1b7682acf415a9752b30a2f"}
+         :git/sha "df383ba057e4e7da8542abf160d739a33ffc115b"}
         ;; ADR-2607266000 Phase B: these responsibilities moved out of this repo.
         ;;
         ;; The slice-value stream held this pin on purpose (ADR 0314), because
@@ -112,7 +131,9 @@
         {:git/url "https://github.com/kotoba-lang/kotoba-kir.git"
          ;; fuel64: 233bd6bb exports `max-fuel` (kotoba-kir ADR 0268), the fuel
          ;; ceiling `kotoba.compiler.nbb.cli` and `kotoba.verifier` now read.
-         ;; Fast-forward from the pin main now carries (b2e5d9c): ahead 5, behind 0.
+         ;; Advanced by this stream and independently adopted by #767, so the
+         ;; SHA below is main's as well as this branch's -- only the reason was
+         ;; missing from main.
          :git/sha "233bd6bb6b15912679c529611a42c8af15f2354c"}
         ;; The frontend is an HIR producer and KIR lowering is its consumer;
         ;; both validate the same checked envelope.
