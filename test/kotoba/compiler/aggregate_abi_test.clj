@@ -107,6 +107,16 @@
   ;;   91033a9  the writable region is an lea, a function's address is a label.
   ;;   d710558  a reentry parameter's home is stored inside the loop.
   ;;
+  ;; And REPRODUCED, not only contained: `compare` above answers whether a SHA
+  ;; is reachable from this pin, which is a different question from whether the
+  ;; artifacts still come out the same. Both Qwen3.5 tranche-three objects were
+  ;; recompiled at 452422f and reproduce the bytes committed on aiueos main
+  ;; exactly -- 5cd0baa6... at 17,872 and 23308afe... at 6,808 -- and neither
+  ;; had been built with d710558 in its closure, so the reentry-spill repair
+  ;; does not reach those two (aiueos ADR-0175). 452422f is an ancestor of the
+  ;; pin below (`merge-base --is-ancestor`), so the reproduction claim stays
+  ;; covered by the advance.
+  ;;
   ;; fuel64 -- 2026-09-03: the object replenish is no longer an imm32.
   ;;           `replenish-bytes` picks between `mov qword [r9+8],imm32` and
   ;;           `movabs r10,imm64; mov [r9+8],r10`, so a per-call budget past
