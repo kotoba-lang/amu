@@ -35,7 +35,7 @@ that domain is unreachable for anyone, and recording that is a result.
 |---|---|---|---|
 | H-A | the quiet gate reads a proxy (load1) with a floor above its own limit; read the intended quantity (busy-CPU fraction) directly at the same strictness | **executed — iteration 16** (ADR 0282) | fleet measurement 2026-08-29: load1 criterion 0/7 hosts ever qualified; busy-fraction criterion qualified 2 hosts outright, near-qualified 3, and rejected exactly the one host running a persistent workload |
 | H-C | narrow-arithmetic gap vs Clang: Clang strength-reduces `q*(2^31-1)` to `sub‑lsl + add`, taking one multiply off the mul pipes per round; amu emits `msub` | **landed — kotoba-native #83, gated on one serial chain** | instruction diff: amu 54 instrs (6/round), clang 61 (7/round) yet clang faster; hand-patched amu code (byte-identical reconstruction, 8 substitutions): +2.46% mean, medians 6.86→6.70 ns, mins 6.85→6.68, 42 ABBA samples/arm on levi, both arms answering 1830338420. Explains ~⅓ of the ~7% clang gap |
-| H-C2 | the remaining ~4.4% vs Clang on `kernel` after H-C: the mutated stream and clang's are now near-identical in shape (62 vs 61 instructions; amu-mut still loads the now-dead `0x7fffffff` constant), so the residue is scheduling/front-end shaped | open — generate from an instruction-order diff | pending; 2026-09-03 10:16 – 2026-09-04 16:41 JST: ~50 consecutive ticks refused host-busy (load1 11–83, quiet limit 7.5; last: 16:41 JST load1 31.42 / 5m 37.39 / 15m 39.53), no measurement attempted; NEXT は H-C2 のまま (full tick ledger in git history pre-trim) | H-D | `kernel_batch` loop-path remainder (~8% vs Rust diagnostic, refused `:too-noisy` in ADR 0281): body scheduling / per-iteration instruction mix | open; measurement first needs the noise fixed (H-B) or the loop lengthened | ADR 0279 measured 1.349x behind pre-#653..#660; levi 2026-08-29 read 1.08x diagnostic |
+| H-C2 | the remaining ~4.4% vs Clang on `kernel` after H-C: the mutated stream and clang's are now near-identical in shape (62 vs 61 instructions; amu-mut still loads the now-dead `0x7fffffff` constant), so the residue is scheduling/front-end shaped | open — generate from an instruction-order diff | pending; 2026-09-03 10:16 – 2026-09-04 16:41 JST: ~50 consecutive ticks refused host-busy (load1 11–83, quiet limit 7.5; last: 16:41 JST load1 31.42 / 5m 37.39 / 15m 39.53), no measurement attempted; 2026-09-04 17:08 JST: load1 26.09 / 5m 31.82 / 15m 34.88 — refused host-busy again; 17:09 JST recheck load1 23.48 still > 7.5 (full tick ledger in git history pre-trim); 2026-09-04 17:52 JST: load1 17.73 / 5m 30.74 / 15m 36.15 — refused host-busy again, no measurement attempted; 2026-09-04 17:58 JST (rank tick 111): load1 18.34 / 5m 29.44 / 15m 35.46 — still > 7.5, host busy | H-D | `kernel_batch` loop-path remainder (~8% vs Rust diagnostic, refused `:too-noisy` in ADR 0281): body scheduling / per-iteration instruction mix | open; measurement first needs the noise fixed (H-B) or the loop lengthened | ADR 0279 measured 1.349x behind pre-#653..#660; levi 2026-08-29 read 1.08x diagnostic |
 | H-B | batch-fixture noise (rsd 0.47 vs policy 0.10) is scheduler migration of a long single-call region across P/E cores; pin the timed region's QoS | open | performance.md already documents an E-core migration incident; 2026-09-03 10:00 JST falsify tick: host busy (load1 82.83), no measurement attempted |
 | H-E | call-crossing values go to stack slots instead of the callee-saved registers the prologue already spends: `kernel_call` saves x19–x26 yet stores/loads all eight call results through the stack (8 STR + 11 LDR + 3 constant-mov round-trips) | **hand-falsified — iteration 20: +6.66% separated (5.19 → 4.84 ns), fuel contract intact, past clang's 5.03**. Compiler work: assign call-crossing values to the preserved tier in the scan | performance.md's conservative-path tables; iteration-20 fixture retained in `levi:~/amu-evidence/` |
 | H-F | protect domains where amu already leads (kernel_wide +7% vs rustc diagnostic) with byte-accurate regressions | standing | #637–#639 pattern |
@@ -1692,6 +1692,18 @@ as before.
   — highest expected qualified gain x probability; ~4.4% residual vs
   Clang on `kernel`, near-identical static shape, separable).
 
+- **110 (2026-09-04 17:35 JST, amu-bench bench tick; host busy, no measurement)**:
+  load1 37.51 / 5m 35.70 / 15m 36.84 (up 11 days, 9:23, 6 users, 10 CPUs) —
+  ~5x above the 7.5 quiet limit; no bench, perfgate, or falsify measurement
+  attempted. Top CPU consumers: kotoba-shell-host ~99.9%, Chrome helper
+  (Renderer) ~99.1%, java app server ~97.5% — interactive user workload, not a
+  fleet measurement window. No new ADR since 0334; no new "要 quiet-host 測定"
+  item pending (J-B confirmatory quiet-host rerun still pending per tick 10).
+  No re-rank, no status transition: no new measured numbers. Population
+  unchanged: H-C2, H-D, H-B, H-Y1 open. NEXT: H-C2 (unchanged — highest
+  expected qualified gain x probability; ~4.4% residual vs Clang on `kernel`,
+  near-identical static shape, separable).
+
 ## Standing honesty constraints
 
 Every number above is one host on one day; the falsification numbers are
@@ -1703,3 +1715,12 @@ lever's verdict requires a same-run candidate-vs-candidate A/B. No entry
 in this file is a claim; claims are
 sealed artifacts that only the gated pipeline emits. If an iteration's
 measured verdict contradicts this table, the table is what gets edited.
+
+- **111 (2026-09-04 17:58 JST, amu-rank rank tick; host busy, no measurement)**:
+  load1 18.34 / 5m 29.44 / 15m 35.46 (up 11 days, 9:41, 6 users, 10 CPUs) —
+  still > 7.5 quiet limit; no bench, perfgate, or falsify measurement
+  attempted. No new ADR since 0334; no new evidence from sibling ticks since
+  110. No re-rank, no status transition: no new measured numbers.
+  Population unchanged: H-C2, H-D, H-B, H-Y1 open. NEXT: H-C2 (unchanged —
+  highest expected qualified gain x probability; ~4.4% residual vs Clang on
+  `kernel`, near-identical static shape, separable).
