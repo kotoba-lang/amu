@@ -1,6 +1,7 @@
 (ns kotoba.compiler.test-runner
   (:require [clojure.test :as t]
             [kotoba.compiler.atomic-output-test]
+            [kotoba.compiler.loader-source-classpath-test]
             [kotoba.compiler.namespace-reachability-test]
             [kotoba.compiler.value-codec-test]
             [kotoba.compiler.test-runner-completeness-test]
