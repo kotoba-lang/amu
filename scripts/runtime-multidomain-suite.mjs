@@ -286,8 +286,10 @@ try {
   };
   const perfgateInput = join(directory, "multidomain-input.json");
   writeFileSync(perfgateInput, `${JSON.stringify(report, null, 2)}\n`);
-  report.qualification.perfgate = JSON.parse(execute("bash",
-    [join(root, "scripts", "perfgate-qualify.sh"), perfgateInput]));
+  // perfgate bridge: nbb launcher -> clojure -M -m perfgate-qualify (the
+  // POSIX-shell bridge was deleted; the nbb entrypoint is the supported route).
+  report.qualification.perfgate = JSON.parse(execute("nbb",
+    [join(root, "scripts", "perfgate-qualify.cljs"), perfgateInput]));
   report.qualification.comparatorSetQualified
     = report.qualification.perfgate["comparator-set-qualified?"];
   report.qualification.broadFastestClaimQualified = false;

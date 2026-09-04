@@ -6,7 +6,10 @@
   (:require ["node:child_process" :as child]
             ["node:path" :as path]))
 
-(def root (.resolve path (.dirname path (or js/__filename ".")) ".."))
+;; nbb sets *file* to the absolute path of the loaded script; js/__filename is
+;; nil under nbb, which used to resolve `root` to the PARENT of the repo and
+;; made the clojure child fail with "Could not locate perfgate_qualify__init".
+(def root (.resolve path (.dirname path (or *file* ".")) ".."))
 
 (def deps
   (pr-str
