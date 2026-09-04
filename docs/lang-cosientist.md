@@ -142,3 +142,41 @@ ty 注記なし probe のため過大評価されていた — 以下は型付�
 - 次 (1 hypothesis): parse-long host intrinsic — (parse-long s) 1 op を
   host 側 1 call で実装した場合の下限 (noop 境界 750ns/call + 1 intrinsic call)
   を hand-patch で測る (既存 intrinsic 呼び出し 1 回のコストを実測して外挿)。
+
+## Iteration 5 - parse-long host intrinsic limit falsification (2026-09-05, amu@db6f9fe1)
+
+- Hypothesis: (parse-long s) as 1 host intrinsic call reduces 9 host calls to 1;
+
+  expected cost = noop boundary (750ns/call, iter 4 measured) + 1 intrinsic call.
+
+- Hand-patch (measured before any implementation): 1 admitted intrinsic host call
+
+  per invoke via (string-split-count s "9"), :string param, O(n) host work
+
+  (/tmp/langcos/hostcall-bench.kotoba, check PASS, kernel cid
+
+  bafyreicorll7sibn5gr2id54xhqch7t74xljspp3z3zwta4qcst25wyiku, wasm32 PASS).
+
+- Measured (1e6 calls, "123456789", loadavg 5.2-6.4, 3 runs):
+
+  739.6 / 748.1 / 766.7 ns/call - same as noop boundary 750ns/call (iter 4).
+
+  Host-side O(n) work is marginal; the :string marshal + host-call boundary dominates.
+
+- Verdict: parse-long host intrinsic lower bound ~= 750-770 ns/call vs C 17.2-17.8
+
+  ns/call (iter 4) = ~43x slower. Even 9 calls -> 1 call cannot reach C within 5%.
+
+  Hypothesis falsified (not-separated, ~43x). Fixing this needs boundary-level change
+
+  (guest-side byte access / memory-passing string marshal) - an amu runtime issue,
+
+  not a lang feature. parse-long coverage work stops here (blocked: string boundary).
+
+- Gate: check PASS / compile PASS / sanity split-count("123456789","9")=2 correct.
+
+- Next (1 hypothesis): contains? on typed map - map-contains-i64 host intrinsic
+
+  already exists; probe whether (contains? m k) is only an alias/desugar gap
+
+  (get PASSes already; same-shape desugar is the expected route).
