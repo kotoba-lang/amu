@@ -97,3 +97,48 @@ ty 注記なし probe のため過大評価されていた — 以下は型付�
   hand-patch probe: 文字列→i64 の lowering (loop + digit accumulate) を
   手書きで測り, clang 同形 (atoi 相当) と wasm32 比較して ≥5% 劣勢なら
   実装設計を見直す。
+
+
+## Iteration 4 — parse-long hand-patch 速度反証 (2026-09-05, amu@55b93e40)
+
+- 仮説: parse-long (文字列→i64) は既存 op (string-code-point-at /
+  string-byte-length / 自己再帰 fn / 算術) のみで表現でき, lowering 追加で
+  comparator (C 同形) 比 ≥5% 以内に載る。
+- hand-patch probe (実装前, 実測):
+  - 許可集合確認: /tmp/langcos/parse-long-probe.kotoba (digit? + 自己再帰
+    parse-digits + parse-long, 4 定義) — bin/amu check --jvm-free PASS
+    (exit 0), wasm32 compile PASS, node + browser-host 実行で
+    parse-long("123456789")=123456789 / reject 系 (空/非数字/符号) 全て
+    正しく -1 (ALL-OK)。なお 2 変数 loop/recur ((recur (+ off 1) (+ acc ...)))
+    は subset-reject「operation has no admitted lowering」→ 1 変数 loop のみ
+    admit。acc を引数で運ぶ自己再帰 fn で迂回した (これ自体は言語制限の実測)。
+  - fuel: 既定 fuel 512 では 23 回目の呼び出しで trap (unreachable) —
+    自己再帰 1 entry = 1 charge (loop helper でないため)。--fuel 100000000
+    付きで再コンパイルして計測。
+- 速度反証 (手作り bench, 9 桁 "123456789" を 1e6 回 parse, loadavg 7-12):
+  - kotoba wasm32-browser (--fuel 1e8): 8.019s → 8.752s / 1e6 calls
+    = 8019-8752 ns/call (2 run: 8019, 8752)
+  - C 同形 (再帰 parse_digits, zig cc -O3 wasm32-freestanding): 17.2-17.8
+    ns/call (2 run: 17165, 17772)
+  - 分離比 ~467x / ~492x (≥5% どころか 2 桁以上の劣勢)
+  - 内訳分離: 同一 :string param marshal + fuel charge だけで中身が空の
+    noop kernel は 750 ns/call — つまり caller 側 JS→wasm :string
+    boundary と fuel charge だけで C 比 ~42x。compute 部分 (8752-750)
+    でも ~450x。
+  - 原因 (実測根拠): string-code-point-at は host import
+    (kotoba:typed/string-code-point-at/function) で, host 側は呼び出しごとに
+    assertValue (utf8Length 全走査) + new TextEncoder().encode(value) で
+    文字列全体を再エンコードする (browser-host.mjs:1767-1791)。
+    9 桁 parse = 9 回の host call = 9 回の O(n) 再エンコード + 9 回の
+    fuel charge。C は 1 バイト読み (s[off])。
+- verdict: hypothesis 棄却 (not-separated, 大差で劣勢)。既存 op の合成で
+  parse-long を載せても C 比 ≥5% に全く届かない。実装を進めるなら設計変更が
+  必要: (a) 文字列の guest 側バイトアクセス op (memory 直接読み) の新 lowering,
+  または (b) host 側 parse-long intrinsic (1 host call で全体 parse)。
+  どちらも新 lowering/intrinsic — surface alias ではないので lang 拡張と
+  backend 変更を伴う。
+- gate: check PASS / compile PASS / 実行結果正し (ALL-OK) は確認済み。
+  perfgate qualify は不適 (速度側で棄却)。
+- 次 (1 hypothesis): parse-long host intrinsic — (parse-long s) 1 op を
+  host 側 1 call で実装した場合の下限 (noop 境界 750ns/call + 1 intrinsic call)
+  を hand-patch で測る (既存 intrinsic 呼び出し 1 回のコストを実測して外挿)。
