@@ -1505,18 +1505,22 @@ as before.
   qualified gain × probability; ~4.4% residual vs Clang on `kernel`,
   near-identical static shape, separable).
 
-- **117 (2026-09-04 22:56 JST, amu-rank rank tick; host busy, no measurement)**:
-  load1 31.81 / 5m 28.11 / 15m 20.14 (up 6 days, 10:54, 5 users, macOS 26.4)
-  — ~4x above the 7.5 quiet limit; per policy no bench, perfgate, or
-  hand-patch measurement attempted, no numbers recorded. git fetch reviewed:
-  origin/main unchanged at d90665c7; no new sibling commit carries measured
-  evidence for this population → no re-rank, no status transition, no new
-  hypothesis. Uncommitted bench-tick entries 92 (22:10) and 116 (22:34,
-  busy-CPU 39% vs 3-5% quiet band) left intact in the working tree.
-  Population unchanged: H-C2, H-D, H-B, H-Y1 open (J-B awaiting a quiet
-  host; J-C blocked behind J-B). NEXT: H-C2 (unchanged — highest expected
-  qualified gain × probability; ~4.4% residual vs Clang on `kernel`,
-  near-identical static shape, separable).
+- **118 (2026-09-04 23:58 JST, amu-rank rank pass; host busy, no measurement)**:
+  load1 8.54 / 5m 9.69 / 15m 13.99 (up 6 days, 11:57, 13 users, macOS 26.4)
+  — load1 nominally near the 7.5 proxy limit, but the gate quantity itself,
+  busy-CPU fraction, read ~250% summed process CPU on 10 CPUs ~= 25% busy,
+  far above the 3-5% quiet band perfgate's H-A gate uses; per policy no
+  bench, perfgate, or hand-patch measurement attempted, no numbers recorded.
+  Housekeeping: the duplicated copy of entry 117 in this working tree was
+  removed (textual duplicate only — the committed entry 117 stands).
+  Evidence reviewed since entry 117: falsify tick 23:37 JST on H-C2 (host
+  busy, no numbers); no new measured evidence against any open hypothesis,
+  so no re-rank, no status transition, no new hypothesis — a re-rank
+  without measured numbers would be fabrication. Population unchanged:
+  H-C2, H-D, H-B, H-Y1 open (J-B awaiting a quiet host; J-C blocked behind
+  J-B). NEXT: H-C2 (unchanged — highest expected qualified gain ×
+  probability; ~4.4% residual vs Clang on `kernel`, near-identical static
+  shape, separable).
 
 ## Standing honesty constraints
 
