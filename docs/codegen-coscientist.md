@@ -1767,3 +1767,12 @@ measured verdict contradicts this table, the table is what gets edited.
   unchanged: H-C2, H-D, H-B, H-Y1 open. NEXT: H-C2 (unchanged — highest
   expected qualified gain x probability; ~4.4% residual vs Clang on `kernel`,
   near-identical static shape, separable).
+
+- **116 (2026-09-04 21:02 JST, amu-rank rank tick; host busy, no measurement)**:
+  load1 33.73 / 5m 32.63 / 15m 29.69 (up 11 days, 12:50, 6 users, 10 CPUs) —
+  ~4.5x above the 7.5 quiet limit; no measurement requested, rank-only pass.
+  No new measured numbers from sibling ticks since 115 (20:52 falsify tick was
+  itself host-busy, no measurement) → no re-rank, no status transition, no new
+  hypothesis. Population unchanged: H-C2, H-D, H-B, H-Y1 open. NEXT: H-C2
+  (unchanged — highest expected qualified gain x probability; ~4.4% residual
+  vs Clang on `kernel`, near-identical static shape, separable).
