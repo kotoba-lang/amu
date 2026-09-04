@@ -73,6 +73,7 @@ const ALLOWED_IMPORTS = new Set([
   "kotoba:typed/string-split-count/function",
   "kotoba:typed/string-code-point-at/function",
   "kotoba:typed/string-fold-case/function",
+  "kotoba:typed/string-upper/function",
   "kotoba:typed/keyword-name/function",
   "kotoba:typed/string-index-new/function",
   "kotoba:typed/string-index-contains/function",
@@ -1821,6 +1822,14 @@ function createTypedRuntime(abi, typedCapCall, allow) {
       if (descriptor !== "string") reject("invalid-typed-operation", "string descriptor required");
       value = assertValue(descriptor, value);
       const result = value.toLowerCase();
+      if (utf8Length(result) > 65536) reject("invalid-typed-value", "typed string is oversized");
+      return result;
+    },
+    "string-upper"(descriptorId, value) {
+      const descriptor = descriptorAt(descriptorId);
+      if (descriptor !== "string") reject("invalid-typed-operation", "string descriptor required");
+      value = assertValue(descriptor, value);
+      const result = value.toUpperCase();
       if (utf8Length(result) > 65536) reject("invalid-typed-value", "typed string is oversized");
       return result;
     },

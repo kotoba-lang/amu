@@ -148,3 +148,43 @@ ty 注記なし probe のため過大評価されていた — 以下は型付�
 - 次 (1 hypothesis): population 表の他の REJECT 記載の stale 再確認
   (`min` / `seq` / `some->` / `keys` / `remove` は 2026-09-03 の型付き
   re-probe 表に未記載。まず `min` が現行 sema で qualify されるか 1 probe)。
+
+## Iteration 6 — `min` / `seq` / `keys` / `remove` / `some->` 一括 re-probe (2026-09-04)
+
+probe 環境: kotoba-sema @ee4c515 (`bot/lang-fn-shorthand-20260904` classpath) +
+amu nbb wasm_cli route, JVM-free。数字は全て実測。
+
+- **min: ledger 記載は正しい (REJECT 実在)**。
+  `(min a b)` → subset-reject "operation has no admitted lowering"。
+  hand-patch `(if (< a b) a b)` → check PASS / wasm32 compile PASS (305 bytes)。
+  hand-patch reduce 版 `(reduce (fn [acc x] (if (< acc x) acc x)) 0 v)` →
+  check PASS / wasm32 PASS (2017 bytes, loop CID
+  `bafyreickegiixyfjcuqstkuibiaqfoh7ef7o54o6up3ri7msjgzelnobje`)。
+  → `min` は既存 op (`<`/`if`) への純 desugar で qualify 可能。
+  実装候補 (parity 検証は次 iteration)。
+- **seq / keys / remove: REJECT 実在** ("operation has no admitted lowering")
+  — `(seq v)`, `(if (seq v) ...)`, `(keys m)`, `(remove p v)` いずれも拒否。
+  展開先が存在しないため surface alias では解決不可 (実装要)。
+- **some->: 部分動作 (新規知見)**。
+  - 0-step `(some-> (get m :a))` → check PASS / wasm32 PASS (1930 bytes)、
+    definition CID は手書き `(get m :a)` と**完全一致**
+    (`bafyreiegx2bnqhijjhxgxi4itycortorg4zwdqzjabofa2m4ziwvfvisl4`) — parity 確認。
+  - 1-step `(some-> (get m :a) (+ 1))` は REJECT。desugar-some-thread
+    (frontend.cljc:3042) の resolve-option-type (:2984) が `(get m :a)` の
+    option 型を解決できず fallback `[:option :i64]` を仮定 →
+    "if branches must have the same value type"。型指示 rewrite pass
+    (:8501 option-or) では解決できる — `(option-or (get m :a) 0)` は check PASS。
+  - hand-patch 代替 `(option-value-of [:option :i64] (get m :a) 0)` →
+    check+wasm32 PASS (1975 bytes, CID
+    `bafyreihgdputlxvrheeztyj3yhnhvpt5hk6sxmhdydneonad2icsuhpk54`)。
+  - 反証 verdict: some-> の連鎖 step は新 lowering ではなく
+    resolve-option-type への typed-map get 認識追加 (または option-or 経由の
+    型指示 rewrite への desugar 委譲) が最小修正。既存 option lowering への
+    委譲のため新 runtime cost 0 予測。
+- comparator 比: 新 lowering なし (全て既存 op 展開の確認) のため
+  速度反証対象なし。jvm-dep-ledger 側への更新依頼事項:
+  `min`=REJECT 是正 (hand-patch で qualify 可能な desugar 欠落)、
+  `contains?`=stale (iteration 5)、`some->`=部分 (0-step のみ)。
+- 次 (1 hypothesis): `min` 2-arity desugar `(if (< a b) a b)` を実装した場合、
+  手書き同形と definition CID 完全一致 (parity) になるかを 1 probe で確認
+  (fail-closed の 0/3+ arity も併せて検証)。

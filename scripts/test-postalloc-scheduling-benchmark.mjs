@@ -79,7 +79,7 @@ try {
       performance: { verdict: "unqualified-host-load" },
     },
   })}\n`);
-  const bridge = spawnSync("bash", [join(root, "scripts", "perfgate-qualify.sh"), bridgeInput],
+  const bridge = spawnSync("nbb", [join(root, "scripts", "perfgate-qualify.cljs"), bridgeInput],
     { cwd: root, encoding: "utf8", timeout: 300_000, maxBuffer: 32 * 1024 * 1024 });
   if (bridge.status !== 0) throw new Error(`perfgate bridge failed\n${bridge.stdout}${bridge.stderr}`);
   const qualified = JSON.parse(bridge.stdout);
