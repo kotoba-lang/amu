@@ -104,3 +104,25 @@ ty 注記なし probe のため過大評価されていた — 以下は型付�
   逆方向。jvm-dep-ledger の blocked 実測欠落の中で下流影響が大きい候補。
   まず hand-patch probe: `string-substring`+手書き数字パース loop の lowering が
   既に qualify されるか (既存 op のみで組めるか) を 1 probe で切り分け。
+
+## Iteration 4 — parse-long hand-patch 反証 (2026-09-04, 実装なし = surface alias 不可の結論)
+
+- probe (amu@4257c685 lock, kotoba-sema @ee4c515 classpath, JVM-free):
+  - `(parse-long s)` 単独 → subset-reject "operation has no admitted lowering" (実測 再確認)。
+    `(:string → :i64)` 逆向き変換の lowering も許可集合にないため parse-long は
+    純 desugar では実装できない (iteration 1-3 と決定的に異なる)。
+  - hand-patch: 既存 string op のみでの桁パース loop
+    `(string-length)` + `(string-code-point-at s i)` + i64 算術:
+    - check PASS (`__kotoba_loop_1` @bafyreievvk..., `t` @bafyreifu3i7...)
+    - compile --target wasm32 --jvm-free PASS (pl1.wasm, 2079 bytes)
+  - 符号対応拡張版 (先頭 +/-, 非数字で 0): check PASS, wasm32 compile PASS (pl3.wasm)。
+- 反証 verdict: **既存 op 組み合わせで parse-long と同値の loop は qualify 済み**。
+  よって実装経路は 2 択: (a) parser/lowering 層に新 string-parse-i64 lowering を
+  追加 (新 backend work, 速度反証が本来必要), (b) stdlib snippet 側で hand-patch
+  同型を提供 (compiler 変更 0)。速度面では (a) の intrinsic 化は hand-patch loop と
+  同一 lowering になるはずなので、(a) を選んでも速度閾値は新規コスト 0 と予測 —
+  次の担当 (実装側) への引き継ぎ情報として記録。
+- comparator 比: 未実施 (実装なし、新 lowering なしのため反証対象なし)。
+- 次 (1 hypothesis): `contains?` on typed map — `(get m :k 0)` との 2 値版 desugar
+  `(not= (get m :k sentinel) sentinel)` が既存 op で qualify されるか hand-patch
+  probe (sentinel 衝突の意味論差異も併記すること)。
