@@ -26,10 +26,25 @@
                             #js {:cwd cwd :encoding "utf8" :maxBuffer max-buffer
                                  :env (js/Object.assign #js {} js/process.env (clj->js env))})
          status (or (.-status result) 70)
-         value {:status status :stdout (or (.-stdout result) "")
+         value {:status status
+                ;; A child killed by a signal reports status nil from spawnSync
+                ;; and carries the signal name; without this it is flattened to
+                ;; a synthetic exit code and the one fact that discriminates a
+                ;; runner OOM kill (SIGKILL) from a fault libFuzzer failed to
+                ;; trap (SIGSEGV) is lost (amu#784).
+                :signal (or (.-signal result) "none")
+                :stdout (or (.-stdout result) "")
                 :stderr (or (.-stderr result) "")}]
      (when (and (.-error result) (not allow-failure?)) (throw (.-error result)))
      (when (and (not allow-failure?) (not= 0 status))
        (throw (js/Error. (str "command failed: " command " " (str/join " " args)
+                              (when (not= "none" (:signal value))
+                                (str "\nsignal=" (:signal result)))
                               "\n" (:stdout value) (:stderr value)))))
      value)))
+
+(defn describe-exit [result]
+  (let [signal (:signal result)]
+    (if (and signal (not= "none" signal))
+      (str "signal=" signal " (status nil)")
+      (str "exit=" (:status result)))))
