@@ -35,7 +35,7 @@ that domain is unreachable for anyone, and recording that is a result.
 |---|---|---|---|
 | H-A | the quiet gate reads a proxy (load1) with a floor above its own limit; read the intended quantity (busy-CPU fraction) directly at the same strictness | **executed — iteration 16** (ADR 0282) | fleet measurement 2026-08-29: load1 criterion 0/7 hosts ever qualified; busy-fraction criterion qualified 2 hosts outright, near-qualified 3, and rejected exactly the one host running a persistent workload |
 | H-C | narrow-arithmetic gap vs Clang: Clang strength-reduces `q*(2^31-1)` to `sub‑lsl + add`, taking one multiply off the mul pipes per round; amu emits `msub` | **landed — kotoba-native #83, gated on one serial chain** | instruction diff: amu 54 instrs (6/round), clang 61 (7/round) yet clang faster; hand-patched amu code (byte-identical reconstruction, 8 substitutions): +2.46% mean, medians 6.86→6.70 ns, mins 6.85→6.68, 42 ABBA samples/arm on levi, both arms answering 1830338420. Explains ~⅓ of the ~7% clang gap |
-| H-C2 | the remaining ~4.4% vs Clang on `kernel` after H-C: the mutated stream and clang's are now near-identical in shape (62 vs 61 instructions; amu-mut still loads the now-dead `0x7fffffff` constant), so the residue is scheduling/front-end shaped | open — generate from an instruction-order diff | pending; 2026-09-03 10:16 JST falsify tick: host busy (load1 48.01), no measurement attempted | 2026-09-03 10:31 JST falsify tick: host busy (load1 38.40, 1min avg over 10-day uptime), no measurement attempted | 2026-09-03 10:52 JST falsify tick: host busy (load1 28.49, load15 33.90), no measurement attempted; NEXT は H-C2 のまま | 2026-09-03 11:27 JST falsify tick: host busy (load1 29.81, load15 35.26), no measurement attempted; NEXT は H-C2 のまま | 2026-09-03 13:33 JST bench tick: host busy (load1 23.21, load5 17.62, load15 17.86, up 10 days), no measurement attempted; NEXT は H-C2 のまま | 2026-09-03 13:34 JST falsify tick: host busy (load1 16.07), no measurement attempted | 2026-09-03 15:08 JST falsify tick: host busy (load1 27.24, load5 20.98, load15 18.49, up 10 days), no measurement attempted; NEXT は H-C2 のまま | 2026-09-03 16:00 JST falsify tick: host busy (load1 12.74, load5 14.16, load15 17.30, up 10 days), no measurement attempted; NEXT は H-C2 のまま | 2026-09-03 17:40 JST bench tick: host busy (load1 35.54, load5 35.97, load15 28.99, up 10 days, 10 CPUs), no measurement attempted; NEXT は H-C2 のまま | 2026-09-03 18:37 JST falsify tick: host busy (load1 19.32, load5 16.19, load15 16.23, up 10 days, 10 CPUs), no measurement attempted; NEXT は H-C2 のまま | 2026-09-03 19:13 JST bench tick: host busy (load1 14.80, load5 15.08, load15 17.02, up 10 days, 10 CPUs), no measurement attempted; NEXT は H-C2 のまま | 2026-09-03 19:20 JST falsify tick: host busy (load1 15.78, load5 17.17, load15 17.41, up 10 days, 10 CPUs), no measurement attempted; NEXT は H-C2 のまま | 2026-09-03 19:50 JST bench tick: host busy (load1 13.64, load5 13.92, load15 15.25, up 10 days, 11:38, 10 CPUs), no measurement attempted; NEXT は H-C2 のまま | 2026-09-03 20:46 JST falsify tick: host busy (load1 15.18, load5 16.38, load15 18.98, up 10 days, 12:34, 13 users), no measurement attempted; NEXT は H-C2 のまま | 2026-09-03 20:57 JST falsify tick: host busy (load1 15.18, load5 18.75, load15 19.72, up 10 days, 12:45, 13 users), no measurement attempted; NEXT は H-C2 のまま | 2026-09-03 21:07 JST bench tick: host busy (load1 11.04, load5 15.25, load15 17.22, up 10 days, 12:55, 13 users), no measurement attempted; NEXT は H-C2 のまま | 2026-09-03 23:17 JST falsify tick: host busy (load1 17.75, load5 16.84, load15 16.84, up 10 days, 15:05, 11 users, 10 CPUs), no measurement attempted; NEXT は H-C2 のまま | 2026-09-04 01:06 JST bench tick: host busy (load1 23.07, load5 28.48, load15 25.13, up 10 days, 11 users), no measurement attempted; NEXT は H-C2 のまま | 2026-09-04 01:25 JST falsify tick: host busy (load1 23.72, load5 17.92, load15 19.33, up 10 days, 11 users), no measurement attempted; NEXT は H-C2 のまま | 2026-09-04 03:54 JST falsify tick: host busy (load1 17.99, load5 17.61, load15 19.83, up 10 days, 10 CPUs), no measurement attempted; NEXT は H-C2 のまま | 2026-09-04 04:22 JST rank tick: host busy (load1 14.42, load5 13.99, load15 16.33, up 10 days, 10 CPUs), no measurement attempted; NEXT は H-C2 のまま |
+| H-C2 | the remaining ~4.4% vs Clang on `kernel` after H-C: the mutated stream and clang's are now near-identical in shape (62 vs 61 instructions; amu-mut still loads the now-dead `0x7fffffff` constant), so the residue is scheduling/front-end shaped | open — generate from an instruction-order diff | pending; 2026-09-03 10:16 JST falsify tick: host busy (load1 48.01), no measurement attempted | 2026-09-03 10:31 JST falsify tick: host busy (load1 38.40, 1min avg over 10-day uptime), no measurement attempted | 2026-09-03 10:52 JST falsify tick: host busy (load1 28.49, load15 33.90), no measurement attempted; NEXT は H-C2 のまま | 2026-09-03 11:27 JST falsify tick: host busy (load1 29.81, load15 35.26), no measurement attempted; NEXT は H-C2 のまま | 2026-09-03 13:33 JST bench tick: host busy (load1 23.21, load5 17.62, load15 17.86, up 10 days), no measurement attempted; NEXT は H-C2 のまま | 2026-09-03 13:34 JST falsify tick: host busy (load1 16.07), no measurement attempted | 2026-09-03 15:08 JST falsify tick: host busy (load1 27.24, load5 20.98, load15 18.49, up 10 days), no measurement attempted; NEXT は H-C2 のまま | 2026-09-03 16:00 JST falsify tick: host busy (load1 12.74, load5 14.16, load15 17.30, up 10 days), no measurement attempted; NEXT は H-C2 のまま | 2026-09-03 17:40 JST bench tick: host busy (load1 35.54, load5 35.97, load15 28.99, up 10 days, 10 CPUs), no measurement attempted; NEXT は H-C2 のまま | 2026-09-03 18:37 JST falsify tick: host busy (load1 19.32, load5 16.19, load15 16.23, up 10 days, 10 CPUs), no measurement attempted; NEXT は H-C2 のまま | 2026-09-03 19:13 JST bench tick: host busy (load1 14.80, load5 15.08, load15 17.02, up 10 days, 10 CPUs), no measurement attempted; NEXT は H-C2 のまま | 2026-09-03 19:20 JST falsify tick: host busy (load1 15.78, load5 17.17, load15 17.41, up 10 days, 10 CPUs), no measurement attempted; NEXT は H-C2 のまま | 2026-09-03 19:50 JST bench tick: host busy (load1 13.64, load5 13.92, load15 15.25, up 10 days, 11:38, 10 CPUs), no measurement attempted; NEXT は H-C2 のまま | 2026-09-03 20:46 JST falsify tick: host busy (load1 15.18, load5 16.38, load15 18.98, up 10 days, 12:34, 13 users), no measurement attempted; NEXT は H-C2 のまま | 2026-09-03 20:57 JST falsify tick: host busy (load1 15.18, load5 18.75, load15 19.72, up 10 days, 12:45, 13 users), no measurement attempted; NEXT は H-C2 のまま | 2026-09-03 21:07 JST bench tick: host busy (load1 11.04, load5 15.25, load15 17.22, up 10 days, 12:55, 13 users), no measurement attempted; NEXT は H-C2 のまま | 2026-09-03 23:17 JST falsify tick: host busy (load1 17.75, load5 16.84, load15 16.84, up 10 days, 15:05, 11 users, 10 CPUs), no measurement attempted; NEXT は H-C2 のまま | 2026-09-04 01:06 JST bench tick: host busy (load1 23.07, load5 28.48, load15 25.13, up 10 days, 11 users), no measurement attempted; NEXT は H-C2 のまま | 2026-09-04 01:25 JST falsify tick: host busy (load1 23.72, load5 17.92, load15 19.33, up 10 days, 11 users), no measurement attempted; NEXT は H-C2 のまま | 2026-09-04 03:54 JST falsify tick: host busy (load1 17.99, load5 17.61, load15 19.83, up 10 days, 10 CPUs), no measurement attempted; NEXT は H-C2 のまま | 2026-09-04 04:22 JST rank tick: host busy (load1 14.42, load5 13.99, load15 16.33, up 10 days, 10 CPUs), no measurement attempted; NEXT は H-C2 のまま | 2026-09-04 05:12 JST falsify tick: host busy (load1 19.05, load5 17.39, load15 18.10, up 10 days, 11 users, 10 CPUs), no measurement attempted; NEXT は H-C2 のまま | 2026-09-04 07:40 JST bench tick: host busy (load1 29.14, load5 22.55, load15 22.15, up 10 days, 23:28, 11 users, 10 CPUs), no measurement attempted; quiet limit 7.5 exceeded 4x; NEXT は H-C2 のまま | 2026-09-04 10:46 JST falsify tick: host busy (load1 18.51, load5 28.00, load15 26.93, up 11 days, 10 CPUs), no measurement attempted; NEXT は H-C2 のまま | 2026-09-04 11:00 JST falsify tick: host busy (load1 32.81, load5 32.59, load15 29.42, up 11 days, 2:48, 8 users, 10 CPUs), no measurement attempted; NEXT は H-C2 のまま |
 | H-D | `kernel_batch` loop-path remainder (~8% vs Rust diagnostic, refused `:too-noisy` in ADR 0281): body scheduling / per-iteration instruction mix | open; measurement first needs the noise fixed (H-B) or the loop lengthened | ADR 0279 measured 1.349x behind pre-#653..#660; levi 2026-08-29 read 1.08x diagnostic |
 | H-B | batch-fixture noise (rsd 0.47 vs policy 0.10) is scheduler migration of a long single-call region across P/E cores; pin the timed region's QoS | open | performance.md already documents an E-core migration incident; 2026-09-03 10:00 JST falsify tick: host busy (load1 82.83), no measurement attempted |
 | H-E | call-crossing values go to stack slots instead of the callee-saved registers the prologue already spends: `kernel_call` saves x19–x26 yet stores/loads all eight call results through the stack (8 STR + 11 LDR + 3 constant-mov round-trips) | **hand-falsified — iteration 20: +6.66% separated (5.19 → 4.84 ns), fuel contract intact, past clang's 5.03**. Compiler work: assign call-crossing values to the preserved tier in the scan | performance.md's conservative-path tables; iteration-20 fixture retained in `levi:~/amu-evidence/` |
@@ -1340,6 +1340,76 @@ as before.
   NEXT: H-C2 (unchanged — highest expected qualified gain × probability;
   ~4.4% residual vs Clang on `kernel` with near-identical static shape,
   separable).
+
+- **81 (2026-09-04 07:24 JST, rank pass; host busy, no measurement)**:
+  load1 21.25 / 5min 25.15 / 15min 25.86 (up 10 days, 23:13, 11 users) —
+  above the 7.5 quiet limit, so no bench, perfgate, or falsify run was
+  attempted. Evidence since entry 80 reviewed: one more busy falsify tick on
+  H-C2 (05:12 JST, no numbers); no fetch diff carried new perfgate/bench
+  numbers against any open hypothesis. No re-rank, no status transition, no
+  new hypothesis — a re-rank without measured numbers would be fabrication.
+  Population unchanged: H-C2, H-D, H-B, H-Y1 open. NEXT: H-C2 (unchanged —
+  highest expected qualified gain × probability; ~4.4% residual vs Clang on
+  `kernel` with near-identical static shape, separable).
+
+- **82 (2026-09-04 08:42 JST, falsify pass; host busy, no measurement)**:
+  load1 20.61 / 5min 17.40 / 15min 19.33 (up 11 days, 0:30, 11 users) —
+  above the 7.5 quiet limit; per policy no bench, perfgate, or hand-patch
+  measurement attempted. No hypothesis evidence updated. Population
+  unchanged: H-C2, H-D, H-B, H-Y1 open. NEXT: H-C2 (unchanged — highest
+  expected qualified gain × probability; ~4.4% residual vs Clang on
+  `kernel` with near-identical static shape, separable).
+
+- **83 (2026-09-04 10:39 JST, bench pass; host busy, no measurement)**:
+  load1 38.73 / 5min 29.36 / 15min 25.36 (up 11 days, 2:26, 9 users) —
+  far above the 7.5 quiet limit; per policy no bench or perfgate run
+  attempted, no numbers recorded. amu-falsify evidence checked: no new
+  "要 quiet-host 測定" item pending. Population unchanged: H-C2, H-D, H-B,
+  H-Y1 open. NEXT: H-C2 (unchanged — highest expected qualified gain ×
+  probability; ~4.4% residual vs Clang on `kernel`, near-identical static
+  shape, separable).
+
+- **84 (2026-09-04 10:47 JST, rank pass; host busy, no measurement)**:
+  load1 13.72 / 5min 23.49 / 15min 25.28 (up 11 days, 2:36, 9 users, 10 CPUs)
+  — above the 7.5 quiet limit; no bench, perfgate, or falsify run attempted,
+  no numbers recorded. No new evidence from amu-falsify / amu-bench since
+  entry 83 beyond that busy tick, so no re-rank, no status transition, no
+  new hypothesis. Population unchanged: H-C2, H-D, H-B, H-Y1 open.
+  NEXT: H-C2 (unchanged — highest expected qualified gain × probability;
+  ~4.4% residual vs Clang on `kernel`, near-identical static shape,
+  separable).
+
+### NEXT
+  H-C2 (unchanged; host busy at 10:47 JST rank tick, no measurement possible)
+
+- **85 (2026-09-04 10:54 JST, bench pass; host busy, no measurement)**:
+  load1 32.89 / 5min 28.79 / 15min 27.01 (up 11 days, 2:41, 8 users, 10 CPUs)
+  — far above the 7.5 quiet limit; per policy no bench or perfgate run
+  attempted, no numbers recorded. amu-falsify evidence checked: no new
+  "要 quiet-host 測定" item pending. Population unchanged: H-C2, H-D, H-B,
+  H-Y1 open. NEXT: H-C2 (unchanged — highest expected qualified gain ×
+  probability; ~4.4% residual vs Clang on `kernel`, near-identical static
+  shape, separable).
+
+- **86 (2026-09-04 11:00 JST, falsify pass; host busy, no measurement)**:
+  load1 32.81 / 5min 32.59 / 15min 29.42 (up 11 days, 2:48, 8 users, 10 CPUs)
+  — far above the 7.5 quiet limit; per policy no bench, perfgate, or
+  hand-patch measurement attempted. Busy-tick evidence appended to the H-C2
+  row only. Population unchanged: H-C2, H-D, H-B, H-Y1 open. NEXT: H-C2
+  (unchanged — highest expected qualified gain × probability; ~4.4%
+  residual vs Clang on `kernel`, near-identical static shape, separable).
+
+- **87 (2026-09-04 11:02 JST, rank pass; host busy, no measurement)**:
+  load1 29.88 / 5min 31.61 / 15min 29.51 (up 11 days, 2:50, 8 users, 10 CPUs)
+  — far above the 7.5 quiet limit; per policy no bench, perfgate, or
+  hand-patch measurement attempted, no numbers recorded. Evidence since
+  entry 86 reviewed: only additional busy falsify ticks on H-C2
+  (10:46, 11:00 JST); no new perfgate/bench numbers against any open
+  hypothesis, so no re-rank, no status transition, no new hypothesis —
+  a re-rank without measured numbers would be fabrication. Population
+  unchanged: H-C2, H-D, H-B, H-Y1 open. NEXT: H-C2 (unchanged — highest
+  expected qualified gain × probability; ~4.4% residual vs Clang on
+  `kernel`, near-identical static shape, separable).
 
 ## Standing honesty constraints
 
