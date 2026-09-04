@@ -369,6 +369,23 @@
     (is (= 14 (:oracle-value (:kir compiled))))
     (is (= 14 (call ns 'main)))))
 
+(deftest vector-take-and-pop-execute-on-cljs
+  ;; vector-take is drop's mirror (keeps the FIRST n items, same 0..count
+  ;; range, same :vector-take-out-of-range trap); pop desugars to
+  ;; (vector-take v (- (vector-count v) 1)). Measured live 2026-09-04 through
+  ;; `amu compile --target cljs` + nbb: (vector-count (pop [7 8 9])) = 2.
+  (let [source "(defn main []
+  (let [kept (vector-take [7 8 9] 2)
+        popped (pop [7 8 9])]
+    (+ (vector-count kept)
+       (+ (vector-at kept 1)
+          (+ (vector-count popped)
+             (vector-at popped 0))))))"
+        compiled (compile-cljs source)
+        ns (eval-in-fresh-ns (:source compiled))]
+    (is (= 19 (:oracle-value (:kir compiled))))
+    (is (= 19 (call ns 'main)))))
+
 (deftest vector-returning-closures-execute-on-cljs
   (let [source "(defn main []
   (let [singleton (fn [x] [x])]

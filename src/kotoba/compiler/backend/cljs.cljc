@@ -143,6 +143,11 @@
               (lower-expr (first args))
               (lower-expr (second args)))
 
+        vector-take
+        (list 'kotoba$vector-take
+              (lower-expr (first args))
+              (lower-expr (second args)))
+
         vector-assoc
         (list 'kotoba$vector-assoc
               (lower-expr (first args))
@@ -454,6 +459,17 @@
                        (<= 0 drop-count (count items)))
           (kotoba$typed-fail! "vector-drop-out-of-range" {:count drop-count}))
         (subvec items drop-count)))
+    (defn- kotoba$vector-take [items take-count]
+      ;; The mirror of vector-drop: keeps the FIRST take-count items, same
+      ;; range contract (0..count) and the same :vector-take-out-of-range
+      ;; trap -- pop desugars to (vector-take v (- (vector-count v) 1)), so
+      ;; an empty vector's -1 lands out of range here without a special case.
+      (let [items (kotoba$typed-value! :vector-i64 items)
+            take-count (kotoba$host-index take-count)]
+        (when-not (and (some? take-count)
+                       (<= 0 take-count (count items)))
+          (kotoba$typed-fail! "vector-take-out-of-range" {:count take-count}))
+        (subvec items 0 take-count)))
     (defn- kotoba$vector-assoc [items index item]
       (let [items (kotoba$typed-value! :vector-i64 items)
             index (kotoba$host-index index)]

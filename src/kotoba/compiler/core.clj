@@ -80,7 +80,7 @@
 ;; compile paths admit the exact same native-typed-feature subset.
 
 (def ^:private cljs-bounded-vector-ops
-  '#{vector-new vector-count vector-get vector-at vector-drop vector-assoc vector-conj
+  '#{vector-new vector-count vector-get vector-at vector-drop vector-take vector-assoc vector-conj
      hetero-vector-new hetero-vector-count hetero-vector-at
      hetero-vector-assoc hetero-vector-equal})
 
