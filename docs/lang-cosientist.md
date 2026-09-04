@@ -74,3 +74,26 @@ ty 注記なし probe のため過大評価されていた — 以下は型付�
 - 次 (1 hypothesis): `#()` shorthand — reader/analyze 層の欠落か desugar 層かを
   1 probe で切り分け。`(mapv #(* % 2) v)` が reader で落ちるなら macroexpand 相当
   の最小 reader sugar; 既存 `(fn [x] ...)` 経由なら pure desugar で #() を展開。
+
+## Iteration 3 — #() fn shorthand (2026-09-05, 実測 verify: amu@e3b8c9b5)
+
+- branch: kotoba-sema `bot/lang-fn-shorthand-20260904` @ee4c5155
+  (reader 層実装, kotoba_reader.cljc +91 行。未マージ: main に含まれず,
+  PR 待ち。前 tick 実装分を本 tick で実測 verify)。
+- 実測 (amu --jvm-free, ローカル sema worktree classpath, 2026-09-05 02:07 JST):
+  - `(reduce + 0 (mapv #(* % 2) v))` check **PASS** (exit 0), wasm32 compile
+    **PASS** (2214 bytes)
+  - **KIR parity**: `(mapv #(* % 2) v)` と `(mapv (fn [x] (* x 2)) v)` の
+    全 definition CID 完全一致 — t `bafyreidsqpt3jj23...`,
+    loop_1 `bafyreicptlqjvu5hh...`, loop_2 `bafyreieuoy7c66duf...`
+  - fail-closed 実測: `#()` empty body REJECT (reader, exit 65),
+    `#(+ %& 1)` rest REJECT (reader), `#(* %2 2)` gap REJECT
+    (subset-reject "1-source map fn requires matching unique parameters",
+    span 付き — map 側の拒否で正しく落ちる)
+- comparator 比: reader sugar が既存 `(fn ...)` 形へ一対一展開のため
+  新規 runtime cost 0 (速度閾値不適用, iteration 1/2 と同型)。
+- verdict: parity + fail-closed 済み。merge 待ち (bot/lang-fn-shorthand-20260904)。
+- 次 (1 hypothesis): `parse-long` — `string-from-i64` は既存の逆向き欠落。
+  hand-patch probe: 文字列→i64 の lowering (loop + digit accumulate) を
+  手書きで測り, clang 同形 (atoi 相当) と wasm32 比較して ≥5% 劣勢なら
+  実装設計を見直す。
