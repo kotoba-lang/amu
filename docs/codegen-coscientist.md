@@ -1443,6 +1443,19 @@ as before.
   qualified gain × probability; ~4.4% residual vs Clang on `kernel`,
   near-identical static shape, separable).
 
+- **91 (2026-09-04 11:53 JST, rank pass; host busy, no measurement)**:
+  load1 48.18 / 5min 48.03 / 15min 49.54 (up 11 days, 3:36, 9 users, 10
+  CPUs) — ~6x above the 7.5 quiet limit; per policy no bench, perfgate, or
+  hand-patch measurement attempted, no numbers recorded. git fetch
+  reviewed: no new commit carries measured evidence (origin/main is at
+  764a6dba; only maint/perfgate-bridge and jit busy-ticks since entry 90).
+  No re-rank, no status transition, no new hypothesis — a re-rank without
+  measured numbers would be fabrication. Population unchanged: H-C2, H-D,
+  H-B, H-Y1 open (J-B awaiting a quiet host; J-C blocked behind J-B).
+  NEXT: H-C2 (unchanged — highest expected qualified gain × probability;
+  ~4.4% residual vs Clang on `kernel`, near-identical static shape,
+  separable).
+
 ## Standing honesty constraints
 
 Every number above is one host on one day; the falsification numbers are
