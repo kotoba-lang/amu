@@ -123,6 +123,28 @@ ty 注記なし probe のため過大評価されていた — 以下は型付�
   同一 lowering になるはずなので、(a) を選んでも速度閾値は新規コスト 0 と予測 —
   次の担当 (実装側) への引き継ぎ情報として記録。
 - comparator 比: 未実施 (実装なし、新 lowering なしのため反証対象なし)。
-- 次 (1 hypothesis): `contains?` on typed map — `(get m :k 0)` との 2 値版 desugar
-  `(not= (get m :k sentinel) sentinel)` が既存 op で qualify されるか hand-patch
-  probe (sentinel 衝突の意味論差異も併記すること)。
+## Iteration 5 — `contains?` on typed map: ledger 記載は stale (2026-09-04, 実装不要の反証)
+
+- probe (kotoba-sema @ee4c515 classpath, amu nbb route, JVM-free):
+  現行 sema frontend には `contains?` → `typed-map-contains` の rewrite が
+  既に実装済み (frontend.cljc `map-presence-operations`, `rewrite` arm
+  `= op 'contains?'`, commit 93790c4「integer and string map keys through the
+  friendly surface」時点で降りている)。ledger の REJECT 記載は stale。
+  - `(contains? m :k)` / `[:map :keyword :i64]` → check **PASS**
+  - `(contains? m 3)` / `[:map :i64 :i64]` → check **PASS**
+  - compile --target wasm32 **PASS** (ct1 1942 bytes / ct2 1936 bytes)
+  - `(get m :k 0)` も PASS (既知)。
+- hand-patch 反証 (2 値 desugar 案 `(not= (get m :k sentinel) sentinel)`):
+  check PASS, wasm32 compile PASS (ct4 2004 bytes — native より **+68 bytes**)。
+  definition CID は native `typed-map-contains` と別値
+  (t @bafyreigvmnfzfyy5... vs @bafyreicrksxcdq2e...) — lowering が異なるため
+  parity は成立しない (意味論差: sentinel 衝突で偽陰性の可能性が残る)。
+- 反証 verdict: **実装不要** — `contains?` は既に qualify 済み lowering で
+  動作し、desugar 案 (sentinel) は bytes 増 + 意味論劣るため採らない。
+  「contains? が REJECT」という jvm-dep-ledger 記載の反証が今回の成果。
+  jvm-dep-migrator 側に stale 記載の更新を依頼する情報として記録。
+- comparator 比: 新 lowering なし (既存 typed-map-contains を確認しただけ)
+  のため速度反証対象なし。
+- 次 (1 hypothesis): population 表の他の REJECT 記載の stale 再確認
+  (`min` / `seq` / `some->` / `keys` / `remove` は 2026-09-03 の型付き
+  re-probe 表に未記載。まず `min` が現行 sema で qualify されるか 1 probe)。
