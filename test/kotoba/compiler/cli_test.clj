@@ -122,6 +122,27 @@
                                 (.toPath (java.io.File. output)))))))
           (is (str/includes? (slurp output) "export")))))))
 
+(deftest cljs-target-alias-reaches-the-cljs-backend
+  ;; `--target cljs` used to fall through parse-target to the bare `:cljs`,
+  ;; rejected as :unsupported-target, while the KIR -> cljs source backend
+  ;; behind :cljs-kotoba-v1 is implemented (measured 2026-09-04). The alias
+  ;; must reach that backend and emit plain cljs source text, not an artifact
+  ;; map literal.
+  (doseq [[alias expected-target] [["cljs" :cljs-kotoba-v1]
+                                   ["cljs-node" :cljs-node-kotoba-v1]
+                                   ["cljs-browser" :cljs-browser-kotoba-v1]]]
+    (let [source (temp-kotoba-source! "(defn main [] 42)" ".kotoba")
+          output (.getPath (doto (java.io.File/createTempFile "kotoba-cljs-alias-" ".cljs")
+                             (.deleteOnExit)))
+          out (StringWriter.)]
+      (binding [*out* out]
+        (cli/-main "compile" source "--target" alias "--output" output))
+      (let [report (edn/read-string (str out))]
+        (is (:ok report) (pr-str report))
+        (is (= expected-target (:target report)))
+        (is (str/includes? (slurp output) "(defn main"))
+        (is (str/includes? (slurp output) "(ns kotoba.compiled.generated)"))))))
+
 (deftest compile-source-path-loads-only-a-closed-qualified-project
   (let [directory (.toFile (java.nio.file.Files/createTempDirectory
                             "kotoba-cli-project-" (make-array java.nio.file.attribute.FileAttribute 0)))
