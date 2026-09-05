@@ -396,3 +396,55 @@ ty 注記なし probe のため過大評価されていた — 以下は型付�
 - Next (1 hypothesis): fix the some-thread desugar (both modes) to a single
   canonical lowering shape, then re-run the parity matrix (some-> / some->> x
   1-let / 0-let) against ONE hand twin until all CIDs match.
+
+## Iteration 15 — some-thread canonical temp: iter 14 defect root-caused & repaired (2026-09-06, amu@pre-e8702dc0, sema bot/lang-some-thread-canonical-20260906 @ac5381a)
+
+- Hypothesis (carried from iter 14): the some->/some->> desugar can be repaired to
+  ONE canonical lowering shape so the parity matrix (some-> / some->> × 0-let /
+  1-let) matches ONE hand twin per shape with no CID drift.
+- Root cause found by falsification probes BEFORE the edit (branch 3f847f9):
+  - Binder-name normalization probe: hand twins differing only by temp name
+    (stmp vs stmp2) give IDENTICAL t CID `bafyreih66axczmp7isomcsdw6k6tdxxealpldspxhpozjr7uqaf4ti5jwu`
+    — binder names are normalized, not the cause per se; but a hand twin using a
+    `__kotoba_`-prefixed name is REJECT (reserved prefix, exit 65) and the twin
+    written in the desugar's nested-let SHAPE
+    `(let [opt ..] (let [sth1 opt] (if (option-some? sth1) (+ (option-value sth1 0) 1) 0)))`
+    = t `bafyreiac7b4vxobujx6ainywyo7xkjtbejd6ygbv2uv3j4aubqb3t4nbqe` matches the
+    0-let alias CID, while the flat-let twin does not. Two real shapes existed.
+  - Source of the shapes: the desugar's temp was `some-thread__N` derived from
+    `*loop-counter*` inside analyze (renumbered by unrelated loops / collision
+    avoidance) and gensym outside — the SAME spelling desugared to different
+    KIR depending on counter state (iter 14 "some spellings drop payload" was
+    binder-naming drift, not payload dropping; `(- 100 (option-value ...))` is
+    always kept, verified by the 1-let hand twin CID matching the 0-let alias).
+- Implementation (minimal, 6+/3-): single deterministic `synthetic "some-thread"`
+  temp for every spelling (same shape as binding-some at :3258). No lowering change.
+- Measured parity matrix (amu --jvm-free, cp-t15 = sema@ac5381a classpath):
+  - some-> 0-let == some-> 1-let == nested-let hand twin:
+    t `bafyreiac7b4vxobujx6ainywyo7xkjtbejd6ygbv2uv3j4aubqb3t4nbqe`
+  - some-> 1-let typed-param (`[:option-i64]` param) == typed-param hand twin:
+    t `bafyreia2bhjmxm2ljwe7o3urxte2hszr6h2px4wvd6snnvrhid3a7led74`
+  - some->> 0-let == some->> 1-let == nested-let hand twins:
+    `(- 100 (option-value …))` t `bafyreifh37gjockkt6oxd3dpbqurq3c63b6yuipdsvtcsgyg2tlgw6qvou`,
+    `(- 100 5 (option-value …))` t `bafyreieipf6przxlapbmuic2ym4gujubrfxia45qre4ixpdlvnle5yxa3u`
+  - compile wasm32 PASS (typed-param some->, 2008 bytes; some->> 1-let PASS).
+    Note: the 0-let spellings ((option-some x) inline) fail compile with
+    "unsupported typed Wasm expression" (exit 70) — SAME failure on pinned sema
+    3f847f9, so it is a pre-existing backend gap (inline option-some lowering),
+    not a regression of this repair. check/CID admission still PASSes for them.
+  - run (browser-host): some-> typed-param = 42 (ALL-OK),
+    some->> typed-param = 100-41 = 59 (ALL-OK).
+  - fail-closed: 0-step `(some-> opt)` / `(some->> opt)` REJECT exit 65
+    ("requires an initial option and at least one step") — own diagnostic.
+  - regression: sema suite (nbb, portable tests) 237 tests / 1145 assertions /
+    0 failures / 0 errors (same totals as iters 10/13 baseline).
+- comparator ratio: no new lowering, same admitted ops as the hand twin — speed
+  threshold N/A (same class as iters 1/2/10/11/13).
+- verdict: hypothesis CONFIRMED — canonical lowering achieved, iter 14's
+  determinism defect root-caused (temp-name drift) and repaired; parity matrix
+  fully green. Pushed branch bot/lang-some-thread-canonical-20260906 @ac5381a
+  (merge-pending). Pre-existing backend gap recorded for maintainer bots:
+  inline `(option-some x)` input fails wasm lowering with exit 70 ICE.
+- Next (1 hypothesis): (:k m) projection sugar — `(get m :k 0)` already admits
+  (population row), so probe whether (:k m) reader sugar is only an alias-shaped
+  desugar gap; then re-check jvm-dep-ledger blocked list for remaining alias-shaped gaps.
