@@ -1510,6 +1510,40 @@ static int64_t ui_event_inject(struct kexe_context_v4 *context,
                   checked_pair_new(context, ui_event_value, 0)))));
 }
 
+static int64_t env_read_provider(struct kexe_context_v4 *context,
+                                 int64_t request) {
+  const uint8_t *bytes = NULL;
+  uint64_t length = 0;
+  if (!read_string_handle(context, request, &bytes, &length)) {
+    raise(SIGILL);
+    return 0;
+  }
+  /* getenv needs a NUL-terminated C string. Environment names cannot
+   * contain '=' or NUL; reject '=' outright and anything that does not
+   * fit the on-stack scratch buffer. Fail closed on malformed requests
+   * rather than guessing a name. */
+  if (length == 0 || length >= 4096) {
+    raise(SIGILL);
+    return 0;
+  }
+  char name[4096];
+  memcpy(name, bytes, (size_t)length);
+  name[length] = '\0';
+  for (uint64_t i = 0; i < length; i++) {
+    if (name[i] == '=') {
+      raise(SIGILL);
+      return 0;
+    }
+  }
+  const char *value = getenv(name);
+  if (value == NULL) {
+    /* Unset: guest sees the empty string, not a trap. */
+    return intern_utf8(context, (const uint8_t *)"", 0);
+  }
+  size_t value_length = strlen(value);
+  return intern_utf8(context, (const uint8_t *)value, value_length);
+}
+
 static int64_t checked_typed_cap_call(struct kexe_context_v4 *context,
                                       uint64_t id, uint64_t request_kind,
                                       uint64_t result_kind, int64_t request) {
@@ -1536,6 +1570,12 @@ static int64_t checked_typed_cap_call(struct kexe_context_v4 *context,
     result = ui_commit_inject(context, request);
   } else if (id == 10 && request_kind == KEXE_TYPED_UI_EVENT_V1) {
     result = ui_event_inject(context, request);
+  } else if (id == 33 && request_kind == KEXE_TYPED_STRING) {
+    /* wire id 33 = :env/read. Real host provider: the request string is
+     * the environment variable name; the result is its value (empty
+     * string when unset). Other string-capability ids keep the
+     * deterministic identity stub below. */
+    result = env_read_provider(context, request);
   } else {
     /* The qualification host's deterministic typed provider is identity
      * for the one-word string/option/result slice. */
