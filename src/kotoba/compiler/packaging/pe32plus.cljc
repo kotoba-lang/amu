@@ -283,6 +283,9 @@
 (def ^:private byte-scale
   [1 256 65536 16777216 4294967296 1099511627776 281474976710656 72057594037927936])
 
+(defn- rip [label] {:rel32 label})
+(defn- label [name] {:label name})
+
 (defn- read-le
   "WIDTH little-endian bytes at OFFSET, as one number.
 
@@ -305,6 +308,63 @@
   (reduce (fn [value index]
             (+ value (* (nth bytes (+ offset index)) (nth byte-scale index))))
           0 (range width)))
+(defn- utf16z [value]
+  (vec (mapcat #(le (int %) 2) (concat value [\u0000]))))
+(defn- read-i32 [bytes offset]
+  (let [value (read-le bytes offset 4)]
+    (if (>= value 2147483648)
+      (- value 4294967296)
+      value)))
+(defn- uefi-output-string-tokens [message-label return-label]
+  (concat
+   ;; EFI_SYSTEM_TABLE.ConOut is at +0x40 and SIMPLE_TEXT_OUTPUT.OutputString
+   ;; is at +0x08. Keep each checkpoint optional when firmware exposes no
+   ;; console, so the headless boot path remains valid.
+   [0x49 0x8b 0x4d 0x40 0x48 0x85 0xc9 0x0f 0x84] [(rip return-label)]
+   [0x48 0x8d 0x15] [(rip message-label)]
+   [0x48 0x8b 0x41 0x08 0xff 0xd0]
+   [(label return-label)]))
+(defn- store-status-nibble [source shift digit-label store-label target-label]
+  (concat
+   [0x44 0x89 0xf8]
+   (when (pos? shift) [0xc1 0xe8 shift])
+   [0x83 0xe0 0x0f 0x83 0xf8 0x0a 0x0f 0x8c] [(rip digit-label)]
+   [0x83 0xc0 0x37 0xe9] [(rip store-label)]
+   [(label digit-label)] [0x83 0xc0 0x30]
+   [(label store-label)] [0x66 0x89 0x05] [(rip target-label)]
+   ;; Retain the explicit source register in this helper's contract. Both
+   ;; callers currently convert r15d, which holds the kernel return status.
+   (when (not (= source :r15d)) [0xcc])))
+(defn- k16-preflight-tokens [returnable-entry context-address]
+  (concat
+   ;; Read 02:00.0 through PCI mechanism #1. Only the explicit K16 diagnostic
+   ;; profile calls the kernel while Boot Services and ConOut are still live.
+   [0x66 0xba 0xf8 0x0c 0xb8 0x00 0x00 0x02 0x80 0xef
+    0x66 0xba 0xfc 0x0c 0xed 0x3d 0xec 0x10 0x25 0x81
+    0x0f 0x85] [(rip :exit-boot)]
+   (uefi-output-string-tokens :rtl-message :rtl-message-return)
+   [0x48 0x8d 0x3d] [(rip :boot-info)]
+   ;; The normal ELF entry deliberately halts after main returns. Preflight
+   ;; instead calls the compiler's returnable main wrapper and establishes the
+   ;; two context values normally installed by that ELF entry shim.
+   [0x49 0xb9] (le context-address 8)
+   [0x49 0x89 0x79 0x50]
+   [0x48 0xb8] (le returnable-entry 8) [0xff 0xd0 0x49 0x89 0xc7]
+   (store-status-nibble :r15d 4 :status-high-digit :status-high-store
+                        :status-high)
+   (store-status-nibble :r15d 0 :status-low-digit :status-low-store
+                        :status-low)
+   [0x49 0x8b 0x4d 0x40 0x48 0x85 0xc9 0x0f 0x84]
+   [(rip :preflight-hold)]
+   [0x48 0x8d 0x15] [(rip :status-message)]
+   [0x48 0x8b 0x41 0x08 0xff 0xd0]
+   [(label :preflight-hold)]
+   ;; Keep the physical diagnostic visible. Returning EFI_LOAD_ERROR made the
+   ;; K16 immediately retry PXE and erase STATUS before it could be recorded.
+   [0xfa 0xf4 0xeb 0xfd]))
+(def ^:private kernel-scratch-pages 14)
+
+
 
 (defn- code-size [tokens]
   (reduce (fn [size token]
@@ -317,8 +377,15 @@
 (defn- finalize-loader [tokens external-labels]
   (let [labels (loop [remaining tokens position text-rva out external-labels]
                  (if-let [token (first remaining)]
-                   (if-let [label (and (map? token) (:label token))]
-                     (recur (next remaining) position (assoc out label position))
+                   (cond
+                     (and (map? token) (:label token))
+                     (recur (next remaining) position
+                            (assoc out (:label token) position))
+
+                     (and (map? token) (:rel32 token))
+                     (recur (next remaining) (+ position 4) out)
+
+                     :else
                      (recur (next remaining) (inc position) out))
                    out))]
     (loop [remaining tokens position text-rva out []]
@@ -335,9 +402,6 @@
 
           :else (recur (next remaining) (inc position) (conj out token)))
         (vec out)))))
-
-(defn- rip [label] {:rel32 label})
-(defn- label [name] {:label name})
 
 (defn- allocate-segment [address-label pages source-label size]
   (concat
@@ -378,10 +442,12 @@
   portable; it is evidence that nobody wrote one. Suspect the arithmetic --
   cljs bitwise operators truncate to int32, and the values here (entry points,
   paddrs, segment sizes) are 64-bit. See aiueos ADR-0130."
-  ([kernel] (package-embedded-kernel kernel []))
-  ([kernel payload]
+  ([kernel] (package-embedded-kernel kernel [] {}))
+  ([kernel payload] (package-embedded-kernel kernel payload {}))
+  ([kernel payload options]
   (let [kernel (vec kernel)
-        payload (vec payload)]
+        payload (vec payload)
+        k16-preflight? (true? (:k16-preflight? options))]
     (when (> (count payload) 16384)
       (throw (ex-info "embedded RT payload exceeds 16 KiB" {:bytes (count payload)})))
     (when-not (and (= [0x7f 0x45 0x4c 0x46] (subvec kernel 0 4))
@@ -401,9 +467,11 @@
                               :memsz (read-le kernel (+ offset 40) 8)}))
                          (range phnum))]
       (let [first-segment (first segments) second-segment (second segments)
-            entry-segment (some #(and (= 5 (:flags %))
-                                      (<= (:paddr %) entry)
-                                      (< entry (+ (:paddr %) (:memsz %)))) segments)
+            entry-segment (some #(when (and (= 5 (:flags %))
+                                            (<= (:paddr %) entry)
+                                            (< entry (+ (:paddr %) (:memsz %))))
+                                   %)
+                                segments)
             non-overlap (or (<= (+ (:paddr first-segment) (:memsz first-segment))
                                 (:paddr second-segment))
                             (<= (+ (:paddr second-segment) (:memsz second-segment))
@@ -418,14 +486,52 @@
                                    (<= (+ (:offset %) (:filesz %)) (count kernel))) segments)
                      (= [5 6] (mapv :flags segments)) entry-segment non-overlap)
         (throw (ex-info "embedded kernel PT_LOAD contract rejected" {:segments segments})))
-      (let [data-addresses [0 8]
+      (let [entry-file-offset (+ (:offset entry-segment)
+                                 (- entry (:paddr entry-segment)))
+            entry-shim? (and (<= (+ entry-file-offset 73) (count kernel))
+                             (= [0x48 0x89 0x3d]
+                                (subvec kernel (+ entry-file-offset 54)
+                                        (+ entry-file-offset 57)))
+                             (= [0x4c 0x8d 0x0d]
+                                (subvec kernel (+ entry-file-offset 61)
+                                        (+ entry-file-offset 64)))
+                             (= 0xe8 (nth kernel (+ entry-file-offset 68))))
+            context-address (when entry-shim?
+                              (+ entry 68
+                                 (read-i32 kernel (+ entry-file-offset 64))))
+            returnable-entry (when entry-shim?
+                               (+ entry 73
+                                  (read-i32 kernel (+ entry-file-offset 69))))
+            _ (when (and k16-preflight? (not entry-shim?))
+                (throw (ex-info "K16 preflight requires the returnable AIUEOS kernel entry shim"
+                                {:entry entry :entry-file-offset entry-file-offset})))
+            data-addresses [0 8]
+            rx-limit (align (+ (:paddr first-segment) (:memsz first-segment)) 4096)
+            rw-start (:paddr second-segment)
+            rw-end (+ rw-start (:memsz second-segment))
             payload? (seq payload)
-            variables-size (if payload? 88 72)
+            ;; Two loader-private segment destinations precede boot-info.
+            ;; Boot-info v4 is 96 bytes without a payload: the original
+            ;; firmware-map and W^X fields followed by a loader-owned scratch
+            ;; address/page count. An optional payload pointer/length follows.
+            variables-size (if payload? 128 112)
             memory-map-offset (align variables-size 16)
             memory-map-capacity 16384
             embedded-offset (align (+ memory-map-offset memory-map-capacity) 16)
             payload-offset embedded-offset
             kernel-offset (align (+ payload-offset (count payload)) 16)
+            status-prefix "AIUEOS K16 PREFLIGHT STATUS "
+            enter-message (if k16-preflight?
+                            (utf16z "AIUEOS K16 PREFLIGHT ENTER\r\n") [])
+            rtl-message (if k16-preflight?
+                          (utf16z "AIUEOS K16 PREFLIGHT RTL8125\r\n") [])
+            status-message (if k16-preflight?
+                             (utf16z (str status-prefix "00\r\n")) [])
+            enter-message-offset (align (+ kernel-offset (count kernel)) 16)
+            rtl-message-offset (align (+ enter-message-offset
+                                         (count enter-message)) 16)
+            status-message-offset (align (+ rtl-message-offset
+                                            (count rtl-message)) 16)
             ;; Build once with provisional external RVAs; instruction length is
             ;; independent of displacement values.
             segment-tokens (mapcat (fn [index segment]
@@ -437,7 +543,18 @@
                     [0x41 0x54 0x41 0x55 0x41 0x56 0x41 0x57
                      0x48 0x83 0xec 0x28 0x49 0x89 0xcc 0x49 0x89 0xd5
                      0x4c 0x8b 0x72 0x60]
+                    (when k16-preflight?
+                      (uefi-output-string-tokens :enter-message
+                                                 :enter-message-return))
                     segment-tokens
+                    ;; AllocateAnyPages/EfiLoaderData. The returned physical
+                    ;; address is explicit boot authority, so no fixed low-RAM
+                    ;; hole or conventional-memory scan is required on K16.
+                    [0xb9 0 0 0 0 0xba 2 0 0 0 0x41 0xb8]
+                    (le kernel-scratch-pages 4)
+                    [0x4c 0x8d 0x0d] [(rip :scratch-address)]
+                    [0x41 0xff 0x56 0x28 0x48 0x85 0xc0 0x0f 0x85]
+                    [(rip :fail)]
                     (when payload?
                       (concat [0x48 0x8d 0x05] [(rip :payload)]
                               [0x48 0x89 0x05] [(rip :payload-pointer)]
@@ -461,6 +578,9 @@
                     [0x48 0x8d 0x05] [(rip :descriptor-version)]
                     [0x48 0x89 0x44 0x24 0x20 0x41 0xff 0x56 0x38
                      0x48 0x85 0xc0 0x0f 0x85] [(rip :fail)]
+                    (when k16-preflight?
+                      (k16-preflight-tokens returnable-entry context-address))
+                    [(label :exit-boot)]
                     [0x4c 0x89 0xe1 0x48 0x8b 0x15] [(rip :map-key)]
                     [0x41 0xff 0x96 0xe8 0x00 0x00 0x00 0x48 0x85 0xc0
                      0x0f 0x85] [(rip :get-map)]
@@ -474,8 +594,16 @@
             data-address (align (+ text-rva text-size) section-alignment)
             data (vec (concat (mapcat #(le (:paddr %) 8) segments)
                               (le 0x544f4f4245554941 8)
-                              (le (if payload? 2 1) 8)
-                              (repeat (- variables-size 32) 0)
+                              (le 4 8)
+                              ;; map pointer/size/key/descriptor fields are
+                              ;; populated by the loader before handoff.
+                              (repeat 40 0)
+                              (le rx-limit 8)
+                              (le rw-start 8)
+                              (le rw-end 8)
+                              (repeat 8 0)
+                              (le kernel-scratch-pages 8)
+                              (when payload? (repeat 16 0))
                               (repeat (- memory-map-offset variables-size) 0)
                               (repeat memory-map-capacity 0)
                               (repeat (- embedded-offset
@@ -483,7 +611,20 @@
                               payload
                               (repeat (- kernel-offset
                                          (+ payload-offset (count payload))) 0)
-                              kernel))
+                              kernel
+                              (when k16-preflight?
+                                (concat
+                                 (repeat (- enter-message-offset
+                                            (+ kernel-offset (count kernel))) 0)
+                                 enter-message
+                                 (repeat (- rtl-message-offset
+                                            (+ enter-message-offset
+                                               (count enter-message))) 0)
+                                 rtl-message
+                                 (repeat (- status-message-offset
+                                            (+ rtl-message-offset
+                                               (count rtl-message))) 0)
+                                 status-message))))
             data-raw-size (align (count data) file-alignment)
             reloc-address (align (+ data-address (count data)) section-alignment)
             labels (merge {:address0 (+ data-address (nth data-addresses 0))
@@ -494,10 +635,22 @@
                            :descriptor-size (+ data-address 48)
                            :descriptor-version (+ data-address 56)
                            :map-key (+ data-address 64)
+                           :rx-limit (+ data-address 72)
+                           :rw-start (+ data-address 80)
+                           :rw-end (+ data-address 88)
+                           :scratch-address (+ data-address 96)
                            :memory-map (+ data-address memory-map-offset)
-                           :payload-pointer (+ data-address 72)
-                           :payload-length (+ data-address 80)
+                           :payload-pointer (+ data-address 112)
+                           :payload-length (+ data-address 120)
                            :payload (+ data-address payload-offset)}
+                          (when k16-preflight?
+                            {:enter-message (+ data-address enter-message-offset)
+                             :rtl-message (+ data-address rtl-message-offset)
+                             :status-message (+ data-address status-message-offset)
+                             :status-high (+ data-address status-message-offset
+                                             (* 2 (count status-prefix)))
+                             :status-low (+ data-address status-message-offset
+                                            (* 2 (inc (count status-prefix))))})
                           (into {} (map-indexed
                                     (fn [index segment]
                                       [(keyword (str "segment" index))
@@ -528,16 +681,25 @@
                                 :rva reloc-address :raw-size reloc-raw-size
                                 :raw-offset reloc-offset :characteristics 0x42000040
                                 :bytes reloc}]})]
-        {:format :pe32+-embedded-kernel/v2 :target firmware-target
+        {:format :pe32+-embedded-kernel/v3 :target firmware-target
          :entry :efi_main :entry-rva text-rva :sections [:text :data :reloc]
          :boot-info-layout (cond->
                             {:bytes (+ (- memory-map-offset 16)
                                        memory-map-capacity (count payload))
                              :memory-map-offset (- memory-map-offset 16)
-                             :memory-map-capacity memory-map-capacity}
+                             :memory-map-capacity memory-map-capacity
+                             :rx-limit-offset 56
+                             :rw-start-offset 64
+                             :rw-end-offset 72
+                             :kernel-scratch-address-offset 80
+                             :kernel-scratch-pages-offset 88
+                             :kernel-scratch-pages kernel-scratch-pages}
                              payload?
                              (assoc :payload-offset (- payload-offset 16)
                                     :payload-bytes (count payload)))
          :imports [] :embedded-kernel-sha256 (artifact/sha256 kernel)
          :embedded-payload-sha256 (when payload? (artifact/sha256 payload))
+         :k16-preflight? k16-preflight?
+         :k16-preflight-returnable-entry (when k16-preflight? returnable-entry)
+         :k16-preflight-context-address (when k16-preflight? context-address)
          :bytes bytes}))))))
