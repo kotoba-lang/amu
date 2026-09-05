@@ -1,0 +1,6 @@
+import io
+p = "docs/codegen-coscientist.md"
+entry = "\n2026-09-05 21:49 JST (amu-rank cron, tick 127): host busy (load1 12.98 / 5m 16.36 / 15m 40.91 at 21:46, threshold 7.5) — measurement refused, rank-only pass. git fetch: origin/main 3a4f1036 unchanged since tick 126; local HEAD advanced to 723e84b4 (lang-cosientist iteration 11: min/max desugar branch landed — rank-noted, not a codegen-ladder number). Evidence reviewed since tick 126: sibling entry 21:16 amu-falsify (busy-refusal) already in working tree; no new codegen ADR (0338 remains newest measured landing — J-B imod specialization diagnostic-only, 5 consecutive positive windows +7.6/+7.8/+6.3%, no perfgate verdict); no new measured numbers → no re-rank, no status transition, no new hypothesis. Population unchanged: J-B confirmed-diagnostic but unqualified (awaiting idle>=9/10 rerun), H-Z3 top of the codegen ladder (quiet-host hand-patch A/B pending), H-C2/H-D/H-B/H-Y1 open; J-C blocked behind J-B. NEXT: J-B fully-quiet-host rerun (idle>=9/10) of bench/runtime-comparison/jb_imod_control.c for the perfgate-qualifiable number, then H-Z3 quiet-host hand-patch A/B, then H-C2.\n"
+with io.open(p, "a", encoding="utf-8") as f:
+    f.write(entry)
+print("appended")
