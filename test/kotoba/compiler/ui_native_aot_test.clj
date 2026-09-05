@@ -70,8 +70,7 @@
 (defonce measured-runtime
   (delay
     (let [{:keys [runtime loader-bytes]} (executor/measure-runtime)
-          loader (doto (java.io.File/createTempFile "kotoba-ui-loader-" "")
-                   (.deleteOnExit))]
+          loader (atomic-output/temp-file! "kotoba-ui-loader-" "")]
       (atomic-output/write-bytes! (.getPath loader) loader-bytes {:executable? true})
       {:runtime runtime :loader-path (.getPath loader)})))
 

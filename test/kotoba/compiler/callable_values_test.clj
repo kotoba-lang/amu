@@ -1,5 +1,6 @@
 (ns kotoba.compiler.callable-values-test
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [kotoba.compiler.atomic-output :as atomic-output]
+            [clojure.test :refer [deftest is testing]]
             [clojure.java.shell :as shell]
             [clojure.string :as str]
             [kotoba.compiler.core :as compiler]
@@ -480,7 +481,7 @@
         js (compiler/compile-source source :js-kotoba-v1)
         wasm-a (compiler/compile-source source :wasm32-browser-kotoba-v1)
         wasm-b (compiler/compile-source source :wasm32-browser-kotoba-v1)
-        module (java.io.File/createTempFile "kotoba-structured-closure-" ".mjs")
+        module (atomic-output/temp-file! "kotoba-structured-closure-" ".mjs")
         probe (try
                 (spit module
                       (str (:source js)
@@ -540,7 +541,7 @@
         js (compiler/compile-source source :js-kotoba-v1)
         wasm-a (compiler/compile-source source :wasm32-browser-kotoba-v1)
         wasm-b (compiler/compile-source source :wasm32-browser-kotoba-v1)
-        module (java.io.File/createTempFile "kotoba-numeric-closure-" ".mjs")
+        module (atomic-output/temp-file! "kotoba-numeric-closure-" ".mjs")
         probe (try
                 (spit module
                       (str (:source js)

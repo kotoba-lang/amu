@@ -16,7 +16,8 @@
   Real nbb execution of the exact same generated sources (including the
   fuel-exhaustion global-depletion property) was independently verified by
   hand before this commit; see ADR-2607151500."
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [kotoba.compiler.atomic-output :as atomic-output]
+            [clojure.test :refer [deftest is testing]]
             [clojure.java.shell :as shell]
             [clojure.tools.reader :as reader]
             [kotoba.compiler.core :as compiler]
@@ -304,8 +305,7 @@
         compiled (compile-cljs source {:allow #{[:cap/call 4]}})
         request [request-type "ことば😀" [[:set :keyword] [:app/safe]]]
         result [result-type [[:option :bool] true true]]
-        script (doto (java.io.File/createTempFile "kotoba-typed-provider-" ".cljs")
-                 (.deleteOnExit))]
+        script (atomic-output/temp-file! "kotoba-typed-provider-" ".cljs")]
     (spit script
           (str (:source compiled) "\n"
                "(set-typed-providers! "
@@ -326,8 +326,7 @@
         source (str "(ns demo.i64 (:export [invoke]) (:capabilities #{:http/post}))"
                     (typed-function "invoke" ":http/post" request-type result-type))
         compiled (compile-cljs source {:allow #{[:cap/call 4]}})
-        script (doto (java.io.File/createTempFile "kotoba-typed-i64-" ".cljs")
-                 (.deleteOnExit))]
+        script (atomic-output/temp-file! "kotoba-typed-i64-" ".cljs")]
     (spit script
           (str (:source compiled) "\n"
                "(def minimum (js/BigInt \"-9223372036854775808\"))\n"
@@ -425,8 +424,7 @@
                   "(ns demo.vector-i64 (:export [pick]))
                    (defn pick [items :vector-i64 index :i64] :i64
                      (vector-at items index))")
-        script (doto (java.io.File/createTempFile "kotoba-vector-i64-" ".cljs")
-                 (.deleteOnExit))]
+        script (atomic-output/temp-file! "kotoba-vector-i64-" ".cljs")]
     (spit script
           (str (:source compiled) "\n"
                "(def item (js/BigInt \"9223372036854775807\"))\n"
