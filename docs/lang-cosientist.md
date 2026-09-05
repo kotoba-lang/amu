@@ -240,3 +240,124 @@ ty 注記なし probe のため過大評価されていた — 以下は型付�
   実測済みなので, 修復 desugar が hand-patch と KIR 完全一致 (definition CID 一致)
   にできるかを parity probe で確認 (`if-some`/`when-some` desugar :3229-3261 が
   同型の正しい構造 — これを雛形に some-> を張り直す)。その後 `seq`/`remove`。
+
+## Iteration 10 — seq/remove desugar 最小実装 (2026-09-05, 実測 amu@70670834, kotoba-sema branch bot/lang-seq-remove-20260905 @8941b5d)
+
+- 仮説 (iteration 9 引き継ぎ): seq → identity, remove → filter 述語反転の
+  純 desugar を frontend.cljc に実装し, hand-patch 展開と KIR 完全一致
+  (definition CID 一致) にできる。
+- 実装: kotoba-sema branch `bot/lang-seq-remove-20260905` @8941b5d
+  (frontend.cljc desugar cond に `seq`/`remove` 2 case, 31 行。mapv/filterv
+  alias (iteration 2) と同型: 事前 arity/pred 形検査で自名前の diagnostic で
+  fail-closed → 既存 map/filter lowering へ再委譲)。
+- gate (ローカル sema branch classpath + amu nbb wasm_cli route, JVM-free):
+  - check `(reduce + 0 (seq v))` PASS (exit 0) / `(remove (fn [x] (< x 3)) v)` PASS
+  - **KIR parity 実測**: remove alias probe と hand-patch 展開
+    `(filter (fn [x] (not (< x 3))) v)` (remove-hand3.kotoba) の全 definition CID
+    完全一致 — filter loop_1 `bafyreieon45i7iwyodelpsjytjai7yxj55h5m332yxue5yqz5yazwj4h5y`,
+    reduce loop_2 `bafyreieuoy7c66duftjm6uxs22gz23wsmjzj6uc7pvecgc7cfqamgcdwbq`,
+    t `bafyreibprazt2pvfqoim5fyu5vihclbvft3yiy5diuacd6clvh54inskru`,
+    main `bafyreieesv7k4s2tamwjdmvkkz536d4mg4xq3sxrjqqq2k77k7bfzglfz4`。
+    seq alias の t cid `bafyreifjpju3gqmsjtmswu2c2mkv3fu7tiucfgpqfqrgflskwj7vmyngq4`
+    も hand 展開 (identity) と完全一致。
+  - compile --target wasm32 PASS (seq 3 defs / remove 4 defs)
+  - 実行 (browser-host, [1,2,3,0] fixture): seq = **6 (ALL-OK)**,
+    remove = **3 (ALL-OK)** — iteration 9 の hand-patch 実行値と一致。
+  - fail-closed 実測: `(seq)` REJECT (exit 65, "seq requires exactly one
+    vector-i64 collection"), `(remove p v v)` REJECT ("remove requires pred and
+    one vector-i64 collection"), `(remove 42 v)` REJECT ("remove pred must be a
+    named function or (fn [x] single-expr)") — いずれも自名前 diagnostic。
+  - regression: sema suite (nbb, 全 portable .cljc test) **237 tests / 1145
+    assertions / 0 failures / 0 errors**。
+- probe 教訓 (本 tick の誤検知 1 件, 記録に残す): 新 compile の wasm が 0 を
+  返したのは desugar バグではなく probe fixture の bug — 空の
+  `(vector-alloc 4)` は全 cell 0 で, `(not (< x 3))` が全員 false, sum = 0
+  が正しい。pinned sema で同一プログラムを compile しても 0 (再現) —
+  fixture を [1,2,3,0] 埋め (vector-assoc!) にして 6/3 を確認。
+  新 wasm が期待値と違うときは fixture を先に疑う。
+- comparator 比: 展開が既存 T4.5 map/filter lowering そのものなので新規
+  runtime cost 0 (新 lowering なしのため速度反証対象なし, iter 1/2 と同型)。
+- verdict: parity + fail-closed + regression 全緑。merge 待ち
+  (kotoba-sema bot/lang-seq-remove-20260905)。
+- Next (1 hypothesis): some-> desugar 修復 (iteration 7/8 引き継ぎ) —
+  修復形は hand-patch 実測済み (payload 落ち, PASS + 値 42)。残作業は
+  正典 (let の有無) を 1 つ決めて desugar と hand-patch の CID を一致させる
+  parity probe。その後, jvm-dep-ledger の残欠落 (min/max: branch
+  bot/lang-min-max-20260904 が既にある — 実測 verify が必要)。
+
+## Iteration 11 - min/max desugar branch verify (2026-09-05, amu@6a18f06d, sema branch bot/lang-min-max-20260904 @2542e1d)
+
+- Hypothesis (iter 10 carried over): existing branch bot/lang-min-max-20260904
+  (min/max as `(let [tmp a] (if (< tmp b) tmp b))` pure desugar, 19 lines) can
+  be verified to (a) admit what the pinned sema rejects, (b) produce KIR
+  identical to the hand-written let+if twin, (c) run correct values.
+- Measured (sema branch worktree /tmp/langcos/sema-minmax classpath, amu nbb
+  wasm_cli route, JVM-free):
+  - pinned sema (145e8b5): `(min a b)` subset-reject operation-has-no-admitted-
+    lowering (exit 65) - the gap is exactly the branch desugar.
+  - hand-patch probe (mm-hand.kotoba, hand-written let+if) check PASS (exit 0).
+  - branch sema: `(min a b)` check PASS (exit 0); `(max a b)` PASS.
+  - KIR parity: alias vs hand-written let+if twin - ALL definition CIDs
+    identical: t bafyreid7ut5npoyeasyp37hfpkk42sk7csqpbdlzc5bi6b2f4lcuw7jsui,
+    main bafyreihmujd4mjwwlnasauef75qku2rnlezxyfre3otxfqgma3t6vp2oay.
+  - compile --target wasm32 PASS (346 bytes; with --fuel 1e8 also PASS).
+  - run (browser-host, 2e6 calls): min(3,7)=3, min(9,4)=4, min(5,5)=5, ALL-OK.
+  - fail-closed: `(min a)` REJECT exit 65 (min requires exactly two operands);
+    `(min a b a)` REJECT (same message).
+  - microbench (2e6 calls, loadavg 16-19, quiet-gate boundary so indicative
+    only): alias 31.2-31.7 ns/call vs hand twin 32.4-33.3 ns/call - same level,
+    no disadvantage, no separation (no new lowering, speed threshold N/A).
+    C twin comparison not run this tick (host busy, quiet gate not met).
+- Verdict: parity + fail-closed + correct values. Merge-pending
+  (kotoba-sema bot/lang-min-max-20260904; same shape as iters 1/2/10).
+- Next (1 hypothesis): some-> desugar repair (iters 7/8) - fix the broken
+  desugar so its definition CIDs match the measured hand-patch form (payload
+  drop, PASS + value 42). Then (:k m) projection sugar / re-evaluate the
+  parse-long string boundary blocker (iters 4/5).
+
+## Iteration 12 (2026-09-05) - measurement BLOCKED, no verdict
+
+- Target hypothesis (carried from iter 11): some-> desugar repair parity probe
+- (repair desugar CIDs == measured hand-patch form, payload-drop, value 42).
+- Not executed: terminal tool returned exit 0 with zero output on every command
+- this tick (foreground and background, incl. date, ls /tmp/langcos, git log).
+- No probe, compile, or bench could be run or observed. No numbers recorded
+- -> no verdict, no implementation attempted (falsify-first discipline).
+- Next tick: resume the same hypothesis after a terminal health check.
+
+## Iteration 13 - some-> desugar repair, KIR parity verified (2026-09-05, amu@cb9930d4, sema branch bot/lang-some-thread-fix-20260905 @3f847f9)
+
+- Hypothesis (carried from iters 7/8/11): the broken desugar-some-thread can be
+  repaired to the measured hand-patch form (payload drop, plain option-some? /
+  option-value) with KIR definition CIDs identical to the hand twin.
+- Implementation: kotoba-sema branch bot/lang-some-thread-fix-20260905 @3f847f9
+  (frontend.cljc desugar-some-thread rewritten, 23+/15-; some->> shares it).
+- Measured (local sema branch classpath + amu nbb wasm_cli route, JVM-free):
+  - `(some-> opt (+ 1))` with `t [opt :option-i64]`: check PASS (exit 0),
+    wasm32 compile PASS, browser-host run `t(option-some 41)` = 42 (ALL-OK)
+    - same value as the iter 7 hand-patch measurement.
+  - KIR parity: alias vs hand-written
+    `(let [stmp opt] (if (option-some? stmp) (+ (option-value stmp 0) 1) 0))`
+    ALL definition CIDs identical - t
+    `bafyreia2bhjmxm2ljwe7o3urxte2hszr6h2px4wvd6snnvrhid3a7led74`, main
+    `bafyreigqgbc7xhcr33vy7lj5shxo3q2p24wryznlek54zioxyxssdk5zwy`.
+  - inline `(some-> (option-some x) (+ 1))` also admits with parity
+    (t `bafyreih66axczmp7isomcsdw6k6tdxxealpldspxhpozjr7uqaf4ti5jwu`),
+    resolving iter 7 case 1 (resolve-option-type mismatch) for this shape.
+  - fail-closed: 0-step `(some-> opt)` REJECT exit 65 ("some-> requires an
+    initial option and at least one step").
+  - regression: sema suite (nbb, portable .cljc tests) 237 tests / 1145
+    assertions / 0 failures / 0 errors (same totals as iter 10 baseline).
+- Probe lessons (recorded, not repeated): terminal stdout came back empty for
+  every plain command this tick (iter 12's blocker) - workaround: write
+  command output to a file and read the file. `compile` without `--output`
+  on a bare path is invalid usage (exit 64); the wasm_cli route needs
+  `compile <file> --target wasm32 --output <file.wasm>`.
+- comparator ratio: repaired desugar lowers to the same admitted ops the hand
+  twin uses; no new lowering, so the speed threshold is N/A (same class as
+  iters 1/2/10/11).
+- verdict: parity + fail-closed + regression all green. Merge-pending
+  (kotoba-sema bot/lang-some-thread-fix-20260905).
+- Next (1 hypothesis): some->> last?-mode parity probe (thread-last direction)
+  with the same hand twin method, then (:k m) projection sugar, then re-check
+  the ledger blocked list for anything else that is alias-shaped.
