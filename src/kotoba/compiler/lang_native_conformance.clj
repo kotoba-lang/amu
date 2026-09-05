@@ -47,8 +47,7 @@
     (when (tender-native-available?)
       (let [measure (requiring-resolve 'kototama.native.executor/measure-runtime)
             {:keys [runtime loader-bytes]} (measure)
-            loader (doto (java.io.File/createTempFile "kotoba-native-pilot-" "")
-                     (.deleteOnExit))]
+            loader (atomic-output/temp-file! "kotoba-native-pilot-" "")]
         (atomic-output/write-bytes! (.getPath loader) loader-bytes {:executable? true})
         {:runtime runtime :loader-path (.getPath loader)}))))
 
