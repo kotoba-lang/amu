@@ -1717,6 +1717,20 @@ as before.
   `bench/runtime-comparison/jb_imod_control.c` for the
   perfgate-qualifiable number (entry 102 re-rank stands).
 
+- **114 (2026-09-05 09:39 JST, bench pass; host busy, no measurement)**:
+  bench tick. Host state at tick (probe script /tmp/amubench_mon.txt +
+  10s trend /tmp/amubench_trend.txt): load1 24.40->25.84 / 5m 20.22->20.92 /
+  15m 31.43->31.36, up 2:22, 14 users, 10 CPUs, CPU usage 39.69% user /
+  11.69% sys / 48.61% idle -- load1 ~25.8, far above the 7.5 quiet limit
+  and flat over 10s (no decay), so the quiet gate fails, the NEXT item
+  (J-B fully-quiet-host rerun of `bench/runtime-comparison/
+  jb_imod_control.c`, idle >=9/10) was not attempted, and no bench or
+  perfgate numbers were recorded. amu-falsify evidence checked via the
+  NEXT header: no new "yao quiet-host sokutei" item pending. Population
+  unchanged: H-C2, H-D, H-B, H-Y1 open; J-B confirmed-diagnostic but
+  unqualified, awaiting the idle>=9/10 rerun; J-C blocked behind it.
+  NEXT unchanged (entry 102 re-rank stands).
+
 ## Standing honesty constraints
 
 Every number above is one host on one day; the falsification numbers are
@@ -1795,4 +1809,89 @@ measured verdict contradicts this table, the table is what gets edited.
   blocked behind it. NEXT: J-B fully-quiet-host rerun (idle >=9/10) of
   `bench/runtime-comparison/jb_imod_control.c` for the
   perfgate-qualifiable number (entry 102 re-rank stands).
-</old_string>
+
+- **115 (2026-09-05 09:52 JST, rank pass; host busy, no measurement)**:
+  rank pass runs no measurement by role. Host state at tick (probe script
+  /tmp/amurank_mon_114.txt): load1 24.13 / 5m 19.14 / 15m 22.88, up 2:35,
+  14 users, 10 CPUs -- far above the 7.5 quiet limit and sustained across
+  all three windows, so the quiet gate fails and no bench, perfgate, or
+  hand-patch work is feasible; no numbers were recorded. Note: this cron
+  host's foreground terminal again returned empty output (known shape,
+  entries 96/99/104/109/110/111); evidence was collected via a probe
+  script writing to /tmp plus read-only file reads. Evidence reviewed
+  since entry 113: one new landing found on branch `k16-loader-port`
+  (46eeedae, 09:35 JST) -- forward-port of the pure-native-k16 BOOTX64
+  loader onto 5cec9196 (cli.clj + pe32plus.cljc, +186/-21). It is build
+  machinery for the addressed-execution side of the goal, not a measured
+  perf verdict, so it does not re-rank the codegen hypothesis population
+  and needs no status transition. jit-cosientist tick 8 (0a14e133) was
+  already counted at 113. Population unchanged: H-C2, H-D, H-B, H-Y1
+  open; J-B confirmed-diagnostic (14 consecutive positive windows across
+  5) but unqualified, still awaiting the idle>=9/10 rerun; J-C blocked
+  behind it. NEXT: J-B fully-quiet-host rerun (idle >=9/10) of
+  `bench/runtime-comparison/jb_imod_control.c` for the
+  perfgate-qualifiable number (entry 102 re-rank stands).
+
+- **116 (2026-09-05 10:03 JST, bench pass; host busy, no measurement)**:
+  bench tick. Host state at tick (probe via background script writing
+  /tmp/amu_bench_uptime.txt; foreground terminal returned empty output,
+  the known shape entries 96/99/104/109/110/111): load1 37.14 / 5m 33.41
+  / 15m 29.05, up 2:46, 12 users, 10 CPUs — load1 far above the 7.5
+  quiet limit and sustained across all three windows, so the quiet gate
+  failed, the NEXT item (J-B fully-quiet-host rerun of
+  `bench/runtime-comparison/jb_imod_control.c`, idle >=9/10) was not
+  attempted, and no bench or perfgate numbers were recorded.
+  amu-falsify evidence checked: no new "要 quiet-host 測定" item
+  pending. Population unchanged: H-C2, H-D, H-B, H-Y1 open; J-B
+  confirmed-diagnostic (14 consecutive positive windows across 5) but
+  unqualified, still awaiting the idle>=9/10 rerun; J-C blocked behind
+  it. NEXT unchanged (entry 102 re-rank stands).
+
+- **117 (2026-09-05 10:44 JST, bench pass; host busy, no measurement)**:
+  bench tick. Host state at tick (probe script /tmp/amu_bench_probe_117.sh
+  writing /tmp/amu_bench_uptime_117.txt; foreground terminal again empty,
+  the known shape entries 96/99/104/109/110/111): load1 27.28 / 5m 26.32
+  / 15m 25.15, up 3:27, 12 users, 10 CPUs — load1 far above the 7.5
+  quiet limit and sustained across all three windows, so the quiet gate
+  failed, the NEXT item (J-B fully-quiet-host rerun of
+  `bench/runtime-comparison/jb_imod_control.c`, idle >=9/10) was not
+  attempted, and no bench or perfgate numbers were recorded. Incident
+  note: the first append attempt this tick used a shell heredoc, which
+  the cron runtime mis-executed — it created a stray 1,890-byte
+  `docs/codegen-cosientist.md` (s-dropped spelling) holding the entry
+  twice; the real `docs/codegen-cosientist.md` (129,111 bytes) was
+  verified intact before repair and the stray was moved to tmp/.
+  Appends now go through a Python script
+  (scripts/append-entry117-amubench.py), matching the existing
+  append-*.py convention. amu-falsify evidence checked: no new
+  "要 quiet-host 測定" item pending. Population unchanged: H-C2, H-D,
+  H-B, H-Y1 open; J-B confirmed-diagnostic (14 consecutive positive
+  windows across 5) but unqualified, still awaiting the idle>=9/10
+  rerun; J-C blocked behind it. NEXT unchanged (entry 102 re-rank
+  stands).
+
+- **118 (2026-09-05 11:22 JST, rank pass; host busy, no measurement)**:
+  rank pass runs no measurement by role. Host state at tick (probe script
+  ~/.hermes/profiles/amu-rank/tmp/status_check.sh writing status_out.txt;
+  foreground terminal again returned empty output, the known shape entries
+  96/99/104/109/110/111/116): load1 11.54 / 5m 16.46 / 15m 19.79, up 4:01,
+  12 users, 10 CPUs — load1 above the 7.5 quiet limit and sustained across
+  all three windows (though decaying from the earlier 20+ peak), so the
+  quiet gate fails and the NEXT item (J-B fully-quiet-host rerun of
+  `bench/runtime-comparison/jb_imod_control.c`, idle >=9/10) was not
+  attempted. Evidence reviewed since entry 117: one new landing, 8ebb3426
+  (amu-jit tick 9) — quiet gate failed there too (load1 19.2-22.5, no idle
+  CPU), J-B rerun deferred; its only new content is source-inspection
+  (J-B premise re-verified on origin tree: imod is a user fn with a runtime
+  divisor; the hand-patch arm measures levers 1+2 combined per ADR 0289
+  ranking, a lever-2-only control with a non-inlined mulh arm is proposed
+  as the next control). Source inspection is not a measured verdict, so no
+  re-rank and no status transition; the proposed lever-2-only control is
+  noted as a J-B refinement, registered for ranking once any measured
+  number exists. Population unchanged: H-C2, H-D, H-B, H-Y1 open; J-B
+  confirmed-diagnostic (14 consecutive positive windows across 5) but
+  unqualified, still awaiting the idle>=9/10 rerun; J-C blocked behind it.
+  NEXT: J-B fully-quiet-host rerun (idle >=9/10) of
+  `bench/runtime-comparison/jb_imod_control.c` for the perfgate-qualifiable
+  number (entry 102 re-rank stands); when quiet host is available, the
+  lever-2-only control (non-inlined mulh arm) may follow it.
