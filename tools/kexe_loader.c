@@ -1544,6 +1544,124 @@ static int64_t env_read_provider(struct kexe_context_v4 *context,
   return intern_utf8(context, (const uint8_t *)value, value_length);
 }
 
+/* wire id 35 = :fs/app-data (runtime id 202). The request string is an
+ * absolute path to READ; the result is the file's bytes as a string. The
+ * granted scope comes from KEXE_CAP_RESOURCES_35, a colon-separated list
+ * of allowed path prefixes set by the kbb shim from the policy's resource
+ * scope. Enforcement is realpath-canonicalized prefix match (a directory
+ * scope entry admits the files beneath it); a missing or empty scope
+ * denies everything. Symlink escape is closed by resolving the target
+ * path before the compare. Fail closed: any malformed request or scope
+ * breach raises SIGILL. */
+static int64_t fs_app_data_read_provider(struct kexe_context_v4 *context,
+                                         int64_t request) {
+  const uint8_t *bytes = NULL;
+  uint64_t length = 0;
+  if (!read_string_handle(context, request, &bytes, &length)) {
+    raise(SIGILL);
+    return 0;
+  }
+  if (length == 0 || length >= 4096 || bytes[0] != '/') {
+    raise(SIGILL);
+    return 0;
+  }
+  char target[4096];
+  memcpy(target, bytes, (size_t)length);
+  target[length] = '\0';
+  char resolved[4096];
+  if (realpath(target, resolved) == NULL) {
+    raise(SIGILL);
+    return 0;
+  }
+  const char *scope_env = getenv("KEXE_CAP_RESOURCES_35");
+  if (scope_env == NULL || scope_env[0] == '\0') {
+    raise(SIGILL);
+    return 0;
+  }
+  size_t resolved_length = strlen(resolved);
+  int permitted = 0;
+  const char *cursor = scope_env;
+  while (*cursor != '\0' && !permitted) {
+    const char *end = strchr(cursor, ':');
+    size_t entry_length = (end != NULL) ? (size_t)(end - cursor) : strlen(cursor);
+    char entry[4096];
+    if (entry_length > 0 && entry_length < sizeof(entry)) {
+      memcpy(entry, cursor, entry_length);
+      entry[entry_length] = '\0';
+      char entry_resolved[4096];
+      if (realpath(entry, entry_resolved) != NULL) {
+        size_t entry_resolved_length = strlen(entry_resolved);
+        if (resolved_length == entry_resolved_length &&
+            memcmp(resolved, entry_resolved, entry_resolved_length) == 0) {
+          permitted = 1;
+        } else if (resolved_length > entry_resolved_length &&
+                   entry_resolved_length > 0 &&
+                   entry_resolved[entry_resolved_length - 1] == '/') {
+          if (memcmp(resolved, entry_resolved, entry_resolved_length) == 0) {
+            permitted = 1;
+          }
+        } else if (resolved_length > entry_resolved_length &&
+                   resolved[entry_resolved_length] == '/') {
+          if (memcmp(resolved, entry_resolved, entry_resolved_length) == 0) {
+            permitted = 1;
+          }
+        }
+      }
+    }
+    if (end != NULL) {
+      cursor = end + 1;
+    } else {
+      cursor += entry_length;
+    }
+  }
+  if (!permitted) {
+    raise(SIGILL);
+    return 0;
+  }
+  FILE *file = fopen(resolved, "rb");
+  if (file == NULL) {
+    raise(SIGILL);
+    return 0;
+  }
+  size_t capacity = 65536;
+  uint8_t *buffer = (uint8_t *)malloc(capacity);
+  size_t total = 0;
+  if (buffer == NULL) {
+    fclose(file);
+    raise(SIGILL);
+    return 0;
+  }
+  for (;;) {
+    if (total == capacity) {
+      size_t next = capacity * 2;
+      uint8_t *grown = (uint8_t *)realloc(buffer, next);
+      if (grown == NULL) {
+        free(buffer);
+        fclose(file);
+        raise(SIGILL);
+        return 0;
+      }
+      buffer = grown;
+      capacity = next;
+    }
+    size_t read = fread(buffer + total, 1, capacity - total, file);
+    total += read;
+    if (read == 0) {
+      if (ferror(file)) {
+        free(buffer);
+        fclose(file);
+        raise(SIGILL);
+        return 0;
+      }
+      break;
+    }
+  }
+  fclose(file);
+  int64_t result = intern_utf8(context, buffer, total);
+  free(buffer);
+  return result;
+}
+
 static int64_t checked_typed_cap_call(struct kexe_context_v4 *context,
                                       uint64_t id, uint64_t request_kind,
                                       uint64_t result_kind, int64_t request) {
@@ -1570,6 +1688,10 @@ static int64_t checked_typed_cap_call(struct kexe_context_v4 *context,
     result = ui_commit_inject(context, request);
   } else if (id == 10 && request_kind == KEXE_TYPED_UI_EVENT_V1) {
     result = ui_event_inject(context, request);
+  } else if (id == 35 && request_kind == KEXE_TYPED_STRING) {
+    /* wire id 35 = :fs/app-data. Read provider: request is the absolute
+     * path, result is the file contents; scope is KEXE_CAP_RESOURCES_35. */
+    result = fs_app_data_read_provider(context, request);
   } else if (id == 33 && request_kind == KEXE_TYPED_STRING) {
     /* wire id 33 = :env/read. Real host provider: the request string is
      * the environment variable name; the result is its value (empty
@@ -2039,6 +2161,7 @@ static void install_syscall_sandbox(void) {
   static const char profile[] =
       "(version 1)"
       "(deny default)"
+      "(allow file-read*)"
       "(allow file-write-data)"
       "(allow signal (target self))"
       "(allow process-info-pidinfo)"
