@@ -30,6 +30,14 @@ Appended only; population rows are owned by rank, evidence by falsify.
   `bench/runtime-comparison/jb_imod_control.c`. Next: on a quiet host add the
   third (non-inlined mulh) arm to separate lever 1 from lever 2.
 
+- 2026-09-05 12:20 JST tick 10 (JIT): quiet gate failed a 9th consecutive
+  time — load1 21.0–21.7 on 10 CPUs, iostat cpu idle 50–73% (3 samples),
+  below the required ≥90%. Top consumers: hermes gateway, WindowServer, and
+  a stray `git merge` in /tmp/gp-pr495. J-B measurement again deferred, no
+  compiler change, control unchanged at `bench/runtime-comparison/jb_imod_control.c`.
+  Note: working tree has unrelated uncommitted changes (atomic_output.clj +
+  13 test files) from another role — left untouched per cowork discipline.
+
 ## Policy note (standing)
 
 Any JIT-form claim needs a warmup/steady-state measurement-boundary decision in
