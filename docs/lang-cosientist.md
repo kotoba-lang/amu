@@ -240,3 +240,47 @@ ty 注記なし probe のため過大評価されていた — 以下は型付�
   実測済みなので, 修復 desugar が hand-patch と KIR 完全一致 (definition CID 一致)
   にできるかを parity probe で確認 (`if-some`/`when-some` desugar :3229-3261 が
   同型の正しい構造 — これを雛形に some-> を張り直す)。その後 `seq`/`remove`。
+
+## Iteration 10 — seq/remove desugar 最小実装 (2026-09-05, 実測 amu@70670834, kotoba-sema branch bot/lang-seq-remove-20260905 @8941b5d)
+
+- 仮説 (iteration 9 引き継ぎ): seq → identity, remove → filter 述語反転の
+  純 desugar を frontend.cljc に実装し, hand-patch 展開と KIR 完全一致
+  (definition CID 一致) にできる。
+- 実装: kotoba-sema branch `bot/lang-seq-remove-20260905` @8941b5d
+  (frontend.cljc desugar cond に `seq`/`remove` 2 case, 31 行。mapv/filterv
+  alias (iteration 2) と同型: 事前 arity/pred 形検査で自名前の diagnostic で
+  fail-closed → 既存 map/filter lowering へ再委譲)。
+- gate (ローカル sema branch classpath + amu nbb wasm_cli route, JVM-free):
+  - check `(reduce + 0 (seq v))` PASS (exit 0) / `(remove (fn [x] (< x 3)) v)` PASS
+  - **KIR parity 実測**: remove alias probe と hand-patch 展開
+    `(filter (fn [x] (not (< x 3))) v)` (remove-hand3.kotoba) の全 definition CID
+    完全一致 — filter loop_1 `bafyreieon45i7iwyodelpsjytjai7yxj55h5m332yxue5yqz5yazwj4h5y`,
+    reduce loop_2 `bafyreieuoy7c66duftjm6uxs22gz23wsmjzj6uc7pvecgc7cfqamgcdwbq`,
+    t `bafyreibprazt2pvfqoim5fyu5vihclbvft3yiy5diuacd6clvh54inskru`,
+    main `bafyreieesv7k4s2tamwjdmvkkz536d4mg4xq3sxrjqqq2k77k7bfzglfz4`。
+    seq alias の t cid `bafyreifjpju3gqmsjtmswu2c2mkv3fu7tiucfgpqfqrgflskwj7vmyngq4`
+    も hand 展開 (identity) と完全一致。
+  - compile --target wasm32 PASS (seq 3 defs / remove 4 defs)
+  - 実行 (browser-host, [1,2,3,0] fixture): seq = **6 (ALL-OK)**,
+    remove = **3 (ALL-OK)** — iteration 9 の hand-patch 実行値と一致。
+  - fail-closed 実測: `(seq)` REJECT (exit 65, "seq requires exactly one
+    vector-i64 collection"), `(remove p v v)` REJECT ("remove requires pred and
+    one vector-i64 collection"), `(remove 42 v)` REJECT ("remove pred must be a
+    named function or (fn [x] single-expr)") — いずれも自名前 diagnostic。
+  - regression: sema suite (nbb, 全 portable .cljc test) **237 tests / 1145
+    assertions / 0 failures / 0 errors**。
+- probe 教訓 (本 tick の誤検知 1 件, 記録に残す): 新 compile の wasm が 0 を
+  返したのは desugar バグではなく probe fixture の bug — 空の
+  `(vector-alloc 4)` は全 cell 0 で, `(not (< x 3))` が全員 false, sum = 0
+  が正しい。pinned sema で同一プログラムを compile しても 0 (再現) —
+  fixture を [1,2,3,0] 埋め (vector-assoc!) にして 6/3 を確認。
+  新 wasm が期待値と違うときは fixture を先に疑う。
+- comparator 比: 展開が既存 T4.5 map/filter lowering そのものなので新規
+  runtime cost 0 (新 lowering なしのため速度反証対象なし, iter 1/2 と同型)。
+- verdict: parity + fail-closed + regression 全緑。merge 待ち
+  (kotoba-sema bot/lang-seq-remove-20260905)。
+- Next (1 hypothesis): some-> desugar 修復 (iteration 7/8 引き継ぎ) —
+  修復形は hand-patch 実測済み (payload 落ち, PASS + 値 42)。残作業は
+  正典 (let の有無) を 1 つ決めて desugar と hand-patch の CID を一致させる
+  parity probe。その後, jvm-dep-ledger の残欠落 (min/max: branch
+  bot/lang-min-max-20260904 が既にある — 実測 verify が必要)。
