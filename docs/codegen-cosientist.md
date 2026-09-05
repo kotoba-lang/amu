@@ -1763,3 +1763,41 @@ measured verdict contradicts this table, the table is what gets edited.
   Population unchanged: H-C2, H-D, H-B, H-Y1 open. NEXT: H-C2 (unchanged —
   highest expected qualified gain x probability; ~4.4% residual vs Clang on
   `kernel`, near-identical static shape, separable).
+
+
+2026-09-05 19:35 JST (amu-rank cron, tick 124): host busy (load1 21.23 / 5m 27.97 / 15m 37.69 at 19:32-19:34, threshold 7.5) — measurement refused, rank-only pass. git fetch run (origin/main 3a4f1036, unchanged since tick 121's read); local doc marker-free. Evidence reviewed since tick 123: no new ADR (0338 remains newest measured landing); no new measured numbers from siblings → no re-rank, no status transition, no new hypothesis. Population unchanged: J-B confirmed-diagnostic but unqualified (14 consecutive positive windows, awaiting idle>=9/10 rerun of bench/runtime-comparison/jb_imod_control.c), H-Z3 top of the codegen ladder (quiet-host hand-patch A/B pending), H-C2/H-D/H-B/H-Y1 open; J-C blocked behind J-B. NEXT: J-B fully-quiet-host rerun (idle>=9/10) of bench/runtime-comparison/jb_imod_control.c, then H-Z3 quiet-host hand-patch A/B, then H-C2.
+2026-09-05 19:48 JST (amu-rank cron, tick 125): host busy (load1 26.05 /
+load5 36.62 / load15 38.19 at 19:47, threshold 7.5) — measurement refused,
+rank-only pass. git fetch run (HEAD 7959c02c); uncommitted sibling evidence
+reviewed: one amu-bench tick (19:45 JST, host busy, idle 0/10, no numbers),
+no new ADR (0338 remains newest measured landing), no new measured numbers
+-> no re-rank, no status transition, no new hypothesis. Population
+unchanged: J-B confirmed-diagnostic but unqualified (awaiting idle>=9/10
+rerun of bench/runtime-comparison/jb_imod_control.c), H-Z3 top of the
+codegen ladder (quiet-host hand-patch A/B pending), H-C2/H-D/H-B/H-Y1
+open; J-C blocked behind J-B. NEXT: J-B fully-quiet-host rerun
+(idle>=9/10), then H-Z3 quiet-host hand-patch A/B, then H-C2.
+
+2026-09-05 20:20 JST (amu-rank cron, tick 127): host busy (load1 12.36-52.82
+over 20:18-20:20 / load5 25.91-34.69 / load15 36.27-40.54, iostat cpu idle
+44-64% over 3 probes, threshold load1 7.5 + idle>=9/10) - measurement
+refused, rank-only pass. git fetch run (HEAD 723e84b4). Evidence reviewed
+since tick 126: sibling uncommitted diffs are one falsify tick 10 (JIT,
+19:55 JST - quiet gate failed a 9th consecutive time, J-B deferred, no
+numbers) and one bench tick 20:11 JST (host busy, no numbers); HEAD-only
+commit 723e84b4 is lang-cosientist iteration 11 (docs/lang-cosientist.md
+only) - no new codegen ADR (0338 remains newest measured landing), no new
+measured numbers -> no re-rank, no status transition, no new hypothesis.
+Population unchanged: J-B confirmed-diagnostic but unqualified (9 busy
+gates; awaiting idle>=9/10 rerun of bench/runtime-comparison/
+jb_imod_control.c), H-Z3 top of the codegen ladder (quiet-host hand-patch
+A/B pending), H-C2/H-D/H-B/H-Y1 open; J-C blocked behind J-B. NEXT: J-B
+fully-quiet-host rerun (idle>=9/10), then H-Z3 quiet-host hand-patch A/B,
+then H-C2.
+
+
+2026-09-05 20:53 JST (amu-rank cron, tick 128): host busy (load1 36.81 / 5m 37.86 / 15m 32.46 at 20:50, threshold 7.5) - measurement refused, rank-only pass. git fetch run: origin/main unchanged (3a4f1036), local HEAD 723e84b4. Evidence reviewed since tick 127: sibling ticks 20:02/20:11/20:25/20:39 (falsify) and 20:25 (bench) are all busy-refusals with no numbers; no new ADR (0338 remains newest measured landing - J-B imod specialization diagnostic-only, 14 consecutive positive windows, no perfgate verdict); JIT falsify tick 10 recorded a 9th consecutive quiet-gate failure. No new measured numbers -> no re-rank, no status transition, no new hypothesis. Population unchanged: J-B confirmed-diagnostic but unqualified (awaiting idle>=9/10 rerun of bench/runtime-comparison/jb_imod_control.c), H-Z3 top of the codegen ladder (quiet-host hand-patch A/B pending), H-C2/H-D/H-B/H-Y1 open; J-C blocked behind J-B. NEXT: J-B fully-quiet-host rerun (idle>=9/10), then H-Z3 quiet-host hand-patch A/B, then H-C2.
+
+2026-09-05 21:36 JST (amu-falsify cron): host busy (load1 34.45 / 5m 59.46 / 15m 74.47 at 21:35, threshold load1 7.5) - measurement refused, falsify pass aborted with no numbers. No hypothesis selected, no status change. NEXT: H-Z3 quiet-host hand-patch A/B, then H-C2.
+
+2026-09-05 22:02 JST (amu-bench cron, tick 123): host NOT quiet enough for the NEXT measurement — J-B rerun requires idle>=9/10 busy-CPU; measured sum_cpu_percent 278.8% on 10 CPUs (~28% busy, idle ~7/10), load1 6.24 (below the 7.5 proxy threshold) but load5 14.90 / load15 26.10 still decaying, up 14:44, 15 users. load-check via scripts/load-check-amubench.sh, evidence read from /tmp probe files (foreground terminal returns empty output — known shape). No bench/runtime-comparison, no perfgate run, no numbers recorded. NEXT unchanged: J-B fully-quiet-host rerun (idle>=9/10) of bench/runtime-comparison/jb_imod_control.c, then H-Z3 quiet-host hand-patch A/B, then H-C2. Population unchanged: J-B confirmed-diagnostic but unqualified, H-Z3 top of the codegen ladder, H-C2/H-D/H-B/H-Y1 open; J-C blocked behind J-B.
