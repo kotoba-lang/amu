@@ -45,6 +45,12 @@
         "wasm-component" :wasm-component-kotoba-v1
         "js" :js-kotoba-v1
         "javascript" :js-kotoba-v1
+        ;; The `kotoba` CLI's own spelling for this target. Without it the
+        ;; alias table dropped `web` through (keyword s) to the bare `:web`,
+        ;; rejected as :unsupported-target -- while :js-kotoba-v1 behind it
+        ;; was fully implemented (measured 2026-09-05: compile-source green,
+        ;; the emitted .mjs answers (keys {10 1 20 2}) = 2n under Node).
+        "web" :js-kotoba-v1
         "js-browser" :js-browser-kotoba-v1
         ;; ADR-2607151500's cljs target was reachable only by its full profile
         ;; name -- `--target cljs-kotoba-v1` -- while `js`/`javascript` mapped

@@ -143,6 +143,24 @@
         (is (str/includes? (slurp output) "(defn main"))
         (is (str/includes? (slurp output) "(ns kotoba.compiled.generated)"))))))
 
+(deftest web-target-alias-reaches-the-js-backend
+  ;; `--target web` is the `kotoba` CLI's own spelling for :js-kotoba-v1;
+  ;; amu's alias table dropped it through (keyword s) to the bare `:web`,
+  ;; rejected as :unsupported-target (measured 2026-09-05, same class as the
+  ;; cljs alias gap fixed above). The alias must reach the kotoba-script
+  ;; backend and emit a restricted-ESM artifact.
+  (let [source (temp-kotoba-source! "(defn main [] 42)" ".kotoba")
+        output (.getPath (doto (java.io.File/createTempFile "kotoba-web-alias-" ".mjs")
+                           (.deleteOnExit)))
+        out (StringWriter.)]
+    (binding [*out* out]
+      (cli/-main "compile" source "--target" "web" "--output" output))
+    (let [report (edn/read-string (str out))]
+      (is (:ok report) (pr-str report))
+      (is (= :js-kotoba-v1 (:target report)))
+      (is (str/includes? (slurp output) "kotobaArtifact"))
+      (is (str/includes? (slurp output) "instantiateKotoba")))))
+
 (deftest compile-source-path-loads-only-a-closed-qualified-project
   (let [directory (.toFile (java.nio.file.Files/createTempDirectory
                             "kotoba-cli-project-" (make-array java.nio.file.attribute.FileAttribute 0)))
