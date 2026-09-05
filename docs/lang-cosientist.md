@@ -240,3 +240,44 @@ ty 注記なし probe のため過大評価されていた — 以下は型付�
   実測済みなので, 修復 desugar が hand-patch と KIR 完全一致 (definition CID 一致)
   にできるかを parity probe で確認 (`if-some`/`when-some` desugar :3229-3261 が
   同型の正しい構造 — これを雛形に some-> を張り直す)。その後 `seq`/`remove`。
+## Iteration 8 — some-> desugar 修復の事前反証 (parity probe) (2026-09-05, 実測 amu@fc88a4e4)
+
+- 仮説 (iteration 7 引き継ぎ): 修復 desugar (`if-some`/`when-some` 雛形の
+  payload 落ち構造) は hand-patch (iteration 7 実測, t cid
+  `bafyreihietdwlgkm3fzcj...`) と KIR 完全一致 (definition CID 一致) にできる。
+- 実測 (sema main 145e8b5 classpath, amu bin/amu --jvm-free, host busy
+  load1 23.47/10CPU — quiet gate 不成立のため timing 計測は行わず check /
+  compile / 実行結果のみ):
+  - 修復 desugar の生成物シミュレーション (手書き展開, `let` + `if` +
+    `option-some?` + `option-value` payload 落ち, /tmp/langcos/
+    some-desugar-sim.kotoba) — check **PASS (exit 0)**, wasm32 compile
+    **PASS** (2008 bytes), browser-host 実行 `main() = 42` (**ALL-OK**)。
+  - **KIR parity 実測**: シミュレーション展開の t cid は
+    `bafyreia2bhjmxm2ljwe7o3urxte2hszr6h2px4wvd6snnvrhid3a7led74`。
+    iteration 7 の hand-patch (`(if (option-some? tmp) (+ (option-value tmp 0) 1) 0)`
+    直書き) の t cid は `bafyreihietdwlgkm3fzcj...` — **CID 一致しない**
+    (let binding の有無が definition identity に入るため)。
+    → 修復 desugar は let を導入せず `(if (option-some? opt) (thread
+    (option-value opt 0)) fallback)` を **opt を複写して** 直接組み立てる
+    (option-form が pure な場合) か, let 込みの identity を desugar 契約の
+    正典として hand-patch 側も let 込みに揃える必要がある。どちらでも
+    parity は取れるが, **正典 (canonical) を 1 つ決める作業が残る**。
+  - 2 call 合成 probe (some-desugar-sim2.kotoba, option-some 41 と
+    option-none) — check PASS (exit 0), t cid は 1-call 版と一致
+    (`bafyreia2bhjmxm2ljwe7o3urxte2hszr6h2px4wvd6snnvrhid3a7led74` —
+    t の identity が呼び出し側に非依存で安定することも実測)。
+  - 教訓 (fail-closed 再確認): `__kotoba_` prefix の手書き binding は
+    "symbol uses the reserved __kotoba_ prefix" で正しく拒否される
+    (exit 65, span 付き)。synthetic 名の正典は desugar 側のみが生成できる。
+- verdict: hypothesis **部分確認** — 修復 desugar の lowering 形自体は
+  admit + 正しい値 (42) で動くことを実測。ただし hand-patch との CID 完全
+  一致には let の有無 (正典の選択) が必要で, 現行 `desugar-some-thread`
+  (:3190-3209) の option-none 落ち構造が型不一致を起こす根本は iteration 7
+  実測の通り。修復は「payload 落ち + 正典 let の有無を決めて hand-patch を
+  揃える」1 作業として実装可能 (lang 拡張, backend 変更不要)。
+  host busy につき速度閾値は不適用 (純 desugar のため新 lowering なし)。
+- gate: check PASS / wasm32 compile PASS / 実行値 42 正しい (ALL-OK)。
+  perfgate は不適 (速度反証対象なし)。
+- Next (1 hypothesis): `seq`/`remove` — `(seq v)` と `(remove p v)` が
+  既存 op (vector-count / eager filter 等) の desugar で載るか, 1 probe で
+  切り分け (mapv/filterv と同型の alias/desugar 欠落か, lowering 欠落か)。
