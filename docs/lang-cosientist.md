@@ -200,3 +200,43 @@ ty 注記なし probe のため過大評価されていた — 以下は型付�
 - Next (1 hypothesis): `some->` — reader/macro 層の欠落か desugar 層かを
   1 probe で切り分け (既存 `option-some?`/`option-value` lowering 経由の
   純 desugar で parity が取れるか)。`seq`/`remove` は後続。
+## Iteration 7 — some-> (2026-09-05, 実測 amu@8ebb3426)
+
+- 仮説 (iteration 6 引き継ぎ): `some->` は reader/macro 層の欠落か desugar 層かを
+  1 probe で切り分け (既存 option lowering 経由の純 desugar で parity が取れるか)。
+- 実測 (sema main classpath, amu bin/amu --jvm-free, 2026-09-05 JST):
+  - frontend.cljc に `desugar-some-thread` が**既に実装済み** (:3190-3209, :4933)。
+    しかし以下の 4 形すべて check REJECT / 1 形 ICE (exit 70):
+    1. `(some-> (option-some x) (+ 1))` → "expression type mismatch: expected
+       [:option :i64], got option-i64" (resolve-option-type が裸 option-some
+       の monomorphic `:option-i64` を解決できず legacy `[:option :i64]` を
+       挿入, それが -of 系 generic op の要求と衝突)
+    2. `(option-some-of :i64 x)` 直接 → **ICE** `internal-operation/option-some-of`
+       (exit 70, fail-closed ではあるが ICE は品質問題)
+    3. `(some-> opt (+ 1))` with typed param `[:option :i64]` →
+       "if branches must have the same value type" — **desugar の構造的欠陥**:
+       then 枝は threaded payload (i64) を返し, else 枝は `option-none-of` を
+       返すため then/else 型が必ず不一致。1 step も then を option に包み直さない。
+    4. main 経由で戻り値を `[:option :i64]` にしても同 3 と同じ reject。
+  - hand-patch (正しい lowering 形, 実装前に実測):
+    `(if (option-some? tmp) (+ (option-value tmp 0) 1) 0)` — check **PASS (exit 0)**,
+    t cid `bafyreihietdwlgkm3fzcj...`; wasm32 compile **PASS**; browser-host 実行で
+    `t(option-some 41)` = **42** (ALL-OK)。
+  - 教訓: `(some-> opt f)` の正しい desugar は現行実装の
+    `(let [tmp ..] (if (option-some?-of T tmp) (threaded payload) (option-none-of T)))`
+    ではなく payload 落ち `(if (option-some? tmp) (thread payload) fallback)`
+    (some-> は option を return しない Clojure 互換。option を返すなら
+    別名 some->opt 的 sugar が要る)。
+- verdict: hypothesis **部分棄却** — `some->` は「既に実装済み」ではない
+  (iteration 6 の contains? と異なり, desugar が存在するが**壊れている**:
+  あらゆる入力形で REJECT/ICE になり正しく desugar される入力はない)。
+  速度反証対象なし (現行実装は 1 つも admit しないため)。修復が必要な場合の
+  実装形は hand-patch で実測済み (PASS + 正しい値)。
+  ICE (`option-some-of` exit 70) は compiler 品質バグとして maintainer 系 bot
+  への報告対象 (本 bot は lang 機能の反証のみ)。
+- gate: hand-patch probe で check PASS / wasm32 compile PASS / 実行値 42 正しい。
+  perfgate は不適 (速度反証対象なし)。
+- Next (1 hypothesis): `some->` desugar 修復の事前反証 — 正しい形は hand-patch
+  実測済みなので, 修復 desugar が hand-patch と KIR 完全一致 (definition CID 一致)
+  にできるかを parity probe で確認 (`if-some`/`when-some` desugar :3229-3261 が
+  同型の正しい構造 — これを雛形に some-> を張り直す)。その後 `seq`/`remove`。
