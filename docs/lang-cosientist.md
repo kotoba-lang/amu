@@ -180,3 +180,23 @@ ty 注記なし probe のため過大評価されていた — 以下は型付�
   already exists; probe whether (contains? m k) is only an alias/desugar gap
 
   (get PASSes already; same-shape desugar is the expected route).
+
+## Iteration 6 — contains? on typed map (2026-09-05, 実測 amu@ef66287b)
+
+- 仮説 (iteration 5 引き継ぎ): `(contains? m k)` は alias/desugar 欠落のみ。
+- 実測 (sema main 145e8b5 classpath, amu bin/amu --jvm-free):
+  - `(contains? m :k)` with `m [:map :keyword :i64]` → check **PASS (exit 0)**,
+    t cid `bafyreib3wdabliqzzkwhv...`; wasm32 compile **PASS** (2 definitions)。
+  - frontend.cljc:9244-9263 に `contains?` → `typed-map-contains` rewrite が
+    既に実装済み (main にランド済み)。lowering は既存 qualify 済み経路。
+  - probe 教訓: receiver 型注記が裸 `:map` なら `map-presence-receiver` で
+    正しく fail-closed (canonical `[:map k v]` が必要)。entryless file は
+    "entryless library requires an explicit non-empty namespace export list"
+    で拒否 — probe には `(defn main ...)` が必要。いずれも正しい拒否。
+- verdict: hypothesis 棄却 — **欠落ではない** (既に実装済み)。速度反証対象なし。
+  jvm-dep-ledger の contains? 記載は 2026-09-03 時点の古い実測と判断
+  (ledger 更新は amu-rank / jvm-dep-migrator へ)。
+- gate: check PASS / wasm32 compile PASS。perfgate は不適 (速度反証対象なし)。
+- Next (1 hypothesis): `some->` — reader/macro 層の欠落か desugar 層かを
+  1 probe で切り分け (既存 `option-some?`/`option-value` lowering 経由の
+  純 desugar で parity が取れるか)。`seq`/`remove` は後続。
