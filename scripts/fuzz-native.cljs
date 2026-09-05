@@ -106,7 +106,12 @@
                                :UBSAN_OPTIONS "halt_on_error=1:print_stacktrace=1"}
                          :allow-failure? true :max-buffer (* 16 1024 1024)})
         log (str (:stdout result) (:stderr result))]
-    (when-not (= 0 (:status result)) (throw (js/Error. log)))
+    (when-not (= 0 (:status result))
+      ;; amu#784: print the captured exit/signal so a silent child death is
+      ;; attributable (signal=SIGKILL = external kill/OOM, signal=SIGSEGV =
+      ;; unhandled fault, exit=N = the child failed on its own).
+      (throw (js/Error. (str "native-fuzz: target " (lib/describe-exit result)
+                             "\n" log))))
     (let [done (last (filter #(.includes % "cov:") (str/split-lines log)))
           cov (number-field done #"cov: ([0-9]+)" "coverage")
           features (number-field done #"ft: ([0-9]+)" "features")

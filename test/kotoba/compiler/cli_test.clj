@@ -1,5 +1,6 @@
 (ns kotoba.compiler.cli-test
-  (:require [clojure.edn :as edn]
+  (:require [kotoba.compiler.atomic-output :as atomic-output]
+            [clojure.edn :as edn]
             [clojure.java.io :as io]
             [clojure.java.shell :as shell]
             [clojure.string :as str]
@@ -28,8 +29,7 @@
 (defn- temp-kotoba-source!
   ([contents] (temp-kotoba-source! contents ".kotoba"))
   ([contents extension]
-  (let [file (doto (java.io.File/createTempFile "kotoba-cli-test-" extension)
-               (.deleteOnExit))]
+  (let [file (atomic-output/temp-file! "kotoba-cli-test-" extension)]
     (spit file contents)
     (.getPath file))))
 
@@ -105,8 +105,7 @@
            [".cljc" "js" :javascript/esm]
            [".cljc" "wasm32" :wasm/v1]]]
     (let [source (temp-kotoba-source! "(defn main [] 42)" extension)
-          output (.getPath (doto (java.io.File/createTempFile "kotoba-target-selection-" ".out")
-                             (.deleteOnExit)))
+          output (.getPath (atomic-output/temp-file! "kotoba-target-selection-" ".out"))
           out (StringWriter.)]
       (binding [*out* out]
         (cli/-main "compile" source "--target" target "--output" output))
@@ -121,6 +120,43 @@
                        (take 4 (java.nio.file.Files/readAllBytes
                                 (.toPath (java.io.File. output)))))))
           (is (str/includes? (slurp output) "export")))))))
+
+(deftest cljs-target-alias-reaches-the-cljs-backend
+  ;; `--target cljs` used to fall through parse-target to the bare `:cljs`,
+  ;; rejected as :unsupported-target, while the KIR -> cljs source backend
+  ;; behind :cljs-kotoba-v1 is implemented (measured 2026-09-04). The alias
+  ;; must reach that backend and emit plain cljs source text, not an artifact
+  ;; map literal.
+  (doseq [[alias expected-target] [["cljs" :cljs-kotoba-v1]
+                                   ["cljs-node" :cljs-node-kotoba-v1]
+                                   ["cljs-browser" :cljs-browser-kotoba-v1]]]
+    (let [source (temp-kotoba-source! "(defn main [] 42)" ".kotoba")
+          output (.getPath (atomic-output/temp-file! "kotoba-cljs-alias-" ".cljs"))
+          out (StringWriter.)]
+      (binding [*out* out]
+        (cli/-main "compile" source "--target" alias "--output" output))
+      (let [report (edn/read-string (str out))]
+        (is (:ok report) (pr-str report))
+        (is (= expected-target (:target report)))
+        (is (str/includes? (slurp output) "(defn main"))
+        (is (str/includes? (slurp output) "(ns kotoba.compiled.generated)"))))))
+
+(deftest web-target-alias-reaches-the-js-backend
+  ;; `--target web` is the `kotoba` CLI's own spelling for :js-kotoba-v1;
+  ;; amu's alias table dropped it through (keyword s) to the bare `:web`,
+  ;; rejected as :unsupported-target (measured 2026-09-05, same class as the
+  ;; cljs alias gap fixed above). The alias must reach the kotoba-script
+  ;; backend and emit a restricted-ESM artifact.
+  (let [source (temp-kotoba-source! "(defn main [] 42)" ".kotoba")
+        output (.getPath (atomic-output/temp-file! "kotoba-web-alias-" ".mjs"))
+        out (StringWriter.)]
+    (binding [*out* out]
+      (cli/-main "compile" source "--target" "web" "--output" output))
+    (let [report (edn/read-string (str out))]
+      (is (:ok report) (pr-str report))
+      (is (= :js-kotoba-v1 (:target report)))
+      (is (str/includes? (slurp output) "kotobaArtifact"))
+      (is (str/includes? (slurp output) "instantiateKotoba")))))
 
 (deftest compile-source-path-loads-only-a-closed-qualified-project
   (let [directory (.toFile (java.nio.file.Files/createTempDirectory
@@ -293,8 +329,7 @@
             and the old code unconditionally wrote (:artifact result) via
             write-edn! for every non-:wasm/v1 format."
     (let [source (temp-kotoba-source! "(defn main [] (let [x 40 y 2] (+ x y)))")
-          output (.getPath (doto (java.io.File/createTempFile "kotoba-cli-cljs-out-" ".cljs")
-                             (.deleteOnExit)))
+          output (.getPath (atomic-output/temp-file! "kotoba-cli-cljs-out-" ".cljs"))
           status (atom nil)
           out (StringWriter.)]
       (binding [cli/*exit* #(reset! status %)
@@ -327,8 +362,7 @@
 
 (deftest compile-aiueos-user-target-writes-elf-not-kexe-edn
   (let [source (temp-kotoba-source! "(defn main [] (+ 40 2))")
-        output (.getPath (doto (java.io.File/createTempFile "kotoba-aiueos-user-" ".elf")
-                           (.deleteOnExit)))
+        output (.getPath (atomic-output/temp-file! "kotoba-aiueos-user-" ".elf"))
         out (StringWriter.)]
     (binding [*out* out]
       (cli/-main "compile" source "--target" "x86_64-aiueos-user-v1"
@@ -339,8 +373,7 @@
 
 (deftest compile-aiueos-kernel-image-bypasses-the-object-link-stage
   (let [source (temp-kotoba-source! "(defn main [] (kernel-out-u32 244 16))")
-        output (.getPath (doto (java.io.File/createTempFile "kotoba-aiueos-kernel-" ".elf")
-                           (.deleteOnExit)))
+        output (.getPath (atomic-output/temp-file! "kotoba-aiueos-kernel-" ".elf"))
         out (StringWriter.)]
     (binding [*out* out]
       (cli/-main "compile" source "--target" "x86_64-aiueos-kernel-v1"
@@ -352,9 +385,7 @@
 
 (deftest compile-cli-threads-fuel-into-native-image
   (let [source (temp-kotoba-source! "(defn main [] (kernel-out-u32 244 16))")
-        output (.getPath (doto (java.io.File/createTempFile
-                                "kotoba-aiueos-kernel-fuel-" ".elf")
-                           (.deleteOnExit)))
+        output (.getPath (atomic-output/temp-file! "kotoba-aiueos-kernel-fuel-" ".elf"))
         out (StringWriter.)]
     (binding [*out* out]
       (cli/-main "compile" source "--target" "x86_64-aiueos-kernel-v1"
@@ -372,8 +403,7 @@
 
 (deftest compile-wasm-target-is-unaffected-by-the-cljs-output-fix
   (let [source (temp-kotoba-source! "(defn main [] (let [x 40 y 2] (+ x y)))")
-        output (.getPath (doto (java.io.File/createTempFile "kotoba-cli-wasm-out-" ".wasm")
-                           (.deleteOnExit)))
+        output (.getPath (atomic-output/temp-file! "kotoba-cli-wasm-out-" ".wasm"))
         status (atom nil)
         out (StringWriter.)]
     (binding [cli/*exit* #(reset! status %)
@@ -392,11 +422,9 @@
         policy {:allow #{[:cap/call 7]}}
         source (temp-kotoba-source! text)
         policy-file (.getPath
-                     (doto (java.io.File/createTempFile "kotoba-component-policy-" ".edn")
-                       (.deleteOnExit)))
+                     (atomic-output/temp-file! "kotoba-component-policy-" ".edn"))
         output (.getPath
-                (doto (java.io.File/createTempFile "kotoba-component-v2-" ".wasm")
-                  (.deleteOnExit)))
+                (atomic-output/temp-file! "kotoba-component-v2-" ".wasm"))
         out (StringWriter.)]
     (spit policy-file (pr-str policy))
     (binding [*out* out]
@@ -467,7 +495,7 @@
 (deftest a-single-file-compile-is-unaffected
   (testing "nothing to pin means nothing to refuse"
     (let [source (temp-kotoba-source! "(ns solo (:export [main])) (defn main [] 1)")
-          output (java.io.File/createTempFile "kotoba-solo-" ".mjs")
+          output (atomic-output/temp-file! "kotoba-solo-" ".mjs")
           out (StringWriter.)]
       (binding [*out* out]
         (cli/-main "compile" source "--target" "js" "--output" (.getPath output)))

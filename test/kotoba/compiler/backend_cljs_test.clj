@@ -16,7 +16,8 @@
   Real nbb execution of the exact same generated sources (including the
   fuel-exhaustion global-depletion property) was independently verified by
   hand before this commit; see ADR-2607151500."
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [kotoba.compiler.atomic-output :as atomic-output]
+            [clojure.test :refer [deftest is testing]]
             [clojure.java.shell :as shell]
             [clojure.tools.reader :as reader]
             [kotoba.compiler.core :as compiler]
@@ -304,8 +305,7 @@
         compiled (compile-cljs source {:allow #{[:cap/call 4]}})
         request [request-type "ことば😀" [[:set :keyword] [:app/safe]]]
         result [result-type [[:option :bool] true true]]
-        script (doto (java.io.File/createTempFile "kotoba-typed-provider-" ".cljs")
-                 (.deleteOnExit))]
+        script (atomic-output/temp-file! "kotoba-typed-provider-" ".cljs")]
     (spit script
           (str (:source compiled) "\n"
                "(set-typed-providers! "
@@ -326,8 +326,7 @@
         source (str "(ns demo.i64 (:export [invoke]) (:capabilities #{:http/post}))"
                     (typed-function "invoke" ":http/post" request-type result-type))
         compiled (compile-cljs source {:allow #{[:cap/call 4]}})
-        script (doto (java.io.File/createTempFile "kotoba-typed-i64-" ".cljs")
-                 (.deleteOnExit))]
+        script (atomic-output/temp-file! "kotoba-typed-i64-" ".cljs")]
     (spit script
           (str (:source compiled) "\n"
                "(def minimum (js/BigInt \"-9223372036854775808\"))\n"
@@ -369,6 +368,23 @@
     (is (= 14 (:oracle-value (:kir compiled))))
     (is (= 14 (call ns 'main)))))
 
+(deftest vector-take-and-pop-execute-on-cljs
+  ;; vector-take is drop's mirror (keeps the FIRST n items, same 0..count
+  ;; range, same :vector-take-out-of-range trap); pop desugars to
+  ;; (vector-take v (- (vector-count v) 1)). Measured live 2026-09-04 through
+  ;; `amu compile --target cljs` + nbb: (vector-count (pop [7 8 9])) = 2.
+  (let [source "(defn main []
+  (let [kept (vector-take [7 8 9] 2)
+        popped (pop [7 8 9])]
+    (+ (vector-count kept)
+       (+ (vector-at kept 1)
+          (+ (vector-count popped)
+             (vector-at popped 0))))))"
+        compiled (compile-cljs source)
+        ns (eval-in-fresh-ns (:source compiled))]
+    (is (= 19 (:oracle-value (:kir compiled))))
+    (is (= 19 (call ns 'main)))))
+
 (deftest vector-returning-closures-execute-on-cljs
   (let [source "(defn main []
   (let [singleton (fn [x] [x])]
@@ -408,8 +424,7 @@
                   "(ns demo.vector-i64 (:export [pick]))
                    (defn pick [items :vector-i64 index :i64] :i64
                      (vector-at items index))")
-        script (doto (java.io.File/createTempFile "kotoba-vector-i64-" ".cljs")
-                 (.deleteOnExit))]
+        script (atomic-output/temp-file! "kotoba-vector-i64-" ".cljs")]
     (spit script
           (str (:source compiled) "\n"
                "(def item (js/BigInt \"9223372036854775807\"))\n"
