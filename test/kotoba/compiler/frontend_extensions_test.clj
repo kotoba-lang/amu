@@ -3,7 +3,8 @@
   kotoba-lang/kotoba's already-proven runtime.clj desugar-and/desugar-or),
   and keyword/map literals + get/assoc (new, desugared entirely to the
   existing heap-pair/list primitives -- no backend/codegen change)."
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [kotoba.compiler.atomic-output :as atomic-output]
+            [clojure.test :refer [deftest is testing]]
             [clojure.string :as str]
             [clojure.java.shell :as shell]
             [kotoba.compiler.core :as compiler]
@@ -138,7 +139,7 @@
                   (let [f (fn [x] \"done\")]
                     (do 0 (f 123))))"
         compiled (compiler/compile-source source :js-kotoba-v1)
-        module (java.io.File/createTempFile "kotoba-do-portability-" ".mjs")
+        module (atomic-output/temp-file! "kotoba-do-portability-" ".mjs")
         probe (try
                 (spit module
                       (str (:source compiled)

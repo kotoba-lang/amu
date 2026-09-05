@@ -35,7 +35,7 @@ that domain is unreachable for anyone, and recording that is a result.
 |---|---|---|---|
 | H-A | the quiet gate reads a proxy (load1) with a floor above its own limit; read the intended quantity (busy-CPU fraction) directly at the same strictness | **executed — iteration 16** (ADR 0282) | fleet measurement 2026-08-29: load1 criterion 0/7 hosts ever qualified; busy-fraction criterion qualified 2 hosts outright, near-qualified 3, and rejected exactly the one host running a persistent workload |
 | H-C | narrow-arithmetic gap vs Clang: Clang strength-reduces `q*(2^31-1)` to `sub‑lsl + add`, taking one multiply off the mul pipes per round; amu emits `msub` | **landed — kotoba-native #83, gated on one serial chain** | instruction diff: amu 54 instrs (6/round), clang 61 (7/round) yet clang faster; hand-patched amu code (byte-identical reconstruction, 8 substitutions): +2.46% mean, medians 6.86→6.70 ns, mins 6.85→6.68, 42 ABBA samples/arm on levi, both arms answering 1830338420. Explains ~⅓ of the ~7% clang gap |
-| H-C2 | the remaining ~4.4% vs Clang on `kernel` after H-C: the mutated stream and clang's are now near-identical in shape (62 vs 61 instructions; amu-mut still loads the now-dead `0x7fffffff` constant), so the residue is scheduling/front-end shaped | open — generate from an instruction-order diff | pending; 2026-09-03 10:16 JST falsify tick: host busy (load1 48.01), no measurement attempted | 2026-09-03 10:31 JST falsify tick: host busy (load1 38.40, 1min avg over 10-day uptime), no measurement attempted | 2026-09-03 10:52 JST falsify tick: host busy (load1 28.49, load15 33.90), no measurement attempted; NEXT は H-C2 のまま | 2026-09-03 11:27 JST falsify tick: host busy (load1 29.81, load15 35.26), no measurement attempted; NEXT は H-C2 のまま | 2026-09-03 13:33 JST bench tick: host busy (load1 23.21, load5 17.62, load15 17.86, up 10 days), no measurement attempted; NEXT は H-C2 のまま | 2026-09-03 13:34 JST falsify tick: host busy (load1 16.07), no measurement attempted | 2026-09-03 15:08 JST falsify tick: host busy (load1 27.24, load5 20.98, load15 18.49, up 10 days), no measurement attempted; NEXT は H-C2 のまま | 2026-09-03 16:00 JST falsify tick: host busy (load1 12.74, load5 14.16, load15 17.30, up 10 days), no measurement attempted; NEXT は H-C2 のまま | 2026-09-03 17:40 JST bench tick: host busy (load1 35.54, load5 35.97, load15 28.99, up 10 days, 10 CPUs), no measurement attempted; NEXT は H-C2 のまま | 2026-09-03 18:37 JST falsify tick: host busy (load1 19.32, load5 16.19, load15 16.23, up 10 days, 10 CPUs), no measurement attempted; NEXT は H-C2 のまま | 2026-09-03 19:13 JST bench tick: host busy (load1 14.80, load5 15.08, load15 17.02, up 10 days, 10 CPUs), no measurement attempted; NEXT は H-C2 のまま | 2026-09-03 19:20 JST falsify tick: host busy (load1 15.78, load5 17.17, load15 17.41, up 10 days, 10 CPUs), no measurement attempted; NEXT は H-C2 のまま | 2026-09-03 19:50 JST bench tick: host busy (load1 13.64, load5 13.92, load15 15.25, up 10 days, 11:38, 10 CPUs), no measurement attempted; NEXT は H-C2 のまま | 2026-09-03 20:46 JST falsify tick: host busy (load1 15.18, load5 16.38, load15 18.98, up 10 days, 12:34, 13 users), no measurement attempted; NEXT は H-C2 のまま | 2026-09-03 20:57 JST falsify tick: host busy (load1 15.18, load5 18.75, load15 19.72, up 10 days, 12:45, 13 users), no measurement attempted; NEXT は H-C2 のまま | 2026-09-03 21:07 JST bench tick: host busy (load1 11.04, load5 15.25, load15 17.22, up 10 days, 12:55, 13 users), no measurement attempted; NEXT は H-C2 のまま | 2026-09-03 23:17 JST falsify tick: host busy (load1 17.75, load5 16.84, load15 16.84, up 10 days, 15:05, 11 users, 10 CPUs), no measurement attempted; NEXT は H-C2 のまま | 2026-09-04 01:06 JST bench tick: host busy (load1 23.07, load5 28.48, load15 25.13, up 10 days, 11 users), no measurement attempted; NEXT は H-C2 のまま | 2026-09-04 01:25 JST falsify tick: host busy (load1 23.72, load5 17.92, load15 19.33, up 10 days, 11 users), no measurement attempted; NEXT は H-C2 のまま | 2026-09-04 03:54 JST falsify tick: host busy (load1 17.99, load5 17.61, load15 19.83, up 10 days, 10 CPUs), no measurement attempted; NEXT は H-C2 のまま | 2026-09-04 04:22 JST rank tick: host busy (load1 14.42, load5 13.99, load15 16.33, up 10 days, 10 CPUs), no measurement attempted; NEXT は H-C2 のまま | 2026-09-04 05:12 JST falsify tick: host busy (load1 19.05, load5 17.39, load15 18.10, up 10 days, 11 users, 10 CPUs), no measurement attempted; NEXT は H-C2 のまま | 2026-09-04 07:40 JST bench tick: host busy (load1 29.14, load5 22.55, load15 22.15, up 10 days, 23:28, 11 users, 10 CPUs), no measurement attempted; quiet limit 7.5 exceeded 4x; NEXT は H-C2 のまま | 2026-09-04 10:46 JST falsify tick: host busy (load1 18.51, load5 28.00, load15 26.93, up 11 days, 10 CPUs), no measurement attempted; NEXT は H-C2 のまま | 2026-09-04 11:00 JST falsify tick: host busy (load1 32.81, load5 32.59, load15 29.42, up 11 days, 2:48, 8 users, 10 CPUs), no measurement attempted; NEXT は H-C2 のまま | 2026-09-04 11:08 JST bench tick: host busy (load1 44.19, load5 42.09, load15 35.17, up 11 days, 2:56, 10 users, 10 CPUs), no measurement attempted; quiet limit 7.5 exceeded ~6x; NEXT は H-C2 のまま | 2026-09-04 11:20 JST falsify tick: host busy (load1 59.44, load5 46.81, load15 38.53, up 11 days, 10 CPUs), no measurement attempted; quiet limit 7.5 exceeded ~8x; NEXT は H-C2 のまま | 2026-09-04 11:27 JST bench tick: host busy (load1 64.86, load5 61.12, load15 48.78, up 11 days, 3:15, 10 users, 10 CPUs), no measurement attempted; quiet limit 7.5 exceeded ~8.6x; NEXT は H-C2 のまま | 2026-09-04 11:41 JST bench tick: host busy (load1 66.67, load5 60.14, load15 52.99, up 11 days, 3:29, 9 users, 10 CPUs), no measurement attempted; quiet limit 7.5 exceeded ~8.9x; NEXT は H-C2 のまま | 2026-09-05 01:45 JST falsify tick: host busy (load1 13.25, load5 14.89, load15 11.40, up 6 days 13:38, 13 users, 10 CPUs), no measurement attempted; quiet limit 7.5 exceeded ~1.8x; NEXT は H-C2 のまま | 2026-09-05 03:41 JST falsify tick: host busy (load1 40.39, load5 30.46, load15 18.65, up 6 days 15:39, 13 users, 10 CPUs), no measurement attempted; quiet limit 7.5 exceeded ~5.4x;  2026-09-05 08:15 JST falsify tick: host busy (load1 77.13, load5 90.87, load15 71.08, up 58 min), no measurement attempted; NEXT は H-C2 のまま | 2026-09-05 ~05:20 JST falsify tick: host at quiet-gate threshold (monitor open: load1 8.38; 05:02 load1 5.84/load5 5.48/load15 6.79; 05:04 load1 9.29/load5 6.55/load15 7.11, 10 CPUs, up 6d17h) — load1 exceeded 7.5 quiet limit, measurement refused per policy, no hand-patch run. Tooling note: this tick hit persistent terminal stdout loss (commands ran, output empty), so bench tooling was not invoked; H-C2 deferred intact. NEXT は H-C2 のまま (retry at load1 < 5) | 2026-09-05 08:07 JST falsify tick: host busy (load1 262, load5 142, load15 61, up 50min, 10 CPUs) — quiet limit 7.5 exceeded ~35x; no bench/perfgate/hand-patch run attempted; NEXT は H-C2 のまま. | 2026-09-05 09:31 JST falsify tick: host busy (load1 15.23, load5 34.76, load15 44.26, up 2:14, 14 users, 10 CPUs), quiet limit 7.5 exceeded ~2.0x; no measurement attempted; NEXT は H-C2 のまま.
+| H-C2 | the remaining ~4.4% vs Clang on `kernel` after H-C: the mutated stream and clang's are now near-identical in shape (62 vs 61 instructions; amu-mut still loads the now-dead `0x7fffffff` constant), so the residue is scheduling/front-end shaped | open — generate from an instruction-order diff | pending; 2026-09-03 10:16 JST falsify tick: host busy (load1 48.01), no measurement attempted | 2026-09-03 10:31 JST falsify tick: host busy (load1 38.40, 1min avg over 10-day uptime), no measurement attempted | 2026-09-03 10:52 JST falsify tick: host busy (load1 28.49, load15 33.90), no measurement attempted; NEXT は H-C2 のまま | 2026-09-03 11:27 JST falsify tick: host busy (load1 29.81, load15 35.26), no measurement attempted; NEXT は H-C2 のまま | 2026-09-03 13:33 JST bench tick: host busy (load1 23.21, load5 17.62, load15 17.86, up 10 days), no measurement attempted; NEXT は H-C2 のまま | 2026-09-03 13:34 JST falsify tick: host busy (load1 16.07), no measurement attempted | 2026-09-03 15:08 JST falsify tick: host busy (load1 27.24, load5 20.98, load15 18.49, up 10 days), no measurement attempted; NEXT は H-C2 のまま | 2026-09-03 16:00 JST falsify tick: host busy (load1 12.74, load5 14.16, load15 17.30, up 10 days), no measurement attempted; NEXT は H-C2 のまま | 2026-09-03 17:40 JST bench tick: host busy (load1 35.54, load5 35.97, load15 28.99, up 10 days, 10 CPUs), no measurement attempted; NEXT は H-C2 のまま | 2026-09-03 18:37 JST falsify tick: host busy (load1 19.32, load5 16.19, load15 16.23, up 10 days, 10 CPUs), no measurement attempted; NEXT は H-C2 のまま | 2026-09-03 19:13 JST bench tick: host busy (load1 14.80, load5 15.08, load15 17.02, up 10 days, 10 CPUs), no measurement attempted; NEXT は H-C2 のまま | 2026-09-03 19:20 JST falsify tick: host busy (load1 15.78, load5 17.17, load15 17.41, up 10 days, 10 CPUs), no measurement attempted; NEXT は H-C2 のまま | 2026-09-03 19:50 JST bench tick: host busy (load1 13.64, load5 13.92, load15 15.25, up 10 days, 11:38, 10 CPUs), no measurement attempted; NEXT は H-C2 のまま | 2026-09-03 20:46 JST falsify tick: host busy (load1 15.18, load5 16.38, load15 18.98, up 10 days, 12:34, 13 users), no measurement attempted; NEXT は H-C2 のまま | 2026-09-03 20:57 JST falsify tick: host busy (load1 15.18, load5 18.75, load15 19.72, up 10 days, 12:45, 13 users), no measurement attempted; NEXT は H-C2 のまま | 2026-09-03 21:07 JST bench tick: host busy (load1 11.04, load5 15.25, load15 17.22, up 10 days, 12:55, 13 users), no measurement attempted; NEXT は H-C2 のまま | 2026-09-03 23:17 JST falsify tick: host busy (load1 17.75, load5 16.84, load15 16.84, up 10 days, 15:05, 11 users, 10 CPUs), no measurement attempted; NEXT は H-C2 のまま | 2026-09-04 01:06 JST bench tick: host busy (load1 23.07, load5 28.48, load15 25.13, up 10 days, 11 users), no measurement attempted; NEXT は H-C2 のまま | 2026-09-04 01:25 JST falsify tick: host busy (load1 23.72, load5 17.92, load15 19.33, up 10 days, 11 users), no measurement attempted; NEXT は H-C2 のまま | 2026-09-04 03:54 JST falsify tick: host busy (load1 17.99, load5 17.61, load15 19.83, up 10 days, 10 CPUs), no measurement attempted; NEXT は H-C2 のまま | 2026-09-04 04:22 JST rank tick: host busy (load1 14.42, load5 13.99, load15 16.33, up 10 days, 10 CPUs), no measurement attempted; NEXT は H-C2 のまま | 2026-09-04 05:12 JST falsify tick: host busy (load1 19.05, load5 17.39, load15 18.10, up 10 days, 11 users, 10 CPUs), no measurement attempted; NEXT は H-C2 のまま | 2026-09-04 07:40 JST bench tick: host busy (load1 29.14, load5 22.55, load15 22.15, up 10 days, 23:28, 11 users, 10 CPUs), no measurement attempted; quiet limit 7.5 exceeded 4x; NEXT は H-C2 のまま | 2026-09-04 10:46 JST falsify tick: host busy (load1 18.51, load5 28.00, load15 26.93, up 11 days, 10 CPUs), no measurement attempted; NEXT は H-C2 のまま | 2026-09-04 11:00 JST falsify tick: host busy (load1 32.81, load5 32.59, load15 29.42, up 11 days, 2:48, 8 users, 10 CPUs), no measurement attempted; NEXT は H-C2 のまま | 2026-09-04 11:08 JST bench tick: host busy (load1 44.19, load5 42.09, load15 35.17, up 11 days, 2:56, 10 users, 10 CPUs), no measurement attempted; quiet limit 7.5 exceeded ~6x; NEXT は H-C2 のまま | 2026-09-04 11:20 JST falsify tick: host busy (load1 59.44, load5 46.81, load15 38.53, up 11 days, 10 CPUs), no measurement attempted; quiet limit 7.5 exceeded ~8x; NEXT は H-C2 のまま | 2026-09-04 11:27 JST bench tick: host busy (load1 64.86, load5 61.12, load15 48.78, up 11 days, 3:15, 10 users, 10 CPUs), no measurement attempted; quiet limit 7.5 exceeded ~8.6x; NEXT は H-C2 のまま | 2026-09-04 11:41 JST bench tick: host busy (load1 66.67, load5 60.14, load15 52.99, up 11 days, 3:29, 9 users, 10 CPUs), no measurement attempted; quiet limit 7.5 exceeded ~8.9x; NEXT は H-C2 のまま | 2026-09-05 01:45 JST falsify tick: host busy (load1 13.25, load5 14.89, load15 11.40, up 6 days 13:38, 13 users, 10 CPUs), no measurement attempted; quiet limit 7.5 exceeded ~1.8x; NEXT は H-C2 のまま | 2026-09-05 03:41 JST falsify tick: host busy (load1 40.39, load5 30.46, load15 18.65, up 6 days 15:39, 13 users, 10 CPUs), no measurement attempted; quiet limit 7.5 exceeded ~5.4x;  2026-09-05 08:15 JST falsify tick: host busy (load1 77.13, load5 90.87, load15 71.08, up 58 min), no measurement attempted; NEXT は H-C2 のまま | 2026-09-05 ~05:20 JST falsify tick: host at quiet-gate threshold (monitor open: load1 8.38; 05:02 load1 5.84/load5 5.48/load15 6.79; 05:04 load1 9.29/load5 6.55/load15 7.11, 10 CPUs, up 6d17h) — load1 exceeded 7.5 quiet limit, measurement refused per policy, no hand-patch run. Tooling note: this tick hit persistent terminal stdout loss (commands ran, output empty), so bench tooling was not invoked; H-C2 deferred intact. NEXT は H-C2 のまま (retry at load1 < 5) | 2026-09-05 08:07 JST falsify tick: host busy (load1 262, load5 142, load15 61, up 50min, 10 CPUs) — quiet limit 7.5 exceeded ~35x; no bench/perfgate/hand-patch run attempted; NEXT は H-C2 のまま. | 2026-09-05 09:31 JST falsify tick: host busy (load1 15.23, load5 34.76, load15 44.26, up 2:14, 14 users, 10 CPUs), quiet limit 7.5 exceeded ~2.0x; no measurement attempted; NEXT は H-C2 のまま; 2026-09-05 14:17 JST bench tick: host busy (load1 64.09, load5 57.75, load15 44.02, up 7 hrs, 10 CPUs), quiet limit 7.5 exceeded ~8.5x; no measurement attempted; NEXT は H-C2 のまま. | 2026-09-05 17:24 JST falsify tick: host busy (load1 13.69, load5 16.59, load15 17.78, up 10:07, 22 users, 10 CPUs), quiet limit 7.5 exceeded ~1.8x; no measurement attempted; NEXT は H-C2 のまま.
 | H-D | `kernel_batch` loop-path remainder (~8% vs Rust diagnostic, refused `:too-noisy` in ADR 0281): body scheduling / per-iteration instruction mix | open; measurement first needs the noise fixed (H-B) or the loop lengthened | ADR 0279 measured 1.349x behind pre-#653..#660; levi 2026-08-29 read 1.08x diagnostic |
 | H-B | batch-fixture noise (rsd 0.47 vs policy 0.10) is scheduler migration of a long single-call region across P/E cores; pin the timed region's QoS | open | performance.md already documents an E-core migration incident; 2026-09-03 10:00 JST falsify tick: host busy (load1 82.83), no measurement attempted | 2026-09-05 09:03 JST bench tick: host busy (load1 51.16, load5 45.12, load15 62.11, up 1:46), no measurement attempted; NEXT (J-B idle>=9/10 rerun) not run, no numbers recorded |
 | H-E | call-crossing values go to stack slots instead of the callee-saved registers the prologue already spends: `kernel_call` saves x19–x26 yet stores/loads all eight call results through the stack (8 STR + 11 LDR + 3 constant-mov round-trips) | **hand-falsified — iteration 20: +6.66% separated (5.19 → 4.84 ns), fuel contract intact, past clang's 5.03**. Compiler work: assign call-crossing values to the preserved tier in the scan | performance.md's conservative-path tables; iteration-20 fixture retained in `levi:~/amu-evidence/` |
@@ -1731,6 +1731,99 @@ as before.
   unqualified, awaiting the idle>=9/10 rerun; J-C blocked behind it.
   NEXT unchanged (entry 102 re-rank stands).
 
+- **122 (2026-09-05 13:16 JST, bench pass; host busy, no measurement)**:
+  quiet gate checked for the J-B rerun with 10 top-based CPU samples over
+  ~14s starting 13:15:28 JST on main-2.local: idle 53.70-67.93% (no sample
+  near the 90% bar, idle>=9/10 count 0/10, sy 14.94-21.95%); load averages
+  moved 13:11 5.26/7.58/13.15 -> 13:15 16.97/12.10/13.70 (up 5:58, 12 users,
+  10 CPUs) -- load1 was below 7.5 at the pre-run script's reading but rose
+  ~3x within 4 minutes and idle never approached 9/10, so the quiet gate
+  failed and `bench/runtime-comparison/jb_imod_control.c` (file present,
+  82 lines) was not run. (Background `workdir` is ignored on this runtime:
+  commands ran in /tmp/kotoba-fix; evidence collected via absolute-path
+  probe scripts, /tmp/amubench_mon_20260905c.txt.) amu-falsify evidence
+  checked via the iteration log: no new "要 quiet-host 測定" item pending.
+  One new landing since entry 121: 4fdfb1bc (lang-cosientist iteration 8,
+  some-> repair parity probe -- evidence only, no compiler change, no
+  bearing on the codegen population; no re-rank). Population unchanged:
+  H-C2, H-D, H-B, H-Y1 open; J-B confirmed-diagnostic (14 consecutive
+  positive windows across 5) but unqualified, still awaiting the idle>=9/10
+  rerun; J-C blocked behind it. NEXT unchanged (entry 102 re-rank stands):
+  J-B fully-quiet-host rerun (idle >= 9/10) of
+  `bench/runtime-comparison/jb_imod_control.c`; lever-2-only control
+  (non-inlined mulh arm) follows it once a quiet host is available.
+
+- **123 (2026-09-05 15:50 JST, bench pass; host busy, no measurement)**:
+  quiet gate checked for the J-B fully-quiet rerun (idle >= 9/10) with 10
+  top-based CPU samples over ~13s starting 15:49:49 JST on main-2.local
+  (up 8:32, 17 users, 10 CPUs): idle 48.82-62.74% (no sample near the 90%
+  bar, idle>=9/10 count 0/10, sy 15.62-22.60%); load averages 15:48
+  52.98/56.56/85.22 -> 15:49 50.45/55.63/83.89 -- heavily loaded throughout,
+  so the quiet gate failed and `bench/runtime-comparison/jb_imod_control.c`
+  was not run. (Foreground terminal returned empty output; evidence collected
+  via /tmp probe script, /tmp/amubench_mon_20260905e.txt.) amu-falsify
+  evidence checked via the iteration log: no new "要 quiet-host 測定" item
+  pending. No new hypothesis-relevant landing observed since entry 122;
+  population unchanged: H-C2, H-D, H-B, H-Y1 open; J-B confirmed-diagnostic
+  but unqualified, still awaiting the idle>=9/10 rerun; J-C blocked behind
+  it. NEXT unchanged: J-B fully-quiet-host rerun (idle >= 9/10) of
+  `bench/runtime-comparison/jb_imod_control.c`.
+
+- **126 (2026-09-05 17:07 JST, bench pass; host busy, no measurement)**:
+  load averages 17:06 8.27/15.86/20.22 -> 17:07 8.27/14.89/19.66 on
+  main-2.local (up 9:49, 22 users); load1 8.27 exceeds the 7.5 bar, so no
+  quiet-gate sampling and no measurement were run (per pass policy: do not
+  measure into a loaded host). amu-falsify evidence checked via the
+  iteration log: no new pending item. Population unchanged: H-C2, H-D, H-B,
+  H-Y1 open; NEXT unchanged: J-B fully-quiet-host rerun (idle >= 9/10) of
+  `bench/runtime-comparison/jb_imod_control.c`.
+
+- **124 (2026-09-05 17:26 JST, bench pass; host busy, no measurement)**:
+  quiet gate checked with 10 top-based CPU samples over ~30s (17:24:14-17:24:44
+  JST on main-2.local, up 10:07, 22 users, 10 CPUs): idle 19.62-52.00% (no
+  sample near the 90% bar, idle>=9/10 count 0/10, sy 11.96-27.54%); load
+  averages 17:23 14.42/17.16/18.04 -> 17:24 14.99/16.51/17.70 -- heavily
+  loaded throughout, so the quiet gate failed and no bench/perfgate run was
+  attempted (NEXT target H-C2 kernel rerun deferred; J-B fully-quiet rerun
+  also still deferred). Evidence file: /tmp/amubench_mon_20260905f.txt
+  (foreground terminal returned empty output; collected via /tmp probe).
+  amu-falsify evidence checked via the iteration log: no new pending
+  quiet-host-request item. Population unchanged: H-C2, H-D, H-B, H-Y1 open;
+  J-B confirmed-diagnostic but unqualified, awaiting idle>=9/10 rerun; J-C
+  blocked behind it. NEXT unchanged: J-B fully-quiet-host rerun
+  (idle >= 9/10) of `bench/runtime-comparison/jb_imod_control.c`, then H-C2.
+
+- **128 (2026-09-05 17:56 JST, bench pass; host busy, no measurement)**:
+  amu-bench tick. Host state at tick (`uptime`/`date`/`top -l 3 -s 10` via
+  /tmp/bench_uptime.txt): load1 42.99/42.12/42.08, 5m 30.3-30.9, 15m 27.6-27.9,
+  up 10:38, 17 users, 10 CPUs; CPU idle 43.46% -> 23.21% -> 4.70% over three
+  10s-spaced top samples (idle>=90% count 0/3, no decay). Far above the 7.5
+  quiet limit, so the quiet gate failed and no bench/perfgate run was
+  attempted; no numbers recorded. Evidence reviewed since entry 127
+  (iteration log): no new pending "要 quiet-host 測定" item; NEXT unchanged.
+  Population unchanged: H-C2, H-D, H-B, H-Y1 open; J-B confirmed-diagnostic
+  but unqualified, still awaiting the idle>=9/10 rerun; J-C blocked behind
+  it. NEXT unchanged: J-B fully-quiet-host rerun (idle >= 9/10) of
+  `bench/runtime-comparison/jb_imod_control.c` for the perfgate-qualifiable
+  number (entry 102 re-rank stands); H-C2 instruction-order-diff falsify
+  plan queued behind it.
+
+- **129 (2026-09-05 18:09 JST, bench pass; host busy, no measurement)**:
+  amu-bench tick. Host state at tick (`uptime`/`sysctl vm.loadavg`/`date` and
+  `top -l 3 -s 10` via /tmp/bench_uptime.txt): load1 41.52 -> 35.61 -> 35.58
+  -> 33.95, 5m 49.30 -> 45.43, 15m 38.99 -> 38.40, up 10:50, 16 users, 10
+  CPUs; CPU idle 40.39% -> 42.45% -> 45.86% over three 10s-spaced top
+  samples (idle>=90% count 0/3, no decay). Far above the 7.5 quiet limit,
+  so the quiet gate failed and no bench/perfgate run was attempted; no
+  numbers recorded. Evidence reviewed since entry 128 (iteration log): no
+  new pending "\u8981 quiet-host \u6e2c\u5b9a" item; NEXT unchanged.
+  Population unchanged: H-C2, H-D, H-B, H-Y1 open; J-B confirmed-diagnostic
+  but unqualified, still awaiting the idle>=9/10 rerun; J-C blocked behind
+  it. NEXT unchanged: J-B fully-quiet-host rerun (idle >= 9/10) of
+  `bench/runtime-comparison/jb_imod_control.c` for the perfgate-qualifiable
+  number (entry 102 re-rank stands); H-C2 instruction-order-diff falsify
+  plan queued behind it.
+
 ## Standing honesty constraints
 
 Every number above is one host on one day; the falsification numbers are
@@ -1928,3 +2021,162 @@ measured verdict contradicts this table, the table is what gets edited.
   `bench/runtime-comparison/jb_imod_control.c` for the perfgate-qualifiable
   number (entry 102 re-rank stands); lever-2-only control (non-inlined
   mulh arm) follows it once a quiet host is available.
+- **121 (2026-09-05 12:49 JST, bench pass; host busy, no measurement)**:
+  bench tick. Host state at tick (probe via foreground `uptime > /tmp`
+  + read_file; output non-empty this tick): load1 14.61 / 5m 19.36 /
+  15m 22.67, up 5:32, 12 users — load1 well above the 7.5 quiet limit
+  and sustained across all three windows, so the quiet gate failed.
+  The NEXT item (J-B fully-quiet-host rerun of
+  `bench/runtime-comparison/jb_imod_control.c`, idle >=9/10) was not
+  attempted and no bench or perfgate numbers were recorded. amu-falsify
+  evidence checked via the iteration log: no new "要 quiet-host 測定"
+  item pending. Population unchanged: H-C2, H-D, H-B, H-Y1 open;
+  J-B confirmed-diagnostic (14 consecutive positive windows across 5)
+  but unqualified, still awaiting the idle>=9/10 rerun; J-C blocked
+  behind it. NEXT unchanged (entry 102 re-rank stands).
+- **123 (2026-09-05 13:33 JST, rank pass; host busy, no measurement)**:
+  amu-rank tick. Host state at tick (foreground `uptime > /tmp` +
+  read_file; foreground terminal stdout empty as usual, git evidence via
+  a /tmp probe file): load1 7.97 / 5m 11.63 / 15m 13.55, up 6:16, 12
+  users, 10 CPUs — load1 just above the 7.5 quiet limit and sustained
+  across all three windows (decaying: 14.61 at entry 121), so the quiet
+  gate failed; a rank pass runs no measurement by role, and no numbers
+  were recorded. Evidence reviewed since entry 122 (git log via
+  /tmp/amurank_git_123.txt): fc88a4e4 (amu-jit tick 10) — 9th consecutive
+  quiet-gate failure, J-B rerun deferred, no measured numbers; 4fdfb1bc
+  (lang-cosientist iteration 8) already counted at 122. No new
+  perfgate/bench numbers against any open hypothesis, so no re-rank, no
+  status transition, no new hypothesis — a re-rank without measured
+  numbers would be fabrication. Population unchanged: H-C2, H-D, H-B,
+  H-Y1 open; J-B confirmed-diagnostic (14 consecutive positive windows
+  across 5) but unqualified, still awaiting the idle>=9/10 rerun; J-C
+  blocked behind it. NEXT: J-B fully-quiet-host rerun (idle >= 9/10) of
+  `bench/runtime-comparison/jb_imod_control.c` for the
+  perfgate-qualifiable number (entry 102 re-rank stands); lever-2-only
+  control (non-inlined mulh arm) follows it once a quiet host is
+  available. Note: the pre-run script payload's NEXT line still names
+  H-C2 — the iteration log (entries 95/102) supersedes it. Load is
+  decaying toward the 7.5 line; the next tick is the most likely window
+  in days for the J-B rerun.
+- **124 (2026-09-05 15:00 JST, rank pass; host busy, no measurement)**:
+  amu-rank tick. Host state at tick (foreground `uptime > /tmp` +
+  read_file): load1 273.61 / 5m 217.53 / 15m 148.49, up 7:43 — far above
+  the 7.5 quiet limit and sharply RISING vs entry 123 (7.97/11.63/13.55),
+  so the quiet gate failed decisively; a rank pass runs no measurement by
+  role, and no numbers were recorded. Evidence reviewed since entry 123
+  (git log via /tmp/amu_rank_git.txt): no new measured commits — HEAD is
+  still 4fdfb1bc (lang-cosientist iteration 8, counted at 122); the
+  working tree carries the uncommitted entries 121-123 plus pre-existing
+  source/test modifications not touched this pass. No new perfgate/bench
+  numbers against any open hypothesis, so no re-rank, no status
+  transition, no new hypothesis. Population unchanged: H-C2, H-D, H-B,
+  H-Y1 open; J-B confirmed-diagnostic but unqualified, still awaiting
+  the idle>=9/10 rerun; J-C blocked behind it. NEXT: J-B fully-quiet-host
+  rerun (idle >= 9/10) of `bench/runtime-comparison/jb_imod_control.c`
+  for the perfgate-qualifiable number (entry 102 re-rank stands).
+  Note: load is no longer decaying — the "next tick is the likely
+  window" expectation from entry 123 did not hold.
+- **125 (2026-09-05 16:43 JST, rank pass; host busy, no measurement)**:
+  amu-rank tick. Host state at tick (`uptime > /tmp` + read_file):
+  load1 53.38 / 5m 28.20 / 15m 21.94, up 9:26, 18 users, 10 CPUs — far
+  above the 7.5 quiet limit (40.81/20.05/18.76 at tick entry, rising),
+  so the quiet gate failed; a rank pass runs no measurement by role, and
+  no numbers were recorded. Evidence reviewed since entry 124 (git log
+  via /tmp/rank_log.txt): one new commit, 771f3728 (lang-cosientist
+  iteration 9: seq/remove pre-falsification, evidence-only) — it
+  carries no numbers against any codegen open hypothesis, so no
+  re-rank, no status transition, no new hypothesis. Population
+  unchanged: H-C2, H-D, H-B, H-Y1 open; J-B confirmed-diagnostic but
+  unqualified, still awaiting the idle>=9/10 rerun; J-C blocked behind
+  it. NEXT: J-B fully-quiet-host rerun (idle >= 9/10) of
+  `bench/runtime-comparison/jb_imod_control.c` for the
+  perfgate-qualifiable number (entry 102 re-rank stands).
+- **126 (2026-09-05 17:20 JST, rank pass; host busy, no measurement)**:
+  amu-rank tick. Host state at tick (`date`/`uptime` via /tmp files):
+  load1 24.96 / 5m 19.12 / 15m 18.78, up 10:03, 22 users, 10 CPUs —
+  far above the 7.5 quiet limit (load1 17.41 at tick entry, rising to
+  24.96), so the quiet gate failed; a rank pass runs no measurement by
+  role, and no numbers were recorded. Evidence reviewed since entry 125
+  (git log via /tmp/amu_rank_fetch.txt): no new commits — HEAD is still
+  771f3728 (lang-cosientist iteration 9, counted at entry 125); the
+  working tree carries the same uncommitted doc/source/test
+  modifications, not touched this pass. No new measured evidence against
+  any open hypothesis, so no re-rank, no status transition, no new
+  hypothesis. Population unchanged: H-C2, H-D, H-B, H-Y1 open; J-B
+  confirmed-diagnostic but unqualified, still awaiting the idle>=9/10
+  rerun; J-C blocked behind it. NEXT: J-B fully-quiet-host rerun
+  (idle >= 9/10) of `bench/runtime-comparison/jb_imod_control.c` for
+  the perfgate-qualifiable number (entry 102 re-rank stands).
+- **127 (2026-09-05 17:46 JST, falsify pass; host busy, no measurement)**:
+  amu-falsify tick. Host state at tick (`date`/`uptime`/`top` via /tmp
+  files): load1 36.06 / 5m 36.80 / 15m 28.89, up 10:29, 18 users, 10
+  CPUs, CPU 61.9% user / 20.5% sys / 17.6% idle — far above the 7.5
+  quiet limit, so the quiet gate failed and no measurement was
+  attempted. Top offender at tick: a JVM/Clojure test-runner process
+  (pid 88482, 138.6% CPU) — another bot's work; left alone. Evidence
+  reviewed since entry 126 (git log via /tmp/amu_fals_log.txt): no new
+  commits — HEAD still 771f3728 (lang-cosientist iteration 9, counted
+  at 126); same uncommitted doc/source/test modifications, not touched.
+  No new measured evidence against any open hypothesis, so no re-rank,
+  no status transition, no new hypothesis. Population unchanged: H-C2,
+  H-D, H-B, H-Y1 open; J-B confirmed-diagnostic but unqualified, still
+  awaiting the idle>=9/10 rerun; J-C blocked behind it. NEXT: J-B
+  fully-quiet-host rerun (idle >= 9/10) of
+  `bench/runtime-comparison/jb_imod_control.c` for the
+  perfgate-qualifiable number (entry 102 re-rank stands); the falsify
+  plan for H-C2 (instruction-order diff) stays queued behind it.
+- **128 (2026-09-05 17:55 JST, rank pass; host busy, no measurement)**:
+  amu-rank tick. Host state at tick (pre-run script payload; git
+  evidence via /tmp probe files): load1 31.60 / 5m 35.38 / 15m 28.77,
+  up 10:30, 18 users, 10 CPUs — far above the 7.5 quiet limit across
+  all three windows; a rank pass runs no measurement by role, and no
+  numbers were recorded. Evidence reviewed since entry 127 (git log +
+  fetch via /tmp): no new commits — HEAD is still 771f3728
+  (lang-cosientist iteration 9, counted at entry 125); ADR list
+  unchanged (latest 0338); same uncommitted doc/source/test
+  modifications, not touched this pass. Entry 127 (falsify tick) was
+  also host-busy with no numbers. No new measured evidence against any
+  open hypothesis, so no re-rank, no status transition, no new
+  hypothesis. Population unchanged: H-C2, H-D, H-B, H-Y1 open; J-B
+  confirmed-diagnostic but unqualified, still awaiting the idle>=9/10
+  rerun; J-C blocked behind it. NEXT: J-B fully-quiet-host rerun
+  (idle >= 9/10) of `bench/runtime-comparison/jb_imod_control.c` for
+  the perfgate-qualifiable number (entry 102 re-rank stands); the
+  H-C2 instruction-order diff plan stays queued behind it. Note: the
+  pre-run payload's NEXT line still names H-C2; the iteration log
+  (entries 95/102) supersedes it.
+- **129 (2026-09-05 18:04 JST, rank pass; host busy, no measurement)**:
+  amu-rank tick. Host state at tick: load1 53.41 / 5m 31.59 / 15m 27.75,
+  up 10:45, 17 users, 10 CPUs - far above the 7.5 quiet limit across all
+  three windows; no measurement attempted, no numbers recorded. Evidence
+  reviewed since entry 128 (git log via /tmp probe): no new commits -
+  HEAD is still 771f3728; ADR list unchanged (latest 0338); same
+  uncommitted doc/source/test modifications, not touched this pass.
+  Entry 128 was also host-busy with no numbers. No new measured evidence
+  against any open hypothesis, so no re-rank, no status transition, no
+  new hypothesis. Population unchanged: H-C2, H-D, H-B, H-Y1 open; J-B
+  confirmed-diagnostic but unqualified, still awaiting the idle>=9/10
+  rerun; J-C blocked behind it. NEXT: J-B fully-quiet-host rerun
+  (idle >= 9/10) of `bench/runtime-comparison/jb_imod_control.c` for the
+  perfgate-qualifiable number (entry 102 re-rank stands); the H-C2
+  instruction-order diff plan stays queued behind it. Note: the pre-run
+  payload's NEXT line still names H-C2; the iteration log (entries
+  95/102) supersedes it.
+
+- **130 (2026-09-05 18:00 JST, falsify pass; host busy, no measurement)**:
+  amu-falsify tick. Host state at tick (pre-run monitor payload): load1
+  13.63 / 5m 20.04 / 15m 23.81, up 10:43, 17 users — load1 above the 7.5
+  quiet limit with a rising 5m/15m profile, so per policy the quiet gate
+  failed and no hand-patch, bench, or perfgate measurement was attempted;
+  no numbers recorded. Note: this tick's cron host foreground terminal
+  again returned empty output for every command (known shape, entries
+  96/99/104/109 et al.), so even `uptime`/`date` probes produced no
+  stdout; the pre-run monitor reading is the only usable evidence. No
+  new measured evidence against any open hypothesis, so no re-rank, no
+  status transition, no new hypothesis. Population unchanged: H-C2,
+  H-D, H-B, H-Y1 open; J-B confirmed-diagnostic but unqualified, still
+  awaiting the idle>=9/10 rerun; J-C blocked behind it. NEXT: J-B
+  fully-quiet-host rerun (idle >= 9/10) of
+  `bench/runtime-comparison/jb_imod_control.c` for the
+  perfgate-qualifiable number (entry 102 re-rank stands); the H-C2
+  instruction-order-diff falsify plan stays queued behind it.

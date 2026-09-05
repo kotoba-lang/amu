@@ -13,7 +13,8 @@
   PRINTS, and what `--policy` ACCEPTS. The wire id is deliberately not asserted
   away -- `wire-policy` must still produce it, because admission, KIR and the
   emitted bytes are all agreed on the integer."
-  (:require [clojure.edn :as edn]
+  (:require [kotoba.compiler.atomic-output :as atomic-output]
+            [clojure.edn :as edn]
             [clojure.test :refer [deftest is testing use-fixtures]]
             [kotoba.compiler.capability-names :as cap-names]
             [kotoba.compiler.cli :as cli])
@@ -32,8 +33,7 @@
   "(ns demo (:export [main]))\n(defn main [] :string (hash/sha256 \"x\"))\n")
 
 (defn- temp-file! [contents extension]
-  (let [file (doto (java.io.File/createTempFile "kotoba-capability-names-" extension)
-               (.deleteOnExit))]
+  (let [file (atomic-output/temp-file! "kotoba-capability-names-" extension)]
     (spit file contents)
     (.getPath file)))
 

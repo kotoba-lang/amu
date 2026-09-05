@@ -26,8 +26,7 @@
 (defonce measured-runtime
   (delay
     (let [{:keys [runtime loader-bytes]} (executor/measure-runtime)
-          loader (doto (java.io.File/createTempFile "kotoba-test-loader-" "")
-                   (.deleteOnExit))]
+          loader (atomic-output/temp-file! "kotoba-test-loader-" "")]
       (atomic-output/write-bytes! (.getPath loader) loader-bytes {:executable? true})
       {:runtime runtime :loader-path (.getPath loader)})))
 
@@ -544,8 +543,7 @@
 (deftest execution-rejects-a-loader-that-does-not-match-the-approved-bytes
   (let [{:keys [envelope trust]} (signed "(defn main [] 42)" {:allow #{}})
         {:keys [trust options]} (execution-options trust)
-        changed (doto (java.io.File/createTempFile "kotoba-changed-loader-" "")
-                  (.deleteOnExit))]
+        changed (atomic-output/temp-file! "kotoba-changed-loader-" "")]
     (atomic-output/write-bytes! (.getPath changed) (byte-array [0 1 2 3])
                                 {:executable? true})
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #"does not match runtime identity"
