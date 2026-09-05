@@ -281,3 +281,35 @@ ty 注記なし probe のため過大評価されていた — 以下は型付�
 - Next (1 hypothesis): `seq`/`remove` — `(seq v)` と `(remove p v)` が
   既存 op (vector-count / eager filter 等) の desugar で載るか, 1 probe で
   切り分け (mapv/filterv と同型の alias/desugar 欠落か, lowering 欠落か)。
+## Iteration 9 — seq / remove (2026-09-05, 実測 amu@4fdfb1bc, host busy load1 99-224/10CPU — timing 計測は quiet gate 不成立のため未実施, check/compile/実行値のみ)
+
+- 仮説 (iteration 8 引き継ぎ): `(seq v)` と `(remove p v)` が既存 op
+  (vector-count / eager filter 等) の desugar で載るか, 1 probe で切り分け
+  (mapv/filterv と同型の alias/desugar 欠落か, lowering 欠落か)。
+- 実測 (sema main classpath, amu bin/amu --jvm-free):
+  - `(reduce + 0 (seq v))` → subset-reject "operation has no admitted type
+    signature" (seq に型シグネチャ自体が無い, /tmp/langcos/seq-check1.txt)。
+  - `(reduce + 0 (remove (fn [x] (< x 3)) v))` → subset-reject "operation has
+    no admitted type signature" (同型, /tmp/langcos/remove-check1.txt)。
+  - hand-patch (実装前に実測):
+    - `seq` → identity 展開 `(reduce + 0 v)`: check **PASS**, wasm32 compile
+      **PASS**, browser-host 実行 (vector-alloc 4 cell, [1,2,3] 埋め) = **6 (ALL-OK)**。
+    - `remove` → `(filter (fn [x] (not pred)) v)` 展開 (filter の述語反転):
+      check **PASS**, wasm32 compile **PASS**, 同 fixture 実行 = **3 (ALL-OK)**
+      (1,2 除去, 3 のみ残る — remove として正しい)。
+  - 教訓: `(vector 1 2 3)` リテラルは "operation has no admitted lowering"
+    で reject (vector-alloc + vector-assoc! で構築する必要) — probe は
+    affine-write 形で実施。`filter` には "filter pred must be
+    (fn [x] single-expr)" 制約あり (型注記付き fn は拒否)。
+- 判定: `seq`/`remove` は **alias/desugar 欠落のみ** (mapv/filterv iteration 2
+  と同型)。seq → identity, remove → filter 述語反転の純 desugar で
+  lowering 追加は不要。host busy のため速度計測は未実施だが, 展開先が
+  既存 qualify 済み lowering のため新規 runtime cost なし (iter 1/2 と同型)。
+- verdict: 欠落は surface desugar のみと実測。実装は iteration 1/2 と同じ
+  frontend.cljc desugar cond 2 case (seq 1-arity → identity, remove 3-arity
+  → filter + not 述語反転, 事前 arity 検査で fail-closed)。
+  本 tick は反証まで (実装は次 tick, branch bot/lang-seq-remove-<date>)。
+- gate: check PASS / wasm32 compile PASS / 実行値正し (6 / 3, ALL-OK)。
+  perfgate 不適 (速度反証対象なし, 純 desugar)。
+- Next (1 hypothesis): seq/remove desugar の最小実装 + KIR parity
+  (hand-patch 展開と definition CID 完全一致) を 1 branch で出す。
