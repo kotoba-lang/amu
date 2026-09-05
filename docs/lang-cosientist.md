@@ -284,3 +284,33 @@ ty 注記なし probe のため過大評価されていた — 以下は型付�
   正典 (let の有無) を 1 つ決めて desugar と hand-patch の CID を一致させる
   parity probe。その後, jvm-dep-ledger の残欠落 (min/max: branch
   bot/lang-min-max-20260904 が既にある — 実測 verify が必要)。
+
+## Iteration 11 - min/max desugar branch verify (2026-09-05, amu@6a18f06d, sema branch bot/lang-min-max-20260904 @2542e1d)
+
+- Hypothesis (iter 10 carried over): existing branch bot/lang-min-max-20260904
+  (min/max as `(let [tmp a] (if (< tmp b) tmp b))` pure desugar, 19 lines) can
+  be verified to (a) admit what the pinned sema rejects, (b) produce KIR
+  identical to the hand-written let+if twin, (c) run correct values.
+- Measured (sema branch worktree /tmp/langcos/sema-minmax classpath, amu nbb
+  wasm_cli route, JVM-free):
+  - pinned sema (145e8b5): `(min a b)` subset-reject operation-has-no-admitted-
+    lowering (exit 65) - the gap is exactly the branch desugar.
+  - hand-patch probe (mm-hand.kotoba, hand-written let+if) check PASS (exit 0).
+  - branch sema: `(min a b)` check PASS (exit 0); `(max a b)` PASS.
+  - KIR parity: alias vs hand-written let+if twin - ALL definition CIDs
+    identical: t bafyreid7ut5npoyeasyp37hfpkk42sk7csqpbdlzc5bi6b2f4lcuw7jsui,
+    main bafyreihmujd4mjwwlnasauef75qku2rnlezxyfre3otxfqgma3t6vp2oay.
+  - compile --target wasm32 PASS (346 bytes; with --fuel 1e8 also PASS).
+  - run (browser-host, 2e6 calls): min(3,7)=3, min(9,4)=4, min(5,5)=5, ALL-OK.
+  - fail-closed: `(min a)` REJECT exit 65 (min requires exactly two operands);
+    `(min a b a)` REJECT (same message).
+  - microbench (2e6 calls, loadavg 16-19, quiet-gate boundary so indicative
+    only): alias 31.2-31.7 ns/call vs hand twin 32.4-33.3 ns/call - same level,
+    no disadvantage, no separation (no new lowering, speed threshold N/A).
+    C twin comparison not run this tick (host busy, quiet gate not met).
+- Verdict: parity + fail-closed + correct values. Merge-pending
+  (kotoba-sema bot/lang-min-max-20260904; same shape as iters 1/2/10).
+- Next (1 hypothesis): some-> desugar repair (iters 7/8) - fix the broken
+  desugar so its definition CIDs match the measured hand-patch form (payload
+  drop, PASS + value 42). Then (:k m) projection sugar / re-evaluate the
+  parse-long string boundary blocker (iters 4/5).
