@@ -51,6 +51,14 @@ const nbbNativeTargets = new Set([
   "aarch64-android", "aarch64-ios",
   "x86_64-aiueos-kernel-v1", "x86_64-aiueos-user-v1", "x86_64-aiueos-uefi-v1",
   "aarch64-aiueos-kernel-v1",
+  // The EVM backend is portable .cljc and its nbb parity is already asserted
+  // against the JVM's pinned bytes (test/nbb/run.cljs evm case), so the only
+  // thing the JVM did here was host the CLI. `evm_cli.cljs` now hosts it.
+  // The full profile name is accepted beside the CLI spellings because
+  // `--target evm256-kotoba-v1` is what the JVM CLI's own parse-target table
+  // documents, and a flag that works on one route but not the other would be
+  // the silent fork this launcher exists to prevent.
+  "evm", "evm256", "evm256-kotoba-v1",
 ]);
 
 function fail(message, code) {
@@ -129,7 +137,8 @@ function nbbEntrypoint(root, args) {
   const filename = ["verify-output-set", "sign-output-set"].includes(command) ? "output_set_cli.cljs"
     : command === "extract-native" ? "x86_64_cli.cljs"
     : wasm ? "wasm_cli.cljs"
-      : target.startsWith("aarch64") ? "aarch64_cli.cljs" : "x86_64_cli.cljs";
+      : target && target.startsWith("evm") ? "evm_cli.cljs"
+        : target.startsWith("aarch64") ? "aarch64_cli.cljs" : "x86_64_cli.cljs";
   return path.join(root, "src", "kotoba", "compiler", "nbb", filename);
 }
 
