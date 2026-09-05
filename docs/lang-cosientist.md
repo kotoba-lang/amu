@@ -361,3 +361,38 @@ ty 注記なし probe のため過大評価されていた — 以下は型付�
 - Next (1 hypothesis): some->> last?-mode parity probe (thread-last direction)
   with the same hand twin method, then (:k m) projection sugar, then re-check
   the ledger blocked list for anything else that is alias-shaped.
+
+
+## Iteration 14 - some->> last?-mode parity probe: payload-drop defect (2026-09-05, amu tick14, sema branch bot/lang-some-thread-fix-20260905 @3f847f9)
+
+- Hypothesis (carried from iters 11/13): some->> (last?-mode) desugars to the
+  hand twin `(let [stmp opt] (if (option-some? stmp) (thread-last payload) fallback))`
+  with definition CIDs identical to the hand twin.
+- Measured (nbb wasm_cli route, cp-somefix classpath, JVM-free, terminal-output
+  workaround used again this tick: write to file + read):
+  - 1-let alias `(some->> opt (- 100))`: check PASS (exit 0).
+    Hand twin `(- 100 (option-value stmp 0))` = t `bafyreiawoiat3vi4...`:
+    alias t `bafyreifh37gjockkt...` -> CID MISMATCH.
+    Semantics twin without payload `(- 100)` = t `bafyreib4j7pvr7uj...`:
+    alias t `bafyreifh37gjockkt...` -> CID MISMATCH too.
+  - 0-let alias `(some->> (option-some x) (- 100))`: PASS, but its t CID
+    `bafyreiawoiat3vi4lujdkyf5jk44253cpszyje2q6z3n47zj26mxmrn64u` equals the
+    1-let hand twin that USES `(option-value stmp 0)` - not the no-payload twin.
+    Same inconsistency for 2-arg step `(- 100 5)`.
+  - Correct syntax with reserved temp name: REJECT "symbol uses the reserved
+    __kotoba_ prefix" (fail-closed by design; twins must use other names).
+    Correct syntax with non-reserved name but nested `option-value` temp reuse
+    in one let: REJECT "source reader rejected input" (exit 65).
+  - Control (thread-first): `(some-> opt (+ 1))` PASS, but its t CID
+    `bafyreiac7b4vxobujx6ainywyo7xkjtbejd6ygbv2uv3j4aubqb3t4nbqe` differs from
+    the iter-13 1-let hand twin `bafyreih66axczmp7isomcsdw6k6tdxxealpldspxhpozjr7uqaf4ti5jwu`.
+- Verdict: hypothesis FALSIFIED for some->> last?-mode - the branch-3f847f9
+  desugar does not consistently thread the payload in last?-mode: some
+  spellings emit `(- 100)` (payload dropped), other equivalent spellings emit
+  `(- 100 (option-value tmp 0))` (payload kept), so equivalent input
+  desugars to different KIR - a determinism defect, not just a semantic one.
+  Note iter 13's some-> "parity" claim only holds for the 1-let spelling; the
+  0-let some-> CID differs from that twin (matches the other twin shape).
+- Next (1 hypothesis): fix the some-thread desugar (both modes) to a single
+  canonical lowering shape, then re-run the parity matrix (some-> / some->> x
+  1-let / 0-let) against ONE hand twin until all CIDs match.
