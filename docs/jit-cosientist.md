@@ -43,3 +43,17 @@ Appended only; population rows are owned by rank, evidence by falsify.
 Any JIT-form claim needs a warmup/steady-state measurement-boundary decision in
 `perfgate` — changes go through an ADR draft; **no sealed claim before human
 approval**. Current verdicts above are diagnostics, not claims.
+
+- 2026-09-05 14:25 JST tick 11 (JIT): quiet gate failed a 10th consecutive
+  time - load1 90.45 (5m 81.7, 15m 61.5) on 10 CPUs, iostat cpu idle 52-54%
+  (3 samples), far below the required >=90% idle. J-B measurement again
+  deferred, no compiler change, control unchanged at
+  bench/runtime-comparison/jb_imod_control.c. Next: on a quiet host add the
+  third (non-inlined mulh) arm to separate lever 1 from lever 2.
+
+- 2026-09-05 17:46 JST tick 12 (JIT): quiet gate failed a 12th consecutive
+  time - load1 36.06 (5m 36.80, 15m 28.89) on 10 CPUs. J-B measurement again
+  deferred, no compiler change, control unchanged at
+  bench/runtime-comparison/jb_imod_control.c. Next: on a quiet host add the
+  third (non-inlined mulh) arm to separate lever 1 from lever 2; J-C stays
+  blocked behind the J-B rerun.
