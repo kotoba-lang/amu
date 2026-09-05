@@ -280,7 +280,7 @@
   ;;            kotoba-native pin to adeb1b0f, so this repository resolves one
   ;;            kotoba-native across both pins rather than an older one behind
   ;;            its own.
-  (is (= "96edd345ce46bc2e2c3c4ae9b4f4cdc26484f188"
+  (is (= "1ee32cab32e0bc1e13c0ede8a8515b043a82dca6"
          (dependency-pin 'io.github.kotoba-lang/kotoba-verifier)))
   (is (= 7 (:abi/version aggregate-abi/contract)))
   (is (= :recursive-word-handles
