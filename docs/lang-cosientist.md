@@ -314,3 +314,50 @@ ty 注記なし probe のため過大評価されていた — 以下は型付�
   desugar so its definition CIDs match the measured hand-patch form (payload
   drop, PASS + value 42). Then (:k m) projection sugar / re-evaluate the
   parse-long string boundary blocker (iters 4/5).
+
+## Iteration 12 (2026-09-05) - measurement BLOCKED, no verdict
+
+- Target hypothesis (carried from iter 11): some-> desugar repair parity probe
+- (repair desugar CIDs == measured hand-patch form, payload-drop, value 42).
+- Not executed: terminal tool returned exit 0 with zero output on every command
+- this tick (foreground and background, incl. date, ls /tmp/langcos, git log).
+- No probe, compile, or bench could be run or observed. No numbers recorded
+- -> no verdict, no implementation attempted (falsify-first discipline).
+- Next tick: resume the same hypothesis after a terminal health check.
+
+## Iteration 13 - some-> desugar repair, KIR parity verified (2026-09-05, amu@cb9930d4, sema branch bot/lang-some-thread-fix-20260905 @3f847f9)
+
+- Hypothesis (carried from iters 7/8/11): the broken desugar-some-thread can be
+  repaired to the measured hand-patch form (payload drop, plain option-some? /
+  option-value) with KIR definition CIDs identical to the hand twin.
+- Implementation: kotoba-sema branch bot/lang-some-thread-fix-20260905 @3f847f9
+  (frontend.cljc desugar-some-thread rewritten, 23+/15-; some->> shares it).
+- Measured (local sema branch classpath + amu nbb wasm_cli route, JVM-free):
+  - `(some-> opt (+ 1))` with `t [opt :option-i64]`: check PASS (exit 0),
+    wasm32 compile PASS, browser-host run `t(option-some 41)` = 42 (ALL-OK)
+    - same value as the iter 7 hand-patch measurement.
+  - KIR parity: alias vs hand-written
+    `(let [stmp opt] (if (option-some? stmp) (+ (option-value stmp 0) 1) 0))`
+    ALL definition CIDs identical - t
+    `bafyreia2bhjmxm2ljwe7o3urxte2hszr6h2px4wvd6snnvrhid3a7led74`, main
+    `bafyreigqgbc7xhcr33vy7lj5shxo3q2p24wryznlek54zioxyxssdk5zwy`.
+  - inline `(some-> (option-some x) (+ 1))` also admits with parity
+    (t `bafyreih66axczmp7isomcsdw6k6tdxxealpldspxhpozjr7uqaf4ti5jwu`),
+    resolving iter 7 case 1 (resolve-option-type mismatch) for this shape.
+  - fail-closed: 0-step `(some-> opt)` REJECT exit 65 ("some-> requires an
+    initial option and at least one step").
+  - regression: sema suite (nbb, portable .cljc tests) 237 tests / 1145
+    assertions / 0 failures / 0 errors (same totals as iter 10 baseline).
+- Probe lessons (recorded, not repeated): terminal stdout came back empty for
+  every plain command this tick (iter 12's blocker) - workaround: write
+  command output to a file and read the file. `compile` without `--output`
+  on a bare path is invalid usage (exit 64); the wasm_cli route needs
+  `compile <file> --target wasm32 --output <file.wasm>`.
+- comparator ratio: repaired desugar lowers to the same admitted ops the hand
+  twin uses; no new lowering, so the speed threshold is N/A (same class as
+  iters 1/2/10/11).
+- verdict: parity + fail-closed + regression all green. Merge-pending
+  (kotoba-sema bot/lang-some-thread-fix-20260905).
+- Next (1 hypothesis): some->> last?-mode parity probe (thread-last direction)
+  with the same hand twin method, then (:k m) projection sugar, then re-check
+  the ledger blocked list for anything else that is alias-shaped.
