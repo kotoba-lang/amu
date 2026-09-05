@@ -34,6 +34,25 @@
       (is (= :kotoba.error/pure-product-effects
              (:kotoba.error/code (ex-data e)))))))
 
+(deftest check-source-pure-heads-are-not-yet-admitted
+  ;; ADR-544 (pure S-expression core + cljk surface) step 1 admits the pure
+  ;; head set (lam app rel query perform handle ref) as desugaring source
+  ;; forms. The grammar-authority side (kotoba-lang #563,
+  ;; pure-s-expression-core-heads-are-not-yet-admitted) pins the grammar
+  ;; gap; THIS is the compiler-side counterpart -- the frontend must reject
+  ;; lam/app source today ("operation has no admitted lowering",
+  ;; :kotoba.error/subset-reject), and step 1 has to flip BOTH sides before
+  ;; it can claim pure-`.kotoba` source compiles. Edit this to assert
+  ;; admission as part of landing the grammar change; do not delete it.
+  (try
+    (compiler/check-source
+     "(ns demo (:export [main])) (defn main [] :i64 (app (lam [x] x) 41))"
+     {:language-profile :pure-product})
+    (is false "expected lam/app to be rejected -- ADR-544 step 1 not yet landed")
+    (catch clojure.lang.ExceptionInfo e
+      (is (= :kotoba.error/subset-reject
+             (:kotoba.error/code (ex-data e)))))))
+
 (deftest check-source-pure-product-rejects-capabilities
   (try
     (compiler/check-source pure-caps-bad {:language-profile :pure-product})
