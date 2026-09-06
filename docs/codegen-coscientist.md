@@ -2836,3 +2836,47 @@ ple Clang C11, Zig, Go
   `call-preservation` is **forced by the program**, and the domain's real
   target is the ~6.4% it shares with `call-preservation`, not the 3.36%
   between them.
+
+- **130 (2026-09-06, #142 measured as shipped, and the gate cannot see it)**:
+  kotoba-native#142 is confirmed in real compiler output — `kernel_call`'s
+  module goes MSUB 1 → 0 and shifted-SUB 0 → 1, and the artifact answers every
+  manifest input with fuel 1. Measured against the same clang binary:
+
+  | | median | min | vs clang |
+  |---|---:|---:|---:|
+  | before #142 | 4.7600 | 4.7550 | −5.90% |
+  | **after #142** | **4.6900** | **4.6750** | **−4.34%** |
+
+  **+1.47% median, +1.66% mean at n=110 per arm.** Both robust statistics move
+  together and stay put as samples accumulate.
+
+  ⚠ **It will not pass perfgate, and more samples make that worse.** At n=50
+  the gap was 0.0740 against a summed-sd of 0.0867 — nearly separated. At
+  n=110 the gap is 0.0805 and the summed-sd is **0.3964**, because longer runs
+  catch more outliers on a shared machine even when the node is quiet by the
+  busy-CPU gate. Each arm's own spread is fine (rsd 0.044 and 0.039, well
+  inside the policy's 0.10); it is the *sum* of two spreads being compared
+  against a 1.7% effect.
+
+  That is worth stating as a property of the tournament rather than of this
+  change: **`perfgate.core/qualify` as configured cannot resolve an
+  improvement of this size on this fixture.** A real 1.5–2% gain is invisible
+  to the gate individually. Since the claim contract needs ≥5% *per pair*,
+  improvements of this magnitude can only ever count by accumulating into one
+  measurement — several landed together, measured once — not by being
+  qualified one at a time.
+
+  Two consequences for how this loop should proceed:
+
+  1. **Do not discard a hypothesis because its hand-patch came back "not
+     separated."** 126's if-conversion (+0.12%) is a genuine null; 123's
+     strength reduction (+2.49%) and this (+1.66%) are not — they are real
+     effects under the instrument's resolution. The ledger has been recording
+     both with the same phrase, which flattens the distinction.
+  2. **Report median and min alongside the mean.** Here they are stable to
+     0.005 ns across 110 samples while the mean wanders by 0.08; the gate's
+     verdict and the robust statistics disagree, and only one of them is
+     tracking the change.
+
+  `call-preservation` now stands at **−4.34%** against clang, from −6.47% when
+  123 opened it.
