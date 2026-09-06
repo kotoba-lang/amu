@@ -133,6 +133,30 @@ const FIXTURES = {
       return [...first, ...rest].reduce((sum, value) => sum + value, 0);
     },
   },
+  // DIAGNOSTIC ONLY. kernel_deep with multiplier 2039, so every folded lane
+  // constant (2039i+1, max 46898) fits sixteen bits and needs a bare MOV with
+  // no MOVK. That removes 23 instructions -- exactly the count an LDR-literal
+  // constant pool would save -- so this prices the cheap form before anyone
+  // builds the expensive one.
+  kernel_deep_movonly: {
+    kotoba: "kernel_deep_movonly.kotoba",
+    rust: "kernel_deep_movonly.rs",
+    benchmark: "deep-spill-pressure-movonly-diagnostic-v1",
+    nativeSymbol: "kotoba_bench_kernel_deep_movonly",
+    comparators: nativeComparators,
+    arithmetic: "kernel_deep with 16-bit lane constants (diagnostic)",
+    verificationInputs: [0, 1, 2, 199, 200, 201],
+    expected(n) {
+      const step = value => {
+        const v = value * 2039 + 1;
+        return v - Math.trunc(v / 2147483647) * 2147483647;
+      };
+      const first = Array.from({ length: 14 }, (_, i) => step(n + i));
+      const shadowedN = first.at(-1);
+      const rest = Array.from({ length: 10 }, (_, i) => step(shadowedN + 14 + i));
+      return [...first, ...rest].reduce((sum, value) => sum + value, 0);
+    },
+  },
   kernel_call: {
     kotoba: "kernel_call.kotoba",
     rust: "kernel_call.rs",
