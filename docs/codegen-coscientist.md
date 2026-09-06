@@ -3606,3 +3606,56 @@ ple Clang C11, Zig, Go
   zig is not reachable by the kind of peephole this loop has been generating.
 
   Score unchanged: **median 19/30, range 17–19, stable 16**.
+
+- **145 (2026-09-07, induction-variable strength reduction across lanes is
+  −5%, which closes the second and last direction out of this local optimum)**:
+
+  144 ended by saying the remaining gap "is not reachable by the kind of
+  peephole this loop generates". That was an admission that every lever tried
+  so far changed **instruction selection** and none changed **dependency
+  structure**. So here is the structural one.
+
+  The lane constants are an arithmetic progression: `(n+i)*48271+1 ==
+  ((n+i-1)*48271+1) + 48271`. Textbook induction-variable strength reduction —
+  replace 24 independent constant materialisations with 23 adds off the
+  previous lane. `kernel_deep_incremental` does exactly that, and its lane
+  results are **bit-identical** to `kernel_deep`'s (checked in Python over the
+  verification inputs and beyond, including a negative n).
+
+  Two quiet-host runs (busy-CPU 0.04–0.06):
+
+  | rep | kernel_deep | incremental | median | min |
+  |---|---|---|---|---|
+  | 1 | 9.01 | 9.47 | **−5.11%** | −4.89% |
+  | 2 | 9.01 | 9.46 | **−4.99%** | −4.90% |
+
+  **The incremental form is 5% slower**, reproducibly, on both statistics.
+  The serial edge costs far more than the ~4% of materialisation it removes.
+
+  **Both directions out of this point are now measured, not assumed:**
+
+  | direction | change | result |
+  |---|---|---|
+  | instruction selection | pool the constants (141) | **0%** |
+  | | park spills in SIMD vs stack (144) | **0.67% ± 1.15%** |
+  | dependency structure | chain the lane inputs (here) | **−5%** |
+
+  Shortening the instruction stream without touching the chains buys nothing;
+  shortening it *by* touching the chains costs 5%. That is what a local
+  optimum looks like from the inside, and it is now a measurement rather than
+  the assertion 135 made and 144 repeated.
+
+  It also explains the earlier pair that looked contradictory. 139's fixtures
+  (`narrowconst`, `movonly`) removed materialisation and **substituted
+  nothing** — strictly less work, ~4% faster, and unreachable by a compiler,
+  because a compiler has to put *something* there. Every real substitution
+  since has landed between 0% and −5%.
+
+  **What would still be worth someone's time**, none of it a peephole: the
+  24-lane fixture is designed to exceed the register file, so the win would
+  have to come from needing fewer live values at once — vectorising the lanes
+  (rustc reaches for NEON here and is still slower, so this is not obviously
+  free), or reassociating the final sum tree to shorten lane lifetimes. Both
+  are register-allocation-scale changes, not encoder changes.
+
+  Score unchanged: **median 19/30, range 17–19, stable 16**.
