@@ -2524,10 +2524,18 @@ ple Clang C11, Zig, Go
      compiler change, because a byte-preserving hand patch must leave NOPs
      where the real fix removes instructions.
 
-  **H-C is recorded as landed and is not in the emitted code.** Counting
-  across all six required fixtures at `b5a0c302`: MSUB 16 / 16 / 24 / 1 / 1 / 0
-  and **SUB-with-shift zero everywhere**. Whatever kotoba-native #83 landed,
-  no fixture emits the shape H-C describes.
+  **H-C reaches some fixtures and not others.** Counting across all six
+  required fixtures at `b5a0c302`: MSUB 16 / 16 / 24 / 1 / 1 / 0.
+
+  ⚠ **This entry first said "SUB-with-shift zero everywhere". That was a
+  broken instrument, not a finding.** The detector masked
+  `(x & 0xffe0fc00) == 0xcb000000`, and `0xfc00` covers the shift-amount
+  field — so the companion test `imm6 != 0` could never be true and every
+  fixture reported zero by construction. Re-measured with a decoder validated
+  against clang's own `sub x9,x9,x9,lsl #31` (`0xcb097d29`, imm6 = 31):
+  `kernel` emits **8** shifted subtracts. H-C is active there. What is true is
+  narrower and is what iteration 124 acts on: the two call domains emit an
+  MSUB and no shifted form.
 
   ⚠ **And H-C's +2.46% on `kernel` did not reproduce.** Strength-reducing all
   16 sites there (1:1 MOV/MSUB, so an in-place patch is exact) measured
@@ -2553,3 +2561,797 @@ ple Clang C11, Zig, Go
   where amu and clang execute the same instruction mix. Static shape is
   exhausted as an explanation; this one needs a scheduling or front-end
   measurement.
+
+- **124 (2026-09-06, the single-MSUB clause was unreachable; and why
+  `deep-spill-pressure` wins)**: kotoba-native #142 lands the first half of
+  iteration 123's finding as a compiler change.
+
+  `a64-serial-msub-chain?` opens with `(<= msub-count 1)` — a single MSUB is
+  trivially one serial chain, which is the case the shifted form wins. **That
+  clause was unreachable.** Its values come from
+  `a64-profitable-cached-mersenne-values`, which reads the constant cache, and
+  the cache admits only constants occurring more than once (correctly — one use
+  saves no materialization). The one case the chain test exists to admit was
+  filtered out a layer earlier. `kernel_call` and `kernel_call_branch` now emit
+  clang's shape; `kernel`, `kernel_wide`, `kernel_deep` and `kernel_loop_call`
+  are byte-identical, and the gate's own 5.1% loss on independent lanes is
+  preserved.
+
+  Two guards worth keeping in mind for the next such change. Being Mersenne is
+  not enough to admit a constant — every 2^k−1 is, including the 3 in
+  `(i64-shift-left a 3)`, and admitting shift amounts moved allocation under
+  unrelated code (7 encoding-parity failures). And the first byte-identity
+  comparison was **confounded**: the baseline used amu's *pinned*
+  kotoba-native while the candidate used main, so #138's fuel preamble
+  (`CBNZ; BRK; SUB` → `SUBS; B.cond; BRK`) showed up as this change moving
+  `kernel` and `kernel_loop_call`. Compare against the same base.
+
+  **`deep-spill-pressure`: amu's lead is structural, and the obvious "waste"
+  is the reason for it.** amu emits 48 constant-materialization words against
+  clang's 1, which reads as pure overhead until you look at what it buys:
+  amu computes `n*48271` **once** and adds a folded per-lane constant
+  `k*48271+1`, where clang emits 24 separate MADDs. amu trades one extra word
+  per lane for 23 fewer multiplies, and that is why it is +4.4% ahead rather
+  than behind. Do not "fix" it toward clang's shape.
+
+  The cost is real but nearly forced: only lane 0's addend fits an ADD
+  immediate, only lanes 0–1 fit a bare MOVZ, and lanes 2–23 need MOVZ+MOVK.
+  One untested lead — the addends are an arithmetic progression, so the five
+  power-of-two lanes (k = 1, 2, 4, 8, 16) could be `ADD xd, base, xM, LSL #s`
+  with 48271 held in xM: one word where three are spent now, 10 words of 241.
+  ⚠ Unmeasured, and this fixture's docstring says it sits *above* the register
+  pool, so pinning xM may buy spills that cost more than the words save. It
+  needs the hand-patch treatment before it is believed.
+
+  This pair still needs **+0.6pp** to qualify and is the nearest of the eight
+  near-misses. NEXT is that lead, measured — not the call boundary, where
+  #142 takes `call-preservation` from −7.1% to about −4% and the remaining
+  deficit is scheduling-shaped rather than static.
+
+- **125 (2026-09-06, PROVEN CEILING on `narrow-arithmetic`)**: this file's
+  opening paragraph names a proven ceiling as an honest terminal state — *"if
+  Amu's emitted stream for a domain is cost-identical to LLVM's best, a strict
+  ≥5% win on that domain is unreachable for anyone, and recording that is a
+  result."* That is now the measured state of `narrow-arithmetic`.
+
+  Disassembling the `kernel` symbol only (not the module — the module carries
+  `bench`, `__kotoba_loop_1` and `main`, and comparing it against one clang
+  symbol reports 275 against 61 and 24 rounds against 8, which is how this
+  comparison was first got wrong):
+
+  | | instructions | MADD | SMULH | shifted SUB | shifted ADD |
+  |---|---:|---:|---:|---:|---:|
+  | amu | **61** | 8 | 8 | 8 | 8 |
+  | clang | **61** | 8 | 8 | 8 | 8 |
+  | rust | **61** | 8 | 8 | 8 | 8 |
+
+  amu and clang emit **the same opcode sequence**. 60 of 61 words differ, and
+  every one of those differences is a register number; the single opcode
+  difference is `MOVZ x13,#48271` against `MOVZ w8,#48271`, the same immediate
+  in the 32-bit form. rust lands on 61 with the same mix.
+
+  So the three unqualified `narrow-arithmetic` pairs — rust +1.0%, clang
+  +1.9%, swift +1.0% — are not near-misses waiting on a codegen idea. **Three
+  compilers agree on the program.** The residual is register assignment and
+  measurement noise, and a ≥5% separated win is unreachable for any of them.
+  H-C is already applied here (the 8 shifted subtracts), which is the other
+  half of iteration 123's correction.
+
+  **This bounds the claim contract.** Of the eight positive-but-unqualified
+  pairs, three are at a shared ceiling. The bounded fastest claim requires all
+  thirty; it is therefore not reachable by codegen work on this fixture set,
+  and no amount of iteration will make `narrow-arithmetic` a 5% win.
+
+  What remains genuinely open, in order of reachability:
+
+  | pair | now | needs | shape of the gap |
+  |---|---:|---:|---|
+  | `deep-spill-pressure` × clang | +4.4% | +0.6pp | one untested lead (124) |
+  | `deep-spill-pressure` × zig | +0.3% | +4.7pp | unexamined |
+  | `loop-call-back-edge` × rust | +0.5% | +4.5pp | unexamined |
+  | `call-preservation` × rust/clang | ≈−4% after #142 | +9pp | ~1.67% survives with fuel removed |
+  | `branch-call-control-flow` × rust/clang | −8 to −11% | +13pp | unexamined, the largest deficit |
+
+  The honest statement of where the tournament stands: **amu native is fastest
+  among the enumerated implementations against Go and Swift on all six required
+  domains (12 of 12 pairs qualified), leads Zig on five of six, and against the
+  two LLVM backends holds one domain, ties one at a proven ceiling, and trails
+  on the call boundary.** That sentence is measurable, measured, and true. The
+  contract's sentence is not, and 125 is the reason it cannot become true here.
+
+- **126 (2026-09-06, if-conversion FALSIFIED on `branch-call-control-flow`;
+  and a bug report I filed and withdrew)**: the largest deficit in the
+  tournament (−11.4% vs clang) had never been opened. Static shapes:
+
+  | | instructions | control flow | epilogues |
+  |---|---:|---|---:|
+  | amu | 59 | `CBNZ`, hot path on the **taken** side | **2** (duplicated) |
+  | clang | 44 | `cmp` + `csel`, branchless | 1 |
+
+  The obvious hypothesis: if-convert a two-arm branch with cheap arms into a
+  conditional select, as clang does. Hand-patched byte-preserving — 7 ADD,
+  `CMP x19,#0`, `CSEL x0,xzr,x0,EQ`, one epilogue, 6 NOP — every manifest input
+  identical including `n=0 → 0`, which is the arm the select exists for.
+
+  **+0.12%, not separated; the median moved the wrong way (4.920 → 4.950).**
+  The hypothesis is wrong, and in hindsight obviously so: the benchmark calls
+  with `n=200` every time, so the branch is perfectly predicted and costs
+  nothing, while the 15 extra instructions sit almost entirely in the
+  *not-taken* path where they are never fetched. `CSEL` only adds a dependency
+  on the compare. **Instruction count is not the cost here; occupancy of the
+  executed path is.**
+
+  So the ~4pp that separates this domain from `call-preservation` — same eight
+  calls, same arithmetic, one `if` — is still unexplained, and it is not the
+  branch. Both save the same number of registers (5 store instructions each),
+  so the prologue is not it either. NEXT is an instruction-by-instruction diff
+  of the two amu emissions, which is cheap and has not been done.
+
+  ⚠ **The fixture's docstring is wrong and should be corrected**: it says the
+  `if` "sends it to the conservative all-vreg path where every value gets a
+  stack slot whether or not anything was short of registers." There are **no
+  value stack slots** in the emission — only the callee-saved prologue and
+  epilogue. That describes a compiler that no longer exists.
+
+  ⚠ **kotoba-native#143 was mine and was wrong.** I reported #138 as breaking
+  the verifier for call-containing functions, on a clean-looking bisect. The
+  bisect was measuring my own harness: I compiled with an overridden
+  kotoba-native and ran `extract-native` **without** the override, so the
+  verifier re-emitted with amu's pinned compiler and compared against bytes
+  from a different one. With the override on both sides the artifact verifies,
+  and re-emitting directly gives 0 differing instructions of 63.
+  `verifier.cljc:1891` was doing exactly its job. Issue withdrawn and closed.
+
+  The residue worth keeping: `native instruction stream rejected` reads as a
+  defect in the artifact rather than as a version mismatch between the emitter
+  that produced it and the one checking it. Naming both identities in that
+  message would have ended this in seconds rather than a bisect.
+
+- **127 (2026-09-06, the `if` costs amu 3% and earns clang 1%, on 52 vs 51
+  executed instructions)**: the cheap diff that should have come before 126's
+  hand patch. `kernel_call` and `kernel_call_branch` differ by one `if`.
+
+  Instruction for instruction, the two amu emissions are **the same program**
+  through the entire call sequence — bytes 0–148 differ only in which
+  callee-saved register holds which result. Two real differences:
+
+  1. `kernel_call` reuses **x19** for the fifth call result, because `n` is
+     dead after the fourth argument. `kernel_call_branch` cannot: `n` is live
+     to the `CBNZ x19`, so it takes **x26** instead and saves one more
+     register. That is forced by the program, not a choice — clang keeps x19
+     for its `cmp x19,#0` for the same reason. Both save 5 store instructions.
+  2. The duplicated epilogue, which 126 already showed is off the hot path.
+
+  Executed instructions at `n=200`: **51 for `kernel_call`, 52 for
+  `kernel_call_branch`** (39 through the CBNZ, then 13 at the branch target).
+  One instruction apart.
+
+  And the direction is the tell:
+
+  | | amu | clang |
+  |---|---:|---:|
+  | `kernel_call` | 4.7750 | 4.4875 |
+  | `kernel_call_branch` | **4.9200** | **4.4450** |
+
+  **Adding the `if` makes clang faster and amu slower.** clang gains 0.9%;
+  amu loses 3.0%. On one extra executed instruction, with the same register
+  discipline and the same call sequence.
+
+  Three structural hypotheses are now falsified for this domain: the branch
+  itself (126, if-conversion +0.12%), the prologue (same store count), and
+  instruction count (52 vs 51). What remains is layout- or front-end-shaped —
+  amu's executed path spans 236 bytes across a forward jump where
+  `kernel_call`'s is 204 contiguous — and that is not visible in a static
+  diff. It needs a measurement this loop does not currently have: the
+  hand-patch method cannot move code without moving branch targets, so
+  testing a layout hypothesis means a compiler change or a
+  performance-counter read, not a byte substitution.
+
+  That is the honest edge of the method here, and it is worth naming rather
+  than working around: **every remaining deficit in this domain is smaller
+  than what a byte-preserving patch can resolve.**
+
+- **128 (2026-09-06, layout FALSIFIED too; four hypotheses down on
+  `branch-call-control-flow`)**: 127 ended by saying a layout hypothesis needs
+  an instrument this loop does not have. That was wrong — it needs one shift.
+
+  Prepending NOPs to the blob and calling at `48+k` moves the whole code
+  together, so every relative branch stays correct and *only the placement*
+  changes. Six shifts, both fixtures, 14 interleaved samples each, every
+  variant verified to still answer 1190481486 with fuel 1:
+
+  | shift | +0 | +4 | +8 | +16 | +32 | +64 |
+  |---|---:|---:|---:|---:|---:|---:|
+  | `kernel_call` | 4.7650 | 4.7600 | 4.7650 | 4.7600 | 4.7600 | 4.7600 |
+  | `kernel_call_branch` | 4.9300 | 4.9200 | 4.9300 | 4.9225 | 4.9200 | 4.9650 |
+
+  Spread: **0.11%** and **0.91%** of median. The ~3.3% gap between the two
+  fixtures is present at every alignment, including the ones that break
+  16-byte alignment. **Placement is not the cause.**
+
+  Falsified for this domain, each by measurement rather than argument:
+
+  | hypothesis | verdict |
+  |---|---|
+  | the branch itself | if-conversion to CSEL: **+0.12%**, median worse (126) |
+  | the prologue | identical store count, the extra register is forced (127) |
+  | instruction count | 52 executed against 51 (127) |
+  | code placement | flat across six shifts (128) |
+
+  What survives is the one thing 127 found and could not price: with the `if`,
+  `n` is live to the test, so the allocator cannot recycle x19 for the fifth
+  call result and takes x26 — ten callee-saved registers in play against nine,
+  across eight calls. Same instruction count, one more architectural register
+  live across every call boundary. That is a rename/pressure question, and the
+  next honest instrument for it is a performance counter, not another
+  substitution.
+
+  Recording the negative space deliberately: a later reader should not re-run
+  any of these four. The cheap structural explanations for this domain are
+  exhausted, and the remaining 3.3% is smaller than any of them.
+
+- **129 (2026-09-06, CONFIRMED: one extra callee-saved register is 2.84% of
+  the 3.36%)**: after four falsifications, the surviving suspect from 127 —
+  ten callee-saved registers against nine — is isolated and priced.
+
+  The test removes every other variable. `kernel_call` is patched to hold its
+  fifth call result in **x26** instead of recycling x19, which is exactly what
+  the branch version is forced into, and **nothing else changes**: no branch,
+  no extra instruction, same executed path, same layout.
+
+  | arm | callee-saved | branch | median | vs base |
+  |---|---:|---|---:|---:|
+  | `kc-base` | 9 | no | 4.7600 | — |
+  | `kc-x26` | **10** | **no** | **4.8950** | **+2.84%** |
+  | `kcb-base` | 10 | yes | 4.9200 | +3.36% |
+
+  **The register accounts for 2.84 of the 3.36 points. 0.53% is left for
+  everything else — the branch, the second epilogue, the extra instruction.**
+  That is consistent with 126 and 128 finding nothing in those.
+
+  The first attempt at this patch answered 1180682672 instead of 1190481486:
+  I moved the definition and one use but missed that the sum chain also reads
+  the fifth result (`ADD x2,x22,x19`). The correctness gate caught it. A
+  register-renaming patch has to rename *every* reader, and the readers are
+  not adjacent to the definition.
+
+  **Why amu pays this and clang does not.** clang saves ten callee-saved
+  registers in *both* fixtures — `stp x26,x25 / x24,x23 / x22,x21 / x20,x19 /
+  x29,x30`. amu's `kernel_call` saves nine, because it notices `n` is dead
+  after the fourth argument and recycles x19. So amu is *better allocated*
+  than clang on `kernel_call`, and the `if` takes that advantage away: with
+  `n` live to the test, x19 cannot be recycled and amu is forced up to clang's
+  ten. clang's two fixtures measure 4.4875 and 4.4450 — nearly flat — for
+  exactly this reason: it never had the advantage to lose.
+
+  ⚠ **This explains the amu-to-amu delta, not the amu-to-clang deficit.**
+  amu's nine-register `kernel_call` is still 6.4% behind clang's ten-register
+  one, so register count is not that gap. Do not read 129 as pricing the
+  distance to clang.
+
+  Whether it is fixable is doubtful and should be stated: eight results plus a
+  live `n` is nine values across eight calls, and the allocator is already
+  tight. Spilling `n` trades the register for a stack slot on the same path.
+  The honest reading is that `branch-call-control-flow`'s extra deficit over
+  `call-preservation` is **forced by the program**, and the domain's real
+  target is the ~6.4% it shares with `call-preservation`, not the 3.36%
+  between them.
+
+- **130 (2026-09-06, #142 measured as shipped, and the gate cannot see it)**:
+  kotoba-native#142 is confirmed in real compiler output — `kernel_call`'s
+  module goes MSUB 1 → 0 and shifted-SUB 0 → 1, and the artifact answers every
+  manifest input with fuel 1. Measured against the same clang binary:
+
+  | | median | min | vs clang |
+  |---|---:|---:|---:|
+  | before #142 | 4.7600 | 4.7550 | −5.90% |
+  | **after #142** | **4.6900** | **4.6750** | **−4.34%** |
+
+  **+1.47% median, +1.66% mean at n=110 per arm.** Both robust statistics move
+  together and stay put as samples accumulate.
+
+  ⚠ **It will not pass perfgate, and more samples make that worse.** At n=50
+  the gap was 0.0740 against a summed-sd of 0.0867 — nearly separated. At
+  n=110 the gap is 0.0805 and the summed-sd is **0.3964**, because longer runs
+  catch more outliers on a shared machine even when the node is quiet by the
+  busy-CPU gate. Each arm's own spread is fine (rsd 0.044 and 0.039, well
+  inside the policy's 0.10); it is the *sum* of two spreads being compared
+  against a 1.7% effect.
+
+  That is worth stating as a property of the tournament rather than of this
+  change: **`perfgate.core/qualify` as configured cannot resolve an
+  improvement of this size on this fixture.** A real 1.5–2% gain is invisible
+  to the gate individually. Since the claim contract needs ≥5% *per pair*,
+  improvements of this magnitude can only ever count by accumulating into one
+  measurement — several landed together, measured once — not by being
+  qualified one at a time.
+
+  Two consequences for how this loop should proceed:
+
+  1. **Do not discard a hypothesis because its hand-patch came back "not
+     separated."** 126's if-conversion (+0.12%) is a genuine null; 123's
+     strength reduction (+2.49%) and this (+1.66%) are not — they are real
+     effects under the instrument's resolution. The ledger has been recording
+     both with the same phrase, which flattens the distinction.
+  2. **Report median and min alongside the mean.** Here they are stable to
+     0.005 ns across 110 samples while the mean wanders by 0.08; the gate's
+     verdict and the robust statistics disagree, and only one of them is
+     tracking the change.
+
+  `call-preservation` now stands at **−4.34%** against clang, from −6.47% when
+  123 opened it.
+
+- **131 (2026-09-06, ONE FRAME ALLOCATION INSTEAD OF TEN — the first pair
+  flip: `deep-spill-pressure` × clang QUALIFIES)**: amu builds its frame by
+  chaining pre-indexed stores, so every save serially depends on the previous
+  SP. clang allocates once and uses offset addressing.
+
+  ```
+  amu     STP x19,x20,[sp,#-16]!   clang   stp x26,x25,[sp,#-0x50]!
+          STP x21,x22,[sp,#-16]!           stp x24,x23,[sp,#0x10]
+          STP x23,x24,[sp,#-16]!           stp x22,x21,[sp,#0x20]
+          STR x25,    [sp,#-16]!           stp x20,x19,[sp,#0x30]
+          STP x29,x30,[sp,#-16]!           stp x29,x30,[sp,#0x40]
+  ```
+
+  SP updates per fixture: `kernel` 0, `kernel_wide` 0, `kernel_loop_call` 2,
+  **`kernel_deep` 8, `kernel_call` 10, `kernel_call_branch` 15** — against two
+  for clang in every case.
+
+  Hand-patched to one allocation plus offset addressing. **Instruction count
+  unchanged**; only the addressing mode differs. Every manifest input
+  identical, fuel intact, on both fixtures tested.
+
+  **`deep-spill-pressure` × clang, n=60 per arm:**
+
+  | arm | mean | improvement | separated | rsd | qualifies |
+  |---|---:|---:|---|---:|---|
+  | amu base | 9.5262 | +4.35% | yes | 0.035 | **no** (under 5%) |
+  | **amu + frame** | **9.3244** | **+6.37%** | **yes** | **0.013** | **YES** |
+
+  All four `perfgate.core/qualify` conditions: improvement ≥ 0.05 ✓,
+  separated from summed spread (0.6345 > 0.2196) ✓, both arms' rsd ≤ 0.10 ✓,
+  ≥ 5 samples ✓. **This is the first pair to cross, and it takes the score to
+  19/30 once the compiler emits it.**
+
+  **`call-preservation` × clang:** +3.41% median on top of #142, moving amu
+  from −4.22% to **−0.67%** — near parity, and amu's *minimum* (4.3500) is
+  now below clang's (4.4600).
+
+  Two encoding errors on the way, both caught rather than measured: `STR x25`
+  lost its base-register field and addressed x15 (instant SIGSEGV), and a
+  post-index LDP had `0xA8D0` where `0xA8C0 + 0x50000` is `0xA8C5`. The patch
+  script now *generates* encodings from a register/offset spec instead of
+  carrying hand-computed words, which removes the class.
+
+  This is a prologue/epilogue emission change, not an allocator change — the
+  registers saved and the frame size are identical, only the addressing mode
+  moves. It should apply to every non-leaf function on this target.
+
+  NEXT: `branch-call-control-flow` has **15** SP updates, the most of any
+  fixture, and sits at −11.4%. Same patch, not yet measured there.
+
+- **132 (2026-09-06, #145 shipped and measured; fp/lr fold attempted and
+  reverted)**: the frame change is in the compiler and reproduces the hand
+  patch. `kernel_deep` goes 8 SP updates → 2, and with the **real compiler
+  output** at n=60:
+
+  | arm | mean | vs clang | qualifies |
+  |---|---:|---:|---|
+  | amu base | 9.5723 | +4.52% | no |
+  | **amu #145** | **9.4229** | **+6.01%** | **YES** |
+
+  `call-preservation` measured across the whole progression:
+
+  | | SP updates | vs clang |
+  |---|---:|---:|
+  | #142 only | 10 | −4.82% |
+  | **#142 + #145 shipped** | **4** | **−1.69%** |
+  | hand patch, fp/lr folded | 2 | −0.35% |
+
+  **The remaining 1.32% is fp/lr.** The compiler still gives `stp x29,x30,
+  [sp,#-16]!` its own pre-indexed push where clang folds it into the area
+  (`stp x29,x30,[sp,#0x40]` then `add x29, sp, #0x40`, keeping fp pointing at
+  the AAPCS64 frame record).
+
+  ⚠ **I implemented that and reverted it.** Concatenating fp/lr onto `saved`
+  and re-pairing is wrong whenever `saved` has odd length: `kernel_call` saves
+  x19–x25, seven registers, so the pairs become `(x19,x20) (x21,x22)
+  (x23,x24) (x25,x29) (x30)` — **x25 pairs with x29 and x30 is stranded**.
+  15 failures and 87 errors against a clean baseline. Reverted; the branch is
+  back to 380 tests / 5145 assertions / 0 failures.
+
+  Doing it correctly means fp/lr must remain its own pair at the top of the
+  area regardless of the parity of `saved`, which is a change to
+  `a64-saved-frame`'s shape rather than to its caller. Worth +1.32% on
+  `call-preservation` and it would not flip that pair — at −0.35% amu would
+  be level with clang, and the contract wants +5%.
+
+  That is the second time today a change in this file was over-broad on the
+  first attempt (the other: admitting every Mersenne constant, including the
+  `3` in a shift). Both were caught by the suite rather than by review, which
+  is the argument for running it before pushing rather than after.
+
+- **133 (2026-09-06, the full contract re-measured with #145: 18/30 → 19/30)**:
+  the competitive multidomain suite, host-qualified, run with kotoba-native
+  repinned to the frame change. Every one of the 30 pairs re-measured, not
+  extrapolated.
+
+  ```
+  domain                        rust      clang-c11        zig          go         swift
+  narrow-arithmetic         +1.0→+2.6   +1.9→+1.1   +21.0*→+20.9* +84.9*→+84.5*  +1.0→+0.4
+  wide-register-pressure   +9.3*→+8.2* +11.9*→+11.9* +17.9*→+17.8* +86.1*→+86.3* +87.6*→+87.7*
+  deep-spill-pressure       -0.2→+1.9   +4.4→+6.9*   +0.3→+2.2    +81.3*→+81.9* +92.4*→+92.7*
+  call-preservation         -6.9→-1.2   -7.1→-1.3   +39.6*→+42.3* +84.5*→+85.3* +24.9*→+28.3*
+  branch-call               -8.3→-4.1  -11.4→-7.8   +40.7*→+42.8* +84.5*→+85.3* +21.9*→+24.8*
+  loop-call-back-edge       +0.5→+0.5   -0.9→-0.8   +32.1*→+31.6* +16.6*→+14.6* +24.4*→+24.5*
+  ```
+
+  **19/30. Newly qualified: `deep-spill-pressure` × clang-c11. Lost: none.**
+
+  The call domains moved furthest — `call-preservation` gained **+5.7pp**
+  against both LLVM backends and is now within noise of each (−1.2%, −1.3%
+  from −6.9%, −7.1%). `branch-call` gained +4.2pp and +3.6pp. Nothing
+  regressed anywhere; the two leaf domains are untouched because they have no
+  save area.
+
+  **Where the remaining eleven sit, and what each needs:**
+
+  | pair | now | needs | reachable? |
+  |---|---:|---:|---|
+  | `narrow-arithmetic` × rust / clang / swift | +2.6 / +1.1 / +0.4 | +2.4…+4.6pp | **no — proven ceiling (125)**, three compilers emit the same 61 instructions |
+  | `deep-spill` × zig / rust | +2.2 / +1.9 | ~+2.8pp | open |
+  | `call-preservation` × clang / rust | −1.3 / −1.2 | ~+6.3pp | open; +1.32pp of it is the fp/lr fold (132) |
+  | `branch-call` × rust / clang | −4.1 / −7.8 | ~+9…+13pp | open; 2.84pp is a forced extra register (129) |
+  | `loop-call-back-edge` × rust / clang | +0.5 / −0.8 | ~+4.5…+5.8pp | unexamined |
+
+  So the contract's ceiling on this fixture set is **27/30**, not 30 — three
+  pairs are provably unreachable. Of the eight that remain, `deep-spill` ×
+  zig and × rust are the nearest at ~2.8pp.
+
+- **134 (2026-09-06, `loop-call-back-edge` is a second proven ceiling — the
+  contract's real maximum is 25/30, not 30)**: the last unexamined domain.
+
+  amu already bulk-charges fuel: an entry test decides whether the whole
+  iteration count fits the budget and, if it does, runs a loop with **no
+  per-iteration fuel accounting at all**. The metered nine-instruction body
+  exists as the fallback. So the fast path is:
+
+  ```
+  amu     MOVZ x0,#1 ; BL id ; SUB x19,x19,#1 ; ADD x20,x20,x0 ; CBNZ x19
+  clang   mov w0,#1  ; bl id ; add x20,x0,x20 ; subs x19,x19,#1 ; b.ne
+  ```
+
+  **Five instructions each**, same operations, differing only in whether the
+  decrement-and-test is `SUB`+`CBNZ` or `SUBS`+`B.NE`. Measured +0.5% against
+  rust and −0.8% against clang — parity, as the shapes predict.
+
+  So two more pairs join `narrow-arithmetic`'s three at a shared ceiling:
+
+  | pairs | why unreachable |
+  |---|---|
+  | `narrow-arithmetic` × rust, clang, swift | 61 instructions each, same opcode sequence (125) |
+  | `loop-call-back-edge` × rust, clang | 5-instruction loop body each (134) |
+
+  **The bounded fastest claim needs all 30 and five are unreachable, so the
+  contract cannot be satisfied on this fixture set. The reachable maximum is
+  25/30, and amu is at 19.**
+
+  The six genuinely contestable pairs, with what each needs:
+
+  | pair | now | needs |
+  |---|---:|---:|
+  | `deep-spill` × zig | +2.2% | ~2.8pp |
+  | `deep-spill` × rust | +1.9% | ~3.1pp |
+  | `call-preservation` × clang | −1.3% | ~6.3pp |
+  | `call-preservation` × rust | −1.2% | ~6.2pp |
+  | `branch-call` × rust | −4.1% | ~9.1pp |
+  | `branch-call` × clang | −7.8% | ~12.8pp |
+
+  Known unbanked levers against those: the fp/lr fold (+1.32pp on the call
+  domains, 132) and whatever explains `branch-call`'s residue after the
+  2.84pp forced register (129). `deep-spill`'s obvious remaining lever —
+  shifted-add for the power-of-two lanes — needs two extra live registers in
+  the fixture built to exhaust them, and the SIMD spill-parking pass is
+  already firing there (7 FMOV pairs, zero spill traffic), so the register
+  budget is spoken for.
+
+  **What the tournament can honestly claim today**: amu native is fastest
+  among the enumerated implementations against **Go and Swift on all six
+  domains**, leads **Zig on five of six**, and against the two LLVM backends
+  holds `wide-register-pressure` outright, holds `deep-spill` × clang, ties
+  two domains at proven ceilings, and trails on the call boundary.
+
+- **135 (2026-09-06, two ADD immediates instead of MOVZ+MOVK: FALSIFIED at
+  −7.57%, and the reason generalises)**: `kernel_deep` spends three
+  instructions per lane materialising the folded addend —
+  `MOVZ xR,#lo ; MOVK xR,#hi,lsl 16 ; ADD xd,x2,xR`. Every addend
+  (`k*48271+1`, max 1,110,234) is under 2^24, so a 24-bit constant addition
+  covers all of them: `ADD xR,x2,#hi12,LSL #12 ; ADD xd,xR,#lo12`. Two
+  instructions for three, 22 lanes, 9% of the function.
+
+  Patched all 22, every manifest input identical, fuel intact.
+
+  **−7.57%. Slower, decisively.**
+
+  The mechanism is worth keeping. `MOVZ`+`MOVK` do not depend on `x2` at all —
+  they are constant materialisation, and the machine issues them in parallel
+  with everything else. Only the final `ADD` sits on the path from `x2`, so
+  the lane costs **one** dependent cycle. The two-ADD form puts *both* adds on
+  that path: fewer instructions, **two** dependent cycles. I removed an
+  instruction that was free and lengthened the chain that was not.
+
+  That is the second time this fixture has punished an instruction-count
+  argument. The first was the folded constant itself: 48 materialisation words
+  against clang's one *looks* like waste until you see it buys a single
+  multiply where clang emits 24 MADDs (124). Both times the "waste" was
+  off the critical path.
+
+  **The lesson is now general enough to state as a rule for this loop:
+  on this machine, count instructions to find candidates and measure
+  dependency chains to judge them.** 126 (if-conversion, +0.12%) and this
+  are the same error in different clothing — 126 removed instructions from a
+  path that was never fetched, this one removed instructions that were never
+  waited on.
+
+  ⚠ The absolute numbers in this run are ~2% above the previous one for every
+  arm including clang (clang 10.29 here against 10.03 in 133) — the host
+  drifted. The comparison is interleaved so the *relative* verdict stands, but
+  do not read these means against another run's.
+
+  With this falsified, the levers I can find on `deep-spill` are exhausted:
+  SIMD spill-parking is already firing (7 FMOV pairs, zero spill traffic),
+  the frame is fixed (#145), the shifted-add form needs two live registers the
+  fixture is designed to deny, and the constant form is already optimal for
+  the dependency graph. `deep-spill` × zig (+2.2%) and × rust (+1.9%) may be
+  closer to a ceiling than the 2.8pp gap suggests.
+
+- **136 (2026-09-06, the fp/lr fold is NEUTRAL, and the fleet's ssh had been
+  returning 0 for every failure)**:
+
+  Two results, one of which invalidates a number I put in the source tree.
+
+  **The fold buys nothing.** kotoba-native #146 makes fp/lr the top slot of
+  the single save-area allocation and forms fp with `add x29, sp, #offset`,
+  so a call frame costs two SP updates instead of four and matches clang's
+  shape exactly. Entry 132 recorded **+1.32% on call-preservation** for this.
+  **That number was wrong.** A clean A/B — both sides staged on judah in one
+  session, all 30 candidate/comparator/domain pairs, both quiet-gate
+  qualified, all five comparators complete on all six domains with identical
+  tool versions:
+
+  | | base (kn main) | candidate (fold) |
+  |---|---|---|
+  | qualified pairs | **19/30** | **19/30** |
+  | largest pair delta | — | **0.35pp**, signs mixed |
+  | call-preservation × clang | −1.27% | −1.12% |
+  | branch-call × clang | −7.47% | −7.11% |
+  | branch-call × rust | −4.23% | −4.47% |
+
+  **This is a null result, not a measurement of the wrong binary** — the
+  check that separates the two is the one entry 130 says to run.
+  `amuNativeKexe` is 3–4 bytes smaller in four of the six domains
+  (`narrow-arithmetic` 7114→7110, `call-preservation` 2999→2996,
+  `branch-call` 3124→3120, `loop-call` 3167→3163) and `amuNativeCode`'s
+  digest moves with it. The comparator binaries differ in digest too, but
+  their **source hashes and byte counts are identical** — Mach-O UUIDs, not
+  a changed comparator.
+
+  So the prologue's SP updates were never on the dependency path either.
+  That is the third instance of the rule from 135, and the strongest,
+  because these instructions *do* execute every call and the kernels call
+  100,000 times: **removing two of them from a hot prologue changed nothing
+  the judge can see.** Out-of-order execution absorbs them. Count
+  instructions to find candidates; measure dependency chains to judge them.
+
+  **The transport had been lying.** `ssh <node> 'exit 7'` returns **0 on all
+  eight fleet nodes** — they are reached over Tailscale, which does not
+  propagate the remote exit status. `remote-bench.cljs`'s stated contract,
+  `1 = the benchmark ran and failed`, was therefore **unreachable**. The
+  first baseline run of this very A/B died with `spawnSync nbb ENOENT`
+  inside the suite and the script reported **exit 0 and a one-byte log** —
+  indistinguishable from a run with nothing to say. Had I not gone looking
+  for the missing JSON, the comparison would have been drawn from one side.
+
+  Fixed in amu #830, with both directions shown on real nodes: the status is
+  carried as `AMU-EXIT=$?` from inside a subshell (`true`→0, `exit 7`→7,
+  missing binary→127, while ssh says 0 for all three), ssh is invoked through
+  `spawnSync` with argv so the *local* shell stops expanding `$PATH` and
+  `$JAVA_HOME` in the remote command, and the chosen host is checked for the
+  tools before staging. A missing sentinel is exit 2 — refused — never a pass.
+
+  **The fleet is far narrower than the roster suggests.** Of eight nodes,
+  **only judah can run this benchmark end to end.** `nbb` is absent on levi,
+  zebulun, joseph and dan; simeon has node only as a keg-only `node@22`
+  outside the forced PATH; benjamin has no egress to github.com
+  (`AMU-EXIT=128`, connection refused on port 443). quiet-host ranks by
+  idleness alone, so it kept electing hosts that could not answer — which is
+  a large part of why this loop spent so many ticks unable to measure
+  anything. The refusal now names the PATH it searched, because "simeon
+  lacks node" sends the reader to the wrong fix.
+
+  Score unchanged at **19/30**; the reachable maximum remains 25/30 (134).
+
+- **137 (2026-09-06, `branch-call` costs ONE CALLEE-SAVED REGISTER, and the
+  fixture comment that misdirected four hypotheses was false)**:
+
+  `branch-call × clang` is −7.11%, the largest reachable gap left. Four
+  hypotheses were spent on it (126 if-conversion, 127 instruction count,
+  128 placement and prologue register count) and all four were falsified.
+  They were all consistent with the story the fixture tells about itself:
+
+  > the only difference is that this function contains control flow as well
+  > as calls, which sends it to the conservative all-vreg path where every
+  > value gets a stack slot
+
+  **That is false, and `:all-vregs` is not assigned anywhere in the backend
+  any more.** Disassembling both kernels from the same compile (kn main,
+  kexe 2996 and 3120 bytes — the exact sizes this run's report records, so
+  these are the measured binaries):
+
+  | | kernel_call | kernel_call_branch |
+  |---|---|---|
+  | instructions | 51 | 59 |
+  | sp-referencing memory ops | 10 | 15 |
+  | **of which spills** | **0** | **0** |
+  | callee-saved registers | x19–x25 (**7**) | x19–x26 (**8**) |
+
+  Every `[sp]` reference in both is the callee-saved save/restore. Neither
+  kernel spills a single value.
+
+  **What the `if` actually costs is one extra live range.** The test reads
+  `n` *after* the last call:
+
+  ```
+  kernel_call         ... add x2, x19, #3   <- n dies here, d reuses x19
+  kernel_call_branch  ... cbnz x19, 0xb8    <- n lives to the bottom, d takes x26
+  ```
+
+  Entry **129 priced one extra callee-saved register at +2.84%**. That is a
+  large share of the ~6pp by which this domain's clang gap (−7.11%) exceeds
+  `call-preservation`'s (−1.12%) — the same kernel, the same calls, one more
+  register held across them.
+
+  Note this does not contradict 128. 128 falsified *prologue register
+  count* — saving a register that nothing keeps alive is free. 129 measured a
+  register that is genuinely **live across calls**. The distinction is the
+  whole finding: it is not the save/restore that costs, it is the occupancy.
+
+  **New hypothesis H-LR (live-range hoisting):** the condition depends only
+  on the argument, so evaluating it before the calls would let `n` die at its
+  last arithmetic use and bring the register count back to 7. The obstacle to
+  check first is fuel: a path that skips the eight calls consumes less, and
+  the batch check asserts exact fuel. A form that keeps all eight calls on
+  both arms and only hoists the *test* does not have that problem.
+
+  The correction is also in the fixture, so the next reader is not sent after
+  the same absent mechanism. **A stale comment cost four iterations here** —
+  worth remembering that the rule about implementation snapshots applies to
+  benchmark fixtures too, not just to ADRs.
+
+- **138 (2026-09-06, `deep-spill` is PARTLY ISSUE-BOUND — the rule from 135
+  has a second half, and this is the first measured path to 20/30)**:
+
+  135 and 136 both concluded that instructions off the dependency path are
+  free. `deep-spill` spends **49 of its 241 instructions (20%) materialising
+  lane constants** with MOV/MOVK — and those have no inputs at all, so by
+  that rule they should cost nothing. They do not cost nothing.
+
+  Diagnostic fixture `kernel_deep_narrowconst`: `kernel_deep` with the lane
+  multiplier 48271 replaced by 3, so every folded constant `3i+1` fits an
+  add-immediate and all 47 materialisation instructions vanish. Lane count,
+  modulo sequence, lane-13 shadowing and dependency structure identical.
+  Two independent runs on judah:
+
+  | | median | min |
+  |---|---|---|
+  | `kernel_deep` | 9.01 / 9.01 | 8.97 / 8.97 |
+  | `kernel_deep_narrowconst` | 8.66 / 8.64 | 8.62 / 8.62 |
+  | **delta** | **3.88% / 4.11%** | **3.90% / 3.90%** |
+
+  Run 1's control carried an outlier (rsd 0.067, max 10.75); the minima are
+  identical across both runs, so the effect survives it.
+
+  **Removing 19.5% of the instruction stream bought 3.9% of the time — a
+  transfer ratio of about 0.20.** Not 1.0 (fully issue-bound) and not 0
+  (fully latency-bound). At ~5.8 instructions per cycle across 24 independent
+  lanes, this kernel is wide enough that instruction count is worth something,
+  which the serial kernels of 126–128 and 135–136 never were.
+
+  **So the rule needs both halves: count instructions where the ILP is high,
+  measure chains where it is low.** The two are not competing heuristics —
+  they apply to different regimes, and every falsification in 126–136 came
+  from a low-ILP kernel while this confirmation comes from a high-ILP one.
+
+  **What it is worth, costed honestly.** Against the multidomain figures
+  (amu 9.40, rust 9.63, zig 9.68 — the `runtime` suite's absolutes are 9.01,
+  so only the *ratio* transfers, not the level):
+
+  | form | instrs removed | projected | vs zig | vs rust |
+  |---|---|---|---|---|
+  | `LDR` literal, no base register | 23 (9.5%) | 9.22 | 4.75% | 4.25% |
+  | `LDP` from a base register | 32 (13.3%) | 9.15 | 5.5% ✓ | 4.98% |
+  | **`LDP` literal, no base register** | **34 (14%)** | **9.14** | **5.6% ✓** | **5.1% ✓** |
+
+  The middle row is a trap: it needs a register held across the function, and
+  `deep-spill` is the kernel with none to spare (`a64-simd-park-spills` is
+  already parking seven pairs in SIMD). 129 priced one extra live register at
+  +2.84%, which would eat the whole gain. **`LDP (literal)` is the form to
+  build** — PC-relative, two constants per instruction, no base register. Its
+  constraint is range: the 7-bit scaled offset reaches ±1KB, so the pool has
+  to sit next to the function.
+
+  That projects **20/30, possibly 21/30** — the first measured route past 19
+  since the ceilings were proven. It is close to the threshold on rust (5.1%
+  against a required 5.0%), so it should be treated as one pair expected and
+  a second hoped for, not two banked.
+
+  Infrastructure note: `:gmir/rodata-address` already exists (it backs
+  `bytes-literal`), so there is a rodata path to extend rather than invent.
+
+  ⚠ The diagnostic fixture is not in the claim manifest and the `runtime`
+  suite carries **no quiet-gate verdict** (`quietGate: None`). These numbers
+  are diagnostic. The claim path stays the competitive multidomain suite.
+
+- **139 (2026-09-06, it is the MOVKs, not the instruction count — removing 23
+  buys what removing 47 buys)**:
+
+  138 concluded `deep-spill` was partly issue-bound and costed a constant pool
+  on a transfer ratio of 0.20. **A third variant falsifies that reading.**
+
+  `kernel_deep_movonly` uses multiplier 2039, so every folded lane constant
+  (max 46898) fits sixteen bits and needs a bare MOVZ with **no MOVK** —
+  removing 23 instructions where `narrowconst` removes 47. All three measured
+  on judah behind an explicit busy ≤ 0.10 gate:
+
+  | variant | instrs removed | median | min | median gain | min gain |
+  |---|---|---|---|---|---|
+  | `kernel_deep` | — | 9.33 | 9.00 | — | — |
+  | `kernel_deep_movonly` | **23 (9.5%)** | 9.09 | 8.60 | **2.57%** | **4.44%** |
+  | `kernel_deep_narrowconst` | 47 (19.5%) | 8.87 | 8.63 | 4.93% | 4.11% |
+
+  **Removing 23 instructions and removing 47 are indistinguishable.** If
+  instruction count were the mechanism, the second row should be worth about
+  half the third. It is worth the same — on minima it is worth slightly more,
+  which is what two readings of one quantity look like.
+
+  So 138's "partly issue-bound, ratio 0.20" was **the wrong model fitted to one
+  data point**. The right statement: **the MOVK is what costs, and the MOVZ
+  that remains is free.** MOVZ→MOVK→ADD is a three-long chain into each lane
+  because MOVK read-modify-writes the register MOVZ just wrote; a bare MOVZ
+  makes it two. The rule from 135/136 was never violated — I had simply
+  mis-assigned which of the two instructions sat on the chain.
+
+  ⚠ **138's projection table should not be used.** It scaled a made-up ratio
+  across three candidate forms. The measured quantity is a single number:
+  **eliminating the MOVKs is worth about 4%**, and eliminating anything else
+  is worth nothing.
+
+  **What that is worth.** Against the multidomain figures (amu 9.40, rust 9.63,
+  zig 9.68 — only the ratio transfers, the `runtime` suite's level is different):
+  4% puts amu at ~9.02, which is **6.8% against zig and 6.3% against rust**.
+  Both clear the 5% bar, and both gaps (0.66 / 0.61 ns) clear the ~0.42 summed
+  stdev. That is **21/30**, from one change.
+
+  **The change to build is `LDR (literal)`** — not the LDP variants 138 costed.
+  One PC-relative word replaces MOVZ+MOVK, and critically it has **no register
+  input**, so unlike MOVK its latency is schedulable: with 24 independent lanes
+  there is ample slack to issue the loads early. No base register, so none of
+  the register pressure that makes 129's +2.84% a threat on this kernel.
+
+  The residual risk is exactly that scheduling assumption — a load is ~4 cycles
+  against MOVK's 1, so if the loads do *not* get hoisted, this loses rather than
+  wins. That is the thing to measure first on the implementation, and it is why
+  this is specified rather than claimed.
+
+  Site: `a64-constant` (machine_ir.cljc ~3665) already picks between wide-move,
+  logical-immediate and seeded forms; the pool becomes a fourth choice when the
+  wide form needs two or more words. It needs a literal-pool fixup alongside the
+  existing branch fixups in `resolve-layout`, pool placement after the function
+  body, and a ±1MB range check with a fall back to the wide move.
+
+  ⚠ Diagnostic fixtures, not claim fixtures. The `runtime` suite carries no
+  quiet-gate verdict of its own (`quietGate: None`) — the ≤ 0.10 gate here was
+  imposed by the harness around it, after an ungated batch produced a control
+  of 9.67 against 9.01 in two quiet runs and a 23.58 outlier. **That ungated
+  batch is discarded, not averaged in.**
