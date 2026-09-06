@@ -1715,6 +1715,164 @@ static int64_t fs_app_data_read_provider(struct kexe_context_v4 *context,
   return result;
 }
 
+/* Write provider for wire id 35 (:fs/app-data). The request string is
+ * "<path>\0<content>": the first NUL separates the absolute target path from
+ * the raw bytes to write. Scope is KEXE_CAP_RESOURCES_35, enforced with the
+ * same realpath-canonicalized prefix match and fd containment as the read
+ * provider. The file is created/truncated O_NOFOLLOW. Returns the number of
+ * bytes written (>= 0), or raises SIGILL on any scope/containment violation.
+ * Writing through a symlink is impossible (O_NOFOLLOW), and a trailing slash
+ * (directory target) is refused. */
+/* memmem fallback for platforms without it (glibc has it; macOS lacks <string> memmem). */
+static void *shim_memmem(const void *hay, size_t hlen, const void *needle, size_t nlen) {
+  if (nlen == 0) return (void *)hay;
+  if (hlen < nlen) return NULL;
+  const uint8_t *h = (const uint8_t *)hay, *n = (const uint8_t *)needle;
+  for (size_t i = 0; i + nlen <= hlen; i++) {
+    if (memcmp(h + i, n, nlen) == 0) return (void *)(h + i);
+  }
+  return NULL;
+}
+#define memmem shim_memmem
+
+static int64_t fs_app_data_write_provider(struct kexe_context_v4 *context,
+                                          int64_t request) {
+  const uint8_t *bytes = NULL;
+  uint64_t length = 0;
+  if (!read_string_handle(context, request, &bytes, &length)) {
+    raise(SIGILL);
+    return 0;
+  }
+  if (bytes == NULL) {
+    raise(SIGILL);
+    return 0;
+  }
+  /* Write form is "<path>WRITE_SEP<content>". Guests cannot emit a control
+   * character (NUL, SOH) because the Kotoba source reader rejects control
+   * chars and there is no char-to-string builtin, so the separator is an
+   * ASCII token the guest can build with string-concat. Any second occurrence
+   * of the token (i.e. content containing it) is refused fail-closed. */
+  static const char write_token[] = "WRITE_SEP";
+  const size_t token_len = sizeof(write_token) - 1u;
+  const uint8_t *sep = NULL;
+  size_t i = 0;
+  for (; i + token_len <= (size_t)length; i++) {
+    if (memcmp(bytes + i, write_token, token_len) == 0) { sep = bytes + i; break; }
+  }
+  if (sep == NULL) {
+    raise(SIGILL);
+    return 0;
+  }
+  /* Refuse a second token occurrence (content containing the separator). */
+  for (size_t j = (size_t)(sep - bytes) + token_len; j + token_len <= (size_t)length; j++) {
+    if (memcmp(bytes + j, write_token, token_len) == 0) {
+      raise(SIGILL);
+      return 0;
+    }
+  }
+  size_t path_length = (size_t)(sep - bytes);
+  if (path_length == 0 || path_length >= 4096 || bytes[0] != '/') {
+    raise(SIGILL);
+    return 0;
+  }
+  const uint8_t *content = sep + token_len;
+  size_t content_length = (size_t)(bytes + length - content);
+
+  char target[4096];
+  memcpy(target, bytes, path_length);
+  target[path_length] = '\0';
+
+  if (kexe_scope35_count == 0) {
+    raise(SIGILL);
+    return 0;
+  }
+  char candidate[4096];
+  int permitted = 0;
+  for (int s = 0; s < kexe_scope35_count && !permitted; s++) {
+    for (int v = 0; v < 2 && !permitted; v++) {
+      const char *base = (v == 0) ? kexe_scope35_orig[s] : kexe_scope35_resolved[s];
+      size_t base_length = strlen(base);
+      const char *suffix = NULL;
+      if (strncmp(target, base, base_length) == 0 &&
+          (target[base_length] == '/' || target[base_length] == '\0')) {
+        suffix = target + base_length;
+      }
+      if (suffix == NULL) continue;
+      size_t suffix_length = strlen(suffix);
+      size_t real_length = strlen(kexe_scope35_resolved[s]);
+      if (real_length + suffix_length >= sizeof(candidate)) continue;
+      memcpy(candidate, kexe_scope35_resolved[s], real_length);
+      memcpy(candidate + real_length, suffix, suffix_length + 1);
+      permitted = 1;
+    }
+  }
+  if (!permitted) {
+    raise(SIGILL);
+    return 0;
+  }
+  struct stat st;
+  if (stat(candidate, &st) == 0 && S_ISDIR(st.st_mode)) {
+    raise(SIGILL);
+    return 0;
+  }
+  int fd = open(candidate, O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW, 0644);
+  if (fd < 0) {
+      raise(SIGILL);
+    return 0;
+  }
+#if defined(__APPLE__)
+  char actual[4096];
+  if (fcntl(fd, F_GETPATH, actual) != 0) {
+    close(fd);
+    raise(SIGILL);
+    return 0;
+  }
+  size_t actual_length = strlen(actual);
+  int contained = 0;
+  for (int s = 0; s < kexe_scope35_count && !contained; s++) {
+    const char *base = kexe_scope35_resolved[s];
+    size_t base_length = strlen(base);
+    if (actual_length >= base_length &&
+        memcmp(actual, base, base_length) == 0 &&
+        (actual_length == base_length || actual[base_length] == '/')) {
+      contained = 1;
+    }
+  }
+#else
+  struct stat fd_sb, cand_sb;
+  if (fstat(fd, &fd_sb) != 0 || stat(candidate, &cand_sb) != 0) {
+    close(fd);
+    raise(SIGILL);
+    return 0;
+  }
+  int contained = (fd_sb.st_dev == cand_sb.st_dev &&
+                   fd_sb.st_ino == cand_sb.st_ino);
+#endif
+  if (!contained) {
+    close(fd);
+    raise(SIGILL);
+    return 0;
+  }
+
+  size_t off = 0;
+  while (off < content_length) {
+    ssize_t w = write(fd, content + off, content_length - off);
+    if (w < 0) {
+      if (errno == EINTR) continue;
+      close(fd);
+      raise(SIGILL);
+      return 0;
+    }
+    off += (size_t)w;
+  }
+  close(fd);
+  /* Return the written content as a string (matching result_kind :string), so
+   * the guest can verify the write via string-byte-length (== content_length)
+   * and keep the capability's typed result contract. */
+  return intern_utf8(context, content, content_length);
+}
+
+
 static int64_t checked_typed_cap_call(struct kexe_context_v4 *context,
                                       uint64_t id, uint64_t request_kind,
                                       uint64_t result_kind, int64_t request) {
@@ -1742,9 +1900,18 @@ static int64_t checked_typed_cap_call(struct kexe_context_v4 *context,
   } else if (id == 10 && request_kind == KEXE_TYPED_UI_EVENT_V1) {
     result = ui_event_inject(context, request);
   } else if (id == 35 && request_kind == KEXE_TYPED_STRING) {
-    /* wire id 35 = :fs/app-data. Read provider: request is the absolute
-     * path, result is the file contents; scope is KEXE_CAP_RESOURCES_35. */
-    result = fs_app_data_read_provider(context, request);
+    /* wire id 35 = :fs/app-data. If the request string contains a NUL it is
+     * the write form "<path>\0<content>" (handled by the write provider);
+     * otherwise it is the read form (absolute path) -> file contents. Scope
+     * is KEXE_CAP_RESOURCES_35 for both. */
+    uint64_t rlen = 0;
+    const uint8_t *rb = NULL;
+    if (read_string_handle(context, request, &rb, &rlen) && rb &&
+        memmem(rb, (size_t)rlen, "WRITE_SEP", 9) != NULL) {
+      result = fs_app_data_write_provider(context, request);
+    } else {
+      result = fs_app_data_read_provider(context, request);
+    }
   } else if (id == 33 && request_kind == KEXE_TYPED_STRING) {
     /* wire id 33 = :env/read. Real host provider: the request string is
      * the environment variable name; the result is its value (empty
@@ -2287,6 +2454,9 @@ static void install_syscall_sandbox(void) {
   for (int s = 0; s < kexe_scope35_count; s++) {
     used += (size_t)snprintf(profile + used, sizeof(profile) - used,
               "(allow file-read* (subpath \"%s\"))",
+              kexe_scope35_resolved[s]);
+    used += (size_t)snprintf(profile + used, sizeof(profile) - used,
+              "(allow file-write* (subpath \"%s\"))",
               kexe_scope35_resolved[s]);
   }
   char *error = NULL;
