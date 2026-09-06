@@ -3105,3 +3105,69 @@ ple Clang C11, Zig, Go
   fixture is designed to deny, and the constant form is already optimal for
   the dependency graph. `deep-spill` × zig (+2.2%) and × rust (+1.9%) may be
   closer to a ceiling than the 2.8pp gap suggests.
+
+- **136 (2026-09-06, the fp/lr fold is NEUTRAL, and the fleet's ssh had been
+  returning 0 for every failure)**:
+
+  Two results, one of which invalidates a number I put in the source tree.
+
+  **The fold buys nothing.** kotoba-native #146 makes fp/lr the top slot of
+  the single save-area allocation and forms fp with `add x29, sp, #offset`,
+  so a call frame costs two SP updates instead of four and matches clang's
+  shape exactly. Entry 132 recorded **+1.32% on call-preservation** for this.
+  **That number was wrong.** A clean A/B — both sides staged on judah in one
+  session, all 30 candidate/comparator/domain pairs, both quiet-gate
+  qualified, all five comparators complete on all six domains with identical
+  tool versions:
+
+  | | base (kn main) | candidate (fold) |
+  |---|---|---|
+  | qualified pairs | **19/30** | **19/30** |
+  | largest pair delta | — | **0.35pp**, signs mixed |
+  | call-preservation × clang | −1.27% | −1.12% |
+  | branch-call × clang | −7.47% | −7.11% |
+  | branch-call × rust | −4.23% | −4.47% |
+
+  **This is a null result, not a measurement of the wrong binary** — the
+  check that separates the two is the one entry 130 says to run.
+  `amuNativeKexe` is 3–4 bytes smaller in four of the six domains
+  (`narrow-arithmetic` 7114→7110, `call-preservation` 2999→2996,
+  `branch-call` 3124→3120, `loop-call` 3167→3163) and `amuNativeCode`'s
+  digest moves with it. The comparator binaries differ in digest too, but
+  their **source hashes and byte counts are identical** — Mach-O UUIDs, not
+  a changed comparator.
+
+  So the prologue's SP updates were never on the dependency path either.
+  That is the third instance of the rule from 135, and the strongest,
+  because these instructions *do* execute every call and the kernels call
+  100,000 times: **removing two of them from a hot prologue changed nothing
+  the judge can see.** Out-of-order execution absorbs them. Count
+  instructions to find candidates; measure dependency chains to judge them.
+
+  **The transport had been lying.** `ssh <node> 'exit 7'` returns **0 on all
+  eight fleet nodes** — they are reached over Tailscale, which does not
+  propagate the remote exit status. `remote-bench.cljs`'s stated contract,
+  `1 = the benchmark ran and failed`, was therefore **unreachable**. The
+  first baseline run of this very A/B died with `spawnSync nbb ENOENT`
+  inside the suite and the script reported **exit 0 and a one-byte log** —
+  indistinguishable from a run with nothing to say. Had I not gone looking
+  for the missing JSON, the comparison would have been drawn from one side.
+
+  Fixed in amu #830, with both directions shown on real nodes: the status is
+  carried as `AMU-EXIT=$?` from inside a subshell (`true`→0, `exit 7`→7,
+  missing binary→127, while ssh says 0 for all three), ssh is invoked through
+  `spawnSync` with argv so the *local* shell stops expanding `$PATH` and
+  `$JAVA_HOME` in the remote command, and the chosen host is checked for the
+  tools before staging. A missing sentinel is exit 2 — refused — never a pass.
+
+  **The fleet is far narrower than the roster suggests.** Of eight nodes,
+  **only judah can run this benchmark end to end.** `nbb` is absent on levi,
+  zebulun, joseph and dan; simeon has node only as a keg-only `node@22`
+  outside the forced PATH; benjamin has no egress to github.com
+  (`AMU-EXIT=128`, connection refused on port 443). quiet-host ranks by
+  idleness alone, so it kept electing hosts that could not answer — which is
+  a large part of why this loop spent so many ticks unable to measure
+  anything. The refusal now names the PATH it searched, because "simeon
+  lacks node" sends the reader to the wrong fix.
+
+  Score unchanged at **19/30**; the reachable maximum remains 25/30 (134).
