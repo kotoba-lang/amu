@@ -2706,3 +2706,47 @@ ple Clang C11, Zig, Go
   defect in the artifact rather than as a version mismatch between the emitter
   that produced it and the one checking it. Naming both identities in that
   message would have ended this in seconds rather than a bisect.
+
+- **127 (2026-09-06, the `if` costs amu 3% and earns clang 1%, on 52 vs 51
+  executed instructions)**: the cheap diff that should have come before 126's
+  hand patch. `kernel_call` and `kernel_call_branch` differ by one `if`.
+
+  Instruction for instruction, the two amu emissions are **the same program**
+  through the entire call sequence — bytes 0–148 differ only in which
+  callee-saved register holds which result. Two real differences:
+
+  1. `kernel_call` reuses **x19** for the fifth call result, because `n` is
+     dead after the fourth argument. `kernel_call_branch` cannot: `n` is live
+     to the `CBNZ x19`, so it takes **x26** instead and saves one more
+     register. That is forced by the program, not a choice — clang keeps x19
+     for its `cmp x19,#0` for the same reason. Both save 5 store instructions.
+  2. The duplicated epilogue, which 126 already showed is off the hot path.
+
+  Executed instructions at `n=200`: **51 for `kernel_call`, 52 for
+  `kernel_call_branch`** (39 through the CBNZ, then 13 at the branch target).
+  One instruction apart.
+
+  And the direction is the tell:
+
+  | | amu | clang |
+  |---|---:|---:|
+  | `kernel_call` | 4.7750 | 4.4875 |
+  | `kernel_call_branch` | **4.9200** | **4.4450** |
+
+  **Adding the `if` makes clang faster and amu slower.** clang gains 0.9%;
+  amu loses 3.0%. On one extra executed instruction, with the same register
+  discipline and the same call sequence.
+
+  Three structural hypotheses are now falsified for this domain: the branch
+  itself (126, if-conversion +0.12%), the prologue (same store count), and
+  instruction count (52 vs 51). What remains is layout- or front-end-shaped —
+  amu's executed path spans 236 bytes across a forward jump where
+  `kernel_call`'s is 204 contiguous — and that is not visible in a static
+  diff. It needs a measurement this loop does not currently have: the
+  hand-patch method cannot move code without moving branch targets, so
+  testing a layout hypothesis means a compiler change or a
+  performance-counter read, not a byte substitution.
+
+  That is the honest edge of the method here, and it is worth naming rather
+  than working around: **every remaining deficit in this domain is smaller
+  than what a byte-preserving patch can resolve.**
