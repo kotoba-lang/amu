@@ -2750,3 +2750,42 @@ ple Clang C11, Zig, Go
   That is the honest edge of the method here, and it is worth naming rather
   than working around: **every remaining deficit in this domain is smaller
   than what a byte-preserving patch can resolve.**
+
+- **128 (2026-09-06, layout FALSIFIED too; four hypotheses down on
+  `branch-call-control-flow`)**: 127 ended by saying a layout hypothesis needs
+  an instrument this loop does not have. That was wrong — it needs one shift.
+
+  Prepending NOPs to the blob and calling at `48+k` moves the whole code
+  together, so every relative branch stays correct and *only the placement*
+  changes. Six shifts, both fixtures, 14 interleaved samples each, every
+  variant verified to still answer 1190481486 with fuel 1:
+
+  | shift | +0 | +4 | +8 | +16 | +32 | +64 |
+  |---|---:|---:|---:|---:|---:|---:|
+  | `kernel_call` | 4.7650 | 4.7600 | 4.7650 | 4.7600 | 4.7600 | 4.7600 |
+  | `kernel_call_branch` | 4.9300 | 4.9200 | 4.9300 | 4.9225 | 4.9200 | 4.9650 |
+
+  Spread: **0.11%** and **0.91%** of median. The ~3.3% gap between the two
+  fixtures is present at every alignment, including the ones that break
+  16-byte alignment. **Placement is not the cause.**
+
+  Falsified for this domain, each by measurement rather than argument:
+
+  | hypothesis | verdict |
+  |---|---|
+  | the branch itself | if-conversion to CSEL: **+0.12%**, median worse (126) |
+  | the prologue | identical store count, the extra register is forced (127) |
+  | instruction count | 52 executed against 51 (127) |
+  | code placement | flat across six shifts (128) |
+
+  What survives is the one thing 127 found and could not price: with the `if`,
+  `n` is live to the test, so the allocator cannot recycle x19 for the fifth
+  call result and takes x26 — ten callee-saved registers in play against nine,
+  across eight calls. Same instruction count, one more architectural register
+  live across every call boundary. That is a rename/pressure question, and the
+  next honest instrument for it is a performance counter, not another
+  substitution.
+
+  Recording the negative space deliberately: a later reader should not re-run
+  any of these four. The cheap structural explanations for this domain are
+  exhausted, and the remaining 3.3% is smaller than any of them.
