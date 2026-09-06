@@ -3061,3 +3061,47 @@ ple Clang C11, Zig, Go
   domains**, leads **Zig on five of six**, and against the two LLVM backends
   holds `wide-register-pressure` outright, holds `deep-spill` × clang, ties
   two domains at proven ceilings, and trails on the call boundary.
+
+- **135 (2026-09-06, two ADD immediates instead of MOVZ+MOVK: FALSIFIED at
+  −7.57%, and the reason generalises)**: `kernel_deep` spends three
+  instructions per lane materialising the folded addend —
+  `MOVZ xR,#lo ; MOVK xR,#hi,lsl 16 ; ADD xd,x2,xR`. Every addend
+  (`k*48271+1`, max 1,110,234) is under 2^24, so a 24-bit constant addition
+  covers all of them: `ADD xR,x2,#hi12,LSL #12 ; ADD xd,xR,#lo12`. Two
+  instructions for three, 22 lanes, 9% of the function.
+
+  Patched all 22, every manifest input identical, fuel intact.
+
+  **−7.57%. Slower, decisively.**
+
+  The mechanism is worth keeping. `MOVZ`+`MOVK` do not depend on `x2` at all —
+  they are constant materialisation, and the machine issues them in parallel
+  with everything else. Only the final `ADD` sits on the path from `x2`, so
+  the lane costs **one** dependent cycle. The two-ADD form puts *both* adds on
+  that path: fewer instructions, **two** dependent cycles. I removed an
+  instruction that was free and lengthened the chain that was not.
+
+  That is the second time this fixture has punished an instruction-count
+  argument. The first was the folded constant itself: 48 materialisation words
+  against clang's one *looks* like waste until you see it buys a single
+  multiply where clang emits 24 MADDs (124). Both times the "waste" was
+  off the critical path.
+
+  **The lesson is now general enough to state as a rule for this loop:
+  on this machine, count instructions to find candidates and measure
+  dependency chains to judge them.** 126 (if-conversion, +0.12%) and this
+  are the same error in different clothing — 126 removed instructions from a
+  path that was never fetched, this one removed instructions that were never
+  waited on.
+
+  ⚠ The absolute numbers in this run are ~2% above the previous one for every
+  arm including clang (clang 10.29 here against 10.03 in 133) — the host
+  drifted. The comparison is interleaved so the *relative* verdict stands, but
+  do not read these means against another run's.
+
+  With this falsified, the levers I can find on `deep-spill` are exhausted:
+  SIMD spill-parking is already firing (7 FMOV pairs, zero spill traffic),
+  the frame is fixed (#145), the shifted-add form needs two live registers the
+  fixture is designed to deny, and the constant form is already optimal for
+  the dependency graph. `deep-spill` × zig (+2.2%) and × rust (+1.9%) may be
+  closer to a ceiling than the 2.8pp gap suggests.
