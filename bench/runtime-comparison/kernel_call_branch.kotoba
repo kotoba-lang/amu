@@ -1,8 +1,25 @@
 ;; The same calls and the same executed arithmetic as kernel_call, with one
-;; `if` around it whose taken arm is identical. Nothing about the work differs;
-;; the only difference is that this function contains control flow as well as
-;; calls, which sends it to the conservative all-vreg path where every value
-;; gets a stack slot whether or not anything was short of registers.
+;; `if` around it whose taken arm is identical. Nothing about the work differs.
+;;
+;; ⚠ This comment used to say the `if` "sends it to the conservative all-vreg
+;; path where every value gets a stack slot". Measured 2026-09-06 (entry 137):
+;; that is FALSE. Both kernels are spill-free -- the only sp traffic in either
+;; is the callee-saved save/restore, and `:all-vregs` is not assigned anywhere
+;; in the backend any more. The old sentence was an implementation snapshot
+;; that outlived its implementation, and it sent four hypotheses (if-conversion,
+;; placement, instruction count, prologue register count) after a mechanism
+;; that was not there.
+;;
+;; What the `if` actually costs is ONE extra callee-saved register. The test
+;; reads `n` after the last call, so the argument stays live to the end and
+;; `d` cannot reuse its register:
+;;
+;;   kernel_call         x19..x25 (7)  -- n dies at `add x2,x19,#3`, d reuses x19
+;;   kernel_call_branch  x19..x26 (8)  -- n lives to `cbnz x19` at the bottom
+;;
+;; Entry 129 priced one extra callee-saved register at +2.84%, which is a
+;; large part of why this domain trails clang by ~7% where kernel_call trails
+;; by ~1%.
 (ns kernel-call-branch (:export [kernel]))
 
 (defn step [x :i64] :i64
