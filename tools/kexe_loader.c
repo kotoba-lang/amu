@@ -1638,6 +1638,12 @@ static int64_t fs_app_data_read_provider(struct kexe_context_v4 *context,
     raise(SIGILL);
     return 0;
   }
+  /* Containment of the opened fd. macOS: F_GETPATH gives the kernel path,
+   * compared against each resolved entry. Linux: the candidate path was
+   * re-spelled under a resolved entry (lexically inside the grant) and
+   * opened O_NOFOLLOW, so a (st_dev, st_ino) match between the fd and a
+   * fresh stat of the candidate proves the fd IS the granted file. */
+#if defined(__APPLE__)
   char actual[4096];
   if (fcntl(fd, F_GETPATH, actual) != 0) {
     close(fd);
@@ -1655,6 +1661,16 @@ static int64_t fs_app_data_read_provider(struct kexe_context_v4 *context,
       contained = 1;
     }
   }
+#else
+  struct stat fd_sb, cand_sb;
+  if (fstat(fd, &fd_sb) != 0 || stat(candidate, &cand_sb) != 0) {
+    close(fd);
+    raise(SIGILL);
+    return 0;
+  }
+  int contained = (fd_sb.st_dev == cand_sb.st_dev &&
+                   fd_sb.st_ino == cand_sb.st_ino);
+#endif
   if (!contained) {
     close(fd);
     raise(SIGILL);
