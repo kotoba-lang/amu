@@ -3659,3 +3659,64 @@ ple Clang C11, Zig, Go
   are register-allocation-scale changes, not encoder changes.
 
   Score unchanged: **median 19/30, range 17–19, stable 16**.
+
+- **146 (2026-09-07, interleaving the sum is +3.17% — the first positive
+  result in this series, and the first measured route to 20/30)**:
+
+  145 said the remaining move was register-allocation scale, not encoder
+  scale, and named two candidates. This is the second one: **reassociate the
+  final sum so lanes are consumed as they are produced.**
+
+  `kernel_deep` computes 24 lanes and then sums them, so all 24 are live at
+  once — which is the pressure the fixture exists to create.
+  `kernel_deep_accum` folds each lane into an accumulator immediately. Same
+  lanes, same arithmetic, **same result** — i64 addition is associative, so
+  the reassociation is exact (verified in Python over the verification inputs
+  and beyond, including a negative n).
+
+  | rep | kernel_deep | accum | median | min |
+  |---|---|---|---|---|
+  | 1 | 8.97 | 8.71 | **+2.90%** | +2.14% |
+  | 2 | 9.02 | 8.71 | **+3.44%** | +3.13% |
+
+  **+3.17% median, +2.64% min**, both runs, both statistics, same direction.
+
+  **The mechanism is confirmed by disassembly, not inferred:**
+
+  | | instructions | FMOV | sp-mem ops | callee-saved pairs |
+  |---|---|---|---|---|
+  | `kernel_deep` | 241 | 14 | 8 | 4 |
+  | `kernel_deep_accum` | **219** | **0** | **0** | **0** |
+
+  Peak liveness falls far enough that the function needs **no callee-saved
+  registers and no frame at all** — it becomes a leaf that fits in the
+  caller-saved bank. Every spill, every SIMD park, and the whole prologue go
+  away together. That is a much larger structural change than any encoder
+  lever tried in 141–145, and it is why it is the only one that moved.
+
+  **What it is worth.** Applying +3.17% to the current figures (amu 9.46,
+  zig 9.68, rust 9.63):
+
+  | pair | now | projected | |
+  |---|---|---|---|
+  | deep-spill × zig | 2.27% | **5.37%** | **qualifies** |
+  | deep-spill × rust | 1.77% | 4.88% | still short |
+
+  **That is 20/30**, and rust lands close enough that run-to-run variation
+  would sometimes carry it.
+
+  ⚠ **This is a fixture, not a pass.** I have measured the shape a compiler
+  transformation would produce, not the transformation. 141 is the cautionary
+  case — but the two differ in exactly the way that matters: 139's fixtures
+  removed work and **substituted nothing**, which no compiler can do, whereas
+  this one performs an operation reordering a compiler is free to perform, on
+  the same instructions, and the disassembly confirms the predicted mechanism
+  rather than merely the predicted timing.
+
+  Specified as kotoba-native#150. The pass has to (a) find a sum whose terms
+  are independently computed, (b) prove the reassociation exact — trivial for
+  wrapping i64 addition, **not** for floats — and (c) interleave the folds
+  with the producers. Step (c) is where it can go wrong: fold too eagerly and
+  the accumulator becomes the serial spine that cost 5% in 145.
+
+  Score today unchanged: **median 19/30, range 17–19, stable 16.**
