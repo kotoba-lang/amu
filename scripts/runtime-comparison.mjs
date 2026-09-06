@@ -182,6 +182,31 @@ const FIXTURES = {
       return [...first, ...rest].reduce((sum, value) => sum + value, 0);
     },
   },
+  // DIAGNOSTIC ONLY. kernel_deep with the final sum interleaved into the lanes.
+  // Same lanes, same arithmetic, same result -- i64 addition is associative so
+  // reassociating the 24-term sum is exact. What changes is LIVENESS: peak live
+  // lane values drops from 24 to about 2, removing the register pressure this
+  // fixture exists to create. Tests whether sum reassociation is worth building,
+  // against the serial accumulator chain it costs.
+  kernel_deep_accum: {
+    kotoba: "kernel_deep_accum.kotoba",
+    rust: "kernel_deep_accum.rs",
+    benchmark: "deep-spill-pressure-accum-diagnostic-v1",
+    nativeSymbol: "kotoba_bench_kernel_deep_accum",
+    comparators: nativeComparators,
+    arithmetic: "kernel_deep with the sum interleaved into the lanes (diagnostic)",
+    verificationInputs: [0, 1, 2, 199, 200, 201],
+    expected(n) {
+      const step = value => {
+        const v = value * 48271 + 1;
+        return v - Math.trunc(v / 2147483647) * 2147483647;
+      };
+      const first = Array.from({ length: 14 }, (_, i) => step(n + i));
+      const shadowedN = first.at(-1);
+      const rest = Array.from({ length: 10 }, (_, i) => step(shadowedN + 14 + i));
+      return [...first, ...rest].reduce((sum, value) => sum + value, 0);
+    },
+  },
   kernel_call: {
     kotoba: "kernel_call.kotoba",
     rust: "kernel_call.rs",
