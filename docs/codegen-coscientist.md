@@ -2524,10 +2524,18 @@ ple Clang C11, Zig, Go
      compiler change, because a byte-preserving hand patch must leave NOPs
      where the real fix removes instructions.
 
-  **H-C is recorded as landed and is not in the emitted code.** Counting
-  across all six required fixtures at `b5a0c302`: MSUB 16 / 16 / 24 / 1 / 1 / 0
-  and **SUB-with-shift zero everywhere**. Whatever kotoba-native #83 landed,
-  no fixture emits the shape H-C describes.
+  **H-C reaches some fixtures and not others.** Counting across all six
+  required fixtures at `b5a0c302`: MSUB 16 / 16 / 24 / 1 / 1 / 0.
+
+  ⚠ **This entry first said "SUB-with-shift zero everywhere". That was a
+  broken instrument, not a finding.** The detector masked
+  `(x & 0xffe0fc00) == 0xcb000000`, and `0xfc00` covers the shift-amount
+  field — so the companion test `imm6 != 0` could never be true and every
+  fixture reported zero by construction. Re-measured with a decoder validated
+  against clang's own `sub x9,x9,x9,lsl #31` (`0xcb097d29`, imm6 = 31):
+  `kernel` emits **8** shifted subtracts. H-C is active there. What is true is
+  narrower and is what iteration 124 acts on: the two call domains emit an
+  MSUB and no shifted form.
 
   ⚠ **And H-C's +2.46% on `kernel` did not reproduce.** Strength-reducing all
   16 sites there (1:1 MOV/MSUB, so an in-place patch is exact) measured
@@ -2553,3 +2561,49 @@ ple Clang C11, Zig, Go
   where amu and clang execute the same instruction mix. Static shape is
   exhausted as an explanation; this one needs a scheduling or front-end
   measurement.
+
+- **124 (2026-09-06, the single-MSUB clause was unreachable; and why
+  `deep-spill-pressure` wins)**: kotoba-native #142 lands the first half of
+  iteration 123's finding as a compiler change.
+
+  `a64-serial-msub-chain?` opens with `(<= msub-count 1)` — a single MSUB is
+  trivially one serial chain, which is the case the shifted form wins. **That
+  clause was unreachable.** Its values come from
+  `a64-profitable-cached-mersenne-values`, which reads the constant cache, and
+  the cache admits only constants occurring more than once (correctly — one use
+  saves no materialization). The one case the chain test exists to admit was
+  filtered out a layer earlier. `kernel_call` and `kernel_call_branch` now emit
+  clang's shape; `kernel`, `kernel_wide`, `kernel_deep` and `kernel_loop_call`
+  are byte-identical, and the gate's own 5.1% loss on independent lanes is
+  preserved.
+
+  Two guards worth keeping in mind for the next such change. Being Mersenne is
+  not enough to admit a constant — every 2^k−1 is, including the 3 in
+  `(i64-shift-left a 3)`, and admitting shift amounts moved allocation under
+  unrelated code (7 encoding-parity failures). And the first byte-identity
+  comparison was **confounded**: the baseline used amu's *pinned*
+  kotoba-native while the candidate used main, so #138's fuel preamble
+  (`CBNZ; BRK; SUB` → `SUBS; B.cond; BRK`) showed up as this change moving
+  `kernel` and `kernel_loop_call`. Compare against the same base.
+
+  **`deep-spill-pressure`: amu's lead is structural, and the obvious "waste"
+  is the reason for it.** amu emits 48 constant-materialization words against
+  clang's 1, which reads as pure overhead until you look at what it buys:
+  amu computes `n*48271` **once** and adds a folded per-lane constant
+  `k*48271+1`, where clang emits 24 separate MADDs. amu trades one extra word
+  per lane for 23 fewer multiplies, and that is why it is +4.4% ahead rather
+  than behind. Do not "fix" it toward clang's shape.
+
+  The cost is real but nearly forced: only lane 0's addend fits an ADD
+  immediate, only lanes 0–1 fit a bare MOVZ, and lanes 2–23 need MOVZ+MOVK.
+  One untested lead — the addends are an arithmetic progression, so the five
+  power-of-two lanes (k = 1, 2, 4, 8, 16) could be `ADD xd, base, xM, LSL #s`
+  with 48271 held in xM: one word where three are spent now, 10 words of 241.
+  ⚠ Unmeasured, and this fixture's docstring says it sits *above* the register
+  pool, so pinning xM may buy spills that cost more than the words save. It
+  needs the hand-patch treatment before it is believed.
+
+  This pair still needs **+0.6pp** to qualify and is the nearest of the eight
+  near-misses. NEXT is that lead, measured — not the call boundary, where
+  #142 takes `call-preservation` from −7.1% to about −4% and the remaining
+  deficit is scheduling-shaped rather than static.
