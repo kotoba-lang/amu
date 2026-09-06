@@ -22,7 +22,27 @@
 ;;   multidomain  scripts/runtime-multidomain-suite.mjs the six-domain claim path
 ;;
 ;; exit 0 = a report was produced;  1 = the benchmark ran and failed;
-;; exit 2 = could not get to a host or could not stage (refused to answer).
+;; exit 2 = could not get to a host, could not stage, or could not read the
+;;          benchmark's exit status (refused to answer).
+;;
+;; TWO THINGS THIS FILE HAS TO WORK AROUND, both measured 2026-09-06.
+;;
+;; 1. THE FLEET'S SSH DOES NOT RETURN THE REMOTE EXIT STATUS. Every node
+;;    answers 0 no matter what the command did -- `ssh <node> 'exit 7'` is 0 on
+;;    all eight. The nodes are reached over Tailscale (100.64/10 addresses), and
+;;    that transport is what drops it. So `1 = the benchmark ran and failed` was
+;;    unreachable: a crashed benchmark returned 0 with an empty report, which is
+;;    the same answer as a benchmark that had nothing to say. The status is now
+;;    carried in the output stream as AMU-EXIT=<n> and parsed; a missing
+;;    sentinel is exit 2, never a pass.
+;;
+;; 2. THE LOCAL SHELL EXPANDS THE REMOTE COMMAND. `sh` ran everything through
+;;    /bin/sh, so `$JAVA_HOME` and `$PATH` in the remote command were replaced
+;;    with THIS workstation's values before ssh saw them -- the node ran with a
+;;    PATH full of directories that do not exist on it. The same defect is
+;;    already recorded further down for an inline awk `$6`; fixing that one
+;;    instance left this one. ssh is now invoked through spawnSync with an argv
+;;    vector, so there is no local shell to expand anything.
 
 (require '[clojure.string :as str])
 (def cp (js/require "node:child_process"))
@@ -32,6 +52,28 @@
 (defn arg [flag fallback]
   (let [v (argv) i (.lastIndexOf (to-array v) flag)]
     (if (neg? i) fallback (nth v (inc i) fallback))))
+
+(defn ssh!
+  "Run REMOTE-CMD on HOST and report what it actually did.
+
+   argv, not a command string: spawnSync without `shell` never involves a local
+   /bin/sh, so `$PATH` inside REMOTE-CMD reaches the node unexpanded.
+
+   The reported :exit comes from the AMU-EXIT sentinel the remote shell prints,
+   not from ssh -- see the header. :exit is nil when the sentinel is absent,
+   which callers must treat as `could not measure`, not as success."
+  [host remote-cmd & [{:keys [timeout] :or {timeout 900000}}]]
+  ;; The subshell matters: a bare `exit N` in REMOTE-CMD would end the login
+  ;; shell before the sentinel line ran, and a missing sentinel is reported as
+  ;; `could not measure`. Inside ( ) an explicit exit ends only the subshell,
+  ;; so its status still reaches $? and gets printed.
+  (let [wrapped (str "(\n" remote-cmd "\n)\nAMU_STATUS=$?; echo \"AMU-EXIT=$AMU_STATUS\"\n")
+        r (.spawnSync cp "ssh" #js ["-o" "BatchMode=yes" host wrapped]
+                      #js {:encoding "utf8" :timeout timeout :maxBuffer 64000000})
+        out (str (or (.-stdout r) "") (or (.-stderr r) ""))]
+    {:out out
+     :transport-exit (.-status r)
+     :exit (some-> (re-find #"AMU-EXIT=(\d+)" out) second js/parseInt)}))
 
 (defn sh [cmd & [{:keys [timeout] :or {timeout 900000}}]]
   (try {:exit 0 :out (str (.execSync cp cmd #js {:encoding "utf8" :timeout timeout
@@ -78,16 +120,49 @@
           (die! 2 (str "refusing to measure an uncommitted tree; commit first:\n" dirty)))
       env (str "export JAVA_HOME=/opt/homebrew/opt/openjdk; "
                "export PATH=$JAVA_HOME/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin; ")
-      stage (sh (str "ssh -o BatchMode=yes " host " " (pr-str
-                 (str env "set -e; "
-                      "if [ ! -d " remote "/.git ]; then git clone -q https://github.com/kotoba-lang/amu.git " remote "; fi; "
-                      "cd " remote "; git fetch -q origin; git checkout -q " head "; "
-                      "[ -d node_modules ] || npm install --silent --no-audit --no-fund >/dev/null 2>&1; "
-                      "git rev-parse HEAD")))
-                {:timeout 900000})
-      _ (when-not (zero? (:exit stage))
-          (die! 2 (str "staging " head " on " host " failed:\n" (:out stage))))
-      staged (str/trim (last (remove str/blank? (str/split-lines (:out stage)))))
+      ;; The node has to have what the benchmark shells out to. `nbb` is
+      ;; missing on four of the eight nodes (measured 2026-09-06: judah,
+      ;; simeon and benjamin have it; levi, zebulun, joseph and dan do not),
+      ;; and quiet-host ranks by idleness alone, so the idlest node is often
+      ;; one that cannot run this at all. Without this check that surfaced as
+      ;; `spawnSync nbb ENOENT` deep inside the suite, reported as exit 0.
+      tools (ssh! host (str env "for t in node nbb; do "
+                            "command -v $t >/dev/null || echo MISSING=$t; done")
+                  {:timeout 120000})
+      _ (when-not (= 0 (:exit tools))
+          (die! 2 (str "could not probe " host " for its toolchain"
+                       (when (nil? (:exit tools))
+                         " (no AMU-EXIT sentinel came back)")
+                       ":\n" (:out tools))))
+      missing (mapv second (re-seq #"MISSING=(\S+)" (:out tools)))
+      _ (when (seq missing)
+          ;; Name the PATH that was searched. `node` is present on simeon but
+          ;; as a keg-only node@22 outside this PATH, so "lacks node" without
+          ;; the search path reads as a missing install and sends the reader
+          ;; to the wrong fix.
+          (die! 2 (str host " lacks " (str/join ", " missing)
+                       " on the PATH this script sets:\n  "
+                       (str/trim (str/replace (str/replace env "export JAVA_HOME=" "JAVA_HOME=")
+                                              "; export PATH=" "\n  PATH="))
+                       "\nRefusing to report a pass from a node that cannot run"
+                       " the benchmark. Pass --host with a node that has them,"
+                       " or --hosts to restrict the quiet-host probe.")))
+      stage (ssh! host
+                  (str env "set -e; "
+                       "if [ ! -d " remote "/.git ]; then git clone -q https://github.com/kotoba-lang/amu.git " remote "; fi; "
+                       "cd " remote "; git fetch -q origin; git checkout -q " head "; "
+                       "[ -d node_modules ] || npm install --silent --no-audit --no-fund >/dev/null 2>&1; "
+                       "git rev-parse HEAD")
+                  {:timeout 900000})
+      _ (when-not (= 0 (:exit stage))
+          (die! 2 (str "staging " head " on " host " failed"
+                       (when (nil? (:exit stage))
+                         " (no AMU-EXIT sentinel came back)")
+                       ":\n" (:out stage))))
+      staged (->> (str/split-lines (:out stage))
+                  (remove str/blank?)
+                  (remove #(str/starts-with? % "AMU-EXIT="))
+                  last str/trim)
       _ (when-not (= staged head)
           (die! 2 (str "host has " staged " but HEAD is " head)))
       remote-json (str "~/amu-evidence/" bench-name "-" (subs head 0 12) "-" (.now js/Date) ".json")
@@ -109,14 +184,32 @@
                "node " (:script spec) " " (:out-flag spec) " " remote-json " "
                (str/join " " passthru) "; "
                "echo REPORT=" remote-json)
-      run (sh (str "ssh -o BatchMode=yes " host " " (pr-str cmd)) {:timeout 3600000})
+      run (ssh! host cmd {:timeout 3600000})
+      _ (when (nil? (:exit run))
+          (die! 2 (str "no AMU-EXIT sentinel came back from " host
+                       "; the benchmark's outcome is unknown, so this refuses"
+                       " to report one:\n" (:out run))))
       after (busy)
       local-out (arg "--out" (str "/tmp/amu-" bench-name "-" (subs head 0 12) ".json"))]
   (println (:out run))
-  (when-let [report (second (re-find #"REPORT=(\S+)" (:out run)))]
-    (let [c (sh (str "scp -q " host ":" report " " local-out))]
-      (when (zero? (:exit c))
+  ;; A benchmark that exited 0 and produced no readable report has not been
+  ;; measured, so it does not get to answer 0 either. Every path below either
+  ;; prints a receipt naming a file that exists locally, or refuses.
+  (if-not (zero? (:exit run))
+    (.exit js/process 1)
+    (let [report (second (re-find #"REPORT=(\S+)" (:out run)))]
+      (when-not report
+        (die! 2 (str "the benchmark on " host " exited 0 but printed no REPORT= line")))
+      (let [c (sh (str "scp -q " host ":" report " " local-out))]
+        (when-not (zero? (:exit c))
+          (die! 2 (str "could not copy " report " back from " host ":\n" (:out c))))
+        (when-not (.existsSync fs local-out)
+          (die! 2 (str "scp reported success but " local-out " is not there")))
         (println (pr-str {:format :amu.remote-bench/v1 :host host :commit head
                           :bench bench-name :report local-out
-                          :busy-cpu-fraction {:before before :after after}})))))
-  (.exit js/process (if (zero? (:exit run)) 0 1)))
+                          :busy-cpu-fraction {:before before :after after}
+                          ;; Recorded because it is always 0 on this fleet and
+                          ;; a later reader should not mistake it for evidence.
+                          :ssh-transport-exit (:transport-exit run)
+                          :benchmark-exit (:exit run)}))
+        (.exit js/process 0)))))
