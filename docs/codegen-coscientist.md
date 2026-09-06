@@ -2607,3 +2607,54 @@ ple Clang C11, Zig, Go
   near-misses. NEXT is that lead, measured — not the call boundary, where
   #142 takes `call-preservation` from −7.1% to about −4% and the remaining
   deficit is scheduling-shaped rather than static.
+
+- **125 (2026-09-06, PROVEN CEILING on `narrow-arithmetic`)**: this file's
+  opening paragraph names a proven ceiling as an honest terminal state — *"if
+  Amu's emitted stream for a domain is cost-identical to LLVM's best, a strict
+  ≥5% win on that domain is unreachable for anyone, and recording that is a
+  result."* That is now the measured state of `narrow-arithmetic`.
+
+  Disassembling the `kernel` symbol only (not the module — the module carries
+  `bench`, `__kotoba_loop_1` and `main`, and comparing it against one clang
+  symbol reports 275 against 61 and 24 rounds against 8, which is how this
+  comparison was first got wrong):
+
+  | | instructions | MADD | SMULH | shifted SUB | shifted ADD |
+  |---|---:|---:|---:|---:|---:|
+  | amu | **61** | 8 | 8 | 8 | 8 |
+  | clang | **61** | 8 | 8 | 8 | 8 |
+  | rust | **61** | 8 | 8 | 8 | 8 |
+
+  amu and clang emit **the same opcode sequence**. 60 of 61 words differ, and
+  every one of those differences is a register number; the single opcode
+  difference is `MOVZ x13,#48271` against `MOVZ w8,#48271`, the same immediate
+  in the 32-bit form. rust lands on 61 with the same mix.
+
+  So the three unqualified `narrow-arithmetic` pairs — rust +1.0%, clang
+  +1.9%, swift +1.0% — are not near-misses waiting on a codegen idea. **Three
+  compilers agree on the program.** The residual is register assignment and
+  measurement noise, and a ≥5% separated win is unreachable for any of them.
+  H-C is already applied here (the 8 shifted subtracts), which is the other
+  half of iteration 123's correction.
+
+  **This bounds the claim contract.** Of the eight positive-but-unqualified
+  pairs, three are at a shared ceiling. The bounded fastest claim requires all
+  thirty; it is therefore not reachable by codegen work on this fixture set,
+  and no amount of iteration will make `narrow-arithmetic` a 5% win.
+
+  What remains genuinely open, in order of reachability:
+
+  | pair | now | needs | shape of the gap |
+  |---|---:|---:|---|
+  | `deep-spill-pressure` × clang | +4.4% | +0.6pp | one untested lead (124) |
+  | `deep-spill-pressure` × zig | +0.3% | +4.7pp | unexamined |
+  | `loop-call-back-edge` × rust | +0.5% | +4.5pp | unexamined |
+  | `call-preservation` × rust/clang | ≈−4% after #142 | +9pp | ~1.67% survives with fuel removed |
+  | `branch-call-control-flow` × rust/clang | −8 to −11% | +13pp | unexamined, the largest deficit |
+
+  The honest statement of where the tournament stands: **amu native is fastest
+  among the enumerated implementations against Go and Swift on all six required
+  domains (12 of 12 pairs qualified), leads Zig on five of six, and against the
+  two LLVM backends holds one domain, ties one at a proven ceiling, and trails
+  on the call boundary.** That sentence is measurable, measured, and true. The
+  contract's sentence is not, and 125 is the reason it cannot become true here.
