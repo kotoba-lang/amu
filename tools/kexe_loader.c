@@ -1553,6 +1553,41 @@ static int64_t env_read_provider(struct kexe_context_v4 *context,
  * denies everything. Symlink escape is closed by resolving the target
  * path before the compare. Fail closed: any malformed request or scope
  * breach raises SIGILL. */
+/* Parent-side resolved :fs/app-data scope (wire id 35). Parsed and
+ * realpath'ed BEFORE the child is forked, while the process is still
+ * unsandboxed. Both the Seatbelt profile and the provider use only these
+ * resolved spellings, so no sandboxed code needs to realpath a path
+ * outside the grant (e.g. through the /tmp -> /private/tmp symlink). */
+static char kexe_scope35_resolved[16][4096];
+static char kexe_scope35_orig[16][4096];
+static int kexe_scope35_count = 0;
+
+static void kexe_scope35_init(void) {
+  const char *scope_env = getenv("KEXE_CAP_RESOURCES_35");
+  if (scope_env == NULL || scope_env[0] == '\0') return;
+  const char *cursor = scope_env;
+  while (*cursor != '\0' &&
+         kexe_scope35_count < (int)(sizeof(kexe_scope35_resolved) /
+                                    sizeof(kexe_scope35_resolved[0]))) {
+    const char *end = strchr(cursor, ':');
+    size_t entry_length = (end != NULL) ? (size_t)(end - cursor) : strlen(cursor);
+    if (entry_length > 0 && entry_length < 4096) {
+      char entry[4096];
+      memcpy(entry, cursor, entry_length);
+      entry[entry_length] = '\0';
+      char resolved[4096];
+      if (realpath(entry, resolved) != NULL &&
+          strlen(resolved) < sizeof(kexe_scope35_resolved[0])) {
+        strcpy(kexe_scope35_resolved[kexe_scope35_count], resolved);
+        strcpy(kexe_scope35_orig[kexe_scope35_count], entry);
+        kexe_scope35_count++;
+      }
+    }
+    if (end != NULL) cursor = end + 1;
+    else cursor += entry_length;
+  }
+}
+
 static int64_t fs_app_data_read_provider(struct kexe_context_v4 *context,
                                          int64_t request) {
   const uint8_t *bytes = NULL;
@@ -1568,66 +1603,69 @@ static int64_t fs_app_data_read_provider(struct kexe_context_v4 *context,
   char target[4096];
   memcpy(target, bytes, (size_t)length);
   target[length] = '\0';
-  char resolved[4096];
-  if (realpath(target, resolved) == NULL) {
+
+  if (kexe_scope35_count == 0) {
     raise(SIGILL);
     return 0;
   }
-  const char *scope_env = getenv("KEXE_CAP_RESOURCES_35");
-  if (scope_env == NULL || scope_env[0] == '\0') {
-    raise(SIGILL);
-    return 0;
-  }
-  size_t resolved_length = strlen(resolved);
+  char candidate[4096];
   int permitted = 0;
-  const char *cursor = scope_env;
-  while (*cursor != '\0' && !permitted) {
-    const char *end = strchr(cursor, ':');
-    size_t entry_length = (end != NULL) ? (size_t)(end - cursor) : strlen(cursor);
-    char entry[4096];
-    if (entry_length > 0 && entry_length < sizeof(entry)) {
-      memcpy(entry, cursor, entry_length);
-      entry[entry_length] = '\0';
-      char entry_resolved[4096];
-      if (realpath(entry, entry_resolved) != NULL) {
-        size_t entry_resolved_length = strlen(entry_resolved);
-        if (resolved_length == entry_resolved_length &&
-            memcmp(resolved, entry_resolved, entry_resolved_length) == 0) {
-          permitted = 1;
-        } else if (resolved_length > entry_resolved_length &&
-                   entry_resolved_length > 0 &&
-                   entry_resolved[entry_resolved_length - 1] == '/') {
-          if (memcmp(resolved, entry_resolved, entry_resolved_length) == 0) {
-            permitted = 1;
-          }
-        } else if (resolved_length > entry_resolved_length &&
-                   resolved[entry_resolved_length] == '/') {
-          if (memcmp(resolved, entry_resolved, entry_resolved_length) == 0) {
-            permitted = 1;
-          }
-        }
+  for (int s = 0; s < kexe_scope35_count && !permitted; s++) {
+    for (int v = 0; v < 2 && !permitted; v++) {
+      const char *base = (v == 0) ? kexe_scope35_orig[s] : kexe_scope35_resolved[s];
+      size_t base_length = strlen(base);
+      const char *suffix = NULL;
+      if (strncmp(target, base, base_length) == 0 &&
+          (target[base_length] == '/' || target[base_length] == '\0')) {
+        suffix = target + base_length;
       }
-    }
-    if (end != NULL) {
-      cursor = end + 1;
-    } else {
-      cursor += entry_length;
+      if (suffix == NULL) continue;
+      size_t suffix_length = strlen(suffix);
+      size_t real_length = strlen(kexe_scope35_resolved[s]);
+      if (real_length + suffix_length >= sizeof(candidate)) continue;
+      memcpy(candidate, kexe_scope35_resolved[s], real_length);
+      memcpy(candidate + real_length, suffix, suffix_length + 1);
+      permitted = 1;
     }
   }
   if (!permitted) {
     raise(SIGILL);
     return 0;
   }
-  FILE *file = fopen(resolved, "rb");
-  if (file == NULL) {
+
+  int fd = open(candidate, O_RDONLY | O_NOFOLLOW);
+  if (fd < 0) {
     raise(SIGILL);
     return 0;
   }
+  char actual[4096];
+  if (fcntl(fd, F_GETPATH, actual) != 0) {
+    close(fd);
+    raise(SIGILL);
+    return 0;
+  }
+  size_t actual_length = strlen(actual);
+  int contained = 0;
+  for (int s = 0; s < kexe_scope35_count && !contained; s++) {
+    const char *base = kexe_scope35_resolved[s];
+    size_t base_length = strlen(base);
+    if (actual_length >= base_length &&
+        memcmp(actual, base, base_length) == 0 &&
+        (actual_length == base_length || actual[base_length] == '/')) {
+      contained = 1;
+    }
+  }
+  if (!contained) {
+    close(fd);
+    raise(SIGILL);
+    return 0;
+  }
+
   size_t capacity = 65536;
   uint8_t *buffer = (uint8_t *)malloc(capacity);
   size_t total = 0;
   if (buffer == NULL) {
-    fclose(file);
+    close(fd);
     raise(SIGILL);
     return 0;
   }
@@ -1637,26 +1675,25 @@ static int64_t fs_app_data_read_provider(struct kexe_context_v4 *context,
       uint8_t *grown = (uint8_t *)realloc(buffer, next);
       if (grown == NULL) {
         free(buffer);
-        fclose(file);
+        close(fd);
         raise(SIGILL);
         return 0;
       }
       buffer = grown;
       capacity = next;
     }
-    size_t read = fread(buffer + total, 1, capacity - total, file);
-    total += read;
-    if (read == 0) {
-      if (ferror(file)) {
-        free(buffer);
-        fclose(file);
-        raise(SIGILL);
-        return 0;
-      }
-      break;
+    ssize_t got = read(fd, buffer + total, capacity - total);
+    if (got < 0) {
+      if (errno == EINTR) continue;
+      free(buffer);
+      close(fd);
+      raise(SIGILL);
+      return 0;
     }
+    if (got == 0) break;
+    total += (size_t)got;
   }
-  fclose(file);
+  close(fd);
   int64_t result = intern_utf8(context, buffer, total);
   free(buffer);
   return result;
@@ -2158,15 +2195,25 @@ static void install_syscall_sandbox(void) {
 }
 #elif defined(__APPLE__) && !defined(KEXE_SANITIZER_TEST)
 static void install_syscall_sandbox(void) {
-  static const char profile[] =
-      "(version 1)"
-      "(deny default)"
-      "(allow file-read*)"
-      "(allow file-write-data)"
-      "(allow signal (target self))"
-      "(allow process-info-pidinfo)"
-      "(allow process-info-setcontrol)"
-      "(allow sysctl-read)";
+  /* file-read* is NOT blanket: each :fs/app-data (wire id 35) scope entry
+   * becomes a (subpath ...) filter, so reads are possible only beneath
+   * the granted directories. Entries come from KEXE_CAP_RESOURCES_35
+   * (colon-separated) -- the same scope string the provider checks
+   * per-call; Seatbelt is the second enforcement layer. Both the
+   * literal entry spelling and its realpath are granted, so the guest
+   * may use either spelling and realpath still fails closed outside
+   * the scope. */
+  static char profile[32768];
+  size_t used = 0;
+  used += (size_t)snprintf(profile + used, sizeof(profile) - used,
+      "(version 1)(deny default)(allow file-write-data)"
+      "(allow signal (target self))(allow process-info-pidinfo)"
+      "(allow process-info-setcontrol)(allow sysctl-read)");
+  for (int s = 0; s < kexe_scope35_count; s++) {
+    used += (size_t)snprintf(profile + used, sizeof(profile) - used,
+              "(allow file-read* (subpath \"%s\"))",
+              kexe_scope35_resolved[s]);
+  }
   char *error = NULL;
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
@@ -2276,6 +2323,7 @@ int main(int argc, char **argv) {
   shared->context.vector_assoc_in_place = checked_vector_assoc_in_place;
   shared->context.code_base = (const uint8_t *)memory;
   shared->context.code_length = (uint64_t)length;
+    kexe_scope35_init();
   if (parse_allow(argv[5], shared->context.allow) != 0) return 2;
   for (unsigned long i = 0; i < arity; i++) {
     if (parse_guest_arg(shared, argv[6 + i], &args[i]) != 0) return 2;
