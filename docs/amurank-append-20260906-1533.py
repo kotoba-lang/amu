@@ -1,0 +1,12 @@
+import io
+
+path = "docs/codegen-coscientist.md"
+entry = """
+
+2026-09-06 15:33 JST (amu-rank cron, tick 154): rank-only pass, no measurement by role. Host busy (load1 12.87 / 5m 12.99 / 15m 22.30 at 15:33 via sysctl, up 1 day 8:16, threshold 7.5; monitor pre-run 15:32 read 7.89-8.58) - quiet gate violated, no bench, no perfgate, no hand-patch measurement this tick. git fetch run: origin/main advanced to 1e5b7b8f (PR #805 merge k16-native-qwen-kernels-2-amu) locally behind; `git diff bcc5c52b..origin/main -- docs/` = 2 insertions / 489 deletions, entirely housekeeping (bot-artifact .out probe files and stale doc-lines removed by wire35 PR #799/805) - origin's docs/codegen-coscientist.md gained ZERO new evidence lines (89 deletions, 0 insertions), so no sibling measured verdict arrived upstream; local working tree still carries uncommitted ticks 151-153 plus sibling busy-refusal entries (parallel-profile duplication pattern, not touched by rank). Evidence reviewed since tick 153: sibling entries 15:07 amu-bench (load1 70.20 busy-refusal) and 15:16 amu-falsify (load1 16.56 busy-refusal; confirms H-C2/H-Z3 timed paths all require a quiet host, the static instruction-order diff already done 03:55) - all present in working tree; NO new measured verdicts, NO new ADR (0339 remains newest measured landing - J-B idle-gate rerun +7.3/+7.0/+6.4%, 6/6 positive overall). No new measured numbers -> no re-rank beyond tick 145, no status transition, no new hypothesis. Population unchanged: J-B replicated-diagnostic (perfgate.core/qualify confirmation pending; J-C unblocked-conditional on that verdict), H-Z3 top of the codegen ladder (quiet-host hand-patch A/B pending), H-C2 statically confirmed 61/61 but timed A/B UNRESOLVED after two polluted attempts (14:00-14:03 and ~14:43), H-D/H-B/H-Y1 open, H-Z1 folded into H-Z3. NEXT unchanged: H-C2 timed hand-patch A/B (amu-mut vs clang kernel stream, ~4.4% gap) requires a window that holds load1 < 7.5 sustained THROUGH all trials - use the sustained-window protocol all-before:start and calibrate total trial duration to the observed spike regime (prior windows closed mid-run with load1 spikes 98-119) - then H-Z3 quiet-host hand-patch A/B, then J-B perfgate.core/qualify confirmation.
+"""
+
+with io.open(path, "a", encoding="utf-8") as f:
+    f.write(entry)
+
+print("appended tick 154")

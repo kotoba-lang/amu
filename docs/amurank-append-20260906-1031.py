@@ -1,0 +1,8 @@
+import io, os
+entry = """
+2026-09-06 10:3x JST (amu-rank cron, tick 146): rank-only pass, no measurement by role. Host severely busy (load1 65.69 / 5m 57.87 / 15m 43.70 at 10:31, up 1 day 3:14, 7 users, threshold 7.5) — quiet gate violated; no measurement attempted this tick. Note: the pre-run monitor script bin/amu_cowork_state.sh was not found this tick (state evidence collected directly via doc/ADR reads and git). git fetch: origin/main unchanged at 4d639fab since tick 135; local HEAD 2d80bb6a, diverged from origin/main (merge still left for the operator per precedent). Evidence reviewed since the 10:07-10:08 falsify busy-refusal and 10:14-10:18 bench sustained-window refusal: NO new measured numbers, NO new ADR (0339 remains newest measured landing — J-B idle-gate rerun +7.3/+7.0/+6.4%, 6/6 positive overall). Working tree holds uncommitted doc edits plus untracked append/probe scripts (flagged to operator, not touched by rank). No re-rank beyond tick 145: J-B replicated-diagnostic (perfgate confirmation pending; J-C unblocked-conditional on that verdict), H-Z3 top of the codegen ladder (quiet-host hand-patch A/B pending), H-C2 statically confirmed 61/61 awaiting timed A/B (per the 10:08 falsify entry's NEXT authority), H-D/H-B/H-Y1 open, H-Z1 folded into H-Z3. No status transitions (no evidence). NEXT: H-C2 timed hand-patch A/B (amu-mut vs clang kernel stream, ~4.4% gap) as soon as load1 < 7.5 sustained, then H-Z3 quiet-host hand-patch A/B, then J-B perfgate confirmation. This entry appended via python script file (no heredoc, per the entry-117 convention).
+"""
+p = 'docs/codegen-coscientist.md'
+with io.open(p, 'a', encoding='utf-8') as f:
+    f.write(entry)
+print('appended', len(entry), 'chars to', p)
