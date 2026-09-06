@@ -2930,3 +2930,44 @@ ple Clang C11, Zig, Go
 
   NEXT: `branch-call-control-flow` has **15** SP updates, the most of any
   fixture, and sits at −11.4%. Same patch, not yet measured there.
+
+- **132 (2026-09-06, #145 shipped and measured; fp/lr fold attempted and
+  reverted)**: the frame change is in the compiler and reproduces the hand
+  patch. `kernel_deep` goes 8 SP updates → 2, and with the **real compiler
+  output** at n=60:
+
+  | arm | mean | vs clang | qualifies |
+  |---|---:|---:|---|
+  | amu base | 9.5723 | +4.52% | no |
+  | **amu #145** | **9.4229** | **+6.01%** | **YES** |
+
+  `call-preservation` measured across the whole progression:
+
+  | | SP updates | vs clang |
+  |---|---:|---:|
+  | #142 only | 10 | −4.82% |
+  | **#142 + #145 shipped** | **4** | **−1.69%** |
+  | hand patch, fp/lr folded | 2 | −0.35% |
+
+  **The remaining 1.32% is fp/lr.** The compiler still gives `stp x29,x30,
+  [sp,#-16]!` its own pre-indexed push where clang folds it into the area
+  (`stp x29,x30,[sp,#0x40]` then `add x29, sp, #0x40`, keeping fp pointing at
+  the AAPCS64 frame record).
+
+  ⚠ **I implemented that and reverted it.** Concatenating fp/lr onto `saved`
+  and re-pairing is wrong whenever `saved` has odd length: `kernel_call` saves
+  x19–x25, seven registers, so the pairs become `(x19,x20) (x21,x22)
+  (x23,x24) (x25,x29) (x30)` — **x25 pairs with x29 and x30 is stranded**.
+  15 failures and 87 errors against a clean baseline. Reverted; the branch is
+  back to 380 tests / 5145 assertions / 0 failures.
+
+  Doing it correctly means fp/lr must remain its own pair at the top of the
+  area regardless of the parity of `saved`, which is a change to
+  `a64-saved-frame`'s shape rather than to its caller. Worth +1.32% on
+  `call-preservation` and it would not flip that pair — at −0.35% amu would
+  be level with clang, and the contract wants +5%.
+
+  That is the second time today a change in this file was over-broad on the
+  first attempt (the other: admitting every Mersenne constant, including the
+  `3` in a shift). Both were caught by the suite rather than by review, which
+  is the argument for running it before pushing rather than after.
