@@ -109,3 +109,19 @@ approval**. Current verdicts above are diagnostics, not claims.
   at bench/runtime-comparison/jb_imod_control.c. Next tick unchanged: on a
   quiet host (idle ≥90%) run 4000000 iters × 24 alternations, ratio of
   medians, then add the third (non-inlined mulh) arm.
+
+- 2026-09-06 10:04 JST tick 18 (JIT): quiet gate failed a 17th consecutive
+  time — load1 18.6-21.3 on 10 CPUs, iostat cpu idle 33-59% across two
+  probes ~2 min apart (10:01, 10:03), never >=90%. J-B measurement deferred,
+  no compiler change, control unchanged at
+  bench/runtime-comparison/jb_imod_control.c. Next tick unchanged: on a
+  quiet host (idle >=90%) run 4000000 iters x 24 alternations, ratio of
+  medians, then add the third (non-inlined mulh) arm.
+
+- 2026-09-06 11:13 JST tick 19 (JIT): quiet gate failed an 18th consecutive
+  time — load1 25.6-26.1 on 10 CPUs (15m avg ~51, falling trend), iostat cpu
+  idle 46-52% across 3 samples, never near the required >=90%. J-B
+  measurement deferred, no compiler change, control unchanged at
+  bench/runtime-comparison/jb_imod_control.c. Next tick unchanged: on a
+  quiet host (idle >=90%) run 4000000 iters x 24 alternations, ratio of
+  medians, then add the third (non-inlined mulh) arm.
