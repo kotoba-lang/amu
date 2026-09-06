@@ -2971,3 +2971,40 @@ ple Clang C11, Zig, Go
   first attempt (the other: admitting every Mersenne constant, including the
   `3` in a shift). Both were caught by the suite rather than by review, which
   is the argument for running it before pushing rather than after.
+
+- **133 (2026-09-06, the full contract re-measured with #145: 18/30 → 19/30)**:
+  the competitive multidomain suite, host-qualified, run with kotoba-native
+  repinned to the frame change. Every one of the 30 pairs re-measured, not
+  extrapolated.
+
+  ```
+  domain                        rust      clang-c11        zig          go         swift
+  narrow-arithmetic         +1.0→+2.6   +1.9→+1.1   +21.0*→+20.9* +84.9*→+84.5*  +1.0→+0.4
+  wide-register-pressure   +9.3*→+8.2* +11.9*→+11.9* +17.9*→+17.8* +86.1*→+86.3* +87.6*→+87.7*
+  deep-spill-pressure       -0.2→+1.9   +4.4→+6.9*   +0.3→+2.2    +81.3*→+81.9* +92.4*→+92.7*
+  call-preservation         -6.9→-1.2   -7.1→-1.3   +39.6*→+42.3* +84.5*→+85.3* +24.9*→+28.3*
+  branch-call               -8.3→-4.1  -11.4→-7.8   +40.7*→+42.8* +84.5*→+85.3* +21.9*→+24.8*
+  loop-call-back-edge       +0.5→+0.5   -0.9→-0.8   +32.1*→+31.6* +16.6*→+14.6* +24.4*→+24.5*
+  ```
+
+  **19/30. Newly qualified: `deep-spill-pressure` × clang-c11. Lost: none.**
+
+  The call domains moved furthest — `call-preservation` gained **+5.7pp**
+  against both LLVM backends and is now within noise of each (−1.2%, −1.3%
+  from −6.9%, −7.1%). `branch-call` gained +4.2pp and +3.6pp. Nothing
+  regressed anywhere; the two leaf domains are untouched because they have no
+  save area.
+
+  **Where the remaining eleven sit, and what each needs:**
+
+  | pair | now | needs | reachable? |
+  |---|---:|---:|---|
+  | `narrow-arithmetic` × rust / clang / swift | +2.6 / +1.1 / +0.4 | +2.4…+4.6pp | **no — proven ceiling (125)**, three compilers emit the same 61 instructions |
+  | `deep-spill` × zig / rust | +2.2 / +1.9 | ~+2.8pp | open |
+  | `call-preservation` × clang / rust | −1.3 / −1.2 | ~+6.3pp | open; +1.32pp of it is the fp/lr fold (132) |
+  | `branch-call` × rust / clang | −4.1 / −7.8 | ~+9…+13pp | open; 2.84pp is a forced extra register (129) |
+  | `loop-call-back-edge` × rust / clang | +0.5 / −0.8 | ~+4.5…+5.8pp | unexamined |
+
+  So the contract's ceiling on this fixture set is **27/30**, not 30 — three
+  pairs are provably unreachable. Of the eight that remain, `deep-spill` ×
+  zig and × rust are the nearest at ~2.8pp.
