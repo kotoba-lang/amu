@@ -6,7 +6,7 @@
             ["node:os" :as os]
             ["node:path" :as path]))
 
-(def root (.resolve path (.dirname path *file*) ".."))
+(def root (fs/realpathSync (.resolve path (.dirname path *file*) "..")))
 (def tmp (.mkdtempSync fs (.join path (.tmpdir os) "kotoba-conformance-")))
 (def kotoba (.join path root "bin" "kotoba"))
 (defn file [name] (.join path tmp name))
@@ -215,7 +215,58 @@
                    "env/read provider echoed a value it was not asked to")
           (ensure! (and (not= 0 (:status denied))
                         (contains-text? (:stderr denied) ":signal :SIGTRAP"))
-                   "env/read denial did not fail closed"))))
+                   "env/read denial did not fail closed")))
+    ;; wire id 35 = :fs/app-data. The loader's real typed provider reads the
+    ;; file at the request path and returns its bytes as a string, but only
+    ;; when the granted scope KEXE_CAP_RESOURCES_35 (a colon-separated list of
+    ;; realpath-canonicalized allowed path prefixes) admits it. Any scope
+    ;; breach -- missing, mismatched, or a deny on wire 35 in the allow vector
+    ;; -- fails closed (SIGTRAP on aarch64, mirroring env/read above). Asserted
+    ;; on the guest's string=? branch, so an identity stub cannot pass.
+    (let [fs-cap (file (str isa "-fs-cap.kexe"))
+          target (.join path root "test" "nbb" "fixtures" "fs-request-target.txt")
+          ;; the guest's request path must be the absolute path that exists on
+          ;; THIS host (CI runner path differs from a dev machine), so bake
+          ;; `target` in at conformance-run time rather than hard-coding it.
+          guest (file "fs-app-data-read.kotoba")
+          guest-src (str "(ns fixture.fs-app-data-read (:export [main]))\n"
+                         "(defn main [] :i64\n"
+                         "  (let [v (typed-cap-call :fs/app-data :string :string\n"
+                         "                          \"" target "\")]\n"
+                         "    (if (string=? v \"hello-from-fs\") 1 0)))\n")]
+      (write! "fs-app-data-read.kotoba" guest-src)
+      (k "compile" guest "--target" isa
+         "--policy" (.join path root "test" "nbb" "fixtures" "fs-app-data-read-policy.edn")
+         "--output" fs-cap)
+      (k "verify" fs-cap)
+      (let [[binary off] (offset fs-cap isa "main" "-fs")
+            loader (file "kexe-loader")
+            allowed (run loader [binary off "0" isa "35"]
+                         {:env {:KEXE_CAP_RESOURCES_35 target}})
+            scope-mismatch (run loader [binary off "0" isa "35"]
+                                {:env {:KEXE_CAP_RESOURCES_35
+                                       (str target "-nope")}
+                                 :allow-failure? true})
+            scope-empty (run loader [binary off "0" isa "35"]
+                             {:env {:KEXE_CAP_RESOURCES_35 ""}
+                              :allow-failure? true})
+            denied (run loader [binary off "0" isa "-"]
+                        {:env {:KEXE_CAP_RESOURCES_35 target} :allow-failure? true})]
+        (ensure! (= "1" (str/trim (:stdout allowed)))
+                 (str "fs/app-data allowed path did not read the file: "
+                      (:stdout allowed) " " (:stderr allowed)))
+        (ensure! (and (not= 0 (:status scope-mismatch))
+                      (contains-text? (:stderr scope-mismatch) ":signal :SIGILL"))
+                 (str "fs/app-data scope mismatch did not fail closed: "
+                      (:stderr scope-mismatch)))
+        (ensure! (and (not= 0 (:status scope-empty))
+                      (contains-text? (:stderr scope-empty) ":signal :SIGILL"))
+                 (str "fs/app-data empty scope did not fail closed: "
+                      (:stderr scope-empty)))
+        (ensure! (and (not= 0 (:status denied))
+                      (contains-text? (:stderr denied) ":signal :SIGTRAP"))
+                 (str "fs/app-data wire-35 deny did not fail closed: "
+                      (:stderr denied))))))
     ;; This must go through `bin/kotoba`'s nbb-native fast path. Registry IDs
     ;; are compiler-host numbers, while authored i64 literals are BigInt under
     ;; nbb; compiling and independently verifying both forms prevents their
