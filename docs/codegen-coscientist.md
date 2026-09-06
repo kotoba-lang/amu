@@ -3171,3 +3171,60 @@ ple Clang C11, Zig, Go
   lacks node" sends the reader to the wrong fix.
 
   Score unchanged at **19/30**; the reachable maximum remains 25/30 (134).
+
+- **137 (2026-09-06, `branch-call` costs ONE CALLEE-SAVED REGISTER, and the
+  fixture comment that misdirected four hypotheses was false)**:
+
+  `branch-call × clang` is −7.11%, the largest reachable gap left. Four
+  hypotheses were spent on it (126 if-conversion, 127 instruction count,
+  128 placement and prologue register count) and all four were falsified.
+  They were all consistent with the story the fixture tells about itself:
+
+  > the only difference is that this function contains control flow as well
+  > as calls, which sends it to the conservative all-vreg path where every
+  > value gets a stack slot
+
+  **That is false, and `:all-vregs` is not assigned anywhere in the backend
+  any more.** Disassembling both kernels from the same compile (kn main,
+  kexe 2996 and 3120 bytes — the exact sizes this run's report records, so
+  these are the measured binaries):
+
+  | | kernel_call | kernel_call_branch |
+  |---|---|---|
+  | instructions | 51 | 59 |
+  | sp-referencing memory ops | 10 | 15 |
+  | **of which spills** | **0** | **0** |
+  | callee-saved registers | x19–x25 (**7**) | x19–x26 (**8**) |
+
+  Every `[sp]` reference in both is the callee-saved save/restore. Neither
+  kernel spills a single value.
+
+  **What the `if` actually costs is one extra live range.** The test reads
+  `n` *after* the last call:
+
+  ```
+  kernel_call         ... add x2, x19, #3   <- n dies here, d reuses x19
+  kernel_call_branch  ... cbnz x19, 0xb8    <- n lives to the bottom, d takes x26
+  ```
+
+  Entry **129 priced one extra callee-saved register at +2.84%**. That is a
+  large share of the ~6pp by which this domain's clang gap (−7.11%) exceeds
+  `call-preservation`'s (−1.12%) — the same kernel, the same calls, one more
+  register held across them.
+
+  Note this does not contradict 128. 128 falsified *prologue register
+  count* — saving a register that nothing keeps alive is free. 129 measured a
+  register that is genuinely **live across calls**. The distinction is the
+  whole finding: it is not the save/restore that costs, it is the occupancy.
+
+  **New hypothesis H-LR (live-range hoisting):** the condition depends only
+  on the argument, so evaluating it before the calls would let `n` die at its
+  last arithmetic use and bring the register count back to 7. The obstacle to
+  check first is fuel: a path that skips the eight calls consumes less, and
+  the batch check asserts exact fuel. A form that keeps all eight calls on
+  both arms and only hoists the *test* does not have that problem.
+
+  The correction is also in the fixture, so the next reader is not sent after
+  the same absent mechanism. **A stale comment cost four iterations here** —
+  worth remembering that the rule about implementation snapshots applies to
+  benchmark fixtures too, not just to ADRs.
