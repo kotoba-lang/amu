@@ -47,7 +47,8 @@
      advances, but it may never move backwards.
   4. The grammar read names exactly the kernel heads the pinned frontend
      admits."
-  (:require [clojure.edn :as edn]
+  (:require [kotoba.compiler.core :as compiler]
+            [clojure.edn :as edn]
             [clojure.java.io :as io]
             [clojure.set :as set]
             [clojure.string :as str]
@@ -85,7 +86,16 @@
    "6e1202fd23bc5a2ed6ef432114585c1813f5143d643eb4c8ee9a00b6e798b922"
    "871f3873ae30a33ba7461c8664094b42396c0c4d79612668d11b0b29a2c0172f"
    "9d701ea9a803a4b3d7dc4245274a9a901ab4ac506ebd401282b2acdf7747dd9c"
-   "3e41eb84a57a1fcc84dc0ec0b6a5ec1fd535c39e2cf6cfc14418fc1ec4567483"])
+   "3e41eb84a57a1fcc84dc0ec0b6a5ec1fd535c39e2cf6cfc14418fc1ec4567483"
+   ;; 2026-09-06, ADR-544 step 1: the authority admits the seven pure
+   ;; S-expression heads as :sugar :pure-s-expression-core, `ref` leaves
+   ;; :forbidden-heads (it is excused through :no-ambient-mutation
+   ;; :admitted-via-pure-core-elaboration instead, because a head cannot be in
+   ;; the admitted set and the forbidden one at once), and :backends is
+   ;; recorded per head because `rel` and `query` are KIR-only. Carried to all
+   ;; five copies lang/vendored-copies.edn registers; this entry is the sixth
+   ;; reader of those bytes.
+   "a1b444230a3ec6b835545b422f79a9c6fc581dc2588d035ae739bc0eb89d08bb"])
 
 (def authority-grammar-sha256
   "sha256 of the grammar this repository reads -- kotoba-sema's copy, at the
@@ -219,8 +229,40 @@
       (let [forbidden (head-names (:forbidden-heads grammar))]
         (is (empty? (set/intersection forbidden #{"atom" "swap!" "reset!"}))
             "this copy is behind the authority by local-state slice 1")
-        (is (set/subset? #{"ref" "dosync" "volatile!" "binding" "var"} forbidden)
-            "the seven heads with no ability model must still be forbidden")))))
+        ;; `ref` LEFT this set on 2026-09-06 and is deliberately not asserted
+        ;; here any more. ADR-544's pure S-expression core spells a definition
+        ;; reference `(ref name)`, and a head cannot be in the admitted set and
+        ;; the forbidden one at once -- kotoba-lang/grammar's
+        ;; `the-admission-set-holds-real-heads-and-not-feature-names` refuses
+        ;; exactly that. It is excused instead through
+        ;; `:no-ambient-mutation :admitted-via-pure-core-elaboration`.
+        ;;
+        ;; Dropping a head from a security assertion is how one goes missing,
+        ;; so the two checks below REPLACE it rather than shorten it: the
+        ;; refusal moved from the catalog into the elaboration, so it is
+        ;; asserted where it now lives -- behaviourally, through the frontend.
+        (is (set/subset? #{"dosync" "volatile!" "binding" "var"} forbidden)
+            "the heads with no ability model must still be forbidden")
+        (is (not (contains? forbidden "ref"))
+            "`ref` is in the admitted head set; leaving it here too would make
+             this copy of the grammar contradict itself")))
+    (testing "the STM reading of `ref` is still refused, by the elaboration"
+      ;; This is what the catalog entry used to buy, asserted against the
+      ;; frontend that now owns it.
+      (doseq [source ["(ns d (:export [main])) (defn main [] :i64 (let [r (ref 0)] 1))"
+                      "(ns d (:export [main])) (defn main [] :i64 (let [r (ref 0)] (deref r)))"]]
+        (try
+          (compiler/check-source source {})
+          (is false (str "STM ref must be refused: " source))
+          (catch clojure.lang.ExceptionInfo e
+            (is (= :kotoba.error/ambient-forbidden (:kotoba.error/code (ex-data e)))
+                "the STM reading keeps the ambient-mutation CODE it always had")))))
+    (testing "and the definition reading is admitted, so the above is not
+              a `ref` that is refused everywhere"
+      (is (some? (compiler/check-source
+                  (str "(ns d (:export [main])) (defn seven [] :i64 7) "
+                       "(defn main [] :i64 (app (ref seven)))")
+                  {}))))))
 
 ;; ---------------------------------------------------------------------------
 ;; The claim `deps.edn` makes about the file it pins
