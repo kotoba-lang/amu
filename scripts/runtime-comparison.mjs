@@ -107,6 +107,32 @@ const FIXTURES = {
       return [...first, ...rest].reduce((sum, value) => sum + value, 0);
     },
   },
+  // DIAGNOSTIC ONLY -- never part of a claim. kernel_deep with the lane
+  // multiplier 48271 replaced by 3, so every folded lane constant (3i+1)
+  // fits an add-immediate and the 47 MOV/MOVK materialisation instructions
+  // disappear. Everything else -- lane count, the modulo sequence, the lane-13
+  // shadowing, the dependency structure -- is identical. The question it
+  // answers is whether this kernel is issue-bound or latency-bound, which
+  // decides whether removing off-chain instructions is worth anything.
+  kernel_deep_narrowconst: {
+    kotoba: "kernel_deep_narrowconst.kotoba",
+    rust: "kernel_deep_narrowconst.rs",
+    benchmark: "deep-spill-pressure-narrowconst-diagnostic-v1",
+    nativeSymbol: "kotoba_bench_kernel_deep_narrowconst",
+    comparators: nativeComparators,
+    arithmetic: "kernel_deep with narrow lane constants (diagnostic)",
+    verificationInputs: [0, 1, 2, 199, 200, 201],
+    expected(n) {
+      const step = value => {
+        const v = value * 3 + 1;
+        return v - Math.trunc(v / 2147483647) * 2147483647;
+      };
+      const first = Array.from({ length: 14 }, (_, i) => step(n + i));
+      const shadowedN = first.at(-1);
+      const rest = Array.from({ length: 10 }, (_, i) => step(shadowedN + 14 + i));
+      return [...first, ...rest].reduce((sum, value) => sum + value, 0);
+    },
+  },
   kernel_call: {
     kotoba: "kernel_call.kotoba",
     rust: "kernel_call.rs",
