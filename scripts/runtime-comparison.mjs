@@ -157,6 +157,31 @@ const FIXTURES = {
       return [...first, ...rest].reduce((sum, value) => sum + value, 0);
     },
   },
+  // DIAGNOSTIC ONLY. kernel_deep with each lane's input derived from the
+  // previous by one add: (n+i)*48271+1 == ((n+i-1)*48271+1) + 48271, so every
+  // lane result is bit-identical. Only the dependency structure changes --
+  // 24 independent constant materialisations become a serial chain of adds.
+  // Tests whether induction-variable strength reduction across lanes is worth
+  // building, given 139 measured the whole materialisation cost at ~4%.
+  kernel_deep_incremental: {
+    kotoba: "kernel_deep_incremental.kotoba",
+    rust: "kernel_deep_incremental.rs",
+    benchmark: "deep-spill-pressure-incremental-diagnostic-v1",
+    nativeSymbol: "kotoba_bench_kernel_deep_incremental",
+    comparators: nativeComparators,
+    arithmetic: "kernel_deep with lane inputs chained by addition (diagnostic)",
+    verificationInputs: [0, 1, 2, 199, 200, 201],
+    expected(n) {
+      const step = value => {
+        const v = value * 48271 + 1;
+        return v - Math.trunc(v / 2147483647) * 2147483647;
+      };
+      const first = Array.from({ length: 14 }, (_, i) => step(n + i));
+      const shadowedN = first.at(-1);
+      const rest = Array.from({ length: 10 }, (_, i) => step(shadowedN + 14 + i));
+      return [...first, ...rest].reduce((sum, value) => sum + value, 0);
+    },
+  },
   kernel_call: {
     kotoba: "kernel_call.kotoba",
     rust: "kernel_call.rs",
