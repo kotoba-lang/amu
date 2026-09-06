@@ -2658,3 +2658,51 @@ ple Clang C11, Zig, Go
   two LLVM backends holds one domain, ties one at a proven ceiling, and trails
   on the call boundary.** That sentence is measurable, measured, and true. The
   contract's sentence is not, and 125 is the reason it cannot become true here.
+
+- **126 (2026-09-06, if-conversion FALSIFIED on `branch-call-control-flow`;
+  and a bug report I filed and withdrew)**: the largest deficit in the
+  tournament (−11.4% vs clang) had never been opened. Static shapes:
+
+  | | instructions | control flow | epilogues |
+  |---|---:|---|---:|
+  | amu | 59 | `CBNZ`, hot path on the **taken** side | **2** (duplicated) |
+  | clang | 44 | `cmp` + `csel`, branchless | 1 |
+
+  The obvious hypothesis: if-convert a two-arm branch with cheap arms into a
+  conditional select, as clang does. Hand-patched byte-preserving — 7 ADD,
+  `CMP x19,#0`, `CSEL x0,xzr,x0,EQ`, one epilogue, 6 NOP — every manifest input
+  identical including `n=0 → 0`, which is the arm the select exists for.
+
+  **+0.12%, not separated; the median moved the wrong way (4.920 → 4.950).**
+  The hypothesis is wrong, and in hindsight obviously so: the benchmark calls
+  with `n=200` every time, so the branch is perfectly predicted and costs
+  nothing, while the 15 extra instructions sit almost entirely in the
+  *not-taken* path where they are never fetched. `CSEL` only adds a dependency
+  on the compare. **Instruction count is not the cost here; occupancy of the
+  executed path is.**
+
+  So the ~4pp that separates this domain from `call-preservation` — same eight
+  calls, same arithmetic, one `if` — is still unexplained, and it is not the
+  branch. Both save the same number of registers (5 store instructions each),
+  so the prologue is not it either. NEXT is an instruction-by-instruction diff
+  of the two amu emissions, which is cheap and has not been done.
+
+  ⚠ **The fixture's docstring is wrong and should be corrected**: it says the
+  `if` "sends it to the conservative all-vreg path where every value gets a
+  stack slot whether or not anything was short of registers." There are **no
+  value stack slots** in the emission — only the callee-saved prologue and
+  epilogue. That describes a compiler that no longer exists.
+
+  ⚠ **kotoba-native#143 was mine and was wrong.** I reported #138 as breaking
+  the verifier for call-containing functions, on a clean-looking bisect. The
+  bisect was measuring my own harness: I compiled with an overridden
+  kotoba-native and ran `extract-native` **without** the override, so the
+  verifier re-emitted with amu's pinned compiler and compared against bytes
+  from a different one. With the override on both sides the artifact verifies,
+  and re-emitting directly gives 0 differing instructions of 63.
+  `verifier.cljc:1891` was doing exactly its job. Issue withdrawn and closed.
+
+  The residue worth keeping: `native instruction stream rejected` reads as a
+  defect in the artifact rather than as a version mismatch between the emitter
+  that produced it and the one checking it. Naming both identities in that
+  message would have ended this in seconds rather than a bisect.
