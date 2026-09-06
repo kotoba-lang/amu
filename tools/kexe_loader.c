@@ -1544,6 +1544,177 @@ static int64_t env_read_provider(struct kexe_context_v4 *context,
   return intern_utf8(context, (const uint8_t *)value, value_length);
 }
 
+/* wire id 35 = :fs/app-data (runtime id 202). The request string is an
+ * absolute path to READ; the result is the file's bytes as a string. The
+ * granted scope comes from KEXE_CAP_RESOURCES_35, a colon-separated list
+ * of allowed path prefixes set by the kbb shim from the policy's resource
+ * scope. Enforcement is realpath-canonicalized prefix match (a directory
+ * scope entry admits the files beneath it); a missing or empty scope
+ * denies everything. Symlink escape is closed by resolving the target
+ * path before the compare. Fail closed: any malformed request or scope
+ * breach raises SIGILL. */
+/* Parent-side resolved :fs/app-data scope (wire id 35). Parsed and
+ * realpath'ed BEFORE the child is forked, while the process is still
+ * unsandboxed. Both the Seatbelt profile and the provider use only these
+ * resolved spellings, so no sandboxed code needs to realpath a path
+ * outside the grant (e.g. through the /tmp -> /private/tmp symlink). */
+static char kexe_scope35_resolved[16][4096];
+static char kexe_scope35_orig[16][4096];
+static int kexe_scope35_count = 0;
+
+static void kexe_scope35_init(void) {
+  const char *scope_env = getenv("KEXE_CAP_RESOURCES_35");
+  if (scope_env == NULL || scope_env[0] == '\0') return;
+  const char *cursor = scope_env;
+  while (*cursor != '\0' &&
+         kexe_scope35_count < (int)(sizeof(kexe_scope35_resolved) /
+                                    sizeof(kexe_scope35_resolved[0]))) {
+    const char *end = strchr(cursor, ':');
+    size_t entry_length = (end != NULL) ? (size_t)(end - cursor) : strlen(cursor);
+    if (entry_length > 0 && entry_length < 4096) {
+      char entry[4096];
+      memcpy(entry, cursor, entry_length);
+      entry[entry_length] = '\0';
+      char resolved[4096];
+      if (realpath(entry, resolved) != NULL &&
+          strlen(resolved) < sizeof(kexe_scope35_resolved[0])) {
+        strcpy(kexe_scope35_resolved[kexe_scope35_count], resolved);
+        strcpy(kexe_scope35_orig[kexe_scope35_count], entry);
+        kexe_scope35_count++;
+      }
+    }
+    if (end != NULL) cursor = end + 1;
+    else cursor += entry_length;
+  }
+}
+
+static int64_t fs_app_data_read_provider(struct kexe_context_v4 *context,
+                                         int64_t request) {
+  const uint8_t *bytes = NULL;
+  uint64_t length = 0;
+  if (!read_string_handle(context, request, &bytes, &length)) {
+    raise(SIGILL);
+    return 0;
+  }
+  if (length == 0 || length >= 4096 || bytes[0] != '/') {
+    raise(SIGILL);
+    return 0;
+  }
+  char target[4096];
+  memcpy(target, bytes, (size_t)length);
+  target[length] = '\0';
+
+  if (kexe_scope35_count == 0) {
+    raise(SIGILL);
+    return 0;
+  }
+  char candidate[4096];
+  int permitted = 0;
+  for (int s = 0; s < kexe_scope35_count && !permitted; s++) {
+    for (int v = 0; v < 2 && !permitted; v++) {
+      const char *base = (v == 0) ? kexe_scope35_orig[s] : kexe_scope35_resolved[s];
+      size_t base_length = strlen(base);
+      const char *suffix = NULL;
+      if (strncmp(target, base, base_length) == 0 &&
+          (target[base_length] == '/' || target[base_length] == '\0')) {
+        suffix = target + base_length;
+      }
+      if (suffix == NULL) continue;
+      size_t suffix_length = strlen(suffix);
+      size_t real_length = strlen(kexe_scope35_resolved[s]);
+      if (real_length + suffix_length >= sizeof(candidate)) continue;
+      memcpy(candidate, kexe_scope35_resolved[s], real_length);
+      memcpy(candidate + real_length, suffix, suffix_length + 1);
+      permitted = 1;
+    }
+  }
+  if (!permitted) {
+    raise(SIGILL);
+    return 0;
+  }
+
+  int fd = open(candidate, O_RDONLY | O_NOFOLLOW);
+  if (fd < 0) {
+    raise(SIGILL);
+    return 0;
+  }
+  /* Containment of the opened fd. macOS: F_GETPATH gives the kernel path,
+   * compared against each resolved entry. Linux: the candidate path was
+   * re-spelled under a resolved entry (lexically inside the grant) and
+   * opened O_NOFOLLOW, so a (st_dev, st_ino) match between the fd and a
+   * fresh stat of the candidate proves the fd IS the granted file. */
+#if defined(__APPLE__)
+  char actual[4096];
+  if (fcntl(fd, F_GETPATH, actual) != 0) {
+    close(fd);
+    raise(SIGILL);
+    return 0;
+  }
+  size_t actual_length = strlen(actual);
+  int contained = 0;
+  for (int s = 0; s < kexe_scope35_count && !contained; s++) {
+    const char *base = kexe_scope35_resolved[s];
+    size_t base_length = strlen(base);
+    if (actual_length >= base_length &&
+        memcmp(actual, base, base_length) == 0 &&
+        (actual_length == base_length || actual[base_length] == '/')) {
+      contained = 1;
+    }
+  }
+#else
+  struct stat fd_sb, cand_sb;
+  if (fstat(fd, &fd_sb) != 0 || stat(candidate, &cand_sb) != 0) {
+    close(fd);
+    raise(SIGILL);
+    return 0;
+  }
+  int contained = (fd_sb.st_dev == cand_sb.st_dev &&
+                   fd_sb.st_ino == cand_sb.st_ino);
+#endif
+  if (!contained) {
+    close(fd);
+    raise(SIGILL);
+    return 0;
+  }
+
+  size_t capacity = 65536;
+  uint8_t *buffer = (uint8_t *)malloc(capacity);
+  size_t total = 0;
+  if (buffer == NULL) {
+    close(fd);
+    raise(SIGILL);
+    return 0;
+  }
+  for (;;) {
+    if (total == capacity) {
+      size_t next = capacity * 2;
+      uint8_t *grown = (uint8_t *)realloc(buffer, next);
+      if (grown == NULL) {
+        free(buffer);
+        close(fd);
+        raise(SIGILL);
+        return 0;
+      }
+      buffer = grown;
+      capacity = next;
+    }
+    ssize_t got = read(fd, buffer + total, capacity - total);
+    if (got < 0) {
+      if (errno == EINTR) continue;
+      free(buffer);
+      close(fd);
+      raise(SIGILL);
+      return 0;
+    }
+    if (got == 0) break;
+    total += (size_t)got;
+  }
+  close(fd);
+  int64_t result = intern_utf8(context, buffer, total);
+  free(buffer);
+  return result;
+}
+
 static int64_t checked_typed_cap_call(struct kexe_context_v4 *context,
                                       uint64_t id, uint64_t request_kind,
                                       uint64_t result_kind, int64_t request) {
@@ -1570,6 +1741,10 @@ static int64_t checked_typed_cap_call(struct kexe_context_v4 *context,
     result = ui_commit_inject(context, request);
   } else if (id == 10 && request_kind == KEXE_TYPED_UI_EVENT_V1) {
     result = ui_event_inject(context, request);
+  } else if (id == 35 && request_kind == KEXE_TYPED_STRING) {
+    /* wire id 35 = :fs/app-data. Read provider: request is the absolute
+     * path, result is the file contents; scope is KEXE_CAP_RESOURCES_35. */
+    result = fs_app_data_read_provider(context, request);
   } else if (id == 33 && request_kind == KEXE_TYPED_STRING) {
     /* wire id 33 = :env/read. Real host provider: the request string is
      * the environment variable name; the result is its value (empty
@@ -2036,14 +2211,25 @@ static void install_syscall_sandbox(void) {
 }
 #elif defined(__APPLE__) && !defined(KEXE_SANITIZER_TEST)
 static void install_syscall_sandbox(void) {
-  static const char profile[] =
-      "(version 1)"
-      "(deny default)"
-      "(allow file-write-data)"
-      "(allow signal (target self))"
-      "(allow process-info-pidinfo)"
-      "(allow process-info-setcontrol)"
-      "(allow sysctl-read)";
+  /* file-read* is NOT blanket: each :fs/app-data (wire id 35) scope entry
+   * becomes a (subpath ...) filter, so reads are possible only beneath
+   * the granted directories. Entries come from KEXE_CAP_RESOURCES_35
+   * (colon-separated) -- the same scope string the provider checks
+   * per-call; Seatbelt is the second enforcement layer. Both the
+   * literal entry spelling and its realpath are granted, so the guest
+   * may use either spelling and realpath still fails closed outside
+   * the scope. */
+  static char profile[32768];
+  size_t used = 0;
+  used += (size_t)snprintf(profile + used, sizeof(profile) - used,
+      "(version 1)(deny default)(allow file-write-data)"
+      "(allow signal (target self))(allow process-info-pidinfo)"
+      "(allow process-info-setcontrol)(allow sysctl-read)");
+  for (int s = 0; s < kexe_scope35_count; s++) {
+    used += (size_t)snprintf(profile + used, sizeof(profile) - used,
+              "(allow file-read* (subpath \"%s\"))",
+              kexe_scope35_resolved[s]);
+  }
   char *error = NULL;
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
@@ -2153,6 +2339,7 @@ int main(int argc, char **argv) {
   shared->context.vector_assoc_in_place = checked_vector_assoc_in_place;
   shared->context.code_base = (const uint8_t *)memory;
   shared->context.code_length = (uint64_t)length;
+    kexe_scope35_init();
   if (parse_allow(argv[5], shared->context.allow) != 0) return 2;
   for (unsigned long i = 0; i < arity; i++) {
     if (parse_guest_arg(shared, argv[6 + i], &args[i]) != 0) return 2;
