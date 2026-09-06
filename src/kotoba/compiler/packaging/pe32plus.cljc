@@ -447,7 +447,8 @@
   ([kernel payload options]
   (let [kernel (vec kernel)
         payload (vec payload)
-        k16-preflight? (true? (:k16-preflight? options))]
+        k16-preflight? (true? (:k16-preflight? options))
+        k16-note (or (:k16-note options) "")]
     (when (> (count payload) 16384)
       (throw (ex-info "embedded RT payload exceeds 16 KiB" {:bytes (count payload)})))
     (when-not (and (= [0x7f 0x45 0x4c 0x46] (subvec kernel 0 4))
@@ -527,11 +528,35 @@
                           (utf16z "AIUEOS K16 PREFLIGHT RTL8125\r\n") [])
             status-message (if k16-preflight?
                              (utf16z (str status-prefix "00\r\n")) [])
+            ;; The panel could not tell a running kernel from a stale one.
+            ;; ENTER and RTL8125 are printed by every preflight image ever
+            ;; built, and STATUS only appears after `main` returns -- which a
+            ;; resident kernel never does. So three different situations --
+            ;; this artifact is running, an older artifact is running, the
+            ;; machine is wedged -- all showed the same two lines.
+            ;;
+            ;; The embedded kernel's SHA-256 is the whole identity: the fuel
+            ;; budget, every source module and the compiler are sealed into
+            ;; that ELF, so any of them changing changes this string. It is
+            ;; also reproducible, which a wall-clock timestamp is not -- and
+            ;; this packager is byte-compared against a second packaging on
+            ;; every build. A caller who wants a version or a date supplies it
+            ;; through `:k16-note`, where determinism is its own problem.
+            kernel-digest (artifact/sha256 kernel)
+            build-message (if k16-preflight?
+                            (utf16z (str "AIUEOS K16 BUILD "
+                                         (subs kernel-digest 0 16)
+                                         (when (seq (str k16-note))
+                                           (str " " k16-note))
+                                         "\r\n"))
+                            [])
             enter-message-offset (align (+ kernel-offset (count kernel)) 16)
             rtl-message-offset (align (+ enter-message-offset
                                          (count enter-message)) 16)
             status-message-offset (align (+ rtl-message-offset
                                             (count rtl-message)) 16)
+            build-message-offset (align (+ status-message-offset
+                                           (count status-message)) 16)
             ;; Build once with provisional external RVAs; instruction length is
             ;; independent of displacement values.
             segment-tokens (mapcat (fn [index segment]
@@ -544,8 +569,12 @@
                      0x48 0x83 0xec 0x28 0x49 0x89 0xcc 0x49 0x89 0xd5
                      0x4c 0x8b 0x72 0x60]
                     (when k16-preflight?
-                      (uefi-output-string-tokens :enter-message
-                                                 :enter-message-return))
+                      (concat
+                       (uefi-output-string-tokens :enter-message
+                                                  :enter-message-return)
+                       ;; Before anything can hang: say which artifact this is.
+                       (uefi-output-string-tokens :build-message
+                                                  :build-message-return)))
                     segment-tokens
                     ;; AllocateAnyPages/EfiLoaderData. The returned physical
                     ;; address is explicit boot authority, so no fixed low-RAM
@@ -624,7 +653,11 @@
                                  (repeat (- status-message-offset
                                             (+ rtl-message-offset
                                                (count rtl-message))) 0)
-                                 status-message))))
+                                 status-message
+                                 (repeat (- build-message-offset
+                                            (+ status-message-offset
+                                               (count status-message))) 0)
+                                 build-message))))
             data-raw-size (align (count data) file-alignment)
             reloc-address (align (+ data-address (count data)) section-alignment)
             labels (merge {:address0 (+ data-address (nth data-addresses 0))
@@ -645,6 +678,7 @@
                            :payload (+ data-address payload-offset)}
                           (when k16-preflight?
                             {:enter-message (+ data-address enter-message-offset)
+                             :build-message (+ data-address build-message-offset)
                              :rtl-message (+ data-address rtl-message-offset)
                              :status-message (+ data-address status-message-offset)
                              :status-high (+ data-address status-message-offset
