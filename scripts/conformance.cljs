@@ -225,8 +225,17 @@
     ;; on the guest's string=? branch, so an identity stub cannot pass.
     (let [fs-cap (file (str isa "-fs-cap.kexe"))
           target (.join path root "test" "nbb" "fixtures" "fs-request-target.txt")
-          fixture-src (.join path root "test" "nbb" "fixtures" "fs-app-data-read.kotoba")]
-      (k "compile" fixture-src "--target" isa
+          ;; the guest's request path must be the absolute path that exists on
+          ;; THIS host (CI runner path differs from a dev machine), so bake
+          ;; `target` in at conformance-run time rather than hard-coding it.
+          guest (file "fs-app-data-read.kotoba")
+          guest-src (str "(ns fixture.fs-app-data-read (:export [main]))\n"
+                         "(defn main [] :i64\n"
+                         "  (let [v (typed-cap-call :fs/app-data :string :string\n"
+                         "                          \"" target "\")]\n"
+                         "    (if (string=? v \"hello-from-fs\") 1 0)))\n")]
+      (write! "fs-app-data-read.kotoba" guest-src)
+      (k "compile" guest "--target" isa
          "--policy" (.join path root "test" "nbb" "fixtures" "fs-app-data-read-policy.edn")
          "--output" fs-cap)
       (k "verify" fs-cap)
