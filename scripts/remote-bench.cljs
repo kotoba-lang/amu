@@ -91,18 +91,32 @@
       _ (when-not (= staged head)
           (die! 2 (str "host has " staged " but HEAD is " head)))
       remote-json (str "~/amu-evidence/" bench-name "-" (subs head 0 12) "-" (.now js/Date) ".json")
+      ;; Read the host's busy fraction through quiet-host.cljs, not an inline
+      ;; awk. The first version of this line was
+      ;;   "echo BUSY=$(iostat -c2 -w1 | tail -1 | awk '{print 100-$6}')"
+      ;; and it reported 100 on an idle machine every time: execSync runs the
+      ;; command through /bin/sh, which expanded `$6` to the empty positional
+      ;; parameter before ssh saw it, so awk evaluated `100-`. A wrong number
+      ;; that looks like a real one is worse here than no number, since these
+      ;; readings are what let a later reader judge the run.
+      busy (fn [] (let [{:keys [exit out]} (sh (str "nbb scripts/quiet-host.cljs --hosts " host)
+                                               {:timeout 120000})]
+                    (if (#{0 1} exit)
+                      (some-> (re-find #":busy-cpu-fraction ([\d.]+)" out) second)
+                      "unmeasured")))
+      before (busy)
       cmd (str env "set -e; mkdir -p ~/amu-evidence; cd " remote "; "
-               "echo BUSY_BEFORE=$(iostat -c2 -w1 | tail -1 | awk '{print 100-$6}'); "
                "node " (:script spec) " " (:out-flag spec) " " remote-json " "
                (str/join " " passthru) "; "
-               "echo BUSY_AFTER=$(iostat -c2 -w1 | tail -1 | awk '{print 100-$6}'); "
                "echo REPORT=" remote-json)
       run (sh (str "ssh -o BatchMode=yes " host " " (pr-str cmd)) {:timeout 3600000})
+      after (busy)
       local-out (arg "--out" (str "/tmp/amu-" bench-name "-" (subs head 0 12) ".json"))]
   (println (:out run))
   (when-let [report (second (re-find #"REPORT=(\S+)" (:out run)))]
     (let [c (sh (str "scp -q " host ":" report " " local-out))]
       (when (zero? (:exit c))
         (println (pr-str {:format :amu.remote-bench/v1 :host host :commit head
-                          :bench bench-name :report local-out})))))
+                          :bench bench-name :report local-out
+                          :busy-cpu-fraction {:before before :after after}})))))
   (.exit js/process (if (zero? (:exit run)) 0 1)))
