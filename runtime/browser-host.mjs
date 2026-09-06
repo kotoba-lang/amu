@@ -2899,6 +2899,22 @@ function applyUiAttrs(element, pairs) {
  *        DOM factory; defaults to globalThis.document. Tests may inject a mock.
  * @returns {Element} the element reconciled as container's first element child
  */
+/**
+ * What each DOM slot was last built from: parent element -> index -> {node, element}.
+ *
+ * A WeakMap so a container that goes out of scope takes its memo with it. The
+ * values hold the last document that was rendered, which the caller is holding
+ * anyway -- the driver keeps `state`, and the view is derived from it.
+ */
+const renderedFrom = new WeakMap();
+
+function remember(parent, index, node, element) {
+  let slots = renderedFrom.get(parent);
+  if (slots === undefined) { slots = []; renderedFrom.set(parent, slots); }
+  slots[index] = { node, element };
+  return element;
+}
+
 export function reconcileUiDocument(container, doc, dom = {}) {
   if (container == null || typeof container !== "object")
     reject("invalid-ui-document", "reconcile container is required");
@@ -2937,6 +2953,34 @@ export function reconcileUiDocument(container, doc, dom = {}) {
   };
 
   const walk = (parent, index, node) => {
+    // A subtree that is the SAME VALUE as the one this element was last built
+    // from cannot have changed, so it is not walked. `document-assoc` rebuilds
+    // the entry pairs of the map it touches and leaves every untouched child
+    // value at the same reference, so identity here is a content test that
+    // costs one lookup and encodes nothing.
+    //
+    // Sound but deliberately not complete: two structurally equal documents
+    // built independently are different objects and are walked in full. That
+    // is the safe direction -- skipping too little repaints something that did
+    // not change, skipping too much would leave a stale page. The memo is also
+    // checked against the DOM before it is trusted, because an element that
+    // something else replaced is no longer the one this entry describes.
+    //
+    // What this does weaken, said plainly: before the memo, every paint
+    // re-applied every attribute and every text, so a subtree that something
+    // outside the reconciler had edited was repaired on the next paint. A
+    // skipped subtree is not. The slot check catches a replaced element; it
+    // does not catch an attribute written behind the reconciler's back. That
+    // is sound here because this function owns the container -- the driver
+    // attaches its listeners to the mount, never to guest-named nodes, and
+    // the guest cannot name a DOM object at all -- but a caller that shares
+    // the container with other code is outside what this assumes.
+    const remembered = renderedFrom.get(parent)?.[index];
+    if (remembered !== undefined
+        && remembered.node === node
+        && remembered.element === parent.childNodes?.[index])
+      return remembered.element;
+
     const tag = uiDocTag(node);
     // Read attributes before touching the DOM: a denied name or URL scheme
     // must reject the whole reconcile, not leave a half-applied element.
@@ -2948,12 +2992,12 @@ export function reconcileUiDocument(container, doc, dom = {}) {
     if (kids.length === 0) {
       // Leaf: textContent is the single source of truth (clears element children).
       if (el.textContent !== text) el.textContent = text;
-      return el;
+      return remember(parent, index, node, el);
     }
     // Branch: ignore :text; reconcile element/text children from the vector only.
     for (let i = 0; i < kids.length; i++) walk(el, i, kids[i]);
     trimAfter(el, kids.length);
-    return el;
+    return remember(parent, index, node, el);
   };
 
   const root = walk(container, 0, doc);
