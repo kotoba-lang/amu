@@ -3292,3 +3292,66 @@ ple Clang C11, Zig, Go
   ⚠ The diagnostic fixture is not in the claim manifest and the `runtime`
   suite carries **no quiet-gate verdict** (`quietGate: None`). These numbers
   are diagnostic. The claim path stays the competitive multidomain suite.
+
+- **139 (2026-09-06, it is the MOVKs, not the instruction count — removing 23
+  buys what removing 47 buys)**:
+
+  138 concluded `deep-spill` was partly issue-bound and costed a constant pool
+  on a transfer ratio of 0.20. **A third variant falsifies that reading.**
+
+  `kernel_deep_movonly` uses multiplier 2039, so every folded lane constant
+  (max 46898) fits sixteen bits and needs a bare MOVZ with **no MOVK** —
+  removing 23 instructions where `narrowconst` removes 47. All three measured
+  on judah behind an explicit busy ≤ 0.10 gate:
+
+  | variant | instrs removed | median | min | median gain | min gain |
+  |---|---|---|---|---|---|
+  | `kernel_deep` | — | 9.33 | 9.00 | — | — |
+  | `kernel_deep_movonly` | **23 (9.5%)** | 9.09 | 8.60 | **2.57%** | **4.44%** |
+  | `kernel_deep_narrowconst` | 47 (19.5%) | 8.87 | 8.63 | 4.93% | 4.11% |
+
+  **Removing 23 instructions and removing 47 are indistinguishable.** If
+  instruction count were the mechanism, the second row should be worth about
+  half the third. It is worth the same — on minima it is worth slightly more,
+  which is what two readings of one quantity look like.
+
+  So 138's "partly issue-bound, ratio 0.20" was **the wrong model fitted to one
+  data point**. The right statement: **the MOVK is what costs, and the MOVZ
+  that remains is free.** MOVZ→MOVK→ADD is a three-long chain into each lane
+  because MOVK read-modify-writes the register MOVZ just wrote; a bare MOVZ
+  makes it two. The rule from 135/136 was never violated — I had simply
+  mis-assigned which of the two instructions sat on the chain.
+
+  ⚠ **138's projection table should not be used.** It scaled a made-up ratio
+  across three candidate forms. The measured quantity is a single number:
+  **eliminating the MOVKs is worth about 4%**, and eliminating anything else
+  is worth nothing.
+
+  **What that is worth.** Against the multidomain figures (amu 9.40, rust 9.63,
+  zig 9.68 — only the ratio transfers, the `runtime` suite's level is different):
+  4% puts amu at ~9.02, which is **6.8% against zig and 6.3% against rust**.
+  Both clear the 5% bar, and both gaps (0.66 / 0.61 ns) clear the ~0.42 summed
+  stdev. That is **21/30**, from one change.
+
+  **The change to build is `LDR (literal)`** — not the LDP variants 138 costed.
+  One PC-relative word replaces MOVZ+MOVK, and critically it has **no register
+  input**, so unlike MOVK its latency is schedulable: with 24 independent lanes
+  there is ample slack to issue the loads early. No base register, so none of
+  the register pressure that makes 129's +2.84% a threat on this kernel.
+
+  The residual risk is exactly that scheduling assumption — a load is ~4 cycles
+  against MOVK's 1, so if the loads do *not* get hoisted, this loses rather than
+  wins. That is the thing to measure first on the implementation, and it is why
+  this is specified rather than claimed.
+
+  Site: `a64-constant` (machine_ir.cljc ~3665) already picks between wide-move,
+  logical-immediate and seeded forms; the pool becomes a fourth choice when the
+  wide form needs two or more words. It needs a literal-pool fixup alongside the
+  existing branch fixups in `resolve-layout`, pool placement after the function
+  body, and a ±1MB range check with a fall back to the wide move.
+
+  ⚠ Diagnostic fixtures, not claim fixtures. The `runtime` suite carries no
+  quiet-gate verdict of its own (`quietGate: None`) — the ≤ 0.10 gate here was
+  imposed by the harness around it, after an ungated batch produced a control
+  of 9.67 against 9.01 in two quiet runs and a 23.58 outlier. **That ungated
+  batch is discarded, not averaged in.**
