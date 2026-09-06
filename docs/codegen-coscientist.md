@@ -3554,3 +3554,55 @@ ple Clang C11, Zig, Go
   instructions, against a 5.31pp gap, and below this fleet's noise floor).
 
   Score unchanged: **median 19/30, range 17–19, stable 16**.
+
+- **144 (2026-09-07, SIMD spill-parking's +3.21% has eroded to +0.67% ± 1.15%
+  — the fifth lever to measure at zero, and the reason is one of our own
+  landed changes)**:
+
+  I had dismissed re-testing this pass because its docstring cites **+3.21%
+  separated** from iterations 23–24. That is a citation, not a measurement:
+  the figure came from **hand-substituting** fourteen spill instructions on a
+  compiler that has since gained #142, #145 and #146. The rule about
+  implementation snapshots applies to measurements too, and I applied it to
+  everything except the numbers that were already in my favour.
+
+  Compiled both shapes and ran three interleaved quiet-host pairs
+  (busy-CPU 0.06–0.09), drift-corrected against the five domains whose bytes
+  do not change between the arms:
+
+  | rep | drift | deep-spill | corrected |
+  |---|---|---|---|
+  | 1 | +2.35% | +2.41% | **+0.06%** |
+  | 2 | −1.44% | +0.85% | **+2.29%** |
+  | 3 | +0.01% | −0.32% | **−0.33%** |
+
+  **Disabling the pass costs +0.67%, sd 1.15, n=3.** Right in sign — parking
+  is still the better shape and stays — but **indistinguishable from zero**,
+  and nowhere near 3.21%.
+
+  The shapes genuinely differ, so this is not one binary measured twice: on
+  `kernel_deep`, parked is 241 instructions / 14 FMOV / 8 sp-memory ops;
+  unparked is 243 / 0 FMOV / 22.
+
+  **The likely cause is #145, which this loop landed.** Once the frame became
+  a single allocation with offset addressing, a stack-slot round trip stopped
+  being expensive enough for a register-file move to beat by much. An
+  optimization worth 3% against N dependent SP updates is worth much less
+  against two. **Landing one optimization can quietly retire another's
+  value**, and nothing in the codebase notices — the docstring kept asserting
+  3.21% for as long as anyone cared to read it (kotoba-native#149 corrects it).
+
+  ⚠ I also repeated the #143 mistake inside this experiment: compiled with the
+  pass disabled and ran `extract-native` without the flag, so the verifier
+  re-emitted the parked shape and rejected the export table. The ledger
+  already records that exact error. **Reading about a mistake does not prevent
+  it; only making the configuration impossible to split does.**
+
+  **Where this leaves the search.** Five levers on `deep-spill` now measure at
+  or near zero — constant pooling (141), SIMD parking (here), and the frame,
+  Mersenne and two-ADD results already recorded. The division sequence is
+  instruction-for-instruction identical to clang's and rustc's. On the
+  evidence, amu's deep-spill codegen is at a local optimum, and the 2.09pp to
+  zig is not reachable by the kind of peephole this loop has been generating.
+
+  Score unchanged: **median 19/30, range 17–19, stable 16**.
