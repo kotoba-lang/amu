@@ -493,3 +493,44 @@ ty 注記なし probe のため過大評価されていた — 以下は型付�
 - Verdict: hypothesis FALSIFIED. Guest-side byte access alone cannot reach C (17.2-17.8 ns/call, iter 4); the blocker is the string ABSENT from guest memory, not the number of host calls. A fix requires a memory-passing string marshal (write :string bytes into guest linear memory at the boundary, ABI/intrinsic change in amu runtime + browser-host) - out of scope for lang-cosientist (no alias/desugar route exists). parse-long coverage stays BLOCKED on: string-to-linear-memory marshal.
 - Gate: check PASS + wasm32 compile PASS (2008 bytes) for both probes; values correct (acc 10780000 = 49 x 2e5 in both cases). perfgate N/A (falsification of a design, not a runtime claim; load gate not quiet).
 - Next (1 hypothesis): remaining ledger alias-shaped list is exhausted (iters 1-16). Pivot to the jvm-dep-ledger "clock/uuid/mutable-store capability import syntax" gap (population note): 1 probe to classify it - surface syntax missing (reader) vs capability module not admitted in the typed import set - hand-probe with a minimal capability import to see which layer rejects and with what diagnostic.
+
+## Iteration 18 — capability import syntax: classified, NOT a lang gap for clock (2026-09-06, amu@996ae58d, pinned sema via amu lock)
+
+- Hypothesis (carried from iter 17): the ledger's "capability-import syntax for
+  clock/uuid/mutable-store undeclared" gap is a missing reader/import layer.
+- Measured (amu bin/amu --jvm-free, amu@996ae58d; terminal via .sh script files,
+  outputs in /tmp/langcos/t18-*.txt):
+  - **clock/now admits TODAY**: `(defn read-clock [seed :i64] :i64 (clock/now seed))`
+    check PASS (exit 0) with `--policy` granting `[:cap/call :clock/now]`
+    (examples/capability-policy.edn shape). Without policy: fail-closed
+    "capability policy denies required effects" (exit 65, admission-denied).
+    wasm32 compile PASS (2 definitions); definition-cids
+    read-clock `bafyreicsq5gpckgxkk2s7xjn7z65ziggb5hynjutww322uvlsxqsoqzn3m`,
+    main `bafyreibusqxl5rullwfb7ptxkb3vthl5qe5wis6wiypyxq26mfd7zv5h2m`.
+    Surface is a plain namespaced call (`clock/now seed`) — NO import syntax
+    exists or is needed; elaborates to `(typed-cap-call 7 :i64 :i64 seed)`
+    (project.cljc:267, catalog wire id 7, kit clock-v1 :wasm32-kotoba-v1
+    :implemented).
+  - state/transact (id 8), entropy/draw (id 23): same admission-denied shape
+    without policy (exit 65) — same surface class as clock/now.
+  - fail-closed separation: state/transact denied under a clock-only policy —
+    grants are per-capability, minimal-policy reported in admission verdict.
+  - **uuid is a REAL gap but catalog-level, not syntax**: `(uuid/v4 seed)` →
+    subset-reject "named operation uuid/v4 is not a registered capability"
+    (exit 65, span 付き); catalog has NO uuid entry (grep 0 hits in
+    capability-catalog.edn). Landing uuid = catalog + wire-id + kit + host
+    intrinsic — a designed authority addition, not desugar.
+- Verdict: hypothesis FALSIFIED as "syntax missing". clock/now (and by the same
+  shape state/transact / mutable-store class) needs NO language change — the
+  ledger blocker reduces to (a) policy grant availability in component builds
+  and (b) runtime host provider for the target surface (kit notes wasm32
+  implemented; native blocked by ADR 0261 host-authority). uuid is a separate,
+  genuine catalog gap. Speed threshold N/A (capability call = host boundary,
+  same ~640-750 ns/call class as iters 4/5 boundary measurements).
+- Gate: check PASS + wasm32 compile PASS (clock/now with grant); all negative
+  probes fail-closed with own diagnostics. perfgate N/A.
+- Next (1 hypothesis): jvm-dep-ledger alias/capability-shaped items are now
+  exhausted. Re-scan the blocked cohort CRUD shape for the largest remaining
+  measured gap — `keys`/`reduce-kv` on typed map (ledger list): probe whether
+  they are alias-shaped (desugar to map iteration over a typed map) or need a
+  new lowering, starting with a hand-patch `(reduce-kv f init m)` expansion.
