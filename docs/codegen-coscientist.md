@@ -3355,3 +3355,41 @@ ple Clang C11, Zig, Go
   imposed by the harness around it, after an ungated batch produced a control
   of 9.67 against 9.01 in two quiet runs and a 23.58 outlier. **That ungated
   batch is discarded, not averaged in.**
+
+- **140 (2026-09-06, the load's latency is hidden — LDR-literal measured 4.5%
+  faster than MOVZ+MOVK, so #147 has nothing left to measure)**:
+
+  139 specified `LDR (literal)` with one open risk: a load is ~4 cycles against
+  MOVK's 1, so if the loads are not hoisted ahead of their uses the change
+  loses instead of winning. That is now measured rather than assumed.
+
+  A hand-written microbenchmark reproduces the `deep-spill` lane shape exactly
+  — 24 lanes of `add / smulh / add / asr / add / msub`, with the magic
+  constants read off amu's own disassembly — in two variants differing only in
+  how the lane constant arrives. Both compute identical results over n = 0..4.
+  Ten invocations on judah across two batches, each the minimum of seven
+  interleaved rounds:
+
+  | | movk | ldr | gain |
+  |---|---|---|---|
+  | batch 1 (5 runs) | 8.683–8.708 | 8.317–8.325 | **4.13 – 4.50%** |
+  | batch 2 (5 runs) | 8.708–8.725 | 8.317–8.325 | **4.50 – 4.59%** |
+
+  **Two unrelated methods, one number:** the fixture diagnostic said removing
+  the MOVKs was worth ~4%, and a hand-written A/B that changes nothing else
+  says 4.5%. That agreement is worth more than either reading alone.
+
+  Two things this run teaches about its own method:
+
+  * ⚠ **The same benchmark on this workstation says LDR is 7% SLOWER.**
+    Different chip, load average over 100. A microbenchmark is only evidence
+    about the machine it ran on, and the claim path's machine is the fleet.
+  * The first version used **x20** as the accumulator. x20 is callee-saved, so
+    clobbering it corrupted the C driver's loop counter — and that surfaced as
+    runs taking 30+ minutes and never finishing, **not** as a wrong answer.
+    A wrong answer would have been caught immediately by the equality check
+    that was already there; a corrupted caller was not. The accumulator is x9.
+
+  Nothing is left to measure before implementing #147. The projection stands:
+  `deep-spill × zig` → ~6.8%, `× rust` → ~6.3%, both clearing the 5% bar and
+  the ~0.42 ns separation floor. **19/30 → 21/30.**
