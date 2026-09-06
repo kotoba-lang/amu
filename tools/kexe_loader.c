@@ -2172,10 +2172,6 @@ static void install_limits(void) {
 }
 
 #if defined(__linux__) && !defined(KEXE_SANITIZER_TEST)
-#define ALLOW_SYSCALL(number) \
-  BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, (number), 0, 1), \
-  BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW)
-
 static void install_syscall_sandbox(void) {
 #if defined(__x86_64__)
   const uint32_t expected_arch = AUDIT_ARCH_X86_64;
@@ -2184,26 +2180,89 @@ static void install_syscall_sandbox(void) {
 #else
 #error "unsupported Linux architecture for KEXE seccomp"
 #endif
-  struct sock_filter filter[] = {
-      BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, arch)),
-      BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, expected_arch, 1, 0),
-      BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_KILL_PROCESS),
-      BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, nr)),
-      ALLOW_SYSCALL(__NR_write),
-      ALLOW_SYSCALL(__NR_exit),
-      ALLOW_SYSCALL(__NR_exit_group),
-      ALLOW_SYSCALL(__NR_rt_sigreturn),
-      ALLOW_SYSCALL(__NR_rt_sigprocmask),
-      ALLOW_SYSCALL(__NR_getpid),
-      ALLOW_SYSCALL(__NR_gettid),
-      ALLOW_SYSCALL(__NR_tgkill),
-      ALLOW_SYSCALL(__NR_munmap),
-      ALLOW_SYSCALL(__NR_brk),
-      ALLOW_SYSCALL(__NR_clock_gettime),
-      BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_TRAP),
-  };
+  struct sock_filter filter[64];
+  int n = 0;
+#define ADD(stmt) do { filter[n++] = (stmt); } while (0)
+  ADD((struct sock_filter)BPF_STMT(BPF_LD | BPF_W | BPF_ABS,
+                                   offsetof(struct seccomp_data, arch)));
+  ADD((struct sock_filter)BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K,
+                                   expected_arch, 1, 0));
+  ADD((struct sock_filter)BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_KILL_PROCESS));
+  ADD((struct sock_filter)BPF_STMT(BPF_LD | BPF_W | BPF_ABS,
+                                   offsetof(struct seccomp_data, nr)));
+  /* fs/app-data (wire id 35) reads are admitted only when a scope was
+   * granted (KEXE_CAP_RESOURCES_35 set). The conformance filesystem probe
+   * runs with no scope and must still be denied; the kbb native runner sets
+   * the scope and the provider's realpath compare enforces it. */
+  const int fs_reads =
+      getenv("KEXE_CAP_RESOURCES_35") != NULL &&
+      getenv("KEXE_CAP_RESOURCES_35")[0] != '\0';
+  if (fs_reads) {
+#ifdef __NR_read
+    ADD((struct sock_filter)BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K,
+                                     __NR_read, 0, 1));
+    ADD((struct sock_filter)BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW));
+#endif
+#ifdef __NR_open
+    ADD((struct sock_filter)BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K,
+                                     __NR_open, 0, 1));
+    ADD((struct sock_filter)BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW));
+#endif
+#ifdef __NR_openat
+    ADD((struct sock_filter)BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K,
+                                     __NR_openat, 0, 1));
+    ADD((struct sock_filter)BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW));
+#endif
+    ADD((struct sock_filter)BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K,
+                                     __NR_close, 0, 1));
+    ADD((struct sock_filter)BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW));
+    ADD((struct sock_filter)BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K,
+                                     __NR_lseek, 0, 1));
+    ADD((struct sock_filter)BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW));
+#ifdef __NR_pread64
+    ADD((struct sock_filter)BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K,
+                                     __NR_pread64, 0, 1));
+    ADD((struct sock_filter)BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW));
+#endif
+#ifdef __NR_fstat
+    ADD((struct sock_filter)BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K,
+                                     __NR_fstat, 0, 1));
+    ADD((struct sock_filter)BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW));
+#endif
+#ifdef __NR_newfstatat
+    ADD((struct sock_filter)BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K,
+                                     __NR_newfstatat, 0, 1));
+    ADD((struct sock_filter)BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW));
+#endif
+#ifdef __NR_access
+    ADD((struct sock_filter)BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K,
+                                     __NR_access, 0, 1));
+    ADD((struct sock_filter)BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW));
+#endif
+#ifndef __NR_faccessat2
+#define __NR_faccessat2 439
+#endif
+    ADD((struct sock_filter)BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K,
+                                     __NR_faccessat2, 0, 1));
+    ADD((struct sock_filter)BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW));
+  }
+#define ALLOW_SYSCALL_AT(number) \
+    ADD((struct sock_filter)BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, (number), 0, 1)); \
+    ADD((struct sock_filter)BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW))
+  ALLOW_SYSCALL_AT(__NR_write);
+  ALLOW_SYSCALL_AT(__NR_exit);
+  ALLOW_SYSCALL_AT(__NR_exit_group);
+  ALLOW_SYSCALL_AT(__NR_rt_sigreturn);
+  ALLOW_SYSCALL_AT(__NR_rt_sigprocmask);
+  ALLOW_SYSCALL_AT(__NR_getpid);
+  ALLOW_SYSCALL_AT(__NR_gettid);
+  ALLOW_SYSCALL_AT(__NR_tgkill);
+  ALLOW_SYSCALL_AT(__NR_munmap);
+  ALLOW_SYSCALL_AT(__NR_brk);
+  ALLOW_SYSCALL_AT(__NR_clock_gettime);
+  ADD((struct sock_filter)BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_TRAP));
   struct sock_fprog program = {
-      .len = (unsigned short)(sizeof(filter) / sizeof(filter[0])),
+      .len = (unsigned short)n,
       .filter = filter,
   };
   if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0) fail("no_new_privs");
