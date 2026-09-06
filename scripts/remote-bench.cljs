@@ -136,10 +136,17 @@
                        ":\n" (:out tools))))
       missing (mapv second (re-seq #"MISSING=(\S+)" (:out tools)))
       _ (when (seq missing)
+          ;; Name the PATH that was searched. `node` is present on simeon but
+          ;; as a keg-only node@22 outside this PATH, so "lacks node" without
+          ;; the search path reads as a missing install and sends the reader
+          ;; to the wrong fix.
           (die! 2 (str host " lacks " (str/join ", " missing)
-                       " -- refusing to report a pass from a node that cannot"
-                       " run the benchmark. Pass --host with a node that has"
-                       " them, or --hosts to restrict the quiet-host probe.")))
+                       " on the PATH this script sets:\n  "
+                       (str/trim (str/replace (str/replace env "export JAVA_HOME=" "JAVA_HOME=")
+                                              "; export PATH=" "\n  PATH="))
+                       "\nRefusing to report a pass from a node that cannot run"
+                       " the benchmark. Pass --host with a node that has them,"
+                       " or --hosts to restrict the quiet-host probe.")))
       stage (ssh! host
                   (str env "set -e; "
                        "if [ ! -d " remote "/.git ]; then git clone -q https://github.com/kotoba-lang/amu.git " remote "; fi; "
