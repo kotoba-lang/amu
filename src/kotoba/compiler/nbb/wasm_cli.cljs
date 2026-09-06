@@ -8,6 +8,8 @@
             [kotoba.compiler.capability-names :as cap-names]
             [kotoba.compiler.nbb.cli-support :as support]
             [kotoba.compiler.definition-identity :as definition-identity]
+            [kotoba.compiler.nbb.package-authoring :as package-authoring]
+            [kotoba.compiler.nbb.package-lock :as package-lock]
             [kotoba.compiler.nbb.compile-cache :as compile-cache]
             [kotoba.sema :as sema]
             [kotoba.compiler.nbb.io :as io]
@@ -199,6 +201,30 @@
     {:provenance-output provenance-output
      :publication-output publication-output}))
 
+(defn- computed-definition-cids
+  "The definition CIDs of a built graph, as a flat collection."
+  [report]
+  (keep :cid (vals (:entries report))))
+
+(defn- package-verdict!
+  "Bind a consumed package lock to the code that was actually built.
+
+  Resolution alone proves a directory exists where the lock says one should.
+  This proves the definitions in it are the ones the lock names -- and it is
+  the reason `--package-lock` is a pin rather than a path search with extra
+  ceremony. Throws on a mismatch; the caller emits nothing.
+
+  Returns nil when no package lock was consumed, so a caller `cond->`-ing on
+  it prints nothing rather than printing an empty verification."
+  [resolved definitions]
+  (when-let [packages (:packages resolved)]
+    (let [verdict (support/timed
+                   "package-definitions"
+                   #(package-lock/verify-definitions
+                     (:dependencies packages)
+                     (computed-definition-cids definitions)))]
+      (package-lock/report packages verdict))))
+
 (defn- check! [args context]
   (let [resolved (project-source/resolve-source! args)
         source (:source resolved)
@@ -238,6 +264,10 @@
       ;; check from a check of a graph that happened to link -- the difference
       ;; between "this module is admitted" and "these N modules are".
       (:project resolved) (assoc :project (:project resolved))
+      ;; A check that consumed a package lock says what the lock bought. Absent
+      ;; this key the answer is identical whether a lock was verified or never
+      ;; supplied, which is the shape that lets a build quietly stop checking.
+      (:packages resolved) (assoc :packages (package-verdict! resolved definitions))
       context (assoc :stage-cache {:hir (:cache hir-result)}))))
 
 (defn- definition-cids!
@@ -257,11 +287,13 @@
     (when-not (map? (:entries report))
       (throw (ex-info "no definition identity is available for this module"
                       {:phase :definition-identity :reason (:reason report)})))
-    (assoc report
-           :ok true
-           :format :kotoba.definition-cids/v1
-           :lines (definition-identity/format-lines report)
-           :scanned (definition-identity/scanned-line report))))
+    (cond-> (assoc report
+                   :ok true
+                   :format :kotoba.definition-cids/v1
+                   :lines (definition-identity/format-lines report)
+                   :scanned (definition-identity/scanned-line report))
+      (:packages resolved)
+      (assoc :packages (package-verdict! resolved report)))))
 
 (defn- compile-uncached! [args target output source linked? lock-cid]
   (let [policy (support/timed "policy-read" #(read-policy! args))
@@ -385,10 +417,27 @@
         linked? (:linked? resolved)
         output (or (support/option args "--output") (str input ".wasm"))
         lock-cid (get-in resolved [:lock :lock-cid])
+        ;; Before anything is emitted. The compile paths below may answer from
+        ;; a stage cache, so the package verdict cannot ride along with
+        ;; whichever HIR they happen to compute; when a lock was consumed this
+        ;; runs the frontend once for the sole purpose of checking it. Nothing
+        ;; is paid when no lock was given.
+        packages (when (:packages resolved)
+                   (let [policy (support/timed "policy-read" #(read-policy! args))
+                         hir (:value (resolve-hir!
+                                      source
+                                      (project-source/analyze-opts policy linked?)
+                                      nil))]
+                     (package-verdict!
+                      resolved
+                      (definition-identity/describe
+                       {:hir hir
+                        :kir (try (ir/lower hir) (catch :default _ nil))}))))
         result (if context
                  (compile-cached! args target output source linked? context lock-cid)
                  (compile-uncached! args target output source linked? lock-cid))]
-    (merge result (project-source/inputs-record resolved))))
+    (cond-> (merge result (project-source/inputs-record resolved))
+      packages (assoc :packages packages))))
 
 (defn- module-lock!
   "Pin a path-resolved project once so every later compile of it resolves by
@@ -401,7 +450,10 @@
   halves run here."
   [args]
   (let [input (support/timed "source-admit" #(support/source! (second args)))
-        source-roots (support/options args "--source-path")
+        ;; The same roots `check` and `compile` get: a lock pinned without the
+        ;; dependencies would name a graph the entry cannot actually link.
+        resolved-packages (project-source/resolve-packages! args)
+        source-roots (project-source/source-roots args resolved-packages)
         blocks (or (support/option args "--blocks")
                    (support/usage-error! "--blocks <dir> is required"))
         _ (when (empty? source-roots)
@@ -419,9 +471,34 @@
                 project-files/load-closed-graph input source-roots blocks))]
     (support/timed "module-lock-write"
                    #(io/write-text! output (pr-str (dissoc lock :lock-cid))))
-    {:ok true :lock output :blocks blocks
-     :root (:root lock) :modules (count (:modules lock))
-     :lock-cid (:lock-cid lock)}))
+    (cond-> {:ok true :lock output :blocks blocks
+             :root (:root lock) :modules (count (:modules lock))
+             :lock-cid (:lock-cid lock)}
+      resolved-packages
+      (assoc :packages (package-lock/report resolved-packages
+                                            {:check :definition-cids
+                                             :outcome :deferred
+                                             :note (str "a module lock pins every "
+                                                        "module by CID; definition "
+                                                        "identity is checked when it "
+                                                        "is compiled")})))))
+
+(defn- describe-definition-cids
+  "The definition CIDs of one module file, for the lock producer. Reads the
+  file alone rather than as part of a project: definition identity is
+  context-independent -- measured 2026-09-06, `double-it` hashes to the same
+  CID compiled alone and as a dependency of another module -- which is the
+  property that lets a lock pin them at all."
+  [path]
+  (let [source (io/read-text-file path)
+        hir (:value (resolve-hir! source (support/analyze-options nil) nil))
+        report (definition-identity/describe
+                {:hir hir :kir (try (ir/lower hir) (catch :default _ nil))})]
+    (when-not (map? (:entries report))
+      (throw (ex-info "no definition identity is available for this module"
+                      {:phase :definition-identity :module path
+                       :reason (:reason report)})))
+    (keep :cid (vals (:entries report)))))
 
 (defn- run! [args context]
   (case (first args)
@@ -432,6 +509,12 @@
     ;; arrives. A lock is target-independent, so there is nothing for the
     ;; native entry points to answer differently.
     "module-lock" (module-lock! args)
+    ;; Authoring, not building. `package-manifest` needs no resolver at all;
+    ;; `package-lock` reads each dependency's own signed manifest and asks
+    ;; this compiler for the definition CIDs, so the values it writes are
+    ;; measured rather than declared.
+    "package-manifest" (package-authoring/package-manifest! args)
+    "package-lock" (package-authoring/package-lock! describe-definition-cids args)
     (support/usage-error!
      (str "error: nbb Wasm path does not cover command " (first args)))))
 

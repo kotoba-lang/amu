@@ -2397,3 +2397,55 @@ ple Clang C11, Zig, Go
 2026-09-05 23:10 JST (amu-rank cron, tick 129): rank-only pass, no measurement by role. Host load decaying but not yet sustained-quiet: load1 4.00 (below 7.5), load5 7.90, load15 22.21 at 23:04; sibling falsify tick 23:07 observed load1 6.96->17.65 over 23:00-23:06 with idle 4-6/10 CPUs — no sustained quiet window yet, but the J-B quiet window is close. git fetch run: local HEAD bb6f1e80 (lang-cosientist iteration 13 — docs/lang-cosientist.md scope, not a codegen-ladder number). Evidence reviewed since tick 128: falsify ticks 22:18 and 23:07 (both busy-refusals, no numbers); no new codegen ADR (0338 remains newest measured landing — J-B imod specialization diagnostic-only, no perfgate verdict); no new measured numbers -> no re-rank, no status transition, no new hypothesis. Population unchanged: J-B confirmed-diagnostic but unqualified (awaiting idle>=9/10 rerun of bench/runtime-comparison/jb_imod_control.c), H-Z3 top of the codegen ladder (quiet-host hand-patch A/B pending), H-C2/H-D/H-B/H-Y1 open; J-C blocked behind J-B. NEXT: J-B fully-quiet-host rerun (idle>=9/10) of bench/runtime-comparison/jb_imod_control.c — load trend suggests attempt it next tick — then H-Z3 quiet-host hand-patch A/B, then H-C2.
 
 2026-09-05 23:58 JST (amu-rank cron, tick 130): rank-only pass, no measurement by role. Host load has decayed into the quiet band: load1 3.80 / load5 10.11 / load15 11.46 at 23:56 (threshold 7.5) — load1 is now below gate; load5/15 still above but falling. git fetch run: no new origin commits since tick 129 (local HEAD bb6f1e80; newest commit 57622a9e is jit-cosientist tick 13, jit scope, not a codegen-ladder number). Evidence reviewed since tick 129: falsify 23:07 was the newest sibling entry (busy-refusal, no numbers); no new codegen ADR (0338 remains newest measured landing — J-B imod specialization diagnostic-only, 5 consecutive positive windows +7.6/+7.8/+6.3%, no perfgate verdict); no new measured numbers -> no re-rank, no status transition, no new hypothesis. Population unchanged: J-B confirmed-diagnostic but unqualified (awaiting idle>=9/10 rerun of bench/runtime-comparison/jb_imod_control.c), H-Z3 top of the codegen ladder (quiet-host hand-patch A/B pending), H-C2/H-D/H-B/H-Y1 open; J-C blocked behind J-B. NEXT: J-B fully-quiet-host rerun (idle>=9/10) of bench/runtime-comparison/jb_imod_control.c — load1 3.80 is the quietest window observed today, amu-bench should attempt it this window — then H-Z3 quiet-host hand-patch A/B, then H-C2.
+
+- **119 (2026-09-06, first host-qualified tick after 10+ consecutive
+  busy-refusals; the refusals were reading the wrong machine)**: the quiet gate
+  the three bots apply (`load1 > 7.5`) is prose in
+  `scripts/hermes-cron-jobs/hermes-cron-jobs.json`, not code, and it reads the
+  operator workstation, because every bot's `workdir` is the local checkout and
+  no amu script contains an ssh. Measured this tick: that workstation at load1
+  15.9–38.4, and **all seven reachable fleet nodes at busy-CPU 0.04–0.07
+  against ADR 0282's 0.10 limit** (`quiet-host.cljs`, probed 7 of 7). Every
+  refused tick since 2026-08-29 had a qualifying host available. Landed
+  `scripts/quiet-host.cljs` (three distinct exits: qualified / probed-none /
+  could-not-probe) and `scripts/remote-bench.cljs` (stages HEAD on the chosen
+  node, refuses an uncommitted tree). Verified end to end on levi at
+  busy-CPU 0.07→0.04. **This is a blocker fix, and per the Rank rule a blocker
+  that gates every other claim outranks any single codegen win** — H-C2, H-D,
+  H-B and H-Y1 were not unrankable, they were unmeasurable.
+
+- **120 (2026-09-06, build-time axis; measured, not yet a perfgate verdict)**:
+  the research goal names runtime only, so cold compile time has never been
+  ranked. Re-measured `performance-baseline` on levi (host-qualified,
+  commit `ee5771c0`, 5 runs):
+
+  | target | cold process | loaded compiler | startup share |
+  |---|---:|---:|---:|
+  | wasm32 | 887.95 ms | 186.66 ms | 701.28 ms (**79%**) |
+  | aarch64 | 1241.12 ms | 293.62 ms | 944.35 ms (**76%**) |
+
+  Three quarters of a cold compile is process and namespace startup, not
+  compiler work — that is where a build-speed hypothesis belongs, and
+  `launcher-comparison` on the same host shows the front-end swap already
+  banked only 1.05x (61.89 ms median saved, 1262.42 → 1200.53 ms).
+
+  ⚠ **Do not read these against `docs/performance.md`'s 5,141.83 / 5,934.01 ms.**
+  That baseline records neither its host nor that host's load, so the ~5x
+  difference cannot be attributed between "quiet host", "different commit" and
+  "compiler got faster". **An unqualified baseline cannot ground a regression
+  claim in either direction**; the fix is to re-establish it through
+  `remote-bench.cljs` so the next comparison has a host reading attached.
+
+- **121 (2026-09-06, route fork on the tournament's own architecture —
+  filed as amu #818)**: `compile --jvm-free --target aarch64-macos` **exits 0**
+  and writes an artifact that both routes' verifier rejects (`native export
+  table rejected`). Scope measured across three targets: `x86_64-macos` and
+  `wasm32` are **byte-identical** between routes; only aarch64 diverges. Same
+  `:kir-sha256`, same effects, same export table except `__kotoba_loop_1`
+  (**388 vs 752 bytes**), first differing code byte at offset 308 — the first
+  instruction of the loop body, `LDR x16,[x23,#8]` (nbb) vs `SUBS xzr,x0,xzr`
+  (jvm). `90-docs/codegen/coscientist/iteration-32.edn` recorded this input
+  failing loudly on the nbb route with `:kotoba/internal-error`; the fix
+  (kotoba-native `b77496b8`, amu #722) removed the error and left the
+  divergence, **turning a loud failure into a silent one**. Not claimed: which
+  lowering is correct — neither artifact was executed.

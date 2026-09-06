@@ -20,6 +20,7 @@
   (:require [kotoba.compiler.nbb.cli-support :as support]
             [kotoba.compiler.nbb.io :as io]
             [kotoba.compiler.nbb.module-lock :as module-lock]
+            [kotoba.compiler.nbb.package-lock :as package-lock]
             [kotoba.compiler.nbb.project-files :as project-files]
             [kotoba.compiler.project :as project]))
 
@@ -34,6 +35,34 @@
   [policy linked?]
   (cond-> (support/analyze-options policy)
     linked? (assoc :admit-linked-synthetics? true)))
+
+(defn resolve-packages!
+  "Dependency roots from a consumed package lock, or nil when none was given.
+
+  Separate from `resolve-source!` because `module-lock` needs the same roots
+  and does not go through it -- it reads `--source-path` itself. Before this
+  was shared, `amu module-lock --package-lock ...` accepted the flag and
+  pinned a graph that did not contain the dependency: an accepted argument
+  that changed nothing."
+  [args]
+  (when-let [lock-path (support/option args "--package-lock")]
+    (let [packages (or (support/option args "--packages")
+                       (support/usage-error!
+                        "--package-lock requires --packages <dir>"))]
+      (support/timed
+       "package-lock-resolve"
+       #(package-lock/resolve-lock
+         lock-path packages
+         (when-let [trust (support/option args "--trust")]
+           (support/read-edn-file! trust)))))))
+
+(defn source-roots
+  "`--source-path` roots, then any the package lock contributed. The entry's
+  own sources come first so a package cannot shadow a namespace the caller
+  defines locally."
+  [args resolved-packages]
+  (into (vec (support/options args "--source-path"))
+        (:source-paths resolved-packages)))
 
 (defn resolve-source!
   "Answer the source text to compile and whether it came from a linked graph.
@@ -53,10 +82,25 @@
   in name only.
 
   Reads no policy: the caller owns when policy is decoded, and that ordering
-  is load-bearing for the artifact cache."
+  is load-bearing for the artifact cache.
+
+  `--package-lock` composes with `--source-path` rather than replacing it: a
+  package lock supplies the roots of the DEPENDENCIES, the entry's own sources
+  stay wherever the caller says they are. It does not compose with
+  `--module-lock`, which already names every module in the graph by CID --
+  adding unpinned roots to a pinned build would be the path search a lock
+  exists to remove.
+  "
   [args]
   (let [lock-path (support/option args "--module-lock")
-        source-roots (support/options args "--source-path")]
+        resolved-packages (resolve-packages! args)
+        source-roots (source-roots args resolved-packages)]
+    (when (and resolved-packages lock-path)
+      (support/usage-error!
+       (str "--package-lock and --module-lock are mutually exclusive: a module "
+            "lock already pins every module in the graph by CID, and adding "
+            "path-resolved dependency roots to it would reintroduce the search "
+            "it removes")))
     (cond
       lock-path
       (let [blocks (or (support/option args "--blocks")
@@ -87,12 +131,20 @@
         {:input input
          :source (:source linked)
          :linked? true
+         :packages resolved-packages
          :project {:root (:root graph)
                    :module-order (:module-order linked)
                    :paths (:paths graph)}})
 
       :else
       (let [input (support/timed "source-admit" #(support/source! (second args)))]
+        ;; A package lock that resolved to nothing must not fall through to a
+        ;; single-file read that silently ignores it. An empty lock is legal;
+        ;; being handed one and compiling as if it were absent is not.
+        (when (and resolved-packages (empty? source-roots))
+          (support/usage-error!
+           (str "--package-lock resolved no source roots and no --source-path "
+                "was given; there is nothing for the entry module to require")))
         {:input input
          :source (support/timed "source-read" #(io/read-text-file input))
          :linked? false}))))

@@ -324,6 +324,27 @@
         io.github.kotoba-lang/kotoba-component
         {:git/url "https://github.com/kotoba-lang/kotoba-component.git"
          :git/sha "68acc7237aec7b24b683304db8e87d14ec1be745"}
+        ;; The package contract: `kotoba.lang.package-contract` validates a
+        ;; `kotoba.lock.edn` -- required fields, real CIDv1s, capability grant
+        ;; ⊆ declaration, signer revocation, and Ed25519 signature
+        ;; verification. `kotoba.compiler.nbb.package-lock` consumes a lock
+        ;; through it rather than re-deriving the rules; a second validator
+        ;; would be free to disagree with the one the corpus tests, which is
+        ;; exactly how `check-package-contract.bb` drifted before it was
+        ;; deleted.
+        ;;
+        ;; Pinned at 2ebe7461. This is a FLOOR, not a convenience: ccd26fda
+        ;; made signature verification portable and 2ebe7461 made
+        ;; `manifest-integrity-error` portable. Below ccd26fda every signature
+        ;; is rejected here (`:clj`-only verification), so no signed manifest
+        ;; can be consumed at all; below 2ebe7461 `manifest-integrity-error`
+        ;; does not exist off the JVM, and a lock would be admitted on a
+        ;; signature over a self-declared cid nothing checked against content.
+        ;; An older pin is not a weaker check, it is a build that cannot
+        ;; consume a lock.
+        io.github.kotoba-lang/kotoba-core-contracts
+        {:git/url "https://github.com/kotoba-lang/kotoba-core-contracts.git"
+         :git/sha "2ebe7461bdf89e609b0dda2517393604e37b12b0"}
         ;; CIDv1 for `module-lock`: pinned module resolution has to prove the
         ;; bytes it read are the ones the lock names, and that is a hash, not a
         ;; path check. Same pin the codebase/semantic layers use, so a source
