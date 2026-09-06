@@ -6,7 +6,7 @@
             ["node:os" :as os]
             ["node:path" :as path]))
 
-(def root (.resolve path (.dirname path *file*) ".."))
+(def root (fs/realpathSync (.resolve path (.dirname path *file*) "..")))
 (def tmp (.mkdtempSync fs (.join path (.tmpdir os) "kotoba-conformance-")))
 (def kotoba (.join path root "bin" "kotoba"))
 (defn file [name] (.join path tmp name))
