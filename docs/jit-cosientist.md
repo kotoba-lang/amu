@@ -79,3 +79,33 @@ approval**. Current verdicts above are diagnostics, not claims.
   only (full quiet gate never met there either). Next tick unchanged; ADR
   0335 step 2 (real kotoba-native lowering specialization + perfgate on a
   fully quiet host) is now the overdue lever and belongs to the AOT axis.
+
+- 2026-09-06 03:50 JST tick 15 (JIT): quiet gate failed a 14th consecutive
+  time — load1 3.7–7.2 on 10 CPUs (best of the series so far, but 15m avg
+  still 16–20), iostat cpu idle 46–66% across two probes ~6 min apart,
+  never near the required ≥90%. Host also showed the known instability
+  (commands intermittently hanging past 60 s, background-run outputs not
+  landing), so even beyond idle the window is not trustworthy for J-B.
+  J-B measurement deferred, no compiler change, control unchanged at
+  bench/runtime-comparison/jb_imod_control.c. Next tick unchanged: on a
+  quiet host (idle ≥90%) run 4000000 iters × 24 alternations, ratio of
+  medians, then add the third (non-inlined mulh) arm.
+
+- 2026-09-06 07:05 JST tick 16 (JIT): quiet gate failed a 15th consecutive
+  time — load1 27.8–70.4 on 10 CPUs across probes (06:53–06:59), iostat cpu
+  idle 34–47% across ~28 samples, never ≥90% (host busy: several terminal
+  probes timed out past 60–180 s before producing output). J-B measurement
+  deferred, no compiler change, control unchanged at
+  bench/runtime-comparison/jb_imod_control.c. Next tick unchanged: on a
+  quiet host (idle ≥90%) run 4000000 iters × 24 alternations, ratio of
+  medians, then add the third (non-inlined mulh) arm.
+
+- 2026-09-06 07:53 JST tick 17 (JIT): quiet gate failed a 16th consecutive
+  time — load1 33–69 on 10 CPUs (15m avg ~67, heavy host; this tick the host
+  was so loaded that `uptime` foreground calls returned empty output and
+  shell commands timed out at 60–300 s; probes succeeded only via
+  redirect-to-file), iostat cpu idle 29–47% across ~65 samples over ~8 min,
+  never ≥90%. J-B measurement deferred, no compiler change, control unchanged
+  at bench/runtime-comparison/jb_imod_control.c. Next tick unchanged: on a
+  quiet host (idle ≥90%) run 4000000 iters × 24 alternations, ratio of
+  medians, then add the third (non-inlined mulh) arm.
