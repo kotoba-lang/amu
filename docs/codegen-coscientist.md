@@ -3504,3 +3504,53 @@ ple Clang C11, Zig, Go
   but **no future entry may claim a pair was gained or lost from one run.**
   The threshold for "this changed the score" is now a median over repeated
   host-qualified runs.
+
+- **143 (2026-09-06, the bounded claim is UNATTAINABLE, and one of this
+  ledger's own ceiling claims does not reproduce)**:
+
+  Chasing the score further, I went to re-verify 134's ceilings rather than
+  cite them. Two results, opposite in sign.
+
+  **Confirmed, and stronger than 134 stated.** Disassembling all three
+  artifacts for `narrow-arithmetic`:
+
+  | | instructions | encodings |
+  |---|---|---|
+  | amu native | **61** | differ from the others **only in register numbers** |
+  | Apple clang -O3 | **61** | **byte-identical to rustc** |
+  | rustc -O3 | **61** | **byte-identical to clang** |
+
+  Same mnemonic sequence, position for position, all three. A ≥5% margin over
+  identical code cannot be produced. So `narrow-arithmetic × clang` and
+  `× rust` are not pairs more work will win — **and therefore neither is
+  30/30. The bounded claim is unattainable, not unmet.** That distinction was
+  missing from what kotoba-lang.org published ("stays unqualified" reads as
+  "not yet"); it now says so, listing only the pairs actually disassembled.
+
+  **Did not reproduce.** 134 claims five such pairs. `loop-call-back-edge`
+  does not check out with this method: `extract-native --symbol kernel`
+  returns `:offset 4 :length 40` — ten instructions containing a fuel
+  preamble, a prologue, `mov x1,#0` and an epilogue, with **no back edge, no
+  `bl`, and no `ret` inside the extent** — for a kernel the suite times at
+  **~140 ns**, two orders of magnitude above every other domain. clang
+  compiles the same shape to a real 20-instruction loop.
+
+  Those two facts cannot both be right. **I have not withdrawn 134** — it may
+  have been measured another way — but the published artifact now lists two
+  ceiling pairs rather than five, and the anomaly is amu#843.
+
+  ⚠ **This reaches backwards.** `extract-native`'s extent is how 137, 141 and
+  142 counted per-domain instructions. If it can understate a function, those
+  counts inherit the doubt. The `narrow-arithmetic` comparison above does not
+  (61 × 4 = 244 bytes, and all three agree instruction-for-instruction, which
+  a truncated extent would not produce), but **no future instruction count
+  from this tool should be quoted without checking the extent against the
+  disassembly's own shape** — a function that does not end in `ret` was not
+  fully extracted.
+
+  Also filed: kotoba-native#148, a redundant `mov x0, x19` immediately after
+  `mov x19, x0` in the entry sequence of both call-shaped kernels — real, and
+  **explicitly too small to move the score** (~0.9% of one kernel's
+  instructions, against a 5.31pp gap, and below this fleet's noise floor).
+
+  Score unchanged: **median 19/30, range 17–19, stable 16**.
