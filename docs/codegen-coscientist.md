@@ -3447,3 +3447,60 @@ ple Clang C11, Zig, Go
 
   Not landing. The branch stays as evidence; #147 is closed as measured and
   rejected. **19/30 stands, and the reachable maximum is still 25.**
+
+- **142 (2026-09-06, the published score was stated to a precision it does not
+  have — one outlier sample can cost three pairs)**:
+
+  141 recorded in passing that four runs of one commit scored 19, 19, 15, 19.
+  Following that up turned out to matter more than the compiler change it was
+  a footnote to, because **kotoba-lang.org was publishing `19/30` as a flat
+  number** and I am the one who put it there.
+
+  **What the ±4 actually is.** Not four independent losses. One sample of
+  **10.48 ns against a median of 5.165** in amu-native's own arm on
+  `branch-call` — the next largest was 5.67 — pushed that arm's relative stdev
+  to **0.1373** and tripped perfgate's `too-noisy` rule. Dropping that single
+  sample gives **0.0465**. Because `too-noisy` is evaluated **per arm**, one
+  bad amu measurement disqualified **three comparator pairs at once**, and
+  those pairs were 17%, 25% and 43% ahead. Comparisons not remotely in doubt,
+  lost to one scheduler hiccup.
+
+  That correlation is the whole explanation for the spread: the score does not
+  move one pair at a time, it moves in blocks of up to five.
+
+  **What I did NOT do.** Loosen `max-relative-stdev`, or trim the outlier.
+  Either would raise my own score by weakening the judge that grades it. The
+  gate is doing its job; the reporting was wrong.
+
+  **What changed.** `project-runtime-comparison.cljs` now takes several
+  reports and publishes the **median**, `scoreByRun`, `observedRange`,
+  `stableQualifiedPairs` (won every run), and per-pair `qualifiedRuns` — so
+  "won once" and "won always" stop rendering identically. Every extra report
+  faces the same refusals as the first, plus one more: **its quiet gate must
+  have passed.** A run whose host was never measured does not vote. Both
+  refusals were exercised and neither writes an artifact.
+
+  **Republished from five host-qualified runs of amu main c6f21d1e**
+  (busy-CPU 0.05–0.09):
+
+  | | |
+  |---|---|
+  | per run | **19, 19, 17, 17, 19** |
+  | median (headline) | **19** |
+  | observed range | **17–19** |
+  | qualified in every run | **16** |
+
+  The headline is unchanged — 19 was right *as a median*. What was wrong was
+  publishing it bare. kotoba-lang.org now reads "Median of 5 host-qualified
+  runs; the score ranged 17–19 and 16 of the 30 pairs qualified in every one."
+
+  Marginal under this build: `wide-register × clang` 4/5 (12.02%),
+  `deep-spill × clang` 4/5 (**6.18%** — genuinely near the 5% bar),
+  `wide-register × rust` 3/5 (7.98%).
+
+  **Consequence for this loop.** Every single-run A/B in entries 130–141 was
+  reading a quantity whose one-run resolution is about ±2 pairs. The
+  drift-corrected comparisons survive that (they compare arms within a run),
+  but **no future entry may claim a pair was gained or lost from one run.**
+  The threshold for "this changed the score" is now a median over repeated
+  host-qualified runs.
