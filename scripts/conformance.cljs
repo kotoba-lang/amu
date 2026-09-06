@@ -215,7 +215,7 @@
                    "env/read provider echoed a value it was not asked to")
           (ensure! (and (not= 0 (:status denied))
                         (contains-text? (:stderr denied) ":signal :SIGTRAP"))
-                   "env/read denial did not fail closed"))))
+                   "env/read denial did not fail closed")))
     ;; wire id 35 = :fs/app-data. The loader's real typed provider reads the
     ;; file at the request path and returns its bytes as a string, but only
     ;; when the granted scope KEXE_CAP_RESOURCES_35 (a colon-separated list of
@@ -257,7 +257,7 @@
         (ensure! (and (not= 0 (:status denied))
                       (contains-text? (:stderr denied) ":signal :SIGTRAP"))
                  (str "fs/app-data wire-35 deny did not fail closed: "
-                      (:stderr denied)))))
+                      (:stderr denied))))))
     ;; This must go through `bin/kotoba`'s nbb-native fast path. Registry IDs
     ;; are compiler-host numbers, while authored i64 literals are BigInt under
     ;; nbb; compiling and independently verifying both forms prevents their
