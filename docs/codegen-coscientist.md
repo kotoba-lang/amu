@@ -3355,3 +3355,95 @@ ple Clang C11, Zig, Go
   imposed by the harness around it, after an ungated batch produced a control
   of 9.67 against 9.01 in two quiet runs and a 23.58 outlier. **That ungated
   batch is discarded, not averaged in.**
+
+- **140 (2026-09-06, the load's latency is hidden — LDR-literal measured 4.5%
+  faster than MOVZ+MOVK, so #147 has nothing left to measure)**:
+
+  139 specified `LDR (literal)` with one open risk: a load is ~4 cycles against
+  MOVK's 1, so if the loads are not hoisted ahead of their uses the change
+  loses instead of winning. That is now measured rather than assumed.
+
+  A hand-written microbenchmark reproduces the `deep-spill` lane shape exactly
+  — 24 lanes of `add / smulh / add / asr / add / msub`, with the magic
+  constants read off amu's own disassembly — in two variants differing only in
+  how the lane constant arrives. Both compute identical results over n = 0..4.
+  Ten invocations on judah across two batches, each the minimum of seven
+  interleaved rounds:
+
+  | | movk | ldr | gain |
+  |---|---|---|---|
+  | batch 1 (5 runs) | 8.683–8.708 | 8.317–8.325 | **4.13 – 4.50%** |
+  | batch 2 (5 runs) | 8.708–8.725 | 8.317–8.325 | **4.50 – 4.59%** |
+
+  **Two unrelated methods, one number:** the fixture diagnostic said removing
+  the MOVKs was worth ~4%, and a hand-written A/B that changes nothing else
+  says 4.5%. That agreement is worth more than either reading alone.
+
+  Two things this run teaches about its own method:
+
+  * ⚠ **The same benchmark on this workstation says LDR is 7% SLOWER.**
+    Different chip, load average over 100. A microbenchmark is only evidence
+    about the machine it ran on, and the claim path's machine is the fleet.
+  * The first version used **x20** as the accumulator. x20 is callee-saved, so
+    clobbering it corrupted the C driver's loop counter — and that surfaced as
+    runs taking 30+ minutes and never finishing, **not** as a wrong answer.
+    A wrong answer would have been caught immediately by the equality check
+    that was already there; a corrupted caller was not. The accumulator is x9.
+
+  Nothing is left to measure before implementing #147. The projection stands:
+  `deep-spill × zig` → ~6.8%, `× rust` → ~6.3%, both clearing the 5% bar and
+  the ~0.42 ns separation floor. **19/30 → 21/30.**
+
+- **141 (2026-09-06, the literal pool is FALSIFIED at −0.54% ± 1.57%, and both
+  diagnostics that predicted +4% were measuring the wrong thing)**:
+
+  #147 was built: `LDR (literal)` against a per-function constant pool, scoped
+  to the `:aarch64/constant` encoder, pool emitted inside each function so
+  `extract-native` still copies it. Structurally it works — all 22 LDR sites in
+  `kernel_deep` resolve to distinct real lane constants inside the extracted
+  range, and the encoding came from clang's assembler rather than by hand.
+
+  **It buys nothing.** Four quiet-qualified A/B pairs on judah:
+
+  | run | control drift | deep-spill raw | drift-corrected |
+  |---|---|---|---|
+  | 1 | +2.14% | −0.11% | **−2.24%** |
+  | 2 | +0.39% | +0.11% | **−0.29%** |
+  | 3 | −2.00% | −0.11% | **+1.89%** |
+  | 4 | −0.37% | −1.89% | **−1.52%** |
+
+  **mean −0.54%, sd 1.57, n=4** — zero, against a predicted 4%.
+
+  The correction matters and is what makes this readable at all: **four of the
+  six domains are byte-identical between the two builds** (only `deep-spill`
+  +56 bytes and `wide-register-pressure` +8 changed), so their delta is pure
+  run-to-run drift. It ran from −2.0% to +2.1% between pairs. Without that
+  control I would have read run 1 as "the pool makes narrow-arithmetic 4.17%
+  slower" — on a kernel whose bytes did not change.
+
+  **Why 139 and 140 both predicted a gain that is not there.** Neither
+  diagnostic modelled the substitution:
+
+  * the **fixture** (139) removed the MOVKs and put **nothing** in their place
+    — strictly less work, so of course it was faster;
+  * the **microbenchmark** (140) did compare MOVZ+MOVK against LDR, but its
+    lanes were chained through a serial accumulator (`add x9, x9, x4`), which
+    serialises them and hands each load a long window to complete. The real
+    kernel sums in a tree at the end, so there is less slack and the load's
+    ~4 cycles land where MOVK's 1 used to.
+
+  **Two agreeing measurements were still both wrong, in the same direction, for
+  the same reason.** The agreement felt like corroboration in 140 and was
+  actually a shared blind spot: both compared "constant is cheaper" against
+  "constant is dearer" without reproducing what the real change does, which is
+  swap two ALU ops for one load *in the real dependency graph*.
+
+  ⚠ **A further caution about the score itself.** The baselines across these
+  four pairs scored **19, 19, 15, 19** — the *same commit*, four times. A
+  single 30-pair run resolves the score to about ±4 pairs when the host is
+  merely quiet-gated. `19/30` is what this build typically scores, not a
+  reading precise to one pair, and no single run should be used to claim a
+  pair was gained or lost.
+
+  Not landing. The branch stays as evidence; #147 is closed as measured and
+  rejected. **19/30 stands, and the reachable maximum is still 25.**
