@@ -3228,3 +3228,67 @@ ple Clang C11, Zig, Go
   the same absent mechanism. **A stale comment cost four iterations here** —
   worth remembering that the rule about implementation snapshots applies to
   benchmark fixtures too, not just to ADRs.
+
+- **138 (2026-09-06, `deep-spill` is PARTLY ISSUE-BOUND — the rule from 135
+  has a second half, and this is the first measured path to 20/30)**:
+
+  135 and 136 both concluded that instructions off the dependency path are
+  free. `deep-spill` spends **49 of its 241 instructions (20%) materialising
+  lane constants** with MOV/MOVK — and those have no inputs at all, so by
+  that rule they should cost nothing. They do not cost nothing.
+
+  Diagnostic fixture `kernel_deep_narrowconst`: `kernel_deep` with the lane
+  multiplier 48271 replaced by 3, so every folded constant `3i+1` fits an
+  add-immediate and all 47 materialisation instructions vanish. Lane count,
+  modulo sequence, lane-13 shadowing and dependency structure identical.
+  Two independent runs on judah:
+
+  | | median | min |
+  |---|---|---|
+  | `kernel_deep` | 9.01 / 9.01 | 8.97 / 8.97 |
+  | `kernel_deep_narrowconst` | 8.66 / 8.64 | 8.62 / 8.62 |
+  | **delta** | **3.88% / 4.11%** | **3.90% / 3.90%** |
+
+  Run 1's control carried an outlier (rsd 0.067, max 10.75); the minima are
+  identical across both runs, so the effect survives it.
+
+  **Removing 19.5% of the instruction stream bought 3.9% of the time — a
+  transfer ratio of about 0.20.** Not 1.0 (fully issue-bound) and not 0
+  (fully latency-bound). At ~5.8 instructions per cycle across 24 independent
+  lanes, this kernel is wide enough that instruction count is worth something,
+  which the serial kernels of 126–128 and 135–136 never were.
+
+  **So the rule needs both halves: count instructions where the ILP is high,
+  measure chains where it is low.** The two are not competing heuristics —
+  they apply to different regimes, and every falsification in 126–136 came
+  from a low-ILP kernel while this confirmation comes from a high-ILP one.
+
+  **What it is worth, costed honestly.** Against the multidomain figures
+  (amu 9.40, rust 9.63, zig 9.68 — the `runtime` suite's absolutes are 9.01,
+  so only the *ratio* transfers, not the level):
+
+  | form | instrs removed | projected | vs zig | vs rust |
+  |---|---|---|---|---|
+  | `LDR` literal, no base register | 23 (9.5%) | 9.22 | 4.75% | 4.25% |
+  | `LDP` from a base register | 32 (13.3%) | 9.15 | 5.5% ✓ | 4.98% |
+  | **`LDP` literal, no base register** | **34 (14%)** | **9.14** | **5.6% ✓** | **5.1% ✓** |
+
+  The middle row is a trap: it needs a register held across the function, and
+  `deep-spill` is the kernel with none to spare (`a64-simd-park-spills` is
+  already parking seven pairs in SIMD). 129 priced one extra live register at
+  +2.84%, which would eat the whole gain. **`LDP (literal)` is the form to
+  build** — PC-relative, two constants per instruction, no base register. Its
+  constraint is range: the 7-bit scaled offset reaches ±1KB, so the pool has
+  to sit next to the function.
+
+  That projects **20/30, possibly 21/30** — the first measured route past 19
+  since the ceilings were proven. It is close to the threshold on rust (5.1%
+  against a required 5.0%), so it should be treated as one pair expected and
+  a second hoped for, not two banked.
+
+  Infrastructure note: `:gmir/rodata-address` already exists (it backs
+  `bytes-literal`), so there is a rodata path to extend rather than invent.
+
+  ⚠ The diagnostic fixture is not in the claim manifest and the `runtime`
+  suite carries **no quiet-gate verdict** (`quietGate: None`). These numbers
+  are diagnostic. The claim path stays the competitive multidomain suite.
