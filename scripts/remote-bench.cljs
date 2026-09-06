@@ -58,7 +58,10 @@
       passthru (let [v (argv) i (.indexOf (to-array v) "--")]
                  (if (neg? i) [] (vec (drop (inc i) v))))
       host (or (arg "--host" nil)
-               (let [{:keys [exit out]} (sh "nbb scripts/quiet-host.cljs" {:timeout 240000})]
+               (let [hosts (arg "--hosts" nil)
+                     {:keys [exit out]} (sh (str "nbb scripts/quiet-host.cljs"
+                                                 (when hosts (str " --hosts " hosts)))
+                                            {:timeout 240000})]
                  (case exit
                    0 (second (re-find #":chosen \"([^\"]+)\"" out))
                    1 (die! 1 "no fleet node is quiet enough right now (probe succeeded)")
