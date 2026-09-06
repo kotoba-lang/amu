@@ -20,6 +20,7 @@ const usage = [
   "         --packages <dir> [--trust trust.edn]",
   "       amu package-manifest <package root> --name <n> --version <v> \\",
   "         --url <git url> --key key.edn",
+  "       amu package-fetch --deps kotoba.deps.edn --packages <dir>",
   "       amu package-lock --deps kotoba.deps.edn --packages <dir> --output kotoba.lock.edn",
   "       amu definition-cids <file> [--source-path <dir>]  # one CID per definition",
   "       amu compile <entry> --source-path <dir> --unpinned --target <target> --output <file>",
@@ -130,6 +131,7 @@ function nbbNativeEligible(args) {
     || command === "definition-cids"
     || command === "module-lock"
     || command === "package-manifest" || command === "package-lock"
+    || command === "package-fetch"
     || command === "verify-output-set" || command === "sign-output-set"
 
     || (command === "worker" && nbbNativeTargets.has(option(args, "--target")))
@@ -141,6 +143,7 @@ function nbbEntrypoint(root, args) {
   const target = option(args, "--target");
   const wasm = command === "check" || command === "definition-cids"
     || command === "package-manifest" || command === "package-lock"
+    || command === "package-fetch"
     || target === undefined || target.startsWith("wasm32");
   const filename = ["verify-output-set", "sign-output-set"].includes(command) ? "output_set_cli.cljs"
     : command === "extract-native" ? "x86_64_cli.cljs"

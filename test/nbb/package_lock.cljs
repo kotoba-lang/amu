@@ -292,6 +292,109 @@
                  "--packages must name an existing directory"
                  (fn [] (resolve! lock (.join path root "no-such-packages-dir"))))
 
+  ;; ── package-fetch ────────────────────────────────────────────────────────
+  ;;
+  ;; `--packages` had to be populated by hand until 2026-09-06; the refusals
+  ;; named a command that did not exist. These run against a bare local
+  ;; repository, so they exercise the real clone/checkout path without needing
+  ;; the network.
+
+  (let [remote (.join path root "remote.git")
+        fetched (.join path root "fetched-packages")
+        deps (.join path root "fetch.deps.edn")
+        source (.join path root "pkgsrc")
+        ;; The publisher commits the manifest into the package repository --
+        ;; that is what makes a fetched tree self-describing. `build-fixture!`
+        ;; wrote one into the materialised copy; the source repository needs
+        ;; its own, and the commit it lands in is what the lock will pin.
+        published (do (.cpSync fs (:manifest-path f)
+                               (.join path source package-lock/manifest-file-name))
+                      (git! source ["add" "-A"])
+                      (git! source ["-c" "user.email=t@t" "-c" "user.name=t"
+                                    "commit" "-q" "-m" "publish manifest"])
+                      (git! source ["rev-parse" "HEAD"]))]
+    (git! root ["clone" "--quiet" "--bare" source remote])
+    (authoring/write-edn!
+     deps {:packages {"kotoba-lang/demo-util"
+                      {:git/url remote :git/sha published
+                       :version "0.1.0"
+                       :entries ["src/demo/util.kotoba"]}}})
+
+    (check "package-fetch materialises a package at its pinned commit"
+           (fn []
+             (let [r (authoring/package-fetch!
+                      ["package-fetch" "--deps" deps "--packages" fetched])
+                   entry (first (:fetched r))
+                   dest (package-lock/dependency-root
+                         fetched {:dep/name "kotoba-lang/demo-util"
+                                  :dep/commit published})]
+               (when-not (= :fetched (:outcome entry))
+                 (throw (js/Error. (str "outcome " (pr-str (:outcome entry))))))
+               (when-not (.existsSync fs (.join path dest "src/demo/util.kotoba"))
+                 (throw (js/Error. "the package source is not where it was put")))
+               ;; ADR-2607211600 retired shallow clones: a graft boundary makes
+               ;; ancestry answers wrong while looking authoritative, and this
+               ;; directory is the subject of a commit check.
+               (when-not (= "false" (git! dest ["rev-parse" "--is-shallow-repository"]))
+                 (throw (js/Error. "the fetched checkout is shallow"))))))
+
+    (check "a second fetch verifies rather than refetching"
+           (fn []
+             (let [r (authoring/package-fetch!
+                      ["package-fetch" "--deps" deps "--packages" fetched])]
+               ;; `:already-present` and `:fetched` must not print the same, or
+               ;; a run that did nothing reads like a run that brought
+               ;; everything down.
+               (when-not (= :already-present (:outcome (first (:fetched r))))
+                 (throw (js/Error. (str "outcome "
+                                        (pr-str (:outcome (first (:fetched r)))))))))))
+
+    (expect-reject "a directory named after one commit but holding another is refused"
+                   "a different commit is already materialised at this path"
+                   (fn []
+                     (let [fake "0123456789abcdef0123456789abcdef01234567"
+                           held (package-lock/dependency-root
+                                 fetched {:dep/name "kotoba-lang/demo-util"
+                                          :dep/commit published})
+                           impostor (package-lock/dependency-root
+                                     fetched {:dep/name "kotoba-lang/demo-util"
+                                              :dep/commit fake})
+                           deps2 (.join path root "fetch-impostor.deps.edn")]
+                       ;; A directory NAMED after a commit is not evidence that
+                       ;; it holds one -- the whole reason this check exists.
+                       (.cpSync fs held impostor #js {:recursive true})
+                       (authoring/write-edn!
+                        deps2 {:packages {"kotoba-lang/demo-util"
+                                          {:git/url remote :git/sha fake
+                                           :version "0.1.0"
+                                           :entries ["src/demo/util.kotoba"]}}})
+                       (authoring/package-fetch!
+                        ["package-fetch" "--deps" deps2 "--packages" fetched]))))
+
+    (expect-reject "a commit the repository does not have is refused"
+                   "the pinned commit is not in the fetched repository"
+                   (fn []
+                     (let [deps3 (.join path root "fetch-missing.deps.edn")]
+                       (authoring/write-edn!
+                        deps3 {:packages
+                               {"kotoba-lang/absent"
+                                {:git/url remote
+                                 :git/sha "0123456789abcdef0123456789abcdef01234567"
+                                 :version "0.1.0"
+                                 :entries ["src/demo/util.kotoba"]}}})
+                       (authoring/package-fetch!
+                        ["package-fetch" "--deps" deps3 "--packages" fetched]))))
+
+    (check "a lock built over a FETCHED tree resolves"
+           (fn []
+             (let [out (.join path root "fetched.lock.edn")]
+               (authoring/package-lock! describe-cids
+                                        ["package-lock" "--deps" deps
+                                         "--packages" fetched "--output" out])
+               (let [r (package-lock/resolve-lock out fetched nil)]
+                 (when-not (= 1 (count (:dependencies r)))
+                   (throw (js/Error. "the fetched tree did not resolve")))))))) 
+
   (check "the fixture is intact after every negative case"
          (fn []
            (let [r (resolve! lock packages)]

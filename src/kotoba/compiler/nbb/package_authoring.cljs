@@ -150,6 +150,118 @@
      :tree-cid (get-in manifest [:kotoba.package/source :tree-cid])
      :signers (mapv :did (:kotoba.package/signatures manifest))}))
 
+(defn- git-run [args]
+  (.spawnSync child "git" (clj->js args)
+              #js {:encoding "utf8" :maxBuffer 33554432}))
+
+(defn- git-ok? [r]
+  (and (not (.-error r)) (zero? (or (.-status r) 1))))
+
+(defn fetch-package!
+  "Materialise one declared package at its pinned commit under
+  `<packages>/<name>/<commit>`.
+
+  FULL HISTORY, no `--depth`. The workspace retired shallow clones
+  (ADR-2607211600) because a graft boundary makes ancestry answers wrong while
+  looking authoritative, and this directory is the subject of a commit check --
+  a shallow checkout would still report the right HEAD, so the failure would
+  not show up here; it would show up later, somewhere else, as a repository
+  that cannot answer questions about itself.
+
+  Content-addressed and idempotent: the destination is named by the commit, so
+  a second run over an existing directory verifies rather than refetches. It
+  verifies rather than trusting the name -- a directory NAMED after a commit is
+  not evidence that it holds one."
+  [packages-dir {:keys [name url commit]}]
+  (let [dest (package-lock/dependency-root packages-dir
+                                           {:dep/name name :dep/commit commit})]
+    (if (.existsSync fs dest)
+      (let [head (git-run ["-C" dest "rev-parse" "HEAD"])]
+        (cond
+          (not (git-ok? head))
+          {:name name :commit commit :root dest :outcome :present-unverified
+           :note "already present, but not a git checkout -- HEAD not checked"}
+
+          (= commit (str/trim (.-stdout head)))
+          {:name name :commit commit :root dest :outcome :already-present}
+
+          :else
+          (reject! "a different commit is already materialised at this path"
+                   {:dependency name :expected commit
+                    :actual (str/trim (.-stdout head)) :root dest})))
+      (do
+        (when-not (string? url)
+          (reject! "package declares no :git/url, so it cannot be fetched"
+                   {:dependency name}))
+        (.mkdirSync fs (.dirname node-path dest) #js {:recursive true})
+        (let [done (atom false)]
+          (try
+            (let [clone (git-run ["clone" "--quiet" "--no-checkout" url dest])]
+              (when-not (git-ok? clone)
+                (reject! "git clone failed"
+                         {:dependency name :url url
+                          :stderr (some-> (.-stderr clone) str/trim)})))
+            (let [checkout (git-run ["-C" dest "checkout" "--quiet" commit])]
+              (when-not (git-ok? checkout)
+                (reject! "the pinned commit is not in the fetched repository"
+                         {:dependency name :commit commit
+                          :stderr (some-> (.-stderr checkout) str/trim)})))
+            (reset! done true)
+            (finally
+              ;; `git clone` leaves its destination behind on transport
+              ;; failure. Remove only the directory this call created, so a
+              ;; retry is a retry and not a resume from a half-tree.
+              (when-not @done
+                (.rmSync fs dest #js {:recursive true :force true})))))
+        {:name name :commit commit :root dest :outcome :fetched}))))
+
+(defn package-fetch!
+  "amu package-fetch --deps kotoba.deps.edn --packages <dir>
+
+  Populate the directory `--package-lock` reads from. This is the ONLY command
+  here that touches the network, and it is separate from `package-lock` on
+  purpose: producing a lock and fetching what it pins are different acts with
+  different trust, and a `package-lock` that fetched would make every build
+  that regenerates a lock a network operation.
+
+  It does not verify manifests or tree CIDs. `package-lock` does that when it
+  reads the trees, and `--package-lock` does it again at build time. Checking
+  here as well would only move where the same refusal is printed."
+  [args]
+  (let [deps-path (or (support/option args "--deps")
+                      (support/usage-error! "--deps <kotoba.deps.edn> is required"))
+        packages (or (support/option args "--packages")
+                     (support/usage-error! "--packages <dir> is required"))
+        declaration (support/read-edn-file! deps-path)
+        packages-map (:packages declaration)]
+    (when-not (map? packages-map)
+      (reject! "dependency declaration has no :packages map" {:path deps-path}))
+    (when (empty? packages-map)
+      (reject! "dependency declaration pins nothing" {:path deps-path}))
+    (.mkdirSync fs packages #js {:recursive true})
+    (let [results (mapv (fn [[name spec]]
+                          (fetch-package!
+                           packages
+                           {:name name
+                            :url (:git/url spec)
+                            :commit (or (:git/sha spec)
+                                        (reject! "package declares no :git/sha"
+                                                 {:dependency name}))}))
+                        (sort-by key packages-map))]
+      {:ok true
+       :format :kotoba.package-fetch/v1
+       :packages packages
+       :fetched (mapv #(dissoc % :note) results)
+       ;; "already present" and "fetched" are different facts and must not
+       ;; print the same, or a run that did nothing reads like a run that
+       ;; brought everything down.
+       :scanned (str "SCANNED\t" (count results) " declared\tfetched="
+                     (count (filter #(= :fetched (:outcome %)) results))
+                     "\tpresent="
+                     (count (filter #(= :already-present (:outcome %)) results))
+                     "\tunverified="
+                     (count (filter #(= :present-unverified (:outcome %)) results)))})))
+
 ;; ── the lock ────────────────────────────────────────────────────────────────
 
 (defn- definition-cids-of
