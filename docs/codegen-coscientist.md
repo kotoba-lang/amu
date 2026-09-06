@@ -3008,3 +3008,56 @@ ple Clang C11, Zig, Go
   So the contract's ceiling on this fixture set is **27/30**, not 30 — three
   pairs are provably unreachable. Of the eight that remain, `deep-spill` ×
   zig and × rust are the nearest at ~2.8pp.
+
+- **134 (2026-09-06, `loop-call-back-edge` is a second proven ceiling — the
+  contract's real maximum is 25/30, not 30)**: the last unexamined domain.
+
+  amu already bulk-charges fuel: an entry test decides whether the whole
+  iteration count fits the budget and, if it does, runs a loop with **no
+  per-iteration fuel accounting at all**. The metered nine-instruction body
+  exists as the fallback. So the fast path is:
+
+  ```
+  amu     MOVZ x0,#1 ; BL id ; SUB x19,x19,#1 ; ADD x20,x20,x0 ; CBNZ x19
+  clang   mov w0,#1  ; bl id ; add x20,x0,x20 ; subs x19,x19,#1 ; b.ne
+  ```
+
+  **Five instructions each**, same operations, differing only in whether the
+  decrement-and-test is `SUB`+`CBNZ` or `SUBS`+`B.NE`. Measured +0.5% against
+  rust and −0.8% against clang — parity, as the shapes predict.
+
+  So two more pairs join `narrow-arithmetic`'s three at a shared ceiling:
+
+  | pairs | why unreachable |
+  |---|---|
+  | `narrow-arithmetic` × rust, clang, swift | 61 instructions each, same opcode sequence (125) |
+  | `loop-call-back-edge` × rust, clang | 5-instruction loop body each (134) |
+
+  **The bounded fastest claim needs all 30 and five are unreachable, so the
+  contract cannot be satisfied on this fixture set. The reachable maximum is
+  25/30, and amu is at 19.**
+
+  The six genuinely contestable pairs, with what each needs:
+
+  | pair | now | needs |
+  |---|---:|---:|
+  | `deep-spill` × zig | +2.2% | ~2.8pp |
+  | `deep-spill` × rust | +1.9% | ~3.1pp |
+  | `call-preservation` × clang | −1.3% | ~6.3pp |
+  | `call-preservation` × rust | −1.2% | ~6.2pp |
+  | `branch-call` × rust | −4.1% | ~9.1pp |
+  | `branch-call` × clang | −7.8% | ~12.8pp |
+
+  Known unbanked levers against those: the fp/lr fold (+1.32pp on the call
+  domains, 132) and whatever explains `branch-call`'s residue after the
+  2.84pp forced register (129). `deep-spill`'s obvious remaining lever —
+  shifted-add for the power-of-two lanes — needs two extra live registers in
+  the fixture built to exhaust them, and the SIMD spill-parking pass is
+  already firing there (7 FMOV pairs, zero spill traffic), so the register
+  budget is spoken for.
+
+  **What the tournament can honestly claim today**: amu native is fastest
+  among the enumerated implementations against **Go and Swift on all six
+  domains**, leads **Zig on five of six**, and against the two LLVM backends
+  holds `wide-register-pressure` outright, holds `deep-spill` × clang, ties
+  two domains at proven ceilings, and trails on the call boundary.
