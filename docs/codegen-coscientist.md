@@ -2488,3 +2488,68 @@ ple Clang C11, Zig, Go
   `call-preservation` when the allocator is already doing the thing H-E asked
   for. The instruction-stream diff against clang's twin is the same method
   H-C used, and this time both arms are on one qualified host.
+
+- **123 (2026-09-06, Reflect executed on the call boundary; the 6.47% gap
+  decomposed, and H-C is not in the emission)**: instruction-stream diff of
+  `kernel_call` against its clang twin on one quiet host, both arms measured
+  in the same harness, 60 samples per arm interleaved ABBA.
+
+  **First, the harness is neutral.** amu runs through the runner's `raw` mode
+  (anonymous mmap + mprotect) and every comparator through `dylib` (dlopen +
+  dlsym), which is a difference that would bias all 30 pairs if it cost
+  anything. Extracting clang's own `kotoba_bench_step_c`/`kernel_call` span
+  into a raw blob and running the *same bytes* both ways: **+0.11%**. The load
+  path is not the gap, and the 18/30 score is not an artifact of it.
+
+  **The gap, decomposed** (medians; clang 4.4850):
+
+  | arm | median | vs clang |
+  |---|---:|---:|
+  | base | 4.7750 | −6.47% |
+  | + callee strength reduction | 4.7000 | −4.74% |
+  | + caller MOVs removed (`comb`) | 4.6400 | −3.46% |
+  | + fuel preamble removed (diagnostic) | 4.5600 | −1.67% |
+
+  Two shippable compiler changes, worth **+3.13%** together on this domain,
+  every manifest input byte-identical and the one-fuel-per-call contract
+  intact:
+
+  1. **The callee still multiplies.** `step` ends `MOV x2,#2147483647;
+     MSUB x0,x1,x2,x0`; clang ends `sub x9,x9,x9,lsl #31; add`. Same
+     instruction count, one fewer multiply, and it is on the dependency chain
+     of all eight calls. Measured alone: **+2.49%**.
+  2. **Four dependent MOVs in the caller.** amu emits `ADD x2,x19,#k; MOV
+     x0,x2` where clang emits `add x0,x19,#k`, plus one `MOV x0,x19` when x0
+     already holds n. Measured alone: **+1.28%** — and that understates the
+     compiler change, because a byte-preserving hand patch must leave NOPs
+     where the real fix removes instructions.
+
+  **H-C is recorded as landed and is not in the emitted code.** Counting
+  across all six required fixtures at `b5a0c302`: MSUB 16 / 16 / 24 / 1 / 1 / 0
+  and **SUB-with-shift zero everywhere**. Whatever kotoba-native #83 landed,
+  no fixture emits the shape H-C describes.
+
+  ⚠ **And H-C's +2.46% on `kernel` did not reproduce.** Strength-reducing all
+  16 sites there (1:1 MOV/MSUB, so an in-place patch is exact) measured
+  **−0.15% → +0.00%** vs clang at n=12. The transformation is worth ~2.5% on
+  the call domains and nothing measurable on `kernel`. That is a third figure
+  in this file whose measurement conditions did not travel with it.
+
+  **`kernel_wide` and `kernel_deep` cannot be hand-patched this way at all**,
+  and the reason matters for the compiler change: they hoist the constant into
+  x13 **once** and reuse it across 16 and 24 MSUBs. Rewriting that single MOV
+  destroys the constant for every later site — the correctness gate caught it
+  (results 3793385996124 and 4963239473660 against 5224842816 and 2552249090).
+  In those domains the transformation *adds* an instruction per site rather
+  than trading one for one, so it must be measured there before it is assumed
+  to help.
+
+  **Neither fix flips a pair.** `call-preservation` goes −7.1% → about −4%:
+  closer, still a loss. The pair nearest to qualifying remains
+  `deep-spill-pressure` vs clang at **+4.4%**, needing +0.6pp — and that is a
+  domain where this transformation is not yet known to be safe or profitable.
+
+  NEXT: the ~1.67% that survives with both fixes applied and fuel removed,
+  where amu and clang execute the same instruction mix. Static shape is
+  exhausted as an explanation; this one needs a scheduling or front-end
+  measurement.
