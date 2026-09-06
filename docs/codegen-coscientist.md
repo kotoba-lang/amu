@@ -2880,3 +2880,53 @@ ple Clang C11, Zig, Go
 
   `call-preservation` now stands at **−4.34%** against clang, from −6.47% when
   123 opened it.
+
+- **131 (2026-09-06, ONE FRAME ALLOCATION INSTEAD OF TEN — the first pair
+  flip: `deep-spill-pressure` × clang QUALIFIES)**: amu builds its frame by
+  chaining pre-indexed stores, so every save serially depends on the previous
+  SP. clang allocates once and uses offset addressing.
+
+  ```
+  amu     STP x19,x20,[sp,#-16]!   clang   stp x26,x25,[sp,#-0x50]!
+          STP x21,x22,[sp,#-16]!           stp x24,x23,[sp,#0x10]
+          STP x23,x24,[sp,#-16]!           stp x22,x21,[sp,#0x20]
+          STR x25,    [sp,#-16]!           stp x20,x19,[sp,#0x30]
+          STP x29,x30,[sp,#-16]!           stp x29,x30,[sp,#0x40]
+  ```
+
+  SP updates per fixture: `kernel` 0, `kernel_wide` 0, `kernel_loop_call` 2,
+  **`kernel_deep` 8, `kernel_call` 10, `kernel_call_branch` 15** — against two
+  for clang in every case.
+
+  Hand-patched to one allocation plus offset addressing. **Instruction count
+  unchanged**; only the addressing mode differs. Every manifest input
+  identical, fuel intact, on both fixtures tested.
+
+  **`deep-spill-pressure` × clang, n=60 per arm:**
+
+  | arm | mean | improvement | separated | rsd | qualifies |
+  |---|---:|---:|---|---:|---|
+  | amu base | 9.5262 | +4.35% | yes | 0.035 | **no** (under 5%) |
+  | **amu + frame** | **9.3244** | **+6.37%** | **yes** | **0.013** | **YES** |
+
+  All four `perfgate.core/qualify` conditions: improvement ≥ 0.05 ✓,
+  separated from summed spread (0.6345 > 0.2196) ✓, both arms' rsd ≤ 0.10 ✓,
+  ≥ 5 samples ✓. **This is the first pair to cross, and it takes the score to
+  19/30 once the compiler emits it.**
+
+  **`call-preservation` × clang:** +3.41% median on top of #142, moving amu
+  from −4.22% to **−0.67%** — near parity, and amu's *minimum* (4.3500) is
+  now below clang's (4.4600).
+
+  Two encoding errors on the way, both caught rather than measured: `STR x25`
+  lost its base-register field and addressed x15 (instant SIGSEGV), and a
+  post-index LDP had `0xA8D0` where `0xA8C0 + 0x50000` is `0xA8C5`. The patch
+  script now *generates* encodings from a register/offset spec instead of
+  carrying hand-computed words, which removes the class.
+
+  This is a prologue/epilogue emission change, not an allocator change — the
+  registers saved and the frame size are identical, only the addressing mode
+  moves. It should apply to every non-leaf function on this target.
+
+  NEXT: `branch-call-control-flow` has **15** SP updates, the most of any
+  fixture, and sits at −11.4%. Same patch, not yet measured there.
