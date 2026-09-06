@@ -2789,3 +2789,50 @@ ple Clang C11, Zig, Go
   Recording the negative space deliberately: a later reader should not re-run
   any of these four. The cheap structural explanations for this domain are
   exhausted, and the remaining 3.3% is smaller than any of them.
+
+- **129 (2026-09-06, CONFIRMED: one extra callee-saved register is 2.84% of
+  the 3.36%)**: after four falsifications, the surviving suspect from 127 —
+  ten callee-saved registers against nine — is isolated and priced.
+
+  The test removes every other variable. `kernel_call` is patched to hold its
+  fifth call result in **x26** instead of recycling x19, which is exactly what
+  the branch version is forced into, and **nothing else changes**: no branch,
+  no extra instruction, same executed path, same layout.
+
+  | arm | callee-saved | branch | median | vs base |
+  |---|---:|---|---:|---:|
+  | `kc-base` | 9 | no | 4.7600 | — |
+  | `kc-x26` | **10** | **no** | **4.8950** | **+2.84%** |
+  | `kcb-base` | 10 | yes | 4.9200 | +3.36% |
+
+  **The register accounts for 2.84 of the 3.36 points. 0.53% is left for
+  everything else — the branch, the second epilogue, the extra instruction.**
+  That is consistent with 126 and 128 finding nothing in those.
+
+  The first attempt at this patch answered 1180682672 instead of 1190481486:
+  I moved the definition and one use but missed that the sum chain also reads
+  the fifth result (`ADD x2,x22,x19`). The correctness gate caught it. A
+  register-renaming patch has to rename *every* reader, and the readers are
+  not adjacent to the definition.
+
+  **Why amu pays this and clang does not.** clang saves ten callee-saved
+  registers in *both* fixtures — `stp x26,x25 / x24,x23 / x22,x21 / x20,x19 /
+  x29,x30`. amu's `kernel_call` saves nine, because it notices `n` is dead
+  after the fourth argument and recycles x19. So amu is *better allocated*
+  than clang on `kernel_call`, and the `if` takes that advantage away: with
+  `n` live to the test, x19 cannot be recycled and amu is forced up to clang's
+  ten. clang's two fixtures measure 4.4875 and 4.4450 — nearly flat — for
+  exactly this reason: it never had the advantage to lose.
+
+  ⚠ **This explains the amu-to-amu delta, not the amu-to-clang deficit.**
+  amu's nine-register `kernel_call` is still 6.4% behind clang's ten-register
+  one, so register count is not that gap. Do not read 129 as pricing the
+  distance to clang.
+
+  Whether it is fixable is doubtful and should be stated: eight results plus a
+  live `n` is nine values across eight calls, and the allocator is already
+  tight. Spilling `n` trades the register for a stack slot on the same path.
+  The honest reading is that `branch-call-control-flow`'s extra deficit over
+  `call-preservation` is **forced by the program**, and the domain's real
+  target is the ~6.4% it shares with `call-preservation`, not the 3.36%
+  between them.
