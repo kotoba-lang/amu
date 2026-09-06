@@ -562,7 +562,14 @@ x86-64 and AArch64; the five-live-parameter case uses one bounded lazy entry
 spill. Both paths are executed through real loader subprocesses in the
 shared dual-ISA test table.
 
-The restricted JavaScript target is selected with `--target js`. A Web
+The restricted JavaScript target is selected with `--target js`. Since
+2026-09-06 it runs on the nbb/Node route like the Wasm and native targets
+(`bin/amu compile … --target js --jvm-free`; the emitter, `kotoba-lang/
+kotoba-script`, is portable `.cljc`), and `test/nbb/js_parity.cljs` holds the
+route to the JVM's bytes: the committed `runtime/http/route-decide.mjs` is the
+JVM's artifact and the nbb route reproduces it byte for byte, with the manifest
+and provenance equal as values. `cljs-browser` is the one JavaScript-family
+target still on the JVM route (ADR 0340). A Web
 library may deliberately omit `main`, but only when its namespace declares a
 non-empty host boundary, for example `(ns example.math (:export [add1]))`.
 This produces an entryless ESM artifact whose frozen API contains only those

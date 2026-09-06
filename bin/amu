@@ -68,6 +68,16 @@ const nbbNativeTargets = new Set([
   "evm", "evm256", "evm256-kotoba-v1",
 ]);
 
+// The restricted-ESM targets. The emitter (kotoba-lang/kotoba-script) is
+// portable .cljc since 2026-09-06 and its nbb bytes are asserted against the
+// JVM's (that repo's test/nbb/parity.cljs, and test/nbb/js_parity.cljs here
+// against runtime/http/route-decide.mjs), so `js_cli.cljs` hosts these the
+// way `evm_cli.cljs` hosts the EVM. `cljs-browser` is deliberately absent:
+// that backend emits ClojureScript source text and stays on the JVM route.
+const nbbJsTargets = new Set([
+  "js", "javascript", "web", "js-kotoba-v1", "js-browser", "js-browser-kotoba-v1",
+]);
+
 function fail(message, code) {
   console.error(message);
   process.exit(code);
@@ -135,7 +145,8 @@ function nbbNativeEligible(args) {
     || command === "verify-output-set" || command === "sign-output-set"
 
     || (command === "worker" && nbbNativeTargets.has(option(args, "--target")))
-    || (command === "compile" && nbbNativeTargets.has(option(args, "--target")));
+    || (command === "compile" && nbbNativeTargets.has(option(args, "--target")))
+    || (command === "compile" && nbbJsTargets.has(option(args, "--target")));
 }
 
 function nbbEntrypoint(root, args) {
@@ -147,6 +158,7 @@ function nbbEntrypoint(root, args) {
     || target === undefined || target.startsWith("wasm32");
   const filename = ["verify-output-set", "sign-output-set"].includes(command) ? "output_set_cli.cljs"
     : command === "extract-native" ? "x86_64_cli.cljs"
+    : (command === "compile" && nbbJsTargets.has(target)) ? "js_cli.cljs"
     : wasm ? "wasm_cli.cljs"
       : target && target.startsWith("evm") ? "evm_cli.cljs"
         : target.startsWith("aarch64") ? "aarch64_cli.cljs" : "x86_64_cli.cljs";
