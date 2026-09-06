@@ -395,6 +395,44 @@
                  (when-not (= 1 (count (:dependencies r)))
                    (throw (js/Error. "the fetched tree did not resolve")))))))) 
 
+  ;; ── the trust file ───────────────────────────────────────────────────────
+  ;;
+  ;; Same document `kotoba.security.package-admission` reads. A trust file
+  ;; that behaves differently depending on which tool opens it is worse than
+  ;; two file formats, so anything this route cannot act on is refused.
+
+  (check "a trust file granting what the package declares is accepted"
+         (fn []
+           (package-lock/resolve-lock
+            lock packages {:declared-capabilities []
+                           :revoked-signers []})))
+
+  (expect-reject "a trust file naming a revoked signer refuses the dependency"
+                 "signer not currently trusted"
+                 (fn []
+                   (let [dep (first (:dependencies (resolve! lock packages)))]
+                     (package-lock/resolve-lock
+                      lock packages
+                      {:revoked-signers (:signers dep)}))))
+
+  (expect-reject "a key register is refused rather than ignored"
+                 "does not honour :key-register"
+                 (fn []
+                   ;; The JVM route folds blocked statuses in this map into the
+                   ;; revoked set. Ignoring it here would apply a STRICTLY
+                   ;; WEAKER check while looking like it had applied the
+                   ;; caller's: the document would name a revoked signer and
+                   ;; the build would accept it.
+                   (package-lock/resolve-lock
+                    lock packages
+                    {:key-register {"did:key:zSomeone" {:status :revoked}}})))
+
+  (expect-reject "a misspelled trust key is refused rather than read as empty"
+                 "unrecognised keys in the trust file"
+                 (fn []
+                   (package-lock/resolve-lock
+                    lock packages {:revoked-signer ["did:key:zTypo"]})))
+
   (check "the fixture is intact after every negative case"
          (fn []
            (let [r (resolve! lock packages)]
