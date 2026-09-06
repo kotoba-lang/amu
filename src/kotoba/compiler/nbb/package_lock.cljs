@@ -332,16 +332,58 @@
 
 ;; ── the trust context the contract validates against ────────────────────────
 
+(def ^:private honoured-trust-keys
+  #{:declared-capabilities :revoked-signers :expired-signers :compromised-signers})
+
+(def ^:private known-unhonoured-trust-keys
+  "Keys `kotoba.security.package-admission/trust-context` acts on and this one
+  does not. Named rather than lumped in with typos, so the refusal can say
+  which behaviour is missing instead of only that something is."
+  {:key-register (str "a key register maps signer DIDs to statuses, and blocked "
+                      "statuses are merged into the revoked set. Not implemented "
+                      "here: expand it into :revoked-signers before passing the "
+                      "trust file to this route")
+   :keys (str "an inline key register. Same as :key-register -- expand it into "
+              ":revoked-signers")})
+
 (defn trust-context
   "What the caller grants and whom it no longer trusts, as
   `kotoba.lang.package-contract/lockfile-error` wants it.
 
-  Absent `--trust`, `:declared-capabilities` is empty, so any dep asking for
-  a capability is refused. That is the ADR's rule -- \"Dependencies receive no
-  host capability by default\" -- expressed as the default rather than as
-  prose, and it is why the empty case is not a hole: a pure library grants
-  nothing and passes, an effectful one must be granted explicitly."
+  The file shape is `kotoba.security.package-admission`'s: `:declared-capabilities`,
+  `:revoked-signers`, `:expired-signers`, `:compromised-signers`. Deliberately
+  the same file, so one trust document serves both routes.
+
+  TWO DIFFERENCES, both stated because a trust file that behaves differently
+  depending on which tool reads it is worse than two file formats:
+
+  1. A key that this route does not act on is REFUSED, not ignored. The JVM
+     route honours `:key-register` / `:keys`, folding blocked statuses into the
+     revoked set; this one does not. Ignoring such a file would apply a
+     STRICTLY WEAKER check while looking like it had applied the caller's --
+     the trust document would name revoked signers and the build would accept
+     them.
+
+  2. Absent `:declared-capabilities`, this route grants NOTHING, where the JVM
+     route falls back to the manifest's own declared capabilities. That is not
+     a gap: `manifest-verdicts!` already checks the grant against the
+     manifest's declaration, so folding the same comparison in here would
+     answer one question twice and leave the caller's own ceiling unasked.
+     The ADR's rule -- dependencies receive no host capability by default --
+     is expressed as the default rather than as prose."
   [trust]
+  (when trust
+    (doseq [[k why] known-unhonoured-trust-keys]
+      (when (contains? trust k)
+        (reject! (str "this route does not honour " k " in a trust file")
+                 {:key k :reason why})))
+    (when-let [unknown (seq (remove honoured-trust-keys (keys trust)))]
+      (reject! "unrecognised keys in the trust file"
+               {:keys (vec (sort unknown))
+                :honoured (vec (sort honoured-trust-keys))
+                :reason (str "a misspelled key would otherwise be silently "
+                             "empty, which reads exactly like a caller that "
+                             "granted nothing")})))
   {:declared-capabilities (vec (:declared-capabilities trust))
    :revoked-signers (vec (:revoked-signers trust))
    :expired-signers (vec (:expired-signers trust))

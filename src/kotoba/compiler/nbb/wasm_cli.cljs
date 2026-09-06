@@ -513,6 +513,7 @@
     ;; `package-lock` reads each dependency's own signed manifest and asks
     ;; this compiler for the definition CIDs, so the values it writes are
     ;; measured rather than declared.
+    "package-fetch" (package-authoring/package-fetch! args)
     "package-manifest" (package-authoring/package-manifest! args)
     "package-lock" (package-authoring/package-lock! describe-definition-cids args)
     (support/usage-error!
