@@ -448,3 +448,38 @@ ty 注記なし probe のため過大評価されていた — 以下は型付�
 - Next (1 hypothesis): (:k m) projection sugar — `(get m :k 0)` already admits
   (population row), so probe whether (:k m) reader sugar is only an alias-shaped
   desugar gap; then re-check jvm-dep-ledger blocked list for remaining alias-shaped gaps.
+
+## Iteration 16 - (:k m) projection: alias-only hypothesis FALSIFIED (2026-09-06, amu@5592269e, pinned sema via amu lock)
+
+- Hypothesis (carried from iter 15): `(:k m)` on a canonical typed map is an
+  alias-shaped desugar gap, rewritable mechanically to an existing admitted form.
+- Measured (amu bin/amu check --jvm-free, amu@5592269e; terminal security
+  scanner blocks compound variable commands this tick — probes run via
+  /tmp/langcos/t17-run.sh script file, outputs /tmp/langcos/t17-*.txt):
+  - `(:k m)` with `m [:map :keyword :i64]` → REJECT exit 65
+    "record-get without a type descriptor requires a record value; got [:map :keyword :i64]"
+    (t17-kwproj.txt). Source root cause: frontend.cljc:4464 desugars ANY
+    keyword-head call unconditionally to `(record-get m :k)`; the 2-arity
+    rewrite pass (:9156-9174) refuses non-record receivers — no typed-map arm.
+  - `(get m :k)` 2-arity same map → REJECT exit 65 "expression type mismatch:
+    expected i64, got [:option :i64]" — 2-arg get returns the option, so
+    `(:k m)` CANNOT desugar to `(get m :k)` (t17-g2.txt).
+  - `(get m :k 0)` 3-arity → PASS exit 0, t cid
+    `bafyreic3wtjamgppcl23lsw4iqucesdzdlgizo47jk75bysm5amasbrr6m` (t17-g3.txt;
+    identical file to proj-get-twin.kotoba so parity trivially exact. Note this
+    differs from t16-check-hand.txt's `bafyreibtiucow2...` — pinned sema
+    advanced between measurements, so the earlier CID is stale, not drift).
+- Verdict: hypothesis FALSIFIED — `(:k m)` is NOT alias-shaped. No correct
+  mechanical desugar target exists: 2-arg get is type-wrong; 3-arg get needs an
+  implicit default (Clojure semantics = nil, not 0); record-get is another type.
+  Landing it needs a SEMANTIC DECISION (default policy: reject / 0 /
+  `(:k m default)` extension) plus a new typed-map arm in the 2-arity rewrite
+  pass — not pure sugar. No implementation this tick (design unsettled;
+  speed threshold N/A). ICE-free, all rejects fail-closed with own diagnostics.
+- Gate: check probes only (3 REJECT / 1 PASS). perfgate N/A (no runtime claim).
+- Next (1 hypothesis): alias-shaped surface of the jvm-dep-ledger list is now
+  exhausted (str / mapv / filterv / #() / seq / remove / min-max / some-> /
+  some->> / contains? all landed or falsified). Pivot: parse-long string
+  boundary blocker (iters 4/5) — hand-patch probe of a guest-side byte-access
+  design (`string-byte-at` direct memory read, new lowering) to test whether
+  the ~43x host-call boundary cost is avoidable before any amu runtime work.
