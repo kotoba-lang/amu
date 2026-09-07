@@ -139,11 +139,9 @@
   ;; operation with nothing faulting to say so, which is why the suite pins
   ;; that byte as an explicit `not`. Checked with `merge-base --is-ancestor`
   ;; against 452422f.
-  ;; Advanced 2026-09-07 to 70b94c6d. f040b483..70b94c6d is ONE commit and it
-  ;; touches deps.edn alone, +2/-2: kotoba-kir was renamed osaho, so the
-  ;; coordinate moved. No encoding, no lowering, no opcode -- the native
-  ;; boundary this suite guards is byte-identical, which is why this advance
-  ;; carries no qualification claim. Superproject adr-2609078000.
+  ;; Advanced 2026-09-08 for the osaho rename. The range is ONE commit
+  ;; touching deps.edn alone, +2/-2 -- no encoding, no lowering, no opcode.
+  ;; The boundary is byte-identical, so this carries no qualification claim.
   (is (= "70b94c6d33801d54ae45d6508c1d4dfc4386446a"
          (dependency-pin 'io.github.kotoba-lang/kotoba-native)))
   ;; Advanced 2026-09-07 to kotoba-native main c9d5c44 (hoist #151, cross-call
@@ -305,10 +303,9 @@
   ;; `kernel-undefined-opcode-handler-address`. This verifier rejects by
   ;; absence, so it moves with the kotoba-sema / kotoba-kir / kotoba-native
   ;; pins in this commit or the head is a green `check` and a red `compile`.
-  ;; Advanced 2026-09-07 to 2e435cf4. ed9bf9b4..2e435cf4 is ONE commit
-  ;; touching deps.edn alone, +2/-2: kotoba-kir was renamed osaho. Nothing
-  ;; the verifier checks moved, so this advance carries no qualification
-  ;; claim -- the same shape as the kotoba-native advance above.
+  ;; Advanced 2026-09-08 for the osaho rename. The range is ONE commit
+  ;; touching deps.edn alone, +2/-2 -- no encoding, no lowering, no opcode.
+  ;; The boundary is byte-identical, so this carries no qualification claim.
   (is (= "2e435cf4994c59d341c387d3103809cc3f93a116"
          (dependency-pin 'io.github.kotoba-lang/kotoba-verifier)))
   (is (= 7 (:abi/version aggregate-abi/contract)))

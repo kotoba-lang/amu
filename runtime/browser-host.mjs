@@ -359,9 +359,9 @@ function parseCompatibility(module) {
       result.tenderRole !== "kototama/component-tender-v1" ||
       result.tenderContract !== "kotoba.capability-host/v1")
     reject("compatibility-mismatch", "compiler, language, or tender contract is unsupported");
-  // kototama-* are the names kototama took ownership of in kotoba-wasm 5e054c11.
-  // BOTH accepted: a module emitted before it declares the kotoba-* name and is
-  // still valid. Drop the kotoba-* three once no supported emitter produces them.
+  // kototama-* are the names kototama took in kotoba-wasm 5e054c11. BOTH are
+  // accepted: a module emitted before it declares the kotoba-* name and is
+  // still valid. Drop the kotoba-* three once no emitter produces them.
   if (![
     "kototama-capability-host-v1", "kototama-browser-host-v1", "kototama-wasi-host-v1",
     "kotoba-capability-host-v1", "kotoba-browser-host-v1", "kotoba-wasi-host-v1",

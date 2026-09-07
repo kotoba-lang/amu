@@ -63,7 +63,9 @@ and not one project.
 | **H-3a** | the quadratic is in the backend (lowering + Wasm emission) | **refused — iteration 1** | `check` is 93% of `compile` at K=1023 (16777 / 18069 ms). The whole backend is ~7% of the time and cannot hold a term that is 76% of the growth |
 | **H-3b** | the quadratic is in *body size* — one function whose body has K bindings costs O(K²) | **partial — iteration 1** | splitting `main`'s K bindings across M chunk functions at fixed K=768 removes ~30% of the superlinear term and then plateaus: 11541 → 10539 → 9942 → 9830 → 9926 ms for M = 1, 2, 4, 12, 48 |
 | **H-3c** | the rest is per-*module*: a pass whose cost is (functions × functions) | **refused — iteration 1** | 1000 one-operation functions check in 3427 ms on a straight line (fitted quadratic coefficient 0.00026, 13% of the growth). Function count is not the quantity |
-| **H-3d** | the quantity is **total expression nodes in the module**, not functions, bodies or calls separately | **confirmed — iteration 1** | one two-parameter model, `1419 + 0.535·N + 0.0000447·N²` ms, predicts five points across four differently-shaped workload families within the host's own spread |
+| **H-3d** | the quantity is **total expression nodes in the module**, not functions, bodies or calls separately | **confirmed — iteration 1**, and located in iteration 2 | one two-parameter model, `1419 + 0.535·N + 0.0000447·N²` ms, predicts five points across four differently-shaped workload families within the host's own spread |
+| **H-3e** | the `N²` coefficient is held by one or two passes, not spread across all of them | **confirmed — iteration 2** | per-binding probes through `analyze*`: one binding (`read-forms`) held 74% at K=768. Fixed in kotoba-sema `31d0d463`; `amu check` at K=1023 is 2.09× faster and byte-identical |
+| **H-3f** | after the reader, `infer-closure-refinements` (`frontend.cljc:14613`) carries the surviving term | **open — iteration 3** | measured post-fix: 45 / 267 / 1174 / 2101 ms at K = 128 / 384 / 768 / 1023 — 46.7× over 8× K, exponent 1.85, and 59% of `amu check`. It is a fixed point whose own `refinement-count-limit` is `1 + N + Σ params`, so it may run O(N) rounds over N functions |
 
 ## Iteration 1 — 2026-09-07: the growth term is quadratic, and it is in the front end
 
@@ -198,8 +200,9 @@ Both texts should stop saying the multi-module sentence in the meantime.
 
 | rank | action | why it ranks here |
 |---:|---|---|
-| 1 | **Find the node-quadratic pass in the front end** and remove it | it is 76% of the growth at K=1023 on the published host, it is in the 93% of the time that `check` owns, and every size above ~300 is hostage to it. Nothing else moves the curve's *shape* |
+| ~~1~~ | ~~**Find the node-quadratic pass in the front end** and remove it~~ | **done — iteration 2.** It was `source-location` in the reader. `amu check` at K=1023 is 2.09× faster, the quadratic coefficient is 4× smaller, and the emitted module is byte-identical. A quadratic term survives; see H-3f |
 | 2 | **Cut `v0.7.4`** | 0.7.3 silently mis-compiles any single file above 128 functions. The fix landed upstream and has been sitting unreleased since; the benchmark is the least of it. No research is required — the blocker is that packaging needs a JDK, GraalVM `native-image` and three platform targets |
+| 2a | **Advance `kotoba-lang/kotoba`'s Amu pin**, deliberately and with tests | measured 2026-09-07: that repository — the one the released CLI is built from — pins Amu at `ffd9adfa`, **93 commits behind Amu's main**, held on purpose for the `--target js` nbb route (its own comment says so). Iteration 2's 2× is in Amu's main and *does not reach the released binary through that pin*. Neither does the LEB128 fix in rank 2. Two pins and one release stand between a landed fix and a user; naming only the release would name one of the three |
 | 3 | **Correct the multi-module sentence** in `buildbench/README.md` and in the site's build-scaling table | it is a published claim that measurement refutes |
 | 4 | **Decide the whole-program function bound** (owner) | until it is decided, K=1024 and K=2048 are unscoreable and the goal sentence has to name its own domain |
 | 5 | Constant factor: the released CLI's ~0.78 ms/function against Clang's ~0.095 | the intercept is already 2.5× better than Clang's. Nothing here is worth doing before rank 1, because at the sizes where the claim is currently lost the quadratic term is bigger than the whole comparator |
@@ -233,3 +236,136 @@ The absolute numbers in this iteration are from Apple M1 Max at `load1` 10–23
 and are **not** portable and **not** perfgate-qualified. What is claimed from
 them is the shape of the curve and the ordering of the four shapes, which
 survives a busy host because the load fell on all of them.
+
+## Iteration 2 — 2026-09-07: the quadratic was one function in the reader
+
+Iteration 1 named the experiment before running it: instrument the `check`
+pipeline pass by pass and see whether one or two passes hold the `N²`
+coefficient. They do — one does.
+
+`analyze*` in `kotoba-sema` `frontend.cljc` is a single long `let`. Each of its
+71 top-level bindings got a probe. At K=768, of 8946 ms:
+
+| binding | ms | share |
+|---|---:|---:|
+| `forms` — line 14202, the **first** binding | 6600 | 74% |
+| `parsed` — line 14613 | 1243 | 14% |
+| everything else (69 bindings) | 1103 | 12% |
+
+Splitting that first binding into its three parts put **5424 ms of 7736 ms in
+`read-forms` alone**. Nothing downstream of the reader was the problem; the
+type checker, the effect inference and both lowerings are the 12%.
+
+### The defect
+
+`kotoba.compiler.kotoba-reader/source-location`, called by `located` for every
+collection and every symbol:
+
+```clojure
+(let [prefix (subs (:source st) 0 (:position st))   ; O(offset) copy
+      lines  (str/split prefix #"\n" -1)]           ; O(offset) split + allocation
+  {:line (count lines) :column (inc (count (last lines))) :offset (:position st)})
+```
+
+Every located node re-derives its line and column by copying the entire source
+prefix and splitting it. With M located nodes over B bytes that is Θ(M·B).
+
+| source bytes | `read-forms` |
+|---:|---:|
+| 17,922 | 196 ms |
+| 55,042 | 1,381 ms |
+| 110,722 | 5,433 ms |
+| 147,835 | 9,371 ms |
+
+8.25× the bytes, **47.8× the time** — exponent 1.83.
+
+### The fix and what it bought
+
+One line-start index per source (native `index-of`, one entry per line) and a
+binary search per node. `kotoba-lang/kotoba-sema` `31d0d463`, pinned into Amu
+by `kotoba-lang/amu#877`.
+
+| | before | after | |
+|---|---|---|---|
+| `read-forms`, 147,835 bytes | 9,371 ms | 355 ms | 26× |
+| `amu check`, K=1023 | 16.17 / 16.42 / 16.19 s | 7.75 / 7.77 / 7.77 s | **2.09×** |
+| `amu compile --target wasm32`, K=1023 | 19.86 / 17.83 s | 9.07 / 9.14 s | **~2.0×** |
+
+Arms interleaved on one busy host (`load1` 28–46), which is why the ratio is
+reported and the seconds are not.
+
+**Nothing observable changed.** The emitted module is byte-identical (89,475
+bytes) and answers `main() = 1023`; `amu check` output is byte-identical
+including every definition CID and span; an unknown-operation source reports
+the same `{:line 5, :column 4, :offset 62, :end-offset 80}`.
+
+The suite discriminates, in both directions and for the stated reason:
+breaking the column by one fails 60 tests, and breaking the binary search's
+upper bound fails exactly two — both of them added with the fix, because the
+296-test suite did not otherwise reach that case.
+
+### The curve after the fix — reduced, not gone
+
+`amu check` through `bin/amu`, 3 samples per point, this host at `load1`
+34–48 (busier than iteration 1's 10–23, so these seconds are worse than the
+change deserves):
+
+| K | before (load1 10–23) | after (load1 34–48) |
+|---:|---:|---:|
+| 1 | 1504 | 1640 |
+| 128 | 2293 | 2229 |
+| 384 | — | 3433 |
+| 768 | 11242 | 6110 |
+| 1023 | 16777 | 7995 |
+
+Fitted quadratic coefficient: **0.00967 → 0.00242 ms/node², a 4× reduction**,
+and the marginal cost per added function at the top of the range falls from
+23.5 ms to 7.4 ms. The measured exponent over the same K range goes from
+~1.83 to ~1.2.
+
+**It is not linear yet.** A quadratic term survives, roughly a quarter of the
+old one, and this must not be reported as "fixed".
+
+### What this does and does not settle
+
+It does not win a size. Amu at K=1023 goes from 9.2 s to roughly 4.5 s on the
+published host's scale, against `clang-native` at 105 ms — the claim is not
+close, and the *released* CLI is the lane that could win it, which needs
+`v0.7.4` first.
+
+What it settles is where three quarters of the growth term came from: one
+reader function that had nothing to do with compiling, re-deriving a line
+number the reader already knew.
+
+### The next quadratic — measured, not guessed
+
+The same instrumentation, re-run at four sizes with the reader fixed, says
+where the surviving term is. Milliseconds, `amu check`:
+
+| binding | K=128 | K=384 | K=768 | K=1023 | growth over 8× K |
+|---|---:|---:|---:|---:|---:|
+| `parsed (infer-closure-refinements parsed preliminary-lambdas)` — `frontend.cljc:14613` | 45 | 267 | 1174 | **2101** | **46.7× (exponent 1.85)** |
+| `A read-forms` (this iteration's fix) | 51 | 137 | 289 | 374 | 7.3× — linear |
+| `parsed` — `frontend.cljc:14351` | 99 | 179 | 328 | 384 | 3.9× |
+| whole `check` | 341 | 866 | 2324 | 3541 | 10.4× |
+
+`infer-closure-refinements` is now **59% of `amu check` at K=1023** and carries
+the same exponent the reader used to. Its docstring says what it is — a fixed
+point over the function/parameter graph — and its own guard,
+`refinement-count-limit = 1 + (count functions) + Σ (count params)`, bounds the
+rounds by something linear in N. A fixed point that may run O(N) rounds and
+walks all N functions per round is O(N²) by construction, which is the shape
+the numbers show. Iteration 3 should measure the round count before assuming
+that is the whole story.
+
+Two neighbours were checked and are **not** it. `infer-absent-results`
+(`frontend.cljc:14609`) runs a constant 6 passes at every size and reports
+`inferred=0` on this workload — every function declares `:i64`, so it does a
+signature table and a `mapv` for nothing, which is worth its own small fix but
+is not the term. The desugar block at `frontend.cljc:14351` grows 3.9× over the
+same 8× range.
+
+⚠ This section said `infer-absent-results` when it was first written. The label
+came from a probe named by line number and the line was read off by four. The
+probe was right; the reading was not. Corrected here and in
+kotoba-lang/amu#878 after instrumenting the function itself.

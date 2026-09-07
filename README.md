@@ -1130,6 +1130,16 @@ probes to be denied on both OS families.
 Wasm modules contain a private, non-replenishable i64 fuel global initialized to
 512 by default (or the finite `--fuel` value). Every function entry checks and
 decrements it before evaluating guest code.
+The native loader takes the same budget from the environment: `KEXE_FUEL`
+(positive decimal, absent = 512), echoed by the structured report as
+`:fuel {:initial N :remaining M}`; zero, negative or non-decimal values are
+refused with exit 2 before the guest starts (ADR-0343). Its other host
+contract is a scope per filesystem capability: `KEXE_CAP_RESOURCES_35` for
+`:fs/app-data` (whole-file read, `<path>WRITE_SEP<content>` write,
+`<path>RANGE_SEP<offset>:<length>` bounded read) and `KEXE_CAP_RESOURCES_34`
+for `:fs/browse` (one directory's sorted, newline-joined entry names) -- both
+colon-separated absolute prefixes, realpath'ed before fork, enforced by the
+provider and by the sandbox profile, admitting nothing when unset.
 This permits bounded recursion while guaranteeing that recursive cycles trap.
 x86-64 reserves r9 and AArch64 reserves x7 for a loader-owned fuel-context
 pointer; both charge every function entry before guest instructions. Their real

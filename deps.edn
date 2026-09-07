@@ -69,11 +69,7 @@
         ;; said so.
         ;;
         ;;   grammar-sha256    ee7ea37c7ea88c52ee8869af4d485e91a0b11bb153682ad717c86c055270b6b5
-        ;;   kotoba-sema-pin   d639922b5b4c07d3ab60f1d6d27817fcec7d3c75
-        ;; 2026-09-07: the pin moved for the osaho rename; the grammar did NOT.
-        ;; Measured, af8cc780 and d639922b ship guest-grammar.edn byte-identical
-        ;; at ee7ea37c, which is why grammar-sha256 above is unchanged and
-        ;; authority-digest-history gets no new entry.
+        ;;   kotoba-sema-pin   31d0d463f5aba39063ddc8911c648f6cd606c6ff
         ;;
         ;; `guest_grammar_vendor_test/authority-digest-history` ends with the
         ;; same digest, so the pin, the prose and the history move in one
@@ -119,9 +115,25 @@
         ;; (e191c8b1 on the authority, on kotoba-sema and on this repository's
         ;; copy alike) -- so it is admitted by the grammar and refused at
         ;; compile time, not at run time.
+        ;; Advanced 2026-09-07, af8cc780 -> 31d0d463 (kotoba-sema main, ahead 5,
+        ;; forward only). The grammar did NOT move (guest-grammar.edn is not in
+        ;; the diff), so `grammar-sha256` above and `authority-digest-history`
+        ;; are untouched by this advance. What it buys:
+        ;;
+        ;;  - 31d0d463 stops `source-location` re-deriving line/column from
+        ;;    scratch at every located node -- it used to `subs` the whole
+        ;;    prefix from offset 0 and split it on newlines, which is O(offset)
+        ;;    per node and quadratic in source size. Measured on this repo's
+        ;;    own workload at these pins, `amu check` on a 147,835-byte source:
+        ;;    12,442 ms -> 3,551 ms, and the reader's own share 9,371 -> 355 ms.
+        ;;    Output is byte-identical, CIDs and spans included.
+        ;;  - it also carries kotoba-sema's own capability-catalog resync and an
+        ;;    i64 min/max test; THIS repository's copy of the catalog shadows
+        ;;    kotoba-sema's on this classpath and is not resynced here, because
+        ;;    this advance does not claim a catalog change.
         io.github.kotoba-lang/kotoba-sema
         {:git/url "https://github.com/kotoba-lang/kotoba-sema.git"
-         :git/sha "d639922b5b4c07d3ab60f1d6d27817fcec7d3c75"}
+         :git/sha "31d0d463f5aba39063ddc8911c648f6cd606c6ff"}
         ;; ADR-2607266000 Phase B: these responsibilities moved out of this repo.
         ;;
         ;; The slice-value stream held this pin on purpose (ADR 0314), because
@@ -210,7 +222,7 @@
          ;; 9749773d advances it for the fs_app_data WRITE provider (write form
          ;; "path WRITE_SEP content", Seatbelt file-write* subpath); 8c77d809
          ;; escapes the docstring quotes (PR #21 follow-up, fixes browser matrix).
-         :git/sha "4c233548fec39784c6eb8760d133e07b13fb7656"}
+         :git/sha "99e94e79b790a19acad68e728b4773b23af63c90"}
         ;; HELD at 1a2e10c on 2026-09-03 (ADR 0331), 28 commits behind its main,
         ;; while every other pin in this file moved to the tip. The reason, so
         ;; that a lagging pin and a pin with an argument behind it stay
@@ -463,13 +475,13 @@
                    ;; :native-conformance below -- one kototama-native.
                    io.github.kotoba-lang/kototama-native
                    {:git/url "https://github.com/kotoba-lang/kototama-native.git"
-                    :git/sha "0303b02e1063724fbdf50b5edf3323a385f5599c"}}
+                    :git/sha "a569f1d14a09674503fc00733fd38fd3699fa4fb"}}
                   :main-opts ["-m" "kotoba.compiler.test-runner"]}
            :native-run
            {:extra-deps
             {io.github.kotoba-lang/kototama-native
              {:git/url "https://github.com/kotoba-lang/kototama-native.git"
-              :git/sha "0303b02e1063724fbdf50b5edf3323a385f5599c"}}
+              :git/sha "a569f1d14a09674503fc00733fd38fd3699fa4fb"}}
             :main-opts ["-m" "kotoba.compiler.cli"]}
            :run {:main-opts ["-m" "kotoba.compiler.cli"]}
            :conformance
@@ -481,7 +493,7 @@
            {:extra-deps
             {io.github.kotoba-lang/kototama-native
              {:git/url "https://github.com/kotoba-lang/kototama-native.git"
-              :git/sha "0303b02e1063724fbdf50b5edf3323a385f5599c"}
+              :git/sha "a569f1d14a09674503fc00733fd38fd3699fa4fb"}
              io.github.kotoba-lang/provider
              {:git/url "https://github.com/kotoba-lang/provider.git"
               :git/sha "0ba1fbabb536027d25bbefc50374fbe95e6b54ec"}}
