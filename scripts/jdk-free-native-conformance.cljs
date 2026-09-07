@@ -163,6 +163,157 @@
             (ensure! (= expected (str/trim (:stdout executed)))
                      (str "native " symbol " expected " expected ", got "
                           (str/trim (:stdout executed))))))))
+    ;; ------------------------------------------------------------------
+    ;; kbb host contract of the loader (owner rule kbb-first, 2026-09-07).
+    ;; These run the loader JVM-free against guests compiled here, so they
+    ;; hold without the artifact runtime identity the JVM suite needs.
+    ;;
+    ;; KEXE_FUEL: the loader takes its fuel budget from the environment.
+    ;; examples/fuel.kotoba's `forever` is the recursion that must trap: under
+    ;; the default it traps with `:initial 512 :remaining 0`; under
+    ;; KEXE_FUEL=100000 the report says `:initial 100000 :remaining 0` -- the
+    ;; budget was in force, and exhausted (a report that still said 512 would
+    ;; mean the knob did nothing). A zero, negative or non-decimal budget is
+    ;; refused before the guest starts (exit 2), never coerced.
+    (let [artifact (file "fuel-budget.kexe")
+          binary (file "fuel-budget.bin")
+          with-env (fn [extra] (js/Object.assign #js {} env (clj->js extra)))]
+      (invoke ["compile" (.join path root "examples" "fuel.kotoba")
+               "--target" isa "--output" artifact])
+      (let [extracted (:stdout (invoke ["extract-native" artifact "--symbol" "forever"
+                                        "--output" binary]))
+            [_ offset] (re-find #":offset ([0-9]+)" extracted)
+            _ (ensure! offset "extract-native returned no forever offset")
+            args [binary offset "1" isa "-" "0"]
+            default (run loader args (with-env {"KEXE_STRUCTURED_REPORT" "1"}) true)
+            budget (run loader args (with-env {"KEXE_STRUCTURED_REPORT" "1"
+                                               "KEXE_FUEL" "100000"}) true)]
+        (ensure! (and (= 120 (:status default))
+                      (str/includes? (:stdout default) ":fuel {:initial 512 :remaining 0}"))
+                 (str "default fuel: forever did not exhaust 512: "
+                      (:status default) " " (str/trim (:stdout default))))
+        (ensure! (and (= 120 (:status budget))
+                      (str/includes? (:stdout budget) ":fuel {:initial 100000 :remaining 0}"))
+                 (str "KEXE_FUEL=100000 was not the budget in force: "
+                      (:status budget) " " (str/trim (:stdout budget))))
+        (doseq [bad ["0" "abc" "-5" "12abc" "+7"]]
+          (let [refused (run loader args (with-env {"KEXE_FUEL" bad}) true)]
+            (ensure! (= 2 (:status refused))
+                     (str "KEXE_FUEL=" bad " was not refused with exit 2: "
+                          (:status refused) " " (:stderr refused)))))))
+
+    ;; :fs/browse (wire id 34): the loader lists ONE directory inside
+    ;; KEXE_CAP_RESOURCES_34 -- entry names sorted bytewise, "\n"-joined, "."
+    ;; and ".." excluded, dotfiles included -- the shape kotoba's js host
+    ;; answers for the same wire id. Byte-exact through KEXE_RESULT_TYPE=string.
+    ;; With no scope, a scope elsewhere, or a regular file as the request the
+    ;; call traps (SIGILL, exit 120) instead of answering. Guest sources are
+    ;; written here because the directory under test only exists here.
+    (let [dir (file "browse-dir")
+          other (file "browse-other")
+          hex (fn [s] (.toString (js/Buffer.from s "utf8") "hex"))
+          string-env (fn [extra] (js/Object.assign #js {} env
+                                                   (clj->js (merge {"KEXE_STRUCTURED_REPORT" "1"
+                                                                    "KEXE_RESULT_TYPE" "string"}
+                                                                   extra))))
+          guest! (fn [name request]
+                   (let [source (file (str name ".kotoba"))
+                         policy (file (str name "-policy.edn"))
+                         artifact (file (str name ".kexe"))
+                         binary (file (str name ".bin"))]
+                     (fs/writeFileSync source
+                                       (str "(ns conformance." name " (:export [main]))\n"
+                                            "(defn main [] :string "
+                                            "(typed-cap-call :fs/browse :string :string \"" request "\"))\n"))
+                     (fs/writeFileSync policy "{:allow #{[:cap/call 34]}}")
+                     (invoke ["compile" source "--target" isa "--policy" policy "--output" artifact])
+                     (let [[_ offset] (re-find #":offset ([0-9]+)"
+                                               (:stdout (invoke ["extract-native" artifact
+                                                                 "--symbol" "main" "--output" binary])))]
+                       (ensure! offset (str "extract-native returned no offset for " name))
+                       [binary offset "0" isa "34"])))]
+      (fs/mkdirSync dir)
+      (fs/mkdirSync other)
+      (doseq [n ["b.txt" "a.txt" ".hidden" "z"]] (fs/writeFileSync (.join path dir n) n))
+      (let [args (guest! "browse-listing" dir)
+            listed (run loader args (string-env {"KEXE_CAP_RESOURCES_34" dir}) true)
+            expected (str ":result-utf8-hex \"" (hex ".hidden\na.txt\nb.txt\nz") "\"")]
+        (ensure! (and (= 0 (:status listed)) (str/includes? (:stdout listed) expected))
+                 (str "browse listing mismatch: " (:status listed) " " (str/trim (:stdout listed)) " " (str/trim (:stderr listed))))
+        (doseq [[label extra] [["no scope" {}]
+                               ["a scope elsewhere" {"KEXE_CAP_RESOURCES_34" other}]]]
+          (let [refused (run loader args (string-env extra) true)]
+            (ensure! (and (= 120 (:status refused))
+                          (str/includes? (:stderr refused) ":signal :SIGILL"))
+                     (str "browse with " label " was not refused: "
+                          (:status refused) " " (:stderr refused))))))
+      (let [args (guest! "browse-file" (.join path dir "a.txt"))
+            refused (run loader args (string-env {"KEXE_CAP_RESOURCES_34" dir}) true)]
+        (ensure! (and (= 120 (:status refused)) (str/includes? (:stderr refused) ":signal :SIGILL"))
+                 (str "browse of a regular file was not refused: " (:status refused) " " (:stderr refused))))
+      (let [args (guest! "browse-empty" other)
+            empty (run loader args (string-env {"KEXE_CAP_RESOURCES_34" other}) true)]
+        (ensure! (and (= 0 (:status empty)) (str/includes? (:stdout empty) ":result-utf8-hex \"\""))
+                 (str "empty directory did not answer the empty string: "
+                      (:status empty) " " (str/trim (:stdout empty)) " " (str/trim (:stderr empty))))))
+
+    ;; :fs/app-data RANGE form (wire id 35): "<path>RANGE_SEP<offset>:<length>"
+    ;; answers exactly that window of a file -- here 70,000 bytes, larger than
+    ;; one guest string and than the loader's string pool, with U+2500 (three
+    ;; bytes) planted at byte 5000. Byte-exact against the fixture through
+    ;; KEXE_RESULT_TYPE=string. A window past EOF, a window that cuts the
+    ;; code point, and the whole-file read of the same file (pool overflow --
+    ;; the reason the range form exists) all trap instead of answering short.
+    (let [big (file "range-big.txt")
+          ascii (fn [n] (let [pattern "0123456789abcdef\n"]
+                          (.slice (.repeat pattern (inc (quot n (count pattern)))) 0 n)))
+          text (str (ascii 5000) "─" (ascii (- 70000 5003)))
+          bytes (js/Buffer.from text "utf8")
+          _ (ensure! (= 70000 (.-length bytes)) (str "range fixture is " (.-length bytes) " bytes"))
+          hex (fn [buf] (.toString buf "hex"))
+          string-env (fn [extra] (js/Object.assign #js {} env
+                                                   (clj->js (merge {"KEXE_STRUCTURED_REPORT" "1"
+                                                                    "KEXE_RESULT_TYPE" "string"
+                                                                    "KEXE_CAP_RESOURCES_35" tmp}
+                                                                   extra))))
+          guest! (fn [name request]
+                   (let [source (file (str name ".kotoba"))
+                         policy (file (str name "-policy.edn"))
+                         artifact (file (str name ".kexe"))
+                         binary (file (str name ".bin"))]
+                     (fs/writeFileSync source
+                                       (str "(ns conformance." name " (:export [main]))\n"
+                                            "(defn main [] :string "
+                                            "(typed-cap-call :fs/app-data :string :string \"" request "\"))\n"))
+                     (fs/writeFileSync policy "{:allow #{[:cap/call 35]}}")
+                     (invoke ["compile" source "--target" isa "--policy" policy "--output" artifact])
+                     (let [[_ offset] (re-find #":offset ([0-9]+)"
+                                               (:stdout (invoke ["extract-native" artifact
+                                                                 "--symbol" "main" "--output" binary])))]
+                       (ensure! offset (str "extract-native returned no offset for " name))
+                       [binary offset "0" isa "35"])))
+          window! (fn [name offset length]
+                    (let [args (guest! name (str big "RANGE_SEP" offset ":" length))
+                          answered (run loader args (string-env {}) true)
+                          expected (str ":result-utf8-hex \"" (hex (.subarray bytes offset (+ offset length))) "\"")]
+                      (ensure! (and (= 0 (:status answered)) (str/includes? (:stdout answered) expected))
+                               (str name " [" offset ", " (+ offset length) ") mismatch: "
+                                    (:status answered) " " (subs (str/trim (:stdout answered)) 0 200)
+                                    " " (str/trim (:stderr answered))))))
+          refused! (fn [name request why]
+                     (let [args (guest! name request)
+                           refused (run loader args (string-env {}) true)]
+                       (ensure! (and (= 120 (:status refused)) (str/includes? (:stderr refused) ":signal :SIGILL"))
+                                (str why " was not refused: " (:status refused) " " (:stderr refused)))))]
+      (fs/writeFileSync big bytes)
+      (window! "range-head" 0 4096)
+      (window! "range-tail" 66000 4000)
+      (window! "range-across-code-point" 4990 20)
+      (refused! "range-past-eof" (str big "RANGE_SEP69500:1000") "a window past EOF")
+      (refused! "range-cut-code-point" (str big "RANGE_SEP5001:4") "a window cutting U+2500")
+      (refused! "range-twice" (str big "RANGE_SEP0:4RANGE_SEP") "a second RANGE_SEP")
+      (refused! "range-whole-file" big "the whole-file read of a 70,000-byte file"))
+
     ;; The aiueos target profiles package the sealed artifact into an ELF64 or
     ;; PE32+ container. Until `kotoba.compiler.nbb.native-package` existed this
     ;; driver had no packaging step at all, so `os/aiueos` built all 67 of its
