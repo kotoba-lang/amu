@@ -64,7 +64,11 @@
                 (catch clojure.lang.ExceptionInfo error error))
         report (cli/error-report error "program.cljk")]
     ;; T3.1: reject! sites use stable :kotoba.error/* codes (default :subset-reject).
-    (is (= :kotoba.error/subset-reject (get-in report [:diagnostic :code])))
+    ;; kotoba-sema dda80b3 (pinned 2026-09-07 via af8cc780) split the
+    ;; "no admitted lowering" catch-all into its causes; a head that is neither
+    ;; a builtin, a sugar head nor a module function is now named
+    ;; `:kotoba.error/unknown-operation` rather than falling to the default.
+    (is (= :kotoba.error/unknown-operation (get-in report [:diagnostic :code])))
     (is (= "program.cljk" (get-in report [:diagnostic :source])))
     (is (= {:line 2 :column 3}
            (select-keys (get-in report [:diagnostic :span]) [:line :column])))

@@ -133,7 +133,10 @@
   (is (= 5 (execute-main
             "(defn main [] (let [+ (fn [a b] (- a b))] (+ 9 4)))")))
   (testing "unbound call heads remain closed-world errors"
-    (is (re-find #"no admitted lowering"
+    ;; kotoba-sema dda80b3: a misspelled head is refused as "unknown operation:
+    ;; <head> is not a builtin, a sugar head, or a function of this module",
+    ;; with the nearest names beside it, instead of the old catch-all.
+    (is (re-find #"unknown operation: misspelled is not a builtin"
                  (rejection-message "(defn main [] (misspelled 1))"))))
   (testing "direct closure application retains the ABI arity bound"
     (is (re-find #"arity four"
