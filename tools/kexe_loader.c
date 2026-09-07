@@ -43,6 +43,13 @@ typedef int64_t (*kexe_fn8)(int64_t, int64_t, int64_t, int64_t,
 #define KEXE_KGRAPH_CAPACITY 4096u
 #define KEXE_STRING_POOL_BYTES 65536u
 #define KEXE_RECORD_FIELD_LIMIT 128u
+/* Fuel the guest starts with. 512 unless KEXE_FUEL names another positive
+ * decimal budget; the loader enforces the number it is handed and decides
+ * nothing about it (the kbb shim passes `--fuel` through here). The CPU and
+ * wall-clock limits in install_limits()/supervise() are NOT raised by a
+ * larger budget: fuel bounds the guest's own steps, the rlimits bound the
+ * child, and both stay in force. */
+static uint64_t kexe_initial_fuel = 512;
 
 static void write_stderr_checked(const char *bytes, size_t length) {
   ssize_t written = write(STDERR_FILENO, bytes, length);
@@ -2190,18 +2197,18 @@ static int write_supervisor_report(const struct kexe_shared_v4 *shared,
         static const char trap[] =
             "KEXE_TRAP {:kind :result :reason :invalid-string-handle}\n";
         write_stderr_checked(trap, sizeof(trap) - 1u);
-        printf("{:status :trap :exit 126 :fuel {:initial 512 :remaining %" PRIu64
+        printf("{:status :trap :exit 126 :fuel {:initial %" PRIu64 " :remaining %" PRIu64
                "} :heap {:capacity 4096 :used %" PRIu64 "}}\n",
-               shared->context.fuel, shared->pair_used);
+               kexe_initial_fuel, shared->context.fuel, shared->pair_used);
         return 126;
       }
       printf("{:status :ok :result %" PRId64
              " :result-type :string :result-utf8-hex \"",
              shared->result);
       for (uint64_t i = 0; i < length; i++) printf("%02x", bytes[i]);
-      printf("\" :fuel {:initial 512 :remaining %" PRIu64
+      printf("\" :fuel {:initial %" PRIu64 " :remaining %" PRIu64
              "} :heap {:capacity 4096 :used %" PRIu64 "}}\n",
-             shared->context.fuel, shared->pair_used);
+             kexe_initial_fuel, shared->context.fuel, shared->pair_used);
     } else if (record_field_count > 0) {
       int64_t fields[KEXE_RECORD_FIELD_LIMIT];
       if (!inspect_record_result(shared, shared->result,
@@ -2209,18 +2216,18 @@ static int write_supervisor_report(const struct kexe_shared_v4 *shared,
         static const char trap[] =
             "KEXE_TRAP {:kind :result :reason :invalid-record-chain}\n";
         write_stderr_checked(trap, sizeof(trap) - 1u);
-        printf("{:status :trap :exit 127 :fuel {:initial 512 :remaining %" PRIu64
+        printf("{:status :trap :exit 127 :fuel {:initial %" PRIu64 " :remaining %" PRIu64
                "} :heap {:capacity 4096 :used %" PRIu64 "}}\n",
-               shared->context.fuel, shared->pair_used);
+               kexe_initial_fuel, shared->context.fuel, shared->pair_used);
         return 127;
       }
       printf("{:status :ok :result %" PRId64
              " :result-type :record :result-words [", shared->result);
       for (uint64_t i = 0; i < record_field_count; i++)
         printf(i == 0 ? "%" PRId64 : " %" PRId64, fields[i]);
-      printf("] :fuel {:initial 512 :remaining %" PRIu64
+      printf("] :fuel {:initial %" PRIu64 " :remaining %" PRIu64
              "} :heap {:capacity 4096 :used %" PRIu64 "}}\n",
-             shared->context.fuel, shared->pair_used);
+             kexe_initial_fuel, shared->context.fuel, shared->pair_used);
     } else if (strcmp(result_type, "option-i64") == 0 ||
                strcmp(result_type, "result-i64") == 0) {
       int option = strcmp(result_type, "option-i64") == 0;
@@ -2230,17 +2237,17 @@ static int write_supervisor_report(const struct kexe_shared_v4 *shared,
         int trap_exit = option ? 128 : 129;
         const char *reason = option ? "invalid-option-i64" : "invalid-result-i64";
         fprintf(stderr, "KEXE_TRAP {:kind :result :reason :%s}\n", reason);
-        printf("{:status :trap :exit %d :fuel {:initial 512 :remaining %" PRIu64
+        printf("{:status :trap :exit %d :fuel {:initial %" PRIu64 " :remaining %" PRIu64
                "} :heap {:capacity 4096 :used %" PRIu64 "}}\n",
-               trap_exit, shared->context.fuel, shared->pair_used);
+               trap_exit, kexe_initial_fuel, shared->context.fuel, shared->pair_used);
         return trap_exit;
       }
       printf("{:status :ok :result %" PRId64 " :result-type :%s "
              ":result-tag %s :result-word %" PRId64
-             " :fuel {:initial 512 :remaining %" PRIu64
+             " :fuel {:initial %" PRIu64 " :remaining %" PRIu64
              "} :heap {:capacity 4096 :used %" PRIu64 "}}\n",
              shared->result, result_type, tag == 1 ? "true" : "false", payload,
-             shared->context.fuel, shared->pair_used);
+             kexe_initial_fuel, shared->context.fuel, shared->pair_used);
     } else if (variant_case_count > 0) {
       int64_t ordinal, payload;
       if (!inspect_variant_result(shared, shared->result, variant_case_count,
@@ -2248,28 +2255,28 @@ static int write_supervisor_report(const struct kexe_shared_v4 *shared,
         static const char trap[] =
             "KEXE_TRAP {:kind :result :reason :invalid-variant}\n";
         write_stderr_checked(trap, sizeof(trap) - 1u);
-        printf("{:status :trap :exit 130 :fuel {:initial 512 :remaining %" PRIu64
+        printf("{:status :trap :exit 130 :fuel {:initial %" PRIu64 " :remaining %" PRIu64
                "} :heap {:capacity 4096 :used %" PRIu64 "}}\n",
-               shared->context.fuel, shared->pair_used);
+               kexe_initial_fuel, shared->context.fuel, shared->pair_used);
         return 130;
       }
       printf("{:status :ok :result %" PRId64
              " :result-type :variant :result-ordinal %" PRId64
              " :result-word %" PRId64
-             " :fuel {:initial 512 :remaining %" PRIu64
+             " :fuel {:initial %" PRIu64 " :remaining %" PRIu64
              "} :heap {:capacity 4096 :used %" PRIu64 "}}\n",
-             shared->result, ordinal, payload, shared->context.fuel,
+             shared->result, ordinal, payload, kexe_initial_fuel, shared->context.fuel,
              shared->pair_used);
     } else {
       printf("{:status :ok :result %" PRId64
-             " :fuel {:initial 512 :remaining %" PRIu64
+             " :fuel {:initial %" PRIu64 " :remaining %" PRIu64
              "} :heap {:capacity 4096 :used %" PRIu64 "}}\n",
-             shared->result, shared->context.fuel, shared->pair_used);
+             shared->result, kexe_initial_fuel, shared->context.fuel, shared->pair_used);
     }
   } else {
-    printf("{:status :trap :exit %d :fuel {:initial 512 :remaining %" PRIu64
+    printf("{:status :trap :exit %d :fuel {:initial %" PRIu64 " :remaining %" PRIu64
            "} :heap {:capacity 4096 :used %" PRIu64 "}}\n",
-           child_status, shared->context.fuel, shared->pair_used);
+           child_status, kexe_initial_fuel, shared->context.fuel, shared->pair_used);
   }
   return child_status;
 }
@@ -2544,7 +2551,14 @@ int main(int argc, char **argv) {
   if (shared == MAP_FAILED) fail("mmap shared execution state");
   memset(shared, 0, sizeof(*shared));
   shared->context.version = 4;
-  shared->context.fuel = 512;
+  const char *fuel_env = getenv("KEXE_FUEL");
+  if (fuel_env != NULL && fuel_env[0] != '\0') {
+    if (parse_u64(fuel_env, &kexe_initial_fuel) != 0 || kexe_initial_fuel == 0) {
+      fprintf(stderr, "kexe-loader: KEXE_FUEL must be a positive decimal integer\n");
+      return 2;
+    }
+  }
+  shared->context.fuel = kexe_initial_fuel;
   shared->context.cap_call = checked_cap_call;
   shared->context.pair_new = checked_pair_new;
   shared->context.pair_first = checked_pair_first;

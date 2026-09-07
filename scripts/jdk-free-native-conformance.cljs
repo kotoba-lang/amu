@@ -163,6 +163,45 @@
             (ensure! (= expected (str/trim (:stdout executed)))
                      (str "native " symbol " expected " expected ", got "
                           (str/trim (:stdout executed))))))))
+    ;; ------------------------------------------------------------------
+    ;; kbb host contract of the loader (owner rule kbb-first, 2026-09-07).
+    ;; These run the loader JVM-free against guests compiled here, so they
+    ;; hold without the artifact runtime identity the JVM suite needs.
+    ;;
+    ;; KEXE_FUEL: the loader takes its fuel budget from the environment.
+    ;; examples/fuel.kotoba's `forever` is the recursion that must trap: under
+    ;; the default it traps with `:initial 512 :remaining 0`; under
+    ;; KEXE_FUEL=100000 the report says `:initial 100000 :remaining 0` -- the
+    ;; budget was in force, and exhausted (a report that still said 512 would
+    ;; mean the knob did nothing). A zero, negative or non-decimal budget is
+    ;; refused before the guest starts (exit 2), never coerced.
+    (let [artifact (file "fuel-budget.kexe")
+          binary (file "fuel-budget.bin")
+          with-env (fn [extra] (js/Object.assign #js {} env (clj->js extra)))]
+      (invoke ["compile" (.join path root "examples" "fuel.kotoba")
+               "--target" isa "--output" artifact])
+      (let [extracted (:stdout (invoke ["extract-native" artifact "--symbol" "forever"
+                                        "--output" binary]))
+            [_ offset] (re-find #":offset ([0-9]+)" extracted)
+            _ (ensure! offset "extract-native returned no forever offset")
+            args [binary offset "1" isa "-" "0"]
+            default (run loader args (with-env {"KEXE_STRUCTURED_REPORT" "1"}) true)
+            budget (run loader args (with-env {"KEXE_STRUCTURED_REPORT" "1"
+                                               "KEXE_FUEL" "100000"}) true)]
+        (ensure! (and (= 120 (:status default))
+                      (str/includes? (:stdout default) ":fuel {:initial 512 :remaining 0}"))
+                 (str "default fuel: forever did not exhaust 512: "
+                      (:status default) " " (str/trim (:stdout default))))
+        (ensure! (and (= 120 (:status budget))
+                      (str/includes? (:stdout budget) ":fuel {:initial 100000 :remaining 0}"))
+                 (str "KEXE_FUEL=100000 was not the budget in force: "
+                      (:status budget) " " (str/trim (:stdout budget))))
+        (doseq [bad ["0" "abc" "-5" "12abc" "+7"]]
+          (let [refused (run loader args (with-env {"KEXE_FUEL" bad}) true)]
+            (ensure! (= 2 (:status refused))
+                     (str "KEXE_FUEL=" bad " was not refused with exit 2: "
+                          (:status refused) " " (:stderr refused)))))))
+
     ;; The aiueos target profiles package the sealed artifact into an ELF64 or
     ;; PE32+ container. Until `kotoba.compiler.nbb.native-package` existed this
     ;; driver had no packaging step at all, so `os/aiueos` built all 67 of its
