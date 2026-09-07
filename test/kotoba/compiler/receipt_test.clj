@@ -148,7 +148,7 @@
         runtime {:format :kotoba.native-runtime/v6
                  :target-profile {:format :kotoba.target-profile/v1
                                   :execution :native :isa :x86_64 :os :linux
-                                  :abi :sysv :runtime :kotoba-linux-supervisor-v1}
+                                  :abi :sysv :runtime :kototama-linux-supervisor-v1}
                  :loader-source-sha256 runtime-identity/loader-source-sha256
                  :loader-binary-sha256 (apply str (repeat 64 "a"))
                  :compiler-binary-sha256 (apply str (repeat 64 "b"))
@@ -186,7 +186,7 @@
   (let [runtime {:format :kotoba.native-runtime/v6
                  :target-profile {:format :kotoba.target-profile/v1
                                   :execution :native :isa :x86_64 :os :linux
-                                  :abi :sysv :runtime :kotoba-linux-supervisor-v1}
+                                  :abi :sysv :runtime :kototama-linux-supervisor-v1}
                  :loader-source-sha256 runtime-identity/loader-source-sha256
                  :loader-binary-sha256 (apply str (repeat 64 "a"))
                  :compiler-binary-sha256 (apply str (repeat 64 "b"))

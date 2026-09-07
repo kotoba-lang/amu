@@ -139,11 +139,18 @@
   ;; operation with nothing faulting to say so, which is why the suite pins
   ;; that byte as an explicit `not`. Checked with `merge-base --is-ancestor`
   ;; against 452422f.
-  (is (= "c9d5c44b77bed01b96fe1ba7dfbf1991e1ea2ba5"
+  (is (= "f040b483cbb23ccdcf6e3cc81ed5e22cae9177ac"
          (dependency-pin 'io.github.kotoba-lang/kotoba-native)))
   ;; Advanced 2026-09-07 to kotoba-native main c9d5c44 (hoist #151, cross-call
   ;; hoist #152, copy coalescing #154; 06badc8's allow-list entry is on main as
   ;; 4e717ab). main...c9d5c44 by merge-base --is-ancestor: forward only.
+  ;; Advanced again 2026-09-07 to kotoba-native main f040b483 (c9d5c44..f040b483
+  ;; ahead 6, forward only): #153 context slots in the RW page, #155 the
+  ;; vector-6 'U' handler, #156 `kernel-undefined-opcode-handler-address`
+  ;; lowering, #162 kotoba-gmir -> a3f0597c. The head is admitted by
+  ;; kotoba-sema af8cc780, lowered by kotoba-kir 658436f2 and verified by
+  ;; kotoba-verifier ed9bf9b4 in the SAME commit as this pin -- a frontend that
+  ;; admits it over a native that cannot encode it is the gap fwstore measured.
   ;; Advanced 2026-08-31 for two more instances of ADR-0286's class -- a KIR
   ;; i64 is a BigInt under ClojureScript and reached a host operation that
   ;; cannot take one. There, `hetero-vector-at`; here, `uleb` (every
@@ -219,7 +226,12 @@
   ;; resolve. With both pins advanced the same program refuses at
   ;; `:wasm-typed-lowering`, which is an emitter gap in a fourth repository
   ;; and is recorded as such rather than papered over.
-  (is (= "b021a0d179fb983e8ad7da702252cfa764cd2fc2"
+  ;; Advanced 2026-09-07 to kotoba-kir main 658436f2 (b021a0d1..658436f2 ahead
+  ;; 17, forward only) for kotoba-kir#83, the lowering of
+  ;; `kernel-undefined-opcode-handler-address`; moved in the SAME commit as the
+  ;; kotoba-sema pin that admits the head, for the reason the paragraph above
+  ;; measured.
+  (is (= "658436f25c57d7c96f121d9dfd376e9871a82445"
          (dependency-pin 'io.github.kotoba-lang/osaho)))
   ;; Advanced 2026-09-01 alongside the backend: the verifier re-derives the
   ;; two new arities and the v4 `expected-context`, and is what turns a
@@ -283,7 +295,12 @@
   ;;            kotoba-native pin to adeb1b0f, so this repository resolves one
   ;;            kotoba-native across both pins rather than an older one behind
   ;;            its own.
-  (is (= "1ee32cab32e0bc1e13c0ede8a8515b043a82dca6"
+  ;; Advanced 2026-09-07 to kotoba-verifier main ed9bf9b4 (1ee32cab..ed9bf9b4
+  ;; ahead 2, forward only) for kotoba-verifier#51: the rows for
+  ;; `kernel-undefined-opcode-handler-address`. This verifier rejects by
+  ;; absence, so it moves with the kotoba-sema / kotoba-kir / kotoba-native
+  ;; pins in this commit or the head is a green `check` and a red `compile`.
+  (is (= "ed9bf9b4b4a52751b94724f2ec0a03d39c55a367"
          (dependency-pin 'io.github.kotoba-lang/kotoba-verifier)))
   (is (= 7 (:abi/version aggregate-abi/contract)))
   (is (= :recursive-word-handles

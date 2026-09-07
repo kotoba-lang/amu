@@ -101,7 +101,12 @@
     (is (= 544 (count bytes)))
     ;; The fixture's :code is re-emitted by the pinned kotoba-native, so this
     ;; digest moves with the emitter: def77da7 under adeb1b0f; re-emitted and
-    ;; re-sealed 2026-09-07 for kotoba-native main c9d5c44.
+    ;; re-sealed 2026-09-07 for kotoba-native main c9d5c44. Re-sealed again the
+    ;; same day for kotoba-kir d41dc85 (#81): the fixture's :target-profile
+    ;; :runtime became :kototama-ios-static-host-v1 (the verifier compares it
+    ;; to `target/profile`), and the artifact :sha256 moved with it. :program,
+    ;; the 48 code words and this object digest are byte-identical to the
+    ;; previous seal -- the rename touched no emitted byte.
     (is (= "f60879b394aa69317f2f1577948a74784f294579b8e6f3b9ca894c2c4cfad5e4"
            (:object-sha256 manifest))
         "object-sha256 is computed from the same vector on both runtimes")

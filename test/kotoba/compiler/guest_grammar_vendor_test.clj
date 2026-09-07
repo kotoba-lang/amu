@@ -95,7 +95,14 @@
    ;; recorded per head because `rel` and `query` are KIR-only. Carried to all
    ;; five copies lang/vendored-copies.edn registers; this entry is the sixth
    ;; reader of those bytes.
-   "a1b444230a3ec6b835545b422f79a9c6fc581dc2588d035ae739bc0eb89d08bb"])
+   "a1b444230a3ec6b835545b422f79a9c6fc581dc2588d035ae739bc0eb89d08bb"
+   ;; 2026-09-07, kotoba-sema 3378b1d3 -> af8cc780: the authority admits
+   ;; `kernel-undefined-opcode-handler-address` (kotoba-lang f1f62cb, digest
+   ;; e333abac) and then the `fs-browse-dir` head (ba3f941, this digest).
+   ;; kotoba-sema resynced straight to ba3f941's bytes, so e333abac was never
+   ;; on this classpath and is deliberately NOT in this vector -- the history
+   ;; records what this repository READ, not every commit the authority made.
+   "ee7ea37c7ea88c52ee8869af4d485e91a0b11bb153682ad717c86c055270b6b5"])
 
 (def authority-grammar-sha256
   "sha256 of the grammar this repository reads -- kotoba-sema's copy, at the
