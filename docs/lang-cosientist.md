@@ -689,3 +689,55 @@ ty 注記なし probe のため過大評価されていた — 以下は型付�
   t21-into-hand.kotoba twin above (all definition CIDs), wasm32 compile,
   browser-host value run, fail-closed matrix ((into) / (into d x s) / non-
   vector dst / (defn into ...) reservation), nbb regression 237/1145 baseline.
+
+
+## Iteration 21 - into (2-arity vector) surface alias: implemented, KIR + wasm byte parity (2026-09-07, amu@97831b0e, sema main 4ddf48d, branch bot/lang-into-alias-20260907 @a10ad5f, PR kotoba-lang/kotoba-sema#66)
+
+- Hypothesis (carried from iter 20): `into` is the last true alias-shaped ledger
+  gap - desugar `(into dst src)` to `(reduce (fn [acc x] (vector-conj acc x))
+  dst src)` with zero new backend lowering.
+- Falsify-first baseline (pristine 4ddf48d, before any edit): `(into dst src)`
+  check REJECT exit 65 "unknown operation: into is not a builtin, a sugar head,
+  or a function of this module" (t22-baseline.txt) - note the diagnostic
+  CHANGED from iter 20's "operation has no admitted lowering" (lang-h6 split
+  the catch-all upstream; same gap, sharper message). Hand twin check PASS with
+  CIDs identical to iter 20's (t bafyreiah4tnjfp6cdhkzwvc2lyizexqopmsr6ymvjfzwlmmd76twfkfnbi,
+  loop bafyreigqcfw24skgdu24bkjaqejpql65wbaiz74p7myv3hyrwdzovzvs5u, main
+  bafyreies6aqmy3fmuyvg7h555i7nexj5uhkytsd3c5bnozbang424yvqma) - pin stable.
+- Implementation: sema branch bot/lang-into-alias-20260907 @a10ad5f
+  (frontend.cljc desugar cond `into` arm, +19 lines; mapv/filterv template +
+  module-defines-into guard; reject! on arity != 2).
+- Gate (local worktree classpath cp-t22 + amu nbb wasm_cli route, JVM-free):
+  - check `(into (vector-alloc 0) src)` PASS (exit 0)
+  - **KIR parity**: alias vs hand twin - ALL definition CIDs identical (same
+    three CIDs as the twin above; exports [t __kotoba_loop_1 main], same
+    group-cid bafyreih7pkwdb...) - exact, not just per-definition.
+  - **stronger than CID parity**: wasm32 compile of alias and hand twin are
+    byte-identical (`cmp` WASM-IDENTICAL) and alias recompile deterministic
+    (ALIAS-DETERMINISTIC). New runtime cost literally zero by construction.
+  - run (browser-host): alias = 3, hand = 3 (vector-count over 3 elems,
+    ALL-OK).
+  - fail-closed matrix: `(into dst)` / `(into d s x)` REJECT exit 65 own
+    diagnostic ("into requires a destination and one source in this subset");
+    map-dst / keyword-src REJECT exit 65 "expression type mismatch: expected
+    vector-i64" (reduce lowering's own type check, no ICE); module's own
+    `(defn into ...)` steps the alias aside - user fn compiled and ran
+    (result 1, its own vector-conj 7 body, distinct CIDs) - mapv lesson held.
+  - regression: portable .cljc suite (nbb) **292 tests / 1244 assertions /
+    0 failures / 0 errors** (baseline grew 237/1145 -> 292/1244 from upstream
+    merges; green on this branch).
+- comparator ratio: N/A - expansion IS the existing qualified lowering
+  (byte-identical wasm), speed threshold inapplicable (same class as iters
+  1/2/10/11/13/15).
+- verdict: CONFIRMED + landed pipeline: parity, fail-closed, userdef guard,
+  regression all green. PR kotoba-lang/kotoba-sema#66 (merge-pending).
+  Ledger note for amu-rank/jvm-dep-migrator: `into` coverage gap CLOSED on
+  this branch (was: no head at all).
+- Next (1 hypothesis): conj-on-vector and (long x) are semantic decisions
+  (iter 20) - not implementable here. Remaining population without a verdict:
+  `count`/`reduce` on non-vector collections (map/list domains) - probe
+  whether bare `(count s)` on a string / `(count m)` on a record admits
+  (map count already PASS iter 19 addendum), and whether `min`/`max`/`into`
+  merged state lets the jvm-dep-ledger blocked rows be re-probed for any
+  head whose ONLY blocker was an alias - final sweep against sema main after
+  #66 merges.
