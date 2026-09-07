@@ -438,11 +438,17 @@
             source (:source resolved)
             linked? (:linked? resolved)
             output (or (support/option args "--output") (str input ".kexe"))
-            result (if context
-                     (compile-cached! args source linked? target backend output
-                                      emit-program package context)
-                     (compile-uncached! args source linked? target backend output
-                                        emit-program package))]
+            result (try
+                     (if context
+                       (compile-cached! args source linked? target backend output
+                                        emit-program package context)
+                       (compile-uncached! args source linked? target backend output
+                                          emit-program package))
+                     ;; A refusal against the linked unit names the module
+                     ;; and line that wrote the form (amu-h10), as on the
+                     ;; JVM route's `compile-project`.
+                     (catch :default error
+                       (throw (project-source/attribute-error error resolved))))]
         (merge result (project-source/inputs-record resolved)))
 
     "extract-native"

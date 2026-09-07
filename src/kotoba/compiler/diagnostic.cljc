@@ -1,4 +1,5 @@
-(ns kotoba.compiler.diagnostic)
+(ns kotoba.compiler.diagnostic
+  (:require [clojure.string]))
 
 (def phase-codes
   {:usage :kotoba/invalid-usage
@@ -48,6 +49,20 @@
 
 (declare refine refined-message)
 
+(defn- base-name [path]
+  (last (clojure.string/split (str path) #"[/\\]")))
+
+(defn source-label
+  "What `:source` names. A refusal the project linker attributed to a module
+  (`:source-module`, and `:source-file` when the graph came from paths) names
+  that module's file -- the file the author can open -- rather than the root
+  the command was given, which is where the linked unit's refusals used to be
+  reported (amu-h10). Otherwise the caller's `source-name`."
+  [data source-name]
+  (or (some-> (:source-file data) base-name)
+      (some-> (:source-module data) str)
+      source-name))
+
 (defn from-error
   "Build a :kotoba.diagnostic/v1 map from an ExceptionInfo.
 
@@ -59,11 +74,12 @@
         phase (or (:phase data) :internal)
         code (or (:code (refine error))
                  (:kotoba.error/code data)
-                 (get phase-codes phase :kotoba/internal-error))]
+                 (get phase-codes phase :kotoba/internal-error))
+        source (source-label data source-name)]
     (cond-> {:format :kotoba.diagnostic/v1
              :code code
              :severity :error}
-      (string? source-name) (assoc :source source-name)
+      (string? source) (assoc :source source)
       (map? (:span data)) (assoc :span (:span data)))))
 
 (defn format-human
@@ -76,6 +92,9 @@
         d (from-error error source-name)
         code (name (:code d))
         span (:span d)
+        ;; The attributed module file when there is one, else the caller's
+        ;; name -- the same choice `from-error` made for `:source`.
+        source-name (source-label data source-name)
         loc (cond
               (and (string? source-name) (map? span)
                    (or (:line span) (:column span)))

@@ -392,7 +392,10 @@
           modules (when graph (vec (sort (map str (keys (:sources graph))))))]
       (try
         (let [result (if graph
-                       (compiler/check-project (:sources graph) (:root graph) policy)
+                       (try
+                         (compiler/check-project (:sources graph) (:root graph) policy)
+                         (catch clojure.lang.ExceptionInfo error
+                           (throw (project/with-module-file error (:paths graph)))))
                        (compiler/check-source (bounded-edn/read-text-file input) policy))
               ;; The reporting boundary. The wire id stays in HIR, in the
               ;; admission decision and in any artifact a later `compile`
@@ -607,8 +610,13 @@
                    ;; branch below. It used to be dropped here, so `--fuel`
                    ;; on a project build was accepted and silently ignored.
                    (seq source-roots)
-                   (let [{:keys [sources root]} (project-files/load-closed-graph input source-roots)]
-                     (compiler/compile-project sources root target policy {} source-opts))
+                   (let [{:keys [sources root paths]} (project-files/load-closed-graph input source-roots)]
+                     (try
+                       (compiler/compile-project sources root target policy {} source-opts)
+                       ;; The graph came from paths, so a refusal attributed
+                       ;; to a module can name the file it was loaded from.
+                       (catch clojure.lang.ExceptionInfo error
+                         (throw (project/with-module-file error paths)))))
 
                    :else
                    (compiler/compile-source (bounded-edn/read-text-file input)

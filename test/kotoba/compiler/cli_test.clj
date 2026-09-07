@@ -478,6 +478,39 @@
                      "--output" output))
         (is (= 8192 (sealed-native-fuel output)))))))
 
+(deftest project-diagnostics-name-the-authoring-module-and-its-line
+  ;; amu-h10. A project is linked into one synthetic unit before the frontend
+  ;; sees it, so a refusal used to be reported against the ROOT file at a
+  ;; line and column that exist only in the linker's output
+  ;; (`kernel.kotoba:73:297`). The module that wrote the form, and the line
+  ;; it wrote it on, are both known to the linker; the report now says them
+  ;; and drops the column, which no author's editor can jump to.
+  (let [{:keys [root source-path]}
+        (temp-project! "(ns example.a (:require [example.b :as b]) (:export [main]))
+(defn main [] :i64 (b/wide 1 2 3 4 5 6))"
+                       "b"
+                       "(ns example.b (:export [wide]))
+(defn- helper [x :i64] :i64 (+ x 1))
+(defn wide [a :i64 b :i64 c :i64 d :i64 e :i64 f :i64] :i64
+  (+ a (+ b (+ c (+ d (+ e f))))))")
+        output (.getPath (atomic-output/temp-file! "kotoba-project-diag-" ".kexe"))
+        status (atom nil)
+        err (StringWriter.)]
+    (binding [cli/*exit* #(reset! status %)
+              *err* err]
+      (cli/-main "compile" root "--source-path" source-path
+                 "--target" "x86_64-kotoba-v1" "--output" output "--unpinned"))
+    (let [report (edn/read-string (str err))
+          diagnostic (:diagnostic report)]
+      (is (= 65 @status))
+      (is (= :subset (:error report)))
+      (is (= "b.kotoba" (:source diagnostic))
+          "the module that wrote the form, not the root the command named")
+      (is (= 3 (get-in diagnostic [:span :line]))
+          "the defn line in b.kotoba, not a line of the linked unit")
+      (is (not (contains? (:span diagnostic) :column))
+          "a column into the synthetic unit is dropped rather than misreported"))))
+
 (deftest compile-wasm-target-is-unaffected-by-the-cljs-output-fix
   (let [source (temp-kotoba-source! "(defn main [] (let [x 40 y 2] (+ x y)))")
         output (.getPath (atomic-output/temp-file! "kotoba-cli-wasm-out-" ".wasm"))

@@ -818,7 +818,10 @@
   ([sources root] (check-project sources root {}))
   ([sources root policy]
    (let [linked (project/link-source sources root)]
-     (assoc (check-source (:source linked) policy {:admit-linked-synthetics? true})
+     (assoc (try
+              (check-source (:source linked) policy {:admit-linked-synthetics? true})
+              (catch clojure.lang.ExceptionInfo error
+                (throw (project/attribute-linked-error error linked))))
             :root root
             :module-order (:module-order linked)))))
 
@@ -884,12 +887,18 @@
          ;; keys; the caller's build metadata is otherwise carried unchanged.
          linked-meta (merge emit-metadata project-meta
                             {:admit-linked-synthetics? true})
-         compiled (if component-target?
-                    ;; Component opts are target + project digests only here;
-                    ;; CLI attaches fuel/profile via direct compile-component.
-                    (compile-component (:source linked) policy
-                                       (merge {:target target} linked-meta))
-                    (compile-source (:source linked) target policy linked-meta))]
+         compiled (try
+                    (if component-target?
+                      ;; Component opts are target + project digests only here;
+                      ;; CLI attaches fuel/profile via direct compile-component.
+                      (compile-component (:source linked) policy
+                                         (merge {:target target} linked-meta))
+                      (compile-source (:source linked) target policy linked-meta))
+                    ;; A refusal here was raised against the linked unit. Name
+                    ;; the module and line that wrote the form instead
+                    ;; (amu-h10; `project/attribute-linked-error`).
+                    (catch clojure.lang.ExceptionInfo error
+                      (throw (project/attribute-linked-error error linked))))]
      (cond-> (assoc compiled :project graph :project-digest graph-digest
                     :project-linkage linkage-evidence)
        (:manifest compiled)

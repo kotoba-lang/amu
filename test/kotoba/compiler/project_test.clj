@@ -639,3 +639,37 @@
            'wide.root (str "(ns wide.root (:require [wide.lib :as l]) (:export [main]))"
                            "(defn main [] :i64 (l/f 1))")}
           'wide.root)))))
+
+;; ---------------------------------------------------------------------------
+;; amu-h10: a project-mode refusal is attributed to the module that wrote the
+;; form, at the line the author wrote it on.
+
+(deftest compile-project-attributes-a-refusal-to-the-authoring-module
+  (let [b "(ns example.b (:export [wide]))
+(defn- helper [x :i64] :i64 (+ x 1))
+(defn wide [a :i64 b :i64 c :i64 d :i64 e :i64 f :i64] :i64
+  (+ a (+ b (+ c (+ d (+ e f))))))"
+        a "(ns example.a (:require [example.b :as b]) (:export [main]))
+(defn main [] :i64 (b/wide 1 2 3 4 5 6))"]
+    (try
+      (compiler/compile-project {'example.a a 'example.b b} 'example.a :x86_64-kotoba-v1)
+      (is false "a six-parameter function was admitted")
+      (catch clojure.lang.ExceptionInfo error
+        (let [data (ex-data error)]
+          (is (= :kotoba.error/max-parameters (:kotoba.error/code data))
+              "the refusal itself is unchanged")
+          (is (= 'example.b (:source-module data)))
+          (is (= 3 (get-in data [:span :line]))
+              "the defn line in example.b's own source")
+          (is (not (contains? (:span data) :column))
+              "no column: the only one known points into the linked unit"))))))
+
+(deftest source-map-carries-the-defn-line-of-each-module-function
+  (let [{:keys [source-map]}
+        (project/link-source {'example.app app-source 'example.text text-source} 'example.app)
+        by-name (into {} (map (juxt :source-name identity)) (:entries source-map))]
+    ;; text-source: ns on line 1, `prefix` on line 2, `greet` on line 3;
+    ;; app-source: ns spans lines 1-3, `welcome` on line 4.
+    (is (= 2 (get-in by-name ['prefix :source-line])))
+    (is (= 3 (get-in by-name ['greet :source-line])))
+    (is (= 4 (get-in by-name ['welcome :source-line])))))

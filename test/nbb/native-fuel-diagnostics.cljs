@@ -1,10 +1,15 @@
 (ns test.nbb.native-fuel-diagnostics
-  "The JDK-free native driver, on the seam the JVM route fixed the same
-  day (amu-h6):
+  "The JDK-free native driver, on the two seams the JVM route fixed the same
+  day (amu-h6, amu-h10):
 
   - `--fuel N` together with a policy `{:budgets {:fuel M}}`, N != M, is
     refused as `{:phase :usage :reason :fuel-declared-twice :flag N :policy M}`
     instead of the flag silently winning; N = M compiles and seals N.
+  - A refusal raised while compiling a linked project names the module and
+    line that wrote the form (`:source-module`, `:span {:line}`, and the
+    module's file when the graph came from `--source-path`), not the root
+    file at a position inside the linker's synthetic unit.
+
   Runs `kotoba.compiler.nbb.cli/run!` in-process the way `x86_64_cli.cljs`
   does, once through `support/invoke` for the envelope and once bare for the
   ex-data, so the assertions do not depend on what the envelope redacts."
@@ -71,6 +76,40 @@
     (check! "h6: --fuel 8192 with policy 8192 compiles and seals 8192"
             (and (zero? status) (= "8192" (str (get-in artifact [:limits :fuel]))))
             {:status status :stderr stderr :limits (:limits artifact)})))
+
+;; ---------------------------------------------------------------------------
+;; amu-h10
+
+(let [dir (tmpdir)
+      root (spit! dir "main.kotoba"
+                  (str "(ns example.a (:require [example.b :as b]) (:export [main]))\n"
+                       "(defn main [] :i64 (b/wide 1 2 3 4 5 6))\n"))
+      _ (spit! dir "src/example/b.kotoba"
+               (str "(ns example.b (:export [wide]))\n"
+                    "(defn- helper [x :i64] :i64 (+ x 1))\n"
+                    "(defn wide [a :i64 b :i64 c :i64 d :i64 e :i64 f :i64] :i64\n"
+                    "  (+ a (+ b (+ c (+ d (+ e f))))))\n"))
+      src (.join path dir "src")
+      out (.join path dir "main.kexe")
+      args ["compile" root "--source-path" src "--target" "x86_64" "--output" out "--unpinned"]
+      data (apply thrown-data args)]
+  (check! "h10: the refusal itself is unchanged"
+          (= :kotoba.error/max-parameters (:kotoba.error/code data)) data)
+  (check! "h10: attributed to example.b at its defn line, no column"
+          (and (= 'example.b (:source-module data))
+               (= {:line 3} (:span data)))
+          (select-keys data [:source-module :span]))
+  (check! "h10: the module's file is named when the graph came from --source-path"
+          (and (string? (:source-file data)) (str/ends-with? (:source-file data) "b.kotoba"))
+          (:source-file data))
+  (let [{:keys [status stderr]} (apply invoke args)
+        report (when (seq stderr) (reader/read-string stderr))
+        diagnostic (:diagnostic report)]
+    (check! "h10: the envelope names b.kotoba:3"
+            (and (= 65 status)
+                 (= "b.kotoba" (:source diagnostic))
+                 (= {:line 3} (:span diagnostic)))
+            {:status status :diagnostic diagnostic})))
 
 (when (pos? @failures)
   (println (str @failures " failure(s)"))

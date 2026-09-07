@@ -394,6 +394,94 @@
 
           :else (recur rest-pending))))))
 
+;; ---------------------------------------------------------------------------
+;; Attributing a refusal to the module that wrote the form (amu-h10).
+;;
+;; The frontend never sees an author's file in project mode. It sees two
+;; synthetic texts: per module, `source-text` of that module's rewritten forms
+;; plus import stubs (`analyze-module`), and then the linked unit for the whole
+;; graph (`link-source`). Every `:span` it attaches refers to one of those, so
+;; a project-build diagnostic used to name the root file at a line and column
+;; that exist only in the linker's output -- `kernel.kotoba:73:297` -- and
+;; when the refusal carried no span at all it named the root file alone,
+;; which was simply the wrong file. Both texts print one top-level form per
+;; line, so a line in either is an index into a form vector this namespace
+;; holds; the original forms carry the reader's positions, so the index turns
+;; back into the author's line. The column is not recoverable (pr-str
+;; re-flows every form) and is dropped rather than misreported.
+
+(defn- form-contains?
+  "Structural containment: is `needle` `form` itself or a subform of it?"
+  [form needle]
+  (or (= form needle)
+      (and (coll? form)
+           (some #(form-contains? % needle)
+                 (if (map? form) (concat (keys form) (vals form)) (seq form))))))
+
+(defn- top-level-index
+  "Which top-level form of the text the frontend read a refusal refers to:
+  the line of its span (one form per line), or, when it carried no span, the
+  first form containing the rejected `:form`. nil when neither locates it."
+  [forms data]
+  (let [line (get-in data [:span :line])
+        needle (:form data)]
+    (cond
+      (and (number? line) (<= 1 line (count forms))) (dec line)
+      (contains? data :form)
+      (first (keep-indexed (fn [index form] (when (form-contains? form needle) index))
+                           forms)))))
+
+(defn attribute-error
+  "The same refusal, attributed: `:source-module` names the module that
+  wrote the form and `:span` is `{:line <that module's line>}` when the line
+  is known. Any span into a synthetic text is dropped -- it is a position no
+  author can open. The code, message, phase and every other datum stand."
+  [error module line]
+  (ex-info (ex-message error)
+           (-> (ex-data error)
+               (assoc :source-module module)
+               (dissoc :span)
+               (cond-> (number? line) (assoc :span {:line line})))
+           error))
+
+(defn with-module-file
+  "Add `:source-file` to an attributed refusal from a module->path map, when
+  the graph was loaded from paths (`--source-path`). A CID-pinned graph has no
+  paths, and the module name stands alone."
+  [error paths]
+  (let [data (ex-data error)
+        file (get paths (:source-module data))]
+    (if (and (map? data) (some? file) (nil? (:source-file data)))
+      (ex-info (ex-message error) (assoc data :source-file (str file)) error)
+      error)))
+
+(defn- attribute-module-error
+  "A refusal raised while analysing one module's augmented text. `original`
+  are the module's forms as read from the author's source, `analysed` the
+  forms the frontend actually read (rewritten originals, then import stubs,
+  in that order). A form index below `(count original)` is an author's form;
+  a stub has no author and yields the module without a line."
+  [error module original analysed]
+  (let [data (ex-data error)]
+    (if (or (not (map? data)) (contains? data :source-module))
+      error
+      (let [index (top-level-index analysed data)
+            line (when (and (some? index) (< index (count original)))
+                   (:line (meta (nth original index))))]
+        (attribute-error error module line)))))
+
+(defn- definition-lines
+  "Top-level `defn`/`defn-` name -> the line the author wrote it on."
+  [forms]
+  (into {}
+        (keep (fn [form]
+                (when (and (seq? form)
+                           (contains? #{'defn 'defn-} (first form))
+                           (symbol? (second form))
+                           (number? (:line (meta form))))
+                  [(second form) (:line (meta form))])))
+        forms))
+
 (defn- analyze-module [forms info dependencies module-index]
   (let [available
         (into {}
@@ -424,8 +512,12 @@
         ;; Lambda IDs are artifact data. Give every source module a disjoint
         ;; range so the project-level dispatcher can route a closure back to
         ;; the module whose lifted helper owns that ID.
-        hir (sema/analyze (source-text augmented)
-                              {:lambda-id-base (* module-index sema/max-functions)})
+        hir (try
+              (sema/analyze (source-text augmented)
+                            {:lambda-id-base (* module-index sema/max-functions)})
+              (catch #?(:clj clojure.lang.ExceptionInfo :cljs :default) error
+                (throw (attribute-module-error error (:namespace info) forms augmented))))
+        defn-lines (definition-lines forms)
         ;; Matched on `:source-name`, not `:name`: a multi-arity stub is one
         ;; `defn-` that the frontend has already split into several functions
         ;; with generated names. Filtering on `:name` would leave those in
@@ -471,7 +563,12 @@
                                         ;; the position in the module the
                                         ;; author actually wrote.
                                         (assoc :source-module (:namespace info)
-                                               :source-span (:span (meta (:body function))))
+                                               :source-span (:span (meta (:body function)))
+                                               ;; The defn line in the author's
+                                               ;; file, from the forms as READ
+                                               ;; (the augmented text above has
+                                               ;; already re-flowed them).
+                                               :source-line (get defn-lines (source-name-of function)))
                                         (update :name local-names)
                                         ;; Before renaming: rewrite-calls rebuilds forms
                                         ;; with list*, which drops the :source-operation
@@ -667,7 +764,8 @@
                                          {:linked-line (+ 2 index)
                                           :module module
                                           :source-name (:source-name function)
-                                          :source-span (:source-span function)}))
+                                          :source-span (:source-span function)
+                                          :source-line (:source-line function)}))
                                      functions))}
           linked-bytes (value/utf8-byte-count! linked-source)]
       (when (> function-count max-project-functions)
@@ -696,3 +794,37 @@
   [source-map linked-line]
   (some (fn [entry] (when (= linked-line (:linked-line entry)) entry))
         (:entries source-map)))
+
+(defn linked-position
+  "Where in the authoring modules a refusal raised against the LINKED source
+  came from: `{:module :line}` (line nil when the module is known but the
+  defn line is not), or nil when the refusal cannot be placed -- it referred
+  to the `ns` form, a synthetic dispatcher or an export wrapper, or carried
+  neither a span nor a form."
+  [source-map linked-source data]
+  (let [entry (or (when-let [line (get-in data [:span :line])]
+                    (source-position source-map line))
+                  (when (contains? data :form)
+                    (when-let [index (top-level-index (sema/read-forms linked-source) data)]
+                      (source-position source-map (inc index)))))]
+    (when entry
+      {:module (:module entry) :line (:source-line entry)})))
+
+(defn attribute-linked-error
+  "A refusal from compiling `linked` (a `link-source` result), attributed to
+  the module and line it came from when `linked-position` can place it. An
+  error `analyze-module` already attributed passes through unchanged. One
+  that cannot be placed keeps everything but its span: the span it carried
+  points into the linked unit, which no author wrote."
+  [error linked]
+  (let [data (ex-data error)]
+    (cond
+      (or (not (map? data)) (contains? data :source-module)) error
+      (nil? (:source-map linked)) error
+      :else
+      (if-let [{:keys [module line]} (linked-position (:source-map linked)
+                                                      (:source linked) data)]
+        (attribute-error error module line)
+        (if (contains? data :span)
+          (ex-info (ex-message error) (dissoc data :span) error)
+          error)))))
