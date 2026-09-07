@@ -323,7 +323,24 @@
          ;; leave this compiler admitting a head in the frontend with no
          ;; encoding behind it, which is the gap AMU-PINS measured and which
          ;; aiueos main now has a CONSUMER for.
-         :git/sha "adeb1b0fa5bcd2dd18a657c7e3bd3c4acbd630ae"}
+         ;;
+         ;; reassoc: d5fdf8cb, kotoba-native's MAIN, 2026-09-07. Advanced for the
+         ;; pre-allocation hoist (kotoba-native #151): consumers that kill an
+         ;; operand move up beside their producers, so a trailing sum no longer
+         ;; holds every lane live. deep-spill compiles to 219 instructions with
+         ;; no SIMD parks, no stack ops and no frame (was 241/14/8/frame), and
+         ;; the compiler-path A/B on the quiet fleet host is -2.66% (sd 0.32,
+         ;; n=3) on that domain with the other five byte-identical. Also
+         ;; carries this loop's #142 (once-used Mersenne factors), #145 (one
+         ;; save-area allocation), #146 (fp/lr folded into it, measured
+         ;; neutral), #149 (SIMD-park docstring re-measured), and four commits
+         ;; from other work already on main: e1525e3 (AArch64 fuel decrement
+         ;; via carry flag -- on every kernel's path, its own suite green),
+         ;; 4e717ab (elf64 aiueos-allocator-plan export, which amu #839 wanted
+         ;; and this supersedes), 0605ec2 / a99c127 (APIC, not on the
+         ;; benchmark path). Checked with `merge-base --is-ancestor` both ways
+         ;; against adeb1b0f: ahead 17, behind 0.
+         :git/sha "d5fdf8cb50d834ad3e96ddd66df0b312aaf9948d"}
         io.github.kotoba-lang/kotoba-component
         {:git/url "https://github.com/kotoba-lang/kotoba-component.git"
          :git/sha "68acc7237aec7b24b683304db8e87d14ec1be745"}

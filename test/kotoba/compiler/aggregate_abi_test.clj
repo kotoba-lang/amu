@@ -139,7 +139,16 @@
   ;; operation with nothing faulting to say so, which is why the suite pins
   ;; that byte as an explicit `not`. Checked with `merge-base --is-ancestor`
   ;; against 452422f.
-  (is (= "adeb1b0fa5bcd2dd18a657c7e3bd3c4acbd630ae"
+  ;;
+  ;; reassoc: advanced 2026-09-07 to d5fdf8cb for the pre-allocation hoist
+  ;; (kotoba-native #151). The allocator used to see a trailing sum with every
+  ;; lane live at once; consumers that kill an operand now sit beside their
+  ;; producers, and deep-spill drops from 241 instructions / 14 SIMD parks /
+  ;; a frame to 219 / 0 / none. Compiler-path A/B on the quiet fleet host:
+  ;; -2.66% (sd 0.32, n=3) on deep-spill, the other five domains
+  ;; byte-identical. No packaged object outside deep-spill changes bytes.
+  ;; Checked with `merge-base --is-ancestor` both ways against adeb1b0f.
+  (is (= "d5fdf8cb50d834ad3e96ddd66df0b312aaf9948d"
          (dependency-pin 'io.github.kotoba-lang/kotoba-native)))
   ;; Advanced 2026-08-31 for two more instances of ADR-0286's class -- a KIR
   ;; i64 is a BigInt under ClojureScript and reached a host operation that
