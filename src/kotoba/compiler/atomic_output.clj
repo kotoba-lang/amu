@@ -7,6 +7,19 @@
             AclFileAttributeView FileAttribute PosixFilePermissions]
            [java.util Collections EnumSet]))
 
+(defn temp-file!
+  "Create a temporary file under java.io.tmpdir, registered for deletion on
+  JVM exit, and return it as a java.io.File. This is the compiler's one
+  temp-file constructor: call sites spell a prefix and a suffix, not
+  java.io.File statics. Backed by java.nio.file.Files/createTempFile so the
+  permissions model stays nio's."
+  ([prefix] (temp-file! prefix ".tmp"))
+  ([prefix suffix]
+   (doto (.. (Files/createTempFile (str prefix) (str suffix)
+                                   (make-array FileAttribute 0))
+             toFile)
+     (.deleteOnExit))))
+
 (defn- reject! [message data cause]
   (throw (ex-info message (merge {:phase :output} data) cause)))
 

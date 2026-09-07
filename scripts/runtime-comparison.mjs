@@ -107,6 +107,106 @@ const FIXTURES = {
       return [...first, ...rest].reduce((sum, value) => sum + value, 0);
     },
   },
+  // DIAGNOSTIC ONLY -- never part of a claim. kernel_deep with the lane
+  // multiplier 48271 replaced by 3, so every folded lane constant (3i+1)
+  // fits an add-immediate and the 47 MOV/MOVK materialisation instructions
+  // disappear. Everything else -- lane count, the modulo sequence, the lane-13
+  // shadowing, the dependency structure -- is identical. The question it
+  // answers is whether this kernel is issue-bound or latency-bound, which
+  // decides whether removing off-chain instructions is worth anything.
+  kernel_deep_narrowconst: {
+    kotoba: "kernel_deep_narrowconst.kotoba",
+    rust: "kernel_deep_narrowconst.rs",
+    benchmark: "deep-spill-pressure-narrowconst-diagnostic-v1",
+    nativeSymbol: "kotoba_bench_kernel_deep_narrowconst",
+    comparators: nativeComparators,
+    arithmetic: "kernel_deep with narrow lane constants (diagnostic)",
+    verificationInputs: [0, 1, 2, 199, 200, 201],
+    expected(n) {
+      const step = value => {
+        const v = value * 3 + 1;
+        return v - Math.trunc(v / 2147483647) * 2147483647;
+      };
+      const first = Array.from({ length: 14 }, (_, i) => step(n + i));
+      const shadowedN = first.at(-1);
+      const rest = Array.from({ length: 10 }, (_, i) => step(shadowedN + 14 + i));
+      return [...first, ...rest].reduce((sum, value) => sum + value, 0);
+    },
+  },
+  // DIAGNOSTIC ONLY. kernel_deep with multiplier 2039, so every folded lane
+  // constant (2039i+1, max 46898) fits sixteen bits and needs a bare MOV with
+  // no MOVK. That removes 23 instructions -- exactly the count an LDR-literal
+  // constant pool would save -- so this prices the cheap form before anyone
+  // builds the expensive one.
+  kernel_deep_movonly: {
+    kotoba: "kernel_deep_movonly.kotoba",
+    rust: "kernel_deep_movonly.rs",
+    benchmark: "deep-spill-pressure-movonly-diagnostic-v1",
+    nativeSymbol: "kotoba_bench_kernel_deep_movonly",
+    comparators: nativeComparators,
+    arithmetic: "kernel_deep with 16-bit lane constants (diagnostic)",
+    verificationInputs: [0, 1, 2, 199, 200, 201],
+    expected(n) {
+      const step = value => {
+        const v = value * 2039 + 1;
+        return v - Math.trunc(v / 2147483647) * 2147483647;
+      };
+      const first = Array.from({ length: 14 }, (_, i) => step(n + i));
+      const shadowedN = first.at(-1);
+      const rest = Array.from({ length: 10 }, (_, i) => step(shadowedN + 14 + i));
+      return [...first, ...rest].reduce((sum, value) => sum + value, 0);
+    },
+  },
+  // DIAGNOSTIC ONLY. kernel_deep with each lane's input derived from the
+  // previous by one add: (n+i)*48271+1 == ((n+i-1)*48271+1) + 48271, so every
+  // lane result is bit-identical. Only the dependency structure changes --
+  // 24 independent constant materialisations become a serial chain of adds.
+  // Tests whether induction-variable strength reduction across lanes is worth
+  // building, given 139 measured the whole materialisation cost at ~4%.
+  kernel_deep_incremental: {
+    kotoba: "kernel_deep_incremental.kotoba",
+    rust: "kernel_deep_incremental.rs",
+    benchmark: "deep-spill-pressure-incremental-diagnostic-v1",
+    nativeSymbol: "kotoba_bench_kernel_deep_incremental",
+    comparators: nativeComparators,
+    arithmetic: "kernel_deep with lane inputs chained by addition (diagnostic)",
+    verificationInputs: [0, 1, 2, 199, 200, 201],
+    expected(n) {
+      const step = value => {
+        const v = value * 48271 + 1;
+        return v - Math.trunc(v / 2147483647) * 2147483647;
+      };
+      const first = Array.from({ length: 14 }, (_, i) => step(n + i));
+      const shadowedN = first.at(-1);
+      const rest = Array.from({ length: 10 }, (_, i) => step(shadowedN + 14 + i));
+      return [...first, ...rest].reduce((sum, value) => sum + value, 0);
+    },
+  },
+  // DIAGNOSTIC ONLY. kernel_deep with the final sum interleaved into the lanes.
+  // Same lanes, same arithmetic, same result -- i64 addition is associative so
+  // reassociating the 24-term sum is exact. What changes is LIVENESS: peak live
+  // lane values drops from 24 to about 2, removing the register pressure this
+  // fixture exists to create. Tests whether sum reassociation is worth building,
+  // against the serial accumulator chain it costs.
+  kernel_deep_accum: {
+    kotoba: "kernel_deep_accum.kotoba",
+    rust: "kernel_deep_accum.rs",
+    benchmark: "deep-spill-pressure-accum-diagnostic-v1",
+    nativeSymbol: "kotoba_bench_kernel_deep_accum",
+    comparators: nativeComparators,
+    arithmetic: "kernel_deep with the sum interleaved into the lanes (diagnostic)",
+    verificationInputs: [0, 1, 2, 199, 200, 201],
+    expected(n) {
+      const step = value => {
+        const v = value * 48271 + 1;
+        return v - Math.trunc(v / 2147483647) * 2147483647;
+      };
+      const first = Array.from({ length: 14 }, (_, i) => step(n + i));
+      const shadowedN = first.at(-1);
+      const rest = Array.from({ length: 10 }, (_, i) => step(shadowedN + 14 + i));
+      return [...first, ...rest].reduce((sum, value) => sum + value, 0);
+    },
+  },
   kernel_call: {
     kotoba: "kernel_call.kotoba",
     rust: "kernel_call.rs",

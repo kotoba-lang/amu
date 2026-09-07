@@ -49,6 +49,20 @@
                      :size (byte-size (:source result))})
     (= :kexe/v1 (:format result))
     (assoc :primary {:format :kotoba.kexe/v1 :sha256 (get-in result [:artifact :sha256])})
+    ;; The EVM backend's own artifact already carries byte vectors plus their
+    ;; digests (evm/emit computes :runtime-sha256/:creation-sha256 itself), so
+    ;; the primary output identity reuses those digests rather than re-hashing
+    ;; the vectors here. Before this branch an `:evm/v1` result proved nothing
+    ;; about its emitted bytes: `:outputs` came out `{}` on BOTH runtimes --
+    ;; this file is .cljc and both share it -- so the provenance seal bound
+    ;; only the source, HIR and KIR. The same gap every other backend closed
+    ;; when this map grew its first branches.
+    (= :evm/v1 (:format result))
+    (assoc :primary {:format :evm-creation-bytes
+                     :sha256 (or (:creation-sha256 result)
+                                 #?(:clj (raw-sha256 (byte-array (map unchecked-byte (:creation-bytes result))))
+                                    :cljs (raw-sha256 (js/Buffer.from (clj->js (:creation-bytes result))))))
+                     :size (count (:creation-bytes result))})
     (:binary result) (assoc :binary (bytes-identity (:format (:binary result)) (:bytes (:binary result))))
     (:object result) (assoc :object (bytes-identity (:format (:object result)) (:bytes (:object result))))))
 

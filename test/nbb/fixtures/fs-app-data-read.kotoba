@@ -1,0 +1,11 @@
+(ns fixture.fs-app-data-read (:export [main]))
+
+;; wire id 35 = :fs/app-data. The loader's real typed provider reads the file
+;; at the request path (when the granted scope KEXE_CAP_RESOURCES_35 admits it)
+;; and returns its bytes as a string. main returns 1 only when the provider
+;; returned the real file content -- an identity stub that echoes the request
+;; path cannot pass. The request path is absolute as the loader requires.
+(defn main [] :i64
+  (let [v (typed-cap-call :fs/app-data :string :string
+                          "/Users/junkawasaki/github/com-junkawasaki/orgs/kotoba-lang/amu-kbb-fsappdata/test/nbb/fixtures/fs-request-target.txt")]
+    (if (string=? v "hello-from-fs") 1 0)))

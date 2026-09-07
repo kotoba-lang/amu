@@ -31,17 +31,45 @@
        (map ns-symbol)
        set))
 
-(defn- listed-in-runner []
-  (into #{} (map symbol)
-        (re-seq #"kotoba\.compiler\.[a-z0-9.-]+-test"
-                (slurp "test/kotoba/compiler/test_runner.clj"))))
+(defn- region
+  "The text of one named list in the runner, or nothing.
+
+  Reading the whole file was the defect this check had: a namespace named
+  anywhere in it -- in the `:require` vector alone, say -- satisfied a scan of
+  the file, while the runner only executes what the `suite` vector holds. A
+  namespace in one list and not the other is never run, and this check said
+  nothing about it. Measured 2026-09-06: three namespaces were in that state,
+  one of them `dom-app-driver-test`, the end-to-end test for the application
+  driver."
+  [source start-marker]
+  (when-let [start (str/index-of source start-marker)]
+    (when-let [end (str/index-of source "])" start)]
+      (subs source start end))))
+
+(defn- names-in [source start-marker]
+  (some->> (region source start-marker)
+           (re-seq #"kotoba\.compiler\.[a-z0-9.-]+-test")
+           (into #{} (map symbol))))
 
 (deftest every-test-namespace-is-in-the-runner
-  (let [on-disk (disj (test-namespaces-on-disk)
-                      'kotoba.compiler.test-runner-completeness-test)
-        listed (listed-in-runner)
-        missing (sort (remove listed on-disk))]
-    (is (empty? missing)
-        (str "test namespaces not run by kotoba.compiler.test-runner: "
-             (pr-str missing)
-             " — add each to BOTH the :require vector and the run-tests call"))))
+  (let [source (slurp "test/kotoba/compiler/test_runner.clj")
+        required (names-in source "(:require")
+        suite (names-in source "(def ^:private suite")]
+    ;; A check that could not read its inputs must not report a pass. Both
+    ;; lists are located by shape, so a rename that moves them turns this red
+    ;; rather than turning it into a scan of nothing.
+    (is (some? required) "test-runner has no readable :require vector")
+    (is (some? suite) "test-runner has no readable suite vector")
+    (when (and required suite)
+      (let [on-disk (disj (test-namespaces-on-disk)
+                          'kotoba.compiler.test-runner-completeness-test)
+            missing-from-suite (sort (remove suite on-disk))
+            missing-from-require (sort (remove required on-disk))]
+        ;; The suite is what actually runs, so it is named first and separately:
+        ;; a namespace missing from it produces no symptom at all.
+        (is (empty? missing-from-suite)
+            (str "test namespaces never executed -- absent from the `suite` vector: "
+                 (pr-str missing-from-suite)))
+        (is (empty? missing-from-require)
+            (str "test namespaces absent from the runner's :require vector: "
+                 (pr-str missing-from-require)))))))

@@ -98,19 +98,19 @@
     (is (not= (:sha256 linux) (:sha256 macos)))
     (is (not= (:sha256 linux) (:sha256 windows)))
     (is (= {:format :kotoba.target-profile/v1 :execution :native :isa :x86_64
-            :os :linux :abi :sysv :runtime :kotoba-linux-supervisor-v1}
+            :os :linux :abi :sysv :runtime :kototama-linux-supervisor-v1}
            (:target-profile linux)))
     (is (= {:format :kotoba.target-profile/v1 :execution :native :isa :x86_64
-            :os :windows :abi :kotoba-sysv-v1 :runtime :kotoba-windows-supervisor-v1}
+            :os :windows :abi :kotoba-sysv-v1 :runtime :kototama-windows-supervisor-v1}
            (:target-profile windows)))
     (is (= {:format :kotoba.target-profile/v1 :execution :native :isa :aarch64
-            :os :windows :abi :kotoba-aapcs64-v1 :runtime :kotoba-windows-supervisor-v1}
+            :os :windows :abi :kotoba-aapcs64-v1 :runtime :kototama-windows-supervisor-v1}
            (:target-profile windows-arm)))
     (is (= {:format :kotoba.target-profile/v1 :execution :native :isa :aarch64
-            :os :android :abi :aapcs64 :runtime :kotoba-android-isolated-host-v1}
+            :os :android :abi :aapcs64 :runtime :kototama-android-isolated-host-v1}
            (:target-profile android)))
     (is (= {:format :kotoba.target-profile/v1 :execution :native :isa :aarch64
-            :os :ios :abi :aapcs64 :runtime :kotoba-ios-static-host-v1}
+            :os :ios :abi :aapcs64 :runtime :kototama-ios-static-host-v1}
            (:target-profile ios)))
     (is (= (:code android) (:code ios) (:code windows-arm)))
     (is (not= (:sha256 windows-arm) (:sha256 android)))
@@ -118,7 +118,7 @@
     (is (= :browser (get-in browser [:target-profile :os])))
     (is (= :wasm (get-in browser [:target-profile :execution])))
     (is (= {:format :kotoba.target-profile/v1 :execution :wasm :isa :wasm32
-            :os :wasi :abi :wasm-mvp :runtime :kotoba-wasi-host-v1}
+            :os :wasi :abi :wasm-mvp :runtime :kototama-wasi-host-v1}
            (:target-profile wasi)))
     (is (not= (seq (:bytes browser)) (seq (:bytes wasi))))
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #"target profile"

@@ -15,6 +15,13 @@ const usage = [
   "       amu compile --module-lock <lock> --blocks <dir> --target <target> --output <file>",
   "       (both halves run without a JDK; add --jvm-free to prove it)",
   "       amu check <entry> --source-path <dir>            # links, emits nothing",
+  "  packages (a signed, CID-pinned kotoba.lock.edn supplying the dependencies):",
+  "       amu check <entry> --source-path <dir> --package-lock kotoba.lock.edn \\",
+  "         --packages <dir> [--trust trust.edn]",
+  "       amu package-manifest <package root> --name <n> --version <v> \\",
+  "         --url <git url> --key key.edn",
+  "       amu package-fetch --deps kotoba.deps.edn --packages <dir>",
+  "       amu package-lock --deps kotoba.deps.edn --packages <dir> --output kotoba.lock.edn",
   "       amu definition-cids <file> [--source-path <dir>]  # one CID per definition",
   "       amu compile <entry> --source-path <dir> --unpinned --target <target> --output <file>",
   "       amu worker [--target wasm32|x86_64|aarch64]",
@@ -51,6 +58,24 @@ const nbbNativeTargets = new Set([
   "aarch64-android", "aarch64-ios",
   "x86_64-aiueos-kernel-v1", "x86_64-aiueos-user-v1", "x86_64-aiueos-uefi-v1",
   "aarch64-aiueos-kernel-v1",
+  // The EVM backend is portable .cljc and its nbb parity is already asserted
+  // against the JVM's pinned bytes (test/nbb/run.cljs evm case), so the only
+  // thing the JVM did here was host the CLI. `evm_cli.cljs` now hosts it.
+  // The full profile name is accepted beside the CLI spellings because
+  // `--target evm256-kotoba-v1` is what the JVM CLI's own parse-target table
+  // documents, and a flag that works on one route but not the other would be
+  // the silent fork this launcher exists to prevent.
+  "evm", "evm256", "evm256-kotoba-v1",
+]);
+
+// The restricted-ESM targets. The emitter (kotoba-lang/kotoba-script) is
+// portable .cljc since 2026-09-06 and its nbb bytes are asserted against the
+// JVM's (that repo's test/nbb/parity.cljs, and test/nbb/js_parity.cljs here
+// against runtime/http/route-decide.mjs), so `js_cli.cljs` hosts these the
+// way `evm_cli.cljs` hosts the EVM. `cljs-browser` is deliberately absent:
+// that backend emits ClojureScript source text and stays on the JVM route.
+const nbbJsTargets = new Set([
+  "js", "javascript", "web", "js-kotoba-v1", "js-browser", "js-browser-kotoba-v1",
 ]);
 
 function fail(message, code) {
@@ -115,21 +140,28 @@ function nbbNativeEligible(args) {
   return command === "check" || command === "extract-native"
     || command === "definition-cids"
     || command === "module-lock"
+    || command === "package-manifest" || command === "package-lock"
+    || command === "package-fetch"
     || command === "verify-output-set" || command === "sign-output-set"
 
     || (command === "worker" && nbbNativeTargets.has(option(args, "--target")))
-    || (command === "compile" && nbbNativeTargets.has(option(args, "--target")));
+    || (command === "compile" && nbbNativeTargets.has(option(args, "--target")))
+    || (command === "compile" && nbbJsTargets.has(option(args, "--target")));
 }
 
 function nbbEntrypoint(root, args) {
   const command = args[0];
   const target = option(args, "--target");
   const wasm = command === "check" || command === "definition-cids"
+    || command === "package-manifest" || command === "package-lock"
+    || command === "package-fetch"
     || target === undefined || target.startsWith("wasm32");
   const filename = ["verify-output-set", "sign-output-set"].includes(command) ? "output_set_cli.cljs"
     : command === "extract-native" ? "x86_64_cli.cljs"
+    : (command === "compile" && nbbJsTargets.has(target)) ? "js_cli.cljs"
     : wasm ? "wasm_cli.cljs"
-      : target.startsWith("aarch64") ? "aarch64_cli.cljs" : "x86_64_cli.cljs";
+      : target && target.startsWith("evm") ? "evm_cli.cljs"
+        : target.startsWith("aarch64") ? "aarch64_cli.cljs" : "x86_64_cli.cljs";
   return path.join(root, "src", "kotoba", "compiler", "nbb", filename);
 }
 
@@ -304,7 +336,18 @@ function securityClasspath(root, nbbCli, jvmFree) {
 // Flags whose value is always a filesystem location, including ones with no
 // extension to recognise it by.
 const PATH_VALUED_FLAGS = new Set(["--blocks", "--source-path", "--module-lock",
-  "--output", "--policy"]);
+  "--output", "--policy", "--package-lock", "--packages", "--trust"]);
+
+// Flags whose value is NEVER a filesystem location, however much it looks
+// like one. A package name is `<org>/<name>` and a repository URL is full of
+// separators, so the "contains a slash" heuristic below rewrites both into
+// absolute paths under the caller's cwd. Measured 2026-09-06: `--name
+// kotoba-lang/demo-util` reached the backend as
+// `/…/wt/amu/kotoba-lang/demo-util`, and the manifest was written with that
+// as its package name -- accepted by every check, because a package name is
+// only ever compared to itself.
+const NON_PATH_FLAGS = new Set(["--name", "--version", "--url", "--kind",
+  "--capability", "--target", "--symbol", "--entry"]);
 
 // Extensions this CLI is handed as filesystem paths. A bare word like
 // `compile` or `wasm32-browser` has none and is left alone.
@@ -339,6 +382,7 @@ function resolveCallerPaths(args, cwd) {
     // the Amu checkout by the spawn's `cwd: root`. The flag says what the next
     // argument is; use it rather than guessing from the spelling.
     if (PATH_VALUED_FLAGS.has(args[index - 1])) return path.resolve(cwd, arg);
+    if (NON_PATH_FLAGS.has(args[index - 1])) return arg;
     const looksLikePath = arg.includes("/") || arg.includes("\\")
       || PATH_EXTENSIONS.some(ext => arg.endsWith(ext));
     return looksLikePath ? path.resolve(cwd, arg) : arg;

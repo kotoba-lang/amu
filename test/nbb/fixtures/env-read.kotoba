@@ -1,0 +1,8 @@
+(ns fixture.env-read (:export [main]))
+
+;; wire id 33 = :env/read. main returns 1 only when the typed cap-call
+;; provider returned the real value of KBB_PROVIDER_TEST_VAR -- an identity
+;; stub echoes the request ("KBB_PROVIDER_TEST_VAR") and cannot pass.
+(defn main [] :i64
+  (let [v (typed-cap-call :env/read :string :string "KBB_PROVIDER_TEST_VAR")]
+    (if (string=? v "hello") 1 0)))

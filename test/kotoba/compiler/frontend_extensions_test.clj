@@ -3,7 +3,8 @@
   kotoba-lang/kotoba's already-proven runtime.clj desugar-and/desugar-or),
   and keyword/map literals + get/assoc (new, desugared entirely to the
   existing heap-pair/list primitives -- no backend/codegen change)."
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [kotoba.compiler.atomic-output :as atomic-output]
+            [clojure.test :refer [deftest is testing]]
             [clojure.string :as str]
             [clojure.java.shell :as shell]
             [kotoba.compiler.core :as compiler]
@@ -138,7 +139,7 @@
                   (let [f (fn [x] \"done\")]
                     (do 0 (f 123))))"
         compiled (compiler/compile-source source :js-kotoba-v1)
-        module (java.io.File/createTempFile "kotoba-do-portability-" ".mjs")
+        module (atomic-output/temp-file! "kotoba-do-portability-" ".mjs")
         probe (try
                 (spit module
                       (str (:source compiled)
@@ -1012,9 +1013,10 @@
                           (ir/execute (:kir wasm) 'hidden [1])))))
 
 (deftest module-export-declarations-fail-closed
-  (is (= "namespace exports must name declared public functions"
+  ;; kotoba-sema dda80b3 names WHICH export failed and why, after the colon.
+  (is (= "namespace exports must name declared public functions: missing is not defined in this module"
          (rejection-message "(ns bad (:export [missing])) (defn main [] 0)")))
-  (is (= "namespace exports must name declared public functions"
+  (is (= "namespace exports must name declared public functions: hidden is declared with defn-, which is private; declare it with defn to export it"
          (rejection-message "(ns bad (:export [main hidden])) (defn- hidden [] 1) (defn main [] 0)")))
   (is (= "namespace exports must be unique bounded function names"
          (rejection-message "(ns bad (:export [main main])) (defn main [] 0)")))
@@ -1108,7 +1110,11 @@
          (rejection-message "(ns bad (:export [f])) (defn f [x :i64] :i64 (string-length x))")))
   ;; Nor is a parameter whose uses disagree: it falls back to `:i64` and fails
   ;; where it failed before.
-  (is (= "expression type mismatch: expected string, got i64"
+  ;; kotoba-sema af8cc780 explains an unannotated parameter whose uses disagree,
+  ;; naming both uses and their spans, and tells the author what to do.
+  (is (= (str "expression type mismatch: expected string, got i64 -- parameter x of f is "
+              "unannotated and its uses disagree: (string-length x) requires string [x at 1:68], "
+              "(> x 0) requires i64 [x at 1:48]; annotate x")
          (rejection-message "(ns bad (:export [f])) (defn f [x] :i64 (if (> x 0) (string-length x) 0))")))
   (is (= "string exceeds UTF-8 byte limit"
          (rejection-message

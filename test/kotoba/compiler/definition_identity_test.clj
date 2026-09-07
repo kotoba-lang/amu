@@ -482,3 +482,102 @@
                   (catch Exception e e))]
       (is (some? ex) "refused")
       (is (= :definition/binder-not-normalized (:problem (ex-data ex)))))))
+
+;; ---------------------------------------------------------------------------
+;; ADR-544 §3: the pure and clojure-shaped surfaces mint the SAME CID
+;;
+;; "Both `.cljk` and `.kotoba` compile to the same underlying typed KIR /
+;; Semantic DAG and mint identical Definition CIDs for equivalent normalized
+;; semantics."
+;;
+;; That was the ADR's step 2 and it was recorded as unfinished on the strength
+;; of a wrong measurement: `:kir-sha256` in a compile's provenance, which is a
+;; hash of the whole lowered module INCLUDING binder names, and which does
+;; differ between the two spellings. The Definition CID does not -- binders are
+;; alpha-normalized before the payload is sealed (kotoba.kir.alpha-normalization,
+;; converged 2026-09-02).
+;;
+;; Nothing checked it, which is why a wrong claim could stand. These pairs are
+;; the check. Each is one program written twice: once with the pure head, once
+;; with the clojure-shaped primitive it desugars onto.
+
+(def ^:private pure-shaped-pairs
+  {"lam / fn"
+   [(str "(ns p (:export [run main]))\n"
+         "(defn run [n :i64] :i64 (let [f (lam [x] (+ x 1))] (f n)))\n"
+         "(defn main [] :i64 (run 1))")
+    (str "(ns p (:export [run main]))\n"
+         "(defn run [n :i64] :i64 (let [f (fn [x] (+ x 1))] (f n)))\n"
+         "(defn main [] :i64 (run 1))")]
+   "app / ordinary application"
+   [(str "(ns p (:export [run main]))\n(defn inc1 [x :i64] :i64 (+ x 1))\n"
+         "(defn run [n :i64] :i64 (app inc1 n))\n(defn main [] :i64 (run 1))")
+    (str "(ns p (:export [run main]))\n(defn inc1 [x :i64] :i64 (+ x 1))\n"
+         "(defn run [n :i64] :i64 (inc1 n))\n(defn main [] :i64 (run 1))")]
+   "ref / the named symbol"
+   [(str "(ns p (:export [run main]))\n(defn inc1 [x :i64] :i64 (+ x 1))\n"
+         "(defn run [n :i64] :i64 (app (ref inc1) n))\n(defn main [] :i64 (run 1))")
+    (str "(ns p (:export [run main]))\n(defn inc1 [x :i64] :i64 (+ x 1))\n"
+         "(defn run [n :i64] :i64 (inc1 n))\n(defn main [] :i64 (run 1))")]
+   "rel+query / kgraph-assert!+kgraph-get"
+   [(str "(ns p (:export [run main]))\n"
+         "(defn run [n :i64] :i64 (do (rel 1 2 42) (query 1 2)))\n(defn main [] :i64 (run 0))")
+    (str "(ns p (:export [run main]))\n"
+         "(defn run [n :i64] :i64 (do (kgraph-assert! 1 2 42) (kgraph-get 1 2)))\n"
+         "(defn main [] :i64 (run 0))")]
+   "handle / try"
+   [(str "(ns p (:export [main]))\n"
+         "(defn main [] :i64 (handle (if (> 1 0) (throw \"boom\") 5) (catch e 7)))")
+    (str "(ns p (:export [main]))\n"
+         "(defn main [] :i64 (try (if (> 1 0) (throw \"boom\") 5) (catch e 7)))")]
+   ;; The one the wrong claim was about. The pure spelling introduces a
+   ;; SYNTHETIC binder for the operator; the shaped one uses the author's `g`.
+   ;; Different names, same CID -- which is the whole point of normalizing.
+   "beta-redex / let-bound closure"
+   [(str "(ns p (:export [run main]))\n"
+         "(defn run [n :i64] :i64 (app (lam [x] (+ x 1)) n))\n(defn main [] :i64 (run 1))")
+    (str "(ns p (:export [run main]))\n"
+         "(defn run [n :i64] :i64 (let [g (fn [x] (+ x 1))] (g n)))\n"
+         "(defn main [] :i64 (run 1))")]})
+
+(deftest the-pure-and-shaped-surfaces-mint-the-same-definition-cids
+  (doseq [[what [pure shaped]] pure-shaped-pairs]
+    (testing what
+      (let [p (cids pure) s (cids shaped)]
+        ;; Evidence floor first. An empty map equals an empty map, and a pair
+        ;; that compiled to nothing would otherwise read as agreement.
+        (is (seq p) (str what ": the pure spelling produced no definitions"))
+        (is (seq s) (str what ": the shaped spelling produced no definitions"))
+        (is (= p s)
+            (str what ": ADR-544 §3 requires equal Definition CIDs for equal "
+                 "normalized semantics.\n  pure   " (pr-str p)
+                 "\n  shaped " (pr-str s)))))))
+
+(deftest a-binder-name-does-not-move-a-definition-cid
+  ;; The property the pairs above rely on, asserted directly so a failure there
+  ;; can be told apart from alpha-normalization breaking generally. `loop` is
+  ;; the form `lang/code-identity.edn` names as its residual risk -- a
+  ;; self-contained binder that `verify-normalized!` cannot catch leaking.
+  (testing "loop binders"
+    (is (= (cids (str "(ns p (:export [run main]))\n"
+                      "(defn run [n :i64] :i64 (loop [i 0 acc 0] "
+                      "(if (< i 3) (recur (+ i 1) (+ acc i)) acc)))\n"
+                      "(defn main [] :i64 (run 0))"))
+           (cids (str "(ns p (:export [run main]))\n"
+                      "(defn run [n :i64] :i64 (loop [j 0 total 0] "
+                      "(if (< j 3) (recur (+ j 1) (+ total j)) total)))\n"
+                      "(defn main [] :i64 (run 0))")))
+        "measured 2026-09-06: loop desugars to a static helper whose binders
+         become ordinary params, so the residual risk that file names does not
+         reach this case")))
+
+(deftest and-a-changed-body-still-moves-it
+  ;; The negative control for both tests above. Without it they pass for an
+  ;; identity that returns a constant.
+  (is (not= (cids (str "(ns p (:export [run main]))\n"
+                       "(defn run [n :i64] :i64 (app (lam [x] (+ x 1)) n))\n"
+                       "(defn main [] :i64 (run 1))"))
+            (cids (str "(ns p (:export [run main]))\n"
+                       "(defn run [n :i64] :i64 (app (lam [x] (+ x 2)) n))\n"
+                       "(defn main [] :i64 (run 1))")))
+      "+1 and +2 must not share a CID"))

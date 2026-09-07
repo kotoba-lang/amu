@@ -45,7 +45,23 @@
         "wasm-component" :wasm-component-kotoba-v1
         "js" :js-kotoba-v1
         "javascript" :js-kotoba-v1
+        ;; The `kotoba` CLI's own spelling for this target. Without it the
+        ;; alias table dropped `web` through (keyword s) to the bare `:web`,
+        ;; rejected as :unsupported-target -- while :js-kotoba-v1 behind it
+        ;; was fully implemented (measured 2026-09-05: compile-source green,
+        ;; the emitted .mjs answers (keys {10 1 20 2}) = 2n under Node).
+        "web" :js-kotoba-v1
         "js-browser" :js-browser-kotoba-v1
+        ;; ADR-2607151500's cljs target was reachable only by its full profile
+        ;; name -- `--target cljs-kotoba-v1` -- while `js`/`javascript` mapped
+        ;; by alias. `--target cljs` fell through `(keyword s)` to the bare
+        ;; `:cljs`, which dispatch! then rejected as `:unsupported-target`
+        ;; even though the backend behind it (backend.cljs, the KIR -> cljs
+        ;; source-text emitter) is implemented and its compile-source path is
+        ;; green (measured 2026-09-04). Aliased here alongside its siblings.
+        "cljs" :cljs-kotoba-v1
+        "cljs-browser" :cljs-browser-kotoba-v1
+        "cljs-node" :cljs-node-kotoba-v1
         "evm" :evm256-kotoba-v1
         "evm256" :evm256-kotoba-v1
         "wasm32-browser" :wasm32-browser-kotoba-v1
@@ -94,7 +110,11 @@
     ;; allowlist is for. `:check` joined them for the same reason on 2026-08-30:
     ;; a module rejected for declaring `(:require ...)` needs to be told which
     ;; invocation links its project.
-    :problem :pin :then :override :check})
+    :problem :pin :then :override :check
+    ;; `:fuel-declared-twice` names the two numbers that disagreed. They are
+    ;; the caller's own integers (a flag and a policy field), already parsed
+    ;; as such, so admitting them widens nothing an error can leak.
+    :flag :policy})
 
 (defn error-report
   ([error] (error-report error nil))
@@ -372,7 +392,10 @@
           modules (when graph (vec (sort (map str (keys (:sources graph))))))]
       (try
         (let [result (if graph
-                       (compiler/check-project (:sources graph) (:root graph) policy)
+                       (try
+                         (compiler/check-project (:sources graph) (:root graph) policy)
+                         (catch clojure.lang.ExceptionInfo error
+                           (throw (project/with-module-file error (:paths graph)))))
                        (compiler/check-source (bounded-edn/read-text-file input) policy))
               ;; The reporting boundary. The wire id stays in HIR, in the
               ;; admission decision and in any artifact a later `compile`
@@ -573,7 +596,8 @@
                                                         :admit-linked-synthetics? true)))
 
                    locked
-                   (compiler/compile-project (:sources locked) (:root locked) target policy)
+                   (compiler/compile-project (:sources locked) (:root locked) target policy
+                                             {} source-opts)
 
                    ;; Multi-file closed graph → link → compile-component (T8.3
                    ;; multi-file project kit body first slice). Same Canonical
@@ -593,9 +617,17 @@
                    (compiler/compile-component
                     (bounded-edn/read-text-file input) policy component-opts)
 
+                   ;; `source-opts` rides along exactly as on the single-file
+                   ;; branch below. It used to be dropped here, so `--fuel`
+                   ;; on a project build was accepted and silently ignored.
                    (seq source-roots)
-                   (let [{:keys [sources root]} (project-files/load-closed-graph input source-roots)]
-                     (compiler/compile-project sources root target policy))
+                   (let [{:keys [sources root paths]} (project-files/load-closed-graph input source-roots)]
+                     (try
+                       (compiler/compile-project sources root target policy {} source-opts)
+                       ;; The graph came from paths, so a refusal attributed
+                       ;; to a module can name the file it was loaded from.
+                       (catch clojure.lang.ExceptionInfo error
+                         (throw (project/with-module-file error paths)))))
 
                    :else
                    (compiler/compile-source (bounded-edn/read-text-file input)

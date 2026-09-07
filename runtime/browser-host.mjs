@@ -73,6 +73,7 @@ const ALLOWED_IMPORTS = new Set([
   "kotoba:typed/string-split-count/function",
   "kotoba:typed/string-code-point-at/function",
   "kotoba:typed/string-fold-case/function",
+  "kotoba:typed/string-upper/function",
   "kotoba:typed/keyword-name/function",
   "kotoba:typed/string-index-new/function",
   "kotoba:typed/string-index-contains/function",
@@ -1824,6 +1825,14 @@ function createTypedRuntime(abi, typedCapCall, allow) {
       if (utf8Length(result) > 65536) reject("invalid-typed-value", "typed string is oversized");
       return result;
     },
+    "string-upper"(descriptorId, value) {
+      const descriptor = descriptorAt(descriptorId);
+      if (descriptor !== "string") reject("invalid-typed-operation", "string descriptor required");
+      value = assertValue(descriptor, value);
+      const result = value.toUpperCase();
+      if (utf8Length(result) > 65536) reject("invalid-typed-value", "typed string is oversized");
+      return result;
+    },
     "assoc-i64"(descriptorId, value, index, replacement) {
       return assoc(descriptorId, value, index, i64(replacement));
     },
@@ -2890,6 +2899,67 @@ function applyUiAttrs(element, pairs) {
  *        DOM factory; defaults to globalThis.document. Tests may inject a mock.
  * @returns {Element} the element reconciled as container's first element child
  */
+/**
+ * What each DOM slot was last rendered from, as CONTENT rather than as a
+ * reference: parent element -> index -> {key, element}.
+ *
+ * The first version of this memo compared document nodes by identity, on the
+ * grounds that `document-assoc` leaves untouched children at the same
+ * reference. That is true of the state and false of the paint: `dom-driver`
+ * gives every interaction a fresh guest instance, because a restricted-ESM
+ * instance is metered and a shared one dies of `fuel-exhausted` on the eighth
+ * interaction. `dom_app_driver_test` pins that at 200 instantiations. Two
+ * paints therefore never share an object, and an identity memo could not fire
+ * even once through the shipped driver.
+ *
+ * Content survives what identity cannot. The bound is what makes it cheap: a
+ * `:document` holds at most 256 nodes, so keying every slot costs a walk of a
+ * structure that is small by admission rather than by hope.
+ *
+ * A WeakMap, so a container that goes out of scope takes its memo with it.
+ */
+const renderedFrom = new WeakMap();
+
+/** Length-prefixed, so no tag, attribute or text can spell another node's key. */
+const keyPart = text => `${text.length}:${text}`;
+
+/**
+ * Everything the reconciler renders from one node, plus a key over exactly
+ * that and nothing else. Two nodes with the same key produce the same DOM, so
+ * a slot whose key is unchanged needs no DOM work -- and a node that differs
+ * anywhere the reconciler reads has a different key, because the key is built
+ * from the same four reads the renderer makes.
+ *
+ * Memoised per reconcile, so each node is described once however deep it sits.
+ */
+function describeUiNode(node, described) {
+  const seen = described.get(node);
+  if (seen !== undefined) return seen;
+  // Reading the tag and the attributes here means a denied tag, a denied
+  // attribute name or a denied URL scheme rejects the whole reconcile before
+  // any element is touched -- the guarantee the old comment on `walk` claimed
+  // per node, now total over the tree.
+  const tag = uiDocTag(node);
+  const attrs = uiDocAttrs(node);
+  const kids = uiDocChildren(node);
+  const text = kids.length === 0 ? uiDocStringField(node, "text", "") : "";
+  const head = keyPart(tag)
+    + keyPart(attrs.map(([name, value]) => keyPart(name) + keyPart(value)).join(""));
+  const key = kids.length === 0
+    ? `l${head}${keyPart(text)}`
+    : `b${head}${keyPart(kids.map(kid => describeUiNode(kid, described).key).join(""))}`;
+  const description = { key, tag, attrs, text, kids };
+  described.set(node, description);
+  return description;
+}
+
+function remember(parent, index, key, element) {
+  let slots = renderedFrom.get(parent);
+  if (slots === undefined) { slots = []; renderedFrom.set(parent, slots); }
+  slots[index] = { key, element };
+  return element;
+}
+
 export function reconcileUiDocument(container, doc, dom = {}) {
   if (container == null || typeof container !== "object")
     reject("invalid-ui-document", "reconcile container is required");
@@ -2927,24 +2997,48 @@ export function reconcileUiDocument(container, doc, dom = {}) {
     }
   };
 
+  // One description per node for this reconcile, so the key that decides
+  // whether to skip and the reads that do the rendering are the same four
+  // reads, made once.
+  const described = new Map();
+
   const walk = (parent, index, node) => {
-    const tag = uiDocTag(node);
-    // Read attributes before touching the DOM: a denied name or URL scheme
-    // must reject the whole reconcile, not leave a half-applied element.
-    const attrs = uiDocAttrs(node);
+    const { key, tag, attrs, text, kids } = describeUiNode(node, described);
+
+    // A slot whose content is what it already holds needs no DOM work. The
+    // memo is checked against the DOM before it is trusted, because an element
+    // that something else replaced is no longer the one this entry describes.
+    //
+    // What this weakens, said plainly and not understated: before any memo,
+    // every paint re-applied every attribute and every text, so anything edited
+    // underneath the reconciler was repaired by accident on the next paint.
+    // Now a skipped subtree is not descended at all, so nothing inside it is
+    // repaired -- not an attribute, not a text, not a replaced child. The slot
+    // check only guards the level the paint actually reaches.
+    //
+    // That is sound for the caller this exists for: `dom-driver` owns its
+    // mount, attaches listeners to the container rather than to guest-named
+    // nodes, and the guest cannot name a DOM object at all. A caller that
+    // shares a container with other code is outside what this assumes.
+    // `scripts/test-reconcile-sharing.mjs` pins the limit rather than leaving
+    // it to be discovered.
+    const remembered = renderedFrom.get(parent)?.[index];
+    if (remembered !== undefined
+        && remembered.key === key
+        && remembered.element === parent.childNodes?.[index])
+      return remembered.element;
+
     const el = ensureChild(parent, index, tag);
     applyUiAttrs(el, attrs);
-    const text = uiDocStringField(node, "text", "");
-    const kids = uiDocChildren(node);
     if (kids.length === 0) {
       // Leaf: textContent is the single source of truth (clears element children).
       if (el.textContent !== text) el.textContent = text;
-      return el;
+      return remember(parent, index, key, el);
     }
     // Branch: ignore :text; reconcile element/text children from the vector only.
     for (let i = 0; i < kids.length; i++) walk(el, i, kids[i]);
     trimAfter(el, kids.length);
-    return el;
+    return remember(parent, index, key, el);
   };
 
   const root = walk(container, 0, doc);

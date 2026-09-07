@@ -27,7 +27,7 @@
          :git/sha "d5137c7bbd029e4c09964e8241899d2c286302bf"}
         io.github.kotoba-lang/kotoba-script
         {:git/url "https://github.com/kotoba-lang/kotoba-script.git"
-         :git/sha "b72a333878a70954274162ce8ce09e480824ac59"}
+         :git/sha "8a55311bff0785b18e161fba2062fd38ca98868d"}
         ;; ADR-0222: source reading and semantic analysis live behind the
         ;; kotoba-sema repository boundary and public semantic-analysis API.
         ;;
@@ -68,16 +68,18 @@
         ;; read 3e3f9748 while the file on disk hashed to 67561e57, and nothing
         ;; said so.
         ;;
-        ;;   grammar-sha256    871f3873ae30a33ba7461c8664094b42396c0c4d79612668d11b0b29a2c0172f
-        ;;   kotoba-sema-pin   63d76616e35347dacc8db57a81a6d58cca4ff633
+        ;;   grammar-sha256    ee7ea37c7ea88c52ee8869af4d485e91a0b11bb153682ad717c86c055270b6b5
+        ;;   kotoba-sema-pin   af8cc78060493e9169ca4199dfa7f33d468b9a1d
         ;;
         ;; `guest_grammar_vendor_test/authority-digest-history` ends with the
         ;; same digest, so the pin, the prose and the history move in one
         ;; commit or the suite goes red.
         ;;
-        ;; Advanced 2026-09-03, df383ba0 -> 63d76616, and the grammar moved with
-        ;; it (6e1202fd -> 871f3873) -- which is the case the history vector was
-        ;; written for, so 871f3873 is APPENDED there rather than substituted.
+        ;; Advanced 2026-09-05 (kbb slice 3), 63d76616 -> bf01d4a8, and the
+        ;; grammar moved with it (871f3873 -> 9d701ea: the env-read/fs-browse
+        ;; string heads). 9d701ea is APPENDED to the history vector, not
+        ;; substituted. bf01d4a8 also carries the compiler wire ids 33/34
+        ;; (:env/read / :fs/browse) in the vendored capability catalog.
         ;; What the advance buys, and why it is not optional:
         ;;
         ;;  - 72c2577 gives `peek`, `pop`, `keys` and `vals` primitives. Without
@@ -99,9 +101,23 @@
         ;;    named neither; resyncing the shadowing copy from the copy it
         ;;    shadows would have carried that misplacement into a third
         ;;    repository (kotoba-lang 5b54e5e3, ADR-2609031100).
+        ;; Advanced 2026-09-07, 3378b1d3 -> af8cc780 (kotoba-sema main, ahead 16,
+        ;; forward only by merge-base --is-ancestor): kotoba-sema#61/#67 admit
+        ;; `kernel-undefined-opcode-handler-address` (arity 0, sibling of
+        ;; `kernel-double-fault-handler-address`), and the grammar moved with it
+        ;; a1b44423 -> ee7ea37c. kotoba-lang's authority passed through
+        ;; e333abac (f1f62cb, the same head) on the way to ee7ea37c (ba3f941,
+        ;; the fs-browse-dir head); no kotoba-sema commit carried e333abac, so
+        ;; only ee7ea37c is APPENDED to `authority-digest-history`. Measured at
+        ;; these pins: `fs-browse-dir` is a grammar head with no lowering in
+        ;; kotoba-kir 658436f2 and no row in kotoba-verifier ed9bf9b4 (0 files
+        ;; name it in either), and the capability catalog did not move
+        ;; (e191c8b1 on the authority, on kotoba-sema and on this repository's
+        ;; copy alike) -- so it is admitted by the grammar and refused at
+        ;; compile time, not at run time.
         io.github.kotoba-lang/kotoba-sema
         {:git/url "https://github.com/kotoba-lang/kotoba-sema.git"
-         :git/sha "63d76616e35347dacc8db57a81a6d58cca4ff633"}
+         :git/sha "af8cc78060493e9169ca4199dfa7f33d468b9a1d"}
         ;; ADR-2607266000 Phase B: these responsibilities moved out of this repo.
         ;;
         ;; The slice-value stream held this pin on purpose (ADR 0314), because
@@ -161,7 +177,15 @@
          ;; A frontend that admits a head its lowering has never heard of is a
          ;; worse state than either pin alone: the refusal moves from compile
          ;; time to run time. The two pins move in one commit.
-         :git/sha "b021a0d179fb983e8ad7da702252cfa764cd2fc2"}
+         ;;
+         ;; Advanced 2026-09-07, b021a0d1 -> 658436f2 (kotoba-kir main, ahead 17,
+         ;; forward only), for kotoba-kir#83: the lowering of
+         ;; `kernel-undefined-opcode-handler-address`. Same rule as above --
+         ;; the kotoba-sema pin in this commit admits the head, so a kir left
+         ;; behind would trap `:unknown-function` at run time. The four commits
+         ;; past 55b7a29f (ADR-0270 KIR-as-IPLD-codec and the payload-v3
+         ;; differential) are documentation and tests on kotoba-kir's side.
+         :git/sha "658436f25c57d7c96f121d9dfd376e9871a82445"}
         ;; The frontend is an HIR producer and KIR lowering is its consumer;
         ;; both validate the same checked envelope.
         io.github.kotoba-lang/kotoba-hir
@@ -176,7 +200,13 @@
         ;; or execution refuses before the guest starts.
         io.github.kotoba-lang/artifact
         {:git/url "https://github.com/kotoba-lang/artifact.git"
-         :git/sha "912ca0d60f4a9b5d3617a43d1d42560477d7894f"}
+         ;; kbb slice 4: 9e908fb0 advances loader-source-sha256 for the
+         ;; env_read_provider (wire id 33); d94e63a4 advances it again for
+         ;; fs_app_data_read_provider (wire id 35, KEXE_CAP_RESOURCES_35 scope);
+         ;; 9749773d advances it for the fs_app_data WRITE provider (write form
+         ;; "path WRITE_SEP content", Seatbelt file-write* subpath); 8c77d809
+         ;; escapes the docstring quotes (PR #21 follow-up, fixes browser matrix).
+         :git/sha "8c77d80975c2609cf3943e2fd4124b25394c05f7"}
         ;; HELD at 1a2e10c on 2026-09-03 (ADR 0331), 28 commits behind its main,
         ;; while every other pin in this file moved to the tip. The reason, so
         ;; that a lagging pin and a pin with an argument behind it stay
@@ -315,10 +345,44 @@
          ;; leave this compiler admitting a head in the frontend with no
          ;; encoding behind it, which is the gap AMU-PINS measured and which
          ;; aiueos main now has a CONSUMER for.
-         :git/sha "adeb1b0fa5bcd2dd18a657c7e3bd3c4acbd630ae"}
+         ;; 2026-09-07: 06badc8 was one commit on a side branch (its allow-list
+         ;; entry is on kotoba-native main as 4e717ab). c9d5c44 is kotoba-native
+         ;; main: the pre-allocation hoist (#151), the cross-call hoist (#152)
+         ;; and call-argument copy coalescing (#154). Codegen moves on the call
+         ;; domains and deep-spill; every other benchmark kernel is byte-identical.
+         ;; 2026-09-07 (second advance): c9d5c44 -> f040b483, kotoba-native main,
+         ;; ahead 6, forward only. #153 context slots in the RW page, #155 the
+         ;; vector-6 'U' (undefined opcode) handler, #156 the lowering of
+         ;; `kernel-undefined-opcode-handler-address`, #162 the kotoba-gmir pin
+         ;; -> a3f0597c (kotoba-gmir#30 admits the same head). kotoba-gmir is
+         ;; transitive here -- this repository does not pin it directly -- so
+         ;; deps-lock.edn is where d4e040b2 -> a3f0597c shows. kotoba-mir and
+         ;; kotoba-codegen do not move (0bb174c8 / 3a7d7fc2 on both sides).
+         :git/sha "f040b483cbb23ccdcf6e3cc81ed5e22cae9177ac"}
         io.github.kotoba-lang/kotoba-component
         {:git/url "https://github.com/kotoba-lang/kotoba-component.git"
          :git/sha "68acc7237aec7b24b683304db8e87d14ec1be745"}
+        ;; The package contract: `kotoba.lang.package-contract` validates a
+        ;; `kotoba.lock.edn` -- required fields, real CIDv1s, capability grant
+        ;; ⊆ declaration, signer revocation, and Ed25519 signature
+        ;; verification. `kotoba.compiler.nbb.package-lock` consumes a lock
+        ;; through it rather than re-deriving the rules; a second validator
+        ;; would be free to disagree with the one the corpus tests, which is
+        ;; exactly how `check-package-contract.bb` drifted before it was
+        ;; deleted.
+        ;;
+        ;; Pinned at 2ebe7461. This is a FLOOR, not a convenience: ccd26fda
+        ;; made signature verification portable and 2ebe7461 made
+        ;; `manifest-integrity-error` portable. Below ccd26fda every signature
+        ;; is rejected here (`:clj`-only verification), so no signed manifest
+        ;; can be consumed at all; below 2ebe7461 `manifest-integrity-error`
+        ;; does not exist off the JVM, and a lock would be admitted on a
+        ;; signature over a self-declared cid nothing checked against content.
+        ;; An older pin is not a weaker check, it is a build that cannot
+        ;; consume a lock.
+        io.github.kotoba-lang/kotoba-core-contracts
+        {:git/url "https://github.com/kotoba-lang/kotoba-core-contracts.git"
+         :git/sha "2ebe7461bdf89e609b0dda2517393604e37b12b0"}
         ;; CIDv1 for `module-lock`: pinned module resolution has to prove the
         ;; bytes it read are the ones the lock names, and that is a hash, not a
         ;; path check. Same pin the codebase/semantic layers use, so a source
@@ -367,22 +431,41 @@
          ;; d1985d62 and adds the four rows for `kernel-uefi-alloc-region`
          ;; (kotoba-verifier ADR-0050). This verifier rejects by ABSENCE, so
          ;; the older pin refuses the head the frontend admits.
-         :git/sha "96edd345ce46bc2e2c3c4ae9b4f4cdc26484f188"}
+         ;; kbb slice 3: 1ee32cab admits a :string entry result — one machine
+         ;; word (pair(offset,length) handle), KEXE_RESULT_TYPE=string is
+         ;; readable by kexe_loader.c.
+         ;; Advanced 2026-09-07, 1ee32cab -> ed9bf9b4 (kotoba-verifier main, ahead
+         ;; 2, forward only), for kotoba-verifier#51: the rows for
+         ;; `kernel-undefined-opcode-handler-address`. This verifier rejects by
+         ;; ABSENCE, so without this the head the frontend now admits and kir now
+         ;; lowers would still be a green `check` and a red `compile`.
+         :git/sha "ed9bf9b4b4a52751b94724f2ec0a03d39c55a367"}
 }
  :aliases {:test {:extra-paths ["test"]
                   :extra-deps
                   {io.github.kotoba-lang/provider
                    {:git/url "https://github.com/kotoba-lang/provider.git"
                     :git/sha "f040fc07675b0ef68b6e638a856cd20b65dba125"}
+                   ;; Advanced 2026-09-07, ec4d182e -> a569f1d1 (kototama-native
+                   ;; main, ahead 10, forward only), REQUIRED by the kotoba-kir
+                   ;; pin above: kotoba-kir d41dc85 (#81) renamed every
+                   ;; `:runtime` keyword kotoba-* -> kototama-*, and the
+                   ;; executor's untagged-supervisor gate compared the artifact
+                   ;; profile against the literal `:kotoba-supervisor-v1`.
+                   ;; Measured with only the kir pin moved: 122 "artifact and
+                   ;; runtime target profiles do not match" errors across the
+                   ;; native suites, 0 on the base. kototama-native #11 follows
+                   ;; the rename. Same sha in :native-run and
+                   ;; :native-conformance below -- one kototama-native.
                    io.github.kotoba-lang/kototama-native
                    {:git/url "https://github.com/kotoba-lang/kototama-native.git"
-                    :git/sha "ec4d182e5f0118ecaca54b66295eb6a9cf3f9536"}}
+                    :git/sha "a569f1d14a09674503fc00733fd38fd3699fa4fb"}}
                   :main-opts ["-m" "kotoba.compiler.test-runner"]}
            :native-run
            {:extra-deps
             {io.github.kotoba-lang/kototama-native
              {:git/url "https://github.com/kotoba-lang/kototama-native.git"
-              :git/sha "ec4d182e5f0118ecaca54b66295eb6a9cf3f9536"}}
+              :git/sha "a569f1d14a09674503fc00733fd38fd3699fa4fb"}}
             :main-opts ["-m" "kotoba.compiler.cli"]}
            :run {:main-opts ["-m" "kotoba.compiler.cli"]}
            :conformance
@@ -394,7 +477,7 @@
            {:extra-deps
             {io.github.kotoba-lang/kototama-native
              {:git/url "https://github.com/kotoba-lang/kototama-native.git"
-              :git/sha "ec4d182e5f0118ecaca54b66295eb6a9cf3f9536"}
+              :git/sha "a569f1d14a09674503fc00733fd38fd3699fa4fb"}
              io.github.kotoba-lang/provider
              {:git/url "https://github.com/kotoba-lang/provider.git"
               :git/sha "f040fc07675b0ef68b6e638a856cd20b65dba125"}}

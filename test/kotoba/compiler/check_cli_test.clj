@@ -34,6 +34,52 @@
       (is (= :kotoba.error/pure-product-effects
              (:kotoba.error/code (ex-data e)))))))
 
+(deftest check-source-admits-the-pure-heads
+  ;; ADR-544 step 1 admits the pure head set (lam app ref perform rel query
+  ;; handle) as desugaring source forms. This was the compiler-side RED gate
+  ;; -- it asserted `lam`/`app` were REJECTED, and said in its own comment to
+  ;; edit it to assert admission as part of landing the grammar change rather
+  ;; than delete it. Step 1 landed 2026-09-06 (kotoba-lang #582/#586,
+  ;; kotoba-sema #55/#57/#59), so this is that edit.
+  ;;
+  ;; The pure-product profile is the strict one, which is the point: these
+  ;; heads desugar onto primitives that were already inside it, so admitting
+  ;; them widened no profile.
+  (is (some? (compiler/check-source
+              "(ns demo (:export [main])) (defn main [] :i64 (app (lam [x] x) 41))"
+              {:language-profile :pure-product}))
+      "lam/app must compile under :pure-product")
+  (is (some? (compiler/check-source
+              (str "(ns demo (:export [main])) (defn inc1 [x :i64] :i64 (+ x 1)) "
+                   "(defn main [] :i64 (app (ref inc1) 41))")
+              {:language-profile :pure-product}))
+      "ref must resolve to a name this module defines")
+  ;; And the two that must still be refused there, so this is not a test that
+  ;; simply stopped checking anything: `perform` and `handle` carry effects,
+  ;; and `:pure-product` is effect-free by definition.
+  ;;
+  ;; Each is pinned to the code of the rule that ACTUALLY refuses it, not to a
+  ;; shared one. They are refused by different rules and the difference is
+  ;; real: `perform` needs a `:capabilities` declaration, and the profile
+  ;; rejects that clause before it ever looks at a head, so it never reaches
+  ;; the head set. Asserting one code for both would have been satisfied by
+  ;; either rule doing all the work.
+  (doseq [[what expected source]
+          [["perform" :kotoba.error/pure-product-capabilities
+            (str "(ns demo (:capabilities #{:clock/now}) (:export [main])) "
+                 "(defn main [] :i64 (perform :clock/now 0))")]
+           ["handle" :kotoba.error/pure-product-forbidden
+            (str "(ns demo (:export [main])) "
+                 "(defn main [] :i64 (handle (if (> 1 0) (throw \"boom\") 5) (catch e 7)))")]]]
+    (try
+      (compiler/check-source source {:language-profile :pure-product})
+      (is false (str what " must still be refused under :pure-product"))
+      (catch clojure.lang.ExceptionInfo e
+        (is (= expected (:kotoba.error/code (ex-data e)))
+            (str what " must be refused by its own rule -- a different code "
+                 "would mean that rule had stopped firing and something else "
+                 "happened to catch it"))))))
+
 (deftest check-source-pure-product-rejects-capabilities
   (try
     (compiler/check-source pure-caps-bad {:language-profile :pure-product})

@@ -1,5 +1,6 @@
 (ns kotoba.compiler.interface-test
-  (:require [clojure.edn :as edn]
+  (:require [kotoba.compiler.atomic-output :as atomic-output]
+            [clojure.edn :as edn]
             [clojure.test :refer [deftest is]]
             [kotoba.compiler.cli :as cli]
             [kotoba.compiler.interface :as interface])
@@ -24,8 +25,7 @@
     (is (not (interface/valid? (assoc-in a [:exports 0 :result] :string))))))
 
 (deftest cli-inspect-emits-the-versioned-interface
-  (let [file (doto (java.io.File/createTempFile "kotoba-interface-" ".cljk")
-               (.deleteOnExit))
+  (let [file (atomic-output/temp-file! "kotoba-interface-" ".cljk")
         out (StringWriter.)]
     (spit file source)
     (binding [*out* out] (cli/-main "inspect" (.getPath file)))

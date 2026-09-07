@@ -1,5 +1,6 @@
 (ns kotoba.compiler.callable-values-test
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [kotoba.compiler.atomic-output :as atomic-output]
+            [clojure.test :refer [deftest is testing]]
             [clojure.java.shell :as shell]
             [clojure.string :as str]
             [kotoba.compiler.core :as compiler]
@@ -132,7 +133,10 @@
   (is (= 5 (execute-main
             "(defn main [] (let [+ (fn [a b] (- a b))] (+ 9 4)))")))
   (testing "unbound call heads remain closed-world errors"
-    (is (re-find #"no admitted lowering"
+    ;; kotoba-sema dda80b3: a misspelled head is refused as "unknown operation:
+    ;; <head> is not a builtin, a sugar head, or a function of this module",
+    ;; with the nearest names beside it, instead of the old catch-all.
+    (is (re-find #"unknown operation: misspelled is not a builtin"
                  (rejection-message "(defn main [] (misspelled 1))"))))
   (testing "direct closure application retains the ABI arity bound"
     (is (re-find #"arity four"
@@ -480,7 +484,7 @@
         js (compiler/compile-source source :js-kotoba-v1)
         wasm-a (compiler/compile-source source :wasm32-browser-kotoba-v1)
         wasm-b (compiler/compile-source source :wasm32-browser-kotoba-v1)
-        module (java.io.File/createTempFile "kotoba-structured-closure-" ".mjs")
+        module (atomic-output/temp-file! "kotoba-structured-closure-" ".mjs")
         probe (try
                 (spit module
                       (str (:source js)
@@ -540,7 +544,7 @@
         js (compiler/compile-source source :js-kotoba-v1)
         wasm-a (compiler/compile-source source :wasm32-browser-kotoba-v1)
         wasm-b (compiler/compile-source source :wasm32-browser-kotoba-v1)
-        module (java.io.File/createTempFile "kotoba-numeric-closure-" ".mjs")
+        module (atomic-output/temp-file! "kotoba-numeric-closure-" ".mjs")
         probe (try
                 (spit module
                       (str (:source js)

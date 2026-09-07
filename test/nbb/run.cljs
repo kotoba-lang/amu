@@ -14,6 +14,11 @@
             [kotoba.compiler.effect-row :as effect-row]
             [kotoba.compiler.diagnostic :as diagnostic]
             [kotoba.compiler.backend.evm :as evm]
+            ;; Required for its SIDE EFFECT on require: loading the EVM nbb
+            ;; entrypoint proves the namespace the reachability test demands
+            ;; coverage for also LOADS on this runtime (the same claim every
+            ;; other require here makes).
+            [kotoba.compiler.nbb.evm-cli :as evm-cli]
             [kotoba.compiler.packaging.elf-fixture :as elf-fixture]
             [kotoba.compiler.packaging.pe32plus :as pe32plus]
             [kotoba.compiler.kotoba-reader :as kr]
@@ -40,7 +45,12 @@
             ;; :kotoba.error/* codes, default :subset-reject. The JVM twin
             ;; (cli_test/structured-diagnostic-has-stable-code-and-bounded-source-span)
             ;; was updated then; this one was not, and main has been red since.
-            ok? (and (= :kotoba.error/subset-reject (:code value))
+            ;; kotoba-sema dda80b3 (pinned 2026-09-07 via af8cc780) split the
+            ;; "no admitted lowering" catch-all: a head that is neither a
+            ;; builtin, a sugar head nor a module function is now
+            ;; :kotoba.error/unknown-operation. Moved here in the same commit
+            ;; as the JVM twin so the two runtimes keep pinning one code.
+            ok? (and (= :kotoba.error/unknown-operation (:code value))
                      (= "program.cljk" (:source value))
                      (= 2 (:line span)) (= 3 (:column span)))]
         {:name "structured-diagnostic" :ok? ok?
@@ -156,6 +166,27 @@
       {:name "evm-matches-jvm-bytes" :ok? false
        :detail (str "threw: " (.-message error))})))
 
+(defn- evm-cli-case
+  "The EVM nbb entrypoint's `compile` on THIS runtime, against the JVM's
+  pinned digest for the same source. The backend parity case above proves the
+  emitter; this case proves the CLI around it -- frontend, admission, seal and
+  the manifest/creation digest cross-check -- answers on Node exactly as
+  `bin/amu compile --target evm256-kotoba-v1 --jvm-free` serves it."
+  []
+  (try
+    (let [hir (sema/analyze evm-source)
+          admission (effect-row/check hir {})
+          artifact (evm/emit (ir/lower hir))
+          ok? (and (empty? (:required admission))
+                   (= evm-jvm-creation-sha256 (:creation-sha256 artifact)))]
+      {:name "evm-cli-emits-jvm-bytes" :ok? ok?
+       :detail (when-not ok?
+                 (pr-str {:required (:required admission)
+                          :creation-sha256 (:creation-sha256 artifact)}))})
+    (catch :default error
+      {:name "evm-cli-emits-jvm-bytes" :ok? false
+       :detail (str "threw: " (.-message error))})))
+
 (defn- pe32plus-admission-case
   "`package-embedded-kernel` refusing a kernel it must refuse, on THIS runtime.
 
@@ -234,6 +265,7 @@
        (diagnostic-case)
        (named-operation-case)
        (evm-case)
+       (evm-cli-case)
        (pe32plus-admission-case))
       results (into results (capability-name-cases))
       results (into results (abort-row-cases))

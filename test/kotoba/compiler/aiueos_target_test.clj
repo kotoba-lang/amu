@@ -98,7 +98,7 @@
       (let [profile (target/profile name)]
         (is (= :aiueos (:os profile)))
         (is (= (if (= name :x86_64-aiueos-user-v1)
-                 :kotoba-aiueos-user-v1 :none)
+                 :kototama-aiueos-user-v1 :none)
                (:runtime profile)))
         (is (false? (:ambient-syscalls profile)))
         (is (= expected (select-keys profile (keys expected))))))))
@@ -111,7 +111,7 @@
         (is (= name (:target artifact)))
         (is (= (target/profile name) (:target-profile artifact)))
         (is (= (if (= name :x86_64-aiueos-user-v1)
-                 :kotoba-aiueos-user-v1 :none)
+                 :kototama-aiueos-user-v1 :none)
                (get-in artifact [:target-profile :runtime])))))))
 
 (deftest kernel-target-emits-a-real-freestanding-elf64-image
@@ -188,17 +188,18 @@
     (is (contains-bytes? [0xc6 0x04 0x25 0x00 0x00 0x10 0x00 0x00]) "guard write")
     (is (contains-bytes? [0xc6 0x04 0x25 0x00 0x10 0x10 0x00 0x00]) "text write")
     (is (some? rw-segment) "RW context PT_LOAD exists")
-    ;; The NX probe still loads 0x110000 (machine_ir / x86_64). elf64.clj
-    ;; places the RW PT_LOAD at a dynamic data offset (minimum 0x108000), so
-    ;; the encoding is not the segment start. 0x110000 must still fall inside
-    ;; that mapping or the probe executes a page the image did not mark NX.
-    (let [nx-addr 0x110000]
-      (is (contains-bytes? (into [0x49 0xba] (le-bytes nx-addr 8)))
-          "NX execute target 0x110000")
-      (is (<= (:vaddr rw-segment) nx-addr)
-          "NX address at or after RW vaddr")
-      (is (< nx-addr (+ (:vaddr rw-segment) (:memsz rw-segment)))
-          "NX address inside RW PT_LOAD"))))
+    ;; Until kotoba-native f9d17a3 (#155, pinned 2026-09-07 via f040b483) the
+    ;; NX probe was `movabs r10,0x110000; call r10`, and this test pinned that
+    ;; immediate and checked it fell inside the RW PT_LOAD. Both assumed the
+    ;; context page sits at image-base+0x10000; under the JVM packager that
+    ;; address is inside RX text, so the probe executed text and the #PF
+    ;; classifier could never answer 'X' for the page it was written to name.
+    ;; The probe now DERIVES the page: r9 is the context register, so the
+    ;; fetch is `mov r10,r9; call r10` (`interrupt-abi/probe-nx-execute-bytes`)
+    ;; and there is no address literal left to range-check -- the RW PT_LOAD
+    ;; assertion above is what remains of that check.
+    (is (contains-bytes? [0x4d 0x89 0xca 0x41 0xff 0xd2])
+        "NX execute probe: mov r10,r9; call r10 (fetch from the context page)")))
 
 (deftest kernel-target-loads-versioned-boot-info-from-its-private-context
   (let [artifact (:artifact (compiler/compile-source

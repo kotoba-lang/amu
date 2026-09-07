@@ -1,5 +1,6 @@
 (ns kotoba.compiler.wasm-typed-test
-  (:require [clojure.java.shell :as shell]
+  (:require [kotoba.compiler.atomic-output :as atomic-output]
+            [clojure.java.shell :as shell]
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
             [kotoba.wasm.core :as wasm]
@@ -684,7 +685,7 @@
                                           {:allow #{[:cap/call 7]}})
         text (String. (byte-array (map unchecked-byte (:bytes compiled)))
                       "ISO-8859-1")
-        tmp (java.io.File/createTempFile "amu-clock-now-" ".wasm")]
+        tmp (atomic-output/temp-file! "amu-clock-now-" ".wasm")]
     (try
       (with-open [out (java.io.FileOutputStream. tmp)]
         (.write out ^bytes (:bytes compiled)))

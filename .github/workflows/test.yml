@@ -74,6 +74,15 @@ jobs:
         with:
           cli: 1.12.5.1654
       - run: npm ci
+      # #775: the ubuntu-24.04 runner image (20260831.293+) now ships Kind
+      # 0.33.0, but scripts/kind-server-conformance.cljs pins kind v0.32.0
+      # exactly. Install the pinned binary ahead of it on PATH.
+      - name: Install pinned kind v0.32.0
+        run: |
+          curl -fsSLo /tmp/kind https://kind.sigs.k8s.io/dl/v0.32.0/kind-linux-amd64
+          chmod +x /tmp/kind
+          sudo mv /tmp/kind /usr/local/bin/kind
+          kind version
       - run: npm run test-kind-server
   # This compiler is itself a library, and its own suite passing is not enough.
   # A KIR-shape change can be green here and leave a downstream repo's shipped

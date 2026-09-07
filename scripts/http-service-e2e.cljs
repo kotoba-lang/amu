@@ -5,8 +5,9 @@
 ;; and fail loudly rather than silently if the shipped decision core has
 ;; drifted from its source.
 ;;
-;; The compile step needs a JDK (js/js-browser targets route through
-;; `clojure -M:run`, per browser-matrix's own note) -- that is a BUILD-time
+;; The compile step no longer needs a JDK: since 2026-09-06 `bin/amu` routes
+;; js/js-browser to the nbb driver (kotoba.compiler.nbb.js-cli), the emitter
+;; being portable .cljc. The note that follows predates that -- a BUILD-time
 ;; dependency of this repo's tooling, not a runtime dependency of the
 ;; artifact this test proves works. The Node process this script spawns to
 ;; actually serve HTTP and answer requests never touches java(1).
