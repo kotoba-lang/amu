@@ -21,17 +21,33 @@ identity library is a canonical encoder, not a binder-aware normalization, so
 this step is the compiler's), and a callee symbol is replaced by its CID.
 Mutual recursion follows `scc-v1` — the cycle is hashed as a unit, with its
 member ordering chosen from the canonical bytes rather than from the names.
-A definition the identity cannot seal — today, one whose effect row carries the
-tracked control effect `:abort`, which names no capability — is listed with an
-explicit `:definition-cid :unbridged-effect` marker; a CID is never invented for
-a hole.
+A definition the identity cannot seal is listed with an explicit
+`:definition-cid :unbridged-effect` marker, and its callers with
+`:dependency-unavailable`; a CID is never invented for a hole. What cannot be
+sealed is a wire id no catalog names, or any effect-row keyword outside
+kotoba-kir's closed `control-effects` set. The tracked control effect `:abort`
+is **not** one of them: it is in that closed set, so an aborting definition
+**has** an identity, and it differs from the same body's pure identity because
+their interfaces differ (`[:result T E]` against `T`). This paragraph named
+`:abort` as the example of a hole until 2026-09-07; that was true of kotoba-kir
+before `984a507` (2026-09-02) and ADR-0300 section 4 was amended for it on
+2026-09-03 while this line was not.
 
 That closure keys Wasm emission. Renaming a private function and its call sites
-leaves the definition CIDs, and therefore the emitted bytes, unchanged, so the
-compile is served from cache and reports `:definitions-recompiled 0`; changing a
-body moves the CIDs and recompiles. The metric is definitions, never wall clock.
-Exported names and declaration order are part of the key because both are in the
-emitted bytes — measured, not assumed. See
+leaves the definition CIDs, and therefore the emitted bytes, unchanged; changing
+a body moves the CIDs and recompiles. The metric is definitions, never wall
+clock. Exported names and declaration order are part of the key because both
+are in the emitted bytes — measured, not assumed.
+
+**`:definitions-recompiled 0` is the worker route.** The cache lives in a worker
+context (`amu worker`), so a one-shot `amu compile` consults no cache and
+reports every definition in the module — `compile-uncached!` says so in as many
+words, because *the cache was not consulted* and *the cache missed* are
+different facts. Read the `:cache` key to tell them apart: it is absent when
+nothing was consulted, and `:hit`/`:miss` when something was. Under
+`amu worker`, an unchanged recompile answers `:cache :hit` with `0`, and a
+renamed module answers `:cache :miss` with `0` — the artifact key moved because
+the source text did, and nothing had to be re-emitted anyway. See
 `docs/adr/0300-definition-cids-are-computed-by-the-compiler-and-key-the-cache.md`.
 
 ## Content-bound logic manifest
