@@ -622,3 +622,70 @@ ty 注記なし probe のため過大評価されていた — 以下は型付�
   a list->vector-i64 bridge, the keys+get reduce-kv route becomes mechanical
   (count is already qualified). Fix request to amu-rank/backend owner should
   carry these two facts.
+
+
+## Iteration 20 - remaining ledger rejects classified: conj / into / (long x) (2026-09-07, amu@8f155d54, sema pinned 3378b1d via amu lock)
+
+- Hypothesis (carried from iter 19 "re-scan the blocked cohort"): the three
+  ledger-listed rejects `(conj v x)` on vector / `into` / `(long x)` are
+  alias-shaped desugar gaps like iters 1/2/10. Falsify-first: hand-patch
+  twins measured BEFORE any compiler change, 1 probe each (bin/amu
+  check/compile --jvm-free; outputs /tmp/langcos/t21-*.txt; terminal stdout
+  empty again this tick — file-redirect workaround used throughout).
+- Measured classification:
+  1. `(conj v x)` with `v :vector-i64` -> check REJECT exit 65
+     :kotoba.error/set-conj-receiver, message "A bounded vector answers to
+     vector-conj" (t21-p1). The arm frontend.cljc:9643-9670 dispatches conj to
+     typed-set-conj ONLY and refuses non-set receivers DELIBERATELY
+     (guide-to-alternative wording); guest-grammar.edn:326 claims conj as
+     "pair prepend after duplicate removal" = set semantics. Hand twin
+     `(vector-conj v 9)` check PASS exit 0 (t
+     bafyreifp74xq24dhnljvvq4mgdkt5u2bjetfrpljjvu56h4yuob64gzjv4), wasm32
+     compile PASS (1965 bytes, exit 0). -> hypothesis FALSIFIED for
+     conj-on-vector: NOT a missing-alias gap — landing it is a semantic
+     WIDENING decision (receiver domain of a reserved head + grammar row
+     rewrite), owner-level, not desugar sugar. Multi-item `(conj v 9 10)`
+     same refuse; fold twin `(vector-conj (vector-conj v 9) 10)` stands ready.
+  2. `(into dst src)` -> check REJECT exit 65 "operation has no admitted
+     lowering"; head NOT in :forbidden-heads, NOT in any reserved set, no
+     rewrite arm at all (pure gap). Hand twin
+     `(reduce (fn [acc x] (vector-conj acc x)) (vector-alloc 0) src)` check
+     PASS exit 0 (t bafyreiah4tnjfp6cdhkzwvc2lyizexqopmsr6ymvjfzwlmmd76twfkfnbi,
+     __kotoba_loop_1 bafyreigqcfw24skgdu24bkjaqejpql65wbaiz74p7myv3hyrwdzovzvs5u,
+     main bafyreies6aqmy3fmuyvg7h555i7nexj5uhkytsd3c5bnozbang424yvqma),
+     wasm32 compile PASS exit 0 (3 definitions recompiled, provenance +
+     publication sidecars written). -> hypothesis CONFIRMED for `into`:
+     alias-shaped (T4.5 reduce+conj is an already-qualified lowering — the
+     same zero-new-cost class as iters 1/2/10/11). Implementation candidate:
+     desugar cond arm (2-arity receiver-type dispatch, fail-closed on xform/
+     3-arity and non-vector receivers) + reserve name. NOT implemented this
+     tick (budget); no existing remote branch matches conj|into|long|cast —
+     duplicate work checked.
+  3. `(long x)` with `x :f64` -> check REJECT exit 65 "operation has no
+     admitted lowering". Explicit conversion ops f64-to-i64-checked /
+     f64-to-i64-truncating are admitted (frontend :1155 conversion table);
+     hand twin `(f64-to-i64-truncating x)` check PASS exit 0 (t
+     bafyreifpanx2663uc5x75f5ksel63cadb3j2wb7s6pokywurbuf7sgeaoy).
+     1-arg, type-correct target EXISTS (unlike iter 16 :k whose mechanical
+     targets were all type-wrong) -> mechanically desugarable, but WHICH arm
+     (truncating=JVM/Clojure `(long)` semantics vs checked=safe-subset policy)
+     is a semantic decision the grammar owner has not made (no :long row in
+     guest-grammar.edn). Classification: blocked-on-decision, not
+     blocked-on-lowering — unlike parse-long (iter 17, ABI) it needs zero
+     backend work once decided.
+- Gate: 6 check probes (3 hand-twin PASS / 3 reject exit 65 own diagnostics,
+  all ICE-free fail-closed with guide messages) + 2 wasm32 compile probes PASS
+  (vector-conj twin 1965B / into-hand 3 defs). No timing claims made this tick
+  (loadavg 23-31, quiet gate not met — not needed: classification probes only,
+  no new lowering in any hand twin).
+- comparator ratio: N/A for all three (no admitted-vs-admitted runtime
+  difference to measure yet; into twin = existing qualified lowering exactly).
+- verdict: iter-19 hypothesis partially holds — `into` is the last true
+  alias-shaped gap in the ledger cohort (implementation next tick); conj-on-
+  vector and (long x) are semantic decisions (widening / cast-policy), not
+  sugar, and are routed to the language owner rather than implemented.
+- Next (1 hypothesis): implement `(into dst src)` desugar on sema branch
+  bot/lang-into-alias-* from pinned 3378b1d, then full gate: KIR parity vs the
+  t21-into-hand.kotoba twin above (all definition CIDs), wasm32 compile,
+  browser-host value run, fail-closed matrix ((into) / (into d x s) / non-
+  vector dst / (defn into ...) reservation), nbb regression 237/1145 baseline.
