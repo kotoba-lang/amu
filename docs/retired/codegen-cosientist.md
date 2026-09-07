@@ -1,3 +1,10 @@
+> **RETIRED — STALE DOCUMENT.** This file is a stale duplicate of the live
+> co-scientist ladder.It differs from the authoritative document by one letter in
+> its filename, and has already caused a wrong decision once. **Do not follow
+> anything here.** The authoritative, current co-scientist ladder lives at
+> **`docs/codegen-coSCientist.md`** (capital S). Treat any number, verdict, or
+> status in this file as untrustworthy until re-measured and re-landed there.
+
 # Codegen co-scientist — tournament state
 
 The research goal is the claim contract's own sentence: *Amu native is fastest
