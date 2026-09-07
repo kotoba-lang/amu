@@ -17,7 +17,12 @@
      is refused (`capability-denied`) when the grant is absent;
   4. `--jvm-free` is honoured: `clojure` and `java` are hidden from PATH for
      every compile below, so a silent fall-back to the JVM route would fail
-     rather than pass.
+     rather than pass;
+  5. the committed JVM goldens under `test/fixtures/js-parity/` (todo-app:
+     typed values + `:document`; consumer: a `--source-path` linked project;
+     capability-fuel: `--fuel 4096`) are reproduced byte for byte, and their
+     manifest / provenance sidecars are equal to the JVM's as EDN values --
+     the first differing key is named when they are not.
   Run from the repo root: `npm run test-nbb-js`. Last line `SCANNED <n>
   failed <k>`; SCANNED 0 is exit 2."
   (:require ["node:child_process" :as cp]
@@ -115,6 +120,95 @@
   (if (and (not= 0 (:status r)) (re-find #"(?i)jvm|clojure|not found|refus" (str (:err r) (:out r))))
     (ok! "cljs-browser under --jvm-free is refused, not silently routed")
     (fail! "cljs-browser --jvm-free" (str "status " (:status r) " " (subs (str (:err r) (:out r)) 0 200)))))
+
+;; 5. committed JVM goldens under test/fixtures/js-parity/ (README.md there
+;;    records the exact JVM command and the kotoba-script pin per golden).
+;;    For each: the nbb route with the same flags must reproduce the `.mjs`
+;;    byte for byte, and its manifest / provenance sidecars must equal the
+;;    JVM's AS EDN VALUES (key order in the text is not a claim; see the
+;;    js-cli docstring). The three cover what route-decide does not: typed
+;;    values + `:document` (todo-app), a `--source-path` linked project
+;;    (consumer -> parity.util), and a `--fuel` override (4096) on a
+;;    capability-bearing module.
+(def golden-dir (.join path root "test" "fixtures" "js-parity"))
+
+(def goldens
+  [{:name "todo-app"
+    :source "examples/todo-app.kotoba"
+    :flags []}
+   {:name "consumer"
+    :source "test/fixtures/js-parity/consumer.kotoba"
+    ;; `--unpinned` because the JVM route refuses a path-resolved project
+    ;; without it (ADR-2608580000 D5, `:compile/unpinned-inputs`); the nbb
+    ;; route accepts the flag and emits the same bytes with or without it
+    ;; (measured 2026-09-06), so the golden's flags are the JVM's.
+    :flags ["--source-path" "test/fixtures/js-parity/lib" "--unpinned"]}
+   {:name "capability-fuel"
+    :source "examples/capability.kotoba"
+    :flags ["--policy" "examples/capability-policy.edn" "--fuel" "4096"]
+    :fuel 4096}])
+
+(defn- first-diff
+  "The first path at which two EDN values differ, as {:path :nbb :jvm}, or
+  nil when they are equal. Maps descend key by key (a key present on one side
+  only is reported at that key), equal-length sequences index by index;
+  anything else is reported where it is."
+  [a b at]
+  (cond
+    (= a b) nil
+    (and (map? a) (map? b))
+    (some (fn [k] (first-diff (get a k ::absent) (get b k ::absent) (conj at k)))
+          (distinct (concat (keys a) (keys b))))
+    (and (sequential? a) (sequential? b) (= (count a) (count b)))
+    (some (fn [[i x y]] (first-diff x y (conj at i))) (map vector (range) a b))
+    :else {:path at :nbb a :jvm b}))
+
+(defn- read-edn [file] (reader/read-string (.readFileSync fs file "utf8")))
+
+(defn- first-byte-diff [a b]
+  (or (some (fn [i] (when (not= (.charAt a i) (.charAt b i)) i))
+            (range (min (count a) (count b))))
+      (min (count a) (count b))))
+
+(doseq [{:keys [name source flags fuel]} goldens]
+  (let [golden (.join path golden-dir (str name ".mjs"))
+        missing (remove #(.existsSync fs %) [golden (str golden ".manifest.edn") (str golden ".provenance.edn")])
+        out (.join path tmp (str name ".mjs"))
+        r (when (empty? missing)
+            (apply amu! "compile" source "--target" "js" "--jvm-free" "--output" out flags))]
+    (swap! scanned inc)
+    (cond
+      ;; A golden that is not there is a FAIL with a name, not an uncaught
+      ;; ENOENT that ends the run before the SCANNED line.
+      (seq missing)
+      (fail! (str name " golden missing") (str/join ", " missing))
+
+      (not= 0 (:status r))
+      (fail! (str name " compile (jvm-free)") (str (:err r) (:out r)))
+
+      :else
+      (let [nbb-bytes (.readFileSync fs out "utf8")
+            jvm-bytes (.readFileSync fs golden "utf8")]
+        (if (= nbb-bytes jvm-bytes)
+          (ok! (str name ".mjs: nbb route == committed JVM golden (" (count nbb-bytes) " bytes)"))
+          (fail! (str name ".mjs parity")
+                 (str "first difference at byte " (first-byte-diff nbb-bytes jvm-bytes)
+                      ", sizes nbb=" (count nbb-bytes) " jvm=" (count jvm-bytes))))
+        (doseq [sidecar [".manifest.edn" ".provenance.edn"]]
+          (swap! scanned inc)
+          (let [nbb-value (read-edn (str out sidecar))
+                jvm-value (read-edn (str golden sidecar))]
+            (if-let [d (first-diff nbb-value jvm-value [])]
+              (fail! (str name sidecar " as EDN")
+                     (str "first differing key " (pr-str (:path d))
+                          ": nbb=" (pr-str (:nbb d)) " jvm=" (pr-str (:jvm d))))
+              (ok! (str name sidecar ": nbb route == JVM golden as an EDN value")))))
+        (when fuel
+          (swap! scanned inc)
+          (let [needle (str "let fuel=" fuel ";")]
+            (if (str/includes? nbb-bytes needle)
+              (ok! (str name ".mjs carries `" needle "` (the --fuel override reached the emitter)"))
+              (fail! (str name " --fuel") (str "module does not contain " (pr-str needle))))))))))
 
 (.rmSync fs tmp #js {:recursive true :force true})
 (println (str "SCANNED " @scanned " failed " (count @failures)))

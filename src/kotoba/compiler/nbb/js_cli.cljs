@@ -106,7 +106,23 @@
         linked? (:linked? resolved)
         output (or (support/option args "--output") (str input ".mjs"))
         policy (support/timed "policy-read" #(read-policy! args))
-        emit-metadata (support/emit-metadata args)
+        module-graph (project-source/module-graph resolved text-sha256)
+        ;; What `provenance/attach` seals as `:build-metadata-sha256` and what
+        ;; the emitter reads. For a single file it is the CLI's metadata
+        ;; (`--fuel` etc.), as `compile-source` receives it. For a linked
+        ;; project the JVM CLI does not thread that map at all: `cli.clj` hands
+        ;; `compile-project` sources + policy, and `compile-project` builds the
+        ;; metadata itself -- the module-graph digest, the per-module source
+        ;; digests and `:admit-linked-synthetics? true`, nothing else (the
+        ;; comment at its `build-metadata` remark names this as still open).
+        ;; Mirrored here key for key so the two routes seal the same value;
+        ;; before this (2026-09-06) the nbb route hashed `{}` for a project and
+        ;; emitted a header without the graph digest, 281 bytes short.
+        emit-metadata (if module-graph
+                        {:module-graph-digest (:digest module-graph)
+                         :module-source-digests (:module-digests module-graph)
+                         :admit-linked-synthetics? true}
+                        (support/emit-metadata args))
         hir (support/timed "frontend"
                            #(sema/analyze source (project-source/analyze-opts policy linked?)))
         admission (support/timed "admission"
@@ -159,7 +175,12 @@
                                      :limits (limits fuel typed-values?)
                                      :source js-source
                                      :manifest manifest}))
-        manifest (:manifest result)
+        ;; After `attach`, as `compile-project` does it: the provenance seal
+        ;; does not cover these two keys, the manifest carries them.
+        manifest (cond-> (:manifest result)
+                   module-graph
+                   (merge {:kotoba.artifact/module-graph-digest (:digest module-graph)
+                           :kotoba.artifact/module-source-digests (:module-digests module-graph)}))
         manifest-edn (str output ".manifest.edn")
         manifest-json (str output ".manifest.json")
         provenance-output (str output ".provenance.edn")]
@@ -176,6 +197,9 @@
             :admission (cap-names/name-grants admission)
             :effects (cap-names/name-grants (:effects hir))
             :bytes (.byteLength js/Buffer js-source "utf8")}
+           (when module-graph
+             {:project (:graph module-graph)
+              :project-digest (:digest module-graph)})
            (project-source/inputs-record resolved))))
 
 (defn- run! [args]
