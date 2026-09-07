@@ -1,0 +1,9 @@
+(ns t (:export [main]))
+;; Control: self-recursive, guarded by a literal comparison, called with a
+;; literal -- but the recursive step is (quot n 2), not a +-1 countdown.
+;; The estimator must keep today's answer for this: unbounded, no expansion.
+(defn halve [n :i64 acc :i64] :i64
+  (if (= n 0)
+    acc
+    (halve (quot n 2) (+ acc 1))))
+(defn main [] :i64 (halve 8000 0))

@@ -508,8 +508,8 @@
                           (assoc-in [:target-profile :os] other-os)
                           (assoc-in [:target-profile :runtime]
                                     (if (= other-os :linux)
-                                      :kotoba-linux-supervisor-v1
-                                      :kotoba-macos-supervisor-v1)))
+                                      :kototama-linux-supervisor-v1
+                                      :kototama-macos-supervisor-v1)))
         pinned (assoc trust :trusted-runtime-sha256
                       #{(runtime-identity/identity-sha256 other-runtime)})]
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #"runtime target profile"
