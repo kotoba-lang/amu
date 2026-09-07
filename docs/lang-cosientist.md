@@ -534,3 +534,91 @@ ty 注記なし probe のため過大評価されていた — 以下は型付�
   measured gap — `keys`/`reduce-kv` on typed map (ledger list): probe whether
   they are alias-shaped (desugar to map iteration over a typed map) or need a
   new lowering, starting with a hand-patch `(reduce-kv f init m)` expansion.
+
+## Iteration 19 - keys/reduce-kv: alias-shaped hypothesis FALSIFIED (three real gaps, not sugar) (2026-09-06 t19 probes + 2026-09-07 t20 probes, sema main @3378b1d via amu lock)
+
+- Hypothesis (carried from iter 18): `keys` on typed map / `reduce-kv` are
+  alias-shaped (desugar to map iteration over existing admitted ops).
+- Measured (bin/amu check/compile --jvm-free; outputs /tmp/langcos/t19-*.txt,
+  t20-*.txt; t19 probes run 2026-09-06 13:48-13:53, t20 2026-09-07 11:09-11:20):
+  - `(keys m)` receiver `m [:map :keyword :i64]` -> check **PASS** (exit 0,
+    t19-keys5). Frontend :9940-9970 `map-projection-operations` rewrite
+    keys->`(typed-map-keys [:map K V] m)` already landed on sema main
+    (3378b1d). NOT a reader/alias gap - unlike :k projection (iter 16).
+  - BUT the projected type is `[:list K]` (frontend :8563-8568 comment: not
+    a set - values not distinct), and EVERY consumer that could use it
+    rejects: `(reduce + 0 (keys m))` REJECT "expected vector-i64, got
+    [:list :keyword]" (t20-rkvhand3); `(reduce + 0 (vals m))` REJECT
+    "expected vector-i64, got [:list :i64]" (t20-reducevals);
+    `(map (fn [k] (get m k 0)) (keys m))` same reject (t20-maplist); hand twin
+    `(reduce (fn [acc k] (+ acc (get m k 0))) 0 (typed-map-keys ...))`
+    REJECT same message (t19-rkv). Higher-order reduce/map/filter only admit
+    vector-i64 - the [:list T] domain has no bridge.
+  - `(reduce-kv f init m)` -> check REJECT "operation has no admitted
+    lowering" (exit 65, t19-reducekv); frontend has ZERO language-level
+    reduce-kv desugar (grep 1 hit = internal Clojure code :2930).
+  - No list->vector conversion op: `(typed-map-keys->vector T m)` REJECT
+    "operation has no admitted type signature" (t19-rkv2).
+  - Entry-walk route blocked too: `typed-map-entry-at` returns
+    `[:option [:vector [K V]]]` (frontend :8579-8584) but NO entry accessor
+    exists - `(typed-map-entry-value (typed-map-entry-at ...))` REJECT
+    "no admitted lowering" (t20-rkventry). (`typed-map-entries` is not a
+    real op - only `max-typed-map-entries` = 31 limit symbol in frontend.)
+  - Backend qualification gap (ICE-class, exit 70): even the check-admitted
+    shapes fail wasm32 compile:
+    `(count (keys m))` -> compile REJECT "unsupported typed Wasm expression"
+    (t20-keys5 + t20-keys4, exit 70);
+    `(get m (nth (keys m) 0) 0)` -> check PASS (exit 0, v0 cid
+    bafyreidbae6tcex2jnqpxlfx3sqbfo6cov2uhn56wpic36gqj75eavwfge) but compile
+    "typed Wasm operation is not qualified" (exit 70);
+    the full loop twin (2-var loop + count + nth + get - check PASS exit 0,
+    loop bafyreidvidkt65y5ikiwapjxnmiskjihgt3fuim62xw42utmm4l4bks4nu,
+    sumkv bafyreie4cco3xjrakgovkofp7ps2myakyoc3jfl2bzfuofvrf4q5qpsfwy) also
+    compile exit 70. Control `(get m :k 0)` compiles fine (exit 0) - so the
+    gap is specifically the typed-map-keys / typed-list-nth wasm lowering,
+    not the whole map domain.
+- Verdict: hypothesis FALSIFIED - keys/reduce-kv is NOT alias-shaped. Three
+  real gaps stand between the ledger row and any runtime claim:
+  (1) wasm32 lowering for typed-map-keys/typed-list-nth not qualified (exit 70;
+  check admits what compile cannot build - maintainer-reportable ICE-class),
+  (2) [:list T]->vector-i64 bridge absent (no conversion op; every higher-order
+  consumer rejects),
+  (3) entry accessor (key/value of the entry-at option-vector) absent.
+  All need new lowering / type-domain design in the backend (KIR + wasm), not a
+  frontend desugar - no correct hand twin exists that passes check+compile+run,
+  so per falsify-first discipline NO implementation was attempted.
+  reduce-kv inherits (1)(2)(3) transitively (its only mechanical targets are
+  keys+get or entry-walk, both dead ends). Coverage status: BLOCKED on backend
+  typed-map list lowering - same class of stop as parse-long on the string
+  ABI (iters 4/5/17).
+- Gate: 7 check probes (3 PASS / 4 fail-closed exit 65 own diagnostics) +
+  5 compile probes (1 PASS control / 4 exit 70 internal-error fail-closed).
+  perfgate N/A - nothing qualifiable to benchmark (no wasm was ever produced
+  for the keys path); loadavg 61-124 this tick, quiet gate not met anyway
+  (no timing claims made).
+- Next (1 hypothesis): alias-shaped ledger list is now exhausted
+  (str/mapv/filterv/#()/seq/remove/min-max/some->/some->>/contains? landed;
+  keys/reduce-kv falsified as backend-blocked this iter; :k projection iter
+  16; parse-long iter 17; uuid iter 18 catalog-level). Report
+  keys/reduce-kv + the exit-70 typed-map-keys lowering ICE to amu-rank /
+  jvm-dep-ledger owner. Then 1 probe: `(count m)` directly on a canonical
+  [:map K V] - the loop twin this iter needed explicit typed-map-count; if
+  bare `count` desugars to it, the keys+get route simplifies and gap (1)
+  becomes the single blocker for a future backend fix request.
+
+### Iteration 19 addendum - next-hypothesis probe executed same tick ((count m) direct)
+
+- `(count m)` on `m [:map :keyword :i64]` -> check **PASS** (exit 0, n cid
+  bafyreieyx7z7xkiqmeip7ruofxx4xyx2bycss2elcedpjgcwdmwxrrjemq,
+  t20-countdirect-check.txt) - bare `count` DOES desugar to typed-map-count
+  for canonical maps; the explicit typed-map-count call in the loop twin was
+  not required.
+- compile --target wasm32 **PASS** (exit 0, t20-count.txt) + browser-host run
+  `(count (typed-map-new [:map :keyword :i64] :a 1 :b 2))` = **2 (ALL-OK)**.
+- Contrast with iter 19: the exit-70 wasm gap is specific to the `[:list T]`
+  carriers (typed-map-keys / typed-list-nth), not the map domain as a whole -
+  count-direct passes the full check+compile+run pipeline.
+- Refines the blocker model: if a backend adds [:list K] wasm lowering +
+  a list->vector-i64 bridge, the keys+get reduce-kv route becomes mechanical
+  (count is already qualified). Fix request to amu-rank/backend owner should
+  carry these two facts.
