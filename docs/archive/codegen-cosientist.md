@@ -1,3 +1,11 @@
+> **[RETIRED 2026-09-08]** This is the STALE lowercase duplicate of the live ladder
+
+> `docs/codegen-coSCientist.md` (capital S). It caused a wrong decision once, per
+
+> the co-scientist loop. Retired here so it can no longer be treated as the
+
+> authoritative tournament state. Do NOT update this file; edit the live doc.
+
 # Codegen co-scientist — tournament state
 
 The research goal is the claim contract's own sentence: *Amu native is fastest
