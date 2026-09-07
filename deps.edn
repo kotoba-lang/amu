@@ -69,7 +69,7 @@
         ;; said so.
         ;;
         ;;   grammar-sha256    ee7ea37c7ea88c52ee8869af4d485e91a0b11bb153682ad717c86c055270b6b5
-        ;;   kotoba-sema-pin   af8cc78060493e9169ca4199dfa7f33d468b9a1d
+        ;;   kotoba-sema-pin   31d0d463f5aba39063ddc8911c648f6cd606c6ff
         ;;
         ;; `guest_grammar_vendor_test/authority-digest-history` ends with the
         ;; same digest, so the pin, the prose and the history move in one
@@ -115,9 +115,25 @@
         ;; (e191c8b1 on the authority, on kotoba-sema and on this repository's
         ;; copy alike) -- so it is admitted by the grammar and refused at
         ;; compile time, not at run time.
+        ;; Advanced 2026-09-07, af8cc780 -> 31d0d463 (kotoba-sema main, ahead 5,
+        ;; forward only). The grammar did NOT move (guest-grammar.edn is not in
+        ;; the diff), so `grammar-sha256` above and `authority-digest-history`
+        ;; are untouched by this advance. What it buys:
+        ;;
+        ;;  - 31d0d463 stops `source-location` re-deriving line/column from
+        ;;    scratch at every located node -- it used to `subs` the whole
+        ;;    prefix from offset 0 and split it on newlines, which is O(offset)
+        ;;    per node and quadratic in source size. Measured on this repo's
+        ;;    own workload at these pins, `amu check` on a 147,835-byte source:
+        ;;    12,442 ms -> 3,551 ms, and the reader's own share 9,371 -> 355 ms.
+        ;;    Output is byte-identical, CIDs and spans included.
+        ;;  - it also carries kotoba-sema's own capability-catalog resync and an
+        ;;    i64 min/max test; THIS repository's copy of the catalog shadows
+        ;;    kotoba-sema's on this classpath and is not resynced here, because
+        ;;    this advance does not claim a catalog change.
         io.github.kotoba-lang/kotoba-sema
         {:git/url "https://github.com/kotoba-lang/kotoba-sema.git"
-         :git/sha "af8cc78060493e9169ca4199dfa7f33d468b9a1d"}
+         :git/sha "31d0d463f5aba39063ddc8911c648f6cd606c6ff"}
         ;; ADR-2607266000 Phase B: these responsibilities moved out of this repo.
         ;;
         ;; The slice-value stream held this pin on purpose (ADR 0314), because
