@@ -1,0 +1,13 @@
+(ns consumer
+  ;; Entry module of the `--source-path` parity golden. Requires `parity.util`
+  ;; from `test/fixtures/js-parity/lib`, so compiling it exercises
+  ;; `project/link-source` on both routes (JVM and nbb) -- the resolved
+  ;; graph, not just a single file, must emit identical bytes.
+  (:require [parity.util :as u])
+  (:export [main]))
+
+(defn main [] :string
+  (u/greet "parity"))
+
+(defn answer [] :i64
+  (+ (u/twice 20) 2))
