@@ -3720,3 +3720,76 @@ ple Clang C11, Zig, Go
   the accumulator becomes the serial spine that cost 5% in 145.
 
   Score today unchanged: **median 19/30, range 17–19, stable 16.**
+
+- **147 (2026-09-07, the hoist is built and measured on the compiler path:
+  deep-spill −2.66% ± 0.32 — the first compiler change in this series that
+  moved the real artifact)**:
+
+  146 measured a hand-written fixture. This is the pass (kotoba-native #151):
+  before allocation, a pure register-only instruction for which at least one
+  operand's last use is that instruction moves up beside the later of its
+  producers. It never crosses a barrier — label, branch, call, memory,
+  terminator, physical register, **or `:mir/argument`** — and never splits a
+  multiply→add/subtract pair the AArch64 selector fuses.
+
+  **The argument barrier was found by breaking it.** With arguments
+  crossable, `sum-five`'s first add climbed above the materialisation of the
+  remaining parameters and the allocator stored them: a frameless leaf grew
+  three spill slots, 31 failures and an error. Nothing may rise above the
+  last argument. That is now in the code, not only here.
+
+  **What it produces.** `kernel_deep` through amu: 241 instructions / 14 FMOV
+  / 8 stack ops / 4 callee-saved pairs → **219 / 0 / 0 / 0**, byte-for-byte
+  the fixture's shape; a 6-lane unit check shows the hoisted order equals the
+  interleaved-accumulator order instruction for instruction. Blast radius is
+  **one domain**: the other five benchmark kernels are byte-identical to main
+  (the call kernels' sums stay put because every operand sits behind a call
+  barrier).
+
+  **Compiler-path A/B**, three interleaved quiet-host pairs on judah
+  (busy 0.06–0.09), drift-corrected against the five byte-identical domains:
+
+  | rep | control drift | deep-spill corrected |
+  |---|---|---|
+  | 1 | +1.34% | **−3.07%** |
+  | 2 | −6.73% | **−2.28%** |
+  | 3 | −0.16% | **−2.62%** |
+
+  **mean −2.66%, sd 0.32, n=3** — every rep negative, and the tightest
+  measurement in this series. The fixture said −3.17%; the pass delivers
+  −2.66%. **141's fixture-vs-pass gap did not recur**, for the reason 146
+  predicted: this fixture performed the same reordering the pass performs.
+
+  Per pair on the hoist side: `deep-spill × zig` **5.64 / 6.46 / 5.98%** —
+  above the bar in every rep, qualified in two (rep 1 missed separation by
+  0.03 ns, gap 0.54 vs summed stdev 0.57). `× rust` 3.92 / 5.32 / 4.95 —
+  qualified once, at the line as projected (4.88% projected, 4.73% measured).
+  `× clang` widened from ~6.5–7.5% to 9.3–10.5%. Scores 19→19, 6→21, 19→20.
+
+  ⚠ **Rep 2's base run scored 6/30 under a −6.73% drift.** The amu arm hit
+  rsd 0.416 on four domains at once (33 `too-noisy` reasons) — a disturbance
+  that began *after* the quiet gate sampled. Do not read that pair as +15.
+  Its drift-corrected deep-spill delta still agrees with the clean reps
+  because medians survive what rsd does not; that is the whole argument for
+  the drift control. The honest score effect is **+0 to +1 per clean pair**.
+
+  **Tests told the truth about themselves.** Three fixtures created pressure
+  with exactly the shape this pass removes — independent lanes and a trailing
+  sum — so the pass made them frameless and they stopped testing anything
+  (bounded spills, the post-allocation fallback, the preserved-tier
+  prologue). Each now consumes every lane twice, which is what real pressure
+  looks like; pins re-measured (2→7 slots, 24→25, saves 5/6 registers). The
+  frame tests' helper also bypassed `compile-gmir` and compared a hoisted
+  prologue against an un-hoisted save set. One x86 pin moved by a 3-byte
+  `mov rax,r8`: the caller's running sum now lands in r8. Recorded as one
+  move, not hidden in a count.
+
+  **What is and is not public.** #151 merged at 01:00 (before the A/B
+  finished; the measurement is posted on it). amu main still pinned
+  kotoba-native at adeb1b0f, **17 behind**, so the shipped compiler and the
+  published 19/30 had none of #142/#145/#146/#151. amu #853 advances the pin
+  across all three baked sites (deps.edn, the regenerated lock, the exact-sha
+  test) — #839 had moved only deps.edn, which is why it was blocked. Per 142,
+  the published number changes only after five host-qualified runs of the
+  new main are projected. Expected: **median 20/30**, with rust close enough
+  to carry it to 21 some runs. Not claimed until measured.
