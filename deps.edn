@@ -117,7 +117,7 @@
         ;; compile time, not at run time.
         io.github.kotoba-lang/kotoba-sema
         {:git/url "https://github.com/kotoba-lang/kotoba-sema.git"
-         :git/sha "af8cc78060493e9169ca4199dfa7f33d468b9a1d"}
+         :git/sha "93a2ad4b1ec5d8e0cec7e7d6dcaa4d4e25c67dca"}
         ;; ADR-2607266000 Phase B: these responsibilities moved out of this repo.
         ;;
         ;; The slice-value stream held this pin on purpose (ADR 0314), because
@@ -161,8 +161,8 @@
         ;; pin `AIUEOS_DEQUANT_KQUANT_QEMU_OK` has nothing to disagree with.
         ;; 18f7c3a makes the sealed control-effect vocabulary this repository's
         ;; export rather than something the compiler re-derives.
-        io.github.kotoba-lang/kotoba-kir
-        {:git/url "https://github.com/kotoba-lang/kotoba-kir.git"
+        io.github.kotoba-lang/osaho
+        {:git/url "https://github.com/kotoba-lang/osaho.git"
          ;; fuel64: 233bd6bb exports `max-fuel` (kotoba-kir ADR 0268), the fuel
          ;; ceiling `kotoba.compiler.nbb.cli` and `kotoba.verifier` now read.
          ;; Advanced by this stream and independently adopted by #767, so the
@@ -206,7 +206,7 @@
          ;; 9749773d advances it for the fs_app_data WRITE provider (write form
          ;; "path WRITE_SEP content", Seatbelt file-write* subpath); 8c77d809
          ;; escapes the docstring quotes (PR #21 follow-up, fixes browser matrix).
-         :git/sha "8c77d80975c2609cf3943e2fd4124b25394c05f7"}
+         :git/sha "99e94e79b790a19acad68e728b4773b23af63c90"}
         ;; HELD at 1a2e10c on 2026-09-03 (ADR 0331), 28 commits behind its main,
         ;; while every other pin in this file moved to the tip. The reason, so
         ;; that a lagging pin and a pin with an argument behind it stay
@@ -234,7 +234,7 @@
          :git/sha "1a2e10cf8038155de210357e637eac4102de89cb"}
         io.github.kotoba-lang/kotoba-wasm
         {:git/url "https://github.com/kotoba-lang/kotoba-wasm.git"
-         :git/sha "cc23ea35bc284d08cf5fc2f57dfcc10ce431a23b"}
+         :git/sha "2d912bf3dacb143cf0d366cc07bd3f312eccde38"}
         ;; Production KIR routes exclusively through whole-module
         ;; GMIR/MIR/allocated-MC, including word/f64/memory/runtime/capability,
         ;; literal-data, scalar variant, word-field record, and x86 privileged
@@ -358,10 +358,10 @@
          ;; transitive here -- this repository does not pin it directly -- so
          ;; deps-lock.edn is where d4e040b2 -> a3f0597c shows. kotoba-mir and
          ;; kotoba-codegen do not move (0bb174c8 / 3a7d7fc2 on both sides).
-         :git/sha "f040b483cbb23ccdcf6e3cc81ed5e22cae9177ac"}
+         :git/sha "70b94c6d33801d54ae45d6508c1d4dfc4386446a"}
         io.github.kotoba-lang/kotoba-component
         {:git/url "https://github.com/kotoba-lang/kotoba-component.git"
-         :git/sha "68acc7237aec7b24b683304db8e87d14ec1be745"}
+         :git/sha "ff2c3e8c29a02a7731e70c7e4d276441ebc9d42d"}
         ;; The package contract: `kotoba.lang.package-contract` validates a
         ;; `kotoba.lock.edn` -- required fields, real CIDv1s, capability grant
         ;; ⊆ declaration, signer revocation, and Ed25519 signature
@@ -439,13 +439,13 @@
          ;; `kernel-undefined-opcode-handler-address`. This verifier rejects by
          ;; ABSENCE, so without this the head the frontend now admits and kir now
          ;; lowers would still be a green `check` and a red `compile`.
-         :git/sha "ed9bf9b4b4a52751b94724f2ec0a03d39c55a367"}
+         :git/sha "2e435cf4994c59d341c387d3103809cc3f93a116"}
 }
  :aliases {:test {:extra-paths ["test"]
                   :extra-deps
                   {io.github.kotoba-lang/provider
                    {:git/url "https://github.com/kotoba-lang/provider.git"
-                    :git/sha "f040fc07675b0ef68b6e638a856cd20b65dba125"}
+                    :git/sha "0ba1fbabb536027d25bbefc50374fbe95e6b54ec"}
                    ;; Advanced 2026-09-07, ec4d182e -> a569f1d1 (kototama-native
                    ;; main, ahead 10, forward only), REQUIRED by the kotoba-kir
                    ;; pin above: kotoba-kir d41dc85 (#81) renamed every
@@ -459,13 +459,13 @@
                    ;; :native-conformance below -- one kototama-native.
                    io.github.kotoba-lang/kototama-native
                    {:git/url "https://github.com/kotoba-lang/kototama-native.git"
-                    :git/sha "a569f1d14a09674503fc00733fd38fd3699fa4fb"}}
+                    :git/sha "0303b02e1063724fbdf50b5edf3323a385f5599c"}}
                   :main-opts ["-m" "kotoba.compiler.test-runner"]}
            :native-run
            {:extra-deps
             {io.github.kotoba-lang/kototama-native
              {:git/url "https://github.com/kotoba-lang/kototama-native.git"
-              :git/sha "a569f1d14a09674503fc00733fd38fd3699fa4fb"}}
+              :git/sha "0303b02e1063724fbdf50b5edf3323a385f5599c"}}
             :main-opts ["-m" "kotoba.compiler.cli"]}
            :run {:main-opts ["-m" "kotoba.compiler.cli"]}
            :conformance
@@ -477,10 +477,10 @@
            {:extra-deps
             {io.github.kotoba-lang/kototama-native
              {:git/url "https://github.com/kotoba-lang/kototama-native.git"
-              :git/sha "a569f1d14a09674503fc00733fd38fd3699fa4fb"}
+              :git/sha "0303b02e1063724fbdf50b5edf3323a385f5599c"}
              io.github.kotoba-lang/provider
              {:git/url "https://github.com/kotoba-lang/provider.git"
-              :git/sha "f040fc07675b0ef68b6e638a856cd20b65dba125"}}
+              :git/sha "0ba1fbabb536027d25bbefc50374fbe95e6b54ec"}}
             :extra-paths ["test"]
             :main-opts ["-m" "kotoba.compiler.lang-native-conformance"]}
            :fuel-estimate
