@@ -139,7 +139,7 @@
   ;; operation with nothing faulting to say so, which is why the suite pins
   ;; that byte as an explicit `not`. Checked with `merge-base --is-ancestor`
   ;; against 452422f.
-  (is (= "adeb1b0fa5bcd2dd18a657c7e3bd3c4acbd630ae"
+  (is (= "06badc834a6e69bc0a5bbbbb80e1e36553e1e7c9"
          (dependency-pin 'io.github.kotoba-lang/kotoba-native)))
   ;; Advanced 2026-08-31 for two more instances of ADR-0286's class -- a KIR
   ;; i64 is a BigInt under ClojureScript and reached a host operation that
