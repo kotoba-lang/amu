@@ -139,7 +139,12 @@
   ;; operation with nothing faulting to say so, which is why the suite pins
   ;; that byte as an explicit `not`. Checked with `merge-base --is-ancestor`
   ;; against 452422f.
-  (is (= "f040b483cbb23ccdcf6e3cc81ed5e22cae9177ac"
+  ;; Advanced 2026-09-07 to 70b94c6d. f040b483..70b94c6d is ONE commit and it
+  ;; touches deps.edn alone, +2/-2: kotoba-kir was renamed osaho, so the
+  ;; coordinate moved. No encoding, no lowering, no opcode -- the native
+  ;; boundary this suite guards is byte-identical, which is why this advance
+  ;; carries no qualification claim. Superproject adr-2609078000.
+  (is (= "70b94c6d33801d54ae45d6508c1d4dfc4386446a"
          (dependency-pin 'io.github.kotoba-lang/kotoba-native)))
   ;; Advanced 2026-09-07 to kotoba-native main c9d5c44 (hoist #151, cross-call
   ;; hoist #152, copy coalescing #154; 06badc8's allow-list entry is on main as
@@ -232,7 +237,7 @@
   ;; kotoba-sema pin that admits the head, for the reason the paragraph above
   ;; measured.
   (is (= "658436f25c57d7c96f121d9dfd376e9871a82445"
-         (dependency-pin 'io.github.kotoba-lang/kotoba-kir)))
+         (dependency-pin 'io.github.kotoba-lang/osaho)))
   ;; Advanced 2026-09-01 alongside the backend: the verifier re-derives the
   ;; two new arities and the v4 `expected-context`, and is what turns a
   ;; mismatched ABI into an explicit refusal rather than a v3 artifact

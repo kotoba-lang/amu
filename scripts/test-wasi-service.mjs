@@ -99,7 +99,7 @@ fs.writeFileSync(hostilePath, withCompatibility(Uint8Array.from([
   ...section(3, [1, 0]),
   ...section(7, [1, ...name("main"), 0, 0]),
   ...section(10, [1, 9, 0, 0x03, 0x40, 0x0c, 0, 0x0b, 0x42, 0, 0x0b])
-]), { target: "wasm32-wasi-kotoba-v1", runtime: "kotoba-wasi-host-v1" }));
+]), { target: "wasm32-wasi-kotoba-v1", runtime: "kototama-wasi-host-v1" }));
 await withService(hostilePath, 18083, async health => {
   const started = Date.now();
   const cancelled = await post(18083, request("main"));
