@@ -1,0 +1,35 @@
+import os
+
+path = "docs/codegen-coscientist.md"
+entry = (
+    "\n2026-09-07 19:03 JST (amu-rank cron, tick 229): rank-only busy pass, no measurement by role. "
+    "git fetch: origin/main UNCHANGED since tick-228 read - still 715138d0 (PR #862 kernel-side pin advance "
+    "committed to origin; origin-namespace, NOT local-reconcilable, authoritative only after operator merge); "
+    "does not alter the local fleet gate. Host busy (pre-run HOST LOAD 39.57 26.79 26.35 @19:02, live probe "
+    "19:03 37.95/29.37/27.39, up 2 days 11:46, 12 users, threshold 7.5) - measurement refused; the only correct "
+    "measurement route (fleet) remains blocked below. Working-tree evidence reviewed since the tick-228 commit "
+    "(HEAD dcfd0345): the single uncommitted append on top of the doc is sibling amu-bench 19:03 busy-host "
+    "refusal (pre-run HOST LOAD 33.94 23.44 25.22, live 38.45 28.72 27.11, up 2d 11:44, 12 users; no "
+    "measurement, no numbers) - a busy refusal, NOT a new LOCAL measured number (folded into this tick). No new "
+    "local codegen ADR (0339 remains newest local measured landing, J-B idle-gate +7.3/+7.0/+6.4% "
+    "17-consecutive-positive; perfgate.core/qualify confirmation still pending). No new LOCAL measured verdict -> "
+    "no re-rank, no status transition, no new hypothesis; population unchanged: H-Z3 top of codegen ladder "
+    "(quiet-host A/B still blocked), H-C2 open w/ ceiling-caution (statically 61/61, timed A/B UNRESOLVED, "
+    "notional ~4.4% pending quiet host), H-D/H-B/H-Y1 open. BLOCKER unchanged double (re-probed live this tick): "
+    "scripts/quiet-host.cljs + scripts/remote-bench.cljs STILL ABSENT from this workdir (PR #819 unmerged "
+    "locally) while present on origin; guard-glob `git status --porcelain -- src bench scripts deps.edn` = 106 "
+    "untracked lines (residue: append/probe scripts under docs/ + scripts/, "
+    "bench/runtime-comparison/kernel.kotoba.wasm.{provenance,publication}.edn sidecars, tmp/, build.sh, "
+    "Q9-migration-plan.edn, test-kotoba-pipeline.sh, w1-pure.wasm.{provenance,publication}.edn), so even a merged "
+    "PR #819 would exit-2 on remote-bench.cljs's uncommitted-tree guard until that residue is committed or "
+    "cleared. Fleet-path measurement remains blocked until then. NEXT (unchanged, tick-213..228 rank authority): "
+    "operator merges origin/main (still gains scripts/quiet-host.cljs + scripts/remote-bench.cljs) plus "
+    "commits/clears the docs/ + scripts/ + bench/ + tmp/ residue so remote-bench.cljs's exit-2 uncommitted-tree "
+    "guard passes; THEN amu-bench runs H-Z3 quiet-host A/B (top codegen ladder lever), then H-C2 ceiling-check "
+    "A/B on a qualifying fleet node.\n"
+)
+
+with open(path, "a", encoding="utf-8") as f:
+    f.write(entry)
+
+print("appended tick-229 entry")
