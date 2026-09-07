@@ -401,6 +401,54 @@
       (is (= 4096 (.getLong buffer (+ rw-offset 8)))
           "--fuel must reach the sealed native context, not only admission"))))
 
+(defn- sealed-native-fuel
+  "The fuel qword the kernel packager sealed into the RW context segment.
+  The packager emits RX first and RW second; p_offset is the third field of
+  an ELF64 program header, and the context's fuel lives 8 bytes in."
+  [output]
+  (let [bytes (java.nio.file.Files/readAllBytes (.toPath (java.io.File. output)))
+        buffer (doto (ByteBuffer/wrap bytes) (.order ByteOrder/LITTLE_ENDIAN))
+        program-header-offset (.getLong buffer 32)
+        program-header-size (.getShort buffer 54)
+        rw-header (+ program-header-offset program-header-size)
+        rw-offset (.getLong buffer (+ rw-header 8))]
+    (.getLong buffer (+ rw-offset 8))))
+
+(defn- temp-project!
+  "A two-module project on disk: `<dir>/main.kotoba` requiring
+  `<dir>/src/example/<name>.kotoba`. Returns the root file and source root."
+  [root-source module-name module-source]
+  (let [directory (.toFile (java.nio.file.Files/createTempDirectory
+                            "kotoba-cli-project-" (make-array java.nio.file.attribute.FileAttribute 0)))
+        source-directory (io/file directory "src")
+        dependency (io/file source-directory (str "example/" module-name ".kotoba"))
+        root (io/file directory "main.kotoba")]
+    (.mkdirs (.getParentFile dependency))
+    (spit dependency module-source)
+    (spit root root-source)
+    {:root (.getPath root) :source-path (.getPath source-directory) :directory directory}))
+
+(deftest compile-cli-threads-fuel-into-native-image-through-source-path
+  ;; amu-h5. The single-file branch above has sealed `--fuel` since the fix
+  ;; its comment records; the `--source-path` branch built the same
+  ;; `source-opts` and never passed them to `compile-project`, so a project
+  ;; kernel image reported success and sealed 512. Same assertion, same
+  ;; qword, through the linker.
+  (let [{:keys [root source-path]}
+        (temp-project! "(ns example.k (:require [example.lib :as lib]) (:export [main]))
+                        (defn main [] (kernel-out-u32 244 (lib/answer)))"
+                       "lib"
+                       "(ns example.lib (:export [answer]))
+                        (defn answer [] 16)")
+        output (.getPath (atomic-output/temp-file! "kotoba-aiueos-kernel-project-fuel-" ".elf"))
+        out (StringWriter.)]
+    (binding [*out* out]
+      (cli/-main "compile" root "--source-path" source-path
+                 "--target" "x86_64-aiueos-kernel-v1" "--artifact" "image"
+                 "--fuel" "4096" "--output" output "--unpinned"))
+    (is (= 4096 (sealed-native-fuel output))
+        "--fuel must reach the sealed native context on the project route too")))
+
 (deftest compile-wasm-target-is-unaffected-by-the-cljs-output-fix
   (let [source (temp-kotoba-source! "(defn main [] (let [x 40 y 2] (+ x y)))")
         output (.getPath (atomic-output/temp-file! "kotoba-cli-wasm-out-" ".wasm"))

@@ -815,6 +815,17 @@
   ([sources root target] (compile-project sources root target {}))
   ([sources root target policy] (compile-project sources root target policy {}))
   ([sources root target policy supply-chain]
+   (compile-project sources root target policy supply-chain {}))
+  ;; `emit-metadata` is the same map `compile-source` takes -- `:fuel`,
+  ;; `:language-profile` -- carried here so a project build seals the budget
+  ;; the caller declared. Before this arity the CLI built `source-opts` from
+  ;; `--fuel` and handed it only to the single-file branch: on
+  ;; `--source-path` / `--module-lock` the flag was accepted, never reached
+  ;; `linked-meta`, and `declared-fuel` fell back to the policy or 512 while
+  ;; the compile reported success (amu-h5, measured 2026-09-07 on
+  ;; `x86_64-aiueos-kernel-v1 --artifact image --fuel 4096`: the sealed RW
+  ;; context qword read 512).
+  ([sources root target policy supply-chain emit-metadata]
    (let [allowed-keys #{:package-lock-digest :trust-policy-digest
                         :package-receipt-digest}
          values (when (map? supply-chain) (vals supply-chain))
@@ -850,7 +861,10 @@
                               :module-source-digests module-digests}
                              supply-chain)
          component-target? (= :component (:execution (target-profile/profile target)))
-         linked-meta (assoc project-meta :admit-linked-synthetics? true)
+         ;; Project digests win over anything the caller put under the same
+         ;; keys; the caller's build metadata is otherwise carried unchanged.
+         linked-meta (merge emit-metadata project-meta
+                            {:admit-linked-synthetics? true})
          compiled (if component-target?
                     ;; Component opts are target + project digests only here;
                     ;; CLI attaches fuel/profile via direct compile-component.
