@@ -17,7 +17,8 @@
   namespace deliberately keeps the frontend out of its load closure so
   `output-set-cli` does not pay 15.8s to verify a signature. Both drivers that
   require this one already load `kotoba.sema`."
-  (:require [kotoba.compiler.nbb.cli-support :as support]
+  (:require [kotoba.artifact.core :as artifact]
+            [kotoba.compiler.nbb.cli-support :as support]
             [kotoba.compiler.nbb.io :as io]
             [kotoba.compiler.nbb.module-lock :as module-lock]
             [kotoba.compiler.nbb.package-lock :as package-lock]
@@ -117,6 +118,15 @@
          :source (:source linked)
          :source-map (:source-map linked)
          :linked? true
+         ;; Per-module source text, keyed by namespace, for the module-graph
+         ;; identity the JVM's `compile-project` seals into the artifact
+         ;; (`:module-graph-digest` / `:module-source-digests`). Without it a
+         ;; driver on this route can link the same graph and still emit a
+         ;; module whose header lacks the graph digest -- measured 2026-09-06
+         ;; on `--target js`: 281 bytes short of the JVM's and a
+         ;; `:build-metadata-sha256` of the empty map.
+         :sources (:sources graph)
+         :module-order (:module-order linked)
          :lock {:module-lock lock-path :lock-cid (:lock-cid graph)}
          :project {:root (:root graph)
                    :module-order (:module-order linked)
@@ -138,6 +148,8 @@
          :source (:source linked)
          :source-map (:source-map linked)
          :linked? true
+         :sources (:sources graph)
+         :module-order (:module-order linked)
          :packages resolved-packages
          :project {:root (:root graph)
                    :module-order (:module-order linked)
@@ -184,3 +196,26 @@
     {:kotoba.compile/inputs (if (:linked? resolved)
                               :unpinned-source-path
                               :single-file)}))
+
+(defn module-graph
+  "The closed module graph's identity, as the JVM's `compile-project` computes
+  it (kotoba.compiler.core): each module's source SHA-256 keyed by namespace in
+  a sorted map, restricted to the linked module order, and the SHA-256 of the
+  `:kotoba.module-graph/v1` record built from root, order and those digests.
+  nil for an unlinked (single-file) compile. Returned as {:graph :digest
+  :module-digests} so a driver can seal the digests into the emitted module
+  and the manifest and print the graph, exactly as the JVM route does."
+  [resolved text-sha256]
+  (when (:linked? resolved)
+    (let [order (:module-order resolved)
+          module-digests (into (sorted-map)
+                               (map (fn [[namespace source]]
+                                      [namespace (text-sha256 source)]))
+                               (select-keys (:sources resolved) order))
+          graph {:kotoba.module/schema :kotoba.module-graph/v1
+                 :kotoba.module/root (get-in resolved [:project :root])
+                 :kotoba.module/order order
+                 :kotoba.module/source-digests module-digests}]
+      {:graph graph
+       :digest (artifact/sha256 graph)
+       :module-digests module-digests})))

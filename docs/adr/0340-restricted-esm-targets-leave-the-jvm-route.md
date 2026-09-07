@@ -63,6 +63,32 @@ instantiate.
 - The superproject CLAUDE.md table that marks `js` / `js-browser` as *JVM*
   and *新規で選ばない* is superseded for the JVM half; the *default is
   `wasm32-browser`* guidance stands.
+- The parity gate widened past `route-decide` (2026-09-06, second slice):
+  `test/fixtures/js-parity/` holds three goldens the JVM route wrote once at
+  kotoba-script `8a55311b` (README.md there records the exact command per
+  golden) -- `todo-app.mjs` (`examples/todo-app.kotoba`: typed values,
+  `:document`, no policy, default fuel), `consumer.mjs` (`consumer.kotoba`
+  requiring `parity.util` from `lib/` through `--source-path`, so the linked
+  project graph is compared, not a single file) and `capability-fuel.mjs`
+  (`examples/capability.kotoba` with its policy and `--fuel 4096`; the
+  consumer command carries `--unpinned` because the JVM refuses a path-resolved
+  project without it, ADR-2608580000 D5, while the nbb route accepts either
+  spelling -- recorded, not changed). For each,
+  `test/nbb/js_parity.cljs` compiles on the nbb route with the same flags and
+  asserts the `.mjs` byte for byte and the `.manifest.edn` / `.provenance.edn`
+  sidecars as EDN values, naming the first differing key when they diverge;
+  the fuel golden must also carry `let fuel=4096;`. What the earlier golden
+  did not cover -- typed-value limits, project linking, the fuel resolution
+  order -- is now measured rather than asserted by the driver's docstring.
+  The first run of the widened gate was red: the nbb `consumer.mjs` was 281
+  bytes shorter than the JVM's (first difference at byte 1,195) and its
+  `:build-metadata-sha256` was the SHA-256 of `{}`, because `js-cli` passed
+  the CLI's `--fuel` metadata where `compile-project` passes the module-graph
+  digest, the per-module source digests and `:admit-linked-synthetics? true`,
+  and never merged `:kotoba.artifact/module-graph-digest` /
+  `:kotoba.artifact/module-source-digests` into the manifest.
+  `project-source/module-graph` now computes the same `:kotoba.module-graph/v1`
+  record and `js-cli` seals it the same way; the three files are equal again.
 - Not mirrored: the JVM's `.inputs.edn` sidecar (folded into the printed
   result, as the Wasm route does) and hash-map key ORDER inside the manifest
   and provenance text. Both are values; the test compares them as such.
