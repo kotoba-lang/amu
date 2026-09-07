@@ -1,4 +1,5 @@
 #define _GNU_SOURCE
+#include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <inttypes.h>
@@ -1551,31 +1552,36 @@ static int64_t env_read_provider(struct kexe_context_v4 *context,
   return intern_utf8(context, (const uint8_t *)value, value_length);
 }
 
-/* wire id 35 = :fs/app-data (runtime id 202). The request string is an
- * absolute path to READ; the result is the file's bytes as a string. The
- * granted scope comes from KEXE_CAP_RESOURCES_35, a colon-separated list
- * of allowed path prefixes set by the kbb shim from the policy's resource
- * scope. Enforcement is realpath-canonicalized prefix match (a directory
- * scope entry admits the files beneath it); a missing or empty scope
- * denies everything. Symlink escape is closed by resolving the target
- * path before the compare. Fail closed: any malformed request or scope
- * breach raises SIGILL. */
-/* Parent-side resolved :fs/app-data scope (wire id 35). Parsed and
- * realpath'ed BEFORE the child is forked, while the process is still
- * unsandboxed. Both the Seatbelt profile and the provider use only these
- * resolved spellings, so no sandboxed code needs to realpath a path
- * outside the grant (e.g. through the /tmp -> /private/tmp symlink). */
-static char kexe_scope35_resolved[16][4096];
-static char kexe_scope35_orig[16][4096];
-static int kexe_scope35_count = 0;
+/* ----------------------------------------------------------------------
+ * Filesystem capability scopes: wire id 35 = :fs/app-data (runtime id 202;
+ * read, write and ranged read of one file) and wire id 34 = :fs/browse (one
+ * directory listing). Each scope is a colon-separated list of absolute path
+ * prefixes the kbb shim hands over in KEXE_CAP_RESOURCES_<wire-id>, taken
+ * from the policy's resource scope. Entries are realpath'ed in the PARENT,
+ * before fork, while the process is still unsandboxed; both the Seatbelt
+ * profile and every provider use only these resolved spellings, so no
+ * sandboxed code needs to realpath a path outside the grant (e.g. through
+ * the /tmp -> /private/tmp symlink). A missing or empty scope admits
+ * nothing. The loader decides nothing here: the grant is the shim's, the
+ * loader only enforces the list it was given, fail closed -- any malformed
+ * request, scope breach or I/O failure raises SIGILL. */
+#define KEXE_SCOPE_ENTRIES 16
 
-static void kexe_scope35_init(void) {
-  const char *scope_env = getenv("KEXE_CAP_RESOURCES_35");
+struct kexe_scope {
+  char resolved[KEXE_SCOPE_ENTRIES][4096];
+  char orig[KEXE_SCOPE_ENTRIES][4096];
+  int count;
+};
+
+static struct kexe_scope kexe_scope35; /* :fs/app-data read / write / range */
+static struct kexe_scope kexe_scope34; /* :fs/browse directory listing      */
+
+static void kexe_scope_init(struct kexe_scope *scope, const char *env_name) {
+  scope->count = 0;
+  const char *scope_env = getenv(env_name);
   if (scope_env == NULL || scope_env[0] == '\0') return;
   const char *cursor = scope_env;
-  while (*cursor != '\0' &&
-         kexe_scope35_count < (int)(sizeof(kexe_scope35_resolved) /
-                                    sizeof(kexe_scope35_resolved[0]))) {
+  while (*cursor != '\0' && scope->count < KEXE_SCOPE_ENTRIES) {
     const char *end = strchr(cursor, ':');
     size_t entry_length = (end != NULL) ? (size_t)(end - cursor) : strlen(cursor);
     if (entry_length > 0 && entry_length < 4096) {
@@ -1584,10 +1590,10 @@ static void kexe_scope35_init(void) {
       entry[entry_length] = '\0';
       char resolved[4096];
       if (realpath(entry, resolved) != NULL &&
-          strlen(resolved) < sizeof(kexe_scope35_resolved[0])) {
-        strcpy(kexe_scope35_resolved[kexe_scope35_count], resolved);
-        strcpy(kexe_scope35_orig[kexe_scope35_count], entry);
-        kexe_scope35_count++;
+          strlen(resolved) < sizeof(scope->resolved[0])) {
+        strcpy(scope->resolved[scope->count], resolved);
+        strcpy(scope->orig[scope->count], entry);
+        scope->count++;
       }
     }
     if (end != NULL) cursor = end + 1;
@@ -1595,91 +1601,119 @@ static void kexe_scope35_init(void) {
   }
 }
 
+/* Lexical admission. `target` (absolute, NUL-terminated) must equal a scope
+ * entry -- in either its literal or its resolved spelling -- or lie beneath
+ * one. On success `candidate` is the target re-spelled under that entry's
+ * RESOLVED prefix, so the open that follows happens on canonical bytes.
+ * Returns 1 when admitted; nothing is opened here. */
+static int kexe_scope_admit(const struct kexe_scope *scope, const char *target,
+                            char candidate[4096]) {
+  for (int s = 0; s < scope->count; s++) {
+    for (int v = 0; v < 2; v++) {
+      const char *base = (v == 0) ? scope->orig[s] : scope->resolved[s];
+      size_t base_length = strlen(base);
+      if (strncmp(target, base, base_length) != 0 ||
+          (target[base_length] != '/' && target[base_length] != '\0')) continue;
+      const char *suffix = target + base_length;
+      size_t suffix_length = strlen(suffix);
+      size_t real_length = strlen(scope->resolved[s]);
+      if (real_length + suffix_length >= 4096) continue;
+      memcpy(candidate, scope->resolved[s], real_length);
+      memcpy(candidate + real_length, suffix, suffix_length + 1);
+      return 1;
+    }
+  }
+  return 0;
+}
+
+/* Containment of an OPENED fd -- the second check, after admission, because
+ * the path that was admitted and the object that was opened can differ.
+ * macOS: F_GETPATH gives the kernel's path for the fd, compared against each
+ * resolved entry. Linux: the candidate was re-spelled under a resolved entry
+ * (lexically inside the grant) and opened O_NOFOLLOW, so a (st_dev, st_ino)
+ * match between the fd and a fresh stat of the candidate proves the fd IS
+ * the granted object. Returns 1 when contained. */
+static int kexe_scope_contains_fd(const struct kexe_scope *scope, int fd,
+                                  const char *candidate) {
+#if defined(__APPLE__)
+  (void)candidate;
+  char actual[4096];
+  if (fcntl(fd, F_GETPATH, actual) != 0) return 0;
+  size_t actual_length = strlen(actual);
+  for (int s = 0; s < scope->count; s++) {
+    const char *base = scope->resolved[s];
+    size_t base_length = strlen(base);
+    if (actual_length >= base_length &&
+        memcmp(actual, base, base_length) == 0 &&
+        (actual_length == base_length || actual[base_length] == '/')) return 1;
+  }
+  return 0;
+#else
+  struct stat fd_sb, cand_sb;
+  if (fstat(fd, &fd_sb) != 0 || stat(candidate, &cand_sb) != 0) return 0;
+  return fd_sb.st_dev == cand_sb.st_dev && fd_sb.st_ino == cand_sb.st_ino;
+#endif
+}
+
+/* Copies a request's path bytes into a NUL-terminated buffer, refusing the
+ * empty, over-long and relative forms no provider admits. */
+static int kexe_request_path(const uint8_t *bytes, size_t length,
+                             char target[4096]) {
+  if (bytes == NULL || length == 0 || length >= 4096 || bytes[0] != '/') return 0;
+  memcpy(target, bytes, length);
+  target[length] = '\0';
+  return 1;
+}
+
+/* The single occurrence of `token` in `bytes`, or NULL when it is absent or
+ * occurs again. The separators are ASCII tokens rather than control
+ * characters because a Kotoba guest cannot emit a control character and has
+ * no char-to-string builtin, so it builds the request with string-concat; a
+ * second occurrence -- content or a path that contains the token -- is
+ * refused fail-closed rather than escaped. */
+static const uint8_t *kexe_single_token(const uint8_t *bytes, size_t length,
+                                        const char *token) {
+  size_t token_len = strlen(token);
+  const uint8_t *first = NULL;
+  for (size_t i = 0; i + token_len <= length; i++) {
+    if (memcmp(bytes + i, token, token_len) != 0) continue;
+    if (first != NULL) return NULL;
+    first = bytes + i;
+    i += token_len - 1;
+  }
+  return first;
+}
+
+/* memmem fallback for platforms without it (glibc has it; macOS lacks <string> memmem). */
+static void *shim_memmem(const void *hay, size_t hlen, const void *needle, size_t nlen) {
+  if (nlen == 0) return (void *)hay;
+  if (hlen < nlen) return NULL;
+  const uint8_t *h = (const uint8_t *)hay, *n = (const uint8_t *)needle;
+  for (size_t i = 0; i + nlen <= hlen; i++) {
+    if (memcmp(h + i, n, nlen) == 0) return (void *)(h + i);
+  }
+  return NULL;
+}
+#define memmem shim_memmem
+
+/* wire id 35, READ form. The request string is an absolute path; the result
+ * is the file's bytes as a string. The whole file is interned, so a file
+ * larger than the string pool (KEXE_STRING_POOL_BYTES) cannot be read this
+ * way -- that is what the RANGE form is for. */
 static int64_t fs_app_data_read_provider(struct kexe_context_v4 *context,
                                          int64_t request) {
   const uint8_t *bytes = NULL;
   uint64_t length = 0;
-  if (!read_string_handle(context, request, &bytes, &length)) {
+  char target[4096], candidate[4096];
+  if (!read_string_handle(context, request, &bytes, &length) ||
+      !kexe_request_path(bytes, (size_t)length, target) ||
+      !kexe_scope_admit(&kexe_scope35, target, candidate)) {
     raise(SIGILL);
     return 0;
   }
-  if (length == 0 || length >= 4096 || bytes[0] != '/') {
-    raise(SIGILL);
-    return 0;
-  }
-  char target[4096];
-  memcpy(target, bytes, (size_t)length);
-  target[length] = '\0';
-
-  if (kexe_scope35_count == 0) {
-    raise(SIGILL);
-    return 0;
-  }
-  char candidate[4096];
-  int permitted = 0;
-  for (int s = 0; s < kexe_scope35_count && !permitted; s++) {
-    for (int v = 0; v < 2 && !permitted; v++) {
-      const char *base = (v == 0) ? kexe_scope35_orig[s] : kexe_scope35_resolved[s];
-      size_t base_length = strlen(base);
-      const char *suffix = NULL;
-      if (strncmp(target, base, base_length) == 0 &&
-          (target[base_length] == '/' || target[base_length] == '\0')) {
-        suffix = target + base_length;
-      }
-      if (suffix == NULL) continue;
-      size_t suffix_length = strlen(suffix);
-      size_t real_length = strlen(kexe_scope35_resolved[s]);
-      if (real_length + suffix_length >= sizeof(candidate)) continue;
-      memcpy(candidate, kexe_scope35_resolved[s], real_length);
-      memcpy(candidate + real_length, suffix, suffix_length + 1);
-      permitted = 1;
-    }
-  }
-  if (!permitted) {
-    raise(SIGILL);
-    return 0;
-  }
-
   int fd = open(candidate, O_RDONLY | O_NOFOLLOW);
-  if (fd < 0) {
-    raise(SIGILL);
-    return 0;
-  }
-  /* Containment of the opened fd. macOS: F_GETPATH gives the kernel path,
-   * compared against each resolved entry. Linux: the candidate path was
-   * re-spelled under a resolved entry (lexically inside the grant) and
-   * opened O_NOFOLLOW, so a (st_dev, st_ino) match between the fd and a
-   * fresh stat of the candidate proves the fd IS the granted file. */
-#if defined(__APPLE__)
-  char actual[4096];
-  if (fcntl(fd, F_GETPATH, actual) != 0) {
-    close(fd);
-    raise(SIGILL);
-    return 0;
-  }
-  size_t actual_length = strlen(actual);
-  int contained = 0;
-  for (int s = 0; s < kexe_scope35_count && !contained; s++) {
-    const char *base = kexe_scope35_resolved[s];
-    size_t base_length = strlen(base);
-    if (actual_length >= base_length &&
-        memcmp(actual, base, base_length) == 0 &&
-        (actual_length == base_length || actual[base_length] == '/')) {
-      contained = 1;
-    }
-  }
-#else
-  struct stat fd_sb, cand_sb;
-  if (fstat(fd, &fd_sb) != 0 || stat(candidate, &cand_sb) != 0) {
-    close(fd);
-    raise(SIGILL);
-    return 0;
-  }
-  int contained = (fd_sb.st_dev == cand_sb.st_dev &&
-                   fd_sb.st_ino == cand_sb.st_ino);
-#endif
-  if (!contained) {
-    close(fd);
+  if (fd < 0 || !kexe_scope_contains_fd(&kexe_scope35, fd, candidate)) {
+    if (fd >= 0) close(fd);
     raise(SIGILL);
     return 0;
   }
@@ -1722,141 +1756,40 @@ static int64_t fs_app_data_read_provider(struct kexe_context_v4 *context,
   return result;
 }
 
-/* Write provider for wire id 35 (:fs/app-data). The request string is
- * "<path>\0<content>": the first NUL separates the absolute target path from
- * the raw bytes to write. Scope is KEXE_CAP_RESOURCES_35, enforced with the
- * same realpath-canonicalized prefix match and fd containment as the read
- * provider. The file is created/truncated O_NOFOLLOW. Returns the number of
- * bytes written (>= 0), or raises SIGILL on any scope/containment violation.
- * Writing through a symlink is impossible (O_NOFOLLOW), and a trailing slash
- * (directory target) is refused. */
-/* memmem fallback for platforms without it (glibc has it; macOS lacks <string> memmem). */
-static void *shim_memmem(const void *hay, size_t hlen, const void *needle, size_t nlen) {
-  if (nlen == 0) return (void *)hay;
-  if (hlen < nlen) return NULL;
-  const uint8_t *h = (const uint8_t *)hay, *n = (const uint8_t *)needle;
-  for (size_t i = 0; i + nlen <= hlen; i++) {
-    if (memcmp(h + i, n, nlen) == 0) return (void *)(h + i);
-  }
-  return NULL;
-}
-#define memmem shim_memmem
-
+/* wire id 35, WRITE form: "<path>WRITE_SEP<content>" -> the content written
+ * back (so the guest can verify the write via string-byte-length and the
+ * capability keeps its typed :string result). Same scope and containment as
+ * the read form. The file is created/truncated O_NOFOLLOW; writing through a
+ * symlink is impossible, and a directory target is refused. */
 static int64_t fs_app_data_write_provider(struct kexe_context_v4 *context,
                                           int64_t request) {
   const uint8_t *bytes = NULL;
   uint64_t length = 0;
-  if (!read_string_handle(context, request, &bytes, &length)) {
+  if (!read_string_handle(context, request, &bytes, &length) || bytes == NULL) {
     raise(SIGILL);
     return 0;
   }
-  if (bytes == NULL) {
-    raise(SIGILL);
-    return 0;
-  }
-  /* Write form is "<path>WRITE_SEP<content>". Guests cannot emit a control
-   * character (NUL, SOH) because the Kotoba source reader rejects control
-   * chars and there is no char-to-string builtin, so the separator is an
-   * ASCII token the guest can build with string-concat. Any second occurrence
-   * of the token (i.e. content containing it) is refused fail-closed. */
   static const char write_token[] = "WRITE_SEP";
   const size_t token_len = sizeof(write_token) - 1u;
-  const uint8_t *sep = NULL;
-  size_t i = 0;
-  for (; i + token_len <= (size_t)length; i++) {
-    if (memcmp(bytes + i, write_token, token_len) == 0) { sep = bytes + i; break; }
-  }
-  if (sep == NULL) {
-    raise(SIGILL);
-    return 0;
-  }
-  /* Refuse a second token occurrence (content containing the separator). */
-  for (size_t j = (size_t)(sep - bytes) + token_len; j + token_len <= (size_t)length; j++) {
-    if (memcmp(bytes + j, write_token, token_len) == 0) {
-      raise(SIGILL);
-      return 0;
-    }
-  }
-  size_t path_length = (size_t)(sep - bytes);
-  if (path_length == 0 || path_length >= 4096 || bytes[0] != '/') {
+  const uint8_t *sep = kexe_single_token(bytes, (size_t)length, write_token);
+  char target[4096], candidate[4096];
+  if (sep == NULL ||
+      !kexe_request_path(bytes, (size_t)(sep - bytes), target) ||
+      !kexe_scope_admit(&kexe_scope35, target, candidate)) {
     raise(SIGILL);
     return 0;
   }
   const uint8_t *content = sep + token_len;
   size_t content_length = (size_t)(bytes + length - content);
 
-  char target[4096];
-  memcpy(target, bytes, path_length);
-  target[path_length] = '\0';
-
-  if (kexe_scope35_count == 0) {
-    raise(SIGILL);
-    return 0;
-  }
-  char candidate[4096];
-  int permitted = 0;
-  for (int s = 0; s < kexe_scope35_count && !permitted; s++) {
-    for (int v = 0; v < 2 && !permitted; v++) {
-      const char *base = (v == 0) ? kexe_scope35_orig[s] : kexe_scope35_resolved[s];
-      size_t base_length = strlen(base);
-      const char *suffix = NULL;
-      if (strncmp(target, base, base_length) == 0 &&
-          (target[base_length] == '/' || target[base_length] == '\0')) {
-        suffix = target + base_length;
-      }
-      if (suffix == NULL) continue;
-      size_t suffix_length = strlen(suffix);
-      size_t real_length = strlen(kexe_scope35_resolved[s]);
-      if (real_length + suffix_length >= sizeof(candidate)) continue;
-      memcpy(candidate, kexe_scope35_resolved[s], real_length);
-      memcpy(candidate + real_length, suffix, suffix_length + 1);
-      permitted = 1;
-    }
-  }
-  if (!permitted) {
-    raise(SIGILL);
-    return 0;
-  }
   struct stat st;
   if (stat(candidate, &st) == 0 && S_ISDIR(st.st_mode)) {
     raise(SIGILL);
     return 0;
   }
   int fd = open(candidate, O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW, 0644);
-  if (fd < 0) {
-      raise(SIGILL);
-    return 0;
-  }
-#if defined(__APPLE__)
-  char actual[4096];
-  if (fcntl(fd, F_GETPATH, actual) != 0) {
-    close(fd);
-    raise(SIGILL);
-    return 0;
-  }
-  size_t actual_length = strlen(actual);
-  int contained = 0;
-  for (int s = 0; s < kexe_scope35_count && !contained; s++) {
-    const char *base = kexe_scope35_resolved[s];
-    size_t base_length = strlen(base);
-    if (actual_length >= base_length &&
-        memcmp(actual, base, base_length) == 0 &&
-        (actual_length == base_length || actual[base_length] == '/')) {
-      contained = 1;
-    }
-  }
-#else
-  struct stat fd_sb, cand_sb;
-  if (fstat(fd, &fd_sb) != 0 || stat(candidate, &cand_sb) != 0) {
-    close(fd);
-    raise(SIGILL);
-    return 0;
-  }
-  int contained = (fd_sb.st_dev == cand_sb.st_dev &&
-                   fd_sb.st_ino == cand_sb.st_ino);
-#endif
-  if (!contained) {
-    close(fd);
+  if (fd < 0 || !kexe_scope_contains_fd(&kexe_scope35, fd, candidate)) {
+    if (fd >= 0) close(fd);
     raise(SIGILL);
     return 0;
   }
@@ -1873,10 +1806,107 @@ static int64_t fs_app_data_write_provider(struct kexe_context_v4 *context,
     off += (size_t)w;
   }
   close(fd);
-  /* Return the written content as a string (matching result_kind :string), so
-   * the guest can verify the write via string-byte-length (== content_length)
-   * and keep the capability's typed result contract. */
   return intern_utf8(context, content, content_length);
+}
+
+/* wire id 34 = :fs/browse. The request string is an absolute DIRECTORY path
+ * inside KEXE_CAP_RESOURCES_34; the result is the directory's entry names
+ * ("." and ".." excluded), sorted bytewise, joined by a single "\n" (the
+ * empty string for an empty directory) -- the shape the js host answers for
+ * the same wire id. Bounds: at most KEXE_BROWSE_ENTRY_LIMIT names and a
+ * listing that fits the string pool; more is refused, not truncated (a
+ * truncated listing would look like a smaller directory). Names are validated
+ * as UTF-8 by the typed dispatch, so a non-UTF-8 name traps the call. The
+ * directory is opened O_NOFOLLOW|O_DIRECTORY and contained like a file. */
+#define KEXE_BROWSE_ENTRY_LIMIT 4096u
+
+static int kexe_name_compare(const void *a, const void *b) {
+  return strcmp(*(const char *const *)a, *(const char *const *)b);
+}
+
+static void kexe_free_names(char **names, size_t count) {
+  for (size_t i = 0; i < count; i++) free(names[i]);
+  free(names);
+}
+
+static int64_t fs_browse_provider(struct kexe_context_v4 *context,
+                                  int64_t request) {
+  const uint8_t *bytes = NULL;
+  uint64_t length = 0;
+  char target[4096], candidate[4096];
+  if (!read_string_handle(context, request, &bytes, &length) ||
+      !kexe_request_path(bytes, (size_t)length, target) ||
+      !kexe_scope_admit(&kexe_scope34, target, candidate)) {
+    raise(SIGILL);
+    return 0;
+  }
+  int fd = open(candidate, O_RDONLY | O_DIRECTORY | O_NOFOLLOW);
+  if (fd < 0 || !kexe_scope_contains_fd(&kexe_scope34, fd, candidate)) {
+    if (fd >= 0) close(fd);
+    raise(SIGILL);
+    return 0;
+  }
+  DIR *dir = fdopendir(fd);
+  if (dir == NULL) {
+    close(fd);
+    raise(SIGILL);
+    return 0;
+  }
+  char **names = NULL;
+  size_t count = 0, capacity = 0, total = 0;
+  int refused = 0;
+  for (;;) {
+    errno = 0;
+    struct dirent *entry = readdir(dir);
+    if (entry == NULL) {
+      if (errno != 0) refused = 1;
+      break;
+    }
+    const char *name = entry->d_name;
+    if (strcmp(name, ".") == 0 || strcmp(name, "..") == 0) continue;
+    size_t name_length = strlen(name);
+    if (count >= KEXE_BROWSE_ENTRY_LIMIT ||
+        total + name_length + (count > 0 ? 1u : 0u) > KEXE_STRING_POOL_BYTES) {
+      refused = 1;
+      break;
+    }
+    if (count == capacity) {
+      size_t next = capacity == 0 ? 64u : capacity * 2u;
+      char **grown = (char **)realloc(names, next * sizeof(char *));
+      if (grown == NULL) { refused = 1; break; }
+      names = grown;
+      capacity = next;
+    }
+    char *copy = (char *)malloc(name_length + 1u);
+    if (copy == NULL) { refused = 1; break; }
+    memcpy(copy, name, name_length + 1u);
+    names[count++] = copy;
+    total += name_length + (count > 1 ? 1u : 0u);
+  }
+  closedir(dir);
+  if (refused) {
+    kexe_free_names(names, count);
+    raise(SIGILL);
+    return 0;
+  }
+  qsort(names, count, sizeof(char *), kexe_name_compare);
+  uint8_t *listing = (uint8_t *)malloc(total == 0 ? 1u : total);
+  if (listing == NULL) {
+    kexe_free_names(names, count);
+    raise(SIGILL);
+    return 0;
+  }
+  size_t used = 0;
+  for (size_t i = 0; i < count; i++) {
+    if (i > 0) listing[used++] = '\n';
+    size_t name_length = strlen(names[i]);
+    memcpy(listing + used, names[i], name_length);
+    used += name_length;
+  }
+  kexe_free_names(names, count);
+  int64_t result = intern_utf8(context, listing, used);
+  free(listing);
+  return result;
 }
 
 
@@ -1907,10 +1937,9 @@ static int64_t checked_typed_cap_call(struct kexe_context_v4 *context,
   } else if (id == 10 && request_kind == KEXE_TYPED_UI_EVENT_V1) {
     result = ui_event_inject(context, request);
   } else if (id == 35 && request_kind == KEXE_TYPED_STRING) {
-    /* wire id 35 = :fs/app-data. If the request string contains a NUL it is
-     * the write form "<path>\0<content>" (handled by the write provider);
-     * otherwise it is the read form (absolute path) -> file contents. Scope
-     * is KEXE_CAP_RESOURCES_35 for both. */
+    /* wire id 35 = :fs/app-data, two request forms told apart by an ASCII
+     * token: "<path>WRITE_SEP<content>" writes, a bare absolute path reads
+     * the whole file. Scope is KEXE_CAP_RESOURCES_35 for both. */
     uint64_t rlen = 0;
     const uint8_t *rb = NULL;
     if (read_string_handle(context, request, &rb, &rlen) && rb &&
@@ -1919,6 +1948,11 @@ static int64_t checked_typed_cap_call(struct kexe_context_v4 *context,
     } else {
       result = fs_app_data_read_provider(context, request);
     }
+  } else if (id == 34 && request_kind == KEXE_TYPED_STRING) {
+    /* wire id 34 = :fs/browse. Real host provider: the request string is an
+     * absolute directory path inside KEXE_CAP_RESOURCES_34; the result is the
+     * sorted, newline-joined entry names. */
+    result = fs_browse_provider(context, request);
   } else if (id == 33 && request_kind == KEXE_TYPED_STRING) {
     /* wire id 33 = :env/read. Real host provider: the request string is
      * the environment variable name; the result is its value (empty
@@ -2354,7 +2388,7 @@ static void install_syscall_sandbox(void) {
 #else
 #error "unsupported Linux architecture for KEXE seccomp"
 #endif
-  struct sock_filter filter[64];
+  struct sock_filter filter[96];
   int n = 0;
 #define ADD(stmt) do { filter[n++] = (stmt); } while (0)
   ADD((struct sock_filter)BPF_STMT(BPF_LD | BPF_W | BPF_ABS,
@@ -2364,13 +2398,32 @@ static void install_syscall_sandbox(void) {
   ADD((struct sock_filter)BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_KILL_PROCESS));
   ADD((struct sock_filter)BPF_STMT(BPF_LD | BPF_W | BPF_ABS,
                                    offsetof(struct seccomp_data, nr)));
-  /* fs/app-data (wire id 35) reads are admitted only when a scope was
-   * granted (KEXE_CAP_RESOURCES_35 set). The conformance filesystem probe
-   * runs with no scope and must still be denied; the kbb native runner sets
-   * the scope and the provider's realpath compare enforces it. */
-  const int fs_reads =
-      getenv("KEXE_CAP_RESOURCES_35") != NULL &&
-      getenv("KEXE_CAP_RESOURCES_35")[0] != '\0';
+  /* fs/app-data (wire id 35) and fs/browse (wire id 34) syscalls are
+   * admitted only when the matching scope was granted (KEXE_CAP_RESOURCES_35
+   * / _34 set). The conformance filesystem probe runs with no scope and must
+   * still be denied; the kbb native runner sets the scopes and the providers'
+   * realpath compare enforces them. */
+  const int fs_reads = kexe_scope35.count > 0 || kexe_scope34.count > 0;
+  if (kexe_scope34.count > 0) {
+#ifdef __NR_getdents64
+    ADD((struct sock_filter)BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K,
+                                     __NR_getdents64, 0, 1));
+    ADD((struct sock_filter)BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW));
+#endif
+    /* glibc's fdopendir asks F_GETFL of the directory fd. Only that fcntl
+     * command is admitted: nr == fcntl AND args[1] == F_GETFL; any other
+     * command falls through to the trap below. The accumulator is reloaded
+     * with nr afterwards so the remaining tests see the syscall number. */
+    ADD((struct sock_filter)BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K,
+                                     __NR_fcntl, 0, 4));
+    ADD((struct sock_filter)BPF_STMT(BPF_LD | BPF_W | BPF_ABS,
+                                     offsetof(struct seccomp_data, args[1])));
+    ADD((struct sock_filter)BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K,
+                                     (uint32_t)F_GETFL, 0, 1));
+    ADD((struct sock_filter)BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW));
+    ADD((struct sock_filter)BPF_STMT(BPF_LD | BPF_W | BPF_ABS,
+                                     offsetof(struct seccomp_data, nr)));
+  }
   if (fs_reads) {
 #ifdef __NR_read
     ADD((struct sock_filter)BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K,
@@ -2444,11 +2497,12 @@ static void install_syscall_sandbox(void) {
 }
 #elif defined(__APPLE__) && !defined(KEXE_SANITIZER_TEST)
 static void install_syscall_sandbox(void) {
-  /* file-read* is NOT blanket: each :fs/app-data (wire id 35) scope entry
-   * becomes a (subpath ...) filter, so reads are possible only beneath
-   * the granted directories. Entries come from KEXE_CAP_RESOURCES_35
-   * (colon-separated) -- the same scope string the provider checks
-   * per-call; Seatbelt is the second enforcement layer. Both the
+  /* file-read* is NOT blanket: each :fs/app-data (wire id 35) and
+   * :fs/browse (wire id 34) scope entry becomes a (subpath ...) filter, so
+   * reads are possible only beneath the granted directories. Entries come
+   * from KEXE_CAP_RESOURCES_35 / _34 (colon-separated) -- the same scope
+   * strings the providers check per-call; Seatbelt is the second
+   * enforcement layer. Both the
    * literal entry spelling and its realpath are granted, so the guest
    * may use either spelling and realpath still fails closed outside
    * the scope. */
@@ -2458,13 +2512,19 @@ static void install_syscall_sandbox(void) {
       "(version 1)(deny default)(allow file-write-data)"
       "(allow signal (target self))(allow process-info-pidinfo)"
       "(allow process-info-setcontrol)(allow sysctl-read)");
-  for (int s = 0; s < kexe_scope35_count; s++) {
+  for (int s = 0; s < kexe_scope35.count; s++) {
     used += (size_t)snprintf(profile + used, sizeof(profile) - used,
               "(allow file-read* (subpath \"%s\"))",
-              kexe_scope35_resolved[s]);
+              kexe_scope35.resolved[s]);
     used += (size_t)snprintf(profile + used, sizeof(profile) - used,
               "(allow file-write* (subpath \"%s\"))",
-              kexe_scope35_resolved[s]);
+              kexe_scope35.resolved[s]);
+  }
+  /* :fs/browse (wire id 34) lists directories: read-only, no write grant. */
+  for (int s = 0; s < kexe_scope34.count; s++) {
+    used += (size_t)snprintf(profile + used, sizeof(profile) - used,
+              "(allow file-read* (subpath \"%s\"))",
+              kexe_scope34.resolved[s]);
   }
   char *error = NULL;
 #pragma clang diagnostic push
@@ -2582,7 +2642,8 @@ int main(int argc, char **argv) {
   shared->context.vector_assoc_in_place = checked_vector_assoc_in_place;
   shared->context.code_base = (const uint8_t *)memory;
   shared->context.code_length = (uint64_t)length;
-    kexe_scope35_init();
+  kexe_scope_init(&kexe_scope35, "KEXE_CAP_RESOURCES_35");
+  kexe_scope_init(&kexe_scope34, "KEXE_CAP_RESOURCES_34");
   if (parse_allow(argv[5], shared->context.allow) != 0) return 2;
   for (unsigned long i = 0; i < arity; i++) {
     if (parse_guest_arg(shared, argv[6 + i], &args[i]) != 0) return 2;

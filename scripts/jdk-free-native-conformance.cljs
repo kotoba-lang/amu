@@ -202,6 +202,61 @@
                      (str "KEXE_FUEL=" bad " was not refused with exit 2: "
                           (:status refused) " " (:stderr refused)))))))
 
+    ;; :fs/browse (wire id 34): the loader lists ONE directory inside
+    ;; KEXE_CAP_RESOURCES_34 -- entry names sorted bytewise, "\n"-joined, "."
+    ;; and ".." excluded, dotfiles included -- the shape kotoba's js host
+    ;; answers for the same wire id. Byte-exact through KEXE_RESULT_TYPE=string.
+    ;; With no scope, a scope elsewhere, or a regular file as the request the
+    ;; call traps (SIGILL, exit 120) instead of answering. Guest sources are
+    ;; written here because the directory under test only exists here.
+    (let [dir (file "browse-dir")
+          other (file "browse-other")
+          hex (fn [s] (.toString (js/Buffer.from s "utf8") "hex"))
+          string-env (fn [extra] (js/Object.assign #js {} env
+                                                   (clj->js (merge {"KEXE_STRUCTURED_REPORT" "1"
+                                                                    "KEXE_RESULT_TYPE" "string"}
+                                                                   extra))))
+          guest! (fn [name request]
+                   (let [source (file (str name ".kotoba"))
+                         policy (file (str name "-policy.edn"))
+                         artifact (file (str name ".kexe"))
+                         binary (file (str name ".bin"))]
+                     (fs/writeFileSync source
+                                       (str "(ns conformance." name " (:export [main]))\n"
+                                            "(defn main [] :string "
+                                            "(typed-cap-call :fs/browse :string :string \"" request "\"))\n"))
+                     (fs/writeFileSync policy "{:allow #{[:cap/call 34]}}")
+                     (invoke ["compile" source "--target" isa "--policy" policy "--output" artifact])
+                     (let [[_ offset] (re-find #":offset ([0-9]+)"
+                                               (:stdout (invoke ["extract-native" artifact
+                                                                 "--symbol" "main" "--output" binary])))]
+                       (ensure! offset (str "extract-native returned no offset for " name))
+                       [binary offset "0" isa "34"])))]
+      (fs/mkdirSync dir)
+      (fs/mkdirSync other)
+      (doseq [n ["b.txt" "a.txt" ".hidden" "z"]] (fs/writeFileSync (.join path dir n) n))
+      (let [args (guest! "browse-listing" dir)
+            listed (run loader args (string-env {"KEXE_CAP_RESOURCES_34" dir}) true)
+            expected (str ":result-utf8-hex \"" (hex ".hidden\na.txt\nb.txt\nz") "\"")]
+        (ensure! (and (= 0 (:status listed)) (str/includes? (:stdout listed) expected))
+                 (str "browse listing mismatch: " (:status listed) " " (str/trim (:stdout listed))))
+        (doseq [[label extra] [["no scope" {}]
+                               ["a scope elsewhere" {"KEXE_CAP_RESOURCES_34" other}]]]
+          (let [refused (run loader args (string-env extra) true)]
+            (ensure! (and (= 120 (:status refused))
+                          (str/includes? (:stderr refused) ":signal :SIGILL"))
+                     (str "browse with " label " was not refused: "
+                          (:status refused) " " (:stderr refused))))))
+      (let [args (guest! "browse-file" (.join path dir "a.txt"))
+            refused (run loader args (string-env {"KEXE_CAP_RESOURCES_34" dir}) true)]
+        (ensure! (and (= 120 (:status refused)) (str/includes? (:stderr refused) ":signal :SIGILL"))
+                 (str "browse of a regular file was not refused: " (:status refused) " " (:stderr refused))))
+      (let [args (guest! "browse-empty" other)
+            empty (run loader args (string-env {"KEXE_CAP_RESOURCES_34" other}) true)]
+        (ensure! (and (= 0 (:status empty)) (str/includes? (:stdout empty) ":result-utf8-hex \"\""))
+                 (str "empty directory did not answer the empty string: "
+                      (:status empty) " " (str/trim (:stdout empty))))))
+
     ;; The aiueos target profiles package the sealed artifact into an ELF64 or
     ;; PE32+ container. Until `kotoba.compiler.nbb.native-package` existed this
     ;; driver had no packaging step at all, so `os/aiueos` built all 67 of its
