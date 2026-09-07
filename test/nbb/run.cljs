@@ -45,7 +45,12 @@
             ;; :kotoba.error/* codes, default :subset-reject. The JVM twin
             ;; (cli_test/structured-diagnostic-has-stable-code-and-bounded-source-span)
             ;; was updated then; this one was not, and main has been red since.
-            ok? (and (= :kotoba.error/subset-reject (:code value))
+            ;; kotoba-sema dda80b3 (pinned 2026-09-07 via af8cc780) split the
+            ;; "no admitted lowering" catch-all: a head that is neither a
+            ;; builtin, a sugar head nor a module function is now
+            ;; :kotoba.error/unknown-operation. Moved here in the same commit
+            ;; as the JVM twin so the two runtimes keep pinning one code.
+            ok? (and (= :kotoba.error/unknown-operation (:code value))
                      (= "program.cljk" (:source value))
                      (= 2 (:line span)) (= 3 (:column span)))]
         {:name "structured-diagnostic" :ok? ok?
