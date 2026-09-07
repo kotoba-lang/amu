@@ -1,0 +1,72 @@
+;; git-run-v1 — driving git, as a capability.
+;;
+;; git is the sharpest tool a script host hands out: it rewrites history,
+;; force-pushes, deletes branches, and reaches the network. So this kit takes
+;; the :process/spawn shape and takes it further -- the guest supplies ZERO
+;; git bytes. argv, cwd and timeout are policy literals; the request is an
+;; INDEX naming a row. What a script may do with git is therefore written
+;; down in the policy, where a human reviews it, and the script cannot widen
+;; it by computing a different string.
+;;
+;; This host enforces the mechanism, not the judgement: it checks that the
+;; row exists, that argv[0] is `git`, and that the row's cwd resolves inside
+;; a granted root -- so a policy table cannot reach a repository the grant
+;; did not name. Whether `push --force` belongs in the table is the policy
+;; author's call, and putting it in a table is precisely what makes that call
+;; reviewable.
+;;
+;; THE EXIT STATUS TRAVELS WITH STDOUT. :process/spawn (20) answers an exit
+;; status and nothing else, which is why no script could count the lines of
+;; `git status --porcelain`. But dropping the status instead would be the
+;; same mistake mirrored: `git diff --quiet` says "there are changes" by
+;; exiting 1, and `git cat-file -e` answers a question with 128. The wire
+;; carries one value, so it carries both: "<exit>\n<stdout>". kbb.git reads
+;; that encoding once, so no script spells it.
+{:kotoba.capability-kit/name :git-run
+ :kotoba.capability-kit/version 1
+ :capabilities [{:name :git/run :id 22}]
+ :semantics {:invocation :policy-table-by-index
+             :guest-supplied-argv false
+             :argv0 :must-be-git
+             :cwd :policy-literal-resolved-within-granted-roots
+             :shell false
+             :stdin :closed
+             :stderr :not-returned
+             :answer "<exit>\n<stdout>"}
+ :limits {:stdout-bytes 262144
+          :timeout-seconds-default 30
+          :index :non-negative-i64}
+ :run
+ {:request [:string]                    ; the grant index, in decimal
+  :result [:string]}                    ; "<exit>\n<stdout>"
+ :refusals
+ [{:reason :git-run/index-outside-table
+   :when "the index names no row -- refused, never clamped to the last row"}
+  {:reason :git-run/cwd-outside-scope
+   :when "the row's cwd does not resolve inside a granted :git/run root"}
+  {:reason :git-run/argv0-not-git
+   :when "the table row's argv[0] is not `git` (rejected when the policy is read,
+          before anything is compiled)"}
+  {:reason :git-run/stdout-over-limit
+   :when "stdout exceeds :stdout-bytes -- truncating would be a silent lie"}
+  {:reason :git-run/invocation-failed
+   :when "the process could not be started or hit :timeout-seconds"}]
+ ;; Measured 2026-09-07, JVM-free (PATH stubs for clojure/java/clj exit 127,
+ ;; control checked first).
+ ;;
+ ;; :jit :implemented -- kotoba's bin/kbb_js.cljs hosts wire 22.
+ ;; examples/kbb/git_status_report.kotoba reads one line of stdout from
+ ;; `git ls-files` (exit 0) and exit 128 from `git cat-file -e` in the same
+ ;; run; the index-outside-table and cwd-outside-scope refusals were each
+ ;; exercised and each left a :denied receipt.
+ ;;
+ ;; :native-aot :pending is a MISSING PROVIDER, not a rejected schema --
+ ;; :string in, :string out is inside the native one-word slice, but
+ ;; kexe_loader.c carries no wire-22 provider (ADR-2609051100 task 5).
+ ;;
+ ;; :reference / :wasm-aot / :wasm32-kotoba-v1 :pending -- not tried.
+ :qualification {:reference :pending
+                 :wasm-aot :pending
+                 :wasm32-kotoba-v1 :pending
+                 :native-aot :pending
+                 :jit :implemented}}

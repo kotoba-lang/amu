@@ -1,0 +1,97 @@
+;; fs-transact-v1 — WRITING one file, as a capability.
+;;
+;; :fs/app-data (35) has had a kit-shaped provider on two JVM-free backends
+;; for a while; :fs/transact (19) has had a wire id in the catalog and
+;; nothing behind it. This kit is the typed contract the wire-19 providers
+;; are written against, and it exists because "the catalog says 19" is not
+;; an answer to "what may a guest write, and what stops it".
+;;
+;; WHY THE GUEST SUPPLIES THE PATH. :process/spawn and :git/run take an
+;; INDEX into a policy table, because the guest has no business composing a
+;; command line. Writing is different: the CONTENT is the guest's whole
+;; contribution -- a script that computed a report cannot hand it to a
+;; policy literal -- and the path names a place inside a tree the grant
+;; already opened. So the shape follows the READ (wire 35): the guest names
+;; a path, and the scope is the boundary.
+;;
+;; What that costs, and how it is paid: a path is a traversal surface. The
+;; provider resolves the target's PARENT directory (a file that does not
+;; exist yet has no realpath of its own, so the parent is the only thing
+;; that can be resolved before the write) and requires it inside the granted
+;; scope, then opens O_NOFOLLOW -- otherwise a symlink already sitting inside
+;; the scope would be a door out of it, and the scope check would pass while
+;; the bytes landed somewhere else.
+;;
+;; ONE VALUE ON THE WIRE. Request is "<path>\n<content>", split at the FIRST
+;; newline. A path containing a newline cannot be written; it would fail the
+;; scope check anyway. The result is the byte count written, so a caller can
+;; assert the write was whole without reading it back -- though the honest
+;; check is to read it back through wire 35, which is a different provider.
+{:kotoba.capability-kit/name :fs-transact
+ :kotoba.capability-kit/version 1
+ :capabilities [{:name :fs/transact :id 19}]
+ :semantics {:target :guest-named-path-host-scoped
+             :scope-check :parent-realpath-within-granted-roots
+             :symlink :refused-o-nofollow
+             :existing-target :regular-file-only
+             :mode :truncate-then-write
+             :atomicity :none
+             :ambient-cwd false}
+ :limits {:content-bytes 65536
+          :path :bounded-string
+          :encoding :utf-8}
+ :transact
+ {:request [:string]                    ; "<path>\n<content>"
+  :result [:i64]}                       ; bytes written
+ :refusals
+ [{:reason :fs-transact/malformed-request
+   :when "the request carries no newline, so it names no path"}
+  {:reason :fs-transact/path-outside-scope
+   :when "the target's parent does not resolve inside a granted root"}
+  {:reason :fs-transact/content-over-limit
+   :when "the content exceeds :content-bytes"}
+  {:reason :fs-transact/not-a-regular-file
+   :when "the target exists and is a directory, socket or symlink"}
+  {:reason :fs-transact/cannot-open
+   :when "O_NOFOLLOW|O_CREAT refuses -- the usual cause is a symlink at the target"}]
+ ;; Measured 2026-09-07, JVM-free (PATH stubs for clojure/java/clj exit 127,
+ ;; control checked first). Read every value here as "measured on that date",
+ ;; not as a property of the capability.
+ ;;
+ ;; :jit :implemented -- kotoba's bin/kbb_js.cljs hosts wire 19 and
+ ;; examples/kbb/git_status_report.kotoba writes 15 bytes and reads them back
+ ;; through wire 35 for 112837; three separate refusals (ungranted, parent
+ ;; outside scope, index-shaped policy errors) were exercised in the same
+ ;; measurement and each left a :denied receipt.
+ ;;
+ ;; :native-aot :pending is a MISSING PROVIDER, not a rejected schema: the
+ ;; request and result are one-word values (:string, :i64), which is what the
+ ;; native slice admits, but kexe_loader.c carries no wire-19 provider
+ ;; (ADR-2609051100 task 5). Separately measured the same day: a guest module
+ ;; of this size is rejected by `amu extract-native` with "native export table
+ ;; rejected" (ADR 0288 class), so the native route has two independent things
+ ;; wrong with it and fixing the provider alone will not qualify this kit.
+ ;;
+ ;; ⚠ THE TWO HOSTS DISAGREE ABOUT WHERE WRITING LIVES, and this kit does not
+ ;; hide it. Measured 2026-09-07 on amu main 498def2d, tools/kexe_loader.c
+ ;; already writes files -- but on WIRE 35, dispatching inside the
+ ;; :fs/app-data provider on a separator found in the request. That makes a
+ ;; grant of :fs/app-data confer write authority, which is exactly what
+ ;; kotoba's lib/kbb/fs.kotoba says it does not ("Read-only on purpose"): an
+ ;; operator who granted a directory for reading would be granting it for
+ ;; writing. Wire 19 exists in the catalog so that read scope and write scope
+ ;; can be granted separately, and the js host writes there.
+ ;;
+ ;; Two smaller drifts in the same provider, reported rather than repaired
+ ;; (tools/kexe_loader.c is another task's file): its comment says the
+ ;; separator is a NUL ("<path>\0<content>") while the dispatch searches for
+ ;; the literal bytes "WRITE_SEP"; and neither separator is this kit's "\n".
+ ;; Whichever wire wins, ONE separator has to.
+ ;;
+ ;; :reference / :wasm-aot / :wasm32-kotoba-v1 :pending -- not tried. Not
+ ;; "unavailable": untried and measured-absent must not print the same.
+ :qualification {:reference :pending
+                 :wasm-aot :pending
+                 :wasm32-kotoba-v1 :pending
+                 :native-aot :pending
+                 :jit :implemented}}
