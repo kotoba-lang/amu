@@ -139,8 +139,11 @@
   ;; operation with nothing faulting to say so, which is why the suite pins
   ;; that byte as an explicit `not`. Checked with `merge-base --is-ancestor`
   ;; against 452422f.
-  (is (= "06badc834a6e69bc0a5bbbbb80e1e36553e1e7c9"
+  (is (= "c9d5c44b77bed01b96fe1ba7dfbf1991e1ea2ba5"
          (dependency-pin 'io.github.kotoba-lang/kotoba-native)))
+  ;; Advanced 2026-09-07 to kotoba-native main c9d5c44 (hoist #151, cross-call
+  ;; hoist #152, copy coalescing #154; 06badc8's allow-list entry is on main as
+  ;; 4e717ab). main...c9d5c44 by merge-base --is-ancestor: forward only.
   ;; Advanced 2026-08-31 for two more instances of ADR-0286's class -- a KIR
   ;; i64 is a BigInt under ClojureScript and reached a host operation that
   ;; cannot take one. There, `hetero-vector-at`; here, `uleb` (every

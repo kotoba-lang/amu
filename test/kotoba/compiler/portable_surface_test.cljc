@@ -99,7 +99,10 @@
     (is (= [0xcf 0xfa 0xed 0xfe] (vec (take 4 bytes))))
     ;; Byte-for-byte what the JVM emitted from this same artifact.
     (is (= 544 (count bytes)))
-    (is (= "def77da7ef69f5407818d7dcd84dbc5402445312129e883f0b242d26d4c7eceb"
+    ;; The fixture's :code is re-emitted by the pinned kotoba-native, so this
+    ;; digest moves with the emitter: def77da7 under adeb1b0f; re-emitted and
+    ;; re-sealed 2026-09-07 for kotoba-native main c9d5c44.
+    (is (= "f60879b394aa69317f2f1577948a74784f294579b8e6f3b9ca894c2c4cfad5e4"
            (:object-sha256 manifest))
         "object-sha256 is computed from the same vector on both runtimes")
     (is (= :kotoba.ios-aot/v2 (:format manifest)))
