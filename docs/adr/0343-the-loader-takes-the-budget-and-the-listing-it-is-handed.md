@@ -5,7 +5,7 @@
 - Relates: superproject `ADR-2609051100` (kbb native backend), `ADR-2609062200`
   (kbb js backend oracle), superproject CLAUDE.md "kbb-first" (owner,
   2026-09-07), kotoba-lang/artifact `runtime_identity.cljc` (loader identity
-  `a2b6d308bc539b1367f265cbb8bb421ee09a798305f1c46828accf81d1a6c495`)
+  `eec48a659c1eb8f4f8eaf1716b439f6e47ed6fa0210c80270b31d8fdbd5a2b08`)
 
 ## Context
 
@@ -117,8 +117,9 @@ written content may contain `RANGE_SEP`.
 
 ## Consequences
 
-- `kotoba-lang/artifact` PR #23 (merged, main `6f12b438`) carries the new
-  identity. amu's `deps.edn` pin on `io.github.kotoba-lang/artifact` must
+- `kotoba-lang/artifact` PR #23 (merged) carried the first identity; the
+  Linux `-Wunused-parameter` fix moved it once more (see the follow-up PR
+  named in the amu PR). amu's `deps.edn` pin on `io.github.kotoba-lang/artifact` must
   move to that commit with this loader, or `kototama.native.executor/
   build-runtime!` refuses the source before any guest starts. That pin is
   deliberately not moved on this branch (another agent owns deps.edn today);

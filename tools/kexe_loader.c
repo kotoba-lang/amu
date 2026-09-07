@@ -1649,6 +1649,10 @@ static int kexe_scope_contains_fd(const struct kexe_scope *scope, int fd,
   }
   return 0;
 #else
+  /* The scope is consulted through `candidate`, which admission re-spelled
+   * under a resolved entry; the parameter is kept so both branches share one
+   * signature (GCC -Wunused-parameter, measured on the Linux CI hosts). */
+  (void)scope;
   struct stat fd_sb, cand_sb;
   if (fstat(fd, &fd_sb) != 0 || stat(candidate, &cand_sb) != 0) return 0;
   return fd_sb.st_dev == cand_sb.st_dev && fd_sb.st_ino == cand_sb.st_ino;
