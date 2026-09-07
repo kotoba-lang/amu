@@ -103,6 +103,7 @@ const ALLOWED_IMPORTS = new Set([
   "kotoba:typed/document-vector-conj/function",
   "kotoba:typed/document-vector-drop/function",
   "kotoba:typed/document-vector-remove/function",
+  "kotoba:typed/document-vector-sort/function",
   "kotoba:typed/document-get/function",
   "kotoba:typed/document-assoc/function",
   "kotoba:typed/document-dissoc/function",
@@ -2242,6 +2243,13 @@ function createTypedRuntime(abi, typedCapCall, allow) {
       if (index < 0n || index >= BigInt(value[1].length))
         reject("invalid-typed-operation", "document vector index out of range");
       return constructDocument(["vector", value[1].filter((_, itemIndex) => itemIndex !== Number(index))]);
+    },
+    "document-vector-sort"(descriptorId, value) {
+      if (descriptorAt(descriptorId) !== documentDescriptor)
+        reject("invalid-typed-operation", "document descriptor required");
+      value = assertDocument(value);
+      if (value[0] !== "vector") reject("invalid-typed-operation", "document vector required");
+      return constructDocument(["vector", value[1].slice().sort(compareDocument)]);
     },
     "document-get"(descriptorId, value, key) {
       if (descriptorAt(descriptorId) !== documentDescriptor)

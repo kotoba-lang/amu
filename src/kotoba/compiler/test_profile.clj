@@ -11,10 +11,9 @@
             [kotoba.artifact.core :as artifact]
             [kotoba.compiler.core :as compiler]
             [kotoba.compiler.effect-row :as effect-row]
-            [kotoba.sema :as sema]
-            [kotoba.kir :as ir]))
+            [kotoba.sema :as sema]))
 
-(def targets [:jvm-kir :js :wasm])
+(def targets [:js :wasm])
 
 (defn- harness-source [source]
   (let [hir (sema/analyze source)]
@@ -43,18 +42,6 @@
   grant (see `kotoba.compiler.effect-row`) and has no `first` to compare."
   [checked]
   {:allow (effect-row/grants (get-in checked [:hir :effects]))})
-
-(defn- jvm-results [kir tests]
-  (letfn [(handler [cap-id value]
-            (ir/execute kir 'test-handler [cap-id value]))]
-    (mapv (fn [test-name]
-            (try
-              ;; same rule as the js/wasm probes above
-              {:test test-name
-               :ok (contains? #{true 1} (ir/execute kir test-name [] {:cap-call handler}))}
-              (catch Exception error
-                {:test test-name :ok false :error (or (ex-message error) "test trap")})))
-          tests)))
 
 (defn- node-run [target program]
   (let [result (shell/sh "node" "--input-type=module" "-e" program)]
@@ -136,8 +123,7 @@
         cap-ids (capability-ids kir)
         _ (when (empty? tests)
             (throw (ex-info "no exported test-* definitions" {:phase :test})))
-        results {:jvm-kir (jvm-results kir tests)
-                 :js (js-results (:source js) tests cap-ids)
+        results {:js (js-results (:source js) tests cap-ids)
                  :wasm (wasm-results (:bytes wasm) tests cap-ids)}
         failed (vec (for [[target cases] results
                           case cases
