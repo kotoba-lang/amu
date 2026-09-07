@@ -2239,6 +2239,7 @@ origin-namespace only and does not change the local ladder.
 
 | 2026-09-07 14:15 JST (amu-bench cron, bench tick): NO measurement this tick - host busy AND fleet path still double-gated. (a) Pre-run monitor this tick: 14:15 up 2 days 6:56, 13 users, load averages 48.03 37.47 30.69 (independent python probe this tick at 14:14: 50.23 38.95 31.46) - far above the 7.5 prose gate, and per rank tick 155 / ADR 0282 this workstation's load1 is the WRONG measurement quantity anyway (fleet nodes probe busy-CPU, limit 0.10); nothing is measured against it. (b) Fleet-path blocker re-confirmed by direct python probe this tick (file-based script, no heredoc / no -e/-c / no shell redirect): scripts/quiet-host.cljs = False and scripts/remote-bench.cljs = False - BOTH STILL ABSENT from this workdir; PR #819 unmerged locally (origin advanced again to 78cdc2e1 per rank tick 212, never merged here). (2) the exact remote-bench.cljs guard glob `git status --porcelain -- src bench scripts deps.edn` returns 101 untracked line(s) live this tick (HEAD cabf84b6 amu-rank tick 212: rank-only pass; origin advanced 068b7671->78cdc2e1 b), still non-empty so even a merged PR #819 would exit-2 on remote-bench.cljs's uncommitted-tree guard until residue is committed/cleared. No bench/runtime-comparison, no perfgate.core/qualify run, no numbers, no verdict, no compiler change, nothing claimed (fabricating fleet results is forbidden). Population unchanged (rank authority, tick 212): J-B/H-Z3 top, H-C2 open w/ ceiling-caution, H-D/H-B/H-Y1 open. NEXT (unchanged, rank authority): operator merges origin/main (now 78cdc2e1 - gains scripts/quiet-host.cljs + scripts/remote-bench.cljs) AND commits/clears the docs/ + scripts/ + tmp/ residue so remote-bench.cljs's exit-2 uncommitted-tree guard passes; THEN amu-bench runs the top-quiet-host A/B on a qualifying fleet node. Fleet-path measurement remains blocked until then. Entry appended via python script file (no heredoc, no -e/-c, no shell redirect).
 
+| 2026-09-07 15:13 JST (amu-bench cron, bench tick, busy-host refusal): pre-run HOST LOAD 28.60 26.01 25.92 (15:07 uptime read, up 2 days 7:50, 13 users) - far above the 7.5 prose quiet gate (per ADR 0282 this workstation load1 is the WRONG measurement quantity anyway; fleet nodes probe busy-CPU fraction, limit 0.10). No measurement attempted per quiet-gate role; busy recorded as evidence only (probe: HEAD 6eafb5ad amu-rank tick 215: rank-only pass; host busy load1 39.29>7.5, origin un, quiet-host.cljs=False, remote-bench.cljs=False). Fleet-path measurement remains blocked (both scripts still ABSENT from this workdir; PR #819 unmerged locally). Population unchanged: J-B/H-Z3 top, H-C2 open with ceiling-caution, H-D/H-B/H-Y1 open. NEXT (unchanged, rank authority): operator merges origin/main plus commits/clears docs/+scripts/+bench/+tmp residue;then quiet-host A/B on a qualifying fleet node. Appended via python script.
 ## Standing honesty constraints
 
 Every number above is one host on one day; the falsification numbers are
@@ -3476,4 +3477,36 @@ commits/clears the docs/ + scripts/ + bench/ + tmp/ residue so remote-bench.cljs
 exit-2 uncommitted-tree guard passes; THEN amu-bench runs H-Z3 quiet-host A/B (top
 lever), then H-C2 ceiling-check A/B on a qualifying fleet node. Appended via python
 script (docs/amurank-append-20260907-tick215.py).
+2026-09-07 15:19 JST (amu-rank cron, tick 216): rank-only pass, no measurement
+by role. git fetch: origin/main UNCHANGED since tick-215 read - still 78cdc2e1
+(PR #825 empty-tree cleanup, no codegen change, origin-namespace not
+local-reconcilable; reconciliation authoritative only after operator merge). Host
+still busy and irrelevant to rank: live probe 15:19 load1 27.51 / 5m 24.02 / 15m
+24.81 (up 2 days 8:02, 13 users, threshold 7.5) - measurement refused; the only
+correct measurement route (fleet) remains blocked below. Working-tree evidence
+reviewed since the tick-215 commit (HEAD 6eafb5ad): the single uncommitted append
+on top of that commit is sibling amu-bench's own 15:13 host-busy refusal
+(pre-run HOST LOAD {28.60 26.01 25.92}, up 2d 7:50, 13 users, no measurement, no
+numbers, probe HEAD 6eafb5ad, both fleet scripts absent, guard-glob unchanged) -
+a busy refusal, NOT a new LOCAL measured number. No new local codegen ADR (0339
+remains newest local measured landing, J-B idle-gate +7.3/+7.0/+6.4%
+17-consecutive-positive; perfgate.core/qualify confirmation still pending). No new
+LOCAL measured verdict -> no re-rank, no status transition, no new hypothesis;
+population unchanged: H-Z3 top of codegen ladder (quiet-host A/B still blocked),
+H-C2 open w/ ceiling-caution (statically 61/61, timed A/B UNRESOLVED, notional
+~4.4% pending quiet host), H-D/H-B/H-Y1 open. BLOCKER unchanged double (re-probed
+live this tick; no heredoc / no -e/-c): scripts/quiet-host.cljs +
+scripts/remote-bench.cljs STILL ABSENT from this workdir (PR #819 unmerged
+locally) while present on origin; guard-glob `git status --porcelain -- src bench
+scripts deps.edn` = 101 untracked lines this tick (residue: append/probe scripts
+under docs/ + scripts/, bench/runtime-comparison/kernel.kotoba.wasm.{provenance,
+publication}.edn sidecars, tmp/, build.sh, Q9-migration-plan.edn, test-kotoba-pipeline.sh),
+so even a merged PR #819 would exit-2 on remote-bench.cljs's uncommitted-tree guard
+until that residue is committed or cleared. Fleet-path measurement remains blocked
+until then. NEXT (unchanged, tick-213/214/215/216 rank authority): operator merges
+origin/main (still gains scripts/quiet-host.cljs + scripts/remote-bench.cljs) plus
+commits/clears the docs/ + scripts/ + bench/ + tmp/ residue so remote-bench.cljs's
+exit-2 uncommitted-tree guard passes; THEN amu-bench runs H-Z3 quiet-host A/B (top
+lever), then H-C2 ceiling-check A/B on a qualifying fleet node. Appended via python
+script (docs/amurank-append-20260907-tick216.py).
 
