@@ -5,7 +5,7 @@
 - Relates: superproject `ADR-2609051100` (kbb native backend), `ADR-2609062200`
   (kbb js backend oracle), superproject CLAUDE.md "kbb-first" (owner,
   2026-09-07), kotoba-lang/artifact `runtime_identity.cljc` (loader identity
-  `eec48a659c1eb8f4f8eaf1716b439f6e47ed6fa0210c80270b31d8fdbd5a2b08`)
+  `147b0344fabaedc9cc9740f7ab87a785344f6b074a39ebca69ac8f256433a3a0`)
 
 ## Context
 
@@ -54,8 +54,13 @@ wire-35 scope) answers its entry names sorted bytewise and newline-joined,
 kotoba's js host answers. `O_DIRECTORY|O_NOFOLLOW`, contained like a file,
 bounded at 4096 names and the string pool, refused rather than truncated.
 Seatbelt grants `file-read*` (subpath) per entry; seccomp admits
-`getdents64`, and `fcntl` only with `args[1] == F_GETFL` (glibc's `fdopendir`
-asks it), only when that scope is set. The scope code the two wire-35
+`getdents64` only when that scope is set. On Linux the listing is read with
+the raw `getdents64` syscall rather than libc's `DIR`: measured with strace on
+glibc 2.39, `fdopendir` issues `fcntl(F_GETFL)` and then
+`fcntl(F_SETFD, FD_CLOEXEC)`, and the second one trips the filter (`SIGSYS`);
+admitting `fcntl` for that is more surface than parsing the records the
+kernel already returns. macOS keeps `fdopendir`/`readdir` (Seatbelt filters
+paths, not syscalls). The scope code the two wire-35
 providers each carried is one `struct kexe_scope` with init / admit /
 contains-fd helpers.
 
@@ -87,8 +92,12 @@ written content may contain `RANGE_SEP`.
   name at the first new check (`KEXE_FUEL=100000 was not the budget in force
   ... :initial 512`), and passes on each of the three commits.
 - ASan/UBSan build clean; `tools/kexe_parser_fuzz.c` still includes the
-  source. The Linux seccomp additions compiled but did not execute here
-  (macOS host).
+  source. Linux (x86_64, gcc 13.3, glibc 2.39, a tailnet host): gcc
+  `-Werror` clean, the listing byte-exact, the three refusals SIGILL, the
+  wire-35 read and range reads and the fuel report unchanged, the
+  filesystem/network/process probes still `SIGSYS`. The PR's Ubuntu checks
+  caught two things first: a GCC `-Wunused-parameter` clang never saw, and
+  the `fdopendir` `fcntl` above -- both measured on that host, not guessed.
 
 ## What this does not land, measured
 

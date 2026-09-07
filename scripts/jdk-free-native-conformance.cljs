@@ -239,7 +239,7 @@
             listed (run loader args (string-env {"KEXE_CAP_RESOURCES_34" dir}) true)
             expected (str ":result-utf8-hex \"" (hex ".hidden\na.txt\nb.txt\nz") "\"")]
         (ensure! (and (= 0 (:status listed)) (str/includes? (:stdout listed) expected))
-                 (str "browse listing mismatch: " (:status listed) " " (str/trim (:stdout listed))))
+                 (str "browse listing mismatch: " (:status listed) " " (str/trim (:stdout listed)) " " (str/trim (:stderr listed))))
         (doseq [[label extra] [["no scope" {}]
                                ["a scope elsewhere" {"KEXE_CAP_RESOURCES_34" other}]]]
           (let [refused (run loader args (string-env extra) true)]
@@ -255,7 +255,7 @@
             empty (run loader args (string-env {"KEXE_CAP_RESOURCES_34" other}) true)]
         (ensure! (and (= 0 (:status empty)) (str/includes? (:stdout empty) ":result-utf8-hex \"\""))
                  (str "empty directory did not answer the empty string: "
-                      (:status empty) " " (str/trim (:stdout empty))))))
+                      (:status empty) " " (str/trim (:stdout empty)) " " (str/trim (:stderr empty))))))
 
     ;; :fs/app-data RANGE form (wire id 35): "<path>RANGE_SEP<offset>:<length>"
     ;; answers exactly that window of a file -- here 70,000 bytes, larger than
@@ -298,7 +298,8 @@
                           expected (str ":result-utf8-hex \"" (hex (.subarray bytes offset (+ offset length))) "\"")]
                       (ensure! (and (= 0 (:status answered)) (str/includes? (:stdout answered) expected))
                                (str name " [" offset ", " (+ offset length) ") mismatch: "
-                                    (:status answered) " " (subs (str/trim (:stdout answered)) 0 200)))))
+                                    (:status answered) " " (subs (str/trim (:stdout answered)) 0 200)
+                                    " " (str/trim (:stderr answered))))))
           refused! (fn [name request why]
                      (let [args (guest! name request)
                            refused (run loader args (string-env {}) true)]

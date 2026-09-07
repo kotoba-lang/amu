@@ -1932,6 +1932,89 @@ static void kexe_free_names(char **names, size_t count) {
   free(names);
 }
 
+/* One entry name into the listing under construction; 0 = refuse (over the
+ * name or byte bound, or out of memory). "." and ".." are skipped here. */
+static int kexe_browse_add(const char *name, char ***names, size_t *count,
+                           size_t *capacity, size_t *total) {
+  if (strcmp(name, ".") == 0 || strcmp(name, "..") == 0) return 1;
+  size_t name_length = strlen(name);
+  if (*count >= KEXE_BROWSE_ENTRY_LIMIT ||
+      *total + name_length + (*count > 0 ? 1u : 0u) > KEXE_STRING_POOL_BYTES) return 0;
+  if (*count == *capacity) {
+    size_t next = *capacity == 0 ? 64u : *capacity * 2u;
+    char **grown = (char **)realloc(*names, next * sizeof(char *));
+    if (grown == NULL) return 0;
+    *names = grown;
+    *capacity = next;
+  }
+  char *copy = (char *)malloc(name_length + 1u);
+  if (copy == NULL) return 0;
+  memcpy(copy, name, name_length + 1u);
+  (*names)[(*count)++] = copy;
+  *total += name_length + (*count > 1 ? 1u : 0u);
+  return 1;
+}
+
+/* Directory enumeration. Linux reads the raw getdents64 records into a
+ * static buffer: glibc's fdopendir would fcntl(F_GETFL) and then
+ * fcntl(F_SETFD, FD_CLOEXEC) on the fd (measured with strace on glibc 2.39:
+ * the second one trips the seccomp filter as SIGSYS), and admitting fcntl
+ * for that is more surface than reading the records the kernel already
+ * hands over. macOS uses fdopendir/readdir; Seatbelt filters paths, not
+ * syscalls. Both consume the fd. Returns 0 on refusal. */
+#if defined(__linux__)
+static int kexe_enumerate_directory(int fd, char ***names, size_t *count,
+                                    size_t *capacity, size_t *total) {
+  static uint8_t records[32768];
+  for (;;) {
+    long got = syscall(SYS_getdents64, fd, records, sizeof(records));
+    if (got < 0) {
+      if (errno == EINTR) continue;
+      close(fd);
+      return 0;
+    }
+    if (got == 0) break;
+    long pos = 0;
+    while (pos < got) {
+      /* struct linux_dirent64: u64 d_ino, s64 d_off, u16 d_reclen,
+       * u8 d_type, char d_name[] -- the name starts at byte 19 and is
+       * NUL-terminated within d_reclen. */
+      if (got - pos < 19) { close(fd); return 0; }
+      uint16_t reclen = 0;
+      memcpy(&reclen, records + pos + 16, sizeof(reclen));
+      if (reclen < 20 || pos + (long)reclen > got) { close(fd); return 0; }
+      const char *name = (const char *)(records + pos + 19);
+      if (memchr(name, '\0', (size_t)reclen - 19u) == NULL) { close(fd); return 0; }
+      if (!kexe_browse_add(name, names, count, capacity, total)) { close(fd); return 0; }
+      pos += reclen;
+    }
+  }
+  close(fd);
+  return 1;
+}
+#else
+static int kexe_enumerate_directory(int fd, char ***names, size_t *count,
+                                    size_t *capacity, size_t *total) {
+  DIR *dir = fdopendir(fd);
+  if (dir == NULL) {
+    close(fd);
+    return 0;
+  }
+  int ok = 1;
+  for (;;) {
+    errno = 0;
+    struct dirent *entry = readdir(dir);
+    if (entry == NULL) {
+      if (errno != 0) ok = 0;
+      break;
+    }
+    if (!kexe_browse_add(entry->d_name, names, count, capacity, total)) { ok = 0; break; }
+  }
+  closedir(dir);
+  return ok;
+}
+#endif
+
 static int64_t fs_browse_provider(struct kexe_context_v4 *context,
                                   int64_t request) {
   const uint8_t *bytes = NULL;
@@ -1949,45 +2032,9 @@ static int64_t fs_browse_provider(struct kexe_context_v4 *context,
     raise(SIGILL);
     return 0;
   }
-  DIR *dir = fdopendir(fd);
-  if (dir == NULL) {
-    close(fd);
-    raise(SIGILL);
-    return 0;
-  }
   char **names = NULL;
   size_t count = 0, capacity = 0, total = 0;
-  int refused = 0;
-  for (;;) {
-    errno = 0;
-    struct dirent *entry = readdir(dir);
-    if (entry == NULL) {
-      if (errno != 0) refused = 1;
-      break;
-    }
-    const char *name = entry->d_name;
-    if (strcmp(name, ".") == 0 || strcmp(name, "..") == 0) continue;
-    size_t name_length = strlen(name);
-    if (count >= KEXE_BROWSE_ENTRY_LIMIT ||
-        total + name_length + (count > 0 ? 1u : 0u) > KEXE_STRING_POOL_BYTES) {
-      refused = 1;
-      break;
-    }
-    if (count == capacity) {
-      size_t next = capacity == 0 ? 64u : capacity * 2u;
-      char **grown = (char **)realloc(names, next * sizeof(char *));
-      if (grown == NULL) { refused = 1; break; }
-      names = grown;
-      capacity = next;
-    }
-    char *copy = (char *)malloc(name_length + 1u);
-    if (copy == NULL) { refused = 1; break; }
-    memcpy(copy, name, name_length + 1u);
-    names[count++] = copy;
-    total += name_length + (count > 1 ? 1u : 0u);
-  }
-  closedir(dir);
-  if (refused) {
+  if (!kexe_enumerate_directory(fd, &names, &count, &capacity, &total)) {
     kexe_free_names(names, count);
     raise(SIGILL);
     return 0;
@@ -2517,19 +2564,9 @@ static void install_syscall_sandbox(void) {
                                      __NR_getdents64, 0, 1));
     ADD((struct sock_filter)BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW));
 #endif
-    /* glibc's fdopendir asks F_GETFL of the directory fd. Only that fcntl
-     * command is admitted: nr == fcntl AND args[1] == F_GETFL; any other
-     * command falls through to the trap below. The accumulator is reloaded
-     * with nr afterwards so the remaining tests see the syscall number. */
-    ADD((struct sock_filter)BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K,
-                                     __NR_fcntl, 0, 4));
-    ADD((struct sock_filter)BPF_STMT(BPF_LD | BPF_W | BPF_ABS,
-                                     offsetof(struct seccomp_data, args[1])));
-    ADD((struct sock_filter)BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K,
-                                     (uint32_t)F_GETFL, 0, 1));
-    ADD((struct sock_filter)BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW));
-    ADD((struct sock_filter)BPF_STMT(BPF_LD | BPF_W | BPF_ABS,
-                                     offsetof(struct seccomp_data, nr)));
+    /* No fcntl: the listing is read with raw getdents64, so glibc's
+     * fdopendir (F_GETFL, then F_SETFD -- the one that tripped this filter,
+     * measured) is never called in the child. */
   }
   if (fs_reads) {
 #ifdef __NR_read
