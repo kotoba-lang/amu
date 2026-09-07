@@ -126,7 +126,7 @@
             (println "android-ndk: Arm64 emulator executed verified code under RW-to-RX host")))
       (let [text (.readFileSync fs artifact "utf8")]
         (doseq [needle [":target :aarch64-android-kotoba-v1" ":os :android"
-                        ":runtime :kotoba-android-isolated-host-v1"]]
+                        ":runtime :kototama-android-isolated-host-v1"]]
           (lib/ensure! (.includes text needle) (str "android-ndk: artifact missing " needle))))))
     (println "android-ndk: reproducible AArch64 host, hardened ELF, and sealed target passed")
     (finally (.rmSync fs tmp #js {:recursive true :force true}))))

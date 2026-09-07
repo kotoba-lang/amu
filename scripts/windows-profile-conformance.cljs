@@ -96,7 +96,7 @@
     (lib/ensure! (.equals first second) "windows-profile: artifact is not reproducible")
     (doseq [needle [(str ":target " target-profile)
                     ":os :windows" (str ":abi " abi)
-                    ":runtime :kotoba-windows-supervisor-v1"
+                    ":runtime :kototama-windows-supervisor-v1"
                     (str ":mode " context-mode)]]
       (lib/ensure! (.includes text needle) (str "windows-profile: missing binding " needle))))
   (run-k! ["verify" (artifact "first.kexe")])
@@ -331,7 +331,7 @@
                           (.includes result ":format :kotoba.native-runtime/v6"))
                      "windows-profile: measured product evidence mismatch"))
       (lib/ensure! (.includes (.readFileSync fs (artifact "runtime.edn") "utf8")
-                              ":runtime :kotoba-windows-supervisor-v1")
+                              ":runtime :kototama-windows-supervisor-v1")
                    "windows-profile: measured runtime profile mismatch")
       (let [run-args (fn [runtime loader suffix]
                        ["run" (artifact "signed.kexe") "--trust" (artifact "runtime-trust.edn")
