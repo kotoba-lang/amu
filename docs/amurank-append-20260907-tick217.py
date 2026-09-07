@@ -1,0 +1,55 @@
+import re, sys
+
+path = "docs/codegen-coscientist.md"
+with open(path, "r", encoding="utf-8") as f:
+    txt = f.read()
+
+anchor = "tick216.py)."
+
+new_entry = (
+    "2026-09-07 15:35 JST (amu-rank cron, tick 217): rank-only pass, no measurement "
+    "by role. git fetch: origin/main UNCHANGED since tick-216 read - still 78cdc2e1 "
+    "(PR #825 empty-tree cleanup, no codegen change, origin-namespace not "
+    "local-reconcilable; reconciliation authoritative only after operator merge). Host "
+    "still busy and irrelevant to rank: live probe pre-run HOST LOAD shown as 45.05 37.92 "
+    "33.49 (up 2 days 8:16, 13 users, threshold 7.5) - measurement refused; the only "
+    "correct measurement route (fleet) remains blocked below. Working-tree evidence "
+    "reviewed since the tick-216 commit (HEAD fe56db17): the single uncommitted append "
+    "on top of that commit is sibling amu-bench's own 15:23 host-busy refusal "
+    "(pre-run HOST LOAD {40.15 31.41 27.69}, up 2d 8:05, 13 users, no measurement, no "
+    "numbers, probe HEAD fe56db17, both fleet scripts absent, guard-glob unchanged) - "
+    "a busy refusal, NOT a new LOCAL measured number. No new local codegen ADR (0339 "
+    "remains newest local measured landing, J-B idle-gate +7.3/+7.0/+6.4% "
+    "17-consecutive-positive; perfgate.core/qualify confirmation still pending). No new "
+    "LOCAL measured verdict -> no re-rank, no status transition, no new hypothesis; "
+    "population unchanged: H-Z3 top of codegen ladder (quiet-host A/B still blocked), "
+    "H-C2 open w/ ceiling-caution (statically 61/61, timed A/B UNRESOLVED, notional "
+    "~4.4% pending quiet host), H-D/H-B/H-Y1 open. BLOCKER unchanged double (re-probed "
+    "live this tick; no heredoc / no -e/-c): scripts/quiet-host.cljs + "
+    "scripts/remote-bench.cljs STILL ABSENT from this workdir (PR #819 unmerged "
+    "locally) while present on origin; guard-glob `git status --porcelain -- src bench "
+    "scripts deps.edn` stays ~101 untracked lines (residue: append/probe scripts "
+    "under docs/ + scripts/, bench/runtime-comparison/kernel.kotoba.wasm.{provenance,"
+    "publication}.edn sidecars, tmp/, build.sh, Q9-migration-plan.edn, "
+    "test-kotoba-pipeline.sh), so even a merged PR #819 would exit-2 on "
+    "remote-bench.cljs's uncommitted-tree guard until that residue is committed or "
+    "cleared. Fleet-path measurement remains blocked until then. NEXT (unchanged, "
+    "tick-213/214/215/216 rank authority): operator merges origin/main (still gains "
+    "scripts/quiet-host.cljs + scripts/remote-bench.cljs) plus commits/clears the "
+    "docs/ + scripts/ + bench/ + tmp/ residue so remote-bench.cljs's exit-2 "
+    "uncommitted-tree guard passes; THEN amu-bench runs H-Z3 quiet-host A/B (top "
+    "lever), then H-C2 ceiling-check A/B on a qualifying fleet node. Appended via python "
+    "script (docs/amurank-append-20260907-tick217.py)."
+)
+
+if anchor not in txt:
+    print("ANCHOR NOT FOUND; aborting (no append).")
+    sys.exit(1)
+
+# Insert new entry immediately after the anchor (which ends the tick-216 sentence).
+idx = txt.index(anchor) + len(anchor)
+txt = txt[:idx] + "\n" + new_entry + "\n" + txt[idx:]
+
+with open(path, "w", encoding="utf-8") as f:
+    f.write(txt)
+print("OK: tick-217 rank entry appended after tick-216.")
