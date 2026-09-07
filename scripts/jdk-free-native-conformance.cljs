@@ -257,6 +257,62 @@
                  (str "empty directory did not answer the empty string: "
                       (:status empty) " " (str/trim (:stdout empty))))))
 
+    ;; :fs/app-data RANGE form (wire id 35): "<path>RANGE_SEP<offset>:<length>"
+    ;; answers exactly that window of a file -- here 70,000 bytes, larger than
+    ;; one guest string and than the loader's string pool, with U+2500 (three
+    ;; bytes) planted at byte 5000. Byte-exact against the fixture through
+    ;; KEXE_RESULT_TYPE=string. A window past EOF, a window that cuts the
+    ;; code point, and the whole-file read of the same file (pool overflow --
+    ;; the reason the range form exists) all trap instead of answering short.
+    (let [big (file "range-big.txt")
+          ascii (fn [n] (let [pattern "0123456789abcdef\n"]
+                          (.slice (.repeat pattern (inc (quot n (count pattern)))) 0 n)))
+          text (str (ascii 5000) "─" (ascii (- 70000 5003)))
+          bytes (js/Buffer.from text "utf8")
+          _ (ensure! (= 70000 (.-length bytes)) (str "range fixture is " (.-length bytes) " bytes"))
+          hex (fn [buf] (.toString buf "hex"))
+          string-env (fn [extra] (js/Object.assign #js {} env
+                                                   (clj->js (merge {"KEXE_STRUCTURED_REPORT" "1"
+                                                                    "KEXE_RESULT_TYPE" "string"
+                                                                    "KEXE_CAP_RESOURCES_35" tmp}
+                                                                   extra))))
+          guest! (fn [name request]
+                   (let [source (file (str name ".kotoba"))
+                         policy (file (str name "-policy.edn"))
+                         artifact (file (str name ".kexe"))
+                         binary (file (str name ".bin"))]
+                     (fs/writeFileSync source
+                                       (str "(ns conformance." name " (:export [main]))\n"
+                                            "(defn main [] :string "
+                                            "(typed-cap-call :fs/app-data :string :string \"" request "\"))\n"))
+                     (fs/writeFileSync policy "{:allow #{[:cap/call 35]}}")
+                     (invoke ["compile" source "--target" isa "--policy" policy "--output" artifact])
+                     (let [[_ offset] (re-find #":offset ([0-9]+)"
+                                               (:stdout (invoke ["extract-native" artifact
+                                                                 "--symbol" "main" "--output" binary])))]
+                       (ensure! offset (str "extract-native returned no offset for " name))
+                       [binary offset "0" isa "35"])))
+          window! (fn [name offset length]
+                    (let [args (guest! name (str big "RANGE_SEP" offset ":" length))
+                          answered (run loader args (string-env {}) true)
+                          expected (str ":result-utf8-hex \"" (hex (.subarray bytes offset (+ offset length))) "\"")]
+                      (ensure! (and (= 0 (:status answered)) (str/includes? (:stdout answered) expected))
+                               (str name " [" offset ", " (+ offset length) ") mismatch: "
+                                    (:status answered) " " (subs (str/trim (:stdout answered)) 0 200)))))
+          refused! (fn [name request why]
+                     (let [args (guest! name request)
+                           refused (run loader args (string-env {}) true)]
+                       (ensure! (and (= 120 (:status refused)) (str/includes? (:stderr refused) ":signal :SIGILL"))
+                                (str why " was not refused: " (:status refused) " " (:stderr refused)))))]
+      (fs/writeFileSync big bytes)
+      (window! "range-head" 0 4096)
+      (window! "range-tail" 66000 4000)
+      (window! "range-across-code-point" 4990 20)
+      (refused! "range-past-eof" (str big "RANGE_SEP69500:1000") "a window past EOF")
+      (refused! "range-cut-code-point" (str big "RANGE_SEP5001:4") "a window cutting U+2500")
+      (refused! "range-twice" (str big "RANGE_SEP0:4RANGE_SEP") "a second RANGE_SEP")
+      (refused! "range-whole-file" big "the whole-file read of a 70,000-byte file"))
+
     ;; The aiueos target profiles package the sealed artifact into an ELF64 or
     ;; PE32+ container. Until `kotoba.compiler.nbb.native-package` existed this
     ;; driver had no packaging step at all, so `os/aiueos` built all 67 of its

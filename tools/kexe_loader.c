@@ -1809,6 +1809,105 @@ static int64_t fs_app_data_write_provider(struct kexe_context_v4 *context,
   return intern_utf8(context, content, content_length);
 }
 
+/* Bounded decimal parse over a byte span: digits only (no sign, no '+', no
+ * whitespace), at most 20 of them, overflow refused. */
+static int kexe_parse_u64_span(const uint8_t *text, size_t length,
+                               uint64_t *value) {
+  if (length == 0 || length > 20) return 0;
+  uint64_t acc = 0;
+  for (size_t i = 0; i < length; i++) {
+    if (text[i] < '0' || text[i] > '9') return 0;
+    uint64_t digit = (uint64_t)(text[i] - '0');
+    if (acc > (UINT64_MAX - digit) / 10u) return 0;
+    acc = acc * 10u + digit;
+  }
+  *value = acc;
+  return 1;
+}
+
+/* wire id 35, RANGE form: "<path>RANGE_SEP<offset>:<length>" -> exactly
+ * `length` bytes of the file starting at byte `offset`, as a string. The
+ * window must lie inside the file ([offset, offset+length) within its size
+ * -- a short read is never answered) and `length` must fit the string pool.
+ * The result is then validated as canonical UTF-8 by the typed dispatch like
+ * every other string result, so a window that cuts a code point traps rather
+ * than answering bytes no guest string may hold. Same scope and containment
+ * as the read form. This is what lets a guest read a file larger than one
+ * guest string, one bounded window at a time. */
+static int64_t fs_app_data_range_read_provider(struct kexe_context_v4 *context,
+                                               int64_t request) {
+  const uint8_t *bytes = NULL;
+  uint64_t length = 0;
+  if (!read_string_handle(context, request, &bytes, &length) || bytes == NULL) {
+    raise(SIGILL);
+    return 0;
+  }
+  static const char range_token[] = "RANGE_SEP";
+  const size_t token_len = sizeof(range_token) - 1u;
+  const uint8_t *sep = kexe_single_token(bytes, (size_t)length, range_token);
+  char target[4096], candidate[4096];
+  if (sep == NULL ||
+      !kexe_request_path(bytes, (size_t)(sep - bytes), target) ||
+      !kexe_scope_admit(&kexe_scope35, target, candidate)) {
+    raise(SIGILL);
+    return 0;
+  }
+  const uint8_t *spec = sep + token_len;
+  size_t spec_length = (size_t)(bytes + length - spec);
+  const uint8_t *colon = memchr(spec, ':', spec_length);
+  uint64_t offset = 0, window = 0;
+  if (colon == NULL ||
+      !kexe_parse_u64_span(spec, (size_t)(colon - spec), &offset) ||
+      !kexe_parse_u64_span(colon + 1, (size_t)(spec + spec_length - colon - 1), &window) ||
+      window > KEXE_STRING_POOL_BYTES) {
+    raise(SIGILL);
+    return 0;
+  }
+
+  int fd = open(candidate, O_RDONLY | O_NOFOLLOW);
+  if (fd < 0 || !kexe_scope_contains_fd(&kexe_scope35, fd, candidate)) {
+    if (fd >= 0) close(fd);
+    raise(SIGILL);
+    return 0;
+  }
+  struct stat st;
+  if (fstat(fd, &st) != 0 || !S_ISREG(st.st_mode) || st.st_size < 0 ||
+      offset > (uint64_t)st.st_size || window > (uint64_t)st.st_size - offset) {
+    close(fd);
+    raise(SIGILL);
+    return 0;
+  }
+  uint8_t *buffer = (uint8_t *)malloc(window == 0 ? 1u : (size_t)window);
+  if (buffer == NULL) {
+    close(fd);
+    raise(SIGILL);
+    return 0;
+  }
+  size_t total = 0;
+  while (total < (size_t)window) {
+    ssize_t got = pread(fd, buffer + total, (size_t)window - total,
+                        (off_t)(offset + total));
+    if (got < 0) {
+      if (errno == EINTR) continue;
+      free(buffer);
+      close(fd);
+      raise(SIGILL);
+      return 0;
+    }
+    if (got == 0) break; /* the file shrank under us: a short window is refused below */
+    total += (size_t)got;
+  }
+  close(fd);
+  if (total != (size_t)window) {
+    free(buffer);
+    raise(SIGILL);
+    return 0;
+  }
+  int64_t result = intern_utf8(context, buffer, total);
+  free(buffer);
+  return result;
+}
+
 /* wire id 34 = :fs/browse. The request string is an absolute DIRECTORY path
  * inside KEXE_CAP_RESOURCES_34; the result is the directory's entry names
  * ("." and ".." excluded), sorted bytewise, joined by a single "\n" (the
@@ -1937,14 +2036,18 @@ static int64_t checked_typed_cap_call(struct kexe_context_v4 *context,
   } else if (id == 10 && request_kind == KEXE_TYPED_UI_EVENT_V1) {
     result = ui_event_inject(context, request);
   } else if (id == 35 && request_kind == KEXE_TYPED_STRING) {
-    /* wire id 35 = :fs/app-data, two request forms told apart by an ASCII
-     * token: "<path>WRITE_SEP<content>" writes, a bare absolute path reads
-     * the whole file. Scope is KEXE_CAP_RESOURCES_35 for both. */
+    /* wire id 35 = :fs/app-data, three request forms told apart by an ASCII
+     * token: "<path>WRITE_SEP<content>" writes, "<path>RANGE_SEP<off>:<len>"
+     * reads one bounded window, a bare absolute path reads the whole file.
+     * WRITE_SEP is tested first so written content may itself contain
+     * RANGE_SEP. Scope is KEXE_CAP_RESOURCES_35 for all three. */
     uint64_t rlen = 0;
     const uint8_t *rb = NULL;
     if (read_string_handle(context, request, &rb, &rlen) && rb &&
         memmem(rb, (size_t)rlen, "WRITE_SEP", 9) != NULL) {
       result = fs_app_data_write_provider(context, request);
+    } else if (rb != NULL && memmem(rb, (size_t)rlen, "RANGE_SEP", 9) != NULL) {
+      result = fs_app_data_range_read_provider(context, request);
     } else {
       result = fs_app_data_read_provider(context, request);
     }
