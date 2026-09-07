@@ -220,7 +220,7 @@
   ;; `:wasm-typed-lowering`, which is an emitter gap in a fourth repository
   ;; and is recorded as such rather than papered over.
   (is (= "b021a0d179fb983e8ad7da702252cfa764cd2fc2"
-         (dependency-pin 'io.github.kotoba-lang/kotoba-kir)))
+         (dependency-pin 'io.github.kotoba-lang/osaho)))
   ;; Advanced 2026-09-01 alongside the backend: the verifier re-derives the
   ;; two new arities and the v4 `expected-context`, and is what turns a
   ;; mismatched ABI into an explicit refusal rather than a v3 artifact
