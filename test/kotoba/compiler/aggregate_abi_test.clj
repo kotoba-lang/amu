@@ -305,7 +305,11 @@
   ;; `kernel-undefined-opcode-handler-address`. This verifier rejects by
   ;; absence, so it moves with the kotoba-sema / kotoba-kir / kotoba-native
   ;; pins in this commit or the head is a green `check` and a red `compile`.
-  (is (= "ed9bf9b4b4a52751b94724f2ec0a03d39c55a367"
+  ;; Advanced 2026-09-07 to 2e435cf4. ed9bf9b4..2e435cf4 is ONE commit
+  ;; touching deps.edn alone, +2/-2: kotoba-kir was renamed osaho. Nothing
+  ;; the verifier checks moved, so this advance carries no qualification
+  ;; claim -- the same shape as the kotoba-native advance above.
+  (is (= "2e435cf4994c59d341c387d3103809cc3f93a116"
          (dependency-pin 'io.github.kotoba-lang/kotoba-verifier)))
   (is (= 7 (:abi/version aggregate-abi/contract)))
   (is (= :recursive-word-handles
