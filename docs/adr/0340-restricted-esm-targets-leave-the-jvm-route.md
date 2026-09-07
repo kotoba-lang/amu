@@ -93,12 +93,31 @@ instantiate.
   result, as the Wasm route does) and hash-map key ORDER inside the manifest
   and provenance text. Both are values; the test compares them as such.
 - Pins advanced 2026-09-07 (kotoba-script `8a55311b` -> `79d13e78`, kotoba-kir
-  `b021a0d1` -> `f1259101`; `deps-lock.edn` regenerated, digest `684509af`):
-  the script fix is cljs-branch-only (JS `-0` was typed as an i64 literal on
-  nbb), so the four committed goldens are unchanged -- `test-nbb-js` measured
+  `b021a0d1` -> `f1259101`; `deps-lock.edn` regenerated): the script fix is
+  cljs-branch-only (JS `-0` was typed as an i64 literal on nbb), so the four
+  committed goldens are unchanged -- `test-nbb-js` measured
   `SCANNED 16 failed 0` at the new pins with no regeneration. The kir advance
   adds the interpreter case for `string-index-of`: the pure program
   `(ns p (:export [main])) (defn main [] :i64 (string-index-of "héllo wörld" "wö"))`
   compiled `--target js --jvm-free` on the base failed with exit 70
   `:kotoba/lowering-failed "unknown-function"`, and at `f1259101` compiles
   (58,495 bytes) and `instantiateKotoba({}).main()` prints `7` under Node.
+  The same kir range carries ADR-2809051130's T0 rename of every `:runtime`
+  keyword (`kotoba-*` -> `kototama-*`), which the verifier enforces by
+  comparing an artifact's `:target-profile` to kir's table -- so the advance
+  also moved kotoba-wasm `cc23ea35` -> `5e054c11` (the paired consumer
+  half), kototama-native `ec4d182e` -> `a569f1d1` (its untagged-supervisor
+  gate; at the old literal the JVM suite showed 122 errors, all
+  `artifact and runtime target profiles do not match`), the old-name
+  literals in `core_test` / `receipt_test` / `native_executor_test` /
+  `aiueos_target_test` and the two conformance scripts, and re-captured
+  `test/fixtures/ios-aot-artifact.edn` on the JVM: it differs from the old
+  fixture only in the two `:runtime` keywords and the seal, so the Mach-O
+  `object-sha256` the portable-surface test asserts is unchanged. On the
+  wasm side the rename reaches the compatibility section every module
+  carries, so `runtime/browser-host.mjs`'s runtime-identity allowlist (and
+  the two scripts that spell an identity) follow it -- a module compiled
+  before the rename is now refused with `compatibility-mismatch` -- and
+  `resources/kotoba/lang-conformance/pilot-golden.edn` was regenerated with
+  `clojure -M:conformance --write-golden`: 62 of 62 ids changed only their
+  `:wasm-sha256`, none their `:kir-sha256`.

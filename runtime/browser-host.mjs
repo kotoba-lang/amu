@@ -359,7 +359,7 @@ function parseCompatibility(module) {
       result.tenderRole !== "kototama/component-tender-v1" ||
       result.tenderContract !== "kotoba.capability-host/v1")
     reject("compatibility-mismatch", "compiler, language, or tender contract is unsupported");
-  if (!["kotoba-capability-host-v1", "kotoba-browser-host-v1", "kotoba-wasi-host-v1"].includes(result.runtime))
+  if (!["kototama-capability-host-v1", "kototama-browser-host-v1", "kototama-wasi-host-v1"].includes(result.runtime))
     reject("compatibility-mismatch", "runtime compatibility identity is unsupported");
   return Object.freeze({ version: COMPATIBILITY_VERSION, ...result });
 }

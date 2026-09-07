@@ -222,7 +222,14 @@
          :git/sha "1a2e10cf8038155de210357e637eac4102de89cb"}
         io.github.kotoba-lang/kotoba-wasm
         {:git/url "https://github.com/kotoba-lang/kotoba-wasm.git"
-         :git/sha "cc23ea35bc284d08cf5fc2f57dfcc10ce431a23b"}
+         ;; Advanced 2026-09-07, cc23ea35 -> 5e054c11, in the same commit as
+         ;; the kotoba-kir pin because ADR-2809051130 made them one change
+         ;; set: 5e054c11 (#70) is the consumer half of the `:runtime`
+         ;; rename, so the wasm compatibility section names the same
+         ;; `:kototama-{browser,wasi,capability}-host-v1` the kir target
+         ;; profile now names. The other two commits are the string-upper
+         ;; lowering that mirrors kir 2adcafd4.
+         :git/sha "5e054c11f1b445fa25a757b6aeb1860358e124a4"}
         ;; Production KIR routes exclusively through whole-module
         ;; GMIR/MIR/allocated-MC, including word/f64/memory/runtime/capability,
         ;; literal-data, scalar variant, word-field record, and x86 privileged
@@ -418,13 +425,24 @@
                     :git/sha "f040fc07675b0ef68b6e638a856cd20b65dba125"}
                    io.github.kotoba-lang/kototama-native
                    {:git/url "https://github.com/kotoba-lang/kototama-native.git"
-                    :git/sha "ec4d182e5f0118ecaca54b66295eb6a9cf3f9536"}}
+                    ;; Advanced 2026-09-07, ec4d182e -> a569f1d1, with the
+                    ;; kotoba-kir pin (ADR-2809051130). The executor accepted an
+                    ;; OS-untagged artifact by the literal :kotoba-supervisor-v1;
+                    ;; at kir f1259101 every untagged artifact names
+                    ;; :kototama-supervisor-v1, so the old executor refused all
+                    ;; of them -- measured here as 122 errors ("artifact and
+                    ;; runtime target profiles do not match", executor.clj:987)
+                    ;; across native_executor_test, the clock kexe oracle and
+                    ;; the 20-case pure-native conformance suite. kototama-native
+                    ;; #11 moves the literal and its own kir pin; the three
+                    ;; aliases below name the same sha.
+                    :git/sha "a569f1d14a09674503fc00733fd38fd3699fa4fb"}}
                   :main-opts ["-m" "kotoba.compiler.test-runner"]}
            :native-run
            {:extra-deps
             {io.github.kotoba-lang/kototama-native
              {:git/url "https://github.com/kotoba-lang/kototama-native.git"
-              :git/sha "ec4d182e5f0118ecaca54b66295eb6a9cf3f9536"}}
+              :git/sha "a569f1d14a09674503fc00733fd38fd3699fa4fb"}}
             :main-opts ["-m" "kotoba.compiler.cli"]}
            :run {:main-opts ["-m" "kotoba.compiler.cli"]}
            :conformance
@@ -436,7 +454,7 @@
            {:extra-deps
             {io.github.kotoba-lang/kototama-native
              {:git/url "https://github.com/kotoba-lang/kototama-native.git"
-              :git/sha "ec4d182e5f0118ecaca54b66295eb6a9cf3f9536"}
+              :git/sha "a569f1d14a09674503fc00733fd38fd3699fa4fb"}
              io.github.kotoba-lang/provider
              {:git/url "https://github.com/kotoba-lang/provider.git"
               :git/sha "f040fc07675b0ef68b6e638a856cd20b65dba125"}}

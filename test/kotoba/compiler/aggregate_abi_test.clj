@@ -216,7 +216,21 @@
   ;; resolve. With both pins advanced the same program refuses at
   ;; `:wasm-typed-lowering`, which is an emitter gap in a fourth repository
   ;; and is recorded as such rather than papered over.
-  (is (= "b021a0d179fb983e8ad7da702252cfa764cd2fc2"
+  ;; Advanced 2026-09-07 to f1259101 for two things and one consequence:
+  ;;   375cb65d / ee850cb6 -- `string-index-of` gains its reference-
+  ;;     interpreter case (a pure `main` using it compiled on the --jvm-free
+  ;;     route to `:kotoba/lowering-failed "unknown-function"` at the old
+  ;;     pin) and answers an i64 on ClojureScript, so `(= (string-index-of
+  ;;     ...) 7)` no longer folds to 0 on nbb.
+  ;;   d41dc856 (ADR-2809051130, T0) -- every `:runtime` keyword in
+  ;;     target.cljc renames `kotoba-*` -> `kototama-*`. That is a keyword
+  ;;     identity change with no behaviour behind it, but the verifier
+  ;;     compares an artifact's `:target-profile` to this table, so every
+  ;;     literal in this repository that spelled the old name (core_test,
+  ;;     receipt_test, native_executor_test, aiueos_target_test, the two
+  ;;     conformance scripts, the captured ios fixture) moved in the same
+  ;;     commit, and kototama-native's supervisor gate moved with it.
+  (is (= "f12591011fd0d55d25c2cfba37364338487e70e3"
          (dependency-pin 'io.github.kotoba-lang/kotoba-kir)))
   ;; Advanced 2026-09-01 alongside the backend: the verifier re-derives the
   ;; two new arities and the v4 `expected-context`, and is what turns a

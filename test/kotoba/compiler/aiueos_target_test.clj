@@ -98,7 +98,7 @@
       (let [profile (target/profile name)]
         (is (= :aiueos (:os profile)))
         (is (= (if (= name :x86_64-aiueos-user-v1)
-                 :kotoba-aiueos-user-v1 :none)
+                 :kototama-aiueos-user-v1 :none)
                (:runtime profile)))
         (is (false? (:ambient-syscalls profile)))
         (is (= expected (select-keys profile (keys expected))))))))
@@ -111,7 +111,7 @@
         (is (= name (:target artifact)))
         (is (= (target/profile name) (:target-profile artifact)))
         (is (= (if (= name :x86_64-aiueos-user-v1)
-                 :kotoba-aiueos-user-v1 :none)
+                 :kototama-aiueos-user-v1 :none)
                (get-in artifact [:target-profile :runtime])))))))
 
 (deftest kernel-target-emits-a-real-freestanding-elf64-image
