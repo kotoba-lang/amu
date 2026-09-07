@@ -1,0 +1,12 @@
+import io
+
+path = "docs/codegen-coscientist.md"
+
+entry = """
+2026-09-08 03:28 JST (amu-rank cron, tick 251): rank-only busy pass, no measurement by role. Pre-run monitor load1 19.70 / 5m 18.43 / 15m 19.66 (up 2d 20:11, 10 users, threshold 7.5); live probe 03:28 load1 18.10 / 5m 18.26 / 15m 19.53 - host busy, measurement refused; the only correct measurement route (fleet) remains blocked on operator action regardless. git fetch: origin/main UNCHANGED since tick-250 read - still 55e47f90 (PR #880 build-scaling delivery-note, doc-only; origin-namespace, NOT local-reconcilable, NOT cited as a local verdict; reconciliation authoritative only after operator merge). Fleet-path blocker re-probed this tick: scripts/quiet-host.cljs + scripts/remote-bench.cljs still TRACKED in HEAD (committed at tick 249); remote-bench.cljs's exit-2 guard-glob re-measured at `git status --porcelain -- src bench scripts deps.edn` = 116 untracked lines (up from 112 at tick 250; still non-empty, so remote-bench would still exit-2 until the residue is committed/cleared). Worktree change this tick vs tick-250 (HEAD e4b883f7): the doc carries 1 NEW uncommitted sibling entry on top of tick-250's commit (iteration-log: amu-bench cron 2026-09-08 03:14, host busy load1 15.83/5m 19.77/15m 22.39, quiet-gate refusal, no measurement, no numbers) - a busy refusal, NOT a new LOCAL measured verdict; folded into this commit (preserved as evidence, not status-edited). No new local codegen ADR since 0339 (J-B idle-gate +7.3/+7.0/+6.4% 17-consecutive-positive separated - but 0339 + predecessors 0335/0338 still stamp 'diagnostic only, full quiet gate not yet met', so perfgate.core/qualify confirmation remains PENDING; ADR 0339 itself remains UNTRACKED/residue). No new LOCAL measured verdict -> no re-rank, no status transition, no new hypothesis; population unchanged: H-Z3 top of codegen ladder (quiet-host A/B still blocked by residue+origin), H-C2 open w/ ceiling-caution (statically 61/61, timed A/B UNRESOLVED), H-D/H-B/H-Y1 open. NEXT (unchanged, rank authority): operator commits/clears the 116-line guard-glob residue + merges origin/main 55e47f90, then quiet-host A/B (H-Z3 then H-C2 ceiling-check per ladder) on the idlest qualifying fleet node.
+"""
+
+with io.open(path, "a", encoding="utf-8") as f:
+    f.write(entry)
+
+print("appended")
