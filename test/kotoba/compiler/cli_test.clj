@@ -449,6 +449,35 @@
     (is (= 4096 (sealed-native-fuel output))
         "--fuel must reach the sealed native context on the project route too")))
 
+(deftest compile-cli-refuses-fuel-declared-twice-with-different-values
+  ;; amu-h6. `--fuel` and a policy `{:budgets {:fuel M}}` are two spellings
+  ;; of one budget. When they disagree the flag used to win silently; the
+  ;; caller who wrote the policy could not tell which number was sealed.
+  (let [source (temp-kotoba-source! "(defn main [] (kernel-out-u32 244 16))")
+        policy (temp-kotoba-source! "{:budgets {:fuel 4096}}" ".edn")
+        output (.getPath (atomic-output/temp-file! "kotoba-fuel-twice-" ".elf"))
+        status (atom nil)
+        err (StringWriter.)]
+    (binding [cli/*exit* #(reset! status %)
+              *err* err]
+      (cli/-main "compile" source "--target" "x86_64-aiueos-kernel-v1"
+                 "--artifact" "image" "--fuel" "8192" "--policy" policy
+                 "--output" output))
+    (let [report (edn/read-string (str err))]
+      (is (= 64 @status))
+      (is (= :usage (:error report)))
+      (is (= {:phase :usage :reason :fuel-declared-twice :flag 8192 :policy 4096}
+             (select-keys (:details report) [:phase :reason :flag :policy]))))
+    (testing "the same value spelled twice is one declaration, and it is sealed"
+      (let [agreeing (temp-kotoba-source! "{:budgets {:fuel 8192}}" ".edn")
+            output (.getPath (atomic-output/temp-file! "kotoba-fuel-agree-" ".elf"))
+            out (StringWriter.)]
+        (binding [*out* out]
+          (cli/-main "compile" source "--target" "x86_64-aiueos-kernel-v1"
+                     "--artifact" "image" "--fuel" "8192" "--policy" agreeing
+                     "--output" output))
+        (is (= 8192 (sealed-native-fuel output)))))))
+
 (deftest compile-wasm-target-is-unaffected-by-the-cljs-output-fix
   (let [source (temp-kotoba-source! "(defn main [] (let [x 40 y 2] (+ x y)))")
         output (.getPath (atomic-output/temp-file! "kotoba-cli-wasm-out-" ".wasm"))

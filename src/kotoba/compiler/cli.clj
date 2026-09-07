@@ -110,7 +110,11 @@
     ;; allowlist is for. `:check` joined them for the same reason on 2026-08-30:
     ;; a module rejected for declaring `(:require ...)` needs to be told which
     ;; invocation links its project.
-    :problem :pin :then :override :check})
+    :problem :pin :then :override :check
+    ;; `:fuel-declared-twice` names the two numbers that disagreed. They are
+    ;; the caller's own integers (a flag and a policy field), already parsed
+    ;; as such, so admitting them widens nothing an error can leak.
+    :flag :policy})
 
 (defn error-report
   ([error] (error-report error nil))

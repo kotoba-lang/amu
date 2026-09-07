@@ -487,6 +487,24 @@
                                 (assoc opts :profile profile :budgets budgets)))]
      (provenance/attach source policy opts result))))
 
+(defn refuse-fuel-declared-twice!
+  "`--fuel N` (emit-metadata `:fuel`) and a policy `{:budgets {:fuel M}}` are
+  two spellings of ONE budget. `declared-fuel` reads them in that order, so
+  when they disagreed the flag won and the policy's author never learned that
+  the number in their file was not the one sealed -- a build that reported
+  success with a budget nobody had checked. Equal values are one declaration
+  and compile; different values are refused before anything is lowered.
+
+  Mirrored by the nbb native driver's `fuel-policy!` so both routes refuse
+  with the same data (amu-h6)."
+  [policy emit-metadata]
+  (let [flag (:fuel emit-metadata)
+        from-policy (get-in policy [:budgets :fuel])]
+    (when (and (some? flag) (some? from-policy) (not= flag from-policy))
+      (throw (ex-info "fuel declared twice with different values: --fuel and the policy's :budgets :fuel must agree"
+                      {:phase :usage :reason :fuel-declared-twice
+                       :flag flag :policy from-policy})))))
+
 (defn- compile-source*
   ([source target] (compile-source* source target {}))
   ([source target policy] (compile-source* source target policy {}))
@@ -580,10 +598,11 @@
                         (ir/uses-f64? hir) :kotoba.typed/mixed-f64-v2
                         typed-values? :kotoba.typed/externref-v1
                         :else :kotoba.i64/direct-v1)
-        declared-fuel (or (:fuel emit-metadata)
-                          (get-in emit-metadata [:budgets :fuel])
-                          (get-in policy [:budgets :fuel])
-                          512)
+        declared-fuel (do (refuse-fuel-declared-twice! policy emit-metadata)
+                          (or (:fuel emit-metadata)
+                              (get-in emit-metadata [:budgets :fuel])
+                              (get-in policy [:budgets :fuel])
+                              512))
         compatibility (compatibility/descriptor
                        {:hir-format (:format hir) :kir-format (:format kir)
                         :target target :target-profile profile :value-abi value-abi})]
