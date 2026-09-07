@@ -3793,3 +3793,162 @@ ple Clang C11, Zig, Go
   the published number changes only after five host-qualified runs of the
   new main are projected. Expected: **median 20/30**, with rust close enough
   to carry it to 21 some runs. Not claimed until measured.
+
+- **148 (2026-09-07, the eleven pairs ranked by what can move them; the call
+  domains read instruction by instruction against clang)**:
+
+  Re-ranking from the five published-basis runs (`pub-1..5`, same commit),
+  counting truthy `qualified?` — the earlier per-pair table in this file
+  counted tuples and read 3/3 for everything:
+
+  | never qualified (0/5) | mean margin | why |
+  |---|---:|---|
+  | narrow-arithmetic × rust / clang / swift | +0.9 / +1.1 / +1.0% | the same 61 instructions (143). Not winnable |
+  | loop-call-back-edge × rust / clang | +0.8 / −0.6% | amu's loop body is 10 instructions to clang's 20 and it does not matter: the call to `step` is the cost. A tie by construction |
+  | call-preservation × rust / clang | −5.9 / −6.4% | amu is slower. Decomposed below |
+  | branch-call-control-flow × rust / clang | −8.2 / −11.4% | amu is slower. Decomposed below |
+  | deep-spill-pressure × rust / zig | −0.1 / +0.9% | the pairs 147's hoist moves (+4.7 / +6.0% in its A/B) |
+
+  Three more are lost only to `not-separated-from-noise` in one or two runs
+  of five (wide × rust 3/5 at +7.5%, wide × clang 4/5 at +11.4%, deep × clang
+  4/5 at +5.6%): the gap is real and the arms' own spread swallows it.
+
+  So of the eleven, **five cannot be moved by codegen** (identical code, or
+  call-bound ties), two are within reach of the hoist, and four are the call
+  boundary. The honest ceiling of this fixture set is 22–24 of 30, not 30.
+
+  **The call boundary, decomposed by reading.** rustc and clang agree
+  byte-for-byte with each other on every kernel (249 / 132 / 61 / 42+12 /
+  44 / 20 instructions). `kernel_call_branch` through amu at kn `d5fdf8c`
+  executes 52 instructions per call to clang's 44 (59 static; the untaken
+  `n = 0` arm and its epilogue are seven of them). The eight:
+
+  | count | what | removable? |
+  |---:|---|---|
+  | 4 | fuel: `ldr x16,[x7,#8]; subs; b.hs; str` | no — the contract |
+  | 1 | `mov x19,x0 ; mov x0,x19` — x0 already holds n | yes |
+  | 3 | `add x2,x19,#k ; mov x0,x2` where clang writes `add x0,x19,#k` | yes |
+
+  Same four on `kernel_call` (51 static, 48 after #152). Both kinds sit on
+  the dependency path INTO the call — the callee waits on them. Iteration 123
+  had priced a NOP-patched removal at +1.28% and #148 filed it as "too small
+  to move the score"; against a −6% gap with no other instruction-level
+  difference left, it is the only shippable item on this domain.
+
+  Also found on the way: clang keeps **seven** callee-saved registers on
+  `kernel_call` (x19–x25) and eight on the branch kernel — the same as amu.
+  The register count was never the gap; 128 was right to falsify it.
+
+- **149 (2026-09-07, the four copies are removed by a post-allocation
+  coalescing pass; the blast radius is exactly the two call domains)**:
+
+  kotoba-native #154 (`c9d5c44` on main): one forward pass over the
+  allocated instruction vector, aarch64 only. A move whose destination
+  already holds its source is dropped (an alias recorded by the previous move
+  between the two registers, forgotten on any write to either, on a call, or
+  at any op the pass does not model). A single-instruction producer
+  immediately followed by a move of its result, with the result dead after
+  the move and the producer not reading the move's target, produces into the
+  target. "Dead" walks forward only through ops the pass understands — read
+  → live, write → dead, call kills a caller-saved register it does not read,
+  return / tail-call kill everything, anything else → live — so the
+  conservative answer always keeps the copy.
+
+  Static, through amu with both sides compiled the same way:
+
+  | kernel | kn main `bf23a30` | + coalescing |
+  |---|---|---|
+  | `kernel_call` | 240 B / 48 instr / 6 saved / 8 sp | **224 B / 44** / 6 / 8 |
+  | `kernel_call_branch` | 284 B / 59 / 8 / 15 | **268 B / 55** / 8 / 15 |
+  | `kernel`, `kernel_wide`, `kernel_deep`, `kernel_loop_call` | byte-identical | byte-identical |
+
+  The only instruction-level differences are the four copies. The suite's
+  own loop-call word pin moved 53 → 51 (its helper's constant argument was
+  the same shape); the bench fixture's loop is not, and is byte-identical.
+  389 tests / 5247 assertions; every new assertion was run without the pass
+  first and fails there.
+
+  Pin-only A/B on judah (amu `61c7c183`'s tree with ONLY the kotoba-native
+  sha moved; three interleaved reps; the four byte-identical domains are the
+  drift control):
+
+  | pair | domain | drift-corrected amu-native | pairs |
+  |---|---|---:|---|
+  | hoist → +cross-call (#152) | call-preservation | **+0.04% sd 1.35, n=2** | rust / clang 0/2 → 0/2 (−0.6 / −1.0%) |
+  | +cross-call → +coalescing (#154) | call-preservation | **−1.42% sd 2.08, n=3** | rust / clang 0/3 → 0/3 (−0.3 → −0.2%, −0.8 → −0.5%) |
+  | | branch-call-control-flow | **−1.05% sd 1.14, n=3** | rust / clang 0/3 → 0/3 (−3.8 → −4.0%, −6.9 → −6.7%) |
+
+  The `pa` pair ran three reps; rep 1 is not a data point — the hx arm
+  tripped the harness's per-domain host-load gate mid-run (18 pairs
+  `multidomain host-load gate failed`, amu medians +12% across the board,
+  control drift 10.6%) even though the pre-run quiet gate had passed. The
+  analysis now excludes any rep in which an arm tripped that gate. On the
+  two clean reps the cross-call hoist is a null at this resolution: three
+  fewer instructions and one fewer callee-saved pair do not show up on a
+  4.6 ns kernel whose spread is ±1.5%.
+
+  The `pb` pair needed five reps to get three clean ones: reps 1 and 3 tripped
+  the mid-run host-load gate outright, and of the three that did not, rep 4
+  carried a 9.5% control drift (the co arm scored 14/30) and rep 5 a −2.7%
+  one (the hx arm 13/30) — judah was being shared with fleet gates the whole
+  hour, and the harness's gate catches the gross cases, not all of them. On
+  what survives, coalescing reads favourable on both call domains and
+  separated from zero on neither: −1.4% and −1.1%, each inside its own
+  spread. It flips no pair. Its honest summary is the static one — four
+  fewer instructions per call on the dependency path, the exact copies clang
+  never emits — plus a runtime signal in the right direction that this host
+  cannot resolve at n=3.
+
+  **What the three passes did to the call boundary is visible in the
+  published run instead** (150): call-preservation × rust went from −5.9% to
+  −0.8% and × clang from −6.4% to −0.7%; branch-call × rust from −8.2% to
+  −2.5%, × clang from −11.4% to −6.1%. Not one of them is a qualified pair,
+  and with amu now within a point of rust on `call-preservation` while still
+  paying four fuel instructions per call that rust does not, there is no
+  static shape left on that domain that codegen can remove. It joins the
+  ceiling list, one level below `narrow-arithmetic`: not identical code, but
+  identical code plus the contract.
+
+- **150 (2026-09-07, the pin advances to kotoba-native main and the score is
+  re-measured through the published pipeline)**:
+
+  amu #857: `06badc8 → c9d5c44`. The outgoing pin (#839) was one commit on a
+  side branch; its allow-list entry is on kotoba-native main as `4e717ab`, so
+  nothing is dropped and the pin is back where the pin rule wants it. #853
+  (pinning `d5fdf8cb`) conflicted once #839 landed and is closed as
+  superseded — nothing was rebased. The iOS golden fixture is re-emitted and
+  re-sealed (48 code words, same exports, Mach-O 544 bytes, object digest
+  `def77da7… → f60879b3…`); JVM 11 / 61 and nbb 6 / 14 green.
+
+  Six runs for five votes. Run 5 passed the pre-run quiet gate and tripped
+  the harness's mid-run host-load gate (`hostLoadQualified false`, 0/30 —
+  a fleet gate was on judah at the time; `~/.gftd/fleet-ci-tick.log` shows
+  `test-*-murakumo-judah` passes minutes apart all hour). **The projector
+  used to count such a run.** It checked only the quiet gate, so a run whose
+  medians were another tenant's could vote a 17 into the published spread —
+  which is what 142's `[19, 19, 17, 17, 19]` most likely was. The projector
+  now refuses any report with `hostLoadQualified false` (kotoba-lang #612,
+  shown to refuse the contaminated report, to accept a clean one, and to
+  refuse a mixed set), and the publish pipeline runs until it holds five
+  host-qualified reports.
+
+  Projected from runs 1–4 and 6, amu main `42f092ea`:
+
+  | | before (142) | now |
+  |---|---|---|
+  | median | 19 / 30 | **19 / 30** |
+  | per run | 19, 19, 17, 17, 19 | 19, 19, 19, 20, 20 |
+  | stable floor (qualified in every run) | 16 | **19** |
+  | deep-spill × rust / × zig | −0.1% / +0.9% | **+4.1% / +4.8%** (0/5 and 2/5 — at the line) |
+  | call-preservation × rust / × clang | −5.9% / −6.4% | **−0.8% / −0.7%** |
+  | branch-call × rust / × clang | −8.2% / −11.4% | **−2.5% / −6.1%** |
+
+  The median did not move; almost everything under it did. The three passes
+  took the call boundary from a 6–11% deficit to within a point of rust on
+  `call-preservation`, and put both open deep-spill pairs within one point
+  of the 5% line — and none of that is a qualified pair, because the judge
+  asks for 5% and separation, not for closer. That is the right judge.
+
+  kotoba-lang.org shows the same card (`RUNTIME SPEED · 19/30`); what changed
+  on it is the range (`19–20`, was `17–19`) and the floor (`19 of 30 in every
+  run`, was 16). The proven-unwinnable disclosure stands.
