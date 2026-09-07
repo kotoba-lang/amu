@@ -65,7 +65,7 @@ and not one project.
 | **H-3c** | the rest is per-*module*: a pass whose cost is (functions × functions) | **refused — iteration 1** | 1000 one-operation functions check in 3427 ms on a straight line (fitted quadratic coefficient 0.00026, 13% of the growth). Function count is not the quantity |
 | **H-3d** | the quantity is **total expression nodes in the module**, not functions, bodies or calls separately | **confirmed — iteration 1**, and located in iteration 2 | one two-parameter model, `1419 + 0.535·N + 0.0000447·N²` ms, predicts five points across four differently-shaped workload families within the host's own spread |
 | **H-3e** | the `N²` coefficient is held by one or two passes, not spread across all of them | **confirmed — iteration 2** | per-binding probes through `analyze*`: one binding (`read-forms`) held 74% at K=768. Fixed in kotoba-sema `31d0d463`; `amu check` at K=1023 is 2.09× faster and byte-identical |
-| **H-3f** | after the reader, `infer-absent-results` (`frontend.cljc:14613`) carries the surviving term | **open — iteration 3** | measured post-fix: 45 / 267 / 1174 / 2101 ms at K = 128 / 384 / 768 / 1023 — 46.7× over 8× K, exponent 1.85, and 59% of `amu check` |
+| **H-3f** | after the reader, `infer-closure-refinements` (`frontend.cljc:14613`) carries the surviving term | **open — iteration 3** | measured post-fix: 45 / 267 / 1174 / 2101 ms at K = 128 / 384 / 768 / 1023 — 46.7× over 8× K, exponent 1.85, and 59% of `amu check`. It is a fixed point whose own `refinement-count-limit` is `1 + N + Σ params`, so it may run O(N) rounds over N functions |
 
 ## Iteration 1 — 2026-09-07: the growth term is quadratic, and it is in the front end
 
@@ -343,16 +343,28 @@ where the surviving term is. Milliseconds, `amu check`:
 
 | binding | K=128 | K=384 | K=768 | K=1023 | growth over 8× K |
 |---|---:|---:|---:|---:|---:|
-| `parsed (infer-absent-results parsed)` — `frontend.cljc:14613` | 45 | 267 | 1174 | **2101** | **46.7× (exponent 1.85)** |
+| `parsed (infer-closure-refinements parsed preliminary-lambdas)` — `frontend.cljc:14613` | 45 | 267 | 1174 | **2101** | **46.7× (exponent 1.85)** |
 | `A read-forms` (this iteration's fix) | 51 | 137 | 289 | 374 | 7.3× — linear |
 | `parsed` — `frontend.cljc:14351` | 99 | 179 | 328 | 384 | 3.9× |
 | whole `check` | 341 | 866 | 2324 | 3541 | 10.4× |
 
-`infer-absent-results` is now **59% of `amu check` at K=1023** and carries the
-same exponent the reader used to. It is two passes, each building a signature
-table and inferring the body of every function whose result was left
-unannotated — every function in this workload declares `:i64`, so the first
-question for iteration 3 is why it runs at all here, and the second is what
-inside it is quadratic. Do not start by reading it: iteration 1 lost two
-hypotheses that way and iteration 2 found the answer in ten minutes of
-probes.
+`infer-closure-refinements` is now **59% of `amu check` at K=1023** and carries
+the same exponent the reader used to. Its docstring says what it is — a fixed
+point over the function/parameter graph — and its own guard,
+`refinement-count-limit = 1 + (count functions) + Σ (count params)`, bounds the
+rounds by something linear in N. A fixed point that may run O(N) rounds and
+walks all N functions per round is O(N²) by construction, which is the shape
+the numbers show. Iteration 3 should measure the round count before assuming
+that is the whole story.
+
+Two neighbours were checked and are **not** it. `infer-absent-results`
+(`frontend.cljc:14609`) runs a constant 6 passes at every size and reports
+`inferred=0` on this workload — every function declares `:i64`, so it does a
+signature table and a `mapv` for nothing, which is worth its own small fix but
+is not the term. The desugar block at `frontend.cljc:14351` grows 3.9× over the
+same 8× range.
+
+⚠ This section said `infer-absent-results` when it was first written. The label
+came from a probe named by line number and the line was read off by four. The
+probe was right; the reading was not. Corrected here and in
+kotoba-lang/amu#878 after instrumenting the function itself.
