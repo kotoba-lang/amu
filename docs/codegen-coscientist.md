@@ -3355,3 +3355,368 @@ ple Clang C11, Zig, Go
   imposed by the harness around it, after an ungated batch produced a control
   of 9.67 against 9.01 in two quiet runs and a 23.58 outlier. **That ungated
   batch is discarded, not averaged in.**
+
+- **140 (2026-09-06, the load's latency is hidden — LDR-literal measured 4.5%
+  faster than MOVZ+MOVK, so #147 has nothing left to measure)**:
+
+  139 specified `LDR (literal)` with one open risk: a load is ~4 cycles against
+  MOVK's 1, so if the loads are not hoisted ahead of their uses the change
+  loses instead of winning. That is now measured rather than assumed.
+
+  A hand-written microbenchmark reproduces the `deep-spill` lane shape exactly
+  — 24 lanes of `add / smulh / add / asr / add / msub`, with the magic
+  constants read off amu's own disassembly — in two variants differing only in
+  how the lane constant arrives. Both compute identical results over n = 0..4.
+  Ten invocations on judah across two batches, each the minimum of seven
+  interleaved rounds:
+
+  | | movk | ldr | gain |
+  |---|---|---|---|
+  | batch 1 (5 runs) | 8.683–8.708 | 8.317–8.325 | **4.13 – 4.50%** |
+  | batch 2 (5 runs) | 8.708–8.725 | 8.317–8.325 | **4.50 – 4.59%** |
+
+  **Two unrelated methods, one number:** the fixture diagnostic said removing
+  the MOVKs was worth ~4%, and a hand-written A/B that changes nothing else
+  says 4.5%. That agreement is worth more than either reading alone.
+
+  Two things this run teaches about its own method:
+
+  * ⚠ **The same benchmark on this workstation says LDR is 7% SLOWER.**
+    Different chip, load average over 100. A microbenchmark is only evidence
+    about the machine it ran on, and the claim path's machine is the fleet.
+  * The first version used **x20** as the accumulator. x20 is callee-saved, so
+    clobbering it corrupted the C driver's loop counter — and that surfaced as
+    runs taking 30+ minutes and never finishing, **not** as a wrong answer.
+    A wrong answer would have been caught immediately by the equality check
+    that was already there; a corrupted caller was not. The accumulator is x9.
+
+  Nothing is left to measure before implementing #147. The projection stands:
+  `deep-spill × zig` → ~6.8%, `× rust` → ~6.3%, both clearing the 5% bar and
+  the ~0.42 ns separation floor. **19/30 → 21/30.**
+
+- **141 (2026-09-06, the literal pool is FALSIFIED at −0.54% ± 1.57%, and both
+  diagnostics that predicted +4% were measuring the wrong thing)**:
+
+  #147 was built: `LDR (literal)` against a per-function constant pool, scoped
+  to the `:aarch64/constant` encoder, pool emitted inside each function so
+  `extract-native` still copies it. Structurally it works — all 22 LDR sites in
+  `kernel_deep` resolve to distinct real lane constants inside the extracted
+  range, and the encoding came from clang's assembler rather than by hand.
+
+  **It buys nothing.** Four quiet-qualified A/B pairs on judah:
+
+  | run | control drift | deep-spill raw | drift-corrected |
+  |---|---|---|---|
+  | 1 | +2.14% | −0.11% | **−2.24%** |
+  | 2 | +0.39% | +0.11% | **−0.29%** |
+  | 3 | −2.00% | −0.11% | **+1.89%** |
+  | 4 | −0.37% | −1.89% | **−1.52%** |
+
+  **mean −0.54%, sd 1.57, n=4** — zero, against a predicted 4%.
+
+  The correction matters and is what makes this readable at all: **four of the
+  six domains are byte-identical between the two builds** (only `deep-spill`
+  +56 bytes and `wide-register-pressure` +8 changed), so their delta is pure
+  run-to-run drift. It ran from −2.0% to +2.1% between pairs. Without that
+  control I would have read run 1 as "the pool makes narrow-arithmetic 4.17%
+  slower" — on a kernel whose bytes did not change.
+
+  **Why 139 and 140 both predicted a gain that is not there.** Neither
+  diagnostic modelled the substitution:
+
+  * the **fixture** (139) removed the MOVKs and put **nothing** in their place
+    — strictly less work, so of course it was faster;
+  * the **microbenchmark** (140) did compare MOVZ+MOVK against LDR, but its
+    lanes were chained through a serial accumulator (`add x9, x9, x4`), which
+    serialises them and hands each load a long window to complete. The real
+    kernel sums in a tree at the end, so there is less slack and the load's
+    ~4 cycles land where MOVK's 1 used to.
+
+  **Two agreeing measurements were still both wrong, in the same direction, for
+  the same reason.** The agreement felt like corroboration in 140 and was
+  actually a shared blind spot: both compared "constant is cheaper" against
+  "constant is dearer" without reproducing what the real change does, which is
+  swap two ALU ops for one load *in the real dependency graph*.
+
+  ⚠ **A further caution about the score itself.** The baselines across these
+  four pairs scored **19, 19, 15, 19** — the *same commit*, four times. A
+  single 30-pair run resolves the score to about ±4 pairs when the host is
+  merely quiet-gated. `19/30` is what this build typically scores, not a
+  reading precise to one pair, and no single run should be used to claim a
+  pair was gained or lost.
+
+  Not landing. The branch stays as evidence; #147 is closed as measured and
+  rejected. **19/30 stands, and the reachable maximum is still 25.**
+
+- **142 (2026-09-06, the published score was stated to a precision it does not
+  have — one outlier sample can cost three pairs)**:
+
+  141 recorded in passing that four runs of one commit scored 19, 19, 15, 19.
+  Following that up turned out to matter more than the compiler change it was
+  a footnote to, because **kotoba-lang.org was publishing `19/30` as a flat
+  number** and I am the one who put it there.
+
+  **What the ±4 actually is.** Not four independent losses. One sample of
+  **10.48 ns against a median of 5.165** in amu-native's own arm on
+  `branch-call` — the next largest was 5.67 — pushed that arm's relative stdev
+  to **0.1373** and tripped perfgate's `too-noisy` rule. Dropping that single
+  sample gives **0.0465**. Because `too-noisy` is evaluated **per arm**, one
+  bad amu measurement disqualified **three comparator pairs at once**, and
+  those pairs were 17%, 25% and 43% ahead. Comparisons not remotely in doubt,
+  lost to one scheduler hiccup.
+
+  That correlation is the whole explanation for the spread: the score does not
+  move one pair at a time, it moves in blocks of up to five.
+
+  **What I did NOT do.** Loosen `max-relative-stdev`, or trim the outlier.
+  Either would raise my own score by weakening the judge that grades it. The
+  gate is doing its job; the reporting was wrong.
+
+  **What changed.** `project-runtime-comparison.cljs` now takes several
+  reports and publishes the **median**, `scoreByRun`, `observedRange`,
+  `stableQualifiedPairs` (won every run), and per-pair `qualifiedRuns` — so
+  "won once" and "won always" stop rendering identically. Every extra report
+  faces the same refusals as the first, plus one more: **its quiet gate must
+  have passed.** A run whose host was never measured does not vote. Both
+  refusals were exercised and neither writes an artifact.
+
+  **Republished from five host-qualified runs of amu main c6f21d1e**
+  (busy-CPU 0.05–0.09):
+
+  | | |
+  |---|---|
+  | per run | **19, 19, 17, 17, 19** |
+  | median (headline) | **19** |
+  | observed range | **17–19** |
+  | qualified in every run | **16** |
+
+  The headline is unchanged — 19 was right *as a median*. What was wrong was
+  publishing it bare. kotoba-lang.org now reads "Median of 5 host-qualified
+  runs; the score ranged 17–19 and 16 of the 30 pairs qualified in every one."
+
+  Marginal under this build: `wide-register × clang` 4/5 (12.02%),
+  `deep-spill × clang` 4/5 (**6.18%** — genuinely near the 5% bar),
+  `wide-register × rust` 3/5 (7.98%).
+
+  **Consequence for this loop.** Every single-run A/B in entries 130–141 was
+  reading a quantity whose one-run resolution is about ±2 pairs. The
+  drift-corrected comparisons survive that (they compare arms within a run),
+  but **no future entry may claim a pair was gained or lost from one run.**
+  The threshold for "this changed the score" is now a median over repeated
+  host-qualified runs.
+
+- **143 (2026-09-06, the bounded claim is UNATTAINABLE, and one of this
+  ledger's own ceiling claims does not reproduce)**:
+
+  Chasing the score further, I went to re-verify 134's ceilings rather than
+  cite them. Two results, opposite in sign.
+
+  **Confirmed, and stronger than 134 stated.** Disassembling all three
+  artifacts for `narrow-arithmetic`:
+
+  | | instructions | encodings |
+  |---|---|---|
+  | amu native | **61** | differ from the others **only in register numbers** |
+  | Apple clang -O3 | **61** | **byte-identical to rustc** |
+  | rustc -O3 | **61** | **byte-identical to clang** |
+
+  Same mnemonic sequence, position for position, all three. A ≥5% margin over
+  identical code cannot be produced. So `narrow-arithmetic × clang` and
+  `× rust` are not pairs more work will win — **and therefore neither is
+  30/30. The bounded claim is unattainable, not unmet.** That distinction was
+  missing from what kotoba-lang.org published ("stays unqualified" reads as
+  "not yet"); it now says so, listing only the pairs actually disassembled.
+
+  **Did not reproduce.** 134 claims five such pairs. `loop-call-back-edge`
+  does not check out with this method: `extract-native --symbol kernel`
+  returns `:offset 4 :length 40` — ten instructions containing a fuel
+  preamble, a prologue, `mov x1,#0` and an epilogue, with **no back edge, no
+  `bl`, and no `ret` inside the extent** — for a kernel the suite times at
+  **~140 ns**, two orders of magnitude above every other domain. clang
+  compiles the same shape to a real 20-instruction loop.
+
+  Those two facts cannot both be right. **I have not withdrawn 134** — it may
+  have been measured another way — but the published artifact now lists two
+  ceiling pairs rather than five, and the anomaly is amu#843.
+
+  ⚠ **This reaches backwards.** `extract-native`'s extent is how 137, 141 and
+  142 counted per-domain instructions. If it can understate a function, those
+  counts inherit the doubt. The `narrow-arithmetic` comparison above does not
+  (61 × 4 = 244 bytes, and all three agree instruction-for-instruction, which
+  a truncated extent would not produce), but **no future instruction count
+  from this tool should be quoted without checking the extent against the
+  disassembly's own shape** — a function that does not end in `ret` was not
+  fully extracted.
+
+  Also filed: kotoba-native#148, a redundant `mov x0, x19` immediately after
+  `mov x19, x0` in the entry sequence of both call-shaped kernels — real, and
+  **explicitly too small to move the score** (~0.9% of one kernel's
+  instructions, against a 5.31pp gap, and below this fleet's noise floor).
+
+  Score unchanged: **median 19/30, range 17–19, stable 16**.
+
+- **144 (2026-09-07, SIMD spill-parking's +3.21% has eroded to +0.67% ± 1.15%
+  — the fifth lever to measure at zero, and the reason is one of our own
+  landed changes)**:
+
+  I had dismissed re-testing this pass because its docstring cites **+3.21%
+  separated** from iterations 23–24. That is a citation, not a measurement:
+  the figure came from **hand-substituting** fourteen spill instructions on a
+  compiler that has since gained #142, #145 and #146. The rule about
+  implementation snapshots applies to measurements too, and I applied it to
+  everything except the numbers that were already in my favour.
+
+  Compiled both shapes and ran three interleaved quiet-host pairs
+  (busy-CPU 0.06–0.09), drift-corrected against the five domains whose bytes
+  do not change between the arms:
+
+  | rep | drift | deep-spill | corrected |
+  |---|---|---|---|
+  | 1 | +2.35% | +2.41% | **+0.06%** |
+  | 2 | −1.44% | +0.85% | **+2.29%** |
+  | 3 | +0.01% | −0.32% | **−0.33%** |
+
+  **Disabling the pass costs +0.67%, sd 1.15, n=3.** Right in sign — parking
+  is still the better shape and stays — but **indistinguishable from zero**,
+  and nowhere near 3.21%.
+
+  The shapes genuinely differ, so this is not one binary measured twice: on
+  `kernel_deep`, parked is 241 instructions / 14 FMOV / 8 sp-memory ops;
+  unparked is 243 / 0 FMOV / 22.
+
+  **The likely cause is #145, which this loop landed.** Once the frame became
+  a single allocation with offset addressing, a stack-slot round trip stopped
+  being expensive enough for a register-file move to beat by much. An
+  optimization worth 3% against N dependent SP updates is worth much less
+  against two. **Landing one optimization can quietly retire another's
+  value**, and nothing in the codebase notices — the docstring kept asserting
+  3.21% for as long as anyone cared to read it (kotoba-native#149 corrects it).
+
+  ⚠ I also repeated the #143 mistake inside this experiment: compiled with the
+  pass disabled and ran `extract-native` without the flag, so the verifier
+  re-emitted the parked shape and rejected the export table. The ledger
+  already records that exact error. **Reading about a mistake does not prevent
+  it; only making the configuration impossible to split does.**
+
+  **Where this leaves the search.** Five levers on `deep-spill` now measure at
+  or near zero — constant pooling (141), SIMD parking (here), and the frame,
+  Mersenne and two-ADD results already recorded. The division sequence is
+  instruction-for-instruction identical to clang's and rustc's. On the
+  evidence, amu's deep-spill codegen is at a local optimum, and the 2.09pp to
+  zig is not reachable by the kind of peephole this loop has been generating.
+
+  Score unchanged: **median 19/30, range 17–19, stable 16**.
+
+- **145 (2026-09-07, induction-variable strength reduction across lanes is
+  −5%, which closes the second and last direction out of this local optimum)**:
+
+  144 ended by saying the remaining gap "is not reachable by the kind of
+  peephole this loop generates". That was an admission that every lever tried
+  so far changed **instruction selection** and none changed **dependency
+  structure**. So here is the structural one.
+
+  The lane constants are an arithmetic progression: `(n+i)*48271+1 ==
+  ((n+i-1)*48271+1) + 48271`. Textbook induction-variable strength reduction —
+  replace 24 independent constant materialisations with 23 adds off the
+  previous lane. `kernel_deep_incremental` does exactly that, and its lane
+  results are **bit-identical** to `kernel_deep`'s (checked in Python over the
+  verification inputs and beyond, including a negative n).
+
+  Two quiet-host runs (busy-CPU 0.04–0.06):
+
+  | rep | kernel_deep | incremental | median | min |
+  |---|---|---|---|---|
+  | 1 | 9.01 | 9.47 | **−5.11%** | −4.89% |
+  | 2 | 9.01 | 9.46 | **−4.99%** | −4.90% |
+
+  **The incremental form is 5% slower**, reproducibly, on both statistics.
+  The serial edge costs far more than the ~4% of materialisation it removes.
+
+  **Both directions out of this point are now measured, not assumed:**
+
+  | direction | change | result |
+  |---|---|---|
+  | instruction selection | pool the constants (141) | **0%** |
+  | | park spills in SIMD vs stack (144) | **0.67% ± 1.15%** |
+  | dependency structure | chain the lane inputs (here) | **−5%** |
+
+  Shortening the instruction stream without touching the chains buys nothing;
+  shortening it *by* touching the chains costs 5%. That is what a local
+  optimum looks like from the inside, and it is now a measurement rather than
+  the assertion 135 made and 144 repeated.
+
+  It also explains the earlier pair that looked contradictory. 139's fixtures
+  (`narrowconst`, `movonly`) removed materialisation and **substituted
+  nothing** — strictly less work, ~4% faster, and unreachable by a compiler,
+  because a compiler has to put *something* there. Every real substitution
+  since has landed between 0% and −5%.
+
+  **What would still be worth someone's time**, none of it a peephole: the
+  24-lane fixture is designed to exceed the register file, so the win would
+  have to come from needing fewer live values at once — vectorising the lanes
+  (rustc reaches for NEON here and is still slower, so this is not obviously
+  free), or reassociating the final sum tree to shorten lane lifetimes. Both
+  are register-allocation-scale changes, not encoder changes.
+
+  Score unchanged: **median 19/30, range 17–19, stable 16**.
+
+- **146 (2026-09-07, interleaving the sum is +3.17% — the first positive
+  result in this series, and the first measured route to 20/30)**:
+
+  145 said the remaining move was register-allocation scale, not encoder
+  scale, and named two candidates. This is the second one: **reassociate the
+  final sum so lanes are consumed as they are produced.**
+
+  `kernel_deep` computes 24 lanes and then sums them, so all 24 are live at
+  once — which is the pressure the fixture exists to create.
+  `kernel_deep_accum` folds each lane into an accumulator immediately. Same
+  lanes, same arithmetic, **same result** — i64 addition is associative, so
+  the reassociation is exact (verified in Python over the verification inputs
+  and beyond, including a negative n).
+
+  | rep | kernel_deep | accum | median | min |
+  |---|---|---|---|---|
+  | 1 | 8.97 | 8.71 | **+2.90%** | +2.14% |
+  | 2 | 9.02 | 8.71 | **+3.44%** | +3.13% |
+
+  **+3.17% median, +2.64% min**, both runs, both statistics, same direction.
+
+  **The mechanism is confirmed by disassembly, not inferred:**
+
+  | | instructions | FMOV | sp-mem ops | callee-saved pairs |
+  |---|---|---|---|---|
+  | `kernel_deep` | 241 | 14 | 8 | 4 |
+  | `kernel_deep_accum` | **219** | **0** | **0** | **0** |
+
+  Peak liveness falls far enough that the function needs **no callee-saved
+  registers and no frame at all** — it becomes a leaf that fits in the
+  caller-saved bank. Every spill, every SIMD park, and the whole prologue go
+  away together. That is a much larger structural change than any encoder
+  lever tried in 141–145, and it is why it is the only one that moved.
+
+  **What it is worth.** Applying +3.17% to the current figures (amu 9.46,
+  zig 9.68, rust 9.63):
+
+  | pair | now | projected | |
+  |---|---|---|---|
+  | deep-spill × zig | 2.27% | **5.37%** | **qualifies** |
+  | deep-spill × rust | 1.77% | 4.88% | still short |
+
+  **That is 20/30**, and rust lands close enough that run-to-run variation
+  would sometimes carry it.
+
+  ⚠ **This is a fixture, not a pass.** I have measured the shape a compiler
+  transformation would produce, not the transformation. 141 is the cautionary
+  case — but the two differ in exactly the way that matters: 139's fixtures
+  removed work and **substituted nothing**, which no compiler can do, whereas
+  this one performs an operation reordering a compiler is free to perform, on
+  the same instructions, and the disassembly confirms the predicted mechanism
+  rather than merely the predicted timing.
+
+  Specified as kotoba-native#150. The pass has to (a) find a sum whose terms
+  are independently computed, (b) prove the reassociation exact — trivial for
+  wrapping i64 addition, **not** for floats — and (c) interleave the folds
+  with the producers. Step (c) is where it can go wrong: fold too eagerly and
+  the accumulator becomes the serial spine that cost 5% in 145.
+
+  Score today unchanged: **median 19/30, range 17–19, stable 16.**
