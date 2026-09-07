@@ -27,7 +27,11 @@
          :git/sha "d5137c7bbd029e4c09964e8241899d2c286302bf"}
         io.github.kotoba-lang/kotoba-script
         {:git/url "https://github.com/kotoba-lang/kotoba-script.git"
-         :git/sha "8a55311bff0785b18e161fba2062fd38ca98868d"}
+         ;; Advanced 2026-09-07, 8a55311b -> 79d13e78: the JS emitter typed a
+         ;; JS `-0` as an i64 literal on the cljs (nbb) branch only, and 79d13e78
+         ;; adds 60 parity goldens. Emitted bytes are unchanged on the JVM route,
+         ;; so the committed goldens under test/fixtures/js-parity stay valid.
+         :git/sha "79d13e78a000e14704e04a218363824674b57c7e"}
         ;; ADR-0222: source reading and semantic analysis live behind the
         ;; kotoba-sema repository boundary and public semantic-analysis API.
         ;;
@@ -163,7 +167,13 @@
          ;; A frontend that admits a head its lowering has never heard of is a
          ;; worse state than either pin alone: the refusal moves from compile
          ;; time to run time. The two pins move in one commit.
-         :git/sha "b021a0d179fb983e8ad7da702252cfa764cd2fc2"}
+         ;;
+         ;; Advanced 2026-09-07, b021a0d1 -> f1259101: the reference interpreter
+         ;; gains the `string-index-of` case (a pure `main` using it failed this
+         ;; compiler's --jvm-free route with `:kotoba/lowering-failed
+         ;; "unknown-function"`), and on cljs it returns a BigInt rather than a
+         ;; JS number, so `(= (string-index-of ...) 7)` no longer folds to 0.
+         :git/sha "f12591011fd0d55d25c2cfba37364338487e70e3"}
         ;; The frontend is an HIR producer and KIR lowering is its consumer;
         ;; both validate the same checked envelope.
         io.github.kotoba-lang/kotoba-hir

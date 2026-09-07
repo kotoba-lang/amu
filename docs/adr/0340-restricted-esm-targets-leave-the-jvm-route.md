@@ -92,3 +92,13 @@ instantiate.
 - Not mirrored: the JVM's `.inputs.edn` sidecar (folded into the printed
   result, as the Wasm route does) and hash-map key ORDER inside the manifest
   and provenance text. Both are values; the test compares them as such.
+- Pins advanced 2026-09-07 (kotoba-script `8a55311b` -> `79d13e78`, kotoba-kir
+  `b021a0d1` -> `f1259101`; `deps-lock.edn` regenerated, digest `684509af`):
+  the script fix is cljs-branch-only (JS `-0` was typed as an i64 literal on
+  nbb), so the four committed goldens are unchanged -- `test-nbb-js` measured
+  `SCANNED 16 failed 0` at the new pins with no regeneration. The kir advance
+  adds the interpreter case for `string-index-of`: the pure program
+  `(ns p (:export [main])) (defn main [] :i64 (string-index-of "héllo wörld" "wö"))`
+  compiled `--target js --jvm-free` on the base failed with exit 70
+  `:kotoba/lowering-failed "unknown-function"`, and at `f1259101` compiles
+  (58,495 bytes) and `instantiateKotoba({}).main()` prints `7` under Node.
