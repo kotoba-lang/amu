@@ -487,6 +487,24 @@
                                 (assoc opts :profile profile :budgets budgets)))]
      (provenance/attach source policy opts result))))
 
+(defn refuse-fuel-declared-twice!
+  "`--fuel N` (emit-metadata `:fuel`) and a policy `{:budgets {:fuel M}}` are
+  two spellings of ONE budget. `declared-fuel` reads them in that order, so
+  when they disagreed the flag won and the policy's author never learned that
+  the number in their file was not the one sealed -- a build that reported
+  success with a budget nobody had checked. Equal values are one declaration
+  and compile; different values are refused before anything is lowered.
+
+  Mirrored by the nbb native driver's `fuel-policy!` so both routes refuse
+  with the same data (amu-h6)."
+  [policy emit-metadata]
+  (let [flag (:fuel emit-metadata)
+        from-policy (get-in policy [:budgets :fuel])]
+    (when (and (some? flag) (some? from-policy) (not= flag from-policy))
+      (throw (ex-info "fuel declared twice with different values: --fuel and the policy's :budgets :fuel must agree"
+                      {:phase :usage :reason :fuel-declared-twice
+                       :flag flag :policy from-policy})))))
+
 (defn- compile-source*
   ([source target] (compile-source* source target {}))
   ([source target policy] (compile-source* source target policy {}))
@@ -580,10 +598,11 @@
                         (ir/uses-f64? hir) :kotoba.typed/mixed-f64-v2
                         typed-values? :kotoba.typed/externref-v1
                         :else :kotoba.i64/direct-v1)
-        declared-fuel (or (:fuel emit-metadata)
-                          (get-in emit-metadata [:budgets :fuel])
-                          (get-in policy [:budgets :fuel])
-                          512)
+        declared-fuel (do (refuse-fuel-declared-twice! policy emit-metadata)
+                          (or (:fuel emit-metadata)
+                              (get-in emit-metadata [:budgets :fuel])
+                              (get-in policy [:budgets :fuel])
+                              512))
         compatibility (compatibility/descriptor
                        {:hir-format (:format hir) :kir-format (:format kir)
                         :target target :target-profile profile :value-abi value-abi})]
@@ -799,7 +818,10 @@
   ([sources root] (check-project sources root {}))
   ([sources root policy]
    (let [linked (project/link-source sources root)]
-     (assoc (check-source (:source linked) policy {:admit-linked-synthetics? true})
+     (assoc (try
+              (check-source (:source linked) policy {:admit-linked-synthetics? true})
+              (catch clojure.lang.ExceptionInfo error
+                (throw (project/attribute-linked-error error linked))))
             :root root
             :module-order (:module-order linked)))))
 
@@ -815,6 +837,17 @@
   ([sources root target] (compile-project sources root target {}))
   ([sources root target policy] (compile-project sources root target policy {}))
   ([sources root target policy supply-chain]
+   (compile-project sources root target policy supply-chain {}))
+  ;; `emit-metadata` is the same map `compile-source` takes -- `:fuel`,
+  ;; `:language-profile` -- carried here so a project build seals the budget
+  ;; the caller declared. Before this arity the CLI built `source-opts` from
+  ;; `--fuel` and handed it only to the single-file branch: on
+  ;; `--source-path` / `--module-lock` the flag was accepted, never reached
+  ;; `linked-meta`, and `declared-fuel` fell back to the policy or 512 while
+  ;; the compile reported success (amu-h5, measured 2026-09-07 on
+  ;; `x86_64-aiueos-kernel-v1 --artifact image --fuel 4096`: the sealed RW
+  ;; context qword read 512).
+  ([sources root target policy supply-chain emit-metadata]
    (let [allowed-keys #{:package-lock-digest :trust-policy-digest
                         :package-receipt-digest}
          values (when (map? supply-chain) (vals supply-chain))
@@ -850,13 +883,22 @@
                               :module-source-digests module-digests}
                              supply-chain)
          component-target? (= :component (:execution (target-profile/profile target)))
-         linked-meta (assoc project-meta :admit-linked-synthetics? true)
-         compiled (if component-target?
-                    ;; Component opts are target + project digests only here;
-                    ;; CLI attaches fuel/profile via direct compile-component.
-                    (compile-component (:source linked) policy
-                                       (merge {:target target} linked-meta))
-                    (compile-source (:source linked) target policy linked-meta))]
+         ;; Project digests win over anything the caller put under the same
+         ;; keys; the caller's build metadata is otherwise carried unchanged.
+         linked-meta (merge emit-metadata project-meta
+                            {:admit-linked-synthetics? true})
+         compiled (try
+                    (if component-target?
+                      ;; Component opts are target + project digests only here;
+                      ;; CLI attaches fuel/profile via direct compile-component.
+                      (compile-component (:source linked) policy
+                                         (merge {:target target} linked-meta))
+                      (compile-source (:source linked) target policy linked-meta))
+                    ;; A refusal here was raised against the linked unit. Name
+                    ;; the module and line that wrote the form instead
+                    ;; (amu-h10; `project/attribute-linked-error`).
+                    (catch clojure.lang.ExceptionInfo error
+                      (throw (project/attribute-linked-error error linked))))]
      (cond-> (assoc compiled :project graph :project-digest graph-digest
                     :project-linkage linkage-evidence)
        (:manifest compiled)

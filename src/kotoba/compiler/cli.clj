@@ -110,7 +110,11 @@
     ;; allowlist is for. `:check` joined them for the same reason on 2026-08-30:
     ;; a module rejected for declaring `(:require ...)` needs to be told which
     ;; invocation links its project.
-    :problem :pin :then :override :check})
+    :problem :pin :then :override :check
+    ;; `:fuel-declared-twice` names the two numbers that disagreed. They are
+    ;; the caller's own integers (a flag and a policy field), already parsed
+    ;; as such, so admitting them widens nothing an error can leak.
+    :flag :policy})
 
 (defn error-report
   ([error] (error-report error nil))
@@ -388,7 +392,10 @@
           modules (when graph (vec (sort (map str (keys (:sources graph))))))]
       (try
         (let [result (if graph
-                       (compiler/check-project (:sources graph) (:root graph) policy)
+                       (try
+                         (compiler/check-project (:sources graph) (:root graph) policy)
+                         (catch clojure.lang.ExceptionInfo error
+                           (throw (project/with-module-file error (:paths graph)))))
                        (compiler/check-source (bounded-edn/read-text-file input) policy))
               ;; The reporting boundary. The wire id stays in HIR, in the
               ;; admission decision and in any artifact a later `compile`
@@ -578,7 +585,8 @@
                                                         :admit-linked-synthetics? true)))
 
                    locked
-                   (compiler/compile-project (:sources locked) (:root locked) target policy)
+                   (compiler/compile-project (:sources locked) (:root locked) target policy
+                                             {} source-opts)
 
                    ;; Multi-file closed graph → link → compile-component (T8.3
                    ;; multi-file project kit body first slice). Same Canonical
@@ -598,9 +606,17 @@
                    (compiler/compile-component
                     (bounded-edn/read-text-file input) policy component-opts)
 
+                   ;; `source-opts` rides along exactly as on the single-file
+                   ;; branch below. It used to be dropped here, so `--fuel`
+                   ;; on a project build was accepted and silently ignored.
                    (seq source-roots)
-                   (let [{:keys [sources root]} (project-files/load-closed-graph input source-roots)]
-                     (compiler/compile-project sources root target policy))
+                   (let [{:keys [sources root paths]} (project-files/load-closed-graph input source-roots)]
+                     (try
+                       (compiler/compile-project sources root target policy {} source-opts)
+                       ;; The graph came from paths, so a refusal attributed
+                       ;; to a module can name the file it was loaded from.
+                       (catch clojure.lang.ExceptionInfo error
+                         (throw (project/with-module-file error paths)))))
 
                    :else
                    (compiler/compile-source (bounded-edn/read-text-file input)

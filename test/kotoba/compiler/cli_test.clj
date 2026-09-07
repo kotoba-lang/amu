@@ -401,6 +401,116 @@
       (is (= 4096 (.getLong buffer (+ rw-offset 8)))
           "--fuel must reach the sealed native context, not only admission"))))
 
+(defn- sealed-native-fuel
+  "The fuel qword the kernel packager sealed into the RW context segment.
+  The packager emits RX first and RW second; p_offset is the third field of
+  an ELF64 program header, and the context's fuel lives 8 bytes in."
+  [output]
+  (let [bytes (java.nio.file.Files/readAllBytes (.toPath (java.io.File. output)))
+        buffer (doto (ByteBuffer/wrap bytes) (.order ByteOrder/LITTLE_ENDIAN))
+        program-header-offset (.getLong buffer 32)
+        program-header-size (.getShort buffer 54)
+        rw-header (+ program-header-offset program-header-size)
+        rw-offset (.getLong buffer (+ rw-header 8))]
+    (.getLong buffer (+ rw-offset 8))))
+
+(defn- temp-project!
+  "A two-module project on disk: `<dir>/main.kotoba` requiring
+  `<dir>/src/example/<name>.kotoba`. Returns the root file and source root."
+  [root-source module-name module-source]
+  (let [directory (.toFile (java.nio.file.Files/createTempDirectory
+                            "kotoba-cli-project-" (make-array java.nio.file.attribute.FileAttribute 0)))
+        source-directory (io/file directory "src")
+        dependency (io/file source-directory (str "example/" module-name ".kotoba"))
+        root (io/file directory "main.kotoba")]
+    (.mkdirs (.getParentFile dependency))
+    (spit dependency module-source)
+    (spit root root-source)
+    {:root (.getPath root) :source-path (.getPath source-directory) :directory directory}))
+
+(deftest compile-cli-threads-fuel-into-native-image-through-source-path
+  ;; amu-h5. The single-file branch above has sealed `--fuel` since the fix
+  ;; its comment records; the `--source-path` branch built the same
+  ;; `source-opts` and never passed them to `compile-project`, so a project
+  ;; kernel image reported success and sealed 512. Same assertion, same
+  ;; qword, through the linker.
+  (let [{:keys [root source-path]}
+        (temp-project! "(ns example.k (:require [example.lib :as lib]) (:export [main]))
+                        (defn main [] (kernel-out-u32 244 (lib/answer)))"
+                       "lib"
+                       "(ns example.lib (:export [answer]))
+                        (defn answer [] 16)")
+        output (.getPath (atomic-output/temp-file! "kotoba-aiueos-kernel-project-fuel-" ".elf"))
+        out (StringWriter.)]
+    (binding [*out* out]
+      (cli/-main "compile" root "--source-path" source-path
+                 "--target" "x86_64-aiueos-kernel-v1" "--artifact" "image"
+                 "--fuel" "4096" "--output" output "--unpinned"))
+    (is (= 4096 (sealed-native-fuel output))
+        "--fuel must reach the sealed native context on the project route too")))
+
+(deftest compile-cli-refuses-fuel-declared-twice-with-different-values
+  ;; amu-h6. `--fuel` and a policy `{:budgets {:fuel M}}` are two spellings
+  ;; of one budget. When they disagree the flag used to win silently; the
+  ;; caller who wrote the policy could not tell which number was sealed.
+  (let [source (temp-kotoba-source! "(defn main [] (kernel-out-u32 244 16))")
+        policy (temp-kotoba-source! "{:budgets {:fuel 4096}}" ".edn")
+        output (.getPath (atomic-output/temp-file! "kotoba-fuel-twice-" ".elf"))
+        status (atom nil)
+        err (StringWriter.)]
+    (binding [cli/*exit* #(reset! status %)
+              *err* err]
+      (cli/-main "compile" source "--target" "x86_64-aiueos-kernel-v1"
+                 "--artifact" "image" "--fuel" "8192" "--policy" policy
+                 "--output" output))
+    (let [report (edn/read-string (str err))]
+      (is (= 64 @status))
+      (is (= :usage (:error report)))
+      (is (= {:phase :usage :reason :fuel-declared-twice :flag 8192 :policy 4096}
+             (select-keys (:details report) [:phase :reason :flag :policy]))))
+    (testing "the same value spelled twice is one declaration, and it is sealed"
+      (let [agreeing (temp-kotoba-source! "{:budgets {:fuel 8192}}" ".edn")
+            output (.getPath (atomic-output/temp-file! "kotoba-fuel-agree-" ".elf"))
+            out (StringWriter.)]
+        (binding [*out* out]
+          (cli/-main "compile" source "--target" "x86_64-aiueos-kernel-v1"
+                     "--artifact" "image" "--fuel" "8192" "--policy" agreeing
+                     "--output" output))
+        (is (= 8192 (sealed-native-fuel output)))))))
+
+(deftest project-diagnostics-name-the-authoring-module-and-its-line
+  ;; amu-h10. A project is linked into one synthetic unit before the frontend
+  ;; sees it, so a refusal used to be reported against the ROOT file at a
+  ;; line and column that exist only in the linker's output
+  ;; (`kernel.kotoba:73:297`). The module that wrote the form, and the line
+  ;; it wrote it on, are both known to the linker; the report now says them
+  ;; and drops the column, which no author's editor can jump to.
+  (let [{:keys [root source-path]}
+        (temp-project! "(ns example.a (:require [example.b :as b]) (:export [main]))
+(defn main [] :i64 (b/wide 1 2 3 4 5 6))"
+                       "b"
+                       "(ns example.b (:export [wide]))
+(defn- helper [x :i64] :i64 (+ x 1))
+(defn wide [a :i64 b :i64 c :i64 d :i64 e :i64 f :i64] :i64
+  (+ a (+ b (+ c (+ d (+ e f))))))")
+        output (.getPath (atomic-output/temp-file! "kotoba-project-diag-" ".kexe"))
+        status (atom nil)
+        err (StringWriter.)]
+    (binding [cli/*exit* #(reset! status %)
+              *err* err]
+      (cli/-main "compile" root "--source-path" source-path
+                 "--target" "x86_64-kotoba-v1" "--output" output "--unpinned"))
+    (let [report (edn/read-string (str err))
+          diagnostic (:diagnostic report)]
+      (is (= 65 @status))
+      (is (= :subset (:error report)))
+      (is (= "b.kotoba" (:source diagnostic))
+          "the module that wrote the form, not the root the command named")
+      (is (= 3 (get-in diagnostic [:span :line]))
+          "the defn line in b.kotoba, not a line of the linked unit")
+      (is (not (contains? (:span diagnostic) :column))
+          "a column into the synthetic unit is dropped rather than misreported"))))
+
 (deftest compile-wasm-target-is-unaffected-by-the-cljs-output-fix
   (let [source (temp-kotoba-source! "(defn main [] (let [x 40 y 2] (+ x y)))")
         output (.getPath (atomic-output/temp-file! "kotoba-cli-wasm-out-" ".wasm"))

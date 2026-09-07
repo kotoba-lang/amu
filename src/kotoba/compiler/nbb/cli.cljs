@@ -114,6 +114,26 @@
                        :maximum max-native-fuel})))
     fuel))
 
+(defn- fuel-policy!
+  "The policy with `--fuel` folded into `[:budgets :fuel]` -- after refusing
+  the case where both were given and disagree. Mirrors
+  `kotoba.compiler.core/refuse-fuel-declared-twice!` (amu-h6): the flag used
+  to overwrite the policy's number here silently, so the policy's author never
+  learned theirs was not the one sealed.
+
+  Compared as decimal text: the flag is a BigInt (`support/emit-metadata`) and
+  the policy value is a BigInt or a plain integer depending on how it was
+  read, and `=` does not cross that boundary."
+  [policy emit-metadata]
+  (let [flag (:fuel emit-metadata)
+        from-policy (get-in policy [:budgets :fuel])]
+    (when (and (some? flag) (some? from-policy) (not= (str flag) (str from-policy)))
+      (throw (ex-info "fuel declared twice with different values: --fuel and the policy's :budgets :fuel must agree"
+                      {:phase :usage :reason :fuel-declared-twice
+                       :flag flag :policy from-policy})))
+    (cond-> policy
+      (some? flag) (assoc-in [:budgets :fuel] flag))))
+
 (defn- read-policy!
   "`--policy`, with named grants canonicalised to wire ids. Same seam and same
   reason as `kotoba.compiler.nbb.wasm-cli/read-policy!`."
@@ -191,10 +211,7 @@
                 {:hir-format (:format hir) :kir-format (:format kir)
                  :target target :target-profile profile :value-abi value-abi})
         program (select-keys kir [:format :entry :exports :signature :effects :functions])
-        declared-fuel (native-fuel!
-                       (cond-> policy
-                         (:fuel emit-metadata)
-                         (assoc-in [:budgets :fuel] (:fuel emit-metadata))))
+        declared-fuel (native-fuel! (fuel-policy! policy emit-metadata))
         ;; Verification re-emits from this closed program. Do not let
         ;; compiler-private KIR metadata influence the bytes being sealed.
         emitted (support/timed "native-emit" #(emit-program program))
@@ -421,11 +438,17 @@
             source (:source resolved)
             linked? (:linked? resolved)
             output (or (support/option args "--output") (str input ".kexe"))
-            result (if context
-                     (compile-cached! args source linked? target backend output
-                                      emit-program package context)
-                     (compile-uncached! args source linked? target backend output
-                                        emit-program package))]
+            result (try
+                     (if context
+                       (compile-cached! args source linked? target backend output
+                                        emit-program package context)
+                       (compile-uncached! args source linked? target backend output
+                                          emit-program package))
+                     ;; A refusal against the linked unit names the module
+                     ;; and line that wrote the form (amu-h10), as on the
+                     ;; JVM route's `compile-project`.
+                     (catch :default error
+                       (throw (project-source/attribute-error error resolved))))]
         (merge result (project-source/inputs-record resolved)))
 
     "extract-native"

@@ -116,6 +116,7 @@
          ;; JVM CLI does it.
          :input (str (:root graph))
          :source (:source linked)
+         :source-map (:source-map linked)
          :linked? true
          ;; Per-module source text, keyed by namespace, for the module-graph
          ;; identity the JVM's `compile-project` seals into the artifact
@@ -137,9 +138,15 @@
             graph (support/timed "project-load"
                                  #(project-files/load-closed-graph input source-roots))
             linked (support/timed "project-link"
-                                  #(project/link-source (:sources graph) (:root graph)))]
+                                  #(try
+                                     (project/link-source (:sources graph) (:root graph))
+                                     ;; A module the linker refused is named by
+                                     ;; the file it was loaded from (amu-h10).
+                                     (catch :default error
+                                       (throw (project/with-module-file error (:paths graph))))))]
         {:input input
          :source (:source linked)
+         :source-map (:source-map linked)
          :linked? true
          :sources (:sources graph)
          :module-order (:module-order linked)
@@ -160,6 +167,19 @@
         {:input input
          :source (support/timed "source-read" #(io/read-text-file input))
          :linked? false}))))
+
+(defn attribute-error
+  "A refusal raised while compiling a linked graph, attributed to the module
+  and line that wrote the form (`project/attribute-linked-error`) and, when
+  the graph came from `--source-path`, to the file that module was loaded
+  from. A single-file compile passes through: nothing was linked."
+  [error resolved]
+  (if-not (:linked? resolved)
+    error
+    (-> error
+        (project/attribute-linked-error {:source-map (:source-map resolved)
+                                         :source (:source resolved)})
+        (project/with-module-file (get-in resolved [:project :paths])))))
 
 (defn inputs-record
   "How the inputs were found, in the compile's answer rather than only in the
