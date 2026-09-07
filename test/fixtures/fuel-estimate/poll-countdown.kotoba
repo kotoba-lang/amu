@@ -1,0 +1,11 @@
+(ns t (:export [main]))
+;; The aiueos poll idiom in miniature: a tail-recursive countdown whose one
+;; self-call passes (- n 1), guarded by an `if` that compares n against a
+;; literal, called with a literal argument. Counting function entries (the
+;; T7.2 charge model): 8001 entries x (1 entry + 1 non-self call) = 16002.
+(defn poll [win n :i64] :i64
+  (if (= n 0)
+    0
+    (+ (helper win) (poll win (- n 1)))))
+(defn helper [w] :i64 (+ w 1))
+(defn main [] :i64 (poll 3 8000))
