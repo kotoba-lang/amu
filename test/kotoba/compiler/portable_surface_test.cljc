@@ -98,8 +98,18 @@
     ;; `macho/encode-object`, which is fed the `ascii-bytes` result.
     (is (= [0xcf 0xfa 0xed 0xfe] (vec (take 4 bytes))))
     ;; Byte-for-byte what the JVM emitted from this same artifact.
+    ;;
+    ;; reassoc -- 2026-09-07: the fixture's :code was re-emitted and re-sealed
+    ;; when the kotoba-native pin advanced to d5fdf8cb (pre-allocation hoist,
+    ;; #151, plus #142/#145/#146). The verifier re-derives :code from :program
+    ;; with the pinned emitter and demands byte equality, so an artifact sealed
+    ;; under the previous emitter is rejected as "native instruction stream
+    ;; rejected" -- correctly. Regenerated through the verifier's own
+    ;; target-contract emit and `artifact/seal`, nothing else in the artifact
+    ;; touched; still 48 words and the same exports, so the Mach-O is still
+    ;; 544 bytes and only its digest moved.
     (is (= 544 (count bytes)))
-    (is (= "def77da7ef69f5407818d7dcd84dbc5402445312129e883f0b242d26d4c7eceb"
+    (is (= "f60879b394aa69317f2f1577948a74784f294579b8e6f3b9ca894c2c4cfad5e4"
            (:object-sha256 manifest))
         "object-sha256 is computed from the same vector on both runtimes")
     (is (= :kotoba.ios-aot/v2 (:format manifest)))
