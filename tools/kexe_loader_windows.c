@@ -475,8 +475,15 @@ static const char *arena_report(const struct kexe_context *ctx) {
  * the report's shape is the cross-platform contract and now matches, while
  * raising the bound needs the arenas moved out of `struct kexe_context`, and
  * this file cannot be compiled or executed on the machine that would make
- * that change. */
-static void arena_exhausted(const char *reason) {
+ * that change.
+ *
+ * `noreturn` is load-bearing rather than decoration. Each call replaced a
+ * bare `__builtin_trap()` inside a value-returning function, and without the
+ * attribute the compiler cannot see that control stops here -- it reports a
+ * missing return, which `-Werror` on the Windows jobs turns into a build
+ * failure. Measured: that is exactly how the first version of this change
+ * failed there. */
+__attribute__((noreturn)) static void arena_exhausted(const char *reason) {
   fprintf(stderr, "KEXE_TRAP {:kind :arena :reason :%s}\n", reason);
   __builtin_trap();
 }
