@@ -1006,3 +1006,71 @@ ty 注記なし probe のため過大評価されていた — 以下は型付�
   t27-mm-head can run = 8. Backup if lock-blocked: re-classify the 0-let
   inline option-some exit-70 (t26-st0) against cp-t27b - does wasm #74 also
   clear it, or is it a genuine backend fix request.
+
+## Iteration 28 - run-side leg CLOSED (compat `runtime` field = T0 rename kotoba-* -> kototama-*) + NEW silent miscompile found & fixed: wasm #74 min/max emitter uses gt_s/le_s (kotoba-wasm PR #75) (2026-09-08, amu-lang-cosientist t28, wasm main tip 2d912bf, fix branch bot/minmax-emitter-swap-20260908 @7a2238e)
+
+- Hypotheses (carried from iter 27): (A) 1 probe - dump the
+  `kotoba.compatibility` custom section of t27-mm-head-b.wasm vs the host
+  table to name the rejecting field; (B) backup - does wasm #74 clear the
+  0-let inline option-some exit-70?
+- (A) Measured with a standalone custom-section parser
+  (/tmp/langcos/t28-compat.mjs, no host code reused): BOTH wasm carry all 8
+  fields; the ONLY difference is `runtime`:
+  - hand twin (pinned wasm cc23ea35): "kotoba-capability-host-v1"
+  - head-b (wasm 2d912bf = #74): "kototama-capability-host-v1"
+  Host check (browser-host.mjs:362) accepts only the three kotoba-* names.
+  Root cause by git: emitter 2d912bf CONTAINS the T0 rename 5e054c1 (#70,
+  ancestor test measured FIX74-CONTAINS-RENAME), which renamed the emitted
+  identity; the amu HEAD host predates the compat adoption. The host fix
+  EXISTS on amu origin/main (dual allowlist kototama-* + kotoba-*, lines
+  366-367, via the osaho pin-advance line 420ac667/439ae2bc) but NOT in
+  local HEAD 02280635 (HEAD-PREDATES-ORIGIN). => compat leg fully
+  explained: advance sema+kir+wasm pins TOGETHER with an amu HEAD at/after
+  the dual-allowlist host.
+- NEW DEFECT exposed by closing (A): running head-b on the origin/main host
+  (extracted via `git show origin/main:runtime/browser-host.mjs`, repo
+  untouched) PASSED compat but computed **13, expected 8**. Value matrix on
+  the #74 emitter: min(3,7)=7, min(7,3)=7, min(-2,4)=4, max(3,7)=3,
+  max(-2,4)=-2 - ties pass, every strict case returns the OPPOSITE.
+  Root cause (core.cljc:246): `cmp (if (= op 'min) 0x55 0x57)` - the comment
+  claims 0x55=i64.lt/0x57=i64.gt, but the spec and THIS file's own
+  comparison arm (:292 `'< 0x53 '> 0x55 '<= 0x57`) say 0x53=i64.lt_s,
+  0x55=i64.gt_s, 0x57=i64.le_s. select(a,b,a>b) makes min emit
+  max-semantics and select(a,b,a<=b) makes max emit min. SILENT miscompile
+  class: check PASS, compile PASS, wrong values, no ICE - and 2d912bf is
+  CURRENTLY wasm origin/main tip, so any lock advance to tip ships it.
+- Fix (2 opcode constants + comment): min->0x53, max->0x55, branch
+  bot/minmax-emitter-swap-20260908 @7a2238e (worktree /tmp/langcos/wasm-mmfix
+  off 2d912bf; kotoba-wasm repo change, NOT lang). Re-measured on cp-t28
+  (sema pinned 6e0b470 + kir 381a968 + wasm @7a2238e classpath swap):
+  compile PASS exit 0; value matrix 8/8 OK (min 3/3/5/-2 + max 7/7/5/4);
+  main = (+ (t (u 3 7) 4) (t 9 4)) = **8 ALL-OK**; hand twin control on the
+  same host = 8 ALL-OK unchanged.
+- PR kotoba-lang/kotoba-wasm#75 opened @7a2238e (gh-verified OPEN; list
+  shows [#75 this fix, #72 unrelated cleanup]), body carries the
+  before/after value tables and the pin blast-radius note (amu-pinned wasm
+  2292c842 = commit BEFORE #74, so the default --jvm-free route is
+  unaffected until the advance - #75 must merge before the lock moves).
+- (B) backup hypothesis NOT executed (budget; superseded by the (A)+defect
+  result; t26-st0 compile would need cp-t28 + compat fix together).
+- Gate: compile PASS x2 (head-fix, hand control) + run PASS x2 (8 ALL-OK) +
+  run MISMATCH x1 captured as defect evidence (13 vs 8). No timing claims
+  (loadavg 18-65, quiet gate NOT met; correctness fix, no perf claim =>
+  perfgate N/A). wasm repo JVM suite not run this tick (compat diagnostic
+  on busy host); the change is 2 constants in an emit arm verified
+  end-to-end through the full pipeline.
+- comparator ratio: N/A (not a lang sugar; wasm emitter correctness). The
+  lang-side cohort is unchanged: min/max remains blocked on the 3-pin chain
+  (iter 27), now with a MEASURED precondition that #75 merges first, else
+  the advance exposes a silent miscompile instead of a working min/max.
+- verdict: iter-27 next-hypothesis CONFIRMED and closed with numbers; one
+  NEW falsification-grade finding: #74's min/max lowering is wrong
+  (measured, 8-case matrix before/after), fixed and PR'd. Zero lang work.
+- Next (1 hypothesis): after wasm #75 + sema #70/#71 merge and the
+  deps-lock advance (sema bf01d4a8 -> >=6e0b470, kir b021a0d -> >=381a968,
+  wasm cc23ea35/2292c84 -> >=#75-fixed commit, amu HEAD -> dual-allowlist
+  host), re-probe (min a b) through the DEFAULT bin/amu --jvm-free route
+  expecting check+compile+run=8 with no classpath swaps - the lock-owner
+  recipe from iters 27/28 becomes one command. If pins stall: re-classify
+  the t26-st0 0-let inline option-some exit-70 on cp-t28 (does #74+fix
+  clear it).
