@@ -1,0 +1,33 @@
+;; A pure entry whose compile-time evaluation costs more than the constant
+;; oracle's default budget of 100,000, and whose recursion depth is small.
+;;
+;; `kotoba.kir/lower` seals a pure zero-arity entry's value by EXECUTING it,
+;; and until osaho c24c92a1 that execution had a budget no caller could name:
+;; `--fuel` reached the artifact's `:limits` and the verifier's re-execution
+;; and stopped there. So a program like this one was refused as
+;; `fuel-exhausted` however much fuel its author declared.
+;;
+;; Two loops rather than one long one, and that is the whole shape of the
+;; fixture. Measured 2026-09-08: a single 100,000-iteration loop exhausts the
+;; HOST STACK the interpreter runs on -- which `bin/amu` gives 4096 -- and
+;; that is reported as `fuel-exhausted` too, so such a program refuses
+;; identically at every budget and would prove nothing about this one. Nested
+;; loops keep the depth at a few hundred while the total charge passes the
+;; oracle's default: 400 * 400 = 160,000 leaf calls.
+(ns oracle-fuel-budget
+  (:export [main]))
+
+(defn- tick [x :i64] :i64
+  (+ x 1))
+
+(defn- inner [n :i64 acc :i64] :i64
+  (loop [i n a acc]
+    (if (<= i 0)
+      a
+      (recur (- i 1) (tick a)))))
+
+(defn main [] :i64
+  (loop [n 400 acc 0]
+    (if (<= n 0)
+      acc
+      (recur (- n 1) (inner 400 acc)))))

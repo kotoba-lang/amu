@@ -166,12 +166,17 @@
                    (pr-str [:kotoba.hir-cache/v3 source opts])
                    (fn [] (sema/analyze source opts)))))
 
-(defn- resolve-kir! [hir stage-cache]
+(defn- resolve-kir! [hir stage-cache oracle-fuel]
   (support/timed "kir-lower"
                  #(compile-cache/resolve-stage!
                    ;; Native oracle evaluation is reusable only when the
-                   ;; admitted HIR is byte-for-byte semantically identical.
-                   stage-cache :kir (pr-str hir) (fn [] (ir/lower hir)))))
+                   ;; admitted HIR is byte-for-byte semantically identical --
+                   ;; and now also only under the same oracle budget, which is
+                   ;; part of the key for the same reason the HIR is: a
+                   ;; different budget is a different execution and can seal a
+                   ;; different value (or none).
+                   stage-cache :kir (pr-str [hir oracle-fuel])
+                   (fn [] (ir/lower hir {:oracle-fuel oracle-fuel})))))
 
 (defn- compile-native! [hir target backend policy emit-metadata emit-program stage-cache]
   (when (and (= :kotoba.hir/v3 (:format hir))
@@ -199,7 +204,22 @@
   (let [admission (support/timed
                    "admission"
                    #(effect-row/check hir (support/capability-policy policy)))
-        kir-result (resolve-kir! hir stage-cache)
+        ;; The DECLARED budget, computed before lowering rather than after,
+        ;; because `kotoba.kir/lower` seals the entry's value by executing it
+        ;; and that execution used to have a private budget no caller could
+        ;; name (osaho c24c92a1). Two things follow from passing this one:
+        ;; a program the author gave enough fuel for now compiles, and the
+        ;; sealed value is derived under the same budget `kotoba.verifier`
+        ;; re-derives it under -- which used to be true only when both
+        ;; happened to fit inside the private constant.
+        declared-fuel (native-fuel! (fuel-policy! policy emit-metadata))
+        ;; nil when the caller named no budget, so `lower` keeps its own
+        ;; default. `declared-fuel` above is not that value: it falls back to
+        ;; the RUNTIME default of 512, and handing 512 to the oracle would
+        ;; stop compiling every program between 512 and 100,000 that compiles
+        ;; today.
+        kir-result (resolve-kir! hir stage-cache
+                                 (support/oracle-fuel emit-metadata policy))
         kir (:value kir-result)
         value (:oracle-value kir)
         profile (target-profile/profile target)
@@ -209,7 +229,6 @@
                 {:hir-format (:format hir) :kir-format (:format kir)
                  :target target :target-profile profile :value-abi value-abi})
         program (select-keys kir [:format :entry :exports :signature :effects :functions])
-        declared-fuel (native-fuel! (fuel-policy! policy emit-metadata))
         ;; Verification re-emits from this closed program. Do not let
         ;; compiler-private KIR metadata influence the bytes being sealed.
         emitted (support/timed "native-emit" #(emit-program program))

@@ -58,12 +58,16 @@
                    (pr-str [:kotoba.hir-cache/v3 source opts])
                    (fn [] (sema/analyze source opts)))))
 
-(defn- resolve-kir! [hir stage-cache]
+(defn- resolve-kir! [hir stage-cache oracle-fuel]
   (support/timed "kir-lower"
                  #(compile-cache/resolve-stage!
                    ;; Source spelling is deliberately excluded: a frontend-
                    ;; equivalent edit still reruns admission, then reuses KIR.
-                   stage-cache :kir (pr-str hir) (fn [] (ir/lower hir)))))
+                   ;; The oracle budget IS part of the key -- a different
+                   ;; budget is a different execution and can seal a different
+                   ;; value, or none.
+                   stage-cache :kir (pr-str [hir oracle-fuel])
+                   (fn [] (ir/lower hir {:oracle-fuel oracle-fuel})))))
 
 (defn- stage-status [hir-result kir-result emit-result]
   (cond-> {:hir (:cache hir-result) :kir (:cache kir-result)}
@@ -302,7 +306,11 @@
         admission-result (support/timed
                           "admission"
                           #(effect-row/check hir (support/capability-policy policy)))
-        kir (support/timed "kir-lower" #(ir/lower hir))
+        ;; Same budget the emitter and the artifact's `:limits` get -- see
+        ;; `resolve-kir!`. This is the uncached route, and it is the one the
+        ;; project (`--source-path` / `--module-lock`) flow takes.
+        kir (support/timed "kir-lower"
+                           #(ir/lower hir {:oracle-fuel (support/oracle-fuel emit-metadata policy)}))
         compiled (compile-wasm! source target policy emit-metadata
                                 hir admission-result kir
                                 {:stage-cache nil :lock-cid lock-cid})
@@ -365,7 +373,11 @@
                               "admission"
                               #(effect-row/check hir
                                                 (support/capability-policy policy)))
-            kir-result (resolve-kir! hir stage-cache)
+            ;; Same budget the emitter and the artifact's `:limits` get. See
+            ;; the native route's comment: `lower` executes the entry to seal
+            ;; its value and had a private budget until osaho c24c92a1.
+            kir-result (resolve-kir! hir stage-cache
+                                     (support/oracle-fuel emit-metadata policy))
             kir (:value kir-result)
             compiled (compile-wasm! source target policy emit-metadata
                                     hir admission-result kir

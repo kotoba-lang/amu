@@ -210,7 +210,15 @@
          ;; [0,63]). Without it SHA-512 -- rotations over a `:vector-i64` --
          ;; is refused for aarch64 with a message about typed values that
          ;; names no shift, which is why the cause took a while to find.
-         :git/sha "7324314564abf1ae05a08dbd0066c9e6c3b34921"}
+         ;;
+         ;; Advanced 2026-09-08, 73243145 -> c24c92a1 (osaho main, ahead 2,
+         ;; forward only), and REQUIRED by this commit: `kotoba.kir/lower`
+         ;; gains an `:oracle-fuel` option. Until it had one, the execution
+         ;; that seals a pure entry's value ran on a private 100,000 and
+         ;; `--fuel` could not reach it -- measured on the X25519 Montgomery
+         ;; ladder, which was refused as `fuel-exhausted` identically at
+         ;; `--fuel 60000000` and at the largest budget KIR admits.
+         :git/sha "c24c92a1b76624afd3ce12b4ee8162f44a40d68f"}
         ;; The frontend is an HIR producer and KIR lowering is its consumer;
         ;; both validate the same checked envelope.
         io.github.kotoba-lang/kotoba-hir
