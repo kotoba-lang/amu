@@ -864,3 +864,78 @@ ty 注記なし probe のため過大評価されていた — 以下は型付�
   x 0-let/1-let == hand twins) + run values 42/59 + fail-closed +
   regression on the new base, and open the PR. CIDs must be re-measured
   (main moved twice since iter 15).
+
+## Iteration 26 - some-thread canonical repair landed as PR #71 (rebased onto 6e0b470, whole-defn patch; determinism root-cause re-verified on new base) (2026-09-08, amu-lang-cosientist, sema main 6e0b470, branch bot/lang-some-thread-canonical-rebase-20260908 @7b0accd)
+
+- Hypothesis (carried from iter 23): the iter-15 end shape (payload-drop +
+  single `(synthetic "some-thread")` temp) applies as a CLEAN whole-defn
+  replacement onto 6e0b470 (not cherry-pick), and the parity matrix
+  re-measures green on the new base.
+- Collision check BEFORE work: gh pr list --state open = [#70 seq/remove]
+  only - no other some-thread PR; the abandoned /tmp/langcos/sema-t25b
+  cherry-pick (176fcf5, mid-conflict, unpushed) was left untouched; the
+  some-thread-only diff 7c21686..176fcf5 (26+/15-, same end shape as
+  ac5381a) was extracted as the patch body instead.
+- Patch application: git apply of the whole-defn patch onto 6e0b470
+  applied CLEANLY (no 3-way needed); commit 7b0accd = single frontend.cljc
+  hunk @3627 (desugar-some-thread), independent of #70's hunk @6158.
+- Measured (cp-t26 = sema-t26@7b0accd classpath, amu nbb wasm_cli route,
+  JVM-free; outputs /tmp/langcos/t26-gate.txt, t26-run.txt, t26-det.txt,
+  t26-control.txt, t26-regression.txt):
+  - some-> 1-let alias == hand twin: ALL definition CIDs identical
+    (t bafyreia2bhjmxm2ljwe7o3urxte2hszr6h2px4wvd6snnvrhid3a7led74,
+    main bafyreigqgbc7xhcr33vy7lj5shxo3q2p24wryznlek54zioxyxssdk5zwy)
+    AND wasm32 compile byte-identical (cmp LETALIAS-WASM-IDENTICAL).
+    t CID equals the iter-15 recorded value (stable across the rebase).
+  - some->> alias == hand twin: ALL CIDs identical (t
+    bafyreihh7itqsfjkyqvghfqtgtdwiipih6zn3q45txjqrh24ddyswk7fga,
+    main bafyreibnm6w65n7j4bskc45zvtrczlut6ff3iyxloejvbjgmrix6sbtule),
+    byte-identical (LASTALIAS-WASM-IDENTICAL). NOTE these differ from
+    iter-15's recorded some->> CIDs (bafyreifh37gjockkt...) - main
+    advanced since iter 15, so iter-15 CIDs are stale, not drift;
+    alias-vs-hand parity on THIS base is exact.
+  - run (browser-host): some-> = 42, some->> = 59, BOTH ALL-OK.
+  - determinism re-verification of the iter-14 root cause: (some-> opt
+    (+ 1)) inside a module that ALSO has unrelated loops (mapv + reduce)
+    keeps the identical t CID bafyreia2bhjmx... (= standalone spelling);
+    composite compiled (5 defs) and ran 42 ALL-OK. The counter-derived
+    some-thread__N drift does not reproduce on 7b0accd.
+  - fail-closed: (some-> opt) / (some->> opt) 0-step REJECT exit 65 own
+    diagnostics ("requires an initial option and at least one step"),
+    span-attached, no ICE.
+  - CONTROL on unpatched 6e0b470 (cp-t26main, detached worktree):
+    1-let alias check REJECT exit 65 "expression type mismatch: expected
+    [:option :i64], got option-i64" (iter-7 case reproduced = the gap
+    this PR fixes); 0-let inline (some-> (option-some x) f) also REJECTs
+    at check (exit 65 same message) on main.
+  - REGRESSION: portable .cljc suite (nbb) 302 tests / 1263 assertions /
+    0 failures / 0 errors == unpatched 6e0b470 baseline (iter-23 totals).
+  - backend gap refined (maintainer-reportable, NOT this PR): on the
+    BRANCH the 0-let inline spelling now PASSES check but compile exits 70
+    "unsupported typed Wasm expression" (t26-st0/t26-st0l) - the
+    payload-drop desugar admits the inline option-some form that main
+    rejects at check, and the wasm lowering for inline (option-some x) is
+    the remaining gap (same class as iter-15's note; the repair moved the
+    failure from check to compile for that spelling; 1-let spellings are
+    unaffected and fully green).
+- Gate: check PASS x6 + fail-closed x2 (exit 65) + compile PASS x4 +
+  byte-identity x2 + run values x2 (42/59) + control rejects x2 +
+  regression 302/1263/0. loadavg 18-45 - quiet gate NOT met, NO timing
+  claims made (byte-identical wasm => comparator ratio inapplicable, same
+  class as iters 1/2/10/11/15/21/23).
+- verdict: CONFIRMED + PR kotoba-lang/kotoba-sema#71 opened @7b0accd
+  (MERGEABLE verified via gh; merge-pending). Supersedes unmerged branches
+  3f847f9 / ac5381a (noted in PR body). Alias-shaped cohort now: str /
+  mapv / filterv / contains? / into / #() = landed; seq/remove = PR #70
+  open; some->/some->> = PR #71 open; min/max = kir gap (kir PR #84
+  "implement i64 min/max" MERGED 2026-09-07T08:05Z but amu deps-lock kir
+  pin b021a0d1 PREDATES it - pinned kir has no min/max lowering (grep
+  measured); blocked-on-lock-advance, no lang work).
+- Next (1 hypothesis): after #70/#71 merge + deps-lock advance (sema pin
+  bf01d4a8 predates #66; kir pin b021a0d predates #84 min/max), re-probe
+  (min a b) through the DEFAULT bin/amu --jvm-free route to confirm the
+  exit-70 flips to compile PASS once pins move - lock-owner action with a
+  measured verification step here, not lang work. Alternative if pins
+  don't move: hand the 0-let inline option-some wasm-lowering exit-70
+  repro (t26-st0.kotoba: check PASS / compile exit 70) to the backend
+  owner as a concrete fix request.
