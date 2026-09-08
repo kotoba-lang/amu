@@ -1913,45 +1913,77 @@ static int64_t fs_app_data_range_read_provider(struct kexe_context_v4 *context,
 }
 
 /* wire id 34 = :fs/browse. The request string is an absolute DIRECTORY path
- * inside KEXE_CAP_RESOURCES_34; the result is the directory's entry names
- * ("." and ".." excluded), sorted bytewise, joined by a single "\n" (the
- * empty string for an empty directory) -- the shape the js host answers for
- * the same wire id. Bounds: at most KEXE_BROWSE_ENTRY_LIMIT names and a
- * listing that fits the string pool; more is refused, not truncated (a
- * truncated listing would look like a smaller directory). Names are validated
- * as UTF-8 by the typed dispatch, so a non-UTF-8 name traps the call. The
- * directory is opened O_NOFOLLOW|O_DIRECTORY and contained like a file. */
+ * inside KEXE_CAP_RESOURCES_34; the result is the directory's entries, one
+ * "NAME<TAB>D" line each -- D is "1" for a directory and "0" for a file --
+ * sorted bytewise by NAME and joined by a single "\n" (the empty string for
+ * an empty directory). "." and ".." are never listed. This is the same wire
+ * the js host answers for the same id (kotoba bin/kbb_js.cljs wire 34) and
+ * the wire lib/kbb/browse.kotoba is written against: the is-directory flag
+ * is what a recursive scan needs, so a guest can walk a tree without
+ * guessing which entry is a directory. Bounds: at most
+ * KEXE_BROWSE_ENTRY_LIMIT entries and a listing that fits the string pool;
+ * more is refused, not truncated (a truncated listing would look like a
+ * smaller directory). Names are validated as UTF-8 by the typed dispatch,
+ * so a non-UTF-8 name traps the call. The directory is opened
+ * O_NOFOLLOW|O_DIRECTORY and contained like a file. */
 #define KEXE_BROWSE_ENTRY_LIMIT 4096u
 
-static int kexe_name_compare(const void *a, const void *b) {
-  return strcmp(*(const char *const *)a, *(const char *const *)b);
+/* The dirent type byte's DT_DIR value; defined here so the module compiles
+ * the same under -std=c11 on macOS and Linux (both platforms use 4). */
+#ifndef DT_DIR
+#define DT_DIR 4
+#endif
+
+/* One listing entry: the name plus the is-directory flag taken from the SAME
+ * dirent record that supplied the name (a separate stat would follow a
+ * symlink where the dirent type does not -- the js host's readdirSync
+ * withFileTypes answers DT_LNK the same way, so both hosts agree). */
+struct kexe_browse_entry {
+  char *name;
+  uint8_t is_dir;
+};
+
+static int kexe_browse_compare(const void *a, const void *b) {
+  return strcmp(((const struct kexe_browse_entry *)a)->name,
+                ((const struct kexe_browse_entry *)b)->name);
 }
 
-static void kexe_free_names(char **names, size_t count) {
-  for (size_t i = 0; i < count; i++) free(names[i]);
-  free(names);
+static void kexe_free_browse_entries(struct kexe_browse_entry *entries,
+                                     size_t count) {
+  for (size_t i = 0; i < count; i++) free(entries[i].name);
+  free(entries);
 }
 
-/* One entry name into the listing under construction; 0 = refuse (over the
- * name or byte bound, or out of memory). "." and ".." are skipped here. */
-static int kexe_browse_add(const char *name, char ***names, size_t *count,
+/* One entry into the listing under construction; 0 = refuse (over the name
+ * or byte bound, or out of memory). "." and ".." are skipped here. Each
+ * entry contributes its name, a TAB and the one-byte D flag; a newline
+ * separates every entry after the first -- the byte total is what the
+ * provider later mallocs, so the check and the accumulation count the same
+ * bytes. */
+static int kexe_browse_add(const char *name, uint8_t is_dir,
+                           struct kexe_browse_entry **entries, size_t *count,
                            size_t *capacity, size_t *total) {
   if (strcmp(name, ".") == 0 || strcmp(name, "..") == 0) return 1;
   size_t name_length = strlen(name);
+  size_t entry_bytes = name_length + 2u + (*count > 0 ? 1u : 0u);
   if (*count >= KEXE_BROWSE_ENTRY_LIMIT ||
-      *total + name_length + (*count > 0 ? 1u : 0u) > KEXE_STRING_POOL_BYTES) return 0;
+      *total + entry_bytes > KEXE_STRING_POOL_BYTES) return 0;
   if (*count == *capacity) {
     size_t next = *capacity == 0 ? 64u : *capacity * 2u;
-    char **grown = (char **)realloc(*names, next * sizeof(char *));
+    struct kexe_browse_entry *grown =
+        (struct kexe_browse_entry *)realloc(*entries,
+                                            next * sizeof(struct kexe_browse_entry));
     if (grown == NULL) return 0;
-    *names = grown;
+    *entries = grown;
     *capacity = next;
   }
   char *copy = (char *)malloc(name_length + 1u);
   if (copy == NULL) return 0;
   memcpy(copy, name, name_length + 1u);
-  (*names)[(*count)++] = copy;
-  *total += name_length + (*count > 1 ? 1u : 0u);
+  (*entries)[*count].name = copy;
+  (*entries)[*count].is_dir = is_dir ? 1u : 0u;
+  (*count)++;
+  *total += entry_bytes;
   return 1;
 }
 
@@ -1963,8 +1995,9 @@ static int kexe_browse_add(const char *name, char ***names, size_t *count,
  * hands over. macOS uses fdopendir/readdir; Seatbelt filters paths, not
  * syscalls. Both consume the fd. Returns 0 on refusal. */
 #if defined(__linux__)
-static int kexe_enumerate_directory(int fd, char ***names, size_t *count,
-                                    size_t *capacity, size_t *total) {
+static int kexe_enumerate_directory(int fd, struct kexe_browse_entry **entries,
+                                    size_t *count, size_t *capacity,
+                                    size_t *total) {
   static uint8_t records[32768];
   for (;;) {
     long got = syscall(SYS_getdents64, fd, records, sizeof(records));
@@ -1977,15 +2010,19 @@ static int kexe_enumerate_directory(int fd, char ***names, size_t *count,
     long pos = 0;
     while (pos < got) {
       /* struct linux_dirent64: u64 d_ino, s64 d_off, u16 d_reclen,
-       * u8 d_type, char d_name[] -- the name starts at byte 19 and is
-       * NUL-terminated within d_reclen. */
+       * u8 d_type, char d_name[] -- the type is byte 18, the name starts
+       * at byte 19 and is NUL-terminated within d_reclen. */
       if (got - pos < 19) { close(fd); return 0; }
       uint16_t reclen = 0;
       memcpy(&reclen, records + pos + 16, sizeof(reclen));
       if (reclen < 20 || pos + (long)reclen > got) { close(fd); return 0; }
       const char *name = (const char *)(records + pos + 19);
+      uint8_t d_type = records[pos + 18];
       if (memchr(name, '\0', (size_t)reclen - 19u) == NULL) { close(fd); return 0; }
-      if (!kexe_browse_add(name, names, count, capacity, total)) { close(fd); return 0; }
+      if (!kexe_browse_add(name, d_type == DT_DIR, entries, count, capacity, total)) {
+        close(fd);
+        return 0;
+      }
       pos += reclen;
     }
   }
@@ -1993,8 +2030,9 @@ static int kexe_enumerate_directory(int fd, char ***names, size_t *count,
   return 1;
 }
 #else
-static int kexe_enumerate_directory(int fd, char ***names, size_t *count,
-                                    size_t *capacity, size_t *total) {
+static int kexe_enumerate_directory(int fd, struct kexe_browse_entry **entries,
+                                    size_t *count, size_t *capacity,
+                                    size_t *total) {
   DIR *dir = fdopendir(fd);
   if (dir == NULL) {
     close(fd);
@@ -2008,7 +2046,8 @@ static int kexe_enumerate_directory(int fd, char ***names, size_t *count,
       if (errno != 0) ok = 0;
       break;
     }
-    if (!kexe_browse_add(entry->d_name, names, count, capacity, total)) { ok = 0; break; }
+    if (!kexe_browse_add(entry->d_name, entry->d_type == DT_DIR,
+                         entries, count, capacity, total)) { ok = 0; break; }
   }
   closedir(dir);
   return ok;
@@ -2032,28 +2071,30 @@ static int64_t fs_browse_provider(struct kexe_context_v4 *context,
     raise(SIGILL);
     return 0;
   }
-  char **names = NULL;
+  struct kexe_browse_entry *entries = NULL;
   size_t count = 0, capacity = 0, total = 0;
-  if (!kexe_enumerate_directory(fd, &names, &count, &capacity, &total)) {
-    kexe_free_names(names, count);
+  if (!kexe_enumerate_directory(fd, &entries, &count, &capacity, &total)) {
+    kexe_free_browse_entries(entries, count);
     raise(SIGILL);
     return 0;
   }
-  qsort(names, count, sizeof(char *), kexe_name_compare);
+  qsort(entries, count, sizeof(struct kexe_browse_entry), kexe_browse_compare);
   uint8_t *listing = (uint8_t *)malloc(total == 0 ? 1u : total);
   if (listing == NULL) {
-    kexe_free_names(names, count);
+    kexe_free_browse_entries(entries, count);
     raise(SIGILL);
     return 0;
   }
   size_t used = 0;
   for (size_t i = 0; i < count; i++) {
     if (i > 0) listing[used++] = '\n';
-    size_t name_length = strlen(names[i]);
-    memcpy(listing + used, names[i], name_length);
+    size_t name_length = strlen(entries[i].name);
+    memcpy(listing + used, entries[i].name, name_length);
     used += name_length;
+    listing[used++] = '\t';
+    listing[used++] = entries[i].is_dir ? '1' : '0';
   }
-  kexe_free_names(names, count);
+  kexe_free_browse_entries(entries, count);
   int64_t result = intern_utf8(context, listing, used);
   free(listing);
   return result;
@@ -2105,7 +2146,8 @@ static int64_t checked_typed_cap_call(struct kexe_context_v4 *context,
   } else if (id == 34 && request_kind == KEXE_TYPED_STRING) {
     /* wire id 34 = :fs/browse. Real host provider: the request string is an
      * absolute directory path inside KEXE_CAP_RESOURCES_34; the result is the
-     * sorted, newline-joined entry names. */
+     * sorted NAME<TAB>D lines ("1" = directory, "0" = file), the same wire
+     * the js host answers. */
     result = fs_browse_provider(context, request);
   } else if (id == 33 && request_kind == KEXE_TYPED_STRING) {
     /* wire id 33 = :env/read. Real host provider: the request string is
