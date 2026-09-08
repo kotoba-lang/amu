@@ -1,5 +1,6 @@
 (ns kotoba.compiler.logic-manifest-test
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require #?(:clj  [clojure.test :refer [deftest is testing]]
+               :cljs [cljs.test :refer [deftest is testing] :include-macros true])
             [kotoba.compiler.logic-manifest :as logic]))
 
 (def cid
@@ -27,7 +28,7 @@
     (is (= #{:clock/now :http/post} (:effects manifest)))
     (is (= #{[:cap/call 7] [:cap/call 4]} (:wire-effects manifest)))
     (is (= :kotoba.logic-manifest/v1 (:format manifest)))
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"input is not exact"
+    (is (thrown-with-msg? #?(:clj clojure.lang.ExceptionInfo :cljs ExceptionInfo) #"input is not exact"
                           (logic/build! compiled (assoc input :effects #{:kernel/format}))))))
 
 (deftest manifest-projects-inert-provenance-separated-facts
@@ -46,7 +47,7 @@
 (deftest tampering-breaks-the-content-bound-manifest
   (let [manifest (logic/build! compiled input)]
     (is (false? (logic/valid? (assoc manifest :effects #{:kernel/format}))))
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"invalid logic manifest"
+    (is (thrown-with-msg? #?(:clj clojure.lang.ExceptionInfo :cljs ExceptionInfo) #"invalid logic manifest"
                           (logic/authorizer-facts
                            (assoc manifest :world-cid "not-a-cid"))))))
 

@@ -1,5 +1,6 @@
 (ns kotoba.compiler.source-path-test
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require #?(:clj  [clojure.test :refer [deftest is testing]]
+               :cljs [cljs.test :refer [deftest is testing] :include-macros true])
             [kotoba.compiler.source-path :as source-path]))
 
 (deftest source-extensions-select-discovery-not-runtime
@@ -9,6 +10,6 @@
   (doseq [path ["safe.kotoba" "safe.cljk" "safe.cljc"]]
     (testing path (is (= path (source-path/admit! path)))))
   (is (nil? (source-path/source-kind "unsafe.clj")))
-  (is (thrown-with-msg? clojure.lang.ExceptionInfo
+  (is (thrown-with-msg? #?(:clj clojure.lang.ExceptionInfo :cljs ExceptionInfo)
                         #"\.kotoba, \.cljk, or \.cljc"
                         (source-path/admit! "unsafe.cljs"))))

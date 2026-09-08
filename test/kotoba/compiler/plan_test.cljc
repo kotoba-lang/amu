@@ -1,5 +1,6 @@
 (ns kotoba.compiler.plan-test
-  (:require [clojure.test :refer [deftest is]]
+  (:require #?(:clj  [clojure.test :refer [deftest is]]
+               :cljs [cljs.test :refer [deftest is] :include-macros true])
             [kotoba.compiler.plan :as plan]))
 
 (def cid
@@ -20,5 +21,5 @@
         result (plan/build! compiled input)]
     (is (= :kotoba.plan/v1 (:format result)))
     (is (= #{[:cap/call 7]} (:requested-effects result)))
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"plan input is not exact"
+    (is (thrown-with-msg? #?(:clj clojure.lang.ExceptionInfo :cljs ExceptionInfo) #"plan input is not exact"
                           (plan/build! compiled (assoc input :requested-effects #{:anything}))))))
