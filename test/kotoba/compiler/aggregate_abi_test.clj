@@ -247,7 +247,11 @@
   ;; `i64-shift-left` / `i64-shift-right` / `u64-shift-right` beside a typed
   ;; value, under the operand restriction it already enforced for their i32
   ;; twins. It widens what compiles; it moves no encoding.
-  (is (= "7324314564abf1ae05a08dbd0066c9e6c3b34921"
+  ;; Advanced 2026-09-08 to c24c92a1: `kotoba.kir/lower` gains an
+  ;; `:oracle-fuel` option, so the execution that seals a pure entry's value
+  ;; runs on the budget its author declared instead of a private 100,000.
+  ;; It moves no encoding; it widens what can be lowered at all.
+  (is (= "c24c92a1b76624afd3ce12b4ee8162f44a40d68f"
          (dependency-pin 'io.github.kotoba-lang/osaho)))
   ;; Advanced 2026-09-01 alongside the backend: the verifier re-derives the
   ;; two new arities and the v4 `expected-context`, and is what turns a

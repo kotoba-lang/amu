@@ -8,6 +8,7 @@
             ["node:perf_hooks" :refer [performance]]
             [kotoba.compiler.diagnostic :as diagnostic]
             [kotoba.compiler.kotoba-reader :as kr]
+            [kotoba.kir.cljs-i64 :as i64]
             [kotoba.compiler.nbb.io :as io]
             [kotoba.compiler.source-path :as source-path]))
 
@@ -171,6 +172,27 @@
                           {:phase :usage :fuel text})))
         {:fuel fuel}))
     {}))
+
+(defn oracle-fuel
+  "The declared budget as a HOST number, for `kotoba.kir/lower`'s
+  `:oracle-fuel`.
+
+  `emit-metadata` keeps `--fuel` as a BigInt on purpose, so provenance hashes
+  and Wasm i64 emission stay exact past 2^53. The interpreter that seals a
+  pure entry's value counts in host integers and refuses a BigInt outright
+  (`fuel must be a positive integer within the admitted ceiling`), so the
+  narrowing happens here -- once, at the boundary, rather than at each of the
+  three routes that lower. Every admitted budget is at most 2^53-1
+  (`kotoba.kir/max-fuel`), which is exactly the range a host number holds.
+
+  Returns nil when the caller declared nothing, and that is the whole
+  contract: `lower` then uses its own default. Substituting the RUNTIME
+  default here instead would be a silent regression -- the runtime default is
+  512 and the oracle's is 100,000, so every program between those two sizes
+  would stop compiling for callers who named no budget at all."
+  [emit-metadata policy]
+  (when-let [declared (or (:fuel emit-metadata) (get-in policy [:budgets :fuel]))]
+    (if (i64/bigint-value? declared) (js/Number declared) declared)))
 
 (def ^:private declarative-policy-keys
   "Policy controls consumed by the compiler rather than capability admission.

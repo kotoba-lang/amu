@@ -181,6 +181,42 @@
             (ensure! (= expected (str/trim (:stdout executed)))
                      (str "native " symbol " expected " expected ", got "
                           (str/trim (:stdout executed))))))))
+    ;; The oracle's budget is the caller's. `kotoba.kir/lower` seals a pure
+    ;; entry's value by EXECUTING it, and that execution used to run on a
+    ;; private 100,000 that no flag could reach: `--fuel` went to the
+    ;; artifact's `:limits` and the verifier's re-execution and stopped there.
+    ;; So a program costing more than that was refused as `fuel-exhausted`
+    ;; whatever its author declared -- measured on the X25519 Montgomery
+    ;; ladder, identically at `--fuel 60000000` and at the largest budget KIR
+    ;; admits.
+    ;;
+    ;; Both directions, because each alone proves nothing: without the flag it
+    ;; must still refuse (a default that quietly became unbounded would
+    ;; compile a runaway recursion for as long as the machine tolerated it),
+    ;; and with the flag it must compile AND the binary must answer 160,000 --
+    ;; the value distinguishes a budget that was really in force from a
+    ;; refusal that merely stopped happening.
+    (let [source (.join path root "examples" "oracle-fuel-budget.kotoba")
+          artifact (file "oracle-fuel-budget.kexe")
+          binary (file "oracle-fuel-budget.bin")
+          refused (run js/process.execPath
+                       [amu "compile" source "--target" isa "--output" artifact]
+                       env true)]
+      (ensure! (not= 0 (:status refused))
+               "a program past the oracle's default budget compiled with no budget named")
+      (ensure! (str/includes? (str (:stdout refused) (:stderr refused)) "fuel-exhausted")
+               (str "the no-budget refusal named a different cause: " (:stderr refused)))
+      (invoke ["compile" source "--target" isa "--fuel" "10000000" "--output" artifact])
+      (let [extracted (:stdout (invoke ["extract-native" artifact "--symbol" "main"
+                                        "--output" binary]))
+            [_ offset] (re-find #":offset ([0-9]+)" extracted)]
+        (ensure! offset "extract-native returned no oracle-fuel-budget offset")
+        (let [executed (run loader [binary offset "0" isa "-"]
+                            (js/Object.assign #js {} env #js {"KEXE_FUEL" "10000000"}))]
+          (ensure! (= "160000" (str/trim (:stdout executed)))
+                   (str "native oracle-fuel-budget expected 160000, got "
+                        (str/trim (:stdout executed)))))))
+
     ;; The control for the case above. `i64-beyond-double` only discriminates
     ;; between an exact reader and a lossy one while the artifact it produces
     ;; actually contains a token `cljs.reader` cannot hold -- if the example

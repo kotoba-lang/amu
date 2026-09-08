@@ -127,7 +127,9 @@
                            #(sema/analyze source (project-source/analyze-opts policy linked?)))
         admission (support/timed "admission"
                                  #(effect-row/check hir (support/capability-policy policy)))
-        kir (support/timed "kir-lower" #(ir/lower hir))
+        ;; Same budget the artifact gets -- see the wasm route's `resolve-kir!`.
+        kir (support/timed "kir-lower"
+                           #(ir/lower hir {:oracle-fuel (support/oracle-fuel emit-metadata policy)}))
         typed-values? (= :kotoba.kir/v4 (:format kir))
         value-profile (if typed-values? :kotoba.value/typed-v1 :kotoba.value/i64-v1)
         ;; Same resolution order as `compile-source*`: --fuel, then the
