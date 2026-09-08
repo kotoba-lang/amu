@@ -1,0 +1,33 @@
+(ns kotoba.lang.conformance.option-return-kit (:export [main]))
+;; T4.3 / PVA: a function whose declared RETURN TYPE is an option, with
+;; option-some-of on one arm of an `if` and option-none-of on the other.
+;;
+;; This is not `if_some_kit` again. That one builds an option inline and
+;; consumes it in the same expression, so the option never crosses a function
+;; boundary and the return-position lowering is never exercised. This one
+;; returns the option, and both arms are read back: 7 from the some arm, 900
+;; from the else of the none arm, so a lowering that collapsed either arm
+;; gives a number that is not 907.
+;;
+;; `unreached` is the second half, and it is the half that was expensive:
+;; `kotoba-lang/lang/compat.edn` recorded (2026-09-02, amu bb51dc14) that ONE
+;; option-returning function refused `unsupported typed Wasm expression`
+;; (exit 70) for the WHOLE project even when main never called it. Nothing
+;; called it, so nothing could route around it -- the guest stdlib was written
+;; to avoid option returns entirely, and an implementation state became a
+;; house style. `unreached` is never called on purpose: if that regresses,
+;; this kit stops compiling rather than stops answering.
+
+(defn- pick [n :i64] [:option :i64]
+  (if (> n 0)
+    (option-some-of [:option :i64] n)
+    (option-none-of [:option :i64])))
+
+(defn- unreached [n :i64] [:option :i64]
+  (if (> n 100)
+    (option-some-of [:option :i64] (* n 2))
+    (option-none-of [:option :i64])))
+
+(defn main [] :i64
+  (+ (if-some [x (pick 7)] x 0)
+     (if-some [y (pick -1)] y 900)))

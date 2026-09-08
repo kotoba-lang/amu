@@ -1,0 +1,101 @@
+{:adr/id 345
+ :adr/status :accepted
+ :adr/date "2026-09-08"
+ :decision :option-in-return-position-already-lowered-so-the-guard-is-the-deliverable
+
+ :summary
+ "kotoba-lang/kotoba-lang lang/compat.edn recorded, under
+  :measured :option-return-on-wasm32, that a function returning an option with
+  option-some on one arm of an `if` and option-none on the other compiled on
+  KIR and REFUSED wasm32 and wasm32-browser -- and refused the WHOLE project
+  even when main never reached it. Re-measured at amu 9092ee34 it lowers,
+  RUNS, and answers, on all three targets. No compiler change was needed. The
+  deliverable is therefore the guard that was missing, plus the correction of
+  an authority that had been steering guest code for six days after the thing
+  it described stopped being true."
+
+ :re-measurement
+ {:at "2026-09-08, amu 9092ee34cc32b53ca998c473f7172e2f172abd8b"
+  :previously "2026-09-02, amu bb51dc14: exit 70, \"unsupported typed Wasm expression\""
+  :single-module
+  {:source "(defn- pick [n :i64] [:option :i64] (if (> n 0) (option-some-of [:option :i64] n) (option-none-of [:option :i64])))"
+   :wasm32 {:exit 0 :ran 7}
+   :wasm32-browser {:exit 0 :ran 7}
+   :web {:exit 0 :ran 7}
+   :typed-abi-descriptors ["bool" "i64" "keyword" ["option" "i64"]]}
+  :two-module
+  {:shape "optlib exports `pick` (called on both arms) AND `unreached` (an option-returning fn main never calls); optapp calls only pick"
+   :command "node bin/amu compile optapp.kotoba --source-path <dir> --unpinned --target <t> --output <o>"
+   :wasm32 {:exit 0 :ran 907}
+   :wasm32-browser {:exit 0 :ran 907}
+   :web {:exit 0 :ran 907}
+   :note "907 = 7 from the some arm + 900 from the else of the none arm, so neither arm is collapsed. This is the half that mattered: the project-poisoning shape no longer reproduces."}
+  :ran-through "runtime/browser-host.mjs, instantiateKotoba, instance.exports.main()"}
+
+ :what-the-error-string-was-not
+ {:searched "the literal `unsupported typed Wasm expression` across amu"
+  :found "only docs/adr/0290 and a prose note in the conformance pilot manifest -- no live emit site reachable by this shape"
+  :reading "the lowering gap that ADR 0290 names for map-new is a different operation; the option path had already been qualified by the time of this measurement"}
+
+ :why-a-closed-gap-still-cost-something
+ "The recorded refusal was correct when it was written. What outlived it was
+  the SECOND-ORDER damage the note itself names: because ONE unreachable
+  function could refuse a whole project, the guest compat surface was written
+  to avoid option returns entirely. clojure.string/index-of and last-index-of
+  were absent for that reason and no other -- the index half had been answered
+  since 2026-09-02. An implementation state had become a house style, and
+  nothing in the tree could tell anyone it had stopped being true. That is the
+  defect this ADR is really about; the compiler was fine."
+
+ :the-guard
+ {:case :option-return-kit
+  :entry "resources/kotoba/lang-conformance/values/option_return_kit.kotoba"
+  :required-backends #{:kir :wasm32-kotoba-v1}
+  :kind :run
+  :expect 907
+  :why-not-if-some-kit
+  "if_some_kit and if_some_string_kit build an option inline and consume it in
+   the same expression, so the option never crosses a function boundary and the
+   RETURN-position lowering is never exercised. That is why the pilot could not
+   have caught this either way -- neither its regression nor its repair."
+  :carries-an-uncalled-function-on-purpose
+  "`unreached` is never called. If the project-poisoning behaviour returns, the
+   kit stops COMPILING rather than stops answering. Verified that it is not
+   dead-code eliminated: a deliberate type error placed inside `unreached`
+   alone refuses the module (exit 65, \"expected i64, got string\"), so the
+   compiler does reach it."}
+
+ :discrimination
+ {:rule "a check that has not been seen to fail for the reason it names is not a check"
+  :broken-on-purpose
+  [{:what "kit's none-arm else value 900 -> 901"
+    :result "9 failures; the report carries :kir {:result 908} and :wasm32-kotoba-v1 {:result 908, :raw-out \"908\"} against :expect 907"
+    :proves "the kit RUNS on both backends and the value is compared -- it is not skipped, and it is not merely compiled"}
+   {:what "a type error inside `unreached` only"
+    :result "exit 65 at compile"
+    :proves "the uncalled function is genuinely compiled, so the poison-half guard is real"}]
+  :also "adding the case turned the golden-digest ratchet red on its own (:extra-live, and 63 declared vs 62 golden) before the golden was regenerated, which is the manifest ratchet doing its job"}
+
+ :suite
+ {:before "1335 tests, 9603 assertions, 0 failures"
+  :after "1335 tests, 9607 assertions, 0 failures"
+  :touched ["resources/kotoba/lang-conformance/pilot-manifest.edn"
+            "resources/kotoba/lang-conformance/pilot-golden.edn"
+            "test/kotoba/compiler/lang_conformance_test.clj (ratchet 62/57 -> 63/58)"]}
+
+ :consequences
+ ["The pilot now exercises an option in return position on wasm32, so this
+   cannot regress silently again."
+  "kotoba-lang/kotoba-lang lands clojure.string/index-of and last-index-of
+   returning [:option :i64], and corrects lang/compat.edn, in its own PR."
+  "The remaining :absent entries in that file were re-read against this
+   measurement: split / split-lines / join are blocked on an element accessor
+   for [:list :string], and lower-case / upper-case / capitalize on locale --
+   none of them on this. They stay absent for their own reasons."]
+
+ :rule-this-instance-of
+ "Read a rule that blocks a design and ask whether it states a PROPERTY or an
+  IMPLEMENTATION STATE. This one said `it refuses`, with a date and a SHA
+  attached -- an implementation state, and the honest kind, which is why
+  re-measuring it took one command. The failure was not that the note was
+  written; it was that nothing re-ran it."}
