@@ -445,9 +445,45 @@ static struct vector_cell *checked_vector(struct kexe_context *ctx, int64_t hand
   return &ctx->vectors[(uint64_t)handle - 1];
 }
 
+/* The two vector arenas, beside the fuel and pair-heap numbers the report
+ * already carries. Same shape and same reason as the POSIX loader's: without
+ * it a reader who exhausts one cannot see how close they were, or that an
+ * arena was involved. The capacities are the compile-time constants here --
+ * see `arena_exhausted` below for why this loader has no budget to report. */
+static const char *arena_report(const struct kexe_context *ctx) {
+  static char buffer[192];
+  snprintf(buffer, sizeof(buffer),
+           " :vectors {:capacity %llu :used %llu}"
+           " :vector-items {:capacity %llu :used %llu}",
+           (unsigned long long)KEXE_VECTOR_CAPACITY,
+           (unsigned long long)ctx->vector_used,
+           (unsigned long long)KEXE_VECTOR_ITEM_CAPACITY,
+           (unsigned long long)ctx->vector_item_used);
+  return buffer;
+}
+
+/* Names the arena that ran out, then traps. The POSIX loader gained this on
+ * 2026-09-08 and the reason applies identically here: exhaustion was a bare
+ * trap, and the structured report described the PAIR heap, which vector work
+ * never touches -- so a guest that outgrew an arena looked to its author like
+ * a miscompilation. `fprintf` rather than `write` because this loader already
+ * reports its sandbox denials that way and has no signal-handler constraint.
+ *
+ * What this loader does NOT have is the POSIX side's per-run budget: the two
+ * capacities below are still compile-time, so a Windows guest that needs a
+ * bigger arena has no way to ask. That is a gap, stated rather than hidden --
+ * the report's shape is the cross-platform contract and now matches, while
+ * raising the bound needs the arenas moved out of `struct kexe_context`, and
+ * this file cannot be compiled or executed on the machine that would make
+ * that change. */
+static void arena_exhausted(const char *reason) {
+  fprintf(stderr, "KEXE_TRAP {:kind :arena :reason :%s}\n", reason);
+  __builtin_trap();
+}
+
 static int64_t intern_vector(struct kexe_context *ctx, uint64_t offset, uint64_t length) {
   uint64_t index;
-  if (ctx->vector_used >= KEXE_VECTOR_CAPACITY) __builtin_trap();
+  if (ctx->vector_used >= KEXE_VECTOR_CAPACITY) arena_exhausted("vector-table-exhausted");
   index = ctx->vector_used++;
   ctx->vectors[index].offset = offset;
   ctx->vectors[index].length = length;
@@ -476,14 +512,16 @@ static int64_t SYSV vector_conj(struct kexe_context *ctx, int64_t handle, int64_
   if (length >= KEXE_VECTOR_LENGTH_LIMIT) __builtin_trap();
   if (offset + length != ctx->vector_item_used) {
     uint64_t destination;
-    if (ctx->vector_item_used + length + 1u > KEXE_VECTOR_ITEM_CAPACITY) __builtin_trap();
+    if (ctx->vector_item_used + length + 1u > KEXE_VECTOR_ITEM_CAPACITY)
+      arena_exhausted("vector-items-exhausted");
     destination = ctx->vector_item_used;
     memmove(&ctx->vector_items[destination], &ctx->vector_items[offset],
             (size_t)length * sizeof(int64_t));
     ctx->vector_item_used += length;
     offset = destination;
   }
-  if (ctx->vector_item_used >= KEXE_VECTOR_ITEM_CAPACITY) __builtin_trap();
+  if (ctx->vector_item_used >= KEXE_VECTOR_ITEM_CAPACITY)
+    arena_exhausted("vector-items-exhausted");
   ctx->vector_items[ctx->vector_item_used++] = item;
   return intern_vector(ctx, offset, length + 1u);
 }
@@ -495,7 +533,8 @@ static int64_t SYSV vector_assoc(struct kexe_context *ctx, int64_t handle,
   uint64_t length = vector->length;
   uint64_t destination;
   if (index < 0 || (uint64_t)index >= length) __builtin_trap();
-  if (ctx->vector_item_used + length > KEXE_VECTOR_ITEM_CAPACITY) __builtin_trap();
+  if (ctx->vector_item_used + length > KEXE_VECTOR_ITEM_CAPACITY)
+    arena_exhausted("vector-items-exhausted");
   destination = ctx->vector_item_used;
   memmove(&ctx->vector_items[destination], &ctx->vector_items[offset],
           (size_t)length * sizeof(int64_t));
@@ -509,7 +548,8 @@ static int64_t SYSV vector_alloc(struct kexe_context *ctx, int64_t count) {
   uint64_t i;
   if (ctx == NULL || ctx->version != 4) __builtin_trap();
   if (count < 0 || (uint64_t)count > KEXE_VECTOR_LENGTH_LIMIT) __builtin_trap();
-  if (ctx->vector_item_used + (uint64_t)count > KEXE_VECTOR_ITEM_CAPACITY) __builtin_trap();
+  if (ctx->vector_item_used + (uint64_t)count > KEXE_VECTOR_ITEM_CAPACITY)
+    arena_exhausted("vector-items-exhausted");
   offset = ctx->vector_item_used;
   for (i = 0; i < (uint64_t)count; i++) ctx->vector_items[offset + i] = 0;
   ctx->vector_item_used += (uint64_t)count;
@@ -1511,8 +1551,9 @@ int main(int argc, char **argv) {
       if (result_bytes == NULL) {
         fprintf(stderr, "KEXE_TRAP {:kind :result :reason :invalid-string-handle}\n");
         printf("{:status :trap :exit 66 :fuel {:initial 512 :remaining %llu} "
-               ":heap {:capacity 4096 :used %llu}}\n",
-               (unsigned long long)ctx->fuel, (unsigned long long)ctx->pair_used);
+               ":heap {:capacity 4096 :used %llu}%s}\n",
+               (unsigned long long)ctx->fuel, (unsigned long long)ctx->pair_used,
+               arena_report(ctx));
         SecureZeroMemory(ctx, sizeof(*ctx));
         VirtualFree(ctx, 0, MEM_RELEASE);
         VirtualFree(code, 0, MEM_RELEASE);
@@ -1522,15 +1563,17 @@ int main(int argc, char **argv) {
              (long long)result);
       for (uint64_t i = 0; i < result_length; i++) printf("%02x", result_bytes[i]);
       printf("\" :fuel {:initial 512 :remaining %llu} "
-             ":heap {:capacity 4096 :used %llu}}\n",
-             (unsigned long long)ctx->fuel, (unsigned long long)ctx->pair_used);
+             ":heap {:capacity 4096 :used %llu}%s}\n",
+             (unsigned long long)ctx->fuel, (unsigned long long)ctx->pair_used,
+               arena_report(ctx));
     } else if (record_field_count > 0) {
       int64_t fields[KEXE_RECORD_FIELD_LIMIT];
       if (!inspect_record_result(ctx, result, record_field_count, fields)) {
         fprintf(stderr, "KEXE_TRAP {:kind :result :reason :invalid-record-chain}\n");
         printf("{:status :trap :exit 127 :fuel {:initial 512 :remaining %llu} "
-               ":heap {:capacity 4096 :used %llu}}\n",
-               (unsigned long long)ctx->fuel, (unsigned long long)ctx->pair_used);
+               ":heap {:capacity 4096 :used %llu}%s}\n",
+               (unsigned long long)ctx->fuel, (unsigned long long)ctx->pair_used,
+               arena_report(ctx));
         SecureZeroMemory(ctx, sizeof(*ctx));
         VirtualFree(ctx, 0, MEM_RELEASE);
         VirtualFree(code, 0, MEM_RELEASE);
@@ -1541,8 +1584,9 @@ int main(int argc, char **argv) {
       for (uint64_t i = 0; i < record_field_count; i++)
         printf(i == 0 ? "%lld" : " %lld", (long long)fields[i]);
       printf("] :fuel {:initial 512 :remaining %llu} "
-             ":heap {:capacity 4096 :used %llu}}\n",
-             (unsigned long long)ctx->fuel, (unsigned long long)ctx->pair_used);
+             ":heap {:capacity 4096 :used %llu}%s}\n",
+             (unsigned long long)ctx->fuel, (unsigned long long)ctx->pair_used,
+               arena_report(ctx));
     } else if (strcmp(result_type, "option-i64") == 0 ||
                strcmp(result_type, "result-i64") == 0) {
       int option = strcmp(result_type, "option-i64") == 0;
@@ -1552,8 +1596,9 @@ int main(int argc, char **argv) {
         const char *reason = option ? "invalid-option-i64" : "invalid-result-i64";
         fprintf(stderr, "KEXE_TRAP {:kind :result :reason :%s}\n", reason);
         printf("{:status :trap :exit %d :fuel {:initial 512 :remaining %llu} "
-               ":heap {:capacity 4096 :used %llu}}\n", trap_exit,
-               (unsigned long long)ctx->fuel, (unsigned long long)ctx->pair_used);
+               ":heap {:capacity 4096 :used %llu}%s}\n", trap_exit,
+               (unsigned long long)ctx->fuel, (unsigned long long)ctx->pair_used,
+               arena_report(ctx));
         SecureZeroMemory(ctx, sizeof(*ctx));
         VirtualFree(ctx, 0, MEM_RELEASE);
         VirtualFree(code, 0, MEM_RELEASE);
@@ -1562,18 +1607,19 @@ int main(int argc, char **argv) {
       printf("{:status :ok :result %lld :result-type :%s "
              ":result-tag %s :result-word %lld "
              ":fuel {:initial 512 :remaining %llu} "
-             ":heap {:capacity 4096 :used %llu}}\n",
+             ":heap {:capacity 4096 :used %llu}%s}\n",
              (long long)result, result_type, tag == 1 ? "true" : "false",
              (long long)payload, (unsigned long long)ctx->fuel,
-             (unsigned long long)ctx->pair_used);
+             (unsigned long long)ctx->pair_used, arena_report(ctx));
     } else if (variant_case_count > 0) {
       int64_t ordinal, payload;
       if (!inspect_variant_result(ctx, result, variant_case_count,
                                   variant_bool_mask, &ordinal, &payload)) {
         fprintf(stderr, "KEXE_TRAP {:kind :result :reason :invalid-variant}\n");
         printf("{:status :trap :exit 130 :fuel {:initial 512 :remaining %llu} "
-               ":heap {:capacity 4096 :used %llu}}\n",
-               (unsigned long long)ctx->fuel, (unsigned long long)ctx->pair_used);
+               ":heap {:capacity 4096 :used %llu}%s}\n",
+               (unsigned long long)ctx->fuel, (unsigned long long)ctx->pair_used,
+               arena_report(ctx));
         SecureZeroMemory(ctx, sizeof(*ctx));
         VirtualFree(ctx, 0, MEM_RELEASE);
         VirtualFree(code, 0, MEM_RELEASE);
@@ -1582,15 +1628,15 @@ int main(int argc, char **argv) {
       printf("{:status :ok :result %lld :result-type :variant "
              ":result-ordinal %lld :result-word %lld "
              ":fuel {:initial 512 :remaining %llu} "
-             ":heap {:capacity 4096 :used %llu}}\n",
+             ":heap {:capacity 4096 :used %llu}%s}\n",
              (long long)result, (long long)ordinal, (long long)payload,
              (unsigned long long)ctx->fuel,
-             (unsigned long long)ctx->pair_used);
+             (unsigned long long)ctx->pair_used, arena_report(ctx));
     } else {
       printf("{:status :ok :result %lld :fuel {:initial 512 :remaining %llu} "
-             ":heap {:capacity 4096 :used %llu}}\n",
+             ":heap {:capacity 4096 :used %llu}%s}\n",
              (long long)result, (unsigned long long)ctx->fuel,
-             (unsigned long long)ctx->pair_used);
+             (unsigned long long)ctx->pair_used, arena_report(ctx));
     }
   } else printf("%lld\n", (long long)result);
 

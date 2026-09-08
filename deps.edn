@@ -246,7 +246,15 @@
          ;; that file. Without the advance every native execution refuses with
          ;; `native loader source identity mismatch` -- which is the pin doing
          ;; its job, and the reason the review of an arena change lands there.
-         :git/sha "678c0095257004822664cbfac0d833ed232031af"}
+         ;; And a0b36af3 the same day for the WINDOWS loader's half of it.
+         ;; The report's key set is matched exactly by
+         ;; `kototama.native.executor`, so a loader missing `:vectors` and
+         ;; `:vector-items` fails every native execution as malformed
+         ;; evidence -- which is how the asymmetry was found rather than
+         ;; assumed: the POSIX-only change turned windows-2025 and
+         ;; windows-arm64 red. Only the POSIX loader takes the arenas as a
+         ;; per-run budget; the Windows one reports its constants and says so.
+         :git/sha "a0b36af3737f8495f78f60484c35a8bbbfcf50be"}
         ;; HELD at 1a2e10c on 2026-09-03 (ADR 0331), 28 commits behind its main,
         ;; while every other pin in this file moved to the tip. The reason, so
         ;; that a lagging pin and a pin with an argument behind it stay
