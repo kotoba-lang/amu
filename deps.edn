@@ -239,7 +239,14 @@
          ;; 9749773d advances it for the fs_app_data WRITE provider (write form
          ;; "path WRITE_SEP content", Seatbelt file-write* subpath); 8c77d809
          ;; escapes the docstring quotes (PR #21 follow-up, fixes browser matrix).
-         :git/sha "99e94e79b790a19acad68e728b4773b23af63c90"}
+         ;;
+         ;; Advanced 2026-09-08, 99e94e79 -> 678c0095, and REQUIRED by this
+         ;; commit rather than merely current: `loader-source-sha256` is the
+         ;; reviewed identity of tools/kexe_loader.c, and this commit changes
+         ;; that file. Without the advance every native execution refuses with
+         ;; `native loader source identity mismatch` -- which is the pin doing
+         ;; its job, and the reason the review of an arena change lands there.
+         :git/sha "678c0095257004822664cbfac0d833ed232031af"}
         ;; HELD at 1a2e10c on 2026-09-03 (ADR 0331), 28 commits behind its main,
         ;; while every other pin in this file moved to the tip. The reason, so
         ;; that a lagging pin and a pin with an argument behind it stay
@@ -520,6 +527,13 @@
                   {io.github.kotoba-lang/provider
                    {:git/url "https://github.com/kotoba-lang/provider.git"
                     :git/sha "0ba1fbabb536027d25bbefc50374fbe95e6b54ec"}
+                   ;; Advanced 2026-09-08, a569f1d1 -> f6adc42f, and REQUIRED
+                   ;; by this commit: `valid-supervisor-report?` matches the
+                   ;; report's key set EXACTLY, so the loader's new `:vectors`
+                   ;; and `:vector-items` made every native execution fail as
+                   ;; "malformed native supervisor evidence" until it learned
+                   ;; them. That exactness is the contract working, not a
+                   ;; brittleness to route around.
                    ;; Advanced 2026-09-07, ec4d182e -> a569f1d1 (kototama-native
                    ;; main, ahead 10, forward only), REQUIRED by the kotoba-kir
                    ;; pin above: kotoba-kir d41dc85 (#81) renamed every
@@ -533,13 +547,13 @@
                    ;; :native-conformance below -- one kototama-native.
                    io.github.kotoba-lang/kototama-native
                    {:git/url "https://github.com/kotoba-lang/kototama-native.git"
-                    :git/sha "a569f1d14a09674503fc00733fd38fd3699fa4fb"}}
+                    :git/sha "f6adc42f9035de056f900573b7f7e6d6cd51ac1b"}}
                   :main-opts ["-m" "kotoba.compiler.test-runner"]}
            :native-run
            {:extra-deps
             {io.github.kotoba-lang/kototama-native
              {:git/url "https://github.com/kotoba-lang/kototama-native.git"
-              :git/sha "a569f1d14a09674503fc00733fd38fd3699fa4fb"}}
+              :git/sha "f6adc42f9035de056f900573b7f7e6d6cd51ac1b"}}
             :main-opts ["-m" "kotoba.compiler.cli"]}
            :run {:main-opts ["-m" "kotoba.compiler.cli"]}
            :conformance
@@ -551,7 +565,7 @@
            {:extra-deps
             {io.github.kotoba-lang/kototama-native
              {:git/url "https://github.com/kotoba-lang/kototama-native.git"
-              :git/sha "a569f1d14a09674503fc00733fd38fd3699fa4fb"}
+              :git/sha "f6adc42f9035de056f900573b7f7e6d6cd51ac1b"}
              io.github.kotoba-lang/provider
              {:git/url "https://github.com/kotoba-lang/provider.git"
               :git/sha "0ba1fbabb536027d25bbefc50374fbe95e6b54ec"}}

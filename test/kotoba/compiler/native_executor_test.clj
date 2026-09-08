@@ -54,9 +54,16 @@
     ;; decrement and kotoba-native stopped charging one (codegen
     ;; co-scientist iteration 11). A leaf that spends fuel here again is a
     ;; regression, not a rounding difference.
+    ;; The two vector arenas joined every report on 2026-09-08 (kexe_loader.c,
+    ;; artifact 678c0095). `main` touches no vector, so both read zero used --
+    ;; and asserting them at zero rather than dropping them from the
+    ;; comparison keeps this a whole-report equality, which is what makes an
+    ;; unexpected field a failure here.
     (is (= {:status :ok :result 42
             :fuel {:initial 512 :remaining 512}
-            :heap {:capacity 4096 :used 0}}
+            :heap {:capacity 4096 :used 0}
+            :vectors {:capacity 4096 :used 0}
+            :vector-items {:capacity 65536 :used 0}}
            (:report result)))
     (is (<= (:started-at result) (:finished-at result)))))
 

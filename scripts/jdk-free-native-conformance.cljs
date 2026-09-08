@@ -217,6 +217,69 @@
                    (str "native oracle-fuel-budget expected 160000, got "
                         (str/trim (:stdout executed)))))))
 
+    ;; The vector arenas: named when they fill, reported always, and raisable.
+    ;;
+    ;; Exhaustion used to be `raise(SIGILL)` and nothing else, so a guest that
+    ;; outgrew an arena looked to its author like a miscompilation -- measured
+    ;; 2026-09-08 running X25519 natively, which answered
+    ;; `{:kind :signal :signal :SIGILL}` beside a `:heap` line about the PAIR
+    ;; arena, which was untouched.
+    ;;
+    ;; Three things are asserted, and the third is what makes the other two
+    ;; mean something: the SAME program must succeed once the arena it named
+    ;; is raised. Without it, "refused, and said a word" is consistent with an
+    ;; arena that can never be big enough.
+    (let [source (.join path root "examples" "vector-arena.kotoba")
+          artifact (file "vector-arena.kexe")
+          binary (file "vector-arena.bin")
+          with-env (fn [extra] (js/Object.assign #js {} env (clj->js extra)))]
+      (invoke ["compile" source "--target" isa "--output" artifact])
+      (let [extracted (:stdout (invoke ["extract-native" artifact "--symbol" "churn"
+                                        "--output" binary]))
+            [_ offset] (re-find #":offset ([0-9]+)" extracted)
+            _ (ensure! offset "extract-native returned no churn offset")
+            args [binary offset "1" isa "-" "5000"]
+            exhausted (run loader args
+                           (with-env {"KEXE_STRUCTURED_REPORT" "1"
+                                      "KEXE_FUEL" "900000000"})
+                           true)
+            report (str (:stdout exhausted) (:stderr exhausted))]
+        (ensure! (= 120 (:status exhausted))
+                 (str "the arena did not trap: " (:status exhausted) " " report))
+        (ensure! (str/includes? report "{:kind :arena :reason :vector-table-exhausted}")
+                 (str "the arena trap did not name itself: " report))
+        ;; The HANDLE table, not the item arena. A report naming the wrong one
+        ;; would be worse than no report, and the two are only distinguishable
+        ;; because this fixture fills them unevenly.
+        (ensure! (str/includes? report ":vectors {:capacity 4096 :used 4096}")
+                 (str "the report did not show the handle table full: " report))
+        (ensure! (re-find #":vector-items \{:capacity 65536 :used [0-9]{1,4}\}" report)
+                 (str "the item arena should be far from full here: " report))
+        (let [raised (run loader args
+                          (with-env {"KEXE_STRUCTURED_REPORT" "1"
+                                     "KEXE_FUEL" "900000000"
+                                     "KEXE_VECTOR_CAPACITY" "12000"}))]
+          (ensure! (str/includes? (:stdout raised) ":status :ok")
+                   (str "raising the handle table did not let it through: "
+                        (:stdout raised) (:stderr raised)))
+          (ensure! (str/includes? (:stdout raised) ":result 4999")
+                   (str "the raised run answered something else: " (:stdout raised))))
+        ;; A budget that is not a positive decimal integer is refused before
+        ;; the guest starts, never coerced -- the contract KEXE_FUEL has.
+        (doseq [bad ["0" "abc" "-5" "12abc"]]
+          (let [refused (run loader args (with-env {"KEXE_VECTOR_CAPACITY" bad}) true)]
+            (ensure! (= 2 (:status refused))
+                     (str "KEXE_VECTOR_CAPACITY=" bad " was not refused: "
+                          (:status refused)))))
+        ;; And a request the machine rather than the program would have to
+        ;; refuse is refused by the program.
+        (let [over (run loader args
+                        (with-env {"KEXE_VECTOR_ITEM_CAPACITY" "200000000"}) true)]
+          (ensure! (= 2 (:status over))
+                   "a vector arena past the byte ceiling was admitted")
+          (ensure! (str/includes? (str (:stdout over) (:stderr over)) "ceiling")
+                   (str "the ceiling refusal named a different cause: " (:stderr over))))))
+
     ;; The control for the case above. `i64-beyond-double` only discriminates
     ;; between an exact reader and a lossy one while the artifact it produces
     ;; actually contains a token `cljs.reader` cannot hold -- if the example

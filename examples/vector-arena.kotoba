@@ -1,0 +1,27 @@
+;; The loader's two vector arenas, and which of them a program exhausts.
+;;
+;; A `:vector-i64` is immutable, so every update mints a new handle over a
+;; fresh slice. amu's `tools/kexe_loader.c` bounds that twice over -- a table
+;; of handles and an arena of items -- because the two are separately
+;; exhaustible: many small vectors run out of handles first, one growing
+;; vector runs out of items first, and neither bound implies the other.
+;;
+;; `churn` makes the FIRST of those happen: two handles per iteration over
+;; one-item slices, so at the default 4096 handles / 65536 items the table is
+;; full while the item arena is at six percent. That asymmetry is what the
+;; structured report has to be able to show, and what the trap has to be able
+;; to name -- before 2026-09-08 both arrived as a bare SIGILL.
+;;
+;; `churn` takes its count as an argument on purpose: an exported function
+;; with parameters is not the entry, so the compile-time constant oracle does
+;; not run it. This fixture is about the loader, not about lowering.
+(ns vector-arena
+  (:export [main churn]))
+
+(defn churn [n :i64] :i64
+  (loop [v (vector-alloc 1) i 0]
+    (if (>= i n)
+      (vector-at v 0)
+      (recur (vector-assoc (vector-alloc 1) 0 i) (+ i 1)))))
+
+(defn main [] :i64 0)

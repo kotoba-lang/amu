@@ -68,12 +68,30 @@ static void write_stderr_checked(const char *bytes, size_t length) {
  * element allocates rather than mutates -- is no longer true of the whole
  * table. It is still true of `checked_vector_assoc`, and that is what keeps
  * an unproven handle safe. The two numbers below are UNCHANGED by v4:
- * removing the copy removes the reason the arena had to be four vectors wide,
- * but raising a bound is a separate decision with its own fail-closed
- * argument, and it has not been made (superproject `surface-status.edn`,
- * `:arena-bounds`). */
-#define KEXE_VECTOR_CAPACITY 4096u
-#define KEXE_VECTOR_ITEM_CAPACITY 65536u
+ * removing the copy removes the reason the arena had to be four vectors wide.
+ *
+ * Whether to RAISE either number was a separate decision with its own
+ * fail-closed argument, and this comment used to record that it had not been
+ * made. It has now, and the shape it took is not "pick a bigger constant":
+ * both numbers stay exactly where they were and become the DEFAULTS of a
+ * per-run budget, the way `KEXE_FUEL` already worked. A guest that ran before
+ * runs identically; one that did not still refuses unless its caller asks.
+ * Superproject `surface-status.edn`, `:arena-bounds`, records the decision
+ * and the measurement behind the ceiling. */
+#define KEXE_VECTOR_CAPACITY_DEFAULT 4096u
+#define KEXE_VECTOR_ITEM_CAPACITY_DEFAULT 65536u
+
+/* The ceiling on what a caller may ask for: the two arenas TOGETHER, in
+ * bytes. A bound that can be raised needs one, or a mistyped environment
+ * variable becomes a request the kernel is asked to satisfy.
+ *
+ * One gibibyte, and the number is chosen from a measurement rather than a
+ * feeling: X25519 (kotoba-lang/org-ietf-x25519, kotoba/x25519/core.kotoba)
+ * is the largest Kotoba guest measured here, and running it natively took
+ * 1,165,132 handles and 31,933,313 items -- 274 MiB across the two arenas.
+ * The ceiling leaves room for that and refuses anything that would need a
+ * machine rather than a program to be the thing that says no. */
+#define KEXE_ARENA_MAX_BYTES (1024u * 1024u * 1024u)
 
 struct kexe_context_v4 {
   uint64_t version;
@@ -208,10 +226,42 @@ struct kexe_shared_v4 {
    * growing vector runs out of elements first, and neither bound implies the
    * other. */
   uint64_t vector_used;
-  struct kexe_vector_v1 vectors[KEXE_VECTOR_CAPACITY];
+  uint64_t vector_capacity;
   uint64_t vector_item_used;
-  int64_t vector_items[KEXE_VECTOR_ITEM_CAPACITY];
+  uint64_t vector_item_capacity;
+  /* Byte offsets from `shared`, not pointers. The two arenas are sized at
+   * map time and laid out immediately after this struct in the SAME shared
+   * mapping, so the parent reads the child's high-water marks the way it
+   * already reads its result. Offsets rather than pointers because a pointer
+   * stored in a shared mapping is only meaningful while both processes have
+   * it at the same address; an offset is meaningful either way. */
+  uint64_t vector_table_offset;
+  uint64_t vector_items_offset;
 };
+
+static inline struct kexe_vector_v1 *kexe_vector_table(
+    struct kexe_shared_v4 *shared) {
+  return (struct kexe_vector_v1 *)((uint8_t *)shared + shared->vector_table_offset);
+}
+
+static inline int64_t *kexe_vector_items(struct kexe_shared_v4 *shared) {
+  return (int64_t *)((uint8_t *)shared + shared->vector_items_offset);
+}
+
+/* Names the arena that ran out, before the SIGILL that stops the guest.
+ * Exhaustion used to be a bare illegal instruction, which says nothing about
+ * whose fault it is: measured 2026-09-08, running X25519 natively answered
+ * `{:kind :signal :signal :SIGILL}` and a reader had no way to tell an arena
+ * from a miscompilation. Written with `write` rather than `fprintf` for the
+ * reason `probe_denied` below is: it is the one call that is safe here and
+ * permitted by the syscall sandbox. */
+static void arena_exhausted(const char *reason) {
+  static const char prefix[] = "KEXE_TRAP {:kind :arena :reason :";
+  ssize_t written = write(STDERR_FILENO, prefix, sizeof(prefix) - 1);
+  written = write(STDERR_FILENO, reason, strlen(reason));
+  written = write(STDERR_FILENO, "}\n", 2);
+  (void)written;
+}
 
 _Static_assert(offsetof(struct kexe_context_v4, fuel) == 8, "fuel ABI drift");
 _Static_assert(offsetof(struct kexe_context_v4, allow) == 16, "allow ABI drift");
@@ -242,10 +292,8 @@ _Static_assert(offsetof(struct kexe_context_v4, vector_alloc) == 200, "vector AB
 _Static_assert(offsetof(struct kexe_context_v4, vector_assoc_in_place) == 208, "vector ABI drift");
 _Static_assert(sizeof(((struct kexe_shared_v4 *)0)->string_pool) == 65536,
                "string pool size drift");
-_Static_assert(sizeof(((struct kexe_shared_v4 *)0)->vectors) == 65536,
-               "vector table size drift");
-_Static_assert(sizeof(((struct kexe_shared_v4 *)0)->vector_items) == 524288,
-               "vector item arena size drift");
+
+
 
 static int parse_u64(const char *text, uint64_t *value) {
   if (text == NULL || *text < '0' || *text > '9') return -1;
@@ -345,7 +393,7 @@ static int64_t checked_pair_second(struct kexe_context_v4 *context, int64_t hand
 static struct kexe_vector_v1 *resolve_vector(struct kexe_shared_v4 *shared,
                                              int64_t handle) {
   if (handle <= 0 || (uint64_t)handle > shared->vector_used) return NULL;
-  return &shared->vectors[(uint64_t)handle - 1];
+  return &kexe_vector_table(shared)[(uint64_t)handle - 1];
 }
 
 /* Mints a handle for an already-populated slice. Returns 0 when the handle
@@ -353,10 +401,10 @@ static struct kexe_vector_v1 *resolve_vector(struct kexe_shared_v4 *shared,
  * rather than a silently wrong vector. */
 static int64_t intern_vector(struct kexe_shared_v4 *shared,
                              uint64_t offset, uint64_t length) {
-  if (shared->vector_used >= KEXE_VECTOR_CAPACITY) return 0;
+  if (shared->vector_used >= shared->vector_capacity) return 0;
   uint64_t index = shared->vector_used++;
-  shared->vectors[index].offset = offset;
-  shared->vectors[index].length = length;
+  kexe_vector_table(shared)[index].offset = offset;
+  kexe_vector_table(shared)[index].length = length;
   return (int64_t)(index + 1);
 }
 
@@ -367,7 +415,7 @@ static int64_t checked_vector_new_empty(struct kexe_context_v4 *context) {
   struct kexe_shared_v4 *shared = (struct kexe_shared_v4 *)context;
   if (context == NULL || context->version != 4) { raise(SIGILL); return 0; }
   int64_t handle = intern_vector(shared, shared->vector_item_used, 0);
-  if (handle == 0) { raise(SIGILL); return 0; }
+  if (handle == 0) { arena_exhausted("vector-table-exhausted"); raise(SIGILL); return 0; }
   return handle;
 }
 
@@ -392,7 +440,7 @@ static int64_t checked_vector_at(struct kexe_context_v4 *context,
     raise(SIGILL);
     return 0;
   }
-  return shared->vector_items[vector->offset + (uint64_t)index];
+  return kexe_vector_items(shared)[vector->offset + (uint64_t)index];
 }
 
 static int64_t checked_vector_conj(struct kexe_context_v4 *context,
@@ -411,12 +459,13 @@ static int64_t checked_vector_conj(struct kexe_context_v4 *context,
   if (offset + length != shared->vector_item_used) {
     /* Interior slice: appending would write a word some other handle may
      * already span, so copy first. */
-    if (shared->vector_item_used + length + 1u > KEXE_VECTOR_ITEM_CAPACITY) {
+    if (shared->vector_item_used + length + 1u > shared->vector_item_capacity) {
+      arena_exhausted("vector-items-exhausted");
       raise(SIGILL);
       return 0;
     }
     uint64_t destination = shared->vector_item_used;
-    memmove(&shared->vector_items[destination], &shared->vector_items[offset],
+    memmove(&kexe_vector_items(shared)[destination], &kexe_vector_items(shared)[offset],
             (size_t)length * sizeof(int64_t));
     shared->vector_item_used += length;
     offset = destination;
@@ -425,13 +474,14 @@ static int64_t checked_vector_conj(struct kexe_context_v4 *context,
    * handle: writing it cannot change what any existing handle reads, because
    * every handle carries its own length. This is why repeated conj is linear
    * rather than quadratic. */
-  if (shared->vector_item_used >= KEXE_VECTOR_ITEM_CAPACITY) {
+  if (shared->vector_item_used >= shared->vector_item_capacity) {
+    arena_exhausted("vector-items-exhausted");
     raise(SIGILL);
     return 0;
   }
-  shared->vector_items[shared->vector_item_used++] = item;
+  kexe_vector_items(shared)[shared->vector_item_used++] = item;
   int64_t result = intern_vector(shared, offset, length + 1u);
-  if (result == 0) { raise(SIGILL); return 0; }
+  if (result == 0) { arena_exhausted("vector-table-exhausted"); raise(SIGILL); return 0; }
   return result;
 }
 
@@ -449,17 +499,18 @@ static int64_t checked_vector_assoc(struct kexe_context_v4 *context,
   }
   uint64_t offset = vector->offset;
   uint64_t length = vector->length;
-  if (shared->vector_item_used + length > KEXE_VECTOR_ITEM_CAPACITY) {
+  if (shared->vector_item_used + length > shared->vector_item_capacity) {
+    arena_exhausted("vector-items-exhausted");
     raise(SIGILL);
     return 0;
   }
   uint64_t destination = shared->vector_item_used;
-  memmove(&shared->vector_items[destination], &shared->vector_items[offset],
+  memmove(&kexe_vector_items(shared)[destination], &kexe_vector_items(shared)[offset],
           (size_t)length * sizeof(int64_t));
-  shared->vector_items[destination + (uint64_t)index] = item;
+  kexe_vector_items(shared)[destination + (uint64_t)index] = item;
   shared->vector_item_used += length;
   int64_t result = intern_vector(shared, destination, length);
-  if (result == 0) { raise(SIGILL); return 0; }
+  if (result == 0) { arena_exhausted("vector-table-exhausted"); raise(SIGILL); return 0; }
   return result;
 }
 
@@ -475,15 +526,16 @@ static int64_t checked_vector_alloc(struct kexe_context_v4 *context,
   struct kexe_shared_v4 *shared = (struct kexe_shared_v4 *)context;
   if (context == NULL || context->version != 4) { raise(SIGILL); return 0; }
   if (count < 0 || count > 16384) { raise(SIGILL); return 0; }
-  if (shared->vector_item_used + (uint64_t)count > KEXE_VECTOR_ITEM_CAPACITY) {
+  if (shared->vector_item_used + (uint64_t)count > shared->vector_item_capacity) {
+    arena_exhausted("vector-items-exhausted");
     raise(SIGILL);
     return 0;
   }
   uint64_t offset = shared->vector_item_used;
-  for (uint64_t i = 0; i < (uint64_t)count; i++) shared->vector_items[offset + i] = 0;
+  for (uint64_t i = 0; i < (uint64_t)count; i++) kexe_vector_items(shared)[offset + i] = 0;
   shared->vector_item_used += (uint64_t)count;
   int64_t result = intern_vector(shared, offset, (uint64_t)count);
-  if (result == 0) { raise(SIGILL); return 0; }
+  if (result == 0) { arena_exhausted("vector-table-exhausted"); raise(SIGILL); return 0; }
   return result;
 }
 
@@ -511,7 +563,7 @@ static int64_t checked_vector_assoc_in_place(struct kexe_context_v4 *context,
     raise(SIGILL);
     return 0;
   }
-  shared->vector_items[vector->offset + (uint64_t)index] = item;
+  kexe_vector_items(shared)[vector->offset + (uint64_t)index] = item;
   return handle;
 }
 
@@ -529,7 +581,7 @@ static int64_t checked_vector_drop(struct kexe_context_v4 *context,
   }
   int64_t result = intern_vector(shared, vector->offset + (uint64_t)count,
                                  vector->length - (uint64_t)count);
-  if (result == 0) { raise(SIGILL); return 0; }
+  if (result == 0) { arena_exhausted("vector-table-exhausted"); raise(SIGILL); return 0; }
   return result;
 }
 
@@ -940,9 +992,9 @@ static int peek_vector(struct kexe_context_v4 *context, int64_t handle,
   if (context == NULL || context->version != 4) return 0;
   vector = resolve_vector(shared, handle);
   if (vector == NULL) return 0;
-  if (vector->offset + vector->length > KEXE_VECTOR_ITEM_CAPACITY) return 0;
+  if (vector->offset + vector->length > shared->vector_item_capacity) return 0;
   *length = vector->length;
-  *items = shared->vector_items + vector->offset;
+  *items = kexe_vector_items(shared) + vector->offset;
   return 1;
 }
 
@@ -2371,6 +2423,22 @@ static int supervise(pid_t child) {
   return 123;
 }
 
+/* The vector arenas, beside the fuel and pair-heap numbers the report already
+ * carries. Without this a reader who exhausts one has no way to see how close
+ * they were, or that an arena was involved at all: exhaustion used to arrive
+ * as a bare SIGILL and the report named the PAIR heap, which was untouched.
+ * A static buffer because the caller is `printf` and there is exactly one
+ * report per run. */
+static const char *arena_report(const struct kexe_shared_v4 *shared) {
+  static char buffer[192];
+  snprintf(buffer, sizeof(buffer),
+           " :vectors {:capacity %" PRIu64 " :used %" PRIu64
+           "} :vector-items {:capacity %" PRIu64 " :used %" PRIu64 "}",
+           shared->vector_capacity, shared->vector_used,
+           shared->vector_item_capacity, shared->vector_item_used);
+  return buffer;
+}
+
 static int write_supervisor_report(const struct kexe_shared_v4 *shared,
                                    int child_status,
                                    const char *result_type,
@@ -2386,8 +2454,9 @@ static int write_supervisor_report(const struct kexe_shared_v4 *shared,
             "KEXE_TRAP {:kind :result :reason :invalid-string-handle}\n";
         write_stderr_checked(trap, sizeof(trap) - 1u);
         printf("{:status :trap :exit 126 :fuel {:initial %" PRIu64 " :remaining %" PRIu64
-               "} :heap {:capacity 4096 :used %" PRIu64 "}}\n",
-               kexe_initial_fuel, shared->context.fuel, shared->pair_used);
+               "} :heap {:capacity 4096 :used %" PRIu64 "}%s}\n",
+               kexe_initial_fuel, shared->context.fuel, shared->pair_used,
+               arena_report(shared));
         return 126;
       }
       printf("{:status :ok :result %" PRId64
@@ -2395,8 +2464,9 @@ static int write_supervisor_report(const struct kexe_shared_v4 *shared,
              shared->result);
       for (uint64_t i = 0; i < length; i++) printf("%02x", bytes[i]);
       printf("\" :fuel {:initial %" PRIu64 " :remaining %" PRIu64
-             "} :heap {:capacity 4096 :used %" PRIu64 "}}\n",
-             kexe_initial_fuel, shared->context.fuel, shared->pair_used);
+             "} :heap {:capacity 4096 :used %" PRIu64 "}%s}\n",
+             kexe_initial_fuel, shared->context.fuel, shared->pair_used,
+               arena_report(shared));
     } else if (record_field_count > 0) {
       int64_t fields[KEXE_RECORD_FIELD_LIMIT];
       if (!inspect_record_result(shared, shared->result,
@@ -2405,8 +2475,9 @@ static int write_supervisor_report(const struct kexe_shared_v4 *shared,
             "KEXE_TRAP {:kind :result :reason :invalid-record-chain}\n";
         write_stderr_checked(trap, sizeof(trap) - 1u);
         printf("{:status :trap :exit 127 :fuel {:initial %" PRIu64 " :remaining %" PRIu64
-               "} :heap {:capacity 4096 :used %" PRIu64 "}}\n",
-               kexe_initial_fuel, shared->context.fuel, shared->pair_used);
+               "} :heap {:capacity 4096 :used %" PRIu64 "}%s}\n",
+               kexe_initial_fuel, shared->context.fuel, shared->pair_used,
+               arena_report(shared));
         return 127;
       }
       printf("{:status :ok :result %" PRId64
@@ -2414,8 +2485,9 @@ static int write_supervisor_report(const struct kexe_shared_v4 *shared,
       for (uint64_t i = 0; i < record_field_count; i++)
         printf(i == 0 ? "%" PRId64 : " %" PRId64, fields[i]);
       printf("] :fuel {:initial %" PRIu64 " :remaining %" PRIu64
-             "} :heap {:capacity 4096 :used %" PRIu64 "}}\n",
-             kexe_initial_fuel, shared->context.fuel, shared->pair_used);
+             "} :heap {:capacity 4096 :used %" PRIu64 "}%s}\n",
+             kexe_initial_fuel, shared->context.fuel, shared->pair_used,
+               arena_report(shared));
     } else if (strcmp(result_type, "option-i64") == 0 ||
                strcmp(result_type, "result-i64") == 0) {
       int option = strcmp(result_type, "option-i64") == 0;
@@ -2426,16 +2498,18 @@ static int write_supervisor_report(const struct kexe_shared_v4 *shared,
         const char *reason = option ? "invalid-option-i64" : "invalid-result-i64";
         fprintf(stderr, "KEXE_TRAP {:kind :result :reason :%s}\n", reason);
         printf("{:status :trap :exit %d :fuel {:initial %" PRIu64 " :remaining %" PRIu64
-               "} :heap {:capacity 4096 :used %" PRIu64 "}}\n",
-               trap_exit, kexe_initial_fuel, shared->context.fuel, shared->pair_used);
+               "} :heap {:capacity 4096 :used %" PRIu64 "}%s}\n",
+               trap_exit, kexe_initial_fuel, shared->context.fuel, shared->pair_used,
+               arena_report(shared));
         return trap_exit;
       }
       printf("{:status :ok :result %" PRId64 " :result-type :%s "
              ":result-tag %s :result-word %" PRId64
              " :fuel {:initial %" PRIu64 " :remaining %" PRIu64
-             "} :heap {:capacity 4096 :used %" PRIu64 "}}\n",
+             "} :heap {:capacity 4096 :used %" PRIu64 "}%s}\n",
              shared->result, result_type, tag == 1 ? "true" : "false", payload,
-             kexe_initial_fuel, shared->context.fuel, shared->pair_used);
+             kexe_initial_fuel, shared->context.fuel, shared->pair_used,
+               arena_report(shared));
     } else if (variant_case_count > 0) {
       int64_t ordinal, payload;
       if (!inspect_variant_result(shared, shared->result, variant_case_count,
@@ -2444,27 +2518,30 @@ static int write_supervisor_report(const struct kexe_shared_v4 *shared,
             "KEXE_TRAP {:kind :result :reason :invalid-variant}\n";
         write_stderr_checked(trap, sizeof(trap) - 1u);
         printf("{:status :trap :exit 130 :fuel {:initial %" PRIu64 " :remaining %" PRIu64
-               "} :heap {:capacity 4096 :used %" PRIu64 "}}\n",
-               kexe_initial_fuel, shared->context.fuel, shared->pair_used);
+               "} :heap {:capacity 4096 :used %" PRIu64 "}%s}\n",
+               kexe_initial_fuel, shared->context.fuel, shared->pair_used,
+               arena_report(shared));
         return 130;
       }
       printf("{:status :ok :result %" PRId64
              " :result-type :variant :result-ordinal %" PRId64
              " :result-word %" PRId64
              " :fuel {:initial %" PRIu64 " :remaining %" PRIu64
-             "} :heap {:capacity 4096 :used %" PRIu64 "}}\n",
+             "} :heap {:capacity 4096 :used %" PRIu64 "}%s}\n",
              shared->result, ordinal, payload, kexe_initial_fuel, shared->context.fuel,
-             shared->pair_used);
+             shared->pair_used, arena_report(shared));
     } else {
       printf("{:status :ok :result %" PRId64
              " :fuel {:initial %" PRIu64 " :remaining %" PRIu64
-             "} :heap {:capacity 4096 :used %" PRIu64 "}}\n",
-             shared->result, kexe_initial_fuel, shared->context.fuel, shared->pair_used);
+             "} :heap {:capacity 4096 :used %" PRIu64 "}%s}\n",
+             shared->result, kexe_initial_fuel, shared->context.fuel, shared->pair_used,
+               arena_report(shared));
     }
   } else {
     printf("{:status :trap :exit %d :fuel {:initial %" PRIu64 " :remaining %" PRIu64
-           "} :heap {:capacity 4096 :used %" PRIu64 "}}\n",
-           child_status, kexe_initial_fuel, shared->context.fuel, shared->pair_used);
+           "} :heap {:capacity 4096 :used %" PRIu64 "}%s}\n",
+           child_status, kexe_initial_fuel, shared->context.fuel, shared->pair_used,
+               arena_report(shared));
   }
   return child_status;
 }
@@ -2749,12 +2826,65 @@ int main(int argc, char **argv) {
              strcmp(result_type, "option-i64") != 0 &&
              strcmp(result_type, "result-i64") != 0) return 2;
   int64_t args[6] = {0, 0, 0, 0, 0, 0};
+
+  /* The two vector arenas are sized here rather than at compile time. Both
+   * default to what they were as fixed arrays, and both are refused before
+   * the guest starts if the environment names something that is not a
+   * positive decimal integer -- never coerced, the same contract KEXE_FUEL
+   * has above.
+   *
+   * Why a guest needs to raise them: a `:vector-i64` is immutable, so every
+   * update mints a new handle over a fresh slice. Measured 2026-09-08,
+   * X25519 (kotoba-lang/org-ietf-x25519) took 1,165,132 handles and
+   * 31,933,313 items to answer -- 285 and 487 times the defaults. It is not
+   * a large program; it is a program that writes to vectors in a loop. */
+  uint64_t vector_capacity = KEXE_VECTOR_CAPACITY_DEFAULT;
+  uint64_t vector_item_capacity = KEXE_VECTOR_ITEM_CAPACITY_DEFAULT;
+  const char *vector_env = getenv("KEXE_VECTOR_CAPACITY");
+  if (vector_env != NULL && vector_env[0] != '\0') {
+    if (parse_u64(vector_env, &vector_capacity) != 0 || vector_capacity == 0) {
+      fprintf(stderr,
+              "kexe-loader: KEXE_VECTOR_CAPACITY must be a positive decimal integer\n");
+      return 2;
+    }
+  }
+  const char *vector_item_env = getenv("KEXE_VECTOR_ITEM_CAPACITY");
+  if (vector_item_env != NULL && vector_item_env[0] != '\0') {
+    if (parse_u64(vector_item_env, &vector_item_capacity) != 0 ||
+        vector_item_capacity == 0) {
+      fprintf(stderr,
+              "kexe-loader: KEXE_VECTOR_ITEM_CAPACITY must be a positive decimal integer\n");
+      return 2;
+    }
+  }
+  /* Overflow first, then the ceiling. Checking the product without checking
+   * for wraparound would let a large enough request come back under the
+   * ceiling. */
+  if (vector_capacity > KEXE_ARENA_MAX_BYTES / sizeof(struct kexe_vector_v1) ||
+      vector_item_capacity > KEXE_ARENA_MAX_BYTES / sizeof(int64_t)) {
+    fprintf(stderr, "kexe-loader: vector arena request exceeds the %llu byte ceiling\n",
+            (unsigned long long)KEXE_ARENA_MAX_BYTES);
+    return 2;
+  }
+  uint64_t vector_table_bytes = vector_capacity * sizeof(struct kexe_vector_v1);
+  uint64_t vector_item_bytes = vector_item_capacity * sizeof(int64_t);
+  if (vector_table_bytes + vector_item_bytes > KEXE_ARENA_MAX_BYTES) {
+    fprintf(stderr, "kexe-loader: vector arena request exceeds the %llu byte ceiling\n",
+            (unsigned long long)KEXE_ARENA_MAX_BYTES);
+    return 2;
+  }
+  uint64_t shared_bytes = sizeof(struct kexe_shared_v4) + vector_table_bytes
+                          + vector_item_bytes;
   struct kexe_shared_v4 *shared =
-      mmap(NULL, sizeof(*shared), PROT_READ | PROT_WRITE,
+      mmap(NULL, (size_t)shared_bytes, PROT_READ | PROT_WRITE,
            MAP_SHARED | MAP_ANONYMOUS, -1, 0);
   if (shared == MAP_FAILED) fail("mmap shared execution state");
-  memset(shared, 0, sizeof(*shared));
+  memset(shared, 0, (size_t)shared_bytes);
   shared->context.version = 4;
+  shared->vector_capacity = vector_capacity;
+  shared->vector_item_capacity = vector_item_capacity;
+  shared->vector_table_offset = sizeof(struct kexe_shared_v4);
+  shared->vector_items_offset = sizeof(struct kexe_shared_v4) + vector_table_bytes;
   const char *fuel_env = getenv("KEXE_FUEL");
   if (fuel_env != NULL && fuel_env[0] != '\0') {
     if (parse_u64(fuel_env, &kexe_initial_fuel) != 0 || kexe_initial_fuel == 0) {
@@ -2803,7 +2933,7 @@ int main(int argc, char **argv) {
                                              record_field_count,
                                              variant_case_count,
                                              variant_bool_mask);
-    if (munmap(shared, sizeof(*shared)) != 0) fail("supervisor shared munmap");
+    if (munmap(shared, (size_t)shared_bytes) != 0) fail("supervisor shared munmap");
     if (munmap(memory, mapped) != 0) fail("supervisor munmap");
     return child_status;
   }
@@ -2871,6 +3001,6 @@ int main(int argc, char **argv) {
   if (!structured_report) write_i64(result);
 
   if (munmap(memory, mapped) != 0) fail("munmap");
-  if (munmap(shared, sizeof(*shared)) != 0) fail("shared munmap");
+  if (munmap(shared, (size_t)shared_bytes) != 0) fail("shared munmap");
   _exit(0);
 }
