@@ -314,7 +314,7 @@
       (doseq [n ["b.txt" "a.txt" ".hidden" "z"]] (fs/writeFileSync (.join path dir n) n))
       (let [args (guest! "browse-listing" dir)
             listed (run loader args (string-env {"KEXE_CAP_RESOURCES_34" dir}) true)
-            expected (str ":result-utf8-hex \"" (hex ".hidden\na.txt\nb.txt\nz") "\"")]
+            expected (str ":result-utf8-hex \"" (hex ".hidden\t0\na.txt\t0\nb.txt\t0\nz\t0") "\"")]
         (ensure! (and (= 0 (:status listed)) (str/includes? (:stdout listed) expected))
                  (str "browse listing mismatch: " (:status listed) " " (str/trim (:stdout listed)) " " (str/trim (:stderr listed))))
         (doseq [[label extra] [["no scope" {}]
