@@ -371,7 +371,7 @@ approval**. Current verdicts above are diagnostics, not claims.
   wall is on-stack inside InterpreterMachine.call/eval, opcode handlers
   are never a dominant leaf in either rep.
 
-- 2026-09-08 12:15–12:50 JST tick 28 (JIT): **J-B 4-arm FIRST
+- 2026-09-08 12:42–13:40 JST tick 28 (JIT): **J-B 4-arm FIRST
   QUIET-GATED + FIRST perfgate.core/qualify RUN OF THE JIT AXIS. ADR 0345.**
   The workstation gate still failed a 25th consecutive time (12:42: load1
   72–80 on 10 CPUs, iostat idle 13–45%) — so, per ADR 0341's measurement-

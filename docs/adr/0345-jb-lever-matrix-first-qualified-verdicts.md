@@ -16,7 +16,7 @@ the C-vs-D ordering was not stable across ticks. No JIT-axis measurement had
 ever carried a `perfgate.core/qualify` verdict at the fleet quiet gate
 (busy-CPU fraction ≤ 0.10, ADR 0282 criterion).
 
-## Measurement (benjamin, 2026-09-08 12:25–12:37 JST run window)
+## Measurement (benjamin, 2026-09-08 13:25–13:37 JST run window = 04:25–04:37 UTC)
 
 - Fixture: `bench/runtime-comparison/jb_imod_control_4arms.c`, sha256
   `a025ed9ba133d5a4c2c435c7c299ab56142444da2bcbf850cb032a22a8e3c108`
