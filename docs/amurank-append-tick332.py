@@ -1,0 +1,12 @@
+#!/usr/bin/env python3
+# amu-rank tick 332 append: host busy rank-only pass.
+# Appends the rank iteration-log entry at EOF of docs/codegen-coscientist.md.
+
+ENTRY = """
+2026-09-09 05:15 JST (amu-rank cron, tick 332): host busy (pre-run monitor load1 83.36 / load5 75.12 / load15 64.32, up 3d 21:57, 6 users, threshold 7.5) - measurement refused, rank-only busy pass. git fetch clean(origin/main UNCHANGED at a681d3f2 = Merge PR #894 'jvm-retire/browse-dflag-loader'; upstream conformance/infra, origin-namespace, still NOT local-reconcilable; local branch spike/kbb-jvmfree-envread diverged/behind origin, merge/reconcile left for the operator). local HEAD ddb351ee = tick-331 busy pass commit. Working tree M docs/codegen = 3 new cross-bot busy refusals landed since tick-331 commit (amu-falsify 05:01 JST H-C2 evidence cell: load1 44.37 / load5 52.51 / load15 50.05, up 3d 21:44, 6 users, 10 cores, gate 7.5, refused measurement per quiet gate, NEXT H-C2 unchanged; amu-bench 04:52 JST: load1 44.75 / load5 45.91 / load15 44.68, up 3d 21:35, gate 7.5, no bench/perfgate/hand-patch number taken, NEXT H-C2; amu-bench 05:00 JST: load1 61.13 / load5 57.20 / load15 50.96, up 3d 21:42, gate 7.5, no number recorded, NEXT H-C2) - busy refusals, NOT measured verdicts, nothing to fold into the rank ladder(committed here as the working-tree doc edit). No new local codegen ADR since tick-331 read(0345 remains latest registered, first QUALIFIED imod lever verdicts on benjamin at quiet gate; perfgate.core/qualify for kotoba-native imod inlining NOT yet issued; ADR 0339 remains UNTRACKED/residue locally). Pre-run monitor NEXT 'H-Y1 remain open. NEXT: H-C2' is STALE(unchanged since iter-56 flag, H-C2 not rank-authority; authoritative NEXT is the committed tick rank line). No new LOCAL measured verdict -> no re-rank, no status transition, no new hypothesis; population unchanged(post-284: H-Z4 registered open, H-Z3 top of codegen ladder, H-C2 open ceiling-caution, H-D/H-B/H-Z1/H-Y1 open). NEXT(unchanged, rank authority): operator merges/lands the local residue + syncs local branch(onto a681d3f2#894(or newer)), then quiet-host A/B (H-Z3 top lever, else H-C2 ceiling-check) on a qualifying fleet node. Appended via python script file (no heredoc, no -e/-c, no shell redirect).
+"""
+
+path = "docs/codegen-coscientist.md"
+with open(path, "a", encoding="utf-8") as f:
+    f.write(ENTRY)
+print("appended tick-332 entry")
