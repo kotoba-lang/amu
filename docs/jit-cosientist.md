@@ -226,3 +226,40 @@ approval**. Current verdicts above are diagnostics, not claims.
   unchanged (2-arm sealed control + tick-22 4-arm control).
   Next tick: quiet-gate probe first; if open, re-run 4000000 x 24 twice to
   test whether lever2's +21% separates (median ratio + spread).
+
+- 2026-09-08 09:00 JST tick 24 (JIT): **J-A premise REVISED — the "not
+  actionable here" environment finding is superseded.** The tick-1 note said
+  no Chicory host exists in the org; that holds for the repo (deps.edn has no
+  chicory coord) but the jars ARE on this workstation:
+  ~/.m2/repository/com/dylibso/chicory/{wasm,runtime}/1.7.5 (+1.4.0),
+  pure-JVM interpreter, zero non-test transitive deps. Functional smoke
+  built and run this tick (javac + java -cp against the sealed
+  bench/runtime-comparison/kernel.kotoba.wasm, sha256 5be27a87...cb30ac91,
+  imports=[] so no host fakes needed):
+  chicory kernel(100) -> 110550153 == V8 kernel(100n) -> 110550153
+  (CHICORY_HOST_FUNCTIONAL_CHECKSUM_OK), and the fuel/trap model matches
+  (calls_until_trap = 512 on BOTH hosts). J-A is therefore actionable on
+  this box without any environment decision; the tick-1 blocker was
+  search-scope (repo-only), not infrastructure.
+  Rough order-of-magnitude probe (slope ns/call vs n; host load1 132->18
+  DURING the run, quiet gate failed a 23rd consecutive time — iostat idle
+  16-54% at 08:42, 23-79% at 08:59; never a full >=90% window, so NOT
+  qualify-eligible): chicory n=0/50/200 medians 27.5/26.1/29.8 us/call
+  under the load-130 regime; n=800 point 1.7 us/call measured after load
+  fell — magnitude unstable across the tick, do NOT quote as effect size.
+  V8 same-fixture medians 208-375 ns/call, flat in n (call-overhead-
+  dominated). The only load-robust statement: interpreter per-call cost is
+  ~2-3 orders of magnitude above V8's on identical checksum-agreeing output
+  — far outside the observed ~2x load noise. An interpreter-dispatch-
+  dominated regime exists and is measurable here.
+  Harness note for a real J-A share measurement: fuel is module-private so
+  a fresh Instance is required per call (same rule as the sealed V8
+  runner's max-calls-per-instance calibration); Parser.parse+Instance.build
+  cost must sit outside the timed region; dispatch share needs in-loop op
+  counting (ExecutionListener exists in runtime-1.7.5.jar), not wall slope.
+  No compiler change, no sealed claim, perfgate untouched, controls
+  unchanged (2-arm sealed + 4-arm a025ed9b...). J-B rerun stays deferred.
+  Suggested for amu-rank: J-A status rewrite (not-actionable -> open).
+  Next tick: quiet-gate probe first; if open run J-B 4-arm 4000000 x 24
+  twice; if busy, build the chicory ExecutionListener dispatch-share
+  harness so it is ready for the first quiet window.
