@@ -258,9 +258,34 @@
           (when (.-error result)
             (fail! "error: unable to start nbb-native compiler runtime" 70))
           (.exit js/process (or (.-status result) 70)))
-        (let [alias (if (contains? #{"measure-runtime" "run"} (first sub-args))
+        (let [;; `--jvm-free` was passed straight through to the subcommand as
+              ;; an ordinary argument, so `bin/kotoba -M run x.kotoba
+              ;; --jvm-free` started a JVM and said nothing. Measured
+              ;; 2026-09-08 with a `clojure` shim on PATH that logs its argv:
+              ;; the log read `-M:native-run run x.kotoba --jvm-free` and
+              ;; stdout was empty.
+              ;;
+              ;; A flag that looks honoured and is not is worse than one that
+              ;; is unsupported: every "this ran JVM-free" claim made through
+              ;; this launcher was unfalsifiable. `bin/amu` already refuses
+              ;; here; this is the same refusal, same exit code 64.
+              jvm-free? (some #{"--jvm-free"} sub-args)
+              _ (when jvm-free?
+                  (fail! (str "error: this Kotoba command has no JVM-free implementation; "
+                              "refusing to invoke the Clojure/JVM compatibility path")
+                         64))
+              alias (if (contains? #{"measure-runtime" "run"} (first sub-args))
                       "-M:native-run"
                       "-M:run")
+              ;; And when it IS the JVM path, say so. Silence here is what let
+              ;; the fallback masquerade as the fast path -- the fast path
+              ;; above spawns nbb and prints nothing either, so the two were
+              ;; indistinguishable from outside. stderr, so it cannot corrupt
+              ;; a stdout the caller is parsing.
+              _ (.error js/console
+                        (str "kotoba: no JVM-free path for `" (first sub-args)
+                             "`; starting a JVM (clojure " alias
+                             "). Pass --jvm-free to refuse instead."))
               result (.spawnSync child "clojure"
                                  (clj->js (into [alias] sub-args))
                                  #js {:cwd root :stdio "inherit" :env js/process.env})]

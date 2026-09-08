@@ -25,6 +25,22 @@
   {:id :nominal-record
    :source "(defn main [] (record-get [:record :conformance/person [[:name :string] [:age :i64]]] (record [:record :conformance/person [[:name :string] [:age :i64]]] \"Kotoba\" 7) :age))"
    :expect 7}
+  ;; The canonical list ACCESSOR, added 2026-09-08. Until then a [:list T]
+  ;; could be constructed (typed-list-new) and counted (vector-count) and
+  ;; nothing read an element back out of it: `typed-list-nth` type-checked --
+  ;; kotoba-sema has carried it since 2026-09-03 and rewrites `nth` on a list
+  ;; to it -- and neither backend lowered it, so `amu check` returned 0 and
+  ;; `amu compile` returned 70 on both targets, for the whole module whether
+  ;; the function was reached or not. Both arms are here because they are
+  ;; different lowerings on wasm32: an i64 item calls the `list-nth-i64`
+  ;; intrinsic and a reference item calls `list-nth-ref`, and a test that only
+  ;; covered one would pass with the two swapped.
+  {:id :typed-list-nth-i64
+   :source "(defn main [] (typed-list-nth [:list :i64] (typed-list-new [:list :i64] 4 5 6) 2))"
+   :expect 6}
+  {:id :typed-list-nth-reference
+   :source "(defn main [] (string-byte-length (typed-list-nth [:list :string] (typed-list-new [:list :string] \"a\" \"bb\" \"ccc\") 1)))"
+   :expect 2}
   ;; In-place vector update. Present here because a lowering to a STORE is
   ;; only indistinguishable from a copy when the handle is dead afterwards,
   ;; and "indistinguishable" is a claim about three runtimes agreeing rather

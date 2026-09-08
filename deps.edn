@@ -24,9 +24,14 @@
         io.github.kotoba-lang/json
         {:git/url "https://github.com/kotoba-lang/json.git"
          :git/sha "d5137c7bbd029e4c09964e8241899d2c286302bf"}
+        ;; Advanced 2026-09-08 to f803255e (PR #99): `typed-list-nth`, the
+        ;; accessor a [:list T] never had on this backend. Before it, a list
+        ;; could be built and counted and never read -- `amu check` returned 0
+        ;; and `amu compile --target web` returned 70 "unsupported KIR node",
+        ;; for the whole module whether the function was reached or not.
         io.github.kotoba-lang/kotoba-script
         {:git/url "https://github.com/kotoba-lang/kotoba-script.git"
-         :git/sha "fcc5751ba522fb753a6415a08a4f7265e52ce872"}
+         :git/sha "f803255ed259203e008d989f859b3b1b5fd22c98"}
         ;; ADR-0222: source reading and semantic analysis live behind the
         ;; kotoba-sema repository boundary and public semantic-analysis API.
         ;;
@@ -68,7 +73,7 @@
         ;; said so.
         ;;
         ;;   grammar-sha256    515bbc7de84a3340ef3b250e4ee411739d3acebf32ba31450540f146768bb841
-        ;;   kotoba-sema-pin   6c895d100c7e45d2904554530b258e7155e15856
+        ;;   kotoba-sema-pin   96fd4e1936adcf6a225d72b46a003dcf2b3bf94a
         ;;
         ;; `guest_grammar_vendor_test/authority-digest-history` ends with the
         ;; same digest, so the pin, the prose and the history move in one
@@ -131,6 +136,42 @@
         ;;    kotoba-sema's on this classpath and is not resynced here, because
         ;;    this advance does not claim a catalog change.
         io.github.kotoba-lang/kotoba-sema
+        ;; 96fd4e19 (2026-09-08, +2 on 7154ffb6): `(def k 1.5)` is admitted.
+        ;; `constant-literal?` asked `value/f64-value?` -- a host double -- so
+        ;; an f64 constant was refused under the JVM-free reader. THIS
+        ;; REPOSITORY found it again: `f64-constants-are-closed-and-use-\
+        ;; canonical-bit-lowering` was the last error in this suite against the
+        ;; unified reader. Third site in frontend.cljc with that shape, after
+        ;; the f32 branch and the map-key/document shims.
+        ;;
+        ;; 7154ffb6 (2026-09-08, +2 on 9d87c113): the reader reads hex. THIS
+        ;; REPOSITORY IS WHY IT WAS FOUND. Advancing to 9d87c113 alone turned
+        ;; `bit-or-and-not-match-jvm-semantics` and
+        ;; `i64-shifts-cover-the-full-width` red on `(bit-or 0xF000 0x00F0)`:
+        ;; kotoba-reader matched decimal digits only, so `0xF000` became a
+        ;; SYMBOL and was refused as an unbound variable. 79 `.kotoba` files
+        ;; use `0x` literals and none of them could be read on nbb -- a defect
+        ;; older than the pin that surfaced it, and invisible while the JVM
+        ;; still had `clojure.tools.reader` to handle hex for free.
+        ;; The same commit refuses `0377` instead of reading it as decimal 377
+        ;; where tools.reader read octal 255 -- two hosts, two numbers, no
+        ;; error on either.
+        ;;
+        ;; 9d87c113 (2026-09-08, +2 on 6c895d10): kotoba-sema reads with ONE
+        ;; reader on both hosts and no longer depends on
+        ;; `org.clojure/tools.reader`. That dependency reached this
+        ;; repository's production classpath transitively and ONLY through
+        ;; kotoba-sema; measured across this pin advance,
+        ;; `clojure -Spath | grep -c tools.reader` goes 1 -> 0. This is the
+        ;; first third-party JVM library to actually LEAVE the compiler's
+        ;; closure rather than be re-declared somewhere quieter.
+        ;;
+        ;; The grammar bytes do not move across it (515bbc7d either side, and
+        ;; the compare names only deps.edn, run-tests.cljs, frontend.cljc,
+        ;; kotoba_reader.cljc and the reader test), so `grammar-sha256` and
+        ;; `authority-digest-history` are unchanged and the pin prose above
+        ;; moves alone.
+        ;;
         ;; 6c895d10 (2026-09-08, +12): f32 decimal literals reach the f32
         ;; branch under the JVM-free reader. Before this pin `(f32-add 1.5
         ;; 2.5)` and `(defn main [] :f32 1.5)` compiled on the JVM and were
@@ -139,7 +180,7 @@
         ;; went unseen because the only test of the feature was `.clj`; it is
         ;; `.cljc` and in `run-tests.cljs` as of that commit.
         {:git/url "https://github.com/kotoba-lang/kotoba-sema.git"
-         :git/sha "6c895d100c7e45d2904554530b258e7155e15856"}
+         :git/sha "96fd4e1936adcf6a225d72b46a003dcf2b3bf94a"}
         ;; ADR-2607266000 Phase B: these responsibilities moved out of this repo.
         ;;
         ;; The slice-value stream held this pin on purpose (ADR 0314), because
@@ -274,9 +315,23 @@
         io.github.kotoba-lang/io-ipld
         {:git/url "https://github.com/kotoba-lang/io-ipld.git"
          :git/sha "1a2e10cf8038155de210357e637eac4102de89cb"}
+        ;; Advanced 2026-09-08 to 829966fd (PR #76): the same accessor on
+        ;; wasm32, as two CONDITIONALLY imported intrinsics (`list-nth-i64` /
+        ;; `list-nth-ref`), which runtime/browser-host.mjs now answers.
+        ;;
+        ;; The advance also crosses 2d912bf (#74), which lowers
+        ;; `document-vector-sort` and emits its import inside the same
+        ;; `has-document?` block as the rest -- so every document-using module
+        ;; now carries it. Measured 2026-09-08: with the pin moved and nothing
+        ;; else, 11 tests across document_value / document_sha256 /
+        ;; document_roundtrip / document_edn / dataspace_wasm_aot failed at
+        ;; INSTANTIATION with `forbidden-import: Wasm import is outside the
+        ;; Kotoba browser profile: kotoba:typed/document-vector-sort/function`.
+        ;; This commit teaches the host that operation, sorting by the same
+        ;; total order the KIR reference interpreter uses.
         io.github.kotoba-lang/kotoba-wasm
         {:git/url "https://github.com/kotoba-lang/kotoba-wasm.git"
-         :git/sha "2292c842bea9b4693e320d90b050c088c1ee6e0d"}
+         :git/sha "829966fd47148d3ef2b873ea35bed57a63928606"}
         ;; Production KIR routes exclusively through whole-module
         ;; GMIR/MIR/allocated-MC, including word/f64/memory/runtime/capability,
         ;; literal-data, scalar variant, word-field record, and x86 privileged
@@ -539,20 +594,18 @@
                    ;; nothing about `bin/kotoba` changes here. What changes is
                    ;; that the declaration now says where it is actually used.
                    ;;
-                   ;; READ THIS BEFORE CALLING IT REMOVED. The jar is STILL on
-                   ;; `clojure -Spath`: `io.github.kotoba-lang/kotoba-sema`
-                   ;; depends on it (`clojure -Stree`, 2026-09-08), because
-                   ;; `kotoba.compiler.frontend`'s `:clj` branch reads source
-                   ;; with `clojure.tools.reader` while its `:cljs` branch uses
-                   ;; the in-repo `kotoba-reader`. Measured before and after
-                   ;; this edit: one tools.reader entry on the production
-                   ;; classpath, both times. So this commit corrects a
-                   ;; declaration; it does not shrink the closure. The closure
-                   ;; shrinks when kotoba-sema reads with one reader on both
-                   ;; hosts -- attempted 2026-09-08 and NOT landed: it compiles
-                   ;; and then fails 28 assertions and errors 23 more in
-                   ;; kotoba-sema's own JVM suite, so the two readers do not
-                   ;; agree today and saying otherwise would be a guess.
+                   ;; When this moved here it did NOT remove the jar: kotoba-sema
+                   ;; pulled it transitively, and `clojure -Spath` carried one
+                   ;; entry before and after. That is no longer true. kotoba-sema
+                   ;; 9d87c113 reads with one reader on both hosts and dropped the
+                   ;; dependency, so across the pin advance in this same commit the
+                   ;; production classpath goes 1 -> 0.
+                   ;;
+                   ;; The declaration stays here because the two `.clj` tests still
+                   ;; require it, and this is where they are. Do not promote it back
+                   ;; to top-level `:deps` to make some resolution problem go away:
+                   ;; that would put a JVM library back on the closure of a compiler
+                   ;; whose stated exit is a native binary with no Clojure installed.
                    org.clojure/tools.reader {:mvn/version "1.5.2"}
                    io.github.kotoba-lang/provider
                    {:git/url "https://github.com/kotoba-lang/provider.git"

@@ -55,6 +55,11 @@ const ALLOWED_IMPORTS = new Set([
   "kotoba:typed/set-contains-ref/function",
   "kotoba:typed/set-nth-i64/function",
   "kotoba:typed/set-nth-ref/function",
+  // The list accessor. Imported only by a module that indexes a
+  // `[:list T]`; kotoba-wasm emits these two conditionally, so a module
+  // that never indexes a list carries neither and is unaffected.
+  "kotoba:typed/list-nth-i64/function",
+  "kotoba:typed/list-nth-ref/function",
   "kotoba:typed/map-contains-i64/function",
   "kotoba:typed/map-contains-ref/function",
   "kotoba:typed/map-get-i64/function",
@@ -103,6 +108,16 @@ const ALLOWED_IMPORTS = new Set([
   "kotoba:typed/document-vector-conj/function",
   "kotoba:typed/document-vector-drop/function",
   "kotoba:typed/document-vector-remove/function",
+  // kotoba-wasm 2d912bf (#74) lowers `document-vector-sort`, and emits its
+  // import inside the same `has-document?` block as the rest -- so EVERY
+  // document-using module carries it, whether it sorts or not. This host was
+  // pinned behind that commit; advancing the pin without this line turns
+  // ELEVEN tests red at INSTANTIATION with `forbidden-import`, across
+  // document_value, document_sha256, document_roundtrip, document_edn and
+  // dataspace_wasm_aot -- measured 2026-09-08 against a suite that is
+  // 0 failures / 0 errors at origin/main. kotoba-script (`docVectorSort`) and
+  // the KIR reference interpreter have both had it since that day.
+  "kotoba:typed/document-vector-sort/function",
   "kotoba:typed/document-get/function",
   "kotoba:typed/document-assoc/function",
   "kotoba:typed/document-dissoc/function",
@@ -2026,6 +2041,12 @@ function createTypedRuntime(abi, typedCapCall, allow) {
     "set-nth-ref"(descriptorId, value, rawIndex) {
       return setNth(descriptorId, value, i64(rawIndex), /*i64Item*/ false);
     },
+    "list-nth-i64"(descriptorId, value, rawIndex) {
+      return listNth(descriptorId, value, i64(rawIndex), /*i64Item*/ true);
+    },
+    "list-nth-ref"(descriptorId, value, rawIndex) {
+      return listNth(descriptorId, value, i64(rawIndex), /*i64Item*/ false);
+    },
     "map-contains-i64"(descriptorId, value, key) {
       return mapContains(descriptorId, value, i64(key)) ? 1 : 0;
     },
@@ -2249,6 +2270,17 @@ function createTypedRuntime(abi, typedCapCall, allow) {
         reject("invalid-typed-operation", "document vector index out of range");
       return constructDocument(["vector", value[1].filter((_, itemIndex) => itemIndex !== Number(index))]);
     },
+    "document-vector-sort"(descriptorId, value) {
+      if (descriptorAt(descriptorId) !== documentDescriptor)
+        reject("invalid-typed-operation", "document descriptor required");
+      value = assertDocument(value);
+      if (value[0] !== "vector") reject("invalid-typed-operation", "document vector required");
+      // The same total order the KIR reference interpreter sorts by
+      // (`value/document-compare`) and the same one this host already uses to
+      // check that a document set is sorted and duplicate-free, so the three
+      // runtimes agree on the ORDER and not only on the multiset.
+      return constructDocument(["vector", [...value[1]].sort((left, right) => compareDocument(left, right, false))]);
+    },
     "document-get"(descriptorId, value, key) {
       if (descriptorAt(descriptorId) !== documentDescriptor)
         reject("invalid-typed-operation", "document descriptor required");
@@ -2464,6 +2496,27 @@ function createTypedRuntime(abi, typedCapCall, allow) {
     const items = checked[1];
     if (index < 0n || index >= BigInt(items.length))
       reject("invalid-typed-operation", "set index out of bounds");
+    const item = items[Number(index)];
+    assertValue(descriptor[1], item);
+    return i64Item ? i64(item) : item;
+  };
+  /**
+   * `typed-list-nth`: index into a canonical `[:list T]`.
+   *
+   * Traps out of range rather than answering, which is what sema promises for
+   * it -- "typed-list-nth traps on an index out of range, as vector nth
+   * without a default does". Before 2026-09-08 there was no list accessor on
+   * any backend: a `[:list T]` (including every `typed-map-keys` /
+   * `typed-map-vals` projection) could be built and counted and never read.
+   */
+  const listNth = (descriptorId, value, index, i64Item) => {
+    const descriptor = descriptorAt(descriptorId);
+    if (!Array.isArray(descriptor) || descriptor[0] !== "list")
+      reject("invalid-typed-operation", "list nth requires a list descriptor");
+    const checked = assertValue(descriptor, value);
+    const items = checked[1];
+    if (index < 0n || index >= BigInt(items.length))
+      reject("invalid-typed-operation", "list index out of bounds");
     const item = items[Number(index)];
     assertValue(descriptor[1], item);
     return i64Item ? i64(item) : item;
