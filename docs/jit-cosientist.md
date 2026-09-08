@@ -370,3 +370,52 @@ approval**. Current verdicts above are diagnostics, not claims.
   lever" question moves at all. The load-robust J-A facts stay: ~100% of
   wall is on-stack inside InterpreterMachine.call/eval, opcode handlers
   are never a dominant leaf in either rep.
+
+- 2026-09-08 12:15–12:50 JST tick 28 (JIT): **J-B 4-arm FIRST
+  QUIET-GATED + FIRST perfgate.core/qualify RUN OF THE JIT AXIS. ADR 0345.**
+  The workstation gate still failed a 25th consecutive time (12:42: load1
+  72–80 on 10 CPUs, iostat idle 13–45%) — so, per ADR 0341's measurement-
+  placement finding, the measurement moved to fleet node **benjamin** (busy-
+  CPU fraction PRE 0.045 / POST 0.049, all samples ≤ 0.10, load1 ~2 on 10
+  cores, 0 users). Fixture: sealed 4-arm control jb_imod_control_4arms.c
+  (sha256 a025ed9b...e3c108 verified on-node after scp), Apple clang 17
+  -std=c11 -O3; -Werror omitted ONLY for the fixture's two pre-existing
+  unused-`q` warnings (present since tick 22; arms disassembly-verified on-
+  node this tick: A bl->imod_opaque sdiv / B bl->imod_const smulh+asr /
+  C inline sdiv 0 bl / D inline smulh+asr 0 sdiv). 12 process-cold runs
+  (4000000 x 24, median-of-24 = one sample; ~63 s each), 4-arm checksum
+  764266 agreed EVERY run. Verdicts from perfgate.core/qualify run ON
+  benjamin (default-v1: min-samples 5, max-rel-stdev 0.10, min-improvement
+  0.05, provenance :measured; machine darwin-arm64-benjamin):
+    lever1 A->B (const-divisor fold, call kept):   +13.11% QUALIFIED, separated (gap .4676 vs summed-stdev .0008)
+    lever2 A->C (helper-call INLINING, sdiv kept): +18.03% QUALIFIED, separated (gap .6432 vs summed-stdev .0019)
+    both   A->D:                                   +13.14% QUALIFIED, separated
+    B->D (marginal inlining on const arm):          +0.03% NOT qualified (:improvement-below-threshold, :not-separated-from-noise)
+    C->D (marginal const on inlined arm):           −5.97% NOT qualified, separated REGRESSION
+  Rel-stdevs 0.0001–0.0012 — 2–3 orders below the 0.10 ceiling. Cross-host
+  reproduction of ADR 0344 Evidence 2 (levi) within 0.1pp on all five deltas.
+  Consequences: (1) the tick-22/23 attribution falsification — J-B's saving
+  is the helper CALL, not divisor specialization — now stands at QUALIFIED
+  quality, no longer sign-only; B->D ≈ 0 is measured noise, not an
+  unmeasured gap. (2) The two levers are SUBSTITUTES on this serial chain,
+  not complements: C (inline-only) is the best proxy arm at +18.0% and the
+  const fold ON TOP of it separates as −6.0% regression. Rule-5 composition
+  for the ladder therefore picks ONE lever: imod helper inlining at the call
+  site (J-B2) — its hand-patch bound is now ≥5% three times over at
+  qualified spread separation. (3) 0344's non-additivity and "C beats D"
+  become qualified facts, not busy-host patterns. NO compiler change, no
+  sealed claim (still C-proxy control; kotoba-native inlining unimplemented;
+  JIT warmup/steady-state policy note unchanged — ADR 0345 is an evidence
+  record). Artifacts: bench/runtime-comparison/jb_imod_4arm_benjamin_t28.edn
+  (raw 12 runs + gate + verdicts) and jb_qualify.clj (the exact perfgate
+  route; run on-node with clojure -Sdeps '{:paths [...]}' -M -m jb-qualify
+  against perfgate+machine sources on the temp paths). Status rewrite (J-B
+  mechanism attribution; J-B2 promotion) belongs to amu-rank.
+  J-A unchanged this tick (JFR harness idle, no quiet-window run attempted —
+  the workstation window never opened; next tick moves J-A to benjamin too,
+  the quiet window is now REACHABLE off-host). Next tick: (1) JFR
+  cross-attribution (SampleVersion=2 method-vs-stack) on benjamin; if leaf
+  attribution stays unstable there, the dispatch-share question needs a
+  different estimator (perf counters), recorded as J-A's next method branch;
+  (2) hand-patch scope prediction for J-B2 in kotoba-native emission before
+  any compiler work per falsify-first.

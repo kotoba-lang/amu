@@ -1,0 +1,76 @@
+;; J-B 4-arm lever matrix — host-qualified run, fleet node benjamin, 2026-09-08 tick 28.
+;; Fixture: bench/runtime-comparison/jb_imod_control_4arms.c
+;;   sha256 a025ed9ba133d5a4c2c435c7c299ab56142444da2bcbf850cb032a22a8e3c108
+;; Build: cc (Apple clang 17.0.0 clang-1700.6.4.2) -std=c11 -O3 -Wall -Wextra
+;;   (/tmp/jb4_t28 on benjamin; -Werror omitted only for the two pre-existing
+;;   unused-`q` warnings present in the sealed fixture since tick 22 — arms and
+;;   codegen shapes disassembly-verified this tick: arm_opaque bl->imod_opaque
+;;   (sdiv), arm_const bl->imod_const (smulh+asr), arm_opaque_inl inline sdiv
+;;   0 bl, arm_const_inl inline smulh+asr 0 sdiv.)
+;; Runs: 12 x process-cold `/tmp/jb4_t28 4000000 24` (each run's printed
+;;   median-of-24-alternations ns/elem is ONE sample here). Every run: 4-arm
+;;   checksum agreement 764266 (same as sealed 2-arm control and ADR 0344).
+;; Gate (ADR 0282/0341 busy-CPU fraction, 1s os.cpus() deltas):
+;;   PRE 0.045 load1 2.00 / POST 0.049 load1 2.14 on 10 cores; earlier same-day
+;;   3-rep bracket 0.044/0.044/0.078/0.045. All samples <= 0.10 limit.
+;;   This is the first JIT-axis measurement that MET the fleet quiet gate;
+;;   ticks 1-23 refused on the workstation (25 consecutive misses) — the
+;;   measurement-placement defect named by ADR 0341 applied to this axis too.
+{:format "amu.jb-lever-matrix-raw/v1"
+ :date "2026-09-08T12:25+09:00/12:37+09:00 (JST 12:25-12:37 run window)"
+ :host "benjamin"
+ :fixture-sha256 "a025ed9ba133d5a4c2c435c7c299ab56142444da2bcbf850cb032a22a8e3c108"
+ :compiler "Apple clang version 17.0.0 (clang-1700.6.4.2) aarch64"
+ :gate {:pre {:busy 0.045 :load1 2.00}
+        :post {:busy 0.049 :load1 2.14}
+        :bracket-samples [0.044 0.044 0.078 0.045]
+        :limit 0.10}
+ :runs [{:A 3.567 :B 3.100 :C 2.923 :D 3.098}
+        {:A 3.566 :B 3.099 :C 2.923 :D 3.097}
+        {:A 3.567 :B 3.100 :C 2.923 :D 3.097}
+        {:A 3.567 :B 3.099 :C 2.923 :D 3.097}
+        {:A 3.567 :B 3.100 :C 2.926 :D 3.098}
+        {:A 3.567 :B 3.100 :C 2.928 :D 3.110}
+        {:A 3.567 :B 3.099 :C 2.923 :D 3.097}
+        {:A 3.567 :B 3.099 :C 2.923 :D 3.097}
+        {:A 3.567 :B 3.099 :C 2.923 :D 3.097}
+        {:A 3.567 :B 3.099 :C 2.923 :D 3.097}
+        {:A 3.567 :B 3.099 :C 2.923 :D 3.097}
+        {:A 3.567 :B 3.099 :C 2.923 :D 3.097}]
+ :perfgate-verdicts
+ ;; produced ON benjamin by perfgate.core/qualify (kotoba-lang/perfgate @
+ ;; local source, default-v1 policy, min-samples 5, max-relative-stdev 0.10,
+ ;; min-improvement 0.05, require-provenance :measured) via
+ ;; bench/runtime-comparison/jb_qualify.clj; machine descriptor
+ ;; darwin-arm64-benjamin :measured (cpu aarch64 10 cores).
+ [{:label :lever1-const-only :base :A :cand :B :qualified? true :reasons []
+   :improvement 0.1311 :separated? true :gap 0.4676 :summed-stdev 0.0008
+   :baseline-mean 3.5669 :candidate-mean 3.0993 :n 12
+   :rel-stdev-base 0.0001 :rel-stdev-cand 0.0002}
+  {:label :lever2-inline-only :base :A :cand :C :qualified? true :reasons []
+   :improvement 0.1803 :separated? true :gap 0.6432 :summed-stdev 0.0019
+   :baseline-mean 3.5669 :candidate-mean 2.9237 :n 12
+   :rel-stdev-base 0.0001 :rel-stdev-cand 0.0006}
+  {:label :both :base :A :cand :D :qualified? true :reasons []
+   :improvement 0.1314 :separated? true :gap 0.4687 :summed-stdev 0.0040
+   :baseline-mean 3.5669 :candidate-mean 3.0983 :n 12
+   :rel-stdev-base 0.0001 :rel-stdev-cand 0.0012}
+  {:label :marginal-inline-on-const :base :B :cand :D :qualified? false
+   :reasons [:improvement-below-threshold :not-separated-from-noise]
+   :improvement 0.0003 :separated? false :gap 0.0011 :summed-stdev 0.0042
+   :baseline-mean 3.0993 :candidate-mean 3.0983 :n 12}
+  {:label :marginal-const-on-inline :base :C :cand :D :qualified? false
+   :reasons [:improvement-below-threshold]
+   :improvement -0.0597 :separated? true :gap 0.1746 :summed-stdev 0.0053
+   :baseline-mean 2.9237 :candidate-mean 3.0983 :n 12}]
+ :reading
+ "lever2 (helper-call inlining, sdiv KEPT) +18.03% qualified+separated is the
+  dominant lever; lever1 (constant-divisor fold, call kept) +13.11% qualified;
+  B->D (adding inlining on top of the const arm) is +0.03% NOT separated — the
+  tick-22/23 attribution falsification now holds at qualified quality; C->D
+  (adding const on top of inline) is -5.97%, separated REGRESSION. The two
+  levers are substitutes on this serial chain, not complements; the best proxy
+  arm is C (inline-only). Cross-host reproduction of ADR 0344 Evidence 2
+  (levi: A 3.570/B 3.103/C 2.926/D 3.101, +13.1/+18.0/+13.1/+0.1/-6.0) —
+  all five deltas agree within 0.1pp."
+ :not-a-claim "C-proxy control arms only; kotoba-native imod inlining is not implemented; perfgate policy for JIT-form warmup/steady-state boundaries unchanged (policy note in docs/jit-cosientist.md; ADR draft before any sealed JIT claim)."}
