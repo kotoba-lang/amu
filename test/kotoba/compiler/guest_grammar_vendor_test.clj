@@ -102,7 +102,19 @@
    ;; kotoba-sema resynced straight to ba3f941's bytes, so e333abac was never
    ;; on this classpath and is deliberately NOT in this vector -- the history
    ;; records what this repository READ, not every commit the authority made.
-   "ee7ea37c7ea88c52ee8869af4d485e91a0b11bb153682ad717c86c055270b6b5"])
+   "ee7ea37c7ea88c52ee8869af4d485e91a0b11bb153682ad717c86c055270b6b5"
+   ;; 2026-09-08, kotoba-sema af8cc780 -> 6c895d10. The grammar bytes are
+   ;; 515bbc7d (the pure-head backend reach wave, kotoba-sema PR #72);
+   ;; this repository had not read them yet because its pin stopped short
+   ;; of that merge. The pin advance that brings them is the f32 literal
+   ;; fix: `(f32-add 1.5 2.5)` and `(defn main [] :f32 1.5)` compiled on
+   ;; the JVM and were REFUSED on nbb, so the default target of this
+   ;; compiler could not write an f32 literal at all. Measured through
+   ;; this repository's own JVM-free path, before and after the pin:
+   ;;   ./bin/amu check <f32 source> --jvm-free
+   ;;   before  :ok false  "expression type mismatch: expected f32, got f64"
+   ;;   after   :ok true
+   "515bbc7de84a3340ef3b250e4ee411739d3acebf32ba31450540f146768bb841"])
 
 (def authority-grammar-sha256
   "sha256 of the grammar this repository reads -- kotoba-sema's copy, at the
