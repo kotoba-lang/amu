@@ -741,3 +741,126 @@ ty 注記なし probe のため過大評価されていた — 以下は型付�
   merged state lets the jvm-dep-ledger blocked rows be re-probed for any
   head whose ONLY blocker was an alias - final sweep against sema main after
   #66 merges.
+
+## Iteration 22 - post-#66 final sweep: into CLOSED (merged); seq/remove + some-> canonical + #() branches unmerged-unPR; min/max flipped to frontend-admit-but-KIR-lowering-missing (exit 70) (2026-09-08, amu@c388865c, sema main 31d0d46, JVM-free nbb wasm_cli, cp-t24)
+
+- Hypothesis (carried from iter 21): after PR #66 merged, re-probe sema main
+  for heads whose ONLY blocker was an alias.
+- Merge-state facts (git/gh, measured this tick):
+  - PR kotoba-lang/kotoba-sema#66 (into alias) **MERGED** 2026-09-07T04:23Z,
+    merge commit b3ea4fd; `into` desugar arm present on main
+    (frontend.cljc :6171 region). `into` coverage gap CLOSED.
+  - gh pr list --state open = **[]** - no open lang PRs at all.
+  - UNMERGED into main (merge-base --is-ancestor = false): seq/remove alias
+    @8941b5d, some-thread canonical @ac5381a, min-max desugar @2542e1d,
+    #() shorthand @ee4c5155. A stale local ref `bot/lang-seq-remove-20260907`
+    resolves to 93a2ad4 = "catalog: resync :fs/browse-dir compiler wire 36
+    (#69)" - UNRELATED to seq/remove; main has no "seq requires"/"remove
+    requires" diagnostic (grep 0) and the live probe rejects (below), so the
+    alias is genuinely not landed. Iters 3/10/13/15 remain
+    implemented-but-merge-pending with NO PR opened.
+  - amu deps-lock sema pin bf01d4a8 PREDATES the #66 merge
+    (b3ea4fd not an ancestor of bf01d4a8) - a lock advance is needed for
+    `into` to reach the `bin/amu --jvm-free` default route.
+- NEW main change relevant to population: PR #68 ccd3b23 (2026-09-07)
+  "sema: admit i64 min/max as binary heads" adds `min 2 max 2` to
+  i64-operations (main frontend.cljc:221-222). Branch 2542e1d's desugar is
+  SUPERSEDED for min/max (head-level admission, no desugar needed).
+- Measured against sema main 31d0d46 (local classpath, amu nbb wasm_cli,
+  JVM-free; outputs /tmp/langcos/t24-main-probe.txt, t24t.txt):
+  - `(min a b)` / `(max a b)` (t24-minmax.kotoba): check **PASS** exit 0.
+  - compile --target wasm32 **exit 70** `{:error :ir,
+    :code kotoba/lowering-failed, :message "unknown-function"}` (reproduced
+    2x independently).
+  - CONTROL hand twin `(let [m a] (if (< m b) m b))` on the SAME classpath:
+    check PASS + compile **PASS exit 0** (wasm + provenance + publication
+    sidecars, 2 definitions recompiled) - the exit-70 is specific to the
+    min/max head lowering, not the file shape.
+  - Root cause by inspection: the pinned kotoba-kir b021a0d
+    (amu deps-lock:50-53, same commit cp-t24 loads) has NO i64 min/max
+    lowering (kir.cljc grep: only min-i64 constants). #68's message claims
+    pairing with a kotoba-kir PR that implements the KIR min/max ops; that
+    kir side is not in the pinned commit. => min/max is now BLOCKED
+    backend-side: needs the kir bump + amu lock resync. No lang work needed.
+  - `(seq v)` / `(remove f v)` live probes on main: check REJECT exit 65
+    "unknown operation: seq|remove is not a builtin, a sugar head, or a
+    function of this module" - confirms 8941b5d not landed.
+- Verdict: iter-21 final sweep CONFIRMED with numbers. Alias-shaped cohort
+  final state: str/mapv/filterv/contains?/into = landed on sema main;
+  #()/seq-remove/some->canonical = verified-but-unmerged branch-only (need
+  rebase onto 31d0d46 + PR - iter 10/13/15 CIDs must be re-measured after
+  rebase since main advanced); min/max flipped from alias-gap to a
+  KIR-lowering gap (check admits what compile cannot build - ICE-class,
+  kir/lock-owner reportable; #68 also shipped a grammar-test stale-fix that
+  now describes (min 1 2) as lowered while the pipeline exit-70s it);
+  keys/reduce-kv, :k projection, parse-long, conj-on-vector, (long x), uuid
+  remain as iters 16-20 recorded.
+- Gate: check PASS x2 + compile PASS x1 (control) + compile exit-70
+  fail-closed x2 (own diagnostic, no silent miscompile). No timing claims
+  (loadavg 17.3-21.1, quiet gate NOT met; perfgate N/A - no comparable wasm
+  pair exists for the admitted head yet).
+- Next (1 hypothesis): seq/remove + some-thread canonical rebase onto
+  31d0d46, re-run the iter-10/15 parity CIDs, open the missing PRs
+  (branch-only verified work is currently invisible to the fleet). For
+  min/max: carry the exit-70 + kir-pin-gap evidence to the amu lock owner
+  (single blocker = a kir commit with the min/max op + deps-lock advance).
+
+## Iteration 23 - seq/remove alias landed as PR #70 (rebased onto main tip 6e0b470, full gate re-run); #() shorthand found ALREADY-MERGED on main (2026-09-08, amu@4ea5a4ce, sema main 6e0b470, branch bot/lang-seq-remove-rebase-20260908 @fafa476)
+
+- Scope note: an earlier tick today (pre-report) completed the 8941b5d
+  rebase onto 31d0d46 + parity measurement (/tmp/langcos/lcos-t23-parity.txt)
+  but ended before commit/PR/docs. Main then advanced 31d0d46 -> 6e0b470.
+  This tick re-ran the whole landing on the NEW tip: the 31-line
+  frontend.cljc patch applies cleanly onto 6e0b470 (the delta touched only
+  infer-closure-refinements :11469-11500, unrelated to the desugar cond).
+- Measured (local worktree /tmp/langcos/sema-t23c classpath + amu nbb
+  wasm_cli route, JVM-free; outputs /tmp/langcos/t23c-main.txt,
+  t23c-run.txt, t23c-regression2.txt):
+  - KIR parity on new base: seq alias == hand twin ALL CIDs identical
+    (t bafyreifjpju3gqmsjtmswu2c2mkv3fu7tiucfgpqfqrgflskwj7vmyngq4,
+    loop_1 bafyreieuoy7c66duf..., group bafyreih7vm4vjofgnbykvi...) -
+    unchanged from iter 10; remove alias == hand twin ALL CIDs identical
+    (loop_1 bafyreieon45i7iwyodelpsjytjai7yxj55h5m332yxue5yqz5yazwj4h5y,
+    bafyreidnb6wx65zppsivpuyuncaavmhrj2zlu7kjq7jzfspabok47kw7wy, t
+    bafyreibehxreq5ew7kxutiq2sw6bfqb3rolg4b56sqjinogmbo2mpqtbtu).
+  - wasm32 compile PASS x4; alias vs hand **byte-identical** (cmp:
+    SEQ-WASM-IDENTICAL, REMOVE-WASM-IDENTICAL) - zero new runtime cost by
+    construction (same class as iters 1/2/11/21).
+  - run (browser-host, [1,2,3,0] vector-assoc fixture): seq reduce = **6
+    ALL-OK**, remove sum = **3 ALL-OK** (iter 10 values reproduced).
+  - fail-closed re-run on new base: (seq) / (remove p v v) / (remove 42 v)
+    -> exit 65 own diagnostics ("seq requires exactly one vector-i64
+    collection" etc.), no ICE.
+  - regression: portable .cljc suite (nbb) **302 tests / 1263 assertions /
+    0 failures / 0 errors** (baseline 292/1244 grew via upstream #67-#69;
+    green on fafa476; totals posted to the PR as a comment).
+- NEW fleet-visible facts (gh/git measured this tick):
+  - `#()` fn shorthand is **already MERGED on main** (ebfae3e = PR #46;
+    reader read-fn-shorthand present at kotoba_reader.cljc:140 on
+    6e0b470). Live probe a-sharpfn.kotoba check exit 0 on the main-tip
+    classpath (loop CID bafyreicptlqjvu5hhcjqagofvuqkmxfolr2kk3rhtydvbft5v3623n6eti,
+    t bafyreidsqpt3jj23feploxzxetqdnczpiuxh3nizxj4e3ey6xwz4bfmsd4).
+    Iter 22's "#() = unmerged branch ee4c5155" row is STALE - ee4c515 was
+    the pre-merge branch head; cleanup PRs #53/#64 closed the superseded
+    branches. Population update: #() = LANDED.
+  - some-thread canonical repair (ac5381a) is STILL not on main:
+    frontend.cljc:3627-3647 on 6e0b470 retains the counter-derived
+    `some-thread__N` temp + `-of`-family + `option-none-of` return (the
+    pre-iter-7 shape). Worktree /tmp/langcos/sema-t25b (another bot's,
+    mid cherry-pick of 3f847f9, conflict exactly inside desugar-some-thread)
+    was left untouched - it corroborates that the 3f847f9/ac5381a diff
+    conflicts with nothing outside that defn.
+- Gate: check PASS x4 / compile PASS x4 / run values x2 correct /
+  fail-closed x3 exit 65 / regression 302/1263/0. loadavg 13.9-15.5 -
+  quiet gate NOT met, but NO timing claims made (byte-identical wasm makes
+  comparator ratio inapplicable, same as iter 21).
+- verdict: CONFIRMED + PR kotoba-lang/kotoba-sema#70 opened @fafa476
+  (merge-pending; this makes the iter-10 work fleet-visible for the first
+  time - it had never been pushed as a PR).
+- Next (1 hypothesis): some-thread canonical repair landing - rebuild the
+  iter-15 end shape (payload-drop + single synthetic temp, union of
+  3f847f9+ac5381a) as a clean whole-defn replacement patch onto 6e0b470
+  (not cherry-pick), then re-run the iter-15 parity matrix (some->/some->>
+  x 0-let/1-let == hand twins) + run values 42/59 + fail-closed +
+  regression on the new base, and open the PR. CIDs must be re-measured
+  (main moved twice since iter 15).
