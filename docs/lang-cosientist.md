@@ -939,3 +939,70 @@ ty 注記なし probe のため過大評価されていた — 以下は型付�
   don't move: hand the 0-let inline option-some wasm-lowering exit-70
   repro (t26-st0.kotoba: check PASS / compile exit 70) to the backend
   owner as a concrete fix request.
+
+## Iteration 27 - min/max "single kir-pin blocker" FALSIFIED: it is a 3-pin chain (kir #84 + wasm #74 + amu host compat identity) (2026-09-08, amu-lang-cosientist t27, sema main 6e0b470, cp-t27 = pinned + kir worktree @381a968, cp-t27b = + wasm worktree @2d912bf)
+
+- Hypothesis (carried from iters 22/26): the min/max compile exit-70 is blocked
+  by ONE thing - the amu deps-lock kir pin b021a0d predating kir #84 (381a968
+  "kir: implement i64 min/max", MERGED 2026-09-07T08:05Z; verified this tick:
+  ancestor of kir main, commit reachable in gitlibs cache). Advancing the kir
+  pin alone flips compile to PASS.
+- Method (classpath-swap simulation of a pin advance; NO compiler change, no
+  branch/PR; probes /tmp/langcos/t27-mm-head.kotoba = (min a b)/(max a b) heads
+  + t27-mm-hand.kotoba = let+if twin; terminal stdout empty again this tick -
+  script-file + file-redirect workaround; Tirith blocked brace-group commands
+  - plain scripts only):
+  - CONTROL hand twin on pinned everything (cp-t26main): check PASS exit 0,
+    compile PASS, browser-host run = 8 ALL-OK. File shape fine.
+  - head form + kir-381a968 swap (sema 6e0b470, wasm pinned cc23ea35):
+    check PASS exit 0; compile exit 70 but the error CLASS MOVED:
+    iter-22's `:ir lowering-failed "unknown-function"` became
+    `:wasm-local-encoding "invalid Wasm index operand"` (t27-gate.txt).
+    The KIR stage now passes (= kir #84 was one real blocker); the wasm
+    EMITTER is the next: grep of pinned kotoba-wasm core.cljc cc23ea35 shows
+    f64-min/f64-max emit entries (0xa4/0xa5) and i64 shift entries but NO
+    i64 min/max entry.
+  - Missing link found: kotoba-wasm PR #74 "script: typed wasm emitter lower
+    i64 min/max + document-vector-sort" MERGED 2026-09-07T09:42Z, merge commit
+    2d912bf (worktree proves the emit: cmp/select 0x55/0x57).
+    amu deps-lock wasm pin cc23ea35 PREDATES it (git merge-base --is-ancestor
+    measured: PIN-PREDATES-FIX=STALE).
+  - cp-t27b (kir 381a968 + wasm 2d912bf): compile **PASS exit 0** (3
+    definitions recompiled, provenance + publication sidecars written) -
+    the compile-level gap is fully closed by the two already-merged upstreams.
+  - BUT browser-host run of the head wasm FAILS: KotobaHostError
+    "runtime compatibility identity is unsupported" (code
+    compatibility-mismatch, browser-host.mjs:363 parseCompatibility) -
+    artifacts emitted by the newer wasm carry a compat identity the amu-pinned
+    host rejects. THIRD blocker = the amu-side runtime/lock chain.
+  - head-vs-hand wasm byte identity: DIFFERS (char 42) - expected, not a
+    parity target: #68 made min/max native heads with their own lowering, so
+    alias==hand parity is not the criterion (head t cid
+    bafyreifxnraihe5slxu4sml7lukwasbyx4qdd35d2nmtkaxtipvpf7uffm != hand
+    bafyreid7ut5npoyeasyp37hfpkk42sk7csqpbdlzc5bi6b2f4lcuw7jsui).
+    NO timing claims (loadavg 98-114, quiet gate NOT met; head wasm never
+    executed anyway - comparator N/A).
+- Verdict: hypothesis FALSIFIED in its stated "kir pin alone" form; CONFIRMED
+  in direction, with the blocker model corrected to a THREE-pin chain, every
+  upstream commit already merged:
+  1. sema pin bf01d4a8 -> >= ccd3b23 (heads; predates #66 too - iter-22 fact)
+  2. kir pin b021a0d -> >= 381a968 (#84)
+  3. wasm pin cc23ea35 -> >= 2d912bf (#74)
+  + amu runtime host compat identity in step with the newer wasm (measured
+    run-side failure otherwise).
+  This is a deps-lock advance plan for the lock owner with a measured
+  verification recipe (t27-mm-head.kotoba: check PASS + compile PASS +
+  run = 8). Zero lang work remains for min/max.
+- Gate: check PASS x3 + compile PASS x2 + exit-70 fail-closed x1 (diagnostic
+  changed class, no silent miscompile) + run PASS x1 (hand twin = 8) + run
+  fail-closed x1 (compat identity, no execution of incompatible artifact).
+  perfgate N/A.
+- Fleet state re-confirmed this tick (gh): sema PR #70 (seq/remove) and #71
+  (some-thread) still OPEN, mergedAt null; no other open lang PRs.
+- Next (1 hypothesis): run-side leg - locate which field of
+  parseCompatibility (amu runtime/browser-host.mjs:363) rejects the cp-t27b
+  head wasm (1 probe: dump the wasm's compat-identity custom section vs the
+  host's supported table) - the single missing measured leg before
+  t27-mm-head can run = 8. Backup if lock-blocked: re-classify the 0-let
+  inline option-some exit-70 (t26-st0) against cp-t27b - does wasm #74 also
+  clear it, or is it a genuine backend fix request.
