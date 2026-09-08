@@ -335,6 +335,41 @@
    ;; Retain the explicit source register in this helper's contract. Both
    ;; callers currently convert r15d, which holds the kernel return status.
    (when (not (= source :r15d)) [0xcc])))
+(def ^:private tender-continue
+  "What the guest returns to mean \"that was one step; call me again\".
+
+  250 rather than 0 or 1 because this value is also what the panel renders as
+  STATUS: the two hex digits are the low byte of the same register, so a
+  sentinel that collides with an ordinary return would make a running node and
+  a finished one print the same thing. The guest's existing returns are small
+  and 223 (`DF`, a reset that did not happen); 250 is `FA` and is free."
+  250)
+
+(defn- tender-snapshot-tokens [context-address]
+  "Read the budget the ELF sealed, once, before the guest has run.
+
+  The loader does not carry a fuel number and cannot be told one. The
+  compiler already wrote the budget into the guest's own context word at
+  `[r9+8]`, and `elf64/artifact-fuel` checked there that `:limits :fuel` and
+  `:fuel-abi :initial` agree, so that word IS the receipt. Copying it at
+  runtime rather than baking an immediate removes two failure modes at once:
+  the loader cannot disagree with the artifact, and there is no `imm32` to
+  overflow -- ADR-0195's hazard was a budget at or above 2^31 being written as
+  a negative quadword by `mov qword [r9+8], imm32`, and ADR-0203 has since
+  raised `ir/max-fuel` to 2^53-1. A mechanism whose ceiling is the width of
+  one field is a knob; this one has no ceiling to state.
+
+  movabs r9, context ; mov rax, [r9+8] ; mov [rip+:tender-fuel], rax"
+  (concat [0x49 0xb9] (le context-address 8)
+          [0x49 0x8b 0x41 0x08]
+          [0x48 0x89 0x05] [(rip :tender-fuel)]))
+
+(defn- tender-replenish-tokens []
+  ;; mov rax, [rip+:tender-fuel] ; mov [r9+8], rax -- r9 is re-materialised by
+  ;; the caller each iteration, so this pairs with that and nothing else.
+  (concat [0x48 0x8b 0x05] [(rip :tender-fuel)]
+          [0x49 0x89 0x41 0x08]))
+
 (defn- k16-preflight-tokens [returnable-entry context-address]
   (concat
    ;; Read 02:00.0 through PCI mechanism #1. Only the explicit K16 diagnostic
@@ -343,13 +378,32 @@
     0x66 0xba 0xfc 0x0c 0xed 0x3d 0xec 0x10 0x25 0x81
     0x0f 0x85] [(rip :exit-boot)]
    (uefi-output-string-tokens :rtl-message :rtl-message-return)
-   [0x48 0x8d 0x3d] [(rip :boot-info)]
+   ;; ── the tender loop (ADR-0204, ADR-0205) ─────────────────────────────
    ;; The normal ELF entry deliberately halts after main returns. Preflight
    ;; instead calls the compiler's returnable main wrapper and establishes the
-   ;; two context values normally installed by that ELF entry shim.
+   ;; two context values normally installed by that ELF entry shim -- and, from
+   ;; 2026-09-08, RE-ENTERS it for as long as the guest says it has more steps.
+   ;;
+   ;; This is the object wrapper's `replenish; call` lifted to the image. It is
+   ;; here rather than in the guest for the reason ADR-0204 gives: the kernel
+   ;; could write its own fuel word from Kotoba and it would work, and a
+   ;; handler inside the computation is not a handler. The budget belongs to
+   ;; whoever calls, and on this route that is this instruction stream.
+   ;;
+   ;; Everything is re-materialised each iteration rather than kept in a
+   ;; register: rdi and r9 are caller-saved across the SysV call and the guest
+   ;; is free to clobber both. `lea` of a fixed RVA and `movabs` of a constant
+   ;; cost four instructions and remove a class of question.
+   (tender-snapshot-tokens context-address)
+   [(label :tender-step)]
+   [0x48 0x8d 0x3d] [(rip :boot-info)]
    [0x49 0xb9] (le context-address 8)
    [0x49 0x89 0x79 0x50]
+   (tender-replenish-tokens)
    [0x48 0xb8] (le returnable-entry 8) [0xff 0xd0 0x49 0x89 0xc7]
+   ;; cmp r15, tender-continue ; je tender-step
+   [0x49 0x81 0xff] (le tender-continue 4)
+   [0x0f 0x84] [(rip :tender-step)]
    (store-status-nibble :r15d 4 :status-high-digit :status-high-store
                         :status-high)
    (store-status-nibble :r15d 0 :status-low-digit :status-low-store
@@ -511,6 +565,28 @@
             rw-start (:paddr second-segment)
             rw-end (+ rw-start (:memsz second-segment))
             payload? (seq payload)
+            ;; The budget the tender will restore, read from the ELF where the
+            ;; compiler sealed it. The loader does not choose it and does not
+            ;; emit it; this is here so the receipt can NAME it and a verifier
+            ;; can compare it against `:limits :fuel`. Reading the same word
+            ;; the running loop reads is the point -- a second opinion derived
+            ;; some other way could disagree with the image and be believed.
+            sealed-fuel (when (and k16-preflight?
+                                   (<= (:paddr second-segment) context-address)
+                                   (<= (+ (- context-address
+                                             (:paddr second-segment)) 16)
+                                       (:filesz second-segment)))
+                          (read-le kernel (+ (:offset second-segment)
+                                             (- context-address
+                                                (:paddr second-segment))
+                                             8)
+                                   8))
+            _ (when (and k16-preflight? (not (and (integer? sealed-fuel)
+                                                  (pos? sealed-fuel))))
+                (throw (ex-info "K16 tender found no sealed fuel word in the kernel context"
+                                {:reason :k16-tender-sealed-fuel-unreadable
+                                 :context-address context-address
+                                 :sealed-fuel sealed-fuel})))
             ;; Two loader-private segment destinations precede boot-info.
             ;; Boot-info v4 is 96 bytes without a payload: the original
             ;; firmware-map and W^X fields followed by a loader-owned scratch
@@ -557,6 +633,15 @@
                                             (count rtl-message)) 16)
             build-message-offset (align (+ status-message-offset
                                            (count status-message)) 16)
+            ;; One loader-private quadword, after everything the image
+            ;; already had: where the tender puts the budget it read out of
+            ;; the guest before the first call. Deliberately at the TAIL --
+            ;; boot-info, the memory map and every message keep the offsets
+            ;; they had, so a preflight image with the tender differs from one
+            ;; without it only in `.text` and in these 16 bytes. The guest is
+            ;; never shown the thing that refills it.
+            tender-slot-offset (align (+ build-message-offset
+                                         (count build-message)) 16)
             ;; Build once with provisional external RVAs; instruction length is
             ;; independent of displacement values.
             segment-tokens (mapcat (fn [index segment]
@@ -657,7 +742,11 @@
                                  (repeat (- build-message-offset
                                             (+ status-message-offset
                                                (count status-message))) 0)
-                                 build-message))))
+                                 build-message
+                                 (repeat (- tender-slot-offset
+                                            (+ build-message-offset
+                                               (count build-message))) 0)
+                                 (repeat 16 0)))))
             data-raw-size (align (count data) file-alignment)
             reloc-address (align (+ data-address (count data)) section-alignment)
             labels (merge {:address0 (+ data-address (nth data-addresses 0))
@@ -677,7 +766,8 @@
                            :payload-length (+ data-address 120)
                            :payload (+ data-address payload-offset)}
                           (when k16-preflight?
-                            {:enter-message (+ data-address enter-message-offset)
+                            {:tender-fuel (+ data-address tender-slot-offset)
+                             :enter-message (+ data-address enter-message-offset)
                              :build-message (+ data-address build-message-offset)
                              :rtl-message (+ data-address rtl-message-offset)
                              :status-message (+ data-address status-message-offset)
@@ -736,4 +826,6 @@
          :k16-preflight? k16-preflight?
          :k16-preflight-returnable-entry (when k16-preflight? returnable-entry)
          :k16-preflight-context-address (when k16-preflight? context-address)
+         :k16-tender-continue (when k16-preflight? tender-continue)
+         :k16-tender-sealed-fuel sealed-fuel
          :bytes bytes}))))))
