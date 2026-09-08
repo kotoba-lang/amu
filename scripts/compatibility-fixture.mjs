@@ -18,7 +18,7 @@ function text(value) {
 
 export function withCompatibility(moduleBytes, {
   target = "wasm32-browser-kotoba-v1",
-  runtime = "kotoba-browser-host-v1",
+  runtime = "kototama-browser-host-v1",
   kir = "kotoba.kir/v3",
   valueAbi = "kotoba.i64/direct-v1"
 } = {}) {

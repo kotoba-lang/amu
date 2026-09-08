@@ -139,7 +139,10 @@
   ;; operation with nothing faulting to say so, which is why the suite pins
   ;; that byte as an explicit `not`. Checked with `merge-base --is-ancestor`
   ;; against 452422f.
-  (is (= "f040b483cbb23ccdcf6e3cc81ed5e22cae9177ac"
+  ;; Advanced 2026-09-08 for the osaho rename. The range is ONE commit
+  ;; touching deps.edn alone, +2/-2 -- no encoding, no lowering, no opcode.
+  ;; The boundary is byte-identical, so this carries no qualification claim.
+  (is (= "70b94c6d33801d54ae45d6508c1d4dfc4386446a"
          (dependency-pin 'io.github.kotoba-lang/kotoba-native)))
   ;; Advanced 2026-09-07 to kotoba-native main c9d5c44 (hoist #151, cross-call
   ;; hoist #152, copy coalescing #154; 06badc8's allow-list entry is on main as
@@ -232,7 +235,7 @@
   ;; kotoba-sema pin that admits the head, for the reason the paragraph above
   ;; measured.
   (is (= "658436f25c57d7c96f121d9dfd376e9871a82445"
-         (dependency-pin 'io.github.kotoba-lang/kotoba-kir)))
+         (dependency-pin 'io.github.kotoba-lang/osaho)))
   ;; Advanced 2026-09-01 alongside the backend: the verifier re-derives the
   ;; two new arities and the v4 `expected-context`, and is what turns a
   ;; mismatched ABI into an explicit refusal rather than a v3 artifact
@@ -300,7 +303,10 @@
   ;; `kernel-undefined-opcode-handler-address`. This verifier rejects by
   ;; absence, so it moves with the kotoba-sema / kotoba-kir / kotoba-native
   ;; pins in this commit or the head is a green `check` and a red `compile`.
-  (is (= "ed9bf9b4b4a52751b94724f2ec0a03d39c55a367"
+  ;; Advanced 2026-09-08 for the osaho rename. The range is ONE commit
+  ;; touching deps.edn alone, +2/-2 -- no encoding, no lowering, no opcode.
+  ;; The boundary is byte-identical, so this carries no qualification claim.
+  (is (= "2e435cf4994c59d341c387d3103809cc3f93a116"
          (dependency-pin 'io.github.kotoba-lang/kotoba-verifier)))
   (is (= 7 (:abi/version aggregate-abi/contract)))
   (is (= :recursive-word-handles
