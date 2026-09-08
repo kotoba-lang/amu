@@ -263,3 +263,43 @@ approval**. Current verdicts above are diagnostics, not claims.
   Next tick: quiet-gate probe first; if open run J-B 4-arm 4000000 x 24
   twice; if busy, build the chicory ExecutionListener dispatch-share
   harness so it is ready for the first quiet window.
+
+- 2026-09-08 09:41–10:35 JST tick 25 (JIT): **J-A wall-diff estimator
+  FALSIFIED; counting estimators sealed into the repo.** Quiet gate failed a
+  24th consecutive time (probe 09:41: load1 22.9–23.9 on 10 CPUs, iostat cpu
+  idle 40–54% over 8 samples; later runs saw load1 7.9–32, idle never
+  measured >=90%; terminal output-loss recurred, redirect-to-file used).
+  Built the tick-24-assigned ExecutionListener harness (~/.m2 chicory
+  1.7.5; sealed fixture sha256 5be27a87...cb30ac91 verified this tick,
+  checksum 110550153 kernel(100) reproduces on every arm) and immediately
+  falsified its wall-diff premise: withUnsafeExecutionListener runs on the
+  SAME InterpreterMachine class as bare, yet the empty-listener arm measured
+  FASTER than bare (-7.97% reps=9 interleaved arms; -14.2% batched
+  per-call, batch=40 reps=12) — impossible for added per-instruction work.
+  Order-flip control (JaOrderFlip, batch=40, reps=12, both orders in
+  separate processes): listener-first +5.2%, bare-first -33.0% — the sign
+  follows alternation ORDER, not the mechanism. Conclusion: the
+  bare-vs-listener wall diff CANNOT bound dispatch share on this
+  host/method; the tick-24 plan's estimator is dead and any J-A share
+  number built on it would be an order artifact. What IS load-robust and
+  kept: exact instruction COUNTING via the listener (no timing): kernel(N)
+  executes exactly 120 instrs/call, FLAT in n (n is a scalar arg — the 8
+  sdiv chain is straight-line: 27.5% I64_CONST, 20% LOCAL_GET, 13.3%
+  I64_MUL, 6.7% I64_DIV_S, 6.7% I64_ADD, 7.5% I64_SUB, ...); bench loop =
+  128 instrs/iteration. Slope estimator (JaFixedVsSlope, wall OLS vs exact
+  instr count): not load-stable — run1 454 ns/instr NEGATIVE intercept,
+  run2 200 ns/instr with +133 us intercept (load1 8–32); r=64 regime jump
+  both runs. Unqualified, method kept for the quiet window. Harness +
+  README sealed at bench/runtime-comparison/ja_harness/ — including the
+  falsified wall-diff arms, the negative result is part of the artifact.
+  Next estimator candidate (not built yet): JFR method-sampling exclusive
+  share of InterpreterMachine.execute (bundled JDK; dispatch self-time
+  without listener perturbation) — quiet window still required for
+  quotable numbers. J-B rerun still deferred (24th consecutive miss). ADR
+  numbers 0340–0344 taken (0344 = amu-rank J-B lever matrix, branch
+  amu-claim-task4-adr0344); no new ADR this tick — a harness-level
+  negative belongs in the ledger + harness README, not an ADR. No compiler
+  change, no sealed claim, perfgate untouched, controls unchanged (2-arm
+  sealed + 4-arm a025ed9b...). Next tick: quiet-gate probe first; if open,
+  (1) J-B 4-arm 4000000 x 24, (2) JFR sampling run for the dispatch share;
+  if busy, build the JFR harness so it is ready.
