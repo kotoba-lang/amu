@@ -300,7 +300,13 @@
         ;; reached, so 511 has never been contradicted by a measurement. If ADR
         ;; 0034 moves it too, the message now says so instead of withholding the
         ;; number the way the first one did.
-        (lib/ensure! (= "{:status :ok :result 42 :fuel {:initial 512 :remaining 511} :heap {:capacity 4096 :used 2}}"
+        ;; The two vector arenas, for the same reason as the report above:
+        ;; comparing the whole line is what makes an unexpected field a
+        ;; failure. This program uses two heap words and no vectors.
+        (lib/ensure! (= (str "{:status :ok :result 42 :fuel {:initial 512 :remaining 511}"
+                             " :heap {:capacity 4096 :used 2}"
+                             " :vectors {:capacity 4096 :used 0}"
+                             " :vector-items {:capacity 65536 :used 0}}")
                         (.trim (.-stdout report)))
                      (str "windows-profile: bounded heap report mismatch: "
                           (pr-str (.trim (.-stdout report))))))
