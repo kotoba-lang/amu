@@ -244,7 +244,16 @@
         ;; then answered 510 -- the same value scripts/conformance.cljs measured
         ;; on macOS, and the same +1 kotoba-native ADR 0034 produces by not
         ;; charging entry fuel on a function that cannot re-enter.
-        (lib/ensure! (= "{:status :ok :result 42 :fuel {:initial 512 :remaining 510} :heap {:capacity 4096 :used 0}}"
+        ;; The two vector arenas joined every report on 2026-09-08. `main`
+        ;; touches no vector, so both read zero used -- and they are asserted
+        ;; at zero rather than dropped from the comparison, because comparing
+        ;; the WHOLE line is what makes an unexpected field a failure here.
+        ;; Windows reports its capacities as the compile-time constants: only
+        ;; the POSIX loader takes them as a per-run budget.
+        (lib/ensure! (= (str "{:status :ok :result 42 :fuel {:initial 512 :remaining 510}"
+                             " :heap {:capacity 4096 :used 0}"
+                             " :vectors {:capacity 4096 :used 0}"
+                             " :vector-items {:capacity 65536 :used 0}}")
                         (.trim (.-stdout structured)))
                      (str "windows-profile: structured supervisor report mismatch: "
                           (pr-str (.trim (.-stdout structured))))))
