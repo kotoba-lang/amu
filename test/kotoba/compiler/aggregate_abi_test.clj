@@ -139,7 +139,7 @@
   ;; operation with nothing faulting to say so, which is why the suite pins
   ;; that byte as an explicit `not`. Checked with `merge-base --is-ancestor`
   ;; against 452422f.
-  (is (= "f040b483cbb23ccdcf6e3cc81ed5e22cae9177ac"
+  (is (= "155e82ce7b51da7efa75b83ed0fee5b4578952e8"
          (dependency-pin 'io.github.kotoba-lang/kotoba-native)))
   ;; Advanced 2026-09-07 to kotoba-native main c9d5c44 (hoist #151, cross-call
   ;; hoist #152, copy coalescing #154; 06badc8's allow-list entry is on main as
@@ -151,6 +151,12 @@
   ;; kotoba-sema af8cc780, lowered by kotoba-kir 658436f2 and verified by
   ;; kotoba-verifier ed9bf9b4 in the SAME commit as this pin -- a frontend that
   ;; admits it over a native that cannot encode it is the gap fwstore measured.
+  ;; Advanced 2026-09-08 to kotoba-native main 155e82ce (f040b483..155e82ce
+  ;; ahead 3, forward only): #163 -- every fatal canned handler ('U' fuel
+  ;; exhaustion, #DF, the non-returning #PF arms) writes `mov al,6; out
+  ;; 0xCF9,al` (platform reset) after its 0xE9 letter and 0xF4 debug-exit and
+  ;; before the halt loop; and 70b94c6d, kotoba-native's kotoba-kir coordinate
+  ;; renamed to osaho at the sha it already pinned.
   ;; Advanced 2026-08-31 for two more instances of ADR-0286's class -- a KIR
   ;; i64 is a BigInt under ClojureScript and reached a host operation that
   ;; cannot take one. There, `hetero-vector-at`; here, `uleb` (every

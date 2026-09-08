@@ -374,7 +374,21 @@
          ;; transitive here -- this repository does not pin it directly -- so
          ;; deps-lock.edn is where d4e040b2 -> a3f0597c shows. kotoba-mir and
          ;; kotoba-codegen do not move (0bb174c8 / 3a7d7fc2 on both sides).
-         :git/sha "f040b483cbb23ccdcf6e3cc81ed5e22cae9177ac"}
+         ;; 2026-09-08 (third advance): f040b483 -> 155e82ce, kotoba-native main,
+         ;; ahead 3, forward only (`gh api .../compare` status "ahead",
+         ;; merge_base = f040b483). kotoba-native#163: every fatal canned
+         ;; handler -- the vector-6 fuel-exhaustion 'U', #DF, and the
+         ;; non-returning #PF arms -- now writes `mov al,6; out 0xCF9,al`
+         ;; (platform reset) after its 0xE9 letter and 0xF4 debug-exit and
+         ;; before the halt loop, so a K16 kernel that dies under QEMU/OVMF
+         ;; resets instead of spinning. 70b94c6d also renames kotoba-native's
+         ;; own kotoba-kir coordinate to `io.github.kotoba-lang/osaho` at the
+         ;; SAME sha (d809f284) it already pinned; the coordinate this
+         ;; repository pins directly stays `kotoba-kir` 658436f2 (renaming it
+         ;; is a separate decision, see #862). d809f284 is 10 commits BEHIND
+         ;; the osaho b021a0d1 the lock already carries, so tools.deps keeps
+         ;; b021a0d1 and the regenerated deps-lock.edn moves only this entry.
+         :git/sha "155e82ce7b51da7efa75b83ed0fee5b4578952e8"}
         io.github.kotoba-lang/kotoba-component
         {:git/url "https://github.com/kotoba-lang/kotoba-component.git"
          :git/sha "68acc7237aec7b24b683304db8e87d14ec1be745"}
