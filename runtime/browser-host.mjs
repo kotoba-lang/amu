@@ -111,10 +111,12 @@ const ALLOWED_IMPORTS = new Set([
   // kotoba-wasm 2d912bf (#74) lowers `document-vector-sort`, and emits its
   // import inside the same `has-document?` block as the rest -- so EVERY
   // document-using module carries it, whether it sorts or not. This host was
-  // pinned behind that commit; advancing the pin without this line refuses
-  // four dataspace modules at instantiation with `forbidden-import`, measured
-  // 2026-09-08. kotoba-script (`docVectorSort`) and the KIR reference
-  // interpreter have both had it since that day.
+  // pinned behind that commit; advancing the pin without this line turns
+  // ELEVEN tests red at INSTANTIATION with `forbidden-import`, across
+  // document_value, document_sha256, document_roundtrip, document_edn and
+  // dataspace_wasm_aot -- measured 2026-09-08 against a suite that is
+  // 0 failures / 0 errors at origin/main. kotoba-script (`docVectorSort`) and
+  // the KIR reference interpreter have both had it since that day.
   "kotoba:typed/document-vector-sort/function",
   "kotoba:typed/document-get/function",
   "kotoba:typed/document-assoc/function",
