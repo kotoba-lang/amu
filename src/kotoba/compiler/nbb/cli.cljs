@@ -2,9 +2,7 @@
   "Shared ordinary-native CLI implementation. ISA-specific executable
   entrypoints inject exactly one emitter, so compiling AArch64 never loads
   x86-64 code and vice versa."
-  (:require [cljs.reader :as reader]
-            [clojure.walk :as walk]
-            [kotoba.compiler.capability-names :as cap-names]
+  (:require [kotoba.compiler.capability-names :as cap-names]
             [kotoba.compiler.nbb.cli-support :as support]
             [kotoba.compiler.nbb.compile-cache :as compile-cache]
             [kotoba.sema :as sema]
@@ -452,24 +450,38 @@
         (merge result (project-source/inputs-record resolved)))
 
     "extract-native"
+    ;; EDN has no i64 type marker: the writer prints an nbb bigint as the same
+    ;; plain integer token the JVM writes, so a reader that returns Numbers
+    ;; cannot be told the difference and rounds -- see
+    ;; `support/read-artifact-file!`, which is the reader this now uses and
+    ;; carries the measurement.
+    ;;
+    ;; What is worth keeping HERE is why the old code looked like it had
+    ;; already handled this: it restored `:value` alone, with a postwalk, and
+    ;; that is the one place the loss had been noticed. The constants live in
+    ;; `:program`, which it left rounded. Reading exactly needs no restoring
+    ;; step at all, so the postwalk is gone rather than widened.
     (let [input (second args)
-          serialized (reader/read-string (io/read-text-file input))
-          ;; EDN has no i64 type marker: the writer deliberately prints an
-          ;; nbb bigint as the same plain integer token the JVM writes. Restore
-          ;; the oracle value boundary before the CLJS verifier re-executes the
-          ;; entry; structural metadata and machine bytes remain JS numbers.
-          artifact-map (update serialized :value
-                               #(walk/postwalk (fn [x]
-                                                 (if (integer? x) (i64/->bigint x) x))
-                                               %))
+          artifact-map (support/read-artifact-file! input)
           symbol (symbol (or (support/option args "--symbol") "main"))
           output (or (support/option args "--output") "program.bin")
           _ (verifier/verify-artifact! artifact-map)
           export (get (:exports artifact-map) symbol)]
       (when-not export
         (throw (ex-info "unknown native export" {:phase :verify :entry symbol})))
-      (io/write-bytes! output (js/Buffer.from (clj->js (:code artifact-map))))
-      (merge {:ok true :output output :symbol symbol} export))
+      ;; `:code` is machine bytes, and they arrive as BigInt like everything
+      ;; else the reader returns. `Buffer.from` throws on a BigInt element, so
+      ;; narrow here -- at the one place that needs Numbers -- rather than
+      ;; walking the artifact and widening what the verifier was handed.
+      (io/write-bytes! output
+                       (js/Buffer.from (clj->js (mapv #(js/Number %) (:code artifact-map)))))
+      ;; `:offset`, `:length` and `:arity` come out of the artifact, so they
+      ;; are BigInts too, and `pr-str` renders a BigInt as
+      ;; `#object[BigInt 10500]` -- unreadable to the caller that has to pass
+      ;; the offset to `kexe_loader`. `edn-safe` is the writer's own
+      ;; convention for this: a BigInt prints as the same plain integer token
+      ;; the JVM route prints, so the two routes' results stay comparable.
+      (artifact/edn-safe (merge {:ok true :output output :symbol symbol} export)))
 
     (support/usage-error!
      (str "error: nbb native path does not cover command " (first args)))))

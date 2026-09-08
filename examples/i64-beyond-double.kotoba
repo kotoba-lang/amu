@@ -1,0 +1,13 @@
+;; One i64 constant that a JavaScript Number cannot hold.
+;;
+;; 4794697086780616226 is SHA-512's first round constant. It is here as an
+;; EXACT literal on purpose: `cljs.reader` -- which `amu extract-native` used
+;; to read artifacts with -- turns that token into 4794697086780617000, and
+;; the whole point of this example is that the value survives the round trip
+;; through the sealed artifact and out of the loader. Do not "tidy" it to
+;; something under 2^53; that would make it pass for a lossy reader too.
+(ns i64-beyond-double
+  (:export [main]))
+
+(defn main [] :i64
+  4794697086780616226)

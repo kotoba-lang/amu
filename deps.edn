@@ -201,7 +201,16 @@
          ;; behind would trap `:unknown-function` at run time. The four commits
          ;; past 55b7a29f (ADR-0270 KIR-as-IPLD-codec and the payload-v3
          ;; differential) are documentation and tests on kotoba-kir's side.
-         :git/sha "658436f25c57d7c96f121d9dfd376e9871a82445"}
+         ;;
+         ;; Advanced 2026-09-08, 658436f2 -> 73243145 (osaho main, ahead 4,
+         ;; forward only), for osaho cf11d9e: the native admission gate now
+         ;; admits `i64-shift-left` / `i64-shift-right` / `u64-shift-right`
+         ;; beside a typed value, under the same operand restriction the gate
+         ;; already enforced for their i32 twins (integer shift count in
+         ;; [0,63]). Without it SHA-512 -- rotations over a `:vector-i64` --
+         ;; is refused for aarch64 with a message about typed values that
+         ;; names no shift, which is why the cause took a while to find.
+         :git/sha "7324314564abf1ae05a08dbd0066c9e6c3b34921"}
         ;; The frontend is an HIR producer and KIR lowering is its consumer;
         ;; both validate the same checked envelope.
         io.github.kotoba-lang/kotoba-hir
@@ -374,7 +383,24 @@
          ;; transitive here -- this repository does not pin it directly -- so
          ;; deps-lock.edn is where d4e040b2 -> a3f0597c shows. kotoba-mir and
          ;; kotoba-codegen do not move (0bb174c8 / 3a7d7fc2 on both sides).
-         :git/sha "70b94c6d33801d54ae45d6508c1d4dfc4386446a"}
+         ;;
+         ;; Advanced 2026-09-08, 70b94c6d -> a5711bdc (kotoba-native main,
+         ;; ahead 4, forward only), and REQUIRED by the `extract-native`
+         ;; change in this commit. Through kotoba-mir ac690136:
+         ;; `aarch64-fuse-zero-equality-branches` tested its constant with
+         ;; `zero?`, which is false for a JavaScript BigInt, so on this front
+         ;; the fusion never fired for a literal that came from the reader --
+         ;; every literal in real source. `(if (= a 0) a a)` compiled to 24
+         ;; bytes here and 12 through the JVM, for the same program.
+         ;;
+         ;; That made emission a function of the host's SPELLING of a value
+         ;; rather than of the value, which only stayed invisible while
+         ;; `extract-native` read artifacts with `cljs.reader` and so handed
+         ;; the verifier the same wrong representation the compiler had used.
+         ;; Reading them exactly turns it into a refusal:
+         ;; `examples/held-operations.kotoba` was rejected as "native
+         ;; instruction stream rejected" by a verifier that was right.
+         :git/sha "a5711bdc859cbe11c8a9497d7b836ed3d884f086"}
         io.github.kotoba-lang/kotoba-component
         {:git/url "https://github.com/kotoba-lang/kotoba-component.git"
          :git/sha "ff2c3e8c29a02a7731e70c7e4d276441ebc9d42d"}
@@ -455,7 +481,31 @@
          ;; `kernel-undefined-opcode-handler-address`. This verifier rejects by
          ;; ABSENCE, so without this the head the frontend now admits and kir now
          ;; lowers would still be a green `check` and a red `compile`.
-         :git/sha "2e435cf4994c59d341c387d3103809cc3f93a116"}
+         ;;
+         ;; Advanced 2026-09-08, 2e435cf4 -> 258da2ca (kotoba-verifier main,
+         ;; ahead 5, forward only), and this one is REQUIRED by the
+         ;; `extract-native` change in this commit rather than merely paired
+         ;; with it. The `.cljs` branch of `verify-artifact!` had never once
+         ;; run against a real native artifact -- `amu verify` was `.clj`-only
+         ;; until today -- so six gates read the JVM's representation and
+         ;; refused nbb's. Measured on this repository's SHA-512 aarch64
+         ;; artifact with the old pin: "malformed code bytes", because the
+         ;; byte gate asked `integer?` of a BigInt, which is false. The five
+         ;; commits replace `integer?` with `guest-integer?` at three gates,
+         ;; compare six structures through `guest=`, and normalize
+         ;; `[:limits :fuel]` to a Number at the interpreter boundary.
+         ;;
+         ;; And on to ea50d8f2 (same day, ahead 2, forward only) for the
+         ;; SEVENTH site of the same class, which is the first that was not a
+         ;; refusal: a param index read out of an artifact is a bigint on this
+         ;; host, and `nth` will not take one while `set` and `distinct` throw
+         ;; when they hash one. Measured with `examples/held-operations.kotoba`
+         ;; compiled to aarch64-macos: `extract-native` answered
+         ;; `:kotoba/internal-error`, which points at the compiler instead of
+         ;; at the artifact. That commit also rebuilds the verifier's native
+         ;; fixture, which had gone stale enough that its own suite carried a
+         ;; permanent red.
+         :git/sha "ea50d8f2bbc29908a3b8a987089754d6355f37f3"}
 }
  :aliases {:test {:extra-paths ["test"]
                   :extra-deps
