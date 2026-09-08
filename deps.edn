@@ -18,7 +18,6 @@
  :deps {org.clojure/clojure {:mvn/version "1.12.0"}
         io.github.kotoba-lang/abi {:git/url "https://github.com/kotoba-lang/abi.git"
                                    :git/sha "32ee84b2efc92478c846629c8d8319280eed506c"}
-        org.clojure/tools.reader {:mvn/version "1.5.2"}
         ;; Advanced 2026-09-03 (ADR 0330) with kotoba-lang/provider f040fc0,
         ;; which retires org.clojure/data.json for this namespace and needs
         ;; d5137c7's kwargs surface to be a drop-in.
@@ -68,8 +67,8 @@
         ;; read 3e3f9748 while the file on disk hashed to 67561e57, and nothing
         ;; said so.
         ;;
-        ;;   grammar-sha256    ee7ea37c7ea88c52ee8869af4d485e91a0b11bb153682ad717c86c055270b6b5
-        ;;   kotoba-sema-pin   31d0d463f5aba39063ddc8911c648f6cd606c6ff
+        ;;   grammar-sha256    515bbc7de84a3340ef3b250e4ee411739d3acebf32ba31450540f146768bb841
+        ;;   kotoba-sema-pin   6c895d100c7e45d2904554530b258e7155e15856
         ;;
         ;; `guest_grammar_vendor_test/authority-digest-history` ends with the
         ;; same digest, so the pin, the prose and the history move in one
@@ -132,8 +131,15 @@
         ;;    kotoba-sema's on this classpath and is not resynced here, because
         ;;    this advance does not claim a catalog change.
         io.github.kotoba-lang/kotoba-sema
+        ;; 6c895d10 (2026-09-08, +12): f32 decimal literals reach the f32
+        ;; branch under the JVM-free reader. Before this pin `(f32-add 1.5
+        ;; 2.5)` and `(defn main [] :f32 1.5)` compiled on the JVM and were
+        ;; REFUSED on nbb -- and `bin/amu` runs nbb for wasm32-browser, so the
+        ;; default target of this compiler could not write an f32 literal. It
+        ;; went unseen because the only test of the feature was `.clj`; it is
+        ;; `.cljc` and in `run-tests.cljs` as of that commit.
         {:git/url "https://github.com/kotoba-lang/kotoba-sema.git"
-         :git/sha "31d0d463f5aba39063ddc8911c648f6cd606c6ff"}
+         :git/sha "6c895d100c7e45d2904554530b258e7155e15856"}
         ;; ADR-2607266000 Phase B: these responsibilities moved out of this repo.
         ;;
         ;; The slice-value stream held this pin on purpose (ADR 0314), because
@@ -517,7 +523,35 @@
 }
  :aliases {:test {:extra-paths ["test"]
                   :extra-deps
-                  {io.github.kotoba-lang/provider
+                  {;; Only `test/kotoba/compiler/backend_cljs_test.clj` and
+                   ;; `test/kotoba/compiler/cli_test.clj` require this, and both
+                   ;; are `.clj` -- the JVM test oracle, not the compiler. It sat
+                   ;; in top-level `:deps` until 2026-09-08, where it put a
+                   ;; third-party JVM library on the production closure of a
+                   ;; compiler whose stated exit is a native binary with no
+                   ;; Clojure installed. Measured before the move: one
+                   ;; tools.reader jar on `clojure -Spath`, zero `tools.reader`
+                   ;; references under `src/`, and zero entries in
+                   ;; `deps-lock.edn` -- the JDK-free path never resolved it, so
+                   ;; nothing about `bin/kotoba` changes here. What changes is
+                   ;; that the declaration now says where it is actually used.
+                   ;;
+                   ;; READ THIS BEFORE CALLING IT REMOVED. The jar is STILL on
+                   ;; `clojure -Spath`: `io.github.kotoba-lang/kotoba-sema`
+                   ;; depends on it (`clojure -Stree`, 2026-09-08), because
+                   ;; `kotoba.compiler.frontend`'s `:clj` branch reads source
+                   ;; with `clojure.tools.reader` while its `:cljs` branch uses
+                   ;; the in-repo `kotoba-reader`. Measured before and after
+                   ;; this edit: one tools.reader entry on the production
+                   ;; classpath, both times. So this commit corrects a
+                   ;; declaration; it does not shrink the closure. The closure
+                   ;; shrinks when kotoba-sema reads with one reader on both
+                   ;; hosts -- attempted 2026-09-08 and NOT landed: it compiles
+                   ;; and then fails 28 assertions and errors 23 more in
+                   ;; kotoba-sema's own JVM suite, so the two readers do not
+                   ;; agree today and saying otherwise would be a guess.
+                   org.clojure/tools.reader {:mvn/version "1.5.2"}
+                   io.github.kotoba-lang/provider
                    {:git/url "https://github.com/kotoba-lang/provider.git"
                     :git/sha "0ba1fbabb536027d25bbefc50374fbe95e6b54ec"}
                    ;; Advanced 2026-09-07, ec4d182e -> a569f1d1 (kototama-native
