@@ -1074,3 +1074,89 @@ ty 注記なし probe のため過大評価されていた — 以下は型付�
   recipe from iters 27/28 becomes one command. If pins stall: re-classify
   the t26-st0 0-let inline option-some exit-70 on cp-t28 (does #74+fix
   clear it).
+
+## Iteration 29 - the 3-pin chain collapses to 1 pin on origin/main: only wasm 2292c842 -> 083f4b9 (#75) stands between origin pins and min/max check+compile+run=8 (2026-09-08, amu-lang-cosientist t29, amu origin/main 6e1c81db, local HEAD f282763e (behind, not an ancestor of origin), sema pin 31d0d46, osaho pin c24c92a1, wasm pins: origin=2292c842 / local=cc23ea35)
+
+- Hypothesis (carried from iter 28): after #75 merge + the deps-lock advance,
+  (min a b) passes check+compile+run=8 through the default --jvm-free route
+  with no classpath swaps - and the iter-27 "3-pin chain" may have collapsed
+  because origin/main advanced meanwhile.
+- Fleet state measured this tick (gh/git):
+  - kotoba-wasm #75 (min/max emitter opcode fix, iter-28 PR) **MERGED**
+    2026-09-08T05:41Z = merge commit 083f4b9 = current wasm origin/main tip
+    (fetch + log measured). 083f4b9's core.cljc is byte-identical to my fix
+    branch 7a2238e (cmp: CORE-CLJC-IDENTICAL).
+  - sema #70 (seq/remove) + #71 (some-thread canonical) still **OPEN**
+    (mergedAt null), no other open lang PRs.
+  - amu local HEAD f282763e is NOT an ancestor of origin/main 6e1c81db
+    (HEAD-NOT-ANCESTOR); origin/main contains the dual-allowlist host
+    (browser-host.mjs:366-367 kototama-* + kotoba-* accepted, grep on the
+    origin/main blob), local HEAD runtime still kotoba-only (:362).
+- Pin audit (git show origin/main:deps-lock.edn vs local, both greps this tick):
+  - sema: origin pin **31d0d46** >= ccd3b23 (#68 min/max heads) AND >= b3ea4fd
+    (#66 into; "into requires" grep = 1 in the cached tree). Local HEAD pin
+    still bf01d4a8 (predates #66).
+  - kir: origin renamed the coordinate to io.github.kotoba-lang/**osaho**
+    @c24c92a1; osaho c24c92a1 src/kotoba/kir.cljc carries `min max` in the
+    integer op set (grep line 166; the file differs from 381a968 from line 79
+    - rename-era content; #84's substance arrived via "advance each pin to its
+    rename commit" 420ac667). => the iter-27 kir-pin leg is ALREADY satisfied
+    on origin; local HEAD kir pin b021a0d179 (no min/max) is superseded.
+  - wasm: origin pin 2292c842 PREDATES #74 (core.cljc comparison table has
+    only the f64 rows; i64 min/max emit: grep 0 hits). Local pin cc23ea35 is
+    predates-#74 too (iter 27 measured); both < 083f4b9.
+    => the SINGLE remaining pin move on origin is wasm -> 083f4b9.
+- Measured (detached origin/main worktree /tmp/langcos/amu-o-t29,
+  bin/amu --jvm-free default route + nbb wasm_cli classpath-swap probes;
+  probes t27-mm-head.kotoba (min/max heads) + t27-mm-hand.kotoba (let+if
+  control); outputs /tmp/langcos/t29-p1.txt, t29-p4.txt):
+  1. DEFAULT origin/main route, origin pins as-is: check head **PASS exit 0**
+     (t cid bafyreifxnraihe5slxu4sml7lukwasbyx4qdd35d2nmtkaxtipvpf7uffm -
+     equals the iter-27 head CID, stable), hand check PASS;
+     compile --target wasm32 **exit 70** `:wasm-local-encoding "invalid Wasm
+     index operand"` (= the missing #74 emit, exact iter-27 class), hand
+     control compile PASS exit 0. The origin lock resolves cleanly from
+     cache (print-classpath exit 0, 38 entries) - no JVM fallback.
+  2. Same worktree, ONLY change = wasm classpath 2292c842 -> 083f4b9
+     (#74+#75 merged emitter; sema/osaho/abi/etc all origin pins; NO compiler
+     or lang change): compile head **PASS exit 0** (385 bytes, 3 definitions
+     recompiled, provenance + publication sidecars written), compile hand
+     PASS (409 bytes). Compat custom section of the head wasm:
+     runtime = "kototama-capability-host-v1" (T0-rename identity; the
+     origin/main dual-allowlist host accepts it - iter-28 compat leg live).
+     RUN on the origin/main worktree browser-host: head main(0) = **8
+     ALL-OK**, hand main(0) = **8 ALL-OK** ((t (u 3 7) 4) + (t 9 4) =
+     min(max(3,7)=7,4)+min(9,4) = 4+4 = 8 - the #75-fixed semantics, both
+     head and hand twin).
+- Probe lessons (recorded): print-classpath.cljs emits entries one per LINE,
+  not colon-joined - the first cp-t29b attempt broke the classpath (exit 1
+  "Could not find namespace"); tr '\n' ':' fixed it. Also the wasm_cli route
+  needs $W/src:$W/resources prepended (launcher's own behavior) or
+  kotoba.compiler.capability-names is not found.
+- loadavg 5.9-23 across probes - quiet gate borderline; NO timing claims made
+  (this is pipeline correctness verification; comparator ratio N/A - head and
+  hand wasm differ by construction as of #68-native heads, iter-27 note).
+- Verdict: hypothesis CONFIRMED, with the blocker model corrected AGAIN:
+  the advance plan is no longer a hand-crafted 3-pin chain. On origin/main
+  (6e1c81db) sema+osaho+host legs are already pinned past #68/#66/#84/
+  dual-allowlist; the ONLY pin move needed to make (min a b) green through
+  check+compile+run is **kotoba-wasm 2292c842 -> 083f4b9** (measured with
+  exactly that swap: compile exit 70 -> PASS, run = 8 ALL-OK).
+  Whatever branch local HEAD f282763e merges/rebases onto origin.main
+  inherits the first two legs automatically.
+- Lock-owner action item (deps advance, not lang work):
+  deps-lock.edn kotoba-wasm :git-sha ->
+  083f4b9543960d9005e63158a9bae1457114c986, then acceptance = this iteration's
+  recipe WITHOUT classpath swaps (check PASS / compile PASS / run 8 ALL-OK).
+- Gate: check PASS x2 + compile exit-70 fail-closed x1 (origin pins as-is) +
+  compile PASS x2 (swap) + run PASS x2 (8/8 ALL-OK) + control compile PASS x1.
+  All --jvm-free nbb route, no java/javac/clojure invocation, no silent
+  fallback. perfgate N/A (no runtime-performance claim).
+- Next (1 hypothesis): #70/#71 merge watch + base-ordering check: sema pin
+  31d0d46 PREDATES the #70/#71 rebase base 6e0b470 (iter-23 measured
+  6e0b470 as main tip after 31d0d46). When the next sema pin advance happens
+  it must jump to >= (merge commits of #70/#71) in ONE move; probe after any
+  merge: seq/remove + some->/some->> alias-vs-hand CID re-measurement on the
+  NEW default route (iters 23/26 values are base-specific, must not be
+  carried over as "expected").
+NOTE: shared checkout — local HEAD moved f282763e -> 71a5e5f3 during this tick (other bots committing to spike/kbb-jvmfree-envread); local pin audit (sema bf01d4a8 / kir b021a0d179 / wasm cc23ea35) taken from that checkout mid-tick and consistent with iters 22/27/28 records.
