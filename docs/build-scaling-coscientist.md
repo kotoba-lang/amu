@@ -65,7 +65,7 @@ and not one project.
 | **H-3c** | the rest is per-*module*: a pass whose cost is (functions × functions) | **refused — iteration 1** | 1000 one-operation functions check in 3427 ms on a straight line (fitted quadratic coefficient 0.00026, 13% of the growth). Function count is not the quantity |
 | **H-3d** | the quantity is **total expression nodes in the module**, not functions, bodies or calls separately | **confirmed — iteration 1**, and located in iteration 2 | one two-parameter model, `1419 + 0.535·N + 0.0000447·N²` ms, predicts five points across four differently-shaped workload families within the host's own spread |
 | **H-3e** | the `N²` coefficient is held by one or two passes, not spread across all of them | **confirmed — iteration 2** | per-binding probes through `analyze*`: one binding (`read-forms`) held 74% at K=768. Fixed in kotoba-sema `31d0d463`; `amu check` at K=1023 is 2.09× faster and byte-identical |
-| **H-3f** | after the reader, `infer-closure-refinements` (`frontend.cljc:14613`) carries the surviving term | **open — iteration 3** | measured post-fix: 45 / 267 / 1174 / 2101 ms at K = 128 / 384 / 768 / 1023 — 46.7× over 8× K, exponent 1.85, and 59% of `amu check`. It is a fixed point whose own `refinement-count-limit` is `1 + N + Σ params`, so it may run O(N) rounds over N functions |
+| **H-3f** | after the reader, `infer-closure-refinements` (`frontend.cljc:14613`) carries the surviving term | **confirmed and fixed — iteration 3** (kotoba-sema `615a91b4`) | measured post-fix: 45 / 267 / 1174 / 2101 ms at K = 128 / 384 / 768 / 1023 — 46.7× over 8× K, exponent 1.85, and 59% of `amu check`. It is a fixed point whose own `refinement-count-limit` is `1 + N + Σ params`, so it may run O(N) rounds over N functions |
 
 ## Iteration 1 — 2026-09-07: the growth term is quadratic, and it is in the front end
 
@@ -369,3 +369,77 @@ same 8× range.
 came from a probe named by line number and the line was read off by four. The
 probe was right; the reading was not. Corrected here and in
 kotoba-lang/amu#878 after instrumenting the function itself.
+
+## Iteration 3 — 2026-09-08: the second quadratic, and a green that said nothing
+
+H-3f named `infer-closure-refinements` from iteration 2's probes. Two things
+had to be measured before touching it: how many rounds the fixed point runs,
+and whether the cost is in the rounds or inside one.
+
+```
+ICR round 0  functions=129   ms=43
+ICR round 0  functions=385   ms=268
+ICR round 0  functions=769   ms=1051
+```
+
+**One round at every size.** The fixed point converges immediately on this
+workload, so the term is inside a single pass. That killed the obvious reading
+of the docstring — "a deterministic fixed point" invites you to suspect the
+iteration count, and the iteration count is 1.
+
+### The defect
+
+The pass's `let` case computes a status for each binding and then stores the
+binding's **form**:
+
+```clojure
+(recur (next pairs)
+       (assoc current name {:form value :env current}))
+```
+
+A later reference to that name re-derives the status by walking the form
+again — and that form refers to the previous binding, which walks again, and
+so on. At binding `i` the walk costs O(i); the loop pays Σ i = **O(K²)** walks
+of the same forms. The loop already has the answer when it binds the name, so
+it is now carried on the entry.
+
+| K | pass before | pass after |
+|---:|---:|---:|
+| 128 | 45 ms | 16 ms |
+| 384 | 346 ms | 23 ms |
+| 768 | 1,369 ms | 42 ms |
+| 1023 | **2,200 ms** | **51 ms** |
+
+43× at K=1023, and linear where it carried exponent 1.85.
+
+### The part worth keeping: the suite did not reach it
+
+Forcing the memoized status to `:unknown` — a real break of the pass's symbol
+resolution — left **all 296 tests green**, and left `amu check` and
+`amu compile --target wasm32` byte-identical on every program that could be
+constructed for it, closure-carrying ones included.
+
+That is the exact shape this workspace's rules name: a check that cannot fail
+returns the same value as a check that ran and found nothing. The pass had no
+test that reached it, so its green had never meant anything.
+
+`closure_refinement_test.cljc` is the first one that does: a parameter
+position that must carry a closure pair, a result position that does, and a
+module that gets neither. It discriminates — making the pass hand out no
+refinements fails exactly those two plus the existing HIR golden.
+
+**It does not guard the memo.** Nothing does, and the commit says so rather
+than letting three new green tests imply otherwise. The safety evidence for
+the memo is output equality across a corpus of real modules, not a test.
+
+### A finding that was nearly a false one
+
+The first attempt to count refinements on real modules reported
+`refinements=0` for four programs — and the probe had not been inserted at
+all, because the Python that inserted it asserted on an anchor with one space
+too many and the `AssertionError` scrolled past above four confident-looking
+zeros. Re-inserted correctly, the same four report 2, 2, 0, 0.
+
+A probe that failed to install and a probe that installed and found nothing
+print the same thing. The `grep -c` that reads them cannot tell the
+difference.
