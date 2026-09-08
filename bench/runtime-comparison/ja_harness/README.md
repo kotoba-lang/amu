@@ -36,12 +36,35 @@ $HOME/.m2/repository/com/dylibso/chicory/runtime/1.7.5/runtime-1.7.5.jar
   the quiet gate before its numbers mean anything, and possibly a fixed-r
   range.
 
-## Next estimator candidate (not yet built)
+## JFR sampling estimator (`JaJfrDispatchShare`): BUILT + VALIDATED (ticks 26–27)
 
-JFR method sampling (bundled with the JDK, no new deps): long chicory loop
-runs, then `jfr print` exclusive share of
-`com.dylibso.chicory.runtime.InterpreterMachine.execute`. That measures
-dispatch-loop self-time directly instead of perturbing it with a listener.
+Passive stack sampling (`jdk.ExecutionSample`, 10 ms) over a long chicory
+loop; reports leaf (exclusive) / on-stack (inclusive) shares of
+`InterpreterMachine.*` plus a top-20 profile — no per-instruction listener
+perturbation. Two bugs found and fixed by the tick-27 smoke runs:
+
+1. Cached `ExportFunction`s exhaust the sealed per-instance fuel:
+   `calls_until_trap=512` on one `Instance` (measured tick 27, matching the
+   V8 runner's calibration); a fresh `Instance.builder(mod).build()` gets a
+   fresh 512. The harness now keeps a pool of 8 slots, rebuilding each
+   instance every 256 uses (~62–214 ns/call amortised, visible as its own
+   JFR leaf if it ever matters).
+2. `jdk.MethodSample` alone records ZERO samples on Temurin 21.0.1 aarch64
+   (per-method CPU sampling needs
+   `-XX:FlightRecorderOptions=SampleVersion=2`); the estimator therefore
+   uses `jdk.ExecutionSample` (thread stack sampling, no extra flags).
+
+First working run (busy host, load1 16–20, 409 samples, diagnostics only):
+on-stack `InterpreterMachine.call` = 99.0% and `eval` = 83.6%, but the
+dominant LEAF is `MStack.push` 71.4% — operand-stack push machinery, NOT
+the dispatch loop itself (`eval` leaf 4.7%); `InterpreterMachine.execute`
+never appears as a frame in chicory 1.7.5. Quote-worthy share numbers need
+a quiet-gate run plus a SampleVersion=2 method-sampling cross-attribution
+(to rule out inlined-push-site pile-on on the `MStack.push` leaf name).
+See docs/jit-cosientist.md tick 27.
+
+Run: `java -cp "$CJ:." JaJfrDispatchShare ../kernel.kotoba.wasm 100 200 5 20`
+(args: wasm, kernel-n, inner-iters, warmup_s, record_s).
 
 ## Files
 
@@ -52,6 +75,7 @@ dispatch-loop self-time directly instead of perturbing it with a listener.
 | JaLoopHistogram.java | per-iteration executed-opcode histogram, bench loop (counting only) |
 | JaFixedVsSlope.java | instr-count-vs-wall OLS slope/intercept estimator (load-unstable) |
 | JaModuleShape.java | exports/import count of the fixture |
+| JaJfrDispatchShare.java | JFR stack-sampling dispatch-share estimator (validated tick 27) |
 
 No sealed claim; diagnostics only until perfgate + human-approved warmup
 policy (see docs/jit-cosientist.md policy note).

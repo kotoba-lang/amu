@@ -303,3 +303,70 @@ approval**. Current verdicts above are diagnostics, not claims.
   sealed + 4-arm a025ed9b...). Next tick: quiet-gate probe first; if open,
   (1) J-B 4-arm 4000000 x 24, (2) JFR sampling run for the dispatch share;
   if busy, build the JFR harness so it is ready.
+
+- 2026-09-08 11:46–12:05 JST tick 27 (JIT): **JFR dispatch-share estimator
+  BUILT AND VALIDATED (tick-25's named next candidate; tick 26 built the
+  first version but left no ledger note — two blocking bugs found and fixed
+  by this tick's smoke runs).** Quiet gate failed again (last RECORDED
+  consecutive-miss count was 24 at tick 25; tick 26's gate state has no
+  ledger entry, not claimed; probes 11:46: load1 7.2–11.9 with iostat cpu
+  idle 45–66%, 11:49: load1 5.9–7.9 idle 34–43% — never >=90%). All numbers
+  below are diagnostics, NOT qualify-eligible, no perfgate verdict.
+  Bug 1 (fuel): the cached-ExportFunction version trapped after ~13 calls
+  in warmup — direct measurement: calls_until_trap=512 on one Instance
+  (matches the sealed V8 fixture), a fresh Instance gets a fresh 512; fixed
+  with a slot pool rebuilt every 256 uses (amortised rebuild ~62–214
+  ns/call, ~0.2–0.8% of call cost, visible as its own JFR leaf if it ever
+  matters). Bug 2 (event type): with jdk.MethodSample only, a clean 20 s /
+  8.87M-iter run recorded total_samples=0 (per-method CPU sampling needs
+  -XX:FlightRecorderOptions=SampleVersion=2 on Temurin 21.0.1 aarch64);
+  switched to jdk.ExecutionSample (stack sampling, no extra flags).
+  First working run (12:00, 5 s warmup + 20 s record, 8.87M calls, checksum
+  110550153 verified, load1 16–20 during run): 409 samples; INCLUSIVE
+  on-stack share InterpreterMachine.call = 99.0% (405/409), eval = 83.6%;
+  LEAF (exclusive) shares: MStack.push 71.4%, StackFrame.<init> 10.0%,
+  ValType.equals 6.6%, InterpreterMachine.eval 4.7%,
+  InterpreterMachine.call 2.4%; InterpreterMachine.execute never appears
+  as a frame in this version (its share key returns 0). Arithmetic opcode
+  handlers as leaf are tiny (I64_DIV_S 1.7%, I64_MUL 1.0% on-stack incl.).
+  Diagnostic reading (pending quiet-window cross-check): J-A's premise
+  "interpreter dispatch dominates" needs refinement — ~99% of wall IS
+  inside the chicory machine (trivially yes vs any non-interpreter share),
+  but the dominant leaf is NOT the dispatch loop (eval 4.7%); it is the
+  operand-stack machinery MStack.push (71%). If that survives the quiet
+  gate, the JIT lever in a chicory-class interpreter is stack-operation
+  specialisation (e.g. typed/local-slot push), not opcode dispatch —
+  same shape of attribution surprise as J-B's lever split (tick 22).
+  CAVEATS before quoting: (a) JIT-inlining attribution can pile inlined
+  push sites onto the MStack.push leaf name; (b) samples fire at safepoint
+  polls, whose density is not uniform across loop bodies; (c) 409 samples
+  at load1 16–20 — spread/separation impossible. Load-robust-ish side
+  result: wall per interpreter call WITH amortised rebuild is ~2.3 us
+  (this run) — an order of magnitude below tick 24's 27.5 us/call, which
+  was measured with a fresh Instance PER CALL: that earlier number was
+  mostly instance-rebuild cost, not interpretation (rebuild-only measured
+  16.2 us this tick). The tick-24 "2–3 orders of magnitude" V8-vs-chicory
+  statement is WITHDRAWN on that accounting; identical-fixture ratio under
+  load is ~6–10x, not ~100x. Correction logged here, not silently.
+  J-B unchanged: 4-arm control rebuilt clean this tick from
+  a025ed9b...c108 (BUILD_OK, /tmp/jb4_t27), not run (gate miss). No
+  compiler change, no sealed claim, perfgate untouched, controls unchanged.
+  Next tick: quiet-gate probe first; if open run the JFR estimator 2x with
+  BOTH SampleVersion=2 method sampling and stack sampling for
+  cross-attribution (kills caveat (a)), plus the J-B 4-arm full-size rerun;
+  if busy, nothing further on J-A tooling — the estimator is ready, the
+  missing resource is a quiet window.
+
+  Rep 2 (12:10, same harness, load1 37–39): on-stack call = 100%, eval =
+  83.6% (identical to rep 1) — but the LEAF profile flipped:
+  StackFrame.doControlTransfer 68.8% (rep 1: unlisted ~0), MStack.push
+  0% (rep 1: 71.4%), eval leaf 14.7% (rep 1: 4.7%). So the inclusive
+  shares are stable across two loads while the leaf attribution is NOT:
+  consistent with JIT inlining moving push/control-transfer code between
+  leaf names as tiers change (caveat (a) materialised, measured, not
+  hypothesised). Consequence recorded: leaf-share cannot be quoted from
+  ANY number of busy-host reps; the quiet-gate + SampleVersion=2
+  cross-attribution run is mandatory before J-A's "which part is the
+  lever" question moves at all. The load-robust J-A facts stay: ~100% of
+  wall is on-stack inside InterpreterMachine.call/eval, opcode handlers
+  are never a dominant leaf in either rep.
