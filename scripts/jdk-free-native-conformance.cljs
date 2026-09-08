@@ -280,9 +280,11 @@
                           (:status refused) " " (:stderr refused)))))))
 
     ;; :fs/browse (wire id 34): the loader lists ONE directory inside
-    ;; KEXE_CAP_RESOURCES_34 -- entry names sorted bytewise, "\n"-joined, "."
-    ;; and ".." excluded, dotfiles included -- the shape kotoba's js host
-    ;; answers for the same wire id. Byte-exact through KEXE_RESULT_TYPE=string.
+    ;; KEXE_CAP_RESOURCES_34 -- one line per entry, "NAME<TAB>D" where D is
+    ;; "1" for a directory and "0" for a file (kotoba lib/kbb/browse.kotoba),
+    ;; sorted bytewise by NAME, "." and ".." excluded, dotfiles included --
+    ;; the shape kotoba's js host answers for the same wire id. Byte-exact
+    ;; through KEXE_RESULT_TYPE=string.
     ;; With no scope, a scope elsewhere, or a regular file as the request the
     ;; call traps (SIGILL, exit 120) instead of answering. Guest sources are
     ;; written here because the directory under test only exists here.
@@ -311,10 +313,14 @@
                        [binary offset "0" isa "34"])))]
       (fs/mkdirSync dir)
       (fs/mkdirSync other)
+      (fs/mkdirSync (.join path dir "m"))
       (doseq [n ["b.txt" "a.txt" ".hidden" "z"]] (fs/writeFileSync (.join path dir n) n))
       (let [args (guest! "browse-listing" dir)
             listed (run loader args (string-env {"KEXE_CAP_RESOURCES_34" dir}) true)
-            expected (str ":result-utf8-hex \"" (hex ".hidden\na.txt\nb.txt\nz") "\"")]
+            ;; "m" is the directory: its D flag must be "1", the files "0".
+            ;; Sorted bytewise, ".hidden" (0x2e) first, "z" last.
+            expected (str ":result-utf8-hex \""
+                          (hex ".hidden\t0\na.txt\t0\nb.txt\t0\nm\t1\nz\t0") "\"")]
         (ensure! (and (= 0 (:status listed)) (str/includes? (:stdout listed) expected))
                  (str "browse listing mismatch: " (:status listed) " " (str/trim (:stdout listed)) " " (str/trim (:stderr listed))))
         (doseq [[label extra] [["no scope" {}]
