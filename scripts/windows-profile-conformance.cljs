@@ -244,7 +244,16 @@
         ;; then answered 510 -- the same value scripts/conformance.cljs measured
         ;; on macOS, and the same +1 kotoba-native ADR 0034 produces by not
         ;; charging entry fuel on a function that cannot re-enter.
-        (lib/ensure! (= "{:status :ok :result 42 :fuel {:initial 512 :remaining 510} :heap {:capacity 4096 :used 0}}"
+        ;; The two vector arenas joined every report on 2026-09-08. `main`
+        ;; touches no vector, so both read zero used -- and they are asserted
+        ;; at zero rather than dropped from the comparison, because comparing
+        ;; the WHOLE line is what makes an unexpected field a failure here.
+        ;; Windows reports its capacities as the compile-time constants: only
+        ;; the POSIX loader takes them as a per-run budget.
+        (lib/ensure! (= (str "{:status :ok :result 42 :fuel {:initial 512 :remaining 510}"
+                             " :heap {:capacity 4096 :used 0}"
+                             " :vectors {:capacity 4096 :used 0}"
+                             " :vector-items {:capacity 65536 :used 0}}")
                         (.trim (.-stdout structured)))
                      (str "windows-profile: structured supervisor report mismatch: "
                           (pr-str (.trim (.-stdout structured))))))
@@ -291,7 +300,13 @@
         ;; reached, so 511 has never been contradicted by a measurement. If ADR
         ;; 0034 moves it too, the message now says so instead of withholding the
         ;; number the way the first one did.
-        (lib/ensure! (= "{:status :ok :result 42 :fuel {:initial 512 :remaining 511} :heap {:capacity 4096 :used 2}}"
+        ;; The two vector arenas, for the same reason as the report above:
+        ;; comparing the whole line is what makes an unexpected field a
+        ;; failure. This program uses two heap words and no vectors.
+        (lib/ensure! (= (str "{:status :ok :result 42 :fuel {:initial 512 :remaining 511}"
+                             " :heap {:capacity 4096 :used 2}"
+                             " :vectors {:capacity 4096 :used 0}"
+                             " :vector-items {:capacity 65536 :used 0}}")
                         (.trim (.-stdout report)))
                      (str "windows-profile: bounded heap report mismatch: "
                           (pr-str (.trim (.-stdout report))))))
