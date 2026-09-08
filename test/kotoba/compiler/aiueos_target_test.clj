@@ -237,8 +237,19 @@
         first-image (pe32plus/package-embedded-kernel kernel)
         second-image (pe32plus/package-embedded-kernel kernel)
         bytes (:bytes first-image)]
-    (is (= :pe32+-embedded-kernel/v2 (:format first-image)))
-    (is (= {:bytes 16448 :memory-map-offset 64 :memory-map-capacity 16384}
+    ;; v3 / boot-info v4 since the K16 loader work. The layout below is not a
+    ;; transcription of whatever the packager happens to emit -- the running
+    ;; kernel VALIDATES it: aiueos `kernel.kotoba/main` reads ten boot-info
+    ;; fields and refuses unless the magic is AIUEBOOT, the version word is 4,
+    ;; the memory-map pointer equals the map it was handed, and
+    ;; kernel-scratch-pages is exactly 14. A board running this layout boots
+    ;; and answers inference jobs, so the contract is the new one and these
+    ;; assertions were the stale half.
+    (is (= :pe32+-embedded-kernel/v3 (:format first-image)))
+    (is (= {:bytes 16480 :memory-map-offset 96 :memory-map-capacity 16384
+            :rx-limit-offset 56 :rw-start-offset 64 :rw-end-offset 72
+            :kernel-scratch-address-offset 80 :kernel-scratch-pages-offset 88
+            :kernel-scratch-pages 14}
            (:boot-info-layout first-image)))
     (is (= [0x4d 0x5a] (subvec bytes 0 2)))
     (is (= [0x50 0x45 0 0] (subvec bytes 0x80 0x84)))
@@ -271,13 +282,20 @@
         store-offset (byte-sequence-offset bytes store-prefix)
         displacement (read-le bytes (+ store-offset 8) 4)
         store-next-rva (+ text-rva (- (+ store-offset 12) text-raw))]
-    (is (= {:bytes 16592 :memory-map-offset 80
-            :memory-map-capacity 16384 :payload-offset 16464
-            :payload-bytes 128}
+    (is (= {:bytes 16624 :memory-map-offset 112
+            :memory-map-capacity 16384 :payload-offset 16496
+            :payload-bytes 128
+            :rx-limit-offset 56 :rw-start-offset 64 :rw-end-offset 72
+            :kernel-scratch-address-offset 80 :kernel-scratch-pages-offset 88
+            :kernel-scratch-pages 14}
            (:boot-info-layout image)))
     (is (= (artifact/sha256 payload) (:embedded-payload-sha256 image)))
-    (is (= (+ data-rva 80) (+ store-next-rva displacement))
-        "payload length store names boot-info offset 64, not four bytes later")
+    ;; +120, not +80: boot-info v4 put the loader-owned scratch address and
+    ;; page count between the W^X fields and the payload pair, which moved the
+    ;; payload length from boot-info offset 64 to 104 (data-address+120). The
+    ;; measured drift was exactly 40 bytes, which is those two quadwords.
+    (is (= (+ data-rva 120) (+ store-next-rva displacement))
+        "payload length store names boot-info offset 104, not four bytes later")
     (is (= (:bytes image)
            (:bytes (pe32plus/package-embedded-kernel kernel payload))))
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #"exceeds 16 KiB"
