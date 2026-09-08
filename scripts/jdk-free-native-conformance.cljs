@@ -1,6 +1,9 @@
 #!/usr/bin/env nbb
 (ns jdk-free-native-conformance
   (:require [clojure.string :as str]
+            ;; The reader this suite's `i64-beyond-double` control measures
+            ;; AGAINST -- it is not used to read anything the suite relies on.
+            [cljs.reader]
             ["node:child_process" :as child]
             ["node:crypto" :as crypto]
             ["node:fs" :as fs]
@@ -147,7 +150,22 @@
              ;; shift, so the three entries cannot be confused for each other.
              ;; Measured by executing the artifact, not computed and trusted.
              {:source "i64-shift.kotoba" :symbol "mixed"
-              :arguments ["-8"] :expected "-67"}]]
+              :arguments ["-8"] :expected "-67"}
+             ;; An i64 literal past 2^53, carried end to end. Until 2026-09-08
+             ;; `extract-native` read the artifact with `cljs.reader`, which
+             ;; returns a `js/Number` for every integer token -- so it did not
+             ;; corrupt the artifact so much as fail to read it, and since the
+             ;; seal is over the exact values it then refused its own
+             ;; compiler's output as "artifact integrity mismatch". Every
+             ;; fixture that reached this command had constants under 2^53,
+             ;; where a Number is exact, so nothing here could see it; the
+             ;; first program in the tree whose constants do not fit --
+             ;; SHA-512, whose first round constant this is -- was refused on
+             ;; the first try. The expected value is the LITERAL: a rounded
+             ;; read prints 4794697086780617000, which this distinguishes
+             ;; from a bare "it verified".
+             {:source "i64-beyond-double.kotoba" :symbol "main"
+              :arguments [] :expected "4794697086780616226"}]]
       (let [artifact (file (str symbol ".kexe"))
             binary (file (str symbol ".bin"))]
         (invoke ["compile" (.join path root "examples" source)
@@ -163,6 +181,29 @@
             (ensure! (= expected (str/trim (:stdout executed)))
                      (str "native " symbol " expected " expected ", got "
                           (str/trim (:stdout executed))))))))
+    ;; The control for the case above. `i64-beyond-double` only discriminates
+    ;; between an exact reader and a lossy one while the artifact it produces
+    ;; actually contains a token `cljs.reader` cannot hold -- if the example
+    ;; ever drifted under 2^53 the case would pass for either reader and
+    ;; assert nothing. Rather than trust that, read the artifact the way the
+    ;; command used to and require that it still loses the constant. Failing
+    ;; here does not mean the compiler is wrong; it means this suite can no
+    ;; longer tell the two readers apart.
+    (let [artifact (file "i64-beyond-double-control.kexe")
+          literal "4794697086780616226"]
+      (invoke ["compile" (.join path root "examples" "i64-beyond-double.kotoba")
+               "--target" isa "--output" artifact])
+      (let [text (fs/readFileSync artifact "utf8")
+            lossy (pr-str (cljs.reader/read-string text))]
+        (ensure! (str/includes? text literal)
+                 (str "examples/i64-beyond-double.kotoba no longer puts " literal
+                      " in its artifact, so the case above asserts nothing"))
+        (ensure! (not (str/includes? lossy literal))
+                 (str "cljs.reader no longer loses " literal
+                      " in this artifact, so this suite cannot tell the "
+                      "i64-preserving reader from the lossy one. Fix the "
+                      "example, do not relax this check"))))
+
     ;; ------------------------------------------------------------------
     ;; kbb host contract of the loader (owner rule kbb-first, 2026-09-07).
     ;; These run the loader JVM-free against guests compiled here, so they

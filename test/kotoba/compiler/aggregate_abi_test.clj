@@ -142,7 +142,16 @@
   ;; Advanced 2026-09-08 for the osaho rename. The range is ONE commit
   ;; touching deps.edn alone, +2/-2 -- no encoding, no lowering, no opcode.
   ;; The boundary is byte-identical, so this carries no qualification claim.
-  (is (= "70b94c6d33801d54ae45d6508c1d4dfc4386446a"
+  ;; Advanced 2026-09-08 to a5711bdc, which carries kotoba-mir ac690136 and
+  ;; DOES change bytes on this front, deliberately.
+  ;; `aarch64-fuse-zero-equality-branches` tested its constant with `zero?`,
+  ;; which is false for a JavaScript bigint, so the fusion never fired for a
+  ;; literal that came from the reader -- every literal in real source.
+  ;; `(if (= a 0) a a)` was 24 bytes under nbb and 12 through the JVM, for the
+  ;; same program. The JVM side is unchanged by this advance: a Long always
+  ;; compared to 0, so the boundary this test pins moves not at all here, and
+  ;; what moves is the OTHER front, toward these bytes.
+  (is (= "a5711bdc859cbe11c8a9497d7b836ed3d884f086"
          (dependency-pin 'io.github.kotoba-lang/kotoba-native)))
   ;; Advanced 2026-09-07 to kotoba-native main c9d5c44 (hoist #151, cross-call
   ;; hoist #152, copy coalescing #154; 06badc8's allow-list entry is on main as
@@ -234,7 +243,11 @@
   ;; `kernel-undefined-opcode-handler-address`; moved in the SAME commit as the
   ;; kotoba-sema pin that admits the head, for the reason the paragraph above
   ;; measured.
-  (is (= "658436f25c57d7c96f121d9dfd376e9871a82445"
+  ;; Advanced 2026-09-08 to 73243145: the native admission gate now admits
+  ;; `i64-shift-left` / `i64-shift-right` / `u64-shift-right` beside a typed
+  ;; value, under the operand restriction it already enforced for their i32
+  ;; twins. It widens what compiles; it moves no encoding.
+  (is (= "7324314564abf1ae05a08dbd0066c9e6c3b34921"
          (dependency-pin 'io.github.kotoba-lang/osaho)))
   ;; Advanced 2026-09-01 alongside the backend: the verifier re-derives the
   ;; two new arities and the v4 `expected-context`, and is what turns a
@@ -306,7 +319,13 @@
   ;; Advanced 2026-09-08 for the osaho rename. The range is ONE commit
   ;; touching deps.edn alone, +2/-2 -- no encoding, no lowering, no opcode.
   ;; The boundary is byte-identical, so this carries no qualification claim.
-  (is (= "2e435cf4994c59d341c387d3103809cc3f93a116"
+  ;; Advanced 2026-09-08 to ea50d8f2. Seven gates in the `.cljs` branch of
+  ;; `verify-artifact!` had never run against a real artifact -- `amu verify`
+  ;; was `.clj`-only -- and read the JVM's representation. The seventh was not
+  ;; a refusal but a host TypeError: a param index out of an artifact is a
+  ;; bigint, `nth` will not take one, and this repository reported it as
+  ;; `:kotoba/internal-error`. It admits nothing new.
+  (is (= "ea50d8f2bbc29908a3b8a987089754d6355f37f3"
          (dependency-pin 'io.github.kotoba-lang/kotoba-verifier)))
   (is (= 7 (:abi/version aggregate-abi/contract)))
   (is (= :recursive-word-handles

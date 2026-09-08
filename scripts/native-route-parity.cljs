@@ -56,7 +56,18 @@
           was host-specific until 3d7a6f0"}
    {:source "examples/i64-semantics.kotoba"
     :why "the scalar baseline -- if this diverges the disagreement is not
-          about any one feature"}])
+          about any one feature"}
+   {:source "examples/held-operations.kotoba"
+    :why "closures, and a guest `(= x 0)` -- the two routes emitted DIFFERENT
+          AArch64 for this until kotoba-mir ac690136. The fusion of a
+          zero-equality into branch-nonzero tested its constant with `zero?`,
+          which is false for the JavaScript bigint every guest literal is on
+          this front, so it fired only for the literals the frontend
+          synthesizes: 2008 bytes through the JVM, 2128 here. This file's own
+          instruction above says to add a fixture whenever a route-specific
+          defect is fixed, and this one was found by a consumer repository
+          instead -- kotoba-verifier refused the artifact -- which is the
+          case that instruction exists to prevent"}])
 
 (defn- run [command args]
   (let [result (.spawnSync child command (clj->js args)

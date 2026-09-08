@@ -67,12 +67,24 @@
 (def ^:private max-policy-nodes 200000)
 (def ^:private max-policy-string-chars (* 1024 1024))
 
-(defn- validate-edn-shape! [value]
+;; A sealed artifact is a different input class from a policy file, and its
+;; size is set by a contract rather than by taste: `kotoba.verifier` admits up
+;; to 1 MiB of code bytes, and every byte is one node here. A node bound below
+;; that would refuse artifacts the verifier accepts -- a decode error standing
+;; in for a verification decision, which is the worse of the two failures
+;; because it names the reader instead of the artifact. Four times the code
+;; ceiling leaves the program, exports and metadata room above it.
+;;
+;; Measured 2026-09-08, the largest artifact in this tree: SHA-512 compiled to
+;; aarch64-macos, 46,498 characters, 12,520 nodes, depth 12, longest string 64.
+(def ^:private max-artifact-nodes (* 4 1024 1024))
+
+(defn- validate-edn-shape! [limit value]
   (let [nodes (volatile! 0)]
     (letfn [(walk [x]
-              (when (> (vswap! nodes inc) max-policy-nodes)
+              (when (> (vswap! nodes inc) limit)
                 (throw (ex-info "EDN value contains too many nodes"
-                                {:phase :decode :limit max-policy-nodes})))
+                                {:phase :decode :limit limit})))
               (when (and (string? x) (> (count x) max-policy-string-chars))
                 (throw (ex-info "EDN string exceeds limit"
                                 {:phase :decode :limit max-policy-string-chars})))
@@ -82,21 +94,39 @@
       (walk value)
       value)))
 
-(defn- read-edn-form! [text]
+(defn- read-edn-form! [node-limit text]
   (let [forms (kr/read-forms text {:max-depth max-policy-depth
                                    :max-token-chars max-policy-token-chars})]
     (when (empty? forms)
       (throw (ex-info "EDN input is empty" {:phase :decode})))
     (when (> (count forms) 1)
       (throw (ex-info "EDN input contains trailing forms" {:phase :decode})))
-    (validate-edn-shape! (first forms))))
+    (validate-edn-shape! node-limit (first forms))))
 
 ;; The module lock is the other EDN file this route is handed. Same reader and
 ;; same bounds as `--policy`: it arrives from the caller, and a lock is
 ;; supposed to make a build MORE constrained, so it must not be the one input
 ;; read without limits.
 (defn read-edn-file! [path]
-  (read-edn-form! (io/read-text-file path)))
+  (read-edn-form! max-policy-nodes (io/read-text-file path)))
+
+(defn read-artifact-file!
+  "A sealed `.kexe` read with the reader the rest of this compiler uses.
+
+  `kr/read-forms` returns a BigInt for every integer token, which is what an
+  i64 IS on this host. `cljs.reader`, which `extract-native` called until
+  2026-09-08, returns a `js/Number` -- and a Number cannot hold an i64.
+  Measured on SHA-512 compiled to aarch64-macos: 347 integer literals, 106 of
+  them past 2^53, the first round constant coming back
+  4794697086780616226 -> 4794697086780617000. The seal is over the exact
+  values, so the command refused its own compiler's output as \"artifact
+  integrity mismatch\" while the file on disk was intact.
+
+  Same depth and token bounds as a policy file; a larger node bound, because
+  an artifact's size is set by the verifier's own code ceiling rather than by
+  what a hand-written EDN file plausibly is."
+  [path]
+  (read-edn-form! max-artifact-nodes (io/read-text-file path)))
 
 (defn read-policy-material [args]
   (if-let [path (option args "--policy")]
@@ -119,7 +149,7 @@
   nothing."
   [material]
   (if (:present? material)
-    (read-edn-form! (:text material))
+    (read-edn-form! max-policy-nodes (:text material))
     {}))
 
 (defn read-policy [args]
