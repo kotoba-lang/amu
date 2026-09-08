@@ -1160,3 +1160,68 @@ ty 注記なし probe のため過大評価されていた — 以下は型付�
   NEW default route (iters 23/26 values are base-specific, must not be
   carried over as "expected").
 NOTE: shared checkout — local HEAD moved f282763e -> 71a5e5f3 during this tick (other bots committing to spike/kbb-jvmfree-envread); local pin audit (sema bf01d4a8 / kir b021a0d179 / wasm cc23ea35) taken from that checkout mid-tick and consistent with iters 22/27/28 records.
+
+## Iteration 30 - iter-28 backup hypothesis (B) executed: wasm #74+#75 does NOT clear the exit-70; defect reclassified as kotoba-wasm missing infer-type arms for plain option-some/option-none (not an inline-option-some/#71 issue) (2026-09-08, amu-lang-cosientist t30, cp-t30 = sema-t26@7b0accd + kir 381a968 (#84) + wasm-t29@083f4b9 (#74+#75 merged tip), no compiler edits)
+
+- Fleet state this tick: sema #70/#71 still OPEN (mergedAt null, gh measured);
+  amu origin/main advanced 6e1c81db -> a169d7bf = PR #890 kotoba-script pin
+  bump only — wasm pin still 2292c842, so iter-29's single-pin blocker
+  (wasm -> 083f4b9) is UNCHANGED.
+- Hypothesis (carried from iter 28 "(B) backup"): does wasm #74+fix #75 clear
+  the t26-st0 0-let inline option-some exit-70 (check PASS / compile exit 70)?
+- Method: classpath swap simulation (cp-t26 with kotoba-kir b021a0d ->
+  381a968, kotoba-wasm cc23ea35 -> 083f4b9; grep sanity 0 stale entries);
+  probes /tmp/langcos/t30-*, outputs t30-gate.txt, t30-iso*.txt,
+  t30-narrow.txt, t30-final.txt.
+- Measured (compile exits through amu nbb wasm_cli --jvm-free):
+  - t26-st0 / t26-st0l (0-let some->/some->> inline): check PASS / compile
+    **exit 70** "unsupported typed Wasm expression" -> hypothesis FALSIFIED
+    (both still ICE at #74+#75+kir#84 merged tip).
+  - CONTROL t15-let-alias (1-let spelling): check + compile PASS same cp.
+  - Isolating matrix that re-names the defect:
+    - `(option-some x)` in fn-RETURN position: compile PASS (t30-a),
+      origin/main dual-allowlist host run = **41 ALL-OK**.
+    - `(option-none)` in fn-return: compile PASS (t30-g).
+    - let-bound option via an fn constructor `(let [o (mk x)] ...)`: compile
+      PASS (t30-f), run = **42 ALL-OK** — the payload-drop shape IS reachable
+      today via the indirect route.
+    - DIRECT constructor in a `let` binding: `(let [o (option-some x)] ...)`
+      (t30-b) and `(let [o (option-none)] ...)` (t30-e/t30-h) -> **exit 70**;
+      t30-b gives the SAME exit-70 on the UNPATCHED main sema @6e0b470
+      classpath (control) — not a PR #71 regression, a hand-written-twin
+      failure.
+    - constructor in an `if` then-branch (t30-i): exit 70 (= infer-type's if
+      arm infers the then-branch, typed.cljc:345).
+  - Code location: kotoba-wasm typed.cljc:474
+    `:else (or (:result (get signatures op)) (throw "unsupported typed Wasm
+    expression"))` — infer-type has arms for `option-some-of/option-none-of`
+    (:445) and the query ops (:406) but NONE for plain monomorphic
+    `option-some`/`option-none`; the emit side (core.cljc:2742-2747) CAN emit
+    them (which is why return-position works — type comes from the declared
+    fn return, never inferred).
+- Classification: sema check admits option constructors in type-INFERENCE
+  positions (let binding / if branch) that kotoba-wasm cannot infer ->
+  check-admits-compile-ICE (exit 70, own diagnostic, no silent miscompile).
+  The iters-15/26 "inline option-some backend gap" is really this: plain
+  `option-some`/`option-none` infer-type arms missing in kotoba-wasm.
+  Zero matching open issues in kotoba-wasm (gh issue list empty,
+  gh search 0 hits this tick) — reportable to the backend owner: mechanical
+  fix = add infer-type arms (option-some -> [:option T] from payload;
+  option-none has NO payload type -> the right fix is a sema check REJECT
+  with a diagnostic, not a wasm ICE).
+- Gate: check PASS x8 + compile PASS x5 + compile exit-70 x6 (fail-closed
+  ICE-class) + run PASS x2 (41/42 ALL-OK on origin/main host; local-HEAD host
+  run rejects with compat identity = iter-28 T0-rename behavior reproduced).
+  No timing claims (loadavg 20-47, quiet gate NOT met; correctness
+  classification, perfgate N/A).
+- verdict: hypothesis FALSIFIED (in its stated form) and the blocker model
+  corrected with numbers: #71's 0-let spellings stay blocked on a
+  kotoba-wasm infer-type gap that also blocks HAND-WRITTEN let forms on main
+  — strictly bigger than the some-> sugar. Zero lang work remains for it;
+  fix request belongs to kotoba-wasm (+ sema check diagnostic leg).
+- Next (1 hypothesis): lock-advance watch — when sema/kir/wasm pins next move
+  (iter-29 recipe: wasm 2292c842 -> 083f4b9 + #70/#71 merges), re-probe
+  t27-mm-head through the DEFAULT bin/amu --jvm-free route expecting
+  check+compile+run=8 with no swaps; until then the t30-f indirect-constructor
+  spelling stands as the measured current-language workaround for let-bound
+  options (record for ledger owner).
