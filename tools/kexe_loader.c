@@ -2045,6 +2045,53 @@ static void *shim_memmem(const void *hay, size_t hlen, const void *needle, size_
  * is the file's bytes as a string. The whole file is interned, so a file
  * larger than the string arena budget in force for the run cannot be read this
  * way -- that is what the RANGE form is for. */
+/* wire id 35, EXISTS form: "<path>EXISTS_SEP" -> "1" when the path is a
+ * readable file inside the granted scope, "0" otherwise.
+ *
+ * This exists because a guest could not report a missing operand. The read
+ * form TRAPS on a path it cannot serve, and a trap cannot be caught, so the
+ * guest never got control back to write `head: FILE: No such file or
+ * directory` -- six commands in this family shipped saying so. The proper
+ * answer would be a capability returning [:result T E], but the native gate
+ * admits `[:result-i64 :result-i64]` and not a result over a string, so that
+ * is a change to the gate. This is a change to a request form, on a wire
+ * that already tells three of them apart by an ASCII token.
+ *
+ * A path OUTSIDE the scope answers "0", not a trap and not "1". That is the
+ * safe answer and the deliberate one: "0" is indistinguishable from absent,
+ * so a guest cannot use this to probe for the existence of files it was
+ * never granted. It learns exactly one thing -- whether the operand it was
+ * given is one it may read -- which is the question a command asks. */
+static int64_t fs_app_data_exists_provider(struct kexe_context_v4 *context,
+                                           int64_t request) {
+  const uint8_t *bytes = NULL;
+  uint64_t length = 0;
+  char target[4096], candidate[4096];
+  if (!read_string_handle(context, request, &bytes, &length)) {
+    raise(SIGILL);
+    return 0;
+  }
+  /* Strip the token before resolving: the path is everything before it. */
+  const uint8_t *token = (const uint8_t *)memmem(bytes, (size_t)length,
+                                                 "EXISTS_SEP", 10);
+  if (token == NULL) {
+    raise(SIGILL);
+    return 0;
+  }
+  size_t path_length = (size_t)(token - bytes);
+  if (!kexe_request_path(bytes, path_length, target) ||
+      !kexe_scope_admit(&kexe_scope35, target, candidate)) {
+    return intern_utf8(context, (const uint8_t *)"0", 1);
+  }
+  int fd = open(candidate, O_RDONLY | O_NOFOLLOW);
+  if (fd < 0) {
+    return intern_utf8(context, (const uint8_t *)"0", 1);
+  }
+  int inside = kexe_scope_contains_fd(&kexe_scope35, fd, candidate);
+  close(fd);
+  return intern_utf8(context, (const uint8_t *)(inside ? "1" : "0"), 1);
+}
+
 static int64_t fs_app_data_read_provider(struct kexe_context_v4 *context,
                                          int64_t request) {
   const uint8_t *bytes = NULL;
@@ -2469,9 +2516,10 @@ static int64_t checked_typed_cap_call(struct kexe_context_v4 *context,
   } else if (id == 10 && request_kind == KEXE_TYPED_UI_EVENT_V1) {
     result = ui_event_inject(context, request);
   } else if (id == 35 && request_kind == KEXE_TYPED_STRING) {
-    /* wire id 35 = :fs/app-data, three request forms told apart by an ASCII
+    /* wire id 35 = :fs/app-data, four request forms told apart by an ASCII
      * token: "<path>WRITE_SEP<content>" writes, "<path>RANGE_SEP<off>:<len>"
-     * reads one bounded window, a bare absolute path reads the whole file.
+     * reads one bounded window, "<path>EXISTS_SEP" answers "1"/"0", and a
+     * bare absolute path reads the whole file.
      * WRITE_SEP is tested first so written content may itself contain
      * RANGE_SEP. Scope is KEXE_CAP_RESOURCES_35 for all three. */
     uint64_t rlen = 0;
@@ -2479,6 +2527,11 @@ static int64_t checked_typed_cap_call(struct kexe_context_v4 *context,
     if (read_string_handle(context, request, &rb, &rlen) && rb &&
         memmem(rb, (size_t)rlen, "WRITE_SEP", 9) != NULL) {
       result = fs_app_data_write_provider(context, request);
+    } else if (rb != NULL && memmem(rb, (size_t)rlen, "EXISTS_SEP", 10) != NULL) {
+      /* Tested before RANGE_SEP and after WRITE_SEP for the same reason the
+       * existing order has: written content may contain any of these tokens,
+       * and an EXISTS request carries no content at all. */
+      result = fs_app_data_exists_provider(context, request);
     } else if (rb != NULL && memmem(rb, (size_t)rlen, "RANGE_SEP", 9) != NULL) {
       result = fs_app_data_range_read_provider(context, request);
     } else {
