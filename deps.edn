@@ -16,8 +16,20 @@
 ;; lock on the common path at all.
 {:paths ["src" "resources" "tools"]
  :deps {org.clojure/clojure {:mvn/version "1.12.0"}
+        ;; Advanced 2026-09-09, 32ee84b2 -> 3abf80a1 (abi main, ahead 1,
+        ;; forward only). The same BigInt class as the osaho pin below, but
+        ;; LATENT here: `world-wit` and `capability-import-name` are not on
+        ;; any route this compiler takes -- measured by loading an
+        ;; instrumented copy first on the classpath during a failing wasm
+        ;; compile and observing that the namespace never loads. Taken anyway
+        ;; because the functions are broken as functions (`world-wit` on a
+        ;; two-id set throws `Cannot compare 23 to 7`, and
+        ;; `capability-import-name` throws `Cannot create property
+        ;; closure_uid_... on bigint` because that map has 18 entries and so
+        ;; hashes rather than scanning), and because abi owns the id
+        ;; vocabulary.
         io.github.kotoba-lang/abi {:git/url "https://github.com/kotoba-lang/abi.git"
-                                   :git/sha "32ee84b2efc92478c846629c8d8319280eed506c"}
+                                   :git/sha "3abf80a1fc0b5a0830acc8b37027baee65a53239"}
         ;; Advanced 2026-09-03 (ADR 0330) with kotoba-lang/provider f040fc0,
         ;; which retires org.clojure/data.json for this namespace and needs
         ;; d5137c7's kwargs surface to be a drop-in.
@@ -272,7 +284,22 @@
          ;; is why every float kernel here is written through
          ;; f64-from-bits. Needed WITH the verifier pin below -- kir alone
          ;; is a green `check` and a red `compile`.
-         :git/sha "74426bad2fa7c8b674c9bc9469232f1b751fbf9c"}
+         ;;
+         ;; Advanced 2026-09-09, 74426bad -> a37577c9 (osaho main, ahead 1,
+         ;; forward only), for the defect this pin is the ONLY way to reach:
+         ;; `kotoba.kir.descriptor/capability-contracts` deduplicates, orders
+         ;; and groups capability ids, and on cljs those ids are BigInt --
+         ;; which cljs.core cannot sort, cannot `distinct` and cannot
+         ;; `group-by`. Measured on this exact tree: a module declaring TWO
+         ;; capabilities answered `internal compiler error` (exit 70) for
+         ;; `--target wasm32-browser` while ONE capability and both native
+         ;; targets were fine, because a one-element `Array.sort` never
+         ;; invokes its comparator. With the fix on the classpath and nothing
+         ;; else changed, exit 70 -> exit 0, and the artifact instantiates and
+         ;; answers 30002 for `(+ (now-at 1) (draw-at 1))` under a
+         ;; `1000*id + v` capability stub -- 7001 + 23001, so both ids reach
+         ;; the host and reach it distinctly.
+         :git/sha "a37577c92d5b60b683c98957f1a07cf3252b3e68"}
         ;; The frontend is an HIR producer and KIR lowering is its consumer;
         ;; both validate the same checked envelope.
         io.github.kotoba-lang/kotoba-hir
