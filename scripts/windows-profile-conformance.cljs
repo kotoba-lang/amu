@@ -252,8 +252,17 @@
         ;; Pinned as the WHOLE line rather than by substring, deliberately: a
         ;; key silently joining or leaving the report is the thing this
         ;; assertion exists to catch, and that is how it caught this one.
+        ;;
+        ;; It caught the next one the same way. `:string-pool` joined every
+        ;; report on 2026-09-10, when the posix loader's arenas became
+        ;; per-run budgets; the windows loader followed so the two could pair
+        ;; under one executor, and this line was what said the windows side
+        ;; had actually changed -- the job moved from "malformed native
+        ;; supervisor evidence" to this mismatch, which is the report being
+        ;; RIGHT and the expectation being stale.
         (lib/ensure! (= (str "{:status :ok :result 42 :fuel {:initial 512 :remaining 510} "
                              ":heap {:capacity 4096 :used 0} "
+                             ":string-pool {:capacity 65536 :used 0} "
                              ":vectors {:capacity 4096 :used 0} "
                              ":vector-items {:capacity 65536 :used 0}}")
                         (.trim (.-stdout structured)))
@@ -303,9 +312,11 @@
         ;; 0034 moves it too, the message now says so instead of withholding the
         ;; number the way the first one did.
         ;; `:vectors` and `:vector-items` joined this report on 2026-09-09,
-        ;; for the reason recorded at the first assertion in this file.
+        ;; and `:string-pool` on 2026-09-10, for the reason recorded at the
+        ;; first assertion in this file.
         (lib/ensure! (= (str "{:status :ok :result 42 :fuel {:initial 512 :remaining 511} "
                              ":heap {:capacity 4096 :used 2} "
+                             ":string-pool {:capacity 65536 :used 0} "
                              ":vectors {:capacity 4096 :used 0} "
                              ":vector-items {:capacity 65536 :used 0}}")
                         (.trim (.-stdout report)))
