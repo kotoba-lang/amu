@@ -419,3 +419,74 @@ approval**. Current verdicts above are diagnostics, not claims.
   different estimator (perf counters), recorded as J-A's next method branch;
   (2) hand-patch scope prediction for J-B2 in kotoba-native emission before
   any compiler work per falsify-first.
+
+- 2026-09-09 09:41–10:41 JST tick 31 (JIT): **J-A quiet-host regime set
+  COMPLETED; leaf-attribution question ANSWERED at quiet quality (ADR 0346);
+  ticks 29–30 backfill-sealed; first J-B2 hand-patch scope note recorded.**
+  Workstation quiet gate failed again (09:41: load1 131.29/86.28/54.10 on 10
+  CPUs — no further probe attempted). Benjamin gate MET: PRE busy_fraction
+  0.038–0.041, POST 0.043–0.054, load1 1.4–3.6, all ≤ 0.10 (fixed probe —
+  first version summed via `c.times.system`, node's field is `.sys` → NaN;
+  fixed version sealed at bench/runtime-comparison/ja_harness/gate_probe.js).
+  Backfill: ticks 29 (benjamin 5x60s JFR @default tiering + 5 V8 wall reps)
+  and 30 (noInline x2 + c1only x2) RAN but left NO ledger entries — same
+  omission pattern as tick 26. Their logs are sealed this tick at
+  bench/runtime-comparison/ (ja_jfr_benjamin_t29.log c05d0d46...,
+  ja_v8_benjamin_t29.log 5c7fb016..., ja_jfr_ablate_benjamin_t30.log
+  3022c85e...) with the harness source JaJfrDispatchShareV2FIX.java
+  (de105441...). Headline from tick 29 (quiet): leaf
+  InterpreterMachine.numberOfParams 75.27–80.23% STABLE across 5/5 reps
+  (on-stack call 98.2–99.2%, eval 82.0–84.4%); the tick-27 busy-host
+  push<->control-transfer flip never appears — caveat (a) contained.
+  METHODSAMPLE records 0 events on benjamin's OpenJDK 26.0.1 in every rep and
+  FlightRecorderOptions=SampleVersion=2 is rejected there: the tick-28 plan's
+  method-vs-stack cross-attribution is IMPOSSIBLE on this host; the tiering
+  ablation replaces it (recorded, not fabricated).
+  This tick's own measurement: regime completion run (ABL3 =
+  -XX:TieredStopAtLevel=4 C2-only x2, CTRL = default x2, 40s records,
+  ~/ja_t29/regime_t31.log, pulled back as ja_jfr_regime_benjamin_t31.log
+  a0e45239...). Results: C2-only leaf numberOfParams 76.21–79.07%, on-stack
+  call 98.0–99.4%, eval 80.8–83.2%, wall 672.5/745.2 ns/call; CTRL leaf
+  78.63–80.54%, wall 685.5/733.2 — leaf dominance survives removing C1, and
+  record length (20/40/60s) does not move it. Full regime table (all on
+  benjamin, gate met, checksum 110550153 every rep): default 75.3–80.5%
+  numberOfParams leaf; noInline -> numberOfParams VANISHES, eval leaf
+  20.8–22.9% + MethodHandle ctor machinery on-stack ~15–21%, wall 2677–2812
+  (~3.7x slower); c1only -> leaf top BLOCK 18.6–30.8% (n=82 samples, thin),
+  wall 7090–7179; c2only ~= default. Reading (diagnostic, no perfgate
+  verdict — shares are not duration observations): J-A's "dispatch
+  dominates" is FALSIFIED as an attribution and SUPERSEDED: ~99% of wall is
+  inside InterpreterMachine.call (inclusive, trivially true), the stable
+  quiet-host dominant leaf is the IF/numberOfParams per-instruction
+  operand-type machinery (~78%), eval-exclusive dispatch is only 3.0–5.1%,
+  arithmetic opcode handlers never dominant in any rep under any tiering.
+  The lever in a chicory-class host is signature/type-machinery
+  specialisation, NOT opcode dispatch — shape-identical to J-B2's
+  helper-call-not-divisor finding.
+  Cross-host cost correction of record: same-host quiet ratio chicory
+  default 685.5–755.8 (median 744.2) vs V8 28.6–29.3 (median 29.0) =
+  ~25–26x (supersedes the withdrawn ~100x and the busy-host ~6–10x).
+  J-B2 hand-patch SCOPE prediction (tick-28's next item 2; NO compiler
+  change): ADR 0289's decoded aarch64-kotoba-v1 kernel_collections walk loop
+  = 29 inlined + bl(->imod: 18 instr incl. an 8-instruction INT64_MIN/-1
+  guard rebuild + sdiv) + moves ~= 47–52 instr/elem. Inlining the modulo
+  removes bl/ret/arg-move/result-move (~5–7) and, with a constant divisor,
+  the guard rebuild (8) — instruction-count bound ~= 13–28% of the element's
+  issue slots. Against the qualified C-proxy bound (+18.03% A->C,
+  qualified+separated, tick 28) the predicted band for a kotoba-native
+  imod-inlining hand-patch is >=5% on the collections domain with the
+  inline-only shape (J-B2) — do NOT compose the const-fold on top (C->D
+  separated REGRESSION -5.97%). Scope for future compiler work (rank to
+  schedule): kotoba-native/src/kotoba/native/aarch64.cljc modulo call-site
+  (the signed-division env helper already shows the inline-guard shape);
+  x86_64 parity + peephole unaffected — bounded, one lever only.
+  J-B itself: no new numbers (4-arm control unchanged, a025ed9b...; benjamin
+  fixture still at /tmp/jb4_t28). No compiler change, no sealed claim,
+  perfgate untouched. Next tick: (1) status rewrites belong to amu-rank
+  (J-A answered-pending-rank, J-B mechanism falsified-at-qualified-quality,
+  J-B2 promotion + scope note); (2) if rank promotes J-B2, the first falsify
+  step is a hand-patch (asm-level or .kotoba source restructure) of the
+  collections walk loop predicting >=5% separated via perfgate on benjamin —
+  NOT a compiler edit; (3) J-C (host-crossing JIT inlining) still untouched
+  — H-Y1's 2.03 crossings/element needs a benjamin re-measure before any
+  inlining hypothesis can be priced.
