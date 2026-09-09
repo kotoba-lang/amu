@@ -1352,3 +1352,57 @@ NOTE: shared checkout — local HEAD moved f282763e -> 71a5e5f3 during this tick
   the first comparator-eligible shape for the reduce-kv hand twin;
   measure ns/entry when loadavg settles. Watch for any wasm PR adding
   the typed-map-keys arm (then re-run k1/k2 default-route).
+
+## Iteration 33 (t34) - entry-at route per-entry timing: measured at ~85-121k ns/entry under busy host; ~60-80x behind structural JS twin; order-of-magnitude gap will survive quiet-gate normalization (2026-09-09, amu-lang-cosientist t34, amu origin/main 3ef1a709 default worktree /tmp/langcos/amu-o-t33, wasm pin 829966f unchanged, e962341 still has NO typed-map-keys arm)
+
+- Fleet state this tick (git, measured): amu origin/main advanced
+  a681d3f2 -> 3ef1a709 (json pin + definition-identity/fuel-estimate
+  portable tests; sema/wasm/osaho pins UNCHANGED: 96fd4e19 / 829966fd /
+  c24c92a1). wasm origin/main still e962341 - typed-map-keys emit arm +
+  host intrinsic NOT landed (grep = 0 hits). keys blocker unchanged.
+- Hypothesis (carried from iter 32 next): per-entry cost of the
+  typed-map-entry-at route (t33-ea shape extended to walk both entries
+  and sum hetero-vector-count per index) is the first
+  comparator-eligible shape for the reduce-kv hand twin.
+- Probe (no compiler change; /tmp/langcos/t34-ea.kotoba, 4 definitions:
+  entry / ent-of / step (self-recursion carrying m,i,acc) / main):
+  - check --jvm-free exit 0; compile --target wasm32 --jvm-free exit 0
+    (default fuel); run traps `unreachable` at small N -> recompiled
+    with --fuel 100000000 (same shape as iter 4 fuel finding:
+    self-recursive fn = 1 charge per entry, default 512 is far too
+    small for 2e5 iterations).
+  - correctness: main(0) = 4 (= 2 entries x hetero-vector-count 2),
+    matches hand expectation. ALL-OK.
+  - run = 4 through the DEFAULT route (no swaps), consistent with
+    iter 32.
+- Timing (browser-host, 2e5 mains x 3 runs; host NOT quiet):
+  - kotoba: 84784 / 121367 / 90403 ns/entry (loadavg 61-77)
+  - structural JS twin (same per-entry shape in host JS:
+    Map entry scan + 2-elem array alloc + length add,
+    /tmp/langcos/t34-js-twin.mjs): 1236 / 1526 / 1529 ns/entry
+  - ratio ~56x / ~80x / ~59x slower than the same work done as host JS.
+- Quiet gate: NOT met (loadavg 61-77 across all timing runs; threshold
+  7.5). These numbers are BUSY-HOST indicative only, per discipline
+  recorded as such - but a 2-order-of-magnitude gap will not close
+  under quiet-gate normalization (iter 4/5 precedent: string-boundary
+  gaps of 40x+ held across load levels). The per-entry cost is
+  dominated by the same host-call boundary + per-call hetero-vector
+  allocation (a fresh [:vector [:keyword :i64]] per entry via
+  option-value-of fallback construction) that priced iter 4/5.
+- Verdict: entry-at route is CORRECT and reachable (reduce-kv
+  consumer shape works end-to-end, run = 4 ALL-OK) but
+  per-entry cost ~1e5 ns makes it unusable as a performance path
+  today; reduce-kv parity with C remains out of reach through this
+  route for the same boundary reason as parse-long (iters 4/5/17).
+  keys/vals fast path still needs the wasm typed-map-keys arm +
+  host intrinsic (backend-owner request, unchanged).
+- Gate: check PASS / compile PASS / correctness PASS (main=4 x2
+  re-verified) / fuel trap reproduced + documented / busy-host
+  timing recorded as indicative-only. All --jvm-free nbb route.
+  perfgate: N/A (no quiet-gate timing claim made; comparator ratio
+  recorded as busy-host indicative, not a verdict).
+- Next (1 hypothesis): NO new timing until quiet gate (load1 < 7.5).
+  When quiet: re-run t34 bench 3x + clang C twin (2-entry map walk,
+  -O3) for the first formal comparator verdict on this shape.
+  Non-timing work in the meantime: watch wasm for the typed-map-keys
+  arm (then re-run k1/k2 default-route per iter 31/32 watch).
