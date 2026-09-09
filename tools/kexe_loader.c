@@ -1607,6 +1607,78 @@ static int64_t io_write_provider(struct kexe_context_v4 *context,
   return intern_utf8(context, (const uint8_t *)count, (size_t)digits);
 }
 
+/* wire id 38 = :cli/args. The arguments a COMMAND was invoked with.
+ *
+ * The loader's own positional arguments and the guest's are separated on the
+ * command line by `--`: everything after the first one belongs to the guest
+ * and nothing before it does. That keeps the existing strict arity check --
+ * `argc != 6 + arity` -- meaning what it always meant, instead of turning it
+ * into a lower bound that would stop catching a miscounted invocation.
+ *
+ * Request and result are both `:string`, because those are the type pairs the
+ * native gate admits, so the index travels as decimal text:
+ *
+ *   ""    -> the COUNT of arguments, as decimal text
+ *   "<i>" -> argument i, zero-based, or the empty string past the end
+ *
+ * The empty request is what makes the count unambiguous: an index is a
+ * non-empty decimal, so no argument index can collide with it. A guest cannot
+ * discover the count by probing for the empty answer, because an empty
+ * ARGUMENT is legal and answers the same thing.
+ *
+ * There is no resource scope, for the same reason :io/write has none: the
+ * guest names nothing and chooses nothing. The grant means "may see how this
+ * process was invoked". */
+static char **kexe_guest_argv = NULL;
+static int kexe_guest_argc = 0;
+
+static int64_t cli_args_provider(struct kexe_context_v4 *context,
+                                 int64_t request) {
+  const uint8_t *bytes = NULL;
+  uint64_t length = 0;
+  if (!read_string_handle(context, request, &bytes, &length)) {
+    raise(SIGILL);
+    return 0;
+  }
+  if (length == 0) {
+    char count[24];
+    int digits = snprintf(count, sizeof(count), "%d", kexe_guest_argc);
+    if (digits <= 0 || (size_t)digits >= sizeof(count)) {
+      raise(SIGILL);
+      return 0;
+    }
+    return intern_utf8(context, (const uint8_t *)count, (size_t)digits);
+  }
+  /* A decimal index, and nothing else. A malformed request is refused rather
+   * than read as zero -- answering argv[0] for "1x" would be a silent wrong
+   * answer, which is the one outcome worth trapping over. */
+  if (length >= 20) {
+    raise(SIGILL);
+    return 0;
+  }
+  char index_text[24];
+  memcpy(index_text, bytes, (size_t)length);
+  index_text[length] = '\0';
+  for (uint64_t i = 0; i < length; i++) {
+    if (index_text[i] < '0' || index_text[i] > '9') {
+      raise(SIGILL);
+      return 0;
+    }
+  }
+  errno = 0;
+  char *end = NULL;
+  unsigned long long index = strtoull(index_text, &end, 10);
+  if (errno != 0 || end == NULL || *end != '\0') {
+    raise(SIGILL);
+    return 0;
+  }
+  if (index >= (unsigned long long)kexe_guest_argc) {
+    return intern_utf8(context, (const uint8_t *)"", 0);
+  }
+  const char *value = kexe_guest_argv[index];
+  return intern_utf8(context, (const uint8_t *)value, strlen(value));
+}
+
 /* ----------------------------------------------------------------------
  * Filesystem capability scopes: wire id 35 = :fs/app-data (runtime id 202;
  * read, write and ranged read of one file) and wire id 34 = :fs/browse (one
@@ -2204,6 +2276,11 @@ static int64_t checked_typed_cap_call(struct kexe_context_v4 *context,
      * sorted NAME<TAB>D lines ("1" = directory, "0" = file), the same wire
      * the js host answers. */
     result = fs_browse_provider(context, request);
+  } else if (id == 38 && request_kind == KEXE_TYPED_STRING) {
+    /* wire id 38 = :cli/args. Real host provider: the empty request answers
+     * the argument count as decimal text, a decimal index answers that
+     * argument, past the end answers the empty string. */
+    result = cli_args_provider(context, request);
   } else if (id == 37 && request_kind == KEXE_TYPED_STRING) {
     /* wire id 37 = :io/write. Real host provider: the request string is
      * written to fd 1 and the result is the decimal byte count. No resource
@@ -2803,6 +2880,27 @@ static void probe_denied(const char *reason) {
 }
 
 int main(int argc, char **argv) {
+  /* Everything after the first `--` is the GUEST's argv (wire 38), and is
+   * removed from this loader's own argument vector before any of the checks
+   * below run -- so `argc != 6 + arity` keeps meaning exactly what it meant
+   * and still catches a miscounted invocation. A `--` with nothing after it
+   * is a guest argv of length zero, which is different from no `--` at all
+   * only in that the guest may ask and be told zero. */
+  for (int i = 1; i < argc; i++) {
+    if (strcmp(argv[i], "--") == 0) {
+      kexe_guest_argv = argv + i + 1;
+      kexe_guest_argc = argc - i - 1;
+      argc = i;
+      break;
+    }
+  }
+  /* Command mode: the guest's answer is the process's EXIT STATUS and the
+   * loader prints no report of its own, so stdout carries only what the guest
+   * wrote through wire 37. Without it the loader keeps printing the result,
+   * which is what every existing caller reads. Truncated to 0..255 the way a
+   * shell would; a negative answer therefore arrives as 256 + it, which is
+   * the same thing `exit(-1)` does anywhere else. */
+  const int command_mode = getenv("KEXE_COMMAND") != NULL;
   if (argc < 6 || argc > 11) {
     fprintf(stderr, "usage: kexe-loader <raw-code> <offset> <arity> <x86_64|aarch64> <allow-csv|-> [i64 ...]\n");
     return 2;
@@ -2971,9 +3069,9 @@ int main(int argc, char **argv) {
   }
   shared->result = result;
   shared->completed = 1;
-  if (!structured_report) write_i64(result);
+  if (!structured_report && !command_mode) write_i64(result);
 
   if (munmap(memory, mapped) != 0) fail("munmap");
   if (munmap(shared, sizeof(*shared)) != 0) fail("shared munmap");
-  _exit(0);
+  _exit(command_mode ? (int)((uint64_t)result & 0xffu) : 0);
 }
