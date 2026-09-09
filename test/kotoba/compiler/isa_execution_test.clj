@@ -1527,6 +1527,9 @@
 (def ^:private iq3xxs-source
   (slurp "test/fixtures/rodata-codebook-iq3xxs.kotoba"))
 
+(def ^:private iq3s-source
+  (slurp "test/fixtures/rodata-codebook-iq3s.kotoba"))
+
 (defn- pool-literals
   "Every `(bytes-literal \"…\")` hex string in SOURCE, in the order it appears."
   [source]
@@ -1565,6 +1568,16 @@
                (fnv (iq/hex->bytes (first literals)))))
         (is (= (get-in iq/digests [:kvalues-iq4nl :bytes])
                (count (iq/hex->bytes (first literals)))))))
+    (testing "IQ3_S carries the nine-bit grid and kmask"
+      (let [literals (pool-literals iq3s-source)]
+        (is (= 2 (count literals)) "two tables, so two pool entries")
+        (is (= iq/iq3s-grid-hex (first literals)))
+        (is (= iq/kmask-iq2xs-hex (second literals)))
+        (is (= (get-in iq/digests [:iq3s-grid :fnv1a32])
+               (fnv (iq/hex->bytes (first literals)))))
+        (is (= 2048 (count (iq/hex->bytes (first literals))))
+            "512 entries of four bytes -- twice IQ3_XXS's, which is the whole
+             point of the ninth bit")))
     (testing "IQ3_XXS carries ksigns, the grid and kmask"
       ;; In the order the source names them, which is the order the decode
       ;; needs them: the sign selector, the grid entry, the element mask.
@@ -1657,6 +1670,58 @@
                                 (bit-and (bit-shift-right w 24) 0xff)])
                        [0x1234567 0x89abcde 0x2468ace 0x13579bd
                         0xfedcba9 0x7654321 0xa5a5a5a 0x5c5c5c5]))))
+
+(def ^:private iq3s-block
+  "One `block_iq3_s`, 110 bytes: `d`, 64 eight-bit codes, eight bytes of
+  NINTH bits, 32 sign bytes, and four bytes holding two four-bit scales each.
+  The `qh` bytes are chosen so the ninth bit is set for some codes in every
+  one of the four `l` positions -- a block where it never fired would agree
+  with a decode that ignored `qh` entirely."
+  (vec (concat [0x55 0x35]
+               (map #(mod (* 37 (inc %)) 256) (range 64))
+               [0x9a 0x3c 0xf1 0x05 0xc7 0x2e 0x68 0xb3]
+               (map #(mod (* 53 (inc %)) 256) (range 32))
+               [0x41 0x7c 0x2b 0xd6])))
+
+(deftest iq3-s-dequantises-on-every-available-isa
+  ;; 64 more of the model's 866 tensors, and the format where the grid index
+  ;; is NINE bits: eight from `qs` and one lifted out of `qh` by a shift whose
+  ;; amount depends on which code pair is being read. The fixture writes that
+  ;; shift as a multiply by `256 / 4^l`, because shift counts in this dialect
+  ;; are literals -- a frontend admission rule, not a machine limit.
+  ;;
+  ;; Reference is osaho's oracle, for the reason given on the IQ3_XXS test.
+  (let [available (into {} (remove (comp nil? val) @loaders))
+        missing (remove available (keys isas))
+        required (if (macos?) (set (keys isas)) #{(host-isa)})
+        expected (mapv (fn [v] (Float/floatToRawIntBits (float v)))
+                       (@#'kotoba.kir/dequantize-block
+                        'kernel-dequant-dot-iq3-s iq3s-block 0))]
+    (println "iq3-s available:" (vec (sort (keys available)))
+             "/ missing (SKIPPED):" (vec (sort missing)))
+    (is (every? available required)
+        (str "required ISA loaders are unavailable on this host. required: "
+             (vec (sort required)) ", missing: " (vec (sort missing))))
+    (is (= 256 (count expected)))
+    ;; This block decodes to 76 distinct values with 127 negative and 129
+    ;; positive. Asserted rather than remembered: a fixture that drifted into
+    ;; a single repeated value, or into one sign, would pass every element
+    ;; comparison below while testing almost nothing.
+    (is (< 32 (count (distinct expected))) "SCANNED distinct values")
+    (is (< 32 (count (filter neg? expected))) "SCANNED negative values")
+    (is (< 32 (count (filter pos? expected))) "SCANNED positive values")
+    (doseq [[isa _] available]
+      (testing isa
+        ;; Both scale nibbles, both halves of a pair, all four `l` positions,
+        ;; every 64-element pair boundary, and the last element.
+        (doseq [element [0 1 3 4 7 8 15 16 31 32 33 63 64 96 128 191 200 255]]
+          (let [report (run-native isa iq3s-source "-" {:allow #{}}
+                                   'weight-bits
+                                   [(str "g:" (region-hex iq3s-block)) "gl:0"
+                                    (str element)])]
+            (is (not (str/includes? report "KEXE_TRAP")) (str/trim report))
+            (is (str/includes? report (str ":result " (nth expected element)))
+                (str "element " element ": " (str/trim report)))))))))
 
 (deftest iq3-xxs-dequantises-on-every-available-isa
   ;; THE LARGEST UNSUPPORTED TYPE IN THE SHIPPING MODEL -- 82 of 866 tensors,
