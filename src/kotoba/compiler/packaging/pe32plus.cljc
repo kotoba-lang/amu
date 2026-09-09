@@ -388,6 +388,23 @@
    ;; Read 02:00.0 through PCI mechanism #1. Only the explicit K16 diagnostic
    ;; profile calls the kernel while Boot Services and ConOut are still live.
    (debugcon-byte \P)                    ; preflight reached the PCI probe
+   ;; PUBLISH AN ADDRESS THE LOADER EXECUTES FROM.
+   ;;
+   ;; The guest maps the first GiB RW+NX above the low 2 MiB -- its own comment
+   ;; on `fill-identity-pd` says so -- so once it loads CR3 the only executable
+   ;; text is its own, including the instruction the tender returns to. On the
+   ;; K16 the firmware happens to place this image under 2 MiB and the return
+   ;; lands; under OVMF it does not and the `ret` is an instruction fetch on an
+   ;; NX page. Measured 2026-09-09: the post-call marker printed for the first
+   ;; time on the one run where the guest returned BEFORE installing its tables.
+   ;;
+   ;; One address, not a base and not a range. The guest clears NX at PDE
+   ;; granularity -- 2 MiB -- and this image is 255 KiB, so a finer number
+   ;; would be one the reader cannot act on. `lea rax,[rip+0]` also needs no
+   ;; RVA arithmetic, which matters because `data-address` is not in scope
+   ;; where these tokens are built: it depends on their own length.
+   [0x48 0x8d 0x05 0x00 0x00 0x00 0x00]
+   [0x48 0x89 0x05] [(rip :loader-text)]
    ;; THE SNAPSHOT COMES FIRST, before the branch that can skip past it.
    ;; Measured 2026-09-09 in one QEMU run: with it after the PCI probe, a
    ;; mismatch jumped to `:tender-step` -- which is BELOW the snapshot -- so
@@ -623,7 +640,15 @@
             variables-size (if payload? 128 112)
             memory-map-offset (align variables-size 16)
             memory-map-capacity 16384
-            embedded-offset (align (+ memory-map-offset memory-map-capacity) 16)
+            ;; AFTER THE MAP, not before it. The guest hardcodes the memory
+            ;; map at boot-info offset 96 (`kernel-subregion boot 16480 96
+            ;; 16384`), so widening the variable block moves the map and the
+            ;; guest rejects the whole structure -- measured 2026-09-09, it
+            ;; returned 18 and QEMU exited 37. Appending here leaves every
+            ;; existing offset untouched and costs only the derived offsets
+            ;; below, which are already derived.
+            loader-text-offset (align (+ memory-map-offset memory-map-capacity) 16)
+            embedded-offset (align (+ loader-text-offset 16) 16)
             payload-offset embedded-offset
             kernel-offset (align (+ payload-offset (count payload)) 16)
             status-prefix "AIUEOS K16 PREFLIGHT STATUS "
@@ -749,8 +774,14 @@
                               (when payload? (repeat 16 0))
                               (repeat (- memory-map-offset variables-size) 0)
                               (repeat memory-map-capacity 0)
-                              (repeat (- embedded-offset
+                              (repeat (- loader-text-offset
                                          (+ memory-map-offset memory-map-capacity)) 0)
+                              ;; the loader's own text address, written at
+                              ;; runtime -- UEFI chooses it, so nothing earlier
+                              ;; can know it
+                              (repeat 16 0)
+                              (repeat (- embedded-offset
+                                         (+ loader-text-offset 16)) 0)
                               payload
                               (repeat (- kernel-offset
                                          (+ payload-offset (count payload))) 0)
@@ -793,7 +824,8 @@
                            :memory-map (+ data-address memory-map-offset)
                            :payload-pointer (+ data-address 112)
                            :payload-length (+ data-address 120)
-                           :payload (+ data-address payload-offset)}
+                           :payload (+ data-address payload-offset)
+                           :loader-text (+ data-address loader-text-offset)}
                           (when k16-preflight?
                             {:tender-fuel (+ data-address tender-slot-offset)
                              :enter-message (+ data-address enter-message-offset)
@@ -846,7 +878,14 @@
                              :rw-end-offset 72
                              :kernel-scratch-address-offset 80
                              :kernel-scratch-pages-offset 88
-                             :kernel-scratch-pages kernel-scratch-pages}
+                             :kernel-scratch-pages kernel-scratch-pages
+                             ;; Where the guest finds the loader's text
+                             ;; address, relative to boot-info. Reported rather
+                             ;; than left implicit because the guest has to
+                             ;; hardcode it -- it already hardcodes 96 for the
+                             ;; memory map -- and a number two files must agree
+                             ;; on should be printed by the one that decides it.
+                             :loader-text-offset (- loader-text-offset 16)}
                              payload?
                              (assoc :payload-offset (- payload-offset 16)
                                     :payload-bytes (count payload)))
