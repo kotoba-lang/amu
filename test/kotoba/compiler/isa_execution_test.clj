@@ -1530,6 +1530,9 @@
 (def ^:private iq3s-source
   (slurp "test/fixtures/rodata-codebook-iq3s.kotoba"))
 
+(def ^:private iq2s-source
+  (slurp "test/fixtures/rodata-codebook-iq2s.kotoba"))
+
 (defn- pool-literals
   "Every `(bytes-literal \"…\")` hex string in SOURCE, in the order it appears."
   [source]
@@ -1568,6 +1571,16 @@
                (fnv (iq/hex->bytes (first literals)))))
         (is (= (get-in iq/digests [:kvalues-iq4nl :bytes])
                (count (iq/hex->bytes (first literals)))))))
+    (testing "IQ2_S carries the ten-bit grid and kmask"
+      (let [literals (pool-literals iq2s-source)]
+        (is (= 2 (count literals)))
+        (is (= iq/iq2s-grid-hex (first literals)))
+        (is (= iq/kmask-iq2xs-hex (second literals)))
+        (is (= (get-in iq/digests [:iq2s-grid :fnv1a32])
+               (fnv (iq/hex->bytes (first literals)))))
+        (is (= 8192 (count (iq/hex->bytes (first literals))))
+            "1024 entries of EIGHT bytes -- four times IQ3_S's, which is what
+             a ten-bit index and eight elements per entry come to")))
     (testing "IQ3_S carries the nine-bit grid and kmask"
       (let [literals (pool-literals iq3s-source)]
         (is (= 2 (count literals)) "two tables, so two pool entries")
@@ -1682,6 +1695,56 @@
                [0x9a 0x3c 0xf1 0x05 0xc7 0x2e 0x68 0xb3]
                (map #(mod (* 53 (inc %)) 256) (range 32))
                [0x41 0x7c 0x2b 0xd6])))
+
+(def ^:private iq2s-block
+  "One `block_iq2_s`, 82 bytes: `d`, 32 eight-bit codes, 32 sign bytes, eight
+  bytes carrying the ninth and TENTH bits, and eight bytes of packed scales."
+  (vec (concat [0x55 0x35]
+               (map #(mod (* 37 (inc %)) 256) (range 32))
+               (map #(mod (* 53 (inc %)) 256) (range 32))
+               [0x9a 0x3c 0xf1 0x05 0xc7 0x2e 0x68 0xb3]
+               [0x41 0x7c 0x2b 0xd6 0x8e 0x15 0xa9 0x63])))
+
+(deftest iq2-s-dequantises-on-every-available-isa
+  ;; THE FOURTH AND LAST of the formats kotoba-native's `elf64` docstring
+  ;; named as staying in the C. 62 more of the model's 866 tensors, and with
+  ;; IQ4_XS, IQ3_XXS and IQ3_S that is 222 of the 306 that sentence covered.
+  ;;
+  ;; The grid index is TEN bits -- two lifted out of `qh`, mask 0x300 -- so
+  ;; the grid is 1024 entries of eight bytes. 8192 bytes is the largest of the
+  ;; six vendored tables, and the size the pool was separately measured
+  ;; against before any of this was written.
+  ;;
+  ;; Reference is osaho's oracle, for the reason given on the IQ3_XXS test.
+  (let [available (into {} (remove (comp nil? val) @loaders))
+        missing (remove available (keys isas))
+        required (if (macos?) (set (keys isas)) #{(host-isa)})
+        expected (mapv (fn [v] (Float/floatToRawIntBits (float v)))
+                       (@#'kotoba.kir/dequantize-block
+                        'kernel-dequant-dot-iq2-s iq2s-block 0))]
+    (println "iq2-s available:" (vec (sort (keys available)))
+             "/ missing (SKIPPED):" (vec (sort missing)))
+    (is (every? available required)
+        (str "required ISA loaders are unavailable on this host. required: "
+             (vec (sort required)) ", missing: " (vec (sort missing))))
+    (is (= 256 (count expected)))
+    ;; Measured: 77 distinct, 127 negative, 129 positive, 0 zero. Floors
+    ;; rather than the numbers, for the reason the IQ3_S test gives.
+    (is (< 32 (count (distinct expected))) "SCANNED distinct values")
+    (is (< 32 (count (filter neg? expected))) "SCANNED negative values")
+    (is (< 32 (count (filter pos? expected))) "SCANNED positive values")
+    (doseq [[isa _] available]
+      (testing isa
+        ;; Both scale nibbles (l < 2 takes the low one), every quarter of a
+        ;; group, both 32-element boundaries, and the last element.
+        (doseq [element [0 1 7 8 15 16 23 24 31 32 63 64 128 160 200 255]]
+          (let [report (run-native isa iq2s-source "-" {:allow #{}}
+                                   'weight-bits
+                                   [(str "g:" (region-hex iq2s-block)) "gl:0"
+                                    (str element)])]
+            (is (not (str/includes? report "KEXE_TRAP")) (str/trim report))
+            (is (str/includes? report (str ":result " (nth expected element)))
+                (str "element " element ": " (str/trim report)))))))))
 
 (deftest iq3-s-dequantises-on-every-available-isa
   ;; 64 more of the model's 866 tensors, and the format where the grid index
