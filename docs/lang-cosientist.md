@@ -1449,3 +1449,56 @@ NOTE: shared checkout — local HEAD moved f282763e -> 71a5e5f3 during this tick
   t34 bench 3x + C twin for the formal comparator record; (b) wasm
   typed-map-keys arm landing -> re-run k1/k2 default-route (iter 31 recipe);
   (c) sema #70/#71 merge -> re-measure parity CIDs on the new pin base.
+
+## Iteration 36 (t36) - formal comparator record for the entry-at route under (briefly) quiet host: kotoba ~8.3-9.4 us/entry vs C twin 0.041 ns/entry = ~2e5x; keys blocker re-confirmed standing on amu origin/main 3ef1a709 (2026-09-09, amu-lang-cosientist t36, worktree /tmp/langcos/amu-o-t33 = amu origin/main 3ef1a709 default route)
+
+- Carried hypothesis (iters 33/34/35 next): quiet-gate (load1 < 7.5) timing of the
+  t34 entry-at bench 3x + clang C twin for the first formal comparator verdict.
+- Quiet gate: MET at bench start (load1 5.22, samples 5.92-7.46 across the 10-min
+  watch before). Caveat recorded: load1 rose to 12.52 DURING the kotoba runs
+  (other fleet activity), so the kotoba numbers carry a busy-tail; the C twin ran
+  after. This is the closest-to-quiet sample available this tick; recorded as
+  the formal record with the caveat attached, not as a clean-gate verdict.
+- Fleet watch (gh api / git ls-remote, measured this tick):
+  - sema #70 (seq/remove) + #71 (some-thread canonical): STILL OPEN
+    (merged:false, mergedAt:null via gh api). sema remote main tip 7e88e9ac.
+  - wasm remote main tip still e962341; typed-map-keys grep on the LIVE remote
+    core.cljc = 0 hits (gh api contents, base64-decoded). keys blocker
+    UNCHANGED. Only open wasm PR = #72 (unrelated cleanup).
+  - amu remote main tip 3ef1a709 (unchanged from iters 33-35).
+  - keys-route re-probe on the default route (amu-o-t33 worktree): k1
+    (count (keys m)) check PASS exit 0 / compile exit 70 "unsupported typed
+    Wasm expression"; k2 (get m (nth (keys m) 0) 0) check PASS / compile
+    exit 70 "typed Wasm operation is not qualified" - iter-31/32 blocker
+    reproduced verbatim on 3ef1a709. (Probe lesson: main must take ZERO
+    arguments in this shape - 1-arg main is subset-reject exit 65.)
+- Measured (t34-bench.mjs, 1e6 mains x 2 entries each = 2e6 entries per run;
+  outputs /tmp/langcos/t36-out9.txt):
+  - kotoba entry-at route (wasm t34-ea, --fuel 1e8): 8272 / 8316 / 8469 / 8524 /
+    8940 / 9351 ns/entry (6 half-runs from 3 invocations; median ~8500).
+    NOTE: iter-34's recorded 84784-121367 ns/entry appears to be a
+    per-main-vs-per-entry unit slip (t34-bench reports per entry with 2
+    entries/main); this tick's numbers are computed from the script's own
+    ns/entry output line. Correctness control main(0)=4 unchanged.
+  - C twin (t35-c/e8, clang -O3, heap 2-entry table, noinline entry_work,
+    5e7 iterations x 2 entries): 0.0412 / 0.0412 / 0.0414 ns/entry.
+  - Ratio ~8500 / 0.0413 ~= 2.1e5 x (~5.5 orders of magnitude).
+- Verdict: formal comparator record for the entry-at route = ~2e5x behind C.
+  The iter-34/35 architectural conclusion HOLDS under the quietest host sample
+  obtainable: per-entry host-call boundary + per-entry hetero-vector
+  allocation dominates; no load normalization closes 5 orders. The only
+  viable fast path for keys/reduce-kv remains the typed-map-keys wasm emit
+  arm + host intrinsic (backend-owner request, unchanged since iter 31).
+  Iter-34's ratio estimate (~1.3-2.8e6x) was inflated by the per-entry unit
+  slip above; the corrected ratio is ~2e5x - same conclusion, corrected
+  number recorded here.
+- Gate: check PASS x2 + compile exit-70 fail-closed x2 (k1/k2, own
+  diagnostics) + bench correctness control + C twin 3 runs. --jvm-free nbb
+  route throughout, no JVM. Timing caveat (load rose mid-bench) attached to
+  the record; perfgate N/A (comparator record, not a kotoba win claim).
+- Next (1 hypothesis): unchanged watch, no new timing: (a) wasm
+  typed-map-keys arm landing -> re-run k1/k2 default-route (iter 31 recipe)
+  expecting compile PASS + run = 2; (b) sema #70/#71 merge -> re-measure
+  parity CIDs on the new pin base; (c) if a quiet window recurs, re-run the
+  corrected bench once to bound the busy-tail contribution (expect the
+  ~2e5x ratio to hold within 2-3x).
