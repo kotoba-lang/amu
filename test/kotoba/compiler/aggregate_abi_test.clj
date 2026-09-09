@@ -256,7 +256,17 @@
   ;; this moves no encoding either -- it admits the signature that could
   ;; already be computed with, and which every float kernel in this workspace
   ;; had been writing around through f64-from-bits.
-  (is (= "74426bad2fa7c8b674c9bc9469232f1b751fbf9c"
+  ;; Advanced 2026-09-09 to a37577c9: `kotoba.kir.descriptor/capability-contracts`
+  ;; deduplicates, orders and groups capability ids, and on ClojureScript
+  ;; those ids are BigInt -- which cljs.core can neither sort, nor `distinct`,
+  ;; nor `group-by`. Only the sort fired, and it fires at the SECOND contract,
+  ;; so `compile --target wasm32-browser` answered `internal compiler error`
+  ;; for any module declaring two or more capabilities while ONE capability
+  ;; and both native targets were fine (a one-element `Array.sort` never
+  ;; invokes its comparator). No native path builds this table, which is why
+  ;; the split was never about the backends. This moves no encoding: on the
+  ;; JVM the narrowing is `identity`.
+  (is (= "a37577c92d5b60b683c98957f1a07cf3252b3e68"
          (dependency-pin 'io.github.kotoba-lang/osaho)))
   ;; Advanced 2026-09-01 alongside the backend: the verifier re-derives the
   ;; two new arities and the v4 `expected-context`, and is what turns a
