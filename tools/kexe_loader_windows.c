@@ -1344,6 +1344,27 @@ static int run_appcontainer_parent(int argc, char **argv) {
   return (int)exit_code;
 }
 
+/* granted regions / arena parity: the tail every report ends with, defined
+ * ONCE because there are nine of them. `kototama.native.executor`'s
+ * `valid-supervisor-report?` has expected `:vectors` and `:vector-items` in
+ * every `:ok` and `:trap` report since 2026-09-08 -- the two vector arenas are
+ * separately exhaustible and were the only bounded resource a run could hit
+ * without the report mentioning it.
+ *
+ * This repository's deps.edn held the artifact windows identity back for
+ * exactly this: an arena windows loader "cannot pair with a posix loader that
+ * does not under any single executor". The posix loader gained the arenas in
+ * this branch, so the pairing is resolved in the other direction -- both
+ * report them, and the hold is over. */
+#define KEXE_REPORT_TAIL_FMT                                                   \
+  ":heap {:capacity 4096 :used %llu} :vectors {:capacity %u :used %llu} "      \
+  ":vector-items {:capacity %u :used %llu}}\n"
+#define KEXE_REPORT_TAIL_ARGS(c)                                               \
+  (unsigned long long)(c)->pair_used, (unsigned)KEXE_VECTOR_CAPACITY,          \
+      (unsigned long long)(c)->vector_used,                                    \
+      (unsigned)KEXE_VECTOR_ITEM_CAPACITY,                                     \
+      (unsigned long long)(c)->vector_item_used
+
 static int sandbox_probe(void) {
   if (getenv("KEXE_FILESYSTEM_PROBE") != NULL) {
     HANDLE file = CreateFileW(L"kotoba-denial-probe.tmp", GENERIC_WRITE, 0, NULL,
@@ -1511,8 +1532,8 @@ int main(int argc, char **argv) {
       if (result_bytes == NULL) {
         fprintf(stderr, "KEXE_TRAP {:kind :result :reason :invalid-string-handle}\n");
         printf("{:status :trap :exit 66 :fuel {:initial 512 :remaining %llu} "
-               ":heap {:capacity 4096 :used %llu}}\n",
-               (unsigned long long)ctx->fuel, (unsigned long long)ctx->pair_used);
+               KEXE_REPORT_TAIL_FMT,
+               (unsigned long long)ctx->fuel, KEXE_REPORT_TAIL_ARGS(ctx));
         SecureZeroMemory(ctx, sizeof(*ctx));
         VirtualFree(ctx, 0, MEM_RELEASE);
         VirtualFree(code, 0, MEM_RELEASE);
@@ -1522,15 +1543,15 @@ int main(int argc, char **argv) {
              (long long)result);
       for (uint64_t i = 0; i < result_length; i++) printf("%02x", result_bytes[i]);
       printf("\" :fuel {:initial 512 :remaining %llu} "
-             ":heap {:capacity 4096 :used %llu}}\n",
-             (unsigned long long)ctx->fuel, (unsigned long long)ctx->pair_used);
+             KEXE_REPORT_TAIL_FMT,
+             (unsigned long long)ctx->fuel, KEXE_REPORT_TAIL_ARGS(ctx));
     } else if (record_field_count > 0) {
       int64_t fields[KEXE_RECORD_FIELD_LIMIT];
       if (!inspect_record_result(ctx, result, record_field_count, fields)) {
         fprintf(stderr, "KEXE_TRAP {:kind :result :reason :invalid-record-chain}\n");
         printf("{:status :trap :exit 127 :fuel {:initial 512 :remaining %llu} "
-               ":heap {:capacity 4096 :used %llu}}\n",
-               (unsigned long long)ctx->fuel, (unsigned long long)ctx->pair_used);
+               KEXE_REPORT_TAIL_FMT,
+               (unsigned long long)ctx->fuel, KEXE_REPORT_TAIL_ARGS(ctx));
         SecureZeroMemory(ctx, sizeof(*ctx));
         VirtualFree(ctx, 0, MEM_RELEASE);
         VirtualFree(code, 0, MEM_RELEASE);
@@ -1541,8 +1562,8 @@ int main(int argc, char **argv) {
       for (uint64_t i = 0; i < record_field_count; i++)
         printf(i == 0 ? "%lld" : " %lld", (long long)fields[i]);
       printf("] :fuel {:initial 512 :remaining %llu} "
-             ":heap {:capacity 4096 :used %llu}}\n",
-             (unsigned long long)ctx->fuel, (unsigned long long)ctx->pair_used);
+             KEXE_REPORT_TAIL_FMT,
+             (unsigned long long)ctx->fuel, KEXE_REPORT_TAIL_ARGS(ctx));
     } else if (strcmp(result_type, "option-i64") == 0 ||
                strcmp(result_type, "result-i64") == 0) {
       int option = strcmp(result_type, "option-i64") == 0;
@@ -1552,8 +1573,8 @@ int main(int argc, char **argv) {
         const char *reason = option ? "invalid-option-i64" : "invalid-result-i64";
         fprintf(stderr, "KEXE_TRAP {:kind :result :reason :%s}\n", reason);
         printf("{:status :trap :exit %d :fuel {:initial 512 :remaining %llu} "
-               ":heap {:capacity 4096 :used %llu}}\n", trap_exit,
-               (unsigned long long)ctx->fuel, (unsigned long long)ctx->pair_used);
+               KEXE_REPORT_TAIL_FMT, trap_exit,
+               (unsigned long long)ctx->fuel, KEXE_REPORT_TAIL_ARGS(ctx));
         SecureZeroMemory(ctx, sizeof(*ctx));
         VirtualFree(ctx, 0, MEM_RELEASE);
         VirtualFree(code, 0, MEM_RELEASE);
@@ -1562,18 +1583,18 @@ int main(int argc, char **argv) {
       printf("{:status :ok :result %lld :result-type :%s "
              ":result-tag %s :result-word %lld "
              ":fuel {:initial 512 :remaining %llu} "
-             ":heap {:capacity 4096 :used %llu}}\n",
+             KEXE_REPORT_TAIL_FMT,
              (long long)result, result_type, tag == 1 ? "true" : "false",
              (long long)payload, (unsigned long long)ctx->fuel,
-             (unsigned long long)ctx->pair_used);
+             KEXE_REPORT_TAIL_ARGS(ctx));
     } else if (variant_case_count > 0) {
       int64_t ordinal, payload;
       if (!inspect_variant_result(ctx, result, variant_case_count,
                                   variant_bool_mask, &ordinal, &payload)) {
         fprintf(stderr, "KEXE_TRAP {:kind :result :reason :invalid-variant}\n");
         printf("{:status :trap :exit 130 :fuel {:initial 512 :remaining %llu} "
-               ":heap {:capacity 4096 :used %llu}}\n",
-               (unsigned long long)ctx->fuel, (unsigned long long)ctx->pair_used);
+               KEXE_REPORT_TAIL_FMT,
+               (unsigned long long)ctx->fuel, KEXE_REPORT_TAIL_ARGS(ctx));
         SecureZeroMemory(ctx, sizeof(*ctx));
         VirtualFree(ctx, 0, MEM_RELEASE);
         VirtualFree(code, 0, MEM_RELEASE);
@@ -1582,15 +1603,15 @@ int main(int argc, char **argv) {
       printf("{:status :ok :result %lld :result-type :variant "
              ":result-ordinal %lld :result-word %lld "
              ":fuel {:initial 512 :remaining %llu} "
-             ":heap {:capacity 4096 :used %llu}}\n",
+             KEXE_REPORT_TAIL_FMT,
              (long long)result, (long long)ordinal, (long long)payload,
              (unsigned long long)ctx->fuel,
-             (unsigned long long)ctx->pair_used);
+             KEXE_REPORT_TAIL_ARGS(ctx));
     } else {
       printf("{:status :ok :result %lld :fuel {:initial 512 :remaining %llu} "
-             ":heap {:capacity 4096 :used %llu}}\n",
+             KEXE_REPORT_TAIL_FMT,
              (long long)result, (unsigned long long)ctx->fuel,
-             (unsigned long long)ctx->pair_used);
+             KEXE_REPORT_TAIL_ARGS(ctx));
     }
   } else printf("%lld\n", (long long)result);
 
