@@ -4,7 +4,7 @@
   pattern as test/nbb/http-transport.cljs) so spawnSync hops can reach a
   local Anthropic-Messages-shaped /v1/messages without blocking the server
   event loop."
-  (:require [clojure.string :as string]
+  (:require [kotoba.lang.text :as string]
             [provider.llm-transport :as transport]
             ["node:child_process" :as child]
             ["node:fs" :as fs]

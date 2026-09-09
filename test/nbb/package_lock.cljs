@@ -15,7 +15,7 @@
             ["node:fs" :as fs]
             ["node:os" :as os]
             ["node:path" :as path]
-            [clojure.string :as str]
+            [kotoba.lang.text :as str]
             [ed25519.core :as ed25519]
             [kotoba.compiler.definition-identity :as definition-identity]
             [kotoba.compiler.nbb.cli-support :as support]

@@ -25,7 +25,7 @@
             [kotoba.sema :as sema]
             [kotoba.verifier :as verifier]
             [json.data-json :as json]
-            [clojure.string :as str])
+            [kotoba.lang.text :as str])
   (:gen-class))
 
 (defn- native-executor-fn [operation]

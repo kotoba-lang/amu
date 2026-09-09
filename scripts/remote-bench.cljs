@@ -44,7 +44,7 @@
 ;;    instance left this one. ssh is now invoked through spawnSync with an argv
 ;;    vector, so there is no local shell to expand anything.
 
-(require '[clojure.string :as str])
+(require '[kotoba.lang.text :as str])
 (def cp (js/require "node:child_process"))
 (def fs (js/require "node:fs"))
 

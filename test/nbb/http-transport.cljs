@@ -7,7 +7,7 @@
   destination-blocked? forced false for loopback fixtures — matching the
   clj http_transport_test.clj with-redefs pattern (allow-list membership
   itself is never redefined)."
-  (:require [clojure.string :as string]
+  (:require [kotoba.lang.text :as string]
             [provider.http-transport :as transport]
             ["node:child_process" :as child]
             ["node:fs" :as fs]
@@ -81,7 +81,7 @@ s.listen(0,'127.0.0.1',()=>{
     (when-let [[_ scheme host port]
                (re-matches #"(https?)://([A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?)(?::([0-9]+))?(?:/[^ ]*)?"
                            url)]
-      (str scheme "://" (string/lower-case host) (when port (str ":" port))))))
+      (str scheme "://" (string/lower host) (when port (str ":" port))))))
 
 (defn- with-http-fixture
   "Widen canonical-origin to http:// and disable destination block for loopback."

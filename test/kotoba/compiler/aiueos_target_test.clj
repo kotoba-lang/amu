@@ -1,5 +1,5 @@
 (ns kotoba.compiler.aiueos-target-test
-  (:require [clojure.string :as str]
+  (:require [kotoba.lang.text :as str]
             [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]
             [kotoba.artifact.core :as artifact]

@@ -4,7 +4,7 @@
   Applications receive a closed capability object, never the ambient Worker
   env. Generated JavaScript is an artifact; the EDN profile is authoritative."
   (:require [json.data-json :as json]
-            [clojure.string :as str]
+            [kotoba.lang.text :as str]
             [kotoba.artifact.core :as artifact]))
 
 (def schema :kotoba.host-profile/v1)
@@ -154,7 +154,7 @@
                      (every? #{"GET" "HEAD" "POST" "PUT" "DELETE"} methods)))
     (reject! "HTTP methods are invalid" {:field field}))
   (vec (sort (map #(if (keyword? %)
-                     (str/upper-case (name %))
+                     (str/upper (name %))
                      %)
                    methods))))
 

@@ -1,5 +1,5 @@
 (ns kotoba.compiler.bounded-edn-test
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [kotoba.lang.text] [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.bounded-edn :as bounded-edn])
   (:import [java.nio.file Files]
            [java.nio.file.attribute FileAttribute]))
@@ -25,7 +25,7 @@
            ;; alongside porting these same two limits to the nbb-native path
            ;; (kotoba.compiler.nbb.cli/validate-edn-shape!, scripts/conformance.cljs).
            ["oversized string" (str "\"" (apply str (repeat 1048577 "a")) "\"") #"string exceeds"]
-           ["too many nodes" (str "[" (clojure.string/join " " (repeat 200001 "1")) "]") #"too many nodes"]]]
+           ["too many nodes" (str "[" (kotoba.lang.text/join " " (repeat 200001 "1")) "]") #"too many nodes"]]]
     (testing label
       (let [error (trap #(bounded-edn/read-string input))]
         (is (instance? clojure.lang.ExceptionInfo error))

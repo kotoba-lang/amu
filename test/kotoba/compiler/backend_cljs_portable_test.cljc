@@ -14,7 +14,7 @@
 
   Run without a JVM:
     nbb --classpath \"src:test:$(clojure -Spath -M:test)\" run-cljs-backend.cljs"
-  (:require [clojure.string :as str]
+  (:require [kotoba.lang.text :as str]
             [clojure.test :refer [deftest is]]
             [kotoba.compiler.backend.cljs :as backend]))
 

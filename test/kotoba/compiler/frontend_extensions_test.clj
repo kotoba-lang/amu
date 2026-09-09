@@ -5,7 +5,7 @@
   existing heap-pair/list primitives -- no backend/codegen change)."
   (:require [kotoba.compiler.atomic-output :as atomic-output]
             [clojure.test :refer [deftest is testing]]
-            [clojure.string :as str]
+            [kotoba.lang.text :as str]
             [clojure.java.shell :as shell]
             [kotoba.compiler.core :as compiler]
             [kotoba.sema :as sema]
@@ -233,7 +233,7 @@
     (is (= '(vector-new 1 2 3) (get-in checked [:hir :functions 0 :body]))))
   (is (some? (rejection-message
               (str "(defn main [] :vector-i64 (vector-i64 "
-                   (clojure.string/join " " (range 129)) "))"))))
+                   (str/join " " (range 129)) "))"))))
   (is (some? (rejection-message "(defn bad [] :vector-i64 (vector-i64 1 true))"))))
 
 (deftest bounded-vector-f64-has-owned-reference-and-web-semantics
@@ -892,7 +892,7 @@
   ;; comfortably under this compiler's fixed 512-fuel budget. Verifies
   ;; that bound actually holds, rather than just asserting it in prose.
   (let [source (str "(defn main [] (get {"
-                     (clojure.string/join " " (map #(str ":k" % " " %) (range 128)))
+                     (str/join " " (map #(str ":k" % " " %) (range 128)))
                      "} :missing))")]
     (is (= 0 (oracle source)) "a full-width admissible map miss completes within fuel")))
 
@@ -969,7 +969,7 @@
   (doseq [source ["(def values #{}) (defn main [] values)"
                   "(def values #{:ok 1}) (defn main [] values)"
                   (str "(def values #{"
-                       (clojure.string/join " " (map #(str ":k" %) (range 33)))
+                       (str/join " " (map #(str ":k" %) (range 33)))
                        "}) (defn main [] values)")]]
     (is (= "constant value must be closed bounded integer/string/keyword/boolean/nil/vector/map or non-empty keyword-set data"
            (rejection-message source)))))

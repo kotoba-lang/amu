@@ -25,7 +25,7 @@
   (:require ["node:child_process" :as child]
             ["node:fs" :as fs]
             ["node:path" :as node-path]
-            [clojure.string :as str]
+            [kotoba.lang.text :as str]
             [ed25519.core :as ed25519]
             [kotoba.lang.package-contract :as contract]
             [multiformats.core :as mf]

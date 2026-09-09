@@ -7,7 +7,7 @@
   checked KIR is executed by the JVM oracle, restricted ESM, and Wasm."
   (:require [json.data-json :as json]
             [clojure.java.shell :as shell]
-            [clojure.string :as str]
+            [kotoba.lang.text :as str]
             [kotoba.artifact.core :as artifact]
             [kotoba.compiler.core :as compiler]
             [kotoba.compiler.effect-row :as effect-row]

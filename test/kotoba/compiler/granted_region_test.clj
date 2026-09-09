@@ -17,7 +17,7 @@
   --symbol sum-bytes`, `.byte` under a label, `clang -c -target
   arm64-apple-macos`, call as `int64_t f(int64_t,...,void *)` -- the operands
   arrive in x0.. and the eighth argument register is the context."
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [kotoba.lang.text] [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]))
 
 (def ^:private fixture (slurp "test/fixtures/granted-region-sum.kotoba"))
@@ -37,7 +37,7 @@
   ;; The frontend ADMITS a literal base -- naming MMIO is the job on aiueos --
   ;; so this refusal is the verifier's own, and it has to be, or the admission
   ;; above would have opened the whole address space instead of one region.
-  (let [result (compiled (clojure.string/replace
+  (let [result (compiled (kotoba.lang.text/replace
                           fixture
                           "(defn sum-bytes [base :i64 length :i64]\n  (sum-from (slice-of-u8 base length) 0 0))"
                           "(defn sum-bytes [length :i64]\n  (sum-from (slice-of-u8 4096 length) 0 0))"))]
@@ -50,7 +50,7 @@
   ;; The frontend's own provenance rule, which this admission did not touch.
   ;; A different sentence for a different problem: this program did not merely
   ;; choose an address, it built one.
-  (let [result (compiled (clojure.string/replace
+  (let [result (compiled (kotoba.lang.text/replace
                           fixture
                           "(slice-of-u8 base length)"
                           "(slice-of-u8 (+ base 8) length)"))]
@@ -73,11 +73,11 @@
   ;; without anything going red.
   (let [messages (into #{}
                        (map (fn [source] (:message (compiled source))))
-                       [(clojure.string/replace
+                       [(kotoba.lang.text/replace
                          fixture
                          "(defn sum-bytes [base :i64 length :i64]\n  (sum-from (slice-of-u8 base length) 0 0))"
                          "(defn sum-bytes [length :i64]\n  (sum-from (slice-of-u8 4096 length) 0 0))")
-                        (clojure.string/replace fixture "(slice-of-u8 base length)"
+                        (kotoba.lang.text/replace fixture "(slice-of-u8 base length)"
                                                 "(slice-of-u8 (+ base 8) length)")
                         "(ns w (:export [go]))
                          (defn go [base :i64] (kernel-load-u8 base 100 0))"])]

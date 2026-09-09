@@ -14,7 +14,7 @@
 ;;   nbb scripts/test-definition-cid-parity.cljs
 
 (ns scripts.test-definition-cid-parity
-  (:require [clojure.string :as str]
+  (:require [kotoba.lang.text :as str]
             [scripts.lib :as lib]))
 
 (def directory (lib/temp-dir "kotoba-defcid-parity-"))

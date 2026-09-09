@@ -1,5 +1,5 @@
 (ns ipld-adl-conformance
-  (:require [clojure.string :as str]
+  (:require [kotoba.lang.text :as str]
             [ipld.schema :as schema]
             [ipld.schema-dsl :as dsl]
             [kotoba.compiler.ipld-adl :as adl]

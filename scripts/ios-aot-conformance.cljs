@@ -1,7 +1,7 @@
 #!/usr/bin/env nbb
 (ns ios-aot-conformance
   (:require [scripts.lib :as lib]
-            [clojure.string :as str]
+            [kotoba.lang.text :as str]
             ["node:child_process" :as child]
             ["node:fs" :as fs]
             ["node:os" :as os]

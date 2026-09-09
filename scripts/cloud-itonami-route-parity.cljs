@@ -64,7 +64,7 @@
             ["node:fs" :as fs]
             ["node:os" :as os]
             ["node:path" :as path]
-            [clojure.string :as str]))
+            [kotoba.lang.text :as str]))
 
 (def root (.resolve path (.dirname path *file*) ".."))
 (def kotoba (.join path root "bin" "kotoba"))
@@ -149,8 +149,8 @@
   "Uppercase everything after the last `/` -- a case attack on the leaf only."
   [p]
   (let [i (.lastIndexOf p "/")]
-    (if (neg? i) (str/upper-case p)
-        (str (subs p 0 (inc i)) (str/upper-case (subs p (inc i)))))))
+    (if (neg? i) (str/upper p)
+        (str (subs p 0 (inc i)) (str/upper (subs p (inc i)))))))
 
 (defn standard-battery
   "The uniform battery for a route admitting exactly (GET, `admitted`).

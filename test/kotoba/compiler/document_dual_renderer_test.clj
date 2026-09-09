@@ -16,7 +16,7 @@
   before any HAMT/arena selection — the other remaining W4 exit item.
 
   Complements slices 1–5. Does not claim full :ui/commit kit qualification (W5)."
-  (:require [clojure.string :as str]
+  (:require [kotoba.lang.text :as str]
             [clojure.java.shell :as shell]
             [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]

@@ -72,7 +72,7 @@
   mistaken for one: `:definitions` carries `:cid` on success and
   `:definition-cid <marker>` on refusal, so a consumer that reads `:cid`
   gets nothing rather than something plausible."
-  (:require [clojure.string :as str]
+  (:require [kotoba.lang.text :as str]
             [kotoba.kir :as ir]
             [kotoba.kir.alpha-normalization :as an]
             [kotoba.kir.definition-identity :as kir-id]
