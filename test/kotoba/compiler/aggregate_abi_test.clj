@@ -151,7 +151,16 @@
   ;; same program. The JVM side is unchanged by this advance: a Long always
   ;; compared to 0, so the boundary this test pins moves not at all here, and
   ;; what moves is the OTHER front, toward these bytes.
-  (is (= "a5711bdc859cbe11c8a9497d7b836ed3d884f086"
+  ;; Advanced 2026-09-09 to 11691559 for `lower-index-of` (kotoba-native ADR
+  ;; 0081). It moves bytes only for programs that use `string-index-of`, which
+  ;; nothing could until this pin: the head had no lowering, so it was
+  ;; call-shaped and `reject-unextracted-call!` refused it as
+  ;; `call-abi-not-admitted` -- one gate EARLIER than the two ADR 0002 opened,
+  ;; which is why neither kotoba.kir nor the verifier had ever seen it. The
+  ;; lowering is the scan `string-contains?` already emits, returning the
+  ;; offset `kotoba$string-find` had computed instead of folding it to 0/1, so
+  ;; no helper, callback, value representation or ABI version moves here.
+  (is (= "11691559934a16fcad073e4c0a8a58ab40049f2e"
          (dependency-pin 'io.github.kotoba-lang/kotoba-native)))
   ;; Advanced 2026-09-07 to kotoba-native main c9d5c44 (hoist #151, cross-call
   ;; hoist #152, copy coalescing #154; 06badc8's allow-list entry is on main as
@@ -256,7 +265,18 @@
   ;; this moves no encoding either -- it admits the signature that could
   ;; already be computed with, and which every float kernel in this workspace
   ;; had been writing around through f64-from-bits.
-  (is (= "74426bad2fa7c8b674c9bc9469232f1b751fbf9c"
+  ;; Advanced 2026-09-09 to 1a81e2d7, and this one is a CORRECTNESS advance.
+  ;; `utf8-index-of!` converted the host's UTF-16 index to a UTF-8 byte offset
+  ;; one unit at a time: it charged a surrogate PAIR 4 bytes at the high
+  ;; surrogate and then stepped onto the low one, which matched no earlier arm
+  ;; and took `:else` for 3 more. Every astral code point before a match added
+  ;; 7. `(string-index-of "<G clef>ab" "ab")` answered 7 where kotoba-script's
+  ;; JS emitter, kotoba-native's new lowering and CPython all answer 4.
+  ;; `lower` folds a pure i64 entry through this evaluator, so the wrong offset
+  ;; reached ARTIFACTS as a baked constant, not only runtime. Found from
+  ;; outside, by kotoba-native's oracle comparison, which writes no expected
+  ;; value down (osaho ADR 0271).
+  (is (= "1a81e2d7df947a719b75db1e6e5616a900f3ebb7"
          (dependency-pin 'io.github.kotoba-lang/osaho)))
   ;; Advanced 2026-09-01 alongside the backend: the verifier re-derives the
   ;; two new arities and the v4 `expected-context`, and is what turns a
@@ -345,7 +365,13 @@
   ;; refused on a hosted target even though the frontend admits one. Same skew
   ;; argument in the other direction: without this pin a program this
   ;; repository compiles is refused at verification.
-  (is (= "33b3d067603da3a1c596a900ddd6ab029d5ed6e3"
+  ;; Advanced 2026-09-09 to 1810a62c: `string-operations` gains
+  ;; `string-index-of 2` (kotoba-verifier ADR 0051). Required WITH the
+  ;; kotoba-native pin above and not separable from it -- ADR 0002 measured
+  ;; that opening one of these gates alone moves nothing, and the verifier
+  ;; re-derives its own table, so a head this repository can emit and that
+  ;; table does not carry is refused after emission.
+  (is (= "1810a62ca2bee309e9add96d603121b45d26deaa"
          (dependency-pin 'io.github.kotoba-lang/kotoba-verifier)))
   (is (= 7 (:abi/version aggregate-abi/contract)))
   (is (= :recursive-word-handles
