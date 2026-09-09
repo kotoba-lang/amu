@@ -32,6 +32,15 @@
 ;;                             through that require. A test cannot be more
 ;;                             portable than the namespaces it pulls in.
 ;;
+;; UPDATE 2026-09-08: the two `format`/fixture-reading namespaces above are no
+;; longer wholesale absent. Their file-free assertions moved to
+;; `kotoba.compiler.definition-identity-portable-test` and
+;; `kotoba.compiler.fuel-estimate-portable-test` (`.cljc` siblings, following
+;; the pattern in kotoba-lang/kotoba's `*-portable-test.cljc` files); the
+;; fixture-reading and `kotoba.compiler.core`-requiring remainder stayed in the
+;; original `.clj` files. `uefi-target-gate-test` is still wholesale absent --
+;; its whole namespace requires `kotoba.compiler.core`.
+;;
 ;; Both are genuinely JVM-only as written. Splitting their file-free assertions
 ;; into portable siblings is real follow-on work, not a rename.
 ;;
@@ -43,6 +52,8 @@
 ;; line, never by grepping this file.
 (ns run-tests
   (:require [cljs.test :as t]
+            [kotoba.compiler.definition-identity-portable-test]
+            [kotoba.compiler.fuel-estimate-portable-test]
             [kotoba.compiler.logic-manifest-test]
             [kotoba.compiler.plan-test]
             [kotoba.compiler.source-path-test]))
@@ -53,6 +64,8 @@
   (when (pos? (+ (or (:fail m) 0) (or (:error m) 0)))
     (set! (.-exitCode js/process) 1)))
 
-(t/run-tests 'kotoba.compiler.logic-manifest-test
+(t/run-tests 'kotoba.compiler.definition-identity-portable-test
+             'kotoba.compiler.fuel-estimate-portable-test
+             'kotoba.compiler.logic-manifest-test
              'kotoba.compiler.plan-test
              'kotoba.compiler.source-path-test)

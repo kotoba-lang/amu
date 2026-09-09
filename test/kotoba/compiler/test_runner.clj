@@ -13,6 +13,7 @@
             [kotoba.compiler.cli-test]
             [kotoba.compiler.core-test]
             [kotoba.compiler.definition-identity-test]
+            [kotoba.compiler.definition-identity-portable-test]
             [kotoba.compiler.coverage-test]
             [kotoba.compiler.coverage-evidence-test]
             [kotoba.compiler.bounded-edn-test]
@@ -62,6 +63,7 @@
             [kotoba.compiler.lang-conformance-golden-test]
             [kotoba.compiler.lang-native-conformance-test]
             [kotoba.compiler.fuel-estimate-test]
+            [kotoba.compiler.fuel-estimate-portable-test]
             ;; fuel64: the four statements of the fuel ceiling, compared here
             ;; because amu is the only classpath that holds more than two
             [kotoba.compiler.fuel64-ceiling-test]
@@ -196,6 +198,11 @@
    'kotoba.compiler.cli-test
    'kotoba.compiler.core-test
    'kotoba.compiler.definition-identity-test
+   ;; The `.cljc` sibling holding the assertions that touch no file. It runs on
+   ;; BOTH hosts, so it belongs in this list as well as in `run-tests.cljs` --
+   ;; registering only the nbb runner drops it from the JVM suite silently, and
+   ;; the count is the only thing that says so.
+   'kotoba.compiler.definition-identity-portable-test
    'kotoba.compiler.coverage-test
    'kotoba.compiler.coverage-evidence-test
    'kotoba.compiler.bounded-edn-test
@@ -246,6 +253,7 @@
    'kotoba.compiler.lang-conformance-golden-test
    'kotoba.compiler.lang-native-conformance-test
    'kotoba.compiler.fuel-estimate-test
+   'kotoba.compiler.fuel-estimate-portable-test
    'kotoba.compiler.fuel64-ceiling-test
    'kotoba.compiler.fuel64-efi-budget-test
    'kotoba.compiler.capability-names-test
