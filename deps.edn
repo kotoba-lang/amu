@@ -402,7 +402,11 @@
          ;; errors in the JVM suite into one cause: every native execution
          ;; refused the loader as "native loader source identity mismatch",
          ;; which reads as tampering and is a pin skew.
-         :git/sha "7bff9bacf11c0c9444da3f60ac0f0c473c5c1164"}
+         ;; Corrected 2026-09-10 to 97cd1e33: 7bff9bac's docstring closed
+         ;; early on a raw quote and the namespace did not compile, which is
+         ;; what took windows-arm64, android-ndk and both browser-matrix
+         ;; jobs red.
+         :git/sha "97cd1e331579437c9b1886f41ef93c31570a58cf"}
         ;; HELD at 1a2e10c on 2026-09-03 (ADR 0331), 28 commits behind its main,
         ;; while every other pin in this file moved to the tip. The reason, so
         ;; that a lagging pin and a pin with an argument behind it stay
@@ -817,13 +821,13 @@
                    ;; :native-conformance below -- one kototama-native.
                    io.github.kotoba-lang/kototama-native
                    {:git/url "https://github.com/kotoba-lang/kototama-native.git"
-                    :git/sha "0d24470d1fb79051558d9aa398afb2e1971ae061"}}
+                    :git/sha "33383e515da75584c6312cb2bb9f368b8565c3a6"}}
                   :main-opts ["-m" "kotoba.compiler.test-runner"]}
            :native-run
            {:extra-deps
             {io.github.kotoba-lang/kototama-native
              {:git/url "https://github.com/kotoba-lang/kototama-native.git"
-              :git/sha "0d24470d1fb79051558d9aa398afb2e1971ae061"}}
+              :git/sha "33383e515da75584c6312cb2bb9f368b8565c3a6"}}
             :main-opts ["-m" "kotoba.compiler.cli"]}
            :run {:main-opts ["-m" "kotoba.compiler.cli"]}
            :conformance
@@ -835,7 +839,7 @@
            {:extra-deps
             {io.github.kotoba-lang/kototama-native
              {:git/url "https://github.com/kotoba-lang/kototama-native.git"
-              :git/sha "0d24470d1fb79051558d9aa398afb2e1971ae061"}
+              :git/sha "33383e515da75584c6312cb2bb9f368b8565c3a6"}
              io.github.kotoba-lang/provider
              {:git/url "https://github.com/kotoba-lang/provider.git"
               :git/sha "0ba1fbabb536027d25bbefc50374fbe95e6b54ec"}}
