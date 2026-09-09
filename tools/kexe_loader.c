@@ -1552,6 +1552,61 @@ static int64_t env_read_provider(struct kexe_context_v4 *context,
   return intern_utf8(context, (const uint8_t *)value, value_length);
 }
 
+/* wire id 37 = :io/write. The bytes a COMMAND writes to its standard output.
+ *
+ * The request is the payload; the result is the DECIMAL COUNT of bytes
+ * written, as text. Two things pick that shape and neither is a preference.
+ * `[:string :string]` is one of the four generic type pairs kotoba.kir's
+ * native gate admits for `typed-cap-call`, and `:string -> :i64` is not among
+ * them. And the result has to be SHORT: the string pool below is a bump
+ * allocator that never reclaims, so echoing the payload back -- the shape the
+ * wire-35 write form uses, where the echo is the verification -- would charge
+ * every write twice and halve how much a command can print. A count is a
+ * handful of bytes whatever the payload is, and is still checkable.
+ *
+ * Unlike every other provider here this one has NO resource scope. There is
+ * nothing to narrow: the guest cannot name a destination, cannot open one,
+ * and cannot ask which one it got. It writes to this process's fd 1 and to
+ * nothing else, so the authority the grant carries is exactly "may produce
+ * output", which is what a command needs and all of it.
+ *
+ * A partial write is retried; a real error fails closed with SIGILL rather
+ * than reporting a count that did not happen. EINTR is retried and is not an
+ * error -- a signal arriving mid-write must not look like a short answer. */
+static int64_t io_write_provider(struct kexe_context_v4 *context,
+                                 int64_t request) {
+  const uint8_t *bytes = NULL;
+  uint64_t length = 0;
+  if (!read_string_handle(context, request, &bytes, &length)) {
+    raise(SIGILL);
+    return 0;
+  }
+  uint64_t written = 0;
+  while (written < length) {
+    ssize_t n = write(1, bytes + written, (size_t)(length - written));
+    if (n < 0) {
+      if (errno == EINTR) continue;
+      raise(SIGILL);
+      return 0;
+    }
+    if (n == 0) {
+      /* Neither progress nor an error. Refusing beats spinning. */
+      raise(SIGILL);
+      return 0;
+    }
+    written += (uint64_t)n;
+  }
+  /* Decimal, no sign, no padding: at most 20 digits for a uint64. */
+  char count[24];
+  int digits = snprintf(count, sizeof(count), "%llu",
+                        (unsigned long long)written);
+  if (digits <= 0 || (size_t)digits >= sizeof(count)) {
+    raise(SIGILL);
+    return 0;
+  }
+  return intern_utf8(context, (const uint8_t *)count, (size_t)digits);
+}
+
 /* ----------------------------------------------------------------------
  * Filesystem capability scopes: wire id 35 = :fs/app-data (runtime id 202;
  * read, write and ranged read of one file) and wire id 34 = :fs/browse (one
@@ -2149,6 +2204,12 @@ static int64_t checked_typed_cap_call(struct kexe_context_v4 *context,
      * sorted NAME<TAB>D lines ("1" = directory, "0" = file), the same wire
      * the js host answers. */
     result = fs_browse_provider(context, request);
+  } else if (id == 37 && request_kind == KEXE_TYPED_STRING) {
+    /* wire id 37 = :io/write. Real host provider: the request string is
+     * written to fd 1 and the result is the decimal byte count. No resource
+     * scope -- the guest names no destination, so there is nothing to
+     * narrow. */
+    result = io_write_provider(context, request);
   } else if (id == 33 && request_kind == KEXE_TYPED_STRING) {
     /* wire id 33 = :env/read. Real host provider: the request string is
      * the environment variable name; the result is its value (empty

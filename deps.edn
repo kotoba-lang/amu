@@ -180,7 +180,18 @@
         ;; went unseen because the only test of the feature was `.clj`; it is
         ;; `.cljc` and in `run-tests.cljs` as of that commit.
         {:git/url "https://github.com/kotoba-lang/kotoba-sema.git"
-         :git/sha "96fd4e1936adcf6a225d72b46a003dcf2b3bf94a"}
+         :git/sha          ;;
+         ;; Advanced 2026-09-09, 96fd4e19 -> 050d2c48 (kotoba-sema main, forward only).
+         ;; One file: the vendored capability catalog gains :io/write, wire 37,
+         ;; `:string -> :string` -- the bytes a command writes to stdout, answered with
+         ;; the decimal byte count (kotoba-lang a0408d81 is the authority).
+         ;; This pin is not a convenience. The frontend that raises `cap-call names an
+         ;; unregistered capability` is in kotoba-sema and reads THAT copy, so a
+         ;; capability in the authority is invisible to this compiler until this pin
+         ;; moves. amu's own resources/kotoba/lang/capability-catalog.edn is not the
+         ;; one consulted -- measured on the resolved classpath, where the only entry
+         ;; carrying the resource is kotoba-sema's.
+         "050d2c48751f259a435d21b2c07b28cef48b596d"}
         ;; ADR-2607266000 Phase B: these responsibilities moved out of this repo.
         ;;
         ;; The slice-value stream held this pin on purpose (ADR 0314), because
