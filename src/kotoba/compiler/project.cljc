@@ -783,13 +783,14 @@
           ;; Nothing is weakened either way: the effects that policy and the
           ;; artifact's requiredCapabilities are computed from come from the
           ;; elaborated calls, not from this clause.
-;; Unlike `:capabilities`, the linked namespace MUST carry the schemas: the
-          ;; emitted signatures reference them by name (`[:ref :sl/r]`), and a
-          ;; type that names a schema the namespace does not declare is
-          ;; refused with "value type references a schema outside the closed
-          ;; namespace table". The union is safe because
-          ;; `reject-schema-collisions!` has already refused any name two
-          ;; modules define differently.
+          ;;
+          ;; `:schemas` goes the other way: the linked namespace MUST carry
+          ;; them. The emitted signatures reference schemas by name
+          ;; (`[:ref :sl/r]`), and a type naming a schema the namespace does
+          ;; not declare is refused with "value type references a schema
+          ;; outside the closed namespace table". Taking the union is safe
+          ;; because `reject-schema-collisions!` has already refused any name
+          ;; two modules define differently.
           merged-schemas (reduce (fn [acc module]
                                    (merge acc (get-in parsed [module :info :schemas])))
                                  {} @order)
