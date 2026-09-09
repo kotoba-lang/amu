@@ -43,7 +43,7 @@
         ;; for the whole module whether the function was reached or not.
         io.github.kotoba-lang/kotoba-script
         {:git/url "https://github.com/kotoba-lang/kotoba-script.git"
-         :git/sha "f803255ed259203e008d989f859b3b1b5fd22c98"}
+         :git/sha "b4099699f4faab572a5f3baa43d33f81148ecbd9"}
         ;; ADR-0222: source reading and semantic analysis live behind the
         ;; kotoba-sema repository boundary and public semantic-analysis API.
         ;;
@@ -236,6 +236,11 @@
         ;; pin `AIUEOS_DEQUANT_KQUANT_QEMU_OK` has nothing to disagree with.
         ;; 18f7c3a makes the sealed control-effect vocabulary this repository's
         ;; export rather than something the compiler re-derives.
+        ;; ⚠ Advance this WITH the kotoba-script pin above, never alone. The
+        ;; value-bounds table is stated in both, and
+        ;; `value_bounds_agreement_test` compares them from this classpath --
+        ;; which is the only place they meet. Measured 2026-09-10: moving one
+        ;; alone let a 1057-node document compile and then trap at runtime.
         io.github.kotoba-lang/osaho
         {:git/url "https://github.com/kotoba-lang/osaho.git"
          ;; fuel64: 233bd6bb exports `max-fuel` (kotoba-kir ADR 0268), the fuel
@@ -299,7 +304,7 @@
          ;; answers 30002 for `(+ (now-at 1) (draw-at 1))` under a
          ;; `1000*id + v` capability stub -- 7001 + 23001, so both ids reach
          ;; the host and reach it distinctly.
-         :git/sha "a37577c92d5b60b683c98957f1a07cf3252b3e68"}
+         :git/sha "7a6a27b834d33bb68cc4ee9addc5ce4a4bee6b4a"}
         ;; The frontend is an HIR producer and KIR lowering is its consumer;
         ;; both validate the same checked envelope.
         io.github.kotoba-lang/kotoba-hir

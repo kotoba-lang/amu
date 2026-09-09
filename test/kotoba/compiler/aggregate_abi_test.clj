@@ -294,7 +294,19 @@
   ;; invokes its comparator). No native path builds this table, which is why
   ;; the split was never about the backends. This moves no encoding: on the
   ;; JVM the narrowing is `identity`.
-  (is (= "a37577c92d5b60b683c98957f1a07cf3252b3e68"
+  ;; Advanced 2026-09-10 to 7a6a27b8: `document-node-limit` 256 -> 4096. This
+  ;; moves no encoding -- the constant is a validation threshold walked over an
+  ;; already-built value, and `document-canonical-bytes` emits the identical
+  ;; format for every document that was legal before. It widens what can be
+  ;; represented at all, which is the point: adr-2608690000 measured a Kotoba
+  ;; screen filling at seven rows and said that is too small to claim cljs
+  ;; equivalence.
+  ;;
+  ;; ⚠ The same number is restated in kotoba-script, which writes it into every
+  ;; emitted ESM prelude as a literal, so THAT pin moves in the same commit.
+  ;; `value_bounds_agreement_test` is what compares them; advancing one alone
+  ;; was measured to compile a 1057-node document and then trap it at runtime.
+  (is (= "7a6a27b834d33bb68cc4ee9addc5ce4a4bee6b4a"
          (dependency-pin 'io.github.kotoba-lang/osaho)))
   ;; Advanced 2026-09-01 alongside the backend: the verifier re-derives the
   ;; two new arities and the v4 `expected-context`, and is what turns a
