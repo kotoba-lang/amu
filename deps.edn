@@ -592,7 +592,23 @@
          ;; of the f64 signature admission. This verifier rejects by
          ;; ABSENCE, so without it the boundary kir now admits is refused
          ;; at compile time.
-         :git/sha "39db2f3f5400c7c687bac7b49694e3fdb5e92fa2"}
+         ;;
+         ;; Advanced 2026-09-09, 39db2f3f -> 33b3d067 (kotoba-verifier main,
+         ;; forward only). The SLICE memory subfamily plus `kernel-subregion`
+         ;; is admitted on general native targets when the verifier's own
+         ;; re-derivation proves every base is a parameter -- so a hosted
+         ;; program can read a region ITS CALLER GRANTED, which is the
+         ;; primitive `kotoba-lang/inference`'s kernel refuses on today. The
+         ;; byte-window family and everything privileged stay aiueos-only, and
+         ;; a literal base is refused on a hosted target even though the
+         ;; frontend admits one.
+         ;;
+         ;; Without this pin `amu compile --target aarch64` still answers
+         ;; "bounded kernel memory operation requires the aiueos kernel
+         ;; target" for a program the verifier now admits -- a green
+         ;; `amu check` followed by a red `amu compile`, which is the exact
+         ;; skew this repo's own deps comments already warn about.
+         :git/sha "33b3d067603da3a1c596a900ddd6ab029d5ed6e3"}
 }
  :aliases {:test {:extra-paths ["test"]
                   :extra-deps
