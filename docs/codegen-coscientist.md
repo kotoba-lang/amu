@@ -2050,6 +2050,17 @@ H-Z3 quiet-host hand-patch A/B, then H-C2.
 
 | 2026-09-06 00:24 JST (amu-bench cron): host busy — J-B fully-quiet-host rerun NOT attempted. Measurement window observation 00:16-00:24 (4 min sustained, 8 x 30s samples): load1 7.72->6.94->4.02->3.25 (00:16-00:19) looked like an opening window, but then spiked 14.58->30.32 (00:20-00:21) before decaying 7.07 at 00:23; only 2/8 samples below threshold 7.5, no sustained quiet window (idle>=9/10 not observable). No bench, no perfgate, no numbers recorded. Probes via /tmp scripts (no heredoc), entry via append script per entry-117 convention. NEXT unchanged: J-B fully-quiet-host rerun (idle>=9/10) of bench/runtime-comparison/jb_imod_control.c, then H-Z3 quiet-host hand-patch A/B, then H-C2. Population unchanged: J-B confirmed-diagnostic but unqualified, H-Z3 top of the codegen ladder, H-C2/H-D/H-B/H-Y1 open; J-C blocked behind J-B.
 
+**amu-bench tick (2026-09-09 19:12 JST, host busy; no measurement)**:
+host load1 26.25 / load5 23.22 / load15 24.61 (up 4d 11:50, 8 users, macOS 26.4)
+-- still far past the 7.5 quiet-host sanity limit; the busy-CPU gate is not
+met, so per policy NO bench, perfgate, or hand-patch number was taken or
+recorded this tick. NEXT (unchanged, rank authority): H-C2 ceiling-check A/B
+on `kernel` (statically 61/61 near-identical shape; timed ~4.4% vs Clang
+unresolved) plus the amu-falsify quiet-host measurement list in the H-Z3/H-Z4
+lever family, on the first quiet host / qualifying fleet node (levi 0.04,
+joseph/benjamin 0.05, judah 0.07). Population unchanged this tick.
+
+
 ## Standing honesty constraints
 
 Every number above is one host on one day; the falsification numbers are
