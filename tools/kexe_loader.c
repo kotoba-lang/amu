@@ -1703,9 +1703,12 @@ struct kexe_scope {
 static struct kexe_scope kexe_scope35; /* :fs/app-data read / write / range */
 static struct kexe_scope kexe_scope34; /* :fs/browse directory listing      */
 
-static void kexe_scope_init(struct kexe_scope *scope, const char *env_name) {
+/* Fill SCOPE from a colon-separated list of path prefixes. Each entry is
+ * kept in both spellings -- as written and as realpath resolved it -- so a
+ * guest may name either and the resolved form still fails closed outside the
+ * scope. An entry that does not resolve is dropped, not guessed at. */
+static void kexe_scope_from_text(struct kexe_scope *scope, const char *scope_env) {
   scope->count = 0;
-  const char *scope_env = getenv(env_name);
   if (scope_env == NULL || scope_env[0] == '\0') return;
   const char *cursor = scope_env;
   while (*cursor != '\0' && scope->count < KEXE_SCOPE_ENTRIES) {
@@ -1726,6 +1729,30 @@ static void kexe_scope_init(struct kexe_scope *scope, const char *env_name) {
     if (end != NULL) cursor = end + 1;
     else cursor += entry_length;
   }
+}
+
+/* Where a scope COMES FROM, which is the whole question for a packaged
+ * command.
+ *
+ * A loader invocation takes it from the environment: the kbb shim resolves
+ * the policy's resource scope and hands it over in KEXE_CAP_RESOURCES_<wire>.
+ *
+ * A packaged command must not, and the environment is ignored there. The
+ * allow list is already a constant of the binary, and a scope taken from the
+ * caller would let that caller widen what the command may read while the
+ * grant it was packaged with says otherwise -- `KEXE_CAP_RESOURCES_35=/ ./cat
+ * anything` would work on a binary packaged for one directory. So in an
+ * embedded build the scope is a constant too, and there is no argument or
+ * variable that moves it. */
+static void kexe_scope_init(struct kexe_scope *scope, const char *env_name) {
+#ifdef KEXE_EMBEDDED
+  (void)env_name;
+  kexe_scope_from_text(scope,
+                       scope == &kexe_scope35 ? KEXE_EMBEDDED_SCOPE35
+                                              : KEXE_EMBEDDED_SCOPE34);
+#else
+  kexe_scope_from_text(scope, getenv(env_name));
+#endif
 }
 
 /* Lexical admission. `target` (absolute, NUL-terminated) must equal a scope

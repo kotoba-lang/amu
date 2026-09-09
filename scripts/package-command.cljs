@@ -45,6 +45,13 @@
       isa (or (opt "--isa") "aarch64")
       allow (or (opt "--allow") "-")
       out (opt "--output")
+      ;; The filesystem authority is a constant of the binary too, for the
+      ;; same reason the allow list is: a scope taken from the environment
+      ;; would let the CALLER widen what the command may read, so a packaged
+      ;; command ignores KEXE_CAP_RESOURCES_* entirely. Empty means none,
+      ;; which is what a command that reads no file should be given.
+      fs-scope (or (opt "--fs-scope") "")
+      browse-scope (or (opt "--browse-scope") "")
       cc (or (opt "--cc") (.-CC js/process.env) "cc")
       ;; nbb puts the script path at argv[2]; the loader source is its
       ;; sibling, so the packager works from any working directory.
@@ -60,6 +67,12 @@
   ;; the far end with no explanation.
   (when-not (or (= allow "-") (re-matches #"[0-9]+(,[0-9]+)*" allow))
     (die "--allow must be a comma-separated list of wire ids, or - for none"))
+  ;; The scopes become C string literals, so a quote or a backslash in one
+  ;; would end the literal early and silently grant something else. Refuse
+  ;; rather than escape: a path that needs escaping is not a path anyone
+  ;; means to grant.
+  (doseq [[flag v] [["--fs-scope" fs-scope] ["--browse-scope" browse-scope]]]
+    (when (re-find #"[\"\\\n]" v) (die (str flag " must not contain a quote, backslash or newline"))))
   (when-not (.existsSync fs code-path) (die (str "no such file: " code-path)))
   (when-not (.existsSync fs loader) (die (str "loader source not found: " loader)))
   (let [bytes (.readFileSync fs code-path)
@@ -78,6 +91,8 @@
                     "#define KEXE_EMBEDDED_ARITY 0u\n"
                     "#define KEXE_EMBEDDED_ISA \"" isa "\"\n"
                     "#define KEXE_EMBEDDED_ALLOW \"" allow "\"\n"
+                    "#define KEXE_EMBEDDED_SCOPE35 \"" fs-scope "\"\n"
+                    "#define KEXE_EMBEDDED_SCOPE34 \"" browse-scope "\"\n"
                     "static const unsigned char kexe_embedded_code[" n "] = {\n"
                     rows "\n};\n")
         dir (.mkdtempSync fs (.join path (.tmpdir os) "kexe-package-"))
@@ -92,4 +107,5 @@
         (do (.chmodSync fs out 0755)
             (println (pr-str {:ok true :output out :code-bytes n
                               :offset (js/parseInt offset 10) :isa isa :allow allow
+                              :fs-scope fs-scope :browse-scope browse-scope
                               :size (.-size (.statSync fs out))})))))))
