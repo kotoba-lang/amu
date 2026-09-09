@@ -1551,8 +1551,16 @@
                            [(str "g:" (region-hex block)) "gl:0"
                             (str "g:" (region-hex (f32-bytes activations))) "gl:1"
                             1])))]
+    ;; Printed AND asserted, and the count is printed too, because the
+    ;; cross-ISA claim below is VACUOUS when only one ISA is available: a set
+    ;; of one answer has one distinct element no matter what that answer is.
+    ;; On macOS both are required and the claim is real; on a Linux runner only
+    ;; the host ISA exists and this degrades to the per-ISA constants above,
+    ;; which is honest but is a smaller test than it looks.
     (println "granted-dequant available:" (vec (sort (keys available)))
-             "/ missing (SKIPPED):" (vec (sort missing)))
+             "/ missing (SKIPPED):" (vec (sort missing))
+             "/ cross-isa claim is"
+             (if (< (count available) 2) "VACUOUS here" "live"))
     (is (every? available required)
         (str "required ISA loaders are unavailable on this host. required: "
              (vec (sort required)) ", missing: " (vec (sort missing))))
