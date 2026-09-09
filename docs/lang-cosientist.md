@@ -1406,3 +1406,46 @@ NOTE: shared checkout — local HEAD moved f282763e -> 71a5e5f3 during this tick
   -O3) for the first formal comparator verdict on this shape.
   Non-timing work in the meantime: watch wasm for the typed-map-keys
   arm (then re-run k1/k2 default-route per iter 31/32 watch).
+## Iteration 34 (t35) - iter-33 next-hypothesis: quiet gate NOT met (loadavg 12.6-32.1, threshold 7.5), NO timing rerun; C twin of the entry-at shape built & measured BUSY-HOST only (~0.04-0.07 ns/entry) => entry-at route gap is ~6 orders of magnitude, survives any normalization; wasm/PR watch: NOTHING moved (2026-09-09, amu-lang-cosientist t35, amu origin/main 3ef1a709, pins sema 96fd4e19 / wasm 829966fd / osaho c24c92a1)
+
+- Carried hypothesis (iter 33 next): quiet-gate timing of t34 bench 3x + clang C twin
+  (2-entry map walk, -O3) for the first formal comparator verdict.
+- Quiet gate: NOT MET. loadavg sampled every 60s across the tick: 12.05-18.61 1-min
+  (one later spike 32.12). No kotoba timing run attempted (discipline: no timing
+  claims under busy host). t34's busy-host numbers remain indicative-only.
+- C twin (the only measured leg possible this tick, /tmp/langcos/t35-c/e8.c:
+  heap-allocated 2-entry table, noinline entry_work per entry, clang -O3,
+  const-fold defeated via getenv-guarded content; objdump verified entry_work
+  emitted as a real bl call):
+  - 5e7 iterations x 2 entries: 0.0427-0.0679 ns/entry (3 runs, loadavg ~13-32).
+    Earlier constant-table variants measured 0.0000 (fully const-folded -
+    recorded as a probe lesson, NOT used as data).
+  - vs t34 kotoba entry-at route: 84784-121367 ns/entry (busy-host indicative).
+  - Ratio ~1.3-2.8 MILLION x. Even if quiet-gate normalization improved the
+    kotoba side 10x, the gap is ~5-6 orders of magnitude - dominated by the
+    same JS-host boundary + per-entry hetero-vector allocation that priced
+    iters 4/5/17/33 (string/entry marshalling through host calls). The
+    entry-at route CANNOT become comparator-eligible by load normalization.
+- Fleet watch (gh api / git, measured):
+  - wasm origin/main tip still e962341 (compare e962341...main = identical,
+    ahead 0 behind 0). typed-map-keys grep in core.cljc + typed.cljc of the
+    LIVE remote main = 0 hits (checked via gh api contents, base64-decoded).
+    PR #76 covered typed-list-nth only. keys blocker UNCHANGED.
+  - sema origin/main tip 7e88e9ac (kotoba.lang.text retirement only); pin
+    96fd4e19 is 2 behind tip, both commits unrelated to lang gaps.
+  - sema PRs #70 (seq/remove) / #71 (some-thread canonical): still OPEN,
+    mergedAt null.
+  - amu origin/main 3ef1a709 (unchanged from iter 33; #903/#904 json pin +
+    portable tests only).
+- Verdict: no new formal verdict (quiet gate). The C-twin measurement
+  sharpens iter-33's conclusion: the entry-at route's per-entry cost is
+  architecturally ~10^6x off C; the only viable fast path for keys/reduce-kv
+  remains a typed-map-keys wasm emit arm + host intrinsic (backend-owner
+  request, iters 31/32/33 model unchanged). No lang work available this tick.
+- Gate: C twin compile + 3 measured runs + const-fold control (B=1 acc check)
+  + objdump verification. No kotoba probes run (nothing moved upstream; no
+  timing under busy host). perfgate N/A.
+- Next (1 hypothesis): unchanged watch: (a) quiet gate (load1 < 7.5) -> rerun
+  t34 bench 3x + C twin for the formal comparator record; (b) wasm
+  typed-map-keys arm landing -> re-run k1/k2 default-route (iter 31 recipe);
+  (c) sema #70/#71 merge -> re-measure parity CIDs on the new pin base.
