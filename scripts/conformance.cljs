@@ -99,8 +99,13 @@
     ;; report-status=:ok)" the moment that pin was advanced. Pinned as the
     ;; WHOLE line rather than by substring: a key silently joining or leaving
     ;; the report is what this assertion is for.
+    ;; `:string-pool` joined on 2026-09-10, when the arenas became per-run
+    ;; budgets: the string arena had no line at all, so a guest that
+    ;; exhausted it had nothing to read. Pinning the WHOLE line is precisely
+    ;; what keeps a key from joining in silence -- and it caught this one.
     (ensure! (= (str "{:status :ok :result 42 :fuel {:initial 512 :remaining 510} "
                      ":heap {:capacity 4096 :used 0} "
+                     ":string-pool {:capacity 65536 :used 0} "
                      ":vectors {:capacity 4096 :used 0} "
                      ":vector-items {:capacity 65536 :used 0}}")
                 (str/trim (:stdout result)))

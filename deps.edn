@@ -392,7 +392,17 @@
          ;; exactly what it was asked, rejected for the shape of the sentence
          ;; it said so in, on the one platform whose loader had not been fixed.
          ;; matching the js host).
-         :git/sha "b5a7c9c557caa3611d0c4cf678c27246dd5f1394"}
+         ;; Advanced 2026-09-10, b5a7c9c5 -> 7bff9bac (forward only: 4
+         ;; ahead, 0 behind). The loader in tools/kexe_loader.c in THIS
+         ;; commit is the one a COMMAND runs on -- :io/write (37),
+         ;; :cli/args (38), :io/write-error (39), and the :fs/app-data EXISTS
+         ;; form -- and its arenas became per-run budgets, which is what put
+         ;; :string-pool into every report. loader-source-sha256 names it as
+         ;; 65f001ee. It was THIS pin lagging that turned 25 failures and 109
+         ;; errors in the JVM suite into one cause: every native execution
+         ;; refused the loader as "native loader source identity mismatch",
+         ;; which reads as tampering and is a pin skew.
+         :git/sha "7bff9bacf11c0c9444da3f60ac0f0c473c5c1164"}
         ;; HELD at 1a2e10c on 2026-09-03 (ADR 0331), 28 commits behind its main,
         ;; while every other pin in this file moved to the tip. The reason, so
         ;; that a lagging pin and a pin with an argument behind it stay
@@ -807,13 +817,13 @@
                    ;; :native-conformance below -- one kototama-native.
                    io.github.kotoba-lang/kototama-native
                    {:git/url "https://github.com/kotoba-lang/kototama-native.git"
-                    :git/sha "9e53ea35e76caa61405a3f4c56f68eb9492a6c01"}}
+                    :git/sha "0d24470d1fb79051558d9aa398afb2e1971ae061"}}
                   :main-opts ["-m" "kotoba.compiler.test-runner"]}
            :native-run
            {:extra-deps
             {io.github.kotoba-lang/kototama-native
              {:git/url "https://github.com/kotoba-lang/kototama-native.git"
-              :git/sha "9e53ea35e76caa61405a3f4c56f68eb9492a6c01"}}
+              :git/sha "0d24470d1fb79051558d9aa398afb2e1971ae061"}}
             :main-opts ["-m" "kotoba.compiler.cli"]}
            :run {:main-opts ["-m" "kotoba.compiler.cli"]}
            :conformance
@@ -825,7 +835,7 @@
            {:extra-deps
             {io.github.kotoba-lang/kototama-native
              {:git/url "https://github.com/kotoba-lang/kototama-native.git"
-              :git/sha "9e53ea35e76caa61405a3f4c56f68eb9492a6c01"}
+              :git/sha "0d24470d1fb79051558d9aa398afb2e1971ae061"}
              io.github.kotoba-lang/provider
              {:git/url "https://github.com/kotoba-lang/provider.git"
               :git/sha "0ba1fbabb536027d25bbefc50374fbe95e6b54ec"}}
