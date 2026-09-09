@@ -265,7 +265,14 @@
          ;; `--fuel` could not reach it -- measured on the X25519 Montgomery
          ;; ladder, which was refused as `fuel-exhausted` identically at
          ;; `--fuel 60000000` and at the largest budget KIR admits.
-         :git/sha "c24c92a1b76624afd3ce12b4ee8162f44a40d68f"}
+         
+         ;; Advanced 2026-09-09 for osaho 74426ba: a native function may
+         ;; DECLARE an :f64 parameter or result. The operations were
+         ;; admitted in ADR-2608030300; only the signature was not, which
+         ;; is why every float kernel here is written through
+         ;; f64-from-bits. Needed WITH the verifier pin below -- kir alone
+         ;; is a green `check` and a red `compile`.
+         :git/sha "74426bad2fa7c8b674c9bc9469232f1b751fbf9c"}
         ;; The frontend is an HIR producer and KIR lowering is its consumer;
         ;; both validate the same checked envelope.
         io.github.kotoba-lang/kotoba-hir
@@ -580,7 +587,12 @@
          ;; at the artifact. That commit also rebuilds the verifier's native
          ;; fixture, which had gone stale enough that its own suite carried a
          ;; permanent red.
-         :git/sha "ea50d8f2bbc29908a3b8a987089754d6355f37f3"}
+         
+         ;; Advanced 2026-09-09 for kotoba-verifier 39db2f3, the other half
+         ;; of the f64 signature admission. This verifier rejects by
+         ;; ABSENCE, so without it the boundary kir now admits is refused
+         ;; at compile time.
+         :git/sha "39db2f3f5400c7c687bac7b49694e3fdb5e92fa2"}
 }
  :aliases {:test {:extra-paths ["test"]
                   :extra-deps
