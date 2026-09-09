@@ -88,17 +88,21 @@
                       "if(find('draft').getAttribute('value')!=='')process.exit(8);"
                       "if(find('draft').value!=='')process.exit(17);"
                       ;; Toggle flips exactly the item that was named.
-                      "dom.dispatch(find('tc'),'click');"
-                      "if(find('tc').textContent!=='[x]')process.exit(9);"
-                      "if(find('ta').textContent!=='[x]')process.exit(10);"
-                      "if(find('tb').textContent!=='[ ]')process.exit(11);"
+                      ;; ⚠ Item keys were letters (ta/tb/tc, da) until
+                      ;; 2026-09-10; they are the item's index now, because
+                      ;; `string-from-i64` made the alphabet workaround
+                      ;; unnecessary. Same items, same order, different names.
+                      "dom.dispatch(find('t2'),'click');"
+                      "if(find('t2').textContent!=='[x]')process.exit(9);"
+                      "if(find('t0').textContent!=='[x]')process.exit(10);"
+                      "if(find('t1').textContent!=='[ ]')process.exit(11);"
                       ;; Filtering is guest state, so it survives re-render.
                       "dom.dispatch(find('f-active'),'click');"
                       "if(/prove the loop/.test(text()))process.exit(12);"
                       "if(!/carry a click back/.test(text()))process.exit(13);"
                       "dom.dispatch(find('f-all'),'click');"
                       ;; Delete removes one item and renumbers the rest.
-                      "dom.dispatch(find('da'),'click');"
+                      "dom.dispatch(find('d0'),'click');"
                       "if(/render a kotoba document/.test(text()))process.exit(14);"
                       "if(!/2 left/.test(text()))process.exit(15);"
                       ;; Unmount detaches; later events change nothing.
@@ -155,14 +159,24 @@
                       "app.dispatch('draft','input','item');"
                       "if(!app.dispatch('add','click'))break}}"
                       "catch(e){code=e.cause?.message??e.message}"
-                      ;; The budget no longer stops it. If a future change
-                      ;; lowers the budget back under a real screen, this is
-                      ;; the line that says so.
-                      "if(code!=='')process.exit(6);"
-                      ;; And the app's own counter cap is what shows instead.
-                      "if(!/9\\+ left/.test(text()))process.exit(7);"
-                      ;; It really did grow: 175 chars rendered at the old
-                      ;; ceiling, and this is well past that.
+                      ;; ⚠ Updated again the same day. The line above described
+                      ;; the app's own caps; those are gone, and the ceiling
+                      ;; moved a third time. Measured, in order:
+                      ;;
+                      ;;   256-node budget   5 adds, doc-node-limit, "7 left"
+                      ;;   4096-node budget  the app's 26-letter alphabet cap
+                      ;;   integer keys      FUEL, at 27 items
+                      ;;
+                      ;; That last move is the qualitative one: the first two
+                      ;; ceilings were constants compiled into the language,
+                      ;; and fuel is a budget the CALLER chooses. An app that
+                      ;; wants more asks for more.
+                      "if(code!=='fuel-exhausted')process.exit(6);"
+                      ;; The counter reports a number rather than giving up at
+                      ;; "9+", which is what `string-from-i64` bought.
+                      "if(!/\\d\\d+ left/.test(text()))process.exit(7);"
+                      ;; And it grew well past the 175 chars the old ceiling
+                      ;; allowed.
                       "if(text().length<300)process.exit(17);"
                       "console.log('ok');"))]
       (is (zero? (:exit result)) (str (:err result) (:out result)))
