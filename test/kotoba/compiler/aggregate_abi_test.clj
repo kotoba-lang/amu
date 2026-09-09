@@ -151,6 +151,40 @@
   ;; same program. The JVM side is unchanged by this advance: a Long always
   ;; compared to 0, so the boundary this test pins moves not at all here, and
   ;; what moves is the OTHER front, toward these bytes.
+  ;; Advanced 2026-09-09 to 7cbed512, which carries kotoba-mir b70a567a and is
+  ;; the pin that makes TWO NEW AArch64 ARMS reachable from this repository:
+  ;; `kernel-dot-f32` and Q8_0's fused dequantize-and-dot. Both are the x86
+  ;; SCALAR arm reproduced instruction for instruction, because the contract of
+  ;; those operations is an ACCUMULATION TREE and not a dot product -- one
+  ;; specific order of summation IS the operation. Without this pin they are
+  ;; refused at MIR selection with `x86-simd-target-mismatch`.
+  ;;
+  ;; It changes bytes on the AArch64 front by ADDING arms, not by moving an
+  ;; existing sequence, so the boundary this test pins is untouched.
+  ;; `the-fused-dequant-answers-the-same-bits-on-every-available-isa` is the
+  ;; assertion that the two ISAs agree, executed as real processes.
+  ;; Advanced 2026-09-09 to c14a49f3, which carries kotoba-mir 4a049cc9: a
+  ;; LITERAL'S ADDRESS now emits on AArch64 through `adr`, a single
+  ;; instruction. The refusal it replaces named ADRP+ADD's 4 KiB page split as
+  ;; the blocker and the named blocker was the wrong instruction -- `adr`
+  ;; reaches +/-1 MiB, and the pool is at the end of the same emitted buffer
+  ;; as the code, so the distance is bounded by the size of one program.
+  ;;
+  ;; It ADDS an arm rather than moving an existing sequence, so the boundary
+  ;; this test pins is untouched.
+  ;; Advanced again 2026-09-09 to edbbe987: a FUNCTION'S address is `adr` on
+  ;; AArch64 too, at the same label a call resolves against. It carries
+  ;; kotoba-mir 1a1c4358 and kotoba-codegen 3e6c815a. The gap it closes was
+  ;; named by the commit that closed the literal's, hours earlier -- the
+  ;; refusal there said a function's address is x86-only "for exactly the
+  ;; reason the literal is", and the literal's reason had already stopped
+  ;; holding.
+  ;;
+  ;; Merged 2026-09-09: BOTH notes stand and the sha is the one deps.edn
+  ;; carries. This assertion exists to make the two agree, so resolving it
+  ;; by picking a side would have made the ratchet assert a pin nobody is
+  ;; using -- green, and about nothing.
+  ;;
   ;; Advanced 2026-09-09 to 11691559 for `lower-index-of` (kotoba-native ADR
   ;; 0081). It moves bytes only for programs that use `string-index-of`, which
   ;; nothing could until this pin: the head had no lowering, so it was
@@ -160,7 +194,7 @@
   ;; lowering is the scan `string-contains?` already emits, returning the
   ;; offset `kotoba$string-find` had computed instead of folding it to 0/1, so
   ;; no helper, callback, value representation or ABI version moves here.
-  (is (= "11691559934a16fcad073e4c0a8a58ab40049f2e"
+  (is (= "edbbe9873fc0eac387d1420e5191be6fab0ff469"
          (dependency-pin 'io.github.kotoba-lang/kotoba-native)))
   ;; Advanced 2026-09-07 to kotoba-native main c9d5c44 (hoist #151, cross-call
   ;; hoist #152, copy coalescing #154; 06badc8's allow-list entry is on main as
@@ -265,6 +299,22 @@
   ;; this moves no encoding either -- it admits the signature that could
   ;; already be computed with, and which every float kernel in this workspace
   ;; had been writing around through f64-from-bits.
+  ;; Advanced 2026-09-09 to a37577c9: `kotoba.kir.descriptor/capability-contracts`
+  ;; deduplicates, orders and groups capability ids, and on ClojureScript
+  ;; those ids are BigInt -- which cljs.core can neither sort, nor `distinct`,
+  ;; nor `group-by`. Only the sort fired, and it fires at the SECOND contract,
+  ;; so `compile --target wasm32-browser` answered `internal compiler error`
+  ;; for any module declaring two or more capabilities while ONE capability
+  ;; and both native targets were fine (a one-element `Array.sort` never
+  ;; invokes its comparator). No native path builds this table, which is why
+  ;; the split was never about the backends. This moves no encoding: on the
+  ;; JVM the narrowing is `identity`.
+  ;;
+  ;; Merged 2026-09-09: BOTH notes stand and the sha is the one deps.edn
+  ;; carries. This assertion exists to make the two agree, so resolving it
+  ;; by picking a side would have made the ratchet assert a pin nobody is
+  ;; using -- green, and about nothing.
+  ;;
   ;; Advanced 2026-09-09 to 1a81e2d7, and this one is a CORRECTNESS advance.
   ;; `utf8-index-of!` converted the host's UTF-16 index to a UTF-8 byte offset
   ;; one unit at a time: it charged a surrogate PAIR 4 bytes at the high
@@ -365,13 +415,35 @@
   ;; refused on a hosted target even though the frontend admits one. Same skew
   ;; argument in the other direction: without this pin a program this
   ;; repository compiles is refused at verification.
+  ;; Advanced again 2026-09-09 to 6f4871f3, which lifts exactly the two
+  ;; restrictions the paragraph above records as standing. The four rodata
+  ;; literal heads leave the aiueos-only set for the two hosted native
+  ;; targets, and a literal IS admitted as a region base beside a parameter --
+  ;; for a reason the integer does not have: `4096` is an address the program
+  ;; chose and could have chosen differently, while `(bytes-literal "...")` is
+  ;; a relocation the backend resolves into a pool it placed beside the code.
+  ;; A pool that is addressable and unreadable is not a pool.
+  ;; Advanced again 2026-09-09 to 93eacd80, which takes
+  ;; `kernel-function-address` out of the verifier's aiueos-only set. It was
+  ;; there beside `kernel-scratch-region` under ONE comment covering both,
+  ;; and the reason belonged to the reservation: a `.data` reservation is a
+  ;; place in an IMAGE, a function's label is a place in the emitted buffer,
+  ;; and every native target has one of those. Required with this file's
+  ;; `function-address-targets` change for the usual reason -- without it the
+  ;; program this repository now compiles is refused at verification.
+  ;;
+  ;; Merged 2026-09-09: BOTH notes stand and the sha is the one deps.edn
+  ;; carries. This assertion exists to make the two agree, so resolving it
+  ;; by picking a side would have made the ratchet assert a pin nobody is
+  ;; using -- green, and about nothing.
+  ;;
   ;; Advanced 2026-09-09 to 1810a62c: `string-operations` gains
   ;; `string-index-of 2` (kotoba-verifier ADR 0051). Required WITH the
   ;; kotoba-native pin above and not separable from it -- ADR 0002 measured
   ;; that opening one of these gates alone moves nothing, and the verifier
   ;; re-derives its own table, so a head this repository can emit and that
   ;; table does not carry is refused after emission.
-  (is (= "1810a62ca2bee309e9add96d603121b45d26deaa"
+  (is (= "85ea11d61cc3613bfb5ac80a7736de7ae1382942"
          (dependency-pin 'io.github.kotoba-lang/kotoba-verifier)))
   (is (= 7 (:abi/version aggregate-abi/contract)))
   (is (= :recursive-word-handles

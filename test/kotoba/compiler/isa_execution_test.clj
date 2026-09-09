@@ -23,6 +23,8 @@
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]
+            [kotoba.kir]
+            [kotoba.kir.iq-codebook :as iq]
             [kotoba.gmir :as gmir]
             [kotoba.mir :as mir]
             [kotoba.native.machine-ir :as machine-ir]))
@@ -1432,3 +1434,657 @@
         (is (not (str/includes? report "KEXE_TRAP")) (str/trim report))
         (is (str/includes? report (str ":result " expected))
             (str/trim report))))))
+
+;; ---------------------------------------------------------------------------
+;; granted regions: bytes the CALLER handed in, on both ISAs, as real processes
+;; ---------------------------------------------------------------------------
+
+(def ^:private granted-region-source
+  (slurp "test/fixtures/granted-region-sum.kotoba"))
+
+;; ---------------------------------------------------------------------------
+;; rodata: a codebook the PROGRAM carries, on both ISAs, as real processes
+;; ---------------------------------------------------------------------------
+
+(def ^:private codebook-source
+  (slurp "test/fixtures/rodata-codebook-iq4.kotoba"))
+
+(def ^:private kvalues-iq4nl
+  "The reference table, written here as sixteen decimal numbers rather than
+  read out of the fixture. A test that derived the expectation from the same
+  hex string the program carries would agree with itself no matter what the
+  program did with it."
+  [-127 -104 -83 -65 -49 -35 -22 -10 1 13 25 38 53 69 89 113])
+
+(defn- nibble-sum-reference [bytes]
+  (reduce + 0 (map (fn [b] (+ (nth kvalues-iq4nl (bit-and b 15))
+                              (nth kvalues-iq4nl (bit-and (quot b 16) 15))))
+                   bytes)))
+
+(defn- region-hex [bytes]
+  (apply str (map #(format "%02x" (bit-and (int %) 0xff)) bytes)))
+
+(deftest a-granted-region-is-read-on-every-available-isa
+  ;; `kotoba.verifier` 33b3d067 admits the slice memory subfamily on general
+  ;; native targets when every base is provably a PARAMETER. This is the other
+  ;; half: the loader's `g:<hex>`/`gl:<n>` pair, which is what a caller uses to
+  ;; BE that parameter. Before it there was no caller that could grant a
+  ;; region -- a string argument arrives as a pair handle and a vector as an
+  ;; arena handle, and neither is an address.
+  ;;
+  ;; Both numbers are the loader's. `gl:0` is a REFERENCE to the zeroth region
+  ;; minted, answered with the length recorded when the bytes were copied, so a
+  ;; caller cannot grant a base together with a length that does not belong to
+  ;; it. That is the property, and it is why the pair is a pair.
+  (let [available (into {} (remove (comp nil? val) @loaders))
+        missing (remove available (keys isas))
+        required (if (macos?) (set (keys isas)) #{(host-isa)})]
+    (println "granted-region available:" (vec (sort (keys available)))
+             "/ missing (SKIPPED):" (vec (sort missing)))
+    (is (every? available required)
+        (str "required ISA loaders are unavailable on this host. required: "
+             (vec (sort required)) ", missing: " (vec (sort missing))))
+    (doseq [[isa _] available]
+      (testing isa
+        (testing "sixty-four granted bytes"
+          ;; 1 + 2 + ... + 64
+          (let [report (run-native isa granted-region-source "-" {:allow #{}}
+                                   'sum-bytes
+                                   [(str "g:" (region-hex (range 1 65))) "gl:0"])]
+            (is (not (str/includes? report "KEXE_TRAP")) (str/trim report))
+            (is (str/includes? report ":result 2080") (str/trim report))))
+        (testing "the LENGTH is the grant's, not the traversal's"
+          ;; The same program over a ten-byte grant walks ten bytes, because
+          ;; `slice-length` answers what was granted. A traversal that assumed
+          ;; its own bound would read the other fifty-four.
+          (let [report (run-native isa granted-region-source "-" {:allow #{}}
+                                   'sum-bytes
+                                   [(str "g:" (region-hex (range 1 11))) "gl:0"])]
+            (is (str/includes? report ":result 55") (str/trim report))))
+        (testing "an empty grant is a grant"
+          (let [report (run-native isa granted-region-source "-" {:allow #{}}
+                                   'sum-bytes ["g:" "gl:0"])]
+            (is (str/includes? report ":result 0") (str/trim report))))
+        (testing "a byte is read UNSIGNED"
+          ;; Four 0xFF bytes are 1020, not -4. The slice's element type is
+          ;; :u8, and a sign-extended load would answer a negative here.
+          (let [report (run-native isa granted-region-source "-" {:allow #{}}
+                                   'sum-bytes
+                                   [(str "g:" (region-hex [255 255 255 255])) "gl:0"])]
+            (is (str/includes? report ":result 1020") (str/trim report))))
+        (testing "a length naming a region the loader never minted is refused"
+          ;; Fail closed rather than answered with zero: `gl:1` when one region
+          ;; exists is a forward reference, and a zero there would be a silent
+          ;; empty walk over a region that IS there.
+          (let [report (run-native isa granted-region-source "-" {:allow #{}}
+                                   'sum-bytes
+                                   [(str "g:" (region-hex [1 2 3])) "gl:1"])]
+            (is (not (str/includes? report ":result"))
+                (str "a forward reference must not produce a result: "
+                     (str/trim report)))))))))
+
+
+(def ^:private iq3xxs-source
+  (slurp "test/fixtures/rodata-codebook-iq3xxs.kotoba"))
+
+(def ^:private iq3s-source
+  (slurp "test/fixtures/rodata-codebook-iq3s.kotoba"))
+
+(def ^:private iq2s-source
+  (slurp "test/fixtures/rodata-codebook-iq2s.kotoba"))
+
+(defn- pool-literals
+  "Every `(bytes-literal \"…\")` hex string in SOURCE, in the order it appears."
+  [source]
+  (mapv second (re-seq #"\(bytes-literal \"([0-9a-f]*)\"\)" source)))
+
+(def ^:private iq4xs-source
+  (slurp "test/fixtures/rodata-codebook-iq4xs.kotoba"))
+
+(deftest the-pool-carries-the-vendored-codebook-byte-for-byte
+  ;; ⚠ THIS IS THE COMPARISON osaho ADR 0264 BUILT THE DIGESTS FOR, and it
+  ;; says so in as many words: each image is pinned by an FNV-1a/32
+  ;; positional digest so that "a SECOND transcription of the same table -- a
+  ;; backend's read-only pool, say -- can be compared with this one BY A TEST
+  ;; rather than only by an execution".
+  ;;
+  ;; These fixtures are that second transcription. Without this, a wrong
+  ;; codebook is caught only where an execution test happens to index the
+  ;; byte that differs -- and a 1024-entry grid probed at thirteen elements
+  ;; leaves most of it unread. FNV rather than a sum because a sum cannot see
+  ;; a permutation.
+  ;;
+  ;; The digest is recomputed HERE from the fixture's own hex rather than
+  ;; taken from `iq/digests`, so the two sides arrive at the number by
+  ;; different routes; `iq/digests` is what it is compared against.
+  (letfn [(fnv [bytes]
+            (reduce (fn [h b]
+                      (let [x (bit-xor h (bit-and b 0xff))]
+                        (bit-and (+ (* x 16777216) (* x 403)) 0xffffffff)))
+                    0x811c9dc5
+                    bytes))]
+    (testing "IQ4_XS carries kvalues_iq4nl and nothing else"
+      (let [literals (pool-literals iq4xs-source)]
+        (is (= 1 (count literals)) "one table, so one pool entry")
+        (is (= iq/kvalues-iq4nl-hex (first literals)))
+        (is (= (get-in iq/digests [:kvalues-iq4nl :fnv1a32])
+               (fnv (iq/hex->bytes (first literals)))))
+        (is (= (get-in iq/digests [:kvalues-iq4nl :bytes])
+               (count (iq/hex->bytes (first literals)))))))
+    (testing "IQ2_S carries the ten-bit grid and kmask"
+      (let [literals (pool-literals iq2s-source)]
+        (is (= 2 (count literals)))
+        (is (= iq/iq2s-grid-hex (first literals)))
+        (is (= iq/kmask-iq2xs-hex (second literals)))
+        (is (= (get-in iq/digests [:iq2s-grid :fnv1a32])
+               (fnv (iq/hex->bytes (first literals)))))
+        (is (= 8192 (count (iq/hex->bytes (first literals))))
+            "1024 entries of EIGHT bytes -- four times IQ3_S's, which is what
+             a ten-bit index and eight elements per entry come to")))
+    (testing "IQ3_S carries the nine-bit grid and kmask"
+      (let [literals (pool-literals iq3s-source)]
+        (is (= 2 (count literals)) "two tables, so two pool entries")
+        (is (= iq/iq3s-grid-hex (first literals)))
+        (is (= iq/kmask-iq2xs-hex (second literals)))
+        (is (= (get-in iq/digests [:iq3s-grid :fnv1a32])
+               (fnv (iq/hex->bytes (first literals)))))
+        (is (= 2048 (count (iq/hex->bytes (first literals))))
+            "512 entries of four bytes -- twice IQ3_XXS's, which is the whole
+             point of the ninth bit")))
+    (testing "IQ3_XXS carries ksigns, the grid and kmask"
+      ;; In the order the source names them, which is the order the decode
+      ;; needs them: the sign selector, the grid entry, the element mask.
+      (let [literals (pool-literals iq3xxs-source)
+            expected [[iq/ksigns-iq2xs-hex :ksigns-iq2xs]
+                      [iq/iq3xxs-grid-hex :iq3xxs-grid]
+                      [iq/kmask-iq2xs-hex :kmask-iq2xs]]]
+        (is (= 3 (count literals)) "three tables, so three pool entries")
+        (doseq [[[hex k] got] (map vector expected literals)]
+          (testing (str k)
+            (is (= hex got))
+            (is (= (get-in iq/digests [k :fnv1a32]) (fnv (iq/hex->bytes got))))
+            (is (= (get-in iq/digests [k :bytes]) (count (iq/hex->bytes got))))))))
+    (testing "and the digest sees a permutation, which is why it is not a sum"
+      ;; The control. Swapping two bytes leaves the sum identical; if this
+      ;; assertion ever passed, every assertion above would be vacuous.
+      (let [bytes (iq/hex->bytes iq/kvalues-iq4nl-hex)
+            swapped (assoc bytes 0 (peek bytes) 15 (first bytes))]
+        (is (= (reduce + bytes) (reduce + swapped)) "the sum cannot tell")
+        (is (not= (fnv bytes) (fnv swapped)) "the digest can")))))
+
+(defn- half->f32-bits
+  "fp16 -> the binary32 bit pattern, BY THE IEEE-754 DEFINITION rather than by
+  the magic-multiply equation the program under test uses.
+
+  ⚠ THIS IS THE POINT OF THE HELPER. Reimplementing the same equation would
+  make the test agree with itself: both sides would carry `0x77800000` and
+  both would be wrong together. Here the exponent and mantissa are read out
+  and the value assembled arithmetically, which is a different route to the
+  same number -- and the two disagree loudly if either is wrong."
+  [half]
+  (let [sign (if (zero? (bit-and half 0x8000)) 1.0 -1.0)
+        e (bit-and (bit-shift-right half 10) 0x1f)
+        m (bit-and half 0x3ff)]
+    (if (= e 31)
+      ;; ⚠ THE INFINITY/NAN ARM IS A BIT-LEVEL CONVENTION, NOT A VALUE, so it
+      ;; is stated rather than derived -- and this arm therefore does NOT
+      ;; discriminate, because it is the same equation the program uses. A NaN
+      ;; has no numeric value to arrive at independently, and its PAYLOAD is
+      ;; exactly what a derivation through a float would destroy: `(float
+      ;; Double/NaN)` gives a canonical NaN, so a reference built that way
+      ;; would report every payload as wrong. It is written out so a reader
+      ;; is not misled into counting these three cases as evidence.
+      ;; `unchecked-int` for the same reason the program narrows: both
+      ;; exports answer a pattern SIGN-EXTENDED from bit 31, so a negative
+      ;; infinity is -8388608 and not 4286578688.
+      (unchecked-int (bit-or (bit-shift-left (bit-and half 0x8000) 16)
+                             0x7f800000
+                             (bit-shift-left m 13)))
+      ;; The finite cases DO discriminate: the exponent and mantissa are read
+      ;; out and the value assembled arithmetically, which never mentions the
+      ;; `0x77800000` the program multiplies by.
+      (Float/floatToRawIntBits
+       (float
+        (if (zero? e)
+          (* sign (Math/pow 2 -14) (/ (double m) 1024.0))
+          (* sign (Math/pow 2 (- e 15)) (+ 1.0 (/ (double m) 1024.0)))))))))
+
+(defn- iq4xs-weight-bits
+  "ggml's `dequantize_row_iq4_xs`, one element, as an f32 bit pattern.
+  Transcribed from the C rather than from the fixture."
+  [block element]
+  (let [b (fn [i] (bit-and (int (nth block i)) 0xff))
+        d-half (bit-or (b 0) (bit-shift-left (b 1) 8))
+        scales-h (bit-or (b 2) (bit-shift-left (b 3) 8))
+        ib (quot element 32)
+        j (- element (* ib 32))
+        low (< j 16)
+        jj (if low j (- j 16))
+        packed (b (+ 8 (* ib 16) jj))
+        nibble (if low (bit-and packed 15) (bit-shift-right packed 4))
+        sl (b (+ 4 (quot ib 2)))
+        sl4 (if (even? ib) (bit-and sl 15) (bit-and (bit-shift-right sl 4) 15))
+        sh2 (bit-and (bit-shift-right scales-h (* 2 ib)) 3)
+        ls (bit-or sl4 (bit-shift-left sh2 4))
+        d (Float/intBitsToFloat (unchecked-int (half->f32-bits d-half)))
+        dl (float (* d (float (- ls 32))))]
+    (Float/floatToRawIntBits (float (* dl (float (nth kvalues-iq4nl nibble)))))))
+
+(def ^:private iq3xxs-block
+  "One `block_iq3_xxs`, 98 bytes: `d`, 64 grid codes, and eight 32-bit words
+  whose top nibble is a scale and whose low 28 bits are four seven-bit sign
+  selectors. The words are chosen so all four selectors differ within a word
+  and the scale nibble varies across the eight."
+  (vec (concat [0x55 0x35]
+               (map #(mod (* 37 (inc %)) 256) (range 64))
+               (mapcat (fn [w] [(bit-and w 0xff)
+                                (bit-and (bit-shift-right w 8) 0xff)
+                                (bit-and (bit-shift-right w 16) 0xff)
+                                (bit-and (bit-shift-right w 24) 0xff)])
+                       [0x1234567 0x89abcde 0x2468ace 0x13579bd
+                        0xfedcba9 0x7654321 0xa5a5a5a 0x5c5c5c5]))))
+
+(def ^:private iq3s-block
+  "One `block_iq3_s`, 110 bytes: `d`, 64 eight-bit codes, eight bytes of
+  NINTH bits, 32 sign bytes, and four bytes holding two four-bit scales each.
+  The `qh` bytes are chosen so the ninth bit is set for some codes in every
+  one of the four `l` positions -- a block where it never fired would agree
+  with a decode that ignored `qh` entirely."
+  (vec (concat [0x55 0x35]
+               (map #(mod (* 37 (inc %)) 256) (range 64))
+               [0x9a 0x3c 0xf1 0x05 0xc7 0x2e 0x68 0xb3]
+               (map #(mod (* 53 (inc %)) 256) (range 32))
+               [0x41 0x7c 0x2b 0xd6])))
+
+(def ^:private iq2s-block
+  "One `block_iq2_s`, 82 bytes: `d`, 32 eight-bit codes, 32 sign bytes, eight
+  bytes carrying the ninth and TENTH bits, and eight bytes of packed scales."
+  (vec (concat [0x55 0x35]
+               (map #(mod (* 37 (inc %)) 256) (range 32))
+               (map #(mod (* 53 (inc %)) 256) (range 32))
+               [0x9a 0x3c 0xf1 0x05 0xc7 0x2e 0x68 0xb3]
+               [0x41 0x7c 0x2b 0xd6 0x8e 0x15 0xa9 0x63])))
+
+(deftest iq2-s-dequantises-on-every-available-isa
+  ;; THE FOURTH AND LAST of the formats kotoba-native's `elf64` docstring
+  ;; named as staying in the C. 62 more of the model's 866 tensors, and with
+  ;; IQ4_XS, IQ3_XXS and IQ3_S that is 222 of the 306 that sentence covered.
+  ;;
+  ;; The grid index is TEN bits -- two lifted out of `qh`, mask 0x300 -- so
+  ;; the grid is 1024 entries of eight bytes. 8192 bytes is the largest of the
+  ;; six vendored tables, and the size the pool was separately measured
+  ;; against before any of this was written.
+  ;;
+  ;; Reference is osaho's oracle, for the reason given on the IQ3_XXS test.
+  (let [available (into {} (remove (comp nil? val) @loaders))
+        missing (remove available (keys isas))
+        required (if (macos?) (set (keys isas)) #{(host-isa)})
+        expected (mapv (fn [v] (Float/floatToRawIntBits (float v)))
+                       (@#'kotoba.kir/dequantize-block
+                        'kernel-dequant-dot-iq2-s iq2s-block 0))]
+    (println "iq2-s available:" (vec (sort (keys available)))
+             "/ missing (SKIPPED):" (vec (sort missing)))
+    (is (every? available required)
+        (str "required ISA loaders are unavailable on this host. required: "
+             (vec (sort required)) ", missing: " (vec (sort missing))))
+    (is (= 256 (count expected)))
+    ;; Measured: 77 distinct, 127 negative, 129 positive, 0 zero. Floors
+    ;; rather than the numbers, for the reason the IQ3_S test gives.
+    (is (< 32 (count (distinct expected))) "SCANNED distinct values")
+    (is (< 32 (count (filter neg? expected))) "SCANNED negative values")
+    (is (< 32 (count (filter pos? expected))) "SCANNED positive values")
+    (doseq [[isa _] available]
+      (testing isa
+        ;; Both scale nibbles (l < 2 takes the low one), every quarter of a
+        ;; group, both 32-element boundaries, and the last element.
+        (doseq [element [0 1 7 8 15 16 23 24 31 32 63 64 128 160 200 255]]
+          (let [report (run-native isa iq2s-source "-" {:allow #{}}
+                                   'weight-bits
+                                   [(str "g:" (region-hex iq2s-block)) "gl:0"
+                                    (str element)])]
+            (is (not (str/includes? report "KEXE_TRAP")) (str/trim report))
+            (is (str/includes? report (str ":result " (nth expected element)))
+                (str "element " element ": " (str/trim report)))))))))
+
+(deftest iq3-s-dequantises-on-every-available-isa
+  ;; 64 more of the model's 866 tensors, and the format where the grid index
+  ;; is NINE bits: eight from `qs` and one lifted out of `qh` by a shift whose
+  ;; amount depends on which code pair is being read. The fixture writes that
+  ;; shift as a multiply by `256 / 4^l`, because shift counts in this dialect
+  ;; are literals -- a frontend admission rule, not a machine limit.
+  ;;
+  ;; Reference is osaho's oracle, for the reason given on the IQ3_XXS test.
+  (let [available (into {} (remove (comp nil? val) @loaders))
+        missing (remove available (keys isas))
+        required (if (macos?) (set (keys isas)) #{(host-isa)})
+        expected (mapv (fn [v] (Float/floatToRawIntBits (float v)))
+                       (@#'kotoba.kir/dequantize-block
+                        'kernel-dequant-dot-iq3-s iq3s-block 0))]
+    (println "iq3-s available:" (vec (sort (keys available)))
+             "/ missing (SKIPPED):" (vec (sort missing)))
+    (is (every? available required)
+        (str "required ISA loaders are unavailable on this host. required: "
+             (vec (sort required)) ", missing: " (vec (sort missing))))
+    (is (= 256 (count expected)))
+    ;; This block decodes to 76 distinct values with 127 negative and 129
+    ;; positive. Asserted rather than remembered: a fixture that drifted into
+    ;; a single repeated value, or into one sign, would pass every element
+    ;; comparison below while testing almost nothing.
+    (is (< 32 (count (distinct expected))) "SCANNED distinct values")
+    (is (< 32 (count (filter neg? expected))) "SCANNED negative values")
+    (is (< 32 (count (filter pos? expected))) "SCANNED positive values")
+    (doseq [[isa _] available]
+      (testing isa
+        ;; Both scale nibbles, both halves of a pair, all four `l` positions,
+        ;; every 64-element pair boundary, and the last element.
+        (doseq [element [0 1 3 4 7 8 15 16 31 32 33 63 64 96 128 191 200 255]]
+          (let [report (run-native isa iq3s-source "-" {:allow #{}}
+                                   'weight-bits
+                                   [(str "g:" (region-hex iq3s-block)) "gl:0"
+                                    (str element)])]
+            (is (not (str/includes? report "KEXE_TRAP")) (str/trim report))
+            (is (str/includes? report (str ":result " (nth expected element)))
+                (str "element " element ": " (str/trim report)))))))))
+
+(deftest iq3-xxs-dequantises-on-every-available-isa
+  ;; THE LARGEST UNSUPPORTED TYPE IN THE SHIPPING MODEL -- 82 of 866 tensors,
+  ;; more than any other single format. Three tables rather than one, and a
+  ;; per-element sign the table does not carry.
+  ;;
+  ;; ⚠ THE REFERENCE IS osaho's ORACLE, NOT A SECOND TRANSCRIPTION HERE, and
+  ;; that is a deliberate difference from the IQ4_XS test above. Writing the
+  ;; equation out again in this file would test my reading of the C twice and
+  ;; the backend once. osaho's oracle is already compared, element by element,
+  ;; against a pointer-walk transcription of `dequantize_row_iq3_xxs` in
+  ;; `kotoba.kir-dequant-iq-test` (osaho ADR 0264: SCANNED 256, DISAGREEMENTS
+  ;; 0), so leaning on it makes THIS test about the backend -- which is the
+  ;; part that is new.
+  ;;
+  ;; What the pool carries is checked separately and without executing
+  ;; anything, by `the-pool-carries-the-vendored-codebook-byte-for-byte`. The
+  ;; two are needed together: thirteen probes cannot read a 1024-entry grid,
+  ;; and a digest cannot tell you the decode indexes it correctly.
+  (let [available (into {} (remove (comp nil? val) @loaders))
+        missing (remove available (keys isas))
+        required (if (macos?) (set (keys isas)) #{(host-isa)})
+        expected (mapv (fn [v] (Float/floatToRawIntBits (float v)))
+                       (@#'kotoba.kir/dequantize-block
+                        'kernel-dequant-dot-iq3-xxs iq3xxs-block 0))]
+    (println "iq3-xxs available:" (vec (sort (keys available)))
+             "/ missing (SKIPPED):" (vec (sort missing)))
+    (is (every? available required)
+        (str "required ISA loaders are unavailable on this host. required: "
+             (vec (sort required)) ", missing: " (vec (sort missing))))
+    (is (= 256 (count expected)))
+    (is (< 1 (count (distinct expected)))
+        "a block that decoded to one repeated value would pass vacuously")
+    (doseq [[isa _] available]
+      (testing isa
+        ;; Every sub-block boundary, both halves of a sign group, both bytes
+        ;; of a code pair, and the last element.
+        (doseq [element [0 1 3 4 7 8 15 16 31 32 63 100 128 200 255]]
+          (let [report (run-native isa iq3xxs-source "-" {:allow #{}}
+                                   'weight-bits
+                                   [(str "g:" (region-hex iq3xxs-block)) "gl:0"
+                                    (str element)])]
+            (is (not (str/includes? report "KEXE_TRAP")) (str/trim report))
+            (is (str/includes? report (str ":result " (nth expected element)))
+                (str "element " element ": " (str/trim report)))))
+        (testing "a sign selector actually flips a sign"
+          ;; The control for the third table. `ksigns_iq2xs` is the only one
+          ;; of the three whose effect is invisible in magnitude, so a decode
+          ;; that ignored it would still agree on |value| everywhere. This
+          ;; asserts the block produces BOTH signs.
+          (let [answers (map (fn [e]
+                               (let [r (run-native isa iq3xxs-source "-" {:allow #{}}
+                                                   'weight-bits
+                                                   [(str "g:" (region-hex iq3xxs-block))
+                                                    "gl:0" (str e)])]
+                                 (Long/parseLong (second (re-find #":result (-?\d+)" r)))))
+                             [0 3])]
+            (is (some neg? answers))
+            (is (some pos? answers))))))))
+
+(deftest iq4-xs-dequantises-on-every-available-isa
+  ;; ⚠ THE FORMAT THAT KEPT THE IQ TYPES IN THE C, decoded in Kotoba and run
+  ;; as a real process. It needs everything the day's work added at once: a
+  ;; codebook in the program's own pool, a region the caller granted, a base
+  ;; that survives the frontend's rename through a `let`, and f32 arithmetic.
+  ;;
+  ;; The fp16 super-block scale is decoded BY THE X86 EQUATION -- mask, shift,
+  ;; multiply by 2^112 -- and the reference above decodes it by the IEEE-754
+  ;; definition instead, so the two agree by arriving at the same number
+  ;; rather than by carrying the same constant.
+  (let [available (into {} (remove (comp nil? val) @loaders))
+        missing (remove available (keys isas))
+        required (if (macos?) (set (keys isas)) #{(host-isa)})
+        ;; A block whose fields are all non-trivial: a scale that is neither
+        ;; a power of two nor 1, both nibble positions of every `scales_l`
+        ;; byte, and a `scales_h` with all four two-bit patterns present.
+        block (vec (concat [0x55 0x35 0xe7 0xb1 0x5a 0x3c 0x91 0x2d]
+                           (map #(mod (* 37 (inc %)) 256) (range 128))))]
+    (println "iq4-xs available:" (vec (sort (keys available)))
+             "/ missing (SKIPPED):" (vec (sort missing)))
+    (is (every? available required)
+        (str "required ISA loaders are unavailable on this host. required: "
+             (vec (sort required)) ", missing: " (vec (sort missing))))
+    (doseq [[isa _] available]
+      (testing isa
+        (testing "the fp16 decode, against the IEEE-754 definition"
+          ;; Zero, a subnormal, one, the scale this block uses, the largest
+          ;; finite half, a negative, an infinity and a NaN with a payload.
+          (doseq [half [0x0000 0x0001 0x03ff 0x3c00 0x3555 0x7bff
+                        0xc000 0x7c00 0x7e01]]
+            (let [report (run-native isa iq4xs-source "-" {:allow #{}}
+                                     'half-bits [(str half)])
+                  expected (half->f32-bits half)]
+              (is (not (str/includes? report "KEXE_TRAP")) (str/trim report))
+              (is (str/includes? report (str ":result " expected))
+                  (str (format "half 0x%04x" half) ": " (str/trim report))))))
+        (testing "the dequantised weight, over a whole block"
+          ;; Every sub-block boundary, both halves of a sub-block, both
+          ;; nibble positions, and the last element.
+          (doseq [element [0 1 15 16 17 31 32 63 64 100 128 200 255]]
+            (let [expected (iq4xs-weight-bits block element)
+                  report (run-native isa iq4xs-source "-" {:allow #{}}
+                                     'weight-bits
+                                     [(str "g:" (region-hex block)) "gl:0"
+                                      (str element)])]
+              (is (not (str/includes? report "KEXE_TRAP")) (str/trim report))
+              (is (str/includes? report (str ":result " expected))
+                  (str "element " element ": " (str/trim report))))))
+        (testing "changing one nibble of qs changes exactly that element"
+          ;; The control. Two blocks differing in the low nibble of qs[0]
+          ;; must differ at element 0 and agree at element 16, which reads
+          ;; the HIGH nibble of the same byte.
+          (let [bumped (assoc block 8 (bit-or (bit-and (nth block 8) 0xf0) 15))
+                answer (fn [blk e]
+                         (let [r (run-native isa iq4xs-source "-" {:allow #{}}
+                                             'weight-bits
+                                             [(str "g:" (region-hex blk)) "gl:0"
+                                              (str e)])]
+                           (Long/parseLong
+                            (second (re-find #":result (-?\d+)" r)))))]
+            (is (not= (answer block 0) (answer bumped 0)))
+            (is (= (answer block 16) (answer bumped 16)))
+            (is (= (iq4xs-weight-bits bumped 0) (answer bumped 0)))))))))
+
+(deftest a-carried-codebook-is-decoded-on-every-available-isa
+  ;; THE LAST PIECE THE IQ QUANTIZATION FORMATS WERE MISSING, executed rather
+  ;; than argued. kotoba-native's `elf64` docstring says of IQ3_XXS, IQ3_S,
+  ;; IQ4_XS and IQ2_S -- 306 of the shipping model's 866 tensors -- that they
+  ;; "decode through codebook grids that `qwen35_quant_tables.inc` holds as
+  ;; static const data, and this dialect has no rodata and no bytes literal to
+  ;; put one in. Those types stay in the C."
+  ;;
+  ;; The fixture is `kvalues_iq4nl`, the sixteen-entry table IQ4_NL and IQ4_XS
+  ;; decode through, carried as the program's own bytes. Three things had to
+  ;; be true at once and none of them was until 2026-09-09: the four literal
+  ;; heads had to leave the verifier's aiueos-only set, a literal had to be
+  ;; admitted as a REGION BASE beside a parameter (a pool that is addressable
+  ;; and unreadable is not a pool), and AArch64 had to have an instruction
+  ;; that reaches the pool -- `adr`, one instruction, not ADRP+ADD.
+  ;;
+  ;; ⚠ THE EXPECTATION IS COMPUTED FROM A SEPARATE COPY OF THE TABLE, above.
+  ;; Deriving it from the fixture's hex would make the test agree with itself.
+  (let [available (into {} (remove (comp nil? val) @loaders))
+        missing (remove available (keys isas))
+        required (if (macos?) (set (keys isas)) #{(host-isa)})]
+    (println "rodata-codebook available:" (vec (sort (keys available)))
+             "/ missing (SKIPPED):" (vec (sort missing)))
+    (is (every? available required)
+        (str "required ISA loaders are unavailable on this host. required: "
+             (vec (sort required)) ", missing: " (vec (sort missing))))
+    (doseq [[isa _] available]
+      (testing isa
+        (testing "every entry of the table, read out of the program's own pool"
+          (doseq [[index expected] (map-indexed vector kvalues-iq4nl)]
+            (let [report (run-native isa codebook-source "-" {:allow #{}}
+                                     'kvalue [(str index)])]
+              (is (not (str/includes? report "KEXE_TRAP")) (str/trim report))
+              (is (str/includes? report (str ":result " expected))
+                  (str index " -> " expected ": " (str/trim report))))))
+        (testing "a whole block's nibbles, against an independent reference"
+          ;; 128 bytes is one IQ4_XS block's `qs`: 256 packed nibbles, low
+          ;; first, which is ggml's own unpack order.
+          (let [qs (mapv #(mod (* 37 (inc %)) 256) (range 128))
+                expected (nibble-sum-reference qs)
+                report (run-native isa codebook-source "-" {:allow #{}}
+                                   'nibble-sum
+                                   [(str "g:" (region-hex qs)) "gl:0"])]
+            (is (not (str/includes? report "KEXE_TRAP")) (str/trim report))
+            (is (str/includes? report (str ":result " expected))
+                (str/trim report))))
+        (testing "changing ONE nibble moves the answer by exactly one table step"
+          ;; The control that separates "reads the codebook" from "computes
+          ;; some constant". Both runs walk the same 128 bytes; they differ in
+          ;; the low nibble of byte 0, so the answer must differ by exactly
+          ;; kvalues[15] - kvalues[0] and by nothing else.
+          (let [base (vec (repeat 128 0))
+                bumped (assoc base 0 15)
+                answer (fn [qs]
+                         (let [r (run-native isa codebook-source "-" {:allow #{}}
+                                             'nibble-sum
+                                             [(str "g:" (region-hex qs)) "gl:0"])]
+                           (Long/parseLong
+                            (second (re-find #":result (-?\d+)" r)))))]
+            (is (= (- (nth kvalues-iq4nl 15) (nth kvalues-iq4nl 0))
+                   (- (answer bumped) (answer base))))))
+        (testing "the grant's LENGTH bounds the walk, not the program's idea of it"
+          (let [qs (mapv #(mod (* 37 (inc %)) 256) (range 128))]
+            (doseq [n [0 1 64 128]]
+              (let [taken (subvec qs 0 n)
+                    report (run-native isa codebook-source "-" {:allow #{}}
+                                       'nibble-sum
+                                       [(str "g:" (region-hex taken)) "gl:0"])]
+                (is (str/includes? report
+                                   (str ":result " (nibble-sum-reference taken)))
+                    (str n " bytes: " (str/trim report)))))))))))
+
+;; ---------------------------------------------------------------------------
+;; granted regions x dequant: the fused kernel over two granted regions
+;; ---------------------------------------------------------------------------
+
+(def ^:private granted-dequant-source
+  (slurp "test/fixtures/granted-region-dequant.kotoba"))
+
+(defn- f32-bytes [xs]
+  (mapcat (fn [x]
+            (let [bits (Float/floatToRawIntBits (float x))]
+              [(bit-and bits 0xff)
+               (bit-and (bit-shift-right bits 8) 0xff)
+               (bit-and (bit-shift-right bits 16) 0xff)
+               (bit-and (bit-shift-right bits 24) 0xff)]))
+          xs))
+
+(defn- q8-0-block
+  "One Q8_0 block: a binary16 scale then thirty-two signed codes."
+  [half codes]
+  (into [(bit-and half 0xff) (bit-and (bit-shift-right half 8) 0xff)]
+        (map #(bit-and % 0xff)) codes))
+
+(defn- report-result [report]
+  (when-let [m (re-find #":result (-?\d+)" report)] (Long/parseLong (second m))))
+
+(deftest the-fused-dequant-answers-the-same-bits-on-every-available-isa
+  ;; `kernel-dequant-dot-q8-0`'s contract is an ACCUMULATION TREE. Floating-
+  ;; point addition is not associative, so one specific order of summation is
+  ;; the operation, and the AArch64 arm exists only because it reproduces the
+  ;; x86 one instruction for instruction. Cross-ISA bit-identity is therefore
+  ;; not a nice property of this kernel -- it is the kernel.
+  ;;
+  ;; It is load-bearing beyond this repository too: `local-murakumo` qualifies
+  ;; a node by comparing GREEDY tokens exactly, and the community-provider lane
+  ;; verifies a claimed result by re-running a sampled job on another node. A
+  ;; Mac mini and a K16 that disagree in the last bit of a logit are two fleets.
+  ;;
+  ;; The regions are GRANTED, which is what makes this runnable at all: the
+  ;; weight row and the activations are host bytes the loader minted, and the
+  ;; program's two bases are parameters it could not have chosen.
+  (let [available (into {} (remove (comp nil? val) @loaders))
+        missing (remove available (keys isas))
+        required (if (macos?) (set (keys isas)) #{(host-isa)})
+        run (fn [isa block activations]
+              (report-result
+               (run-native isa granted-dequant-source "-" {:allow #{}} 'dot-q8-0
+                           [(str "g:" (region-hex block)) "gl:0"
+                            (str "g:" (region-hex (f32-bytes activations))) "gl:1"
+                            1])))]
+    ;; Printed AND asserted, and the count is printed too, because the
+    ;; cross-ISA claim below is VACUOUS when only one ISA is available: a set
+    ;; of one answer has one distinct element no matter what that answer is.
+    ;; On macOS both are required and the claim is real; on a Linux runner only
+    ;; the host ISA exists and this degrades to the per-ISA constants above,
+    ;; which is honest but is a smaller test than it looks.
+    (println "granted-dequant available:" (vec (sort (keys available)))
+             "/ missing (SKIPPED):" (vec (sort missing))
+             "/ cross-isa claim is"
+             (if (< (count available) 2) "VACUOUS here" "live"))
+    (is (every? available required)
+        (str "required ISA loaders are unavailable on this host. required: "
+             (vec (sort required)) ", missing: " (vec (sort missing))))
+    (testing "d = 1.0, codes 1..32, activations 1.0 -> 528.0f"
+      (let [block (q8-0-block 0x3C00 (range 1 33))
+            answers (into {} (map (fn [isa] [isa (run isa block (repeat 32 1.0))]))
+                          (keys available))]
+        (doseq [[isa answer] answers]
+          (is (= (Float/floatToRawIntBits (float 528.0)) answer)
+              (str isa " answered " answer)))
+        ;; Equal TO EACH OTHER, asserted separately: a constant both arms had
+        ;; drifted from together would pass the check above and fail here.
+        (is (= 1 (count (set (vals answers))))
+            (str "the ISAs disagree: " (pr-str answers)))))
+    (testing "a fixture whose answer names the accumulation tree"
+      ;; The first activation is 2^24 and the rest are 1.0, so each 1 added in
+      ;; isolation rounds away and each pair does not. Four lanes, element e
+      ;; into lane e mod 4, then (s0+s1)+(s2+s3): 2^24 + 24. A single
+      ;; left-to-right accumulator answers 2^24 exactly, so the digits name the
+      ;; tree rather than merely being a plausible dot product.
+      (let [block (q8-0-block 0x3C00 (repeat 32 1))
+            activations (cons (Float/intBitsToFloat 0x4B800000) (repeat 31 1.0))
+            answers (into {} (map (fn [isa] [isa (run isa block activations)]))
+                          (keys available))]
+        (doseq [[isa answer] answers]
+          (is (= 0x4B80000C answer)
+              (str isa " answered " (format "0x%08X" answer)
+                   " -- 0x4B800000 is a left-to-right sum")))
+        (is (= 1 (count (set (vals answers))))
+            (str "the ISAs disagree: " (pr-str answers)))))))
+
+(deftest the-two-K-quants-are-still-refused-on-aarch64
+  ;; Asserted rather than merely true, so writing either arm is a red test that
+  ;; has to be looked at. The reason is a gap and is named as one: a Q4_K
+  ;; block's (scale, min) pair and its nibble half change on different periods
+  ;; and a Q6_K block's scale index every sixteen elements, so their thirty-two
+  ;; groups are unrolled with per-group geometry rather than looped -- and none
+  ;; of that is written for AArch64.
+  (doseq [op '[kernel-dequant-dot-q4-k kernel-dequant-dot-q6-k]]
+    (testing (str op)
+      (let [source (str "(ns k (:export [go]))\n"
+                        "(defn go [a :i64 b :i64 c :i64 d :i64 n :i64]\n"
+                        "  (" op " a b c d n))")]
+        (is (some? (:artifact (compiler/compile-source source :x86_64-kotoba-v1 {})))
+            "x86-64 emits it")
+        (is (thrown? clojure.lang.ExceptionInfo
+                     (compiler/compile-source source :aarch64-kotoba-v1 {}))
+            (str op " reached the AArch64 backend"))))))

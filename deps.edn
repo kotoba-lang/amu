@@ -16,8 +16,20 @@
 ;; lock on the common path at all.
 {:paths ["src" "resources" "tools"]
  :deps {org.clojure/clojure {:mvn/version "1.12.0"}
+        ;; Advanced 2026-09-09, 32ee84b2 -> 3abf80a1 (abi main, ahead 1,
+        ;; forward only). The same BigInt class as the osaho pin below, but
+        ;; LATENT here: `world-wit` and `capability-import-name` are not on
+        ;; any route this compiler takes -- measured by loading an
+        ;; instrumented copy first on the classpath during a failing wasm
+        ;; compile and observing that the namespace never loads. Taken anyway
+        ;; because the functions are broken as functions (`world-wit` on a
+        ;; two-id set throws `Cannot compare 23 to 7`, and
+        ;; `capability-import-name` throws `Cannot create property
+        ;; closure_uid_... on bigint` because that map has 18 entries and so
+        ;; hashes rather than scanning), and because abi owns the id
+        ;; vocabulary.
         io.github.kotoba-lang/abi {:git/url "https://github.com/kotoba-lang/abi.git"
-                                   :git/sha "32ee84b2efc92478c846629c8d8319280eed506c"}
+                                   :git/sha "3abf80a1fc0b5a0830acc8b37027baee65a53239"}
         ;; Advanced 2026-09-03 (ADR 0330) with kotoba-lang/provider f040fc0,
         ;; which retires org.clojure/data.json for this namespace and needs
         ;; d5137c7's kwargs surface to be a drop-in.
@@ -284,6 +296,26 @@
          ;; f64-from-bits. Needed WITH the verifier pin below -- kir alone
          ;; is a green `check` and a red `compile`.
          ;;
+         ;; Advanced 2026-09-09, 74426bad -> a37577c9 (osaho main, ahead 1,
+         ;; forward only), for the defect this pin is the ONLY way to reach:
+         ;; `kotoba.kir.descriptor/capability-contracts` deduplicates, orders
+         ;; and groups capability ids, and on cljs those ids are BigInt --
+         ;; which cljs.core cannot sort, cannot `distinct` and cannot
+         ;; `group-by`. Measured on this exact tree: a module declaring TWO
+         ;; capabilities answered `internal compiler error` (exit 70) for
+         ;; `--target wasm32-browser` while ONE capability and both native
+         ;; targets were fine, because a one-element `Array.sort` never
+         ;; invokes its comparator. With the fix on the classpath and nothing
+         ;; else changed, exit 70 -> exit 0, and the artifact instantiates and
+         ;; answers 30002 for `(+ (now-at 1) (draw-at 1))` under a
+         ;; `1000*id + v` capability stub -- 7001 + 23001, so both ids reach
+         ;; the host and reach it distinctly.
+         ;;
+         ;; Both notes stand and the sha is the LATER one. Measured on merge:
+         ;; main named a37577c9, which `gh api compare` says is 2 commits BEHIND
+         ;; 1a81e2d7 -- so taking main's side here would have reverted the
+         ;; surrogate fix below while keeping the note that describes it.
+         ;;
          ;; Advanced 2026-09-09 for the `string-index-of` wave. The operation had no
          ;; native lowering and failed from source as `aggregate ABI rejected:
          ;; call-abi-not-admitted` -- an unlowered head is call-shaped, so it reached
@@ -319,6 +351,14 @@
         ;; or execution refuses before the guest starts.
         io.github.kotoba-lang/artifact
         {:git/url "https://github.com/kotoba-lang/artifact.git"
+         ;;
+         ;; Advanced 2026-09-09 for GRANTED REGIONS. `loader-source-sha256`
+         ;; names the loader in `tools/kexe_loader.c` in THIS commit, which has
+         ;; the `g:<hex>` and `gl:<n>` argument forms. `build-runtime!` compares
+         ;; the reviewed source's sha against that pin and refuses a mismatch,
+         ;; so the C and this pin move in one commit or every execution fails
+         ;; with "native loader source identity mismatch" -- which reads as a
+         ;; tampered loader and is a pin skew.
          ;; kbb slice 4: 9e908fb0 advances loader-source-sha256 for the
          ;; env_read_provider (wire id 33); d94e63a4 advances it again for
          ;; fs_app_data_read_provider (wire id 35, KEXE_CAP_RESOURCES_35 scope);
@@ -330,8 +370,18 @@
          ;; windows identity held at f10a99e4 (artifact PR #31): the arena
          ;; windows loader (0269b0ab) reports :vectors and cannot pair with a posix
          ;; loader that does not under any single executor.
+         ;; THAT HOLD ENDED 2026-09-09. The posix loader gained the two arenas
+         ;; in this commit, so the pairing is resolved in the other direction
+         ;; and the windows identity advances with it -- both report :vectors
+         ;; and :vector-items, nine sites there and ten here, from one macro
+         ;; each. The hold is over because the thing it was waiting for
+         ;; happened, and it was ADVANCING THIS PIN that said so: windows-arm64
+         ;; and browser-matrix (windows-2025) went red with "malformed native
+         ;; supervisor evidence (exit=0, report-status=:ok)" -- a run that did
+         ;; exactly what it was asked, rejected for the shape of the sentence
+         ;; it said so in, on the one platform whose loader had not been fixed.
          ;; matching the js host).
-         :git/sha "4ec18a54deafaa4db6b7242cc9b21c89ab0bd779"}
+         :git/sha "b5a7c9c557caa3611d0c4cf678c27246dd5f1394"}
         ;; HELD at 1a2e10c on 2026-09-03 (ADR 0331), 28 commits behind its main,
         ;; while every other pin in this file moved to the tip. The reason, so
         ;; that a lagging pin and a pin with an argument behind it stay
@@ -515,12 +565,45 @@
          ;; `examples/held-operations.kotoba` was rejected as "native
          ;; instruction stream rejected" by a verifier that was right.
          ;;
+         ;; Advanced 2026-09-09 to 7cbed512, which carries kotoba-mir b70a567a
+         ;; and is the pin that makes TWO NEW AArch64 ARMS reachable from this
+         ;; repository: `kernel-dot-f32` and Q8_0's fused dequantize-and-dot.
+         ;; Both are the x86 SCALAR arm reproduced instruction for instruction,
+         ;; because the contract of those operations is an ACCUMULATION TREE
+         ;; and not a dot product -- one specific order of summation IS the
+         ;; operation, so an arm that answered a different number would be a
+         ;; different operation wearing the same name.
+         ;;
+         ;; Without this pin `amu compile --target aarch64` refuses them at MIR
+         ;; selection with `x86-simd-target-mismatch`, which is a program this
+         ;; repository can now compile being rejected for a reason that stopped
+         ;; being true.
+         ;;
+         ;; Advanced 2026-09-09, 7cbed512 -> c14a49f3 (kotoba-native main,
+         ;; forward only), and this one carries kotoba-mir b70a567a ->
+         ;; 4a049cc9 with it. A LITERAL'S ADDRESS NOW EMITS ON AARCH64.
+         ;;
+         ;; The refusal that stood there named ADRP+ADD's 4 KiB page split as
+         ;; the blocker. It was the wrong instruction: `adr` reaches +/-1 MiB
+         ;; in one, and kotoba-native places the literal pool at the end of the
+         ;; same emitted buffer as the code, so the distance is bounded by the
+         ;; size of one program -- the fact a linker cannot know and a backend
+         ;; can. Required WITH this file's `rodata-literal-targets` change, not
+         ;; optional: widening the gate here without the pin admits a program
+         ;; that `kotoba.mir` then refuses, which is a green `amu check`
+         ;; followed by a red `amu compile`.
+         ;;
+         ;; The sha above is main's and it CONTAINS the advance below:
+         ;; compare 11691559...edbbe987 answers ahead 7, behind 0. The note is
+         ;; kept because deps.edn is where the reason for a pin lives, and a
+         ;; later advance does not delete the earlier one's argument.
+         ;;
          ;; Advanced 2026-09-09, a5711bdc -> 11691559 (kotoba-native main, forward
          ;; only, 20 commits): `lower-index-of`, the same scan `string-contains?`
          ;; already lowers to, returning the offset `kotoba$string-find` had already
          ;; computed instead of folding it to 0/1. No new helper, no new callback, no
          ;; new value representation, no ABI bump. See the osaho note above.
-         :git/sha "11691559934a16fcad073e4c0a8a58ab40049f2e"}
+         :git/sha "edbbe9873fc0eac387d1420e5191be6fab0ff469"}
         io.github.kotoba-lang/kotoba-component
         {:git/url "https://github.com/kotoba-lang/kotoba-component.git"
          :git/sha "ff2c3e8c29a02a7731e70c7e4d276441ebc9d42d"}
@@ -647,11 +730,27 @@
          ;; `amu check` followed by a red `amu compile`, which is the exact
          ;; skew this repo's own deps comments already warn about.
          ;;
+         ;; Advanced 2026-09-09 to 6f4871f3. Two admissions land together and
+         ;; both are needed by the same program: the four rodata literal heads
+         ;; leave the verifier's aiueos-only set for the two HOSTED native
+         ;; targets, and `traceable-region-base?` admits a rodata literal as a
+         ;; region base beside a parameter. A pool that is addressable and
+         ;; unreadable is not a pool.
+         ;;
+         ;; The literal is admitted as a base for a reason the integer is not:
+         ;; `4096` is an address the program chose and could have chosen
+         ;; differently, while `(bytes-literal "...")` is a relocation the
+         ;; backend resolves into a pool it placed beside the code -- the
+         ;; program cannot make it point anywhere else, and the bytes it
+         ;; reaches are its own.
+         ;;
+         ;; Same shape: main's sha contains this one (ahead 8, behind 0).
+         ;;
          ;; Advanced 2026-09-09, 33b3d067 -> 1810a62c (kotoba-verifier main, forward
          ;; only, 2 commits): `string-operations` gains `string-index-of 2`. Without it
          ;; the backend emits code this verifier then refuses -- the second gate of
          ;; ADR 0002, which measured that one gate alone unlocks nothing.
-         :git/sha "1810a62ca2bee309e9add96d603121b45d26deaa"}
+         :git/sha "85ea11d61cc3613bfb5ac80a7736de7ae1382942"}
 }
  :aliases {:test {:extra-paths ["test"]
                   :extra-deps
@@ -697,13 +796,13 @@
                    ;; :native-conformance below -- one kototama-native.
                    io.github.kotoba-lang/kototama-native
                    {:git/url "https://github.com/kotoba-lang/kototama-native.git"
-                    :git/sha "a569f1d14a09674503fc00733fd38fd3699fa4fb"}}
+                    :git/sha "9e53ea35e76caa61405a3f4c56f68eb9492a6c01"}}
                   :main-opts ["-m" "kotoba.compiler.test-runner"]}
            :native-run
            {:extra-deps
             {io.github.kotoba-lang/kototama-native
              {:git/url "https://github.com/kotoba-lang/kototama-native.git"
-              :git/sha "a569f1d14a09674503fc00733fd38fd3699fa4fb"}}
+              :git/sha "9e53ea35e76caa61405a3f4c56f68eb9492a6c01"}}
             :main-opts ["-m" "kotoba.compiler.cli"]}
            :run {:main-opts ["-m" "kotoba.compiler.cli"]}
            :conformance
@@ -715,7 +814,7 @@
            {:extra-deps
             {io.github.kotoba-lang/kototama-native
              {:git/url "https://github.com/kotoba-lang/kototama-native.git"
-              :git/sha "a569f1d14a09674503fc00733fd38fd3699fa4fb"}
+              :git/sha "9e53ea35e76caa61405a3f4c56f68eb9492a6c01"}
              io.github.kotoba-lang/provider
              {:git/url "https://github.com/kotoba-lang/provider.git"
               :git/sha "0ba1fbabb536027d25bbefc50374fbe95e6b54ec"}}

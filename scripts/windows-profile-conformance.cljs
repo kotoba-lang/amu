@@ -244,7 +244,18 @@
         ;; then answered 510 -- the same value scripts/conformance.cljs measured
         ;; on macOS, and the same +1 kotoba-native ADR 0034 produces by not
         ;; charging entry fuel on a function that cannot re-enter.
-        (lib/ensure! (= "{:status :ok :result 42 :fuel {:initial 512 :remaining 510} :heap {:capacity 4096 :used 0}}"
+        ;; `:vectors` and `:vector-items` joined this report on 2026-09-09.
+        ;; `kototama.native.executor`'s `valid-supervisor-report?` had expected
+        ;; them since 2026-09-08 and the windows loader had never emitted them,
+        ;; which is what made every signed run on this platform fail as
+        ;; "malformed native supervisor evidence (exit=0, report-status=:ok)".
+        ;; Pinned as the WHOLE line rather than by substring, deliberately: a
+        ;; key silently joining or leaving the report is the thing this
+        ;; assertion exists to catch, and that is how it caught this one.
+        (lib/ensure! (= (str "{:status :ok :result 42 :fuel {:initial 512 :remaining 510} "
+                             ":heap {:capacity 4096 :used 0} "
+                             ":vectors {:capacity 4096 :used 0} "
+                             ":vector-items {:capacity 65536 :used 0}}")
                         (.trim (.-stdout structured)))
                      (str "windows-profile: structured supervisor report mismatch: "
                           (pr-str (.trim (.-stdout structured))))))
@@ -291,7 +302,12 @@
         ;; reached, so 511 has never been contradicted by a measurement. If ADR
         ;; 0034 moves it too, the message now says so instead of withholding the
         ;; number the way the first one did.
-        (lib/ensure! (= "{:status :ok :result 42 :fuel {:initial 512 :remaining 511} :heap {:capacity 4096 :used 2}}"
+        ;; `:vectors` and `:vector-items` joined this report on 2026-09-09,
+        ;; for the reason recorded at the first assertion in this file.
+        (lib/ensure! (= (str "{:status :ok :result 42 :fuel {:initial 512 :remaining 511} "
+                             ":heap {:capacity 4096 :used 2} "
+                             ":vectors {:capacity 4096 :used 0} "
+                             ":vector-items {:capacity 65536 :used 0}}")
                         (.trim (.-stdout report)))
                      (str "windows-profile: bounded heap report mismatch: "
                           (pr-str (.trim (.-stdout report))))))
