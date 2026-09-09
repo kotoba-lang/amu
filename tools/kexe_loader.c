@@ -227,15 +227,33 @@ struct kexe_shared_v4 {
   struct kexe_vector_v1 vectors[KEXE_VECTOR_CAPACITY];
   uint64_t vector_item_used;
   int64_t vector_items[KEXE_VECTOR_ITEM_CAPACITY];
-  /* granted regions: appended LAST on purpose. Every offset this file asserts
-   * (`fuel` at 8, `allow` at 16, `cap_call` at 48) is inside `context`, which
-   * is first, so growing the tail cannot move one. */
+  /* granted regions: appended LAST on purpose, for TWO reasons.
+   *
+   * The first is that every offset this file asserts (`fuel` at 8, `allow` at
+   * 16, `cap_call` at 48) is inside `context`, which is first, so growing the
+   * tail cannot move one.
+   *
+   * The second is the one that matters if something goes wrong. The pool is
+   * the only guest-WRITABLE arena a caller hands an address to, and it is the
+   * last thing in the mapping -- so a write past its end leaves the mapping
+   * and the supervisor reports a trap. Put it between `pairs` and `vectors`
+   * instead and the same write silently corrupts a handle table, which is a
+   * wrong answer rather than a stopped one. The emitted bounds check should
+   * make that unreachable; this is where it lands if it ever is not, and the
+   * `_Static_assert` below is what keeps a later field from being appended
+   * after it. */
   uint64_t region_used;
   uint64_t region_count;
   struct kexe_granted_region_v1 regions[KEXE_REGION_CAPACITY];
   uint8_t region_pool[KEXE_REGION_POOL_BYTES];
 };
 
+/* granted regions: the pool ends the mapping. A guest overrun must leave the
+ * mapping and trap, not reach a handle table -- so nothing may be appended
+ * after it, and this is the check rather than a comment saying so. */
+_Static_assert(offsetof(struct kexe_shared_v4, region_pool) +
+                   KEXE_REGION_POOL_BYTES == sizeof(struct kexe_shared_v4),
+               "region pool must be the last field of the shared mapping");
 _Static_assert(offsetof(struct kexe_context_v4, fuel) == 8, "fuel ABI drift");
 _Static_assert(offsetof(struct kexe_context_v4, allow) == 16, "allow ABI drift");
 _Static_assert(offsetof(struct kexe_context_v4, cap_call) == 48, "cap ABI drift");
