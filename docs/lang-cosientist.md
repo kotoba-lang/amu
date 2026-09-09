@@ -1225,3 +1225,78 @@ NOTE: shared checkout — local HEAD moved f282763e -> 71a5e5f3 during this tick
   check+compile+run=8 with no swaps; until then the t30-f indirect-constructor
   spelling stands as the measured current-language workaround for let-bound
   options (record for ledger owner).
+
+## Iteration 31 - lock-advance watch CONFIRMED: min/max green through DEFAULT bin/amu --jvm-free (no swaps) on amu origin/main a681d3f2; keys-route gap narrowed to typed-map-keys ALONE (wasm #76 landed nth) (2026-09-09, amu-lang-cosientist t32, amu origin/main a681d3f2 = sema pin 96fd4e19 (#77) + wasm pin 829966fd (#74+#75+#76) + osaho c24c92a1, dual-allowlist host :381-382)
+
+- Prior-tick note: /tmp/langcos/t31 probes (Sep 8 19:40-19:46, A/B classpath
+  matrix on typed-list nth) ran but the tick ended before any docs record.
+  Results corroborated this tick (B-form nth-i64 compile PASS +
+  B-t31-nth-i64.wasm artifact = reproduced independently as t32-k3 below);
+  no claims carried from the unreleased A/B labels.
+- Fleet state measured (gh/git):
+  - amu origin/main a681d3f2 (#894). deps-lock: sema 96fd4e19 ("Merge #77:
+    f64 constants", 2026-09-08T08:59Z), wasm 829966fd ("Merge PR #76:
+    typed-list-nth - list accessor on two conditionally imported intrinsics",
+    2026-09-08T09:31Z), osaho c24c92a1. => the iter-29 single-pin move
+    (wasm -> #74+#75 fixed emitter) LANDED on origin, plus #76.
+  - sema #70 (seq/remove) + #71 (some-thread canonical) STILL OPEN.
+    Pin 96fd4e19 content-verified NOT to contain them: grep "seq requires
+    exactly one" = 0; frontend.cljc:3633 still counter-derived
+    some-thread__N temp (pre-#71 shape).
+  - Local HEAD 249370c6 (spike/kbb-jvmfree-envread, shared checkout) still
+    carries OLD pins (sema bf01d4a8 / wasm cc23ea35) - origin is ahead;
+    local spike needs the rebase/merge like iters 29/30 noted.
+  - wasm tip e962341 = only "clojure.string retired for kotoba.lang.text"
+    after the pin (no emitter change in between: compare measured).
+- H-A (lock-advance watch, carried from iter 30 next): (min a b)/(max a b)
+  through the DEFAULT route, NO classpath swaps. Verdict CONFIRMED:
+  - check t27-mm-head.kotoba exit 0 (head t cid
+    bafyreifxnraihe5slxu4sml7lukwasbyx4qdd35d2nmtkaxtipvpf7uffm - identical
+    to iters 27/29), compile --target wasm32 exit 0 (385 bytes, 3
+    definitions recompiled, provenance + publication sidecars), RUN on the
+    origin worktree host main(0) = **8 ALL-OK**.
+  - hand twin control: check PASS + compile PASS (409 bytes) + run **8
+    ALL-OK**.
+  - => the iter-22/26/27/29 "min/max blocked on lock advance" row is CLOSED
+    on origin/main (local HEAD pending). Zero lang work; no timing claims.
+- H-B (gap re-classification, iter-19 3-gap model vs new pins): keys route
+  probes t32-k1..k11 (bin/amu check/compile --jvm-free, origin worktree):
+  - k3 nth on [:list :i64] literal (typed-list-new): check+compile PASS,
+    run = **20** (expect 20) -> #76's typed-list-nth lowering REAL.
+  - k6 nth on [:list :keyword] + keyword =: check+compile PASS, run = **1**.
+  - k11 (get m (nth (typed-list-new [:list :keyword] :a :b) 0)) full flow:
+    check+compile PASS, run = **1 ALL-OK** -> keyword carriers consumed by
+    typed-map get work END-TO-END today.
+  - BUT every map-DERIVED keys path still exit-70 fail-closed:
+    k1 (count (keys m)) "unsupported typed Wasm expression";
+    k7 (count (typed-map-keys ...)) same;
+    k2 (get m (nth (keys m) 0) 0) "typed Wasm operation is not qualified";
+    k10 typed-map-keys in fn-RETURN position (the iter-30
+    return-position-type trick) ALSO "not qualified" -> the gap is the
+    typed-map-keys op emit/qualification itself, not an infer-position
+    artifact.
+  - => iter-19 gap model refined: (2) list->consumers bridge now exists for
+    nth/get via #76 (k11 proves the route with a literal list); the SINGLE
+    remaining blocker for the keys+get reduce-kv route is typed-map-keys
+    wasm qualification. count-direct (iter 19 addendum) + loop plain-symbol
+    form (k8 check PASS; k4 typed-binding loop REJECT exit 65 "loop requires
+    an even vector of plain-symbol bindings" - new sharper diagnostic vs
+    iter-4's message) all fine.
+- Gate: check PASS x8 (head/hand/k1/k2/k3/k6/k7/k8/k10/k11) + compile PASS
+  x5 (head, hand, k3, k6, k11) + compile exit-70 fail-closed x4 (k1 k2 k7
+  k10, own diagnostics, no silent miscompile) + check exit-65 x1 (k4) +
+  run PASS x4 (8/8/20/1/1 ALL-OK). All --jvm-free nbb route, no JVM.
+  loadavg 85-170 - quiet gate NOT met; NO timing claims made
+  (perfgate N/A: correctness/coverage verification only; head-vs-hand wasm
+  differ by construction since #68 native heads, iter-27 note).
+- verdict: H-A CONFIRMED (min/max CLOSED on origin pins, measured
+  check+compile+run=8 with zero swaps - the iter-27/28/29 advance plan is
+  fully consumed). H-B CONFIRMED (gap narrowed from iter-19's 3 to ONE:
+  typed-map-keys wasm qualification; fix request refines the backend-owner
+  ask - #76 covered typed-list-nth but NOT typed-map-keys).
+- Next (1 hypothesis): after a typed-map-keys wasm qualification lands
+  (watch kotoba-wasm), re-run t32-k1/k2 through the default route expecting
+  compile PASS + run = 2/(value); if it lands, the reduce-kv hand twin
+  (count+nth+get loop, k8 shape) becomes mechanically compilable and gets
+  its first comparator-eligible runtime claim. Meanwhile #70/#71 merge
+  watch continues (pin 96fd4e19 content-verified without them).
