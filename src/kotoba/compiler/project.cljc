@@ -34,11 +34,20 @@
   smuggle a wider declaration in through the project path than it could
   through the single-module path.
 
-  Still not admitted here: `:schemas`. The frontend takes it, but linking
-  several modules' schema tables into one namespace needs a collision rule
-  for identically-named schemas across modules, which is a separate decision
-  from this one -- a project module that declares `:schemas` is still
-  rejected rather than silently having the clause dropped."
+  `:schemas` is admitted since 2026-09-09, with the collision rule this
+  docstring used to say was missing. It matters because records are how a
+  Kotoba function carries more than five arguments (`:max-parameters 5`), so
+  a library that does real work declares `:schemas` -- and while this clause
+  was refused, NOTHING COULD REQUIRE SUCH A LIBRARY. `kotoba-lang/pattern`'s
+  matcher and compiler are records throughout; a consumer had to compile them
+  separately and put the artifacts together in its host.
+
+  The rule: each module is analysed on its own, so a schema name is resolved
+  inside the module that declares it and never has to merge. What CAN go
+  wrong is two modules declaring the SAME NAME with DIFFERENT definitions and
+  passing values of it across the import boundary, so `link-source` refuses
+  that pair by name (identical definitions are fine, and are what a shared
+  schema looks like when two modules spell it the same way)."
   [forms]
   (let [ns-forms (filter #(and (seq? %) (= 'ns (first %))) forms)]
     (when-not (= 1 (count ns-forms))
@@ -51,12 +60,12 @@
         (reject! "invalid project namespace" {:namespace name}))
       (when (and docstring (> (count docstring) sema/max-namespace-docstring-chars))
         (reject! "namespace docstring exceeds admission limit" {:namespace name}))
-      (loop [remaining clauses exports nil requires [] capabilities nil]
+      (loop [remaining clauses exports nil requires [] capabilities nil schemas nil]
         (if-let [clause (first remaining)]
           (cond
             (and (seq? clause) (= :export (first clause)) (= 2 (count clause))
                  (vector? (second clause)) (nil? exports))
-            (recur (next remaining) (vec (second clause)) requires capabilities)
+            (recur (next remaining) (vec (second clause)) requires capabilities schemas)
 
             (and (seq? clause) (= :capabilities (first clause)) (= 2 (count clause))
                  (set? (second clause)) (nil? capabilities))
@@ -65,7 +74,15 @@
                         (not-every? #(and (keyword? %) (namespace %)) declared))
                 (reject! "namespace :capabilities must be a bounded set of namespaced keywords"
                          {:namespace name :capabilities declared}))
-              (recur (next remaining) exports requires declared))
+              (recur (next remaining) exports requires declared schemas))
+
+            (and (seq? clause) (= :schemas (first clause)) (= 2 (count clause))
+                 (map? (second clause)) (nil? schemas))
+            ;; Shape only, and the SAME shape the frontend admits: the table's
+            ;; contents are validated once, by the per-module analysis, which
+            ;; is where a schema graph is checked. Two validations of one table
+            ;; is how they drift apart.
+            (recur (next remaining) exports requires capabilities (second clause))
 
             (and (seq? clause) (= :require (first clause)))
             (let [parsed
@@ -78,10 +95,10 @@
                                      {:namespace name :spec spec}))
                           {:namespace (first spec) :alias (nth spec 2)})
                         (rest clause))]
-              (recur (next remaining) exports (into requires parsed) capabilities))
+              (recur (next remaining) exports (into requires parsed) capabilities schemas))
 
             :else
-            (reject! "only one :export, one :capabilities and alias-only :require clauses are admitted"
+            (reject! "only one :export, one :capabilities, one :schemas and alias-only :require clauses are admitted"
                      {:namespace name :clause clause}))
           (do
             (when-not (some? exports)
@@ -95,7 +112,25 @@
             ;; means "this module must use no capability at all". Collapsing
             ;; the two would silently turn the second into the first.
             {:namespace name :exports exports :requires requires
-             :capabilities capabilities}))))))
+             :capabilities capabilities :schemas schemas}))))))
+
+;; Each module is analysed on its own, so a schema name resolves inside the
+;; module that declares it and the tables never merge. What can still go wrong
+;; is two modules declaring the SAME NAME with DIFFERENT definitions and
+;; passing a value of it across the import boundary: both sides type-check
+;; locally and the linked call means something neither module wrote. Identical
+;; definitions are fine -- that is what a shared schema looks like when two
+;; modules spell it the same way -- so only a differing pair is refused, and
+;; the message names both modules rather than the name alone.
+(defn- reject-schema-collisions! [parsed]
+  (let [tables (into {} (map (fn [[name entry]] [name (get-in entry [:info :schemas])])) parsed)]
+    (doseq [[a table-a] tables
+            [schema definition] (or table-a {})
+            [b table-b] tables
+            :when (and (not= a b) (contains? (or table-b {}) schema))]
+      (when-not (= definition (get table-b schema))
+        (reject! "modules declare the same schema name with different definitions"
+                 {:schema schema :modules [a b]})))))
 
 (defn- without-requires [forms]
   (mapv (fn [form]
@@ -359,9 +394,17 @@
      (walk/postwalk (fn [x] (if (i64/bigint-value? x) (IntegerLiteral. (str x)) x))
                     form)))
 
+;; ⚠ `*print-namespace-maps*` is bound off here. A map whose keys are all
+;; namespaced with the same namespace prints as `#:x{:y 1}`, and the Kotoba
+;; reader has no `#:` dispatch -- it answers "unsupported reader dispatch".
+;; This module re-serialises every module's forms and reads them back, so any
+;; such map turns into a read failure attributed to the module. A `:schemas`
+;; table is exactly that shape: `{:sl/r [...]}` prints as `#:sl{:r [...]}`.
+;; Measured 2026-09-09; the round trip is one line in nbb.
 (defn- source-text [forms]
-  (str (str/join "\n" (map #(pr-str #?(:clj % :cljs (readable-integers %))) forms))
-       "\n"))
+  (binding [*print-namespace-maps* false]
+    (str (str/join "\n" (map #(pr-str #?(:clj % :cljs (readable-integers %))) forms))
+         "\n")))
 
 (defn- admit-project-forms!
   [forms counters]
@@ -677,6 +720,7 @@
                                          {:key declared :declared (:namespace info)}))
                               [declared {:forms forms :info info}])))
                      sources)
+        _ (reject-schema-collisions! parsed)
         visiting (volatile! #{}) linked (volatile! {}) order (volatile! [])
         edge-count (volatile! 0)]
     (letfn [(visit [name depth]
@@ -739,9 +783,23 @@
           ;; Nothing is weakened either way: the effects that policy and the
           ;; artifact's requiredCapabilities are computed from come from the
           ;; elaborated calls, not from this clause.
+          ;;
+          ;; `:schemas` goes the other way: the linked namespace MUST carry
+          ;; them. The emitted signatures reference schemas by name
+          ;; (`[:ref :sl/r]`), and a type naming a schema the namespace does
+          ;; not declare is refused with "value type references a schema
+          ;; outside the closed namespace table". Taking the union is safe
+          ;; because `reject-schema-collisions!` has already refused any name
+          ;; two modules define differently.
+          merged-schemas (reduce (fn [acc module]
+                                   (merge acc (get-in parsed [module :info :schemas])))
+                                 {} @order)
           linked-source
           (source-text
-           (into [(list 'ns root (list :export (vec (map first exports))))]
+           (into [(if (seq merged-schemas)
+                    (list 'ns root (list :export (vec (map first exports)))
+                          (list :schemas merged-schemas))
+                    (list 'ns root (list :export (vec (map first exports)))))]
                  (concat
                   (map (fn [{:keys [name params param-types result body
                                     callable-param-contracts callable-result-contract]}]

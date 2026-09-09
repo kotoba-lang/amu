@@ -17,6 +17,59 @@
      (:export [welcome]))
    (defn welcome [name :string] :string (text/greet name))")
 
+
+(def schema-lib-source
+  "(ns example.schema
+     (:export [thrice])
+     (:schemas {:sl/r [:record :sl/r [[:n :i64]]]}))
+   (defn thrice [x [:ref :sl/r]] :i64 (* 3 (record-get x :n)))")
+
+(def schema-app-source
+  "(ns example.schema-app
+     (:require [example.schema :as s])
+     (:export [main])
+     (:schemas {:sl/r [:record :sl/r [[:n :i64]]]}))
+   (defn main [] :i64 (s/thrice (record-new [:ref :sl/r] 3)))")
+
+(def schema-conflict-source
+  "(ns example.schema-app
+     (:require [example.schema :as s])
+     (:export [main])
+     (:schemas {:sl/r [:record :sl/r [[:n :i64] [:extra :i64]]]}))
+   (defn main [] :i64 (s/thrice (record-new [:ref :sl/r] 3 4)))")
+
+(deftest project-admits-schemas-and-links-the-merged-table
+  ;; Records are how a Kotoba function carries more than five arguments
+  ;; (:max-parameters 5), so a library that does real work declares :schemas --
+  ;; and while the project path refused the clause, nothing could require such
+  ;; a library at all.  The linked namespace is compiled as ONE module, so it
+  ;; has to carry the union of the modules' tables or its own emitted
+  ;; signatures name a schema outside the closed namespace table.
+  (let [sources {'example.schema-app schema-app-source
+                 'example.schema schema-lib-source}
+        {:keys [source modules]} (project/link-source sources 'example.schema-app)
+        compiled (compiler/compile-project sources 'example.schema-app :js-kotoba-v1)]
+    (is (= #{'example.schema 'example.schema-app} modules))
+    (is (str/includes? source ":schemas"))
+    (is (str/includes? source "[:record :sl/r [[:n :i64]]]"))
+    ;; ...and NOT as a namespaced map literal, which the Kotoba reader has no
+    ;; `#:` dispatch for -- it answers "unsupported reader dispatch" and the
+    ;; round trip fails as a read error attributed to the module.
+    (is (not (str/includes? source "#:sl{")))
+    (is (= 9 (ir/execute (:kir compiled) 'main [])))))
+
+(deftest project-refuses-one-schema-name-defined-two-ways
+  ;; Merging the tables is only safe because the union cannot be ambiguous.
+  (let [thrown (try (project/link-source {'example.schema-app schema-conflict-source
+                                          'example.schema schema-lib-source}
+                                         'example.schema-app)
+                    nil
+                    (catch clojure.lang.ExceptionInfo error error))]
+    (is (some? thrown))
+    (is (str/includes? (ex-message thrown)
+                       "modules declare the same schema name with different definitions"))
+    (is (= :sl/r (:schema (ex-data thrown))))))
+
 (deftest closed-project-links-exported-functions
   (let [{:keys [source module-order modules]}
         (project/link-source {'example.app app-source 'example.text text-source} 'example.app)
@@ -500,14 +553,28 @@
                               "(:capabilities #{:ui/commit})"
                               "(:capabilities #{:ui/commit}) (:capabilities #{:ui/commit})"))
           'caps.app))))
-  (testing ":schemas remains rejected in project mode rather than silently dropped"
+  (testing ":schemas is carried into the linked namespace, not silently dropped"
+    ;; Until 2026-09-09 this clause was refused outright, and the refusal was
+    ;; deliberate: dropping a schema table quietly would have compiled the
+    ;; module against types it never declared. Admitting it is only safe
+    ;; because the linker merges the tables and refuses a collision, so the
+    ;; assertion moved from "refused" to "present in the output".
+    (let [{:keys [source]}
+          (project/link-source
+           (assoc caps-sources 'caps.render
+                  (str/replace commit-source
+                               "(:capabilities #{:ui/commit})"
+                               "(:capabilities #{:ui/commit}) (:schemas {:caps/r [:record :caps/r [[:n :i64]]]})"))
+           'caps.app)]
+      (is (str/includes? source "[:record :caps/r [[:n :i64]]]"))))
+  (testing "at most one :schemas clause"
     (is (thrown-with-msg?
          clojure.lang.ExceptionInfo #"are admitted"
          (project/link-source
           (assoc caps-sources 'caps.render
                  (str/replace commit-source
                               "(:capabilities #{:ui/commit})"
-                              "(:capabilities #{:ui/commit}) (:schemas {})"))
+                              "(:capabilities #{:ui/commit}) (:schemas {}) (:schemas {})"))
           'caps.app)))))
 
 ;; ---------------------------------------------------------------------------
