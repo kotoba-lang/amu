@@ -394,9 +394,17 @@
      (walk/postwalk (fn [x] (if (i64/bigint-value? x) (IntegerLiteral. (str x)) x))
                     form)))
 
+;; ⚠ `*print-namespace-maps*` is bound off here. A map whose keys are all
+;; namespaced with the same namespace prints as `#:x{:y 1}`, and the Kotoba
+;; reader has no `#:` dispatch -- it answers "unsupported reader dispatch".
+;; This module re-serialises every module's forms and reads them back, so any
+;; such map turns into a read failure attributed to the module. A `:schemas`
+;; table is exactly that shape: `{:sl/r [...]}` prints as `#:sl{:r [...]}`.
+;; Measured 2026-09-09; the round trip is one line in nbb.
 (defn- source-text [forms]
-  (str (str/join "\n" (map #(pr-str #?(:clj % :cljs (readable-integers %))) forms))
-       "\n"))
+  (binding [*print-namespace-maps* false]
+    (str (str/join "\n" (map #(pr-str #?(:clj % :cljs (readable-integers %))) forms))
+         "\n")))
 
 (defn- admit-project-forms!
   [forms counters]
@@ -775,9 +783,22 @@
           ;; Nothing is weakened either way: the effects that policy and the
           ;; artifact's requiredCapabilities are computed from come from the
           ;; elaborated calls, not from this clause.
+;; Unlike `:capabilities`, the linked namespace MUST carry the schemas: the
+          ;; emitted signatures reference them by name (`[:ref :sl/r]`), and a
+          ;; type that names a schema the namespace does not declare is
+          ;; refused with "value type references a schema outside the closed
+          ;; namespace table". The union is safe because
+          ;; `reject-schema-collisions!` has already refused any name two
+          ;; modules define differently.
+          merged-schemas (reduce (fn [acc module]
+                                   (merge acc (get-in parsed [module :info :schemas])))
+                                 {} @order)
           linked-source
           (source-text
-           (into [(list 'ns root (list :export (vec (map first exports))))]
+           (into [(if (seq merged-schemas)
+                    (list 'ns root (list :export (vec (map first exports)))
+                          (list :schemas merged-schemas))
+                    (list 'ns root (list :export (vec (map first exports)))))]
                  (concat
                   (map (fn [{:keys [name params param-types result body
                                     callable-param-contracts callable-result-contract]}]

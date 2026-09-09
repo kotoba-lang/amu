@@ -17,6 +17,59 @@
      (:export [welcome]))
    (defn welcome [name :string] :string (text/greet name))")
 
+
+(def schema-lib-source
+  "(ns example.schema
+     (:export [thrice])
+     (:schemas {:sl/r [:record :sl/r [[:n :i64]]]}))
+   (defn thrice [x [:ref :sl/r]] :i64 (* 3 (record-get x :n)))")
+
+(def schema-app-source
+  "(ns example.schema-app
+     (:require [example.schema :as s])
+     (:export [triple])
+     (:schemas {:sl/r [:record :sl/r [[:n :i64]]]}))
+   (defn triple [x [:ref :sl/r]] :i64 (s/thrice x))")
+
+(def schema-conflict-source
+  "(ns example.schema-app
+     (:require [example.schema :as s])
+     (:export [triple])
+     (:schemas {:sl/r [:record :sl/r [[:n :i64] [:extra :i64]]]}))
+   (defn triple [x [:ref :sl/r]] :i64 (s/thrice x))")
+
+(deftest project-admits-schemas-and-links-the-tables
+  ;; Records are how a Kotoba function carries more than five arguments, so a
+  ;; library that does real work declares :schemas -- and while the project
+  ;; path refused the clause, nothing could require such a library at all.
+  (let [{:keys [source modules]}
+        (project/link-source {'example.schema-app schema-app-source
+                              'example.schema schema-lib-source}
+                             'example.schema-app)]
+    (is (= #{'example.schema 'example.schema-app} modules))
+    ;; the linked namespace carries the union: its own signatures name the
+    ;; schema, and a type naming a schema the namespace does not declare is
+    ;; refused
+    (is (str/includes? source ":schemas"))
+    (is (str/includes? source ":sl/r"))
+    ;; ...and NOT as a namespaced map literal, which the Kotoba reader has no
+    ;; dispatch for
+    (is (not (str/includes? source "#:sl{")))
+    (is (= 9 (:value (ir/execute (compiler/compile-source source :kir-v4)
+                                 'triple
+                                 [{:kotoba/record :sl/r :n 3}]))))))
+
+(deftest project-refuses-one-schema-name-defined-two-ways
+  (let [thrown (try (project/link-source {'example.schema-app schema-conflict-source
+                                          'example.schema schema-lib-source}
+                                         'example.schema-app)
+                    nil
+                    (catch clojure.lang.ExceptionInfo error error))]
+    (is (some? thrown))
+    (is (str/includes? (ex-message thrown)
+                       "modules declare the same schema name with different definitions"))
+    (is (= :sl/r (:schema (ex-data thrown))))))
+
 (deftest closed-project-links-exported-functions
   (let [{:keys [source module-order modules]}
         (project/link-source {'example.app app-source 'example.text text-source} 'example.app)
