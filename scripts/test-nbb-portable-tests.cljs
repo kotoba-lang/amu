@@ -1,0 +1,45 @@
+(ns scripts.test-nbb-portable-tests
+  "Launcher for `test/nbb/portable-tests.cljs`.
+
+  Unlike its siblings this one resolves the classpath with
+  `scripts/print-classpath.cljs` rather than `clojure -Spath -M:test`. The
+  repository's stated exit is a native binary with no Clojure installed and
+  its Q9 acceptance path is JVM-free, so a JVM-free suite whose LAUNCHER
+  starts a JVM is only half the claim. `print-classpath.cljs` reads
+  `deps-lock.edn`, which is what `bin/amu` itself uses.
+
+  `test/` is added explicitly: the lock resolves production sources and
+  dependencies, deliberately, and these tests live outside that."
+  (:require [scripts.lib :as lib]
+            ["node:child_process" :as child]
+            ["node:path" :as path]))
+
+(let [nbb-cli (lib/join lib/root "node_modules" "nbb" "cli.js")
+      resolved (.spawnSync child js/process.execPath
+                           (clj->js [nbb-cli "--classpath" (lib/join lib/root "src")
+                                     (lib/join lib/root "scripts" "print-classpath.cljs")
+                                     lib/root])
+                           #js {:encoding "utf8" :cwd lib/root :env js/process.env})
+      _ (when-not (zero? (or (.-status resolved) 70))
+          (println "test-nbb-portable-tests: could not resolve a classpath")
+          (println (.-stderr resolved))
+          (.exit js/process 70))
+      entries (->> (.split (.trim (or (.-stdout resolved) "")) "\n")
+                   (remove empty?))
+      _ (when (empty? entries)
+          ;; The evidence floor for the launcher: an empty classpath would let
+          ;; nbb start and every require fail, and a suite that could not load
+          ;; must not answer like a suite that passed.
+          (println "test-nbb-portable-tests: classpath resolved to zero entries")
+          (.exit js/process 70))
+      classpath (.join (clj->js (concat [(lib/join lib/root "src")
+                                         (lib/join lib/root "resources")
+                                         (lib/join lib/root "test")]
+                                        entries))
+                       (.-delimiter path))
+      result (.spawnSync child js/process.execPath
+                         (clj->js [nbb-cli "--classpath" classpath
+                                   (lib/join lib/root "test" "nbb" "portable-tests.cljs")])
+                         #js {:cwd lib/root :stdio "inherit" :env js/process.env})]
+  (when (.-error result) (throw (.-error result)))
+  (.exit js/process (or (.-status result) 70)))
