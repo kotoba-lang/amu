@@ -1,0 +1,50 @@
+;; J-C pre-pricing samples: 2 process-cold runs x (nbb slope.cljs 200 9)
+;; per spelling, on benjamin 2026-09-09 11:48-11:49 JST, load1 2.65-2.96
+;; on 10 cores, 0 users, node v26.5.0, nbb 1.5.211.
+;; Crossings counted on-node first (load-independent):
+;;   wasmvec (self-rec): touch 2.032 / base 1.032 / noref 0 crossings/elem
+;;   wasmloop (loop/recur): touch 1.032 / base 0.016 / noref 0 crossings/elem
+;; checksums verified by slope.cljs itself against kotoba.kir expectations
+;; (exit 0 on every run; any mismatch would exit 3).
+{:host "benjamin"
+ :gate [{:probe "11:48" :load1 2.96 :load5 2.18 :load15 1.82 :users 0}
+        {:probe "11:49" :load1 2.75 :load5 2.26 :load15 1.88 :users 0}]
+ :fixtures {:wasmvec "66c78038ba108509c3f1b4fda3f97193e27f9a564d3e73a97e3002b949fef515"
+            :wasmloop "ef5261dec673c077692da2f4022f051221228226c9e1e4de949f4a5f0a61edc5"}
+ :runs
+ [{:svec-touch 664.573974609375 :svec-base 304.75341796875 :svec-noref 4.1064453125
+   :loop-touch 349.11376953125 :loop-base 4.676513671875 :loop-noref -0.726318359375}
+  {:svec-touch 648.73779296875 :svec-base 314.31884765625 :svec-noref 4.615478515625
+   :loop-touch 351.036376953125 :loop-base 5.2783203125 :loop-noref 0.3515625}
+  {:svec-touch 650.1953125 :svec-base 314.46533203125 :svec-noref 4.664306640625
+   :loop-touch 351.51611328125 :loop-base 5.10498046875 :loop-noref 0.394287109375}
+  {:svec-touch 663.343505859375 :svec-base 314.810791015625 :svec-noref 4.970703125
+   :loop-touch 347.066650390625 :loop-base 5.218505859375 :loop-noref 0.247802734375}
+  {:svec-touch 667.584228515625 :svec-base 317.724609375 :svec-noref 4.998779296875
+   :loop-touch 341.11572265625 :loop-base 5.13427734375 :loop-noref 0.242919921875}
+  {:svec-touch 658.5888671875 :svec-base 318.187255859375 :svec-noref 4.99755859375
+   :loop-touch 355.3564453125 :loop-base 4.95849609375 :loop-noref 0.250244140625}
+  {:svec-touch 664.488525390625 :svec-base 324.290771484375 :svec-noref 5.025634765625
+   :loop-touch 348.885498046875 :loop-base 5.015869140625 :loop-noref 0.22216796875}
+  {:svec-touch 660.296630859375 :svec-base 326.871337890625 :svec-noref 4.9755859375
+   :loop-touch 338.61328125 :loop-base 4.99755859375 :loop-noref 0.244140625}
+  {:svec-touch 651.787109375 :svec-base 322.799072265625 :svec-noref 5.05126953125
+   :loop-touch 346.5869140625 :loop-base 5.09521484375 :loop-noref 0.24169921875}
+  {:svec-touch 658.406982421875 :svec-base 319.0283203125 :svec-noref 4.02099609375
+   :loop-touch 336.929931640625 :loop-base 4.786376953125 :loop-noref 0.05615234375}
+  {:svec-touch 656.23291015625 :svec-base 324.8095703125 :svec-noref 4.757080078125
+   :loop-touch 351.781005859375 :loop-base 5.2490234375 :loop-noref 0.345458984375}
+  {:svec-touch 653.262939453125 :svec-base 314.54833984375 :svec-noref 5.009765625
+   :loop-touch 336.402587890625 :loop-base 5.02197265625 :loop-noref 0.408935546875}
+  {:svec-touch 647.50732421875 :svec-base 319.18212890625 :svec-noref 4.979248046875
+   :loop-touch 345.479736328125 :loop-base 5.13671875 :loop-noref 0.213623046875}
+  {:svec-touch 665.830078125 :svec-base 321.787109375 :svec-noref 5.03173828125
+   :loop-touch 341.651611328125 :loop-base 5.08544921875 :loop-noref 0.267333984375}
+  {:svec-touch 663.2470703125 :svec-base 327.608642578125 :svec-noref 5.009765625
+   :loop-touch 341.278076171875 :loop-base 5.11962890625 :loop-noref 0.21484375}
+  {:svec-touch 677.957763671875 :svec-base 327.318115234375 :svec-noref 5.17333984375
+   :loop-touch 353.009033203125 :loop-base 5.02685546875 :loop-noref 0.223388671875}
+  {:svec-touch 659.346923828125 :svec-base 320.1416015625 :svec-noref 5.0048828125
+   :loop-touch 344.307861328125 :loop-base 4.90478515625 :loop-noref 0.2392578125}
+  {:svec-touch 660.8642578125 :svec-base 322.591552734375 :svec-noref 5.006103515625
+   :loop-touch 353.941650390625 :loop-base 5.013427734375 :loop-noref 0.213623046875}]}

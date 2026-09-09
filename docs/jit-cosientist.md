@@ -490,3 +490,37 @@ approval**. Current verdicts above are diagnostics, not claims.
   NOT a compiler edit; (3) J-C (host-crossing JIT inlining) still untouched
   — H-Y1's 2.03 crossings/element needs a benjamin re-measure before any
   inlining hypothesis can be priced.
+
+- 2026-09-09 11:44–11:55 JST tick 32 (JIT): **J-C FIRST MEASURED VERDICT — host
+  crossing priced at quiet quality on benjamin (ADR 0347).** Workstation quiet
+  gate failed again (11:43: load1 13.5–37.3 on 10 CPUs, iostat idle 40–54%,
+  never >=90%); benjamin gate met (load1 2.0–3.0 on 10 cores, 0 users, before
+  and after). Fixtures compiled fresh this tick on the workstation
+  (wasmvec.kotoba.wasm 66c78038...fef515, wasmloop.kotoba.wasm
+  ef5261de...61edc5, `bin/amu compile --target wasm32`, sha-verified on-node
+  after scp). Crossings recounted on-node: wasmvec touch 2.032 / base 1.032 /
+  noref 0; wasmloop touch 1.032 / base 0.016 / noref 0 crossings/element —
+  exact ADR 0285 reproduction. Timings: nbb slope.cljs 200 9 x2 process-cold
+  runs per spelling (CPU-time slope A=200 vs 2A, warmup cancels; arms
+  interleaved; every return checksum-verified vs kotoba.kir inside the script).
+  perfgate.core/qualify ON benjamin (route bench/bulk-carrier/jc_qualify.clj,
+  raw samples jc_crossing_benjamin_t32.edn, n=18/arm):
+    loop/recur touch vs self-rec touch:   +47.49% QUALIFIED, separated (gap 313.23 vs summed-stdev 13.57)
+    loop/recur carry vs self-rec carry:   +98.42% QUALIFIED, separated (gap 314.69 vs 5.99)
+    noref CONTROL:                        NOT qualified (:too-noisy, 4.9/0.2 ns residue, rel-stdev 1.21 — expected: zero crossings both arms, codegen shape the counts do not govern)
+  rel-stdevs 0.011–0.030 on priced arms. Reading: the per-iteration
+  typed-assert-ref crossing is ~47.5% of the touched element and ~98% of a
+  carry-only loop; J-C as originally framed ("JIT-side inlining removes it") is
+  MISPRICED — the measured removal mechanism is the loop-spelling's
+  prologue-once structure, a frontend/codegen widening (ADR 0285's open
+  follow-up), not a host-JIT change; measured ceiling ~47% of element cost on
+  this fixture, an order above the 5% bar. Status re-scope of J-C belongs to
+  amu-rank. No compiler change, no sealed claim, perfgate untouched, JIT-axis
+  policy note unchanged (slope method needs no warmup boundary decision — the
+  warmup cancels between slope terms). Node scratch kept at benjamin:~/jc_t32.
+  Next tick: (1) await/consume amu-rank's J-B2 promotion decision; if promoted,
+  first falsify step is a hand-patch of the collections walk loop predicting
+  >=5% separated via perfgate on benjamin — NOT a compiler edit; (2) J-C
+  follow-up candidate for rank: price the residual 1.032 crossing/element
+  (`vector-at` itself) the same way (gen_slice_wasm.cljs hand-wasm arm vs
+  loop-touch) to bound what widening alone cannot remove.
