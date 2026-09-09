@@ -647,8 +647,22 @@
             ;; returned 18 and QEMU exited 37. Appending here leaves every
             ;; existing offset untouched and costs only the derived offsets
             ;; below, which are already derived.
-            loader-text-offset (align (+ memory-map-offset memory-map-capacity) 16)
-            embedded-offset (align (+ loader-text-offset 16) 16)
+            ;; INSIDE the map window, in its last 16 bytes -- not after it.
+            ;;
+            ;; After it, boot-info grows past 16480 and the guest's own
+            ;; accessor cannot reach the field: `load64-boot` bounds every read
+            ;; at 96 and a widened copy bounded at 16496 HANGS, measured
+            ;; 2026-09-09 (debugcon `PSTCMa`: the marker before the read
+            ;; printed, the one after it did not). 16480 is the span the guest
+            ;; already asserts when it takes the map as a subregion, so a field
+            ;; inside it needs no new bound and no ABI change.
+            ;;
+            ;; The map never fills its window: the capacity is 16 KiB and the
+            ;; firmware's map is a few KiB. The guest already refuses a map
+            ;; larger than the capacity; it now refuses one that would reach
+            ;; these 16 bytes.
+            loader-text-offset (- (+ memory-map-offset memory-map-capacity) 16)
+            embedded-offset (align (+ memory-map-offset memory-map-capacity) 16)
             payload-offset embedded-offset
             kernel-offset (align (+ payload-offset (count payload)) 16)
             status-prefix "AIUEOS K16 PREFLIGHT STATUS "
@@ -774,14 +788,9 @@
                               (when payload? (repeat 16 0))
                               (repeat (- memory-map-offset variables-size) 0)
                               (repeat memory-map-capacity 0)
-                              (repeat (- loader-text-offset
-                                         (+ memory-map-offset memory-map-capacity)) 0)
-                              ;; the loader's own text address, written at
-                              ;; runtime -- UEFI chooses it, so nothing earlier
-                              ;; can know it
-                              (repeat 16 0)
                               (repeat (- embedded-offset
-                                         (+ loader-text-offset 16)) 0)
+                                         (+ memory-map-offset
+                                            memory-map-capacity)) 0)
                               payload
                               (repeat (- kernel-offset
                                          (+ payload-offset (count payload))) 0)
@@ -869,6 +878,10 @@
         {:format :pe32+-embedded-kernel/v3 :target firmware-target
          :entry :efi_main :entry-rva text-rva :sections [:text :data :reloc]
          :boot-info-layout (cond->
+                            ;; +16 for the loader-text slot that follows the
+                            ;; map. The guest bounds every boot-info read by
+                            ;; this span, so a field it cannot include is a
+                            ;; field it cannot read.
                             {:bytes (+ (- memory-map-offset 16)
                                        memory-map-capacity (count payload))
                              :memory-map-offset (- memory-map-offset 16)
