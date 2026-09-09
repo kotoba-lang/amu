@@ -390,8 +390,26 @@ static int64_t checked_cap_call(struct kexe_context_v4 *context,
 static int64_t checked_pair_new(struct kexe_context_v4 *context,
                                 int64_t first, int64_t second) {
   struct kexe_shared_v4 *shared = (struct kexe_shared_v4 *)context;
+/* Every allocation site bounds the index against the ARRAY as well as the
+ * budget, and the second half is not redundant belt-and-braces -- it is what
+ * makes the invariant LOCAL.
+ *
+ * While the bound was a compile-time constant the compiler could prove
+ * `index < KEXE_PAIR_CAPACITY` from the guard and the write was obviously in
+ * range. A runtime budget it cannot prove anything about, so gcc on the CI
+ * runners refused the file:
+ *
+ *   kexe_loader.c:401: error: writing 1 byte into a region of size 0
+ *   [-Werror=stringop-overflow=]
+ *
+ * The budget is validated against KEXE_PAIR_MAX once at startup, so this
+ * adds no behaviour -- it moves that fact to where the write is, which is
+ * where the compiler is looking. Clang (macOS, and every local build here)
+ * did not warn, so this was invisible until CI compiled it with
+ * -Wall -Wextra -Werror. */
   if (context == NULL || context->version != 4 ||
-      shared->pair_used >= kexe_pair_budget) {
+      shared->pair_used >= kexe_pair_budget ||
+      shared->pair_used >= KEXE_PAIR_MAX) {
     raise(SIGILL);
     return 0;
   }
@@ -786,7 +804,8 @@ static int hex_nibble(char value) {
 
 static int allocate_host_pair(struct kexe_shared_v4 *shared,
                               int64_t first, int64_t second, int64_t *handle) {
-  if (shared->pair_used >= kexe_pair_budget) return -1;
+  if (shared->pair_used >= kexe_pair_budget ||
+      shared->pair_used >= KEXE_PAIR_MAX) return -1;
   uint64_t index = shared->pair_used++;
   shared->pairs[index].first = first;
   shared->pairs[index].second = second;
@@ -859,7 +878,8 @@ static int parse_guest_arg(struct kexe_shared_v4 *shared,
       cursor = end + 1;
       if (*cursor == '\0') return -1;
     }
-    if (count > kexe_pair_budget - shared->pair_used) return -1;
+    if (count > kexe_pair_budget - shared->pair_used ||
+        count > KEXE_PAIR_MAX - shared->pair_used) return -1;
     int64_t handle = 0;
     for (uint64_t i = count; i > 0; i--) {
       uint64_t index = shared->pair_used++;
@@ -923,7 +943,9 @@ static int parse_guest_arg(struct kexe_shared_v4 *shared,
   if ((digits & 1u) != 0) return -1;
   uint64_t length = (uint64_t)(digits / 2u);
   if (length > kexe_string_pool_budget - shared->string_pool_used ||
-      shared->pair_used >= kexe_pair_budget) return -1;
+      length > KEXE_STRING_POOL_MAX - shared->string_pool_used ||
+      shared->pair_used >= kexe_pair_budget ||
+      shared->pair_used >= KEXE_PAIR_MAX) return -1;
   for (size_t i = 0; i < digits; i++) {
     if (hex_nibble(hex[i]) < 0) return -1;
   }
@@ -1130,7 +1152,8 @@ static int read_string_handle(struct kexe_context_v4 *context, int64_t value,
 static int64_t intern_utf8(struct kexe_context_v4 *context,
                            const uint8_t *bytes, uint64_t length) {
   struct kexe_shared_v4 *shared = (struct kexe_shared_v4 *)context;
-  if (shared->string_pool_used + length > kexe_string_pool_budget) {
+  if (shared->string_pool_used + length > kexe_string_pool_budget ||
+      shared->string_pool_used + length > KEXE_STRING_POOL_MAX) {
     raise(SIGILL);
     return 0;
   }

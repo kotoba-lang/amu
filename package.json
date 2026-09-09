@@ -38,6 +38,8 @@
     "test-postalloc-scheduling-benchmark": "node scripts/test-postalloc-scheduling-benchmark.mjs",
     "test-clean-clone-cli": "nbb scripts/test-clean-clone-cli.cljs",
     "test-jdk-free-native": "nbb scripts/jdk-free-native-conformance.cljs",
+    "_comment-loader-warnings": "The loader is compiled by CI with -Wall -Wextra -Werror and by hand, locally, without them. A gcc-only -Wstringop-overflow error reached main-blocking CI that way; this target is the same command, so the difference between a local build and the one that gates a merge is one npm run rather than a memory.",
+    "test-loader-warnings": "cc -std=c11 -O2 -Wall -Wextra -Werror tools/kexe_loader.c -o /tmp/kexe-loader-warncheck && echo loader compiles clean under the flags CI uses",
     "test-native-route-parity": "nbb scripts/native-route-parity.cljs",
     "lock-classpath": "nbb scripts/lock-classpath.cljs",
     "test-nbb-clock-transport": "nbb --classpath . scripts/test-nbb-clock-transport.cljs",
