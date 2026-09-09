@@ -59,6 +59,9 @@
       ;; the loader's own default, so a command packaged without asking is
       ;; bounded exactly as a loader invocation is.
       pool (or (opt "--string-pool") "65536")
+      ;; Fuel, the fourth and last thing a caller could still have chosen on
+      ;; the command's behalf. Default is the loader's own 512.
+      fuel (or (opt "--fuel") "512")
       cc (or (opt "--cc") (.-CC js/process.env) "cc")
       ;; nbb puts the script path at argv[2]; the loader source is its
       ;; sibling, so the packager works from any working directory.
@@ -70,6 +73,8 @@
   (when-not (re-matches #"[0-9]+" (str offset)) (die "--offset must be a decimal"))
   (when-not (re-matches #"[1-9][0-9]*" (str pool))
     (die "--string-pool must be a positive decimal"))
+  (when-not (re-matches #"[1-9][0-9]*" (str fuel))
+    (die "--fuel must be a positive decimal"))
   ;; The allow list is copied through verbatim and re-parsed by the loader's
   ;; own parse_allow at run time; refusing anything but the two shapes it
   ;; accepts here keeps a typo from becoming a C string that fails closed at
@@ -103,6 +108,7 @@
                     "#define KEXE_EMBEDDED_SCOPE35 \"" fs-scope "\"\n"
                     "#define KEXE_EMBEDDED_SCOPE34 \"" browse-scope "\"\n"
                     "#define KEXE_EMBEDDED_STRING_POOL " pool "u\n"
+                    "#define KEXE_EMBEDDED_FUEL " fuel "u\n"
                     "static const unsigned char kexe_embedded_code[" n "] = {\n"
                     rows "\n};\n")
         dir (.mkdtempSync fs (.join path (.tmpdir os) "kexe-package-"))
@@ -117,5 +123,5 @@
         (do (.chmodSync fs out 0755)
             (println (pr-str {:ok true :output out :code-bytes n
                               :offset (js/parseInt offset 10) :isa isa :allow allow
-                              :fs-scope fs-scope :browse-scope browse-scope :string-pool pool
+                              :fs-scope fs-scope :browse-scope browse-scope :string-pool pool :fuel fuel
                               :size (.-size (.statSync fs out))})))))))

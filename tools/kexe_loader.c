@@ -3060,6 +3060,14 @@ int main(int argc, char **argv) {
    * a run costs the whole mapping; without it, a run that allocates 64 KiB
    * faults 64 KiB. */
   shared->context.version = 4;
+#ifdef KEXE_EMBEDDED
+  /* Fuel is a constant of a packaged command for the same reason its grant,
+   * its scopes and its string arena are: a caller that could raise the fuel
+   * through the environment would be choosing the command's resource bound
+   * on its behalf. This was the last of the four still readable from
+   * outside. */
+  kexe_initial_fuel = KEXE_EMBEDDED_FUEL;
+#else
   const char *fuel_env = getenv("KEXE_FUEL");
   if (fuel_env != NULL && fuel_env[0] != '\0') {
     if (parse_u64(fuel_env, &kexe_initial_fuel) != 0 || kexe_initial_fuel == 0) {
@@ -3067,6 +3075,7 @@ int main(int argc, char **argv) {
       return 2;
     }
   }
+#endif
   /* The string arena budget, in force for this run only. Same shape as
    * KEXE_FUEL above: absent means the default, present means a positive
    * decimal, and anything else is refused BEFORE the guest starts rather
