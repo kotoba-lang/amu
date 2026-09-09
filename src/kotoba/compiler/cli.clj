@@ -765,7 +765,8 @@
       (verifier/verify-artifact! artifact)
       (println (pr-str {:ok true :verified true :target (:target artifact)})))
     "extract-native"
-    (let [artifact (bounded-edn/read-file (second args))
+    (let [artifact (source-path/admit-native-artifact!
+                    (bounded-edn/read-file (second args)) (second args))
           symbol (symbol (or (option args "--symbol") "main"))
           output (or (option args "--output") "program.bin")
           _ (verifier/verify-artifact! artifact)
