@@ -169,22 +169,52 @@
                      ".catch(e=>{console.error(e);process.exit(70)})"))]
     (is (zero? (:exit result)) (:err result))))
 
+(def ^:private f64-record-source
+  ;; A record FIELD of f64. `native-word-field-types`'s reason still holds
+  ;; here: a field would have to say which width its one word carries, and no
+  ;; field's declared type is read at runtime.
+  (str "(ns pilot.f64-record (:export [x])) "
+       "(defn x [p [:record :pilot/point [[:x :f64]]]] :i64 "
+       "  (f64-to-bits (record-get [:record :pilot/point [[:x :f64]]] p :x)))"))
+
+(def ^:private f32-signature-source
+  ;; :f32 in a signature. One word, same argument as :f64 -- and deliberately
+  ;; NOT admitted, because only :f64 was measured end to end. An admission is
+  ;; a claim about what a backend lowers, not about what an argument covers.
+  (str "(ns pilot.f32-sig (:export [add2])) "
+       "(defn add2 [x :f32 y :f32] :f32 (f32-add x y))"))
+
 (deftest f64-native-targets-fail-closed
-  (testing "f64 as a DECLARED TYPE is not lowered through the i64 native ABI"
-    ;; `source` puts f64 in signatures -- vectors and records of f64 crossing
-    ;; the boundary -- for which native has no value representation. That is
-    ;; still refused, which is the property this test exists to pin.
+  (testing "what native still refuses, with a fixture that actually shows it"
+    ;; ⚠ This test used to compile `source` -- plain f64 SCALAR signatures --
+    ;; and assert a throw, while its comment said the property was about
+    ;; "vectors and records of f64 crossing the boundary". The fixture had
+    ;; neither. The gate it was really hitting was the scalar signature, and
+    ;; that gate opened on 2026-09-09 (osaho 74426bad, kotoba-verifier
+    ;; 39db2f3f): the width IS the declared type in a signature, read at
+    ;; compile time by both sides, so the reason a FIELD is refused does not
+    ;; reach it.
     ;;
-    ;; The message moved. Native gained f64 SCALAR arithmetic
-    ;; (ADR-2608030300), so this no longer stops at the floating-point target
-    ;; gate; it stops one gate later at the typed-value slice, which is the
-    ;; gate that actually knows native has no f64 aggregate representation.
-    ;; Asserting the refusal rather than its wording keeps the invariant and
-    ;; stops the test pinning which gate happens to catch it.
+    ;; So the invariant is kept and the fixtures now demonstrate it. Both of
+    ;; these are refused, and each for a reason that is written down where the
+    ;; refusal lives.
     (is (thrown? clojure.lang.ExceptionInfo
-                 (compiler/compile-source source :x86_64-kotoba-v1)))
+                 (compiler/compile-source f64-record-source :x86_64-kotoba-v1)))
     (is (thrown? clojure.lang.ExceptionInfo
-                 (compiler/compile-source source :aarch64-kotoba-v1)))))
+                 (compiler/compile-source f64-record-source :aarch64-kotoba-v1)))
+    (is (thrown? clojure.lang.ExceptionInfo
+                 (compiler/compile-source f32-signature-source :x86_64-kotoba-v1)))
+    (is (thrown? clojure.lang.ExceptionInfo
+                 (compiler/compile-source f32-signature-source :aarch64-kotoba-v1)))))
+
+(deftest f64-scalar-signatures-reach-native
+  (testing "a native function may DECLARE that it takes and returns an f64"
+    ;; The other half of the change above, and the reason it was worth making:
+    ;; every float kernel in this workspace is written through f64-from-bits
+    ;; because this was the shape the boundary would not carry.
+    ;; kotoba-lang/aiueos's qwen35 kernels included.
+    (doseq [target [:x86_64-kotoba-v1 :aarch64-kotoba-v1]]
+      (is (some? (compiler/compile-source source target)) (str target)))))
 
 (deftest f64-arithmetic-behind-a-scalar-signature-does-reach-native
   (testing "the other side of the same boundary: f64 used internally, with

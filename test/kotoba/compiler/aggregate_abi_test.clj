@@ -251,7 +251,12 @@
   ;; `:oracle-fuel` option, so the execution that seals a pure entry's value
   ;; runs on the budget its author declared instead of a private 100,000.
   ;; It moves no encoding; it widens what can be lowered at all.
-  (is (= "c24c92a1b76624afd3ce12b4ee8162f44a40d68f"
+  ;; Advanced 2026-09-09 to 74426bad: a native function may DECLARE an :f64
+  ;; parameter or result. The operations were admitted in ADR-2608030300, so
+  ;; this moves no encoding either -- it admits the signature that could
+  ;; already be computed with, and which every float kernel in this workspace
+  ;; had been writing around through f64-from-bits.
+  (is (= "74426bad2fa7c8b674c9bc9469232f1b751fbf9c"
          (dependency-pin 'io.github.kotoba-lang/osaho)))
   ;; Advanced 2026-09-01 alongside the backend: the verifier re-derives the
   ;; two new arities and the v4 `expected-context`, and is what turns a
@@ -329,7 +334,10 @@
   ;; a refusal but a host TypeError: a param index out of an artifact is a
   ;; bigint, `nth` will not take one, and this repository reported it as
   ;; `:kotoba/internal-error`. It admits nothing new.
-  (is (= "ea50d8f2bbc29908a3b8a987089754d6355f37f3"
+  ;; Advanced 2026-09-09 to 39db2f3f, the other half of that admission. This
+  ;; verifier rejects by ABSENCE, so with the older pin the boundary kir now
+  ;; admits would be a green `check` and a red `compile`.
+  (is (= "39db2f3f5400c7c687bac7b49694e3fdb5e92fa2"
          (dependency-pin 'io.github.kotoba-lang/kotoba-verifier)))
   (is (= 7 (:abi/version aggregate-abi/contract)))
   (is (= :recursive-word-handles
