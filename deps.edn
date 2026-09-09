@@ -500,7 +500,21 @@
          ;; Reading them exactly turns it into a refusal:
          ;; `examples/held-operations.kotoba` was rejected as "native
          ;; instruction stream rejected" by a verifier that was right.
-         :git/sha "a5711bdc859cbe11c8a9497d7b836ed3d884f086"}
+         ;;
+         ;; Advanced 2026-09-09 to 7cbed512, which carries kotoba-mir b70a567a
+         ;; and is the pin that makes TWO NEW AArch64 ARMS reachable from this
+         ;; repository: `kernel-dot-f32` and Q8_0's fused dequantize-and-dot.
+         ;; Both are the x86 SCALAR arm reproduced instruction for instruction,
+         ;; because the contract of those operations is an ACCUMULATION TREE
+         ;; and not a dot product -- one specific order of summation IS the
+         ;; operation, so an arm that answered a different number would be a
+         ;; different operation wearing the same name.
+         ;;
+         ;; Without this pin `amu compile --target aarch64` refuses them at MIR
+         ;; selection with `x86-simd-target-mismatch`, which is a program this
+         ;; repository can now compile being rejected for a reason that stopped
+         ;; being true.
+         :git/sha "7cbed512f7c383dacb77705216d0a8184a1170d3"}
         io.github.kotoba-lang/kotoba-component
         {:git/url "https://github.com/kotoba-lang/kotoba-component.git"
          :git/sha "ff2c3e8c29a02a7731e70c7e4d276441ebc9d42d"}

@@ -151,7 +151,19 @@
   ;; same program. The JVM side is unchanged by this advance: a Long always
   ;; compared to 0, so the boundary this test pins moves not at all here, and
   ;; what moves is the OTHER front, toward these bytes.
-  (is (= "a5711bdc859cbe11c8a9497d7b836ed3d884f086"
+  ;; Advanced 2026-09-09 to 7cbed512, which carries kotoba-mir b70a567a and is
+  ;; the pin that makes TWO NEW AArch64 ARMS reachable from this repository:
+  ;; `kernel-dot-f32` and Q8_0's fused dequantize-and-dot. Both are the x86
+  ;; SCALAR arm reproduced instruction for instruction, because the contract of
+  ;; those operations is an ACCUMULATION TREE and not a dot product -- one
+  ;; specific order of summation IS the operation. Without this pin they are
+  ;; refused at MIR selection with `x86-simd-target-mismatch`.
+  ;;
+  ;; It changes bytes on the AArch64 front by ADDING arms, not by moving an
+  ;; existing sequence, so the boundary this test pins is untouched.
+  ;; `the-fused-dequant-answers-the-same-bits-on-every-available-isa` is the
+  ;; assertion that the two ISAs agree, executed as real processes.
+  (is (= "7cbed512f7c383dacb77705216d0a8184a1170d3"
          (dependency-pin 'io.github.kotoba-lang/kotoba-native)))
   ;; Advanced 2026-09-07 to kotoba-native main c9d5c44 (hoist #151, cross-call
   ;; hoist #152, copy coalescing #154; 06badc8's allow-list entry is on main as

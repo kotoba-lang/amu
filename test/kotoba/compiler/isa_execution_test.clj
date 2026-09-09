@@ -1501,3 +1501,103 @@
             (is (not (str/includes? report ":result"))
                 (str "a forward reference must not produce a result: "
                      (str/trim report)))))))))
+
+;; ---------------------------------------------------------------------------
+;; granted regions x dequant: the fused kernel over two granted regions
+;; ---------------------------------------------------------------------------
+
+(def ^:private granted-dequant-source
+  (slurp "test/fixtures/granted-region-dequant.kotoba"))
+
+(defn- f32-bytes [xs]
+  (mapcat (fn [x]
+            (let [bits (Float/floatToRawIntBits (float x))]
+              [(bit-and bits 0xff)
+               (bit-and (bit-shift-right bits 8) 0xff)
+               (bit-and (bit-shift-right bits 16) 0xff)
+               (bit-and (bit-shift-right bits 24) 0xff)]))
+          xs))
+
+(defn- q8-0-block
+  "One Q8_0 block: a binary16 scale then thirty-two signed codes."
+  [half codes]
+  (into [(bit-and half 0xff) (bit-and (bit-shift-right half 8) 0xff)]
+        (map #(bit-and % 0xff)) codes))
+
+(defn- report-result [report]
+  (when-let [m (re-find #":result (-?\d+)" report)] (Long/parseLong (second m))))
+
+(deftest the-fused-dequant-answers-the-same-bits-on-every-available-isa
+  ;; `kernel-dequant-dot-q8-0`'s contract is an ACCUMULATION TREE. Floating-
+  ;; point addition is not associative, so one specific order of summation is
+  ;; the operation, and the AArch64 arm exists only because it reproduces the
+  ;; x86 one instruction for instruction. Cross-ISA bit-identity is therefore
+  ;; not a nice property of this kernel -- it is the kernel.
+  ;;
+  ;; It is load-bearing beyond this repository too: `local-murakumo` qualifies
+  ;; a node by comparing GREEDY tokens exactly, and the community-provider lane
+  ;; verifies a claimed result by re-running a sampled job on another node. A
+  ;; Mac mini and a K16 that disagree in the last bit of a logit are two fleets.
+  ;;
+  ;; The regions are GRANTED, which is what makes this runnable at all: the
+  ;; weight row and the activations are host bytes the loader minted, and the
+  ;; program's two bases are parameters it could not have chosen.
+  (let [available (into {} (remove (comp nil? val) @loaders))
+        missing (remove available (keys isas))
+        required (if (macos?) (set (keys isas)) #{(host-isa)})
+        run (fn [isa block activations]
+              (report-result
+               (run-native isa granted-dequant-source "-" {:allow #{}} 'dot-q8-0
+                           [(str "g:" (region-hex block)) "gl:0"
+                            (str "g:" (region-hex (f32-bytes activations))) "gl:1"
+                            1])))]
+    (println "granted-dequant available:" (vec (sort (keys available)))
+             "/ missing (SKIPPED):" (vec (sort missing)))
+    (is (every? available required)
+        (str "required ISA loaders are unavailable on this host. required: "
+             (vec (sort required)) ", missing: " (vec (sort missing))))
+    (testing "d = 1.0, codes 1..32, activations 1.0 -> 528.0f"
+      (let [block (q8-0-block 0x3C00 (range 1 33))
+            answers (into {} (map (fn [isa] [isa (run isa block (repeat 32 1.0))]))
+                          (keys available))]
+        (doseq [[isa answer] answers]
+          (is (= (Float/floatToRawIntBits (float 528.0)) answer)
+              (str isa " answered " answer)))
+        ;; Equal TO EACH OTHER, asserted separately: a constant both arms had
+        ;; drifted from together would pass the check above and fail here.
+        (is (= 1 (count (set (vals answers))))
+            (str "the ISAs disagree: " (pr-str answers)))))
+    (testing "a fixture whose answer names the accumulation tree"
+      ;; The first activation is 2^24 and the rest are 1.0, so each 1 added in
+      ;; isolation rounds away and each pair does not. Four lanes, element e
+      ;; into lane e mod 4, then (s0+s1)+(s2+s3): 2^24 + 24. A single
+      ;; left-to-right accumulator answers 2^24 exactly, so the digits name the
+      ;; tree rather than merely being a plausible dot product.
+      (let [block (q8-0-block 0x3C00 (repeat 32 1))
+            activations (cons (Float/intBitsToFloat 0x4B800000) (repeat 31 1.0))
+            answers (into {} (map (fn [isa] [isa (run isa block activations)]))
+                          (keys available))]
+        (doseq [[isa answer] answers]
+          (is (= 0x4B80000C answer)
+              (str isa " answered " (format "0x%08X" answer)
+                   " -- 0x4B800000 is a left-to-right sum")))
+        (is (= 1 (count (set (vals answers))))
+            (str "the ISAs disagree: " (pr-str answers)))))))
+
+(deftest the-two-K-quants-are-still-refused-on-aarch64
+  ;; Asserted rather than merely true, so writing either arm is a red test that
+  ;; has to be looked at. The reason is a gap and is named as one: a Q4_K
+  ;; block's (scale, min) pair and its nibble half change on different periods
+  ;; and a Q6_K block's scale index every sixteen elements, so their thirty-two
+  ;; groups are unrolled with per-group geometry rather than looped -- and none
+  ;; of that is written for AArch64.
+  (doseq [op '[kernel-dequant-dot-q4-k kernel-dequant-dot-q6-k]]
+    (testing (str op)
+      (let [source (str "(ns k (:export [go]))\n"
+                        "(defn go [a :i64 b :i64 c :i64 d :i64 n :i64]\n"
+                        "  (" op " a b c d n))")]
+        (is (some? (:artifact (compiler/compile-source source :x86_64-kotoba-v1 {})))
+            "x86-64 emits it")
+        (is (thrown? clojure.lang.ExceptionInfo
+                     (compiler/compile-source source :aarch64-kotoba-v1 {}))
+            (str op " reached the AArch64 backend"))))))
