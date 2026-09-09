@@ -79,6 +79,9 @@
             [kotoba.compiler.slice-carrier-test]
             ;; slice-value: the ADR 0285 carrier as a value, and its cost in bytes
             [kotoba.compiler.slice-value-test]
+            ;; granted regions: the same carrier, on a target that is not
+            ;; aiueos, reading memory the CALLER handed in.
+            [kotoba.compiler.granted-region-test]
             [kotoba.compiler.kernel-subregion-test]
             [kotoba.compiler.error-code-contract-test]
             [kotoba.compiler.frontend-condp-test]
@@ -264,6 +267,7 @@
    'kotoba.compiler.native-device-io-test
    'kotoba.compiler.slice-carrier-test
    'kotoba.compiler.slice-value-test
+   'kotoba.compiler.granted-region-test
    'kotoba.compiler.kernel-subregion-test
    'kotoba.compiler.kir-trap-source-test
    'kotoba.compiler.error-code-contract-test

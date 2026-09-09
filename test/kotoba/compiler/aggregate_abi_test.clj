@@ -337,7 +337,15 @@
   ;; Advanced 2026-09-09 to 39db2f3f, the other half of that admission. This
   ;; verifier rejects by ABSENCE, so with the older pin the boundary kir now
   ;; admits would be a green `check` and a red `compile`.
-  (is (= "39db2f3f5400c7c687bac7b49694e3fdb5e92fa2"
+  ;; Advanced again 2026-09-09 to 33b3d067, and this one ADMITS rather than
+  ;; widens a type: the slice memory subfamily plus `kernel-subregion` may now
+  ;; reach a general native target when the verifier's own re-derivation proves
+  ;; every base is a parameter -- a region the CALLER granted. The byte-window
+  ;; family and everything privileged stay aiueos-only, and a literal base is
+  ;; refused on a hosted target even though the frontend admits one. Same skew
+  ;; argument in the other direction: without this pin a program this
+  ;; repository compiles is refused at verification.
+  (is (= "33b3d067603da3a1c596a900ddd6ab029d5ed6e3"
          (dependency-pin 'io.github.kotoba-lang/kotoba-verifier)))
   (is (= 7 (:abi/version aggregate-abi/contract)))
   (is (= :recursive-word-handles

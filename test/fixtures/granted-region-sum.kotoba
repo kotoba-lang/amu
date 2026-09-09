@@ -1,0 +1,29 @@
+(ns amu.granted-region-sum
+  (:export [sum-bytes]))
+
+;; granted regions: a HOSTED native target reading memory its caller handed in.
+;;
+;; Every operation in `kernel-memory-operations` used to require an aiueos
+;; kernel target. The reason was sound -- `base` is an address and the emitted
+;; bounds check constrains the offset within a window, not the window itself --
+;; but it did not cover a base the program could not have CHOSEN. Here the base
+;; arrives as a parameter of an exported function, so the only thing that could
+;; have named it is whoever invoked the export.
+;;
+;; The slice is built INSIDE. That is not a workaround for the export ABI: it
+;; is the shape that makes the length the caller's too, because `slice-length`
+;; then answers what was granted rather than what the traversal assumed.
+;;
+;; `kotoba.verifier` re-derives the condition for itself -- every base is a
+;; parameter, and every argument flowing into a tainted parameter position is
+;; a parameter too -- and refuses a literal base on a hosted target even though
+;; `kotoba.compiler.frontend` admits one. Compiling this fixture for
+;; `aarch64` and refusing its literal-base twin is the pair that says so.
+
+(defn- sum-from [s [:slice :u8] index :i64 total :i64]
+  (if (< index (slice-length s))
+    (sum-from s (+ index 1) (+ total (slice-get s index)))
+    total))
+
+(defn sum-bytes [base :i64 length :i64]
+  (sum-from (slice-of-u8 base length) 0 0))
