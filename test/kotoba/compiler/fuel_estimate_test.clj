@@ -7,32 +7,19 @@
   nobody could read from the source how many entries a run buys -- the
   cadence constant in aiueos was set by watching `ud2` deaths on hardware.
   The numbers pinned here are the estimator's model (1 unit per function
-  entry, static call sites counted once), not a measured WCET."
+  entry, static call sites counted once), not a measured WCET.
+
+  After the 2026-09-08 split, only the two deftests that read a `.kotoba`
+  fixture through `clojure.java.io`/`slurp` stayed here -- nbb has no
+  classpath `io/resource`. Every deftest that compiles an inline source
+  string moved to `kotoba.compiler.fuel-estimate-portable-test` (.cljc),
+  registered on both hosts."
   (:require [clojure.test :refer [deftest is testing]]
             [clojure.java.io :as io]
             [kotoba.compiler.fuel-estimate :as fe]))
 
 (defn- fixture [name]
   (slurp (io/resource (str "fixtures/fuel-estimate/" name))))
-
-(deftest single-main-within-budget
-  (let [r (fe/estimate-source
-           "(ns t (:export [main])) (defn main [] :i64 (+ 1 2))")]
-    (is (= :kotoba.fuel-estimate/v1 (:format r)))
-    (is (= 1 (:function-count r)))
-    (is (true? (:within-default-budget? r)))
-    (is (<= (:crude-units r) 512))
-    (is (= {} (:recursion r)) "no self-recursion: nothing to report")
-    (is (= [] (:bounded-calls r)))))
-
-(deftest counts-static-callee-entries
-  (let [r (fe/estimate-source
-           "(ns t (:export [main]))
-            (defn main [] :i64 (+ 1 (helper)))
-            (defn helper [] :i64 2)")]
-    (is (= 2 (:function-count r)))
-    (is (= 1 (:static-call-sites r)))
-    (is (= 3 (:crude-units r)))))
 
 (deftest bounded-countdown-poll-is-estimable
   ;; poll: 3 functions, 3 static call sites -> 6 units before expansion.
@@ -65,36 +52,3 @@
     (is (= [] (:bounded-calls r)))
     (is (= 4 (:crude-units r)))
     (is (true? (:within-default-budget? r)))))
-
-(deftest countup-toward-a-literal-bound
-  ;; (+ n 1) toward (>= n 10), self-call in the else branch: n = 0..10 = 11
-  ;; entries x 1 unit. 2 + 2 = 4 before, 4 + 11 - 1 = 14 after.
-  (let [r (fe/estimate-source
-           "(ns t (:export [main]))
-            (defn up [n :i64] :i64 (if (>= n 10) 0 (+ 1 (up (+ n 1)))))
-            (defn main [] :i64 (up 0))")]
-    (is (= 1 (get-in r [:recursion 'up :step])))
-    (is (= 11 (:iterations (first (:bounded-calls r)))))
-    (is (= 14 (:crude-units r)))))
-
-(deftest self-call-in-the-then-branch-terminates-when-the-test-is-false
-  ;; (if (> n 0) (recurse) 0) with (poll 5): n = 5..0 = 6 entries x 1 unit.
-  (let [r (fe/estimate-source
-           "(ns t (:export [main]))
-            (defn poll [n :i64] :i64 (if (> n 0) (+ 1 (poll (- n 1))) 0))
-            (defn main [] :i64 (poll 5))")]
-    (is (= :test-false (get-in r [:recursion 'poll :terminates-when])))
-    (is (= 6 (:iterations (first (:bounded-calls r)))))
-    (is (= 9 (:crude-units r)))))
-
-(deftest non-literal-argument-is-not-expanded
-  ;; The countdown shape is recognized, but the call passes a parameter, not
-  ;; a literal: no call-site expansion, crude units unchanged (3 + 3 = 6).
-  (let [r (fe/estimate-source
-           "(ns t (:export [main]))
-            (defn poll [n :i64] :i64 (if (= n 0) 0 (+ 1 (poll (- n 1)))))
-            (defn run [k :i64] :i64 (poll k))
-            (defn main [] :i64 (run 8000))")]
-    (is (= :bounded-countdown (get-in r [:recursion 'poll :kind])))
-    (is (= [] (:bounded-calls r)))
-    (is (= 6 (:crude-units r)))))
