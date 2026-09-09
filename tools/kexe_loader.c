@@ -42,7 +42,25 @@ typedef int64_t (*kexe_fn8)(int64_t, int64_t, int64_t, int64_t,
 
 #define KEXE_PAIR_CAPACITY 4096u
 #define KEXE_KGRAPH_CAPACITY 4096u
+/* The string arena.
+ *
+ * KEXE_STRING_POOL_BYTES is the DEFAULT budget and stays exactly what it has
+ * always been, so a guest that ran before runs identically. KEXE_STRING_POOL
+ * names another positive decimal for one run, the way KEXE_FUEL already does
+ * for fuel -- and that shape is the decision, not the number. Raising a bound
+ * at build time moves every program's ceiling at once; raising it per run
+ * moves one caller's, and a guest that outgrows the default still refuses
+ * unless its caller asks. (kotoba-lang lang/surface-status.edn :arena-bounds
+ * records this shape for the vector arenas; the string arena had been left
+ * behind.)
+ *
+ * KEXE_STRING_POOL_MAX is the address space the arena is mapped over, not
+ * memory it uses: the mapping is MAP_ANONYMOUS, so pages are zero-filled by
+ * the kernel and faulted in only as the bump allocator reaches them. That is
+ * why the explicit memset of the shared struct had to go -- it touched every
+ * page and would have turned a large ceiling into a large cost. */
 #define KEXE_STRING_POOL_BYTES 65536u
+#define KEXE_STRING_POOL_MAX (256u * 1024u * 1024u)
 #define KEXE_RECORD_FIELD_LIMIT 128u
 /* Fuel the guest starts with. 512 unless KEXE_FUEL names another positive
  * decimal budget; the loader enforces the number it is handed and decides
@@ -51,6 +69,12 @@ typedef int64_t (*kexe_fn8)(int64_t, int64_t, int64_t, int64_t,
  * larger budget: fuel bounds the guest's own steps, the rlimits bound the
  * child, and both stay in force. */
 static uint64_t kexe_initial_fuel = 512;
+/* The string arena budget in force for this run: the default above unless
+ * KEXE_STRING_POOL (or, in a packaged command, the baked constant) names
+ * another positive decimal. Every allocation site checks THIS, never the
+ * array's size, so the ceiling a guest meets is the budget and not the
+ * mapping. */
+static uint64_t kexe_string_pool_budget = KEXE_STRING_POOL_BYTES;
 
 static void write_stderr_checked(const char *bytes, size_t length) {
   ssize_t written = write(STDERR_FILENO, bytes, length);
@@ -202,7 +226,7 @@ struct kexe_shared_v4 {
   uint64_t kgraph_used;
   struct kexe_datom_v1 datoms[KEXE_KGRAPH_CAPACITY];
   uint64_t string_pool_used;
-  uint8_t string_pool[KEXE_STRING_POOL_BYTES];
+  uint8_t string_pool[KEXE_STRING_POOL_MAX];
   /* Two arenas, because a vector table entry and the elements it spans are
    * separately exhaustible: many small vectors run out of entries first, one
    * growing vector runs out of elements first, and neither bound implies the
@@ -240,7 +264,7 @@ _Static_assert(offsetof(struct kexe_context_v4, vector_assoc) == 184, "vector AB
 _Static_assert(offsetof(struct kexe_context_v4, vector_drop) == 192, "vector ABI drift");
 _Static_assert(offsetof(struct kexe_context_v4, vector_alloc) == 200, "vector ABI drift");
 _Static_assert(offsetof(struct kexe_context_v4, vector_assoc_in_place) == 208, "vector ABI drift");
-_Static_assert(sizeof(((struct kexe_shared_v4 *)0)->string_pool) == 65536,
+_Static_assert(sizeof(((struct kexe_shared_v4 *)0)->string_pool) == KEXE_STRING_POOL_MAX,
                "string pool size drift");
 _Static_assert(sizeof(((struct kexe_shared_v4 *)0)->vectors) == 65536,
                "vector table size drift");
@@ -625,7 +649,7 @@ static const uint8_t *resolve_string_bytes(struct kexe_context_v4 *context,
   }
   /* `-(offset + 1)` is defined even for INT64_MIN; `-offset - 1` is not. */
   uint64_t pool_offset = (uint64_t)(-(offset + 1));
-  if (pool_offset + (uint64_t)length > KEXE_STRING_POOL_BYTES ||
+  if (pool_offset + (uint64_t)length > kexe_string_pool_budget ||
       pool_offset + (uint64_t)length < pool_offset) {
     raise(SIGILL);
     return NULL;
@@ -780,7 +804,7 @@ static int parse_guest_arg(struct kexe_shared_v4 *shared,
   size_t digits = strlen(hex);
   if ((digits & 1u) != 0) return -1;
   uint64_t length = (uint64_t)(digits / 2u);
-  if (length > KEXE_STRING_POOL_BYTES - shared->string_pool_used ||
+  if (length > kexe_string_pool_budget - shared->string_pool_used ||
       shared->pair_used >= KEXE_PAIR_CAPACITY) return -1;
   for (size_t i = 0; i < digits; i++) {
     if (hex_nibble(hex[i]) < 0) return -1;
@@ -955,7 +979,7 @@ static const uint8_t *peek_string_bytes(struct kexe_context_v4 *context,
     return context->code_base + offset;
   }
   uint64_t pool_offset = (uint64_t)(-(offset + 1));
-  if (pool_offset + (uint64_t)length > KEXE_STRING_POOL_BYTES ||
+  if (pool_offset + (uint64_t)length > kexe_string_pool_budget ||
       pool_offset + (uint64_t)length < pool_offset) return NULL;
   return shared->string_pool + pool_offset;
 }
@@ -988,7 +1012,7 @@ static int read_string_handle(struct kexe_context_v4 *context, int64_t value,
 static int64_t intern_utf8(struct kexe_context_v4 *context,
                            const uint8_t *bytes, uint64_t length) {
   struct kexe_shared_v4 *shared = (struct kexe_shared_v4 *)context;
-  if (shared->string_pool_used + length > KEXE_STRING_POOL_BYTES) {
+  if (shared->string_pool_used + length > kexe_string_pool_budget) {
     raise(SIGILL);
     return 0;
   }
@@ -1143,8 +1167,8 @@ static int64_t intern_pool_string(struct kexe_context_v4 *context,
   struct kexe_shared_v4 *shared = (struct kexe_shared_v4 *)context;
   size_t n = strlen(text);
   if (context == NULL || text == NULL ||
-      n > KEXE_STRING_POOL_BYTES ||
-      shared->string_pool_used + n > KEXE_STRING_POOL_BYTES) {
+      n > kexe_string_pool_budget ||
+      shared->string_pool_used + n > kexe_string_pool_budget) {
     raise(SIGILL);
     return 0;
   }
@@ -1856,7 +1880,7 @@ static void *shim_memmem(const void *hay, size_t hlen, const void *needle, size_
 
 /* wire id 35, READ form. The request string is an absolute path; the result
  * is the file's bytes as a string. The whole file is interned, so a file
- * larger than the string pool (KEXE_STRING_POOL_BYTES) cannot be read this
+ * larger than the string arena budget in force for the run cannot be read this
  * way -- that is what the RANGE form is for. */
 static int64_t fs_app_data_read_provider(struct kexe_context_v4 *context,
                                          int64_t request) {
@@ -2017,7 +2041,7 @@ static int64_t fs_app_data_range_read_provider(struct kexe_context_v4 *context,
   if (colon == NULL ||
       !kexe_parse_u64_span(spec, (size_t)(colon - spec), &offset) ||
       !kexe_parse_u64_span(colon + 1, (size_t)(spec + spec_length - colon - 1), &window) ||
-      window > KEXE_STRING_POOL_BYTES) {
+      window > kexe_string_pool_budget) {
     raise(SIGILL);
     return 0;
   }
@@ -2121,7 +2145,7 @@ static int kexe_browse_add(const char *name, uint8_t is_dir,
   size_t name_length = strlen(name);
   size_t entry_bytes = name_length + 2u + (*count > 0 ? 1u : 0u);
   if (*count >= KEXE_BROWSE_ENTRY_LIMIT ||
-      *total + entry_bytes > KEXE_STRING_POOL_BYTES) return 0;
+      *total + entry_bytes > kexe_string_pool_budget) return 0;
   if (*count == *capacity) {
     size_t next = *capacity == 0 ? 64u : *capacity * 2u;
     struct kexe_browse_entry *grown =
@@ -2387,7 +2411,7 @@ static int64_t checked_string_concat(struct kexe_context_v4 *context,
     return 0;
   }
   int64_t total = length_a + length_b;
-  if (shared->string_pool_used + (uint64_t)total > KEXE_STRING_POOL_BYTES ||
+  if (shared->string_pool_used + (uint64_t)total > kexe_string_pool_budget ||
       shared->string_pool_used + (uint64_t)total < shared->string_pool_used) {
     raise(SIGILL);
     return 0;
@@ -3028,7 +3052,13 @@ int main(int argc, char **argv) {
       mmap(NULL, sizeof(*shared), PROT_READ | PROT_WRITE,
            MAP_SHARED | MAP_ANONYMOUS, -1, 0);
   if (shared == MAP_FAILED) fail("mmap shared execution state");
-  memset(shared, 0, sizeof(*shared));
+  /* No memset: MAP_ANONYMOUS pages are zero-filled by the kernel, so this
+   * only ever re-zeroed memory that was already zero -- and it TOUCHED every
+   * page while doing it, which is what would make a large string arena cost
+   * its full size at startup instead of faulting in as the bump allocator
+   * reaches it. Measured with the arena mapped over 256 MiB: with the memset
+   * a run costs the whole mapping; without it, a run that allocates 64 KiB
+   * faults 64 KiB. */
   shared->context.version = 4;
   const char *fuel_env = getenv("KEXE_FUEL");
   if (fuel_env != NULL && fuel_env[0] != '\0') {
@@ -3036,6 +3066,28 @@ int main(int argc, char **argv) {
       fprintf(stderr, "kexe-loader: KEXE_FUEL must be a positive decimal integer\n");
       return 2;
     }
+  }
+  /* The string arena budget, in force for this run only. Same shape as
+   * KEXE_FUEL above: absent means the default, present means a positive
+   * decimal, and anything else is refused BEFORE the guest starts rather
+   * than clamped -- a budget silently reduced to something the caller did
+   * not ask for is a bound nobody can plan against. */
+#ifdef KEXE_EMBEDDED
+  kexe_string_pool_budget = KEXE_EMBEDDED_STRING_POOL;
+#else
+  const char *pool_env = getenv("KEXE_STRING_POOL");
+  if (pool_env != NULL && pool_env[0] != '\0') {
+    if (parse_u64(pool_env, &kexe_string_pool_budget) != 0 ||
+        kexe_string_pool_budget == 0) {
+      fprintf(stderr, "kexe-loader: KEXE_STRING_POOL must be a positive decimal integer\n");
+      return 2;
+    }
+  }
+#endif
+  if (kexe_string_pool_budget > KEXE_STRING_POOL_MAX) {
+    fprintf(stderr, "kexe-loader: KEXE_STRING_POOL exceeds the %u-byte ceiling\n",
+            (unsigned)KEXE_STRING_POOL_MAX);
+    return 2;
   }
   shared->context.fuel = kexe_initial_fuel;
   shared->context.cap_call = checked_cap_call;

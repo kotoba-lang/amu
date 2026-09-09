@@ -52,6 +52,13 @@
       ;; which is what a command that reads no file should be given.
       fs-scope (or (opt "--fs-scope") "")
       browse-scope (or (opt "--browse-scope") "")
+      ;; The resource bound is a constant of the binary for the same reason
+      ;; the grant and the scopes are: a command's ceiling is a fact about
+      ;; the command, and a caller that could raise it through the
+      ;; environment would be choosing on the command's behalf. Default is
+      ;; the loader's own default, so a command packaged without asking is
+      ;; bounded exactly as a loader invocation is.
+      pool (or (opt "--string-pool") "65536")
       cc (or (opt "--cc") (.-CC js/process.env) "cc")
       ;; nbb puts the script path at argv[2]; the loader source is its
       ;; sibling, so the packager works from any working directory.
@@ -61,6 +68,8 @@
   (when-not (and code-path offset out) (die "--code, --offset and --output are required"))
   (when-not (contains? #{"aarch64" "x86_64"} isa) (die (str "unknown isa: " isa)))
   (when-not (re-matches #"[0-9]+" (str offset)) (die "--offset must be a decimal"))
+  (when-not (re-matches #"[1-9][0-9]*" (str pool))
+    (die "--string-pool must be a positive decimal"))
   ;; The allow list is copied through verbatim and re-parsed by the loader's
   ;; own parse_allow at run time; refusing anything but the two shapes it
   ;; accepts here keeps a typo from becoming a C string that fails closed at
@@ -93,6 +102,7 @@
                     "#define KEXE_EMBEDDED_ALLOW \"" allow "\"\n"
                     "#define KEXE_EMBEDDED_SCOPE35 \"" fs-scope "\"\n"
                     "#define KEXE_EMBEDDED_SCOPE34 \"" browse-scope "\"\n"
+                    "#define KEXE_EMBEDDED_STRING_POOL " pool "u\n"
                     "static const unsigned char kexe_embedded_code[" n "] = {\n"
                     rows "\n};\n")
         dir (.mkdtempSync fs (.join path (.tmpdir os) "kexe-package-"))
@@ -107,5 +117,5 @@
         (do (.chmodSync fs out 0755)
             (println (pr-str {:ok true :output out :code-bytes n
                               :offset (js/parseInt offset 10) :isa isa :allow allow
-                              :fs-scope fs-scope :browse-scope browse-scope
+                              :fs-scope fs-scope :browse-scope browse-scope :string-pool pool
                               :size (.-size (.statSync fs out))})))))))
