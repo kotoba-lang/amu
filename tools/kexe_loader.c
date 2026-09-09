@@ -43,6 +43,13 @@ typedef int64_t (*kexe_fn8)(int64_t, int64_t, int64_t, int64_t,
 #define KEXE_PAIR_CAPACITY 4096u
 #define KEXE_KGRAPH_CAPACITY 4096u
 #define KEXE_STRING_POOL_BYTES 65536u
+/* granted regions: a bounded arena of HOST bytes an entry may be handed as a
+ * (base, length) pair. Same 64 KiB bound as the string pool, and for the same
+ * reason -- both arrive as hex in argv, and argv is what actually limits them
+ * long before the arena does. A region that does not fit through argv needs a
+ * different transport, and that is a gap rather than a bound. */
+#define KEXE_REGION_CAPACITY 8u
+#define KEXE_REGION_POOL_BYTES 65536u
 #define KEXE_RECORD_FIELD_LIMIT 128u
 /* Fuel the guest starts with. 512 unless KEXE_FUEL names another positive
  * decimal budget; the loader enforces the number it is handed and decides
@@ -185,6 +192,15 @@ struct kexe_pair_v1 { int64_t first; int64_t second; };
 struct kexe_datom_v1 { int64_t e; int64_t a; int64_t v; };
 struct kexe_vector_v1 { uint64_t offset; uint64_t length; };
 
+/* granted regions: where one lives in the pool. The LENGTH is recorded here
+ * rather than taken from the caller a second time, which is the whole point --
+ * a base and a length that do not belong together is how a granted region
+ * becomes an ungranted one. */
+struct kexe_granted_region_v1 {
+  uint64_t offset;
+  uint64_t length;
+};
+
 struct kexe_shared_v4 {
   struct kexe_context_v4 context;
   int64_t result;
@@ -211,6 +227,13 @@ struct kexe_shared_v4 {
   struct kexe_vector_v1 vectors[KEXE_VECTOR_CAPACITY];
   uint64_t vector_item_used;
   int64_t vector_items[KEXE_VECTOR_ITEM_CAPACITY];
+  /* granted regions: appended LAST on purpose. Every offset this file asserts
+   * (`fuel` at 8, `allow` at 16, `cap_call` at 48) is inside `context`, which
+   * is first, so growing the tail cannot move one. */
+  uint64_t region_used;
+  uint64_t region_count;
+  struct kexe_granted_region_v1 regions[KEXE_REGION_CAPACITY];
+  uint8_t region_pool[KEXE_REGION_POOL_BYTES];
 };
 
 _Static_assert(offsetof(struct kexe_context_v4, fuel) == 8, "fuel ABI drift");
@@ -773,6 +796,52 @@ static int parse_guest_arg(struct kexe_shared_v4 *shared,
       handle = (int64_t)(index + 1u);
     }
     *value = handle;
+    return 0;
+  }
+  /* granted regions: `g:<hex>` mints a region from host bytes and answers its
+   * BASE ADDRESS; `gl:<n>` answers the LENGTH of the n-th region minted so
+   * far. Arguments are parsed in argv order and before the fork, so `n` is
+   * deterministic and the mapping is shared with the child.
+   *
+   * BOTH NUMBERS ARE THE LOADER'S. That is the property this pair exists for:
+   * a caller can grant a region, and cannot grant a base with a length that
+   * does not belong to it. The guest's own bounds check then compares an index
+   * against a length it did not choose either.
+   *
+   * The pool lives in the MAP_SHARED mapping, so the address handed over is
+   * valid in the child at the same place. It is NOT valid after this process
+   * exits, which is why nothing outside a single execution may hold it. */
+  if (strncmp(text, "g:", 2) == 0) {
+    const char *hex = text + 2;
+    size_t digits = strlen(hex);
+    if ((digits & 1u) != 0) return -1;
+    uint64_t length = (uint64_t)(digits / 2u);
+    if (shared->region_count >= KEXE_REGION_CAPACITY) return -1;
+    if (length > KEXE_REGION_POOL_BYTES - shared->region_used) return -1;
+    for (size_t i = 0; i < digits; i++) {
+      if (hex_nibble(hex[i]) < 0) return -1;
+    }
+    uint64_t start = shared->region_used;
+    for (uint64_t i = 0; i < length; i++) {
+      shared->region_pool[start + i] =
+          (uint8_t)((hex_nibble(hex[2u * i]) << 4) |
+                    hex_nibble(hex[2u * i + 1u]));
+    }
+    shared->regions[shared->region_count].offset = start;
+    shared->regions[shared->region_count].length = length;
+    shared->region_count++;
+    shared->region_used += length;
+    *value = (int64_t)(uintptr_t)(shared->region_pool + start);
+    return 0;
+  }
+  if (strncmp(text, "gl:", 3) == 0) {
+    uint64_t index;
+    if (parse_u64(text + 3, &index) != 0) return -1;
+    /* Fail closed on a length asked for before its region was minted: the
+     * count is what has been minted SO FAR, so a forward reference is refused
+     * rather than answered with zero. */
+    if (index >= shared->region_count) return -1;
+    *value = (int64_t)shared->regions[index].length;
     return 0;
   }
   if (strncmp(text, "s:", 2) != 0) return parse_i64(text, value);
@@ -2413,6 +2482,27 @@ static int supervise(pid_t child) {
   return 123;
 }
 
+/* The tail every supervisor report ends with, defined ONCE because there are
+ * ten of them -- one per result type, plus the traps -- and a report that
+ * carries a different set of keys than `kototama.native.executor`'s
+ * `valid-supervisor-report?` expects is rejected as "malformed native
+ * supervisor evidence" no matter what the run actually did.
+ *
+ * The two VECTOR arenas are here because that is what the disagreement was.
+ * `kototama-native` added them to the expected key set on 2026-09-08 -- the
+ * arenas are separately exhaustible and were the only bounded resource a run
+ * could hit without the report mentioning it, arriving as a bare SIGILL
+ * beside a `:heap` line about the PAIR arena, which vector work never
+ * touches -- and this loader never gained the other half. It was invisible
+ * because amu pinned an older kototama-native; advancing that pin is what
+ * surfaced it. */
+#define KEXE_REPORT_TAIL_FMT                                                  \
+  "} :heap {:capacity 4096 :used %" PRIu64 "} :vectors {:capacity %u :used %"  \
+  PRIu64 "} :vector-items {:capacity %u :used %" PRIu64 "}}\n"
+#define KEXE_REPORT_TAIL_ARGS(s)                                              \
+  (s)->pair_used, (unsigned)KEXE_VECTOR_CAPACITY, (s)->vector_used,            \
+      (unsigned)KEXE_VECTOR_ITEM_CAPACITY, (s)->vector_item_used
+
 static int write_supervisor_report(const struct kexe_shared_v4 *shared,
                                    int child_status,
                                    const char *result_type,
@@ -2428,8 +2518,8 @@ static int write_supervisor_report(const struct kexe_shared_v4 *shared,
             "KEXE_TRAP {:kind :result :reason :invalid-string-handle}\n";
         write_stderr_checked(trap, sizeof(trap) - 1u);
         printf("{:status :trap :exit 126 :fuel {:initial %" PRIu64 " :remaining %" PRIu64
-               "} :heap {:capacity 4096 :used %" PRIu64 "}}\n",
-               kexe_initial_fuel, shared->context.fuel, shared->pair_used);
+               KEXE_REPORT_TAIL_FMT,
+               kexe_initial_fuel, shared->context.fuel, KEXE_REPORT_TAIL_ARGS(shared));
         return 126;
       }
       printf("{:status :ok :result %" PRId64
@@ -2437,8 +2527,8 @@ static int write_supervisor_report(const struct kexe_shared_v4 *shared,
              shared->result);
       for (uint64_t i = 0; i < length; i++) printf("%02x", bytes[i]);
       printf("\" :fuel {:initial %" PRIu64 " :remaining %" PRIu64
-             "} :heap {:capacity 4096 :used %" PRIu64 "}}\n",
-             kexe_initial_fuel, shared->context.fuel, shared->pair_used);
+             KEXE_REPORT_TAIL_FMT,
+             kexe_initial_fuel, shared->context.fuel, KEXE_REPORT_TAIL_ARGS(shared));
     } else if (record_field_count > 0) {
       int64_t fields[KEXE_RECORD_FIELD_LIMIT];
       if (!inspect_record_result(shared, shared->result,
@@ -2447,8 +2537,8 @@ static int write_supervisor_report(const struct kexe_shared_v4 *shared,
             "KEXE_TRAP {:kind :result :reason :invalid-record-chain}\n";
         write_stderr_checked(trap, sizeof(trap) - 1u);
         printf("{:status :trap :exit 127 :fuel {:initial %" PRIu64 " :remaining %" PRIu64
-               "} :heap {:capacity 4096 :used %" PRIu64 "}}\n",
-               kexe_initial_fuel, shared->context.fuel, shared->pair_used);
+               KEXE_REPORT_TAIL_FMT,
+               kexe_initial_fuel, shared->context.fuel, KEXE_REPORT_TAIL_ARGS(shared));
         return 127;
       }
       printf("{:status :ok :result %" PRId64
@@ -2456,8 +2546,8 @@ static int write_supervisor_report(const struct kexe_shared_v4 *shared,
       for (uint64_t i = 0; i < record_field_count; i++)
         printf(i == 0 ? "%" PRId64 : " %" PRId64, fields[i]);
       printf("] :fuel {:initial %" PRIu64 " :remaining %" PRIu64
-             "} :heap {:capacity 4096 :used %" PRIu64 "}}\n",
-             kexe_initial_fuel, shared->context.fuel, shared->pair_used);
+             KEXE_REPORT_TAIL_FMT,
+             kexe_initial_fuel, shared->context.fuel, KEXE_REPORT_TAIL_ARGS(shared));
     } else if (strcmp(result_type, "option-i64") == 0 ||
                strcmp(result_type, "result-i64") == 0) {
       int option = strcmp(result_type, "option-i64") == 0;
@@ -2468,16 +2558,16 @@ static int write_supervisor_report(const struct kexe_shared_v4 *shared,
         const char *reason = option ? "invalid-option-i64" : "invalid-result-i64";
         fprintf(stderr, "KEXE_TRAP {:kind :result :reason :%s}\n", reason);
         printf("{:status :trap :exit %d :fuel {:initial %" PRIu64 " :remaining %" PRIu64
-               "} :heap {:capacity 4096 :used %" PRIu64 "}}\n",
-               trap_exit, kexe_initial_fuel, shared->context.fuel, shared->pair_used);
+               KEXE_REPORT_TAIL_FMT,
+               trap_exit, kexe_initial_fuel, shared->context.fuel, KEXE_REPORT_TAIL_ARGS(shared));
         return trap_exit;
       }
       printf("{:status :ok :result %" PRId64 " :result-type :%s "
              ":result-tag %s :result-word %" PRId64
              " :fuel {:initial %" PRIu64 " :remaining %" PRIu64
-             "} :heap {:capacity 4096 :used %" PRIu64 "}}\n",
+             KEXE_REPORT_TAIL_FMT,
              shared->result, result_type, tag == 1 ? "true" : "false", payload,
-             kexe_initial_fuel, shared->context.fuel, shared->pair_used);
+             kexe_initial_fuel, shared->context.fuel, KEXE_REPORT_TAIL_ARGS(shared));
     } else if (variant_case_count > 0) {
       int64_t ordinal, payload;
       if (!inspect_variant_result(shared, shared->result, variant_case_count,
@@ -2486,27 +2576,27 @@ static int write_supervisor_report(const struct kexe_shared_v4 *shared,
             "KEXE_TRAP {:kind :result :reason :invalid-variant}\n";
         write_stderr_checked(trap, sizeof(trap) - 1u);
         printf("{:status :trap :exit 130 :fuel {:initial %" PRIu64 " :remaining %" PRIu64
-               "} :heap {:capacity 4096 :used %" PRIu64 "}}\n",
-               kexe_initial_fuel, shared->context.fuel, shared->pair_used);
+               KEXE_REPORT_TAIL_FMT,
+               kexe_initial_fuel, shared->context.fuel, KEXE_REPORT_TAIL_ARGS(shared));
         return 130;
       }
       printf("{:status :ok :result %" PRId64
              " :result-type :variant :result-ordinal %" PRId64
              " :result-word %" PRId64
              " :fuel {:initial %" PRIu64 " :remaining %" PRIu64
-             "} :heap {:capacity 4096 :used %" PRIu64 "}}\n",
+             KEXE_REPORT_TAIL_FMT,
              shared->result, ordinal, payload, kexe_initial_fuel, shared->context.fuel,
-             shared->pair_used);
+             KEXE_REPORT_TAIL_ARGS(shared));
     } else {
       printf("{:status :ok :result %" PRId64
              " :fuel {:initial %" PRIu64 " :remaining %" PRIu64
-             "} :heap {:capacity 4096 :used %" PRIu64 "}}\n",
-             shared->result, kexe_initial_fuel, shared->context.fuel, shared->pair_used);
+             KEXE_REPORT_TAIL_FMT,
+             shared->result, kexe_initial_fuel, shared->context.fuel, KEXE_REPORT_TAIL_ARGS(shared));
     }
   } else {
     printf("{:status :trap :exit %d :fuel {:initial %" PRIu64 " :remaining %" PRIu64
-           "} :heap {:capacity 4096 :used %" PRIu64 "}}\n",
-           child_status, kexe_initial_fuel, shared->context.fuel, shared->pair_used);
+           KEXE_REPORT_TAIL_FMT,
+           child_status, kexe_initial_fuel, shared->context.fuel, KEXE_REPORT_TAIL_ARGS(shared));
   }
   return child_status;
 }
