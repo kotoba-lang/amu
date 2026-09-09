@@ -1721,6 +1721,51 @@ static int64_t io_write_provider(struct kexe_context_v4 *context,
   return intern_utf8(context, (const uint8_t *)count, (size_t)digits);
 }
 
+/* wire id 39 = :io/write-error. The bytes a COMMAND writes to its DIAGNOSTIC
+ * output.
+ *
+ * Byte for byte the same provider as wire 37 with fd 2 instead of fd 1, and
+ * that similarity is the point: what differs is not the mechanism but the
+ * AUTHORITY. A pipeline reads stdout and a person reads stderr, so a grant
+ * carrying both would let a guest put into the answer what it was only
+ * permitted to complain with. Six commands in this family had shipped saying
+ * "the error paths are not matched" because there was nothing to match them
+ * with.
+ *
+ * Same result: the decimal count of bytes written, short for the same reason
+ * -- the arena never reclaims, and an echo would charge every write twice. */
+static int64_t io_write_error_provider(struct kexe_context_v4 *context,
+                                       int64_t request) {
+  const uint8_t *bytes = NULL;
+  uint64_t length = 0;
+  if (!read_string_handle(context, request, &bytes, &length)) {
+    raise(SIGILL);
+    return 0;
+  }
+  uint64_t written = 0;
+  while (written < length) {
+    ssize_t n = write(2, bytes + written, (size_t)(length - written));
+    if (n < 0) {
+      if (errno == EINTR) continue;
+      raise(SIGILL);
+      return 0;
+    }
+    if (n == 0) {
+      raise(SIGILL);
+      return 0;
+    }
+    written += (uint64_t)n;
+  }
+  char count[24];
+  int digits = snprintf(count, sizeof(count), "%llu",
+                        (unsigned long long)written);
+  if (digits <= 0 || (size_t)digits >= sizeof(count)) {
+    raise(SIGILL);
+    return 0;
+  }
+  return intern_utf8(context, (const uint8_t *)count, (size_t)digits);
+}
+
 /* wire id 38 = :cli/args. The arguments a COMMAND was invoked with.
  *
  * The loader's own positional arguments and the guest's are separated on the
@@ -2417,6 +2462,11 @@ static int64_t checked_typed_cap_call(struct kexe_context_v4 *context,
      * sorted NAME<TAB>D lines ("1" = directory, "0" = file), the same wire
      * the js host answers. */
     result = fs_browse_provider(context, request);
+  } else if (id == 39 && request_kind == KEXE_TYPED_STRING) {
+    /* wire id 39 = :io/write-error. Real host provider: the request string is
+     * written to fd 2 and the result is the decimal byte count. No resource
+     * scope, for the same reason wire 37 has none. */
+    result = io_write_error_provider(context, request);
   } else if (id == 38 && request_kind == KEXE_TYPED_STRING) {
     /* wire id 38 = :cli/args. Real host provider: the empty request answers
      * the argument count as decimal text, a decimal index answers that
