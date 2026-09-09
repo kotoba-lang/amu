@@ -1522,6 +1522,131 @@
                      (str/trim report)))))))))
 
 
+(def ^:private iq4xs-source
+  (slurp "test/fixtures/rodata-codebook-iq4xs.kotoba"))
+
+(defn- half->f32-bits
+  "fp16 -> the binary32 bit pattern, BY THE IEEE-754 DEFINITION rather than by
+  the magic-multiply equation the program under test uses.
+
+  ⚠ THIS IS THE POINT OF THE HELPER. Reimplementing the same equation would
+  make the test agree with itself: both sides would carry `0x77800000` and
+  both would be wrong together. Here the exponent and mantissa are read out
+  and the value assembled arithmetically, which is a different route to the
+  same number -- and the two disagree loudly if either is wrong."
+  [half]
+  (let [sign (if (zero? (bit-and half 0x8000)) 1.0 -1.0)
+        e (bit-and (bit-shift-right half 10) 0x1f)
+        m (bit-and half 0x3ff)]
+    (if (= e 31)
+      ;; ⚠ THE INFINITY/NAN ARM IS A BIT-LEVEL CONVENTION, NOT A VALUE, so it
+      ;; is stated rather than derived -- and this arm therefore does NOT
+      ;; discriminate, because it is the same equation the program uses. A NaN
+      ;; has no numeric value to arrive at independently, and its PAYLOAD is
+      ;; exactly what a derivation through a float would destroy: `(float
+      ;; Double/NaN)` gives a canonical NaN, so a reference built that way
+      ;; would report every payload as wrong. It is written out so a reader
+      ;; is not misled into counting these three cases as evidence.
+      ;; `unchecked-int` for the same reason the program narrows: both
+      ;; exports answer a pattern SIGN-EXTENDED from bit 31, so a negative
+      ;; infinity is -8388608 and not 4286578688.
+      (unchecked-int (bit-or (bit-shift-left (bit-and half 0x8000) 16)
+                             0x7f800000
+                             (bit-shift-left m 13)))
+      ;; The finite cases DO discriminate: the exponent and mantissa are read
+      ;; out and the value assembled arithmetically, which never mentions the
+      ;; `0x77800000` the program multiplies by.
+      (Float/floatToRawIntBits
+       (float
+        (if (zero? e)
+          (* sign (Math/pow 2 -14) (/ (double m) 1024.0))
+          (* sign (Math/pow 2 (- e 15)) (+ 1.0 (/ (double m) 1024.0)))))))))
+
+(defn- iq4xs-weight-bits
+  "ggml's `dequantize_row_iq4_xs`, one element, as an f32 bit pattern.
+  Transcribed from the C rather than from the fixture."
+  [block element]
+  (let [b (fn [i] (bit-and (int (nth block i)) 0xff))
+        d-half (bit-or (b 0) (bit-shift-left (b 1) 8))
+        scales-h (bit-or (b 2) (bit-shift-left (b 3) 8))
+        ib (quot element 32)
+        j (- element (* ib 32))
+        low (< j 16)
+        jj (if low j (- j 16))
+        packed (b (+ 8 (* ib 16) jj))
+        nibble (if low (bit-and packed 15) (bit-shift-right packed 4))
+        sl (b (+ 4 (quot ib 2)))
+        sl4 (if (even? ib) (bit-and sl 15) (bit-and (bit-shift-right sl 4) 15))
+        sh2 (bit-and (bit-shift-right scales-h (* 2 ib)) 3)
+        ls (bit-or sl4 (bit-shift-left sh2 4))
+        d (Float/intBitsToFloat (unchecked-int (half->f32-bits d-half)))
+        dl (float (* d (float (- ls 32))))]
+    (Float/floatToRawIntBits (float (* dl (float (nth kvalues-iq4nl nibble)))))))
+
+(deftest iq4-xs-dequantises-on-every-available-isa
+  ;; ⚠ THE FORMAT THAT KEPT THE IQ TYPES IN THE C, decoded in Kotoba and run
+  ;; as a real process. It needs everything the day's work added at once: a
+  ;; codebook in the program's own pool, a region the caller granted, a base
+  ;; that survives the frontend's rename through a `let`, and f32 arithmetic.
+  ;;
+  ;; The fp16 super-block scale is decoded BY THE X86 EQUATION -- mask, shift,
+  ;; multiply by 2^112 -- and the reference above decodes it by the IEEE-754
+  ;; definition instead, so the two agree by arriving at the same number
+  ;; rather than by carrying the same constant.
+  (let [available (into {} (remove (comp nil? val) @loaders))
+        missing (remove available (keys isas))
+        required (if (macos?) (set (keys isas)) #{(host-isa)})
+        ;; A block whose fields are all non-trivial: a scale that is neither
+        ;; a power of two nor 1, both nibble positions of every `scales_l`
+        ;; byte, and a `scales_h` with all four two-bit patterns present.
+        block (vec (concat [0x55 0x35 0xe7 0xb1 0x5a 0x3c 0x91 0x2d]
+                           (map #(mod (* 37 (inc %)) 256) (range 128))))]
+    (println "iq4-xs available:" (vec (sort (keys available)))
+             "/ missing (SKIPPED):" (vec (sort missing)))
+    (is (every? available required)
+        (str "required ISA loaders are unavailable on this host. required: "
+             (vec (sort required)) ", missing: " (vec (sort missing))))
+    (doseq [[isa _] available]
+      (testing isa
+        (testing "the fp16 decode, against the IEEE-754 definition"
+          ;; Zero, a subnormal, one, the scale this block uses, the largest
+          ;; finite half, a negative, an infinity and a NaN with a payload.
+          (doseq [half [0x0000 0x0001 0x03ff 0x3c00 0x3555 0x7bff
+                        0xc000 0x7c00 0x7e01]]
+            (let [report (run-native isa iq4xs-source "-" {:allow #{}}
+                                     'half-bits [(str half)])
+                  expected (half->f32-bits half)]
+              (is (not (str/includes? report "KEXE_TRAP")) (str/trim report))
+              (is (str/includes? report (str ":result " expected))
+                  (str (format "half 0x%04x" half) ": " (str/trim report))))))
+        (testing "the dequantised weight, over a whole block"
+          ;; Every sub-block boundary, both halves of a sub-block, both
+          ;; nibble positions, and the last element.
+          (doseq [element [0 1 15 16 17 31 32 63 64 100 128 200 255]]
+            (let [expected (iq4xs-weight-bits block element)
+                  report (run-native isa iq4xs-source "-" {:allow #{}}
+                                     'weight-bits
+                                     [(str "g:" (region-hex block)) "gl:0"
+                                      (str element)])]
+              (is (not (str/includes? report "KEXE_TRAP")) (str/trim report))
+              (is (str/includes? report (str ":result " expected))
+                  (str "element " element ": " (str/trim report))))))
+        (testing "changing one nibble of qs changes exactly that element"
+          ;; The control. Two blocks differing in the low nibble of qs[0]
+          ;; must differ at element 0 and agree at element 16, which reads
+          ;; the HIGH nibble of the same byte.
+          (let [bumped (assoc block 8 (bit-or (bit-and (nth block 8) 0xf0) 15))
+                answer (fn [blk e]
+                         (let [r (run-native isa iq4xs-source "-" {:allow #{}}
+                                             'weight-bits
+                                             [(str "g:" (region-hex blk)) "gl:0"
+                                              (str e)])]
+                           (Long/parseLong
+                            (second (re-find #":result (-?\d+)" r)))))]
+            (is (not= (answer block 0) (answer bumped 0)))
+            (is (= (answer block 16) (answer bumped 16)))
+            (is (= (iq4xs-weight-bits bumped 0) (answer bumped 0)))))))))
+
 (deftest a-carried-codebook-is-decoded-on-every-available-isa
   ;; THE LAST PIECE THE IQ QUANTIZATION FORMATS WERE MISSING, executed rather
   ;; than argued. kotoba-native's `elf64` docstring says of IQ3_XXS, IQ3_S,

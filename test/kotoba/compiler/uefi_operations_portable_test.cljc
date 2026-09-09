@@ -48,8 +48,9 @@
     (is (every? uefi/rodata-literal-targets
                 [:x86_64-aiueos-uefi-v1 :x86_64-aiueos-kernel-v1
                  :x86_64-kotoba-v1 :aarch64-kotoba-v1]))
-    (is (= #{:x86_64-aiueos-uefi-v1 :x86_64-aiueos-kernel-v1}
-           uefi/function-address-targets))))
+    ;; Equal to the literals' set since 2026-09-09, by measurement in three
+    ;; layers rather than by merging the two gates. The separate `def` stays.
+    (is (= uefi/rodata-literal-targets uefi/function-address-targets))))
 
 (deftest every-gated-head-is-refused-outside-the-firmware-target
   (doseq [op uefi/uefi-only-operations
@@ -120,16 +121,21 @@
         (is (= m (uefi/reject-rodata-literals-outside-native-targets! target m))
             (str op " on " target))))))
 
-(deftest a-function-address-is-refused-where-a-literal-is-admitted
-  ;; The control for the split: on a hosted native target the two families
-  ;; disagree, and each says so in its own sentence.
+(deftest both-families-are-admitted-on-a-hosted-native-target
+  ;; Was `a-function-address-is-refused-where-a-literal-is-admitted`, which
+  ;; was true for a few hours on 2026-09-09 and was the control that kept the
+  ;; two gates from being recombined while it was. They agree again by
+  ;; measurement; this asserts the agreement rather than being deleted.
   (let [target :aarch64-kotoba-v1
         lit (module '(bytes-literal "dead"))
         addr (module '(kernel-function-address main))]
     (is (= lit (uefi/reject-rodata-literals-outside-native-targets! target lit)))
-    (is (= '[kernel-function-address]
-           (:operations (refusal uefi/reject-rodata-literals-outside-native-targets!
-                                 target addr))))))
+    (is (= addr (uefi/reject-rodata-literals-outside-native-targets! target addr))))
+  (testing "and both are still refused where no pool exists at all"
+    (doseq [op uefi/rodata-literal-operations]
+      (let [data (refusal uefi/reject-rodata-literals-outside-native-targets!
+                          :wasm32-browser-v1 (module (list op "x")))]
+        (is (= [op] (:operations data)))))))
 
 (deftest the-two-gates-disagree-about-the-kernel-target-on-purpose
   ;; Both heads arrived together; one is admitted on the aiueos KERNEL target

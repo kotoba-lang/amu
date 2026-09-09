@@ -172,7 +172,14 @@
   ;;
   ;; It ADDS an arm rather than moving an existing sequence, so the boundary
   ;; this test pins is untouched.
-  (is (= "c14a49f369905b1b6e61379a529071eecda75865"
+  ;; Advanced again 2026-09-09 to edbbe987: a FUNCTION'S address is `adr` on
+  ;; AArch64 too, at the same label a call resolves against. It carries
+  ;; kotoba-mir 1a1c4358 and kotoba-codegen 3e6c815a. The gap it closes was
+  ;; named by the commit that closed the literal's, hours earlier -- the
+  ;; refusal there said a function's address is x86-only "for exactly the
+  ;; reason the literal is", and the literal's reason had already stopped
+  ;; holding.
+  (is (= "edbbe9873fc0eac387d1420e5191be6fab0ff469"
          (dependency-pin 'io.github.kotoba-lang/kotoba-native)))
   ;; Advanced 2026-09-07 to kotoba-native main c9d5c44 (hoist #151, cross-call
   ;; hoist #152, copy coalescing #154; 06badc8's allow-list entry is on main as
@@ -374,7 +381,15 @@
   ;; chose and could have chosen differently, while `(bytes-literal "...")` is
   ;; a relocation the backend resolves into a pool it placed beside the code.
   ;; A pool that is addressable and unreadable is not a pool.
-  (is (= "6f4871f33e643cc65ab2bfedeaf18b5d281fd82c"
+  ;; Advanced again 2026-09-09 to 93eacd80, which takes
+  ;; `kernel-function-address` out of the verifier's aiueos-only set. It was
+  ;; there beside `kernel-scratch-region` under ONE comment covering both,
+  ;; and the reason belonged to the reservation: a `.data` reservation is a
+  ;; place in an IMAGE, a function's label is a place in the emitted buffer,
+  ;; and every native target has one of those. Required with this file's
+  ;; `function-address-targets` change for the usual reason -- without it the
+  ;; program this repository now compiles is refused at verification.
+  (is (= "85ea11d61cc3613bfb5ac80a7736de7ae1382942"
          (dependency-pin 'io.github.kotoba-lang/kotoba-verifier)))
   (is (= 7 (:abi/version aggregate-abi/contract)))
   (is (= :recursive-word-handles

@@ -94,8 +94,12 @@
   a green `amu check` followed by a red `amu compile`, which is the exact skew
   this repository's deps comments already warn about.
 
-  Its target set is therefore UNCHANGED. Closing that gap is a separate act
-  and needs its own measurement, exactly as the literal's did."
+  ⚠ THE GAP CLOSED THE SAME DAY, and this docstring keeps the paragraph
+  above rather than deleting it because the SEQUENCE is the point. The split
+  is what let the literal's gate move on its own evidence while this one
+  stayed put for a few hours; a single gate for both would have moved them
+  together, on evidence that covered only one. The name stays for the same
+  reason: two families with two reasons, even when the two sets agree today."
   '#{kernel-function-address})
 
 (def rodata-literal-operations
@@ -142,17 +146,24 @@
         target-profile/profiles))
 
 (def function-address-targets
-  "boot-scratch's set, which did NOT move on 2026-09-09. It is spelled by
-  intersecting the literals' set with the aiueos condition rather than being
-  written out, so that it stays a SUBSET by construction: a target admitted
-  for a function address but not for a literal would be incoherent, since the
-  function address needs everything the literal needs and one thing more."
+  "boot-scratch's set. Still spelled by intersection with the literals' set
+  rather than written out, so that it stays a SUBSET by construction -- a
+  target admitted for a function address but not for a literal would be
+  incoherent, since the function address needs everything the literal needs.
+
+  ⚠ THE INTERSECTION IS NOW WITH EVERYTHING, so the two sets are equal
+  today. That is a measurement, not a merge: `kotoba.mir` stopped refusing
+  `:gmir/function-address` on AArch64 (kotoba-mir 1a1c4358), kotoba-native
+  emits `adr` at the callee's label (edbbe987), and kotoba-verifier took the
+  head out of its aiueos-only set (93eacd80). Each of those was its own
+  commit with its own control.
+
+  The name and the separate `def` stay. Two families with two reasons keep
+  the ability to move apart again -- which is exactly what happened here,
+  hours apart, and would have been impossible under one gate."
   (into #{}
-        (keep (fn [[name profile]]
-                (when (and (contains? rodata-literal-targets name)
-                           (= :aiueos (:os profile))
-                           (= :x86_64 (:isa profile)))
-                  name)))
+        (keep (fn [[name _profile]]
+                (when (contains? rodata-literal-targets name) name)))
         target-profile/profiles))
 
 (defn heads-used

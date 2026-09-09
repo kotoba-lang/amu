@@ -171,10 +171,16 @@
                :x86_64-kotoba-v1 :aarch64-kotoba-v1]))
   (is (not-any? uefi/rodata-literal-targets
                 [:wasm32-browser-v1 :wasm32-kotoba-v1]))
-  (is (= #{:x86_64-aiueos-uefi-v1 :x86_64-aiueos-kernel-v1}
-         uefi/function-address-targets))
-  ;; The function-address set is a SUBSET by construction; assert it, because
-  ;; a target admitted for an address but not for a literal is incoherent.
+  ;; ⚠ THE TWO SETS ARE EQUAL TODAY, and that is a measurement rather than a
+  ;; merge. `kernel-function-address` was held back for a few hours because
+  ;; `kotoba.mir` still refused it on AArch64; all three layers moved after
+  ;; that, each in its own commit with its own control. The `def` and the
+  ;; separate assertions stay: two families with two reasons keep the ability
+  ;; to move apart again, which is exactly what they did.
+  (is (= uefi/rodata-literal-targets uefi/function-address-targets))
+  ;; The function-address set is a SUBSET by construction; assert it anyway,
+  ;; because a target admitted for an address but not for a literal is
+  ;; incoherent and the equality above would not survive a future split.
   (is (every? uefi/rodata-literal-targets uefi/function-address-targets))
   (doseq [[op source] (dissoc literal-bodies 'kernel-function-address)
           target [:wasm32-kotoba-v1 :aarch64-aiueos-kernel-v1]]
@@ -186,22 +192,30 @@
                (ex-message thrown)))
         (is (= [op] (:operations (ex-data thrown))))))))
 
-(deftest boot-scratch-a-function-address-is-refused-where-a-literal-is-not
-  ;; ⚠ THE CONTROL FOR THE SPLIT, and the reason it is a separate deftest.
-  ;; On `:aarch64-kotoba-v1` a literal now compiles and a function address
-  ;; does not. If the two gates were ever recombined, one of these two
-  ;; assertions goes red whichever way the recombination went.
+(deftest boot-scratch-a-function-address-compiles-where-a-literal-does
+  ;; ⚠ THIS REPLACES A REFUSAL that stood for a few hours on 2026-09-09, and
+  ;; the hours are the point. When it was written, `:aarch64-kotoba-v1`
+  ;; admitted a literal and refused a function address, and this test was the
+  ;; control that would have gone red if the two gates had been recombined.
+  ;;
+  ;; They are equal again now, by measurement rather than by merging: the
+  ;; refusal was in `kotoba.mir`, and `adr` closed it. Deleting this test
+  ;; would assert nothing, so it asserts the positive instead -- BOTH heads
+  ;; compile on the hosted AArch64 target, which is what the whole chain
+  ;; adds up to.
   (is (some? (compiled-output (get literal-bodies 'bytes-literal)
                               :aarch64-kotoba-v1)))
-  (let [thrown (try (compiler/compile-source
-                     (get literal-bodies 'kernel-function-address)
-                     :aarch64-kotoba-v1)
-                    nil
-                    (catch clojure.lang.ExceptionInfo e e))]
-    (is (some? thrown))
-    (is (= "a function's address requires a native aiueos x86-64 target"
-           (ex-message thrown)))
-    (is (= '[kernel-function-address] (:operations (ex-data thrown))))))
+  (is (some? (compiled-output (get literal-bodies 'kernel-function-address)
+                              :aarch64-kotoba-v1)))
+  (testing "and the head whose answer is WRONG elsewhere is still gated"
+    ;; `kernel-scratch-region` is the control that survives: its answer
+    ;; outside an aiueos image is wrong rather than absent, so it is a
+    ;; difference between the targets and not a gap. Its gate is
+    ;; `uefi-only-operations`, tested above; asserted here as membership so
+    ;; that a change moving it into the literal family is red in the file
+    ;; that widened that family.
+    (is (contains? uefi/uefi-only-operations 'kernel-scratch-region))
+    (is (not (contains? uefi/rodata-literal-operations 'kernel-scratch-region)))))
 
 (deftest boot-lit-the-admitted-targets-actually-admit-them
   ;; The other direction, in the same file: a gate that refused everything
