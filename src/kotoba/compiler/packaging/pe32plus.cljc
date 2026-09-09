@@ -405,6 +405,24 @@
    ;; where these tokens are built: it depends on their own length.
    [0x48 0x8d 0x05 0x00 0x00 0x00 0x00]
    [0x48 0x89 0x05] [(rip :loader-text)]
+   ;; And UEFI's CR3, into the other half of the same 16-byte slot.
+   ;;
+   ;; The guest replaces CR3 with a map in which everything above 2 MiB is NX,
+   ;; and un-NXes exactly one 2 MiB page: this image's. That is enough for the
+   ;; loader to RUN after the guest returns, and not enough for it to CALL the
+   ;; firmware that loaded it -- ConOut is firmware text, up there, and NX.
+   ;; The fall-through below calls it to keep the status string on the K16's
+   ;; panel, so the one path whose purpose is to report a failure is the one
+   ;; that cannot complete.
+   ;;
+   ;; In QEMU that surfaced as exit 63: the instruction-fetch #PF reaches the
+   ;; guest's recoverable handler, which requires CR2 == 0x100000, and it
+   ;; fails closed with an 'F' receipt. Measured 2026-09-09, twice, identical:
+   ;; e=0011, CR2 == RIP == a firmware address, the last event before exit.
+   ;; On the K16 there is no isa-debug-exit, so the same fault ends in the
+   ;; fail-closed halt instead -- a board that stops after 'F'.
+   [0x0f 0x20 0xd8]                      ; mov rax,cr3
+   [0x48 0x89 0x05] [(rip :uefi-cr3)]
    ;; THE SNAPSHOT COMES FIRST, before the branch that can skip past it.
    ;; Measured 2026-09-09 in one QEMU run: with it after the PCI probe, a
    ;; mismatch jumped to `:tender-step` -- which is BELOW the snapshot -- so
@@ -450,6 +468,12 @@
    ;; cmp r15, tender-continue ; je tender-step
    [0x49 0x81 0xff] (le tender-continue 4)
    [0x0f 0x84] [(rip :tender-step)]
+   ;; Back to the map the firmware handed us, BEFORE calling any of it. The
+   ;; loader's own page is executable in both maps -- UEFI identity-maps it and
+   ;; the guest un-NXes it -- so the switch itself is safe to execute, and the
+   ;; stack lives in the first GiB, which both maps cover.
+   [0x48 0x8b 0x05] [(rip :uefi-cr3)]    ; mov rax,[rip+uefi-cr3]
+   [0x0f 0x22 0xd8]                      ; mov cr3,rax
    (store-status-nibble :r15d 4 :status-high-digit :status-high-store
                         :status-high)
    (store-status-nibble :r15d 0 :status-low-digit :status-low-store
@@ -457,7 +481,9 @@
    [0x49 0x8b 0x4d 0x40 0x48 0x85 0xc9 0x0f 0x84]
    [(rip :preflight-hold)]
    [0x48 0x8d 0x15] [(rip :status-message)]
+   (debugcon-byte \O)                    ; about to call firmware
    [0x48 0x8b 0x41 0x08 0xff 0xd0]
+   (debugcon-byte \K)                    ; and it came back
    [(label :preflight-hold)]
    ;; Keep the physical diagnostic visible. Returning EFI_LOAD_ERROR made the
    ;; K16 immediately retry PXE and erase STATUS before it could be recorded.
@@ -834,7 +860,9 @@
                            :payload-pointer (+ data-address 112)
                            :payload-length (+ data-address 120)
                            :payload (+ data-address payload-offset)
-                           :loader-text (+ data-address loader-text-offset)}
+                           :loader-text (+ data-address loader-text-offset)
+                           ;; the other half of the 16-byte slot
+                           :uefi-cr3 (+ data-address loader-text-offset 8)}
                           (when k16-preflight?
                             {:tender-fuel (+ data-address tender-slot-offset)
                              :enter-message (+ data-address enter-message-offset)
