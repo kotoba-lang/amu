@@ -54,9 +54,23 @@
     ;; decrement and kotoba-native stopped charging one (codegen
     ;; co-scientist iteration 11). A leaf that spends fuel here again is a
     ;; regression, not a rounding difference.
+    ;; `:vectors` and `:vector-items` joined every report on 2026-09-09.
+    ;; `kototama.native.executor`'s `valid-supervisor-report?` had expected
+    ;; them since 2026-09-08 -- the two vector arenas are separately
+    ;; exhaustible and were the only bounded resource a run could hit without
+    ;; the report mentioning it -- and this loader had never gained the other
+    ;; half. The disagreement was invisible because this repository pinned an
+    ;; older kototama-native; advancing that pin surfaced it as "malformed
+    ;; native supervisor evidence (exit=0, report-status=:ok)".
+    ;;
+    ;; Asserted as the WHOLE map rather than by `select-keys`, deliberately: a
+    ;; key silently joining or leaving the report is the thing this assertion
+    ;; exists to catch, and that is exactly how it caught this one.
     (is (= {:status :ok :result 42
             :fuel {:initial 512 :remaining 512}
-            :heap {:capacity 4096 :used 0}}
+            :heap {:capacity 4096 :used 0}
+            :vectors {:capacity 4096 :used 0}
+            :vector-items {:capacity 65536 :used 0}}
            (:report result)))
     (is (<= (:started-at result) (:finished-at result)))))
 

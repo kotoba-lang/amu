@@ -1,4 +1,20 @@
+;; The sha is the RATCHET: coverage floors measured against one loader do
+;; not carry to another, so changing tools/kexe_loader.c must fail here
+;; until someone decides what the floors are for the new one.
+;;
+;; Advanced 2026-09-09 for the granted-region argument forms (`g:<hex>`
+;; and `gl:<n>`), the report tail, and the pool-is-last assert.
+;;
+;; ⚠ THE FLOORS BELOW WERE NOT RE-MEASURED. They are the previous
+;; loader's, carried forward, and that is stated rather than implied:
+;; libFuzzer's runtime (libclang_rt.fuzzer_osx.a) is not installed on
+;; the machine that made this change, so `npm run fuzz` there takes the
+;; deterministic-sanitized arm and never reaches this file. The Linux CI
+;; job is what measures them. The change ADDS parser branches rather
+;; than removing any, so the floors should be met or exceeded -- but
+;; "should" is the word, and if CI reports higher numbers these floors
+;; are now looser than the code deserves and should be raised.
 {:format :kotoba.fuzz-baseline/v2
- :loader-source-sha256 "9942820b279a2526bf9f56886b08368488a1ef1b082c7d91154e5102d66dd36b"
+ :loader-source-sha256 "ef9b2dffdc87249d73e4d0fb7afcd31815ac484e83ffee0161559a72458a22eb"
  :profiles {:x64 {:min-cov 60 :min-features 100 :min-corpus 20}
             :arm64 {:min-cov 60 :min-features 100 :min-corpus 18}}}
