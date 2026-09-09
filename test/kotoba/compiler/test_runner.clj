@@ -14,6 +14,8 @@
             [kotoba.compiler.core-test]
             [kotoba.compiler.definition-identity-test]
             [kotoba.compiler.definition-identity-portable-test]
+            [kotoba.compiler.provenance-portable-test]
+            [kotoba.compiler.uefi-operations-portable-test]
             [kotoba.compiler.coverage-test]
             [kotoba.compiler.coverage-evidence-test]
             [kotoba.compiler.bounded-edn-test]
@@ -206,6 +208,8 @@
    ;; registering only the nbb runner drops it from the JVM suite silently, and
    ;; the count is the only thing that says so.
    'kotoba.compiler.definition-identity-portable-test
+   'kotoba.compiler.provenance-portable-test
+   'kotoba.compiler.uefi-operations-portable-test
    'kotoba.compiler.coverage-test
    'kotoba.compiler.coverage-evidence-test
    'kotoba.compiler.bounded-edn-test

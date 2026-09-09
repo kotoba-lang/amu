@@ -92,7 +92,17 @@
     ;; 0034, arriving here with the pin advance to 69e364e). The message
     ;; carries what was actually read, because a mismatch whose value is
     ;; discarded costs a second run to diagnose -- this one did.
-    (ensure! (= "{:status :ok :result 42 :fuel {:initial 512 :remaining 510} :heap {:capacity 4096 :used 0}}"
+    ;; `:vectors` and `:vector-items` joined this report on 2026-09-09.
+    ;; `kototama.native.executor`'s `valid-supervisor-report?` had expected
+    ;; them since 2026-09-08 and no loader emitted them, so every signed run
+    ;; failed as "malformed native supervisor evidence (exit=0,
+    ;; report-status=:ok)" the moment that pin was advanced. Pinned as the
+    ;; WHOLE line rather than by substring: a key silently joining or leaving
+    ;; the report is what this assertion is for.
+    (ensure! (= (str "{:status :ok :result 42 :fuel {:initial 512 :remaining 510} "
+                     ":heap {:capacity 4096 :used 0} "
+                     ":vectors {:capacity 4096 :used 0} "
+                     ":vector-items {:capacity 65536 :used 0}}")
                 (str/trim (:stdout result)))
              (str "native structured report mismatch: "
                   (pr-str (str/trim (:stdout result)))))))

@@ -1432,3 +1432,72 @@
         (is (not (str/includes? report "KEXE_TRAP")) (str/trim report))
         (is (str/includes? report (str ":result " expected))
             (str/trim report))))))
+
+;; ---------------------------------------------------------------------------
+;; granted regions: bytes the CALLER handed in, on both ISAs, as real processes
+;; ---------------------------------------------------------------------------
+
+(def ^:private granted-region-source
+  (slurp "test/fixtures/granted-region-sum.kotoba"))
+
+(defn- region-hex [bytes]
+  (apply str (map #(format "%02x" (bit-and (int %) 0xff)) bytes)))
+
+(deftest a-granted-region-is-read-on-every-available-isa
+  ;; `kotoba.verifier` 33b3d067 admits the slice memory subfamily on general
+  ;; native targets when every base is provably a PARAMETER. This is the other
+  ;; half: the loader's `g:<hex>`/`gl:<n>` pair, which is what a caller uses to
+  ;; BE that parameter. Before it there was no caller that could grant a
+  ;; region -- a string argument arrives as a pair handle and a vector as an
+  ;; arena handle, and neither is an address.
+  ;;
+  ;; Both numbers are the loader's. `gl:0` is a REFERENCE to the zeroth region
+  ;; minted, answered with the length recorded when the bytes were copied, so a
+  ;; caller cannot grant a base together with a length that does not belong to
+  ;; it. That is the property, and it is why the pair is a pair.
+  (let [available (into {} (remove (comp nil? val) @loaders))
+        missing (remove available (keys isas))
+        required (if (macos?) (set (keys isas)) #{(host-isa)})]
+    (println "granted-region available:" (vec (sort (keys available)))
+             "/ missing (SKIPPED):" (vec (sort missing)))
+    (is (every? available required)
+        (str "required ISA loaders are unavailable on this host. required: "
+             (vec (sort required)) ", missing: " (vec (sort missing))))
+    (doseq [[isa _] available]
+      (testing isa
+        (testing "sixty-four granted bytes"
+          ;; 1 + 2 + ... + 64
+          (let [report (run-native isa granted-region-source "-" {:allow #{}}
+                                   'sum-bytes
+                                   [(str "g:" (region-hex (range 1 65))) "gl:0"])]
+            (is (not (str/includes? report "KEXE_TRAP")) (str/trim report))
+            (is (str/includes? report ":result 2080") (str/trim report))))
+        (testing "the LENGTH is the grant's, not the traversal's"
+          ;; The same program over a ten-byte grant walks ten bytes, because
+          ;; `slice-length` answers what was granted. A traversal that assumed
+          ;; its own bound would read the other fifty-four.
+          (let [report (run-native isa granted-region-source "-" {:allow #{}}
+                                   'sum-bytes
+                                   [(str "g:" (region-hex (range 1 11))) "gl:0"])]
+            (is (str/includes? report ":result 55") (str/trim report))))
+        (testing "an empty grant is a grant"
+          (let [report (run-native isa granted-region-source "-" {:allow #{}}
+                                   'sum-bytes ["g:" "gl:0"])]
+            (is (str/includes? report ":result 0") (str/trim report))))
+        (testing "a byte is read UNSIGNED"
+          ;; Four 0xFF bytes are 1020, not -4. The slice's element type is
+          ;; :u8, and a sign-extended load would answer a negative here.
+          (let [report (run-native isa granted-region-source "-" {:allow #{}}
+                                   'sum-bytes
+                                   [(str "g:" (region-hex [255 255 255 255])) "gl:0"])]
+            (is (str/includes? report ":result 1020") (str/trim report))))
+        (testing "a length naming a region the loader never minted is refused"
+          ;; Fail closed rather than answered with zero: `gl:1` when one region
+          ;; exists is a forward reference, and a zero there would be a silent
+          ;; empty walk over a region that IS there.
+          (let [report (run-native isa granted-region-source "-" {:allow #{}}
+                                   'sum-bytes
+                                   [(str "g:" (region-hex [1 2 3])) "gl:1"])]
+            (is (not (str/includes? report ":result"))
+                (str "a forward reference must not produce a result: "
+                     (str/trim report)))))))))
