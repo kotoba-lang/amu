@@ -272,7 +272,28 @@
          ;; is why every float kernel here is written through
          ;; f64-from-bits. Needed WITH the verifier pin below -- kir alone
          ;; is a green `check` and a red `compile`.
-         :git/sha "74426bad2fa7c8b674c9bc9469232f1b751fbf9c"}
+         ;;
+         ;; Advanced 2026-09-09 for the `string-index-of` wave. The operation had no
+         ;; native lowering and failed from source as `aggregate ABI rejected:
+         ;; call-abi-not-admitted` -- an unlowered head is call-shaped, so it reached
+         ;; neither of the two gates ADR 0002 opened for `string-contains?`. Without a
+         ;; byte offset a guest cannot cut a string at a separator, so no line-oriented
+         ;; program compiles for native; `kbb.browse` is the measured case
+         ;; (kotoba/bin/kbb_shim.cljs, 2026-09-07).
+         ;;
+         ;; Three pins move together because the operation needs all three, and ADR 0002
+         ;; measured that opening one gate alone moves nothing:
+         ;;   kotoba-native   `lower-index-of` on both ISAs (its ADR 0081)
+         ;;   kotoba-verifier `string-operations` gains the head (its ADR 0051)
+         ;;   osaho           the ORACLE itself was wrong (its ADR 0271)
+         ;;
+         ;; The osaho half is a CORRECTNESS advance, not a feature one:
+         ;; `utf8-index-of!` charged a surrogate pair 4 bytes at the high surrogate and
+         ;; 3 more at the low one, so it answered 7 where kotoba-script's JS emitter,
+         ;; kotoba-native's lowering and CPython all answer 4. `lower` folds a pure i64
+         ;; entry through that evaluator, so a constant `string-index-of` over an astral
+         ;; literal was baked into artifacts wrong.
+         :git/sha "1a81e2d7df947a719b75db1e6e5616a900f3ebb7"}
         ;; The frontend is an HIR producer and KIR lowering is its consumer;
         ;; both validate the same checked envelope.
         io.github.kotoba-lang/kotoba-hir
@@ -482,7 +503,13 @@
          ;; Reading them exactly turns it into a refusal:
          ;; `examples/held-operations.kotoba` was rejected as "native
          ;; instruction stream rejected" by a verifier that was right.
-         :git/sha "a5711bdc859cbe11c8a9497d7b836ed3d884f086"}
+         ;;
+         ;; Advanced 2026-09-09, a5711bdc -> 11691559 (kotoba-native main, forward
+         ;; only, 20 commits): `lower-index-of`, the same scan `string-contains?`
+         ;; already lowers to, returning the offset `kotoba$string-find` had already
+         ;; computed instead of folding it to 0/1. No new helper, no new callback, no
+         ;; new value representation, no ABI bump. See the osaho note above.
+         :git/sha "11691559934a16fcad073e4c0a8a58ab40049f2e"}
         io.github.kotoba-lang/kotoba-component
         {:git/url "https://github.com/kotoba-lang/kotoba-component.git"
          :git/sha "ff2c3e8c29a02a7731e70c7e4d276441ebc9d42d"}
@@ -608,7 +635,12 @@
          ;; target" for a program the verifier now admits -- a green
          ;; `amu check` followed by a red `amu compile`, which is the exact
          ;; skew this repo's own deps comments already warn about.
-         :git/sha "33b3d067603da3a1c596a900ddd6ab029d5ed6e3"}
+         ;;
+         ;; Advanced 2026-09-09, 33b3d067 -> 1810a62c (kotoba-verifier main, forward
+         ;; only, 2 commits): `string-operations` gains `string-index-of 2`. Without it
+         ;; the backend emits code this verifier then refuses -- the second gate of
+         ;; ADR 0002, which measured that one gate alone unlocks nothing.
+         :git/sha "1810a62ca2bee309e9add96d603121b45d26deaa"}
 }
  :aliases {:test {:extra-paths ["test"]
                   :extra-deps
