@@ -514,7 +514,21 @@
          ;; selection with `x86-simd-target-mismatch`, which is a program this
          ;; repository can now compile being rejected for a reason that stopped
          ;; being true.
-         :git/sha "7cbed512f7c383dacb77705216d0a8184a1170d3"}
+         ;;
+         ;; Advanced 2026-09-09, 7cbed512 -> c14a49f3 (kotoba-native main,
+         ;; forward only), and this one carries kotoba-mir b70a567a ->
+         ;; 4a049cc9 with it. A LITERAL'S ADDRESS NOW EMITS ON AARCH64.
+         ;;
+         ;; The refusal that stood there named ADRP+ADD's 4 KiB page split as
+         ;; the blocker. It was the wrong instruction: `adr` reaches +/-1 MiB
+         ;; in one, and kotoba-native places the literal pool at the end of the
+         ;; same emitted buffer as the code, so the distance is bounded by the
+         ;; size of one program -- the fact a linker cannot know and a backend
+         ;; can. Required WITH this file's `rodata-literal-targets` change, not
+         ;; optional: widening the gate here without the pin admits a program
+         ;; that `kotoba.mir` then refuses, which is a green `amu check`
+         ;; followed by a red `amu compile`.
+         :git/sha "c14a49f369905b1b6e61379a529071eecda75865"}
         io.github.kotoba-lang/kotoba-component
         {:git/url "https://github.com/kotoba-lang/kotoba-component.git"
          :git/sha "ff2c3e8c29a02a7731e70c7e4d276441ebc9d42d"}
@@ -640,7 +654,21 @@
          ;; target" for a program the verifier now admits -- a green
          ;; `amu check` followed by a red `amu compile`, which is the exact
          ;; skew this repo's own deps comments already warn about.
-         :git/sha "33b3d067603da3a1c596a900ddd6ab029d5ed6e3"}
+         ;;
+         ;; Advanced 2026-09-09 to 6f4871f3. Two admissions land together and
+         ;; both are needed by the same program: the four rodata literal heads
+         ;; leave the verifier's aiueos-only set for the two HOSTED native
+         ;; targets, and `traceable-region-base?` admits a rodata literal as a
+         ;; region base beside a parameter. A pool that is addressable and
+         ;; unreadable is not a pool.
+         ;;
+         ;; The literal is admitted as a base for a reason the integer is not:
+         ;; `4096` is an address the program chose and could have chosen
+         ;; differently, while `(bytes-literal "...")` is a relocation the
+         ;; backend resolves into a pool it placed beside the code -- the
+         ;; program cannot make it point anywhere else, and the bytes it
+         ;; reaches are its own.
+         :git/sha "6f4871f33e643cc65ab2bfedeaf18b5d281fd82c"}
 }
  :aliases {:test {:extra-paths ["test"]
                   :extra-deps

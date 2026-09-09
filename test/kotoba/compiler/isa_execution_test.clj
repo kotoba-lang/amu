@@ -1440,6 +1440,25 @@
 (def ^:private granted-region-source
   (slurp "test/fixtures/granted-region-sum.kotoba"))
 
+;; ---------------------------------------------------------------------------
+;; rodata: a codebook the PROGRAM carries, on both ISAs, as real processes
+;; ---------------------------------------------------------------------------
+
+(def ^:private codebook-source
+  (slurp "test/fixtures/rodata-codebook-iq4.kotoba"))
+
+(def ^:private kvalues-iq4nl
+  "The reference table, written here as sixteen decimal numbers rather than
+  read out of the fixture. A test that derived the expectation from the same
+  hex string the program carries would agree with itself no matter what the
+  program did with it."
+  [-127 -104 -83 -65 -49 -35 -22 -10 1 13 25 38 53 69 89 113])
+
+(defn- nibble-sum-reference [bytes]
+  (reduce + 0 (map (fn [b] (+ (nth kvalues-iq4nl (bit-and b 15))
+                              (nth kvalues-iq4nl (bit-and (quot b 16) 15))))
+                   bytes)))
+
 (defn- region-hex [bytes]
   (apply str (map #(format "%02x" (bit-and (int %) 0xff)) bytes)))
 
@@ -1501,6 +1520,79 @@
             (is (not (str/includes? report ":result"))
                 (str "a forward reference must not produce a result: "
                      (str/trim report)))))))))
+
+
+(deftest a-carried-codebook-is-decoded-on-every-available-isa
+  ;; THE LAST PIECE THE IQ QUANTIZATION FORMATS WERE MISSING, executed rather
+  ;; than argued. kotoba-native's `elf64` docstring says of IQ3_XXS, IQ3_S,
+  ;; IQ4_XS and IQ2_S -- 306 of the shipping model's 866 tensors -- that they
+  ;; "decode through codebook grids that `qwen35_quant_tables.inc` holds as
+  ;; static const data, and this dialect has no rodata and no bytes literal to
+  ;; put one in. Those types stay in the C."
+  ;;
+  ;; The fixture is `kvalues_iq4nl`, the sixteen-entry table IQ4_NL and IQ4_XS
+  ;; decode through, carried as the program's own bytes. Three things had to
+  ;; be true at once and none of them was until 2026-09-09: the four literal
+  ;; heads had to leave the verifier's aiueos-only set, a literal had to be
+  ;; admitted as a REGION BASE beside a parameter (a pool that is addressable
+  ;; and unreadable is not a pool), and AArch64 had to have an instruction
+  ;; that reaches the pool -- `adr`, one instruction, not ADRP+ADD.
+  ;;
+  ;; ⚠ THE EXPECTATION IS COMPUTED FROM A SEPARATE COPY OF THE TABLE, above.
+  ;; Deriving it from the fixture's hex would make the test agree with itself.
+  (let [available (into {} (remove (comp nil? val) @loaders))
+        missing (remove available (keys isas))
+        required (if (macos?) (set (keys isas)) #{(host-isa)})]
+    (println "rodata-codebook available:" (vec (sort (keys available)))
+             "/ missing (SKIPPED):" (vec (sort missing)))
+    (is (every? available required)
+        (str "required ISA loaders are unavailable on this host. required: "
+             (vec (sort required)) ", missing: " (vec (sort missing))))
+    (doseq [[isa _] available]
+      (testing isa
+        (testing "every entry of the table, read out of the program's own pool"
+          (doseq [[index expected] (map-indexed vector kvalues-iq4nl)]
+            (let [report (run-native isa codebook-source "-" {:allow #{}}
+                                     'kvalue [(str index)])]
+              (is (not (str/includes? report "KEXE_TRAP")) (str/trim report))
+              (is (str/includes? report (str ":result " expected))
+                  (str index " -> " expected ": " (str/trim report))))))
+        (testing "a whole block's nibbles, against an independent reference"
+          ;; 128 bytes is one IQ4_XS block's `qs`: 256 packed nibbles, low
+          ;; first, which is ggml's own unpack order.
+          (let [qs (mapv #(mod (* 37 (inc %)) 256) (range 128))
+                expected (nibble-sum-reference qs)
+                report (run-native isa codebook-source "-" {:allow #{}}
+                                   'nibble-sum
+                                   [(str "g:" (region-hex qs)) "gl:0"])]
+            (is (not (str/includes? report "KEXE_TRAP")) (str/trim report))
+            (is (str/includes? report (str ":result " expected))
+                (str/trim report))))
+        (testing "changing ONE nibble moves the answer by exactly one table step"
+          ;; The control that separates "reads the codebook" from "computes
+          ;; some constant". Both runs walk the same 128 bytes; they differ in
+          ;; the low nibble of byte 0, so the answer must differ by exactly
+          ;; kvalues[15] - kvalues[0] and by nothing else.
+          (let [base (vec (repeat 128 0))
+                bumped (assoc base 0 15)
+                answer (fn [qs]
+                         (let [r (run-native isa codebook-source "-" {:allow #{}}
+                                             'nibble-sum
+                                             [(str "g:" (region-hex qs)) "gl:0"])]
+                           (Long/parseLong
+                            (second (re-find #":result (-?\d+)" r)))))]
+            (is (= (- (nth kvalues-iq4nl 15) (nth kvalues-iq4nl 0))
+                   (- (answer bumped) (answer base))))))
+        (testing "the grant's LENGTH bounds the walk, not the program's idea of it"
+          (let [qs (mapv #(mod (* 37 (inc %)) 256) (range 128))]
+            (doseq [n [0 1 64 128]]
+              (let [taken (subvec qs 0 n)
+                    report (run-native isa codebook-source "-" {:allow #{}}
+                                       'nibble-sum
+                                       [(str "g:" (region-hex taken)) "gl:0"])]
+                (is (str/includes? report
+                                   (str ":result " (nibble-sum-reference taken)))
+                    (str n " bytes: " (str/trim report)))))))))))
 
 ;; ---------------------------------------------------------------------------
 ;; granted regions x dequant: the fused kernel over two granted regions

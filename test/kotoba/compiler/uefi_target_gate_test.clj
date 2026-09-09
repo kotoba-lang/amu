@@ -134,46 +134,108 @@
    ;; does.
    'kernel-function-address "(defn main [] (kernel-function-address main))"})
 
-(deftest boot-lit-a-literal-pool-is-gated-to-the-native-aiueos-targets
+(defn- compiled-output
+  "What `compile-source` produced, whatever the target calls it. The aiueos
+  packagers answer `:binary`; the hosted native targets answer `:artifact`.
+  Asserting `:binary` for both would report every hosted target as a refusal
+  -- a failure that looks like the gate and is not."
+  [source target]
+  (let [out (compiler/compile-source source target)]
+    (or (:binary out) (:artifact out))))
+
+(deftest boot-lit-a-literal-pool-is-gated-to-the-targets-that-have-one
   ;; A WIDER set than the firmware boundary's, and a different sentence.
   ;; `kernel-uefi-call2` on a Linux target is a program that would fault;
   ;; `(guid "...")` on the Wasm target is a program the backend has no way to
   ;; compile at all, and saying "require the aiueos UEFI target" about it would
   ;; name the wrong requirement.
-  (is (= '#{ucs2 guid bytes-literal bytes-literal-length
-            kernel-function-address}
-         uefi/rodata-literal-operations))
+  ;;
+  ;; ⚠ THE SET GREW ON 2026-09-09 and the operation set SPLIT in the same
+  ;; change. The literals gained the two hosted native targets -- the kexe
+  ;; loader mmaps the code buffer and jumps into it, so a pool beside the code
+  ;; is reachable exactly as it is inside an image -- and both ISAs, because
+  ;; `adr` answers on AArch64 what `lea …,[rip+disp32]` answers on x86-64.
+  ;; `kernel-function-address` did NOT come along: `kotoba.mir` still refuses
+  ;; it on AArch64 under its own keyword, so admitting it here would be a
+  ;; green `amu check` and a red `amu compile`.
+  (is (= '#{ucs2 guid bytes-literal bytes-literal-length}
+         uefi/rodata-literal-only-operations))
+  (is (= '#{kernel-function-address} uefi/function-address-operations))
+  ;; TWELVE, not four: `:native` execution covers linux, macos, windows,
+  ;; android and ios on both ISAs as well as the two bare `kotoba-v1`s. The
+  ;; count is asserted beside the set so that a profile table gaining a
+  ;; native target is visible here rather than silent.
+  (is (= 12 (count uefi/rodata-literal-targets)))
+  (is (every? uefi/rodata-literal-targets
+              [:x86_64-aiueos-uefi-v1 :x86_64-aiueos-kernel-v1
+               :x86_64-kotoba-v1 :aarch64-kotoba-v1]))
+  (is (not-any? uefi/rodata-literal-targets
+                [:wasm32-browser-v1 :wasm32-kotoba-v1]))
   (is (= #{:x86_64-aiueos-uefi-v1 :x86_64-aiueos-kernel-v1}
-         uefi/rodata-literal-targets))
-  (doseq [[op source] literal-bodies
-          target [:x86_64-kotoba-v1 :x86_64-linux-kotoba-v1
-                  :aarch64-aiueos-kernel-v1]]
+         uefi/function-address-targets))
+  ;; The function-address set is a SUBSET by construction; assert it, because
+  ;; a target admitted for an address but not for a literal is incoherent.
+  (is (every? uefi/rodata-literal-targets uefi/function-address-targets))
+  (doseq [[op source] (dissoc literal-bodies 'kernel-function-address)
+          target [:wasm32-kotoba-v1 :aarch64-aiueos-kernel-v1]]
     (testing (str op " on " target)
       (let [thrown (try (compiler/compile-source source target) nil
                         (catch clojure.lang.ExceptionInfo e e))]
         (is (some? thrown) (str op " reached " target))
-        (is (= "an image-resolved address requires a native aiueos x86-64 target"
+        (is (= "an image-resolved address requires a target whose backend places a literal pool"
                (ex-message thrown)))
         (is (= [op] (:operations (ex-data thrown))))))))
 
-(deftest boot-lit-the-admitted-targets-actually-admit-them
-  ;; The other direction, in the same file: a gate that refused everything
-  ;; would pass every assertion above. Both admitted targets, so neither is
-  ;; carried by the other.
-  (doseq [target uefi/rodata-literal-targets
-          [op source] literal-bodies]
-    (testing (str op " on " target)
-      (is (some? (:binary (compiler/compile-source source target)))
-          (str op " must compile on " target)))))
-
-(deftest boot-lit-a-literal-hidden-in-a-let-is-still-a-literal
+(deftest boot-scratch-a-function-address-is-refused-where-a-literal-is-not
+  ;; ⚠ THE CONTROL FOR THE SPLIT, and the reason it is a separate deftest.
+  ;; On `:aarch64-kotoba-v1` a literal now compiles and a function address
+  ;; does not. If the two gates were ever recombined, one of these two
+  ;; assertions goes red whichever way the recombination went.
+  (is (some? (compiled-output (get literal-bodies 'bytes-literal)
+                              :aarch64-kotoba-v1)))
   (let [thrown (try (compiler/compile-source
-                     "(defn main [] (let [p (ucs2 \"AIUEOS\")] p))"
-                     :x86_64-kotoba-v1)
+                     (get literal-bodies 'kernel-function-address)
+                     :aarch64-kotoba-v1)
                     nil
                     (catch clojure.lang.ExceptionInfo e e))]
     (is (some? thrown))
-    (is (= "an image-resolved address requires a native aiueos x86-64 target"
+    (is (= "a function's address requires a native aiueos x86-64 target"
+           (ex-message thrown)))
+    (is (= '[kernel-function-address] (:operations (ex-data thrown))))))
+
+(deftest boot-lit-the-admitted-targets-actually-admit-them
+  ;; The other direction, in the same file: a gate that refused everything
+  ;; would pass every assertion above. EVERY admitted target, so none is
+  ;; carried by the others -- and the set is now twelve rather than two.
+  ;;
+  ;; ⚠ ONLY TWO OF THE TWELVE ARE VERIFIABLE. `kotoba.verifier`'s
+  ;; `target-contracts` holds `:x86_64-kotoba-v1` and `:aarch64-kotoba-v1` and
+  ;; nothing else, so the other ten were outside the verified path already,
+  ;; for every operation rather than for this one. This gate answers "does
+  ;; this backend place a pool", the verifier answers a different question,
+  ;; and widening one did not narrow the other.
+  (doseq [target uefi/rodata-literal-targets
+          [op source] (dissoc literal-bodies 'kernel-function-address)]
+    (testing (str op " on " target)
+      (is (some? (compiled-output source target))
+          (str op " must compile on " target))))
+  (doseq [target uefi/function-address-targets
+          :let [source (get literal-bodies 'kernel-function-address)]]
+    (testing (str "kernel-function-address on " target)
+      (is (some? (compiled-output source target))))))
+
+(deftest boot-lit-a-literal-hidden-in-a-let-is-still-a-literal
+  ;; The refusing target moved from `:x86_64-kotoba-v1` to Wasm on
+  ;; 2026-09-09: the hosted native targets now HAVE a pool, and Wasm is where
+  ;; the head lowers to nothing at all. What this test is about -- that a head
+  ;; bound by a `let` is still a head -- is unchanged.
+  (let [thrown (try (compiler/compile-source
+                     "(defn main [] (let [p (ucs2 \"AIUEOS\")] p))"
+                     :wasm32-kotoba-v1)
+                    nil
+                    (catch clojure.lang.ExceptionInfo e e))]
+    (is (some? thrown))
+    (is (= "an image-resolved address requires a target whose backend places a literal pool"
            (ex-message thrown)))
     (is (= '[ucs2] (:operations (ex-data thrown))))))
 

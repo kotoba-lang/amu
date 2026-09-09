@@ -163,7 +163,16 @@
   ;; existing sequence, so the boundary this test pins is untouched.
   ;; `the-fused-dequant-answers-the-same-bits-on-every-available-isa` is the
   ;; assertion that the two ISAs agree, executed as real processes.
-  (is (= "7cbed512f7c383dacb77705216d0a8184a1170d3"
+  ;; Advanced 2026-09-09 to c14a49f3, which carries kotoba-mir 4a049cc9: a
+  ;; LITERAL'S ADDRESS now emits on AArch64 through `adr`, a single
+  ;; instruction. The refusal it replaces named ADRP+ADD's 4 KiB page split as
+  ;; the blocker and the named blocker was the wrong instruction -- `adr`
+  ;; reaches +/-1 MiB, and the pool is at the end of the same emitted buffer
+  ;; as the code, so the distance is bounded by the size of one program.
+  ;;
+  ;; It ADDS an arm rather than moving an existing sequence, so the boundary
+  ;; this test pins is untouched.
+  (is (= "c14a49f369905b1b6e61379a529071eecda75865"
          (dependency-pin 'io.github.kotoba-lang/kotoba-native)))
   ;; Advanced 2026-09-07 to kotoba-native main c9d5c44 (hoist #151, cross-call
   ;; hoist #152, copy coalescing #154; 06badc8's allow-list entry is on main as
@@ -357,7 +366,15 @@
   ;; refused on a hosted target even though the frontend admits one. Same skew
   ;; argument in the other direction: without this pin a program this
   ;; repository compiles is refused at verification.
-  (is (= "33b3d067603da3a1c596a900ddd6ab029d5ed6e3"
+  ;; Advanced again 2026-09-09 to 6f4871f3, which lifts exactly the two
+  ;; restrictions the paragraph above records as standing. The four rodata
+  ;; literal heads leave the aiueos-only set for the two hosted native
+  ;; targets, and a literal IS admitted as a region base beside a parameter --
+  ;; for a reason the integer does not have: `4096` is an address the program
+  ;; chose and could have chosen differently, while `(bytes-literal "...")` is
+  ;; a relocation the backend resolves into a pool it placed beside the code.
+  ;; A pool that is addressable and unreadable is not a pool.
+  (is (= "6f4871f33e643cc65ab2bfedeaf18b5d281fd82c"
          (dependency-pin 'io.github.kotoba-lang/kotoba-verifier)))
   (is (= 7 (:abi/version aggregate-abi/contract)))
   (is (= :recursive-word-handles

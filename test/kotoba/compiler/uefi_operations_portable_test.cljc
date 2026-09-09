@@ -40,8 +40,16 @@
   (is (= :x86_64-aiueos-uefi-v1 uefi/uefi-target))
   (testing "and the literal targets are derived from the profile table, so a
             host that resolved profiles differently would answer differently"
+    ;; TWELVE since 2026-09-09: the two aiueos packagers plus every `:native`
+    ;; execution profile, on both ISAs. The COUNT is what makes a host that
+    ;; resolved profiles differently answer differently -- naming four members
+    ;; would still pass on a host that lost the other eight.
+    (is (= 12 (count uefi/rodata-literal-targets)))
+    (is (every? uefi/rodata-literal-targets
+                [:x86_64-aiueos-uefi-v1 :x86_64-aiueos-kernel-v1
+                 :x86_64-kotoba-v1 :aarch64-kotoba-v1]))
     (is (= #{:x86_64-aiueos-uefi-v1 :x86_64-aiueos-kernel-v1}
-           uefi/rodata-literal-targets))))
+           uefi/function-address-targets))))
 
 (deftest every-gated-head-is-refused-outside-the-firmware-target
   (doseq [op uefi/uefi-only-operations
@@ -83,18 +91,45 @@
   ;; Two refusals, and the point of their being two is that they say different
   ;; things. Asserting the message literal is the assertion: if upstream
   ;; renamed one to the other, only this comparison would notice.
+  ;;
+  ;; ⚠ THE REFUSING TARGET IS NOW `:wasm32-browser-v1`, not
+  ;; `:x86_64-linux-kotoba-v1`. The hosted native targets joined the admitted
+  ;; set on 2026-09-09 -- the kexe loader mmaps the code buffer and jumps into
+  ;; it, so a pool beside the code is reachable exactly as it is inside an
+  ;; image. Wasm is where the heads still lower to nothing at all, which is
+  ;; the reason this refusal exists.
   (doseq [op uefi/rodata-literal-operations]
-    (testing (str op " outside the native aiueos targets")
+    (testing (str op " on a backend with no pool at all")
       (let [data (refusal uefi/reject-rodata-literals-outside-native-targets!
-                          :x86_64-linux-kotoba-v1 (module (list op "x")))]
+                          :wasm32-browser-v1 (module (list op "x")))]
         (is (= :target (:phase data)))
         (is (= [op] (:operations data))))))
-  (testing "and both admitted targets admit them, so neither carries the other"
+  (testing "every admitted target admits them, so none carries the others"
+    ;; The two families are checked against their OWN target sets, because
+    ;; they stopped sharing one in the same change: `kernel-function-address`
+    ;; is still refused on AArch64 by `kotoba.mir`, so admitting it here would
+    ;; be a green check and a red compile.
     (doseq [target uefi/rodata-literal-targets
-            op uefi/rodata-literal-operations]
+            op uefi/rodata-literal-only-operations]
+      (let [m (module (list op "x"))]
+        (is (= m (uefi/reject-rodata-literals-outside-native-targets! target m))
+            (str op " on " target))))
+    (doseq [target uefi/function-address-targets
+            op uefi/function-address-operations]
       (let [m (module (list op "x"))]
         (is (= m (uefi/reject-rodata-literals-outside-native-targets! target m))
             (str op " on " target))))))
+
+(deftest a-function-address-is-refused-where-a-literal-is-admitted
+  ;; The control for the split: on a hosted native target the two families
+  ;; disagree, and each says so in its own sentence.
+  (let [target :aarch64-kotoba-v1
+        lit (module '(bytes-literal "dead"))
+        addr (module '(kernel-function-address main))]
+    (is (= lit (uefi/reject-rodata-literals-outside-native-targets! target lit)))
+    (is (= '[kernel-function-address]
+           (:operations (refusal uefi/reject-rodata-literals-outside-native-targets!
+                                 target addr))))))
 
 (deftest the-two-gates-disagree-about-the-kernel-target-on-purpose
   ;; Both heads arrived together; one is admitted on the aiueos KERNEL target
