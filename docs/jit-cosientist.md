@@ -524,3 +524,62 @@ approval**. Current verdicts above are diagnostics, not claims.
   follow-up candidate for rank: price the residual 1.032 crossing/element
   (`vector-at` itself) the same way (gen_slice_wasm.cljs hand-wasm arm vs
   loop-touch) to bound what widening alone cannot remove.
+
+
+- 2026-09-09 12:49–14:10 JST tick 33 (JIT): **J-C residual (vector-at) priced
+  at quiet quality on benjamin — the residual 1.032 crossing/element is
+  ~99.9% of the touched element’s cost; per-element vector-at work itself
+  is unmeasurable in the same engine.** Workstation quiet gate failed again
+  (12:48: load1 10.64/18.52/28.33 on 10 CPUs, up 4d 5:31 — no further probe
+  attempted); benjamin gate met (pre load1 1.84, post 1.46/2.00, 0 users, 10
+  cores; busy-fraction probe route of ticks 28–31). Fixtures: hand-wasm
+  module built ON-NODE from the repo’s gen_slice_wasm.cljs (handslice.wasm
+  sha256 20f54443...34626d1; hand arms carry NO host crossings and NO
+  browser-host admission layer — the module is not a kotoba component, so
+  plain WebAssembly.instantiate hosted it; compile/instantiate sit outside
+  every timed region and the A-vs-2A slope cancels all constants).
+  Checksums pre-verified on-node by plain instantiate: run-slice
+  133120/266240, run-noref 129024/258048 — byte-identical to the kotoba
+  wasmvec expectations. Method identical to t32 (nbb slope, CPU-time A=2000
+  vs 2A, 9 interleaved rounds, process-cold runs; hand route sealed at
+  bench/runtime-comparison/slope_hand.cljs). 6 hand runs + 5 kotoba
+  process-cold runs; 5v5 balanced pairing recorded (the 6th hand run
+  completed after the svec batch — excluded, logged in the artifact).
+  perfgate.core/qualify ON benjamin (route
+  bench/runtime-comparison/jc_qualify_hand.clj, raw samples
+  bench/runtime-comparison/jc_residual_benjamin_t33.edn, n=5/arm):
+    hand-vs-svec-touch (0 crossings vs 1.032+vector-at): +99.94% QUALIFIED, separated (gap 685.44 vs summed-stdev 11.33)
+    hand-vs-svec-base (carry-only, vector never read):  +99.88% QUALIFIED, separated (gap 334.01 vs 5.86)
+    hand-vs-svec-noref CONTROL:                        +91.61% QUALIFIED, separated — NOT a valid control here: the hand module’s noref arm is also ~0.42 ns/elem, i.e. the ENTIRE kotoba wasmvec per-element cost above ~5 ns (loop + crossing + vector-at) is the externref/typed-capability admission regime, not anything about the element access specifically
+    hand-slice-vs-hand-noref (in-module element access): +0.98% NOT qualified (:improvement-below-threshold, :not-separated-from-noise)
+  Reading (measured, no speculation): in the same engine on the same
+  machine, a loop whose every element access is bounds-check + load costs
+  0.416 ns/elem vs 0.420 for the identical loop with NO access — the
+  element access itself is free at this size; the kotoba arm’s 680
+  ns/elem is ~1600x the hand arm and the t32 loop-spelling arm was 690
+  ns/elem, so the "residual 1.032 crossing" is not a vector-at
+  cost at all — it is the same externref admission machinery the t32
+  touch/base arms already carry. CAVEAT (method-honesty): the hand module
+  is hosted WITHOUT the browser-host admission layer while the kotoba arms
+  are hosted WITH it, so the comparison prices "competent lowering +
+  no admission" vs "current lowering + admission" — it
+  is an upper bound on widening, NOT a decomposition of the kotoba arm.
+  This is the honest reading; a same-admission hand arm would require the
+  hand module to be a kotoba component (compiler change, out of falsify
+  scope). Consequence: J-C follow-up is no longer "price the residual
+  crossing" (done — it is the admission regime, an order above
+  the 5% bar at ~99.9% of element cost) but "what does admission cost
+  when the crossing is NOT per-element" — that is a browser-host
+  capability-machinery question for rank to scope (J-C3 candidate), plus
+  the J-B2 collections hand-patch which remains the actionable lever on
+  the AOT side. No compiler change, no sealed claim, perfgate untouched,
+  JIT-axis policy note unchanged (slope method needs no warmup boundary
+  decision). Artifacts: jc_residual_benjamin_t33.edn (raw + gate),
+  slope_hand.cljs, jc_qualify_hand.clj; node scratch at benjamin:/tmp
+  (/tmp/run1.txt /tmp/run2.txt /tmp/svec5.log /tmp/bulk/handslice.wasm).
+  Next tick: (1) await/consume amu-rank’s J-B2 promotion decision
+  (unchanged from t32); (2) if rank wants the admission-cost
+  decomposition, the falsify step is a hand-wasm module WITH a kotoba
+  compatibility section — needs rank/human to decide whether that is
+  compiler work (it edits the emitter) or hand-patchable;
+  (3) otherwise pick the next open JIT-axis hypothesis.

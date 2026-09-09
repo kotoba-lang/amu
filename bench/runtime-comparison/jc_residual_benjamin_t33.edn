@@ -1,0 +1,41 @@
+;; J-C residual (vector-at) pricing on benjamin, tick 33 (JIT axis), 2026-09-09
+;; 12:49–14:10 JST. Raw sample EDN for perfgate (jc_qualify_hand.clj input shape).
+;; Arms (ns/element CPU-time slope, A=2000 vs 2A, 9 interleaved rounds; value
+;; recorded per process-cold run = median of its 9 rounds):
+;;   hand-slice / hand-noref : gen_slice_wasm.cljs hand-wasm module
+;;     (/tmp/bulk/handslice.wasm, sha256
+;;     20f54443b1eeb24e4a3cd65c7b4c6bd2028592479681bf8ce6c1c901934626d1,
+;;     built on-node from the repo source), plain WebAssembly.instantiate —
+;;     the module is not a kotoba component (no compatibility metadata), so the
+;;     browser-host admission layer cannot host it; module compile and
+;;     instantiation sit outside every timed region and the A-vs-2A slope
+;;     cancels all constants. Checksums pre-verified by plain instantiate:
+;;     run-slice 133120/266240, run-noref 129024/258048 — byte-identical to the
+;;     kotoba wasmvec expectations.
+;;   svec-touch / svec-base / svec-noref : kotoba wasmvec.kotoba.wasm (t32
+;;     fixture, sha 66c78038...fef515), browser-host route, checksums verified
+;;     vs kotoba.kir inside slope.cljs.
+;; Gate: benjamin pre load1 1.84 (10 cores, 0 users), post load1 1.46/2.00;
+;; busy-fraction probe route of ticks 28–31. 5 svec process-cold runs
+;; interleaved in time with the 6 hand process-cold runs (hand runs 1–6 logged
+;; at /tmp/run1.txt, /tmp/run2.txt; 6th hand run excluded below — it completed
+;; after the svec batch; 5v5 balanced pairing recorded here).
+{:host "benjamin"
+ :gate {:when "2026-09-09 12:49-14:10 JST"
+        :pre {:load1 1.84 :load5 1.73 :users 0 :cores 10}
+        :post {:load1 1.46 :load5 2.00 :users 0}}
+ :fixtures {:handslice "20f54443b1eeb24e4a3cd65c7b4c6bd2028592479681bf8ce6c1c901934626d1"
+            :wasmvec "66c78038...fef515 (t32 fixture, on-node)"}
+ :hand-runs "6 (5 paired below + 1 post-batch)"
+ :svec-runs "5"
+ :runs
+ [{:hand-slice 0.3896484375 :hand-noref 0.41357421875
+   :svec-touch 683.8759765625 :svec-base 344.73291015625 :svec-noref 5.27197265625}
+  {:hand-slice 0.4322509765625 :hand-noref 0.413818359375
+   :svec-touch 682.0889892578125 :svec-base 331.85498046875 :svec-noref 4.9327392578125}
+  {:hand-slice 0.431884765625 :hand-noref 0.41357421875
+   :svec-touch 705.5811767578125 :svec-base 330.3626708984375 :svec-noref 4.9227294921875}
+  {:hand-slice 0.3902587890625 :hand-noref 0.4144287109375
+   :svec-touch 680.7279052734375 :svec-base 332.5086669921875 :svec-noref 4.9312744140625}
+  {:hand-slice 0.4345703125 :hand-noref 0.4437255859375
+   :svec-touch 677.01904296875 :svec-base 332.6861572265625 :svec-noref 4.9520263671875}]}
