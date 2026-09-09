@@ -15,6 +15,7 @@
             [kotoba.kir.cljs-i64 :as i64]
             [kotoba.kir :as ir]
             [kotoba.compiler.provenance :as provenance]
+            [kotoba.compiler.source-path :as source-path]
             [kotoba.compiler.uefi-operations :as uefi]
             [kotoba.kir.target :as target-profile]
             [kotoba.verifier :as verifier]))
@@ -481,7 +482,8 @@
     ;; `:program`, which it left rounded. Reading exactly needs no restoring
     ;; step at all, so the postwalk is gone rather than widened.
     (let [input (second args)
-          artifact-map (support/read-artifact-file! input)
+          artifact-map (source-path/admit-native-artifact!
+                        (support/read-artifact-file! input) input)
           symbol (symbol (or (support/option args "--symbol") "main"))
           output (or (support/option args "--output") "program.bin")
           _ (verifier/verify-artifact! artifact-map)
