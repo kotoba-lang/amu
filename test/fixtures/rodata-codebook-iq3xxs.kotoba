@@ -1,0 +1,75 @@
+(ns iq3-xxs-dequant (:export [weight-bits]))
+
+;; IQ3_XXS, dequantised in Kotoba. 82 of the Qwen3.5 model's 866 tensors are
+;; this type -- more than any other single format it could not decode.
+;;
+;; The block is 98 bytes and its layout is ggml's `block_iq3_xxs`:
+;;
+;;   [0..1]    d     fp16 super-block scale
+;;   [2..65]   qs    64 grid codes, one byte each
+;;   [66..97]  aux   eight 32-bit words, little endian; the top nibble of
+;;                   each is a four-bit scale and the 28 bits below it are
+;;                   FOUR SEVEN-BIT sign selectors
+;;
+;; ⚠ THREE TABLES, AND THEY BELONG TO THE FORMAT rather than to the block.
+;; They are carried here as the program's own bytes, in a pool the layout
+;; pass places beside the code. The hex is COPIED FROM
+;; `kotoba.kir.iq-codebook`, which vendored it from llama.cpp @3173a564 (MIT)
+;; through aiueos's `qwen35_quant_tables.inc` -- and osaho ADR 0264 pinned
+;; each image with an FNV-1a/32 positional digest precisely so that a second
+;; transcription like this one "can be compared with this one BY A TEST
+;; rather than only by an execution". That comparison is
+;; `the-pool-carries-the-vendored-codebook-byte-for-byte`.
+;;
+;; ⚠ EVERY SHIFT COUNT IN THIS DIALECT IS A LITERAL in [0,63], a frontend
+;; admission rule rather than a machine limit. The C's `aux32 >> 7*l` is
+;; therefore `shr7n`, recursion by a fixed step of seven.
+
+(defn- shr7n [value :i64 times :i64]
+  (if (< times 1) value (shr7n (u64-shift-right value 7) (- times 1))))
+
+(defn- half-bits [half :i64]
+  ;; fp16 -> the binary32 bit pattern by the x86 equation, sign-extended from
+  ;; bit 31 to agree with `f32-to-bits`. Same arm as the IQ4_XS fixture's.
+  (let [sign (i64-shift-left (bit-and half 32768) 16)
+        rest (i64-shift-left (bit-and half 32767) 13)
+        pattern (if (= 31744 (bit-and half 31744))
+                  (bit-or sign (bit-or rest 2139095040))
+                  (bit-or sign
+                          (bit-and 4294967295
+                                   (f32-to-bits
+                                    (f32-mul (f32-from-bits rest)
+                                             (f32-from-bits 2004877312))))))]
+    (if (< pattern 2147483648) pattern (- pattern 4294967296))))
+
+(defn weight-bits [base :i64 length :i64 element :i64]
+  (let [b (slice-of-u8 base length)
+        d-half (bit-or (slice-get b 0) (i64-shift-left (slice-get b 1) 8))
+        ib32 (quot element 32)
+        rem (- element (* ib32 32))
+        l (quot rem 8)
+        k (- rem (* l 8))
+        low (< k 4)
+        j (if low k (- k 4))
+        aux (+ 66 (* 4 ib32))
+        aux32 (bit-or (slice-get b aux)
+                      (bit-or (i64-shift-left (slice-get b (+ aux 1)) 8)
+                              (bit-or (i64-shift-left (slice-get b (+ aux 2)) 16)
+                                      (i64-shift-left (slice-get b (+ aux 3)) 24))))
+        ;; `db = d * (0.5 + (aux32 >> 28)) * 0.5`, and the NARROWING ORDER is
+        ;; part of the answer: the C rounds to f32 after each multiply, so
+        ;; this does the same rather than computing in one wider expression.
+        scale (u64-shift-right aux32 28)
+        half-one (f32-from-bits 1056964608)
+        db (f32-mul (f32-mul (f32-from-bits (half-bits d-half))
+                             (f32-add half-one (i64-to-f32-rounded scale)))
+                    half-one)
+        selector (bit-and (shr7n aux32 l) 127)
+        sign (slice-get (slice-of-u8 (bytes-literal "008182038405068788090a8b0c8d8e0f901112931495961718999a1b9c1d1e9fa02122a324a5a62728a9aa2bac2d2eaf30b1b233b43536b7b8393abb3cbdbe3fc04142c344c5c64748c9ca4bcc4d4ecf50d1d253d45556d7d8595adb5cddde5f60e1e263e46566e7e8696aeb6cedee6ff07172f374f5f67778f9fa7bfc7d7eff") 128) selector)
+        code (slice-get b (+ 2 (+ (* 8 ib32) (+ (* 2 l) (if low 0 1)))))
+        entry (slice-get (slice-of-u8 (bytes-literal "0404040414040404240404040c0c04041c0c04043e0c040404140404141404040c1c0404142404041c3e04042c3e04040c040c041c040c04040c0c04140c0c040c140c042c140c04041c0c04141c0c040c240c04242c0c04043e0c040404140414041404240414040c0c140404141404141414040c1c14041c1c14043e1c14040c2c14043e2c14042c3e14040c041c043e041c04040c1c04140c1c042c141c04043e1c041c0c24043e1c2404242424043e2c24041c3e24042c3e24040c042c043e042c04141c2c04142c2c042c1c340424343404040c3e04240c3e04340c3e041c243e040c343e040c04040c1c04040c040c040c140c040c0c14040c1c14040c041c040c141c040c241c040c3e24040c042c040c04040c0c14040c0c0c0c0c0c04140c0c14140c0c0c04140c1c04140c040c140c140c140c0c14140c041c140c143e140c04041c0c14041c0c04141c0c0c1c1c0c34241c0c34341c0c0c04240c2c04240c042c240c04142c0c24142c0c34242c0c0c3e2c0c2c04340c14143e0c04243e0c04040414140404140c0c04141c0c04140414041414140414341404140c1c0414142404140c040c141c040c142c040c14040c0c14140c0c140c140c14041c0c141c340c143e340c14043e0c1404041414140414140c0c14143e0c141404141414141414143e1c1414042414142c2c14140c041c14040c1c14240c1c14043e1c14243e1c142c1c24141c2c24141c042c143e142c140c242c14243e2c140c043e141c043e14340c3e142c243e140c04041c040c041c140c041c0c14041c1c14041c042c041c2c34041c143e041c04040c1c14040c1c04140c1c0c1c0c1c24240c1c34240c1c0c04141c1c04141c040c141c2c14141c142c141c143e141c0c0c1c1c1c1c1c1c041c241c3e24241c143e241c04042c1c34042c1c14142c1c2c2c2c1c240c341c341c341c1c34341c1c1c3e1c04343e1c240404243e0c04242c1c04243e1c04241c2c04243e2c0424243e0c24041414243e1c14240424142404341424343414243e041c242c241c24240424240c2c2424243424242c142c241c242c24043e2c242c043e24040c3e24140c3e24041c3e24140c042c0c24042c043e042c04040c2c34040c2c34140c2c2c2c0c2c240c142c141c142c143e142c14041c2c1c2c1c2c040c242c1c14242c3e14242c143e242c14042c2c0c1c2c2c042c342c24143e2c14243e2c241404342424043434240434243404340c140c340c340c343e0c143424341434041c1c34341c1c34242424342c042c34142c2c341c1c34341c043e340c143e341c04043e2c04043e3e04043e040c043e141c043e142c043e34140c3e04240c3e140c143e2c24143e142c143e04041c3e2c0c1c3e1c1c1c3e04341c3e0c14243e0c24243e04042c3e14042c3e24142c3e041c343e") 1024)
+                         (+ (* 4 code) j))
+        value (f32-mul db (i64-to-f32-rounded entry))
+        mask (slice-get (slice-of-u8 (bytes-literal "0102040810204080") 8)
+                        (if low j (+ j 4)))]
+    (f32-to-bits (if (< 0 (bit-and sign mask)) (f32-neg value) value))))

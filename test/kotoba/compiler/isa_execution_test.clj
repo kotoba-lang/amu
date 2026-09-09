@@ -23,6 +23,8 @@
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]
+            [kotoba.kir]
+            [kotoba.kir.iq-codebook :as iq]
             [kotoba.gmir :as gmir]
             [kotoba.mir :as mir]
             [kotoba.native.machine-ir :as machine-ir]))
@@ -1522,8 +1524,67 @@
                      (str/trim report)))))))))
 
 
+(def ^:private iq3xxs-source
+  (slurp "test/fixtures/rodata-codebook-iq3xxs.kotoba"))
+
+(defn- pool-literals
+  "Every `(bytes-literal \"…\")` hex string in SOURCE, in the order it appears."
+  [source]
+  (mapv second (re-seq #"\(bytes-literal \"([0-9a-f]*)\"\)" source)))
+
 (def ^:private iq4xs-source
   (slurp "test/fixtures/rodata-codebook-iq4xs.kotoba"))
+
+(deftest the-pool-carries-the-vendored-codebook-byte-for-byte
+  ;; ⚠ THIS IS THE COMPARISON osaho ADR 0264 BUILT THE DIGESTS FOR, and it
+  ;; says so in as many words: each image is pinned by an FNV-1a/32
+  ;; positional digest so that "a SECOND transcription of the same table -- a
+  ;; backend's read-only pool, say -- can be compared with this one BY A TEST
+  ;; rather than only by an execution".
+  ;;
+  ;; These fixtures are that second transcription. Without this, a wrong
+  ;; codebook is caught only where an execution test happens to index the
+  ;; byte that differs -- and a 1024-entry grid probed at thirteen elements
+  ;; leaves most of it unread. FNV rather than a sum because a sum cannot see
+  ;; a permutation.
+  ;;
+  ;; The digest is recomputed HERE from the fixture's own hex rather than
+  ;; taken from `iq/digests`, so the two sides arrive at the number by
+  ;; different routes; `iq/digests` is what it is compared against.
+  (letfn [(fnv [bytes]
+            (reduce (fn [h b]
+                      (let [x (bit-xor h (bit-and b 0xff))]
+                        (bit-and (+ (* x 16777216) (* x 403)) 0xffffffff)))
+                    0x811c9dc5
+                    bytes))]
+    (testing "IQ4_XS carries kvalues_iq4nl and nothing else"
+      (let [literals (pool-literals iq4xs-source)]
+        (is (= 1 (count literals)) "one table, so one pool entry")
+        (is (= iq/kvalues-iq4nl-hex (first literals)))
+        (is (= (get-in iq/digests [:kvalues-iq4nl :fnv1a32])
+               (fnv (iq/hex->bytes (first literals)))))
+        (is (= (get-in iq/digests [:kvalues-iq4nl :bytes])
+               (count (iq/hex->bytes (first literals)))))))
+    (testing "IQ3_XXS carries ksigns, the grid and kmask"
+      ;; In the order the source names them, which is the order the decode
+      ;; needs them: the sign selector, the grid entry, the element mask.
+      (let [literals (pool-literals iq3xxs-source)
+            expected [[iq/ksigns-iq2xs-hex :ksigns-iq2xs]
+                      [iq/iq3xxs-grid-hex :iq3xxs-grid]
+                      [iq/kmask-iq2xs-hex :kmask-iq2xs]]]
+        (is (= 3 (count literals)) "three tables, so three pool entries")
+        (doseq [[[hex k] got] (map vector expected literals)]
+          (testing (str k)
+            (is (= hex got))
+            (is (= (get-in iq/digests [k :fnv1a32]) (fnv (iq/hex->bytes got))))
+            (is (= (get-in iq/digests [k :bytes]) (count (iq/hex->bytes got))))))))
+    (testing "and the digest sees a permutation, which is why it is not a sum"
+      ;; The control. Swapping two bytes leaves the sum identical; if this
+      ;; assertion ever passed, every assertion above would be vacuous.
+      (let [bytes (iq/hex->bytes iq/kvalues-iq4nl-hex)
+            swapped (assoc bytes 0 (peek bytes) 15 (first bytes))]
+        (is (= (reduce + bytes) (reduce + swapped)) "the sum cannot tell")
+        (is (not= (fnv bytes) (fnv swapped)) "the digest can")))))
 
 (defn- half->f32-bits
   "fp16 -> the binary32 bit pattern, BY THE IEEE-754 DEFINITION rather than by
@@ -1582,6 +1643,79 @@
         d (Float/intBitsToFloat (unchecked-int (half->f32-bits d-half)))
         dl (float (* d (float (- ls 32))))]
     (Float/floatToRawIntBits (float (* dl (float (nth kvalues-iq4nl nibble)))))))
+
+(def ^:private iq3xxs-block
+  "One `block_iq3_xxs`, 98 bytes: `d`, 64 grid codes, and eight 32-bit words
+  whose top nibble is a scale and whose low 28 bits are four seven-bit sign
+  selectors. The words are chosen so all four selectors differ within a word
+  and the scale nibble varies across the eight."
+  (vec (concat [0x55 0x35]
+               (map #(mod (* 37 (inc %)) 256) (range 64))
+               (mapcat (fn [w] [(bit-and w 0xff)
+                                (bit-and (bit-shift-right w 8) 0xff)
+                                (bit-and (bit-shift-right w 16) 0xff)
+                                (bit-and (bit-shift-right w 24) 0xff)])
+                       [0x1234567 0x89abcde 0x2468ace 0x13579bd
+                        0xfedcba9 0x7654321 0xa5a5a5a 0x5c5c5c5]))))
+
+(deftest iq3-xxs-dequantises-on-every-available-isa
+  ;; THE LARGEST UNSUPPORTED TYPE IN THE SHIPPING MODEL -- 82 of 866 tensors,
+  ;; more than any other single format. Three tables rather than one, and a
+  ;; per-element sign the table does not carry.
+  ;;
+  ;; ⚠ THE REFERENCE IS osaho's ORACLE, NOT A SECOND TRANSCRIPTION HERE, and
+  ;; that is a deliberate difference from the IQ4_XS test above. Writing the
+  ;; equation out again in this file would test my reading of the C twice and
+  ;; the backend once. osaho's oracle is already compared, element by element,
+  ;; against a pointer-walk transcription of `dequantize_row_iq3_xxs` in
+  ;; `kotoba.kir-dequant-iq-test` (osaho ADR 0264: SCANNED 256, DISAGREEMENTS
+  ;; 0), so leaning on it makes THIS test about the backend -- which is the
+  ;; part that is new.
+  ;;
+  ;; What the pool carries is checked separately and without executing
+  ;; anything, by `the-pool-carries-the-vendored-codebook-byte-for-byte`. The
+  ;; two are needed together: thirteen probes cannot read a 1024-entry grid,
+  ;; and a digest cannot tell you the decode indexes it correctly.
+  (let [available (into {} (remove (comp nil? val) @loaders))
+        missing (remove available (keys isas))
+        required (if (macos?) (set (keys isas)) #{(host-isa)})
+        expected (mapv (fn [v] (Float/floatToRawIntBits (float v)))
+                       (@#'kotoba.kir/dequantize-block
+                        'kernel-dequant-dot-iq3-xxs iq3xxs-block 0))]
+    (println "iq3-xxs available:" (vec (sort (keys available)))
+             "/ missing (SKIPPED):" (vec (sort missing)))
+    (is (every? available required)
+        (str "required ISA loaders are unavailable on this host. required: "
+             (vec (sort required)) ", missing: " (vec (sort missing))))
+    (is (= 256 (count expected)))
+    (is (< 1 (count (distinct expected)))
+        "a block that decoded to one repeated value would pass vacuously")
+    (doseq [[isa _] available]
+      (testing isa
+        ;; Every sub-block boundary, both halves of a sign group, both bytes
+        ;; of a code pair, and the last element.
+        (doseq [element [0 1 3 4 7 8 15 16 31 32 63 100 128 200 255]]
+          (let [report (run-native isa iq3xxs-source "-" {:allow #{}}
+                                   'weight-bits
+                                   [(str "g:" (region-hex iq3xxs-block)) "gl:0"
+                                    (str element)])]
+            (is (not (str/includes? report "KEXE_TRAP")) (str/trim report))
+            (is (str/includes? report (str ":result " (nth expected element)))
+                (str "element " element ": " (str/trim report)))))
+        (testing "a sign selector actually flips a sign"
+          ;; The control for the third table. `ksigns_iq2xs` is the only one
+          ;; of the three whose effect is invisible in magnitude, so a decode
+          ;; that ignored it would still agree on |value| everywhere. This
+          ;; asserts the block produces BOTH signs.
+          (let [answers (map (fn [e]
+                               (let [r (run-native isa iq3xxs-source "-" {:allow #{}}
+                                                   'weight-bits
+                                                   [(str "g:" (region-hex iq3xxs-block))
+                                                    "gl:0" (str e)])]
+                                 (Long/parseLong (second (re-find #":result (-?\d+)" r)))))
+                             [0 3])]
+            (is (some neg? answers))
+            (is (some pos? answers))))))))
 
 (deftest iq4-xs-dequantises-on-every-available-isa
   ;; ⚠ THE FORMAT THAT KEPT THE IQ TYPES IN THE C, decoded in Kotoba and run
