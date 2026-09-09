@@ -345,6 +345,19 @@
   and 223 (`DF`, a reset that did not happen); 250 is `FA` and is free."
   250)
 
+(defn- debugcon-byte
+  "One ASCII byte to port 0xE9: `mov dx,0xE9; mov al,c; out dx,al`.
+
+  QEMU's isa-debugcon captures it and real hardware ignores the port entirely,
+  so this is free on the board and is the only channel the LOADER has -- the
+  netlog belongs to the guest's NIC, and the ConOut panel only prints when
+  `main` returns. Measured 2026-09-09: with the tender made reachable under
+  QEMU the guest hung with debugcon EMPTY, meaning it stopped before anything
+  anyone had instrumented. A stage marker turns that single bit into a
+  position."
+  [c]
+  [0x66 0xba 0xe9 0x00 0xb0 (int c) 0xee])
+
 (defn- tender-snapshot-tokens [context-address]
   "Read the budget the ELF sealed, once, before the guest has run.
 
@@ -374,9 +387,23 @@
   (concat
    ;; Read 02:00.0 through PCI mechanism #1. Only the explicit K16 diagnostic
    ;; profile calls the kernel while Boot Services and ConOut are still live.
+   (debugcon-byte \P)                    ; preflight reached the PCI probe
+   ;; THE SNAPSHOT COMES FIRST, before the branch that can skip past it.
+   ;; Measured 2026-09-09 in one QEMU run: with it after the PCI probe, a
+   ;; mismatch jumped to `:tender-step` -- which is BELOW the snapshot -- so
+   ;; `tender-fuel` was never written, the replenish stored a zero, and the
+   ;; guest was called with no budget and trapped instantly. debugcon read
+   ;; `PTC`: probe, top of loop, about to call, and no return. The marker that
+   ;; was missing (`S`) named the defect on the first attempt.
+   ;;
+   ;; It only READS the guest's context, so hoisting it above the probe costs
+   ;; nothing and removes a whole class of "the branch skipped the setup".
+   (tender-snapshot-tokens context-address)
+   (debugcon-byte \S)                    ; sealed budget snapshotted
    [0x66 0xba 0xf8 0x0c 0xb8 0x00 0x00 0x02 0x80 0xef
     0x66 0xba 0xfc 0x0c 0xed 0x3d 0xec 0x10 0x25 0x81
-    0x0f 0x85] [(rip :exit-boot)]
+    0x0f 0x85] [(rip :tender-step)]
+   (debugcon-byte \N)                    ; the RTL8125 was there
    (uefi-output-string-tokens :rtl-message :rtl-message-return)
    ;; ── the tender loop (ADR-0204, ADR-0205) ─────────────────────────────
    ;; The normal ELF entry deliberately halts after main returns. Preflight
@@ -394,13 +421,15 @@
    ;; register: rdi and r9 are caller-saved across the SysV call and the guest
    ;; is free to clobber both. `lea` of a fixed RVA and `movabs` of a constant
    ;; cost four instructions and remove a class of question.
-   (tender-snapshot-tokens context-address)
    [(label :tender-step)]
+   (debugcon-byte \T)                    ; top of the tender loop
    [0x48 0x8d 0x3d] [(rip :boot-info)]
    [0x49 0xb9] (le context-address 8)
    [0x49 0x89 0x79 0x50]
    (tender-replenish-tokens)
+   (debugcon-byte \C)                    ; about to call the guest
    [0x48 0xb8] (le returnable-entry 8) [0xff 0xd0 0x49 0x89 0xc7]
+   (debugcon-byte \X)                    ; the guest returned
    ;; cmp r15, tender-continue ; je tender-step
    [0x49 0x81 0xff] (le tender-continue 4)
    [0x0f 0x84] [(rip :tender-step)]
