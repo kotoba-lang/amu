@@ -1,0 +1,21 @@
+(ns amu.granted-region-dequant
+  (:export [dot-q8-0]))
+
+;; granted regions x dequant: the fused dequantize-and-dot over TWO regions the
+;; caller granted -- a packed weight row and the activations it folds against.
+;;
+;; Five parameters is the whole ABI budget, and it is exactly what this takes:
+;; two words per region and the block count. Both bases are parameters, so the
+;; provenance rule admits them and `kotoba.verifier`'s own re-derivation agrees;
+;; the program never names an address.
+;;
+;; The point of the fixture is CROSS-ISA AGREEMENT. `kernel-dequant-dot-q8-0`'s
+;; contract is an accumulation tree, not a dot product -- floating-point
+;; addition is not associative, so one order of summation IS the operation --
+;; and the AArch64 arm exists only because it reproduces the x86 one. The test
+;; beside this file asserts the two answers are equal TO EACH OTHER, not merely
+;; that each equals a constant: a constant both arms had drifted from together
+;; would still pass the weaker claim.
+
+(defn dot-q8-0 [wbase :i64 wlen :i64 xbase :i64 xlen :i64 blocks :i64]
+  (kernel-dequant-dot-q8-0 wbase wlen xbase xlen blocks))

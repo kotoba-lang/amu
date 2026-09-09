@@ -1,0 +1,39 @@
+(ns iq4-codebook (:export [kvalue nibble-sum]))
+
+;; `kvalues_iq4nl` -- the sixteen-entry signed table IQ4_NL and IQ4_XS decode
+;; through, and the smallest of the codebooks that kept the IQ formats in the
+;; C. It is carried here as the program's OWN bytes, in two's complement:
+;;
+;;   -127 -104  -83  -65  -49  -35  -22  -10    1   13   25   38   53   69   89  113
+;;    81   98    ad   bf   cf   dd   ea   f6   01   0d   19   26   35   45   59   71
+;;
+;; The pool is placed by the layout pass at the end of the same emitted buffer
+;; as the code, and reached with `lea …,[rip+disp32]` on x86-64 and `adr` on
+;; AArch64. Nothing here is a number the program chose.
+;;
+;; ⚠ THE SLICE IS BUILT AT EACH USE rather than returned from a helper: a
+;; slice value can only be indexed, narrowed, measured, or passed to a slice
+;; parameter, so a `codebook` function returning one is refused. The pool is
+;; keyed on [encoding content], so the two use sites still share ONE entry.
+
+(defn kvalue [index :i64]
+  ;; The table is signed and the slice reads unsigned, so the sign is restored
+  ;; here rather than by a wider load: a byte at or above 128 is that byte
+  ;; minus 256. Doing it in arithmetic keeps the whole decode inside the
+  ;; portable operator set.
+  (let [raw (slice-get (slice-of-u8 (bytes-literal "8198adbfcfddeaf6010d192635455971") 16)
+                       (bit-and index 15))]
+    (if (< raw 128) raw (- raw 256))))
+
+(defn- walk [qs [:slice :u8] index :i64 total :i64]
+  (if (< index (slice-length qs))
+    (let [byte (slice-get qs index)]
+      (walk qs (+ index 1)
+            (+ total (+ (kvalue (bit-and byte 15))
+                        (kvalue (u64-shift-right byte 4))))))
+    total))
+
+(defn nibble-sum [base :i64 length :i64]
+  ;; The IQ decode shape without the scale: every packed nibble becomes a
+  ;; codebook entry, low nibble first, exactly as ggml's IQ4 unpack does.
+  (walk (slice-of-u8 base length) 0 0))

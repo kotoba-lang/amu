@@ -1,0 +1,83 @@
+(ns iq4-xs-dequant (:export [weight-bits half-bits]))
+
+;; IQ4_XS, dequantised in Kotoba. The block is 136 bytes and its layout is
+;; ggml's `block_iq4_xs`:
+;;
+;;   [0..1]     d          fp16 super-block scale
+;;   [2..3]     scales_h   u16, two bits per sub-block
+;;   [4..7]     scales_l   four bytes, four bits per sub-block
+;;   [8..135]   qs         128 bytes, 256 packed nibbles
+;;
+;; and the decode, from `dequantize_row_iq4_xs`:
+;;
+;;   ls = (scales_l[ib/2] >> 4*(ib%2) & 0xf) | ((scales_h >> 2*ib & 3) << 4)
+;;   dl = d * (ls - 32)
+;;   y[32*ib + j]      = dl * kvalues_iq4nl[qs[16*ib + j] & 0xf]
+;;   y[32*ib + j + 16] = dl * kvalues_iq4nl[qs[16*ib + j] >> 4]
+;;
+;; ⚠ EVERY SHIFT COUNT IN THIS DIALECT IS A LITERAL in [0,63], which is a
+;; frontend admission rule and not a machine limit. The two dynamic shifts in
+;; the C above are therefore written as recursion by a fixed step -- `shr2n`
+;; below -- and the nibble select as a branch. Both are the same arithmetic;
+;; neither is a workaround for something the backend cannot do.
+
+(defn- shr2n [value :i64 times :i64]
+  (if (< times 1) value (shr2n (u64-shift-right value 2) (- times 1))))
+
+(defn half-bits [half :i64]
+  ;; fp16 -> the binary32 BIT PATTERN, by the x86 equation rather than by a
+  ;; hardware convert: mask off the sign, shift the exponent and mantissa into
+  ;; binary32 position, and scale by 2^112 (0x77800000) to undo the bias
+  ;; difference. Exponent 31 is the one case the scaling cannot express -- it
+  ;; would produce a finite number where infinity and NaN belong -- so it is
+  ;; a branch, and the mantissa payload rides through it unchanged.
+  ;;
+  ;; The answer is a bit pattern rather than a float because this dialect's
+  ;; boundary carries words; `f32-from-bits` turns it back.
+  ;; ⚠ AND THE ANSWER IS SIGN-EXTENDED FROM BIT 31, because `f32-to-bits` is
+  ;; and this module's other export goes through it. Assembling the pattern
+  ;; with `bit-or` leaves it as an UNSIGNED 32-bit value in a 64-bit word, so
+  ;; the two exports would disagree about what "an f32 bit pattern" is for
+  ;; every negative float -- 0xC0000000 would come back as 3221225472 from one
+  ;; and as -1073741824 from the other. Measured 2026-09-09: half 0xc000
+  ;; (-2.0) is exactly that case. The narrowing is written out rather than
+  ;; done by a round trip through `f32-from-bits`, so a hardware that
+  ;; canonicalises a NaN payload on a move cannot change the answer.
+  (let [sign (i64-shift-left (bit-and half 32768) 16)
+        rest (i64-shift-left (bit-and half 32767) 13)
+        pattern (if (= 31744 (bit-and half 31744))
+                  (bit-or sign (bit-or rest 2139095040))
+                  (bit-or sign
+                          (bit-and 4294967295
+                                   (f32-to-bits
+                                    (f32-mul (f32-from-bits rest)
+                                             (f32-from-bits 2004877312))))))]
+    (if (< pattern 2147483648) pattern (- pattern 4294967296))))
+
+(defn- kvalue [index :i64]
+  (let [raw (slice-get (slice-of-u8 (bytes-literal "8198adbfcfddeaf6010d192635455971") 16)
+                       (bit-and index 15))]
+    (if (< raw 128) raw (- raw 256))))
+
+(defn weight-bits [base :i64 length :i64 element :i64]
+  ;; The dequantised weight at ELEMENT of the granted block, as an f32 bit
+  ;; pattern. One element rather than a row, so the answer is one word and
+  ;; the boundary needs no output region.
+  (let [block (slice-of-u8 base length)
+        d (bit-or (slice-get block 0) (i64-shift-left (slice-get block 1) 8))
+        scales-h (bit-or (slice-get block 2) (i64-shift-left (slice-get block 3) 8))
+        ib (quot element 32)
+        j (- element (* ib 32))
+        low (< j 16)
+        jj (if low j (- j 16))
+        packed (slice-get block (+ 8 (+ (* ib 16) jj)))
+        nibble (if low (bit-and packed 15) (u64-shift-right packed 4))
+        sl (slice-get block (+ 4 (quot ib 2)))
+        sl4 (if (= 0 (- ib (* 2 (quot ib 2))))
+              (bit-and sl 15)
+              (bit-and (u64-shift-right sl 4) 15))
+        sh2 (bit-and (shr2n scales-h ib) 3)
+        ls (bit-or sl4 (i64-shift-left sh2 4))
+        dl (f32-mul (f32-from-bits (half-bits d))
+                    (i64-to-f32-rounded (- ls 32)))]
+    (f32-to-bits (f32-mul dl (i64-to-f32-rounded (kvalue nibble))))))
