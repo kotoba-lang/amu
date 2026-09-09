@@ -50,11 +50,28 @@
  * need not be the one that computed the last.
  *
  * What stays bounded per interaction is `step` plus the `view` that follows
- * it: they share one budget. Measured on the todo example, that budget is not
- * what a growing app hits first -- a `:document` may hold 256 nodes, and a
- * screen exceeds that (`doc-node-limit`) at around seven rows, long before it
- * runs short of fuel. The node budget, not fuel, is today's ceiling on how
- * much one Kotoba screen can show.
+ * it: they share one budget.
+ *
+ * ⚠ This paragraph said, until 2026-09-10, that the budget "is not what a
+ * growing app hits first -- a `:document` may hold 256 nodes, and a screen
+ * exceeds that (`doc-node-limit`) at around seven rows ... The node budget,
+ * not fuel, is today's ceiling on how much one Kotoba screen can show."
+ *
+ * That was true and is not any more, and the order it described has inverted.
+ * Measured on the todo example, each step uncovering the next:
+ *
+ *   256-node budget      5 adds, then `doc-node-limit`, "7 left"
+ *   4096-node budget     the example's own 26-letter alphabet cap
+ *   integer item keys    FUEL, at 27 items
+ *
+ * (osaho#88 raised the budget; `string-from-i64` retired the alphabet, which
+ * the example had called a missing builtin.)
+ *
+ * So fuel IS what a growing app hits first now, and that is the better
+ * position rather than a worse one: the two ceilings it replaced were
+ * constants compiled into the language, and fuel is a budget the CALLER
+ * chooses. "How much can one Kotoba screen show" stopped being a number
+ * someone has to change and became a question an app answers for itself.
  *
  * ## Bounds
  *

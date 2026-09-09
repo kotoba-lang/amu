@@ -151,7 +151,35 @@
   ;; same program. The JVM side is unchanged by this advance: a Long always
   ;; compared to 0, so the boundary this test pins moves not at all here, and
   ;; what moves is the OTHER front, toward these bytes.
-  (is (= "a5711bdc859cbe11c8a9497d7b836ed3d884f086"
+  ;; Advanced 2026-09-09 to 7cbed512, which carries kotoba-mir b70a567a and is
+  ;; the pin that makes TWO NEW AArch64 ARMS reachable from this repository:
+  ;; `kernel-dot-f32` and Q8_0's fused dequantize-and-dot. Both are the x86
+  ;; SCALAR arm reproduced instruction for instruction, because the contract of
+  ;; those operations is an ACCUMULATION TREE and not a dot product -- one
+  ;; specific order of summation IS the operation. Without this pin they are
+  ;; refused at MIR selection with `x86-simd-target-mismatch`.
+  ;;
+  ;; It changes bytes on the AArch64 front by ADDING arms, not by moving an
+  ;; existing sequence, so the boundary this test pins is untouched.
+  ;; `the-fused-dequant-answers-the-same-bits-on-every-available-isa` is the
+  ;; assertion that the two ISAs agree, executed as real processes.
+  ;; Advanced 2026-09-09 to c14a49f3, which carries kotoba-mir 4a049cc9: a
+  ;; LITERAL'S ADDRESS now emits on AArch64 through `adr`, a single
+  ;; instruction. The refusal it replaces named ADRP+ADD's 4 KiB page split as
+  ;; the blocker and the named blocker was the wrong instruction -- `adr`
+  ;; reaches +/-1 MiB, and the pool is at the end of the same emitted buffer
+  ;; as the code, so the distance is bounded by the size of one program.
+  ;;
+  ;; It ADDS an arm rather than moving an existing sequence, so the boundary
+  ;; this test pins is untouched.
+  ;; Advanced again 2026-09-09 to edbbe987: a FUNCTION'S address is `adr` on
+  ;; AArch64 too, at the same label a call resolves against. It carries
+  ;; kotoba-mir 1a1c4358 and kotoba-codegen 3e6c815a. The gap it closes was
+  ;; named by the commit that closed the literal's, hours earlier -- the
+  ;; refusal there said a function's address is x86-only "for exactly the
+  ;; reason the literal is", and the literal's reason had already stopped
+  ;; holding.
+  (is (= "edbbe9873fc0eac387d1420e5191be6fab0ff469"
          (dependency-pin 'io.github.kotoba-lang/kotoba-native)))
   ;; Advanced 2026-09-07 to kotoba-native main c9d5c44 (hoist #151, cross-call
   ;; hoist #152, copy coalescing #154; 06badc8's allow-list entry is on main as
@@ -266,7 +294,19 @@
   ;; invokes its comparator). No native path builds this table, which is why
   ;; the split was never about the backends. This moves no encoding: on the
   ;; JVM the narrowing is `identity`.
-  (is (= "a37577c92d5b60b683c98957f1a07cf3252b3e68"
+  ;; Advanced 2026-09-10 to 7a6a27b8: `document-node-limit` 256 -> 4096. This
+  ;; moves no encoding -- the constant is a validation threshold walked over an
+  ;; already-built value, and `document-canonical-bytes` emits the identical
+  ;; format for every document that was legal before. It widens what can be
+  ;; represented at all, which is the point: adr-2608690000 measured a Kotoba
+  ;; screen filling at seven rows and said that is too small to claim cljs
+  ;; equivalence.
+  ;;
+  ;; ⚠ The same number is restated in kotoba-script, which writes it into every
+  ;; emitted ESM prelude as a literal, so THAT pin moves in the same commit.
+  ;; `value_bounds_agreement_test` is what compares them; advancing one alone
+  ;; was measured to compile a 1057-node document and then trap it at runtime.
+  (is (= "7a6a27b834d33bb68cc4ee9addc5ce4a4bee6b4a"
          (dependency-pin 'io.github.kotoba-lang/osaho)))
   ;; Advanced 2026-09-01 alongside the backend: the verifier re-derives the
   ;; two new arities and the v4 `expected-context`, and is what turns a
@@ -355,7 +395,23 @@
   ;; refused on a hosted target even though the frontend admits one. Same skew
   ;; argument in the other direction: without this pin a program this
   ;; repository compiles is refused at verification.
-  (is (= "33b3d067603da3a1c596a900ddd6ab029d5ed6e3"
+  ;; Advanced again 2026-09-09 to 6f4871f3, which lifts exactly the two
+  ;; restrictions the paragraph above records as standing. The four rodata
+  ;; literal heads leave the aiueos-only set for the two hosted native
+  ;; targets, and a literal IS admitted as a region base beside a parameter --
+  ;; for a reason the integer does not have: `4096` is an address the program
+  ;; chose and could have chosen differently, while `(bytes-literal "...")` is
+  ;; a relocation the backend resolves into a pool it placed beside the code.
+  ;; A pool that is addressable and unreadable is not a pool.
+  ;; Advanced again 2026-09-09 to 93eacd80, which takes
+  ;; `kernel-function-address` out of the verifier's aiueos-only set. It was
+  ;; there beside `kernel-scratch-region` under ONE comment covering both,
+  ;; and the reason belonged to the reservation: a `.data` reservation is a
+  ;; place in an IMAGE, a function's label is a place in the emitted buffer,
+  ;; and every native target has one of those. Required with this file's
+  ;; `function-address-targets` change for the usual reason -- without it the
+  ;; program this repository now compiles is refused at verification.
+  (is (= "85ea11d61cc3613bfb5ac80a7736de7ae1382942"
          (dependency-pin 'io.github.kotoba-lang/kotoba-verifier)))
   (is (= 7 (:abi/version aggregate-abi/contract)))
   (is (= :recursive-word-handles

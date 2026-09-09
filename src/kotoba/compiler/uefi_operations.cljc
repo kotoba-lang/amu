@@ -73,33 +73,97 @@
 ;; the address at a 4 KiB page boundary and the layout pass does not model it)
 ;; -- an admission of a gap, and refusing here says so one layer earlier and
 ;; with the target named.
+(def rodata-literal-only-operations
+  "The four heads whose value is a LITERAL's address.
+
+  Separated from `kernel-function-address` on 2026-09-09, when the two
+  stopped having the same answer. They had shared a gate since they arrived,
+  and sharing it was right while they did."
+  '#{ucs2 guid bytes-literal bytes-literal-length})
+
+(def function-address-operations
+  "boot-scratch: `(kernel-function-address f)` needs a backend that resolves a
+  label, which is what the literals need too -- so this head shared their gate
+  from the day it arrived, and the sharing was correct.
+
+  ⚠ IT STOPPED BEING CORRECT ON 2026-09-09 and the split is why this is its
+  own name. The literals gained an AArch64 answer (`adr`); the function
+  address did not, because `kotoba.mir` still refuses `:gmir/function-address`
+  there under its own keyword, `:function-address-target-mismatch`. Widening
+  one gate for both would have admitted here what the next layer refuses --
+  a green `amu check` followed by a red `amu compile`, which is the exact skew
+  this repository's deps comments already warn about.
+
+  ⚠ THE GAP CLOSED THE SAME DAY, and this docstring keeps the paragraph
+  above rather than deleting it because the SEQUENCE is the point. The split
+  is what let the literal's gate move on its own evidence while this one
+  stayed put for a few hours; a single gate for both would have moved them
+  together, on evidence that covered only one. The name stays for the same
+  reason: two families with two reasons, even when the two sets agree today."
+  '#{kernel-function-address})
+
 (def rodata-literal-operations
-  '#{ucs2 guid bytes-literal bytes-literal-length
-     ;; boot-scratch: `(kernel-function-address f)` needs exactly what the
-     ;; literals need and nothing more -- a backend that resolves a label with
-     ;; `lea dst,[rip+disp32]`. It is not dangerous, it reads no firmware
-     ;; memory and it calls nothing; on the Wasm, kotoba-script and CLJS
-     ;; backends it would lower to nothing at all.
-     ;;
-     ;; The set below is therefore the right one: the aiueos x86-64 native
-     ;; targets, firmware AND kernel. A kernel image resolves its own function
-     ;; labels exactly as a firmware image does -- which is the difference
-     ;; between this head and `kernel-scratch-region` above, whose answer is
-     ;; wrong outside the UEFI packager rather than absent.
-     kernel-function-address})
+  "Both families, for the callers that gate on \"needs a resolved label\"."
+  (into rodata-literal-only-operations function-address-operations))
 
 ;; Derived from `kotoba.kir.target`'s own profiles rather than written out, so
-;; a new aiueos x86-64 target does not silently lack the literal pool its
-;; backend already has. The two conditions are the two things the backend
-;; needs: an x86-64 ISA (`lea …,[rip+disp32]`) and an aiueos OS (a `.text` the
-;; pool can sit at the end of, with no dynamic loader to relocate it).
+;; a new target does not silently lack the literal pool its backend already
+;; has. Two families, and the second joined on 2026-09-09.
+;;
+;; THE AIUEOS FIRMWARE AND KERNEL TARGETS were always here. What the backend
+;; needs is a `.text` the pool can sit at the end of, with no dynamic loader
+;; to relocate it -- and a kernel image resolves its own labels exactly as a
+;; firmware image does.
+;;
+;; THE HOSTED NATIVE TARGETS JOINED THEM, because the premise that excluded
+;; them was not true. A literal pool is a place in a CONTIGUOUS MAPPING that
+;; holds the code, and a hosted target has one: the kexe loader mmaps the code
+;; buffer and jumps into it, so a pool the layout pass placed beside the code
+;; is reachable exactly as it is inside an image. The loader's own context
+;; carries `code_base` and `code_length`.
+;;
+;; ⚠ THE ISA CONDITION IS GONE, and that is the second half of the same day's
+;; measurement rather than an oversight. It said x86-64 because the refusal in
+;; `kotoba.mir` said AArch64's answer was ADRP+ADD and its 4 KiB page split
+;; was unmodelled. The named blocker was the wrong instruction: `adr` reaches
+;; +/-1 MiB in one, and kotoba-native's pool is in the same emitted buffer as
+;; the code, which bounds the distance by the size of one program. Both
+;; refusals are gone in the pins this file names.
+;;
+;; WHY IT WAS WORTH WIDENING: the IQ quantization formats decode through
+;; codebook grids of 256, 512 or 1024 entries that belong to the FORMAT.
+;; Without a pool those types stay in the C -- which is what kotoba-native's
+;; elf64 docstring says in as many words -- and the direction is Kotoba and
+;; this compiler only.
 (def rodata-literal-targets
   (into #{}
         (keep (fn [[name profile]]
-                (when (and (= :x86_64 (:isa profile))
-                           (= :aiueos (:os profile))
-                           (contains? #{:firmware :kernel} (:execution profile)))
+                (when (or (and (= :aiueos (:os profile))
+                               (= :x86_64 (:isa profile))
+                               (contains? #{:firmware :kernel} (:execution profile)))
+                          (= :native (:execution profile)))
                   name)))
+        target-profile/profiles))
+
+(def function-address-targets
+  "boot-scratch's set. Still spelled by intersection with the literals' set
+  rather than written out, so that it stays a SUBSET by construction -- a
+  target admitted for a function address but not for a literal would be
+  incoherent, since the function address needs everything the literal needs.
+
+  ⚠ THE INTERSECTION IS NOW WITH EVERYTHING, so the two sets are equal
+  today. That is a measurement, not a merge: `kotoba.mir` stopped refusing
+  `:gmir/function-address` on AArch64 (kotoba-mir 1a1c4358), kotoba-native
+  emits `adr` at the callee's label (edbbe987), and kotoba-verifier took the
+  head out of its aiueos-only set (93eacd80). Each of those was its own
+  commit with its own control.
+
+  The name and the separate `def` stay. Two families with two reasons keep
+  the ability to move apart again -- which is exactly what happened here,
+  hours apart, and would have been impossible under one gate."
+  (into #{}
+        (keep (fn [[name _profile]]
+                (when (contains? rodata-literal-targets name) name)))
         target-profile/profiles))
 
 (defn heads-used
@@ -144,10 +208,19 @@
   program the backend has no way to compile, and saying `require the aiueos
   UEFI target` about it would name the wrong requirement."
   [target module]
-  (let [used (heads-used rodata-literal-operations module)]
+  (let [used (heads-used rodata-literal-only-operations module)
+        functions (heads-used function-address-operations module)]
     (when (and (seq used) (not (contains? rodata-literal-targets target)))
-      (throw (ex-info "an image-resolved address requires a native aiueos x86-64 target"
+      (throw (ex-info "an image-resolved address requires a target whose backend places a literal pool"
                       {:phase :target :target target
                        :admitted (vec (sort rodata-literal-targets))
                        :operations used})))
+    ;; boot-scratch: its own refusal and its own sentence, because after the
+    ;; split the two families are admitted on different targets and a caller
+    ;; reading the report should not have to guess which head it wrote.
+    (when (and (seq functions) (not (contains? function-address-targets target)))
+      (throw (ex-info "a function's address requires a native aiueos x86-64 target"
+                      {:phase :target :target target
+                       :admitted (vec (sort function-address-targets))
+                       :operations functions})))
     module))
