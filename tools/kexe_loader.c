@@ -2886,6 +2886,15 @@ int main(int argc, char **argv) {
    * and still catches a miscounted invocation. A `--` with nothing after it
    * is a guest argv of length zero, which is different from no `--` at all
    * only in that the guest may ask and be told zero. */
+#ifdef KEXE_EMBEDDED
+  /* A packaged command owns its whole command line: there is no loader
+   * invocation in front of it to separate off, so every argument after the
+   * program name belongs to the guest and `--` is just another argument --
+   * which is what a caller writing `grep -- -x file` means by it. */
+  kexe_guest_argv = argv + 1;
+  kexe_guest_argc = argc - 1;
+  argc = 1;
+#else
   for (int i = 1; i < argc; i++) {
     if (strcmp(argv[i], "--") == 0) {
       kexe_guest_argv = argv + i + 1;
@@ -2894,17 +2903,54 @@ int main(int argc, char **argv) {
       break;
     }
   }
+#endif
   /* Command mode: the guest's answer is the process's EXIT STATUS and the
    * loader prints no report of its own, so stdout carries only what the guest
    * wrote through wire 37. Without it the loader keeps printing the result,
    * which is what every existing caller reads. Truncated to 0..255 the way a
    * shell would; a negative answer therefore arrives as 256 + it, which is
    * the same thing `exit(-1)` does anywhere else. */
+#ifdef KEXE_EMBEDDED
+  /* A command always answers with its exit status and never prints a report
+   * of its own -- that is what makes it a command rather than a loader
+   * invocation, so it is not left to an environment variable. */
+  const int command_mode = 1;
+#else
   const int command_mode = getenv("KEXE_COMMAND") != NULL;
+#endif
+#ifndef KEXE_EMBEDDED
   if (argc < 6 || argc > 11) {
     fprintf(stderr, "usage: kexe-loader <raw-code> <offset> <arity> <x86_64|aarch64> <allow-csv|-> [i64 ...]\n");
     return 2;
   }
+#else
+  (void)argc;
+#endif
+#ifdef KEXE_EMBEDDED
+  /* The machine code is a constant of this binary, not a file it is told to
+   * read. Nothing on the command line can point it at other bytes, so a
+   * packaged command has no argument that selects what it executes. */
+  const uint64_t offset = KEXE_EMBEDDED_OFFSET;
+  const unsigned long arity = KEXE_EMBEDDED_ARITY;
+  const char *isa = KEXE_EMBEDDED_ISA;
+  const long length = (long)sizeof(kexe_embedded_code);
+  if (arity != 0) {
+    /* A command receives its input through :cli/args, not through i64
+     * parameters there is nowhere to write. */
+    fprintf(stderr, "kexe-command: packaged entry must have arity 0\n");
+    return 2;
+  }
+  if (length <= 0 || offset >= (uint64_t)length) {
+    fprintf(stderr, "kexe-command: invalid embedded code length or offset\n");
+    return 2;
+  }
+  long pagesize = sysconf(_SC_PAGESIZE);
+  size_t mapped = ((size_t)length + (size_t)pagesize - 1) & ~((size_t)pagesize - 1);
+  void *memory = mmap(NULL, mapped, PROT_READ | PROT_WRITE,
+                      MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  if (memory == MAP_FAILED) fail("mmap RW");
+  memcpy(memory, kexe_embedded_code, (size_t)length);
+#else
   uint64_t offset;
   if (parse_u64(argv[2], &offset) != 0) return 2;
   unsigned long arity;
@@ -2929,6 +2975,7 @@ int main(int argc, char **argv) {
   if (memory == MAP_FAILED) fail("mmap RW");
   if (fread(memory, 1, (size_t)length, file) != (size_t)length) fail("read");
   if (fclose(file) != 0) fail("close");
+#endif
 
   /* The security boundary: writable code is never executable. */
   if (mprotect(memory, mapped, PROT_READ | PROT_EXEC) != 0) fail("mprotect RX");
@@ -2989,7 +3036,14 @@ int main(int argc, char **argv) {
   shared->context.code_length = (uint64_t)length;
   kexe_scope_init(&kexe_scope35, "KEXE_CAP_RESOURCES_35");
   kexe_scope_init(&kexe_scope34, "KEXE_CAP_RESOURCES_34");
+#ifdef KEXE_EMBEDDED
+  /* The grant is a constant too, and it is the SAME text a loader invocation
+   * would have been given, parsed by the same function -- a packaged command
+   * cannot widen its own authority and cannot be told to. */
+  if (parse_allow(KEXE_EMBEDDED_ALLOW, shared->context.allow) != 0) return 2;
+#else
   if (parse_allow(argv[5], shared->context.allow) != 0) return 2;
+#endif
   for (unsigned long i = 0; i < arity; i++) {
     if (parse_guest_arg(shared, argv[6 + i], &args[i]) != 0) return 2;
   }
