@@ -3,5 +3,10 @@
 ;; in deps.edn is invisible to them.
 ;;
 ;; :paths is COPIED from deps.edn, not chosen here.
-{:paths ["src" "resources" "tools"]
+;; "." is here because nbb PUTS IT THERE WHEN THERE IS NO nbb.edn, and taking
+;; it away is what adding this file did. Measured: a tree with scripts/lib.cljs
+;; and a script that requires scripts.lib resolves it with no nbb.edn, fails
+;; with {:paths ["src"]}, and resolves again with {:paths ["src" "."]}.
+;; It goes LAST so the declared paths still win.
+{:paths ["src" "resources" "tools" "."]
  :deps {io.github.kotoba-lang/text {:git/sha "2ee6dce2ca944decd001f9378868dd703fc3e741"}}}
