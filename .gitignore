@@ -4,6 +4,11 @@
 /.clj-kondo/.cache/
 /target/
 /node_modules/
+# ...and node_modules as a SYMLINK, which the trailing slash above does not
+# match. That is how one got committed on 2026-09-06 (25591e0a): it pointed at
+# its own absolute path, so `npx --no-install nbb` -- bin/kotoba's shebang --
+# died with ELOOP in any checkout at that path and the CLI would not start.
+/node_modules
 /test-results/
 /playwright-report/
 /.tools/
