@@ -40,7 +40,26 @@ typedef int64_t (*kexe_fn6)(int64_t, int64_t, int64_t, int64_t, int64_t, int64_t
 typedef int64_t (*kexe_fn8)(int64_t, int64_t, int64_t, int64_t,
                             int64_t, int64_t, int64_t, int64_t);
 
+/* The pair heap: every string handle, every option, every result and every
+ * record boundary is a pair, and nothing is ever reclaimed.
+ *
+ * KEXE_PAIR_CAPACITY is the DEFAULT budget and stays what it has always
+ * been; KEXE_PAIRS names another positive decimal for one run, and a
+ * packaged command bakes it. Same shape as KEXE_FUEL and KEXE_STRING_POOL,
+ * and the same argument: raising a bound at build time moves every
+ * program's ceiling at once, raising it per run moves one caller's.
+ *
+ * Measured 2026-09-10, which is why this is here: a `uniq` walking 600 lines
+ * trapped with `:heap {:capacity 4096 :used 4096}` and 49,994,368 fuel
+ * REMAINING -- about eight pairs per line, from the substrings a line walk
+ * takes. The report naming the arena is what turned that into one
+ * measurement instead of a bisection.
+ *
+ * KEXE_PAIR_MAX is address space, not memory: the mapping is MAP_ANONYMOUS
+ * and nothing memsets it, so pages fault in as the bump allocator reaches
+ * them. */
 #define KEXE_PAIR_CAPACITY 4096u
+#define KEXE_PAIR_MAX (4u * 1024u * 1024u)
 #define KEXE_KGRAPH_CAPACITY 4096u
 /* The string arena.
  *
@@ -85,6 +104,10 @@ static uint64_t kexe_initial_fuel = 512;
  * array's size, so the ceiling a guest meets is the budget and not the
  * mapping. */
 static uint64_t kexe_string_pool_budget = KEXE_STRING_POOL_BYTES;
+/* The pair-heap budget in force for this run. Every allocation site checks
+ * THIS, never the array's size, so the ceiling a guest meets is the budget
+ * and not the mapping. */
+static uint64_t kexe_pair_budget = KEXE_PAIR_CAPACITY;
 
 static void write_stderr_checked(const char *bytes, size_t length) {
   ssize_t written = write(STDERR_FILENO, bytes, length);
@@ -233,7 +256,7 @@ struct kexe_shared_v4 {
   int64_t result;
   uint64_t completed;
   uint64_t pair_used;
-  struct kexe_pair_v1 pairs[KEXE_PAIR_CAPACITY];
+  struct kexe_pair_v1 pairs[KEXE_PAIR_MAX];
   /* One flag per pair handle: the (offset, length) bytes this handle
    * addresses are known-valid canonical UTF-8. Sound because the bytes a
    * handle covers never change after it is minted -- code+literal data is
@@ -241,7 +264,7 @@ struct kexe_shared_v4 {
    * established, holds for the handle's lifetime. This turns the
    * per-access whole-string valid_utf8 in substring/code-point-at (an
    * O(n^2) cost for a scan) into one validation per handle. */
-  uint8_t pair_validated[KEXE_PAIR_CAPACITY];
+  uint8_t pair_validated[KEXE_PAIR_MAX];
   uint64_t kgraph_used;
   struct kexe_datom_v1 datoms[KEXE_KGRAPH_CAPACITY];
   uint64_t string_pool_used;
@@ -296,7 +319,12 @@ _Static_assert(offsetof(struct kexe_context_v4, string_equal) == 112, "string AB
 _Static_assert(offsetof(struct kexe_context_v4, string_concat) == 120, "string ABI drift");
 _Static_assert(offsetof(struct kexe_context_v4, string_substring) == 136, "string ABI drift");
 _Static_assert(offsetof(struct kexe_context_v4, string_code_point_at) == 144, "string ABI drift");
-_Static_assert(sizeof(((struct kexe_shared_v4 *)0)->pairs) == 65536,
+/* The arena is now mapped over KEXE_PAIR_MAX and BOUNDED by
+ * kexe_pair_budget, so the tripwire moves from a literal to the max it is
+ * sized by -- it still catches a change to the array, which is what it is
+ * for, and no longer asserts a number that stopped being the ceiling. */
+_Static_assert(sizeof(((struct kexe_shared_v4 *)0)->pairs)
+                   == KEXE_PAIR_MAX * sizeof(struct kexe_pair_v1),
                "pair arena size drift");
 _Static_assert(sizeof(((struct kexe_shared_v4 *)0)->datoms) == 98304,
                "kgraph arena size drift");
@@ -363,7 +391,7 @@ static int64_t checked_pair_new(struct kexe_context_v4 *context,
                                 int64_t first, int64_t second) {
   struct kexe_shared_v4 *shared = (struct kexe_shared_v4 *)context;
   if (context == NULL || context->version != 4 ||
-      shared->pair_used >= KEXE_PAIR_CAPACITY) {
+      shared->pair_used >= kexe_pair_budget) {
     raise(SIGILL);
     return 0;
   }
@@ -758,7 +786,7 @@ static int hex_nibble(char value) {
 
 static int allocate_host_pair(struct kexe_shared_v4 *shared,
                               int64_t first, int64_t second, int64_t *handle) {
-  if (shared->pair_used >= KEXE_PAIR_CAPACITY) return -1;
+  if (shared->pair_used >= kexe_pair_budget) return -1;
   uint64_t index = shared->pair_used++;
   shared->pairs[index].first = first;
   shared->pairs[index].second = second;
@@ -831,7 +859,7 @@ static int parse_guest_arg(struct kexe_shared_v4 *shared,
       cursor = end + 1;
       if (*cursor == '\0') return -1;
     }
-    if (count > KEXE_PAIR_CAPACITY - shared->pair_used) return -1;
+    if (count > kexe_pair_budget - shared->pair_used) return -1;
     int64_t handle = 0;
     for (uint64_t i = count; i > 0; i--) {
       uint64_t index = shared->pair_used++;
@@ -895,7 +923,7 @@ static int parse_guest_arg(struct kexe_shared_v4 *shared,
   if ((digits & 1u) != 0) return -1;
   uint64_t length = (uint64_t)(digits / 2u);
   if (length > kexe_string_pool_budget - shared->string_pool_used ||
-      shared->pair_used >= KEXE_PAIR_CAPACITY) return -1;
+      shared->pair_used >= kexe_pair_budget) return -1;
   for (size_t i = 0; i < digits; i++) {
     if (hex_nibble(hex[i]) < 0) return -1;
   }
@@ -2756,11 +2784,23 @@ static int supervise(pid_t child) {
  * touches -- and this loader never gained the other half. It was invisible
  * because amu pinned an older kototama-native; advancing that pin is what
  * surfaced it. */
+/* The reported capacity is the budget IN FORCE, not the default. It was the
+ * literal 4096 until 2026-09-10, which was true while the pair heap was a
+ * compile-time constant and became a lie the moment it became a budget: a
+ * run with KEXE_PAIRS=200000 reported `:capacity 4096 :used 8013`, a used
+ * larger than its own capacity. `:arena-bounds` says a bound you can see is
+ * a bound you can plan against; one you can see WRONG is worse than one you
+ * cannot see. The string arena joins the report for the same reason -- it
+ * had no line at all, so a guest that exhausted it had nothing to read. */
 #define KEXE_REPORT_TAIL_FMT                                                  \
-  "} :heap {:capacity 4096 :used %" PRIu64 "} :vectors {:capacity %u :used %"  \
+  "} :heap {:capacity %" PRIu64 " :used %" PRIu64                             \
+  "} :string-pool {:capacity %" PRIu64 " :used %" PRIu64                      \
+  "} :vectors {:capacity %u :used %"                                          \
   PRIu64 "} :vector-items {:capacity %u :used %" PRIu64 "}}\n"
 #define KEXE_REPORT_TAIL_ARGS(s)                                              \
-  (s)->pair_used, (unsigned)KEXE_VECTOR_CAPACITY, (s)->vector_used,            \
+  kexe_pair_budget, (s)->pair_used,                                           \
+      kexe_string_pool_budget, (s)->string_pool_used,                          \
+      (unsigned)KEXE_VECTOR_CAPACITY, (s)->vector_used,                        \
       (unsigned)KEXE_VECTOR_ITEM_CAPACITY, (s)->vector_item_used
 
 static int write_supervisor_report(const struct kexe_shared_v4 *shared,
@@ -3254,6 +3294,22 @@ int main(int argc, char **argv) {
     }
   }
 #endif
+#ifdef KEXE_EMBEDDED
+  kexe_pair_budget = KEXE_EMBEDDED_PAIRS;
+#else
+  const char *pairs_env = getenv("KEXE_PAIRS");
+  if (pairs_env != NULL && pairs_env[0] != '\0') {
+    if (parse_u64(pairs_env, &kexe_pair_budget) != 0 || kexe_pair_budget == 0) {
+      fprintf(stderr, "kexe-loader: KEXE_PAIRS must be a positive decimal integer\n");
+      return 2;
+    }
+  }
+#endif
+  if (kexe_pair_budget > KEXE_PAIR_MAX) {
+    fprintf(stderr, "kexe-loader: KEXE_PAIRS exceeds the %u-entry ceiling\n",
+            (unsigned)KEXE_PAIR_MAX);
+    return 2;
+  }
   if (kexe_string_pool_budget > KEXE_STRING_POOL_MAX) {
     fprintf(stderr, "kexe-loader: KEXE_STRING_POOL exceeds the %u-byte ceiling\n",
             (unsigned)KEXE_STRING_POOL_MAX);
