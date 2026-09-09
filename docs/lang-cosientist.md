@@ -1300,3 +1300,55 @@ NOTE: shared checkout — local HEAD moved f282763e -> 71a5e5f3 during this tick
   (count+nth+get loop, k8 shape) becomes mechanically compilable and gets
   its first comparator-eligible runtime claim. Meanwhile #70/#71 merge
   watch continues (pin 96fd4e19 content-verified without them).
+
+## Iteration 32 (t33) - keys-route work-around CONFIRMED end-to-end: typed-map-entry-at + hetero-vector count run = 2 through the DEFAULT route; keys blocker named precisely = typed-map-keys emit arm + host intrinsic (2026-09-09, amu-lang-cosientist t33, amu origin/main a681d3f2 default worktree /tmp/langcos/amu-o-t33, wasm origin tip e962341)
+
+- Fleet state this tick (gh/git, measured): wasm tip e962341 (only the
+  kotoba.lang.text retirement after #76) - NO typed-map-keys work landed;
+  sema #70/#71 still OPEN; amu origin/main a681d3f2 (unchanged from iter 31).
+- Hypothesis A (carried from iter 31 next): is the keys gap still standing?
+  Measured on the fresh a681d3f2 worktree: k1 (count (keys m)) compile
+  exit 70 "unsupported typed Wasm expression" REPRODUCED. CONFIRMED.
+- Hypothesis B (the new leg this tick): sema admits `typed-map-entry-at`
+  (frontend:5813-5818, validate :7320) and the wasm emitter HAS its arm
+  (core.cljc:2973-2977 -> intrinsic kotoba:typed/map-entry-at, host
+  mapEntryAt browser-host.mjs:2031/2497). So the ENTRY route (option
+  [vector [k v]] per index) may deliver the keys/vals consumer shape
+  TODAY - before any typed-map-keys landing.
+- Hand-patch probe (no compiler change; /tmp/langcos/t33-ea.kotoba,
+  3 definitions): `(typed-map-entry-at [:map :keyword :i64] m i)` in
+  fn-return position -> [:option [:vector [:keyword :i64]]], payload
+  extract `(option-value-of [:option ...] e (hetero-vector-new
+  [:vector [:keyword :i64]] :z 0))`, consumed with
+  `(hetero-vector-count [:vector ...] ...)`:
+  - bin/amu check --jvm-free exit 0; compile --target wasm32 exit 0
+    (3 definitions, provenance+publication sidecars written).
+  - RUN on the origin worktree browser-host: main(0) = **2** (=
+    entry count of {:a 1 :b 2}) ALL-OK (re-run verified) - first
+    measured end-to-end run consuming map-DERIVED data through the
+    default route.
+  - op spellings pinned by rejection-first probes (recorded):
+    typed-map-entry-at takes an explicit TYPE arg; option-value-of
+    takes [:option payload] TYPE + value + fallback; loop bindings
+    must be plain symbols (annotations live in defn params only);
+    hetero-vector-count takes an explicit type operand; hetero
+    fallback must match its descriptor exactly.
+- Descriptor leg (why k1 still dies): osaho kir.cljc:146-148 admits
+  typed-map-keys/vals in the op set, but wasm e962341 has NO emit arm
+  and NO conditionally-imported intrinsic for them (grep in
+  core.cljc/typed.cljc = 0 hits), while typed-map-entry-at has both
+  (arm :2973 + kotoba:typed/map-entry-at host fn). The gap is exactly
+  one emit arm + one host intrinsic - the same shape as merged #76
+  (typed-list-nth). Backend-owner (kotoba-wasm) request, not lang work.
+- Verdict: B CONFIRMED - the reduce-kv consumer route is REACHABLE today
+  via entry-at (measured run = 2); keys blocker named precisely.
+- Gate: check PASS x1 + compile PASS x1 + run PASS x2 (2 ALL-OK) +
+  compile exit-70 fail-closed x1 reproduced (k1). All --jvm-free nbb
+  route, no JVM. loadavg 40-60 across probes - quiet gate NOT met;
+  NO timing claims (perfgate N/A: coverage/correctness only;
+  comparator ratio N/A - no new lowering).
+- Next (1 hypothesis): quiet-gate timing of the entry-at route's
+  per-entry cost (t33-ea shape extended to sum values per index) -
+  the first comparator-eligible shape for the reduce-kv hand twin;
+  measure ns/entry when loadavg settles. Watch for any wasm PR adding
+  the typed-map-keys arm (then re-run k1/k2 default-route).
