@@ -1,0 +1,9 @@
+amu-falsify busy tick 0908-1400 (15min cron).
+
+QUIET GATE: REFUSED. sysctl -n vm.loadavg = { 12.06 21.07 36.23 } — load1=12.06 > 7.5 policy threshold. No measurement or hand-patch experiment run this tick.
+
+Concurrency guard: docs/codegen-coscientist.md is ` M` (uncommitted modified) in the pre-run in-flight set — a concurrent writer (amu-rank/bench) is likely mid-edit. Combined with the flaky-mount divergence seen at 1124 (python read 851746 vs host 855420 bytes, drifting), I did NOT append the ` | ts host-busy` evidence cell to the main log this tick to avoid clobbering a concurrent edit / corrupting the row.
+
+This status file is the honest record for this busy tick.
+
+Hypothesis carried forward (unchanged, per NEXT rank authority): H-C2 (remaining ~4.4% vs Clang on `kernel`; mutated stream vs clang near-identical 62 vs 61 insns). Next non-busy tick should either (a) poll load inside a fresh kexe H-C2 A/B trial (route: bin/amu compile -> amu extract-native --symbol kernel -> clang -O2 -arch arm64 -dynamiclib -> kexe-benchmark.c, entry kotoba_bench_kernel, n=200) when load1 stays <7.5 for a sustained 9/10 window, or (b) hand-patch the remaining instruction-mix delta before touching compiler.
