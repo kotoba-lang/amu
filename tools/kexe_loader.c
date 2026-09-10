@@ -2224,6 +2224,185 @@ static int64_t fs_app_data_write_provider(struct kexe_context_v4 *context,
   return intern_utf8(context, content, content_length);
 }
 
+/* --- scoped mutation -------------------------------------------------------
+ *
+ * mkdir, unlink, rmdir and rename, each confined to the wire-35 scope.
+ *
+ * The read and write providers above are safe because they OPEN the target
+ * and then ask `kexe_scope_contains_fd`, which resolves the descriptor
+ * (F_GETPATH on macOS, dev+ino comparison elsewhere) and so cannot be fooled
+ * by a `..` component or a symlink. `kexe_scope_admit` alone would be: it
+ * matches text, and `/granted/../../etc` prefixes `/granted` at a `/`
+ * boundary.
+ *
+ * A mutation has no descriptor for the thing it acts on -- unlink removes a
+ * name, not an open file -- so the same guarantee is obtained one level up:
+ * open the PARENT directory, put it through the identical containment check,
+ * and then act relative to that descriptor with mkdirat/unlinkat/renameat.
+ * The name operated on is a single component, so it cannot walk anywhere.
+ *
+ * These ANSWER "1" or "0" rather than trapping when the operation fails --
+ * `rm` of a name that is not there is a diagnostic the guest must write, not
+ * a fault. A request OUTSIDE the scope still traps, exactly as writing does:
+ * that is not a question, it is a grant violation. */
+static int kexe_split_parent(const char *candidate, char parent[4096],
+                             char base[256]) {
+  const char *slash = strrchr(candidate, '/');
+  if (slash == NULL || slash == candidate) return 0;
+  size_t parent_length = (size_t)(slash - candidate);
+  size_t base_length = strlen(slash + 1);
+  if (parent_length == 0 || parent_length >= 4096) return 0;
+  if (base_length == 0 || base_length >= 256) return 0;
+  /* A single component: no traversal, no re-entry into the path resolver. */
+  if (strcmp(slash + 1, ".") == 0 || strcmp(slash + 1, "..") == 0) return 0;
+  memcpy(parent, candidate, parent_length);
+  parent[parent_length] = '\0';
+  memcpy(base, slash + 1, base_length + 1);
+  return 1;
+}
+
+/* The parent directory of `candidate`, open and proven to be inside the
+ * scope, or -1. The caller closes it. */
+static int kexe_scoped_parent_fd(const char *candidate, char base[256]) {
+  char parent[4096];
+  if (!kexe_split_parent(candidate, parent, base)) return -1;
+  int dfd = open(parent, O_RDONLY | O_DIRECTORY);
+  if (dfd < 0) return -1;
+  if (!kexe_scope_contains_fd(&kexe_scope35, dfd, parent)) {
+    close(dfd);
+    return -1;
+  }
+  return dfd;
+}
+
+static int64_t kexe_answer_bool(struct kexe_context_v4 *context, int ok) {
+  return intern_utf8(context, (const uint8_t *)(ok ? "1" : "0"), 1);
+}
+
+/* wire id 35, MKDIR form: "<path>MKDIR_SEP" -> "1" if the directory was
+ * created, "0" if it was not (it already exists, the parent is missing, the
+ * filesystem refused). 0777 is passed and the process umask applies, which is
+ * what mkdir(1) itself does. */
+static int64_t fs_app_data_mkdir_provider(struct kexe_context_v4 *context,
+                                          int64_t request) {
+  const uint8_t *bytes = NULL;
+  uint64_t length = 0;
+  static const char token[] = "MKDIR_SEP";
+  char target[4096], candidate[4096], base[256];
+  const uint8_t *sep = NULL;
+  if (!read_string_handle(context, request, &bytes, &length) || bytes == NULL ||
+      (sep = kexe_single_token(bytes, (size_t)length, token)) == NULL ||
+      !kexe_request_path(bytes, (size_t)(sep - bytes), target) ||
+      !kexe_scope_admit(&kexe_scope35, target, candidate)) {
+    raise(SIGILL);
+    return 0;
+  }
+  int dfd = kexe_scoped_parent_fd(candidate, base);
+  if (dfd < 0) {
+    raise(SIGILL);
+    return 0;
+  }
+  int ok = mkdirat(dfd, base, 0777) == 0;
+  close(dfd);
+  return kexe_answer_bool(context, ok);
+}
+
+/* wire id 35, UNLINK form: "<path>UNLINK_SEP" -> "1" if the name was removed.
+ * AT_REMOVEDIR is NOT passed, so this refuses a directory the way unlink(2)
+ * does; RMDIR_SEP is the separate form for that, because `rm` and `rmdir` are
+ * separate commands and answering both from one request would let a guest
+ * remove a tree it only asked to remove a file from. */
+static int64_t fs_app_data_unlink_provider(struct kexe_context_v4 *context,
+                                           int64_t request) {
+  const uint8_t *bytes = NULL;
+  uint64_t length = 0;
+  static const char token[] = "UNLINK_SEP";
+  char target[4096], candidate[4096], base[256];
+  const uint8_t *sep = NULL;
+  if (!read_string_handle(context, request, &bytes, &length) || bytes == NULL ||
+      (sep = kexe_single_token(bytes, (size_t)length, token)) == NULL ||
+      !kexe_request_path(bytes, (size_t)(sep - bytes), target) ||
+      !kexe_scope_admit(&kexe_scope35, target, candidate)) {
+    raise(SIGILL);
+    return 0;
+  }
+  int dfd = kexe_scoped_parent_fd(candidate, base);
+  if (dfd < 0) {
+    raise(SIGILL);
+    return 0;
+  }
+  int ok = unlinkat(dfd, base, 0) == 0;
+  close(dfd);
+  return kexe_answer_bool(context, ok);
+}
+
+/* wire id 35, RMDIR form: "<path>RMDIR_SEP" -> "1" if the EMPTY directory was
+ * removed. A non-empty one answers "0"; there is no recursive form, and a
+ * guest that wants one walks the tree itself under its own fuel. */
+static int64_t fs_app_data_rmdir_provider(struct kexe_context_v4 *context,
+                                          int64_t request) {
+  const uint8_t *bytes = NULL;
+  uint64_t length = 0;
+  static const char token[] = "RMDIR_SEP";
+  char target[4096], candidate[4096], base[256];
+  const uint8_t *sep = NULL;
+  if (!read_string_handle(context, request, &bytes, &length) || bytes == NULL ||
+      (sep = kexe_single_token(bytes, (size_t)length, token)) == NULL ||
+      !kexe_request_path(bytes, (size_t)(sep - bytes), target) ||
+      !kexe_scope_admit(&kexe_scope35, target, candidate)) {
+    raise(SIGILL);
+    return 0;
+  }
+  int dfd = kexe_scoped_parent_fd(candidate, base);
+  if (dfd < 0) {
+    raise(SIGILL);
+    return 0;
+  }
+  int ok = unlinkat(dfd, base, AT_REMOVEDIR) == 0;
+  close(dfd);
+  return kexe_answer_bool(context, ok);
+}
+
+/* wire id 35, RENAME form: "<from>RENAME_SEP<to>" -> "1" if renamed. BOTH
+ * sides are admitted and BOTH parents are proven in scope, so this cannot be
+ * used to move a file out of the grant or to pull one in. */
+static int64_t fs_app_data_rename_provider(struct kexe_context_v4 *context,
+                                           int64_t request) {
+  const uint8_t *bytes = NULL;
+  uint64_t length = 0;
+  static const char token[] = "RENAME_SEP";
+  const size_t token_len = sizeof(token) - 1u;
+  char from_target[4096], from_candidate[4096], from_base[256];
+  char to_target[4096], to_candidate[4096], to_base[256];
+  const uint8_t *sep = NULL;
+  if (!read_string_handle(context, request, &bytes, &length) || bytes == NULL ||
+      (sep = kexe_single_token(bytes, (size_t)length, token)) == NULL ||
+      !kexe_request_path(bytes, (size_t)(sep - bytes), from_target) ||
+      !kexe_request_path(sep + token_len,
+                         (size_t)(bytes + length - (sep + token_len)),
+                         to_target) ||
+      !kexe_scope_admit(&kexe_scope35, from_target, from_candidate) ||
+      !kexe_scope_admit(&kexe_scope35, to_target, to_candidate)) {
+    raise(SIGILL);
+    return 0;
+  }
+  int from_fd = kexe_scoped_parent_fd(from_candidate, from_base);
+  if (from_fd < 0) {
+    raise(SIGILL);
+    return 0;
+  }
+  int to_fd = kexe_scoped_parent_fd(to_candidate, to_base);
+  if (to_fd < 0) {
+    close(from_fd);
+    raise(SIGILL);
+    return 0;
+  }
+  int ok = renameat(from_fd, from_base, to_fd, to_base) == 0;
+  close(from_fd);
+  close(to_fd);
+  return kexe_answer_bool(context, ok);
+}
+
 /* Bounded decimal parse over a byte span: digits only (no sign, no '+', no
  * whitespace), at most 20 of them, overflow refused. */
 static int kexe_parse_u64_span(const uint8_t *text, size_t length,
@@ -2539,12 +2718,20 @@ static int64_t checked_typed_cap_call(struct kexe_context_v4 *context,
   } else if (id == 10 && request_kind == KEXE_TYPED_UI_EVENT_V1) {
     result = ui_event_inject(context, request);
   } else if (id == 35 && request_kind == KEXE_TYPED_STRING) {
-    /* wire id 35 = :fs/app-data, four request forms told apart by an ASCII
-     * token: "<path>WRITE_SEP<content>" writes, "<path>RANGE_SEP<off>:<len>"
-     * reads one bounded window, "<path>EXISTS_SEP" answers "1"/"0", and a
-     * bare absolute path reads the whole file.
-     * WRITE_SEP is tested first so written content may itself contain
-     * RANGE_SEP. Scope is KEXE_CAP_RESOURCES_35 for all three. */
+    /* wire id 35 = :fs/app-data, told apart by an ASCII token:
+     *   "<path>WRITE_SEP<content>"      write
+     *   "<path>RANGE_SEP<off>:<len>"    one bounded window
+     *   "<path>EXISTS_SEP"              "1"/"0"
+     *   "<path>MKDIR_SEP"               create a directory
+     *   "<path>UNLINK_SEP"              remove a name
+     *   "<path>RMDIR_SEP"               remove an empty directory
+     *   "<from>RENAME_SEP<to>"          rename
+     *   a bare absolute path            read the whole file
+     *
+     * WRITE_SEP is tested FIRST and stays first: written content may itself
+     * contain any of these tokens, and only the write form has content. The
+     * mutation forms carry no content, so their order among themselves does
+     * not matter. Scope is KEXE_CAP_RESOURCES_35 for all of them. */
     uint64_t rlen = 0;
     const uint8_t *rb = NULL;
     if (read_string_handle(context, request, &rb, &rlen) && rb &&
@@ -2557,6 +2744,14 @@ static int64_t checked_typed_cap_call(struct kexe_context_v4 *context,
       result = fs_app_data_exists_provider(context, request);
     } else if (rb != NULL && memmem(rb, (size_t)rlen, "RANGE_SEP", 9) != NULL) {
       result = fs_app_data_range_read_provider(context, request);
+    } else if (rb != NULL && memmem(rb, (size_t)rlen, "MKDIR_SEP", 9) != NULL) {
+      result = fs_app_data_mkdir_provider(context, request);
+    } else if (rb != NULL && memmem(rb, (size_t)rlen, "UNLINK_SEP", 10) != NULL) {
+      result = fs_app_data_unlink_provider(context, request);
+    } else if (rb != NULL && memmem(rb, (size_t)rlen, "RMDIR_SEP", 9) != NULL) {
+      result = fs_app_data_rmdir_provider(context, request);
+    } else if (rb != NULL && memmem(rb, (size_t)rlen, "RENAME_SEP", 10) != NULL) {
+      result = fs_app_data_rename_provider(context, request);
     } else {
       result = fs_app_data_read_provider(context, request);
     }
