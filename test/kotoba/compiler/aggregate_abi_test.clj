@@ -179,7 +179,22 @@
   ;; refusal there said a function's address is x86-only "for exactly the
   ;; reason the literal is", and the literal's reason had already stopped
   ;; holding.
-  (is (= "edbbe9873fc0eac387d1420e5191be6fab0ff469"
+  ;; Advanced 2026-09-10 to 5f2717c2 (edbbe987..5f2717c2 ahead 12, forward
+  ;; only). Required, not optional, and NOT for anything this test pins:
+  ;; `capability-bitmap` in elf64.cljc did `(quot id 8)` on a capability id
+  ;; that arrives as a bigint under ClojureScript, so every
+  ;; `--target x86_64-aiueos-user-v1` of a source containing `cap-call` exited
+  ;; 70 :kotoba/internal-error. x86_64.cljc already coerced the same value
+  ;; with `js/Number` and said why; elf64.cljc did not. Measured on this
+  ;; branch: `(cap-call 16 0)` under a policy granting 16..19 is exit 70 at
+  ;; edbbe987 and exit 0 / 8560 bytes at 5f2717c2.
+  ;;
+  ;; The boundary this test pins is untouched, and here that is a claim about
+  ;; the whole range rather than one commit: the twelve commits change
+  ;; elf64.{clj,cljc}, tests, nbb.edn, .gitignore and run-tests.cljs, and
+  ;; nothing else -- no MIR, no codegen, no encoder. elf64 writes the USER
+  ;; IMAGE; it does not emit the aggregate sequences these bytes assert.
+  (is (= "5f2717c243ab769eacd9db74417759c73e448482"
          (dependency-pin 'io.github.kotoba-lang/kotoba-native)))
   ;; Advanced 2026-09-07 to kotoba-native main c9d5c44 (hoist #151, cross-call
   ;; hoist #152, copy coalescing #154; 06badc8's allow-list entry is on main as
