@@ -1,76 +1,90 @@
 (ns scripts.dual-backend-equivalence
-  "Independent-rebuild verification: compile ONE input through TWO backends and
-  compare THE VALUES THE ARTIFACTS PRODUCE.
+  "Independent-rebuild verification: compile ONE input through SEVERAL backends
+  and compare THE VALUES THE ARTIFACTS PRODUCE.
 
   `output_attestation.cljs` signs who built an artifact. It cannot say the
   artifact is right, and a content-addressed source tree cannot either: if the
   compiler is compromised the output is compromised and source review sees
   nothing (the Ken Thompson shape). The only thing that detects that is a
-  second path disagreeing. This is the first increment of that: it builds each
-  corpus program for `wasm32` and for `js` (restricted ESM), RUNS both, and
-  compares every exported zero-arity probe value by value.
+  second path disagreeing.
 
-  Why running matters rather than diffing exit codes: on 2026-09-06
-  (kotoba-lang/amu#835) a module COMPILED, RAN, and gave a WRONG ANSWER on
-  aarch64-macos -- keyword `=` was always false while i64 `=` was correct in
-  the same build, so every branch went the wrong way. Two green builds would
-  have agreed perfectly. Only the values disagree.
+  Why the values and not the exit codes: on 2026-09-06 (kotoba-lang/amu#835) a
+  module COMPILED, RAN, and gave a WRONG ANSWER on aarch64-macos -- keyword `=`
+  was always false while i64 `=` was correct in the same build, so every branch
+  went the wrong way. Two green builds agree perfectly on that. Only the values
+  disagree.
+
+  That is not only history. Run this with `--with-native` on Darwin arm64 and
+  it reports the same shape on main TODAY: `03-keyword-eq` answers 0 where
+  wasm32 and js answer 1, while `02-compare`'s i64 equality is correct in the
+  same build. `:ok true` means the compiler built something. It has never meant
+  the something is right.
 
   For the same reason this reports COUNTS, never a boolean. A boolean cannot
-  distinguish one regression from a broken build; #835 was caught only because
-  the failing module returned a count.
+  distinguish one regression from a broken build; #835 was caught at all only
+  because the failing module returned a count.
 
-  WHAT THIS DOES NOT COVER, stated so nobody reads more from a green run than
-  is in it:
+  THE PATHS
 
-    * The two backends share the frontend, the desugarer and the KIR. This
-      detects LOWERING divergence. A compromised frontend would compromise
-      both paths identically and this would stay green. Closing that needs a
-      third path that does not share the front half.
-    * The corpus is small and hand-written, not generated. It is a floor, not
-      a proof.
-    * Only probes that are zero-arity and return an i64 are comparable across
-      the two value ABIs. A probe returning a typed reference is reported as
-      UNCOMPARABLE, never as agreement.
+    wasm32   kotoba-native's Wasm encoder, executed through
+             runtime/browser-host.mjs, which owns the `kotoba:typed` ABI.
+    js       kotoba-lang/kotoba-script's restricted-ESM emitter, executed as an
+             ES module.
+    native   the aarch64/x86_64 AOT emitters, executed through the kexe loader.
+             OPT-IN (`--with-native`): the kexe route returns ONE entry point
+             per invocation, so every probe is a separate signed `amu run`,
+             tens of seconds each, and that route still reaches
+             `clojure -M:native-run`.
+
+  Two DIFFERENT backends agreeing is evidence. Two invocations of one emitter
+  agreeing is not, which is why this repo's JVM/nbb parity tests for the SAME
+  backend do not answer this question.
+
+  WHAT THIS DOES NOT COVER, stated so nobody reads more from a green run than is
+  in it:
+
+    * Every path shares the frontend, the desugarer and the KIR. This detects
+      LOWERING divergence. A compromised frontend compromises all paths
+      identically and this stays green. Closing that needs a path that does not
+      share the front half.
+    * The corpus is small and hand-written, not generated. It is a floor.
+    * Only zero-arity probes returning an i64 are comparable across the value
+      ABIs. Anything else is reported UNCOMPARABLE or SKIPPED, never as
+      agreement.
+    * Export names are enumerated from the in-process hosts. The native route
+      cannot list its exports, so it is probed for the names the others report.
 
   Exit-code contract -- three answers, not two:
 
-    0  every program both backends built agreed on every comparable probe,
-       AND at least one probe actually ran.
-    1  at least one probe DISAGREED, or one side's export set differs.
+    0  every program with at least two live paths agreed on every comparable
+       probe, AND at least one probe actually ran.
+    1  at least one probe DISAGREED, or the paths' export sets differ.
     2  COULD NOT ANSWER. No probe ran, the corpus is empty or unreadable, the
-       host runtime is missing, or a compile failed in a way that is not a
-       refusal the compiler named. Never 0 -- a check that could not run must
-       not return the value of a check that ran and found nothing.
+       host runtime is missing, native setup failed while it was asked for, or
+       a compile failed in a way that is not a refusal the compiler named.
+       Never 0 -- a check that could not run must not return the value of a
+       check that ran and found nothing.
 
   Usage:
 
     nbb scripts/dual-backend-equivalence.cljs
+    nbb scripts/dual-backend-equivalence.cljs --with-native
     nbb scripts/dual-backend-equivalence.cljs --corpus test/dual-backend --json
-    nbb scripts/dual-backend-equivalence.cljs --keep   # leave artifacts in place"
+    nbb scripts/dual-backend-equivalence.cljs --keep   # leave artifacts behind"
   (:require ["node:child_process" :as cp]
             ["node:fs" :as fs]
             ["node:os" :as os]
             ["node:path" :as path]
+            [cljs.reader :as reader]
             [clojure.string :as str]))
-
-;; ---------------------------------------------------------------------------
-;; The two paths under comparison.
-;;
-;; `--target wasm32` reaches kotoba-native's Wasm encoder and runs under
-;; `runtime/browser-host.mjs`, which owns the `kotoba:typed` ABI. `--target js`
-;; reaches kotoba-lang/kotoba-script's restricted-ESM emitter and runs as an
-;; ES module. Different emitters, different value representations, different
-;; runtimes -- which is the whole point: agreement between them is evidence,
-;; agreement between two invocations of one emitter is not.
-
-(def ^:private paths
-  [{:id :wasm32 :target "wasm32" :suffix ".wasm"}
-   {:id :js     :target "js"     :suffix ".mjs"}])
 
 (def ^:private exit-agreed 0)
 (def ^:private exit-disagreed 1)
 (def ^:private exit-cannot-answer 2)
+
+;; Far enough out that clock skew cannot turn a comparison into an expiry
+;; refusal, which would read as a backend disagreeing.
+(def ^:private native-expiry "99999999999")
 
 ;; ---------------------------------------------------------------------------
 
@@ -88,177 +102,269 @@
 
 (defn- exists? [p] (.existsSync fs p))
 
+(defn- amu [root & a]
+  (let [r (.spawnSync cp js/process.execPath
+                      (clj->js (into [(path/join root "bin" "amu")] a))
+            #js {:cwd root :encoding "utf8" :maxBuffer (* 32 1024 1024)})]
+    {:status (.-status r) :error (.-error r)
+     :text (str (.-stdout r) (.-stderr r))}))
+
 ;; ---------------------------------------------------------------------------
-;; Compiling. Each compile is a separate `bin/amu` process, so a crash on one
-;; program cannot take the run with it, and the refusal text is kept: a
-;; backend that REFUSES a program is a measurement, and it must not be
-;; recorded the same way as a backend that built one.
+;; Compiling. Each compile is its own process, so a crash on one program cannot
+;; take the run with it, and the refusal TEXT is kept: a backend that REFUSES a
+;; program is a measurement and must not be recorded the way a backend that
+;; built one is.
 
 (defn- compile-one [root src out target]
-  (let [r (.spawnSync cp js/process.execPath
-                      (clj->js [(path/join root "bin" "amu") "compile" src
-                                "--target" target "--output" out])
-            #js {:cwd root :encoding "utf8" :maxBuffer (* 32 1024 1024)})
-        status (.-status r)
-        text (str (.-stdout r) (.-stderr r))]
+  (let [{:keys [status error text]} (amu root "compile" src "--target" target
+                                         "--output" out)]
     (cond
-      (.-error r) {:ok? false :kind :infrastructure
-                   :message (.. r -error -message)}
-      (zero? status) (if (exists? out)
-                       {:ok? true :kind :built}
-                       ;; exit 0 and no artifact is not a pass. It is the exact
-                       ;; shape this file exists to refuse: a check that did not
-                       ;; run returning the value of one that did.
-                       {:ok? false :kind :infrastructure
-                        :message "compiler exited 0 but wrote no artifact"})
-      ;; The compiler's own refusal codes. 64/65/70 all print a
-      ;; `:kotoba.cli-error/v1` map naming the reason; anything else is not a
+      error {:ok? false :kind :infrastructure :message (.-message error)}
+      (zero? status)
+      (if (exists? out)
+        {:ok? true :kind :built}
+        ;; exit 0 and no artifact is not a pass. It is the exact shape this
+        ;; file exists to refuse.
+        {:ok? false :kind :infrastructure
+         :message "compiler exited 0 but wrote no artifact"})
+      ;; The compiler's own refusal codes; each prints a
+      ;; `:kotoba.cli-error/v1` map naming the reason. Anything else is not a
       ;; refusal we can read, so it is infrastructure, not a measurement.
       (contains? #{64 65 70} status)
       {:ok? false :kind :refused :status status
        :message (or (second (re-find #":message \"([^\"]*)\"" text))
                     (str "exit " status))}
-      :else {:ok? false :kind :infrastructure
-             :message (str "exit " status " :: "
-                           (str/join " / " (take-last 2 (remove str/blank?
-                                                               (str/split-lines text)))))})))
+      :else
+      {:ok? false :kind :infrastructure
+       :message (str "exit " status " :: "
+                     (str/join " / " (take-last 2 (remove str/blank?
+                                                          (str/split-lines text)))))})))
 
 ;; ---------------------------------------------------------------------------
-;; Running. Both artifacts are loaded in THIS process and their exports called
-;; directly, so what is compared is the value each backend actually computes,
-;; not a string either of them printed.
-
-(defn- host-module [root]
-  (js/import (str "file://" (path/join root "runtime" "browser-host.mjs"))))
-
-(defn- instantiate-wasm [root artifact]
-  (-> (host-module root)
-      (.then (fn [host]
-               (.instantiateKotoba host (.readFileSync fs artifact) #js {})))
-      (.then (fn [r] (.. r -instance -exports)))))
-
-(defn- instantiate-js [artifact]
-  (-> (js/import (str "file://" artifact))
-      (.then (fn [m] (.instantiateKotoba m #js {})))))
-
-;; A probe's value is normalised to a string BEFORE comparison so that two
-;; representations of the same number compare equal (wasm returns BigInt,
-;; restricted ESM returns BigInt too, but the host wrappers are free to differ)
-;; and so that a thrown trap compares as itself rather than as a missing value.
-;; A value that is neither is reported UNCOMPARABLE -- it is not agreement.
+;; Reading a value back.
 
 (defn- js-tag
-  "`Object.prototype.toString.call` rather than `typeof`, because it is total:
-  it answers for null and undefined too, and it distinguishes a BigInt
-  primitive from a Number without either backend having to agree on boxing."
+  "`Object.prototype.toString.call` rather than `typeof`: it is total (it
+  answers for null and undefined) and it separates a BigInt primitive from a
+  Number without either host having to agree on boxing."
   [v]
   (.call (.. js/Object -prototype -toString) v))
 
-(defn- arity [exports name]
-  (let [f (aget exports name)]
-    (if (fn? f) (.-length f) -1)))
+(defn- classify [v]
+  (case (js-tag v)
+    "[object BigInt]"  {:kind :i64 :text (str v)}
+    "[object Number]"  {:kind :i64 :text (str v)}
+    "[object Boolean]" {:kind :bool :text (str v)}
+    {:kind :uncomparable :text (js-tag v)}))
 
-;; Only zero-arity probes are called. A probe that takes arguments would need
-;; the harness to invent them, and inventing them on two different value ABIs
-;; is how a comparison starts measuring the harness instead of the compiler --
-;; measured here first: calling `fact`/`fib` with no arguments trapped on both
-;; sides with DIFFERENT host wording, and the run reported a mismatch on an
-;; operation that had never executed. That is a false positive, and a
-;; comparison that produces them cannot be trusted when it produces a real one.
-;; Arity is read from `Function.length`, which both hosts report, and a
-;; DIFFERENCE in arity between the two sides is itself a disagreement.
-
-(defn- probe-value [exports name]
+(defn- call-probe [exports name]
   (let [f (aget exports name)]
     (if-not (fn? f)
       {:kind :absent :text "absent"}
-      (try
-        (let [v (f)
-              tag (js-tag v)]
-          (case tag
-            "[object BigInt]"  {:kind :i64 :text (str v)}
-            "[object Number]"  {:kind :i64 :text (str v)}
-            "[object Boolean]" {:kind :bool :text (str v)}
-            {:kind :uncomparable :text tag}))
-        (catch :default e
-          {:kind :trap :text (str "trap:" (or (.-message e) (str e)))})))))
+      (try (classify (f))
+           (catch :default e
+             {:kind :trap :text (str "trap:" (or (.-message e) (str e)))})))))
 
-(defn- export-names [exports]
-  (sort (js->clj (.keys js/Object exports))))
+(defn- arity [exports name]
+  (let [f (aget exports name)] (if (fn? f) (.-length f) -1)))
+
+;; ---------------------------------------------------------------------------
+;; wasm32 and js are in-process: the artifact's own function is called and its
+;; return value compared, not a string it printed.
+
+(defn- instantiate-wasm [root artifact]
+  (-> (js/import (str "file://" (path/join root "runtime" "browser-host.mjs")))
+      (.then (fn [host] (.instantiateKotoba host (.readFileSync fs artifact) #js {})))
+      (.then (fn [r] (.. r -instance -exports)))))
+
+(defn- instantiate-esm [artifact]
+  (-> (js/import (str "file://" artifact))
+      (.then (fn [m] (.instantiateKotoba m #js {})))))
+
+;; ---------------------------------------------------------------------------
+;; native.
+
+(defn- native-target []
+  (let [isa (case (.arch os) "arm64" "aarch64" "x64" "x86_64" nil)
+        o (case (.platform os) "darwin" "macos" "linux" "linux" "win32" "windows" nil)]
+    (when (and isa o) (str isa "-" o))))
+
+(defn- setup-native!
+  "Answers `{:ctx ...}` or `{:reason ...}`. The reason is kept rather than
+  collapsed to false: `--with-native` on a host with no native target and
+  `--with-native` where `measure-runtime` failed are different facts, and only
+  one of them is fixed by running somewhere else."
+  [root work]
+  (let [target (native-target)]
+    (if-not target
+      {:reason (str "no native target for " (.platform os) "/" (.arch os))}
+      (let [key-file (path/join work "native-key.edn")
+            runtime-file (path/join work "native-runtime.edn")
+            loader (path/join work "native-loader")
+            trust-file (path/join work "native-trust.edn")
+            policy (path/join work "native-policy.edn")
+            input (path/join work "native-input.edn")
+            k (amu root "keygen" "--output" key-file)]
+        (if-not (zero? (:status k))
+          {:reason (str "amu keygen failed: " (str/trim (:text k)))}
+          (let [signer (second (re-find #":signer \"([0-9a-f]+)\"" (:text k)))
+                m (amu root "measure-runtime" "--output" runtime-file
+                       "--loader-output" loader)]
+            (if-not (zero? (:status m))
+              {:reason (str "amu measure-runtime failed: " (str/trim (:text m)))}
+              (let [runtime-sha (second (re-find #":runtime-sha256 \"([0-9a-f]+)\""
+                                                 (:text m)))]
+                (if-not (and signer runtime-sha)
+                  {:reason "could not read the signer or runtime digest from amu's output"}
+                  (do
+                    (.writeFileSync fs trust-file
+                                    (str "{:format :kotoba.trust/v1"
+                                         " :trusted-signers #{\"" signer "\"}"
+                                         " :revoked-signers #{}"
+                                         " :revoked-artifacts #{}"
+                                         " :trusted-runtime-sha256 #{\"" runtime-sha "\"}"
+                                         " :revoked-runtime-sha256 #{}}\n"))
+                    (.writeFileSync fs policy "{:allow #{}}\n")
+                    (.writeFileSync fs input "{:args []}\n")
+                    {:ctx {:target target :key key-file :runtime runtime-file
+                           :loader loader :trust trust-file :policy policy
+                           :input input}}))))))))))
+
+(defn- native-build [root ctx src out]
+  (let [c (compile-one root src out (:target ctx))]
+    (if-not (:ok? c)
+      c
+      (let [kexe (str out ".kexe")
+            s (amu root "sign" out "--key" (:key ctx)
+                   "--expires" native-expiry "--output" kexe)]
+        (if (zero? (:status s))
+          {:ok? true :kind :built :kexe kexe}
+          {:ok? false :kind :infrastructure
+           :message (str "amu sign failed: " (str/trim (:text s)))})))))
+
+(defn- native-probe [root ctx kexe work entry]
+  (let [safe (str/replace entry #"[^A-Za-z0-9_.-]" "_")
+        result-file (path/join work (str "native-result-" safe ".edn"))
+        receipt (path/join work (str "native-receipt-" safe ".edn"))
+        r (amu root "run" kexe "--trust" (:trust ctx) "--runtime" (:runtime ctx)
+               "--loader" (:loader ctx) "--policy" (:policy ctx)
+               "--input" (:input ctx) "--executor-key" (:key ctx)
+               "--entry" entry "--now" "1500"
+               "--result-output" result-file "--output" receipt)]
+    (if-not (exists? result-file)
+      {:kind :trap :text (str "trap:run produced no result ("
+                              (str/trim (:text r)) ")")}
+      (try
+        (let [v (reader/read-string (.readFileSync fs result-file "utf8"))]
+          (if (= :ok (:status v))
+            (classify (:result v))
+            ;; A non-:ok status is the native runtime refusing, which is a
+            ;; value-shaped fact about this probe, not a harness failure.
+            {:kind :trap :text (str "trap:" (name (or (:status v) :unknown)))}))
+        (catch :default e
+          {:kind :uncomparable
+           :text (str "unreadable-result:" (.-message e))})))))
 
 ;; ---------------------------------------------------------------------------
 
-(defn- compare-program [root src work]
-  (let [base (str/replace (path/basename src ".kotoba") #"[^A-Za-z0-9_.-]" "_")
-        builds (into {}
-                     (map (fn [{:keys [id target suffix]}]
-                            (let [out (path/join work (str base "." (name id) suffix))]
-                              [id (assoc (compile-one root src out target)
-                                         :artifact out :target target)])))
-                     paths)]
+(defn- probe-verdict [values]
+  (let [vs (vals values)
+        texts (set (map :text vs))]
     (cond
-      (some #(= :infrastructure (:kind %)) (vals builds))
+      (some #(= :uncomparable (:kind %)) vs) :uncomparable
+      (< (count values) 2) :too-few-paths
+      (= 1 (count texts)) :agreed
+      :else :disagreed)))
+
+(defn- compare-program [root src work native-ctx]
+  (let [base (str/replace (path/basename src ".kotoba") #"[^A-Za-z0-9_.-]" "_")
+        wasm-out (path/join work (str base ".wasm"))
+        esm-out (path/join work (str base ".mjs"))
+        native-out (when native-ctx (path/join work (str base ".native")))
+        wasm (compile-one root src wasm-out "wasm32")
+        esm (compile-one root src esm-out "js")
+        native (when native-ctx (native-build root native-ctx src native-out))
+        builds (cond-> {:wasm32 wasm :js esm} native-ctx (assoc :native native))
+        infra (filter #(= :infrastructure (:kind (val %))) builds)]
+    (cond
+      (seq infra)
       (js/Promise.resolve
        {:program base :status :infrastructure
-        :detail (into {} (map (fn [[k v]] [k (:message v)]))
-                      (filter #(= :infrastructure (:kind (val %))) builds))})
+        :detail (into {} (map (fn [[k v]] [k (:message v)])) infra)})
 
-      (every? :ok? (vals builds))
-      (-> (js/Promise.all
-           #js [(instantiate-wasm root (:artifact (:wasm32 builds)))
-                (instantiate-js (:artifact (:js builds)))])
-          (.then
-           (fn [pair]
-             (let [w (aget pair 0) j (aget pair 1)
-                   wn (export-names w) jn (export-names j)
-                   only-wasm (remove (set jn) wn)
-                   only-js (remove (set wn) jn)
-                   shared (filter (set jn) wn)
-                   probes (for [n shared
-                                :let [wa (arity w n) ja (arity j n)]]
-                            (if (not= wa ja)
-                              {:probe n :verdict :arity-split
-                               :wasm32 {:kind :arity :text (str "arity " wa)}
-                               :js {:kind :arity :text (str "arity " ja)}}
-                              (if (pos? wa)
-                                {:probe n :verdict :skipped-arity
-                                 :wasm32 {:kind :arity :text (str "arity " wa)}
-                                 :js {:kind :arity :text (str "arity " ja)}}
-                                (let [wv (probe-value w n) jv (probe-value j n)]
-                                  {:probe n :wasm32 wv :js jv
-                                   :verdict (cond
-                                              (or (= :uncomparable (:kind wv))
-                                                  (= :uncomparable (:kind jv))) :uncomparable
-                                              (= (:text wv) (:text jv)) :agreed
-                                              :else :disagreed)}))))]
-               {:program base :status :compared
-                :only-wasm (vec only-wasm) :only-js (vec only-js)
-                :probes (vec probes)})))
-          (.catch (fn [e]
-                    {:program base :status :infrastructure
-                     :detail {:run (or (.-message e) (str e))}})))
+      ;; Fewer than two live paths is neither a pass nor a failure: there is
+      ;; nothing to compare. It gets its own count.
+      (< (count (filter (comp :ok? val) builds)) 2)
+      (js/Promise.resolve
+       {:program base :status :too-few-paths
+        :detail (into {} (map (fn [[k v]] [k (if (:ok? v) "built" (:message v))]))
+                      builds)})
 
       :else
-      (js/Promise.resolve
-       {:program base :status :one-side-refused
-        :detail (into {} (map (fn [[k v]] [k (if (:ok? v) "built" (:message v))])) builds)}))))
+      (-> (js/Promise.all
+           #js [(if (:ok? wasm) (instantiate-wasm root wasm-out) (js/Promise.resolve nil))
+                (if (:ok? esm) (instantiate-esm esm-out) (js/Promise.resolve nil))])
+          (.then
+           (fn [pair]
+             (let [w (aget pair 0)
+                   j (aget pair 1)
+                   native-live? (and native-ctx (:ok? native))
+                   live (cond-> [] w (conj :wasm32) j (conj :js)
+                                native-live? (conj :native))
+                   wn (when w (sort (js->clj (.keys js/Object w))))
+                   jn (when j (sort (js->clj (.keys js/Object j))))
+                   names (if (and wn jn) (filter (set jn) wn) (or wn jn))
+                   only-wasm (if (and wn jn) (vec (remove (set jn) wn)) [])
+                   only-js (if (and wn jn) (vec (remove (set wn) jn)) [])
+                   probes
+                   (vec
+                    (for [n names]
+                      (let [wa (when w (arity w n))
+                            ja (when j (arity j n))]
+                        (cond
+                          (and wa ja (not= wa ja))
+                          {:probe n :verdict :arity-split
+                           :values {:wasm32 {:kind :arity :text (str "arity " wa)}
+                                    :js {:kind :arity :text (str "arity " ja)}}}
+
+                          (pos? (or wa ja 0))
+                          {:probe n :verdict :skipped-arity
+                           :values {:arity {:kind :arity :text (str "arity " (or wa ja))}}}
+
+                          :else
+                          (let [pv (cond-> {}
+                                     w (assoc :wasm32 (call-probe w n))
+                                     j (assoc :js (call-probe j n))
+                                     native-live?
+                                     (assoc :native (native-probe root native-ctx
+                                                                  (:kexe native) work n)))]
+                            {:probe n :values pv :verdict (probe-verdict pv)})))))]
+               {:program base :status :compared :live (vec live)
+                :only-wasm only-wasm :only-js only-js :probes probes})))
+          (.catch (fn [e]
+                    {:program base :status :infrastructure
+                     :detail {:run (or (.-message e) (str e))}}))))))
 
 ;; ---------------------------------------------------------------------------
 
-(defn- report! [results json?]
+(defn- split-text [values]
+  (str/join "  " (map (fn [[k v]] (str (name k) "=" (:text v)))
+                      (sort-by (comp name key) values))))
+
+(defn- report! [results json? native?]
   (let [compared (filter #(= :compared (:status %)) results)
         probes (mapcat :probes compared)
-        agreed (filter #(= :agreed (:verdict %)) probes)
-        disagreed (filter #(= :disagreed (:verdict %)) probes)
-        uncomparable (filter #(= :uncomparable (:verdict %)) probes)
-        arity-splits (filter #(= :arity-split (:verdict %)) probes)
-        skipped (filter #(= :skipped-arity (:verdict %)) probes)
+        by (fn [v] (filter #(= v (:verdict %)) probes))
+        agreed (by :agreed) disagreed (by :disagreed)
+        uncomparable (by :uncomparable) skipped (by :skipped-arity)
+        arity-splits (by :arity-split)
         export-splits (filter #(or (seq (:only-wasm %)) (seq (:only-js %))) compared)
-        refused (filter #(= :one-side-refused (:status %)) results)
+        few (filter #(= :too-few-paths (:status %)) results)
         broken (filter #(= :infrastructure (:status %)) results)
-        summary {:programs-seen (count results)
+        summary {:paths (if native? ["wasm32" "js" "native"] ["wasm32" "js"])
+                 :programs-seen (count results)
                  :programs-compared (count compared)
-                 :programs-uncompilable-by-one-side (count refused)
+                 :programs-uncompilable-by-enough-paths (count few)
                  :programs-infrastructure-error (count broken)
                  :probes-seen (count probes)
                  :probes-run (+ (count agreed) (count disagreed))
@@ -277,28 +383,27 @@
             (let [d (concat (filter #(= :disagreed (:verdict %)) (:probes r))
                             (filter #(= :arity-split (:verdict %)) (:probes r)))
                   u (filter #(= :uncomparable (:verdict %)) (:probes r))
-                  sk (filter #(= :skipped-arity (:verdict %)) (:probes r))]
+                  sk (filter #(= :skipped-arity (:verdict %)) (:probes r))
+                  ran (filter #(contains? #{:agreed :disagreed} (:verdict %)) (:probes r))]
               (println (str (if (seq d) "DISAGREED " "agreed    ")
                             (:program r)
-                            "  ran=" (count (filter #(contains? #{:agreed :disagreed} (:verdict %))
-                                                    (:probes r)))
+                            "  paths=" (str/join "+" (map name (:live r)))
+                            " ran=" (count ran)
                             " agreed=" (count (filter #(= :agreed (:verdict %)) (:probes r)))
                             " disagreed=" (count d)
                             (when (seq sk) (str " skipped-nonzero-arity=" (count sk)))
                             (when (seq u) (str " uncomparable=" (count u)))))
               (doseq [p d]
-                (println (str "    MISMATCH " (:program r) "/" (:probe p)
-                              "  wasm32=" (:text (:wasm32 p))
-                              "  js=" (:text (:js p)))))
+                (println (str "    MISMATCH " (:program r) "/" (:probe p) "  "
+                              (split-text (:values p)))))
               (doseq [p u]
-                (println (str "    UNCOMPARABLE " (:program r) "/" (:probe p)
-                              " (wasm32 " (name (:kind (:wasm32 p)))
-                              ", js " (name (:kind (:js p))) ")")))
+                (println (str "    UNCOMPARABLE " (:program r) "/" (:probe p) "  "
+                              (split-text (:values p)))))
               (doseq [n (:only-wasm r)]
                 (println (str "    EXPORT-ONLY-WASM32 " (:program r) "/" n)))
               (doseq [n (:only-js r)]
                 (println (str "    EXPORT-ONLY-JS " (:program r) "/" n))))
-            :one-side-refused
+            :too-few-paths
             (println (str "NOT MEASURED " (:program r) "  "
                           (str/join "  " (map (fn [[k v]] (str (name k) "=" v))
                                               (:detail r)))))
@@ -307,13 +412,13 @@
                           (str/join "  " (map (fn [[k v]] (str (name k) ": " v))
                                               (:detail r)))))))
         (println)
-        (println (str "SUMMARY"
+        (println (str "SUMMARY paths=" (str/join "+" (:paths summary))
                       " programs-seen=" (:programs-seen summary)
                       " compared=" (:programs-compared summary)
-                      " uncompilable-by-one-side=" (:programs-uncompilable-by-one-side summary)
+                      " uncompilable-by-enough-paths="
+                      (:programs-uncompilable-by-enough-paths summary)
                       " infrastructure-errors=" (:programs-infrastructure-error summary)))
-        (println (str "PROBES"
-                      " seen=" (:probes-seen summary)
+        (println (str "PROBES seen=" (:probes-seen summary)
                       " run=" (:probes-run summary)
                       " agreed=" (:probes-agreed summary)
                       " disagreed=" (:probes-disagreed summary)
@@ -324,19 +429,20 @@
     summary))
 
 (defn- decide [summary]
-  ;; Evidence floor first. `probes-run = 0` with nothing disagreeing is the
-  ;; shape of a check that never ran, and it must not exit 0.
   (cond
     (pos? (:programs-infrastructure-error summary))
-    [exit-cannot-answer "REFUSED: a program failed for a reason that is not a compiler refusal."]
+    [exit-cannot-answer
+     "REFUSED: a program failed for a reason that is not a compiler refusal."]
 
+    ;; Evidence floor. Zero probes with nothing disagreeing is the shape of a
+    ;; check that never ran, and it must not exit 0.
     (zero? (:probes-run summary))
     [exit-cannot-answer "REFUSED: no probe executed; nothing was compared."]
 
     (or (pos? (:probes-disagreed summary))
         (pos? (:probes-arity-split summary))
         (pos? (:export-set-splits summary)))
-    [exit-disagreed "DISAGREEMENT: the two backends do not compute the same values."]
+    [exit-disagreed "DISAGREEMENT: the backends do not compute the same values."]
 
     :else
     [exit-agreed "AGREED on every comparable probe that ran."]))
@@ -350,12 +456,13 @@
                                          (path/join root "test" "dual-backend")))
         json? (flag? args "--json")
         keep? (flag? args "--keep")
+        want-native? (flag? args "--with-native")
         work (flag-value args "--work"
                          (.mkdtempSync fs (path/join (os/tmpdir) "amu-dual-")))]
     (when-not (exists? (path/join root "bin" "amu"))
       (die! exit-cannot-answer
-            (str "REFUSED: " root " has no bin/amu. Run this from the amu repo root, "
-                 "or pass --root.")))
+            (str "REFUSED: " root " has no bin/amu. Run this from the amu repo "
+                 "root, or pass --root.")))
     (when-not (exists? (path/join root "runtime" "browser-host.mjs"))
       (die! exit-cannot-answer
             (str "REFUSED: " root " has no runtime/browser-host.mjs; the wasm32 "
@@ -369,28 +476,37 @@
                        (mapv #(path/join corpus %)))]
       (when (empty? sources)
         (die! exit-cannot-answer (str "REFUSED: no .kotoba programs in " corpus)))
-      (println (str "corpus=" corpus "  programs=" (count sources)
-                    "  work=" work))
-      (println (str "paths=" (str/join " x " (map :target paths))))
-      (println)
-      (-> (reduce (fn [p src]
-                    (.then p (fn [acc]
-                               (.then (compare-program root src work)
-                                      (fn [r] (conj acc r))))))
-                  (js/Promise.resolve [])
-                  sources)
-          (.then (fn [results]
-                   (let [summary (report! (vec results) json?)
-                         [code line] (decide summary)]
-                     (println)
-                     (println line)
-                     (when-not keep?
-                       (try (.rmSync fs work #js {:recursive true :force true})
-                            (catch :default _ nil)))
-                     (.exit js/process code))))
-          (.catch (fn [e]
-                    (die! exit-cannot-answer
-                          (str "REFUSED: harness itself failed: "
-                               (or (.-message e) (str e))))))))))
+      ;; Native setup is refused loudly rather than silently dropped. Falling
+      ;; back to two paths after being ASKED for three would report a narrower
+      ;; check under the wider check's name.
+      (let [native (when want-native? (setup-native! root work))]
+        (when (and want-native? (:reason native))
+          (die! exit-cannot-answer
+                (str "REFUSED: --with-native was requested but the native path "
+                     "could not be prepared: " (:reason native))))
+        (let [ctx (:ctx native)]
+          (println (str "corpus=" corpus "  programs=" (count sources)
+                        "  work=" work))
+          (println (str "paths=wasm32 x js" (when ctx (str " x " (:target ctx)))))
+          (println)
+          (-> (reduce (fn [p src]
+                        (.then p (fn [acc]
+                                   (.then (compare-program root src work ctx)
+                                          (fn [r] (conj acc r))))))
+                      (js/Promise.resolve [])
+                      sources)
+              (.then (fn [results]
+                       (let [summary (report! (vec results) json? (some? ctx))
+                             [code line] (decide summary)]
+                         (println)
+                         (println line)
+                         (when-not keep?
+                           (try (.rmSync fs work #js {:recursive true :force true})
+                                (catch :default _ nil)))
+                         (.exit js/process code))))
+              (.catch (fn [e]
+                        (die! exit-cannot-answer
+                              (str "REFUSED: harness itself failed: "
+                                   (or (.-message e) (str e))))))))))))
 
 (-main)
