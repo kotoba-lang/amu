@@ -85,7 +85,7 @@
         ;; said so.
         ;;
         ;;   grammar-sha256    515bbc7de84a3340ef3b250e4ee411739d3acebf32ba31450540f146768bb841
-        ;;   kotoba-sema-pin   96fd4e1936adcf6a225d72b46a003dcf2b3bf94a
+        ;;   kotoba-sema-pin   0470c524e8a2cda5bd5bbc6839571bde6e0135e6
         ;;
         ;; `guest_grammar_vendor_test/authority-digest-history` ends with the
         ;; same digest, so the pin, the prose and the history move in one
@@ -197,6 +197,14 @@
          ;; One file: the vendored capability catalog gains :io/write, wire 37,
          ;; `:string -> :string` -- the bytes a command writes to stdout, answered with
          ;; the decimal byte count (kotoba-lang a0408d81 is the authority).
+         ;;
+         ;; Advanced AGAIN 2026-09-10, 930373c7 -> 0470c524 (forward only: 2 ahead,
+         ;; 0 behind), for the other two wires a command needs -- :cli/args (38) and
+         ;; :io/write-error (39). The prose block at the top of this file states this
+         ;; same sha, and `guest_grammar_vendor_test/deps-edn-claim` compares the two:
+         ;; it went red because the first advance updated this narrative and not that
+         ;; claim, so the file pinned 0470c524 while announcing 96fd4e19. Two literals
+         ;; for one fact, which is the drift that test exists to catch.
          ;; This pin is not a convenience. The frontend that raises `cap-call names an
          ;; unregistered capability` is in kotoba-sema and reads THAT copy, so a
          ;; capability in the authority is invisible to this compiler until this pin
