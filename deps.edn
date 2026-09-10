@@ -650,7 +650,14 @@
          ;; already lowers to, returning the offset `kotoba$string-find` had already
          ;; computed instead of folding it to 0/1. No new helper, no new callback, no
          ;; new value representation, no ABI bump. See the osaho note above.
-         :git/sha "edbbe9873fc0eac387d1420e5191be6fab0ff469"}
+         ;; Advanced 2026-09-10, edbbe987 -> 5f2717c2 (kotoba-native main,
+         ;; forward only, 12 commits). Required, not optional: `capability-bitmap`
+         ;; in elf64.cljc did `(quot id 8)` on a capability id that arrives as a
+         ;; bigint on cljs, so EVERY `compile --target x86_64-aiueos-user-v1` of a
+         ;; source containing `cap-call` exited 70 :kotoba/internal-error while the
+         ;; same source compiled on six other targets. aiueos PLC_RT was blocked on
+         ;; it and had been recorded as unreachable at three amu revisions.
+         :git/sha "5f2717c243ab769eacd9db74417759c73e448482"}
         io.github.kotoba-lang/kotoba-component
         {:git/url "https://github.com/kotoba-lang/kotoba-component.git"
          :git/sha "ff2c3e8c29a02a7731e70c7e4d276441ebc9d42d"}
