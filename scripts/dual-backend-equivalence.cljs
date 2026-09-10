@@ -75,7 +75,6 @@
             ["node:fs" :as fs]
             ["node:os" :as os]
             ["node:path" :as path]
-            [cljs.reader :as reader]
             [clojure.string :as str]))
 
 (def ^:private exit-agreed 0)
@@ -254,16 +253,31 @@
     (if-not (exists? result-file)
       {:kind :trap :text (str "trap:run produced no result ("
                               (str/trim (:text r)) ")")}
-      (try
-        (let [v (reader/read-string (.readFileSync fs result-file "utf8"))]
-          (if (= :ok (:status v))
-            (classify (:result v))
-            ;; A non-:ok status is the native runtime refusing, which is a
-            ;; value-shaped fact about this probe, not a harness failure.
-            {:kind :trap :text (str "trap:" (name (or (:status v) :unknown)))}))
-        (catch :default e
-          {:kind :uncomparable
-           :text (str "unreadable-result:" (.-message e))})))))
+      ;; The result is read as TEXT and compared as the exact decimal string,
+      ;; never through a numeric type.
+      ;;
+      ;; `cljs.reader/read-string` was here first and it silently LIED. It
+      ;; parses an EDN integer into a float64, so the whole-corpus run reported
+      ;;
+      ;;   MISMATCH 01-i64-arith/big-add  js=4611686018427387904
+      ;;                                  native=4611686018427388000
+      ;;                                  wasm32=4611686018427387904
+      ;;
+      ;; which is that number rounded to double precision -- a defect in THIS
+      ;; FILE presented as a defect in the native backend, in a run whose whole
+      ;; purpose is to say which backend is wrong. The i64 the compiler is
+      ;; being asked about is exactly the range a double cannot hold, so the
+      ;; comparison has to stay out of JS numbers entirely.
+      (let [text (.readFileSync fs result-file "utf8")
+            status (second (re-find #":status\s+:([A-Za-z0-9_.*+!?<>=-]+)" text))
+            literal (second (re-find #":result\s+(-?\d+)\}\s*$" text))]
+        (cond
+          (not= "ok" status)
+          ;; A non-:ok status is the native runtime refusing, which is a
+          ;; value-shaped fact about this probe, not a harness failure.
+          {:kind :trap :text (str "trap:" (or status "unreadable-status"))}
+          literal {:kind :i64 :text literal}
+          :else {:kind :uncomparable :text "result-is-not-an-integer"})))))
 
 ;; ---------------------------------------------------------------------------
 
@@ -340,6 +354,15 @@
                                                                   (:kexe native) work n)))]
                             {:probe n :values pv :verdict (probe-verdict pv)})))))]
                {:program base :status :compared :live (vec live)
+                ;; A path that refused this program is named, with its reason.
+                ;; Leaving it to be inferred from the `paths=` field means a
+                ;; reader has to notice an ABSENCE to learn that a backend
+                ;; declined -- and absences are exactly what nobody notices.
+                :dropped (into {}
+                               (keep (fn [[k v]]
+                                       (when (and v (not (:ok? v)))
+                                         [k (:message v)])))
+                               builds)
                 :only-wasm only-wasm :only-js only-js :probes probes})))
           (.catch (fn [e]
                     {:program base :status :infrastructure
@@ -373,7 +396,8 @@
                  :probes-uncomparable (count uncomparable)
                  :probes-skipped-nonzero-arity (count skipped)
                  :probes-arity-split (count arity-splits)
-                 :export-set-splits (count export-splits)}]
+                 :export-set-splits (count export-splits)
+                 :path-drops (reduce + 0 (map (comp count :dropped) compared))}]
     (if json?
       (println (js/JSON.stringify (clj->js {:summary summary :results results}) nil 2))
       (do
@@ -399,6 +423,9 @@
               (doseq [p u]
                 (println (str "    UNCOMPARABLE " (:program r) "/" (:probe p) "  "
                               (split-text (:values p)))))
+              (doseq [[k reason] (:dropped r)]
+                (println (str "    PATH-DROPPED " (:program r) " " (name k)
+                              ": " reason)))
               (doseq [n (:only-wasm r)]
                 (println (str "    EXPORT-ONLY-WASM32 " (:program r) "/" n)))
               (doseq [n (:only-js r)]
@@ -425,7 +452,8 @@
                       " skipped-nonzero-arity=" (:probes-skipped-nonzero-arity summary)
                       " arity-splits=" (:probes-arity-split summary)
                       " uncomparable=" (:probes-uncomparable summary)
-                      " export-set-splits=" (:export-set-splits summary)))))
+                      " export-set-splits=" (:export-set-splits summary)
+                      " path-drops=" (:path-drops summary)))))
     summary))
 
 (defn- decide [summary]
