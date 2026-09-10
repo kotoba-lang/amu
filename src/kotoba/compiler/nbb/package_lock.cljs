@@ -49,7 +49,7 @@
             ["node:fs" :as fs]
             ["node:path" :as node-path]
             [clojure.set :as set]
-            [clojure.string :as str]
+            [kotoba.lang.text :as str]
             [kotoba.lang.package-contract :as contract]
             [kotoba.compiler.nbb.cli-support :as support]))
 

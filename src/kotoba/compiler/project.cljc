@@ -1,5 +1,5 @@
 (ns kotoba.compiler.project
-  (:require [clojure.string :as str]
+  (:require [kotoba.lang.text :as str]
             [kotoba.sema :as sema]
             [kotoba.kir.value :as value]
             #?@(:cljs [[clojure.walk :as walk]

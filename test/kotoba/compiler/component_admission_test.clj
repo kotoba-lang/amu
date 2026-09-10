@@ -2,7 +2,7 @@
   "Component target exposure, declared fuel/memory budgets, and the admission
   request the compiler owes kototama (ADR-2607252500)."
   (:require [clojure.test :refer [deftest is testing]]
-            [clojure.string :as str]
+            [kotoba.lang.text :as str]
             [kotoba.component.admission :as admission]
             [kotoba.wasm.core :as wasm]
             [kotoba.sema :as sema]

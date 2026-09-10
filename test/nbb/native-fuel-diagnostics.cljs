@@ -14,7 +14,7 @@
   does, once through `support/invoke` for the envelope and once bare for the
   ex-data, so the assertions do not depend on what the envelope redacts."
   (:require [cljs.reader :as reader]
-            [clojure.string :as str]
+            [kotoba.lang.text :as str]
             [kotoba.compiler.nbb.cli :as native-cli]
             [kotoba.compiler.nbb.cli-support :as support]
             [kotoba.compiler.nbb.native-package :as native-package]

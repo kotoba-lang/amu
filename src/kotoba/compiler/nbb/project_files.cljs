@@ -26,7 +26,7 @@
   check exists to stop, and it would do so silently."
   (:require ["node:fs" :as fs]
             ["node:path" :as path]
-            [clojure.string :as str]
+            [kotoba.lang.text :as str]
             [kotoba.sema :as sema]
             [kotoba.compiler.project :as project]))
 

@@ -14,7 +14,7 @@
   runner such as cognitect.test-runner cannot develop it; a hand-maintained one
   needs this check."
   (:require [clojure.java.io :as io]
-            [clojure.string :as str]
+            [kotoba.lang.text :as str]
             [clojure.test :refer [deftest is]]))
 
 (defn- ns-symbol [^java.io.File f]

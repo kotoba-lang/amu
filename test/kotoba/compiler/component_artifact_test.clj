@@ -3,7 +3,7 @@
             [clojure.java.io :as io]
             [clojure.java.shell :as shell]
             [clojure.test :refer [deftest is]]
-            [clojure.string :as str]
+            [kotoba.lang.text :as str]
             [kotoba.wasm.core :as wasm]
             [kotoba.component.artifact :as component]
             [kotoba.component.core :as component-core]

@@ -17,7 +17,7 @@
 ;;   nbb slope.cljs <artifact.wasm> <A> <rounds>
 
 (ns slope
-  (:require ["fs" :as fs]
+  (:require [kotoba.lang.text] ["fs" :as fs]
             ["../../runtime/browser-host.mjs" :as host]))
 
 (def artifact (first *command-line-args*))
@@ -55,7 +55,7 @@
                        ta (timed f A) tb (timed f B)]
                    (swap! samples update name conj
                           (/ (* (- tb ta) 1000.0) (* (- B A) per-outer))))))
-             (println (str "{" (clojure.string/join
-                                " " (map (fn [[k v]] (str ":" k " [" (clojure.string/join " " v) "]"))
+             (println (str "{" (kotoba.lang.text/join
+                                " " (map (fn [[k v]] (str ":" k " [" (kotoba.lang.text/join " " v) "]"))
                                          @samples)) "}")))))))
     (.catch (fn [e] (println "ERR" (.-message e)) (set! (.-exitCode js/process) 1))))

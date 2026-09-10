@@ -10,7 +10,7 @@
 ;; `printf` octal escapes, and `cmp` is a Buffer comparison, so the checks no
 ;; longer depend on the host's printf accepting `\241`.
 (ns test-ipld-adl-wasmtime
-  (:require [clojure.string :as str]
+  (:require [kotoba.lang.text :as str]
             [scripts.lib :as lib]
             ["node:fs" :as fs]))
 

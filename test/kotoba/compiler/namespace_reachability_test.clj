@@ -29,7 +29,7 @@
   and the check would pass while protecting nothing -- verified by restoring one
   of the deleted files and watching it stay green."
   (:require [clojure.java.io :as io]
-            [clojure.string :as str]
+            [kotoba.lang.text :as str]
             [clojure.test :refer [deftest is]]))
 
 (def ^:private ns-pattern #"kotoba\.compiler\.[a-zA-Z0-9._-]+")

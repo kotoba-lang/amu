@@ -32,7 +32,7 @@
          loopback fixture address is not refused -- except in
          `real-destination-blocked-check-refuses-a-loopback-target`, which
          deliberately leaves it real to prove the guard fires end-to-end."
-  (:require [clojure.string :as string]
+  (:require [kotoba.lang.text :as string]
             [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]
             [kotoba.kir :as ir]
@@ -189,7 +189,7 @@
     (when-let [[_ scheme host port]
                (re-matches #"(https?)://([A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?)(?::([0-9]+))?(?:/[^ ]*)?"
                            origin-str)]
-      (str scheme "://" (string/lower-case host) (when port (str ":" port))))))
+      (str scheme "://" (string/lower host) (when port (str ":" port))))))
 
 (defn- widen-https-origin
   "Drop-in test replacement for `provider.http`'s private

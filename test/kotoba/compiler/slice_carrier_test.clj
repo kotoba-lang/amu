@@ -6,7 +6,7 @@
   bytes, so it is checked against bytes rather than restated -- and the two
   halves are checked separately, because a fixture that emits no load at all
   would satisfy `no callback` trivially."
-  (:require [clojure.string :as str]
+  (:require [kotoba.lang.text :as str]
             [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]))
 

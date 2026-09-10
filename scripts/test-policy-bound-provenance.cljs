@@ -1,6 +1,6 @@
 #!/usr/bin/env nbb
 (ns test-policy-bound-provenance
-  (:require [clojure.string :as str]
+  (:require [kotoba.lang.text :as str]
             [scripts.lib :as lib]
             ["node:child_process" :as child]
             ["node:crypto" :as crypto]

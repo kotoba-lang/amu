@@ -4,7 +4,7 @@
   Requires tender-native (test / :native-run alias). Soft-skips if unavailable."
   (:require [clojure.edn :as edn]
             [clojure.java.io :as io]
-            [clojure.string :as str]
+            [kotoba.lang.text :as str]
             [kotoba.compiler.core :as compiler]
             [kotoba.compiler.atomic-output :as atomic-output]
             [kotoba.artifact.runtime-identity :as runtime-identity]
@@ -16,7 +16,7 @@
 (defn host-native-target
   []
   (if (contains? #{"aarch64" "arm64"}
-                 (str/lower-case (System/getProperty "os.arch")))
+                 (str/lower (System/getProperty "os.arch")))
     :aarch64-kotoba-v1
     :x86_64-kotoba-v1))
 

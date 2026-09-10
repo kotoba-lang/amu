@@ -1,7 +1,7 @@
 (ns kotoba.compiler.wasm-typed-test
   (:require [kotoba.compiler.atomic-output :as atomic-output]
             [clojure.java.shell :as shell]
-            [clojure.string :as str]
+            [kotoba.lang.text :as str]
             [clojure.test :refer [deftest is testing]]
             [kotoba.wasm.core :as wasm]
             [kotoba.wasm.typed :as typed]

@@ -1,7 +1,7 @@
 (ns kotoba.compiler.string-simd-loader-test
   (:require [clojure.java.io :as io]
             [clojure.java.shell :as shell]
-            [clojure.string :as str]
+            [kotoba.lang.text :as str]
             [clojure.test :refer [deftest is testing]]))
 
 (def ^:private loader-source (io/file "tools" "kexe_loader.c"))
@@ -19,7 +19,7 @@
     (is (= 0 (:exit assembly-result)) (:err assembly-result))
     (when (zero? (:exit assembly-result))
       (let [text (slurp assembly)
-            arch (str/lower-case (System/getProperty "os.arch"))]
+            arch (str/lower (System/getProperty "os.arch"))]
         (testing "the optimized assembly contains the selected 16-byte compare"
           (cond
             (contains? #{"aarch64" "arm64"} arch)

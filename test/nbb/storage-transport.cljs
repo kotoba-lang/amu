@@ -3,7 +3,7 @@
   (ADR 0119). Sibling Node HTTP server + port file (same pattern as
   http/llm nbb transport tests) speaking the host-configured KV wire
   protocol from ADR 0071."
-  (:require [clojure.string :as string]
+  (:require [kotoba.lang.text :as string]
             [provider.storage-transport :as transport]
             ["node:child_process" :as child]
             ["node:fs" :as fs]

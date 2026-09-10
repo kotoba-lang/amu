@@ -29,7 +29,7 @@
 
   Run from this repo's root: `nbb scripts/ios-simulator-conformance.cljs`"
   (:require [scripts.lib :as lib]
-            [clojure.string :as str]
+            [kotoba.lang.text :as str]
             ["node:child_process" :as child]
             ["node:fs" :as fs]
             ["node:os" :as os]

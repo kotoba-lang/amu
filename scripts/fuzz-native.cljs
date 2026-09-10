@@ -1,6 +1,6 @@
 #!/usr/bin/env nbb
 (ns kotoba-native-fuzz
-  (:require [clojure.string :as str]
+  (:require [kotoba.lang.text :as str]
             [cljs.reader :as reader]
             [scripts.lib :as lib]
             ["node:fs" :as fs]

@@ -1,6 +1,6 @@
 #!/usr/bin/env nbb
 (ns jdk-free-native-conformance
-  (:require [clojure.string :as str]
+  (:require [kotoba.lang.text :as str]
             ;; The reader this suite's `i64-beyond-double` control measures
             ;; AGAINST -- it is not used to read anything the suite relies on.
             [cljs.reader]

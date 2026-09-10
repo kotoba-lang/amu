@@ -1,5 +1,5 @@
 (ns kotoba.compiler.diagnostic
-  (:require [clojure.string]))
+  (:require [kotoba.lang.text]))
 
 (def phase-codes
   {:usage :kotoba/invalid-usage
@@ -50,7 +50,7 @@
 (declare refine refined-message)
 
 (defn- base-name [path]
-  (last (clojure.string/split (str path) #"[/\\]")))
+  (last (kotoba.lang.text/split (str path) #"[/\\]")))
 
 (defn source-label
   "What `:source` names. A refusal the project linker attributed to a module

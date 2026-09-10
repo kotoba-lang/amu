@@ -1,6 +1,6 @@
 #!/usr/bin/env nbb
 (ns check-workflows
-  (:require [clojure.string :as str]
+  (:require [kotoba.lang.text :as str]
             [scripts.lib :as lib]
             ["node:fs" :as fs]))
 

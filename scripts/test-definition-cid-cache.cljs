@@ -22,7 +22,7 @@
 ;;   nbb scripts/test-definition-cid-cache.cljs
 
 (ns scripts.test-definition-cid-cache
-  (:require [clojure.string :as str]
+  (:require [kotoba.lang.text :as str]
             [scripts.lib :as lib]
             ["node:child_process" :as child]
             ["node:fs" :as fs]))

@@ -15,7 +15,12 @@
 ;; ADR-0202's follow-up is to derive the closure from git and stop needing a
 ;; lock on the common path at all.
 {:paths ["src" "resources" "tools"]
- :deps {org.clojure/clojure {:mvn/version "1.12.0"}
+ :deps {
+        ;; kotoba.lang.text, not clojure.string. Pinned as an explicit floor:
+        ;; tools.deps takes the NEWEST sha it is shown, so without a floor here
+        ;; this repo silently rides whatever a sibling happens to name.
+        io.github.kotoba-lang/text {:git/sha "2ee6dce2ca944decd001f9378868dd703fc3e741"}
+       org.clojure/clojure {:mvn/version "1.12.0"}
         ;; Advanced 2026-09-09, 32ee84b2 -> 3abf80a1 (abi main, ahead 1,
         ;; forward only). The same BigInt class as the osaho pin below, but
         ;; LATENT here: `world-wit` and `capability-import-name` are not on

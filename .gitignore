@@ -31,3 +31,13 @@ test/nbb/golden/*.wasm.provenance.edn
 /docs/*.status
 /docs/*.size
 /docs/*.bak*
+
+# .nbb/ is deliberately NOT ignored here, and the cache under it is deliberately
+# committed. nbb builds `nbb-deps.jar` by shelling out to babashka, and the
+# GitHub-hosted runners this repo's jobs use do not have `bb` -- this workspace
+# retired it as a script host (ADR-2607173000). The committed cache is what
+# stands in for it. Measured 2026-09-10: removing those eight files turned
+# `server-kind` from success (88s) into failure in 15s with `/bin/sh: 1: bb: not
+# found`, from `bb --config .nbb/.cache/<hash>/deps.edn ... uberjar`. The <hash>
+# is over the resolved dependency set, so a new one is needed whenever deps.edn
+# moves -- an ignore rule here would break CI again at the next dependency bump.
