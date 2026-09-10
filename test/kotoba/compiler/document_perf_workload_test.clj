@@ -12,7 +12,7 @@
 
   Complements slices 1–8. Does not claim HAMT selection or :ui/commit (W5)."
   (:require [clojure.java.shell :as shell]
-            [clojure.string :as str]
+            [kotoba.lang.text :as str]
             [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]
             [kotoba.kir :as ir]

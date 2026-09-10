@@ -1,5 +1,5 @@
 (ns kotoba.compiler.source-path
-  (:require [clojure.string :as str]))
+  (:require [kotoba.lang.text :as str]))
 
 (def extensions
   "Closed source-discovery contract. Extensions select discovery intent only;

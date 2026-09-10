@@ -3,7 +3,7 @@
   "Exercise the shipped CLI from a dependency-empty clone. The fake clojure
   executable makes any fallback to tools.deps fail, so success proves the
   checked-in lock is sufficient after the documented `npm ci` bootstrap."
-  (:require [clojure.string :as str]
+  (:require [kotoba.lang.text :as str]
             ["node:child_process" :as child]
             ["node:fs" :as fs]
             ["node:os" :as os]

@@ -1,6 +1,6 @@
 #!/usr/bin/env nbb
 (ns kotoba-conformance
-  (:require [clojure.string :as str]
+  (:require [kotoba.lang.text :as str]
             ["node:child_process" :as child]
             ["node:fs" :as fs]
             ["node:os" :as os]

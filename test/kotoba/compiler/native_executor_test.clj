@@ -1,6 +1,6 @@
 (ns kotoba.compiler.native-executor-test
   (:require [clojure.edn :as edn]
-            [clojure.string :as str]
+            [kotoba.lang.text :as str]
             [clojure.test :refer [deftest is]]
             [kotoba.compiler.atomic-output :as atomic-output]
             [kotoba.native.aarch64 :as aarch64]

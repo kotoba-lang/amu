@@ -31,7 +31,7 @@
             ["node:os" :as os]
             ["node:path" :as path]
             [cljs.reader :as reader]
-            [clojure.string :as str]))
+            [kotoba.lang.text :as str]))
 
 (def root (.cwd js/process))
 (def tmp (.mkdtempSync fs (.join path (.tmpdir os) "amu-js-parity-")))

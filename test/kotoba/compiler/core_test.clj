@@ -1,7 +1,7 @@
 (ns kotoba.compiler.core-test
   (:require [clojure.test :refer [deftest is testing]]
             [clojure.java.shell :as shell]
-            [clojure.string :as str]
+            [kotoba.lang.text :as str]
             [kotoba.artifact.core :as artifact]
             [kotoba.compiler.core :as compiler]
             [kotoba.kir :as ir]

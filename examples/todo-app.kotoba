@@ -12,17 +12,32 @@
   ;; name, no host object, and no callback anywhere below -- a node says who it
   ;; is with `:data-k`, and the host tells us which name was acted on.
   ;;
-  ;; Three bounds are real, and none of them is hidden:
+  ;; ⚠ Three bounds were listed here as real, and on 2026-09-10 all three
+  ;; turned out to be statements about the implementation of the day rather
+  ;; than about the language. They are kept, corrected, because what they got
+  ;; wrong is more useful than what they got right:
   ;;
-  ;;   * Item identity is a letter drawn from `alphabet`, so the model tops out
-  ;;     at 26 items -- Kotoba has no integer-to-string builtin (the same gap
-  ;;     the css migration hit; it read digits out of a literal too). A wider
-  ;;     app wants that builtin, not a workaround.
-  ;;   * The counter shows "9+" past nine, for the same reason.
-  ;;   * The screen fills up first, and much sooner: a `:document` holds 256
-  ;;     nodes, and this layout crosses it (`doc-node-limit`) at about seven
-  ;;     rows. That is the honest ceiling on a Kotoba screen today, and it is a
-  ;;     value-budget question rather than anything this module can fix.
+  ;;   * \"Item identity is a letter ... Kotoba has no integer-to-string
+  ;;     builtin ... A wider app wants that builtin, not a workaround.\" It has
+  ;;     one. `string-from-i64` takes arbitrary i64 (12345, -42, 0 and
+  ;;     9007199254740991 all render, measured through the emitted ESM), and
+  ;;     was already in use elsewhere in the workspace. The keys are integers
+  ;;     now and the model has no cap.
+  ;;   * \"The counter shows 9+ past nine, for the same reason.\" Same builtin,
+  ;;     same fix; it counts.
+  ;;   * \"The screen fills up ... a `:document` holds 256 nodes ... about
+  ;;     seven rows ... the honest ceiling on a Kotoba screen today.\" That one
+  ;;     was true and is not any more: 256 -> 4096 in osaho#88 and its
+  ;;     restatement in kotoba-script#101, because adr-2608690000 had already
+  ;;     measured seven rows and said it was too small to claim cljs
+  ;;     equivalence. 123 rows of a four-column table fit now.
+  ;;
+  ;; What IS still real: there is no `i64-from-string`, so `key-index` scans
+  ;; rather than parses. It is bounded by the todo count, not by a constant.
+  ;;
+  ;; adr-2609100200 records the shape, which recurred six times in one day: an
+  ;; implementation state written down as a fact keeps steering work long after
+  ;; it stops being true, and it makes no sound when it does.
   (:export [init view step])
   (:schemas {:todo/render [:record :todo/render
                            [[:todos :document]
@@ -62,26 +77,36 @@
 
 ;; --- nominal item identity ------------------------------------------------
 
-(defn alphabet [] :string "abcdefghijklmnopqrstuvwxyz")
-
-(defn digits [] :string "0123456789")
+;; ⚠ Item keys were letters drawn from a 26-character alphabet, and the
+;; counter read a digit out of "0123456789" and gave up at "9+". The header
+;; above said both existed because "Kotoba has no integer-to-string builtin"
+;; and that "a wider app wants that builtin, not a workaround".
+;;
+;; It has one. Measured 2026-09-10 through the emitted ESM: `string-from-i64`
+;; takes arbitrary i64 -- 12345, -42, 0 and 9007199254740991 all render. The
+;; workaround outlived its reason, and the reason was stated as a fact here,
+;; in adr-2608690000, and in the first draft of adr-2609100200, which records
+;; how long that took to notice.
 
 (defn key-at [i :i64] :string
-  (string-substring (alphabet) i (+ i 1)))
+  (string-from-i64 i))
 
-(defn key-index-from [k :string i :i64] :i64
+;; The reverse still scans, and that part IS a real gap: there is no
+;; `i64-from-string` ("not a builtin, a sugar head, or a function of this
+;; module", measured the same day). What changed is the BOUND -- it was a hard
+;; 26, and is now the number of todos, so the scan no longer imposes a cap of
+;; its own on the model.
+(defn key-index-from [k :string i :i64 n :i64] :i64
   (cond
-    (>= i 26) -1
+    (>= i n) -1
     (string=? (key-at i) k) i
-    :else (key-index-from k (+ i 1))))
+    :else (key-index-from k (+ i 1) n)))
 
-(defn key-index [k :string] :i64
-  (key-index-from k 0))
+(defn key-index [k :string n :i64] :i64
+  (key-index-from k 0 n))
 
 (defn count-label [n :i64] :string
-  (if (< n 10)
-    (string-concat (string-substring (digits) n (+ n 1)) " left")
-    "9+ left"))
+  (string-concat (string-from-i64 n) " left"))
 
 ;; --- view -----------------------------------------------------------------
 
@@ -184,7 +209,13 @@
         todos (dget state :todos)]
     (cond
       (string=? draft "") state
-      (>= (document-count todos) 26) state
+      ;; 26 was the alphabet's length, not a property of anything. With
+      ;; integer keys the real ceiling is `document-container-item-limit`:
+      ;; `:todos` is a `:document` vector, and one holds 32 items. That is a
+      ;; DIFFERENT constant from the node budget raised in osaho#88 -- the
+      ;; budget bounds the rendered view (123 rows of a four-column table fit
+      ;; now), and this bounds the model. Raising one did not move the other.
+      (>= (document-count todos) 32) state
       :else (document-assoc
              (document-assoc state :todos
                              (document-vector-conj
@@ -218,8 +249,8 @@
     (let [prefix (string-substring target 0 1)
           k (string-substring target 1 (string-byte-length target))]
       (cond
-        (string=? prefix "t") (toggle-at state (key-index k))
-        (string=? prefix "d") (delete-at state (key-index k))
+        (string=? prefix "t") (toggle-at state (key-index k (document-count (dget state :todos))))
+        (string=? prefix "d") (delete-at state (key-index k (document-count (dget state :todos))))
         :else state))))
 
 (defn on-click [state :document target :string] :document

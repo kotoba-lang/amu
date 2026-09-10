@@ -22,7 +22,7 @@
      metadata the elaborated form still carries to restore the source spelling
      for capability calls only -- module-to-module calls keep their synthetic
      names, so per-module isolation is unchanged."
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [kotoba.lang.text] [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]
             [kotoba.sema :as sema]
             [kotoba.compiler.project :as project]))
@@ -158,9 +158,9 @@
     (let [{:keys [source source-map]}
           (project/link-source {'ci7.app app-source 'ci7.clock lib-source} 'ci7.app)
           ;; the emitted body carrying the capability call
-          capability-line (->> (clojure.string/split-lines source)
+          capability-line (->> (kotoba.lang.text/split-lines source)
                                (keep-indexed (fn [i l]
-                                               (when (clojure.string/includes? l "clock/now")
+                                               (when (kotoba.lang.text/includes? l "clock/now")
                                                  (inc i))))
                                first)
           entry (project/source-position source-map capability-line)]

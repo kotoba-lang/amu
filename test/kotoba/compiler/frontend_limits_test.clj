@@ -58,7 +58,7 @@
                     [:kir :oracle-value])))
   (is (thrown-with-msg? clojure.lang.ExceptionInfo #"only a bounded :export vector"
                         (compiler/check-source
-                         "(ns pilot (:require [clojure.string :as str])) (defn main [] 0)")))
+                         "(ns pilot (:require [kotoba.lang.text :as str])) (defn main [] 0)")))
   (with-redefs [sema/max-namespace-docstring-chars 3]
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #"docstring exceeds admission limit"
                           (compiler/check-source

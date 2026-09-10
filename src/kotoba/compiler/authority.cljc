@@ -2,7 +2,7 @@
   "Dynamic authority admission for typed capability calls. Identity proof and
   delegation verification stay at the host boundary; this module validates
   their sealed result and intersects it with local runtime policy."
-  (:require [clojure.string :as str]))
+  (:require [kotoba.lang.text :as str]))
 
 (def context-format :kotoba.authority-context/v1)
 (def principal-format :kotoba.principal/v1)

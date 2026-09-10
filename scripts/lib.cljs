@@ -1,5 +1,5 @@
 (ns scripts.lib
-  (:require [clojure.string :as str]
+  (:require [kotoba.lang.text :as str]
             ["node:child_process" :as child]
             ["node:crypto" :as crypto]
             ["node:fs" :as fs]

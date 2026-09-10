@@ -1,7 +1,7 @@
 (ns perfgate-qualify
   (:require [json.data-json :as json]
             [clojure.java.io :as io]
-            [clojure.string :as str]
+            [kotoba.lang.text :as str]
             [machine.core :as m]
             [perfgate.core :as g])
   (:import [java.nio.charset StandardCharsets]
@@ -25,7 +25,7 @@
         l2 (or (some-> (sysctl "hw.l2cachesize") parse-long) 262144)]
     (m/measured
      {:format m/format-id
-      :machine/id (str "darwin-" (str/replace (str/lower-case brand) #"[^a-z0-9]+" "-"))
+      :machine/id (str "darwin-" (str/replace (str/lower brand) #"[^a-z0-9]+" "-"))
       :cpu {:arch (if (= "arm64" (System/getProperty "os.arch")) :aarch64 :x86-64)
             :cores cores
             :cache [{:level 1 :kind :data :bytes l1 :line-bytes line :shared-by 1}
@@ -112,7 +112,7 @@
               "recorded machine/ISA is incomplete" {:domain (:id domain)})
     (m/measured {:format m/format-id
                  :machine/id (str platform "-" architecture "-"
-                                  (str/replace (str/lower-case cpu) #"[^a-z0-9]+" "-")
+                                  (str/replace (str/lower cpu) #"[^a-z0-9]+" "-")
                                   "-" logicalCpus)
                  :cpu {:arch isa :cores logicalCpus}}
                 (str "recorded benchmark environment for " (:id domain)))))

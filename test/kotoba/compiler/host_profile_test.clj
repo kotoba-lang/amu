@@ -1,6 +1,6 @@
 (ns kotoba.compiler.host-profile-test
   (:require [clojure.edn :as edn]
-            [clojure.string :as str]
+            [kotoba.lang.text :as str]
             [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.host-profile :as host-profile]))
 

@@ -1,6 +1,6 @@
 (ns kotoba.compiler.project-files
   (:require [clojure.java.io :as io]
-            [clojure.string :as str]
+            [kotoba.lang.text :as str]
             [kotoba.sema :as sema]
             [kotoba.compiler.project :as project])
   (:import [java.nio.file Files LinkOption Path]))

@@ -16,7 +16,7 @@
   budget), and until this slice its cadence constant had to be set by
   watching `ud2` deaths on hardware."
   (:require [kotoba.sema :as sema]
-            [clojure.string :as str]
+            [kotoba.lang.text :as str]
             #?@(:cljs [["node:fs" :as node-fs]])))
 
 ;; `System/exit` is JVM-only and `*err*` does not exist in ClojureScript. Both

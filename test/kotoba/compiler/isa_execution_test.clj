@@ -20,7 +20,7 @@
   imply a cross-ISA run that did not occur."
   (:require [clojure.java.io :as io]
             [clojure.java.shell :as shell]
-            [clojure.string :as str]
+            [kotoba.lang.text :as str]
             [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]
             [kotoba.kir]
@@ -58,7 +58,7 @@
 (defn- macos? [] (= "Mac OS X" (System/getProperty "os.name")))
 
 (defn- host-isa []
-  (case (str/lower-case (System/getProperty "os.arch"))
+  (case (str/lower (System/getProperty "os.arch"))
     ("amd64" "x86_64") "x86_64"
     ("aarch64" "arm64") "aarch64"
     nil))

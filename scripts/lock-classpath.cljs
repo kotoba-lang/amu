@@ -21,7 +21,7 @@
             ["node:fs" :as fs]
             ["node:os" :as os]
             ["node:path" :as node-path]
-            [clojure.string :as str]))
+            [kotoba.lang.text :as str]))
 
 (def lock-version 1)
 

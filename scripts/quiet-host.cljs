@@ -31,7 +31,7 @@
 ;;
 ;;   nbb scripts/quiet-host.cljs [--limit 0.10] [--hosts a,b,c] [--json]
 
-(require '[clojure.string :as str])
+(require '[kotoba.lang.text :as str])
 (def cp (js/require "node:child_process"))
 (def fs (js/require "node:fs"))
 

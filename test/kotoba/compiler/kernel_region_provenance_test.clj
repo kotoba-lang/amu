@@ -15,7 +15,7 @@
   is spelled `kernel-subregion` -- whose offset the native backends bound
   with an emitted check (see kernel-subregion-test). Bare `(+ base offset)`
   in a base position is rejected here as a result."
-  (:require [clojure.string :as str]
+  (:require [kotoba.lang.text :as str]
             [clojure.test :refer [deftest is testing]]
             [kotoba.sema :as sema]))
 

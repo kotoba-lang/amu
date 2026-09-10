@@ -25,7 +25,7 @@
   subject. What is asserted instead is the property itself -- a `let` body of
   N forms emits exactly what the explicit `(do ...)` of those N forms emits,
   and N forms do not fit in the object for N-1."
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [kotoba.lang.text] [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]))
 
 (def ^:private kernel-targets [:x86_64-aiueos-kernel-v1 :aarch64-aiueos-kernel-v1])
@@ -42,11 +42,11 @@
 (defn- stores [n] (for [i (range n)] (str "(kernel-store-u8 region 8 " i " " (+ 65 i) ")")))
 
 (defn- let-body-source [n]
-  (str "(defn main [] (let [region " region "] " (clojure.string/join " " (stores n)) "))"))
+  (str "(defn main [] (let [region " region "] " (kotoba.lang.text/join " " (stores n)) "))"))
 
 (defn- do-body-source [n]
   (str "(defn main [] (let [region " region "] (do "
-       (clojure.string/join " " (stores n)) ")))"))
+       (kotoba.lang.text/join " " (stores n)) ")))"))
 
 (defn- occurrences [bytes needle]
   (count (filter #(= needle %) (partition (count needle) 1 bytes))))

@@ -27,7 +27,7 @@
   (:require #?(:clj [clojure.test :refer [deftest is testing]]
                :cljs [cljs.test :refer [deftest is testing] :include-macros true])
             [clojure.set :as set]
-            [clojure.string :as str]
+            [kotoba.lang.text :as str]
             [kotoba.compiler.definition-identity :as di]
             [kotoba.kir :as ir]
             [kotoba.kir.alpha-normalization :as an]

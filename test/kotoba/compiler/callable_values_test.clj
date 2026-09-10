@@ -2,7 +2,7 @@
   (:require [kotoba.compiler.atomic-output :as atomic-output]
             [clojure.test :refer [deftest is testing]]
             [clojure.java.shell :as shell]
-            [clojure.string :as str]
+            [kotoba.lang.text :as str]
             [kotoba.compiler.core :as compiler]
             [kotoba.kir :as kir]))
 

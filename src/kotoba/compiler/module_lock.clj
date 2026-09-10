@@ -20,7 +20,7 @@
   CID says what a definition MEANS. Conflating them would let a comment change
   invalidate a definition identity, or let two different sources claim one."
   (:require [clojure.java.io :as io]
-            [clojure.string :as str]
+            [kotoba.lang.text :as str]
             [kotoba.compiler.bounded-edn :as bounded-edn]
             [kotoba.sema :as sema]
             [kotoba.compiler.project :as project]

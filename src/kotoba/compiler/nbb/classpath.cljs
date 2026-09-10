@@ -32,7 +32,7 @@
             ["node:os" :as os]
             ["node:path" :as node-path]
             [clojure.edn :as edn]
-            [clojure.string :as str]))
+            [kotoba.lang.text :as str]))
 
 (def lock-version 1)
 (def lock-file-name "deps-lock.edn")

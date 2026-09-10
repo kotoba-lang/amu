@@ -1,7 +1,7 @@
 #!/usr/bin/env nbb
 (ns test-output-set-publisher-auth
   (:require [cljs.reader :as reader]
-            [clojure.string :as str]
+            [kotoba.lang.text :as str]
             [scripts.lib :as lib]
             ["node:child_process" :as child]
             ["node:fs" :as fs]

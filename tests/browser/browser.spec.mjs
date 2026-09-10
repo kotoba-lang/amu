@@ -62,7 +62,14 @@ test("a .kotoba app answers real browser events", async ({ page }) => {
   await expect(app.locator('[data-k="draft"]')).toHaveValue("");
 
   // State the guest owns survives a re-render it did not ask for.
-  await app.locator('[data-k="tc"]').click();
+  //
+  // ⚠ Item keys were letters (ta/tb/tc, da) until 2026-09-10 and are the
+  // item's index now: `string-from-i64` retired the 26-letter alphabet the
+  // example had described as a missing builtin. Same items, same order,
+  // different names. The unit-test fixtures in dom_app_driver_test moved for
+  // the same reason and in the same commit -- this file is the one that only
+  // CI runs, so it is the one that says whether a real browser agrees.
+  await app.locator('[data-k="t2"]').click();
   await expect(items.nth(2).locator("button.toggle")).toHaveText("[x]");
 
   await app.locator('[data-k="f-active"]').click();
@@ -70,7 +77,7 @@ test("a .kotoba app answers real browser events", async ({ page }) => {
   await expect(items.nth(0)).toContainText("carry a click back to the guest");
 
   await app.locator('[data-k="f-all"]').click();
-  await app.locator('[data-k="da"]').click();
+  await app.locator('[data-k="d0"]').click();
   await expect(items).toHaveCount(2);
   await expect(app.locator("p.count")).toHaveText("2 left");
 

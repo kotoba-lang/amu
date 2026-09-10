@@ -5,7 +5,7 @@
 ;; may execute a `.sh`, and `scripts/check-workflows.cljs` enforces that by
 ;; refusing any `.sh` file in the tree.
 (ns build-ipld-adl-wasmtime
-  (:require [clojure.string :as str]
+  (:require [kotoba.lang.text :as str]
             [scripts.lib :as lib]
             ["node:fs" :as fs]
             ["node:path" :as path]))
