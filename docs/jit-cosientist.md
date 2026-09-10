@@ -79,3 +79,13 @@ approval**. Current verdicts above are diagnostics, not claims.
   only (full quiet gate never met there either). Next tick unchanged; ADR
   0335 step 2 (real kotoba-native lowering specialization + perfgate on a
   fully quiet host) is now the overdue lever and belongs to the AOT axis.
+
+- 2026-09-09 20:50 JST tick 15 (JIT): quiet gate failed a 14th consecutive
+  time — load1 16.4–49.9 on 10 CPUs (uptime 19.46/49.91/70.09 at 20:50,
+  falling to ~17–25 through the tick), iostat cpu idle 0–43% across ~55
+  samples, never >=90%. J-B measurement deferred, no compiler change,
+  control unchanged at bench/runtime-comparison/jb_imod_control.c.
+  Note: terminal commands over ~60s were killed/timed out this tick, so
+  even if the gate opened, the 4000000-iter x 24-alternation run would need
+  a background session. Next tick unchanged: quiet host -> ratio of medians,
+  then third (non-inlined mulh) arm.
