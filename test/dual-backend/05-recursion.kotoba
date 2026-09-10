@@ -1,0 +1,15 @@
+;; Self-recursion. `fact` and `fib` take an argument, so the harness reports
+;; them as skipped-nonzero-arity and compares the zero-arity wrappers instead --
+;; inventing arguments across two value ABIs measures the harness, not the
+;; compiler.
+;;
+;; `fact-0` is the base case on its own: a `fact` whose recursion is broken but
+;; whose base case is right still returns 1 here.
+(ns dual.recursion)
+
+(defn fact [n] (if (< n 2) 1 (* n (fact (- n 1)))))
+(defn fib [n] (if (< n 2) n (+ (fib (- n 1)) (fib (- n 2)))))
+(defn fact-5 [] (fact 5))
+(defn fact-0 [] (fact 0))
+(defn fib-10 [] (fib 10))
+(defn main [] 0)

@@ -1,0 +1,13 @@
+;; Binding forms. `let-shadow` is the probe an incorrectly-scoped inner binding
+;; moves; `loop-zero-trip` is the loop whose body never executes, which a
+;; do-while lowering answers differently from a while lowering.
+;;
+;; `__kotoba_loop_*` are compiler-generated exports with parameters; they are
+;; reported skipped, not agreed.
+(ns dual.let-loop)
+
+(defn let-simple [] (let [a 3 b 4] (+ a b)))
+(defn let-shadow [] (let [a 3] (let [a 4] a)))
+(defn loop-sum [] (loop [i 0 acc 0] (if (< i 5) (recur (+ i 1) (+ acc i)) acc)))
+(defn loop-zero-trip [] (loop [i 5 acc 0] (if (< i 5) (recur (+ i 1) (+ acc i)) acc)))
+(defn main [] 0)

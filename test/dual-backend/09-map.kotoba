@@ -1,0 +1,13 @@
+;; The legacy keyword-keyed bounded map, which answers to `get` and `assoc` and
+;; has no other primitive -- not `count`, not presence, not removal (measured:
+;; adding `count` here makes BOTH backends refuse the program).
+;;
+;; Measured 2026-09-10: this program does NOT move when keyword `=` is broken
+;; in the emitter prelude, so map lookup does not route through the same
+;; equality helper. That is why 03-keyword-eq exists separately.
+(ns dual.map)
+
+(defn m-get [] (get {:a 1 :b 2} :a 0))
+(defn m-get-missing [] (get {:a 1 :b 2} :c 0))
+(defn m-get-second [] (get {:a 1 :b 2} :b 0))
+(defn main [] 0)
