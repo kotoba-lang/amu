@@ -14,7 +14,13 @@
 ;; than removing any, so the floors should be met or exceeded -- but
 ;; "should" is the word, and if CI reports higher numbers these floors
 ;; are now looser than the code deserves and should be raised.
+;;
+;; Advanced 2026-09-10 for arena_exhausted: the parser is untouched, so this
+;; is the ratchet doing its bookkeeping rather than reporting a new surface.
+;; The floors are again NOT re-measured, for the same reason as above, and
+;; the change adds no parser branch at all -- the new code runs only on
+;; paths that were already about to raise(SIGILL).
 {:format :kotoba.fuzz-baseline/v2
- :loader-source-sha256 "ef9b2dffdc87249d73e4d0fb7afcd31815ac484e83ffee0161559a72458a22eb"
+ :loader-source-sha256 "638ab0b6bdac7e755ad6d9b26d1f57ce998b86ba64f594d07c92bbaf5c7327e9"
  :profiles {:x64 {:min-cov 60 :min-features 100 :min-corpus 20}
             :arm64 {:min-cov 60 :min-features 100 :min-corpus 18}}}

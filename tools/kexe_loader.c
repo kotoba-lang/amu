@@ -389,6 +389,27 @@ static struct kexe_vector_v1 *resolve_vector(struct kexe_shared_v4 *shared,
   return &shared->vectors[(uint64_t)handle - 1];
 }
 
+/* Names the arena that ran out, before the SIGILL that stops the guest.
+ * Exhaustion was a bare illegal instruction, which says nothing about whose
+ * fault it is: a run that exhausts an arena and a run that miscompiles both
+ * answer `{:kind :signal :signal :SIGILL}`, and a reader had no way to tell
+ * them apart. Written with `write` rather than `fprintf` for the reason
+ * `probe_denied` is: it is the one call that is safe here and permitted by
+ * the syscall sandbox.
+ *
+ * Deliberately NOT used at the `context == NULL`, `version != 4` or
+ * `resolve_vector` sites -- those are a malformed call, not a budget -- nor
+ * at the `length >= 16384u` bound, which is `kotoba.kir.value/vector-item-limit`
+ * and is checked separately BECAUSE the arena is wider. Reporting a KIR
+ * limit as an arena would make the diagnostic name the wrong ceiling. */
+static void arena_exhausted(const char *reason) {
+  static const char prefix[] = "KEXE_TRAP {:kind :arena :reason :";
+  ssize_t written = write(STDERR_FILENO, prefix, sizeof(prefix) - 1);
+  written = write(STDERR_FILENO, reason, strlen(reason));
+  written = write(STDERR_FILENO, "}\n", 2);
+  (void)written;
+}
+
 /* Mints a handle for an already-populated slice. Returns 0 when the handle
  * table is full; every caller turns that into SIGILL, so exhaustion is a trap
  * rather than a silently wrong vector. */
@@ -408,7 +429,7 @@ static int64_t checked_vector_new_empty(struct kexe_context_v4 *context) {
   struct kexe_shared_v4 *shared = (struct kexe_shared_v4 *)context;
   if (context == NULL || context->version != 4) { raise(SIGILL); return 0; }
   int64_t handle = intern_vector(shared, shared->vector_item_used, 0);
-  if (handle == 0) { raise(SIGILL); return 0; }
+  if (handle == 0) { arena_exhausted("vector-table-exhausted"); raise(SIGILL); return 0; }
   return handle;
 }
 
@@ -453,6 +474,7 @@ static int64_t checked_vector_conj(struct kexe_context_v4 *context,
     /* Interior slice: appending would write a word some other handle may
      * already span, so copy first. */
     if (shared->vector_item_used + length + 1u > KEXE_VECTOR_ITEM_CAPACITY) {
+      arena_exhausted("vector-items-exhausted");
       raise(SIGILL);
       return 0;
     }
@@ -467,12 +489,13 @@ static int64_t checked_vector_conj(struct kexe_context_v4 *context,
    * every handle carries its own length. This is why repeated conj is linear
    * rather than quadratic. */
   if (shared->vector_item_used >= KEXE_VECTOR_ITEM_CAPACITY) {
+    arena_exhausted("vector-items-exhausted");
     raise(SIGILL);
     return 0;
   }
   shared->vector_items[shared->vector_item_used++] = item;
   int64_t result = intern_vector(shared, offset, length + 1u);
-  if (result == 0) { raise(SIGILL); return 0; }
+  if (result == 0) { arena_exhausted("vector-table-exhausted"); raise(SIGILL); return 0; }
   return result;
 }
 
@@ -500,7 +523,7 @@ static int64_t checked_vector_assoc(struct kexe_context_v4 *context,
   shared->vector_items[destination + (uint64_t)index] = item;
   shared->vector_item_used += length;
   int64_t result = intern_vector(shared, destination, length);
-  if (result == 0) { raise(SIGILL); return 0; }
+  if (result == 0) { arena_exhausted("vector-table-exhausted"); raise(SIGILL); return 0; }
   return result;
 }
 
@@ -524,7 +547,7 @@ static int64_t checked_vector_alloc(struct kexe_context_v4 *context,
   for (uint64_t i = 0; i < (uint64_t)count; i++) shared->vector_items[offset + i] = 0;
   shared->vector_item_used += (uint64_t)count;
   int64_t result = intern_vector(shared, offset, (uint64_t)count);
-  if (result == 0) { raise(SIGILL); return 0; }
+  if (result == 0) { arena_exhausted("vector-table-exhausted"); raise(SIGILL); return 0; }
   return result;
 }
 
@@ -570,7 +593,7 @@ static int64_t checked_vector_drop(struct kexe_context_v4 *context,
   }
   int64_t result = intern_vector(shared, vector->offset + (uint64_t)count,
                                  vector->length - (uint64_t)count);
-  if (result == 0) { raise(SIGILL); return 0; }
+  if (result == 0) { arena_exhausted("vector-table-exhausted"); raise(SIGILL); return 0; }
   return result;
 }
 
