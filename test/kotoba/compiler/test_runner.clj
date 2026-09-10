@@ -13,6 +13,7 @@
             [kotoba.compiler.cli-test]
             [kotoba.compiler.core-test]
             [kotoba.compiler.definition-identity-test]
+            [kotoba.compiler.effect-classification-test]
             [kotoba.compiler.definition-identity-portable-test]
             [kotoba.compiler.provenance-portable-test]
             [kotoba.compiler.surface-convergence-portable-test]
@@ -205,6 +206,7 @@
    'kotoba.compiler.cli-test
    'kotoba.compiler.core-test
    'kotoba.compiler.definition-identity-test
+   'kotoba.compiler.effect-classification-test
    ;; The `.cljc` sibling holding the assertions that touch no file. It runs on
    ;; BOTH hosts, so it belongs in this list as well as in `run-tests.cljs` --
    ;; registering only the nbb runner drops it from the JVM suite silently, and

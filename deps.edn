@@ -20,6 +20,34 @@
         ;; tools.deps takes the NEWEST sha it is shown, so without a floor here
         ;; this repo silently rides whatever a sibling happens to name.
         io.github.kotoba-lang/text {:git/sha "2ee6dce2ca944decd001f9378868dd703fc3e741"}
+        ;; The ONE classification lattice (root ADR-2607280100 D1, which exists
+        ;; because there were two copies of that rank map and merging them was
+        ;; the point). `kotoba.compiler.effect-classification` ranks a
+        ;; capability's declared classification with it and defines no second
+        ;; copy.
+        ;;
+        ;; It was already on this classpath, transitively through osaho, and
+        ;; that is exactly why it is declared here: a dependency that arrives
+        ;; only through a sibling rides whatever sha that sibling names, and
+        ;; nothing in this repository would notice the lattice changing under
+        ;; it.
+        ;;
+        ;; ADVANCED IN THE SAME COMMIT, b13c5e12 -> d87f3342 (security main,
+        ;; ahead 44, forward only), because the sha osaho names is from BEFORE
+        ;; D1 landed. Measured 2026-09-10 at b13c5e12: `abac/classification-rank`
+        ;; is still its own `{:public 0 :internal 1 :confidential 2
+        ;; :restricted 3}` map, a SECOND copy of the lattice -- the exact
+        ;; duplication ADR-2607280100 D1 exists to remove and records as
+        ;; "実装済み" in security's main. It was implemented, and it had not
+        ;; arrived: this compiler was borrowing a lattice that was still two.
+        ;; d87f3342 is where `classification-rank` is the alias, and where
+        ;; `canonical`, `unknown-labels` and `:personal` as a spelling of rank
+        ;; 2 exist at all. `unknown-labels` is what
+        ;; `kotoba.compiler.effect-classification` uses to say a declaration is
+        ;; outside the lattice without writing a membership test of its own.
+        io.github.kotoba-lang/security
+        {:git/url "https://github.com/kotoba-lang/security.git"
+         :git/sha "d87f334235bef7229bf8b8231c200612f824cbc2"}
        org.clojure/clojure {:mvn/version "1.12.0"}
         ;; Advanced 2026-09-09, 32ee84b2 -> 3abf80a1 (abi main, ahead 1,
         ;; forward only). The same BigInt class as the osaho pin below, but
