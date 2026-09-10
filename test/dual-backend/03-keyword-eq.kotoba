@@ -1,0 +1,16 @@
+;; The shape of kotoba-lang/amu#835 (2026-09-06): on aarch64-macos, keyword `=`
+;; was ALWAYS FALSE while i64 `=` was correct in the same build, so every
+;; branch went the wrong way. The module compiled, ran, and answered wrong.
+;;
+;; `kw-same` and `kw-branch-same` are the probes that defect moves;
+;; `kw-diff`/`kw-prefix`/`kw-branch-diff` are already false and do NOT move,
+;; which is why both directions are here. A corpus with only the false cases
+;; would have stayed green through #835.
+(ns dual.keyword-eq)
+
+(defn kw-same [] (if (= :alpha :alpha) 1 0))
+(defn kw-diff [] (if (= :alpha :beta) 1 0))
+(defn kw-prefix [] (if (= :alpha :alphabet) 1 0))
+(defn kw-branch-same [] (if (= :alpha :alpha) 111 222))
+(defn kw-branch-diff [] (if (= :alpha :beta) 111 222))
+(defn main [] 0)

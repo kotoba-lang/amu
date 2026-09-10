@@ -1,0 +1,17 @@
+;; MEASURED ASYMMETRY, 2026-09-10 -- do not delete this program to make the run
+;; tidy. `wasm32` builds it; `--target js` accepts the flag, reaches the
+;; restricted-ESM emitter, and exits 70 with "unsupported KIR operation",
+;; which does not name the operation. Isolated to `i64-shift-left` and
+;; `i64-shift-right` individually.
+;;
+;; The harness must report this as NOT MEASURED with a distinct count. It is
+;; neither a pass nor a disagreement: it is the pair of backends failing to
+;; overlap, and a corpus that hides it would be claiming coverage it has not
+;; got.
+(ns dual.bitops)
+
+(defn shl [] (i64-shift-left 1 10))
+(defn shr [] (i64-shift-right 1024 3))
+(defn shr-negative [] (i64-shift-right -1024 3))
+(defn shl-zero [] (i64-shift-left 1 0))
+(defn main [] 0)

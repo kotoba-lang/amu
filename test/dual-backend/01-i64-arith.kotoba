@@ -1,0 +1,20 @@
+;; i64 arithmetic. Every probe is zero-arity and returns an i64, which is the
+;; only shape the two value ABIs can be compared through directly.
+;;
+;; `rem` is NOT here: both backends refuse it ("rem is not a builtin"), so it
+;; would be a program neither side compiles rather than a probe. Measured
+;; 2026-09-10.
+(ns dual.i64-arith)
+
+(defn add-small [] (+ 2 3))
+(defn add-negative [] (+ -7 3))
+(defn sub [] (- 10 4))
+(defn sub-underflow [] (- 3 10))
+(defn mul [] (* 6 7))
+(defn mul-negative [] (* -6 7))
+(defn negate [] (- 0 5))
+(defn quot-exact [] (quot 12 4))
+(defn quot-truncating [] (quot 7 2))
+(defn quot-negative [] (quot -7 2))
+(defn big-add [] (+ 4611686018427387903 1))
+(defn main [] 0)
