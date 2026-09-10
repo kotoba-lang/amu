@@ -211,6 +211,16 @@
         allowed (cap-names/name-grants (:allowed d))
         base (or (ex-message error) "capability denied")]
     (cond
+      ;; Root ADR-2607280100 D5, and FIRST for the same reason the refusal
+      ;; itself is first: the ids are named here because the caller has to act
+      ;; on them, and what they have to do is add a declaration to the
+      ;; capability catalog, not edit `--policy`.
+      (seq (:classification/undeclared d))
+      (str base "; effects with no declared classification "
+           (pr-str (cap-names/name-grants (:classification/undeclared d))))
+      (seq (:classification/unrankable d))
+      (str base "; labels outside kotoba.security.information-flow/ranks "
+           (pr-str (:classification/unrankable d)))
       (seq missing)
       (str base
            "; missing grants " (pr-str missing)
@@ -233,6 +243,9 @@
   [error]
   (let [d (ex-data error)
         code (cond
+               (or (seq (:classification/undeclared d))
+                   (seq (:classification/unrankable d)))
+               :kotoba.error/capability-classification-undeclared
                (seq (:missing d)) :kotoba.error/capability-missing-grant
                (seq (:abac/violations d)) :kotoba.error/capability-abac-deny
                (:crypto d) :kotoba.error/capability-crypto-deny

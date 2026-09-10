@@ -34,7 +34,8 @@
   `:effects` all keep the row as the frontend inferred it, `:abort` included:
   a reader of those is entitled to know the function aborts. Only the
   admission decision is narrowed."
-  (:require [kotoba.kir.admission :as admission]))
+  (:require [kotoba.compiler.effect-classification :as classification]
+            [kotoba.kir.admission :as admission]))
 
 (def control-effects
   "Row members that describe how a function may LEAVE its caller's scope, not
@@ -73,6 +74,33 @@
 (defn check
   "`kotoba.kir.admission/check` over the grants of HIR's row. Same policy
   shape, same result, same refusals -- except that a control effect is no
-  longer a required grant nobody can write."
+  longer a required grant nobody can write, and that every grant must carry a
+  classification the one lattice can rank (root ADR-2607280100 D5; see
+  `kotoba.compiler.effect-classification`).
+
+  The classification refusal is FIRST, above the missing-grant refusal and
+  above ABAC, on the same reasoning kotobase Step 3 used for its undeclared
+  branch: when both would refuse, `this effect has no declared
+  classification` is the answer someone can act on, and `the policy did not
+  grant it` reports a check that has not been reached. An effect nobody has
+  classified cannot be admitted by any policy, so no policy decision is
+  waiting on it.
+
+  The result gains `:classification/effective` (the label the row joins to),
+  `:classification/labels`, and `:classification/no-read-up`, which is
+  `:armed` when the policy named a subject clearance and abac therefore
+  compared it against that label, `:unarmed` when it named none. It is
+  reported rather than left to be inferred from the absence of a violation --
+  an unarmed comparison and a comparison that passed produce the same
+  `:abac/allowed? true`."
   [hir policy]
-  (admission/check (admissible hir) policy))
+  (let [narrowed (admissible hir)
+        facts (classification/check! (:effects narrowed))
+        [armed-policy armed-label]
+        (classification/arm policy (:classification/effective facts))]
+    (assoc (admission/check narrowed armed-policy)
+           :classification/effective (:classification/effective facts)
+           :classification/labels (:classification/labels facts)
+           :classification/no-read-up (if armed-label :armed :unarmed)
+           :classification/unknown-subject-clearance
+           (classification/unknown-subject-clearance armed-policy))))

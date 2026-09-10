@@ -53,6 +53,7 @@
 (ns run-tests
   (:require [cljs.test :as t]
             [kotoba.compiler.definition-identity-portable-test]
+            [kotoba.compiler.effect-classification-test]
             [kotoba.compiler.fuel-estimate-portable-test]
             [kotoba.compiler.logic-manifest-test]
             [kotoba.compiler.plan-test]
@@ -65,6 +66,7 @@
     (set! (.-exitCode js/process) 1)))
 
 (t/run-tests 'kotoba.compiler.definition-identity-portable-test
+             'kotoba.compiler.effect-classification-test
              'kotoba.compiler.fuel-estimate-portable-test
              'kotoba.compiler.logic-manifest-test
              'kotoba.compiler.plan-test
