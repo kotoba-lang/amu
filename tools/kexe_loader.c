@@ -2224,6 +2224,113 @@ static int64_t fs_app_data_write_provider(struct kexe_context_v4 *context,
   return intern_utf8(context, content, content_length);
 }
 
+static int64_t kexe_answer_bool(struct kexe_context_v4 *context, int ok) {
+  return intern_utf8(context, (const uint8_t *)(ok ? "1" : "0"), 1);
+}
+
+/* wire id 35, STAT form: "<path>STAT_SEP" -> "<mode> <size> <blocks> <isdir>"
+ * in decimal, space separated, or the EMPTY string when the path cannot be
+ * stat'ed.
+ *
+ * This widens a wire-35 grant by strictly less than nothing it did not
+ * already allow: a grant that can read a file's CONTENTS can already tell its
+ * size. The mode and the block count are what `du`, `chmod` and `ls -l` need
+ * and what no other form answers -- `du` in particular reports DISK BLOCKS
+ * and not bytes, so st_size cannot produce it (a one-byte file occupies a
+ * whole block, measured: du reports 8 512-byte units for a directory holding
+ * one 1-byte file).
+ *
+ * Same confinement as reading: open with O_NOFOLLOW, then prove the
+ * descriptor is inside the scope before trusting it. */
+static int64_t fs_app_data_stat_provider(struct kexe_context_v4 *context,
+                                         int64_t request) {
+  const uint8_t *bytes = NULL;
+  uint64_t length = 0;
+  static const char token[] = "STAT_SEP";
+  char target[4096], candidate[4096];
+  const uint8_t *sep = NULL;
+  if (!read_string_handle(context, request, &bytes, &length) || bytes == NULL ||
+      (sep = kexe_single_token(bytes, (size_t)length, token)) == NULL ||
+      !kexe_request_path(bytes, (size_t)(sep - bytes), target) ||
+      !kexe_scope_admit(&kexe_scope35, target, candidate)) {
+    raise(SIGILL);
+    return 0;
+  }
+  int fd = open(candidate, O_RDONLY | O_NOFOLLOW);
+  if (fd < 0) return intern_utf8(context, (const uint8_t *)"", 0);
+  if (!kexe_scope_contains_fd(&kexe_scope35, fd, candidate)) {
+    close(fd);
+    raise(SIGILL);
+    return 0;
+  }
+  struct stat sb;
+  if (fstat(fd, &sb) != 0) {
+    close(fd);
+    return intern_utf8(context, (const uint8_t *)"", 0);
+  }
+  close(fd);
+  char answer[128];
+  int n = snprintf(answer, sizeof(answer),
+                   "%u %lld %lld %d",
+                   (unsigned)(sb.st_mode & 0777), (long long)sb.st_size,
+                   (long long)sb.st_blocks, S_ISDIR(sb.st_mode) ? 1 : 0);
+  if (n <= 0 || (size_t)n >= sizeof(answer)) {
+    raise(SIGILL);
+    return 0;
+  }
+  return intern_utf8(context, (const uint8_t *)answer, (size_t)n);
+}
+
+/* wire id 35, CHMOD form: "<path>CHMOD_SEP<octal>" -> "1"/"0".
+ *
+ * The mode arrives as OCTAL TEXT, which is how chmod(1) is written and how
+ * the guest received it, so neither side re-renders it. Only the twelve
+ * permission bits are honoured: setuid, setgid and the sticky bit are NOT
+ * settable through this form, because a grant to write a file's bytes is not
+ * a grant to make it run as someone else. */
+static int64_t fs_app_data_chmod_provider(struct kexe_context_v4 *context,
+                                          int64_t request) {
+  const uint8_t *bytes = NULL;
+  uint64_t length = 0;
+  static const char token[] = "CHMOD_SEP";
+  const size_t token_len = sizeof(token) - 1u;
+  char target[4096], candidate[4096];
+  const uint8_t *sep = NULL;
+  if (!read_string_handle(context, request, &bytes, &length) || bytes == NULL ||
+      (sep = kexe_single_token(bytes, (size_t)length, token)) == NULL ||
+      !kexe_request_path(bytes, (size_t)(sep - bytes), target) ||
+      !kexe_scope_admit(&kexe_scope35, target, candidate)) {
+    raise(SIGILL);
+    return 0;
+  }
+  const uint8_t *digits = sep + token_len;
+  size_t digit_count = (size_t)(bytes + length - digits);
+  if (digit_count == 0 || digit_count > 6) {
+    raise(SIGILL);
+    return 0;
+  }
+  unsigned mode = 0;
+  for (size_t i = 0; i < digit_count; i++) {
+    if (digits[i] < '0' || digits[i] > '7') {
+      raise(SIGILL);
+      return 0;
+    }
+    mode = mode * 8u + (unsigned)(digits[i] - '0');
+  }
+  /* Permission bits only. */
+  mode &= 0777u;
+  int fd = open(candidate, O_RDONLY | O_NOFOLLOW);
+  if (fd < 0) return kexe_answer_bool(context, 0);
+  if (!kexe_scope_contains_fd(&kexe_scope35, fd, candidate)) {
+    close(fd);
+    raise(SIGILL);
+    return 0;
+  }
+  int ok = fchmod(fd, (mode_t)mode) == 0;
+  close(fd);
+  return kexe_answer_bool(context, ok);
+}
+
 /* --- scoped mutation -------------------------------------------------------
  *
  * mkdir, unlink, rmdir and rename, each confined to the wire-35 scope.
@@ -2261,22 +2368,32 @@ static int kexe_split_parent(const char *candidate, char parent[4096],
   return 1;
 }
 
-/* The parent directory of `candidate`, open and proven to be inside the
- * scope, or -1. The caller closes it. */
-static int kexe_scoped_parent_fd(const char *candidate, char base[256]) {
+/* The parent directory of `candidate`, open and proven inside the scope, or
+ * -1. The caller closes it.
+ *
+ * `*fatal` separates the two ways this fails, and the distinction is the
+ * whole contract: a parent that cannot be OPENED is an operational failure
+ * the guest has to report (`mkdir x/y` when `x` is absent is a diagnostic,
+ * not a fault), while a malformed request or a parent outside the grant is a
+ * violation and traps. Answering "0" for the second would turn a grant breach
+ * into a routine `false`; trapping on the first made `mkdir x/y` die with
+ * SIGILL where mkdir(1) prints one line and exits 1. */
+static int kexe_scoped_parent_fd(const char *candidate, char base[256],
+                                 int *fatal) {
   char parent[4096];
-  if (!kexe_split_parent(candidate, parent, base)) return -1;
+  *fatal = 0;
+  if (!kexe_split_parent(candidate, parent, base)) {
+    *fatal = 1;
+    return -1;
+  }
   int dfd = open(parent, O_RDONLY | O_DIRECTORY);
   if (dfd < 0) return -1;
   if (!kexe_scope_contains_fd(&kexe_scope35, dfd, parent)) {
     close(dfd);
+    *fatal = 1;
     return -1;
   }
   return dfd;
-}
-
-static int64_t kexe_answer_bool(struct kexe_context_v4 *context, int ok) {
-  return intern_utf8(context, (const uint8_t *)(ok ? "1" : "0"), 1);
 }
 
 /* wire id 35, MKDIR form: "<path>MKDIR_SEP" -> "1" if the directory was
@@ -2297,10 +2414,14 @@ static int64_t fs_app_data_mkdir_provider(struct kexe_context_v4 *context,
     raise(SIGILL);
     return 0;
   }
-  int dfd = kexe_scoped_parent_fd(candidate, base);
+  int fatal = 0;
+  int dfd = kexe_scoped_parent_fd(candidate, base, &fatal);
   if (dfd < 0) {
-    raise(SIGILL);
-    return 0;
+    if (fatal) {
+      raise(SIGILL);
+      return 0;
+    }
+    return kexe_answer_bool(context, 0);
   }
   int ok = mkdirat(dfd, base, 0777) == 0;
   close(dfd);
@@ -2326,10 +2447,14 @@ static int64_t fs_app_data_unlink_provider(struct kexe_context_v4 *context,
     raise(SIGILL);
     return 0;
   }
-  int dfd = kexe_scoped_parent_fd(candidate, base);
+  int fatal = 0;
+  int dfd = kexe_scoped_parent_fd(candidate, base, &fatal);
   if (dfd < 0) {
-    raise(SIGILL);
-    return 0;
+    if (fatal) {
+      raise(SIGILL);
+      return 0;
+    }
+    return kexe_answer_bool(context, 0);
   }
   int ok = unlinkat(dfd, base, 0) == 0;
   close(dfd);
@@ -2353,10 +2478,14 @@ static int64_t fs_app_data_rmdir_provider(struct kexe_context_v4 *context,
     raise(SIGILL);
     return 0;
   }
-  int dfd = kexe_scoped_parent_fd(candidate, base);
+  int fatal = 0;
+  int dfd = kexe_scoped_parent_fd(candidate, base, &fatal);
   if (dfd < 0) {
-    raise(SIGILL);
-    return 0;
+    if (fatal) {
+      raise(SIGILL);
+      return 0;
+    }
+    return kexe_answer_bool(context, 0);
   }
   int ok = unlinkat(dfd, base, AT_REMOVEDIR) == 0;
   close(dfd);
@@ -2386,16 +2515,23 @@ static int64_t fs_app_data_rename_provider(struct kexe_context_v4 *context,
     raise(SIGILL);
     return 0;
   }
-  int from_fd = kexe_scoped_parent_fd(from_candidate, from_base);
+  int fatal = 0;
+  int from_fd = kexe_scoped_parent_fd(from_candidate, from_base, &fatal);
   if (from_fd < 0) {
-    raise(SIGILL);
-    return 0;
+    if (fatal) {
+      raise(SIGILL);
+      return 0;
+    }
+    return kexe_answer_bool(context, 0);
   }
-  int to_fd = kexe_scoped_parent_fd(to_candidate, to_base);
+  int to_fd = kexe_scoped_parent_fd(to_candidate, to_base, &fatal);
   if (to_fd < 0) {
     close(from_fd);
-    raise(SIGILL);
-    return 0;
+    if (fatal) {
+      raise(SIGILL);
+      return 0;
+    }
+    return kexe_answer_bool(context, 0);
   }
   int ok = renameat(from_fd, from_base, to_fd, to_base) == 0;
   close(from_fd);
@@ -2744,6 +2880,10 @@ static int64_t checked_typed_cap_call(struct kexe_context_v4 *context,
       result = fs_app_data_exists_provider(context, request);
     } else if (rb != NULL && memmem(rb, (size_t)rlen, "RANGE_SEP", 9) != NULL) {
       result = fs_app_data_range_read_provider(context, request);
+    } else if (rb != NULL && memmem(rb, (size_t)rlen, "STAT_SEP", 8) != NULL) {
+      result = fs_app_data_stat_provider(context, request);
+    } else if (rb != NULL && memmem(rb, (size_t)rlen, "CHMOD_SEP", 9) != NULL) {
+      result = fs_app_data_chmod_provider(context, request);
     } else if (rb != NULL && memmem(rb, (size_t)rlen, "MKDIR_SEP", 9) != NULL) {
       result = fs_app_data_mkdir_provider(context, request);
     } else if (rb != NULL && memmem(rb, (size_t)rlen, "UNLINK_SEP", 10) != NULL) {
