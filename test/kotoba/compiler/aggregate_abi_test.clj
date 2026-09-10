@@ -179,6 +179,21 @@
   ;; refusal there said a function's address is x86-only "for exactly the
   ;; reason the literal is", and the literal's reason had already stopped
   ;; holding.
+  ;;
+  ;; Merged 2026-09-09: BOTH notes stand and the sha is the one deps.edn
+  ;; carries. This assertion exists to make the two agree, so resolving it
+  ;; by picking a side would have made the ratchet assert a pin nobody is
+  ;; using -- green, and about nothing.
+  ;;
+  ;; Advanced 2026-09-09 to 11691559 for `lower-index-of` (kotoba-native ADR
+  ;; 0081). It moves bytes only for programs that use `string-index-of`, which
+  ;; nothing could until this pin: the head had no lowering, so it was
+  ;; call-shaped and `reject-unextracted-call!` refused it as
+  ;; `call-abi-not-admitted` -- one gate EARLIER than the two ADR 0002 opened,
+  ;; which is why neither kotoba.kir nor the verifier had ever seen it. The
+  ;; lowering is the scan `string-contains?` already emits, returning the
+  ;; offset `kotoba$string-find` had computed instead of folding it to 0/1, so
+  ;; no helper, callback, value representation or ABI version moves here.
   ;; Advanced 2026-09-10 to 5f2717c2 (edbbe987..5f2717c2 ahead 12, forward
   ;; only). Required, not optional, and NOT for anything this test pins:
   ;; `capability-bitmap` in elf64.cljc did `(quot id 8)` on a capability id
@@ -321,6 +336,28 @@
   ;; emitted ESM prelude as a literal, so THAT pin moves in the same commit.
   ;; `value_bounds_agreement_test` is what compares them; advancing one alone
   ;; was measured to compile a 1057-node document and then trap it at runtime.
+  ;;
+  ;; Merged 2026-09-10: both notes stand and the sha is the one deps.edn
+  ;; carries. Picking a side would make the ratchet assert a pin nobody is
+  ;; using -- green, and about nothing.
+  ;;
+  ;;
+  ;; Merged 2026-09-09: BOTH notes stand and the sha is the one deps.edn
+  ;; carries. This assertion exists to make the two agree, so resolving it
+  ;; by picking a side would have made the ratchet assert a pin nobody is
+  ;; using -- green, and about nothing.
+  ;;
+  ;; Advanced 2026-09-09 to 1a81e2d7, and this one is a CORRECTNESS advance.
+  ;; `utf8-index-of!` converted the host's UTF-16 index to a UTF-8 byte offset
+  ;; one unit at a time: it charged a surrogate PAIR 4 bytes at the high
+  ;; surrogate and then stepped onto the low one, which matched no earlier arm
+  ;; and took `:else` for 3 more. Every astral code point before a match added
+  ;; 7. `(string-index-of "<G clef>ab" "ab")` answered 7 where kotoba-script's
+  ;; JS emitter, kotoba-native's new lowering and CPython all answer 4.
+  ;; `lower` folds a pure i64 entry through this evaluator, so the wrong offset
+  ;; reached ARTIFACTS as a baked constant, not only runtime. Found from
+  ;; outside, by kotoba-native's oracle comparison, which writes no expected
+  ;; value down (osaho ADR 0271).
   (is (= "7a6a27b834d33bb68cc4ee9addc5ce4a4bee6b4a"
          (dependency-pin 'io.github.kotoba-lang/osaho)))
   ;; Advanced 2026-09-01 alongside the backend: the verifier re-derives the
@@ -426,6 +463,18 @@
   ;; and every native target has one of those. Required with this file's
   ;; `function-address-targets` change for the usual reason -- without it the
   ;; program this repository now compiles is refused at verification.
+  ;;
+  ;; Merged 2026-09-09: BOTH notes stand and the sha is the one deps.edn
+  ;; carries. This assertion exists to make the two agree, so resolving it
+  ;; by picking a side would have made the ratchet assert a pin nobody is
+  ;; using -- green, and about nothing.
+  ;;
+  ;; Advanced 2026-09-09 to 1810a62c: `string-operations` gains
+  ;; `string-index-of 2` (kotoba-verifier ADR 0051). Required WITH the
+  ;; kotoba-native pin above and not separable from it -- ADR 0002 measured
+  ;; that opening one of these gates alone moves nothing, and the verifier
+  ;; re-derives its own table, so a head this repository can emit and that
+  ;; table does not carry is refused after emission.
   (is (= "85ea11d61cc3613bfb5ac80a7736de7ae1382942"
          (dependency-pin 'io.github.kotoba-lang/kotoba-verifier)))
   (is (= 7 (:abi/version aggregate-abi/contract)))

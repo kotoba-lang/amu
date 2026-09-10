@@ -66,9 +66,14 @@
     ;; Asserted as the WHOLE map rather than by `select-keys`, deliberately: a
     ;; key silently joining or leaving the report is the thing this assertion
     ;; exists to catch, and that is exactly how it caught this one.
+    ;; It caught the next one identically. `:string-pool` joined every report
+    ;; on 2026-09-10, when the loader's arenas became per-run budgets and the
+    ;; string arena -- which had no line at all, so a guest that exhausted it
+    ;; had nothing to read -- gained one.
     (is (= {:status :ok :result 42
             :fuel {:initial 512 :remaining 512}
             :heap {:capacity 4096 :used 0}
+            :string-pool {:capacity 65536 :used 0}
             :vectors {:capacity 4096 :used 0}
             :vector-items {:capacity 65536 :used 0}}
            (:report result)))

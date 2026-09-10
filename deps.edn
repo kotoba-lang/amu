@@ -90,7 +90,7 @@
         ;; said so.
         ;;
         ;;   grammar-sha256    515bbc7de84a3340ef3b250e4ee411739d3acebf32ba31450540f146768bb841
-        ;;   kotoba-sema-pin   96fd4e1936adcf6a225d72b46a003dcf2b3bf94a
+        ;;   kotoba-sema-pin   0470c524e8a2cda5bd5bbc6839571bde6e0135e6
         ;;
         ;; `guest_grammar_vendor_test/authority-digest-history` ends with the
         ;; same digest, so the pin, the prose and the history move in one
@@ -197,7 +197,26 @@
         ;; went unseen because the only test of the feature was `.clj`; it is
         ;; `.cljc` and in `run-tests.cljs` as of that commit.
         {:git/url "https://github.com/kotoba-lang/kotoba-sema.git"
-         :git/sha "96fd4e1936adcf6a225d72b46a003dcf2b3bf94a"}
+         :git/sha          ;;
+         ;; Advanced 2026-09-09, 96fd4e19 -> 930373c7 (kotoba-sema main, forward only).
+         ;; One file: the vendored capability catalog gains :io/write, wire 37,
+         ;; `:string -> :string` -- the bytes a command writes to stdout, answered with
+         ;; the decimal byte count (kotoba-lang a0408d81 is the authority).
+         ;;
+         ;; Advanced AGAIN 2026-09-10, 930373c7 -> 0470c524 (forward only: 2 ahead,
+         ;; 0 behind), for the other two wires a command needs -- :cli/args (38) and
+         ;; :io/write-error (39). The prose block at the top of this file states this
+         ;; same sha, and `guest_grammar_vendor_test/deps-edn-claim` compares the two:
+         ;; it went red because the first advance updated this narrative and not that
+         ;; claim, so the file pinned 0470c524 while announcing 96fd4e19. Two literals
+         ;; for one fact, which is the drift that test exists to catch.
+         ;; This pin is not a convenience. The frontend that raises `cap-call names an
+         ;; unregistered capability` is in kotoba-sema and reads THAT copy, so a
+         ;; capability in the authority is invisible to this compiler until this pin
+         ;; moves. amu's own resources/kotoba/lang/capability-catalog.edn is not the
+         ;; one consulted -- measured on the resolved classpath, where the only entry
+         ;; carrying the resource is kotoba-sema's.
+         "0470c524e8a2cda5bd5bbc6839571bde6e0135e6"}
         ;; ADR-2607266000 Phase B: these responsibilities moved out of this repo.
         ;;
         ;; The slice-value stream held this pin on purpose (ADR 0314), because
@@ -309,6 +328,38 @@
          ;; answers 30002 for `(+ (now-at 1) (draw-at 1))` under a
          ;; `1000*id + v` capability stub -- 7001 + 23001, so both ids reach
          ;; the host and reach it distinctly.
+         ;;
+         ;; Merged 2026-09-10. Both notes stand and the sha is main's, which
+         ;; CONTAINS the advance below: compare 1a81e2d7...7a6a27b8 answers
+         ;; ahead 2, behind 0. deps.edn is where the reason for a pin lives,
+         ;; and a later advance does not delete the earlier one's argument.
+         ;;
+         ;;
+         ;; Both notes stand and the sha is the LATER one. Measured on merge:
+         ;; main named a37577c9, which `gh api compare` says is 2 commits BEHIND
+         ;; 1a81e2d7 -- so taking main's side here would have reverted the
+         ;; surrogate fix below while keeping the note that describes it.
+         ;;
+         ;; Advanced 2026-09-09 for the `string-index-of` wave. The operation had no
+         ;; native lowering and failed from source as `aggregate ABI rejected:
+         ;; call-abi-not-admitted` -- an unlowered head is call-shaped, so it reached
+         ;; neither of the two gates ADR 0002 opened for `string-contains?`. Without a
+         ;; byte offset a guest cannot cut a string at a separator, so no line-oriented
+         ;; program compiles for native; `kbb.browse` is the measured case
+         ;; (kotoba/bin/kbb_shim.cljs, 2026-09-07).
+         ;;
+         ;; Three pins move together because the operation needs all three, and ADR 0002
+         ;; measured that opening one gate alone moves nothing:
+         ;;   kotoba-native   `lower-index-of` on both ISAs (its ADR 0081)
+         ;;   kotoba-verifier `string-operations` gains the head (its ADR 0051)
+         ;;   osaho           the ORACLE itself was wrong (its ADR 0271)
+         ;;
+         ;; The osaho half is a CORRECTNESS advance, not a feature one:
+         ;; `utf8-index-of!` charged a surrogate pair 4 bytes at the high surrogate and
+         ;; 3 more at the low one, so it answered 7 where kotoba-script's JS emitter,
+         ;; kotoba-native's lowering and CPython all answer 4. `lower` folds a pure i64
+         ;; entry through that evaluator, so a constant `string-index-of` over an astral
+         ;; literal was baked into artifacts wrong.
          :git/sha "7a6a27b834d33bb68cc4ee9addc5ce4a4bee6b4a"}
         ;; The frontend is an HIR producer and KIR lowering is its consumer;
         ;; both validate the same checked envelope.
@@ -354,7 +405,30 @@
          ;; exactly what it was asked, rejected for the shape of the sentence
          ;; it said so in, on the one platform whose loader had not been fixed.
          ;; matching the js host).
-         :git/sha "b5a7c9c557caa3611d0c4cf678c27246dd5f1394"}
+         ;; Advanced 2026-09-10, b5a7c9c5 -> 7bff9bac (forward only: 4
+         ;; ahead, 0 behind). The loader in tools/kexe_loader.c in THIS
+         ;; commit is the one a COMMAND runs on -- :io/write (37),
+         ;; :cli/args (38), :io/write-error (39), and the :fs/app-data EXISTS
+         ;; form -- and its arenas became per-run budgets, which is what put
+         ;; :string-pool into every report. loader-source-sha256 names it as
+         ;; e648fbba. It was THIS pin lagging that turned 25 failures and 109
+         ;; errors in the JVM suite into one cause: every native execution
+         ;; refused the loader as "native loader source identity mismatch",
+         ;; which reads as tampering and is a pin skew.
+         ;; Corrected 2026-09-10 to 97cd1e33: 7bff9bac's docstring closed
+         ;; early on a raw quote and the namespace did not compile, which is
+         ;; what took windows-arm64, android-ndk and both browser-matrix
+         ;; jobs red.
+         ;; Advanced again 2026-09-10 to 15f488d2: the WINDOWS loader
+         ;; identity, for the same :string-pool key. Both windows jobs failed
+         ;; as "malformed native supervisor evidence" while every other job
+         ;; was green -- one executor cannot admit two loaders that disagree
+         ;; about which keys a report has.
+         ;; Advanced 2026-09-10 for the six wire-35 MUTATION forms -- mkdir,
+         ;; unlink, rmdir, rename, stat and chmod -- which is what lets a
+         ;; command change a filesystem rather than only read one. New
+         ;; request forms, not new capabilities, so kotoba-sema did not move.
+         :git/sha "db66a0908dc972492efd6c61208e56ba0e60cf96"}
         ;; HELD at 1a2e10c on 2026-09-03 (ADR 0331), 28 commits behind its main,
         ;; while every other pin in this file moved to the tip. The reason, so
         ;; that a lagging pin and a pin with an argument behind it stay
@@ -566,6 +640,16 @@
          ;; that `kotoba.mir` then refuses, which is a green `amu check`
          ;; followed by a red `amu compile`.
          ;;
+         ;; The sha above is main's and it CONTAINS the advance below:
+         ;; compare 11691559...edbbe987 answers ahead 7, behind 0. The note is
+         ;; kept because deps.edn is where the reason for a pin lives, and a
+         ;; later advance does not delete the earlier one's argument.
+         ;;
+         ;; Advanced 2026-09-09, a5711bdc -> 11691559 (kotoba-native main, forward
+         ;; only, 20 commits): `lower-index-of`, the same scan `string-contains?`
+         ;; already lowers to, returning the offset `kotoba$string-find` had already
+         ;; computed instead of folding it to 0/1. No new helper, no new callback, no
+         ;; new value representation, no ABI bump. See the osaho note above.
          ;; Advanced 2026-09-10, edbbe987 -> 5f2717c2 (kotoba-native main,
          ;; forward only, 12 commits). Required, not optional: `capability-bitmap`
          ;; in elf64.cljc did `(quot id 8)` on a capability id that arrives as a
@@ -713,6 +797,13 @@
          ;; backend resolves into a pool it placed beside the code -- the
          ;; program cannot make it point anywhere else, and the bytes it
          ;; reaches are its own.
+         ;;
+         ;; Same shape: main's sha contains this one (ahead 8, behind 0).
+         ;;
+         ;; Advanced 2026-09-09, 33b3d067 -> 1810a62c (kotoba-verifier main, forward
+         ;; only, 2 commits): `string-operations` gains `string-index-of 2`. Without it
+         ;; the backend emits code this verifier then refuses -- the second gate of
+         ;; ADR 0002, which measured that one gate alone unlocks nothing.
          :git/sha "85ea11d61cc3613bfb5ac80a7736de7ae1382942"}
 }
  :aliases {:test {:extra-paths ["test"]
@@ -759,13 +850,13 @@
                    ;; :native-conformance below -- one kototama-native.
                    io.github.kotoba-lang/kototama-native
                    {:git/url "https://github.com/kotoba-lang/kototama-native.git"
-                    :git/sha "9e53ea35e76caa61405a3f4c56f68eb9492a6c01"}}
+                    :git/sha "a4089a2f4a17ad232af7a79d0c177a8e0cd85c80"}}
                   :main-opts ["-m" "kotoba.compiler.test-runner"]}
            :native-run
            {:extra-deps
             {io.github.kotoba-lang/kototama-native
              {:git/url "https://github.com/kotoba-lang/kototama-native.git"
-              :git/sha "9e53ea35e76caa61405a3f4c56f68eb9492a6c01"}}
+              :git/sha "a4089a2f4a17ad232af7a79d0c177a8e0cd85c80"}}
             :main-opts ["-m" "kotoba.compiler.cli"]}
            :run {:main-opts ["-m" "kotoba.compiler.cli"]}
            :conformance
@@ -777,7 +868,7 @@
            {:extra-deps
             {io.github.kotoba-lang/kototama-native
              {:git/url "https://github.com/kotoba-lang/kototama-native.git"
-              :git/sha "9e53ea35e76caa61405a3f4c56f68eb9492a6c01"}
+              :git/sha "a4089a2f4a17ad232af7a79d0c177a8e0cd85c80"}
              io.github.kotoba-lang/provider
              {:git/url "https://github.com/kotoba-lang/provider.git"
               :git/sha "0ba1fbabb536027d25bbefc50374fbe95e6b54ec"}}

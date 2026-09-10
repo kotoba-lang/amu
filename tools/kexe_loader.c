@@ -40,14 +40,54 @@ typedef int64_t (*kexe_fn6)(int64_t, int64_t, int64_t, int64_t, int64_t, int64_t
 typedef int64_t (*kexe_fn8)(int64_t, int64_t, int64_t, int64_t,
                             int64_t, int64_t, int64_t, int64_t);
 
+/* The pair heap: every string handle, every option, every result and every
+ * record boundary is a pair, and nothing is ever reclaimed.
+ *
+ * KEXE_PAIR_CAPACITY is the DEFAULT budget and stays what it has always
+ * been; KEXE_PAIRS names another positive decimal for one run, and a
+ * packaged command bakes it. Same shape as KEXE_FUEL and KEXE_STRING_POOL,
+ * and the same argument: raising a bound at build time moves every
+ * program's ceiling at once, raising it per run moves one caller's.
+ *
+ * Measured 2026-09-10, which is why this is here: a `uniq` walking 600 lines
+ * trapped with `:heap {:capacity 4096 :used 4096}` and 49,994,368 fuel
+ * REMAINING -- about eight pairs per line, from the substrings a line walk
+ * takes. The report naming the arena is what turned that into one
+ * measurement instead of a bisection.
+ *
+ * KEXE_PAIR_MAX is address space, not memory: the mapping is MAP_ANONYMOUS
+ * and nothing memsets it, so pages fault in as the bump allocator reaches
+ * them. */
 #define KEXE_PAIR_CAPACITY 4096u
+#define KEXE_PAIR_MAX (4u * 1024u * 1024u)
 #define KEXE_KGRAPH_CAPACITY 4096u
+/* The string arena.
+ *
+ * KEXE_STRING_POOL_BYTES is the DEFAULT budget and stays exactly what it has
+ * always been, so a guest that ran before runs identically. KEXE_STRING_POOL
+ * names another positive decimal for one run, the way KEXE_FUEL already does
+ * for fuel -- and that shape is the decision, not the number. Raising a bound
+ * at build time moves every program's ceiling at once; raising it per run
+ * moves one caller's, and a guest that outgrows the default still refuses
+ * unless its caller asks. (kotoba-lang lang/surface-status.edn :arena-bounds
+ * records this shape for the vector arenas; the string arena had been left
+ * behind.)
+ *
+ * KEXE_STRING_POOL_MAX is the address space the arena is mapped over, not
+ * memory it uses: the mapping is MAP_ANONYMOUS, so pages are zero-filled by
+ * the kernel and faulted in only as the bump allocator reaches them. That is
+ * why the explicit memset of the shared struct had to go -- it touched every
+ * page and would have turned a large ceiling into a large cost. */
 #define KEXE_STRING_POOL_BYTES 65536u
+#define KEXE_STRING_POOL_MAX (256u * 1024u * 1024u)
 /* granted regions: a bounded arena of HOST bytes an entry may be handed as a
  * (base, length) pair. Same 64 KiB bound as the string pool, and for the same
  * reason -- both arrive as hex in argv, and argv is what actually limits them
  * long before the arena does. A region that does not fit through argv needs a
  * different transport, and that is a gap rather than a bound. */
+/* (The string pool's 64 KiB is now a DEFAULT rather than a fixed size --
+ * KEXE_STRING_POOL / --string-pool move it per run. The region arena is
+ * still fixed, and the sentence above is about argv either way.) */
 #define KEXE_REGION_CAPACITY 8u
 #define KEXE_REGION_POOL_BYTES 65536u
 #define KEXE_RECORD_FIELD_LIMIT 128u
@@ -58,6 +98,16 @@ typedef int64_t (*kexe_fn8)(int64_t, int64_t, int64_t, int64_t,
  * larger budget: fuel bounds the guest's own steps, the rlimits bound the
  * child, and both stay in force. */
 static uint64_t kexe_initial_fuel = 512;
+/* The string arena budget in force for this run: the default above unless
+ * KEXE_STRING_POOL (or, in a packaged command, the baked constant) names
+ * another positive decimal. Every allocation site checks THIS, never the
+ * array's size, so the ceiling a guest meets is the budget and not the
+ * mapping. */
+static uint64_t kexe_string_pool_budget = KEXE_STRING_POOL_BYTES;
+/* The pair-heap budget in force for this run. Every allocation site checks
+ * THIS, never the array's size, so the ceiling a guest meets is the budget
+ * and not the mapping. */
+static uint64_t kexe_pair_budget = KEXE_PAIR_CAPACITY;
 
 static void write_stderr_checked(const char *bytes, size_t length) {
   ssize_t written = write(STDERR_FILENO, bytes, length);
@@ -206,7 +256,7 @@ struct kexe_shared_v4 {
   int64_t result;
   uint64_t completed;
   uint64_t pair_used;
-  struct kexe_pair_v1 pairs[KEXE_PAIR_CAPACITY];
+  struct kexe_pair_v1 pairs[KEXE_PAIR_MAX];
   /* One flag per pair handle: the (offset, length) bytes this handle
    * addresses are known-valid canonical UTF-8. Sound because the bytes a
    * handle covers never change after it is minted -- code+literal data is
@@ -214,11 +264,11 @@ struct kexe_shared_v4 {
    * established, holds for the handle's lifetime. This turns the
    * per-access whole-string valid_utf8 in substring/code-point-at (an
    * O(n^2) cost for a scan) into one validation per handle. */
-  uint8_t pair_validated[KEXE_PAIR_CAPACITY];
+  uint8_t pair_validated[KEXE_PAIR_MAX];
   uint64_t kgraph_used;
   struct kexe_datom_v1 datoms[KEXE_KGRAPH_CAPACITY];
   uint64_t string_pool_used;
-  uint8_t string_pool[KEXE_STRING_POOL_BYTES];
+  uint8_t string_pool[KEXE_STRING_POOL_MAX];
   /* Two arenas, because a vector table entry and the elements it spans are
    * separately exhaustible: many small vectors run out of entries first, one
    * growing vector runs out of elements first, and neither bound implies the
@@ -269,7 +319,12 @@ _Static_assert(offsetof(struct kexe_context_v4, string_equal) == 112, "string AB
 _Static_assert(offsetof(struct kexe_context_v4, string_concat) == 120, "string ABI drift");
 _Static_assert(offsetof(struct kexe_context_v4, string_substring) == 136, "string ABI drift");
 _Static_assert(offsetof(struct kexe_context_v4, string_code_point_at) == 144, "string ABI drift");
-_Static_assert(sizeof(((struct kexe_shared_v4 *)0)->pairs) == 65536,
+/* The arena is now mapped over KEXE_PAIR_MAX and BOUNDED by
+ * kexe_pair_budget, so the tripwire moves from a literal to the max it is
+ * sized by -- it still catches a change to the array, which is what it is
+ * for, and no longer asserts a number that stopped being the ceiling. */
+_Static_assert(sizeof(((struct kexe_shared_v4 *)0)->pairs)
+                   == KEXE_PAIR_MAX * sizeof(struct kexe_pair_v1),
                "pair arena size drift");
 _Static_assert(sizeof(((struct kexe_shared_v4 *)0)->datoms) == 98304,
                "kgraph arena size drift");
@@ -281,7 +336,7 @@ _Static_assert(offsetof(struct kexe_context_v4, vector_assoc) == 184, "vector AB
 _Static_assert(offsetof(struct kexe_context_v4, vector_drop) == 192, "vector ABI drift");
 _Static_assert(offsetof(struct kexe_context_v4, vector_alloc) == 200, "vector ABI drift");
 _Static_assert(offsetof(struct kexe_context_v4, vector_assoc_in_place) == 208, "vector ABI drift");
-_Static_assert(sizeof(((struct kexe_shared_v4 *)0)->string_pool) == 65536,
+_Static_assert(sizeof(((struct kexe_shared_v4 *)0)->string_pool) == KEXE_STRING_POOL_MAX,
                "string pool size drift");
 _Static_assert(sizeof(((struct kexe_shared_v4 *)0)->vectors) == 65536,
                "vector table size drift");
@@ -335,8 +390,26 @@ static int64_t checked_cap_call(struct kexe_context_v4 *context,
 static int64_t checked_pair_new(struct kexe_context_v4 *context,
                                 int64_t first, int64_t second) {
   struct kexe_shared_v4 *shared = (struct kexe_shared_v4 *)context;
+/* Every allocation site bounds the index against the ARRAY as well as the
+ * budget, and the second half is not redundant belt-and-braces -- it is what
+ * makes the invariant LOCAL.
+ *
+ * While the bound was a compile-time constant the compiler could prove
+ * `index < KEXE_PAIR_CAPACITY` from the guard and the write was obviously in
+ * range. A runtime budget it cannot prove anything about, so gcc on the CI
+ * runners refused the file:
+ *
+ *   kexe_loader.c:401: error: writing 1 byte into a region of size 0
+ *   [-Werror=stringop-overflow=]
+ *
+ * The budget is validated against KEXE_PAIR_MAX once at startup, so this
+ * adds no behaviour -- it moves that fact to where the write is, which is
+ * where the compiler is looking. Clang (macOS, and every local build here)
+ * did not warn, so this was invisible until CI compiled it with
+ * -Wall -Wextra -Werror. */
   if (context == NULL || context->version != 4 ||
-      shared->pair_used >= KEXE_PAIR_CAPACITY) {
+      shared->pair_used >= kexe_pair_budget ||
+      shared->pair_used >= KEXE_PAIR_MAX) {
     raise(SIGILL);
     return 0;
   }
@@ -666,7 +739,7 @@ static const uint8_t *resolve_string_bytes(struct kexe_context_v4 *context,
   }
   /* `-(offset + 1)` is defined even for INT64_MIN; `-offset - 1` is not. */
   uint64_t pool_offset = (uint64_t)(-(offset + 1));
-  if (pool_offset + (uint64_t)length > KEXE_STRING_POOL_BYTES ||
+  if (pool_offset + (uint64_t)length > kexe_string_pool_budget ||
       pool_offset + (uint64_t)length < pool_offset) {
     raise(SIGILL);
     return NULL;
@@ -731,7 +804,8 @@ static int hex_nibble(char value) {
 
 static int allocate_host_pair(struct kexe_shared_v4 *shared,
                               int64_t first, int64_t second, int64_t *handle) {
-  if (shared->pair_used >= KEXE_PAIR_CAPACITY) return -1;
+  if (shared->pair_used >= kexe_pair_budget ||
+      shared->pair_used >= KEXE_PAIR_MAX) return -1;
   uint64_t index = shared->pair_used++;
   shared->pairs[index].first = first;
   shared->pairs[index].second = second;
@@ -804,7 +878,8 @@ static int parse_guest_arg(struct kexe_shared_v4 *shared,
       cursor = end + 1;
       if (*cursor == '\0') return -1;
     }
-    if (count > KEXE_PAIR_CAPACITY - shared->pair_used) return -1;
+    if (count > kexe_pair_budget - shared->pair_used ||
+        count > KEXE_PAIR_MAX - shared->pair_used) return -1;
     int64_t handle = 0;
     for (uint64_t i = count; i > 0; i--) {
       uint64_t index = shared->pair_used++;
@@ -867,8 +942,10 @@ static int parse_guest_arg(struct kexe_shared_v4 *shared,
   size_t digits = strlen(hex);
   if ((digits & 1u) != 0) return -1;
   uint64_t length = (uint64_t)(digits / 2u);
-  if (length > KEXE_STRING_POOL_BYTES - shared->string_pool_used ||
-      shared->pair_used >= KEXE_PAIR_CAPACITY) return -1;
+  if (length > kexe_string_pool_budget - shared->string_pool_used ||
+      length > KEXE_STRING_POOL_MAX - shared->string_pool_used ||
+      shared->pair_used >= kexe_pair_budget ||
+      shared->pair_used >= KEXE_PAIR_MAX) return -1;
   for (size_t i = 0; i < digits; i++) {
     if (hex_nibble(hex[i]) < 0) return -1;
   }
@@ -1042,7 +1119,7 @@ static const uint8_t *peek_string_bytes(struct kexe_context_v4 *context,
     return context->code_base + offset;
   }
   uint64_t pool_offset = (uint64_t)(-(offset + 1));
-  if (pool_offset + (uint64_t)length > KEXE_STRING_POOL_BYTES ||
+  if (pool_offset + (uint64_t)length > kexe_string_pool_budget ||
       pool_offset + (uint64_t)length < pool_offset) return NULL;
   return shared->string_pool + pool_offset;
 }
@@ -1075,7 +1152,8 @@ static int read_string_handle(struct kexe_context_v4 *context, int64_t value,
 static int64_t intern_utf8(struct kexe_context_v4 *context,
                            const uint8_t *bytes, uint64_t length) {
   struct kexe_shared_v4 *shared = (struct kexe_shared_v4 *)context;
-  if (shared->string_pool_used + length > KEXE_STRING_POOL_BYTES) {
+  if (shared->string_pool_used + length > kexe_string_pool_budget ||
+      shared->string_pool_used + length > KEXE_STRING_POOL_MAX) {
     raise(SIGILL);
     return 0;
   }
@@ -1230,8 +1308,8 @@ static int64_t intern_pool_string(struct kexe_context_v4 *context,
   struct kexe_shared_v4 *shared = (struct kexe_shared_v4 *)context;
   size_t n = strlen(text);
   if (context == NULL || text == NULL ||
-      n > KEXE_STRING_POOL_BYTES ||
-      shared->string_pool_used + n > KEXE_STRING_POOL_BYTES) {
+      n > kexe_string_pool_budget ||
+      shared->string_pool_used + n > kexe_string_pool_budget) {
     raise(SIGILL);
     return 0;
   }
@@ -1639,6 +1717,178 @@ static int64_t env_read_provider(struct kexe_context_v4 *context,
   return intern_utf8(context, (const uint8_t *)value, value_length);
 }
 
+/* wire id 37 = :io/write. The bytes a COMMAND writes to its standard output.
+ *
+ * The request is the payload; the result is the DECIMAL COUNT of bytes
+ * written, as text. Two things pick that shape and neither is a preference.
+ * `[:string :string]` is one of the four generic type pairs kotoba.kir's
+ * native gate admits for `typed-cap-call`, and `:string -> :i64` is not among
+ * them. And the result has to be SHORT: the string pool below is a bump
+ * allocator that never reclaims, so echoing the payload back -- the shape the
+ * wire-35 write form uses, where the echo is the verification -- would charge
+ * every write twice and halve how much a command can print. A count is a
+ * handful of bytes whatever the payload is, and is still checkable.
+ *
+ * Unlike every other provider here this one has NO resource scope. There is
+ * nothing to narrow: the guest cannot name a destination, cannot open one,
+ * and cannot ask which one it got. It writes to this process's fd 1 and to
+ * nothing else, so the authority the grant carries is exactly "may produce
+ * output", which is what a command needs and all of it.
+ *
+ * A partial write is retried; a real error fails closed with SIGILL rather
+ * than reporting a count that did not happen. EINTR is retried and is not an
+ * error -- a signal arriving mid-write must not look like a short answer. */
+static int64_t io_write_provider(struct kexe_context_v4 *context,
+                                 int64_t request) {
+  const uint8_t *bytes = NULL;
+  uint64_t length = 0;
+  if (!read_string_handle(context, request, &bytes, &length)) {
+    raise(SIGILL);
+    return 0;
+  }
+  uint64_t written = 0;
+  while (written < length) {
+    ssize_t n = write(1, bytes + written, (size_t)(length - written));
+    if (n < 0) {
+      if (errno == EINTR) continue;
+      raise(SIGILL);
+      return 0;
+    }
+    if (n == 0) {
+      /* Neither progress nor an error. Refusing beats spinning. */
+      raise(SIGILL);
+      return 0;
+    }
+    written += (uint64_t)n;
+  }
+  /* Decimal, no sign, no padding: at most 20 digits for a uint64. */
+  char count[24];
+  int digits = snprintf(count, sizeof(count), "%llu",
+                        (unsigned long long)written);
+  if (digits <= 0 || (size_t)digits >= sizeof(count)) {
+    raise(SIGILL);
+    return 0;
+  }
+  return intern_utf8(context, (const uint8_t *)count, (size_t)digits);
+}
+
+/* wire id 39 = :io/write-error. The bytes a COMMAND writes to its DIAGNOSTIC
+ * output.
+ *
+ * Byte for byte the same provider as wire 37 with fd 2 instead of fd 1, and
+ * that similarity is the point: what differs is not the mechanism but the
+ * AUTHORITY. A pipeline reads stdout and a person reads stderr, so a grant
+ * carrying both would let a guest put into the answer what it was only
+ * permitted to complain with. Six commands in this family had shipped saying
+ * "the error paths are not matched" because there was nothing to match them
+ * with.
+ *
+ * Same result: the decimal count of bytes written, short for the same reason
+ * -- the arena never reclaims, and an echo would charge every write twice. */
+static int64_t io_write_error_provider(struct kexe_context_v4 *context,
+                                       int64_t request) {
+  const uint8_t *bytes = NULL;
+  uint64_t length = 0;
+  if (!read_string_handle(context, request, &bytes, &length)) {
+    raise(SIGILL);
+    return 0;
+  }
+  uint64_t written = 0;
+  while (written < length) {
+    ssize_t n = write(2, bytes + written, (size_t)(length - written));
+    if (n < 0) {
+      if (errno == EINTR) continue;
+      raise(SIGILL);
+      return 0;
+    }
+    if (n == 0) {
+      raise(SIGILL);
+      return 0;
+    }
+    written += (uint64_t)n;
+  }
+  char count[24];
+  int digits = snprintf(count, sizeof(count), "%llu",
+                        (unsigned long long)written);
+  if (digits <= 0 || (size_t)digits >= sizeof(count)) {
+    raise(SIGILL);
+    return 0;
+  }
+  return intern_utf8(context, (const uint8_t *)count, (size_t)digits);
+}
+
+/* wire id 38 = :cli/args. The arguments a COMMAND was invoked with.
+ *
+ * The loader's own positional arguments and the guest's are separated on the
+ * command line by `--`: everything after the first one belongs to the guest
+ * and nothing before it does. That keeps the existing strict arity check --
+ * `argc != 6 + arity` -- meaning what it always meant, instead of turning it
+ * into a lower bound that would stop catching a miscounted invocation.
+ *
+ * Request and result are both `:string`, because those are the type pairs the
+ * native gate admits, so the index travels as decimal text:
+ *
+ *   ""    -> the COUNT of arguments, as decimal text
+ *   "<i>" -> argument i, zero-based, or the empty string past the end
+ *
+ * The empty request is what makes the count unambiguous: an index is a
+ * non-empty decimal, so no argument index can collide with it. A guest cannot
+ * discover the count by probing for the empty answer, because an empty
+ * ARGUMENT is legal and answers the same thing.
+ *
+ * There is no resource scope, for the same reason :io/write has none: the
+ * guest names nothing and chooses nothing. The grant means "may see how this
+ * process was invoked". */
+static char **kexe_guest_argv = NULL;
+static int kexe_guest_argc = 0;
+
+static int64_t cli_args_provider(struct kexe_context_v4 *context,
+                                 int64_t request) {
+  const uint8_t *bytes = NULL;
+  uint64_t length = 0;
+  if (!read_string_handle(context, request, &bytes, &length)) {
+    raise(SIGILL);
+    return 0;
+  }
+  if (length == 0) {
+    char count[24];
+    int digits = snprintf(count, sizeof(count), "%d", kexe_guest_argc);
+    if (digits <= 0 || (size_t)digits >= sizeof(count)) {
+      raise(SIGILL);
+      return 0;
+    }
+    return intern_utf8(context, (const uint8_t *)count, (size_t)digits);
+  }
+  /* A decimal index, and nothing else. A malformed request is refused rather
+   * than read as zero -- answering argv[0] for "1x" would be a silent wrong
+   * answer, which is the one outcome worth trapping over. */
+  if (length >= 20) {
+    raise(SIGILL);
+    return 0;
+  }
+  char index_text[24];
+  memcpy(index_text, bytes, (size_t)length);
+  index_text[length] = '\0';
+  for (uint64_t i = 0; i < length; i++) {
+    if (index_text[i] < '0' || index_text[i] > '9') {
+      raise(SIGILL);
+      return 0;
+    }
+  }
+  errno = 0;
+  char *end = NULL;
+  unsigned long long index = strtoull(index_text, &end, 10);
+  if (errno != 0 || end == NULL || *end != '\0') {
+    raise(SIGILL);
+    return 0;
+  }
+  if (index >= (unsigned long long)kexe_guest_argc) {
+    return intern_utf8(context, (const uint8_t *)"", 0);
+  }
+  const char *value = kexe_guest_argv[index];
+  return intern_utf8(context, (const uint8_t *)value, strlen(value));
+}
+
 /* ----------------------------------------------------------------------
  * Filesystem capability scopes: wire id 35 = :fs/app-data (runtime id 202;
  * read, write and ranged read of one file) and wire id 34 = :fs/browse (one
@@ -1663,9 +1913,12 @@ struct kexe_scope {
 static struct kexe_scope kexe_scope35; /* :fs/app-data read / write / range */
 static struct kexe_scope kexe_scope34; /* :fs/browse directory listing      */
 
-static void kexe_scope_init(struct kexe_scope *scope, const char *env_name) {
+/* Fill SCOPE from a colon-separated list of path prefixes. Each entry is
+ * kept in both spellings -- as written and as realpath resolved it -- so a
+ * guest may name either and the resolved form still fails closed outside the
+ * scope. An entry that does not resolve is dropped, not guessed at. */
+static void kexe_scope_from_text(struct kexe_scope *scope, const char *scope_env) {
   scope->count = 0;
-  const char *scope_env = getenv(env_name);
   if (scope_env == NULL || scope_env[0] == '\0') return;
   const char *cursor = scope_env;
   while (*cursor != '\0' && scope->count < KEXE_SCOPE_ENTRIES) {
@@ -1686,6 +1939,30 @@ static void kexe_scope_init(struct kexe_scope *scope, const char *env_name) {
     if (end != NULL) cursor = end + 1;
     else cursor += entry_length;
   }
+}
+
+/* Where a scope COMES FROM, which is the whole question for a packaged
+ * command.
+ *
+ * A loader invocation takes it from the environment: the kbb shim resolves
+ * the policy's resource scope and hands it over in KEXE_CAP_RESOURCES_<wire>.
+ *
+ * A packaged command must not, and the environment is ignored there. The
+ * allow list is already a constant of the binary, and a scope taken from the
+ * caller would let that caller widen what the command may read while the
+ * grant it was packaged with says otherwise -- `KEXE_CAP_RESOURCES_35=/ ./cat
+ * anything` would work on a binary packaged for one directory. So in an
+ * embedded build the scope is a constant too, and there is no argument or
+ * variable that moves it. */
+static void kexe_scope_init(struct kexe_scope *scope, const char *env_name) {
+#ifdef KEXE_EMBEDDED
+  (void)env_name;
+  kexe_scope_from_text(scope,
+                       scope == &kexe_scope35 ? KEXE_EMBEDDED_SCOPE35
+                                              : KEXE_EMBEDDED_SCOPE34);
+#else
+  kexe_scope_from_text(scope, getenv(env_name));
+#endif
 }
 
 /* Lexical admission. `target` (absolute, NUL-terminated) must equal a scope
@@ -1789,8 +2066,55 @@ static void *shim_memmem(const void *hay, size_t hlen, const void *needle, size_
 
 /* wire id 35, READ form. The request string is an absolute path; the result
  * is the file's bytes as a string. The whole file is interned, so a file
- * larger than the string pool (KEXE_STRING_POOL_BYTES) cannot be read this
+ * larger than the string arena budget in force for the run cannot be read this
  * way -- that is what the RANGE form is for. */
+/* wire id 35, EXISTS form: "<path>EXISTS_SEP" -> "1" when the path is a
+ * readable file inside the granted scope, "0" otherwise.
+ *
+ * This exists because a guest could not report a missing operand. The read
+ * form TRAPS on a path it cannot serve, and a trap cannot be caught, so the
+ * guest never got control back to write `head: FILE: No such file or
+ * directory` -- six commands in this family shipped saying so. The proper
+ * answer would be a capability returning [:result T E], but the native gate
+ * admits `[:result-i64 :result-i64]` and not a result over a string, so that
+ * is a change to the gate. This is a change to a request form, on a wire
+ * that already tells three of them apart by an ASCII token.
+ *
+ * A path OUTSIDE the scope answers "0", not a trap and not "1". That is the
+ * safe answer and the deliberate one: "0" is indistinguishable from absent,
+ * so a guest cannot use this to probe for the existence of files it was
+ * never granted. It learns exactly one thing -- whether the operand it was
+ * given is one it may read -- which is the question a command asks. */
+static int64_t fs_app_data_exists_provider(struct kexe_context_v4 *context,
+                                           int64_t request) {
+  const uint8_t *bytes = NULL;
+  uint64_t length = 0;
+  char target[4096], candidate[4096];
+  if (!read_string_handle(context, request, &bytes, &length)) {
+    raise(SIGILL);
+    return 0;
+  }
+  /* Strip the token before resolving: the path is everything before it. */
+  const uint8_t *token = (const uint8_t *)memmem(bytes, (size_t)length,
+                                                 "EXISTS_SEP", 10);
+  if (token == NULL) {
+    raise(SIGILL);
+    return 0;
+  }
+  size_t path_length = (size_t)(token - bytes);
+  if (!kexe_request_path(bytes, path_length, target) ||
+      !kexe_scope_admit(&kexe_scope35, target, candidate)) {
+    return intern_utf8(context, (const uint8_t *)"0", 1);
+  }
+  int fd = open(candidate, O_RDONLY | O_NOFOLLOW);
+  if (fd < 0) {
+    return intern_utf8(context, (const uint8_t *)"0", 1);
+  }
+  int inside = kexe_scope_contains_fd(&kexe_scope35, fd, candidate);
+  close(fd);
+  return intern_utf8(context, (const uint8_t *)(inside ? "1" : "0"), 1);
+}
+
 static int64_t fs_app_data_read_provider(struct kexe_context_v4 *context,
                                          int64_t request) {
   const uint8_t *bytes = NULL;
@@ -1900,6 +2224,321 @@ static int64_t fs_app_data_write_provider(struct kexe_context_v4 *context,
   return intern_utf8(context, content, content_length);
 }
 
+static int64_t kexe_answer_bool(struct kexe_context_v4 *context, int ok) {
+  return intern_utf8(context, (const uint8_t *)(ok ? "1" : "0"), 1);
+}
+
+/* wire id 35, STAT form: "<path>STAT_SEP" -> "<mode> <size> <blocks> <isdir>"
+ * in decimal, space separated, or the EMPTY string when the path cannot be
+ * stat'ed.
+ *
+ * This widens a wire-35 grant by strictly less than nothing it did not
+ * already allow: a grant that can read a file's CONTENTS can already tell its
+ * size. The mode and the block count are what `du`, `chmod` and `ls -l` need
+ * and what no other form answers -- `du` in particular reports DISK BLOCKS
+ * and not bytes, so st_size cannot produce it (a one-byte file occupies a
+ * whole block, measured: du reports 8 512-byte units for a directory holding
+ * one 1-byte file).
+ *
+ * Same confinement as reading: open with O_NOFOLLOW, then prove the
+ * descriptor is inside the scope before trusting it. */
+static int64_t fs_app_data_stat_provider(struct kexe_context_v4 *context,
+                                         int64_t request) {
+  const uint8_t *bytes = NULL;
+  uint64_t length = 0;
+  static const char token[] = "STAT_SEP";
+  char target[4096], candidate[4096];
+  const uint8_t *sep = NULL;
+  if (!read_string_handle(context, request, &bytes, &length) || bytes == NULL ||
+      (sep = kexe_single_token(bytes, (size_t)length, token)) == NULL ||
+      !kexe_request_path(bytes, (size_t)(sep - bytes), target) ||
+      !kexe_scope_admit(&kexe_scope35, target, candidate)) {
+    raise(SIGILL);
+    return 0;
+  }
+  int fd = open(candidate, O_RDONLY | O_NOFOLLOW);
+  if (fd < 0) return intern_utf8(context, (const uint8_t *)"", 0);
+  if (!kexe_scope_contains_fd(&kexe_scope35, fd, candidate)) {
+    close(fd);
+    raise(SIGILL);
+    return 0;
+  }
+  struct stat sb;
+  if (fstat(fd, &sb) != 0) {
+    close(fd);
+    return intern_utf8(context, (const uint8_t *)"", 0);
+  }
+  close(fd);
+  char answer[128];
+  int n = snprintf(answer, sizeof(answer),
+                   "%u %lld %lld %d",
+                   (unsigned)(sb.st_mode & 0777), (long long)sb.st_size,
+                   (long long)sb.st_blocks, S_ISDIR(sb.st_mode) ? 1 : 0);
+  if (n <= 0 || (size_t)n >= sizeof(answer)) {
+    raise(SIGILL);
+    return 0;
+  }
+  return intern_utf8(context, (const uint8_t *)answer, (size_t)n);
+}
+
+/* wire id 35, CHMOD form: "<path>CHMOD_SEP<octal>" -> "1"/"0".
+ *
+ * The mode arrives as OCTAL TEXT, which is how chmod(1) is written and how
+ * the guest received it, so neither side re-renders it. Only the twelve
+ * permission bits are honoured: setuid, setgid and the sticky bit are NOT
+ * settable through this form, because a grant to write a file's bytes is not
+ * a grant to make it run as someone else. */
+static int64_t fs_app_data_chmod_provider(struct kexe_context_v4 *context,
+                                          int64_t request) {
+  const uint8_t *bytes = NULL;
+  uint64_t length = 0;
+  static const char token[] = "CHMOD_SEP";
+  const size_t token_len = sizeof(token) - 1u;
+  char target[4096], candidate[4096];
+  const uint8_t *sep = NULL;
+  if (!read_string_handle(context, request, &bytes, &length) || bytes == NULL ||
+      (sep = kexe_single_token(bytes, (size_t)length, token)) == NULL ||
+      !kexe_request_path(bytes, (size_t)(sep - bytes), target) ||
+      !kexe_scope_admit(&kexe_scope35, target, candidate)) {
+    raise(SIGILL);
+    return 0;
+  }
+  const uint8_t *digits = sep + token_len;
+  size_t digit_count = (size_t)(bytes + length - digits);
+  if (digit_count == 0 || digit_count > 6) {
+    raise(SIGILL);
+    return 0;
+  }
+  unsigned mode = 0;
+  for (size_t i = 0; i < digit_count; i++) {
+    if (digits[i] < '0' || digits[i] > '7') {
+      raise(SIGILL);
+      return 0;
+    }
+    mode = mode * 8u + (unsigned)(digits[i] - '0');
+  }
+  /* Permission bits only. */
+  mode &= 0777u;
+  int fd = open(candidate, O_RDONLY | O_NOFOLLOW);
+  if (fd < 0) return kexe_answer_bool(context, 0);
+  if (!kexe_scope_contains_fd(&kexe_scope35, fd, candidate)) {
+    close(fd);
+    raise(SIGILL);
+    return 0;
+  }
+  int ok = fchmod(fd, (mode_t)mode) == 0;
+  close(fd);
+  return kexe_answer_bool(context, ok);
+}
+
+/* --- scoped mutation -------------------------------------------------------
+ *
+ * mkdir, unlink, rmdir and rename, each confined to the wire-35 scope.
+ *
+ * The read and write providers above are safe because they OPEN the target
+ * and then ask `kexe_scope_contains_fd`, which resolves the descriptor
+ * (F_GETPATH on macOS, dev+ino comparison elsewhere) and so cannot be fooled
+ * by a `..` component or a symlink. `kexe_scope_admit` alone would be: it
+ * matches text, and `/granted/../../etc` prefixes `/granted` at a `/`
+ * boundary.
+ *
+ * A mutation has no descriptor for the thing it acts on -- unlink removes a
+ * name, not an open file -- so the same guarantee is obtained one level up:
+ * open the PARENT directory, put it through the identical containment check,
+ * and then act relative to that descriptor with mkdirat/unlinkat/renameat.
+ * The name operated on is a single component, so it cannot walk anywhere.
+ *
+ * These ANSWER "1" or "0" rather than trapping when the operation fails --
+ * `rm` of a name that is not there is a diagnostic the guest must write, not
+ * a fault. A request OUTSIDE the scope still traps, exactly as writing does:
+ * that is not a question, it is a grant violation. */
+static int kexe_split_parent(const char *candidate, char parent[4096],
+                             char base[256]) {
+  const char *slash = strrchr(candidate, '/');
+  if (slash == NULL || slash == candidate) return 0;
+  size_t parent_length = (size_t)(slash - candidate);
+  size_t base_length = strlen(slash + 1);
+  if (parent_length == 0 || parent_length >= 4096) return 0;
+  if (base_length == 0 || base_length >= 256) return 0;
+  /* A single component: no traversal, no re-entry into the path resolver. */
+  if (strcmp(slash + 1, ".") == 0 || strcmp(slash + 1, "..") == 0) return 0;
+  memcpy(parent, candidate, parent_length);
+  parent[parent_length] = '\0';
+  memcpy(base, slash + 1, base_length + 1);
+  return 1;
+}
+
+/* The parent directory of `candidate`, open and proven inside the scope, or
+ * -1. The caller closes it.
+ *
+ * `*fatal` separates the two ways this fails, and the distinction is the
+ * whole contract: a parent that cannot be OPENED is an operational failure
+ * the guest has to report (`mkdir x/y` when `x` is absent is a diagnostic,
+ * not a fault), while a malformed request or a parent outside the grant is a
+ * violation and traps. Answering "0" for the second would turn a grant breach
+ * into a routine `false`; trapping on the first made `mkdir x/y` die with
+ * SIGILL where mkdir(1) prints one line and exits 1. */
+static int kexe_scoped_parent_fd(const char *candidate, char base[256],
+                                 int *fatal) {
+  char parent[4096];
+  *fatal = 0;
+  if (!kexe_split_parent(candidate, parent, base)) {
+    *fatal = 1;
+    return -1;
+  }
+  int dfd = open(parent, O_RDONLY | O_DIRECTORY);
+  if (dfd < 0) return -1;
+  if (!kexe_scope_contains_fd(&kexe_scope35, dfd, parent)) {
+    close(dfd);
+    *fatal = 1;
+    return -1;
+  }
+  return dfd;
+}
+
+/* wire id 35, MKDIR form: "<path>MKDIR_SEP" -> "1" if the directory was
+ * created, "0" if it was not (it already exists, the parent is missing, the
+ * filesystem refused). 0777 is passed and the process umask applies, which is
+ * what mkdir(1) itself does. */
+static int64_t fs_app_data_mkdir_provider(struct kexe_context_v4 *context,
+                                          int64_t request) {
+  const uint8_t *bytes = NULL;
+  uint64_t length = 0;
+  static const char token[] = "MKDIR_SEP";
+  char target[4096], candidate[4096], base[256];
+  const uint8_t *sep = NULL;
+  if (!read_string_handle(context, request, &bytes, &length) || bytes == NULL ||
+      (sep = kexe_single_token(bytes, (size_t)length, token)) == NULL ||
+      !kexe_request_path(bytes, (size_t)(sep - bytes), target) ||
+      !kexe_scope_admit(&kexe_scope35, target, candidate)) {
+    raise(SIGILL);
+    return 0;
+  }
+  int fatal = 0;
+  int dfd = kexe_scoped_parent_fd(candidate, base, &fatal);
+  if (dfd < 0) {
+    if (fatal) {
+      raise(SIGILL);
+      return 0;
+    }
+    return kexe_answer_bool(context, 0);
+  }
+  int ok = mkdirat(dfd, base, 0777) == 0;
+  close(dfd);
+  return kexe_answer_bool(context, ok);
+}
+
+/* wire id 35, UNLINK form: "<path>UNLINK_SEP" -> "1" if the name was removed.
+ * AT_REMOVEDIR is NOT passed, so this refuses a directory the way unlink(2)
+ * does; RMDIR_SEP is the separate form for that, because `rm` and `rmdir` are
+ * separate commands and answering both from one request would let a guest
+ * remove a tree it only asked to remove a file from. */
+static int64_t fs_app_data_unlink_provider(struct kexe_context_v4 *context,
+                                           int64_t request) {
+  const uint8_t *bytes = NULL;
+  uint64_t length = 0;
+  static const char token[] = "UNLINK_SEP";
+  char target[4096], candidate[4096], base[256];
+  const uint8_t *sep = NULL;
+  if (!read_string_handle(context, request, &bytes, &length) || bytes == NULL ||
+      (sep = kexe_single_token(bytes, (size_t)length, token)) == NULL ||
+      !kexe_request_path(bytes, (size_t)(sep - bytes), target) ||
+      !kexe_scope_admit(&kexe_scope35, target, candidate)) {
+    raise(SIGILL);
+    return 0;
+  }
+  int fatal = 0;
+  int dfd = kexe_scoped_parent_fd(candidate, base, &fatal);
+  if (dfd < 0) {
+    if (fatal) {
+      raise(SIGILL);
+      return 0;
+    }
+    return kexe_answer_bool(context, 0);
+  }
+  int ok = unlinkat(dfd, base, 0) == 0;
+  close(dfd);
+  return kexe_answer_bool(context, ok);
+}
+
+/* wire id 35, RMDIR form: "<path>RMDIR_SEP" -> "1" if the EMPTY directory was
+ * removed. A non-empty one answers "0"; there is no recursive form, and a
+ * guest that wants one walks the tree itself under its own fuel. */
+static int64_t fs_app_data_rmdir_provider(struct kexe_context_v4 *context,
+                                          int64_t request) {
+  const uint8_t *bytes = NULL;
+  uint64_t length = 0;
+  static const char token[] = "RMDIR_SEP";
+  char target[4096], candidate[4096], base[256];
+  const uint8_t *sep = NULL;
+  if (!read_string_handle(context, request, &bytes, &length) || bytes == NULL ||
+      (sep = kexe_single_token(bytes, (size_t)length, token)) == NULL ||
+      !kexe_request_path(bytes, (size_t)(sep - bytes), target) ||
+      !kexe_scope_admit(&kexe_scope35, target, candidate)) {
+    raise(SIGILL);
+    return 0;
+  }
+  int fatal = 0;
+  int dfd = kexe_scoped_parent_fd(candidate, base, &fatal);
+  if (dfd < 0) {
+    if (fatal) {
+      raise(SIGILL);
+      return 0;
+    }
+    return kexe_answer_bool(context, 0);
+  }
+  int ok = unlinkat(dfd, base, AT_REMOVEDIR) == 0;
+  close(dfd);
+  return kexe_answer_bool(context, ok);
+}
+
+/* wire id 35, RENAME form: "<from>RENAME_SEP<to>" -> "1" if renamed. BOTH
+ * sides are admitted and BOTH parents are proven in scope, so this cannot be
+ * used to move a file out of the grant or to pull one in. */
+static int64_t fs_app_data_rename_provider(struct kexe_context_v4 *context,
+                                           int64_t request) {
+  const uint8_t *bytes = NULL;
+  uint64_t length = 0;
+  static const char token[] = "RENAME_SEP";
+  const size_t token_len = sizeof(token) - 1u;
+  char from_target[4096], from_candidate[4096], from_base[256];
+  char to_target[4096], to_candidate[4096], to_base[256];
+  const uint8_t *sep = NULL;
+  if (!read_string_handle(context, request, &bytes, &length) || bytes == NULL ||
+      (sep = kexe_single_token(bytes, (size_t)length, token)) == NULL ||
+      !kexe_request_path(bytes, (size_t)(sep - bytes), from_target) ||
+      !kexe_request_path(sep + token_len,
+                         (size_t)(bytes + length - (sep + token_len)),
+                         to_target) ||
+      !kexe_scope_admit(&kexe_scope35, from_target, from_candidate) ||
+      !kexe_scope_admit(&kexe_scope35, to_target, to_candidate)) {
+    raise(SIGILL);
+    return 0;
+  }
+  int fatal = 0;
+  int from_fd = kexe_scoped_parent_fd(from_candidate, from_base, &fatal);
+  if (from_fd < 0) {
+    if (fatal) {
+      raise(SIGILL);
+      return 0;
+    }
+    return kexe_answer_bool(context, 0);
+  }
+  int to_fd = kexe_scoped_parent_fd(to_candidate, to_base, &fatal);
+  if (to_fd < 0) {
+    close(from_fd);
+    if (fatal) {
+      raise(SIGILL);
+      return 0;
+    }
+    return kexe_answer_bool(context, 0);
+  }
+  int ok = renameat(from_fd, from_base, to_fd, to_base) == 0;
+  close(from_fd);
+  close(to_fd);
+  return kexe_answer_bool(context, ok);
+}
+
 /* Bounded decimal parse over a byte span: digits only (no sign, no '+', no
  * whitespace), at most 20 of them, overflow refused. */
 static int kexe_parse_u64_span(const uint8_t *text, size_t length,
@@ -1950,7 +2589,7 @@ static int64_t fs_app_data_range_read_provider(struct kexe_context_v4 *context,
   if (colon == NULL ||
       !kexe_parse_u64_span(spec, (size_t)(colon - spec), &offset) ||
       !kexe_parse_u64_span(colon + 1, (size_t)(spec + spec_length - colon - 1), &window) ||
-      window > KEXE_STRING_POOL_BYTES) {
+      window > kexe_string_pool_budget) {
     raise(SIGILL);
     return 0;
   }
@@ -2054,7 +2693,7 @@ static int kexe_browse_add(const char *name, uint8_t is_dir,
   size_t name_length = strlen(name);
   size_t entry_bytes = name_length + 2u + (*count > 0 ? 1u : 0u);
   if (*count >= KEXE_BROWSE_ENTRY_LIMIT ||
-      *total + entry_bytes > KEXE_STRING_POOL_BYTES) return 0;
+      *total + entry_bytes > kexe_string_pool_budget) return 0;
   if (*count == *capacity) {
     size_t next = *capacity == 0 ? 64u : *capacity * 2u;
     struct kexe_browse_entry *grown =
@@ -2215,18 +2854,44 @@ static int64_t checked_typed_cap_call(struct kexe_context_v4 *context,
   } else if (id == 10 && request_kind == KEXE_TYPED_UI_EVENT_V1) {
     result = ui_event_inject(context, request);
   } else if (id == 35 && request_kind == KEXE_TYPED_STRING) {
-    /* wire id 35 = :fs/app-data, three request forms told apart by an ASCII
-     * token: "<path>WRITE_SEP<content>" writes, "<path>RANGE_SEP<off>:<len>"
-     * reads one bounded window, a bare absolute path reads the whole file.
-     * WRITE_SEP is tested first so written content may itself contain
-     * RANGE_SEP. Scope is KEXE_CAP_RESOURCES_35 for all three. */
+    /* wire id 35 = :fs/app-data, told apart by an ASCII token:
+     *   "<path>WRITE_SEP<content>"      write
+     *   "<path>RANGE_SEP<off>:<len>"    one bounded window
+     *   "<path>EXISTS_SEP"              "1"/"0"
+     *   "<path>MKDIR_SEP"               create a directory
+     *   "<path>UNLINK_SEP"              remove a name
+     *   "<path>RMDIR_SEP"               remove an empty directory
+     *   "<from>RENAME_SEP<to>"          rename
+     *   a bare absolute path            read the whole file
+     *
+     * WRITE_SEP is tested FIRST and stays first: written content may itself
+     * contain any of these tokens, and only the write form has content. The
+     * mutation forms carry no content, so their order among themselves does
+     * not matter. Scope is KEXE_CAP_RESOURCES_35 for all of them. */
     uint64_t rlen = 0;
     const uint8_t *rb = NULL;
     if (read_string_handle(context, request, &rb, &rlen) && rb &&
         memmem(rb, (size_t)rlen, "WRITE_SEP", 9) != NULL) {
       result = fs_app_data_write_provider(context, request);
+    } else if (rb != NULL && memmem(rb, (size_t)rlen, "EXISTS_SEP", 10) != NULL) {
+      /* Tested before RANGE_SEP and after WRITE_SEP for the same reason the
+       * existing order has: written content may contain any of these tokens,
+       * and an EXISTS request carries no content at all. */
+      result = fs_app_data_exists_provider(context, request);
     } else if (rb != NULL && memmem(rb, (size_t)rlen, "RANGE_SEP", 9) != NULL) {
       result = fs_app_data_range_read_provider(context, request);
+    } else if (rb != NULL && memmem(rb, (size_t)rlen, "STAT_SEP", 8) != NULL) {
+      result = fs_app_data_stat_provider(context, request);
+    } else if (rb != NULL && memmem(rb, (size_t)rlen, "CHMOD_SEP", 9) != NULL) {
+      result = fs_app_data_chmod_provider(context, request);
+    } else if (rb != NULL && memmem(rb, (size_t)rlen, "MKDIR_SEP", 9) != NULL) {
+      result = fs_app_data_mkdir_provider(context, request);
+    } else if (rb != NULL && memmem(rb, (size_t)rlen, "UNLINK_SEP", 10) != NULL) {
+      result = fs_app_data_unlink_provider(context, request);
+    } else if (rb != NULL && memmem(rb, (size_t)rlen, "RMDIR_SEP", 9) != NULL) {
+      result = fs_app_data_rmdir_provider(context, request);
+    } else if (rb != NULL && memmem(rb, (size_t)rlen, "RENAME_SEP", 10) != NULL) {
+      result = fs_app_data_rename_provider(context, request);
     } else {
       result = fs_app_data_read_provider(context, request);
     }
@@ -2236,6 +2901,22 @@ static int64_t checked_typed_cap_call(struct kexe_context_v4 *context,
      * sorted NAME<TAB>D lines ("1" = directory, "0" = file), the same wire
      * the js host answers. */
     result = fs_browse_provider(context, request);
+  } else if (id == 39 && request_kind == KEXE_TYPED_STRING) {
+    /* wire id 39 = :io/write-error. Real host provider: the request string is
+     * written to fd 2 and the result is the decimal byte count. No resource
+     * scope, for the same reason wire 37 has none. */
+    result = io_write_error_provider(context, request);
+  } else if (id == 38 && request_kind == KEXE_TYPED_STRING) {
+    /* wire id 38 = :cli/args. Real host provider: the empty request answers
+     * the argument count as decimal text, a decimal index answers that
+     * argument, past the end answers the empty string. */
+    result = cli_args_provider(context, request);
+  } else if (id == 37 && request_kind == KEXE_TYPED_STRING) {
+    /* wire id 37 = :io/write. Real host provider: the request string is
+     * written to fd 1 and the result is the decimal byte count. No resource
+     * scope -- the guest names no destination, so there is nothing to
+     * narrow. */
+    result = io_write_provider(context, request);
   } else if (id == 33 && request_kind == KEXE_TYPED_STRING) {
     /* wire id 33 = :env/read. Real host provider: the request string is
      * the environment variable name; the result is its value (empty
@@ -2309,7 +2990,7 @@ static int64_t checked_string_concat(struct kexe_context_v4 *context,
     return 0;
   }
   int64_t total = length_a + length_b;
-  if (shared->string_pool_used + (uint64_t)total > KEXE_STRING_POOL_BYTES ||
+  if (shared->string_pool_used + (uint64_t)total > kexe_string_pool_budget ||
       shared->string_pool_used + (uint64_t)total < shared->string_pool_used) {
     raise(SIGILL);
     return 0;
@@ -2514,11 +3195,23 @@ static int supervise(pid_t child) {
  * touches -- and this loader never gained the other half. It was invisible
  * because amu pinned an older kototama-native; advancing that pin is what
  * surfaced it. */
+/* The reported capacity is the budget IN FORCE, not the default. It was the
+ * literal 4096 until 2026-09-10, which was true while the pair heap was a
+ * compile-time constant and became a lie the moment it became a budget: a
+ * run with KEXE_PAIRS=200000 reported `:capacity 4096 :used 8013`, a used
+ * larger than its own capacity. `:arena-bounds` says a bound you can see is
+ * a bound you can plan against; one you can see WRONG is worse than one you
+ * cannot see. The string arena joins the report for the same reason -- it
+ * had no line at all, so a guest that exhausted it had nothing to read. */
 #define KEXE_REPORT_TAIL_FMT                                                  \
-  "} :heap {:capacity 4096 :used %" PRIu64 "} :vectors {:capacity %u :used %"  \
+  "} :heap {:capacity %" PRIu64 " :used %" PRIu64                             \
+  "} :string-pool {:capacity %" PRIu64 " :used %" PRIu64                      \
+  "} :vectors {:capacity %u :used %"                                          \
   PRIu64 "} :vector-items {:capacity %u :used %" PRIu64 "}}\n"
 #define KEXE_REPORT_TAIL_ARGS(s)                                              \
-  (s)->pair_used, (unsigned)KEXE_VECTOR_CAPACITY, (s)->vector_used,            \
+  kexe_pair_budget, (s)->pair_used,                                           \
+      kexe_string_pool_budget, (s)->string_pool_used,                          \
+      (unsigned)KEXE_VECTOR_CAPACITY, (s)->vector_used,                        \
       (unsigned)KEXE_VECTOR_ITEM_CAPACITY, (s)->vector_item_used
 
 static int write_supervisor_report(const struct kexe_shared_v4 *shared,
@@ -2850,10 +3543,77 @@ static void probe_denied(const char *reason) {
 }
 
 int main(int argc, char **argv) {
+  /* Everything after the first `--` is the GUEST's argv (wire 38), and is
+   * removed from this loader's own argument vector before any of the checks
+   * below run -- so `argc != 6 + arity` keeps meaning exactly what it meant
+   * and still catches a miscounted invocation. A `--` with nothing after it
+   * is a guest argv of length zero, which is different from no `--` at all
+   * only in that the guest may ask and be told zero. */
+#ifdef KEXE_EMBEDDED
+  /* A packaged command owns its whole command line: there is no loader
+   * invocation in front of it to separate off, so every argument after the
+   * program name belongs to the guest and `--` is just another argument --
+   * which is what a caller writing `grep -- -x file` means by it. */
+  kexe_guest_argv = argv + 1;
+  kexe_guest_argc = argc - 1;
+  argc = 1;
+#else
+  for (int i = 1; i < argc; i++) {
+    if (strcmp(argv[i], "--") == 0) {
+      kexe_guest_argv = argv + i + 1;
+      kexe_guest_argc = argc - i - 1;
+      argc = i;
+      break;
+    }
+  }
+#endif
+  /* Command mode: the guest's answer is the process's EXIT STATUS and the
+   * loader prints no report of its own, so stdout carries only what the guest
+   * wrote through wire 37. Without it the loader keeps printing the result,
+   * which is what every existing caller reads. Truncated to 0..255 the way a
+   * shell would; a negative answer therefore arrives as 256 + it, which is
+   * the same thing `exit(-1)` does anywhere else. */
+#ifdef KEXE_EMBEDDED
+  /* A command always answers with its exit status and never prints a report
+   * of its own -- that is what makes it a command rather than a loader
+   * invocation, so it is not left to an environment variable. */
+  const int command_mode = 1;
+#else
+  const int command_mode = getenv("KEXE_COMMAND") != NULL;
+#endif
+#ifndef KEXE_EMBEDDED
   if (argc < 6 || argc > 11) {
     fprintf(stderr, "usage: kexe-loader <raw-code> <offset> <arity> <x86_64|aarch64> <allow-csv|-> [i64 ...]\n");
     return 2;
   }
+#else
+  (void)argc;
+#endif
+#ifdef KEXE_EMBEDDED
+  /* The machine code is a constant of this binary, not a file it is told to
+   * read. Nothing on the command line can point it at other bytes, so a
+   * packaged command has no argument that selects what it executes. */
+  const uint64_t offset = KEXE_EMBEDDED_OFFSET;
+  const unsigned long arity = KEXE_EMBEDDED_ARITY;
+  const char *isa = KEXE_EMBEDDED_ISA;
+  const long length = (long)sizeof(kexe_embedded_code);
+  if (arity != 0) {
+    /* A command receives its input through :cli/args, not through i64
+     * parameters there is nowhere to write. */
+    fprintf(stderr, "kexe-command: packaged entry must have arity 0\n");
+    return 2;
+  }
+  if (length <= 0 || offset >= (uint64_t)length) {
+    fprintf(stderr, "kexe-command: invalid embedded code length or offset\n");
+    return 2;
+  }
+  long pagesize = sysconf(_SC_PAGESIZE);
+  size_t mapped = ((size_t)length + (size_t)pagesize - 1) & ~((size_t)pagesize - 1);
+  void *memory = mmap(NULL, mapped, PROT_READ | PROT_WRITE,
+                      MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  if (memory == MAP_FAILED) fail("mmap RW");
+  memcpy(memory, kexe_embedded_code, (size_t)length);
+#else
   uint64_t offset;
   if (parse_u64(argv[2], &offset) != 0) return 2;
   unsigned long arity;
@@ -2878,6 +3638,7 @@ int main(int argc, char **argv) {
   if (memory == MAP_FAILED) fail("mmap RW");
   if (fread(memory, 1, (size_t)length, file) != (size_t)length) fail("read");
   if (fclose(file) != 0) fail("close");
+#endif
 
   /* The security boundary: writable code is never executable. */
   if (mprotect(memory, mapped, PROT_READ | PROT_EXEC) != 0) fail("mprotect RX");
@@ -2903,14 +3664,67 @@ int main(int argc, char **argv) {
       mmap(NULL, sizeof(*shared), PROT_READ | PROT_WRITE,
            MAP_SHARED | MAP_ANONYMOUS, -1, 0);
   if (shared == MAP_FAILED) fail("mmap shared execution state");
-  memset(shared, 0, sizeof(*shared));
+  /* No memset: MAP_ANONYMOUS pages are zero-filled by the kernel, so this
+   * only ever re-zeroed memory that was already zero -- and it TOUCHED every
+   * page while doing it, which is what would make a large string arena cost
+   * its full size at startup instead of faulting in as the bump allocator
+   * reaches it. Measured with the arena mapped over 256 MiB: with the memset
+   * a run costs the whole mapping; without it, a run that allocates 64 KiB
+   * faults 64 KiB. */
   shared->context.version = 4;
+#ifdef KEXE_EMBEDDED
+  /* Fuel is a constant of a packaged command for the same reason its grant,
+   * its scopes and its string arena are: a caller that could raise the fuel
+   * through the environment would be choosing the command's resource bound
+   * on its behalf. This was the last of the four still readable from
+   * outside. */
+  kexe_initial_fuel = KEXE_EMBEDDED_FUEL;
+#else
   const char *fuel_env = getenv("KEXE_FUEL");
   if (fuel_env != NULL && fuel_env[0] != '\0') {
     if (parse_u64(fuel_env, &kexe_initial_fuel) != 0 || kexe_initial_fuel == 0) {
       fprintf(stderr, "kexe-loader: KEXE_FUEL must be a positive decimal integer\n");
       return 2;
     }
+  }
+#endif
+  /* The string arena budget, in force for this run only. Same shape as
+   * KEXE_FUEL above: absent means the default, present means a positive
+   * decimal, and anything else is refused BEFORE the guest starts rather
+   * than clamped -- a budget silently reduced to something the caller did
+   * not ask for is a bound nobody can plan against. */
+#ifdef KEXE_EMBEDDED
+  kexe_string_pool_budget = KEXE_EMBEDDED_STRING_POOL;
+#else
+  const char *pool_env = getenv("KEXE_STRING_POOL");
+  if (pool_env != NULL && pool_env[0] != '\0') {
+    if (parse_u64(pool_env, &kexe_string_pool_budget) != 0 ||
+        kexe_string_pool_budget == 0) {
+      fprintf(stderr, "kexe-loader: KEXE_STRING_POOL must be a positive decimal integer\n");
+      return 2;
+    }
+  }
+#endif
+#ifdef KEXE_EMBEDDED
+  kexe_pair_budget = KEXE_EMBEDDED_PAIRS;
+#else
+  const char *pairs_env = getenv("KEXE_PAIRS");
+  if (pairs_env != NULL && pairs_env[0] != '\0') {
+    if (parse_u64(pairs_env, &kexe_pair_budget) != 0 || kexe_pair_budget == 0) {
+      fprintf(stderr, "kexe-loader: KEXE_PAIRS must be a positive decimal integer\n");
+      return 2;
+    }
+  }
+#endif
+  if (kexe_pair_budget > KEXE_PAIR_MAX) {
+    fprintf(stderr, "kexe-loader: KEXE_PAIRS exceeds the %u-entry ceiling\n",
+            (unsigned)KEXE_PAIR_MAX);
+    return 2;
+  }
+  if (kexe_string_pool_budget > KEXE_STRING_POOL_MAX) {
+    fprintf(stderr, "kexe-loader: KEXE_STRING_POOL exceeds the %u-byte ceiling\n",
+            (unsigned)KEXE_STRING_POOL_MAX);
+    return 2;
   }
   shared->context.fuel = kexe_initial_fuel;
   shared->context.cap_call = checked_cap_call;
@@ -2938,7 +3752,14 @@ int main(int argc, char **argv) {
   shared->context.code_length = (uint64_t)length;
   kexe_scope_init(&kexe_scope35, "KEXE_CAP_RESOURCES_35");
   kexe_scope_init(&kexe_scope34, "KEXE_CAP_RESOURCES_34");
+#ifdef KEXE_EMBEDDED
+  /* The grant is a constant too, and it is the SAME text a loader invocation
+   * would have been given, parsed by the same function -- a packaged command
+   * cannot widen its own authority and cannot be told to. */
+  if (parse_allow(KEXE_EMBEDDED_ALLOW, shared->context.allow) != 0) return 2;
+#else
   if (parse_allow(argv[5], shared->context.allow) != 0) return 2;
+#endif
   for (unsigned long i = 0; i < arity; i++) {
     if (parse_guest_arg(shared, argv[6 + i], &args[i]) != 0) return 2;
   }
@@ -3018,9 +3839,9 @@ int main(int argc, char **argv) {
   }
   shared->result = result;
   shared->completed = 1;
-  if (!structured_report) write_i64(result);
+  if (!structured_report && !command_mode) write_i64(result);
 
   if (munmap(memory, mapped) != 0) fail("munmap");
   if (munmap(shared, sizeof(*shared)) != 0) fail("shared munmap");
-  _exit(0);
+  _exit(command_mode ? (int)((uint64_t)result & 0xffu) : 0);
 }

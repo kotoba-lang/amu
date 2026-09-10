@@ -152,6 +152,14 @@
   :fs/browse
   {:source-operation fs/browse :effect :host/fs-browse
    :compiler-wire-id 34}
+  ;; fs/browse-dir (runtime id 261, kotoba-core-contracts) — directory
+  ;; listing WITH an is-dir flag per entry, for the kotoba-lang/find
+  ;; recursive tree-walk. Wire id 36 so native (amu KEXE / kbb --backend
+  ;; js) guests can lower it against the js/native provider; same effect
+  ;; family as fs/browse (:host/fs-browse-dir).
+  :fs/browse-dir
+  {:source-operation fs/browse-dir :effect :host/fs-browse-dir
+   :compiler-wire-id 36}
   ;; fs/app-data (runtime id 202, kotoba-core-contracts) — sandboxed
   ;; fs read/write narrowed to the granted path scope (never :any in
   ;; production policies). Wire id 35 so native (amu KEXE) guests can
@@ -159,7 +167,47 @@
   ;; (ADR-2609051100 slice 4).
   :fs/app-data
   {:source-operation fs/app-data :effect :host/fs-app-data
-   :compiler-wire-id 35}}
+   :compiler-wire-id 35}
+  ;; io/write — the bytes a COMMAND writes to its standard output. Wire id
+  ;; 37.
+  ;;
+  ;; Request is the bytes; the result is the DECIMAL COUNT of bytes written,
+  ;; as text. Two constraints pick that shape and neither is a preference:
+  ;;
+  ;;   * `[:string :string]` is one of the four generic type pairs
+  ;;     `kotoba.kir`'s native gate admits for `typed-cap-call` (the others
+  ;;     are i64, option-i64, result-i64). `:string -> :i64` is not among
+  ;;     them and would need a named provider contract, which is a change to
+  ;;     the gate rather than to this catalog.
+  ;;   * the result must be SHORT. A native guest's strings live in one
+  ;;     65,536-byte arena that is a bump allocator and never reclaims
+  ;;     (`kexe_loader.c`, no assignment to `string_pool_used` other than
+  ;;     `+=`), so echoing the payload back -- the shape `fs/app-data`'s
+  ;;     write form uses -- would charge every write twice. A count costs a
+  ;;     handful of bytes whatever the payload is, and is still verifiable.
+  ;;
+  ;; The effect is `:host/io-write`, which is deliberately NOT the
+  ;; `:host/log-append` family: a command's standard output is its answer,
+  ;; not an audit record, and the two must not share a grant.
+  :io/write
+  {:source-operation io/write :effect :host/io-write
+   :compiler-wire-id 37}
+  ;; cli/args — the arguments a COMMAND was invoked with. Wire id 38.
+  ;;
+  ;; `:string -> :string`, so the index travels as decimal text: the empty
+  ;; request answers the COUNT, a decimal answers that argument zero-based,
+  ;; and past the end answers the empty string. The empty request is what
+  ;; makes the count unambiguous -- an index is a non-empty decimal, so no
+  ;; index can collide with it, and a guest cannot instead probe for the
+  ;; first empty answer because an empty ARGUMENT is legal and looks the
+  ;; same.
+  ;;
+  ;; Like :io/write this carries no resource scope, and for the same reason:
+  ;; the guest names nothing and chooses nothing. The grant means exactly
+  ;; "may see how this process was invoked".
+  :cli/args
+  {:source-operation cli/args :effect :host/cli-args
+   :compiler-wire-id 38}}
  :invariants
  [:semantic-name-is-qualified-keyword
   :source-operation-is-qualified-symbol

@@ -60,10 +60,23 @@
   [:inputs :ops-completed :ops-trapped :string-bytes-read :dataspace-calls
    :string-result :record-result :tagged-result :variant-result :string-handle])
 
+;; Sliced from the marker rather than read as a LINE, because stderr is not
+;; this harness's alone. The fuzz driver grants every capability, so an input
+;; can reach `:io/write-error` (wire 39), whose provider writes its request to
+;; fd 2 verbatim and unterminated -- landing on the same line as this report.
+;; Measured 2026-09-10: 65 bytes of fuzz input preceded the marker and the
+;; reader failed with "Invalid character: ` found while reading symbol",
+;; after a 20,000-run job that had otherwise passed. Taking the substring
+;; from the marker's own `{` is immune to whatever precedes it.
 (defn reach! [log]
-  (let [line (last (filter #(.includes % ":kotoba.fuzz-reach/v1") (str/split-lines log)))]
-    (when-not line (throw (js/Error. "native-fuzz: target emitted no reach line")))
-    (let [reach (reader/read-string (str/trim line))]
+  (let [marker "{:format :kotoba.fuzz-reach/v1"
+        at (.lastIndexOf log marker)]
+    (when (neg? at) (throw (js/Error. "native-fuzz: target emitted no reach line")))
+    (let [tail (subs log at)
+          end (.indexOf tail "}")
+          _ (when (neg? end)
+              (throw (js/Error. "native-fuzz: reach line is not terminated")))
+          reach (reader/read-string (subs tail 0 (inc end)))]
       (lib/ensure! (= :kotoba.fuzz-reach/v1 (:format reach))
                    "native-fuzz: reach line is not :kotoba.fuzz-reach/v1")
       (lib/ensure! (= (set reach-keys) (disj (set (keys reach)) :format))

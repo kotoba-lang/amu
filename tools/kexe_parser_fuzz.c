@@ -81,9 +81,19 @@ struct fuzz_reach {
 
 static struct fuzz_reach fuzz_reach;
 
+/* The leading newline is load-bearing. stderr is no longer this harness's
+ * alone: the fuzz driver grants every capability (see the allow[] fill in
+ * the standalone entry), so a fuzz input can reach `:io/write-error` (wire
+ * 39), whose provider writes its request to fd 2 VERBATIM and without a
+ * terminator. Measured 2026-09-10 -- 65 bytes of input landed immediately
+ * before this line, and the reader that took "the last line containing the
+ * marker" then choked on a backtick in them.
+ *
+ * The harness no longer parses whole lines either, which is the real fix.
+ * This newline is what keeps the log readable by a person. */
 static void fuzz_report_reach(void) {
   fprintf(stderr,
-          "{:format :kotoba.fuzz-reach/v1"
+          "\n{:format :kotoba.fuzz-reach/v1"
           " :inputs %llu :ops-completed %llu :ops-trapped %llu"
           " :string-bytes-read %llu :dataspace-calls %llu"
           " :string-result %llu :record-result %llu :tagged-result %llu"

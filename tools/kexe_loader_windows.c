@@ -1355,12 +1355,31 @@ static int run_appcontainer_parent(int argc, char **argv) {
  * exactly this: an arena windows loader "cannot pair with a posix loader that
  * does not under any single executor". The posix loader gained the arenas in
  * this branch, so the pairing is resolved in the other direction -- both
- * report them, and the hold is over. */
+ * report them, and the hold is over.
+ *
+ * `:string-pool` joins on 2026-09-10 for the same reason and by the same
+ * route: the posix loader added it (its arenas became per-run budgets, and
+ * the string arena had no line at all, so a guest that exhausted it had
+ * nothing to read), kototama-native's `valid-supervisor-report?` compares
+ * the key set for EXACT equality, and a loader that omits the key is
+ * therefore rejected as malformed evidence. That is precisely how this was
+ * found: with the posix side landed, every job went green except the two
+ * windows ones, which failed with "malformed native supervisor evidence".
+ *
+ * The capacity here is the compile-time KEXE_STRING_POOL_BYTES rather than a
+ * budget, because this loader has no KEXE_STRING_POOL override. The
+ * validator pins the key's structure and bounds rather than its constant, so
+ * the two loaders may disagree on the number and still pair. */
 #define KEXE_REPORT_TAIL_FMT                                                   \
-  ":heap {:capacity 4096 :used %llu} :vectors {:capacity %u :used %llu} "      \
+  ":heap {:capacity 4096 :used %llu} "                                         \
+  ":string-pool {:capacity %u :used %llu} "                                    \
+  ":vectors {:capacity %u :used %llu} "                                        \
   ":vector-items {:capacity %u :used %llu}}\n"
 #define KEXE_REPORT_TAIL_ARGS(c)                                               \
-  (unsigned long long)(c)->pair_used, (unsigned)KEXE_VECTOR_CAPACITY,          \
+  (unsigned long long)(c)->pair_used,                                          \
+      (unsigned)KEXE_STRING_POOL_BYTES,                                        \
+      (unsigned long long)(c)->string_pool_used,                               \
+      (unsigned)KEXE_VECTOR_CAPACITY,                                          \
       (unsigned long long)(c)->vector_used,                                    \
       (unsigned)KEXE_VECTOR_ITEM_CAPACITY,                                     \
       (unsigned long long)(c)->vector_item_used
