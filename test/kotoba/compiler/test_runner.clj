@@ -15,6 +15,7 @@
             [kotoba.compiler.definition-identity-test]
             [kotoba.compiler.definition-identity-portable-test]
             [kotoba.compiler.provenance-portable-test]
+            [kotoba.compiler.surface-convergence-portable-test]
             [kotoba.compiler.uefi-operations-portable-test]
             [kotoba.compiler.coverage-test]
             [kotoba.compiler.coverage-evidence-test]
@@ -210,6 +211,7 @@
    ;; the count is the only thing that says so.
    'kotoba.compiler.definition-identity-portable-test
    'kotoba.compiler.provenance-portable-test
+   'kotoba.compiler.surface-convergence-portable-test
    'kotoba.compiler.uefi-operations-portable-test
    'kotoba.compiler.coverage-test
    'kotoba.compiler.coverage-evidence-test

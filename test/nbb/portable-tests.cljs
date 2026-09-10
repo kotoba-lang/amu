@@ -23,6 +23,7 @@
             [kotoba.compiler.fuel-estimate-portable-test]
             [kotoba.compiler.portable-surface-test]
             [kotoba.compiler.provenance-portable-test]
+            [kotoba.compiler.surface-convergence-portable-test]
             [kotoba.compiler.uefi-operations-portable-test]))
 
 (def namespaces
@@ -31,6 +32,7 @@
     kotoba.compiler.fuel-estimate-portable-test
     kotoba.compiler.portable-surface-test
     kotoba.compiler.provenance-portable-test
+    kotoba.compiler.surface-convergence-portable-test
     kotoba.compiler.uefi-operations-portable-test])
 
 (def ^:private on-disk
