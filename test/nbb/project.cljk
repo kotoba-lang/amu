@@ -790,8 +790,6 @@
               "namespace clause :import is not admitted: host interop (a Java / JS class) is outside the language; the admitted clauses are :export, :capabilities, :schemas, :params and :require"]
              [":require-macros" "(:require-macros [m :refer [x]])"
               "namespace clause :require-macros is not admitted: macros are outside the language; the admitted clauses are :export, :capabilities, :schemas, :params and :require"]
-             [":refer-clojure" "(:refer-clojure :exclude [read])"
-              "namespace clause :refer-clojure is not admitted: there is no clojure.core to exclude from; the admitted clauses are :export, :capabilities, :schemas, :params and :require"]
              [":use" "(:use [m])"
               "namespace clause :use is not admitted: an unqualified ambient namespace is outside the language; the admitted clauses are :export, :capabilities, :schemas, :params and :require"]
              ;; The control: a head nobody listed is still the generic refusal.
@@ -800,6 +798,65 @@
       (when-let [failure (rejects #(project/link-source
                                     {'root (str "(ns root (:export [main]) " clause ")\n(defn main [] :i64 1)")}
                                     'root)
+                                  expected)]
+        (throw (js/Error. (str label ": " failure)))))))
+
+;; `(:refer-clojure :exclude/:only [...])` is a NO-OP (guest-grammar `:ns
+;; :refer-clojure`, 2026-09-11): there is no clojure.core to narrow, so the
+;; clause means nothing, and the linker strips it with `:require` before the
+;; frontend reads the module. The assertion that matters is that the LINKED
+;; SOURCE is byte-identical with and without the clause -- that is what makes
+;; the definition CIDs the same (measured through `amu definition-cids` in the
+;; commit that landed this). What stays refused is refused BY NAME.
+
+(defn- rc-calc [clause]
+  (str "(ns example.calc " clause " (:require [example.math :as math]) (:export [compute]))\n"
+       "(defn compute [n :i64] :i64 (+ (math/double-it n) 1))"))
+
+(check "refer-clojure-is-a-no-op"
+  (fn []
+    (let [link (fn [calc] (:source (project/link-source {'example.math refer-math 'example.calc calc} 'example.calc)))
+          without (link (rc-calc ""))]
+      (assert (not (re-find #"refer-clojure" without)))
+      (doseq [clause ["(:refer-clojure :exclude [update])"
+                      "(:refer-clojure :only [inc])"
+                      "(:refer-clojure :exclude [update] :only [inc])"
+                      "(:refer-clojure :exclude [])"
+                      "(:refer-clojure)"]]
+        (assert (= without (link (rc-calc clause)))
+                (str "the linked source differs with " clause)))
+      ;; After the other clauses, and beside all five admitted ones, still a no-op.
+      (assert (= without
+                 (link (str "(ns example.calc (:require [example.math :as math]) (:export [compute]) (:refer-clojure :exclude [update]))\n"
+                            "(defn compute [n :i64] :i64 (+ (math/double-it n) 1))"))))
+      (assert (= 41 (run-compute (str "(ns example.calc (:refer-clojure :exclude [update]) (:require [example.math :as math :refer [double-it]]) (:export [compute]))\n"
+                                      "(defn compute [n :i64] :i64 (+ (double-it n) 1))")))))))
+
+(check "refer-clojure-refusals-are-by-name"
+  (fn []
+    (doseq [[label calc expected]
+            [[":rename"
+              (rc-calc "(:refer-clojure :rename {update up})")
+              "namespace clause :refer-clojure :rename is not admitted: renaming changes name resolution; :exclude and :only are admitted as no-ops"]
+             ["an option nobody declared"
+              (rc-calc "(:refer-clojure :frobnicate [update])")
+              "namespace clause :refer-clojure option :frobnicate is not admitted; the admitted options are :exclude and :only"]
+             ["a non-symbol entry"
+              (rc-calc "(:refer-clojure :exclude [\"update\"])")
+              "namespace clause :refer-clojure :exclude takes a bounded vector of simple symbols"]
+             ["a qualified entry"
+              (rc-calc "(:refer-clojure :only [clojure.core/inc])")
+              "namespace clause :refer-clojure :only takes a bounded vector of simple symbols"]
+             ["an odd option list"
+              (rc-calc "(:refer-clojure :exclude)")
+              "namespace clause :refer-clojure takes :exclude [sym ...] and/or :only [sym ...]"]
+             ["a repeated option"
+              (rc-calc "(:refer-clojure :exclude [update] :exclude [inc])")
+              "namespace clause :refer-clojure repeats an option"]
+             ["a second :refer-clojure clause"
+              (rc-calc "(:refer-clojure :exclude [update]) (:refer-clojure :only [inc])")
+              "namespace admits :refer-clojure at most once"]]]
+      (when-let [failure (rejects #(project/link-source {'example.math refer-math 'example.calc calc} 'example.calc)
                                   expected)]
         (throw (js/Error. (str label ": " failure)))))))
 

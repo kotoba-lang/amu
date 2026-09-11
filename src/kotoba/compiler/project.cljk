@@ -177,13 +177,63 @@
 
 (def ^:private refused-namespace-clauses
   "Clause head -> why it stays outside the language. Named in the refusal so
-  a census can tell them apart; none is admitted."
+  a census can tell them apart; none is admitted. (`:refer-clojure` left this
+  set on 2026-09-11: it is a no-op, see `validate-refer-clojure-clauses!`.)"
   {:import "host interop (a Java / JS class) is outside the language"
    :require-macros "macros are outside the language"
    :use "an unqualified ambient namespace is outside the language"
-   :refer-clojure "there is no clojure.core to exclude from"
    :load "loading source at run time is outside the language"
    :gen-class "host interop is outside the language"})
+
+;; `(:refer-clojure :exclude [sym ...])` / `(:refer-clojure :only [sym ...])`
+;; is admitted as a NO-OP (kotoba-lang `lang/guest-grammar.edn` `:ns
+;; :refer-clojure`, 2026-09-11). On a Clojure host the clause only NARROWS
+;; what `ns` auto-refers from clojure.core; Kotoba refers nothing from
+;; clojure.core, so it has no meaning and no effect. Refusing it bought no
+;; safety and cost every dual-runtime module that shadows a core name
+;; (measured 2026-09-11 on the project route: 19 of the compiler's own 181
+;; sources were refused for this clause alone, all of them `:exclude`).
+;; Implementation state, not a property: a module carrying the clause links
+;; and analyses identically to the same module without it -- the linker
+;; strips it with `:require` (`without-requires`) before the frontend reads
+;; the module, so the definition CIDs are the same.
+;;
+;; What stays refused, by name: `:rename` (it DOES change name resolution),
+;; any other option key, a repeated option, a non-symbol entry, and a second
+;; `:refer-clojure` clause. The messages are the frontend's, verbatim, so the
+;; two routes answer one sentence.
+(def ^:private refer-clojure-option-keys #{:exclude :only})
+
+(defn- refer-clojure-clause? [clause]
+  (and (seq? clause) (= :refer-clojure (first clause))))
+
+(defn- validate-refer-clojure-clauses!
+  "Shape-check every `(:refer-clojure ...)` clause of one module header."
+  [module-name clauses]
+  (when (> (count clauses) 1)
+    (reject! "namespace admits :refer-clojure at most once" {:namespace module-name :clauses (vec clauses)}))
+  (doseq [clause clauses]
+    (let [options (rest clause)
+          data {:namespace module-name :clause clause}]
+      (when-not (even? (count options))
+        (reject! "namespace clause :refer-clojure takes :exclude [sym ...] and/or :only [sym ...]" data))
+      (let [pairs (partition 2 options)
+            keys-seen (map first pairs)]
+        (doseq [k keys-seen]
+          (when (= :rename k)
+            (reject! "namespace clause :refer-clojure :rename is not admitted: renaming changes name resolution; :exclude and :only are admitted as no-ops" data))
+          (when-not (contains? refer-clojure-option-keys k)
+            (reject! (str "namespace clause :refer-clojure option " (pr-str k)
+                          " is not admitted; the admitted options are :exclude and :only")
+                     data)))
+        (when (not= (count keys-seen) (count (distinct keys-seen)))
+          (reject! "namespace clause :refer-clojure repeats an option" data))
+        (doseq [[k names] pairs]
+          (when-not (and (vector? names)
+                         (<= (count names) sema/max-functions)
+                         (every? simple-symbol? names))
+            (reject! (str "namespace clause :refer-clojure " (pr-str k) " takes a bounded vector of simple symbols")
+                     data)))))))
 
 (defn- synthetic-refer-alias
   "The alias a `[m :refer [...]]` spec gets when the author gave none. It
@@ -335,12 +385,15 @@
       (when-let [stray (first (filter map? clauses))]
         (reject! "namespace attr-map must follow the docstring: (ns NAME DOCSTRING? ATTR-MAP? CLAUSE ...)"
                  {:namespace name :clause stray}))
+      ;; `(:refer-clojure ...)` is validated and then DROPPED: a no-op that
+      ;; counts toward nothing below and appears at most once.
+      (validate-refer-clojure-clauses! name (filter refer-clojure-clause? clauses))
       (loop [remaining (if attr-map
                          (sema/namespace-attr-map->clauses
-                          attr-map clauses
+                          attr-map (remove refer-clojure-clause? clauses)
                           (fn [message data code]
                             (reject! message {:namespace name :attr-map data :code code})))
-                         clauses)
+                         (remove refer-clojure-clause? clauses))
              exports nil requires [] capabilities nil schemas nil params nil]
         (if-let [clause (first remaining)]
           (cond
@@ -381,9 +434,9 @@
             ;; A clause head this loop knows and REFUSES is named, so a
             ;; histogram of refusals can tell host interop (`:import`), a
             ;; macro harness (`:require-macros`) and a Clojure-only
-            ;; declaration (`:refer-clojure` / `:use`) apart from one another
-            ;; and from a malformed admitted clause. Nothing here is admitted:
-            ;; these have no meaning in a language without a host.
+            ;; declaration (`:use`) apart from one another and from a
+            ;; malformed admitted clause. Nothing here is admitted: these
+            ;; have no meaning in a language without a host.
             (and (seq? clause) (contains? refused-namespace-clauses (first clause)))
             (reject! (str "namespace clause " (pr-str (first clause)) " is not admitted: "
                           (get refused-namespace-clauses (first clause))
@@ -442,10 +495,14 @@
         (reject! "modules declare the same schema name with different definitions"
                  {:schema schema :modules [a b]})))))
 
-;; The two clauses only the linker reads. `:require` has always been stripped
+;; The clauses only the linker reads. `:require` has always been stripped
 ;; here; `:params` joins it because, by the time a template reaches the
 ;; frontend, every parameter it named has been substituted away and the
 ;; clause would be a declaration of symbols that no longer occur.
+;; `:refer-clojure` is stripped too (2026-09-11): it is a no-op already
+;; validated by `module-info`, so the linked source a module with the clause
+;; hands to the frontend is byte-identical to the one without it -- one
+;; analysis, one set of definition CIDs -- whatever the frontend would say.
 (defn- without-requires [forms]
   (mapv (fn [form]
           (if (and (seq? form) (= 'ns (first form)))
@@ -453,7 +510,7 @@
               (list* op name
                      (keep (fn [clause]
                              (cond
-                               (and (seq? clause) (contains? #{:require :params} (first clause)))
+                               (and (seq? clause) (contains? #{:require :params :refer-clojure} (first clause)))
                                nil
                                ;; The attr-map spelling of `:params` is the
                                ;; linker's too; strip the key, keep the map
