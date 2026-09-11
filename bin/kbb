@@ -1,0 +1,43 @@
+#!/usr/bin/env node
+// kbb, the `--backend sci` door only, on this repository's own engine.
+//
+// The kbb cutover (ADR-2609112000, 3222b35d) rewrote every package.json
+// script to `kbb --backend sci <script.cljk>`. `kbb` is kotoba-lang/kotoba's
+// launcher and needs the org-babashka-nbb checkout beside it -- neither is
+// on a CI runner, so every `npm run` step on main answered `sh: 1: kbb: not
+// found` (measured 2026-09-11, every job since the cutover). This file is
+// the same door on the engine this repository already installs:
+// node_modules/nbb IS kotoba-lang/org-babashka-nbb (package.json pins the
+// fork), so `--backend sci` here means "run the .cljk on that engine", which
+// is exactly what the workspace launcher does with it.
+//
+// Only the sci door is provided. The other doors (`.kotoba` guests through
+// kbb_shim, the Clojure-CLI-shaped argv through kbb_deps) belong to
+// kotoba-lang/kotoba; asking for them here is refused by name rather than
+// approximated.
+"use strict";
+const { spawnSync } = require("node:child_process");
+const fs = require("node:fs");
+const path = require("node:path");
+
+const root = path.resolve(path.dirname(fs.realpathSync(__filename)), "..");
+const engine = process.env.KBB_ENGINE || path.join(root, "node_modules", "nbb", "cli.js");
+const args = process.argv.slice(2);
+
+if (!fs.existsSync(engine)) {
+  console.error(`kbb: engine not found at ${engine}; run \`npm ci\` (node_modules/nbb is the org-babashka-nbb fork) or set KBB_ENGINE`);
+  process.exit(3);
+}
+if (args[0] !== "--backend" || args[1] !== "sci") {
+  console.error("kbb: this repository's launcher provides the `--backend sci` door only; "
+    + "the .kotoba guest and Clojure-CLI-shaped doors are kotoba-lang/kotoba's bin/kbb");
+  process.exit(3);
+}
+const result = spawnSync(process.execPath, [engine, ...args.slice(2)], {
+  stdio: "inherit", env: process.env,
+});
+if (result.error) {
+  console.error(`kbb: unable to start the engine: ${result.error.message}`);
+  process.exit(70);
+}
+process.exit(result.status ?? 70);
