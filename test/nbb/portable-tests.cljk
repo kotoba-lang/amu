@@ -36,14 +36,18 @@
     kotoba.compiler.uefi-operations-portable-test])
 
 (def ^:private on-disk
-  "The `*_portable_test.cljc` files under test/kotoba/compiler, so a new one
+  "The `*_portable_test.cljk` files under test/kotoba/compiler, so a new one
   cannot be added without either registering it here or turning this red.
-  `portable_surface_test.cljc` does not carry the suffix, so it is named."
+  `portable_surface_test.cljk` does not carry the suffix, so it is named.
+  The spelling is `.cljk` since the 2026-09-11 rename (root ADR-2609111500);
+  with `.cljc` still here this scan found 0 files on disk against 7
+  registered and refused to report a pass -- exit 2, the right answer for
+  a scan that could not see its input, and the reason this line moved."
   (let [dir (path/join "test" "kotoba" "compiler")]
     (->> (.readdirSync fs dir)
-         (filter #(and (.endsWith % ".cljc")
-                       (or (.endsWith % "_portable_test.cljc")
-                           (= % "portable_surface_test.cljc"))))
+         (filter #(and (.endsWith % ".cljk")
+                       (or (.endsWith % "_portable_test.cljk")
+                           (= % "portable_surface_test.cljk"))))
          sort
          vec)))
 

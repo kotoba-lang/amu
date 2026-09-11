@@ -81,10 +81,10 @@
                   (nil? target)
                   (.startsWith target "wasm32"))
         filename (cond
-                   (= command "extract-native") "x86_64_cli.cljs"
-                   wasm? "wasm_cli.cljs"
-                   (.startsWith target "aarch64") "aarch64_cli.cljs"
-                   :else "x86_64_cli.cljs")]
+                   (= command "extract-native") "x86_64_cli.cljk"
+                   wasm? "wasm_cli.cljk"
+                   (.startsWith target "aarch64") "aarch64_cli.cljk"
+                   :else "x86_64_cli.cljk")]
     (.join path root "src" "kotoba" "compiler" "nbb" filename)))
 
 ;; Both nbb compiler entrypoint families require `kotoba.kir.admission`, whose
@@ -135,7 +135,7 @@
   to the wrong fix (measured 2026-08-18: the lock was byte-fresh, and the job
   ten minutes earlier on the same image resolved it without complaint)."
   [root nbb-cli]
-  (let [script (.join path root "scripts" "print-classpath.cljs")]
+  (let [script (.join path root "scripts" "print-classpath.cljk")]
     (cond
       (not (.existsSync fs (.join path root "deps-lock.edn")))
       {:reason "deps-lock.edn is not present"}

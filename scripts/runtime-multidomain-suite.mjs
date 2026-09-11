@@ -289,7 +289,7 @@ try {
   // perfgate bridge: nbb launcher -> clojure -M -m perfgate-qualify (the
   // POSIX-shell bridge was deleted; the nbb entrypoint is the supported route).
   report.qualification.perfgate = JSON.parse(execute("nbb",
-    [join(root, "scripts", "perfgate-qualify.cljs"), perfgateInput]));
+    [join(root, "scripts", "perfgate-qualify.cljk"), perfgateInput]));
   report.qualification.comparatorSetQualified
     = report.qualification.perfgate["comparator-set-qualified?"];
   report.qualification.broadFastestClaimQualified = false;
