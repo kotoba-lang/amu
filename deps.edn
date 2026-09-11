@@ -175,8 +175,8 @@
         ;; read 3e3f9748 while the file on disk hashed to 67561e57, and nothing
         ;; said so.
         ;;
-        ;;   grammar-sha256    7644f32d72e94728dd7dd4d534207cb6cccfb018d02856b3f4eccc39cbed66e8
-        ;;   kotoba-sema-pin   d17a490b7f7d5f6257293bdaa4567cd5fa286fb7
+        ;;   grammar-sha256    5b8af0f9db6ae93d44cc3a8c47d40eece4a8303274959fd5862a46f6a378bf1d
+        ;;   kotoba-sema-pin   b82c7bb3f9bf36ad23a494e76e869cd21ed1ffed
         ;;
         ;; `guest_grammar_vendor_test/authority-digest-history` ends with the
         ;; same digest, so the pin, the prose and the history move in one
@@ -548,7 +548,20 @@
          ;; osaho `kir/value.cljk` (`\b`) and kotoba-sema's own reader
          ;; (`\f`), the second required by every frontend module. Grammar copy
          ;; unchanged at 7644f32d: no head admitted or withdrawn.
-         "d17a490b7f7d5f6257293bdaa4567cd5fa286fb7"}
+         ;;
+         ;; 2026-09-12, d17a490 -> b82c7bb3 (kotoba-sema main, forward only,
+         ;; ahead 2 behind 0; adr-2609111900, the one-result-expression wall:
+         ;; 14 modules refused at measurement 15 and 272 defn forms in the
+         ;; corpus with several body forms, 218 of them a `when` / `when-not`
+         ;; guard before the result): a `defn` / `defn-` / `fn` body of several
+         ;; forms is one `do`, as `let`'s already was. Authority
+         ;; `:implicit-body-forms` moves the three heads from `:refuses` to
+         ;; `:sequences`; `loop` / `try` / `catch` stay refused. Grammar copy
+         ;; 7644f32d -> 5b8af0f9 (kotoba-lang 89e26ec7 = kotoba-sema b82c7bb3,
+         ;; byte-identical), APPENDED to `authority-digest-history`. Measured
+         ;; on wasm32-browser: a two-body defn / defn- / fn answers the LAST
+         ;; form (42), and the locked pin refused the same source.
+         "b82c7bb3f9bf36ad23a494e76e869cd21ed1ffed"}
         ;; ADR-2607266000 Phase B: these responsibilities moved out of this repo.
         ;;
         ;; The slice-value stream held this pin on purpose (ADR 0314), because
