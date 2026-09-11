@@ -336,7 +336,7 @@ reusing the unmodified `asymmetric-request-validation-chain`). Because
 process invocation, proving REAL cross-call persistence needed a
 different evidence shape than any prior ADR: a small, hand-written,
 test-only "driver" application component
-(`test/kotoba/compiler/component_composition_test.clj`'s own
+(`test/kotoba/compiler/component_composition_test.cljk`'s own
 `state-driver-wat`) issues 14 sequential calls to the real provider from
 within ONE exported function and ONE Wasmtime invocation, folding a
 pass/fail bit per step into a returned bitmask -- real execution returned

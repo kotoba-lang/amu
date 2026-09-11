@@ -21,7 +21,7 @@ change, on its own, with its own evidence.
 Two other things had accumulated in the same gap.
 
 **The ISA execution rows were never committed.** Four agents in a row added rows
-to `test/kotoba/compiler/isa_execution_test.clj`, ran them green as real
+to `test/kotoba/compiler/isa_execution_test.cljk`, ran them green as real
 processes on both ISAs, and left them uncommitted because this repository was
 outside each of their scopes. Each reproduced its rows in an ADR of the
 repository it *was* allowed to touch. Four ADRs is not a regression gate; the
@@ -98,7 +98,7 @@ test either way — a structured code is not a sentence someone can reword — a
 it belongs in its own change with its own evidence.
 
 `deps-lock.edn` is regenerated in this same commit
-(`nbb scripts/lock-classpath.cljs`). Its digest now matches the `deps.edn`
+(`nbb scripts/lock-classpath.cljk`). Its digest now matches the `deps.edn`
 beside it, so `bin/kotoba`'s JDK-free path resolves again rather than falling
 back.
 

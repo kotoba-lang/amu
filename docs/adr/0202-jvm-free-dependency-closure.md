@@ -47,7 +47,7 @@ the lock is an error, not a silently stale closure.
 
 Transitive pins genuinely conflict here: the root pins `kotoba-kir` at one
 commit and `artifact`, `kotoba-native` and `kotoba-verifier` pin three others.
-Choosing between them is `tools.deps`' job. `scripts/lock-classpath.cljs` runs
+Choosing between them is `tools.deps`' job. `scripts/lock-classpath.cljk` runs
 `clojure -Spath` **once, at authoring time**, and writes down what it decided.
 
 Re-implementing that resolution in nbb would have been the obvious
@@ -72,7 +72,7 @@ getting an answer.
   produces a **byte-identical** `.kexe` under either resolver.
 - **The property**: with `clojure` stubbed to exit 127 and a cold cache,
   `bin/kotoba -M check` and `-M compile --target aarch64-macos` both succeed.
-- **Fail-closed**, 11 cases in `test/nbb/classpath.cljs`, run by
+- **Fail-closed**, 11 cases in `test/nbb/classpath.cljk`, run by
   `npm run test-nbb-classpath` on nbb with `--classpath src` and nothing else —
   no JVM in the test for the JVM-free path. A stale lock, an unsupported
   version, an empty lock, a missing lock, a checkout at the wrong commit, and a

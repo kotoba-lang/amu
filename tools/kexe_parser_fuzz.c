@@ -256,7 +256,7 @@ static struct kexe_shared_v4 *fuzz_open(struct fuzz_cursor *cursor,
    * lesson. C23 made `NULL + 0` well defined; Apple clang 21 on the authoring
    * workstation says nothing, Apple clang 17 on fleet node simeon fails the
    * run. The gate was green locally and red on the fleet for a difference that
-   * is neither in the loader nor in the input. `scripts/fuzz-native.cljs` now
+   * is neither in the loader nor in the input. `scripts/fuzz-native.cljk` now
    * records the compiler in the summary so a verdict carries the toolchain
    * that produced it.
    *

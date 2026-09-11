@@ -63,7 +63,7 @@ async function waitAttribute(session, elementId, name, expected, attempts = 100)
 let session;
 try {
   child(process.execPath,
-    [path.join(root, "node_modules/nbb/cli.js"), path.join(root, "scripts/browser-fixture-server.cljs")],
+    [path.join(root, "node_modules/nbb/cli.js"), path.join(root, "scripts/browser-fixture-server.cljk")],
     { KOTOBA_BROWSER_ARTIFACTS: artifactDir, KOTOBA_BROWSER_PORT: String(fixturePort) });
   await waitFor(`http://127.0.0.1:${fixturePort}/health`);
   child("safaridriver", ["--port", String(driverPort)]);

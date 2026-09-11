@@ -30,7 +30,7 @@ launchers). Parent cljs blocks until the hop child exits.
 ### Evidence
 
 - provider#12 — `:cljs` implementation in `provider.http-transport`
-- `test/nbb/http-transport.cljs` — destination-literal, constructor, allow-list
+- `test/nbb/http-transport.cljk` — destination-literal, constructor, allow-list
   refuse, local echo POST through typed provider, outside-redirect decline
 - Pin `io.github.kotoba-lang/provider` → `393a02a3d0cb84f065d13905f67814376adcff67`
 

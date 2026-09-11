@@ -68,7 +68,7 @@ bytes are the two varints `0x01 0x55` and the sha2-256 multihash header
 
 A resolver that verified against its own private hash would accept every block
 it wrote and reject every lock the other route wrote, while looking exactly
-like this one. So `test/nbb/project.cljs` pins the result against vectors the
+like this one. So `test/nbb/project.cljk` pins the result against vectors the
 JVM produced, and the whole-graph `lock-cid` beside them.
 
 ### Three changes that are corrections, not ports
@@ -157,7 +157,7 @@ rather than a seal.
 
 ### Break/unbreak
 
-Two reverts in an isolated copy, `test/nbb/project.cljs` run against each.
+Two reverts in an isolated copy, `test/nbb/project.cljk` run against each.
 Control: **25 cases, 0 failures** (9 pre-existing, 16 new).
 
 | revert | result |
@@ -180,8 +180,8 @@ no --blocks:    exit 64, "--module-lock requires --blocks <dir>", marker absent
 
 | suite | this branch | base `93c4998` |
 |---|---|---|
-| `test/nbb/project.cljs` | 25 cases, 0 failed | 9 cases, 0 failed |
-| `scripts/test-nbb-wasm32.cljs` | 42 cases, 0 failed | 42 cases, 0 failed |
+| `test/nbb/project.cljk` | 25 cases, 0 failed | 9 cases, 0 failed |
+| `scripts/test-nbb-wasm32.cljk` | 42 cases, 0 failed | 42 cases, 0 failed |
 | `node scripts/test-amu-launcher.mjs` | see below | see below |
 
 ## Limits of this evidence

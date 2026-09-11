@@ -96,7 +96,7 @@ That primary Node front resolves its pinned source closure from
 `deps-lock.edn`, bound to the exact `deps.edn` digest. Amu CI checks the lock
 hermetically and compiles/executes a representative native artifact with JVM
 executables removed from `PATH`; every dependency pin change must regenerate
-the lock with `nbb scripts/lock-classpath.cljs`.
+the lock with `nbb scripts/lock-classpath.cljk`.
 
 Primary Wasm and ordinary-native compilation are policy-bound as well:
 `:budgets :fuel` controls the emitted Wasm module or sealed native fuel ABI
@@ -508,7 +508,7 @@ around representing `.kotoba`'s full signed-64-bit integer semantics as JS
 (`kotoba.compiler.kotoba-reader`) instead of the JVM-only
 `clojure.tools.reader` (its nominal ClojureScript sibling,
 `cljs.tools.reader`, depends on several `cljs.core` internals nbb's SCI
-interpreter doesn't resolve -- see that ns's docstring). `test/nbb/run.cljs`
+interpreter doesn't resolve -- see that ns's docstring). `test/nbb/run.cljk`
 (`npm run test-nbb-wasm32`) verifies that this path emits valid Wasm for every
 `examples/*.kotoba` fixture plus dedicated i64/sleb128 boundary cases (true
 i64 max/min, add-wraparound, the sleb continuation-bit crossing at 127/128).
@@ -581,7 +581,7 @@ shared dual-ISA test table.
 The restricted JavaScript target is selected with `--target js`. Since
 2026-09-06 it runs on the nbb/Node route like the Wasm and native targets
 (`bin/amu compile … --target js --jvm-free`; the emitter, `kotoba-lang/
-kotoba-script`, is portable `.cljc`), and `test/nbb/js_parity.cljs` holds the
+kotoba-script`, is portable `.cljc`), and `test/nbb/js_parity.cljk` holds the
 route to the JVM's bytes: the committed `runtime/http/route-decide.mjs` is the
 JVM's artifact and the nbb route reproduces it byte for byte, with the manifest
 and provenance equal as values. `cljs-browser` is the one JavaScript-family
@@ -1453,8 +1453,8 @@ being lost with the runner.
 Downloaded corpus artifacts are reviewed in dry-run mode before promotion:
 
 ```bash
-npx nbb scripts/review-fuzz-corpus.cljs path/to/artifact/corpus --dry-run
-npx nbb scripts/review-fuzz-corpus.cljs path/to/artifact/corpus --apply
+npx nbb scripts/review-fuzz-corpus.cljk path/to/artifact/corpus --dry-run
+npx nbb scripts/review-fuzz-corpus.cljk path/to/artifact/corpus --apply
 ```
 
 Promotion accepts only non-symlink regular files no larger than 1024 bytes,
@@ -1475,7 +1475,7 @@ An administrator can audit the live settings without exposing administration
 access to CI:
 
 ```bash
-npx nbb scripts/check-github-governance.cljs
+npx nbb scripts/check-github-governance.cljk
 ```
 
 The EDN is desired state; only a successful GitHub API readback establishes

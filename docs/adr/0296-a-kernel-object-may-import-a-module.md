@@ -128,7 +128,7 @@ is wrong", which is the same mistake pointed the other way.
 ## What each gate was shown to catch
 
 Every one was run red on a deliberate break and green unchanged, and the red
-had to be the gate's own sentence — `scripts/jdk-free-native-conformance.cljs`,
+had to be the gate's own sentence — `scripts/jdk-free-native-conformance.cljk`,
 section 1–8.
 
 | break | gate that fired |

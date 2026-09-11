@@ -105,7 +105,7 @@ Measured 2026-09-02 on macOS/arm64.
 - The same for `--target aarch64` → 520 bytes containing `FADD S`
   (`1e212800`), `FMUL S`, `FSQRT S`, `FCMP S`, `FCVT D,S`, `SCVTF S`, and
   **not** `FADD D` or `FMUL D`.
-- `test/kotoba/compiler/f32_native_execution_test.clj` — 7 tests, **81
+- `test/kotoba/compiler/f32_native_execution_test.cljk` — 7 tests, **81
   assertions**: real machine code, signed, verified and **executed** through
   `kototama.native.executor` on this host, every case compared **bit-for-bit
   against the KIR reference interpreter** rather than against a number written

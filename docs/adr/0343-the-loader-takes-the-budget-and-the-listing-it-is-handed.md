@@ -37,7 +37,7 @@ anything: the budget, the scope, the window.
 
 Three changes to `tools/kexe_loader.c`, each its own commit, each measured
 RED on the base loader and GREEN after on identical guest bytes, each with a
-JVM-free check in `scripts/jdk-free-native-conformance.cljs` (the JVM suite
+JVM-free check in `scripts/jdk-free-native-conformance.cljk` (the JVM suite
 cannot run until the artifact identity pin moves; this gate can).
 
 **KEXE_FUEL.** The loader reads a positive decimal budget from `KEXE_FUEL`

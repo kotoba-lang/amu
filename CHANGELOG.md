@@ -51,7 +51,7 @@ production-strength VM sandbox remain absent.
 - **Fuzzing infrastructure**: coverage- and sanitizer-guided (ASan/UBSan)
   fuzzing of the native loader and frontend parser, with corpus
   promotion/review tooling and CI coverage-regression gating
-  (`scripts/fuzz-native.cljs`, `scripts/review-fuzz-corpus.cljs`).
+  (`scripts/fuzz-native.cljk`, `scripts/review-fuzz-corpus.cljk`).
 - **nbb-native execution path**: `wasm32`/`wasm32-browser`/`wasm32-wasi`
   `compile`/`check` run entirely under `nbb` (ClojureScript on Node) with no
   JVM process spawned, sharing `.cljc` source with the JVM-compat path used

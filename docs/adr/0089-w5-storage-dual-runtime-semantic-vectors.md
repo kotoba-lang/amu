@@ -19,8 +19,8 @@ Production **cljs** storage transport remains unimplemented (JVM path ADR
 
 ## Evidence
 
-- `test/kotoba/compiler/storage_provider_test.clj` — existing vectors + denial
-- `test/nbb/storage-provider.cljs` — put boundary, missing/conflict, redaction,
+- `test/kotoba/compiler/storage_provider_test.cljk` — existing vectors + denial
+- `test/nbb/storage-provider.cljk` — put boundary, missing/conflict, redaction,
   invalid version fail-closed, denial (5 cases)
 - provider#5 — storage cljs i64 versions
 - State dual-runtime ADR 0088; family 4 dual-runtime intermediate evidence

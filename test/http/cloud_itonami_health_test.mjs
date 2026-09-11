@@ -13,7 +13,7 @@
 // separate, more precise claim -- the SAME `health_core.kotoba` source
 // agreeing between the JVM/KIR-interpreter oracle and this repo's
 // `:js-kotoba-v1` target across a battery of (method, path) inputs -- is
-// proven by scripts/cloud-itonami-health-parity.cljs, not here.
+// proven by scripts/cloud-itonami-health-parity.cljk, not here.
 import fs from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
@@ -23,7 +23,7 @@ const here = path.dirname(new URL(import.meta.url).pathname);
 const sha256 = p => createHash("sha256").update(fs.readFileSync(p)).digest("hex");
 const need = name => {
   const value = process.env[name];
-  if (!value) throw new Error(`${name} is required (set by scripts/cloud-itonami-health-route-e2e.cljs)`);
+  if (!value) throw new Error(`${name} is required (set by scripts/cloud-itonami-health-route-e2e.cljk)`);
   return value;
 };
 

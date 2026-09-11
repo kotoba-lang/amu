@@ -40,7 +40,7 @@ instantiate.
    `compile-source*`: same limits, same manifest, `provenance/attach` on the
    same result shape, four files written (`.mjs`, `.manifest.edn`,
    `.manifest.json`, `.provenance.edn`).
-3. **The parity claim is measured by `test/nbb/js_parity.cljs`** with
+3. **The parity claim is measured by `test/nbb/js_parity.cljk`** with
    `clojure`/`java` hidden from PATH: `runtime/http/route-decide.kotoba`
    compiles to the committed `runtime/http/route-decide.mjs` byte for byte
    (60,092 bytes — that file is the JVM's artifact at the same pin, refreshed
@@ -53,7 +53,7 @@ instantiate.
 
 ## Consequences
 
-- `scripts/http-service-e2e.cljs`'s drift gate no longer needs a JDK; its
+- `scripts/http-service-e2e.cljk`'s drift gate no longer needs a JDK; its
   header comment says so. The committed `route-decide.mjs` moved by one line:
   the previous file was compiled at kotoba-script `69f65b33`, and the emitter
   has since grown `linearValues`, `vectorAlloc` and `stringIndexOf` runtime
@@ -74,7 +74,7 @@ instantiate.
   consumer command carries `--unpinned` because the JVM refuses a path-resolved
   project without it, ADR-2608580000 D5, while the nbb route accepts either
   spelling -- recorded, not changed). For each,
-  `test/nbb/js_parity.cljs` compiles on the nbb route with the same flags and
+  `test/nbb/js_parity.cljk` compiles on the nbb route with the same flags and
   asserts the `.mjs` byte for byte and the `.manifest.edn` / `.provenance.edn`
   sidecars as EDN values, naming the first differing key when they diverge;
   the fuel golden must also carry `let fuel=4096;`. What the earlier golden

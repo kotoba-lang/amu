@@ -16,9 +16,9 @@ produced numbers that fail `typed-cap-call` result validation. Fixed in
 
 ## Evidence
 
-- `test/kotoba/compiler/state_provider_test.clj` — round-trip, isolation,
+- `test/kotoba/compiler/state_provider_test.cljk` — round-trip, isolation,
   capacity typed error, missing-grant denial
-- `test/nbb/state-provider.cljs` — same four vectors on cljs with bigint
+- `test/nbb/state-provider.cljk` — same four vectors on cljs with bigint
   versions
 - provider#4 — cljs i64 version counters
 - State wasm packaging already landed (ADR 0060/0061 `state-provider-wat`)

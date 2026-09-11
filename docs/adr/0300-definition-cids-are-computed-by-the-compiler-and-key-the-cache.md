@@ -16,7 +16,7 @@ identity is its canonical typed KIR plus five other sealed inputs, and
 kotoba-kir has implemented that identity for as long. Nothing computed one.
 Measured on this repository at `ca869d79`, `definition-cid` appeared in exactly
 one place — as an unpopulated field name in
-`src/kotoba/compiler/logic_manifest.cljc`. No compiled function had an
+`src/kotoba/compiler/logic_manifest.cljk`. No compiled function had an
 identity, so:
 
 - a package lock could pin `:dep/definition-cids`, and no build could produce
@@ -191,7 +191,7 @@ once, so a duration measures the machine's mood while a count measures the
 cache. `:unmeasured` when there was no material, so "the cache was not asked"
 and "the cache missed" do not print the same thing.
 
-`scripts/test-definition-cid-cache.cljs`, driving a real worker over its NDJSON
+`scripts/test-definition-cid-cache.cljk`, driving a real worker over its NDJSON
 protocol:
 
 | scenario | artifact cache | `:wasm` stage | definitions recompiled | `.wasm` |
@@ -218,7 +218,7 @@ but still a lie about what the number means.
 is emitted once for every backend on both routes rather than at each call site.
 **This changes `.provenance.edn` bytes for every artifact**, deliberately. The
 `.wasm` bytes are unchanged, and
-`scripts/test-policy-bound-provenance.cljs` — which asserts the JVM and nbb
+`scripts/test-policy-bound-provenance.cljk` — which asserts the JVM and nbb
 sidecars are byte-identical — now covers the new key too.
 
 A result whose backend carries no typed KIR gets a named reason
@@ -286,10 +286,10 @@ with
 
 ```clojure
 :ci8 {:status :implemented
-      :evidence ["kotoba-lang/amu src/kotoba/compiler/definition_identity.cljc"
-                 "kotoba-lang/amu test/kotoba/compiler/definition_identity_test.clj"
-                 "kotoba-lang/amu scripts/test-definition-cid-parity.cljs"
-                 "kotoba-lang/amu scripts/test-definition-cid-cache.cljs"
+      :evidence ["kotoba-lang/amu src/kotoba/compiler/definition_identity.cljk"
+                 "kotoba-lang/amu test/kotoba/compiler/definition_identity_test.cljk"
+                 "kotoba-lang/amu scripts/test-definition-cid-parity.cljk"
+                 "kotoba-lang/amu scripts/test-definition-cid-cache.cljk"
                  "kotoba-lang/amu docs/adr/0300-definition-cids-are-computed-by-the-compiler-and-key-the-cache.md"]
       :note "The compiler mints a payload-v2 DefCID per top-level function on
              both the JVM and the JDK-free nbb route, byte-identical across the

@@ -212,7 +212,7 @@ validate`), not hand-assembled WAT, and every Wasmtime invocation ran the
   real cross-call persistence** (qualitatively different from every prior
   ADR's "round-trips unchanged" evidence, which only ever needed a single
   call). `state-driver-wat`/`state-driver-wit`
-  (`test/kotoba/compiler/component_composition_test.clj`) build a small,
+  (`test/kotoba/compiler/component_composition_test.cljk`) build a small,
   hand-written, test-only "driver" application component -- necessary
   because `wasmtime run --invoke` instantiates the composed component
   FRESH on every process invocation (confirmed via `wasmtime run --help`:

@@ -61,7 +61,7 @@ So a widely-threaded record now reads:
 
 ## A gap this uncovered: the test namespace was never in the gate
 
-`clojure -M:test` runs an explicit list in `test/kotoba/compiler/test_runner.clj`
+`clojure -M:test` runs an explicit list in `test/kotoba/compiler/test_runner.cljk`
 — both a `:require` vector and a second literal list inside `-main`.
 `record-projection-sugar-test`, added by ADR 0189 (#441) and extended by #442,
 was in **neither**. The suite reported an unchanged `716 tests / 6104

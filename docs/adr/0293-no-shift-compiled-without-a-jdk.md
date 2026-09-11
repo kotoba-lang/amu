@@ -34,7 +34,7 @@ Nothing in this repository could see it, and the reason is structural rather
 than an oversight:
 
 - `clojure -M:test` runs the JVM route, where the rule holds.
-- `scripts/jdk-free-native-conformance.cljs` runs the JDK-free route — and its
+- `scripts/jdk-free-native-conformance.cljk` runs the JDK-free route — and its
   fixtures (`i64-semantics`, `structured`, `nested-record`, `held-operations`,
   `many-constants`) contain no shift. It could have seen it and had nothing to
   look at.
@@ -51,7 +51,7 @@ the PersistentArrayMap boundary. Same host difference, different symptom.
 ## Decision
 
 1. `examples/i64-shift.kotoba` covers all three i64 shifts, and joins the
-   executed case list in `scripts/jdk-free-native-conformance.cljs` with
+   executed case list in `scripts/jdk-free-native-conformance.cljk` with
    `mixed(-8) = -67` measured by running the artifact under the W^X loader.
    The `+1` at `x = -8` is contributed only by the LOGICAL right shift, so
    swapping `u64-shift-right` for `i64-shift-right` gives `-68` and the three
@@ -63,7 +63,7 @@ the PersistentArrayMap boundary. Same host difference, different symptom.
    half is pinned in kotoba-verifier's own `.cljc` test, which runs on both
    hosts.
 
-2. `scripts/native-route-parity.cljs` (`npm run test-native-route-parity`)
+2. `scripts/native-route-parity.cljk` (`npm run test-native-route-parity`)
    compiles a fixture on both routes and compares the object bytes. It needs a
    JDK, which is why it is a separate driver rather than a case in the
    conformance script. It exits **3**, not 0 and not 1, when it cannot reach
