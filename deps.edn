@@ -153,8 +153,8 @@
         ;; read 3e3f9748 while the file on disk hashed to 67561e57, and nothing
         ;; said so.
         ;;
-        ;;   grammar-sha256    c308cc04f7cb7568d214917288f6f06a61539cb6ad6a68056dc6036ade8f0448
-        ;;   kotoba-sema-pin   6a35ed4a9217f58005e315eb8bd27aebbe49aa95
+        ;;   grammar-sha256    11fd920ceabccedf5f4edc148b8167d6f182bc4a66475dbbe4ecb8bd88200388
+        ;;   kotoba-sema-pin   597cda44fe0c91fc50bf196f1cf15f8c3fe70ad6
         ;;
         ;; `guest_grammar_vendor_test/authority-digest-history` ends with the
         ;; same digest, so the pin, the prose and the history move in one
@@ -448,7 +448,28 @@
          ;; definition-cids --jvm-free` on `(def k 4096)` + a reader and on
          ;; `(def k (* 4 1024))` + the same reader mints byte-identical
          ;; output at this pin.
-         "6a35ed4a9217f58005e315eb8bd27aebbe49aa95"}
+         ;;
+         ;; 2026-09-11, 6a35ed4a -> 597cda44 (kotoba-sema main, forward only
+         ;; by `gh api .../compare`, ahead 2 behind 0; adr-2609111900). kotoba-sema
+         ;; 8720979: the `map` callback is refused by its CAUSE -- the one
+         ;; sentence `N-source map fn requires matching unique parameters and
+         ;; one expression` (7 of this compiler's 208 sources at 6e56b1d8,
+         ;; and all 7 were ONE site: `(map (fn [[k v]] ...) x)` in
+         ;; kotoba.artifact.core/edn-safe reached through `into`'s transducer
+         ;; rewrite) becomes eight: parameter vector / count / destructuring /
+         ;; duplicates / empty body / several forms / literal / not-a-head.
+         ;; Destructuring is IMPLEMENTATION STATE (the item of a vector-i64
+         ;; source has no positions; it moves when the source model does),
+         ;; several body forms is the profile's one-expression rule (`fn` and
+         ;; `defn` in `:implicit-body-forms :refuses`), a keyword / partial /
+         ;; comp callback has no value model. The stored-callback path now
+         ;; REQUESTS its dispatcher, so `(defn f [g xs] (map g xs))` in a
+         ;; module with no lambda of arity 1 compiles instead of answering
+         ;; with a synthesized name. The grammar copy moved with it, c308cc04
+         ;; -> 11fd920c (`:sugar :map` gains `:callback`), APPENDED to
+         ;; `authority-digest-history`. CID control: the HIR sha256 of four
+         ;; already-admitted map shapes is identical at 6a35ed4a and here.
+         "597cda44fe0c91fc50bf196f1cf15f8c3fe70ad6"}
         ;; ADR-2607266000 Phase B: these responsibilities moved out of this repo.
         ;;
         ;; The slice-value stream held this pin on purpose (ADR 0314), because
