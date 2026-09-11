@@ -8,6 +8,7 @@
 (def root (.resolve path (.dirname path *file*) ".."))
 (def tmp (.mkdtempSync fs (.join path (.tmpdir os) "kotoba-browser-matrix-")))
 (def kotoba (.join path root "bin" "kotoba"))
+(def amu (.join path root "bin" "amu"))
 (def nbb-cli (.join path root "node_modules" "nbb" "cli.js"))
 (defn run! [command args env]
   (let [result (.spawnSync child command (clj->js args)
@@ -24,16 +25,17 @@
 (defn compile-web!
   "Emit a restricted-ESM artifact for the DOM app-driver lane.
 
-  Unlike the wasm32 compiles above this one is NOT on the JDK-free fast path:
-  `bin/kotoba` routes every non-wasm/native target to `clojure -M:run`, because
-  the web backend (kotoba-lang/kotoba-script) is JVM-only Clojure with no nbb
-  entrypoint. Said out loud rather than discovered as a confusing JVM spawn --
-  the browser matrix needs a JDK for this artifact and only this one."
+  On the nbb route since ADR 0340 (`js_cli.cljk`; `bin/amu` lists `js-browser`
+  in `nbbJsTargets`). This said `needs a JDK` until 2026-09-11 and went
+  through `bin/kotoba`, which still routes js targets to `clojure -M:run` --
+  and after the .cljk rename that JVM route cannot load `kotoba.compiler.cli`
+  at all, so the required `browser-matrix (ubuntu-latest)` check failed at
+  this line on every commit. `--jvm-free` makes the fall-back a refusal
+  rather than a JVM spawn."
   [source output]
-  (println (str "browser-matrix: compiling " source
-                " for the web target (needs a JDK; the web backend is JVM-only)"))
-  (nbb! [kotoba "-M" "compile" (.join path root source)
-         "--target" "js-browser" "--output" (.join path tmp output)] {}))
+  (println (str "browser-matrix: compiling " source " for the web target (nbb route)"))
+  (run! amu ["compile" (.join path root source)
+             "--target" "js-browser" "--output" (.join path tmp output) "--jvm-free"] {}))
 
 (try
   (compile! "examples/structured.kotoba" "program.wasm")
