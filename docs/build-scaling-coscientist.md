@@ -443,3 +443,148 @@ zeros. Re-inserted correctly, the same four report 2, 2, 0, 0.
 A probe that failed to install and a probe that installed and found nothing
 print the same thing. The `grep -c` that reads them cannot tell the
 difference.
+
+## Iteration 4 — 2026-09-11: the lane had no compiler, and then a slower one
+
+Not a compiler-speed iteration. Before any hypothesis could be measured, the
+Amu lane had to produce a number at all, and for most of this day it could not.
+
+### The barrier
+
+Root ADR-2609111500 renamed every `.clj` / `.cljs` / `.cljc` in the workspace
+to `.cljk` (kotoba-lang/amu#934, merged 14:13 JST), by owner decision and with
+no compatibility mirror. Measured on `origin/main` `e7c3814a` immediately
+after: `bin/amu check` exits 1 with `ENOENT … wasm_cli.cljs` at every size —
+the driver names the six `*_cli` files by bare basename, which the rename's
+exact-path substitution could not see — and behind that, the stock nbb
+1.5.212 in `node_modules` cannot `require` a `.cljk` namespace at all. Per
+this loop's own scoring rule, that is not a slow lane; it is the absence of
+one, at every K.
+
+This ranks above every speed hypothesis (a barrier that makes a size
+unmeasurable outranks a win at a size that measures), so it is what this
+iteration did. Two sessions did it in parallel: amu#935 (landed first) and
+amu#936 both make the driver and the launcher scripts name the `.cljk` files,
+regenerate `deps-lock.edn` for the digest the rename moved, and point
+`node_modules/nbb` at the workspace's `.cljk`-resolving fork. #935 is the one
+on `main`; what survives of #936 is the engine below, two script paths #935
+did not reach, and this record.
+
+### The engine was the next barrier, and it was measured before it landed
+
+The fork that existed at 14:00 (`org-babashka-nbb@33575ae`) sat on nbb
+**1.4.208**. With the compiler source held fixed — the pre-rename tree, so
+nothing but `node_modules/nbb/cli.js` differs — K=384, `amu check`, ABAB ×3,
+one host at `load1` 22–37:
+
+| engine | run 1 | run 2 | run 3 |
+|---|---:|---:|---:|
+| fork on 1.4.208 | 5695 | 5637 | 5457 |
+| stock 1.5.212 | 3507 | 3728 | 3572 |
+
+**~1.45× slower for the same work.** Adopting that fork to fix the barrier
+would have moved every Amu cell in the scoreboard backwards by that ratio and
+attributed it to nothing. The fork was rebased onto 1.5.212 instead
+(`org-babashka-nbb@a28e1901`; the one patch is the same 10-line probe list):
+
+| engine | run 1 | run 2 | run 3 |
+|---|---:|---:|---:|
+| fork on 1.5.212 (post-rename tree) | 3691 | 3893 | 3858 |
+| fork on 1.4.208 (post-rename tree) | 5555 | 5325 | 5805 |
+
+The engine runs every `kbb` hook and script in the workspace, not only Amu,
+so the west pin for it moved the same day.
+
+**Nothing observable changed** across the barrier fix: `amu check` output at
+K=128 and the wasm32 emission at K=1023 (89,477 bytes, `main() = 1023` when
+instantiated) are byte-identical between the pre-rename tree on stock 1.5.212
+and the restored tree on the rebased fork.
+
+### Where the time is now — measured, busy host, shape only
+
+`amu check` through `bin/amu`, restored route, 3 samples per point, `load1`
+19–38 (worse than iteration 3's window; seconds are not portable):
+
+| K | ms | marginal ms / function |
+|---:|---:|---:|
+| 1 | 1583–1683 | — |
+| 128 | 2824–3020 | ~10 |
+| 384 | 5047–5484 | ~9 |
+| 768 | 8917–9056 | ~10 |
+| 1023 | 11358–11571 | ~10 |
+
+The marginal cost is flat across 8× K on this host. Iteration 1's 8.9 → 23.5
+ms growth is gone; what iteration 2 (reader) and iteration 3
+(`infer-closure-refinements`) left is, at these sizes, within the noise of a
+loaded machine. **That is not a proof of linearity** — a quiet host and the
+per-binding probes are what would show a surviving term — but the exponent is
+no longer the first-order problem. The constant factor is:
+
+| component of the K=1 cost | ms | how measured |
+|---|---:|---|
+| `nbb -e '(+ 1 2)'` | ~160 | bare engine startup |
+| `bin/amu` driver (classpath cache hit, spawn) | ~150 | `bin/amu` minus a direct `wasm_cli.cljk` invocation |
+| loading the compiler's namespaces into SCI | ~1300 | the remainder |
+
+The classpath resolver (`print-classpath.cljk`, ~460 ms) is already cached in
+`os.tmpdir()` keyed by the `deps.edn` digest and is not on the warm path. The
+1.3 s is SCI reading and evaluating the compiler's own source on every process
+start. No cache in Amu can remove it; only a route that does not interpret the
+compiler can — the released native CLI (rank 2 / 2a above), or the compiler
+compiled by itself.
+
+### The same curve on a quiet host — H-3 closed
+
+The rank-4 item was cheap enough to do in the same hour. The PR commit
+(`f58f3d86`) staged on fleet node `naphtali` (Apple M4, 10 cores, 16 GiB,
+macOS 26.2, `0 users`, `load1` 1.5–3.0 before and after — quiet-host probe
+2026-09-11 15:23 JST reported 8 of 9 nodes under the 0.10 busy fraction),
+`bin/amu check`, 5 process-cold samples per point, the same generated
+workload and fuel policy as the published run:
+
+| K | ms (5 samples) | marginal ms / function |
+|---:|---|---:|
+| 1 | 1099 1098 1095 1096 (+ one cold-cache 2517) | — |
+| 128 | 1599 1577 1577 1589 1577 | 3.8 |
+| 384 | 2316 2375 2318 2335 2341 | 2.95 |
+| 768 | 3484 3499 3497 3517 3512 | 3.03 |
+| 1023 | 4223 4298 4291 4278 4233 | 2.98 |
+
+Least squares on the medians: **`1143 + 3.06·K` ms, largest residual 50 ms.**
+Fitting a quadratic gives a coefficient of **−0.0002 ms/K²** — the sign of a
+term that is not there. The published run's `0.00616·K²` (6.4 s of the 8.5 s
+that K=1023 cost above its intercept) is gone, and its `2.02·K` slope is now
+3.06 on this host through the nbb route the published run measured Amu on
+(the two hosts are the same model; the intercept moved from 733 to 1143 ms,
+which is the same SCI-loading cost measured on a different day and a
+different `node`, v22 here).
+
+`amu compile --target wasm32` at K=1023 on the same node: **5201 / 5280 /
+5207 ms** against the published **9242 ms** — 1.77×. The emitted module is
+sha256 `7df99f14…` on the node and on the workstation alike, 89,477 bytes,
+`main() = 1023` when instantiated.
+
+**H-3 is closed on a quiet host: the front end is linear in K at every size
+the language admits.** What is left is the intercept and the slope, and both
+belong to the route (SCI interpreting the compiler), not to any pass.
+
+### Ranking after iteration 4
+
+| rank | action | why |
+|---:|---|---|
+| 1 | **Land the 1.5.212 engine and advance the west pin** | #935 restored the route on the 1.4.208 fork, so `main` at `adb05c20` has a number at every K — ~1.45× slower than it needs to be |
+| 2 | **Cut `v0.7.4` / advance `kotoba-lang/kotoba`'s Amu pin** | unchanged from iteration 1, but the rename adds a new fact: the released CLI is built by GraalVM from the JVM route, and the JVM route cannot load `.cljk`. Advancing that pin past `e9b58163` now needs a JVM-side loader for the new spelling, or the native CLI is frozen at a pre-rename Amu forever. **Owner-level; not decided here** |
+| 3 | Constant factor: 1.3 s of SCI namespace loading | the whole intercept; unreachable from inside Amu, reachable only by rank 2 |
+| ~~4~~ | ~~Confirm linearity on a quiet host~~ | **done above** — `1143 + 3.06·K`, no quadratic term on `naphtali` |
+| 5 | Correct the multi-module sentence; decide the whole-program bound | unchanged |
+
+### What still does not run, and is not this iteration's
+
+`test-nbb-js` (10 parity diffs against pinned JVM fixture bytes) is red on the
+pre-rename tree with stock nbb too — an older failure. Every launcher that
+reaches `clojure -M:run` (`test-policy-bound-provenance`,
+`test-output-set-publisher-auth`, `test-definition-cid-parity`, and the
+`amu keygen` / `amu sign` commands) fails with
+`Could not locate kotoba/compiler/cli.clj` — the JVM route does not load
+`.cljk`, which the rename ADR accepts as fix-forward. That is the same fact as
+rank 2's second sentence, seen from the other side.
