@@ -137,6 +137,23 @@ paths"` (65).
 JVM-only namespaces in the CLI's reach: 9 → **7**, all now in `kotoba-component` /
 `kotoba-wasm` (external) or above them (`core`, `test-profile`, `cli`).
 
+## Iteration 4 (2026-09-11): the first leaf outside amu
+
+`kotoba.wasm.tools` (kotoba-lang/kotoba-wasm) — the 50-line seam to the pinned
+`wasm-tools` binary, the level-1 leaf `kotoba.component.core` stands on — is portable at
+kotoba-wasm `f5fdbc5a`, pinned here. The Node branch spawns the same commands through
+`node:child_process` with no shell and a private `mkdtemp`; the version pattern is one
+text on both hosts (the JVM's `\Q..\E` has no JavaScript form, so the dots are escaped by
+hand and a test pins that `1x243x0` is refused). `wasm-tools-portable-test` runs the real
+pinned binary — a WAT module comes back with the wasm magic, a non-WAT one is refused —
+and a binary that is not on PATH is the same named refusal as a failing one. The one
+error in that repository's nbb suite (`wasm-capability-key-test`, bigint mixed with a
+number) is on its `main` unchanged.
+
+JVM-only namespaces in the CLI's reach: 7 → **6**. What is left is `kotoba-component`
+(`admission` L1, `core` L1 — 7,206 lines — and `artifact` L2) and, above it,
+`compiler.core` (L3), `test-profile` (L4), `cli` (L5).
+
 ## What remains, in order (from the EDN, `--probe` confirmed)
 
 | level | namespace | refused on Node with | unblocks |
@@ -144,7 +161,7 @@ JVM-only namespaces in the CLI's reach: 9 → **7**, all now in `kotoba-componen
 | 1 | ~~`kotoba.compiler.release`~~ | ~~`java.io.FileInputStream`~~ | **portable since 2026-09-11** (a `:cljs` branch on node fs/crypto); `sbom`, `attest-release`, `verify-release` and `package-ios` joined `trust-cli` the same day |
 | 1 | ~~`kotoba.compiler.coverage`~~ | ~~`java.nio.file.Files`~~ | **portable since iteration 2**; `coverage`, `sign-coverage-evidence`, `package-aiueos-boot` joined `trust-cli` |
 | ~~1~~ | ~~`kotoba.compiler.project-files`, `module-lock`~~ | | **one namespace each since iteration 3** — the `nbb.*` twins are deleted, their bodies are the `:cljs` branches |
-| 1 | `kotoba.component.admission`, `kotoba.wasm.tools` | `StandardCharsets` | external repo `kotoba-component` / `kotoba-wasm`; `check`/`compile` on the JVM route |
+| 1 | `kotoba.component.admission`, ~~`kotoba.wasm.tools`~~ | `StandardCharsets` | external repo `kotoba-component`; `wasm.tools` done in iteration 4 |
 | 2–3 | `kotoba.component.core`, `.artifact` | same repo | |
 | 4 | `kotoba.compiler.core` | the JVM compile driver (930 lines) | `test`; the JVM `check`/`compile` twins |
 | 5 | `kotoba.compiler.test-profile` | `clojure.java.shell` | `test` |
