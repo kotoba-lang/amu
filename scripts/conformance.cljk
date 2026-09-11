@@ -6,6 +6,17 @@
             ["node:os" :as os]
             ["node:path" :as path]))
 
+;; ⚠ REFUSED SINCE 2026-09-11 -- the JVM route is removed (owner decision:
+;; Kotoba and the amu native/nbb compiler only). This harness drives
+;; `verify`, `sign`, `keygen`, `receipt`, `run` and `measure-runtime`, all of
+;; which were JVM-CLI-only (docs/adr/0347). It exits 2 (could-not-answer)
+;; rather than failing at the first of them. Its Wasm/native COMPILE
+;; coverage is carried by test-nbb-wasm32, test-jdk-free-native and
+;; test-policy-bound-provenance; its signing/receipt/run coverage is the
+;; port ledger's, and is not carried by anything today.
+(js/console.error "REFUSED could-not-answer reason=jvm-route-removed needs=verify,sign,keygen,receipt,run,measure-runtime ledger=docs/adr/0347-the-jvm-route-is-removed.md")
+(.exit js/process 2)
+
 (def root (fs/realpathSync (.resolve path (.dirname path *file*) "..")))
 (def tmp (.mkdtempSync fs (.join path (.tmpdir os) "kotoba-conformance-")))
 (def kotoba (.join path root "bin" "kotoba"))

@@ -1,5 +1,12 @@
 #!/usr/bin/env nbb
 (ns test-policy-bound-provenance
+  "Policy-bound compilation on the nbb route: a policy changes the sealed
+  provenance and the bytes, `--fuel` changes the bytes, the output set is
+  committed and integrity-admitted, a forbidden capability is refused, an
+  excessive budget is refused. Until 2026-09-11 this also compiled every
+  fixture a second time through `clojure -M:run` and asserted byte identity
+  with the JVM; the JVM route was removed that day, so the nbb route is the
+  only emitter and there is no second one to be identical to."
   (:require [kotoba.lang.text :as str]
             [scripts.lib :as lib]
             ["node:child_process" :as child]
@@ -52,15 +59,11 @@
         pure-policy (lib/join lib/root "test" "nbb" "fixtures"
                               "pure-product-policy.edn")
         amu (lib/join directory "amu.wasm")
-        jvm (lib/join directory "jvm.wasm")
         cli-fuel-amu (lib/join directory "cli-fuel-amu.wasm")
-        cli-fuel-jvm (lib/join directory "cli-fuel-jvm.wasm")
         default-fuel (lib/join directory "default.wasm")
         native-fixture (lib/join lib/root "examples" "w1-pure.kotoba")
         amu-native (lib/join directory "amu.kexe")
-        jvm-native (lib/join directory "jvm.kexe")
         cli-fuel-amu-native (lib/join directory "cli-fuel-amu.kexe")
-        cli-fuel-jvm-native (lib/join directory "cli-fuel-jvm.kexe")
         primary (run! js/process.execPath
                       [(lib/join lib/root "bin" "amu") "compile" fixture
                        "--target" "wasm32" "--policy" policy "--output" amu])
@@ -76,13 +79,9 @@
                                   native-fixture "--target" "aarch64"
                                   "--policy" excessive-policy
                                   "--output" (lib/join directory "excessive.kexe")])]
-    (run! "clojure" ["-M:run" "compile" fixture "--target" "wasm32"
-                     "--policy" policy "--output" jvm])
     (run! js/process.execPath
           [(lib/join lib/root "bin" "amu") "compile" fixture
            "--target" "wasm32" "--fuel" "1048576" "--output" cli-fuel-amu])
-    (run! "clojure" ["-M:run" "compile" fixture "--target" "wasm32"
-                     "--fuel" "1048576" "--output" cli-fuel-jvm])
     (run! js/process.execPath
           [(lib/join lib/root "bin" "amu") "compile" fixture
            "--target" "wasm32" "--output" default-fuel])
@@ -99,30 +98,16 @@
                         (.includes (.-stdout native-admitted)
                                   ":publisher-authenticated false"))
                    "primary compiler did not integrity-admit native output with an explicit trust boundary"))
-    (run! "clojure" ["-M:run" "compile" native-fixture "--target" "aarch64"
-                     "--policy" policy "--output" jvm-native])
     (run! js/process.execPath
           [(lib/join lib/root "bin" "amu") "compile" native-fixture
            "--target" "aarch64" "--fuel" "1048576"
            "--output" cli-fuel-amu-native])
-    (run! "clojure" ["-M:run" "compile" native-fixture "--target" "aarch64"
-                     "--fuel" "1048576" "--output" cli-fuel-jvm-native])
 
-    (lib/ensure! (same? amu jvm)
-                 "primary Node Wasm bytes ignored or changed policy-bound JVM emission")
-    (lib/ensure! (same? (str amu ".provenance.edn")
-                        (str jvm ".provenance.edn"))
-                 "primary Node Wasm provenance differs from the JVM contract")
     (lib/ensure! (not (same? amu default-fuel))
                  "changing the fuel budget did not change emitted Wasm")
     (lib/ensure! (not (same? (str amu ".provenance.edn")
                              (str default-fuel ".provenance.edn")))
                  "changing policy did not change sealed Wasm provenance")
-    (lib/ensure! (same? cli-fuel-amu cli-fuel-jvm)
-                 "primary Node Wasm --fuel bytes differ from the JVM contract")
-    (lib/ensure! (same? (str cli-fuel-amu ".provenance.edn")
-                        (str cli-fuel-jvm ".provenance.edn"))
-                 "primary Node Wasm --fuel provenance differs from the JVM contract")
     (lib/ensure! (and (.includes (.-stdout primary) ":provenance-output")
                       (.includes (.-stdout primary) ":publication-output")
                       (not (.includes (.-stdout primary) ":not-emitted")))
@@ -137,16 +122,6 @@
                  "policy-bound primary output is not valid Wasm")
     (lib/ensure! (>= (.-size (.statSync fs (str amu ".provenance.edn"))) 128)
                  "Wasm provenance sidecar is unexpectedly empty")
-    (lib/ensure! (same? amu-native jvm-native)
-                 "primary Node native artifact differs from the JVM policy contract")
-    (lib/ensure! (same? (str amu-native ".provenance.edn")
-                        (str jvm-native ".provenance.edn"))
-                 "primary Node native provenance differs from the JVM contract")
-    (lib/ensure! (same? cli-fuel-amu-native cli-fuel-jvm-native)
-                 "primary Node native --fuel artifact differs from the JVM contract")
-    (lib/ensure! (same? (str cli-fuel-amu-native ".provenance.edn")
-                        (str cli-fuel-jvm-native ".provenance.edn"))
-                 "primary Node native --fuel provenance differs from the JVM contract")
     (doseq [output [amu default-fuel amu-native]]
       (lib/ensure! (.isFile (.statSync fs (str output ".publication.edn")))
                    (str "primary compiler omitted output-set commit marker for " output)))

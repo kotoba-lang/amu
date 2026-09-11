@@ -9,26 +9,6 @@ concurrency:
 permissions:
   contents: read
 jobs:
-  provider-qualification:
-    strategy:
-      fail-fast: false
-      matrix:
-        backend: [wasmtime, native, cljs]
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: "24.12.0"
-          cache: npm
-      - uses: DeLaGuardo/setup-clojure@4c7a6f613e5089821bb3bb2a33a3ee115578580d # 13.6.1
-        with:
-          cli: 1.12.5.1654
-      - name: Prepare pinned compiler dependencies with bounded transient retries
-        run: node scripts/ci-dependency-prefetch.mjs
-      - run: clojure -M -m kotoba.compiler.backend-qualification verify ${{ matrix.backend }}
   windows-arm64:
     runs-on: windows-11-arm
     steps:
@@ -39,9 +19,6 @@ jobs:
         with:
           node-version: "24.12.0"
           cache: npm
-      - uses: DeLaGuardo/setup-clojure@4c7a6f613e5089821bb3bb2a33a3ee115578580d # 13.6.1
-        with:
-          cli: 1.12.5.1654
       - run: npm ci
       - run: npm run test-nbb-io
       - run: npm run test-windows-profile
@@ -55,9 +32,6 @@ jobs:
         with:
           node-version: "24.12.0"
           cache: npm
-      - uses: DeLaGuardo/setup-clojure@4c7a6f613e5089821bb3bb2a33a3ee115578580d # 13.6.1
-        with:
-          cli: 1.12.5.1654
       - run: npm ci
       - run: npm run test-android-ndk
   server-kind:
@@ -70,9 +44,6 @@ jobs:
         with:
           node-version: "24.12.0"
           cache: npm
-      - uses: DeLaGuardo/setup-clojure@4c7a6f613e5089821bb3bb2a33a3ee115578580d # 13.6.1
-        with:
-          cli: 1.12.5.1654
       - run: npm ci
       # #775: the ubuntu-24.04 runner image (20260831.293+) now ships Kind
       # 0.33.0, but scripts/kind-server-conformance.cljk pins kind v0.32.0
@@ -97,29 +68,6 @@ jobs:
   # every `kotoba/*_core.kotoba` live and compares it byte for byte with the
   # shipped KIR, so it fails exactly when this repo changes the KIR a consumer
   # has already frozen.
-  downstream-murakumo:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          path: amu
-      - name: Check out the consumer
-        run: git clone --depth 1 https://github.com/kotoba-lang/murakumo murakumo
-      - uses: DeLaGuardo/setup-clojure@4c7a6f613e5089821bb3bb2a33a3ee115578580d # 13.6.1
-        with:
-          cli: 1.12.5.1654
-      # The pinned KIR must stay >= this checkout's own deps.edn pin: the gate
-      # builds amu from ../amu, so a KIR older than the namespaces that source
-      # requires cannot load it, and the gate fails for a reason that has
-      # nothing to do with murakumo drift. Advanced 2026-09-02 with deps.edn to
-      # afd117d2 (kotoba.kir.alpha-normalization).
-      - name: murakumo KIR drift gate against this checkout
-        working-directory: murakumo
-        run: |
-          clojure -Sdeps "{:aliases {:dep {:override-deps {io.github.kotoba-lang/amu {:local/root \"../amu\"} io.github.kotoba-lang/osaho {:git/url \"https://github.com/kotoba-lang/osaho.git\" :git/sha \"658436f25c57d7c96f121d9dfd376e9871a82445\"}}}}}" \
-            -M:test:dep -n murakumo.kotoba-oracle-authority-test
-
   test:
     strategy:
       fail-fast: false
@@ -134,9 +82,6 @@ jobs:
         with:
           node-version: "24.12.0"
           cache: npm
-      - uses: DeLaGuardo/setup-clojure@4c7a6f613e5089821bb3bb2a33a3ee115578580d # 13.6.1
-        with:
-          cli: 1.12.5.1654
       - name: Prepare pinned test dependencies with bounded transient retries
         run: node scripts/ci-dependency-prefetch.mjs --alias test
       - uses: bytecodealliance/actions/wasm-tools/setup@7ee36389ead2e51422087f820a7e17e39811b05f # main
@@ -159,8 +104,6 @@ jobs:
       - if: ${{ !cancelled() }}
         run: npm run test-policy-bound-provenance
       - if: ${{ !cancelled() }}
-        run: npm run test-output-set-publisher-auth
-      - if: ${{ !cancelled() }}
         run: npm run test-browser-host
       - if: ${{ !cancelled() }}
         run: npm run test-worker-host
@@ -168,8 +111,6 @@ jobs:
         run: npm run test-wasi-host
       - if: ${{ !cancelled() }}
         run: npm run test-wasi-service
-      - if: ${{ !cancelled() }}
-        run: npm run test-release
       - if: ${{ !cancelled() }}
         run: npm run test-wasmtime
       - if: ${{ !cancelled() && matrix.os == 'macos-14' }}
@@ -180,11 +121,6 @@ jobs:
         run: npm run test-ios-simulator
         env:
           DEVELOPER_DIR: /Applications/Xcode_16.2.app/Contents/Developer
-      - if: ${{ !cancelled() }}
-        run: clojure -M:test
-        env:
-          KOTOBA_FUZZ_SEED: "5426643073673934426"
-          KOTOBA_FUZZ_CASES: "1000"
       - if: ${{ !cancelled() }}
         run: npm run test-nbb-wasm32
       - if: ${{ !cancelled() }}
@@ -213,15 +149,13 @@ jobs:
       - if: ${{ !cancelled() }}
         name: Test canonical ability adapter on ClojureScript
         run: |
-          task_classpath="$(clojure -Spath)"
-          npx nbb --classpath "$task_classpath" test/nbb/value-codec.cljk
+          task_classpath="$(node node_modules/nbb/cli.js --classpath src scripts/print-classpath.cljk . | tr '\n' ':')"
+          npx nbb --classpath "src:resources:$task_classpath" test/nbb/value-codec.cljk
       - if: ${{ !cancelled() }}
         run: |
           printf '(defn main [] (+ 40 2))\n' > /tmp/ci.kotoba
           bin/kotoba -M compile /tmp/ci.kotoba --target x86_64 --output /tmp/ci.kexe
-          bin/kotoba -M verify /tmp/ci.kexe
-      - if: ${{ !cancelled() }}
-        run: npx nbb scripts/conformance.cljk
+          bin/amu verify-output-set /tmp/ci.kexe
       - if: ${{ !cancelled() }}
         run: npx nbb scripts/sanitizer.cljk
       - if: ${{ !cancelled() }}

@@ -198,9 +198,12 @@ try {
     { cwd: locklessRoot, encoding: "utf8", timeout: 120_000, maxBuffer: 16 * 1024 * 1024,
       env: { ...process.env, PATH: `${fakeBin}${delimiter}${process.env.PATH}` } });
   if (lockless.error) throw lockless.error;
+  // The message changed on 2026-09-11 with the JVM route: there is no
+  // fallback to forbid any more, the lock is the only resolver and its
+  // absence is the refusal.
   if (lockless.status !== 70
-      || !lockless.stderr.includes("JVM fallback is forbidden"))
-    throw new Error(`--jvm-free accepted a missing dependency lock\n${lockless.stdout}${lockless.stderr}`);
+      || !lockless.stderr.includes("There is no JVM fallback"))
+    throw new Error(`a missing dependency lock was accepted\n${lockless.stdout}${lockless.stderr}`);
   if (existsSync(marker)) throw new Error("--jvm-free lock failure invoked clojure");
   // A caller-relative path resolves against the CALLER's directory, not the Amu
   // checkout. Both spawns in bin/amu set `cwd: root`, so before this was fixed

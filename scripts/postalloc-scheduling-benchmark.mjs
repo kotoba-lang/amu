@@ -191,7 +191,9 @@ function timedSample(arm, runner, rawNative, offset, target, n, calls, warmup, f
 }
 
 function compileCommand(root, args) {
-  return ["clojure", ["-M:run", ...args], { cwd: root }];
+  // bin/amu on the nbb route; the JVM route (`clojure -M:run`) was removed
+  // on 2026-09-11.
+  return [join(root, "bin", "amu"), args, { cwd: root }];
 }
 
 function buildArtifacts(root, target, fixtureFile, directory, symbol = "kernel") {
@@ -328,7 +330,7 @@ try {
         }
       }
       compile = {
-        measurement: "subprocess wall clock via clojure -M:run; not compiler-internal phase time",
+        measurement: "subprocess wall clock via bin/amu (nbb route); not compiler-internal phase time",
         baseline: {
           samples: baselineCompile,
           compileWallMilliseconds: summary(baselineCompile.map(s => s.compileWallMilliseconds)),
@@ -363,7 +365,7 @@ try {
       samplesPerArm: baselineRuntime.length,
       rotation: "ABBA/BAAB per run pair",
       fuelPerInstance: benchmarkFuel,
-      compilerLauncher: "clojure -M:run",
+      compilerLauncher: "bin/amu (nbb route)",
       nativeBoundary: "benchmark-only direct W^X invocation; no production supervisor or safety claim",
       hostLoadGate,
       reducedRuntimeUnderHostLoad: !hostLoadGate,

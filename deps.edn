@@ -933,31 +933,17 @@
                    io.github.kotoba-lang/kototama-native
                    {:git/url "https://github.com/kotoba-lang/kototama-native.git"
                     :git/sha "a4089a2f4a17ad232af7a79d0c177a8e0cd85c80"}}
-                  :main-opts ["-m" "kotoba.compiler.test-runner"]}
-           :native-run
-           {:extra-deps
-            {io.github.kotoba-lang/kototama-native
-             {:git/url "https://github.com/kotoba-lang/kototama-native.git"
-              :git/sha "a4089a2f4a17ad232af7a79d0c177a8e0cd85c80"}}
-            :main-opts ["-m" "kotoba.compiler.cli"]}
-           :run {:main-opts ["-m" "kotoba.compiler.cli"]}
-           :conformance
-           {:main-opts ["-m" "kotoba.compiler.lang-conformance"]}
-           :runtime-bench
-           {:extra-paths ["bench/runtime-comparison/cljs"]
-            :extra-deps {org.clojure/clojurescript {:mvn/version "1.12.134"}}}
-           :native-conformance
-           {:extra-deps
-            {io.github.kotoba-lang/kototama-native
-             {:git/url "https://github.com/kotoba-lang/kototama-native.git"
-              :git/sha "a4089a2f4a17ad232af7a79d0c177a8e0cd85c80"}
-             io.github.kotoba-lang/provider
-             {:git/url "https://github.com/kotoba-lang/provider.git"
-              :git/sha "0ba1fbabb536027d25bbefc50374fbe95e6b54ec"}}
-            :extra-paths ["test"]
-            :main-opts ["-m" "kotoba.compiler.lang-native-conformance"]}
-           :fuel-estimate
-           {:main-opts ["-m" "kotoba.compiler.fuel-estimate"]}
-           :ipld-adl-conformance
-           {:extra-paths ["scripts"]
-            :main-opts ["-m" "ipld-adl-conformance"]}}}
+                  ;; No :main-opts: the JVM test runner left with the JVM route
+                  ;; (2026-09-11). This alias remains as the DECLARATION of the
+                  ;; extra git dependencies the nbb test runners need;
+                  ;; scripts/lock-classpath.cljk records its closure under
+                  ;; :lock/alias-entries and print-classpath.cljk --alias test
+                  ;; resolves it with git alone. `clojure -Spath -M:test` is
+                  ;; how the lock is authored, not how anything runs.
+                  }
+           ;; :run / :native-run / :conformance / :runtime-bench /
+           ;; :native-conformance / :fuel-estimate / :ipld-adl-conformance were
+           ;; JVM launch aliases (`clojure -M:<alias>`). Removed 2026-09-11 with
+           ;; the JVM route; their mains are listed in docs/adr
+           ;; 0347-the-jvm-route-is-removed.md as the port ledger.
+           }}

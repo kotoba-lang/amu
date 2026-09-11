@@ -1,5 +1,14 @@
 import { spawnSync } from "node:child_process";
-import { pathToFileURL } from "node:url";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+
+// The prefetch materializes the pinned git closure from deps-lock.edn through
+// the same resolver `bin/amu` uses (scripts/print-classpath.cljk, git alone).
+// Until 2026-09-11 it ran `clojure -P [-M:<alias>]`; the JVM route was
+// removed that day, and with it the JDK on every runner. An alias names the
+// lock's `:lock/alias-entries` section (`test`), not a deps.edn alias.
+const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const nbbCli = join(root, "node_modules", "nbb", "cli.js");
 
 const DEFAULT_ATTEMPTS = 3;
 const DEFAULT_DELAYS_MS = [1000, 3000];
@@ -30,15 +39,17 @@ export function prefetchDependencies({
   alias,
   attempts = DEFAULT_ATTEMPTS,
   delaysMs = DEFAULT_DELAYS_MS,
-  run = (args) => spawnSync("clojure", args, {
-    encoding: "utf8",
-    maxBuffer: 16 * 1024 * 1024,
-  }),
+  run = (args) => spawnSync(process.execPath,
+    [nbbCli, "--classpath", join(root, "src"), join(root, "scripts", "print-classpath.cljk"), root, ...args], {
+      cwd: root,
+      encoding: "utf8",
+      maxBuffer: 16 * 1024 * 1024,
+    }),
   wait = sleep,
   stdout = process.stdout,
   stderr = process.stderr,
 } = {}) {
-  const args = alias ? ["-P", `-M:${alias}`] : ["-P"];
+  const args = alias ? ["--alias", alias] : [];
 
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     const result = run(args);

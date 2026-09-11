@@ -66,6 +66,16 @@
             ["node:path" :as path]
             [kotoba.lang.text :as str]))
 
+;; ⚠ REFUSED SINCE 2026-09-11 -- the JVM route is removed (owner decision:
+;; Kotoba and the amu native/nbb compiler only). This harness ran the
+;; Clojure route-decision namespaces on the JVM (`clojure -M -e`) as the
+;; oracle the Kotoba component is compared against; that oracle needs to
+;; run on nbb now (the namespaces are .cljk and portable on their face --
+;; unmeasured). Exits 2 (could-not-answer) rather than failing on a
+;; missing `clojure`. Tracked in docs/adr (jvm-route-removed).
+(js/console.error "REFUSED could-not-answer reason=jvm-route-removed needs=clojure-oracle-on-nbb ledger=docs/adr/jvm-route-removed")
+(.exit js/process 2)
+
 (def root (.resolve path (.dirname path *file*) ".."))
 (def kotoba (.join path root "bin" "kotoba"))
 (def nbb-cli (.join path root "node_modules" "nbb" "cli.js"))

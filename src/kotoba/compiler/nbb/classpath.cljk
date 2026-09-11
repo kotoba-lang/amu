@@ -142,15 +142,40 @@
       (throw (ex-info "dependency lock has no entries" {:phase :lock})))
     (into [] (mapcat entry-directories) (:lock/entries lock))))
 
+(defn resolve-alias-directories
+  "The directories an alias ADDS (recorded under `:lock/alias-entries` by
+  `scripts/lock-classpath.cljk`). An alias the lock does not carry is a
+  refusal, not an empty vector: an nbb test runner that asked for `:test`
+  and got nothing would load its namespaces from wherever else they happened
+  to be, or fail on the first require with no hint of why."
+  [root alias]
+  (let [lock (read-lock root)
+        entries (get-in lock [:lock/alias-entries (keyword alias)])]
+    (when-not (contains? (or (:lock/alias-entries lock) {}) (keyword alias))
+      (throw (ex-info (str "the dependency lock carries no entries for alias " alias
+                           "; run scripts/lock-classpath.cljk")
+                      {:phase :lock :alias alias
+                       :locked (vec (keys (:lock/alias-entries lock)))})))
+    (into [] (mapcat entry-directories) entries)))
+
 (defn -main
   "Print the resolved dependency directories, one per line, or an EDN error on
   STDERR and a non-zero exit. `bin/kotoba` joins them with the platform
   separator; keeping the output one-per-line means a path containing the
   separator cannot be mistaken for two entries."
   [& args]
-  (let [root (or (first args) (.cwd js/process))]
+  (let [aliases (->> (partition 2 1 args)
+                     (filter #(= "--alias" (first %)))
+                     (map second))
+        positional (->> (partition-all 2 1 (concat [nil] args))
+                        (remove (fn [[before a]] (or (= a "--alias") (= before "--alias"))))
+                        (map second)
+                        (remove nil?))
+        root (or (first positional) (.cwd js/process))]
     (try
-      (doseq [dir (resolve-directories root)] (println dir))
+      (doseq [dir (concat (resolve-directories root)
+                          (mapcat #(resolve-alias-directories root %) aliases))]
+        (println dir))
       (catch :default error
         (binding [*print-fn* *print-err-fn*]
           (prn (merge {:format :kotoba.classpath-error/v1 :ok false

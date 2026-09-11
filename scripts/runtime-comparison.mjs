@@ -34,8 +34,14 @@ const FIXTURES = {
     rust: "kernel.rs",
     benchmark: "unrolled-modular-mix-v1",
     nativeSymbol: "kotoba_bench_kernel",
+    // "clojure" and "clojurescript" left the comparator list on 2026-09-11
+    // with the JVM route: both were built and run through `clojure`
+    // (`-M kernel.clj`, `-M:runtime-bench cljs.main`), and the alias is
+    // gone. A JVM-less ClojureScript comparator (nbb, or shadow-cljs built
+    // elsewhere) is a separate decision; their adapter code below stays so
+    // one can be wired back without rediscovering the ABI.
     comparators: [
-      ...nativeComparators, "clojure", "clojurescript", "mojo", "python",
+      ...nativeComparators, "mojo", "python",
       "typescript-node", "typescript-deno",
     ],
     arithmetic: "8 identical quotient/remainder mix rounds stay within exact i64 and JavaScript safe integers",
@@ -453,17 +459,21 @@ function build(directory, target, fixtureSpec, enabled, skipped, fuel) {
 
   // Keep runtime evidence on one canonical compiler entrypoint. Launcher
   // conformance is measured separately and must not select a different
-  // code-generation path inside one comparison report.
+  // code-generation path inside one comparison report. That entrypoint is
+  // `bin/amu` on the nbb route: the JVM route (`clojure -M:run`) was removed
+  // on 2026-09-11, so the Amu rows of this report are produced by the same
+  // compiler every other caller uses.
+  const amu = join(root, "bin", "amu");
   if (fixtureSpec.metric !== "artifact-batch") {
-    step("amuWasm", "clojure",
-      ["-M:run", "compile", wasmFixture, "--target", "wasm32",
+    step("amuWasm", amu,
+      ["compile", wasmFixture, "--target", "wasm32",
         "--fuel", String(fuel), "--output", wasm]);
   }
-  step("amuNative", "clojure",
-    ["-M:run", "compile", fixture, "--target", target,
+  step("amuNative", amu,
+    ["compile", fixture, "--target", target,
       "--fuel", String(fuel), "--output", native]);
-  const extracted = step("amuNativeExtract", "clojure",
-    ["-M:run", "extract-native", native, "--symbol", "kernel", "--output", rawNative]);
+  const extracted = step("amuNativeExtract", amu,
+    ["extract-native", native, "--symbol", "kernel", "--output", rawNative]);
   const offsetMatch = extracted.stdout.match(/:offset\s+([0-9]+)/);
   if (!offsetMatch) throw new Error("native extraction omitted kernel offset");
   const nativeOffset = offsetMatch[1];
@@ -865,7 +875,7 @@ try {
       timing: batchMode
         ? "one timed call crosses into each compiled artifact; the complete iteration loop is inside that artifact"
         : "in-process steady state after explicit warmup; process wall and RSS are separate",
-      compilerLauncher: "clojure -M:run canonical compiler entrypoint",
+      compilerLauncher: "bin/amu (nbb route) canonical compiler entrypoint",
       fuelPerInstance: fixtureFuel,
       wasmMaxCallsPerInstance: raw["amu-wasm32"]?.[0]?.maxCallsPerInstance ?? null,
       wasmFuel: batchMode ? null
