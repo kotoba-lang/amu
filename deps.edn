@@ -175,8 +175,8 @@
         ;; read 3e3f9748 while the file on disk hashed to 67561e57, and nothing
         ;; said so.
         ;;
-        ;;   grammar-sha256    53e4d2f0f64d2ce00e5670b2053e57a3d945c51394986dd457df66c449cc446b
-        ;;   kotoba-sema-pin   9d72b4cd32310c4e75feb0a9b5d344adffb94293
+        ;;   grammar-sha256    7644f32d72e94728dd7dd4d534207cb6cccfb018d02856b3f4eccc39cbed66e8
+        ;;   kotoba-sema-pin   e4e9521885e5151a7b2c821926a76869e925da16
         ;;
         ;; `guest_grammar_vendor_test/authority-digest-history` ends with the
         ;; same digest, so the pin, the prose and the history move in one
@@ -527,7 +527,19 @@
          ;; APPENDED to `authority-digest-history`. CID control: `amu
          ;; definition-cids` of a fixed-arity module is identical at
          ;; 6f49a83d and here (see the test suite commit).
-         "9d72b4cd32310c4e75feb0a9b5d344adffb94293"}
+         ;;
+         ;; 2026-09-12, 9d72b4cd -> e4e9521 (kotoba-sema main, forward only by
+         ;; `gh api .../compare`, ahead 3 behind 0; adr-2609111900, the
+         ;; map-indexed wall, 8 of the compiler's own modules): `map-indexed`
+         ;; passes the index first and reuses `map`'s callback admission
+         ;; (kotoba-sema bc921ab). Grammar copy 53e4d2f0 -> 7644f32d, APPENDED
+         ;; to `authority-digest-history`: kotoba-lang main carried the
+         ;; map-indexed entry at 63dc6e9a WITHOUT the variadic-defn entry
+         ;; (whose branch was not yet merged), and no kotoba-sema copy ever
+         ;; had that digest -- e4e9521's copy is the union of both waves,
+         ;; which is what kotoba-lang main carries once the variadic-defn
+         ;; branch merges (measured: the merge of the two hashes to 7644f32d).
+         "e4e9521885e5151a7b2c821926a76869e925da16"}
         ;; ADR-2607266000 Phase B: these responsibilities moved out of this repo.
         ;;
         ;; The slice-value stream held this pin on purpose (ADR 0314), because
