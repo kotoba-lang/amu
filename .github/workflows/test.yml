@@ -82,8 +82,6 @@ jobs:
         with:
           node-version: "24.12.0"
           cache: npm
-      - name: Prepare pinned test dependencies with bounded transient retries
-        run: node scripts/ci-dependency-prefetch.mjs --alias test
       - uses: bytecodealliance/actions/wasm-tools/setup@7ee36389ead2e51422087f820a7e17e39811b05f # main
         with:
           # Must match kotoba.compiler.wasm-tools/version -- the default is
@@ -93,6 +91,13 @@ jobs:
       - name: Install pinned Component composition tool
         run: cargo install --locked --version 0.10.1 wac-cli
       - run: npm ci
+      # After `npm ci`: the prefetch resolves deps-lock.edn through the nbb
+      # fork in node_modules (the JVM route and `clojure -P` are gone, ADR
+      # 0347), so it cannot run before the install. Measured on the first
+      # push of that change: it ran before `npm ci`, failed on a missing
+      # node_modules/nbb, and every later step reported `nbb: not found`.
+      - name: Prepare pinned test dependencies with bounded transient retries
+        run: node scripts/ci-dependency-prefetch.mjs --alias test
       - if: ${{ !cancelled() }}
         run: npm run test-ci-dependency-prefetch
       - if: ${{ !cancelled() }}
