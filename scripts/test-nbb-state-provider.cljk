@@ -10,7 +10,7 @@
       classpath (str lib/root (.-delimiter path) resolved)
       result (.spawnSync child js/process.execPath
                          (clj->js [nbb-cli "--classpath" classpath
-                                  (lib/join lib/root "test" "kbb" "--backend" "sci" "state-provider.cljk")])
+                                  (lib/join lib/root "test" "nbb" "state-provider.cljk")])
                          #js {:cwd lib/root :stdio "inherit" :env js/process.env})]
   (when (.-error result) (throw (.-error result)))
   (.exit js/process (or (.-status result) 70)))
