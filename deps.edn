@@ -153,8 +153,8 @@
         ;; read 3e3f9748 while the file on disk hashed to 67561e57, and nothing
         ;; said so.
         ;;
-        ;;   grammar-sha256    d07b8816546b8ff2d78e1db2f375c92ee5e654e20d04eb554a5c4f38fe031587
-        ;;   kotoba-sema-pin   3dea8c39c46ff8ac8920dc94d75be6a8d9d843a5
+        ;;   grammar-sha256    48fb5241483bb38fc33944047e3456a9360e8e3c9315aa06bb085e3ada8828db
+        ;;   kotoba-sema-pin   3714ffbf0ce356581d356bb52114b65a2a34eb0c
         ;;
         ;; `guest_grammar_vendor_test/authority-digest-history` ends with the
         ;; same digest, so the pin, the prose and the history move in one
@@ -399,7 +399,28 @@
          ;; this diff -- only the 5 `src/` files above are -- so
          ;; `grammar-sha256` and `authority-digest-history` do not move; this
          ;; prose block moves alone.
-         "3dea8c39c46ff8ac8920dc94d75be6a8d9d843a5"}
+         ;;
+         ;; 2026-09-11, 3dea8c39 -> 3714ffbf (kotoba-sema main, forward only
+         ;; by `gh api .../compare`; adr-2609111900, the selfhost ceiling
+         ;; loop). The range carries three things. 19cd515 refuses `#=` as a
+         ;; reader dispatch instead of scanning the source text for two
+         ;; characters. c5849ff rewrites the 3-arity single-step transducer
+         ;; `into` to the 2-arity. f2cfaae is this wave: a keyword-keyed map
+         ;; literal with a value that spells a non-i64 type lowers to a closed
+         ;; record `[:record :kotoba.map-literal/<keys> [[k T] ...]]` read
+         ;; off its values -- what a defrecord constructor lowers to, so
+         ;; `(:field m)` keeps the field's static type -- and the all-i64
+         ;; keyword literal is unchanged byte for byte (CID control below).
+         ;; Measured at a406845e on the project route: 10 of this compiler's
+         ;; own 210 sources were refused `map literal with keyword keys
+         ;; carries i64 values` for an ordinary config literal. The grammar
+         ;; copy moved with it, d07b8816 -> 48fb5241 (`:sugar :map-literal
+         ;; :value-types :keyword-keys` is a map; `:entry-limits` gains
+         ;; `:keyword-record 20`), APPENDED to `authority-digest-history`.
+         ;; CID control: `amu definition-cids --jvm-free` on a module whose
+         ;; only literal is `{:b 2 :a 1}` mints byte-identical output at
+         ;; 3dea8c39 and at this pin.
+         "3714ffbf0ce356581d356bb52114b65a2a34eb0c"}
         ;; ADR-2607266000 Phase B: these responsibilities moved out of this repo.
         ;;
         ;; The slice-value stream held this pin on purpose (ADR 0314), because
