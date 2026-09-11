@@ -9,17 +9,17 @@
             [kotoba.compiler.definition-identity :as definition-identity]
             [kotoba.compiler.diagnostic :as diagnostic]
             [kotoba.compiler.ios-aot :as ios-aot]
-            [kotoba.compiler.interface :as interface]
             [kotoba.compiler.module-lock :as module-lock]
             [kotoba.compiler.project :as project]
             [kotoba.compiler.project-files :as project-files]
             [kotoba.compiler.packaging.pe32plus :as pe32plus]
             [kotoba.compiler.receipt :as receipt]
             [kotoba.compiler.test-profile :as test-profile]
+            [kotoba.compiler.trust-cli :as trust-cli]
             [kotoba.compiler.release :as release]
             [kotoba.artifact.runtime-identity :as runtime-identity]
-            [kotoba.verifier.signing :as signing]
             [kotoba.compiler.source-path :as source-path]
+            [kotoba.compiler.target-names :as target-names]
             [kotoba.kir :as ir]
             [kotoba.kir.target :as target-profile]
             [kotoba.sema :as sema]
@@ -37,44 +37,7 @@
               {:phase :native-executor :operation operation
                :dependency 'io.github.kotoba-lang/kototama-native}))))
 
-(defn- parse-target [s]
-  (case s "wasm32" :wasm32-kotoba-v1 "x86_64" :x86_64-kotoba-v1
-        "aarch64" :aarch64-kotoba-v1
-        ;; ADR-2607252500: the primary application artifact.
-        "component" :wasm-component-kotoba-v1
-        "wasm-component" :wasm-component-kotoba-v1
-        "js" :js-kotoba-v1
-        "javascript" :js-kotoba-v1
-        ;; The `kotoba` CLI's own spelling for this target. Without it the
-        ;; alias table dropped `web` through (keyword s) to the bare `:web`,
-        ;; rejected as :unsupported-target -- while :js-kotoba-v1 behind it
-        ;; was fully implemented (measured 2026-09-05: compile-source green,
-        ;; the emitted .mjs answers (keys {10 1 20 2}) = 2n under Node).
-        "web" :js-kotoba-v1
-        "js-browser" :js-browser-kotoba-v1
-        ;; ADR-2607151500's cljs target was reachable only by its full profile
-        ;; name -- `--target cljs-kotoba-v1` -- while `js`/`javascript` mapped
-        ;; by alias. `--target cljs` fell through `(keyword s)` to the bare
-        ;; `:cljs`, which dispatch! then rejected as `:unsupported-target`
-        ;; even though the backend behind it (backend.cljs, the KIR -> cljs
-        ;; source-text emitter) is implemented and its compile-source path is
-        ;; green (measured 2026-09-04). Aliased here alongside its siblings.
-        "cljs" :cljs-kotoba-v1
-        "cljs-browser" :cljs-browser-kotoba-v1
-        "cljs-node" :cljs-node-kotoba-v1
-        "evm" :evm256-kotoba-v1
-        "evm256" :evm256-kotoba-v1
-        "wasm32-browser" :wasm32-browser-kotoba-v1
-        "wasm32-wasi" :wasm32-wasi-kotoba-v1
-        "x86_64-linux" :x86_64-linux-kotoba-v1
-        "x86_64-macos" :x86_64-macos-kotoba-v1
-        "x86_64-windows" :x86_64-windows-kotoba-v1
-        "aarch64-linux" :aarch64-linux-kotoba-v1
-        "aarch64-macos" :aarch64-macos-kotoba-v1
-        "aarch64-windows" :aarch64-windows-kotoba-v1
-        "aarch64-android" :aarch64-android-kotoba-v1
-        "aarch64-ios" :aarch64-ios-kotoba-v1
-        (keyword s)))
+(defn- parse-target [s] (target-names/parse s))
 
 (defn- option [args flag] (second (drop-while #(not= flag %) args)))
 (defn- options [args flag]
@@ -147,53 +110,22 @@
     ;; code the two are indistinguishable to a caller, which is the failure
     ;; where a check that could not measure returns what a passing check does.
     :definition-identity 66
-    (:signature :trust :runtime-identity) 77
+    ;; `:sign` joined 2026-09-11 -- see kotoba.compiler.nbb.cli-support.
+    (:signature :sign :trust :runtime-identity) 77
     :output 74
     :execute 69
     :receipt 76
     70))
 
 (defn- dispatch! [& args]
+  ;; The trust-plane commands (keys, trust sets, signatures, receipts,
+  ;; inspect) are `kotoba.compiler.trust-cli`, one portable implementation
+  ;; shared with the Node entrypoint. The remaining branches are the ones
+  ;; that still stand on a JVM-only namespace -- `docs/jvm-route-topology.edn`
+  ;; lists which and in what order they leave.
+  (if (contains? trust-cli/commands (first args))
+    (println (pr-str (trust-cli/dispatch! (vec args))))
   (case (first args)
-    "keygen"
-    (let [output (or (option args "--output") "kotoba-signing-key.edn")
-          key (signing/generate-keypair)]
-      (atomic-output/write-edn! output key {:private? true})
-      (println (pr-str {:ok true :output output :signer (:signer key)})))
-    "public-key"
-    (let [key (bounded-edn/read-file (second args))
-          public (signing/verification-key key)
-          output (or (option args "--output") "kotoba-verification-key.edn")]
-      (atomic-output/write-edn! output public)
-      (println (pr-str {:ok true :output output :signer (:signer public)})))
-    "inspect"
-    (let [input (kotoba-source! (second args))
-          inspected (interface/inspect-source (bounded-edn/read-text-file input))]
-      (if-let [output (option args "--output")]
-        (do (atomic-output/write-edn! output inspected)
-            (println (pr-str {:ok true :output output :sha256 (:sha256 inspected)})))
-        (println (pr-str inspected))))
-    "trust-key"
-    (let [key (bounded-edn/read-file (second args))
-          signer (signing/trusted-signer-id! key)
-          output (or (option args "--output") "kotoba-trust.edn")
-          trust {:format :kotoba.trust/v1 :trusted-signers #{signer}
-                 :revoked-signers #{} :revoked-artifacts #{}
-                 :trusted-runtime-sha256 #{}
-                 :revoked-runtime-sha256 #{}}]
-      (atomic-output/write-edn! output trust)
-      (println (pr-str {:ok true :output output :signer signer})))
-    "trust-runtime"
-    (let [evidence (bounded-edn/read-file (second args))
-          _ (runtime-identity/validate-measurement! evidence)
-          trust-path (option args "--trust")
-          trust (signing/validate-trust! (bounded-edn/read-file trust-path))
-          runtime (:runtime evidence)
-          runtime-sha (runtime-identity/identity-sha256 runtime)
-          output (or (option args "--output") trust-path)
-          updated (update trust :trusted-runtime-sha256 (fnil conj #{}) runtime-sha)]
-      (atomic-output/write-edn! output updated)
-      (println (pr-str {:ok true :output output :runtime-sha256 runtime-sha})))
     "measure-runtime"
     (let [{:keys [runtime loader-bytes]} ((native-executor-fn 'measure-runtime))
           output (or (option args "--output") "kotoba-runtime.edn")
@@ -203,23 +135,6 @@
                                         :runtime runtime})
       (println (pr-str {:ok true :output output :loader-output loader-output
                         :runtime-sha256 (runtime-identity/identity-sha256 runtime)})))
-    "sign"
-    (let [artifact (bounded-edn/read-file (second args))
-          key (bounded-edn/read-file (option args "--key"))
-          output (or (option args "--output") "program.signed.kexe")
-          not-before (Long/parseLong (or (option args "--not-before") "0"))
-          expires (Long/parseLong (or (option args "--expires")
-                                      (str (+ (quot (System/currentTimeMillis) 1000) 86400))))
-          envelope (signing/sign artifact key {:not-before not-before :expires expires})]
-      (atomic-output/write-edn! output envelope)
-      (println (pr-str {:ok true :output output :signer (get-in envelope [:statement :signer])})))
-    "verify-signed"
-    (let [envelope (bounded-edn/read-file (second args))
-          trust (bounded-edn/read-file (option args "--trust"))
-          now (Long/parseLong (or (option args "--now")
-                                  (str (quot (System/currentTimeMillis) 1000))))
-          result (signing/verify envelope trust now)]
-      (println (pr-str (dissoc result :artifact))))
     "run"
     (let [envelope (bounded-edn/read-file (second args))
           trust (bounded-edn/read-file (option args "--trust"))
@@ -257,45 +172,6 @@
                         :result-output result-path :output receipt-path
                         :receipt-sha256 (:receipt-sha256 value)}))
       (when-not (= :ok (:status evidence)) (*exit* 120)))
-    "receipt"
-    (let [envelope (bounded-edn/read-file (option args "--signed"))
-          trust (bounded-edn/read-file (option args "--trust"))
-          policy (bounded-edn/read-file (option args "--policy"))
-          input (bounded-edn/read-file (option args "--input"))
-          output-value (bounded-edn/read-file (option args "--result"))
-          parent-path (option args "--parent")
-          parent (when parent-path (bounded-edn/read-file parent-path))
-          executor-key (bounded-edn/read-file (option args "--executor-key"))
-          output-path (or (option args "--output") "run.receipt.edn")
-          value (receipt/create
-                 envelope trust policy input output-value
-                 {:now (Long/parseLong (option args "--now"))
-                  :started-at (Long/parseLong (option args "--started-at"))
-                  :finished-at (Long/parseLong (option args "--finished-at"))
-                  :status (keyword (option args "--status"))
-                  :target (parse-target (option args "--target"))
-                  :entry (symbol (or (option args "--entry") "main"))
-                  :fuel-initial (Long/parseLong (or (option args "--fuel-initial") "512"))
-                  :fuel-remaining (Long/parseLong (option args "--fuel-remaining"))
-                  :parent parent :executor-key executor-key})]
-      (atomic-output/write-edn! output-path value)
-      (println (pr-str {:ok true :output output-path :receipt-sha256 (:receipt-sha256 value)})))
-    "verify-receipt"
-    (let [value (bounded-edn/read-file (second args))
-          envelope (bounded-edn/read-file (option args "--signed"))
-          trust (bounded-edn/read-file (option args "--trust"))
-          policy (bounded-edn/read-file (option args "--policy"))
-          input (bounded-edn/read-file (option args "--input"))
-          output-value (bounded-edn/read-file (option args "--result"))
-          parent-path (option args "--parent")
-          parent (when parent-path (bounded-edn/read-file parent-path))]
-      (println (pr-str (receipt/verify value envelope trust policy input output-value
-                                       {:now (Long/parseLong (option args "--now"))
-                                        :parent parent}))))
-    "verify-chain"
-    (let [receipts (bounded-edn/read-file (second args))
-          trust (bounded-edn/read-file (option args "--trust"))]
-      (println (pr-str (receipt/verify-chain receipts trust))))
     "coverage"
     (let [manifest (bounded-edn/read-file (second args))
           _ (coverage/verify-dataset! manifest (option args "--dataset"))
@@ -760,10 +636,6 @@
           now (Long/parseLong (option args "--now"))
           result (release/verify! envelope input sbom trust now)]
       (println (pr-str (assoc result :ok true))))
-    "verify"
-    (let [artifact (bounded-edn/read-file (second args))]
-      (verifier/verify-artifact! artifact)
-      (println (pr-str {:ok true :verified true :target (:target artifact)})))
     "extract-native"
     (let [artifact (source-path/admit-native-artifact!
                     (bounded-edn/read-file (second args)) (second args))
@@ -776,7 +648,7 @@
       (atomic-output/write-bytes!
        output (byte-array (map unchecked-byte (:code artifact))))
       (println (pr-str (merge {:ok true :output output :symbol symbol} export))))
-    (throw (ex-info "unknown or missing kotoba command" {:phase :usage}))))
+    (throw (ex-info "unknown or missing kotoba command" {:phase :usage})))))
 
 (defn -main [& args]
   (try

@@ -52,6 +52,7 @@
 ;; line, never by grepping this file.
 (ns run-tests
   (:require [cljs.test :as t]
+            [kotoba.compiler.bounded-edn-portable-test]
             [kotoba.compiler.definition-identity-portable-test]
             [kotoba.compiler.effect-classification-test]
             [kotoba.compiler.fuel-estimate-portable-test]
@@ -65,7 +66,8 @@
   (when (pos? (+ (or (:fail m) 0) (or (:error m) 0)))
     (set! (.-exitCode js/process) 1)))
 
-(t/run-tests 'kotoba.compiler.definition-identity-portable-test
+(t/run-tests 'kotoba.compiler.bounded-edn-portable-test
+             'kotoba.compiler.definition-identity-portable-test
              'kotoba.compiler.effect-classification-test
              'kotoba.compiler.fuel-estimate-portable-test
              'kotoba.compiler.logic-manifest-test

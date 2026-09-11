@@ -1,0 +1,108 @@
+(ns kotoba.compiler.bounded-edn-portable-test
+  "`kotoba.compiler.bounded-edn` on both hosts: the same refusals, with the
+  same messages and the same `{:phase :decode}` data, whichever reader is
+  underneath.
+
+  This is `bounded-edn-test` (the `.clj` original) carried over with two
+  changes that are the whole point of the port. The accepting case compares
+  PRINTED values, because the Node host hands back a bigint for every integer
+  and `=` between a bigint and a number is false -- the representation is
+  different on purpose (see the namespace docstring), the token is not. And
+  the file cases write their bytes through the host's own `fs`, so the byte
+  ceiling and the strict-UTF-8 decode are exercised on the route
+  `bin/amu` actually takes.
+
+  Every negative case names its reason. A reader that accepted `#inst` would
+  fail the tagged-object case by its message, not by an exception count."
+  (:require [clojure.test :refer [deftest is testing]]
+            [kotoba.artifact.core :as artifact]
+            [kotoba.compiler.bounded-edn :as bounded-edn]
+            [kotoba.lang.text :as text]
+            #?@(:clj [[clojure.java.io :as io]]
+                :cljs [["node:fs" :as fs]
+                       ["node:os" :as os]
+                       ["node:path" :as path]])))
+
+(defn- trap [f]
+  (try (f) nil (catch #?(:clj clojure.lang.ExceptionInfo :cljs :default) error error)))
+
+(defn- printed [value]
+  (pr-str (artifact/edn-safe value)))
+
+(deftest accepts-one-bounded-edn-value
+  (is (= "{:allow #{[:cap/call 7]}, :args [1 -2]}"
+         (printed (bounded-edn/read-string "{:allow #{[:cap/call 7]}, :args [1 -2]}")))))
+
+(deftest rejects-structural-resource-attacks
+  (doseq [[label input message]
+          [["empty" "  ; nothing\n" #"empty"]
+           ["trailing form" "{} {}" #"trailing forms"]
+           ["reader depth" (str (apply str (repeat 129 "["))
+                                 (apply str (repeat 129 "]"))) #"nesting"]
+           ["oversized atom" (apply str (repeat 4097 "9")) #"token"]
+           ["tagged object" "#inst \"2026-07-11\"" #"dispatch forms"]
+           ["discard form" "{:safe true} #_ :hidden" #"dispatch forms"]
+           ["oversized string" (str "\"" (apply str (repeat 1048577 "a")) "\"") #"string exceeds"]
+           ["too many nodes" (str "[" (text/join " " (repeat 200001 "1")) "]") #"too many nodes"]
+           ["not text" 5 #"must be text"]]]
+    (testing label
+      (let [error (trap #(bounded-edn/read-string input))]
+        (is (some? error) label)
+        (is (re-find message (ex-message error)) label)
+        (is (= :decode (:phase (ex-data error))) label)))))
+
+(defn- with-temp-file [f]
+  #?(:clj (let [file (java.io.File/createTempFile "kotoba-bounded-edn-" ".edn")]
+            (try (f (.getPath file)) (finally (.delete file))))
+     :cljs (let [dir (.mkdtempSync fs (.join path (.tmpdir os) "kotoba-bounded-edn-"))
+                 file (.join path dir "input.edn")]
+             (try (f file)
+                  (finally (.rmSync fs dir #js {:recursive true :force true}))))))
+
+(defn- write-bytes! [file bytes]
+  #?(:clj (with-open [out (io/output-stream file)]
+            (.write out (byte-array (map unchecked-byte bytes))))
+     :cljs (.writeFileSync fs file (js/Buffer.from (clj->js bytes)))))
+
+(defn- write-text! [file text]
+  ;; Not `(map int text)`: cljs `int` of a one-character string is NaN, and
+  ;; a Buffer built from NaNs is a run of zero bytes -- which this test's
+  ;; first draft wrote and then read back as spaces.
+  #?(:clj (write-bytes! file (map int text))
+     :cljs (.writeFileSync fs file text "utf8")))
+
+(deftest file-input-is-byte-bounded-and-strict-utf8
+  (with-temp-file
+    (fn [file]
+      (write-bytes! file [0x7b 0x7d 0xff])
+      (is (re-find #"valid UTF-8"
+                   (ex-message (trap #(bounded-edn/read-file file)))))
+      (write-text! file "{:0123456789 1}")
+      (is (= "{:0123456789 1}" (printed (bounded-edn/read-file file))))
+      (with-redefs [bounded-edn/max-edn-bytes 8]
+        (let [error (trap #(bounded-edn/read-file file))]
+          (is (re-find #"byte limit" (ex-message error)))
+          (is (= 8 (:limit (ex-data error))))
+          (is (= :edn (:kind (ex-data error)))))))))
+
+(deftest a-missing-file-and-a-directory-are-refused-not-read-as-empty
+  (let [missing (trap #(bounded-edn/read-file "/nonexistent/kotoba/bounded-edn.edn"))]
+    (is (some? missing))
+    (is (= :decode (:phase (ex-data missing)))))
+  (with-temp-file
+    (fn [file]
+      (let [dir #?(:clj (.getParent (java.io.File. ^String file))
+                   :cljs (.dirname path file))
+            error (trap #(bounded-edn/read-file dir))]
+        (is (some? error))
+        (is (re-find #"regular file" (ex-message error)))))))
+
+(deftest source-text-is-bounded-by-the-source-limit-not-the-edn-limit
+  (with-temp-file
+    (fn [file]
+      (write-text! file "(defn main [] :i64 1)\n")
+      (is (= "(defn main [] :i64 1)\n" (bounded-edn/read-text-file file)))
+      (with-redefs [bounded-edn/max-source-bytes 4]
+        (let [error (trap #(bounded-edn/read-text-file file))]
+          (is (re-find #"byte limit" (ex-message error)))
+          (is (= :source (:kind (ex-data error)))))))))
