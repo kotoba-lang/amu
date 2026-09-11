@@ -1,6 +1,6 @@
 # ADR-0331: A pin held with a reason is not a pin left behind
 
-- Status: accepted
+- Status: accepted; the hold it decided was LIFTED 2026-09-12 (see the last section)
 - Date: 2026-09-03
 
 ## Context
@@ -96,3 +96,40 @@ and the module-lock CID, neither of which is on a `.kotoba` compile path.
   repository: a decoder that enforces canonical form is strictly better, and it
   is only this test's fixture — chosen when the decoder did not — that stops
   discriminating because of it.
+
+## 2026-09-12: the hold is lifted
+
+The argument above is unchanged and was re-measured today; what changed is that
+both things it protected have left this repository.
+
+1. **The test cannot run.** `ipld_adl_test` imports `java.nio` and the module
+   it exercises, `kotoba.compiler.ipld-adl`, is itself JVM-only
+   (`FileAttribute`). ADR 0347 removed the JVM route; neither file runs on any
+   route this repository has. A hold that keeps a test discriminating is worth
+   nothing while the test cannot fire either way -- that is the same shape this
+   ADR refuses, from the other side.
+
+2. **The open question has a measurement on both shas.** Decoding then
+   re-encoding under nbb, with only the io-ipld sha changed:
+
+   | input | at `1a2e10cf` | at `3e48e468` |
+   |---|---|---|
+   | `18 05` (uint8 spelling of 5) | decodes to 5, output 2 bytes, canonical 1 -- the ADL refusal fires | refused by the decoder: "bytes are not canonical DAG-CBOR" |
+   | `a2 61 62 01 61 61 02` (`{"b" 1 "a" 2}`, keys unsorted) | decodes, keys unsorted | refused by the decoder |
+   | `fa 3f c0 00 00` (float32 1.5) | refused: "unsupported simple/float" | same |
+   | `9f 01 ff` (indefinite array) | refused: "indefinite/reserved length unsupported" | same |
+
+   Four non-canonical shapes; at `3e48e468` none reaches the ADL check. That is
+   evidence for option 1 above (the check is subsumed by the decoder), not a
+   proof over all inputs. If `kotoba.compiler.ipld-adl` is ever ported to the
+   nbb route, the test's non-canonical case should be re-asked against the
+   decoder of the day, and if no input reaches `:adl-output-not-canonical`,
+   the check should be deleted rather than kept dead.
+
+Cost of the hold, measured at amu `46d91a25` on the project route: 9 of the
+61 "requires an explicit :export vector" refusals named an `ipld.*` namespace
+or `kotoba.value.codec`. The pin moves to `3e48e468` (ahead 62, behind 0) with
+this section's summary beside it in `deps.edn`. The advance adds
+`dev-protobuf` to the closure -- `ipld.dag-pb`'s wire codec, a real dependency
+and not excluded.
+
