@@ -15,7 +15,7 @@
       resolved (.spawnSync child js/process.execPath
                            (clj->js [nbb-cli "--classpath"
                                      (lib/join lib/root "src")
-                                     (lib/join lib/root "scripts" "print-classpath.cljs")
+                                     (lib/join lib/root "scripts" "print-classpath.cljk")
                                      lib/root])
                            #js {:cwd lib/root :encoding "utf8"})
       _ (when-not (zero? (or (.-status resolved) 1))
@@ -40,7 +40,7 @@
                        (.-delimiter path))
       result (.spawnSync child js/process.execPath
                          (clj->js [nbb-cli "--classpath" classpath
-                                   (lib/join lib/root "test" "nbb" "package_lock.cljs")])
+                                   (lib/join lib/root "test" "nbb" "package_lock.cljk")])
                          #js {:cwd lib/root :stdio "inherit" :env js/process.env})]
   (when (.-error result) (throw (.-error result)))
   (.exit js/process (or (.-status result) 70)))
