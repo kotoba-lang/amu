@@ -176,7 +176,7 @@
         ;; said so.
         ;;
         ;;   grammar-sha256    5b8af0f9db6ae93d44cc3a8c47d40eece4a8303274959fd5862a46f6a378bf1d
-        ;;   kotoba-sema-pin   b82c7bb3f9bf36ad23a494e76e869cd21ed1ffed
+        ;;   kotoba-sema-pin   99f03fc8d04842ba682202870e024792aa43b1ca
         ;;
         ;; `guest_grammar_vendor_test/authority-digest-history` ends with the
         ;; same digest, so the pin, the prose and the history move in one
@@ -561,7 +561,14 @@
          ;; byte-identical), APPENDED to `authority-digest-history`. Measured
          ;; on wasm32-browser: a two-body defn / defn- / fn answers the LAST
          ;; form (42), and the locked pin refused the same source.
-         "b82c7bb3f9bf36ad23a494e76e869cd21ed1ffed"}
+         ;;
+         ;; 2026-09-12, b82c7bb3 -> 99f03fc8 (kotoba-sema main, forward only, ahead 2
+         ;; behind 0): the empty-body refusal names the `#?(:clj ...)`-only
+         ;; body -- selfhost measurement 17 showed 13 modules still stopped
+         ;; at `function must contain one result expression` after the body
+         ;; sequencing, every one a body this reader reads as nothing. Same
+         ;; grammar digest (5b8af0f9); no head admitted or withdrawn.
+         "99f03fc8d04842ba682202870e024792aa43b1ca"}
         ;; ADR-2607266000 Phase B: these responsibilities moved out of this repo.
         ;;
         ;; The slice-value stream held this pin on purpose (ADR 0314), because
