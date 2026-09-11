@@ -152,7 +152,9 @@ JVM-only namespaces in the CLI's reach: 9 → **7**, all now in `kotoba-componen
 
 Not on this list, deliberately: `run` and `measure-runtime` need `kototama.native.executor`
 — a runtime, not a compiler leaf. `package-ios` (#948) and `package-aiueos-boot`
-(iteration 2) have left.
+(iteration 2) have left. (Later the same day the executor gained a Node host of its own --
+kototama-native a94e5c19 -- and became a root dependency of this compiler; `run` /
+`measure-runtime` are on the nbb route since. See the ledger in ADR 0347.)
 
 ## What this does not claim
 

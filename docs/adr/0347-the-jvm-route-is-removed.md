@@ -84,7 +84,7 @@ a refusal today; each is a port to do, in this order of consequence:
 | `sbom`, `attest-release`, `verify-release` | release evidence | **ported 2026-09-11**, same namespace; `kotoba.compiler.release` gained a `:cljs` branch (node fs/crypto) with the same refusals. `test-release` (7 refusals) and `test-output-set-publisher-auth` are un-refused and back in CI |
 | `package-ios` | iOS static Mach-O object + manifest | **ported 2026-09-11**; `ios-aot/package` was portable, its `:code` and entry offset are narrowed from bigint for `kotoba.object.macho64`'s byte gate. Verified `Mach-O 64-bit object arm64`, links with `runtime/ios/kotoba_ios_host.c` into a static archive locally (Xcode 26.6; the pinned-Xcode-16.2 conformance is CI's macos-14) |
 | target `cljs` / `cljs-browser` / `cljs-node` | the ClojureScript-source emitter | **ported 2026-09-11** (`js_cli.cljk` `compile-cljs!`); `backend.cljs` admits bigint literals and prints them as digits. The emitted source is EXECUTED in `test-nbb-release-and-emitters`: `fact 5 = 120`, `fact 10 = 3628800`, `forever` traps on fuel |
-| `run`, `measure-runtime` | executing artifacts from the CLI, and the loader identity a receipt's `:runtime` refers to | **blocked**: `kototama.native.executor` is a 1,238-line JVM driver around `tools/kexe_loader.c` -- toolchain identity (compiler resource manifest, dependency files), reproducible double build, argument marshalling for records/variants/strings/regions, supervisor-report validation, bounded process I/O. `jdk-free-native-conformance.cljk` already builds and drives the loader on Node, so the mechanism exists; the port is the driver. `conformance.cljk` refuses on exactly these two |
+| `run`, `measure-runtime` | executing artifacts from the CLI, and the loader identity a receipt's `:runtime` refers to | **ported 2026-09-11** (evening). `kototama.native.executor` (kototama-native a94e5c19, #12) has a `:cljs` branch at every host-specific site -- node:child_process / fs / crypto / os / path -- and the decisions are shared text; kototama-native is a root dependency of this compiler now (it was a `:test`-alias one), and `trust-cli` carries the two commands. Node-only facts named at the site: integers may be bigint (a report's `:result` / `:result-word(s)` past 2^53 is re-read from the report text as bigint -- `examples/i64-beyond-double.kotoba` returns `4794697086780616226` exact), and `spawnSync` kills the direct child rather than a tree (the loader spawns nothing). Measured on aarch64-macos through `bin/amu` from a foreign directory: `measure-runtime` twice reproducible; `run` of signed `structured.kotoba` → `:result 42`, `:remaining 510`, `verify-receipt` `:verified? true`; `calc 20 0` → `:status :trap` `:signal :SIGTRAP`, exit 120; expired `--now` → 77; a loader with one appended byte → 77 "does not match runtime identity"; wrong arity → 69. `conformance.cljk` is un-refused and runs end to end |
 | `coverage`, `sign-coverage-evidence` | coverage evidence | **ported 2026-09-11** (ADR 0348 iteration 2): `kotoba.compiler.coverage` gained a `:cljs` dataset walk and host-number normalization; `test-nbb-trust` runs the repository's own snapshot, signed evidence, and four refusals |
 | `package-aiueos-boot` | BOOTX64.EFI from an x86-64 kernel image | **ported 2026-09-11** (ADR 0348 iteration 2); `pe32plus` was portable, the two input refusals now carry a `:phase`. Its natural input -- the x86-64 kernel IMAGE -- is still the row below |
 | the divergent x86-64 aiueos kernel IMAGE | the live-boot GDT/TSS shim lives in the JVM twin of `elf64` | **blocked**, as before (`divergentImageReason` in `bin/amu`); the kernel OBJECT, user image and UEFI application are on the nbb route |
@@ -95,7 +95,7 @@ JVM mains and harnesses:
 |---|---|
 | `scripts/perfgate_qualify.cljk` (JVM main) via `scripts/perfgate-qualify.cljk` | refuses; `runtime-multidomain-suite.mjs` and `postalloc-scheduling-benchmark.mjs` call it |
 | `scripts/test-ipld-adl-wasmtime.cljk` (`-M:ipld-adl-conformance`) | refuses |
-| `scripts/conformance.cljk` (the CI language-conformance harness) | refuses on `run` / `measure-runtime` only; its signing, receipt, release, inspect, iOS and cljs blocks are carried by `test-nbb-trust`, `test-nbb-release-and-emitters`, `test-release` and `test-output-set-publisher-auth` (all in `test.yml`); its compile coverage by `test-nbb-wasm32` / `test-jdk-free-native` / `test-policy-bound-provenance` |
+| `scripts/conformance.cljk` (the CI language-conformance harness) | **runs again** (2026-09-11 evening) now that `run` / `measure-runtime` are on the nbb route; its `attested-run` is the executed evidence for the executor port. Refused for the hours in between, exit 2 |
 | `scripts/cloud-itonami-route-parity.cljk` (+ health / oauth-resource parity) | refuses; the Clojure oracle namespaces are `.cljk` and look portable — running them on nbb is the port, unmeasured |
 | `kotoba.compiler.backend-qualification` (CI `provider-qualification` job) | job removed; the qualification must move to the nbb route |
 | `downstream-murakumo` KIR drift gate (`kbb -M:test:dep` in murakumo) | job removed; murakumo's own suite decides how it runs without a JVM |
@@ -103,9 +103,10 @@ JVM mains and harnesses:
 
 ## Consequences
 
-- **Port status after the first day**: `run` and `measure-runtime` remain
-  (`coverage` / `sign-coverage-evidence` / `package-aiueos-boot` left in ADR
-  0348 iteration 2); the rest is on the nbb route with
+- **Port status after the first day**: nothing on the command ledger
+  remains -- `coverage` / `sign-coverage-evidence` / `package-aiueos-boot`
+  left in ADR 0348 iteration 2, `run` / `measure-runtime` in the evening
+  once the executor had a Node host; all with
   executed evidence. Three defects of one shape surfaced on the way and are
   fixed: `integer?` against a read-back bigint in `receipt`, `backend.cljs`
   and (via `ios-aot`) `macho64`'s byte gate. Any remaining `integer?` on a

@@ -243,6 +243,12 @@
     ;; plane's other refusals, on both routes.
     (:signature :sign :trust :runtime-identity) 77
     :output 74
+    ;; `:execute` is what `kototama.native.executor` names every refusal
+    ;; of its own -- an unsupported host, a loader that could not be built
+    ;; or does not match its identity, an argument that does not fit the
+    ;; entry, malformed supervisor evidence. `kotoba.compiler.cli/exit-code`
+    ;; has carried it as 69 since `run` existed; it joined here with `run`.
+    :execute 69
     :receipt 76
     70))
 
@@ -269,6 +275,7 @@
   (try
     (let [value (timed "command" #(run! (vec args)))]
       {:status 0
+       :value value
        :stdout (str (pr-str value) "\n")
        :stderr ""
        :timing (timing-report)})
@@ -287,13 +294,21 @@
   [run! args]
   (invoke* run! args true))
 
-(defn execute! [run!]
-  (let [{:keys [status stdout stderr timing]}
-        (invoke* run! (vec *command-line-args*) false)]
-    (emit-timing! timing)
-    (when (seq stdout) (.write js/process.stdout stdout))
-    (when (seq stderr) (.write js/process.stderr stderr))
-    (when-not (zero? status) (.exit js/process status))))
+(defn execute!
+  "Run the command on `*command-line-args*`, print its value or its error
+  report, and exit with the error's code. A command that RETURNED may still
+  want a non-zero exit -- `run` on a guest that trapped answers `:ok false`
+  and exits 120 -- so `exit-for` reads that off the returned value; it is
+  consulted only when the command returned, never on an error."
+  ([run!] (execute! run! (constantly 0)))
+  ([run! exit-for]
+   (let [{:keys [status value stdout stderr timing]}
+         (invoke* run! (vec *command-line-args*) false)
+         status (if (zero? status) (exit-for value) status)]
+     (emit-timing! timing)
+     (when (seq stdout) (.write js/process.stdout stdout))
+     (when (seq stderr) (.write js/process.stderr stderr))
+     (when-not (zero? status) (.exit js/process status)))))
 
 (def ^:private max-worker-line-bytes (* 64 1024))
 (def ^:private max-worker-args 64)

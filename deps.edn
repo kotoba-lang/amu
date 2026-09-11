@@ -1022,6 +1022,23 @@
         ;; kernel-native (8158aa8), and the interrupt entry address gate
         ;; (7070ec0) -- all fast-forward ancestors of this pin.
         ;;
+        ;; kototama-native: the native execution host (`kototama.native.executor`)
+        ;; behind `amu run` and `amu measure-runtime`. Until 2026-09-11 this was
+        ;; a `:test` alias dependency (and, before the JVM route left, the
+        ;; `:native-run` / `:native-conformance` launch aliases'), because the
+        ;; executor was JVM-only and those two commands ran on the JVM CLI.
+        ;; kototama-native a94e5c19 gives the executor a Node host and
+        ;; `trust-cli` calls it on the nbb route -- which resolves ONLY the
+        ;; root closure through deps-lock.edn. So it lives here. Its own
+        ;; closure (text, osaho, artifact, kotoba-verifier) is already this
+        ;; compiler's.
+        ;; Advanced 2026-09-11, a94e5c19 -> 005c9b741639bc517682b62afd84be9ea5c0ce9d (kototama-native main,
+        ;; forward only): the Node executor's regular-file check follows
+        ;; symlinks, without which Ubuntu's /usr/bin/cc (a symlink) was "not
+        ;; found" and measure-runtime refused on this repo's ubuntu runners.
+        io.github.kotoba-lang/kototama-native
+        {:git/url "https://github.com/kotoba-lang/kototama-native.git"
+         :git/sha "005c9b741639bc517682b62afd84be9ea5c0ce9d"}
         ;; Advanced 2026-09-03 (ADR 0330) for the fifth and sixth instances of
         ;; that same independence: b58c009 re-derives the fused
         ;; dequantize-and-dot family and bcea4a1 the four codebook formats, each
@@ -1159,20 +1176,10 @@
                    io.github.kotoba-lang/provider
                    {:git/url "https://github.com/kotoba-lang/provider.git"
                     :git/sha "0ba1fbabb536027d25bbefc50374fbe95e6b54ec"}
-                   ;; Advanced 2026-09-07, ec4d182e -> a569f1d1 (kototama-native
-                   ;; main, ahead 10, forward only), REQUIRED by the kotoba-kir
-                   ;; pin above: kotoba-kir d41dc85 (#81) renamed every
-                   ;; `:runtime` keyword kotoba-* -> kototama-*, and the
-                   ;; executor's untagged-supervisor gate compared the artifact
-                   ;; profile against the literal `:kotoba-supervisor-v1`.
-                   ;; Measured with only the kir pin moved: 122 "artifact and
-                   ;; runtime target profiles do not match" errors across the
-                   ;; native suites, 0 on the base. kototama-native #11 follows
-                   ;; the rename. Same sha in :native-run and
-                   ;; :native-conformance below -- one kototama-native.
-                   io.github.kotoba-lang/kototama-native
-                   {:git/url "https://github.com/kotoba-lang/kototama-native.git"
-                    :git/sha "a4089a2f4a17ad232af7a79d0c177a8e0cd85c80"}}
+                   ;; kototama-native left this alias for the root `:deps` on
+                   ;; 2026-09-11 (see the note there): the executor has a Node
+                   ;; host and the nbb route resolves only the root closure.
+                   }
                   ;; No :main-opts: the JVM test runner left with the JVM route
                   ;; (2026-09-11). This alias remains as the DECLARATION of the
                   ;; extra git dependencies the nbb test runners need;
