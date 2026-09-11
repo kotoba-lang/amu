@@ -85,13 +85,65 @@ Found on the way and fixed on both routes: `:sign` (a malformed key at `public-k
 neither exit-code table and answered 70, "internal compiler error", for a caller's input.
 It is 77 now, beside the signature plane's other refusals.
 
+## Iteration 2 (2026-09-11, later the same day)
+
+Between the two iterations a parallel session ported `release` and `package-ios`
+(#948). This iteration took the next level-1 leaf and the command that stood only on
+leaves already portable:
+
+| level | namespace / command | status |
+|---|---|---|
+| 1 | `kotoba.compiler.coverage` | **portable** — `:cljs` dataset walk on `node:fs` / `node:crypto`; the schema admits host integers through `guest-integer?` and the report arithmetic runs on host numbers (every manifest integer is basis points, a threshold or an epoch) |
+| — | `kotoba.compiler.coverage-evidence` | was portable by content; `:tested-at` / `:expires` now admitted through `guest-integer?` |
+| — | `coverage`, `sign-coverage-evidence`, `package-aiueos-boot` | on the nbb route, in `trust-cli` |
+
+`scripts/test-nbb-trust.cljk` grows to 49 checks: the repository's own coverage snapshot
+reports `unknown + identifiable = 10000` and `goal-met? false`; a claim signed here and
+named as release evidence turns the platform's share into `:supported-bps`; the wrong
+dataset (65), expired evidence (77), an untrusted signer (77) and evidence nobody provided
+(65) are each refused by name. `package-aiueos-boot` packages a minimal ET_EXEC x86-64
+kernel into a PE32+ image (starts `MZ`), twice byte-identically, and refuses a kernel
+OBJECT and a 16 KiB+1 payload with 65 — the two input refusals in `pe32plus` carry a
+`:phase` now; before, both answered 70 "internal compiler error". Removing the
+host-number normalization turns 8 coverage checks red.
+
+What `package-aiueos-boot` cannot yet do on this route: its natural input, the x86-64
+kernel IMAGE, is the one artifact the nbb route still refuses (the JVM twin of `elf64`
+holds the live-boot shim — ADR 0347's ledger). The command is portable; its producer is not.
+
+JVM-only namespaces in the CLI's reach: 11 → **9**. Commands on no route: `run`,
+`measure-runtime` (the native executor) and `test` (the JVM test runner).
+
+## Iteration 3 (2026-09-11): two twins become one namespace each
+
+`kotoba.compiler.module-lock` and `kotoba.compiler.project-files` each had a Node twin
+under `kotoba.compiler.nbb.*` — the same functions, the same messages, kept identical by
+hand, with a test pinning the Node CIDs against JVM vectors. Rank 2 of this ADR says one
+implementation per command; the same applies to a leaf. The twins are deleted and their
+bodies are the `:cljs` branches of the canonical namespaces: the host seams (real path,
+regular-file, directory, segment-wise containment, block read/write, the CIDv1 hash) are
+reader conditionals, the contract (every check, every message, `:phase`) is one text.
+`lock-from-source-paths` keeps both arities — the Node route injects
+`load-closed-graph`, the 3-arity resolves it for callers not on a pinned build.
+`read-lock` reads through the now-portable `bounded-edn` on both hosts.
+
+Measured: `test-nbb-project` (44 checks, including the CID vectors produced by the JVM
+twin) unchanged; a two-module project pinned with `amu module-lock`, compiled with
+`compile --module-lock`, answers 42; a block edited in place after pinning is refused
+`"locked module block does not hash to its CID"` (65); the same namespace under two
+`--source-path` roots is refused `"namespace resolves from multiple explicit source
+paths"` (65).
+
+JVM-only namespaces in the CLI's reach: 9 → **7**, all now in `kotoba-component` /
+`kotoba-wasm` (external) or above them (`core`, `test-profile`, `cli`).
+
 ## What remains, in order (from the EDN, `--probe` confirmed)
 
 | level | namespace | refused on Node with | unblocks |
 |---|---|---|---|
 | 1 | ~~`kotoba.compiler.release`~~ | ~~`java.io.FileInputStream`~~ | **portable since 2026-09-11** (a `:cljs` branch on node fs/crypto); `sbom`, `attest-release`, `verify-release` and `package-ios` joined `trust-cli` the same day |
-| 1 | `kotoba.compiler.coverage` | `java.nio.file.Files` | `coverage` (`sign-coverage-evidence` needs only the leaves already done) |
-| 1 | `kotoba.compiler.project-files`, `module-lock` | `java.nio.file.Files` | already have Node ports under `nbb.*` — the honest end state is one namespace each, not two |
+| 1 | ~~`kotoba.compiler.coverage`~~ | ~~`java.nio.file.Files`~~ | **portable since iteration 2**; `coverage`, `sign-coverage-evidence`, `package-aiueos-boot` joined `trust-cli` |
+| ~~1~~ | ~~`kotoba.compiler.project-files`, `module-lock`~~ | | **one namespace each since iteration 3** — the `nbb.*` twins are deleted, their bodies are the `:cljs` branches |
 | 1 | `kotoba.component.admission`, `kotoba.wasm.tools` | `StandardCharsets` | external repo `kotoba-component` / `kotoba-wasm`; `check`/`compile` on the JVM route |
 | 2–3 | `kotoba.component.core`, `.artifact` | same repo | |
 | 4 | `kotoba.compiler.core` | the JVM compile driver (930 lines) | `test`; the JVM `check`/`compile` twins |
@@ -99,11 +151,10 @@ It is 77 now, beside the signature plane's other refusals.
 | 6 | `kotoba.compiler.cli` | itself | the route |
 
 Not on this list, deliberately: `run` and `measure-runtime` need `kototama.native.executor`
-— a runtime, not a compiler leaf — and `package-ios` / `package-aiueos-boot` stand only on
-the two leaves now portable and are a routing change away, gated on their own end-to-end
-checks. (Later the same day the executor gained a Node host of its own -- kototama-native
-a94e5c19 -- and became a root dependency of this compiler; `run` / `measure-runtime` are
-on the nbb route since. See the ledger in ADR 0347.)
+— a runtime, not a compiler leaf. `package-ios` (#948) and `package-aiueos-boot`
+(iteration 2) have left. (Later the same day the executor gained a Node host of its own --
+kototama-native a94e5c19 -- and became a root dependency of this compiler; `run` /
+`measure-runtime` are on the nbb route since. See the ledger in ADR 0347.)
 
 ## What this does not claim
 

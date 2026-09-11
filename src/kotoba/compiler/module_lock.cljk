@@ -18,25 +18,104 @@
   definition CIDs in `kotoba-lang/codebase`, which identify checked
   definitions. A source-tree CID says which bytes were compiled. A definition
   CID says what a definition MEANS. Conflating them would let a comment change
-  invalidate a definition identity, or let two different sources claim one."
+  invalidate a definition identity, or let two different sources claim one.
+
+  One namespace on both compiler hosts since 2026-09-11 (ADR 0348 iteration
+  3). Until then this was two hand-kept twins -- this file on the JVM and
+  `kotoba.compiler.nbb.module-lock` on Node -- with byte-identical messages
+  and a test pinning the Node CIDs against JVM vectors. The messages, the
+  `:phase :module-lock` data and every function's contract are unchanged;
+  what moved is that the host-specific parts (the CID hash, the block-store
+  reads and writes) sit in reader conditionals here instead of in a second
+  file. The Node CID is assembled from `node:crypto`'s SHA-256 and
+  `multiformats.base32` rather than `multiformats.core/cidv1-raw`, whose
+  ClojureScript branch hashes with `@noble/hashes`, an npm package this
+  compiler does not depend on; `test/nbb/project.cljk` pins that shortcut
+  against the JVM's vectors."
   {:kotoba/export [load-locked-graph lock-cid lock-from-source-paths lock-schema read-lock write-block!]}
-  (:require [clojure.java.io :as io]
-            [kotoba.lang.text :as str]
-            [kotoba.compiler.bounded-edn :as bounded-edn]
-            [kotoba.sema :as sema]
+  (:require [kotoba.compiler.bounded-edn :as bounded-edn]
             [kotoba.compiler.project :as project]
-            [multiformats.core :as mf])
-  (:import [java.nio.file Files LinkOption Path]))
+            [kotoba.sema :as sema]
+            #?@(:clj [[clojure.java.io :as io]
+                      [multiformats.core :as mf]]
+                :cljs [["node:crypto" :as crypto]
+                       ["node:fs" :as fs]
+                       ["node:path" :as path]
+                       [kotoba.compiler.nbb.io :as nbb-io]
+                       [multiformats.base32 :as base32]]))
+  #?(:clj (:import [java.nio.file Files LinkOption Path])))
 
 (def lock-schema :kotoba.module-lock/v1)
 
 (defn- reject! [message data]
   (throw (ex-info message (assoc data :phase :module-lock))))
 
-(defn- block-file ^Path [blocks-root cid]
+;; ── host seams ─────────────────────────────────────────────────────────────
+
+#?(:cljs
+   ;; CIDv1(raw, sha2-256) = multibase 'b' + base32(0x01 0x55 0x12 0x20 <digest>).
+   ;; The four leading octets are the varints for CID version 1 and the raw
+   ;; codec (0x55) followed by the sha2-256 multihash code (0x12) and its
+   ;; 32-byte length -- all below 128, so each is a one-octet varint. Same
+   ;; value `ipfs add --cid-version=1 --raw-leaves` produces for a single block.
+   (def ^:private cidv1-raw-prefix [0x01 0x55 0x12 0x20]))
+
+(defn- cidv1-raw [bytes]
+  #?(:clj (mf/cidv1-raw bytes)
+     :cljs (let [digest (-> (.createHash crypto "sha256") (.update bytes) (.digest))]
+             (str "b" (base32/encode (into cidv1-raw-prefix (js/Array.from digest)))))))
+
+(defn- utf8-bytes [text]
+  #?(:clj (.getBytes ^String text "UTF-8")
+     :cljs (.from js/Buffer text "utf8")))
+
+(defn- byte-length [bytes]
+  #?(:clj (alength ^bytes bytes) :cljs (.-length bytes)))
+
+(defn- block-file [blocks-root cid]
   (when-not (re-matches #"[a-z0-9]{16,128}" (str cid))
     (reject! "module CID is not a plain base32 CIDv1" {:cid cid}))
-  (.resolve ^Path blocks-root ^String cid))
+  ;; A name that passed the pattern above cannot escape the block root: the
+  ;; pattern admits no separator, no dot and no colon, so there is no `..`
+  ;; segment and no drive-relative form to normalize away.
+  #?(:clj (.resolve ^Path blocks-root ^String cid)
+     :cljs (.join path blocks-root cid)))
+
+(defn- regular-file? [p]
+  #?(:clj (Files/isRegularFile p (make-array LinkOption 0))
+     :cljs (try (.isFile (.statSync fs p)) (catch :default _ false))))
+
+(defn- read-block-bytes [p]
+  #?(:clj (Files/readAllBytes p)
+     :cljs (.readFileSync fs p)))
+
+(defn- decode-utf8! [bytes cid]
+  ;; Decoded only after the hash matched. The decoder is strict so a block
+  ;; whose bytes verify but are not UTF-8 is rejected here rather than
+  ;; reaching the reader as replacement characters.
+  #?(:clj (String. ^bytes bytes "UTF-8")
+     :cljs (try
+             (.decode (js/TextDecoder. "utf-8" #js {:fatal true}) bytes)
+             (catch :default error
+               (throw (ex-info "input is not valid UTF-8"
+                               {:phase :decode :cid cid} error))))))
+
+(defn- blocks-root! [blocks-path]
+  (let [root #?(:clj (try
+                       (.toRealPath (.toPath (io/file blocks-path))
+                                    (make-array LinkOption 0))
+                       (catch java.io.IOException _
+                         (reject! "block store is not readable" {:path blocks-path})))
+                :cljs (try
+                        (.realpathSync fs blocks-path)
+                        (catch :default _
+                          (reject! "block store is not readable" {:path blocks-path}))))]
+    (when-not #?(:clj (Files/isDirectory root (make-array LinkOption 0))
+                 :cljs (try (.isDirectory (.statSync fs root)) (catch :default _ false)))
+      (reject! "block store must be a readable directory" {:path blocks-path}))
+    root))
+
+;; ── the contract ───────────────────────────────────────────────────────────
 
 (defn- read-verified-source
   "Read the module bytes for CID and prove they are the ones named.
@@ -45,19 +124,19 @@
   serves the wrong file, a truncated read, and a tampered block are all the
   same failure here, and none of them can reach the frontend."
   [blocks-root cid]
-  (let [path (block-file blocks-root cid)]
-    (when-not (Files/isRegularFile path (make-array LinkOption 0))
+  (let [p (block-file blocks-root cid)]
+    (when-not (regular-file? p)
       (reject! "locked module block is missing from the block store"
                {:cid cid :block-store (str blocks-root)}))
-    (let [bytes (Files/readAllBytes path)]
-      (when (> (alength bytes) project/max-linked-source-bytes)
+    (let [bytes (read-block-bytes p)]
+      (when (> (byte-length bytes) project/max-linked-source-bytes)
         (reject! "locked module exceeds the source size limit"
                  {:cid cid :limit project/max-linked-source-bytes}))
-      (let [actual (mf/cidv1-raw bytes)]
+      (let [actual (cidv1-raw bytes)]
         (when-not (= cid actual)
           (reject! "locked module block does not hash to its CID"
                    {:expected cid :actual actual})))
-      (String. ^bytes bytes "UTF-8"))))
+      (decode-utf8! bytes cid))))
 
 (defn lock-cid
   "Identity of the pinned input set itself.
@@ -67,13 +146,12 @@
   plus every namespace/CID pair, in canonical order -- so a receipt can bind
   one value that changes whenever any input does."
   [{:keys [root modules]}]
-  (mf/cidv1-raw
-   (.getBytes (pr-str {:schema lock-schema
-                       :root (str root)
-                       :modules (into (sorted-map)
-                                      (map (fn [[k v]] [(str k) (str v)]))
-                                      modules)})
-              "UTF-8")))
+  (cidv1-raw
+   (utf8-bytes (pr-str {:schema lock-schema
+                        :root (str root)
+                        :modules (into (sorted-map)
+                                       (map (fn [[k v]] [(str k) (str v)]))
+                                       modules)}))))
 
 (defn read-lock
   "Read and structurally validate a module lock file."
@@ -106,7 +184,7 @@
         {:schema lock-schema :root root :modules modules}))))
 
 (defn load-locked-graph
-  "Resolve the closed module graph named by LOCK-PATH out of BLOCKS-ROOT.
+  "Resolve the closed module graph named by LOCK-PATH out of BLOCKS-PATH.
 
   Returns the same `{:sources :root}` shape `project-files/load-closed-graph`
   produces, so linking and compilation are unchanged downstream, plus the
@@ -117,14 +195,8 @@
   several roots -- but the unreachable entries do not silently become part of
   this compile."
   [lock-path blocks-path]
-  (let [{:keys [root modules] :as lock} (read-lock lock-path)
-        blocks-root (try
-                      (.toRealPath (.toPath (io/file blocks-path))
-                                   (make-array LinkOption 0))
-                      (catch java.io.IOException _
-                        (reject! "block store is not readable" {:path blocks-path})))]
-    (when-not (Files/isDirectory blocks-root (make-array LinkOption 0))
-      (reject! "block store must be a readable directory" {:path blocks-path}))
+  (let [{:keys [root modules]} (read-lock lock-path)
+        blocks-root (blocks-root! blocks-path)]
     (loop [pending [root] sources {} resolved {}]
       (if-let [namespace (first pending)]
         (if (contains? sources namespace)
@@ -150,21 +222,32 @@
          :lock-cid (lock-cid {:root root :modules resolved})}))))
 
 (defn write-block!
-  "Persist SOURCE into BLOCKS-ROOT under its own CID and return that CID.
+  "Persist SOURCE into BLOCKS-PATH under its own CID and return that CID.
 
   Used to build a lock from a working tree: the CID is derived from the bytes,
   so writing the same source twice is idempotent and two authors who wrote the
-  same module produce the same block."
+  same module produce the same block. A CID collision is not the expectation
+  here; a block store shared with something that writes by a different rule
+  is. So an existing block is compared rather than overwritten, and the store
+  can only ever hold bytes that match their own name."
   [blocks-path source]
-  (let [dir (io/file blocks-path)
-        bytes (.getBytes ^String source "UTF-8")
-        cid (mf/cidv1-raw bytes)]
-    (.mkdirs dir)
-    (let [target (io/file dir cid)]
-      (if (.exists target)
-        (when-not (= (seq bytes) (seq (Files/readAllBytes (.toPath target))))
-          (reject! "existing block has different bytes for its CID" {:cid cid}))
-        (Files/write (.toPath target) bytes (make-array java.nio.file.OpenOption 0))))
+  (let [bytes (utf8-bytes source)
+        cid (cidv1-raw bytes)]
+    #?(:clj
+       (let [dir (io/file blocks-path)]
+         (.mkdirs dir)
+         (let [target (io/file dir cid)]
+           (if (.exists target)
+             (when-not (= (seq bytes) (seq (Files/readAllBytes (.toPath target))))
+               (reject! "existing block has different bytes for its CID" {:cid cid}))
+             (Files/write (.toPath target) bytes (make-array java.nio.file.OpenOption 0)))))
+       :cljs
+       (let [target (.join path blocks-path cid)]
+         (.mkdirSync fs blocks-path #js {:recursive true})
+         (if (regular-file? target)
+           (when-not (.equals bytes (.readFileSync fs target))
+             (reject! "existing block has different bytes for its CID" {:cid cid}))
+           (nbb-io/write-text! target source))))
     cid))
 
 (defn lock-from-source-paths
@@ -172,13 +255,22 @@
   BLOCKS-PATH.
 
   This is the migration edge: a project that resolves by path today can be
-  pinned once and compiled by CID from then on."
-  [input source-paths blocks-path]
-  (let [project-files (requiring-resolve 'kotoba.compiler.project-files/load-closed-graph)
-        {:keys [sources root]} (project-files input source-paths)
-        modules (into (sorted-map)
-                      (map (fn [[namespace source]]
-                             [namespace (write-block! blocks-path source)]))
-                      sources)]
-    {:schema lock-schema :root root :modules modules
-     :lock-cid (lock-cid {:root root :modules modules})}))
+  pinned once and compiled by CID from then on. `load-closed-graph` is passed
+  in rather than required, so this namespace does not pull the path resolver
+  into the dependency closure of a build that is already pinned; the 3-arity
+  resolves `kotoba.compiler.project-files/load-closed-graph` for callers that
+  are not on a pinned build."
+  ([input source-paths blocks-path]
+   (lock-from-source-paths
+    #?(:clj (requiring-resolve 'kotoba.compiler.project-files/load-closed-graph)
+       :cljs (reject! "lock-from-source-paths needs load-closed-graph on this host"
+                      {:input input}))
+    input source-paths blocks-path))
+  ([load-closed-graph input source-paths blocks-path]
+   (let [{:keys [sources root]} (load-closed-graph input source-paths)
+         modules (into (sorted-map)
+                       (map (fn [[namespace source]]
+                              [namespace (write-block! blocks-path source)]))
+                       sources)]
+     {:schema lock-schema :root root :modules modules
+      :lock-cid (lock-cid {:root root :modules modules})})))

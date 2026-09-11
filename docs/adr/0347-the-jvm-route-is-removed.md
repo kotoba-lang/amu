@@ -85,7 +85,8 @@ a refusal today; each is a port to do, in this order of consequence:
 | `package-ios` | iOS static Mach-O object + manifest | **ported 2026-09-11**; `ios-aot/package` was portable, its `:code` and entry offset are narrowed from bigint for `kotoba.object.macho64`'s byte gate. Verified `Mach-O 64-bit object arm64`, links with `runtime/ios/kotoba_ios_host.c` into a static archive locally (Xcode 26.6; the pinned-Xcode-16.2 conformance is CI's macos-14) |
 | target `cljs` / `cljs-browser` / `cljs-node` | the ClojureScript-source emitter | **ported 2026-09-11** (`js_cli.cljk` `compile-cljs!`); `backend.cljs` admits bigint literals and prints them as digits. The emitted source is EXECUTED in `test-nbb-release-and-emitters`: `fact 5 = 120`, `fact 10 = 3628800`, `forever` traps on fuel |
 | `run`, `measure-runtime` | executing artifacts from the CLI, and the loader identity a receipt's `:runtime` refers to | **ported 2026-09-11** (evening). `kototama.native.executor` (kototama-native a94e5c19, #12) has a `:cljs` branch at every host-specific site -- node:child_process / fs / crypto / os / path -- and the decisions are shared text; kototama-native is a root dependency of this compiler now (it was a `:test`-alias one), and `trust-cli` carries the two commands. Node-only facts named at the site: integers may be bigint (a report's `:result` / `:result-word(s)` past 2^53 is re-read from the report text as bigint -- `examples/i64-beyond-double.kotoba` returns `4794697086780616226` exact), and `spawnSync` kills the direct child rather than a tree (the loader spawns nothing). Measured on aarch64-macos through `bin/amu` from a foreign directory: `measure-runtime` twice reproducible; `run` of signed `structured.kotoba` → `:result 42`, `:remaining 510`, `verify-receipt` `:verified? true`; `calc 20 0` → `:status :trap` `:signal :SIGTRAP`, exit 120; expired `--now` → 77; a loader with one appended byte → 77 "does not match runtime identity"; wrong arity → 69. `conformance.cljk` is un-refused and runs end to end |
-| `coverage`, `sign-coverage-evidence` | coverage evidence | **blocked**; `kotoba.compiler.coverage` uses `java.nio.file` + `MessageDigest` (136 lines) -- the same shape as the release port |
+| `coverage`, `sign-coverage-evidence` | coverage evidence | **ported 2026-09-11** (ADR 0348 iteration 2): `kotoba.compiler.coverage` gained a `:cljs` dataset walk and host-number normalization; `test-nbb-trust` runs the repository's own snapshot, signed evidence, and four refusals |
+| `package-aiueos-boot` | BOOTX64.EFI from an x86-64 kernel image | **ported 2026-09-11** (ADR 0348 iteration 2); `pe32plus` was portable, the two input refusals now carry a `:phase`. Its natural input -- the x86-64 kernel IMAGE -- is still the row below |
 | the divergent x86-64 aiueos kernel IMAGE | the live-boot GDT/TSS shim lives in the JVM twin of `elf64` | **blocked**, as before (`divergentImageReason` in `bin/amu`); the kernel OBJECT, user image and UEFI application are on the nbb route |
 
 JVM mains and harnesses:
@@ -102,10 +103,11 @@ JVM mains and harnesses:
 
 ## Consequences
 
-- **Port status after the first day**: `coverage` and
-  `sign-coverage-evidence` remain; the rest -- `run` and `measure-runtime`
-  included, since the evening -- is on the nbb route with executed
-  evidence. Three defects of one shape surfaced on the way and are
+- **Port status after the first day**: nothing on the command ledger
+  remains -- `coverage` / `sign-coverage-evidence` / `package-aiueos-boot`
+  left in ADR 0348 iteration 2, `run` / `measure-runtime` in the evening
+  once the executor had a Node host; all with
+  executed evidence. Three defects of one shape surfaced on the way and are
   fixed: `integer?` against a read-back bigint in `receipt`, `backend.cljs`
   and (via `ios-aot`) `macho64`'s byte gate. Any remaining `integer?` on a
   value that crossed the kotoba reader is the same bug waiting. Two launcher

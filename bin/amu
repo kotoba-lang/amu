@@ -103,14 +103,16 @@ function option(args, flag) {
 // :kotoba.error/namespace-export-clause through this launcher, and exited 0
 // with a 6561-byte .wasm through the JVM entry point that owns the linker.
 //
-// `kotoba.compiler.nbb.project-files` resolved that half on 2026-08-31.
+// `kotoba.compiler.project-files` (a Node twin on 2026-08-31, one namespace
+// on both hosts since ADR 0348) resolved that half.
 // --module-lock stayed on the JVM afterwards, and the refusal was right while
 // it lasted: serving a lock-pinned build from the PATH resolver would have
 // dropped the pinning without saying so, which is the ambience the lock
 // exists to remove. But the consequence was that reproducible and JDK-free
 // were mutually exclusive, and Q9 forbids a JVM build dependency -- so the
 // answer was to remove the reason for the refusal rather than the refusal.
-// `kotoba.compiler.nbb.module-lock` is the CID resolver, and `module-lock`
+// `kotoba.compiler.module-lock` (one namespace on both hosts since ADR 0348;
+// it was a Node twin before) is the CID resolver, and `module-lock`
 // itself (which PRODUCES a lock) runs here too: leaving production on the JVM
 // would only have moved the JDK one step upstream of every pinned build.
 //
@@ -150,6 +152,7 @@ const trustCommands = new Set(["keygen", "public-key", "inspect", "trust-key",
   // The release family and iOS packaging joined the same namespace on
   // 2026-09-11 (kotoba.compiler.release is portable now; ios-aot was).
   "sbom", "attest-release", "verify-release", "package-ios",
+  "coverage", "sign-coverage-evidence", "package-aiueos-boot",
   // `run` and `measure-runtime` joined later the same day, when the kototama
   // native executor gained a Node host (kototama-native a94e5c19). They were
   // the last two entries of the JVM-route-removed ledger.

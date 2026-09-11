@@ -284,10 +284,11 @@ error rather than a reason to go looking. `module-lock/lock-cid` gives the whole
 resolved input set one identity, so a receipt can bind a value that changes
 whenever any input does.
 
-Both halves run without a JDK. `kotoba.compiler.nbb.module-lock` is the Node
-twin of the resolver and `bin/amu` routes `module-lock` and
-`compile --module-lock` there, so `--jvm-free` covers pinning a project as
-well as compiling from the pin. Leaving lock PRODUCTION on the JVM would only
+Both halves run without a JDK. `kotoba.compiler.module-lock` is one
+namespace on both hosts (it was a JVM file and a Node twin until 2026-09-11,
+ADR 0348) and `bin/amu` routes `module-lock` and `compile --module-lock` to
+the Node route, so `--jvm-free` covers pinning a project as well as
+compiling from the pin. Leaving lock PRODUCTION on the JVM would only
 have moved the JDK one step upstream of every pinned build, which is the Q9
 objection restated rather than answered.
 

@@ -1,9 +1,24 @@
 (ns kotoba.compiler.coverage
+  "The worldwide-coverage manifest (ADR 0001): its schema, the report it
+  yields, and the dataset digest it names.
+
+  Portable since 2026-09-11 (ADR 0348, level-1 leaf of
+  `docs/jvm-route-topology.edn`). The `:clj` dataset walk is the one that
+  was here; the `:cljs` branch reads the file through `node:fs` with the
+  same refusals (regular file, byte ceiling, digest mismatch). Integers
+  read back on the Node host are bigint, so the schema admits them through
+  `verifier/guest-integer?` and the arithmetic in `report` runs on host
+  numbers -- every integer in a manifest is a share in basis points, a
+  threshold or an epoch, all far below 2^53."
   {:kotoba/export [report validate! verify-dataset!]}
-  (:require [clojure.java.io :as io]
-            [clojure.set :as set])
-  (:import [java.nio.file Files LinkOption Paths]
-           [java.security MessageDigest]))
+  (:require [clojure.set :as set]
+            [clojure.walk :as walk]
+            [kotoba.verifier :as verifier]
+            #?@(:clj [[clojure.java.io :as io]]
+                :cljs [["node:crypto" :as crypto]
+                       ["node:fs" :as fs]]))
+  #?(:clj (:import [java.nio.file Files LinkOption Paths]
+                   [java.security MessageDigest])))
 
 (def ^:private manifest-keys
   #{:format :dataset :population :period :observations :support :threshold-bps})
@@ -18,6 +33,15 @@
 (defn- reject! [message data]
   (throw (ex-info message (merge {:phase :coverage} data))))
 
+(defn- host-numbers
+  "Every guest integer as a host number. Identity on the JVM; on Node a
+  bigint that the reader handed back becomes a Number. Applied before the
+  schema is checked, so `integer?`, `=` and `quot` below see one
+  representation on both hosts."
+  [value]
+  #?(:clj value
+     :cljs (walk/postwalk #(if (verifier/guest-integer? %) (js/Number %) %) value)))
+
 (defn- exact-keys? [value expected]
   (and (map? value) (= expected (set (keys value)))))
 
@@ -28,6 +52,7 @@
   (and (string? value) (boolean (re-matches #"[0-9]{4}-(0[1-9]|1[0-2])" value))))
 
 (defn validate! [manifest]
+  (let [manifest (host-numbers manifest)]
   (when-not (exact-keys? manifest manifest-keys)
     (reject! "coverage manifest schema rejected" {}))
   (let [{:keys [dataset period observations support threshold-bps]} manifest]
@@ -72,12 +97,12 @@
                    (set/subset? (set (map :platform support))
                                 (set (map :platform observations))))
       (reject! "coverage support evidence rejected" {})))
-  manifest)
+  manifest))
 
 (defn report
   ([manifest] (report manifest []))
   ([manifest verified-evidence]
-   (validate! manifest)
+   (let [manifest (validate! manifest)]
    (when-not (and (vector? verified-evidence)
                   (every? #(and (map? %) (sha256? (:digest %))
                                 (keyword? (:platform %)) (set? (:paths %)))
@@ -107,31 +132,47 @@
      :coverage-bps coverage-bps
      :threshold-bps (:threshold-bps manifest)
      :goal-met? (>= coverage-bps (:threshold-bps manifest))
-     :release-platforms (set (map :platform released))})))
+     :release-platforms (set (map :platform released))}))))
 
 (defn verify-dataset! [manifest path]
-  (validate! manifest)
-  (when-not (and (string? path) (seq path))
-    (reject! "coverage dataset path is required" {}))
-  (let [file (Paths/get path (make-array String 0))]
-    (when-not (Files/isRegularFile file (make-array LinkOption 0))
-      (reject! "coverage dataset must be a regular file" {}))
-    (let [digest (MessageDigest/getInstance "SHA-256")]
-      (with-open [input (io/input-stream path)]
-        (let [buffer (byte-array 8192)]
-          (loop [total 0]
-            (let [read (.read input buffer)]
-              (when-not (neg? read)
-                (let [next-total (+ total read)]
-                  (when (> next-total max-dataset-bytes)
-                    (reject! "coverage dataset exceeds byte limit"
-                             {:limit max-dataset-bytes}))
-                  (.update digest buffer 0 read)
-                  (recur next-total)))))))
-      (let [actual (apply str (map #(format "%02x" (bit-and (int %) 0xff))
-                                   (.digest digest)))]
-        (when-not (MessageDigest/isEqual (.getBytes ^String actual "US-ASCII")
-                                         (.getBytes ^String (get-in manifest [:dataset :sha256])
-                                                    "US-ASCII"))
-          (reject! "coverage dataset digest mismatch" {}))))
-  manifest))
+  (let [manifest (validate! manifest)]
+    (when-not (and (string? path) (seq path))
+      (reject! "coverage dataset path is required" {}))
+    #?(:clj
+       (let [file (Paths/get path (make-array String 0))]
+         (when-not (Files/isRegularFile file (make-array LinkOption 0))
+           (reject! "coverage dataset must be a regular file" {}))
+         (let [digest (MessageDigest/getInstance "SHA-256")]
+           (with-open [input (io/input-stream path)]
+             (let [buffer (byte-array 8192)]
+               (loop [total 0]
+                 (let [read (.read input buffer)]
+                   (when-not (neg? read)
+                     (let [next-total (+ total read)]
+                       (when (> next-total max-dataset-bytes)
+                         (reject! "coverage dataset exceeds byte limit"
+                                  {:limit max-dataset-bytes}))
+                       (.update digest buffer 0 read)
+                       (recur next-total)))))))
+           (let [actual (apply str (map #(format "%02x" (bit-and (int %) 0xff))
+                                        (.digest digest)))]
+             (when-not (MessageDigest/isEqual (.getBytes ^String actual "US-ASCII")
+                                              (.getBytes ^String (get-in manifest [:dataset :sha256])
+                                                         "US-ASCII"))
+               (reject! "coverage dataset digest mismatch" {})))))
+       :cljs
+       (let [stat (try (.statSync fs path) (catch :default _ nil))]
+         (when-not (and stat (.isFile stat))
+           (reject! "coverage dataset must be a regular file" {}))
+         (when (> (.-size stat) max-dataset-bytes)
+           (reject! "coverage dataset exceeds byte limit" {:limit max-dataset-bytes}))
+         (let [bytes (.readFileSync fs path)
+               _ (when (> (.-length bytes) max-dataset-bytes)
+                   (reject! "coverage dataset exceeds byte limit" {:limit max-dataset-bytes}))
+               actual (-> (.createHash crypto "sha256") (.update bytes) (.digest "hex"))
+               expected (get-in manifest [:dataset :sha256])]
+           (when-not (and (= (count actual) (count expected))
+                          (crypto/timingSafeEqual (js/Buffer.from actual "ascii")
+                                                  (js/Buffer.from expected "ascii")))
+             (reject! "coverage dataset digest mismatch" {})))))
+    manifest))

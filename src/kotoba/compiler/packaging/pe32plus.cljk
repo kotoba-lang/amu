@@ -504,11 +504,17 @@
         payload (vec payload)
         k16-preflight? (true? (:k16-preflight? options))
         k16-note (or (:k16-note options) "")]
+    ;; These two are refusals of the CALLER's input, so they carry a phase:
+    ;; without one the CLI reports "internal compiler error" (exit 70) for a
+    ;; kernel OBJECT handed to a packager that wants an ET_EXEC image --
+    ;; measured on the first `package-aiueos-boot` the Node route ever ran.
     (when (> (count payload) 16384)
-      (throw (ex-info "embedded RT payload exceeds 16 KiB" {:bytes (count payload)})))
-    (when-not (and (= [0x7f 0x45 0x4c 0x46] (subvec kernel 0 4))
+      (throw (ex-info "embedded RT payload exceeds 16 KiB"
+                      {:phase :verify :bytes (count payload)})))
+    (when-not (and (>= (count kernel) 64)
+                   (= [0x7f 0x45 0x4c 0x46] (subvec kernel 0 4))
                    (= 2 (read-le kernel 16 2)) (= 0x3e (read-le kernel 18 2)))
-      (throw (ex-info "embedded kernel must be x86-64 ET_EXEC" {})))
+      (throw (ex-info "embedded kernel must be x86-64 ET_EXEC" {:phase :verify})))
     (let [entry (read-le kernel 24 8)
           phoff (read-le kernel 32 8)
           phentsize (read-le kernel 54 2)
