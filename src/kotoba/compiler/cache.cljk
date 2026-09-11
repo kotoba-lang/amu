@@ -7,7 +7,14 @@
 
 (def entry-schema :kotoba.incremental-cache/v1)
 (def statement-schema :kotoba.incremental-cache-statement/v1)
-(def ^:private byte-array-class (Class/forName "[B"))
+(defn- host-bytes?
+  "A value that is the host's byte container: byte[] on the JVM, a Buffer or
+  Uint8Array on Node. `Class/forName \"[B\"` was the JVM spelling, and it
+  was the whole reason this namespace refused to load on Node (ADR 0348
+  iteration 7)."
+  [value]
+  #?(:clj (= (Class/forName "[B") (class value))
+     :cljs (or (instance? js/Uint8Array value) (instance? js/Buffer value))))
 (def ^:private max-canonical-bytes (* 64 1024 1024))
 
 (defn- reject [reason message]
@@ -17,9 +24,10 @@
 
 (defn- freeze [value]
   (cond
-    (= byte-array-class (class value))
+    (host-bytes? value)
     {:kotoba.cache/format :bytes-v1
-     :kotoba.cache/value (mapv #(bit-and (int %) 0xff) value)}
+     :kotoba.cache/value #?(:clj (mapv #(bit-and (int %) 0xff) value)
+                            :cljs (vec (js/Array.from value)))}
     (map? value) (into (empty value) (map (fn [[k v]] [(freeze k) (freeze v)])) value)
     (vector? value) (mapv freeze value)
     (set? value) (set (map freeze value))
@@ -34,7 +42,8 @@
          (= :bytes-v1 (:kotoba.cache/format value))
          (vector? (:kotoba.cache/value value))
          (every? #(and (integer? %) (<= 0 % 255)) (:kotoba.cache/value value)))
-    (byte-array (map unchecked-byte (:kotoba.cache/value value)))
+    #?(:clj (byte-array (map unchecked-byte (:kotoba.cache/value value)))
+       :cljs (js/Buffer.from (clj->js (:kotoba.cache/value value))))
     (and (map? value)
          (= #{:kotoba.cache/format :kotoba.cache/value} (set (keys value)))
          (= :list-v1 (:kotoba.cache/format value))

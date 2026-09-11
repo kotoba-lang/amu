@@ -288,9 +288,20 @@
                      ;; the trust plane is no longer a branch of dispatch!, so
                      ;; it is listed from its own source of truth
                      (concat (map (fn [c] [c {:jvm-only []}]) (trust-commands)) commands))
+      ;; Probe EVERY namespace in the reach, not only the ones the static
+      ;; classification flagged: a `Class/forName` in a body, with no import
+      ;; and no reader conditional, read as portable to the classifier and
+      ;; refused on Node (kotoba.compiler.cache, measured 2026-09-11 -- the
+      ;; topology said 3 JVM-only while a fourth sat under compiler.core).
+      ;; The probe is the measurement; the classification is the hint.
       probe (when (flag? "--probe")
               (probe-loads (str/join ":" (into [(lib/join lib/root "src") (lib/join lib/root "resources")] dirs))
-                           (sort jvm)))
+                           (sort cli-reach)))
+      ;; with a probe, the JVM-only set is what actually refused to load
+      jvm (if probe
+            (set (keep (fn [[n r]] (when-not (:loads? r) n)) probe))
+            jvm)
+      [order levels deps] (if probe (dependencies-first inv jvm) [order levels deps])
       short #(-> %
                  (str/replace (str lib/root "/") "")
                  (str/replace (str (.homedir (js/require "node:os")) "/.gitlibs/libs/io.github.kotoba-lang/") "~lib/"))

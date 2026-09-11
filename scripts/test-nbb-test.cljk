@@ -1,0 +1,70 @@
+#!/usr/bin/env nbb
+(ns test-nbb-test
+  "`amu test` through `bin/amu` on the Node route: the runner that executes a
+  source's `test-*` exports on the KIR interpreter, on the restricted-ESM
+  emission and on the Wasm emission (the last two in a child node), and
+  reports. Until 2026-09-11 (ADR 0348 iteration 7) this command reached the
+  user only through the JVM.
+
+  A passing source is exit 0 with `3/3 passed`; a source with one failing
+  test is exit 1 with one ` FAIL` line per target and `:ok false` in
+  `--json`; a source with no tests is refused by name (65). The three
+  targets must AGREE -- the interpreter answering a bigint where the probes
+  answer `true` is exactly what the first Node run of this runner found.
+
+  Run from the repo root: `nbb --classpath . scripts/test-nbb-test.cljk`."
+  (:require [cljs.reader :as reader]
+            [scripts.lib :as lib]
+            ["node:child_process" :as child]
+            ["node:fs" :as fs]
+            ["node:os" :as os]
+            ["node:path" :as path]))
+
+(def directory (.mkdtempSync fs (.join path (.tmpdir os) "amu-test-cmd-")))
+
+(defn- amu [& args]
+  (.spawnSync child js/process.execPath
+              (clj->js (into [(lib/join lib/root "bin" "amu")] args))
+              #js {:cwd lib/root :encoding "utf8" :timeout 300000
+                   :maxBuffer (* 16 1024 1024)}))
+
+(def ^:private checks (volatile! {:pass 0 :fail 0}))
+(defn- report! [ok? label detail]
+  (vswap! checks update (if ok? :pass :fail) inc)
+  (println (str (if ok? "PASS " "FAIL ") label (when-not ok? (str " -- " detail)))))
+
+(try
+  (let [passing (lib/join directory "passing.kotoba")
+        mixed (lib/join directory "mixed.kotoba")
+        none (lib/join directory "none.kotoba")]
+    (lib/write-text! passing "(ns t (:export [test-adds test-true]))\n(defn test-adds [] :i64 (if (= (+ 40 2) 42) 1 0))\n(defn test-true [] :bool (< 1 2))\n")
+    (lib/write-text! mixed "(ns t (:export [test-adds test-fails]))\n(defn test-adds [] :i64 (if (= (+ 40 2) 42) 1 0))\n(defn test-fails [] :i64 0)\n")
+    (lib/write-text! none "(ns t (:export [main]))\n(defn main [] :i64 1)\n")
+    (let [r (amu "test" passing)]
+      (report! (zero? (.-status r)) "a passing source exits 0" (str (.-stdout r) (.-stderr r)))
+      (report! (.includes (str (.-stdout r)) "kotoba test: 6/6 passed")
+               "two tests on three targets: 6/6" (str (.-stdout r))))
+    (let [r (amu "test" mixed)
+          err (str (.-stderr r))]
+      (report! (= 1 (.-status r)) "a source with a failing test exits 1" (str (.-stdout r) err))
+      (report! (.includes (str (.-stdout r)) "kotoba test: 3/6 FAILED") "3/6 FAILED on the summary line" (str (.-stdout r)))
+      (report! (= 3 (count (re-seq #" FAIL test-fails target=" err)))
+               "one FAIL line per target for the failing test, none for the passing one"
+               err))
+    (let [r (amu "test" mixed "--json")
+          report (reader/read-string (str (.-stdout r)))]
+      (report! (= :kotoba.test-report/v1 (:format report)) "--json answers the report" (str (.-stdout r)))
+      (report! (false? (:ok report)) "--json :ok false for the failing source" (pr-str (:ok report)))
+      (report! (= [:jvm-kir :js :wasm] (:targets report)) "--json names the three targets" (pr-str (:targets report)))
+      (report! (every? (fn [[_ rows]] (= [true false] (mapv :ok rows))) (:results report))
+               "the three targets agree, case by case" (pr-str (:results report))))
+    (let [r (amu "test" none)]
+      (report! (and (= 65 (.-status r)) (.includes (str (.-stderr r)) "no exported test-* definitions"))
+               "a source with no tests is refused by name (65)" (str "exit " (.-status r) " " (.-stderr r))))
+    (let [r (amu "test" passing "--jvm-free")]
+      (report! (zero? (.-status r)) "runs with --jvm-free" (str (.-stderr r)))))
+  (finally (lib/remove-tree! directory)))
+
+(let [{:keys [pass fail]} @checks]
+  (println (str "SCANNED\t" (+ pass fail) "\tchecks; " pass " passed, " fail " failed"))
+  (when (or (zero? pass) (pos? fail)) (set! (.-exitCode js/process) 1)))

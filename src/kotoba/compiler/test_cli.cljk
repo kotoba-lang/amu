@@ -1,0 +1,40 @@
+(ns kotoba.compiler.test-cli
+  "`amu test <file.kotoba>` -- run a source's exported `test-*` definitions
+  on every semantic target and report. One implementation on both hosts
+  (ADR 0348 iteration 7): `kotoba.compiler.cli` delegates here on the JVM,
+  `kotoba.compiler.nbb.test-cli` is the Node entrypoint.
+
+  `run` returns the report and the lines to print; the entrypoint prints and
+  exits. A report whose `:ok` is false is a non-zero exit (1) on both hosts
+  -- a failing test must not look like a passing run to a caller that only
+  reads the status."
+  {:kotoba/export [run]}
+  (:require [kotoba.compiler.bounded-edn :as bounded-edn]
+            [kotoba.compiler.source-path :as source-path]
+            [kotoba.compiler.test-profile :as test-profile]))
+
+(defn- flat-results [report]
+  (mapcat (fn [[target rows]] (map #(assoc % :target target) rows))
+          (or (:results report) {})))
+
+(defn human-lines
+  "The `kotoba test:` summary line and one ` FAIL` line per failing case
+  (the latter go to stderr on both routes)."
+  [report]
+  (let [flat (flat-results report)
+        passed (count (filter :ok flat))]
+    {:out [(str "kotoba test: " passed "/" (count flat)
+                (if (:ok report) " passed" " FAILED")
+                " tests=" (pr-str (or (:tests report) []))
+                " targets=" (pr-str (or (:targets report) [])))]
+     :err (vec (for [r flat :when (not (:ok r))]
+                 (str " FAIL " (:test r) " target=" (:target r) " " (or (:error r) ""))))}))
+
+(defn run
+  "ARGS as `bin/amu` hands them: `test <file> [--json]`. Returns
+  `{:report r :json? bool}`; the report's `:ok` decides the exit status."
+  [args]
+  (let [input (source-path/admit! (second args))
+        json? (boolean (some #{"--json"} args))
+        report (test-profile/run-source (bounded-edn/read-text-file input))]
+    {:report report :json? json?}))

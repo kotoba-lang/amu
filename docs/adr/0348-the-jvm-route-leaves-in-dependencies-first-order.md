@@ -169,6 +169,47 @@ line: `kotoba.component.core` (7,206 lines) → `component.artifact` → `compil
 Model encoder — and it is where this order ends: everything a command still needs is
 either that chain or the native executor.
 
+## Iterations 6–7 (2026-09-11): the chain, and a correction to the instrument
+
+**6 — `kotoba-component`, the encoder.** `kotoba.component.core` is 14,254 lines, and
+its whole JVM surface, measured before touching it, was 40 `.getBytes` forms, their
+`alength`s, two `format "%02x"` and the (already portable) `wasm-tools` seam — every
+octet vector it builds feeds `wat-data`, which masks with 0xff, or a count. Two host
+seams replace them; the 14,000 lines of lowering are untouched. `artifact` (the packager)
+runs the same two `wasm-tools component` commands on both hosts. And `wit` had refused
+the typed-capability-v3 profile on Node "because the accessor in kotoba-lang/abi is
+`:clj`-only" — it had not been since abi embedded the WIT bytes; the refusal outlived its
+reason until the first Node run of the encoder hit it (the "implementation state written
+as a property" form root ADR-2809041200 names). `core-portable-test` runs the first two
+cases of the JVM suite end to end on Node, down to the component's eight preamble
+octets. kotoba-component `db8690ac`, pinned here.
+
+**A correction to the instrument.** With the external chain gone the topology said
+**3** JVM-only; probing every namespace in the reach instead of only the ones the static
+classification flagged said **5**: `kotoba.compiler.cache` (`Class/forName` in a body, no
+import, no reader conditional) and `ipld-adl-source` (`byte-array`, `Integer/MAX_VALUE`)
+read as portable to the classifier and refused on Node. `--probe` now measures the whole
+reach; the classification is a hint, the probe is the count. The 5 was the true number
+for the last four iterations too — this document's earlier counts were each two low.
+
+**7 — the compile driver and the test runner.** `cache` (the host's byte container),
+`ipld-adl-source` (UTF-8, byte container, an i32 ceiling spelled as a literal),
+`compiler.core` (one SHA-256 helper and five `catch clojure.lang.ExceptionInfo` — the
+whole JVM surface of the 931-line driver, everything it drives being portable by now) and
+`test-profile` (`clojure.java.shell` → a child `node` on both hosts; `Base64` → the
+host's). On the first Node run of the runner every passing test reported `:ok false` on
+the interpreter target while js and wasm said true: the KIR interpreter answers a bigint
+and `(contains? #{true 1} 1n)` is false — the same class as signing, receipt, coverage,
+macho64, backend.cljs. `amu test` is on the nbb route (`kotoba.compiler.test-cli`, one
+implementation; the JVM CLI delegates), with `:test` → 65 in both exit tables (a source
+with no tests answered 70 "internal compiler error" before). `scripts/test-nbb-test.cljk`:
+11 checks — 6/6 passed, 3/6 FAILED with one FAIL line per target, `--json`, the three
+targets agreeing case by case, no tests refused by name, `--jvm-free`.
+
+JVM-only namespaces in the CLI's reach: **5 → 1**. The one is `kotoba.compiler.cli`
+itself — `System/exit`, `java.io.File`, the JVM `-main` — which no route runs since
+ADR 0347. Commands on no route: `run`, `measure-runtime` (the native executor).
+
 ## What remains, in order (from the EDN, `--probe` confirmed)
 
 | level | namespace | refused on Node with | unblocks |
@@ -177,10 +218,10 @@ either that chain or the native executor.
 | 1 | ~~`kotoba.compiler.coverage`~~ | ~~`java.nio.file.Files`~~ | **portable since iteration 2**; `coverage`, `sign-coverage-evidence`, `package-aiueos-boot` joined `trust-cli` |
 | ~~1~~ | ~~`kotoba.compiler.project-files`, `module-lock`~~ | | **one namespace each since iteration 3** — the `nbb.*` twins are deleted, their bodies are the `:cljs` branches |
 | ~~1~~ | ~~`kotoba.component.admission`, `kotoba.wasm.tools`~~ | | done in iterations 5 and 4 |
-| 2–3 | `kotoba.component.core`, `.artifact` | same repo | |
-| 4 | `kotoba.compiler.core` | the JVM compile driver (930 lines) | `test`; the JVM `check`/`compile` twins |
-| 5 | `kotoba.compiler.test-profile` | `clojure.java.shell` | `test` |
-| 6 | `kotoba.compiler.cli` | itself | the route |
+| ~~2–3~~ | ~~`kotoba.component.core`, `.artifact`~~ | | done, iteration 6 |
+| ~~4~~ | ~~`kotoba.compiler.core`~~ (and `cache`, `ipld-adl-source`, which the classifier had missed) | | done, iteration 7 |
+| ~~5~~ | ~~`kotoba.compiler.test-profile`~~ | | done, iteration 7 — `amu test` is on the nbb route |
+| 1 | `kotoba.compiler.cli` | `System/exit`, `java.io.File`, `-main` | nothing: no route runs it since ADR 0347. Retiring it is a decision, not a port — it still holds `run` / `measure-runtime`, which need the native executor's Node host first |
 
 Not on this list, deliberately: `run` and `measure-runtime` need `kototama.native.executor`
 — a runtime, not a compiler leaf. `package-ios` (#948) and `package-aiueos-boot`

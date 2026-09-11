@@ -11,7 +11,7 @@
             [kotoba.compiler.project :as project]
             [kotoba.compiler.project-files :as project-files]
             [kotoba.compiler.receipt :as receipt]
-            [kotoba.compiler.test-profile :as test-profile]
+            [kotoba.compiler.test-cli :as test-cli]
             [kotoba.compiler.trust-cli :as trust-cli]
             [kotoba.artifact.runtime-identity :as runtime-identity]
             [kotoba.compiler.source-path :as source-path]
@@ -99,7 +99,7 @@
   (case phase
     :usage 64
     (:decode :read :subset :admission :ir :verify :coverage :project-link
-     :module-lock) 65
+     :module-lock :test) 65
     ;; Neither 0 nor 65. A refused definition is an ANSWER -- the report lists
     ;; it with its marker and exits 0 -- so this code is reserved for the
     ;; other thing: no identity could be computed at all. Without a distinct
@@ -289,29 +289,14 @@
                   (println (diagnostic/format-human e input)))
                 (*exit* (exit-code (or (:phase (ex-data e)) :subset))))))))
     "test"
-    ;; T9.3: official .kotoba test harness (test-profile). Human by default; --json machine.
-    (let [input (kotoba-source! (second args))
-          json? (some #{"--json"} args)
-          report (test-profile/run-source (bounded-edn/read-text-file input))]
+    ;; T9.3: the official .kotoba test harness. One implementation with the
+    ;; Node route (`kotoba.compiler.test-cli`); this branch prints.
+    (let [{:keys [report json?]} (test-cli/run (vec args))]
       (if json?
         (println (pr-str report))
-        (let [by-target (or (:results report) {})
-              flat (mapcat (fn [[tgt rows]]
-                             (map #(assoc % :target tgt) rows))
-                           by-target)
-              passed (count (filter :ok flat))
-              total (count flat)
-              names (or (:tests report) [])]
-          (println (str "kotoba test: " passed "/" total
-                        (if (:ok report) " passed" " FAILED")
-                        " tests=" (pr-str names)
-                        " targets=" (pr-str (or (:targets report) []))))
-          (doseq [r flat]
-            (when-not (:ok r)
-              (binding [*out* *err*]
-                (println " FAIL" (:test r)
-                         (str "target=" (:target r))
-                         (or (:error r) "")))))))
+        (let [{:keys [out err]} (test-cli/human-lines report)]
+          (doseq [line out] (println line))
+          (binding [*out* *err*] (doseq [line err] (println line)))))
       (when-not (:ok report) (*exit* 1)))
     "module-lock"
     ;; Pin a path-resolved project once so every later compile of it resolves

@@ -227,7 +227,10 @@
     ;; Node routes still answer identically.
     ;; `:coverage` joined with the coverage commands (ADR 0348 iteration 2);
     ;; the JVM table has carried it all along.
-    (:decode :read :subset :admission :verify :coverage :project-link :module-lock) 65
+    ;; `:test` -- a source with no exported test-* definitions, or a test
+    ;; that is not a zero-arity export -- joined with `amu test` on this
+    ;; route (ADR 0348 iteration 7); it answered 70 on both routes before.
+    (:decode :read :subset :admission :verify :coverage :project-link :module-lock :test) 65
     ;; `kotoba.compiler.cli/exit-code` carries this entry too. Neither 0 nor
     ;; 65: a REFUSED definition is an answer (listed with its marker, exit 0),
     ;; and this is the other thing -- no identity could be computed at all.
@@ -286,6 +289,17 @@
   "Runs one already-loaded compiler command without terminating the process."
   [run! args]
   (invoke* run! args true))
+
+(defn refusal
+  "The error contract for an entrypoint that prints its own success output
+  (`amu test` prints text, not EDN): the same `:kotoba.cli-error/v1` report
+  and the same exit code `invoke` would have produced for ERROR."
+  [error source]
+  (let [source-name (when (source-path/source-kind source)
+                      (.basename node-path source))
+        report (error-report error source-name)]
+    {:status (exit-code (:error report))
+     :stderr (str (pr-str report) "\n")}))
 
 (defn execute! [run!]
   (let [{:keys [status stdout stderr timing]}
