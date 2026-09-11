@@ -154,6 +154,21 @@ JVM-only namespaces in the CLI's reach: 7 → **6**. What is left is `kotoba-com
 (`admission` L1, `core` L1 — 7,206 lines — and `artifact` L2) and, above it,
 `compiler.core` (L3), `test-profile` (L4), `cli` (L5).
 
+## Iteration 5 (2026-09-11): `kotoba.component.admission`
+
+The other level-1 leaf outside amu. Its only host-specific parts were the SHA-256 and the
+byte container; at kotoba-component `472de0c8` the digest is `node:crypto` on Node, the
+base32 walk runs over a vector of octets on both hosts (accumulator masked to its live
+bits — 32-bit JavaScript bit operations need that, the JVM's longs never did), and three
+CID vectors produced by the JVM implementation before the port (two texts, a byte string
+carrying 0xff) are pinned by that repository's first nbb runner. Pinned here.
+
+JVM-only namespaces in the CLI's reach: 6 → **5**. The remaining chain is now a single
+line: `kotoba.component.core` (7,206 lines) → `component.artifact` → `compiler.core` →
+`test-profile` → `cli`. That is one port, not five small ones — `core` is the Component
+Model encoder — and it is where this order ends: everything a command still needs is
+either that chain or the native executor.
+
 ## What remains, in order (from the EDN, `--probe` confirmed)
 
 | level | namespace | refused on Node with | unblocks |
@@ -161,7 +176,7 @@ JVM-only namespaces in the CLI's reach: 7 → **6**. What is left is `kotoba-com
 | 1 | ~~`kotoba.compiler.release`~~ | ~~`java.io.FileInputStream`~~ | **portable since 2026-09-11** (a `:cljs` branch on node fs/crypto); `sbom`, `attest-release`, `verify-release` and `package-ios` joined `trust-cli` the same day |
 | 1 | ~~`kotoba.compiler.coverage`~~ | ~~`java.nio.file.Files`~~ | **portable since iteration 2**; `coverage`, `sign-coverage-evidence`, `package-aiueos-boot` joined `trust-cli` |
 | ~~1~~ | ~~`kotoba.compiler.project-files`, `module-lock`~~ | | **one namespace each since iteration 3** — the `nbb.*` twins are deleted, their bodies are the `:cljs` branches |
-| 1 | `kotoba.component.admission`, ~~`kotoba.wasm.tools`~~ | `StandardCharsets` | external repo `kotoba-component`; `wasm.tools` done in iteration 4 |
+| ~~1~~ | ~~`kotoba.component.admission`, `kotoba.wasm.tools`~~ | | done in iterations 5 and 4 |
 | 2–3 | `kotoba.component.core`, `.artifact` | same repo | |
 | 4 | `kotoba.compiler.core` | the JVM compile driver (930 lines) | `test`; the JVM `check`/`compile` twins |
 | 5 | `kotoba.compiler.test-profile` | `clojure.java.shell` | `test` |
