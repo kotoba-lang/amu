@@ -100,6 +100,14 @@
     (catch #?(:clj Exception :cljs :default) error
       (throw (ex-info "input is not valid UTF-8" {:phase :decode :kind kind} error)))))
 
+(defn read-bytes-file
+  "The raw bytes of a regular file under LIMIT -- a `byte[]` on the JVM, a
+  `Buffer` on Node -- with this namespace's refusals (path required,
+  regular file, byte limit). For inputs that are bytes and not text: a
+  kernel object handed to `package-aiueos-boot`."
+  [path limit]
+  (read-bytes path limit :bytes))
+
 (defn read-text-file
   ([path] (read-text-file path max-source-bytes))
   ([path limit] (decode-utf8 (read-bytes path limit :source) :source)))

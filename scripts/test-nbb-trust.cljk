@@ -150,6 +150,92 @@
     (refused! "keygen into a directory that does not exist" 74 "output parent must be a directory"
               "keygen" "--output" (lib/join directory "nope" "key.edn"))
 
+    ;; coverage: the repository's own snapshot, then evidence signed here
+    (let [manifest-path (lib/join lib/root "data" "coverage" "interactive-2026-06.edn")
+          dataset (lib/join lib/root "data" "coverage" "statcounter-os-worldwide-2026-06.csv")
+          result (ok! "coverage of the repository snapshot" "coverage" manifest-path "--dataset" dataset)
+          report (stdout-edn result)]
+      (report! (and (= :kotoba.coverage-report/v1 (:format report))
+                    (= 10000 (+ (:unknown-bps report) (:identifiable-bps report)))
+                    (false? (:goal-met? report)))
+               "coverage report adds up and does not claim the goal" (pr-str report))
+      (refused! "coverage against the wrong dataset" 65 "coverage dataset digest mismatch"
+                "coverage" manifest-path "--dataset" source)
+      ;; a claim signed here, a manifest that names it as release evidence
+      (let [manifest (reader/read-string (lib/read-text manifest-path))
+            platform (:platform (first (remove #(= :unknown (:platform %)) (:observations manifest))))
+            claim {:platform platform :paths #{:wasm}
+                   :target-profiles #{:wasm32-kotoba-v1}
+                   :conformance-sha256 (apply str (repeat 64 "a"))
+                   :runtime-sha256 (apply str (repeat 64 "b"))
+                   :ci-run-url "https://example.invalid/run/1"
+                   :tested-at 1000 :expires 4102444800}
+            claim-path (lib/join directory "claim.edn")
+            evidence (lib/join directory "evidence.edn")
+            _ (lib/write-text! claim-path (pr-str claim))
+            signed (ok! "sign-coverage-evidence" "sign-coverage-evidence" claim-path
+                        "--key" key "--output" evidence)
+            digest (:evidence-sha256 (stdout-edn signed))
+            _ (report! (and (string? digest) (= 64 (count digest)))
+                       "sign-coverage-evidence reports the evidence digest" (pr-str (stdout-edn signed)))
+            release-manifest (assoc manifest :support
+                                    [{:platform platform :status :release
+                                      :paths #{:wasm} :evidence [digest]}])
+            release-path (lib/join directory "release-manifest.edn")
+            _ (lib/write-text! release-path (pr-str release-manifest))
+            with-evidence (ok! "coverage with signed evidence"
+                               "coverage" release-path "--dataset" dataset
+                               "--evidence" evidence "--trust" trust "--now" "2000")
+            counted (stdout-edn with-evidence)
+            share (:share-bps (first (filter #(= platform (:platform %)) (:observations manifest))))]
+        (report! (and (= share (:supported-bps counted))
+                      (= #{platform} (:release-platforms counted)))
+                 "signed evidence counts the platform's share as supported" (pr-str counted))
+        (refused! "coverage with expired evidence" 77 "coverage evidence is expired"
+                  "coverage" release-path "--dataset" dataset
+                  "--evidence" evidence "--trust" trust "--now" "4102444801")
+        (refused! "coverage with evidence from an untrusted signer" 77
+                  "coverage evidence signer is not trusted"
+                  "coverage" release-path "--dataset" dataset
+                  "--evidence" evidence "--trust" other-trust "--now" "2000")
+        (refused! "coverage whose manifest names evidence nobody provided" 65
+                  "release coverage evidence is missing or mismatched"
+                  "coverage" release-path "--dataset" dataset)))
+
+    ;; package-aiueos-boot: a minimal ET_EXEC x86-64 kernel, and the refusals
+    (let [le (fn [value width] (mapv (fn [i] (mod (quot value (reduce * (repeat i 256))) 256)) (range width)))
+          page 4096 phoff 64 phentsize 56 body (+ phoff (* 2 phentsize))
+          ph (fn [flags offset paddr size]
+               (vec (concat (le 1 4) (le flags 4) (le offset 8) (le paddr 8) (le paddr 8)
+                            (le size 8) (le size 8) (le page 8))))
+          header (vec (concat [0x7f 0x45 0x4c 0x46 2 1 1 0] (repeat 8 0)
+                              (le 2 2) (le 0x3e 2) (le 1 4) (le 0x100000 8) (le phoff 8)
+                              (le 0 8) (le 0 4) (le 64 2) (le phentsize 2) (le 2 2)
+                              (le 0 2) (le 0 2) (le 0 2)))
+          kernel (vec (concat header (ph 5 body 0x100000 page)
+                              (ph 6 (+ body page) 0x101000 page) (repeat (* 2 page) 0)))
+          image (lib/join directory "kernel.img")
+          efi (lib/join directory "BOOTX64.EFI")
+          efi-again (lib/join directory "BOOTX64-again.EFI")
+          big-payload (lib/join directory "payload.bin")]
+      (.writeFileSync fs image (js/Buffer.from (clj->js kernel)))
+      (.writeFileSync fs big-payload (js/Buffer.alloc 16385 1))
+      (let [result (ok! "package-aiueos-boot" "package-aiueos-boot" image "--output" efi "--k16-note" "test")
+            value (stdout-edn result)
+            bytes (.readFileSync fs efi)]
+        (report! (and (= 77 (aget bytes 0)) (= 90 (aget bytes 1)))
+                 "the packaged image is PE32+ (starts MZ)" (str (aget bytes 0) " " (aget bytes 1)))
+        (report! (and (string? (:kernel-sha256 value)) (= :x86_64-aiueos-uefi-v1 (:target value)))
+                 "package-aiueos-boot reports the embedded kernel digest" (pr-str value)))
+      (ok! "package-aiueos-boot again" "package-aiueos-boot" image "--output" efi-again "--k16-note" "test")
+      (report! (.equals (.readFileSync fs efi) (.readFileSync fs efi-again))
+               "packaging the same input twice is byte-identical" "")
+      (refused! "a kernel OBJECT is not an ET_EXEC image" 65 "embedded kernel must be x86-64 ET_EXEC"
+                "package-aiueos-boot" artifact "--output" (lib/join directory "never.efi"))
+      (refused! "a payload over 16 KiB" 65 "embedded RT payload exceeds 16 KiB"
+                "package-aiueos-boot" image "--payload" big-payload
+                "--output" (lib/join directory "never.efi")))
+
     ;; the route: none of the above started a JVM
     (let [result (invoke "keygen" "--output" (lib/join directory "jvm-free.edn") "--jvm-free")]
       (report! (zero? (.-status result)) "keygen runs with --jvm-free" (str (.-stderr result)))))

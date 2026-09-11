@@ -1,6 +1,7 @@
 (ns kotoba.compiler.coverage-evidence
   {:kotoba/export [sign verify verify-bundle]}
   (:require [kotoba.artifact.core :as artifact]
+            [kotoba.verifier :as verifier]
             [kotoba.verifier.signing :as signing]))
 
 (def ^:private claim-keys
@@ -27,8 +28,11 @@
        (sha256? (:conformance-sha256 claim))
        (sha256? (:runtime-sha256 claim))
        (string? (:ci-run-url claim)) (<= 1 (count (:ci-run-url claim)) 2048)
-       (integer? (:tested-at claim)) (pos? (:tested-at claim))
-       (integer? (:expires claim)) (< (:tested-at claim) (:expires claim))))
+       ;; `guest-integer?`, not `integer?`: a claim read back on the Node
+       ;; host carries bigints, and the relational operators are exact
+       ;; across the two representations (same class as signing, ADR 0348).
+       (verifier/guest-integer? (:tested-at claim)) (pos? (:tested-at claim))
+       (verifier/guest-integer? (:expires claim)) (< (:tested-at claim) (:expires claim))))
 
 (defn sign [claim key]
   (when-not (valid-claim? claim)
