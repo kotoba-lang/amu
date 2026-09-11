@@ -784,6 +784,12 @@
     (let [[op & args] form
           op' (if (and (symbol? op) (namespace op))
                 (or (get imported op)
+                    ;; `clojure.core/merge` is the bare head `merge` spelled
+                    ;; fully (coll.cljk does this 17 times to dodge a local);
+                    ;; the prefix names no module. The frontend strips it the
+                    ;; same way (kotoba-sema 6f49a83); the linker must not
+                    ;; refuse it first as an import (2026-09-11).
+                    (when (= "clojure.core" (namespace op)) (symbol (name op)))
                     ;; Left as written: elaboration into a typed ability is the
                     ;; frontend's job, and it runs identically on linked source.
                     (when (capability-operation? op) op)
