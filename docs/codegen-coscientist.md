@@ -2062,6 +2062,19 @@ H-Z3 quiet-host hand-patch A/B, then H-C2.
 
 - **358 (2026-09-10 11:0x JST, amu-rank cron)**: host busy (load1 21.18 / 5m 24.58 / 15m 32.34 at 11:02, threshold 7.5; up 5 days) — measurement refused, rank-only pass. git fetch: origin/main advanced 5e9a544d -> e49de78f (PR #920 gitignore cleanup, PR #919, PR-linked compiler/loader/test scope, no codegen-ladder number). DOC DIVERGENCE NOTED (rank-relevant, not fixed here): origin/main's docs/codegen-coscientist.md no longer carries the tick 355/356/357 and amu-bench 2026-09-10 01:0x prose entries that this branch appended at the end of the doc (after the proven-unwinnable disclosure footer); the origin diff deletes exactly those blocks. They were misplaced in position, and full text remains in git history at 5e9a544d, so treated as origin-side positional cleanup, not evidence loss — no numbers were in the deleted blocks. Cross-bot doc-position convention should go through the append script's anchor; flagged for the operator. Evidence reviewed since tick 357: no new measured numbers against any open hypothesis (no new ADR; 0345 remains newest on disk). No re-rank, no status transition, no new hypothesis. Population unchanged: H-Z3 top of the codegen ladder (benjamin imod hand-patch A/B pending quiet host), J-C folded, H-C2/H-D/H-B/H-Y1 open. NEXT unchanged: benjamin collections walk-loop hand-patch (imod helper inlining, J-B2/H-Z3) via perfgate on a quiet fleet node.
 
+- **bench tick (2026-09-11 16:14 JST, amu-bench; host busy, no measurement)**:
+  load1 9.23 / 5m 20.87 / 15m 25.26 (host main-2.local, up 6 days, 8:57,
+  8 users) -- load1 above the 7.5 quiet limit and 5m/15m show a sustained
+  heavy wave (pre-run snapshot at 16:08 was 41.58 / 27.19 / 27.71, decaying
+  but not quiet), so the quiet gate failed and the NEXT item (H-C2
+  quiet-host A/B) was not attempted; no bench, no perfgate, no numbers
+  recorded. amu-falsify evidence checked: no new pending
+  "要 quiet-host 測定" item requiring action this tick. Evidence
+  collected via probe script writing /private/tmp (foreground terminal
+  empty-output shape, known). No re-rank, no status transition -- nothing
+  measured this tick. Population unchanged: H-C2, H-D, H-B, H-Y1, H-Z1,
+  H-Z3 open. NEXT: H-C2 (unchanged).
+
 ## Standing honesty constraints
 
 Every number above is one host on one day; the falsification numbers are
@@ -3964,3 +3977,5 @@ ple Clang C11, Zig, Go
   kotoba-lang.org shows the same card (`RUNTIME SPEED · 19/30`); what changed
   on it is the range (`19–20`, was `17–19`) and the floor (`19 of 30 in every
   run`, was 16). The proven-unwinnable disclosure stands.
+
+2026-09-11 17:0x JST (amu-rank cron): rank-only pass; host busy (load1 23.12 / 5m 45.76 / 15m 40.67 at 17:06, threshold 7.5) — measurement refused. git fetch/review: local HEAD 51808aa0 (Merge #938: nbb engine rebased onto 1.5.212, amu check ~1.45x faster than the 1.4.208 fork — build/tooling scope, not a codegen-ladder number). Worktree carries sibling in-flight edits (M docs/codegen-coscientist.md, D scripts/quiet-host.cljk) and many untracked probe scripts; no new committed measured numbers reviewed since the last committed tick → no re-rank, no status transition, no new hypothesis. Population unchanged: benjamin imod hand-patch (J-B2/H-Z3) first, fallback H-C2; H-D, H-B, H-Y1 open. NEXT: H-Z3 quiet-host hand-patch A/B (only measured above-bar effect, needs a sustained idle>=9/10 window), fallback H-C2.
