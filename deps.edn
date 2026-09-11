@@ -1011,9 +1011,13 @@
         ;; root closure through deps-lock.edn. So it lives here. Its own
         ;; closure (text, osaho, artifact, kotoba-verifier) is already this
         ;; compiler's.
+        ;; Advanced 2026-09-11, a94e5c19 -> 005c9b741639bc517682b62afd84be9ea5c0ce9d (kototama-native main,
+        ;; forward only): the Node executor's regular-file check follows
+        ;; symlinks, without which Ubuntu's /usr/bin/cc (a symlink) was "not
+        ;; found" and measure-runtime refused on this repo's ubuntu runners.
         io.github.kotoba-lang/kototama-native
         {:git/url "https://github.com/kotoba-lang/kototama-native.git"
-         :git/sha "a94e5c193869fe93dd679fc1ceea1007fe28adc5"}
+         :git/sha "005c9b741639bc517682b62afd84be9ea5c0ce9d"}
         ;; Advanced 2026-09-03 (ADR 0330) for the fifth and sixth instances of
         ;; that same independence: b58c009 re-derives the fused
         ;; dequantize-and-dot family and bcea4a1 the four codebook formats, each
