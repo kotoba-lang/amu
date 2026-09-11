@@ -85,7 +85,8 @@ a refusal today; each is a port to do, in this order of consequence:
 | `package-ios` | iOS static Mach-O object + manifest | **ported 2026-09-11**; `ios-aot/package` was portable, its `:code` and entry offset are narrowed from bigint for `kotoba.object.macho64`'s byte gate. Verified `Mach-O 64-bit object arm64`, links with `runtime/ios/kotoba_ios_host.c` into a static archive locally (Xcode 26.6; the pinned-Xcode-16.2 conformance is CI's macos-14) |
 | target `cljs` / `cljs-browser` / `cljs-node` | the ClojureScript-source emitter | **ported 2026-09-11** (`js_cli.cljk` `compile-cljs!`); `backend.cljs` admits bigint literals and prints them as digits. The emitted source is EXECUTED in `test-nbb-release-and-emitters`: `fact 5 = 120`, `fact 10 = 3628800`, `forever` traps on fuel |
 | `run`, `measure-runtime` | executing artifacts from the CLI, and the loader identity a receipt's `:runtime` refers to | **blocked**: `kototama.native.executor` is a 1,238-line JVM driver around `tools/kexe_loader.c` -- toolchain identity (compiler resource manifest, dependency files), reproducible double build, argument marshalling for records/variants/strings/regions, supervisor-report validation, bounded process I/O. `jdk-free-native-conformance.cljk` already builds and drives the loader on Node, so the mechanism exists; the port is the driver. `conformance.cljk` refuses on exactly these two |
-| `coverage`, `sign-coverage-evidence` | coverage evidence | **blocked**; `kotoba.compiler.coverage` uses `java.nio.file` + `MessageDigest` (136 lines) -- the same shape as the release port |
+| `coverage`, `sign-coverage-evidence` | coverage evidence | **ported 2026-09-11** (ADR 0348 iteration 2): `kotoba.compiler.coverage` gained a `:cljs` dataset walk and host-number normalization; `test-nbb-trust` runs the repository's own snapshot, signed evidence, and four refusals |
+| `package-aiueos-boot` | BOOTX64.EFI from an x86-64 kernel image | **ported 2026-09-11** (ADR 0348 iteration 2); `pe32plus` was portable, the two input refusals now carry a `:phase`. Its natural input -- the x86-64 kernel IMAGE -- is still the row below |
 | the divergent x86-64 aiueos kernel IMAGE | the live-boot GDT/TSS shim lives in the JVM twin of `elf64` | **blocked**, as before (`divergentImageReason` in `bin/amu`); the kernel OBJECT, user image and UEFI application are on the nbb route |
 
 JVM mains and harnesses:
@@ -102,8 +103,9 @@ JVM mains and harnesses:
 
 ## Consequences
 
-- **Port status after the first day**: `run`, `measure-runtime`, `coverage`
-  and `sign-coverage-evidence` remain; the rest is on the nbb route with
+- **Port status after the first day**: `run` and `measure-runtime` remain
+  (`coverage` / `sign-coverage-evidence` / `package-aiueos-boot` left in ADR
+  0348 iteration 2); the rest is on the nbb route with
   executed evidence. Three defects of one shape surfaced on the way and are
   fixed: `integer?` against a read-back bigint in `receipt`, `backend.cljs`
   and (via `ios-aot`) `macho64`'s byte gate. Any remaining `integer?` on a
