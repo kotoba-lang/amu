@@ -511,7 +511,11 @@
                                    require))
                                requires)]
             (when-not (some? exports)
-              (reject! "project module requires an explicit :export vector" {:namespace name}))
+              ;; The module is NAMED in the sentence: on the self-host route the
+              ;; refusal is almost always about a dependency two links away, and a
+              ;; histogram of 59 identical sentences said nothing about which
+              ;; (measured 2026-09-11, adr-2609111900).
+              (reject! (str "project module " name " requires an explicit :export vector") {:namespace name}))
             (when-not (= (count requires) (count (set (map :alias requires))))
               (reject! "duplicate import alias" {:namespace name :requires requires}))
             (check-referred-names! name requires forms)
