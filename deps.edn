@@ -117,8 +117,8 @@
         ;; read 3e3f9748 while the file on disk hashed to 67561e57, and nothing
         ;; said so.
         ;;
-        ;;   grammar-sha256    7262fae36127e58a9681f7790344827cc89e4c8f6b57dda1ed1f0175352aa1e0
-        ;;   kotoba-sema-pin   f1e5fd5ae58f453b9248d692b193ca731227697c
+        ;;   grammar-sha256    d07b8816546b8ff2d78e1db2f375c92ee5e654e20d04eb554a5c4f38fe031587
+        ;;   kotoba-sema-pin   9a5f65eca9f259f062260156e3d24566cdb764b6
         ;;
         ;; `guest_grammar_vendor_test/authority-digest-history` ends with the
         ;; same digest, so the pin, the prose and the history move in one
@@ -331,7 +331,21 @@
          ;; sees a `:require` clause -- and lands in the same commit as this
          ;; pin, so the grammar and the linker that implements it travel
          ;; together.
-         "f1e5fd5ae58f453b9248d692b193ca731227697c"}
+         ;;
+         ;; 2026-09-11, f1e5fd5a -> 9a5f65ec (kotoba-sema main, forward only):
+         ;; the `:refer-clojure` no-op wave. The grammar moves 7262fae3 ->
+         ;; d07b8816 (`:ns :clauses` gains `:refer-clojure`; `:ns` gains a
+         ;; `:refer-clojure` entry; `:refer-clojure` leaves
+         ;; `:ns-refused-clauses`); the frontend admits `(:refer-clojure
+         ;; :exclude/:only [..])` as a no-op and refuses `:rename` by name
+         ;; (384aad6). The range also carries 1e1a357: the namespace /
+         ;; function docstring bound 4096 -> 65536 chars (still a bound;
+         ;; docstrings are outside identity). On the project route THIS
+         ;; repository (kotoba.compiler.project) validates the clause and
+         ;; strips it with `:require` before the frontend reads the module,
+         ;; so the linked source -- and the definition CIDs -- of a module
+         ;; with the clause are those of the module without it.
+         "9a5f65eca9f259f062260156e3d24566cdb764b6"}
         ;; ADR-2607266000 Phase B: these responsibilities moved out of this repo.
         ;;
         ;; The slice-value stream held this pin on purpose (ADR 0314), because

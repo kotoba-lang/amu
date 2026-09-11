@@ -348,7 +348,20 @@
                                        (str/replace "text/greet" "greet"))
                       'example.text text-source}
                      'example.app)))
-        "the linked source of the referred spelling is the qualified spelling's")))
+        "the linked source of the referred spelling is the qualified spelling's"))
+  (testing "refer-clojure is a no-op"
+    ;; `(:refer-clojure :exclude [..])` is admitted and stripped (2026-09-11):
+    ;; the linked source is byte-identical with and without it.
+    (is (= (:source (project/link-source {'example.app app-source 'example.text text-source} 'example.app))
+           (:source (project/link-source
+                     {'example.app (str/replace app-source "(ns example.app" "(ns example.app (:refer-clojure :exclude [update])")
+                      'example.text text-source}
+                     'example.app))))
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #":refer-clojure :rename is not admitted"
+                          (project/link-source
+                           {'example.app (str/replace app-source "(ns example.app" "(ns example.app (:refer-clojure :rename {update up})")
+                            'example.text text-source}
+                           'example.app)))))
 
 (defn- dependency-project [count all-previous?]
   (into {}

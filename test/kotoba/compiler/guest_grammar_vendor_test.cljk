@@ -133,7 +133,16 @@
    ;; (`:import` / `:require-macros` / `:refer-clojure` / `:use`); kotoba-lang
    ;; f69b6a3d, digest 7262fae3, kotoba-sema's copy and frontend in one
    ;; commit (c296b83f).
-   "7262fae36127e58a9681f7790344827cc89e4c8f6b57dda1ed1f0175352aa1e0"])
+   "7262fae36127e58a9681f7790344827cc89e4c8f6b57dda1ed1f0175352aa1e0"
+   ;; 2026-09-11, kotoba-sema f1e5fd5a -> 9a5f65ec: the authority admits
+   ;; `(:refer-clojure :exclude/:only [..])` as a NO-OP (there is no
+   ;; clojure.core to narrow; a module with the clause analyses identically
+   ;; to one without it) and refuses `:rename` by name; `:refer-clojure`
+   ;; leaves `:ns-refused-clauses`. kotoba-lang a638bca, digest d07b8816,
+   ;; kotoba-sema's copy and frontend in one commit (384aad6). THIS
+   ;; repository's project linker validates the clause and strips it with
+   ;; `:require`.
+   "d07b8816546b8ff2d78e1db2f375c92ee5e654e20d04eb554a5c4f38fe031587"])
 
 (def authority-grammar-sha256
   "sha256 of the grammar this repository reads -- kotoba-sema's copy, at the
