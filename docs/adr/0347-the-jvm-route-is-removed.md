@@ -80,13 +80,14 @@ a refusal today; each is a port to do, in this order of consequence:
 
 | command | why it matters | status |
 |---|---|---|
-| `keygen`, `sign`, `public-key`, `trust-key`, `verify-signed` | publisher keys and signatures. `sign-output-set` / `verify-output-set` are ALREADY on the nbb route (`output_set_cli.cljk`, Ed25519 via node crypto), so the primitive exists; the key-file commands are the gap | **blocked**; `test-output-set-publisher-auth`, `test-release` refuse |
-| `attest-release`, `verify-release`, `sbom` | release evidence | **blocked**; `release-conformance.cljk` refuses |
-| `verify`, `verify-chain`, `verify-receipt`, `receipt`, `coverage`, `sign-coverage-evidence`, `trust-runtime` | receipts and coverage. `verify-output-set` covers the artifact-admission half | **blocked** |
-| `run`, `measure-runtime` | executing artifacts from the CLI (`kototama-native` host) | **blocked**; `dual-backend-equivalence.cljk` names it |
-| `test` | the JVM test runner | **retired**: the 185 `.cljk` test files outside `test/nbb/` (every one carries an `ns`) do not run anywhere. The 89 files under `test/nbb/` and the 7 `*-portable-test` namespaces do. Porting is per namespace; the files are not deleted so the assertions they hold are not lost |
-| `inspect`, `package-ios`, `package-aiueos-boot` | inspection; iOS/aiueos image packaging | **blocked** (`ios-aot-conformance.cljk` is conditional on macOS and was not measured here) |
-| target `cljs-browser` | the ClojureScript-source emitter (JVM-only backend) | **blocked**; `js-browser` on the nbb route is the restricted-ESM emitter, a different artifact |
+| `keygen`, `public-key`, `trust-key`, `sign`, `verify-signed`, `verify` | publisher keys and signatures; artifact admission | **ported 2026-09-11** (`nbb/signing_cli.cljk`). `kotoba.verifier.signing` was already portable; the pin advanced to f1efb423 for its bigint-aware `verify`. Covered by `test-nbb-signing` (30 cases, refusals pinned), `test-output-set-publisher-auth`, `test-release` |
+| `receipt`, `verify-receipt`, `verify-chain`, `trust-runtime` | execution receipts and chains | **ported 2026-09-11**; `kotoba.compiler.receipt` had no host interop, only `integer?` on read-back bigints (now `guest-integer?`). `trust-runtime` is ported but has nothing to trust until `measure-runtime` exists |
+| `attest-release`, `verify-release`, `sbom` | release evidence | **ported 2026-09-11**; `kotoba.compiler.release` gained a `:cljs` branch (node fs/crypto) with the same refusals |
+| `inspect` | the closed public contract of a source | **ported 2026-09-11** (`kotoba.compiler.interface` was portable) |
+| `package-ios` | iOS static Mach-O object + manifest | **ported 2026-09-11**; `ios-aot/package` was portable, its `:code` and entry offset are narrowed from bigint for `kotoba.object.macho64`. Object verified `Mach-O 64-bit object arm64`, links with `runtime/ios/kotoba_ios_host.c` into a static archive locally (Xcode 26.6; the pinned-Xcode-16.2 conformance runs on CI's macos-14) |
+| target `cljs` / `cljs-browser` / `cljs-node` | the ClojureScript-source emitter | **ported 2026-09-11** (`js_cli.cljk` `compile-cljs!`); `backend.cljs` admits bigint literals and prints them as digits. The emitted source is EXECUTED in the suite: `fact 5 = 120`, `fact 10 = 3628800`, `forever` traps on fuel |
+| `run`, `measure-runtime` | executing artifacts from the CLI, and the loader identity that makes a receipt's `:runtime` mean something | **blocked**: `kototama.native.executor` is a 1,238-line JVM driver around `tools/kexe_loader.c` -- toolchain identity (compiler resource manifest, dependency files), reproducible double build, argument marshalling for records/variants/strings/regions, supervisor-report validation, bounded process I/O. `jdk-free-native-conformance.cljk` already builds and drives the loader on nbb, so the mechanism exists; the port is the driver. `conformance.cljk` refuses on exactly these two |
+| `coverage`, `sign-coverage-evidence` | coverage evidence | **blocked**; `kotoba.compiler.coverage` uses `java.nio.file` + `MessageDigest` (136 lines) -- same shape as the release port, not yet done |
 | the divergent x86-64 aiueos kernel IMAGE | the live-boot GDT/TSS shim lives in the JVM twin of `elf64` | **blocked**, as before (`divergentImageReason` in `bin/amu`); the kernel OBJECT, user image and UEFI application are on the nbb route |
 
 JVM mains and harnesses:
@@ -95,7 +96,7 @@ JVM mains and harnesses:
 |---|---|
 | `scripts/perfgate_qualify.cljk` (JVM main) via `scripts/perfgate-qualify.cljk` | refuses; `runtime-multidomain-suite.mjs` and `postalloc-scheduling-benchmark.mjs` call it |
 | `scripts/test-ipld-adl-wasmtime.cljk` (`-M:ipld-adl-conformance`) | refuses |
-| `scripts/conformance.cljk` (the CI language-conformance harness: `verify`, `sign`, `keygen`, `receipt`, `run`, `measure-runtime`) | refuses; removed from `test.yml`. Its compile coverage is carried by `test-nbb-wasm32` / `test-jdk-free-native` / `test-policy-bound-provenance`; its signing / receipt / execution coverage is carried by nothing today |
+| `scripts/conformance.cljk` (the CI language-conformance harness) | refuses on `run` / `measure-runtime` only; its signing, receipt, release, inspect, iOS and cljs blocks are carried by `test-nbb-signing`, `test-release` and `test-output-set-publisher-auth` (all back in `test.yml`); its compile coverage by `test-nbb-wasm32` / `test-jdk-free-native` / `test-policy-bound-provenance` |
 | `scripts/cloud-itonami-route-parity.cljk` (+ health / oauth-resource parity) | refuses; the Clojure oracle namespaces are `.cljk` and look portable — running them on nbb is the port, unmeasured |
 | `kotoba.compiler.backend-qualification` (CI `provider-qualification` job) | job removed; the qualification must move to the nbb route |
 | `downstream-murakumo` KIR drift gate (`clojure -M:test:dep` in murakumo) | job removed; murakumo's own suite decides how it runs without a JVM |
@@ -103,6 +104,13 @@ JVM mains and harnesses:
 
 ## Consequences
 
+- **Port status after the first day**: of the JVM-only commands, `run`,
+  `measure-runtime`, `coverage` and `sign-coverage-evidence` remain; the
+  rest are on the nbb route with executed evidence. Three defects of one
+  shape surfaced on the way and are fixed: `integer?` against a read-back
+  bigint in `receipt`, `backend.cljs` and (via `ios-aot`) `macho64`'s byte
+  gate. Any remaining `integer?` on a value that crossed the kotoba reader is
+  the same bug waiting.
 - Every claim of the form "JVM-free" is now trivially true and therefore
   says nothing; the claim that matters is **"implemented on the nbb/native
   route"**, and the refusal at exit 64 is what makes its absence visible.

@@ -78,6 +78,10 @@ const nbbNativeTargets = new Set([
 // that backend emits ClojureScript source text and stays on the JVM route.
 const nbbJsTargets = new Set([
   "js", "javascript", "web", "js-kotoba-v1", "js-browser", "js-browser-kotoba-v1",
+  // The ClojureScript-source emitter joined the nbb route on 2026-09-11
+  // (ADR 0347): `js_cli.cljk`'s `compile-cljs!`.
+  "cljs", "cljs-browser", "cljs-node",
+  "cljs-kotoba-v1", "cljs-browser-kotoba-v1", "cljs-node-kotoba-v1",
 ]);
 
 function fail(message, code) {
@@ -136,10 +140,19 @@ const divergentImageReason =
   + "deliberately. The kernel OBJECT, the CPL3 user image, the UEFI application "
   + "and the AArch64 kernel image are byte-identical on this route.";
 
+// Signing, trust, receipt and inspection commands: `signing_cli.cljk`,
+// ported from the JVM CLI on 2026-09-11 (ADR 0347's port ledger, first row).
+const signingCommands = new Set([
+  "keygen", "public-key", "trust-key", "trust-runtime", "sign", "verify-signed",
+  "verify", "inspect", "receipt", "verify-receipt", "verify-chain",
+  "sbom", "attest-release", "verify-release", "package-ios",
+]);
+
 function nbbNativeEligible(args) {
   const command = args[0];
   if (command === "compile" && divergentAiueosKernelImage(args)) return false;
   return command === "check" || command === "extract-native"
+    || signingCommands.has(command)
     || command === "definition-cids"
     || command === "module-lock"
     || command === "package-manifest" || command === "package-lock"
@@ -159,6 +172,7 @@ function nbbEntrypoint(root, args) {
     || command === "package-fetch"
     || target === undefined || target.startsWith("wasm32");
   const filename = ["verify-output-set", "sign-output-set"].includes(command) ? "output_set_cli.cljk"
+    : signingCommands.has(command) ? "signing_cli.cljk"
     : command === "extract-native" ? "x86_64_cli.cljk"
     : (command === "compile" && nbbJsTargets.has(target)) ? "js_cli.cljk"
     : wasm ? "wasm_cli.cljk"
@@ -341,8 +355,14 @@ const NON_PATH_FLAGS = new Set(["--name", "--version", "--url", "--kind",
 
 // Extensions this CLI is handed as filesystem paths. A bare word like
 // `compile` or `wasm32-browser` has none and is left alone.
+// `.kexe` joined on 2026-09-11: the compiler's own sealed-artifact extension
+// was not in its own list, so `amu verify prog.kexe` from another directory
+// read `prog.kexe` inside the Amu checkout and reported "input could not be
+// read" -- the exact failure the paragraph above describes, for the one file
+// type every signing and receipt command takes.
 const PATH_EXTENSIONS = [
-  ".kotoba", ".edn", ".json", ".wasm", ".wat", ".mjs", ".js", ".cljk", ".cljs", ".cljc",
+  ".kotoba", ".kexe", ".bin", ".spdx",
+  ".edn", ".json", ".wasm", ".wat", ".mjs", ".js", ".cljk", ".cljs", ".cljc",
   ".clj", ".lock", ".txt", ".md", ".c", ".h", ".o", ".a", ".so", ".dylib", ".exe"
 ];
 

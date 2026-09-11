@@ -517,12 +517,16 @@ are the compatibility contract; byte layout is not.
 
 **There is no JVM route (ADR 0347, 2026-09-11).** Until then the
 `x86_64-aiueos-*`/`aarch64-aiueos-*` kernel IMAGE packaging and every other
-`kotoba` subcommand (`package-ios`, `sbom`, `attest-release`, `sign`,
-`keygen`, `run`, receipts, coverage, ...) went through `clojure -M:run`
-(`kotoba.compiler.cli`, JVM). That fallback is removed: a command or target
-with no nbb-route implementation is refused at exit 64 naming it, and the
-list of what still has to be ported -- with what carries each one's coverage
-in the meantime -- is the ledger in `docs/adr/0347-the-jvm-route-is-removed.md`.
+`kotoba` subcommand went through `clojure -M:run` (`kotoba.compiler.cli`,
+JVM). That fallback is removed: a command or target with no nbb-route
+implementation is refused at exit 64 naming it. Ported the same day, with
+executed evidence (`npm run test-nbb-signing`): `keygen`, `public-key`,
+`trust-key`, `sign`, `verify-signed`, `verify`, `receipt`, `verify-receipt`,
+`verify-chain`, `inspect`, `sbom`, `attest-release`, `verify-release`,
+`package-ios`, and the `cljs` / `cljs-browser` / `cljs-node` targets. Still
+to port: `run`, `measure-runtime`, `coverage`, `sign-coverage-evidence`; the
+ledger in `docs/adr/0347-the-jvm-route-is-removed.md` says what each one
+needs.
 The kernel OBJECT, the CPL3 user image and the UEFI application ARE on the
 nbb route (aiueos links them from there); the divergent x86-64 kernel image
 is the one packaging target still refused. Ordinary native nbb compilation

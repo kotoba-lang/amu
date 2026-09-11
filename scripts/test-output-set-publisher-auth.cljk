@@ -8,14 +8,6 @@
             ["node:os" :as os]
             ["node:path" :as path]))
 
-;; ⚠ REFUSED SINCE 2026-09-11 -- the JVM route is removed (owner decision:
-;; Kotoba and the amu native/nbb compiler only). This script needs `amu keygen` (Ed25519 key generation on the JVM CLI) and a JVM-side `sign`,
-;; which has no nbb-route implementation yet. It exits 2 (could-not-answer)
-;; here rather than failing later on a missing `clojure`, so a run of it is
-;; never mistaken for a red test of the thing it used to test. The port is
-;; tracked in docs/adr (jvm-route-removed).
-(js/console.error "REFUSED could-not-answer reason=jvm-route-removed needs=amu ledger=docs/adr/jvm-route-removed")
-(.exit js/process 2)
 
 
 (def directory (.mkdtempSync fs (.join path (.tmpdir os)
@@ -104,15 +96,23 @@
                                    ":publisher-authenticated true"))
                    "native output did not retain independent verification before publisher authentication"))
 
-    ;; Node's signature must be byte-compatible with the canonical JVM
-    ;; verifier rather than defining an NBB-only signature dialect.
-    (run! "clojure"
-          ["-M" "-e"
-           (str "(require '[kotoba.compiler.bounded-edn :as b] "
+    ;; Until 2026-09-11 the signature was re-verified through the JVM
+    ;; `kotoba.verifier.signing` here, so the Node signature could not drift
+    ;; into an nbb-only dialect. The JVM route is removed (ADR 0347); the
+    ;; cross-host check now runs the same `verify-value` on the nbb route
+    ;; through a second process, which proves the envelope round-trips
+    ;; through the writer and the kotoba reader, not that a JVM agrees.
+    (run! js/process.execPath
+          [(lib/join lib/root "node_modules" "nbb" "cli.js")
+           "--classpath" (str (lib/join lib/root "src") (.-delimiter path)
+                              (lib/join lib/root "resources") (.-delimiter path)
+                              (lib/lock-classpath))
+           "-e"
+           (str "(require '[kotoba.compiler.nbb.cli-support :as c] "
                 "'[kotoba.verifier.signing :as s]) "
-                "(let [e (b/read-file \"" attestation "\")] "
+                "(let [e (c/read-edn-file! \"" attestation "\")] "
                 "(when-not (s/verify-value (get-in e [:statement :public-key]) "
-                "(:statement e) (:signature e)) (System/exit 9)))")])
+                "(:statement e) (:signature e)) (.exit js/process 9)))")])
 
     (lib/ensure! (rejected? (amu "verify-output-set" artifact
                                  "--attestation" attestation

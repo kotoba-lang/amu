@@ -918,7 +918,14 @@
          ;; only, 2 commits): `string-operations` gains `string-index-of 2`. Without it
          ;; the backend emits code this verifier then refuses -- the second gate of
          ;; ADR 0002, which measured that one gate alone unlocks nothing.
-         :git/sha "85ea11d61cc3613bfb5ac80a7736de7ae1382942"}
+         ;; Advanced 2026-09-11, 85ea11d6 -> f1efb423 (main, forward only, 6
+         ;; commits: the .cljk rename and jk/signing-host-i64). Required by the
+         ;; nbb signing route (`signing_cli.cljk`): an envelope written with
+         ;; `artifact/edn-safe` and read back with the kotoba reader carries
+         ;; its validity bounds as bigint, and `signing/verify` at 85ea11d6
+         ;; asked `integer?`, which says false -- "signature statement
+         ;; mismatch" on every envelope this route had just signed.
+         :git/sha "f1efb423e495b8a4073fa8d163473069cf58737f"}
 }
  :aliases {:test {:extra-paths ["test"]
                   :extra-deps

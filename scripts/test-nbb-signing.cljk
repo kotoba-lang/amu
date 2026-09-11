@@ -1,0 +1,192 @@
+#!/usr/bin/env nbb
+;; The signing, trust, receipt, inspection, iOS-packaging and cljs-emission
+;; commands on the nbb route -- the block of `scripts/conformance.cljk` that
+;; became runnable without a JVM on 2026-09-11 (ADR 0347 port ledger),
+;; lifted out so it runs while that harness still waits on `run` and
+;; `measure-runtime`. Every command is driven through `bin/amu` as a caller
+;; would use it, from a directory that is not the repository, with relative
+;; paths.
+;;
+;; Each verdict is measured in BOTH directions: the positive case, and the
+;; refusal a one-byte or one-parameter change must produce, with its reason
+;; pinned. Exit 0 only when every case ran; a shorter run is not a pass.
+(ns test-nbb-signing
+  (:require [kotoba.lang.text :as str]
+            ["node:child_process" :as child]
+            ["node:fs" :as fs]
+            ["node:os" :as os]
+            ["node:path" :as path]))
+
+(def root (fs/realpathSync (.resolve path (.dirname path *file*) "..")))
+(def tmp (.mkdtempSync fs (.join path (.tmpdir os) "kotoba-nbb-signing-")))
+(def amu (.join path root "bin" "amu"))
+(defn file [name] (.join path tmp name))
+(defn write! [name value] (.writeFileSync fs (file name) value))
+(defn read! [name] (.readFileSync fs (file name) "utf8"))
+
+(def ran (atom 0))
+(def failed (atom []))
+(defn record! [name ok? detail]
+  (swap! ran inc)
+  (println (str (if ok? "PASS " "FAIL ") name (when-not ok? (str "  " detail))))
+  (when-not ok? (swap! failed conj name)))
+
+(defn amu!
+  "Run `amu` from the temp directory with RELATIVE file names, the way a
+  caller types them. Returns {:status :stdout :stderr}."
+  [& args]
+  (let [result (.spawnSync child js/process.execPath (clj->js (into [amu] args))
+                           #js {:cwd tmp :encoding "utf8" :maxBuffer 16777216})]
+    (when (.-error result) (throw (.-error result)))
+    {:status (or (.-status result) 70)
+     :stdout (or (.-stdout result) "")
+     :stderr (or (.-stderr result) "")}))
+
+(defn ok? [r] (and (zero? (:status r)) (str/includes? (:stdout r) ":ok true")))
+(defn refused-with? [r message]
+  (and (not (zero? (:status r))) (str/includes? (:stderr r) message)))
+
+(try
+  ;; ── artifacts ─────────────────────────────────────────────────────────
+  (let [r (amu! "compile" (.join path root "examples" "structured.kotoba")
+                "--target" "x86_64" "--output" "program.kexe")]
+    (record! "compile x86_64 artifact" (ok? r) (:stderr r)))
+  (record! "verify admits the artifact" (ok? (amu! "verify" "program.kexe")) "")
+  (let [text (read! "program.kexe")]
+    (write! "tampered.kexe" (str/replace-first text ":kotoba.kexe/v1" ":kotoba.kexe/v9"))
+    (record! "verify refuses a tampered artifact"
+             (not (zero? (:status (amu! "verify" "tampered.kexe")))) ""))
+
+  ;; ── keys and trust ────────────────────────────────────────────────────
+  (record! "keygen" (ok? (amu! "keygen" "--output" "signing-key.edn")) "")
+  (record! "keygen writes 0600"
+           (= 384 (bit-and 511 (.-mode (.statSync fs (file "signing-key.edn"))))) "")
+  (record! "public-key" (ok? (amu! "public-key" "signing-key.edn" "--output" "verification-key.edn")) "")
+  (record! "public-key carries no private material"
+           (not (str/includes? (read! "verification-key.edn") ":private-key")) "")
+  (record! "trust-key" (ok? (amu! "trust-key" "verification-key.edn" "--output" "trust.edn")) "")
+  (amu! "keygen" "--output" "other-key.edn")
+  (amu! "public-key" "other-key.edn" "--output" "other-public.edn")
+  (amu! "trust-key" "other-public.edn" "--output" "other-trust.edn")
+
+  ;; ── sign / verify-signed ──────────────────────────────────────────────
+  (record! "sign" (ok? (amu! "sign" "program.kexe" "--key" "signing-key.edn"
+                             "--not-before" "1000" "--expires" "2000"
+                             "--output" "program.signed.kexe")) "")
+  (record! "sign refuses a non-integer bound"
+           (refused-with? (amu! "sign" "program.kexe" "--key" "signing-key.edn"
+                                "--not-before" "abc")
+                          "must be a decimal integer") "")
+  (let [r (amu! "verify-signed" "program.signed.kexe" "--trust" "trust.edn" "--now" "1500")]
+    (record! "verify-signed inside validity, trusted signer"
+             (and (zero? (:status r)) (str/includes? (:stdout r) ":verified? true")) (:stderr r)))
+  (record! "verify-signed refuses an untrusted signer"
+           (refused-with? (amu! "verify-signed" "program.signed.kexe" "--trust" "other-trust.edn" "--now" "1500")
+                          "signer is not trusted") "")
+  (record! "verify-signed refuses before not-before"
+           (refused-with? (amu! "verify-signed" "program.signed.kexe" "--trust" "trust.edn" "--now" "999")
+                          "not yet valid") "")
+  (record! "verify-signed refuses at expiry"
+           (refused-with? (amu! "verify-signed" "program.signed.kexe" "--trust" "trust.edn" "--now" "2000")
+                          "expired") "")
+  (let [text (read! "program.signed.kexe")
+        [_ sig] (re-find #":signature \"([A-Za-z0-9+/=]{8})" text)
+        flipped (str/replace-first text (str ":signature \"" sig)
+                                   (str ":signature \"" (subs sig 0 7)
+                                        (if (= "A" (subs sig 7 8)) "B" "A")))]
+    (write! "flipped.signed.kexe" flipped)
+    (record! "verify-signed refuses a flipped signature byte"
+             (refused-with? (amu! "verify-signed" "flipped.signed.kexe" "--trust" "trust.edn" "--now" "1500")
+                            "signature verification failed") ""))
+
+  ;; ── receipts ──────────────────────────────────────────────────────────
+  (write! "pure-policy.edn" "{:allow #{}}\n")
+  (write! "input.edn" "{:args []}\n")
+  (write! "output.edn" "42\n")
+  (write! "other-output.edn" "43\n")
+  (record! "receipt"
+           (ok? (amu! "receipt" "--signed" "program.signed.kexe" "--trust" "trust.edn"
+                      "--policy" "pure-policy.edn" "--input" "input.edn" "--result" "output.edn"
+                      "--now" "1500" "--started-at" "1400" "--finished-at" "1401" "--status" "ok"
+                      "--target" "x86_64" "--entry" "main" "--fuel-initial" "256" "--fuel-remaining" "255"
+                      "--executor-key" "signing-key.edn" "--output" "run.receipt.edn")) "")
+  (let [r (amu! "verify-receipt" "run.receipt.edn" "--signed" "program.signed.kexe"
+                "--trust" "trust.edn" "--policy" "pure-policy.edn" "--input" "input.edn"
+                "--result" "output.edn" "--now" "1500")]
+    (record! "verify-receipt" (and (zero? (:status r)) (str/includes? (:stdout r) ":verified? true")) (:stderr r)))
+  (record! "verify-receipt refuses a different result"
+           (refused-with? (amu! "verify-receipt" "run.receipt.edn" "--signed" "program.signed.kexe"
+                                "--trust" "trust.edn" "--policy" "pure-policy.edn" "--input" "input.edn"
+                                "--result" "other-output.edn" "--now" "1500")
+                          "receipt evidence mismatch") "")
+  (write! "receipt-chain.edn" (str "[" (read! "run.receipt.edn") "]\n"))
+  (let [r (amu! "verify-chain" "receipt-chain.edn" "--trust" "trust.edn")]
+    (record! "verify-chain" (and (zero? (:status r)) (str/includes? (:stdout r) ":scope :executor-attested-chain/v1"))
+             (:stderr r)))
+
+  ;; ── inspect ───────────────────────────────────────────────────────────
+  (let [r (amu! "inspect" (.join path root "examples" "structured.kotoba"))]
+    (record! "inspect prints the public contract"
+             (and (zero? (:status r)) (str/includes? (:stdout r) ":kotoba.interface/v1")
+                  (not (str/includes? (:stdout r) "defn")))
+             (:stderr r)))
+
+  ;; ── release ───────────────────────────────────────────────────────────
+  (record! "sbom" (ok? (amu! "sbom" "program.kexe" "--output" "program.spdx")) "")
+  (record! "sbom is deterministic"
+           (do (amu! "sbom" "program.kexe" "--output" "program-again.spdx")
+               (= (read! "program.spdx") (read! "program-again.spdx"))) "")
+  (record! "attest-release"
+           (ok? (amu! "attest-release" "program.kexe" "--sbom" "program.spdx" "--key" "signing-key.edn"
+                      "--target" "x86_64" "--not-before" "1000" "--expires" "2000"
+                      "--output" "release.edn")) "")
+  (let [r (amu! "verify-release" "release.edn" "--artifact" "program.kexe" "--sbom" "program.spdx"
+                "--trust" "trust.edn" "--now" "1500")]
+    (record! "verify-release" (and (zero? (:status r)) (str/includes? (:stdout r) ":verified? true")) (:stderr r)))
+  (write! "program-mutated.kexe" (str (read! "program.kexe") "x"))
+  (record! "verify-release refuses a mutated artifact"
+           (refused-with? (amu! "verify-release" "release.edn" "--artifact" "program-mutated.kexe"
+                                "--sbom" "program.spdx" "--trust" "trust.edn" "--now" "1500")
+                          "identity mismatch") "")
+
+  ;; ── package-ios ───────────────────────────────────────────────────────
+  (let [r (amu! "compile" (.join path root "examples" "structured.kotoba")
+                "--target" "aarch64-ios" "--output" "ios.kexe")]
+    (record! "compile aarch64-ios artifact" (ok? r) (:stderr r)))
+  (let [r (amu! "package-ios" "ios.kexe" "--entry" "main" "--platform" "ios"
+                "--output" "program.o" "--manifest-output" "program.o.edn")
+        bytes (when (.existsSync fs (file "program.o")) (.readFileSync fs (file "program.o")))]
+    ;; Mach-O 64-bit magic, little-endian: cf fa ed fe.
+    (record! "package-ios writes a Mach-O 64-bit object"
+             (and (ok? r) bytes (= [0xcf 0xfa 0xed 0xfe] (vec (.subarray bytes 0 4))))
+             (:stderr r)))
+  (record! "package-ios refuses a non-iOS artifact"
+           (refused-with? (amu! "package-ios" "program.kexe" "--output" "wrong.o")
+                          "explicit iOS target") "")
+
+  ;; ── cljs emission, EXECUTED ───────────────────────────────────────────
+  (let [r (amu! "compile" (.join path root "examples" "fuel.kotoba")
+                "--target" "cljs-browser" "--output" "fuel.cljs")]
+    (record! "compile cljs-browser emits source" (ok? r) (:stderr r)))
+  (let [cp (.join path tmp "cp" "kotoba" "compiled")]
+    (.mkdirSync fs cp #js {:recursive true})
+    (.copyFileSync fs (file "fuel.cljs") (.join path cp "generated.cljs"))
+    (let [result (.spawnSync child js/process.execPath
+                             (clj->js [(.join path root "node_modules" "nbb" "cli.js")
+                                       "--classpath" (.join path tmp "cp")
+                                       "-e" (str "(require '[kotoba.compiled.generated :as g]) "
+                                                 "(prn [(g/fact 5) (g/fact 10) "
+                                                 "(try (g/forever 0) (catch :default e (ex-message e)))])")])
+                             #js {:cwd tmp :encoding "utf8"})]
+      (record! "the emitted cljs runs: fact 5 = 120, fact 10 = 3628800, forever traps on fuel"
+               (str/includes? (or (.-stdout result) "") "[120 3628800 \"fuel-exhausted\"]")
+               (str (.-stdout result) (.-stderr result)))))
+
+  (finally
+    (.rmSync fs tmp #js {:recursive true :force true})))
+
+(println (str "SCANNED\t" @ran "\tcases, failed=" (count @failed)))
+(when (or (seq @failed) (< @ran 30))
+  (println (str "FAIL " (pr-str @failed)))
+  (.exit js/process 1))
+(println "nbb-signing: keys, signatures, receipts, inspection, release, iOS packaging and cljs emission on the nbb route")

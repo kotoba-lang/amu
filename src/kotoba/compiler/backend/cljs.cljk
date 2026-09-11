@@ -97,9 +97,38 @@
      :cljs (let [host-index (if (number? index) index (js/Number index))]
              (when (js/Number.isSafeInteger host-index) host-index))))")
 
+;; A KIR literal on the Node host is a bigint (every integer the kotoba reader
+;; returns is one) and cljs `integer?` says false to it. The emitter's own
+;; arithmetic on literal indices (`(inc index)`) also needs a host number.
+;; Narrowing is exact for every index; a VALUE literal is printed as it is
+;; and a bigint prints as its digits, so a literal past 2^53 stays exact in
+;; the emitted source. Measured 2026-09-11, the first `--target cljs-browser`
+;; on the nbb route: "1 is not ISeqable", the literal 1 taken for a form.
+(defn- literal? [form]
+  (or (integer? form)
+      #?(:cljs (identical? js/BigInt (type form)) :clj false)))
+
+(defn- host-index [index]
+  #?(:clj index
+     :cljs (if (identical? js/BigInt (type index)) (js/Number index) index)))
+
+;; What a literal becomes in the emitted TEXT. On the JVM a long prints as
+;; its digits. A bigint pr-strs as `#object[BigInt 1]`, which is not
+;; ClojureScript; so a bigint that is a safe integer becomes a host number
+;; (prints the same digits), and one past 2^53 becomes a symbol spelled as
+;; its digits -- which prints the exact digits the JVM printed, and which
+;; the ClojureScript reader then reads the way it always read them.
+(defn- literal-text [form]
+  #?(:clj form
+     :cljs (if (identical? js/BigInt (type form))
+             (if (<= (js/BigInt "-9007199254740991") form (js/BigInt "9007199254740991"))
+               (js/Number form)
+               (symbol (str form)))
+             form)))
+
 (defn- lower-expr [form]
   (cond
-    (integer? form) form
+    (literal? form) (literal-text form)
     (or (string? form) (keyword? form) (boolean? form)) form
     (symbol? form) form
     :else
@@ -176,7 +205,7 @@
           (list 'nth
                 (list 'kotoba$typed-value! (list 'quote type)
                       (lower-expr value))
-                (inc index)))
+                (inc (host-index index))))
 
         hetero-vector-assoc
         (let [[type value index item] args]
@@ -184,7 +213,7 @@
                 (list 'assoc
                       (list 'kotoba$typed-value! (list 'quote type)
                             (lower-expr value))
-                      (inc index)
+                      (inc (host-index index))
                       (lower-expr item))))
 
         hetero-vector-equal

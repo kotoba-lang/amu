@@ -1,0 +1,288 @@
+(ns kotoba.compiler.nbb.signing-cli
+  "The signing, trust, receipt and inspection commands on the nbb route.
+
+  Until 2026-09-11 these were JVM-only (`kotoba.compiler.cli`), and when the
+  JVM route was removed (ADR 0347) they became refusals. Every library they
+  call was already portable -- `kotoba.verifier.signing` carries a `:cljs`
+  branch on `node:crypto` for Ed25519, `kotoba.compiler.receipt` and
+  `kotoba.compiler.interface` have no host interop at all -- so what was
+  missing was this file: argument parsing, bounded EDN reads, atomic writes,
+  and the same result envelopes the JVM printed, so a caller that parsed
+  `{:ok true :output ... :signer ...}` keeps working.
+
+  Keys are written through `io/write-text!`, which creates the temporary
+  0600 and renames it into place: the same posture the JVM's
+  `atomic-output/write-edn! ... {:private? true}` had for `keygen`.
+
+  Numbers: `--not-before`, `--expires`, `--now` and the receipt timestamps
+  are epoch seconds and fuel counts, parsed as decimal integers and refused
+  otherwise -- the JVM's `Long/parseLong` threw on garbage; this names it."
+  (:require [kotoba.artifact.core :as artifact]
+            [kotoba.compiler.interface :as interface]
+            [kotoba.compiler.ios-aot :as ios-aot]
+            [kotoba.compiler.nbb.cli-support :as support]
+            [kotoba.compiler.nbb.io :as io]
+            [kotoba.compiler.receipt :as receipt]
+            [kotoba.compiler.release :as release]
+            [kotoba.compiler.source-path :as source-path]
+            [kotoba.artifact.runtime-identity :as runtime-identity]
+            [kotoba.kir.target :as target-profile]
+            [kotoba.verifier :as verifier]
+            [kotoba.verifier.signing :as signing]
+            [kotoba.lang.text :as str]))
+
+(defn- option [args flag] (support/option args flag))
+
+(defn- required! [args flag]
+  (or (option args flag)
+      (support/usage-error! (str "error: " (first args) " requires " flag))))
+
+(defn- positional! [args what]
+  (let [value (second args)]
+    (when (or (nil? value) (str/starts-with? value "--"))
+      (support/usage-error! (str "error: " (first args) " requires " what)))
+    value))
+
+(defn- parse-integer!
+  "A decimal integer, or a refusal that names the flag. Returns a JS number
+  when it fits (every epoch second and fuel count does); the receipt library
+  compares and stores it as a value."
+  [flag text]
+  (when-not (and (string? text) (re-matches #"-?[0-9]{1,18}" text))
+    (support/usage-error! (str "error: " flag " must be a decimal integer, got "
+                               (pr-str text))))
+  (js/parseInt text 10))
+
+(defn- now-seconds [] (quot (js/Date.now) 1000))
+
+(defn- read-edn! [path] (support/read-edn-file! path))
+
+(defn- write-edn! [path value]
+  (io/write-text! path (str (pr-str (artifact/edn-safe value)) "\n"))
+  path)
+
+;; The JVM CLI's `parse-target` alias table, verbatim, plus the refusal it
+;; did not have: a spelling that names no profile is a usage error here
+;; rather than a bare keyword the receipt would seal.
+(defn- parse-target [s]
+  (case s
+    "wasm32" :wasm32-kotoba-v1
+    "x86_64" :x86_64-kotoba-v1
+    "aarch64" :aarch64-kotoba-v1
+    "component" :wasm-component-kotoba-v1
+    "wasm-component" :wasm-component-kotoba-v1
+    "js" :js-kotoba-v1
+    "javascript" :js-kotoba-v1
+    "web" :js-kotoba-v1
+    "js-browser" :js-browser-kotoba-v1
+    "cljs" :cljs-kotoba-v1
+    "cljs-browser" :cljs-browser-kotoba-v1
+    "cljs-node" :cljs-node-kotoba-v1
+    "evm" :evm256-kotoba-v1
+    "evm256" :evm256-kotoba-v1
+    "wasm32-browser" :wasm32-browser-kotoba-v1
+    "wasm32-wasi" :wasm32-wasi-kotoba-v1
+    "x86_64-linux" :x86_64-linux-kotoba-v1
+    "x86_64-macos" :x86_64-macos-kotoba-v1
+    "x86_64-windows" :x86_64-windows-kotoba-v1
+    "aarch64-linux" :aarch64-linux-kotoba-v1
+    "aarch64-macos" :aarch64-macos-kotoba-v1
+    "aarch64-windows" :aarch64-windows-kotoba-v1
+    "aarch64-android" :aarch64-android-kotoba-v1
+    "aarch64-ios" :aarch64-ios-kotoba-v1
+    (let [k (keyword s)]
+      (if (target-profile/profile k)
+        k
+        (support/usage-error! (str "error: unknown --target " (pr-str s)))))))
+
+;; ── keys and trust ──────────────────────────────────────────────────────
+
+(defn- keygen! [args]
+  (let [output (or (option args "--output") "kotoba-signing-key.edn")
+        key (signing/generate-keypair)]
+    (write-edn! output key)
+    {:ok true :output output :signer (:signer key)}))
+
+(defn- public-key! [args]
+  (let [key (read-edn! (positional! args "a signing-key file"))
+        public (signing/verification-key key)
+        output (or (option args "--output") "kotoba-verification-key.edn")]
+    (write-edn! output public)
+    {:ok true :output output :signer (:signer public)}))
+
+(defn- trust-key! [args]
+  (let [key (read-edn! (positional! args "a key file"))
+        signer (signing/trusted-signer-id! key)
+        output (or (option args "--output") "kotoba-trust.edn")
+        trust {:format :kotoba.trust/v1 :trusted-signers #{signer}
+               :revoked-signers #{} :revoked-artifacts #{}
+               :trusted-runtime-sha256 #{}
+               :revoked-runtime-sha256 #{}}]
+    (write-edn! output trust)
+    {:ok true :output output :signer signer}))
+
+(defn- trust-runtime! [args]
+  (let [evidence (read-edn! (positional! args "a runtime-measurement file"))
+        _ (runtime-identity/validate-measurement! evidence)
+        trust-path (required! args "--trust")
+        trust (signing/validate-trust! (read-edn! trust-path))
+        runtime-sha (runtime-identity/identity-sha256 (:runtime evidence))
+        output (or (option args "--output") trust-path)
+        updated (update trust :trusted-runtime-sha256 (fnil conj #{}) runtime-sha)]
+    (write-edn! output updated)
+    {:ok true :output output :runtime-sha256 runtime-sha}))
+
+;; ── artifacts ───────────────────────────────────────────────────────────
+
+(defn- read-artifact! [path]
+  (support/read-artifact-file! path))
+
+(defn- verify! [args]
+  (let [artifact (read-artifact! (positional! args "an artifact path"))]
+    (verifier/verify-artifact! artifact)
+    {:ok true :verified true :target (:target artifact)}))
+
+(defn- sign! [args]
+  (let [artifact (read-artifact! (positional! args "an artifact path"))
+        key (read-edn! (required! args "--key"))
+        output (or (option args "--output") "program.signed.kexe")
+        not-before (parse-integer! "--not-before" (or (option args "--not-before") "0"))
+        expires (parse-integer! "--expires"
+                                (or (option args "--expires")
+                                    (str (+ (now-seconds) 86400))))
+        envelope (signing/sign artifact key {:not-before not-before :expires expires})]
+    (write-edn! output envelope)
+    {:ok true :output output :signer (get-in envelope [:statement :signer])}))
+
+(defn- verify-signed! [args]
+  (let [envelope (read-artifact! (positional! args "a signed envelope path"))
+        trust (read-edn! (required! args "--trust"))
+        now (parse-integer! "--now" (or (option args "--now") (str (now-seconds))))
+        result (signing/verify envelope trust now)]
+    (dissoc result :artifact)))
+
+(defn- inspect! [args]
+  (let [input (source-path/admit! (positional! args "a Kotoba source path"))
+        inspected (interface/inspect-source (io/read-text-file input))]
+    (if-let [output (option args "--output")]
+      (do (write-edn! output inspected)
+          {:ok true :output output :sha256 (:sha256 inspected)})
+      inspected)))
+
+;; ── receipts ────────────────────────────────────────────────────────────
+
+(defn- optional-edn [args flag]
+  (when-let [path (option args flag)] (read-edn! path)))
+
+(defn- receipt! [args]
+  (let [envelope (read-artifact! (required! args "--signed"))
+        trust (read-edn! (required! args "--trust"))
+        policy (read-edn! (required! args "--policy"))
+        input (read-edn! (required! args "--input"))
+        output-value (read-edn! (required! args "--result"))
+        parent (optional-edn args "--parent")
+        executor-key (read-edn! (required! args "--executor-key"))
+        output-path (or (option args "--output") "run.receipt.edn")
+        value (receipt/create
+               envelope trust policy input output-value
+               {:now (parse-integer! "--now" (required! args "--now"))
+                :started-at (parse-integer! "--started-at" (required! args "--started-at"))
+                :finished-at (parse-integer! "--finished-at" (required! args "--finished-at"))
+                :status (keyword (required! args "--status"))
+                :target (parse-target (required! args "--target"))
+                :entry (symbol (or (option args "--entry") "main"))
+                :fuel-initial (parse-integer! "--fuel-initial"
+                                              (or (option args "--fuel-initial") "512"))
+                :fuel-remaining (parse-integer! "--fuel-remaining"
+                                                (required! args "--fuel-remaining"))
+                :parent parent :executor-key executor-key})]
+    (write-edn! output-path value)
+    {:ok true :output output-path :receipt-sha256 (:receipt-sha256 value)}))
+
+(defn- verify-receipt! [args]
+  (let [value (read-edn! (positional! args "a receipt path"))
+        envelope (read-artifact! (required! args "--signed"))
+        trust (read-edn! (required! args "--trust"))
+        policy (read-edn! (required! args "--policy"))
+        input (read-edn! (required! args "--input"))
+        output-value (read-edn! (required! args "--result"))
+        parent (optional-edn args "--parent")]
+    (receipt/verify value envelope trust policy input output-value
+                    {:now (parse-integer! "--now" (required! args "--now"))
+                     :parent parent})))
+
+(defn- verify-chain! [args]
+  (let [receipts (read-edn! (positional! args "a receipt-chain path"))
+        trust (read-edn! (required! args "--trust"))]
+    (receipt/verify-chain receipts trust)))
+
+;; ── release ─────────────────────────────────────────────────────────────
+
+(defn- sbom! [args]
+  (let [input (positional! args "an artifact path")
+        output (or (option args "--output") (str input ".spdx"))]
+    (io/write-bytes! output (release/sbom-bytes input))
+    {:ok true :format :spdx/v2.3 :output output}))
+
+(defn- attest-release! [args]
+  (let [input (positional! args "an artifact path")
+        sbom (required! args "--sbom")
+        key (read-edn! (required! args "--key"))
+        target (parse-target (required! args "--target"))
+        not-before (parse-integer! "--not-before" (required! args "--not-before"))
+        expires (parse-integer! "--expires" (required! args "--expires"))
+        output (or (option args "--output") (str input ".attestation.edn"))
+        envelope (release/attest input sbom target key not-before expires)]
+    (write-edn! output envelope)
+    {:ok true :target target :output output
+     :subject-sha256 (get-in envelope [:statement :subject :sha256])}))
+
+(defn- verify-release! [args]
+  (let [envelope (read-edn! (positional! args "an attestation path"))
+        input (required! args "--artifact")
+        sbom (required! args "--sbom")
+        trust (read-edn! (required! args "--trust"))
+        now (parse-integer! "--now" (required! args "--now"))]
+    (assoc (release/verify! envelope input sbom trust now) :ok true)))
+
+;; ── iOS AOT packaging ───────────────────────────────────────────────────
+;; `ios-aot/package` is portable and on the Node host answers the object as
+;; a vector of unsigned bytes (its own comment says why); the write is the
+;; only host-specific step.
+
+(defn- package-ios! [args]
+  (let [input (read-artifact! (positional! args "an aarch64-ios artifact path"))
+        entry (symbol (or (option args "--entry") "main"))
+        platform (keyword (or (option args "--platform") "ios"))
+        output (or (option args "--output") "kotoba-ios-program.o")
+        manifest-output (or (option args "--manifest-output") (str output ".edn"))
+        packaged (ios-aot/package input entry {:platform platform})]
+    (io/write-bytes! output (js/Uint8Array.from (clj->js (:object packaged))))
+    (write-edn! manifest-output (:manifest packaged))
+    {:ok true :target (:target input) :entry entry
+     :platform platform :output output
+     :manifest-output manifest-output}))
+
+(def commands
+  {"keygen" keygen!
+   "package-ios" package-ios!
+   "sbom" sbom!
+   "attest-release" attest-release!
+   "verify-release" verify-release!
+   "public-key" public-key!
+   "trust-key" trust-key!
+   "trust-runtime" trust-runtime!
+   "sign" sign!
+   "verify-signed" verify-signed!
+   "verify" verify!
+   "inspect" inspect!
+   "receipt" receipt!
+   "verify-receipt" verify-receipt!
+   "verify-chain" verify-chain!})
+
+(support/execute!
+ ;; `edn-safe` so a bigint (every integer the kotoba reader returns) prints
+ ;; as an integer token rather than `#object[BigInt 1000]`.
+ #(if-let [command (get commands (first %))]
+    (artifact/edn-safe (command %))
+    (support/usage-error! "error: signing command is unknown")))

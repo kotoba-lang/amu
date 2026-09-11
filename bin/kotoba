@@ -66,11 +66,19 @@
   ;; clause as a malformed `:export`. Same guard as bin/amu's `projectMode`.
   (boolean (some #{"--source-path" "--module-lock"} sub-args)))
 
+;; Signing, trust, receipt, release and inspection commands: `signing_cli.cljk`
+;; (ported from the JVM CLI on 2026-09-11, ADR 0347's port ledger).
+(def ^:private signing-commands
+  #{"keygen" "public-key" "trust-key" "trust-runtime" "sign" "verify-signed"
+    "verify" "inspect" "receipt" "verify-receipt" "verify-chain"
+    "sbom" "attest-release" "verify-release" "package-ios"})
+
 (defn- nbb-native-eligible? [sub-args]
   (let [cmd (first sub-args)]
     (and
      (not (project-mode? sub-args))
      (or (contains? #{"check" "extract-native"} cmd)
+         (contains? signing-commands cmd)
          (and (= cmd "worker") (contains? nbb-native-targets (option sub-args "--target")))
          (and (= cmd "compile") (contains? nbb-native-targets (option sub-args "--target")))))))
 
@@ -81,6 +89,7 @@
                   (nil? target)
                   (.startsWith target "wasm32"))
         filename (cond
+                   (contains? signing-commands command) "signing_cli.cljk"
                    (= command "extract-native") "x86_64_cli.cljk"
                    wasm? "wasm_cli.cljk"
                    (.startsWith target "aarch64") "aarch64_cli.cljk"
