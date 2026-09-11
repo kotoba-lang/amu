@@ -211,7 +211,10 @@
           module-digests (into (sorted-map)
                                (map (fn [[namespace source]]
                                       [namespace (text-sha256 source)]))
-                               (select-keys (:sources resolved) order))
+                               ;; By NAMESPACE, not by linker key: a template
+                               ;; instantiated twice is one source text, and
+                               ;; its key is `[namespace binding]`.
+                               (select-keys (:sources resolved) (project/module-namespaces order)))
           graph {:kotoba.module/schema :kotoba.module-graph/v1
                  :kotoba.module/root (get-in resolved [:project :root])
                  :kotoba.module/order order

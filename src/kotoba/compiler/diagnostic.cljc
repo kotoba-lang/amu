@@ -149,6 +149,32 @@
        (let [form (:form data)]
          (and (seq? form) (= :require (first form))))))
 
+;; The same rename for a TEMPLATE reached on its own. `(:params [elem])` makes
+;; a module a template (kotoba.compiler.project): it has no meaning until an
+;; importer binds every parameter with `:with`, and the linker substitutes the
+;; binding before the frontend reads it. Handed to the frontend directly it
+;; gets the same fall-through message a `:require` gets. Nothing is admitted
+;; here either: a template is never compiled on its own, on any path.
+
+(defn- params-clause-rejection? [data]
+  (and (= :kotoba.error/namespace-export-clause (:kotoba.error/code data))
+       (let [form (:form data)]
+         (and (seq? form) (= :params (first form))))))
+
+(defn- params-clause-message [form]
+  (let [params (second form)
+        binding (when (vector? params)
+                  (pr-str (into {} (map (fn [p] [p (symbol "<type>")])) params)))]
+    (str "template module declares (:params " (pr-str params) ") and needs an "
+         "instantiation: require it with :with " (or binding "{<parameter> <type>}")
+         " from an importing module and link the project "
+         "(`amu check <entry> --source-path <dir>`); a template is never "
+         "compiled on its own")))
+
+(def ^:private params-clause-remedy
+  {:problem :namespace/params-needs-instantiation
+   :check "check <entry> --source-path <dir>"})
+
 (defn refine
   "Answer `{:code :message :details}` when this error is a project-mode routing
   refusal wearing a single-module message, else nil.
@@ -158,10 +184,16 @@
   the frontend set it, so subset-corpus assertions are unaffected."
   [error]
   (let [data (ex-data error)]
-    (when (require-clause-rejection? data)
+    (cond
+      (require-clause-rejection? data)
       {:code :kotoba.error/namespace-require-needs-project
        :message require-clause-message
-       :details require-clause-remedy})))
+       :details require-clause-remedy}
+
+      (params-clause-rejection? data)
+      {:code :kotoba.error/namespace-params-needs-instantiation
+       :message (params-clause-message (:form data))
+       :details params-clause-remedy})))
 
 (defn refined-message
   "The refined message when one applies, else `fallback` (the caller's
