@@ -1,0 +1,162 @@
+#!/usr/bin/env nbb
+(ns test-nbb-trust
+  "The trust-plane commands through `bin/amu`, on the Node route, with the
+  refusals that make the passes mean something.
+
+  `keygen`, `public-key`, `trust-key`, `sign`, `verify-signed`, `verify` and
+  `inspect` reached the user only through `clojure -M:run` until 2026-09-11,
+  and after the `.cljk` rename that route could not load the compiler at all
+  -- `amu keygen` had no working route anywhere, which is how
+  `test-output-set-publisher-auth` went red. This script is the one that
+  discriminates the port: every positive case has a negative twin that must
+  be refused with its named reason and exit code, so a route that accepted
+  everything, or a route that never ran, cannot pass it.
+
+  Run from the repo root: `nbb --classpath . scripts/test-nbb-trust.cljk`."
+  (:require [cljs.reader :as reader]
+            [kotoba.lang.text :as str]
+            [scripts.lib :as lib]
+            ["node:child_process" :as child]
+            ["node:fs" :as fs]
+            ["node:os" :as os]
+            ["node:path" :as path]))
+
+(def directory (.mkdtempSync fs (.join path (.tmpdir os) "amu-trust-")))
+
+(defn- invoke [& args]
+  (.spawnSync child js/process.execPath
+              (clj->js (into [(lib/join lib/root "bin" "amu")] args))
+              #js {:cwd lib/root :encoding "utf8" :timeout 180000
+                   :maxBuffer (* 16 1024 1024)}))
+
+(def ^:private checks (volatile! {:pass 0 :fail 0}))
+
+(defn- report! [ok? label detail]
+  (vswap! checks update (if ok? :pass :fail) inc)
+  (println (str (if ok? "PASS " "FAIL ") label (when-not ok? (str " -- " detail)))))
+
+(defn- ok! [label & args]
+  (let [result (apply invoke args)]
+    (report! (and (nil? (.-error result)) (zero? (.-status result)))
+             label (str "exit " (.-status result) "\n" (.-stdout result) (.-stderr result)))
+    result))
+
+(defn- refused! [label status fragment & args]
+  (let [result (apply invoke args)
+        err (str (.-stderr result))]
+    (report! (and (= status (.-status result)) (.includes err fragment))
+             (str label " (exit " status ", " (pr-str fragment) ")")
+             (str "exit " (.-status result) "\n" (.-stdout result) err))
+    result))
+
+(defn- stdout-edn [result]
+  (reader/read-string (str (.-stdout result))))
+
+(defn- mode [file]
+  (bit-and (.-mode (.statSync fs file)) 511))
+
+(try
+  (let [source (lib/join directory "m.kotoba")
+        artifact (lib/join directory "m.kexe")
+        key (lib/join directory "key.edn")
+        public (lib/join directory "pub.edn")
+        trust (lib/join directory "trust.edn")
+        other-key (lib/join directory "other.edn")
+        other-public (lib/join directory "otherpub.edn")
+        other-trust (lib/join directory "othertrust.edn")
+        signed (lib/join directory "m.signed.kexe")
+        tampered-artifact (lib/join directory "tampered-artifact.kexe")
+        tampered-statement (lib/join directory "tampered-statement.kexe")]
+    (lib/write-text! source "(defn main [] :i64 42)\n")
+    (ok! "compile a native artifact to sign"
+         "compile" source "--target" "aarch64-macos" "--output" artifact)
+
+    ;; keys and trust
+    (let [result (ok! "keygen" "keygen" "--output" key)
+          signer (:signer (stdout-edn result))]
+      (report! (= 384 (mode key)) "a private key is written 0600" (.toString (mode key) 8))
+      (report! (and (string? signer) (= 64 (count signer))) "keygen reports the signer id" signer)
+      (let [public-result (ok! "public-key" "public-key" key "--output" public)]
+        (report! (= signer (:signer (stdout-edn public-result)))
+                 "public-key names the same signer" (pr-str (stdout-edn public-result))))
+      (report! (not (.includes (lib/read-text public) ":private-key"))
+               "the verification key carries no private key" (lib/read-text public))
+      (ok! "trust-key" "trust-key" public "--output" trust)
+      (report! (= #{signer} (:trusted-signers (reader/read-string (lib/read-text trust))))
+               "trust-key trusts exactly that signer" (lib/read-text trust)))
+    (refused! "public-key of a file that is not a key" 77 "malformed Ed25519"
+              "public-key" trust "--output" (lib/join directory "never.edn"))
+
+    ;; sign + verify-signed
+    (ok! "sign" "sign" artifact "--key" key "--not-before" "0"
+         "--expires" "4102444800" "--output" signed)
+    (let [result (ok! "verify-signed inside the validity window"
+                      "verify-signed" signed "--trust" trust "--now" "1000")
+          value (stdout-edn result)]
+      (report! (true? (:verified? value)) "verify-signed answers :verified? true" (pr-str value))
+      (report! (= {:not-before 0 :expires 4102444800} (:validity value))
+               "validity bounds print as plain integers, not #object[BigInt]"
+               (str (.-stdout result))))
+    (refused! "verify-signed after expiry" 77 "signature is expired"
+              "verify-signed" signed "--trust" trust "--now" "4102444801")
+    (refused! "verify-signed before not-before" 77 "signature is not yet valid"
+              "verify-signed" (do (ok! "sign with a future not-before"
+                                       "sign" artifact "--key" key "--not-before" "2000"
+                                       "--expires" "3000" "--output"
+                                       (lib/join directory "future.kexe"))
+                                  (lib/join directory "future.kexe"))
+              "--trust" trust "--now" "1999")
+
+    ;; a signer the trust set does not name
+    (ok! "keygen (other)" "keygen" "--output" other-key)
+    (ok! "public-key (other)" "public-key" other-key "--output" other-public)
+    (ok! "trust-key (other)" "trust-key" other-public "--output" other-trust)
+    (refused! "verify-signed against a trust set that does not name the signer" 77
+              "signer is not trusted"
+              "verify-signed" signed "--trust" other-trust "--now" "1000")
+
+    ;; tampering: one code byte, and one statement field
+    (let [text (lib/read-text signed)
+          [_ byte-text] (re-find #":code \[(\d+)" text)
+          code-index (.indexOf text (str ":code [" byte-text))
+          bumped (str (mod (inc (js/parseInt byte-text 10)) 256))]
+      (lib/write-text! tampered-artifact
+                       (str (subs text 0 (+ code-index 7)) bumped
+                            (subs text (+ code-index 7 (count byte-text)))))
+      (lib/write-text! tampered-statement
+                       (str/replace text ":expires 4102444800" ":expires 4102444801")))
+    (refused! "a tampered code byte" 65 "artifact integrity mismatch"
+              "verify-signed" tampered-artifact "--trust" trust "--now" "1000")
+    (refused! "a tampered statement field" 77 "Ed25519 signature verification failed"
+              "verify-signed" tampered-statement "--trust" trust "--now" "1000")
+
+    ;; verify (unsigned artifact) and inspect
+    (ok! "verify" "verify" artifact)
+    (refused! "verify of a tampered artifact" 65 "artifact integrity mismatch"
+              "verify" (do (lib/write-text! (lib/join directory "bad.kexe")
+                                            (str/replace (lib/read-text artifact)
+                                                         #":code \[\d+" ":code [7"))
+                           (lib/join directory "bad.kexe")))
+    (let [result (ok! "inspect" "inspect" source)
+          value (stdout-edn result)]
+      (report! (= :kotoba.interface/v1 (:format value)) "inspect answers an interface" (pr-str value))
+      (report! (= 'main (:entry value)) "inspect names the entry" (pr-str value)))
+
+    ;; usage: the integers are checked, not swallowed
+    (refused! "sign with a non-integer --expires" 64 "--expires must be a decimal integer"
+              "sign" artifact "--key" key "--expires" "abc")
+    (refused! "verify-signed without --trust" 64 "missing --trust"
+              "verify-signed" signed "--now" "1000")
+    (refused! "keygen into a directory that does not exist" 74 "output parent must be a directory"
+              "keygen" "--output" (lib/join directory "nope" "key.edn"))
+
+    ;; the route: none of the above started a JVM
+    (let [result (invoke "keygen" "--output" (lib/join directory "jvm-free.edn") "--jvm-free")]
+      (report! (zero? (.-status result)) "keygen runs with --jvm-free" (str (.-stderr result)))))
+  (finally
+    (lib/remove-tree! directory)))
+
+(let [{:keys [pass fail]} @checks]
+  (println (str "SCANNED\t" (+ pass fail) "\tchecks; " pass " passed, " fail " failed"))
+  (when (or (zero? pass) (pos? fail))
+    (set! (.-exitCode js/process) 1)))

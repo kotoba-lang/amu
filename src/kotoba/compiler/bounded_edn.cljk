@@ -1,11 +1,35 @@
 (ns kotoba.compiler.bounded-edn
+  "Bounded reading of EDN and source text, on both compiler hosts.
+
+  This was `.clj` until 2026-09-11, and it was the first leaf in the
+  reverse-topological order of what still forces `bin/amu` onto the JVM
+  (`docs/jvm-route-topology.edn`): every JVM-only command reads its input
+  through here, and nothing here is about the JVM -- it is a byte ceiling, a
+  UTF-8 decode that refuses malformed input, a preflight over the text, and
+  a walk over the value. The bounds are the contract; the host is not.
+
+  On `:clj` the implementation is the one that was here, byte for byte
+  inside the reader conditionals. On `:cljs` the bytes come through
+  `kotoba.compiler.nbb.io`'s bounded, no-follow, growth-detecting read, and
+  the EDN is read with `kotoba.compiler.kotoba-reader` -- the reader the rest
+  of this compiler uses on that host, which returns a bigint for every integer
+  token. That is deliberate and it is the same choice
+  `kotoba.compiler.nbb.cli-support/read-artifact-file!` records: `cljs.reader`
+  returns a Number, and a Number cannot hold an i64 (the first SHA-512 round
+  constant came back off by 774 through it). The two hosts therefore hand
+  back different representations of the same integer, and every consumer
+  that compares one has to say so with `kotoba.verifier/guest-integer?`
+  rather than `integer?` -- `kotoba.verifier.signing` learned that on
+  2026-09-11 (kotoba-verifier f1efb423)."
   (:refer-clojure :exclude [read-string])
-  (:require [clojure.edn :as edn]
-            [clojure.java.io :as io])
-  (:import [java.io ByteArrayOutputStream PushbackReader]
-           [java.nio ByteBuffer]
-           [java.nio.charset CodingErrorAction StandardCharsets]
-           [java.nio.file Files LinkOption Paths]))
+  (:require #?@(:clj [[clojure.edn :as edn]
+                      [clojure.java.io :as io]]
+                :cljs [[kotoba.compiler.kotoba-reader :as kr]
+                       [kotoba.compiler.nbb.io :as nbb-io]]))
+  #?(:clj (:import [java.io ByteArrayOutputStream PushbackReader]
+                   [java.nio ByteBuffer]
+                   [java.nio.charset CodingErrorAction StandardCharsets]
+                   [java.nio.file Files LinkOption Paths])))
 
 (def max-edn-bytes (* 8 1024 1024))
 (def max-source-bytes (* 1024 1024))
@@ -17,92 +41,121 @@
 (defn- reject! [message data]
   (throw (ex-info message (merge {:phase :decode} data))))
 
-(defn- read-bytes [path limit kind]
-  (when-not (and (string? path) (seq path))
-    (reject! "input path is required" {:kind kind}))
-  (try
-    (when-not (Files/isRegularFile (Paths/get path (make-array String 0))
-                                   (make-array LinkOption 0))
-      (reject! "input must be a regular file" {:kind kind :path path}))
-    (with-open [input (io/input-stream path)
-                output (ByteArrayOutputStream.)]
-      (let [buffer (byte-array 8192)]
-        (loop [total 0]
-          (let [read (.read input buffer)]
-            (if (neg? read)
-              (.toByteArray output)
-              (let [next-total (+ total read)]
-                (when (> next-total limit)
-                  (reject! "input exceeds byte limit"
-                           {:kind kind :limit limit :path path}))
-                (.write output buffer 0 read)
-                (recur next-total)))))))
-    (catch clojure.lang.ExceptionInfo error (throw error))
-    (catch Exception error
-      (throw (ex-info "input could not be read"
-                      {:phase :decode :kind kind :path path} error)))))
+#?(:clj
+   (defn- read-bytes [path limit kind]
+     (when-not (and (string? path) (seq path))
+       (reject! "input path is required" {:kind kind}))
+     (try
+       (when-not (Files/isRegularFile (Paths/get path (make-array String 0))
+                                      (make-array LinkOption 0))
+         (reject! "input must be a regular file" {:kind kind :path path}))
+       (with-open [input (io/input-stream path)
+                   output (ByteArrayOutputStream.)]
+         (let [buffer (byte-array 8192)]
+           (loop [total 0]
+             (let [read (.read input buffer)]
+               (if (neg? read)
+                 (.toByteArray output)
+                 (let [next-total (+ total read)]
+                   (when (> next-total limit)
+                     (reject! "input exceeds byte limit"
+                              {:kind kind :limit limit :path path}))
+                   (.write output buffer 0 read)
+                   (recur next-total)))))))
+       (catch clojure.lang.ExceptionInfo error (throw error))
+       (catch Exception error
+         (throw (ex-info "input could not be read"
+                         {:phase :decode :kind kind :path path} error)))))
+   :cljs
+   (defn- read-bytes [path limit kind]
+     (when-not (and (string? path) (seq path))
+       (reject! "input path is required" {:kind kind}))
+     ;; `nbb-io/read-bounded-bytes-file` refuses symlinks, non-regular files,
+     ;; files over the limit and files that grow while read -- the same
+     ;; refusals as the `:clj` branch plus one -- but it names its data with
+     ;; the verifier's vocabulary. Re-key them so a caller sees the same
+     ;; {:phase :decode :kind ...} on either host.
+     (try
+       (nbb-io/read-bounded-bytes-file path limit)
+       (catch :default error
+         (let [message (ex-message error)]
+           (cond
+             (= message "output-set member exceeds byte limit")
+             (reject! "input exceeds byte limit" {:kind kind :limit limit :path path})
+             (or (= message "output-set member is not a regular file")
+                 (= message "output-set member must not be a symbolic link"))
+             (reject! "input must be a regular file" {:kind kind :path path})
+             :else
+             (throw (ex-info "input could not be read"
+                             {:phase :decode :kind kind :path path} error))))))))
 
 (defn- decode-utf8 [bytes kind]
   (try
-    (str (.decode (doto (.newDecoder StandardCharsets/UTF_8)
-                    (.onMalformedInput CodingErrorAction/REPORT)
-                    (.onUnmappableCharacter CodingErrorAction/REPORT))
-                  (ByteBuffer/wrap bytes)))
-    (catch Exception error
+    #?(:clj (str (.decode (doto (.newDecoder StandardCharsets/UTF_8)
+                            (.onMalformedInput CodingErrorAction/REPORT)
+                            (.onUnmappableCharacter CodingErrorAction/REPORT))
+                          (ByteBuffer/wrap bytes)))
+       :cljs (.decode (js/TextDecoder. "utf-8" #js {:fatal true}) bytes))
+    (catch #?(:clj Exception :cljs :default) error
       (throw (ex-info "input is not valid UTF-8" {:phase :decode :kind kind} error)))))
 
 (defn read-text-file
   ([path] (read-text-file path max-source-bytes))
   ([path limit] (decode-utf8 (read-bytes path limit :source) :source)))
 
+(defn- whitespace? [ch]
+  #?(:clj (Character/isWhitespace ^char ch)
+     :cljs (boolean (re-matches #"\s" ch))))
+
 (defn- preflight! [text]
-  (loop [index 0 depth 0 token-length 0 in-string? false escaped? false in-comment? false]
-    (when (< index (count text))
-      (let [ch (.charAt ^String text index)]
-        (cond
-          in-comment?
-          (recur (inc index) depth 0 false false (not= ch \newline))
+  (let [n (count text)]
+    (loop [index 0 depth 0 token-length 0 in-string? false escaped? false in-comment? false]
+      (when (< index n)
+        (let [ch (.charAt ^String text index)]
+          (cond
+            in-comment?
+            (recur (inc index) depth 0 false false (not= ch \newline))
 
-          (and in-string? escaped?)
-          (recur (inc index) depth 0 true false false)
+            (and in-string? escaped?)
+            (recur (inc index) depth 0 true false false)
 
-          (and in-string? (= ch \\))
-          (recur (inc index) depth 0 true true false)
+            (and in-string? (= ch \\))
+            (recur (inc index) depth 0 true true false)
 
-          (= ch \newline)
-          (recur (inc index) depth 0 in-string? false false)
+            (= ch \newline)
+            (recur (inc index) depth 0 in-string? false false)
 
-          (and (not in-string?) (= ch \;))
-          (recur (inc index) depth 0 false false true)
+            (and (not in-string?) (= ch \;))
+            (recur (inc index) depth 0 false false true)
 
-          (= ch \")
-          (recur (inc index) depth 0 (not in-string?) false false)
+            (= ch \")
+            (recur (inc index) depth 0 (not in-string?) false false)
 
-          in-string?
-          (recur (inc index) depth 0 true false false)
+            in-string?
+            (recur (inc index) depth 0 true false false)
 
-          (and (= ch \#)
-               (or (= (inc index) (count text))
-                   (not= (.charAt ^String text (inc index)) \{)))
-          (reject! "EDN dispatch forms are forbidden" {})
+            (and (= ch \#)
+                 (or (= (inc index) n)
+                     (not= (.charAt ^String text (inc index)) \{)))
+            (reject! "EDN dispatch forms are forbidden" {})
 
-          (#{\( \[ \{} ch)
-          (let [next-depth (inc depth)]
-            (when (> next-depth max-depth)
-              (reject! "EDN nesting exceeds limit" {:limit max-depth}))
-            (recur (inc index) next-depth 0 false false false))
+            (#{\( \[ \{} ch)
+            (let [next-depth (inc depth)]
+              (when (> next-depth max-depth)
+                (reject! "EDN nesting exceeds limit" {:limit max-depth}))
+              (recur (inc index) next-depth 0 false false false))
 
-          (#{\) \] \}} ch)
-          (recur (inc index) (max 0 (dec depth)) 0 false false false)
+            (#{\) \] \}} ch)
+            (recur (inc index) (max 0 (dec depth)) 0 false false false)
 
-          (or (Character/isWhitespace ch) (= ch \,))
-          (recur (inc index) depth 0 false false false)
+            (or (whitespace? ch) (= ch \,))
+            (recur (inc index) depth 0 false false false)
 
-          :else
-          (let [next-length (inc token-length)]
-            (when (> next-length max-token-chars)
-              (reject! "EDN token exceeds limit" {:limit max-token-chars}))
-            (recur (inc index) depth next-length false false false)))))))
+            :else
+            (let [next-length (inc token-length)]
+              (when (> next-length max-token-chars)
+                (reject! "EDN token exceeds limit" {:limit max-token-chars}))
+              (recur (inc index) depth next-length false false false))))))))
 
 (defn- validate-shape! [value]
   (let [nodes (volatile! 0)]
@@ -119,21 +172,37 @@
       (walk value 0)
       value)))
 
+#?(:clj
+   (defn- read-one! [text]
+     (with-open [reader (PushbackReader. (java.io.StringReader. text))]
+       (let [eof (Object.)
+             value (edn/read {:eof eof} reader)]
+         (when (identical? eof value)
+           (reject! "EDN input is empty" {}))
+         (when-not (identical? eof (edn/read {:eof eof} reader))
+           (reject! "EDN input contains trailing forms" {}))
+         value)))
+   :cljs
+   (defn- read-one! [text]
+     (let [forms (kr/read-forms text {:max-depth max-depth
+                                      :max-token-chars max-token-chars})]
+       (when (empty? forms)
+         (reject! "EDN input is empty" {}))
+       (when (> (count forms) 1)
+         (reject! "EDN input contains trailing forms" {}))
+       (first forms))))
+
 (defn read-string [text]
   (when-not (string? text)
     (reject! "EDN input must be text" {}))
   (preflight! text)
   (try
-    (with-open [reader (PushbackReader. (java.io.StringReader. text))]
-      (let [eof (Object.)
-            value (edn/read {:eof eof} reader)]
-        (when (identical? eof value)
-          (reject! "EDN input is empty" {}))
-        (when-not (identical? eof (edn/read {:eof eof} reader))
-          (reject! "EDN input contains trailing forms" {}))
-        (validate-shape! value)))
-    (catch clojure.lang.ExceptionInfo error (throw error))
-    (catch Exception error
+    (validate-shape! (read-one! text))
+    (catch #?(:clj clojure.lang.ExceptionInfo :cljs ExceptionInfo) error
+      ;; The kotoba reader's own refusals carry {:phase :read}; every other
+      ;; ex-info here is one of this namespace's. Both are already named.
+      (throw error))
+    (catch #?(:clj Exception :cljs :default) error
       (throw (ex-info "EDN input was rejected" {:phase :decode} error)))))
 
 (defn read-file [path]

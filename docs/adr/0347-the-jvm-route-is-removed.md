@@ -80,12 +80,14 @@ a refusal today; each is a port to do, in this order of consequence:
 
 | command | why it matters | status |
 |---|---|---|
-| `keygen`, `sign`, `public-key`, `trust-key`, `verify-signed` | publisher keys and signatures. `sign-output-set` / `verify-output-set` are ALREADY on the nbb route (`output_set_cli.cljk`, Ed25519 via node crypto), so the primitive exists; the key-file commands are the gap | **blocked**; `test-output-set-publisher-auth`, `test-release` refuse |
+| `keygen`, `sign`, `public-key`, `trust-key`, `verify-signed` | publisher keys and signatures. `sign-output-set` / `verify-output-set` are ALREADY on the nbb route (`output_set_cli.cljk`, Ed25519 via node crypto), so the primitive exists; the key-file commands were the gap | **on the nbb route** since ADR 0348 (`kotoba.compiler.trust-cli`, `scripts/test-nbb-trust.cljk` 32 checks). `test-output-set-publisher-auth` still refuses at its own JVM parity oracle; `test-release` at `attest-release` |
 | `attest-release`, `verify-release`, `sbom` | release evidence | **blocked**; `release-conformance.cljk` refuses |
-| `verify`, `verify-chain`, `verify-receipt`, `receipt`, `coverage`, `sign-coverage-evidence`, `trust-runtime` | receipts and coverage. `verify-output-set` covers the artifact-admission half | **blocked** |
+| `verify`, `verify-chain`, `verify-receipt`, `receipt`, `trust-runtime` | receipts and trust | **on the nbb route** since ADR 0348 |
+| `coverage`, `sign-coverage-evidence` | coverage evidence | **blocked** on `kotoba.compiler.coverage` (level 1 in `docs/jvm-route-topology.edn`); `sign-coverage-evidence` stands only on leaves already portable and is a routing change away |
 | `run`, `measure-runtime` | executing artifacts from the CLI (`kototama-native` host) | **blocked**; `dual-backend-equivalence.cljk` names it |
 | `test` | the JVM test runner | **retired**: the 185 `.cljk` test files outside `test/nbb/` (every one carries an `ns`) do not run anywhere. The 89 files under `test/nbb/` and the 7 `*-portable-test` namespaces do. Porting is per namespace; the files are not deleted so the assertions they hold are not lost |
-| `inspect`, `package-ios`, `package-aiueos-boot` | inspection; iOS/aiueos image packaging | **blocked** (`ios-aot-conformance.cljk` is conditional on macOS and was not measured here) |
+| `inspect` | interface inspection | **on the nbb route** since ADR 0348 |
+| `package-ios`, `package-aiueos-boot` | iOS/aiueos image packaging | **blocked** by routing only -- both stand on `bounded-edn` / `atomic-output`, portable since ADR 0348 (`ios-aot-conformance.cljk` is conditional on macOS and was not measured here) |
 | target `cljs-browser` | the ClojureScript-source emitter (JVM-only backend) | **blocked**; `js-browser` on the nbb route is the restricted-ESM emitter, a different artifact |
 | the divergent x86-64 aiueos kernel IMAGE | the live-boot GDT/TSS shim lives in the JVM twin of `elf64` | **blocked**, as before (`divergentImageReason` in `bin/amu`); the kernel OBJECT, user image and UEFI application are on the nbb route |
 
