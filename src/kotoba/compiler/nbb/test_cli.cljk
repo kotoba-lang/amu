@@ -1,0 +1,23 @@
+(ns kotoba.compiler.nbb.test-cli
+  "Node entrypoint for `amu test`. The command is `kotoba.compiler.test-cli`;
+  this file prints and exits. Unlike the other entrypoints it does not go
+  through `support/execute!`, because the human report is text, not EDN,
+  and a failing test is exit 1 rather than a thrown refusal."
+  (:require [kotoba.artifact.core :as artifact]
+            [kotoba.compiler.nbb.cli-support :as support]
+            [kotoba.compiler.test-cli :as test-cli]))
+
+(let [args (vec *command-line-args*)
+      {:keys [report json?] :as outcome}
+      (try (test-cli/run args)
+           (catch :default error
+             (let [{:keys [status stderr]} (support/refusal error (second args))]
+               (.write js/process.stderr stderr)
+               (.exit js/process status))))]
+  (when outcome
+    (if json?
+      (println (pr-str (artifact/edn-safe report)))
+      (let [{:keys [out err]} (test-cli/human-lines report)]
+        (doseq [line out] (println line))
+        (doseq [line err] (.write js/process.stderr (str line "\n")))))
+    (when-not (:ok report) (.exit js/process 1))))

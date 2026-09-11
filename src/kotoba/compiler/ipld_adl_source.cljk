@@ -36,7 +36,8 @@
       (if done? (conj out b) (recur n' (conj out (bit-or b 0x80)))))))
 
 (defn- utf8 [s]
-  (mapv #(bit-and (int %) 0xff) (.getBytes ^String s "UTF-8")))
+  #?(:clj (mapv #(bit-and (int %) 0xff) (.getBytes ^String s "UTF-8"))
+     :cljs (vec (js/Array.from (js/Buffer.from s "utf8")))))
 
 (defn- name-bytes [s]
   (let [bytes (utf8 s)] (into (uleb (count bytes)) bytes)))
@@ -287,10 +288,17 @@
                       (section 1 types) (section 3 functions)
                       (section 5 memory) (section 7 exports)
                       (section 10 code) (section 11 data))]
-    (byte-array (map unchecked-byte bytes))))
+    ;; the host's byte container: a byte[] on the JVM, a Buffer on Node
+    #?(:clj (byte-array (map unchecked-byte bytes))
+       :cljs (js/Buffer.from (clj->js (vec bytes))))))
 
 (defn- reject! [message data]
   (throw (ex-info message (merge {:phase :ipld-adl-source} data))))
+
+;; The i32 ceiling the guest ABI's offsets and indices live under. Spelled
+;; as a literal rather than `Integer/MAX_VALUE`, which only the JVM has; the
+;; comparisons are exact for a bigint on Node as for a long on the JVM.
+(def ^:private max-i32 2147483647)
 
 (defn- exact-function-shape? [function result]
   (and (= ['value] (:params function))
@@ -318,7 +326,7 @@
     (and (seq? form) (= 'bytes-slice (first form)) (= 4 (count form)))
     (let [[_ child start end] form]
       (when (and (integer? start) (integer? end))
-        (when-not (and (<= 0 start end) (<= end Integer/MAX_VALUE))
+        (when-not (and (<= 0 start end) (<= end max-i32))
           (reject! "IPLD ADL subrange offsets must satisfy 0 <= start <= end"
                    {:operation name :profile :pure-closed-v1
                     :start start :end end}))
@@ -371,7 +379,7 @@
                (= 'bytes-at (first read)) (= 'value (second read))
                (integer? (nth read 2)) (integer? expected))
       (let [index (nth read 2)]
-        (when-not (<= 0 index Integer/MAX_VALUE)
+        (when-not (<= 0 index max-i32)
           (reject! "IPLD ADL byte index must be a non-negative int32"
                    {:operation name :profile :pure-closed-v1 :index index}))
         (when-not (<= 0 expected 255)
@@ -389,7 +397,7 @@
       (= false body) :false
       (and (seq? body) (= '= (first body)) (= 3 (count body))
            (= '(bytes-count value) (second body))
-           (integer? (nth body 2)) (<= 0 (nth body 2) Integer/MAX_VALUE))
+           (integer? (nth body 2)) (<= 0 (nth body 2) max-i32))
       [:input-byte-count-eq (nth body 2)]
       :else
       (or (byte-at-plan body name)

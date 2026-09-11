@@ -7,7 +7,8 @@
   checked KIR is executed by the JVM oracle, restricted ESM, and Wasm."
   {:kotoba/export [run-source targets]}
   (:require [json.data-json :as json]
-            [clojure.java.shell :as shell]
+            #?(:clj [clojure.java.shell :as shell]
+               :cljs ["node:child_process" :as child])
             [kotoba.lang.text :as str]
             [kotoba.artifact.core :as artifact]
             [kotoba.compiler.core :as compiler]
@@ -45,28 +46,57 @@
   [checked]
   {:allow (effect-row/grants (get-in checked [:hir :effects]))})
 
-(defn- jvm-results [kir tests]
+(defn- pass?
+  "A test IS a predicate: `true`, or the integer 1 for the profile-4
+  deprecation window -- the same rule the js/wasm probes apply. On Node the
+  KIR interpreter answers a bigint, and `(contains? #{true 1} 1n)` is false
+  there (measured 2026-09-11: every passing test reported `:ok false` on the
+  interpreter target while js and wasm said true)."
+  [v]
+  (or (true? v)
+      #?(:clj (= 1 v)
+         :cljs (or (= 1 v) (identical? v (js/BigInt 1))))))
+
+(defn- jvm-results
+  "The KIR interpreter on the host running the compiler. The target is still
+  named `:jvm-kir` in the report -- it is the interpreter target, and the
+  name predates the compiler running anywhere but the JVM."
+  [kir tests]
   (letfn [(handler [cap-id value]
             (ir/execute kir 'test-handler [cap-id value]))]
     (mapv (fn [test-name]
             (try
-              ;; same rule as the js/wasm probes above
               {:test test-name
-               :ok (contains? #{true 1} (ir/execute kir test-name [] {:cap-call handler}))}
-              (catch Exception error
+               :ok (pass? (ir/execute kir test-name [] {:cap-call handler}))}
+              (catch #?(:clj Exception :cljs :default) error
                 {:test test-name :ok false :error (or (ex-message error) "test trap")})))
           tests)))
 
 (defn- node-run [target program]
-  (let [result (shell/sh "node" "--input-type=module" "-e" program)]
+  ;; The js and wasm targets are executed by a CHILD node -- on both hosts.
+  ;; Under nbb that is the same binary the compiler runs on; under the JVM it
+  ;; is whatever `node` is on PATH. Either way the probe is a separate
+  ;; process, so a trap or an infinite loop in a test cannot take the runner
+  ;; down with it.
+  (let [result #?(:clj (shell/sh "node" "--input-type=module" "-e" program)
+                  :cljs (let [r (.spawnSync child js/process.execPath
+                                            #js ["--input-type=module" "-e" program]
+                                            #js {:encoding "utf8" :maxBuffer (* 64 1024 1024)})]
+                          {:exit (if (.-error r) 1 (.-status r))
+                           :out (str (.-stdout r))
+                           :err (str (some-> (.-error r) .-message) (.-stderr r))}))]
     (when-not (zero? (:exit result))
       (throw (ex-info "Kotoba target test process failed"
                       {:phase :test :target target :stderr (:err result)})))
     (json/read-str (:out result) {:key-fn keyword})))
 
+(defn- base64 [bytes]
+  #?(:clj (.encodeToString (java.util.Base64/getEncoder) ^bytes bytes)
+     :cljs (.toString (js/Buffer.from bytes) "base64")))
+
 (defn- encoded-text [text]
-  (.encodeToString (java.util.Base64/getEncoder)
-                   (.getBytes ^String text "UTF-8")))
+  (base64 #?(:clj (.getBytes ^String text "UTF-8")
+             :cljs (js/Buffer.from text "utf8"))))
 
 (defn- capability-ids
   "The wire ids the js/wasm probes must serve. Only `[:cap/call id]` members
@@ -105,7 +135,7 @@
           "console.log(JSON.stringify(out));"))))
 
 (defn- wasm-results [bytes tests cap-ids]
-  (let [encoded (.encodeToString (java.util.Base64/getEncoder) bytes)
+  (let [encoded (base64 bytes)
         names (json/write-str (mapv name tests))
         ids (json/write-str cap-ids)]
     (node-run
