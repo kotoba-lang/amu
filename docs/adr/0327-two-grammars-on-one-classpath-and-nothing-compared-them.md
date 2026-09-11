@@ -58,7 +58,7 @@ of a check that ran and found nothing wrong.
    leave two different grammars on one classpath, with which one wins decided
    by classpath order.
 3. **Compare them, where they cannot be absent.**
-   `test/kotoba/compiler/guest_grammar_vendor_test.clj` enumerates *every*
+   `test/kotoba/compiler/guest_grammar_vendor_test.cljk` enumerates *every*
    classpath copy — `ClassLoader/getResources`, not `io/resource`, which
    answers with the first and so cannot see a second — and asserts they are
    byte-identical to each other and to the pinned authority digest.

@@ -1,0 +1,73 @@
+;; nbb --classpath "src:test:$(clojure -Spath -M:test)" run-tests.cljk
+;;
+;; The ClojureScript half of this repository's suite. THE COMPILER HAD NONE.
+;;
+;; That is the sentence worth sitting with: `bin/amu`'s default target is
+;; `wasm32-browser`, which runs on nbb, and until 2026-09-08 no test in this
+;; repository had ever executed there through a runner. The nbb path was
+;; exercised only incidentally, by scripts that compile a fixture and check the
+;; bytes.
+;;
+;; It is not a hypothetical gap. Advancing the kotoba-sema pin across the
+;; reader unification this same day turned THIS suite red three times, and each
+;; red was a language feature that did not work on nbb: f32 decimal literals
+;; refused, `0x` hex literals read as SYMBOLS (79 `.kotoba` files use them),
+;; and `(def k 1.5)` refused as not-closed. All three were older than the pin
+;; that surfaced them and invisible while the JVM had `clojure.tools.reader`
+;; to handle those forms for free.
+;;
+;; Four namespaces, chosen because their sources are `.cljc` and their tests
+;; needed nothing but `clojure.lang.ExceptionInfo` conditionalised. TWO of the
+;; seven one-host sources are deliberately absent and are NOT oversights:
+;;
+;;   definition-identity-test  uses `clojure.java.io`, `slurp` and `format`.
+;;                             `clojure.core/format` does not exist on
+;;                             ClojureScript at all.
+;;   fuel-estimate-test        reads fixtures through `clojure.java.io`/`slurp`.
+;;   uefi-target-gate-test     requires `kotoba.compiler.core`, which is a
+;;                             `.clj` namespace -- JVM-only by construction, not
+;;                             by omission. Ported, measured, and reverted: nbb
+;;                             refused it with `Unable to resolve classname:
+;;                             java.nio.charset.StandardCharsets`, reached
+;;                             through that require. A test cannot be more
+;;                             portable than the namespaces it pulls in.
+;;
+;; UPDATE 2026-09-08: the two `format`/fixture-reading namespaces above are no
+;; longer wholesale absent. Their file-free assertions moved to
+;; `kotoba.compiler.definition-identity-portable-test` and
+;; `kotoba.compiler.fuel-estimate-portable-test` (`.cljc` siblings, following
+;; the pattern in kotoba-lang/kotoba's `*-portable-test.cljc` files); the
+;; fixture-reading and `kotoba.compiler.core`-requiring remainder stayed in the
+;; original `.clj` files. `uefi-target-gate-test` is still wholesale absent --
+;; its whole namespace requires `kotoba.compiler.core`.
+;;
+;; Both are genuinely JVM-only as written. Splitting their file-free assertions
+;; into portable siblings is real follow-on work, not a rename.
+;;
+;; Anything added to `test/` as `.cljc` belongs in BOTH lists below. Being
+;; required is not being run -- and neither is being NAMED: a namespace placed
+;; just above the `(t/run-tests ...)` form instead of inside it is a bare
+;; symbol, evaluated and discarded, and the suite reports the unchanged count
+;; without erroring. Verify by the count MOVING and by a literal `Testing <ns>`
+;; line, never by grepping this file.
+(ns run-tests
+  (:require [cljs.test :as t]
+            [kotoba.compiler.definition-identity-portable-test]
+            [kotoba.compiler.effect-classification-test]
+            [kotoba.compiler.fuel-estimate-portable-test]
+            [kotoba.compiler.logic-manifest-test]
+            [kotoba.compiler.plan-test]
+            [kotoba.compiler.source-path-test]))
+
+(defmethod t/report [:cljs.test/default :end-run-tests] [m]
+  (println (str "\nnbb: " (:test m) " tests, " (:pass m) " passed, "
+                (:fail m) " failed, " (:error m) " errors"))
+  (when (pos? (+ (or (:fail m) 0) (or (:error m) 0)))
+    (set! (.-exitCode js/process) 1)))
+
+(t/run-tests 'kotoba.compiler.definition-identity-portable-test
+             'kotoba.compiler.effect-classification-test
+             'kotoba.compiler.fuel-estimate-portable-test
+             'kotoba.compiler.logic-manifest-test
+             'kotoba.compiler.plan-test
+             'kotoba.compiler.source-path-test)

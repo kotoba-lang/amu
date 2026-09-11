@@ -23,11 +23,11 @@ matching KIR's cljs effect encoding.
 
 ## Evidence
 
-- `test/kotoba/compiler/clock_provider_test.clj` — invalid tick typed
+- `test/kotoba/compiler/clock_provider_test.cljk` — invalid tick typed
   errors + missing-grant denial
-- `test/kotoba/compiler/log_provider_test.clj` — missing-grant denial
-- `test/nbb/clock-transport.cljs` — production clock dual-runtime (restored)
-- `test/nbb/log-provider.cljs` — append/read, field/read limits, retention
+- `test/kotoba/compiler/log_provider_test.cljk` — missing-grant denial
+- `test/nbb/clock-transport.cljk` — production clock dual-runtime (restored)
+- `test/nbb/log-provider.cljk` — append/read, field/read limits, retention
   truncation, denial on cljs
 - provider#2 — log cljs i64 sequence fix
 

@@ -26,9 +26,9 @@ or async profile qualification.
 
 ## Evidence
 
-- `test/kotoba/compiler/object_provider_test.clj` — put boundary, CAS
+- `test/kotoba/compiler/object_provider_test.cljk` — put boundary, CAS
   win/lose, binding/empty fail-closed, redaction, missing-grant denial
-- `test/nbb/object-provider.cljs` — same five vectors on cljs
+- `test/nbb/object-provider.cljk` — same five vectors on cljs
 - provider#8 — `provider.object`
 
 ## What this does NOT claim

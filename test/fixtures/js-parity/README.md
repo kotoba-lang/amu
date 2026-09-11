@@ -1,8 +1,8 @@
 # js-parity goldens
 
-Artifacts the **JVM route** wrote once, so `test/nbb/js_parity.cljs` can hold
+Artifacts the **JVM route** wrote once, so `test/nbb/js_parity.cljk` can hold
 the JVM-free route (`bin/amu compile --target js --jvm-free`, driver
-`src/kotoba/compiler/nbb/js_cli.cljs`) to them: the `.mjs` byte for byte, the
+`src/kotoba/compiler/nbb/js_cli.cljk`) to them: the `.mjs` byte for byte, the
 `.manifest.edn` / `.provenance.edn` sidecars as EDN values. They are compiler
 OUTPUTS, not authored code; do not edit them by hand. See ADR 0340.
 

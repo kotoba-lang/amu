@@ -59,7 +59,7 @@ const nbbNativeTargets = new Set([
   "x86_64-aiueos-kernel-v1", "x86_64-aiueos-user-v1", "x86_64-aiueos-uefi-v1",
   "aarch64-aiueos-kernel-v1",
   // The EVM backend is portable .cljc and its nbb parity is already asserted
-  // against the JVM's pinned bytes (test/nbb/run.cljs evm case), so the only
+  // against the JVM's pinned bytes (test/nbb/run.cljk evm case), so the only
   // thing the JVM did here was host the CLI. `evm_cli.cljs` now hosts it.
   // The full profile name is accepted beside the CLI spellings because
   // `--target evm256-kotoba-v1` is what the JVM CLI's own parse-target table
@@ -70,7 +70,7 @@ const nbbNativeTargets = new Set([
 
 // The restricted-ESM targets. The emitter (kotoba-lang/kotoba-script) is
 // portable .cljc since 2026-09-06 and its nbb bytes are asserted against the
-// JVM's (that repo's test/nbb/parity.cljs, and test/nbb/js_parity.cljs here
+// JVM's (that repo's test/nbb/parity.cljs, and test/nbb/js_parity.cljk here
 // against runtime/http/route-decide.mjs), so `js_cli.cljs` hosts these the
 // way `evm_cli.cljs` hosts the EVM. `cljs-browser` is deliberately absent:
 // that backend emits ClojureScript source text and stays on the JVM route.
@@ -196,7 +196,7 @@ function resolveWithLock(root, nbbCli) {
     return { entries: null, reason: "deps-lock.edn is not present" };
   }
   if (!fs.existsSync(script)) {
-    return { entries: null, reason: "scripts/print-classpath.cljs is not present" };
+    return { entries: null, reason: "scripts/print-classpath.cljk is not present" };
   }
   // A cold hosted runner clones the pinned closure from GitHub. A transient
   // fetch failure must not silently demote an otherwise valid lock to the JVM
@@ -310,19 +310,19 @@ function securityClasspath(root, nbbCli, jvmFree) {
       fail("error: --jvm-free requires dependency resolution from deps-lock.edn; "
         + lockAttempt.reason
         + "\n  JVM fallback is forbidden. Regenerate the lock with: "
-        + "nbb scripts/lock-classpath.cljs", 70);
+        + "nbb scripts/lock-classpath.cljk", 70);
     }
     console.error("amu: could not resolve the dependency closure from deps-lock.edn: "
       + lockAttempt.reason
       + "\n  falling back to `clojure -Spath` (needs a JDK)."
-      + "\n  If a pin in deps.edn moved, regenerate the lock: nbb scripts/lock-classpath.cljs");
+      + "\n  If a pin in deps.edn moved, regenerate the lock: nbb scripts/lock-classpath.cljk");
     entries = resolveWithJvm(root);
   }
   const resolved = entries && admittedClasspath(entries, root, allowedRoots);
   if (!resolved) {
     fail("error: cannot resolve Amu's dependency closure.\n"
-      + "  Regenerate deps-lock.edn with: nbb scripts/lock-classpath.cljs\n"
-      + "  Diagnose with: nbb --classpath src scripts/print-classpath.cljs", 70);
+      + "  Regenerate deps-lock.edn with: nbb scripts/lock-classpath.cljk\n"
+      + "  Diagnose with: nbb --classpath src scripts/print-classpath.cljk", 70);
   }
   try {
     publishPrivateCache(cacheFile, resolved);
@@ -390,7 +390,7 @@ function resolveCallerPaths(args, cwd) {
 }
 
 // `--prelude` is honoured only by the CLJS backend
-// (src/kotoba/compiler/backend/cljs.cljc). None of the nbb entry points
+// (src/kotoba/compiler/backend/cljs.cljk). None of the nbb entry points
 // under kotoba.compiler.nbb.* parses it, so on every route this launcher
 // sends there the flag changes nothing -- and reports :ok true while doing
 // so. Measured 2026-08-30 on 2cb7d3f: a single file calling a

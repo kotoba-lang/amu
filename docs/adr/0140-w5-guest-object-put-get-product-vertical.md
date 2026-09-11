@@ -41,7 +41,7 @@ Example: `examples/w5-object-put-get-product.kotoba`
 ### Evidence
 
 - `object_product_vertical_test` (clj reference runtime)
-- nbb product case in `test/nbb/object-provider.cljs`
+- nbb product case in `test/nbb/object-provider.cljk`
 - Suite green (see PR)
 
 ## What this does NOT claim

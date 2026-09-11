@@ -52,7 +52,7 @@ id 5) whose `:invoke` functions implement the full semantics themselves:
   numbers" semantics ADR 0030 specifies, computed from live state, not
   hard-coded.
 
-This is confirmed directly in `test/kotoba/compiler/log_provider_test.clj`:
+This is confirmed directly in `test/kotoba/compiler/log_provider_test.cljk`:
 `append-and-read-use-structured-bounded-values` performs a real
 append-then-read round trip through the compiled/hosted runtime and checks
 the returned sequence and entry; `field-and-read-limits-fail-before-mutation`
@@ -95,7 +95,7 @@ part of the guest-installable `:providers` map:
   throwing `"UI event queue limit reached"` once the live `events` atom
   is at capacity, and assigns a real monotonic `event-revision`.
 
-This is confirmed directly in `test/kotoba/compiler/ui_provider_test.clj`:
+This is confirmed directly in `test/kotoba/compiler/ui_provider_test.cljk`:
 `declarative-view-and-events-cross-only-typed-boundaries` commits a real
 node, checks `(:snapshot kit)` reflects it, enqueues a real event via the
 host-only `enqueue!`, pulls it once (getting the event), then pulls again
@@ -107,7 +107,7 @@ ignoring the mismatch.
 
 ### The conformance-suite fixture list is the same distinguishing evidence ADR 0067 already used, now confirmed for `log`/`ui` specifically
 
-`test/kotoba/compiler/provider_conformance_test.clj`'s shared `fixtures`
+`test/kotoba/compiler/provider_conformance_test.cljk`'s shared `fixtures`
 function constructs `llm`/`http`/`storage` each with an explicit
 `:transport (fn [_] {:error {:code :*/disabled ...}})` (or the `:tag :error`
 equivalent for `storage`) — a fixture standing in for a missing backend at
@@ -177,9 +177,9 @@ rewrite the Decision/gap/snapshot prose in place).
 
 **What did not change:** `src/kotoba/compiler/provider/log.cljc`,
 `src/kotoba/compiler/provider/ui.cljc`,
-`test/kotoba/compiler/log_provider_test.clj`,
-`test/kotoba/compiler/ui_provider_test.clj`,
-`test/kotoba/compiler/provider_conformance_test.clj`,
+`test/kotoba/compiler/log_provider_test.cljk`,
+`test/kotoba/compiler/ui_provider_test.cljk`,
+`test/kotoba/compiler/provider_conformance_test.cljk`,
 `resources/kotoba/lang/capability-kits/{log,ui}-v1.edn` (`:qualification`
 remains exactly `{:reference :implemented :wasm-aot :pending :native-aot
 :pending :jit :pending}` for both, confirmed unchanged by direct read), and
@@ -191,9 +191,9 @@ branches also do not touch, and touches none of their files either.
 
 - Direct reads of `src/kotoba/compiler/provider/log.cljc`,
   `src/kotoba/compiler/provider/ui.cljc`,
-  `test/kotoba/compiler/log_provider_test.clj`,
-  `test/kotoba/compiler/ui_provider_test.clj`,
-  `test/kotoba/compiler/provider_conformance_test.clj`,
+  `test/kotoba/compiler/log_provider_test.cljk`,
+  `test/kotoba/compiler/ui_provider_test.cljk`,
+  `test/kotoba/compiler/provider_conformance_test.cljk`,
   `resources/kotoba/lang/capability-kits/{log,ui,state,llm,http,storage}-v1.edn`,
   `docs/adr/{0025,0030,0060,0061,0064,0066,0067,0071}-*.md`,
   `docs/adr/0049-component-application-language-gap-ledger.md`, and

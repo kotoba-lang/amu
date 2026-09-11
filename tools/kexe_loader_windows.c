@@ -884,7 +884,7 @@ static void prohibit_dynamic_code(void) {
  * fail (the admin-privilege risk above did not materialize -- every
  * loader invocation in that run, including the plain non-probe ones, got
  * this far without fail_win() firing). The failure was downstream, at the
- * KEXE_NETWORK_PROBE assertion in scripts/windows-profile-conformance.cljs:
+ * KEXE_NETWORK_PROBE assertion in scripts/windows-profile-conformance.cljk:
  * the probe process exited with a code other than 77, meaning the loopback
  * connect() in connect_and_require_denial() did not resolve to WSAEACCES as
  * expected. Root cause is not confirmed. The filter as originally written

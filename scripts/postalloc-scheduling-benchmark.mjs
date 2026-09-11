@@ -370,7 +370,7 @@ try {
     },
     isolation: {
       amuDiffCommits: `${baselineCommit}..${candidateCommit}`,
-      amuChangedPaths: ["deps.edn", "deps-lock.edn", "docs/adr/0275-post-allocation-cfg-scheduling.*", "test/kotoba/compiler/aggregate_abi_test.clj", "test/kotoba/compiler/isa_execution_test.clj"],
+      amuChangedPaths: ["deps.edn", "deps-lock.edn", "docs/adr/0275-post-allocation-cfg-scheduling.*", "test/kotoba/compiler/aggregate_abi_test.cljk", "test/kotoba/compiler/isa_execution_test.cljk"],
       kotobaMir: { before: "699ead0308065ffb0eb2919bfeefd0123e9b0d46", after: "ad739526d9f80cdda76fd8de3239acb4c07a8f58", changedSourceFiles: ["src/kotoba/mir.cljc"] },
       kotobaNative: { before: "7b757f79e9d3fcafacd277ce3883a11faba35ff3", after: "542ad8e1383fd3f7aef637847fb3733b079655ab", changedSourceFiles: ["deps.edn", "test/kotoba/native/machine_ir_test.clj"] },
       schedulerDelta: "post-allocation per-basic-block integer scheduling after physical MIR allocation",

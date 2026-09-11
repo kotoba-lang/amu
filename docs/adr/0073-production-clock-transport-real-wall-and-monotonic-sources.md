@@ -170,7 +170,7 @@ ABI boundary. Neither branch admits anything the other branch would reject.
   `next-sequence!` (see Decision); after the fix, the identical repro
   script returns a genuine `[result-type :wall [wall-type #object[BigInt
   ...] #object[BigInt 1]]]`.
-- **Unit test suite** (`test/kotoba/compiler/clock_transport_test.clj`, 7
+- **Unit test suite** (`test/kotoba/compiler/clock_transport_test.cljk`, 7
   `deftest`s, `:clj` only -- no fake server needed, unlike ADR 0064/0066/
   0071, since there is no network to fake):
   - `wall-now`/`monotonic-now` from `production-clock-source` each return a
@@ -191,11 +191,11 @@ ABI boundary. Neither branch admits anything the other branch would reject.
     decreasing nanosecond values, and a shared, incrementing observation
     sequence across the `:wall`/`:monotonic` domains on the SAME provider
     instance.
-  - Registered in `test/kotoba/compiler/test_runner.clj` alongside the
+  - Registered in `test/kotoba/compiler/test_runner.cljk` alongside the
     sibling `*-transport-test` namespaces.
-- **`:cljs`/nbb test suite** (`test/nbb/clock-transport.cljs`, run via `npm
-  run test-nbb-clock-transport` -> `scripts/test-nbb-clock-transport.cljs`,
-  which mirrors `scripts/test-nbb-wasm32.cljs`'s own `clojure -Spath`-
+- **`:cljs`/nbb test suite** (`test/nbb/clock-transport.cljk`, run via `npm
+  run test-nbb-clock-transport` -> `scripts/test-nbb-clock-transport.cljk`,
+  which mirrors `scripts/test-nbb-wasm32.cljk`'s own `clojure -Spath`-
   resolved-classpath launcher pattern exactly, needed because
   `kotoba.compiler.admission` requires the `kotoba.security.abac` git
   dependency, invisible to a literal `--classpath .:src`): 5 cases, all

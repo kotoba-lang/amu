@@ -26,7 +26,7 @@ are each constructed around a host-injected `:transport` function — a
 `(fn [request] -> reply)` the provider itself never implements. Before ADR
 0064, LLM's only `:transport` implementations anywhere in this repo were
 fixtures that returned canned or `:disabled`-error replies
-(`test/kotoba/compiler/provider_conformance_test.clj`'s shared `fixtures`
+(`test/kotoba/compiler/provider_conformance_test.cljk`'s shared `fixtures`
 function still does exactly this for `llm`, `http`, and `storage` today —
 each is constructed with a `:transport (fn [_] {:error {:code
 :*/disabled ...}})`). ADR 0064 is precisely the story of adding the first
@@ -40,7 +40,7 @@ provider/state.cljc`) has no `:transport` parameter and never has. Its
 key and value, a real per-instance monotonic version counter, and a real
 256-entry capacity limit enforced by counting the live table — not a stub
 that ignores its input or returns a literal constant. This is confirmed
-directly in `test/kotoba/compiler/state_provider_test.clj`
+directly in `test/kotoba/compiler/state_provider_test.cljk`
 (`state-provider-round-trips-versioned-values`,
 `state-provider-instances-are-isolated`), and in the very same
 `provider_conformance_test.clj` fixture list cited above: unlike `llm`/
@@ -120,7 +120,7 @@ existing "Progress addendum" section: append a pointer, never rewrite the
 Decision/gap prose in place).
 
 **What did not change:** `src/kotoba/compiler/provider/state.cljc`,
-`test/kotoba/compiler/state_provider_test.clj`,
+`test/kotoba/compiler/state_provider_test.cljk`,
 `resources/kotoba/lang/capability-kits/state-v1.edn` (`:qualification`
 remains exactly `{:reference :implemented :wasm-aot :pending :native-aot
 :pending :jit :pending}`, confirmed unchanged by direct read), and every
@@ -133,8 +133,8 @@ their files either.
 ## Evidence
 
 - Direct reads of `src/kotoba/compiler/provider/state.cljc`,
-  `test/kotoba/compiler/state_provider_test.clj`,
-  `test/kotoba/compiler/provider_conformance_test.clj`,
+  `test/kotoba/compiler/state_provider_test.cljk`,
+  `test/kotoba/compiler/provider_conformance_test.cljk`,
   `src/kotoba/compiler/provider/storage.cljc`,
   `src/kotoba/compiler/provider/llm.cljc`, `src/kotoba/compiler/provider/
   clock.cljc`, `resources/kotoba/lang/capability-kits/{state,llm,http,

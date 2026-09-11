@@ -130,7 +130,7 @@ this fix, not merely a hypothetical).
   `variant-new`/`variant-match` remain in the pre-existing `non-string-
   typed-ops` denylist, unchanged, so every OTHER admission predicate in this
   file (`only-cljs-provider-typed-features?`) is unaffected.
-- `src/kotoba/compiler/core.clj`: comment updated to mention the second
+- `src/kotoba/compiler/core.cljk`: comment updated to mention the second
   increment; the native-admission error message (which an ADR 0062 test
   regex depends on) is left byte-for-byte unchanged.
 - `src/kotoba/compiler/backend/x86_64.cljc` / `backend/aarch64.cljc`: new
@@ -156,7 +156,7 @@ this fix, not merely a hypothetical).
   cases in `lowered-cost` that skip the compile-time type-descriptor vector
   (same reasoning as the pre-existing `record-new`/`record-get` cases
   there).
-- `test/kotoba/compiler/native_executor_test.clj`: five new `deftest`s
+- `test/kotoba/compiler/native_executor_test.cljk`: five new `deftest`s
   (below).
 - No other file changed. `tools/kexe_loader.c` (and every measured
   runtime-identity SHA-256 pin) is untouched; no capability kit is touched;

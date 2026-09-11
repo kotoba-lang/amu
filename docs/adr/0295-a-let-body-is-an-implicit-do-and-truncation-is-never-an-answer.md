@@ -85,7 +85,7 @@ Adopt the upstream fix and pin the compiled evidence here.
 - A consumer meeting an unexpected core-form shape **refuses**. Emitting a
   shorter program that compiles clean is not an admitted response.
 
-`test/kotoba/compiler/let_body_sequencing_test.clj` measures this at the
+`test/kotoba/compiler/let_body_sequencing_test.cljk` measures this at the
 object, not at the HIR: for one through four kernel stores on both kernel
 targets, the `let` body emits byte-for-byte what the explicit `(do …)` emits,
 the object grows by a constant amount per store, and every store's immediate
@@ -109,7 +109,7 @@ so no existing program's emitted bytes move.
   after.
 - A four-argument `if` that compiled before now refuses with
   `:kotoba.error/if-arity`. This widens refusal, not admission.
-- `test/kotoba/compiler/aggregate_abi_test.clj`'s kotoba-kir pin assertion
+- `test/kotoba/compiler/aggregate_abi_test.cljk`'s kotoba-kir pin assertion
   moves with the pin.
 
 ## Evidence

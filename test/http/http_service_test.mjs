@@ -5,7 +5,7 @@
 // The shipped decision core is loaded from its checked-in location. The
 // three fixture guests (a healthy demo, a decision-core double, and a
 // capability-requiring probe) are compiled fresh by
-// scripts/http-service-e2e.cljs into a tmp dir and handed in via env vars,
+// scripts/http-service-e2e.cljk into a tmp dir and handed in via env vars,
 // so this proves the real compile -> host -> serve pipeline on every run
 // rather than trusting a stale prebuilt binary.
 import fs from "node:fs";
@@ -17,7 +17,7 @@ const here = path.dirname(new URL(import.meta.url).pathname);
 const sha256 = p => createHash("sha256").update(fs.readFileSync(p)).digest("hex");
 const need = name => {
   const value = process.env[name];
-  if (!value) throw new Error(`${name} is required (set by scripts/http-service-e2e.cljs)`);
+  if (!value) throw new Error(`${name} is required (set by scripts/http-service-e2e.cljk)`);
   return value;
 };
 
@@ -142,7 +142,7 @@ function baseConfig(decideOverride) {
 }
 
 // ---- 5. the shipped decide core carries a stable source digest --------
-// (scripts/http-service-e2e.cljs additionally recompiles route-decide.kotoba
+// (scripts/http-service-e2e.cljk additionally recompiles route-decide.kotoba
 // from source on every run and fails the whole suite if that digest drifts
 // from the shipped one -- see its "drift" step.)
 {

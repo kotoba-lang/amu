@@ -30,7 +30,7 @@ export default defineConfig({
   ],
   use: { baseURL: "http://127.0.0.1:4173", trace: "retain-on-failure" },
   webServer: {
-    command: "node node_modules/nbb/cli.js scripts/browser-fixture-server.cljs",
+    command: "node node_modules/nbb/cli.js scripts/browser-fixture-server.cljk",
     url: "http://127.0.0.1:4173/health",
     reuseExistingServer: false,
     stdout: "pipe",

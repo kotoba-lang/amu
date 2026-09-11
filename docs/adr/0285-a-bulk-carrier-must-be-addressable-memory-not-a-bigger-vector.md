@@ -36,7 +36,7 @@ from concurrent sessions throughout. The structural claims rest on counts; the
 timings below are diagnostic.
 
 Every `kotoba:typed` import was wrapped before instantiation
-(`bench/bulk-carrier/crossings.cljs`) and the calls counted over one outer step
+(`bench/bulk-carrier/crossings.cljk`) and the calls counted over one outer step
 = 4096 element visits. Three arms: `touch` reads one element per iteration,
 `base` is the identical loop that **carries** the vector and never reads it, and
 `noref` is the identical loop carrying no vector at all. `base` and `noref`

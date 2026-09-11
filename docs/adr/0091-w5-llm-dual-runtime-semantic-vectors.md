@@ -21,9 +21,9 @@ tool-calls, and cancel are out of v1 kit scope (kit marks them false).
 
 ## Evidence
 
-- `test/kotoba/compiler/llm_provider_test.clj` — generation, model/budget
+- `test/kotoba/compiler/llm_provider_test.cljk` — generation, model/budget
   fail-closed, typed errors, missing-grant denial
-- `test/nbb/llm-provider.cljs` — same four vectors on cljs with bigint
+- `test/nbb/llm-provider.cljk` — same four vectors on cljs with bigint
   tokens/temperature
 - provider#7 — llm cljs i64 fix
 

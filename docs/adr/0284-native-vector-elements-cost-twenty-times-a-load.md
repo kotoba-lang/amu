@@ -94,7 +94,7 @@ four. Any native compile through `bin/amu` carrying floating point stamped
 `:kotoba.typed/mixed-f64-v2` and refused the artifact. Falsified end to end:
 the same `vector-f64` source exits 65 `native compatibility metadata rejected`
 before and 0 after, with the artifact now carrying `mixed-f64-v2`. Pinned by
-`test/nbb/native-value-abi.cljs`; reverting the fix fails exactly the three
+`test/nbb/native-value-abi.cljk`; reverting the fix fails exactly the three
 f64/f32 assertions and leaves both controls green.
 
 `native-value-abi` derives from the KIR rather than the HIR because the KIR is

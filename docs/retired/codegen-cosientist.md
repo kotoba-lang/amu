@@ -840,7 +840,7 @@ as before.
   merge 42bd12d). ADR 0285.
   **Counted first, because a count does not drift with load and this
   workstation ran at load1 12-700.** Wrapping every `kotoba:typed` import
-  (`bench/bulk-carrier/crossings.cljs`) over 4096 element visits: a wasm32 loop
+  (`bench/bulk-carrier/crossings.cljk`) over 4096 element visits: a wasm32 loop
   that merely **carries** a `:vector-i64` and never reads it pays **1.032 host
   crossings per element** -- `kotoba.wasm.core` emits a `typed-assert-ref`
   prologue per reference-typed parameter, so a recursive function re-proves the

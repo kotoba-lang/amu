@@ -27,7 +27,7 @@ the body uses the symbol exactly once as above.
 
 ### 3. Evidence
 
-- `test/kotoba/compiler/linear_resource_test.clj` — move / consume admit +
+- `test/kotoba/compiler/linear_resource_test.cljk` — move / consume admit +
   double-use / multi-binding reject
 - Prior direct-call and component packaging paths unchanged
 

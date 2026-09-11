@@ -31,7 +31,7 @@ exits. Alias GET (`/infer/models/murakumo-main`) and messages POST
 ### Evidence
 
 - provider#13 — `:cljs` implementation
-- `test/nbb/llm-transport.cljs` — override resolve, success, empty text,
+- `test/nbb/llm-transport.cljk` — override resolve, success, empty text,
   429/401/500, bearer header
 - Pin `provider` → `3f4a69be247037ea8e61e6ed45c4efa7cf38171e`
 
