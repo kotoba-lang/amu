@@ -118,7 +118,7 @@
         ;; said so.
         ;;
         ;;   grammar-sha256    515bbc7de84a3340ef3b250e4ee411739d3acebf32ba31450540f146768bb841
-        ;;   kotoba-sema-pin   8b28804783c8ce036d0c5dca135bd71a5596c186
+        ;;   kotoba-sema-pin   9b153c7b7444b9e8e1ed0654900572b59115b9d7
         ;;
         ;; `guest_grammar_vendor_test/authority-digest-history` ends with the
         ;; same digest, so the pin, the prose and the history move in one
@@ -268,7 +268,22 @@
          ;; resyncs this block already describes plus a computed shift count
          ;; and ADR-2607280100 Step 4; none changes what this compiler admits
          ;; except through the same catalog path named above.
-         "8b28804783c8ce036d0c5dca135bd71a5596c186"}
+         ;; Advanced AGAIN the same day, 8b288047 -> 9b153c7b (forward only:
+         ;; 2 ahead, 0 behind), for the defect the docstring fix uncovered one
+         ;; step behind it. The source reader had no `^` arm at all, so
+         ;; `^:private h` was read as two ordinary elements and every
+         ;; declaration head misreported it:
+         ;;
+         ;;   (defn ^:private h [x :i64] :i64 x)  "function parameters must be a vector"
+         ;;   (defrecord ^:no-doc Sq [side])      "defrecord requires a bounded name ..."
+         ;;   (defprotocol ^:no-doc IP (area [this]))  "... unique bounded ... signatures"
+         ;;
+         ;; Now `^meta` reads and merges with the source-location metadata,
+         ;; and `^:private` on a defn IS defn- -- exporting it is refused
+         ;; with :kotoba.error/export-names-private-function. The one
+         ;; behaviour that tightened: `(defrecord Sq [^:no-doc side])` was
+         ;; silently a TWO-field record before; it is one field now.
+         "9b153c7b7444b9e8e1ed0654900572b59115b9d7"}
         ;; ADR-2607266000 Phase B: these responsibilities moved out of this repo.
         ;;
         ;; The slice-value stream held this pin on purpose (ADR 0314), because
