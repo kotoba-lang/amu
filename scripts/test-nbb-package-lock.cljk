@@ -2,7 +2,7 @@
   "Run `test/nbb/package_lock.cljk` against the pinned dependency closure.
 
   Resolves that closure through `kotoba.compiler.nbb.classpath` and
-  `deps-lock.edn` -- NOT through `clojure -Spath`, which is how the sibling
+  `deps-lock.edn` -- NOT through `kbb -Spath`, which is how the sibling
   `test-nbb-project` does it. The difference is the point: this suite exists
   to show that a package lock can be produced and consumed without a JDK, and
   a runner that shelled out to one to assemble its own classpath would be
@@ -22,7 +22,7 @@
           (.error js/console
                   (str "could not resolve the dependency closure from "
                        "deps-lock.edn:\n" (.-stderr resolved)
-                       "\nRegenerate it with: nbb scripts/lock-classpath.cljk"))
+                       "\nRegenerate it with: kbb --backend sci scripts/lock-classpath.cljk"))
           (.exit js/process 70))
       entries (->> (.split (.trim (.-stdout resolved)) "\n")
                    (map #(.trim %))
@@ -40,7 +40,7 @@
                        (.-delimiter path))
       result (.spawnSync child js/process.execPath
                          (clj->js [nbb-cli "--classpath" classpath
-                                   (lib/join lib/root "test" "nbb" "package_lock.cljk")])
+                                   (lib/join lib/root "test" "kbb" "--backend" "sci" "package_lock.cljk")])
                          #js {:cwd lib/root :stdio "inherit" :env js/process.env})]
   (when (.-error result) (throw (.-error result)))
   (.exit js/process (or (.-status result) 70)))

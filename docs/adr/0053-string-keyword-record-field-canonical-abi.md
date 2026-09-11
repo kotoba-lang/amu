@@ -178,7 +178,7 @@ here either, consistent with ADR 0049/0051/0052.
 - focused suite (`canonical-abi-test`, `component-artifact-test`,
   `component-composition-test`, `component-wit-test`): 28 tests, 120
   assertions, 0 failures, run against the pinned `wasm-tools 1.243.0`.
-- full `clojure -M:test` suite: 407 tests, 4349 assertions, 0 failures, same
+- full `kbb -M:test` suite: 407 tests, 4349 assertions, 0 failures, same
   pinned toolchain.
 - `wasm-tools validate --features component-model` on both produced
   string/keyword-field record identity components: passed.

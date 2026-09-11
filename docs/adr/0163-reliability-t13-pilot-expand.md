@@ -23,7 +23,7 @@ collection fixtures.
 
 ## Evidence
 
-- `clojure -M:conformance` 7/7
+- `kbb -M:conformance` 7/7
 - lang_conformance_test updated
 
 ## Related

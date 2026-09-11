@@ -54,7 +54,7 @@ boundaries.
 
 ## Evidence
 
-- `clojure -M:native-conformance`: 16/16 through a signed kexe and the real
+- `kbb -M:native-conformance`: 16/16 through a signed kexe and the real
   host-ISA loader.
 - Integer cases cover construction, count, indexed access, total fallback,
   append, replacement immutability, and suffix views.

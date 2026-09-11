@@ -52,7 +52,7 @@ the untouched T5.3 rewrite, not compiler capability.
 
 ## Evidence
 
-- `clojure -M:conformance` → `52 / 52 passed (47 pure-product, 5 portable)`
+- `kbb -M:conformance` → `52 / 52 passed (47 pure-product, 5 portable)`
 - `kotoba.compiler.lang-conformance-test` → 7 tests, 222 assertions, 0 failures
   - `every-pure-product-case-passes-profile-admission` (47 / 5 split asserted)
   - `pure-product-label-on-forbidden-surface-is-rejected` (mislabelling condp as

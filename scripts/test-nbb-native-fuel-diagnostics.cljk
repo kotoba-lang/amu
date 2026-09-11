@@ -1,6 +1,6 @@
 (ns scripts.test-nbb-native-fuel-diagnostics
   "Launcher for `test/nbb/native-fuel-diagnostics.cljk`, mirroring
-  `scripts/test-nbb-native-value-abi.cljk`: `clojure -Spath -M:test` resolves
+  `scripts/test-nbb-native-value-abi.cljk`: `kbb -Spath -M:test` resolves
   the dependency closure `kotoba.compiler.nbb.cli` needs, and that classpath
   plus this repo's root is handed to a child `nbb` process."
   (:require [scripts.lib :as lib]
@@ -12,7 +12,7 @@
       classpath (str lib/root (.-delimiter path) resolved)
       result (.spawnSync child js/process.execPath
                          (clj->js [nbb-cli "--classpath" classpath
-                                   (lib/join lib/root "test" "nbb" "native-fuel-diagnostics.cljk")])
+                                   (lib/join lib/root "test" "kbb" "--backend" "sci" "native-fuel-diagnostics.cljk")])
                          #js {:cwd lib/root :stdio "inherit" :env js/process.env})]
   (when (.-error result) (throw (.-error result)))
   (.exit js/process (or (.-status result) 70)))

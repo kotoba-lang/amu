@@ -9,7 +9,7 @@ Kotoba tests are ordinary exported, zero-arity definitions named `test-*`.
 They pass by returning Kotoba `i64` value `1`. The compiler command
 
 ```sh
-clojure -M:run test path/to/module.kotoba
+kbb -M:run test path/to/module.kotoba
 ```
 
 checks the source once, assigns a content ID to the selected KIR test

@@ -28,7 +28,7 @@ admission-blocked for most collection fixtures.
 
 ## Evidence
 
-- `clojure -M:conformance` 12/12
+- `kbb -M:conformance` 12/12
 - `lang_conformance_test` count + dual-backend assertions
 
 ## Related

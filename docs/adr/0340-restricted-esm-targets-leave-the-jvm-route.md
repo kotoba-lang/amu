@@ -7,7 +7,7 @@
 
 `bin/amu` hosts every Wasm, native and EVM target on nbb/Node and refuses
 `--jvm-free` only where the JVM genuinely still owns something. `--target js`
-and `js-browser` were the exception: they spawned `clojure -M`, and the
+and `js-browser` were the exception: they spawned `kbb -M`, and the
 superproject's CLAUDE.md table said so in bold (*JVM を起こす*; *新規で選ばない*).
 
 Nothing in code generation needed the JVM. The frontend, admission, KIR

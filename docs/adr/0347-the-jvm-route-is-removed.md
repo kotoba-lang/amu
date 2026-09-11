@@ -18,11 +18,11 @@ ledger.
    nothing — every invocation is JVM-free — and is kept so the call sites
    that spell it keep working.
 2. **The dependency closure comes from `deps-lock.edn`, resolved with git
-   alone, always.** The `clojure -Spath` fallback in both launchers is gone.
+   alone, always.** The `kbb -Spath` fallback in both launchers is gone.
    The lock now also records the closure the `:test` alias adds
    (`:lock/alias-entries {:test [...]}`), and `print-classpath.cljk --alias
    test` reproduces it; `scripts/lib.cljk`'s `lock-classpath` replaced
-   `clojure -Spath [-M:test]` in the seventeen nbb test runners. An alias the
+   `kbb -Spath [-M:test]` in the seventeen nbb test runners. An alias the
    lock does not carry is a refusal, not an empty classpath.
 3. **The one place a JDK is still used is `scripts/lock-classpath.cljk`, at
    authoring time, to WRITE the lock.** It is tools.deps' resolver, and a
@@ -53,8 +53,8 @@ ledger.
 ## What was measured
 
 - Before: at `adb05c20` (main after #935) `bin/amu keygen` and `amu compile
-  --target cljs-browser` spawned `clojure -M:run`, and `bin/amu`'s resolver
-  fell back to `clojure -Spath` when the lock was stale. After: both exit 64
+  --target cljs-browser` spawned `kbb -M:run`, and `bin/amu`'s resolver
+  fell back to `kbb -Spath` when the lock was stale. After: both exit 64
   with the command named; a stale lock exits 70 naming
   `scripts/lock-classpath.cljk`. The nbb route is unchanged: `kotoba -M
   check`, `amu compile --target wasm32 --policy`, `--target
@@ -98,7 +98,7 @@ JVM mains and harnesses:
 | `scripts/conformance.cljk` (the CI language-conformance harness: `verify`, `sign`, `keygen`, `receipt`, `run`, `measure-runtime`) | refuses; removed from `test.yml`. Its compile coverage is carried by `test-nbb-wasm32` / `test-jdk-free-native` / `test-policy-bound-provenance`; its signing / receipt / execution coverage is carried by nothing today |
 | `scripts/cloud-itonami-route-parity.cljk` (+ health / oauth-resource parity) | refuses; the Clojure oracle namespaces are `.cljk` and look portable — running them on nbb is the port, unmeasured |
 | `kotoba.compiler.backend-qualification` (CI `provider-qualification` job) | job removed; the qualification must move to the nbb route |
-| `downstream-murakumo` KIR drift gate (`clojure -M:test:dep` in murakumo) | job removed; murakumo's own suite decides how it runs without a JVM |
+| `downstream-murakumo` KIR drift gate (`kbb -M:test:dep` in murakumo) | job removed; murakumo's own suite decides how it runs without a JVM |
 | `runtime-comparison.mjs` comparators `clojure`, `clojurescript` | dropped from the default list; adapters kept |
 
 ## Consequences
@@ -106,7 +106,7 @@ JVM mains and harnesses:
 - Every claim of the form "JVM-free" is now trivially true and therefore
   says nothing; the claim that matters is **"implemented on the nbb/native
   route"**, and the refusal at exit 64 is what makes its absence visible.
-- The JVM suite (`clojure -M:test`) was the largest body of tests in this
+- The JVM suite (`kbb -M:test`) was the largest body of tests in this
   repository. It is not running. This ADR does not pretend otherwise: the
   count above is the debt, and the nbb-route suites are the coverage that
   exists today.

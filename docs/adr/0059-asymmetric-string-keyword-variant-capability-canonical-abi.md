@@ -316,11 +316,11 @@ validate`), not hand-assembled WAT, and every Wasmtime invocation ran the
   46/234 -- 3 new `deftest` forms this ADR adds, including the primary
   `state-v1`-literal-shape fixture, both minimal string-on-one-side
   fixtures, and the updated fail-closed boundary tests).
-- Full `clojure -M:test` suite: 436 tests, 4513 assertions, 0 failures (up
+- Full `kbb -M:test` suite: 436 tests, 4513 assertions, 0 failures (up
   from ADR 0058's own recorded 429/4485), against the pinned `wasm-tools
   1.243.0` and `wac-cli 0.10.1` (unchanged pins -- this ADR needed no
   toolchain change).
-- `clojure -M -m kotoba.compiler.backend-qualification verify wasmtime`
+- `kbb -M -m kotoba.compiler.backend-qualification verify wasmtime`
   (and, matching ADR 0058's own additional checks, `verify native` and
   `verify cljs`): all three report the identical `:provider-manifest-
   sha256` and `:gaps` list recorded before this change (confirmed by

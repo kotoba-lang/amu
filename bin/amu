@@ -296,7 +296,7 @@ function securityClasspath(root, nbbCli) {
     if (cached) return cached;
   }
 
-  // The lock is the only resolver. There is no `clojure -Spath` fallback any
+  // The lock is the only resolver. There is no `kbb -Spath` fallback any
   // more (2026-09-11, owner decision: the JVM route is removed; Kotoba and the
   // amu native/nbb compiler only). A lock that does not match deps.edn is a
   // refusal that names the fix, never a JVM spawn.
@@ -306,13 +306,13 @@ function securityClasspath(root, nbbCli) {
     fail("error: dependency resolution from deps-lock.edn failed; "
       + lockAttempt.reason
       + "\n  There is no JVM fallback. Regenerate the lock with: "
-      + "nbb scripts/lock-classpath.cljk", 70);
+      + "kbb --backend sci scripts/lock-classpath.cljk", 70);
   }
   const resolved = admittedClasspath(entries, root, allowedRoots);
   if (!resolved) {
     fail("error: cannot resolve Amu's dependency closure.\n"
-      + "  Regenerate deps-lock.edn with: nbb scripts/lock-classpath.cljk\n"
-      + "  Diagnose with: nbb --classpath src scripts/print-classpath.cljk", 70);
+      + "  Regenerate deps-lock.edn with: kbb --backend sci scripts/lock-classpath.cljk\n"
+      + "  Diagnose with: kbb --backend sci --classpath src scripts/print-classpath.cljk", 70);
   }
   try {
     publishPrivateCache(cacheFile, resolved);
@@ -418,7 +418,7 @@ function runCompiler(root, rawArgs) {
   }
 
   // The JVM route is gone (2026-09-11). Until 2026-09-11 anything not on the
-  // nbb route above was handed to `clojure -M:run`; that spawn hid every
+  // nbb route above was handed to `kbb -M:run`; that spawn hid every
   // command the nbb route did not implement behind a working JVM, and after
   // the .cljk rename the JVM could not load the CLI anyway. Now the answer is
   // a refusal that names the command and the target, so the gap is visible

@@ -1,4 +1,4 @@
-#!/usr/bin/env nbb
+#!/usr/bin/env kbb
 ;; scripts/remote-bench.cljk — run an amu benchmark on a quiet fleet node.
 ;;
 ;; The co-scientist loop's judge (`perfgate.core/qualify`) needs a host-qualified
@@ -11,9 +11,9 @@
 ;; benchmark there, and copies the JSON back. It does not decide WHICH
 ;; hypothesis to measure; that stays with the loop.
 ;;
-;;   nbb scripts/remote-bench.cljk --bench runtime --fixture kernel
-;;   nbb scripts/remote-bench.cljk --bench compile --host judah
-;;   nbb scripts/remote-bench.cljk --bench multidomain --out /tmp/r.json
+;;   kbb --backend sci scripts/remote-bench.cljk --bench runtime --fixture kernel
+;;   kbb --backend sci scripts/remote-bench.cljk --bench compile --host judah
+;;   kbb --backend sci scripts/remote-bench.cljk --bench multidomain --out /tmp/r.json
 ;;
 ;; --bench:
 ;;   runtime      scripts/runtime-comparison.mjs        generated-program runtime
@@ -101,7 +101,7 @@
                  (if (neg? i) [] (vec (drop (inc i) v))))
       host (or (arg "--host" nil)
                (let [hosts (arg "--hosts" nil)
-                     {:keys [exit out]} (sh (str "nbb scripts/quiet-host.cljk"
+                     {:keys [exit out]} (sh (str "kbb --backend sci scripts/quiet-host.cljk"
                                                  (when hosts (str " --hosts " hosts)))
                                             {:timeout 240000})]
                  (case exit
@@ -174,7 +174,7 @@
       ;; parameter before ssh saw it, so awk evaluated `100-`. A wrong number
       ;; that looks like a real one is worse here than no number, since these
       ;; readings are what let a later reader judge the run.
-      busy (fn [] (let [{:keys [exit out]} (sh (str "nbb scripts/quiet-host.cljk --hosts " host)
+      busy (fn [] (let [{:keys [exit out]} (sh (str "kbb --backend sci scripts/quiet-host.cljk --hosts " host)
                                                {:timeout 120000})]
                     (if (#{0 1} exit)
                       (some-> (re-find #":busy-cpu-fraction ([\d.]+)" out) second)

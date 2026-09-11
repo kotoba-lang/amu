@@ -53,9 +53,9 @@ only the 3-arity form.
   failures: let-bound record, record parameter, call result, repeated
   projection inside one expression, 3-arity unchanged, and three fail-closed
   cases (non-record value, wrong arity, undeclared field).
-- `clojure -M:conformance` → **52 / 52 passed (47 pure-product, 5 portable)** —
+- `kbb -M:conformance` → **52 / 52 passed (47 pure-product, 5 portable)** —
   unchanged.
-- `clojure -M:test` → 716 tests, 6104 assertions, **1 failure**:
+- `kbb -M:test` → 716 tests, 6104 assertions, **1 failure**:
   `dual-renderer-soft-performance-workload`, a wall-clock soft budget that also
   fails on pristine `main` under load.
 

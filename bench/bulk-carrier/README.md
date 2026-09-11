@@ -15,8 +15,8 @@ every timing here is diagnostic.
 ```sh
 amu compile wasmvec.kotoba  --target wasm32 --fuel 4000000000000
 amu compile wasmloop.kotoba --target wasm32 --fuel 4000000000000
-nbb crossings.cljs wasmvec.kotoba.wasm      # self-recursion spelling
-nbb crossings.cljs wasmloop.kotoba.wasm     # loop/recur spelling
+kbb --backend sci crossings.cljk wasmvec.kotoba.wasm      # self-recursion spelling
+kbb --backend sci crossings.cljk wasmloop.kotoba.wasm     # loop/recur spelling
 ```
 
 `wasmvec` and `wasmloop` compute the same function by two admitted spellings —
@@ -32,10 +32,10 @@ forbids any bulk loop; `--fuel` is a policy parameter and capacity is not.
 ## Then the timings, and their refusals
 
 ```sh
-nbb slope.cljs wasmvec.kotoba.wasm 200 9 > wasm.edn
+kbb --backend sci slope.cljk wasmvec.kotoba.wasm 200 9 > wasm.edn
 cc -O3 -o native_model native_model.c && ./native_model 200000 9 > c.json
-nbb gen_slice_wasm.cljs                       # hand-encoded slice-at stand-in
-nbb --classpath <perfgate>/src:<machine>/src gate.cljs \
+kbb --backend sci gen_slice_wasm.cljk                       # hand-encoded slice-at stand-in
+kbb --backend sci --classpath <perfgate>/src:<machine>/src gate.cljs \
     wasm.edn c.edn inline:indirect plain:inline h-slice:h-noref
 ```
 
@@ -66,8 +66,8 @@ not evidence that the compiler can emit it.
 ## The loop spelling is a capability limit too
 
 ```sh
-nbb depth.cljs wasmvec.kotoba.wasm  run-noref 6000 12000   # self-recursion
-nbb depth.cljs wasmloop.kotoba.wasm run-noref 12000 40000  # loop/recur
+kbb --backend sci depth.cljk wasmvec.kotoba.wasm  run-noref 6000 12000   # self-recursion
+kbb --backend sci depth.cljk wasmloop.kotoba.wasm run-noref 12000 40000  # loop/recur
 ```
 
 Self-recursion stops between 6,128 and 12,128 iterations with a host
@@ -85,7 +85,7 @@ outer counts sized so every sample integrates at least 3 ms of CPU, explicit
 warmup for every arm before any sampling.
 
 ```sh
-nbb --classpath <perfgate>/src:<machine>/src gate.cljs \
+kbb --backend sci --classpath <perfgate>/src:<machine>/src gate.cljs \
     samples-levi-wasm.edn samples-levi-c.edn \
     k-loop-touch:k-rec-touch k-loop-base:k-rec-base k-loop-noref:k-rec-noref \
     h-noref:h-slice c-inline:c-indirect c-plain:c-inline

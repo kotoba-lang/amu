@@ -23,4 +23,4 @@ Pilot **31 → 34**.
 
 ## Evidence
 
-- `clojure -M:conformance` 34/34 + goldens
+- `kbb -M:conformance` 34/34 + goldens

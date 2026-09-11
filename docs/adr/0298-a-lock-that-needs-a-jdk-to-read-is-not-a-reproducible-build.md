@@ -121,7 +121,7 @@ checkout's commit; it is not a JVM.
 ### Byte-for-byte against the JVM route
 
 The same two source files, pinned and compiled once through
-`clojure -M:run` and once through the Node route:
+`kbb -M:run` and once through the Node route:
 
 | artefact | result |
 |---|---|

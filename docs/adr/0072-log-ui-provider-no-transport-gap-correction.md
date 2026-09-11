@@ -216,7 +216,7 @@ branches also do not touch, and touches none of their files either.
   pattern ADR 0067 already confirmed for `(state/provider)` — contrasted
   directly against the same function's `llm`/`http`/`storage` entries, each
   of which passes an explicit disabled-error `:transport` fixture.
-- Full `clojure -M:test` suite, run unmodified against this branch (which
+- Full `kbb -M:test` suite, run unmodified against this branch (which
   makes no production changes), reports the same pass count as an untouched
   `origin/main` HEAD, confirming this ADR's own claim that no code changed.
 

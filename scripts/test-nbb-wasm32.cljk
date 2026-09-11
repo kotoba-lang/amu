@@ -6,7 +6,7 @@
 (let [resolved (lib/lock-classpath)
       nbb-cli (lib/join lib/root "node_modules" "nbb" "cli.js")
       ;; The cross-runtime corpus owns reusable fixtures under test/. Keep that
-      ;; tree explicit: `clojure -Spath` intentionally resolves production
+      ;; tree explicit: `kbb -Spath` intentionally resolves production
       ;; sources and dependencies only.
       classpath (str lib/root (.-delimiter path)
                      (lib/join lib/root "test") (.-delimiter path)
@@ -15,7 +15,7 @@
                          ;; Match bin/kotoba's bounded NBB compiler stack.
                          (clj->js ["--stack-size=4096"
                                   nbb-cli "--classpath" classpath
-                                  (lib/join lib/root "test" "nbb" "run.cljk")])
+                                  (lib/join lib/root "test" "kbb" "--backend" "sci" "run.cljk")])
                          #js {:cwd lib/root :stdio "inherit" :env js/process.env})]
   (when (.-error result) (throw (.-error result)))
   (.exit js/process (or (.-status result) 70)))
