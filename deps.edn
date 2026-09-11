@@ -153,8 +153,8 @@
         ;; read 3e3f9748 while the file on disk hashed to 67561e57, and nothing
         ;; said so.
         ;;
-        ;;   grammar-sha256    48fb5241483bb38fc33944047e3456a9360e8e3c9315aa06bb085e3ada8828db
-        ;;   kotoba-sema-pin   3714ffbf0ce356581d356bb52114b65a2a34eb0c
+        ;;   grammar-sha256    c308cc04f7cb7568d214917288f6f06a61539cb6ad6a68056dc6036ade8f0448
+        ;;   kotoba-sema-pin   6a35ed4a9217f58005e315eb8bd27aebbe49aa95
         ;;
         ;; `guest_grammar_vendor_test/authority-digest-history` ends with the
         ;; same digest, so the pin, the prose and the history move in one
@@ -420,7 +420,35 @@
          ;; CID control: `amu definition-cids --jvm-free` on a module whose
          ;; only literal is `{:b 2 :a 1}` mints byte-identical output at
          ;; 3dea8c39 and at this pin.
-         "3714ffbf0ce356581d356bb52114b65a2a34eb0c"}
+         ;;
+         ;; 2026-09-11, 3714ffbf -> 6a35ed4a (kotoba-sema main, forward only
+         ;; by `gh api .../compare`, ahead 4 behind 0; adr-2609111900, the
+         ;; selfhost ceiling loop). kotoba-sema b782bbf: a top-level `def`
+         ;; whose value is a pure call form (or a collection literal holding
+         ;; one) FOLDS at analysis time -- probed as a one-function module
+         ;; over the constants above it, empty effect row required, executed
+         ;; once on the reference interpreter under the KIR constant oracle's
+         ;; fuel, the result spelled back as the literal (or the canonical
+         ;; typed-set-new / typed-map-new) -- so `(def k 4096)` and `(def k
+         ;; (* 4 1024))` are ONE constant and mint the same definition CIDs
+         ;; (CID control below). Classified IMPLEMENTATION STATE for pure
+         ;; expressions (evidence in that commit); module-level state and
+         ;; effects stay refused as a PROPERTY, by name: `def value is
+         ;; stateful/effectful: (atom ...) -- move it into a function or a
+         ;; capability`; a `loop` is refused by name because its self-tail
+         ;; re-entry is zero-charge on the interpreter and the fuel cannot
+         ;; bound it; a heap handle (closure / list / lazy seq) likewise.
+         ;; Measured at a406845e on the project route: 9 of this compiler's
+         ;; own 210 sources were refused `constant value must be closed
+         ;; bounded ...` at such a def. The grammar copy moved with it,
+         ;; 48fb5241 -> 8450745f (`:core-form-shapes` gains `:def`) and then
+         ;; c308cc04 (692570e, the same wave's second step: a quoted symbol
+         ;; at a def is quoted data, an over-long string is refused by its
+         ;; bound), both APPENDED to `authority-digest-history`. CID control: `amu
+         ;; definition-cids --jvm-free` on `(def k 4096)` + a reader and on
+         ;; `(def k (* 4 1024))` + the same reader mints byte-identical
+         ;; output at this pin.
+         "6a35ed4a9217f58005e315eb8bd27aebbe49aa95"}
         ;; ADR-2607266000 Phase B: these responsibilities moved out of this repo.
         ;;
         ;; The slice-value stream held this pin on purpose (ADR 0314), because
