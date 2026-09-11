@@ -178,12 +178,33 @@
     (let [[_ name & raw-clauses] (first ns-forms)
           [docstring clauses] (if (string? (first raw-clauses))
                                 [(first raw-clauses) (next raw-clauses)]
-                                [nil raw-clauses])]
+                                [nil raw-clauses])
+          ;; The ATTR-MAP spelling (grammar `:ns :attr-map`, 2026-09-11):
+          ;; `{:kotoba/export [...]}` after the docstring IS `(:export [...])`,
+          ;; and likewise for the other three keys, so dual-runtime source --
+          ;; which SCI's `ns` refuses to load with an `(:export ...)` clause --
+          ;; can declare its exports. The map is rewritten into clauses HERE,
+          ;; before the loop below, by the frontend's own rewrite reached
+          ;; through the public sema boundary: one key table, one validation
+          ;; path, and the same refusals (unknown key by name, a key beside
+          ;; its clause as declared twice) on both routes.
+          [attr-map clauses] (if (map? (first clauses))
+                               [(first clauses) (next clauses)]
+                               [nil clauses])]
       (when-not (and (simple-symbol? name) (not (str/blank? (str name))))
         (reject! "invalid project namespace" {:namespace name}))
       (when (and docstring (> (count docstring) sema/max-namespace-docstring-chars))
         (reject! "namespace docstring exceeds admission limit" {:namespace name}))
-      (loop [remaining clauses exports nil requires [] capabilities nil schemas nil params nil]
+      (when-let [stray (first (filter map? clauses))]
+        (reject! "namespace attr-map must follow the docstring: (ns NAME DOCSTRING? ATTR-MAP? CLAUSE ...)"
+                 {:namespace name :clause stray}))
+      (loop [remaining (if attr-map
+                         (sema/namespace-attr-map->clauses
+                          attr-map clauses
+                          (fn [message data code]
+                            (reject! message {:namespace name :attr-map data :code code})))
+                         clauses)
+             exports nil requires [] capabilities nil schemas nil params nil]
         (if-let [clause (first remaining)]
           (cond
             (and (seq? clause) (= :export (first clause)) (= 2 (count clause))
@@ -294,8 +315,19 @@
   (mapv (fn [form]
           (if (and (seq? form) (= 'ns (first form)))
             (let [[op name & clauses] form]
-              (list* op name (remove #(and (seq? %) (contains? #{:require :params} (first %)))
-                                     clauses)))
+              (list* op name
+                     (keep (fn [clause]
+                             (cond
+                               (and (seq? clause) (contains? #{:require :params} (first clause)))
+                               nil
+                               ;; The attr-map spelling of `:params` is the
+                               ;; linker's too; strip the key, keep the map
+                               ;; (its other keys are the frontend's to read).
+                               (and (map? clause) (contains? clause :kotoba/params))
+                               (let [m (dissoc clause :kotoba/params)]
+                                 (when (seq m) m))
+                               :else clause))
+                           clauses)))
             form))
         forms))
 

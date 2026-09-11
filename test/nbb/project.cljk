@@ -632,3 +632,65 @@
                      'root))]
       (assert (string? message) "+ on :string is refused under one binding and not the other")
       (assert (re-find #" in t\.plus with \{elem :string\}$" message) message))))
+
+;; ---------------------------------------------------------------------------
+;; The ns ATTR-MAP spelling (grammar `:ns :attr-map`, 2026-09-11)
+;;
+;; `(ns NAME DOCSTRING? {:kotoba/export [...]} ...)` IS `(:export [...])`, and
+;; the same for :kotoba/capabilities, :kotoba/schemas and :kotoba/params. The
+;; rewrite is `kotoba.sema/namespace-attr-map->clauses`, called from
+;; `module-info` before its clause loop, so the project route admits exactly
+;; the keys the single-module route does and refuses with the same words.
+;; Why: SCI's `ns` (this runtime) refuses `(:export ...)` outright, so a
+;; module that must also LOAD here can only declare its exports this way.
+
+(def ^:private attr-map-sources
+  {'kotoba.set.union
+   (.replace union-template "(:params [elem])\n  (:export [union])" "{:kotoba/params [elem] :kotoba/export [union]}")
+   'root
+   ;; The map goes BEFORE the require clause: it has one position.
+   (-> union-root
+       (.replace "(ns root\n" "(ns root\n  {:kotoba/export [main]}\n")
+       (.replace "\n  (:export [main]))" ")"))})
+
+(check "attr-map-export-and-params-mean-the-clauses"
+  (fn []
+    ;; The control: the rewrite actually happened to both modules.
+    (assert (not (re-find #"\(:export" (get attr-map-sources 'kotoba.set.union))))
+    (assert (not (re-find #"\(:params" (get attr-map-sources 'kotoba.set.union))))
+    (assert (re-find #"\{:kotoba/export \[main\]\}" (get attr-map-sources 'root)))
+    (assert (not (re-find #"\(:export" (get attr-map-sources 'root))))
+    (let [clause (project/link-source template-sources 'root)
+          attr (project/link-source attr-map-sources 'root)]
+      (assert (= (:module-order clause) (:module-order attr)) (pr-str (:module-order attr)))
+      (assert (= (:source clause) (:source attr))
+              "the linked source differs between the two spellings, so the attr-map was not rewritten into the clauses")
+      (assert (= 5 (run-main attr-map-sources 'root))))
+    ;; The attr-map after a docstring, the position Clojure defines.
+    (assert (= 5 (run-main (assoc attr-map-sources 'root
+                                  (.replace (get attr-map-sources 'root) "(ns root\n" "(ns root\n  \"the root\"\n"))
+                           'root)))))
+
+(check "attr-map-refusals-are-fail-closed"
+  (fn []
+    (doseq [[label source expected]
+            [["unknown key, by name"
+              "(ns root {:author \"nobody\" :kotoba/export [main]})\n(defn main [] :i64 1)"
+              "namespace attr-map key :author is not admitted; the admitted keys are [:kotoba/capabilities :kotoba/export :kotoba/params :kotoba/schemas]"]
+             ["a namespaced key nobody declared is not a comment"
+              "(ns root {:kotoba/exports [main]})\n(defn main [] :i64 1)"
+              "namespace attr-map key :kotoba/exports is not admitted; the admitted keys are [:kotoba/capabilities :kotoba/export :kotoba/params :kotoba/schemas]"]
+             ["declared twice"
+              "(ns root {:kotoba/export [main]} (:export [main]))\n(defn main [] :i64 1)"
+              "namespace declares :export twice: attr-map :kotoba/export and clause (:export ...)"]
+             ["out of position"
+              "(ns root (:export [main]) {:kotoba/export [main]})\n(defn main [] :i64 1)"
+              "namespace attr-map must follow the docstring: (ns NAME DOCSTRING? ATTR-MAP? CLAUSE ...)"]
+             ["the value goes through the clause loop"
+              "(ns root {:kotoba/export main})\n(defn main [] :i64 1)"
+              "only one :export, one :capabilities, one :schemas, one :params and alias-only :require clauses are admitted"]
+             ["an empty attr-map declares nothing, so the export is still required"
+              "(ns root {})\n(defn main [] :i64 1)"
+              "project module requires an explicit :export vector"]]]
+      (when-let [failure (rejects #(project/link-source {'root source} 'root) expected)]
+        (throw (js/Error. (str label ": " failure)))))))

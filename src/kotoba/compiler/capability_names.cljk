@@ -39,6 +39,11 @@
   a name for it would be a lie. An id the catalog DOES know is named even when
   the source spelled it numerically, because the name is the more useful of two
   true answers."
+  ;; Exports in the ns ATTR-MAP (grammar `:ns :attr-map`): the spelling both
+  ;; hosts accept -- SCI's `ns` refuses an `(:export ...)` clause, and `amu
+  ;; check` in project mode refuses a module without one. Public functions
+  ;; only; `id->name` / `name->id` are defs and an export must be a function.
+  {:kotoba/export [named-grant name-grants wire-grant wire-policy]}
   (:require [clojure.walk :as walk]
             [kotoba.sema :as sema]
             #?(:cljs [kotoba.kir.cljs-i64 :as i64])))
