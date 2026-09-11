@@ -584,8 +584,10 @@
                            env true)]
           (ensure! (not= 0 (:status refused))
                    "a project missing one of its modules compiled anyway")
+          ;; The sentence names the module since 2026-09-12; the pinned
+          ;; literal is the tail that every module name shares.
           (ensure! (str/includes? (str (:stdout refused) (:stderr refused))
-                                  "required module is missing from the explicit source paths")
+                                  "is missing from the explicit source paths")
                    (str "the missing-module refusal named a different cause: "
                         (:stderr refused)))
           (ensure! (not (fs/existsSync out))
