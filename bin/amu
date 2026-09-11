@@ -146,8 +146,14 @@ const divergentImageReason =
 // One portable implementation (`kotoba.compiler.trust-cli`) since 2026-09-11;
 // this set is `kotoba.compiler.trust-cli/commands`, spelled again here because
 // the driver decides the route before any Clojure is loaded. `run` and
-// `measure-runtime` are NOT in it: they need the kototama native executor,
-// which has no Node host yet, so they stay refused below by name.
+// `measure-runtime` are `runCommands` above: same route, plus the executor's
+// alias closure.
+// The two commands that EXECUTE: they build the kexe loader and run an
+// artifact under it through kototama.native.executor, which lives under the
+// `:native-run` alias of deps.edn (a runtime, kept off the compile closure).
+// Their classpath adds that alias's locked entries; nothing else's does.
+const runCommands = new Set(["run", "measure-runtime"]);
+
 const trustCommands = new Set(["keygen", "public-key", "inspect", "trust-key",
   "trust-runtime", "sign", "verify-signed", "verify", "receipt",
   "verify-receipt", "verify-chain",
@@ -159,6 +165,7 @@ function nbbNativeEligible(args) {
   if (command === "compile" && divergentAiueosKernelImage(args)) return false;
   if (trustCommands.has(command)) return true;
   if (command === "test") return true;
+  if (runCommands.has(command)) return true;
   return command === "check" || command === "extract-native"
     || command === "definition-cids"
     || command === "module-lock"
@@ -181,6 +188,7 @@ function nbbEntrypoint(root, args) {
   const filename = ["verify-output-set", "sign-output-set"].includes(command) ? "output_set_cli.cljk"
     : trustCommands.has(command) ? "trust_cli.cljk"
     : command === "test" ? "test_cli.cljk"
+    : runCommands.has(command) ? "run_cli.cljk"
     : command === "extract-native" ? "x86_64_cli.cljk"
     : (command === "compile" && nbbJsTargets.has(target)) ? "js_cli.cljk"
     : wasm ? "wasm_cli.cljk"
@@ -214,7 +222,7 @@ function resolverFailure(result) {
 // all four as "missing or stale" sent a Windows runner's transient clone
 // failure to the wrong fix (measured 2026-08-18: the lock was byte-fresh, the
 // job before it on the same image had resolved the same lock fine).
-function resolveWithLock(root, nbbCli) {
+function resolveWithLock(root, nbbCli, alias) {
   const script = path.join(root, "scripts", "print-classpath.cljk");
   if (!fs.existsSync(path.join(root, "deps-lock.edn"))) {
     return { entries: null, reason: "deps-lock.edn is not present" };
@@ -228,7 +236,8 @@ function resolveWithLock(root, nbbCli) {
   let last = "no attempt ran";
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const result = spawn(process.execPath,
-      [nbbCli, "--classpath", path.join(root, "src"), script, root], {
+      [nbbCli, "--classpath", path.join(root, "src"), script, root,
+        ...(alias ? ["--alias", alias] : [])], {
         cwd: root, encoding: "utf8", maxBuffer: 16 * 1024 * 1024,
       });
     if (!result.error && result.status === 0) {
@@ -302,12 +311,17 @@ function publishPrivateCache(cacheFile, value) {
   }
 }
 
-function securityClasspath(root, nbbCli) {
+// ALIAS, when given, adds the closure deps-lock.edn recorded for that alias
+// (`:lock/alias-entries`) on top of the root closure -- `native-run` for the
+// two executing commands, nothing for a compile. The cache is keyed by it,
+// so a compile never reads an executing command's classpath or vice versa.
+function securityClasspath(root, nbbCli, alias) {
   const depsEdn = path.join(root, "deps.edn");
   const gitlibsRoot = path.resolve(process.env.GITLIBS || path.join(os.homedir(), ".gitlibs"));
   const allowedRoots = [gitlibsRoot, root, path.join(os.homedir(), ".m2", "repository")];
   const digest = createHash("sha256")
-    .update(fs.readFileSync(depsEdn)).update("\0").update(gitlibsRoot).digest("hex");
+    .update(fs.readFileSync(depsEdn)).update("\0").update(gitlibsRoot)
+    .update("\0").update(alias || "").digest("hex");
   const cacheFile = path.join(os.tmpdir(), `amu-security-classpath-${digest}.txt`);
   const cacheContents = readProtectedCache(cacheFile);
   if (cacheContents !== null) {
@@ -322,7 +336,7 @@ function securityClasspath(root, nbbCli) {
   // more (2026-09-11, owner decision: the JVM route is removed; Kotoba and the
   // amu native/nbb compiler only). A lock that does not match deps.edn is a
   // refusal that names the fix, never a JVM spawn.
-  const lockAttempt = resolveWithLock(root, nbbCli);
+  const lockAttempt = resolveWithLock(root, nbbCli, alias);
   const entries = lockAttempt.entries;
   if (!entries) {
     fail("error: dependency resolution from deps-lock.edn failed; "
@@ -435,8 +449,9 @@ function runCompiler(root, rawArgs) {
         + "graph.", 64);
     }
     const nbbCli = path.join(root, "node_modules", "nbb", "cli.js");
+    const alias = runCommands.has(args[0]) ? "native-run" : null;
     const classpath = [path.join(root, "src"), path.join(root, "resources"),
-      securityClasspath(root, nbbCli)].join(path.delimiter);
+      securityClasspath(root, nbbCli, alias)].join(path.delimiter);
     const result = spawn(process.execPath,
       ["--stack-size=4096", nbbCli, "--classpath", classpath, nbbEntrypoint(root, args), ...args], {
         cwd: root, stdio: "inherit",

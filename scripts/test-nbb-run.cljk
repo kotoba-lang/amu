@@ -1,0 +1,128 @@
+#!/usr/bin/env nbb
+(ns test-nbb-run
+  "`amu measure-runtime` and `amu run` through `bin/amu` on the Node route:
+  build the reviewed kexe loader with the host C toolchain, trust its
+  identity, execute a signed native artifact under it, write the receipt,
+  and verify that receipt with `verify-receipt`. Until 2026-09-12 (ADR 0348
+  iteration 8) these two were the last commands with no route at all.
+
+  Every positive step has a refusal beside it: an untrusted runtime (77),
+  an input whose arity does not match the entry (69), a trapped execution
+  (exit 120, `:status :trap`, and the receipt still written). The loader is
+  built twice by `measure-runtime` itself (reproducible double build); this
+  script asserts the artifact it drives answers 42 and that the receipt
+  verifies against the same runtime trust.
+
+  Needs a C toolchain on PATH, as `jdk-free-native-conformance.cljk` does.
+  Run from the repo root: `nbb --classpath . scripts/test-nbb-run.cljk`."
+  (:require [cljs.reader :as reader]
+            [scripts.lib :as lib]
+            ["node:child_process" :as child]
+            ["node:fs" :as fs]
+            ["node:os" :as os]
+            ["node:path" :as path]))
+
+(def directory (.mkdtempSync fs (.join path (.tmpdir os) "amu-run-")))
+
+(defn- invoke [& args]
+  (.spawnSync child js/process.execPath
+              (clj->js (into [(lib/join lib/root "bin" "amu")] args))
+              #js {:cwd lib/root :encoding "utf8" :timeout 600000
+                   :maxBuffer (* 64 1024 1024)}))
+
+(def ^:private checks (volatile! {:pass 0 :fail 0}))
+(defn- report! [ok? label detail]
+  (vswap! checks update (if ok? :pass :fail) inc)
+  (println (str (if ok? "PASS " "FAIL ") label (when-not ok? (str " -- " detail)))))
+(defn- ok! [label & args]
+  (let [r (apply invoke args)]
+    (report! (and (nil? (.-error r)) (zero? (.-status r))) label
+             (str "exit " (.-status r) "\n" (.-stdout r) (.-stderr r)))
+    r))
+(defn- refused! [label status fragment & args]
+  (let [r (apply invoke args) err (str (.-stderr r))]
+    (report! (and (= status (.-status r)) (.includes err fragment))
+             (str label " (exit " status ", " (pr-str fragment) ")")
+             (str "exit " (.-status r) "\n" (.-stdout r) err))
+    r))
+(defn- edn-out [r] (reader/read-string (str (.-stdout r))))
+(defn- f [name] (lib/join directory name))
+
+(try
+  (let [source (f "m.kotoba")]
+    (lib/write-text! source "(defn main [] :i64 42)\n")
+    (lib/write-text! (f "policy.edn") "{:allow #{}}\n")
+    (lib/write-text! (f "input.edn") "{:args []}\n")
+    (lib/write-text! (f "input-one.edn") "{:args [1]}\n")
+    (ok! "compile a native artifact" "compile" source "--target" "aarch64-macos" "--output" (f "m.kexe"))
+    (ok! "compile examples/fuel.kotoba" "compile" (lib/join lib/root "examples" "fuel.kotoba")
+         "--target" "aarch64-macos" "--output" (f "fuel.kexe"))
+    (ok! "keygen" "keygen" "--output" (f "key.edn"))
+    (ok! "public-key" "public-key" (f "key.edn") "--output" (f "pub.edn"))
+    (ok! "trust-key" "trust-key" (f "pub.edn") "--output" (f "trust.edn"))
+    (ok! "sign" "sign" (f "m.kexe") "--key" (f "key.edn") "--not-before" "0"
+         "--expires" "4102444800" "--output" (f "m.signed.kexe"))
+    (ok! "sign fuel" "sign" (f "fuel.kexe") "--key" (f "key.edn") "--not-before" "0"
+         "--expires" "4102444800" "--output" (f "fuel.signed.kexe"))
+
+    ;; measure-runtime: the loader, built by the host toolchain, 0700
+    (let [r (ok! "measure-runtime" "measure-runtime" "--output" (f "runtime.edn")
+                 "--loader-output" (f "kotoba-loader"))
+          v (edn-out r)]
+      (report! (and (string? (:runtime-sha256 v)) (= 64 (count (:runtime-sha256 v))))
+               "measure-runtime reports the runtime identity" (pr-str v))
+      (report! (= 448 (bit-and (.-mode (.statSync fs (f "kotoba-loader"))) 511))
+               "the loader is written 0700" (.toString (bit-and (.-mode (.statSync fs (f "kotoba-loader"))) 511) 8))
+      (report! (pos? (.-size (.statSync fs (f "kotoba-loader")))) "the loader has bytes" ""))
+
+    ;; run before the runtime is trusted: refused by name
+    (refused! "run under a trust set that does not name the runtime" 77
+              "native runtime identity is not trusted"
+              "run" (f "m.signed.kexe") "--trust" (f "trust.edn") "--runtime" (f "runtime.edn")
+              "--loader" (f "kotoba-loader") "--policy" (f "policy.edn") "--input" (f "input.edn")
+              "--executor-key" (f "key.edn") "--now" "1500"
+              "--result-output" (f "never.result.edn") "--output" (f "never.receipt.edn"))
+    (ok! "trust-runtime" "trust-runtime" (f "runtime.edn") "--trust" (f "trust.edn")
+         "--output" (f "runtime-trust.edn"))
+
+    ;; the run, and its receipt
+    (let [r (ok! "run main" "run" (f "m.signed.kexe") "--trust" (f "runtime-trust.edn")
+                 "--runtime" (f "runtime.edn") "--loader" (f "kotoba-loader")
+                 "--policy" (f "policy.edn") "--input" (f "input.edn")
+                 "--executor-key" (f "key.edn") "--now" "1500"
+                 "--result-output" (f "run.result.edn") "--output" (f "run.receipt.edn"))
+          v (edn-out r)]
+      (report! (and (true? (:ok v)) (= :ok (:status v))) "run answers :ok" (pr-str (dissoc v :result)))
+      (report! (= 42 (get-in v [:result :result])) "main() = 42 under the loader" (pr-str (get-in v [:result :result])))
+      (report! (string? (:receipt-sha256 v)) "run names the receipt digest" (pr-str (:receipt-sha256 v))))
+    (let [r (ok! "verify-receipt" "verify-receipt" (f "run.receipt.edn") "--signed" (f "m.signed.kexe")
+                 "--trust" (f "runtime-trust.edn") "--policy" (f "policy.edn") "--input" (f "input.edn")
+                 "--result" (f "run.result.edn") "--now" "1500")]
+      (report! (true? (:verified? (edn-out r))) "the receipt verifies" (str (.-stdout r))))
+
+    ;; refusals and the trap
+    (refused! "an input whose arity does not match the entry" 69
+              "execution input does not match entry arguments"
+              "run" (f "m.signed.kexe") "--trust" (f "runtime-trust.edn") "--runtime" (f "runtime.edn")
+              "--loader" (f "kotoba-loader") "--policy" (f "policy.edn") "--input" (f "input-one.edn")
+              "--executor-key" (f "key.edn") "--now" "1500"
+              "--result-output" (f "never.result.edn") "--output" (f "never.receipt.edn"))
+    (let [r (invoke "run" (f "fuel.signed.kexe") "--entry" "forever" "--trust" (f "runtime-trust.edn")
+                    "--runtime" (f "runtime.edn") "--loader" (f "kotoba-loader")
+                    "--policy" (f "policy.edn") "--input" (f "input-one.edn")
+                    "--executor-key" (f "key.edn") "--now" "1500"
+                    "--result-output" (f "forever.result.edn") "--output" (f "forever.receipt.edn"))
+          v (try (edn-out r) (catch :default _ nil))]
+      (report! (= 120 (.-status r)) "a trapped execution exits 120" (str "exit " (.-status r) " " (.-stderr r)))
+      (report! (and v (false? (:ok v)) (= :trap (:status v))) "and answers :status :trap" (str (.-stdout r)))
+      (report! (.existsSync fs (f "forever.receipt.edn")) "and still writes the receipt" ""))
+    (refused! "run without --runtime" 64 "missing --runtime"
+              "run" (f "m.signed.kexe") "--trust" (f "runtime-trust.edn") "--loader" (f "kotoba-loader")
+              "--policy" (f "policy.edn") "--input" (f "input.edn") "--executor-key" (f "key.edn"))
+    (let [r (invoke "measure-runtime" "--output" (f "runtime2.edn") "--loader-output" (f "loader2") "--jvm-free")]
+      (report! (zero? (.-status r)) "measure-runtime runs with --jvm-free" (str (.-stderr r)))))
+  (finally (lib/remove-tree! directory)))
+
+(let [{:keys [pass fail]} @checks]
+  (println (str "SCANNED\t" (+ pass fail) "\tchecks; " pass " passed, " fail " failed"))
+  (when (or (zero? pass) (pos? fail)) (set! (.-exitCode js/process) 1)))

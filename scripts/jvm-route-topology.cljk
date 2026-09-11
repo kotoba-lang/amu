@@ -250,7 +250,9 @@
   (let [text (.readFileSync fs (lib/join lib/root "bin" "amu") "utf8")
         block (second (re-find #"function nbbNativeEligible\(args\) \{([\s\S]*?)\n\}" text))]
     (into (trust-commands)
-          (map second (re-seq #"command === \"([a-z\-]+)\"" block)))))
+          (concat (map second (re-seq #"command === \"([a-z\-]+)\"" block))
+                  ;; the executing commands, routed with their own alias closure
+                  (map second (re-seq #"\"([a-z\-]+)\"" (or (second (re-find #"const runCommands = new Set\(\[([^\]]*)\]" text)) "")))))))
 
 ;; ---------------------------------------------------------------------------
 ;; probe
