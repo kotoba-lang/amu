@@ -185,7 +185,15 @@
    ;; is kotoba-lang lang/compat/clojure/set.kotoba. kotoba-lang authority
    ;; 2dcd0721, digest b957f5cd; kotoba-sema's copy alone moved (37f662a),
    ;; its frontend never sees `:params`. No head admitted or withdrawn.
-   "b957f5cdd0b6d7ee244cec88711f2aaf42bcdfa95cbb72305f70d81433d9ae43"])
+   "b957f5cdd0b6d7ee244cec88711f2aaf42bcdfa95cbb72305f70d81433d9ae43"
+   ;; 2026-09-12, kotoba-sema 6f49a83d -> 9d72b4cd: a `[fixed ... & rest]`
+   ;; defn is specialized per used arity of the closed module by the fn
+   ;; profile's own lowering (`:named-multi-arity` gains `:variadic-defn`);
+   ;; the exported / value / past-the-bound uses are refused by name.
+   ;; kotoba-lang authority 53e4d2f0, kotoba-sema's copy and frontend in
+   ;; one commit (9d72b4cd). IMPLEMENTATION STATE closed; no head admitted
+   ;; or withdrawn.
+   "53e4d2f0f64d2ce00e5670b2053e57a3d945c51394986dd457df66c449cc446b"])
 
 (def authority-grammar-sha256
   "sha256 of the grammar this repository reads -- kotoba-sema's copy, at the

@@ -175,8 +175,8 @@
         ;; read 3e3f9748 while the file on disk hashed to 67561e57, and nothing
         ;; said so.
         ;;
-        ;;   grammar-sha256    b957f5cdd0b6d7ee244cec88711f2aaf42bcdfa95cbb72305f70d81433d9ae43
-        ;;   kotoba-sema-pin   6f49a83d1ebe1c01ddfe189d7f410642e17203f7
+        ;;   grammar-sha256    53e4d2f0f64d2ce00e5670b2053e57a3d945c51394986dd457df66c449cc446b
+        ;;   kotoba-sema-pin   9d72b4cd32310c4e75feb0a9b5d344adffb94293
         ;;
         ;; `guest_grammar_vendor_test/authority-digest-history` ends with the
         ;; same digest, so the pin, the prose and the history move in one
@@ -504,7 +504,30 @@
          ;; CID control: `amu check` `:definitions` of a 2-module project
          ;; that does not require clojure.set, and of examples/todo-app.kotoba,
          ;; are identical before and after the linker change.
-         "6f49a83d1ebe1c01ddfe189d7f410642e17203f7"}
+         ;;
+         ;; 2026-09-12, 6f49a83d -> 9d72b4cd (kotoba-sema main, forward only
+         ;; by `gh api .../compare`; adr-2609111900, the variadic defn wall:
+         ;; 12 of the compiler's own modules at amu 1800fc4 refused `variadic
+         ;; parameters are outside the multi-arity profile`). IMPLEMENTATION
+         ;; STATE closed: the authority's `:named-multi-arity :variadic` had
+         ;; claimed "[fixed ... & rest] statically specialized through arity
+         ;; 5" all along and the fn profile honoured it; the named profile
+         ;; did not, and the single-arity spelling `(defn f [a & r] r)` was
+         ;; READ as a three-parameter function with a parameter named `&`.
+         ;; Now one clause per arity a call site of the closed module uses
+         ;; (plus the smallest arity no fixed clause holds), by
+         ;; `lift-lambda`'s own extracted lowering; rest is the pair-chain
+         ;; `(list ...)` of the surplus parameters. Exported / value-position
+         ;; / past-the-bound uses refused by name -- an exported variadic
+         ;; defn in particular, because THIS repository's `:interface`
+         ;; carries fixed clauses and nothing variadic, so an importing
+         ;; module could only reach the exporter's own arities; the linker
+         ;; therefore never sees a variadic clause, only `$arityN` ones.
+         ;; Grammar copy moved with the frontend, b957f5cd -> 53e4d2f0,
+         ;; APPENDED to `authority-digest-history`. CID control: `amu
+         ;; definition-cids` of a fixed-arity module is identical at
+         ;; 6f49a83d and here (see the test suite commit).
+         "9d72b4cd32310c4e75feb0a9b5d344adffb94293"}
         ;; ADR-2607266000 Phase B: these responsibilities moved out of this repo.
         ;;
         ;; The slice-value stream held this pin on purpose (ADR 0314), because

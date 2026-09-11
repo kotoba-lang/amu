@@ -1001,3 +1001,66 @@
       (assert (string? message) "a regex literal in a selected branch is refused")
       (assert (re-find #"host regex literal" message) message)
       (assert (not (re-find #"admitted exported import" message)) message))))
+
+;; ---------------------------------------------------------------------------
+;; Variadic defn across the linker (kotoba-sema 9d72b4cd, 2026-09-12).
+;;
+;; A `[fixed ... & rest]` defn is specialized per arity a call site of its OWN
+;; module uses. The linker never sees a variadic clause: by the time a module
+;; is analyzed its variadic defn is `$arityN` clauses like any multi-arity
+;; function, and the linked source re-emits those. Cross-module calls are not
+;; a case this repository handles because they cannot be written -- an
+;; EXPORTED variadic defn is refused by the frontend, since `:interface`
+;; carries fixed clauses and an importer could only reach the exporter's own
+;; arities. Both directions are asserted: the private one links and runs
+;; through the filesystem route; the exported one is refused by that sentence,
+;; not by `export does not name a declared function`.
+
+(def ^:private variadic-sources
+  {'va.lib
+   "(ns va.lib (:export [sum3 sum1]))
+    (defn- add-all [a & r] (if (empty? r) a (+ a (first r) (if (empty? (rest r)) 0 (second r)))))
+    (defn sum1 [a :i64] :i64 (add-all a))
+    (defn sum3 [a :i64 b :i64 c :i64] :i64 (add-all a b c))"
+   'va.main
+   "(ns va.main (:require [va.lib :as l]) (:export [main]))
+    (defn main [] :i64 (+ (l/sum1 1) (l/sum3 10 20 30)))"})
+
+(check "a-private-variadic-defn-links-and-runs-behind-fixed-arity-exports"
+  (fn []
+    (let [{:keys [source module-order]} (project/link-source variadic-sources 'va.main)
+          kir (ir/lower (sema/analyze source {:admit-linked-synthetics? true}))]
+      (assert (= ['va.lib 'va.main] module-order))
+      ;; The linked text carries the specialized clauses, not the `&`. The
+      ;; linker renames locals (`kotoba_module__N__M`), so the clauses are
+      ;; recognised by their parameter vectors: the surplus parameters carry
+      ;; the reserved prefix the lowering gives them.
+      (assert (not (re-find #"& " source)) (str "a variadic clause reached the linked source: " source))
+      (assert (re-find #"\[a\] :i64 \(let \[r 0\]" source)
+              (str "the arity-1 specialization (rest = the empty chain) is in the linked source: " source))
+      (assert (re-find #"\[a __kotoba_rest_arg_0 __kotoba_rest_arg_1\]" source)
+              (str "the arity-3 specialization is in the linked source: " source))
+      (assert (not (re-find #"\[a __kotoba_rest_arg_0\]" source))
+              (str "an arity no call site uses (2) is not emitted: " source))
+      (assert (= 61 (js/Number (ir/execute kir 'main [])))))))
+
+(check "a-private-variadic-defn-links-through-filesystem-discovery"
+  (fn []
+    (let [root (tmpdir)
+          main (spit! (.join path root "va") "main.cljk" (get variadic-sources 'va.main))
+          _ (spit! (.join path root "va") "lib.cljk" (get variadic-sources 'va.lib))
+          graph (project-files/load-closed-graph main [root])
+          {:keys [source]} (project/link-source (:sources graph) (:root graph))
+          kir (ir/lower (sema/analyze source {:admit-linked-synthetics? true}))]
+      (assert (= 61 (js/Number (ir/execute kir 'main [])))))))
+
+(check "an-exported-variadic-defn-is-refused-by-its-own-sentence"
+  (fn []
+    (let [message (refusal-message
+                   #(project/link-source
+                     {'vx.lib "(ns vx.lib (:export [add-all]))\n(defn add-all [a & r] (if (empty? r) a (+ a (first r))))"
+                      'vx.main "(ns vx.main (:require [vx.lib :as l]) (:export [main]))\n(defn main [] :i64 (l/add-all 1 2))"}
+                     'vx.main))]
+      (assert (string? message) "an exported variadic defn is refused")
+      (assert (re-find #"variadic function add-all cannot be exported: an export must have a fixed interface" message) message)
+      (assert (not (re-find #"export does not name a declared function" message)) message))))
