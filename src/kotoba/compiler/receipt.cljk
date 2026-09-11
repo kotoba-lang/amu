@@ -4,7 +4,16 @@
             [kotoba.compiler.effect-row :as effect-row]
             [kotoba.artifact.core :as artifact]
             [kotoba.artifact.runtime-identity :as runtime-identity]
+            [kotoba.verifier :as verifier]
             [kotoba.verifier.signing :as signing]))
+
+;; `verifier/guest-integer?`, not `integer?`: on the Node host every integer
+;; the kotoba reader returns is a bigint, and cljs `integer?` says false to
+;; it. A receipt this namespace wrote, read back through the nbb route, was
+;; refused as "receipt evidence mismatch" on its own timestamps (measured
+;; 2026-09-11, the first receipt ever verified without a JVM). Same fix
+;; kotoba-verifier applied to the signing envelope's validity bounds.
+(defn- an-integer? [x] (verifier/guest-integer? x))
 
 (def statuses #{:ok :trap :denied})
 (def ^:private receipt-fields-v1
@@ -70,9 +79,9 @@
       (runtime-identity/admit! runtime trust))
     (when-not (contains? statuses status)
       (throw (ex-info "invalid receipt status" {:phase :receipt :status status})))
-    (when-not (and (integer? started-at) (integer? finished-at) (<= started-at finished-at))
+    (when-not (and (an-integer? started-at) (an-integer? finished-at) (<= started-at finished-at))
       (throw (ex-info "invalid receipt time interval" {:phase :receipt})))
-    (when-not (and (integer? fuel-initial) (integer? fuel-remaining)
+    (when-not (and (an-integer? fuel-initial) (an-integer? fuel-remaining)
                    (<= 0 fuel-remaining fuel-initial))
       (throw (ex-info "invalid receipt fuel accounting" {:phase :receipt})))
     (when-not (and (= target (:target kexe)) (symbol? entry)
@@ -138,9 +147,9 @@
                    (= (:authority-decision receipt) authority-decision)
                    (= (:parent receipt) expected-parent)
                    (contains? statuses (:status receipt))
-                   (integer? (:started-at receipt)) (integer? (:finished-at receipt))
+                   (an-integer? (:started-at receipt)) (an-integer? (:finished-at receipt))
                    (<= (:started-at receipt) (:finished-at receipt))
-                   (integer? (:initial fuel)) (integer? (:remaining fuel))
+                   (an-integer? (:initial fuel)) (an-integer? (:remaining fuel))
                    (<= 0 (:remaining fuel) (:initial fuel))
                    (= (:consumed fuel) (- (:initial fuel) (:remaining fuel))))
       (throw (ex-info "receipt evidence mismatch" {:phase :receipt})))

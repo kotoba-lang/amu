@@ -66,11 +66,21 @@
   ;; clause as a malformed `:export`. Same guard as bin/amu's `projectMode`.
   (boolean (some #{"--source-path" "--module-lock"} sub-args)))
 
+;; The trust-plane, release and iOS-packaging commands: one portable
+;; implementation (`kotoba.compiler.trust-cli`), Node entrypoint
+;; `nbb/trust_cli.cljk`. The same set `bin/amu` spells; spelled again here
+;; because this launcher decides the route before any Clojure is loaded.
+(def ^:private trust-commands
+  #{"keygen" "public-key" "inspect" "trust-key" "trust-runtime"
+    "sign" "verify-signed" "verify" "receipt" "verify-receipt" "verify-chain"
+    "sbom" "attest-release" "verify-release" "package-ios"})
+
 (defn- nbb-native-eligible? [sub-args]
   (let [cmd (first sub-args)]
     (and
      (not (project-mode? sub-args))
      (or (contains? #{"check" "extract-native"} cmd)
+         (contains? trust-commands cmd)
          (and (= cmd "worker") (contains? nbb-native-targets (option sub-args "--target")))
          (and (= cmd "compile") (contains? nbb-native-targets (option sub-args "--target")))))))
 
@@ -81,6 +91,7 @@
                   (nil? target)
                   (.startsWith target "wasm32"))
         filename (cond
+                   (contains? trust-commands command) "trust_cli.cljk"
                    (= command "extract-native") "x86_64_cli.cljk"
                    wasm? "wasm_cli.cljk"
                    (.startsWith target "aarch64") "aarch64_cli.cljk"
@@ -240,7 +251,17 @@
                                                  classpath
                                                  (nbb-entrypoint root sub-args)]
                                                 sub-args))
-                                 #js {:cwd root :stdio "inherit" :env js/process.env})]
+                                 ;; The CALLER's directory, not the checkout.
+                                 ;; Every path the nbb entrypoints take is
+                                 ;; resolved by them against the process cwd,
+                                 ;; and with `:cwd root` a relative `--output
+                                 ;; key.edn` landed INSIDE the Amu checkout while
+                                 ;; the caller's directory stayed empty and the
+                                 ;; command reported `:ok true` (measured
+                                 ;; 2026-09-11 with `kotoba -M keygen`). The
+                                 ;; classpath above is absolute, so nothing the
+                                 ;; child loads depends on where it starts.
+                                 #js {:cwd (.cwd js/process) :stdio "inherit" :env js/process.env})]
           (when (.-error result)
             (fail! "error: unable to start nbb-native compiler runtime" 70))
           (.exit js/process (or (.-status result) 70)))

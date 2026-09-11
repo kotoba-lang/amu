@@ -35,8 +35,17 @@
    (let [export (get (:exports kexe) entry)]
      (when-not export
        (reject! "iOS AOT entry is not exported" {:entry entry}))
-     (let [code (:code kexe)
-           offset (:offset export)
+     (let [;; On the Node host an artifact read back through the kotoba reader
+           ;; carries its bytes and offsets as bigint (every integer token is
+           ;; one), and `kotoba.object.macho64` asks `integer?` of each byte,
+           ;; which says false to a bigint. Narrow them to host numbers here:
+           ;; a byte and a code offset are far below 2^53, so this is exact.
+           ;; Measured 2026-09-11, the first `package-ios` on the nbb route:
+           ;; "invalid Mach-O byte region" on a valid aarch64-ios artifact.
+           host-int #?(:clj identity
+                       :cljs (fn [x] (if (identical? js/BigInt (type x)) (js/Number x) x)))
+           code (mapv host-int (:code kexe))
+           offset (host-int (:offset export))
            target-profile (ascii-bytes "aarch64-ios-kotoba-v1")
            object-vector (macho/encode-object
                           {:machine :aarch64

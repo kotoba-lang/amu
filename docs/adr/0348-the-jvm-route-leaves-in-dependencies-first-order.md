@@ -89,7 +89,7 @@ It is 77 now, beside the signature plane's other refusals.
 
 | level | namespace | refused on Node with | unblocks |
 |---|---|---|---|
-| 1 | `kotoba.compiler.release` | `java.io.FileInputStream` | `sbom`, `attest-release`, `verify-release` |
+| 1 | ~~`kotoba.compiler.release`~~ | ~~`java.io.FileInputStream`~~ | **portable since 2026-09-11** (a `:cljs` branch on node fs/crypto); `sbom`, `attest-release`, `verify-release` and `package-ios` joined `trust-cli` the same day |
 | 1 | `kotoba.compiler.coverage` | `java.nio.file.Files` | `coverage` (`sign-coverage-evidence` needs only the leaves already done) |
 | 1 | `kotoba.compiler.project-files`, `module-lock` | `java.nio.file.Files` | already have Node ports under `nbb.*` — the honest end state is one namespace each, not two |
 | 1 | `kotoba.component.admission`, `kotoba.wasm.tools` | `StandardCharsets` | external repo `kotoba-component` / `kotoba-wasm`; `check`/`compile` on the JVM route |
