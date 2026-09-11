@@ -760,7 +760,7 @@ try {
     }
   }
   if (enabled.has("clojure")) {
-    definitions.clojure = ["clojure", ["-M", join(benchRoot, "kernel.clj"), ...common], {}];
+    definitions.clojure = ["clojure", ["-M", join(benchRoot, "kernel.cljk"), ...common], {}];
   }
   if (enabled.has("clojurescript")) {
     definitions.clojurescript = [process.execPath, [built.paths.cljs, ...common], {}];
@@ -947,7 +947,7 @@ try {
         swiftHelperSource: artifact(built.paths.swiftHelperSource) } : {}),
       kotobaSource: artifact(built.paths.fixture),
       ...(batchMode ? {} : { kotobaWasmSource: artifact(built.paths.wasmFixture) }),
-      ...(enabled.has("clojure") ? { clojureSource: artifact(join(benchRoot, "kernel.clj")) } : {}),
+      ...(enabled.has("clojure") ? { clojureSource: artifact(join(benchRoot, "kernel.cljk")) } : {}),
       ...(enabled.has("clojurescript") ? { clojurescript: artifact(built.paths.cljs) } : {}),
       ...(batchMode ? {} : { amuWasm32: artifact(built.paths.wasm) }),
       amuNativeKexe: artifact(built.paths.native),
