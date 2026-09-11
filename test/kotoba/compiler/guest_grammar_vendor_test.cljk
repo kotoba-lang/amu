@@ -151,7 +151,24 @@
    ;; byte-identical, and `:entry-limits` gains `:keyword-record 20`;
    ;; kotoba-lang e9a44c3, digest 48fb5241, kotoba-sema's copy and frontend
    ;; in one commit (f2cfaae). No head admitted or withdrawn.
-   "48fb5241483bb38fc33944047e3456a9360e8e3c9315aa06bb085e3ada8828db"])
+   "48fb5241483bb38fc33944047e3456a9360e8e3c9315aa06bb085e3ada8828db"
+   ;; 2026-09-11, kotoba-sema 3714ffbf -> 72a1d949: the authority folds a
+   ;; `def` whose value is a pure call form at analysis time
+   ;; (`:core-form-shapes :def`): probed as a one-function module over the
+   ;; constants above it, empty effect row required, executed once on the
+   ;; reference interpreter under the KIR constant oracle's fuel, the result
+   ;; spelled back as the literal -- so `(def k 4096)` and `(def k (* 4
+   ;; 1024))` mint the same definition CIDs; `atom` / `delay` / `volatile!`
+   ;; / a cap-call / a forward reference / fuel / a trap refused by name.
+   ;; kotoba-lang ddd5059, digest 8450745f, kotoba-sema's copy and frontend
+   ;; in one commit (b782bbf). No head admitted or withdrawn.
+   "8450745f43ebf9ba3b56b5d63341205ed77a2671a388d79c6246031ce719e9d1"
+   ;; 2026-09-11, the same wave's second step, kotoba-sema 72a1d949 ->
+   ;; 6a35ed4a: a quoted SYMBOL at a def is named as quoted data (it was
+   ;; answered as an alias lookup) and a string past the portable byte
+   ;; bound is refused by the bound, not by closedness. kotoba-lang
+   ;; 88eb479, digest c308cc04. No head admitted or withdrawn.
+   "c308cc04f7cb7568d214917288f6f06a61539cb6ad6a68056dc6036ade8f0448"])
 
 (def authority-grammar-sha256
   "sha256 of the grammar this repository reads -- kotoba-sema's copy, at the
