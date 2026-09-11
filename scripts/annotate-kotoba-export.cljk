@@ -27,9 +27,11 @@
 (def root (.resolve path (.dirname path *file*) ".."))
 (def src-root (.join path root "src"))
 
-;; kotoba-lang/amu#942's other agent owns this file's ns header; touching it
-;; here would race that edit.
-(def excluded-paths #{(.join path src-root "kotoba" "compiler" "project.cljk")})
+;; kotoba-lang/amu#942's other agent owned this file's ns header while this
+;; annotator's first wave (amu#946) ran; that edit landed and the exclusion
+;; is stale. Kept as an empty set (not deleted outright) so a future
+;; conflicting in-flight edit has a single, obvious place to add itself back.
+(def excluded-paths #{})
 
 ;; ---------------------------------------------------------------------
 ;; file discovery

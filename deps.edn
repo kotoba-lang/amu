@@ -154,7 +154,7 @@
         ;; said so.
         ;;
         ;;   grammar-sha256    d07b8816546b8ff2d78e1db2f375c92ee5e654e20d04eb554a5c4f38fe031587
-        ;;   kotoba-sema-pin   9a5f65eca9f259f062260156e3d24566cdb764b6
+        ;;   kotoba-sema-pin   3dea8c39c46ff8ac8920dc94d75be6a8d9d843a5
         ;;
         ;; `guest_grammar_vendor_test/authority-digest-history` ends with the
         ;; same digest, so the pin, the prose and the history move in one
@@ -381,7 +381,25 @@
          ;; strips it with `:require` before the frontend reads the module,
          ;; so the linked source -- and the definition CIDs -- of a module
          ;; with the clause are those of the module without it.
-         "9a5f65eca9f259f062260156e3d24566cdb764b6"}
+         ;;
+         ;; 2026-09-11, 9a5f65ec -> 3dea8c39 (kotoba-sema main, ahead 2, behind
+         ;; 0, forward only by `gh api .../compare`): amu#951 measured that
+         ;; even after every first-party dependency was annotated, the
+         ;; project-module closure still refused two occurrences naming
+         ;; `kotoba.sema` -- kotoba-sema's OWN 5 `.cljk` modules
+         ;; (affine, frontend, kotoba_reader, schema, sema.cljk itself) had
+         ;; never been run through amu#946's annotator. This advance is that:
+         ;; `{:kotoba/export [...]}` on all 5, run from an uncommitted copy of
+         ;; amu's annotate-kotoba-export.cljk at kotoba-sema's own root (its
+         ;; `../src` then resolves there). `--check` reports 0 remaining, a
+         ;; second `--apply` is a no-op, and kotoba-sema's own suite (nbb
+         ;; --classpath "src:test:$(clojure -Spath -M:test)" run-tests.cljk)
+         ;; stays at 429 tests / 1636 assertions, identical to main. The
+         ;; grammar copy (`resources/kotoba/lang/guest-grammar.edn`) is not in
+         ;; this diff -- only the 5 `src/` files above are -- so
+         ;; `grammar-sha256` and `authority-digest-history` do not move; this
+         ;; prose block moves alone.
+         "3dea8c39c46ff8ac8920dc94d75be6a8d9d843a5"}
         ;; ADR-2607266000 Phase B: these responsibilities moved out of this repo.
         ;;
         ;; The slice-value stream held this pin on purpose (ADR 0314), because
