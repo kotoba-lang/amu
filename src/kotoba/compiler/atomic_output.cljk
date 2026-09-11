@@ -1,28 +1,61 @@
 (ns kotoba.compiler.atomic-output
-  (:import [java.nio ByteBuffer]
-           [java.nio.channels FileChannel]
-           [java.nio.charset StandardCharsets]
-           [java.nio.file CopyOption Files OpenOption Path Paths StandardCopyOption StandardOpenOption]
-           [java.nio.file.attribute AclEntry AclEntryPermission AclEntryType
-            AclFileAttributeView FileAttribute PosixFilePermissions]
-           [java.util Collections EnumSet]))
+  "Atomic publication of a compiler output, on both compiler hosts.
+
+  This was `.clj` until 2026-09-11; with `kotoba.compiler.bounded-edn` it is
+  the other leaf every JVM-only `bin/amu` command stands on
+  (`docs/jvm-route-topology.edn`): `keygen` writes a private key through it,
+  `sign` an envelope, `sbom` bytes. The contract is the same on either host --
+  a private temporary in the target's own directory, the bytes, a flush, an
+  atomic rename -- and the `:clj` implementation is the one that was here,
+  unchanged inside its reader conditional.
+
+  On `:cljs` the write goes through `kotoba.compiler.nbb.io/write-set!`, the
+  Node route's existing fsync-before-rename boundary, which creates the
+  temporary 0600 (`:private?` is therefore the default posture there, as it
+  is for the JVM temporary) and sets `:executable?` as 0700 on the descriptor
+  before a byte lands. Owner-only Windows ACLs are a `:clj`-only claim; the
+  Node branch names that rather than pretending a `chmod` is one."
+  #?(:clj (:import [java.nio ByteBuffer]
+                   [java.nio.channels FileChannel]
+                   [java.nio.charset StandardCharsets]
+                   [java.nio.file CopyOption Files OpenOption Path Paths StandardCopyOption StandardOpenOption]
+                   [java.nio.file.attribute AclEntry AclEntryPermission AclEntryType
+                    AclFileAttributeView FileAttribute PosixFilePermissions]
+                   [java.util Collections EnumSet])
+     :cljs (:require [kotoba.artifact.core :as artifact]
+                     [kotoba.compiler.nbb.io :as nbb-io]
+                     ["node:fs" :as fs]
+                     ["node:os" :as os]
+                     ["node:path" :as path])))
 
 (defn temp-file!
-  "Create a temporary file under java.io.tmpdir, registered for deletion on
-  JVM exit, and return it as a java.io.File. This is the compiler's one
-  temp-file constructor: call sites spell a prefix and a suffix, not
-  java.io.File statics. Backed by java.nio.file.Files/createTempFile so the
-  permissions model stays nio's."
+  "Create a temporary file under the host's temporary directory and return
+  it -- a `java.io.File` registered for deletion on JVM exit on `:clj`, a
+  path string on `:cljs` (Node has no exit hook that survives a crash; the
+  caller that wants it gone removes it). This is the compiler's one temp-file
+  constructor: call sites spell a prefix and a suffix, not host statics. The
+  `:clj` half is backed by `Files/createTempFile` so the permissions model
+  stays nio's; the `:cljs` half creates the file itself, exclusively, 0600."
   ([prefix] (temp-file! prefix ".tmp"))
   ([prefix suffix]
-   (doto (.. (Files/createTempFile (str prefix) (str suffix)
-                                   (make-array FileAttribute 0))
-             toFile)
-     (.deleteOnExit))))
+   #?(:clj (doto (.. (Files/createTempFile (str prefix) (str suffix)
+                                           (make-array FileAttribute 0))
+                     toFile)
+             (.deleteOnExit))
+      :cljs (let [dir (.mkdtempSync fs (.join path (.tmpdir os) (str prefix)))
+                  file (.join path dir (str "file" suffix))
+                  constants (.-constants fs)
+                  fd (.openSync fs file (bit-or (.-O_CREAT constants)
+                                                (.-O_EXCL constants)
+                                                (.-O_WRONLY constants)) 384)]
+              (.closeSync fs fd)
+              file))))
 
 (defn- reject! [message data cause]
   (throw (ex-info message (merge {:phase :output} data) cause)))
 
+#?(:clj
+(do
 (defn- target-path [path]
   (when-not (and (string? path) (seq path))
     (reject! "output path is required" {} nil))
@@ -79,11 +112,32 @@
       (try (set-owner-acl! path true)
            (catch clojure.lang.ExceptionInfo nested (throw nested))
            (catch Exception nested
-             (reject! "executable output permissions are unsupported" {:path (str path)} nested))))))
+             (reject! "executable output permissions are unsupported" {:path (str path)} nested))))))))
+
+#?(:cljs
+   (defn- byte-source? [bytes]
+     (or (instance? js/Uint8Array bytes) (instance? js/Buffer bytes))))
+
+#?(:cljs
+   (defn- write-bytes-node! [output-path bytes {:keys [executable?]}]
+     ;; `write-set!` creates the temporary 0600 and renames it, so an output
+     ;; is owner-private on this host without asking; `:private?` adds
+     ;; nothing and `:executable?` is the one mode that differs. Its errors
+     ;; are already {:phase :output ...}; `target!` there refuses a missing
+     ;; parent with the same message the `:clj` branch uses.
+     (nbb-io/write-bytes! output-path bytes (if executable? 448 nil))
+     (.resolve path output-path)))
 
 (defn write-bytes!
   ([path bytes] (write-bytes! path bytes {}))
-  ([path bytes {:keys [private? executable?] :or {private? false executable? false}}]
+  ([path bytes {:keys [private? executable?] :or {private? false executable? false} :as options}]
+   #?(:cljs
+      (do
+        (when-not (byte-source? bytes)
+          (reject! "output must be a byte array" {:path path} nil))
+        (write-bytes-node! path bytes options))
+      :clj
+   (do
    (when-not (instance? (Class/forName "[B") bytes)
      (reject! "output must be a byte array" {:path path} nil))
    (let [target (target-path path)
@@ -111,12 +165,23 @@
        (catch clojure.lang.ExceptionInfo error (throw error))
        (catch Exception error
          (reject! "atomic output failed" {:path path :reason @operation} error))
-       (finally (Files/deleteIfExists temporary))))))
+       (finally (Files/deleteIfExists temporary))))))))
+
+(defn- utf8-bytes [^String text]
+  #?(:clj (.getBytes text StandardCharsets/UTF_8)
+     :cljs (js/Buffer.from text "utf8")))
 
 (defn write-edn!
+  "`pr-str` the value and publish it. On `:cljs` the value goes through
+  `artifact/edn-safe` first: a guest integer is a bigint there, and `pr-str`
+  renders a bigint as `#object[BigInt 7]`, which no reader takes back. The
+  JVM prints a long as its digits already, so the two hosts write the same
+  token for the same integer."
   ([path value] (write-edn! path value {}))
   ([path value options]
-   (write-bytes! path (.getBytes (pr-str value) StandardCharsets/UTF_8) options)))
+   (write-bytes! path (utf8-bytes (pr-str #?(:clj value
+                                             :cljs (artifact/edn-safe value))))
+                 options)))
 
 (defn write-text!
   "Like write-edn! but for a value that is ALREADY a string meant to be read
@@ -127,4 +192,4 @@
   ([path value options]
    (when-not (string? value)
      (reject! "output must be a string" {:path path} nil))
-   (write-bytes! path (.getBytes ^String value StandardCharsets/UTF_8) options)))
+   (write-bytes! path (utf8-bytes value) options)))

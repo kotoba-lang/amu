@@ -81,17 +81,24 @@
         (when-some [fd @descriptor]
           (try (.closeSync fs fd) (catch :default _ nil)))))))
 
-(defn- open-output! [temporary]
+(defn- open-output! [temporary mode]
   (let [constants (.-constants fs)
         no-follow (or (.-O_NOFOLLOW constants) 0)
         flags (bit-or (.-O_CREAT constants)
                       (.-O_EXCL constants)
                       (.-O_WRONLY constants)
                       no-follow)]
-    ;; 0600 is also the JVM temporary-file posture on POSIX. The NBB path does
-    ;; not emit keys, but private creation prevents another local user from
-    ;; observing an artifact before publication.
-    (.openSync fs temporary flags 384)))
+    ;; 0600 is also the JVM temporary-file posture on POSIX, and it is what a
+    ;; private key gets (`kotoba.compiler.atomic-output` writes `amu keygen`'s
+    ;; output through here since 2026-09-11). Private creation prevents
+    ;; another local user from observing an artifact before publication. An
+    ;; entry may ask for a different mode -- the loader binary is 0700 -- and
+    ;; it is set on the descriptor before a byte is written, so the file never
+    ;; exists with bytes and the wrong mode.
+    (let [fd (.openSync fs temporary flags 384)]
+      (when (and mode (not= mode 384))
+        (.fchmodSync fs fd mode))
+      fd)))
 
 (defn- fsync-directory! [dir]
   ;; Node cannot open directory handles on Windows. Keep that platform's
@@ -136,10 +143,10 @@
       (try
         (let [staged
               (mapv
-               (fn [index {:keys [target bytes text] entry-path :path}]
+               (fn [index {:keys [target bytes text mode] entry-path :path}]
                  (vreset! active-path entry-path)
                  (let [temporary (.join path temporary-dir (str index ".tmp"))
-                       fd (open-output! temporary)]
+                       fd (open-output! temporary mode)]
                    (vreset! descriptor fd)
                    (vreset! operation :write)
                    (cond
@@ -178,8 +185,9 @@
   (write-set! [(assoc entry :path output-path)])
   output-path)
 
-(defn write-bytes! [output-path ^js bytes]
-  (write-atomic! output-path {:bytes bytes}))
+(defn write-bytes!
+  ([output-path ^js bytes] (write-atomic! output-path {:bytes bytes}))
+  ([output-path ^js bytes mode] (write-atomic! output-path {:bytes bytes :mode mode})))
 
 ;; Same fsync-before-rename boundary as `write-bytes!`, for the native compile
 ;; path's `.kexe`/`.provenance.edn` output.

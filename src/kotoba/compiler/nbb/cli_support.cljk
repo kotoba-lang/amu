@@ -229,8 +229,18 @@
     ;; 65: a REFUSED definition is an answer (listed with its marker, exit 0),
     ;; and this is the other thing -- no identity could be computed at all.
     :definition-identity 66
-    (:signature :trust) 77
+    ;; `:runtime-identity` and `:receipt` joined when the trust-plane
+    ;; commands (`kotoba.compiler.nbb.trust-cli`) started answering here;
+    ;; `kotoba.compiler.cli/exit-code` has carried both all along.
+    ;; `:sign` is what `kotoba.verifier.signing` names a malformed key or an
+    ;; invalid validity interval at signing time. It was in neither table, so
+    ;; `amu public-key <not-a-key>` exited 70 -- "internal compiler error" --
+    ;; for a caller's bad input (measured 2026-09-11 by the first negative
+    ;; case of scripts/test-nbb-trust.cljk). Same code as the signature
+    ;; plane's other refusals, on both routes.
+    (:signature :sign :trust :runtime-identity) 77
     :output 74
+    :receipt 76
     70))
 
 (defn- error-report [error source-name]

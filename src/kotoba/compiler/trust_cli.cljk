@@ -1,0 +1,185 @@
+(ns kotoba.compiler.trust-cli
+  "The trust-plane commands of `bin/amu`, on both compiler hosts: keys,
+  trust sets, artifact signatures, receipts, and `inspect`.
+
+  Until 2026-09-11 these lived as branches of `kotoba.compiler.cli/dispatch!`
+  and reached the user only through `clojure -M:run`. Nothing in them is
+  about the JVM -- `kotoba.verifier.signing`, `kotoba.verifier`,
+  `kotoba.compiler.receipt`, `kotoba.compiler.interface` and
+  `kotoba.artifact.runtime-identity` are all portable -- so the JVM was the
+  route for want of two leaves (`bounded-edn`, `atomic-output`), which are
+  portable now (`docs/jvm-route-topology.edn`). After the `.cljk` rename the
+  JVM route cannot load this compiler at all, so until this namespace
+  existed `amu keygen` had no working route anywhere.
+
+  One implementation, two entrypoints: `kotoba.compiler.cli` (JVM) delegates
+  each of these commands here, and `kotoba.compiler.nbb.trust-cli` is the
+  Node entrypoint `bin/amu` routes them to. Every command RETURNS the value it
+  used to print; the entrypoint prints it. That is what lets one function be
+  the command on both hosts, and what lets a test call it without a process.
+
+  Not here, on purpose: `run` and `measure-runtime`. They need the
+  `kototama.native.executor` plugin, which is the JVM's `-M:native-run` alias
+  -- a runtime, not a compiler leaf -- and they stay on `kotoba.compiler.cli`
+  until that runtime has a Node host.
+
+  Integers: `--now`, `--expires` and friends arrive as decimal text and are
+  parsed with the host's `parse-long`; values read back from files arrive
+  in the host's guest-integer representation (a bigint on Node, see
+  `bounded-edn`). The verifier compares across the two exactly."
+  (:require [kotoba.artifact.runtime-identity :as runtime-identity]
+            [kotoba.compiler.atomic-output :as atomic-output]
+            [kotoba.compiler.bounded-edn :as bounded-edn]
+            [kotoba.compiler.interface :as interface]
+            [kotoba.compiler.receipt :as receipt]
+            [kotoba.compiler.source-path :as source-path]
+            [kotoba.compiler.target-names :as target-names]
+            [kotoba.verifier :as verifier]
+            [kotoba.verifier.signing :as signing]))
+
+(def commands
+  "Every command this namespace answers. `bin/amu` routes exactly these to
+  the Node entrypoint; the JVM CLI delegates exactly these here. One set,
+  read by both, so a command cannot be on one list and not the other."
+  #{"keygen" "public-key" "inspect" "trust-key" "trust-runtime"
+    "sign" "verify-signed" "verify" "receipt" "verify-receipt" "verify-chain"})
+
+(defn- option [args flag] (second (drop-while #(not= flag %) args)))
+
+(defn- usage! [message]
+  (throw (ex-info message {:phase :usage})))
+
+(defn- required [args flag]
+  (or (option args flag) (usage! (str "missing " flag))))
+
+(defn- long-option
+  "A decimal integer option, or the fallback when absent. Text that is not
+  an integer is a usage error, not a zero: `Long/parseLong` threw on the JVM
+  and `parse-long` answers nil, and nil would have flowed into a validity
+  check as `not-before 0`."
+  ([args flag] (long-option args flag nil))
+  ([args flag fallback]
+   (let [text (option args flag)]
+     (cond
+       (nil? text) (if (some? fallback) fallback (usage! (str "missing " flag)))
+       :else (or (parse-long text)
+                 (usage! (str flag " must be a decimal integer")))))))
+
+(defn now-seconds []
+  #?(:clj (quot (System/currentTimeMillis) 1000)
+     :cljs (quot (.now js/Date) 1000)))
+
+(defn dispatch!
+  "Run one trust-plane command and return the value to print."
+  [args]
+  (let [command (first args)]
+    (case command
+      "keygen"
+      (let [output (or (option args "--output") "kotoba-signing-key.edn")
+            key (signing/generate-keypair)]
+        (atomic-output/write-edn! output key {:private? true})
+        {:ok true :output output :signer (:signer key)})
+
+      "public-key"
+      (let [key (bounded-edn/read-file (second args))
+            public (signing/verification-key key)
+            output (or (option args "--output") "kotoba-verification-key.edn")]
+        (atomic-output/write-edn! output public)
+        {:ok true :output output :signer (:signer public)})
+
+      "inspect"
+      (let [input (source-path/admit! (second args))
+            inspected (interface/inspect-source (bounded-edn/read-text-file input))]
+        (if-let [output (option args "--output")]
+          (do (atomic-output/write-edn! output inspected)
+              {:ok true :output output :sha256 (:sha256 inspected)})
+          inspected))
+
+      "trust-key"
+      (let [key (bounded-edn/read-file (second args))
+            signer (signing/trusted-signer-id! key)
+            output (or (option args "--output") "kotoba-trust.edn")
+            trust {:format :kotoba.trust/v1 :trusted-signers #{signer}
+                   :revoked-signers #{} :revoked-artifacts #{}
+                   :trusted-runtime-sha256 #{}
+                   :revoked-runtime-sha256 #{}}]
+        (atomic-output/write-edn! output trust)
+        {:ok true :output output :signer signer})
+
+      "trust-runtime"
+      (let [evidence (bounded-edn/read-file (second args))
+            _ (runtime-identity/validate-measurement! evidence)
+            trust-path (required args "--trust")
+            trust (signing/validate-trust! (bounded-edn/read-file trust-path))
+            runtime (:runtime evidence)
+            runtime-sha (runtime-identity/identity-sha256 runtime)
+            output (or (option args "--output") trust-path)
+            updated (update trust :trusted-runtime-sha256 (fnil conj #{}) runtime-sha)]
+        (atomic-output/write-edn! output updated)
+        {:ok true :output output :runtime-sha256 runtime-sha})
+
+      "sign"
+      (let [artifact (bounded-edn/read-file (second args))
+            key (bounded-edn/read-file (required args "--key"))
+            output (or (option args "--output") "program.signed.kexe")
+            not-before (long-option args "--not-before" 0)
+            expires (long-option args "--expires" (+ (now-seconds) 86400))
+            envelope (signing/sign artifact key {:not-before not-before :expires expires})]
+        (atomic-output/write-edn! output envelope)
+        {:ok true :output output :signer (get-in envelope [:statement :signer])})
+
+      "verify-signed"
+      (let [envelope (bounded-edn/read-file (second args))
+            trust (bounded-edn/read-file (required args "--trust"))
+            now (long-option args "--now" (now-seconds))
+            result (signing/verify envelope trust now)]
+        (dissoc result :artifact))
+
+      "verify"
+      (let [artifact (bounded-edn/read-file (second args))]
+        (verifier/verify-artifact! artifact)
+        {:ok true :verified true :target (:target artifact)})
+
+      "receipt"
+      (let [envelope (bounded-edn/read-file (required args "--signed"))
+            trust (bounded-edn/read-file (required args "--trust"))
+            policy (bounded-edn/read-file (required args "--policy"))
+            input (bounded-edn/read-file (required args "--input"))
+            output-value (bounded-edn/read-file (required args "--result"))
+            parent-path (option args "--parent")
+            parent (when parent-path (bounded-edn/read-file parent-path))
+            executor-key (bounded-edn/read-file (required args "--executor-key"))
+            output-path (or (option args "--output") "run.receipt.edn")
+            value (receipt/create
+                   envelope trust policy input output-value
+                   {:now (long-option args "--now")
+                    :started-at (long-option args "--started-at")
+                    :finished-at (long-option args "--finished-at")
+                    :status (keyword (required args "--status"))
+                    :target (target-names/parse (required args "--target"))
+                    :entry (symbol (or (option args "--entry") "main"))
+                    :fuel-initial (long-option args "--fuel-initial" 512)
+                    :fuel-remaining (long-option args "--fuel-remaining")
+                    :parent parent :executor-key executor-key})]
+        (atomic-output/write-edn! output-path value)
+        {:ok true :output output-path :receipt-sha256 (:receipt-sha256 value)})
+
+      "verify-receipt"
+      (let [value (bounded-edn/read-file (second args))
+            envelope (bounded-edn/read-file (required args "--signed"))
+            trust (bounded-edn/read-file (required args "--trust"))
+            policy (bounded-edn/read-file (required args "--policy"))
+            input (bounded-edn/read-file (required args "--input"))
+            output-value (bounded-edn/read-file (required args "--result"))
+            parent-path (option args "--parent")
+            parent (when parent-path (bounded-edn/read-file parent-path))]
+        (receipt/verify value envelope trust policy input output-value
+                        {:now (long-option args "--now")
+                         :parent parent}))
+
+      "verify-chain"
+      (let [receipts (bounded-edn/read-file (second args))
+            trust (bounded-edn/read-file (required args "--trust"))]
+        (receipt/verify-chain receipts trust))
+
+      (usage! (str "not a trust-plane command: " (pr-str command))))))

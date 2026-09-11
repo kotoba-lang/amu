@@ -1,0 +1,321 @@
+#!/usr/bin/env nbb
+;; scripts/jvm-route-topology.cljk -- what still forces `bin/amu` onto the JVM,
+;; as a graph, in the order it can be removed.
+;;
+;; `bin/amu` has two routes. The Node route (`kotoba.compiler.nbb.*`) answers
+;; check / compile / definition-cids / the package and output-set commands and,
+;; since 2026-09-11, the trust plane. Everything else falls to
+;; `clojure -M:run` and `kotoba.compiler.cli` -- and after the .cljk rename
+;; (root ADR-2609111500) that route cannot load the compiler at all, so a
+;; command on it has no working route anywhere.
+;;
+;; This script does not guess which namespaces are the reason. It walks every
+;; namespace on the compiler's classpath, decides for each whether the Node
+;; host can load it, computes the closure `kotoba.compiler.cli` reaches, and
+;; orders the JVM-only part of that closure DEPENDENCIES FIRST -- the reverse
+;; topological order in which the leaves can be made portable without a
+;; dependent being ported before what it stands on. Then it says, per CLI
+;; command, which of those namespaces the command still stands on.
+;;
+;; A namespace is JVM-only iff NO portable file provides it. Twins count: the
+;; Node resolver probes `.cljk`, `.cljs.cljk`, `.cljc.cljk`, `.cljs`, `.cljc`,
+;; `.clj.cljk`, `.clj` in that order, so a `.clj` beside a `.cljc` is not a
+;; JVM-only namespace. A bare `.cljk` (post-rename) is classified by its
+;; previous extension when `cljk-origin.edn` records one, and otherwise by
+;; whether its ns form imports `java.*` / `clojure.lang` or requires
+;; `clojure.java.*` without a `:cljs` reader branch anywhere in the file.
+;;
+;; That classification is a static claim; `--probe` makes it a measured one by
+;; `require`-ing every namespace the classification calls JVM-only in a child
+;; nbb and recording which actually fail to load, and why.
+;;
+;;   nbb --classpath . scripts/jvm-route-topology.cljk [--probe] [--output docs/jvm-route-topology.edn]
+;;
+;; exit 0  wrote the topology
+;; exit 2  could not read the classpath or found no namespaces (refused, not clean)
+(ns jvm-route-topology
+  (:require [kotoba.lang.text :as str]
+            [scripts.lib :as lib]
+            ["node:child_process" :as child]
+            ["node:fs" :as fs]
+            ["node:path" :as path]))
+
+(defn- arg [flag]
+  (let [v (vec *command-line-args*) i (.indexOf v flag)]
+    (when-not (neg? i) (nth v (inc i) nil))))
+
+(def ^:private flag? (set *command-line-args*))
+
+(defn- die! [status message]
+  (println message)
+  (.exit js/process status))
+
+;; ---------------------------------------------------------------------------
+;; classpath
+
+(defn- classpath-dirs []
+  (let [result (.spawnSync child js/process.execPath
+                           (clj->js [(lib/join lib/root "node_modules" "nbb" "cli.js")
+                                     "--classpath" (lib/join lib/root "src")
+                                     (lib/join lib/root "scripts" "print-classpath.cljk")
+                                     lib/root])
+                           #js {:cwd lib/root :encoding "utf8" :maxBuffer (* 16 1024 1024)})]
+    (when (or (.-error result) (not (zero? (.-status result))))
+      (die! 2 (str "REFUSED: the classpath resolver did not answer: "
+                   (or (some-> (.-error result) .-message) (.-stderr result)))))
+    (->> (str/split-lines (str (.-stdout result)))
+         (map str/trim)
+         (remove str/blank?)
+         vec)))
+
+;; ---------------------------------------------------------------------------
+;; namespace inventory
+
+(defn- source-file? [f]
+  (some #(str/ends-with? f %) [".cljk" ".clj" ".cljc" ".cljs"]))
+
+(defn- walk-files [dir]
+  (let [out (volatile! [])]
+    (letfn [(walk [d]
+              (doseq [entry (.readdirSync fs d #js {:withFileTypes true})]
+                (let [p (.join path d (.-name entry))]
+                  (cond
+                    (.isDirectory entry) (when-not (= "node_modules" (.-name entry)) (walk p))
+                    (and (.isFile entry) (source-file? (.-name entry))) (vswap! out conj p)))))]
+      (when (.existsSync fs dir) (walk dir)))
+    @out))
+
+(defn- origin-map [repo-root]
+  (let [p (.join path repo-root "cljk-origin.edn")]
+    (if (.existsSync fs p)
+      (into {} (map (fn [[_ f e]] [f e]))
+            (re-seq #"\"([^\"]+\.cljk)\"\s+\"(\.clj[cs]?)\"" (.readFileSync fs p "utf8")))
+      {})))
+
+(defn- ns-form [text]
+  (when-let [m (.exec (js/RegExp. "\\(ns\\s+(?:\\^[^\\s]+\\s+)?([\\w.\\-*+!?$%&=<>]+)") text)]
+    (let [start (.-index m)]
+      (loop [i start depth 0]
+        (if (>= i (count text))
+          nil
+          (let [c (.charAt text i)
+                depth (cond (= c "(") (inc depth) (= c ")") (dec depth) :else depth)]
+            (if (and (= c ")") (zero? depth))
+              {:name (aget m 1) :form (subs text start (inc i))}
+              (recur (inc i) depth))))))))
+
+(defn- requires-of [form]
+  (let [in-vectors (map second (re-seq #"\[\s*([a-zA-Z][\w.\-*+!?$%&=<>]*)\s" form))
+        bare (map second (re-seq #"\(:require\s+([a-zA-Z][\w.\-]*)" form))]
+    (set (concat in-vectors bare))))
+
+(defn- kind-of
+  "`:portable` / `:jvm` / `:unknown` from the file's spelling alone. A bare
+  `.cljk` is `:unknown` even when `cljk-origin.edn` says it was `.clj`: the
+  port of a leaf keeps the file name, so origin is where a file CAME from,
+  not what it is now -- `bounded-edn` and `atomic-output` were `.clj` on
+  2026-09-11 morning and load on Node by evening under the same name."
+  [file rel omap]
+  (let [base (.basename path file)]
+    (cond
+      (or (str/ends-with? base ".clj.cljk") (str/ends-with? base ".clj")) :jvm
+      (some #(str/ends-with? base %) [".cljc.cljk" ".cljs.cljk" ".cljc" ".cljs"]) :portable
+      (contains? #{".cljc" ".cljs"} (get omap rel)) :portable
+      :else :unknown)))
+
+(defn- content-kind
+  "For a bare `.cljk`: JVM-only iff the file names the JVM with no `:cljs`
+  branch anywhere -- a `java.*` / `clojure.lang` import, a `clojure.java.*`
+  require, or a `:clj`-only reader conditional. A file with none of those is
+  portable by content whatever it used to be called (`receipt`,
+  `coverage-evidence`)."
+  [form text reqs]
+  (let [;; `#?(:clj a :cljs b)` and `#?@(:clj [...] :cljs [...])` both carry a
+        ;; :cljs branch without the literal text "#?(:cljs"
+        cljs-branch? (boolean (re-find #"#\?@?\([\s\S]{0,400}?:cljs[\s\[(]" text))
+        clj-branch? (str/includes? text "#?(:clj")]
+    (cond
+      cljs-branch? :portable
+      (re-find #"\(:import[\s\S]*?(java\.|javax\.|clojure\.lang)" form) :jvm
+      (some #(str/starts-with? % "clojure.java") reqs) :jvm
+      clj-branch? :jvm
+      ;; a body that names the JVM without importing it: `System/exit`,
+      ;; `(catch java.io.FileNotFoundException ...)`, `clojure.lang.ExceptionInfo`
+      (re-find #"\bSystem/|\bjava\.[a-z]+\.[A-Z]|\bclojure\.lang\.[A-Z]" text) :jvm
+      :else :portable)))
+
+(defn- inventory [roots]
+  (let [files (volatile! {})]
+    (doseq [root roots]
+      (let [repo-root (if (= root (lib/join lib/root "src")) lib/root (.dirname path root))
+            omap (origin-map repo-root)]
+        (doseq [file (walk-files root)]
+          (let [text (try (.readFileSync fs file "utf8") (catch :default _ nil))
+                parsed (when text (ns-form text))]
+            (when parsed
+              (let [reqs (requires-of (:form parsed))
+                    rel (.relative path repo-root file)
+                    spelled (kind-of file rel omap)
+                    kind (if (= :unknown spelled) (content-kind (:form parsed) text reqs) spelled)]
+                (vswap! files update (:name parsed) (fnil conj [])
+                        {:path file :kind kind
+                         :requires (vec (sort (disj reqs (:name parsed))))})))))))
+    ;; a namespace is JVM-only iff no portable file provides it
+    (into (sorted-map)
+          (map (fn [[n fs]]
+                 (let [portable (filter #(= :portable (:kind %)) fs)
+                       chosen (or (first portable) (first fs))]
+                   [n {:kind (if (seq portable) :portable :jvm)
+                       :path (:path chosen)
+                       :requires (:requires chosen)
+                       :files (mapv (juxt :path :kind) fs)}])))
+          @files)))
+
+;; ---------------------------------------------------------------------------
+;; reach and order
+
+(defn- reach [inv start]
+  (loop [seen #{} stack [start]]
+    (if (empty? stack)
+      seen
+      (let [n (peek stack) stack (pop stack)]
+        (if (or (seen n) (not (contains? inv n)))
+          (recur seen stack)
+          (recur (conj seen n) (into stack (:requires (inv n)))))))))
+
+(defn- dependencies-first
+  "Kahn's algorithm over the JVM-only subgraph. Returns [order levels]:
+  a leaf (no JVM-only dependency) is level 1, and a namespace's level is one
+  more than the deepest JVM-only namespace it requires."
+  [inv jvm]
+  (let [deps (into {} (map (fn [n] [n (vec (filter jvm (:requires (inv n))))])) jvm)
+        dependents (reduce (fn [m [n ds]] (reduce #(update %1 %2 (fnil conj []) n) m ds)) {} deps)]
+    (loop [indeg (into {} (map (fn [[n ds]] [n (count ds)])) deps)
+           ready (vec (sort (keep (fn [[n c]] (when (zero? c) n)) indeg)))
+           order []
+           levels {}]
+      (if (empty? ready)
+        (do (when (not= (count order) (count jvm))
+              (die! 2 (str "REFUSED: cycle among JVM-only namespaces; ordered "
+                           (count order) " of " (count jvm))))
+            [order levels deps])
+        (let [n (first ready)
+              level (inc (reduce max 0 (map levels (deps n))))
+              [indeg ready']
+              (reduce (fn [[indeg ready] m]
+                        (let [c (dec (indeg m))]
+                          [(assoc indeg m c) (if (zero? c) (conj ready m) ready)]))
+                      [indeg (vec (rest ready))]
+                      (sort (get dependents n [])))]
+          (recur indeg ready' (conj order n) (assoc levels n level)))))))
+
+;; ---------------------------------------------------------------------------
+;; commands
+
+(defn- cli-commands
+  "Each `case` branch of `kotoba.compiler.cli/dispatch!` and the namespaces
+  its body names through an alias. Coarse -- an alias used in a shared helper
+  is not seen -- so this is a lower bound on what a command reaches, stated
+  as one."
+  [inv]
+  (let [text (.readFileSync fs (lib/join lib/root "src" "kotoba" "compiler" "cli.cljk") "utf8")
+        aliases (into {} (map (fn [[_ ns alias]] [alias ns]))
+                      (re-seq #"\[([\w.\-]+)\s+:as\s+([\w\-]+)\]" (subs text 0 (min 4000 (count text)))))
+        lines (vec (str/split-lines text))
+        heads (keep-indexed (fn [i l] (when (re-matches #"^    \"[a-z\-]+\"$" l)
+                                        [i (str/replace l #"[\s\"]" "")]))
+                            lines)
+        end (or (first (keep-indexed (fn [i l] (when (str/includes? l "unknown or missing kotoba command") i)) lines))
+                (count lines))
+        heads (vec heads)]
+    (into (sorted-map)
+          (map-indexed
+           (fn [k [i cmd]]
+             (let [j (if (< (inc k) (count heads)) (first (nth heads (inc k))) end)
+                   body (str/join "\n" (subvec lines i j))
+                   used (set (map second (re-seq #"\b([a-z][\w\-]*)/[\w\-!?*]+" body)))
+                   direct (set (keep aliases used))
+                   closure (reduce (fn [acc n] (into acc (reach inv n))) #{} direct)]
+               [cmd {:jvm-only (vec (sort (filter #(= :jvm (:kind (inv %))) closure)))}])))
+          heads)))
+
+(defn- trust-commands []
+  ;; read from the source of truth rather than restated here
+  (let [text (.readFileSync fs (lib/join lib/root "src" "kotoba" "compiler" "trust_cli.cljk") "utf8")
+        m (re-find #"\(def commands[\s\S]*?#\{([^}]*)\}" text)]
+    (set (map #(str/replace % "\"" "") (re-seq #"\"[a-z\-]+\"" (second m))))))
+
+(defn- node-route-commands []
+  ;; the literal set the driver routes; `worker`/`compile` are target-gated
+  (let [text (.readFileSync fs (lib/join lib/root "bin" "amu") "utf8")
+        block (second (re-find #"function nbbNativeEligible\(args\) \{([\s\S]*?)\n\}" text))]
+    (into (trust-commands)
+          (map second (re-seq #"command === \"([a-z\-]+)\"" block)))))
+
+;; ---------------------------------------------------------------------------
+;; probe
+
+(defn- probe-loads [classpath names]
+  (into (sorted-map)
+        (map (fn [n]
+               (let [result (.spawnSync child js/process.execPath
+                                        (clj->js [(lib/join lib/root "node_modules" "nbb" "cli.js")
+                                                  "--classpath" classpath
+                                                  "-e" (str "(require (quote [" n "]))")])
+                                        #js {:cwd lib/root :encoding "utf8" :timeout 180000
+                                             :maxBuffer (* 16 1024 1024)})
+                     err (str (.-stderr result))
+                     message (second (re-find #"Message:\s+(.*)" err))]
+                 [n (if (and (nil? (.-error result)) (zero? (.-status result)))
+                      {:loads? true}
+                      {:loads? false :reason (or message (str/trim (subs err 0 (min 200 (count err)))))})])))
+        names))
+
+;; ---------------------------------------------------------------------------
+
+(let [dirs (classpath-dirs)
+      roots (into [(lib/join lib/root "src")] dirs)
+      inv (inventory roots)
+      _ (when (< (count inv) 50)
+          (die! 2 (str "REFUSED: only " (count inv) " namespaces found; the classpath is not the compiler's")))
+      cli-reach (reach inv "kotoba.compiler.cli")
+      jvm (set (filter #(= :jvm (:kind (inv %))) cli-reach))
+      [order levels deps] (dependencies-first inv jvm)
+      commands (cli-commands inv)
+      node-cmds (node-route-commands)
+      commands (into (sorted-map)
+                     (map (fn [[cmd m]] [cmd (assoc m :route (if (contains? node-cmds cmd) :node :jvm))]))
+                     ;; the trust plane is no longer a branch of dispatch!, so
+                     ;; it is listed from its own source of truth
+                     (concat (map (fn [c] [c {:jvm-only []}]) (trust-commands)) commands))
+      probe (when (flag? "--probe")
+              (probe-loads (str/join ":" (into [(lib/join lib/root "src") (lib/join lib/root "resources")] dirs))
+                           (sort jvm)))
+      short #(-> %
+                 (str/replace (str lib/root "/") "")
+                 (str/replace (str (.homedir (js/require "node:os")) "/.gitlibs/libs/io.github.kotoba-lang/") "~lib/"))
+      topology {:format :amu.jvm-route-topology/v1
+                :generated-by "scripts/jvm-route-topology.cljk"
+                :scanned {:namespaces (count inv) :classpath-dirs (count dirs)}
+                :cli-reach {:namespaces (count cli-reach) :jvm-only (count jvm)}
+                :dependencies-first
+                (mapv (fn [n] (cond-> {:namespace n :level (levels n)
+                                       :file (short (:path (inv n)))
+                                       :jvm-only-requires (deps n)}
+                                probe (assoc :loads-on-node? (get-in probe [n :loads?])
+                                             :node-refusal (get-in probe [n :reason]))))
+                      order)
+                :commands commands}
+      out (arg "--output")]
+  (println (str "SCANNED\t" (count inv) "\tnamespaces on " (inc (count dirs)) " roots; "
+                (count cli-reach) " reached from kotoba.compiler.cli, " (count jvm) " JVM-only"))
+  (doseq [n order]
+    (println (str "L" (levels n) "\t" n
+                  (when probe (str "\t" (if (get-in probe [n :loads?]) "loads" (str "refused: " (get-in probe [n :reason])))))
+                  "\t<- " (if (seq (deps n)) (str/join ", " (deps n)) "-"))))
+  (println)
+  (doseq [[cmd {:keys [route jvm-only]}] commands]
+    (println (str (name route) "\t" cmd "\t" (if (seq jvm-only) (str/join ", " jvm-only) "-"))))
+  (when out
+    (.writeFileSync fs out (str (pr-str topology) "\n") "utf8")
+    (println (str "\nwrote " out))))

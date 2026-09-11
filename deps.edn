@@ -886,7 +886,15 @@
          ;; only, 2 commits): `string-operations` gains `string-index-of 2`. Without it
          ;; the backend emits code this verifier then refuses -- the second gate of
          ;; ADR 0002, which measured that one gate alone unlocks nothing.
-         :git/sha "85ea11d61cc3613bfb5ac80a7736de7ae1382942"}
+         ;;
+         ;; Advanced 2026-09-11, 85ea11d6 -> f1efb423 (kotoba-verifier main, forward
+         ;; only; carries that repo's .cljk rename and the eighth site of the
+         ;; bigint class): `signing/sign` and `signing/verify` checked a validity
+         ;; bound with `integer?`, which is false for the bigint the kotoba reader
+         ;; hands back on Node. Measured here: an envelope signed on Node, written,
+         ;; read back, refused as "signature statement mismatch". Required by the
+         ;; trust-plane commands leaving the JVM route in this same commit.
+         :git/sha "f1efb423e495b8a4073fa8d163473069cf58737f"}
 }
  :aliases {:test {:extra-paths ["test"]
                   :extra-deps
