@@ -544,3 +544,26 @@
                        "(defn run [n :i64] :i64 (app (lam [x] (+ x 2)) n))\n"
                        "(defn main [] :i64 (run 1))")))
       "+1 and +2 must not share a CID"))
+
+(deftest a-folded-constant-and-its-literal-mint-the-same-cid
+  ;; adr-2609111900, the selfhost ceiling loop, kotoba-sema pin 6a35ed4a: a
+  ;; top-level `def` whose value is a pure expression is evaluated ONCE at
+  ;; analysis time on the reference interpreter and the RESULT is the
+  ;; constant, substituted exactly as a literal is. The whole point of that
+  ;; design is this equality: the identity of a function that reads the
+  ;; constant is the VALUE's, and how the author spelled the value is not in
+  ;; it. `amu definition-cids --jvm-free` on the same three modules answers
+  ;; bafyreigwbmz... / bafyreigwbmz... / bafyreiacuk... (measured 2026-09-11).
+  (let [module (fn [k] (str "(ns d (:export [read-k]))\n"
+                            "(def k " k ")\n"
+                            "(defn read-k [] :i64 (+ k 1))\n"))
+        literal (cids (module "4096"))
+        folded (cids (module "(* 4 1024)"))
+        control (cids (module "4097"))]
+    (is (string? (get literal "read-k")))
+    (is (= (get literal "read-k") (get folded "read-k"))
+        "(def k 4096) and (def k (* 4 1024)) are one constant")
+    ;; the negative control: without it the test passes for an identity that
+    ;; ignores the constant altogether
+    (is (not= (get literal "read-k") (get control "read-k"))
+        "4096 and 4097 must not share a CID")))
