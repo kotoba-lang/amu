@@ -63,12 +63,43 @@
 ;; otherwise report it as an unbound variable in a module the author never saw.
 ;;
 ;; Fail-closed both ways: a template reached with no binding (single-file
-;; `amu check`, or a project `:require` without `:with`) is refused by name,
-;; and so is a `:with` on a module that declares no `:params`, a `:with` naming
-;; a parameter the template does not declare, and a `:with` missing one it
-;; does. Instantiations are modules: they count against `max-project-modules`
-;; and their functions against `max-project-functions`, and two importers
-;; binding the same parameters to the same types share ONE instantiation.
+;; `amu check`, or a project `:require` without `:with` of a template that
+;; declares no default) is refused by name, and so is a `:with` on a module
+;; that declares no `:params`, a `:with` naming a parameter the template does
+;; not declare, and a `:with` missing one it does. Instantiations are modules:
+;; they count against `max-project-modules` and their functions against
+;; `max-project-functions`, and two importers binding the same parameters to
+;; the same types share ONE instantiation.
+;;
+;; DEFAULT BINDINGS (2026-09-11, kotoba-lang ADR-clojure-set-compat-template-
+;; default-binding). A parameter may declare the type it is bound to when the
+;; importer says nothing: `(:params [elem :keyword])` -- the name, then the
+;; type, the way a `defn` parameter vector spells `[s :string]`. A `:require`
+;; of that template WITHOUT `:with` is then the require WITH `:with {elem
+;; :keyword}`, in every respect: same instantiation key, same substituted
+;; text, same definition CIDs, shared with any importer that spells the
+;; binding out. Nothing is inferred from a call site and nothing is
+;; order-dependent: the binding is a fact written in the template file.
+;;
+;; Why this exists: DUAL-RUNTIME source. The compiler's own modules keep
+;; loading on nbb / Clojure while they are being admitted here, and their
+;; `(:require [clojure.set :as set])` cannot carry `:with` -- measured
+;; 2026-09-11, ClojureScript 1.12.42 refuses the spec outright ("Only :as,
+;; :refer and :rename options supported in :require / :require-macros"),
+;; and Clojure 1.12.5 / nbb accept it only because they ignore libspec
+;; options they do not know, which is not a place to hang a meaning. So the
+;; compat template `lang/compat/clojure/set.kotoba` (kotoba-lang) declares
+;; `(:params [elem :keyword])`: a module whose sets are keyword sets links
+;; with no change on its side, and one whose sets are not is refused at the
+;; first call whose argument is a `[:set :symbol]` -- by the frontend, by
+;; type, in the instantiation `clojure.set with {elem :keyword}`, which the
+;; refusal names.
+;;
+;; A template may mix: `(:params [k :keyword v])` defaults `k` and not `v`,
+;; and a require without `:with` is refused naming `v`. An explicit `:with`
+;; still binds EVERY parameter -- defaults do not fill in behind a partial
+;; map, because a binding that is half written and half inherited is two
+;; places to read to learn one instantiation.
 
 (defn- type-form?
   "The frontend's own discriminator (`parameter-type-item?`): every value type
@@ -108,18 +139,43 @@
 (defn- describe-binding [namespace binding]
   (str namespace " with " (pr-str (into (sorted-map) binding))))
 
+(defn template-param-names
+  "The parameter SYMBOLS of a `(:params [...])` vector, with the default type
+  forms that may follow them left out: `[elem :keyword]` names `elem`."
+  [declared]
+  (vec (filter symbol? declared)))
+
 (defn- validate-template-params!
+  "`[sym type? ...]` -> `{:names [sym ...] :defaults {sym type ...}}`. A
+  symbol is a parameter; a type form right after a symbol is that
+  parameter's default binding; anything else is refused by name. Two
+  parameters may not share a name, and a default may not be a symbol -- a
+  symbol after a symbol is the NEXT parameter, so `[a b]` is two parameters
+  and never `a` defaulting to `b`."
   [name declared]
-  (when-not (and (vector? declared)
-                 (seq declared)
-                 (every? #(and (simple-symbol? %) (not (str/blank? (str %)))) declared)
-                 (= (count declared) (count (set declared))))
+  (when-not (and (vector? declared) (seq declared))
     (reject! "namespace :params must be a non-empty vector of distinct simple symbols"
              {:namespace name :params declared}))
-  (when (> (count declared) max-template-parameters)
-    (reject! "namespace :params exceed the template parameter limit"
-             {:namespace name :count (count declared) :limit max-template-parameters}))
-  (vec declared))
+  (let [{:keys [names defaults]}
+        (loop [items (seq declared) names [] defaults {}]
+          (if (empty? items)
+            {:names names :defaults defaults}
+            (let [item (first items)]
+              (when-not (and (simple-symbol? item) (not (str/blank? (str item))))
+                (reject! (if (type-form? item)
+                           "namespace :params default type must follow a parameter symbol"
+                           "namespace :params must be a non-empty vector of distinct simple symbols")
+                         {:namespace name :params declared :item item}))
+              (if (type-form? (second items))
+                (recur (nnext items) (conj names item) (assoc defaults item (second items)))
+                (recur (next items) (conj names item) defaults)))))]
+    (when-not (= (count names) (count (set names)))
+      (reject! "namespace :params must be a non-empty vector of distinct simple symbols"
+               {:namespace name :params declared}))
+    (when (> (count names) max-template-parameters)
+      (reject! "namespace :params exceed the template parameter limit"
+               {:namespace name :count (count names) :limit max-template-parameters}))
+    {:names names :defaults defaults}))
 
 (defn- validate-binding!
   "Shape of one `:with` map, checked in the module that wrote it. Each value
@@ -450,7 +506,7 @@
           (let [requires (mapv (fn [{:keys [with spec] :as require}]
                                  (if (contains? require :with)
                                    (-> require
-                                       (assoc :with (validate-binding! name spec with params))
+                                       (assoc :with (validate-binding! name spec with (:names params)))
                                        (dissoc :spec))
                                    require))
                                requires)]
@@ -474,9 +530,14 @@
             ;; the two would silently turn the second into the first.
             ;;
             ;; `:params` is likewise nil for an ordinary module and a vector
-            ;; for a template; the two are different modules to the linker.
+            ;; of parameter names for a template; the two are different
+            ;; modules to the linker. `:param-defaults` is the template's
+            ;; declared default binding, a map over some or all of those
+            ;; names (nil for an ordinary module, `{}` for a template that
+            ;; declares none).
             {:namespace name :exports exports :requires requires
-             :capabilities capabilities :schemas schemas :params params}))))))
+             :capabilities capabilities :schemas schemas
+             :params (:names params) :param-defaults (:defaults params)}))))))
 
 ;; Each module is analysed on its own, so a schema name resolves inside the
 ;; module that declares it and the tables never merge. What can still go wrong
@@ -722,6 +783,18 @@
                     ;; Left as written: elaboration into a typed ability is the
                     ;; frontend's job, and it runs identically on linked source.
                     (when (capability-operation? op) op)
+                    ;; Also left as written: the reader's TAGGED forms --
+                    ;; `#"pat"` reads as `(kotoba.reader/regex "pat")`, `#js`
+                    ;; as `(kotoba.reader/js ...)`, a 9+ element set as
+                    ;; `(kotoba.reader/set [...])` -- which the frontend refuses
+                    ;; BY NAME (`:kotoba.error/host-regex-literal` and kin).
+                    ;; Measured 2026-09-11 on kotoba-native's aggregate_abi:
+                    ;; this rewrite reached the tag first and reported the
+                    ;; regex as `qualified call is not an admitted exported
+                    ;; import`, a sentence about imports for a module whose
+                    ;; one import resolved. The frontend's refusal is the one
+                    ;; that names the thing.
+                    (when (= "kotoba.reader" (namespace op)) op)
                     (reject! "qualified call is not an admitted exported import" {:call op}))
                 op)]
       (list* op' (map #(rewrite-import-calls % imported) args)))
@@ -1464,15 +1537,38 @@
     ;; NAMESPACE: a template requiring itself under another binding is an
     ;; unbounded family of instantiations, and refusing it as a cycle is the
     ;; bound.
-    (letfn [(instantiate [name binding]
+    (letfn [(default-binding
+              ;; The binding a `:require` WITHOUT `:with` means: the required
+              ;; template's declared defaults, when they cover every
+              ;; parameter; nil otherwise (an ordinary module, or a template
+              ;; with a parameter that has no default -- `instantiate`
+              ;; refuses that one by name). A `:with` that IS written is
+              ;; returned as written: defaults never fill in behind it.
+              [{dependency :namespace with :with :as require}]
+              (if (some? with)
+                require
+                (let [info (:info (get parsed dependency))
+                      params (:params info)
+                      defaults (:param-defaults info)]
+                  (if (and (some? params) (every? #(contains? defaults %) params))
+                    (assoc require :with (into (sorted-map) defaults))
+                    require))))
+            (with-default-bindings [info]
+              (update info :requires #(mapv default-binding %)))
+            (instantiate [name binding]
               (let [{:keys [forms info]} (get parsed name)
-                    params (:params info)]
+                    params (:params info)
+                    defaults (:param-defaults info)]
                 (cond
                   (and (some? params) (nil? binding))
-                  (reject! (str "template module " name " declares (:params " (pr-str params)
-                                ") and needs an instantiation: require it with :with "
-                                (pr-str (into {} (map (fn [p] [p (symbol (str "<type>"))])) params)))
-                           {:module name :params params})
+                  (let [undefaulted (vec (remove #(contains? defaults %) params))]
+                    (reject! (str "template module " name " declares (:params " (pr-str params)
+                                  ") and needs an instantiation: require it with :with "
+                                  (pr-str (into {} (map (fn [p] [p (symbol (str "<type>"))])) params))
+                                  (when (seq defaults)
+                                    (str "; its parameter(s) " (pr-str undefaulted)
+                                         " declare no default, so the require cannot omit :with")))
+                             {:module name :params params :undefaulted undefaulted}))
 
                   (and (nil? params) (some? binding))
                   (reject! (str "module " name " declares no (:params ...) but is required with :with "
@@ -1496,9 +1592,9 @@
                     ;; a forwarded `:with {elem elem}` is concrete by the time
                     ;; the requirement below is resolved.
                     (let [forms' (instantiate-forms forms binding name)]
-                      {:forms forms' :info (module-info forms')}))
+                      {:forms forms' :info (with-default-bindings (module-info forms'))}))
 
-                  :else {:forms forms :info info})))
+                  :else {:forms forms :info (with-default-bindings info)})))
             (visit [key depth]
               (let [name (key-namespace key)
                     binding (key-binding key)]

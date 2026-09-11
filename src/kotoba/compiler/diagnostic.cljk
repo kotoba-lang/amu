@@ -164,8 +164,11 @@
 
 (defn- params-clause-message [form]
   (let [params (second form)
+        ;; `[elem :keyword]` declares ONE parameter with a default; the type
+        ;; form after a symbol is not a second parameter (project.cljk
+        ;; `template-param-names`), so the suggested binding names symbols only.
         binding (when (vector? params)
-                  (pr-str (into {} (map (fn [p] [p (symbol "<type>")])) params)))]
+                  (pr-str (into {} (map (fn [p] [p (symbol "<type>")])) (filter symbol? params))))]
     (str "template module declares (:params " (pr-str params) ") and needs an "
          "instantiation: require it with :with " (or binding "{<parameter> <type>}")
          " from an importing module and link the project "
