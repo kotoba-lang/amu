@@ -126,6 +126,41 @@
                                     "namespace resolves from multiple explicit source paths")]
           (throw (js/Error. failure)))))))
 
+(check "a-kotoba-twin-in-another-root-stands-in-for-the-cljk"
+  (fn []
+    ;; 2026-09-12 (adr-2609111900): the compiler's own sources require
+    ;; `kotoba.lang.text`, which `text/src` carries as a `.cljk` the guest
+    ;; route can never admit (host interop is a property of that module) and
+    ;; `kotoba-lang/lang/compat` carries as a `.kotoba` forwarder. The
+    ;; `.kotoba` is the module; both argument orders, because "first root
+    ;; wins" would pass one of them and shadow the other silently.
+    (let [a (tmpdir) b (tmpdir)
+          main (spit! a "main.cljk" entry)
+          _ (spit! a "util.cljk" (util 2))
+          _ (spit! b "util.kotoba" (util 5))]
+      (doseq [roots [[a b] [b a]]]
+        (let [graph (project-files/load-closed-graph main roots)
+              {:keys [source]} (project/link-source (:sources graph) (:root graph))
+              kir (ir/lower (sema/analyze source {:admit-linked-synthetics? true}))]
+          (assert (= (.join path (.realpathSync fs b) "util.kotoba") (get (:paths graph) 'util))
+                  (str "the .kotoba twin must be the resolved path, got " (get (:paths graph) 'util)))
+          ;; Not just which path was chosen -- that the twin's code is what ran.
+          (assert (= 26 (js/Number (ir/execute kir 'run [5])))
+                  (str "the .kotoba twin (x5) must be what runs, got " (ir/execute kir 'run [5]))))))))
+
+(check "two-kotoba-twins-in-two-roots-are-still-ambiguous"
+  (fn []
+    ;; The exception is by KIND, not a return to argument order: two
+    ;; guest-native modules of one namespace have no tie-breaker.
+    (let [a (tmpdir) b (tmpdir)
+          main (spit! a "main.cljk" entry)
+          _ (spit! a "util.kotoba" (util 2))
+          _ (spit! b "util.kotoba" (util 3))]
+      (doseq [roots [[a b] [b a]]]
+        (when-let [failure (rejects #(project-files/load-closed-graph main roots)
+                                    "namespace resolves from multiple explicit source paths")]
+          (throw (js/Error. failure)))))))
+
 (check "symlink-out-of-the-root-is-refused"
   (fn []
     (let [root (tmpdir) outside (tmpdir)

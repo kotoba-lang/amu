@@ -10,6 +10,16 @@
   - Extension priority (`.kotoba`, `.cljk`, `.cljc`) is local to ONE root. The
     same namespace present under two explicit roots is ambiguous and rejected;
     it must never be settled by argument order.
+  - One exception, settled by KIND and not by order (2026-09-12, adr-2609111900):
+    a `.kotoba` module in one root stands in for a `.cljk` / `.cljc` of the
+    same namespace in another. A dual-runtime source is what the HOST runtime
+    loads through its own classpath; the guest-native twin beside it on the
+    project route is the module the guest route was always going to link --
+    the same priority this loader already applies within one root, carried
+    across roots. `kotoba-lang/lang/compat/kotoba/lang/text.kotoba` shadowing
+    `text/src/kotoba/lang/text.cljk` is the case it exists for. Two `.kotoba`
+    or two `.cljk` in two roots are still ambiguous and still refused, in
+    either argument order.
   - Every discovered path is resolved through the real path before use, and
     must lie under one of the source roots. The root module is exempt because
     it was named explicitly rather than discovered by namespace.
@@ -86,10 +96,17 @@
       (empty? existing)
       (reject! "required module is missing from the explicit source paths"
                {:module namespace})
-      (> (count existing) 1)
-      (reject! "namespace resolves from multiple explicit source paths"
-               {:module namespace})
-      :else (first existing))))
+      (= (count existing) 1)
+      (first existing)
+      :else
+      ;; Across roots, exactly one guest-native `.kotoba` stands in for any
+      ;; number of dual-runtime `.cljk` / `.cljc` twins; anything else is the
+      ;; ambiguity the docstring refuses.
+      (let [guest-native (filterv #(str/ends-with? (str %) ".kotoba") existing)]
+        (if (= 1 (count guest-native))
+          (first guest-native)
+          (reject! "namespace resolves from multiple explicit source paths"
+                   {:module namespace}))))))
 
 (defn load-closed-graph
   "Load only the transitive closure rooted at input from explicit source
