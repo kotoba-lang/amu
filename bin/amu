@@ -158,12 +158,12 @@ function nbbEntrypoint(root, args) {
     || command === "package-manifest" || command === "package-lock"
     || command === "package-fetch"
     || target === undefined || target.startsWith("wasm32");
-  const filename = ["verify-output-set", "sign-output-set"].includes(command) ? "output_set_cli.cljs"
-    : command === "extract-native" ? "x86_64_cli.cljs"
-    : (command === "compile" && nbbJsTargets.has(target)) ? "js_cli.cljs"
-    : wasm ? "wasm_cli.cljs"
-      : target && target.startsWith("evm") ? "evm_cli.cljs"
-        : target.startsWith("aarch64") ? "aarch64_cli.cljs" : "x86_64_cli.cljs";
+  const filename = ["verify-output-set", "sign-output-set"].includes(command) ? "output_set_cli.cljk"
+    : command === "extract-native" ? "x86_64_cli.cljk"
+    : (command === "compile" && nbbJsTargets.has(target)) ? "js_cli.cljk"
+    : wasm ? "wasm_cli.cljk"
+      : target && target.startsWith("evm") ? "evm_cli.cljk"
+        : target.startsWith("aarch64") ? "aarch64_cli.cljk" : "x86_64_cli.cljk";
   return path.join(root, "src", "kotoba", "compiler", "nbb", filename);
 }
 
@@ -193,7 +193,7 @@ function resolverFailure(result) {
 // failure to the wrong fix (measured 2026-08-18: the lock was byte-fresh, the
 // job before it on the same image had resolved the same lock fine).
 function resolveWithLock(root, nbbCli) {
-  const script = path.join(root, "scripts", "print-classpath.cljs");
+  const script = path.join(root, "scripts", "print-classpath.cljk");
   if (!fs.existsSync(path.join(root, "deps-lock.edn"))) {
     return { entries: null, reason: "deps-lock.edn is not present" };
   }
@@ -354,7 +354,7 @@ const NON_PATH_FLAGS = new Set(["--name", "--version", "--url", "--kind",
 // Extensions this CLI is handed as filesystem paths. A bare word like
 // `compile` or `wasm32-browser` has none and is left alone.
 const PATH_EXTENSIONS = [
-  ".kotoba", ".edn", ".json", ".wasm", ".wat", ".mjs", ".js", ".cljs", ".cljc",
+  ".kotoba", ".edn", ".json", ".wasm", ".wat", ".mjs", ".js", ".cljk", ".cljs", ".cljc",
   ".clj", ".lock", ".txt", ".md", ".c", ".h", ".o", ".a", ".so", ".dylib", ".exe"
 ];
 

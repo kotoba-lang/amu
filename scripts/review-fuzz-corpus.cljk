@@ -51,7 +51,7 @@
           (println (str "{:mode :" (subs mode 2) " :files " file-count " :bytes " total
                         " :new " (count fresh) " :duplicate " duplicate "}"))
           (when (and (= mode "--apply") (seq fresh))
-            (lib/run "npx" (into ["--no-install" "nbb" (lib/join lib/root "scripts" "fuzz-native.cljs")]
+            (lib/run "npx" (into ["--no-install" "nbb" (lib/join lib/root "scripts" "fuzz-native.cljk")]
                                  [])
                      {:env {:KOTOBA_FUZZ_IMPORT_DIR source
                             :KOTOBA_NATIVE_FUZZ_RUNS "20000"}})
