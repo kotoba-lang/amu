@@ -98,11 +98,11 @@
 ;; to a temp file keyed by a hash of `deps.edn`'s bytes so the fast path
 ;; only pays the JVM-startup + dependency-resolution cost once per distinct
 ;; `deps.edn` (e.g. once per CI job's checkout), not once per `compile`/
-;; `check` call -- callers like `scripts/fuzz-native.cljs` invoke this
+;; `check` call -- callers like `scripts/fuzz-native.cljk` invoke this
 ;; fast path thousands of times in a loop.
 ;;
 ;; That is now the FALLBACK. `deps-lock.edn` records the closure `clojure
-;; -Spath` resolved, and `scripts/print-classpath.cljs` reproduces it from git
+;; -Spath` resolved, and `scripts/print-classpath.cljk` reproduces it from git
 ;; alone -- so the whole fast path runs with no JDK present, which is what
 ;; "the nbb path does not touch the JVM" was always supposed to mean. The lock
 ;; is bound to `deps.edn`'s digest and the resolver fails closed on a stale
@@ -141,7 +141,7 @@
       {:reason "deps-lock.edn is not present"}
 
       (not (.existsSync fs script))
-      {:reason "scripts/print-classpath.cljs is not present"}
+      {:reason "scripts/print-classpath.cljk is not present"}
 
       :else
       ;; Cold hosted runners clone the pinned closure. Preserve git's safe,
@@ -201,14 +201,14 @@
                                                "closure from deps-lock.edn: " (:reason attempt)
                                                "\n  falling back to `clojure -Spath` (needs a JDK)."
                                                "\n  If a pin in deps.edn moved, regenerate the "
-                                               "lock: nbb scripts/lock-classpath.cljs"))
+                                               "lock: nbb scripts/lock-classpath.cljk"))
                                   (resolve-with-jvm root))))]
         (do (.writeFileSync fs cache-file resolved) resolved)
         (fail! (str "error: cannot resolve the compiler's dependency closure.\n"
                     "  deps-lock.edn resolves it without a JDK; regenerate it with\n"
-                    "    nbb scripts/lock-classpath.cljs\n"
+                    "    nbb scripts/lock-classpath.cljk\n"
                     "  (that script needs a JDK once; nothing else on this path does).\n"
-                    "  Diagnose with: nbb --classpath src scripts/print-classpath.cljs")
+                    "  Diagnose with: nbb --classpath src scripts/print-classpath.cljk")
                70)))))
 
 (let [args (vec *command-line-args*)
@@ -228,7 +228,7 @@
         ;; its shebang with no classpath flags, so it can't `:require`
         ;; those namespaces directly in its own process. Spawns nbb's own
         ;; `node_modules/nbb/cli.js` directly via `process.execPath`
-        ;; (same pattern `scripts/browser-matrix.cljs`'s `nbb!` already
+        ;; (same pattern `scripts/browser-matrix.cljk`'s `nbb!` already
         ;; uses), NOT `npx` -- confirmed live: `spawnSync("npx", ...)`
         ;; fails on Windows CI ("unable to start nbb-native compiler
         ;; runtime") because `npx` resolves to `npx.cmd`, which needs

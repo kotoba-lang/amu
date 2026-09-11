@@ -170,7 +170,7 @@ decision this task does not make unilaterally on cljs's behalf).
 
 ## Evidence
 
-- **Unit test suite** (`test/kotoba/compiler/storage_transport_test.clj`),
+- **Unit test suite** (`test/kotoba/compiler/storage_transport_test.cljk`),
   split into two groups by design (mirroring `http_transport_test.clj`'s own
   docstring rationale):
   1. Pure/deterministic unit tests of the private helpers directly, with NO
@@ -209,7 +209,7 @@ decision this task does not make unilaterally on cljs's behalf).
 - Full `clojure -M:test` suite, run from this branch: 545 tests, 4811
   assertions, 0 failures, 0 errors -- including this ADR's own new
   `storage-transport-test` namespace (now registered in
-  `test/kotoba/compiler/test_runner.clj` alongside the sibling
+  `test/kotoba/compiler/test_runner.cljk` alongside the sibling
   `http-transport-test`/`llm-transport-test` namespaces).
 
 ## Remaining gaps

@@ -39,7 +39,7 @@ refusal is reported by name rather than as an internal error.
 
 **The defect, and which path served it.** `bin/amu`'s `nbbNativeEligible`
 routes `compile` with `--target wasm32` to the **JDK-free nbb path**
-(`src/kotoba/compiler/nbb/wasm_cli.cljs`); the JVM path was never entered.
+(`src/kotoba/compiler/nbb/wasm_cli.cljk`); the JVM path was never entered.
 Against `orgs/kotoba-lang/org-iso-h264/src/h264/expgolomb.kotoba` at amu
 `5a2d188`, that path exited **70** in 1.29 s with
 

@@ -208,6 +208,6 @@ kotoba-kir ADR 0222).
 | kotoba-native | `4a4c4c3` | `3b7a426` |
 | kotoba-verifier | `58a02b4` | `6ef43bd` |
 
-`deps-lock.edn` regenerated with `nbb scripts/lock-classpath.cljs`. Each bump
+`deps-lock.edn` regenerated with `nbb scripts/lock-classpath.cljk`. Each bump
 was checked with `git merge-base --is-ancestor` rather than assumed to be a
 fast-forward.

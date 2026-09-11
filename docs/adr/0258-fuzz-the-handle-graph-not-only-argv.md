@@ -74,7 +74,7 @@ past `code_length` merely reads padding there; it is a defect either way, since
 ## The reach floor
 
 The target prints a `:kotoba.fuzz-reach/v1` line at exit and
-`scripts/fuzz-native.cljs` refuses a run in which any counter is zero.
+`scripts/fuzz-native.cljk` refuses a run in which any counter is zero.
 
 This is not decoration. The first draft of this change drew the result handle
 as a raw 64-bit word, so it landed inside the 32-entry pair table roughly
@@ -158,7 +158,7 @@ nor the input**. This is CLAUDE.md's "ローカルで緑 は fleet で緑 では
 form that tree-shape reasoning does not cover: nothing about what was shipped
 explains it.
 
-So `scripts/fuzz-native.cljs` now records the compiler in the summary. A
+So `scripts/fuzz-native.cljk` now records the compiler in the summary. A
 sanitizer verdict is a property of the toolchain as much as of the code, and a
 receipt that does not name the compiler cannot be compared with one from
 another node. Measured after the fix, the reach counters are **byte-identical**

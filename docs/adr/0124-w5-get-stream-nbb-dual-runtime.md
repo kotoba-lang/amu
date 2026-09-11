@@ -8,7 +8,7 @@ poll/read ops and not linear Component v0.3 handles
 
 ### 1. nbb dual-runtime vectors
 
-Extend `test/nbb/object-provider.cljs` and `test/nbb/http-provider.cljs` so
+Extend `test/nbb/object-provider.cljk` and `test/nbb/http-provider.cljk` so
 the `:cljs` path mirrors the reference-path oracle (ADR 0121–0123):
 
 | case | transport reply | host ops |

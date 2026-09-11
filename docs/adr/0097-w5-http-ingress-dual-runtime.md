@@ -23,8 +23,8 @@ Status uses canonical i64 (bigint on cljs).
 
 - `provider.http-ingress` (provider#10)
 - abi#17 + kotoba-component#54 inventory
-- `test/kotoba/compiler/http_ingress_provider_test.clj`
-- `test/nbb/http-ingress-provider.cljs`
+- `test/kotoba/compiler/http_ingress_provider_test.cljk`
+- `test/nbb/http-ingress-provider.cljk`
 
 ## What this does NOT claim
 

@@ -44,7 +44,7 @@ symbol in the template's READ FORMS, then analyses the result exactly as it
 analyses a hand-written module. `kotoba-sema` is unchanged and never sees a
 parameter symbol: the two instantiations above are byte-for-byte the two
 hand-written files that were measured, and carry the same definition CIDs
-(pinned in `test/kotoba/compiler/project_template_test.clj`).
+(pinned in `test/kotoba/compiler/project_template_test.cljk`).
 
 ### Where a parameter symbol is a type
 
@@ -140,7 +140,7 @@ authority chooses):
   forms (or the requiring template's own parameters).
 
 The grammar is sha-pinned in four repositories, and this one's
-`test/kotoba/compiler/guest_grammar_vendor_test.clj` compares copies, so the
+`test/kotoba/compiler/guest_grammar_vendor_test.cljk` compares copies, so the
 authority moves first and the pins follow in one wave. This ADR does not do
 that wave.
 

@@ -2,13 +2,13 @@
  :status :accepted
  :date "2026-08-21"
  :decision :a-jvm-sealed-artifact-cannot-be-verified-off-the-jvm
- :subject "src/kotoba/compiler/ios_aot.cljc"
+ :subject "src/kotoba/compiler/ios_aot.cljk"
  :defect-class :no-canonical-value-codec-across-runtimes
  :rule-instance {:superproject-adr "2608198300"
                  :rule "loading a namespace is not evidence that it runs"}
 
  :port {:from "src/kotoba/compiler/ios_aot.clj"
-        :to "src/kotoba/compiler/ios_aot.cljc"
+        :to "src/kotoba/compiler/ios_aot.cljk"
         :edits [{:site "ascii-bytes"
                  :was ".getBytes with StandardCharsets/US_ASCII"
                  :now "reader conditional; :cljs uses TextEncoder"
@@ -22,7 +22,7 @@
                        already unsigned ints and already what :object-sha256 is
                        computed from."}]}
 
- :evidence {:nbb {:runner "run-portable-surface.cljs"
+ :evidence {:nbb {:runner "run-portable-surface.cljk"
                   :tests 6 :assertions 14 :failures 0 :jvm-required false}
             :jvm {:runner "clojure -M:test"
                   :tests 1115 :assertions 8369 :failures 0

@@ -29,7 +29,7 @@ subset that *can* run today, without claiming full matrix green.
 ## Evidence
 
 - pilot-manifest + 5 fixtures
-- `test/kotoba/compiler/lang_conformance_test.clj`
+- `test/kotoba/compiler/lang_conformance_test.cljk`
 - alias `:conformance`
 
 ## Related

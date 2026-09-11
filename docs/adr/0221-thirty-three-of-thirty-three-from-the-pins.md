@@ -52,7 +52,7 @@ untouched. `abi`, `io-ipld`, `io-multiformats`, `artifact`, `kotoba-wasm`,
 `kotoba-component`, `kotoba-script` and `tender-native` are unchanged.
 
 `deps-lock.edn` is regenerated in this same commit
-(`nbb scripts/lock-classpath.cljs`). Its `:lock/deps-digest` is now
+(`nbb scripts/lock-classpath.cljk`). Its `:lock/deps-digest` is now
 `0126d9e8…`, which is the SHA-256 of the `deps.edn` beside it — checked
 explicitly, because a stale lock does not fail loudly, it sends `bin/kotoba`
 back to `clojure -Spath` and the JDK-free property disappears with nobody
@@ -166,7 +166,7 @@ settles it**: with the flakes quiet, the failure set after the advance is
 
 ### ISA execution table
 
-`test/kotoba/compiler/isa_execution_test.clj` is untouched by this change, and
+`test/kotoba/compiler/isa_execution_test.cljk` is untouched by this change, and
 run in isolation twice after the advance:
 
 ```

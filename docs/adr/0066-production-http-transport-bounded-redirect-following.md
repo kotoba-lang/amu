@@ -168,7 +168,7 @@ does not make unilaterally on cljs's behalf).
 
 ## Evidence
 
-- **Unit test suite** (`test/kotoba/compiler/http_transport_test.clj`, 16
+- **Unit test suite** (`test/kotoba/compiler/http_transport_test.cljk`, 16
   `deftest` / 51 assertions), split into two groups by design (see the test
   namespace's own docstring for the full rationale):
   1. Pure/deterministic unit tests of the security-critical private helpers,

@@ -29,7 +29,7 @@ Same design as ADR 0117 (HTTP) and ADR 0118 (LLM): each
 ### Evidence
 
 - provider#14 — `:cljs` implementation
-- `test/nbb/storage-transport.cljs` — resolve-endpoint, put/get, missing,
+- `test/nbb/storage-transport.cljk` — resolve-endpoint, put/get, missing,
   conflict, delete, 429/500
 - Pin `provider` → `69029568a450dcfa4baf8ba21ad53186a2952c5d`
 

@@ -61,7 +61,7 @@ HTTP deployment profile.
 
 `ipld-adl-wasmtime.c` is the synchronous reference engine for io-ipld's
 `ipld-adl-wasm-v1` host port. Build it with
-`scripts/build-ipld-adl-wasmtime.cljs`. Each call creates a fresh Wasmtime Store,
+`scripts/build-ipld-adl-wasmtime.cljk`. Each call creates a fresh Wasmtime Store,
 admits a core Wasm module with zero imports, and enforces Store fuel, linear
 memory, output-byte, and epoch deadline limits. The receipt's fuel and memory
 values come from Wasmtime after execution; guest output cannot supply them.
@@ -120,7 +120,7 @@ route is bound, never the table), reading a guest's return value out of its
 restricted-ESM instance, and writing the socket. Those are effects and a
 growing collection, not a decision. The shipped `route-decide.mjs` is
 committed alongside its `.provenance.edn`/`.inputs.edn`/`.manifest.edn`
-sidecars; `scripts/http-service-e2e.cljs` recompiles the `.kotoba` source
+sidecars; `scripts/http-service-e2e.cljk` recompiles the `.kotoba` source
 fresh on every run and fails loudly if the shipped artifact has drifted from
 it.
 
@@ -140,8 +140,8 @@ are ported here, and no capability package (e.g. a future
 `capability-http-serve`) is introduced by it -- every guest this host loads
 runs with zero granted capabilities.
 
-Run `node scripts/http-service-e2e.cljs`-style orchestration via
-`node node_modules/nbb/cli.js scripts/http-service-e2e.cljs`, which
+Run `node scripts/http-service-e2e.cljk`-style orchestration via
+`node node_modules/nbb/cli.js scripts/http-service-e2e.cljk`, which
 recompiles the decision core and two fixture guests fresh, then drives
 `test/http/http_service_test.mjs` -- a real `node:http` server answering
 real `fetch` requests over a real socket -- through health/echo/404/

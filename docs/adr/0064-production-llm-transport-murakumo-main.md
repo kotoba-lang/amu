@@ -153,7 +153,7 @@ code, not for host-side compiler-repo infrastructure written in this
     `[llm/result-type :ok [llm/completion-type "pong\n</think>\n\npong"
     :end_turn [llm/usage-type 37 7]]]` for the prompt "Reply with exactly
     the word: pong".
-- **Unit test suite** (`test/kotoba/compiler/llm_transport_test.clj`, 12
+- **Unit test suite** (`test/kotoba/compiler/llm_transport_test.cljk`, 12
   `deftest` / 13 assertions, all against local
   `com.sun.net.httpserver.HttpServer` fakes -- no real network, no live
   credential needed for normal `clojure -M:test` runs):

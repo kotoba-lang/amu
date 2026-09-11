@@ -25,8 +25,8 @@ as the original clj `http_provider_test` suite.
 
 ## Evidence
 
-- `test/kotoba/compiler/http_provider_test.clj` — existing vectors + missing-grant denial
-- `test/nbb/http-provider.cljs` — post ok, origin/timeout fail-closed, typed transport
+- `test/kotoba/compiler/http_provider_test.cljk` — existing vectors + missing-grant denial
+- `test/nbb/http-provider.cljk` — post ok, origin/timeout fail-closed, typed transport
   error, redacted exception, denial on cljs
 - provider#3 — http cljs i64 timeout/status fix
 - `npm run test-nbb-http-provider` — 5 cases / 0 failed

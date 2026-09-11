@@ -57,7 +57,7 @@ Two new supporting namespaces exist ONLY for the `:cljs` side:
 
 ## Verification
 
-`test/nbb/run.cljs` (`npm run test-nbb-wasm32`) compiles every
+`test/nbb/run.cljk` (`npm run test-nbb-wasm32`) compiles every
 `examples/*.kotoba` fixture plus dedicated i64/sleb128 boundary fixtures
 (`test/nbb/fixtures/`: true i64 max/min, add-wraparound, the sleb
 continuation-bit crossing at 127/128) through the nbb-native path and

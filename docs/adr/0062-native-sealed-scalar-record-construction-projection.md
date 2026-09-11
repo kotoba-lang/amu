@@ -99,7 +99,7 @@ extra to verify in a wider position.
   `native-scalar-record-field-types`). `record-assoc`/`record-equal` and
   every other typed feature remain in the pre-existing denylist,
   unreachable on native targets, unchanged.
-- `src/kotoba/compiler/core.clj` / `src/kotoba/compiler/nbb/cli.cljs`: both
+- `src/kotoba/compiler/core.cljk` / `src/kotoba/compiler/nbb/cli.cljk`: both
   call sites (the JVM path and the nbb-native fast path, which this
   predicate is explicitly shared between) updated to the renamed predicate;
   error message widened to name the new admitted feature.
@@ -123,7 +123,7 @@ extra to verify in a wider position.
   crash trying to sequentially destructure the descriptor's own bare
   keywords (`(let [[op & args] :i64])` throws; keywords are not seqable),
   a real bug caught during development, not a hypothetical one.
-- `test/kotoba/compiler/native_executor_test.clj`: three new `deftest`s
+- `test/kotoba/compiler/native_executor_test.cljk`: three new `deftest`s
   (below).
 - No other file changed. In particular, `tools/kexe_loader.c` (and
   therefore every measured runtime-identity SHA-256 pin) is untouched; no

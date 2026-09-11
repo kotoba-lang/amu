@@ -19,7 +19,7 @@ queue inside Wasm is not claimed.
 
 - provider#11 — `provider.http-ingress` multi-inflight
 - `http_ingress_provider_test.clj` — multi-inflight FIFO + capacity
-- `test/nbb/http-ingress-provider.cljs` — cljs FIFO vector
+- `test/nbb/http-ingress-provider.cljk` — cljs FIFO vector
 - Kit `http-ingress-v1.edn` records `:max-queue-depth 8`
 
 ## What this does NOT claim

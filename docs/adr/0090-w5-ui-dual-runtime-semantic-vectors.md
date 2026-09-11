@@ -16,9 +16,9 @@ typed-cap-call results and revision matching. Fixed in `provider.ui`.
 
 ## Evidence
 
-- `test/kotoba/compiler/ui_provider_test.clj` — declarative commit/events,
+- `test/kotoba/compiler/ui_provider_test.cljk` — declarative commit/events,
   stale revision, node/typed-set limit, missing-grant denial
-- `test/nbb/ui-provider.cljs` — same four vectors on cljs with bigint
+- `test/nbb/ui-provider.cljk` — same four vectors on cljs with bigint
   revisions
 - provider#6 — cljs i64 revisions
 - No DOM host objects cross the boundary (ADR 0072 log/ui no-transport)

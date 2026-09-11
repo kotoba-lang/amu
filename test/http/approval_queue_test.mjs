@@ -17,7 +17,7 @@
 //   * that the host is holding mechanism only -- an app route and a pure
 //     route coexist, and the host's own built-ins are unaffected.
 //
-// The guest is compiled fresh by scripts/approval-queue-e2e.cljs and handed
+// The guest is compiled fresh by scripts/approval-queue-e2e.cljk and handed
 // in via env, so this proves the real compile -> host -> serve pipeline on
 // every run rather than trusting a stale artifact.
 import fs from "node:fs";
@@ -29,7 +29,7 @@ const here = path.dirname(new URL(import.meta.url).pathname);
 const sha256 = p => createHash("sha256").update(fs.readFileSync(p)).digest("hex");
 const need = name => {
   const value = process.env[name];
-  if (!value) throw new Error(`${name} is required (set by scripts/approval-queue-e2e.cljs)`);
+  if (!value) throw new Error(`${name} is required (set by scripts/approval-queue-e2e.cljk)`);
   return value;
 };
 
@@ -214,7 +214,7 @@ const good = extra => ({
 // ---- 8. VETO BEATS A SATISFIED MINIMUM ----------------------------------
 // approval_core.kotoba: "reversing these two branches is the failure this
 // ordering exists to prevent."  This is the assertion the deliberate break
-// in scripts/approval-queue-e2e.cljs --mutant-* flips.
+// in scripts/approval-queue-e2e.cljk --mutant-* flips.
 {
   const { service, base } = await start();
   await decide(base, good({ actor: "alice" }));

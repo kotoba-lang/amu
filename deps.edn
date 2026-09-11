@@ -1,7 +1,7 @@
 ;; ⚠ Changing anything below means regenerating `deps-lock.edn` IN THE SAME
 ;; COMMIT:
 ;;
-;;     nbb scripts/lock-classpath.cljs
+;;     nbb scripts/lock-classpath.cljk
 ;;
 ;; The lock is what lets `bin/kotoba` resolve this closure without a JDK
 ;; (ADR-0202). A stale one is not an error you find later -- it silently sends
@@ -212,7 +212,7 @@
         ;; closure rather than be re-declared somewhere quieter.
         ;;
         ;; The grammar bytes do not move across it (515bbc7d either side, and
-        ;; the compare names only deps.edn, run-tests.cljs, frontend.cljc,
+        ;; the compare names only deps.edn, run-tests.cljk, frontend.cljc,
         ;; kotoba_reader.cljc and the reader test), so `grammar-sha256` and
         ;; `authority-digest-history` are unchanged and the pin prose above
         ;; moves alone.
@@ -223,7 +223,7 @@
         ;; REFUSED on nbb -- and `bin/amu` runs nbb for wasm32-browser, so the
         ;; default target of this compiler could not write an f32 literal. It
         ;; went unseen because the only test of the feature was `.clj`; it is
-        ;; `.cljc` and in `run-tests.cljs` as of that commit.
+        ;; `.cljc` and in `run-tests.cljk` as of that commit.
         {:git/url "https://github.com/kotoba-lang/kotoba-sema.git"
          :git/sha          ;;
          ;; Advanced 2026-09-09, 96fd4e19 -> 930373c7 (kotoba-sema main, forward only).
@@ -883,8 +883,8 @@
 }
  :aliases {:test {:extra-paths ["test"]
                   :extra-deps
-                  {;; Only `test/kotoba/compiler/backend_cljs_test.clj` and
-                   ;; `test/kotoba/compiler/cli_test.clj` require this, and both
+                  {;; Only `test/kotoba/compiler/backend_cljs_test.cljk` and
+                   ;; `test/kotoba/compiler/cli_test.cljk` require this, and both
                    ;; are `.clj` -- the JVM test oracle, not the compiler. It sat
                    ;; in top-level `:deps` until 2026-09-08, where it put a
                    ;; third-party JVM library on the production closure of a
