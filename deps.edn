@@ -118,7 +118,7 @@
         ;; said so.
         ;;
         ;;   grammar-sha256    515bbc7de84a3340ef3b250e4ee411739d3acebf32ba31450540f146768bb841
-        ;;   kotoba-sema-pin   0470c524e8a2cda5bd5bbc6839571bde6e0135e6
+        ;;   kotoba-sema-pin   8b28804783c8ce036d0c5dca135bd71a5596c186
         ;;
         ;; `guest_grammar_vendor_test/authority-digest-history` ends with the
         ;; same digest, so the pin, the prose and the history move in one
@@ -244,7 +244,31 @@
          ;; moves. amu's own resources/kotoba/lang/capability-catalog.edn is not the
          ;; one consulted -- measured on the resolved classpath, where the only entry
          ;; carrying the resource is kotoba-sema's.
-         "0470c524e8a2cda5bd5bbc6839571bde6e0135e6"}
+         ;; Advanced 2026-09-11, 0470c524 -> 8b288047 (forward only: 10 ahead,
+         ;; 0 behind). The reason this pin moves is the last commit in that
+         ;; range: a protocol declaration may carry documentation.
+         ;;
+         ;; `ns` and `defn` both admit a docstring; `defprotocol` and
+         ;; `definterface` did not -- a leading string sat in the first METHOD
+         ;; position and a trailing one after a parameter vector, and both were
+         ;; measured against a shape wanting exactly (name [params]). Measured
+         ;; 2026-09-11 through this CLI at the previous pin:
+         ;;
+         ;;   (defprotocol IP (-scan [this pattern]))                exit 0
+         ;;   (defprotocol IP "the one operation" (-scan [this p]))   exit 65
+         ;;   (defprotocol IP (-scan [this pattern] "method doc"))    exit 65
+         ;;
+         ;; All four :kotoba.error/protocol-declaration findings in the Q9
+         ;; wave-1 corpus came from ONE declaration -- datom.source/
+         ;; IPatternSource, whose docstring states the three invariants every
+         ;; implementation must satisfy -- so the only way past it was to
+         ;; delete that text, which is narrowing the component to compile it.
+         ;;
+         ;; The other nine commits in the range are the capability-catalog
+         ;; resyncs this block already describes plus a computed shift count
+         ;; and ADR-2607280100 Step 4; none changes what this compiler admits
+         ;; except through the same catalog path named above.
+         "8b28804783c8ce036d0c5dca135bd71a5596c186"}
         ;; ADR-2607266000 Phase B: these responsibilities moved out of this repo.
         ;;
         ;; The slice-value stream held this pin on purpose (ADR 0314), because

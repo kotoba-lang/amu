@@ -76,10 +76,27 @@
   (testing "a count outside the width is rejected, not masked"
     (is (some? (rejection "(i64-shift-left 1 64)")))
     (is (some? (rejection "(i64-shift-left 1 -1)"))))
-  (testing "a non-literal count is rejected"
-    ;; Wasm would mask it modulo 64, so this is an admission choice, not a
-    ;; safety requirement -- but it must be enforced, not merely documented.
-    (is (some? (rejection "(i64-shift-left 1 (+ 1 1))"))))
+  (testing "a computed count is admitted, and the guard moved rather than left"
+    ;; Until 2026-09-10 this asserted the opposite, with the note that Wasm
+    ;; masks modulo 64 so refusing was "an admission choice, not a safety
+    ;; requirement". The language decided that choice the other way
+    ;; (kotoba-sema 03e7a6e): the literal-only gate was an implementation
+    ;; convenience -- it let a backend lower a shift onto CL without a mask --
+    ;; and it made variable-count shift and rotate inexpressible, which is
+    ;; most of what a cipher is.
+    ;;
+    ;; That change named four repositories -- kotoba-sema, osaho,
+    ;; kotoba-verifier, kotoba-native -- and this one is a FIFTH place the old
+    ;; rule was asserted. It surfaced here when the kotoba-sema pin advanced,
+    ;; which is the only way a stale assertion in a consumer ever does.
+    ;;
+    ;; Fail-closed is preserved by moving where it is enforced: a literal
+    ;; out-of-range count is still a compile-time refusal (the case above),
+    ;; and a computed count carries a backend range guard -- x86-64 emits
+    ;; cmp rcx,63 / jbe / ud2, and aarch64 refuses to lower it at all until
+    ;; its own guard exists. Admitting it here is not admitting it unguarded.
+    (is (nil? (rejection "(i64-shift-left 1 (+ 1 1))")))
+    (is (nil? (rejection "(u64-shift-right 1 (+ 1 1))"))))
   (testing "arity is enforced"
     (is (some? (rejection "(i64-shift-left 1)")))
     (is (some? (rejection "(bit-not 1 2)")))
