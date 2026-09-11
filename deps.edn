@@ -101,7 +101,29 @@
          ;; which requires those 19 repositories -- none of which carries the
          ;; annotation -- so the same refusal would name kotoba.json.emit or
          ;; a sibling instead. The count moves by 0 and the closure by 19.
-         :git/sha "15fd195ac41e6268e2005ccbf6cb9924e81e65e2"}
+         ;;
+         ;; Advanced 2026-09-12, 15fd195a -> ce3c2b7b (json main, ahead 20,
+         ;; behind 0, forward only), and the note above is CORRECTED by
+         ;; measurement: at ce3c2b7b `json.core` requires `kotoba.lang.text`
+         ;; and nothing else -- the 19 `json-*` repositories are pulled by the
+         ;; FACADE `kotoba.json` (assembled one repo per definition), which no
+         ;; module on this classpath requires (0 requires of `kotoba.json` /
+         ;; `kotoba.json.*` across the 25 src roots, amu src/test, and the test
+         ;; alias roots). So the 4 modules refused for `json.data-json`'s
+         ;; missing export vector at 46d91a25 (cli, evm_cli, host_profile,
+         ;; test_profile) move to their next refusal, and the facade's
+         ;; per-definition repositories are EXCLUDED below rather than taken:
+         ;; they carry one unannotated module each, and taking them puts 19
+         ;; src roots on the selfhost denominator that nothing links. Same
+         ;; shape and same decision as the coll / edn floors at the end of this
+         ;; map. `kotoba.json` itself stays in json's src (annotated); its
+         ;; `:require` of the excluded namespaces makes it a
+         ;; "required module is missing" on the project route, which is the
+         ;; honest name for a facade whose parts this closure does not carry.
+         :git/sha "ce3c2b7bec5b40151d5f69d862a49edd286339d4"
+         :exclusions [io.github.kotoba-lang/json-decode
+                      io.github.kotoba-lang/json-encode
+                      io.github.kotoba-lang/json-json]}
         ;; Advanced 2026-09-08 to f803255e (PR #99): `typed-list-nth`, the
         ;; accessor a [:list T] never had on this backend. Before it, a list
         ;; could be built and counted and never read -- `amu check` returned 0
@@ -633,7 +655,13 @@
          ;; KIR gate; the four-repo change with
          ;; kotoba-sema/kotoba-verifier/kotoba-native) and the payload-v3
          ;; measurement series, all test-only on osaho's side.
-         :git/sha "f404babb05ec88e1256f4fbfc28117a3582899b5"}
+         ;; Advanced 2026-09-12, f404babb -> 6f5951f3 (osaho main, ahead 2,
+         ;; behind 0, forward only): the portable string literal bound moves
+         ;; 4096 -> 65536 bytes, the value bound. Measured on the selfhost
+         ;; wall at 46d91a25: 3 compiler modules were refused "constant string
+         ;; exceeds the portable string byte limit: 5042 bytes, at most 4096";
+         ;; kotoba-sema does not move for this (the bound is KIR's).
+         :git/sha "6f5951f3a0e4758df3cbc711461710330d81c16b"}
         ;; The frontend is an HIR producer and KIR lowering is its consumer;
         ;; both validate the same checked envelope.
         io.github.kotoba-lang/kotoba-hir
@@ -744,9 +772,35 @@
         ;; kotoba.artifact.content-identity) is still refused on the project
         ;; route with "requires an explicit :export vector" naming an ipld
         ;; namespace. Lifting it is io-ipld's owner's decision, as before.
+        ;;
+        ;; LIFTED 2026-09-12, 1a2e10cf -> 3e48e468 (io-ipld main, ahead 62,
+        ;; behind 0, forward only). Not because the argument above was wrong
+        ;; -- it was measured again today and still holds as stated -- but
+        ;; because both things it protected have left this repository:
+        ;;   (1) `test/kotoba/compiler/ipld_adl_test.cljk` imports java.nio and
+        ;;       runs on no route since ADR 0347 removed the JVM one; and
+        ;;       `src/kotoba/compiler/ipld_adl.cljk` (the check it exercises)
+        ;;       is itself JVM-only (`FileAttribute`). A hold that keeps a
+        ;;       test discriminating is worth nothing when the test cannot run.
+        ;;   (2) ADR 0331's open question -- is the ADL-level canonicality
+        ;;       check subsumed by the decoder? -- now has measurements on
+        ;;       BOTH shas (scratch probe, nbb, `ipld/decode` then
+        ;;       `ipld/encode`): at 1a2e10cf `18 05` decodes to 5 with
+        ;;       [output 2, canonical 1] (the ADL refusal fires) and
+        ;;       `{"b" 1 "a" 2}` decodes with keys unsorted; at 3e48e468 both
+        ;;       are refused by the decoder ("bytes are not canonical
+        ;;       DAG-CBOR"), and float32 / indefinite length are refused on
+        ;;       both. Four shapes, none reaches the ADL check at 3e48e468.
+        ;;       That is evidence for option 1 of the ADR, not a proof over all
+        ;;       inputs; the ADR carries the same note.
+        ;; Cost of the hold, measured at 46d91a25 on the project route: 9 of
+        ;; the 61 export-vector refusals named an `ipld.*` namespace or
+        ;; `kotoba.value.codec`. The advance adds `dev-protobuf` (dag-pb's
+        ;; wire codec) to the closure: one repository, one unannotated
+        ;; module, a real dependency of `ipld.dag-pb` and so NOT excluded.
         io.github.kotoba-lang/io-ipld
         {:git/url "https://github.com/kotoba-lang/io-ipld.git"
-         :git/sha "1a2e10cf8038155de210357e637eac4102de89cb"}
+         :git/sha "3e48e468a9099f32f68cb44f9967af2fd41bb2a6"}
         ;; Advanced 2026-09-08 to 829966fd (PR #76): the same accessor on
         ;; wasm32, as two CONDITIONALLY imported intrinsics (`list-nth-i64` /
         ;; `list-nth-ref`), which runtime/browser-host.mjs now answers.
@@ -1159,6 +1213,119 @@
          ;; 4, behind 0, forward only): same wave as the text pin above --
          ;; `{:kotoba/export [...]}` on every module.
          :git/sha "027747992d9d77990d0a9d233658737ced3c940b"}
+
+        ;; EXPLICIT FLOORS FOR TRANSITIVE DEPENDENCIES (2026-09-12, adr-2609111900
+        ;; source-side wave). None of the eight coordinates below was named in
+        ;; this file before today; each reached the classpath only through a
+        ;; sibling's `:git/sha`, and tools.deps takes the newest sha it is
+        ;; shown -- so when the `{:kotoba/export [...]}` wave annotated each
+        ;; repository's main on 2026-09-11, the annotated sha never arrived
+        ;; here. Measured at 46d91a25 on the project route (`amu check <f>
+        ;; --source-path <every src root> --jvm-free`, 210 sources): 61 modules
+        ;; were refused "project module <ns> requires an explicit :export
+        ;; vector", and 42 of those named a namespace from one of these eight
+        ;; (kotoba.lang.coll 18, kotoba.lang.edn 8, sha2.core 3,
+        ;; kotoba.codegen.layout 3, kotoba.codegen.relocation 2, cbor.core 2,
+        ;; sha2.sha512 / hash.subpath-dispatch / kotoba.codegen.mc / kotoba.mir /
+        ;; kotoba.gmir / ed25519.core 1 each; the other 19 named json.* 9,
+        ;; ipld.* / kotoba.value.codec 9, and this repository's own
+        ;; nbb/test_cli 1). Each floor is the repository's
+        ;; main, forward-only from the sha the sibling named (gh compare: ahead
+        ;; N, behind 0), and the sibling that named the old sha is written
+        ;; beside it so the next reader can tell a floor from a stray pin.
+        ;;
+        ;; coll: named by kotoba-core-contracts 06d1e98a as 563f9e89. Its main
+        ;; (376f8cbd) ALSO assembles a facade `kotoba.coll` from 29
+        ;; per-definition repositories (`coll-*` x27, `set`, `walk`), each one
+        ;; unannotated module. Nothing on this classpath requires `kotoba.coll`
+        ;; (0 requires across the 25 src roots, amu src/test and the test-alias
+        ;; roots; the compiler links `kotoba.lang.coll`, which requires
+        ;; nothing), so the facade's parts are excluded: taking them would put
+        ;; 29 src roots on the selfhost denominator that nothing links, each
+        ;; refused for naming itself. Annotating 29 one-module repositories is
+        ;; the other way to close that, and it is not this commit's.
+        io.github.kotoba-lang/coll
+        {:git/url "https://github.com/kotoba-lang/coll.git"
+         ;; 563f9e89 -> 376f8cbd (coll main, ahead 14, behind 0)
+         :git/sha "376f8cbd1a475ecbb2bc87e7ec63eb0f39a6fdaa"
+         :exclusions [io.github.kotoba-lang/coll-assoc-some
+                      io.github.kotoba-lang/coll-bounded-postwalk
+                      io.github.kotoba-lang/coll-bounded-prewalk
+                      io.github.kotoba-lang/coll-deep-merge
+                      io.github.kotoba-lang/coll-filter-keys
+                      io.github.kotoba-lang/coll-filter-vals
+                      io.github.kotoba-lang/coll-index
+                      io.github.kotoba-lang/coll-index-by
+                      io.github.kotoba-lang/coll-join
+                      io.github.kotoba-lang/coll-keywordize-keys
+                      io.github.kotoba-lang/coll-map-keys
+                      io.github.kotoba-lang/coll-map-vals
+                      io.github.kotoba-lang/coll-postwalk
+                      io.github.kotoba-lang/coll-postwalk-replace
+                      io.github.kotoba-lang/coll-prewalk
+                      io.github.kotoba-lang/coll-prewalk-replace
+                      io.github.kotoba-lang/coll-project
+                      io.github.kotoba-lang/coll-rename
+                      io.github.kotoba-lang/coll-rename-keys
+                      io.github.kotoba-lang/coll-select
+                      io.github.kotoba-lang/coll-set-difference
+                      io.github.kotoba-lang/coll-set-intersection
+                      io.github.kotoba-lang/coll-set-union
+                      io.github.kotoba-lang/coll-stringify-keys
+                      io.github.kotoba-lang/coll-subset
+                      io.github.kotoba-lang/coll-superset
+                      io.github.kotoba-lang/coll-walk
+                      io.github.kotoba-lang/set
+                      io.github.kotoba-lang/walk]}
+        ;; edn: named by kotoba-core-contracts 06d1e98a as 21cfcaef. Same
+        ;; facade shape as coll: main assembles `kotoba.edn` from 4 `edn-*`
+        ;; repositories nothing here requires (the compiler links
+        ;; `kotoba.lang.edn`, which requires kotoba.lang.text). Excluded for
+        ;; the same reason.
+        io.github.kotoba-lang/edn
+        {:git/url "https://github.com/kotoba-lang/edn.git"
+         ;; 21cfcaef -> 79dba32c (edn main, ahead 22, behind 0)
+         :git/sha "79dba32c8892058842c57783f06a2dfe4601aeb0"
+         :exclusions [io.github.kotoba-lang/edn-escape-controls
+                      io.github.kotoba-lang/edn-read-all
+                      io.github.kotoba-lang/edn-read-string
+                      io.github.kotoba-lang/edn-write-string]}
+        ;; kotoba-codegen: named by kotoba-native 19400641 as ce1aada1.
+        io.github.kotoba-lang/kotoba-codegen
+        {:git/url "https://github.com/kotoba-lang/kotoba-codegen.git"
+         ;; ce1aada1 -> 3b79b3fd (kotoba-codegen main, ahead 6, behind 0)
+         :git/sha "3b79b3fd5bc9671c3cf475e1fa4cb47d06ccd088"}
+        ;; kotoba-mir / kotoba-gmir: named by kotoba-native 19400641 as
+        ;; 1a1c4358 / a3f0597c. The two move together (mir requires gmir).
+        io.github.kotoba-lang/kotoba-mir
+        {:git/url "https://github.com/kotoba-lang/kotoba-mir.git"
+         ;; 1a1c4358 -> b82463c2 (kotoba-mir main, ahead 6, behind 0)
+         :git/sha "b82463c2d3416601b6ce0b6a4557894f8399164c"}
+        io.github.kotoba-lang/kotoba-gmir
+        {:git/url "https://github.com/kotoba-lang/kotoba-gmir.git"
+         ;; a3f0597c -> a4b682c4 (kotoba-gmir main, ahead 6, behind 0)
+         :git/sha "a4b682c4049f0608e27d5ad11b3c471415938973"}
+        ;; org-nist-sha2: named by osaho f404babb as cb67e53e. Its main adds
+        ;; `text` as a dependency (already here) and moves amu / osaho into
+        ;; the :test alias, so the closure does not grow.
+        io.github.kotoba-lang/org-nist-sha2
+        {:git/url "https://github.com/kotoba-lang/org-nist-sha2.git"
+         ;; cb67e53e -> ad98470c (org-nist-sha2 main, ahead 13, behind 0)
+         :git/sha "ad98470c672d40f207992890dac6bf0473b52199"}
+        ;; org-ietf-cbor: named by io-ipld (1a2e10cf, and still by 3e48e468)
+        ;; as 1dacfc40.
+        io.github.kotoba-lang/org-ietf-cbor
+        {:git/url "https://github.com/kotoba-lang/org-ietf-cbor.git"
+         ;; 1dacfc40 -> 4c129f82 (org-ietf-cbor main, ahead 20, behind 0)
+         :git/sha "4c129f8224d6ff11afa14d831671db28ed8f4d82"}
+        ;; org-ietf-ed25519: named by kotoba-core-contracts 06d1e98a and
+        ;; security 0e8e1a61 as c1ba8322. Its main adds `org-ietf-x25519` (a
+        ;; real dependency of ed25519.edwards, two unannotated modules) -- taken,
+        ;; not excluded: a library the source requires is not a facade.
+        io.github.kotoba-lang/org-ietf-ed25519
+        {:git/url "https://github.com/kotoba-lang/org-ietf-ed25519.git"
+         ;; c1ba8322 -> 312dec87 (org-ietf-ed25519 main, ahead 24, behind 0)
+         :git/sha "312dec875eb027021b7ad36c600151cd7bb22dc0"}
 }
  :aliases {:test {:extra-paths ["test"]
                   :extra-deps
