@@ -117,8 +117,8 @@
         ;; read 3e3f9748 while the file on disk hashed to 67561e57, and nothing
         ;; said so.
         ;;
-        ;;   grammar-sha256    5a5a3d6c2aea65159f795160c1554382a79bcffb5c2edd5f012317a215076e20
-        ;;   kotoba-sema-pin   2275729c5e12b55488ecabb874ade4034e1417b5
+        ;;   grammar-sha256    7262fae36127e58a9681f7790344827cc89e4c8f6b57dda1ed1f0175352aa1e0
+        ;;   kotoba-sema-pin   f1e5fd5ae58f453b9248d692b193ca731227697c
         ;;
         ;; `guest_grammar_vendor_test/authority-digest-history` ends with the
         ;; same digest, so the pin, the prose and the history move in one
@@ -318,7 +318,20 @@
          ;; is untouched across those four commits (measured: the compare names
          ;; frontend.cljk, kotoba_reader.cljk and two tests), so the digest
          ;; above and `authority-digest-history` do not move.
-         "2275729c5e12b55488ecabb874ade4034e1417b5"}
+         ;;
+         ;; 2026-09-11, 2275729c -> f1e5fd5a (kotoba-sema main, forward only):
+         ;; the require `:refer` wave. The grammar moves 5a5a3d6c -> 7262fae3
+         ;; (`:require-spec` admits `[m :refer [f]]` / `[m :as a :refer [f]]`
+         ;; and gains `:ns-refused-clauses`); the frontend refuses `:import` /
+         ;; `:require-macros` / `:refer-clojure` / `:use` BY NAME; the range
+         ;; also carries the reader increment b37f2b7 (`\c` char literals,
+         ;; `0N` / `1.5M`, large integer sets read as tagged host forms) and
+         ;; the kbb cutover text rewrite. The admission of `:refer` itself is
+         ;; THIS repository's (kotoba.compiler.project) -- the frontend never
+         ;; sees a `:require` clause -- and lands in the same commit as this
+         ;; pin, so the grammar and the linker that implements it travel
+         ;; together.
+         "f1e5fd5ae58f453b9248d692b193ca731227697c"}
         ;; ADR-2607266000 Phase B: these responsibilities moved out of this repo.
         ;;
         ;; The slice-value stream held this pin on purpose (ADR 0314), because
