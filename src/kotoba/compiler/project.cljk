@@ -204,9 +204,13 @@
     (when-not (and (vector? spec) (pos? (count spec)))
       (shape!))
     (let [[required & options] spec]
+      ;; The message is CONSTANT and the string is in the data: a census of
+      ;; refusals over many modules must group these as one bucket, not one
+      ;; per host module name (measured 2026-09-11: the selfhost histogram
+      ;; cut the first version of this message at its embedded quote).
       (when (string? required)
-        (reject! (str "import " (pr-str required) " names a host module by string; a Kotoba module is a simple symbol")
-                 {:namespace module-name :spec spec}))
+        (reject! "import names a host module by string; a Kotoba module is a simple symbol"
+                 {:namespace module-name :spec spec :host-module required}))
       (when-not (simple-symbol? required)
         (shape!))
       (when-not (even? (count options))
