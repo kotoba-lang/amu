@@ -530,6 +530,41 @@ start. No cache in Amu can remove it; only a route that does not interpret the
 compiler can — the released native CLI (rank 2 / 2a above), or the compiler
 compiled by itself.
 
+### The same curve on a quiet host — H-3 closed
+
+The rank-4 item was cheap enough to do in the same hour. The PR commit
+(`f58f3d86`) staged on fleet node `naphtali` (Apple M4, 10 cores, 16 GiB,
+macOS 26.2, `0 users`, `load1` 1.5–3.0 before and after — quiet-host probe
+2026-09-11 15:23 JST reported 8 of 9 nodes under the 0.10 busy fraction),
+`bin/amu check`, 5 process-cold samples per point, the same generated
+workload and fuel policy as the published run:
+
+| K | ms (5 samples) | marginal ms / function |
+|---:|---|---:|
+| 1 | 1099 1098 1095 1096 (+ one cold-cache 2517) | — |
+| 128 | 1599 1577 1577 1589 1577 | 3.8 |
+| 384 | 2316 2375 2318 2335 2341 | 2.95 |
+| 768 | 3484 3499 3497 3517 3512 | 3.03 |
+| 1023 | 4223 4298 4291 4278 4233 | 2.98 |
+
+Least squares on the medians: **`1143 + 3.06·K` ms, largest residual 50 ms.**
+Fitting a quadratic gives a coefficient of **−0.0002 ms/K²** — the sign of a
+term that is not there. The published run's `0.00616·K²` (6.4 s of the 8.5 s
+that K=1023 cost above its intercept) is gone, and its `2.02·K` slope is now
+3.06 on this host through the nbb route the published run measured Amu on
+(the two hosts are the same model; the intercept moved from 733 to 1143 ms,
+which is the same SCI-loading cost measured on a different day and a
+different `node`, v22 here).
+
+`amu compile --target wasm32` at K=1023 on the same node: **5201 / 5280 /
+5207 ms** against the published **9242 ms** — 1.77×. The emitted module is
+sha256 `7df99f14…` on the node and on the workstation alike, 89,477 bytes,
+`main() = 1023` when instantiated.
+
+**H-3 is closed on a quiet host: the front end is linear in K at every size
+the language admits.** What is left is the intercept and the slope, and both
+belong to the route (SCI interpreting the compiler), not to any pass.
+
 ### Ranking after iteration 4
 
 | rank | action | why |
@@ -537,7 +572,7 @@ compiled by itself.
 | 1 | **Land amu#936 and advance the west pin** | until then the lane has no number at any K on `main` |
 | 2 | **Cut `v0.7.4` / advance `kotoba-lang/kotoba`'s Amu pin** | unchanged from iteration 1, but the rename adds a new fact: the released CLI is built by GraalVM from the JVM route, and the JVM route cannot load `.cljk`. Advancing that pin past `e9b58163` now needs a JVM-side loader for the new spelling, or the native CLI is frozen at a pre-rename Amu forever. **Owner-level; not decided here** |
 | 3 | Constant factor: 1.3 s of SCI namespace loading | the whole intercept; unreachable from inside Amu, reachable only by rank 2 |
-| 4 | Confirm linearity on a quiet host with the iteration-2 probes | cheap, and the honest closing of H-3 |
+| ~~4~~ | ~~Confirm linearity on a quiet host~~ | **done above** — `1143 + 3.06·K`, no quadratic term on `naphtali` |
 | 5 | Correct the multi-module sentence; decide the whole-program bound | unchanged |
 
 ### What still does not run, and is not this iteration's
