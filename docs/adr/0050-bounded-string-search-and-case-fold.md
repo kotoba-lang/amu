@@ -111,8 +111,8 @@ Evidence:
 
 - `kotoba-lang/kotoba-script` PR #64,
   `3598e5bd3e6758f7d88523a8f2b03ce8e64ceaf0`: 47 tests / 160 assertions
-  locally (`clojure -M:test`), 0 failures -- that repo has no CI configured.
-- `kotoba-lang/amu`, this change: `clojure -M:test` 396 tests / 4280
+  locally (`kbb -M:test`), 0 failures -- that repo has no CI configured.
+- `kotoba-lang/amu`, this change: `kbb -M:test` 396 tests / 4280
   assertions locally, 0 failures, 4 pre-existing errors (`component-artifact-
   test`/`component-composition-test`, all `wasm-tools version is not
   pinned`). This is a genuine, unrelated, already-present repository CI

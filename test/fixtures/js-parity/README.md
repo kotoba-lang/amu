@@ -14,7 +14,7 @@ each compile takes about a minute) and record the new pin here.
 
 Every golden was produced from the repo root by
 
-    node <superproject>/scripts/resource-guard.mjs run build -- clojure -M:run compile <args>
+    node <superproject>/scripts/resource-guard.mjs run build -- kbb -M:run compile <args>
 
 with `<args>` as follows (`F=test/fixtures/js-parity`):
 

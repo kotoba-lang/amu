@@ -1,0 +1,379 @@
+(ns scripts.annotate-kotoba-export
+  "Annotate every `.cljk` module under `src/` with `{:kotoba/export [...]}` in
+  its `ns` header attr-map (kotoba-lang/amu#942), listing every top-level
+  PUBLIC `defn`/`def`/`defrecord`/`defprotocol`/`defmulti` name.
+
+  This is a careful TEXTUAL pass, not an EDN read: the ns header can contain
+  reader conditionals (`#?(:clj ... :cljs ...)`) that `cljs.reader`/`edn`
+  cannot parse. Instead this walks the raw source with a hand-rolled,
+  string/comment/char-literal-aware paren-balance scanner, restricted to
+  TOP-LEVEL forms (after the `ns` form) plus one level of descent into the
+  two wrapper shapes this codebase actually uses around definitions --
+  `#?(:clj FORM :cljs FORM ...)` and `(do FORM ...)` -- so that names quoted
+  as DATA deep inside some other top-level `def` (e.g. a template of forms
+  spliced into generated code) are never mistaken for real definitions.
+
+  A name is PRIVATE (and excluded) iff its `defn`/`def`/... form uses the
+  `defn-` macro, or has `^:private` immediately after the `def`/`defn`
+  keyword. Everything else top-level is public.
+
+  Idempotent: a module already carrying `:kotoba/export` (this annotator's
+  own marker) or a hand-written `(:export ...)` clause is left untouched, so
+  running this twice changes nothing. `--check` reports without writing."
+  (:require [clojure.string :as str]
+            ["node:fs" :as fs]
+            ["node:path" :as path]))
+
+(def root (.resolve path (.dirname path *file*) ".."))
+(def src-root (.join path root "src"))
+
+;; kotoba-lang/amu#942's other agent owns this file's ns header; touching it
+;; here would race that edit.
+(def excluded-paths #{(.join path src-root "kotoba" "compiler" "project.cljk")})
+
+;; ---------------------------------------------------------------------
+;; file discovery
+;; ---------------------------------------------------------------------
+
+(defn list-cljk-files [dir]
+  (reduce
+   (fn [acc entry]
+     (let [p (.join path dir entry)
+           stat (.lstatSync fs p)]
+       (cond
+         (.isDirectory stat) (into acc (list-cljk-files p))
+         (and (.isFile stat) (str/ends-with? entry ".cljk")) (conj acc p)
+         :else acc)))
+   []
+   (sort (js->clj (.readdirSync fs dir)))))
+
+;; ---------------------------------------------------------------------
+;; character-class helpers (operate on a JS string + integer index)
+;; ---------------------------------------------------------------------
+
+(defn ws-char? [c]
+  (or (= c " ") (= c "\t") (= c "\n") (= c "\r") (= c ",")))
+
+(defn open-bracket? [c] (or (= c "(") (= c "[") (= c "{")))
+(defn close-bracket? [c] (or (= c ")") (= c "]") (= c "}")))
+(defn delimiter-char? [c]
+  (or (ws-char? c) (open-bracket? c) (close-bracket? c) (= c "\"") (= c ";")))
+
+;; ---------------------------------------------------------------------
+;; low-level scanners: each takes (text, index) and returns the index one
+;; past whatever it consumed. All are string/char-literal-aware so bracket
+;; characters inside string bodies, comments, or `\(`-style char literals
+;; never perturb the paren-balance count.
+;; ---------------------------------------------------------------------
+
+(defn skip-line-comment
+  "i is the index of the leading `;`."
+  [text i]
+  (let [n (count text)]
+    (loop [i i]
+      (if (or (>= i n) (= (subs text i (inc i)) "\n"))
+        i
+        (recur (inc i))))))
+
+(defn skip-string
+  "i is the index of the OPENING quote. Returns the index just past the
+  matching, unescaped closing quote."
+  [text i]
+  (let [n (count text)]
+    (loop [i (inc i)]
+      (cond
+        (>= i n) i
+        (= (subs text i (inc i)) "\\") (recur (+ i 2))
+        (= (subs text i (inc i)) "\"") (inc i)
+        :else (recur (inc i))))))
+
+(defn word-char? [c] (boolean (re-find #"[A-Za-z0-9]" c)))
+
+(defn skip-char-literal
+  "i is the index of the leading `\\`. Returns the index just past the
+  literal: either one raw character, or a run of word characters for a
+  named literal like `\\newline` / `\\u0041`."
+  [text i]
+  (let [n (count text)
+        j (inc i)]
+    (if (>= j n)
+      j
+      (let [c (subs text j (inc j))]
+        (if (word-char? c)
+          (loop [k (inc j)]
+            (if (and (< k n) (word-char? (subs text k (inc k))))
+              (recur (inc k))
+              k))
+          (inc j))))))
+
+(defn skip-ws-and-comments
+  "Advances past whitespace and `;` line comments. Does NOT special-case
+  `#_` discard (not present anywhere in this corpus, verified before writing
+  this script); a bare top-level `#_(...)` would be refused instead of
+  mis-annotated because its head token would not match a known def form
+  (harmless: the failure mode is 'ignored', not 'wrongly exported')."
+  [text i]
+  (let [n (count text)]
+    (loop [i i]
+      (cond
+        (>= i n) i
+        (ws-char? (subs text i (inc i))) (recur (inc i))
+        (= (subs text i (inc i)) ";") (recur (skip-line-comment text i))
+        :else i))))
+
+(defn find-form-end
+  "text[start] is the first character of a form (after skip-ws-and-comments).
+  Returns the index just past the form's outermost closing bracket, by
+  counting bracket depth and skipping strings/comments/char-literals.
+  Prefix characters before the first bracket (`#`, `?`, `@`, `'`, `^`, the
+  digits/letters of a reader-conditional dispatch, ...) are consumed
+  without affecting depth, since none of this corpus's top-level forms are
+  bare, bracket-less atoms."
+  [text start]
+  (let [n (count text)]
+    (loop [i start depth 0 started false]
+      (if (>= i n)
+        i
+        (let [c (subs text i (inc i))]
+          (cond
+            (= c "\"") (recur (skip-string text i) depth started)
+            (= c ";") (recur (skip-line-comment text i) depth started)
+            (= c "\\") (recur (skip-char-literal text i) depth started)
+            (open-bracket? c) (recur (inc i) (inc depth) true)
+            (close-bracket? c)
+            (let [depth' (dec depth)]
+              (if (and started (zero? depth'))
+                (inc i)
+                (recur (inc i) depth' started)))
+            :else (recur (inc i) depth started)))))))
+
+(defn read-token
+  "Reads a bare token (symbol/keyword) starting at i: consecutive
+  non-delimiter characters. Returns [token end-index]."
+  [text i]
+  (let [n (count text)]
+    (loop [j i]
+      (if (or (>= j n) (delimiter-char? (subs text j (inc j))))
+        [(subs text i j) j]
+        (recur (inc j))))))
+
+;; ---------------------------------------------------------------------
+;; top-level form splitting
+;; ---------------------------------------------------------------------
+
+(defn top-level-forms
+  "Splits TEXT, from index START to the end of the file, into a sequence of
+  {:text ... :start ... :end ...} for each top-level form, skipping
+  whitespace/comments between them."
+  [text start]
+  (let [n (count text)]
+    (loop [i (skip-ws-and-comments text start) acc []]
+      (if (>= i n)
+        acc
+        (let [end (find-form-end text i)]
+          (if (<= end i)
+            acc ;; malformed / no progress -- stop rather than loop forever
+            (recur (skip-ws-and-comments text end)
+                   (conj acc {:text (subs text i end) :start i :end end}))))))))
+
+;; ---------------------------------------------------------------------
+;; ns-form location
+;; ---------------------------------------------------------------------
+
+(defn locate-ns-form
+  "Returns {:start :end :name-end} for the file's `(ns ...)` form, or nil if
+  the first top-level form is not unambiguously an ns form."
+  [text]
+  (let [i0 (skip-ws-and-comments text 0)]
+    (when (and (<= (+ i0 4) (count text))
+               (= (subs text i0 (+ i0 3)) "(ns")
+               (delimiter-char? (subs text (+ i0 3) (+ i0 4))))
+      (let [end (find-form-end text i0)]
+        (when (> end i0)
+          (let [after-ns (skip-ws-and-comments text (+ i0 3))
+                [_name name-end] (read-token text after-ns)]
+            {:start i0 :end end :name-end name-end}))))))
+
+;; ---------------------------------------------------------------------
+;; definition-name extraction
+;; ---------------------------------------------------------------------
+
+(def def-heads #{"defn" "defn-" "def" "defrecord" "defprotocol" "defmulti"})
+
+(defn list-children
+  "FORM-TEXT is the full text of a bracketed form, `(...)`. Returns the
+  top-level child forms found strictly inside the outer brackets."
+  [form-text]
+  (let [inner-start (inc (.indexOf form-text "("))
+        inner-end (dec (count form-text))]
+    (if (or (neg? inner-start) (< inner-end inner-start))
+      []
+      (top-level-forms (subs form-text 0 inner-end) inner-start))))
+
+(defn skip-metadata-prefixes
+  "Consumes zero or more reader-metadata prefixes (`^:keyword` or `^{...}`)
+  starting at POS, as Clojure's `defn`/`def` accept before the var name.
+  Returns [private? pos'], private? true if any prefix was literally
+  `^:private` or a `^{...}` map whose text contains `:private true`."
+  [text pos]
+  (let [n (count text)]
+    (loop [pos (skip-ws-and-comments text pos) private? false]
+      (if (and (< pos n) (= (subs text pos (inc pos)) "^"))
+        (let [next-pos (inc pos)]
+          (if (and (< next-pos n) (= (subs text next-pos (inc next-pos)) "{"))
+            (let [map-end (find-form-end text next-pos)
+                  map-text (subs text next-pos map-end)
+                  map-private? (boolean (re-find #":private\s+true" map-text))]
+              (recur (skip-ws-and-comments text map-end) (or private? map-private?)))
+            (let [[tok tok-end] (read-token text pos)]
+              (recur (skip-ws-and-comments text tok-end) (or private? (= tok "^:private"))))))
+        [private? pos]))))
+
+(declare collect-defs)
+
+(defn strip-reader-conditional-prefix
+  "If FORM-TEXT starts with `#?` or `#?@`, returns the remaining text from
+  the following `(`. Otherwise returns nil."
+  [form-text]
+  (cond
+    (str/starts-with? form-text "#?@") (subs form-text 3)
+    (str/starts-with? form-text "#?") (subs form-text 2)
+    :else nil))
+
+(defn collect-defs
+  "Returns a set of [name private?] pairs found in FORM-TEXT: either this
+  form IS a def-like form, or it is a `#?(...)`/`(do ...)` wrapper this
+  codebase actually uses around definitions, in which case each branch/child
+  is walked the same way. Any other shape (a plain value, a quoted template
+  of forms-as-data, a `defonce`, ...) contributes nothing -- deliberately:
+  quoted data that merely CONTAINS the tokens `defn`/`def` (kotoba.compiler.
+  backend.cljs's emitted-source templates) must never be read as a real
+  top-level definition, and restricting descent to these two known wrapper
+  shapes is what keeps that true."
+  [form-text]
+  (let [trimmed (str/triml form-text)]
+    (cond
+      (not (str/starts-with? trimmed "(")) #{}
+
+      ;; `#?(:clj FORM :cljs FORM ...)` / `#?@(...)`
+      (strip-reader-conditional-prefix trimmed)
+      (let [inner (strip-reader-conditional-prefix trimmed)
+            children (list-children inner)]
+        ;; children alternate keyword, form, keyword, form, ...
+        (->> children
+             (partition 2 2 nil)
+             (filter #(= 2 (count %)))
+             (mapcat (fn [[_kw form]] (collect-defs (:text form))))
+             set))
+
+      ;; `(do FORM ...)`
+      (let [[head _] (read-token trimmed 1)]
+        (= head "do"))
+      (let [children (list-children trimmed)]
+        (set (mapcat #(collect-defs (:text %)) children)))
+
+      :else
+      (let [[head after-head] (read-token trimmed 1)]
+        (if (contains? def-heads head)
+          (let [private-by-head? (= head "defn-")
+                after-head-ws (skip-ws-and-comments trimmed after-head)
+                [meta-private? name-pos] (skip-metadata-prefixes trimmed after-head-ws)
+                [name _] (read-token trimmed name-pos)]
+            (if (seq name) #{[name (or private-by-head? meta-private?)]} #{}))
+          #{})))))
+
+;; ---------------------------------------------------------------------
+;; per-module processing
+;; ---------------------------------------------------------------------
+
+(defn public-export-names
+  "All names this module should export: every top-level form after the ns
+  form is walked with collect-defs; a name excluded if ANY occurrence across
+  branches was private."
+  [text ns-end]
+  (let [forms (top-level-forms text ns-end)
+        pairs (mapcat #(collect-defs (:text %)) forms)
+        by-name (group-by first pairs)]
+    (->> by-name
+         (keep (fn [[name occurrences]]
+                 (when-not (some second occurrences) name)))
+         sort
+         vec)))
+
+(defn already-annotated?
+  "True if the ns-form text already carries this annotator's marker or a
+  hand-written `(:export ...)` clause."
+  [ns-form-text]
+  (boolean
+   (or (str/index-of ns-form-text ":kotoba/export")
+       (re-find #"\(:export\s" ns-form-text))))
+
+(defn insertion-point
+  "Where {:kotoba/export [...]} goes: right after the docstring if the ns
+  form has one (a string literal directly after the ns name), otherwise
+  right after the ns name itself. NAME-END is the index just past the ns
+  symbol."
+  [text name-end]
+  (let [after-name (skip-ws-and-comments text name-end)]
+    (if (and (< after-name (count text)) (= (subs text after-name (inc after-name)) "\""))
+      (skip-string text after-name)
+      name-end)))
+
+(defn render-export-map [names]
+  (str "{:kotoba/export [" (str/join " " names) "]}"))
+
+(defn process-file [path-str mode]
+  (let [text (.readFileSync fs path-str "utf8")
+        located (locate-ns-form text)]
+    (cond
+      (nil? located)
+      {:path path-str :status :refused :reason "ns form not unambiguously located"}
+
+      (already-annotated? (subs text (:start located) (:end located)))
+      {:path path-str :status :already-annotated}
+
+      :else
+      (let [names (public-export-names text (:end located))
+            ip (insertion-point text (:name-end located))
+            before (subs text 0 ip)
+            after (subs text ip)
+            ;; Insert on its own indented line, matching this codebase's
+            ;; existing three annotated modules. A module with zero public
+            ;; top-level definitions (an entrypoint script whose work is a
+            ;; top-level side-effecting form, not a defn) gets an explicit
+            ;; empty vector -- still the honest answer, and still what the
+            ;; project-module gate asks for.
+            insertion (str "\n  " (render-export-map names))
+            updated (str before insertion after)]
+        (when (= mode :apply)
+          (.writeFileSync fs path-str updated))
+        {:path path-str :status :annotated :names names}))))
+
+;; ---------------------------------------------------------------------
+;; main
+;; ---------------------------------------------------------------------
+
+(defn relative [p] (.relative path root p))
+
+(defn -main [args]
+  (let [mode (if (some #{"--check"} args) :check :apply)
+        files (->> (list-cljk-files src-root) sort)
+        eligible (remove excluded-paths files)
+        excluded (filter excluded-paths files)
+        results (mapv #(process-file % mode) eligible)
+        by-status (group-by :status results)]
+    (println (str "mode: " (name mode)))
+    (println (str "total .cljk under src/: " (count files)))
+    (println (str "excluded (owned by another agent): " (count excluded)))
+    (doseq [p excluded] (println (str "  excluded: " (relative p))))
+    (println (str "already annotated: " (count (:already-annotated by-status))))
+    (println (str (if (= mode :check) "would annotate: " "annotated: ")
+                  (count (:annotated by-status))))
+    (doseq [{:keys [path names]} (:annotated by-status)]
+      (println (str "  " (relative path) " -> [" (str/join " " names) "]")))
+    (println (str "refused: " (count (:refused by-status))))
+    (doseq [{:keys [path reason]} (:refused by-status)]
+      (println (str "  REFUSED " (relative path) ": " reason)))
+    (.exit js/process (if (seq (:refused by-status)) 2 0))))
+
+(-main (vec *command-line-args*))

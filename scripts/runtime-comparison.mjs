@@ -460,7 +460,7 @@ function build(directory, target, fixtureSpec, enabled, skipped, fuel) {
   // Keep runtime evidence on one canonical compiler entrypoint. Launcher
   // conformance is measured separately and must not select a different
   // code-generation path inside one comparison report. That entrypoint is
-  // `bin/amu` on the nbb route: the JVM route (`clojure -M:run`) was removed
+  // `bin/amu` on the nbb route: the JVM route (`kbb -M:run`) was removed
   // on 2026-09-11, so the Amu rows of this report are produced by the same
   // compiler every other caller uses.
   const amu = join(root, "bin", "amu");

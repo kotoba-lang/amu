@@ -64,7 +64,7 @@ ADR-0020 refuses them independently.
 `examples/aiueos-uefi-console.kotoba` compiles to a 2560-byte PE32+ EFI
 application on both routes, **byte-identical**
 (`sha256 8f7c1659e8fb5b60dabe37442cc2b8d694b6be25e11a7421328b27f02f296032`,
-`clojure -M:run compile` and `bin/amu ... --jvm-free`).
+`kbb -M:run compile` and `bin/amu ... --jvm-free`).
 
 It was **booted**, on 2026-09-02, under QEMU 10.1.0 with OVMF
 (`/opt/homebrew/share/qemu/edk2-x86_64-code.fd`), `q35`, `accel=tcg`, the

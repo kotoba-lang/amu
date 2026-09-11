@@ -224,7 +224,7 @@ does not make unilaterally on cljs's behalf).
     third-party HTTPS echo endpoint (an external dependency this test suite
     does not otherwise take) or a self-signed local HTTPS server (rejected
     as unnecessary complexity for this task -- see Remaining gaps item 4).
-- Full `clojure -M:test` suite with this ADR's changes applied, run from
+- Full `kbb -M:test` suite with this ADR's changes applied, run from
   this branch: see the PR description for the exact pass/fail/error counts
   from the run performed at PR-open time; this ADR's own 16 new tests
   contribute 0 failures / 0 errors.

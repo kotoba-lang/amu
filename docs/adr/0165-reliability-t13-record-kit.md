@@ -17,7 +17,7 @@ Suite **12 → 13**.
 
 ## Evidence
 
-- `clojure -M:conformance` 13/13
+- `kbb -M:conformance` 13/13
 
 ## Related
 

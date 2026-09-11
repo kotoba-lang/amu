@@ -61,7 +61,7 @@ So a widely-threaded record now reads:
 
 ## A gap this uncovered: the test namespace was never in the gate
 
-`clojure -M:test` runs an explicit list in `test/kotoba/compiler/test_runner.cljk`
+`kbb -M:test` runs an explicit list in `test/kotoba/compiler/test_runner.cljk`
 — both a `:require` vector and a second literal list inside `-main`.
 `record-projection-sugar-test`, added by ADR 0189 (#441) and extended by #442,
 was in **neither**. The suite reported an unchanged `716 tests / 6104
@@ -121,8 +121,8 @@ invisible:
 - `record-projection-sugar-test` — 14 tests, 17 assertions, 0 failures
   (4 new: ref in parameter annotation, ref in return annotation, ref as a record
   op type argument, undeclared ref fails closed)
-- `clojure -M:conformance` → **52 / 52 passed (47 pure-product, 5 portable)**
-- `clojure -M:test` → **749 tests, 6158 assertions, 0 failures**
+- `kbb -M:conformance` → **52 / 52 passed (47 pure-product, 5 portable)**
+- `kbb -M:test` → **749 tests, 6158 assertions, 0 failures**
   (716 / 6104 before this PR: +14/+17 from registering the namespace ADR 0189
   added, +19/+37 from the eight green namespaces the sweep found)
 

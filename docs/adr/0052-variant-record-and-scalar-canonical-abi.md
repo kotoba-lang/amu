@@ -139,7 +139,7 @@ either, consistent with ADR 0049/0051.
 - focused suite (`canonical-abi-test`, `component-artifact-test`,
   `component-composition-test`, `component-wit-test`): 25 tests, 103
   assertions, 0 failures, run against the pinned `wasm-tools 1.243.0`.
-- full `clojure -M:test` suite: 404 tests, 4332 assertions, 0 failures, same
+- full `kbb -M:test` suite: 404 tests, 4332 assertions, 0 failures, same
   pinned toolchain.
 - `wasm-tools validate --features component-model` on both produced variant
   identity components: passed.

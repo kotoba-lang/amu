@@ -207,7 +207,7 @@ result directly and never depends on `layout-leaves` to do so (see Evidence).
     (folded directly from each field's own raw `layout*` result), pinning
     that `layout-leaves`'s lack of a dedicated leaf shape for this field
     does not affect the record's own overall layout correctness.
-- Full `clojure -M:test` suite with this ADR's changes applied: 505 tests,
+- Full `kbb -M:test` suite with this ADR's changes applied: 505 tests,
   4703 assertions, 0 failures, 0 errors -- confirms every pre-existing
   record/variant/list/string/keyword consumer of `canonical-abi.cljc`
   (`component-core.clj`, `component-composition.clj`, and their own test

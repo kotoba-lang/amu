@@ -1,11 +1,11 @@
 ;; ⚠ Changing anything below means regenerating `deps-lock.edn` IN THE SAME
 ;; COMMIT:
 ;;
-;;     nbb scripts/lock-classpath.cljk
+;;     kbb --backend sci scripts/lock-classpath.cljk
 ;;
 ;; The lock is what lets `bin/kotoba` resolve this closure without a JDK
 ;; (ADR-0202). A stale one is not an error you find later -- it silently sends
-;; the compiler back to `clojure -Spath`, and the JDK-free property is gone
+;; the compiler back to `kbb -Spath`, and the JDK-free property is gone
 ;; with nobody notified.
 ;;
 ;; This is not hypothetical: the lock went stale three times in one afternoon
@@ -950,14 +950,14 @@
                    ;; third-party JVM library on the production closure of a
                    ;; compiler whose stated exit is a native binary with no
                    ;; Clojure installed. Measured before the move: one
-                   ;; tools.reader jar on `clojure -Spath`, zero `tools.reader`
+                   ;; tools.reader jar on `kbb -Spath`, zero `tools.reader`
                    ;; references under `src/`, and zero entries in
                    ;; `deps-lock.edn` -- the JDK-free path never resolved it, so
                    ;; nothing about `bin/kotoba` changes here. What changes is
                    ;; that the declaration now says where it is actually used.
                    ;;
                    ;; When this moved here it did NOT remove the jar: kotoba-sema
-                   ;; pulled it transitively, and `clojure -Spath` carried one
+                   ;; pulled it transitively, and `kbb -Spath` carried one
                    ;; entry before and after. That is no longer true. kotoba-sema
                    ;; 9d87c113 reads with one reader on both hosts and dropped the
                    ;; dependency, so across the pin advance in this same commit the
@@ -991,12 +991,12 @@
                   ;; extra git dependencies the nbb test runners need;
                   ;; scripts/lock-classpath.cljk records its closure under
                   ;; :lock/alias-entries and print-classpath.cljk --alias test
-                  ;; resolves it with git alone. `clojure -Spath -M:test` is
+                  ;; resolves it with git alone. `kbb -Spath -M:test` is
                   ;; how the lock is authored, not how anything runs.
                   }
            ;; :run / :native-run / :conformance / :runtime-bench /
            ;; :native-conformance / :fuel-estimate / :ipld-adl-conformance were
-           ;; JVM launch aliases (`clojure -M:<alias>`). Removed 2026-09-11 with
+           ;; JVM launch aliases (`kbb -M:<alias>`). Removed 2026-09-11 with
            ;; the JVM route; their mains are listed in docs/adr
            ;; 0347-the-jvm-route-is-removed.md as the port ledger.
            }}

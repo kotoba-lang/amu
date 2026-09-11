@@ -1,11 +1,11 @@
-#!/usr/bin/env nbb
+#!/usr/bin/env kbb
 ;; scripts/jvm-route-topology.cljk -- what still forces `bin/amu` onto the JVM,
 ;; as a graph, in the order it can be removed.
 ;;
 ;; `bin/amu` has two routes. The Node route (`kotoba.compiler.nbb.*`) answers
 ;; check / compile / definition-cids / the package and output-set commands and,
 ;; since 2026-09-11, the trust plane. Everything else falls to
-;; `clojure -M:run` and `kotoba.compiler.cli` -- and after the .cljk rename
+;; `kbb -M:run` and `kotoba.compiler.cli` -- and after the .cljk rename
 ;; (root ADR-2609111500) that route cannot load the compiler at all, so a
 ;; command on it has no working route anywhere.
 ;;
@@ -29,7 +29,7 @@
 ;; `require`-ing every namespace the classification calls JVM-only in a child
 ;; nbb and recording which actually fail to load, and why.
 ;;
-;;   nbb --classpath . scripts/jvm-route-topology.cljk [--probe] [--output docs/jvm-route-topology.edn]
+;;   kbb --backend sci --classpath . scripts/jvm-route-topology.cljk [--probe] [--output docs/jvm-route-topology.edn]
 ;;
 ;; exit 0  wrote the topology
 ;; exit 2  could not read the classpath or found no namespaces (refused, not clean)

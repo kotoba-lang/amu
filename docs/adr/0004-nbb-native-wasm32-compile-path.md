@@ -5,7 +5,7 @@
 
 ## Context
 
-`bin/kotoba` was an nbb wrapper that spawned `clojure -M:run` for every
+`bin/kotoba` was an nbb wrapper that spawned `kbb -M:run` for every
 command and every target -- the entire compiler (`frontend`, `ir`, every
 backend, `admission`, packaging, signing, the verifier) was JVM Clojure
 (`.clj`). This is at odds with this monorepo's repo-wide runtime priority
@@ -25,7 +25,7 @@ Clojure (`:clj`) and nbb (`:cljs`). `bin/kotoba` spawns a fresh nbb process
 `clojure` when the command is `check`, or `compile` targeting `wasm32`,
 `wasm32-browser`, or `wasm32-wasi` -- the fast path in
 `kotoba.compiler.nbb.cli`. Every other target and every other subcommand is
-unchanged and still spawns `clojure -M:run`.
+unchanged and still spawns `kbb -M:run`.
 
 Two new supporting namespaces exist ONLY for the `:cljs` side:
 
@@ -64,7 +64,7 @@ continuation-bit crossing at 127/128) through the nbb-native path and
 asserts that every output is valid Wasm. Cross-host compatibility is judged by
 observable semantics, ABI behavior, resource bounds, and fail-closed rejection;
 the binary representation is not a language contract. Routine test runs need
-no JVM at all. `clojure -M:test` (169
+no JVM at all. `kbb -M:test` (169
 tests, 2986 assertions) passes unchanged, confirming the `.cljc` conversion
 altered nothing on the `:clj` side.
 

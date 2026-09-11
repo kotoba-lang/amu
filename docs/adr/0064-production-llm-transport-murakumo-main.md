@@ -156,7 +156,7 @@ code, not for host-side compiler-repo infrastructure written in this
 - **Unit test suite** (`test/kotoba/compiler/llm_transport_test.cljk`, 12
   `deftest` / 13 assertions, all against local
   `com.sun.net.httpserver.HttpServer` fakes -- no real network, no live
-  credential needed for normal `clojure -M:test` runs):
+  credential needed for normal `kbb -M:test` runs):
   - ① override resolves with zero network calls.
   - ② alias-entry parsing is exercised directly against a fake alias server,
     asserting the `:endpoint` field is present in the parsed response (so a
@@ -177,9 +177,9 @@ code, not for host-side compiler-repo infrastructure written in this
   - A REAL integration test (`real-murakumo-main-endpoint-answers`) exists in
     the same file but is gated behind `KOTOBA_LLM_INTEGRATION_TEST=1` AND a
     set `MURAKUMO_API_KEY` -- absent either, it prints a skip message and
-    passes trivially, so ordinary `clojure -M:test` runs never depend on
+    passes trivially, so ordinary `kbb -M:test` runs never depend on
     network access or a live credential.
-- Full `clojure -M:test` suite with this ADR's changes applied: 479 tests,
+- Full `kbb -M:test` suite with this ADR's changes applied: 479 tests,
   4606 assertions, 1 pre-existing failure unrelated to this change
   (`cli_test.clj`'s `structured-diagnostic-has-stable-code-and-bounded-
   source-span`, a source-span regression already fixed on `main` by PR #239

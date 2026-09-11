@@ -15,6 +15,7 @@
   (`(rx-ring-wait-command win head 8000)` under a sealed 2^20 per-boot
   budget), and until this slice its cadence constant had to be set by
   watching `ud2` deaths on hardware."
+  {:kotoba/export [-main estimate-hir estimate-source]}
   (:require [kotoba.sema :as sema]
             [kotoba.lang.text :as str]
             #?@(:cljs [["node:fs" :as node-fs]])))
@@ -268,8 +269,8 @@
             :language-profile (:language-profile hir)))))
 
 (defn -main
-  "CLI: clojure -M -m kotoba.compiler.fuel-estimate <file.kotoba>
-        clojure -M -m kotoba.compiler.fuel-estimate --expr '(defn main [] (+ 1 2))'"
+  "CLI: kbb -M -m kotoba.compiler.fuel-estimate <file.kotoba>
+        kbb -M -m kotoba.compiler.fuel-estimate --expr '(defn main [] (+ 1 2))'"
   [& args]
   (let [[mode a] (if (= "--expr" (first args))
                    [:expr (second args)]

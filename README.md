@@ -96,7 +96,7 @@ That primary Node front resolves its pinned source closure from
 `deps-lock.edn`, bound to the exact `deps.edn` digest. Amu CI checks the lock
 hermetically and compiles/executes a representative native artifact with JVM
 executables removed from `PATH`; every dependency pin change must regenerate
-the lock with `nbb scripts/lock-classpath.cljk`.
+the lock with `kbb --backend sci scripts/lock-classpath.cljk`.
 
 Primary Wasm and ordinary-native compilation are policy-bound as well:
 `:budgets :fuel` controls the emitted Wasm module or sealed native fuel ABI
@@ -480,7 +480,7 @@ addition, and multiplication; storage, external calls, capabilities, parameters,
 extra functions, and every unsupported KIR expression fail closed.
 
 ```bash
-clojure -M:run compile examples/evm-answer.kotoba \
+kbb -M:run compile examples/evm-answer.kotoba \
   --target evm --output answer.evm
 ```
 
@@ -518,7 +518,7 @@ are the compatibility contract; byte layout is not.
 **There is no JVM route (ADR 0347, 2026-09-11).** Until then the
 `x86_64-aiueos-*`/`aarch64-aiueos-*` kernel IMAGE packaging and every other
 `kotoba` subcommand (`package-ios`, `sbom`, `attest-release`, `sign`,
-`keygen`, `run`, receipts, coverage, ...) went through `clojure -M:run`
+`keygen`, `run`, receipts, coverage, ...) went through `kbb -M:run`
 (`kotoba.compiler.cli`, JVM). That fallback is removed: a command or target
 with no nbb-route implementation is refused at exit 64 naming it, and the
 list of what still has to be ported -- with what carries each one's coverage
@@ -1431,7 +1431,7 @@ Ed25519 envelopes, and executor receipts, requiring every case to fail closed.
 A failure can be replayed locally:
 
 ```bash
-KOTOBA_FUZZ_SEED=5426643073673934426 KOTOBA_FUZZ_CASES=1000 clojure -M:test
+KOTOBA_FUZZ_SEED=5426643073673934426 KOTOBA_FUZZ_CASES=1000 kbb -M:test
 ```
 
 The C loader is also compiled with AddressSanitizer and UndefinedBehaviorSanitizer
@@ -1454,8 +1454,8 @@ being lost with the runner.
 Downloaded corpus artifacts are reviewed in dry-run mode before promotion:
 
 ```bash
-npx nbb scripts/review-fuzz-corpus.cljk path/to/artifact/corpus --dry-run
-npx nbb scripts/review-fuzz-corpus.cljk path/to/artifact/corpus --apply
+kbb --backend sci scripts/review-fuzz-corpus.cljk path/to/artifact/corpus --dry-run
+kbb --backend sci scripts/review-fuzz-corpus.cljk path/to/artifact/corpus --apply
 ```
 
 Promotion accepts only non-symlink regular files no larger than 1024 bytes,
@@ -1476,7 +1476,7 @@ An administrator can audit the live settings without exposing administration
 access to CI:
 
 ```bash
-npx nbb scripts/check-github-governance.cljk
+kbb --backend sci scripts/check-github-governance.cljk
 ```
 
 The EDN is desired state; only a successful GitHub API readback establishes

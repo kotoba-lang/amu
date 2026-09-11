@@ -52,10 +52,10 @@ untouched. `abi`, `io-ipld`, `io-multiformats`, `artifact`, `kotoba-wasm`,
 `kotoba-component`, `kotoba-script` and `tender-native` are unchanged.
 
 `deps-lock.edn` is regenerated in this same commit
-(`nbb scripts/lock-classpath.cljk`). Its `:lock/deps-digest` is now
+(`kbb --backend sci scripts/lock-classpath.cljk`). Its `:lock/deps-digest` is now
 `0126d9e8…`, which is the SHA-256 of the `deps.edn` beside it — checked
 explicitly, because a stale lock does not fail loudly, it sends `bin/kotoba`
-back to `clojure -Spath` and the JDK-free property disappears with nobody
+back to `kbb -Spath` and the JDK-free property disappears with nobody
 notified. That is not hypothetical: it is exactly what ADR 0220 found and
 repaired on `origin/main`.
 

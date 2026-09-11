@@ -2,6 +2,7 @@
   "T1.4: pure-native-v1 pilot — host ISA kexe execute for pure i64/string subset.
 
   Requires tender-native (test / :native-run alias). Soft-skips if unavailable."
+  {:kotoba/export [-main host-native-target load-manifest manifest-resource pilot-root run-native-case run-suite tender-native-available?]}
   (:require [clojure.edn :as edn]
             [clojure.java.io :as io]
             [kotoba.lang.text :as str]
@@ -151,7 +152,7 @@
       :target (when (tender-native-available?) (host-native-target))})))
 
 (defn -main
-  "CLI: clojure -M:test -m kotoba.compiler.lang-native-conformance
+  "CLI: kbb -M:test -m kotoba.compiler.lang-native-conformance
    (needs tender-native on classpath — use :test or :native-run alias)
 
    Exit codes: 0 measured and passed, 1 measured and failed, 2 could not

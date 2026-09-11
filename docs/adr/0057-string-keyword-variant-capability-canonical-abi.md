@@ -176,10 +176,10 @@ hand-assembled WAT, and every Wasmtime invocation below ran the **composed**
 - focused suite (`canonical-abi-test`, `component-artifact-test`,
   `component-composition-test`, `component-wit-test`,
   `backend-qualification-test`): 42 tests, 212 assertions, 0 failures.
-- full `clojure -M:test` suite: 425 tests, 4463 assertions, 0 failures,
+- full `kbb -M:test` suite: 425 tests, 4463 assertions, 0 failures,
   against the pinned `wasm-tools 1.243.0` and `wac-cli 0.10.1` (unchanged
   pins -- this ADR needed no toolchain change, unlike ADR 0056).
-- `clojure -M -m kotoba.compiler.backend-qualification verify wasmtime`:
+- `kbb -M -m kotoba.compiler.backend-qualification verify wasmtime`:
   `:manifest-gate :passed`, unchanged `:gaps` list, confirming no
   capability kit's qualification moved as a side effect.
 

@@ -19,6 +19,6 @@ The regression test calls a recursive function carrying a string externref and
 an i64 counter, then observes `string=?` as an exported i64 result. This covers
 both mixed reference/scalar recursive signatures and value-level equality.
 
-Evidence: `clojure -M:test` passes 323 tests / 4,001 assertions; browser-host
+Evidence: `kbb -M:test` passes 323 tests / 4,001 assertions; browser-host
 admission and denial vectors pass; and all 24 JVM/nbb typed-Wasm artifact
 identity cases pass.

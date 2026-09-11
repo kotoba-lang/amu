@@ -54,13 +54,13 @@ to the transport, not a workaround in the code under test.
 
 The first comparison showed `emit-program` producing 48 bytes on the JVM and
 100 on nbb for identical KIR, which reads as a backend divergence. It was not.
-`clojure -Spath` resolves `kotoba-native` from a pinned git dep
+`kbb -Spath` resolves `kotoba-native` from a pinned git dep
 (`95fd4b19`, `~/.gitlibs`) while the hand-built nbb classpath pointed at the
 working checkout `orgs/kotoba-lang/kotoba-native`. Two different sources.
 
 On identical sources the two runtimes emit **byte-identical** code. The
 docstring of `portable-surface-test` already prescribes
-`nbb --classpath "src:test:$(clojure -Spath -M:test)"` — deriving the nbb
+`kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)"` — deriving the nbb
 classpath from the JVM one is what makes the comparison mean anything.
 
 The `orgs/` checkout and the dependency amu actually builds against are not

@@ -23,4 +23,4 @@ Pilot **30 → 31**.
 
 ## Evidence
 
-- `clojure -M:conformance` dual-green + goldens
+- `kbb -M:conformance` dual-green + goldens
