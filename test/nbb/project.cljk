@@ -694,3 +694,120 @@
               "project module requires an explicit :export vector"]]]
       (when-let [failure (rejects #(project/link-source {'root source} 'root) expected)]
         (throw (js/Error. (str label ": " failure)))))))
+
+;; ---------------------------------------------------------------------------
+;; `:refer` in a require spec (grammar `:require-spec :refer`, 2026-09-11)
+;;
+;; A referred name is an alias-qualified name spelled bare: the linker rewrites
+;; every bare, unbound occurrence into `alias/name` BEFORE `rewrite-import-calls`
+;; runs, so the stub, the linked target and the definition CID are those of the
+;; qualified spelling. The equality of the linked SOURCE across the three
+;; spellings is the assertion that there is one resolution path, not two. The
+;; CID half of that claim is measured through `amu definition-cids` in the
+;; commit that landed this (a subprocess is not something this file spawns).
+
+(def ^:private refer-math
+  "(ns example.math (:export [double-it]))\n(defn double-it [n :i64] :i64 (* n 2))")
+
+(defn- refer-calc [spec call]
+  (str "(ns example.calc (:require " spec ") (:export [compute]))\n"
+       "(defn compute [n :i64] :i64 (+ (" call " n) 1))"))
+
+(defn- run-compute [calc]
+  (let [{:keys [source]} (project/link-source {'example.math refer-math 'example.calc calc} 'example.calc)
+        kir (ir/lower (sema/analyze source {:admit-linked-synthetics? true}))]
+    (js/Number (ir/execute kir 'compute [20]))))
+
+(check "a-referred-name-is-the-alias-qualified-name-spelled-bare"
+  (fn []
+    (let [qualified (refer-calc "[example.math :as math]" "math/double-it")
+          referred  (refer-calc "[example.math :as math :refer [double-it]]" "double-it")
+          no-alias  (refer-calc "[example.math :refer [double-it]]" "double-it")
+          link (fn [calc] (:source (project/link-source {'example.math refer-math 'example.calc calc} 'example.calc)))]
+      ;; The control: the referred spellings do not contain the qualified call.
+      (assert (not (re-find #"math/double-it" referred)))
+      (assert (not (re-find #"math/" no-alias)))
+      (assert (= (link qualified) (link referred))
+              "the linked source differs between the qualified and the :as+:refer spelling")
+      (assert (= (link qualified) (link no-alias))
+              "the linked source differs between the qualified and the :refer-only spelling")
+      (assert (= 41 (run-compute referred)))
+      (assert (= 41 (run-compute no-alias))))))
+
+(check "a-bound-local-shadows-a-referred-name"
+  (fn []
+    ;; `(let [double-it 5] ...)` is the local, as on both hosts: 20 + 5.
+    (assert (= 25 (run-compute
+                   (str "(ns example.calc (:require [example.math :refer [double-it]]) (:export [compute]))\n"
+                        "(defn compute [n :i64] :i64 (let [double-it 5] (+ double-it n)))"))))
+    ;; And a defn PARAMETER named like a referred name is the parameter.
+    (assert (= 21 (run-compute
+                   (str "(ns example.calc (:require [example.math :refer [double-it]]) (:export [compute]))\n"
+                        "(defn compute [double-it :i64] :i64 (+ double-it 1))"))))))
+
+(check "refer-refusals-are-by-name"
+  (fn []
+    (doseq [[label calc expected]
+            [["a name the required module does not export"
+              (refer-calc "[example.math :refer [triple]]" "triple")
+              "referred name triple is not exported by example.math; its exports are [double-it]"]
+             [":refer :all"
+              (refer-calc "[example.math :refer :all]" "double-it")
+              ":refer :all is not admitted; name the imported functions"]
+             ["a referred name colliding with a definition of this module"
+              (str "(ns example.calc (:require [example.math :refer [double-it]]) (:export [double-it]))\n"
+                   "(defn double-it [n :i64] :i64 1)")
+              "referred name double-it (from example.math) collides with a definition of this module"]
+             ["a name referred from two specs"
+              (refer-calc "[example.math :refer [double-it]] [example.math :as m :refer [double-it]]" "double-it")
+              "referred name double-it is referred from more than one require spec"]
+             ["a name referred twice in one spec"
+              (refer-calc "[example.math :refer [double-it double-it]]" "double-it")
+              ":refer names double-it twice"]
+             ["an empty :refer"
+              (refer-calc "[example.math :refer []]" "double-it")
+              ":refer takes a non-empty vector of simple symbols"]
+             ["an option nobody declared"
+              (refer-calc "[example.math :only [double-it]]" "double-it")
+              "import option :only is not admitted; the admitted options are :as, :refer and :with"]
+             ["a bare require names nothing this module can use"
+              (refer-calc "[example.math]" "double-it")
+              "import needs :as or :refer; a require with neither names nothing this module can use"]
+             ["a string namespace is a host module"
+              (refer-calc "[\"node:fs\" :as fs]" "double-it")
+              "import \"node:fs\" names a host module by string; a Kotoba module is a simple symbol"]
+             ["a spec that is not a vector"
+              (refer-calc "example.math" "double-it")
+              "imports require [namespace :as alias], [namespace :refer [name ...]] or [namespace :as alias :with {parameter type}]"]]]
+      (when-let [failure (rejects #(project/link-source {'example.math refer-math 'example.calc calc} 'example.calc)
+                                  expected)]
+        (throw (js/Error. (str label ": " failure)))))))
+
+(check "the-ns-clauses-outside-the-language-are-refused-by-name"
+  (fn []
+    (doseq [[label clause expected]
+            [[":import" "(:import [java.io File])"
+              "namespace clause :import is not admitted: host interop (a Java / JS class) is outside the language; the admitted clauses are :export, :capabilities, :schemas, :params and :require"]
+             [":require-macros" "(:require-macros [m :refer [x]])"
+              "namespace clause :require-macros is not admitted: macros are outside the language; the admitted clauses are :export, :capabilities, :schemas, :params and :require"]
+             [":refer-clojure" "(:refer-clojure :exclude [read])"
+              "namespace clause :refer-clojure is not admitted: there is no clojure.core to exclude from; the admitted clauses are :export, :capabilities, :schemas, :params and :require"]
+             [":use" "(:use [m])"
+              "namespace clause :use is not admitted: an unqualified ambient namespace is outside the language; the admitted clauses are :export, :capabilities, :schemas, :params and :require"]
+             ;; The control: a head nobody listed is still the generic refusal.
+             [":frobnicate" "(:frobnicate 1)"
+              "only one :export, one :capabilities, one :schemas, one :params and alias-only :require clauses are admitted"]]]
+      (when-let [failure (rejects #(project/link-source
+                                    {'root (str "(ns root (:export [main]) " clause ")\n(defn main [] :i64 1)")}
+                                    'root)
+                                  expected)]
+        (throw (js/Error. (str label ": " failure)))))))
+
+(check "a-template-forwards-its-binding-beside-a-refer"
+  (fn []
+    ;; `:with` after `:refer`: the substitution finds the option by key, not by
+    ;; position, and the referred `union` links to the right instantiation.
+    (assert (= 3 (run-main {'kotoba.set.union union-template
+                            'root (str "(ns root (:require [kotoba.set.union :refer [union] :with {elem :i64}]) (:export [main]))\n"
+                                       "(defn main [] :i64 (typed-set-count [:set :i64] (union (typed-set-new [:set :i64] 1 2) (typed-set-new [:set :i64] 2 3))))")}
+                           'root)))))

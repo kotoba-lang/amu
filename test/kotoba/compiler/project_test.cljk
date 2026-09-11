@@ -330,13 +330,25 @@
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"cyclic module dependency"
                             (project/link-source {'cycle.a a 'cycle.b b} 'cycle.a)))))
   (testing "non alias import"
+    ;; `[example.text :refer [greet]]` is ADMITTED since 2026-09-11 (a referred
+    ;; name is the alias-qualified name spelled bare); the shape that still
+    ;; fails the spec parser is a spec that is not a vector at all.
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #"imports require"
                           (project/link-source
                            {'example.app (str/replace app-source
                                                       "[example.text :as text]"
-                                                      "[example.text :refer [greet]]")
+                                                      "example.text")
                             'example.text text-source}
-                           'example.app)))))
+                           'example.app))))
+  (testing "referred name"
+    (is (= (:source (project/link-source {'example.app app-source 'example.text text-source} 'example.app))
+           (:source (project/link-source
+                     {'example.app (-> app-source
+                                       (str/replace "[example.text :as text]" "[example.text :refer [greet]]")
+                                       (str/replace "text/greet" "greet"))
+                      'example.text text-source}
+                     'example.app)))
+        "the linked source of the referred spelling is the qualified spelling's")))
 
 (defn- dependency-project [count all-previous?]
   (into {}

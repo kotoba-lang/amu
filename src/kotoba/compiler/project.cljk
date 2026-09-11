@@ -142,6 +142,139 @@
                {:namespace name :spec spec :parameter parameter :value value})))
   (into (sorted-map) binding))
 
+
+;; ---------------------------------------------------------------------------
+;; `:refer` in a require spec (grammar `:require-spec`, 2026-09-11).
+;;
+;; A referred name is an alias-qualified name spelled bare: `[m :as a :refer
+;; [f]]` lets the module write `(f x)` for `(a/f x)`, and `[m :refer [f]]`
+;; is the same with an alias the author never has to see. It is a SPELLING,
+;; not a second resolution path: `rewrite-referred-symbols` turns every bare
+;; occurrence of a referred name into the alias-qualified symbol BEFORE
+;; `rewrite-import-calls` runs, so the stub, the linked target, the
+;; definition CID and every refusal downstream are exactly those of the
+;; qualified spelling (measured: `amu definition-cids` mints the same CIDs
+;; for the two spellings of one project).
+;;
+;; Why it is admitted: it is IMPLEMENTATION STATE, not a property. Kotoba's
+;; module system resolves names through aliases; a referred name is the same
+;; name reached the same way. Both hosts the compiler's own sources must load
+;; on (Clojure, nbb) already accept this spelling, so a module written this
+;; way is dual-runtime source with no change on its side.
+;;
+;; What is refused, by name: `:refer :all` (an open set is not a declaration);
+;; a referred name the required module does not export (checked in
+;; `analyze-module`, where the dependency's interface is known); a referred
+;; name that collides with a definition of this module or with another
+;; referred name (a bare symbol must mean one thing); a spec key nobody
+;; declared; a string namespace (a host module, not a Kotoba one).
+;;
+;; A LOCAL binding still shadows a referred name -- `(let [f 1] f)` is the
+;; local, as it is on both hosts -- because the rewrite tracks scope the way
+;; `check-no-loose-parameters!` does, and a local is not a definition.
+
+(def ^:private require-spec-keys #{:as :with :refer})
+
+(def ^:private refused-namespace-clauses
+  "Clause head -> why it stays outside the language. Named in the refusal so
+  a census can tell them apart; none is admitted."
+  {:import "host interop (a Java / JS class) is outside the language"
+   :require-macros "macros are outside the language"
+   :use "an unqualified ambient namespace is outside the language"
+   :refer-clojure "there is no clojure.core to exclude from"
+   :load "loading source at run time is outside the language"
+   :gen-class "host interop is outside the language"})
+
+(defn- synthetic-refer-alias
+  "The alias a `[m :refer [...]]` spec gets when the author gave none. It
+  must not be a symbol an author can write in a Kotoba module (`kotoba_` names
+  are the linker's), and it is derived from the namespace so two specs of one
+  namespace do not collide with each other."
+  [namespace-symbol]
+  (symbol (str "kotoba_refer__" (str/replace (str namespace-symbol) #"[^A-Za-z0-9]" "_"))))
+
+(defn- parse-require-spec!
+  "One require spec -> `{:namespace :alias :refer? :with? :spec?}`.
+  Shape only for `:with`: it is validated against the required module's
+  declaration once the loop has seen this module's own `:params`."
+  [module-name spec]
+  (letfn [(shape! []
+            (reject! "imports require [namespace :as alias], [namespace :refer [name ...]] or [namespace :as alias :with {parameter type}]"
+                     {:namespace module-name :spec spec}))]
+    (when-not (and (vector? spec) (pos? (count spec)))
+      (shape!))
+    (let [[required & options] spec]
+      (when (string? required)
+        (reject! (str "import " (pr-str required) " names a host module by string; a Kotoba module is a simple symbol")
+                 {:namespace module-name :spec spec}))
+      (when-not (simple-symbol? required)
+        (shape!))
+      (when-not (even? (count options))
+        (shape!))
+      (let [pairs (partition 2 options)
+            keys-seen (map first pairs)]
+        (doseq [k keys-seen]
+          (when-not (contains? require-spec-keys k)
+            (reject! (str "import option " (pr-str k) " is not admitted; the admitted options are :as, :refer and :with")
+                     {:namespace module-name :spec spec})))
+        (when-not (= (count keys-seen) (count (set keys-seen)))
+          (reject! "import spec repeats an option" {:namespace module-name :spec spec}))
+        (let [options (into {} (map vec pairs))
+              alias (get options :as)
+              refer (get options :refer)
+              with (get options :with)
+              has-alias? (contains? (set keys-seen) :as)
+              has-refer? (contains? (set keys-seen) :refer)
+              has-with? (contains? (set keys-seen) :with)]
+          (when (and has-alias? (not (simple-symbol? alias)))
+            (shape!))
+          (when (and (not has-alias?) (not has-refer?))
+            (reject! "import needs :as or :refer; a require with neither names nothing this module can use"
+                     {:namespace module-name :spec spec}))
+          (when has-refer?
+            (when (= :all refer)
+              (reject! ":refer :all is not admitted; name the imported functions"
+                       {:namespace module-name :spec spec}))
+            (when-not (and (vector? refer) (seq refer) (every? simple-symbol? refer))
+              (reject! ":refer takes a non-empty vector of simple symbols"
+                       {:namespace module-name :spec spec}))
+            (when-not (= (count refer) (count (set refer)))
+              (reject! (str ":refer names " (pr-str (first (for [[n c] (frequencies refer) :when (> c 1)] n)))
+                            " twice")
+                       {:namespace module-name :spec spec})))
+          (cond-> {:namespace required
+                   :alias (if has-alias? alias (synthetic-refer-alias required))}
+            has-refer? (assoc :refer (vec refer))
+            has-with? (assoc :with with :spec spec)))))))
+
+(defn- module-definition-names
+  "Top-level names this module defines: `defn` / `defn-` / `def` and the
+  declaration heads the frontend expands (`defrecord`, `defprotocol`,
+  `defmulti`, `defmethod`)."
+  [forms]
+  (into #{}
+        (keep (fn [form]
+                (when (and (seq? form)
+                           (contains? '#{defn defn- def defrecord defprotocol defmulti defmethod} (first form))
+                           (symbol? (second form)))
+                  (second form))))
+        forms))
+
+(defn- check-referred-names!
+  "A referred name means ONE thing in this module: refused if two specs
+  refer it, or if this module defines it."
+  [module-name requires forms]
+  (let [referred (mapcat (fn [{:keys [refer namespace]}] (map (fn [n] [n namespace]) refer)) requires)
+        defined (module-definition-names forms)]
+    (doseq [[n c] (frequencies (map first referred))
+            :when (> c 1)]
+      (reject! (str "referred name " n " is referred from more than one require spec")
+               {:namespace module-name :name n}))
+    (doseq [[n from] referred
+            :when (contains? defined n)]
+      (reject! (str "referred name " n " (from " from ") collides with a definition of this module")
+               {:namespace module-name :name n :from from}))))
+
 (defn module-info
   "Return the bounded declared namespace, exports, alias-only requires and
   declared capability set for one project module. This is also the authority
@@ -238,23 +371,20 @@
                    (validate-template-params! name (second clause)))
 
             (and (seq? clause) (= :require (first clause)))
-            (let [parsed
-                  (mapv (fn [spec]
-                          (when-not (and (vector? spec)
-                                         (or (= 3 (count spec))
-                                             (and (= 5 (count spec)) (= :with (nth spec 3))))
-                                         (simple-symbol? (first spec))
-                                         (= :as (second spec))
-                                         (simple-symbol? (nth spec 2)))
-                            (reject! "imports require [namespace :as alias] or [namespace :as alias :with {parameter type}]"
-                                     {:namespace name :spec spec}))
-                          (cond-> {:namespace (first spec) :alias (nth spec 2)}
-                            ;; Shape only, here; validated against the
-                            ;; required module's declaration once the loop
-                            ;; has seen this module's own `:params`.
-                            (= 5 (count spec)) (assoc :with (nth spec 4) :spec spec)))
-                        (rest clause))]
+            (let [parsed (mapv #(parse-require-spec! name %) (rest clause))]
               (recur (next remaining) exports (into requires parsed) capabilities schemas params))
+
+            ;; A clause head this loop knows and REFUSES is named, so a
+            ;; histogram of refusals can tell host interop (`:import`), a
+            ;; macro harness (`:require-macros`) and a Clojure-only
+            ;; declaration (`:refer-clojure` / `:use`) apart from one another
+            ;; and from a malformed admitted clause. Nothing here is admitted:
+            ;; these have no meaning in a language without a host.
+            (and (seq? clause) (contains? refused-namespace-clauses (first clause)))
+            (reject! (str "namespace clause " (pr-str (first clause)) " is not admitted: "
+                          (get refused-namespace-clauses (first clause))
+                          "; the admitted clauses are :export, :capabilities, :schemas, :params and :require")
+                     {:namespace name :clause clause})
 
             :else
             (reject! "only one :export, one :capabilities, one :schemas, one :params and alias-only :require clauses are admitted"
@@ -270,6 +400,7 @@
               (reject! "project module requires an explicit :export vector" {:namespace name}))
             (when-not (= (count requires) (count (set (map :alias requires))))
               (reject! "duplicate import alias" {:namespace name :requires requires}))
+            (check-referred-names! name requires forms)
             ;; Two requires of one namespace are two DIFFERENT modules when
             ;; they bind a template differently, and that is the whole point
             ;; of a template. The same namespace under the same binding twice
@@ -832,11 +963,16 @@
                                  (keep-meta clause
                                             (apply list :require
                                                    (map (fn [spec]
-                                                          (if (and (vector? spec) (= 5 (count spec)))
-                                                            (keep-meta spec
-                                                                       (assoc spec 4 (into {} (map (fn [[k v]] [k (substitute-in-type v binding)]))
-                                                                                            (nth spec 4))))
-                                                            spec))
+                                                          ;; `:with` is an option pair after the
+                                                          ;; namespace; its position moves when
+                                                          ;; `:refer` precedes it, so find it.
+                                                          (let [at (when (vector? spec)
+                                                                     (first (keep-indexed (fn [i x] (when (and (odd? i) (= :with x)) i)) spec)))]
+                                                            (if (and at (map? (get spec (inc at))))
+                                                              (keep-meta spec
+                                                                         (assoc spec (inc at) (into {} (map (fn [[k v]] [k (substitute-in-type v binding)]))
+                                                                                                    (nth spec (inc at)))))
+                                                              spec)))
                                                         (rest clause))))
                                  clause))
                              form)))
@@ -933,6 +1069,110 @@
               :else nil))]
     (doseq [form forms] (check form #{}))))
 
+(defn- referred-alias-table
+  "referred name -> the alias-qualified symbol it stands for."
+  [requires]
+  (into {}
+        (mapcat (fn [{:keys [refer alias]}]
+                  (map (fn [n] [n (symbol (str alias) (str n))]) refer)))
+        requires))
+
+(defn- rewrite-referred-symbols
+  "Every bare occurrence of a referred name that is not a bound local becomes
+  its alias-qualified symbol. Scope is tracked as `check-no-loose-parameters!`
+  tracks it: `let`-family bindings, `fn` / `defn` parameters, the `catch`
+  binder. `quote` is not entered; the `ns` form is not entered."
+  [forms table]
+  (letfn [(bindings [binding-vector bound f]
+            ;; Returns [rewritten-vector scope-after]. `:let [..]` of
+            ;; `for`/`doseq` opens a nested vector; `:when`/`:while` take an
+            ;; expression in the current scope.
+            (loop [pairs (seq binding-vector) bound bound out []]
+              (if (empty? pairs)
+                [(keep-meta binding-vector out) bound]
+                (let [[pattern expr] pairs]
+                  (cond
+                    (= :let pattern)
+                    (let [[v bound'] (bindings expr bound f)]
+                      (recur (nnext pairs) bound' (conj out pattern v)))
+                    (keyword? pattern)
+                    (recur (nnext pairs) bound (conj out pattern (f expr bound)))
+                    :else
+                    (recur (nnext pairs) (into bound (pattern-symbols pattern))
+                           (conj out pattern (f expr bound))))))))
+          (clause [[params & tail] bound f]
+            (let [bound' (into bound (pattern-symbols params))]
+              (list* params (map #(f % bound') tail))))
+          (rewrite [form bound]
+            (cond
+              (symbol? form)
+              (if (and (contains? table form) (not (contains? bound form)))
+                (get table form)
+                form)
+
+              (seq? form)
+              (let [[op & args] form]
+                (cond
+                  (or (= 'ns op) (= 'quote op)) form
+
+                  (contains? binding-form-heads op)
+                  (let [[v bound'] (bindings (first args) bound rewrite)]
+                    (keep-meta form (list* op v (map #(rewrite % bound') (rest args)))))
+
+                  (= 'fn op)
+                  (if (vector? (first args))
+                    (keep-meta form (list* op (clause args bound rewrite)))
+                    (keep-meta form (list* op (map (fn [c]
+                                                     (if (and (seq? c) (vector? (first c)))
+                                                       (keep-meta c (clause c bound rewrite))
+                                                       (rewrite c bound)))
+                                                   args))))
+
+                  (= 'catch op)
+                  (let [binder (last (butlast args))
+                        bound' (into bound (pattern-symbols binder))]
+                    (keep-meta form (list* op (concat (map #(rewrite % bound) (drop-last 2 args))
+                                                      [binder (rewrite (last args) bound')]))))
+
+                  (contains? #{'defn 'defn-} op)
+                  (let [[name & declaration] args
+                        [docstring declaration] (if (string? (first declaration))
+                                                  [(first declaration) (rest declaration)]
+                                                  [nil declaration])
+                        rebuilt (if (vector? (first declaration))
+                                  (clause declaration bound rewrite)
+                                  (map (fn [c]
+                                         (if (and (seq? c) (vector? (first c)))
+                                           (keep-meta c (clause c bound rewrite))
+                                           (rewrite c bound)))
+                                       declaration))]
+                    (keep-meta form (list* op name (concat (when docstring [docstring]) rebuilt))))
+
+                  :else
+                  (keep-meta form (apply list (map #(rewrite % bound) form)))))
+
+              (vector? form) (keep-meta form (mapv #(rewrite % bound) form))
+              (map? form) (keep-meta form (into (empty form)
+                                                (map (fn [[k v]] [(rewrite k bound) (rewrite v bound)]))
+                                                form))
+              (set? form) (keep-meta form (into (empty form) (map #(rewrite % bound)) form))
+              :else form))]
+    (if (empty? table)
+      forms
+      (mapv #(rewrite % #{}) forms))))
+
+(defn- check-referred-exports!
+  "Every referred name must be an export of the module it is referred from."
+  [info dependencies]
+  (doseq [{dep-name :namespace with :with refer :refer} (:requires info)
+          :when (seq refer)]
+    (let [interface (:interface (get dependencies (instantiation-key dep-name with)))]
+      (doseq [n refer
+              :when (not (contains? interface n))]
+        (reject! (str "referred name " n " is not exported by " dep-name
+                      "; its exports are " (pr-str (vec (sort (keys interface)))))
+                 {:module (:namespace info) :dependency dep-name :name n})))))
+
 (defn instantiate-forms
   "The forms of a template module under BINDING: every parameter symbol in a
   type position replaced by its bound type form, and a refusal if one remains
@@ -973,7 +1213,10 @@
                                   [stub (into {} (map (juxt arity-of :linked-name)) clauses)]))
                            stub-pairs)
         stub-source-names (into #{} (map second) stub-pairs)
-        rewritten (mapv #(rewrite-import-calls % import->stub) (without-requires forms))
+        _ (check-referred-exports! info dependencies)
+        rewritten (mapv #(rewrite-import-calls % import->stub)
+                        (rewrite-referred-symbols (without-requires forms)
+                                                  (referred-alias-table (:requires info))))
         augmented (into rewritten (map (fn [[_ stub clauses]] (stub-form stub clauses)) stub-pairs))
         ;; Lambda IDs are artifact data. Give every source module a disjoint
         ;; range so the project-level dispatcher can route a closure back to
