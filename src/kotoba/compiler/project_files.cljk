@@ -94,7 +94,13 @@
                        source-roots)]
     (cond
       (empty? existing)
-      (reject! "required module is missing from the explicit source paths"
+      ;; The sentence carries the NAME. Measured 2026-09-12 (adr-2609111900,
+      ;; measurement 14): 28 of the compiler's own 225 modules were refused
+      ;; with this sentence and the histogram could not say which module
+      ;; was missing -- the name was in ex-data, and the CLI report keeps
+      ;; only the message. A refusal that does not say what is missing
+      ;; cannot be acted on from the outside.
+      (reject! (str "required module " namespace " is missing from the explicit source paths")
                {:module namespace})
       (= (count existing) 1)
       (first existing)

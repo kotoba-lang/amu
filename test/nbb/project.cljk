@@ -110,8 +110,10 @@
   (fn []
     (let [root (tmpdir)
           main (spit! root "main.cljk" entry)]
+      ;; Named: the sentence says WHICH module (2026-09-12); a sentence
+      ;; that only says "a module is missing" pinned nothing actionable.
       (when-let [failure (rejects #(project-files/load-closed-graph main [root])
-                                  "required module is missing from the explicit source paths")]
+                                  "required module util is missing from the explicit source paths")]
         (throw (js/Error. failure))))))
 
 (check "namespace-in-two-roots-is-ambiguous-not-ordered"
