@@ -530,3 +530,105 @@
           kir (ir/lower (sema/analyze source {:admit-linked-synthetics? true}))]
       (assert (= ['m.base 'm.mid 'm.top] module-order))
       (assert (= 32 (js/Number (ir/execute kir 'main [])))))))
+
+;; ---------------------------------------------------------------------------
+;; Template modules (superproject ADR adr-2609113100, option C).
+;;
+;; `bin/amu` runs THIS runtime for wasm32-browser, so the linker's
+;; instantiation step has to work here, not only on the JVM where
+;; `project_template_test.clj` lives. Same program as that file: one template,
+;; two bindings, `main` answers 5. Refusals are asserted by message, like the
+;; rest of this file.
+
+(def ^:private union-template
+  "(ns kotoba.set.union
+  (:params [elem])
+  (:export [union]))
+(defn union [s1 [:set elem] s2 [:set elem]] [:set elem]
+  (loop [i 0 acc s1]
+    (if (< i (typed-set-count [:set elem] s2))
+      (recur (+ i 1) (typed-set-conj [:set elem] acc (typed-set-nth [:set elem] s2 i)))
+      acc)))")
+
+(def ^:private union-root
+  "(ns root
+  (:require [kotoba.set.union :as ui :with {elem :i64}]
+            [kotoba.set.union :as us :with {elem :symbol}])
+  (:export [main]))
+(defn main [] :i64
+  (+ (typed-set-count [:set :i64] (ui/union (typed-set-new [:set :i64] 1 2) (typed-set-new [:set :i64] 2 3)))
+     (typed-set-count [:set :symbol] (us/union (typed-set-new [:set :symbol] (symbol \"x\")) (typed-set-new [:set :symbol] (symbol \"y\"))))))")
+
+(def ^:private template-sources {'kotoba.set.union union-template 'root union-root})
+
+(defn- run-main [sources root]
+  (let [{:keys [source]} (project/link-source sources root)
+        kir (ir/lower (sema/analyze source {:admit-linked-synthetics? true}))]
+    (js/Number (ir/execute kir 'main []))))
+
+(defn- refusal-message [thunk]
+  (try (thunk) nil (catch :default error (.-message error))))
+
+(check "template-instantiates-per-binding-and-runs"
+  (fn []
+    (let [{:keys [module-order]} (project/link-source template-sources 'root)]
+      (assert (= [['kotoba.set.union {'elem :i64}] ['kotoba.set.union {'elem :symbol}] 'root]
+                 module-order)
+              (pr-str module-order))
+      (assert (= 5 (run-main template-sources 'root))))))
+
+(check "template-links-through-filesystem-discovery-and-through-a-lock"
+  (fn []
+    ;; Discovery walks `:require` by namespace, so the template is ONE file and
+    ;; one block; the bindings live in the importer's (pinned) source.
+    (let [root (tmpdir)
+          main (spit! root "root.kotoba" union-root)
+          _ (spit! (.join path root "kotoba" "set") "union.kotoba" union-template)
+          graph (project-files/load-closed-graph main [root])]
+      (assert (= #{'kotoba.set.union 'root} (set (keys (:sources graph)))))
+      (assert (= 5 (run-main (:sources graph) (:root graph)))))
+    (let [{:keys [blocks lock modules]} (write-lock! template-sources 'root)
+          graph (module-lock/load-locked-graph lock blocks)]
+      (assert (= 2 (count modules)) "one block per source text, not per instantiation")
+      (assert (= 5 (run-main (:sources graph) (:root graph)))))))
+
+(check "template-without-a-binding-is-refused-by-name"
+  (fn []
+    (when-let [failure (rejects #(project/link-source
+                                  (assoc template-sources 'root
+                                         (.replace union-root " :with {elem :i64}" ""))
+                                  'root)
+                                "template module kotoba.set.union declares (:params [elem]) and needs an instantiation: require it with :with {elem <type>}")]
+      (throw (js/Error. failure)))
+    (when-let [failure (rejects #(project/link-source
+                                  {'plain "(ns plain (:export [one])) (defn one [] :i64 1)"
+                                   'root "(ns root (:require [plain :as p :with {elem :i64}]) (:export [main])) (defn main [] :i64 (p/one))"}
+                                  'root)
+                                "module plain declares no (:params ...) but is required with :with {elem :i64}")]
+      (throw (js/Error. failure)))))
+
+(check "a-local-named-like-a-parameter-stays-a-local"
+  (fn []
+    (let [template "(ns t.local (:params [elem]) (:export [f]))
+(defn f [x elem] elem (let [elem 7] (+ x elem)))"
+          forms (project/instantiate-forms (sema/read-forms template) {'elem :i64} 't.local)]
+      ;; Piecewise: the reader hands integers over as BigInt on this runtime,
+      ;; so the whole form is not `=` to a host-literal form.
+      (let [[_ _ params result [_ [local _] body]] (second forms)]
+        (assert (= '[x :i64] params) (pr-str params))
+        (assert (= :i64 result) (pr-str result))
+        (assert (= 'elem local) "the let binds the local, not a type")
+        (assert (= '(+ x elem) body) (pr-str body)))
+      (assert (= 8 (run-main {'t.local template
+                              'root "(ns root (:require [t.local :as t :with {elem :i64}]) (:export [main])) (defn main [] :i64 (t/f 1))"}
+                             'root))))))
+
+(check "a-refusal-inside-an-instantiation-names-the-binding"
+  (fn []
+    (let [message (refusal-message
+                   #(project/link-source
+                     {'t.plus "(ns t.plus (:params [elem]) (:export [plus]))\n(defn plus [a elem b elem] elem (+ a b))"
+                      'root "(ns root (:require [t.plus :as pi :with {elem :i64}] [t.plus :as ps :with {elem :string}]) (:export [main]))\n(defn main [] :i64 (pi/plus 1 2))"}
+                     'root))]
+      (assert (string? message) "+ on :string is refused under one binding and not the other")
+      (assert (re-find #" in t\.plus with \{elem :string\}$" message) message))))

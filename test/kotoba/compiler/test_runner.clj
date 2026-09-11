@@ -127,6 +127,7 @@
             [kotoba.compiler.property-test]
             [kotoba.compiler.module-lock-test]
             [kotoba.compiler.project-test]
+            [kotoba.compiler.project-template-test]
             [kotoba.compiler.receipt-test]
             [kotoba.compiler.ipld-adl-test]
             [kotoba.compiler.ipld-adl-source-test]
@@ -373,6 +374,7 @@
    'kotoba.compiler.verifier-profile-test
    'kotoba.compiler.module-lock-test
    'kotoba.compiler.project-test
+   'kotoba.compiler.project-template-test
    'kotoba.compiler.property-test])
 
 ;; A run that stops early is the failure mode this guards. `kotoba.compiler.cli`

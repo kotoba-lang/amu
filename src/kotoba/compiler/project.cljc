@@ -15,9 +15,132 @@
 (def max-project-expression-nodes 200000)
 (def max-project-literals 65536)
 (def max-project-string-literal-bytes (* 1024 1024))
+;; A template's `(:params [...])` and an importer's `:with {...}` are both
+;; bounded by this. Eight is a ceiling, not a target: no template in the
+;; workspace declares more than one, and the bound exists so the clause is not
+;; the one unbounded thing in a header where everything else is counted.
+(def max-template-parameters 8)
 
 (defn- reject! [message data]
   (throw (ex-info message (assoc data :phase :project-link))))
+
+;; ---------------------------------------------------------------------------
+;; Template modules (superproject ADR adr-2609113100, "option C").
+;;
+;; Kotoba has no type variables: a parameter is annotated with a concrete
+;; value type or defaults to `:i64`, so a library generic over its element
+;; type -- `kotoba.set.union` over `[:set :i64]` and over `[:set :symbol]` --
+;; could only be written twice, by hand, in two files. Measured 2026-09-11:
+;; those two hand-written files link, carry distinct definition CIDs, and
+;; `main` answers 5 through `runtime/browser-host.mjs`. The two files differ in
+;; exactly one token.
+;;
+;; This adds NO typing to the language. A library module declares type
+;; PARAMETERS in its `ns` form, an importer BINDS them in the require spec,
+;; and the linker instantiates the module once per distinct binding by
+;; substituting the bound type form for the parameter symbol BEFORE the
+;; frontend reads the module. `kotoba-sema` is unchanged and never sees a
+;; placeholder: every text it is handed is a module an author could have
+;; written by hand, and the two instantiations of `kotoba.set.union` below
+;; are byte-for-byte the two files that were measured.
+;;
+;;   (ns kotoba.set.union (:params [elem]) (:export [union]))
+;;   (defn union [s1 [:set elem] s2 [:set elem]] [:set elem] ...)
+;;
+;;   (ns root (:require [kotoba.set.union :as ui :with {elem :i64}]
+;;                      [kotoba.set.union :as us :with {elem :symbol}]) ...)
+;;
+;; Where a parameter symbol is a TYPE and where it is a NAME is decided the
+;; way the frontend itself decides it (`parameter-type-item?`): a type is a
+;; keyword or a vector whose head is a keyword. So the symbol is substituted
+;; (1) anywhere inside a keyword-headed vector, (2) in the type slot after a
+;; parameter pattern in a `defn`/`defn-` parameter vector, and (3) in the
+;; result slot after that vector. It is NOT substituted in a value position:
+;; `(let [elem 1] (+ elem 1))` inside a template still means the local. And a
+;; parameter symbol that survives substitution in a position that is not a
+;; bound local is refused here rather than handed to the frontend, which would
+;; otherwise report it as an unbound variable in a module the author never saw.
+;;
+;; Fail-closed both ways: a template reached with no binding (single-file
+;; `amu check`, or a project `:require` without `:with`) is refused by name,
+;; and so is a `:with` on a module that declares no `:params`, a `:with` naming
+;; a parameter the template does not declare, and a `:with` missing one it
+;; does. Instantiations are modules: they count against `max-project-modules`
+;; and their functions against `max-project-functions`, and two importers
+;; binding the same parameters to the same types share ONE instantiation.
+
+(defn- type-form?
+  "The frontend's own discriminator (`parameter-type-item?`): every value type
+  is a keyword or a vector whose head is a keyword, and no binding pattern can
+  look like that."
+  [item]
+  (or (keyword? item)
+      (and (vector? item) (keyword? (first item)))))
+
+(defn instantiation-key
+  "How the linker keys a module: the namespace symbol for an ordinary module,
+  `[namespace binding]` for an instantiation of a template, where `binding` is
+  the `:with` map in sorted order so that two importers spelling the same
+  binding in two orders share one instantiation."
+  [namespace binding]
+  (if (some? binding)
+    [namespace (into (sorted-map) binding)]
+    namespace))
+
+(defn key-namespace
+  "The namespace an `instantiation-key` names."
+  [key]
+  (if (vector? key) (first key) key))
+
+(defn key-binding
+  "The binding an `instantiation-key` carries, nil for an ordinary module."
+  [key]
+  (when (vector? key) (second key)))
+
+(defn module-namespaces
+  "The distinct namespaces behind a module order, in first-seen order. A
+  template appears once however many times it was instantiated: it is one
+  source text, and per-module digests are keyed by source."
+  [order]
+  (vec (distinct (map key-namespace order))))
+
+(defn- describe-binding [namespace binding]
+  (str namespace " with " (pr-str (into (sorted-map) binding))))
+
+(defn- validate-template-params!
+  [name declared]
+  (when-not (and (vector? declared)
+                 (seq declared)
+                 (every? #(and (simple-symbol? %) (not (str/blank? (str %)))) declared)
+                 (= (count declared) (count (set declared))))
+    (reject! "namespace :params must be a non-empty vector of distinct simple symbols"
+             {:namespace name :params declared}))
+  (when (> (count declared) max-template-parameters)
+    (reject! "namespace :params exceed the template parameter limit"
+             {:namespace name :count (count declared) :limit max-template-parameters}))
+  (vec declared))
+
+(defn- validate-binding!
+  "Shape of one `:with` map, checked in the module that wrote it. Each value
+  must be a type form, or -- inside a template -- one of that template's own
+  parameters, which is how a template forwards its element type to a library
+  it requires (`:with {elem elem}`); substitution turns that into a type form
+  before the requirement is resolved. Whether the KEYS are the parameters the
+  required module declares is checked where both sides are known, in
+  `link-source`."
+  [name spec binding own-params]
+  (when-not (and (map? binding) (every? simple-symbol? (keys binding)))
+    (reject! "import :with must be a map from template parameter symbols to type forms"
+             {:namespace name :spec spec}))
+  (when (> (count binding) max-template-parameters)
+    (reject! "import :with exceeds the template parameter limit"
+             {:namespace name :spec spec :count (count binding) :limit max-template-parameters}))
+  (doseq [[parameter value] binding]
+    (when-not (or (type-form? value)
+                  (and (simple-symbol? value) (contains? (set own-params) value)))
+      (reject! "import :with binds a parameter to something that is not a type form"
+               {:namespace name :spec spec :parameter parameter :value value})))
+  (into (sorted-map) binding))
 
 (defn module-info
   "Return the bounded declared namespace, exports, alias-only requires and
@@ -60,12 +183,12 @@
         (reject! "invalid project namespace" {:namespace name}))
       (when (and docstring (> (count docstring) sema/max-namespace-docstring-chars))
         (reject! "namespace docstring exceeds admission limit" {:namespace name}))
-      (loop [remaining clauses exports nil requires [] capabilities nil schemas nil]
+      (loop [remaining clauses exports nil requires [] capabilities nil schemas nil params nil]
         (if-let [clause (first remaining)]
           (cond
             (and (seq? clause) (= :export (first clause)) (= 2 (count clause))
                  (vector? (second clause)) (nil? exports))
-            (recur (next remaining) (vec (second clause)) requires capabilities schemas)
+            (recur (next remaining) (vec (second clause)) requires capabilities schemas params)
 
             (and (seq? clause) (= :capabilities (first clause)) (= 2 (count clause))
                  (set? (second clause)) (nil? capabilities))
@@ -74,7 +197,7 @@
                         (not-every? #(and (keyword? %) (namespace %)) declared))
                 (reject! "namespace :capabilities must be a bounded set of namespaced keywords"
                          {:namespace name :capabilities declared}))
-              (recur (next remaining) exports requires declared schemas))
+              (recur (next remaining) exports requires declared schemas params))
 
             (and (seq? clause) (= :schemas (first clause)) (= 2 (count clause))
                  (map? (second clause)) (nil? schemas))
@@ -82,37 +205,68 @@
             ;; contents are validated once, by the per-module analysis, which
             ;; is where a schema graph is checked. Two validations of one table
             ;; is how they drift apart.
-            (recur (next remaining) exports requires capabilities (second clause))
+            (recur (next remaining) exports requires capabilities (second clause) params)
+
+            ;; `(:params [elem ...])` makes this module a TEMPLATE. The clause
+            ;; is the linker's alone: it is stripped with `:require` before the
+            ;; frontend reads the module, and a module that carries it is never
+            ;; analysed without a binding for every symbol it names.
+            (and (seq? clause) (= :params (first clause)) (= 2 (count clause))
+                 (nil? params))
+            (recur (next remaining) exports requires capabilities schemas
+                   (validate-template-params! name (second clause)))
 
             (and (seq? clause) (= :require (first clause)))
             (let [parsed
                   (mapv (fn [spec]
-                          (when-not (and (vector? spec) (= 3 (count spec))
+                          (when-not (and (vector? spec)
+                                         (or (= 3 (count spec))
+                                             (and (= 5 (count spec)) (= :with (nth spec 3))))
                                          (simple-symbol? (first spec))
                                          (= :as (second spec))
                                          (simple-symbol? (nth spec 2)))
-                            (reject! "imports require [namespace :as alias]"
+                            (reject! "imports require [namespace :as alias] or [namespace :as alias :with {parameter type}]"
                                      {:namespace name :spec spec}))
-                          {:namespace (first spec) :alias (nth spec 2)})
+                          (cond-> {:namespace (first spec) :alias (nth spec 2)}
+                            ;; Shape only, here; validated against the
+                            ;; required module's declaration once the loop
+                            ;; has seen this module's own `:params`.
+                            (= 5 (count spec)) (assoc :with (nth spec 4) :spec spec)))
                         (rest clause))]
-              (recur (next remaining) exports (into requires parsed) capabilities schemas))
+              (recur (next remaining) exports (into requires parsed) capabilities schemas params))
 
             :else
-            (reject! "only one :export, one :capabilities, one :schemas and alias-only :require clauses are admitted"
+            (reject! "only one :export, one :capabilities, one :schemas, one :params and alias-only :require clauses are admitted"
                      {:namespace name :clause clause}))
-          (do
+          (let [requires (mapv (fn [{:keys [with spec] :as require}]
+                                 (if (contains? require :with)
+                                   (-> require
+                                       (assoc :with (validate-binding! name spec with params))
+                                       (dissoc :spec))
+                                   require))
+                               requires)]
             (when-not (some? exports)
               (reject! "project module requires an explicit :export vector" {:namespace name}))
             (when-not (= (count requires) (count (set (map :alias requires))))
               (reject! "duplicate import alias" {:namespace name :requires requires}))
-            (when-not (= (count requires) (count (set (map :namespace requires))))
+            ;; Two requires of one namespace are two DIFFERENT modules when
+            ;; they bind a template differently, and that is the whole point
+            ;; of a template. The same namespace under the same binding twice
+            ;; is still a duplicate.
+            (when-not (= (count requires)
+                         (count (set (map (fn [{:keys [namespace with]}]
+                                            (instantiation-key namespace with))
+                                          requires))))
               (reject! "duplicate imported namespace" {:namespace name :requires requires}))
             ;; nil when the clause is absent, mirroring the frontend: nil
             ;; means "no declare-then-check runs here", an explicit empty set
             ;; means "this module must use no capability at all". Collapsing
             ;; the two would silently turn the second into the first.
+            ;;
+            ;; `:params` is likewise nil for an ordinary module and a vector
+            ;; for a template; the two are different modules to the linker.
             {:namespace name :exports exports :requires requires
-             :capabilities capabilities :schemas schemas}))))))
+             :capabilities capabilities :schemas schemas :params params}))))))
 
 ;; Each module is analysed on its own, so a schema name resolves inside the
 ;; module that declares it and the tables never merge. What can still go wrong
@@ -132,11 +286,16 @@
         (reject! "modules declare the same schema name with different definitions"
                  {:schema schema :modules [a b]})))))
 
+;; The two clauses only the linker reads. `:require` has always been stripped
+;; here; `:params` joins it because, by the time a template reaches the
+;; frontend, every parameter it named has been substituted away and the
+;; clause would be a declaration of symbols that no longer occur.
 (defn- without-requires [forms]
   (mapv (fn [form]
           (if (and (seq? form) (= 'ns (first form)))
             (let [[op name & clauses] form]
-              (list* op name (remove #(and (seq? %) (= :require (first %))) clauses)))
+              (list* op name (remove #(and (seq? %) (contains? #{:require :params} (first %)))
+                                     clauses)))
             form))
         forms))
 
@@ -478,14 +637,24 @@
   "The same refusal, attributed: `:source-module` names the module that
   wrote the form and `:span` is `{:line <that module's line>}` when the line
   is known. Any span into a synthetic text is dropped -- it is a position no
-  author can open. The code, message, phase and every other datum stand."
-  [error module line]
-  (ex-info (ex-message error)
-           (-> (ex-data error)
-               (assoc :source-module module)
-               (dissoc :span)
-               (cond-> (number? line) (assoc :span {:line line})))
-           error))
+  author can open. The code, message, phase and every other datum stand.
+
+  For a refusal raised inside an INSTANTIATION of a template, `binding` is
+  the `:with` map that produced it, and the message says so -- the same
+  template text is analysed once per binding, and a type error that appears
+  under `{elem :symbol}` and not under `{elem :i64}` is only actionable if the
+  reader is told which one it was."
+  ([error module line] (attribute-error error module line nil))
+  ([error module line binding]
+   (ex-info (if (some? binding)
+              (str (ex-message error) " in " (describe-binding module binding))
+              (ex-message error))
+            (-> (ex-data error)
+                (assoc :source-module module)
+                (dissoc :span)
+                (cond-> (number? line) (assoc :span {:line line})
+                        (some? binding) (assoc :source-binding (into (sorted-map) binding))))
+            error)))
 
 (defn with-module-file
   "Add `:source-file` to an attributed refusal from a module->path map, when
@@ -504,14 +673,14 @@
   forms the frontend actually read (rewritten originals, then import stubs,
   in that order). A form index below `(count original)` is an author's form;
   a stub has no author and yields the module without a line."
-  [error module original analysed]
+  [error module original analysed binding]
   (let [data (ex-data error)]
     (if (or (not (map? data)) (contains? data :source-module))
       error
       (let [index (top-level-index analysed data)
             line (when (and (some? index) (< index (count original)))
                    (:line (meta (nth original index))))]
-        (attribute-error error module line)))))
+        (attribute-error error module line binding)))))
 
 (defn- definition-lines
   "Top-level `defn`/`defn-` name -> the line the author wrote it on."
@@ -525,11 +694,233 @@
                   [(second form) (:line (meta form))])))
         forms))
 
-(defn- analyze-module [forms info dependencies module-index]
+;; ---------------------------------------------------------------------------
+;; Instantiating a template: substitution, then the check that nothing was
+;; missed.
+
+(defn- keep-meta
+  "Rebuilt collections keep the reader's position metadata. `definition-lines`
+  and `attribute-module-error` read `:line` off the forms handed to
+  `analyze-module`, and an instantiated template is exactly such a form."
+  [original rebuilt]
+  (if-let [m (meta original)] (with-meta rebuilt m) rebuilt))
+
+(defn- substitute-in-type
+  "Inside a type form, the parameter symbol is a type wherever it stands:
+  `[:set elem]`, `[:map :string [:list elem]]`, `[:fn [[elem] :i64]]`."
+  [form binding]
+  (cond
+    (and (symbol? form) (contains? binding form)) (get binding form)
+    (vector? form) (keep-meta form (mapv #(substitute-in-type % binding) form))
+    :else form))
+
+(declare substitute-form)
+
+(defn- substitute-parameter-vector
+  "The per-item scan the frontend's `typed-param-parts` performs, extended by
+  one rule: a declared parameter symbol standing where a type may stand IS
+  the type slot. A parameter symbol standing where a PATTERN stands is
+  refused -- `[elem]` would otherwise mean \"an i64 named elem\" in a module
+  whose header says `elem` is a type, and `[a elem]` would mean two things
+  depending on which rule ran first. Refusing the name removes the question."
+  [params binding module]
+  (loop [items (seq params) out []]
+    (if (empty? items)
+      (keep-meta params out)
+      (let [pattern (first items)
+            candidate (second items)]
+        (when (and (symbol? pattern) (contains? binding pattern))
+          (reject! "template parameter is used as a parameter name; a parameter symbol may only stand in a type position"
+                   {:module module :parameter pattern :params params}))
+        (cond
+          (and (symbol? candidate) (contains? binding candidate))
+          (recur (nnext items) (conj out (substitute-form pattern binding module)
+                                     (get binding candidate)))
+
+          (type-form? candidate)
+          (recur (nnext items) (conj out (substitute-form pattern binding module)
+                                     (substitute-in-type candidate binding)))
+
+          :else
+          (recur (next items) (conj out (substitute-form pattern binding module))))))))
+
+(defn- substitute-clause
+  "`([params] result? {:effects ...}? body)` -- one arity of a `defn`. The
+  result slot is the item right after the parameter vector, and a bare
+  parameter symbol there is the result type (the frontend would otherwise
+  read it as the body and the body as a surplus form)."
+  [[params & tail] binding module]
+  (let [params' (substitute-parameter-vector params binding module)
+        [result tail'] (if (and (symbol? (first tail)) (contains? binding (first tail)))
+                         [(get binding (first tail)) (rest tail)]
+                         [nil tail])]
+    (concat [params']
+            (when result [result])
+            (map #(substitute-form % binding module) tail'))))
+
+(defn- substitute-declaration
+  "A `defn`/`defn-`: single-arity or a list of arity clauses, with an optional
+  docstring in either case."
+  [form binding module]
+  (let [[op name & declaration] form
+        [docstring declaration] (if (string? (first declaration))
+                                  [(first declaration) (rest declaration)]
+                                  [nil declaration])
+        rebuilt (if (vector? (first declaration))
+                  (substitute-clause declaration binding module)
+                  (map (fn [clause]
+                         (if (and (seq? clause) (vector? (first clause)))
+                           (keep-meta clause (apply list (substitute-clause clause binding module)))
+                           (substitute-form clause binding module)))
+                       declaration))]
+    (keep-meta form (apply list op name (concat (when docstring [docstring]) rebuilt)))))
+
+(defn- substitute-form
+  [form binding module]
+  (cond
+    ;; A keyword-headed vector is a type form wherever it occurs -- the type
+    ;; argument of `typed-set-new`, a result annotation, a nested element
+    ;; type -- and inside it the parameter symbol is a type.
+    (and (vector? form) (keyword? (first form)))
+    (substitute-in-type form binding)
+
+    (seq? form)
+    (cond
+      (contains? #{'defn 'defn-} (first form))
+      (substitute-declaration form binding module)
+
+      ;; The header itself: only the `:with` maps of its require specs are
+      ;; type positions (a template forwarding its own parameter). `:params`
+      ;; names the symbols by design and is left for `without-requires`.
+      (= 'ns (first form))
+      (keep-meta form
+                 (apply list
+                        (map (fn [clause]
+                               (if (and (seq? clause) (= :require (first clause)))
+                                 (keep-meta clause
+                                            (apply list :require
+                                                   (map (fn [spec]
+                                                          (if (and (vector? spec) (= 5 (count spec)))
+                                                            (keep-meta spec
+                                                                       (assoc spec 4 (into {} (map (fn [[k v]] [k (substitute-in-type v binding)]))
+                                                                                            (nth spec 4))))
+                                                            spec))
+                                                        (rest clause))))
+                                 clause))
+                             form)))
+
+      :else
+      (keep-meta form (apply list (map #(substitute-form % binding module) form))))
+
+    (vector? form) (keep-meta form (mapv #(substitute-form % binding module) form))
+    (map? form) (keep-meta form (into {} (map (fn [[k v]] [(substitute-form k binding module)
+                                                           (substitute-form v binding module)]))
+                                      form))
+    :else form))
+
+(def ^:private binding-form-heads
+  "Forms whose second item is a binding vector of `pattern expr` pairs, each
+  pattern in scope for the expressions after it and for the body."
+  '#{let loop for doseq dotimes when-let if-let when-some if-some when-first binding})
+
+(defn- pattern-symbols [pattern]
+  (into #{} (filter symbol?) (tree-seq coll? seq pattern)))
+
+(defn- check-no-loose-parameters!
+  "After substitution, a parameter symbol may remain only as a bound LOCAL --
+  `(let [elem 1] (+ elem 1))` keeps meaning the local, which is the control
+  that shows substitution does not reach into value positions. Anywhere else
+  it is a type position this pass did not rewrite, or a value written where a
+  type was meant, and either way the frontend would report an unbound variable
+  in a synthetic text. Refused here, naming the parameter and the module."
+  [forms binding module]
+  (letfn [(loose! [symbol]
+            (reject! (str "template parameter " symbol " reaches the frontend unsubstituted; "
+                          "it may stand only in a type position (inside a keyword-headed "
+                          "type vector, or as a parameter or result type of a defn)")
+                     {:module module :parameter symbol}))
+          (check-bindings [pairs bound]
+            ;; Returns the scope after the vector. `:let [..]` modifiers of
+            ;; `for`/`doseq` open a nested vector; `:when`/`:while` take an
+            ;; expression checked in the current scope.
+            (loop [pairs (seq pairs) bound bound]
+              (if (empty? pairs)
+                bound
+                (let [[pattern expr] pairs]
+                  (cond
+                    (= :let pattern) (recur (nnext pairs) (check-bindings expr bound))
+                    (keyword? pattern) (do (check expr bound) (recur (nnext pairs) bound))
+                    :else (do (check expr bound)
+                              (recur (nnext pairs) (into bound (pattern-symbols pattern)))))))))
+          (check-clause [[params & tail] bound]
+            (let [bound' (into bound (pattern-symbols params))]
+              (doseq [x tail] (check x bound'))))
+          (check [form bound]
+            (cond
+              (symbol? form)
+              (when (and (contains? binding form) (not (contains? bound form)))
+                (loose! form))
+
+              (seq? form)
+              (let [[op & args] form]
+                (cond
+                  (= 'ns op) nil
+
+                  (contains? binding-form-heads op)
+                  (let [bound' (check-bindings (first args) bound)]
+                    (doseq [x (rest args)] (check x bound')))
+
+                  (= 'fn op)
+                  (if (vector? (first args))
+                    (check-clause args bound)
+                    (doseq [clause args]
+                      (if (and (seq? clause) (vector? (first clause)))
+                        (check-clause clause bound)
+                        (check clause bound))))
+
+                  ;; `(catch [error-type] binder handler)`: the binder is the
+                  ;; last-but-one item, whether or not a type precedes it.
+                  (= 'catch op)
+                  (let [binder (last (butlast args))]
+                    (doseq [x (drop-last 2 args)] (check x bound))
+                    (check (last args) (into bound (pattern-symbols binder))))
+
+                  (contains? #{'defn 'defn-} op)
+                  (let [declaration (cond-> (rest args) (string? (second args)) rest)]
+                    (if (vector? (first declaration))
+                      (check-clause declaration bound)
+                      (doseq [clause declaration]
+                        (if (and (seq? clause) (vector? (first clause)))
+                          (check-clause clause bound)
+                          (check clause bound)))))
+
+                  :else (doseq [x form] (check x bound))))
+
+              (vector? form) (doseq [x form] (check x bound))
+              (map? form) (doseq [[k v] form] (check k bound) (check v bound))
+              :else nil))]
+    (doseq [form forms] (check form #{}))))
+
+(defn instantiate-forms
+  "The forms of a template module under BINDING: every parameter symbol in a
+  type position replaced by its bound type form, and a refusal if one remains
+  anywhere it is not a bound local. Exposed so a test can look at the text the
+  frontend is handed rather than only at what it answers."
+  [forms binding module]
+  (let [binding (into (sorted-map) binding)
+        substituted (mapv #(substitute-form % binding module) forms)]
+    (check-no-loose-parameters! substituted binding module)
+    substituted))
+
+(defn- analyze-module
+  "Analyse one module -- or one INSTANTIATION of a template, when `binding`
+  is non-nil, in which case `forms` are already the substituted forms and
+  `info` was re-read from them (so a forwarded `:with` is concrete here)."
+  [forms info dependencies module-index binding]
   (let [available
         (into {}
-              (mapcat (fn [{dep-name :namespace alias :alias}]
-                        (let [dependency (get dependencies dep-name)]
+              (mapcat (fn [{dep-name :namespace alias :alias with :with}]
+                        (let [dependency (get dependencies (instantiation-key dep-name with))]
                           (when-not dependency
                             (reject! "imported namespace was not resolved"
                                      {:module (:namespace info) :dependency dep-name}))
@@ -559,7 +950,7 @@
               (sema/analyze (source-text augmented)
                             {:lambda-id-base (* module-index sema/max-functions)})
               (catch #?(:clj clojure.lang.ExceptionInfo :cljs :default) error
-                (throw (attribute-module-error error (:namespace info) forms augmented))))
+                (throw (attribute-module-error error (:namespace info) forms augmented binding))))
         defn-lines (definition-lines forms)
         ;; Matched on `:source-name`, not `:name`: a multi-arity stub is one
         ;; `defn-` that the frontend has already split into several functions
@@ -612,6 +1003,11 @@
                                                ;; (the augmented text above has
                                                ;; already re-flowed them).
                                                :source-line (get defn-lines (source-name-of function)))
+                                        ;; Which instantiation, for a template.
+                                        ;; Absent (not nil) for an ordinary
+                                        ;; module so its source-map entries do
+                                        ;; not change shape.
+                                        (cond-> (some? binding) (assoc :source-binding binding))
                                         (update :name local-names)
                                         ;; Before renaming: rewrite-calls rebuilds forms
                                         ;; with list*, which drops the :source-operation
@@ -723,27 +1119,75 @@
         _ (reject-schema-collisions! parsed)
         visiting (volatile! #{}) linked (volatile! {}) order (volatile! [])
         edge-count (volatile! 0)]
-    (letfn [(visit [name depth]
-              (when (> depth max-project-depth)
-                (reject! "project dependency depth exceeds limit"
-                         {:module name :depth depth}))
-              (when-not (contains? parsed name)
-                (reject! "required module is outside the closed project" {:module name}))
-              (when (contains? @visiting name)
-                (reject! "cyclic module dependency rejected" {:module name}))
-              (when-not (contains? @linked name)
-                (vswap! visiting conj name)
-                (doseq [{dependency :namespace} (get-in parsed [name :info :requires])]
-                  (when (> (vswap! edge-count inc) max-project-dependency-edges)
-                    (reject! "project dependency edges exceed limit"
-                             {:edges @edge-count}))
-                  (visit dependency (inc depth)))
-                (let [module (analyze-module (get-in parsed [name :forms])
-                                             (get-in parsed [name :info])
-                                             @linked (count @order))]
-                  (vswap! linked assoc name module)
-                  (vswap! order conj name))
-                (vswap! visiting disj name)))]
+    ;; Modules are visited by `instantiation-key`: the namespace for an
+    ;; ordinary module, `[namespace binding]` for an instantiation of a
+    ;; template. Two importers binding the same template the same way reach
+    ;; ONE key and therefore one analysed module; two bindings are two modules
+    ;; with two disjoint function ranges. The cycle guard stays on the
+    ;; NAMESPACE: a template requiring itself under another binding is an
+    ;; unbounded family of instantiations, and refusing it as a cycle is the
+    ;; bound.
+    (letfn [(instantiate [name binding]
+              (let [{:keys [forms info]} (get parsed name)
+                    params (:params info)]
+                (cond
+                  (and (some? params) (nil? binding))
+                  (reject! (str "template module " name " declares (:params " (pr-str params)
+                                ") and needs an instantiation: require it with :with "
+                                (pr-str (into {} (map (fn [p] [p (symbol (str "<type>"))])) params)))
+                           {:module name :params params})
+
+                  (and (nil? params) (some? binding))
+                  (reject! (str "module " name " declares no (:params ...) but is required with :with "
+                                (pr-str binding))
+                           {:module name :binding binding})
+
+                  (some? params)
+                  (let [declared (set params)
+                        bound (set (keys binding))
+                        missing (vec (remove bound params))
+                        undeclared (vec (sort (remove declared bound)))]
+                    (when (seq missing)
+                      (reject! (str "template module " name " is required with :with " (pr-str binding)
+                                    ", which does not bind its parameter(s) " (pr-str missing))
+                               {:module name :binding binding :missing missing}))
+                    (when (seq undeclared)
+                      (reject! (str "template module " name " is required with :with " (pr-str binding)
+                                    ", which names parameter(s) it does not declare: " (pr-str undeclared))
+                               {:module name :binding binding :undeclared undeclared}))
+                    ;; Substituted forms, then the header re-read from them so
+                    ;; a forwarded `:with {elem elem}` is concrete by the time
+                    ;; the requirement below is resolved.
+                    (let [forms' (instantiate-forms forms binding name)]
+                      {:forms forms' :info (module-info forms')}))
+
+                  :else {:forms forms :info info})))
+            (visit [key depth]
+              (let [name (key-namespace key)
+                    binding (key-binding key)]
+                (when (> depth max-project-depth)
+                  (reject! "project dependency depth exceeds limit"
+                           {:module name :depth depth}))
+                (when-not (contains? parsed name)
+                  (reject! "required module is outside the closed project" {:module name}))
+                (when (contains? @visiting name)
+                  (reject! "cyclic module dependency rejected" {:module name}))
+                (when-not (contains? @linked key)
+                  (vswap! visiting conj name)
+                  (let [{:keys [forms info]} (instantiate name binding)]
+                    (doseq [{dependency :namespace with :with} (:requires info)]
+                      (when (> (vswap! edge-count inc) max-project-dependency-edges)
+                        (reject! "project dependency edges exceed limit"
+                                 {:edges @edge-count}))
+                      (visit (instantiation-key dependency with) (inc depth)))
+                    ;; An instantiation is a module against the same bound.
+                    (when (>= (count @order) max-project-modules)
+                      (reject! "project module count exceeds limit"
+                               {:limit max-project-modules}))
+                    (let [module (analyze-module forms info @linked (count @order) binding)]
+                      (vswap! linked assoc key module)
+                      (vswap! order conj key)))
+                  (vswap! visiting disj name))))]
       (visit root 1))
     (let [root-module (get @linked root)
           module-functions (vec (mapcat #(get-in @linked [% :functions]) @order))
@@ -793,7 +1237,7 @@
           ;; two modules define differently.
           merged-schemas (reduce (fn [acc module]
                                    (merge acc (get-in parsed [module :info :schemas])))
-                                 {} @order)
+                                 {} (module-namespaces @order))
           linked-source
           (source-text
            (into [(if (seq merged-schemas)
@@ -819,11 +1263,17 @@
                       :entries (vec (keep-indexed
                                      (fn [index function]
                                        (when-let [module (:source-module function)]
-                                         {:linked-line (+ 2 index)
-                                          :module module
-                                          :source-name (:source-name function)
-                                          :source-span (:source-span function)
-                                          :source-line (:source-line function)}))
+                                         (cond-> {:linked-line (+ 2 index)
+                                                  :module module
+                                                  :source-name (:source-name function)
+                                                  :source-span (:source-span function)
+                                                  :source-line (:source-line function)}
+                                           ;; Which instantiation of a template
+                                           ;; wrote the function. Absent for
+                                           ;; an ordinary module: byte-identical
+                                           ;; entries to before templates.
+                                           (contains? function :source-binding)
+                                           (assoc :binding (:source-binding function)))))
                                      functions))}
           linked-bytes (value/utf8-byte-count! linked-source)]
       (when (> function-count max-project-functions)

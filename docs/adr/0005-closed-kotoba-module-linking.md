@@ -31,7 +31,11 @@ The admitted namespace dependency syntax is deliberately narrow:
 ```
 
 Imports must use a unique alias. `:refer`, wildcard imports, implicit lookup,
-relative paths, and runtime loading are rejected. Only functions in the
+relative paths, and runtime loading are rejected. Since 2026-09-11 (ADR 0346,
+proposed) a spec may also bind a template module's type parameters --
+`[kotoba.set.union :as ui :with {elem :i64}]` against a module declaring
+`(:params [elem])` -- and the linker instantiates that module per binding
+before the frontend reads it. Only functions in the
 dependency's explicit `:export` vector can be called. The linker rejects missing
 source units, namespace/key mismatches, duplicate aliases or dependencies,
 unknown qualified calls, cycles, and projects above 256 modules or 1,024 linked
