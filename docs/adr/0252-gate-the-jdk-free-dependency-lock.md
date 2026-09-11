@@ -26,7 +26,7 @@ Every full CI host must run two distinct gates before compiler conformance:
 
 Workflow lint requires both commands, preventing a later edit from silently
 removing the property. Dependency pin changes continue to require running
-`nbb scripts/lock-classpath.cljk`; hand-editing one lock entry is insufficient.
+`kbb --backend sci scripts/lock-classpath.cljk`; hand-editing one lock entry is insufficient.
 The generator also canonicalizes GitHub HTTPS origins with a trailing `.git`,
 so lock bytes do not depend on which resolver first populated `~/.gitlibs`.
 

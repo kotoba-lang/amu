@@ -20,7 +20,7 @@
   (let [report (lc/check-goldens)]
     (is (true? (:ok? report))
         (str "digest drift — regenerate with: "
-             "clojure -M:conformance --write-golden ; "
+             "kbb -M:conformance --write-golden ; "
              (pr-str (:mismatches report))))
     (is (= (count (lc/pure-product-cases (lc/load-manifest)))
            (:case-count report))

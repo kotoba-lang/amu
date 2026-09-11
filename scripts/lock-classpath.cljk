@@ -1,8 +1,8 @@
-#!/usr/bin/env nbb
+#!/usr/bin/env kbb
 ;; Regenerate `deps-lock.edn`, the dependency closure `bin/kotoba`'s nbb fast
 ;; path resolves without a JVM.
 ;;
-;; This script is the one place that still runs `clojure -Spath`, and it runs
+;; This script is the one place that still runs `kbb -Spath`, and it runs
 ;; at authoring time, not at compile time. That split is the point: choosing
 ;; between conflicting transitive git pins is `tools.deps`' job and
 ;; re-implementing it in nbb would be a second resolver to disagree with the
@@ -13,7 +13,7 @@
 ;; Run it whenever `deps.edn` changes -- the resolver fails closed until you
 ;; do, which is how the two records stay in agreement.
 ;;
-;;   nbb scripts/lock-classpath.cljk [root]
+;;   kbb --backend sci scripts/lock-classpath.cljk [root]
 
 (ns lock-classpath
   (:require ["node:child_process" :as child]
@@ -77,13 +77,13 @@
       (fail! (str "cannot read the origin URL of " coordinate " at " sha)))))
 
 (defn- spath-entries
-  "`clojure -Spath` with ALIAS-ARGS, grouped into lock entries (one per
+  "`kbb -Spath` with ALIAS-ARGS, grouped into lock entries (one per
   checkout)."
   [root alias-args]
   (let [result (.spawnSync child "clojure" (clj->js (into ["-Spath"] alias-args))
                            #js {:cwd root :encoding "utf8" :maxBuffer 16777216})
         _ (when-not (and (not (.-error result)) (zero? (or (.-status result) 1)))
-            (fail! (str "clojure -Spath " (str/join " " alias-args)
+            (fail! (str "kbb -Spath " (str/join " " alias-args)
                         " failed; this script needs a JDK.\n"
                         "Only this script does -- kotoba.compiler.nbb.classpath resolves\n"
                         "the lock it writes with git alone.\n"
@@ -103,7 +103,7 @@
 
 ;; The `:test` alias adds git deps of its own (provider, kototama-native)
 ;; that the nbb test runners require. Until 2026-09-11 those runners asked
-;; `clojure -Spath -M:test` at RUN time; with the JVM route removed the
+;; `kbb -Spath -M:test` at RUN time; with the JVM route removed the
 ;; closure is recorded here at authoring time, under its alias, and
 ;; `print-classpath.cljk --alias test` reproduces it with git alone. Only the
 ;; entries the alias ADDS are stored; the root entries are not repeated.
@@ -121,10 +121,10 @@
                                (vec (remove #(root-keys ((juxt :coordinate :git-sha) %))
                                             (spath-entries root [(str "-M:" alias)])))]))]
     (when (empty? grouped)
-      (fail! "clojure -Spath resolved no git dependencies; nothing to lock"))
+      (fail! "kbb -Spath resolved no git dependencies; nothing to lock"))
     (let [lock {:lock/version lock-version
                 :lock/deps-digest (sha256-hex (.readFileSync fs deps-file))
-                :lock/resolver "clojure -Spath (authoring time only)"
+                :lock/resolver "kbb -Spath (authoring time only)"
                 :lock/entries grouped
                 :lock/alias-entries alias-entries}
           out (.join node-path root "deps-lock.edn")]

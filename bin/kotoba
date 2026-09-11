@@ -49,7 +49,7 @@
 ;; `x86_64-aiueos-*`/`aarch64-aiueos-*` (ELF64/PE32+ firmware/kernel
 ;; packaging) stay JVM-only -- see that namespace's own comment for why.
 ;; Any other `--target` value, or any subcommand besides `compile`/
-;; `check`, falls through to the JVM `clojure -M:run` path below
+;; `check`, falls through to the JVM `kbb -M:run` path below
 ;; unchanged.
 (def ^:private nbb-native-targets
   #{"wasm32" "wasm32-browser" "wasm32-wasi" nil
@@ -183,7 +183,7 @@
         cache-file (.join path (.tmpdir os) (str "kotoba-security-classpath-" digest ".txt"))]
     (if (.existsSync fs cache-file)
       (.trim (.readFileSync fs cache-file "utf8"))
-      ;; The lock is the only resolver; the `clojure -Spath` fallback was
+      ;; The lock is the only resolver; the `kbb -Spath` fallback was
       ;; removed on 2026-09-11 with the rest of the JVM route (owner decision:
       ;; Kotoba and the amu native/nbb compiler only). A lock that does not
       ;; match deps.edn is a refusal that names the fix, never a JVM spawn.
@@ -193,8 +193,8 @@
           (fail! (str "error: dependency resolution from deps-lock.edn failed: "
                       (:reason attempt)
                       "\n  There is no JVM fallback. Regenerate the lock with\n"
-                      "    nbb scripts/lock-classpath.cljk\n"
-                      "  Diagnose with: nbb --classpath src scripts/print-classpath.cljk")
+                      "    kbb --backend sci scripts/lock-classpath.cljk\n"
+                      "  Diagnose with: kbb --backend sci --classpath src scripts/print-classpath.cljk")
                  70))))))
 
 (let [args (vec *command-line-args*)
@@ -224,7 +224,7 @@
         (let [nbb-cli (.join path root "node_modules" "nbb" "cli.js")
               security-cp (security-classpath-entry root nbb-cli)
               ;; `<root>/resources` is joined explicitly rather than relying on
-              ;; the relative `resources` entry `clojure -Spath` happens to
+              ;; the relative `resources` entry `kbb -Spath` happens to
               ;; emit: the lock records dependency checkouts, and this
               ;; repository's own directories are not a dependency of itself.
               classpath (str (.join path root "src") (.-delimiter path)
@@ -245,7 +245,7 @@
             (fail! "error: unable to start nbb-native compiler runtime" 70))
           (.exit js/process (or (.-status result) 70)))
         ;; The JVM route is gone (2026-09-11). Everything not on the nbb route
-        ;; above used to be handed to `clojure -M:run` / `-M:native-run`; now
+        ;; above used to be handed to `kbb -M:run` / `-M:native-run`; now
         ;; it is a refusal naming the command, the same exit 64 `bin/amu`
         ;; gives. The gap ledger is amu docs/adr `jvm-route-removed`.
         (fail! (str "error: `kotoba -M " (first sub-args)

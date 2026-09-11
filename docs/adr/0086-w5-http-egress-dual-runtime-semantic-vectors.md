@@ -7,7 +7,7 @@ with mock transport), not family exit and not production cljs transport
 
 Start **Delivery 5 / W5 host capability qualification** family 2
 (**HTTP egress**, `:http/post`) by recording dual-runtime semantic vectors on
-the reference path (`:clj` via `clojure -M:test`, `:cljs` via nbb) and closing
+the reference path (`:clj` via `kbb -M:test`, `:cljs` via nbb) and closing
 the i64 defect that blocked honest cljs results:
 
 `timeout-ms` (request) and `status` (ok response) are `:i64` ABI fields. On

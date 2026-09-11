@@ -195,7 +195,7 @@ ABI boundary. Neither branch admits anything the other branch would reject.
     sibling `*-transport-test` namespaces.
 - **`:cljs`/nbb test suite** (`test/nbb/clock-transport.cljk`, run via `npm
   run test-nbb-clock-transport` -> `scripts/test-nbb-clock-transport.cljk`,
-  which mirrors `scripts/test-nbb-wasm32.cljk`'s own `clojure -Spath`-
+  which mirrors `scripts/test-nbb-wasm32.cljk`'s own `kbb -Spath`-
   resolved-classpath launcher pattern exactly, needed because
   `kotoba.compiler.admission` requires the `kotoba.security.abac` git
   dependency, invisible to a literal `--classpath .:src`): 5 cases, all
@@ -221,7 +221,7 @@ ABI boundary. Neither branch admits anything the other branch would reject.
     same-valued plain number equal (`(= 1 (js/BigInt 1))` => `false`,
     confirmed live), a second, independent place this ADR's own
     investigation had to route around the bigint/plain-number split.
-- Full `clojure -M:test` suite with this ADR's changes applied: 563 tests,
+- Full `kbb -M:test` suite with this ADR's changes applied: 563 tests,
   4871 assertions, 0 failures, 0 errors -- including this ADR's own new
   `clock-transport-test` namespace, and confirming the `clock.cljc` fix
   changes nothing observable on `:clj` (every pre-existing `clock-

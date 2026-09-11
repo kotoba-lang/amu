@@ -29,5 +29,5 @@ Also align `cli_test` structured diagnostic code with T3.1
 
 ## Evidence
 
-- `clojure -M:conformance` 28/28
-- `clojure -M:conformance --check-golden`
+- `kbb -M:conformance` 28/28
+- `kbb -M:conformance --check-golden`

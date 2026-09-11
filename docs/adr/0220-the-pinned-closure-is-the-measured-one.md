@@ -32,8 +32,8 @@ table is.
 it was `2a72798b…`. Its entries named `kotoba-kir b12eaf85`, `kotoba-native
 470fd94` and `kotoba-verifier aa85109e` while `deps.edn` declared `d895d1f0`,
 `8e7c0530` and `ccf37fed`. `bin/kotoba` therefore refused the lock and fell back
-to `clojure -Spath` — which is the failure mode the header comment in `deps.edn`
-describes exactly ("it silently sends the compiler back to `clojure -Spath`, and
+to `kbb -Spath` — which is the failure mode the header comment in `deps.edn`
+describes exactly ("it silently sends the compiler back to `kbb -Spath`, and
 the JDK-free property is gone with nobody notified"). Nobody was notified.
 
 ## Decision
@@ -98,7 +98,7 @@ test either way — a structured code is not a sentence someone can reword — a
 it belongs in its own change with its own evidence.
 
 `deps-lock.edn` is regenerated in this same commit
-(`nbb scripts/lock-classpath.cljk`). Its digest now matches the `deps.edn`
+(`kbb --backend sci scripts/lock-classpath.cljk`). Its digest now matches the `deps.edn`
 beside it, so `bin/kotoba`'s JDK-free path resolves again rather than falling
 back.
 

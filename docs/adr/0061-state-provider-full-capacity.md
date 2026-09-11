@@ -149,12 +149,12 @@ anything).
   (`component-core/state-provider-table-capacity`,
   `kotoba.compiler.provider.state/max-entries`, and `state-v1.edn`'s own
   `:limits`, respectively, read directly, not hand-copied.)
-- **Full test suite**: `clojure -M:test` -- 454 tests, 4562 assertions, 0
+- **Full test suite**: `kbb -M:test` -- 454 tests, 4562 assertions, 0
   failures, 0 errors (baseline immediately before this ADR's changes: 453
   tests, 4557 assertions -- so the delta, +1 test/+5 assertions, is exactly
   and only `state-real-provider-full-capacity-driver-closes-and-validates`
   and its own 5 `is` forms, confirmed by diff, not estimated).
-- **`clojure -M -m kotoba.compiler.backend-qualification verify
+- **`kbb -M -m kotoba.compiler.backend-qualification verify
   {wasmtime,native,cljs}`**: all three report the IDENTICAL
   `:provider-manifest-sha256`
   (`5d7599b5701b6fb9660de7488afbfa0b85314f90208a3f11b2ea28ca502e476e`) and

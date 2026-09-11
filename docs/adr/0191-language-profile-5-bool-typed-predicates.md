@@ -214,8 +214,8 @@ with `:composed-surface-kit` named.
 
 ## Evidence (frontend change only, superseded by the section above)
 
-- `clojure -M:conformance` → **52 / 52 dual-backend** (47 pure-product, 5 portable)
-- `clojure -M:test` → see the PR; the only residual failures are the wall-clock
+- `kbb -M:conformance` → **52 / 52 dual-backend** (47 pure-product, 5 portable)
+- `kbb -M:test` → see the PR; the only residual failures are the wall-clock
   perf budgets that also fail on pristine `main` under load
 - `kotoba-kir` 59 tests / 258 assertions, `kotoba-wasm` 83 / 397 — both 0 failures
   (all three repos have CI as of 2026-07-30, so this is no longer the gate)

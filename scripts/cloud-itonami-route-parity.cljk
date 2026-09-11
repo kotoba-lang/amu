@@ -1,4 +1,4 @@
-#!/usr/bin/env nbb
+#!/usr/bin/env kbb
 ;; ONE parameterised admission-decision parity harness for cloud-itonami-app's
 ;; Kotoba route cores. Replaces the copy-paste growth that ADR-2608760000
 ;; addendum 2 flagged: "at the third route it is worth extracting the
@@ -14,7 +14,7 @@
 ;;      (its shipped `cloud.itonami.app.*` namespace, which calls
 ;;      `cloud.itonami.app.kotoba-oracle/call` -> `kotoba.kir/execute` on the
 ;;      shipped `.kir.edn`) -- the exact code path the real server takes on
-;;      every request, run via `clojure -M` in that checkout
+;;      every request, run via `kbb -M` in that checkout
 ;;   2. this repo's `:js-kotoba-v1` restricted-ESM target
 ;;      (`amu compile --target js`), which `runtime/http-service.mjs` hosts
 ;;      JVM-free on Node
@@ -68,7 +68,7 @@
 
 ;; ⚠ REFUSED SINCE 2026-09-11 -- the JVM route is removed (owner decision:
 ;; Kotoba and the amu native/nbb compiler only). This harness ran the
-;; Clojure route-decision namespaces on the JVM (`clojure -M -e`) as the
+;; Clojure route-decision namespaces on the JVM (`kbb -M -e`) as the
 ;; oracle the Kotoba component is compared against; that oracle needs to
 ;; run on nbb now (the namespaces are .cljk and portable on their face --
 ;; unmeasured). Exits 2 (could-not-answer) rather than failing on a
@@ -434,7 +434,7 @@
             (when-not (zero? (or (.-status result) 70))
               (do (.error js/console (.-stderr result))
                   (throw (js/Error. (str label ": jvm oracle path failed")))))
-            ;; `clojure -M` prints classpath warnings to stdout before the
+            ;; `kbb -M` prints classpath warnings to stdout before the
             ;; payload on this repo's classpath -- take the LAST line, which
             ;; is the JSON from `print`.
             (let [lines (-> (.-stdout result) (.trim) (.split "\n"))]

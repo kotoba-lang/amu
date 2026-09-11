@@ -10,8 +10,8 @@
 ## CLI
 
 ```bash
-clojure -M:run test path/to/tests.kotoba
-clojure -M:run test path/to/tests.kotoba --json
+kbb -M:run test path/to/tests.kotoba
+kbb -M:run test path/to/tests.kotoba --json
 ```
 
 Human mode prints `kotoba test: P/T passed` and lists failures.

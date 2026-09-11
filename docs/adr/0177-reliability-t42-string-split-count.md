@@ -20,4 +20,4 @@ Pins: kotoba-kir (ADR 0022) + kotoba-wasm (ADR 0034). Pilot **29→30**.
 ## Evidence
 
 - `:string-split-count-kit` expect 7 (3+1+3)
-- `clojure -M:conformance` dual-green
+- `kbb -M:conformance` dual-green

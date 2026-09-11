@@ -27,5 +27,5 @@ cookbook (T4.4 partial → dual-green evidence).
 
 ## Evidence
 
-- `clojure -M:conformance` includes `:typed-map-kit`
+- `kbb -M:conformance` includes `:typed-map-kit`
 - `--check-golden` digests updated

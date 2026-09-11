@@ -265,14 +265,14 @@ validate`), not hand-assembled WAT, and every Wasmtime invocation ran the
   stateful-sequence driver composition/validation -- 15 to 18 total in that
   namespace) and exactly 10 new `is` assertions across them, confirmed by
   diff, not estimated.
-- Full `clojure -M:test` suite with this ADR's changes applied: 450 tests,
+- Full `kbb -M:test` suite with this ADR's changes applied: 450 tests,
   4548 assertions, 0 failures, against the pinned `wasm-tools 1.243.0` and
   `wac-cli 0.10.1` (unchanged pins -- this ADR needed no toolchain change).
   (Other, unrelated PRs landed on `main` between ADR 0059's own recorded
   436/4513 and this ADR's baseline, so the delta from 436/4513 to 450/4548
   is not attributable to this ADR alone -- the precise, verifiable
   attribution is the 3 `deftest`/10 `is` figure above.)
-- `clojure -M -m kotoba.compiler.backend-qualification verify wasmtime`
+- `kbb -M -m kotoba.compiler.backend-qualification verify wasmtime`
   (and `verify native`, `verify cljs`, matching every prior ADR's own
   additional checks): all three report the identical `:provider-manifest-
   sha256` and `:gaps` list recorded before this change, confirming no

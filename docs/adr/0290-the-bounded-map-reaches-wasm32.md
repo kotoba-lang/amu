@@ -68,14 +68,14 @@ literal had never been asked of this backend.
 
 ## Evidence
 
-`clojure -M:conformance`: **62 / 62 passed (57 pure-product, 5 portable)**, up
+`kbb -M:conformance`: **62 / 62 passed (57 pure-product, 5 portable)**, up
 from 61 / 61 (56 / 5). The new case is
 `:bounded-control-match-and-pure-desugar`, and it passes on `:kir` AND on
 `:wasm32-kotoba-v1` — the runner executes the wasm artifact through
 `runtime/browser-host.mjs` on Node and compares the scalar it returns to
 `:expect`.
 
-`clojure -M:conformance --write-golden` added exactly one row and changed no
+`kbb -M:conformance --write-golden` added exactly one row and changed no
 existing digest: the lowering is a no-op for every module without a bounded
 map, and the 61 pre-existing cases prove it byte for byte. The new row is
 `:kir-sha256 a43416af…`, `:wasm-sha256 ef5e8fc8…`, 2193 wasm bytes.

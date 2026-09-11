@@ -10,7 +10,7 @@ Best-effort compile-time estimate:
 
 - `function-count` + static simple call-sites  
 - Charge model aligns with T7.2 (1 unit / function entry)  
-- CLI: `clojure -M:fuel-estimate <file>`  
+- CLI: `kbb -M:fuel-estimate <file>`  
 
 Not a WCET proof; recursion/loops not unrolled.
 

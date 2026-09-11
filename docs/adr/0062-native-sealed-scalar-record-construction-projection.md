@@ -165,7 +165,7 @@ discipline:**
 
 - **Real native process execution, matching `native_executor_test.clj`'s
   existing pattern exactly (no synthetic byte-level check)**, host
-  architecture aarch64 (Apple Silicon, `clojure -M -e` local dev run):
+  architecture aarch64 (Apple Silicon, `kbb -M -e` local dev run):
   constructing `{a: i64, b: i64, c: bool}` from `(a=11, b=22)` and
   projecting each of its three fields back out through the real
   `kexe-loader` native process (`kotoba.compiler.native-executor/execute`,
@@ -213,7 +213,7 @@ discipline:**
   with `emit-record-get-of-new`'s own clear message, confirming the native
   backend's specific narrow-shape restriction fires (not merely relying on
   a generic upstream type error).
-- **Full `clojure -M:test` suite**: 461 tests, 4580 assertions, 0 errors,
+- **Full `kbb -M:test` suite**: 461 tests, 4580 assertions, 0 errors,
   1 pre-existing failure (`kotoba.compiler.cli-test/structured-diagnostic-
   has-stable-code-and-bounded-source-span`) confirmed, by `git stash`-ing
   this ADR's own changes and re-running the identical namespace against
@@ -224,10 +224,10 @@ discipline:**
   pre-existing on the nbb/cljs side too (`npm run test-nbb-wasm32`'s
   `structured-diagnostic` case), also `git stash`-verified against
   unmodified `main`.
-- **`clojure -M -m kotoba.compiler.backend-qualification verify native`**:
+- **`kbb -M -m kotoba.compiler.backend-qualification verify native`**:
   passes (`:manifest-gate :passed`), confirming this ADR does not disturb
   the existing native capability-kit qualification manifest.
-- **`clojure -M -m kotoba.security.adoption`**: `:status :pass`, unchanged.
+- **`kbb -M -m kotoba.security.adoption`**: `:status :pass`, unchanged.
 
 ## Native tracking is a separate doc from the WASM Component Model baseline
 

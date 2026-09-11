@@ -33,5 +33,5 @@ iterations on KIR + wasm32-kotoba-v1, completing with expected result `42`.
 ## Evidence
 
 - pilot 22→23 dual-green + goldens (`:loop-deep-kit`)
-- `clojure -M:conformance` / `--check-golden`
+- `kbb -M:conformance` / `--check-golden`
 - ADR 0173 (small loop pilot) remains the unit-scale dual-green

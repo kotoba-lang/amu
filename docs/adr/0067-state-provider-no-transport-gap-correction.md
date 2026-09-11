@@ -157,7 +157,7 @@ their files either.
   fixture transport" (`llm` before ADR 0064, `http`, `storage`); the
   distinguishing evidence is the presence or absence of a `:transport`
   constructor key in each provider's own source, read directly.
-- Full `clojure -M:test` suite, run unmodified against this branch (which
+- Full `kbb -M:test` suite, run unmodified against this branch (which
   makes no production changes): 489 tests, 4644 assertions, 0 failures, 0
   errors — identical to what an untouched `origin/main` HEAD (`70c58e4`)
   reports, confirming this ADR's own claim that no code changed.

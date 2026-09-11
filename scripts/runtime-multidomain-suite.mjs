@@ -286,7 +286,7 @@ try {
   };
   const perfgateInput = join(directory, "multidomain-input.json");
   writeFileSync(perfgateInput, `${JSON.stringify(report, null, 2)}\n`);
-  // perfgate bridge: nbb launcher -> clojure -M -m perfgate-qualify (the
+  // perfgate bridge: nbb launcher -> kbb -M -m perfgate-qualify (the
   // POSIX-shell bridge was deleted; the nbb entrypoint is the supported route).
   report.qualification.perfgate = JSON.parse(execute("nbb",
     [join(root, "scripts", "perfgate-qualify.cljk"), perfgateInput]));

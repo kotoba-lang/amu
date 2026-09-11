@@ -149,7 +149,7 @@ and that check caught the attempt.
 ## Verification
 
 ```
-java -cp "$(clojure -A:test -Spath)" clojure.main -e \
+java -cp "$(kbb -A:test -Spath)" clojure.main -e \
   "(clojure.test/run-tests 'kotoba.compiler.guest-grammar-vendor-test)"
   COMPARED 2   SCANNED 189 admitted-builtins (114 kernel heads)
 ```

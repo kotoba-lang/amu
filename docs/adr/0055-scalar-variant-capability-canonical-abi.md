@@ -130,7 +130,7 @@ unreached by a capability-call crossing), still with an identity provider
   `component-composition-test`, `component-wit-test`): 33 tests, 105
   assertions, 0 failures, run against the pinned `wasm-tools 1.243.0` and
   `wac-cli 0.9.0`.
-- full `clojure -M:test` suite: 410 tests, 4366 assertions, 0 failures
+- full `kbb -M:test` suite: 410 tests, 4366 assertions, 0 failures
   before this change (confirmed identical to ADR 0054's own recorded
   baseline); run again after with the new tests included.
 - `wasm-tools validate --features component-model` on both composed

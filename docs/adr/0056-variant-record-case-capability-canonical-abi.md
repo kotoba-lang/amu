@@ -179,7 +179,7 @@ changes.
   `component-composition-test`, `component-wit-test`,
   `backend-qualification-test`): 41 tests, 203 assertions, 0 failures, run
   against `wasm-tools 1.243.0` and `wac-cli 0.10.1`.
-- full `clojure -M:test` suite: 421 tests, 4445 assertions, 0 failures.
+- full `kbb -M:test` suite: 421 tests, 4445 assertions, 0 failures.
 - Fail-closed boundaries re-verified directly by test after the widening: a
   variant case wrapping a sealed *string/keyword-bearing* record used as a
   capability request/result is rejected by `component-core/emit`

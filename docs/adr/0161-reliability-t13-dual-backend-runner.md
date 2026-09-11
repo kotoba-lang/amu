@@ -18,7 +18,7 @@ subset that *can* run today, without claiming full matrix green.
    `resources/kotoba/lang-conformance/` (5 control fixtures proven DUAL_OK).
 3. Gate: KIR `ir/execute` result and Node `browser-host.mjs` wasm `main`
    must both equal `:expect :kotoba`.
-4. CLI: `clojure -M:conformance` (exit 0 only if pilot suite passes).
+4. CLI: `kbb -M:conformance` (exit 0 only if pilot suite passes).
 
 ## Non-claims
 

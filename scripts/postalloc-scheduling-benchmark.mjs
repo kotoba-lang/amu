@@ -191,7 +191,7 @@ function timedSample(arm, runner, rawNative, offset, target, n, calls, warmup, f
 }
 
 function compileCommand(root, args) {
-  // bin/amu on the nbb route; the JVM route (`clojure -M:run`) was removed
+  // bin/amu on the nbb route; the JVM route (`kbb -M:run`) was removed
   // on 2026-09-11.
   return [join(root, "bin", "amu"), args, { cwd: root }];
 }
@@ -246,7 +246,7 @@ function compileColdWallMilliseconds(root, target, fixtureFile, output) {
     compileWallMilliseconds,
     artifactBytes: statSync(output).size,
   };
-  // `KOTOBA_TIMING` is emitted only on the nbb fast path (`bin/amu`), not `clojure -M:run`.
+  // `KOTOBA_TIMING` is emitted only on the nbb fast path (`bin/amu`), not `kbb -M:run`.
   const line = result.stderr.split(/\r?\n/).find(candidate => candidate.startsWith(marker));
   if (line) {
     try {

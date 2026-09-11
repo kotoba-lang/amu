@@ -22,5 +22,5 @@ an optional nominal `:geometry/pose` record. It crosses the actual
 browser-hosted typed Wasm ABI and checks both nested vectors. Existing boundary
 tests continue to reject forged compound values and cross-schema substitution.
 
-Evidence: `clojure -M:test` passes 322 tests / 4,000 assertions with zero
+Evidence: `kbb -M:test` passes 322 tests / 4,000 assertions with zero
 failures or errors.

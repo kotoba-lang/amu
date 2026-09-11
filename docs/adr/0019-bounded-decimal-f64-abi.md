@@ -30,4 +30,4 @@ Evidence:
   malformed syntax, and the input bound;
 - `npm run test-nbb-wasm32`: 23 cases, 0 failed, including a dedicated decimal
   fixture whose Wasm bytes match the JVM compiler golden;
-- `clojure -M:test`: 320 tests and 3,995 assertions after qualification.
+- `kbb -M:test`: 320 tests and 3,995 assertions after qualification.
