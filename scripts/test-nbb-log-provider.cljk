@@ -6,9 +6,9 @@
             ["node:path" :as path]))
 
 ;; -M:test includes the extracted provider package (log kit lives there).
-(let [resolved (lib/run "clojure" ["-Spath" "-M:test"])
+(let [resolved (lib/lock-classpath "test")
       nbb-cli (lib/join lib/root "node_modules" "nbb" "cli.js")
-      classpath (str lib/root (.-delimiter path) (.trim (:stdout resolved)))
+      classpath (str lib/root (.-delimiter path) resolved)
       result (.spawnSync child js/process.execPath
                          (clj->js [nbb-cli "--classpath" classpath
                                   (lib/join lib/root "test" "nbb" "log-provider.cljk")])

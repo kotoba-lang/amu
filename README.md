@@ -515,19 +515,20 @@ i64 max/min, add-wraparound, the sleb continuation-bit crossing at 127/128).
 Observable semantics, ABI behavior, resource bounds, and fail-closed rejection
 are the compatibility contract; byte layout is not.
 
-The `x86_64-aiueos-*`/`aarch64-aiueos-*` firmware and kernel packaging
-targets, plus every other `kotoba` subcommand (`package-ios`, `sbom`,
-`attest-release`, `sign`, `run`, receipts, coverage, etc.), still go through
-`clojure -M:run` (`kotoba.compiler.cli`, JVM) for compiler commands and
-`clojure -M:native-run` for `measure-runtime` / `run` -- native
-ELF64/PE32+ packaging, signing, runtime execution, and release/coverage
-evidence are not part of this nbb-native slice and remain JVM/compat. Ordinary
-native nbb compilation still seals artifacts, runs the independent verifier,
-and emits provenance before writing. The split mirrors the same way
-`kototama`'s own R1 (JVM/Chicory tender) is demoted to "compat suite" behind
-its R2 native-WASM-host path. `bin/amu` picks the path automatically
-based on the subcommand and `--target`; nothing about the CLI's argument
-shape changes.
+**There is no JVM route (ADR 0347, 2026-09-11).** Until then the
+`x86_64-aiueos-*`/`aarch64-aiueos-*` kernel IMAGE packaging and every other
+`kotoba` subcommand (`package-ios`, `sbom`, `attest-release`, `sign`,
+`keygen`, `run`, receipts, coverage, ...) went through `clojure -M:run`
+(`kotoba.compiler.cli`, JVM). That fallback is removed: a command or target
+with no nbb-route implementation is refused at exit 64 naming it, and the
+list of what still has to be ported -- with what carries each one's coverage
+in the meantime -- is the ledger in `docs/adr/0347-the-jvm-route-is-removed.md`.
+The kernel OBJECT, the CPL3 user image and the UEFI application ARE on the
+nbb route (aiueos links them from there); the divergent x86-64 kernel image
+is the one packaging target still refused. Ordinary native nbb compilation
+seals artifacts, runs the independent verifier, and emits provenance before
+writing. `--jvm-free` is accepted everywhere and means nothing: every
+invocation is.
 
 Migration and release gates that must not depend on a locally installed JVM
 pass `--jvm-free`. In that mode Amu never invokes `clojure`: a missing or

@@ -220,15 +220,6 @@ function resolveWithLock(root, nbbCli) {
   return { entries: null, reason: `the lock resolver failed three times: ${last}` };
 }
 
-function resolveWithJvm(root) {
-  const result = spawn("clojure", ["-Spath"], {
-    cwd: root, encoding: "utf8", maxBuffer: 16 * 1024 * 1024,
-  });
-  if (result.error || result.status !== 0) return null;
-  const entries = result.stdout.trim().split(path.delimiter).map((entry) => entry.trim()).filter(Boolean);
-  return entries.length === 0 ? null : entries;
-}
-
 function readProtectedCache(cacheFile) {
   let descriptor;
   try {
@@ -289,7 +280,7 @@ function publishPrivateCache(cacheFile, value) {
   }
 }
 
-function securityClasspath(root, nbbCli, jvmFree) {
+function securityClasspath(root, nbbCli) {
   const depsEdn = path.join(root, "deps.edn");
   const gitlibsRoot = path.resolve(process.env.GITLIBS || path.join(os.homedir(), ".gitlibs"));
   const allowedRoots = [gitlibsRoot, root, path.join(os.homedir(), ".m2", "repository")];
@@ -305,22 +296,19 @@ function securityClasspath(root, nbbCli, jvmFree) {
     if (cached) return cached;
   }
 
+  // The lock is the only resolver. There is no `clojure -Spath` fallback any
+  // more (2026-09-11, owner decision: the JVM route is removed; Kotoba and the
+  // amu native/nbb compiler only). A lock that does not match deps.edn is a
+  // refusal that names the fix, never a JVM spawn.
   const lockAttempt = resolveWithLock(root, nbbCli);
-  let entries = lockAttempt.entries;
+  const entries = lockAttempt.entries;
   if (!entries) {
-    if (jvmFree) {
-      fail("error: --jvm-free requires dependency resolution from deps-lock.edn; "
-        + lockAttempt.reason
-        + "\n  JVM fallback is forbidden. Regenerate the lock with: "
-        + "nbb scripts/lock-classpath.cljk", 70);
-    }
-    console.error("amu: could not resolve the dependency closure from deps-lock.edn: "
+    fail("error: dependency resolution from deps-lock.edn failed; "
       + lockAttempt.reason
-      + "\n  falling back to `clojure -Spath` (needs a JDK)."
-      + "\n  If a pin in deps.edn moved, regenerate the lock: nbb scripts/lock-classpath.cljk");
-    entries = resolveWithJvm(root);
+      + "\n  There is no JVM fallback. Regenerate the lock with: "
+      + "nbb scripts/lock-classpath.cljk", 70);
   }
-  const resolved = entries && admittedClasspath(entries, root, allowedRoots);
+  const resolved = admittedClasspath(entries, root, allowedRoots);
   if (!resolved) {
     fail("error: cannot resolve Amu's dependency closure.\n"
       + "  Regenerate deps-lock.edn with: nbb scripts/lock-classpath.cljk\n"
@@ -408,7 +396,7 @@ function preludeIsIgnored(args) {
   return args.includes("--prelude");
 }
 
-function runCompiler(root, rawArgs, jvmFree) {
+function runCompiler(root, rawArgs) {
   const args = resolveCallerPaths(rawArgs, process.cwd());
   if (nbbNativeEligible(args)) {
     if (preludeIsIgnored(args)) {
@@ -420,7 +408,7 @@ function runCompiler(root, rawArgs, jvmFree) {
     }
     const nbbCli = path.join(root, "node_modules", "nbb", "cli.js");
     const classpath = [path.join(root, "src"), path.join(root, "resources"),
-      securityClasspath(root, nbbCli, jvmFree)].join(path.delimiter);
+      securityClasspath(root, nbbCli)].join(path.delimiter);
     const result = spawn(process.execPath,
       ["--stack-size=4096", nbbCli, "--classpath", classpath, nbbEntrypoint(root, args), ...args], {
         cwd: root, stdio: "inherit",
@@ -429,18 +417,21 @@ function runCompiler(root, rawArgs, jvmFree) {
     process.exit(result.status ?? 70);
   }
 
-  if (jvmFree) {
-    if (args[0] === "compile" && divergentAiueosKernelImage(args)) {
-      fail("error: no JVM-free implementation: " + divergentImageReason, 64);
-    }
-    fail("error: this Amu command or target has no JVM-free implementation; "
-      + "refusing to invoke the Clojure/JVM compatibility path", 64);
+  // The JVM route is gone (2026-09-11). Until 2026-09-11 anything not on the
+  // nbb route above was handed to `clojure -M:run`; that spawn hid every
+  // command the nbb route did not implement behind a working JVM, and after
+  // the .cljk rename the JVM could not load the CLI anyway. Now the answer is
+  // a refusal that names the command and the target, so the gap is visible
+  // at the call site and in docs/adr (JVM-route-removed ledger) rather than
+  // in a stack trace from clojure.main.
+  if (args[0] === "compile" && divergentAiueosKernelImage(args)) {
+    fail("error: no nbb-route implementation: " + divergentImageReason, 64);
   }
-
-  const alias = ["measure-runtime", "run"].includes(args[0]) ? "-M:native-run" : "-M:run";
-  const result = spawn("clojure", [alias, ...args], { cwd: root, stdio: "inherit" });
-  if (result.error) fail("error: unable to start the private compiler runtime", 70);
-  process.exit(result.status ?? 70);
+  const target = option(args, "--target");
+  fail("error: `amu " + args[0] + (target ? " --target " + target : "") + "` has no "
+    + "implementation on the nbb/native route, and the JVM route was removed on "
+    + "2026-09-11 (Kotoba and the amu native compiler only). Commands still to "
+    + "port are listed in docs/adr under `jvm-route-removed`.", 64);
 }
 
 const rawArgs = process.argv.slice(2);
@@ -450,8 +441,9 @@ if (rawArgs.length === 0 || ["-h", "--help"].includes(rawArgs[0])) {
 }
 const boundaries = new Set(["-M", "-M:compiler", "-M:compile"]);
 const unwrappedArgs = boundaries.has(rawArgs[0]) ? rawArgs.slice(1) : rawArgs;
-const jvmFree = unwrappedArgs.includes("--jvm-free");
+// `--jvm-free` is accepted and means nothing: every invocation is JVM-free
+// now. Kept so the thousands of call sites that spell it keep working.
 const args = unwrappedArgs.filter((arg) => arg !== "--jvm-free");
 if (args.length === 0) fail("error: missing Amu compiler command", 2);
 const root = path.resolve(path.dirname(fs.realpathSync(__filename)), "..");
-runCompiler(root, args, jvmFree);
+runCompiler(root, args);

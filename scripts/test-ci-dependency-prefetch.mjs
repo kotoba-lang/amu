@@ -49,7 +49,7 @@ test("retries a transient failure and preserves the requested basis", () => {
     stderr: sink(),
   });
 
-  assert.deepEqual(calls, [["-P", "-M:test"], ["-P", "-M:test"]]);
+  assert.deepEqual(calls, [["--alias", "test"], ["--alias", "test"]]);
   assert.deepEqual(waits, [1000]);
 });
 

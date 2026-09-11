@@ -14,6 +14,16 @@
             [scripts.lib :as lib]
             ["node:fs" :as fs]))
 
+;; ⚠ REFUSED SINCE 2026-09-11 -- the JVM route is removed (owner decision:
+;; Kotoba and the amu native/nbb compiler only). This script needs `clojure -M:ipld-adl-conformance` and the JVM `ipld-adl-source-compile` main,
+;; which has no nbb-route implementation yet. It exits 2 (could-not-answer)
+;; here rather than failing later on a missing `clojure`, so a run of it is
+;; never mistaken for a red test of the thing it used to test. The port is
+;; tracked in docs/adr (jvm-route-removed).
+(js/console.error "REFUSED could-not-answer reason=jvm-route-removed needs=clojure ledger=docs/adr/jvm-route-removed")
+(.exit js/process 2)
+
+
 (def tmp (lib/temp-dir "kotoba-ipld-adl-"))
 (defn at [& parts] (apply lib/join tmp parts))
 (def runner (at "runner"))

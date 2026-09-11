@@ -1,5 +1,6 @@
 (ns scripts.lib
-  (:require [kotoba.lang.text :as str]
+  (:require [clojure.edn :as edn]
+            [kotoba.lang.text :as str]
             ["node:child_process" :as child]
             ["node:crypto" :as crypto]
             ["node:fs" :as fs]
@@ -13,6 +14,36 @@
 (defn join [& values] (.apply (.-join path) path (clj->js values)))
 (defn read-text [file] (.readFileSync fs file "utf8"))
 (defn write-text! [file value] (.writeFileSync fs file value))
+(defn lock-classpath
+  "The dependency closure from deps-lock.edn -- plus the closure each ALIAS
+  adds -- joined with the platform delimiter. This replaced `clojure -Spath`
+  (and `-Spath -M:test`) in every nbb test runner on 2026-09-11, when the JVM
+  route was removed; the lock is regenerated at authoring time by
+  scripts/lock-classpath.cljk and resolved here with git alone. Refuses when
+  the resolver prints nothing: an empty classpath is not a classpath."
+  [& aliases]
+  (let [nbb-cli (join root "node_modules" "nbb" "cli.js")
+        result (.spawnSync child js/process.execPath
+                           (clj->js (into [nbb-cli "--classpath" (join root "src")
+                                           (join root "scripts" "print-classpath.cljk") root]
+                                          (mapcat #(vector "--alias" %) aliases)))
+                           #js {:encoding "utf8" :cwd root :maxBuffer 16777216
+                                :env js/process.env})
+        entries (->> (str/split (str/trim (or (.-stdout result) "")) #"\r?\n")
+                     (remove str/blank?))]
+    (when-not (and (zero? (or (.-status result) 70)) (seq entries))
+      (throw (js/Error. (str "lock-classpath: could not resolve the dependency closure"
+                             (when (seq aliases) (str " (aliases " (str/join "," aliases) ")"))
+                             "\n" (some-> (.-stderr result) str/trim)))))
+    ;; An alias's `:extra-paths` (`-M:test` adds "test") are part of what
+    ;; `clojure -Spath -M:<alias>` printed and are not git dependencies, so
+    ;; the lock does not carry them; they are read from deps.edn here.
+    (let [deps (edn/read-string (read-text (join root "deps.edn")))
+          extra (for [alias aliases
+                      p (get-in deps [:aliases (keyword alias) :extra-paths])]
+                  (join root p))]
+      (str/join (.-delimiter path) (concat extra entries)))))
+
 (defn sha256 [file]
   (let [hash (.createHash crypto "sha256")]
     (.update hash (.readFileSync fs file))

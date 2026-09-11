@@ -8,6 +8,16 @@
             ["node:os" :as os]
             ["node:path" :as path]))
 
+;; ⚠ REFUSED SINCE 2026-09-11 -- the JVM route is removed (owner decision:
+;; Kotoba and the amu native/nbb compiler only). This script needs `amu keygen` (Ed25519 key generation on the JVM CLI) and a JVM-side `sign`,
+;; which has no nbb-route implementation yet. It exits 2 (could-not-answer)
+;; here rather than failing later on a missing `clojure`, so a run of it is
+;; never mistaken for a red test of the thing it used to test. The port is
+;; tracked in docs/adr (jvm-route-removed).
+(js/console.error "REFUSED could-not-answer reason=jvm-route-removed needs=amu ledger=docs/adr/jvm-route-removed")
+(.exit js/process 2)
+
+
 (def directory (.mkdtempSync fs (.join path (.tmpdir os)
                                         "amu-output-publisher-")))
 

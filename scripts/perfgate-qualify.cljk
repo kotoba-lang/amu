@@ -32,8 +32,10 @@
           "usage: nbb scripts/perfgate-qualify.cljk <benchmark.json> | --validate-manifest-v2 <manifest.json>")
   (.exit js/process 2))
 
-(let [result (.spawnSync child "clojure"
-                         (clj->js (into ["-Sdeps" deps "-M" "-m" "perfgate-qualify"]
-                                        arguments))
-                         #js {:cwd root :stdio "inherit"})]
-  (.exit js/process (or (.-status result) 1)))
+;; ⚠ REFUSED SINCE 2026-09-11 -- the JVM route is removed (owner decision:
+;; Kotoba and the amu native/nbb compiler only). The qualifier's main
+;; (`scripts/perfgate_qualify.cljk`) is a JVM program and has no nbb-route
+;; implementation yet; this exits 2 (could-not-answer) rather than failing
+;; on a missing `clojure`. The port is tracked in docs/adr (jvm-route-removed).
+(.error js/console "REFUSED could-not-answer reason=jvm-route-removed needs=perfgate-qualify(JVM main) ledger=docs/adr/jvm-route-removed")
+(.exit js/process 2)
