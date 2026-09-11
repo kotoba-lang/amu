@@ -868,3 +868,101 @@
                             'root (str "(ns root (:require [kotoba.set.union :refer [union] :with {elem :i64}]) (:export [main]))\n"
                                        "(defn main [] :i64 (typed-set-count [:set :i64] (union (typed-set-new [:set :i64] 1 2) (typed-set-new [:set :i64] 2 3))))")}
                            'root)))))
+
+;; ---------------------------------------------------------------------------
+;; Default bindings (kotoba-lang ADR-clojure-set-compat-template-default-
+;; binding, 2026-09-11). `(:params [elem :keyword])` declares the type a
+;; parameter is bound to when the importer writes no `:with`. Nothing is
+;; inferred: the require without `:with` IS the require with the declared
+;; binding, so it shares the instantiation, the linked text and the CIDs with
+;; an importer that spells it out.
+
+(def ^:private defaulted-template
+  (.replace union-template "(:params [elem])" "(:params [elem :keyword])"))
+
+(def ^:private kw-root
+  "(ns root
+  (:require [kotoba.set.union :as u])
+  (:export [main]))
+(defn main [] :i64
+  (typed-set-count [:set :keyword] (u/union #{:a :b} #{:b :c})))")
+
+(def ^:private kw-root-explicit
+  (.replace kw-root "[kotoba.set.union :as u]" "[kotoba.set.union :as u :with {elem :keyword}]"))
+
+(check "a-require-without-with-takes-the-declared-default-binding"
+  (fn []
+    (let [{:keys [module-order]} (project/link-source {'kotoba.set.union defaulted-template 'root kw-root} 'root)]
+      (assert (= [['kotoba.set.union {'elem :keyword}] 'root] module-order) (pr-str module-order))
+      (assert (= 3 (run-main {'kotoba.set.union defaulted-template 'root kw-root} 'root))))))
+
+(check "the-default-binding-and-the-spelled-out-one-are-one-instantiation"
+  (fn []
+    ;; The control for "nothing is inferred": the linked source is the SAME
+    ;; text, so every definition CID is the same. Then both spellings in one
+    ;; project reach one module.
+    (let [implicit (project/link-source {'kotoba.set.union defaulted-template 'root kw-root} 'root)
+          explicit (project/link-source {'kotoba.set.union defaulted-template 'root kw-root-explicit} 'root)]
+      (assert (= (:module-order implicit) (:module-order explicit)))
+      (assert (= (:source implicit) (:source explicit))
+              "the require without :with linked to different text than the one with the default spelled out"))
+    (let [both (str "(ns root (:require [kotoba.set.union :as a] [kotoba.set.union :as b :with {elem :keyword}]) (:export [main]))\n"
+                    "(defn main [] :i64 (+ (typed-set-count [:set :keyword] (a/union #{:a} #{:b})) (typed-set-count [:set :keyword] (b/union #{:a} #{:a}))))")
+          {:keys [module-order]} (project/link-source {'kotoba.set.union defaulted-template 'root both} 'root)]
+      (assert (= [['kotoba.set.union {'elem :keyword}] 'root] module-order) (pr-str module-order))
+      (assert (= 3 (run-main {'kotoba.set.union defaulted-template 'root both} 'root))))))
+
+(check "an-explicit-with-overrides-the-default"
+  (fn []
+    ;; `union-root` binds :i64 and :symbol explicitly against a template whose
+    ;; default is :keyword: two instantiations, neither of them the default.
+    (let [{:keys [module-order]} (project/link-source {'kotoba.set.union defaulted-template 'root union-root} 'root)]
+      (assert (= [['kotoba.set.union {'elem :i64}] ['kotoba.set.union {'elem :symbol}] 'root] module-order)
+              (pr-str module-order))
+      (assert (= 5 (run-main {'kotoba.set.union defaulted-template 'root union-root} 'root))))))
+
+(check "the-attr-map-spelling-carries-the-default-too"
+  (fn []
+    (let [attr (.replace defaulted-template "(:params [elem :keyword])\n  (:export [union])" "{:kotoba/params [elem :keyword] :kotoba/export [union]}")]
+      (assert (not (re-find #"\(:params" attr)))
+      (assert (= 3 (run-main {'kotoba.set.union attr 'root kw-root} 'root))))))
+
+(check "default-binding-refusals-are-by-name"
+  (fn []
+    (doseq [[label sources expected]
+            [["a parameter without a default, and no :with, names that parameter"
+              {'t.two "(ns t.two (:params [elem :keyword other]) (:export [f]))\n(defn f [x elem y other] :i64 1)"
+               'root "(ns root (:require [t.two :as t]) (:export [main]))\n(defn main [] :i64 (t/f :a 1))"}
+              "template module t.two declares (:params [elem other]) and needs an instantiation: require it with :with {elem <type>, other <type>}; its parameter(s) [other] declare no default, so the require cannot omit :with"]
+             ["a template with no default at all keeps the original message"
+              {'kotoba.set.union union-template 'root kw-root}
+              "template module kotoba.set.union declares (:params [elem]) and needs an instantiation: require it with :with {elem <type>}"]
+             ["a default that is not a type form"
+              {'t.bad "(ns t.bad (:params [elem 3]) (:export [f]))\n(defn f [x elem] elem x)"
+               'root "(ns root (:require [t.bad :as t]) (:export [main]))\n(defn main [] :i64 (t/f 1))"}
+              "namespace :params must be a non-empty vector of distinct simple symbols"]
+             ["a type form before any parameter"
+              {'t.bad "(ns t.bad (:params [:keyword elem]) (:export [f]))\n(defn f [x elem] elem x)"
+               'root "(ns root (:require [t.bad :as t]) (:export [main]))\n(defn main [] :i64 (t/f 1))"}
+              "namespace :params default type must follow a parameter symbol"]
+             ["defaults do not fill in behind a partial :with"
+              {'t.two "(ns t.two (:params [elem :keyword other :i64]) (:export [f]))\n(defn f [x elem y other] :i64 1)"
+               'root "(ns root (:require [t.two :as t :with {other :i64}]) (:export [main]))\n(defn main [] :i64 (t/f :a 1))"}
+              "template module t.two is required with :with {other :i64}, which does not bind its parameter(s) [elem]"]]]
+      (when-let [failure (rejects #(project/link-source sources 'root) expected)]
+        (throw (js/Error. (str label ": " failure)))))))
+
+(check "a-reader-tagged-host-literal-reaches-the-frontend-s-named-refusal"
+  (fn []
+    ;; `#"x"` reads as `(kotoba.reader/regex "x")`. Before 2026-09-11 the
+    ;; linker's import rewrite reached that head first and refused it as
+    ;; `qualified call is not an admitted exported import` -- a sentence about
+    ;; imports, for a module whose one import resolved. The frontend names it.
+    (let [message (refusal-message
+                   #(project/link-source
+                     {'plain "(ns plain (:export [one])) (defn one [] :i64 1)"
+                      'root "(ns root (:require [plain :as p]) (:export [main]))\n(defn main [] :i64 (if (p/one) (count #\"x\") 0))"}
+                     'root))]
+      (assert (string? message) "a regex literal in a selected branch is refused")
+      (assert (re-find #"host regex literal" message) message)
+      (assert (not (re-find #"admitted exported import" message)) message))))
