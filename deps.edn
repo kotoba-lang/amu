@@ -19,7 +19,21 @@
         ;; kotoba.lang.text, not clojure.string. Pinned as an explicit floor:
         ;; tools.deps takes the NEWEST sha it is shown, so without a floor here
         ;; this repo silently rides whatever a sibling happens to name.
-        io.github.kotoba-lang/text {:git/sha "2ee6dce2ca944decd001f9378868dd703fc3e741"}
+        ;; Advanced 2026-09-11, 2ee6dce2 -> 3dcb2ab0 (text main, ahead 16, behind
+        ;; 0, forward only): every module under src/ carries the ns attr-map
+        ;; `{:kotoba/export [...]}` (amu#942's spelling, emitted by amu#946's
+        ;; annotator). The project route (`amu check <entry> --source-path ...`)
+        ;; refuses a REQUIRED module that declares no export vector, so with the
+        ;; compiler's own 58 modules annotated (#946) the refusal moved to the
+        ;; git-dep modules their closures reach -- measured on 16 of them at
+        ;; 1f57a6c6 (kotoba.artifact.core x11, kotoba.abi.contract x2,
+        ;; kotoba.artifact.runtime-identity x1, kotoba.sema x2). Every
+        ;; first-party dependency on this classpath was annotated the same way
+        ;; and its main pinned here in this one commit; each pin below that says
+        ;; `same wave` carries that change and that repo's .cljk rename
+        ;; (adr-2609111500) / kbb cutover (adr-2609112000). Superproject ADR
+        ;; adr-2609111900, source-side wave. io-ipld stays HELD (see its note).
+        io.github.kotoba-lang/text {:git/sha "3dcb2ab087933dc7b703b340dac9afce62cb30ff"}
         ;; The ONE classification lattice (root ADR-2607280100 D1, which exists
         ;; because there were two copies of that rank map and merging them was
         ;; the point). `kotoba.compiler.effect-classification` ranks a
@@ -47,7 +61,10 @@
         ;; outside the lattice without writing a membership test of its own.
         io.github.kotoba-lang/security
         {:git/url "https://github.com/kotoba-lang/security.git"
-         :git/sha "d87f334235bef7229bf8b8231c200612f824cbc2"}
+         ;; Advanced 2026-09-11, d87f3342 -> 0e8e1a61 (security main, ahead 6,
+         ;; behind 0, forward only): same wave as the text pin above --
+         ;; `{:kotoba/export [...]}` on every module.
+         :git/sha "0e8e1a61742e714baf3279b6b9e0c2e695c05b70"}
        org.clojure/clojure {:mvn/version "1.12.0"}
         ;; Advanced 2026-09-09, 32ee84b2 -> 3abf80a1 (abi main, ahead 1,
         ;; forward only). The same BigInt class as the osaho pin below, but
@@ -62,12 +79,28 @@
         ;; hashes rather than scanning), and because abi owns the id
         ;; vocabulary.
         io.github.kotoba-lang/abi {:git/url "https://github.com/kotoba-lang/abi.git"
-                                   :git/sha "3abf80a1fc0b5a0830acc8b37027baee65a53239"}
+                                   ;; Advanced 2026-09-11, 3abf80a1 -> b0dad3f8 (abi main, ahead 8, behind
+                                   ;; 0, forward only): same wave as the text pin above -- `{:kotoba/export
+                                   ;; [...]}` on every module.
+                                   :git/sha "b0dad3f8e5cf15d31f7702d3c8a8c5851cbd871d"}
         ;; Advanced 2026-09-03 (ADR 0330) with kotoba-lang/provider f040fc0,
         ;; which retires org.clojure/data.json for this namespace and needs
         ;; d5137c7's kwargs surface to be a drop-in.
         io.github.kotoba-lang/json
         {:git/url "https://github.com/kotoba-lang/json.git"
+         ;; NOT advanced 2026-09-11 with the {:kotoba/export} wave, on purpose.
+         ;; json main (ce3c2b7b, annotated, nbb 32 tests / 115 assertions
+         ;; green) assembles kotoba.json from one repository per definition:
+         ;; measured with `scripts/lock-classpath.cljk`, taking it adds 19
+         ;; `io.github.kotoba-lang/json-*` git coordinates to the JDK-free
+         ;; closure (26 -> 45 entries). That is a closure decision for this
+         ;; repository, not a pin advance, and it clears nothing here: the two
+         ;; modules whose closure reaches json.data-json (host_profile,
+         ;; test_profile) are refused on the project route for its missing
+         ;; export vector, and at ce3c2b7b json.data-json requires json.core,
+         ;; which requires those 19 repositories -- none of which carries the
+         ;; annotation -- so the same refusal would name kotoba.json.emit or
+         ;; a sibling instead. The count moves by 0 and the closure by 19.
          :git/sha "15fd195ac41e6268e2005ccbf6cb9924e81e65e2"}
         ;; Advanced 2026-09-08 to f803255e (PR #99): `typed-list-nth`, the
         ;; accessor a [:list T] never had on this backend. Before it, a list
@@ -76,7 +109,10 @@
         ;; for the whole module whether the function was reached or not.
         io.github.kotoba-lang/kotoba-script
         {:git/url "https://github.com/kotoba-lang/kotoba-script.git"
-         :git/sha "b4099699f4faab572a5f3baa43d33f81148ecbd9"}
+         ;; Advanced 2026-09-11, b4099699 -> 2033d63b (kotoba-script main, ahead
+         ;; 6, behind 0, forward only): same wave as the text pin above --
+         ;; `{:kotoba/export [...]}` on every module.
+         :git/sha "2033d63bbd9fde720ddb20013ce8148d51baa244"}
         ;; ADR-0222: source reading and semantic analysis live behind the
         ;; kotoba-sema repository boundary and public semantic-analysis API.
         ;;
@@ -489,15 +525,28 @@
          ;; kotoba-native's lowering and CPython all answer 4. `lower` folds a pure i64
          ;; entry through that evaluator, so a constant `string-index-of` over an astral
          ;; literal was baked into artifacts wrong.
-         :git/sha "7a6a27b834d33bb68cc4ee9addc5ce4a4bee6b4a"}
+         ;; Advanced 2026-09-11, 7a6a27b8 -> f404babb (osaho main, ahead 24,
+         ;; behind 0, forward only): same wave as the text pin above --
+         ;; `{:kotoba/export [...]}` on every module. Beside the annotation the
+         ;; range carries osaho#89 (a computed i64 shift count is admitted by the
+         ;; KIR gate; the four-repo change with
+         ;; kotoba-sema/kotoba-verifier/kotoba-native) and the payload-v3
+         ;; measurement series, all test-only on osaho's side.
+         :git/sha "f404babb05ec88e1256f4fbfc28117a3582899b5"}
         ;; The frontend is an HIR producer and KIR lowering is its consumer;
         ;; both validate the same checked envelope.
         io.github.kotoba-lang/kotoba-hir
         {:git/url "https://github.com/kotoba-lang/kotoba-hir.git"
-         :git/sha "ac8e70514ee3c9b87ae71324e6e714447acc971c"}
+         ;; Advanced 2026-09-11, ac8e7051 -> 9e4a5316 (kotoba-hir main, ahead 6,
+         ;; behind 0, forward only): same wave as the text pin above --
+         ;; `{:kotoba/export [...]}` on every module.
+         :git/sha "9e4a5316378f5208058cf8332e4920e8fa027286"}
         io.github.kotoba-lang/kotoba-object
         {:git/url "https://github.com/kotoba-lang/kotoba-object.git"
-         :git/sha "9b53a444cfe5550af6b76eef494b4190b5e4e461"}
+         ;; Advanced 2026-09-11, 9b53a444 -> a1649ef9 (kotoba-object main, ahead
+         ;; 8, behind 0, forward only): same wave as the text pin above --
+         ;; `{:kotoba/export [...]}` on every module.
+         :git/sha "a1649ef9b29f061cd9af4cb9648280bf023a9a81"}
         ;; 9007989 pins the context ABI v4 loader identity for both hosts.
         ;; A loader source hash is what binds an artifact to the host that can
         ;; run it, so this pin and tools/kexe_loader.c move in the same commit
@@ -557,7 +606,10 @@
          ;; unlink, rmdir, rename, stat and chmod -- which is what lets a
          ;; command change a filesystem rather than only read one. New
          ;; request forms, not new capabilities, so kotoba-sema did not move.
-         :git/sha "db66a0908dc972492efd6c61208e56ba0e60cf96"}
+         ;; Advanced 2026-09-11, db66a090 -> 84d229c2 (artifact main, ahead 6,
+         ;; behind 0, forward only): same wave as the text pin above --
+         ;; `{:kotoba/export [...]}` on every module.
+         :git/sha "84d229c25b2b9782299eb94743e88c802d227569"}
         ;; HELD at 1a2e10c on 2026-09-03 (ADR 0331), 28 commits behind its main,
         ;; while every other pin in this file moved to the tip. The reason, so
         ;; that a lagging pin and a pin with an argument behind it stay
@@ -580,6 +632,17 @@
         ;; non-canonical form still exists that decodes at 48ba404, is a
         ;; question for io-ipld's owner and not for a pin-consolidation commit.
         ;; Nothing in the K16 native programme depends on this advance.
+        ;; STILL HELD 2026-09-11 (now 60 behind main, 3e48e468). The
+        ;; `{:kotoba/export [...]}` wave annotated io-ipld's 13 modules too
+        ;; (3e48e468, nbb 150 tests / 5653 assertions green), but taking
+        ;; that sha crosses 01b6453 above, and the hold's argument is
+        ;; unchanged -- and its test (ipld_adl_test) is on the JVM route,
+        ;; which cannot run since the .cljk rename, so an advance here could
+        ;; not even be measured against it. Cost of the hold, measured: an
+        ;; amu module whose closure reaches `ipld.*` (through
+        ;; kotoba.artifact.content-identity) is still refused on the project
+        ;; route with "requires an explicit :export vector" naming an ipld
+        ;; namespace. Lifting it is io-ipld's owner's decision, as before.
         io.github.kotoba-lang/io-ipld
         {:git/url "https://github.com/kotoba-lang/io-ipld.git"
          :git/sha "1a2e10cf8038155de210357e637eac4102de89cb"}
@@ -599,7 +662,10 @@
         ;; total order the KIR reference interpreter uses.
         io.github.kotoba-lang/kotoba-wasm
         {:git/url "https://github.com/kotoba-lang/kotoba-wasm.git"
-         :git/sha "829966fd47148d3ef2b873ea35bed57a63928606"}
+         ;; Advanced 2026-09-11, 829966fd -> d4207d00 (kotoba-wasm main, ahead 8,
+         ;; behind 0, forward only): same wave as the text pin above --
+         ;; `{:kotoba/export [...]}` on every module.
+         :git/sha "d4207d007c4415d6a00cb11ceb8572dcc20f2187"}
         ;; Production KIR routes exclusively through whole-module
         ;; GMIR/MIR/allocated-MC, including word/f64/memory/runtime/capability,
         ;; literal-data, scalar variant, word-field record, and x86 privileged
@@ -798,10 +864,16 @@
          ;; this repository's jdk-free-native-conformance on ubuntu-latest
          ;; (`:remaining 18446744073709551615`) the first time it ran on the
          ;; nbb route alone.
-         :git/sha "c048024164186c7f72e5c8e84d207cb97f0e1d30"}
+         ;; Advanced 2026-09-11, c0480241 -> 19400641 (kotoba-native main, ahead
+         ;; 4, behind 0, forward only): same wave as the text pin above --
+         ;; `{:kotoba/export [...]}` on every module.
+         :git/sha "19400641cd3140af96c57b9d9778ebb8b57ed7b6"}
         io.github.kotoba-lang/kotoba-component
         {:git/url "https://github.com/kotoba-lang/kotoba-component.git"
-         :git/sha "ff2c3e8c29a02a7731e70c7e4d276441ebc9d42d"}
+         ;; Advanced 2026-09-11, ff2c3e8c -> cad39ab0 (kotoba-component main,
+         ;; ahead 10, behind 0, forward only): same wave as the text pin above --
+         ;; `{:kotoba/export [...]}` on every module.
+         :git/sha "cad39ab037e13f4cddeb6755571e4fa91e0a059a"}
         ;; The package contract: `kotoba.lang.package-contract` validates a
         ;; `kotoba.lock.edn` -- required fields, real CIDv1s, capability grant
         ;; ⊆ declaration, signer revocation, and Ed25519 signature
@@ -822,7 +894,12 @@
         ;; consume a lock.
         io.github.kotoba-lang/kotoba-core-contracts
         {:git/url "https://github.com/kotoba-lang/kotoba-core-contracts.git"
-         :git/sha "2ebe7461bdf89e609b0dda2517393604e37b12b0"}
+         ;; Advanced 2026-09-11, 2ebe7461 -> 06d1e98a (kotoba-core-contracts main,
+         ;; ahead 30, behind 0, forward only): same wave as the text pin above --
+         ;; `{:kotoba/export [...]}` on every module. The range also carries
+         ;; capability id 261 (fs/browse-dir) and the kotoba.lang.text / coll /
+         ;; edn substitutions.
+         :git/sha "06d1e98ab61259578d38bda1843b749ea6187c44"}
         ;; CIDv1 for `module-lock`: pinned module resolution has to prove the
         ;; bytes it read are the ones the lock names, and that is a hash, not a
         ;; path check. Same pin the codebase/semantic layers use, so a source
@@ -834,7 +911,12 @@
         ;; rather than adding a dependency.
         io.github.kotoba-lang/io-multiformats
         {:git/url "https://github.com/kotoba-lang/io-multiformats.git"
-         :git/sha "561fe7dfada3db852b127f06d41750dabd3cead9"}
+         ;; Advanced 2026-09-11, 561fe7df -> dbb877ed (io-multiformats main, ahead
+         ;; 24, behind 0, forward only): same wave as the text pin above --
+         ;; `{:kotoba/export [...]}` on every module. The range also carries
+         ;; base32's bit-accumulator rewrite (the lazy-seq expansion root
+         ;; ADR-2609051700 names) and the sha256 digest seam.
+         :git/sha "dbb877ed22e87ba68d74d995dd8cbe6cf8f24970"}
         ;; The verifier independently re-derives aggregate ABI v7, including
         ;; recursive record-payload variants, and re-emits the widened boundary
         ;; in addition to scalar/variant/call-frame checks.
@@ -953,7 +1035,10 @@
          ;; hands back on Node. Measured here: an envelope signed on Node, written,
          ;; read back, refused as "signature statement mismatch". Required by the
          ;; trust-plane commands (ADR 0348) landing on the nbb route.
-         :git/sha "f1efb423e495b8a4073fa8d163473069cf58737f"}
+         ;; Advanced 2026-09-11, f1efb423 -> 02774799 (kotoba-verifier main, ahead
+         ;; 4, behind 0, forward only): same wave as the text pin above --
+         ;; `{:kotoba/export [...]}` on every module.
+         :git/sha "027747992d9d77990d0a9d233658737ced3c940b"}
 }
  :aliases {:test {:extra-paths ["test"]
                   :extra-deps
