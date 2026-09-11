@@ -169,6 +169,14 @@ jobs:
           printf '(defn main [] (+ 40 2))\n' > /tmp/ci.kotoba
           bin/kotoba -M compile /tmp/ci.kotoba --target x86_64 --output /tmp/ci.kexe
           bin/amu verify-output-set /tmp/ci.kexe
+      # Back since 2026-09-11 evening: `run` / `measure-runtime` are on the
+      # nbb route (kototama-native a94e5c19 gave the executor a Node host),
+      # so the harness's `attested-run` -- measure the loader twice, run a
+      # signed artifact, verify its receipt -- executes again instead of
+      # refusing with exit 2. `cc` is the host toolchain the loader identity
+      # measures; every runner in this matrix has one.
+      - if: ${{ !cancelled() }}
+        run: npm run conformance
       - if: ${{ !cancelled() }}
         run: npx nbb scripts/sanitizer.cljk
       - if: ${{ !cancelled() }}

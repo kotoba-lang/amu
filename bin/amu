@@ -143,15 +143,17 @@ const divergentImageReason =
 // The trust-plane commands: keys, trust sets, signatures, receipts, inspect.
 // One portable implementation (`kotoba.compiler.trust-cli`) since 2026-09-11;
 // this set is `kotoba.compiler.trust-cli/commands`, spelled again here because
-// the driver decides the route before any Clojure is loaded. `run` and
-// `measure-runtime` are NOT in it: they need the kototama native executor,
-// which has no Node host yet, so they stay refused below by name.
+// the driver decides the route before any Clojure is loaded.
 const trustCommands = new Set(["keygen", "public-key", "inspect", "trust-key",
   "trust-runtime", "sign", "verify-signed", "verify", "receipt",
   "verify-receipt", "verify-chain",
   // The release family and iOS packaging joined the same namespace on
   // 2026-09-11 (kotoba.compiler.release is portable now; ios-aot was).
-  "sbom", "attest-release", "verify-release", "package-ios"]);
+  "sbom", "attest-release", "verify-release", "package-ios",
+  // `run` and `measure-runtime` joined later the same day, when the kototama
+  // native executor gained a Node host (kototama-native a94e5c19). They were
+  // the last two entries of the JVM-route-removed ledger.
+  "measure-runtime", "run"]);
 
 function nbbNativeEligible(args) {
   const command = args[0];
@@ -345,7 +347,11 @@ function securityClasspath(root, nbbCli) {
 // Flags whose value is always a filesystem location, including ones with no
 // extension to recognise it by.
 const PATH_VALUED_FLAGS = new Set(["--blocks", "--source-path", "--module-lock",
-  "--output", "--policy", "--package-lock", "--packages", "--trust"]);
+  "--output", "--policy", "--package-lock", "--packages", "--trust",
+  // `run` / `measure-runtime`: a loader binary has no extension, and a
+  // runtime measurement or a key may be named without one.
+  "--loader", "--loader-output", "--loader-source", "--runtime", "--input",
+  "--executor-key", "--parent", "--result-output", "--key"]);
 
 // Flags whose value is NEVER a filesystem location, however much it looks
 // like one. A package name is `<org>/<name>` and a repository URL is full of
@@ -434,6 +440,16 @@ function runCompiler(root, rawArgs) {
     const nbbCli = path.join(root, "node_modules", "nbb", "cli.js");
     const classpath = [path.join(root, "src"), path.join(root, "resources"),
       securityClasspath(root, nbbCli)].join(path.delimiter);
+    // The reviewed kexe loader source lives in this checkout's `tools/`.
+    // `measure-runtime` finds it through the working directory when that is
+    // this checkout (it is: the spawn below sets `cwd: root`), but a caller
+    // that names its own directory, or a future spawn in the caller's cwd,
+    // would not -- so the executor is told where it is unless the caller
+    // already said. Naming a directory cannot substitute a different loader:
+    // the executor refuses any source whose digest is not the reviewed one.
+    if (!process.env.KOTOBA_LOADER_SOURCE_DIR) {
+      process.env.KOTOBA_LOADER_SOURCE_DIR = path.join(root, "tools");
+    }
     const result = spawn(process.execPath,
       ["--stack-size=4096", nbbCli, "--classpath", classpath, nbbEntrypoint(root, args), ...args], {
         cwd: root, stdio: "inherit",

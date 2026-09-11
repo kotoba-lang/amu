@@ -73,7 +73,9 @@
 (def ^:private trust-commands
   #{"keygen" "public-key" "inspect" "trust-key" "trust-runtime"
     "sign" "verify-signed" "verify" "receipt" "verify-receipt" "verify-chain"
-    "sbom" "attest-release" "verify-release" "package-ios"})
+    "sbom" "attest-release" "verify-release" "package-ios"
+    ;; `measure-runtime` / `run`: the executor has a Node host (2026-09-11).
+    "measure-runtime" "run"})
 
 (defn- nbb-native-eligible? [sub-args]
   (let [cmd (first sub-args)]
@@ -261,7 +263,16 @@
                                  ;; 2026-09-11 with `kotoba -M keygen`). The
                                  ;; classpath above is absolute, so nothing the
                                  ;; child loads depends on where it starts.
-                                 #js {:cwd (.cwd js/process) :stdio "inherit" :env js/process.env})]
+                                 ;; And BECAUSE the child starts in the
+                                 ;; caller's directory, `measure-runtime`'s
+                                 ;; last fallback (`tools/` under the cwd)
+                                 ;; would miss the reviewed loader source, so
+                                 ;; this checkout's `tools/` is named unless
+                                 ;; the caller already named one.
+                                 #js {:cwd (.cwd js/process) :stdio "inherit"
+                                      :env (js/Object.assign
+                                            #js {"KOTOBA_LOADER_SOURCE_DIR" (.join path root "tools")}
+                                            js/process.env)})]
           (when (.-error result)
             (fail! "error: unable to start nbb-native compiler runtime" 70))
           (.exit js/process (or (.-status result) 70)))

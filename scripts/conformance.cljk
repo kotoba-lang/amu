@@ -6,17 +6,13 @@
             ["node:os" :as os]
             ["node:path" :as path]))
 
-;; ⚠ REFUSED SINCE 2026-09-11 -- the JVM route is removed (owner decision:
-;; Kotoba and the amu native/nbb compiler only). This harness drives
-;; `run` and `measure-runtime`, which were JVM-CLI-only (docs/adr/0347) and
-;; are the two still unported (the native executor is a 1,200-line driver
-;; around the kexe loader). `verify`, `sign`, `keygen`, `receipt` and the
-;; release commands are on the nbb route since 2026-09-11 (ADR 0348) and
-;; are covered by test-nbb-trust, test-nbb-release-and-emitters,
-;; test-release and test-output-set-publisher-auth. It exits 2
-;; (could-not-answer) rather than failing at the first of them.
-(js/console.error "REFUSED could-not-answer reason=jvm-route-removed needs=run,measure-runtime ledger=docs/adr/0347-the-jvm-route-is-removed.md")
-(.exit js/process 2)
+;; Refused from 2026-09-11 morning to 2026-09-11 evening: the JVM route was
+;; removed (ADR 0347) while `run` and `measure-runtime` still had no Node
+;; host, and this harness drives both (`attested-run`). Rather than fail at
+;; the first of them it exited 2 (could-not-answer) and named the ledger.
+;; kototama-native a94e5c19 gave `kototama.native.executor` a Node host and
+;; `kotoba.compiler.trust-cli` gained the two commands, so the harness runs
+;; again end to end -- the same commands, on the nbb route.
 
 (def root (fs/realpathSync (.resolve path (.dirname path *file*) "..")))
 (def tmp (.mkdtempSync fs (.join path (.tmpdir os) "kotoba-conformance-")))
@@ -140,8 +136,11 @@
      "--input" (file "input.edn") "--result" (file (str isa "-run-result.edn")) "--now" "1500")
   (let [result (read! (str isa "-run-result.edn"))
         receipt (read! (str isa "-run-receipt.edn"))]
+    ;; Two needles where there was one: the nbb route's writer prints map
+    ;; keys sorted (`:abi` before `:format`), the JVM printed them in
+    ;; insertion order. The VALUE is the same; the text is not.
     (doseq [needle [":status :ok" ":result 42" ":format :kotoba.native-runtime/v6"
-                    ":target-profile {:format :kotoba.target-profile/v1"
+                    ":target-profile {" ":format :kotoba.target-profile/v1"
                     ":loader-binary-sha256" ":assembler-binary-sha256"
                     ":linker-binary-sha256" ":compiler-resource-sha256"
                     ":system-header-closure-sha256"]]

@@ -524,10 +524,13 @@ naming it. On the nbb route the same day, with executed evidence
 `test-output-set-publisher-auth`): `keygen`, `public-key`, `trust-key`,
 `trust-runtime`, `sign`, `verify-signed`, `verify`, `inspect`, `receipt`,
 `verify-receipt`, `verify-chain`, `sbom`, `attest-release`, `verify-release`,
-`package-ios`, and the `cljs` / `cljs-browser` / `cljs-node` targets. Still to
-port: `run`, `measure-runtime`, `coverage`, `sign-coverage-evidence`; the
-ledger in `docs/adr/0347-the-jvm-route-is-removed.md` says what each one
-needs, and ADR 0348 the order.
+`package-ios`, and the `cljs` / `cljs-browser` / `cljs-node` targets; and,
+since the evening of that day, `run` and `measure-runtime` (the kototama
+native executor has a Node host, kototama-native a94e5c19; `scripts/conformance.cljk`'s
+`attested-run` is their executed evidence). Still to port: `coverage`,
+`sign-coverage-evidence`; the ledger in
+`docs/adr/0347-the-jvm-route-is-removed.md` says what each one needs, and
+ADR 0348 the order.
 
 Migration and release gates that must not depend on a locally installed JVM
 pass `--jvm-free`. In that mode Amu never invokes `clojure`: a missing or

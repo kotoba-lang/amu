@@ -1,7 +1,9 @@
 (ns kotoba.compiler.nbb.trust-cli
   "Node entrypoint for the trust-plane commands: `keygen`, `public-key`,
   `inspect`, `trust-key`, `trust-runtime`, `sign`, `verify-signed`,
-  `verify`, `receipt`, `verify-receipt`, `verify-chain`.
+  `verify`, `receipt`, `verify-receipt`, `verify-chain`, the release family,
+  `package-ios`, and -- since the executor has a Node host --
+  `measure-runtime` and `run`.
 
   Thin on purpose. The commands are `kotoba.compiler.trust-cli`, shared with
   the JVM CLI; this file is the process boundary -- argv in, the printed EDN
@@ -17,4 +19,10 @@
 ;; a bigint on this host, and `pr-str` would print it as `#object[BigInt 0]`
 ;; (measured on the first `verify-signed` this route ever ran). The writer's
 ;; convention is one plain integer token, the same the JVM prints.
-(support/execute! (comp artifact/edn-safe trust-cli/dispatch!))
+(support/execute! (comp artifact/edn-safe trust-cli/dispatch!)
+                  ;; `run` answers `:ok false` for a guest that trapped -- the
+                  ;; receipt and evidence are written, the command did its
+                  ;; job -- and the JVM CLI exited 120 on exactly that. Same
+                  ;; code here, from the value, so a caller can tell "the
+                  ;; program did not finish" from "amu could not run it".
+                  (fn [value] (if (false? (:ok value)) 120 0)))

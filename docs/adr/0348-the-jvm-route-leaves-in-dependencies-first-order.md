@@ -99,9 +99,11 @@ It is 77 now, beside the signature plane's other refusals.
 | 6 | `kotoba.compiler.cli` | itself | the route |
 
 Not on this list, deliberately: `run` and `measure-runtime` need `kototama.native.executor`
-(the `-M:native-run` alias) — a runtime, not a compiler leaf — and `package-ios` /
-`package-aiueos-boot` stand only on the two leaves now portable and are a routing change
-away, gated on their own end-to-end checks.
+— a runtime, not a compiler leaf — and `package-ios` / `package-aiueos-boot` stand only on
+the two leaves now portable and are a routing change away, gated on their own end-to-end
+checks. (Later the same day the executor gained a Node host of its own -- kototama-native
+a94e5c19 -- and became a root dependency of this compiler; `run` / `measure-runtime` are
+on the nbb route since. See the ledger in ADR 0347.)
 
 ## What this does not claim
 
