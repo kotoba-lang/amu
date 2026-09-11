@@ -102,7 +102,7 @@ compiles through `bin/amu` end to end: exit 0, 3,030 bytes.
 **The full JVM suite did not finish, and the one red namespace observed in it
 is pre-existing.** This host sat at load average 449-498 throughout (other
 sessions), with one document-render test alone taking 134 s wall for 3.8 s of
-CPU. Two attempts at `clojure -M:test` (152 namespaces) were still in the
+CPU. Two attempts at `kbb -M:test` (152 namespaces) were still in the
 first ten namespaces after an hour. What ran showed
 `kotoba.compiler.isa-execution-test` failing. That namespace is native
 (`kexe`) and is not on the Wasm backend's path at all, but "not on the path"

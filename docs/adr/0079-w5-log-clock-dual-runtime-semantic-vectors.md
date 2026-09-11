@@ -6,7 +6,7 @@ Status: accepted; intermediate W5 evidence (reference + cljs dual-runtime), not 
 
 Start **Delivery 5 / W5 host capability qualification** with family 1
 (**log and clock**) by recording dual-runtime semantic vectors on the
-reference path (`:clj` via `clojure -M:test`, `:cljs` via nbb) and closing
+reference path (`:clj` via `kbb -M:test`, `:cljs` via nbb) and closing
 the one real defect that blocked log's cljs path:
 
 `provider.log`'s sequence counters are `:i64` ABI fields. On `:cljs` the
@@ -17,7 +17,7 @@ not a signed i64`). The fix lives in `kotoba-lang/provider` and mirrors
 clock's `cljs-i64` zero/one counter pattern.
 
 Also restored the nbb dual-runtime harness after the provider extraction:
-launchers now resolve classpath with `clojure -Spath -M:test` so
+launchers now resolve classpath with `kbb -Spath -M:test` so
 `provider.*` is visible, and admission allow-sets use `js/BigInt` cap ids
 matching KIR's cljs effect encoding.
 

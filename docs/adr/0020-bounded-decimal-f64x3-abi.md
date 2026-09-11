@@ -19,6 +19,6 @@ browser-hosted typed Wasm use the same contract. Typed Wasm metadata advances
 to ABI v8 and conditionally imports `kotoba:typed/decimal-f64x3-parse`; the
 browser host retains v5, v6, and v7 artifact admission.
 
-Evidence: `clojure -M:test` passes 321 tests / 3,999 assertions; focused
+Evidence: `kbb -M:test` passes 321 tests / 3,999 assertions; focused
 reference, restricted-JavaScript, and real browser-hosted typed Wasm vectors
 agree; and `npm run test-nbb-wasm32` passes all 24 JVM/nbb byte-identity cases.

@@ -70,7 +70,7 @@ Measured on the two-module fixture (`kproj.helper` exports
 | `.symtab` | 5 entries, 1 GLOBAL FUNC: `kotoba_aiueos_fnv1a` |
 | `.o` from `--source-path` | `d80560c7…d14d6ef9` |
 | `.o` from `--module-lock` | `d80560c7…d14d6ef9` |
-| `.o` from the JVM (`clojure -M:run compile --source-path`) | `d80560c7…d14d6ef9` |
+| `.o` from the JVM (`kbb -M:run compile --source-path`) | `d80560c7…d14d6ef9` |
 
 The same unlisted `aiueos-` name is harmless in a dependency and fatal in the
 entry module, which is the discriminating pair: only the entry module's

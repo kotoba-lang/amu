@@ -946,7 +946,7 @@ as before.
   aarch64, so only the pin can reach them.
   Ruled out first, because two defects landed today with exactly that shape
   (ADR 0286, ADR 0287): this is **not** an nbb/JVM divergence -- `./bin/amu` and
-  `clojure -M:run` reject the same artifact identically. Also not iterations 51
+  `kbb -M:run` reject the same artifact identically. Also not iterations 51
   or 52, which touched `docs/` and `bench/bulk-carrier/`, and `bench/bulk-carrier`
   is on no classpath (`:paths ["src" "resources"]`, and the only bench path in any
   alias is `bench/runtime-comparison/cljs`).

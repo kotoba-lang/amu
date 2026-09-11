@@ -14,7 +14,7 @@
 
 `bin/amu` has two routes. The Node route answers `check`, `compile`, `definition-cids`,
 the package and output-set commands, and the native/EVM/JS targets. Every other command
-fell through to `clojure -M:run` and `kotoba.compiler.cli` -- until ADR 0347 removed the
+fell through to `kbb -M:run` and `kotoba.compiler.cli` -- until ADR 0347 removed the
 spawn the same afternoon and made the fall-through a refusal by name. Either way a command
 on it has no working route anywhere — measured 2026-09-11 morning:
 `amu keygen` exit 1, and `test-output-set-publisher-auth` red at its first `keygen`.
@@ -25,7 +25,7 @@ dependency". That is a graph question, and it is answered by a script rather tha
 reading the code:
 
 ```
-nbb --classpath . scripts/jvm-route-topology.cljk --probe --output docs/jvm-route-topology.edn
+kbb --backend sci --classpath . scripts/jvm-route-topology.cljk --probe --output docs/jvm-route-topology.edn
 ```
 
 It walks every namespace on the compiler's classpath (292 on 42 roots), decides for each
@@ -105,9 +105,9 @@ away, gated on their own end-to-end checks.
 
 ## What this does not claim
 
-The `:clj` branches are unchanged but are **unverified since the rename**: `clojure -M:test`
+The `:clj` branches are unchanged but are **unverified since the rename**: `kbb -M:test`
 cannot load `.cljk`. Parity between the two hosts is held by the portable tests and by the
 byte-identical emission checks, not by the JVM suite. `test-output-set-publisher-auth` now
 gets past `keygen`, `trust-key`, `sign-output-set` and `verify-output-set` and stops at its
-own `clojure -M -e` parity oracle (line 99) — that line is the JVM route, and it is red for
+own `kbb -M -e` parity oracle (line 99) — that line is the JVM route, and it is red for
 the same reason as everything else on it.

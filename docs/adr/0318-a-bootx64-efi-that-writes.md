@@ -64,7 +64,7 @@ repository with both on its classpath.
 `examples/aiueos-uefi-scratch.kotoba` compiles to a 22,528-byte PE32+ EFI
 application on both routes, **byte-identical** (`sha256
 d806bd193881e5aec535de611d9f71e5f8db300fb56bbfb5334135fd47504555`,
-`clojure -M:run compile` and `bin/amu … --jvm-free`).
+`kbb -M:run compile` and `bin/amu … --jvm-free`).
 
 It was **booted**, on 2026-09-02, under QEMU with OVMF
 (`/opt/homebrew/share/qemu/edk2-x86_64-code.fd`), `q35`, `accel=tcg`, the image

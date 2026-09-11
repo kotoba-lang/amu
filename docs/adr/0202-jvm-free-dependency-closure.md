@@ -10,7 +10,7 @@
 
 `bin/kotoba`'s nbb fast path has never run compiler code on the JVM. Its
 *classpath* was another matter: `security-classpath-entry` shelled out to
-`clojure -Spath` purely to locate the pinned git dependencies in `~/.gitlibs`.
+`kbb -Spath` purely to locate the pinned git dependencies in `~/.gitlibs`.
 That one call is what made the whole path need a JDK.
 
 Measured directly, by stubbing `clojure` out and clearing the cache:
@@ -48,7 +48,7 @@ the lock is an error, not a silently stale closure.
 Transitive pins genuinely conflict here: the root pins `kotoba-kir` at one
 commit and `artifact`, `kotoba-native` and `kotoba-verifier` pin three others.
 Choosing between them is `tools.deps`' job. `scripts/lock-classpath.cljk` runs
-`clojure -Spath` **once, at authoring time**, and writes down what it decided.
+`kbb -Spath` **once, at authoring time**, and writes down what it decided.
 
 Re-implementing that resolution in nbb would have been the obvious
 implementation and the wrong one: a second resolver is a second answer to
@@ -61,14 +61,14 @@ were never part of what this path resolves, and recording machine-local
 ### Nothing may return an empty classpath
 
 Both resolvers now return a closure or nothing, and `bin/kotoba` fails with an
-explicit message naming the fix. The fallback to `clojure -Spath` remains for a
+explicit message naming the fix. The fallback to `kbb -Spath` remains for a
 checkout whose lock has not been regenerated yet — not as a second way of
 getting an answer.
 
 ## Verification
 
 - **Parity**: the lock-resolved directory set is byte-for-byte the gitlibs
-  half of `clojure -Spath`'s output, and `compile --target aarch64-macos`
+  half of `kbb -Spath`'s output, and `compile --target aarch64-macos`
   produces a **byte-identical** `.kexe` under either resolver.
 - **The property**: with `clojure` stubbed to exit 127 and a cold cache,
   `bin/kotoba -M check` and `-M compile --target aarch64-macos` both succeed.
@@ -87,7 +87,7 @@ getting an answer.
   cannot push. The edit: add `- run: npm run test-nbb-classpath` beside the
   other `test-nbb-*` steps, and a small job that installs Node but no JDK and
   runs `bin/kotoba -M compile` against a fixture.
-- **The `scripts/test-nbb-*.cljs` launchers still call `clojure -Spath`**
+- **The `scripts/test-nbb-*.cljs` launchers still call `kbb -Spath`**
   themselves to build the classpath for tests that need the full dependency
   set. They can move to this resolver; out of scope here, and unlike
   `bin/kotoba` they are not the compiler's front door.

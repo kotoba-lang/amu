@@ -202,7 +202,7 @@ either, consistent with ADR 0049/0051/0052/0053.
 - focused suite (`canonical-abi-test`, `component-artifact-test`,
   `component-composition-test`, `component-wit-test`): 31 tests, 137
   assertions, 0 failures, run against the pinned `wasm-tools 1.243.0`.
-- full `clojure -M:test` suite: 410 tests, 4366 assertions, 0 failures, same
+- full `kbb -M:test` suite: 410 tests, 4366 assertions, 0 failures, same
   pinned toolchain (baseline before this change, same toolchain: 407 tests,
   4349 assertions, 0 failures -- confirmed identical to ADR 0053's own
   recorded baseline before writing any code for this ADR).

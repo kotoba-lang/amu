@@ -24,7 +24,7 @@
 ;; (non-aiueos) native target names -- everything this fast
 ;; path claims. The `x86_64-aiueos-*`/`aarch64-aiueos-*` firmware/kernel
 ;; sub-targets (ELF64/PE32+ packaging via `kotoba.compiler.packaging.*`,
-;; only reachable through `clojure -M:run compile` directly, not this
+;; only reachable through `kbb -M:run compile` directly, not this
 ;; usage-documented list) stay JVM-only -- out of scope here, same
 ;; boundary `kotoba.compiler.core/compile-source*`'s own `cond->` draws
 ;; between the sealed `:kexe/v1` artifact (every ordinary native target)
@@ -147,7 +147,7 @@
 ;; Mirrors `kotoba.compiler.core/compile-source*`'s `:else` (native) branch
 ;; byte-for-byte -- same sealed `:kotoba.kexe/v1` shape, same
 ;; `fuel-abi`/`context-abi`/`limits` constants, same pre-checks -- so a
-;; `.kexe` produced here and one produced by `clojure -M:run compile` for
+;; `.kexe` produced here and one produced by `kbb -M:run compile` for
 ;; the identical source/target/policy verify identically against either
 ;; artifact's own `:sha256` seal and against `verifier/verify-artifact!`.
 ;; Deliberately does NOT replicate the `x86_64-aiueos-*`/`aarch64-aiueos-*`

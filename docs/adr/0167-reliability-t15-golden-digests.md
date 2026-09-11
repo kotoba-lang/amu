@@ -16,7 +16,7 @@ semantic drift of KIR body or wasm bytes.
 2. Per case:  
    - `kir-sha256` = `artifact.core/sha256` of selected KIR keys  
    - `wasm-sha256` = SHA-256 hex of raw `wasm32-kotoba-v1` bytes  
-3. CLI: `clojure -M:conformance --check-golden` / `--write-golden`  
+3. CLI: `kbb -M:conformance --check-golden` / `--write-golden`  
 4. Test: `lang-conformance-golden-test` always-on
 
 ## Non-claims

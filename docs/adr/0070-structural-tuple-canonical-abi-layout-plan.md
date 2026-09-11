@@ -270,7 +270,7 @@ those five call sites (verified directly, see Evidence).
     `[:result [:tuple ...] :bool]` all work with no special-case rejection
     in either nesting direction, demonstrating tuple composes freely with
     every other structural aggregate this ADR chain has already admitted.
-- Full `clojure -M:test` suite with this ADR's changes applied: 536 tests,
+- Full `kbb -M:test` suite with this ADR's changes applied: 536 tests,
   4807 assertions, 0 failures, 0 errors -- confirms every pre-existing
   record/variant/list/option/result/string/keyword consumer of
   `canonical-abi.cljc` (`component-core.clj`, `component-composition.clj`,

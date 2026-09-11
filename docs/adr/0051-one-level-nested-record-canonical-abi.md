@@ -69,7 +69,7 @@ provider syscall/codec ABI is a separate, still-pending gap).
   `kotoba.compiler.component-composition-test`,
   `kotoba.compiler.component-wit-test`): 19 tests, 75 assertions, 0 failures,
   run against the pinned `wasm-tools 1.243.0`.
-- full `clojure -M:test` suite: 398 tests, 4304 assertions, 0 failures, same
+- full `kbb -M:test` suite: 398 tests, 4304 assertions, 0 failures, same
   pinned toolchain.
 - `wasm-tools validate` on the produced nested-record identity component:
   passed.

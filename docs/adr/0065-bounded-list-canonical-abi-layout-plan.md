@@ -156,7 +156,7 @@ item shape/stride by this leaf-level flattening choice.
     existing "recursive schema has no bounded Canonical ABI layout" guard,
     confirming `visited` threads through `list-layout` correctly with no
     new code needed in `record-layout`/`variant-layout` for this case.
-- Full `clojure -M:test` suite with this ADR's changes applied: 489 tests,
+- Full `kbb -M:test` suite with this ADR's changes applied: 489 tests,
   4642 assertions, 0 failures, 0 errors -- confirms every pre-existing
   record/variant/string/keyword consumer of `canonical-abi.cljc`
   (`component-core.clj`, `component-composition.clj`, and their own test

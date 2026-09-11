@@ -206,7 +206,7 @@ decision this task does not make unilaterally on cljs's behalf).
     already-live endpoint). There is no repo-wide well-known storage
     backend this transport's wire protocol was designed to be pinned
     against -- see Remaining gaps.
-- Full `clojure -M:test` suite, run from this branch: 545 tests, 4811
+- Full `kbb -M:test` suite, run from this branch: 545 tests, 4811
   assertions, 0 failures, 0 errors -- including this ADR's own new
   `storage-transport-test` namespace (now registered in
   `test/kotoba/compiler/test_runner.cljk` alongside the sibling

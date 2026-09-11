@@ -36,7 +36,7 @@ Both routes call both gates, because a gate on one route is not a gate.
 `examples/aiueos-uefi-literals.kotoba` compiles to a 3072-byte PE32+ EFI
 application on both routes, **byte-identical**
 (`sha256 0dfb97cbace0ba3e19beee91d127240e774bdff0a1bbe91675ca738c80bcc916`,
-`clojure -M:run compile` and `bin/amu ... --jvm-free`).
+`kbb -M:run compile` and `bin/amu ... --jvm-free`).
 
 It was **booted**, on 2026-09-02, under QEMU with OVMF
 (`/opt/homebrew/share/qemu/edk2-x86_64-code.fd`), `q35`, `accel=tcg`, the image

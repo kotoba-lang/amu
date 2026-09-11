@@ -522,7 +522,7 @@ no longer the first-order problem. The constant factor is:
 
 | component of the K=1 cost | ms | how measured |
 |---|---:|---|
-| `nbb -e '(+ 1 2)'` | ~160 | bare engine startup |
+| `kbb --backend sci -e '(+ 1 2)'` | ~160 | bare engine startup |
 | `bin/amu` driver (classpath cache hit, spawn) | ~150 | `bin/amu` minus a direct `wasm_cli.cljk` invocation |
 | loading the compiler's namespaces into SCI | ~1300 | the remainder |
 
@@ -582,7 +582,7 @@ belong to the route (SCI interpreting the compiler), not to any pass.
 
 `test-nbb-js` (10 parity diffs against pinned JVM fixture bytes) is red on the
 pre-rename tree with stock nbb too — an older failure. Every launcher that
-reaches `clojure -M:run` (`test-policy-bound-provenance`,
+reaches `kbb -M:run` (`test-policy-bound-provenance`,
 `test-output-set-publisher-auth`, `test-definition-cid-parity`, and the
 `amu keygen` / `amu sign` commands) fails with
 `Could not locate kotoba/compiler/cli.clj` — the JVM route does not load

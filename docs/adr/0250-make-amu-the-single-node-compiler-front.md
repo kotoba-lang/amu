@@ -9,8 +9,8 @@ which then starts NBB again for the compiler. Direct commands are canonical;
 the historical `-M`, `-M:compiler`, and `-M:compile` boundaries remain accepted.
 
 `bin/kotoba` remains an NBB compatibility API. `bin/kotoba-compiler` delegates
-to Amu. JVM-only commands keep their existing `clojure -M:run` or
-`clojure -M:native-run` implementation. This decision changes process topology,
+to Amu. JVM-only commands keep their existing `kbb -M:run` or
+`kbb -M:native-run` implementation. This decision changes process topology,
 not the reader, HIR/KIR, admission, backend, verifier, artifact, or provenance
 contracts.
 

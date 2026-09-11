@@ -41,7 +41,7 @@ Both compile to `--target aarch64` at exit 0 and are then rejected at
 | identical, `kotoba-mir` alone rolled to 3f88f71 | ok, `group-idx` offset 332 len 48 arity 2 | ok, `idct4-1d` offset 116 len 220 arity 5 |
 
 **Bisect over `kotoba-native` `100fb7a8..3162d868` (55 commits).** Each point
-compiled and extracted through `clojure -Sdeps` with the coordinate overridden:
+compiled and extracted through `kbb -Sdeps` with the coordinate overridden:
 
 | pin | result |
 |---|---|
@@ -62,7 +62,7 @@ aarch64**, so the opcode line cannot reach them; the isolation above confirms it
 by rolling back the pin alone and leaving that line in place.
 
 **Not an nbb/JVM divergence.** Both entrypoints reject the same artifact
-identically (`./bin/amu extract-native` and `clojure -M:run extract-native`,
+identically (`./bin/amu extract-native` and `kbb -M:run extract-native`,
 exit 65 both). That control matters because two other defects landed today were
 exactly that shape (ADR 0286, ADR 0287), so it was the first thing to rule out.
 

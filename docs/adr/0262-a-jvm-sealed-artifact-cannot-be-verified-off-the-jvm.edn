@@ -24,7 +24,7 @@
 
  :evidence {:nbb {:runner "run-portable-surface.cljk"
                   :tests 6 :assertions 14 :failures 0 :jvm-required false}
-            :jvm {:runner "clojure -M:test"
+            :jvm {:runner "kbb -M:test"
                   :tests 1115 :assertions 8369 :failures 0
                   :namespaces "140 of 140"}
             :differential {:object-bytes 544
@@ -51,13 +51,13 @@
  :corrected-measurement
  {:claimed "emit-program diverges across runtimes: 48 bytes on JVM, 100 on nbb"
   :actual "identical sources emit identical bytes"
-  :cause "clojure -Spath resolves kotoba-native from a pinned git dep
+  :cause "kbb -Spath resolves kotoba-native from a pinned git dep
           (95fd4b19, ~/.gitlibs); the hand-built nbb classpath pointed at the
           working checkout orgs/kotoba-lang/kotoba-native"
   :caught-before-reporting true
   :standing-fact "the orgs/ checkout and the dependency amu builds against are
                   not the same code"
-  :prescribed-form "nbb --classpath \"src:test:$(clojure -Spath -M:test)\""}
+  :prescribed-form "kbb --backend sci --classpath \"src:test:$(kbb -Spath -M:test)\""}
 
  :remaining {:clj-files-in-src 18
              :groups [:file-io :byte-charset :crypto :json]

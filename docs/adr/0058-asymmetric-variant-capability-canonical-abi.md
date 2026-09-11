@@ -238,11 +238,11 @@ invocation ran the **composed** (application + provider) component:
   `backend-qualification-test`): 46 tests, 234 assertions, 0 failures (up
   from ADR 0057's own recorded 42 tests / 212 assertions -- the 4 new
   `deftest` forms this ADR adds).
-- full `clojure -M:test` suite: 429 tests, 4485 assertions, 0 failures
+- full `kbb -M:test` suite: 429 tests, 4485 assertions, 0 failures
   (up from ADR 0057's own recorded 425 tests / 4463 assertions), against
   the pinned `wasm-tools 1.243.0` and `wac-cli 0.10.1` (unchanged pins --
   this ADR needed no toolchain change).
-- `clojure -M -m kotoba.compiler.backend-qualification verify wasmtime`
+- `kbb -M -m kotoba.compiler.backend-qualification verify wasmtime`
   (and, checked additionally beyond ADR 0057's own evidence, `verify
   native` and `verify cljs`): all three report the identical
   `:provider-manifest-sha256` and `:gaps` list recorded before this change

@@ -17,7 +17,7 @@ $ bin/amu compile probe.kotoba --target x86_64 --jvm-free --output probe.o
  :diagnostic {:code :kotoba/verification-failed, :source "probe.kotoba"},
  :message "runtime KIR i64 shift count rejected"}                     exit 65
 
-$ clojure -M:run compile probe.kotoba --target x86_64 --output probe-jvm.o
+$ kbb -M:run compile probe.kotoba --target x86_64 --output probe-jvm.o
 {:ok true, :target :x86_64-kotoba-v1, ...}                            2213 bytes
 ```
 
@@ -33,7 +33,7 @@ perfectly good literal, so to the caller it read as "your program is wrong".
 Nothing in this repository could see it, and the reason is structural rather
 than an oversight:
 
-- `clojure -M:test` runs the JVM route, where the rule holds.
+- `kbb -M:test` runs the JVM route, where the rule holds.
 - `scripts/jdk-free-native-conformance.cljk` runs the JDK-free route — and its
   fixtures (`i64-semantics`, `structured`, `nested-record`, `held-operations`,
   `many-constants`) contain no shift. It could have seen it and had nothing to
@@ -114,7 +114,7 @@ the PersistentArrayMap boundary. Same host difference, different symptom.
   firmware boundary (`8158aa8`, kotoba-verifier ADR-0020, this repo's
   ADR-0291), this fix (`3d7a6f0`), and the SYSOPS stream's interrupt entry
   address gate (`7070ec0`) — every one a fast-forward ancestor. Verified as one
-  tree: `clojure -M:test` 1227 tests / 8859 assertions, 158 of 158 namespaces,
+  tree: `kbb -M:test` 1227 tests / 8859 assertions, 158 of 158 namespaces,
   0 failures. The only assertion this branch had to move is the pinned SHA in
   `aggregate_abi_test.clj`, which exists so a pin cannot advance silently.
 - Not addressed: the general rule. Every predicate in the verified closure that

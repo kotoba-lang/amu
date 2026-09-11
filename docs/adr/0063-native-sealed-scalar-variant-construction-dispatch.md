@@ -202,7 +202,7 @@ framing:**
 
 - **Real native process execution, matching `native_executor_test.clj`'s
   existing pattern exactly (no synthetic byte-level check)**, host
-  architecture aarch64 (Apple Silicon, `clojure -M -e` local dev run, this
+  architecture aarch64 (Apple Silicon, `kbb -M -e` local dev run, this
   repository's OWN measured `kexe-loader`/signed-envelope/process-boundary
   path, identical to every other deftest in this file): four separate
   construction+dispatch call sites, one per declared case
@@ -269,7 +269,7 @@ framing:**
   and-rejects-forged-handles` and `kgraph-native-customer-pilot-...`'s own
   out-of-range tests already rely on -- confirming the fallback fires as
   real, executed machine code, not merely a code comment's claim.
-- **Full `clojure -M:test` suite**: 465 tests, 4587 assertions, 1 failure, 0
+- **Full `kbb -M:test` suite**: 465 tests, 4587 assertions, 1 failure, 0
   errors -- the identical pre-existing failure ADR 0062 already documented
   (`kotoba.compiler.cli-test/structured-diagnostic-has-stable-code-and-
   bounded-source-span`) confirmed, by `git stash`-ing this ADR's own changes
@@ -280,10 +280,10 @@ framing:**
   (`npm run test-nbb-wasm32`'s `structured-diagnostic` case), also
   `git stash`-verified against the unmodified base commit, matching ADR
   0062's own precedent exactly.
-- **`clojure -M -m kotoba.compiler.backend-qualification verify native`**:
+- **`kbb -M -m kotoba.compiler.backend-qualification verify native`**:
   passes, confirming this ADR does not disturb the existing native
   capability-kit qualification manifest.
-- **`clojure -M -m kotoba.security.adoption`**: unchanged, `:status :pass`.
+- **`kbb -M -m kotoba.security.adoption`**: unchanged, `:status :pass`.
 
 ### A note on why the trap cannot be reached through the normal pipeline
 

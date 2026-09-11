@@ -60,7 +60,7 @@ the commands terminate, not as a performance claim.
 
 The second row is the routing defect, and it is separable from the first: the
 identical arguments sent to the JVM entrypoint directly
-(`clojure -M:run compile ...`) exited **0** and wrote a 6,561-byte `.wasm`
+(`kbb -M:run compile ...`) exited **0** and wrote a 6,561-byte `.wasm`
 (load1 27.21, 10.3 s wall). Same arguments, same tree, two answers — the only
 difference was which entrypoint `bin/amu` picked.
 
