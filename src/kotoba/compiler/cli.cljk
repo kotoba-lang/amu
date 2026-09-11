@@ -12,6 +12,7 @@
             [kotoba.compiler.project-files :as project-files]
             [kotoba.compiler.receipt :as receipt]
             [kotoba.compiler.test-cli :as test-cli]
+            [kotoba.compiler.run-cli :as run-cli]
             [kotoba.compiler.trust-cli :as trust-cli]
             [kotoba.artifact.runtime-identity :as runtime-identity]
             [kotoba.compiler.source-path :as source-path]
@@ -23,15 +24,6 @@
             [json.data-json :as json]
             [kotoba.lang.text :as str])
   (:gen-class))
-
-(defn- native-executor-fn [operation]
-  (or (try
-        (requiring-resolve (symbol "kototama.native.executor" (name operation)))
-        (catch java.io.FileNotFoundException _ nil))
-      (throw (ex-info
-              "native execution requires the kotoba-lang/kototama-native plugin"
-              {:phase :native-executor :operation operation
-               :dependency 'io.github.kotoba-lang/kototama-native}))))
 
 (defn- parse-target [s] (target-names/parse s))
 
@@ -109,7 +101,7 @@
     ;; `:sign` joined 2026-09-11 -- see kotoba.compiler.nbb.cli-support.
     (:signature :sign :trust :runtime-identity) 77
     :output 74
-    :execute 69
+    (:execute :native-executor) 69
     :receipt 76
     70))
 
@@ -119,55 +111,22 @@
   ;; shared with the Node entrypoint. The remaining branches are the ones
   ;; that still stand on a JVM-only namespace -- `docs/jvm-route-topology.edn`
   ;; lists which and in what order they leave.
-  (if (contains? trust-cli/commands (first args))
+  (cond
+    (contains? trust-cli/commands (first args))
     (println (pr-str (trust-cli/dispatch! (vec args))))
+
+    (contains? run-cli/commands (first args))
+    (let [executor (into {} (keep (fn [op]
+                                    (when-let [f (try (requiring-resolve (symbol "kototama.native.executor" (name op)))
+                                                      (catch java.io.FileNotFoundException _ nil))]
+                                      [op f])))
+                         [:measure-runtime :execute])
+          {:keys [value exit]} (run-cli/dispatch! executor (vec args))]
+      (println (pr-str value))
+      (when-not (zero? exit) (*exit* exit)))
+
+    :else
   (case (first args)
-    "measure-runtime"
-    (let [{:keys [runtime loader-bytes]} ((native-executor-fn 'measure-runtime))
-          output (or (option args "--output") "kotoba-runtime.edn")
-          loader-output (or (option args "--loader-output") "kotoba-loader")]
-      (atomic-output/write-bytes! loader-output loader-bytes {:executable? true})
-      (atomic-output/write-edn! output {:format :kotoba.runtime-measurement/v1
-                                        :runtime runtime})
-      (println (pr-str {:ok true :output output :loader-output loader-output
-                        :runtime-sha256 (runtime-identity/identity-sha256 runtime)})))
-    "run"
-    (let [envelope (bounded-edn/read-file (second args))
-          trust (bounded-edn/read-file (option args "--trust"))
-          policy (bounded-edn/read-file (option args "--policy"))
-          input (bounded-edn/read-file (option args "--input"))
-          executor-key (bounded-edn/read-file (option args "--executor-key"))
-          now (Long/parseLong (or (option args "--now")
-                                  (str (quot (System/currentTimeMillis) 1000))))
-          parent-path (option args "--parent")
-          parent (when parent-path (bounded-edn/read-file parent-path))
-          entry (symbol (or (option args "--entry") "main"))
-          runtime-measurement (bounded-edn/read-file (option args "--runtime"))
-          _ (runtime-identity/validate-measurement! runtime-measurement)
-          execution ((native-executor-fn 'execute)
-                     envelope trust policy input
-                     {:now now :entry entry
-                      :runtime (:runtime runtime-measurement)
-                      :loader-path (option args "--loader")})
-          report (:report execution)
-          evidence (:evidence execution)
-          value (receipt/create
-                 envelope trust policy input evidence
-                 {:now now :started-at (:started-at execution)
-                  :finished-at (:finished-at execution)
-                  :status (:status evidence) :target (:target execution)
-                  :entry entry :fuel-initial (get-in report [:fuel :initial])
-                  :fuel-remaining (get-in report [:fuel :remaining])
-                  :parent parent :executor-key executor-key})
-          result-path (or (option args "--result-output") "run.result.edn")
-          receipt-path (or (option args "--output") "run.receipt.edn")]
-      (atomic-output/write-edn! result-path evidence)
-      (atomic-output/write-edn! receipt-path value)
-      (println (pr-str {:ok (= :ok (:status evidence))
-                        :status (:status evidence) :result evidence
-                        :result-output result-path :output receipt-path
-                        :receipt-sha256 (:receipt-sha256 value)}))
-      (when-not (= :ok (:status evidence)) (*exit* 120)))
     "definition-cids"
     ;; ADR 0300. One CID per top-level function, in declaration order.
     ;;
@@ -540,7 +499,7 @@
       (atomic-output/write-bytes!
        output (byte-array (map unchecked-byte (:code artifact))))
       (println (pr-str (merge {:ok true :output output :symbol symbol} export))))
-    (throw (ex-info "unknown or missing kotoba command" {:phase :usage})))))
+    (throw (ex-info "unknown or missing kotoba command" {:phase :usage}))))))
 
 (defn -main [& args]
   (try

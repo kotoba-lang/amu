@@ -210,6 +210,37 @@ JVM-only namespaces in the CLI's reach: **5 → 1**. The one is `kotoba.compiler
 itself — `System/exit`, `java.io.File`, the JVM `-main` — which no route runs since
 ADR 0347. Commands on no route: `run`, `measure-runtime` (the native executor).
 
+## Iteration 8 (2026-09-12): `run` and `measure-runtime` — no command is on the JVM route
+
+`kototama.native.executor` had been ported by a parallel session (kototama-native
+`005c9b74`, "PORTABLE SINCE 2026-09-11"); what was missing was the wiring, and one fact
+about the host. The executor is a runtime — it builds the kexe loader with the host C
+toolchain and walks PATH for it — so it stays off the compile closure: deps.edn declares
+it under a **`:native-run` alias** (declaration only, the launch alias of that name left
+with ADR 0347), `scripts/lock-classpath.cljk` records the alias's closure beside `:test`,
+and `bin/amu` puts it on the classpath for exactly the two executing commands
+(`runCommands`), keyed separately in the classpath cache. `kotoba.compiler.run-cli` is the
+one implementation; the JVM CLI delegates.
+
+The host fact: on nbb a `require` inside a function returns a promise, and `resolve`
+right after it answers nil (measured), so `requiring-resolve` cannot load a plugin at call
+time. The entrypoints load the executor in their namespace form and hand its two functions
+in; `run-cli` never requires it. `:execute` / `:native-executor` → 69 in both exit tables
+(the Node table answered 70 for an input-arity refusal).
+
+`scripts/test-nbb-run.cljk`, 25 checks, needs a C toolchain: compile → keygen → sign →
+`measure-runtime` (loader 0700, identity reported) → `run` refused 77 before the runtime
+is trusted → `trust-runtime` → `run` answers `:ok`, `main() = 42` under the loader, and the
+receipt **verifies with `verify-receipt`** → input arity 69 → `examples/fuel.kotoba`'s
+`forever` traps: exit 120, `:status :trap`, receipt still written → `--jvm-free`.
+
+Topology: **0 commands on the JVM route.** JVM-only in the CLI's reach: 1 —
+`kotoba.compiler.cli` itself (`System/exit`, the JVM `-main`), which no route has run
+since ADR 0347. Whether it is deleted is the next decision, not the next port: every
+command it dispatches has a portable implementation it now merely delegates to, and
+`kotoba.compiler.core` (the JVM compile driver) is reached only by it and by
+`test-profile`.
+
 ## What remains, in order (from the EDN, `--probe` confirmed)
 
 | level | namespace | refused on Node with | unblocks |
@@ -221,11 +252,10 @@ ADR 0347. Commands on no route: `run`, `measure-runtime` (the native executor).
 | ~~2–3~~ | ~~`kotoba.component.core`, `.artifact`~~ | | done, iteration 6 |
 | ~~4~~ | ~~`kotoba.compiler.core`~~ (and `cache`, `ipld-adl-source`, which the classifier had missed) | | done, iteration 7 |
 | ~~5~~ | ~~`kotoba.compiler.test-profile`~~ | | done, iteration 7 — `amu test` is on the nbb route |
-| 1 | `kotoba.compiler.cli` | `System/exit`, `java.io.File`, `-main` | nothing: no route runs it since ADR 0347. Retiring it is a decision, not a port — it still holds `run` / `measure-runtime`, which need the native executor's Node host first |
+| 1 | `kotoba.compiler.cli` | `System/exit`, `java.io.File`, `-main` | nothing: no route runs it since ADR 0347, and since iteration 8 every command it dispatches is a delegation. Retiring it is a decision, not a port |
 
-Not on this list, deliberately: `run` and `measure-runtime` need `kototama.native.executor`
-— a runtime, not a compiler leaf. `package-ios` (#948) and `package-aiueos-boot`
-(iteration 2) have left.
+`run` and `measure-runtime` (iteration 8), `package-ios` (#948) and `package-aiueos-boot`
+(iteration 2) have all left.
 
 ## What this does not claim
 

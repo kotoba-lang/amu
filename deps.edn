@@ -1204,7 +1204,10 @@
                    ;; :native-conformance below -- one kototama-native.
                    io.github.kotoba-lang/kototama-native
                    {:git/url "https://github.com/kotoba-lang/kototama-native.git"
-                    :git/sha "a4089a2f4a17ad232af7a79d0c177a8e0cd85c80"}}
+                    ;; Advanced 2026-09-12, a4089a2f -> 005c9b74 (kototama-native
+                    ;; main, forward only): the executor on both hosts, which
+                    ;; :native-run below pins to the same commit.
+                    :git/sha "005c9b741639bc517682b62afd84be9ea5c0ce9d"}}
                   ;; No :main-opts: the JVM test runner left with the JVM route
                   ;; (2026-09-11). This alias remains as the DECLARATION of the
                   ;; extra git dependencies the nbb test runners need;
@@ -1213,9 +1216,24 @@
                   ;; resolves it with git alone. `kbb -Spath -M:test` is
                   ;; how the lock is authored, not how anything runs.
                   }
-           ;; :run / :native-run / :conformance / :runtime-bench /
-           ;; :native-conformance / :fuel-estimate / :ipld-adl-conformance were
-           ;; JVM launch aliases (`kbb -M:<alias>`). Removed 2026-09-11 with
-           ;; the JVM route; their mains are listed in docs/adr
-           ;; 0347-the-jvm-route-is-removed.md as the port ledger.
-           }}
+           ;; :run / :conformance / :runtime-bench / :native-conformance /
+           ;; :fuel-estimate / :ipld-adl-conformance were JVM launch aliases
+           ;; (`kbb -M:<alias>`). Removed 2026-09-11 with the JVM route; their
+           ;; mains are listed in docs/adr 0347-the-jvm-route-is-removed.md as
+           ;; the port ledger.
+           ;;
+           ;; :native-run is back the same day as a DECLARATION, not a launch
+           ;; alias (ADR 0348 iteration 8): the closure `amu run` and
+           ;; `amu measure-runtime` need beyond the compiler's own. The
+           ;; executor is a runtime -- it builds the kexe loader with the host
+           ;; C toolchain and walks PATH for it -- so it stays off the
+           ;; compile closure; `scripts/lock-classpath.cljk` records this
+           ;; alias under :lock/alias-entries and `bin/amu` puts it on the
+           ;; classpath for exactly those two commands. Same sha as :test
+           ;; above -- one kototama-native.
+           :native-run {:extra-deps
+                        {io.github.kotoba-lang/kototama-native
+                         {:git/url "https://github.com/kotoba-lang/kototama-native.git"
+                          ;; 005c9b74: the executor portable on both hosts
+                          ;; (kototama-native main 2026-09-11, ahead of a4089a2f).
+                          :git/sha "005c9b741639bc517682b62afd84be9ea5c0ce9d"}}}}}
