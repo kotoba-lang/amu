@@ -117,8 +117,8 @@
         ;; read 3e3f9748 while the file on disk hashed to 67561e57, and nothing
         ;; said so.
         ;;
-        ;;   grammar-sha256    515bbc7de84a3340ef3b250e4ee411739d3acebf32ba31450540f146768bb841
-        ;;   kotoba-sema-pin   5065a9c4353e1a0e03e18723c57600bd70a33361
+        ;;   grammar-sha256    5a5a3d6c2aea65159f795160c1554382a79bcffb5c2edd5f012317a215076e20
+        ;;   kotoba-sema-pin   2275729c5e12b55488ecabb874ade4034e1417b5
         ;;
         ;; `guest_grammar_vendor_test/authority-digest-history` ends with the
         ;; same digest, so the pin, the prose and the history move in one
@@ -291,7 +291,34 @@
          ;; method does not match its declaration` while the declaration
          ;; matched perfectly. It now says `protocol method must contain one
          ;; result expression`, mirroring defn; same error code throughout.
-         "5065a9c4353e1a0e03e18723c57600bd70a33361"}
+         ;; Advanced 2026-09-11, 5065a9c4 -> 822496da (kotoba-sema main, forward
+         ;; only: 6 ahead, 0 behind). The commit this pin moves for is the last:
+         ;; the ns header admits an ATTR-MAP spelling of its clauses --
+         ;; `(ns NAME DOCSTRING? {:kotoba/export [...]} ...)` IS
+         ;; `(:export [...])` -- and `kotoba.sema/namespace-attr-map->clauses`
+         ;; is public, which `kotoba.compiler.project/module-info` now calls
+         ;; so the project route admits the same keys with the same refusals
+         ;; as the single-module route. This is the spelling dual-runtime
+         ;; source can carry: SCI's `ns` refuses `(:export ...)` outright, and
+         ;; measured 2026-09-11 in this repository, 19 of the 59 modules under
+         ;; src/ were refused in project mode ONLY for the missing export.
+         ;;
+         ;; The range also carries the .cljk rename (951491fe): kotoba-sema is
+         ;; .cljk-only from here, which the nbb fork this repository pins
+         ;; already loads (this repository's own src/ is .cljk). The grammar
+         ;; bytes move 515bbc7d -> 5a5a3d6c across this pin; the intermediate
+         ;; 10ff0062 (module type parameters) was never on this classpath and
+         ;; is not appended to `authority-digest-history`.
+         ;;
+         ;; Moved on the same day to 2275729c (kotoba-sema main, forward only:
+         ;; 4 ahead, 0 behind) for the two reader widenings landed after the
+         ;; attr-map merge: `#_` discard, `#?@` splicing conditionals,
+         ;; `#:ns{}` maps and `\uXXXX` escapes; then quote, `#"..."` and `#js`
+         ;; read as forms and refused BY NAME in admission. The grammar file
+         ;; is untouched across those four commits (measured: the compare names
+         ;; frontend.cljk, kotoba_reader.cljk and two tests), so the digest
+         ;; above and `authority-digest-history` do not move.
+         "2275729c5e12b55488ecabb874ade4034e1417b5"}
         ;; ADR-2607266000 Phase B: these responsibilities moved out of this repo.
         ;;
         ;; The slice-value stream held this pin on purpose (ADR 0314), because
