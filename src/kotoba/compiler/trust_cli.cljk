@@ -30,7 +30,9 @@
             [kotoba.compiler.atomic-output :as atomic-output]
             [kotoba.compiler.bounded-edn :as bounded-edn]
             [kotoba.compiler.interface :as interface]
+            [kotoba.compiler.ios-aot :as ios-aot]
             [kotoba.compiler.receipt :as receipt]
+            [kotoba.compiler.release :as release]
             [kotoba.compiler.source-path :as source-path]
             [kotoba.compiler.target-names :as target-names]
             [kotoba.verifier :as verifier]
@@ -39,9 +41,15 @@
 (def commands
   "Every command this namespace answers. `bin/amu` routes exactly these to
   the Node entrypoint; the JVM CLI delegates exactly these here. One set,
-  read by both, so a command cannot be on one list and not the other."
+  read by both, so a command cannot be on one list and not the other.
+
+  The release family (`sbom`, `attest-release`, `verify-release`) and
+  `package-ios` joined on 2026-09-11, the same day: `kotoba.compiler.release`
+  became portable (a `:cljs` branch on node fs/crypto), and
+  `kotoba.compiler.ios-aot` already was."
   #{"keygen" "public-key" "inspect" "trust-key" "trust-runtime"
-    "sign" "verify-signed" "verify" "receipt" "verify-receipt" "verify-chain"})
+    "sign" "verify-signed" "verify" "receipt" "verify-receipt" "verify-chain"
+    "sbom" "attest-release" "verify-release" "package-ios"})
 
 (defn- option [args flag] (second (drop-while #(not= flag %) args)))
 
@@ -180,5 +188,54 @@
       (let [receipts (bounded-edn/read-file (second args))
             trust (bounded-edn/read-file (required args "--trust"))]
         (receipt/verify-chain receipts trust))
+
+      ;; ── release ──────────────────────────────────────────────────────
+      "sbom"
+      (let [input (second args)
+            _ (when-not (and (string? input) (not (.startsWith ^String input "--")))
+                (usage! "sbom requires an artifact path"))
+            output (or (option args "--output") (str input ".spdx"))]
+        (atomic-output/write-bytes! output (release/sbom-bytes input))
+        {:ok true :format :spdx/v2.3 :output output})
+
+      "attest-release"
+      (let [input (second args)
+            sbom (required args "--sbom")
+            key (bounded-edn/read-file (required args "--key"))
+            target (target-names/parse (required args "--target"))
+            not-before (long-option args "--not-before")
+            expires (long-option args "--expires")
+            output (or (option args "--output") (str input ".attestation.edn"))
+            envelope (release/attest input sbom target key not-before expires)]
+        (atomic-output/write-edn! output envelope)
+        {:ok true :target target :output output
+         :subject-sha256 (get-in envelope [:statement :subject :sha256])})
+
+      "verify-release"
+      (let [envelope (bounded-edn/read-file (second args))
+            input (required args "--artifact")
+            sbom (required args "--sbom")
+            trust (bounded-edn/read-file (required args "--trust"))
+            now (long-option args "--now")]
+        (assoc (release/verify! envelope input sbom trust now) :ok true))
+
+      ;; ── iOS AOT packaging ────────────────────────────────────────────
+      ;; `ios-aot/package` answers the object as a byte array on the JVM and
+      ;; as a vector of unsigned bytes on Node (its own comment says why);
+      ;; `atomic-output/write-bytes!` takes a byte source on both hosts.
+      "package-ios"
+      (let [input (bounded-edn/read-file (second args))
+            entry (symbol (or (option args "--entry") "main"))
+            platform (keyword (or (option args "--platform") "ios"))
+            output (or (option args "--output") "kotoba-ios-program.o")
+            manifest-output (or (option args "--manifest-output") (str output ".edn"))
+            packaged (ios-aot/package input entry {:platform platform})
+            object #?(:clj (:object packaged)
+                      :cljs (js/Uint8Array.from (clj->js (:object packaged))))]
+        (atomic-output/write-bytes! output object)
+        (atomic-output/write-edn! manifest-output (:manifest packaged))
+        {:ok true :target (:target input) :entry entry
+         :platform platform :output output
+         :manifest-output manifest-output})
 
       (usage! (str "not a trust-plane command: " (pr-str command))))))

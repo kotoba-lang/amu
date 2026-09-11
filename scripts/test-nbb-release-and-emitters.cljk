@@ -1,0 +1,150 @@
+#!/usr/bin/env kbb
+;; The release family (`sbom`, `attest-release`, `verify-release`),
+;; `package-ios` and the ClojureScript-source targets on the nbb route --
+;; ported 2026-09-11 (ADR 0347 port ledger, after ADR 0348's trust plane,
+;; which `test-nbb-trust.cljk` covers). Every command is driven through
+;; `bin/amu` as a caller would use it, from a directory that is not the
+;; repository, with RELATIVE paths -- which is how `.kexe` was found missing
+;; from the launcher's path-extension table. The trust commands it needs
+;; (`keygen`, `trust-key`, `sign`, `verify`) are exercised on the way, through
+;; `bin/kotoba` for two of them so that launcher's routing is measured too.
+;;
+;; Each verdict is measured in BOTH directions: the positive case, and the
+;; refusal a one-byte or one-parameter change must produce, with its reason
+;; pinned. Exit 0 only when every case ran; a shorter run is not a pass.
+(ns test-nbb-release-and-emitters
+  (:require [kotoba.lang.text :as str]
+            ["node:child_process" :as child]
+            ["node:fs" :as fs]
+            ["node:os" :as os]
+            ["node:path" :as path]))
+
+(def root (fs/realpathSync (.resolve path (.dirname path *file*) "..")))
+(def tmp (.mkdtempSync fs (.join path (.tmpdir os) "kotoba-nbb-signing-")))
+(def amu (.join path root "bin" "amu"))
+(def kotoba (.join path root "bin" "kotoba"))
+(def nbb-cli (.join path root "node_modules" "nbb" "cli.js"))
+(defn file [name] (.join path tmp name))
+(defn write! [name value] (.writeFileSync fs (file name) value))
+(defn read! [name] (.readFileSync fs (file name) "utf8"))
+
+(def ran (atom 0))
+(def failed (atom []))
+(defn record! [name ok? detail]
+  (swap! ran inc)
+  (println (str (if ok? "PASS " "FAIL ") name (when-not ok? (str "  " detail))))
+  (when-not ok? (swap! failed conj name)))
+
+(defn amu!
+  "Run `amu` from the temp directory with RELATIVE file names, the way a
+  caller types them. Returns {:status :stdout :stderr}."
+  [& args]
+  (let [result (.spawnSync child js/process.execPath (clj->js (into [amu] args))
+                           #js {:cwd tmp :encoding "utf8" :maxBuffer 16777216})]
+    (when (.-error result) (throw (.-error result)))
+    {:status (or (.-status result) 70)
+     :stdout (or (.-stdout result) "")
+     :stderr (or (.-stderr result) "")}))
+
+(defn kotoba!
+  "The same, through `bin/kotoba -M`."
+  [& args]
+  (let [result (.spawnSync child js/process.execPath (clj->js (into [nbb-cli kotoba "-M"] args))
+                           #js {:cwd tmp :encoding "utf8" :maxBuffer 16777216})]
+    (when (.-error result) (throw (.-error result)))
+    {:status (or (.-status result) 70)
+     :stdout (or (.-stdout result) "")
+     :stderr (or (.-stderr result) "")}))
+
+(defn ok? [r] (and (zero? (:status r)) (str/includes? (:stdout r) ":ok true")))
+(defn refused-with? [r message]
+  (and (not (zero? (:status r))) (str/includes? (:stderr r) message)))
+
+(try
+  ;; ── artifacts ─────────────────────────────────────────────────────────
+  (let [r (amu! "compile" (.join path root "examples" "structured.kotoba")
+                "--target" "x86_64" "--output" "program.kexe")]
+    (record! "compile x86_64 artifact" (ok? r) (:stderr r)))
+  (record! "verify admits the artifact (bin/amu)" (ok? (amu! "verify" "program.kexe")) "")
+  (record! "verify admits the artifact (bin/kotoba -M)" (ok? (kotoba! "verify" "program.kexe")) "")
+  (let [text (read! "program.kexe")]
+    (write! "tampered.kexe" (str/replace-first text ":kotoba.kexe/v1" ":kotoba.kexe/v9"))
+    (record! "verify refuses a tampered artifact"
+             (not (zero? (:status (amu! "verify" "tampered.kexe")))) ""))
+
+  ;; ── keys and trust ────────────────────────────────────────────────────
+  (record! "keygen (bin/kotoba -M)" (ok? (kotoba! "keygen" "--output" "signing-key.edn")) "")
+  (record! "keygen writes 0600"
+           (= 384 (bit-and 511 (.-mode (.statSync fs (file "signing-key.edn"))))) "")
+  (record! "public-key" (ok? (amu! "public-key" "signing-key.edn" "--output" "verification-key.edn")) "")
+  (record! "public-key carries no private material"
+           (not (str/includes? (read! "verification-key.edn") ":private-key")) "")
+  (record! "trust-key" (ok? (amu! "trust-key" "verification-key.edn" "--output" "trust.edn")) "")
+  (amu! "keygen" "--output" "other-key.edn")
+  (amu! "public-key" "other-key.edn" "--output" "other-public.edn")
+  (amu! "trust-key" "other-public.edn" "--output" "other-trust.edn")
+
+  ;; ── sign (the trust plane itself is test-nbb-trust's) ─────────────────
+  (record! "sign" (ok? (amu! "sign" "program.kexe" "--key" "signing-key.edn"
+                             "--not-before" "1000" "--expires" "2000"
+                             "--output" "program.signed.kexe")) "")
+
+  ;; ── release ───────────────────────────────────────────────────────────
+  (record! "sbom" (ok? (amu! "sbom" "program.kexe" "--output" "program.spdx")) "")
+  (record! "sbom is deterministic"
+           (do (amu! "sbom" "program.kexe" "--output" "program-again.spdx")
+               (= (read! "program.spdx") (read! "program-again.spdx"))) "")
+  (record! "attest-release"
+           (ok? (amu! "attest-release" "program.kexe" "--sbom" "program.spdx" "--key" "signing-key.edn"
+                      "--target" "x86_64" "--not-before" "1000" "--expires" "2000"
+                      "--output" "release.edn")) "")
+  (let [r (amu! "verify-release" "release.edn" "--artifact" "program.kexe" "--sbom" "program.spdx"
+                "--trust" "trust.edn" "--now" "1500")]
+    (record! "verify-release" (and (zero? (:status r)) (str/includes? (:stdout r) ":verified? true")) (:stderr r)))
+  (write! "program-mutated.kexe" (str (read! "program.kexe") "x"))
+  (record! "verify-release refuses a mutated artifact"
+           (refused-with? (amu! "verify-release" "release.edn" "--artifact" "program-mutated.kexe"
+                                "--sbom" "program.spdx" "--trust" "trust.edn" "--now" "1500")
+                          "identity mismatch") "")
+
+  ;; ── package-ios ───────────────────────────────────────────────────────
+  (let [r (amu! "compile" (.join path root "examples" "structured.kotoba")
+                "--target" "aarch64-ios" "--output" "ios.kexe")]
+    (record! "compile aarch64-ios artifact" (ok? r) (:stderr r)))
+  (let [r (amu! "package-ios" "ios.kexe" "--entry" "main" "--platform" "ios"
+                "--output" "program.o" "--manifest-output" "program.o.edn")
+        bytes (when (.existsSync fs (file "program.o")) (.readFileSync fs (file "program.o")))]
+    ;; Mach-O 64-bit magic, little-endian: cf fa ed fe.
+    (record! "package-ios writes a Mach-O 64-bit object"
+             (and (ok? r) bytes (= [0xcf 0xfa 0xed 0xfe] (vec (.subarray bytes 0 4))))
+             (:stderr r)))
+  (record! "package-ios refuses a non-iOS artifact"
+           (refused-with? (amu! "package-ios" "program.kexe" "--output" "wrong.o")
+                          "explicit iOS target") "")
+
+  ;; ── cljs emission, EXECUTED ───────────────────────────────────────────
+  (let [r (amu! "compile" (.join path root "examples" "fuel.kotoba")
+                "--target" "cljs-browser" "--output" "fuel.cljs")]
+    (record! "compile cljs-browser emits source" (ok? r) (:stderr r)))
+  (let [cp (.join path tmp "cp" "kotoba" "compiled")]
+    (.mkdirSync fs cp #js {:recursive true})
+    (.copyFileSync fs (file "fuel.cljs") (.join path cp "generated.cljs"))
+    (let [result (.spawnSync child js/process.execPath
+                             (clj->js [(.join path root "node_modules" "nbb" "cli.js")
+                                       "--classpath" (.join path tmp "cp")
+                                       "-e" (str "(require '[kotoba.compiled.generated :as g]) "
+                                                 "(prn [(g/fact 5) (g/fact 10) "
+                                                 "(try (g/forever 0) (catch :default e (ex-message e)))])")])
+                             #js {:cwd tmp :encoding "utf8"})]
+      (record! "the emitted cljs runs: fact 5 = 120, fact 10 = 3628800, forever traps on fuel"
+               (str/includes? (or (.-stdout result) "") "[120 3628800 \"fuel-exhausted\"]")
+               (str (.-stdout result) (.-stderr result)))))
+
+  (finally
+    (.rmSync fs tmp #js {:recursive true :force true})))
+
+(println (str "SCANNED\t" @ran "\tcases, failed=" (count @failed)))
+(when (or (seq @failed) (< @ran 20))
+  (println (str "FAIL " (pr-str @failed)))
+  (.exit js/process 1))
+(println "nbb-release-and-emitters: release attestation, iOS packaging and cljs emission on the nbb route, through both launchers")

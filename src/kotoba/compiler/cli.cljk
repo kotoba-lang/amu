@@ -8,7 +8,6 @@
             [kotoba.compiler.coverage-evidence :as coverage-evidence]
             [kotoba.compiler.definition-identity :as definition-identity]
             [kotoba.compiler.diagnostic :as diagnostic]
-            [kotoba.compiler.ios-aot :as ios-aot]
             [kotoba.compiler.module-lock :as module-lock]
             [kotoba.compiler.project :as project]
             [kotoba.compiler.project-files :as project-files]
@@ -16,7 +15,6 @@
             [kotoba.compiler.receipt :as receipt]
             [kotoba.compiler.test-profile :as test-profile]
             [kotoba.compiler.trust-cli :as trust-cli]
-            [kotoba.compiler.release :as release]
             [kotoba.artifact.runtime-identity :as runtime-identity]
             [kotoba.compiler.source-path :as source-path]
             [kotoba.compiler.target-names :as target-names]
@@ -599,43 +597,6 @@
                                  :provenance-output provenance-output
                                  :inputs-output inputs-output}
                                 (select-keys inputs [:kotoba.compile/inputs]))))))
-    "package-ios"
-    (let [input (bounded-edn/read-file (second args))
-          entry (symbol (or (option args "--entry") "main"))
-          platform (keyword (or (option args "--platform") "ios"))
-          output (or (option args "--output") "kotoba-ios-program.o")
-          manifest-output (or (option args "--manifest-output") (str output ".edn"))
-          packaged (ios-aot/package input entry {:platform platform})]
-      (atomic-output/write-bytes! output (:object packaged))
-      (atomic-output/write-edn! manifest-output (:manifest packaged))
-      (println (pr-str {:ok true :target (:target input) :entry entry
-                        :platform platform :output output
-                        :manifest-output manifest-output})))
-    "sbom"
-    (let [input (second args)
-          output (or (option args "--output") (str input ".spdx"))]
-      (atomic-output/write-bytes! output (release/sbom-bytes input))
-      (println (pr-str {:ok true :format :spdx/v2.3 :output output})))
-    "attest-release"
-    (let [input (second args)
-          sbom (option args "--sbom")
-          key (bounded-edn/read-file (option args "--key"))
-          target (parse-target (option args "--target"))
-          not-before (Long/parseLong (option args "--not-before"))
-          expires (Long/parseLong (option args "--expires"))
-          output (or (option args "--output") (str input ".attestation.edn"))
-          envelope (release/attest input sbom target key not-before expires)]
-      (atomic-output/write-edn! output envelope)
-      (println (pr-str {:ok true :target target :output output
-                        :subject-sha256 (get-in envelope [:statement :subject :sha256])})))
-    "verify-release"
-    (let [envelope (bounded-edn/read-file (second args))
-          input (option args "--artifact")
-          sbom (option args "--sbom")
-          trust (bounded-edn/read-file (option args "--trust"))
-          now (Long/parseLong (option args "--now"))
-          result (release/verify! envelope input sbom trust now)]
-      (println (pr-str (assoc result :ok true))))
     "extract-native"
     (let [artifact (source-path/admit-native-artifact!
                     (bounded-edn/read-file (second args)) (second args))

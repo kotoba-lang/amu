@@ -78,6 +78,10 @@ const nbbNativeTargets = new Set([
 // that backend emits ClojureScript source text and stays on the JVM route.
 const nbbJsTargets = new Set([
   "js", "javascript", "web", "js-kotoba-v1", "js-browser", "js-browser-kotoba-v1",
+  // The ClojureScript-source emitter joined the nbb route on 2026-09-11
+  // (ADR 0347): `js_cli.cljk`'s `compile-cljs!`.
+  "cljs", "cljs-browser", "cljs-node",
+  "cljs-kotoba-v1", "cljs-browser-kotoba-v1", "cljs-node-kotoba-v1",
 ]);
 
 function fail(message, code) {
@@ -144,7 +148,10 @@ const divergentImageReason =
 // which has no Node host yet, so they stay refused below by name.
 const trustCommands = new Set(["keygen", "public-key", "inspect", "trust-key",
   "trust-runtime", "sign", "verify-signed", "verify", "receipt",
-  "verify-receipt", "verify-chain"]);
+  "verify-receipt", "verify-chain",
+  // The release family and iOS packaging joined the same namespace on
+  // 2026-09-11 (kotoba.compiler.release is portable now; ios-aot was).
+  "sbom", "attest-release", "verify-release", "package-ios"]);
 
 function nbbNativeEligible(args) {
   const command = args[0];
@@ -353,8 +360,14 @@ const NON_PATH_FLAGS = new Set(["--name", "--version", "--url", "--kind",
 
 // Extensions this CLI is handed as filesystem paths. A bare word like
 // `compile` or `wasm32-browser` has none and is left alone.
+// `.kexe` joined on 2026-09-11: the compiler's own sealed-artifact extension
+// was not in its own list, so `amu verify prog.kexe` from another directory
+// read `prog.kexe` inside the Amu checkout and reported "input could not be
+// read" -- the exact failure the paragraph above describes, for the one file
+// type every signing and receipt command takes.
 const PATH_EXTENSIONS = [
-  ".kotoba", ".edn", ".json", ".wasm", ".wat", ".mjs", ".js", ".cljk", ".cljs", ".cljc",
+  ".kotoba", ".kexe", ".bin", ".spdx",
+  ".edn", ".json", ".wasm", ".wat", ".mjs", ".js", ".cljk", ".cljs", ".cljc",
   ".clj", ".lock", ".txt", ".md", ".c", ".h", ".o", ".a", ".so", ".dylib", ".exe"
 ];
 

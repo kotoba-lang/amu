@@ -517,18 +517,17 @@ are the compatibility contract; byte layout is not.
 
 **There is no JVM route (ADR 0347, 2026-09-11).** Until then the
 `x86_64-aiueos-*`/`aarch64-aiueos-*` kernel IMAGE packaging and every other
-`kotoba` subcommand (`package-ios`, `sbom`, `attest-release`, `sign`,
-`keygen`, `run`, receipts, coverage, ...) went through `kbb -M:run`
-(`kotoba.compiler.cli`, JVM). That fallback is removed: a command or target
-with no nbb-route implementation is refused at exit 64 naming it, and the
-list of what still has to be ported -- with what carries each one's coverage
-in the meantime -- is the ledger in `docs/adr/0347-the-jvm-route-is-removed.md`.
-The kernel OBJECT, the CPL3 user image and the UEFI application ARE on the
-nbb route (aiueos links them from there); the divergent x86-64 kernel image
-is the one packaging target still refused. Ordinary native nbb compilation
-seals artifacts, runs the independent verifier, and emits provenance before
-writing. `--jvm-free` is accepted everywhere and means nothing: every
-invocation is.
+`kotoba` subcommand went through the JVM CLI. That fallback is removed: a
+command or target with no nbb-route implementation is refused at exit 64
+naming it. On the nbb route the same day, with executed evidence
+(`test-nbb-trust`, `test-nbb-release-and-emitters`, `test-release`,
+`test-output-set-publisher-auth`): `keygen`, `public-key`, `trust-key`,
+`trust-runtime`, `sign`, `verify-signed`, `verify`, `inspect`, `receipt`,
+`verify-receipt`, `verify-chain`, `sbom`, `attest-release`, `verify-release`,
+`package-ios`, and the `cljs` / `cljs-browser` / `cljs-node` targets. Still to
+port: `run`, `measure-runtime`, `coverage`, `sign-coverage-evidence`; the
+ledger in `docs/adr/0347-the-jvm-route-is-removed.md` says what each one
+needs, and ADR 0348 the order.
 
 Migration and release gates that must not depend on a locally installed JVM
 pass `--jvm-free`. In that mode Amu never invokes `clojure`: a missing or

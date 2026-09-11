@@ -27,21 +27,33 @@
             [kotoba.compiler.nbb.project-source :as project-source]
             [kotoba.compiler.provenance :as provenance]
             [kotoba.kir :as ir]
+            [kotoba.compiler.backend.cljs :as cljs]
             [kotoba.kir.compatibility :as compatibility]
             [kotoba.kir.target :as target-profile]
             [kotoba.script :as script]
             [kotoba.sema :as sema]))
 
-;; The JVM `parse-target` spellings for the two restricted-ESM profiles.
-;; `cljs-browser` is NOT here: that backend emits ClojureScript source text
-;; and still lives on the JVM route.
+;; The JVM `parse-target` spellings for the two restricted-ESM profiles, and
+;; -- since 2026-09-11 (ADR 0347) -- the three ClojureScript-source profiles.
+;; That backend (`kotoba.compiler.backend.cljs`) emits ClojureScript source
+;; TEXT, was `.cljc` all along, and stayed on the JVM route only because no
+;; nbb entrypoint called it; `compile-cljs!` below is that call.
 (def targets
   {"js" :js-kotoba-v1
    "javascript" :js-kotoba-v1
    "web" :js-kotoba-v1
    "js-browser" :js-browser-kotoba-v1
    "js-kotoba-v1" :js-kotoba-v1
-   "js-browser-kotoba-v1" :js-browser-kotoba-v1})
+   "js-browser-kotoba-v1" :js-browser-kotoba-v1
+   "cljs" :cljs-kotoba-v1
+   "cljs-browser" :cljs-browser-kotoba-v1
+   "cljs-node" :cljs-node-kotoba-v1
+   "cljs-kotoba-v1" :cljs-kotoba-v1
+   "cljs-browser-kotoba-v1" :cljs-browser-kotoba-v1
+   "cljs-node-kotoba-v1" :cljs-node-kotoba-v1})
+
+(def ^:private cljs-targets
+  #{:cljs-kotoba-v1 :cljs-browser-kotoba-v1 :cljs-node-kotoba-v1})
 
 (def ^:private floating-point-policy
   :kotoba.floating-point/ieee-754-f32-f64-v7)
@@ -90,13 +102,56 @@
               (clj->js (artifact/edn-safe manifest)
                        :keyword-fn (fn [k] (subs (str k) 1)))))
 
+(defn- compile-cljs!
+  "`--target cljs` / `cljs-browser` / `cljs-node`: the same front half as the
+  JVM's `compile-source*` (analyze, admit, lower with the declared budget),
+  then `backend.cljs/emit` and ONE text file at `--output` -- exactly what
+  the JVM CLI wrote for a `:cljs/v1` result (its `write-text!` arm; no
+  provenance sidecar, no manifest). The result envelope carries the same
+  keys the JVM printed for this target."
+  [args target target-name]
+  (let [profile (target-profile/profile target)
+        resolved (project-source/resolve-source! args)
+        input (:input resolved)
+        source (:source resolved)
+        linked? (:linked? resolved)
+        output (or (support/option args "--output") (str input ".cljs"))
+        policy (support/timed "policy-read" #(read-policy! args))
+        emit-metadata (support/emit-metadata args)
+        hir (support/timed "frontend"
+                           #(sema/analyze source (project-source/analyze-opts policy linked?)))
+        admission (support/timed "admission"
+                                 #(effect-row/check hir (support/capability-policy policy)))
+        kir (support/timed "kir-lower"
+                           #(ir/lower hir {:oracle-fuel (support/oracle-fuel emit-metadata policy)}))
+        fuel (host-number (or (:fuel emit-metadata)
+                              (get-in emit-metadata [:budgets :fuel])
+                              (get-in policy [:budgets :fuel])
+                              512))
+        cljs-source (support/timed "cljs-emit" #(cljs/emit kir fuel))]
+    (support/timed "output-write" #(io/write-text! output cljs-source))
+    (merge {:ok true :target target :target-profile profile :output output
+            :format :cljs/v1
+            :admission (cap-names/name-grants admission)
+            :effects (cap-names/name-grants (:effects hir))
+            :limits {:fuel fuel :replenishable? false}
+            :bytes (.byteLength js/Buffer cljs-source "utf8")}
+           (project-source/inputs-record resolved))))
+
+(declare compile-esm!)
+
 (defn- compile-js! [args]
   (let [target-name (or (support/option args "--target") "js")
         target (get targets target-name)
         _ (when-not target
             (support/usage-error!
-             (str "error: nbb JS path does not cover target " target-name)))
-        backend (target-profile/backend target)
+             (str "error: nbb JS path does not cover target " target-name)))]
+    (if (contains? cljs-targets target)
+      (compile-cljs! args target target-name)
+      (compile-esm! args target target-name))))
+
+(defn- compile-esm! [args target target-name]
+  (let [backend (target-profile/backend target)
         _ (when-not (contains? #{:js-kotoba-v1 :js-browser-kotoba-v1} backend)
             (support/usage-error! (str "error: target is not restricted ESM: " target-name)))
         profile (target-profile/profile target)
