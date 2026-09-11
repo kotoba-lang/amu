@@ -114,13 +114,36 @@ holds the live-boot shim — ADR 0347's ledger). The command is portable; its pr
 JVM-only namespaces in the CLI's reach: 11 → **9**. Commands on no route: `run`,
 `measure-runtime` (the native executor) and `test` (the JVM test runner).
 
+## Iteration 3 (2026-09-11): two twins become one namespace each
+
+`kotoba.compiler.module-lock` and `kotoba.compiler.project-files` each had a Node twin
+under `kotoba.compiler.nbb.*` — the same functions, the same messages, kept identical by
+hand, with a test pinning the Node CIDs against JVM vectors. Rank 2 of this ADR says one
+implementation per command; the same applies to a leaf. The twins are deleted and their
+bodies are the `:cljs` branches of the canonical namespaces: the host seams (real path,
+regular-file, directory, segment-wise containment, block read/write, the CIDv1 hash) are
+reader conditionals, the contract (every check, every message, `:phase`) is one text.
+`lock-from-source-paths` keeps both arities — the Node route injects
+`load-closed-graph`, the 3-arity resolves it for callers not on a pinned build.
+`read-lock` reads through the now-portable `bounded-edn` on both hosts.
+
+Measured: `test-nbb-project` (44 checks, including the CID vectors produced by the JVM
+twin) unchanged; a two-module project pinned with `amu module-lock`, compiled with
+`compile --module-lock`, answers 42; a block edited in place after pinning is refused
+`"locked module block does not hash to its CID"` (65); the same namespace under two
+`--source-path` roots is refused `"namespace resolves from multiple explicit source
+paths"` (65).
+
+JVM-only namespaces in the CLI's reach: 9 → **7**, all now in `kotoba-component` /
+`kotoba-wasm` (external) or above them (`core`, `test-profile`, `cli`).
+
 ## What remains, in order (from the EDN, `--probe` confirmed)
 
 | level | namespace | refused on Node with | unblocks |
 |---|---|---|---|
 | 1 | ~~`kotoba.compiler.release`~~ | ~~`java.io.FileInputStream`~~ | **portable since 2026-09-11** (a `:cljs` branch on node fs/crypto); `sbom`, `attest-release`, `verify-release` and `package-ios` joined `trust-cli` the same day |
 | 1 | ~~`kotoba.compiler.coverage`~~ | ~~`java.nio.file.Files`~~ | **portable since iteration 2**; `coverage`, `sign-coverage-evidence`, `package-aiueos-boot` joined `trust-cli` |
-| 1 | `kotoba.compiler.project-files`, `module-lock` | `java.nio.file.Files` | already have Node ports under `nbb.*` — the honest end state is one namespace each, not two |
+| ~~1~~ | ~~`kotoba.compiler.project-files`, `module-lock`~~ | | **one namespace each since iteration 3** — the `nbb.*` twins are deleted, their bodies are the `:cljs` branches |
 | 1 | `kotoba.component.admission`, `kotoba.wasm.tools` | `StandardCharsets` | external repo `kotoba-component` / `kotoba-wasm`; `check`/`compile` on the JVM route |
 | 2–3 | `kotoba.component.core`, `.artifact` | same repo | |
 | 4 | `kotoba.compiler.core` | the JVM compile driver (930 lines) | `test`; the JVM `check`/`compile` twins |

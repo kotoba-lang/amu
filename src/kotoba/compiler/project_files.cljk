@@ -1,33 +1,86 @@
 (ns kotoba.compiler.project-files
+  "Resolve the transitive closure of a multi-module guest from explicit source
+  roots. One namespace on both compiler hosts since 2026-09-11 (ADR 0348
+  iteration 3); until then it was a JVM file and a Node twin
+  (`kotoba.compiler.nbb.project-files`) kept identical by hand.
+
+  What the path resolver is FOR, rather than incidental behaviour, and so
+  what the two hosts share verbatim:
+
+  - Extension priority (`.kotoba`, `.cljk`, `.cljc`) is local to ONE root. The
+    same namespace present under two explicit roots is ambiguous and rejected;
+    it must never be settled by argument order.
+  - Every discovered path is resolved through the real path before use, and
+    must lie under one of the source roots. The root module is exempt because
+    it was named explicitly rather than discovered by namespace.
+  - The declared namespace must equal the one that was required, and one
+    namespace may not resolve to two files.
+
+  Containment is compared segment-wise on both hosts -- `java.nio.file.Path`'s
+  `startsWith` on the JVM, an explicit separator check on Node. A raw string
+  prefix would accept `/src-evil` as living under `/src`, which is the whole
+  class of bug this check exists to stop, and it would do so silently."
   {:kotoba/export [load-closed-graph]}
-  (:require [clojure.java.io :as io]
-            [kotoba.lang.text :as str]
+  (:require [kotoba.lang.text :as str]
             [kotoba.sema :as sema]
-            [kotoba.compiler.project :as project])
-  (:import [java.nio.file Files LinkOption Path]))
+            [kotoba.compiler.project :as project]
+            #?@(:clj [[clojure.java.io :as io]]
+                :cljs [["node:fs" :as fs]
+                       ["node:path" :as path]]))
+  #?(:clj (:import [java.nio.file Files LinkOption Path])))
 
 (def ^:private extensions [".kotoba" ".cljk" ".cljc"])
 
 (defn- reject! [message data]
   (throw (ex-info message (assoc data :phase :project-link))))
 
-(defn- real-path ^Path [value]
+;; ── host seams ─────────────────────────────────────────────────────────────
+
+(defn- real-path [value]
   (try
-    (.toRealPath (.toPath (io/file value)) (make-array LinkOption 0))
-    (catch java.io.IOException _
+    #?(:clj (.toRealPath (.toPath (io/file value)) (make-array LinkOption 0))
+       :cljs (.realpathSync fs value))
+    (catch #?(:clj java.io.IOException :cljs :default) _
       (reject! "project path is not readable" {}))))
+
+(defn- directory? [p]
+  #?(:clj (Files/isDirectory ^Path p (make-array LinkOption 0))
+     :cljs (try (.isDirectory (.statSync fs p)) (catch :default _ false))))
+
+(defn- regular-file? [p]
+  #?(:clj (Files/isRegularFile ^Path p (make-array LinkOption 0))
+     :cljs (try (.isFile (.statSync fs p)) (catch :default _ false))))
+
+(defn- under-root?
+  "Segment-wise containment."
+  [candidate root]
+  #?(:clj (.startsWith ^Path candidate ^Path root)
+     :cljs (or (= candidate root)
+               (str/starts-with? candidate (str root (.-sep path))))))
+
+(defn- resolve-under [root relative]
+  #?(:clj (.resolve ^Path root ^String relative)
+     :cljs (.join path root relative)))
+
+(defn- read-source [real]
+  #?(:clj (slurp (.toFile ^Path real))
+     :cljs (.readFileSync fs real "utf8")))
+
+;; ── the contract ───────────────────────────────────────────────────────────
 
 (defn- namespace-relative [namespace]
   (-> (str namespace) (str/replace "." "/") (str/replace "-" "_")))
 
 (defn- module-path [source-roots namespace]
   (let [relative (namespace-relative namespace)
-        existing (keep (fn [^Path source-root]
+        existing (keep (fn [source-root]
                          ;; Extension priority remains local to one package
                          ;; root. The same namespace in two explicit roots is
-                         ;; ambiguous and must never be shadowed by argument order.
-                         (first (filter #(Files/isRegularFile % (make-array LinkOption 0))
-                                        (map #(.resolve source-root (str relative %)) extensions))))
+                         ;; ambiguous and must never be shadowed by argument
+                         ;; order.
+                         (first (filter regular-file?
+                                        (map #(resolve-under source-root (str relative %))
+                                             extensions))))
                        source-roots)]
     (cond
       (empty? existing)
@@ -39,7 +92,7 @@
       :else (first existing))))
 
 (defn load-closed-graph
-  "Load only the transitive closure rooted at input from one explicit source
+  "Load only the transitive closure rooted at input from explicit source
   directories. The explicitly selected root may live beside those directories;
   dependency real-path checks reject symlink escape and cross-root namespace
   ambiguity. project/link-source owns the aggregate graph and source bounds."
@@ -49,22 +102,20 @@
         root-path (real-path input)]
     (when (empty? source-roots)
       (reject! "at least one source path is required" {}))
-    (doseq [^Path source-root source-roots]
-      (when-not (Files/isDirectory source-root (make-array LinkOption 0))
+    (doseq [source-root source-roots]
+      (when-not (directory? source-root)
         (reject! "source path must be a readable directory" {})))
     (let [sources (volatile! {})
           paths (volatile! {})]
-      (letfn [(visit [^Path file expected]
-                (let [real (.toRealPath file (make-array LinkOption 0))]
+      (letfn [(visit [file expected]
+                (let [real (real-path file)]
                   ;; The root is explicitly selected, not discovered by
                   ;; namespace. Only discovered dependencies are confined.
                   (when (and expected
-                             (not-any? (fn [^Path source-root]
-                                         (.startsWith real source-root))
-                                       source-roots))
+                             (not-any? #(under-root? real %) source-roots))
                     (reject! "project module escapes the explicit source paths"
                              {:module expected}))
-                  (let [source (slurp (.toFile real))
+                  (let [source (read-source real)
                         info (project/module-info (sema/read-forms source))
                         declared (:namespace info)]
                     (when (and expected (not= expected declared))
