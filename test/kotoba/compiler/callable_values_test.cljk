@@ -721,6 +721,27 @@
     (is (= [0] (:closure-param-indexes (get functions 'apply-one))))
     (is (true? (:closure-result? (get functions 'make-renderer))))))
 
+(deftest typed-closure-parameters-run-on-the-interpreter
+  ;; 2026-09-12: a `[:set :keyword]` and a `:document` pass THROUGH a closure
+  ;; parameter; the all-i64 contract program above keeps its CIDs (asserted
+  ;; in kotoba-sema typed_closure_parameters_test with the old frontend
+  ;; shadowed; here the i64 dispatcher name is what is pinned).
+  (is (= 2 (execute-main
+            "(defn count-with [f [:fn [[[:set :keyword]] :i64]] s [:set :keyword]] :i64 (f s))
+             (defn main []
+               (count-with (fn [s] (typed-set-count [:set :keyword] s)) #{:a :b}))")))
+  (is (= 2 (execute-main
+            "(defn apply-doc [f [:fn [[:document] :document]] d :document] :document (f d))
+             (defn main []
+               (document-count (apply-doc (fn [d] (document-merge d (document {:b 2})))
+                                          (document {:a 1}))))")))
+  (let [hir (:hir (compiler/check-source
+                   "(defn apply-one [f [:fn [[:i64] :i64]] x :i64] :i64 (f x))
+                    (defn main [] (apply-one (fn [x] (+ x 1)) 4))"))
+        names (set (map :name (:functions hir)))]
+    (is (contains? names '__kotoba_invoke$arity1) "the all-i64 family keeps its name")
+    (is (not-any? #(re-find #"__kotoba_invoke_p_" (str %)) names))))
+
 (deftest public-callable-contracts-fail-closed
   (testing "an unlisted arity is rejected at the lexical call"
     (is (re-find #"does not admit this arity"
@@ -732,10 +753,31 @@
                  (rejection-message
                   "(defn bad [f [:fn [[:i64] :i64] [[:i64] :bool]]] :i64 0)
                    (defn main [] 0)"))))
-  (testing "the descriptor does not promise unsupported argument ABIs"
-    (is (re-find #"i64 closure ABI"
+  ;; Until kotoba-sema cac05453 (2026-09-12, adr-2609111900) this case
+  ;; pinned `callable parameter types currently require the i64 closure
+  ;; ABI` for `[:fn [[:string] :i64]]`. A closure PARAMETER type is now
+  ;; admitted exactly when it is admitted as a closure RESULT type, so
+  ;; `:string` is admitted and the pin flips; what the rule keeps out --
+  ;; a callable, a linear resource, a type outside the result profile --
+  ;; is pinned below by the sentence that names it.
+  (testing "a string parameter type is admitted (it is a closure result type)"
+    (is (nil? (rejection-message
+               "(defn ok [f [:fn [[:string] :i64]]] :i64 0)
+                (defn main [] 0)"))))
+  (testing "a callable parameter type stays refused by name"
+    (is (= "callable parameter types cannot be callable or linear resources"
+           (rejection-message
+            "(defn bad [f [:fn [[[:fn [[:i64] :i64]]] :i64]]] :i64 0)
+             (defn main [] 0)"))))
+  (testing "a linear parameter type stays refused by the same sentence"
+    (is (= "callable parameter types cannot be callable or linear resources"
+           (rejection-message
+            "(defn bad [f [:fn [[[:stream :bytes]] :i64]]] :i64 0)
+             (defn main [] 0)"))))
+  (testing "a parameter type outside the result profile is refused by the predicate"
+    (is (re-find #"admitted exactly when it is admitted as a closure result type"
                  (rejection-message
-                  "(defn bad [f [:fn [[:string] :i64]]] :i64 0)
+                  "(defn bad [f [:fn [[:keyword] :i64]]] :i64 0)
                    (defn main [] 0)"))))
   (testing "linear-resource results remain outside callable contracts"
     (is (re-find #"linear resources"

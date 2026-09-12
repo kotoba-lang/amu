@@ -1,0 +1,12 @@
+(defn count-with [f [:fn [[[:set :keyword]] :i64]] s [:set :keyword]] :i64 (f s))
+(defn apply-doc [f [:fn [[:document] :document]] d :document] :document (f d))
+
+(defn main [] :i64
+  (+ (count-with (fn [s] (typed-set-count [:set :keyword] s)) #{:a :b})
+     (option-or
+      (document-i64-value
+       (option-or (document-get (apply-doc (fn [d] (document-merge d (document {:b 40})))
+                                           (document {:a 1 :b 2}))
+                                :b)
+                  (document-i64 0)))
+      -1)))
