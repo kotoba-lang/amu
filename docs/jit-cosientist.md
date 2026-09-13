@@ -89,3 +89,21 @@ approval**. Current verdicts above are diagnostics, not claims.
   even if the gate opened, the 4000000-iter x 24-alternation run would need
   a background session. Next tick unchanged: quiet host -> ratio of medians,
   then third (non-inlined mulh) arm.
+
+- 2026-09-11 JST tick 16 (JIT): quiet gate failed a 15th consecutive time —
+  host so loaded that even a 2-second iostat probe (iostat -c 5 2) did not
+  return within a 120 s foreground timeout. J-B measurement deferred, no
+  compiler change, control unchanged at bench/runtime-comparison/jb_imod_control.c.
+  Next tick unchanged: quiet host (idle >=90%) -> 4000000 iters x 24 alternations,
+  ratio of medians, then third (non-inlined mulh) arm.
+- 2026-09-12 JST tick 17 (JIT): quiet gate failed a 16th consecutive time —
+  host degraded further than tick 16: a 2 s `iostat -c 5 2` probe timed out at
+  90 s, and subsequent trivial commands (`uptime`, `pwd && date`, a bare
+  `echo`) either timed out at 120-400 s or returned empty output, so no
+  load/idle reading could be captured at all this tick. J-B measurement
+  deferred, no compiler change, control unchanged at
+  bench/runtime-comparison/jb_imod_control.c. Next tick unchanged: quiet host
+  (idle >=90%) -> 4000000 iters x 24 alternations, ratio of medians, then
+  third (non-inlined mulh) arm. If the next tick also cannot capture any
+  probe output, record J-B as blocked-on-environment instead of continuing
+  per-tick deferral.
