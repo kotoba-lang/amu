@@ -79,7 +79,7 @@
   (let [cmd (first sub-args)]
     (and
      (not (project-mode? sub-args))
-     (or (contains? #{"check" "extract-native"} cmd)
+     (or (contains? #{"check" "extract-native" "run" "measure-runtime"} cmd)
          (contains? trust-commands cmd)
          (and (= cmd "worker") (contains? nbb-native-targets (option sub-args "--target")))
          (and (= cmd "compile") (contains? nbb-native-targets (option sub-args "--target")))))))
@@ -92,6 +92,7 @@
                   (.startsWith target "wasm32"))
         filename (cond
                    (contains? trust-commands command) "trust_cli.cljk"
+                   (contains? #{"run" "measure-runtime"} command) "run_cli.cljk"
                    (= command "extract-native") "x86_64_cli.cljk"
                    wasm? "wasm_cli.cljk"
                    (.startsWith target "aarch64") "aarch64_cli.cljk"
@@ -145,7 +146,7 @@
   them into \"missing or stale\" sent a Windows runner's transient clone failure
   to the wrong fix (measured 2026-08-18: the lock was byte-fresh, and the job
   ten minutes earlier on the same image resolved it without complaint)."
-  [root nbb-cli]
+  [root nbb-cli alias]
   (let [script (.join path root "scripts" "print-classpath.cljk")]
     (cond
       (not (.existsSync fs (.join path root "deps-lock.edn")))
@@ -160,8 +161,9 @@
       ;; before considering the JVM fallback.
       (loop [attempt 0 last "no attempt ran"]
         (let [result (.spawnSync child js/process.execPath
-                                 (clj->js [nbb-cli "--classpath" (.join path root "src")
-                                           script root])
+                                 (clj->js (into [nbb-cli "--classpath" (.join path root "src")
+                                                 script root]
+                                                (if alias ["--alias" alias] [])))
                                  #js {:cwd root :encoding "utf8" :maxBuffer 16777216})
               ok? (and (not (.-error result)) (zero? (or (.-status result) 1)))
               joined (when ok?
@@ -178,8 +180,9 @@
               (recur (inc attempt) last)
               {:reason (str "the lock resolver failed three times: " last)})))))))
 
-(defn- security-classpath-entry [root nbb-cli]
+(defn- security-classpath-entry [root nbb-cli command]
   (let [deps-edn (.join path root "deps.edn")
+        alias-used (when (contains? #{"run" "measure-runtime"} command) "native-run")
         ;; The resolved directories are rooted under GITLIBS. A digest-only
         ;; cache key lets an isolated clean-clone test publish temporary paths
         ;; that a later normal invocation reuses after they have been deleted.
@@ -190,6 +193,10 @@
                    (.update (.readFileSync fs deps-edn))
                    (.update "\u0000")
                    (.update gitlibs-root)
+                   ;; Alias-bound cache: an executing command's classpath
+                   ;; (with :native-run) must never be read by a compile.
+                   (.update "\u0000")
+                   (.update (or alias-used ""))
                    (.digest "hex"))
         cache-file (.join path (.tmpdir os) (str "kotoba-security-classpath-" digest ".txt"))]
     (if (.existsSync fs cache-file)
@@ -198,7 +205,7 @@
       ;; removed on 2026-09-11 with the rest of the JVM route (owner decision:
       ;; Kotoba and the amu native/nbb compiler only). A lock that does not
       ;; match deps.edn is a refusal that names the fix, never a JVM spawn.
-      (let [attempt (resolve-with-lock root nbb-cli)]
+      (let [attempt (resolve-with-lock root nbb-cli alias-used)]
         (if-let [resolved (:classpath attempt)]
           (do (.writeFileSync fs cache-file resolved) resolved)
           (fail! (str "error: dependency resolution from deps-lock.edn failed: "
@@ -233,7 +240,7 @@
         ;; `process.execPath` (the current `node`/`node.exe`) is a real,
         ;; directly-executable binary on every platform.
         (let [nbb-cli (.join path root "node_modules" "nbb" "cli.js")
-              security-cp (security-classpath-entry root nbb-cli)
+              security-cp (security-classpath-entry root nbb-cli (first sub-args))
               ;; `<root>/resources` is joined explicitly rather than relying on
               ;; the relative `resources` entry `kbb -Spath` happens to
               ;; emit: the lock records dependency checkouts, and this
