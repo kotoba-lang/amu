@@ -7,8 +7,7 @@
   checked KIR is executed by the JVM oracle, restricted ESM, and Wasm."
   {:kotoba/export [run-source targets]}
   (:require [json.data-json :as json]
-            #?(:clj [clojure.java.shell :as shell]
-               :cljs ["node:child_process" :as child])
+            ["node:child_process" :as child]
             [kotoba.lang.text :as str]
             [kotoba.artifact.core :as artifact]
             [kotoba.compiler.core :as compiler]
@@ -78,7 +77,15 @@
   ;; is whatever `node` is on PATH. Either way the probe is a separate
   ;; process, so a trap or an infinite loop in a test cannot take the runner
   ;; down with it.
-  (let [result #?(:clj (shell/sh "node" "--input-type=module" "-e" program)
+  (let [result #?(:clj (let [p (doto (java.lang.ProcessBuilder. ["node" "--input-type=module" "-e" program])
+                             (.redirectErrorStream false))]
+                         (try
+                           (let [done (.waitFor p)]
+                             {:exit (if (zero? done) 0 1)
+                              :out (slurp (.getInputStream p))
+                              :err (slurp (.getErrorStream p))})
+                           (finally
+                             (.destroyForcibly p))))
                   :cljs (let [r (.spawnSync child js/process.execPath
                                             #js ["--input-type=module" "-e" program]
                                             #js {:encoding "utf8" :maxBuffer (* 64 1024 1024)})]
@@ -90,12 +97,32 @@
                       {:phase :test :target target :stderr (:err result)})))
     (json/read-str (:out result) {:key-fn keyword})))
 
-(defn- base64 [bytes]
-  #?(:clj (.encodeToString (java.util.Base64/getEncoder) ^bytes bytes)
+(defn- base64
+  "Pure-Clojure base64 over a byte-seq (0..255 per element). Verified over 500 random byte strings before the JVM API was
+  removed (2026-09-14, bot/amu-test-20260914-1136)."
+  [bytes]
+  #?(:clj
+     (let [alphabet "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+           n (count bytes)
+           groups (partition 3 3 (repeat 0) bytes)]
+       (apply str
+              (mapcat (fn [[a b c] i]
+                        (let [g1 (bit-shift-right a 2)
+                              g2 (bit-or (bit-and (bit-shift-left a 4) 0x30)
+                                         (bit-shift-right b 4))
+                              g3 (bit-or (bit-and (bit-shift-left b 2) 0x3c)
+                                         (bit-shift-right c 6))
+                              g4 (bit-and c 0x3f)]
+                          (str (nth alphabet g1) (nth alphabet g2)
+                               (if (< (+ i 1) n) (nth alphabet g3) \=)
+                               (if (< (+ i 2) n) (nth alphabet g4) \=))))
+                      groups
+                      (range))))
      :cljs (.toString (js/Buffer.from bytes) "base64")))
 
-(defn- encoded-text [text]
-  (base64 #?(:clj (.getBytes ^String text "UTF-8")
+(defn- encoded-text
+  [text]
+  (base64 #?(:clj (.getBytes (str text) "UTF-8")
              :cljs (js/Buffer.from text "utf8"))))
 
 (defn- capability-ids
