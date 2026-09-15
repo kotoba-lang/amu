@@ -1157,7 +1157,14 @@
          ;; (its ADR 0082), which tools/kexe_loader.c now supplies. A backend
          ;; before this emits the old per-byte rewrite and a loader before this
          ;; has nothing at 216; the two move together in this commit.
-         :git/sha "9a98c3e23fd1feba3679b5414e34c84a51ea0406"}
+         ;; Advanced 2026-09-15, 9a98c3e -> f98d7f1 (kotoba-native main, forward
+         ;; only, its #177): `=` on keyword operands lowers to `string=?` on
+         ;; both ISAs. Before it `(= :end :end)` answered 0 on aarch64 -- a
+         ;; keyword is a fresh pair(offset,length) per literal and `=` was a
+         ;; word compare -- so every `case` on a keyword took its default arm
+         ;; natively while KIR, js and wasm answered by content (measured
+         ;; here, root ADR-2609151600 follow-up).
+         :git/sha "f98d7f1f3a6bdc6b0ef96427bc5f3c4463b9e41d"}
         io.github.kotoba-lang/kotoba-component
         {:git/url "https://github.com/kotoba-lang/kotoba-component.git"
          ;; Advanced 2026-09-11, ff2c3e8c -> cad39ab0 (kotoba-component main,
