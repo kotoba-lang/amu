@@ -173,7 +173,17 @@
              ;; fixture explains the arithmetic and which wrong host prints
              ;; which wrong number.
              {:source "string-index-of.kotoba" :symbol "main"
-              :arguments [] :expected "189600"}]]
+              :arguments [] :expected "189600"}
+             ;; The first fixture here with a closure. `kir/lower` writes the
+             ;; closure parameter's position as a host index
+             ;; (`:closure-param-indexes`); the artifact reader hands every
+             ;; integer token back as a BigInt, which the interpreter's
+             ;; `integer?` refuses, so until 2026-09-15 `extract-native`
+             ;; rejected its own compiler's output for ANY program with a
+             ;; closure as `native artifact oracle evaluation rejected`. The
+             ;; fixture explains the arithmetic; measured by executing.
+             {:source "closure-node.kotoba" :symbol "main"
+              :arguments [] :expected "301"}]]
       (let [artifact (file (str symbol ".kexe"))
             binary (file (str symbol ".bin"))]
         (invoke ["compile" (.join path root "examples" source)

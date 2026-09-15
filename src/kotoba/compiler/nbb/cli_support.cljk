@@ -112,6 +112,35 @@
 (defn read-edn-file! [path]
   (read-edn-form! max-policy-nodes (io/read-text-file path)))
 
+(def ^:private structural-index-keys
+  "KIR function metadata whose integers are HOST indexes into `:params`, not
+  guest i64 values: `kotoba.kir/validated-closure-param-indexes` and its
+  `i64-pair-chain` sibling check them with `integer?` and use them with
+  `nth`. `kir/lower` writes them as host numbers; the artifact reader below
+  hands back a BigInt for every integer token, which is right for a value
+  and wrong for an index -- `(integer? BigInt)` is false under nbb, so a
+  read-back artifact with ANY closure was refused by the verifier's oracle
+  re-execution as `closure parameter indexes are malformed` (measured
+  2026-09-15: `extract-native` on the first native program passing a
+  `(fn [s] ...)` to a `[:fn [[<record>] <record>]]` parameter; every fixture
+  that had reached the command before was closure-free). Narrowing exactly
+  these keys, at the boundary that produced the BigInts, is the same move
+  `extract-native` makes for `:code`."
+  [:closure-param-indexes :i64-pair-chain-param-indexes])
+
+(defn- narrow-structural-indexes [artifact]
+  (if (and (map? artifact) (vector? (get-in artifact [:program :functions])))
+    (update-in artifact [:program :functions]
+               (fn [functions]
+                 (mapv (fn [function]
+                         (reduce (fn [function key]
+                                   (if (contains? function key)
+                                     (update function key #(mapv js/Number %))
+                                     function))
+                                 function structural-index-keys))
+                       functions)))
+    artifact))
+
 (defn read-artifact-file!
   "A sealed `.kexe` read with the reader the rest of this compiler uses.
 
@@ -126,9 +155,12 @@
 
   Same depth and token bounds as a policy file; a larger node bound, because
   an artifact's size is set by the verifier's own code ceiling rather than by
-  what a hand-written EDN file plausibly is."
+  what a hand-written EDN file plausibly is.
+
+  One narrowing, after the read: `structural-index-keys` above -- host
+  indexes, not values."
   [path]
-  (read-edn-form! max-artifact-nodes (io/read-text-file path)))
+  (narrow-structural-indexes (read-edn-form! max-artifact-nodes (io/read-text-file path))))
 
 (defn read-policy-material [args]
   (if-let [path (option args "--policy")]
