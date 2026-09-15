@@ -3124,20 +3124,51 @@ static int64_t checked_string_concat(struct kexe_context_v5 *context,
     return 0;
   }
   int64_t total = length_a + length_b;
-  if (shared->string_pool_used + (uint64_t)total > kexe_string_pool_budget ||
-      shared->string_pool_used + (uint64_t)total < shared->string_pool_used) {
-    raise(SIGILL);
-    return 0;
-  }
   const uint8_t *a = resolve_string_bytes(context, offset_a, length_a);
   const uint8_t *b = resolve_string_bytes(context, offset_b, length_b);
   int inputs_validated =
       shared->pair_validated[(uint64_t)handle_a - 1] &&
       shared->pair_validated[(uint64_t)handle_b - 1];
+  /* TAIL APPEND (2026-09-15). When A is the LAST allocation in the pool --
+   * pool-backed and ending exactly at string_pool_used -- the result can be
+   * A's own bytes followed by B's, so only B is copied and only B's bytes are
+   * charged. Nothing A covers changes, so every handle over A (A itself, the
+   * views cut from it) stays exactly what it was; the result is a longer
+   * view of the same bytes, minted like any other. The safety argument is
+   * checked_vector_conj's: the write lands past every existing handle.
+   *
+   * Why it exists: a guest that builds output by `(string-concat acc piece)`
+   * copied ACC on every step, so uniq over 13,000 lines and sort over 4,600
+   * needed gigabytes of pool -- measured 2026-09-15, both SIGILL on files
+   * under 1 MB. With the tail fast path an accumulator that is kept at the
+   * tail (append VIEWS to it; build the piece before starting the
+   * accumulator, never between appends) grows in O(1) bytes per byte, which
+   * is what a string builder is. A is left at the tail by this call, so a
+   * chain of appends stays on the fast path. B may alias A (A appended to
+   * itself): the source bytes are read before the copy moves the tail, and
+   * memmove tolerates the overlap of a self-append's second half. */
   uint64_t pool_offset = shared->string_pool_used;
-  memcpy(shared->string_pool + pool_offset, a, (size_t)length_a);
-  memcpy(shared->string_pool + pool_offset + (uint64_t)length_a, b, (size_t)length_b);
-  shared->string_pool_used += (uint64_t)total;
+  int a_is_tail = offset_a < 0 &&
+                  (uint64_t)(-(offset_a + 1)) + (uint64_t)length_a == shared->string_pool_used;
+  if (a_is_tail) {
+    if (shared->string_pool_used + (uint64_t)length_b > kexe_string_pool_budget ||
+        shared->string_pool_used + (uint64_t)length_b < shared->string_pool_used) {
+      raise(SIGILL);
+      return 0;
+    }
+    pool_offset = (uint64_t)(-(offset_a + 1));
+    memmove(shared->string_pool + shared->string_pool_used, b, (size_t)length_b);
+    shared->string_pool_used += (uint64_t)length_b;
+  } else {
+    if (shared->string_pool_used + (uint64_t)total > kexe_string_pool_budget ||
+        shared->string_pool_used + (uint64_t)total < shared->string_pool_used) {
+      raise(SIGILL);
+      return 0;
+    }
+    memcpy(shared->string_pool + pool_offset, a, (size_t)length_a);
+    memcpy(shared->string_pool + pool_offset + (uint64_t)length_a, b, (size_t)length_b);
+    shared->string_pool_used += (uint64_t)total;
+  }
   int64_t result = checked_pair_new(context, -((int64_t)pool_offset) - 1, total);
   /* Concatenation of two valid UTF-8 strings is valid UTF-8. */
   if (inputs_validated) mark_validated(context, result);

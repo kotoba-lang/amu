@@ -574,16 +574,29 @@ static int64_t SYSV string_concat(struct kexe_context *ctx,
   if (a->second < 0 || b->second < 0 || a->second > INT64_MAX - b->second)
     __builtin_trap();
   total = a->second + b->second;
-  if (ctx->string_pool_used + (uint64_t)total > KEXE_STRING_POOL_BYTES ||
-      ctx->string_pool_used + (uint64_t)total < ctx->string_pool_used)
-    __builtin_trap();
   a_bytes = resolve_string_bytes(ctx, a->first, a->second);
   b_bytes = resolve_string_bytes(ctx, b->first, b->second);
-  start = ctx->string_pool_used;
-  memcpy(ctx->string_pool + start, a_bytes, (size_t)a->second);
-  memcpy(ctx->string_pool + start + (uint64_t)a->second,
-         b_bytes, (size_t)b->second);
-  ctx->string_pool_used += (uint64_t)total;
+  /* TAIL APPEND, as in kexe_loader.c's checked_string_concat (2026-09-15):
+   * when LEFT is the pool's last allocation, only RIGHT is copied and
+   * charged, and the result is a longer view of the same bytes. */
+  if (a->first < 0 &&
+      (uint64_t)(-(a->first + 1)) + (uint64_t)a->second == ctx->string_pool_used) {
+    if (ctx->string_pool_used + (uint64_t)b->second > KEXE_STRING_POOL_BYTES ||
+        ctx->string_pool_used + (uint64_t)b->second < ctx->string_pool_used)
+      __builtin_trap();
+    start = (uint64_t)(-(a->first + 1));
+    memmove(ctx->string_pool + ctx->string_pool_used, b_bytes, (size_t)b->second);
+    ctx->string_pool_used += (uint64_t)b->second;
+  } else {
+    if (ctx->string_pool_used + (uint64_t)total > KEXE_STRING_POOL_BYTES ||
+        ctx->string_pool_used + (uint64_t)total < ctx->string_pool_used)
+      __builtin_trap();
+    start = ctx->string_pool_used;
+    memcpy(ctx->string_pool + start, a_bytes, (size_t)a->second);
+    memcpy(ctx->string_pool + start + (uint64_t)a->second,
+           b_bytes, (size_t)b->second);
+    ctx->string_pool_used += (uint64_t)total;
+  }
   {
     /* Concatenation of two valid UTF-8 strings is valid UTF-8. */
     int inputs_validated = ctx->pair_validated[(uint64_t)left - 1] &&
