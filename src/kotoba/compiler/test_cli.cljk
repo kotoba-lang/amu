@@ -31,10 +31,20 @@
                  (str " FAIL " (:test r) " target=" (:target r) " " (or (:error r) ""))))}))
 
 (defn run
-  "ARGS as `bin/amu` hands them: `test <file> [--json]`. Returns
-  `{:report r :json? bool}`; the report's `:ok` decides the exit status."
+  "ARGS as `bin/amu` hands them: `test <file> [--json] [--fuel <n>]`.
+  Returns `{:report r :json? bool}`; the report's `:ok` decides the exit
+  status. `--fuel` is the per-test budget (each test runs on a fresh
+  instance); a value that is not a positive decimal integer is refused by
+  name, as `amu compile --fuel` refuses it."
   [args]
   (let [input (source-path/admit! (second args))
         json? (boolean (some #{"--json"} args))
-        report (test-profile/run-source (bounded-edn/read-text-file input))]
+        fuel (when (some #{"--fuel"} args)
+               (let [text (second (drop-while #(not= "--fuel" %) args))]
+                 (when-not (and text (re-matches #"[1-9][0-9]*" text))
+                   (throw (ex-info "--fuel must be a positive decimal integer"
+                                   {:phase :usage :fuel text})))
+                 #?(:clj (Long/parseLong text) :cljs (js/parseInt text 10))))
+        report (test-profile/run-source (bounded-edn/read-text-file input)
+                                        (cond-> {} fuel (assoc :fuel fuel)))]
     {:report report :json? json?}))

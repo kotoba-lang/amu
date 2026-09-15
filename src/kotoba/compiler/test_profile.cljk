@@ -41,9 +41,13 @@
 
 (defn- test-policy
   "A policy granting exactly the row's capability calls. `:abort` is not a
-  grant (see `kotoba.compiler.effect-row`) and has no `first` to compare."
-  [checked]
-  {:allow (effect-row/grants (get-in checked [:hir :effects]))})
+  grant (see `kotoba.compiler.effect-row`) and has no `first` to compare.
+  `fuel`, when the caller named one, is the compiled-in per-instance budget
+  of the js/wasm probes (`:budgets {:fuel n}`, the same key `amu compile`
+  reads); nil keeps the emitter's default."
+  [checked fuel]
+  (cond-> {:allow (effect-row/grants (get-in checked [:hir :effects]))}
+    fuel (assoc :budgets {:fuel fuel})))
 
 (defn- pass?
   "A test IS a predicate: `true`, or the integer 1 for the profile-4
@@ -60,13 +64,15 @@
   "The KIR interpreter on the host running the compiler. The target is still
   named `:jvm-kir` in the report -- it is the interpreter target, and the
   name predates the compiler running anywhere but the JVM."
-  [kir tests]
+  [kir tests fuel]
   (letfn [(handler [cap-id value]
             (ir/execute kir 'test-handler [cap-id value]))]
     (mapv (fn [test-name]
             (try
               {:test test-name
-               :ok (pass? (ir/execute kir test-name [] {:cap-call handler}))}
+               :ok (pass? (ir/execute kir test-name []
+                                      (cond-> {:cap-call handler}
+                                        fuel (assoc :fuel fuel))))}
               (catch #?(:clj Exception :cljs :default) error
                 {:test test-name :ok false :error (or (ex-message error) "test trap")})))
           tests)))
@@ -147,7 +153,12 @@
           "let x;"
           "const grants=Object.fromEntries(ids.map(id=>[id,value=>"
           "x['test-handler'](BigInt(id),value)]));"
-          "x=m.instantiateKotoba(grants);"
+          ;; ONE INSTANCE PER TEST. The budget is per instance and does not
+          ;; replenish, so on a shared instance the tests after the one that
+          ;; spent it would trap for a reason that is not theirs -- measured
+          ;; 2026-09-15 on a component whose registry scan is ~2,700 fuel:
+          ;; two tests passed and sixteen reported `unreachable`.
+          "const fresh=()=>{x=m.instantiateKotoba(grants);return x;};"
           ;; A test IS a predicate. Under language profile 5 a comparison infers
           ;; `:bool`, so a test returns a boolean on every target as soon as
           ;; result inference reaches it; 1n stays accepted for the profile-4
@@ -157,7 +168,7 @@
           ;; test_profile_test still infers `:i64`, so which side of this the
           ;; runner lands on today depends on inference reach, not on intent.
           "const pass=v=>v===true||v===1n;"
-          "const out=names.map(name=>{try{return {test:name,ok:pass(x[name]())}}"
+          "const out=names.map(name=>{try{return {test:name,ok:pass(fresh()[name]())}}"
           "catch(e){return {test:name,ok:false,error:'test trap'}}});"
           "console.log(JSON.stringify(out));"))))
 
@@ -171,22 +182,31 @@
           "const bytes=Uint8Array.from(Buffer.from('" encoded "','base64'));"
           "const host=await import('./runtime/browser-host.mjs');"
           "let instance;"
-          "const loaded=await host.instantiateKotoba(bytes,{allowCapabilities:ids,"
+          ;; one instance per test, for the reason js-results gives. The ids
+          ;; arrive as strings on the nbb route (json.data-json writes the
+          ;; wire id as text) and the host admits integers only -- measured
+          ;; 2026-09-15: `capability ids must be unique integers in [0,255]`
+          ;; on test-profile-test's own fixture at origin/main.
+          "const fresh=async()=>{const loaded=await host.instantiateKotoba(bytes,{allowCapabilities:ids.map(Number),"
           "capCall:(id,value)=>instance.exports['test-handler'](BigInt(id),value)});"
-          "instance=loaded.instance;"
+          "instance=loaded.instance;return instance;};"
           "const pass=v=>v===true||v===1n;"
-          "const out=names.map(name=>{try{return {test:name,ok:pass(instance.exports[name]())}}"
-          "catch(e){return {test:name,ok:false,error:'test trap'}}});"
+          "const out=[];"
+          "for(const name of names){try{const i=await fresh();out.push({test:name,ok:pass(i.exports[name]())})}"
+          "catch(e){out.push({test:name,ok:false,error:'test trap'})}}"
           "console.log(JSON.stringify(out));"))))
 
 (defn run-source
   "Run one Kotoba source's exported `test-*` definitions on all semantic
   targets. Returns a deterministic report; target adapters never define test
-  expectations."
-  [source]
+  expectations. `opts` may carry `:fuel`, the per-instance budget compiled
+  into the js/wasm probes and handed to the interpreter; every test runs on
+  its own instance, so the budget is per test."
+  ([source] (run-source source {}))
+  ([source {:keys [fuel]}]
   (let [source (harness-source source)
         checked {:hir (sema/analyze source)}
-        policy (test-policy checked)
+        policy (test-policy checked fuel)
         js (compiler/compile-source source :js-kotoba-v1 policy)
         wasm (compiler/compile-source source :wasm32-kotoba-v1 policy)
         kir (:kir js)
@@ -194,7 +214,7 @@
         cap-ids (capability-ids kir)
         _ (when (empty? tests)
             (throw (ex-info "no exported test-* definitions" {:phase :test})))
-        results {:jvm-kir (jvm-results kir tests)
+        results {:jvm-kir (jvm-results kir tests fuel)
                  :js (js-results (:source js) tests cap-ids)
                  :wasm (wasm-results (:bytes wasm) tests cap-ids)}
         failed (vec (for [[target cases] results
@@ -219,4 +239,4 @@
      :tests tests
      :targets targets
      :results results
-     :failed failed}))
+     :failed failed})))

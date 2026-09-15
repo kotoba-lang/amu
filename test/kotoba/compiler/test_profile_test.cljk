@@ -27,3 +27,33 @@
         "a 64-character hex digest, which is what a sha2-256 is and what a CID is not")
     (is (nil? (:test-definition-cid report))
         "the old name claimed an identity this report does not compute")))
+
+;; A test that needs more than the emitter's default budget (512): a 900-step
+;; loop. The restricted-ESM probe meters it (measured 2026-09-15: it passes
+;; at 1000 and fails at 900 -- the js probe charges per step; the wasm probe
+;; charges per call and lets a loop run for free, so only js starves). With
+;; `:fuel 1000` it passes everywhere. The second source pins the other half
+;; of the change -- every test gets its OWN instance: two tests that each
+;; cost between 900 and 1000 both pass at 1000, which a shared instance
+;; could not do. Measured the same day on cloud-itonami-commands, where two
+;; tests passed and sixteen reported `unreachable` on one shared instance.
+(def hungry-source
+  "(ns test.hungry (:export [test-loop]))
+   (defn test-loop [] (= 900 (loop [i 0] (if (>= i 900) i (recur (+ i 1))))))")
+
+(def two-hungry-source
+  "(ns test.two (:export [test-first test-second]))
+   (defn test-first [] (= 900 (loop [i 0] (if (>= i 900) i (recur (+ i 1))))))
+   (defn test-second [] (= 900 (loop [i 0] (if (>= i 900) i (recur (+ i 1))))))")
+
+(deftest fuel-is-a-per-test-budget-the-caller-names
+  (let [starved (profile/run-source hungry-source)
+        fed (profile/run-source hungry-source {:fuel 1000})]
+    (is (not (:ok starved)) "the default budget is not enough for 900 metered steps")
+    (is (= [:js] (mapv :target (:failed starved)))
+        (str "the js probe starves; the interpreter and wasm do not meter a loop: " (pr-str (:failed starved))))
+    (is (:ok fed) (pr-str (:failed fed))))
+  (let [report (profile/run-source two-hungry-source {:fuel 1000})]
+    (is (:ok report)
+        (str "two tests that each cost 900..1000 both pass at 1000 because each runs on a fresh instance: "
+             (pr-str (:failed report))))))
