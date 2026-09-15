@@ -1,0 +1,32 @@
+;; A node closure over a record state -- the shape a state graph's step has:
+;; `(fn [s] ...)` handed to a `[:fn [[<record>] <record>]]` parameter and
+;; applied n times. What this fixture pins is not the closure itself (the
+;; interpreter and every backend ran these before) but the READ-BACK of the
+;; sealed artifact on the JDK-free route: `kir/lower` marks the closure
+;; parameter's position in `:closure-param-indexes`, a host index the
+;; interpreter checks with `integer?`; the artifact reader returns a BigInt
+;; for every integer token, and `(integer? BigInt)` is false under nbb, so
+;; `extract-native` refused every artifact with a closure as
+;; `native artifact oracle evaluation rejected` (2026-09-15). The closure-free
+;; fixtures before this one could not see it.
+;;
+;; 3 steps from count 0: count 3, phase :end (count reached 2 on the third
+;; step) => 100 * 3 + 1 = 301. Measured by executing the artifact.
+(ns examples.closure-node (:export [main]))
+
+(defrecord State [count :i64 phase :keyword])
+
+(defn- bump [s [:record :examples.closure-node/State [[:count :i64] [:phase :keyword]]]]
+  [:record :examples.closure-node/State [[:count :i64] [:phase :keyword]]]
+  (->State (+ (:count s) 1) (if (>= (:count s) 2) :end :go)))
+
+(defn- run-node [node [:fn [[[:record :examples.closure-node/State [[:count :i64] [:phase :keyword]]]]
+                            [:record :examples.closure-node/State [[:count :i64] [:phase :keyword]]]]]
+                 s [:record :examples.closure-node/State [[:count :i64] [:phase :keyword]]]
+                 n :i64]
+  [:record :examples.closure-node/State [[:count :i64] [:phase :keyword]]]
+  (loop [s s i 0] (if (>= i n) s (recur (node s) (+ i 1)))))
+
+(defn main [] :i64
+  (let [r (run-node (fn [s] (bump s)) (->State 0 :go) 3)]
+    (+ (* 100 (:count r)) (if (= :end (:phase r)) 1 0))))
