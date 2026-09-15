@@ -1141,6 +1141,20 @@ contract is a scope per filesystem capability: `KEXE_CAP_RESOURCES_35` for
 for `:fs/browse` (one directory's sorted, newline-joined entry names) -- both
 colon-separated absolute prefixes, realpath'ed before fork, enforced by the
 provider and by the sandbox profile, admitting nothing when unset.
+The child's CPU and wall bounds are budgets of the same shape (2026-09-15):
+`KEXE_CPU_SECONDS` (RLIMIT_CPU, absent = 1, SIGXCPU past it) and
+`KEXE_WALL_SECONDS` (the supervisor's alarm, absent = 3, SIGKILL past it,
+with the child's own SIGALRM one second inside); a packaged command bakes
+both through `package-command.cljk --cpu-seconds / --wall-seconds`. Fuel
+cannot stand in for them -- a `find` over 34,803 entries died of SIGXCPU with
+0.09 s of user time, the second having gone to the kernel's directory reads.
+Wire 37 (`:io/write`) is buffered in the loader (64 KiB, flushed when full,
+before any wire-39 diagnostic, and on every exit path including a trap), so
+a command printing a path and then its newline costs no syscall per line;
+measured on that tree, system time fell from 0.84 s to 0.49 s. The string
+pool and pair heap ceilings a caller may ask for are 1 GiB and 64 Mi handles
+(defaults unchanged); `:fs/browse` refuses a listing only when it does not
+fit the string pool budget, no longer at 4,096 entries.
 This permits bounded recursion while guaranteeing that recursive cycles trap.
 x86-64 reserves r9 and AArch64 reserves x7 for a loader-owned fuel-context
 pointer; both charge every function entry before guest instructions. Their real

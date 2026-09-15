@@ -59,7 +59,15 @@ typedef int64_t (*kexe_fn8)(int64_t, int64_t, int64_t, int64_t,
  * and nothing memsets it, so pages fault in as the bump allocator reaches
  * them. */
 #define KEXE_PAIR_CAPACITY 4096u
-#define KEXE_PAIR_MAX (4u * 1024u * 1024u)
+/* 64 Mi handles (1 GiB of cells, 64 MiB of validity flags), up from 4 Mi on
+ * 2026-09-15. The default budget above is unchanged; this is the most a
+ * caller may ASK for. The argument for moving it is the one that made it
+ * address space in the first place: with four handles per entry (name view,
+ * joined path, two wire-37 write counts) a `find` over orgs/kotoba-lang's
+ * 857,322 entries needs 3.9 Mi handles and the 4 Mi ceiling would have
+ * refused the next tree of that size. Nothing is reclaimed, so the ceiling
+ * IS the largest input a command can walk. */
+#define KEXE_PAIR_MAX (64u * 1024u * 1024u)
 #define KEXE_KGRAPH_CAPACITY 4096u
 /* The string arena.
  *
@@ -79,7 +87,11 @@ typedef int64_t (*kexe_fn8)(int64_t, int64_t, int64_t, int64_t,
  * why the explicit memset of the shared struct had to go -- it touched every
  * page and would have turned a large ceiling into a large cost. */
 #define KEXE_STRING_POOL_BYTES 65536u
-#define KEXE_STRING_POOL_MAX (256u * 1024u * 1024u)
+/* 1 GiB, up from 256 MiB on 2026-09-15 alongside KEXE_PAIR_MAX: the same
+ * `find` interns each path once and each listing once, about 130 bytes per
+ * entry, and 857,322 entries is 110 MiB -- the old ceiling was two such
+ * trees away. */
+#define KEXE_STRING_POOL_MAX (1024u * 1024u * 1024u)
 /* granted regions: a bounded arena of HOST bytes an entry may be handed as a
  * (base, length) pair. Same 64 KiB bound as the string pool, and for the same
  * reason -- both arrive as hex in argv, and argv is what actually limits them
@@ -95,8 +107,9 @@ typedef int64_t (*kexe_fn8)(int64_t, int64_t, int64_t, int64_t,
  * decimal budget; the loader enforces the number it is handed and decides
  * nothing about it (the kbb shim passes `--fuel` through here). The CPU and
  * wall-clock limits in install_limits()/supervise() are NOT raised by a
- * larger budget: fuel bounds the guest's own steps, the rlimits bound the
- * child, and both stay in force. */
+ * larger fuel budget: fuel bounds the guest's own steps, the rlimits bound
+ * the child, and both stay in force -- each as its own budget
+ * (kexe_cpu_seconds / kexe_wall_seconds below). */
 static uint64_t kexe_initial_fuel = 512;
 /* The string arena budget in force for this run: the default above unless
  * KEXE_STRING_POOL (or, in a packaged command, the baked constant) names
@@ -108,6 +121,79 @@ static uint64_t kexe_string_pool_budget = KEXE_STRING_POOL_BYTES;
  * THIS, never the array's size, so the ceiling a guest meets is the budget
  * and not the mapping. */
 static uint64_t kexe_pair_budget = KEXE_PAIR_CAPACITY;
+/* The CPU-second and wall-second bounds on the child, in force for this run.
+ * Until 2026-09-15 both were literals -- RLIMIT_CPU 1 (hard 2) and alarm(2)
+ * in install_limits(), alarm(3) in supervise() -- and a packaged `find` walking
+ * a 34,803-entry tree died of SIGXCPU at 33,074 entries with 0.09 s of user
+ * time: the kernel's directory reads, not the guest's steps, spent the
+ * second. Fuel bounds the guest's own steps and could not have been raised
+ * to help. So these are budgets with the SAME shape as fuel, the string
+ * arena and the pair heap: the default is exactly what the literal was,
+ * KEXE_CPU_SECONDS / KEXE_WALL_SECONDS name another positive decimal for one
+ * loader run, and a packaged command bakes both (`--cpu-seconds`,
+ * `--wall-seconds`) so its caller cannot choose them on its behalf. The hard
+ * CPU limit stays one second above the soft one, as it always was, so
+ * SIGXCPU is delivered and reported before SIGKILL is. */
+#define KEXE_CPU_SECONDS 1u
+#define KEXE_WALL_SECONDS 3u
+#define KEXE_SECONDS_MAX 86400u
+static uint64_t kexe_cpu_seconds = KEXE_CPU_SECONDS;
+static uint64_t kexe_wall_seconds = KEXE_WALL_SECONDS;
+
+/* Standard output is BUFFERED. Wire 37 appends to this and the bytes reach
+ * fd 1 when the buffer fills, when the guest writes to fd 2 (so a diagnostic
+ * never overtakes the output it follows), and on every exit path including
+ * a trap -- the wire has already answered a byte count for these bytes, and
+ * a count for bytes that never arrived would be a lie. Before this every
+ * wire-37 call was one write(2): a `find` printing a path and then its
+ * newline made two syscalls per entry, which is the shape BufWriter-backed
+ * fd/ripgrep exist to avoid. 64 KiB is the pipe-buffer size, so a full
+ * buffer is one write whether the reader is a file or a pipe. */
+#define KEXE_STDOUT_BUFFER_BYTES 65536u
+static uint8_t kexe_stdout_buffer[KEXE_STDOUT_BUFFER_BYTES];
+static size_t kexe_stdout_used = 0;
+
+/* Write LENGTH bytes to FD, retrying partial writes and EINTR; 0 on a real
+ * error or on a write that makes no progress. Async-signal-safe: write(2)
+ * only. */
+static int kexe_write_all(int fd, const uint8_t *bytes, size_t length) {
+  size_t written = 0;
+  while (written < length) {
+    ssize_t n = write(fd, bytes + written, length - written);
+    if (n < 0) {
+      if (errno == EINTR) continue;
+      return 0;
+    }
+    if (n == 0) return 0;
+    written += (size_t)n;
+  }
+  return 1;
+}
+
+/* Flush the stdout buffer. `kexe_stdout_used` is zeroed BEFORE the write so
+ * that a trap arriving mid-write -- whose handler flushes too -- finds
+ * nothing to send rather than sending the same bytes twice: the tail of an
+ * interrupted flush is lost, never duplicated. */
+static int kexe_stdout_flush(void) {
+  size_t pending = kexe_stdout_used;
+  kexe_stdout_used = 0;
+  if (pending == 0) return 1;
+  return kexe_write_all(STDOUT_FILENO, kexe_stdout_buffer, pending);
+}
+
+/* Append LENGTH bytes to the stdout buffer, flushing as needed; a payload
+ * that would not fit an empty buffer goes straight to fd 1 after a flush,
+ * so ordering is preserved and no payload is copied more than once. */
+static int kexe_stdout_append(const uint8_t *bytes, size_t length) {
+  if (length > KEXE_STDOUT_BUFFER_BYTES - kexe_stdout_used) {
+    if (!kexe_stdout_flush()) return 0;
+    if (length >= KEXE_STDOUT_BUFFER_BYTES)
+      return kexe_write_all(STDOUT_FILENO, bytes, length);
+  }
+  memcpy(kexe_stdout_buffer + kexe_stdout_used, bytes, length);
+  kexe_stdout_used += length;
+  return 1;
+}
 
 static void write_stderr_checked(const char *bytes, size_t length) {
   ssize_t written = write(STDERR_FILENO, bytes, length);
@@ -1746,21 +1832,14 @@ static int64_t io_write_provider(struct kexe_context_v4 *context,
     raise(SIGILL);
     return 0;
   }
-  uint64_t written = 0;
-  while (written < length) {
-    ssize_t n = write(1, bytes + written, (size_t)(length - written));
-    if (n < 0) {
-      if (errno == EINTR) continue;
-      raise(SIGILL);
-      return 0;
-    }
-    if (n == 0) {
-      /* Neither progress nor an error. Refusing beats spinning. */
-      raise(SIGILL);
-      return 0;
-    }
-    written += (uint64_t)n;
+  /* Buffered (see kexe_stdout_append): a real error, or a write that makes
+   * no progress, fails closed with SIGILL rather than reporting a count
+   * that did not happen. */
+  if (!kexe_stdout_append(bytes, (size_t)length)) {
+    raise(SIGILL);
+    return 0;
   }
+  uint64_t written = length;
   /* Decimal, no sign, no padding: at most 20 digits for a uint64. */
   char count[24];
   int digits = snprintf(count, sizeof(count), "%llu",
@@ -1790,6 +1869,12 @@ static int64_t io_write_error_provider(struct kexe_context_v4 *context,
   const uint8_t *bytes = NULL;
   uint64_t length = 0;
   if (!read_string_handle(context, request, &bytes, &length)) {
+    raise(SIGILL);
+    return 0;
+  }
+  /* Standard output first: a diagnostic must not overtake the output the
+   * guest wrote before it. */
+  if (!kexe_stdout_flush()) {
     raise(SIGILL);
     return 0;
   }
@@ -2646,13 +2731,18 @@ static int64_t fs_app_data_range_read_provider(struct kexe_context_v4 *context,
  * the js host answers for the same id (kotoba bin/kbb_js.cljs wire 34) and
  * the wire lib/kbb/browse.kotoba is written against: the is-directory flag
  * is what a recursive scan needs, so a guest can walk a tree without
- * guessing which entry is a directory. Bounds: at most
- * KEXE_BROWSE_ENTRY_LIMIT entries and a listing that fits the string pool;
- * more is refused, not truncated (a truncated listing would look like a
- * smaller directory). Names are validated as UTF-8 by the typed dispatch,
- * so a non-UTF-8 name traps the call. The directory is opened
- * O_NOFOLLOW|O_DIRECTORY and contained like a file. */
-#define KEXE_BROWSE_ENTRY_LIMIT 4096u
+ * guessing which entry is a directory. Bound: a listing that fits the string
+ * pool BUDGET in force; more is refused, not truncated (a truncated listing
+ * would look like a smaller directory). Until 2026-09-15 there was a second
+ * bound of 4,096 entries, a literal with no argument attached to it, and a
+ * `find` walking orgs/kotoba-lang died of it at the 12,727-entry directory
+ * app-kotoba-cloud/assets/security-data/blocks -- a directory whose listing
+ * (about 700 KB) fit the pool with room to spare. The pool budget is the
+ * bound that means something (the listing has to be interned there), so
+ * it is now the only one; the entries array below grows by doubling toward
+ * it and a failed growth is a refusal like any other. Names are validated
+ * as UTF-8 by the typed dispatch, so a non-UTF-8 name traps the call. The
+ * directory is opened O_NOFOLLOW|O_DIRECTORY and contained like a file. */
 
 /* The dirent type byte's DT_DIR value; defined here so the module compiles
  * the same under -std=c11 on macOS and Linux (both platforms use 4). */
@@ -2692,8 +2782,7 @@ static int kexe_browse_add(const char *name, uint8_t is_dir,
   if (strcmp(name, ".") == 0 || strcmp(name, "..") == 0) return 1;
   size_t name_length = strlen(name);
   size_t entry_bytes = name_length + 2u + (*count > 0 ? 1u : 0u);
-  if (*count >= KEXE_BROWSE_ENTRY_LIMIT ||
-      *total + entry_bytes > kexe_string_pool_budget) return 0;
+  if (*total + entry_bytes > kexe_string_pool_budget) return 0;
   if (*count == *capacity) {
     size_t next = *capacity == 0 ? 64u : *capacity * 2u;
     struct kexe_browse_entry *grown =
@@ -3139,6 +3228,9 @@ static void trap_handler(int signal_number) {
       break;
   }
 #undef SELECT_SIGNAL
+  /* The guest has already been told these bytes were written. write(2)
+   * only, so this is as async-signal-safe as the report below it. */
+  (void)kexe_stdout_flush();
   ssize_t written = write(STDERR_FILENO, message, length);
   (void)written;
   _exit(120);
@@ -3157,7 +3249,7 @@ static int supervise(pid_t child) {
   sigemptyset(&action.sa_mask);
   if (sigaction(SIGALRM, &action, NULL) != 0) fail("supervisor sigaction");
   supervised_pid = (sig_atomic_t)child;
-  alarm(3);
+  alarm((unsigned int)kexe_wall_seconds);
 
   int status = 0;
   while (waitpid(child, &status, 0) < 0) {
@@ -3346,8 +3438,8 @@ static void install_limits(void) {
   struct rlimit limit;
   limit.rlim_cur = limit.rlim_max = 0;
   if (setrlimit(RLIMIT_CORE, &limit) != 0) fail("setrlimit core");
-  limit.rlim_cur = 1;
-  limit.rlim_max = 2;
+  limit.rlim_cur = (rlim_t)kexe_cpu_seconds;
+  limit.rlim_max = (rlim_t)kexe_cpu_seconds + 1;
   if (setrlimit(RLIMIT_CPU, &limit) != 0) fail("setrlimit cpu");
 #if !defined(__APPLE__) && !defined(KEXE_SANITIZER_TEST)
   /* ASan owns a platform-dependent shadow address space, so the sanitizer
@@ -3373,7 +3465,11 @@ static void install_limits(void) {
   for (size_t i = 0; i < sizeof(signals) / sizeof(signals[0]); i++) {
     if (sigaction(signals[i], &action, NULL) != 0) fail("sigaction");
   }
-  alarm(2);
+  /* The child's own wall alarm, one second inside the supervisor's so that
+   * SIGALRM is reported by this handler before the supervisor's SIGKILL is
+   * -- the 2-inside-3 relation the two literals had, kept as the budget
+   * moves. A one-second wall budget leaves the two coincident. */
+  alarm((unsigned int)(kexe_wall_seconds > 1 ? kexe_wall_seconds - 1 : 1));
 }
 
 #if defined(__linux__) && !defined(KEXE_SANITIZER_TEST)
@@ -3716,6 +3812,30 @@ int main(int argc, char **argv) {
     }
   }
 #endif
+#ifdef KEXE_EMBEDDED
+  kexe_cpu_seconds = KEXE_EMBEDDED_CPU_SECONDS;
+  kexe_wall_seconds = KEXE_EMBEDDED_WALL_SECONDS;
+#else
+  const char *cpu_env = getenv("KEXE_CPU_SECONDS");
+  if (cpu_env != NULL && cpu_env[0] != '\0') {
+    if (parse_u64(cpu_env, &kexe_cpu_seconds) != 0 || kexe_cpu_seconds == 0) {
+      fprintf(stderr, "kexe-loader: KEXE_CPU_SECONDS must be a positive decimal integer\n");
+      return 2;
+    }
+  }
+  const char *wall_env = getenv("KEXE_WALL_SECONDS");
+  if (wall_env != NULL && wall_env[0] != '\0') {
+    if (parse_u64(wall_env, &kexe_wall_seconds) != 0 || kexe_wall_seconds == 0) {
+      fprintf(stderr, "kexe-loader: KEXE_WALL_SECONDS must be a positive decimal integer\n");
+      return 2;
+    }
+  }
+#endif
+  if (kexe_cpu_seconds > KEXE_SECONDS_MAX || kexe_wall_seconds > KEXE_SECONDS_MAX) {
+    fprintf(stderr, "kexe-loader: KEXE_CPU_SECONDS / KEXE_WALL_SECONDS exceed the %u-second ceiling\n",
+            (unsigned)KEXE_SECONDS_MAX);
+    return 2;
+  }
   if (kexe_pair_budget > KEXE_PAIR_MAX) {
     fprintf(stderr, "kexe-loader: KEXE_PAIRS exceeds the %u-entry ceiling\n",
             (unsigned)KEXE_PAIR_MAX);
@@ -3839,6 +3959,10 @@ int main(int argc, char **argv) {
   }
   shared->result = result;
   shared->completed = 1;
+  /* Everything wire 37 accepted reaches fd 1 before the loader's own report
+   * or the exit status does. A flush that fails here is a real write error
+   * on fd 1, reported the way a failed write inside the wire is. */
+  if (!kexe_stdout_flush()) raise(SIGILL);
   if (!structured_report && !command_mode) write_i64(result);
 
   if (munmap(memory, mapped) != 0) fail("munmap");

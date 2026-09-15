@@ -29,6 +29,18 @@ production-strength VM sandbox remain absent.
 
 ### Current capabilities (state so far)
 
+- **Buffered command output, CPU/wall budgets, larger arena ceilings**
+  (2026-09-15) — the native loader buffers wire 37 (`:io/write`) in 64 KiB
+  and flushes before every wire-39 diagnostic and on every exit path
+  including a trap, so a count the wire answered is never a count of bytes
+  that did not arrive. `KEXE_CPU_SECONDS` / `KEXE_WALL_SECONDS` (and
+  `package-command.cljk --cpu-seconds / --wall-seconds`) turn the child's
+  RLIMIT_CPU 1 s and alarm 3 s literals into budgets with unchanged
+  defaults. `KEXE_PAIR_MAX` is 64 Mi handles and `KEXE_STRING_POOL_MAX`
+  1 GiB (address space; defaults unchanged); `:fs/browse` has no entry-count
+  bound beyond the string pool budget. `npm run test-package-command`
+  measures the three behaviours in both directions; the unmodified loader
+  fails two of its eight checks.
 - **Explicit POSIX string SIMD** — checked native string equality retains its
   bounded-handle and canonical UTF-8 validation, then compares 16-byte chunks
   with NEON on AArch64 or SSE2 on x86-64. The loader identity, executor pin,

@@ -1,0 +1,163 @@
+;; scripts/test-package-command.cljk — the packaged-command behaviours that
+;; tools/kexe_loader.c promises and nothing else measured (2026-09-15).
+;;
+;; Three promises, each checked in BOTH directions where it has two:
+;;
+;;   1. Standard output is buffered, and a diagnostic never overtakes the
+;;      output the guest wrote before it: `one` / `diag` / `two` arrives as
+;;      stdout "one\ntwo\n" and stderr "diag\n".
+;;   2. Bytes wire 37 has already answered a count for reach fd 1 even when
+;;      the guest TRAPS afterwards -- the count would otherwise be a lie.
+;;   3. `--cpu-seconds` is a budget: a guest that burns more CPU than it
+;;      names dies of SIGXCPU (exit 120, reason on stderr), and the SAME
+;;      guest under a larger budget completes. Load on the machine cannot
+;;      turn the passing arm red, because RLIMIT_CPU counts CPU seconds and
+;;      not wall seconds; the refusing arm is pinned to its reason literal.
+;;
+;; A fourth is the packager's own refusal of a non-decimal budget, so the
+;; flag cannot be silently ignored.
+;;
+;;   node bin/kbb --backend sci scripts/test-package-command.cljk
+;;
+;; Exit 0 when every check passed, 1 on a failure, 2 when it could not run.
+(ns scripts.test-package-command
+  (:require [clojure.string :as str]
+            ["node:child_process" :as child]
+            ["node:fs" :as fs]
+            ["node:os" :as os]
+            ["node:path" :as path]))
+
+(def root (.resolve path (.dirname path *file*) ".."))
+(def tmp (.mkdtempSync fs (.join path (.tmpdir os) "amu-package-command-")))
+(def amu (.join path root "bin" "amu"))
+(def packager (.join path root "scripts" "package-command.cljk"))
+(def kbb (.join path root "bin" "kbb"))
+(defn file [name] (.join path tmp name))
+
+(defn- refuse [message]
+  (println (pr-str {:ok false :phase :setup :message message}))
+  (.exit js/process 2))
+
+(defn run
+  ([command args] (run command args nil))
+  ([command args input]
+   (let [r (.spawnSync child command (clj->js args)
+                       #js {:cwd root :encoding "utf8" :maxBuffer 16777216 :input input})]
+     (when (.-error r) (throw (.-error r)))
+     {:status (.-status r) :out (or (.-stdout r) "") :err (or (.-stderr r) "")})))
+
+;; The guest: two lines around a diagnostic, then a loop that burns CPU for
+;; as many iterations as argument 0 names, then -- when argument 1 is
+;; "trap" -- a deliberate trap after one more line. Argument 0 is decimal
+;; text, parsed here because wire 38 answers text.
+(def guest
+  "(ns probe.core (:export [main]))
+(defn arg [i :string] :string (typed-cap-call :cli/args :string :string i))
+(defn emit [s :string] :string (typed-cap-call :io/write :string :string s))
+(defn emit-error [s :string] :string (typed-cap-call :io/write-error :string :string s))
+(defn nl [] :string (string-substring \"a
+b\" 1 2))
+(defn digit-value [s :string i :i64] :i64
+  (let [c (string-code-point-at s i)] (if (< c 48) -1 (if (> c 57) -1 (- c 48)))))
+(defn text->i64 [s :string i :i64 n :i64 acc :i64] :i64
+  (if (>= i n) acc (text->i64 s (+ i 1) n (+ (* acc 10) (digit-value s i)))))
+(defn spin [i :i64 stop :i64 acc :i64] :i64
+  (if (>= i stop) acc (spin (+ i 1) stop (+ acc (quot i 7)))))
+(defn main [] :i64
+  (do
+    (emit \"one\") (emit (nl))
+    (emit-error \"diag\") (emit-error (nl))
+    (emit \"two\") (emit (nl))
+    (if (< (spin 0 (text->i64 (arg \"0\") 0 (string-byte-length (arg \"0\")) 0) 0) 0)
+      7
+      (if (string=? (arg \"1\") \"trap\")
+        (do (emit \"three\") (emit (nl))
+            (string-code-point-at \"\" 0))
+        0))))
+")
+
+(def failures (atom 0))
+(defn check! [label ok? detail]
+  (println (str (if ok? "PASS " "FAIL ") label (when-not ok? (str " -- " (pr-str detail)))))
+  (when-not ok? (swap! failures inc)))
+
+(def extract (atom nil))
+
+(defn package! [name cpu-seconds]
+  (let [out (file name)
+        r (run js/process.execPath
+               [kbb "--backend" "sci" packager
+                "--code" (file "probe.bin") "--offset" (str (:offset @extract))
+                "--isa" (:isa @extract) "--allow" "37,38,39"
+                "--fuel" "100000000000" "--pairs" "100000" "--string-pool" "1000000"
+                "--cpu-seconds" (str cpu-seconds) "--wall-seconds" "600"
+                "--output" out])]
+    (when (not= 0 (:status r)) (refuse (str "package failed: " (:err r) (:out r))))
+    out))
+
+(when-not (.existsSync fs amu) (refuse (str "no amu at " amu)))
+(.writeFileSync fs (file "probe.kotoba") guest "utf8")
+(.writeFileSync fs (file "policy.edn")
+                "{:allow #{[:cap/call 37] [:cap/call 38] [:cap/call 39]}}" "utf8")
+(let [isa (if (contains? #{"arm64" "aarch64"} (.arch os)) "aarch64" "x86_64")
+      target (if (= isa "aarch64") "aarch64-macos" "x86_64-linux")
+      c (run js/process.execPath [amu "compile" (file "probe.kotoba") "--target" target
+                                  "--jvm-free" "--policy" (file "policy.edn")
+                                  "--output" (file "probe.kexe")])]
+  (when (not= 0 (:status c)) (refuse (str "compile failed: " (:err c) (:out c))))
+  (let [e (run js/process.execPath [amu "extract-native" (file "probe.kexe")
+                                    "--symbol" "main" "--output" (file "probe.bin")])
+        offset (second (re-find #":offset (\d+)" (:out e)))]
+    (when (or (not= 0 (:status e)) (nil? offset))
+      (refuse (str "extract failed: " (:err e) (:out e))))
+    (reset! extract {:offset offset :isa isa})))
+
+;; 1. Ordering across the buffer: stdout carries both lines, stderr the
+;;    diagnostic, and the exit status is the guest's answer.
+(let [exe (package! "probe-order" 60)
+      r (run exe ["1" "-"])]
+  (check! "stdout is buffered and complete" (= "one\ntwo\n" (:out r)) r)
+  (check! "the diagnostic reaches stderr" (= "diag\n" (:err r)) r)
+  (check! "the exit status is the guest's answer" (= 0 (:status r)) r))
+
+;; 2. The buffer survives a trap: `three` was answered with a count of 6
+;;    before the guest trapped, so it must be on fd 1 beside the trap report.
+(let [exe (package! "probe-trap" 60)
+      r (run exe ["1" "trap"])]
+  (check! "bytes counted before a trap reach stdout"
+          (= "one\ntwo\nthree\n" (:out r)) r)
+  (check! "the trap is reported as SIGILL, exit 120"
+          (and (= 120 (:status r))
+               (str/includes? (:err r) "KEXE_TRAP {:kind :signal :signal :SIGILL}"))
+          r))
+
+;; 3. The CPU budget, both directions, on one guest and one iteration count.
+;;    Three thousand million iterations is several CPU seconds on any
+;;    machine this runs on; the refusing arm names one second.
+(let [iterations "3000000000"
+      tight (package! "probe-cpu-1" 1)
+      r (run tight [iterations "-"])]
+  (check! "over the CPU budget: SIGXCPU, exit 120, output so far kept"
+          (and (= 120 (:status r))
+               (str/includes? (:err r) "KEXE_TRAP {:kind :signal :signal :SIGXCPU}")
+               (= "one\ntwo\n" (:out r)))
+          r))
+(let [wide (package! "probe-cpu-60" 60)
+      r (run wide ["3000000000" "-"])]
+  (check! "under the CPU budget: the same guest completes"
+          (and (= 0 (:status r)) (= "one\ntwo\n" (:out r)))
+          r))
+
+;; 4. The packager refuses a budget that is not a positive decimal.
+(let [r (run js/process.execPath
+             [kbb "--backend" "sci" packager
+              "--code" (file "probe.bin") "--offset" (str (:offset @extract))
+              "--isa" (:isa @extract) "--allow" "37,38,39"
+              "--cpu-seconds" "0" "--output" (file "probe-refused")])]
+  (check! "--cpu-seconds 0 is refused by the packager"
+          (and (= 2 (:status r))
+               (str/includes? (:out r) "--cpu-seconds must be a positive decimal"))
+          r))
+
+(println (str "SCANNED\t" 8 "\tFAILED\t" @failures))
+(.exit js/process (if (zero? @failures) 0 1))
