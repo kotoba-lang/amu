@@ -154,14 +154,16 @@
               :vector-alloc-offset 200
               :vector-assoc-in-place-offset 208
               :string-index-of-offset 216
+              :arena-enter-offset 224
+              :arena-leave-offset 232
               :vector-capacity 4096
               :vector-item-capacity 65536}
              (:context-abi artifact))))))
 
-;; The version field is not decoration. A v3 host has no slots at 200-208 and
-;; a v4 host none at 216, so code compiled against a newer ABI that called
-;; them would jump through uninitialised memory -- the one-directional hazard
-;; each bump exists for. The loader's half is that
+;; The version field is not decoration. A v3 host has no slots at 200-208, a
+;; v4 host none at 216 and a v5 host none at 224-232, so code compiled against
+;; a newer ABI that called them would jump through uninitialised memory -- the
+;; one-directional hazard each bump exists for. The loader's half is that
 ;; every `checked_*` refuses a context whose version is not exactly its own;
 ;; this is the other half, and it fires EARLIER: an artifact naming any other
 ;; ABI is refused before a loader is ever handed it.
@@ -171,17 +173,20 @@
 ;; for equality, so one check answers all of them. They are listed separately
 ;; because a reader looking for "is a downgraded version caught" should find
 ;; that question asked in those words.
-(deftest a-context-abi-that-is-not-v5-is-refused-by-name
+(deftest a-context-abi-that-is-not-v6-is-refused-by-name
   (let [kexe (:artifact (compiler/compile-source "(defn main [] 42)"
                                                  :aarch64-kotoba-v1 {}))
         refusal (fn [m]
                   (try (verifier/verify-artifact! (artifact/seal (dissoc m :sha256)))
                        :ACCEPTED
                        (catch clojure.lang.ExceptionInfo e (ex-message e))))]
-    (is (= 5 (get-in kexe [:context-abi :version])))
+    (is (= 6 (get-in kexe [:context-abi :version])))
     (is (= "execution context ABI is not admitted"
-           (refusal (assoc-in kexe [:context-abi :version] 4)))
+           (refusal (assoc-in kexe [:context-abi :version] 5)))
         "a downgraded version field")
+    (is (= "execution context ABI is not admitted"
+           (refusal (update kexe :context-abi dissoc :arena-enter-offset :arena-leave-offset)))
+        "a table without the v6 pair, which is what a v5 producer emits")
     (is (= "execution context ABI is not admitted"
            (refusal (update kexe :context-abi dissoc :string-index-of-offset)))
         "a table without the v5 slot, which is what a v4 producer emits")
