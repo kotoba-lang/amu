@@ -1,0 +1,32 @@
+(ns examples.arena-scope)
+
+;; `(arena-scope body)` -- superproject ADR-2609160044, context ABI v6. Every
+;; handle and byte allocated while the body runs is released afterwards.
+;;
+;; The loop below builds a 10-byte string and measures it, N times. Without
+;; the scope every iteration leaves a concatenation (10 pool bytes, a handle)
+;; and a substring view (a handle) behind, so 20,000 iterations need 200,000
+;; pool bytes and 40,000 handles; with the scope the arena returns to its
+;; mark every iteration and the whole run needs 10 bytes and two handles.
+;; The conformance runs `scoped` and `unscoped` under a 64 KiB pool and 4,096
+;; handles -- the loader's DEFAULT budgets -- and expects `scoped` to answer
+;; 200000 and `unscoped` to trap. Measured both ways, not computed and
+;; trusted.
+(defn step [i :i64] :i64
+  (string-byte-length (string-substring (string-concat "01234" "56789") 0 10)))
+
+(defn scoped-from [i :i64 n :i64 acc :i64] :i64
+  (if (>= i n)
+    acc
+    (scoped-from (+ i 1) n (+ acc (arena-scope (step i))))))
+
+(defn unscoped-from [i :i64 n :i64 acc :i64] :i64
+  (if (>= i n)
+    acc
+    (unscoped-from (+ i 1) n (+ acc (step i)))))
+
+(defn scoped [n] (scoped-from 0 n 0))
+
+(defn unscoped [n] (unscoped-from 0 n 0))
+
+(defn main [] 0)

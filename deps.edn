@@ -606,7 +606,9 @@
          ;; a [:set :keyword] through a closure parameter -> 2; a document
          ;; through a closure that document-merges {:b 40}, read at :b -> 40;
          ;; the locked pin refused the same source, exit 65.
-         "cac05453252c1782ed2920f00a54bf52ee1ab5aa"}
+         ;; Advanced 2026-09-16 to 31826c1 (kotoba-sema main, forward only, its
+         ;; #81): the `arena-scope` region operation with its scalar-body rule.
+         "31826c10763fa34f7915b562c0e5ffa7db811525"}
         ;; ADR-2607266000 Phase B: these responsibilities moved out of this repo.
         ;;
         ;; The slice-value stream held this pin on purpose (ADR 0314), because
@@ -767,7 +769,9 @@
          ;; `gh api .../compare`, ahead 2 behind 0): the reader-conditional
          ;; `:default` clause so the Kotoba reader reads src/kotoba/kir/definition_identity.cljk
          ;; (adr-2609111900).
-         :git/sha "b8fbdaadf54275b4e351fab87186a00ad8f493aa"}
+         ;; Advanced 2026-09-16 to 1863a8d (osaho main, forward only, its #90): the
+         ;; `arena-scope` head, the identity in the reference interpreter.
+         :git/sha "1863a8def653b77ba5628acb1f216d3dc975a6dd"}
         ;; The frontend is an HIR producer and KIR lowering is its consumer;
         ;; both validate the same checked envelope.
         io.github.kotoba-lang/kotoba-hir
@@ -856,7 +860,9 @@
          ;; identity mismatch", test-nbb-run), which is the pin doing its job.
          ;; Advanced 2026-09-15, 2135fdd -> 496d498 (artifact main, its #33):
          ;; the string-concat tail append moves both loader identities again.
-         :git/sha "496d498356859a127283c832691bcc1a37d9a496"}
+         ;; Advanced 2026-09-16 to 5f09521 (artifact main, its #34): both loader
+         ;; identities move with the ABI v6 arena-scope pair in this landing.
+         :git/sha "5f095217cdb5e11162de465353da3388d12896ef"}
         ;; HELD at 1a2e10c on 2026-09-03 (ADR 0331), 28 commits behind its main,
         ;; while every other pin in this file moved to the tip. The reason, so
         ;; that a lagging pin and a pin with an argument behind it stay
@@ -1167,7 +1173,11 @@
          ;; 0-9, aiueos ADR-0213's installer half. aiueos carries the contract
          ;; (os/aiueos/contracts/install-intent-admit-v1.edn) and the parity
          ;; gate; without the row its object is refused at packaging.
-         :git/sha "7da60185ae3ef6e63ef5e94ffdc4d199fd1676b2"}
+         ;; Advanced 2026-09-16 to d259b18 (kotoba-native main, forward only, its
+         ;; #178 / ADR 0083): ABI v6 -- `(arena-scope body)` lowers to the
+         ;; enter / leave slots at 224 / 232, which tools/kexe_loader.c now
+         ;; supplies (superproject ADR-2609160044).
+         :git/sha "d259b184a2ae1218f01ab86f3829f9d3280d8fde"}
         io.github.kotoba-lang/kotoba-component
         {:git/url "https://github.com/kotoba-lang/kotoba-component.git"
          ;; Advanced 2026-09-11, ff2c3e8c -> cad39ab0 (kotoba-component main,
@@ -1363,7 +1373,9 @@
          ;; only, its #56): `expected-context` names ABI v5 with
          ;; `:string-index-of-offset 216`; the v5 artifacts this compiler now
          ;; seals are refused by any earlier verifier, by name.
-         :git/sha "a0d0799bff0529783d8b3fb000587204bddb3865"}
+         ;; Advanced 2026-09-16 to 8f6ee07 (kotoba-verifier main, forward only,
+         ;; its #57): expected-context v6, the arena-scope scalar-shape rule.
+         :git/sha "8f6ee07cbb881782984bf3127491d48e6e1c0dc1"}
 
         ;; EXPLICIT FLOORS FOR TRANSITIVE DEPENDENCIES (2026-09-12, adr-2609111900
         ;; source-side wave). None of the eight coordinates below was named in
@@ -1453,13 +1465,15 @@
          ;; 1a1c4358 -> b82463c2 (kotoba-mir main, ahead 6, behind 0)
          ;; b82463c2 -> 1a6424c8 (2026-09-15, its #65): `:string-index-of 216`
          ;; in runtime-context-offsets, ABI v5.
-         :git/sha "1a6424c889e335a7b71cac4edeb042e689475861"}
+         ;; 1a6424c8 -> b33e90d8 (2026-09-16, its #66): offsets 224 / 232.
+         :git/sha "b33e90d84370f75b3c1a7968ca7f3197bea45bfb"}
         io.github.kotoba-lang/kotoba-gmir
         {:git/url "https://github.com/kotoba-lang/kotoba-gmir.git"
          ;; a3f0597c -> a4b682c4 (kotoba-gmir main, ahead 6, behind 0)
          ;; a4b682c4 -> 8e572968 (2026-09-15, its #31): `:string-index-of 2`
          ;; in runtime-operation-arities, ABI v5.
-         :git/sha "8e5729684c30720eb1be37170677ddc062b4d171"}
+         ;; 8e572968 -> 966bb4ca (2026-09-16, its #32): :arena-enter / :arena-leave.
+         :git/sha "966bb4ca8cd9fa48b1ee0d7cd30ccca711d91d92"}
         ;; org-nist-sha2: named by osaho f404babb as cb67e53e. Its main adds
         ;; `text` as a dependency (already here) and moves amu / osaho into
         ;; the :test alias, so the closure does not grow.

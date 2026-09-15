@@ -29,6 +29,18 @@ production-strength VM sandbox remain absent.
 
 ### Current capabilities (state so far)
 
+- **Context ABI v6: `(arena-scope body)`, the region reset** (2026-09-16,
+  superproject ADR-2609160044) — `arena_enter` / `arena_leave` at 224 /
+  232 push and pop the four arena marks (pairs, pool, vectors, vector
+  items), so every handle and byte a scalar-typed body allocates is
+  released when it returns. The safety argument is the type rule held by
+  kotoba-sema 31826c1 and re-derived on shape by kotoba-verifier 8f6ee07;
+  kotoba-native d259b18 (ADR 0083) emits the pair only as the head's
+  lowering, osaho 1863a8d answers the identity. `examples/arena-scope.kotoba`
+  runs the same 20,000-iteration loop both ways under the loader's DEFAULT
+  budgets in `jdk-free-native-conformance`: scoped answers 200000, unscoped
+  traps. The fuzz harness reaches the pair unpaired, so the depth-0 leave
+  and the depth bound are fuzzed. Windows loader in step.
 - **string-concat tail append** (2026-09-15) — when the first operand is
   the string pool's last allocation, `checked_string_concat` copies and
   charges only the second and answers a longer view of the same bytes

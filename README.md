@@ -1165,6 +1165,12 @@ v3. `examples/string-index-of.kotoba` is executed under the loader by
 allocation (2026-09-15): only the second operand is copied and charged, so
 an accumulator kept at the tail is a string builder rather than a quadratic
 copy; `examples/tail-append.kotoba` measures it both ways.
+Context ABI **v6** (2026-09-16, superproject ADR-2609160044) adds
+`arena_enter` / `arena_leave` at 224 / 232: `(arena-scope body)` releases
+every handle and byte the body allocated when it returns, and the body's
+type is held to `:i64` / `:bool` / `:f64` by the frontend and the verifier
+so nothing can escape. `examples/arena-scope.kotoba` is executed both ways
+under the default budgets by `jdk-free-native-conformance`.
 This permits bounded recursion while guaranteeing that recursive cycles trap.
 x86-64 reserves r9 and AArch64 reserves x7 for a loader-owned fuel-context
 pointer; both charge every function entry before guest instructions. Their real

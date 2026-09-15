@@ -180,7 +180,20 @@
              ;; the loader before the fast path answers KEXE_TRAP here.
              {:source "tail-append.kotoba" :symbol "appended"
               :arguments ["20000"] :expected "200000"
-              :env {"KEXE_STRING_POOL" "1048576" "KEXE_FUEL" "1000000" "KEXE_PAIRS" "100000"}}]]
+              :env {"KEXE_STRING_POOL" "1048576" "KEXE_FUEL" "1000000" "KEXE_PAIRS" "100000"}}
+             ;; ABI v6 (2026-09-16, ADR-2609160044): the region reset. The
+             ;; SAME loop, under the loader's default 64 KiB pool and 4,096
+             ;; handles: scoped, every iteration returns to its mark and
+             ;; 20,000 of them answer 200000; unscoped, they leave 200,000
+             ;; bytes and 40,000 handles behind and the loader traps. Both
+             ;; are run, so the scope is measured to do something rather
+             ;; than merely to be emitted.
+             {:source "arena-scope.kotoba" :symbol "scoped"
+              :arguments ["20000"] :expected "200000"
+              :env {"KEXE_FUEL" "1000000"}}
+             {:source "arena-scope.kotoba" :symbol "unscoped"
+              :arguments ["20000"] :expected :trap
+              :env {"KEXE_FUEL" "1000000"}}]]
       (let [artifact (file (str symbol ".kexe"))
             binary (file (str symbol ".bin"))]
         (invoke ["compile" (.join path root "examples" source)
@@ -194,10 +207,16 @@
                                     arguments)
                               (if-let [extra (:env case)]
                                 (js/Object.assign #js {} env (clj->js extra))
-                                env))]
-            (ensure! (= expected (str/trim (:stdout executed)))
-                     (str "native " symbol " expected " expected ", got "
-                          (str/trim (:stdout executed))))))))
+                                env)
+                              (= :trap expected))]
+            (if (= :trap expected)
+              (ensure! (and (= 120 (:status executed))
+                            (str/includes? (:stderr executed) "KEXE_TRAP {:kind :signal :signal :SIGILL}"))
+                       (str "native " symbol " expected KEXE_TRAP SIGILL, got exit "
+                            (:status executed) " " (str/trim (:stdout executed))))
+              (ensure! (= expected (str/trim (:stdout executed)))
+                       (str "native " symbol " expected " expected ", got "
+                            (str/trim (:stdout executed)))))))))
     ;; The oracle's budget is the caller's. `kotoba.kir/lower` seals a pure
     ;; entry's value by EXECUTING it, and that execution used to run on a
     ;; private 100,000 that no flag could reach: `--fuel` went to the
