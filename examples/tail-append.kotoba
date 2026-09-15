@@ -1,0 +1,28 @@
+(ns examples.tail-append)
+
+;; A string builder, written as the loader now allows (2026-09-15): an
+;; accumulator that is kept at the TAIL of the string pool and has views
+;; appended to it. `checked_string_concat` charges only the appended bytes
+;; when its first operand is the pool's last allocation, so this grows in
+;; 200,000 bytes of pool -- where copying the accumulator on every step, as
+;; every earlier loader did, is 10 * 20000^2 / 2 = 2 GB and traps under the
+;; 1 MiB budget the conformance runs this with. Measured both ways: the
+;; loader before the fast path answers KEXE_TRAP SIGILL here, this one
+;; answers 200000.
+;;
+;; The first append copies (the accumulator starts as a view of a literal,
+;; which lives in the code region, not the pool); every append after it is
+;; in place, because the result of an append is itself the tail.
+(defn build [acc :string i :i64 n :i64] :string
+  (if (>= i n)
+    acc
+    (build (string-concat acc "0123456789") (+ i 1) n)))
+
+;; N is an argument rather than a literal so that `amu compile` does not
+;; seal the value by running 20,000 steps through the oracle at compile
+;; time; the loader is where this is measured. `main` must take none, so
+;; the entry the conformance calls is `appended`.
+(defn appended [n]
+  (string-byte-length (build (string-substring "x" 0 0) 0 n)))
+
+(defn main [] 0)

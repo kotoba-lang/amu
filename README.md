@@ -1161,6 +1161,10 @@ source rewrite in kotoba-native; `kotoba-verifier` admits version 5 with
 `:string-index-of-offset 216` and refuses a v4 artifact by name, as v4 did
 v3. `examples/string-index-of.kotoba` is executed under the loader by
 `jdk-free-native-conformance`.
+`string-concat` appends IN PLACE when its first operand is the pool's last
+allocation (2026-09-15): only the second operand is copied and charged, so
+an accumulator kept at the tail is a string builder rather than a quadratic
+copy; `examples/tail-append.kotoba` measures it both ways.
 This permits bounded recursion while guaranteeing that recursive cycles trap.
 x86-64 reserves r9 and AArch64 reserves x7 for a loader-owned fuel-context
 pointer; both charge every function entry before guest instructions. Their real
