@@ -1155,6 +1155,12 @@ measured on that tree, system time fell from 0.84 s to 0.49 s. The string
 pool and pair heap ceilings a caller may ask for are 1 GiB and 64 Mi handles
 (defaults unchanged); `:fs/browse` refuses a listing only when it does not
 fit the string pool budget, no longer at 4,096 entries.
+Context ABI **v5** (2026-09-15) adds `string_index_of` at offset 216: the
+byte search as one host call (memmem), where until v5 it was a per-byte
+source rewrite in kotoba-native; `kotoba-verifier` admits version 5 with
+`:string-index-of-offset 216` and refuses a v4 artifact by name, as v4 did
+v3. `examples/string-index-of.kotoba` is executed under the loader by
+`jdk-free-native-conformance`.
 This permits bounded recursion while guaranteeing that recursive cycles trap.
 x86-64 reserves r9 and AArch64 reserves x7 for a loader-owned fuel-context
 pointer; both charge every function entry before guest instructions. Their real
