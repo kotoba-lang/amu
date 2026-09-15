@@ -62,7 +62,25 @@
       (report! (and (= 65 (.-status r)) (.includes (str (.-stderr r)) "no exported test-* definitions"))
                "a source with no tests is refused by name (65)" (str "exit " (.-status r) " " (.-stderr r))))
     (let [r (amu "test" passing "--jvm-free")]
-      (report! (zero? (.-status r)) "runs with --jvm-free" (str (.-stderr r)))))
+      (report! (zero? (.-status r)) "runs with --jvm-free" (str (.-stderr r))))
+    ;; --source-path (2026-09-16): the tests of a linked unit. A root that
+    ;; requires a template module -- the only place a template's tests can
+    ;; live -- and one all-i64 test, so every target runs it. Without the
+    ;; flag the same root is refused (its :require is unresolved), which is
+    ;; the sentence a caller who forgot the flag reads.
+    (let [lib-dir (lib/join directory "linked" "twice")
+          root (lib/join directory "linked" "root.kotoba")]
+      (.mkdirSync fs lib-dir #js {:recursive true})
+      (lib/write-text! (lib/join lib-dir "core.kotoba")
+                       "(ns twice.core (:params [elem]) (:export [apply-twice]))\n(defn apply-twice [f [:fn [[:i64] :i64]] x :i64] :i64 (f (f x)))\n")
+      (lib/write-text! root
+                       "(ns root (:require [twice.core :as tw :with {elem :i64}]) (:export [test-linked]))\n(defn- inc1 [x :i64] :i64 (+ x 1))\n(defn test-linked [] :i64 (if (= 7 (tw/apply-twice (fn [x] (inc1 x)) 5)) 1 0))\n")
+      (let [r (amu "test" root "--source-path" (lib/join directory "linked"))]
+        (report! (zero? (.-status r)) "--source-path: a root requiring a template module runs its tests" (str (.-stdout r) (.-stderr r)))
+        (report! (.includes (str (.-stdout r)) "kotoba test: 3/3 passed")
+                 "--source-path: one linked test on three targets: 3/3" (str (.-stdout r))))
+      (let [r (amu "test" root)]
+        (report! (pos? (.-status r)) "without --source-path the same root is refused" (str (.-stdout r))))))
   (finally (lib/remove-tree! directory)))
 
 (let [{:keys [pass fail]} @checks]

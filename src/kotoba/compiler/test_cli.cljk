@@ -10,8 +10,18 @@
   reads the status."
   {:kotoba/export [run]}
   (:require [kotoba.compiler.bounded-edn :as bounded-edn]
+            [kotoba.compiler.project :as project]
+            [kotoba.compiler.project-files :as project-files]
             [kotoba.compiler.source-path :as source-path]
             [kotoba.compiler.test-profile :as test-profile]))
+
+(defn- source-paths
+  "Every `--source-path <dir>` in ARGS, in order."
+  [args]
+  (loop [args args acc []]
+    (cond (empty? args) acc
+          (= "--source-path" (first args)) (recur (nnext args) (conj acc (second args)))
+          :else (recur (next args) acc))))
 
 (defn- flat-results [report]
   (mapcat (fn [[target rows]] (map #(assoc % :target target) rows))
@@ -31,13 +41,26 @@
                  (str " FAIL " (:test r) " target=" (:target r) " " (or (:error r) ""))))}))
 
 (defn run
-  "ARGS as `bin/amu` hands them: `test <file> [--json] [--fuel <n>]`.
+  "ARGS as `bin/amu` hands them: `test <file> [--json] [--fuel <n>]
+  [--source-path <dir> ...]`.
   Returns `{:report r :json? bool}`; the report's `:ok` decides the exit
   status. `--fuel` is the per-test budget (each test runs on a fresh
   instance); a value that is not a positive decimal integer is refused by
-  name, as `amu compile --fuel` refuses it."
+  name, as `amu compile --fuel` refuses it.
+
+  `--source-path` (2026-09-16): the tests of a module that `(:require ...)`s
+  others -- a template module's tests in particular, which can only exist
+  in an importer that binds its `:params` -- are the exported `test-*` of
+  the LINKED unit, the same closed graph `compile --source-path` links
+  through `project/link-source`. Without this flag such a file was refused
+  as a malformed `:export` / unresolved namespace, so a project's tests
+  could be compiled but never run."
   [args]
   (let [input (source-path/admit! (second args))
+        roots (source-paths args)
+        linked (when (seq roots)
+                 (let [graph (project-files/load-closed-graph input roots)]
+                   (project/link-source (:sources graph) (:root graph))))
         json? (boolean (some #{"--json"} args))
         fuel (when (some #{"--fuel"} args)
                (let [text (second (drop-while #(not= "--fuel" %) args))]
@@ -45,6 +68,8 @@
                    (throw (ex-info "--fuel must be a positive decimal integer"
                                    {:phase :usage :fuel text})))
                  #?(:clj (Long/parseLong text) :cljs (js/parseInt text 10))))
-        report (test-profile/run-source (bounded-edn/read-text-file input)
-                                        (cond-> {} fuel (assoc :fuel fuel)))]
+        report (test-profile/run-source (if linked (:source linked) (bounded-edn/read-text-file input))
+                                        (cond-> {}
+                                          fuel (assoc :fuel fuel)
+                                          linked (assoc :admit-linked-synthetics? true)))]
     {:report report :json? json?}))

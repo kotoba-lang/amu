@@ -13,6 +13,7 @@
 amu test path/to/tests.kotoba
 amu test path/to/tests.kotoba --json
 amu test path/to/tests.kotoba --fuel 5000000   # per-test budget (ADR 0349)
+amu test path/to/root.kotoba --source-path src   # a linked project: the root requires other modules (ADR 0350)
 ```
 
 Human mode prints `kotoba test: P/T passed` and lists failures.

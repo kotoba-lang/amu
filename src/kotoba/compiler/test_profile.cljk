@@ -17,8 +17,8 @@
 
 (def targets [:jvm-kir :js :wasm])
 
-(defn- harness-source [source]
-  (let [hir (sema/analyze source)]
+(defn- harness-source [source analyze-opts]
+  (let [hir (sema/analyze source analyze-opts)]
     (if (some #(= 'main (:name %)) (:functions hir))
       source
       ;; The admitted Wasm browser host requires the conventional `main`
@@ -203,12 +203,15 @@
   into the js/wasm probes and handed to the interpreter; every test runs on
   its own instance, so the budget is per test."
   ([source] (run-source source {}))
-  ([source {:keys [fuel]}]
-  (let [source (harness-source source)
-        checked {:hir (sema/analyze source)}
+  ([source {:keys [fuel admit-linked-synthetics?]}]
+  (let [;; A LINKED unit (`amu test --source-path`) carries the linker's
+        ;; `__kotoba_` names; the same seam `compile --source-path` opens.
+        analyze-opts (cond-> {} admit-linked-synthetics? (assoc :admit-linked-synthetics? true))
+        source (harness-source source analyze-opts)
+        checked {:hir (sema/analyze source analyze-opts)}
         policy (test-policy checked fuel)
-        js (compiler/compile-source source :js-kotoba-v1 policy)
-        wasm (compiler/compile-source source :wasm32-kotoba-v1 policy)
+        js (compiler/compile-source source :js-kotoba-v1 policy analyze-opts)
+        wasm (compiler/compile-source source :wasm32-kotoba-v1 policy analyze-opts)
         kir (:kir js)
         tests (tests-in kir)
         cap-ids (capability-ids kir)
