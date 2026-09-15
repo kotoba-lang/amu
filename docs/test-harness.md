@@ -10,12 +10,18 @@
 ## CLI
 
 ```bash
-kbb -M:run test path/to/tests.kotoba
-kbb -M:run test path/to/tests.kotoba --json
+amu test path/to/tests.kotoba
+amu test path/to/tests.kotoba --json
+amu test path/to/tests.kotoba --fuel 5000000   # per-test budget (ADR 0349)
 ```
 
 Human mode prints `kotoba test: P/T passed` and lists failures.
 `--json` prints the full report EDN/JSON-friendly map.
+
+Every test runs on its own instance on the js and wasm probes, so the fuel
+budget (`--fuel`, default 512) is per test. The interpreter target traps
+self-recursion deeper than 100 frames whatever the budget (reported as
+`fuel-exhausted`); write such walks as `loop`.
 
 ## Fixture
 
