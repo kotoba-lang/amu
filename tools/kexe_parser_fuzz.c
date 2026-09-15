@@ -238,12 +238,30 @@ static void ds_clear(void) {
  * here and merely reads padding there -- but it is a defect either way, since
  * `code_length` is the whole bound `resolve_string_bytes` and
  * `inspect_string_result` are given to work with. */
+/* The shared state is MAPPED, not malloc'ed, for the same reason the loader
+ * maps it: with the 2026-09-15 ceilings (64 Mi pair cells, 1 GiB string
+ * pool) the struct is 2.2 GB of address space, and libFuzzer's malloc hook
+ * refused the allocation as out-of-memory on the first seed input --
+ * `malloc(2215346616)` -- before any fuzzing happened. Anonymous zero pages
+ * fault in only as the bump allocators reach them, so the resident size
+ * stays what the input touches, and memset is neither needed nor wanted (it
+ * would touch every page and turn a ceiling into a cost). Two sites, one
+ * helper each way. */
+static struct kexe_shared_v5 *fuzz_map_shared(void) {
+  void *mapped = mmap(NULL, sizeof(struct kexe_shared_v5), PROT_READ | PROT_WRITE,
+                      MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  return mapped == MAP_FAILED ? NULL : (struct kexe_shared_v5 *)mapped;
+}
+
+static void fuzz_unmap_shared(struct kexe_shared_v5 *shared) {
+  if (shared != NULL) (void)munmap(shared, sizeof *shared);
+}
+
 static struct kexe_shared_v5 *fuzz_open(struct fuzz_cursor *cursor,
                                         uint8_t **code_out,
                                         uint64_t *code_length_out) {
-  struct kexe_shared_v5 *shared = (struct kexe_shared_v5 *)malloc(sizeof *shared);
+  struct kexe_shared_v5 *shared = fuzz_map_shared();
   if (shared == NULL) return NULL;
-  memset(shared, 0, sizeof *shared);
   /* At least one byte, never zero -- `main` refuses `length <= 0` before it
    * maps anything, so a live context always has a non-NULL `code_base` over at
    * least one byte. An empty region is a state the loader cannot be in, and
@@ -289,7 +307,7 @@ static struct kexe_shared_v5 *fuzz_open(struct fuzz_cursor *cursor,
 
 static void fuzz_close(struct kexe_shared_v5 *shared, uint8_t *code) {
   free(code);
-  free(shared);
+  fuzz_unmap_shared(shared);
 }
 
 /* ---------------------------------------------------------------------------
@@ -692,13 +710,12 @@ static void fuzz_parsers(const uint8_t *data, size_t size) {
   uint64_t case_count = 0, bool_mask = 0;
   (void)parse_variant_profile(text, &case_count, &bool_mask);
 
-  struct kexe_shared_v5 *shared = (struct kexe_shared_v5 *)malloc(sizeof *shared);
+  struct kexe_shared_v5 *shared = fuzz_map_shared();
   if (shared != NULL) {
-    memset(shared, 0, sizeof *shared);
     shared->context.version = 5;
     int64_t value = 0;
     (void)parse_guest_arg(shared, text, &value);
-    free(shared);
+    fuzz_unmap_shared(shared);
   }
 
   free(text);
