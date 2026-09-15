@@ -29,6 +29,14 @@ production-strength VM sandbox remain absent.
 
 ### Current capabilities (state so far)
 
+- **string-concat tail append** (2026-09-15) — when the first operand is
+  the string pool's last allocation, `checked_string_concat` copies and
+  charges only the second and answers a longer view of the same bytes
+  (nothing an existing handle covers changes). A guest that keeps its
+  accumulator at the tail and appends views to it now has an O(1)-per-byte
+  string builder; `examples/tail-append.kotoba` (20,000 appends under a
+  1 MiB pool) answers 200000 in `jdk-free-native-conformance` where the
+  loader before it traps. Windows loader in step.
 - **ABI v5: `string-index-of` is a host slot** (2026-09-15) — context
   offset 216, `checked_string_index_of` (memmem; an empty needle traps as
   in the reference interpreter), `kexe_context_v5`, every `checked_*`
