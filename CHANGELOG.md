@@ -29,6 +29,30 @@ production-strength VM sandbox remain absent.
 
 ### Current capabilities (state so far)
 
+- **ABI v5: `string-index-of` is a host slot** (2026-09-15) — context
+  offset 216, `checked_string_index_of` (memmem; an empty needle traps as
+  in the reference interpreter), `kexe_context_v5`, every `checked_*`
+  refusing any other version, the Windows loader in step (memchr +
+  memcmp). kotoba-native 9a98c3e emits the call and rewrites
+  `string-contains?` / `string-replace-all` onto it (its ADR 0082);
+  kotoba-verifier a0d0799 admits version 5 with `:string-index-of-offset
+  216` and refuses v4 by name; gmir 8e57296 / mir 1a6424c carry the arity
+  and the offset. Measured before: a packaged grep at 75 ns/byte, SIGILL
+  after 2 MB of a 3.3 MB file with the 4 Mi-handle arena spent one handle
+  per byte. `examples/string-index-of.kotoba` executes the host's answer
+  against the near-miss rows in `jdk-free-native-conformance`.
+- **Buffered command output, CPU/wall budgets, larger arena ceilings**
+  (2026-09-15) — the native loader buffers wire 37 (`:io/write`) in 64 KiB
+  and flushes before every wire-39 diagnostic and on every exit path
+  including a trap, so a count the wire answered is never a count of bytes
+  that did not arrive. `KEXE_CPU_SECONDS` / `KEXE_WALL_SECONDS` (and
+  `package-command.cljk --cpu-seconds / --wall-seconds`) turn the child's
+  RLIMIT_CPU 1 s and alarm 3 s literals into budgets with unchanged
+  defaults. `KEXE_PAIR_MAX` is 64 Mi handles and `KEXE_STRING_POOL_MAX`
+  1 GiB (address space; defaults unchanged); `:fs/browse` has no entry-count
+  bound beyond the string pool budget. `npm run test-package-command`
+  measures the three behaviours in both directions; the unmodified loader
+  fails two of its eight checks.
 - **Explicit POSIX string SIMD** — checked native string equality retains its
   bounded-handle and canonical UTF-8 validation, then compares 16-byte chunks
   with NEON on AArch64 or SSE2 on x86-64. The loader identity, executor pin,

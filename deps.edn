@@ -848,7 +848,13 @@
          ;; Advanced 2026-09-11, db66a090 -> 84d229c2 (artifact main, ahead 6,
          ;; behind 0, forward only): same wave as the text pin above --
          ;; `{:kotoba/export [...]}` on every module.
-         :git/sha "84d229c25b2b9782299eb94743e88c802d227569"}
+         ;; Advanced 2026-09-15, 84d229c -> 2135fdd (artifact main, its #32):
+         ;; both loader identities move with tools/kexe_loader.c and
+         ;; tools/kexe_loader_windows.c in this landing (buffered wire 37,
+         ;; CPU/wall budgets, arena ceilings, ABI v5). measure-runtime
+         ;; refuses the new loader under the old pin ("native loader source
+         ;; identity mismatch", test-nbb-run), which is the pin doing its job.
+         :git/sha "2135fdd9fbb2145437ad10981a86811620925231"}
         ;; HELD at 1a2e10c on 2026-09-03 (ADR 0331), 28 commits behind its main,
         ;; while every other pin in this file moved to the tip. The reason, so
         ;; that a lagging pin and a pin with an argument behind it stay
@@ -1146,7 +1152,12 @@
          ;; `gh api .../compare`, ahead 2 behind 0): the reader-conditional
          ;; `:default` clause so the Kotoba reader reads src/kotoba/native/machine_ir.cljk
          ;; (adr-2609111900).
-         :git/sha "77a48bd643bd58cfd9b208db50a23f828114215f"}
+         ;; Advanced 2026-09-15, 77a48bd -> 9a98c3e (kotoba-native main, forward
+         ;; only, its #176): ABI v5 -- `string-index-of` is context slot 216
+         ;; (its ADR 0082), which tools/kexe_loader.c now supplies. A backend
+         ;; before this emits the old per-byte rewrite and a loader before this
+         ;; has nothing at 216; the two move together in this commit.
+         :git/sha "9a98c3e23fd1feba3679b5414e34c84a51ea0406"}
         io.github.kotoba-lang/kotoba-component
         {:git/url "https://github.com/kotoba-lang/kotoba-component.git"
          ;; Advanced 2026-09-11, ff2c3e8c -> cad39ab0 (kotoba-component main,
@@ -1338,7 +1349,11 @@
          ;; `gh api .../compare`, ahead 2 behind 0): the reader-conditional
          ;; `:default` clause so the Kotoba reader reads src/kotoba/verifier.cljk
          ;; (adr-2609111900).
-         :git/sha "9cb3b0f7e92e0c949a132f4841098d7be980fca0"}
+         ;; Advanced 2026-09-15, 9cb3b0f -> a0d0799 (kotoba-verifier main, forward
+         ;; only, its #56): `expected-context` names ABI v5 with
+         ;; `:string-index-of-offset 216`; the v5 artifacts this compiler now
+         ;; seals are refused by any earlier verifier, by name.
+         :git/sha "a0d0799bff0529783d8b3fb000587204bddb3865"}
 
         ;; EXPLICIT FLOORS FOR TRANSITIVE DEPENDENCIES (2026-09-12, adr-2609111900
         ;; source-side wave). None of the eight coordinates below was named in
@@ -1426,11 +1441,15 @@
         io.github.kotoba-lang/kotoba-mir
         {:git/url "https://github.com/kotoba-lang/kotoba-mir.git"
          ;; 1a1c4358 -> b82463c2 (kotoba-mir main, ahead 6, behind 0)
-         :git/sha "b82463c2d3416601b6ce0b6a4557894f8399164c"}
+         ;; b82463c2 -> 1a6424c8 (2026-09-15, its #65): `:string-index-of 216`
+         ;; in runtime-context-offsets, ABI v5.
+         :git/sha "1a6424c889e335a7b71cac4edeb042e689475861"}
         io.github.kotoba-lang/kotoba-gmir
         {:git/url "https://github.com/kotoba-lang/kotoba-gmir.git"
          ;; a3f0597c -> a4b682c4 (kotoba-gmir main, ahead 6, behind 0)
-         :git/sha "a4b682c4049f0608e27d5ad11b3c471415938973"}
+         ;; a4b682c4 -> 8e572968 (2026-09-15, its #31): `:string-index-of 2`
+         ;; in runtime-operation-arities, ABI v5.
+         :git/sha "8e5729684c30720eb1be37170677ddc062b4d171"}
         ;; org-nist-sha2: named by osaho f404babb as cb67e53e. Its main adds
         ;; `text` as a dependency (already here) and moves amu / osaho into
         ;; the :test alias, so the closure does not grow.

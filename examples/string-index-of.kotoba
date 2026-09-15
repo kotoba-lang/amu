@@ -1,0 +1,35 @@
+(ns examples.string-index-of)
+
+;; `string-index-of` is a HOST slot since ABI v5 (2026-09-15): context offset
+;; 216, `checked_string_index_of` in tools/kexe_loader.c, memmem on the host's
+;; side. Until then it was a source rewrite in kotoba-native over four other
+;; string callbacks -- one pair handle and three or four host calls per
+;; haystack byte -- and a packaged grep exhausted a 4 Mi-handle arena after
+;; 2 MB of a 3.3 MB file. This fixture is where the HOST's answer is measured
+;; against the rows kotoba-native pins through the reference interpreter.
+;;
+;; One value that can only come out right if every row is right. The rows are
+;; the near misses: a match at 0 (the value an empty needle would also
+;; produce if the host ever answered instead of trapping), the FIRST of two
+;; occurrences, a multi-byte haystack where the byte offset exceeds the
+;; code-point index ("日本語" / "語" is 6, not 2), a needle absent though every
+;; window shares a prefix with it, a needle one byte too long for the only
+;; window, and a search over a runtime substring VIEW -- the shape a line walk
+;; takes, so the host must resolve a view's (offset, length) and not a
+;; literal's.
+;;
+;;   0 + 10*0 + 100*6 + 1000*(-1) + 10000*(-1) + 100000*2
+;;   = 600 - 1000 - 10000 + 200000 = 189600
+;;
+;; Measured by executing the artifact under the W^X loader, not computed and
+;; trusted -- the first draft of this comment summed it to 178600 and the
+;; loader answered 189600, which is the point of executing it. A host that
+;; answered code points for the third row would print 189200, one that found
+;; the second occurrence for the second row 189630.
+(defn main []
+  (+ (string-index-of "abc" "a")
+     (+ (* 10 (string-index-of "abcabc" "abc"))
+        (+ (* 100 (string-index-of "日本語" "語"))
+           (+ (* 1000 (string-index-of "abcde" "cdf"))
+              (+ (* 10000 (string-index-of "abc" "abcd"))
+                 (* 100000 (string-index-of (string-substring "xxabcxx" 2 5) "c"))))))))
