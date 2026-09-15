@@ -174,6 +174,16 @@
              ;; which wrong number.
              {:source "string-index-of.kotoba" :symbol "main"
               :arguments [] :expected "189600"}
+             ;; The first fixture here with a closure. `kir/lower` writes the
+             ;; closure parameter's position as a host index
+             ;; (`:closure-param-indexes`); the artifact reader hands every
+             ;; integer token back as a BigInt, which the interpreter's
+             ;; `integer?` refuses, so until 2026-09-15 `extract-native`
+             ;; rejected its own compiler's output for ANY program with a
+             ;; closure as `native artifact oracle evaluation rejected`. The
+             ;; fixture explains the arithmetic; measured by executing.
+             {:source "closure-node.kotoba" :symbol "main"
+              :arguments [] :expected "301"}
              ;; The string-concat TAIL APPEND (2026-09-15): 20,000 appends of
              ;; a 10-byte view onto a pool-tail accumulator cost 200,000
              ;; bytes, not 2 GB. Run under a 1 MiB pool and enough fuel, so
