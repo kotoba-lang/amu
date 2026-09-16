@@ -1225,10 +1225,21 @@
          ;; rows those objects are refused at packaging.
          ;; Advanced again 2026-09-16 to d2f1dca (its #181, on top of a6a4616):
          ;; the two ABI v8 line heads as host slots 272 / 280.
-         ;; Advanced again 2026-09-16 to ed534e3 (its #185 / #186, ADR 0084):
-         ;; five handle operations emitted in line through the ABI v9
-         ;; pointers; #186 is the value register the first cut clobbered,
-         ;; which examples/inline-handles.kotoba caught under the loader.
+         ;; Advanced 2026-09-16, d2f1dca -> 9cccd1b6 (kotoba-native main, forward
+         ;; only by `gh api .../compare`: ahead 6 behind 0), three of its PRs
+         ;; for aiueos C-free wave 2 (aiueos ADR-0220): #182 admits
+         ;; job-protocol / micro-infer-next / aes128-gcm-selftest; #183 gives
+         ;; the eight wave objects their fuel tiers (four were packaging at the
+         ;; 1024 default and the AES-GCM known-answer test ud2'd at boot); #184
+         ;; lowers `string-code-point-at` over an ASCII literal to a bounded
+         ;; byte load from the rodata pool instead of the slot-144 runtime call
+         ;; -- a kernel object has no host, and the first one whose literal
+         ;; walk executed jumped to address 0 (measured under QEMU).
+         ;; Advanced again 2026-09-16 to ed534e3 (its #185 / #186, on top of
+         ;; 9cccd1b6, ADR 0084): five handle operations emitted in line
+         ;; through the ABI v9 pointers; #186 is the value register the first
+         ;; cut clobbered, which examples/inline-handles.kotoba caught under
+         ;; the loader.
          :git/sha "ed534e38277d0b8ba7e893967c9475c5abc56524"}
         io.github.kotoba-lang/kotoba-component
         {:git/url "https://github.com/kotoba-lang/kotoba-component.git"
