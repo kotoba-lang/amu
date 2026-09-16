@@ -2220,6 +2220,48 @@ static int64_t io_read_provider(struct kexe_context_v10 *context,
   return checked_pair_new(context, -((int64_t)start) - 1, (int64_t)got);
 }
 
+/* wire id 7 = :clock/now, the TEXT form. The same capability and the same
+ * grant bit as the clock-v1 record form above, answered as decimal text so
+ * a COMMAND can ask: the nested clock-v1 codec is admitted on the JVM route
+ * and on the typed Wasm route, and NOT on the JVM-free native route a
+ * packaged command is built by (`only-native-word-typed-features?`, which
+ * admits typed-cap-call for :string/:i64/option/result shapes only), so
+ * until this form `date` could not read a clock at all -- the fall-through
+ * below echoed the request, and a guest printed "wall" (measured
+ * 2026-09-16).
+ *
+ *   "wall"      -> milliseconds since 1970-01-01T00:00:00Z, decimal
+ *   "monotonic" -> nanoseconds of the monotonic clock, decimal
+ *
+ * Anything else traps: a request this does not know is not answered with
+ * a plausible-looking number. Monotonic regression is a trap here too, as
+ * it is an error result in the record form. */
+static int64_t clock_text_provider(struct kexe_context_v10 *context,
+                                   int64_t request) {
+  const uint8_t *bytes = NULL;
+  uint64_t length = 0;
+  if (!read_string_handle(context, request, &bytes, &length)) {
+    raise(SIGILL);
+    return 0;
+  }
+  static int64_t last_monotonic_text = -1;
+  int64_t tick = 0;
+  if (length == 4 && memcmp(bytes, "wall", 4) == 0) {
+    if (read_wall_millis(&tick) != 0 || tick < 0) { raise(SIGILL); return 0; }
+  } else if (length == 9 && memcmp(bytes, "monotonic", 9) == 0) {
+    if (read_monotonic_nanos(&tick) != 0 || tick < 0) { raise(SIGILL); return 0; }
+    if (last_monotonic_text >= 0 && tick < last_monotonic_text) { raise(SIGILL); return 0; }
+    last_monotonic_text = tick;
+  } else {
+    raise(SIGILL);
+    return 0;
+  }
+  char text[24];
+  int digits = snprintf(text, sizeof(text), "%lld", (long long)tick);
+  if (digits <= 0 || (size_t)digits >= sizeof(text)) { raise(SIGILL); return 0; }
+  return intern_utf8(context, (const uint8_t *)text, (size_t)digits);
+}
+
 /* wire id 38 = :cli/args. The arguments a COMMAND was invoked with.
  *
  * The loader's own positional arguments and the guest's are separated on the
@@ -3322,6 +3364,10 @@ static int64_t checked_typed_cap_call(struct kexe_context_v10 *context,
      * written to fd 2 and the result is the decimal byte count. No resource
      * scope, for the same reason wire 37 has none. */
     result = io_write_error_provider(context, request);
+  } else if (id == KEXE_CLOCK_CAPABILITY_ID && request_kind == KEXE_TYPED_STRING) {
+    /* wire id 7 = :clock/now, text form: "wall" -> unix millis, "monotonic"
+     * -> nanos, as decimal text. Same grant bit as the record form. */
+    result = clock_text_provider(context, request);
   } else if (id == 41 && request_kind == KEXE_TYPED_STRING) {
     /* wire id 41 = :io/read. Real host provider: the empty request answers
      * standard input to EOF, a decimal request at most that many unread
