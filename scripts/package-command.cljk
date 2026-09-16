@@ -66,6 +66,12 @@
       ;; A line walk spends about eight per line, so this is the bound a
       ;; text command meets first.
       pairs (or (opt "--pairs") "4096")
+      ;; The two vector arenas (2026-09-16): table entries and the element
+      ;; words they slice, separately exhaustible. Defaults are the
+      ;; loader's own 4096 / 65536; an index sort over a 33 MB file needs
+      ;; about two words per line.
+      vectors (or (opt "--vectors") "4096")
+      vector-items (or (opt "--vector-items") "65536")
       ;; The two bounds on the CHILD rather than on the guest: CPU seconds
       ;; (RLIMIT_CPU, SIGXCPU past it) and wall seconds (the supervisor's
       ;; alarm, SIGKILL past it). Fuel cannot stand in for them -- a `find`
@@ -88,6 +94,10 @@
     (die "--fuel must be a positive decimal"))
   (when-not (re-matches #"[1-9][0-9]*" (str pairs))
     (die "--pairs must be a positive decimal"))
+  (when-not (re-matches #"[1-9][0-9]*" (str vectors))
+    (die "--vectors must be a positive decimal"))
+  (when-not (re-matches #"[1-9][0-9]*" (str vector-items))
+    (die "--vector-items must be a positive decimal"))
   (when-not (re-matches #"[1-9][0-9]*" (str cpu-seconds))
     (die "--cpu-seconds must be a positive decimal"))
   (when-not (re-matches #"[1-9][0-9]*" (str wall-seconds))
@@ -127,6 +137,8 @@
                     "#define KEXE_EMBEDDED_STRING_POOL " pool "u\n"
                     "#define KEXE_EMBEDDED_FUEL " fuel "u\n"
                     "#define KEXE_EMBEDDED_PAIRS " pairs "u\n"
+                    "#define KEXE_EMBEDDED_VECTORS " vectors "u\n"
+                    "#define KEXE_EMBEDDED_VECTOR_ITEMS " vector-items "u\n"
                     "#define KEXE_EMBEDDED_CPU_SECONDS " cpu-seconds "u\n"
                     "#define KEXE_EMBEDDED_WALL_SECONDS " wall-seconds "u\n"
                     "static const unsigned char kexe_embedded_code[" n "] = {\n"
@@ -143,6 +155,6 @@
         (do (.chmodSync fs out 0755)
             (println (pr-str {:ok true :output out :code-bytes n
                               :offset (js/parseInt offset 10) :isa isa :allow allow
-                              :fs-scope fs-scope :browse-scope browse-scope :string-pool pool :fuel fuel :pairs pairs
+                              :fs-scope fs-scope :browse-scope browse-scope :string-pool pool :fuel fuel :pairs pairs :vectors vectors :vector-items vector-items
                               :cpu-seconds cpu-seconds :wall-seconds wall-seconds
                               :size (.-size (.statSync fs out))})))))))

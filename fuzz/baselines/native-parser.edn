@@ -14,8 +14,14 @@
 ;; handle-graph target reaches all four) and the memchr-first memmem
 ;; behind string_index_of; and again 2026-09-16 for the ABI v8 line slots
 ;; (string_index_of_from, string_compare_lines; the handle-graph target
-;; reaches both) and the hand-written decimal in the write provider --
-;; none of which touches the argv/handle parser the floors measure. The floors are again carried
+;; reaches both) and the hand-written decimal in the write provider; and
+;; once more 2026-09-16 for the vector arenas as per-run budgets
+;; (KEXE_VECTORS / KEXE_VECTOR_ITEMS, mmap'd maxima) and the per-vector
+;; limit 2^24, the one-pass string_compare_lines and string_concat
+;; validating its inputs; and for context ABI v9 (six data pointers the
+;; compiler's inline handle operations read; nothing new in the C surface
+;; the fuzzer drives) -- none of which touches the argv/handle parser the
+;; floors measure. The floors are again carried
 ;; forward unmeasured, for the same reason as below.
 ;;
 ;; ⚠ THE FLOORS BELOW WERE NOT RE-MEASURED. They are the previous
@@ -28,6 +34,6 @@
 ;; "should" is the word, and if CI reports higher numbers these floors
 ;; are now looser than the code deserves and should be raised.
 {:format :kotoba.fuzz-baseline/v2
- :loader-source-sha256 "2a6a5cbc66cc8aeb052e02531f82409282f5fea2c797aa6d5334d06c260d9bc9"
+ :loader-source-sha256 "7b7749c1644a7cca291af039e38c1700027c5119595fe9f8ce9db738491965bf"
  :profiles {:x64 {:min-cov 60 :min-features 100 :min-corpus 20}
             :arm64 {:min-cov 60 :min-features 100 :min-corpus 18}}}

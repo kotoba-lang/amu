@@ -798,7 +798,9 @@
          ;; four text heads' reference semantics.
          ;; Advanced again 2026-09-16, 1f07f39b -> 7dfafd78 (osaho #92): the two
          ;; line heads' reference semantics.
-         :git/sha "7dfafd78aa38819555b294c749e54f67b57799bf"}
+         ;; Advanced again 2026-09-16, 7dfafd78 -> f44b9489 (osaho #93):
+         ;; vector-item-limit 16384 -> 2^24, at the native arena's maximum.
+         :git/sha "f44b948995fc52f294b31f92ab1fb54dc6d4edbd"}
         ;; The frontend is an HIR producer and KIR lowering is its consumer;
         ;; both validate the same checked envelope.
         io.github.kotoba-lang/kotoba-hir
@@ -894,7 +896,10 @@
          ;; memchr-first memmem / Windows 95095dc9).
          ;; ba2bd6e8 -> 61f5d38d (2026-09-16, its #37): loader identities for
          ;; context ABI v8 (POSIX 2a6a5cbc / Windows d32b1a22).
-         :git/sha "61f5d38d383d9520551ab6b3e75c2aa3143b3029"}
+         ;; 61f5d38d -> 92c35d4b -> 4082c9b1 (2026-09-16, its #38 / #39):
+         ;; loader identities for the vector arena budgets, then for
+         ;; context ABI v9 (POSIX 7b7749c1 / Windows abe8caf4).
+         :git/sha "4082c9b17c58eb058c26072928667b18f7079bc2"}
         ;; HELD at 1a2e10c on 2026-09-03 (ADR 0331), 28 commits behind its main,
         ;; while every other pin in this file moved to the tip. The reason, so
         ;; that a lagging pin and a pin with an argument behind it stay
@@ -1230,7 +1235,12 @@
          ;; byte load from the rodata pool instead of the slot-144 runtime call
          ;; -- a kernel object has no host, and the first one whose literal
          ;; walk executed jumped to address 0 (measured under QEMU).
-         :git/sha "9cccd1b63ec57e0e3939cced68f244d1c1b68ee9"}
+         ;; Advanced again 2026-09-16 to ed534e3 (its #185 / #186, on top of
+         ;; 9cccd1b6, ADR 0084): five handle operations emitted in line
+         ;; through the ABI v9 pointers; #186 is the value register the first
+         ;; cut clobbered, which examples/inline-handles.kotoba caught under
+         ;; the loader.
+         :git/sha "ed534e38277d0b8ba7e893967c9475c5abc56524"}
         io.github.kotoba-lang/kotoba-component
         {:git/url "https://github.com/kotoba-lang/kotoba-component.git"
          ;; Advanced 2026-09-11, ff2c3e8c -> cad39ab0 (kotoba-component main,
@@ -1432,7 +1442,10 @@
          ;; expected-context v7, the four text heads admitted.
          ;; Advanced 2026-09-16 to 72ba0f4 (kotoba-verifier main, its #59):
          ;; expected-context v8, the two line heads admitted.
-         :git/sha "72ba0f4af5f2904fb137f7a6a24dbe6aab495605"}
+         ;; Advanced 2026-09-16 to ccbf530 (its #60): the vector LITERAL bound
+         ;; stays at 16384 (code size) while the runtime length moves.
+         ;; Advanced 2026-09-16 to c657b65 (its #61): expected-context v9.
+         :git/sha "c657b657aa5b6383afe074aa4a6bf941bbb29e1e"}
 
         ;; EXPLICIT FLOORS FOR TRANSITIVE DEPENDENCIES (2026-09-12, adr-2609111900
         ;; source-side wave). None of the eight coordinates below was named in

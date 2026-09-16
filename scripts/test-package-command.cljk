@@ -72,7 +72,7 @@ b\" 1 2))
       7
       (if (string=? (arg \"1\") \"trap\")
         (do (emit \"three\") (emit (nl))
-            (string-code-point-at \"\" 0))
+            (string-code-point-at (string-substring (arg \"1\") 0 0) 0))
         0))))
 ")
 
@@ -96,6 +96,13 @@ b\" 1 2))
     out))
 
 (when-not (.existsSync fs amu) (refuse (str "no amu at " amu)))
+;; The trap is a HOST refusal on purpose: `string-code-point-at` past the end
+;; of a computed empty string reaches the loader's slot, which raises SIGILL.
+;; It was `(string-code-point-at "" 0)` until 2026-09-16, when kotoba-native
+;; started walking ASCII LITERALS in line (a bounded byte load whose window
+;; check is `brk`, SIGTRAP -- the kernel family's trap, for objects with no
+;; host); that is a different refusal from the one this probe measures, and
+;; the supervisor reports both as :trap.
 (.writeFileSync fs (file "probe.kotoba") guest "utf8")
 (.writeFileSync fs (file "policy.edn")
                 "{:allow #{[:cap/call 37] [:cap/call 38] [:cap/call 39]}}" "utf8")
@@ -159,5 +166,27 @@ b\" 1 2))
                (str/includes? (:out r) "--cpu-seconds must be a positive decimal"))
           r))
 
-(println (str "SCANNED\t" 8 "\tFAILED\t" @failures))
+;; 5. The vector budgets (2026-09-16) are flags of the same shape, refused
+;;    the same way -- a probe that says "vectors" so a typo in the flag name
+;;    is a named failure rather than a silent default.
+(let [r (run js/process.execPath
+             [kbb "--backend" "sci" packager
+              "--code" (file "probe.bin") "--offset" (str (:offset @extract))
+              "--isa" (:isa @extract) "--allow" "37,38,39"
+              "--vector-items" "0" "--output" (file "probe-refused")])]
+  (check! "--vector-items 0 is refused by the packager"
+          (and (= 2 (:status r))
+               (str/includes? (:out r) "--vector-items must be a positive decimal"))
+          r))
+(let [r (run js/process.execPath
+             [kbb "--backend" "sci" packager
+              "--code" (file "probe.bin") "--offset" (str (:offset @extract))
+              "--isa" (:isa @extract) "--allow" "37,38,39"
+              "--vectors" "x" "--output" (file "probe-refused")])]
+  (check! "--vectors x is refused by the packager"
+          (and (= 2 (:status r))
+               (str/includes? (:out r) "--vectors must be a positive decimal"))
+          r))
+
+(println (str "SCANNED\t" 10 "\tFAILED\t" @failures))
 (.exit js/process (if (zero? @failures) 0 1))

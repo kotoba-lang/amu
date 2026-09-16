@@ -1,0 +1,13 @@
+(ns examples.vector-alloc-limit (:export [alloc-count main]))
+
+;; `vector-alloc` under two bounds (2026-09-16): the per-vector limit the
+;; loader re-derives from `kotoba.kir.value/vector-item-limit` (2^24) and the
+;; run's item ARENA budget (KEXE_VECTOR_ITEMS / `--vector-items`, 65536 words
+;; unless asked). The conformance runs this under KEXE_VECTOR_ITEMS=16777217
+;; so the arena is one word wider than the limit, and expects 16777216
+;; admitted and 16777217 refused -- which is the limit answering, not the
+;; arena. The count arrives as an ARGUMENT so the compile-time oracle has
+;; nothing to fold.
+(defn alloc-count [n :i64] :i64 (vector-count (vector-alloc n)))
+
+(defn main [] 0)

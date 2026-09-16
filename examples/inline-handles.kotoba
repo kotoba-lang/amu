@@ -1,0 +1,46 @@
+(ns examples.inline-handles (:export [main sum-at oob byte-length-of]))
+
+;; The five handle operations kotoba-native emits IN LINE (ADR 0084, context
+;; ABI v9): no call through the slot, the range check and the access in the
+;; guest's own code, reading the tables through the six pointers at 288-328.
+;; Executed here under the real loader in both directions:
+;;
+;;   main answers 4590616: a 4-slot vector (vector-count 4) written in place
+;;   at 0 (5) and 3 (9), read back at 0 / 3 / 1, (string-byte-length
+;;   "héllo") = 6 bytes, and (pair-first p) + (pair-second p) = 16 for
+;;   (pair 7 9) -- each in its own place so the printed number names the
+;;   operation that answered wrongly:
+;;     count * 1000000 + at0 * 100000 + at3 * 10000 + at1 * 1000
+;;     + bytelen * 100 + pairsum = 4000000 + 500000 + 90000 + 0 + 600 + 16
+;;   The first cut of the AArch64 sequence printed 4440616 here: the length
+;;   had been loaded into x3, the register holding vector-assoc!'s VALUE,
+;;   so every slot was written 4 -- which is what a fixture with the
+;;   answer in each digit is for.
+;;   oob reads slot 4 of the same 4-slot vector: the inline index bound
+;;   traps SIGILL, the signal the C twin raises -- an emitter that dropped
+;;   the check would read the next word and answer.
+;;   sum-at n reads slot n of a 4-slot vector filled with 1,2,3,4: 2 -> 3.
+(defn main [] :i64
+  (let [v (vector-alloc 4)
+        w (vector-assoc! v 0 5)
+        x (vector-assoc! w 3 9)
+        p (pair 7 9)]
+    (+ (* 1000000 (vector-count x))
+       (* 100000 (vector-at x 0))
+       (* 10000 (vector-at x 3))
+       (* 1000 (vector-at x 1))
+       (* 100 (string-byte-length "héllo"))
+       (+ (pair-first p) (pair-second p)))))
+
+(defn oob [] :i64
+  (let [v (vector-alloc 4)]
+    (vector-at v 4)))
+
+(defn- filled [v :vector-i64 i :i64] :vector-i64
+  (if (>= i 4) v (filled (vector-assoc! v i (+ i 1)) (+ i 1))))
+
+(defn sum-at [n :i64] :i64
+  (vector-at (filled (vector-alloc 4) 0) n))
+
+(defn byte-length-of [n :i64] :i64
+  (string-byte-length (string-substring "abcdef" 0 n)))
