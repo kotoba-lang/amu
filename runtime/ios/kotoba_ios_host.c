@@ -49,6 +49,8 @@ struct kotoba_context_v2 {
   uint64_t *vector_used_pointer;
   void *vectors_base;
   int64_t *vector_items_base;
+  /* ABI v10 (2026-09-16): the two range slots, unserved here (NULL). */
+  void *unserved_range_slots[2];
   const uint8_t *code_base;
   uint64_t code_length;
 };

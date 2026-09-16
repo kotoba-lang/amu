@@ -1196,6 +1196,9 @@ pointers at 288–328 through which five handle operations (`pair-first`,
 function, `udf` / `ud2` on failure — while every loop stays a host call.
 `examples/inline-handles.kotoba` executes the inline path both ways under
 the loader in `jdk-free-native-conformance`.
+Context ABI **v10** (2026-09-16) adds two range operations that take no
+view and mint none: `string-find-byte` 336 and `string-append-range` 344;
+`examples/range-slots.kotoba` executes both under the loader.
 This permits bounded recursion while guaranteeing that recursive cycles trap.
 x86-64 reserves r9 and AArch64 reserves x7 for a loader-owned fuel-context
 pointer; both charge every function entry before guest instructions. Their real

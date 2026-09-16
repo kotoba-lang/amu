@@ -1,0 +1,32 @@
+(ns examples.range-slots (:export [main bad-byte]))
+
+;; The two ABI v10 range heads (slots 336 / 344), executed against the
+;; HOST's answers, a decimal place per head over the operands a wrong host
+;; gets wrong:
+;;
+;;   string-find-byte "a\nb\n" 10 2       -> 3   (ABSOLUTE: relative answers 1)
+;;   string-find-byte "abc" 99 3          -> -1  (from the end: nothing)
+;;   string-find-byte "日本語 a" 32 3     -> 9   (byte offsets)
+;;   string-append-range "x" "abc" 1 3    -> "xbc", 3 bytes; then appended
+;;                                           again from a range of ITSELF
+;;                                           ("xbc" + "bc" = "xbcbc", 5): the
+;;                                           tail append must read the piece
+;;                                           before it moves the tail
+;;   string-append-range "" "日本語" 3 6  -> "本", 3 bytes, equal to the literal
+;;
+;; main = 100000*3 + 10000*(-1+2) + 1000*9 + 100*3 + 10*5 + (cmp+2)
+;;      = 300000 + 10000 + 9000 + 300 + 50 + 2 = 319352
+;;   bad-byte asks for byte 200: refused SIGILL (a non-ASCII byte could
+;;   match inside a code point).
+(defn main [] :i64
+  (let [acc (string-append-range "x" "abc" 1 3)
+        acc2 (string-append-range acc acc 1 3)]
+    (+ (* 100000 (string-find-byte "a\nb\n" 10 2))
+       (* 10000 (+ (string-find-byte "abc" 99 3) 2))
+       (* 1000 (string-find-byte "日本語 a" 32 3))
+       (* 100 (string-byte-length acc))
+       (* 10 (string-byte-length acc2))
+       (+ (string-compare (string-append-range "" "日本語" 3 6) "本") 2))))
+
+(defn bad-byte [] :i64
+  (string-find-byte "abc" 200 0))
