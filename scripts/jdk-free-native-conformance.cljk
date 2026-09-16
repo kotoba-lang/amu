@@ -203,7 +203,18 @@
               :env {"KEXE_FUEL" "1000000"}}
              {:source "arena-scope.kotoba" :symbol "unscoped"
               :arguments ["20000"] :expected :trap
-              :env {"KEXE_FUEL" "1000000"}}]]
+              :env {"KEXE_FUEL" "1000000"}}
+             ;; ABI v7 (2026-09-16): the four text heads -- string-compare,
+             ;; string-fold-ascii, string-find-blank, string-skip-blank --
+             ;; are context slots 240-264, answered by the loader's memcmp,
+             ;; a one-byte-to-one-byte fold and two blank scans. The fixture
+             ;; puts each head's answer in its own decimal place and picks
+             ;; the operands a wrong host gets wrong (a proper prefix, a
+             ;; FROM past an earlier blank, a newline as a blank, a
+             ;; non-ASCII code point under the fold); the value is what the
+             ;; loader printed, checked against the arithmetic in the file.
+             {:source "text-slots.kotoba" :symbol "main"
+              :arguments [] :expected "21337441"}]]
       (let [artifact (file (str symbol ".kexe"))
             binary (file (str symbol ".bin"))]
         (invoke ["compile" (.join path root "examples" source)
