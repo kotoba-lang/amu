@@ -4,9 +4,67 @@
 ;;
 ;; :paths is COPIED from deps.edn, not chosen here.
 ;; "." is here because nbb PUTS IT THERE WHEN THERE IS NO nbb.edn, and taking
-;; it away is what adding this file did. Measured: a tree with scripts/lib.cljk
-;; and a script that requires scripts.lib resolves it with no nbb.edn, fails
-;; with {:paths ["src"]}, and resolves again with {:paths ["src" "."]}.
-;; It goes LAST so the declared paths still win.
-{:paths ["src" "resources" "tools" "."]
- :deps {io.github.kotoba-lang/text {:git/sha "2ee6dce2ca944decd001f9378868dd703fc3e741"}}}
+;; it away is what adding this file did. It goes LAST so the declared paths win.
+;;
+;; test/nbb/run.cljk (the JVM-free regression harness) requires kotoba.sema,
+;; kotoba.kir, kotoba.wasm.core and friends — namespaces living in git deps
+;; invisible to nbb. The git coords below are GENERATED from deps-lock.edn
+;; (:lock/entries), the same closure bin/amu resolves --jvm-free.
+;; AGENTS.md: .cljk dependency declarations for nbb live here.
+;; Regenerate by rerunning the nbb.edn generator against deps-lock.edn.
+{:paths ["src" "resources" "tools" "test" "."]
+ :deps {
+        io.github.kotoba-lang/abi {:git/url "https://github.com/kotoba-lang/abi.git"
+         :git/sha "b0dad3f8e5cf15d31f7702d3c8a8c5851cbd871d"}
+        io.github.kotoba-lang/artifact {:git/url "https://github.com/kotoba-lang/artifact.git"
+         :git/sha "f44e273d4ce52932c04e25a48d42289493157120"}
+        io.github.kotoba-lang/coll {:git/url "https://github.com/kotoba-lang/coll.git"
+         :git/sha "376f8cbd1a475ecbb2bc87e7ec63eb0f39a6fdaa"}
+        io.github.kotoba-lang/dev-protobuf {:git/url "https://github.com/kotoba-lang/dev-protobuf.git"
+         :git/sha "cfd0b29997abbcae918ec5e90fddd621dbfb97b6"}
+        io.github.kotoba-lang/edn {:git/url "https://github.com/kotoba-lang/edn.git"
+         :git/sha "79dba32c8892058842c57783f06a2dfe4601aeb0"}
+        io.github.kotoba-lang/io-ipld {:git/url "https://github.com/kotoba-lang/io-ipld.git"
+         :git/sha "d02a63cdb05a0697d453c1a671f66a44d9b3d507"}
+        io.github.kotoba-lang/io-multiformats {:git/url "https://github.com/kotoba-lang/io-multiformats.git"
+         :git/sha "dbb877ed22e87ba68d74d995dd8cbe6cf8f24970"}
+        io.github.kotoba-lang/json {:git/url "https://github.com/kotoba-lang/json.git"
+         :git/sha "ce3c2b7bec5b40151d5f69d862a49edd286339d4"}
+        io.github.kotoba-lang/kotoba-codegen {:git/url "https://github.com/kotoba-lang/kotoba-codegen.git"
+         :git/sha "3b79b3fd5bc9671c3cf475e1fa4cb47d06ccd088"}
+        io.github.kotoba-lang/kotoba-component {:git/url "https://github.com/kotoba-lang/kotoba-component.git"
+         :git/sha "db8690ac1435c7a0fe05ffc803dce7e85c007387"}
+        io.github.kotoba-lang/kotoba-core-contracts {:git/url "https://github.com/kotoba-lang/kotoba-core-contracts.git"
+         :git/sha "6563b357184e1aaa8adc2beecda511f37cf5b597"}
+        io.github.kotoba-lang/kotoba-gmir {:git/url "https://github.com/kotoba-lang/kotoba-gmir.git"
+         :git/sha "3350ad20a436c1270fc9a693dfea910f68ca9e08"}
+        io.github.kotoba-lang/kotoba-hir {:git/url "https://github.com/kotoba-lang/kotoba-hir.git"
+         :git/sha "abe1774060fcd088c6bfdba38d23f739e5c45338"}
+        io.github.kotoba-lang/kotoba-mir {:git/url "https://github.com/kotoba-lang/kotoba-mir.git"
+         :git/sha "944b5d304ed4b8d56ff4c8ab0bf49285970ba5c3"}
+        io.github.kotoba-lang/kotoba-native {:git/url "https://github.com/kotoba-lang/kotoba-native.git"
+         :git/sha "a9f8a3c718698ac4b7652037736cb3646b7ee405"}
+        io.github.kotoba-lang/kotoba-object {:git/url "https://github.com/kotoba-lang/kotoba-object.git"
+         :git/sha "a1649ef9b29f061cd9af4cb9648280bf023a9a81"}
+        io.github.kotoba-lang/kotoba-script {:git/url "https://github.com/kotoba-lang/kotoba-script.git"
+         :git/sha "8a2d9b6fdf4db9e91ef0a50fedfbe71dec552aca"}
+        io.github.kotoba-lang/kotoba-sema {:git/url "https://github.com/kotoba-lang/kotoba-sema.git"
+         :git/sha "043c62024bc1669656c76ffb71a2757c1b339bd0"}
+        io.github.kotoba-lang/kotoba-verifier {:git/url "https://github.com/kotoba-lang/kotoba-verifier.git"
+         :git/sha "e56795ff9579cfd5fa093f5d28cae6472357e52d"}
+        io.github.kotoba-lang/kotoba-wasm {:git/url "https://github.com/kotoba-lang/kotoba-wasm.git"
+         :git/sha "f5fdbc5a3dc6855604e5cf828e370eb872b45ae1"}
+        io.github.kotoba-lang/org-ietf-cbor {:git/url "https://github.com/kotoba-lang/org-ietf-cbor.git"
+         :git/sha "4c129f8224d6ff11afa14d831671db28ed8f4d82"}
+        io.github.kotoba-lang/org-ietf-ed25519 {:git/url "https://github.com/kotoba-lang/org-ietf-ed25519.git"
+         :git/sha "312dec875eb027021b7ad36c600151cd7bb22dc0"}
+        io.github.kotoba-lang/org-ietf-x25519 {:git/url "https://github.com/kotoba-lang/org-ietf-x25519.git"
+         :git/sha "8c4e1ae7c6f14e5d015bcb8ca80e965ad808d920"}
+        io.github.kotoba-lang/org-nist-sha2 {:git/url "https://github.com/kotoba-lang/org-nist-sha2.git"
+         :git/sha "ad98470c672d40f207992890dac6bf0473b52199"}
+        io.github.kotoba-lang/osaho {:git/url "https://github.com/kotoba-lang/osaho.git"
+         :git/sha "85ed11be624d72f1974dbff8a175941662b6a6d6"}
+        io.github.kotoba-lang/security {:git/url "https://github.com/kotoba-lang/security.git"
+         :git/sha "0e8e1a61742e714baf3279b6b9e0c2e695c05b70"}
+        io.github.kotoba-lang/text {:git/url "https://github.com/kotoba-lang/text.git"
+         :git/sha "3dcb2ab087933dc7b703b340dac9afce62cb30ff"}}}
