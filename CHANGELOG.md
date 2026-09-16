@@ -29,6 +29,27 @@ production-strength VM sandbox remain absent.
 
 ### Current capabilities (state so far)
 
+- **Context ABI v10: two range operations that take no view and mint
+  none** (2026-09-16) — `string-find-byte` 336 (the first offset at or
+  after a boundary holding an ASCII byte; a line walk's newline or
+  delimiter search without a needle handle or a region) and
+  `string-append-range` 344 (an accumulator with a range of a string
+  appended; one call where a view and a concat were two). A 33 MB
+  `cut -f2` had spent 44% of its time minting views. kotoba-gmir 3350ad2
+  / kotoba-mir 944b5d3 / osaho 85ed11b / kotoba-sema d46897d (grammar
+  digest 8a2913b8) / kotoba-native a9f8a3c / kotoba-verifier e56795f /
+  artifact c5862d7. `examples/range-slots.kotoba` executes both under the
+  loader in `jdk-free-native-conformance` (319352; the append over a range
+  of itself; byte 200 refused). Measured on the commands, 33 MB: cut
+  `-f2` 0.19 → **0.13** s (its fast walk cuts over the text by offsets,
+  no line view), uniq 0.13 → 0.10, grep `e` 0.17 → 0.15, awk 0.25 → 0.23,
+  sort 0.66 → 0.62.
+- **A pool string range must lie within the bytes that exist** (2026-09-16)
+  — `resolve_string_bytes` bounded a pool range by the budget, so a pair a
+  guest builds by hand could name a range past `string_pool_used`; the
+  sanitized fuzz arm found it (with the v10 cases in the mix) as a memcpy
+  whose source overlapped `string_concat`'s destination. Refused once, for
+  every string slot, in both loaders; artifact identities advanced.
 - **Context ABI v9: five handle operations emitted in line** (2026-09-16,
   owner decision, kotoba-native ADR 0084) — six data pointers at 288–328
   (the pair-used counter, the pair table, the validated flags, the
