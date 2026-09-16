@@ -2427,7 +2427,11 @@ static int64_t cli_args_provider(struct kexe_context_v10 *context,
  * nothing. The loader decides nothing here: the grant is the shim's, the
  * loader only enforces the list it was given, fail closed -- any malformed
  * request, scope breach or I/O failure raises SIGILL. */
-#define KEXE_SCOPE_ENTRIES 16
+/* 64, not 16, since 2026-09-16: a `$PATH` entry expands to every directory
+ * of the caller's PATH, and a developer's PATH is 30-40 entries long
+ * (measured 36 on the machine this was written on). Two scopes at 64
+ * entries of two 4 KiB spellings is 1 MiB of BSS, untouched unless used. */
+#define KEXE_SCOPE_ENTRIES 64
 
 struct kexe_scope {
   char resolved[KEXE_SCOPE_ENTRIES][4096];
@@ -2438,14 +2442,38 @@ struct kexe_scope {
 static struct kexe_scope kexe_scope35; /* :fs/app-data read / write / range */
 static struct kexe_scope kexe_scope34; /* :fs/browse directory listing      */
 
+/* Add ENTRY to SCOPE in both spellings; an entry that does not resolve is
+ * dropped, not guessed at. */
+static void kexe_scope_add(struct kexe_scope *scope, const char *entry) {
+  if (scope->count >= KEXE_SCOPE_ENTRIES) return;
+  char resolved[4096];
+  if (realpath(entry, resolved) != NULL &&
+      strlen(resolved) < sizeof(scope->resolved[0]) &&
+      strlen(entry) < sizeof(scope->orig[0])) {
+    strcpy(scope->resolved[scope->count], resolved);
+    strcpy(scope->orig[scope->count], entry);
+    scope->count++;
+  }
+}
+
 /* Fill SCOPE from a colon-separated list of path prefixes. Each entry is
  * kept in both spellings -- as written and as realpath resolved it -- so a
  * guest may name either and the resolved form still fails closed outside the
- * scope. An entry that does not resolve is dropped, not guessed at. */
-static void kexe_scope_from_text(struct kexe_scope *scope, const char *scope_env) {
-  scope->count = 0;
-  if (scope_env == NULL || scope_env[0] == '\0') return;
-  const char *cursor = scope_env;
+ * scope. An entry that does not resolve is dropped, not guessed at.
+ *
+ * An entry that is literally `$PATH` expands to the directories of the
+ * CALLER's PATH at start (2026-09-16, superproject ADR-2609161710): `which`
+ * has to look where the caller's shell would look, and a packaged scope
+ * cannot know that in advance. The environment is otherwise ignored by a
+ * packaged command, and this is the one deliberate exception: the caller
+ * chose their PATH the way they chose what to connect to standard input
+ * or to /dev/fd/N, and a packager that writes `$PATH` into the scope has
+ * said the command may read beneath those directories. A relative PATH
+ * entry resolves against the working directory, as the shell resolves it.
+ * When EXPAND is 0 (the recursive call) `$PATH` is an ordinary spelling. */
+static void kexe_scope_from_list(struct kexe_scope *scope, const char *list, int expand) {
+  if (list == NULL || list[0] == '\0') return;
+  const char *cursor = list;
   while (*cursor != '\0' && scope->count < KEXE_SCOPE_ENTRIES) {
     const char *end = strchr(cursor, ':');
     size_t entry_length = (end != NULL) ? (size_t)(end - cursor) : strlen(cursor);
@@ -2453,17 +2481,20 @@ static void kexe_scope_from_text(struct kexe_scope *scope, const char *scope_env
       char entry[4096];
       memcpy(entry, cursor, entry_length);
       entry[entry_length] = '\0';
-      char resolved[4096];
-      if (realpath(entry, resolved) != NULL &&
-          strlen(resolved) < sizeof(scope->resolved[0])) {
-        strcpy(scope->resolved[scope->count], resolved);
-        strcpy(scope->orig[scope->count], entry);
-        scope->count++;
+      if (expand && strcmp(entry, "$PATH") == 0) {
+        kexe_scope_from_list(scope, getenv("PATH"), 0);
+      } else {
+        kexe_scope_add(scope, entry);
       }
     }
     if (end != NULL) cursor = end + 1;
     else cursor += entry_length;
   }
+}
+
+static void kexe_scope_from_text(struct kexe_scope *scope, const char *scope_env) {
+  scope->count = 0;
+  kexe_scope_from_list(scope, scope_env, 1);
 }
 
 /* Where a scope COMES FROM, which is the whole question for a packaged
