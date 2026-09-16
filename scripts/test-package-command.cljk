@@ -61,6 +61,7 @@
 (defn emit [s :string] :string (typed-cap-call :io/write :string :string s))
 (defn emit-error [s :string] :string (typed-cap-call :io/write-error :string :string s))
 (defn stdin [s :string] :string (typed-cap-call :io/read :string :string s))
+(defn clock [s :string] :string (typed-cap-call :clock/now :string :string s))
 (defn chunks [n :i64] :i64
   (let [c (stdin \"4\")]
     (if (= 0 (string-byte-length c)) n (do (emit c) (emit \"|\") (chunks (+ n 1))))))
@@ -86,13 +87,17 @@ b\" 1 2))
       (if (string=? (arg \"1\") \"trap\")
         (do (emit \"three\") (emit (nl))
             (string-code-point-at (string-substring (arg \"1\") 0 0) 0))
+        (if (string=? (arg \"1\") \"clock\")
+          (do (emit (clock \"wall\")) (emit \"|\") (emit (clock \"monotonic\")) (emit \"|\") (emit (clock \"monotonic\")) 0)
+        (if (string=? (arg \"1\") \"clock-bad\")
+          (do (emit (clock \"x\")) 0)
         (if (string=? (arg \"1\") \"slurp\")
           (do (emit (stdin \"\")) 0)
           (if (string=? (arg \"1\") \"chunk\")
             (chunks 0)
             (if (string=? (arg \"1\") \"flood\")
               (flood (grow (string-concat \"flood\" (nl)) 12) 16)
-              0)))))))
+              0)))))))))
 ")
 
 (def failures (atom 0))
@@ -126,7 +131,7 @@ b\" 1 2))
 ;; the supervisor reports both as :trap.
 (.writeFileSync fs (file "probe.kotoba") guest "utf8")
 (.writeFileSync fs (file "policy.edn")
-                "{:allow #{[:cap/call 37] [:cap/call 38] [:cap/call 39] [:cap/call 41]}}" "utf8")
+                "{:allow #{[:cap/call 7] [:cap/call 37] [:cap/call 38] [:cap/call 39] [:cap/call 41]}}" "utf8")
 (let [isa (if (contains? #{"arm64" "aarch64"} (.arch os)) "aarch64" "x86_64")
       target (if (= isa "aarch64") "aarch64-macos" "x86_64-linux")
       c (run js/process.execPath [amu "compile" (file "probe.kotoba") "--target" target
@@ -295,5 +300,42 @@ b\" 1 2))
                (= "diag\n" (:err stays)))
           stays))
 
-(println (str "SCANNED\t" 18 "\tFAILED\t" @failures))
+;; 8. The clock's TEXT form, wire 7 (2026-09-16). The clock-v1 record codec
+;;    is not admitted on the JVM-free native route, so a packaged command
+;;    could not read a clock: the fall-through echoed the request and a
+;;    guest printed "wall". Now "wall" answers unix milliseconds and
+;;    "monotonic" nanoseconds, as decimal text; an unknown request traps
+;;    (SIGILL, the loader's own check) rather than echoing; and the grant
+;;    is bit 7 -- the same guest packaged without it traps at the call
+;;    (SIGTRAP, the emitted mask check). The wall answer is checked against
+;;    the harness's own clock to within five seconds, and the two monotonic
+;;    answers must not go backwards.
+(let [granted (package! "probe-clock" 60 "7,37,38,39,41")
+      denied (package! "probe-clock-denied" 60 "37,38,39,41")
+      before (.now js/Date)
+      r (run granted ["1" "clock"])
+      after (.now js/Date)
+      parts (str/split (subs (:out r) 8) #"\|")
+      wall (js/parseInt (nth parts 0 "x") 10)
+      mono1 (js/parseInt (nth parts 1 "x") 10)
+      mono2 (js/parseInt (nth parts 2 "x") 10)
+      bad (run granted ["1" "clock-bad"])
+      nobit (run denied ["1" "clock"])]
+  (check! "clock wall: decimal unix milliseconds within 5 s of the harness clock"
+          (and (= 0 (:status r)) (str/starts-with? (:out r) "one\ntwo\n")
+               (not (js/isNaN wall)) (<= (- before 5000) wall (+ after 5000)))
+          {:out (:out r) :before before :after after})
+  (check! "clock monotonic: two decimal answers, the second not before the first"
+          (and (not (js/isNaN mono1)) (not (js/isNaN mono2)) (<= mono1 mono2) (< 0 mono1))
+          {:out (:out r)})
+  (check! "clock: an unknown request traps (SIGILL) rather than echoing it"
+          (and (= 120 (:status bad)) (= "one\ntwo\n" (:out bad))
+               (str/includes? (:err bad) "KEXE_TRAP {:kind :signal :signal :SIGILL}"))
+          bad)
+  (check! "clock: without bit 7 the call traps (emitted check: SIGTRAP)"
+          (and (= 120 (:status nobit)) (= "one\ntwo\n" (:out nobit))
+               (str/includes? (:err nobit) "KEXE_TRAP {:kind :signal :signal :SIGTRAP}"))
+          nobit))
+
+(println (str "SCANNED\t" 22 "\tFAILED\t" @failures))
 (.exit js/process (if (zero? @failures) 0 1))

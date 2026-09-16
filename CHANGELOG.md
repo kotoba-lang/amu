@@ -29,6 +29,18 @@ production-strength VM sandbox remain absent.
 
 ### Current capabilities (state so far)
 
+- **`:clock/now` has a text form** (2026-09-16, artifact #45) — the
+  clock-v1 record codec is admitted on the JVM route and the typed Wasm
+  route but not on the JVM-free native route a packaged command is built by
+  (`only-native-word-typed-features?` admits typed-cap-call for
+  string / i64 / option / result shapes only), so `date` could not read a
+  clock: the loader's fall-through echoed the request and a guest printed
+  `wall`. Wire 7 now answers `"wall"` (unix milliseconds) and `"monotonic"`
+  (nanoseconds) as decimal text under the same grant bit; an unknown
+  request traps. test-package-command checks the wall answer against the
+  harness clock (±5 s), monotonic non-regression, the unknown-request trap
+  and the ungranted trap; control with the provider unrouted is red on
+  three.
 - **Wire 41, `:io/read`: a command reads its standard input** (2026-09-16,
   kotoba-lang #697, kotoba-sema #85, artifact #43) — measured over
   1,268,018 Bash calls in 558 agent transcripts, head is invoked as a LATER
