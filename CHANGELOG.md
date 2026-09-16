@@ -29,6 +29,24 @@ production-strength VM sandbox remain absent.
 
 ### Current capabilities (state so far)
 
+- **Context ABI v9: five handle operations emitted in line** (2026-09-16,
+  owner decision, kotoba-native ADR 0084) — six data pointers at 288–328
+  (the pair-used counter, the pair table, the validated flags, the
+  vector-used counter, the vector table, the item arena), written once by
+  the loader before the guest starts, through which kotoba-native ed534e3
+  emits `pair-first` / `pair-second` (`string-byte-length`) /
+  `vector-count` / `vector-at` / `vector-assoc!` as the range check, one
+  table read and one access, failing with `udf` / `ud2` = the SIGILL the
+  C twin raises. Searches, comparisons and concatenations stay host calls.
+  `examples/inline-handles.kotoba` executes the inline path under the
+  loader both ways in `jdk-free-native-conformance` (4590616 in range,
+  SIGILL out of range) — and caught the first cut's clobbered value
+  register on AArch64 before it landed. `string_compare_lines` resolves
+  and validates a string once when both lines are in it. kotoba-verifier
+  c657b65 admits version 9 and refuses a v8 table by name; artifact
+  4082c9b pins the loader identities. Measured on org-ieee-sort's index
+  merge sort over 33 MB: 0.77 s → **0.66 s** user (uutils 0.18,
+  `/usr/bin/sort` 0.38).
 - **Vector arenas as per-run budgets; `vector-item-limit` 2^24** (2026-09-16,
   owner decision) — `KEXE_VECTORS` / `KEXE_VECTOR_ITEMS` and
   `package-command --vectors` / `--vector-items` name the two vector

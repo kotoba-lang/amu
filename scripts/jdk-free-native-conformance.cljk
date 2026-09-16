@@ -236,7 +236,19 @@
               :env {"KEXE_VECTOR_ITEMS" "16777217" "KEXE_FUEL" "1000000"}}
              {:source "vector-alloc-limit.kotoba" :symbol "alloc-count"
               :arguments ["16777217"] :expected :trap
-              :env {"KEXE_VECTOR_ITEMS" "16777217" "KEXE_FUEL" "1000000"}}]]
+              :env {"KEXE_VECTOR_ITEMS" "16777217" "KEXE_FUEL" "1000000"}}
+             ;; Context ABI v9 (2026-09-16, kotoba-native ADR 0084): five
+             ;; handle operations emitted IN LINE, reading the tables through
+             ;; the six pointers at 288-328 and trapping SIGILL themselves.
+             ;; Executed both ways: the in-range reads answer the fixture's
+             ;; digit-per-operation number, and an out-of-range vector-at is
+             ;; refused by the EMITTED check, not by a host function.
+             {:source "inline-handles.kotoba" :symbol "main"
+              :arguments [] :expected "4590616"}
+             {:source "inline-handles.kotoba" :symbol "sum-at"
+              :arguments ["2"] :expected "3"}
+             {:source "inline-handles.kotoba" :symbol "oob"
+              :arguments [] :expected :trap}]]
       (let [artifact (file (str symbol ".kexe"))
             binary (file (str symbol ".bin"))]
         (invoke ["compile" (.join path root "examples" source)
