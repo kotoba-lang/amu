@@ -15,6 +15,7 @@ extern const unsigned char kotoba_ios_code_start[];
 extern const unsigned char kotoba_ios_code_end[];
 extern const char kotoba_ios_target_profile[];
 
+struct kotoba_pair_v1;
 struct kotoba_context_v2 {
   uint64_t version;
   uint64_t fuel;
@@ -31,6 +32,23 @@ struct kotoba_context_v2 {
   int64_t (*string_concat)(struct kotoba_context_v2 *, int64_t, int64_t);
   int64_t (*typed_cap_call)(struct kotoba_context_v2 *, uint64_t, uint64_t,
                             uint64_t, int64_t);
+  /* Slots 136-280 of the full context (strings, vectors, kgraph, the text
+   * and line heads, the region pair) are not served by this host: a program
+   * that names one is refused at packaging, and the words stay NULL so a
+   * call through one is a null jump rather than a wrong answer. They are
+   * laid out so the six INLINE pointers below sit at 288-328, where
+   * kotoba-native (ADR 0084, context ABI v9) reads them without a call:
+   * pair-first / pair-second (string-byte-length) are emitted in line for
+   * every target, this one included, and read the pair table through these
+   * -- measured 2026-09-16, the simulator conformance's `string-byte-length`
+   * read past a context that ended at code_length. */
+  void *unserved_slots[19];
+  uint64_t *pair_used_pointer;
+  struct kotoba_pair_v1 *pairs_base;
+  uint8_t *pair_validated_base;
+  uint64_t *vector_used_pointer;
+  void *vectors_base;
+  int64_t *vector_items_base;
   const uint8_t *code_base;
   uint64_t code_length;
 };
@@ -42,12 +60,19 @@ struct kotoba_shared_v2 {
   struct kotoba_pair_v1 pairs[KOTOBA_IOS_PAIR_CAPACITY];
   uint64_t string_pool_used;
   uint8_t string_pool[KOTOBA_IOS_STRING_POOL_BYTES];
+  /* No vectors on this host: an empty table, so an inline vector-at on any
+   * handle fails its range check (0 used) exactly as a host call would. */
+  uint64_t vector_used;
+  uint8_t pair_validated[KOTOBA_IOS_PAIR_CAPACITY];
 };
 
 _Static_assert(offsetof(struct kotoba_context_v2, fuel) == 8, "fuel ABI drift");
 _Static_assert(offsetof(struct kotoba_context_v2, allow) == 16, "allow ABI drift");
 _Static_assert(offsetof(struct kotoba_context_v2, cap_call) == 48, "cap ABI drift");
 _Static_assert(offsetof(struct kotoba_context_v2, pair_new) == 56, "pair ABI drift");
+_Static_assert(offsetof(struct kotoba_context_v2, typed_cap_call) == 128, "typed ABI drift");
+_Static_assert(offsetof(struct kotoba_context_v2, pair_used_pointer) == 288, "inline ABI drift");
+_Static_assert(offsetof(struct kotoba_context_v2, vector_items_base) == 328, "inline ABI drift");
 _Static_assert(offsetof(struct kotoba_context_v2, pair_first) == 64, "pair ABI drift");
 _Static_assert(offsetof(struct kotoba_context_v2, pair_second) == 72, "pair ABI drift");
 _Static_assert(offsetof(struct kotoba_context_v2, string_equal) == 112, "string ABI drift");
@@ -309,6 +334,12 @@ int kotoba_ios_execute_static_v1(const struct kotoba_ios_request_v1 *request,
   shared->context.string_equal = string_equal;
   shared->context.string_concat = string_concat;
   shared->context.typed_cap_call = typed_cap_call;
+  shared->context.pair_used_pointer = &shared->pair_used;
+  shared->context.pairs_base = shared->pairs;
+  shared->context.pair_validated_base = shared->pair_validated;
+  shared->context.vector_used_pointer = &shared->vector_used;
+  shared->context.vectors_base = NULL;
+  shared->context.vector_items_base = NULL;
   shared->context.code_base = kotoba_ios_code_start;
   shared->context.code_length =
       (uint64_t)((uintptr_t)kotoba_ios_code_end -
