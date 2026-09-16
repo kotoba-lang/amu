@@ -12,8 +12,10 @@
 ;; and again 2026-09-16 for the ABI v7 text slots (string_compare,
 ;; string_fold_ascii, string_find_blank, string_skip_blank; the
 ;; handle-graph target reaches all four) and the memchr-first memmem
-;; behind string_index_of -- none of which touches the argv/handle parser
-;; the floors measure. The floors are again carried
+;; behind string_index_of; and again 2026-09-16 for the ABI v8 line slots
+;; (string_index_of_from, string_compare_lines; the handle-graph target
+;; reaches both) and the hand-written decimal in the write provider --
+;; none of which touches the argv/handle parser the floors measure. The floors are again carried
 ;; forward unmeasured, for the same reason as below.
 ;;
 ;; ⚠ THE FLOORS BELOW WERE NOT RE-MEASURED. They are the previous
@@ -26,6 +28,6 @@
 ;; "should" is the word, and if CI reports higher numbers these floors
 ;; are now looser than the code deserves and should be raised.
 {:format :kotoba.fuzz-baseline/v2
- :loader-source-sha256 "603bde98dfc737e4a64b6f1e9e18d7925f57f319911e25b39f6034bd2a243e5c"
+ :loader-source-sha256 "2a6a5cbc66cc8aeb052e02531f82409282f5fea2c797aa6d5334d06c260d9bc9"
  :profiles {:x64 {:min-cov 60 :min-features 100 :min-corpus 20}
             :arm64 {:min-cov 60 :min-features 100 :min-corpus 18}}}

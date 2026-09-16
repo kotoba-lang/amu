@@ -247,20 +247,20 @@ static void ds_clear(void) {
  * stays what the input touches, and memset is neither needed nor wanted (it
  * would touch every page and turn a ceiling into a cost). Two sites, one
  * helper each way. */
-static struct kexe_shared_v7 *fuzz_map_shared(void) {
-  void *mapped = mmap(NULL, sizeof(struct kexe_shared_v7), PROT_READ | PROT_WRITE,
+static struct kexe_shared_v8 *fuzz_map_shared(void) {
+  void *mapped = mmap(NULL, sizeof(struct kexe_shared_v8), PROT_READ | PROT_WRITE,
                       MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-  return mapped == MAP_FAILED ? NULL : (struct kexe_shared_v7 *)mapped;
+  return mapped == MAP_FAILED ? NULL : (struct kexe_shared_v8 *)mapped;
 }
 
-static void fuzz_unmap_shared(struct kexe_shared_v7 *shared) {
+static void fuzz_unmap_shared(struct kexe_shared_v8 *shared) {
   if (shared != NULL) (void)munmap(shared, sizeof *shared);
 }
 
-static struct kexe_shared_v7 *fuzz_open(struct fuzz_cursor *cursor,
+static struct kexe_shared_v8 *fuzz_open(struct fuzz_cursor *cursor,
                                         uint8_t **code_out,
                                         uint64_t *code_length_out) {
-  struct kexe_shared_v7 *shared = fuzz_map_shared();
+  struct kexe_shared_v8 *shared = fuzz_map_shared();
   if (shared == NULL) return NULL;
   /* At least one byte, never zero -- `main` refuses `length <= 0` before it
    * maps anything, so a live context always has a non-NULL `code_base` over at
@@ -292,7 +292,7 @@ static struct kexe_shared_v7 *fuzz_open(struct fuzz_cursor *cursor,
     uint8_t byte = take_u8(cursor);
     code[i] = ascii ? (uint8_t)(0x20u + (byte % 0x5fu)) : byte;
   }
-  shared->context.version = 7;
+  shared->context.version = 8;
   shared->context.fuel = 512;
   shared->context.code_base = code;
   shared->context.code_length = code_length;
@@ -305,7 +305,7 @@ static struct kexe_shared_v7 *fuzz_open(struct fuzz_cursor *cursor,
   return shared;
 }
 
-static void fuzz_close(struct kexe_shared_v7 *shared, uint8_t *code) {
+static void fuzz_close(struct kexe_shared_v8 *shared, uint8_t *code) {
   free(code);
   fuzz_unmap_shared(shared);
 }
@@ -334,7 +334,7 @@ struct fuzz_marks {
   uint64_t vector_item_used;
 };
 
-static void marks_save(const struct kexe_shared_v7 *shared,
+static void marks_save(const struct kexe_shared_v8 *shared,
                        struct fuzz_marks *marks) {
   marks->pair_used = shared->pair_used;
   marks->kgraph_used = shared->kgraph_used;
@@ -343,7 +343,7 @@ static void marks_save(const struct kexe_shared_v7 *shared,
   marks->vector_item_used = shared->vector_item_used;
 }
 
-static void marks_restore(struct kexe_shared_v7 *shared,
+static void marks_restore(struct kexe_shared_v8 *shared,
                           const struct fuzz_marks *marks) {
   shared->pair_used = marks->pair_used;
   shared->kgraph_used = marks->kgraph_used;
@@ -359,7 +359,7 @@ static int64_t fuzz_value(struct fuzz_cursor *cursor, const int64_t *registers) 
 }
 
 static int64_t fuzz_handle(struct fuzz_cursor *cursor, const int64_t *registers,
-                           const struct kexe_shared_v7 *shared,
+                           const struct kexe_shared_v8 *shared,
                            enum fuzz_arena arena) {
   uint8_t selector = take_u8(cursor);
   if (selector >= 0xf0) return (int64_t)take_u64(cursor);
@@ -373,9 +373,9 @@ static int64_t fuzz_handle(struct fuzz_cursor *cursor, const int64_t *registers,
 }
 
 static int64_t fuzz_dispatch(struct fuzz_cursor *cursor, int64_t *registers,
-                             struct kexe_shared_v7 *shared, uint8_t operation) {
-  struct kexe_context_v7 *context = &shared->context;
-  switch (operation % 29u) {
+                             struct kexe_shared_v8 *shared, uint8_t operation) {
+  struct kexe_context_v8 *context = &shared->context;
+  switch (operation % 31u) {
     case 0:
       return checked_pair_new(context, fuzz_value(cursor, registers),
                               fuzz_value(cursor, registers));
@@ -501,6 +501,18 @@ static int64_t fuzz_dispatch(struct fuzz_cursor *cursor, int64_t *registers,
       return checked_string_skip_blank(
           context, fuzz_handle(cursor, registers, shared, FUZZ_ARENA_PAIR),
           fuzz_value(cursor, registers));
+    /* ABI v8: the two line slots. */
+    case 28:
+      return checked_string_index_of_from(
+          context, fuzz_handle(cursor, registers, shared, FUZZ_ARENA_PAIR),
+          fuzz_handle(cursor, registers, shared, FUZZ_ARENA_PAIR),
+          fuzz_value(cursor, registers));
+    case 29:
+      return checked_string_compare_lines(
+          context, fuzz_handle(cursor, registers, shared, FUZZ_ARENA_PAIR),
+          fuzz_value(cursor, registers),
+          fuzz_handle(cursor, registers, shared, FUZZ_ARENA_PAIR),
+          fuzz_value(cursor, registers));
     default: {
       /* A literal string handle as `emit-string-literal` builds one: a pair
        * over the artifact's own code+literal region. Sometimes in range,
@@ -517,7 +529,7 @@ static void fuzz_handle_graph(const uint8_t *data, size_t size) {
   struct fuzz_cursor cursor = {data, size, 0};
   uint8_t *code = NULL;
   uint64_t code_length = 0;
-  struct kexe_shared_v7 *shared = fuzz_open(&cursor, &code, &code_length);
+  struct kexe_shared_v8 *shared = fuzz_open(&cursor, &code, &code_length);
   if (shared == NULL) return;
 
   int64_t registers[FUZZ_REGISTERS];
@@ -581,7 +593,7 @@ static void fuzz_result_inspection(const uint8_t *data, size_t size) {
   struct fuzz_cursor cursor = {data, size, 0};
   uint8_t *code = NULL;
   uint64_t code_length = 0;
-  struct kexe_shared_v7 *shared = fuzz_open(&cursor, &code, &code_length);
+  struct kexe_shared_v8 *shared = fuzz_open(&cursor, &code, &code_length);
   if (shared == NULL) return;
   fuzz_arm_reach_report();
 
@@ -738,9 +750,9 @@ static void fuzz_parsers(const uint8_t *data, size_t size) {
   uint64_t case_count = 0, bool_mask = 0;
   (void)parse_variant_profile(text, &case_count, &bool_mask);
 
-  struct kexe_shared_v7 *shared = fuzz_map_shared();
+  struct kexe_shared_v8 *shared = fuzz_map_shared();
   if (shared != NULL) {
-    shared->context.version = 7;
+    shared->context.version = 8;
     int64_t value = 0;
     (void)parse_guest_arg(shared, text, &value);
     fuzz_unmap_shared(shared);

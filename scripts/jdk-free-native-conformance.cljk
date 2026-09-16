@@ -214,7 +214,17 @@
              ;; non-ASCII code point under the fold); the value is what the
              ;; loader printed, checked against the arithmetic in the file.
              {:source "text-slots.kotoba" :symbol "main"
-              :arguments [] :expected "21337441"}]]
+              :arguments [] :expected "21337441"}
+             ;; ABI v8 (2026-09-16): the two line heads, string-index-of-from
+             ;; (272) and string-compare-lines (280) -- the second the first
+             ;; FOUR-argument runtime call, whose fourth argument rides in
+             ;; x4 / r8 and lands as the loader's fifth C parameter. Executed
+             ;; here, that convention is measured rather than read. Same
+             ;; shape as text-slots: a decimal place per head over the
+             ;; operands a wrong host gets wrong (relative instead of
+             ;; absolute, the newline inside the line, a proper prefix).
+             {:source "line-slots.kotoba" :symbol "main"
+              :arguments [] :expected "231132"}]]
       (let [artifact (file (str symbol ".kexe"))
             binary (file (str symbol ".bin"))]
         (invoke ["compile" (.join path root "examples" source)

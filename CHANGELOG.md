@@ -29,6 +29,25 @@ production-strength VM sandbox remain absent.
 
 ### Current capabilities (state so far)
 
+- **Context ABI v8: the two line heads as host slots** (2026-09-16) —
+  `string-index-of-from` 272 (the first occurrence of a needle at or after
+  a byte-offset boundary, ABSOLUTE, -1 when none: every line walk had been
+  cutting a view — a handle — to search from an offset) and
+  `string-compare-lines` 280 (byte order of the newline-terminated line of
+  A at I against the line of B at J; a line ends at the first newline,
+  excluded, or the end; the byte length names the empty line: sort's merge
+  and uniq cut two views per comparison). The second is the first
+  four-argument runtime call: kotoba-mir 2c4793d carries its fourth
+  argument in r8 / x4, the loader's fifth C parameter, and
+  `examples/line-slots.kotoba` executes it under the loader in
+  `jdk-free-native-conformance` (231132) — so the convention is measured,
+  not read. kotoba-gmir 790a729 / osaho 7dfafd7 / kotoba-sema b8b01d0
+  (grammar resynced to kotoba-lang 72648a8, digest 9e0eca1e) /
+  kotoba-native d2f1dca / kotoba-verifier 72ba0f4 / artifact 61f5d38.
+  The write providers' decimal count is written by hand rather than
+  `snprintf` — a third of a 100 ns write, and a write is one capability
+  call per line in every line-oriented command. Fuzz harness reaches
+  both; Windows loader in step.
 - **Context ABI v7: the four text heads as host slots** (2026-09-16) —
   `string-compare` 240 (byte order over the common prefix, the shorter
   first: code point order for canonical UTF-8, answered by one memcmp),

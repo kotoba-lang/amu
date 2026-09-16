@@ -177,17 +177,21 @@
 ;; for equality, so one check answers all of them. They are listed separately
 ;; because a reader looking for "is a downgraded version caught" should find
 ;; that question asked in those words.
-(deftest a-context-abi-that-is-not-v7-is-refused-by-name
+(deftest a-context-abi-that-is-not-v8-is-refused-by-name
   (let [kexe (:artifact (compiler/compile-source "(defn main [] 42)"
                                                  :aarch64-kotoba-v1 {}))
         refusal (fn [m]
                   (try (verifier/verify-artifact! (artifact/seal (dissoc m :sha256)))
                        :ACCEPTED
                        (catch clojure.lang.ExceptionInfo e (ex-message e))))]
-    (is (= 7 (get-in kexe [:context-abi :version])))
+    (is (= 8 (get-in kexe [:context-abi :version])))
     (is (= "execution context ABI is not admitted"
-           (refusal (assoc-in kexe [:context-abi :version] 6)))
+           (refusal (assoc-in kexe [:context-abi :version] 7)))
         "a downgraded version field")
+    (is (= "execution context ABI is not admitted"
+           (refusal (update kexe :context-abi dissoc :string-index-of-from-offset
+                            :string-compare-lines-offset)))
+        "a table without the v8 slots, which is what a v7 producer emits")
     (is (= "execution context ABI is not admitted"
            (refusal (update kexe :context-abi dissoc :string-compare-offset :string-fold-ascii-offset
                             :string-find-blank-offset :string-skip-blank-offset)))

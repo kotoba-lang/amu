@@ -1,0 +1,32 @@
+(ns examples.line-slots)
+
+;; The two ABI v8 line heads (context slots 272 / 280), executed against
+;; the HOST's answers. Each head's result lands in its own decimal place so
+;; the printed number names which slot answered wrongly, over the operands
+;; a wrong host gets wrong:
+;;
+;;   string-index-of-from "xaxab" "x" 1     -> 2   (ABSOLUTE: a host that
+;;                        answers relative to FROM prints 1)
+;;   string-index-of-from "abcab" "ab" 3    -> 3   (a match AT from)
+;;   string-index-of-from "abc" "c" 3       -> -1  (from the end: nothing;
+;;                        a host that reads past the end may find garbage)
+;;   string-compare-lines "ab\nabc\n" 0 "ab\nabc\n" 3 -> -1 (a proper
+;;                        prefix is LESS; a host that compares only the
+;;                        common prefix answers 0)
+;;   string-compare-lines "a\tb\n" 0 "a\n" 0 -> 1 (the tab (9) is below
+;;                        the newline (10): a host that includes the newline
+;;                        in the line compares '\t' < '\n' and answers -1)
+;;   string-compare-lines "ab\n" 0 "ab" 0   -> 0   (a last line without
+;;                        its newline is the same line)
+;;
+;; main = 100000*(idx1) + 10000*(idx2) + 1000*(idx3+2) + 100*(cmp1+2)
+;;      + 10*(cmp2+2) + (cmp3+2)
+;;      = 100000*2 + 10000*3 + 1000*1 + 100*1 + 10*3 + 2
+;;      = 231132
+(defn main [] :i64
+  (+ (* 100000 (string-index-of-from "xaxab" "x" 1))
+     (* 10000 (string-index-of-from "abcab" "ab" 3))
+     (* 1000 (+ (string-index-of-from "abc" "c" 3) 2))
+     (* 100 (+ (string-compare-lines "ab\nabc\n" 0 "ab\nabc\n" 3) 2))
+     (* 10 (+ (string-compare-lines "a\tb\n" 0 "a\n" 0) 2))
+     (+ (string-compare-lines "ab\n" 0 "ab" 0) 2)))
