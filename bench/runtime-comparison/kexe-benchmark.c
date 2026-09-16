@@ -414,7 +414,7 @@ static int64_t checked_vector_conj(struct kexe_context_v8 *context,
   if (vector == NULL) { raise(SIGILL); return 0; }
   uint64_t offset = vector->offset;
   uint64_t length = vector->length;
-  if (length >= 16384u) { raise(SIGILL); return 0; }
+  if (length >= 16777216u) { raise(SIGILL); return 0; }
   if (offset + length != shared->vector_item_used) {
     if (shared->vector_item_used + length + 1u > BENCH_VECTOR_ITEM_CAPACITY) {
       raise(SIGILL);
@@ -466,7 +466,7 @@ static int64_t checked_vector_alloc(struct kexe_context_v8 *context,
                                     int64_t count) {
   struct bench_shared *shared = (struct bench_shared *)context;
   if (context == NULL || context->version != 8) { raise(SIGILL); return 0; }
-  if (count < 0 || count > 16384) { raise(SIGILL); return 0; }
+  if (count < 0 || count > 16777216) { raise(SIGILL); return 0; }
   if (shared->vector_item_used + (uint64_t)count > BENCH_VECTOR_ITEM_CAPACITY) {
     raise(SIGILL);
     return 0;

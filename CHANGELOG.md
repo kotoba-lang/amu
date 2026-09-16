@@ -29,6 +29,26 @@ production-strength VM sandbox remain absent.
 
 ### Current capabilities (state so far)
 
+- **Vector arenas as per-run budgets; `vector-item-limit` 2^24** (2026-09-16,
+  owner decision) — `KEXE_VECTORS` / `KEXE_VECTOR_ITEMS` and
+  `package-command --vectors` / `--vector-items` name the two vector
+  arenas for one run (defaults the 4096 / 65536 they always were; mmap'd
+  maxima 2^22 handles / 2^27 words, refused above before the guest
+  starts), and the per-vector length the loader re-derives from
+  `kotoba.kir.value/vector-item-limit` is 2^24 (osaho #93, the argument
+  in its docstring: a vector is bounded again by each host's budget).
+  `examples/vector-alloc-limit.kotoba` measures the limit at its boundary
+  under an arena one word wider than it in `jdk-free-native-conformance`
+  (16777216 admitted, 16777217 refused). What it buys: an index merge
+  sort — `org-ieee-sort` keeps a vector of line offsets and orders the
+  offsets in place — 33 MB in **0.77 s** where the text merge took 2.69
+  (uutils 0.19). Two loader changes measured on it: `string_compare_lines`
+  compares eight bytes at a time in one pass (differentially tested
+  against the memchr/memcmp reference, 0 mismatches over 79,524 offset
+  pairs; a tab below a newline is why memcmp alone cannot answer it), and
+  `string_concat` validates its inputs so its result inherits validity
+  (an accumulator started from a literal had made the write that read it
+  re-scan every batch). artifact 92c35d4 pins both loader identities.
 - **Context ABI v8: the two line heads as host slots** (2026-09-16) —
   `string-index-of-from` 272 (the first occurrence of a needle at or after
   a byte-offset boundary, ABSOLUTE, -1 when none: every line walk had been

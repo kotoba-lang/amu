@@ -1184,6 +1184,11 @@ order of two newline-terminated lines named by their start offsets) — the
 latter the first four-argument runtime call (x4 / r8, the loader's fifth C
 parameter). `examples/line-slots.kotoba` is executed under the loader by
 `jdk-free-native-conformance`.
+The two vector arenas are per-run budgets (2026-09-16): `KEXE_VECTORS` /
+`KEXE_VECTOR_ITEMS`, or `package-command --vectors` / `--vector-items`,
+defaults 4096 / 65536, maxima 2^22 / 2^27; one vector may hold up to 2^24
+items (`kotoba.kir.value/vector-item-limit`), measured at its boundary by
+`examples/vector-alloc-limit.kotoba` in `jdk-free-native-conformance`.
 This permits bounded recursion while guaranteeing that recursive cycles trap.
 x86-64 reserves r9 and AArch64 reserves x7 for a loader-owned fuel-context
 pointer; both charge every function entry before guest instructions. Their real

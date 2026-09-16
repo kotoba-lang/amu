@@ -1483,13 +1483,19 @@
 
 ;; The host bound is the only one that can answer here. `n` arrives as an
 ;; entry ARGUMENT, so the compile-time KIR oracle -- which refuses a literal
-;; `(vector-alloc 20000)` with `:vector-alloc-out-of-range` before any code is
-;; emitted -- has nothing to fold, and `checked_vector_alloc`'s own
-;; re-derivation of `vector-item-limit` is what decides. That re-derivation is
-;; the thing being tested: 16384 is the limit, so 16384 must be ADMITTED and
-;; 16385 refused. A bound checked with `>=` instead of `>` passes every
-;; too-large case and still refuses one program that should run.
-(deftest native-vector-alloc-fails-closed-at-the-item-limit-the-host-re-derives
+;; `(vector-alloc 20000000)` with `:vector-alloc-out-of-range` before any
+;; code is emitted -- has nothing to fold, and `checked_vector_alloc` is
+;; what decides. Two bounds live there since 2026-09-16: the per-vector
+;; limit it re-derives from `vector-item-limit` (2^24, osaho #93) and the
+;; item ARENA budget of the run (KEXE_VECTOR_ITEMS, 65536 words unless the
+;; caller asks). Under this executor the budget is the default, so the
+;; arena is the bound that answers: 65536 must be ADMITTED and 65537
+;; refused. A bound checked with `>=` instead of `>` passes every too-large
+;; case and still refuses one program that should run. The 2^24 limit is
+;; measured where a budget can be named -- amu's jdk-free-native
+;; conformance runs the same program under KEXE_VECTOR_ITEMS=16777217 and
+;; expects 16777216 admitted and 16777217 refused.
+(deftest native-vector-alloc-fails-closed-at-the-item-arena-budget
   (let [{:keys [envelope trust]}
         (signed "(ns pilot.native-slab (:export [alloc-count]))
                  (defn alloc-count [n :i64] :i64 (vector-count (vector-alloc n)))"
@@ -1499,10 +1505,10 @@
                                       (assoc options :entry 'alloc-count)))]
     (is (= {:status :ok :result 0} (select-keys (:evidence (run 0)) [:status :result]))
         "zero slots is a real handle over an empty slice, not an error")
-    (is (= {:status :ok :result 16384}
-           (select-keys (:evidence (run 16384)) [:status :result]))
-        "the limit itself is admitted -- an off-by-one here refuses a legal program")
-    (is (= :trap (get-in (run 16385) [:report :status]))
-        "one past the limit is refused by the host, not by the oracle")
+    (is (= {:status :ok :result 65536}
+           (select-keys (:evidence (run 65536)) [:status :result]))
+        "the arena budget itself is admitted -- an off-by-one here refuses a legal program")
+    (is (= :trap (get-in (run 65537) [:report :status]))
+        "one past the budget is refused by the host, not by the oracle")
     (is (= :trap (get-in (run -1) [:report :status]))
         "a negative count is refused before it is widened to a length")))

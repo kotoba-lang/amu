@@ -240,7 +240,7 @@ static void ds_clear(void) {
  * `inspect_string_result` are given to work with. */
 /* The shared state is MAPPED, not malloc'ed, for the same reason the loader
  * maps it: with the 2026-09-15 ceilings (64 Mi pair cells, 1 GiB string
- * pool) the struct is 2.2 GB of address space, and libFuzzer's malloc hook
+ * pool, 1 GiB of vector items) the struct is 3.3 GB of address space, and libFuzzer's malloc hook
  * refused the allocation as out-of-memory on the first seed input --
  * `malloc(2215346616)` -- before any fuzzing happened. Anonymous zero pages
  * fault in only as the bump allocators reach them, so the resident size

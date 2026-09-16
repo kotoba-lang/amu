@@ -70,7 +70,12 @@ static const GUID KEXE_CONDITION_FLAGS =
 #define KEXE_RECORD_FIELD_LIMIT 128u
 #define KEXE_VECTOR_CAPACITY 4096u
 #define KEXE_VECTOR_ITEM_CAPACITY 65536u
-#define KEXE_VECTOR_LENGTH_LIMIT 16384u
+/* One vector's length bound, re-derived from kotoba.kir.value/vector-item-limit
+ * (2^24 since 2026-09-16, osaho #93). This loader's item arena is still the
+ * fixed 65536 words above, so the arena bounds a vector first here; the
+ * constant matches KIR so a length KIR admits is refused for the arena's
+ * reason, not a stale one. */
+#define KEXE_VECTOR_LENGTH_LIMIT 16777216u
 
 struct pair_cell { int64_t first; int64_t second; };
 struct vector_cell { uint64_t offset; uint64_t length; };

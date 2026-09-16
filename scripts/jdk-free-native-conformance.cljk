@@ -224,7 +224,19 @@
              ;; operands a wrong host gets wrong (relative instead of
              ;; absolute, the newline inside the line, a proper prefix).
              {:source "line-slots.kotoba" :symbol "main"
-              :arguments [] :expected "231132"}]]
+              :arguments [] :expected "231132"}
+             ;; vector-item-limit 2^24 (2026-09-16, osaho #93) re-derived by
+             ;; the loader, measured at its boundary under an item arena one
+             ;; word wider than the limit: the limit itself is admitted and
+             ;; one past it is refused BY THE LIMIT, since the arena would
+             ;; have held it. Both directions, because each alone proves
+             ;; nothing. (128 MB of zero-filled anonymous pages, touched once.)
+             {:source "vector-alloc-limit.kotoba" :symbol "alloc-count"
+              :arguments ["16777216"] :expected "16777216"
+              :env {"KEXE_VECTOR_ITEMS" "16777217" "KEXE_FUEL" "1000000"}}
+             {:source "vector-alloc-limit.kotoba" :symbol "alloc-count"
+              :arguments ["16777217"] :expected :trap
+              :env {"KEXE_VECTOR_ITEMS" "16777217" "KEXE_FUEL" "1000000"}}]]
       (let [artifact (file (str symbol ".kexe"))
             binary (file (str symbol ".bin"))]
         (invoke ["compile" (.join path root "examples" source)

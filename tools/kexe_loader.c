@@ -203,24 +203,39 @@ static void write_stderr_checked(const char *bytes, size_t length) {
   ssize_t written = write(STDERR_FILENO, bytes, length);
   (void)written;
 }
-/* Vector handles, and the element words they slice. The element arena is
- * deliberately four times `kotoba.kir.value/vector-item-limit` (16384), the
- * longest single vector KIR admits: an allocating update could build such a
- * vector and then never touch it again. This bounds total LIVE allocation,
- * not any one vector's length -- the same distinction the string pool above
- * already makes, in bytes rather than words.
+/* Vector handles, and the element words they slice. Two arenas, because a
+ * table entry and the elements it spans are separately exhaustible: many
+ * small vectors run out of entries first, one growing vector runs out of
+ * elements first, and neither bound implies the other.
  *
- * ABI v4 adds `vector_assoc_in_place`, which allocates NOTHING, so the
- * sentence this comment used to open with -- every operation that changes an
- * element allocates rather than mutates -- is no longer true of the whole
- * table. It is still true of `checked_vector_assoc`, and that is what keeps
- * an unproven handle safe. The two numbers below are UNCHANGED by v4:
- * removing the copy removes the reason the arena had to be four vectors wide,
- * but raising a bound is a separate decision with its own fail-closed
- * argument, and it has not been made (superproject `surface-status.edn`,
- * `:arena-bounds`). */
+ * Per-run BUDGETS since 2026-09-16 (owner decision, superproject
+ * ADR-2609161700 follow-up), the shape KEXE_PAIRS and KEXE_STRING_POOL
+ * have: the two CAPACITY values below are the defaults -- exactly the 4096
+ * handles / 65536 words they always were, so a guest that ran before runs
+ * identically -- and KEXE_VECTORS / KEXE_VECTOR_ITEMS (or, in a packaged
+ * command, `--vectors` / `--vector-items` baked as constants) name another
+ * positive decimal for one run, refused above the two MAX values, which are
+ * address space (MAP_ANONYMOUS, zero-filled on first touch), not memory.
+ * Exhaustion is the same SIGILL every arena answers, and the structured
+ * report's tail carries each arena's budget and use, so the one that filled
+ * is the one at its budget.
+ *
+ * KEXE_VECTOR_ITEM_LIMIT is a different quantity: how long ONE vector may
+ * be, re-derived from `kotoba.kir.value/vector-item-limit` (2^24 since
+ * osaho #93, the same day) and checked separately from the arena at
+ * `vector-conj` and `vector-alloc` -- exhausting the arena and exceeding what
+ * KIR admits are different failures. It is at most the item MAX by
+ * construction, so a vector can never be longer than the run could hold.
+ *
+ * ABI v4's `vector_assoc_in_place` allocates NOTHING; `checked_vector_assoc`
+ * still copies, which is what keeps an unproven handle safe. */
 #define KEXE_VECTOR_CAPACITY 4096u
 #define KEXE_VECTOR_ITEM_CAPACITY 65536u
+#define KEXE_VECTOR_MAX (4u * 1024u * 1024u)
+#define KEXE_VECTOR_ITEM_MAX (128u * 1024u * 1024u)
+#define KEXE_VECTOR_ITEM_LIMIT (16u * 1024u * 1024u)
+static uint64_t kexe_vector_budget = KEXE_VECTOR_CAPACITY;
+static uint64_t kexe_vector_item_budget = KEXE_VECTOR_ITEM_CAPACITY;
 
 struct kexe_context_v8 {
   uint64_t version;
@@ -433,9 +448,9 @@ struct kexe_shared_v8 {
    * growing vector runs out of elements first, and neither bound implies the
    * other. */
   uint64_t vector_used;
-  struct kexe_vector_v1 vectors[KEXE_VECTOR_CAPACITY];
+  struct kexe_vector_v1 vectors[KEXE_VECTOR_MAX];
   uint64_t vector_item_used;
-  int64_t vector_items[KEXE_VECTOR_ITEM_CAPACITY];
+  int64_t vector_items[KEXE_VECTOR_ITEM_MAX];
   /* The arena-scope mark stack (ABI v6): one entry per open scope, four
    * arena marks each. Lives before the pool for the reason the pool is last
    * (below); bounded, and the bound is a trap, not a wrap. */
@@ -511,10 +526,11 @@ _Static_assert(offsetof(struct kexe_context_v8, string_index_of_from) == 272, "l
 _Static_assert(offsetof(struct kexe_context_v8, string_compare_lines) == 280, "line ABI drift");
 _Static_assert(sizeof(((struct kexe_shared_v8 *)0)->string_pool) == KEXE_STRING_POOL_MAX,
                "string pool size drift");
-_Static_assert(sizeof(((struct kexe_shared_v8 *)0)->vectors) == 65536,
-               "vector table size drift");
-_Static_assert(sizeof(((struct kexe_shared_v8 *)0)->vector_items) == 524288,
+_Static_assert(sizeof(((struct kexe_shared_v8 *)0)->vectors) == KEXE_VECTOR_MAX * 16u,
+               "vector arena size drift");
+_Static_assert(sizeof(((struct kexe_shared_v8 *)0)->vector_items) == KEXE_VECTOR_ITEM_MAX * 8u,
                "vector item arena size drift");
+_Static_assert(KEXE_VECTOR_ITEM_LIMIT <= KEXE_VECTOR_ITEM_MAX, "a vector must fit the arena");
 
 static int parse_u64(const char *text, uint64_t *value) {
   if (text == NULL || *text < '0' || *text > '9') return -1;
@@ -640,7 +656,8 @@ static struct kexe_vector_v1 *resolve_vector(struct kexe_shared_v8 *shared,
  * rather than a silently wrong vector. */
 static int64_t intern_vector(struct kexe_shared_v8 *shared,
                              uint64_t offset, uint64_t length) {
-  if (shared->vector_used >= KEXE_VECTOR_CAPACITY) return 0;
+  if (shared->vector_used >= kexe_vector_budget ||
+      shared->vector_used >= KEXE_VECTOR_MAX) return 0;
   uint64_t index = shared->vector_used++;
   shared->vectors[index].offset = offset;
   shared->vectors[index].length = length;
@@ -694,11 +711,11 @@ static int64_t checked_vector_conj(struct kexe_context_v8 *context,
    * `kotoba.kir.value/vector-item-limit`. Checked separately from arena
    * capacity because the arena is deliberately wider: exhausting the arena
    * and exceeding what KIR admits are different failures. */
-  if (length >= 16384u) { raise(SIGILL); return 0; }
+  if (length >= KEXE_VECTOR_ITEM_LIMIT) { raise(SIGILL); return 0; }
   if (offset + length != shared->vector_item_used) {
     /* Interior slice: appending would write a word some other handle may
      * already span, so copy first. */
-    if (shared->vector_item_used + length + 1u > KEXE_VECTOR_ITEM_CAPACITY) {
+    if (shared->vector_item_used + length + 1u > kexe_vector_item_budget) {
       raise(SIGILL);
       return 0;
     }
@@ -712,7 +729,7 @@ static int64_t checked_vector_conj(struct kexe_context_v8 *context,
    * handle: writing it cannot change what any existing handle reads, because
    * every handle carries its own length. This is why repeated conj is linear
    * rather than quadratic. */
-  if (shared->vector_item_used >= KEXE_VECTOR_ITEM_CAPACITY) {
+  if (shared->vector_item_used >= kexe_vector_item_budget) {
     raise(SIGILL);
     return 0;
   }
@@ -736,7 +753,7 @@ static int64_t checked_vector_assoc(struct kexe_context_v8 *context,
   }
   uint64_t offset = vector->offset;
   uint64_t length = vector->length;
-  if (shared->vector_item_used + length > KEXE_VECTOR_ITEM_CAPACITY) {
+  if (shared->vector_item_used + length > kexe_vector_item_budget) {
     raise(SIGILL);
     return 0;
   }
@@ -753,7 +770,7 @@ static int64_t checked_vector_assoc(struct kexe_context_v8 *context,
 /* ABI v4: `n` zero words, in one call.
  *
  * The item bound is re-derived from `kotoba.kir.value/vector-item-limit`, the
- * same 16384 `checked_vector_conj` above re-derives, and is checked SEPARATELY
+ * same KEXE_VECTOR_ITEM_LIMIT `checked_vector_conj` above re-derives, and is checked SEPARATELY
  * from arena capacity because exhausting the arena and exceeding what KIR
  * admits are different failures. `n == 0` is admitted and yields a real handle
  * over an empty slice, exactly as `checked_vector_new_empty` does. */
@@ -761,8 +778,8 @@ static int64_t checked_vector_alloc(struct kexe_context_v8 *context,
                                     int64_t count) {
   struct kexe_shared_v8 *shared = (struct kexe_shared_v8 *)context;
   if (context == NULL || context->version != 8) { raise(SIGILL); return 0; }
-  if (count < 0 || count > 16384) { raise(SIGILL); return 0; }
-  if (shared->vector_item_used + (uint64_t)count > KEXE_VECTOR_ITEM_CAPACITY) {
+  if (count < 0 || (uint64_t)count > KEXE_VECTOR_ITEM_LIMIT) { raise(SIGILL); return 0; }
+  if (shared->vector_item_used + (uint64_t)count > kexe_vector_item_budget) {
     raise(SIGILL);
     return 0;
   }
@@ -1277,7 +1294,7 @@ static int peek_vector(struct kexe_context_v8 *context, int64_t handle,
   if (context == NULL || context->version != 8) return 0;
   vector = resolve_vector(shared, handle);
   if (vector == NULL) return 0;
-  if (vector->offset + vector->length > KEXE_VECTOR_ITEM_CAPACITY) return 0;
+  if (vector->offset + vector->length > KEXE_VECTOR_ITEM_MAX) return 0;
   *length = vector->length;
   *items = shared->vector_items + vector->offset;
   return 1;
@@ -3217,11 +3234,60 @@ static int64_t checked_string_index_of_from(struct kexe_context_v8 *context,
   return found == NULL ? -1 : (int64_t)(found - h);
 }
 
-/* The newline-terminated line of a validated string starting at a boundary:
- * its length, up to the first newline (excluded) or the end. */
-static int64_t kexe_line_length(const uint8_t *bytes, int64_t length, int64_t start) {
-  const uint8_t *nl = (const uint8_t *)memchr(bytes + start, '\n', (size_t)(length - start));
-  return nl == NULL ? length - start : (int64_t)(nl - (bytes + start));
+/* Byte order of the line at A against the line at B, each ending at its
+ * first newline (excluded) or at the end of its RA / RB remaining bytes:
+ * -1 / 0 / 1, a proper prefix less than what extends it -- the order
+ * string_compare answers, over the two lines.
+ *
+ * One pass, eight bytes at a time, rather than two memchr calls and a memcmp
+ * (2026-09-16): sampled at 40% of an index sort, the two line-length scans
+ * were most of the comparison, and a line comparison is decided within the
+ * first word or two far more often than not. A word of A and a word of B
+ * are equal, or they differ at a first byte P; a newline in either word
+ * before P ends a line before the difference and decides by length, and the
+ * byte at P decides otherwise -- a newline THERE is the end of that line,
+ * below every byte the other line still has. The tail, when fewer than eight
+ * bytes remain in either string, is the same argument one byte at a time.
+ * A tab (9) below a newline (10) is why memcmp alone cannot answer this:
+ * a line ending where the other has a tab is the shorter line and sorts
+ * first, and memcmp would say the opposite. */
+static inline uint64_t kexe_le64(const uint8_t *p) {
+  uint64_t w;
+  memcpy(&w, p, 8);
+  return w;
+}
+static inline uint64_t kexe_zero_byte_mask(uint64_t w) {
+  /* Bit 7 of each byte that is zero (Mycroft), exact for the LOWEST such
+   * byte, which is the only one read. */
+  return (w - 0x0101010101010101ull) & ~w & 0x8080808080808080ull;
+}
+static int64_t kexe_compare_lines(const uint8_t *a, int64_t ra,
+                                  const uint8_t *b, int64_t rb) {
+  const uint64_t nl8 = 0x0a0a0a0a0a0a0a0aull;
+  int64_t k = 0;
+  while (ra - k >= 8 && rb - k >= 8) {
+    uint64_t wa = kexe_le64(a + k), wb = kexe_le64(b + k);
+    uint64_t na = kexe_zero_byte_mask(wa ^ nl8), nb = kexe_zero_byte_mask(wb ^ nl8);
+    if (wa == wb) {
+      if (na != 0) return 0;          /* both lines end at the same byte */
+      k += 8;
+      continue;
+    }
+    int p = __builtin_ctzll(wa ^ wb) / 8;
+    int ea = na ? __builtin_ctzll(na) / 8 : 8;
+    int eb = nb ? __builtin_ctzll(nb) / 8 : 8;
+    if (ea < p || eb < p) return ea < eb ? -1 : (ea > eb ? 1 : 0);
+    uint8_t ca = a[k + p], cb = b[k + p];
+    if (ca == '\n') return -1;
+    if (cb == '\n') return 1;
+    return ca < cb ? -1 : 1;
+  }
+  for (;; k++) {
+    int enda = k >= ra || a[k] == '\n';
+    int endb = k >= rb || b[k] == '\n';
+    if (enda || endb) return enda ? (endb ? 0 : -1) : 1;
+    if (a[k] != b[k]) return a[k] < b[k] ? -1 : 1;
+  }
 }
 
 static int64_t checked_string_compare_lines(struct kexe_context_v8 *context,
@@ -3246,17 +3312,7 @@ static int64_t checked_string_compare_lines(struct kexe_context_v8 *context,
   }
   if (i < length_a && (a[i] & 0xc0) == 0x80) { raise(SIGILL); return 0; }
   if (j < length_b && (b[j] & 0xc0) == 0x80) { raise(SIGILL); return 0; }
-  int64_t la = kexe_line_length(a, length_a, i);
-  int64_t lb = kexe_line_length(b, length_b, j);
-  /* Byte order over the common prefix, then the shorter first -- the same
-   * order string_compare answers, over the two lines. */
-  size_t common = (size_t)(la < lb ? la : lb);
-  int c = memcmp(a + i, b + j, common);
-  if (c < 0) return -1;
-  if (c > 0) return 1;
-  if (la < lb) return -1;
-  if (la > lb) return 1;
-  return 0;
+  return kexe_compare_lines(a + i, length_a - i, b + j, length_b - j);
 }
 
 /* arena-scope (ABI v6): see the slot's comment in the context struct. */
@@ -3407,9 +3463,20 @@ static int64_t checked_string_concat(struct kexe_context_v8 *context,
   int64_t total = length_a + length_b;
   const uint8_t *a = resolve_string_bytes(context, offset_a, length_a);
   const uint8_t *b = resolve_string_bytes(context, offset_b, length_b);
-  int inputs_validated =
-      shared->pair_validated[(uint64_t)handle_a - 1] &&
-      shared->pair_validated[(uint64_t)handle_b - 1];
+  /* Validate the inputs NOW rather than remember whether someone else has:
+   * an accumulator that starts from a literal (never validated, since nothing
+   * read it) used to mint an unvalidated result at every append, and the
+   * write that finally read it validated the whole batch -- 33 MB of
+   * re-scanning across an index sort's output, sampled 2026-09-16. Each input
+   * is scanned at most once per handle (the flag), so this is the same total
+   * work as before, moved to where the result can inherit it. */
+  if (a == NULL || b == NULL ||
+      !ensure_valid_string(context, handle_a, a, length_a) ||
+      !ensure_valid_string(context, handle_b, b, length_b)) {
+    raise(SIGILL);
+    return 0;
+  }
+  int inputs_validated = 1;
   /* TAIL APPEND (2026-09-15). When A is the LAST allocation in the pool --
    * pool-backed and ending exactly at string_pool_used -- the result can be
    * A's own bytes followed by B's, so only B is copied and only B's bytes are
@@ -3655,13 +3722,13 @@ static int supervise(pid_t child) {
 #define KEXE_REPORT_TAIL_FMT                                                  \
   "} :heap {:capacity %" PRIu64 " :used %" PRIu64                             \
   "} :string-pool {:capacity %" PRIu64 " :used %" PRIu64                      \
-  "} :vectors {:capacity %u :used %"                                          \
-  PRIu64 "} :vector-items {:capacity %u :used %" PRIu64 "}}\n"
+  "} :vectors {:capacity %" PRIu64 " :used %"                                 \
+  PRIu64 "} :vector-items {:capacity %" PRIu64 " :used %" PRIu64 "}}\n"
 #define KEXE_REPORT_TAIL_ARGS(s)                                              \
   kexe_pair_budget, (s)->pair_used,                                           \
       kexe_string_pool_budget, (s)->string_pool_used,                          \
-      (unsigned)KEXE_VECTOR_CAPACITY, (s)->vector_used,                        \
-      (unsigned)KEXE_VECTOR_ITEM_CAPACITY, (s)->vector_item_used
+      kexe_vector_budget, (s)->vector_used,                                    \
+      kexe_vector_item_budget, (s)->vector_item_used
 
 static int write_supervisor_report(const struct kexe_shared_v8 *shared,
                                    int child_status,
@@ -4170,6 +4237,25 @@ int main(int argc, char **argv) {
   }
 #endif
 #ifdef KEXE_EMBEDDED
+  kexe_vector_budget = KEXE_EMBEDDED_VECTORS;
+  kexe_vector_item_budget = KEXE_EMBEDDED_VECTOR_ITEMS;
+#else
+  const char *vectors_env = getenv("KEXE_VECTORS");
+  if (vectors_env != NULL && vectors_env[0] != '\0') {
+    if (parse_u64(vectors_env, &kexe_vector_budget) != 0 || kexe_vector_budget == 0) {
+      fprintf(stderr, "kexe-loader: KEXE_VECTORS must be a positive decimal integer\n");
+      return 2;
+    }
+  }
+  const char *items_env = getenv("KEXE_VECTOR_ITEMS");
+  if (items_env != NULL && items_env[0] != '\0') {
+    if (parse_u64(items_env, &kexe_vector_item_budget) != 0 || kexe_vector_item_budget == 0) {
+      fprintf(stderr, "kexe-loader: KEXE_VECTOR_ITEMS must be a positive decimal integer\n");
+      return 2;
+    }
+  }
+#endif
+#ifdef KEXE_EMBEDDED
   kexe_cpu_seconds = KEXE_EMBEDDED_CPU_SECONDS;
   kexe_wall_seconds = KEXE_EMBEDDED_WALL_SECONDS;
 #else
@@ -4196,6 +4282,16 @@ int main(int argc, char **argv) {
   if (kexe_pair_budget > KEXE_PAIR_MAX) {
     fprintf(stderr, "kexe-loader: KEXE_PAIRS exceeds the %u-entry ceiling\n",
             (unsigned)KEXE_PAIR_MAX);
+    return 2;
+  }
+  if (kexe_vector_budget > KEXE_VECTOR_MAX) {
+    fprintf(stderr, "kexe-loader: KEXE_VECTORS exceeds the %u-entry ceiling\n",
+            (unsigned)KEXE_VECTOR_MAX);
+    return 2;
+  }
+  if (kexe_vector_item_budget > KEXE_VECTOR_ITEM_MAX) {
+    fprintf(stderr, "kexe-loader: KEXE_VECTOR_ITEMS exceeds the %u-word ceiling\n",
+            (unsigned)KEXE_VECTOR_ITEM_MAX);
     return 2;
   }
   if (kexe_string_pool_budget > KEXE_STRING_POOL_MAX) {
