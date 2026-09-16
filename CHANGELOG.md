@@ -29,6 +29,38 @@ production-strength VM sandbox remain absent.
 
 ### Current capabilities (state so far)
 
+- **Wire 41, `:io/read`: a command reads its standard input** (2026-09-16,
+  kotoba-lang #697, kotoba-sema #85, artifact #43) — measured over
+  1,268,018 Bash calls in 558 agent transcripts, head is invoked as a LATER
+  pipeline segment 97% of the time, tail 94%, cut 97%, tr 99%, sort 97%,
+  uniq 99%, wc 84%, awk 81%, grep 67%; a later segment reads stdin, and a
+  command built on wires 35/37/38 could only be the first. Two request
+  forms, one cursor: `""` answers everything to EOF; a decimal answers at
+  most that many unread bytes, the empty string at EOF (what `head` needs
+  so that `yes | head` ends). read(2) is handed the string pool's free
+  tail, so input is copied once by the kernel; input past the pool budget
+  is refused (SIGILL) rather than answered short. No scope: Seatbelt does
+  not mediate read(2) on an inherited descriptor (measured under the
+  loader's own profile), so the allow-mask bit is the whole grant and
+  `scripts/test-package-command.cljk` packages the same guest with and
+  without it (the ungranted call traps SIGTRAP — kotoba-native's emitted
+  mask check, ADR 0084 — before the loader's own SIGILL check is reached).
+  Control with the wire unrouted: three checks red, the identity echo
+  visible. POSIX loader only; the Windows and iOS hosts serve none of the
+  command wires.
+- **A reader that goes away is not a trap** (2026-09-16) — `grep e big | head -1`
+  is the single most frequent pipeline shape in agent tool use (8,593 of
+  1,268,018 Bash calls measured over 558 Claude Code transcripts,
+  superproject ADR-2609161710), and until now a packaged command in that
+  position printed `KEXE_TRAP {:kind :supervisor :reason
+  :unhandled-child-signal}` and exited 123: the child died of SIGPIPE at
+  write(2), exactly as `/usr/bin/grep` does, and the supervisor reported the
+  death it did not recognise. The supervisor now dies the same death
+  (default disposition, `raise(SIGPIPE)`, else 141), stderr silent.
+  `scripts/test-package-command.cljk` checks both directions on one `flood`
+  guest (393,216 bytes into `head -c 1` → 141 and nothing on stderr; into
+  `wc -c` → 0 and every byte); the check was seen red against the previous
+  loader with the old reason literal.
 - **Context ABI v10: two range operations that take no view and mint
   none** (2026-09-16) — `string-find-byte` 336 (the first offset at or
   after a boundary holding an ASCII byte; a line walk's newline or

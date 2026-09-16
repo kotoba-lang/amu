@@ -634,7 +634,12 @@
          ;; Advanced again 2026-09-16 to d46897da (kotoba-sema #84): the two ABI
          ;; v10 range heads typed; grammar copy resynced to kotoba-lang
          ;; e09a71f8 (digest 8a2913b8).
-         "d46897da5bcb3299bef5936fa7f86cc702d6250e"}
+         ;; Advanced again 2026-09-16 to 043c6202 (kotoba-sema #85): :io/read,
+         ;; wire 41 -- a command's standard input -- in the ClojureScript
+         ;; fallback the --jvm-free path reads; vendored catalog resynced to
+         ;; kotoba-lang #697. Without it a guest naming :io/read is refused at
+         ;; admission before the loader's provider is ever reached.
+         "043c62024bc1669656c76ffb71a2757c1b339bd0"}
         ;; ADR-2607266000 Phase B: these responsibilities moved out of this repo.
         ;;
         ;; The slice-value stream held this pin on purpose (ADR 0314), because
@@ -908,7 +913,10 @@
          ;; loader identities for context ABI v10, then for the pool range
          ;; bound the sanitized fuzz arm found (POSIX 412fd846 / Windows
          ;; 9f1c5272).
-         :git/sha "96501138c67e91747622f867dc512baa016b5b1e"}
+         ;; 96501138 -> 157f6032 (2026-09-16, its #43): POSIX loader identity
+         ;; a1193e65 for wire 41 (:io/read, standard input) and the quiet
+         ;; SIGPIPE exit; Windows unchanged.
+         :git/sha "157f60328fcffe699616745d467c51ad6bf94616"}
         ;; HELD at 1a2e10c on 2026-09-03 (ADR 0331), 28 commits behind its main,
         ;; while every other pin in this file moved to the tip. The reason, so
         ;; that a lagging pin and a pin with an argument behind it stay

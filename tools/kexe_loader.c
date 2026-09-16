@@ -2055,6 +2055,120 @@ static int64_t io_write_error_provider(struct kexe_context_v10 *context,
   return intern_utf8(context, (const uint8_t *)count, (size_t)digits);
 }
 
+/* wire id 41 = :io/read. The bytes a COMMAND reads from its STANDARD INPUT.
+ *
+ * Measured 2026-09-16 over 1,268,018 Bash calls in 558 agent transcripts
+ * (superproject ADR-2609161710): head is invoked as a LATER pipeline segment
+ * 97% of the time, tail 94%, cut 97%, tr 99%, sort 97%, uniq 99%, wc 84%,
+ * awk 81%, grep 67%. A later segment reads standard input. A command built on
+ * wires 35, 37 and 38 can only be the FIRST segment, so until this wire the
+ * commands could not sit where they are called.
+ *
+ * Request and result are both `:string`, the type pair the native gate
+ * admits, so the two forms are told apart the way wire 38 tells its own:
+ *
+ *   ""    -> everything up to EOF
+ *   "<n>" -> at most n bytes of what has not been answered yet; the EMPTY
+ *            string at EOF, so a walk that reads until it gets nothing ends
+ *
+ * One cursor for both forms -- the descriptor's own -- so bytes are answered
+ * once. The decimal form is what `head` needs to stop reading once it has its
+ * lines, which is what makes `yes | head` end.
+ *
+ * The bytes go STRAIGHT INTO THE STRING POOL: read(2) is told the pool's free
+ * tail as its buffer and the answer is a pair over what arrived, so the input
+ * is copied once by the kernel and never by this loader. The pool is a budget
+ * of the packaged binary, and input that does not fit it is refused rather
+ * than truncated: for the whole-input form a full pool is followed by a
+ * one-byte probe, and a probe that finds a byte traps -- an answer that was
+ * "everything" and was not would be a silent lie, the one outcome worth
+ * trapping over. The decimal form answers what fits, because "at most n" is
+ * its contract and a shorter answer is one the guest already handles; a pool
+ * with no room at all traps, since an empty answer there would read as EOF.
+ *
+ * No resource scope, and its own effect: the guest names no path and the
+ * grant carries none. Standard input is whatever the CALLER connected, and
+ * Seatbelt does not mediate read(2) on a descriptor the process was started
+ * with (measured 2026-09-16 under this loader's own profile, pipe and file),
+ * so the grant is enforced here, by the allow mask, and nowhere else. */
+static int64_t io_read_provider(struct kexe_context_v10 *context,
+                                int64_t request) {
+  const uint8_t *bytes = NULL;
+  uint64_t length = 0;
+  if (!read_string_handle(context, request, &bytes, &length)) {
+    raise(SIGILL);
+    return 0;
+  }
+  int whole = length == 0;
+  uint64_t limit = 0;
+  if (!whole) {
+    /* A decimal count, and nothing else -- the same refusal wire 38 makes
+     * of a malformed index, for the same reason: "1x" read as 1 is a wrong
+     * answer with nothing to say it was. */
+    if (length >= 20) {
+      raise(SIGILL);
+      return 0;
+    }
+    char count_text[24];
+    memcpy(count_text, bytes, (size_t)length);
+    count_text[length] = '\0';
+    for (uint64_t i = 0; i < length; i++) {
+      if (count_text[i] < '0' || count_text[i] > '9') {
+        raise(SIGILL);
+        return 0;
+      }
+    }
+    errno = 0;
+    char *end = NULL;
+    unsigned long long parsed = strtoull(count_text, &end, 10);
+    if (errno != 0 || end == NULL || *end != '\0') {
+      raise(SIGILL);
+      return 0;
+    }
+    limit = (uint64_t)parsed;
+  }
+  struct kexe_shared_v10 *shared = (struct kexe_shared_v10 *)context;
+  uint64_t ceiling = kexe_string_pool_budget < KEXE_STRING_POOL_MAX
+                         ? kexe_string_pool_budget
+                         : KEXE_STRING_POOL_MAX;
+  uint64_t start = shared->string_pool_used;
+  uint64_t room = ceiling > start ? ceiling - start : 0;
+  uint64_t want = whole ? room : (limit < room ? limit : room);
+  if (want == 0 && (whole || limit > 0)) {
+    /* No room: an empty answer here would read as EOF, which it is not. */
+    raise(SIGILL);
+    return 0;
+  }
+  uint64_t got = 0;
+  while (got < want) {
+    ssize_t n = read(STDIN_FILENO, shared->string_pool + start + got,
+                     (size_t)(want - got));
+    if (n < 0) {
+      if (errno == EINTR) continue;
+      raise(SIGILL);
+      return 0;
+    }
+    if (n == 0) break;
+    got += (uint64_t)n;
+    /* A pipe answers what it has; the decimal form takes that, the whole
+     * form keeps reading until EOF. */
+    if (!whole) break;
+  }
+  if (whole && got == room) {
+    uint8_t probe = 0;
+    ssize_t n;
+    do {
+      n = read(STDIN_FILENO, &probe, 1);
+    } while (n < 0 && errno == EINTR);
+    if (n != 0) {
+      raise(SIGILL);
+      return 0;
+    }
+  }
+  shared->string_pool_used = start + got;
+  return checked_pair_new(context, -((int64_t)start) - 1, (int64_t)got);
+}
+
 /* wire id 38 = :cli/args. The arguments a COMMAND was invoked with.
  *
  * The loader's own positional arguments and the guest's are separated on the
@@ -3157,6 +3271,11 @@ static int64_t checked_typed_cap_call(struct kexe_context_v10 *context,
      * written to fd 2 and the result is the decimal byte count. No resource
      * scope, for the same reason wire 37 has none. */
     result = io_write_error_provider(context, request);
+  } else if (id == 41 && request_kind == KEXE_TYPED_STRING) {
+    /* wire id 41 = :io/read. Real host provider: the empty request answers
+     * standard input to EOF, a decimal request at most that many unread
+     * bytes (empty at EOF). No resource scope; the allow mask is the grant. */
+    result = io_read_provider(context, request);
   } else if (id == 38 && request_kind == KEXE_TYPED_STRING) {
     /* wire id 38 = :cli/args. Real host provider: the empty request answers
      * the argument count as decimal text, a decimal index answers that
@@ -3818,9 +3937,25 @@ static int supervise(pid_t child) {
     return 122;
   }
   if (WIFEXITED(status)) return WEXITSTATUS(status);
-  static const char signal[] =
+  /* SIGPIPE is not the guest's fault and not a trap: the READER went away
+   * (`grep e big | head -1` -- the single most frequent pipeline shape in
+   * agent tool use, 8,593 of 1,268,018 measured Bash calls on 2026-09-16,
+   * superproject ADR-2609161710) and the child died at write(2) the way
+   * every BSD/GNU filter does. Reporting it as :unhandled-child-signal put a
+   * KEXE_TRAP line on stderr for the most common thing a caller does with
+   * output, and the agent read that line as an error. So the supervisor dies
+   * the same death: default disposition, raise, and -- should raise return,
+   * because a parent ignores SIGPIPE and this process inherited that -- the
+   * shell's spelling of the same fact. Nothing on stderr, exactly like
+   * /usr/bin/grep. The child's stdout tail is lost, as it is for grep. */
+  if (WIFSIGNALED(status) && WTERMSIG(status) == SIGPIPE) {
+    (void)signal(SIGPIPE, SIG_DFL);
+    (void)raise(SIGPIPE);
+    return 128 + SIGPIPE;
+  }
+  static const char unhandled[] =
       "KEXE_TRAP {:kind :supervisor :reason :unhandled-child-signal}\n";
-  ssize_t written = write(STDERR_FILENO, signal, sizeof(signal) - 1);
+  ssize_t written = write(STDERR_FILENO, unhandled, sizeof(unhandled) - 1);
   (void)written;
   return 123;
 }
