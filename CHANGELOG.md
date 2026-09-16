@@ -29,6 +29,14 @@ production-strength VM sandbox remain absent.
 
 ### Current capabilities (state so far)
 
+- **`:hash/sha256` (wire 3) has a real provider** (2026-09-16, artifact #46)
+  — the request bytes' SHA-256 as 64 hex characters, FIPS 180-4 in the
+  loader as mechanism, where the switch had fallen through to identity and
+  a guest asking for a digest got its input back (`shasum -a 256` is 612 of
+  1,268,018 measured agent Bash calls). Pure and scopeless; the grant bit is
+  the gate. test-package-command checks the `"abc"` / empty vectors, a
+  24,576-byte input against node's crypto, and the ungranted trap; control
+  with the provider unrouted is red on two.
 - **`:clock/now` has a text form** (2026-09-16, artifact #45) — the
   clock-v1 record codec is admitted on the JVM route and the typed Wasm
   route but not on the JVM-free native route a packaged command is built by

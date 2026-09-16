@@ -62,6 +62,7 @@
 (defn emit-error [s :string] :string (typed-cap-call :io/write-error :string :string s))
 (defn stdin [s :string] :string (typed-cap-call :io/read :string :string s))
 (defn clock [s :string] :string (typed-cap-call :clock/now :string :string s))
+(defn sha [s :string] :string (typed-cap-call :hash/sha256 :string :string s))
 (defn chunks [n :i64] :i64
   (let [c (stdin \"4\")]
     (if (= 0 (string-byte-length c)) n (do (emit c) (emit \"|\") (chunks (+ n 1))))))
@@ -87,6 +88,8 @@ b\" 1 2))
       (if (string=? (arg \"1\") \"trap\")
         (do (emit \"three\") (emit (nl))
             (string-code-point-at (string-substring (arg \"1\") 0 0) 0))
+        (if (string=? (arg \"1\") \"sha\")
+          (do (emit (sha \"abc\")) (emit \"|\") (emit (sha \"\")) (emit \"|\") (emit (sha (grow (string-concat \"flood\" (nl)) 12))) 0)
         (if (string=? (arg \"1\") \"clock\")
           (do (emit (clock \"wall\")) (emit \"|\") (emit (clock \"monotonic\")) (emit \"|\") (emit (clock \"monotonic\")) 0)
         (if (string=? (arg \"1\") \"clock-bad\")
@@ -97,7 +100,7 @@ b\" 1 2))
             (chunks 0)
             (if (string=? (arg \"1\") \"flood\")
               (flood (grow (string-concat \"flood\" (nl)) 12) 16)
-              0)))))))))
+              0))))))))))
 ")
 
 (def failures (atom 0))
@@ -131,7 +134,7 @@ b\" 1 2))
 ;; the supervisor reports both as :trap.
 (.writeFileSync fs (file "probe.kotoba") guest "utf8")
 (.writeFileSync fs (file "policy.edn")
-                "{:allow #{[:cap/call 7] [:cap/call 37] [:cap/call 38] [:cap/call 39] [:cap/call 41]}}" "utf8")
+                "{:allow #{[:cap/call 3] [:cap/call 7] [:cap/call 37] [:cap/call 38] [:cap/call 39] [:cap/call 41]}}" "utf8")
 (let [isa (if (contains? #{"arm64" "aarch64"} (.arch os)) "aarch64" "x86_64")
       target (if (= isa "aarch64") "aarch64-macos" "x86_64-linux")
       c (run js/process.execPath [amu "compile" (file "probe.kotoba") "--target" target
@@ -337,5 +340,31 @@ b\" 1 2))
                (str/includes? (:err nobit) "KEXE_TRAP {:kind :signal :signal :SIGTRAP}"))
           nobit))
 
-(println (str "SCANNED\t" 22 "\tFAILED\t" @failures))
+;; 9. :hash/sha256, wire 3 (2026-09-16). The switch fell through to identity
+;;    for this id, so a guest asking for a digest got its input back. Now
+;;    the FIPS 180-4 vectors: "abc" and the empty string, plus a 24,576-byte
+;;    input (crosses many blocks and the two-block padding case), checked
+;;    against node's own crypto -- and the ungranted binary traps at the
+;;    call (SIGTRAP, the emitted mask check).
+(let [granted (package! "probe-sha" 60 "3,37,38,39,41")
+      denied (package! "probe-sha-denied" 60 "37,38,39,41")
+      r (run granted ["1" "sha"])
+      parts (str/split (subs (:out r) 8) #"\|")
+      big (.repeat "flood\n" 4096)
+      big-hex (.digest (.update (.createHash (js/require "node:crypto") "sha256") big) "hex")
+      nobit (run denied ["1" "sha"])]
+  (check! "sha256: the FIPS vectors, \"abc\" and the empty string"
+          (and (= 0 (:status r))
+               (= "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad" (nth parts 0 ""))
+               (= "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" (nth parts 1 "")))
+          r)
+  (check! "sha256: a 24,576-byte input matches node's crypto"
+          (= big-hex (nth parts 2 ""))
+          {:got (nth parts 2 "") :want big-hex})
+  (check! "sha256: without bit 3 the call traps (emitted check: SIGTRAP)"
+          (and (= 120 (:status nobit)) (= "one\ntwo\n" (:out nobit))
+               (str/includes? (:err nobit) "KEXE_TRAP {:kind :signal :signal :SIGTRAP}"))
+          nobit))
+
+(println (str "SCANNED\t" 25 "\tFAILED\t" @failures))
 (.exit js/process (if (zero? @failures) 0 1))
