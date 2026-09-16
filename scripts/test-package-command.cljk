@@ -63,6 +63,7 @@
 (defn stdin [s :string] :string (typed-cap-call :io/read :string :string s))
 (defn clock [s :string] :string (typed-cap-call :clock/now :string :string s))
 (defn sha [s :string] :string (typed-cap-call :hash/sha256 :string :string s))
+(defn fsq [s :string] :string (typed-cap-call :fs/app-data :string :string s))
 (defn chunks [n :i64] :i64
   (let [c (stdin \"4\")]
     (if (= 0 (string-byte-length c)) n (do (emit c) (emit \"|\") (chunks (+ n 1))))))
@@ -88,6 +89,9 @@ b\" 1 2))
       (if (string=? (arg \"1\") \"trap\")
         (do (emit \"three\") (emit (nl))
             (string-code-point-at (string-substring (arg \"1\") 0 0) 0))
+        (if (string=? (arg \"1\") \"mtime\")
+          (do (emit \"[\") (emit (fsq (string-concat (arg \"2\") \"MTIME_SEP\"))) (emit \"][\")
+              (emit (fsq (string-concat (arg \"2\") \"-missingMTIME_SEP\"))) (emit \"]\") 0)
         (if (string=? (arg \"1\") \"sha\")
           (do (emit (sha \"abc\")) (emit \"|\") (emit (sha \"\")) (emit \"|\") (emit (sha (grow (string-concat \"flood\" (nl)) 12))) 0)
         (if (string=? (arg \"1\") \"clock\")
@@ -100,7 +104,7 @@ b\" 1 2))
             (chunks 0)
             (if (string=? (arg \"1\") \"flood\")
               (flood (grow (string-concat \"flood\" (nl)) 12) 16)
-              0))))))))))
+              0)))))))))))
 ")
 
 (def failures (atom 0))
@@ -112,15 +116,18 @@ b\" 1 2))
 
 (defn package!
   ([name cpu-seconds] (package! name cpu-seconds "37,38,39"))
-  ([name cpu-seconds allow]
+  ([name cpu-seconds allow] (package! name cpu-seconds allow []))
+  ([name cpu-seconds allow extra]
   (let [out (file name)
         r (run js/process.execPath
+               (into
                [kbb "--backend" "sci" packager
                 "--code" (file "probe.bin") "--offset" (str (:offset @extract))
                 "--isa" (:isa @extract) "--allow" allow
                 "--fuel" "100000000000" "--pairs" "100000" "--string-pool" "1000000"
                 "--cpu-seconds" (str cpu-seconds) "--wall-seconds" "600"
-                "--output" out])]
+                "--output" out]
+               extra))]
     (when (not= 0 (:status r)) (refuse (str "package failed: " (:err r) (:out r))))
     out)))
 
@@ -134,7 +141,7 @@ b\" 1 2))
 ;; the supervisor reports both as :trap.
 (.writeFileSync fs (file "probe.kotoba") guest "utf8")
 (.writeFileSync fs (file "policy.edn")
-                "{:allow #{[:cap/call 3] [:cap/call 7] [:cap/call 37] [:cap/call 38] [:cap/call 39] [:cap/call 41]}}" "utf8")
+                "{:allow #{[:cap/call 3] [:cap/call 7] [:cap/call 35] [:cap/call 37] [:cap/call 38] [:cap/call 39] [:cap/call 41]}}" "utf8")
 (let [isa (if (contains? #{"arm64" "aarch64"} (.arch os)) "aarch64" "x86_64")
       target (if (= isa "aarch64") "aarch64-macos" "x86_64-linux")
       c (run js/process.execPath [amu "compile" (file "probe.kotoba") "--target" target
@@ -366,5 +373,30 @@ b\" 1 2))
                (str/includes? (:err nobit) "KEXE_TRAP {:kind :signal :signal :SIGTRAP}"))
           nobit))
 
-(println (str "SCANNED\t" 25 "\tFAILED\t" @failures))
+;; 10. The MTIME form of wire 35 (2026-09-16): "<path>MTIME_SEP" answers
+;;     the modification time as seconds since 1970, "" for a path that
+;;     cannot be stat'ed. Its own form rather than a fifth STAT field
+;;     (org-ieee-du reads STAT's fourth field to the end of the string). The
+;;     harness sets the file's mtime to 1700000000 first, so the answer is a
+;;     known number and not "whatever the clock said"; the ungranted binary
+;;     (no bit 35) traps at the call.
+(let [dir (file "mtime-data")
+      _ (.mkdirSync fs dir)
+      f (.join path dir "f")
+      _ (.writeFileSync fs f "x" "utf8")
+      _ (.utimesSync fs f 1700000000 1700000000)
+      scope (.realpathSync fs dir)
+      granted (package! "probe-mtime" 60 "35,37,38,39" ["--fs-scope" scope])
+      denied (package! "probe-mtime-denied" 60 "37,38,39" ["--fs-scope" scope])
+      r (run granted ["1" "mtime" (.join path scope "f")])
+      nobit (run denied ["1" "mtime" (.join path scope "f")])]
+  (check! "mtime: a known modification time, and \"\" for a missing path"
+          (and (= 0 (:status r)) (= "one\ntwo\n[1700000000][]" (:out r)))
+          r)
+  (check! "mtime: without bit 35 the call traps (emitted check: SIGTRAP)"
+          (and (= 120 (:status nobit)) (= "one\ntwo\n[" (:out nobit))
+               (str/includes? (:err nobit) "KEXE_TRAP {:kind :signal :signal :SIGTRAP}"))
+          nobit))
+
+(println (str "SCANNED\t" 27 "\tFAILED\t" @failures))
 (.exit js/process (if (zero? @failures) 0 1))

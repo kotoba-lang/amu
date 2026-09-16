@@ -2815,6 +2815,49 @@ static int64_t fs_app_data_stat_provider(struct kexe_context_v10 *context,
   return intern_utf8(context, (const uint8_t *)answer, (size_t)n);
 }
 
+/* wire id 35, MTIME form: "<path>MTIME_SEP" -> the modification time as
+ * seconds since 1970, decimal, or the EMPTY string when the path cannot be
+ * stat'ed. Its own form rather than a fifth field on STAT: org-ieee-du reads
+ * STAT's fourth field as "everything after the third space", so a fifth
+ * field would have turned every directory into a file there (read
+ * 2026-09-16 before choosing this). `stat -f %m` is the measured use
+ * (superproject ADR-2609161710); the same confinement as STAT. */
+static int64_t fs_app_data_mtime_provider(struct kexe_context_v10 *context,
+                                          int64_t request) {
+  const uint8_t *bytes = NULL;
+  uint64_t length = 0;
+  static const char token[] = "MTIME_SEP";
+  char target[4096], candidate[4096];
+  const uint8_t *sep = NULL;
+  if (!read_string_handle(context, request, &bytes, &length) || bytes == NULL ||
+      (sep = kexe_single_token(bytes, (size_t)length, token)) == NULL ||
+      !kexe_request_path(bytes, (size_t)(sep - bytes), target) ||
+      !kexe_scope_admit(&kexe_scope35, target, candidate)) {
+    raise(SIGILL);
+    return 0;
+  }
+  int fd = open(candidate, O_RDONLY | O_NOFOLLOW);
+  if (fd < 0) return intern_utf8(context, (const uint8_t *)"", 0);
+  if (!kexe_scope_contains_fd(&kexe_scope35, fd, candidate)) {
+    close(fd);
+    raise(SIGILL);
+    return 0;
+  }
+  struct stat sb;
+  if (fstat(fd, &sb) != 0) {
+    close(fd);
+    return intern_utf8(context, (const uint8_t *)"", 0);
+  }
+  close(fd);
+  char answer[32];
+  int n = snprintf(answer, sizeof(answer), "%lld", (long long)sb.st_mtime);
+  if (n <= 0 || (size_t)n >= sizeof(answer)) {
+    raise(SIGILL);
+    return 0;
+  }
+  return intern_utf8(context, (const uint8_t *)answer, (size_t)n);
+}
+
 /* wire id 35, CHMOD form: "<path>CHMOD_SEP<octal>" -> "1"/"0".
  *
  * The mode arrives as OCTAL TEXT, which is how chmod(1) is written and how
@@ -3420,6 +3463,8 @@ static int64_t checked_typed_cap_call(struct kexe_context_v10 *context,
       result = fs_app_data_range_read_provider(context, request);
     } else if (rb != NULL && memmem(rb, (size_t)rlen, "STAT_SEP", 8) != NULL) {
       result = fs_app_data_stat_provider(context, request);
+    } else if (rb != NULL && memmem(rb, (size_t)rlen, "MTIME_SEP", 9) != NULL) {
+      result = fs_app_data_mtime_provider(context, request);
     } else if (rb != NULL && memmem(rb, (size_t)rlen, "CHMOD_SEP", 9) != NULL) {
       result = fs_app_data_chmod_provider(context, request);
     } else if (rb != NULL && memmem(rb, (size_t)rlen, "MKDIR_SEP", 9) != NULL) {
