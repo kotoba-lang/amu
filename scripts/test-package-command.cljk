@@ -63,6 +63,10 @@ b\" 1 2))
   (if (>= i n) acc (text->i64 s (+ i 1) n (+ (* acc 10) (digit-value s i)))))
 (defn spin [i :i64 stop :i64 acc :i64] :i64
   (if (>= i stop) acc (spin (+ i 1) stop (+ acc (quot i 7)))))
+(defn grow [s :string k :i64] :string
+  (if (<= k 0) s (grow (string-concat s s) (- k 1))))
+(defn flood [s :string k :i64] :i64
+  (if (<= k 0) 0 (do (emit s) (flood s (- k 1)))))
 (defn main [] :i64
   (do
     (emit \"one\") (emit (nl))
@@ -73,7 +77,9 @@ b\" 1 2))
       (if (string=? (arg \"1\") \"trap\")
         (do (emit \"three\") (emit (nl))
             (string-code-point-at (string-substring (arg \"1\") 0 0) 0))
-        0))))
+        (if (string=? (arg \"1\") \"flood\")
+          (flood (grow (string-concat \"flood\" (nl)) 12) 16)
+          0)))))
 ")
 
 (def failures (atom 0))
@@ -188,5 +194,29 @@ b\" 1 2))
                (str/includes? (:out r) "--vectors must be a positive decimal"))
           r))
 
-(println (str "SCANNED\t" 10 "\tFAILED\t" @failures))
+;; 6. A reader that goes away is not a trap (2026-09-16). `flood` writes
+;;    6 * 4096 * 16 = 393,216 bytes -- past the 64 KiB stdout buffer AND the
+;;    64 KiB pipe -- into `head -c 1`, so the child dies at write(2) of
+;;    SIGPIPE whether head has already left or leaves while the child is
+;;    blocked on a full pipe. The supervisor must then die the same death:
+;;    bash spells that 141, and stderr carries NOTHING -- before this it
+;;    carried "KEXE_TRAP {:kind :supervisor :reason :unhandled-child-signal}"
+;;    and the exit was 123, for the most common pipeline shape agents use
+;;    (`grep ... | head`). The other direction: the same flood into a reader
+;;    that stays is exit 0 with every byte, so 141 is the reader's doing.
+(let [exe (package! "probe-flood" 60)
+      gone (run "bash" ["-c" (str "'" exe "' 1 flood | head -c 1 >/dev/null; echo \"${PIPESTATUS[0]}\"")])
+      stays (run "bash" ["-c" (str "'" exe "' 1 flood | wc -c | tr -d ' '; echo \"${PIPESTATUS[0]}\"")])]
+  (check! "reader gone: the supervisor exits 141 with nothing on stderr"
+          (and (= 0 (:status gone))
+               (= "141\n" (:out gone))
+               (= "diag\n" (:err gone)))
+          gone)
+  (check! "reader stays: the same flood is exit 0 and 8 + 393216 bytes"
+          (and (= 0 (:status stays))
+               (= "393224\n0\n" (:out stays))
+               (= "diag\n" (:err stays)))
+          stays))
+
+(println (str "SCANNED\t" 12 "\tFAILED\t" @failures))
 (.exit js/process (if (zero? @failures) 0 1))

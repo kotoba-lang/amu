@@ -3818,9 +3818,25 @@ static int supervise(pid_t child) {
     return 122;
   }
   if (WIFEXITED(status)) return WEXITSTATUS(status);
-  static const char signal[] =
+  /* SIGPIPE is not the guest's fault and not a trap: the READER went away
+   * (`grep e big | head -1` -- the single most frequent pipeline shape in
+   * agent tool use, 8,593 of 1,268,018 measured Bash calls on 2026-09-16,
+   * superproject ADR-2609161710) and the child died at write(2) the way
+   * every BSD/GNU filter does. Reporting it as :unhandled-child-signal put a
+   * KEXE_TRAP line on stderr for the most common thing a caller does with
+   * output, and the agent read that line as an error. So the supervisor dies
+   * the same death: default disposition, raise, and -- should raise return,
+   * because a parent ignores SIGPIPE and this process inherited that -- the
+   * shell's spelling of the same fact. Nothing on stderr, exactly like
+   * /usr/bin/grep. The child's stdout tail is lost, as it is for grep. */
+  if (WIFSIGNALED(status) && WTERMSIG(status) == SIGPIPE) {
+    (void)signal(SIGPIPE, SIG_DFL);
+    (void)raise(SIGPIPE);
+    return 128 + SIGPIPE;
+  }
+  static const char unhandled[] =
       "KEXE_TRAP {:kind :supervisor :reason :unhandled-child-signal}\n";
-  ssize_t written = write(STDERR_FILENO, signal, sizeof(signal) - 1);
+  ssize_t written = write(STDERR_FILENO, unhandled, sizeof(unhandled) - 1);
   (void)written;
   return 123;
 }

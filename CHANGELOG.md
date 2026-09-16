@@ -29,6 +29,19 @@ production-strength VM sandbox remain absent.
 
 ### Current capabilities (state so far)
 
+- **A reader that goes away is not a trap** (2026-09-16) — `grep e big | head -1`
+  is the single most frequent pipeline shape in agent tool use (8,593 of
+  1,268,018 Bash calls measured over 558 Claude Code transcripts,
+  superproject ADR-2609161710), and until now a packaged command in that
+  position printed `KEXE_TRAP {:kind :supervisor :reason
+  :unhandled-child-signal}` and exited 123: the child died of SIGPIPE at
+  write(2), exactly as `/usr/bin/grep` does, and the supervisor reported the
+  death it did not recognise. The supervisor now dies the same death
+  (default disposition, `raise(SIGPIPE)`, else 141), stderr silent.
+  `scripts/test-package-command.cljk` checks both directions on one `flood`
+  guest (393,216 bytes into `head -c 1` → 141 and nothing on stderr; into
+  `wc -c` → 0 and every byte); the check was seen red against the previous
+  loader with the old reason literal.
 - **Context ABI v10: two range operations that take no view and mint
   none** (2026-09-16) — `string-find-byte` 336 (the first offset at or
   after a boundary holding an ASCII byte; a line walk's newline or
