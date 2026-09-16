@@ -180,7 +180,7 @@
   ;; consumer -- and amu's copy of the same authority shadowed kotoba-sema's
   ;; on amu's classpath, so the two ids were invisible to the compiler that
   ;; would have to lower them. The FIRST run of
-  ;; `scripts/check-vendored-copies-fleet.cljs` found it on 2026-09-03; until
+  ;; `scripts/check-vendored-copies-fleet.cljk` found it on 2026-09-03; until
   ;; that run nothing had ever compared the copies. They are promoted here
   ;; rather than reverted because ADR-2609031100 is accepted and
   ;; owner-directed, and its own Consequences already name this file as where
@@ -278,6 +278,67 @@
   :cli/args
   {:source-operation cli/args :effect :host/cli-args
    :compiler-wire-id 38
+   :kotoba.security/classification :internal}
+  ;; io/write-error — the bytes a COMMAND writes to its DIAGNOSTIC output.
+  ;; Wire id 39. Same `:string -> :string` shape as :io/write and the same
+  ;; decimal byte count for a result; the difference is the destination and,
+  ;; more importantly, the AUTHORITY.
+  ;;
+  ;; Its own effect and deliberately not :host/io-write. A command's standard
+  ;; output is its answer and its diagnostic output is not: a pipeline reads
+  ;; one and a person reads the other, and a grant that carried both would let
+  ;; a guest put into the answer what it was only permitted to complain with.
+  ;; Six commands in this family had shipped saying "the error paths are not
+  ;; matched" because there was no capability to match them with.
+  :io/write-error
+  {:source-operation io/write-error :effect :host/io-write-error
+   :compiler-wire-id 39
+   :kotoba.security/classification :internal}
+  ;; sys/cwd — the directory the process was started in. Wire id 40.
+  ;;
+  ;; The empty request answers an absolute path; there is no other form. It
+  ;; carries no resource scope, like :io/write and :cli/args, and for the
+  ;; same reason: the guest names nothing and chooses nothing. The grant
+  ;; means exactly "may see where this process was started".
+  ;;
+  ;; Its own effect, and specifically NOT :host/env-read, though `pwd` is
+  ;; often described as reading $PWD. Measured 2026-09-10: /bin/pwd -L
+  ;; VALIDATES $PWD against the real directory and prints the physical path
+  ;; when they disagree -- with PWD=/tmp it printed the physical path anyway.
+  ;; So the environment variable is not the answer, it is a hint the real
+  ;; answer is checked against, and a grant to read environment variables
+  ;; therefore cannot supply it. That is why this is a wire and not another
+  ;; request form.
+  :sys/cwd
+  {:source-operation sys/cwd :effect :host/sys-cwd
+   :compiler-wire-id 40
+   :kotoba.security/classification :internal}
+  ;; io/read — the bytes a COMMAND reads from its standard input. Wire id 41.
+  ;;
+  ;; Measured 2026-09-16 over 1,268,018 Bash calls in 558 agent transcripts
+  ;; (superproject ADR-2609161710): head is invoked as a LATER pipeline
+  ;; segment 97% of the time, tail 94%, cut 97%, tr 99%, sort 97%, uniq 99%,
+  ;; wc 84%, awk 81%, grep 67%. A later segment reads standard input. Every
+  ;; command built on :cli/args + :fs/app-data + :io/write can only be the
+  ;; FIRST segment, so without this wire the commands cannot sit where they
+  ;; are called.
+  ;;
+  ;; Two request forms. The EMPTY request answers everything up to EOF; a
+  ;; DECIMAL request answers at most that many bytes of what has not been
+  ;; answered yet, and the empty string at EOF -- the form `head` needs to
+  ;; stop reading when it has its lines, so that `yes | head` ends. Both
+  ;; forms share one cursor: bytes are answered once.
+  ;;
+  ;; Its own effect and NOT :host/fs-app-data: the guest names no path and
+  ;; the grant carries no scope. Standard input is whatever the CALLER
+  ;; connected -- a pipe, a file the caller could open, a terminal -- and a
+  ;; grant to read it must not become a grant to open files, nor the other
+  ;; way round. It is also NOT :host/cli-args, though both describe how the
+  ;; process was invoked: argv is bounded and known at start, stdin is
+  ;; unbounded and arrives as the guest asks.
+  :io/read
+  {:source-operation io/read :effect :host/io-read
+   :compiler-wire-id 41
    :kotoba.security/classification :internal}}
  :invariants
  [:semantic-name-is-qualified-keyword

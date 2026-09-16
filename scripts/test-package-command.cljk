@@ -43,7 +43,12 @@
   ([command args input]
    (let [r (.spawnSync child command (clj->js args)
                        #js {:cwd root :encoding "utf8" :maxBuffer 16777216 :input input})]
-     (when (.-error r) (throw (.-error r)))
+     ;; EPIPE on `input` -- the child exited before reading what it was fed
+     ;; -- is a RESULT with a status, not a harness failure: measured
+     ;; 2026-09-16 with wire 41 unrouted, the stdin probe threw here instead
+     ;; of printing FAIL, which is a control that cannot go red. Only a
+     ;; process that did not run at all is thrown.
+     (when (and (.-error r) (nil? (.-status r))) (throw (.-error r)))
      {:status (.-status r) :out (or (.-stdout r) "") :err (or (.-stderr r) "")})))
 
 ;; The guest: two lines around a diagnostic, then a loop that burns CPU for
@@ -55,6 +60,10 @@
 (defn arg [i :string] :string (typed-cap-call :cli/args :string :string i))
 (defn emit [s :string] :string (typed-cap-call :io/write :string :string s))
 (defn emit-error [s :string] :string (typed-cap-call :io/write-error :string :string s))
+(defn stdin [s :string] :string (typed-cap-call :io/read :string :string s))
+(defn chunks [n :i64] :i64
+  (let [c (stdin \"4\")]
+    (if (= 0 (string-byte-length c)) n (do (emit c) (emit \"|\") (chunks (+ n 1))))))
 (defn nl [] :string (string-substring \"a
 b\" 1 2))
 (defn digit-value [s :string i :i64] :i64
@@ -63,6 +72,10 @@ b\" 1 2))
   (if (>= i n) acc (text->i64 s (+ i 1) n (+ (* acc 10) (digit-value s i)))))
 (defn spin [i :i64 stop :i64 acc :i64] :i64
   (if (>= i stop) acc (spin (+ i 1) stop (+ acc (quot i 7)))))
+(defn grow [s :string k :i64] :string
+  (if (<= k 0) s (grow (string-concat s s) (- k 1))))
+(defn flood [s :string k :i64] :i64
+  (if (<= k 0) 0 (do (emit s) (flood s (- k 1)))))
 (defn main [] :i64
   (do
     (emit \"one\") (emit (nl))
@@ -73,7 +86,13 @@ b\" 1 2))
       (if (string=? (arg \"1\") \"trap\")
         (do (emit \"three\") (emit (nl))
             (string-code-point-at (string-substring (arg \"1\") 0 0) 0))
-        0))))
+        (if (string=? (arg \"1\") \"slurp\")
+          (do (emit (stdin \"\")) 0)
+          (if (string=? (arg \"1\") \"chunk\")
+            (chunks 0)
+            (if (string=? (arg \"1\") \"flood\")
+              (flood (grow (string-concat \"flood\" (nl)) 12) 16)
+              0)))))))
 ")
 
 (def failures (atom 0))
@@ -83,17 +102,19 @@ b\" 1 2))
 
 (def extract (atom nil))
 
-(defn package! [name cpu-seconds]
+(defn package!
+  ([name cpu-seconds] (package! name cpu-seconds "37,38,39"))
+  ([name cpu-seconds allow]
   (let [out (file name)
         r (run js/process.execPath
                [kbb "--backend" "sci" packager
                 "--code" (file "probe.bin") "--offset" (str (:offset @extract))
-                "--isa" (:isa @extract) "--allow" "37,38,39"
+                "--isa" (:isa @extract) "--allow" allow
                 "--fuel" "100000000000" "--pairs" "100000" "--string-pool" "1000000"
                 "--cpu-seconds" (str cpu-seconds) "--wall-seconds" "600"
                 "--output" out])]
     (when (not= 0 (:status r)) (refuse (str "package failed: " (:err r) (:out r))))
-    out))
+    out)))
 
 (when-not (.existsSync fs amu) (refuse (str "no amu at " amu)))
 ;; The trap is a HOST refusal on purpose: `string-code-point-at` past the end
@@ -105,7 +126,7 @@ b\" 1 2))
 ;; the supervisor reports both as :trap.
 (.writeFileSync fs (file "probe.kotoba") guest "utf8")
 (.writeFileSync fs (file "policy.edn")
-                "{:allow #{[:cap/call 37] [:cap/call 38] [:cap/call 39]}}" "utf8")
+                "{:allow #{[:cap/call 37] [:cap/call 38] [:cap/call 39] [:cap/call 41]}}" "utf8")
 (let [isa (if (contains? #{"arm64" "aarch64"} (.arch os)) "aarch64" "x86_64")
       target (if (= isa "aarch64") "aarch64-macos" "x86_64-linux")
       c (run js/process.execPath [amu "compile" (file "probe.kotoba") "--target" target
@@ -188,5 +209,91 @@ b\" 1 2))
                (str/includes? (:out r) "--vectors must be a positive decimal"))
           r))
 
-(println (str "SCANNED\t" 10 "\tFAILED\t" @failures))
+;; 6. Standard input, wire 41 (2026-09-16). One guest compiled with the
+;;    grant admitted, packaged TWICE -- with 41 in the allow mask and
+;;    without -- because the mask is the whole enforcement: Seatbelt does not
+;;    mediate read(2) on an inherited descriptor, so the only thing standing
+;;    between a guest and stdin is this bit, and a suite that only ran the
+;;    granted binary would not know whether the bit does anything.
+;;
+;;    Both forms, both directions:
+;;      slurp  -- "" answers everything to EOF, bytes exact; the same guest
+;;                with input past the 1,000,000-byte string pool is refused
+;;                (SIGILL, exit 120) rather than answered short.
+;;      chunk  -- "4" answers at most four bytes at a time and the empty
+;;                string at EOF, so 11 bytes arrive as abcd|efgh|ijk| and
+;;                the walk ends; the exit status is the chunk COUNT so a walk
+;;                that never saw EOF is a different number, not a hang.
+;;      utf-8  -- "4" over three 3-byte code points: a chunk cut at byte
+;;                four would split the second one, and the guest's next
+;;                string operation would trap on the fragment. The loader
+;;                holds an incomplete tail back for the next answer, so the
+;;                chunks are the code points themselves, 日|本|語|, three
+;;                of them -- byte-exact, since an answer of the wrong shape
+;;                would still be nine bytes.
+;;      no bit -- the ungranted binary traps at the first call, and its
+;;                stdout still carries `one\ntwo\n` (the trap is the
+;;                guest's third call, not a startup refusal). The signal is
+;;                SIGTRAP, not SIGILL: kotoba-native EMITS the allow-mask
+;;                check in line (`brk`, kotoba-native ADR 0084) before the
+;;                host slot is ever called, so the loader's own SIGILL check
+;;                in checked_typed_cap_call is the second line and is not
+;;                reached. Measured 2026-09-16; pinned so that a loader that
+;;                stopped checking would still be told apart from one whose
+;;                caller stopped checking first.
+(let [granted (package! "probe-stdin" 60 "37,38,39,41")
+      denied (package! "probe-stdin-denied" 60 "37,38,39")
+      slurp (run granted ["1" "slurp"] "abcdefghijk")
+      chunk (run granted ["1" "chunk"] "abcdefghijk")
+      utf8 (run granted ["1" "chunk"] "\u65e5\u672c\u8a9e")
+      empty-in (run granted ["1" "slurp"] "")
+      over (run granted ["1" "slurp"] (.repeat "x" 1000001))
+      nobit (run denied ["1" "slurp"] "abc")]
+  (check! "slurp: the empty request answers stdin to EOF, bytes exact"
+          (and (= 0 (:status slurp)) (= "one\ntwo\nabcdefghijk" (:out slurp)))
+          slurp)
+  (check! "chunk: \"4\" answers at most four bytes, empty at EOF, three chunks"
+          (and (= 3 (:status chunk)) (= "one\ntwo\nabcd|efgh|ijk|" (:out chunk)))
+          chunk)
+  (check! "chunk over UTF-8: an incomplete tail is held for the next answer, 日|本|語|"
+          (and (= 3 (:status utf8)) (= "one\ntwo\n\u65e5|\u672c|\u8a9e|" (:out utf8)))
+          utf8)
+  (check! "empty stdin: the empty request answers the empty string, exit 0"
+          (and (= 0 (:status empty-in)) (= "one\ntwo\n" (:out empty-in)))
+          empty-in)
+  (check! "input past the string pool is refused (SIGILL, 120), not answered short"
+          (and (= 120 (:status over))
+               (str/includes? (:err over) "KEXE_TRAP {:kind :signal :signal :SIGILL}"))
+          over)
+  (check! "without bit 41 in the allow mask the first read traps (emitted check: SIGTRAP, 120)"
+          (and (= 120 (:status nobit))
+               (= "one\ntwo\n" (:out nobit))
+               (str/includes? (:err nobit) "KEXE_TRAP {:kind :signal :signal :SIGTRAP}"))
+          nobit))
+
+;; 7. A reader that goes away is not a trap (2026-09-16). `flood` writes
+;;    6 * 4096 * 16 = 393,216 bytes -- past the 64 KiB stdout buffer AND the
+;;    64 KiB pipe -- into `head -c 1`, so the child dies at write(2) of
+;;    SIGPIPE whether head has already left or leaves while the child is
+;;    blocked on a full pipe. The supervisor must then die the same death:
+;;    bash spells that 141, and stderr carries NOTHING -- before this it
+;;    carried "KEXE_TRAP {:kind :supervisor :reason :unhandled-child-signal}"
+;;    and the exit was 123, for the most common pipeline shape agents use
+;;    (`grep ... | head`). The other direction: the same flood into a reader
+;;    that stays is exit 0 with every byte, so 141 is the reader's doing.
+(let [exe (package! "probe-flood" 60)
+      gone (run "bash" ["-c" (str "'" exe "' 1 flood | head -c 1 >/dev/null; echo \"${PIPESTATUS[0]}\"")])
+      stays (run "bash" ["-c" (str "'" exe "' 1 flood | wc -c | tr -d ' '; echo \"${PIPESTATUS[0]}\"")])]
+  (check! "reader gone: the supervisor exits 141 with nothing on stderr"
+          (and (= 0 (:status gone))
+               (= "141\n" (:out gone))
+               (= "diag\n" (:err gone)))
+          gone)
+  (check! "reader stays: the same flood is exit 0 and 8 + 393216 bytes"
+          (and (= 0 (:status stays))
+               (= "393224\n0\n" (:out stays))
+               (= "diag\n" (:err stays)))
+          stays))
+
+(println (str "SCANNED\t" 18 "\tFAILED\t" @failures))
 (.exit js/process (if (zero? @failures) 0 1))
