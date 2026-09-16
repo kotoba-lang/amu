@@ -156,6 +156,10 @@
               :string-index-of-offset 216
               :arena-enter-offset 224
               :arena-leave-offset 232
+              :string-compare-offset 240
+              :string-fold-ascii-offset 248
+              :string-find-blank-offset 256
+              :string-skip-blank-offset 264
               :vector-capacity 4096
               :vector-item-capacity 65536}
              (:context-abi artifact))))))
@@ -173,17 +177,21 @@
 ;; for equality, so one check answers all of them. They are listed separately
 ;; because a reader looking for "is a downgraded version caught" should find
 ;; that question asked in those words.
-(deftest a-context-abi-that-is-not-v6-is-refused-by-name
+(deftest a-context-abi-that-is-not-v7-is-refused-by-name
   (let [kexe (:artifact (compiler/compile-source "(defn main [] 42)"
                                                  :aarch64-kotoba-v1 {}))
         refusal (fn [m]
                   (try (verifier/verify-artifact! (artifact/seal (dissoc m :sha256)))
                        :ACCEPTED
                        (catch clojure.lang.ExceptionInfo e (ex-message e))))]
-    (is (= 6 (get-in kexe [:context-abi :version])))
+    (is (= 7 (get-in kexe [:context-abi :version])))
     (is (= "execution context ABI is not admitted"
-           (refusal (assoc-in kexe [:context-abi :version] 5)))
+           (refusal (assoc-in kexe [:context-abi :version] 6)))
         "a downgraded version field")
+    (is (= "execution context ABI is not admitted"
+           (refusal (update kexe :context-abi dissoc :string-compare-offset :string-fold-ascii-offset
+                            :string-find-blank-offset :string-skip-blank-offset)))
+        "a table without the v7 slots, which is what a v6 producer emits")
     (is (= "execution context ABI is not admitted"
            (refusal (update kexe :context-abi dissoc :arena-enter-offset :arena-leave-offset)))
         "a table without the v6 pair, which is what a v5 producer emits")

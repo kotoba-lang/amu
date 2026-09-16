@@ -29,6 +29,32 @@ production-strength VM sandbox remain absent.
 
 ### Current capabilities (state so far)
 
+- **Context ABI v7: the four text heads as host slots** (2026-09-16) —
+  `string-compare` 240 (byte order over the common prefix, the shorter
+  first: code point order for canonical UTF-8, answered by one memcmp),
+  `string-fold-ascii` 248 (A–Z lowered into a fresh pool string, one byte
+  to one byte so an offset into the folded text is the same offset into
+  the original), `string-find-blank` 256 and `string-skip-blank` 264
+  (space `\t` `\n` `\v` `\f` `\r`, FROM a boundary in [0, len]). These
+  replace the per-code-point guest loops sort (comparison), grep `-i`
+  (26-pass fold), wc / awk / cut (field walk) were paying for. kotoba-gmir
+  2f4ee3a / kotoba-mir a51dbab name the arities and offsets, osaho
+  1f07f39 answers the reference semantics, kotoba-sema 4422b1f types them
+  (grammar resynced to kotoba-lang 9ecd9dbc, which now declares
+  `arena-scope` and the four heads), kotoba-native dc853ff emits the
+  slot calls, kotoba-verifier fb402bf admits version 7 and refuses a v6
+  table by name. `examples/text-slots.kotoba` puts each head's answer in
+  its own decimal place over the operands a wrong host gets wrong and is
+  executed under the loader by `jdk-free-native-conformance` (21337441).
+  Fuzz harness reaches all four; Windows loader in step; artifact
+  ba2bd6e pins both loader identities.
+- **memchr-first memmem behind `string-index-of`** (2026-09-16) — the
+  POSIX loader's memmem shim called `memcmp` at every haystack offset, a
+  function call per byte, sampled at 54% of a 33 MB sort whose merge asks
+  for the next newline once per line per level. It is now `memchr` for
+  the needle's first byte and one `memcmp` per candidate, the shape the
+  Windows loader already had, and one definition on every platform. The
+  same sort went from 10.96 s to 3.09 s user with no other change.
 - **Context ABI v6: `(arena-scope body)`, the region reset** (2026-09-16,
   superproject ADR-2609160044) — `arena_enter` / `arena_leave` at 224 /
   232 push and pop the four arena marks (pairs, pool, vectors, vector

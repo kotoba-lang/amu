@@ -1171,6 +1171,12 @@ every handle and byte the body allocated when it returns, and the body's
 type is held to `:i64` / `:bool` / `:f64` by the frontend and the verifier
 so nothing can escape. `examples/arena-scope.kotoba` is executed both ways
 under the default budgets by `jdk-free-native-conformance`.
+Context ABI **v7** (2026-09-16) adds the four text heads as host slots:
+`string-compare` 240, `string-fold-ascii` 248, `string-find-blank` 256,
+`string-skip-blank` 264 — one memcmp, a one-byte-to-one-byte ASCII fold and
+two blank scans, where the guest loops they replace walked code points.
+`examples/text-slots.kotoba` is executed under the loader by
+`jdk-free-native-conformance`.
 This permits bounded recursion while guaranteeing that recursive cycles trap.
 x86-64 reserves r9 and AArch64 reserves x7 for a loader-owned fuel-context
 pointer; both charge every function entry before guest instructions. Their real

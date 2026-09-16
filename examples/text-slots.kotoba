@@ -1,0 +1,42 @@
+(ns examples.text-slots)
+
+;; The four ABI v7 text heads (superproject ADR-2609160044 follow-up, context
+;; slots 240-264), executed against the HOST's answers. Each head's result
+;; lands in its own decimal place so the printed number names which slot
+;; answered wrongly, and the near-miss operands are the ones a wrong host
+;; gets wrong:
+;;
+;;   string-compare  "ab" vs "abc"  -> -1  (a proper prefix is LESS; a host
+;;                   that compares only the common prefix answers 0)
+;;                   "b"  vs "abc"  ->  1  (byte order, not length)
+;;                   "日" vs "z"    ->  1  (0xE6 > 0x7A: byte order IS code
+;;                   point order; a UTF-16 host answers 1 too, a host that
+;;                   compares lengths first answers 1 -- so the prefix row
+;;                   above is what separates them)
+;;   string-fold-ascii "AbC 日" -> "abc 日", compared equal to that literal
+;;                   (0) and 7 bytes long: one byte to one byte, so a host
+;;                   that folds the 0xE6 lead byte or re-encodes the text
+;;                   fails the comparison, and one that drops the non-ASCII
+;;                   code point fails the length.
+;;   string-find-blank "ab\tc d" from 3 -> 4 (the tab at 2 is BEFORE the
+;;                   start; a host that ignores FROM answers 2)
+;;   string-skip-blank "  \n x" from 0 -> 4 (three blanks then a space --
+;;                   \n is blank; a host that stops at \n answers 2)
+;;   string-find-blank "abc" from 3     -> -1 (FROM at the end is a legal
+;;                   boundary and finds nothing)
+;;
+;; main = 10000000*(fold-cmp+2) + 1000000*(cmp1+2) + 100000*(cmp2+2)
+;;      + 10000*(cmp3+2) + 1000*folded-length + 100*find + 10*skip
+;;      + (end-find+2)
+;;      = 10000000*2 + 1000000*1 + 100000*3 + 10000*3 + 1000*7 + 100*4
+;;        + 10*4 + 1
+;;      = 21337441
+(defn main [] :i64
+  (+ (* 10000000 (+ (string-compare (string-fold-ascii "AbC 日") "abc 日") 2))
+     (* 1000000 (+ (string-compare "ab" "abc") 2))
+     (* 100000 (+ (string-compare "b" "abc") 2))
+     (* 10000 (+ (string-compare "日" "z") 2))
+     (* 1000 (string-byte-length (string-fold-ascii "AbC 日")))
+     (* 100 (string-find-blank "ab\tc d" 3))
+     (* 10 (string-skip-blank "  \n x" 0))
+     (+ (string-find-blank "abc" 3) 2)))

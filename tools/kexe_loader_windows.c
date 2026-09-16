@@ -92,7 +92,7 @@ struct kexe_context {
   void *string_substring;
   void *string_code_point_at;
   /* vector-i64 / vector-f64 (ADR-2608030300). Same six slots, same meaning
-   * and same offsets as the POSIX loader's kexe_context_v6 -- the ABI is the
+   * and same offsets as the POSIX loader's kexe_context_v7 -- the ABI is the
    * contract, not either host. See that file for why a vector value is a
    * one-word handle and why conj can append in place. */
   void *vector_new_empty;
@@ -102,7 +102,7 @@ struct kexe_context {
   void *vector_assoc;
   void *vector_drop;
   /* ABI v4 (superproject ADR-2609010200). Same two slots, same meaning and
-   * same offsets as the POSIX loader's kexe_context_v6. `vector_alloc` is n
+   * same offsets as the POSIX loader's kexe_context_v7. `vector_alloc` is n
    * zeros in one call, because `vector-new` is variadic and a million-slot
    * allocation cannot be a literal. `vector_assoc_in_place` is the same
    * update lowered to a STORE, returning the SAME handle: legal exactly when
@@ -117,10 +117,16 @@ struct kexe_context {
    * measurement that moved it out of the guest. */
   void *string_index_of;
   /* ABI v6 (2026-09-16). Same two slots, same meaning and same offsets as
-   * the POSIX loader's kexe_context_v6: the region reset behind
+   * the POSIX loader's kexe_context_v7: the region reset behind
    * `arena-scope`. See that file for the safety argument. */
   void *arena_enter;
   void *arena_leave;
+  /* ABI v7 (2026-09-16). Same four slots as the POSIX loader's
+   * kexe_context_v7; see that file for the contracts. */
+  void *string_compare;
+  void *string_fold_ascii;
+  void *string_find_blank;
+  void *string_skip_blank;
   uint64_t pair_used;
   struct pair_cell pairs[KEXE_PAIR_CAPACITY];
   /* One flag per pair handle: the bytes this handle addresses are
@@ -162,6 +168,8 @@ _Static_assert(offsetof(struct kexe_context, vector_assoc_in_place) == 208, "vec
 _Static_assert(offsetof(struct kexe_context, string_index_of) == 216, "string ABI");
 _Static_assert(offsetof(struct kexe_context, arena_enter) == 224, "region ABI");
 _Static_assert(offsetof(struct kexe_context, arena_leave) == 232, "region ABI");
+_Static_assert(offsetof(struct kexe_context, string_compare) == 240, "text ABI");
+_Static_assert(offsetof(struct kexe_context, string_skip_blank) == 264, "text ABI");
 
 static void fail_win(const char *message) {
   fprintf(stderr, "kexe-loader-windows: %s: win32=%lu\n", message, (unsigned long)GetLastError());
@@ -187,7 +195,7 @@ static HANDLE create_guest_job(void) {
 }
 
 static int64_t SYSV cap_call(struct kexe_context *ctx, uint32_t id, int64_t value) {
-  if (ctx == NULL || ctx->version != 6 || id > 255 || !(ctx->allow[id / 8] & (1u << (id % 8))))
+  if (ctx == NULL || ctx->version != 7 || id > 255 || !(ctx->allow[id / 8] & (1u << (id % 8))))
     __builtin_trap();
   return value + 1;
 }
@@ -218,7 +226,7 @@ static int64_t SYSV pair_second(struct kexe_context *ctx, int64_t handle) {
 static const uint8_t *resolve_string_bytes(struct kexe_context *ctx,
                                            int64_t offset, int64_t length) {
   uint64_t pool_offset;
-  if (ctx == NULL || ctx->version != 6 || length < 0) __builtin_trap();
+  if (ctx == NULL || ctx->version != 7 || length < 0) __builtin_trap();
   if (offset >= 0) {
     if ((uint64_t)offset + (uint64_t)length > ctx->code_length ||
         (uint64_t)offset + (uint64_t)length < (uint64_t)offset)
@@ -456,7 +464,7 @@ static int inspect_variant_result(const struct kexe_context *ctx,
  * hosts implement one ABI and must not drift. */
 
 static struct vector_cell *checked_vector(struct kexe_context *ctx, int64_t handle) {
-  if (ctx == NULL || ctx->version != 6 || handle <= 0 ||
+  if (ctx == NULL || ctx->version != 7 || handle <= 0 ||
       (uint64_t)handle > ctx->vector_used) __builtin_trap();
   return &ctx->vectors[(uint64_t)handle - 1];
 }
@@ -471,7 +479,7 @@ static int64_t intern_vector(struct kexe_context *ctx, uint64_t offset, uint64_t
 }
 
 static int64_t SYSV vector_new_empty(struct kexe_context *ctx) {
-  if (ctx == NULL || ctx->version != 6) __builtin_trap();
+  if (ctx == NULL || ctx->version != 7) __builtin_trap();
   return intern_vector(ctx, ctx->vector_item_used, 0);
 }
 
@@ -523,7 +531,7 @@ static int64_t SYSV vector_assoc(struct kexe_context *ctx, int64_t handle,
 static int64_t SYSV vector_alloc(struct kexe_context *ctx, int64_t count) {
   uint64_t offset;
   uint64_t i;
-  if (ctx == NULL || ctx->version != 6) __builtin_trap();
+  if (ctx == NULL || ctx->version != 7) __builtin_trap();
   if (count < 0 || (uint64_t)count > KEXE_VECTOR_LENGTH_LIMIT) __builtin_trap();
   if (ctx->vector_item_used + (uint64_t)count > KEXE_VECTOR_ITEM_CAPACITY) __builtin_trap();
   offset = ctx->vector_item_used;
@@ -664,6 +672,77 @@ static int64_t SYSV arena_leave(struct kexe_context *ctx) {
   ctx->vector_used = mark[2];
   ctx->vector_item_used = mark[3];
   return 0;
+}
+
+/* See kexe_loader.c's checked_string_compare / _fold_ascii / _scan_blank
+ * (ABI v7), mirrored line for line. */
+static int64_t SYSV string_compare(struct kexe_context *ctx, int64_t left, int64_t right) {
+  struct pair_cell *a = checked_pair(ctx, left);
+  struct pair_cell *b = checked_pair(ctx, right);
+  const uint8_t *ab, *bb;
+  size_t common;
+  int c;
+  if (a->second < 0 || b->second < 0) __builtin_trap();
+  ab = resolve_string_bytes(ctx, a->first, a->second);
+  bb = resolve_string_bytes(ctx, b->first, b->second);
+  if (!ensure_valid_string(ctx, left, ab, a->second) ||
+      !ensure_valid_string(ctx, right, bb, b->second)) __builtin_trap();
+  common = (size_t)(a->second < b->second ? a->second : b->second);
+  c = memcmp(ab, bb, common);
+  if (c < 0) return -1;
+  if (c > 0) return 1;
+  if (a->second < b->second) return -1;
+  if (a->second > b->second) return 1;
+  return 0;
+}
+
+static int64_t SYSV string_fold_ascii(struct kexe_context *ctx, int64_t handle) {
+  struct pair_cell *p = checked_pair(ctx, handle);
+  const uint8_t *bytes;
+  uint8_t *out;
+  uint64_t start;
+  int64_t i;
+  if (p->second < 0) __builtin_trap();
+  bytes = resolve_string_bytes(ctx, p->first, p->second);
+  if (!ensure_valid_string(ctx, handle, bytes, p->second)) __builtin_trap();
+  if (ctx->string_pool_used + (uint64_t)p->second > KEXE_STRING_POOL_BYTES ||
+      ctx->string_pool_used + (uint64_t)p->second < ctx->string_pool_used)
+    __builtin_trap();
+  start = ctx->string_pool_used;
+  out = ctx->string_pool + start;
+  for (i = 0; i < p->second; i++) {
+    uint8_t c = bytes[i];
+    out[i] = (c >= 'A' && c <= 'Z') ? (uint8_t)(c + 32) : c;
+  }
+  ctx->string_pool_used += (uint64_t)p->second;
+  return mark_validated(ctx, pair_new(ctx, -((int64_t)start) - 1, p->second));
+}
+
+static int win_blank_byte(uint8_t c) {
+  return c == ' ' || c == '\t' || c == '\n' || c == '\v' || c == '\f' || c == '\r';
+}
+
+static int64_t string_scan_blank(struct kexe_context *ctx, int64_t handle, int64_t from,
+                                 int wanted, int missing_is_length) {
+  struct pair_cell *p = checked_pair(ctx, handle);
+  const uint8_t *bytes;
+  int64_t i;
+  if (p->second < 0 || from < 0 || from > p->second) __builtin_trap();
+  bytes = resolve_string_bytes(ctx, p->first, p->second);
+  if (!ensure_valid_string(ctx, handle, bytes, p->second)) __builtin_trap();
+  if (from < p->second && (bytes[from] & 0xc0) == 0x80) __builtin_trap();
+  for (i = from; i < p->second; i++) {
+    if (win_blank_byte(bytes[i]) == wanted) return i;
+  }
+  return missing_is_length ? p->second : -1;
+}
+
+static int64_t SYSV string_find_blank(struct kexe_context *ctx, int64_t handle, int64_t from) {
+  return string_scan_blank(ctx, handle, from, 1, 0);
+}
+
+static int64_t SYSV string_skip_blank(struct kexe_context *ctx, int64_t handle, int64_t from) {
+  return string_scan_blank(ctx, handle, from, 0, 1);
 }
 
 /* See kexe_loader.c's checked_string_index_of. Windows has no memmem; a
@@ -824,7 +903,7 @@ static int64_t SYSV typed_cap_call(struct kexe_context *ctx, uint64_t id,
                                    uint64_t request_kind, uint64_t result_kind,
                                    int64_t request) {
   int64_t result;
-  if (ctx == NULL || ctx->version != 6 || id > 255 ||
+  if (ctx == NULL || ctx->version != 7 || id > 255 ||
       !(ctx->allow[id / 8] & (1u << (id % 8))) ||
       request_kind != result_kind ||
       !valid_typed_value(ctx, request_kind, request))
@@ -1589,7 +1668,7 @@ int main(int argc, char **argv) {
   ctx = (struct kexe_context *)VirtualAlloc(NULL, sizeof(*ctx), MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
   if (ctx == NULL) fail_win("VirtualAlloc context");
   ZeroMemory(ctx, sizeof(*ctx));
-  ctx->version = 6;
+  ctx->version = 7;
   ctx->fuel = 512;
   ctx->cap_call = (void *)&cap_call;
   ctx->pair_new = (void *)&pair_new;
@@ -1611,6 +1690,10 @@ int main(int argc, char **argv) {
   ctx->string_index_of = (void *)&string_index_of;
   ctx->arena_enter = (void *)&arena_enter;
   ctx->arena_leave = (void *)&arena_leave;
+  ctx->string_compare = (void *)&string_compare;
+  ctx->string_fold_ascii = (void *)&string_fold_ascii;
+  ctx->string_find_blank = (void *)&string_find_blank;
+  ctx->string_skip_blank = (void *)&string_skip_blank;
   ctx->code_base = code;
   ctx->code_length = (uint64_t)length;
   parse_allow(ctx, argv[5]);
