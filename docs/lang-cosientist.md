@@ -361,3 +361,36 @@ ty 注記なし probe のため過大評価されていた — 以下は型付�
 - Next (1 hypothesis): some->> last?-mode parity probe (thread-last direction)
   with the same hand twin method, then (:k m) projection sugar, then re-check
   the ledger blocked list for anything else that is alias-shaped.
+
+## Iteration 14 — (:k m) keyword projection: gap confirmed, hand-twin measured (2026-09-17, amu@91f7854b)
+
+- 仮説 (iter 13 引き継ぎ): `(:k m)` 投影は純 desugar 欠落で, hand twin
+  `(get m :k 0)` と定義 CID 一致にできる。
+- 反証 probe (実測, pinned sema b8b01d09 / amu bin/amu check --jvm-free):
+  - `(:k m)` on `[:map :keyword :i64]`: **REJECT exit 65**
+    `:kotoba.error/record-projection-unresolved` — "record-get without a type
+    descriptor requires a record value; got [:map :keyword :i64]"
+    (/tmp/langcos/kwproj-probe.kotoba)。欠落は実在 (alias/desugar 欠落で確定)。
+  - hand twin `(get m :k 0)` + `(typed-map-new [:map :keyword :i64] :k 41)`:
+    **check PASS exit 0**。t cid
+    `bafyreic3wtjamgppcl23lsw4iqucesdzdlgizo47jk75bysm5amasbrr6m`,
+    main `bafyreiae3o243flhz5lylzs2lkgzattoyt5ih6prccy65qwem5pzwenusy`
+    (/tmp/langcos/kwproj-hand4.kotoba) — parity の正典。
+  - probe 教訓 (2026-09-05 からの言語変化): keyword-key map literal `{:k 41}`
+    は legacy pair-map のまま (3714ffbf wave で i64/string literal のみ retype)。
+    typed map fixture は `typed-map-new [:map :keyword :i64] :k 41`
+    (type + key/value ペア) で組む。`(get m :k 0)` 自体は canonical typed map
+    経路 (frontend.cljk:10935-10950 `typed-map-get`) と legacy `map-get` 経路
+    の両方に lowering 済み — **sugar だけが欠けている**。
+- 実装未着手 (時間切れ + terminal stdout 障害の file 経由運用)。
+  注入経路は実測済み: `GITLIBS=<dir> ./bin/amu ...` で lock checkout を分離
+  でき, その kotoba-sema checkout を branch commit に合わせると local
+  classpath 注入が通る (hand4 probe で PASS 実測)。実装形: desugar cond に
+  keyword-head `(kw m)` → `(get m kw 0)` 1 case (2-form 限定, 自名前
+  diagnostic fail-closed)。parity 判定基準: 実装 sema で kwproj-probe が
+  exit 0 かつ t cid が `bafyreic3wtjam...` と完全一致。
+- comparator 比: 展開が既存 typed-map-get / map-get lowering そのものなので
+  新規 runtime cost 0 (速度閾値不適用, iter 1/2/10/11 と同型)。perfgate 不適。
+- Next (1 hypothesis): 上記実装の実行と parity 実測 (kwproj-probe exit 0 +
+  hand twin CID 一致)。その後 some->> last?-mode / min-max branch
+  (bot/lang-min-max-20260904) の sema main (043c620) での再実測。
