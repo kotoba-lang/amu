@@ -430,5 +430,47 @@ b\" 1 2))
                (str/includes? (:err nofd) "KEXE_TRAP {:kind :signal :signal :SIGILL}"))
           nofd))
 
-(println (str "SCANNED\t" 30 "\tFAILED\t" @failures))
+;; 12. A $PATH scope entry (2026-09-16): "the directories of the caller's
+;;     PATH at start". `which` must look where the caller's shell looks,
+;;     and a packaged scope cannot know that in advance. The environment is
+;;     otherwise ignored by a packaged command; this is the one deliberate
+;;     exception, and it is the CALLER's choice like stdin and /dev/fd.
+;;     The PATH directory lives OUTSIDE the directly granted scope (the
+;;     first cut put it inside, and two of these three passed for the wrong
+;;     reason). Both directions: packaged WITH `$PATH` the guest reads a
+;;     file under a directory that is on PATH only for this run; the same
+;;     file with PATH not naming its directory traps (SIGILL, the loader's
+;;     own admission) -- the entry grants PATH, not the world; and packaged
+;;     WITHOUT the entry the read traps too.
+(let [dir (file "path-data")
+      _ (.mkdirSync fs dir)
+      _ (.mkdirSync fs (file "path-outside"))
+      pdir (.join path (.realpathSync fs (file "path-outside")) "bin")
+      _ (.mkdirSync fs pdir)
+      tool (.join path pdir "tool")
+      _ (.writeFileSync fs tool "tool bytes" "utf8")
+      scope (.realpathSync fs dir)
+      granted (package! "probe-path" 60 "35,37,38,39" ["--fs-scope" (str scope ":$PATH")])
+      denied (package! "probe-path-denied" 60 "35,37,38,39" ["--fs-scope" scope])
+      with-path (fn [exe' p env-path]
+                  (.spawnSync child exe' (clj->js ["1" "fd" p])
+                              #js {:cwd root :encoding "utf8" :maxBuffer 16777216
+                                   :env (js/Object.assign #js {} (.-env js/process) #js {:PATH env-path})}))
+      as-result (fn [r] {:status (.-status r) :out (or (.-stdout r) "") :err (or (.-stderr r) "")})
+      on-path (as-result (with-path granted tool (str pdir ":/usr/bin:/bin")))
+      off-path (as-result (with-path granted tool "/usr/bin:/bin"))
+      nobit (as-result (with-path denied tool (str pdir ":/usr/bin:/bin")))]
+  (check! "$PATH scope: a file under a directory on the caller's PATH is read"
+          (and (= 0 (:status on-path)) (= "one\ntwo\n[tool bytes]" (:out on-path)))
+          on-path)
+  (check! "$PATH scope: the same file with PATH not naming its directory traps (SIGILL)"
+          (and (= 120 (:status off-path)) (= "one\ntwo\n[" (:out off-path))
+               (str/includes? (:err off-path) "KEXE_TRAP {:kind :signal :signal :SIGILL}"))
+          off-path)
+  (check! "without $PATH in the scope the read traps (SIGILL)"
+          (and (= 120 (:status nobit)) (= "one\ntwo\n[" (:out nobit))
+               (str/includes? (:err nobit) "KEXE_TRAP {:kind :signal :signal :SIGILL}"))
+          nobit))
+
+(println (str "SCANNED\t" 33 "\tFAILED\t" @failures))
 (.exit js/process (if (zero? @failures) 0 1))

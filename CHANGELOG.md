@@ -29,6 +29,16 @@ production-strength VM sandbox remain absent.
 
 ### Current capabilities (state so far)
 
+- **A `$PATH` scope entry expands to the caller's PATH at start**
+  (2026-09-16, artifact #49) — `which` has to look where the caller's shell
+  looks, and a packaged scope cannot know that in advance. The one
+  deliberate exception to a packaged command ignoring its environment, and
+  the caller's choice the way stdin and `/dev/fd` are. `KEXE_SCOPE_ENTRIES`
+  16 → 64 (a developer's PATH is 30–40 entries; 36 measured).
+  test-package-command reads a file under a directory that is on PATH only
+  for that run; with PATH not naming the directory the read traps (the
+  entry grants PATH, not the world); without the entry it traps; control
+  with the expansion disabled is red.
 - **A `/dev/fd` scope entry means "the descriptors the caller connected"**
   (2026-09-16, artifact #48) — `diff <(a) <(b)` hands its operands over as
   `/dev/fd/N` (316 of the 888 measured diff calls), and such a descriptor
