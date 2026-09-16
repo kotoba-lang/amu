@@ -47,7 +47,10 @@ production-strength VM sandbox remain absent.
   mask check, ADR 0084 — before the loader's own SIGILL check is reached).
   Control with the wire unrouted: three checks red, the identity echo
   visible. POSIX loader only; the Windows and iOS hosts serve none of the
-  command wires.
+  command wires. The decimal form answers WHOLE CODE POINTS: an incomplete
+  trailing UTF-8 sequence (at most three bytes) is held back for the next
+  answer, since a chunk cut mid-sequence trapped the guest's next validating
+  string operation (control: 日本語 four bytes at a time, SIGILL).
 - **A reader that goes away is not a trap** (2026-09-16) — `grep e big | head -1`
   is the single most frequent pipeline shape in agent tool use (8,593 of
   1,268,018 Bash calls measured over 558 Claude Code transcripts,

@@ -224,6 +224,13 @@ b\" 1 2))
 ;;                string at EOF, so 11 bytes arrive as abcd|efgh|ijk| and
 ;;                the walk ends; the exit status is the chunk COUNT so a walk
 ;;                that never saw EOF is a different number, not a hang.
+;;      utf-8  -- "4" over three 3-byte code points: a chunk cut at byte
+;;                four would split the second one, and the guest's next
+;;                string operation would trap on the fragment. The loader
+;;                holds an incomplete tail back for the next answer, so the
+;;                chunks are the code points themselves, 日|本|語|, three
+;;                of them -- byte-exact, since an answer of the wrong shape
+;;                would still be nine bytes.
 ;;      no bit -- the ungranted binary traps at the first call, and its
 ;;                stdout still carries `one\ntwo\n` (the trap is the
 ;;                guest's third call, not a startup refusal). The signal is
@@ -238,6 +245,7 @@ b\" 1 2))
       denied (package! "probe-stdin-denied" 60 "37,38,39")
       slurp (run granted ["1" "slurp"] "abcdefghijk")
       chunk (run granted ["1" "chunk"] "abcdefghijk")
+      utf8 (run granted ["1" "chunk"] "\u65e5\u672c\u8a9e")
       empty-in (run granted ["1" "slurp"] "")
       over (run granted ["1" "slurp"] (.repeat "x" 1000001))
       nobit (run denied ["1" "slurp"] "abc")]
@@ -247,6 +255,9 @@ b\" 1 2))
   (check! "chunk: \"4\" answers at most four bytes, empty at EOF, three chunks"
           (and (= 3 (:status chunk)) (= "one\ntwo\nabcd|efgh|ijk|" (:out chunk)))
           chunk)
+  (check! "chunk over UTF-8: an incomplete tail is held for the next answer, 日|本|語|"
+          (and (= 3 (:status utf8)) (= "one\ntwo\n\u65e5|\u672c|\u8a9e|" (:out utf8)))
+          utf8)
   (check! "empty stdin: the empty request answers the empty string, exit 0"
           (and (= 0 (:status empty-in)) (= "one\ntwo\n" (:out empty-in)))
           empty-in)
@@ -284,5 +295,5 @@ b\" 1 2))
                (= "diag\n" (:err stays)))
           stays))
 
-(println (str "SCANNED\t" 17 "\tFAILED\t" @failures))
+(println (str "SCANNED\t" 18 "\tFAILED\t" @failures))
 (.exit js/process (if (zero? @failures) 0 1))

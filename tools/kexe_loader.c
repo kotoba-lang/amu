@@ -2086,11 +2086,37 @@ static int64_t io_write_error_provider(struct kexe_context_v10 *context,
  * its contract and a shorter answer is one the guest already handles; a pool
  * with no room at all traps, since an empty answer there would read as EOF.
  *
+ * The decimal form answers WHOLE CODE POINTS. A chunk cut at an arbitrary
+ * byte can end inside a UTF-8 sequence, and every string operation that
+ * validates its input would then trap on a chunk that was only ever going to
+ * be completed by the next one -- so an incomplete trailing sequence (at most
+ * three bytes: a lead byte and the continuations that arrived) is held back
+ * in `io_read_carry` and is the first thing the next answer holds. The held
+ * bytes are not yet in the pool, so the pool never sees them twice. Input
+ * that is not UTF-8 at all is answered as it is; the loader validates on
+ * use, as it does for a file.
+ *
  * No resource scope, and its own effect: the guest names no path and the
  * grant carries none. Standard input is whatever the CALLER connected, and
  * Seatbelt does not mediate read(2) on a descriptor the process was started
  * with (measured 2026-09-16 under this loader's own profile, pipe and file),
  * so the grant is enforced here, by the allow mask, and nowhere else. */
+static uint8_t io_read_carry[4];
+static size_t io_read_carried = 0;
+
+/* How many trailing bytes of BYTES[0..LENGTH) begin a UTF-8 sequence that
+ * LENGTH does not finish: 0 when the tail is complete (or is not UTF-8 in a
+ * shape worth waiting for). Looks back at most three bytes. */
+static size_t incomplete_utf8_tail(const uint8_t *bytes, size_t length) {
+  size_t back = 0;
+  while (back < length && back < 3 && (bytes[length - 1 - back] & 0xc0) == 0x80) back++;
+  if (back >= length) return 0;
+  uint8_t lead = bytes[length - 1 - back];
+  size_t need = (lead & 0xe0) == 0xc0 ? 2 : (lead & 0xf0) == 0xe0 ? 3 : (lead & 0xf8) == 0xf0 ? 4 : 0;
+  if (need == 0 || back + 1 >= need) return 0;
+  return back + 1;
+}
+
 static int64_t io_read_provider(struct kexe_context_v10 *context,
                                 int64_t request) {
   const uint8_t *bytes = NULL;
@@ -2140,6 +2166,16 @@ static int64_t io_read_provider(struct kexe_context_v10 *context,
     return 0;
   }
   uint64_t got = 0;
+  /* What the previous decimal answer held back comes first. */
+  if (io_read_carried > 0) {
+    if (io_read_carried > want) {
+      raise(SIGILL);
+      return 0;
+    }
+    memcpy(shared->string_pool + start, io_read_carry, io_read_carried);
+    got = io_read_carried;
+    io_read_carried = 0;
+  }
   while (got < want) {
     ssize_t n = read(STDIN_FILENO, shared->string_pool + start + got,
                      (size_t)(want - got));
@@ -2163,6 +2199,21 @@ static int64_t io_read_provider(struct kexe_context_v10 *context,
     if (n != 0) {
       raise(SIGILL);
       return 0;
+    }
+  }
+  if (!whole && got > 0) {
+    size_t hold = incomplete_utf8_tail(shared->string_pool + start, (size_t)got);
+    /* An answer that would be ONLY an incomplete sequence would read as EOF;
+     * the request was too small to hold one code point, which is a refusal
+     * rather than a short answer. */
+    if (hold == got) {
+      raise(SIGILL);
+      return 0;
+    }
+    if (hold > 0) {
+      memcpy(io_read_carry, shared->string_pool + start + got - hold, hold);
+      io_read_carried = hold;
+      got -= hold;
     }
   }
   shared->string_pool_used = start + got;
