@@ -29,6 +29,14 @@ production-strength VM sandbox remain absent.
 
 ### Current capabilities (state so far)
 
+- **Wire 35 MTIME form** (2026-09-16, artifact #47) — `"<path>MTIME_SEP"`
+  answers the modification time as seconds since 1970 (`""` when the path
+  cannot be stat'ed), under STAT's confinement. Its own form rather than a
+  fifth STAT field: org-ieee-du reads STAT's fourth field to the end of the
+  string, so a fifth field would have turned every directory into a file
+  there. For `stat -f %m` (measured). test-package-command sets a file's
+  mtime to a known value and reads it back; the ungranted binary traps;
+  control with the form unrouted is red.
 - **`:hash/sha256` (wire 3) has a real provider** (2026-09-16, artifact #46)
   — the request bytes' SHA-256 as 64 hex characters, FIPS 180-4 in the
   loader as mechanism, where the switch had fallen through to identity and
