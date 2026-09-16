@@ -89,6 +89,8 @@ b\" 1 2))
       (if (string=? (arg \"1\") \"trap\")
         (do (emit \"three\") (emit (nl))
             (string-code-point-at (string-substring (arg \"1\") 0 0) 0))
+        (if (string=? (arg \"1\") \"fd\")
+          (do (emit \"[\") (emit (fsq (arg \"2\"))) (emit \"]\") 0)
         (if (string=? (arg \"1\") \"mtime\")
           (do (emit \"[\") (emit (fsq (string-concat (arg \"2\") \"MTIME_SEP\"))) (emit \"][\")
               (emit (fsq (string-concat (arg \"2\") \"-missingMTIME_SEP\"))) (emit \"]\") 0)
@@ -104,7 +106,7 @@ b\" 1 2))
             (chunks 0)
             (if (string=? (arg \"1\") \"flood\")
               (flood (grow (string-concat \"flood\" (nl)) 12) 16)
-              0)))))))))))
+              0))))))))))))
 ")
 
 (def failures (atom 0))
@@ -398,5 +400,35 @@ b\" 1 2))
                (str/includes? (:err nobit) "KEXE_TRAP {:kind :signal :signal :SIGTRAP}"))
           nobit))
 
-(println (str "SCANNED\t" 27 "\tFAILED\t" @failures))
+;; 11. A /dev/fd scope entry (2026-09-16): "the descriptors the caller
+;;     connected". `diff <(a) <(b)` hands /dev/fd/N operands over, and such
+;;     a descriptor has no path under any grant (a pipe has none at all), so
+;;     the containment check honours an entry that IS /dev/fd the way wire
+;;     41 honours standard input. Both directions: packaged WITH /dev/fd the
+;;     guest reads fd 3 (a pipe from bash process substitution, and a file
+;;     outside every other grant); packaged WITHOUT it the same read traps
+;;     (SIGILL: the loader's own containment, since lexical admission fails
+;;     before any emitted check could).
+(let [dir (file "fd-data")
+      _ (.mkdirSync fs dir)
+      scope (.realpathSync fs dir)
+      granted (package! "probe-fd" 60 "35,37,38,39" ["--fs-scope" (str scope ":/dev/fd")])
+      denied (package! "probe-fd-denied" 60 "35,37,38,39" ["--fs-scope" scope])
+      outside (file "outside.txt")
+      _ (.writeFileSync fs outside "from a file outside the grant" "utf8")
+      pipe (run "bash" ["-c" (str "'" granted "' 1 fd /dev/fd/3 3< <(printf 'from a pipe')")])
+      filefd (run "bash" ["-c" (str "'" granted "' 1 fd /dev/fd/3 3< '" outside "'")])
+      nofd (run "bash" ["-c" (str "'" denied "' 1 fd /dev/fd/3 3< <(printf 'from a pipe')")])]
+  (check! "/dev/fd scope: a process-substitution pipe is read to EOF"
+          (and (= 0 (:status pipe)) (= "one\ntwo\n[from a pipe]" (:out pipe)))
+          pipe)
+  (check! "/dev/fd scope: an inherited file descriptor is read wherever its file lives"
+          (and (= 0 (:status filefd)) (= "one\ntwo\n[from a file outside the grant]" (:out filefd)))
+          filefd)
+  (check! "without /dev/fd in the scope the same read traps (SIGILL, exit 120)"
+          (and (= 120 (:status nofd)) (= "one\ntwo\n[" (:out nofd))
+               (str/includes? (:err nofd) "KEXE_TRAP {:kind :signal :signal :SIGILL}"))
+          nofd))
+
+(println (str "SCANNED\t" 30 "\tFAILED\t" @failures))
 (.exit js/process (if (zero? @failures) 0 1))

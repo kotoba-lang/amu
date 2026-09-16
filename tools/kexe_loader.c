@@ -2524,8 +2524,23 @@ static int kexe_scope_admit(const struct kexe_scope *scope, const char *target,
  * the granted object. Returns 1 when contained. */
 static int kexe_scope_contains_fd(const struct kexe_scope *scope, int fd,
                                   const char *candidate) {
+  /* A scope entry that IS "/dev/fd" means "the descriptors the caller
+   * connected" -- `diff <(a) <(b)` hands its operands over as /dev/fd/N,
+   * 316 of the 888 diff calls measured in agent tool use (superproject
+   * ADR-2609161710). Such a descriptor has no path under any grant: a pipe
+   * has no path at all (F_GETPATH fails, measured), and an inherited file
+   * descriptor's real path is wherever the caller's file is. So the test is
+   * the one standard input already passes on wire 41 -- the CALLER chose
+   * what to connect, and a packager that names /dev/fd in the scope has
+   * said the command may read what it was handed. Lexical admission has
+   * already required the candidate to lie under /dev/fd/, and Seatbelt's
+   * (subpath "/dev/fd") is what let the open succeed. Without this entry
+   * the ordinary containment below refuses such a descriptor, as before. */
+  for (int s = 0; s < scope->count; s++) {
+    if (strcmp(scope->resolved[s], "/dev/fd") == 0 &&
+        strncmp(candidate, "/dev/fd/", 8) == 0) return 1;
+  }
 #if defined(__APPLE__)
-  (void)candidate;
   char actual[4096];
   if (fcntl(fd, F_GETPATH, actual) != 0) return 0;
   size_t actual_length = strlen(actual);

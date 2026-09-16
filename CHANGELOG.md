@@ -29,6 +29,16 @@ production-strength VM sandbox remain absent.
 
 ### Current capabilities (state so far)
 
+- **A `/dev/fd` scope entry means "the descriptors the caller connected"**
+  (2026-09-16, artifact #48) — `diff <(a) <(b)` hands its operands over as
+  `/dev/fd/N` (316 of the 888 measured diff calls), and such a descriptor
+  has no path under any grant: a pipe has none at all (F_GETPATH fails,
+  measured), an inherited file descriptor's real path is wherever the
+  caller's file is. The containment check honours an entry that IS
+  `/dev/fd` the way wire 41 honours standard input; without it the ordinary
+  containment refuses as before. test-package-command packages one guest
+  with and without the entry (pipe read to EOF, outside file read, refusal
+  SIGILL); control with the rule disabled is red on two.
 - **Wire 35 MTIME form** (2026-09-16, artifact #47) — `"<path>MTIME_SEP"`
   answers the modification time as seconds since 1970 (`""` when the path
   cannot be stat'ed), under STAT's confinement. Its own form rather than a
