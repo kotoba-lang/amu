@@ -42,7 +42,16 @@ production-strength VM sandbox remain absent.
   choice). test-package-command: packaged with `$PWD` a relative operand
   is read, `./sub/../sub/x` is read, `../sibling/x` traps; with the
   absolute directory read; with a scope elsewhere traps; control with the
-  join disabled is red on three (38 scanned).
+  join disabled is red on three. **And a wire-35 APPEND form**,
+  `"<path>APPEND_SEP<content>"`: appends to a file that exists (no
+  O_CREAT), same scope, containment and answer as WRITE; between WRITE_SEP
+  and APPEND_SEP the token that comes earlier in the request is the form.
+  It lets a guest build a file one line at a time when each line is minted
+  inside an arena-scope and cannot leave it as a string — `sed -i` (1,042
+  measured scripts) appends each cycle's output to the temporary it renames
+  over the operand. test-package-command: write empty, append twice (a
+  content holding WRITE_SEP), read back; a missing file traps, nothing
+  created (40 scanned).
 - **A `$PATH` scope entry expands to the caller's PATH at start**
   (2026-09-16, artifact #49) — `which` has to look where the caller's shell
   looks, and a packaged scope cannot know that in advance. The one

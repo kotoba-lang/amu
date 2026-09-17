@@ -2827,9 +2827,18 @@ static int64_t fs_app_data_read_provider(struct kexe_context_v10 *context,
  * back (so the guest can verify the write via string-byte-length and the
  * capability keeps its typed :string result). Same scope and containment as
  * the read form. The file is created/truncated O_NOFOLLOW; writing through a
- * symlink is impossible, and a directory target is refused. */
+ * symlink is impossible, and a directory target is refused.
+ *
+ * APPEND form (2026-09-17, superproject ADR-2609161710): "<path>APPEND_SEP
+ * <content>" appends to a file that EXISTS (no O_CREAT: a guest that means
+ * to start a file writes it empty first), same scope, containment and
+ * answer. It is what lets a guest build a file one line at a time when the
+ * line is minted inside an arena-scope and cannot leave it as a string --
+ * `sed -i` (1,042 of 15,968 measured sed scripts) runs each line's cycle
+ * in a region and appends its output to the temporary it renames over the
+ * operand at the end. */
 static int64_t fs_app_data_write_provider(struct kexe_context_v10 *context,
-                                          int64_t request) {
+                                          int64_t request, int append) {
   const uint8_t *bytes = NULL;
   uint64_t length = 0;
   if (!read_string_handle(context, request, &bytes, &length) || bytes == NULL) {
@@ -2837,8 +2846,10 @@ static int64_t fs_app_data_write_provider(struct kexe_context_v10 *context,
     return 0;
   }
   static const char write_token[] = "WRITE_SEP";
-  const size_t token_len = sizeof(write_token) - 1u;
-  const uint8_t *sep = kexe_single_token(bytes, (size_t)length, write_token);
+  static const char append_token[] = "APPEND_SEP";
+  const size_t token_len = append ? sizeof(append_token) - 1u : sizeof(write_token) - 1u;
+  const uint8_t *sep = kexe_single_token(bytes, (size_t)length,
+                                         append ? append_token : write_token);
   char target[4096], candidate[4096];
   if (sep == NULL ||
       !kexe_request_path(bytes, (size_t)(sep - bytes), target) ||
@@ -2854,7 +2865,8 @@ static int64_t fs_app_data_write_provider(struct kexe_context_v10 *context,
     raise(SIGILL);
     return 0;
   }
-  int fd = open(candidate, O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW, 0644);
+  int fd = append ? open(candidate, O_WRONLY | O_APPEND | O_NOFOLLOW)
+                  : open(candidate, O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW, 0644);
   if (fd < 0 || !kexe_scope_contains_fd(&kexe_scope35, fd, candidate)) {
     if (fd >= 0) close(fd);
     raise(SIGILL);
@@ -3555,6 +3567,7 @@ static int64_t checked_typed_cap_call(struct kexe_context_v10 *context,
   } else if (id == 35 && request_kind == KEXE_TYPED_STRING) {
     /* wire id 35 = :fs/app-data, told apart by an ASCII token:
      *   "<path>WRITE_SEP<content>"      write
+     *   "<path>APPEND_SEP<content>"     append to an existing file
      *   "<path>RANGE_SEP<off>:<len>"    one bounded window
      *   "<path>EXISTS_SEP"              "1"/"0"
      *   "<path>MKDIR_SEP"               create a directory
@@ -3563,15 +3576,26 @@ static int64_t checked_typed_cap_call(struct kexe_context_v10 *context,
      *   "<from>RENAME_SEP<to>"          rename
      *   a bare absolute path            read the whole file
      *
-     * WRITE_SEP is tested FIRST and stays first: written content may itself
-     * contain any of these tokens, and only the write form has content. The
-     * mutation forms carry no content, so their order among themselves does
-     * not matter. Scope is KEXE_CAP_RESOURCES_35 for all of them. */
+     * WRITE_SEP and APPEND_SEP are tested FIRST and stay first: written
+     * content may itself contain any of these tokens, and only the two
+     * content forms have content. Between the two, the one whose token
+     * comes EARLIER in the request is the form -- the path precedes the
+     * content, so a write whose content holds APPEND_SEP is still a write
+     * (and a content holding its own form's token is refused by the
+     * provider's single-occurrence rule). The mutation forms carry no
+     * content, so their order among themselves does not matter. Scope is
+     * KEXE_CAP_RESOURCES_35 for all of them. */
     uint64_t rlen = 0;
     const uint8_t *rb = NULL;
-    if (read_string_handle(context, request, &rb, &rlen) && rb &&
-        memmem(rb, (size_t)rlen, "WRITE_SEP", 9) != NULL) {
-      result = fs_app_data_write_provider(context, request);
+    const uint8_t *write_at = NULL, *append_at = NULL;
+    if (read_string_handle(context, request, &rb, &rlen) && rb) {
+      write_at = memmem(rb, (size_t)rlen, "WRITE_SEP", 9);
+      append_at = memmem(rb, (size_t)rlen, "APPEND_SEP", 10);
+    }
+    if (write_at != NULL && (append_at == NULL || write_at < append_at)) {
+      result = fs_app_data_write_provider(context, request, 0);
+    } else if (append_at != NULL) {
+      result = fs_app_data_write_provider(context, request, 1);
     } else if (rb != NULL && memmem(rb, (size_t)rlen, "EXISTS_SEP", 10) != NULL) {
       /* Tested before RANGE_SEP and after WRITE_SEP for the same reason the
        * existing order has: written content may contain any of these tokens,

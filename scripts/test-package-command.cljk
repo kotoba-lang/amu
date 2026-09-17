@@ -91,6 +91,13 @@ b\" 1 2))
             (string-code-point-at (string-substring (arg \"1\") 0 0) 0))
         (if (string=? (arg \"1\") \"fd\")
           (do (emit \"[\") (emit (fsq (arg \"2\"))) (emit \"]\") 0)
+        (if (string=? (arg \"1\") \"append\")
+          (do (fsq (string-concat (arg \"2\") \"WRITE_SEP\"))
+              (fsq (string-concat (arg \"2\") \"APPEND_SEPone;\"))
+              (fsq (string-concat (arg \"2\") \"APPEND_SEPtwo WRITE_SEP inside;\"))
+              (emit \"[\") (emit (fsq (arg \"2\"))) (emit \"]\") 0)
+        (if (string=? (arg \"1\") \"append-missing\")
+          (do (emit \"[\") (emit (fsq (string-concat (arg \"2\") \"APPEND_SEPx\"))) (emit \"]\") 0)
         (if (string=? (arg \"1\") \"mtime\")
           (do (emit \"[\") (emit (fsq (string-concat (arg \"2\") \"MTIME_SEP\"))) (emit \"][\")
               (emit (fsq (string-concat (arg \"2\") \"-missingMTIME_SEP\"))) (emit \"]\") 0)
@@ -106,7 +113,7 @@ b\" 1 2))
             (chunks 0)
             (if (string=? (arg \"1\") \"flood\")
               (flood (grow (string-concat \"flood\" (nl)) 12) 16)
-              0))))))))))))
+              0))))))))))))))
 ")
 
 (def failures (atom 0))
@@ -524,5 +531,30 @@ b\" 1 2))
                (str/includes? (:err out) "KEXE_TRAP {:kind :signal :signal :SIGILL}"))
           out))
 
-(println (str "SCANNED\t" 38 "\tFAILED\t" @failures))
+;; 14. The wire-35 APPEND form (2026-09-17): "<path>APPEND_SEP<content>"
+;;     appends to a file that exists; a missing file traps (no O_CREAT).
+;;     The content of an append may hold WRITE_SEP -- the dispatch takes
+;;     the EARLIER token as the form, since the path precedes the content.
+;;     `sed -i` builds its temporary this way, one line per region.
+(let [dir (file "append-data")
+      _ (.mkdirSync fs dir)
+      real (.realpathSync fs dir)
+      exe' (package! "probe-append" 60 "35,37,38,39" ["--fs-scope" real])
+      target (.join path real "built")
+      run' (fn [mode p]
+             (let [r (.spawnSync child exe' (clj->js ["1" mode p]) #js {:cwd root :encoding "utf8" :maxBuffer 16777216})]
+               {:status (.-status r) :out (or (.-stdout r) "") :err (or (.-stderr r) "")}))
+      built (run' "append" target)
+      missing (run' "append-missing" (.join path real "absent"))]
+  (check! "APPEND form: write empty, append twice (content holding WRITE_SEP), read back"
+          (and (= 0 (:status built)) (= "one\ntwo\n[one;two WRITE_SEP inside;]" (:out built))
+               (= "one;two WRITE_SEP inside;" (.readFileSync fs target "utf8")))
+          built)
+  (check! "APPEND form: a missing file traps (SIGILL), nothing is created"
+          (and (= 120 (:status missing)) (= "one\ntwo\n[" (:out missing))
+               (str/includes? (:err missing) "KEXE_TRAP {:kind :signal :signal :SIGILL}")
+               (not (.existsSync fs (.join path real "absent"))))
+          missing))
+
+(println (str "SCANNED\t" 40 "\tFAILED\t" @failures))
 (.exit js/process (if (zero? @failures) 0 1))
