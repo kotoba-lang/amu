@@ -2471,6 +2471,29 @@ static void kexe_scope_add(struct kexe_scope *scope, const char *entry) {
  * said the command may read beneath those directories. A relative PATH
  * entry resolves against the working directory, as the shell resolves it.
  * When EXPAND is 0 (the recursive call) `$PATH` is an ordinary spelling. */
+/* The working directory the command STARTED in, captured once in the parent
+ * before the fork and the sandbox (2026-09-17, superproject ADR-2609161710).
+ * Two things read it. A `$PWD` scope entry expands to it, on the `$PATH`
+ * argument: the caller chose where to run the command the way they chose
+ * what to connect to stdin, and a packager that writes `$PWD` into the scope
+ * has said the command may read beneath wherever it is run. And a RELATIVE
+ * request path resolves against it, as the shell resolves an operand --
+ * measured over 1,268,018 agent Bash calls, the file operands of head /
+ * tail / sed / grep / wc / cut / sort / cat / awk are relative 99,826 times
+ * and absolute 17,104, so a loader that refused every relative spelling was
+ * refusing the way the commands are called. Resolution happens BEFORE
+ * admission: the joined path is normalized lexically and then held to the
+ * same scope as an absolute one, so `../x` from a granted directory is
+ * `<parent>/x`, outside, and refused. An empty capture (getcwd failed)
+ * admits no relative path and expands `$PWD` to nothing. */
+static char kexe_cwd[4096];
+
+static void kexe_capture_cwd(void) {
+  if (getcwd(kexe_cwd, sizeof(kexe_cwd)) == NULL || kexe_cwd[0] != '/') {
+    kexe_cwd[0] = '\0';
+  }
+}
+
 static void kexe_scope_from_list(struct kexe_scope *scope, const char *list, int expand) {
   if (list == NULL || list[0] == '\0') return;
   const char *cursor = list;
@@ -2483,6 +2506,8 @@ static void kexe_scope_from_list(struct kexe_scope *scope, const char *list, int
       entry[entry_length] = '\0';
       if (expand && strcmp(entry, "$PATH") == 0) {
         kexe_scope_from_list(scope, getenv("PATH"), 0);
+      } else if (expand && strcmp(entry, "$PWD") == 0) {
+        if (kexe_cwd[0] != '\0') kexe_scope_add(scope, kexe_cwd);
       } else {
         kexe_scope_add(scope, entry);
       }
@@ -2594,13 +2619,60 @@ static int kexe_scope_contains_fd(const struct kexe_scope *scope, int fd,
 #endif
 }
 
+/* Rewrites the absolute path in `target` in place without `.` and `..`
+ * segments or repeated slashes: `/a/./b//../c` -> `/a/c`, `/..` -> `/`.
+ * Lexical, so a symlink under a `..` is not followed the way the kernel
+ * would -- the path OPENED is the normalized one, which is what admission
+ * judged, never something admission did not see. */
+static void kexe_normalize_path(char target[4096]) {
+  char out[4096];
+  size_t o = 0;
+  const char *p = target;
+  out[o++] = '/';
+  while (*p != '\0') {
+    while (*p == '/') p++;
+    if (*p == '\0') break;
+    const char *seg = p;
+    while (*p != '\0' && *p != '/') p++;
+    size_t n = (size_t)(p - seg);
+    if (n == 1 && seg[0] == '.') continue;
+    if (n == 2 && seg[0] == '.' && seg[1] == '.') {
+      if (o > 1) {
+        o--;                          /* the slash after the last segment */
+        while (o > 1 && out[o - 1] != '/') o--;
+      }
+      continue;
+    }
+    if (o + n + 1 >= sizeof(out)) return; /* cannot grow; left as it was */
+    memcpy(out + o, seg, n);
+    o += n;
+    out[o++] = '/';
+  }
+  if (o > 1) o--;                     /* no trailing slash except for "/" */
+  out[o] = '\0';
+  memcpy(target, out, o + 1);
+}
+
 /* Copies a request's path bytes into a NUL-terminated buffer, refusing the
- * empty, over-long and relative forms no provider admits. */
+ * empty and over-long forms no provider admits. A relative path is joined
+ * to the captured working directory (see kexe_cwd), and every path is
+ * normalized before the caller admits it. */
 static int kexe_request_path(const uint8_t *bytes, size_t length,
                              char target[4096]) {
-  if (bytes == NULL || length == 0 || length >= 4096 || bytes[0] != '/') return 0;
-  memcpy(target, bytes, length);
-  target[length] = '\0';
+  if (bytes == NULL || length == 0 || length >= 4096) return 0;
+  if (bytes[0] == '/') {
+    memcpy(target, bytes, length);
+    target[length] = '\0';
+  } else {
+    if (kexe_cwd[0] == '\0') return 0;
+    size_t cwd_length = strlen(kexe_cwd);
+    if (cwd_length + 1 + length >= 4096) return 0;
+    memcpy(target, kexe_cwd, cwd_length);
+    target[cwd_length] = '/';
+    memcpy(target + cwd_length + 1, bytes, length);
+    target[cwd_length + 1 + length] = '\0';
+  }
+  kexe_normalize_path(target);
   return 1;
 }
 
@@ -4876,6 +4948,7 @@ int main(int argc, char **argv) {
   shared->context.vector_items_base = shared->vector_items;
   shared->context.code_base = (const uint8_t *)memory;
   shared->context.code_length = (uint64_t)length;
+  kexe_capture_cwd();
   kexe_scope_init(&kexe_scope35, "KEXE_CAP_RESOURCES_35");
   kexe_scope_init(&kexe_scope34, "KEXE_CAP_RESOURCES_34");
 #ifdef KEXE_EMBEDDED

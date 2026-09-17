@@ -29,6 +29,20 @@ production-strength VM sandbox remain absent.
 
 ### Current capabilities (state so far)
 
+- **Relative request paths resolve against the start directory; a `$PWD`
+  scope entry** (2026-09-17, artifact #50) — measured over 1,268,018 agent
+  Bash calls, the file operands of head / tail / sed / grep / wc / cut /
+  sort / cat / awk are relative 99,826 times and absolute 17,104, and the
+  loader refused every relative spelling. A relative path now joins the
+  working directory captured once in the parent (before fork and sandbox),
+  is normalized lexically (`.`, `..`, repeated slashes — the path opened is
+  the normalized one, which is what admission judged) and is then held to
+  the same scope as an absolute one: resolution before admission. `$PWD`
+  in a scope grants that directory, on the `$PATH` argument (the caller's
+  choice). test-package-command: packaged with `$PWD` a relative operand
+  is read, `./sub/../sub/x` is read, `../sibling/x` traps; with the
+  absolute directory read; with a scope elsewhere traps; control with the
+  join disabled is red on three (38 scanned).
 - **A `$PATH` scope entry expands to the caller's PATH at start**
   (2026-09-16, artifact #49) — `which` has to look where the caller's shell
   looks, and a packaged scope cannot know that in advance. The one
