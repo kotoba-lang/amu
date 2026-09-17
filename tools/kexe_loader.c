@@ -2836,7 +2836,40 @@ static int64_t fs_app_data_read_provider(struct kexe_context_v10 *context,
  * line is minted inside an arena-scope and cannot leave it as a string --
  * `sed -i` (1,042 of 15,968 measured sed scripts) runs each line's cycle
  * in a region and appends its output to the temporary it renames over the
- * operand at the end. */
+ * operand at the end.
+ *
+ * Consecutive appends to the SAME file share one descriptor and a 64 KiB
+ * buffer, the shape wire 37 has for standard output: an open, a
+ * containment check, a write and a close per line cost 6.3 us a line
+ * (measured: 769,400 lines, 4.85 s of system time, SIGXCPU under a 5 s
+ * budget), and a file is built one line at a time. Any other wire-35
+ * request -- a read, a stat, the rename that finishes `sed -i` -- closes
+ * the sink first, so what it sees is what was appended; the sink is also
+ * closed when the guest returns, before the exit status. */
+#define KEXE_APPEND_BUFFER_BYTES 65536
+static int kexe_append_fd = -1;
+static char kexe_append_candidate[4096];
+static uint8_t kexe_append_buffer[KEXE_APPEND_BUFFER_BYTES];
+static size_t kexe_append_used = 0;
+
+static int kexe_append_flush(void) {
+  size_t pending = kexe_append_used;
+  kexe_append_used = 0;
+  if (pending == 0 || kexe_append_fd < 0) return 1;
+  return kexe_write_all(kexe_append_fd, kexe_append_buffer, pending);
+}
+
+/* Flush and close the append sink; 1 when nothing was lost. */
+static int kexe_append_close(void) {
+  int ok = kexe_append_flush();
+  if (kexe_append_fd >= 0) {
+    if (close(kexe_append_fd) != 0) ok = 0;
+    kexe_append_fd = -1;
+  }
+  kexe_append_candidate[0] = '\0';
+  return ok;
+}
+
 static int64_t fs_app_data_write_provider(struct kexe_context_v10 *context,
                                           int64_t request, int append) {
   const uint8_t *bytes = NULL;
@@ -2860,13 +2893,50 @@ static int64_t fs_app_data_write_provider(struct kexe_context_v10 *context,
   const uint8_t *content = sep + token_len;
   size_t content_length = (size_t)(bytes + length - content);
 
+  if (append) {
+    if (kexe_append_fd < 0 || strcmp(kexe_append_candidate, candidate) != 0) {
+      if (!kexe_append_close()) {
+        raise(SIGILL);
+        return 0;
+      }
+      struct stat st;
+      if (stat(candidate, &st) == 0 && S_ISDIR(st.st_mode)) {
+        raise(SIGILL);
+        return 0;
+      }
+      int fd = open(candidate, O_WRONLY | O_APPEND | O_NOFOLLOW);
+      if (fd < 0 || !kexe_scope_contains_fd(&kexe_scope35, fd, candidate)) {
+        if (fd >= 0) close(fd);
+        raise(SIGILL);
+        return 0;
+      }
+      kexe_append_fd = fd;
+      strcpy(kexe_append_candidate, candidate);
+    }
+    if (content_length > KEXE_APPEND_BUFFER_BYTES - kexe_append_used) {
+      if (!kexe_append_flush()) {
+        raise(SIGILL);
+        return 0;
+      }
+      if (content_length >= KEXE_APPEND_BUFFER_BYTES) {
+        if (!kexe_write_all(kexe_append_fd, content, content_length)) {
+          raise(SIGILL);
+          return 0;
+        }
+        return intern_utf8(context, content, content_length);
+      }
+    }
+    memcpy(kexe_append_buffer + kexe_append_used, content, content_length);
+    kexe_append_used += content_length;
+    return intern_utf8(context, content, content_length);
+  }
+
   struct stat st;
   if (stat(candidate, &st) == 0 && S_ISDIR(st.st_mode)) {
     raise(SIGILL);
     return 0;
   }
-  int fd = append ? open(candidate, O_WRONLY | O_APPEND | O_NOFOLLOW)
-                  : open(candidate, O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW, 0644);
+  int fd = open(candidate, O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW, 0644);
   if (fd < 0 || !kexe_scope_contains_fd(&kexe_scope35, fd, candidate)) {
     if (fd >= 0) close(fd);
     raise(SIGILL);
@@ -3591,6 +3661,13 @@ static int64_t checked_typed_cap_call(struct kexe_context_v10 *context,
     if (read_string_handle(context, request, &rb, &rlen) && rb) {
       write_at = memmem(rb, (size_t)rlen, "WRITE_SEP", 9);
       append_at = memmem(rb, (size_t)rlen, "APPEND_SEP", 10);
+    }
+    /* Every form but APPEND closes the append sink first, so the bytes a
+     * read, stat or rename sees are the bytes that were appended. */
+    if ((append_at == NULL || (write_at != NULL && write_at < append_at)) &&
+        !kexe_append_close()) {
+      raise(SIGILL);
+      return 0;
     }
     if (write_at != NULL && (append_at == NULL || write_at < append_at)) {
       result = fs_app_data_write_provider(context, request, 0);
@@ -5064,7 +5141,9 @@ int main(int argc, char **argv) {
   shared->completed = 1;
   /* Everything wire 37 accepted reaches fd 1 before the loader's own report
    * or the exit status does. A flush that fails here is a real write error
-   * on fd 1, reported the way a failed write inside the wire is. */
+   * on fd 1, reported the way a failed write inside the wire is. The
+   * wire-35 append sink likewise reaches its file first. */
+  if (!kexe_append_close()) raise(SIGILL);
   if (!kexe_stdout_flush()) raise(SIGILL);
   if (!structured_report && !command_mode) write_i64(result);
 

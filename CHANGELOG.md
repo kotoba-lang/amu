@@ -51,7 +51,11 @@ production-strength VM sandbox remain absent.
   measured scripts) appends each cycle's output to the temporary it renames
   over the operand. test-package-command: write empty, append twice (a
   content holding WRITE_SEP), read back; a missing file traps, nothing
-  created (40 scanned).
+  created (40 scanned). Consecutive appends to one file share a descriptor
+  and a 64 KiB buffer (an open, containment check, write and close per line
+  measured 6.3 µs a line — 4.85 s of system time and SIGXCPU on 769,400
+  lines; buffered, 0.02 s); every other wire-35 form and the guest's return
+  close the sink first.
 - **A `$PATH` scope entry expands to the caller's PATH at start**
   (2026-09-16, artifact #49) — `which` has to look where the caller's shell
   looks, and a packaged scope cannot know that in advance. The one
