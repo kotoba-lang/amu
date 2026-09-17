@@ -91,6 +91,13 @@ b\" 1 2))
             (string-code-point-at (string-substring (arg \"1\") 0 0) 0))
         (if (string=? (arg \"1\") \"fd\")
           (do (emit \"[\") (emit (fsq (arg \"2\"))) (emit \"]\") 0)
+        (if (string=? (arg \"1\") \"append\")
+          (do (fsq (string-concat (arg \"2\") \"WRITE_SEP\"))
+              (fsq (string-concat (arg \"2\") \"APPEND_SEPone;\"))
+              (fsq (string-concat (arg \"2\") \"APPEND_SEPtwo WRITE_SEP inside;\"))
+              (emit \"[\") (emit (fsq (arg \"2\"))) (emit \"]\") 0)
+        (if (string=? (arg \"1\") \"append-missing\")
+          (do (emit \"[\") (emit (fsq (string-concat (arg \"2\") \"APPEND_SEPx\"))) (emit \"]\") 0)
         (if (string=? (arg \"1\") \"mtime\")
           (do (emit \"[\") (emit (fsq (string-concat (arg \"2\") \"MTIME_SEP\"))) (emit \"][\")
               (emit (fsq (string-concat (arg \"2\") \"-missingMTIME_SEP\"))) (emit \"]\") 0)
@@ -106,7 +113,7 @@ b\" 1 2))
             (chunks 0)
             (if (string=? (arg \"1\") \"flood\")
               (flood (grow (string-concat \"flood\" (nl)) 12) 16)
-              0))))))))))))
+              0))))))))))))))
 ")
 
 (def failures (atom 0))
@@ -472,5 +479,82 @@ b\" 1 2))
                (str/includes? (:err nobit) "KEXE_TRAP {:kind :signal :signal :SIGILL}"))
           nobit))
 
-(println (str "SCANNED\t" 33 "\tFAILED\t" @failures))
+;; 13. Relative operands and a $PWD scope entry (2026-09-17): the file
+;;     operands agents write are relative 99,826 times to 17,104 absolute
+;;     (measured over 1,268,018 Bash calls), and the loader refused every
+;;     relative spelling. A relative request path now resolves against the
+;;     working directory the command STARTED in, normalized lexically, and
+;;     is then held to the same scope as an absolute one; `$PWD` in the
+;;     scope grants that directory, the `$PATH` argument again.
+;;     Both directions, and the escape: packaged WITH `$PWD`, run inside a
+;;     directory, a relative operand is read; `../` from that directory to
+;;     a sibling traps (the resolution is before admission, not around it);
+;;     packaged with an ABSOLUTE scope that names the directory the
+;;     relative operand also reads (resolution alone suffices); packaged
+;;     with a scope that does not contain the working directory the
+;;     relative operand traps. Control: with the join disabled the first
+;;     case is red.
+(let [dir (file "pwd-data")
+      _ (.mkdirSync fs dir)
+      _ (.mkdirSync fs (.join path dir "sub"))
+      _ (.writeFileSync fs (.join path dir "sub" "rel") "rel bytes" "utf8")
+      _ (.mkdirSync fs (file "pwd-sibling"))
+      _ (.writeFileSync fs (.join path (file "pwd-sibling") "secret") "secret bytes" "utf8")
+      real (.realpathSync fs dir)
+      with-pwd (package! "probe-pwd" 60 "35,37,38,39" ["--fs-scope" "$PWD"])
+      with-abs (package! "probe-pwd-abs" 60 "35,37,38,39" ["--fs-scope" real])
+      elsewhere (package! "probe-pwd-elsewhere" 60 "35,37,38,39" ["--fs-scope" (.realpathSync fs (file "pwd-sibling"))])
+      in-dir (fn [exe' cwd' p]
+               (let [r (.spawnSync child exe' (clj->js ["1" "fd" p])
+                                   #js {:cwd cwd' :encoding "utf8" :maxBuffer 16777216})]
+                 {:status (.-status r) :out (or (.-stdout r) "") :err (or (.-stderr r) "")}))
+      rel (in-dir with-pwd real "sub/rel")
+      dot (in-dir with-pwd real "./sub/../sub/rel")
+      up (in-dir with-pwd real "../pwd-sibling/secret")
+      abs (in-dir with-abs real "sub/rel")
+      out (in-dir elsewhere real "sub/rel")]
+  (check! "$PWD scope: a relative operand resolves against the working directory and is read"
+          (and (= 0 (:status rel)) (= "one\ntwo\n[rel bytes]" (:out rel)))
+          rel)
+  (check! "$PWD scope: `.` and `..` segments normalize inside the grant"
+          (and (= 0 (:status dot)) (= "one\ntwo\n[rel bytes]" (:out dot)))
+          dot)
+  (check! "$PWD scope: `../` to a sibling of the working directory traps (SIGILL)"
+          (and (= 120 (:status up)) (= "one\ntwo\n[" (:out up))
+               (str/includes? (:err up) "KEXE_TRAP {:kind :signal :signal :SIGILL}"))
+          up)
+  (check! "absolute scope naming the working directory: a relative operand is read"
+          (and (= 0 (:status abs)) (= "one\ntwo\n[rel bytes]" (:out abs)))
+          abs)
+  (check! "scope elsewhere: a relative operand under the working directory traps (SIGILL)"
+          (and (= 120 (:status out)) (= "one\ntwo\n[" (:out out))
+               (str/includes? (:err out) "KEXE_TRAP {:kind :signal :signal :SIGILL}"))
+          out))
+
+;; 14. The wire-35 APPEND form (2026-09-17): "<path>APPEND_SEP<content>"
+;;     appends to a file that exists; a missing file traps (no O_CREAT).
+;;     The content of an append may hold WRITE_SEP -- the dispatch takes
+;;     the EARLIER token as the form, since the path precedes the content.
+;;     `sed -i` builds its temporary this way, one line per region.
+(let [dir (file "append-data")
+      _ (.mkdirSync fs dir)
+      real (.realpathSync fs dir)
+      exe' (package! "probe-append" 60 "35,37,38,39" ["--fs-scope" real])
+      target (.join path real "built")
+      run' (fn [mode p]
+             (let [r (.spawnSync child exe' (clj->js ["1" mode p]) #js {:cwd root :encoding "utf8" :maxBuffer 16777216})]
+               {:status (.-status r) :out (or (.-stdout r) "") :err (or (.-stderr r) "")}))
+      built (run' "append" target)
+      missing (run' "append-missing" (.join path real "absent"))]
+  (check! "APPEND form: write empty, append twice (content holding WRITE_SEP), read back"
+          (and (= 0 (:status built)) (= "one\ntwo\n[one;two WRITE_SEP inside;]" (:out built))
+               (= "one;two WRITE_SEP inside;" (.readFileSync fs target "utf8")))
+          built)
+  (check! "APPEND form: a missing file traps (SIGILL), nothing is created"
+          (and (= 120 (:status missing)) (= "one\ntwo\n[" (:out missing))
+               (str/includes? (:err missing) "KEXE_TRAP {:kind :signal :signal :SIGILL}")
+               (not (.existsSync fs (.join path real "absent"))))
+          missing))
+
+(println (str "SCANNED\t" 40 "\tFAILED\t" @failures))
 (.exit js/process (if (zero? @failures) 0 1))

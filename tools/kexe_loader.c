@@ -2471,6 +2471,29 @@ static void kexe_scope_add(struct kexe_scope *scope, const char *entry) {
  * said the command may read beneath those directories. A relative PATH
  * entry resolves against the working directory, as the shell resolves it.
  * When EXPAND is 0 (the recursive call) `$PATH` is an ordinary spelling. */
+/* The working directory the command STARTED in, captured once in the parent
+ * before the fork and the sandbox (2026-09-17, superproject ADR-2609161710).
+ * Two things read it. A `$PWD` scope entry expands to it, on the `$PATH`
+ * argument: the caller chose where to run the command the way they chose
+ * what to connect to stdin, and a packager that writes `$PWD` into the scope
+ * has said the command may read beneath wherever it is run. And a RELATIVE
+ * request path resolves against it, as the shell resolves an operand --
+ * measured over 1,268,018 agent Bash calls, the file operands of head /
+ * tail / sed / grep / wc / cut / sort / cat / awk are relative 99,826 times
+ * and absolute 17,104, so a loader that refused every relative spelling was
+ * refusing the way the commands are called. Resolution happens BEFORE
+ * admission: the joined path is normalized lexically and then held to the
+ * same scope as an absolute one, so `../x` from a granted directory is
+ * `<parent>/x`, outside, and refused. An empty capture (getcwd failed)
+ * admits no relative path and expands `$PWD` to nothing. */
+static char kexe_cwd[4096];
+
+static void kexe_capture_cwd(void) {
+  if (getcwd(kexe_cwd, sizeof(kexe_cwd)) == NULL || kexe_cwd[0] != '/') {
+    kexe_cwd[0] = '\0';
+  }
+}
+
 static void kexe_scope_from_list(struct kexe_scope *scope, const char *list, int expand) {
   if (list == NULL || list[0] == '\0') return;
   const char *cursor = list;
@@ -2483,6 +2506,8 @@ static void kexe_scope_from_list(struct kexe_scope *scope, const char *list, int
       entry[entry_length] = '\0';
       if (expand && strcmp(entry, "$PATH") == 0) {
         kexe_scope_from_list(scope, getenv("PATH"), 0);
+      } else if (expand && strcmp(entry, "$PWD") == 0) {
+        if (kexe_cwd[0] != '\0') kexe_scope_add(scope, kexe_cwd);
       } else {
         kexe_scope_add(scope, entry);
       }
@@ -2594,13 +2619,60 @@ static int kexe_scope_contains_fd(const struct kexe_scope *scope, int fd,
 #endif
 }
 
+/* Rewrites the absolute path in `target` in place without `.` and `..`
+ * segments or repeated slashes: `/a/./b//../c` -> `/a/c`, `/..` -> `/`.
+ * Lexical, so a symlink under a `..` is not followed the way the kernel
+ * would -- the path OPENED is the normalized one, which is what admission
+ * judged, never something admission did not see. */
+static void kexe_normalize_path(char target[4096]) {
+  char out[4096];
+  size_t o = 0;
+  const char *p = target;
+  out[o++] = '/';
+  while (*p != '\0') {
+    while (*p == '/') p++;
+    if (*p == '\0') break;
+    const char *seg = p;
+    while (*p != '\0' && *p != '/') p++;
+    size_t n = (size_t)(p - seg);
+    if (n == 1 && seg[0] == '.') continue;
+    if (n == 2 && seg[0] == '.' && seg[1] == '.') {
+      if (o > 1) {
+        o--;                          /* the slash after the last segment */
+        while (o > 1 && out[o - 1] != '/') o--;
+      }
+      continue;
+    }
+    if (o + n + 1 >= sizeof(out)) return; /* cannot grow; left as it was */
+    memcpy(out + o, seg, n);
+    o += n;
+    out[o++] = '/';
+  }
+  if (o > 1) o--;                     /* no trailing slash except for "/" */
+  out[o] = '\0';
+  memcpy(target, out, o + 1);
+}
+
 /* Copies a request's path bytes into a NUL-terminated buffer, refusing the
- * empty, over-long and relative forms no provider admits. */
+ * empty and over-long forms no provider admits. A relative path is joined
+ * to the captured working directory (see kexe_cwd), and every path is
+ * normalized before the caller admits it. */
 static int kexe_request_path(const uint8_t *bytes, size_t length,
                              char target[4096]) {
-  if (bytes == NULL || length == 0 || length >= 4096 || bytes[0] != '/') return 0;
-  memcpy(target, bytes, length);
-  target[length] = '\0';
+  if (bytes == NULL || length == 0 || length >= 4096) return 0;
+  if (bytes[0] == '/') {
+    memcpy(target, bytes, length);
+    target[length] = '\0';
+  } else {
+    if (kexe_cwd[0] == '\0') return 0;
+    size_t cwd_length = strlen(kexe_cwd);
+    if (cwd_length + 1 + length >= 4096) return 0;
+    memcpy(target, kexe_cwd, cwd_length);
+    target[cwd_length] = '/';
+    memcpy(target + cwd_length + 1, bytes, length);
+    target[cwd_length + 1 + length] = '\0';
+  }
+  kexe_normalize_path(target);
   return 1;
 }
 
@@ -2755,9 +2827,51 @@ static int64_t fs_app_data_read_provider(struct kexe_context_v10 *context,
  * back (so the guest can verify the write via string-byte-length and the
  * capability keeps its typed :string result). Same scope and containment as
  * the read form. The file is created/truncated O_NOFOLLOW; writing through a
- * symlink is impossible, and a directory target is refused. */
+ * symlink is impossible, and a directory target is refused.
+ *
+ * APPEND form (2026-09-17, superproject ADR-2609161710): "<path>APPEND_SEP
+ * <content>" appends to a file that EXISTS (no O_CREAT: a guest that means
+ * to start a file writes it empty first), same scope, containment and
+ * answer. It is what lets a guest build a file one line at a time when the
+ * line is minted inside an arena-scope and cannot leave it as a string --
+ * `sed -i` (1,042 of 15,968 measured sed scripts) runs each line's cycle
+ * in a region and appends its output to the temporary it renames over the
+ * operand at the end.
+ *
+ * Consecutive appends to the SAME file share one descriptor and a 64 KiB
+ * buffer, the shape wire 37 has for standard output: an open, a
+ * containment check, a write and a close per line cost 6.3 us a line
+ * (measured: 769,400 lines, 4.85 s of system time, SIGXCPU under a 5 s
+ * budget), and a file is built one line at a time. Any other wire-35
+ * request -- a read, a stat, the rename that finishes `sed -i` -- closes
+ * the sink first, so what it sees is what was appended; the sink is also
+ * closed when the guest returns, before the exit status. */
+#define KEXE_APPEND_BUFFER_BYTES 65536
+static int kexe_append_fd = -1;
+static char kexe_append_candidate[4096];
+static uint8_t kexe_append_buffer[KEXE_APPEND_BUFFER_BYTES];
+static size_t kexe_append_used = 0;
+
+static int kexe_append_flush(void) {
+  size_t pending = kexe_append_used;
+  kexe_append_used = 0;
+  if (pending == 0 || kexe_append_fd < 0) return 1;
+  return kexe_write_all(kexe_append_fd, kexe_append_buffer, pending);
+}
+
+/* Flush and close the append sink; 1 when nothing was lost. */
+static int kexe_append_close(void) {
+  int ok = kexe_append_flush();
+  if (kexe_append_fd >= 0) {
+    if (close(kexe_append_fd) != 0) ok = 0;
+    kexe_append_fd = -1;
+  }
+  kexe_append_candidate[0] = '\0';
+  return ok;
+}
+
 static int64_t fs_app_data_write_provider(struct kexe_context_v10 *context,
-                                          int64_t request) {
+                                          int64_t request, int append) {
   const uint8_t *bytes = NULL;
   uint64_t length = 0;
   if (!read_string_handle(context, request, &bytes, &length) || bytes == NULL) {
@@ -2765,8 +2879,10 @@ static int64_t fs_app_data_write_provider(struct kexe_context_v10 *context,
     return 0;
   }
   static const char write_token[] = "WRITE_SEP";
-  const size_t token_len = sizeof(write_token) - 1u;
-  const uint8_t *sep = kexe_single_token(bytes, (size_t)length, write_token);
+  static const char append_token[] = "APPEND_SEP";
+  const size_t token_len = append ? sizeof(append_token) - 1u : sizeof(write_token) - 1u;
+  const uint8_t *sep = kexe_single_token(bytes, (size_t)length,
+                                         append ? append_token : write_token);
   char target[4096], candidate[4096];
   if (sep == NULL ||
       !kexe_request_path(bytes, (size_t)(sep - bytes), target) ||
@@ -2776,6 +2892,44 @@ static int64_t fs_app_data_write_provider(struct kexe_context_v10 *context,
   }
   const uint8_t *content = sep + token_len;
   size_t content_length = (size_t)(bytes + length - content);
+
+  if (append) {
+    if (kexe_append_fd < 0 || strcmp(kexe_append_candidate, candidate) != 0) {
+      if (!kexe_append_close()) {
+        raise(SIGILL);
+        return 0;
+      }
+      struct stat st;
+      if (stat(candidate, &st) == 0 && S_ISDIR(st.st_mode)) {
+        raise(SIGILL);
+        return 0;
+      }
+      int fd = open(candidate, O_WRONLY | O_APPEND | O_NOFOLLOW);
+      if (fd < 0 || !kexe_scope_contains_fd(&kexe_scope35, fd, candidate)) {
+        if (fd >= 0) close(fd);
+        raise(SIGILL);
+        return 0;
+      }
+      kexe_append_fd = fd;
+      strcpy(kexe_append_candidate, candidate);
+    }
+    if (content_length > KEXE_APPEND_BUFFER_BYTES - kexe_append_used) {
+      if (!kexe_append_flush()) {
+        raise(SIGILL);
+        return 0;
+      }
+      if (content_length >= KEXE_APPEND_BUFFER_BYTES) {
+        if (!kexe_write_all(kexe_append_fd, content, content_length)) {
+          raise(SIGILL);
+          return 0;
+        }
+        return intern_utf8(context, content, content_length);
+      }
+    }
+    memcpy(kexe_append_buffer + kexe_append_used, content, content_length);
+    kexe_append_used += content_length;
+    return intern_utf8(context, content, content_length);
+  }
 
   struct stat st;
   if (stat(candidate, &st) == 0 && S_ISDIR(st.st_mode)) {
@@ -3483,6 +3637,7 @@ static int64_t checked_typed_cap_call(struct kexe_context_v10 *context,
   } else if (id == 35 && request_kind == KEXE_TYPED_STRING) {
     /* wire id 35 = :fs/app-data, told apart by an ASCII token:
      *   "<path>WRITE_SEP<content>"      write
+     *   "<path>APPEND_SEP<content>"     append to an existing file
      *   "<path>RANGE_SEP<off>:<len>"    one bounded window
      *   "<path>EXISTS_SEP"              "1"/"0"
      *   "<path>MKDIR_SEP"               create a directory
@@ -3491,15 +3646,33 @@ static int64_t checked_typed_cap_call(struct kexe_context_v10 *context,
      *   "<from>RENAME_SEP<to>"          rename
      *   a bare absolute path            read the whole file
      *
-     * WRITE_SEP is tested FIRST and stays first: written content may itself
-     * contain any of these tokens, and only the write form has content. The
-     * mutation forms carry no content, so their order among themselves does
-     * not matter. Scope is KEXE_CAP_RESOURCES_35 for all of them. */
+     * WRITE_SEP and APPEND_SEP are tested FIRST and stay first: written
+     * content may itself contain any of these tokens, and only the two
+     * content forms have content. Between the two, the one whose token
+     * comes EARLIER in the request is the form -- the path precedes the
+     * content, so a write whose content holds APPEND_SEP is still a write
+     * (and a content holding its own form's token is refused by the
+     * provider's single-occurrence rule). The mutation forms carry no
+     * content, so their order among themselves does not matter. Scope is
+     * KEXE_CAP_RESOURCES_35 for all of them. */
     uint64_t rlen = 0;
     const uint8_t *rb = NULL;
-    if (read_string_handle(context, request, &rb, &rlen) && rb &&
-        memmem(rb, (size_t)rlen, "WRITE_SEP", 9) != NULL) {
-      result = fs_app_data_write_provider(context, request);
+    const uint8_t *write_at = NULL, *append_at = NULL;
+    if (read_string_handle(context, request, &rb, &rlen) && rb) {
+      write_at = memmem(rb, (size_t)rlen, "WRITE_SEP", 9);
+      append_at = memmem(rb, (size_t)rlen, "APPEND_SEP", 10);
+    }
+    /* Every form but APPEND closes the append sink first, so the bytes a
+     * read, stat or rename sees are the bytes that were appended. */
+    if ((append_at == NULL || (write_at != NULL && write_at < append_at)) &&
+        !kexe_append_close()) {
+      raise(SIGILL);
+      return 0;
+    }
+    if (write_at != NULL && (append_at == NULL || write_at < append_at)) {
+      result = fs_app_data_write_provider(context, request, 0);
+    } else if (append_at != NULL) {
+      result = fs_app_data_write_provider(context, request, 1);
     } else if (rb != NULL && memmem(rb, (size_t)rlen, "EXISTS_SEP", 10) != NULL) {
       /* Tested before RANGE_SEP and after WRITE_SEP for the same reason the
        * existing order has: written content may contain any of these tokens,
@@ -4876,6 +5049,7 @@ int main(int argc, char **argv) {
   shared->context.vector_items_base = shared->vector_items;
   shared->context.code_base = (const uint8_t *)memory;
   shared->context.code_length = (uint64_t)length;
+  kexe_capture_cwd();
   kexe_scope_init(&kexe_scope35, "KEXE_CAP_RESOURCES_35");
   kexe_scope_init(&kexe_scope34, "KEXE_CAP_RESOURCES_34");
 #ifdef KEXE_EMBEDDED
@@ -4967,7 +5141,9 @@ int main(int argc, char **argv) {
   shared->completed = 1;
   /* Everything wire 37 accepted reaches fd 1 before the loader's own report
    * or the exit status does. A flush that fails here is a real write error
-   * on fd 1, reported the way a failed write inside the wire is. */
+   * on fd 1, reported the way a failed write inside the wire is. The
+   * wire-35 append sink likewise reaches its file first. */
+  if (!kexe_append_close()) raise(SIGILL);
   if (!kexe_stdout_flush()) raise(SIGILL);
   if (!structured_report && !command_mode) write_i64(result);
 

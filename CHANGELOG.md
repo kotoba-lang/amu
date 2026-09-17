@@ -29,6 +29,33 @@ production-strength VM sandbox remain absent.
 
 ### Current capabilities (state so far)
 
+- **Relative request paths resolve against the start directory; a `$PWD`
+  scope entry** (2026-09-17, artifact #50) — measured over 1,268,018 agent
+  Bash calls, the file operands of head / tail / sed / grep / wc / cut /
+  sort / cat / awk are relative 99,826 times and absolute 17,104, and the
+  loader refused every relative spelling. A relative path now joins the
+  working directory captured once in the parent (before fork and sandbox),
+  is normalized lexically (`.`, `..`, repeated slashes — the path opened is
+  the normalized one, which is what admission judged) and is then held to
+  the same scope as an absolute one: resolution before admission. `$PWD`
+  in a scope grants that directory, on the `$PATH` argument (the caller's
+  choice). test-package-command: packaged with `$PWD` a relative operand
+  is read, `./sub/../sub/x` is read, `../sibling/x` traps; with the
+  absolute directory read; with a scope elsewhere traps; control with the
+  join disabled is red on three. **And a wire-35 APPEND form**,
+  `"<path>APPEND_SEP<content>"`: appends to a file that exists (no
+  O_CREAT), same scope, containment and answer as WRITE; between WRITE_SEP
+  and APPEND_SEP the token that comes earlier in the request is the form.
+  It lets a guest build a file one line at a time when each line is minted
+  inside an arena-scope and cannot leave it as a string — `sed -i` (1,042
+  measured scripts) appends each cycle's output to the temporary it renames
+  over the operand. test-package-command: write empty, append twice (a
+  content holding WRITE_SEP), read back; a missing file traps, nothing
+  created (40 scanned). Consecutive appends to one file share a descriptor
+  and a 64 KiB buffer (an open, containment check, write and close per line
+  measured 6.3 µs a line — 4.85 s of system time and SIGXCPU on 769,400
+  lines; buffered, 0.02 s); every other wire-35 form and the guest's return
+  close the sink first.
 - **A `$PATH` scope entry expands to the caller's PATH at start**
   (2026-09-16, artifact #49) — `which` has to look where the caller's shell
   looks, and a packaged scope cannot know that in advance. The one
