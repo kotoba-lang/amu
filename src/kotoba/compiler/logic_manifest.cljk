@@ -5,10 +5,12 @@
   projects checked KIR into canonical IPLD-ready data. A host verifies the
   resulting block/attestation, then injects its facts into the authorizer as
   the trusted `amu:` provenance."
-  {:kotoba/export [authorizer-evidence! authorizer-facts build! compiler-facts-format manifest-format max-links max-resource-bounds required-input-keys valid?]}
+  {:kotoba/export [authorizer-evidence! authorizer-facts bound-evidence! build! compiler-facts-format manifest-bytes manifest-cid manifest-format max-links max-resource-bounds required-input-keys valid?]}
   (:require [kotoba.abi.contract :as abi]
             [kotoba.artifact.core :as artifact]
-            [kotoba.sema :as sema]))
+            [kotoba.sema :as sema]
+            [cbor.core :as cbor]
+            [multiformats.core :as mf]))
 
 (def manifest-format :kotoba.logic-manifest/v1)
 (def compiler-facts-format :kotoba.compiler-facts/v1)
@@ -159,3 +161,47 @@
     (when-not (= compiler-facts-fields (set (keys evidence)))
       (fail! "compiler facts envelope rejected" {:reason :invalid-envelope}))
     evidence))
+
+;; -- content-addressed manifest CID ------------------------------------------
+;;
+;; `authorizer-evidence!` above only CHECKS the CID a host hands it
+;; (`abi/cid?` is structure). The derivation lives here so a host can COMPUTE
+;; the manifest's CID from the manifest bytes instead of asserting one.
+;; Canonicalization mirrors kotoba.lang.incidence: link order is not semantic
+;; (already sorted by build!), CBOR has no set type, so every set is a sorted
+;; vector before encode. The self-hash field is dropped from the payload -- it
+;; hashes the same body, it is not part of it.
+
+(defn- effect-sort-key [effect]
+  (if (vector? effect) (pr-str effect) (str effect)))
+
+(defn- manifest-payload [manifest]
+  (-> manifest
+      (dissoc :manifest-sha256)
+      (update :effects #(vec (sort-by effect-sort-key %)))
+      (update :wire-effects #(vec (sort %)))
+      (update :function-effects
+              (fn [fes]
+                (mapv (fn [fe] (-> fe
+                        (update :effects (fn [effects] (vec (sort-by effect-sort-key effects))))
+                        (update :wire-effects vec)))
+                      fes)))))
+
+(defn manifest-bytes
+  "Deterministic dag-cbor encoding of the manifest body."
+  [manifest]
+  (when-not (valid? manifest)
+    (fail! "cannot encode invalid logic manifest" {:reason :invalid-manifest}))
+  (cbor/encode (manifest-payload manifest)))
+
+(defn manifest-cid
+  "Content CID (dag-cbor) of a valid logic manifest."
+  [manifest]
+  (mf/cidv1-dag-cbor (manifest-bytes manifest)))
+
+(defn bound-evidence!
+  "Derive the manifest CID from the manifest itself, then bind the projected
+  compiler facts to it. Same envelope shape as `authorizer-evidence!` -- the
+  CID is computed here, not asserted by the caller."
+  [manifest]
+  (authorizer-evidence! (manifest-cid manifest) manifest))
