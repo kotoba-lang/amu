@@ -32,7 +32,7 @@
  * by the reason; the guest-side provider turns that into SIGILL (fail closed),
  * and the reason is printed on the supervisor's stderr so the run says WHY.
  *
- * Bounds: 256 buffers, 64 pipelines, 64 dispatches per command buffer, 8
+ * Bounds: 256 buffers, 64 pipelines, 2048 dispatches per command buffer, 8
  * bindings per pipeline. A request above them is refused by name. */
 
 #include <vulkan/vulkan.h>
@@ -40,7 +40,7 @@
 #define KGPU_MAX_BUFFERS 256
 #define KGPU_MAX_PIPELINES 64
 #define KGPU_MAX_BINDINGS 8
-#define KGPU_MAX_DISPATCHES 64
+#define KGPU_MAX_DISPATCHES 2048   /* a 40-layer Nex decode step is ~1,250 dispatches in one buffer */
 #define KGPU_STAGING_BYTES (64u * 1024u * 1024u)
 
 struct kgpu_buffer {
@@ -220,9 +220,10 @@ static int kgpu_init(void) {
   VkFenceCreateInfo fi = { .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO };
   KGPU_VK(vkCreateFence(kgpu.device, &fi, NULL, &kgpu.fence));
   VkDescriptorPoolSize psize = { .type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-                                 .descriptorCount = KGPU_MAX_DISPATCHES * KGPU_MAX_BINDINGS * 4 };
+                                 .descriptorCount = KGPU_MAX_DISPATCHES * KGPU_MAX_BINDINGS };
   VkDescriptorPoolCreateInfo dpi = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
-                                     .maxSets = KGPU_MAX_DISPATCHES * 4, .poolSizeCount = 1, .pPoolSizes = &psize };
+                                     .flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT,
+                                     .maxSets = KGPU_MAX_DISPATCHES, .poolSizeCount = 1, .pPoolSizes = &psize };
   KGPU_VK(vkCreateDescriptorPool(kgpu.device, &dpi, NULL, &kgpu.descriptors));
   if (kgpu_make_buffer(KGPU_STAGING_BYTES, VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
