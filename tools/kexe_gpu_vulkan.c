@@ -437,6 +437,11 @@ static size_t kgpu_handle(const uint8_t *req, size_t len, uint8_t *out, size_t c
     return kgpu_decimal(out, (uint64_t)h);
   }
   if (strcmp(op, "MAP") == 0) {
+    /* a copy reuses the one command buffer; inside BEGIN..SUBMIT it would
+     * RESET the batch and silently drop every dispatch recorded so far
+     * (measured 2026-09-19: a WRITE after BEGIN left a 27-dispatch layer
+     * step answering zeros). Refused by name instead. */
+    if (kgpu.recording) return kgpu_fail(out, cap, "MAP while recording (BEGIN open): finish with SUBMIT first");
     uint64_t offset, length;
     if (n != 4 || kgpu_parse_u64(tok[2], &offset) != 0 || kgpu_parse_u64(tok[3], &length) != 0 || length == 0)
       return kgpu_fail(out, cap, "MAP <path> <offset> <length>");
@@ -460,6 +465,11 @@ static size_t kgpu_handle(const uint8_t *req, size_t len, uint8_t *out, size_t c
     return kgpu_decimal(out, (uint64_t)h);
   }
   if (strcmp(op, "WRITE") == 0) {
+    /* a copy reuses the one command buffer; inside BEGIN..SUBMIT it would
+     * RESET the batch and silently drop every dispatch recorded so far
+     * (measured 2026-09-19: a WRITE after BEGIN left a 27-dispatch layer
+     * step answering zeros). Refused by name instead. */
+    if (kgpu.recording) return kgpu_fail(out, cap, "WRITE while recording (BEGIN open): finish with SUBMIT first");
     uint64_t handle, offset;
     if (n != 4 || kgpu_parse_u64(tok[1], &handle) != 0 || kgpu_parse_u64(tok[2], &offset) != 0)
       return kgpu_fail(out, cap, "WRITE <handle> <offset> <hex>");
@@ -480,6 +490,11 @@ static size_t kgpu_handle(const uint8_t *req, size_t len, uint8_t *out, size_t c
     return 1;
   }
   if (strcmp(op, "READ") == 0) {
+    /* a copy reuses the one command buffer; inside BEGIN..SUBMIT it would
+     * RESET the batch and silently drop every dispatch recorded so far
+     * (measured 2026-09-19: a WRITE after BEGIN left a 27-dispatch layer
+     * step answering zeros). Refused by name instead. */
+    if (kgpu.recording) return kgpu_fail(out, cap, "READ while recording (BEGIN open): finish with SUBMIT first");
     uint64_t handle, offset, length;
     if (n != 4 || kgpu_parse_u64(tok[1], &handle) != 0 || kgpu_parse_u64(tok[2], &offset) != 0 ||
         kgpu_parse_u64(tok[3], &length) != 0) return kgpu_fail(out, cap, "READ <handle> <offset> <length>");
