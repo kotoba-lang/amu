@@ -32,12 +32,12 @@
  * by the reason; the guest-side provider turns that into SIGILL (fail closed),
  * and the reason is printed on the supervisor's stderr so the run says WHY.
  *
- * Bounds: 256 buffers, 64 pipelines, 2048 dispatches per command buffer, 8
+ * Bounds: 4096 buffers, 64 pipelines, 2048 dispatches per command buffer, 8
  * bindings per pipeline. A request above them is refused by name. */
 
 #include <vulkan/vulkan.h>
 
-#define KGPU_MAX_BUFFERS 256
+#define KGPU_MAX_BUFFERS 4096   /* 40 layers x ~20 tensors MAPped once, plus metas and activations */
 #define KGPU_MAX_PIPELINES 64
 #define KGPU_MAX_BINDINGS 8
 #define KGPU_MAX_DISPATCHES 2048   /* a 40-layer Nex decode step is ~1,250 dispatches in one buffer */
