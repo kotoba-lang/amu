@@ -18,6 +18,16 @@
     (when-not (zero? (or (.-status result) 70))
       (throw (js/Error. (str "browser matrix command failed: " command))))))
 (defn nbb! [args env] (run! js/process.execPath (into [nbb-cli] args) env))
+
+(defn node-spawn!
+  "spawnSync cannot resolve a POSIX shebang on win32 (ENOENT, issue #1000),
+  so run bin/amu through the current node executable there. Non-win32 keeps
+  the direct path so the executable bit stays the contract."
+  [command args env]
+  (if (= "win32" (.platform os))
+    (run! js/process.execPath (into [command] args) env)
+    (run! command args env)))
+
 (defn compile! [source output & more]
   (nbb! (into [kotoba "-M" "compile" (.join path root source)
                "--target" "wasm32-browser" "--output" (.join path tmp output)] more) {}))
@@ -34,7 +44,7 @@
   rather than a JVM spawn."
   [source output]
   (println (str "browser-matrix: compiling " source " for the web target (nbb route)"))
-  (run! amu ["compile" (.join path root source)
+  (node-spawn! amu ["compile" (.join path root source)
              "--target" "js-browser" "--output" (.join path tmp output) "--jvm-free"] {}))
 
 (try

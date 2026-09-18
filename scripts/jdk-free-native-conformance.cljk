@@ -248,6 +248,16 @@
              {:source "inline-handles.kotoba" :symbol "sum-at"
               :arguments ["2"] :expected "3"}
              {:source "inline-handles.kotoba" :symbol "oob"
+              :arguments [] :expected :trap}
+             ;; ABI v10 (2026-09-16): the two range slots, no view taken and
+             ;; none minted -- string-find-byte (336) and string-append-range
+             ;; (344, the second four-argument slot). A decimal place per
+             ;; head; the append is also run over a range of ITSELF, which
+             ;; is what the tail append must read before it moves the tail;
+             ;; a non-ASCII byte is refused.
+             {:source "range-slots.kotoba" :symbol "main"
+              :arguments [] :expected "319352"}
+             {:source "range-slots.kotoba" :symbol "bad-byte"
               :arguments [] :expected :trap}]]
       (let [artifact (file (str symbol ".kexe"))
             binary (file (str symbol ".bin"))]

@@ -43,7 +43,12 @@
   ([command args input]
    (let [r (.spawnSync child command (clj->js args)
                        #js {:cwd root :encoding "utf8" :maxBuffer 16777216 :input input})]
-     (when (.-error r) (throw (.-error r)))
+     ;; EPIPE on `input` -- the child exited before reading what it was fed
+     ;; -- is a RESULT with a status, not a harness failure: measured
+     ;; 2026-09-16 with wire 41 unrouted, the stdin probe threw here instead
+     ;; of printing FAIL, which is a control that cannot go red. Only a
+     ;; process that did not run at all is thrown.
+     (when (and (.-error r) (nil? (.-status r))) (throw (.-error r)))
      {:status (.-status r) :out (or (.-stdout r) "") :err (or (.-stderr r) "")})))
 
 ;; The guest: two lines around a diagnostic, then a loop that burns CPU for
@@ -55,6 +60,13 @@
 (defn arg [i :string] :string (typed-cap-call :cli/args :string :string i))
 (defn emit [s :string] :string (typed-cap-call :io/write :string :string s))
 (defn emit-error [s :string] :string (typed-cap-call :io/write-error :string :string s))
+(defn stdin [s :string] :string (typed-cap-call :io/read :string :string s))
+(defn clock [s :string] :string (typed-cap-call :clock/now :string :string s))
+(defn sha [s :string] :string (typed-cap-call :hash/sha256 :string :string s))
+(defn fsq [s :string] :string (typed-cap-call :fs/app-data :string :string s))
+(defn chunks [n :i64] :i64
+  (let [c (stdin \"4\")]
+    (if (= 0 (string-byte-length c)) n (do (emit c) (emit \"|\") (chunks (+ n 1))))))
 (defn nl [] :string (string-substring \"a
 b\" 1 2))
 (defn digit-value [s :string i :i64] :i64
@@ -63,6 +75,10 @@ b\" 1 2))
   (if (>= i n) acc (text->i64 s (+ i 1) n (+ (* acc 10) (digit-value s i)))))
 (defn spin [i :i64 stop :i64 acc :i64] :i64
   (if (>= i stop) acc (spin (+ i 1) stop (+ acc (quot i 7)))))
+(defn grow [s :string k :i64] :string
+  (if (<= k 0) s (grow (string-concat s s) (- k 1))))
+(defn flood [s :string k :i64] :i64
+  (if (<= k 0) 0 (do (emit s) (flood s (- k 1)))))
 (defn main [] :i64
   (do
     (emit \"one\") (emit (nl))
@@ -73,7 +89,31 @@ b\" 1 2))
       (if (string=? (arg \"1\") \"trap\")
         (do (emit \"three\") (emit (nl))
             (string-code-point-at (string-substring (arg \"1\") 0 0) 0))
-        0))))
+        (if (string=? (arg \"1\") \"fd\")
+          (do (emit \"[\") (emit (fsq (arg \"2\"))) (emit \"]\") 0)
+        (if (string=? (arg \"1\") \"append\")
+          (do (fsq (string-concat (arg \"2\") \"WRITE_SEP\"))
+              (fsq (string-concat (arg \"2\") \"APPEND_SEPone;\"))
+              (fsq (string-concat (arg \"2\") \"APPEND_SEPtwo WRITE_SEP inside;\"))
+              (emit \"[\") (emit (fsq (arg \"2\"))) (emit \"]\") 0)
+        (if (string=? (arg \"1\") \"append-missing\")
+          (do (emit \"[\") (emit (fsq (string-concat (arg \"2\") \"APPEND_SEPx\"))) (emit \"]\") 0)
+        (if (string=? (arg \"1\") \"mtime\")
+          (do (emit \"[\") (emit (fsq (string-concat (arg \"2\") \"MTIME_SEP\"))) (emit \"][\")
+              (emit (fsq (string-concat (arg \"2\") \"-missingMTIME_SEP\"))) (emit \"]\") 0)
+        (if (string=? (arg \"1\") \"sha\")
+          (do (emit (sha \"abc\")) (emit \"|\") (emit (sha \"\")) (emit \"|\") (emit (sha (grow (string-concat \"flood\" (nl)) 12))) 0)
+        (if (string=? (arg \"1\") \"clock\")
+          (do (emit (clock \"wall\")) (emit \"|\") (emit (clock \"monotonic\")) (emit \"|\") (emit (clock \"monotonic\")) 0)
+        (if (string=? (arg \"1\") \"clock-bad\")
+          (do (emit (clock \"x\")) 0)
+        (if (string=? (arg \"1\") \"slurp\")
+          (do (emit (stdin \"\")) 0)
+          (if (string=? (arg \"1\") \"chunk\")
+            (chunks 0)
+            (if (string=? (arg \"1\") \"flood\")
+              (flood (grow (string-concat \"flood\" (nl)) 12) 16)
+              0))))))))))))))
 ")
 
 (def failures (atom 0))
@@ -83,17 +123,22 @@ b\" 1 2))
 
 (def extract (atom nil))
 
-(defn package! [name cpu-seconds]
+(defn package!
+  ([name cpu-seconds] (package! name cpu-seconds "37,38,39"))
+  ([name cpu-seconds allow] (package! name cpu-seconds allow []))
+  ([name cpu-seconds allow extra]
   (let [out (file name)
         r (run js/process.execPath
+               (into
                [kbb "--backend" "sci" packager
                 "--code" (file "probe.bin") "--offset" (str (:offset @extract))
-                "--isa" (:isa @extract) "--allow" "37,38,39"
+                "--isa" (:isa @extract) "--allow" allow
                 "--fuel" "100000000000" "--pairs" "100000" "--string-pool" "1000000"
                 "--cpu-seconds" (str cpu-seconds) "--wall-seconds" "600"
-                "--output" out])]
+                "--output" out]
+               extra))]
     (when (not= 0 (:status r)) (refuse (str "package failed: " (:err r) (:out r))))
-    out))
+    out)))
 
 (when-not (.existsSync fs amu) (refuse (str "no amu at " amu)))
 ;; The trap is a HOST refusal on purpose: `string-code-point-at` past the end
@@ -105,7 +150,7 @@ b\" 1 2))
 ;; the supervisor reports both as :trap.
 (.writeFileSync fs (file "probe.kotoba") guest "utf8")
 (.writeFileSync fs (file "policy.edn")
-                "{:allow #{[:cap/call 37] [:cap/call 38] [:cap/call 39]}}" "utf8")
+                "{:allow #{[:cap/call 3] [:cap/call 7] [:cap/call 35] [:cap/call 37] [:cap/call 38] [:cap/call 39] [:cap/call 41]}}" "utf8")
 (let [isa (if (contains? #{"arm64" "aarch64"} (.arch os)) "aarch64" "x86_64")
       target (if (= isa "aarch64") "aarch64-macos" "x86_64-linux")
       c (run js/process.execPath [amu "compile" (file "probe.kotoba") "--target" target
@@ -188,5 +233,328 @@ b\" 1 2))
                (str/includes? (:out r) "--vectors must be a positive decimal"))
           r))
 
-(println (str "SCANNED\t" 10 "\tFAILED\t" @failures))
+;; 6. Standard input, wire 41 (2026-09-16). One guest compiled with the
+;;    grant admitted, packaged TWICE -- with 41 in the allow mask and
+;;    without -- because the mask is the whole enforcement: Seatbelt does not
+;;    mediate read(2) on an inherited descriptor, so the only thing standing
+;;    between a guest and stdin is this bit, and a suite that only ran the
+;;    granted binary would not know whether the bit does anything.
+;;
+;;    Both forms, both directions:
+;;      slurp  -- "" answers everything to EOF, bytes exact; the same guest
+;;                with input past the 1,000,000-byte string pool is refused
+;;                (SIGILL, exit 120) rather than answered short.
+;;      chunk  -- "4" answers at most four bytes at a time and the empty
+;;                string at EOF, so 11 bytes arrive as abcd|efgh|ijk| and
+;;                the walk ends; the exit status is the chunk COUNT so a walk
+;;                that never saw EOF is a different number, not a hang.
+;;      utf-8  -- "4" over three 3-byte code points: a chunk cut at byte
+;;                four would split the second one, and the guest's next
+;;                string operation would trap on the fragment. The loader
+;;                holds an incomplete tail back for the next answer, so the
+;;                chunks are the code points themselves, 日|本|語|, three
+;;                of them -- byte-exact, since an answer of the wrong shape
+;;                would still be nine bytes.
+;;      no bit -- the ungranted binary traps at the first call, and its
+;;                stdout still carries `one\ntwo\n` (the trap is the
+;;                guest's third call, not a startup refusal). The signal is
+;;                SIGTRAP, not SIGILL: kotoba-native EMITS the allow-mask
+;;                check in line (`brk`, kotoba-native ADR 0084) before the
+;;                host slot is ever called, so the loader's own SIGILL check
+;;                in checked_typed_cap_call is the second line and is not
+;;                reached. Measured 2026-09-16; pinned so that a loader that
+;;                stopped checking would still be told apart from one whose
+;;                caller stopped checking first.
+(let [granted (package! "probe-stdin" 60 "37,38,39,41")
+      denied (package! "probe-stdin-denied" 60 "37,38,39")
+      slurp (run granted ["1" "slurp"] "abcdefghijk")
+      chunk (run granted ["1" "chunk"] "abcdefghijk")
+      utf8 (run granted ["1" "chunk"] "\u65e5\u672c\u8a9e")
+      empty-in (run granted ["1" "slurp"] "")
+      over (run granted ["1" "slurp"] (.repeat "x" 1000001))
+      nobit (run denied ["1" "slurp"] "abc")]
+  (check! "slurp: the empty request answers stdin to EOF, bytes exact"
+          (and (= 0 (:status slurp)) (= "one\ntwo\nabcdefghijk" (:out slurp)))
+          slurp)
+  (check! "chunk: \"4\" answers at most four bytes, empty at EOF, three chunks"
+          (and (= 3 (:status chunk)) (= "one\ntwo\nabcd|efgh|ijk|" (:out chunk)))
+          chunk)
+  (check! "chunk over UTF-8: an incomplete tail is held for the next answer, 日|本|語|"
+          (and (= 3 (:status utf8)) (= "one\ntwo\n\u65e5|\u672c|\u8a9e|" (:out utf8)))
+          utf8)
+  (check! "empty stdin: the empty request answers the empty string, exit 0"
+          (and (= 0 (:status empty-in)) (= "one\ntwo\n" (:out empty-in)))
+          empty-in)
+  (check! "input past the string pool is refused (SIGILL, 120), not answered short"
+          (and (= 120 (:status over))
+               (str/includes? (:err over) "KEXE_TRAP {:kind :signal :signal :SIGILL}"))
+          over)
+  (check! "without bit 41 in the allow mask the first read traps (emitted check: SIGTRAP, 120)"
+          (and (= 120 (:status nobit))
+               (= "one\ntwo\n" (:out nobit))
+               (str/includes? (:err nobit) "KEXE_TRAP {:kind :signal :signal :SIGTRAP}"))
+          nobit))
+
+;; 7. A reader that goes away is not a trap (2026-09-16). `flood` writes
+;;    6 * 4096 * 16 = 393,216 bytes -- past the 64 KiB stdout buffer AND the
+;;    64 KiB pipe -- into `head -c 1`, so the child dies at write(2) of
+;;    SIGPIPE whether head has already left or leaves while the child is
+;;    blocked on a full pipe. The supervisor must then die the same death:
+;;    bash spells that 141, and stderr carries NOTHING -- before this it
+;;    carried "KEXE_TRAP {:kind :supervisor :reason :unhandled-child-signal}"
+;;    and the exit was 123, for the most common pipeline shape agents use
+;;    (`grep ... | head`). The other direction: the same flood into a reader
+;;    that stays is exit 0 with every byte, so 141 is the reader's doing.
+(let [exe (package! "probe-flood" 60)
+      gone (run "bash" ["-c" (str "'" exe "' 1 flood | head -c 1 >/dev/null; echo \"${PIPESTATUS[0]}\"")])
+      stays (run "bash" ["-c" (str "'" exe "' 1 flood | wc -c | tr -d ' '; echo \"${PIPESTATUS[0]}\"")])]
+  (check! "reader gone: the supervisor exits 141 with nothing on stderr"
+          (and (= 0 (:status gone))
+               (= "141\n" (:out gone))
+               (= "diag\n" (:err gone)))
+          gone)
+  (check! "reader stays: the same flood is exit 0 and 8 + 393216 bytes"
+          (and (= 0 (:status stays))
+               (= "393224\n0\n" (:out stays))
+               (= "diag\n" (:err stays)))
+          stays))
+
+;; 8. The clock's TEXT form, wire 7 (2026-09-16). The clock-v1 record codec
+;;    is not admitted on the JVM-free native route, so a packaged command
+;;    could not read a clock: the fall-through echoed the request and a
+;;    guest printed "wall". Now "wall" answers unix milliseconds and
+;;    "monotonic" nanoseconds, as decimal text; an unknown request traps
+;;    (SIGILL, the loader's own check) rather than echoing; and the grant
+;;    is bit 7 -- the same guest packaged without it traps at the call
+;;    (SIGTRAP, the emitted mask check). The wall answer is checked against
+;;    the harness's own clock to within five seconds, and the two monotonic
+;;    answers must not go backwards.
+(let [granted (package! "probe-clock" 60 "7,37,38,39,41")
+      denied (package! "probe-clock-denied" 60 "37,38,39,41")
+      before (.now js/Date)
+      r (run granted ["1" "clock"])
+      after (.now js/Date)
+      parts (str/split (subs (:out r) 8) #"\|")
+      wall (js/parseInt (nth parts 0 "x") 10)
+      mono1 (js/parseInt (nth parts 1 "x") 10)
+      mono2 (js/parseInt (nth parts 2 "x") 10)
+      bad (run granted ["1" "clock-bad"])
+      nobit (run denied ["1" "clock"])]
+  (check! "clock wall: decimal unix milliseconds within 5 s of the harness clock"
+          (and (= 0 (:status r)) (str/starts-with? (:out r) "one\ntwo\n")
+               (not (js/isNaN wall)) (<= (- before 5000) wall (+ after 5000)))
+          {:out (:out r) :before before :after after})
+  (check! "clock monotonic: two decimal answers, the second not before the first"
+          (and (not (js/isNaN mono1)) (not (js/isNaN mono2)) (<= mono1 mono2) (< 0 mono1))
+          {:out (:out r)})
+  (check! "clock: an unknown request traps (SIGILL) rather than echoing it"
+          (and (= 120 (:status bad)) (= "one\ntwo\n" (:out bad))
+               (str/includes? (:err bad) "KEXE_TRAP {:kind :signal :signal :SIGILL}"))
+          bad)
+  (check! "clock: without bit 7 the call traps (emitted check: SIGTRAP)"
+          (and (= 120 (:status nobit)) (= "one\ntwo\n" (:out nobit))
+               (str/includes? (:err nobit) "KEXE_TRAP {:kind :signal :signal :SIGTRAP}"))
+          nobit))
+
+;; 9. :hash/sha256, wire 3 (2026-09-16). The switch fell through to identity
+;;    for this id, so a guest asking for a digest got its input back. Now
+;;    the FIPS 180-4 vectors: "abc" and the empty string, plus a 24,576-byte
+;;    input (crosses many blocks and the two-block padding case), checked
+;;    against node's own crypto -- and the ungranted binary traps at the
+;;    call (SIGTRAP, the emitted mask check).
+(let [granted (package! "probe-sha" 60 "3,37,38,39,41")
+      denied (package! "probe-sha-denied" 60 "37,38,39,41")
+      r (run granted ["1" "sha"])
+      parts (str/split (subs (:out r) 8) #"\|")
+      big (.repeat "flood\n" 4096)
+      big-hex (.digest (.update (.createHash (js/require "node:crypto") "sha256") big) "hex")
+      nobit (run denied ["1" "sha"])]
+  (check! "sha256: the FIPS vectors, \"abc\" and the empty string"
+          (and (= 0 (:status r))
+               (= "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad" (nth parts 0 ""))
+               (= "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" (nth parts 1 "")))
+          r)
+  (check! "sha256: a 24,576-byte input matches node's crypto"
+          (= big-hex (nth parts 2 ""))
+          {:got (nth parts 2 "") :want big-hex})
+  (check! "sha256: without bit 3 the call traps (emitted check: SIGTRAP)"
+          (and (= 120 (:status nobit)) (= "one\ntwo\n" (:out nobit))
+               (str/includes? (:err nobit) "KEXE_TRAP {:kind :signal :signal :SIGTRAP}"))
+          nobit))
+
+;; 10. The MTIME form of wire 35 (2026-09-16): "<path>MTIME_SEP" answers
+;;     the modification time as seconds since 1970, "" for a path that
+;;     cannot be stat'ed. Its own form rather than a fifth STAT field
+;;     (org-ieee-du reads STAT's fourth field to the end of the string). The
+;;     harness sets the file's mtime to 1700000000 first, so the answer is a
+;;     known number and not "whatever the clock said"; the ungranted binary
+;;     (no bit 35) traps at the call.
+(let [dir (file "mtime-data")
+      _ (.mkdirSync fs dir)
+      f (.join path dir "f")
+      _ (.writeFileSync fs f "x" "utf8")
+      _ (.utimesSync fs f 1700000000 1700000000)
+      scope (.realpathSync fs dir)
+      granted (package! "probe-mtime" 60 "35,37,38,39" ["--fs-scope" scope])
+      denied (package! "probe-mtime-denied" 60 "37,38,39" ["--fs-scope" scope])
+      r (run granted ["1" "mtime" (.join path scope "f")])
+      nobit (run denied ["1" "mtime" (.join path scope "f")])]
+  (check! "mtime: a known modification time, and \"\" for a missing path"
+          (and (= 0 (:status r)) (= "one\ntwo\n[1700000000][]" (:out r)))
+          r)
+  (check! "mtime: without bit 35 the call traps (emitted check: SIGTRAP)"
+          (and (= 120 (:status nobit)) (= "one\ntwo\n[" (:out nobit))
+               (str/includes? (:err nobit) "KEXE_TRAP {:kind :signal :signal :SIGTRAP}"))
+          nobit))
+
+;; 11. A /dev/fd scope entry (2026-09-16): "the descriptors the caller
+;;     connected". `diff <(a) <(b)` hands /dev/fd/N operands over, and such
+;;     a descriptor has no path under any grant (a pipe has none at all), so
+;;     the containment check honours an entry that IS /dev/fd the way wire
+;;     41 honours standard input. Both directions: packaged WITH /dev/fd the
+;;     guest reads fd 3 (a pipe from bash process substitution, and a file
+;;     outside every other grant); packaged WITHOUT it the same read traps
+;;     (SIGILL: the loader's own containment, since lexical admission fails
+;;     before any emitted check could).
+(let [dir (file "fd-data")
+      _ (.mkdirSync fs dir)
+      scope (.realpathSync fs dir)
+      granted (package! "probe-fd" 60 "35,37,38,39" ["--fs-scope" (str scope ":/dev/fd")])
+      denied (package! "probe-fd-denied" 60 "35,37,38,39" ["--fs-scope" scope])
+      outside (file "outside.txt")
+      _ (.writeFileSync fs outside "from a file outside the grant" "utf8")
+      pipe (run "bash" ["-c" (str "'" granted "' 1 fd /dev/fd/3 3< <(printf 'from a pipe')")])
+      filefd (run "bash" ["-c" (str "'" granted "' 1 fd /dev/fd/3 3< '" outside "'")])
+      nofd (run "bash" ["-c" (str "'" denied "' 1 fd /dev/fd/3 3< <(printf 'from a pipe')")])]
+  (check! "/dev/fd scope: a process-substitution pipe is read to EOF"
+          (and (= 0 (:status pipe)) (= "one\ntwo\n[from a pipe]" (:out pipe)))
+          pipe)
+  (check! "/dev/fd scope: an inherited file descriptor is read wherever its file lives"
+          (and (= 0 (:status filefd)) (= "one\ntwo\n[from a file outside the grant]" (:out filefd)))
+          filefd)
+  (check! "without /dev/fd in the scope the same read traps (SIGILL, exit 120)"
+          (and (= 120 (:status nofd)) (= "one\ntwo\n[" (:out nofd))
+               (str/includes? (:err nofd) "KEXE_TRAP {:kind :signal :signal :SIGILL}"))
+          nofd))
+
+;; 12. A $PATH scope entry (2026-09-16): "the directories of the caller's
+;;     PATH at start". `which` must look where the caller's shell looks,
+;;     and a packaged scope cannot know that in advance. The environment is
+;;     otherwise ignored by a packaged command; this is the one deliberate
+;;     exception, and it is the CALLER's choice like stdin and /dev/fd.
+;;     The PATH directory lives OUTSIDE the directly granted scope (the
+;;     first cut put it inside, and two of these three passed for the wrong
+;;     reason). Both directions: packaged WITH `$PATH` the guest reads a
+;;     file under a directory that is on PATH only for this run; the same
+;;     file with PATH not naming its directory traps (SIGILL, the loader's
+;;     own admission) -- the entry grants PATH, not the world; and packaged
+;;     WITHOUT the entry the read traps too.
+(let [dir (file "path-data")
+      _ (.mkdirSync fs dir)
+      _ (.mkdirSync fs (file "path-outside"))
+      pdir (.join path (.realpathSync fs (file "path-outside")) "bin")
+      _ (.mkdirSync fs pdir)
+      tool (.join path pdir "tool")
+      _ (.writeFileSync fs tool "tool bytes" "utf8")
+      scope (.realpathSync fs dir)
+      granted (package! "probe-path" 60 "35,37,38,39" ["--fs-scope" (str scope ":$PATH")])
+      denied (package! "probe-path-denied" 60 "35,37,38,39" ["--fs-scope" scope])
+      with-path (fn [exe' p env-path]
+                  (.spawnSync child exe' (clj->js ["1" "fd" p])
+                              #js {:cwd root :encoding "utf8" :maxBuffer 16777216
+                                   :env (js/Object.assign #js {} (.-env js/process) #js {:PATH env-path})}))
+      as-result (fn [r] {:status (.-status r) :out (or (.-stdout r) "") :err (or (.-stderr r) "")})
+      on-path (as-result (with-path granted tool (str pdir ":/usr/bin:/bin")))
+      off-path (as-result (with-path granted tool "/usr/bin:/bin"))
+      nobit (as-result (with-path denied tool (str pdir ":/usr/bin:/bin")))]
+  (check! "$PATH scope: a file under a directory on the caller's PATH is read"
+          (and (= 0 (:status on-path)) (= "one\ntwo\n[tool bytes]" (:out on-path)))
+          on-path)
+  (check! "$PATH scope: the same file with PATH not naming its directory traps (SIGILL)"
+          (and (= 120 (:status off-path)) (= "one\ntwo\n[" (:out off-path))
+               (str/includes? (:err off-path) "KEXE_TRAP {:kind :signal :signal :SIGILL}"))
+          off-path)
+  (check! "without $PATH in the scope the read traps (SIGILL)"
+          (and (= 120 (:status nobit)) (= "one\ntwo\n[" (:out nobit))
+               (str/includes? (:err nobit) "KEXE_TRAP {:kind :signal :signal :SIGILL}"))
+          nobit))
+
+;; 13. Relative operands and a $PWD scope entry (2026-09-17): the file
+;;     operands agents write are relative 99,826 times to 17,104 absolute
+;;     (measured over 1,268,018 Bash calls), and the loader refused every
+;;     relative spelling. A relative request path now resolves against the
+;;     working directory the command STARTED in, normalized lexically, and
+;;     is then held to the same scope as an absolute one; `$PWD` in the
+;;     scope grants that directory, the `$PATH` argument again.
+;;     Both directions, and the escape: packaged WITH `$PWD`, run inside a
+;;     directory, a relative operand is read; `../` from that directory to
+;;     a sibling traps (the resolution is before admission, not around it);
+;;     packaged with an ABSOLUTE scope that names the directory the
+;;     relative operand also reads (resolution alone suffices); packaged
+;;     with a scope that does not contain the working directory the
+;;     relative operand traps. Control: with the join disabled the first
+;;     case is red.
+(let [dir (file "pwd-data")
+      _ (.mkdirSync fs dir)
+      _ (.mkdirSync fs (.join path dir "sub"))
+      _ (.writeFileSync fs (.join path dir "sub" "rel") "rel bytes" "utf8")
+      _ (.mkdirSync fs (file "pwd-sibling"))
+      _ (.writeFileSync fs (.join path (file "pwd-sibling") "secret") "secret bytes" "utf8")
+      real (.realpathSync fs dir)
+      with-pwd (package! "probe-pwd" 60 "35,37,38,39" ["--fs-scope" "$PWD"])
+      with-abs (package! "probe-pwd-abs" 60 "35,37,38,39" ["--fs-scope" real])
+      elsewhere (package! "probe-pwd-elsewhere" 60 "35,37,38,39" ["--fs-scope" (.realpathSync fs (file "pwd-sibling"))])
+      in-dir (fn [exe' cwd' p]
+               (let [r (.spawnSync child exe' (clj->js ["1" "fd" p])
+                                   #js {:cwd cwd' :encoding "utf8" :maxBuffer 16777216})]
+                 {:status (.-status r) :out (or (.-stdout r) "") :err (or (.-stderr r) "")}))
+      rel (in-dir with-pwd real "sub/rel")
+      dot (in-dir with-pwd real "./sub/../sub/rel")
+      up (in-dir with-pwd real "../pwd-sibling/secret")
+      abs (in-dir with-abs real "sub/rel")
+      out (in-dir elsewhere real "sub/rel")]
+  (check! "$PWD scope: a relative operand resolves against the working directory and is read"
+          (and (= 0 (:status rel)) (= "one\ntwo\n[rel bytes]" (:out rel)))
+          rel)
+  (check! "$PWD scope: `.` and `..` segments normalize inside the grant"
+          (and (= 0 (:status dot)) (= "one\ntwo\n[rel bytes]" (:out dot)))
+          dot)
+  (check! "$PWD scope: `../` to a sibling of the working directory traps (SIGILL)"
+          (and (= 120 (:status up)) (= "one\ntwo\n[" (:out up))
+               (str/includes? (:err up) "KEXE_TRAP {:kind :signal :signal :SIGILL}"))
+          up)
+  (check! "absolute scope naming the working directory: a relative operand is read"
+          (and (= 0 (:status abs)) (= "one\ntwo\n[rel bytes]" (:out abs)))
+          abs)
+  (check! "scope elsewhere: a relative operand under the working directory traps (SIGILL)"
+          (and (= 120 (:status out)) (= "one\ntwo\n[" (:out out))
+               (str/includes? (:err out) "KEXE_TRAP {:kind :signal :signal :SIGILL}"))
+          out))
+
+;; 14. The wire-35 APPEND form (2026-09-17): "<path>APPEND_SEP<content>"
+;;     appends to a file that exists; a missing file traps (no O_CREAT).
+;;     The content of an append may hold WRITE_SEP -- the dispatch takes
+;;     the EARLIER token as the form, since the path precedes the content.
+;;     `sed -i` builds its temporary this way, one line per region.
+(let [dir (file "append-data")
+      _ (.mkdirSync fs dir)
+      real (.realpathSync fs dir)
+      exe' (package! "probe-append" 60 "35,37,38,39" ["--fs-scope" real])
+      target (.join path real "built")
+      run' (fn [mode p]
+             (let [r (.spawnSync child exe' (clj->js ["1" mode p]) #js {:cwd root :encoding "utf8" :maxBuffer 16777216})]
+               {:status (.-status r) :out (or (.-stdout r) "") :err (or (.-stderr r) "")}))
+      built (run' "append" target)
+      missing (run' "append-missing" (.join path real "absent"))]
+  (check! "APPEND form: write empty, append twice (content holding WRITE_SEP), read back"
+          (and (= 0 (:status built)) (= "one\ntwo\n[one;two WRITE_SEP inside;]" (:out built))
+               (= "one;two WRITE_SEP inside;" (.readFileSync fs target "utf8")))
+          built)
+  (check! "APPEND form: a missing file traps (SIGILL), nothing is created"
+          (and (= 120 (:status missing)) (= "one\ntwo\n[" (:out missing))
+               (str/includes? (:err missing) "KEXE_TRAP {:kind :signal :signal :SIGILL}")
+               (not (.existsSync fs (.join path real "absent"))))
+          missing))
+
+(println (str "SCANNED\t" 40 "\tFAILED\t" @failures))
 (.exit js/process (if (zero? @failures) 0 1))

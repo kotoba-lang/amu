@@ -21,6 +21,35 @@ file's own addition was written with a changelog in mind.
 
 ## [Unreleased]
 
+### :gpu/compute -- a Kotoba program drives the host GPU from a native binary (2026-09-18)
+
+Compiler wire 42 (`kotoba-lang` 26f1bb3, `kotoba-sema` 9898f0e2, root
+ADR-2609182400 C). `typed-cap-call :gpu/compute :string :string` with one
+ASCII request line: `INFO`, `ALLOC <bytes>`, `MAP <path> <offset> <length>`,
+`WRITE <handle> <offset> <hex>`, `READ <handle> <offset> <length>`,
+`PIPELINE <spv-path> <bindings>`, `BEGIN`, `DISPATCH <pipeline> <x> <y> <z>
+<handle>...`, `SUBMIT` (answers submit->fence nanoseconds), `FREE <handle>`.
+
+The mechanism (`tools/kexe_gpu_vulkan.c`, Vulkan 1.1 core) runs in the
+SUPERVISOR: the sandboxed guest sends the request over a pipe pair minted
+before the fork and reads the answer back (`read` is admitted under seccomp
+only while the broker is active), so the driver never runs under the guest's
+filter and the filter did not widen. Build with `-DKEXE_GPU_VULKAN -lvulkan`;
+without it wire 42 has no provider and a granted guest traps by name. A
+malformed request or a Vulkan error prints its reason on the supervisor's
+stderr and traps the guest (SIGILL), like every other provider.
+
+Measured 2026-09-18 with the same `.kotoba` guests compiled by this compiler
+(`test/fixtures/gpu/`, kotoba-lang/inference `verify/native/gpu/`): one
+command buffer of 40 row-dot dispatches over a 64 MiB f32 matrix (2.68 GB of
+weight reads, ~1.4 Nex tokens): Intel Arc Pro B70 (ANV) 16.8 ms = 160 GB/s;
+AMD Radeon 680M iGPU (RADV, aiueos K16) 61 ms = 44 GB/s; NVIDIA Tegra Xavier
+(nvgpu, aarch64 kexe) 49 ms = 54 GB/s. The three boxes returned the same
+bits for the 4096x1024 dot (max rel err 2.2e-4 against an f64 twin).
+`npm run test-gpu-compute` runs the INFO probe on the host (exit 3 = could
+not run here, named; never a pass).
+
+
 ### Status
 
 The compiler is **experimental alpha, not production-safe**
@@ -29,6 +58,137 @@ production-strength VM sandbox remain absent.
 
 ### Current capabilities (state so far)
 
+- **Relative request paths resolve against the start directory; a `$PWD`
+  scope entry** (2026-09-17, artifact #50) — measured over 1,268,018 agent
+  Bash calls, the file operands of head / tail / sed / grep / wc / cut /
+  sort / cat / awk are relative 99,826 times and absolute 17,104, and the
+  loader refused every relative spelling. A relative path now joins the
+  working directory captured once in the parent (before fork and sandbox),
+  is normalized lexically (`.`, `..`, repeated slashes — the path opened is
+  the normalized one, which is what admission judged) and is then held to
+  the same scope as an absolute one: resolution before admission. `$PWD`
+  in a scope grants that directory, on the `$PATH` argument (the caller's
+  choice). test-package-command: packaged with `$PWD` a relative operand
+  is read, `./sub/../sub/x` is read, `../sibling/x` traps; with the
+  absolute directory read; with a scope elsewhere traps; control with the
+  join disabled is red on three. **And a wire-35 APPEND form**,
+  `"<path>APPEND_SEP<content>"`: appends to a file that exists (no
+  O_CREAT), same scope, containment and answer as WRITE; between WRITE_SEP
+  and APPEND_SEP the token that comes earlier in the request is the form.
+  It lets a guest build a file one line at a time when each line is minted
+  inside an arena-scope and cannot leave it as a string — `sed -i` (1,042
+  measured scripts) appends each cycle's output to the temporary it renames
+  over the operand. test-package-command: write empty, append twice (a
+  content holding WRITE_SEP), read back; a missing file traps, nothing
+  created (40 scanned). Consecutive appends to one file share a descriptor
+  and a 64 KiB buffer (an open, containment check, write and close per line
+  measured 6.3 µs a line — 4.85 s of system time and SIGXCPU on 769,400
+  lines; buffered, 0.02 s); every other wire-35 form and the guest's return
+  close the sink first.
+- **A `$PATH` scope entry expands to the caller's PATH at start**
+  (2026-09-16, artifact #49) — `which` has to look where the caller's shell
+  looks, and a packaged scope cannot know that in advance. The one
+  deliberate exception to a packaged command ignoring its environment, and
+  the caller's choice the way stdin and `/dev/fd` are. `KEXE_SCOPE_ENTRIES`
+  16 → 64 (a developer's PATH is 30–40 entries; 36 measured).
+  test-package-command reads a file under a directory that is on PATH only
+  for that run; with PATH not naming the directory the read traps (the
+  entry grants PATH, not the world); without the entry it traps; control
+  with the expansion disabled is red.
+- **A `/dev/fd` scope entry means "the descriptors the caller connected"**
+  (2026-09-16, artifact #48) — `diff <(a) <(b)` hands its operands over as
+  `/dev/fd/N` (316 of the 888 measured diff calls), and such a descriptor
+  has no path under any grant: a pipe has none at all (F_GETPATH fails,
+  measured), an inherited file descriptor's real path is wherever the
+  caller's file is. The containment check honours an entry that IS
+  `/dev/fd` the way wire 41 honours standard input; without it the ordinary
+  containment refuses as before. test-package-command packages one guest
+  with and without the entry (pipe read to EOF, outside file read, refusal
+  SIGILL); control with the rule disabled is red on two.
+- **Wire 35 MTIME form** (2026-09-16, artifact #47) — `"<path>MTIME_SEP"`
+  answers the modification time as seconds since 1970 (`""` when the path
+  cannot be stat'ed), under STAT's confinement. Its own form rather than a
+  fifth STAT field: org-ieee-du reads STAT's fourth field to the end of the
+  string, so a fifth field would have turned every directory into a file
+  there. For `stat -f %m` (measured). test-package-command sets a file's
+  mtime to a known value and reads it back; the ungranted binary traps;
+  control with the form unrouted is red.
+- **`:hash/sha256` (wire 3) has a real provider** (2026-09-16, artifact #46)
+  — the request bytes' SHA-256 as 64 hex characters, FIPS 180-4 in the
+  loader as mechanism, where the switch had fallen through to identity and
+  a guest asking for a digest got its input back (`shasum -a 256` is 612 of
+  1,268,018 measured agent Bash calls). Pure and scopeless; the grant bit is
+  the gate. test-package-command checks the `"abc"` / empty vectors, a
+  24,576-byte input against node's crypto, and the ungranted trap; control
+  with the provider unrouted is red on two.
+- **`:clock/now` has a text form** (2026-09-16, artifact #45) — the
+  clock-v1 record codec is admitted on the JVM route and the typed Wasm
+  route but not on the JVM-free native route a packaged command is built by
+  (`only-native-word-typed-features?` admits typed-cap-call for
+  string / i64 / option / result shapes only), so `date` could not read a
+  clock: the loader's fall-through echoed the request and a guest printed
+  `wall`. Wire 7 now answers `"wall"` (unix milliseconds) and `"monotonic"`
+  (nanoseconds) as decimal text under the same grant bit; an unknown
+  request traps. test-package-command checks the wall answer against the
+  harness clock (±5 s), monotonic non-regression, the unknown-request trap
+  and the ungranted trap; control with the provider unrouted is red on
+  three.
+- **Wire 41, `:io/read`: a command reads its standard input** (2026-09-16,
+  kotoba-lang #697, kotoba-sema #85, artifact #43) — measured over
+  1,268,018 Bash calls in 558 agent transcripts, head is invoked as a LATER
+  pipeline segment 97% of the time, tail 94%, cut 97%, tr 99%, sort 97%,
+  uniq 99%, wc 84%, awk 81%, grep 67%; a later segment reads stdin, and a
+  command built on wires 35/37/38 could only be the first. Two request
+  forms, one cursor: `""` answers everything to EOF; a decimal answers at
+  most that many unread bytes, the empty string at EOF (what `head` needs
+  so that `yes | head` ends). read(2) is handed the string pool's free
+  tail, so input is copied once by the kernel; input past the pool budget
+  is refused (SIGILL) rather than answered short. No scope: Seatbelt does
+  not mediate read(2) on an inherited descriptor (measured under the
+  loader's own profile), so the allow-mask bit is the whole grant and
+  `scripts/test-package-command.cljk` packages the same guest with and
+  without it (the ungranted call traps SIGTRAP — kotoba-native's emitted
+  mask check, ADR 0084 — before the loader's own SIGILL check is reached).
+  Control with the wire unrouted: three checks red, the identity echo
+  visible. POSIX loader only; the Windows and iOS hosts serve none of the
+  command wires. The decimal form answers WHOLE CODE POINTS: an incomplete
+  trailing UTF-8 sequence (at most three bytes) is held back for the next
+  answer, since a chunk cut mid-sequence trapped the guest's next validating
+  string operation (control: 日本語 four bytes at a time, SIGILL).
+- **A reader that goes away is not a trap** (2026-09-16) — `grep e big | head -1`
+  is the single most frequent pipeline shape in agent tool use (8,593 of
+  1,268,018 Bash calls measured over 558 Claude Code transcripts,
+  superproject ADR-2609161710), and until now a packaged command in that
+  position printed `KEXE_TRAP {:kind :supervisor :reason
+  :unhandled-child-signal}` and exited 123: the child died of SIGPIPE at
+  write(2), exactly as `/usr/bin/grep` does, and the supervisor reported the
+  death it did not recognise. The supervisor now dies the same death
+  (default disposition, `raise(SIGPIPE)`, else 141), stderr silent.
+  `scripts/test-package-command.cljk` checks both directions on one `flood`
+  guest (393,216 bytes into `head -c 1` → 141 and nothing on stderr; into
+  `wc -c` → 0 and every byte); the check was seen red against the previous
+  loader with the old reason literal.
+- **Context ABI v10: two range operations that take no view and mint
+  none** (2026-09-16) — `string-find-byte` 336 (the first offset at or
+  after a boundary holding an ASCII byte; a line walk's newline or
+  delimiter search without a needle handle or a region) and
+  `string-append-range` 344 (an accumulator with a range of a string
+  appended; one call where a view and a concat were two). A 33 MB
+  `cut -f2` had spent 44% of its time minting views. kotoba-gmir 3350ad2
+  / kotoba-mir 944b5d3 / osaho 85ed11b / kotoba-sema d46897d (grammar
+  digest 8a2913b8) / kotoba-native a9f8a3c / kotoba-verifier e56795f /
+  artifact c5862d7. `examples/range-slots.kotoba` executes both under the
+  loader in `jdk-free-native-conformance` (319352; the append over a range
+  of itself; byte 200 refused). Measured on the commands, 33 MB: cut
+  `-f2` 0.19 → **0.13** s (its fast walk cuts over the text by offsets,
+  no line view), uniq 0.13 → 0.10, grep `e` 0.17 → 0.15, awk 0.25 → 0.23,
+  sort 0.66 → 0.62.
+- **A pool string range must lie within the bytes that exist** (2026-09-16)
+  — `resolve_string_bytes` bounded a pool range by the budget, so a pair a
+  guest builds by hand could name a range past `string_pool_used`; the
+  sanitized fuzz arm found it (with the v10 cases in the mix) as a memcpy
+  whose source overlapped `string_concat`'s destination. Refused once, for
+  every string slot, in both loaders; artifact identities advanced.
 - **Context ABI v9: five handle operations emitted in line** (2026-09-16,
   owner decision, kotoba-native ADR 0084) — six data pointers at 288–328
   (the pair-used counter, the pair table, the validated flags, the

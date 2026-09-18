@@ -33,7 +33,15 @@
 ;; than removing any, so the floors should be met or exceeded -- but
 ;; "should" is the word, and if CI reports higher numbers these floors
 ;; are now looser than the code deserves and should be raised.
+;; Advanced 2026-09-18 for wire 42 (:gpu/compute): the guest-side provider
+;; (a length-framed request over a pipe, the answer interned), the
+;; supervisor-side broker in supervise() (poll on the request pipe until the
+;; guest closes it), the pipe pair minted before fork when the grant names
+;; 42, and `read` admitted under the sandbox while the broker is active. The
+;; Vulkan mechanism itself is tools/kexe_gpu_vulkan.c, included only under
+;; -DKEXE_GPU_VULKAN, so this sha covers the loader and not the driver-side
+;; module (root ADR-2609182400 C).
 {:format :kotoba.fuzz-baseline/v2
- :loader-source-sha256 "7b7749c1644a7cca291af039e38c1700027c5119595fe9f8ce9db738491965bf"
+ :loader-source-sha256 "6a2ca0e3728e3414573358a5dae7cf652af650187505435a0b1c99fd45210763"
  :profiles {:x64 {:min-cov 60 :min-features 100 :min-corpus 20}
             :arm64 {:min-cov 60 :min-features 100 :min-corpus 18}}}

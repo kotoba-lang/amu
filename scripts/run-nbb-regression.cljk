@@ -1,0 +1,51 @@
+(ns scripts.run-nbb-regression
+  "Launcher for `test/nbb/run.cljk`, the nbb-native wasm32 regression suite.
+
+  The suite itself is JVM-free, but until now it had no JVM-free way to get
+  its classpath: run bare (`nbb test/nbb/run.cljk`) it used only nbb.edn's
+  `:paths [src resources tools .]`, and `kotoba.sema`/`kotoba.kir`/`kotoba.wasm`
+  are git dependencies that live outside those -- the suite died on the first
+  require before a single case ran. This launcher resolves the dependency
+  closure from `deps-lock.edn` with git alone, the same route `bin/amu`'s nbb
+  fast path uses (`kotoba.compiler.nbb.classpath` via
+  `scripts/print-classpath.cljk`), exactly like `scripts/test-nbb-portable-tests.cljk`.
+
+  The `:test` alias's lock entries are included as verified
+  (scripts/lib/lock-classpath's recipe), and `test/` is appended explicitly:
+  the suite requires `kotoba.compiler.packaging.elf-fixture`, which lives in
+  `test/kotoba/compiler/packaging/elf_fixture.cljk`, outside the lock closure.
+
+  Run from the repo root: `node scripts/run-nbb-regression.cljk`
+  (or `nbb --classpath scripts scripts/run-nbb-regression.cljk`)."
+  (:require [scripts.lib :as lib]
+            ["node:child_process" :as child]
+            ["node:path" :as path]))
+
+(let [nbb-cli (lib/join lib/root "node_modules" "nbb" "cli.js")
+      resolved (.spawnSync child js/process.execPath
+                           (clj->js (into [nbb-cli "--classpath" (lib/join lib/root "src")
+                                           (lib/join lib/root "scripts" "print-classpath.cljk")
+                                           lib/root]
+                                          ["--alias" "test"]))
+                           #js {:encoding "utf8" :cwd lib/root :env js/process.env})
+      _ (when-not (zero? (or (.-status resolved) 70))
+          (println "run-nbb-regression: could not resolve a classpath")
+          (println (.-stderr resolved))
+          (.exit js/process 70))
+      entries (->> (.split (.trim (or (.-stdout resolved) "")) "\n")
+                   (remove empty?))
+      _ (when (empty? entries)
+          ;; The evidence floor for the launcher: an empty classpath would let
+          ;; nbb start and every require fail, and a suite that could not load
+          ;; must not answer like a suite that passed.
+          (println "run-nbb-regression: classpath resolved to zero entries")
+          (.exit js/process 70))
+      classpath (.join (clj->js (concat entries
+                                        [(lib/join lib/root "test")]))
+                       (.-delimiter path))
+      result (.spawnSync child js/process.execPath
+                         (clj->js [nbb-cli "--classpath" classpath
+                                   (lib/join lib/root "test" "nbb" "run.cljk")])
+                         #js {:cwd lib/root :stdio "inherit" :env js/process.env})]
+  (when (.-error result) (throw (.-error result)))
+  (.exit js/process (or (.-status result) 70)))

@@ -128,7 +128,15 @@
    :io/write :internal
    :cli/args :internal
    :io/write-error :internal
-   :sys/cwd :internal})
+   :sys/cwd :internal
+   ;; io/read (41): a command's standard input. :internal like the three
+   ;; command wires beside it -- the bytes are whatever the caller connected.
+   :io/read :internal
+   ;; gpu/compute (42): a compute dispatch on the host GPU, brokered by the
+   ;; supervisor. :internal -- what crosses is device handles and the bytes
+   ;; the guest itself wrote or computed; no path the guest names is opened
+   ;; for the guest to read (root ADR-2609182400 C).
+   :gpu/compute :internal})
 
 (def catalog-resource
   "The capability catalog, at the resource path consumers resolve. Read here
