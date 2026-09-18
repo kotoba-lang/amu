@@ -26,6 +26,7 @@
  *   DISPATCH <pipe> <x> <y> <z> <h>...     -> "1"               (recorded when BEGIN is open, else submitted alone)
  *   SUBMIT                                 -> nanoseconds       (submit -> fence, host clock)
  *   FREE <handle>                          -> "1"
+ *   ZERO <handle>                          -> "1"               (fill the buffer with zeros: fresh state / ring)
  *
  * A malformed request or a Vulkan error answers the single byte "!" followed
  * by the reason; the guest-side provider turns that into SIGILL (fail closed),
@@ -538,6 +539,18 @@ static size_t kgpu_handle(const uint8_t *req, size_t len, uint8_t *out, size_t c
     uint64_t ns;
     if (kgpu_submit_wait(&ns) != 0) return kgpu_fail(out, cap, kgpu_reason);
     return kgpu_decimal(out, ns);
+  }
+  if (strcmp(op, "ZERO") == 0) {
+    uint64_t handle;
+    if (n != 2 || kgpu_parse_u64(tok[1], &handle) != 0) return kgpu_fail(out, cap, "ZERO <handle>");
+    struct kgpu_buffer *b = kgpu_buffer_at((long)handle);
+    if (b == NULL) return kgpu_fail(out, cap, "ZERO: no such buffer");
+    if (kgpu.recording) return kgpu_fail(out, cap, "ZERO while recording");
+    if (kgpu_begin_cmd() != 0) return kgpu_fail(out, cap, kgpu_reason);
+    vkCmdFillBuffer(kgpu.cmd, b->buffer, 0, VK_WHOLE_SIZE, 0u);
+    if (kgpu_submit_wait(NULL) != 0) return kgpu_fail(out, cap, kgpu_reason);
+    out[0] = '1';
+    return 1;
   }
   if (strcmp(op, "FREE") == 0) {
     uint64_t handle;
