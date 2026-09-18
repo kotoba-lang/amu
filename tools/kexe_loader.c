@@ -36,6 +36,17 @@
 #include <sys/syscall.h>
 #endif
 
+/* :gpu/compute (wire id 42): the Vulkan mechanism lives in the SUPERVISOR and
+ * the sandboxed guest reaches it over a pipe pair (root ADR-2609182400 C).
+ * Compiled in with -DKEXE_GPU_VULKAN and -lvulkan; without it wire 42 has no
+ * provider and a granted guest that calls it traps (fail closed, by name). */
+#ifdef KEXE_GPU_VULKAN
+#include <poll.h>
+#endif
+static int kgpu_req_pipe[2] = { -1, -1 };   /* guest -> supervisor */
+static int kgpu_resp_pipe[2] = { -1, -1 };  /* supervisor -> guest */
+static int kgpu_broker_active = 0;
+
 typedef int64_t (*kexe_fn6)(int64_t, int64_t, int64_t, int64_t, int64_t, int64_t);
 typedef int64_t (*kexe_fn8)(int64_t, int64_t, int64_t, int64_t,
                             int64_t, int64_t, int64_t, int64_t);
@@ -1394,6 +1405,48 @@ static int64_t intern_utf8(struct kexe_context_v10 *context,
   memcpy(shared->string_pool + start, bytes, (size_t)length);
   shared->string_pool_used += length;
   return checked_pair_new(context, -((int64_t)start) - 1, (int64_t)length);
+}
+
+#ifdef KEXE_GPU_VULKAN
+#include "kexe_gpu_vulkan.c"
+#endif
+
+/* wire id 42 = :gpu/compute, GUEST side. The request string crosses to the
+ * supervisor as a length-framed message and the answer comes back the same
+ * way; both syscalls (write, read) are in the sandbox's allow-list already.
+ * An answer starting with "!" is the supervisor's refusal and its reason is
+ * already on stderr -- here it is SIGILL like every other failed provider. */
+static int64_t gpu_compute_provider(struct kexe_context_v10 *context, int64_t request) {
+  const uint8_t *bytes = NULL;
+  uint64_t length = 0;
+  if (!kgpu_broker_active || kgpu_req_pipe[1] < 0 || kgpu_resp_pipe[0] < 0 ||
+      !read_string_handle(context, request, &bytes, &length) || length > UINT32_MAX) {
+    raise(SIGILL);
+    return 0;
+  }
+  uint8_t header[4] = { (uint8_t)length, (uint8_t)(length >> 8), (uint8_t)(length >> 16), (uint8_t)(length >> 24) };
+  size_t put = 0;
+  while (put < 4) { ssize_t w = write(kgpu_req_pipe[1], header + put, 4 - put); if (w < 0) { if (errno == EINTR) continue; raise(SIGILL); return 0; } put += (size_t)w; }
+  put = 0;
+  while (put < length) { ssize_t w = write(kgpu_req_pipe[1], bytes + put, (size_t)(length - put)); if (w < 0) { if (errno == EINTR) continue; raise(SIGILL); return 0; } put += (size_t)w; }
+  uint8_t ahead[4];
+  size_t got = 0;
+  while (got < 4) { ssize_t r = read(kgpu_resp_pipe[0], ahead + got, 4 - got); if (r <= 0) { if (r < 0 && errno == EINTR) continue; raise(SIGILL); return 0; } got += (size_t)r; }
+  uint32_t alen = (uint32_t)ahead[0] | ((uint32_t)ahead[1] << 8) | ((uint32_t)ahead[2] << 16) | ((uint32_t)ahead[3] << 24);
+  /* the answer is interned into the string pool, so it must fit there; the
+   * supervisor keeps READ answers within that bound and refuses longer ones */
+  static uint8_t answer[4u * 1024u * 1024u];  /* no malloc under the sandbox */
+  if (alen > sizeof answer) { raise(SIGILL); return 0; }
+  size_t remaining = (size_t)alen;
+  got = 0;
+  while (remaining > 0) {
+    ssize_t r = read(kgpu_resp_pipe[0], answer + got, remaining);
+    if (r <= 0) { if (r < 0 && errno == EINTR) continue; raise(SIGILL); return 0; }
+    got += (size_t)r;
+    remaining -= (size_t)r;
+  }
+  if (alen > 0 && answer[0] == '!') { raise(SIGILL); return 0; }
+  return intern_utf8(context, answer, alen);
 }
 
 static int valid_dataspace_request(struct kexe_context_v10 *context,
@@ -3732,6 +3785,12 @@ static int64_t checked_typed_cap_call(struct kexe_context_v10 *context,
      * scope -- the guest names no destination, so there is nothing to
      * narrow. */
     result = io_write_provider(context, request);
+  } else if (id == 42 && request_kind == KEXE_TYPED_STRING) {
+    /* wire id 42 = :gpu/compute. Brokered to the supervisor's Vulkan
+     * mechanism (kexe_gpu_vulkan.c); no scope -- the guest names buffer and
+     * pipeline HANDLES it was answered, and file paths only for MAP /
+     * PIPELINE, which the supervisor opens read-only. */
+    result = gpu_compute_provider(context, request);
   } else if (id == 33 && request_kind == KEXE_TYPED_STRING) {
     /* wire id 33 = :env/read. Real host provider: the request string is
      * the environment variable name; the result is its value (empty
@@ -4367,6 +4426,26 @@ static int supervise(pid_t child) {
   supervised_pid = (sig_atomic_t)child;
   alarm((unsigned int)kexe_wall_seconds);
 
+#ifdef KEXE_GPU_VULKAN
+  /* :gpu/compute broker: serve the guest's requests until it closes its end
+   * of the request pipe (exit or trap), then fall through to the wait. The
+   * wall alarm interrupts poll with EINTR and the handler has already killed
+   * the child, so the loop ends the same way. */
+  if (kgpu_broker_active) {
+    (void)close(kgpu_req_pipe[1]);
+    (void)close(kgpu_resp_pipe[0]);
+    kgpu_req_pipe[1] = -1;
+    kgpu_resp_pipe[0] = -1;
+    for (;;) {
+      struct pollfd pfd = { .fd = kgpu_req_pipe[0], .events = POLLIN };
+      int ready = poll(&pfd, 1, -1);
+      if (ready < 0) { if (errno == EINTR) { if (supervisor_timed_out) break; continue; } break; }
+      if (pfd.revents & POLLIN) { if (kgpu_serve_one(kgpu_req_pipe[0], kgpu_resp_pipe[1]) != 0) break; continue; }
+      if (pfd.revents & (POLLHUP | POLLERR)) break;
+    }
+  }
+#endif
+
   int status = 0;
   while (waitpid(child, &status, 0) < 0) {
     if (errno == EINTR) continue;
@@ -4629,6 +4708,15 @@ static void install_syscall_sandbox(void) {
    * still be denied; the kbb native runner sets the scopes and the providers'
    * realpath compare enforces them. */
   const int fs_reads = kexe_scope35.count > 0 || kexe_scope34.count > 0;
+  /* :gpu/compute (wire 42): the guest reads the supervisor's answer from a
+   * pipe, so `read` is admitted when the broker is active -- and only read;
+   * every other syscall the Vulkan driver needs stays in the supervisor. */
+  if (kgpu_broker_active) {
+#ifdef __NR_read
+    ADD((struct sock_filter)BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_read, 0, 1));
+    ADD((struct sock_filter)BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW));
+#endif
+  }
   if (kexe_scope34.count > 0) {
 #ifdef __NR_getdents64
     ADD((struct sock_filter)BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K,
@@ -5065,6 +5153,15 @@ int main(int argc, char **argv) {
   }
   int structured_report = getenv("KEXE_STRUCTURED_REPORT") != NULL;
 
+#ifdef KEXE_GPU_VULKAN
+  /* :gpu/compute: only when the grant names wire 42. The pipes exist before
+   * the fork so both sides hold them; the supervisor serves, the guest asks. */
+  if ((shared->context.allow[42 / 64] & (UINT64_C(1) << (42 % 64))) != 0) {
+    if (pipe(kgpu_req_pipe) != 0 || pipe(kgpu_resp_pipe) != 0) fail("gpu broker pipe");
+    kgpu_broker_active = 1;
+  }
+#endif
+
   pid_t child = fork();
   if (child < 0) fail("fork");
   if (child > 0) {
@@ -5081,6 +5178,12 @@ int main(int argc, char **argv) {
 
   supervised_pid = -1;
   alarm(0);
+  if (kgpu_broker_active) {
+    (void)close(kgpu_req_pipe[0]);
+    (void)close(kgpu_resp_pipe[1]);
+    kgpu_req_pipe[0] = -1;
+    kgpu_resp_pipe[1] = -1;
+  }
   if (getenv("KEXE_TIMEOUT_PROBE") != NULL) {
     for (;;) {
     }
