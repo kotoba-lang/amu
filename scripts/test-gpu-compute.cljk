@@ -1,0 +1,59 @@
+#!/usr/bin/env kbb
+;; :gpu/compute (wire 42) end to end on THIS host: compile the INFO probe
+;; (test/fixtures/gpu/gpu-compute-info.kotoba) for the host ISA, build the
+;; loader with -DKEXE_GPU_VULKAN, run the probe with the grant, and require a
+;; device name in the answer. Root ADR-2609182400 C.
+;;
+;; Three outcomes, three exit codes -- the run that could not measure never
+;; reads as the run that measured and passed:
+;;   0  the probe answered "<device>|<api>|<maxWgX>|<unified>"
+;;   1  it ran and the answer was wrong, or the guest trapped
+;;   3  could not run here: no Vulkan headers/loader, or macOS without
+;;      MoltenVK, or the amu compile itself refused -- printed by name
+;;
+;;   kbb --backend sci scripts/test-gpu-compute.cljk
+(ns test-gpu-compute
+  (:require [kotoba.lang.text :as str]
+            ["node:child_process" :as child]
+            ["node:fs" :as fs]
+            ["node:os" :as os]
+            ["node:path" :as path]))
+(def root (.resolve path (.dirname path *file*) ".."))
+(def tmp (.mkdtempSync fs (.join path (.tmpdir os) "amu-gpu-compute-")))
+(defn- sh [cmd args & [env]]
+  (let [r (child/spawnSync cmd (clj->js args) (clj->js {:encoding "utf8" :env (merge (js->clj (.-env js/process)) env)}))]
+    {:status (.-status r) :out (str (.-stdout r)) :err (str (.-stderr r))}))
+(defn- refuse! [reason] (println (str "GPU-COMPUTE\tCOULD-NOT-RUN\t" reason)) (js/process.exit 3))
+(defn- fail! [reason] (println (str "GPU-COMPUTE\tFAIL\t" reason)) (js/process.exit 1))
+(def isa (case (.-arch js/process) "x64" "x86_64" "arm64" "aarch64" (refuse! (str "unsupported host arch " (.-arch js/process)))))
+(def platform (.-platform js/process))
+(def target (str isa (case platform "linux" "-linux" "darwin" "-macos" (refuse! (str "unsupported platform " platform)))))
+;; Vulkan headers + loader library, or nothing to test against.
+(when-not (some #(.existsSync fs %) ["/usr/include/vulkan/vulkan.h" "/usr/local/include/vulkan/vulkan.h" "/opt/homebrew/include/vulkan/vulkan.h"])
+  (refuse! "no vulkan/vulkan.h on this host (apt: libvulkan-dev; macOS: brew install molten-vk vulkan-headers)"))
+(def loader (.join path tmp "kexe-loader-gpu"))
+(let [{:keys [status err]} (sh "cc" (concat ["-std=c11" "-O2" "-Wall" "-Wextra" "-Werror" "-DKEXE_GPU_VULKAN"
+                                             (.join path root "tools" "kexe_loader.c") "-o" loader]
+                                            (if (= platform "darwin") ["-I/opt/homebrew/include" "-L/opt/homebrew/lib" "-lvulkan"] ["-lvulkan"])))]
+  (when-not (zero? status) (fail! (str "the GPU loader does not build: " (subs err 0 (min 600 (count err)))))))
+(def kexe (.join path tmp "probe.kexe"))
+(def code (.join path tmp "probe.bin"))
+(let [{:keys [status out err]} (sh "node" [(.join path root "bin" "amu") "compile" (.join path root "test" "fixtures" "gpu" "gpu-compute-info.kotoba")
+                                            "--target" target "--jvm-free" "--policy" (.join path root "test" "fixtures" "gpu" "gpu-compute-policy.edn")
+                                            "--output" kexe])]
+  (when-not (and (zero? status) (str/includes? out ":ok true")) (refuse! (str "amu compile refused the probe: " (subs (str out err) 0 (min 400 (count (str out err))))))))
+(def offset
+  (let [{:keys [out]} (sh "node" [(.join path root "bin" "amu") "extract-native" kexe "--symbol" "info" "--output" code])
+        m (re-find #":offset (\d+)" out)]
+    (when-not m (fail! (str "extract-native gave no offset: " out)))
+    (second m)))
+(let [{:keys [status out err]} (sh loader [code offset "0" isa "42"] {"KEXE_RESULT_TYPE" "string" "KEXE_STRUCTURED_REPORT" "1" "KEXE_WALL_SECONDS" "60"})
+      hex (second (re-find #":result-utf8-hex \"([0-9a-f]+)\"" out))]
+  (when (and (str/includes? err "no Vulkan physical device")) (refuse! "Vulkan is installed but no physical device answers here"))
+  (when-not hex (fail! (str "probe did not answer a string (exit " status "): " (subs (str out err) 0 (min 400 (count (str out err)))))))
+  (let [answer (.toString (js/Buffer.from hex "hex") "utf8")
+        fields (str/split answer #"\|")]
+    (when-not (= 4 (count fields)) (fail! (str "INFO answer has " (count fields) " fields, not 4: " answer)))
+    (when (str/blank? (first fields)) (fail! "INFO answered an empty device name"))
+    (println (str "GPU-COMPUTE\tOK\t" answer "\t" target))
+    (js/process.exit 0)))

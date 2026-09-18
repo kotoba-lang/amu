@@ -1,5 +1,16 @@
 # Native AOT (x86-64/aarch64) value-representation baseline
 
+> **Correction (2026-09-18, root ADR-2609182400 C).** The statements below
+> that the native backends have "no native provider/capability mechanism of
+> any kind" describe the state when this baseline was written and are no
+> longer true: `kotoba.mir` has `:mir/capability-call`, `kotoba-native`
+> carries `typed-capability-kinds`, and `tools/kexe_loader.c` implements an
+> allow-list plus host providers for wire ids 33–42 — the latest, wire 42
+> `:gpu/compute`, is a Vulkan compute dispatch brokered from the sandboxed
+> guest to the supervisor (`tools/kexe_gpu_vulkan.c`). Read the rest of this
+> file as a record of that date.
+
+
 This document tracks the native (`x86_64-kotoba-v1`/`aarch64-kotoba-v1`,
 `backend/x86-64.cljc`/`backend/aarch64.cljc`) value-representation track,
 separately from `docs/component-model-baseline.md` (which tracks the Wasm

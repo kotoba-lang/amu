@@ -21,6 +21,35 @@ file's own addition was written with a changelog in mind.
 
 ## [Unreleased]
 
+### :gpu/compute -- a Kotoba program drives the host GPU from a native binary (2026-09-18)
+
+Compiler wire 42 (`kotoba-lang` 26f1bb3, `kotoba-sema` 9898f0e2, root
+ADR-2609182400 C). `typed-cap-call :gpu/compute :string :string` with one
+ASCII request line: `INFO`, `ALLOC <bytes>`, `MAP <path> <offset> <length>`,
+`WRITE <handle> <offset> <hex>`, `READ <handle> <offset> <length>`,
+`PIPELINE <spv-path> <bindings>`, `BEGIN`, `DISPATCH <pipeline> <x> <y> <z>
+<handle>...`, `SUBMIT` (answers submit->fence nanoseconds), `FREE <handle>`.
+
+The mechanism (`tools/kexe_gpu_vulkan.c`, Vulkan 1.1 core) runs in the
+SUPERVISOR: the sandboxed guest sends the request over a pipe pair minted
+before the fork and reads the answer back (`read` is admitted under seccomp
+only while the broker is active), so the driver never runs under the guest's
+filter and the filter did not widen. Build with `-DKEXE_GPU_VULKAN -lvulkan`;
+without it wire 42 has no provider and a granted guest traps by name. A
+malformed request or a Vulkan error prints its reason on the supervisor's
+stderr and traps the guest (SIGILL), like every other provider.
+
+Measured 2026-09-18 with the same `.kotoba` guests compiled by this compiler
+(`test/fixtures/gpu/`, kotoba-lang/inference `verify/native/gpu/`): one
+command buffer of 40 row-dot dispatches over a 64 MiB f32 matrix (2.68 GB of
+weight reads, ~1.4 Nex tokens): Intel Arc Pro B70 (ANV) 16.8 ms = 160 GB/s;
+AMD Radeon 680M iGPU (RADV, aiueos K16) 61 ms = 44 GB/s; NVIDIA Tegra Xavier
+(nvgpu, aarch64 kexe) 49 ms = 54 GB/s. The three boxes returned the same
+bits for the 4096x1024 dot (max rel err 2.2e-4 against an f64 twin).
+`npm run test-gpu-compute` runs the INFO probe on the host (exit 3 = could
+not run here, named; never a pass).
+
+
 ### Status
 
 The compiler is **experimental alpha, not production-safe**
