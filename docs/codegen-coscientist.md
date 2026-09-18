@@ -2071,6 +2071,11 @@ H-Z3 quiet-host hand-patch A/B, then H-C2.
 
 - Iteration 2026-09-16 16:07 JST (amu-bench): host busy — load1 47.49 / load5 53.46 / load15 74.90 (uptime, > gate 7.5). quiet-host 測定は実施せず。NEXT の H-C2 (および要 quiet-host 測定の evidence) は次回 quiet 時に持ち越し。
 - **360 (2026-09-16 17:0x JST, amu-rank cron, rank-only pass, host busy load1 102.03 / 5m 84.94 / 15m 78.32 at 17:03, threshold 7.5)**: no measurement by rank role. git fetch: origin/main advanced 4a3bcad0 -> a09d090c (jv/abi-v10-range-slots: context ABI v10 string-find-byte / string-append-range, #1010 — code change only, no bench numbers yet, no re-rank basis). Evidence reviewed since tick 359: sibling amu-bench 16:07 JST busy-refusal line (load1 47.49) present in working tree and committed with this tick; no new measured codegen numbers, no new codegen ADR -> no re-rank, no status transition, no new hypothesis. Population unchanged: deep-spill x zig / x rust rows top of the codegen ladder (open, closest to bar at +4.8% 2/5, in-hand hoist lever), H-C2 / H-D / H-B / H-Y1 open, H-Z3 behind. NEXT: deep-spill hoist-lever rerun A/B on a quiet host (expected to clear >=5% + separation if iteration 147's A/B reproduces), fallback H-C2. Appended via python script (no heredoc, no -e/-c).
+
+- 2026-09-13 23:03 JST rank tick 391 (amu-rank): host busy (load1 30.18, load5 18.13, load15 15.56, up 8d15h), no measurement attempted; population re-rank skipped for lack of new evidence; NEXT は H-C2 のまま (fallback: H-Z3 quiet-host A/B) [ported from rank-tick-392 branch commit 3ee3bd40; original tail placement was positional cleanup on main]
+
+- [rank tick 392, 2026-09-14, amu-rank cron] host busy (load1 11.12 / 5m 10.57 / 15m 10.46 > gate 7.5) -- measurement refused, rank-only pass. git fetch clean: HEAD 3ee3bd40 (tick 391) == origin/main 18ef21dd's descendant; no new commits since tick 391, no new ADRs (0348 newest), no new measured numbers. No re-rank, no status transition. Population unchanged: NEXT = H-C2 (quiet-host runtime-comparison vs Clang on `kernel`, instruction-order diff for the scheduling/front-end residue); fallback H-Z3 quiet-host hand-patch A/B. H-D/H-B/H-Y1/H-Z1 remain open.
+
 ## Standing honesty constraints
 
 Every number above is one host on one day; the falsification numbers are
