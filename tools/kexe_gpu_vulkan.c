@@ -553,6 +553,41 @@ static size_t kgpu_handle(const uint8_t *req, size_t len, uint8_t *out, size_t c
   return kgpu_fail(out, cap, "unknown :gpu/compute request");
 }
 
+/* Tear the device down in order once the guest is gone. Measured 2026-09-19
+ * on the Jetson AGX Xavier (nvgpu 1.3.212): leaving a live VkDevice to the
+ * process exit segfaulted in the driver's atexit path AFTER the report was
+ * already written -- the run was right and the exit code said it was not.
+ * Mesa (ANV, RADV) did not care; the order below is what every driver wants. */
+static void kgpu_shutdown(void) {
+  if (!kgpu.ready) return;
+  (void)vkDeviceWaitIdle(kgpu.device);
+  for (int i = 1; i < KGPU_MAX_PIPELINES; i++) {
+    struct kgpu_pipeline *p = &kgpu.pipelines[i];
+    if (!p->live) continue;
+    vkDestroyPipeline(kgpu.device, p->pipeline, NULL);
+    vkDestroyPipelineLayout(kgpu.device, p->layout, NULL);
+    vkDestroyDescriptorSetLayout(kgpu.device, p->set_layout, NULL);
+    vkDestroyShaderModule(kgpu.device, p->module, NULL);
+    p->live = 0;
+  }
+  for (int i = 1; i < KGPU_MAX_BUFFERS; i++) {
+    struct kgpu_buffer *b = &kgpu.buffers[i];
+    if (!b->live) continue;
+    vkDestroyBuffer(kgpu.device, b->buffer, NULL);
+    vkFreeMemory(kgpu.device, b->memory, NULL);
+    b->live = 0;
+  }
+  vkUnmapMemory(kgpu.device, kgpu.staging_memory);
+  vkDestroyBuffer(kgpu.device, kgpu.staging, NULL);
+  vkFreeMemory(kgpu.device, kgpu.staging_memory, NULL);
+  vkDestroyDescriptorPool(kgpu.device, kgpu.descriptors, NULL);
+  vkDestroyFence(kgpu.device, kgpu.fence, NULL);
+  vkDestroyCommandPool(kgpu.device, kgpu.pool, NULL);
+  vkDestroyDevice(kgpu.device, NULL);
+  vkDestroyInstance(kgpu.instance, NULL);
+  kgpu.ready = 0;
+}
+
 /* ---- the broker: supervisor side ----------------------------------------- */
 /* Frame: u32 little-endian length, then the bytes; both directions. */
 

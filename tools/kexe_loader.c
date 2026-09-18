@@ -4443,6 +4443,7 @@ static int supervise(pid_t child) {
       if (pfd.revents & POLLIN) { if (kgpu_serve_one(kgpu_req_pipe[0], kgpu_resp_pipe[1]) != 0) break; continue; }
       if (pfd.revents & (POLLHUP | POLLERR)) break;
     }
+    kgpu_shutdown();
   }
 #endif
 
