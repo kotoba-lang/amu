@@ -28,6 +28,11 @@
  *   DISPATCHC <pipe> <x> <y> <z> <h>...    -> "1"               (as DISPATCH, but with NO barrier before it: the guest
  *                                                                 asserts it reads nothing the previous dispatch wrote)
  *   SUBMIT                                 -> nanoseconds       (submit -> fence, host clock)
+ *   BEGINK <slot>                          -> "1"               (start recording a KEPT command buffer in slot 0..3: SUBMIT
+ *                                                                 submits it and keeps it; REPLAY submits it again unchanged)
+ *   REPLAY <slot>                          -> nanoseconds       (submit the kept command buffer -> fence; one request for
+ *                                                                 the whole step instead of one per dispatch -- iteration 44)
+ *   DROP <slot>                            -> "1"               (free the kept command buffer and its descriptor sets)
  *   FREE <handle>                          -> "1"
  *   ZERO <handle>                          -> "1"               (fill the buffer with zeros: fresh state / ring)
  *
@@ -35,8 +40,15 @@
  * by the reason; the guest-side provider turns that into SIGILL (fail closed),
  * and the reason is printed on the supervisor's stderr so the run says WHY.
  *
- * Bounds: 4096 buffers, 64 pipelines, 2048 dispatches per command buffer, 8
- * bindings per pipeline. A request above them is refused by name. */
+ * Bounds: 4096 buffers, 64 pipelines, 2048 dispatches per command buffer, 16
+ * bindings per pipeline, 4 kept command buffers. A request above them is refused by name.
+ *
+ * A KEPT command buffer is the fn-mode observation made mechanism: every token step of the
+ * decode guest records the same dispatches (position and token live on the device), so the
+ * step is recorded once (BEGINK .. SUBMIT) and REPLAYed per token. A buffer a kept command
+ * buffer binds cannot be FREEd while it is kept (the replay would read freed memory); the
+ * refusal names the slot. The kept sets come from the same descriptor pool, sized for the
+ * transient buffer plus every slot. */
 
 #include <vulkan/vulkan.h>
 
@@ -44,6 +56,7 @@
 #define KGPU_MAX_PIPELINES 64
 #define KGPU_MAX_BINDINGS 16   /* a fused delta-net step binds 12 (inference, iteration 24) */
 #define KGPU_MAX_DISPATCHES 2048   /* a 40-layer Nex decode step is ~1,250 dispatches in one buffer */
+#define KGPU_MAX_KEPT 4            /* kept (replayable) command buffers, BEGINK <slot> */
 #define KGPU_STAGING_BYTES (64u * 1024u * 1024u)
 
 struct kgpu_buffer {
@@ -80,6 +93,15 @@ static struct {
   uint32_t recorded;
   VkDescriptorSet sets_in_flight[KGPU_MAX_DISPATCHES];
   uint32_t sets_in_flight_count;
+  int recording_kept;     /* -1: the transient buffer; else the kept slot BEGINK opened */
+  struct {
+    int live;
+    VkCommandBuffer cmd;
+    VkDescriptorSet sets[KGPU_MAX_DISPATCHES];
+    uint32_t set_count;
+    long handles[KGPU_MAX_DISPATCHES * KGPU_MAX_BINDINGS];   /* buffers bound, for the FREE refusal */
+    uint32_t handle_count;
+  } kept[KGPU_MAX_KEPT];
   struct kgpu_buffer buffers[KGPU_MAX_BUFFERS];
   struct kgpu_pipeline pipelines[KGPU_MAX_PIPELINES];
   char device_name[256];
@@ -245,16 +267,36 @@ static int kgpu_init(void) {
   VkFenceCreateInfo fi = { .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO };
   KGPU_VK(vkCreateFence(kgpu.device, &fi, NULL, &kgpu.fence));
   VkDescriptorPoolSize psize = { .type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-                                 .descriptorCount = KGPU_MAX_DISPATCHES * KGPU_MAX_BINDINGS };
+                                 .descriptorCount = KGPU_MAX_DISPATCHES * KGPU_MAX_BINDINGS * (1 + KGPU_MAX_KEPT) };
   VkDescriptorPoolCreateInfo dpi = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
                                      .flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT,
-                                     .maxSets = KGPU_MAX_DISPATCHES, .poolSizeCount = 1, .pPoolSizes = &psize };
+                                     .maxSets = KGPU_MAX_DISPATCHES * (1 + KGPU_MAX_KEPT), .poolSizeCount = 1, .pPoolSizes = &psize };
   KGPU_VK(vkCreateDescriptorPool(kgpu.device, &dpi, NULL, &kgpu.descriptors));
   if (kgpu_make_buffer(KGPU_STAGING_BYTES, VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                        &kgpu.staging, &kgpu.staging_memory) != 0) return -1;
   KGPU_VK(vkMapMemory(kgpu.device, kgpu.staging_memory, 0, KGPU_STAGING_BYTES, 0, &kgpu.staging_map));
+  kgpu.recording_kept = -1;
   kgpu.ready = 1;
+  return 0;
+}
+
+/* the command buffer dispatches are recorded into: the kept slot BEGINK opened, else the transient one */
+static VkCommandBuffer kgpu_rec_cmd(void) {
+  return kgpu.recording_kept >= 0 ? kgpu.kept[kgpu.recording_kept].cmd : kgpu.cmd;
+}
+
+/* submit CMD, wait on the fence, answer the host clock's nanoseconds */
+static int kgpu_submit_cmd_wait(VkCommandBuffer cmd, uint64_t *nanoseconds) {
+  VkSubmitInfo si = { .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO, .commandBufferCount = 1, .pCommandBuffers = &cmd };
+  struct timespec t0, t1;
+  clock_gettime(CLOCK_MONOTONIC, &t0);
+  KGPU_VK(vkResetFences(kgpu.device, 1, &kgpu.fence));
+  KGPU_VK(vkQueueSubmit(kgpu.queue, 1, &si, kgpu.fence));
+  KGPU_VK(vkWaitForFences(kgpu.device, 1, &kgpu.fence, VK_TRUE, UINT64_C(60000000000)));
+  clock_gettime(CLOCK_MONOTONIC, &t1);
+  if (nanoseconds != NULL)
+    *nanoseconds = (uint64_t)(t1.tv_sec - t0.tv_sec) * UINT64_C(1000000000) + (uint64_t)(t1.tv_nsec - t0.tv_nsec);
   return 0;
 }
 
@@ -367,22 +409,25 @@ static int kgpu_new_pipeline(const char *spv_path, uint32_t bindings, int *handl
 }
 
 static int kgpu_record_dispatch(struct kgpu_pipeline *p, uint32_t x, uint32_t y, uint32_t z, long *handles, int barrier_before) {
-  if (kgpu.sets_in_flight_count >= KGPU_MAX_DISPATCHES) {
+  if ((kgpu.recording_kept >= 0 ? kgpu.kept[kgpu.recording_kept].set_count : kgpu.sets_in_flight_count) >= KGPU_MAX_DISPATCHES) {
     snprintf(kgpu_reason, sizeof kgpu_reason, "more than %d dispatches in one command buffer", KGPU_MAX_DISPATCHES);
     return -1;
   }
+  VkCommandBuffer cmd = kgpu_rec_cmd();
   VkDescriptorSetAllocateInfo dai = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
                                       .descriptorPool = kgpu.descriptors, .descriptorSetCount = 1,
                                       .pSetLayouts = &p->set_layout };
   VkDescriptorSet set;
   KGPU_VK(vkAllocateDescriptorSets(kgpu.device, &dai, &set));
-  kgpu.sets_in_flight[kgpu.sets_in_flight_count++] = set;
+  if (kgpu.recording_kept >= 0) kgpu.kept[kgpu.recording_kept].sets[kgpu.kept[kgpu.recording_kept].set_count++] = set;
+  else kgpu.sets_in_flight[kgpu.sets_in_flight_count++] = set;
   VkDescriptorBufferInfo infos[KGPU_MAX_BINDINGS];
   VkWriteDescriptorSet writes[KGPU_MAX_BINDINGS];
   for (uint32_t b = 0; b < p->bindings; b++) {
     struct kgpu_buffer *buf = kgpu_buffer_at(handles[b]);
     if (buf == NULL) { snprintf(kgpu_reason, sizeof kgpu_reason, "DISPATCH binding %u: no such buffer %ld", b, handles[b]); return -1; }
     infos[b] = (VkDescriptorBufferInfo){ .buffer = buf->buffer, .offset = 0, .range = VK_WHOLE_SIZE };
+    if (kgpu.recording_kept >= 0) kgpu.kept[kgpu.recording_kept].handles[kgpu.kept[kgpu.recording_kept].handle_count++] = handles[b];
     writes[b] = (VkWriteDescriptorSet){ .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = set,
                                         .dstBinding = b, .descriptorCount = 1,
                                         .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, .pBufferInfo = &infos[b] };
@@ -406,15 +451,15 @@ static int kgpu_record_dispatch(struct kgpu_pipeline *p, uint32_t x, uint32_t y,
                                     .dstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
                                     .dstAccessMask = VK_ACCESS_2_SHADER_STORAGE_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT };
       VkDependencyInfo dep = { .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO, .memoryBarrierCount = 1, .pMemoryBarriers = &barrier2 };
-      vkCmdPipelineBarrier2(kgpu.cmd, &dep);
+      vkCmdPipelineBarrier2(cmd, &dep);
     } else
 #endif
-    vkCmdPipelineBarrier(kgpu.cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                          0, 1, &barrier, 0, NULL, 0, NULL);
   }
-  vkCmdBindPipeline(kgpu.cmd, VK_PIPELINE_BIND_POINT_COMPUTE, p->pipeline);
-  vkCmdBindDescriptorSets(kgpu.cmd, VK_PIPELINE_BIND_POINT_COMPUTE, p->layout, 0, 1, &set, 0, NULL);
-  vkCmdDispatch(kgpu.cmd, x, y, z);
+  vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, p->pipeline);
+  vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, p->layout, 0, 1, &set, 0, NULL);
+  vkCmdDispatch(cmd, x, y, z);
   kgpu.recorded++;
   return 0;
 }
@@ -592,6 +637,50 @@ static size_t kgpu_handle(const uint8_t *req, size_t len, uint8_t *out, size_t c
     out[0] = '1';
     return 1;
   }
+  if (strcmp(op, "BEGINK") == 0) {
+    uint64_t slot;
+    if (n != 2 || kgpu_parse_u64(tok[1], &slot) != 0 || slot >= KGPU_MAX_KEPT) return kgpu_fail(out, cap, "BEGINK <slot 0..3>");
+    if (kgpu.recording) return kgpu_fail(out, cap, "BEGINK while recording");
+    if (kgpu.kept[slot].live) return kgpu_fail(out, cap, "BEGINK: slot is kept (DROP it first)");
+    VkCommandBufferAllocateInfo cai = { .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+                                        .commandPool = kgpu.pool, .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+                                        .commandBufferCount = 1 };
+    VkResult r = vkAllocateCommandBuffers(kgpu.device, &cai, &kgpu.kept[slot].cmd);
+    if (r != VK_SUCCESS) { snprintf(kgpu_reason, sizeof kgpu_reason, "vkAllocateCommandBuffers: %s", kgpu_vk_name(r)); return kgpu_fail(out, cap, kgpu_reason); }
+    VkCommandBufferBeginInfo bi = { .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };   /* not ONE_TIME: replayable */
+    r = vkBeginCommandBuffer(kgpu.kept[slot].cmd, &bi);
+    if (r != VK_SUCCESS) { snprintf(kgpu_reason, sizeof kgpu_reason, "vkBeginCommandBuffer: %s", kgpu_vk_name(r)); return kgpu_fail(out, cap, kgpu_reason); }
+    kgpu.kept[slot].set_count = 0;
+    kgpu.kept[slot].handle_count = 0;
+    kgpu.kept[slot].live = 1;
+    kgpu.recording_kept = (int)slot;
+    kgpu.recording = 1;
+    kgpu.recorded = 0;
+    out[0] = '1';
+    return 1;
+  }
+  if (strcmp(op, "REPLAY") == 0) {
+    uint64_t slot;
+    if (n != 2 || kgpu_parse_u64(tok[1], &slot) != 0 || slot >= KGPU_MAX_KEPT) return kgpu_fail(out, cap, "REPLAY <slot 0..3>");
+    if (kgpu.recording) return kgpu_fail(out, cap, "REPLAY while recording");
+    if (!kgpu.kept[slot].live || kgpu.kept[slot].set_count == 0) return kgpu_fail(out, cap, "REPLAY: slot holds no submitted command buffer");
+    uint64_t ns;
+    if (kgpu_submit_cmd_wait(kgpu.kept[slot].cmd, &ns) != 0) return kgpu_fail(out, cap, kgpu_reason);
+    return kgpu_decimal(out, ns);
+  }
+  if (strcmp(op, "DROP") == 0) {
+    uint64_t slot;
+    if (n != 2 || kgpu_parse_u64(tok[1], &slot) != 0 || slot >= KGPU_MAX_KEPT) return kgpu_fail(out, cap, "DROP <slot 0..3>");
+    if (kgpu.recording) return kgpu_fail(out, cap, "DROP while recording");
+    if (!kgpu.kept[slot].live) return kgpu_fail(out, cap, "DROP: slot is not kept");
+    if (kgpu.kept[slot].set_count > 0) vkFreeDescriptorSets(kgpu.device, kgpu.descriptors, kgpu.kept[slot].set_count, kgpu.kept[slot].sets);
+    vkFreeCommandBuffers(kgpu.device, kgpu.pool, 1, &kgpu.kept[slot].cmd);
+    kgpu.kept[slot].live = 0;
+    kgpu.kept[slot].set_count = 0;
+    kgpu.kept[slot].handle_count = 0;
+    out[0] = '1';
+    return 1;
+  }
   int concurrent = strcmp(op, "DISPATCHC") == 0;
   if (strcmp(op, "DISPATCH") == 0 || concurrent) {
     uint64_t pipe, x, y, z;
@@ -622,6 +711,16 @@ static size_t kgpu_handle(const uint8_t *req, size_t len, uint8_t *out, size_t c
     if (!kgpu.recording) return kgpu_fail(out, cap, "SUBMIT without BEGIN");
     kgpu.recording = 0;
     uint64_t ns;
+    if (kgpu.recording_kept >= 0) {
+      /* the kept buffer: end, submit once now, keep it (and its sets) for REPLAY */
+      int slot = kgpu.recording_kept;
+      kgpu.recording_kept = -1;
+      VkResult r = vkEndCommandBuffer(kgpu.kept[slot].cmd);
+      if (r != VK_SUCCESS) { snprintf(kgpu_reason, sizeof kgpu_reason, "vkEndCommandBuffer: %s", kgpu_vk_name(r)); return kgpu_fail(out, cap, kgpu_reason); }
+      if (kgpu.kept[slot].set_count == 0) return kgpu_fail(out, cap, "SUBMIT: kept command buffer holds no dispatch");
+      if (kgpu_submit_cmd_wait(kgpu.kept[slot].cmd, &ns) != 0) return kgpu_fail(out, cap, kgpu_reason);
+      return kgpu_decimal(out, ns);
+    }
     if (kgpu_submit_wait(&ns) != 0) return kgpu_fail(out, cap, kgpu_reason);
     return kgpu_decimal(out, ns);
   }
@@ -642,6 +741,14 @@ static size_t kgpu_handle(const uint8_t *req, size_t len, uint8_t *out, size_t c
     if (n != 2 || kgpu_parse_u64(tok[1], &handle) != 0) return kgpu_fail(out, cap, "FREE <handle>");
     struct kgpu_buffer *b = kgpu_buffer_at((long)handle);
     if (b == NULL) return kgpu_fail(out, cap, "FREE: no such buffer");
+    for (int k = 0; k < KGPU_MAX_KEPT; k++) {
+      if (!kgpu.kept[k].live) continue;
+      for (uint32_t i = 0; i < kgpu.kept[k].handle_count; i++)
+        if (kgpu.kept[k].handles[i] == (long)handle) {
+          snprintf(kgpu_reason, sizeof kgpu_reason, "FREE: buffer %ld is bound in kept command buffer %d (DROP it first)", (long)handle, k);
+          return kgpu_fail(out, cap, kgpu_reason);
+        }
+    }
     vkDestroyBuffer(kgpu.device, b->buffer, NULL);
     vkFreeMemory(kgpu.device, b->memory, NULL);
     b->live = 0;
