@@ -24,6 +24,7 @@
  *   PIPELINE <spv-path> <bindings>         -> handle            (entry "main", <bindings> storage buffers 0..n-1)
  *   BEGIN                                  -> "1"               (start recording one command buffer)
  *   DISPATCH <pipe> <x> <y> <z> <h>...     -> "1"               (recorded when BEGIN is open, else submitted alone)
+ *   WRITEDEC <h> <off> <u32,u32,...>       -> "<n words>"       (little-endian u32 words from a decimal list)
  *   DISPATCHC <pipe> <x> <y> <z> <h>...    -> "1"               (as DISPATCH, but with NO barrier before it: the guest
  *                                                                 asserts it reads nothing the previous dispatch wrote)
  *   SUBMIT                                 -> nanoseconds       (submit -> fence, host clock)
@@ -504,6 +505,33 @@ static size_t kgpu_handle(const uint8_t *req, size_t len, uint8_t *out, size_t c
     }
     close(fd);
     return kgpu_decimal(out, (uint64_t)h);
+  }
+  if (strcmp(op, "WRITEDEC") == 0) {
+    /* WRITEDEC <handle> <offset> <u32,u32,...>: little-endian u32 words from a comma-separated
+     * decimal list -- the .kotoba guest can format decimals (string-from-i64) but not hex, and
+     * a runtime prompt arrives as such a list (inference, iteration 41). Same refusals as WRITE. */
+    if (kgpu.recording) return kgpu_fail(out, cap, "WRITEDEC while recording (BEGIN open): finish with SUBMIT first");
+    uint64_t handle, offset;
+    if (n != 4 || kgpu_parse_u64(tok[1], &handle) != 0 || kgpu_parse_u64(tok[2], &offset) != 0)
+      return kgpu_fail(out, cap, "WRITEDEC <handle> <offset> <u32,...>");
+    struct kgpu_buffer *b = kgpu_buffer_at((long)handle);
+    if (b == NULL) return kgpu_fail(out, cap, "WRITEDEC: no such buffer");
+    uint8_t *dst = (uint8_t *)kgpu.staging_map;
+    size_t bytes = 0;
+    const char *p = tok[3];
+    while (*p != 0) {
+      if (bytes + 4 > KGPU_STAGING_BYTES) return kgpu_fail(out, cap, "WRITEDEC too many words");
+      char *end = NULL;
+      unsigned long long v = strtoull(p, &end, 10);
+      if (end == p || v > 0xFFFFFFFFull) return kgpu_fail(out, cap, "WRITEDEC: not a u32");
+      dst[bytes] = (uint8_t)(v & 255); dst[bytes + 1] = (uint8_t)((v >> 8) & 255); dst[bytes + 2] = (uint8_t)((v >> 16) & 255); dst[bytes + 3] = (uint8_t)((v >> 24) & 255);
+      bytes += 4;
+      if (*end == ',') p = end + 1; else if (*end == 0) p = end; else return kgpu_fail(out, cap, "WRITEDEC: separator must be ,");
+    }
+    if (bytes == 0) return kgpu_fail(out, cap, "WRITEDEC: empty list");
+    if (offset + bytes > b->size) return kgpu_fail(out, cap, "WRITEDEC past the buffer");
+    if (kgpu_upload_chunk(b->buffer, (VkDeviceSize)offset, (VkDeviceSize)bytes) != 0) return kgpu_fail(out, cap, kgpu_reason);
+    return kgpu_decimal(out, (uint64_t)(bytes / 4));   /* answers the word count */
   }
   if (strcmp(op, "WRITE") == 0) {
     /* a copy reuses the one command buffer; inside BEGIN..SUBMIT it would
