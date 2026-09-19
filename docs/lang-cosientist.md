@@ -571,3 +571,15 @@ ty 注記なし probe のため過大評価されていた — 以下は型付�
 - Next (1 hypothesis): some->> last?-mode parity probe (carried from iter 13),
   or the jvm-dep-ledger stale rows (contains? / (:k m) already PASS - ledger
   update handoff to amu-rank).
+
+
+## Iteration 25 - measurement NOT STARTED (tick budget exhausted at startup), no verdict (2026-09-20)
+
+- Target hypothesis (carried from iter 24, unchanged): some->> last?-mode
+  parity probe (thread-last direction, hand-twin method), or stale
+  jvm-dep-ledger rows handoff to amu-rank (contains? / (:k m) now PASS).
+- Not executed: run time budget was exhausted before any probe/compile could
+  start this tick (host environment notice). No terminal command, no bench,
+  no compiler change. No numbers -> no verdict (falsify-first kept).
+- Next tick: resume the some->> last?-mode parity probe first (iters 13/24
+  handoff); ledger stale-row handoff note for amu-rank still pending.
