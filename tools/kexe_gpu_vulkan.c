@@ -41,7 +41,7 @@
 
 #define KGPU_MAX_BUFFERS 4096   /* 40 layers x ~20 tensors MAPped once, plus metas and activations */
 #define KGPU_MAX_PIPELINES 64
-#define KGPU_MAX_BINDINGS 8
+#define KGPU_MAX_BINDINGS 16   /* a fused delta-net step binds 12 (inference, iteration 24) */
 #define KGPU_MAX_DISPATCHES 2048   /* a 40-layer Nex decode step is ~1,250 dispatches in one buffer */
 #define KGPU_STAGING_BYTES (64u * 1024u * 1024u)
 
@@ -85,6 +85,7 @@ static struct {
   uint32_t api_version;
   uint32_t max_wg_x;
   int unified_memory;
+  int sync2;              /* synchronization2 available and enabled on the device */
 } kgpu;
 
 /* ---- answer helpers ------------------------------------------------------ */
@@ -163,7 +164,11 @@ static int kgpu_init(void) {
   if (kgpu.ready) return 0;
   VkApplicationInfo app = { .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
                             .pApplicationName = "kexe-loader :gpu/compute",
+                            #if defined(VK_VERSION_1_3)
+                            .apiVersion = VK_API_VERSION_1_3 };
+#else
                             .apiVersion = VK_API_VERSION_1_1 };
+#endif
   VkInstanceCreateInfo ici = { .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO, .pApplicationInfo = &app };
   KGPU_VK(vkCreateInstance(&ici, NULL, &kgpu.instance));
   uint32_t count = 0;
@@ -207,7 +212,24 @@ static int kgpu_init(void) {
   VkDeviceQueueCreateInfo qi = { .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
                                  .queueFamilyIndex = kgpu.queue_family, .queueCount = 1,
                                  .pQueuePriorities = &priority };
-  VkDeviceCreateInfo di = { .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+  /* synchronization2 (Vulkan 1.3 core) when the headers, the driver and the device
+     have it: the barrier between dispatches is then the storage-only VkMemoryBarrier2,
+     which ANV turns into half the flush of the 1.0 barrier (B70: 13 -> 6.6 us per
+     dispatch, 4-layer token 3.81 -> 3.50 ms; RADV: no difference; iteration 23).
+     KEXE_GPU_BARRIER_LEGACY=1 forces the 1.0 barrier for A/B. Built against
+     Vulkan 1.2 headers (JetPack 5.1.2) this whole block is compiled out. */
+  kgpu.sync2 = 0;
+  void *device_next = NULL;
+#if defined(VK_VERSION_1_3)
+  VkPhysicalDeviceSynchronization2Features sync2 = { .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SYNCHRONIZATION_2_FEATURES };
+  VkPhysicalDeviceFeatures2 feats2 = { .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, .pNext = &sync2 };
+  VkPhysicalDeviceSynchronization2Features want_sync2 = { .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SYNCHRONIZATION_2_FEATURES, .synchronization2 = VK_TRUE };
+  if (props.apiVersion >= VK_API_VERSION_1_3) {
+    vkGetPhysicalDeviceFeatures2(kgpu.physical, &feats2);
+    if (sync2.synchronization2 && getenv("KEXE_GPU_BARRIER_LEGACY") == NULL) { kgpu.sync2 = 1; device_next = &want_sync2; }
+  }
+#endif
+  VkDeviceCreateInfo di = { .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO, .pNext = device_next,
                             .queueCreateInfoCount = 1, .pQueueCreateInfos = &qi };
   KGPU_VK(vkCreateDevice(kgpu.physical, &di, NULL, &kgpu.device));
   vkGetDeviceQueue(kgpu.device, kgpu.queue_family, 0, &kgpu.queue);
@@ -369,9 +391,23 @@ static int kgpu_record_dispatch(struct kgpu_pipeline *p, uint32_t x, uint32_t y,
     /* every dispatch after the first sees the previous one's writes -- unless the
        guest said DISPATCHC, which is its assertion that this dispatch is independent
        of the one before (the .kotoba knows the data flow; the loader does not) */
+    /* storage-buffer writes -> storage-buffer reads/writes. With synchronization2 the
+       access masks name STORAGE only; the 1.0 SHADER_READ also covers uniform / sampled /
+       texel reads, and on ANV that is twice the flush (iteration 23). */
     VkMemoryBarrier barrier = { .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
                                 .srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
                                 .dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT };
+#if defined(VK_VERSION_1_3)
+    if (kgpu.sync2) {
+      VkMemoryBarrier2 barrier2 = { .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
+                                    .srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+                                    .srcAccessMask = VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
+                                    .dstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+                                    .dstAccessMask = VK_ACCESS_2_SHADER_STORAGE_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT };
+      VkDependencyInfo dep = { .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO, .memoryBarrierCount = 1, .pMemoryBarriers = &barrier2 };
+      vkCmdPipelineBarrier2(kgpu.cmd, &dep);
+    } else
+#endif
     vkCmdPipelineBarrier(kgpu.cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                          0, 1, &barrier, 0, NULL, 0, NULL);
   }
