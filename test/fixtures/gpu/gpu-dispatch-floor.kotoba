@@ -1,0 +1,25 @@
+;; Per-dispatch floor inside one command buffer: N trivial dispatches of a 7-binding
+;; kernel (1 workgroup), N = 1 / 27 / 270 / 1080; the DISPATCHC twin
+;; (gpu-dispatch-floor-concurrent.kotoba) records the same without the barrier
+;; between dispatches. Substitute NEX_ADD_SPV with any 7-binding compute SPIR-V.
+;; Measured 2026-09-19 (slope 270 -> 1080, us/dispatch, barrier / none):
+;;   B70 ANV 13 / 0.18, K16 RADV 2.7 / 0.15, Xavier nvgpu 3.5 / 0.35.
+;; Answer: "<ns 1>|<ns 27>|<ns 270>|<ns 1080>". Root ADR-2609182400 C, iteration 10.
+(ns gpu.floor (:export [main]))
+(defn gpu [r :string] :string
+  (typed-cap-call :gpu/compute :string :string r))
+(defn dispatches [n :i64 req :string] :i64
+  (if (< n 1) 0 (do (gpu req) (dispatches (- n 1) req))))
+(defn run [n :i64 req :string] :string
+  (do (gpu "BEGIN") (dispatches n req) (gpu "SUBMIT")))
+(defn main [] :string
+  (let [a (gpu "ALLOC 128") b (gpu "ALLOC 128") o (gpu "ALLOC 128") m (gpu "ALLOC 32") z (gpu "ALLOC 16")
+        p (gpu "PIPELINE NEX_ADD_SPV 7")]
+    (do
+      (gpu (string-concat "WRITE " (string-concat m " 0 2000000001000000000000000000000000000000000000000000000000000000")))
+      (let [req (string-concat "DISPATCH " (string-concat p (string-concat " 1 1 1 " (string-concat m (string-concat " " (string-concat a (string-concat " " (string-concat b (string-concat " " (string-concat z (string-concat " " (string-concat o (string-concat " " (string-concat z (string-concat " " z)))))))))))))))]
+        (let [r1 (run 1 req)]
+          (let [r27 (run 27 req)]
+            (let [r270 (run 270 req)]
+              (let [r1080 (run 1080 req)]
+                (string-concat r1 (string-concat "|" (string-concat r27 (string-concat "|" (string-concat r270 (string-concat "|" r1080))))))))))))))

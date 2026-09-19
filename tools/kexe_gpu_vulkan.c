@@ -24,6 +24,8 @@
  *   PIPELINE <spv-path> <bindings>         -> handle            (entry "main", <bindings> storage buffers 0..n-1)
  *   BEGIN                                  -> "1"               (start recording one command buffer)
  *   DISPATCH <pipe> <x> <y> <z> <h>...     -> "1"               (recorded when BEGIN is open, else submitted alone)
+ *   DISPATCHC <pipe> <x> <y> <z> <h>...    -> "1"               (as DISPATCH, but with NO barrier before it: the guest
+ *                                                                 asserts it reads nothing the previous dispatch wrote)
  *   SUBMIT                                 -> nanoseconds       (submit -> fence, host clock)
  *   FREE <handle>                          -> "1"
  *   ZERO <handle>                          -> "1"               (fill the buffer with zeros: fresh state / ring)
@@ -341,7 +343,7 @@ static int kgpu_new_pipeline(const char *spv_path, uint32_t bindings, int *handl
   return 0;
 }
 
-static int kgpu_record_dispatch(struct kgpu_pipeline *p, uint32_t x, uint32_t y, uint32_t z, long *handles) {
+static int kgpu_record_dispatch(struct kgpu_pipeline *p, uint32_t x, uint32_t y, uint32_t z, long *handles, int barrier_before) {
   if (kgpu.sets_in_flight_count >= KGPU_MAX_DISPATCHES) {
     snprintf(kgpu_reason, sizeof kgpu_reason, "more than %d dispatches in one command buffer", KGPU_MAX_DISPATCHES);
     return -1;
@@ -363,8 +365,10 @@ static int kgpu_record_dispatch(struct kgpu_pipeline *p, uint32_t x, uint32_t y,
                                         .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, .pBufferInfo = &infos[b] };
   }
   vkUpdateDescriptorSets(kgpu.device, p->bindings, writes, 0, NULL);
-  if (kgpu.recorded > 0) {
-    /* every dispatch after the first sees the previous one's writes */
+  if (kgpu.recorded > 0 && barrier_before) {
+    /* every dispatch after the first sees the previous one's writes -- unless the
+       guest said DISPATCHC, which is its assertion that this dispatch is independent
+       of the one before (the .kotoba knows the data flow; the loader does not) */
     VkMemoryBarrier barrier = { .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
                                 .srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
                                 .dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT };
@@ -524,7 +528,8 @@ static size_t kgpu_handle(const uint8_t *req, size_t len, uint8_t *out, size_t c
     out[0] = '1';
     return 1;
   }
-  if (strcmp(op, "DISPATCH") == 0) {
+  int concurrent = strcmp(op, "DISPATCHC") == 0;
+  if (strcmp(op, "DISPATCH") == 0 || concurrent) {
     uint64_t pipe, x, y, z;
     if (n < 5 || kgpu_parse_u64(tok[1], &pipe) != 0 || kgpu_parse_u64(tok[2], &x) != 0 ||
         kgpu_parse_u64(tok[3], &y) != 0 || kgpu_parse_u64(tok[4], &z) != 0)
@@ -540,7 +545,7 @@ static size_t kgpu_handle(const uint8_t *req, size_t len, uint8_t *out, size_t c
     }
     int alone = !kgpu.recording;
     if (alone) { if (kgpu_begin_cmd() != 0) return kgpu_fail(out, cap, kgpu_reason); kgpu.recorded = 0; }
-    if (kgpu_record_dispatch(p, (uint32_t)x, (uint32_t)y, (uint32_t)z, handles) != 0) return kgpu_fail(out, cap, kgpu_reason);
+    if (kgpu_record_dispatch(p, (uint32_t)x, (uint32_t)y, (uint32_t)z, handles, !concurrent) != 0) return kgpu_fail(out, cap, kgpu_reason);
     if (alone) {
       uint64_t ns;
       if (kgpu_submit_wait(&ns) != 0) return kgpu_fail(out, cap, kgpu_reason);
