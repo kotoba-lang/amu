@@ -7,7 +7,7 @@
   Hardened EDN parsing remains in `kotoba.compiler.nbb.cli-support`; Windows
   owner-only ACL provisioning remains a JVM-only requirement because this path
   emits no private keys."
-  {:kotoba/export [read-bounded-bytes-file read-text-file write-bytes! write-set! write-text!]}
+  {:kotoba/export [max-artifact-bytes read-artifact-text-file read-bounded-bytes-file read-text-file write-bytes! write-set! write-text!]}
   (:require ["node:fs" :as fs]
             ["node:path" :as path]))
 
@@ -21,20 +21,33 @@
 ;; `scripts/conformance.cljk` asserts on.
 (def ^:private max-bytes (* 1024 1024))
 
-(defn read-text-file [p]
+;; An ARTIFACT (.kexe) is EDN whose `:code` is a byte vector printed as text --
+;; ~4 characters per machine byte -- so it outgrows a source file long before
+;; the verifier's code ceiling does. Matches `bounded-edn/max-edn-bytes`, the
+;; JVM twin's bound for the same kind. Measured 2026-09-19: a 12-layer Nex
+;; decode guest (kotoba-lang/inference verify/native/gpu) compiled to a
+;; 1,087,282-byte kexe that `extract-native` then refused with the 1 MiB
+;; source bound -- "input exceeds byte limit", which was true of the wrong
+;; limit.
+(def max-artifact-bytes (* 8 1024 1024))
+
+(defn- read-text-file-bounded [p limit]
   (when-not (and (string? p) (seq p))
     (throw (ex-info "input path is required" {:phase :decode})))
   (let [buf (try
               (.readFileSync fs p)
               (catch :default error
                 (throw (ex-info "input could not be read" {:phase :decode :path p} error))))]
-    (when (> (.-length buf) max-bytes)
-      (throw (ex-info "input exceeds byte limit" {:phase :decode :path p})))
+    (when (> (.-length buf) limit)
+      (throw (ex-info "input exceeds byte limit" {:phase :decode :path p :limit limit})))
     (let [decoder (js/TextDecoder. "utf-8" #js {:fatal true})]
       (try
         (.decode decoder buf)
         (catch :default error
           (throw (ex-info "input is not valid UTF-8" {:phase :decode :path p} error)))))))
+
+(defn read-text-file [p] (read-text-file-bounded p max-bytes))
+(defn read-artifact-text-file [p] (read-text-file-bounded p max-artifact-bytes))
 
 (defn read-bounded-bytes-file [p maximum]
   (when-not (and (string? p) (seq p))
