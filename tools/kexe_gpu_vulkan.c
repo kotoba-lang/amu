@@ -26,20 +26,21 @@
  *   DISPATCH <pipe> <x> <y> <z> <h>...     -> "1"               (recorded when BEGIN is open, else submitted alone)
  *   SUBMIT                                 -> nanoseconds       (submit -> fence, host clock)
  *   FREE <handle>                          -> "1"
+ *   ZERO <handle>                          -> "1"               (fill the buffer with zeros: fresh state / ring)
  *
  * A malformed request or a Vulkan error answers the single byte "!" followed
  * by the reason; the guest-side provider turns that into SIGILL (fail closed),
  * and the reason is printed on the supervisor's stderr so the run says WHY.
  *
- * Bounds: 256 buffers, 64 pipelines, 64 dispatches per command buffer, 8
+ * Bounds: 4096 buffers, 64 pipelines, 2048 dispatches per command buffer, 8
  * bindings per pipeline. A request above them is refused by name. */
 
 #include <vulkan/vulkan.h>
 
-#define KGPU_MAX_BUFFERS 256
+#define KGPU_MAX_BUFFERS 4096   /* 40 layers x ~20 tensors MAPped once, plus metas and activations */
 #define KGPU_MAX_PIPELINES 64
 #define KGPU_MAX_BINDINGS 8
-#define KGPU_MAX_DISPATCHES 64
+#define KGPU_MAX_DISPATCHES 2048   /* a 40-layer Nex decode step is ~1,250 dispatches in one buffer */
 #define KGPU_STAGING_BYTES (64u * 1024u * 1024u)
 
 struct kgpu_buffer {
@@ -219,9 +220,10 @@ static int kgpu_init(void) {
   VkFenceCreateInfo fi = { .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO };
   KGPU_VK(vkCreateFence(kgpu.device, &fi, NULL, &kgpu.fence));
   VkDescriptorPoolSize psize = { .type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-                                 .descriptorCount = KGPU_MAX_DISPATCHES * KGPU_MAX_BINDINGS * 4 };
+                                 .descriptorCount = KGPU_MAX_DISPATCHES * KGPU_MAX_BINDINGS };
   VkDescriptorPoolCreateInfo dpi = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
-                                     .maxSets = KGPU_MAX_DISPATCHES * 4, .poolSizeCount = 1, .pPoolSizes = &psize };
+                                     .flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT,
+                                     .maxSets = KGPU_MAX_DISPATCHES, .poolSizeCount = 1, .pPoolSizes = &psize };
   KGPU_VK(vkCreateDescriptorPool(kgpu.device, &dpi, NULL, &kgpu.descriptors));
   if (kgpu_make_buffer(KGPU_STAGING_BYTES, VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
@@ -436,6 +438,11 @@ static size_t kgpu_handle(const uint8_t *req, size_t len, uint8_t *out, size_t c
     return kgpu_decimal(out, (uint64_t)h);
   }
   if (strcmp(op, "MAP") == 0) {
+    /* a copy reuses the one command buffer; inside BEGIN..SUBMIT it would
+     * RESET the batch and silently drop every dispatch recorded so far
+     * (measured 2026-09-19: a WRITE after BEGIN left a 27-dispatch layer
+     * step answering zeros). Refused by name instead. */
+    if (kgpu.recording) return kgpu_fail(out, cap, "MAP while recording (BEGIN open): finish with SUBMIT first");
     uint64_t offset, length;
     if (n != 4 || kgpu_parse_u64(tok[2], &offset) != 0 || kgpu_parse_u64(tok[3], &length) != 0 || length == 0)
       return kgpu_fail(out, cap, "MAP <path> <offset> <length>");
@@ -459,6 +466,11 @@ static size_t kgpu_handle(const uint8_t *req, size_t len, uint8_t *out, size_t c
     return kgpu_decimal(out, (uint64_t)h);
   }
   if (strcmp(op, "WRITE") == 0) {
+    /* a copy reuses the one command buffer; inside BEGIN..SUBMIT it would
+     * RESET the batch and silently drop every dispatch recorded so far
+     * (measured 2026-09-19: a WRITE after BEGIN left a 27-dispatch layer
+     * step answering zeros). Refused by name instead. */
+    if (kgpu.recording) return kgpu_fail(out, cap, "WRITE while recording (BEGIN open): finish with SUBMIT first");
     uint64_t handle, offset;
     if (n != 4 || kgpu_parse_u64(tok[1], &handle) != 0 || kgpu_parse_u64(tok[2], &offset) != 0)
       return kgpu_fail(out, cap, "WRITE <handle> <offset> <hex>");
@@ -479,6 +491,11 @@ static size_t kgpu_handle(const uint8_t *req, size_t len, uint8_t *out, size_t c
     return 1;
   }
   if (strcmp(op, "READ") == 0) {
+    /* a copy reuses the one command buffer; inside BEGIN..SUBMIT it would
+     * RESET the batch and silently drop every dispatch recorded so far
+     * (measured 2026-09-19: a WRITE after BEGIN left a 27-dispatch layer
+     * step answering zeros). Refused by name instead. */
+    if (kgpu.recording) return kgpu_fail(out, cap, "READ while recording (BEGIN open): finish with SUBMIT first");
     uint64_t handle, offset, length;
     if (n != 4 || kgpu_parse_u64(tok[1], &handle) != 0 || kgpu_parse_u64(tok[2], &offset) != 0 ||
         kgpu_parse_u64(tok[3], &length) != 0) return kgpu_fail(out, cap, "READ <handle> <offset> <length>");
@@ -539,6 +556,18 @@ static size_t kgpu_handle(const uint8_t *req, size_t len, uint8_t *out, size_t c
     if (kgpu_submit_wait(&ns) != 0) return kgpu_fail(out, cap, kgpu_reason);
     return kgpu_decimal(out, ns);
   }
+  if (strcmp(op, "ZERO") == 0) {
+    uint64_t handle;
+    if (n != 2 || kgpu_parse_u64(tok[1], &handle) != 0) return kgpu_fail(out, cap, "ZERO <handle>");
+    struct kgpu_buffer *b = kgpu_buffer_at((long)handle);
+    if (b == NULL) return kgpu_fail(out, cap, "ZERO: no such buffer");
+    if (kgpu.recording) return kgpu_fail(out, cap, "ZERO while recording");
+    if (kgpu_begin_cmd() != 0) return kgpu_fail(out, cap, kgpu_reason);
+    vkCmdFillBuffer(kgpu.cmd, b->buffer, 0, VK_WHOLE_SIZE, 0u);
+    if (kgpu_submit_wait(NULL) != 0) return kgpu_fail(out, cap, kgpu_reason);
+    out[0] = '1';
+    return 1;
+  }
   if (strcmp(op, "FREE") == 0) {
     uint64_t handle;
     if (n != 2 || kgpu_parse_u64(tok[1], &handle) != 0) return kgpu_fail(out, cap, "FREE <handle>");
@@ -551,6 +580,41 @@ static size_t kgpu_handle(const uint8_t *req, size_t len, uint8_t *out, size_t c
     return 1;
   }
   return kgpu_fail(out, cap, "unknown :gpu/compute request");
+}
+
+/* Tear the device down in order once the guest is gone. Measured 2026-09-19
+ * on the Jetson AGX Xavier (nvgpu 1.3.212): leaving a live VkDevice to the
+ * process exit segfaulted in the driver's atexit path AFTER the report was
+ * already written -- the run was right and the exit code said it was not.
+ * Mesa (ANV, RADV) did not care; the order below is what every driver wants. */
+static void kgpu_shutdown(void) {
+  if (!kgpu.ready) return;
+  (void)vkDeviceWaitIdle(kgpu.device);
+  for (int i = 1; i < KGPU_MAX_PIPELINES; i++) {
+    struct kgpu_pipeline *p = &kgpu.pipelines[i];
+    if (!p->live) continue;
+    vkDestroyPipeline(kgpu.device, p->pipeline, NULL);
+    vkDestroyPipelineLayout(kgpu.device, p->layout, NULL);
+    vkDestroyDescriptorSetLayout(kgpu.device, p->set_layout, NULL);
+    vkDestroyShaderModule(kgpu.device, p->module, NULL);
+    p->live = 0;
+  }
+  for (int i = 1; i < KGPU_MAX_BUFFERS; i++) {
+    struct kgpu_buffer *b = &kgpu.buffers[i];
+    if (!b->live) continue;
+    vkDestroyBuffer(kgpu.device, b->buffer, NULL);
+    vkFreeMemory(kgpu.device, b->memory, NULL);
+    b->live = 0;
+  }
+  vkUnmapMemory(kgpu.device, kgpu.staging_memory);
+  vkDestroyBuffer(kgpu.device, kgpu.staging, NULL);
+  vkFreeMemory(kgpu.device, kgpu.staging_memory, NULL);
+  vkDestroyDescriptorPool(kgpu.device, kgpu.descriptors, NULL);
+  vkDestroyFence(kgpu.device, kgpu.fence, NULL);
+  vkDestroyCommandPool(kgpu.device, kgpu.pool, NULL);
+  vkDestroyDevice(kgpu.device, NULL);
+  vkDestroyInstance(kgpu.instance, NULL);
+  kgpu.ready = 0;
 }
 
 /* ---- the broker: supervisor side ----------------------------------------- */
