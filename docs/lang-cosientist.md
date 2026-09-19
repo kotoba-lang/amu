@@ -394,3 +394,144 @@ ty 注記なし probe のため過大評価されていた — 以下は型付�
 - Next (1 hypothesis): 上記実装の実行と parity 実測 (kwproj-probe exit 0 +
   hand twin CID 一致)。その後 some->> last?-mode / min-max branch
   (bot/lang-min-max-20260904) の sema main (043c620) での再実測。
+
+## Iteration 15 - measurement BLOCKED (quiet gate + budget), no verdict (2026-09-17 12:40 JST)
+
+- Target hypothesis (carried from iter 14): (:k m) keyword projection desugar
+  implementation + parity probe (t cid == bafyreic3wtjamgppcl23lsw4...).
+- Not executed: plain terminal stdout still empty (iter 12 issue); file-redirect
+  workaround confirmed working this tick (health file readable, date/loadavg OK).
+- No bench run: loadavg 18.47/16.44/16.35 - quiet gate NOT met. Per discipline,
+  no speed measurement started rather than a contaminated one.
+- No implementation attempted this tick (budget exhaustion before any compiler
+  work; falsify-first discipline kept).
+- Next tick: resume the same hypothesis - implement the desugar 1 case
+  (kwproj-probe exit 0 + hand twin CID match as pass criteria), verification
+  only via file-redirect command output.
+
+## Iteration 16 - measurement IN PROGRESS, no verdict yet (2026-09-17 18:40 JST)
+
+- Target hypothesis (unchanged from iter 14/15): (:k m) keyword projection
+  desugar 1 case; pass criteria kwproj-probe exit 0 + t cid ==
+  bafyreic3wtjamgppcl23lsw4iqucesdzdlgizo47jk75bysm5amasbrr6m.
+- Terminal health check via file-redirect: OK (git status/log/rev-parse read
+  back from file, amu HEAD 5ef963cd). No compiler change made this tick
+  (falsify-first kept; implementation belongs to next tick).
+- No measurement completed within tick budget - status open, work continues
+  next tick (probe files /tmp/langcos/kwproj-probe.kotoba / kwproj-hand4.kotoba).
+## Iteration 17 - (:k m) implementation STARTED, patch pending verification (2026-09-18 00:35 JST, amu@a7c52789)
+
+- Terminal stdout still empty (iter 12/15 known issue); file-redirect workaround working (health OK). Loadavg 19.13/18.88/16.69 - quiet gate NOT met; no speed measurement this tick (target iteration is parity-only, gate N/A).
+- Isolated the sugar injection point (sema checkout b8b01d09 in /tmp/langcos/gitlibs-kw, branch bot/lang-kwproj-20260917): keyword accessor (:field r) desugars to 2-arity record-get at frontend.cljk:5603-5608, which record-projection-unresolved-fails for canonical typed maps (iter 14).
+- Planned 1-case change: desugar to (get value :field 0) instead - identical to the measured hand twin (get m :k 0), so parity is byte-for-byte; records keep working because the get rewrite resolves record receivers to (record-get descriptor value key) (line 10927-10932), the same form the old path produced.
+- NOT VERIFIED: the edit tool refused the 920KB paginated file and the tick budget ended before the edit landed. No compile, no parity probe, no verdict. No commit made. Next tick: apply the edit (frontend.cljk 5603-5608, 2-arity record-get -> (get value :field 0)), then kwproj-probe exit 0 + t cid == bafyreic3wtjamgppcl23lsw4iqucesdzdlgizo47jk75bysm5amasbrr6m + record regression probe before any commit.
+
+## Iteration 18 - (:k m) desugar patch prepared, NOT verified (2026-09-18 07:40 JST, sema worktree /tmp/langcos/sema-kw, no commit)
+
+- Target hypothesis (unchanged, iters 14-17): (:k m) desugars to (get value :field 0) with KIR CIDs identical to the hand twin (t bafyreic3wtjamgppcl23lsw4...).
+- Measured this tick (stdout-empty persists; file-redirect workaround used throughout):
+  - Pinned extraction /tmp/langcos/gitlibs-kw (b8b01d09) intact; keyword-accessor site confirmed at frontend.cljk 5617-5622 (2-arity record-get emission; identical text in b8b01d09 copy and main 043c620). The type-directed `get` rewrite (10936-10964) selects typed-map-get / record-get / map-get by receiver type, so (get v k 0) is a valid universal receiver shape.
+  - kotoba-sema repo detached at 043c620 == kotoba-lang/main; merge-base --is-ancestor b8b01d09 main TRUE (measured). Worktree /tmp/langcos/sema-kw created, branch bot/lang-kwproj-20260918 from kotoba-lang/main. No commit yet.
+- Patch designed but NOT applied (edit run hit tick budget before the write landed). 2-case change: (1) keyword-head 2-form -> (list 'get (desugar-expr v) kw 0) at ~5617-5622; (2) record arm of the get rewrite must admit 2 OR 3 args, dropping the default for records (typed record field is statically present; default is dead) - otherwise a record receiver rejects the new 3-arity spelling (record arm ~10955-10960 requires exactly 2 args) and regresses record accessors.
+- Behavior shift to probe AFTER the patch (falsify-first): keyword accessor over a non-map/non-record scalar previously rejected record-projection-unresolved; via the get rewrite it may fall to map-get. Measure fail-closed before any commit.
+- No compile, no parity probe, no numbers, no commit. Hypothesis open.
+- Next tick: apply the 2-case edit in /tmp/langcos/sema-kw; mirror the same edits onto the pinned b8b01d09 extraction frontend.cljk (GITLIBS classpath); run kwproj-probe (exit 0 + t cid == bafyreic3wtjam...), record-receiver regression, scalar-receiver fail-closed; then commit + push.
+
+## Iteration 19 - (:k m) desugar patch APPLIED in sema-kw worktree, NOT compiled/probed/committed (2026-09-18 12:40 JST)
+
+- Target hypothesis (unchanged, iters 14-18): (:k m) desugars to (get value :field 0); pass criteria kwproj-probe exit 0 + t cid == bafyreic3wtjamgppcl23lsw4iqucesdzdlgizo47jk75bysm5amasbrr6m.
+- APPLIED (verified: python exact-replace assertions count==1 for both cases, /tmp/langcos/sema-kw, branch bot/lang-kwproj-20260918 @ 043c620):
+  - Case 1 (keyword accessor, ~5617): (list 'record-get v kw) -> (list 'get (desugar-expr v) kw 0), comment updated.
+  - Case 2 (record arm of the get rewrite, ~10955): arity guard (= 2 n) -> (<= 2 n 3); 3-arity record receivers drop the dead default and emit (record-get descriptor value key) unchanged.
+- NOT DONE this tick (budget exhausted before any compile): mirror of the same edits onto the pinned b8b01d09 GITLIBS extraction; kotoba check/compile of kwproj-probe.kotoba + kwproj-hand4.kotoba; parity CID compare; record-receiver regression probe; scalar-receiver fail-closed probe; commit/push.
+- Terminal stdout capture still empty (persistent, file-redirect workaround used).
+- Next tick (resume exactly): mirror edits to /tmp/langcos/gitlibs-kw frontend.cljk, run kwproj-probe (exit 0 + t cid == bafyreic3wtjam...), record regression, scalar fail-closed; then commit + push branch bot/lang-kwproj-20260918.
+
+## Iteration 20 - environment LOST (reboot wiped /tmp/langcos), no verdict (2026-09-18 18:40 JST)
+
+- Target hypothesis (unchanged, iters 14-19): (:k m) desugars to (get value :field 0); pass criteria kwproj-probe exit 0 + t cid == hand twin bafyreic3wtjamgppcl23lsw4... (hand twin must be re-measured this cycle - old probe files are gone).
+- Measured this tick (file-redirect; plain terminal stdout still empty):
+  - uptime: 2:51 since boot (loadavg 8.77/14.23/17.92) -> the machine rebooted; /tmp was wiped.
+  - /tmp/langcos does NOT exist (search_files: path not found; /tmp listing has no langcos entries). Lost: /tmp/langcos/sema-kw worktree with the APPLIED-ONLY, UNCOMMITTED 2-case patch (iter 19), the pinned b8b01d09 GITLIBS extraction (gitlibs-kw), and all probe files (kwproj-probe.kotoba, kwproj-hand4.kotoba, etc.). The iter 19 patch was never committed -> its edits are unrecoverable and must be re-applied (they were exact-replace, 2 cases, fully documented in iter 19).
+  - kotoba-sema checkout intact at orgs/kotoba-lang/kotoba-sema (source of truth for re-application).
+- No compile, no parity probe, no bench (no quiet-gate speed measurement was planned; parity-only target), no commit. Hypothesis open.
+- Next tick (resume, rebuild-first): (1) fresh worktree of kotoba-sema from origin/main, branch bot/lang-kwproj-20260918b; (2) re-apply the 2-case patch per iter 19 lines; (3) recreate probe files from scratch (note: hand-twin CID canon bafyreic3wtjam... must be re-measured, not assumed, since the original probe file text is lost); (4) GITLIBS injection route, check/compile/parity/record-regression/scalar-fail-closed, then commit+push.
+- Runtime lesson recorded: keep /tmp scratch under a persistent path or commit early - uncommitted worktree patches in /tmp do not survive host reboots.
+
+## Iteration 21 - (:k m) rebuild started, 2-case patch PENDING apply (2026-09-19 00:45 JST, no verdict)
+
+- Target hypothesis (unchanged, iters 14-20): (:k m) desugars to (get value :field 0);
+  pass criteria = kwproj-probe exit 0 + t cid == hand twin (re-measure, old probe files lost with /tmp).
+- Measured this tick (file-redirect workaround; plain stdout empty persists):
+  - Host rebooted since iter 20 (uptime 8:43, loadavg 24.4/29.9/31.2 - quiet gate NOT met; target is parity-only so speed N/A).
+  - kotoba-sema local branch bot/lang-kwproj-20260918 is at 043c620 = NO committed patch (confirms iter 19 never committed). Worktree /tmp/langcos/sema-kw prunable (wiped).
+  - kotoba-lang/main advanced to 9898f0e (wire 42 :gpu/compute merged). Fresh worktree created: /Users/junkawasaki/github/wt-kwproj, branch bot/lang-kwproj-20260919b @9898f0e (persistent path per iter 20 lesson).
+  - Patch sites LOCATED on 9898f0e frontend.cljk (line numbers shifted): keyword accessor = 5625-5630 (emits 2-arity record-get, comment cites ADR 0189/0190); get rewrite record arm = 10963-10968 (requires (= 2 (count rewritten-args)), rejects keyword non-map receiver as before); typed-map arm 10957-10961 already admits 2-or-3 arity; contains? map-contains at 10940-10941 unaffected.
+- NOT DONE (budget exhausted; patch tool timed out on the 920KB file): apply the 2-case edit (1: 5629-5630 -> (list 'get (desugar-expr (second form)) (first form) 0); 2: record arm guard (= 2 n) -> (<= 2 n 3), emit record-get unchanged, drop dead default). No compile, no probe, no CID, no commit. Hypothesis open.
+- Next tick (resume exactly): apply the 2-case patch with a scripted exact-replace (python, count==1 assertions; patch-tool fuzzy matching timed out at 920KB); recreate kwproj-probe.kotoba / kwproj-hand4.kotoba from scratch; re-measure hand twin CID; GITLIBS injection (worktree branch checkout) -> check/compile/parity + record-receiver regression + scalar-receiver fail-closed; then commit+push bot/lang-kwproj-20260919b.
+
+## Iteration 22 - (:k m) 2-case patch COMMITTED, gate run BLOCKED on GITLIBS checkout shape (2026-09-19 06:50 JST, sema branch bot/lang-kwproj-20260919b @6f743ea, no verdict)
+
+- Target hypothesis (unchanged, iters 14-21): (:k m) desugars to (get value :field 0);
+  pass criteria = kwproj-probe exit 0 + t cid == hand twin (re-measured).
+- APPLIED + COMMITTED: both sites patched in /Users/junkawasaki/github/wt-kwproj
+  (python exact-replace, count==1 asserted for both cases; (list 'record-get ...)
+  -> (list 'get (desugar-expr (second form)) (first form) 0) at the keyword
+  accessor; record-arm guard (= 2 n) -> (<= 2 n 3)). Commit 6f743ea on
+  bot/lang-kwproj-20260919b (base 9898f0e = amu lock pin for kotoba-sema).
+- Gate NOT executed: the GITLIBS injection route failed closed on checkout shape
+  (stdout-empty persists; all output via file redirect). Measured errors:
+  1. plain copy (no .git) at the sha dir -> "dependency checkout is not at its
+     pinned commit, actual nil" (resolver requires a real git checkout);
+  2. symlink to wt-kwproj -> "cannot resolve Amu's dependency closure"
+     (classpath allowedRoots check realpaths entries; wt-kwproj is outside the
+     GITLIBS root);
+  3. real clone of wt-kwproj at HEAD 9898f0e + uncommitted patch inside
+     /tmp/langcos/gw GITLIBS root -> SAME generic closure error. Diagnosed but
+     not fixed within tick budget (bin/amu resolveWithLock, bin/amu:320-357).
+- No check, no compile, no CID, no parity verdict. Hypothesis open.
+- Next tick (resume exactly): diagnose why the local clone checkout fails
+  (read resolveWithLock + print-classpath diagnostics via file redirect; try
+  clean checkout test = unpatched clone at 9898f0e must PASS first - it is
+  exactly the pinned lock content, so a failure there is env, not patch), then
+  re-apply patch in the GITLIBS clone and run the 4 probes (probe/hand4/
+  record/scalar already written in /tmp/langcos). Then push 6f743ea.
+
+## Iteration 23 - (:k m) desugar: gate ALL GREEN, parity + fail-closed + regression verified, pushed (2026-09-19 13:00 JST)
+
+- Target hypothesis (iters 14-22): (:k m) desugars to (get value :field 0);
+  pass criteria kwproj-probe exit 0 + t cid == hand twin
+  bafyreic3wtjamgppcl23lsw4iqucesdzdlgizo47jk75bysm5amasbrr6m.
+- Route fix (GITLIBS injection abandoned): nbb invoked directly with
+  lock classpath entries minus the two pinned kotoba-sema dirs, plus
+  wt-kwproj/{src,resources} substituted (/tmp/langcos/cp-kw.txt). Same shape
+  as the "local sema classpath" route of iters 10/13; terminal stdout healthy
+  this tick (no file-redirect needed).
+- Measured (patched sema = bot/lang-kwproj-20260919b @6f743ea, base 9898f0e):
+  - kwproj-probe check PASS (exit 0); definition CIDs: t
+    bafyreic3wtjamgppcl23lsw4iqucesdzdlgizo47jk75bysm5amasbrr6m, main
+    bafyreiae3o243flhz5lylzs2lkgzattoyt5ih6prccy65qwem5pzwenusy - EXACT match
+    with the measured hand twin (iter 14) -> KIR byte-for-byte parity.
+  - wasm32 compile PASS (kwproj-probe.wasm 2006 bytes, provenance sidecar
+    emitted); browser-host run: main() = 41 (typed-map-new + (:k m)) - correct.
+  - pinned control (9898f0e, no patch): same probe REJECT exit 65
+    record-projection-unresolved - the patch is what admits it.
+  - record regression (kwproj-record2.kotoba, [:record :m/sq [[:side :i64]]],
+    (:side (record-new [:ref :m/sq] 7))): patched PASS cid
+    bafyreih74ugcpmfxqlkkc3zmqgjxz53mhx6xz2wqnqayoypclr2mfm64zq == pinned
+    cid (identical) -> record accessors unaffected; browser-host run = 7.
+  - scalar fail-closed (kwproj-scalar.kotoba, (:k 42)): REJECT exit 65
+    subset-reject "expression type mismatch: expected map, got i64" - named
+    diagnostic, fail-closed kept.
+  - sema regression suite (nbb, run-tests.cljk, full lock classpath +
+    wt-kwproj src/test): 555 tests / 1958 passed / 0 failures / 0 errors.
+- comparator ratio: the desugar lowers through the existing type-directed get
+  rewrite (typed-map-get); no new lowering -> speed threshold N/A (iter
+  1/2/10/11 class).
+- verdict: hypothesis CONFIRMED. parity + fail-closed + record regression +
+  555-test regression all green. Pushed kotoba-sema branch
+  bot/lang-kwproj-20260919b @6f743ea (PR open URL printed by push).
+- Next (1 hypothesis): min/max branch bot/lang-min-max-20260904 re-verify
+  against sema main 043c620+ (iter 11 was on the older base; confirm parity
+  CIDs still match, then push/PR). Then (:k m) ledger update via amu-rank
+  (jvm-dep-ledger contains? / (:k m) rows now stale).
