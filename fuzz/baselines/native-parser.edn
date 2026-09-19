@@ -42,7 +42,13 @@
 ;; -DKEXE_GPU_VULKAN, so this sha covers the loader and not the driver-side
 ;; module (root ADR-2609182400 C). Advanced again 2026-09-19 for the ordered
 ;; Vulkan teardown call at the end of the broker loop (amu #1028).
+;;
+;; Advanced 2026-09-19 for arena_exhausted: the parser is untouched, so this
+;; is the ratchet doing its bookkeeping rather than reporting a new surface.
+;; The floors are again NOT re-measured, for the same reason as above, and
+;; the change adds no parser branch at all -- the new code runs only on
+;; paths that were already about to raise(SIGILL).
 {:format :kotoba.fuzz-baseline/v2
- :loader-source-sha256 "681b19505150f9087a645dce37699e6810df061e1160c66dca227df2dd5ef0e8"
+ :loader-source-sha256 "c9549e52e78e8832389db0ddd64b6ea421e07028ffa0b429f663c0948a9cef48"
  :profiles {:x64 {:min-cov 60 :min-features 100 :min-corpus 20}
             :arm64 {:min-cov 60 :min-features 100 :min-corpus 18}}}
