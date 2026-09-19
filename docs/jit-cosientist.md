@@ -19,7 +19,7 @@ Appended only; population rows are owned by rank, evidence by falsify.
 | ID | hypothesis | status | evidence |
 |---|---|---|---|
 | J-A | Chicory interpreter dispatch dominates the wasm hot-loop cost; measure its share as the JIT premise | **not actionable here** — no chicory host in the org; this workstation's wasm path is V8 (tiered), so the share would measure V8 tiering, not interpreter dispatch | 2026-09-03: search + runner source inspection. Needs an environment decision before any measurement can mean "interpreter dispatch". |
-| J-B | Runtime constant-divisor specialization of the shared `imod` (ADR 0289 residual, ~165 sdiv/call) recovers ≥5% | open — **hand-patch run, unqualified** | 2026-09-03: C control `/tmp/jb-imod` (saved as `bench/runtime-comparison/jb_imod_control.c`), serial chain `acc = imod(acc*31+v[i], M)`, arm A opaque divisor (real `sdiv`, disassembly-verified) vs arm B constant divisor (smulh+asr), both checksum-agreeing. Three runs at load1 16–27 (10 CPUs): saving **−7.8% / +3.8% / −4.7%** — sign flips between runs. Host never met the quiet gate (≥1 idle CPU); perfgate would fail closed. Verdict: **measurement under-qualified, hypothesis neither killed nor confirmed.** The ratio bound suggests the sdiv→mulh term alone is ≲5% of element cost *under load*, but quiet-host numbers are required (expected sdiv latency ~10 cycles on the serial chain could make the real saving much larger than any run above shows). Next: rerun when idle ≥ 9/10 CPUs, 4000000 iters × 24 alternations, ratio of medians. 2026-09-03 tick 2 (JIT): rerun attempted, host again failed the quiet gate (load 16–20 on 10 CPUs, iostat idle 0–4%) — measurement deferred, still neither killed nor confirmed. 2026-09-03 tick 3 (JIT): rerun again deferred — host load 23–28 on 10 CPUs, idle 0–1.6% (two probes 90s apart); third consecutive busy tick. Control remains at bench/runtime-comparison/jb_imod_control.c; measurement is next tick's first action when quiet gate passes. 2026-09-03 tick 4 (JIT): quiet gate failed a 4th consecutive time (load 13–21 on 10 CPUs, top idle 0–1.7%, two probes 2 min apart) — J-B measurement again deferred, no compiler change made. 2026-09-04 10:42 JST tick 5 (JIT): quiet gate failed a 5th consecutive time — load1 31–34 on 10 CPUs, iostat idle 0–1.7% (20 samples), no idle CPU. Control unchanged; measurement is next tick's first action when idle ≥9/10. 2026-09-04 11:43 JST tick 6 (JIT): quiet gate failed a 6th consecutive time — load1 43.6–45.8 on 10 CPUs, iostat idle 0–25% (5 samples, 0% on the busiest probes) — J-B measurement deferred again, no compiler change, control unchanged. (Tick 7 and tick 8 recorded in the tick log below.) |
+| J-B | Runtime constant-divisor specialization of the shared `imod` (ADR 0289 residual, ~165 sdiv/call) recovers ≥5% | open — **hand-patch run, unqualified** | 2026-09-03: C control `/tmp/jb-imod` (saved as `bench/runtime-comparison/jb_imod_control.c`), serial chain `acc = imod(acc*31+v[i], M)`, arm A opaque divisor (real `sdiv`, disassembly-verified) vs arm B constant divisor (smulh+asr), both checksum-agreeing. Three runs at load1 16–27 (10 CPUs): saving **−7.8% / +3.8% / −4.7%** — sign flips between runs. Host never met the quiet gate (≥1 idle CPU); perfgate would fail closed. Verdict: **measurement under-qualified, hypothesis neither killed nor confirmed.** The ratio bound suggests the sdiv→mulh term alone is ≲5% of element cost *under load*, but quiet-host numbers are required (expected sdiv latency ~10 cycles on the serial chain could make the real saving much larger than any run above shows). Next: rerun when idle ≥ 9/10 CPUs, 4000000 iters × 24 alternations, ratio of medians. 2026-09-03 tick 2 (JIT): rerun attempted, host again failed the quiet gate (load 16–20 on 10 CPUs, iostat idle 0–4%) — measurement deferred, still neither killed nor confirmed. 2026-09-03 tick 3 (JIT): rerun again deferred — host load 23–28 on 10 CPUs, idle 0–1.6% (two probes 90s apart); third consecutive busy tick. Control remains at bench/runtime-comparison/jb_imod_control.c; measurement is next tick's first action when quiet gate passes. 2026-09-03 tick 4 (JIT): quiet gate failed a 4th consecutive time (load 13–21 on 10 CPUs, top idle 0–1.7%, two probes 2 min apart) — J-B measurement again deferred, no compiler change made. 2026-09-04 10:42 JST tick 5 (JIT): quiet gate failed a 5th consecutive time — load1 31–34 on 10 CPUs, iostat idle 0–1.7% (20 samples), no idle CPU. Control unchanged; measurement is next tick's first action when idle ≥9/10. 2026-09-04 11:43 JST tick 6 (JIT): quiet gate failed a 6th consecutive time — load1 43.6–45.8 on 10 CPUs, iostat idle 0–25% (5 samples, 0% on best). Measurement deferred. Control unchanged. 2026-09-04 12:14 JST tick 7 (JIT): quiet gate failed a 7th consecutive time — load1 14.5–17.9 on 10 CPUs, iostat idle 0–8% (10 samples). Measurement deferred, no compiler change, control unchanged. 2026-09-04 12:48 JST tick 8 (JIT): quiet gate failed an 8th consecutive time — load1 11.6–14.3 on 10 CPUs (falling trend), iostat cpu idle 6–18% across 10 samples, never ≥90%. J-B measurement deferred, no compiler change, control unchanged at bench/runtime-comparison/jb_imod_control.c. Next: on a quiet host run 4000000 iters × 24 alternations, ratio of medians, then add the third (non-inlined mulh) arm to separate lever 1 from lever 2. 2026-09-04 13:24 JST tick 9 (JIT): quiet gate failed a 9th consecutive time — load1 12.3–16.5 on 10 CPUs, iostat cpu idle 2–14% across 10 samples. J-B measurement deferred, no compiler change, control unchanged. Next tick unchanged.
 
 ## Tick log (falsify — appended evidence notes)
 
@@ -89,3 +89,73 @@ approval**. Current verdicts above are diagnostics, not claims.
   even if the gate opened, the 4000000-iter x 24-alternation run would need
   a background session. Next tick unchanged: quiet host -> ratio of medians,
   then third (non-inlined mulh) arm.
+
+- 2026-09-17 (JIT tick 16): quiet gate failed a 15th consecutive time -
+load1 14.5-25.1 on 10 CPUs (falling through the tick; vm.loadavg
+25.08/19.10/17.61 at probe start), iostat cpu idle 1-31 percent across
+~62 samples over ~5 min, never >=90 percent. J-B measurement deferred,
+no compiler change, control unchanged at
+bench/runtime-comparison/jb_imod_control.c. Terminal-note: this tick the
+terminal backend returned empty stdout for foreground commands (exit 0,
+no output) and hung >3 min on trivial commands; only file-redirected
+background commands produced data (/tmp/jit-probe.txt, /tmp/jit-iostat.txt).
+Next tick unchanged: on a quiet host (idle >=90 percent) run 4000000 iters
+x 24 alternations, ratio of medians, then add the third (non-inlined
+mulh) arm.
+
+- 2026-09-17 (JIT tick 17): quiet gate COULD NOT BE MEASURED — the terminal
+  backend again returned empty stdout (exit 0, no output) for `date`/`uptime`
+  foreground probes and for a file-redirected probe (/tmp/jit-tick17-load.txt;
+  cat and stat both empty), so no load or idle number was obtainable this
+  tick, and the run budget ran out before an alternative read path completed.
+  Per the no-fabrication rule no verdict is recorded: J-B stays open, neither
+  killed nor confirmed, gate status = unmeasured (not "failed"). No compiler
+  change, control unchanged at bench/runtime-comparison/jb_imod_control.c.
+  Next tick unchanged: first action = obtain a load/idle reading by any
+  surviving path (if the terminal stays dead, record gate=unmeasured again);
+  on a quiet host (idle >=90 percent) run 4000000 iters x 24 alternations,
+  ratio of medians, then add the third (non-inlined mulh) arm.
+
+
+- 2026-09-17 18:56 JST tick 18 (JIT): read path restored — terminal stdout is
+  still empty but file-redirected commands land. Quiet gate failed a 16th
+  consecutive time — load1 12.9–14.7 on 10 CPUs (load avg 9.53/9.25/10.25 at
+  18:48 rising to 14.74/16.02/13.47 at 18:54), iostat cpu idle 16–31 percent
+  across 6 samples, never >=90 percent. J-B measurement deferred, no compiler
+  change, control unchanged at bench/runtime-comparison/jb_imod_control.c.
+  Measurement pipeline is otherwise ready (redirected file I/O works); next
+  tick: if idle >=90 percent, run 4000000 iters x 24 alternations via a
+  file-redirected background session, ratio of medians, then add the third
+  (non-inlined mulh) arm.
+
+- 2026-09-18 15:05 JST tick 19 (JIT): quiet gate failed a 17th consecutive
+  time — load1 13.2–15.1 on 10 CPUs (vm.loadavg 13.22/14.24/15.12 then
+  14.93/14.31/14.99 across two probes ~3 min apart), iostat cpu idle 0–29
+  percent across 10 samples, never >=90 percent. J-B measurement deferred,
+  no compiler change, control unchanged at
+  bench/runtime-comparison/jb_imod_control.c. Terminal-note: terminal
+  stdout again empty for foreground commands; file-redirected commands
+  land (pipeline unchanged from tick 18). Next tick unchanged: if idle
+  >=90 percent, run 4000000 iters x 24 alternations via file-redirected
+  background session, ratio of medians, then add the third (non-inlined
+  mulh) arm.
+
+- 2026-09-18 06:52 JST tick 20 (JIT): quiet gate failed an 18th consecutive
+time - probe 1 at 06:43: load1 13.98 (5m 13.47), iostat cpu idle 8-29
+percent (5 samples). Probe 2 at 06:46 (3 min later): load1 RISING to
+28.42/18.30/14.94, idle 0-29 percent. Never >=90 percent; host getting
+busier through the tick. J-B measurement deferred, no compiler change,
+control unchanged at bench/runtime-comparison/jb_imod_control.c. Next
+tick unchanged: if idle >=90 percent, run 4000000 iters x 24 alternations
+via file-redirected background session, ratio of medians, then add the
+third (non-inlined mulh) arm.
+
+- 2026-09-18 12:47 JST tick 21 (JIT): quiet gate failed a 19th consecutive
+  time — load1 13.0-15.5 on 10 CPUs (probes 12:42, 12:43, 12:46 JST),
+  iostat cpu idle 0-29 percent across 9 samples over two probes ~4 min
+  apart, never >=90 percent. Read path still degraded: raw terminal stdout
+  empty; file-redirected probes land. J-B measurement deferred, no compiler
+  change, control unchanged at bench/runtime-comparison/jb_imod_control.c.
+  Next tick unchanged: if idle >=90 percent, run 4000000 iters x 24
+  alternations via file-redirected background session, ratio of medians,
+  then add the third (non-inlined mulh) arm.
