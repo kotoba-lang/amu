@@ -57,3 +57,27 @@
         b (logic/build! compiled (assoc input :dependency-cids [other cid]))]
     (is (= (:manifest-sha256 a) (:manifest-sha256 b)))
     (is (= (:dependency-cids a) (:dependency-cids b)))))
+
+(deftest manifest-cid-is-derived-and-content-bound
+  (let [manifest (logic/build! compiled input)
+        cid (logic/manifest-cid manifest)]
+    (is (string? cid))
+    (is (re-matches #"bafy.*" cid))
+    ;; Same content, same CID: rebuilding from identical input is stable.
+    (is (= cid (logic/manifest-cid (logic/build! compiled input))))
+    ;; Same shape as the asserted-CID path, but the CID is computed.
+    (let [evidence (logic/bound-evidence! manifest)]
+      (is (= :kotoba.compiler-facts/v1 (:format evidence)))
+      (is (= cid (:manifest-cid evidence))))
+    ;; Tampering with a bound identity changes the derived CID: rebuild with
+    ;; a different world CID (each body self-hashes validly) and the CID
+    ;; derivation must not collide.
+    (let [other "bafkreigh2akiscaildcxmhjr7m6exfzucg5c44d6pnz3zqdvv2cesgbxmi"
+          other-cid (logic/manifest-cid (logic/build! compiled (assoc input :world-cid other)))]
+      (is (not= cid other-cid))
+      (is (thrown-with-msg? #?(:clj clojure.lang.ExceptionInfo :cljs ExceptionInfo)
+                            #"invalid logic manifest"
+                            (logic/manifest-cid
+                             ;; A host-side edit that skips build! fails the
+                             ;; self-hash check instead of hashing a tampered body.
+                             (assoc manifest :world-cid other)))))))
