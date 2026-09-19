@@ -41,7 +41,7 @@
 
 #define KGPU_MAX_BUFFERS 4096   /* 40 layers x ~20 tensors MAPped once, plus metas and activations */
 #define KGPU_MAX_PIPELINES 64
-#define KGPU_MAX_BINDINGS 8
+#define KGPU_MAX_BINDINGS 16   /* a fused delta-net step binds 12 (inference, iteration 24) */
 #define KGPU_MAX_DISPATCHES 2048   /* a 40-layer Nex decode step is ~1,250 dispatches in one buffer */
 #define KGPU_STAGING_BYTES (64u * 1024u * 1024u)
 
