@@ -40,7 +40,7 @@
  * by the reason; the guest-side provider turns that into SIGILL (fail closed),
  * and the reason is printed on the supervisor's stderr so the run says WHY.
  *
- * Bounds: 4096 buffers, 64 pipelines, 2048 dispatches per command buffer, 16
+ * Bounds: 4096 buffers, 128 pipelines, 2048 dispatches per command buffer, 16
  * bindings per pipeline, 4 kept command buffers. A request above them is refused by name.
  *
  * A KEPT command buffer is the fn-mode observation made mechanism: every token step of the
@@ -53,7 +53,7 @@
 #include <vulkan/vulkan.h>
 
 #define KGPU_MAX_BUFFERS 4096   /* 40 layers x ~20 tensors MAPped once, plus metas and activations */
-#define KGPU_MAX_PIPELINES 64
+#define KGPU_MAX_PIPELINES 128   /* an adaptive batch guest (three batch steps, a batch prefill, int8 twins) holds ~70 (inference iteration 58) */
 #define KGPU_MAX_BINDINGS 16   /* a fused delta-net step binds 12 (inference, iteration 24) */
 #define KGPU_MAX_DISPATCHES 2048   /* a 40-layer Nex decode step is ~1,250 dispatches in one buffer */
 #define KGPU_MAX_KEPT 4            /* kept (replayable) command buffers, BEGINK <slot> */
