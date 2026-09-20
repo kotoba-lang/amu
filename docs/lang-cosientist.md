@@ -535,3 +535,51 @@ ty 注記なし probe のため過大評価されていた — 以下は型付�
   against sema main 043c620+ (iter 11 was on the older base; confirm parity
   CIDs still match, then push/PR). Then (:k m) ledger update via amu-rank
   (jvm-dep-ledger contains? / (:k m) rows now stale).
+
+## Iteration 24 - min/max branch SUPERSEDED by upstream first-class op (2026-09-19 18:45 JST, amu lock base 9898f0e)
+
+- Target hypothesis (carried from iters 11/13/23): re-verify branch
+  bot/lang-min-max-20260904 (min/max as let+if desugar) against sema main
+  043c620+; if parity CIDs still match the hand twin, push/PR.
+- Measured (local sema classpath route, amu nbb wasm_cli.cljk, JVM-free):
+  - New branch bot/lang-minmax-20260919 @65a2779 (cherry-pick of 2542e1d onto
+    9898f0e, clean): min4.kotoba (t=(min a b), u=hand let+if twin, v=(max a b),
+    w=hand twin) check PASS exit 0.
+  - **CONTROL (unpatched 9898f0e, no min/max branch): same min4.kotoba check
+    PASS exit 0 with IDENTICAL CIDs** (t
+    bafyreifxnraihe5slxu4sml7lukwasbyx4qdd35d2nmtkaxtipvpf7uffm, u
+    bafyreid7ut5npoyeasyp37hfpkk42sk7csqpbdlzc5bi6b2f4lcuw7jsui, v
+    bafyreiekj2hbkwx3khn4dkpnoso6mb625k4ihhg2qvdckang6dvo4sxf7i, w
+    bafyreib6jkf5q6nlwv5cowpn6jngl4y36mpifqi2naid577qggvvpxdpyq). The alias CID
+    (t) is NO LONGER the hand let+if twin CID (u) - upstream main now admits
+    min/max as first-class ops, not the desugar.
+  - run (wasm32, node host): main() = 3047 = 1000*min(3,7) + 10*min(9,4) +
+    max(3,7) - values correct on the upstream path.
+  - fail-closed (upstream path): 1-arity REJECT exit 65 "i64 operation arity
+    mismatch: min takes 2 arguments; got 1"; 3-arity REJECT exit 65 "min takes
+    2 arguments; got 3".
+- Verdict: hypothesis falsified in the favorable direction - **min/max gap is
+  closed upstream** (first-class i64 min/max op on 9898f0e). The let+if desugar
+  branch is redundant AND would be slower than a single-op lowering, so
+  bot/lang-minmax-20260919 @65a2779 is NOT pushed; recommend marking
+  bot/lang-min-max-20260904 superseded (status rewrite is amu-rank's).
+- Probe-lesson (recorded): surface syntax changed since iter 11 - `(:export [t]
+  [u])` multi-form form now REJECTs ("only a bounded :export vector is
+  admitted"); `kir-cids` command name is invalid (it is `definition-cids`);
+  the wasm_cli entrypoint is now wasm_cli.cljk (not .cljs). Old probe scripts
+  must be updated before reuse.
+- Next (1 hypothesis): some->> last?-mode parity probe (carried from iter 13),
+  or the jvm-dep-ledger stale rows (contains? / (:k m) already PASS - ledger
+  update handoff to amu-rank).
+
+
+## Iteration 25 - measurement NOT STARTED (tick budget exhausted at startup), no verdict (2026-09-20)
+
+- Target hypothesis (carried from iter 24, unchanged): some->> last?-mode
+  parity probe (thread-last direction, hand-twin method), or stale
+  jvm-dep-ledger rows handoff to amu-rank (contains? / (:k m) now PASS).
+- Not executed: run time budget was exhausted before any probe/compile could
+  start this tick (host environment notice). No terminal command, no bench,
+  no compiler change. No numbers -> no verdict (falsify-first kept).
+- Next tick: resume the some->> last?-mode parity probe first (iters 13/24
+  handoff); ledger stale-row handoff note for amu-rank still pending.

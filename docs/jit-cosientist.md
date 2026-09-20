@@ -159,3 +159,101 @@ third (non-inlined mulh) arm.
   Next tick unchanged: if idle >=90 percent, run 4000000 iters x 24
   alternations via file-redirected background session, ratio of medians,
   then add the third (non-inlined mulh) arm.
+
+- 2026-09-18 18:49 JST tick 22 (JIT): quiet gate failed a 20th consecutive
+time - load1 11.1-18.3 on 10 CPUs (probe 18:49:12 JST, 20 iostat samples),
+cpu idle 49-84 percent across samples, never >=90 percent; load mild but
+not quiet. Read path: foreground terminal stdout still empty;
+file-redirected background commands land. J-B measurement deferred, no
+compiler change, control unchanged at
+bench/runtime-comparison/jb_imod_control.c. Next tick unchanged: if idle
+>=90 percent, run 4000000 iters x 24 alternations via file-redirected
+background session, ratio of medians, then add the third (non-inlined
+mulh) arm.
+
+- 2026-09-19 00:47 JST tick 23 (JIT): quiet gate failed a 21st consecutive
+time - probe 1 at 00:43:51 JST: load1 11.66 (5m 16.83), iostat cpu idle
+47-55 percent (6 samples). Probe 2 at 00:47:23 JST (~3.5 min later):
+load1 RISING to 36.0/23.2/24.6, idle 46-49 percent. Never >=90 percent;
+host getting busier through the tick. Read path this tick: file-redirected
+foreground probes land (grouped-compound commands are now blocked by the
+security scanner; separate redirected commands work). J-B measurement
+deferred, no compiler change, control unchanged at
+bench/runtime-comparison/jb_imod_control.c. Next tick unchanged: if idle
+>=90 percent, run 4000000 iters x 24 alternations via file-redirected
+background session, ratio of medians, then add the third (non-inlined
+mulh) arm.
+
+- 2026-09-19 06:47 JST tick 24 (JIT): quiet gate failed a 22nd consecutive
+  time - probe 1 at 06:43:08 JST: load1 28.21 (5m 32.27, 15m 34.67).
+  Probe 2 at 06:45 (~2 min later): load1 29.54/30.53/33.51, iostat cpu
+  idle 44-53 percent across 3 samples. Never >=90 percent; host flat-busy
+  (load ~29-30 on 10 CPUs across both probes, not falling). Read path
+  healthy this tick (foreground probes returned; long iostat loops time
+  out >30 s - use short "-c 3" probes). J-B measurement deferred, no
+  compiler change, control unchanged at
+  bench/runtime-comparison/jb_imod_control.c. Next tick unchanged: if idle
+  >=90 percent, run 4000000 iters x 24 alternations via file-redirected
+  background session, ratio of medians, then add the third (non-inlined
+  mulh) arm.
+
+- 2026-09-19 12:48 JST tick 25 (JIT): quiet gate failed a 23rd consecutive
+  time - probe 1 at 12:42 JST: load1 43.89 (5m 33.67), iostat cpu idle
+  46-55 percent (3 samples). Probe 2 at 12:45 (~3 min later): load1 FALLING
+  to 18.26 (5m 28.88), idle 40-51 percent. Never >=90 percent; load falling
+  falling through the tick but far from quiet. J-B measurement deferred, no
+  compiler change, control unchanged at bench/runtime-comparison/jb_imod_control.c.
+  Next tick unchanged: if idle >=90 percent, run 4000000 iters x 24
+  alternations via file-redirected background session, ratio of medians,
+  then add the third (non-inlined mulh) arm.
+
+- 2026-09-19 18:47 JST tick 26 (JIT): quiet gate failed a 24th consecutive
+  time - probe 1 at 18:42 JST: load1 15.27 (5m 22.49, 15m 29.87), iostat cpu
+  idle 32-46 percent (3 samples). Probe 2 at 18:45 (~3 min later): load1
+  FALLING to 11.63 (5m 18.38), idle 36-46 percent. Never >=90 percent;
+  load trending down but far from quiet. Read path healthy (foreground
+  probes returned; short "iostat -c 3" works). J-B measurement deferred,
+  no compiler change, control unchanged at bench/runtime-comparison/
+  jb_imod_control.c. Next tick unchanged: if idle >=90 percent, run
+  4000000 iters x 24 alternations via file-redirected background session,
+  ratio of medians, then add the third (non-inlined mulh) arm.
+
+- 2026-09-20 00:55 JST tick 27 (JIT): quiet gate failed a 25th consecutive
+  time - load1 20.36-20.77 on 10 CPUs (00:43 probe), iostat cpu idle 42-45
+  percent (3 samples), never >=90 percent. But the deferred J-B measurement
+  ran as an under-qualified diagnostic: rebuilt
+  bench/runtime-comparison/jb_imod_control.c unchanged (clang -O2 -arch
+  arm64), 3 runs at 4000000 iters x 24 alternations - saving +6.6/+8.8/+7.1
+  percent (opaque 5.254/5.844/6.249 ns/elem vs const 4.906/5.332/5.803;
+  ratio 1.071/1.096/1.077), checksum 764266 agreeing all runs, sign
+  consistent 3/3, magnitude inside ADR 0335's busy-host 6-7 percent band,
+  far from ADR 0341's quiet-host 13.1. J-B stays not-killed/not-confirmed
+  (under-qualified). New static fact for J-C: the strength-reduction lever
+  is ALREADY IMPLEMENTED in kotoba-native machine_ir.cljk -
+  signed-division-magic (exact Granlund-Montgomery reciprocal, ~line 2954)
+  and a64-quotient-constant (smulh+asr emission, ~line 6243) - but the imod
+  path still emits the opaque guarded SDIV (aarch64.cljk signed-division,
+  0x9ac10c00) because the divisor is not constant at the call site
+  (ADR 0289). J-C's mechanism is "connect it": inline small user functions
+  so the divisor constant-propagates to a64-quotient-constant (the const+
+  inline composition ADR 0344 ranked). No compiler change, no policy change,
+  no sealed claim. Next tick: hand-patch a kernel whose imod divisor is
+  constant post-inline, verify the emitted aarch64 switches from the
+  18-insn guarded-SDIV body to the smulh+asr form, measure end-to-end on a
+  quiet host.
+- 2026-09-20 06:43 JST tick 30 (JIT): quiet gate first probe was the closest-ever
+  to quiet (load1 11.45/11.73 on 10 CPUs falling through two probes, iostat cpu
+  idle best 77 percent at first probe third sample; never >=90 percent; probe 2
+  3 min later already rising load1 16.3/17.2, idle 47/59/49). Under-qualified
+  diagnostic J-B run executed as tick 27 did: rebuilt bench/runtime-comparison/
+  jb_imod_control.c unchanged (clang -O2 -arch arm64), ONE full run 4000000
+  iters x 24 alternations via background session — opaque(sdiv) 5.126 ns/elem
+  vs const(mulh) 4.789, ratio 1.070, saving +6.6 percent, checksum 764266
+  agreeing all arms (single run; sign consistent with tick 27 three same-sign
+  6.6/8.8/7.1 window). Still diagnostic, ADR 0341 quiet-host 13.1 untested.
+  No compiler change, no policy change, no sealed claim. Next tick: on the
+  closest-to-quiet host ADD third (non-inlined mulh) arm separating lever 1
+  (sdiv->mulh) from lever 2 (const-inline composition), rerun ratio of medians,
+  then hand-patch machine_ir-a64-quotient-constant: verify emitted arm64
+  switches 0x9ac10c00 18-insn guarded-SDIV body -> smulh+asr form, end-to-end
+  quiet-host.
