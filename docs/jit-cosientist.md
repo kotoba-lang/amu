@@ -257,3 +257,17 @@ mulh) arm.
   then hand-patch machine_ir-a64-quotient-constant: verify emitted arm64
   switches 0x9ac10c00 18-insn guarded-SDIV body -> smulh+asr form, end-to-end
   quiet-host.
+
+- 2026-09-20 12:50 JST tick 31 (JIT): quiet gate failed a 26th consecutive
+  time - probe 1 at 12:42:54 JST: load1 20.93 (5m 21.47), iostat cpu idle
+  22-46 percent (3 samples). Probe 2 at 12:46 (~3.5 min later): load1 RISING
+  to 34.60/27.61/28.75, idle 0-46 percent. Never >=90 percent; host getting
+  busier through the tick. J-B measurement deferred, no compiler change, no
+  policy change, no sealed claim, control unchanged at
+  bench/runtime-comparison/jb_imod_control.c. Terminal-note: stdout empty
+  for foreground commands this tick; file-redirected probes land (read path
+  same as ticks 18-30). Next tick unchanged: if idle >=90 percent, run
+  4000000 iters x 24 alternations via file-redirected background session
+  (ratio of medians), add the third (non-inlined mulh) arm, then do the
+  tick-27 emit-verification hand-patch (constant-divisor kernel -> expect
+  smulh+asr instead of 0x9ac10c00 guarded SDIV).

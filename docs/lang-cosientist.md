@@ -583,3 +583,55 @@ ty 注記なし probe のため過大評価されていた — 以下は型付�
   no compiler change. No numbers -> no verdict (falsify-first kept).
 - Next tick: resume the some->> last?-mode parity probe first (iters 13/24
   handoff); ledger stale-row handoff note for amu-rank still pending.
+
+## Iteration 26 - some->/some->> payload-drop repair PORTED to current main; some->> last?-mode parity VERIFIED (2026-09-20, sema branch bot/lang-somethread-rebase-20260920 @9401993, pushed)
+
+- Target hypothesis (carried iters 13/24/25): some->> last?-mode parity probe
+  against the payload-drop repair; hand-twin method.
+- Finding first (falsify route): on sema 9898f0e (main), BOTH `(some-> opt (+ 1))`
+  and `(some->> opt (+ 1))` REJECT exit 65 "expression type mismatch: expected
+  [:option :i64], got option-i64" - iter 13's repair branch
+  bot/lang-some-thread-fix-20260905 @3f847f9 was NEVER merged and predates the
+  .cljc->.cljk wave (its old sema classpath fails on current amu:
+  `sema/namespace-attr-map->clauses` unresolvable). The gap is live on main.
+- Implementation: fresh branch bot/lang-somethread-rebase-20260920 @9401993
+  off 9898f0e (worktree /Users/junkawasaki/github/wt-somethread2); port of
+  3f847f9's desugar-some-thread repair onto frontend.cljk via scripted
+  exact-replace (python count==1 assert; 23+/15-, byte-identical to the
+  original commit's stat; ported function diff vs 3f847f9 source = empty).
+- Measured (cp-kw.txt classpath with wt-somethread2 substituted, amu nbb
+  wasm_cli route, JVM-free):
+  - hand twin (smt-hand.kotoba, let+if payload-drop, written BEFORE the
+    branch run): check PASS, t
+    `bafyreidbwzhfda7jvgy6cle7exscbc5dhikoha327f7es2wffh3jzmwd64`, main
+    `bafyreifdeudhnqrnxna5nvnj4vjug7dw7eg2p46r45yzkbt7s367nzqsbu`
+    (re-measured canon; old /tmp probes lost earlier are not assumed).
+  - `(some->> opt (+ 1))` check PASS (exit 0), t/main CIDs EXACT match with
+    the hand twin -> some->> last?-mode KIR parity byte-for-byte.
+  - `(some-> opt (+ 1))` re-check PASS, t
+    `bafyreia2bhjmxm2ljwe7o3urxte2hszr6h2px4wvd6snnvrhid3a7led74` - identical
+    to iter 13's measured parity CID (repair is behavior-preserving for
+    first-mode).
+  - wasm32 compile PASS (2 definitions, provenance sidecar); browser-host
+    run `t(option-some 41)` = **42** (ALL-OK) - correct value.
+  - fail-closed: 0-step `(some->> opt)` REJECT exit 65, own diagnostic
+    "some->> requires an initial option and at least one step".
+  - NEW measured gap (not fixed this tick): 2-step `(some->> opt (+ 1) (* 2))`
+    REJECT exit 65 "expression type mismatch: expected option-i64, got i64" -
+    the recursive `lower` re-enters option resolution on the threaded payload;
+    multi-step threads need a payload-threaded chain. Real coverage limit,
+    recorded as next hypothesis.
+- Regression suite NOT run this tick (budget exhausted after gate+push;
+  ported code is text-identical to 3f847f9 which measured 237/1145/0 in
+  iter 13, but that was the old base - re-run pending). Pushed branch
+  bot/lang-somethread-rebase-20260920 @9401993 (PR open URL printed).
+- comparator ratio: repair lowers through existing admitted plain ops
+  (option-some?/option-value); no new lowering -> speed threshold N/A.
+- Next (1 hypothesis): multi-step some->/some->> chain desugar - fix `lower`
+  to thread the payload directly between steps without re-resolving option
+  type, then re-verify parity per step count + sema regression suite
+  (237 tests baseline) before push.
+- Probe lessons: file-redirect workaround needed again this tick (plain
+  terminal stdout empty); grouped `bash -c` / brace bodies blocked by the
+  security scanner in cron mode - use single simple commands with `>`
+  redirects.
