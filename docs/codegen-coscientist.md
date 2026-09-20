@@ -2187,7 +2187,60 @@ H-Z3 quiet-host hand-patch A/B, then H-C2.
 
 - 2026-09-20 19:1x JST amu-bench: H-C2 evidence: host busy (load1 17.07, load5 19.05, load15 17.32 > 7.5; up 2 days 3:18, 4 users). No measurement run this iteration (quiet gate failed); no pending amu-falsify quiet-host item acted on. host=local, n=0. Appended via python script (no heredoc, no shell redirect).
 
-- **391 (2026-09-20 20:0x JST, amu-rank cron, rank-only pass, host busy load1 11.12 / 5m 25.26 / 15m 30.90 at 20:04, threshold 7.5)**: no measurement by rank role (gate load1<7.5 unmet ~1.5x). git fetch: origin/main UNCHANGED at 10202b13 since tick 390 (local HEAD 5202fe21 already contains it; merge-base is origin/main itself) -- no new merges, no re-rank basis. Evidence reviewed since tick 390 (present uncommitted in the working tree, committed with this tick): sibling amu-bench 19:1x JST busy-refusal for H-C2 (load1 17.07 / 5m 19.05 / 15m 17.32 > 7.5, up 2 days 3:18, n=0) and sibling amu-falsify 18:11 JST busy-refusal (load1 11.12/9.37, load5 12.39/8.71, pre-run monitor 11.66; quiet gate unmet, measurement refused, NEXT=H-C2 unchanged); both appended verbatim to the H-C2 population row / iteration log, text unchanged, no status field change (H-C2 status still 'open -- generate from an instruction-order diff'). docs/jit-cosientist.md and docs/lang-cosientist.md working-tree edits remain uncommitted for their lane owners. No new measured numbers against any open hypothesis, no new codegen ADR (0350 remains newest) -> no re-rank, no status transition, no new hypothesis. Population unchanged: deep-spill x zig / x rust rows top of the codegen ladder (open, closest to bar at +4.8% 2/5, in-hand hoist lever from iteration 147), H-C2 / H-D / H-B / H-Y1 open, H-Z1 / H-Z3 behind. Standing NEXT blocker per tick 390 is the untracked-tree refusal, not host availability (levi busy-cpu 0.04 measured qualifying). Continuous busy: 22nd+ consecutive workstation busy tick, no qualify window >24h. NEXT: deep-spill hoist-lever rerun A/B on levi on a commit-clean tree (amu-bench: clear the scripts/ cron residue from the measurement scope or measure from a clean worktree), fallback H-C2 timed hand-patch on the same host. Appended via python script file (no heredoc, no -e/-c).
+- **391 (2026-09-20 20:0x JST, amu-rank cron, rank-only pass, host busy load1 11.12 / 5m 25.26 / 15m 30.90 at 20:04, threshold 7.5)**: no measurement by rank role (gate load1<7.5 unmet ~1.5x). git fetch: origin/main UNCHANGED at 10202b13 since tick 390 (local HEAD 5202fe21 already contains it; merge-base is origin/main itself) -- no new merges, no re-rank basis. Evidence reviewed since tick 390 (present uncommitted in the working tree, committed with this tick): sibling amu-bench 19:1x JST busy-refusal for H-C2 (load1 17.07 / 5m 19.05 / 15m 17.32 > 7.5, up 2 days 3:18, n=0) and sibling amu-falsify 18:11 JST busy-refusal (load1 11.12/9.37, load5 12.39/8.71, pre-run monitor 11.66; quiet gate unmet, measurement refused, NEXT=H-C2 unchanged); both appended verbatim to the H-C2 population row / iteration log, text unchanged, no status field change (H-C2 status still 'open -- generate from an instruction-order diff'). docs/jit-cosientist.md and docs/lang-cosientist.md working-tree edits remain uncommitted for their lane owners. No new measured numbers against any open hypothesis, no new codegen ADR (0350 remains newest) -> no re-rank, no status transition, no new hypothesis. Population unchanged: deep-spill x zig / x rust rows top of the codegen ladder (open, closest to bar at +4.8% 2/5, in-hand hoist lever from iteration 147), H-C2 / H-D / H-B / H-Y1 open, H-Z1 / H-Z3 behind. Standing NEXT blocker per tick 390 is the untracked-tree refusal, not host availability (levi busy-cpu 0.04 measured qualifying). Continuous busy: 22nd+ consecutive workstation busy tick, no qualify window >24h. NEXT: deep-spill hoist A/B (61c7c183 base vs 10202b13) needs either judah under 0.10 busy-cpu or a base re-pin onto a JVM-free bench era so the base arm can run on naphtali; fallback H-C2 timed hand-patch on an nbb+comparators host (judah/benjamin watched). Appended via python script file (no heredoc, no -e/-c); corrected in-commit this tick for the late-landing sibling 23:3x evidence.
+
+## 2026-09-20 23:3x JST (amu-bench cron, bench/perfgate tick -- FIRST FLEET-HOST RUN OF THE SERIES)
+
+Workstation busy (load1 15.45 / 17.54 / 20.67 at 22:17, 15.45 at 23:21; quiet gate 7.5 unmet all tick)
+-- no workstation measurement. Measurements were taken on the FLEET instead
+(scripts/quiet-host.cljk; roster from superproject scripts/fleet-ci/nodes.edn):
+
+- Fleet probe 22:19 JST: probed 9/9, qualified 6 (naphtali 0.04, dan 0.04,
+  levi 0.05, simeon 0.05, issachar 0.05, joseph 0.10); chosen naphtali.
+- Toolchain probe (argv ssh, 23:25): nbb present on naphtali/judah/benjamin
+  only; levi/dan/joseph/issachar/zebulun have node but no nbb; simeon's node
+  is the keg-only node@22 the remote-bench refusal names. naphtali chosen
+  (quietest of the nbb-capable set).
+- MEASURED: amu current arm (commit 10202b13, pin kotoba-native a9f8a3c7) --
+  scripts/remote-bench.cljk --bench runtime --fixture kernel --host naphtali,
+  n=10 samples. amu-native steady-state ns/kernel: median 7.05, min 7.04,
+  p95 7.42, max 7.42. Report's own qualification: hostLoad qualified=true
+  (policy: load1 before/after <= 75% of logical CPUs, drift <= 10%;
+  loadAverageBefore 2.54/2.16/1.92, after 2.40/2.15/1.92 vs limit 7.5),
+  performance verdict "eligible-for-perfgate". Receipt busy-cpu before 0.36
+  (staging npm churn immediately before the sample) / after 0.04; the
+  report's internal load gate is what judged the run.
+- amu-wasm32 on the same run: median 26.44 ns/kernel (n=10) -- context, not
+  a claim.
+- VERDICT: no perfgate.core/qualify verdict was produced.
+  scripts/perfgate-qualify.cljk refuses could-not-answer (jvm-route-removed,
+  no nbb port), so the eligible-for-perfgate report could not be promoted to
+  qualify / not-separated by the judge. Recorded as measured-but-unjudged,
+  not as a win. Report: /private/tmp/amu-ab-cur-kernel_deep.json (local copy;
+  remote original ~/amu-evidence/runtime-10202b13f664-*.json on naphtali).
+- A/B BASE ARM NOT MEASURED (honest gap): the deep-spill hoist A/B needs the
+  pre-hoist base amu 61c7c183 (pin 06badc8). At that commit the bench script
+  still spawns `clojure -M:run` for the amu arms, and naphtali has no clojure
+  (spawnSync clojure ENOENT, AMU-EXIT=1). The only nbb+clojure+node host,
+  judah, measured busy-cpu 0.22-0.30 > 0.10 across three probes (22:19,
+  23:27, 23:31 JST). No same-host base arm, no delta, no separation claim.
+  The one-arm current number above is absolute and claims nothing about the
+  hoist.
+- Operational findings for the lane (measured): (1) remote staging on
+  naphtali carries dirty package.json/package-lock.json/node_modules from
+  earlier runs; `git checkout -- .` + `git clean -fd node_modules` inside the
+  script-owned ~/amu-bench staging dir unblocks per-arm checkout -- required
+  before EVERY arm because node_modules is TRACKED in the amu repo, so every
+  npm install dirties it. (2) fixture kernel_deep at the 61c7c183 era needs
+  clojure; post-JVM-removal commits do not -- a pre-2026-09-11-pin base arm
+  needs judah when quiet. (3) naphtali lacks rustc (report environment
+  rustc=null): comparator arms cannot build there; amu-vs-clang comparisons
+  need judah/benjamin.
+- NEXT: deep-spill hoist A/B (61c7c183 base vs 10202b13) needs either judah
+  under 0.10 busy or a base re-pin onto a JVM-free bench era; fallback H-C2
+  timed hand-patch on an nbb+comparators host (judah/benjamin watched).
+  Workstation tick evidence: host busy, no workstation measurement, n=0 there.
+  Appended via python script file (no heredoc, no -e/-c).
 
 ## Standing honesty constraints
 
@@ -4121,3 +4174,5 @@ ple Clang C11, Zig, Go
 - **384 (2026-09-19 23:0x JST, amu-rank cron, rank-only pass, host busy load1 26.54 / 5m 27.17 / 15m 23.98 at 23:06, threshold 7.5)**: no measurement by rank role (gate load1<7.5 unmet ~3.5x). git fetch: origin/main ADVANCED bbe0de18 -> 743bb298, 4 commits (gpu PR #1031 barrier storage, #1032 KGPU_MAX_BINDINGS 8->16 with c1b946ae/743bb298 merges). All gpu/loader scope: no new bench, hand-patch, or perfgate number against any codegen hypothesis -> no re-rank basis from origin. Local HEAD 53706e7a (lang-cosientist iter 24 min/max superseded-upstream merge, already local). Evidence reviewed since tick 383 (present in working tree, committed with this tick): sibling amu-falsify 20:38 JST busy-refusal (load1 11.80 / 5m 15.30 > 7.5) and sibling amu-bench 22:08 JST busy-tick refusal (load1 11.97 / 5m 14.13 / 15m 15.00, up 1d 6:18) — text unchanged. docs/jit-cosientist.md working-tree edits remain uncommitted for the jit lane's owner. No new measured numbers against any open hypothesis, no new codegen ADR (0350 remains newest) -> no re-rank, no status transition, no new hypothesis. Population unchanged: deep-spill x zig / x rust rows top of the codegen ladder (open, closest to bar at +4.8% 2/5, in-hand hoist lever from iteration 147), H-C2 / H-D / H-B / H-Y1 open, H-Z1 / H-Z3 behind. NEXT unchanged: deep-spill hoist-lever rerun A/B on a quiet host (expected to clear >=5% + separation if iteration 147's A/B reproduces), fallback H-C2 timed hand-patch. Continuous busy: 18th+ consecutive busy tick, no qualify window >24h (load1 26.54 ~3.5x gate). NEXT: H-deep-spill hoist rerun A/B quiet host (per standing), fallback H-C2. Appended via python script file (no heredoc, no -e/-c).
 
 - **385 (2026-09-20 02:1x JST, amu-rank cron, rank-only pass, host busy load1 27.51 / 5m 26.85 / 15m 24.21 at 02:05, threshold 7.5)**: no measurement by rank role (gate load1<7.5 unmet ~3.6x). git fetch: origin/main ADVANCED 743bb298 -> 83df2200 (one commit: 83df2200 loader name-the-arena re-land #1033 -- loader scope, no bench, hand-patch, or perfgate number against any codegen hypothesis -> no re-rank basis from origin). Local HEAD at tick start was 822301d3 (amu-bench tick 385 01:1x JST busy-refusal commit, already in tree); this tick merged origin/main 83df2200 into that lineage. Evidence reviewed since tick 384: sibling amu-bench 01:11 JST busy-tick refusal (load1 10.40 / 5m 21.70 / 15m 32.41, up 1d 9:18, 19th+ consecutive busy tick) -- text unchanged, already committed at 822301d3. docs/jit-cosientist.md and docs/lang-cosientist.md working-tree edits remain uncommitted for their lane owners. No new measured numbers against any open hypothesis, no new codegen ADR (0350 remains newest) -> no re-rank, no status transition, no new hypothesis. Population unchanged: deep-spill x zig / x rust rows top of the codegen ladder (open, closest to bar at +4.8% 2/5, in-hand hoist lever from iteration 147), H-C2 / H-D / H-B / H-Y1 open, H-Z1 / H-Z3 behind. NEXT unchanged: deep-spill hoist-lever rerun A/B on a quiet host (expected to clear >=5% + separation if iteration 147's A/B reproduces), fallback H-C2 timed hand-patch. Continuous busy: 19th+ consecutive busy tick, no qualify window >24h (load1 27.51 ~3.6x gate). Appended via python script file (no heredoc, no -e/-c).
+
+- **392 (2026-09-20 23:0x JST, amu-rank cron, rank-only pass, host busy load1 96.27 / 5m 63.69 / 15m 37.75 at 23:05, threshold 7.5)**: no measurement by rank role (gate load1<7.5 unmet ~12.8x, the busiest window of the 22+ tick busy streak). git fetch: origin/main UNCHANGED at 10202b13 since tick 391 (local HEAD f2047f27, tick 391's commit, is a descendant; merge-base is origin/main itself) -- no new merges, no re-rank basis. Evidence reviewed since tick 391: at review time (23:05) no new sibling bench/falsify entries; DURING this tick a sibling amu-bench 23:3x JST entry landed in the working tree (FIRST FLEET-HOST RUN: naphtali busy-cpu 0.04 chosen of 6 qualified hosts, amu 10202b13 arm measured n=10 median 7.05 ns with hostLoad qualified, eligible-for-perfgate, but perfgate.core/qualify refuses could-not-answer (jvm-route-removed) -> measured-but-unjudged, NOT a win; A/B base arm 61c7c183 UNMEASURED -- needs clojure, naphtali has none, judah busy-cpu 0.22-0.30 > 0.10); committed verbatim in this tick per convention. RANK CONSEQUENCE (measured, not judgment): the standing NEXT wording 'deep-spill hoist A/B on levi on a commit-clean tree' is measured dead -- levi/dan/joseph/issachar/zebulun have node but no nbb (toolchain probe 23:25), so the bench cannot run there; the blocker is now base-arm toolchain, not tree cleanliness or host availability. Ladder order unchanged; no status transition, no new hypothesis. Population unchanged: deep-spill x zig / x rust rows top of the codegen ladder (open, closest to bar at +4.8% 2/5, in-hand hoist lever from iteration 147), H-C2 / H-D / H-B / H-Y1 open, H-Z1 / H-Z3 behind. Standing NEXT blocker per tick 390 is the untracked-tree refusal, not host availability (levi busy-cpu 0.04 measured qualifying; scripts/remote-bench.cljk exits 2 on the 40+ untracked scripts/ cron-residue files). Continuous busy: 23rd+ consecutive workstation busy tick, no qualify window >24h. NEXT: deep-spill hoist A/B (61c7c183 base vs 10202b13) needs either judah under 0.10 busy-cpu or a base re-pin onto a JVM-free bench era so the base arm can run on naphtali; fallback H-C2 timed hand-patch on an nbb+comparators host (judah/benjamin watched). Appended via python script file (no heredoc, no -e/-c); corrected in-commit this tick for the late-landing sibling 23:3x evidence.
