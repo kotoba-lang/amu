@@ -368,3 +368,26 @@ rerun, then the tick-27 emit-verification hand-patch.
   agreement; (2) verify C-arm disassembly; (3) then the tick-27
   emit-verification hand-patch (constant-divisor kernel -> expect
   smulh+asr instead of the 0x9ac10c00 guarded SDIV in emitted aarch64).
+
+- 2026-09-22 06:45 JST tick 36 (JIT): tick-35 background measurement COMPLETED and
+  read back from /tmp/jb_imod_tick35_out.txt (written 2026-09-22 00:53 JST) - the
+  A/B/C three-arm J-B diagnostic, 4000000 iters x 24 alternations, checksum
+  764266 agreeing all arms: A opaque(sdiv) 5.240 ns/elem, B const-call(mulh)
+  4.902, C const-inline(mulh) 4.890. lever1 A/B ratio 1.069 = saving +6.5%
+  (inside the established busy-host 5.9-8.8 band, sign now consistent 6/6 across
+  ticks 27/30/32/35). lever2 B/C ratio 1.002 = saving +0.2%: the call boundary is
+  NOT a meaningful cost; essentially the whole J-B effect is the sdiv->mulh
+  strength reduction itself. C-arm disassembly verified (/tmp/jb_imod_tick35_
+  disasm.txt): _arm_inl body contains smulh (0x9b497d8d) in-loop and no bl to
+  imod; binary still has exactly 1 sdiv (opaque arm) + 3 smulh. Consequence for
+  J-C: inlining alone (without constant propagation to a64-quotient-constant)
+  buys ~nothing - the emit-path lever is the constant propagation, not the
+  call removal. All results UNDER-QUALIFIED (run host idle never >=90%), so
+  J-B remains not-killed/not-confirmed, no sealed claim. Tick-36 quiet gate
+  failed a 31st consecutive time - load1 22.36 (5m 29.30, 15m 32.92) on 10
+  CPUs at 06:43, iostat cpu idle 46-58 percent (3 samples), never >=90
+  percent. No compiler change, no policy change, no sealed claim. Next tick:
+  (a) if idle >=90 percent, rerun the three-arm run on a quiet host for a
+  qualified lever1/lever2 pair; (b) otherwise the tick-27 emit-verification
+  hand-patch (constant-divisor kernel -> expect smulh+asr instead of the
+  0x9ac10c00 guarded SDIV in emitted aarch64).
