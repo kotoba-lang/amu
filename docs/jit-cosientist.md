@@ -271,3 +271,100 @@ mulh) arm.
   (ratio of medians), add the third (non-inlined mulh) arm, then do the
   tick-27 emit-verification hand-patch (constant-divisor kernel -> expect
   smulh+asr instead of 0x9ac10c00 guarded SDIV).
+- 2026-09-20 18:55 JST tick 32 (JIT): quiet gate failed a 27th consecutive
+time - probe 1 at 18:48:27 JST: load1 14.14 (5m 12.29), iostat cpu idle
+45-60 percent (3 samples); probe 2 at 18:51:09 (~3 min later): load1
+RISING to 16.57 (5m 14.75), idle 45-61 percent. Never >=90 percent.
+Under-qualified J-B diagnostic run as ticks 27/30 did (control
+bench/runtime-comparison/jb_imod_control.c UNCHANGED, md5
+baf8905aad3892ce5fe58a9d8f7ecb6e, 3266 bytes; rebuilt clang -O2 -arch
+arm64): ONE full run 4000000 iters x 24 alternations, finished 18:53:14
+JST - opaque(sdiv) 5.697 ns/elem vs const(mulh) 5.360, ratio 1.063,
+saving +5.9 percent, checksum 764266 agreeing all arms. Sign consistent
+5/5 across the last 5 under-qualified runs (ticks 27/30/32: 6.6/8.8/7.1,
+6.6, 5.9) - magnitude band 5.9-8.8 percent, still far from ADR 0341's
+quiet-host 13.1. Disassembly re-verified: _imod_opaque emits sdiv
+0x9ac10c08 (guarded SDIV), _imod_const emits smulh+asr; whole binary has
+exactly 1 sdiv (opaque arm) and 3 smulh. J-B stays not-killed/not-
+confirmed (under-qualified). Third (inlined-mulh) arm NOT added this
+tick - the patch attempt failed on an exact-string match (hidden
+whitespace suspected, not diagnosed), control left byte-identical rather
+than risk an unverified edit. No compiler change, no policy change, no
+sealed claim. Next tick: (a) quiet host -> full run + third arm; (b) if
+host stays busy, fix the third-arm patch (check line endings via od) and
+rerun, then the tick-27 emit-verification hand-patch.
+
+- 2026-09-21 12:46 JST tick 33 (JIT): quiet gate failed a 28th consecutive
+  time - probe 1 at 12:46:13 JST: load1 107.33 (5m 83.50, 15m 70.87) on 10
+  CPUs, iostat cpu idle 46/58/51 percent (3 samples, ~3 s apart), never
+  >=90 percent; host busier than any recent tick (worst load1 since tick
+  11). Control re-verified byte-identical: md5
+  baf8905aad3892ce5fe58a9d8f7ecb6e (matches tick 32, 3266 bytes).
+  Line-ending diagnosis from tick 32's failed third-arm patch: `od -c` +
+  `file` confirm pure LF (0x0a) endings, ASCII text - the failure was NOT
+  CRLF; root cause remains the exact-string match itself (not further
+  diagnosed this tick). Backup copy of the control taken to scratch + /tmp
+  (tick-33 backup; existence unverified - terminal stdout was empty this
+  tick). J-B measurement deferred, no compiler change, no policy change, no
+  sealed claim. Next tick: (a) quiet host -> full run + third arm; (b) if
+  busy, add the third (non-inlined mulh) arm with a verified patch (file is
+  confirmed LF/ASCII, so an exact-string from read_file content should
+  match - suspect the earlier old_string differed in content, not
+  whitespace), then the tick-27 emit-verification hand-patch.
+- 2026-09-21 18:43 JST tick 34 (JIT): quiet gate failed a 29th consecutive
+  time - load1 31.2-35.5 on 10 CPUs (uptime 35.49/30.33/31.70 at 18:43,
+  iostat 31.20/32.46), cpu idle 42-46 percent across 2 samples, never
+  >=90 percent. Branch (b) of the tick-33 plan executed: third
+  (inlined-mulh) arm patch attempted in-repo against
+  bench/runtime-comparison/jb_imod_control.c - FAILED on exact match again
+  (8-line header anchor AND a 2-line anchor both rejected by the patch
+  tool). Control re-verified byte-identical AFTER the failed patches:
+  md5 baf8905aad3892ce5fe58a9d8f7ecb6e (matches ticks 32/33, 3266 bytes)
+  - file untouched. Root-cause check this tick: jb_imod_control.c is
+  confirmed 100% LF/ASCII with SPACE-indented comments (grep for tab:
+  0 matches; od -c of lines 5-7 shows space runs, no tab) and stayed
+  byte-identical after both failed patch attempts. The patch tool
+  simply failed to match this exact content (ticks 32-34), unexplained -
+  treat the patch tool as unreliable for these files. This doc is
+  space-indented on its recent entry continuation lines as well
+  (grep for tab: 0 matches), yet the same exact-match failure
+  occurred on it too. This entry was appended via file-redirected
+  shell cat, not the patch tool. Pre-tick-34 backup of the control
+  /tmp/jb_imod_control.pre-tick34.c. Read path: foreground stdout empty
+  again; file-redirected probes land (unchanged since tick 18). No J-B
+  diagnostic measurement this tick (host busy; budget used on the patch
+  diagnosis). J-B stays open, not-killed/not-confirmed; no compiler
+  change, no policy change, no sealed claim. Next tick: add the third
+  (inlined-mulh) arm C with write_file (full-file rewrite, SPACE-
+  indented, matching the existing file), verify md5 changed, then on a quiet host run 4000000 iters x
+  24 alternations for A/B/C (lever 1 = A vs B, lever 2 = B vs C), ratio
+  of medians.
+
+- 2026-09-22 00:58 JST tick 35 (JIT): quiet gate failed a 30th consecutive
+  time - probe at 00:43:16 JST: load1 32.78 on 10 CPUs (5m 42.97, 15m
+  48.49, falling trend), iostat cpu idle 37-46 percent (3 samples ~2 s
+  apart), never >=90 percent. Tick-34 branch (a) executed: the third
+  (inlined-mulh) arm C was ADDED to the control file via write_file
+  full-file rewrite (the patch-tool exact-match failures of ticks 32-34
+  sidestepped) - md5 baf8905aad3892ce5fe58a9d8f7ecb6e (ticks 32/33) ->
+  5fe2c47a1c3e2d4268bc65dc0d3779d9 (3266 -> 4695 bytes), pre-tick-35
+  backup at /tmp/jb_imod_control.pre-tick35.c; rebuilt clean (clang -O2
+  -arch arm64 -> /tmp/jb_imod_tick35, empty build output). The arm C
+  mechanism: imod_const_inl is the same constant-divisor body WITHOUT
+  noinline, so clang -O2 inlines it into arm_inl's loop body - lever 1
+  = A vs B (sdiv->mulh swap, call boundary kept), lever 2 = B vs C
+  (same strength-reduced body, call boundary removed). Under-qualified
+  J-B diagnostic run (4000000 iters x 24 alternations, A/B/C interleaved)
+  STARTED as background session proc_c554016d61f8 ->
+  /tmp/jb_imod_tick35_out.txt; tick budget exhausted before completion:
+  status = STARTED, UNDER-QUALIFIED, IN-MEASUREMENT - NO NUMBERS THIS
+  TICK (per the no-fabrication rule, nothing recorded until the output
+  file is read). Disassembly verification of the C arm (expect: no bl,
+  smulh present inside arm_inl loop body) pending in background ->
+  /tmp/jb_imod_tick35_disasm.txt. No compiler change, no policy change,
+  no sealed claim. Next tick first actions: (1) read
+  /tmp/jb_imod_tick35_out.txt (or poll session proc_c554016d61f8 if still
+  running), record A/B/C medians + lever1 A/B + lever2 B/C + checksum
+  agreement; (2) verify C-arm disassembly; (3) then the tick-27
+  emit-verification hand-patch (constant-divisor kernel -> expect
+  smulh+asr instead of the 0x9ac10c00 guarded SDIV in emitted aarch64).
