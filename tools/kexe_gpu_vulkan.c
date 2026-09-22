@@ -193,6 +193,36 @@ static int kgpu_init(void) {
                             .apiVersion = VK_API_VERSION_1_1 };
 #endif
   VkInstanceCreateInfo ici = { .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO, .pApplicationInfo = &app };
+  /* A PORTABILITY driver -- MoltenVK on macOS is the one that exists -- is
+     hidden from the loader unless the instance asks for it by name. Without
+     these two lines `vkCreateInstance` answers VK_ERROR_INCOMPATIBLE_DRIVER
+     on a Mac with MoltenVK installed and every other line below is
+     unreachable (measured 2026-09-22 on an M-series Mac, loader 1.4.357,
+     MoltenVK 1.4.2). The extension is queried rather than assumed: a driver
+     that does not advertise it gets the same instance it got before, so
+     nothing changes for anv / radv / nvgpu. */
+  const char *portability = "VK_KHR_portability_enumeration";
+  uint32_t ext_count = 0;
+  if (vkEnumerateInstanceExtensionProperties(NULL, &ext_count, NULL) == VK_SUCCESS && ext_count > 0) {
+    VkExtensionProperties *props = calloc(ext_count, sizeof *props);
+    if (props != NULL) {
+      if (vkEnumerateInstanceExtensionProperties(NULL, &ext_count, props) == VK_SUCCESS) {
+        for (uint32_t i = 0; i < ext_count; i++) {
+          if (strcmp(props[i].extensionName, portability) == 0) {
+            ici.enabledExtensionCount = 1;
+            ici.ppEnabledExtensionNames = &portability;
+#if defined(VK_KHR_portability_enumeration)
+            ici.flags |= VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
+#else
+            ici.flags |= 0x00000001;
+#endif
+            break;
+          }
+        }
+      }
+      free(props);
+    }
+  }
   KGPU_VK(vkCreateInstance(&ici, NULL, &kgpu.instance));
   uint32_t count = 0;
   KGPU_VK(vkEnumeratePhysicalDevices(kgpu.instance, &count, NULL));
