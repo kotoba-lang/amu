@@ -367,7 +367,38 @@ rerun, then the tick-27 emit-verification hand-patch.
   running), record A/B/C medians + lever1 A/B + lever2 B/C + checksum
   agreement; (2) verify C-arm disassembly; (3) then the tick-27
   emit-verification hand-patch (constant-divisor kernel -> expect
-  smulh+asr instead of the 0x9ac10c00 guarded SDIV in emitted aarch64).
+ smulh+asr instead of the 0x9ac10c00 guarded SDIV in emitted aarch64).
+
+ - 2026-09-23 06:43 JST tick 39 (JIT): quiet gate failed a 33rd consecutive
+ time - probe at 06:43 JST: load1 11.04 (5m 10.81, 15m 9.57) on 10 CPUs,
+ iostat cpu idle 46/61/70 percent (3 samples ~2 s apart), never >=90
+ percent. J-B measurement deferred (host busy); control unchanged at
+ bench/runtime-comparison/jb_imod_control.c (no writes this tick).
+ Branch (b) advanced - static emit-verification targets re-located and
+ READ this tick (no quiet gate needed):
+ (1) kotoba-native/src/kotoba/native/machine_ir.cljk:
+     signed-division-magic def at line 2954; a64-quotient-constant def at
+     line 6243 - on magic success emits smulh 0x9b407c00 + asr/add
+     (lines 6250-6286), on failure falls back to a64-quotient (guarded
+     SDIV, sdiv 0x9ac00c00 body at line 6236, 18-insn cbz/cmp/divide
+     sequence). MIR dispatch: :aarch64/quotient-constant (line 7222,
+     reads :mir/divisor) vs :aarch64/quotient (line 7219, register
+     divisor). signed-division-magic call sites: 3553 (x86), 6245 (a64),
+     8254 (nil? guard), 8709 (mir/divisor).
+ (2) Candidate kernels located: bench/runtime-comparison/kernel_strings.kotoba
+     (line 4: (defn imod [x :i64 m :i64] :i64; scan loop calls imod with
+     constant 1000003) and kernel_collections.kotoba (imod with constants
+     1000003/16/8).
+ Falsification expectation to verify next tick: if constant divisors
+ ALREADY flow through the :aarch64/quotient-constant path at MIR level
+ (site 8709 reads :mir/divisor), the J-C "connect" lever reduces to
+ whether the inliner/const-prop propagates the call-site constant into
+ :mir/divisor BEFORE encoding; the disasm test is: compile kernel_strings
+ (jvm-free, aarch64) and count sdiv 0x9ac10c00 occurrences - expect 0 in
+ the imod body if the lever is present, 1 if it is not. No compiler
+ change, no policy change, no sealed claim. Next tick: run that disasm
+ test; if sdiv present, trace where :mir/divisor is (or is not) populated
+ for inlined constant calls.
 
 - 2026-09-22 06:45 JST tick 36 (JIT): tick-35 background measurement COMPLETED and
   read back from /tmp/jb_imod_tick35_out.txt (written 2026-09-22 00:53 JST) - the
