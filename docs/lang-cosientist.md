@@ -802,3 +802,41 @@ ty 注記なし probe のため過大評価されていた — 以下は型付�
   python count==1; gate = 2-step parity + 1-step CID-unchanged + 0-step
   fail-closed + wasm32 compile + node run option-some 41 -> 84 + sema
   regression suite; commit+push bot/lang-somethread-rebase-20260920).
+
+## Iteration 31 - items 1-2 DONE (cp-smt2 + hand2 CIDs measured), patch NOT applied, no verdict (2026-09-22 18:50 JST, amu@4bf08502)
+
+- Target hypothesis (unchanged iters 26-30): linear-chain lower in
+  desugar-some-thread; pass criteria 2-step check PASS with definition CIDs
+  == hand twin AND 1-step CIDs unchanged (iter 26 canon).
+- Terminal stdout healthy this tick (no file-redirect needed). loadavg
+  32.73 - quiet gate NOT met; target is parity-only so speed N/A.
+- Step (0) re-verified: deps-lock.edn still pins kotoba-sema 9898f0e28b...
+  (line 80) -> wt-somethread2 @9401993 (base 9898f0e) is still on-pin. No
+  rebase needed. Worktree clean (status --porcelain empty).
+- ITEM 1 DONE: /tmp/langcos/cp-smt2.txt built (python exact-replace of
+  wt-somethread/ -> wt-somethread2/, 2 refs, 0 old refs left; 45 entries).
+- ITEM 2 DONE: smt-hand2.kotoba written (2-step hand twin `(let [sht opt]
+  (if (option-some? sht) (* 2 (+ (option-value sht 0) 1)) 0))`) and
+  MEASURED pre-patch on cp-smt2.txt: check PASS exit 0 - t
+  `bafyreibudrjyvqtujvaprwkhjv5mzijgiuaf2p3p42dpozhnxt2lhwhzvu`, main
+  `bafyreiddijvv4nxuxzpme743kfkn66jkhynh26xw4xmfgtcpai44ztfy6m`
+  (r-smt-hand2.txt). This is the 2-step parity canon.
+- NOTE (probe hygiene): the lock-crosscheck script I wrote this tick
+  (iter31-lockcheck.py) printed 54 "MISSING" lines - that is a path-format
+  bug in MY script (it wrote `io.github.kotoba-lang.abi` with slashes but
+  the on-disk cp uses dots `io.github.kotoba-lang/abi/...`); 0 real
+  mismatches. cp-smt.txt was already proven loadable by this tick's hand2
+  check PASS. Do not re-run that script's output as evidence.
+- NOT DONE (budget): ITEM 3 apply linear-chain patch to wt-somethread2
+  frontend.cljk (letfn lower :4093-4109 -> threaded = (reduce
+  #(thread-form %1 %2 last?) payload steps), 1-step output byte-shape
+  identical); ITEM 4 gate (2-step parity t cid == bafyreibudrj... + 1-step
+  CIDs unchanged vs iter 26 canon bafyreia2bh.../bafyreidbwzh... + 0-step
+  fail-closed + wasm32 compile + node run 41 -> 84 + sema regression);
+  ITEM 5 commit+push. No patch applied, no new compile beyond hand2, no
+  verdict. Hypothesis open.
+- Next tick (resume exactly at item 3): python exact-replace patch (count==1
+  assert) on /Users/junkawasaki/github/wt-somethread2
+  src/kotoba/compiler/frontend.cljk desugar-some-thread letfn body; then
+  gate on cp-smt2.txt; canon CIDs above; then commit+push
+  bot/lang-somethread-rebase-20260920.
