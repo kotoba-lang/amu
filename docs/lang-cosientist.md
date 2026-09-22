@@ -890,3 +890,46 @@ ty 注記なし probe のため過大評価されていた — 以下は型付�
   CIDs unchanged (vs iter 26 canon) + 0-step fail-closed + wasm32 compile +
   node run (option-some 41 -> 84) + sema regression suite; then commit+push
   bot/lang-somethread-rebase-20260920.
+
+## Iteration 33 - setup + canon order re-verified, patch NOT applied, no verdict (2026-09-23 06:35 JST, amu@815edd4f)
+
+- Target hypothesis (unchanged iters 26-32): linear-chain lower in
+  desugar-some-thread; pass criteria 2-step check PASS with definition CIDs
+  == hand twin smt-hand2 (t bafyreibudrjyvqtujvaprwkhjv5mzijgiuaf2p3p42dpozhnxt2lhwhzvu,
+  main bafyreiddijvv4nxuxzpme743kfkn66jkhynh26xw4xmfgtcpai44ztfy6m - iter 31
+  canon on disk) AND 1-step CIDs unchanged (iter 26 canon
+  bafyreia2bh.../bafyreidbwzh...).
+- Measured this tick (terminal stdout still empty, file-redirect; loadavg
+  10.36/8.67/8.12 - quiet gate NOT met, target parity-only so speed N/A):
+  - STEP (0) re-verified: amu HEAD 815edd4f (amu-rank tick 403) but
+    deps-lock.edn:80 still pins kotoba-sema 9898f0e28b48d54baba68991b2b2c7503c660b92
+    -> wt-somethread2 @9401993 (base 9898f0e) STILL on-pin, clean tree
+    (status --porcelain empty). No rebase needed.
+  - /tmp/langcos intact: cp-smt2.txt (iter 31), all smt-*.kotoba probes,
+    r-smt-hand2.txt canon all present.
+  - Code site re-confirmed by direct read on 9401993 (line numbers unchanged
+    since iters 27-32): desugar-some-thread defn :4082; recursive lower letfn
+    body :4093-4109; resolve-option-type fallback [:option :i64] :4067;
+    thread-form :3977-3984; desugar-thread :3989 (the linear reduce shape).
+  - CANON ORDER RE-VERIFIED (this tick's new check, by direct read of
+    thread-form :3977-3984): for 2-step `(some->> opt (+ 1) (* 2))` the
+    linear chain emits step 1 NON-last -> `(list* '+ payload 1)` =
+    `(+ (option-value tmp 0) 1)`, then last -> `(* 2 that)`. Net desugar
+    shape `(* 2 (+ (option-value tmp 0) 1))` = BYTE-IDENTICAL to the
+    smt-hand2 canon `(* 2 (+ (option-value sht 0) 1))` (only the let
+    binding name differs, as for the 1-step canon, which matched in iter
+    26 despite the same naming difference). Pass criteria of iter 32 hold
+    as stated; no re-measure of the canon needed.
+- NOT DONE (run budget exhausted during verification, before any patch):
+  linear-chain patch apply (spec unchanged, iter 32: replace letfn body
+  :4093-4109 with plain let - single tmp, option-type = (or (resolve-option-type
+  (first args)) [:option :i64]), payload-type, payload, threaded =
+  (reduce #(thread-form %1 %2 last?) payload (rest args)), then-expr =
+  (desugar-expr threaded)), gate, commit of sema branch. No compile, no new
+  probe, no new CIDs, no numbers, no sema commit. Hypothesis open.
+- Next tick (resume exactly at item 3): python exact-replace patch on
+  /Users/junkawasaki/github/wt-somethread2 src/kotoba/compiler/frontend.cljk
+  (count==1 assert); gate on cp-smt2.txt = 2-step parity (t cid ==
+  bafyreibudrj...) + 1-step CIDs unchanged (vs iter 26 canon) + 0-step
+  fail-closed + wasm32 compile + node run (option-some 41 -> 84) + sema
+  regression suite; then commit+push bot/lang-somethread-rebase-20260920.
