@@ -391,3 +391,24 @@ rerun, then the tick-27 emit-verification hand-patch.
   qualified lever1/lever2 pair; (b) otherwise the tick-27 emit-verification
   hand-patch (constant-divisor kernel -> expect smulh+asr instead of the
   0x9ac10c00 guarded SDIV in emitted aarch64).
+
+- 2026-09-23 00:43 JST tick 38 (JIT): quiet gate failed a 32nd consecutive
+  time - probe at 00:43 JST: load1 22.07 (5m 19.20, 15m 17.74) on 10 CPUs,
+  iostat cpu idle 45/55/62 percent (3 samples ~2 s apart), never >=90
+  percent. J-B measurement deferred, no compiler change, no policy change,
+  no sealed claim. Control re-verified: bench/runtime-comparison/
+  jb_imod_control.c = 4695 bytes, three-arm state (A opaque-sdiv / B
+  const-call mulh / C const-inline mulh) matching the tick-35 write_file
+  rewrite; /tmp/jb_imod_control.pre-tick35.c is the 3266-byte two-arm
+  original. Emit-verification hand-patch targets located for next tick:
+  kotoba-native/src/kotoba/native/machine_ir.cljk (signed-division-magic
+  ~line 2954, a64-quotient-constant ~line 6243 per tick 27) and
+  kotoba-native/src/kotoba/native/aarch64.cljk (guarded SDIV body,
+  0x9ac10c00). Read path: foreground stdout empty; file-redirected
+  commands land; grouped compound commands blocked by the security
+  scanner (separate redirected commands work, same as ticks 23/24).
+  Next tick: (a) quiet host (idle >=90 percent) -> three-arm run, ratio of
+  medians; (b) otherwise the static emit-verification hand-patch on a
+  constant-divisor kernel (no quiet gate needed): expect emitted aarch64
+  to switch from the 0x9ac10c00 guarded SDIV body to the smulh+asr form
+  when the divisor is constant post-inline.
