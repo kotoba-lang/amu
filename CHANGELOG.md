@@ -21,6 +21,34 @@ file's own addition was written with a changelog in mind.
 
 ## [Unreleased]
 
+### :gpu/compute reaches a fourth backend: Apple GPUs through MoltenVK (2026-09-22)
+
+`vkCreateInstance` answered `VK_ERROR_INCOMPATIBLE_DRIVER` on every Mac,
+because a PORTABILITY driver -- MoltenVK is the one that exists -- is hidden
+from the loader unless the instance asks for `VK_KHR_portability_enumeration`
+by name and sets the matching flag. `tools/kexe_gpu_vulkan.c` now queries the
+extension and enables it when it is there; a driver that does not advertise it
+(anv, radv, nvgpu) gets exactly the instance it got before. Control: with the
+lookup changed to a name no driver advertises, the same probe fails again with
+the same VK error.
+
+Measured 2026-09-22 on an M1 Max (loader 1.4.357, MoltenVK 1.4.2), the same
+`.kotoba` guests the other three boxes run:
+
+| guest | answer |
+|---|---|
+| `test/fixtures/gpu/gpu-compute-info.kotoba` | `Apple M1 Max|1.3.357|1024|1` |
+| kotoba-lang/inference `verify/native/gpu/dot.kotoba` (4096x1024 f32) | 2.043 ms, max rel err 3.1e-4 against an f64 twin |
+| its `bench.kotoba` (one command buffer, 40 dispatches over 64 MiB) | 16.5-18.4 ms = **146-163 GB/s**, against B70/ANV 160, Xavier 54, K16 iGPU 44 |
+
+`npm run test-gpu-compute` is green here rather than `COULD-NOT-RUN`. Two
+other things it found: the script built the child environment with
+`(merge (js->clj (.-env js/process)) env)`, which on the kbb engine is "No
+protocol method ICollection.-conj defined for type object" -- it died before
+reaching a GPU; and a guest whose answer is a 16 KiB buffer read back as hex
+needs `KEXE_STRING_POOL` above the 65,536-byte default (the dot guest traps
+at 32,939 bytes used without it).
+
 ### :gpu/compute -- a Kotoba program drives the host GPU from a native binary (2026-09-18)
 
 Compiler wire 42 (`kotoba-lang` 26f1bb3, `kotoba-sema` 9898f0e2, root
