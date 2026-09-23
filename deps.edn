@@ -647,7 +647,21 @@
          ;; :gpu/compute, wire 42 -- a compute dispatch on the host GPU,
          ;; brokered by this repo's loader to tools/kexe_gpu_vulkan.c (root
          ;; ADR-2609182400 C); vendored catalog resynced to kotoba-lang 26f1bb3.
-         "9898f0e28b48d54baba68991b2b2c7503c660b92"}
+         ;; Advanced 2026-09-23 to 3fdaefb6 (kotoba-sema affine/evaluation-order,
+         ;; forward only): the vector-assoc! gate decides linearity in
+         ;; EVALUATION ORDER -- reads before the store admitted, any mention
+         ;; after it refused -- and `when` bodies are sequences. Fixes an
+         ;; admitted read-after-store (`(when c (vector-assoc! v 0 5)
+         ;; (vector-at v 0))` answered 5 on aarch64; the copy answers 0).
+         ;; Differential check: a 20,000-step struct-of-arrays program gives
+         ;; the same checksum through vector-assoc! and vector-assoc on 5 seeds.
+         ;; Advanced again 2026-09-23 to ed3bb7c5 (kotoba-sema affine/threads): the
+         ;; gate expands ->, ->> and as-> before checking (inside -> the
+         ;; threaded handle was never a target: `(let [w (-> v (vector-assoc!
+         ;; 0 5))] (+ (vector-at w 0) (vector-at v 0)))` answered 10, the copy
+         ;; 5), refuses a store inside cond->/some->/doto, and checks
+         ;; vector-f64-assoc! handles, which it never did.
+         "ed3bb7c55320a1ead998f473b658c7843d1c029e"}
         ;; ADR-2607266000 Phase B: these responsibilities moved out of this repo.
         ;;
         ;; The slice-value stream held this pin on purpose (ADR 0314), because
