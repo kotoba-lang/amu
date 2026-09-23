@@ -367,4 +367,113 @@ rerun, then the tick-27 emit-verification hand-patch.
   running), record A/B/C medians + lever1 A/B + lever2 B/C + checksum
   agreement; (2) verify C-arm disassembly; (3) then the tick-27
   emit-verification hand-patch (constant-divisor kernel -> expect
-  smulh+asr instead of the 0x9ac10c00 guarded SDIV in emitted aarch64).
+ smulh+asr instead of the 0x9ac10c00 guarded SDIV in emitted aarch64).
+
+ - 2026-09-23 06:43 JST tick 39 (JIT): quiet gate failed a 33rd consecutive
+ time - probe at 06:43 JST: load1 11.04 (5m 10.81, 15m 9.57) on 10 CPUs,
+ iostat cpu idle 46/61/70 percent (3 samples ~2 s apart), never >=90
+ percent. J-B measurement deferred (host busy); control unchanged at
+ bench/runtime-comparison/jb_imod_control.c (no writes this tick).
+ Branch (b) advanced - static emit-verification targets re-located and
+ READ this tick (no quiet gate needed):
+ (1) kotoba-native/src/kotoba/native/machine_ir.cljk:
+     signed-division-magic def at line 2954; a64-quotient-constant def at
+     line 6243 - on magic success emits smulh 0x9b407c00 + asr/add
+     (lines 6250-6286), on failure falls back to a64-quotient (guarded
+     SDIV, sdiv 0x9ac00c00 body at line 6236, 18-insn cbz/cmp/divide
+     sequence). MIR dispatch: :aarch64/quotient-constant (line 7222,
+     reads :mir/divisor) vs :aarch64/quotient (line 7219, register
+     divisor). signed-division-magic call sites: 3553 (x86), 6245 (a64),
+     8254 (nil? guard), 8709 (mir/divisor).
+ (2) Candidate kernels located: bench/runtime-comparison/kernel_strings.kotoba
+     (line 4: (defn imod [x :i64 m :i64] :i64; scan loop calls imod with
+     constant 1000003) and kernel_collections.kotoba (imod with constants
+     1000003/16/8).
+ Falsification expectation to verify next tick: if constant divisors
+ ALREADY flow through the :aarch64/quotient-constant path at MIR level
+ (site 8709 reads :mir/divisor), the J-C "connect" lever reduces to
+ whether the inliner/const-prop propagates the call-site constant into
+ :mir/divisor BEFORE encoding; the disasm test is: compile kernel_strings
+ (jvm-free, aarch64) and count sdiv 0x9ac10c00 occurrences - expect 0 in
+ the imod body if the lever is present, 1 if it is not. No compiler
+ change, no policy change, no sealed claim. Next tick: run that disasm
+ test; if sdiv present, trace where :mir/divisor is (or is not) populated
+ for inlined constant calls.
+
+- 2026-09-22 06:45 JST tick 36 (JIT): tick-35 background measurement COMPLETED and
+  read back from /tmp/jb_imod_tick35_out.txt (written 2026-09-22 00:53 JST) - the
+  A/B/C three-arm J-B diagnostic, 4000000 iters x 24 alternations, checksum
+  764266 agreeing all arms: A opaque(sdiv) 5.240 ns/elem, B const-call(mulh)
+  4.902, C const-inline(mulh) 4.890. lever1 A/B ratio 1.069 = saving +6.5%
+  (inside the established busy-host 5.9-8.8 band, sign now consistent 6/6 across
+  ticks 27/30/32/35). lever2 B/C ratio 1.002 = saving +0.2%: the call boundary is
+  NOT a meaningful cost; essentially the whole J-B effect is the sdiv->mulh
+  strength reduction itself. C-arm disassembly verified (/tmp/jb_imod_tick35_
+  disasm.txt): _arm_inl body contains smulh (0x9b497d8d) in-loop and no bl to
+  imod; binary still has exactly 1 sdiv (opaque arm) + 3 smulh. Consequence for
+  J-C: inlining alone (without constant propagation to a64-quotient-constant)
+  buys ~nothing - the emit-path lever is the constant propagation, not the
+  call removal. All results UNDER-QUALIFIED (run host idle never >=90%), so
+  J-B remains not-killed/not-confirmed, no sealed claim. Tick-36 quiet gate
+  failed a 31st consecutive time - load1 22.36 (5m 29.30, 15m 32.92) on 10
+  CPUs at 06:43, iostat cpu idle 46-58 percent (3 samples), never >=90
+  percent. No compiler change, no policy change, no sealed claim. Next tick:
+  (a) if idle >=90 percent, rerun the three-arm run on a quiet host for a
+  qualified lever1/lever2 pair; (b) otherwise the tick-27 emit-verification
+  hand-patch (constant-divisor kernel -> expect smulh+asr instead of the
+  0x9ac10c00 guarded SDIV in emitted aarch64).
+
+- 2026-09-23 00:43 JST tick 38 (JIT): quiet gate failed a 32nd consecutive
+  time - probe at 00:43 JST: load1 22.07 (5m 19.20, 15m 17.74) on 10 CPUs,
+  iostat cpu idle 45/55/62 percent (3 samples ~2 s apart), never >=90
+  percent. J-B measurement deferred, no compiler change, no policy change,
+  no sealed claim. Control re-verified: bench/runtime-comparison/
+  jb_imod_control.c = 4695 bytes, three-arm state (A opaque-sdiv / B
+  const-call mulh / C const-inline mulh) matching the tick-35 write_file
+  rewrite; /tmp/jb_imod_control.pre-tick35.c is the 3266-byte two-arm
+  original. Emit-verification hand-patch targets located for next tick:
+  kotoba-native/src/kotoba/native/machine_ir.cljk (signed-division-magic
+  ~line 2954, a64-quotient-constant ~line 6243 per tick 27) and
+  kotoba-native/src/kotoba/native/aarch64.cljk (guarded SDIV body,
+  0x9ac10c00). Read path: foreground stdout empty; file-redirected
+  commands land; grouped compound commands blocked by the security
+  scanner (separate redirected commands work, same as ticks 23/24).
+  Next tick: (a) quiet host (idle >=90 percent) -> three-arm run, ratio of
+  medians; (b) otherwise the static emit-verification hand-patch on a
+  constant-divisor kernel (no quiet gate needed): expect emitted aarch64
+  to switch from the 0x9ac10c00 guarded SDIV body to the smulh+asr form
+  when the divisor is constant post-inline.
+
+- 2026-09-23 12:58 JST tick 40 (JIT): quiet gate failed a 34th consecutive
+  time - load1 26.44/20.96 (uptime 12:43, 12:44 JST, 10 CPUs), iostat not
+  run to completion (budget spent on the static emit-verification). Tick-39
+  plan branch (b) EXECUTED - the disasm test ran, no quiet gate needed:
+  (1) compile: bin/amu compile bench/runtime-comparison/kernel_strings.kotoba
+  --target aarch64 --jvm-free --output /tmp/jit_t40_kernel_strings.kexe ->
+  {:ok true, :target :aarch64-kotoba-v1} (NOTE: compile requires --output;
+  without it the CLI fails :usage "source input must use .kotoba..." with
+  exit 64 - misleading error, cost one round-trip). extract-native needed
+  --symbol kernel (ns exports [kernel], not main): 436 bytes, offset 420.
+  (2) disassembly (raw blob wrapped via .incbin, objdump -d, full listing
+  in /tmp/jit_t40_disasm2.txt): imod body at 0x0 IS the guarded-SDIV form
+  - sdiv x2, x0, x1 = 0x9ac10c02 at 0x34, inside the cbz/overflow-check
+  guarded body, then msub at 0x40. The scan loop calls imod via bl (0xd0,
+  0x138 etc.) - NOT inlined - and materializes the constant 1000003 as
+  mov x2,#0x4243; movk x2,#0xf,lsl #16 then passes it in a REGISTER (x1)
+  as a normal argument. smulh count in the whole 436-byte body: 0.
+  sdiv count: 1. VERDICT (static, deterministic, no quiet gate needed):
+  the J-C "connect" lever is GENUINELY ABSENT - even with a literal
+  constant divisor at every call site, neither inlining nor constant
+  propagation to :mir/divisor happens before a64 encoding, so
+  a64-quotient-constant (smulh+asr, ~6.5% busy-host saving measured in
+  the C proxy) never fires. Hypothesis NOT killed - this CONFIRMS the
+  hand-patch opportunity tick 39 hypothesized, and pins the exact two
+  candidate mechanisms: (a) inline imod into scan before encoding, or
+  (b) populate :mir/divisor at the call site during MIR lowering
+  (machine_ir.cljk site ~8709). Next tick: hand-patch (b) on a scratch
+  copy - trace where the call-site literal 1000003 is dropped (inliner
+  keeps it as a register argument) and whether :mir/divisor can be
+  populated there; verify emitted body switches 0x9ac10c02 ->
+  smulh+asr; only then end-to-end measurement on a quiet host.
+  No compiler change (scratch files in /tmp only), no policy change,
+  no sealed claim.

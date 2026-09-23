@@ -802,3 +802,180 @@ ty 注記なし probe のため過大評価されていた — 以下は型付�
   python count==1; gate = 2-step parity + 1-step CID-unchanged + 0-step
   fail-closed + wasm32 compile + node run option-some 41 -> 84 + sema
   regression suite; commit+push bot/lang-somethread-rebase-20260920).
+
+## Iteration 31 - items 1-2 DONE (cp-smt2 + hand2 CIDs measured), patch NOT applied, no verdict (2026-09-22 18:50 JST, amu@4bf08502)
+
+- Target hypothesis (unchanged iters 26-30): linear-chain lower in
+  desugar-some-thread; pass criteria 2-step check PASS with definition CIDs
+  == hand twin AND 1-step CIDs unchanged (iter 26 canon).
+- Terminal stdout healthy this tick (no file-redirect needed). loadavg
+  32.73 - quiet gate NOT met; target is parity-only so speed N/A.
+- Step (0) re-verified: deps-lock.edn still pins kotoba-sema 9898f0e28b...
+  (line 80) -> wt-somethread2 @9401993 (base 9898f0e) is still on-pin. No
+  rebase needed. Worktree clean (status --porcelain empty).
+- ITEM 1 DONE: /tmp/langcos/cp-smt2.txt built (python exact-replace of
+  wt-somethread/ -> wt-somethread2/, 2 refs, 0 old refs left; 45 entries).
+- ITEM 2 DONE: smt-hand2.kotoba written (2-step hand twin `(let [sht opt]
+  (if (option-some? sht) (* 2 (+ (option-value sht 0) 1)) 0))`) and
+  MEASURED pre-patch on cp-smt2.txt: check PASS exit 0 - t
+  `bafyreibudrjyvqtujvaprwkhjv5mzijgiuaf2p3p42dpozhnxt2lhwhzvu`, main
+  `bafyreiddijvv4nxuxzpme743kfkn66jkhynh26xw4xmfgtcpai44ztfy6m`
+  (r-smt-hand2.txt). This is the 2-step parity canon.
+- NOTE (probe hygiene): the lock-crosscheck script I wrote this tick
+  (iter31-lockcheck.py) printed 54 "MISSING" lines - that is a path-format
+  bug in MY script (it wrote `io.github.kotoba-lang.abi` with slashes but
+  the on-disk cp uses dots `io.github.kotoba-lang/abi/...`); 0 real
+  mismatches. cp-smt.txt was already proven loadable by this tick's hand2
+  check PASS. Do not re-run that script's output as evidence.
+- NOT DONE (budget): ITEM 3 apply linear-chain patch to wt-somethread2
+  frontend.cljk (letfn lower :4093-4109 -> threaded = (reduce
+  #(thread-form %1 %2 last?) payload steps), 1-step output byte-shape
+  identical); ITEM 4 gate (2-step parity t cid == bafyreibudrj... + 1-step
+  CIDs unchanged vs iter 26 canon bafyreia2bh.../bafyreidbwzh... + 0-step
+  fail-closed + wasm32 compile + node run 41 -> 84 + sema regression);
+  ITEM 5 commit+push. No patch applied, no new compile beyond hand2, no
+  verdict. Hypothesis open.
+- Next tick (resume exactly at item 3): python exact-replace patch (count==1
+  assert) on /Users/junkawasaki/github/wt-somethread2
+  src/kotoba/compiler/frontend.cljk desugar-some-thread letfn body; then
+  gate on cp-smt2.txt; canon CIDs above; then commit+push
+  bot/lang-somethread-rebase-20260920.
+
+
+## Iteration 32 - setup re-verified, root cause re-confirmed by code read, patch NOT applied, no verdict (2026-09-23 00:35 JST, amu@a95d56f4)
+
+- Target hypothesis (unchanged iters 26-31): linear-chain lower in
+  desugar-some-thread; pass criteria 2-step check PASS with definition CIDs
+  == hand twin smt-hand2 (t bafyreibudrjyvqtujvaprwkhjv5mzijgiuaf2p3p42dpozhnxt2lhwhzvu,
+  main bafyreiddijvv4nxuxzpme743kfkn66jkhynh26xw4xmfgtcpai44ztfy6m - measured
+  pre-patch in iter 31, canon on disk) AND 1-step CIDs unchanged (iter 26
+  canon bafyreia2bh.../bafyreidbwzh...).
+- Measured this tick (file-redirect; plain terminal stdout still empty;
+  loadavg 10.56/11.86/15.04 - quiet gate NOT met, target parity-only so
+  speed N/A):
+  - STEP (0) re-verified: amu HEAD a95d56f4 (amu-rank tick 401) but
+    deps-lock.edn still pins kotoba-sema 9898f0e28b48d54baba68991b2b2c7503c660b92
+    -> wt-somethread2 @9401993 (base 9898f0e) is STILL on-pin. No rebase
+    needed. Worktree clean (status --porcelain empty).
+  - /tmp/langcos intact; all probe files + cp-smt2.txt (iter 31 item 1) +
+    r-smt-hand2.txt (iter 31 item 2 canon) present.
+  - Code site RE-CONFIRMED by direct read on 9401993 (line numbers unchanged
+    since iters 27/28/30): desugar-some-thread defn at :4082; recursive
+    lower letfn body :4093-4109; root cause visible in source:
+    `(lower threaded (rest steps))` re-enters with the i64 threaded payload
+    as `option-form`, and resolve-option-type (:4025-4068, `:else
+    [:option :i64]` fallback at :4068) yields [:option :i64] for it, so
+    step 2's `option-some?` binds an i64 -> the measured exit 65
+    ("expected option-i64, got i64"). thread-form :3977-3984 (step-shape
+    agnostic) and desugar-thread :3989
+    `(desugar-expr (reduce #(thread-form %1 %2 last?) (first args)
+    (rest args)))` are the shapes the patch mirrors.
+- NOT DONE (run budget exhausted during verification, before any patch):
+  linear-chain patch apply, gate, commit. No compile, no new probe, no new
+  CIDs, no numbers, no commit. Hypothesis open.
+- Patch spec (concretized, ready to apply next tick): replace the letfn
+  body at :4093-4109 with a linear chain - tmp (single),
+  option-type = (resolve-option-type (first args)), payload-type =
+  (second option-type), payload = (list 'option-value tmp
+  (option-payload-fallback payload-type)), threaded =
+  (reduce #(thread-form %1 %2 last?) payload (rest args)), then-expr =
+  (desugar-expr threaded); outer form =
+  (list 'let [tmp (desugar-expr (first args))] (list 'if (list
+  'option-some? tmp) then-expr (option-payload-fallback payload-type))).
+  1-step output is byte-shape identical to the current single-step emit
+  (assert via 1-step CIDs unchanged in gate).
+- Next tick (resume exactly at item 3): python exact-replace patch on
+  /Users/junkawasaki/github/wt-somethread2 frontend.cljk (count==1 assert);
+  gate on cp-smt2.txt = 2-step parity (t cid == bafyreibudrj...) + 1-step
+  CIDs unchanged (vs iter 26 canon) + 0-step fail-closed + wasm32 compile +
+  node run (option-some 41 -> 84) + sema regression suite; then commit+push
+  bot/lang-somethread-rebase-20260920.
+
+## Iteration 33 - setup + canon order re-verified, patch NOT applied, no verdict (2026-09-23 06:35 JST, amu@815edd4f)
+
+- Target hypothesis (unchanged iters 26-32): linear-chain lower in
+  desugar-some-thread; pass criteria 2-step check PASS with definition CIDs
+  == hand twin smt-hand2 (t bafyreibudrjyvqtujvaprwkhjv5mzijgiuaf2p3p42dpozhnxt2lhwhzvu,
+  main bafyreiddijvv4nxuxzpme743kfkn66jkhynh26xw4xmfgtcpai44ztfy6m - iter 31
+  canon on disk) AND 1-step CIDs unchanged (iter 26 canon
+  bafyreia2bh.../bafyreidbwzh...).
+- Measured this tick (terminal stdout still empty, file-redirect; loadavg
+  10.36/8.67/8.12 - quiet gate NOT met, target parity-only so speed N/A):
+  - STEP (0) re-verified: amu HEAD 815edd4f (amu-rank tick 403) but
+    deps-lock.edn:80 still pins kotoba-sema 9898f0e28b48d54baba68991b2b2c7503c660b92
+    -> wt-somethread2 @9401993 (base 9898f0e) STILL on-pin, clean tree
+    (status --porcelain empty). No rebase needed.
+  - /tmp/langcos intact: cp-smt2.txt (iter 31), all smt-*.kotoba probes,
+    r-smt-hand2.txt canon all present.
+  - Code site re-confirmed by direct read on 9401993 (line numbers unchanged
+    since iters 27-32): desugar-some-thread defn :4082; recursive lower letfn
+    body :4093-4109; resolve-option-type fallback [:option :i64] :4067;
+    thread-form :3977-3984; desugar-thread :3989 (the linear reduce shape).
+  - CANON ORDER RE-VERIFIED (this tick's new check, by direct read of
+    thread-form :3977-3984): for 2-step `(some->> opt (+ 1) (* 2))` the
+    linear chain emits step 1 NON-last -> `(list* '+ payload 1)` =
+    `(+ (option-value tmp 0) 1)`, then last -> `(* 2 that)`. Net desugar
+    shape `(* 2 (+ (option-value tmp 0) 1))` = BYTE-IDENTICAL to the
+    smt-hand2 canon `(* 2 (+ (option-value sht 0) 1))` (only the let
+    binding name differs, as for the 1-step canon, which matched in iter
+    26 despite the same naming difference). Pass criteria of iter 32 hold
+    as stated; no re-measure of the canon needed.
+- NOT DONE (run budget exhausted during verification, before any patch):
+  linear-chain patch apply (spec unchanged, iter 32: replace letfn body
+  :4093-4109 with plain let - single tmp, option-type = (or (resolve-option-type
+  (first args)) [:option :i64]), payload-type, payload, threaded =
+  (reduce #(thread-form %1 %2 last?) payload (rest args)), then-expr =
+  (desugar-expr threaded)), gate, commit of sema branch. No compile, no new
+  probe, no new CIDs, no numbers, no sema commit. Hypothesis open.
+- Next tick (resume exactly at item 3): python exact-replace patch on
+  /Users/junkawasaki/github/wt-somethread2 src/kotoba/compiler/frontend.cljk
+  (count==1 assert); gate on cp-smt2.txt = 2-step parity (t cid ==
+  bafyreibudrj...) + 1-step CIDs unchanged (vs iter 26 canon) + 0-step
+  fail-closed + wasm32 compile + node run (option-some 41 -> 84) + sema
+  regression suite; then commit+push bot/lang-somethread-rebase-20260920.
+
+## Iteration 34 - multi-step some->> linear-chain patch APPLIED + 2-step KIR parity CONFIRMED; gate partial (budget), no commit (2026-09-23 12:45 JST, amu@9479a174)
+
+- Target hypothesis (carried iters 26-33): linear-chain lower in
+  desugar-some-thread; pass criteria 2-step check PASS with definition CIDs
+  == hand twin AND 1-step CIDs unchanged (iter 26 canon).
+- DONE this tick (terminal stdout healthy; loadavg 12.79, parity-only so speed N/A):
+  - Step (0): amu HEAD 9479a174, deps-lock.edn:80 still pins kotoba-sema
+    9898f0e28b48... -> wt-somethread2 @9401993 (base 9898f0e) on-pin, clean tree.
+  - ITEM 3 APPLIED: linear-chain patch on wt-somethread2 frontend.cljk
+    (python exact-replace, count==1 asserted, 1032->1214 chars): recursive
+    letfn lower :4093-4109 replaced with plain let - single tmp,
+    option-type = (or (resolve-option-type initial) [:option :i64]), payload,
+    threaded = (reduce #(thread-form %1 %2 last?) payload steps),
+    then-expr = (desugar-expr threaded). Coverage-limit comment recorded
+    in-source (option-resulting step not modeled, not silently admitted).
+  - GATE (cp-smt2.txt classpath, amu nbb wasm_cli route, JVM-free):
+    - 2-step (smt-2step.kotoba `(some->> opt (+ 1) (* 2))`): check **PASS
+      (exit 0)** - was REJECT exit 65 pre-patch (r-smt-2step.txt).
+    - 1-step (smt-first.kotoba): check PASS, t
+      `bafyreia2bhjmxm2ljwe7o3urxte2hszr6h2px4wvd6snnvrhid3a7led74` ==
+      iter 26 canon EXACTLY (1-step CIDs unchanged), main
+      `bafyreigqgbc7xhcr33vy7lj5shxo3q2p24wryznlek54zioxyxssdk5zwy`.
+    - 2-step parity: hand twin CIDs EXACT match - t
+      `bafyreig37xemmislrv5e4izf7ks6lao4ykpkfenjqz53ukpm6ahzo2wluy`,
+      main `bafyreicxvki6ooqf4ij4jwg4xw2oqlmwa6bkqykrq7o34cotyfex3vlfb4`.
+  - CANON CORRECTION (iter 33's re-verify was wrong, this tick measured it):
+    thread-form with last?=true places the value LAST, so the linear chain
+    emits (+ 1 (option-value tmp 0)) for step 1, NOT (+ (option-value tmp 0) 1).
+    The iter 31 hand twin smt-hand2.kotoba used the value-first spelling
+    (t bafyreibudrj...) - numerically equal but a different KIR, hence the
+    CID mismatch on first comparison. Corrected hand twin smt-hand3.kotoba
+    `(* 2 (+ 1 (option-value sht 0)))` measures t
+    `bafyreig37xemm...` == patched 2-step exactly. Parity verdict stands
+    against smt-hand3 (measured this tick, not assumed).
+- NOT DONE (budget exhausted; resume exactly here):
+  - 0-step fail-closed (smt-0step.kotoba, expect exit 65 own diagnostic
+    "some->> requires an initial option and at least one step").
+  - wasm32 compile --output + browser/node run (option-some 41 -> 84).
+  - sema regression suite (nbb run-tests.cljk, full lock classpath +
+    wt-somethread2 src/test).
+  - commit + push bot/lang-somethread-rebase-20260920 (wt-somethread2 tree
+    currently DIRTY with the applied patch - do not lose it).
+- Next tick (resume exactly): run the 4 remaining gate items above, then
+  commit+push. Patch and probes: /tmp/langcos/iter34-patch.py,
+  r-it34-{2step,first,hand3}.txt, smt-hand3.kotoba.
