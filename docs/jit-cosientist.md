@@ -443,3 +443,37 @@ rerun, then the tick-27 emit-verification hand-patch.
   constant-divisor kernel (no quiet gate needed): expect emitted aarch64
   to switch from the 0x9ac10c00 guarded SDIV body to the smulh+asr form
   when the divisor is constant post-inline.
+
+- 2026-09-23 12:58 JST tick 40 (JIT): quiet gate failed a 34th consecutive
+  time - load1 26.44/20.96 (uptime 12:43, 12:44 JST, 10 CPUs), iostat not
+  run to completion (budget spent on the static emit-verification). Tick-39
+  plan branch (b) EXECUTED - the disasm test ran, no quiet gate needed:
+  (1) compile: bin/amu compile bench/runtime-comparison/kernel_strings.kotoba
+  --target aarch64 --jvm-free --output /tmp/jit_t40_kernel_strings.kexe ->
+  {:ok true, :target :aarch64-kotoba-v1} (NOTE: compile requires --output;
+  without it the CLI fails :usage "source input must use .kotoba..." with
+  exit 64 - misleading error, cost one round-trip). extract-native needed
+  --symbol kernel (ns exports [kernel], not main): 436 bytes, offset 420.
+  (2) disassembly (raw blob wrapped via .incbin, objdump -d, full listing
+  in /tmp/jit_t40_disasm2.txt): imod body at 0x0 IS the guarded-SDIV form
+  - sdiv x2, x0, x1 = 0x9ac10c02 at 0x34, inside the cbz/overflow-check
+  guarded body, then msub at 0x40. The scan loop calls imod via bl (0xd0,
+  0x138 etc.) - NOT inlined - and materializes the constant 1000003 as
+  mov x2,#0x4243; movk x2,#0xf,lsl #16 then passes it in a REGISTER (x1)
+  as a normal argument. smulh count in the whole 436-byte body: 0.
+  sdiv count: 1. VERDICT (static, deterministic, no quiet gate needed):
+  the J-C "connect" lever is GENUINELY ABSENT - even with a literal
+  constant divisor at every call site, neither inlining nor constant
+  propagation to :mir/divisor happens before a64 encoding, so
+  a64-quotient-constant (smulh+asr, ~6.5% busy-host saving measured in
+  the C proxy) never fires. Hypothesis NOT killed - this CONFIRMS the
+  hand-patch opportunity tick 39 hypothesized, and pins the exact two
+  candidate mechanisms: (a) inline imod into scan before encoding, or
+  (b) populate :mir/divisor at the call site during MIR lowering
+  (machine_ir.cljk site ~8709). Next tick: hand-patch (b) on a scratch
+  copy - trace where the call-site literal 1000003 is dropped (inliner
+  keeps it as a register argument) and whether :mir/divisor can be
+  populated there; verify emitted body switches 0x9ac10c02 ->
+  smulh+asr; only then end-to-end measurement on a quiet host.
+  No compiler change (scratch files in /tmp only), no policy change,
+  no sealed claim.

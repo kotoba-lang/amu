@@ -933,3 +933,49 @@ ty 注記なし probe のため過大評価されていた — 以下は型付�
   bafyreibudrj...) + 1-step CIDs unchanged (vs iter 26 canon) + 0-step
   fail-closed + wasm32 compile + node run (option-some 41 -> 84) + sema
   regression suite; then commit+push bot/lang-somethread-rebase-20260920.
+
+## Iteration 34 - multi-step some->> linear-chain patch APPLIED + 2-step KIR parity CONFIRMED; gate partial (budget), no commit (2026-09-23 12:45 JST, amu@9479a174)
+
+- Target hypothesis (carried iters 26-33): linear-chain lower in
+  desugar-some-thread; pass criteria 2-step check PASS with definition CIDs
+  == hand twin AND 1-step CIDs unchanged (iter 26 canon).
+- DONE this tick (terminal stdout healthy; loadavg 12.79, parity-only so speed N/A):
+  - Step (0): amu HEAD 9479a174, deps-lock.edn:80 still pins kotoba-sema
+    9898f0e28b48... -> wt-somethread2 @9401993 (base 9898f0e) on-pin, clean tree.
+  - ITEM 3 APPLIED: linear-chain patch on wt-somethread2 frontend.cljk
+    (python exact-replace, count==1 asserted, 1032->1214 chars): recursive
+    letfn lower :4093-4109 replaced with plain let - single tmp,
+    option-type = (or (resolve-option-type initial) [:option :i64]), payload,
+    threaded = (reduce #(thread-form %1 %2 last?) payload steps),
+    then-expr = (desugar-expr threaded). Coverage-limit comment recorded
+    in-source (option-resulting step not modeled, not silently admitted).
+  - GATE (cp-smt2.txt classpath, amu nbb wasm_cli route, JVM-free):
+    - 2-step (smt-2step.kotoba `(some->> opt (+ 1) (* 2))`): check **PASS
+      (exit 0)** - was REJECT exit 65 pre-patch (r-smt-2step.txt).
+    - 1-step (smt-first.kotoba): check PASS, t
+      `bafyreia2bhjmxm2ljwe7o3urxte2hszr6h2px4wvd6snnvrhid3a7led74` ==
+      iter 26 canon EXACTLY (1-step CIDs unchanged), main
+      `bafyreigqgbc7xhcr33vy7lj5shxo3q2p24wryznlek54zioxyxssdk5zwy`.
+    - 2-step parity: hand twin CIDs EXACT match - t
+      `bafyreig37xemmislrv5e4izf7ks6lao4ykpkfenjqz53ukpm6ahzo2wluy`,
+      main `bafyreicxvki6ooqf4ij4jwg4xw2oqlmwa6bkqykrq7o34cotyfex3vlfb4`.
+  - CANON CORRECTION (iter 33's re-verify was wrong, this tick measured it):
+    thread-form with last?=true places the value LAST, so the linear chain
+    emits (+ 1 (option-value tmp 0)) for step 1, NOT (+ (option-value tmp 0) 1).
+    The iter 31 hand twin smt-hand2.kotoba used the value-first spelling
+    (t bafyreibudrj...) - numerically equal but a different KIR, hence the
+    CID mismatch on first comparison. Corrected hand twin smt-hand3.kotoba
+    `(* 2 (+ 1 (option-value sht 0)))` measures t
+    `bafyreig37xemm...` == patched 2-step exactly. Parity verdict stands
+    against smt-hand3 (measured this tick, not assumed).
+- NOT DONE (budget exhausted; resume exactly here):
+  - 0-step fail-closed (smt-0step.kotoba, expect exit 65 own diagnostic
+    "some->> requires an initial option and at least one step").
+  - wasm32 compile --output + browser/node run (option-some 41 -> 84).
+  - sema regression suite (nbb run-tests.cljk, full lock classpath +
+    wt-somethread2 src/test).
+  - commit + push bot/lang-somethread-rebase-20260920 (wt-somethread2 tree
+    currently DIRTY with the applied patch - do not lose it).
+- Next tick (resume exactly): run the 4 remaining gate items above, then
+  commit+push. Patch and probes: /tmp/langcos/iter34-patch.py,
+  r-it34-{2step,first,hand3}.txt, smt-hand3.kotoba.
