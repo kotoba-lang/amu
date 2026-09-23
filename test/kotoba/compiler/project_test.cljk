@@ -726,8 +726,8 @@
           {'wide.lib (str "(ns wide.lib (:export [f]))"
                           "(defn f"
                           "  ([a :i64] :i64 a)"
-                          "  ([a :i64 b :i64 c :i64 d :i64 e :i64 g :i64] :i64"
-                          "     (+ a (+ b (+ c (+ d (+ e g))))))) ")
+                          "  ([" (apply str (interpose " " (map #(str "p" % " :i64") (range 65)))) "] :i64 "
+                          (reduce (fn [acc p] (str "(+ " p " " acc ")")) "0" (map #(str "p" %) (range 65))) "))")
            'wide.root (str "(ns wide.root (:require [wide.lib :as l]) (:export [main]))"
                            "(defn main [] :i64 (l/f 1))")}
           'wide.root)))))
@@ -737,15 +737,15 @@
 ;; form, at the line the author wrote it on.
 
 (deftest compile-project-attributes-a-refusal-to-the-authoring-module
-  (let [b "(ns example.b (:export [wide]))
+  (let [b (str "(ns example.b (:export [wide]))
 (defn- helper [x :i64] :i64 (+ x 1))
-(defn wide [a :i64 b :i64 c :i64 d :i64 e :i64 f :i64] :i64
-  (+ a (+ b (+ c (+ d (+ e f))))))"
-        a "(ns example.a (:require [example.b :as b]) (:export [main]))
-(defn main [] :i64 (b/wide 1 2 3 4 5 6))"]
+(defn wide [" (apply str (interpose " " (map #(str "p" % " :i64") (range 65)))) "] :i64
+  " (reduce (fn [acc p] (str "(+ " p " " acc ")")) "0" (map #(str "p" %) (range 65))) ")")
+        a (str "(ns example.a (:require [example.b :as b]) (:export [main]))
+(defn main [] :i64 (b/wide " (apply str (interpose " " (range 1 66))) "))")]
     (try
       (compiler/compile-project {'example.a a 'example.b b} 'example.a :x86_64-kotoba-v1)
-      (is false "a six-parameter function was admitted")
+      (is false "a 65-parameter function was admitted")
       (catch clojure.lang.ExceptionInfo error
         (let [data (ex-data error)]
           (is (= :kotoba.error/max-parameters (:kotoba.error/code data))

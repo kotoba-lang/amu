@@ -20,8 +20,14 @@
             ["node:path" :as path]))
 (def root (.resolve path (.dirname path *file*) ".."))
 (def tmp (.mkdtempSync fs (.join path (.tmpdir os) "amu-gpu-compute-")))
+;; The child's environment is built with `Object.assign`, not
+;; `(merge (js->clj (.-env js/process)) env)`: on the kbb engine `js->clj` of
+;; `process.env` answers a JS object, and `merge` of one is
+;; "No protocol method ICollection.-conj defined for type object" -- this
+;; script died there before reaching a GPU (measured 2026-09-22 on macOS).
 (defn- sh [cmd args & [env]]
-  (let [r (child/spawnSync cmd (clj->js args) (clj->js {:encoding "utf8" :env (merge (js->clj (.-env js/process)) env)}))]
+  (let [child-env (js/Object.assign #js {} (.-env js/process) (clj->js (or env {})))
+        r (child/spawnSync cmd (clj->js args) #js {:encoding "utf8" :env child-env})]
     {:status (.-status r) :out (str (.-stdout r)) :err (str (.-stderr r))}))
 (defn- refuse! [reason] (println (str "GPU-COMPUTE\tCOULD-NOT-RUN\t" reason)) (js/process.exit 3))
 (defn- fail! [reason] (println (str "GPU-COMPUTE\tFAIL\t" reason)) (js/process.exit 1))

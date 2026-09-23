@@ -88,8 +88,10 @@
    [:ns-import-clause
     "(ns t (:import [java.lang String]) (:export [f])) (defn f [] 1)"
     :kotoba.error/namespace-export-clause]
-   [:max-parameters-6
-    "(ns t (:export [f])) (defn f [a b c d e g] :i64 0)"
+   ;; One past the bound (64, gmir/max-arity; ADR-0166's case was 6 while
+   ;; the bound was 5).
+   [:max-parameters-65
+    (str "(ns t (:export [f])) (defn f [" (apply str (interpose " " (map #(str "p" %) (range 65)))) "] :i64 0)")
     :kotoba.error/max-parameters]])
 
 (deftest ambient-and-forbidden-forms-always-reject

@@ -83,12 +83,12 @@
 (let [dir (tmpdir)
       root (spit! dir "main.kotoba"
                   (str "(ns example.a (:require [example.b :as b]) (:export [main]))\n"
-                       "(defn main [] :i64 (b/wide 1 2 3 4 5 6))\n"))
+                       "(defn main [] :i64 (b/wide " (apply str (interpose " " (range 1 66))) "))\n"))
       _ (spit! dir "src/example/b.kotoba"
                (str "(ns example.b (:export [wide]))\n"
                     "(defn- helper [x :i64] :i64 (+ x 1))\n"
-                    "(defn wide [a :i64 b :i64 c :i64 d :i64 e :i64 f :i64] :i64\n"
-                    "  (+ a (+ b (+ c (+ d (+ e f))))))\n"))
+                    "(defn wide [" (apply str (interpose " " (map #(str "p" % " :i64") (range 65)))) "] :i64\n"
+                    "  " (reduce (fn [acc p] (str "(+ " p " " acc ")")) "0" (map #(str "p" %) (range 65))) ")\n"))
       src (.join path dir "src")
       out (.join path dir "main.kexe")
       args ["compile" root "--source-path" src "--target" "x86_64" "--output" out "--unpinned"]
