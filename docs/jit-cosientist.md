@@ -477,3 +477,35 @@ rerun, then the tick-27 emit-verification hand-patch.
   smulh+asr; only then end-to-end measurement on a quiet host.
   No compiler change (scratch files in /tmp only), no policy change,
   no sealed claim.
+
+- 2026-09-24 00:52 JST tick 41 (JIT): quiet gate failed a 35th consecutive
+  time - uptime at 00:46: load1 27.15 (5m 24.54, 15m 23.71) on 10 CPUs,
+  iostat cpu idle 44/61/44 percent across 3 samples, never >=90 percent.
+  J-B qualified rerun deferred again (last under-qualified band 5.9-8.8
+  percent, ticks 27-36, unchanged). Branch (b) advanced with a fresh
+  REPRODUCTION of the tick-40 static emit-verification (no quiet gate
+  needed): recompiled bench/runtime-comparison/kernel_strings.kotoba
+  --target aarch64 --jvm-free -> {:ok true} (/tmp/jit_t41_kernel_strings
+  .kexe); extract-native (positional form) -> {:ok true, :symbol kernel,
+  :length 436, :offset 420}, written blob 910 bytes; word-level scan of
+  the extracted blob (scratch t41_disasm.py, LE-decoded objdump -s hex):
+  sdiv count 1 (0x9ac10c02, the guarded-SDIV body), smulh count 0, bl
+  count 5 (out-of-body calls). Caveat recorded honestly: the scratch
+  script's printed instruction OFFSETS are unreliable (double offset
+  arithmetic); the three COUNTS are computed per word and are valid.
+  Tick-40 verdict therefore REPRODUCED on a fresh compile: the literal
+  1000003 stays a register argument, imod is not inlined, :mir/divisor
+  is not populated, a64-quotient-constant never fires - the J-C connect
+  lever remains GENUINELY ABSENT (confirmed-absent, not killed). CLI
+  note for the next tick: `extract-native --input <file>` fails with
+  :decode "input could not be read" - only the positional form
+  (amu extract-native <file> --symbol kernel --output <file>) works;
+  misleading diagnostic, same class as tick 40's missing --output
+  failure on compile. J-B stays open, not-killed/not-confirmed. No
+  compiler change (scratch only: /tmp/jit_t41_*), no policy change, no
+  sealed claim. Next tick first action: hand-patch (b) on a scratch
+  copy - trace where the call-site literal is dropped and whether
+  :mir/divisor can be populated at machine_ir.cljk site ~8709 during
+  MIR lowering; recompile kernel_strings and expect the emitted body to
+  switch sdiv 0x9ac10c02 -> smulh+asr (smulh count 0 -> >=1); only then
+  end-to-end measurement on a quiet host (idle >=90 percent).

@@ -961,7 +961,15 @@
          ;; d053c900 -> f0fd1f87 (its #53): the same identity; d053c900's
          ;; docstring held an unescaped quote and did not compile ("Too many
          ;; arguments to def" on windows-arm64 / android-ndk / browser-matrix).
-         :git/sha "f0fd1f87185d05f589b9bc1f93933ac0b3eccc13"}
+         ;; Advanced 2026-09-24, f0fd1f87 -> ae6684c7 (artifact main, ahead 2,
+         ;; behind 0, forward only, amu-maint): TEST-ONLY delta -- the two
+         ;; commits (699dcaa6 "test: clojure.test -> kotoba.test", ae6684c7
+         ;; merge adr-2809061500) touch .gitignore / deps.edn / nbb.edn and
+         ;; 4 test/*.cljk files, NO tools/kexe_loader*.c and no src, so
+         ;; loader-source-sha256 is NOT skewed (deps.edn :paths are
+         ;; ["src" "resources"], the test tree is not on any consumer's
+         ;; classpath). Main CI green on all runs since 2026-09-23.
+         :git/sha "ae6684c70b4271630f8095ee2fd2ebcceba8c9f9"}
         ;; HELD at 1a2e10c on 2026-09-03 (ADR 0331), 28 commits behind its main,
         ;; while every other pin in this file moved to the tip. The reason, so
         ;; that a lagging pin and a pin with an argument behind it stay
