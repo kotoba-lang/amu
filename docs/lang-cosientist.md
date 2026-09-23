@@ -979,6 +979,41 @@ ty 注記なし probe のため過大評価されていた — 以下は型付�
 - Next tick (resume exactly): run the 4 remaining gate items above, then
   commit+push. Patch and probes: /tmp/langcos/iter34-patch.py,
   r-it34-{2step,first,hand3}.txt, smt-hand3.kotoba.
+## Iteration 36 - worktrees WIPED, linear-chain patch RE-APPLIED, gate items 1-4 still pending (2026-09-24 00:4x JST, amu@28212c47)
+
+- Target hypothesis (unchanged iters 26-35): linear-chain lower in
+  desugar-some-thread; 2-step KIR parity CONFIRMED at iter 34 (t
+  bafyreig37xemmislrv5e4izf7ks6lao4ykpkfenjqz53ukpm6ahzo2wluy ==
+  smt-hand3 twin, 1-step CIDs unchanged vs iter 26 canon).
+- DISASTER + RECOVERY (measured this tick):
+  - ALL three persistent worktrees deleted between ticks:
+    /Users/junkawasaki/github/wt-somethread2 (prunable in git worktree list;
+    the iter 34 UNCOMMITTED linear-chain patch lived only in that dir),
+    wt-kwproj and wt-somethread also gone. External cause unknown.
+  - Patch script /tmp/langcos/iter34-patch.py intact (exact OLD/NEW,
+    count==1 assert); /tmp/langcos otherwise intact (cp-smt2.txt, all
+    smt-*.kotoba probes, r-it34-*.txt measurements, smt-hand3.kotoba).
+  - Pin re-verified: amu deps-lock.edn:80 still pins kotoba-sema
+    9898f0e28b48d54baba68991b2b2c7503c660b92 -> branch base 9401993
+    (off 9898f0e) still on-pin. No rebase needed.
+  - RECOVERED: git worktree prune + git worktree add
+    /Users/junkawasaki/github/wt-somethread2 bot/lang-somethread-rebase-20260920
+    -> clean checkout @9401993; re-ran iter34-patch.py ->
+    "PATCH-OK: replaced 1032 chars with 1214 chars", git diff --stat =
+    21 insertions(+), 17 deletions(-) - BYTE-IDENTICAL to iter 34's
+    measured patch. Gate state re-established; iter 34's check measurements
+    (2-step parity / 1-step CIDs) remain valid evidence for this tree.
+- NOT DONE (tick budget exhausted after recovery): 0-step fail-closed,
+  wasm32 compile + run (option-some 41 -> 84), sema regression suite,
+  commit+push of the re-applied patch. No new compile this tick.
+- loadavg 22.62/23.54/23.71 (gate 7.5) - quiet gate NOT met; target is
+  parity-only so speed N/A.
+- Next tick (in order, BEFORE any other work): commit the re-applied patch
+  on bot/lang-somethread-rebase-20260920 IMMEDIATELY (do not lose the
+  worktree twice), then the 4 remaining gate items on cp-smt2.txt, then
+  push. Worktree: /Users/junkawasaki/github/wt-somethread2 (DIRTY,
+  +21/-17 applied patch, uncommitted as of this tick's end).
+
 ## Iteration 35 - setup re-verified, remaining 4 gate items NOT run, no verdict (2026-09-23 18:56 JST, amu@81cf05a4)
 
 - Target hypothesis (unchanged iters 26-34): linear-chain lower in
