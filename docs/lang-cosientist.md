@@ -979,3 +979,45 @@ ty 注記なし probe のため過大評価されていた — 以下は型付�
 - Next tick (resume exactly): run the 4 remaining gate items above, then
   commit+push. Patch and probes: /tmp/langcos/iter34-patch.py,
   r-it34-{2step,first,hand3}.txt, smt-hand3.kotoba.
+## Iteration 35 - setup re-verified, remaining 4 gate items NOT run, no verdict (2026-09-23 18:56 JST, amu@81cf05a4)
+
+- Target hypothesis (unchanged iters 26-34): linear-chain lower in
+  desugar-some-thread; 2-step KIR parity already CONFIRMED at iter 34
+  (t bafyreig37xemmislrv5e4izf7ks6lao4ykpkfenjqz53ukpm6ahzo2wluy ==
+  smt-hand3 twin `(* 2 (+ 1 (option-value sht 0)))`, 1-step CIDs unchanged
+  vs iter 26 canon bafyreia2bh.../bafyreidbwzh...). Remaining: 4 gate items.
+- Measured this tick (file-redirect; plain terminal stdout still empty;
+  loadavg 27.49/98.70/102.48 - quiet gate NOT met, target parity-only so
+  speed N/A):
+  - STEP (0) re-verified: amu HEAD 81cf05a4 (advanced since iter 34's
+    9479a174) but deps-lock.edn:80 still pins kotoba-sema
+    9898f0e28b48d54baba68991b2b2c7503c660b92 -> wt-somethread2 @9401993
+    (base 9898f0e) STILL on-pin, no rebase needed.
+  - wt-somethread2 tree: branch bot/lang-somethread-rebase-20260920 @9401993,
+    exactly one modified file (src/kotoba/compiler/frontend.cljk, +21/-17)
+    = the iter 34 linear-chain patch, intact and UNCOMMITTED. Re-apply
+    script on disk: /tmp/langcos/iter34-patch.py (if ever lost).
+  - /tmp/langcos intact: cp-smt2.txt verified this tick (single
+    classpath line, 2 wt-somethread2 refs, 0 old wt-somethread refs);
+    all smt-*.kotoba probes + r-it34-{2step,first,hand3,2step-exit}.txt
+    present.
+  - Iter 34 measurements RE-READ (not re-run): 2-step check PASS exit 0
+    (t bafyreig37xemm... / main bafyreicxvki...); 1-step check PASS (t
+    bafyreia2bh... == iter 26 canon exactly).
+- NOT DONE (run budget exhausted during verification, before any new
+  probe): (1) 0-step fail-closed (smt-0step.kotoba, expect exit 65 own
+  diagnostic "some->> requires an initial option and at least one step");
+  (2) wasm32 compile --output + run (option-some 41 -> 84); (3) sema
+  regression suite (nbb run-tests.cljk, full lock classpath +
+  wt-somethread2 src/test); (4) commit + push
+  bot/lang-somethread-rebase-20260920. No new probe, no new CIDs, no
+  numbers, no commit this tick. Hypothesis open.
+- Next tick (resume exactly, in order): run gate items 1-4 on cp-smt2.txt
+  (iter 34's route: nbb direct with lock classpath entries minus the two
+  pinned kotoba-sema dirs, wt-somethread2/{src,resources} substituted),
+  then commit+push. NOTE: the exact check command line was not re-derived
+  this tick (r-it34-cp.txt is a classpath fragment only) - re-derive from
+  bin/amu's nbb route + cp-smt2.txt before running; do not assume the
+  iter 34 form. wt-somethread2 tree is DIRTY with the applied patch -
+  commit it before any other branch work touches that worktree.
+
