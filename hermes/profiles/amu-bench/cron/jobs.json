@@ -11,11 +11,11 @@
         "memory"
       ],
       "id": "f472bbd0b9fc",
-      "model": "qwen3.8-27b-whitehacker",
+      "model": "murakumo/free",
       "name": "amu-bench-iteration",
       "no_agent": false,
       "prompt": "amu co-scientist cowork bot (bench/perfgate 担当)。SOUL.md の「cowork 分担」に従い、15 分の 1 反復を遂行せよ。\n\nまず monitor 測定 (amu_cowork_state.sh の出力) が、あなたが知るすべて。\n- host load が高い (load1 > 7.5) なら測定せず「host busy (数値)」だけを\n  docs/codegen-coscientist.md の当該仮説 evidence に残して報告して終了。\n- NEXT 指定と amu-falsify の evidence の「要 quiet-host 測定」を探し、\n  quiet gate (busy-CPU 分数) を確認して bench/runtime-comparison または\n  perfgate を実行する。perfgate.core/qualify の verdict が正本。\n  qualify しなければ「not-separated」と正直に書く。\n- compiler 変更はしない。測定条件 (host, load, n, ABBA) を evidence に添える。\n- 報告は: 実行した測定 / verdict / 数字。誇張なし。\n\ncron runtime が拒否するコマンド形に注意: `-e`/`-c` スクリプトフラグ、\nheredoc でのスクリプト流し込み、`rm -rf` は使わない。コードはファイルに書いて実行する。",
-      "provider": "kotoba",
+      "provider": "murakumo",
       "schedule": {
         "kind": "cron",
         "expr": "7 1-23/3 * * *",

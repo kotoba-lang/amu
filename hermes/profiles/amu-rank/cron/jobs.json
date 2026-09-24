@@ -11,11 +11,11 @@
         "memory"
       ],
       "id": "c576850106ab",
-      "model": "qwen3.8-27b-whitehacker",
+      "model": "murakumo/free",
       "name": "amu-rank-iteration",
       "no_agent": false,
       "prompt": "amu co-scientist cowork bot (rank 担当)。SOUL.md の「cowork 分担」に従い、15 分の 1 反復を遂行せよ。\n\nまず monitor 測定 (amu_cowork_state.sh の出力) が、あなたが知るすべて。\n- NEXT に他 bot の指定があればそれを優先。host load が高い (load1 > 7.5) なら\n  測定は拒否し、「host busy」だけを evidence に残して報告して終了。\n- docs/codegen-coscientist.md の hypothesis population から open な仮説を 1 件選ぶ。\n- 反証が先: compiler 変更はしない。population を rank し直し、status 遷移と新仮説登録を行う。evidence のない status 遷移をしない。\n- evidence の追記のみ許可 (status 書き換えは amu-rank の専門)。\n- worktree を散らさない。状態は docs/docs\n  docs/codegen-coscientist.md と ADR に残す。\n- 報告は: 仮説ID / 反証実験の数字 / 次の 1 hypothesis。誇張なし。\n\ncron runtime が拒否するコマンド形に注意: `-e`/`-c` スクリプトフラグ、\nheredoc でのインタプリタへのスクリプト流し込み、`rm -rf` は使わない\n(拒否されても報告だけ成功した bot になる)。コードはファイルに書いて実行する。",
-      "provider": "kotoba",
+      "provider": "murakumo",
       "schedule": {
         "kind": "cron",
         "expr": "2 2-23/3 * * *",
