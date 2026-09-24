@@ -1,0 +1,169 @@
+(ns bench.boundary-repeat.measure
+  "adr-2609242100 P5 second half: does a typed value cross a trust boundary
+  more than once, and would a verdict memo keyed by (ValueCID, type identity)
+  save the walk? A measurement, not a test: it prints numbers and asserts
+  nothing about them. Run from the repo root:
+
+    node bin/kbb --backend sci --classpath . scripts/bench-boundary-repeat.cljk
+
+  Three probes:
+
+    reference  osaho `bounded-typed-value!` on a host-built
+               [:ref :conformance/list] of n cells, against the cost of the
+               key a ValueCID memo would need: `kotoba.value.codec/value-cid`
+               of the same value on the canonical wire (encode + sha256).
+               n stops at 100 because `runtime->wire-value` is host-recursive
+               and overflows the bounded stack at 1,000 cells.
+    esm        the restricted-ESM export wrapper (`assertTypedValue`) on a
+               list built inside the module and passed back to an identity
+               export (arg in + result out = two walks of the same frozen
+               value), against an iterative sha256 over every node: a lower
+               bound for any CID of an in-memory value, since it omits the
+               canonical encoding.
+    todo-app   examples/todo-app.kotoba driven the way runtime/dom-driver.mjs
+               drives it (a fresh instance per interaction, step then view on
+               the same instance): how many document nodes are walked, and
+               how many of them are the host-held state re-entering a fresh
+               instance (the one repeat that happens).
+
+  Last line: SCANNED<TAB>n; n = 0 exits 2 (nothing measured)."
+  (:require ["node:fs" :as fs]
+            ["node:os" :as os]
+            ["node:path" :as path]
+            ["node:crypto" :as crypto]
+            ["node:url" :as url]
+            [cljs.reader :as reader]
+            [kotoba.sema :as sema]
+            [kotoba.kir :as ir]
+            [kotoba.kir.value :as value]
+            [kotoba.script :as script]
+            [kotoba.value.codec :as codec]
+            [kotoba.compiler.value-codec :as value-codec]
+            [kotoba.compiler.effect-row :as effect-row]))
+
+(def root (.cwd js/process))
+(def directory (.mkdtempSync fs (.join path (.tmpdir os) "amu-boundary-repeat-")))
+(def scanned (atom 0))
+
+(defn- now [] (js/performance.now))
+(defn- median-ms [f k]
+  (let [ts (sort (repeatedly k (fn [] (let [t (now)] (f) (- (now) t)))))]
+    (nth ts (quot k 2))))
+(defn- ms [x] (.toFixed x 2))
+(defn- line! [& parts] (swap! scanned inc) (println (apply str parts)))
+
+(defn- compile-kir [source fuel]
+  (let [hir (sema/analyze source)]
+    (effect-row/check hir {})
+    (ir/lower hir {:oracle-fuel fuel})))
+
+(def corpus
+  (reader/read-string
+   (fs/readFileSync (.join path root "resources" "kotoba" "compiler" "typed-value-conformance.edn") "utf8")))
+(def list-source (:source (first (:boundary corpus))))
+
+(def list-type [:variant :conformance/list [[:empty :i64] [:cons [:ref :conformance/cell]]]])
+(def cell-type [:record :conformance/cell [[:head :i64] [:tail [:ref :conformance/list]]]])
+(def schemas {:conformance/list list-type :conformance/cell cell-type})
+
+(defn- host-list [n]
+  (loop [i n acc [list-type :empty (js/BigInt 0)]]
+    (if (zero? i) acc (recur (dec i) [list-type :cons [cell-type (js/BigInt i) acc]]))))
+
+;; --- reference -------------------------------------------------------------
+(doseq [n [10 100]]
+  (let [x (host-list n)
+        walk (median-ms #(value/bounded-typed-value! list-type x) 5)
+        wire (value-codec/runtime->wire-value list-type schemas x)
+        encode (median-ms #(codec/encode-value wire) 3)
+        cid (median-ms #(codec/value-cid wire) 3)]
+    (line! "reference cells=" n " nodes=" (inc (* 3 n)) " walk-ms=" (ms walk)
+           " value-cid-ms=" (ms cid) " (encode-ms=" (ms encode) ")"
+           " cid/walk=" (.toFixed (/ cid walk) 1))))
+
+;; --- esm -------------------------------------------------------------------
+(defn- esm-module [kir fuel id]
+  (let [file (.join path directory (str id ".mjs"))]
+    (fs/writeFileSync file (script/emit kir {:fuel fuel}))
+    file))
+
+(def ^:private hash-walk*
+  ;; Plain JS, like the walk it is compared with (the emitted ESM is JIT-ed
+  ;; JS; an SCI-interpreted loop here would inflate the ratio about fourfold).
+  (js/Function. "v" "h"
+                (str "const st=[v];while(st.length){const y=st.pop();"
+                     "if(Array.isArray(y)){h.update('['+y.length);for(let i=y.length-1;i>=0;i--)st.push(y[i]);}"
+                     "else h.update(String(y));}return h.digest();")))
+
+(defn- hash-walk
+  "sha256 fed every node of `v`, iteratively: the least work any CID of an
+  in-memory value costs (no canonical encoding)."
+  [v]
+  (hash-walk* v (.createHash crypto "sha256")))
+
+(def roundtrip-source
+  (str (.replace list-source "(:export [main sum])" "(:export [main sum id build])")
+       " (defn id [l [:ref :conformance/list]] [:ref :conformance/list] l)"))
+
+(def todo-file (.join path root "examples" "todo-app.kotoba"))
+
+(defn- instrument-docs
+  "Count document walks in an emitted module: nodes walked, and per full walk
+  the node count, so the held-state walk can be told from constructor walks."
+  [text]
+  (let [head "const assertDoc=v=>{if(Array.isArray(v)&&docChecked.has(v))return v;"
+        tick "if(++state.nodes>"]
+    (when-not (and (.includes text head) (.includes text tick))
+      (throw (js/Error. "todo-app: emitted assertDoc no longer has the instrumented shape")))
+    (-> text
+        (.replace head (str "const assertDoc=v=>{if(Array.isArray(v)&&docChecked.has(v)){globalThis.__p5b.hits++;return v;}"
+                            "const n0=globalThis.__p5b.nodes;const r=assertDoc0(v);"
+                            "globalThis.__p5b.walks.push(globalThis.__p5b.nodes-n0);return r;};"
+                            "const assertDoc0=v=>{"))
+        (.replace tick (str "globalThis.__p5b.nodes++;" tick)))))
+
+(defn- import! [file] (js/import (str (.pathToFileURL url file))))
+
+(-> (import! (esm-module (compile-kir roundtrip-source 1000000) 100000000 "roundtrip"))
+    (.then
+     (fn [m]
+       (let [x (.instantiateKotoba m #js {})]
+         (doseq [n [1000 5000 20000]]
+           (let [v ((aget x "build") (js/BigInt n))
+                 two-walks (median-ms #((aget x "id") v) 7)
+                 walk (/ two-walks 2)
+                 hashed (median-ms #(hash-walk v) 7)]
+             (line! "esm cells=" n " nodes=" (inc (* 3 n)) " walk-ms=" (ms walk)
+                    " hash-walk-ms=" (ms hashed) " hash/walk=" (.toFixed (/ hashed walk) 1)))))
+       (let [file (.join path directory "todo.mjs")]
+         (fs/writeFileSync file (instrument-docs (script/emit (compile-kir (fs/readFileSync todo-file "utf8") 512)
+                                                              {:fuel 5000000})))
+         (import! file))))
+    (.then
+     (fn [m]
+       (set! (.-__p5b js/globalThis) #js {:hits 0 :nodes 0 :walks #js []})
+       (let [p (.-__p5b js/globalThis)
+             state (atom ((aget (.instantiateKotoba m #js {}) "init")))
+             held (atom 0)]
+         (dotimes [i 10]
+           (let [a (.instantiateKotoba m #js {})]
+             (set! (.-walks p) #js [])
+             (reset! state ((aget a "step") @state "draft" "input" (str "item " i)))
+             (swap! held + (or (aget (.-walks p) 0) 0)))
+           (let [b (.instantiateKotoba m #js {})]
+             (set! (.-walks p) #js [])
+             (reset! state ((aget b "step") @state "add" "click" ""))
+             (swap! held + (or (aget (.-walks p) 0) 0))
+             ((aget b "view") @state)))
+         (line! "todo-app interactions=20 doc-nodes-walked=" (.-nodes p)
+                " held-state-reentry-nodes=" @held
+                " share=" (.toFixed (/ @held (.-nodes p)) 4)
+                " memo-hits=" (.-hits p)))))
+    (.then (fn [_]
+             (println (str "SCANNED\t" @scanned))
+             (.rmSync fs directory #js {:recursive true :force true})
+             (.exit js/process (if (pos? @scanned) 0 2))))
+    (.catch (fn [e]
+              (println (str "FAILED " (.-message e)))
+              (println (str "SCANNED\t" @scanned))
+              (.exit js/process 1))))
