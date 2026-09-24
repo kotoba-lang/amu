@@ -1,18 +1,47 @@
 ;; Aggregate ABI v8: a cons list recursing through a record ([:ref] both
-;; ways) and a generic option/result over the recursive type. total of
-;; (1..5) = 15. Five cells, because a typed value is still bounded by the
-;; shared ADT budget (osaho adt-node-limit 64) that every target re-checks.
+;; ways). Builds (1..1000) and sums it: 500500.
+;;
+;; It built FIVE cells until 2026-09-24, because every target re-checked a
+;; typed value in full against osaho's adt-node-limit 64 / adt-depth-limit 12
+;; on every construction and call -- native carries the list as one-word
+;; handles and never re-checked, but `amu compile` seals a pure entry by
+;; running the reference interpreter, which did. adr-2609242100 P2/P3 moved
+;; that check to the trust boundary only, so the list is as long as the run's
+;; budgets allow.
+;;
+;; Shape: `build` and `total` are `loop`s, so the reference interpreter
+;; trampolines them and never nests (it spends host stack per interpreted
+;; call; a self-recursive `build` of 1000 exhausts it as :host/stack-exhausted).
+;; `total` reads the list through three small helpers because a
+;; `match-variant` binder is not in scope inside a `recur` of an enclosing
+;; `loop` (kotoba-sema, measured 2026-09-24: "unbound or dynamic symbol ...
+;; c is not a parameter").
+;;
+;; Budgets: about 4,000 function entries, above the default 512, so the
+;; conformance fixture compiles with --fuel 100000 (the verifier re-derives
+;; the sealed value under it) and runs with KEXE_FUEL=100000.
 (ns probe.list (:export [main])
   (:schemas {:app/list [:variant :app/list [[:empty :i64] [:cons [:ref :app/cell]]]]
              :app/cell [:record :app/cell [[:head :i64] [:tail [:ref :app/list]]]]}))
 (defn kons [h :i64 t [:ref :app/list]] [:ref :app/list]
   (variant-new [:variant :app/list [[:empty :i64] [:cons [:ref :app/cell]]]] :cons
     (record-new [:record :app/cell [[:head :i64] [:tail [:ref :app/list]]]] h t)))
-(defn build [n :i64 acc [:ref :app/list]] [:ref :app/list]
-  (if (= n 0) acc (build (- n 1) (kons n acc))))
-(defn total [l [:ref :app/list] acc :i64] :i64
+(defn cells [l [:ref :app/list]] :i64
   (match-variant l [:variant :app/list [[:empty :i64] [:cons [:ref :app/cell]]]]
-    (:empty _ acc)
-    (:cons c (total (record-get [:record :app/cell [[:head :i64] [:tail [:ref :app/list]]]] c :tail)
-                    (+ acc (record-get [:record :app/cell [[:head :i64] [:tail [:ref :app/list]]]] c :head))))))
-(defn main [] :i64 (total (build 5 (variant-new [:variant :app/list [[:empty :i64] [:cons [:ref :app/cell]]]] :empty 0)) 0))
+    (:empty e 0)
+    (:cons c 1)))
+(defn head-of [l [:ref :app/list]] :i64
+  (match-variant l [:variant :app/list [[:empty :i64] [:cons [:ref :app/cell]]]]
+    (:empty e 0)
+    (:cons c (record-get [:record :app/cell [[:head :i64] [:tail [:ref :app/list]]]] c :head))))
+(defn tail-of [l [:ref :app/list]] [:ref :app/list]
+  (match-variant l [:variant :app/list [[:empty :i64] [:cons [:ref :app/cell]]]]
+    (:empty e l)
+    (:cons c (record-get [:record :app/cell [[:head :i64] [:tail [:ref :app/list]]]] c :tail))))
+(defn build [count :i64] [:ref :app/list]
+  (loop [n count acc (variant-new [:variant :app/list [[:empty :i64] [:cons [:ref :app/cell]]]] :empty 0)]
+    (if (= n 0) acc (recur (- n 1) (kons n acc)))))
+(defn total [list [:ref :app/list]] :i64
+  (loop [l list acc 0]
+    (if (= (cells l) 0) acc (recur (tail-of l) (+ acc (head-of l))))))
+(defn main [] :i64 (total (build 1000)))

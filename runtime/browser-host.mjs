@@ -14,10 +14,14 @@ const MAX_TYPED_DESCRIPTORS = 64;
 // :language/static :type-descriptor-depth / -nodes -- a typed ABI descriptor.
 const TYPE_DESCRIPTOR_DEPTH_LIMIT = 12;
 const TYPE_DESCRIPTOR_NODE_LIMIT = 64;
-// :language/value :adt-depth / :adt-nodes -- one typed runtime value
-// (transitional: P2/P3 remove these from internal values).
-const ADT_VALUE_DEPTH_LIMIT = 12;
-const ADT_VALUE_NODE_LIMIT = 64;
+// :language/boundary :traversal-nodes / :traversal-bytes -- what ONE walk of
+// an untrusted value (a typed capability result) may visit and read (P3 of
+// adr-2609242100). There is no depth or node limit on a typed value inside
+// the instance any more: a value is walked in full once, when it is admitted
+// from the host, and every guest operation after that checks only the node it
+// touches and the tags of that node's immediate operands.
+const BOUNDARY_TRAVERSAL_NODES = 65536;
+const BOUNDARY_TRAVERSAL_BYTES = 1048576;
 // :language/value :document-* -- one :document value.
 const DOCUMENT_DEPTH_LIMIT = 8;
 const DOCUMENT_NODE_LIMIT = 4096;
@@ -1308,25 +1312,35 @@ function createTypedRuntime(abi, typedCapCall, allow) {
   const sameTrustedDescriptor = (left, right) =>
     left === right || (Array.isArray(left) && trustedDescriptors.has(left) &&
                        sameDescriptor(left, right));
-  const assertValue = (descriptor, value,
-                       state = { depth: 0, nodes: 0, indirectBytes: 0,
-                                 listItems: 0 }) => {
+  // An immediate operand of a compound node: a scalar is checked in full
+  // (O(1) or its own bounded size); a compound must be a value this host
+  // admitted (`trustedValues`), carrying the declared descriptor. Never walks
+  // into the operand -- it was walked when it was admitted.
+  const assertOperand = (descriptor, value) => {
     descriptor = resolveDescriptor(descriptor);
-    state.nodes += 1;
-    state.depth += 1;
-    // ADT value depth raised 8→12 with kir ADR 0025 (structured kv EDN spines)
-    if (state.depth > ADT_VALUE_DEPTH_LIMIT || state.nodes > ADT_VALUE_NODE_LIMIT)
-      reject("invalid-typed-value", "typed runtime value budget exceeded");
-    try {
+    if (typeof descriptor === "string") return assertValue(descriptor, value);
+    const kind = descriptor[0];
+    if (kind === "document") return assertDocument(value);
+    if (!Array.isArray(value) || !trustedValues.has(value))
+      reject("invalid-typed-value", "forged compound typed value rejected");
+    if (kind === "result") {
+      if (typeof value[0] !== "boolean" || value.length !== 2)
+        reject("invalid-typed-value", "parametric result shape is invalid");
+    } else if (!sameTrustedDescriptor(value[0], descriptor))
+      reject("invalid-typed-value", "typed operand descriptor is invalid");
+    return value;
+  };
+  // One node: its own shape, and its immediate operands by tag
+  // (`assertOperand`). O(width of the node), whatever the size of the value.
+  const assertValue = (descriptor, value) => {
+    descriptor = resolveDescriptor(descriptor);
+    {
       if (descriptor === "i64") return i64(value);
       if (descriptor === "f64") return f64(value);
       if (descriptor === "f32") return f32(value);
       if (descriptor === "string") {
         const bytes = utf8Length(value);
         if (bytes > 65536) reject("invalid-typed-value", "typed string is oversized");
-        state.indirectBytes += bytes;
-        if (state.indirectBytes > 1048576)
-          reject("invalid-typed-value", "typed aggregate indirect byte budget exceeded");
         return value;
       }
       if (descriptor === "keyword") {
@@ -1334,9 +1348,6 @@ function createTypedRuntime(abi, typedCapCall, allow) {
           reject("invalid-typed-value", "typed keyword is invalid");
         const bytes = utf8Length(value);
         if (bytes > 512) reject("invalid-typed-value", "typed keyword is invalid");
-        state.indirectBytes += bytes;
-        if (state.indirectBytes > 1048576)
-          reject("invalid-typed-value", "typed aggregate indirect byte budget exceeded");
         return value;
       }
       if (descriptor === "symbol") {
@@ -1352,9 +1363,6 @@ function createTypedRuntime(abi, typedCapCall, allow) {
       if (descriptor === "bytes") {
         if (!(value instanceof Uint8Array) || value.byteLength > 65536)
           reject("invalid-typed-value", "typed bytes value is invalid or oversized");
-        state.indirectBytes += value.byteLength;
-        if (state.indirectBytes > 1048576)
-          reject("invalid-typed-value", "typed aggregate indirect byte budget exceeded");
         return value;
       }
       const kind = descriptor[0];
@@ -1429,34 +1437,31 @@ function createTypedRuntime(abi, typedCapCall, allow) {
         if (!sameTrustedDescriptor(value[0], descriptor) || typeof value[1] !== "boolean" ||
             value.length !== (value[1] ? 3 : 2))
           reject("invalid-typed-value", "generic option shape or descriptor is invalid");
-        if (value[1]) assertValue(descriptor[1], value[2], state);
+        if (value[1]) assertOperand(descriptor[1], value[2]);
       } else if (kind === "result") {
         if (typeof value[0] !== "boolean" || value.length !== 2)
           reject("invalid-typed-value", "parametric result shape is invalid");
-        assertValue(value[0] ? descriptor[1] : descriptor[2], value[1], state);
+        assertOperand(value[0] ? descriptor[1] : descriptor[2], value[1]);
       } else if (kind === "variant") {
         const member = descriptor[2].find(([name]) => name === value[1]);
         if (!sameTrustedDescriptor(value[0], descriptor) || value.length !== 3 || member === undefined)
           reject("invalid-typed-value", "variant shape, descriptor, or tag is invalid");
-        assertValue(member[1], value[2], state);
+        assertOperand(member[1], value[2]);
       } else if (kind === "vector") {
         if (!sameTrustedDescriptor(value[0], descriptor) || value.length !== descriptor[1].length + 1)
           reject("invalid-typed-value", "heterogeneous vector shape is invalid");
-        descriptor[1].forEach((item, index) => assertValue(item, value[index + 1], state));
+        descriptor[1].forEach((item, index) => assertOperand(item, value[index + 1]));
       } else if (kind === "list") {
         if (!sameTrustedDescriptor(value[0], descriptor) || value.length !== 2 ||
             !Array.isArray(value[1]) || !Object.isFrozen(value[1]) ||
             value[1].length > 16384)
           reject("invalid-typed-value", "bounded list shape is invalid");
-        state.listItems += value[1].length;
-        if (state.listItems > 16384)
-          reject("invalid-typed-value", "typed aggregate list item budget exceeded");
-        value[1].forEach(item => assertValue(descriptor[1], item, state));
+        value[1].forEach(item => assertOperand(descriptor[1], item));
       } else if (kind === "set") {
         if (!sameTrustedDescriptor(value[0], descriptor) || value.length !== 2 || !Array.isArray(value[1]) ||
             !Object.isFrozen(value[1]) || value[1].length > 32)
           reject("invalid-typed-value", "typed set shape is invalid");
-        value[1].forEach(item => assertValue(descriptor[1], item, state));
+        value[1].forEach(item => assertOperand(descriptor[1], item));
         for (let index = 1; index < value[1].length; index += 1)
           if (compareValue(descriptor[1], value[1][index - 1], value[1][index]) >= 0)
             reject("invalid-typed-value", "typed set is duplicated or non-canonical");
@@ -1467,8 +1472,8 @@ function createTypedRuntime(abi, typedCapCall, allow) {
         value[1].forEach(entry => {
           if (!Array.isArray(entry) || !Object.isFrozen(entry) || entry.length !== 2)
             reject("invalid-typed-value", "typed map entry shape is invalid");
-          assertValue(descriptor[1], entry[0], state);
-          assertValue(descriptor[2], entry[1], state);
+          assertOperand(descriptor[1], entry[0]);
+          assertOperand(descriptor[2], entry[1]);
         });
         for (let index = 1; index < value[1].length; index += 1)
           if (compareValue(descriptor[1], value[1][index - 1][0], value[1][index][0]) >= 0)
@@ -1476,10 +1481,10 @@ function createTypedRuntime(abi, typedCapCall, allow) {
       } else if (kind === "record") {
         if (!sameTrustedDescriptor(value[0], descriptor) || value.length !== descriptor[2].length + 1)
           reject("invalid-typed-value", "record shape or nominal descriptor is invalid");
-        descriptor[2].forEach(([, type], index) => assertValue(type, value[index + 1], state));
+        descriptor[2].forEach(([, type], index) => assertOperand(type, value[index + 1]));
       } else reject("invalid-typed-value", "unknown compound typed value");
       return value;
-    } finally { state.depth -= 1; }
+    }
   };
   const checkedBuilder = value => {
     if ((typeof value !== "object" && typeof value !== "function") || value === null ||
@@ -1494,46 +1499,80 @@ function createTypedRuntime(abi, typedCapCall, allow) {
   // typedCapCall is the host provider. Guest compounds must be interned
   // through builders; the host inject is allowed to return a new tree.
   // Echoing an already-admitted request still works (http wasm proof).
-  const admitHostResult = (descriptor, value) => {
-    if (value !== null && typeof value === "object" && trustedValues.has(value))
-      return assertValue(descriptor, value);
-    if (descriptor === "document" || (Array.isArray(descriptor) && descriptor[0] === "document"))
-      return admitDocument(value);
-    if (typeof descriptor === "string")
-      return assertValue(descriptor, value);
-    const kind = Array.isArray(descriptor) ? descriptor[0] : descriptor;
-    if (kind === "variant") {
-      if (!Array.isArray(value) || value.length !== 3)
-        reject("invalid-typed-value", "variant shape, descriptor, or tag is invalid");
-      const tag = value[1];
-      const member = descriptor[2].find(([name]) => name === tag);
-      if (member === undefined)
-        reject("invalid-typed-value", "variant shape, descriptor, or tag is invalid");
-      const payload = admitHostResult(member[1], value[2]);
-      return admitValue(descriptor, Object.freeze([descriptor, tag, payload]));
+  //
+  // This is the trust boundary (P3 of adr-2609242100): the host's tree is
+  // walked in full, ONCE, post-order over an explicit stack -- no JS
+  // recursion depth depends on the value -- and charged against the boundary
+  // traversal budget. Past it: `budget/boundary-nodes` / `budget/boundary-bytes`.
+  const admitHostResult = (rootDescriptor, rootValue,
+                           budget = { nodes: BOUNDARY_TRAVERSAL_NODES,
+                                      bytes: BOUNDARY_TRAVERSAL_BYTES }) => {
+    let nodes = 0;
+    let bytes = 0;
+    const visit = (descriptor, value) => {
+      if (++nodes > budget.nodes)
+        reject("budget/boundary-nodes", "typed host value exceeds the boundary traversal node budget");
+      if (typeof value === "string") bytes += utf8Length(value);
+      else if (value instanceof Uint8Array) bytes += value.byteLength;
+      if (bytes > budget.bytes)
+        reject("budget/boundary-bytes", "typed host value exceeds the boundary traversal byte budget");
+      if (value !== null && typeof value === "object" && trustedValues.has(value))
+        return { value: assertValue(descriptor, value) };
+      if (descriptor === "document" || (Array.isArray(descriptor) && descriptor[0] === "document"))
+        return { value: admitDocument(value) };
+      descriptor = resolveDescriptor(descriptor);
+      if (typeof descriptor === "string")
+        return { value: assertValue(descriptor, value) };
+      const kind = descriptor[0];
+      if (kind === "variant") {
+        if (!Array.isArray(value) || value.length !== 3)
+          reject("invalid-typed-value", "variant shape, descriptor, or tag is invalid");
+        const tag = value[1];
+        const member = descriptor[2].find(([name]) => name === tag);
+        if (member === undefined)
+          reject("invalid-typed-value", "variant shape, descriptor, or tag is invalid");
+        return { children: [[member[1], value[2]]],
+                 build: ([payload]) => admitValue(descriptor, Object.freeze([descriptor, tag, payload])) };
+      }
+      if (kind === "record") {
+        if (!Array.isArray(value) || value.length !== descriptor[2].length + 1)
+          reject("invalid-typed-value", "record shape is invalid");
+        return { children: descriptor[2].map(([, type], index) => [type, value[index + 1]]),
+                 build: fields => admitValue(descriptor, Object.freeze([descriptor, ...fields])) };
+      }
+      if (kind === "option") {
+        if (!Array.isArray(value) || typeof value[1] !== "boolean")
+          reject("invalid-typed-value", "generic option shape or descriptor is invalid");
+        if (!value[1])
+          return { value: admitValue(descriptor, Object.freeze([descriptor, false])) };
+        return { children: [[descriptor[1], value[2]]],
+                 build: ([inner]) => admitValue(descriptor, Object.freeze([descriptor, true, inner])) };
+      }
+      if (kind === "result") {
+        if (!Array.isArray(value) || typeof value[0] !== "boolean" || value.length !== 2)
+          reject("invalid-typed-value", "parametric result shape is invalid");
+        return { children: [[value[0] ? descriptor[1] : descriptor[2], value[1]]],
+                 build: ([inner]) => admitValue(descriptor, Object.freeze([value[0], inner])) };
+      }
+      return { value: admitValue(descriptor, Array.isArray(value) ? Object.freeze(value) : value) };
+    };
+    const root = visit(rootDescriptor, rootValue);
+    if (root.children === undefined) return root.value;
+    const stack = [{ node: root, results: [] }];
+    for (;;) {
+      const top = stack[stack.length - 1];
+      if (top.results.length < top.node.children.length) {
+        const [descriptor, value] = top.node.children[top.results.length];
+        const child = visit(descriptor, value);
+        if (child.children === undefined) top.results.push(child.value);
+        else stack.push({ node: child, results: [] });
+      } else {
+        const built = top.node.build(top.results);
+        stack.pop();
+        if (stack.length === 0) return built;
+        stack[stack.length - 1].results.push(built);
+      }
     }
-    if (kind === "record") {
-      if (!Array.isArray(value) || value.length !== descriptor[2].length + 1)
-        reject("invalid-typed-value", "record shape is invalid");
-      const fields = descriptor[2].map(([, type], index) =>
-        admitHostResult(type, value[index + 1]));
-      return admitValue(descriptor, Object.freeze([descriptor, ...fields]));
-    }
-    if (kind === "option") {
-      if (!Array.isArray(value) || typeof value[1] !== "boolean")
-        reject("invalid-typed-value", "generic option shape or descriptor is invalid");
-      if (!value[1])
-        return admitValue(descriptor, Object.freeze([descriptor, false]));
-      const inner = admitHostResult(descriptor[1], value[2]);
-      return admitValue(descriptor, Object.freeze([descriptor, true, inner]));
-    }
-    if (kind === "result") {
-      if (!Array.isArray(value) || typeof value[0] !== "boolean" || value.length !== 2)
-        reject("invalid-typed-value", "parametric result shape is invalid");
-      const inner = admitHostResult(value[0] ? descriptor[1] : descriptor[2], value[1]);
-      return admitValue(descriptor, Object.freeze([value[0], inner]));
-    }
-    return admitValue(descriptor, Array.isArray(value) ? Object.freeze(value) : value);
   };
   const documentEntries = value => {
     value = assertDocument(value);
