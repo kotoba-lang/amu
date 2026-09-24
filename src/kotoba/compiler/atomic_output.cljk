@@ -50,7 +50,18 @@
                                                 (.-O_EXCL constants)
                                                 (.-O_WRONLY constants)) 384)]
               (.closeSync fs fd)
-              file))))
+              file)
+      ;; Kotoba (features #{:kotoba}): the :cljs half, so the compiler refuses
+      ;; the Node file-system calls by name; a #?-only body read as nothing --
+      ;; "function body is empty" (adr-2609111900).
+      :default (let [dir (.mkdtempSync fs (.join path (.tmpdir os) (str prefix)))
+                     file (.join path dir (str "file" suffix))
+                     constants (.-constants fs)
+                     fd (.openSync fs file (bit-or (.-O_CREAT constants)
+                                                   (.-O_EXCL constants)
+                                                   (.-O_WRONLY constants)) 384)]
+                 (.closeSync fs fd)
+                 file))))
 
 (defn- reject! [message data cause]
   (throw (ex-info message (merge {:phase :output} data) cause)))
@@ -170,11 +181,21 @@
        (catch clojure.lang.ExceptionInfo error (throw error))
        (catch Exception error
          (reject! "atomic output failed" {:path path :reason @operation} error))
-       (finally (Files/deleteIfExists temporary))))))))
+       (finally (Files/deleteIfExists temporary)))))
+      ;; Kotoba (features #{:kotoba}): the :cljs half, so the compiler refuses
+      ;; the Node file-system calls by name (adr-2609111900: a #?-only body
+      ;; read as nothing -- "function body is empty").
+      :default
+      (do
+        (when-not (byte-source? bytes)
+          (reject! "output must be a byte array" {:path path} nil))
+        (write-bytes-node! path bytes options)))))
 
 (defn- utf8-bytes [^String text]
   #?(:clj (.getBytes text StandardCharsets/UTF_8)
-     :cljs (js/Buffer.from text "utf8")))
+     :cljs (js/Buffer.from text "utf8")
+     ;; Kotoba: the :cljs form, refused by name (host Buffer); see temp-file!.
+     :default (js/Buffer.from text "utf8")))
 
 (defn write-edn!
   "`pr-str` the value and publish it. On `:cljs` the value goes through
