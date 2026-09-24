@@ -1,0 +1,44 @@
+(ns examples.bytes-slots
+  {:kotoba/export [main overlong surrogate not-a-byte too-large]})
+
+;; `:bytes` and the string constructor (context ABI v11 slots 352-376,
+;; superproject adr-2609242330), executed against the HOST's answers, a
+;; decimal place per head:
+;;
+;;   string-from-utf8 [e3 81 82 f0 9f 98 80]  -> "あ😀", 7 bytes
+;;   bytes-from-vector-i64 [104 105]           -> 2 bytes (bytes-count)
+;;   bytes-at of it at 1                       -> 105
+;;   bytes-slice [1,3) of [1 2 3 4]            -> 2 bytes
+;;   bytes-concat of that and [9]              -> 3 bytes
+;;   vector-i64-from-bytes, vector-at 2        -> 9
+;;   string-from-utf8 of the empty bytes       -> 0 bytes
+;;
+;; main = 1000000*7 + 100000*2 + 1000*105 + 100*2 + 10*3 + 9 + 0
+;;      = 7000000 + 200000 + 105000 + 200 + 30 + 9 = 7305239
+;; The four refusals each trap, NAMED by the loader's report
+;; (KEXE_TRAP {:kind :value :reason :utf8/overlong} ...).
+(defn main [] :i64
+  (let [text (string-from-utf8 (bytes-from-vector-i64 (vector-i64 227 129 130 240 159 152 128)))
+        hi (bytes-from-vector-i64 (vector-i64 104 105))
+        mid (bytes-slice (bytes-from-vector-i64 (vector-i64 1 2 3 4)) 1 3)
+        joined (bytes-concat mid (bytes-from-vector-i64 (vector-i64 9)))]
+    (+ (* 1000000 (string-byte-length text))
+       (* 100000 (bytes-count hi))
+       (* 1000 (bytes-at hi 1))
+       (* 100 (bytes-count mid))
+       (* 10 (bytes-count joined))
+       (vector-at (vector-i64-from-bytes joined) 2)
+       (string-byte-length (string-from-utf8 (bytes-empty))))))
+
+(defn overlong [] :i64
+  (string-byte-length (string-from-utf8 (bytes-from-vector-i64 (vector-i64 192 128)))))
+
+(defn surrogate [] :i64
+  (string-byte-length (string-from-utf8 (bytes-from-vector-i64 (vector-i64 237 160 128)))))
+
+(defn not-a-byte [] :i64
+  (bytes-count (bytes-from-vector-i64 (vector-i64 1 256))))
+
+(defn too-large [] :i64
+  (bytes-count (bytes-concat (bytes-from-vector-i64 (vector-alloc 65536))
+                             (bytes-from-vector-i64 (vector-i64 0)))))

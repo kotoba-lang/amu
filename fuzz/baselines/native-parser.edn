@@ -68,7 +68,15 @@
 ;; SIGSEGV/SIGBUS handler that names :host/stack-exhausted. The argv/handle
 ;; parser is untouched; floors carried forward NOT re-measured (same machine
 ;; limitation as above; no libFuzzer runtime here).
+;; Advanced 2026-09-25 for context ABI v11 (superproject adr-2609242330): the
+;; string constructor and three bytes slots (string_from_utf8,
+;; bytes_from_vector, bytes_slice, bytes_concat), the named value traps the
+;; supervisor reports (value_trap), and fuzz cases 32-35 driving the four
+;; slots over vector handles. The argv/handle parser the floors measure is
+;; untouched; the deterministic-sanitized arm (ASan + UBSan, 20,000 cases)
+;; passed with the new cases in the mix. Floors carried forward NOT
+;; re-measured (same machine limitation as above).
 {:format :kotoba.fuzz-baseline/v2
- :loader-source-sha256 "ad409b71749774ee512cf247e341443aab32fa10a4b7b1bba7681bfeef9c2f9c"
+ :loader-source-sha256 "287f6037506402a034c00a6cfe09464518221920b36735affc69309c5eab6e88"
  :profiles {:x64 {:min-cov 60 :min-features 100 :min-corpus 20}
             :arm64 {:min-cov 60 :min-features 100 :min-corpus 18}}}

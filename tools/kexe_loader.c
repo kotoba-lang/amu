@@ -267,22 +267,22 @@ static void write_stderr_checked(const char *bytes, size_t length) {
 static uint64_t kexe_vector_budget = KEXE_VECTOR_CAPACITY;
 static uint64_t kexe_vector_item_budget = KEXE_VECTOR_ITEM_CAPACITY;
 
-struct kexe_context_v10 {
+struct kexe_context_v11 {
   uint64_t version;
   uint64_t fuel;
   uint64_t allow[4];
-  int64_t (*cap_call)(struct kexe_context_v10 *, uint64_t, int64_t);
-  int64_t (*pair_new)(struct kexe_context_v10 *, int64_t, int64_t);
-  int64_t (*pair_first)(struct kexe_context_v10 *, int64_t);
-  int64_t (*pair_second)(struct kexe_context_v10 *, int64_t);
+  int64_t (*cap_call)(struct kexe_context_v11 *, uint64_t, int64_t);
+  int64_t (*pair_new)(struct kexe_context_v11 *, int64_t, int64_t);
+  int64_t (*pair_first)(struct kexe_context_v11 *, int64_t);
+  int64_t (*pair_second)(struct kexe_context_v11 *, int64_t);
   /* kgraph-* (ADR-2607198300): an all-integer EAVT datom store, the native
    * analog of kotoba-lang/kotoba's string/EDN-based kgraph-assert!/
    * kgraph-query -- this loader has no addressable guest buffer for EDN
    * text, so entity/attribute/value are caller-assigned integer ids. */
-  int64_t (*kgraph_assert)(struct kexe_context_v10 *, int64_t, int64_t, int64_t);
-  int64_t (*kgraph_get)(struct kexe_context_v10 *, int64_t, int64_t);
-  int64_t (*kgraph_count)(struct kexe_context_v10 *, int64_t);
-  int64_t (*kgraph_entity_at)(struct kexe_context_v10 *, int64_t, int64_t);
+  int64_t (*kgraph_assert)(struct kexe_context_v11 *, int64_t, int64_t, int64_t);
+  int64_t (*kgraph_get)(struct kexe_context_v11 *, int64_t, int64_t);
+  int64_t (*kgraph_count)(struct kexe_context_v11 *, int64_t);
+  int64_t (*kgraph_entity_at)(struct kexe_context_v11 *, int64_t, int64_t);
   /* string-* (ADR-2607198300 follow-up): a string VALUE is a pair(offset,
    * length) handle (built by backend/{aarch64,x86_64}.clj's
    * emit-string-literal via the existing pair_new above). `offset` addresses
@@ -293,9 +293,9 @@ struct kexe_context_v10 {
    * (dynamic string-concat results), via `-offset - 1`. string-byte-length
    * is exactly pair_second (no new host function); string=?/string-concat
    * need one each, since only they read/copy the addressed bytes. */
-  int64_t (*string_equal)(struct kexe_context_v10 *, int64_t, int64_t);
-  int64_t (*string_concat)(struct kexe_context_v10 *, int64_t, int64_t);
-  int64_t (*typed_cap_call)(struct kexe_context_v10 *, uint64_t, uint64_t,
+  int64_t (*string_equal)(struct kexe_context_v11 *, int64_t, int64_t);
+  int64_t (*string_concat)(struct kexe_context_v11 *, int64_t, int64_t);
+  int64_t (*typed_cap_call)(struct kexe_context_v11 *, uint64_t, uint64_t,
                             uint64_t, int64_t);
   /* string-substring over an arbitrary string value. Unlike string_concat
    * this allocates no pool bytes: a substring is a contiguous byte range of
@@ -303,12 +303,12 @@ struct kexe_context_v10 {
    * addressing the same bytes. Only the boundary CHECK needs the host (the
    * guest cannot load a byte), which is why this is a whole-operation
    * callback like string_equal/string_concat rather than a byte accessor. */
-  int64_t (*string_substring)(struct kexe_context_v10 *, int64_t, int64_t,
+  int64_t (*string_substring)(struct kexe_context_v11 *, int64_t, int64_t,
                               int64_t);
   /* string-code-point-at. Like string_substring this exists only because the
    * guest cannot load a byte; unlike it the result is a scalar, not a handle,
    * so nothing is allocated at all. */
-  int64_t (*string_code_point_at)(struct kexe_context_v10 *, int64_t, int64_t);
+  int64_t (*string_code_point_at)(struct kexe_context_v11 *, int64_t, int64_t);
   /* vector-i64 / vector-f64 (ADR-2608030300). A vector VALUE is a one-word
    * handle into `vectors` below, exactly as a pair value is a handle into
    * `pairs` -- so the backends need no new value representation and every
@@ -326,12 +326,12 @@ struct kexe_context_v10 {
    * `vector_new_empty` has no KIR operation of its own -- KIR's `vector-new`
    * is variadic and this ABI is not, so the backends expand a literal into
    * an empty vector plus one `vector_conj` per element. */
-  int64_t (*vector_new_empty)(struct kexe_context_v10 *);
-  int64_t (*vector_conj)(struct kexe_context_v10 *, int64_t, int64_t);
-  int64_t (*vector_count)(struct kexe_context_v10 *, int64_t);
-  int64_t (*vector_at)(struct kexe_context_v10 *, int64_t, int64_t);
-  int64_t (*vector_assoc)(struct kexe_context_v10 *, int64_t, int64_t, int64_t);
-  int64_t (*vector_drop)(struct kexe_context_v10 *, int64_t, int64_t);
+  int64_t (*vector_new_empty)(struct kexe_context_v11 *);
+  int64_t (*vector_conj)(struct kexe_context_v11 *, int64_t, int64_t);
+  int64_t (*vector_count)(struct kexe_context_v11 *, int64_t);
+  int64_t (*vector_at)(struct kexe_context_v11 *, int64_t, int64_t);
+  int64_t (*vector_assoc)(struct kexe_context_v11 *, int64_t, int64_t, int64_t);
+  int64_t (*vector_drop)(struct kexe_context_v11 *, int64_t, int64_t);
   /* ABI v4 (superproject ADR-2609010200). Two slots the copying table above
    * cannot express, and the reason this struct became v4 rather than v3
    * with an appended tail: a guest bakes these offsets in, so a v3 host
@@ -362,8 +362,8 @@ struct kexe_context_v10 {
    * dead. That split is deliberate: a host-side alias check would have to
    * walk the handle table on every write, which is the O(length) cost this
    * slot exists to remove. */
-  int64_t (*vector_alloc)(struct kexe_context_v10 *, int64_t);
-  int64_t (*vector_assoc_in_place)(struct kexe_context_v10 *, int64_t, int64_t,
+  int64_t (*vector_alloc)(struct kexe_context_v11 *, int64_t);
+  int64_t (*vector_assoc_in_place)(struct kexe_context_v11 *, int64_t, int64_t,
                                    int64_t);
   /* ABI v5 (2026-09-15). `string-index-of`: the first UTF-8 byte offset of
    * the needle in the haystack, or -1. Until v5 this was a source rewrite in
@@ -382,7 +382,7 @@ struct kexe_context_v10 {
    * answer is always an offset `string_substring` accepts. The version is 5
    * for the same one-directional reason it became 4: a v4 host has nothing
    * at 216. */
-  int64_t (*string_index_of)(struct kexe_context_v10 *, int64_t, int64_t);
+  int64_t (*string_index_of)(struct kexe_context_v11 *, int64_t, int64_t);
   /* ABI v6 (2026-09-16, superproject ADR-2609160044). The region reset
    * behind `(arena-scope body)`: ENTER pushes the four arenas' marks --
    * pair_used, string_pool_used, vector_used, vector_item_used -- and LEAVE
@@ -402,8 +402,8 @@ struct kexe_context_v10 {
    * (KEXE_ARENA_SCOPE_DEPTH), so a runaway nest traps rather than writing
    * past it. The version is 6 for the same one-directional reason it
    * became 5: a v5 host has nothing at 224 / 232. */
-  int64_t (*arena_enter)(struct kexe_context_v10 *);
-  int64_t (*arena_leave)(struct kexe_context_v10 *);
+  int64_t (*arena_enter)(struct kexe_context_v11 *);
+  int64_t (*arena_leave)(struct kexe_context_v11 *);
   /* ABI v7 (2026-09-16). Four text operations the command binaries measured
    * to need on the host side: `string_compare` (byte order, -1/0/1 --
    * sort's merge spent one host call per code point comparing),
@@ -414,10 +414,10 @@ struct kexe_context_v10 {
    * when none; blank = C isspace -- wc and awk walked words a code point
    * per call). Reference semantics: osaho kotoba.kir.value. Version 7 for
    * the same one-directional reason as every bump before it. */
-  int64_t (*string_compare)(struct kexe_context_v10 *, int64_t, int64_t);
-  int64_t (*string_fold_ascii)(struct kexe_context_v10 *, int64_t);
-  int64_t (*string_find_blank)(struct kexe_context_v10 *, int64_t, int64_t);
-  int64_t (*string_skip_blank)(struct kexe_context_v10 *, int64_t, int64_t);
+  int64_t (*string_compare)(struct kexe_context_v11 *, int64_t, int64_t);
+  int64_t (*string_fold_ascii)(struct kexe_context_v11 *, int64_t);
+  int64_t (*string_find_blank)(struct kexe_context_v11 *, int64_t, int64_t);
+  int64_t (*string_skip_blank)(struct kexe_context_v11 *, int64_t, int64_t);
   /* ABI v8 (2026-09-16). Two line operations the line-oriented commands
    * measured to need: `string_index_of_from` (the first occurrence of
    * NEEDLE in S at or after byte offset FROM, a code-point boundary in
@@ -431,8 +431,8 @@ struct kexe_context_v10 {
    * kotoba-mir carries the fourth in r8 / x4, the fifth C parameter here.
    * Reference semantics: osaho kotoba.kir.value. Version 8 for the same
    * one-directional reason as every bump before it. */
-  int64_t (*string_index_of_from)(struct kexe_context_v10 *, int64_t, int64_t, int64_t);
-  int64_t (*string_compare_lines)(struct kexe_context_v10 *, int64_t, int64_t, int64_t, int64_t);
+  int64_t (*string_index_of_from)(struct kexe_context_v11 *, int64_t, int64_t, int64_t);
+  int64_t (*string_compare_lines)(struct kexe_context_v11 *, int64_t, int64_t, int64_t, int64_t);
   /* ABI v9 (2026-09-16, kotoba-native ADR 0084, owner decision). Six DATA
    * pointers, written once here before the guest starts and never again,
    * through which the compiler emits five handle operations IN LINE --
@@ -460,8 +460,41 @@ struct kexe_context_v10 {
    * applies exactly as string_concat's does). Measured 2026-09-16: a 33 MB
    * `cut -f2` spent 44% of its time minting views for its searches and
    * appends -- a newline needle per search, a line view, a field view. */
-  int64_t (*string_find_byte)(struct kexe_context_v10 *, int64_t, int64_t, int64_t);
-  int64_t (*string_append_range)(struct kexe_context_v10 *, int64_t, int64_t, int64_t, int64_t);
+  int64_t (*string_find_byte)(struct kexe_context_v11 *, int64_t, int64_t, int64_t);
+  int64_t (*string_append_range)(struct kexe_context_v11 *, int64_t, int64_t, int64_t, int64_t);
+  /* ABI v11 (2026-09-25, superproject adr-2609242330). `:bytes` as a guest
+   * value, and the string constructor the language did not have. A bytes
+   * VALUE is a vector handle whose items are 0..255 -- the type keeps it
+   * apart from a vector-i64, the representation is shared -- so bytes-empty,
+   * bytes-count and bytes-at ARE vector_new_empty / vector_count /
+   * vector_at. These four are what the vector table cannot express:
+   *
+   *   string_from_utf8(b)       a pool string holding b's bytes, CANONICAL
+   *                             UTF-8 only: the first bad sequence is named
+   *                             (value_trap below) and the guest trapped --
+   *                             never replaced with U+FFFD. At most 65536
+   *                             bytes (string/too-large), charged to the
+   *                             string pool (:budget/bytes).
+   *   bytes_from_vector(v)      a COPY of v, refusing an item outside
+   *                             [0,255] (bytes/item-out-of-range) and more
+   *                             than 65536 items (bytes/too-large). Also the
+   *                             lowering of vector-i64-from-bytes, whose
+   *                             items always pass; it must copy, since a
+   *                             view would let vector-assoc! on the result
+   *                             write into the bytes.
+   *   bytes_slice(b, s, e)      a VIEW of [s, e) (bytes/slice-bounds), for
+   *                             string_substring's reason: nothing writes
+   *                             inside a bytes slice.
+   *   bytes_concat(a, b)        a copy, at most 65536 bytes.
+   *
+   * Reference semantics: osaho kotoba.kir (eval) and kotoba.kir.value
+   * (utf8-invalid-at, whose walk and names string_from_utf8 repeats).
+   * Version 11 for the same one-directional reason as every bump before
+   * it: a v10 host has nothing at 352-376. */
+  int64_t (*string_from_utf8)(struct kexe_context_v11 *, int64_t);
+  int64_t (*bytes_from_vector)(struct kexe_context_v11 *, int64_t);
+  int64_t (*bytes_slice)(struct kexe_context_v11 *, int64_t, int64_t, int64_t);
+  int64_t (*bytes_concat)(struct kexe_context_v11 *, int64_t, int64_t);
   /* Data-only (not part of the compiler-checked context-abi): the mmap'd
    * code+literal-data region's base address and real (unpadded) byte
    * length, set once in main() before the guest runs. Never read by guest
@@ -484,14 +517,18 @@ struct kexe_granted_region_v1 {
   uint64_t length;
 };
 
-struct kexe_shared_v10 {
-  struct kexe_context_v10 context;
+struct kexe_shared_v11 {
+  struct kexe_context_v11 context;
   int64_t result;
   uint64_t completed;
   /* Which per-run budget a guest exhausted, written by the child just before
    * the trap it raises and read by the supervisor to NAME the trap
    * (:budget/cells, :budget/bytes). 0 = none recorded. P4 of adr-2609242100. */
   uint64_t budget_exhausted;
+  /* Which VALUE trap a guest hit, written by the refusing host call just
+   * before its SIGILL and read by the supervisor to name it (ABI v11: the
+   * utf8, string/too-large and bytes refusals). 0 = none recorded. */
+  uint64_t value_trap;
   uint64_t pair_used;
   struct kexe_pair_v1 pairs[KEXE_PAIR_MAX];
   /* One flag per pair handle: the (offset, length) bytes this handle
@@ -543,10 +580,10 @@ struct kexe_shared_v10 {
 /* granted regions: the pool ends the mapping. A guest overrun must leave the
  * mapping and trap, not reach a handle table -- so nothing may be appended
  * after it, and this is the check rather than a comment saying so. */
-_Static_assert(offsetof(struct kexe_shared_v10, region_pool) +
-                   KEXE_REGION_POOL_BYTES == sizeof(struct kexe_shared_v10),
+_Static_assert(offsetof(struct kexe_shared_v11, region_pool) +
+                   KEXE_REGION_POOL_BYTES == sizeof(struct kexe_shared_v11),
                "region pool must be the last field of the shared mapping");
-_Static_assert(offsetof(struct kexe_context_v10, fuel) == 8, "fuel ABI drift");
+_Static_assert(offsetof(struct kexe_context_v11, fuel) == 8, "fuel ABI drift");
 
 /* P4 of adr-2609242100: the budget a refusing host call records before its
  * trap, so the supervisor can name it (see report_budget_trap). */
@@ -555,65 +592,100 @@ _Static_assert(offsetof(struct kexe_context_v10, fuel) == 8, "fuel ABI drift");
 #define KEXE_BUDGET_CELLS_VECTOR_ITEMS 3u
 #define KEXE_BUDGET_BYTES_STRING_POOL 4u
 #define KEXE_BUDGET_CELLS_KGRAPH 5u
-static struct kexe_shared_v10 *kexe_shared_for_budget = NULL;
+static struct kexe_shared_v11 *kexe_shared_for_budget = NULL;
 static void note_budget(uint64_t reason) {
   if (kexe_shared_for_budget != NULL && kexe_shared_for_budget->budget_exhausted == 0)
     kexe_shared_for_budget->budget_exhausted = reason;
 }
 
-_Static_assert(offsetof(struct kexe_context_v10, allow) == 16, "allow ABI drift");
-_Static_assert(offsetof(struct kexe_context_v10, cap_call) == 48, "cap ABI drift");
-_Static_assert(offsetof(struct kexe_context_v10, pair_new) == 56, "pair ABI drift");
-_Static_assert(offsetof(struct kexe_context_v10, pair_first) == 64, "pair ABI drift");
-_Static_assert(offsetof(struct kexe_context_v10, pair_second) == 72, "pair ABI drift");
-_Static_assert(offsetof(struct kexe_context_v10, kgraph_assert) == 80, "kgraph ABI drift");
-_Static_assert(offsetof(struct kexe_context_v10, kgraph_get) == 88, "kgraph ABI drift");
-_Static_assert(offsetof(struct kexe_context_v10, kgraph_count) == 96, "kgraph ABI drift");
-_Static_assert(offsetof(struct kexe_context_v10, kgraph_entity_at) == 104, "kgraph ABI drift");
-_Static_assert(offsetof(struct kexe_context_v10, typed_cap_call) == 128, "typed cap ABI drift");
-_Static_assert(offsetof(struct kexe_context_v10, string_equal) == 112, "string ABI drift");
-_Static_assert(offsetof(struct kexe_context_v10, string_concat) == 120, "string ABI drift");
-_Static_assert(offsetof(struct kexe_context_v10, string_substring) == 136, "string ABI drift");
-_Static_assert(offsetof(struct kexe_context_v10, string_code_point_at) == 144, "string ABI drift");
+/* ABI v11: the named value traps. The index is what a host call records in
+ * `value_trap`; the text is the trap's name, identical to osaho's reference
+ * interpreter and the ESM prelude, so one program refused on three backends
+ * is refused with one name. */
+#define KEXE_VALUE_TRAP_COUNT 12u
+static const char *const kexe_value_trap_names[KEXE_VALUE_TRAP_COUNT] = {
+  NULL,
+  "utf8/unexpected-continuation", /* 1 */
+  "utf8/overlong",                /* 2 */
+  "utf8/invalid-byte",            /* 3 */
+  "utf8/truncated",               /* 4 */
+  "utf8/bad-continuation",        /* 5 */
+  "utf8/surrogate",               /* 6 */
+  "utf8/above-max",               /* 7 */
+  "string/too-large",             /* 8 */
+  "bytes/item-out-of-range",      /* 9 */
+  "bytes/too-large",              /* 10 */
+  "bytes/slice-bounds",           /* 11 */
+};
+#define KEXE_VALUE_TRAP_STRING_TOO_LARGE 8u
+#define KEXE_VALUE_TRAP_BYTES_ITEM_OUT_OF_RANGE 9u
+#define KEXE_VALUE_TRAP_BYTES_TOO_LARGE 10u
+#define KEXE_VALUE_TRAP_BYTES_SLICE_BOUNDS 11u
+/* kotoba.kir.value/string-value-byte-limit and bytes-value-byte-limit. */
+#define KEXE_STRING_VALUE_LIMIT 65536u
+#define KEXE_BYTES_VALUE_LIMIT 65536u
+static void note_value_trap(uint64_t code) {
+  if (kexe_shared_for_budget != NULL && kexe_shared_for_budget->value_trap == 0)
+    kexe_shared_for_budget->value_trap = code;
+}
+
+_Static_assert(offsetof(struct kexe_context_v11, allow) == 16, "allow ABI drift");
+_Static_assert(offsetof(struct kexe_context_v11, cap_call) == 48, "cap ABI drift");
+_Static_assert(offsetof(struct kexe_context_v11, pair_new) == 56, "pair ABI drift");
+_Static_assert(offsetof(struct kexe_context_v11, pair_first) == 64, "pair ABI drift");
+_Static_assert(offsetof(struct kexe_context_v11, pair_second) == 72, "pair ABI drift");
+_Static_assert(offsetof(struct kexe_context_v11, kgraph_assert) == 80, "kgraph ABI drift");
+_Static_assert(offsetof(struct kexe_context_v11, kgraph_get) == 88, "kgraph ABI drift");
+_Static_assert(offsetof(struct kexe_context_v11, kgraph_count) == 96, "kgraph ABI drift");
+_Static_assert(offsetof(struct kexe_context_v11, kgraph_entity_at) == 104, "kgraph ABI drift");
+_Static_assert(offsetof(struct kexe_context_v11, typed_cap_call) == 128, "typed cap ABI drift");
+_Static_assert(offsetof(struct kexe_context_v11, string_equal) == 112, "string ABI drift");
+_Static_assert(offsetof(struct kexe_context_v11, string_concat) == 120, "string ABI drift");
+_Static_assert(offsetof(struct kexe_context_v11, string_substring) == 136, "string ABI drift");
+_Static_assert(offsetof(struct kexe_context_v11, string_code_point_at) == 144, "string ABI drift");
 /* The arena is now mapped over KEXE_PAIR_MAX and BOUNDED by
  * kexe_pair_budget, so the tripwire moves from a literal to the max it is
  * sized by -- it still catches a change to the array, which is what it is
  * for, and no longer asserts a number that stopped being the ceiling. */
-_Static_assert(sizeof(((struct kexe_shared_v10 *)0)->pairs)
+_Static_assert(sizeof(((struct kexe_shared_v11 *)0)->pairs)
                    == KEXE_PAIR_MAX * sizeof(struct kexe_pair_v1),
                "pair arena size drift");
-_Static_assert(sizeof(((struct kexe_shared_v10 *)0)->datoms) == 98304,
+_Static_assert(sizeof(((struct kexe_shared_v11 *)0)->datoms) == 98304,
                "kgraph arena size drift");
-_Static_assert(offsetof(struct kexe_context_v10, vector_new_empty) == 152, "vector ABI drift");
-_Static_assert(offsetof(struct kexe_context_v10, vector_conj) == 160, "vector ABI drift");
-_Static_assert(offsetof(struct kexe_context_v10, vector_count) == 168, "vector ABI drift");
-_Static_assert(offsetof(struct kexe_context_v10, vector_at) == 176, "vector ABI drift");
-_Static_assert(offsetof(struct kexe_context_v10, vector_assoc) == 184, "vector ABI drift");
-_Static_assert(offsetof(struct kexe_context_v10, vector_drop) == 192, "vector ABI drift");
-_Static_assert(offsetof(struct kexe_context_v10, vector_alloc) == 200, "vector ABI drift");
-_Static_assert(offsetof(struct kexe_context_v10, vector_assoc_in_place) == 208, "vector ABI drift");
-_Static_assert(offsetof(struct kexe_context_v10, string_index_of) == 216, "string ABI drift");
-_Static_assert(offsetof(struct kexe_context_v10, arena_enter) == 224, "region ABI drift");
-_Static_assert(offsetof(struct kexe_context_v10, arena_leave) == 232, "region ABI drift");
-_Static_assert(offsetof(struct kexe_context_v10, string_compare) == 240, "text ABI drift");
-_Static_assert(offsetof(struct kexe_context_v10, string_fold_ascii) == 248, "text ABI drift");
-_Static_assert(offsetof(struct kexe_context_v10, string_find_blank) == 256, "text ABI drift");
-_Static_assert(offsetof(struct kexe_context_v10, string_skip_blank) == 264, "text ABI drift");
-_Static_assert(offsetof(struct kexe_context_v10, string_index_of_from) == 272, "line ABI drift");
-_Static_assert(offsetof(struct kexe_context_v10, string_compare_lines) == 280, "line ABI drift");
-_Static_assert(offsetof(struct kexe_context_v10, pair_used_pointer) == 288, "inline ABI drift");
-_Static_assert(offsetof(struct kexe_context_v10, pairs_base) == 296, "inline ABI drift");
-_Static_assert(offsetof(struct kexe_context_v10, pair_validated_base) == 304, "inline ABI drift");
-_Static_assert(offsetof(struct kexe_context_v10, vector_used_pointer) == 312, "inline ABI drift");
-_Static_assert(offsetof(struct kexe_context_v10, vectors_base) == 320, "inline ABI drift");
-_Static_assert(offsetof(struct kexe_context_v10, vector_items_base) == 328, "inline ABI drift");
-_Static_assert(offsetof(struct kexe_context_v10, string_find_byte) == 336, "range ABI drift");
-_Static_assert(offsetof(struct kexe_context_v10, string_append_range) == 344, "range ABI drift");
-_Static_assert(sizeof(((struct kexe_shared_v10 *)0)->string_pool) == KEXE_STRING_POOL_MAX,
+_Static_assert(offsetof(struct kexe_context_v11, vector_new_empty) == 152, "vector ABI drift");
+_Static_assert(offsetof(struct kexe_context_v11, vector_conj) == 160, "vector ABI drift");
+_Static_assert(offsetof(struct kexe_context_v11, vector_count) == 168, "vector ABI drift");
+_Static_assert(offsetof(struct kexe_context_v11, vector_at) == 176, "vector ABI drift");
+_Static_assert(offsetof(struct kexe_context_v11, vector_assoc) == 184, "vector ABI drift");
+_Static_assert(offsetof(struct kexe_context_v11, vector_drop) == 192, "vector ABI drift");
+_Static_assert(offsetof(struct kexe_context_v11, vector_alloc) == 200, "vector ABI drift");
+_Static_assert(offsetof(struct kexe_context_v11, vector_assoc_in_place) == 208, "vector ABI drift");
+_Static_assert(offsetof(struct kexe_context_v11, string_index_of) == 216, "string ABI drift");
+_Static_assert(offsetof(struct kexe_context_v11, arena_enter) == 224, "region ABI drift");
+_Static_assert(offsetof(struct kexe_context_v11, arena_leave) == 232, "region ABI drift");
+_Static_assert(offsetof(struct kexe_context_v11, string_compare) == 240, "text ABI drift");
+_Static_assert(offsetof(struct kexe_context_v11, string_fold_ascii) == 248, "text ABI drift");
+_Static_assert(offsetof(struct kexe_context_v11, string_find_blank) == 256, "text ABI drift");
+_Static_assert(offsetof(struct kexe_context_v11, string_skip_blank) == 264, "text ABI drift");
+_Static_assert(offsetof(struct kexe_context_v11, string_index_of_from) == 272, "line ABI drift");
+_Static_assert(offsetof(struct kexe_context_v11, string_compare_lines) == 280, "line ABI drift");
+_Static_assert(offsetof(struct kexe_context_v11, pair_used_pointer) == 288, "inline ABI drift");
+_Static_assert(offsetof(struct kexe_context_v11, pairs_base) == 296, "inline ABI drift");
+_Static_assert(offsetof(struct kexe_context_v11, pair_validated_base) == 304, "inline ABI drift");
+_Static_assert(offsetof(struct kexe_context_v11, vector_used_pointer) == 312, "inline ABI drift");
+_Static_assert(offsetof(struct kexe_context_v11, vectors_base) == 320, "inline ABI drift");
+_Static_assert(offsetof(struct kexe_context_v11, vector_items_base) == 328, "inline ABI drift");
+_Static_assert(offsetof(struct kexe_context_v11, string_find_byte) == 336, "range ABI drift");
+_Static_assert(offsetof(struct kexe_context_v11, string_append_range) == 344, "range ABI drift");
+_Static_assert(offsetof(struct kexe_context_v11, string_from_utf8) == 352, "bytes ABI drift");
+_Static_assert(offsetof(struct kexe_context_v11, bytes_from_vector) == 360, "bytes ABI drift");
+_Static_assert(offsetof(struct kexe_context_v11, bytes_slice) == 368, "bytes ABI drift");
+_Static_assert(offsetof(struct kexe_context_v11, bytes_concat) == 376, "bytes ABI drift");
+_Static_assert(sizeof(((struct kexe_shared_v11 *)0)->string_pool) == KEXE_STRING_POOL_MAX,
                "string pool size drift");
-_Static_assert(sizeof(((struct kexe_shared_v10 *)0)->vectors) == KEXE_VECTOR_MAX * 16u,
+_Static_assert(sizeof(((struct kexe_shared_v11 *)0)->vectors) == KEXE_VECTOR_MAX * 16u,
                "vector arena size drift");
-_Static_assert(sizeof(((struct kexe_shared_v10 *)0)->vector_items) == KEXE_VECTOR_ITEM_MAX * 8u,
+_Static_assert(sizeof(((struct kexe_shared_v11 *)0)->vector_items) == KEXE_VECTOR_ITEM_MAX * 8u,
                "vector item arena size drift");
 _Static_assert(KEXE_VECTOR_ITEM_LIMIT <= KEXE_VECTOR_ITEM_MAX, "a vector must fit the arena");
 
@@ -651,9 +723,9 @@ static int parse_i64(const char *text, int64_t *value) {
 static volatile sig_atomic_t supervisor_timed_out = 0;
 static volatile sig_atomic_t supervised_pid = -1;
 
-static int64_t checked_cap_call(struct kexe_context_v10 *context,
+static int64_t checked_cap_call(struct kexe_context_v11 *context,
                                 uint64_t cap_id, int64_t value) {
-  if (context == NULL || context->version != 10 || cap_id > 255 ||
+  if (context == NULL || context->version != 11 || cap_id > 255 ||
       (context->allow[cap_id / 64] & (UINT64_C(1) << (cap_id % 64))) == 0) {
     raise(SIGILL);
     return 0;
@@ -661,9 +733,9 @@ static int64_t checked_cap_call(struct kexe_context_v10 *context,
   return value + 1;
 }
 
-static int64_t checked_pair_new(struct kexe_context_v10 *context,
+static int64_t checked_pair_new(struct kexe_context_v11 *context,
                                 int64_t first, int64_t second) {
-  struct kexe_shared_v10 *shared = (struct kexe_shared_v10 *)context;
+  struct kexe_shared_v11 *shared = (struct kexe_shared_v11 *)context;
 /* Every allocation site bounds the index against the ARRAY as well as the
  * budget, and the second half is not redundant belt-and-braces -- it is what
  * makes the invariant LOCAL.
@@ -681,10 +753,10 @@ static int64_t checked_pair_new(struct kexe_context_v10 *context,
  * where the compiler is looking. Clang (macOS, and every local build here)
  * did not warn, so this was invisible until CI compiled it with
  * -Wall -Wextra -Werror. */
-  if (context == NULL || context->version != 10 ||
+  if (context == NULL || context->version != 11 ||
       shared->pair_used >= kexe_pair_budget ||
       shared->pair_used >= KEXE_PAIR_MAX) {
-    if (context != NULL && context->version == 10) note_budget(KEXE_BUDGET_CELLS_PAIRS);
+    if (context != NULL && context->version == 11) note_budget(KEXE_BUDGET_CELLS_PAIRS);
     raise(SIGILL);
     return 0;
   }
@@ -695,10 +767,10 @@ static int64_t checked_pair_new(struct kexe_context_v10 *context,
   return (int64_t)(index + 1);
 }
 
-static int64_t checked_pair_get(struct kexe_context_v10 *context,
+static int64_t checked_pair_get(struct kexe_context_v11 *context,
                                 int64_t handle, int second) {
-  struct kexe_shared_v10 *shared = (struct kexe_shared_v10 *)context;
-  if (context == NULL || context->version != 10 || handle <= 0 ||
+  struct kexe_shared_v11 *shared = (struct kexe_shared_v11 *)context;
+  if (context == NULL || context->version != 11 || handle <= 0 ||
       (uint64_t)handle > shared->pair_used) {
     raise(SIGILL);
     return 0;
@@ -707,11 +779,11 @@ static int64_t checked_pair_get(struct kexe_context_v10 *context,
   return second ? pair->second : pair->first;
 }
 
-static int64_t checked_pair_first(struct kexe_context_v10 *context, int64_t handle) {
+static int64_t checked_pair_first(struct kexe_context_v11 *context, int64_t handle) {
   return checked_pair_get(context, handle, 0);
 }
 
-static int64_t checked_pair_second(struct kexe_context_v10 *context, int64_t handle) {
+static int64_t checked_pair_second(struct kexe_context_v11 *context, int64_t handle) {
   return checked_pair_get(context, handle, 1);
 }
 
@@ -731,7 +803,7 @@ static int64_t checked_pair_second(struct kexe_context_v10 *context, int64_t han
  * `vector-assoc!`, which `kotoba-sema` refuses on a handle it cannot prove
  * dead. Everything else in this table still allocates. */
 
-static struct kexe_vector_v1 *resolve_vector(struct kexe_shared_v10 *shared,
+static struct kexe_vector_v1 *resolve_vector(struct kexe_shared_v11 *shared,
                                              int64_t handle) {
   if (handle <= 0 || (uint64_t)handle > shared->vector_used) return NULL;
   return &shared->vectors[(uint64_t)handle - 1];
@@ -745,7 +817,7 @@ static struct kexe_vector_v1 *resolve_vector(struct kexe_shared_v10 *shared,
  * `probe_denied` is: it is the one call that is safe here and permitted by
  * the syscall sandbox.
  *
- * Deliberately NOT used at the `context == NULL` or `version != 10` sites --
+ * Deliberately NOT used at the `context == NULL` or `version != 11` sites --
  * those are a malformed call, not a budget -- nor at the
  * `KEXE_VECTOR_ITEM_LIMIT` bound, which is
  * `kotoba.kir.value/vector-item-limit` and is checked separately BECAUSE the
@@ -765,7 +837,7 @@ static void arena_exhausted(const char *reason) {
 /* Mints a handle for an already-populated slice. Returns 0 when the handle
  * table is full; every caller turns that into SIGILL, so exhaustion is a trap
  * rather than a silently wrong vector. */
-static int64_t intern_vector(struct kexe_shared_v10 *shared,
+static int64_t intern_vector(struct kexe_shared_v11 *shared,
                              uint64_t offset, uint64_t length) {
   if (shared->vector_used >= kexe_vector_budget ||
       shared->vector_used >= KEXE_VECTOR_MAX) return 0;
@@ -778,18 +850,18 @@ static int64_t intern_vector(struct kexe_shared_v10 *shared,
 /* An empty vector starts at the current arena top, which is what lets the
  * conj chain a `vector-new` literal expands into take the copy-free path from
  * its very first element. */
-static int64_t checked_vector_new_empty(struct kexe_context_v10 *context) {
-  struct kexe_shared_v10 *shared = (struct kexe_shared_v10 *)context;
-  if (context == NULL || context->version != 10) { raise(SIGILL); return 0; }
+static int64_t checked_vector_new_empty(struct kexe_context_v11 *context) {
+  struct kexe_shared_v11 *shared = (struct kexe_shared_v11 *)context;
+  if (context == NULL || context->version != 11) { raise(SIGILL); return 0; }
   int64_t handle = intern_vector(shared, shared->vector_item_used, 0);
   if (handle == 0) { arena_exhausted("vector-table-exhausted"); raise(SIGILL); return 0; }
   return handle;
 }
 
-static int64_t checked_vector_count(struct kexe_context_v10 *context,
+static int64_t checked_vector_count(struct kexe_context_v11 *context,
                                     int64_t handle) {
-  struct kexe_shared_v10 *shared = (struct kexe_shared_v10 *)context;
-  if (context == NULL || context->version != 10) { raise(SIGILL); return 0; }
+  struct kexe_shared_v11 *shared = (struct kexe_shared_v11 *)context;
+  if (context == NULL || context->version != 11) { raise(SIGILL); return 0; }
   struct kexe_vector_v1 *vector = resolve_vector(shared, handle);
   if (vector == NULL) { raise(SIGILL); return 0; }
   return (int64_t)vector->length;
@@ -798,10 +870,10 @@ static int64_t checked_vector_count(struct kexe_context_v10 *context,
 /* Traps out of range, matching `kotoba.kir`'s own vector-at. The total
  * variant is vector-get, which the backends lower to a bounds test around
  * this call rather than to a host function of its own. */
-static int64_t checked_vector_at(struct kexe_context_v10 *context,
+static int64_t checked_vector_at(struct kexe_context_v11 *context,
                                  int64_t handle, int64_t index) {
-  struct kexe_shared_v10 *shared = (struct kexe_shared_v10 *)context;
-  if (context == NULL || context->version != 10) { raise(SIGILL); return 0; }
+  struct kexe_shared_v11 *shared = (struct kexe_shared_v11 *)context;
+  if (context == NULL || context->version != 11) { raise(SIGILL); return 0; }
   struct kexe_vector_v1 *vector = resolve_vector(shared, handle);
   if (vector == NULL || index < 0 || (uint64_t)index >= vector->length) {
     raise(SIGILL);
@@ -810,10 +882,10 @@ static int64_t checked_vector_at(struct kexe_context_v10 *context,
   return shared->vector_items[vector->offset + (uint64_t)index];
 }
 
-static int64_t checked_vector_conj(struct kexe_context_v10 *context,
+static int64_t checked_vector_conj(struct kexe_context_v11 *context,
                                    int64_t handle, int64_t item) {
-  struct kexe_shared_v10 *shared = (struct kexe_shared_v10 *)context;
-  if (context == NULL || context->version != 10) { raise(SIGILL); return 0; }
+  struct kexe_shared_v11 *shared = (struct kexe_shared_v11 *)context;
+  if (context == NULL || context->version != 11) { raise(SIGILL); return 0; }
   struct kexe_vector_v1 *vector = resolve_vector(shared, handle);
   if (vector == NULL) { raise(SIGILL); return 0; }
   uint64_t offset = vector->offset;
@@ -854,11 +926,11 @@ static int64_t checked_vector_conj(struct kexe_context_v10 *context,
 
 /* Always copies: the changed element sits inside the slice, and other handles
  * may span it. There is no in-place case to detect. */
-static int64_t checked_vector_assoc(struct kexe_context_v10 *context,
+static int64_t checked_vector_assoc(struct kexe_context_v11 *context,
                                     int64_t handle, int64_t index,
                                     int64_t item) {
-  struct kexe_shared_v10 *shared = (struct kexe_shared_v10 *)context;
-  if (context == NULL || context->version != 10) { raise(SIGILL); return 0; }
+  struct kexe_shared_v11 *shared = (struct kexe_shared_v11 *)context;
+  if (context == NULL || context->version != 11) { raise(SIGILL); return 0; }
   struct kexe_vector_v1 *vector = resolve_vector(shared, handle);
   if (vector == NULL || index < 0 || (uint64_t)index >= vector->length) {
     raise(SIGILL);
@@ -887,10 +959,10 @@ static int64_t checked_vector_assoc(struct kexe_context_v10 *context,
  * from arena capacity because exhausting the arena and exceeding what KIR
  * admits are different failures. `n == 0` is admitted and yields a real handle
  * over an empty slice, exactly as `checked_vector_new_empty` does. */
-static int64_t checked_vector_alloc(struct kexe_context_v10 *context,
+static int64_t checked_vector_alloc(struct kexe_context_v11 *context,
                                     int64_t count) {
-  struct kexe_shared_v10 *shared = (struct kexe_shared_v10 *)context;
-  if (context == NULL || context->version != 10) { raise(SIGILL); return 0; }
+  struct kexe_shared_v11 *shared = (struct kexe_shared_v11 *)context;
+  if (context == NULL || context->version != 11) { raise(SIGILL); return 0; }
   if (count < 0 || (uint64_t)count > KEXE_VECTOR_ITEM_LIMIT) { raise(SIGILL); return 0; }
   if (shared->vector_item_used + (uint64_t)count > kexe_vector_item_budget) {
     raise(SIGILL);
@@ -918,11 +990,11 @@ static int64_t checked_vector_alloc(struct kexe_context_v10 *context,
  * and the index must be inside the slice's own length. A forged handle or an
  * out-of-range index traps here, before any word is written, whatever the
  * compiler believed. */
-static int64_t checked_vector_assoc_in_place(struct kexe_context_v10 *context,
+static int64_t checked_vector_assoc_in_place(struct kexe_context_v11 *context,
                                              int64_t handle, int64_t index,
                                              int64_t item) {
-  struct kexe_shared_v10 *shared = (struct kexe_shared_v10 *)context;
-  if (context == NULL || context->version != 10) { raise(SIGILL); return 0; }
+  struct kexe_shared_v11 *shared = (struct kexe_shared_v11 *)context;
+  if (context == NULL || context->version != 11) { raise(SIGILL); return 0; }
   struct kexe_vector_v1 *vector = resolve_vector(shared, handle);
   if (vector == NULL || index < 0 || (uint64_t)index >= vector->length) {
     raise(SIGILL);
@@ -935,10 +1007,10 @@ static int64_t checked_vector_assoc_in_place(struct kexe_context_v10 *context,
 /* A VIEW, for the same reason string_substring is one: a suffix is contiguous
  * within its source, so it needs a handle but no elements. Dropping zero
  * elements is admitted and yields a distinct handle over the same slice. */
-static int64_t checked_vector_drop(struct kexe_context_v10 *context,
+static int64_t checked_vector_drop(struct kexe_context_v11 *context,
                                    int64_t handle, int64_t count) {
-  struct kexe_shared_v10 *shared = (struct kexe_shared_v10 *)context;
-  if (context == NULL || context->version != 10) { raise(SIGILL); return 0; }
+  struct kexe_shared_v11 *shared = (struct kexe_shared_v11 *)context;
+  if (context == NULL || context->version != 11) { raise(SIGILL); return 0; }
   struct kexe_vector_v1 *vector = resolve_vector(shared, handle);
   if (vector == NULL || count < 0 || (uint64_t)count > vector->length) {
     raise(SIGILL);
@@ -950,12 +1022,12 @@ static int64_t checked_vector_drop(struct kexe_context_v10 *context,
   return result;
 }
 
-static int64_t checked_kgraph_assert(struct kexe_context_v10 *context,
+static int64_t checked_kgraph_assert(struct kexe_context_v11 *context,
                                      int64_t e, int64_t a, int64_t v) {
-  struct kexe_shared_v10 *shared = (struct kexe_shared_v10 *)context;
-  if (context == NULL || context->version != 10 ||
+  struct kexe_shared_v11 *shared = (struct kexe_shared_v11 *)context;
+  if (context == NULL || context->version != 11 ||
       shared->kgraph_used >= KEXE_KGRAPH_CAPACITY) {
-    if (context != NULL && context->version == 10) note_budget(KEXE_BUDGET_CELLS_KGRAPH);
+    if (context != NULL && context->version == 11) note_budget(KEXE_BUDGET_CELLS_KGRAPH);
     raise(SIGILL);
     return 0;
   }
@@ -968,10 +1040,10 @@ static int64_t checked_kgraph_assert(struct kexe_context_v10 *context,
 
 /* Last-write-wins point lookup, matching kgraph-lang/kotoba's own
  * kgraph-query semantics for a single (entity, attribute) pair. */
-static int64_t checked_kgraph_get(struct kexe_context_v10 *context,
+static int64_t checked_kgraph_get(struct kexe_context_v11 *context,
                                   int64_t e, int64_t a) {
-  struct kexe_shared_v10 *shared = (struct kexe_shared_v10 *)context;
-  if (context == NULL || context->version != 10) {
+  struct kexe_shared_v11 *shared = (struct kexe_shared_v11 *)context;
+  if (context == NULL || context->version != 11) {
     raise(SIGILL);
     return 0;
   }
@@ -987,7 +1059,7 @@ static int64_t checked_kgraph_get(struct kexe_context_v10 *context,
 /* True (non-zero) exactly when entity `e` has ever been asserted with
  * attribute `a`, used by checked_kgraph_count/checked_kgraph_entity_at to
  * de-duplicate to the first occurrence without a separate seen-set. */
-static int kgraph_entity_seen_before(const struct kexe_shared_v10 *shared,
+static int kgraph_entity_seen_before(const struct kexe_shared_v11 *shared,
                                      uint64_t upto, int64_t a, int64_t e) {
   for (uint64_t j = 0; j < upto; j++) {
     if (shared->datoms[j].a == a && shared->datoms[j].e == e) return 1;
@@ -995,9 +1067,9 @@ static int kgraph_entity_seen_before(const struct kexe_shared_v10 *shared,
   return 0;
 }
 
-static int64_t checked_kgraph_count(struct kexe_context_v10 *context, int64_t a) {
-  struct kexe_shared_v10 *shared = (struct kexe_shared_v10 *)context;
-  if (context == NULL || context->version != 10) {
+static int64_t checked_kgraph_count(struct kexe_context_v11 *context, int64_t a) {
+  struct kexe_shared_v11 *shared = (struct kexe_shared_v11 *)context;
+  if (context == NULL || context->version != 11) {
     raise(SIGILL);
     return 0;
   }
@@ -1009,10 +1081,10 @@ static int64_t checked_kgraph_count(struct kexe_context_v10 *context, int64_t a)
   return count;
 }
 
-static int64_t checked_kgraph_entity_at(struct kexe_context_v10 *context,
+static int64_t checked_kgraph_entity_at(struct kexe_context_v11 *context,
                                         int64_t a, int64_t index) {
-  struct kexe_shared_v10 *shared = (struct kexe_shared_v10 *)context;
-  if (context == NULL || context->version != 10 || index < 0) {
+  struct kexe_shared_v11 *shared = (struct kexe_shared_v11 *)context;
+  if (context == NULL || context->version != 11 || index < 0) {
     raise(SIGILL);
     return 0;
   }
@@ -1030,9 +1102,9 @@ static int64_t checked_kgraph_entity_at(struct kexe_context_v10 *context,
 /* Resolves a string handle's (offset, length) pair, bounds-checks the
  * addressed byte range against whichever region `offset`'s sign selects,
  * and returns a pointer directly into that region -- never copies. */
-static const uint8_t *resolve_string_bytes(struct kexe_context_v10 *context,
+static const uint8_t *resolve_string_bytes(struct kexe_context_v11 *context,
                                            int64_t offset, int64_t length) {
-  struct kexe_shared_v10 *shared = (struct kexe_shared_v10 *)context;
+  struct kexe_shared_v11 *shared = (struct kexe_shared_v11 *)context;
   if (length < 0) { raise(SIGILL); return NULL; }
   if (offset >= 0) {
     if ((uint64_t)offset + (uint64_t)length > context->code_length) {
@@ -1087,9 +1159,9 @@ static int valid_utf8(const uint8_t *bytes, uint64_t length) {
 
 /* Validate the string behind HANDLE once and remember it on the handle.
  * See pair_validated's comment for why this is sound. */
-static int ensure_valid_string(struct kexe_context_v10 *context, int64_t handle,
+static int ensure_valid_string(struct kexe_context_v11 *context, int64_t handle,
                                const uint8_t *bytes, int64_t length) {
-  struct kexe_shared_v10 *shared = (struct kexe_shared_v10 *)context;
+  struct kexe_shared_v11 *shared = (struct kexe_shared_v11 *)context;
   uint64_t index = (uint64_t)handle - 1;
   if (shared->pair_validated[index]) return 1;
   if (!valid_utf8(bytes, (uint64_t)length)) return 0;
@@ -1100,8 +1172,8 @@ static int ensure_valid_string(struct kexe_context_v10 *context, int64_t handle,
 /* Mark a freshly minted handle whose validity holds by construction: a
  * code-point-bounded view of a validated string, or a concatenation of two
  * validated strings. */
-static int64_t mark_validated(struct kexe_context_v10 *context, int64_t handle) {
-  struct kexe_shared_v10 *shared = (struct kexe_shared_v10 *)context;
+static int64_t mark_validated(struct kexe_context_v11 *context, int64_t handle) {
+  struct kexe_shared_v11 *shared = (struct kexe_shared_v11 *)context;
   if (handle > 0) shared->pair_validated[(uint64_t)handle - 1] = 1;
   return handle;
 }
@@ -1112,7 +1184,7 @@ static int hex_nibble(char value) {
   return -1;
 }
 
-static int allocate_host_pair(struct kexe_shared_v10 *shared,
+static int allocate_host_pair(struct kexe_shared_v11 *shared,
                               int64_t first, int64_t second, int64_t *handle) {
   if (shared->pair_used >= kexe_pair_budget ||
       shared->pair_used >= KEXE_PAIR_MAX) return -1;
@@ -1141,7 +1213,7 @@ static int parse_variant_profile(const char *text, uint64_t *case_count,
  * pair(offset,length) representation as guest-created strings. Scalar tokens
  * retain the historical decimal spelling, so old direct loader callers keep
  * working. */
-static int parse_guest_arg(struct kexe_shared_v10 *shared,
+static int parse_guest_arg(struct kexe_shared_v11 *shared,
                            const char *text, int64_t *value) {
   if (strncmp(text, "v:", 2) == 0) {
     unsigned long long cases, ordinal;
@@ -1279,7 +1351,7 @@ static int parse_guest_arg(struct kexe_shared_v10 *shared,
  * this runs in the supervisor after the sandboxed child has exited. It also
  * requires a pool slice to have actually been allocated, rather than merely
  * falling somewhere inside the pool capacity. */
-static const uint8_t *inspect_string_result(const struct kexe_shared_v10 *shared,
+static const uint8_t *inspect_string_result(const struct kexe_shared_v11 *shared,
                                             int64_t handle, uint64_t *length_out) {
   if (handle <= 0 || (uint64_t)handle > shared->pair_used) return NULL;
   const struct kexe_pair_v1 *pair = &shared->pairs[(uint64_t)handle - 1u];
@@ -1302,7 +1374,7 @@ static const uint8_t *inspect_string_result(const struct kexe_shared_v10 *shared
   return bytes;
 }
 
-static int inspect_record_result(const struct kexe_shared_v10 *shared,
+static int inspect_record_result(const struct kexe_shared_v11 *shared,
                                  int64_t handle, uint64_t field_count,
                                  int64_t fields[KEXE_RECORD_FIELD_LIMIT]) {
   if (field_count == 0 || field_count > KEXE_RECORD_FIELD_LIMIT) return 0;
@@ -1315,7 +1387,7 @@ static int inspect_record_result(const struct kexe_shared_v10 *shared,
   return handle == 0;
 }
 
-static int inspect_tagged_i64_result(const struct kexe_shared_v10 *shared,
+static int inspect_tagged_i64_result(const struct kexe_shared_v11 *shared,
                                      int64_t handle, int option,
                                      int64_t *tag, int64_t *payload) {
   if (handle <= 0 || (uint64_t)handle > shared->pair_used) return 0;
@@ -1327,7 +1399,7 @@ static int inspect_tagged_i64_result(const struct kexe_shared_v10 *shared,
   return 1;
 }
 
-static int inspect_variant_result(const struct kexe_shared_v10 *shared,
+static int inspect_variant_result(const struct kexe_shared_v11 *shared,
                                   int64_t handle, uint64_t case_count,
                                   uint64_t bool_mask, int64_t *ordinal,
                                   int64_t *payload) {
@@ -1397,21 +1469,21 @@ static const char ds_retract_notice[] =
  * SIGILL on a bad handle; a retracted result is pair(1, pair(count, 0)) and
  * looks like a retract *request* until the terminator is walked. Walking
  * that 0 with checked_pair_get aborted a real guest after retract. */
-static int peek_pair(struct kexe_context_v10 *context, int64_t handle,
+static int peek_pair(struct kexe_context_v11 *context, int64_t handle,
                      int second, int64_t *out) {
-  struct kexe_shared_v10 *shared = (struct kexe_shared_v10 *)context;
-  if (context == NULL || context->version != 10 || handle <= 0 ||
+  struct kexe_shared_v11 *shared = (struct kexe_shared_v11 *)context;
+  if (context == NULL || context->version != 11 || handle <= 0 ||
       (uint64_t)handle > shared->pair_used) return 0;
   struct kexe_pair_v1 *pair = &shared->pairs[(uint64_t)handle - 1];
   *out = second ? pair->second : pair->first;
   return 1;
 }
 
-static int peek_vector(struct kexe_context_v10 *context, int64_t handle,
+static int peek_vector(struct kexe_context_v11 *context, int64_t handle,
                        uint64_t *length, const int64_t **items) {
-  struct kexe_shared_v10 *shared = (struct kexe_shared_v10 *)context;
+  struct kexe_shared_v11 *shared = (struct kexe_shared_v11 *)context;
   struct kexe_vector_v1 *vector;
-  if (context == NULL || context->version != 10) return 0;
+  if (context == NULL || context->version != 11) return 0;
   vector = resolve_vector(shared, handle);
   if (vector == NULL) return 0;
   if (vector->offset + vector->length > KEXE_VECTOR_ITEM_MAX) return 0;
@@ -1420,10 +1492,10 @@ static int peek_vector(struct kexe_context_v10 *context, int64_t handle,
   return 1;
 }
 
-static const uint8_t *peek_string_bytes(struct kexe_context_v10 *context,
+static const uint8_t *peek_string_bytes(struct kexe_context_v11 *context,
                                         int64_t offset, int64_t length) {
-  struct kexe_shared_v10 *shared = (struct kexe_shared_v10 *)context;
-  if (context == NULL || context->version != 10 || length < 0) return NULL;
+  struct kexe_shared_v11 *shared = (struct kexe_shared_v11 *)context;
+  if (context == NULL || context->version != 11 || length < 0) return NULL;
   if (offset >= 0) {
     if ((uint64_t)offset + (uint64_t)length > context->code_length) return NULL;
     return context->code_base + offset;
@@ -1434,20 +1506,20 @@ static const uint8_t *peek_string_bytes(struct kexe_context_v10 *context,
   return shared->string_pool + pool_offset;
 }
 
-static int valid_string_handle(struct kexe_context_v10 *context, int64_t value) {
+static int valid_string_handle(struct kexe_context_v11 *context, int64_t value) {
   int64_t offset, length;
   if (!peek_pair(context, value, 0, &offset) ||
       !peek_pair(context, value, 1, &length)) return 0;
   const uint8_t *bytes = peek_string_bytes(context, offset, length);
   if (bytes == NULL || length < 0) return 0;
-  struct kexe_shared_v10 *shared = (struct kexe_shared_v10 *)context;
+  struct kexe_shared_v11 *shared = (struct kexe_shared_v11 *)context;
   if (shared->pair_validated[(uint64_t)value - 1]) return 1;
   if (!valid_utf8(bytes, (uint64_t)length)) return 0;
   shared->pair_validated[(uint64_t)value - 1] = 1;
   return 1;
 }
 
-static int read_string_handle(struct kexe_context_v10 *context, int64_t value,
+static int read_string_handle(struct kexe_context_v11 *context, int64_t value,
                               const uint8_t **bytes, uint64_t *len) {
   int64_t offset = checked_pair_get(context, value, 0);
   int64_t length = checked_pair_get(context, value, 1);
@@ -1459,9 +1531,9 @@ static int read_string_handle(struct kexe_context_v10 *context, int64_t value,
   return 1;
 }
 
-static int64_t intern_utf8(struct kexe_context_v10 *context,
+static int64_t intern_utf8(struct kexe_context_v11 *context,
                            const uint8_t *bytes, uint64_t length) {
-  struct kexe_shared_v10 *shared = (struct kexe_shared_v10 *)context;
+  struct kexe_shared_v11 *shared = (struct kexe_shared_v11 *)context;
   if (shared->string_pool_used + length > kexe_string_pool_budget ||
       shared->string_pool_used + length > KEXE_STRING_POOL_MAX) {
     note_budget(KEXE_BUDGET_BYTES_STRING_POOL);
@@ -1483,7 +1555,7 @@ static int64_t intern_utf8(struct kexe_context_v10 *context,
  * way; both syscalls (write, read) are in the sandbox's allow-list already.
  * An answer starting with "!" is the supervisor's refusal and its reason is
  * already on stderr -- here it is SIGILL like every other failed provider. */
-static int64_t gpu_compute_provider(struct kexe_context_v10 *context, int64_t request) {
+static int64_t gpu_compute_provider(struct kexe_context_v11 *context, int64_t request) {
   const uint8_t *bytes = NULL;
   uint64_t length = 0;
   if (!kgpu_broker_active || kgpu_req_pipe[1] < 0 || kgpu_resp_pipe[0] < 0 ||
@@ -1516,7 +1588,7 @@ static int64_t gpu_compute_provider(struct kexe_context_v10 *context, int64_t re
   return intern_utf8(context, answer, alen);
 }
 
-static int valid_dataspace_request(struct kexe_context_v10 *context,
+static int valid_dataspace_request(struct kexe_context_v11 *context,
                                    int64_t value) {
   int64_t ordinal, payload;
   if (!peek_pair(context, value, 0, &ordinal) ||
@@ -1533,7 +1605,7 @@ static int valid_dataspace_request(struct kexe_context_v10 *context,
   return tail == 0 && valid_string_handle(context, doc);
 }
 
-static int valid_dataspace_result(struct kexe_context_v10 *context,
+static int valid_dataspace_result(struct kexe_context_v11 *context,
                                   int64_t value) {
   int64_t ordinal, payload;
   if (!peek_pair(context, value, 0, &ordinal) ||
@@ -1565,7 +1637,7 @@ static int valid_dataspace_result(struct kexe_context_v10 *context,
   return 0;
 }
 
-static int valid_ui_node(struct kexe_context_v10 *context, int64_t node) {
+static int valid_ui_node(struct kexe_context_v11 *context, int64_t node) {
   int64_t id, rest, parent, rest2, kind, rest3, text, tail;
   int64_t parent_tag, parent_payload;
   if (!peek_pair(context, node, 0, &id) ||
@@ -1587,7 +1659,7 @@ static int valid_ui_node(struct kexe_context_v10 *context, int64_t node) {
   return valid_string_handle(context, parent_payload);
 }
 
-static int valid_ui_nodes(struct kexe_context_v10 *context, int64_t nodes) {
+static int valid_ui_nodes(struct kexe_context_v11 *context, int64_t nodes) {
   uint64_t length = 0, i;
   const int64_t *items = NULL;
   if (!peek_vector(context, nodes, &length, &items) || length > 32) return 0;
@@ -1597,7 +1669,7 @@ static int valid_ui_nodes(struct kexe_context_v10 *context, int64_t nodes) {
   return 1;
 }
 
-static int valid_ui_commit_request(struct kexe_context_v10 *context,
+static int valid_ui_commit_request(struct kexe_context_v11 *context,
                                    int64_t value) {
   int64_t base_rev, rest, nodes, tail;
   if (!peek_pair(context, value, 0, &base_rev) ||
@@ -1607,7 +1679,7 @@ static int valid_ui_commit_request(struct kexe_context_v10 *context,
   return tail == 0 && valid_ui_nodes(context, nodes);
 }
 
-static int valid_ui_commit_result(struct kexe_context_v10 *context,
+static int valid_ui_commit_result(struct kexe_context_v11 *context,
                                   int64_t value) {
   int64_t revision, rest, count, tail;
   if (!peek_pair(context, value, 0, &revision) ||
@@ -1617,7 +1689,7 @@ static int valid_ui_commit_result(struct kexe_context_v10 *context,
   return tail == 0 && revision > 0 && count >= 0;
 }
 
-static int valid_ui_event_request(struct kexe_context_v10 *context,
+static int valid_ui_event_request(struct kexe_context_v11 *context,
                                   int64_t value) {
   int64_t after, tail;
   if (!peek_pair(context, value, 0, &after) ||
@@ -1625,7 +1697,7 @@ static int valid_ui_event_request(struct kexe_context_v10 *context,
   return tail == 0;
 }
 
-static int valid_ui_event(struct kexe_context_v10 *context, int64_t value) {
+static int valid_ui_event(struct kexe_context_v11 *context, int64_t value) {
   int64_t revision, rest, target, rest2, kind, rest3, event_value, tail;
   if (!peek_pair(context, value, 0, &revision) ||
       !peek_pair(context, value, 1, &rest) ||
@@ -1641,7 +1713,7 @@ static int valid_ui_event(struct kexe_context_v10 *context, int64_t value) {
          valid_string_handle(context, event_value);
 }
 
-static int valid_ui_event_result(struct kexe_context_v10 *context,
+static int valid_ui_event_result(struct kexe_context_v11 *context,
                                  int64_t value) {
   int64_t tag, payload;
   if (!peek_pair(context, value, 0, &tag) ||
@@ -1656,9 +1728,9 @@ static int valid_ui_event_result(struct kexe_context_v10 *context,
 #define KEXE_CLOCK_CASE_MONOTONIC 1
 #define KEXE_CLOCK_CASE_ERROR 2
 
-static int64_t intern_pool_string(struct kexe_context_v10 *context,
+static int64_t intern_pool_string(struct kexe_context_v11 *context,
                                   const char *text) {
-  struct kexe_shared_v10 *shared = (struct kexe_shared_v10 *)context;
+  struct kexe_shared_v11 *shared = (struct kexe_shared_v11 *)context;
   size_t n = strlen(text);
   if (context == NULL || text == NULL ||
       n > kexe_string_pool_budget ||
@@ -1673,13 +1745,13 @@ static int64_t intern_pool_string(struct kexe_context_v10 *context,
   return checked_pair_new(context, -((int64_t)off) - 1, (int64_t)n);
 }
 
-static int valid_clock_request(const struct kexe_shared_v10 *shared, int64_t value,
+static int valid_clock_request(const struct kexe_shared_v11 *shared, int64_t value,
                                int64_t *ordinal, int64_t *payload) {
   /* Both request cases carry a bool payload (mask 0b11). */
   return inspect_variant_result(shared, value, 2, 3u, ordinal, payload);
 }
 
-static int valid_clock_result(const struct kexe_shared_v10 *shared, int64_t value) {
+static int valid_clock_result(const struct kexe_shared_v11 *shared, int64_t value) {
   int64_t ordinal = 0, payload = 0, fields[KEXE_RECORD_FIELD_LIMIT];
   if (!inspect_variant_result(shared, value, 3, 0, &ordinal, &payload)) return 0;
   if (ordinal == KEXE_CLOCK_CASE_WALL || ordinal == KEXE_CLOCK_CASE_MONOTONIC) {
@@ -1710,7 +1782,7 @@ static int read_monotonic_nanos(int64_t *out) {
   return 0;
 }
 
-static int64_t clock_error_result(struct kexe_context_v10 *context,
+static int64_t clock_error_result(struct kexe_context_v11 *context,
                                   const char *code, const char *message) {
   int64_t code_handle = intern_pool_string(context, code);
   int64_t message_handle = intern_pool_string(context, message);
@@ -1719,7 +1791,7 @@ static int64_t clock_error_result(struct kexe_context_v10 *context,
   return checked_pair_new(context, KEXE_CLOCK_CASE_ERROR, record);
 }
 
-static int64_t clock_success_result(struct kexe_context_v10 *context,
+static int64_t clock_success_result(struct kexe_context_v11 *context,
                                     int64_t ordinal, int64_t tick,
                                     int64_t sequence) {
   int64_t record = checked_pair_new(context, sequence, 0);
@@ -1727,8 +1799,8 @@ static int64_t clock_success_result(struct kexe_context_v10 *context,
   return checked_pair_new(context, ordinal, record);
 }
 
-static int64_t hosted_clock_v1(struct kexe_context_v10 *context, int64_t request) {
-  struct kexe_shared_v10 *shared = (struct kexe_shared_v10 *)context;
+static int64_t hosted_clock_v1(struct kexe_context_v11 *context, int64_t request) {
+  struct kexe_shared_v11 *shared = (struct kexe_shared_v11 *)context;
   static int64_t observation_sequence = 0;
   static int64_t last_monotonic = -1;
   int64_t ordinal = 0, payload = 0, tick = 0;
@@ -1763,7 +1835,7 @@ static int64_t hosted_clock_v1(struct kexe_context_v10 *context, int64_t request
   return 0;
 }
 
-static int valid_typed_value(struct kexe_context_v10 *context,
+static int valid_typed_value(struct kexe_context_v11 *context,
                              uint64_t kind, int64_t value) {
   if (kind == KEXE_TYPED_STRING) {
     return valid_string_handle(context, value);
@@ -1775,7 +1847,7 @@ static int valid_typed_value(struct kexe_context_v10 *context,
     return kind != KEXE_TYPED_OPTION_I64 || tag != 0 || payload == 0;
   }
   if (kind == KEXE_TYPED_CLOCK_V1) {
-    struct kexe_shared_v10 *shared = (struct kexe_shared_v10 *)context;
+    struct kexe_shared_v11 *shared = (struct kexe_shared_v11 *)context;
     int64_t ordinal = 0, payload = 0;
     return valid_clock_request(shared, value, &ordinal, &payload) ||
            valid_clock_result(shared, value);
@@ -1808,25 +1880,25 @@ static void ds_enqueue(int kind, const uint8_t *bytes, uint64_t len) {
   ds_mail_count++;
 }
 
-static int64_t ds_result_facet(struct kexe_context_v10 *context, int64_t id) {
+static int64_t ds_result_facet(struct kexe_context_v11 *context, int64_t id) {
   return checked_pair_new(context, DS_RES_FACET,
                           checked_pair_new(context, id, 0));
 }
 
-static int64_t ds_result_retracted(struct kexe_context_v10 *context,
+static int64_t ds_result_retracted(struct kexe_context_v11 *context,
                                    int64_t count) {
   return checked_pair_new(context, DS_RES_RETRACTED,
                           checked_pair_new(context, count, 0));
 }
 
-static int64_t ds_result_asserted(struct kexe_context_v10 *context,
+static int64_t ds_result_asserted(struct kexe_context_v11 *context,
                                   int64_t count, int64_t notices) {
   return checked_pair_new(
       context, DS_RES_ASSERTED,
       checked_pair_new(context, count, checked_pair_new(context, notices, 0)));
 }
 
-static int64_t ds_result_matches(struct kexe_context_v10 *context,
+static int64_t ds_result_matches(struct kexe_context_v11 *context,
                                  int64_t bindings, int64_t notices) {
   return checked_pair_new(
       context, DS_RES_MATCHES,
@@ -1834,16 +1906,16 @@ static int64_t ds_result_matches(struct kexe_context_v10 *context,
                        checked_pair_new(context, notices, 0)));
 }
 
-static int64_t ds_notice_handle(struct kexe_context_v10 *context, int kind) {
+static int64_t ds_notice_handle(struct kexe_context_v11 *context, int kind) {
   const char *text = kind == 1 ? ds_retract_notice : ds_assert_notice;
   return intern_utf8(context, (const uint8_t *)text, strlen(text));
 }
 
-static int64_t ds_empty_handle(struct kexe_context_v10 *context) {
+static int64_t ds_empty_handle(struct kexe_context_v11 *context) {
   return intern_utf8(context, (const uint8_t *)ds_empty, strlen(ds_empty));
 }
 
-static int64_t dataspace_inject(struct kexe_context_v10 *context,
+static int64_t dataspace_inject(struct kexe_context_v11 *context,
                                 int64_t request) {
   int64_t ordinal = checked_pair_get(context, request, 0);
   int64_t payload = checked_pair_get(context, request, 1);
@@ -1977,7 +2049,7 @@ static int64_t ui_event_target;
 static int64_t ui_event_kind;
 static int64_t ui_event_value;
 
-static int64_t ui_commit_inject(struct kexe_context_v10 *context,
+static int64_t ui_commit_inject(struct kexe_context_v11 *context,
                                 int64_t request) {
   int64_t base_rev, rest, nodes, tail;
   uint64_t length = 0;
@@ -2014,7 +2086,7 @@ static int64_t ui_commit_inject(struct kexe_context_v10 *context,
       checked_pair_new(context, (int64_t)length, 0));
 }
 
-static int64_t ui_event_inject(struct kexe_context_v10 *context,
+static int64_t ui_event_inject(struct kexe_context_v11 *context,
                                int64_t request) {
   int64_t after, tail;
   if (!peek_pair(context, request, 0, &after) ||
@@ -2037,7 +2109,7 @@ static int64_t ui_event_inject(struct kexe_context_v10 *context,
                   checked_pair_new(context, ui_event_value, 0)))));
 }
 
-static int64_t env_read_provider(struct kexe_context_v10 *context,
+static int64_t env_read_provider(struct kexe_context_v11 *context,
                                  int64_t request) {
   const uint8_t *bytes = NULL;
   uint64_t length = 0;
@@ -2101,7 +2173,7 @@ static size_t kexe_decimal(char *out, uint64_t value) {
   return n;
 }
 
-static int64_t io_write_provider(struct kexe_context_v10 *context,
+static int64_t io_write_provider(struct kexe_context_v11 *context,
                                  int64_t request) {
   const uint8_t *bytes = NULL;
   uint64_t length = 0;
@@ -2138,7 +2210,7 @@ static int64_t io_write_provider(struct kexe_context_v10 *context,
  *
  * Same result: the decimal count of bytes written, short for the same reason
  * -- the arena never reclaims, and an echo would charge every write twice. */
-static int64_t io_write_error_provider(struct kexe_context_v10 *context,
+static int64_t io_write_error_provider(struct kexe_context_v11 *context,
                                        int64_t request) {
   const uint8_t *bytes = NULL;
   uint64_t length = 0;
@@ -2238,7 +2310,7 @@ static size_t incomplete_utf8_tail(const uint8_t *bytes, size_t length) {
   return back + 1;
 }
 
-static int64_t io_read_provider(struct kexe_context_v10 *context,
+static int64_t io_read_provider(struct kexe_context_v11 *context,
                                 int64_t request) {
   const uint8_t *bytes = NULL;
   uint64_t length = 0;
@@ -2274,7 +2346,7 @@ static int64_t io_read_provider(struct kexe_context_v10 *context,
     }
     limit = (uint64_t)parsed;
   }
-  struct kexe_shared_v10 *shared = (struct kexe_shared_v10 *)context;
+  struct kexe_shared_v11 *shared = (struct kexe_shared_v11 *)context;
   uint64_t ceiling = kexe_string_pool_budget < KEXE_STRING_POOL_MAX
                          ? kexe_string_pool_budget
                          : KEXE_STRING_POOL_MAX;
@@ -2357,7 +2429,7 @@ static int64_t io_read_provider(struct kexe_context_v10 *context,
  * Anything else traps: a request this does not know is not answered with
  * a plausible-looking number. Monotonic regression is a trap here too, as
  * it is an error result in the record form. */
-static int64_t clock_text_provider(struct kexe_context_v10 *context,
+static int64_t clock_text_provider(struct kexe_context_v11 *context,
                                    int64_t request) {
   const uint8_t *bytes = NULL;
   uint64_t length = 0;
@@ -2427,7 +2499,7 @@ static void kexe_sha256_block(uint32_t h[8], const uint8_t block[64]) {
   h[0] += a; h[1] += b; h[2] += c; h[3] += d; h[4] += e; h[5] += f; h[6] += g; h[7] += hh;
 }
 
-static int64_t hash_sha256_provider(struct kexe_context_v10 *context, int64_t request) {
+static int64_t hash_sha256_provider(struct kexe_context_v11 *context, int64_t request) {
   const uint8_t *bytes = NULL;
   uint64_t length = 0;
   if (!read_string_handle(context, request, &bytes, &length)) {
@@ -2897,7 +2969,7 @@ static int ked_verify(const uint8_t pk[32], const uint8_t *m, uint64_t mlen,
  * "0": that is a guest bug, and a verifier that answered it with "invalid"
  * would let the bug look like a bad signature. First user: kotoba-lang/dango
  * (the capability-chain verifier). */
-static const uint8_t *granted_span(struct kexe_shared_v10 *shared,
+static const uint8_t *granted_span(struct kexe_shared_v11 *shared,
                                    uint64_t address, uint64_t length) {
   for (uint64_t i = 0; i < shared->region_count; i++) {
     uint64_t base = (uint64_t)(uintptr_t)(shared->region_pool + shared->regions[i].offset);
@@ -2929,7 +3001,7 @@ static int parse_verify_request(const uint8_t *p, uint64_t n, uint64_t out[4]) {
   return i == n;
 }
 
-static int64_t identity_verify_provider(struct kexe_context_v10 *context, int64_t request) {
+static int64_t identity_verify_provider(struct kexe_context_v11 *context, int64_t request) {
   const uint8_t *bytes = NULL;
   uint64_t length = 0;
   uint64_t a[4];
@@ -2938,7 +3010,7 @@ static int64_t identity_verify_provider(struct kexe_context_v10 *context, int64_
     raise(SIGILL);
     return 0;
   }
-  struct kexe_shared_v10 *shared = (struct kexe_shared_v10 *)context;
+  struct kexe_shared_v11 *shared = (struct kexe_shared_v11 *)context;
   const uint8_t *key = granted_span(shared, a[0], 32u);
   const uint8_t *message = granted_span(shared, a[1], a[2]);
   const uint8_t *signature = granted_span(shared, a[3], 64u);
@@ -2975,7 +3047,7 @@ static int64_t identity_verify_provider(struct kexe_context_v10 *context, int64_
 static char **kexe_guest_argv = NULL;
 static int kexe_guest_argc = 0;
 
-static int64_t cli_args_provider(struct kexe_context_v10 *context,
+static int64_t cli_args_provider(struct kexe_context_v11 *context,
                                  int64_t request) {
   const uint8_t *bytes = NULL;
   uint64_t length = 0;
@@ -3345,7 +3417,7 @@ static void *shim_memmem(const void *hay, size_t hlen, const void *needle, size_
  * so a guest cannot use this to probe for the existence of files it was
  * never granted. It learns exactly one thing -- whether the operand it was
  * given is one it may read -- which is the question a command asks. */
-static int64_t fs_app_data_exists_provider(struct kexe_context_v10 *context,
+static int64_t fs_app_data_exists_provider(struct kexe_context_v11 *context,
                                            int64_t request) {
   const uint8_t *bytes = NULL;
   uint64_t length = 0;
@@ -3375,7 +3447,7 @@ static int64_t fs_app_data_exists_provider(struct kexe_context_v10 *context,
   return intern_utf8(context, (const uint8_t *)(inside ? "1" : "0"), 1);
 }
 
-static int64_t fs_app_data_read_provider(struct kexe_context_v10 *context,
+static int64_t fs_app_data_read_provider(struct kexe_context_v11 *context,
                                          int64_t request) {
   const uint8_t *bytes = NULL;
   uint64_t length = 0;
@@ -3478,7 +3550,7 @@ static int kexe_append_close(void) {
   return ok;
 }
 
-static int64_t fs_app_data_write_provider(struct kexe_context_v10 *context,
+static int64_t fs_app_data_write_provider(struct kexe_context_v11 *context,
                                           int64_t request, int append) {
   const uint8_t *bytes = NULL;
   uint64_t length = 0;
@@ -3566,7 +3638,7 @@ static int64_t fs_app_data_write_provider(struct kexe_context_v10 *context,
   return intern_utf8(context, content, content_length);
 }
 
-static int64_t kexe_answer_bool(struct kexe_context_v10 *context, int ok) {
+static int64_t kexe_answer_bool(struct kexe_context_v11 *context, int ok) {
   return intern_utf8(context, (const uint8_t *)(ok ? "1" : "0"), 1);
 }
 
@@ -3584,7 +3656,7 @@ static int64_t kexe_answer_bool(struct kexe_context_v10 *context, int ok) {
  *
  * Same confinement as reading: open with O_NOFOLLOW, then prove the
  * descriptor is inside the scope before trusting it. */
-static int64_t fs_app_data_stat_provider(struct kexe_context_v10 *context,
+static int64_t fs_app_data_stat_provider(struct kexe_context_v11 *context,
                                          int64_t request) {
   const uint8_t *bytes = NULL;
   uint64_t length = 0;
@@ -3630,7 +3702,7 @@ static int64_t fs_app_data_stat_provider(struct kexe_context_v10 *context,
  * field would have turned every directory into a file there (read
  * 2026-09-16 before choosing this). `stat -f %m` is the measured use
  * (superproject ADR-2609161710); the same confinement as STAT. */
-static int64_t fs_app_data_mtime_provider(struct kexe_context_v10 *context,
+static int64_t fs_app_data_mtime_provider(struct kexe_context_v11 *context,
                                           int64_t request) {
   const uint8_t *bytes = NULL;
   uint64_t length = 0;
@@ -3673,7 +3745,7 @@ static int64_t fs_app_data_mtime_provider(struct kexe_context_v10 *context,
  * permission bits are honoured: setuid, setgid and the sticky bit are NOT
  * settable through this form, because a grant to write a file's bytes is not
  * a grant to make it run as someone else. */
-static int64_t fs_app_data_chmod_provider(struct kexe_context_v10 *context,
+static int64_t fs_app_data_chmod_provider(struct kexe_context_v11 *context,
                                           int64_t request) {
   const uint8_t *bytes = NULL;
   uint64_t length = 0;
@@ -3785,7 +3857,7 @@ static int kexe_scoped_parent_fd(const char *candidate, char base[256],
  * created, "0" if it was not (it already exists, the parent is missing, the
  * filesystem refused). 0777 is passed and the process umask applies, which is
  * what mkdir(1) itself does. */
-static int64_t fs_app_data_mkdir_provider(struct kexe_context_v10 *context,
+static int64_t fs_app_data_mkdir_provider(struct kexe_context_v11 *context,
                                           int64_t request) {
   const uint8_t *bytes = NULL;
   uint64_t length = 0;
@@ -3818,7 +3890,7 @@ static int64_t fs_app_data_mkdir_provider(struct kexe_context_v10 *context,
  * does; RMDIR_SEP is the separate form for that, because `rm` and `rmdir` are
  * separate commands and answering both from one request would let a guest
  * remove a tree it only asked to remove a file from. */
-static int64_t fs_app_data_unlink_provider(struct kexe_context_v10 *context,
+static int64_t fs_app_data_unlink_provider(struct kexe_context_v11 *context,
                                            int64_t request) {
   const uint8_t *bytes = NULL;
   uint64_t length = 0;
@@ -3849,7 +3921,7 @@ static int64_t fs_app_data_unlink_provider(struct kexe_context_v10 *context,
 /* wire id 35, RMDIR form: "<path>RMDIR_SEP" -> "1" if the EMPTY directory was
  * removed. A non-empty one answers "0"; there is no recursive form, and a
  * guest that wants one walks the tree itself under its own fuel. */
-static int64_t fs_app_data_rmdir_provider(struct kexe_context_v10 *context,
+static int64_t fs_app_data_rmdir_provider(struct kexe_context_v11 *context,
                                           int64_t request) {
   const uint8_t *bytes = NULL;
   uint64_t length = 0;
@@ -3880,7 +3952,7 @@ static int64_t fs_app_data_rmdir_provider(struct kexe_context_v10 *context,
 /* wire id 35, RENAME form: "<from>RENAME_SEP<to>" -> "1" if renamed. BOTH
  * sides are admitted and BOTH parents are proven in scope, so this cannot be
  * used to move a file out of the grant or to pull one in. */
-static int64_t fs_app_data_rename_provider(struct kexe_context_v10 *context,
+static int64_t fs_app_data_rename_provider(struct kexe_context_v11 *context,
                                            int64_t request) {
   const uint8_t *bytes = NULL;
   uint64_t length = 0;
@@ -3949,7 +4021,7 @@ static int kexe_parse_u64_span(const uint8_t *text, size_t length,
  * than answering bytes no guest string may hold. Same scope and containment
  * as the read form. This is what lets a guest read a file larger than one
  * guest string, one bounded window at a time. */
-static int64_t fs_app_data_range_read_provider(struct kexe_context_v10 *context,
+static int64_t fs_app_data_range_read_provider(struct kexe_context_v11 *context,
                                                int64_t request) {
   const uint8_t *bytes = NULL;
   uint64_t length = 0;
@@ -4170,7 +4242,7 @@ static int kexe_enumerate_directory(int fd, struct kexe_browse_entry **entries,
 }
 #endif
 
-static int64_t fs_browse_provider(struct kexe_context_v10 *context,
+static int64_t fs_browse_provider(struct kexe_context_v11 *context,
                                   int64_t request) {
   const uint8_t *bytes = NULL;
   uint64_t length = 0;
@@ -4217,10 +4289,10 @@ static int64_t fs_browse_provider(struct kexe_context_v10 *context,
 }
 
 
-static int64_t checked_typed_cap_call(struct kexe_context_v10 *context,
+static int64_t checked_typed_cap_call(struct kexe_context_v11 *context,
                                       uint64_t id, uint64_t request_kind,
                                       uint64_t result_kind, int64_t request) {
-  if (context == NULL || context->version != 10 || id > 255 ||
+  if (context == NULL || context->version != 11 || id > 255 ||
       !(context->allow[id / 64] & (UINT64_C(1) << (id % 64))) ||
       request_kind != result_kind ||
       !valid_typed_value(context, request_kind, request)) {
@@ -4392,9 +4464,9 @@ static int simd_bytes_equal(const uint8_t *a, const uint8_t *b, size_t length) {
   return memcmp(a + i, b + i, length - i) == 0;
 }
 
-static int64_t checked_string_equal(struct kexe_context_v10 *context,
+static int64_t checked_string_equal(struct kexe_context_v11 *context,
                                     int64_t handle_a, int64_t handle_b) {
-  if (context == NULL || context->version != 10) { raise(SIGILL); return 0; }
+  if (context == NULL || context->version != 11) { raise(SIGILL); return 0; }
   int64_t offset_a = checked_pair_get(context, handle_a, 0);
   int64_t length_a = checked_pair_get(context, handle_a, 1);
   int64_t offset_b = checked_pair_get(context, handle_b, 0);
@@ -4409,9 +4481,9 @@ static int64_t checked_string_equal(struct kexe_context_v10 *context,
  * memmem is what glibc and libc on macOS both vectorise; an empty needle is
  * refused BEFORE it is consulted, because memmem answers the haystack for
  * one and the reference interpreter refuses. */
-static int64_t checked_string_index_of(struct kexe_context_v10 *context,
+static int64_t checked_string_index_of(struct kexe_context_v11 *context,
                                        int64_t haystack, int64_t needle) {
-  if (context == NULL || context->version != 10) { raise(SIGILL); return 0; }
+  if (context == NULL || context->version != 11) { raise(SIGILL); return 0; }
   int64_t offset_h = checked_pair_get(context, haystack, 0);
   int64_t length_h = checked_pair_get(context, haystack, 1);
   int64_t offset_n = checked_pair_get(context, needle, 0);
@@ -4431,10 +4503,10 @@ static int64_t checked_string_index_of(struct kexe_context_v10 *context,
 }
 
 /* ABI v8 line operations: see the slots' comment in the context struct. */
-static int64_t checked_string_index_of_from(struct kexe_context_v10 *context,
+static int64_t checked_string_index_of_from(struct kexe_context_v11 *context,
                                             int64_t haystack, int64_t needle,
                                             int64_t from) {
-  if (context == NULL || context->version != 10) { raise(SIGILL); return 0; }
+  if (context == NULL || context->version != 11) { raise(SIGILL); return 0; }
   int64_t offset_h = checked_pair_get(context, haystack, 0);
   int64_t length_h = checked_pair_get(context, haystack, 1);
   int64_t offset_n = checked_pair_get(context, needle, 0);
@@ -4516,10 +4588,10 @@ static int64_t kexe_compare_lines(const uint8_t *a, int64_t ra,
   }
 }
 
-static int64_t checked_string_compare_lines(struct kexe_context_v10 *context,
+static int64_t checked_string_compare_lines(struct kexe_context_v11 *context,
                                             int64_t handle_a, int64_t i,
                                             int64_t handle_b, int64_t j) {
-  if (context == NULL || context->version != 10) { raise(SIGILL); return 0; }
+  if (context == NULL || context->version != 11) { raise(SIGILL); return 0; }
   int64_t offset_a = checked_pair_get(context, handle_a, 0);
   int64_t length_a = checked_pair_get(context, handle_a, 1);
   if (length_a < 0 || i < 0 || i > length_a) { raise(SIGILL); return 0; }
@@ -4549,9 +4621,9 @@ static int64_t checked_string_compare_lines(struct kexe_context_v10 *context,
 }
 
 /* ABI v10 range operations: see the slots' comment in the context struct. */
-static int64_t checked_string_find_byte(struct kexe_context_v10 *context,
+static int64_t checked_string_find_byte(struct kexe_context_v11 *context,
                                         int64_t handle, int64_t byte, int64_t from) {
-  if (context == NULL || context->version != 10) { raise(SIGILL); return 0; }
+  if (context == NULL || context->version != 11) { raise(SIGILL); return 0; }
   int64_t offset = checked_pair_get(context, handle, 0);
   int64_t length = checked_pair_get(context, handle, 1);
   if (length < 0 || byte < 0 || byte > 127 || from < 0 || from > length) {
@@ -4569,11 +4641,11 @@ static int64_t checked_string_find_byte(struct kexe_context_v10 *context,
   return hit == NULL ? -1 : (int64_t)(hit - bytes);
 }
 
-static int64_t checked_string_append_range(struct kexe_context_v10 *context,
+static int64_t checked_string_append_range(struct kexe_context_v11 *context,
                                            int64_t acc, int64_t handle,
                                            int64_t start, int64_t end) {
-  struct kexe_shared_v10 *shared = (struct kexe_shared_v10 *)context;
-  if (context == NULL || context->version != 10) { raise(SIGILL); return 0; }
+  struct kexe_shared_v11 *shared = (struct kexe_shared_v11 *)context;
+  if (context == NULL || context->version != 11) { raise(SIGILL); return 0; }
   int64_t offset_a = checked_pair_get(context, acc, 0);
   int64_t length_a = checked_pair_get(context, acc, 1);
   int64_t offset_s = checked_pair_get(context, handle, 0);
@@ -4628,10 +4700,160 @@ static int64_t checked_string_append_range(struct kexe_context_v10 *context,
   return mark_validated(context, result);
 }
 
+/* ABI v11: see the four slots' comment in the context struct. */
+
+/* The FIRST reason BYTES are not canonical UTF-8, as a value-trap index, or 0.
+ * The same walk, in the same order, as osaho kotoba.kir.value/utf8-invalid-at
+ * -- which is what makes "the same name on every backend" checkable: the
+ * second byte's range is decided before the rest is looked for, so E0 80 is
+ * overlong, not truncated. */
+static uint64_t utf8_invalid_reason(const int64_t *items, uint64_t n) {
+  uint64_t i = 0;
+  while (i < n) {
+    int64_t b0 = items[i];
+    if (b0 < 0x80) { i++; continue; }
+    if (b0 < 0xc0) return 1;
+    if (b0 < 0xc2) return 2;
+    if (b0 > 0xf4) return 3;
+    if (i + 1 >= n) return 4;
+    int64_t b1 = items[i + 1];
+    uint64_t k = b0 < 0xe0 ? 1 : b0 < 0xf0 ? 2 : 3;
+    if ((b1 & 0xc0) != 0x80) return 5;
+    if (b0 == 0xe0 && b1 < 0xa0) return 2;
+    if (b0 == 0xf0 && b1 < 0x90) return 2;
+    if (b0 == 0xed && b1 >= 0xa0) return 6;
+    if (b0 == 0xf4 && b1 >= 0x90) return 7;
+    for (uint64_t j = 2; j <= k; j++) {
+      if (i + j >= n) return 4;
+      if ((items[i + j] & 0xc0) != 0x80) return 5;
+    }
+    i += k + 1;
+  }
+  return 0;
+}
+
+static int64_t checked_string_from_utf8(struct kexe_context_v11 *context,
+                                        int64_t handle) {
+  struct kexe_shared_v11 *shared = (struct kexe_shared_v11 *)context;
+  if (context == NULL || context->version != 11) { raise(SIGILL); return 0; }
+  struct kexe_vector_v1 *vector = resolve_vector(shared, handle);
+  if (vector == NULL) { raise(SIGILL); return 0; }
+  uint64_t n = vector->length;
+  const int64_t *items = &shared->vector_items[vector->offset];
+  if (n > KEXE_STRING_VALUE_LIMIT) {
+    note_value_trap(KEXE_VALUE_TRAP_STRING_TOO_LARGE);
+    raise(SIGILL);
+    return 0;
+  }
+  /* A bytes value's items are 0..255 by construction (bytes_from_vector);
+   * a word outside that range means the handle is not a bytes value, and the
+   * walk below would read it as a byte it is not. Refused, unnamed: a
+   * malformed call, not a value the language can hold. */
+  for (uint64_t i = 0; i < n; i++) {
+    if (items[i] < 0 || items[i] > 255) { raise(SIGILL); return 0; }
+  }
+  uint64_t reason = utf8_invalid_reason(items, n);
+  if (reason != 0) { note_value_trap(reason); raise(SIGILL); return 0; }
+  if (shared->string_pool_used + n > kexe_string_pool_budget ||
+      shared->string_pool_used + n < shared->string_pool_used) {
+    note_budget(KEXE_BUDGET_BYTES_STRING_POOL);
+    raise(SIGILL);
+    return 0;
+  }
+  uint64_t pool_offset = shared->string_pool_used;
+  for (uint64_t i = 0; i < n; i++) shared->string_pool[pool_offset + i] = (uint8_t)items[i];
+  shared->string_pool_used += n;
+  /* Validated above, by the stricter rule (named reasons) than valid_utf8's. */
+  return mark_validated(context,
+                        checked_pair_new(context, -((int64_t)pool_offset) - 1, (int64_t)n));
+}
+
+static int64_t checked_bytes_from_vector(struct kexe_context_v11 *context,
+                                         int64_t handle) {
+  struct kexe_shared_v11 *shared = (struct kexe_shared_v11 *)context;
+  if (context == NULL || context->version != 11) { raise(SIGILL); return 0; }
+  struct kexe_vector_v1 *vector = resolve_vector(shared, handle);
+  if (vector == NULL) { raise(SIGILL); return 0; }
+  uint64_t offset = vector->offset;
+  uint64_t n = vector->length;
+  if (n > KEXE_BYTES_VALUE_LIMIT) {
+    note_value_trap(KEXE_VALUE_TRAP_BYTES_TOO_LARGE);
+    raise(SIGILL);
+    return 0;
+  }
+  for (uint64_t i = 0; i < n; i++) {
+    int64_t item = shared->vector_items[offset + i];
+    if (item < 0 || item > 255) {
+      note_value_trap(KEXE_VALUE_TRAP_BYTES_ITEM_OUT_OF_RANGE);
+      raise(SIGILL);
+      return 0;
+    }
+  }
+  if (shared->vector_item_used + n > kexe_vector_item_budget) {
+    arena_exhausted("vector-items-exhausted");
+    raise(SIGILL);
+    return 0;
+  }
+  uint64_t destination = shared->vector_item_used;
+  memmove(&shared->vector_items[destination], &shared->vector_items[offset],
+          (size_t)n * sizeof(int64_t));
+  shared->vector_item_used += n;
+  int64_t result = intern_vector(shared, destination, n);
+  if (result == 0) { arena_exhausted("vector-table-exhausted"); raise(SIGILL); return 0; }
+  return result;
+}
+
+static int64_t checked_bytes_slice(struct kexe_context_v11 *context,
+                                   int64_t handle, int64_t start, int64_t end) {
+  struct kexe_shared_v11 *shared = (struct kexe_shared_v11 *)context;
+  if (context == NULL || context->version != 11) { raise(SIGILL); return 0; }
+  struct kexe_vector_v1 *vector = resolve_vector(shared, handle);
+  if (vector == NULL) { raise(SIGILL); return 0; }
+  if (start < 0 || end < start || (uint64_t)end > vector->length) {
+    note_value_trap(KEXE_VALUE_TRAP_BYTES_SLICE_BOUNDS);
+    raise(SIGILL);
+    return 0;
+  }
+  int64_t result = intern_vector(shared, vector->offset + (uint64_t)start,
+                                 (uint64_t)(end - start));
+  if (result == 0) { arena_exhausted("vector-table-exhausted"); raise(SIGILL); return 0; }
+  return result;
+}
+
+static int64_t checked_bytes_concat(struct kexe_context_v11 *context,
+                                    int64_t left, int64_t right) {
+  struct kexe_shared_v11 *shared = (struct kexe_shared_v11 *)context;
+  if (context == NULL || context->version != 11) { raise(SIGILL); return 0; }
+  struct kexe_vector_v1 *a = resolve_vector(shared, left);
+  struct kexe_vector_v1 *b = resolve_vector(shared, right);
+  if (a == NULL || b == NULL) { raise(SIGILL); return 0; }
+  uint64_t a_offset = a->offset, a_length = a->length;
+  uint64_t b_offset = b->offset, b_length = b->length;
+  if (a_length + b_length > KEXE_BYTES_VALUE_LIMIT) {
+    note_value_trap(KEXE_VALUE_TRAP_BYTES_TOO_LARGE);
+    raise(SIGILL);
+    return 0;
+  }
+  if (shared->vector_item_used + a_length + b_length > kexe_vector_item_budget) {
+    arena_exhausted("vector-items-exhausted");
+    raise(SIGILL);
+    return 0;
+  }
+  uint64_t destination = shared->vector_item_used;
+  memmove(&shared->vector_items[destination], &shared->vector_items[a_offset],
+          (size_t)a_length * sizeof(int64_t));
+  memmove(&shared->vector_items[destination + a_length], &shared->vector_items[b_offset],
+          (size_t)b_length * sizeof(int64_t));
+  shared->vector_item_used += a_length + b_length;
+  int64_t result = intern_vector(shared, destination, a_length + b_length);
+  if (result == 0) { arena_exhausted("vector-table-exhausted"); raise(SIGILL); return 0; }
+  return result;
+}
+
 /* arena-scope (ABI v6): see the slot's comment in the context struct. */
-static int64_t checked_arena_enter(struct kexe_context_v10 *context) {
-  struct kexe_shared_v10 *shared = (struct kexe_shared_v10 *)context;
-  if (context == NULL || context->version != 10) { raise(SIGILL); return 0; }
+static int64_t checked_arena_enter(struct kexe_context_v11 *context) {
+  struct kexe_shared_v11 *shared = (struct kexe_shared_v11 *)context;
+  if (context == NULL || context->version != 11) { raise(SIGILL); return 0; }
   if (shared->arena_scope_depth >= KEXE_ARENA_SCOPE_DEPTH) { raise(SIGILL); return 0; }
   uint64_t *mark = shared->arena_scope_marks[shared->arena_scope_depth];
   mark[0] = shared->pair_used;
@@ -4642,9 +4864,9 @@ static int64_t checked_arena_enter(struct kexe_context_v10 *context) {
   return 0;
 }
 
-static int64_t checked_arena_leave(struct kexe_context_v10 *context) {
-  struct kexe_shared_v10 *shared = (struct kexe_shared_v10 *)context;
-  if (context == NULL || context->version != 10) { raise(SIGILL); return 0; }
+static int64_t checked_arena_leave(struct kexe_context_v11 *context) {
+  struct kexe_shared_v11 *shared = (struct kexe_shared_v11 *)context;
+  if (context == NULL || context->version != 11) { raise(SIGILL); return 0; }
   if (shared->arena_scope_depth == 0) { raise(SIGILL); return 0; }
   shared->arena_scope_depth--;
   const uint64_t *mark = shared->arena_scope_marks[shared->arena_scope_depth];
@@ -4665,9 +4887,9 @@ static int64_t checked_arena_leave(struct kexe_context_v10 *context) {
 }
 
 /* ABI v7 text operations: see the slots' comment in the context struct. */
-static int64_t checked_string_compare(struct kexe_context_v10 *context,
+static int64_t checked_string_compare(struct kexe_context_v11 *context,
                                       int64_t handle_a, int64_t handle_b) {
-  if (context == NULL || context->version != 10) { raise(SIGILL); return 0; }
+  if (context == NULL || context->version != 11) { raise(SIGILL); return 0; }
   int64_t offset_a = checked_pair_get(context, handle_a, 0);
   int64_t length_a = checked_pair_get(context, handle_a, 1);
   int64_t offset_b = checked_pair_get(context, handle_b, 0);
@@ -4692,10 +4914,10 @@ static int64_t checked_string_compare(struct kexe_context_v10 *context,
   return 0;
 }
 
-static int64_t checked_string_fold_ascii(struct kexe_context_v10 *context,
+static int64_t checked_string_fold_ascii(struct kexe_context_v11 *context,
                                          int64_t handle) {
-  struct kexe_shared_v10 *shared = (struct kexe_shared_v10 *)context;
-  if (context == NULL || context->version != 10) { raise(SIGILL); return 0; }
+  struct kexe_shared_v11 *shared = (struct kexe_shared_v11 *)context;
+  if (context == NULL || context->version != 11) { raise(SIGILL); return 0; }
   int64_t offset = checked_pair_get(context, handle, 0);
   int64_t length = checked_pair_get(context, handle, 1);
   if (length < 0) { raise(SIGILL); return 0; }
@@ -4729,10 +4951,10 @@ static int kexe_blank_byte(uint8_t c) {
  * blankness equals WANTED, answering MISSING when none. Blanks are ASCII,
  * so the scan never has to stop inside a multi-byte sequence to answer,
  * and a continuation byte is never a blank. */
-static int64_t checked_string_scan_blank(struct kexe_context_v10 *context,
+static int64_t checked_string_scan_blank(struct kexe_context_v11 *context,
                                          int64_t handle, int64_t from,
                                          int wanted, int missing_is_length) {
-  if (context == NULL || context->version != 10) { raise(SIGILL); return 0; }
+  if (context == NULL || context->version != 11) { raise(SIGILL); return 0; }
   int64_t offset = checked_pair_get(context, handle, 0);
   int64_t length = checked_pair_get(context, handle, 1);
   if (length < 0 || from < 0 || from > length) { raise(SIGILL); return 0; }
@@ -4746,20 +4968,20 @@ static int64_t checked_string_scan_blank(struct kexe_context_v10 *context,
   return missing_is_length ? length : -1;
 }
 
-static int64_t checked_string_find_blank(struct kexe_context_v10 *context,
+static int64_t checked_string_find_blank(struct kexe_context_v11 *context,
                                          int64_t handle, int64_t from) {
   return checked_string_scan_blank(context, handle, from, 1, 0);
 }
 
-static int64_t checked_string_skip_blank(struct kexe_context_v10 *context,
+static int64_t checked_string_skip_blank(struct kexe_context_v11 *context,
                                          int64_t handle, int64_t from) {
   return checked_string_scan_blank(context, handle, from, 0, 1);
 }
 
-static int64_t checked_string_concat(struct kexe_context_v10 *context,
+static int64_t checked_string_concat(struct kexe_context_v11 *context,
                                      int64_t handle_a, int64_t handle_b) {
-  struct kexe_shared_v10 *shared = (struct kexe_shared_v10 *)context;
-  if (context == NULL || context->version != 10) { raise(SIGILL); return 0; }
+  struct kexe_shared_v11 *shared = (struct kexe_shared_v11 *)context;
+  if (context == NULL || context->version != 11) { raise(SIGILL); return 0; }
   int64_t offset_a = checked_pair_get(context, handle_a, 0);
   int64_t length_a = checked_pair_get(context, handle_a, 1);
   int64_t offset_b = checked_pair_get(context, handle_b, 0);
@@ -4850,10 +5072,10 @@ static int64_t checked_string_concat(struct kexe_context_v10 *context,
  *      that is checked rather than assumed: a guest can hand over any pair,
  *      and over invalid UTF-8 "not a continuation byte" would not mean
  *      "code-point boundary". */
-static int64_t checked_string_substring(struct kexe_context_v10 *context,
+static int64_t checked_string_substring(struct kexe_context_v11 *context,
                                         int64_t handle, int64_t start,
                                         int64_t end) {
-  if (context == NULL || context->version != 10) { raise(SIGILL); return 0; }
+  if (context == NULL || context->version != 11) { raise(SIGILL); return 0; }
   int64_t offset = checked_pair_get(context, handle, 0);
   int64_t length = checked_pair_get(context, handle, 1);
   if (length < 0 || start < 0 || end < start || end > length) {
@@ -4885,9 +5107,9 @@ static int64_t checked_string_substring(struct kexe_context_v10 *context,
  * walks a string. valid_utf8 has already established that a sequence starting
  * at a non-continuation byte has all of its continuation bytes inside the
  * string, which is why they are read without further bounds checks. */
-static int64_t checked_string_code_point_at(struct kexe_context_v10 *context,
+static int64_t checked_string_code_point_at(struct kexe_context_v11 *context,
                                             int64_t handle, int64_t byte_offset) {
-  if (context == NULL || context->version != 10) { raise(SIGILL); return 0; }
+  if (context == NULL || context->version != 11) { raise(SIGILL); return 0; }
   int64_t offset = checked_pair_get(context, handle, 0);
   int64_t length = checked_pair_get(context, handle, 1);
   if (length < 0 || byte_offset < 0 || byte_offset >= length) {
@@ -5131,7 +5353,7 @@ static int supervise(pid_t child) {
  *
  * frames are not metered on native (no call-depth counter in the compiled
  * code); the guest stack is RLIMIT_STACK and its exhaustion is a signal. */
-static void report_budget_trap(const struct kexe_shared_v10 *shared, int child_status) {
+static void report_budget_trap(const struct kexe_shared_v11 *shared, int child_status) {
   if (child_status == 0) return;
   const char *line = NULL;
   switch (shared->budget_exhausted) {
@@ -5153,9 +5375,17 @@ static void report_budget_trap(const struct kexe_shared_v10 *shared, int child_s
       break;
   }
   if (line != NULL) write_stderr_checked(line, strlen(line));
+  /* ABI v11: a named VALUE trap, recorded by the refusing host call. */
+  if (shared->value_trap > 0 && shared->value_trap < KEXE_VALUE_TRAP_COUNT) {
+    static const char prefix[] = "KEXE_TRAP {:kind :value :reason :";
+    const char *name = kexe_value_trap_names[shared->value_trap];
+    write_stderr_checked(prefix, sizeof(prefix) - 1);
+    write_stderr_checked(name, strlen(name));
+    write_stderr_checked("}\n", 2);
+  }
 }
 
-static int write_supervisor_report(const struct kexe_shared_v10 *shared,
+static int write_supervisor_report(const struct kexe_shared_v11 *shared,
                                    int child_status,
                                    const char *result_type,
                                    uint64_t record_field_count,
@@ -5639,7 +5869,7 @@ int main(int argc, char **argv) {
              strcmp(result_type, "option-i64") != 0 &&
              strcmp(result_type, "result-i64") != 0) return 2;
   int64_t args[6] = {0, 0, 0, 0, 0, 0};
-  struct kexe_shared_v10 *shared =
+  struct kexe_shared_v11 *shared =
       mmap(NULL, sizeof(*shared), PROT_READ | PROT_WRITE,
            MAP_SHARED | MAP_ANONYMOUS, -1, 0);
   if (shared == MAP_FAILED) fail("mmap shared execution state");
@@ -5651,7 +5881,7 @@ int main(int argc, char **argv) {
    * reaches it. Measured with the arena mapped over 256 MiB: with the memset
    * a run costs the whole mapping; without it, a run that allocates 64 KiB
    * faults 64 KiB. */
-  shared->context.version = 10;
+  shared->context.version = 11;
 #ifdef KEXE_EMBEDDED
   /* Fuel is a constant of a packaged command for the same reason its grant,
    * its scopes and its string arena are: a caller that could raise the fuel
@@ -5802,6 +6032,11 @@ int main(int argc, char **argv) {
   shared->context.string_compare_lines = checked_string_compare_lines;
   shared->context.string_find_byte = checked_string_find_byte;
   shared->context.string_append_range = checked_string_append_range;
+  /* ABI v11: the string constructor and the three bytes slots. */
+  shared->context.string_from_utf8 = checked_string_from_utf8;
+  shared->context.bytes_from_vector = checked_bytes_from_vector;
+  shared->context.bytes_slice = checked_bytes_slice;
+  shared->context.bytes_concat = checked_bytes_concat;
   /* ABI v9: the six pointers the inline handle operations read. */
   shared->context.pair_used_pointer = &shared->pair_used;
   shared->context.pairs_base = shared->pairs;

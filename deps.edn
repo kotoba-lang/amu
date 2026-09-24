@@ -159,7 +159,9 @@
          ;; tags only. Moves WITH osaho below.
          ;; Advanced 2026-09-24, fe952ba6 -> 73801678 (kotoba-script main, ahead 4,
          ;; behind 0, forward only), adr-2609242100 P4: ESM profile: four named budgets, frames 1024, instantiateKotoba(grants, budgets).
-         :git/sha "73801678b003d9732bff6f364bfeb070a288d111"}
+         ;; Advanced 2026-09-25, 73801678 -> d90bc851 (kotoba-script main, ahead 2, forward only):
+         ;; the bytes heads and string-from-utf8 in emitted ESM, named traps (string-from-bytes, superproject adr-2609242330).
+         :git/sha "d90bc851e9425f2d019130cda3c987defef9117f"}
         ;; ADR-0222: source reading and semantic analysis live behind the
         ;; kotoba-sema repository boundary and public semantic-analysis API.
         ;;
@@ -675,7 +677,9 @@
          ;; 0 5))] (+ (vector-at w 0) (vector-at v 0)))` answered 10, the copy
          ;; 5), refuses a store inside cond->/some->/doto, and checks
          ;; vector-f64-assoc! handles, which it never did.
-         "5d4161c565b6503e92660d00e56074558cb3527c"} ;; Advanced 2026-09-25 a7f5ae17 -> 5d4161c5 (main tip, forward only): the state ability, slice 1 (kotoba-lang lang/state-ability.edn, superproject adr-2609242200) -- defhandler / perform :state/* / handle (with ..), specialization and state passing; guest-grammar d87fe28a. Before that: Advanced 2026-09-24 451afded -> a7f5ae17 (main tip, ahead 5, forward only): adr-2609242100 P1 -- max-type-depth / max-schema-depth 8 -> 12, guest-grammar bdbc8474. Before that: 8571681a -> 451afded (main tip, forward only): selfhost walls: fn-body-clj-only, some-two-arg, regex literal, char literal, clojure.* to kotoba.*
+         ;; Advanced 2026-09-25, 5d4161c5 -> 3d5de58a (kotoba-sema main, ahead 2, forward only):
+         ;; the bytes constructors and string-from-utf8 typed; the fold keys on :budget/fuel; grammar copy at digest d71c8b00 (string-from-bytes, superproject adr-2609242330).
+         "3d5de58acf3d3f24c15817f21752930cce32f2de"} ;; Advanced 2026-09-25 a7f5ae17 -> 5d4161c5 (main tip, forward only): the state ability, slice 1 (kotoba-lang lang/state-ability.edn, superproject adr-2609242200) -- defhandler / perform :state/* / handle (with ..), specialization and state passing; guest-grammar d87fe28a. Before that: Advanced 2026-09-24 451afded -> a7f5ae17 (main tip, ahead 5, forward only): adr-2609242100 P1 -- max-type-depth / max-schema-depth 8 -> 12, guest-grammar bdbc8474. Before that: 8571681a -> 451afded (main tip, forward only): selfhost walls: fn-body-clj-only, some-two-arg, regex literal, char literal, clojure.* to kotoba.*
         ;; ADR-2607266000 Phase B: these responsibilities moved out of this repo.
         ;;
         ;; The slice-value stream held this pin on purpose (ADR 0314), because
@@ -850,7 +854,9 @@
          ;; aggregate ABI v8 -- recursive / generic ADT handles on native.
          ;; Advanced 2026-09-24, ba217bff -> f305bb00 (osaho main, ahead 2,
          ;; behind 0, forward only), adr-2609242100 P4: reference profile: :budget/fuel|cells|bytes|frames, frames 32, oracle-inconclusive in lower.
-         :git/sha "ed96b8da11d43a6f647a5d05da701f5201aa992e"} ;; Advanced 2026-09-25 f305bb00 -> ed96b8da (main tip, forward only): the state ability -- :state is a sealed control-effect keyword and a :state-only module is oracled like a pure one. Before that: Advanced 2026-09-24 c5f77e12 -> 4860f4c1 (main tip, forward only): selfhost walls: fn-body-clj-only, some-two-arg, regex literal, char literal, clojure.* to kotoba.*
+         ;; Advanced 2026-09-25, ed96b8da -> 353dd5f3 (osaho main, ahead 2, forward only):
+         ;; reference semantics of the bytes heads and string-from-utf8, native admission, descriptors (string-from-bytes, superproject adr-2609242330).
+         :git/sha "353dd5f30bf803528f355f3b8090413a71e51bc8"} ;; Advanced 2026-09-25 f305bb00 -> ed96b8da (main tip, forward only): the state ability -- :state is a sealed control-effect keyword and a :state-only module is oracled like a pure one. Before that: Advanced 2026-09-24 c5f77e12 -> 4860f4c1 (main tip, forward only): selfhost walls: fn-body-clj-only, some-two-arg, regex literal, char literal, clojure.* to kotoba.*
          ;; Advanced 2026-09-24, 4860f4c1 -> 245bfeb3 (osaho main, ahead 4, behind 0,
          ;; forward only by gh api compare): adr-2609242100 P2 -- a typed value is
          ;; validated once, at execute arguments and capability results, by an
@@ -1006,7 +1012,9 @@
          ;; this commit; without it windows-arm64 and browser-matrix
          ;; (windows-2025) refused the loader as "native loader source identity
          ;; mismatch" (measured on this PR's first CI run).
-         :git/sha "9c13e7377b8cceff4f907ebc66a82926280a4292"}
+         ;; Advanced 2026-09-25, 9c13e737 -> 52e91b8c (artifact main, ahead 2, forward only):
+         ;; the POSIX / Windows loader identities at context ABI v11 (string-from-bytes, superproject adr-2609242330).
+         :git/sha "52e91b8cb5e3e196d33f58cebeb79766e962f0b8"}
         ;; HELD at 1a2e10c on 2026-09-03 (ADR 0331), 28 commits behind its main,
         ;; while every other pin in this file moved to the tip. The reason, so
         ;; that a lagging pin and a pin with an argument behind it stay
@@ -1112,7 +1120,9 @@
          ;; the 16384 the component memory is sized from (same pages).
          ;; Advanced 2026-09-24, 3f0a3ac3 -> 4afb3a57 (kotoba-wasm main, ahead 4,
          ;; behind 0, forward only), adr-2609242100 P4: a loop with a reference-typed result is a Wasm loop, not recursion.
-         :git/sha "4afb3a57f2ccf4090467129d353c41faed76b6f3"}
+         ;; Advanced 2026-09-25, 4afb3a57 -> 185b3ed0 (kotoba-wasm main, ahead 2, forward only):
+         ;; the bytes constructors and string-from-utf8 as kotoba:typed intrinsics (runtime/browser-host.mjs answers them) (string-from-bytes, superproject adr-2609242330).
+         :git/sha "185b3ed0170e486b9d29e1e97acc5e13ec5cbbe4"}
         ;; Production KIR routes exclusively through whole-module
         ;; GMIR/MIR/allocated-MC, including word/f64/memory/runtime/capability,
         ;; literal-data, scalar variant, word-field record, and x86 privileged
@@ -1393,7 +1403,9 @@
          ;; forward only: ahead 2 behind 0). The kernel-object-entries row for
          ;; `aiueos-browser-key`, the guest desktop's input method (aiueos
          ;; ADR-0225) -- that object compiles only with the row.
-         :git/sha "b6bfe0aae6b8791aa4d25bcafbf8f22cf7c25761"} ;; Advanced 2026-09-24 71026eb2 -> b6bfe0aa (main tip, forward only): selfhost walls: fn-body-clj-only, some-two-arg, regex literal, char literal, clojure.* to kotoba.*
+         ;; Advanced 2026-09-25, b6bfe0aa -> 98406d16 (kotoba-native main, ahead 8, forward only):
+         ;; context ABI v11 slots 352-376 on both ISAs (the 6 commits before it are main's own) (string-from-bytes, superproject adr-2609242330).
+         :git/sha "98406d1669637be5d4fe54ad2a6ddd30752113af"} ;; Advanced 2026-09-24 71026eb2 -> b6bfe0aa (main tip, forward only): selfhost walls: fn-body-clj-only, some-two-arg, regex literal, char literal, clojure.* to kotoba.*
         io.github.kotoba-lang/kotoba-component
         {:git/url "https://github.com/kotoba-lang/kotoba-component.git"
          ;; Advanced 2026-09-11, ff2c3e8c -> cad39ab0 (kotoba-component main,
@@ -1603,7 +1615,9 @@
          ;; aggregate ABI v8 -- recursive / generic ADT handles on native.
          ;; Advanced 2026-09-24, 9a0d3341 -> 447dfb00 (kotoba-verifier main, ahead 5,
          ;; behind 0, forward only), adr-2609242100 P4: unmetered native artifacts; oracle inconclusive admitted only when the artifact says so.
-         :git/sha "c4742c040f0ad978bc8c91e1fc5175454d8d41f6"} ;; Advanced 2026-09-25 447dfb00 -> c4742c04 (main tip, forward only): the state ability -- a native artifact whose rows carry :state is verified, capability part re-derived. Before that: Advanced 2026-09-24 95393017 -> 9a0d3341 (main tip, ahead 5, forward only): adr-2609242100 P1 -- string-literal-byte-limit 4096 -> 65536. Before that: 1e304790 -> 95393017 (main tip, forward only): selfhost walls: fn-body-clj-only, some-two-arg, regex literal, char literal, clojure.* to kotoba.*
+         ;; Advanced 2026-09-25, c4742c04 -> 58de25fa (kotoba-verifier main, ahead 2, forward only):
+         ;; expected-context v11 and the bytes heads' arities (string-from-bytes, superproject adr-2609242330).
+         :git/sha "58de25fa191c2e10bd3dd73745a45915c3cdd1fc"} ;; Advanced 2026-09-25 447dfb00 -> c4742c04 (main tip, forward only): the state ability -- a native artifact whose rows carry :state is verified, capability part re-derived. Before that: Advanced 2026-09-24 95393017 -> 9a0d3341 (main tip, ahead 5, forward only): adr-2609242100 P1 -- string-literal-byte-limit 4096 -> 65536. Before that: 1e304790 -> 95393017 (main tip, forward only): selfhost walls: fn-body-clj-only, some-two-arg, regex literal, char literal, clojure.* to kotoba.*
 
         ;; EXPLICIT FLOORS FOR TRANSITIVE DEPENDENCIES (2026-09-12, adr-2609111900
         ;; source-side wave). None of the eight coordinates below was named in
@@ -1698,7 +1712,9 @@
          ;; a51dbab3 -> fe5ce059 -> 2c4793dd (2026-09-16, its #68 / #69):
          ;; offsets 272 / 280 and the fourth runtime argument register.
          ;; 2c4793dd -> 944b5d30 (2026-09-16, its #70): offsets 336 / 344.
-         :git/sha "cfb086be2cffbe06147e097de88a4558078df301"} ;; Advanced 2026-09-24 6d92aea9 -> cfb086be (main tip, forward only): selfhost walls: fn-body-clj-only, some-two-arg, regex literal, char literal, clojure.* to kotoba.*
+         ;; Advanced 2026-09-25, cfb086be -> 67a83d06 (kotoba-mir main, ahead 4, forward only):
+         ;; offsets 352-376 (string-from-bytes, superproject adr-2609242330).
+         :git/sha "67a83d0635e8502acab7f56cb6c4cf50f31de575"} ;; Advanced 2026-09-24 6d92aea9 -> cfb086be (main tip, forward only): selfhost walls: fn-body-clj-only, some-two-arg, regex literal, char literal, clojure.* to kotoba.*
         io.github.kotoba-lang/kotoba-gmir
         {:git/url "https://github.com/kotoba-lang/kotoba-gmir.git"
          ;; a3f0597c -> a4b682c4 (kotoba-gmir main, ahead 6, behind 0)
@@ -1708,7 +1724,9 @@
          ;; 966bb4ca -> 2f4ee3ac (2026-09-16, its #33): the four text arities.
          ;; 2f4ee3ac -> 790a7298 (2026-09-16, its #34): the two line arities.
          ;; 790a7298 -> 3350ad20 (2026-09-16, its #35): the two range arities.
-         :git/sha "cf39f7c1a239666b5e0e3ac82c27bdeb6add0807"}
+         ;; Advanced 2026-09-25, cf39f7c1 -> 47763164 (kotoba-gmir main, ahead 4, forward only):
+         ;; the four ABI v11 runtime arities (string-from-bytes, superproject adr-2609242330).
+         :git/sha "47763164ceec7be14d67fc35ef619f71d383eab9"}
         ;; org-nist-sha2: named by osaho f404babb as cb67e53e. Its main adds
         ;; `text` as a dependency (already here) and moves amu / osaho into
         ;; the :test alias, so the closure does not grow.
@@ -1725,7 +1743,9 @@
          ;; behind 0, forward only by gh api compare): adr-2609242330 S1 -- pure
          ;; byte plumbing, Kotoba `:default` leaves; encoded bytes pinned by a
          ;; 2,367-value golden corpus written by 8ddc27d6, io-ipld CIDs unchanged.
-         :git/sha "b3391fa30546e94d957ab04d3653389c9204cf8b"} ;; Advanced 2026-09-24 4c129f82 -> 8ddc27d6 (main tip, forward only): selfhost walls: fn-body-clj-only, some-two-arg, regex literal, char literal, clojure.* to kotoba.*
+         ;; Advanced 2026-09-25, b3391fa3 -> cd9adc9b (org-ietf-cbor main, ahead 2, forward only):
+         ;; bytes->str / bytes-like? get Kotoba bodies; text decodes fatally (string-from-bytes, superproject adr-2609242330).
+         :git/sha "cd9adc9bf6fcb889c73b4776f4eafac52bf8e723"} ;; Advanced 2026-09-24 4c129f82 -> 8ddc27d6 (main tip, forward only): selfhost walls: fn-body-clj-only, some-two-arg, regex literal, char literal, clojure.* to kotoba.*
         ;; org-ietf-ed25519: named by kotoba-core-contracts 06d1e98a and
         ;; security 0e8e1a61 as c1ba8322. Its main adds `org-ietf-x25519` (a
         ;; real dependency of ed25519.edwards, two unannotated modules) -- taken,

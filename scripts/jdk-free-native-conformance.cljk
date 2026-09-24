@@ -259,6 +259,22 @@
               :arguments [] :expected "319352"}
              {:source "range-slots.kotoba" :symbol "bad-byte"
               :arguments [] :expected :trap}
+             ;; ABI v11 (2026-09-25, superproject adr-2609242330): `:bytes`
+             ;; and the string constructor, slots 352-376. A decimal place per
+             ;; head; each refusal traps, and the loader NAMES it
+             ;; (KEXE_TRAP {:kind :value :reason :utf8/overlong} ...). The
+             ;; last needs a 131,073-item arena for the 65536 + 1 it copies.
+             {:source "bytes-slots.kotoba" :symbol "main"
+              :arguments [] :expected "7305239"}
+             {:source "bytes-slots.kotoba" :symbol "overlong"
+              :arguments [] :expected :trap}
+             {:source "bytes-slots.kotoba" :symbol "surrogate"
+              :arguments [] :expected :trap}
+             {:source "bytes-slots.kotoba" :symbol "not-a-byte"
+              :arguments [] :expected :trap}
+             {:source "bytes-slots.kotoba" :symbol "too-large"
+              :arguments [] :expected :trap
+              :env {"KEXE_VECTOR_ITEMS" "262144"}}
              ;; Aggregate ABI v8 (kotoba-native ADR 0087, 2026-09-24): recursive
              ;; and generic ADTs as one-word handles. Each expected value was
              ;; measured by executing the artifact; each fixture explains it.

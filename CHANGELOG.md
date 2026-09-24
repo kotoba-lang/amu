@@ -21,6 +21,23 @@ file's own addition was written with a changelog in mind.
 
 ## [Unreleased]
 
+### `:bytes` as a guest value and `string-from-utf8`: context ABI v11 (2026-09-25, superproject adr-2609242330)
+
+The language had no way to build a string from bytes and no way to build a
+non-empty `:bytes` value. `(bytes-from-vector-i64 v)` builds one (every item
+in [0,255], at most 65536; refused, never masked), `(vector-i64-from-bytes b)`
+reads one back, and `(string-from-utf8 b)` builds a string from CANONICAL
+UTF-8 only -- the first bad sequence traps by name (`utf8/overlong`,
+`utf8/surrogate`, `utf8/above-max`, `utf8/truncated`, ...), never replaced
+with U+FFFD. The five existing bytes heads now run everywhere, not only on
+Wasm. Native carries a bytes value as a vector-arena handle; the loader gains
+four slots (`string_from_utf8` 352, `bytes_from_vector` 360, `bytes_slice`
+368, `bytes_concat` 376, context version 11) and names the value traps it
+refuses (`KEXE_TRAP {:kind :value :reason :utf8/overlong}`). The browser
+host answers three new `kotoba:typed` intrinsics with the same names as its
+error codes (and its three existing bytes refusals now carry them too).
+`examples/bytes-slots.kotoba` runs in the native conformance.
+
 ### An omitted `--target` is the host's native target (2026-09-24, ADR 0351)
 
 `amu compile <file>` and `amu worker` with no `--target` now build for the
