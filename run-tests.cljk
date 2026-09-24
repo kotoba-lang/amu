@@ -46,6 +46,16 @@
 ;; Both are genuinely JVM-only as written. Splitting their file-free assertions
 ;; into portable siblings is real follow-on work, not a rename.
 ;;
+;; UPDATE 2026-09-25: the engine pin moved to org-babashka-nbb 95ff779 (the
+;; superproject west pin), whose `nbb.jvm.*` compatibility layer loads far more
+;; of the JVM runner's namespaces. Each of the 173 namespaces that
+;; `test/kotoba/compiler/test_runner.cljk` ran and this file did not was loaded
+;; and run on kbb one at a time; the 35 that loaded AND passed with zero
+;; failures/errors were added (value-bounds-agreement-test among them), taking
+;; this suite from 73 to 221 tests. The other 138 either did not load (61) or
+;; loaded with failures/errors -- they stay JVM-only until that changes, and
+;; are not listed here so a pass here does not claim them.
+;;
 ;; Anything added to `test/` as `.cljc` belongs in BOTH lists below. Being
 ;; required is not being run -- and neither is being NAMED: a namespace placed
 ;; just above the `(t/run-tests ...)` form instead of inside it is a bare
@@ -54,15 +64,50 @@
 ;; line, never by grepping this file.
 (ns run-tests
   (:require [cljs.test :as t]
+            [kotoba.compiler.accelerator-test]
+            [kotoba.compiler.backend-cljs-portable-test]
+            [kotoba.compiler.backend-evm-test]
+            [kotoba.compiler.backend-qualification-test]
             [kotoba.compiler.bounded-edn-portable-test]
+            [kotoba.compiler.coverage-evidence-test]
+            [kotoba.compiler.coverage-test]
             [kotoba.compiler.definition-identity-portable-test]
+            [kotoba.compiler.definition-identity-test]
+            [kotoba.compiler.document-dom-reconcile-test]
+            [kotoba.compiler.document-sha256-test]
+            [kotoba.compiler.dom-app-repaint-test]
             [kotoba.compiler.effect-classification-test]
+            [kotoba.compiler.error-code-contract-test]
+            [kotoba.compiler.frontend-equality-diagnostic-test]
             [kotoba.compiler.fuel-estimate-portable-test]
+            [kotoba.compiler.fuel64-ceiling-test]
+            [kotoba.compiler.fuel64-efi-budget-test]
+            [kotoba.compiler.granted-region-test]
             [kotoba.compiler.host-bytes-portable-test]
+            [kotoba.compiler.host-profile-test]
+            [kotoba.compiler.ios-aot-test]
             [kotoba.compiler.logic-manifest-test]
+            [kotoba.compiler.native-aot-qualification-test]
+            [kotoba.compiler.native-device-io-test]
+            [kotoba.compiler.nbb.verdict-cache-test]
             [kotoba.compiler.plan-test]
+            [kotoba.compiler.portable-surface-test]
+            [kotoba.compiler.provenance-portable-test]
+            [kotoba.compiler.receipt-test]
+            [kotoba.compiler.schema-test]
+            [kotoba.compiler.signing-test]
+            [kotoba.compiler.slice-carrier-test]
+            [kotoba.compiler.slice-value-test]
             [kotoba.compiler.source-path-test]
-            [kotoba.compiler.nbb.verdict-cache-test]))
+            [kotoba.compiler.string-simd-loader-test]
+            [kotoba.compiler.surface-convergence-portable-test]
+            [kotoba.compiler.symbol-operation-test]
+            [kotoba.compiler.test-profile-test]
+            [kotoba.compiler.typed-set-nth-test]
+            [kotoba.compiler.uefi-operations-portable-test]
+            [kotoba.compiler.uefi-target-gate-test]
+            [kotoba.compiler.value-bounds-agreement-test]
+            [kotoba.compiler.wasm32-kotoba-v1-qualification-test]))
 
 (defmethod t/report [:cljs.test/default :end-run-tests] [m]
   (println (str "\nnbb: " (:test m) " tests, " (:pass m) " passed, "
@@ -70,12 +115,47 @@
   (when (pos? (+ (or (:fail m) 0) (or (:error m) 0)))
     (set! (.-exitCode js/process) 1)))
 
-(t/run-tests 'kotoba.compiler.bounded-edn-portable-test
+(t/run-tests 'kotoba.compiler.accelerator-test
+             'kotoba.compiler.backend-cljs-portable-test
+             'kotoba.compiler.backend-evm-test
+             'kotoba.compiler.backend-qualification-test
+             'kotoba.compiler.bounded-edn-portable-test
+             'kotoba.compiler.coverage-evidence-test
+             'kotoba.compiler.coverage-test
              'kotoba.compiler.definition-identity-portable-test
+             'kotoba.compiler.definition-identity-test
+             'kotoba.compiler.document-dom-reconcile-test
+             'kotoba.compiler.document-sha256-test
+             'kotoba.compiler.dom-app-repaint-test
              'kotoba.compiler.effect-classification-test
+             'kotoba.compiler.error-code-contract-test
+             'kotoba.compiler.frontend-equality-diagnostic-test
              'kotoba.compiler.fuel-estimate-portable-test
+             'kotoba.compiler.fuel64-ceiling-test
+             'kotoba.compiler.fuel64-efi-budget-test
+             'kotoba.compiler.granted-region-test
              'kotoba.compiler.host-bytes-portable-test
+             'kotoba.compiler.host-profile-test
+             'kotoba.compiler.ios-aot-test
              'kotoba.compiler.logic-manifest-test
+             'kotoba.compiler.native-aot-qualification-test
+             'kotoba.compiler.native-device-io-test
+             'kotoba.compiler.nbb.verdict-cache-test
              'kotoba.compiler.plan-test
+             'kotoba.compiler.portable-surface-test
+             'kotoba.compiler.provenance-portable-test
+             'kotoba.compiler.receipt-test
+             'kotoba.compiler.schema-test
+             'kotoba.compiler.signing-test
+             'kotoba.compiler.slice-carrier-test
+             'kotoba.compiler.slice-value-test
              'kotoba.compiler.source-path-test
-             'kotoba.compiler.nbb.verdict-cache-test)
+             'kotoba.compiler.string-simd-loader-test
+             'kotoba.compiler.surface-convergence-portable-test
+             'kotoba.compiler.symbol-operation-test
+             'kotoba.compiler.test-profile-test
+             'kotoba.compiler.typed-set-nth-test
+             'kotoba.compiler.uefi-operations-portable-test
+             'kotoba.compiler.uefi-target-gate-test
+             'kotoba.compiler.value-bounds-agreement-test
+             'kotoba.compiler.wasm32-kotoba-v1-qualification-test)
