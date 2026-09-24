@@ -26,6 +26,16 @@
 ;; Node's exitCode is the peer of System/exit: setting it lets the process end
 ;; normally with that status, which is also what a caller of `-main` in an
 ;; embedded context wants rather than a hard exit.
+;; clojure.core/some, spelled as the loop it is. In Kotoba `some` is the
+;; option constructor and a two-argument `(some pred coll)` is refused as a
+;; name collision (kotoba-sema frontend); this is the same definition as
+;; clojure.core/some -- the first logical-true (pred x), in order, stopping
+;; there -- so the host answer is unchanged on nbb and the JVM.
+(defn- first-truthy [pred coll]
+  (loop [s (seq coll)]
+    (when s
+      (or (pred (first s)) (recur (next s))))))
+
 (defn- exit! [code]
   #?(:clj (System/exit code)
      :cljs (set! (.-exitCode js/process) code)))
@@ -109,7 +119,7 @@
   (filterv #(and (seq? %) (= fname (first %))) (forms-in body)))
 
 (defn- contains-form? [tree form]
-  (boolean (some #(identical? % form) (forms-in tree))))
+  (boolean (first-truthy #(identical? % form) (forms-in tree))))
 
 (defn- countdown-step
   "`(- p 1)` -> [p -1], `(+ p 1)` -> [p 1] for a parameter symbol p."

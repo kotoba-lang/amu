@@ -6,6 +6,16 @@
             #?@(:cljs [[clojure.walk :as walk]
                        [kotoba.kir.cljs-i64 :as i64]])))
 
+;; clojure.core/some, spelled as the loop it is. In Kotoba `some` is the
+;; option constructor and a two-argument `(some pred coll)` is refused as a
+;; name collision (kotoba-sema frontend); this is the same definition as
+;; clojure.core/some -- the first logical-true (pred x), in order, stopping
+;; there -- so the host answer is unchanged on nbb and the JVM.
+(defn- first-truthy [pred coll]
+  (loop [s (seq coll)]
+    (when s
+      (or (pred (first s)) (recur (next s))))))
+
 (def max-project-modules 256)
 (def max-project-functions 1024)
 (def max-project-source-bytes (* 8 1024 1024))
@@ -925,7 +935,7 @@
   [form needle]
   (or (= form needle)
       (and (coll? form)
-           (some #(form-contains? % needle)
+           (first-truthy #(form-contains? % needle)
                  (if (map? form) (concat (keys form) (vals form)) (seq form))))))
 
 (defn- top-level-index
@@ -1743,7 +1753,7 @@
   from a module, or nil for the `ns` form and for synthetic dispatchers and
   export wrappers, which no author wrote."
   [source-map linked-line]
-  (some (fn [entry] (when (= linked-line (:linked-line entry)) entry))
+  (first-truthy (fn [entry] (when (= linked-line (:linked-line entry)) entry))
         (:entries source-map)))
 
 (defn linked-position
