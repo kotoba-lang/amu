@@ -81,6 +81,33 @@
       ;; answers the default. 1007 and nothing else.
       (assert (= 1007 (js/Number (ir/execute kir 'probe [3])))))))
 
+;; `(conj v x)` on a vector is Clojure's append-at-the-end. Until kotoba-sema
+;; 45913acc the `conj` arm knew only the typed set and refused a vector with
+;; "conj requires a typed set [:set item-type]; got :vector-i64" (aiueos desktop
+;; floor :browser-component, wall 4: browser.input's `(cond-> [...] edit-action
+;; (conj edit-action))`). Linked across a module boundary and run; the END
+;; reading is discriminated (peek is the appended item, first is not).
+;; The linked text carries the per-module pass's synthesized bindings, so it is
+;; analysed with :admit-linked-synthetics?, as the CLI's project route does.
+(check "conj-on-a-vector"
+  (fn []
+    (let [{:keys [source]}
+          (project/link-source
+           {'example.acts
+            "(ns example.acts (:export [acts]))
+             (defn acts [n :i64 edit :bool] :vector-i64
+               (cond-> (conj (filterv (fn [x] (< x n)) [1 2 3 4]) 10) edit (conj 20 30)))"
+            'example.use
+            "(ns example.use (:require [example.acts :as a]) (:export [probe]))
+             (defn probe [n :i64] :i64
+               (let [v (a/acts n true) w (a/acts n false)]
+                 (+ (* 1000 (count v)) (* 100 (count w)) (peek v) (first w))))"}
+           'example.use)
+          kir (ir/lower (sema/analyze source {:admit-linked-synthetics? true}))]
+      ;; n=3: filterv keeps [1 2]; +10 -> [1 2 10]; edit adds 20 30 ->
+      ;; [1 2 10 20 30]. 5000 + 300 + (peek v) 30 + (first w) 1.
+      (assert (= 5331 (js/Number (ir/execute kir 'probe [3])))))))
+
 ;; ---------------------------------------------------------------------------
 ;; Filesystem graph discovery
 ;;
