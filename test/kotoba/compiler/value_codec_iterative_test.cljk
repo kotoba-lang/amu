@@ -1,0 +1,469 @@
+(ns kotoba.compiler.value-codec-iterative-test
+  "The ability wire translations are iterative and budgeted, and translate
+  exactly what the recursive versions did.
+
+  `runtime->wire-value` / `wire-value->runtime` were host-recursive until
+  2026-09-25: one chain of frames per level of the value, so a recursive
+  schema (a cons list of `[:ref ...]` cells) overflowed the host stack at
+  about 1,000 cells on kbb -- a boundary walk whose depth the value chose,
+  against superproject adr-2609242100 P2/P3. They are now one explicit-stack
+  walk each, charged against the language boundary budget (65,536 nodes /
+  1 MiB, traps `:budget/boundary-nodes` / `:budget/boundary-bytes`).
+
+  The recursive implementation is kept below, verbatim apart from its names,
+  as the ORACLE of a differential test: seeded random types and values, and
+  randomly damaged wire values, must give the same translation or the same
+  rejection (message and ex-data) from both."
+  (:require [clojure.test :refer [deftest is testing]]
+            [clojure.walk :as walk]
+            [kotoba.compiler.value-codec :as codec]
+            [kotoba.kir.value :as kir-value]
+            [kotoba.value.codec :as value]))
+
+;; ---------------------------------------------------------------------------
+;; Oracle: the pre-2026-09-25 recursive translation (value_codec.cljk at amu
+;; 2dcaac74), over the namespace's own private helpers.
+
+(def ^:private resolve-type @#'codec/resolve-type)
+(def ^:private document->value @#'codec/document->value)
+(def ^:private value->document @#'codec/value->document)
+(def ^:private exact-int64! @#'codec/exact-int64!)
+(def ^:private exact-float! @#'codec/exact-float!)
+(def ^:private exact-map! @#'codec/exact-map!)
+(def ^:private reject! @#'codec/reject!)
+(def ^:private option-wire @#'codec/option-wire)
+(def ^:private result-wire @#'codec/result-wire)
+(def ^:private admitted-wire-type! @#'codec/admitted-wire-type!)
+(def ^:private direct-wire-types #{:string :bytes :keyword :symbol :bool})
+
+(declare old-runtime->wire* old-wire->runtime*)
+
+(defn- old-runtime->wire* [descriptor schemas item]
+  (let [type (resolve-type descriptor schemas)]
+    (cond
+      (= :i64 type) (value/int64 item)
+      (contains? #{:f32 :f64} type) (value/float64 item)
+      (contains? direct-wire-types type) item
+      (= :document type) (document->value item)
+      (= :map type) (into {} (map (fn [[k v]] [k (value/int64 v)]) item))
+      (= :option-i64 type)
+      (option-wire (first item) (when (first item) (value/int64 (second item))))
+      (= :result-i64 type) (result-wire (first item) (value/int64 (second item)))
+      (= :vector-i64 type) (mapv value/int64 item)
+      (= :vector-f64 type) (mapv value/float64 item)
+
+      (and (vector? type) (= :option (first type)))
+      (option-wire (second item)
+                   (when (second item)
+                     (old-runtime->wire* (second type) schemas (nth item 2))))
+
+      (and (vector? type) (= :result (first type)))
+      (result-wire (first item)
+                   (old-runtime->wire* (if (first item) (second type) (nth type 2))
+                                   schemas (second item)))
+
+      (and (vector? type) (= :record (first type)))
+      (let [fields (nth type 2)]
+        {:kotoba.record/type (second type)
+         :kotoba.record/fields
+         (into {} (map (fn [[[field-name field-type] field-value]]
+                         [field-name (old-runtime->wire* field-type schemas field-value)])
+                       (map vector fields (rest item))))})
+
+      (and (vector? type) (= :variant (first type)))
+      (let [case-name (second item)
+            case-type (some (fn [[candidate payload-type]]
+                              (when (= candidate case-name) payload-type))
+                            (nth type 2))]
+        {:kotoba.variant/type (second type)
+         :kotoba.variant/case case-name
+         :kotoba.variant/value (old-runtime->wire* case-type schemas (nth item 2))})
+
+      (and (vector? type) (= :vector (first type)))
+      (mapv (fn [item-type item-value]
+              (old-runtime->wire* item-type schemas item-value))
+            (second type) (rest item))
+
+      (and (vector? type) (= :list (first type)))
+      (apply list (map #(old-runtime->wire* (second type) schemas %)
+                       (second item)))
+
+      (and (vector? type) (= :set (first type)))
+      (let [items (mapv #(old-runtime->wire* (second type) schemas %) (second item))]
+        (when-not (= (count items) (count (set items)))
+          (reject! "typed set is ambiguous on the canonical value wire" {}))
+        (set items))
+
+      (and (vector? type) (= :map (first type)))
+      (let [entries (mapv (fn [[k v]]
+                            [(old-runtime->wire* (second type) schemas k)
+                             (old-runtime->wire* (nth type 2) schemas v)])
+                          (second item))]
+        (when-not (= (count entries) (count (set (map first entries))))
+          (reject! "typed map keys are ambiguous on the canonical value wire" {}))
+        (into {} entries))
+
+      :else
+      (reject! "ability wire adapter does not support this runtime value"
+               {:type descriptor}))))
+
+(defn- old-wire->runtime* [descriptor schemas item]
+  (let [type (resolve-type descriptor schemas)]
+    (cond
+      (= :i64 type) (exact-int64! item)
+      (contains? #{:f32 :f64} type) (exact-float! item type)
+      (contains? direct-wire-types type) item
+      (= :document type) (value->document item)
+      (= :map type) (do (when-not (map? item)
+                          (reject! "map wire value is not a map" {}))
+                        (into {} (map (fn [[k v]] [k (exact-int64! v)]) item)))
+      (= :option-i64 type)
+      (do (exact-map! "option" item
+                      (if (:kotoba.option/present item)
+                        #{:kotoba.option/present :kotoba.option/value}
+                        #{:kotoba.option/present}))
+          (if (:kotoba.option/present item)
+            [true (exact-int64! (:kotoba.option/value item))]
+            [false]))
+      (= :result-i64 type)
+      (do (exact-map! "result" item
+                      #{:kotoba.result/status :kotoba.result/value})
+          (let [status (:kotoba.result/status item)]
+            (when-not (contains? #{:ok :error} status)
+              (reject! "result wire status is invalid" {:status status}))
+            [(= :ok status) (exact-int64! (:kotoba.result/value item))]))
+      (= :vector-i64 type)
+      (do (when-not (vector? item) (reject! "vector-i64 wire value is not a vector" {}))
+          (mapv exact-int64! item))
+      (= :vector-f64 type)
+      (do (when-not (vector? item) (reject! "vector-f64 wire value is not a vector" {}))
+          (mapv #(exact-float! % :f64) item))
+
+      (and (vector? type) (= :option (first type)))
+      (let [present? (:kotoba.option/present item)]
+        (when-not (boolean? present?)
+          (reject! "option wire presence is not boolean" {}))
+        (exact-map! "option" item
+                    (if present?
+                      #{:kotoba.option/present :kotoba.option/value}
+                      #{:kotoba.option/present}))
+        (if present?
+          [type true (old-wire->runtime* (second type) schemas
+                                     (:kotoba.option/value item))]
+          [type false]))
+
+      (and (vector? type) (= :result (first type)))
+      (do (exact-map! "result" item #{:kotoba.result/status :kotoba.result/value})
+          (let [status (:kotoba.result/status item)]
+            (when-not (contains? #{:ok :error} status)
+              (reject! "result wire status is invalid" {:status status}))
+            [(= :ok status)
+             (old-wire->runtime* (if (= :ok status) (second type) (nth type 2))
+                             schemas (:kotoba.result/value item))]))
+
+      (and (vector? type) (= :record (first type)))
+      (do (exact-map! "record" item #{:kotoba.record/type :kotoba.record/fields})
+          (when-not (= (second type) (:kotoba.record/type item))
+            (reject! "record wire nominal identity does not match"
+                     {:expected (second type) :actual (:kotoba.record/type item)}))
+          (let [fields (nth type 2)
+                values (:kotoba.record/fields item)
+                expected (set (map first fields))]
+            (exact-map! "record fields" values expected)
+            (into [type]
+                  (map (fn [[field-name field-type]]
+                         (old-wire->runtime* field-type schemas (get values field-name)))
+                       fields))))
+
+      (and (vector? type) (= :variant (first type)))
+      (do (exact-map! "variant" item
+                      #{:kotoba.variant/type :kotoba.variant/case :kotoba.variant/value})
+          (when-not (= (second type) (:kotoba.variant/type item))
+            (reject! "variant wire nominal identity does not match"
+                     {:expected (second type) :actual (:kotoba.variant/type item)}))
+          (let [case-name (:kotoba.variant/case item)
+                case-type (some (fn [[candidate payload-type]]
+                                  (when (= candidate case-name) payload-type))
+                                (nth type 2))]
+            (when-not case-type
+              (reject! "variant wire case is not declared" {:case case-name}))
+            [type case-name
+             (old-wire->runtime* case-type schemas (:kotoba.variant/value item))]))
+
+      (and (vector? type) (= :vector (first type)))
+      (do (when-not (and (vector? item) (= (count item) (count (second type))))
+            (reject! "heterogeneous vector wire value has wrong shape" {}))
+          (into [type] (map #(old-wire->runtime* %1 schemas %2) (second type) item)))
+
+      (and (vector? type) (= :list (first type)))
+      (do (when-not (list? item) (reject! "typed list wire value is not a list" {}))
+          [type (mapv #(old-wire->runtime* (second type) schemas %) item)])
+
+      (and (vector? type) (= :set (first type)))
+      (do (when-not (set? item) (reject! "typed set wire value is not a set" {}))
+          [type (mapv #(old-wire->runtime* (second type) schemas %) item)])
+
+      (and (vector? type) (= :map (first type)))
+      (do (when-not (map? item) (reject! "typed map wire value is not a map" {}))
+          [type (mapv (fn [[k v]]
+                        [(old-wire->runtime* (second type) schemas k)
+                         (old-wire->runtime* (nth type 2) schemas v)])
+                      item)])
+
+      :else
+      (reject! "ability wire adapter does not support this wire value"
+               {:type descriptor}))))
+
+(defn- old-runtime->wire-value [descriptor schemas value]
+  (admitted-wire-type! descriptor schemas)
+  (kir-value/bounded-typed-value! descriptor value)
+  (old-runtime->wire* descriptor schemas value))
+
+(defn- old-wire-value->runtime [descriptor schemas value]
+  (admitted-wire-type! descriptor schemas)
+  (kir-value/bounded-typed-value!
+   descriptor (old-wire->runtime* descriptor schemas value)))
+
+;; ---------------------------------------------------------------------------
+;; Outcomes: a value, or the rejection's message and ex-data.
+
+(defn- outcome [f]
+  (try [:ok (f)]
+       (catch #?(:clj Throwable :cljs :default) e
+         [:error (ex-message e) (ex-data e)])))
+
+(defn- same?
+  "Equal outcomes. `=` is false for NaN against itself, so a translation
+  that yields NaN on both sides is compared by its printed form."
+  [a b]
+  (or (= a b) (= (pr-str a) (pr-str b))))
+
+(defn- i64 [n] #?(:clj (long n) :cljs (js/BigInt n)))
+
+;; Seeded PRNG (xorshift32) so a failure names a reproducible seed.
+(defn- rng [seed] (volatile! (bit-or seed 1)))
+(defn- next-int! [state n]
+  (let [x @state
+        x (bit-xor x (bit-shift-left x 13))
+        x (bit-xor x (unsigned-bit-shift-right x 17))
+        x (bit-xor x (bit-shift-left x 5))
+        x (bit-and x 0xffffffff)]
+    (vreset! state (if (zero? x) 1 x))
+    (mod x n)))
+(defn- pick! [state xs] (nth xs (next-int! state (count xs))))
+
+(def ^:private scalar-types
+  [:i64 :f64 :f32 :string :keyword :symbol :bool
+   :option-i64 :result-i64 :vector-i64 :vector-f64])
+
+(defn- gen-type! [state depth]
+  (if (or (zero? depth) (< (next-int! state 10) 3))
+    (pick! state scalar-types)
+    (let [sub #(gen-type! state (dec depth))
+          k (next-int! state 8)
+          tag (keyword "gen" (str "t" (next-int! state 1000000)))]
+      (case k
+        0 [:option (sub)]
+        1 [:result (sub) (sub)]
+        2 [:record tag [[:a (sub)] [:b (sub)]]]
+        3 [:variant tag [[:x (sub)] [:y (sub)]]]
+        4 [:vector [(sub) (sub)]]
+        5 [:list (sub)]
+        6 [:set (pick! state [:i64 :string :keyword])]
+        7 [:map (pick! state [:i64 :string :keyword]) (sub)]))))
+
+(defn- gen-value! [state type]
+  (let [n #(next-int! state 5)
+        gen #(gen-value! state %)]
+    (case type
+      :i64 (i64 (- (next-int! state 2000) 1000))
+      :f64 (/ (- (next-int! state 2000) 1000) 8)
+      :f32 (/ (- (next-int! state 2000) 1000) 4)
+      :string (apply str (repeat (n) (pick! state ["a" "é" "日" "z"])))
+      :keyword (keyword (str "k" (next-int! state 50)))
+      :symbol (symbol (str "s" (next-int! state 50)))
+      :bool (zero? (next-int! state 2))
+      :option-i64 (if (zero? (next-int! state 2)) [false] [true (gen :i64)])
+      :result-i64 [(zero? (next-int! state 2)) (gen :i64)]
+      :vector-i64 (vec (repeatedly (n) #(gen :i64)))
+      :vector-f64 (vec (repeatedly (n) #(gen :f64)))
+      (case (first type)
+        :option (if (zero? (next-int! state 2))
+                  [type false]
+                  [type true (gen (second type))])
+        :result (let [ok? (zero? (next-int! state 2))]
+                  [ok? (gen (if ok? (second type) (nth type 2)))])
+        :record (into [type] (map (fn [[_ t]] (gen t)) (nth type 2)))
+        :variant (let [[case-name t] (pick! state (nth type 2))]
+                   [type case-name (gen t)])
+        :vector (into [type] (map gen (second type)))
+        :list [type (vec (repeatedly (n) #(gen (second type))))]
+        :set [type (vec (distinct (repeatedly (n) #(gen (second type)))))]
+        :map [type (->> (repeatedly (n) #(vector (gen (second type))
+                                               (gen (nth type 2))))
+                        (reduce (fn [acc [k v]]
+                                  (if (some #(= k (first %)) acc) acc (conj acc [k v])))
+                                []))]))))
+
+(def ^:private junk [nil 7 "x" :k {} [] #{} (list) true (value/int64 1)])
+
+(defn- damage!
+  "Replace, with probability 1/p per node, a node of WIRE with junk."
+  [state p wire]
+  (walk/postwalk (fn [node]
+                   (if (and (not (map-entry? node)) (zero? (next-int! state p)))
+                     (pick! state junk)
+                     node))
+                 wire))
+
+;; ---------------------------------------------------------------------------
+;; A recursive schema: a cons list of `[:ref ...]` cells, the shape that
+;; overflowed.
+
+(def ^:private cell-type
+  [:variant :demo/cell [[:empty :bool] [:cons [:ref :demo/pair]]]])
+(def ^:private pair-type
+  [:record :demo/pair [[:head :i64] [:tail [:ref :demo/cell]]]])
+(def ^:private list-schemas {:demo/cell cell-type :demo/pair pair-type})
+
+(defn- cells [n]
+  (loop [i n tail [cell-type :empty true]]
+    (if (zero? i)
+      tail
+      (recur (dec i) [cell-type :cons [pair-type (i64 i) tail]]))))
+
+(defn- wire-cells
+  "The wire form of (cells n), built iteratively so the fixture itself never
+  recurses."
+  [n]
+  (loop [i n tail {:kotoba.variant/type :demo/cell
+                   :kotoba.variant/case :empty
+                   :kotoba.variant/value true}]
+    (if (zero? i)
+      tail
+      (recur (dec i)
+             {:kotoba.variant/type :demo/cell
+              :kotoba.variant/case :cons
+              :kotoba.variant/value
+              {:kotoba.record/type :demo/pair
+               :kotoba.record/fields {:head (value/int64 (i64 i)) :tail tail}}}))))
+
+(defn- wire-heads
+  "The head of every cell of a wire list, in order, walked without recursion
+  (`=` on two 20,000-deep maps recurses in the host and overflows)."
+  [wire]
+  (loop [w wire heads []]
+    (if (= :cons (:kotoba.variant/case w))
+      (let [fields (-> w :kotoba.variant/value :kotoba.record/fields)]
+        (recur (:tail fields) (conj heads (:head fields))))
+      [heads (:kotoba.variant/case w) (:kotoba.variant/value w)])))
+
+(defn- wire-depth
+  "Cells in a wire list, counted without recursion."
+  [wire]
+  (loop [w wire n 0]
+    (if (= :cons (:kotoba.variant/case w))
+      (recur (-> w :kotoba.variant/value :kotoba.record/fields :tail) (inc n))
+      n)))
+
+;; ---------------------------------------------------------------------------
+
+(deftest iterative-translation-agrees-with-the-recursive-oracle
+  (let [runs (volatile! {:values 0 :ok 0 :rejected 0 :damaged 0 :damaged-rejected 0})]
+    (doseq [seed (range 1 401)]
+      (let [state (rng seed)
+            type (gen-type! state 3)
+            raw (gen-value! state type)
+            ;; canonical order for typed sets / maps, as a runtime holds it
+            value (let [[tag v] (outcome #(kir-value/bounded-typed-value! type raw))]
+                    (if (= :ok tag) v raw))
+            old (outcome #(old-runtime->wire-value type {} value))
+            new (outcome #(codec/runtime->wire-value type {} value))]
+        (vswap! runs update :values inc)
+        (is (same? old new) (str "runtime->wire-value, seed " seed ", type " (pr-str type)))
+        (when (= :ok (first old))
+          (vswap! runs update :ok inc)
+          (let [wire (second old)]
+            (is (same? (outcome #(old-wire-value->runtime type {} wire))
+                   (outcome #(codec/wire-value->runtime type {} wire)))
+                (str "wire-value->runtime, seed " seed))
+            (doseq [p [2 4 8]]
+              (let [bad (damage! state p wire)
+                    old-back (outcome #(old-wire-value->runtime type {} bad))]
+                (vswap! runs update :damaged inc)
+                (when (= :error (first old-back))
+                  (vswap! runs update :damaged-rejected inc))
+                (is (same? old-back (outcome #(codec/wire-value->runtime type {} bad)))
+                    (str "damaged wire-value->runtime, seed " seed " p " p))))))
+        (when (= :error (first old))
+          (vswap! runs update :rejected inc))))
+    (let [{:keys [values ok damaged damaged-rejected] :as counts} @runs]
+      (println (str "DIFFERENTIAL\t" (pr-str counts)))
+      ;; Evidence floor: a differential that compared nothing, or only
+      ;; rejections, or never saw a damaged value rejected, proves nothing.
+      (is (= 400 values))
+      (is (>= ok 200) (str "too few values translated: " ok))
+      (is (pos? (- damaged damaged-rejected)) "no damaged value was accepted by both")
+      (is (>= damaged-rejected 100) (str "too few damaged values rejected: " damaged-rejected)))))
+
+(deftest a-small-recursive-list-agrees-with-the-oracle
+  (doseq [n [0 1 2 50]]
+    (let [v (cells n)
+          type [:ref :demo/cell]
+          wire (codec/runtime->wire-value type list-schemas v)]
+      (is (= (old-runtime->wire-value type list-schemas v) wire))
+      (is (= n (wire-depth wire)))
+      (is (= (old-wire-value->runtime type list-schemas wire)
+             (codec/wire-value->runtime type list-schemas wire))))))
+
+(deftest twenty-thousand-cells-cross-without-host-recursion
+  ;; 20,000 cells = 60,001 nodes (variant + record + head per cell), inside the
+  ;; 65,536-node boundary budget. The recursive version overflowed the host
+  ;; stack at about 1,000 cells.
+  (let [n 20000
+        type [:ref :demo/cell]
+        wire (codec/runtime->wire-value type list-schemas (cells n))]
+    (is (= n (wire-depth wire)))
+    (is (= (wire-heads wire) (wire-heads (wire-cells n))))
+    (let [back (codec/wire-value->runtime type list-schemas (wire-cells n))]
+      (is (= :cons (second back)))
+      (is (= (i64 1) (-> back (nth 2) second))))))
+
+(deftest the-boundary-budget-is-a-named-trap
+  (let [type [:ref :demo/cell]]
+    (testing "30,000 cells = 90,001 nodes: over the default 65,536"
+      (let [[tag message data] (outcome #(codec/wire-value->runtime
+                                           type list-schemas (wire-cells 30000)))]
+        (is (= :error tag))
+        (is (= "boundary traversal budget exceeded: boundary-nodes" message))
+        (is (= {:phase :value-codec :trap :budget/boundary-nodes
+                :budget :budget/boundary-nodes :used 65537 :limit 65536}
+               data))))
+    (testing "an explicit node budget: at the need passes, one below traps"
+      ;; 10 cells = 32 nodes: 3 per cell (variant, record, head) + the
+      ;; terminal variant and its payload.
+      (is (= :ok (first (outcome #(codec/wire-value->runtime
+                                    type list-schemas (wire-cells 10) {:nodes 32})))))
+      (is (= [:error "boundary traversal budget exceeded: boundary-nodes"
+              {:phase :value-codec :trap :budget/boundary-nodes
+               :budget :budget/boundary-nodes :used 32 :limit 31}]
+             (outcome #(codec/wire-value->runtime
+                        type list-schemas (wire-cells 10) {:nodes 31}))))
+      ;; The runtime->wire direction validates first (osaho, :phase :value);
+      ;; its own translation walk carries the same budget.
+      (is (= [:error "boundary traversal budget exceeded: boundary-nodes"
+              {:phase :value-codec :trap :budget/boundary-nodes
+               :budget :budget/boundary-nodes :used 32 :limit 31}]
+             (outcome #(@#'codec/walk! @#'codec/runtime-node type list-schemas
+                                        (cells 10) {:nodes 31}))))
+      (is (= :ok (first (outcome #(@#'codec/walk! @#'codec/runtime-node type list-schemas
+                                                    (cells 10) {:nodes 32}))))))
+    (testing "the byte budget counts string payload in UTF-8"
+      (let [t [:list :string]
+            wire (list "abc" "日")] ; 3 + 3 bytes
+        (is (= [:ok [t ["abc" "日"]]]
+               (outcome #(codec/wire-value->runtime t {} wire {:bytes 6}))))
+        (is (= [:error "boundary traversal budget exceeded: boundary-bytes"
+                {:phase :value-codec :trap :budget/boundary-bytes
+                 :budget :budget/boundary-bytes :used 6 :limit 5}]
+               (outcome #(codec/wire-value->runtime t {} wire {:bytes 5}))))))))
