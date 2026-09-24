@@ -1,0 +1,15 @@
+;; A generic typed-cap-call with an :i64 result. Before kotoba-wasm 83c8009e
+;; this compiled to a module WebAssembly.validate refuses (expected i64,
+;; found externref); now the scalar crosses as a one-slot [:option :i64].
+;; One contract per capability id per module (KIR refuses "typed capability
+;; id has conflicting contracts"), hence one fixture per scalar direction.
+(ns fixture.cap-i64-result
+  (:export [main f])
+  (:capabilities #{:object/put-block}))
+(defn f [d :string] :i64
+  (typed-cap-call :object/put-block
+                  [:record :kotoba.object/put-block-request [[:binding :keyword] [:digest :string] [:bytes :bytes]]]
+                  :i64
+                  (record-new [:record :kotoba.object/put-block-request [[:binding :keyword] [:digest :string] [:bytes :bytes]]]
+                              :sha2-256 d (bytes))))
+(defn main [] :i64 0)

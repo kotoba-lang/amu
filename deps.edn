@@ -1061,7 +1061,16 @@
          ;; outside this repository in docs/jvm-route-topology.edn (ADR 0348
          ;; iteration 4). Nothing on the Node route calls it yet; what it removes
          ;; is the first refusal the probe reported under kotoba.component.core.
-         :git/sha "f5fdbc5a3dc6855604e5cf828e370eb872b45ae1"}
+         ;;
+         ;; Advanced 2026-09-24, f5fdbc5a -> 83c8009e (kotoba-wasm main, merge
+         ;; of #77, ahead 2, behind 0, forward only): typed-cap-call scalar
+         ;; results/requests (:i64 / :bool / :f64 / :f32) cross as a one-slot
+         ;; [:option T] or bool pair; the emitter self-validates with
+         ;; WebAssembly.validate and refuses (:wasm-self-validation) instead of
+         ;; returning an invalid module; bytes-count / bytes-at / bytes-slice /
+         ;; bytes-concat / string-index-of lower to their own kotoba:typed
+         ;; imports, which runtime/browser-host.mjs answers in the same commit.
+         :git/sha "83c8009e11b90d49245322646afd5714ba34ad0a"}
         ;; Production KIR routes exclusively through whole-module
         ;; GMIR/MIR/allocated-MC, including word/f64/memory/runtime/capability,
         ;; literal-data, scalar variant, word-field record, and x86 privileged

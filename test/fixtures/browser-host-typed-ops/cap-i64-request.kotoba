@@ -1,0 +1,7 @@
+;; A generic typed-cap-call with an :i64 REQUEST and a :bool result
+;; (kotoba-wasm 83c8009e); the provider must receive a BigInt.
+(ns fixture.cap-i64-request
+  (:export [main f])
+  (:capabilities #{:object/put-block}))
+(defn f [n :i64] :bool (typed-cap-call :object/put-block :i64 :bool n))
+(defn main [] :i64 0)
