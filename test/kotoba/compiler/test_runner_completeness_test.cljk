@@ -1,75 +1,117 @@
 (ns kotoba.compiler.test-runner-completeness-test
-  "Every test namespace on disk must be in the aggregate runner.
+  "Every test namespace on disk must be registered with a runner.
 
-  `kbb -M:test` runs `kotoba.compiler.test-runner`, which lists its
-  namespaces by hand -- twice, in the `:require` vector and again in the
-  `run-tests` call. A file missing from either list is simply never executed,
-  and nothing says so: the suite reports a smaller number and passes.
+  A hand-maintained runner lists its namespaces by hand, and a file missing
+  from the list is simply never executed: the suite reports a smaller number
+  and passes. Measured 2026-07-30: twelve namespaces were absent, four of them
+  RED (#447). The green ones are the harder case -- tests sitting outside the
+  gate produce no symptom at all.
 
-  Measured 2026-07-30: twelve namespaces were absent, four of them RED
-  (#447). The four green ones were the harder case -- tests sitting outside the
-  gate produce no symptom at all, unlike tests failing inside it.
+  Two runners exist, and this check reads both:
 
-  kotoba-lang/kotoba had the same gap and the same fix. An auto-discovering
-  runner such as cognitect.test-runner cannot develop it; a hand-maintained one
-  needs this check."
-  (:require [clojure.java.io :as io]
-            [kotoba.lang.text :as str]
-            [clojure.test :refer [deftest is]]))
+    run-tests.cljk                        the suite that RUNS (kbb/nbb; the
+                                          fleet gate `amu-run-tests`).
+    test/kotoba/compiler/test_runner.cljk the JVM runner. It no longer runs --
+                                          the JVM route was removed 2026-09-11
+                                          (ADR 0347; deps.edn :test has no
+                                          :main-opts) -- so its `suite` vector
+                                          is now the LEDGER of namespaces that
+                                          do not load or pass on kbb and are
+                                          therefore executed nowhere.
 
-(defn- ns-symbol [^java.io.File f]
-  (-> (str f)
-      (str/replace #"^test/" "")
-      (str/replace #"\.cljc?$" "")
+  A test namespace on disk must be in run-tests.cljk's `t/run-tests` call or in
+  that ledger. The count of ledger-only namespaces is printed, because they are
+  registered but not executed and nothing else says so.
+
+  THIS CHECK WAS VACUOUS from 2026-09-11 to 2026-09-25. Its disk filter was
+  `_test\\.cljc?$`; the `.cljk` rename (e9b58163) left 0 files matching, the
+  empty set is trivially a subset of every list, and it passed -- while it was
+  itself only listed in the JVM runner that no longer ran. Measured 2026-09-25
+  on 2dcaac74: 0 files matched the old filter, 183 match `_test.cljk`.
+  Hence `SCANNED<TAB>n` and the floor below: a scan of nothing is a failure to
+  answer, not an answer."
+  (:require [kotoba.lang.text :as str]
+            [clojure.test :refer [deftest is]]
+            #?@(:cljs [["node:fs" :as fs]
+                       ["node:path" :as path]])))
+
+(def ^:private test-file-pattern
+  ;; `.cljk` is the only extension on disk since the 2026-09-11 rename; `.cljc`
+  ;; and `.clj` stay matched so a file that regresses to them is still seen.
+  #"_test\.clj[ck]?$")
+
+(defn- relative-test-files
+  "Paths under test/ (relative to it, `/`-separated) whose name matches."
+  []
+  #?(:clj (let [root (java.io.File. "test")]
+            (->> (file-seq root)
+                 (filter #(.isFile ^java.io.File %))
+                 (map #(str (.relativize (.toPath root) (.toPath ^java.io.File %))))
+                 (filter #(re-find test-file-pattern %))))
+     :cljs (->> (js->clj (.readdirSync fs "test" #js {:recursive true}))
+                (map #(str/replace % (.-sep path) "/"))
+                (filter #(re-find test-file-pattern %))
+                (filter #(.isFile (.statSync fs (.join path "test" %)))))))
+
+(defn- ns-symbol [relative]
+  (-> relative
+      (str/replace #"\.clj[ck]?$" "")
       (str/replace "/" ".")
       (str/replace "_" "-")
       symbol))
 
-(defn- test-namespaces-on-disk []
-  (->> (file-seq (io/file "test"))
-       (filter #(re-find #"_test\.cljc?$" (.getName ^java.io.File %)))
-       (map ns-symbol)
-       set))
-
 (defn- region
-  "The text of one named list in the runner, or nothing.
-
-  Reading the whole file was the defect this check had: a namespace named
-  anywhere in it -- in the `:require` vector alone, say -- satisfied a scan of
-  the file, while the runner only executes what the `suite` vector holds. A
-  namespace in one list and not the other is never run, and this check said
-  nothing about it. Measured 2026-09-06: three namespaces were in that state,
-  one of them `dom-app-driver-test`, the end-to-end test for the application
-  driver."
-  [source start-marker]
+  "The text of one named list in a runner, from `start-marker` to `end-marker`,
+  with `;` comments removed (a commented-out namespace is not run), or nil."
+  [source start-marker end-marker]
   (when-let [start (str/index-of source start-marker)]
-    (when-let [end (str/index-of source "])" start)]
-      (subs source start end))))
+    (when-let [end (str/index-of source end-marker (inc start))]
+      (str/replace (subs source start end) #";[^\n]*" ""))))
 
-(defn- names-in [source start-marker]
-  (some->> (region source start-marker)
+(defn- names-in [source start-marker end-marker]
+  (some->> (region source start-marker end-marker)
            (re-seq #"kotoba\.compiler\.[a-z0-9.-]+-test")
            (into #{} (map symbol))))
 
-(deftest every-test-namespace-is-in-the-runner
-  (let [source (slurp "test/kotoba/compiler/test_runner.cljk")
-        required (names-in source "(:require")
-        suite (names-in source "(def ^:private suite")]
-    ;; A check that could not read its inputs must not report a pass. Both
-    ;; lists are located by shape, so a rename that moves them turns this red
-    ;; rather than turning it into a scan of nothing.
-    (is (some? required) "test-runner has no readable :require vector")
-    (is (some? suite) "test-runner has no readable suite vector")
-    (when (and required suite)
-      (let [on-disk (disj (test-namespaces-on-disk)
-                          'kotoba.compiler.test-runner-completeness-test)
-            missing-from-suite (sort (remove suite on-disk))
-            missing-from-require (sort (remove required on-disk))]
-        ;; The suite is what actually runs, so it is named first and separately:
-        ;; a namespace missing from it produces no symptom at all.
-        (is (empty? missing-from-suite)
-            (str "test namespaces never executed -- absent from the `suite` vector: "
-                 (pr-str missing-from-suite)))
-        (is (empty? missing-from-require)
-            (str "test namespaces absent from the runner's :require vector: "
-                 (pr-str missing-from-require)))))))
+(deftest every-test-namespace-is-registered
+  (let [executor (slurp "run-tests.cljk")
+        ledger (slurp "test/kotoba/compiler/test_runner.cljk")
+        run-required (names-in executor "\n  (:require" "]))")
+        run-called (names-in executor "\n(t/run-tests " ")")
+        ledger-required (names-in ledger "\n  (:require" "]))")
+        ledger-suite (names-in ledger "\n(def ^:private suite" "])")
+        on-disk (set (map ns-symbol (relative-test-files)))]
+    ;; The evidence floor. A scan that found nothing could not read its input.
+    (println (str "SCANNED\t" (count on-disk)))
+    (is (pos? (count on-disk))
+        "scanned 0 test files under test/ -- no verdict is possible")
+    ;; Every list is located by shape; a rename that moves one turns this red
+    ;; rather than into a comparison against nothing.
+    (doseq [[label names] [["run-tests.cljk :require" run-required]
+                           ["run-tests.cljk t/run-tests call" run-called]
+                           ["test_runner.cljk :require" ledger-required]
+                           ["test_runner.cljk suite" ledger-suite]]]
+      (is (seq names) (str label " is missing or empty")))
+    (when (and (seq on-disk) (seq run-required) (seq run-called)
+               (seq ledger-required) (seq ledger-suite))
+      (let [registered (into run-called ledger-suite)
+            unregistered (sort (remove registered on-disk))
+            ledger-only (sort (remove run-called on-disk))]
+        (println (str "EXECUTED\t" (count (filter run-called on-disk))))
+        (println (str "LEDGER-ONLY\t" (count ledger-only)))
+        (is (empty? unregistered)
+            (str "test namespaces registered with no runner -- add each to "
+                 "run-tests.cljk (both lists) if it passes on kbb, else to "
+                 "test_runner.cljk (both lists): " (pr-str unregistered)))
+        ;; Required but not called: loaded, never run -- the count does not move.
+        (is (= run-required run-called)
+            (str "run-tests.cljk :require and t/run-tests disagree -- required only: "
+                 (pr-str (sort (remove run-called run-required)))
+                 ", called only: " (pr-str (sort (remove run-required run-called)))))
+        (is (= ledger-required ledger-suite)
+            (str "test_runner.cljk :require and suite disagree -- required only: "
+                 (pr-str (sort (remove ledger-suite ledger-required)))
+                 ", suite only: " (pr-str (sort (remove ledger-required ledger-suite)))))
+        (is (empty? (remove on-disk registered))
+            (str "registered test namespaces with no file on disk: "
+                 (pr-str (sort (remove on-disk registered)))))))))
