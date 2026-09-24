@@ -1,0 +1,48 @@
+{
+  "jobs": [
+    {
+      "base_url": null,
+      "context_from": null,
+      "deliver": "local",
+      "enabled": true,
+      "enabled_toolsets": null,
+      "id": "faae3ebb778d",
+      "model": null,
+      "name": "amu-test-measure",
+      "no_agent": true,
+      "prompt": "evidence: amu test JVM-free 依存残数を実測して ledger に追記する",
+      "provider": null,
+      "schedule": {
+        "kind": "cron",
+        "expr": "17,47 * * * *",
+        "display": "17,47 * * * *"
+      },
+      "script": "jvmfree_test_evidence.py",
+      "skill": null,
+      "skills": [],
+      "workdir": null
+    },
+    {
+      "base_url": null,
+      "context_from": null,
+      "deliver": "local",
+      "enabled": true,
+      "enabled_toolsets": null,
+      "id": "c1b3f0341a9b",
+      "model": null,
+      "name": "amu-test-land",
+      "no_agent": false,
+      "prompt": "amu-test-jvmfree: SOUL.md を読んで 1 tick 実行せよ。まず scripts/jvmfree_test_evidence.py を実行し MEASURE/REFUSED 行を読む。次に 1 component だけ worktree（/tmp/amu-test-<date>、branch bot/amu-test-$(date +%Y%m%d-%H%M)、分岐元 origin/main）で移植し、verify 2 本（amu check --jvm-free :ok true + 変更経路を 1 回実際に通す）が揃ったら branch push → gh api merges で着地。JVM 起動コマンド（java/clojure/clj/bb）は打たない。進捗 0 なら「0」と正直に報告し次の 1 手を名指す。報告はレシート式（component / verify rc / 台帳 seq / jvm_total）。",
+      "provider": null,
+      "schedule": {
+        "kind": "cron",
+        "expr": "21 3,5,7,9,11,13,15,17,19,21,23 * * *",
+        "display": "21 3,5,7,9,11,13,15,17,19,21,23 * * *"
+      },
+      "script": null,
+      "skill": null,
+      "skills": [],
+      "workdir": null
+    }
+  ]
+}

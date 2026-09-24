@@ -1,0 +1,30 @@
+{
+  "jobs": [
+    {
+      "base_url": null,
+      "context_from": null,
+      "deliver": "local",
+      "enabled": true,
+      "enabled_toolsets": [
+        "terminal",
+        "file",
+        "web"
+      ],
+      "id": "845c1be6d421",
+      "model": "qwen3.8-27b-whitehacker",
+      "name": "amu-maint-tick",
+      "no_agent": false,
+      "prompt": "kotoba-lang/amu OSS maintainer bot。SOUL.md の「分担」に従い、30 分の 1 反復を遂行せよ。\n\nまず monitor 測定 (maint_state.sh の出力) が CI/issue/PR の最新状態。\n- CI 赤を検知したら失敗 log の最初のエラー行を取り、最小 repro と第一推定を\n  issue に起こす。既存 issue と重複するなら二重投稿しない。\n- open issue / open PR を triage (ラベル、重複指摘、再現確認コメント)。\n- 修正は branch bot/maint-<日時> から。main 直 push・force-push・履歴書換は禁止。\n- Q9 compiler routes は JVM-free 原則を遵守 (amu AGENTS.md)。\n- 報告: 赤の有無 / triage 件数 / 出した PR・issue。誇張なし。変化なければそう書く。\n0. CLI E2E smoke (最初に実行、これは CI が見えない欠落を捕まえる):\n   nbb ~/.hermes/profiles/amu-maint/cli_smoke.cljs\n   SMOKE-OK なら次へ。SMOKE-FAIL なら内容を最小 repro として issue に起こし、\n   そのtickの残作業をせず報告する (smoke が赤いときの他の判定は信頼できない)。",
+      "provider": "kotoba",
+      "schedule": {
+        "kind": "cron",
+        "expr": "13,43 5-23 * * *",
+        "display": "13,43 5-23 * * *"
+      },
+      "script": "maint_state_amu-maint.sh",
+      "skill": null,
+      "skills": [],
+      "workdir": "~/github/com-junkawasaki/orgs/kotoba-lang/amu"
+    }
+  ]
+}

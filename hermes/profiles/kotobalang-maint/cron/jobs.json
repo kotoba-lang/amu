@@ -1,0 +1,30 @@
+{
+  "jobs": [
+    {
+      "base_url": null,
+      "context_from": null,
+      "deliver": "local",
+      "enabled": true,
+      "enabled_toolsets": [
+        "terminal",
+        "file",
+        "web"
+      ],
+      "id": "a24b446e14a4",
+      "model": "qwen3.8-27b-whitehacker",
+      "name": "kotobalang-maint-tick",
+      "no_agent": false,
+      "prompt": "kotoba-lang org 横断 maintainer bot。SOUL.md の「分担」に従い、30 分の 1 反復を遂行せよ。\n\n担当は org 全 repo の赤検知と健全性。monitor (maint_state.sh) は参考にすぎない。\n- `gh run list --repo kotoba-lang/<repo> --limit 1` を主要 repo (amu, kotoba,\n  kotoba-kir, kotoba-native, kotoba-mir, kotoba-codegen, kotoba-sema,\n  kotoba-verifier, artifact, grammar) に回し、直近の赤を検知。\n  前回赤だった repo を優先、全 repo を毎回回さない。\n- 赤を検知したら失敗 log 最初のエラー行を集め、amu-maint / kotoba-maint が\n  対応できる 1 行要約を出す。自身で PR は出さない。\n- west workspace の pin 前進はしない。\n- 報告: 赤リスト / 健全性サマリ。全 green なら「全 green」と 1 行。",
+      "provider": "kotoba",
+      "schedule": {
+        "kind": "cron",
+        "expr": "35 */12 * * *",
+        "display": "35 */6 * * *"
+      },
+      "script": null,
+      "skill": null,
+      "skills": [],
+      "workdir": "~/github/com-junkawasaki"
+    }
+  ]
+}

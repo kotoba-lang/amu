@@ -1,0 +1,53 @@
+=== health probe ===
+--- /
+200
+--- /en/
+200
+--- /health
+200
+{
+  "ok": true,
+  "service": "kotoba-cloud-control-plane"
+}
+--- 404 check /random-xyz-123
+404
+--- api
+200
+=== git state ===
+kotoba-lang	git@github.com:kotoba-lang/app-kotoba-cloud (fetch)
+kotoba-lang	git@github.com:kotoba-lang/app-kotoba-cloud (push)
+96a566e deps: wrangler 4.127.0 -> 4.129.0 (#21)
+3e5effc Merge agent/whois-attestation: the auditor's attestation in kotoba.cloud's whois
+b05fa9e whois: carry the auditor's attestation beside the self-issued credential
+## HEAD (no branch)
+=== package.json deps ===
+{
+  "name": "@kotoba-lang/app-kotoba-cloud",
+  "version": "0.1.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "render": "clojure -M:render",
+    "build": "npm run render && shadow-cljs release browser app",
+    "test": "clojure -M:test && node test/aiueos-boot-manifest-cli.mjs",
+    "test:worker": "node test/worker-smoke.mjs",
+    "dry-run": "npm test && npm run build && npm run test:worker && wrangler deploy --dry-run --outdir dist --env=\"\"",
+    "deploy": "npm test && npm run build && npm run test:worker && wrangler deploy --env=\"\""
+  },
+  "devDependencies": {
+    "shadow-cljs": "3.5.0",
+    "wrangler": "4.127.0"
+  },
+  "dependencies": {
+    "@noble/post-quantum": "0.7.1"
+  }
+}
+=== latest npm versions ===
+wrangler: 4.129.0
+=== issues ===
+=== prs ===
+=== deploy freshness (latest commit date vs worker) ===
+2026-09-05 10:12:43 +0900 96a566e deps: wrangler 4.127.0 -> 4.129.0 (#21)
+etag: "0be05d928ab1344c0b4965952c8c9109"
+cf-ray: a36a3bb8f8437828-NRT
