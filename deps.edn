@@ -846,7 +846,7 @@
          ;; heads' reference semantics.
          ;; Advanced 2026-09-24 85ed11be -> c5f77e12 (osaho main, forward only):
          ;; aggregate ABI v8 -- recursive / generic ADT handles on native.
-         :git/sha "245bfeb33c2e5cab0c3efde410560fbb9138ea3d"} ;; Advanced 2026-09-24 c5f77e12 -> 4860f4c1 (main tip, forward only): selfhost walls: fn-body-clj-only, some-two-arg, regex literal, char literal, clojure.* to kotoba.*
+         :git/sha "ba217bff4a3c1368064ee7662093afc20fefe349"} ;; Advanced 2026-09-24 c5f77e12 -> 4860f4c1 (main tip, forward only): selfhost walls: fn-body-clj-only, some-two-arg, regex literal, char literal, clojure.* to kotoba.*
          ;; Advanced 2026-09-24, 4860f4c1 -> 245bfeb3 (osaho main, ahead 4, behind 0,
          ;; forward only by gh api compare): adr-2609242100 P2 -- a typed value is
          ;; validated once, at execute arguments and capability results, by an
@@ -855,6 +855,11 @@
          ;; :host/stack-exhausted as its own trap. Lifts the ~5-cell ceiling the
          ;; compile-time oracle put on every target (examples/recursive-list.kotoba).
          ;; Moves WITH kotoba-script above.
+         ;; Advanced 2026-09-24, 245bfeb3 -> ba217bff (osaho main, ahead 2, behind 0,
+         ;; forward only by gh api compare): adr-2609242330 S1 -- descriptor/utf8's
+         ;; `:default` is a Kotoba body (string-code-point-at walk) instead of a
+         ;; copy of the TextEncoder form. No value-bounds change, so kotoba-script
+         ;; does not move with it (the only commit in the range is descriptor.cljk).
         ;; The frontend is an HIR producer and KIR lowering is its consumer;
         ;; both validate the same checked envelope.
         io.github.kotoba-lang/kotoba-hir
@@ -1708,7 +1713,11 @@
         io.github.kotoba-lang/org-ietf-cbor
         {:git/url "https://github.com/kotoba-lang/org-ietf-cbor.git"
          ;; 1dacfc40 -> 4c129f82 (org-ietf-cbor main, ahead 20, behind 0)
-         :git/sha "8ddc27d6024978d911dff3f5a6d5c59df3737131"} ;; Advanced 2026-09-24 4c129f82 -> 8ddc27d6 (main tip, forward only): selfhost walls: fn-body-clj-only, some-two-arg, regex literal, char literal, clojure.* to kotoba.*
+         ;; Advanced 2026-09-24, 8ddc27d6 -> b3391fa3 (org-ietf-cbor main, ahead 2,
+         ;; behind 0, forward only by gh api compare): adr-2609242330 S1 -- pure
+         ;; byte plumbing, Kotoba `:default` leaves; encoded bytes pinned by a
+         ;; 2,367-value golden corpus written by 8ddc27d6, io-ipld CIDs unchanged.
+         :git/sha "b3391fa30546e94d957ab04d3653389c9204cf8b"} ;; Advanced 2026-09-24 4c129f82 -> 8ddc27d6 (main tip, forward only): selfhost walls: fn-body-clj-only, some-two-arg, regex literal, char literal, clojure.* to kotoba.*
         ;; org-ietf-ed25519: named by kotoba-core-contracts 06d1e98a and
         ;; security 0e8e1a61 as c1ba8322. Its main adds `org-ietf-x25519` (a
         ;; real dependency of ed25519.edwards, two unannotated modules) -- taken,

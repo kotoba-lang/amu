@@ -26,7 +26,8 @@
   (:require #?(:clj  [clojure.test :refer [deftest is testing]]
                :cljs [cljs.test :refer [deftest is testing] :include-macros true])
             [kotoba.artifact.core :as artifact]
-            [kotoba.compiler.provenance :as provenance]))
+            [kotoba.compiler.provenance :as provenance]
+            #?(:cljs [sha2.core :as sha2])))
 
 (def ^:private result
   {:target :wasm32-browser-v1
@@ -114,3 +115,35 @@
       (testing what
         (is (= :provenance (:phase data)))
         (is (= :identity-mismatch (:reason data)))))))
+
+#?(:cljs
+   (deftest the-pure-helpers-answer-what-the-host-answers
+     ;; adr-2609242330 S1. The `:default` (Kotoba) branches of this namespace
+     ;; are built from `utf8-code-point`, `pure-hex` and org-nist-sha2. Those
+     ;; run here too, so each is held to node:crypto / Buffer on the same
+     ;; inputs: seeded random byte vectors of 0..300 bytes (lengths across the
+     ;; 55/56/64-byte SHA-256 padding edges included) and random well-formed
+     ;; strings over every UTF-8 width.
+     (let [raw-sha256 @#'provenance/raw-sha256
+           pure-hex @#'provenance/pure-hex
+           utf8-code-point @#'provenance/utf8-code-point
+           sha256 sha2/sha256
+           seed (atom 20260924)
+           rnd (fn [n] (swap! seed #(mod (* % 48271) 2147483647)) (mod @seed n))
+           vectors (concat (map #(vec (repeat % 255)) [0 1 55 56 63 64 65 119 120 128])
+                           (repeatedly 300 #(vec (repeatedly (rnd 300) (fn [] (rnd 256))))))
+           rand-cp (fn [] (let [c (case (rnd 4) 0 (rnd 0x80) 1 (+ 0x80 (rnd 0x780))
+                                        2 (+ 0x800 (rnd 0xF800)) 3 (+ 0x10000 (rnd 0x100000)))]
+                            (if (<= 0xD800 c 0xDFFF) 0x41 c)))
+           strings (concat ["" "a" "あ" "été" "😀" "\u0000" "߿ࠀ￿"]
+                           (repeatedly 500 #(apply js/String.fromCodePoint (repeatedly (rnd 40) rand-cp))))
+           walk (fn [s] (loop [i 0 out []]
+                          (if (< i (.-length s))
+                            (let [cp (.codePointAt s i)]
+                              (recur (+ i (if (> cp 0xFFFF) 2 1)) (utf8-code-point out cp)))
+                            out)))]
+       (is (= [] (remove #(= (raw-sha256 (js/Buffer.from (clj->js %)))
+                             (pure-hex (sha256 %)))
+                         vectors)))
+       (is (= [] (remove #(= (vec (js/Array.from (js/Buffer.from % "utf8"))) (walk %))
+                         strings))))))

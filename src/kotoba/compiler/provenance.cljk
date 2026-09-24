@@ -6,7 +6,13 @@
      :cljs (:require [kotoba.artifact.core :as artifact]
                      [kotoba.compiler.definition-identity :as definition-identity]
                      [kotoba.kir.compatibility :as compatibility]
-                     ["node:crypto" :as crypto]))
+                     ["node:crypto" :as crypto])
+     ;; Kotoba (adr-2609242330 S1): SHA-256 is the pure org-nist-sha2, which is
+     ;; on this classpath (8e38c43f); no host module.
+     :default (:require [kotoba.artifact.core :as artifact]
+                        [kotoba.compiler.definition-identity :as definition-identity]
+                        [kotoba.kir.compatibility :as compatibility]
+                        [sha2.core :as sha2]))
   #?(:clj (:import (java.nio.charset StandardCharsets)
                    (java.security MessageDigest))))
 
@@ -21,20 +27,79 @@
 ;; site.
 #?(:clj (defn- hex [bytes]
          (apply str (map #(format "%02x" (bit-and (int %) 0xff)) bytes))))
+
+;; ── the pure path (adr-2609242330 S1) ─────────────────────────────────────
+;; What every `:default` below is built from. Bytes are a vector of ints
+;; 0..255; text is UTF-8 already in Kotoba, so its bytes are its code points
+;; re-encoded, read at byte offsets. The host branches must answer the same
+;; strings -- test/kotoba/compiler/provenance_pure_test.cljk runs these
+;; functions on nbb against node:crypto / Buffer.
+
+(defn- utf8-code-point
+  "OUT with the UTF-8 encoding of the scalar value CP appended."
+  [out cp]
+  (cond
+    (< cp 0x80) (conj out cp)
+    (< cp 0x800) (conj out (+ 0xC0 (quot cp 64)) (+ 0x80 (bit-and cp 0x3F)))
+    (< cp 0x10000) (conj out (+ 0xE0 (quot cp 4096))
+                         (+ 0x80 (bit-and (quot cp 64) 0x3F))
+                         (+ 0x80 (bit-and cp 0x3F)))
+    :else (conj out (+ 0xF0 (quot cp 262144))
+                (+ 0x80 (bit-and (quot cp 4096) 0x3F))
+                (+ 0x80 (bit-and (quot cp 64) 0x3F))
+                (+ 0x80 (bit-and cp 0x3F)))))
+
+(defn- hex-digit [d]
+  (let [digits "0123456789abcdef"]
+    #?(:clj (subs digits d (inc d))
+       :cljs (subs digits d (inc d))
+       :default (string-substring digits d (inc d)))))
+
+(defn- pure-hex
+  "Lowercase hex of a vector of ints 0..255."
+  [bytes]
+  (reduce (fn [acc b]
+            (str acc (hex-digit (quot (bit-and b 0xff) 16)) (hex-digit (bit-and b 15))))
+          "" bytes))
+
 (defn- raw-sha256 [bytes]
   #?(:clj (hex (.digest (MessageDigest/getInstance "SHA-256") ^bytes bytes))
-     :cljs (-> (crypto/createHash "sha256") (.update bytes) (.digest "hex"))))
+     :cljs (-> (crypto/createHash "sha256") (.update bytes) (.digest "hex"))
+     :default (pure-hex (sha2/sha256 bytes))))
+(defn- utf8-vector
+  "The UTF-8 bytes of VALUE as a vector of ints (the Kotoba text walk)."
+  [value]
+  #?(:clj (mapv #(bit-and % 0xff) (.getBytes ^String value StandardCharsets/UTF_8))
+     :cljs (vec (js/Array.from (js/Buffer.from value "utf8")))
+     :default (let [n (string-byte-length value)]
+                (loop [i 0 out []]
+                  (if (< i n)
+                    (let [cp (string-code-point-at value i)]
+                      (recur (+ i (cond (< cp 0x80) 1 (< cp 0x800) 2 (< cp 0x10000) 3 :else 4))
+                             (utf8-code-point out cp)))
+                    out)))))
 (defn- text-sha256 [value]
   #?(:clj (raw-sha256 (.getBytes ^String value StandardCharsets/UTF_8))
-     :cljs (raw-sha256 (js/Buffer.from value "utf8"))))
+     :cljs (raw-sha256 (js/Buffer.from value "utf8"))
+     :default (raw-sha256 (utf8-vector value))))
 (defn- byte-size [value]
   #?(:clj (alength (.getBytes ^String value StandardCharsets/UTF_8))
-     :cljs (.-length (js/Buffer.from value "utf8"))))
+     :cljs (.-length (js/Buffer.from value "utf8"))
+     ;; a Kotoba string is UTF-8: its byte length is the answer
+     :default (string-byte-length value)))
+(defn- vector-sha256
+  "SHA-256 hex of a vector of ints (each masked to a byte, as the host
+  byte containers do)."
+  [bytes]
+  #?(:clj (raw-sha256 (byte-array (map unchecked-byte bytes)))
+     :cljs (raw-sha256 (js/Buffer.from (clj->js bytes)))
+     :default (raw-sha256 (mapv #(bit-and % 0xff) bytes))))
 (defn- bytes-identity [format bytes]
   #?(:clj (let [value (byte-array (map unchecked-byte bytes))]
            {:format format :sha256 (raw-sha256 value) :size (alength value)})
      :cljs (let [value (js/Buffer.from (clj->js bytes))]
-            {:format format :sha256 (raw-sha256 value) :size (.-length value)})))
+            {:format format :sha256 (raw-sha256 value) :size (.-length value)})
+     :default {:format format :sha256 (vector-sha256 bytes) :size (count bytes)}))
 
 (defn- outputs [result]
   (cond-> (sorted-map)
@@ -61,8 +126,7 @@
     (= :evm/v1 (:format result))
     (assoc :primary {:format :evm-creation-bytes
                      :sha256 (or (:creation-sha256 result)
-                                 #?(:clj (raw-sha256 (byte-array (map unchecked-byte (:creation-bytes result))))
-                                    :cljs (raw-sha256 (js/Buffer.from (clj->js (:creation-bytes result))))))
+                                 (vector-sha256 (:creation-bytes result)))
                      :size (count (:creation-bytes result))})
     (:binary result) (assoc :binary (bytes-identity (:format (:binary result)) (:bytes (:binary result))))
     (:object result) (assoc :object (bytes-identity (:format (:object result)) (:bytes (:object result))))))
@@ -105,7 +169,17 @@
            (.getBytes ^String a StandardCharsets/US_ASCII)
            (.getBytes ^String b StandardCharsets/US_ASCII))
      :cljs (and (= (count a) (count b))
-               (crypto/timingSafeEqual (js/Buffer.from a "ascii") (js/Buffer.from b "ascii")))))
+               (crypto/timingSafeEqual (js/Buffer.from a "ascii") (js/Buffer.from b "ascii")))
+     ;; Every byte is compared whatever the earlier ones were; the answer is
+     ;; the OR of the differences. A digest here is ASCII hex, so byte
+     ;; offsets and code points coincide.
+     :default (let [n (string-byte-length a)]
+                (and (= n (string-byte-length b))
+                     (zero? (loop [i 0 acc 0]
+                              (if (< i n)
+                                (recur (inc i) (bit-or acc (bit-xor (string-code-point-at a i)
+                                                                    (string-code-point-at b i))))
+                                acc)))))))
 
 (defn verify!
   ([source policy result] (verify! source policy {} result))
