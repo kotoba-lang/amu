@@ -5,6 +5,16 @@
   {:kotoba/export [source-kind admit! admit-native-artifact!]}
   (:require [kotoba.lang.text :as str]))
 
+;; clojure.core/some, spelled as the loop it is. In Kotoba `some` is the
+;; option constructor and a two-argument `(some pred coll)` is refused as a
+;; name collision (kotoba-sema frontend); this is the same definition as
+;; clojure.core/some -- the first logical-true (pred x), in order, stopping
+;; there -- so the host answer is unchanged on nbb and the JVM.
+(defn- first-truthy [pred coll]
+  (loop [s (seq coll)]
+    (when s
+      (or (pred (first s)) (recur (next s))))))
+
 (def extensions
   "Closed source-discovery contract. Extensions select discovery intent only;
   they never select a runtime, weaken the Kotoba grammar, or imply JVM use."
@@ -14,7 +24,7 @@
 
 (defn source-kind [path]
   (when (string? path)
-    (some (fn [[extension kind]]
+    (first-truthy (fn [[extension kind]]
             (when (str/ends-with? path extension) kind))
           extensions)))
 
