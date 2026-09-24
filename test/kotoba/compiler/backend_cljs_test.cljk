@@ -131,7 +131,7 @@
         ns (eval-in-fresh-ns (:source compiled))]
     (dotimes [_ 511] (call ns 'noop))
     (is (= 3 (call ns 'main)) "the 512th call still succeeds")
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"fuel-exhausted"
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"budget/fuel"
                           (call ns 'noop))
         "the 513th call, ever, on this loaded module traps -- not reset per top-level call")))
 

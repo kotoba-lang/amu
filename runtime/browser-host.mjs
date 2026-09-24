@@ -438,7 +438,7 @@ function createHeap() {
   return {
     imports: Object.freeze({
       pair(first, second) {
-        if (cells.length >= PAIR_CAPACITY) reject("heap-exhausted", "immutable pair arena exhausted");
+        if (cells.length >= PAIR_CAPACITY) reject("budget/cells", "immutable pair arena exhausted (adr-2609242100 P4: cells budget)");
         cells.push(Object.freeze([BigInt.asIntN(64, first), BigInt.asIntN(64, second)]));
         return BigInt(cells.length);
       },

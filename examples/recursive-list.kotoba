@@ -17,9 +17,13 @@
 ;; `loop` (kotoba-sema, measured 2026-09-24: "unbound or dynamic symbol ...
 ;; c is not a parameter").
 ;;
-;; Budgets: about 4,000 function entries, above the default 512, so the
-;; conformance fixture compiles with --fuel 100000 (the verifier re-derives
-;; the sealed value under it) and runs with KEXE_FUEL=100000.
+;; Budgets: 6,006 native function entries (measured on aarch64 and x86_64),
+;; above the old default 512. Since adr-2609242100 P4 the native profile does
+;; not meter fuel by default, so it compiles with no --fuel (the oracle runs
+;; under the unmetered artifact's 100,000) and runs with no KEXE_FUEL. Opting
+;; in with KEXE_FUEL=6005 traps :budget/fuel on both ISAs; 6006 answers. Its
+;; 1000 cells use 3,001 of the 4,096 pair-arena cells (KEXE_PAIRS=3000 traps
+;; :budget/cells).
 (ns probe.list (:export [main])
   (:schemas {:app/list [:variant :app/list [[:empty :i64] [:cons [:ref :app/cell]]]]
              :app/cell [:record :app/cell [[:head :i64] [:tail [:ref :app/list]]]]}))

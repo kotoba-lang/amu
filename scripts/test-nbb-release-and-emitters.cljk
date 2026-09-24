@@ -136,8 +136,11 @@
                                                  "(prn [(g/fact 5) (g/fact 10) "
                                                  "(try (g/forever 0) (catch :default e (ex-message e)))])")])
                              #js {:cwd tmp :encoding "utf8"})]
-      (record! "the emitted cljs runs: fact 5 = 120, fact 10 = 3628800, forever traps on fuel"
-               (str/includes? (or (.-stdout result) "") "[120 3628800 \"fuel-exhausted\"]")
+      ;; adr-2609242100 P4: `forever` recurses, and the cljs profile's frames
+      ;; budget (256) now answers before its fuel (512) would -- the trap is
+      ;; named budget/frames, not a host stack overflow.
+      (record! "the emitted cljs runs: fact 5 = 120, fact 10 = 3628800, forever traps on its frames budget"
+               (str/includes? (or (.-stdout result) "") "[120 3628800 \"budget/frames\"]")
                (str (.-stdout result) (.-stderr result)))))
 
   (finally
