@@ -142,6 +142,11 @@ jobs:
         run: npm run test-compile-cache
       - if: ${{ !cancelled() }}
         run: npm run test-compiler-worker
+      # ADR 0351: an omitted --target is the host's native target. Run on all
+      # three hosts of this matrix, because the host table is the thing under
+      # test and each runner is a different row of it.
+      - if: ${{ !cancelled() }}
+        run: npm run test-default-target
       - if: ${{ !cancelled() }}
         run: npm run test-performance-baseline
       - if: ${{ !cancelled() }}

@@ -413,6 +413,11 @@
          :stage-cache (stage-status hir-result kir-result (:emit compiled))}))))
 
 (defn- compile! [args context]
+  ;; "wasm32" here is not amu's default target (that is the host's native
+  ;; target since ADR 0351, resolved by bin/amu before this driver is
+  ;; chosen). The launcher only spawns this driver with a wasm32* --target;
+  ;; the fallback is for a caller that spawned the Wasm driver itself, and
+  ;; so has already chosen Wasm.
   (let [target-name (or (support/option args "--target") "wasm32")
         target (get targets target-name)
         _ (when-not target
@@ -533,6 +538,8 @@
      (str "error: nbb Wasm path does not cover command " (first args)))))
 
 (if (= "worker" (first *command-line-args*))
+  ;; Same as `compile!`: bin/amu reaches this worker only with a wasm32*
+  ;; --target (ADR 0351); the fallback serves a direct spawn of this driver.
   (let [target-name (or (support/option *command-line-args* "--target") "wasm32")
         target (get targets target-name)
         _ (when-not target

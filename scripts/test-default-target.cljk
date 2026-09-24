@@ -1,0 +1,264 @@
+(ns test-default-target
+  "An omitted --target means the HOST's native target (ADR 0351).
+
+  What this pins, each through the real launcher unless it says otherwise:
+
+  - the host table: this machine's `process.platform`/`process.arch` maps to
+    the native target of the same ISA, and the three CI runners' hosts map to
+    the targets their jobs compile for (asserted from the table, since a
+    runner cannot be simulated by lying to the real process);
+  - an unknown host is REFUSED by name (injected host descriptor), never
+    defaulted to wasm;
+  - `amu compile <file>` with no --target writes a native kexe for this host,
+    and `amu extract-native` + `tools/kexe_loader.c` run it to the right
+    answer;
+  - `--target wasm32-browser` still writes Wasm;
+  - `amu check` and `amu module-lock` take no target and do not move:
+    identical bytes with and without AMU_TARGET naming a native target (so
+    they are not routed by it), and module-lock is not sent to the native
+    driver (which does not implement it);
+  - `bin/kotoba -M compile` with no --target writes the same bytes as
+    `bin/amu`;
+  - a program native does not qualify, with the target omitted, is refused
+    naming the feature and the wasm32 targets, and no file is written;
+  - AMU_TARGET sets the default, an explicit --target beats it, an empty one
+    is unset.
+
+  Exit 0 all pass, 1 a check failed, 2 this host cannot run the loader half
+  (not darwin/linux, or no `cc`) -- never 0 for that.
+  Run from the repo root: `node bin/kbb --backend sci --classpath . scripts/test-default-target.cljk`."
+  (:require [clojure.string :as str]
+            [scripts.lib :as lib]
+            ["node:child_process" :as child]
+            ["node:fs" :as fs]
+            ["node:path" :as path]))
+
+(def directory (lib/temp-dir "amu-default-target-"))
+(def amu (lib/join lib/root "bin" "amu"))
+(def kotoba (lib/join lib/root "bin" "kotoba"))
+(def nbb-cli (lib/join lib/root "node_modules" "nbb" "cli.js"))
+
+(def ^:private checks (volatile! {:pass 0 :fail 0}))
+(defn- report! [ok? label detail]
+  (vswap! checks update (if ok? :pass :fail) inc)
+  (println (str (if ok? "PASS " "FAIL ") label (when-not ok? (str " -- " detail)))))
+
+(defn- f [name] (lib/join directory name))
+
+(defn- spawn [argv env-overrides]
+  (let [env (js/Object.assign #js {} js/process.env)]
+    ;; The caller's own AMU_TARGET must not decide a test that is about it.
+    (js-delete env "AMU_TARGET")
+    (doseq [[k v] env-overrides] (aset env k v))
+    (.spawnSync child (first argv) (clj->js (rest argv))
+                #js {:cwd directory :encoding "utf8" :timeout 600000
+                     :maxBuffer (* 64 1024 1024) :env env})))
+
+(defn- amu! [args & [env]] (spawn (into [js/process.execPath amu] args) env))
+(defn- kotoba! [args & [env]]
+  (spawn (into [js/process.execPath nbb-cli kotoba "-M"] args) env))
+
+(defn- ok? [r] (and (nil? (.-error r)) (= 0 (.-status r))))
+(defn- out [r] (str (.-stdout r) (.-stderr r)))
+(defn- bytes-of [file] (when (.existsSync fs file) (.readFileSync fs file)))
+(defn- same-bytes? [a b] (and a b (zero? (.compare a b))))
+
+;; --- the table and the refusal, asked of bin/amu as a module -------------
+;; In a child process: a bin/amu that does not guard its `main` runs it on
+;; `require`, and that must fail this check rather than exit the suite.
+(def ^:private probe-source
+  (str "const a = require(" (js/JSON.stringify amu) ");\n"
+       "if (typeof a.defaultTarget !== 'function') { console.log('NO-EXPORT'); process.exit(3); }\n"
+       "const host = a.hostNativeTarget();\n"
+       "const table = a.hostNativeTargets;\n"
+       "const unknown = ['freebsd/x64', 'linux/ia32', 'darwin/ppc64', 'sunos/x64'].map((k) => {\n"
+       "  const [platform, arch] = k.split('/');\n"
+       "  return a.defaultTarget(['compile', 'x.kotoba'], {}, { platform, arch }); });\n"
+       "const d = (args, env) => a.defaultTarget(args, env);\n"
+       "console.log(JSON.stringify({ host, table, unknown,\n"
+       "  explicit: d(['compile', 'x', '--target', 'wasm32-browser'], { AMU_TARGET: 'x86_64-linux' }),\n"
+       "  env: d(['compile', 'x'], { AMU_TARGET: 'wasm32-wasi' }),\n"
+       "  emptyEnv: d(['compile', 'x'], { AMU_TARGET: '' }),\n"
+       "  worker: d(['worker'], {}),\n"
+       "  check: d(['check', 'x'], { AMU_TARGET: 'x86_64-linux' }),\n"
+       "  moduleLock: d(['module-lock', 'x'], {}),\n"
+       "  platform: process.platform, arch: process.arch }));\n"))
+
+(defn- table-checks! []
+  (let [r (spawn [js/process.execPath "-e" probe-source] {})
+        answer (when (and (ok? r) (str/starts-with? (str (.-stdout r)) "{"))
+                 (js->clj (js/JSON.parse (.-stdout r)) :keywordize-keys true))
+        isa ({"arm64" "aarch64" "x64" "x86_64"} (.-arch js/process))]
+    (report! (some? answer) "bin/amu exports the defaulting rule when required"
+             (str "exit " (.-status r) " " (subs (out r) 0 (min 300 (count (out r))))))
+    (when answer
+      (let [table (:table answer) host-target (get-in answer [:host :target])]
+        (report! (and host-target isa (str/starts-with? host-target (str isa "-")))
+                 (str "this host (" (:platform answer) "/" (:arch answer) ") defaults to "
+                      host-target)
+                 (pr-str (:host answer)))
+        ;; The hosts the required CI jobs run on (test.yml: ubuntu-latest,
+        ;; ubuntu-24.04-arm, macos-14) and the Windows jobs.
+        (doseq [[k expected] [["linux/x64" "x86_64-linux"] ["linux/arm64" "aarch64-linux"]
+                              ["darwin/arm64" "aarch64-macos"] ["darwin/x64" "x86_64-macos"]
+                              ["win32/x64" "x86_64-windows"] ["win32/arm64" "aarch64-windows"]]]
+          (report! (= expected (get table (keyword k)))
+                   (str "host " k " -> " expected) (pr-str (get table (keyword k)))))
+        (doseq [u (:unknown answer)]
+          (report! (and (nil? (:args u)) (string? (:reason u))
+                        (str/includes? (:reason u) "has no amu native target")
+                        (str/includes? (:reason u) "does not fall back to wasm"))
+                   "an unknown host is refused by name, not defaulted" (pr-str u)))
+        (report! (= "wasm32-browser" (second (drop-while #(not= "--target" %) (get-in answer [:explicit :args]))))
+                 "an explicit --target beats AMU_TARGET" (pr-str (:explicit answer)))
+        (report! (and (= "env" (get-in answer [:env :origin]))
+                      (= ["compile" "x" "--target" "wasm32-wasi"] (get-in answer [:env :args])))
+                 "AMU_TARGET supplies the default" (pr-str (:env answer)))
+        (report! (and (= "host" (get-in answer [:emptyEnv :origin]))
+                      (= host-target (last (get-in answer [:emptyEnv :args]))))
+                 "an empty AMU_TARGET is unset" (pr-str (:emptyEnv answer)))
+        (report! (= ["worker" "--target" host-target] (get-in answer [:worker :args]))
+                 "worker defaults to the host target too" (pr-str (:worker answer)))
+        (report! (and (nil? (get-in answer [:check :origin]))
+                      (= ["check" "x"] (get-in answer [:check :args]))
+                      (= ["module-lock" "x"] (get-in answer [:moduleLock :args])))
+                 "check / module-lock are given no target" (pr-str (select-keys answer [:check :moduleLock])))))
+    answer))
+
+;; --- through the launchers -----------------------------------------------
+
+(defn- loader-runs! [host-target]
+  (let [isa (first (str/split host-target #"-"))
+        loader (f "kexe-loader")
+        cc (spawn ["cc" "-std=c11" "-O2" (lib/join lib/root "tools" "kexe_loader.c") "-o" loader] {})]
+    (if-not (ok? cc)
+      (do (println (str "CANNOT-MEASURE the loader half: cc failed -- " (out cc))) :unmeasured)
+      (let [extracted (amu! ["extract-native" (f "omitted.kexe") "--symbol" "main"
+                             "--output" (f "omitted.bin")])
+            [_ offset] (re-find #":offset ([0-9]+)" (str (.-stdout extracted)))
+            ran (when offset (spawn [loader (f "omitted.bin") offset "0" isa "-"] {}))]
+        (report! (some? offset) "extract-native finds main in the defaulted kexe" (out extracted))
+        (report! (and ran (ok? ran) (= "42" (str/trim (.-stdout ran))))
+                 "kexe_loader runs the defaulted native build to 42"
+                 (if ran (str "exit " (.-status ran) " " (out ran)) "not run"))
+        :measured))))
+
+(defn- launcher-checks! [host-target]
+  (let [source (f "answer.kotoba")
+        unqualified (f "unqualified.kotoba")
+        project (f "proj")]
+    (lib/write-text! source "(defn main [] :i64 (+ 40 2))\n")
+    ;; A legacy pair-map literal: the Wasm targets carry it, native does not
+    ;; (`map-new` is outside `kotoba.kir/only-native-word-typed-features?`).
+    (lib/write-text! unqualified "(ns unqualified)\n(defn main [] :i64 (get {:a 1 :b 2} :b))\n")
+    (.mkdirSync fs (lib/join project "src") #js {:recursive true})
+    (lib/write-text! (lib/join project "src" "util.cljk")
+                     "(ns util (:export [twice]))\n(defn twice [x :i64] :i64 (* 2 x))\n")
+    (lib/write-text! (lib/join project "src" "main.cljk")
+                     "(ns main (:require [util :as u]) (:export [run]))\n(defn run [x :i64] :i64 (+ 1 (u/twice x)))\n")
+
+    ;; 1. omitted target -> this host's native kexe
+    (let [r (amu! ["compile" source "--output" (f "omitted.kexe")])]
+      (report! (and (ok? r) (str/includes? (.-stdout r) (str ":target :" host-target "-kotoba-v1")))
+               (str "amu compile with no --target builds " host-target) (out r))
+      (report! (and (bytes-of (f "omitted.kexe"))
+                    (not (same-bytes? (.subarray (bytes-of (f "omitted.kexe")) 0 4)
+                                      (js/Buffer.from #js [0 0x61 0x73 0x6d]))))
+               "the defaulted output is not a Wasm module" ""))
+
+    ;; 2. explicit wasm32-browser still writes Wasm
+    (let [r (amu! ["compile" source "--target" "wasm32-browser" "--output" (f "explicit.wasm")])
+          b (bytes-of (f "explicit.wasm"))]
+      (report! (and (ok? r) b (same-bytes? (.subarray b 0 4) (js/Buffer.from #js [0 0x61 0x73 0x6d])))
+               "--target wasm32-browser still writes Wasm" (out r)))
+
+    ;; 3. check and module-lock: target-independent, unmoved by AMU_TARGET
+    (let [a (amu! ["check" source])
+          b (amu! ["check" source] {"AMU_TARGET" "x86_64-linux"})]
+      (report! (and (ok? a) (ok? b) (str/includes? (.-stdout a) ":format :kotoba.check/v1")
+                    (= (.-stdout a) (.-stdout b)))
+               "amu check needs no target and ignores AMU_TARGET" (str (out a) (out b))))
+    (let [lock! (fn [dir env]
+                  (spawn [js/process.execPath amu "module-lock"
+                          (lib/join project "src" "main.cljk") "--source-path" (lib/join project "src")
+                          "--blocks" (f (str dir "-blocks")) "--output" (f (str dir ".edn"))] env))
+          a (lock! "lock-a" {})
+          b (lock! "lock-b" {"AMU_TARGET" "aarch64-linux"})]
+      (report! (and (ok? a) (str/includes? (.-stdout a) ":ok true") (str/includes? (.-stdout a) ":lock-cid"))
+               "amu module-lock with no target still writes a lock (Wasm-driver route)" (out a))
+      (report! (and (ok? b) (same-bytes? (bytes-of (f "lock-a.edn")) (bytes-of (f "lock-b.edn"))))
+               "module-lock is not routed by AMU_TARGET (identical lock bytes)" (out b)))
+
+    ;; 3b. worker with no target locks to the host target
+    (let [env (js/Object.assign #js {} js/process.env)
+          _ (js-delete env "AMU_TARGET")
+          r (.spawnSync child js/process.execPath (clj->js [amu "worker"])
+                        #js {:cwd directory :encoding "utf8" :timeout 600000 :input "" :env env})]
+      (report! (str/includes? (str (.-stdout r)) (str "\"target\":\"" host-target "-kotoba-v1\""))
+               "amu worker with no --target locks to the host target" (out r)))
+
+    ;; 4. bin/kotoba agrees with bin/amu
+    (let [r (kotoba! ["compile" source "--output" (f "kotoba.kexe")])]
+      (report! (and (ok? r) (same-bytes? (bytes-of (f "omitted.kexe")) (bytes-of (f "kotoba.kexe"))))
+               "bin/kotoba -M compile with no --target writes bin/amu's bytes" (out r)))
+
+    ;; 5. native-unqualified feature, target omitted -> named refusal, no file
+    (let [r (amu! ["compile" unqualified "--output" (f "unqualified.out")])
+          err (str (.-stderr r))]
+      (report! (and (= 70 (.-status r))
+                    (str/includes? err (str "native target " host-target " does not qualify `map-new`"))
+                    (str/includes? err "--target wasm32-browser")
+                    (str/includes? err "--target was omitted, so amu chose this host's native target"))
+               "an unqualified feature is refused by name with the wasm32 hint" (out r))
+      (report! (and (not (.existsSync fs (f "unqualified.out")))
+                    (not (.existsSync fs (f "unqualified.out.provenance.edn"))))
+               "the refused compile wrote nothing (no silent wasm)" (pr-str (.readdirSync fs directory))))
+    (let [r (amu! ["compile" unqualified "--target" host-target "--output" (f "explicit-native.out")])
+          err (str (.-stderr r))]
+      (report! (and (= 70 (.-status r)) (str/includes? err "does not qualify `map-new`")
+                    (str/includes? err "--target wasm32-browser")
+                    (not (str/includes? err "--target was omitted")))
+               "an explicit native target names the feature but does not claim a default" (out r)))
+    (let [r (amu! ["compile" unqualified "--output" (f "env.wasm")] {"AMU_TARGET" "wasm32-browser"})]
+      (report! (and (ok? r) (str/includes? (.-stdout r) ":target :wasm32-browser-kotoba-v1"))
+               "AMU_TARGET=wasm32-browser compiles the same program to Wasm" (out r)))
+    ;; The launcher, not the caller, decides the origin the driver is told.
+    (let [r (amu! ["compile" unqualified "--target" host-target "--output" (f "spoof.out")]
+                  {"AMU_TARGET_ORIGIN" "host"})]
+      (report! (not (str/includes? (str (.-stderr r)) "--target was omitted"))
+               "an ambient AMU_TARGET_ORIGIN is not believed" (out r)))))
+
+;; The expected host target, derived here from Node's own spelling rather than
+;; read back from bin/amu, so the launcher checks below have an oracle that
+;; does not come from the code under test.
+(def expected-host-target
+  (let [isa ({"arm64" "aarch64" "x64" "x86_64"} (.-arch js/process))
+        os ({"darwin" "macos" "linux" "linux" "win32" "windows"} (.-platform js/process))]
+    (when (and isa os) (str isa "-" os))))
+
+(let [code (try
+             (let [answer (table-checks!)
+                   _ (report! (and expected-host-target
+                                   (= expected-host-target (get-in answer [:host :target])))
+                              (str "bin/amu's host target is " expected-host-target)
+                              (pr-str (:host answer)))
+                   host-target expected-host-target
+                   loader-state (when host-target
+                                  (launcher-checks! host-target)
+                                  (if (contains? #{"darwin" "linux"} (.-platform js/process))
+                                    (loader-runs! host-target)
+                                    (do (println (str "CANNOT-MEASURE the loader half on "
+                                                      (.-platform js/process)))
+                                        :unmeasured)))
+                   {:keys [pass fail]} @checks]
+               (println (str "SUMMARY pass=" pass " fail=" fail
+                             (when (= :unmeasured loader-state) " loader=UNMEASURED")))
+               (cond (pos? fail) 1
+                     (or (nil? host-target) (= :unmeasured loader-state)) 2
+                     (zero? pass) 2
+                     :else 0))
+             (catch :default e
+               (println (str "FAIL uncaught: " (.-message e)))
+               1)
+             (finally (lib/remove-tree! directory)))]
+  (.exit js/process code))

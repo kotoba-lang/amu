@@ -299,7 +299,17 @@
                     (or (option args "--blocks")
                         (throw (ex-info "--module-lock requires --blocks <dir>"
                                         {:phase :usage})))))
-          target (parse-target (or (option args "--target") "wasm32"))
+          ;; No default here since amu ADR 0351 (2026-09-24). This in-process
+          ;; twin is no longer spawned by any launcher (ADR 0347); `bin/amu`
+          ;; and `bin/kotoba` resolve an omitted --target to the HOST's
+          ;; native target before routing, and a JVM-side copy of that host
+          ;; table would be a second answer to keep in step for a route
+          ;; that is being removed. Defaulting to wasm32 here would silently
+          ;; contradict the launchers, so an omitted target is refused.
+          target (parse-target
+                  (or (option args "--target")
+                      (throw (ex-info "--target is required on the in-process CLI; bin/amu defaults an omitted --target to the host's native target (amu ADR 0351)"
+                                      {:phase :usage :problem :compile/missing-target}))))
           output (or (option args "--output")
                      ;; A locked compile has no input PATH to derive a name
                      ;; from -- that is the point -- so the root namespace

@@ -3,18 +3,20 @@
   (:require ["node:child_process" :as child]
             ["node:crypto" :as crypto]
             ["node:fs" :as fs]
+            ["node:module" :as node-module]
             ["node:os" :as os]
             ["node:path" :as path]))
 
 (def usage
-  ["usage: kotoba -M compile <file.kotoba|file.cljk|file.cljc> --target wasm32-browser|wasm32-wasi|x86_64-linux|x86_64-macos|x86_64-windows|aarch64-linux|aarch64-macos|aarch64-windows|aarch64-android|aarch64-ios|js|js-browser|evm [--policy policy.edn] --output <file>"
+  ["usage: kotoba -M compile <file.kotoba|file.cljk|file.cljc> [--target wasm32-browser|wasm32-wasi|x86_64-linux|x86_64-macos|x86_64-windows|aarch64-linux|aarch64-macos|aarch64-windows|aarch64-android|aarch64-ios|js|js-browser|evm] [--policy policy.edn] --output <file>"
+   "       (no --target: this host's native target, e.g. aarch64-macos / x86_64-linux; AMU_TARGET overrides it)"
    "       kotoba -M check <file.kotoba|file.cljk|file.cljc> [--policy policy.edn]"
    "  multi-file (a module declaring (:require [ns :as alias])):"
    "       kotoba -M module-lock <entry> --source-path <dir> --blocks <dir>"
    "       kotoba -M compile --module-lock <lock> --blocks <dir> --target <target> --output <file>"
    "       kotoba -M check <entry> --source-path <dir>  # links the closed graph, emits nothing"
    "       kotoba -M definition-cids <file.kotoba> [--source-path <dir>]  # one CID per top-level function"
-   "       kotoba -M worker [--target wasm32|x86_64|aarch64]  # bounded NDJSON on stdin/stdout"
+   "       kotoba -M worker [--target <target>]  # bounded NDJSON on stdin/stdout; no --target: host native"
    "       kotoba -M inspect <file.kotoba|file.cljk|file.cljc> [--output interface.edn]"
    "       kotoba -M test <file.kotoba|file.cljk|file.cljc> [--json]  # runs every test-* export on each qualified target"
    "       kotoba -M module-lock <file.kotoba> --blocks <dir> --source-path <dir> [--output kotoba.modules.edn]"
@@ -51,8 +53,11 @@
 ;; Any other `--target` value, or any subcommand besides `compile`/
 ;; `check`, falls through to the JVM `kbb -M:run` path below
 ;; unchanged.
+;; `nil` left this set on 2026-09-24 (amu ADR 0351): an omitted --target is
+;; resolved to a NAME by `bin/amu`'s `defaultTarget` before routing (see
+;; `with-default-target` below), so it no longer rides `nil` onto Wasm.
 (def ^:private nbb-native-targets
-  #{"wasm32" "wasm32-browser" "wasm32-wasi" nil
+  #{"wasm32" "wasm32-browser" "wasm32-wasi"
     "x86_64" "x86_64-linux" "x86_64-macos" "x86_64-windows"
     "aarch64" "aarch64-linux" "aarch64-macos" "aarch64-windows"
     "aarch64-android" "aarch64-ios"})
@@ -88,8 +93,7 @@
   (let [command (first sub-args)
         target (option sub-args "--target")
         wasm? (or (= command "check")
-                  (nil? target)
-                  (.startsWith target "wasm32"))
+                  (and (some? target) (.startsWith target "wasm32")))
         filename (cond
                    (contains? trust-commands command) "trust_cli.cljk"
                    (contains? #{"run" "measure-runtime"} command) "run_cli.cljk"
@@ -215,6 +219,21 @@
                       "  Diagnose with: kbb --backend sci --classpath src scripts/print-classpath.cljk")
                  70))))))
 
+(defn- with-default-target
+  "SUB-ARGS with the default --target applied, and the origin of that target,
+  as `bin/amu` decides both -- by calling it, not by copying it. `bin/amu` is
+  plain CommonJS and exports `defaultTarget` when it is required rather than
+  run, so the two launchers share one host table (amu ADR 0351). A host with
+  no native target is refused here with the same text and exit 64."
+  [root sub-args]
+  (let [require-amu (.createRequire node-module (.join path root "bin" "amu"))
+        amu (require-amu (.join path root "bin" "amu"))
+        answer ((.-defaultTarget amu) (clj->js sub-args))]
+    (when-let [reason (.-reason answer)]
+      (fail! reason 64))
+    {:args (vec (js->clj (.-args answer)))
+     :origin (.-origin answer)}))
+
 (let [args (vec *command-line-args*)
       boundary (first args)]
   (cond
@@ -224,7 +243,12 @@
     (contains? #{"-M" "-M:compiler" "-M:compile"} boundary)
     (let [self (.realpathSync fs *file*)
           root (.resolve path (.dirname path self) "..")
-          sub-args (subvec args 1)]
+          {sub-args :args origin :origin} (with-default-target root (subvec args 1))
+          child-env (let [env (js/Object.assign #js {} js/process.env)]
+                      (if (contains? #{"host" "env"} origin)
+                        (aset env "AMU_TARGET_ORIGIN" origin)
+                        (js-delete env "AMU_TARGET_ORIGIN"))
+                      env)]
       (if (nbb-native-eligible? sub-args)
         ;; Fast path: no `clojure` (JVM) process is spawned at all. A fresh
         ;; nbb process is spawned (not this one) purely so `--classpath`
@@ -268,7 +292,7 @@
                                  ;; 2026-09-11 with `kotoba -M keygen`). The
                                  ;; classpath above is absolute, so nothing the
                                  ;; child loads depends on where it starts.
-                                 #js {:cwd (.cwd js/process) :stdio "inherit" :env js/process.env})]
+                                 #js {:cwd (.cwd js/process) :stdio "inherit" :env child-env})]
           (when (.-error result)
             (fail! "error: unable to start nbb-native compiler runtime" 70))
           (.exit js/process (or (.-status result) 70)))

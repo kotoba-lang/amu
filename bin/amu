@@ -8,7 +8,9 @@ const os = require("node:os");
 const path = require("node:path");
 
 const usage = [
-  "usage: amu compile <file.kotoba|file.cljk|file.cljc> --target <target> [--policy policy.edn] [--jvm-free] --output <file>",
+  "usage: amu compile <file.kotoba|file.cljk|file.cljc> [--target <target>] [--policy policy.edn] [--jvm-free] --output <file>",
+  "       (no --target: this host's native target, e.g. aarch64-macos / x86_64-linux;",
+  "        AMU_TARGET overrides it; wasm32-browser / wasm32-wasi are chosen explicitly)",
   "       amu check <file.kotoba|file.cljk|file.cljc> [--policy policy.edn] [--jvm-free]",
   "  multi-file (a module declaring (:require [ns :as alias])):",
   "       amu module-lock <entry> --source-path <dir> --blocks <dir>",
@@ -26,7 +28,7 @@ const usage = [
   "       amu package-lock --deps kotoba.deps.edn --packages <dir> --output kotoba.lock.edn",
   "       amu definition-cids <file> [--source-path <dir>]  # one CID per definition",
   "       amu compile <entry> --source-path <dir> --unpinned --target <target> --output <file>",
-  "       amu worker [--target wasm32|x86_64|aarch64]",
+  "       amu worker [--target <target>]   (no --target: this host's native target)",
   "       amu inspect <file.kotoba|file.cljk|file.cljc> [--output interface.edn]",
   "       amu test <file.kotoba|file.cljk|file.cljc> [--json] [--fuel <n>] [--source-path <dir> ...]   (one instance per test)",
   "       amu module-lock <file.kotoba> --blocks <dir> --source-path <dir>",
@@ -53,8 +55,13 @@ const usage = [
 // JVM -- these targets reach the same two ISA emitters as the plain ones --
 // but because only the JVM CLI ran `elf64/package-kernel-object` on the sealed
 // artifact. Both packagers are portable .cljc and load unchanged under nbb.
+// `undefined` left this set on 2026-09-24 (ADR 0351). An omitted --target
+// used to ride it onto the Wasm driver, because `nbbEntrypoint` read
+// `target === undefined` as "wasm". The launcher now resolves an omitted
+// target to a NAME before routing (`defaultTarget` below), so nothing reaches
+// this set without one.
 const nbbNativeTargets = new Set([
-  undefined, "wasm32", "wasm32-browser", "wasm32-wasi",
+  "wasm32", "wasm32-browser", "wasm32-wasi",
   "x86_64", "x86_64-linux", "x86_64-macos", "x86_64-windows",
   "aarch64", "aarch64-linux", "aarch64-macos", "aarch64-windows",
   "aarch64-android", "aarch64-ios",
@@ -83,6 +90,64 @@ const nbbJsTargets = new Set([
   "cljs", "cljs-browser", "cljs-node",
   "cljs-kotoba-v1", "cljs-browser-kotoba-v1", "cljs-node-kotoba-v1",
 ]);
+
+// The host's native target, for a compile or worker that names none (ADR
+// 0351, following superproject ADR-2609241300: amu's native compiler is the
+// first execution path; wasm is a build target chosen for hosts where native
+// cannot run). The same rule as Go's GOOS/GOARCH, Rust's host triple and
+// Zig's native target: an omitted target means the machine you are on.
+//
+// Keys are Node's own `process.platform`/`process.arch` spellings; values are
+// the names `kotoba.compiler.nbb.cli/targets` accepts. A host missing from
+// this table is REFUSED by name -- falling back to wasm32 there would be the
+// old default returning silently on exactly the machines nobody measured.
+const hostNativeTargets = Object.freeze({
+  "darwin/arm64": "aarch64-macos",
+  "darwin/x64": "x86_64-macos",
+  "linux/arm64": "aarch64-linux",
+  "linux/x64": "x86_64-linux",
+  "win32/arm64": "aarch64-windows",
+  "win32/x64": "x86_64-windows",
+  "android/arm64": "aarch64-android",
+});
+
+// `host` is injectable so the refusal can be tested without lying to the
+// real process; production passes nothing.
+function hostNativeTarget(host = { platform: process.platform, arch: process.arch }) {
+  const key = `${host.platform}/${host.arch}`;
+  const target = hostNativeTargets[key];
+  if (target) return { target };
+  return {
+    reason: `error: --target was omitted and this host (${key}) has no amu native `
+      + "target, so there is no host default. amu does not fall back to wasm: "
+      + "pass --target explicitly (wasm32-browser for a browser or Worker, "
+      + "wasm32-wasi for a WASI host, or one of "
+      + Object.values(hostNativeTargets).join(", ")
+      + " to cross-compile), or set AMU_TARGET.",
+  };
+}
+
+// The commands a default applies to: the two that choose a code generator.
+// Everything else either takes no target (check, module-lock, ...) or reads
+// it from an artifact it is handed.
+const defaultedCommands = new Set(["compile", "worker"]);
+
+// Answers `{args, origin}` or `{reason}`. `origin` is "explicit" when the
+// caller wrote --target, "env" when AMU_TARGET supplied it, "host" when the
+// host table did, and null for a command no default applies to. An explicit
+// flag always wins; an empty AMU_TARGET is treated as unset, the way
+// `AMU_TARGET= amu ...` is written to unset it.
+function defaultTarget(args, env = process.env, host = undefined) {
+  if (!defaultedCommands.has(args[0])) return { args, origin: null };
+  if (args.includes("--target")) return { args, origin: "explicit" };
+  const fromEnv = env.AMU_TARGET;
+  if (typeof fromEnv === "string" && fromEnv !== "") {
+    return { args: [...args, "--target", fromEnv], origin: "env" };
+  }
+  const resolved = hostNativeTarget(host);
+  if (!resolved.target) return { reason: resolved.reason };
+  return { args: [...args, "--target", resolved.target], origin: "host" };
+}
 
 function fail(message, code) {
   console.error(message);
@@ -178,13 +243,32 @@ function nbbNativeEligible(args) {
     || (command === "compile" && nbbJsTargets.has(option(args, "--target")));
 }
 
+// Commands that take no --target and are implemented by the Wasm driver's
+// namespace, which also hosts the linker, the module-lock writer and the
+// package authoring commands. `module-lock` is listed by name since ADR 0351:
+// before that it reached `wasm_cli.cljk` only because it carries no --target
+// and `target === undefined` meant "wasm" -- so making the omitted target
+// mean "host native" without this line would have sent `amu module-lock`
+// to the x86-64 / AArch64 driver, which implements only compile and
+// extract-native.
+const targetIndependentCommands = new Set(["check", "definition-cids",
+  "module-lock", "package-manifest", "package-lock", "package-fetch"]);
+
 function nbbEntrypoint(root, args) {
   const command = args[0];
   const target = option(args, "--target");
-  const wasm = command === "check" || command === "definition-cids"
-    || command === "package-manifest" || command === "package-lock"
-    || command === "package-fetch"
-    || target === undefined || target.startsWith("wasm32");
+  const targetIndependent = targetIndependentCommands.has(command);
+  // Unreachable from `runCompiler` (compile and worker are given a target by
+  // `defaultTarget` first), and refused by name rather than dereferenced if
+  // a future caller gets here without one.
+  if (!targetIndependent && target === undefined
+      && !trustCommands.has(command) && command !== "test"
+      && !runCommands.has(command) && command !== "extract-native"
+      && !["verify-output-set", "sign-output-set"].includes(command)) {
+    fail(`error: internal: \`amu ${command}\` reached routing without a --target`, 70);
+  }
+  const wasm = targetIndependent
+    || (target !== undefined && target.startsWith("wasm32"));
   const filename = ["verify-output-set", "sign-output-set"].includes(command) ? "output_set_cli.cljk"
     : trustCommands.has(command) ? "trust_cli.cljk"
     : command === "test" ? "test_cli.cljk"
@@ -203,7 +287,7 @@ function spawn(command, args, options = {}) {
     encoding: options.encoding,
     maxBuffer: options.maxBuffer,
     stdio: options.stdio,
-    env: process.env,
+    env: options.env || process.env,
     shell: false,
   });
 }
@@ -439,7 +523,18 @@ function preludeIsIgnored(args) {
 }
 
 function runCompiler(root, rawArgs) {
-  const args = resolveCallerPaths(rawArgs, process.cwd());
+  const defaulted = defaultTarget(resolveCallerPaths(rawArgs, process.cwd()));
+  if (defaulted.reason) fail(defaulted.reason, 64);
+  const args = defaulted.args;
+  // Tells the native driver where its target came from, so a refusal can say
+  // "amu chose this for you" when it did. Written (or removed) on every
+  // spawn, so a value in the caller's environment is never believed.
+  const childEnv = { ...process.env };
+  if (defaulted.origin === "host" || defaulted.origin === "env") {
+    childEnv.AMU_TARGET_ORIGIN = defaulted.origin;
+  } else {
+    delete childEnv.AMU_TARGET_ORIGIN;
+  }
   if (nbbNativeEligible(args)) {
     if (preludeIsIgnored(args)) {
       fail("error: --prelude is not implemented on this route and would be "
@@ -454,7 +549,7 @@ function runCompiler(root, rawArgs) {
       securityClasspath(root, nbbCli, alias)].join(path.delimiter);
     const result = spawn(process.execPath,
       ["--stack-size=4096", nbbCli, "--classpath", classpath, nbbEntrypoint(root, args), ...args], {
-        cwd: root, stdio: "inherit",
+        cwd: root, stdio: "inherit", env: childEnv,
       });
     if (result.error) fail("error: unable to start the NBB compiler runtime", 70);
     process.exit(result.status ?? 70);
@@ -477,16 +572,27 @@ function runCompiler(root, rawArgs) {
     + "port are listed in docs/adr under `jvm-route-removed`.", 64);
 }
 
-const rawArgs = process.argv.slice(2);
-if (rawArgs.length === 0 || ["-h", "--help"].includes(rawArgs[0])) {
-  process.stdout.write(`${usage.join("\n")}\n`);
-  process.exit(0);
+function main() {
+  const rawArgs = process.argv.slice(2);
+  if (rawArgs.length === 0 || ["-h", "--help"].includes(rawArgs[0])) {
+    process.stdout.write(`${usage.join("\n")}\n`);
+    process.exit(0);
+  }
+  const boundaries = new Set(["-M", "-M:compiler", "-M:compile"]);
+  const unwrappedArgs = boundaries.has(rawArgs[0]) ? rawArgs.slice(1) : rawArgs;
+  // `--jvm-free` is accepted and means nothing: every invocation is JVM-free
+  // now. Kept so the thousands of call sites that spell it keep working.
+  const args = unwrappedArgs.filter((arg) => arg !== "--jvm-free");
+  if (args.length === 0) fail("error: missing Amu compiler command", 2);
+  const root = path.resolve(path.dirname(fs.realpathSync(__filename)), "..");
+  runCompiler(root, args);
 }
-const boundaries = new Set(["-M", "-M:compiler", "-M:compile"]);
-const unwrappedArgs = boundaries.has(rawArgs[0]) ? rawArgs.slice(1) : rawArgs;
-// `--jvm-free` is accepted and means nothing: every invocation is JVM-free
-// now. Kept so the thousands of call sites that spell it keep working.
-const args = unwrappedArgs.filter((arg) => arg !== "--jvm-free");
-if (args.length === 0) fail("error: missing Amu compiler command", 2);
-const root = path.resolve(path.dirname(fs.realpathSync(__filename)), "..");
-runCompiler(root, args);
+
+// Required as a module (bin/kotoba, scripts/test-default-target.cljk), this
+// file answers the target-defaulting rule and runs nothing: one table, so the
+// two launchers cannot disagree about what an omitted --target means.
+if (require.main === module) {
+  main();
+} else {
+  module.exports = { hostNativeTargets, hostNativeTarget, defaultTarget };
+}

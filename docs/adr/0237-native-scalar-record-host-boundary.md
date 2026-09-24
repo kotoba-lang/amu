@@ -55,3 +55,7 @@ descriptor order rather than merely accepting a record-shaped report.
 boundaries. Nested aggregates, vectors, options/results, and documents remain
 explicitly rejected. This advances native maturity without changing Amu's
 public execution API or making native the default target.
+
+> Later (2026-09-24): making native the default target was decided separately
+> in ADR 0351 (`docs/adr/0351-an-omitted-target-means-the-host-native-target.md`).
+> The sentence above records what this ADR did, and is left as written.

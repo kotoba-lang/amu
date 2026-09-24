@@ -21,6 +21,18 @@ file's own addition was written with a changelog in mind.
 
 ## [Unreleased]
 
+### An omitted `--target` is the host's native target (2026-09-24, ADR 0351)
+
+`amu compile <file>` and `amu worker` with no `--target` now build for the
+machine they run on (`aarch64-macos`, `x86_64-linux`, `aarch64-linux`,
+`x86_64-windows`, `aarch64-windows`, `x86_64-macos`, `aarch64-android`)
+instead of wasm32; any other host is refused by name. `AMU_TARGET` overrides
+the default, an explicit `--target` overrides both. `check`,
+`definition-cids`, `module-lock` and `package-*` are routed by name and are
+unchanged (byte-identical output). A program native does not qualify is
+refused naming the feature and `--target wasm32-browser` / `wasm32-wasi`;
+amu never falls back to wasm by itself. `bin/kotoba` shares `bin/amu`'s rule.
+
 ### :gpu/compute reaches a fourth backend: Apple GPUs through MoltenVK (2026-09-22)
 
 `vkCreateInstance` answered `VK_ERROR_INCOMPATIBLE_DRIVER` on every Mac,
