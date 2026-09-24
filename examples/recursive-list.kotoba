@@ -1,0 +1,18 @@
+;; Aggregate ABI v8: a cons list recursing through a record ([:ref] both
+;; ways) and a generic option/result over the recursive type. total of
+;; (1..5) = 15. Five cells, because a typed value is still bounded by the
+;; shared ADT budget (osaho adt-node-limit 64) that every target re-checks.
+(ns probe.list (:export [main])
+  (:schemas {:app/list [:variant :app/list [[:empty :i64] [:cons [:ref :app/cell]]]]
+             :app/cell [:record :app/cell [[:head :i64] [:tail [:ref :app/list]]]]}))
+(defn kons [h :i64 t [:ref :app/list]] [:ref :app/list]
+  (variant-new [:variant :app/list [[:empty :i64] [:cons [:ref :app/cell]]]] :cons
+    (record-new [:record :app/cell [[:head :i64] [:tail [:ref :app/list]]]] h t)))
+(defn build [n :i64 acc [:ref :app/list]] [:ref :app/list]
+  (if (= n 0) acc (build (- n 1) (kons n acc))))
+(defn total [l [:ref :app/list] acc :i64] :i64
+  (match-variant l [:variant :app/list [[:empty :i64] [:cons [:ref :app/cell]]]]
+    (:empty _ acc)
+    (:cons c (total (record-get [:record :app/cell [[:head :i64] [:tail [:ref :app/list]]]] c :tail)
+                    (+ acc (record-get [:record :app/cell [[:head :i64] [:tail [:ref :app/list]]]] c :head))))))
+(defn main [] :i64 (total (build 5 (variant-new [:variant :app/list [[:empty :i64] [:cons [:ref :app/cell]]]] :empty 0)) 0))
