@@ -9,12 +9,16 @@
 (def statement-schema :kotoba.incremental-cache-statement/v1)
 (defn- host-bytes?
   "A value that is the host's byte container: byte[] on the JVM, a Buffer or
-  Uint8Array on Node. `Class/forName \"[B\"` was the JVM spelling, and it
-  was the whole reason this namespace refused to load on Node (ADR 0348
-  iteration 7)."
+  Uint8Array on Node -- and the SIGNED Int8Array that a Java-shaped byte[]
+  (`byte-array`, `.getBytes`, `.digest`) is on the kbb engine since its
+  JVM-compatibility round 2 (2026-09-24); without it such bytes were not
+  recognised and went into the cache payload raw. `Class/forName \"[B\"` was
+  the JVM spelling, and it was the whole reason this namespace refused to
+  load on Node (ADR 0348 iteration 7)."
   [value]
   #?(:clj (= (Class/forName "[B") (class value))
-     :cljs (or (instance? js/Uint8Array value) (instance? js/Buffer value))))
+     :cljs (or (instance? js/Uint8Array value) (instance? js/Buffer value)
+               (instance? js/Int8Array value))))
 (def ^:private max-canonical-bytes (* 64 1024 1024))
 
 (defn- reject [reason message]
@@ -35,9 +39,11 @@
      ;; the reader reads the file and refuses the `:cljs` form by NAME later, in the
      ;; module that uses it. It changes nothing on clj/cljs: Clojure still picks
      ;; `:clj`, ClojureScript/nbb still picks `:cljs` (first match).
+     ;; masked on every host: an Int8Array reads 0xff as -1, and thaw admits
+     ;; only 0..255
      :kotoba.cache/value #?(:clj (mapv #(bit-and (int %) 0xff) value)
-                            :cljs (vec (js/Array.from value))
-                            :default (vec (js/Array.from value)))}
+                            :cljs (mapv #(bit-and % 0xff) (js/Array.from value))
+                            :default (mapv #(bit-and % 0xff) (js/Array.from value)))}
     (map? value) (into (empty value) (map (fn [[k v]] [(freeze k) (freeze v)])) value)
     (vector? value) (mapv freeze value)
     (set? value) (set (map freeze value))
