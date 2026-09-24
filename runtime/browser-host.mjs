@@ -29,6 +29,11 @@ const ALLOWED_IMPORTS = new Set([
   "kotoba:typed/bool-value/function",
   "kotoba:typed/equal/function",
   "kotoba:typed/bytes-empty/function",
+  "kotoba:typed/bytes-count/function",
+  "kotoba:typed/bytes-at/function",
+  "kotoba:typed/bytes-slice/function",
+  "kotoba:typed/bytes-concat/function",
+  "kotoba:typed/string-index-of/function",
   "kotoba:typed/assoc-i64/function",
   "kotoba:typed/assoc-f64/function",
   "kotoba:typed/assoc-f32/function",
@@ -1747,6 +1752,47 @@ function createTypedRuntime(abi, typedCapCall, allow) {
       if (descriptor !== "bytes") reject("invalid-typed-operation", "bytes descriptor required");
       return admitValue(descriptor, Object.freeze(new Uint8Array(0)));
     },
+    // kotoba-wasm lowers bytes-count / bytes-at / bytes-slice / bytes-concat
+    // to these, each imported only by a module that uses it. Semantics are
+    // kotoba-sema's (frontend `bytes-at` / `bytes-slice` / `bytes-concat`):
+    // an unsigned byte widened to i64; an out-of-range index or slice is a
+    // trap, never a read past the operand; results are fresh copies bounded
+    // by the 65536-byte bytes value limit.
+    "bytes-count"(descriptorId, value) {
+      const descriptor = descriptorAt(descriptorId);
+      if (descriptor !== "bytes") reject("invalid-typed-operation", "bytes descriptor required");
+      return BigInt(assertValue(descriptor, value).byteLength);
+    },
+    "bytes-at"(descriptorId, value, index) {
+      const descriptor = descriptorAt(descriptorId);
+      if (descriptor !== "bytes") reject("invalid-typed-operation", "bytes descriptor required");
+      value = assertValue(descriptor, value);
+      index = i64(index);
+      if (index < 0n || index >= BigInt(value.byteLength))
+        reject("invalid-typed-operation", "bytes index is out of bounds");
+      return BigInt(value[Number(index)]);
+    },
+    "bytes-slice"(descriptorId, value, start, end) {
+      const descriptor = descriptorAt(descriptorId);
+      if (descriptor !== "bytes") reject("invalid-typed-operation", "bytes descriptor required");
+      value = assertValue(descriptor, value);
+      start = i64(start); end = i64(end);
+      if (start < 0n || start > end || end > BigInt(value.byteLength))
+        reject("invalid-typed-operation", "bytes slice offsets are out of bounds");
+      return admitValue(descriptor, value.slice(Number(start), Number(end)));
+    },
+    "bytes-concat"(descriptorId, left, right) {
+      const descriptor = descriptorAt(descriptorId);
+      if (descriptor !== "bytes") reject("invalid-typed-operation", "bytes descriptor required");
+      left = assertValue(descriptor, left);
+      right = assertValue(descriptor, right);
+      if (left.byteLength + right.byteLength > 65536)
+        reject("invalid-typed-value", "typed bytes value is invalid or oversized");
+      const result = new Uint8Array(left.byteLength + right.byteLength);
+      result.set(left, 0);
+      result.set(right, left.byteLength);
+      return admitValue(descriptor, result);
+    },
     equal(descriptorId, left, right) {
       const descriptor = descriptorAt(descriptorId);
       return compareValue(descriptor, assertValue(descriptor, left), assertValue(descriptor, right)) === 0 ? 1 : 0;
@@ -1810,6 +1856,18 @@ function createTypedRuntime(abi, typedCapCall, allow) {
         cp = (cp << 6) | (b & 0x3f);
       }
       return cp;
+    },
+    // UTF-8 byte offset of the first match, -1 when absent; an empty needle
+    // is refused exactly as string-contains refuses it.
+    "string-index-of"(descriptorId, haystack, needle) {
+      const descriptor = descriptorAt(descriptorId);
+      if (descriptor !== "string") reject("invalid-typed-operation", "string descriptor required");
+      haystack = assertValue(descriptor, haystack);
+      needle = assertValue(descriptor, needle);
+      if (needle.length === 0)
+        reject("invalid-typed-operation", "empty string search needle rejected");
+      const index = haystack.indexOf(needle);
+      return index < 0 ? -1n : BigInt(utf8Length(haystack.slice(0, index)));
     },
     "string-contains"(descriptorId, haystack, needle) {
       const descriptor = descriptorAt(descriptorId);

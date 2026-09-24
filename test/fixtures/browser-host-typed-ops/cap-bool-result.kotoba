@@ -1,0 +1,13 @@
+;; A generic typed-cap-call with a :bool result (crosses as a bool pair since
+;; kotoba-wasm 83c8009e), returned directly and consumed by `if`.
+(ns fixture.cap-bool-result
+  (:export [main f g])
+  (:capabilities #{:object/put-block}))
+(defn f [d :string] :bool
+  (typed-cap-call :object/put-block
+                  [:record :kotoba.object/put-block-request [[:binding :keyword] [:digest :string] [:bytes :bytes]]]
+                  :bool
+                  (record-new [:record :kotoba.object/put-block-request [[:binding :keyword] [:digest :string] [:bytes :bytes]]]
+                              :sha2-256 d (bytes))))
+(defn g [d :string] :i64 (if (f d) 1 0))
+(defn main [] :i64 0)

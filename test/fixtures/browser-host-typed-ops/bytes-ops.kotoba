@@ -1,0 +1,15 @@
+;; kotoba-wasm 83c8009e lowers these five operations to their own
+;; `kotoba:typed` imports; runtime/browser-host.mjs answers them.
+;; `src` turns a string into bytes through the typed capability provider so
+;; the test can hand the export any byte sequence (including 65536 bytes).
+(ns fixture.bytes-ops
+  (:export [main cnt at sl cc slcount idx])
+  (:capabilities #{:object/put-block}))
+(defn src [s :string] :bytes (typed-cap-call :object/put-block :string :bytes s))
+(defn cnt [s :string] :i64 (bytes-count (src s)))
+(defn at [s :string i :i64] :i64 (bytes-at (src s) i))
+(defn sl [s :string a :i64 b :i64] :bytes (bytes-slice (src s) a b))
+(defn cc [s :string t :string] :bytes (bytes-concat (src s) (src t)))
+(defn slcount [s :string a :i64 b :i64] :i64 (bytes-count (bytes-slice (src s) a b)))
+(defn idx [h :string n :string] :i64 (string-index-of h n))
+(defn main [] :i64 0)

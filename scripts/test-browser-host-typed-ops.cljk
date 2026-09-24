@@ -1,0 +1,171 @@
+#!/usr/bin/env kbb
+(ns test-browser-host-typed-ops
+  "Compile .kotoba through `bin/amu compile --target wasm32-browser
+  --jvm-free` and run the module on runtime/browser-host.mjs, for the
+  operations kotoba-wasm 83c8009e (#77) started lowering:
+
+    bytes-count / bytes-at / bytes-slice / bytes-concat / string-index-of
+      -- each imported as its own `kotoba:typed/<op>/function`, which the
+         host must admit (ALLOWED_IMPORTS) and answer.
+    typed-cap-call with a scalar (:i64 / :bool) result or request
+      -- crosses as a one-slot [:option T] or a bool pair; before 83c8009e
+         the emitter returned a module WebAssembly.validate refuses.
+
+  Every expected trap pins its code AND reason literal, so a trap for a
+  different reason is a FAIL, not a pass. A fixture that does not compile
+  or instantiate counts every one of its cases as FAIL (never skipped).
+  The last line is `SCANNED<TAB>n`; n = 0 exits 2 (nothing was measured).
+
+  Run from the repo root: `kbb --backend sci scripts/test-browser-host-typed-ops.cljk`
+  (also run by `npm run test-browser-host`)."
+  (:require ["node:child_process" :as child]
+            ["node:fs" :as fs]
+            ["node:os" :as os]
+            ["node:path" :as path]))
+
+(def root (.resolve path (.dirname path *file*) ".."))
+(defn- join [& xs] (.apply (.-join path) path (clj->js xs)))
+(def fixtures (join root "test" "fixtures" "browser-host-typed-ops"))
+(def directory (.mkdtempSync fs (.join path (.tmpdir os) "amu-typed-ops-")))
+
+(def ^:private checks (volatile! {:pass 0 :fail 0}))
+(defn- report! [ok? label detail]
+  (vswap! checks update (if ok? :pass :fail) inc)
+  (println (str (if ok? "PASS " "FAIL ") label (when-not ok? (str " -- " detail)))))
+
+(defn- head [s n] (let [s (str s)] (if (> (count s) n) (subs s 0 n) s)))
+
+(defn- compile! [fixture]
+  (let [output (join directory (str fixture ".wasm"))
+        r (.spawnSync child js/process.execPath
+                      (clj->js [(join root "bin" "amu") "compile"
+                                (join fixtures (str fixture ".kotoba"))
+                                "--target" "wasm32-browser" "--jvm-free"
+                                "--policy" (join fixtures "policy.edn")
+                                "--output" output])
+                      #js {:cwd root :encoding "utf8" :timeout 600000
+                           :maxBuffer (* 64 1024 1024)})]
+    (if (and (nil? (.-error r)) (zero? (.-status r)) (.existsSync fs output))
+      {:ok output}
+      {:error (str "compile exit " (.-status r) " "
+                   (head (str (.-stdout r) (.-stderr r) (.-error r)) 600))})))
+
+;; The runner is a plain ES module evaluated by node -e: it imports the exact
+;; dependency-free host artifact. One instantiation per case, because the
+;; provider answer depends on the case.
+(def ^:private runner
+  "const [hostPath, wasmPath, casesJson] = process.argv.slice(1);
+const { pathToFileURL } = await import('node:url');
+const { readFileSync } = await import('node:fs');
+const { instantiateKotoba, normalizeKotobaTrap } = await import(pathToFileURL(hostPath).href);
+const bytes = readFileSync(wasmPath);
+const BIG = -9007199254740993n;
+const providers = {
+  hex: (id, s) => s === 'max' ? new Uint8Array(65536).fill(7) : new Uint8Array(Buffer.from(s, 'hex')),
+  i64: (id, req) => req[2] === 'big' ? BIG : 42n,
+  bool: (id, req) => req[2] === 'yes',
+  reqi64: (id, req) => { if (typeof req !== 'bigint') throw new Error('request not i64: ' + typeof req); return req > 10n; },
+};
+const arg = a => (a && typeof a === 'object' && 'i64' in a) ? BigInt(a.i64) : a;
+const show = v => {
+  if (typeof v === 'bigint') return v + 'n';
+  if (v instanceof Uint8Array) {
+    if (v.length <= 32) return 'hex:' + Buffer.from(v).toString('hex');
+    return 'len:' + v.length + (v.every(b => b === v[0]) ? ',fill:' + v[0] : ',mixed');
+  }
+  return JSON.stringify(v);
+};
+const trap = (tag, e) => { const t = normalizeKotobaTrap(e) || {}; return tag + ':' + t.code + ':' + e.message; };
+const out = [];
+for (const c of JSON.parse(casesJson)) {
+  let h;
+  try { h = await instantiateKotoba(bytes, { allowCapabilities: [15], typedCapCall: providers[c.provider] }); }
+  catch (e) { out.push({ label: c.label, result: trap('refused', e) }); continue; }
+  try { out.push({ label: c.label, result: show(h.instance.exports[c.export](...c.args.map(arg))) }); }
+  catch (e) { out.push({ label: c.label, result: trap('trap', e) }); }
+}
+process.stdout.write(JSON.stringify(out));")
+
+(defn- i64 [n] {:i64 (str n)})
+
+(def oob-index "trap:invalid-typed-operation:bytes index is out of bounds")
+(def oob-slice "trap:invalid-typed-operation:bytes slice offsets are out of bounds")
+(def oversized "trap:invalid-typed-value:typed bytes value is invalid or oversized")
+(def empty-needle "trap:invalid-typed-operation:empty string search needle rejected")
+
+;; [label export provider args expected]
+(def suites
+  {"bytes-ops"
+   [["bytes-count 00ff10" "cnt" "hex" ["00ff10"] "3n"]
+    ["bytes-count empty" "cnt" "hex" [""] "0n"]
+    ["bytes-count 65536" "cnt" "hex" ["max"] "65536n"]
+    ["bytes-at 0" "at" "hex" ["00ff10" (i64 0)] "0n"]
+    ["bytes-at 1 (unsigned)" "at" "hex" ["00ff10" (i64 1)] "255n"]
+    ["bytes-at 2" "at" "hex" ["00ff10" (i64 2)] "16n"]
+    ["bytes-at 3 traps" "at" "hex" ["00ff10" (i64 3)] oob-index]
+    ["bytes-at -1 traps" "at" "hex" ["00ff10" (i64 -1)] oob-index]
+    ["bytes-slice [1,3)" "sl" "hex" ["0a0b0c0d" (i64 1) (i64 3)] "hex:0b0c"]
+    ["bytes-slice [2,2) empty" "sl" "hex" ["0a0b0c0d" (i64 2) (i64 2)] "hex:"]
+    ["bytes-slice [0,4) whole" "sl" "hex" ["0a0b0c0d" (i64 0) (i64 4)] "hex:0a0b0c0d"]
+    ["bytes-slice (3,2) traps" "sl" "hex" ["0a0b0c0d" (i64 3) (i64 2)] oob-slice]
+    ["bytes-slice (0,5) traps" "sl" "hex" ["0a0b0c0d" (i64 0) (i64 5)] oob-slice]
+    ["bytes-slice (-1,2) traps" "sl" "hex" ["0a0b0c0d" (i64 -1) (i64 2)] oob-slice]
+    ["bytes-count of bytes-slice" "slcount" "hex" ["0a0b0c0d" (i64 1) (i64 4)] "3n"]
+    ["bytes-concat 0102+03" "cc" "hex" ["0102" "03"] "hex:010203"]
+    ["bytes-concat empty+0a" "cc" "hex" ["" "0a"] "hex:0a"]
+    ["bytes-concat 65536 ok" "cc" "hex" ["max" ""] "len:65536,fill:7"]
+    ["bytes-concat 65537 traps" "cc" "hex" ["max" "01"] oversized]
+    ["string-index-of a/b/c /" "idx" "hex" ["a/b/c" "/"] "1n"]
+    ["string-index-of absent" "idx" "hex" ["abc" "z"] "-1n"]
+    ["string-index-of héllo wörld wö (UTF-8 offset)" "idx" "hex" ["héllo wörld" "wö"] "7n"]
+    ["string-index-of 𝄞ab ab (4-byte scalar)" "idx" "hex" ["𝄞ab" "ab"] "4n"]
+    ["string-index-of empty needle refused" "idx" "hex" ["abc" ""] empty-needle]]
+   "cap-i64-result"
+   [["42" "f" "i64" ["small"] "42n"]
+    ["beyond 2^53 exactly" "f" "i64" ["big"] "-9007199254740993n"]]
+   "cap-bool-result"
+   [["true" "f" "bool" ["yes"] "true"]
+    ["false" "f" "bool" ["no"] "false"]
+    ["through if (true)" "g" "bool" ["yes"] "1n"]
+    ["through if (false)" "g" "bool" ["no"] "0n"]]
+   "cap-i64-request"
+   [["11 > 10" "f" "reqi64" [(i64 11)] "true"]
+    ["2^62 > 10" "f" "reqi64" [(i64 "4611686018427387904")] "true"]
+    ["3 > 10" "f" "reqi64" [(i64 3)] "false"]]})
+
+(doseq [[fixture cases] suites]
+  (let [compiled (compile! fixture)
+        results (when-let [wasm (:ok compiled)]
+                  (let [r (.spawnSync child js/process.execPath
+                                      (clj->js ["--input-type=module" "-e" runner
+                                                (join root "runtime" "browser-host.mjs")
+                                                wasm
+                                                (js/JSON.stringify
+                                                 (clj->js (for [[label ex provider args] cases]
+                                                            {:label label :export ex
+                                                             :provider provider :args args})))])
+                                      #js {:cwd root :encoding "utf8" :timeout 120000
+                                           :maxBuffer (* 64 1024 1024)})]
+                    (if (and (nil? (.-error r)) (zero? (.-status r)))
+                      {:ok (into {} (map (fn [o] [(.-label o) (.-result o)]))
+                                 (js/JSON.parse (.-stdout r)))}
+                      {:error (str "runner exit " (.-status r) " "
+                                   (head (str (.-stderr r) (.-error r)) 600))})))
+        failure (or (:error compiled) (:error results))]
+    (doseq [[label _ _ _ expected] cases]
+      (if failure
+        (report! false (str fixture ": " label) failure)
+        (let [actual (get (:ok results) label)]
+          (report! (= expected actual) (str fixture ": " label)
+                   (str "expected " (pr-str expected) " got " (pr-str actual))))))))
+
+(.rmSync fs directory #js {:recursive true :force true})
+
+(let [{:keys [pass fail]} @checks
+      scanned (+ pass fail)]
+  (println (str "typed-ops: " pass " passed, " fail " failed"))
+  (println (str "SCANNED\t" scanned))
+  (cond
+    (zero? scanned) (.exit js/process 2)
+    (pos? fail) (.exit js/process 1)
+    :else (.exit js/process 0)))
