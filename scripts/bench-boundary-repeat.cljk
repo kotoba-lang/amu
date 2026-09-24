@@ -1,0 +1,22 @@
+#!/usr/bin/env kbb
+(ns scripts.bench-boundary-repeat
+  "Spawns bench/boundary-repeat/measure.cljk on the locked classpath (the
+  compiler's dependency closure plus the repo root), with the bounded NBB
+  stack bin/amu gives the compiler. See that file for what it measures
+  (adr-2609242100 P5 second half)."
+  (:require [scripts.lib :as lib]
+            ["node:child_process" :as child]
+            ["node:path" :as path]))
+
+(let [resolved (lib/lock-classpath)
+      nbb-cli (lib/join lib/root "node_modules" "nbb" "cli.js")
+      classpath (str lib/root (.-delimiter path)
+                     (lib/join lib/root "src") (.-delimiter path)
+                     (lib/join lib/root "resources") (.-delimiter path)
+                     resolved)
+      result (.spawnSync child js/process.execPath
+                         (clj->js ["--stack-size=4096" nbb-cli "--classpath" classpath
+                                   (lib/join lib/root "bench" "boundary-repeat" "measure.cljk")])
+                         #js {:cwd lib/root :stdio "inherit" :env js/process.env})]
+  (when (.-error result) (throw (.-error result)))
+  (.exit js/process (or (.-status result) 70)))
