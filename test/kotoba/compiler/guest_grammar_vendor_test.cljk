@@ -47,10 +47,10 @@
      advances, but it may never move backwards.
   4. The grammar read names exactly the kernel heads the pinned frontend
      admits."
-  (:require [kotoba.compiler.core :as compiler]
+  (:require [kotoba.bytes :as kbytes] [kotoba.compiler.core :as compiler]
             [clojure.edn :as edn]
             [clojure.java.io :as io]
-            [clojure.set :as set]
+            [kotoba.lang.coll :as set]
             [kotoba.lang.text :as str]
             [clojure.test :refer [deftest is testing]]
             [kotoba.sema :as sema]))
@@ -287,7 +287,7 @@
                (let [bytes (with-open [in (.openStream url)] (.readAllBytes in))]
                  {:url (str url)
                   :sha256 (sha256-hex bytes)
-                  :grammar (edn/read-string (String. bytes "UTF-8"))})))))
+                  :grammar (edn/read-string (kbytes/utf8-string bytes))})))))
 
 (defn- head-names [x] (into #{} (map name) x))
 
@@ -355,7 +355,7 @@
           (str "the grammar on this classpath is a SUPERSEDED authority digest\n"
                "  copy   " url "\n"
                "  sha256 " (subs sha256 0 12) " -- position "
-               (.indexOf ^java.util.List authority-digest-history sha256)
+               (set/index-of authority-digest-history sha256)
                " of " (count authority-digest-history) "\n"
                "Resync FORWARD to " (subs current 0 12)
                "; do not pin a kotoba-sema whose grammar this repository has"

@@ -1,6 +1,6 @@
 (ns kotoba.compiler.wasm-typed-test
-  (:require [kotoba.compiler.atomic-output :as atomic-output]
-            [clojure.java.shell :as shell]
+  (:require [kotoba.bytes :as kbytes] [kotoba.compiler.atomic-output :as atomic-output]
+            [kotoba.process :as shell]
             [kotoba.lang.text :as str]
             [clojure.test :refer [deftest is testing]]
             [kotoba.wasm.core :as wasm]
@@ -10,7 +10,7 @@
             [kotoba.kir.value :as value]))
 
 (defn- node-probe [compiled javascript]
-  (let [encoded (.encodeToString (java.util.Base64/getEncoder) ^bytes (:bytes compiled))
+  (let [encoded (kbytes/base64-encode ^bytes (:bytes compiled))
         probe (str "import('./runtime/browser-host.mjs').then(async m=>{"
                    "const h=await m.instantiateKotoba(Buffer.from(process.argv[1],'base64'));"
                    javascript "}).catch(e=>{console.error(e);process.exit(70)})")]
@@ -65,7 +65,7 @@
            (invoke :bytes (fn [] (bytes))))
          (defn identity [value :bytes] :bytes value)"
         javascript (:source (compiler/compile-source source :js-kotoba-v1))
-        js-encoded (.encodeToString (java.util.Base64/getEncoder)
+        js-encoded (kbytes/base64-encode
                                     (.getBytes javascript "UTF-8"))
         js-probe
         (shell/sh
@@ -187,8 +187,8 @@
         untyped (compiler/compile-source
                  (str "(defn main [] (let [" untyped-bindings "] x130))")
                  :wasm32-browser-kotoba-v1)
-        typed-encoded (.encodeToString (java.util.Base64/getEncoder) (:bytes typed))
-        untyped-encoded (.encodeToString (java.util.Base64/getEncoder) (:bytes untyped))
+        typed-encoded (kbytes/base64-encode (:bytes typed))
+        untyped-encoded (kbytes/base64-encode (:bytes untyped))
         result (shell/sh "node" "--input-type=module" "-e"
                          (str "Promise.all(["
                               "WebAssembly.instantiate(Buffer.from('" typed-encoded "','base64'),{}),"
@@ -203,7 +203,7 @@
 
 (deftest compatibility-is-sealed-and-host-admitted-before-instantiation
   (let [compiled (compiler/compile-source "(defn main [] 42)" :wasm32-browser-kotoba-v1)
-        encoded (.encodeToString (java.util.Base64/getEncoder) ^bytes (:bytes compiled))
+        encoded (kbytes/base64-encode ^bytes (:bytes compiled))
         probe (shell/sh
                "node" "--input-type=module" "-e"
                (str "import('./runtime/browser-host.mjs').then(async m=>{"
@@ -258,7 +258,7 @@
            (typed-cap-call :http/post [:ref :demo/request] [:ref :demo/request] request))"
         compiled (compiler/compile-source source :wasm32-browser-kotoba-v1
                                           {:allow #{[:cap/call 4]}})
-        encoded (.encodeToString (java.util.Base64/getEncoder) ^bytes (:bytes compiled))
+        encoded (kbytes/base64-encode ^bytes (:bytes compiled))
         probe (shell/sh
                "node" "--input-type=module" "-e"
                (str "import('./runtime/browser-host.mjs').then(async m=>{"
@@ -283,7 +283,7 @@
            (typed-cap-call :http/post :string :string request))"
         compiled (compiler/compile-source source :wasm32-browser-kotoba-v1
                                           {:allow #{[:cap/call 4]}})
-        encoded (.encodeToString (java.util.Base64/getEncoder) ^bytes (:bytes compiled))
+        encoded (kbytes/base64-encode ^bytes (:bytes compiled))
         probe (shell/sh
                "node" "--input-type=module" "-e"
                (str "import('./runtime/browser-host.mjs').then(async m=>{"

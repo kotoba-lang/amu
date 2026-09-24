@@ -22,9 +22,9 @@
 
   Break: return a bare 5n from the commit inject instead of the sealed
   record and `guest-runs-both-ui-capabilities` fails on result admission."
-  (:require [clojure.edn :as edn]
+  (:require [kotoba.bytes :as kbytes] [clojure.edn :as edn]
             [clojure.java.io :as io]
-            [clojure.java.shell :as shell]
+            [kotoba.process :as shell]
             [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]
             [provider.ui :as ui]))
@@ -68,7 +68,7 @@
   (compiler/compile-source guest-source :wasm32-browser-kotoba-v1 policy))
 
 (defn- node-probe [compiled javascript]
-  (let [encoded (.encodeToString (java.util.Base64/getEncoder)
+  (let [encoded (kbytes/base64-encode
                                  ^bytes (:bytes compiled))
         probe (str "import('./runtime/browser-host.mjs').then(async m=>{"
                    javascript

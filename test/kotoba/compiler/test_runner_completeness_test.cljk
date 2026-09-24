@@ -13,11 +13,11 @@
   kotoba-lang/kotoba had the same gap and the same fix. An auto-discovering
   runner such as cognitect.test-runner cannot develop it; a hand-maintained one
   needs this check."
-  (:require [clojure.java.io :as io]
+  (:require [kotoba.io :as io]
             [kotoba.lang.text :as str]
             [clojure.test :refer [deftest is]]))
 
-(defn- ns-symbol [^java.io.File f]
+(defn- ns-symbol [f]
   (-> (str f)
       (str/replace #"^test/" "")
       (str/replace #"\.cljc?$" "")
@@ -26,8 +26,8 @@
       symbol))
 
 (defn- test-namespaces-on-disk []
-  (->> (file-seq (io/file "test"))
-       (filter #(re-find #"_test\.cljc?$" (.getName ^java.io.File %)))
+  (->> (io/file-seq (io/file "test"))
+       (filter #(re-find #"_test\.cljc?$" (io/file-name %)))
        (map ns-symbol)
        set))
 

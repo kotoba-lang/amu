@@ -4,15 +4,13 @@
   The in-component store is the production source of truth (no host KV).
   ADR 0060/0061 already packaged the 14-step driver; this ns actually
   runs it. A self-compared bitmask is not evidence."
-  (:require [clojure.edn :as edn]
+  (:require [kotoba.io :as kio] [clojure.edn :as edn]
             [clojure.java.io :as io]
             [clojure.java.shell :as shell]
             [kotoba.lang.text :as str]
             [clojure.test :refer [deftest is]]
             [kotoba.component.composition :as composition]
-            [kotoba.compiler.component-composition-test :as state-comp])
-  (:import [java.nio.file Files]
-           [java.nio.file.attribute FileAttribute]))
+            [kotoba.compiler.component-composition-test :as state-comp]))
 
 (def ^:private wasmtime-binary
   (let [pinned (io/file ".tools" "wasmtime" "wasmtime")]
@@ -31,14 +29,12 @@
      (compose-state-driver))))
 
 (defn- run-closed [closed]
-  (let [path (Files/createTempFile "amu-state-wasm-aot-" ".wasm"
-                                   (make-array FileAttribute 0))]
+  (let [path (kio/temp-file "amu-state-wasm-aot-" ".wasm")]
     (try
-      (Files/write path ^bytes (:bytes closed)
-                   (make-array java.nio.file.OpenOption 0))
+      (kio/write-bytes path ^bytes (:bytes closed))
       (shell/sh wasmtime-binary "run" "--invoke" "run()" (str path))
       (finally
-        (Files/deleteIfExists path)))))
+        (kio/delete-if-exists path)))))
 
 (deftest state-kit-flag-is-bound-to-this-evidence
   (let [kit (edn/read-string

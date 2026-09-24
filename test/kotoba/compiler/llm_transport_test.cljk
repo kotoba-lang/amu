@@ -9,7 +9,7 @@
   `MURAKUMO_API_KEY` to be set) so ordinary `kbb -M:test` runs never
   depend on network access or a live credential -- see
   `real-murakumo-main-endpoint-answers` below."
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [kotoba.bytes :as kbytes] [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]
             [kotoba.kir :as ir]
             [provider.llm :as llm]
@@ -19,7 +19,7 @@
            (java.net InetSocketAddress)))
 
 (defn- respond! [exchange status ^String body]
-  (let [bytes (.getBytes body "UTF-8")]
+  (let [bytes (kbytes/utf8-bytes body)]
     (.sendResponseHeaders exchange status (count bytes))
     (doto (.getResponseBody exchange)
       (.write bytes)

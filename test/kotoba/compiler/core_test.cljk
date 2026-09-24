@@ -1,6 +1,6 @@
 (ns kotoba.compiler.core-test
-  (:require [clojure.test :refer [deftest is testing]]
-            [clojure.java.shell :as shell]
+  (:require [kotoba.bytes :as kbytes] [clojure.test :refer [deftest is testing]]
+            [kotoba.process :as shell]
             [kotoba.lang.text :as str]
             [kotoba.artifact.core :as artifact]
             [kotoba.compiler.core :as compiler]
@@ -200,8 +200,8 @@
 (deftest javascript-execution-matches-the-normative-kir
   (let [compiled (compiler/compile-source structured-source :js-kotoba-v1)
         expected (get-in compiled [:kir :oracle-value])
-        encoded (.encodeToString (java.util.Base64/getEncoder)
-                                 (.getBytes ^String (:source compiled) "UTF-8"))
+        encoded (kbytes/base64-encode
+                                 (kbytes/utf8-bytes ^String (:source compiled)))
         program (str "import('data:text/javascript;base64," encoded
                      "').then(m=>console.log(String(m.instantiateKotoba({}).main())))")
         result (shell/sh "node" "--input-type=module" "-e" program)]
@@ -218,8 +218,8 @@
                     (let [x (+ x 1)]
                       (+ (normalize -5) x))))"
         compiled (compiler/compile-source source :js-browser-kotoba-v1)
-        encoded (.encodeToString (java.util.Base64/getEncoder)
-                                 (.getBytes ^String (:source compiled) "UTF-8"))
+        encoded (kbytes/base64-encode
+                                 (kbytes/utf8-bytes ^String (:source compiled)))
         program (str "import('data:text/javascript;base64," encoded
                      "').then(m=>console.log(String(m.instantiateKotoba({}).main())))")
         result (shell/sh "node" "--input-type=module" "-e" program)]
@@ -235,8 +235,8 @@
                     (if (<= delta-ms window-ms) 1 0)
                     0))"
         compiled (compiler/compile-source source :js-kotoba-v1)
-        encoded (.encodeToString (java.util.Base64/getEncoder)
-                                 (.getBytes ^String (:source compiled) "UTF-8"))
+        encoded (kbytes/base64-encode
+                                 (kbytes/utf8-bytes ^String (:source compiled)))
         program (str "import('data:text/javascript;base64," encoded
                      "').then(m=>{const f=m.instantiateKotoba({})['shot-hit'];"
                      "console.log(String(f(1n,150n,150n))+','+String(f(1n,151n,150n))+','+String(f(0n,0n,150n)))})")
