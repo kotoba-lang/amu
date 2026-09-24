@@ -6,6 +6,26 @@ const MIN_TYPED_ABI_VERSION = 5;
 const COMPATIBILITY_SECTION = "kotoba.compatibility";
 const COMPATIBILITY_VERSION = 1;
 const MAX_TYPED_DESCRIPTORS = 64;
+// Limit values, each a copy of kotoba-lang lang/limits.edn (adr-2609242100
+// P1). Named so amu value_bounds_agreement_test can read them by name and
+// compare them against the vendored table; before P1 they were bare literals
+// in the checks below and three of them had drifted (descriptor depth 8 vs
+// 12, document nodes 256 vs 4096).
+// :language/static :type-descriptor-depth / -nodes -- a typed ABI descriptor.
+const TYPE_DESCRIPTOR_DEPTH_LIMIT = 12;
+const TYPE_DESCRIPTOR_NODE_LIMIT = 64;
+// :language/value :adt-depth / :adt-nodes -- one typed runtime value
+// (transitional: P2/P3 remove these from internal values).
+const ADT_VALUE_DEPTH_LIMIT = 12;
+const ADT_VALUE_NODE_LIMIT = 64;
+// :language/value :document-* -- one :document value.
+const DOCUMENT_DEPTH_LIMIT = 8;
+const DOCUMENT_NODE_LIMIT = 4096;
+const DOCUMENT_UTF8_BYTE_LIMIT = 65536;
+// :profile/wasm :cells :vector-items -- this HOST's per-vector budget, below
+// the language's 2^24 (kotoba.kir.value/vector-item-limit) because this host
+// copies on write. See the comment where VECTOR_TOTAL_ITEM_BUDGET is defined.
+const VECTOR_ITEM_BUDGET = 16384;
 const ALLOWED_IMPORTS = new Set([
   "kotoba:cap/call/function",
   "kotoba:heap/pair/function",
@@ -236,7 +256,7 @@ function parseTypedMetadata(module) {
   };
   const descriptor = depth => {
     nodes += 1;
-    if (depth > 8 || nodes > 64)
+    if (depth > TYPE_DESCRIPTOR_DEPTH_LIMIT || nodes > TYPE_DESCRIPTOR_NODE_LIMIT)
       reject("invalid-typed-metadata", "typed ABI descriptor budget exceeded");
     const tag = byte();
     if (tag <= 3) return Object.freeze(["i64", "string", "keyword", "bool"][tag]);
@@ -476,7 +496,9 @@ function createTypedRuntime(abi, typedCapCall, allow) {
   // already refused before it arrives, so this one never fires and stops
   // being evidence of anything. Raise both, the native arena and amu's
   // component test together.
-  const VECTOR_ITEM_BUDGET = 16384;
+  // 2026-09-16 the language bound moved to 2^24 and this one did not, so it
+  // is now a HOST budget (:profile/wasm in lang/limits.edn), defined at the
+  // top of this file as VECTOR_ITEM_BUDGET (adr-2609242100 P1).
   // How many vector items one instance may allocate IN TOTAL.
   //
   // The per-vector budget bounds one value; this bounds the instance. Without
@@ -559,12 +581,12 @@ function createTypedRuntime(abi, typedCapCall, allow) {
       if (size > (keyword ? 512 : 65536))
         reject("invalid-typed-value", "document scalar text is oversized");
       state.bytes += size;
-      if (state.bytes > 65536) reject("invalid-typed-value", "document UTF-8 budget exceeded");
+      if (state.bytes > DOCUMENT_UTF8_BYTE_LIMIT) reject("invalid-typed-value", "document UTF-8 budget exceeded");
       return value;
     };
     const walk = (node, depth) => {
       state.nodes += 1;
-      if (depth > 8 || state.nodes > 256)
+      if (depth > DOCUMENT_DEPTH_LIMIT || state.nodes > DOCUMENT_NODE_LIMIT)
         reject("invalid-typed-value", "document depth or node budget exceeded");
       if (!Array.isArray(node) || Object.getPrototypeOf(node) !== Array.prototype ||
           (!allowShared && state.seen.has(node)))
@@ -1293,7 +1315,7 @@ function createTypedRuntime(abi, typedCapCall, allow) {
     state.nodes += 1;
     state.depth += 1;
     // ADT value depth raised 8→12 with kir ADR 0025 (structured kv EDN spines)
-    if (state.depth > 12 || state.nodes > 64)
+    if (state.depth > ADT_VALUE_DEPTH_LIMIT || state.nodes > ADT_VALUE_NODE_LIMIT)
       reject("invalid-typed-value", "typed runtime value budget exceeded");
     try {
       if (descriptor === "i64") return i64(value);
@@ -2039,7 +2061,7 @@ function createTypedRuntime(abi, typedCapCall, allow) {
       const start = Number(offset);
       // Same item budget as vector-conj-i64, so the two ways of building the
       // same value cannot disagree about how large it may be.
-      if (!Number.isInteger(items) || items < 0 || items > 16384)
+      if (!Number.isInteger(items) || items < 0 || items > VECTOR_ITEM_BUDGET)
         reject("invalid-typed-value", "vector-i64 item budget exceeded");
       const span = items * 8;
       if (!Number.isInteger(start) || start < 0 || start + span > scratch.buffer.byteLength)
@@ -2651,7 +2673,7 @@ function createTypedRuntime(abi, typedCapCall, allow) {
   const hostVector = items => {
     if (vectorDescriptor === undefined)
       reject("invalid-typed-value", "module does not admit vector-i64 values");
-    if (!Array.isArray(items) || items.length > 16384)
+    if (!Array.isArray(items) || items.length > VECTOR_ITEM_BUDGET)
       reject("invalid-typed-value", "host vector-i64 input is invalid or oversized");
     return admitValue(vectorDescriptor,
       Object.freeze([vectorDescriptor, ...items.map(i64)]));
@@ -2661,7 +2683,7 @@ function createTypedRuntime(abi, typedCapCall, allow) {
   const hostVectorF64 = items => {
     if (vectorF64Descriptor === undefined)
       reject("invalid-typed-value", "module does not admit vector-f64 values");
-    if (!Array.isArray(items) || items.length > 16384)
+    if (!Array.isArray(items) || items.length > VECTOR_ITEM_BUDGET)
       reject("invalid-typed-value", "host vector-f64 input is invalid or oversized");
     return admitValue(vectorF64Descriptor,
       Object.freeze([vectorF64Descriptor, ...items.map(f64)]));

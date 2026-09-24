@@ -1,55 +1,136 @@
 (ns kotoba.compiler.value-bounds-agreement-test
-  "amu is where the value-bounds table's two statements can be compared, so
-  this is where they are.
+  "Every restatement of a Kotoba limit value, compared against the ONE table.
 
-  The table lives in `kotoba.kir.value` (osaho), which every target's
-  compile-time validation reads. It is RESTATED, privately and under different
-  names, in `kotoba.script` (kotoba-script), because the restricted-ESM emitter
-  writes the bounds into every artifact it emits as literal numbers in a
-  generated runtime prelude -- the emitted module has no classpath and cannot
-  read a Clojure var.
+  The table is kotoba-lang `lang/limits.edn` (superproject adr-2609242100,
+  step P1), vendored here byte for byte at `resources/kotoba/lang/limits.edn`
+  and registered in kotoba-lang `lang/vendored-copies.edn`. Each entry names
+  its copies; this test finds every copy the table names and compares it:
 
-  Neither repository is on the other's classpath. amu loads both, which is the
-  same reason `fuel64_ceiling_test` lives here, and that test says the rest of
-  it: a restatement nobody compares is a copy, and a copy drifts.
+    :var      a Clojure var in osaho, kotoba-sema, kotoba-script,
+              kotoba-verifier, kotoba-wasm or this repository -- resolved and
+              dereferenced (private vars too: the emitters' tables are private);
+    :pattern  a constant in a file of THIS repository that has no var -- the
+              browser host (JS), the kexe loaders (C), the cljs backend's
+              emitted prelude -- read as source text by the named regex.
 
-  This one is not hypothetical either, and the drift was measured before the
-  test was written. On 2026-09-10, raising `document-node-limit` in osaho alone
-  let a 1057-node document COMPILE and then fail at runtime with
-  `doc-node-limit` -- the emitted prelude still carried 256. The build
-  succeeded and the artifact was wrong, which is the worse of the two failures:
-  a refusal produces a decision, a wrong answer produces nothing.
+  amu is where this can be done because every one of those runtimes is on its
+  classpath at once (the same reason `fuel64_ceiling_test` lives here).
 
-  ⚠ Adding a bound to either file without adding it here restores exactly the
-  gap this closes. The pairs are listed explicitly rather than derived by name,
-  because the names deliberately differ and a derivation would have to guess."
-  (:require [clojure.test :refer [deftest is testing]]
-            [kotoba.kir.value :as value]
-            [kotoba.script]))
+  ## Why it exists
 
-(defn- script-bound [sym]
-  @(ns-resolve 'kotoba.script sym))
+  Until 2026-09-10 only the ESM document bounds were compared; raising
+  osaho's `document-node-limit` alone let a 1057-node document COMPILE and then
+  trap at runtime. On 2026-09-24 the same shape was measured seven more times
+  across the fleet: ADT/type depth 12 vs 8 (sema, ESM, cljs backend, browser
+  host descriptor decode), string literal bytes 65536 vs 4096 (verifier, ESM,
+  js manifests), document nodes 4096 vs 256 (browser host), record fields 32 vs
+  128 (kexe loaders). Every one compiled; none was compared. The first run of
+  this test against unmodified main named exactly those copies.
 
-(deftest the-emitter-restates-the-same-table-osaho-decides
-  (testing "document bounds -- written into every emitted ESM prelude"
-    (is (= value/document-node-limit (script-bound 'max-document-nodes))
-        "the node budget; a drift here compiles and then traps at runtime")
-    (is (= value/document-depth-limit (script-bound 'max-document-depth)))
-    (is (= value/document-container-item-limit
-           (script-bound 'max-document-container-items)))
-    (is (= value/document-utf8-byte-limit (script-bound 'max-document-utf8-bytes))))
-  (testing "the typed-value bounds beside them"
-    (is (= value/typed-set-item-limit (script-bound 'max-set-items)))
-    (is (= value/typed-map-entry-limit (script-bound 'max-typed-map-entries)))
-    (is (= value/record-field-limit (script-bound 'max-record-fields)))
-    (is (= value/compact-graph-item-limit (script-bound 'max-compact-graph-items)))
-    (is (= value/string-index-key-byte-limit
-           (script-bound 'max-string-index-key-bytes)))))
+  ## What it prints
+
+  `COMPARED <n>` copies, and `UNCHECKED <m>` for copies the table names that
+  are not reachable from this classpath (a repository that is not a
+  dependency, like kototama). n = 0 fails: a run that compared nothing is not a
+  green run (ADR-2608136000)."
+  (:require [clojure.edn :as edn]
+            [clojure.test :refer [deftest is testing]]
+            [kotoba.compiler.limits :as limits]
+            [kotoba.kir]
+            [kotoba.kir.value]
+            [kotoba.compiler.frontend]
+            [kotoba.compiler.schema]
+            [kotoba.script]
+            [kotoba.verifier]
+            [kotoba.wasm.core]
+            [kotoba.compiler.backend.cljs]))
+
+(def vendored-path "resources/kotoba/lang/limits.edn")
+
+(defn- read-table [] (edn/read-string (slurp vendored-path)))
+
+(defn- limit-entries
+  "Every map in TABLE that carries both :value and :copies, as [path entry]."
+  [table]
+  (letfn [(walk [path node]
+            (when (map? node)
+              (concat (when (and (contains? node :value) (contains? node :copies))
+                        [[path node]])
+                      (mapcat (fn [[k v]] (walk (conj path k) v)) node))))]
+    (walk [] table)))
+
+(defn- resolve-var [sym]
+  (when-let [v (ns-resolve (symbol (namespace sym)) (symbol (name sym)))]
+    @v))
+
+(defn- read-pattern [{:keys [path pattern scale]}]
+  (let [text (slurp path)
+        [_ digits] (re-find (re-pattern pattern) text)]
+    (when digits
+      (* (or scale 1) (edn/read-string digits)))))
+
+(defn- actual
+  "What the copy says, or ::unchecked when this classpath cannot see it."
+  [{:keys [repo var pattern] :as copy}]
+  (cond
+    (= 'kotoba.compiler.limits/table var) ::table
+    var (let [v (resolve-var var)] (if (nil? v) ::unresolved v))
+    (and pattern (= "kotoba-lang/amu" repo)) (or (read-pattern copy) ::pattern-not-found)
+    :else ::unchecked))
+
+(defn comparisons
+  "One row per copy the table names."
+  [table]
+  (for [[path {:keys [value copies]}] (limit-entries table)
+        copy copies]
+    {:limit path :expected value :copy copy :actual (actual copy)}))
+
+(deftest the-vendored-table-is-this-repositorys-table
+  (is (= (read-table) limits/table)
+      (str "kotoba.compiler.limits/table is not " vendored-path " -- regenerate the "
+           "literal from the vendored file (read + pprint)")))
+
+(deftest every-copy-of-every-limit-agrees-with-the-table
+  (let [rows (comparisons (read-table))
+        compared (remove #(#{::unchecked ::table} (:actual %)) rows)
+        unchecked (filter #(= ::unchecked (:actual %)) rows)]
+    (println (str "COMPARED\t" (count compared) "\tcopies of lang/limits.edn values"))
+    (println (str "UNCHECKED\t" (count unchecked) "\t"
+                  (pr-str (mapv #(select-keys (:copy %) [:repo :path])
+                                (remove #(= "kotoba-lang/kotoba-lang" (get-in % [:copy :repo]))
+                                        unchecked)))))
+    (is (< 40 (count compared)) "the table named copies this run could not compare")
+    (doseq [{:keys [limit expected copy actual]} compared]
+      (is (= expected actual)
+          (str (:repo copy) " " (:path copy) " "
+               (or (:var copy) (:pattern copy))
+               " says " (pr-str actual) "; lang/limits.edn " limit " says " expected)))))
+
+(deftest the-admission-limits-agree-across-their-copies
+  ;; The values live in lang/guest-grammar.edn (kotoba-lang's limits_test
+  ;; compares the grammar with the table); here, every copy of one admission
+  ;; limit must hold one number.
+  (let [{:keys [copies]} (:language/admission (read-table))]
+    (is (seq copies))
+    (doseq [[k cs] copies]
+      (let [values (map #(resolve-var (:var %)) cs)]
+        (is (every? integer? values) (str k " has a copy this classpath cannot resolve"))
+        (is (apply = values) (str k " copies disagree: " (pr-str (map vector (map :var cs) values))))))))
+
+(deftest the-manifest-limits-are-read-from-the-table
+  (let [wasm (limits/typed-manifest-limits :profile/wasm)
+        js (limits/typed-manifest-limits :profile/esm :js? true)]
+    (is (= 12 (:parametric-adt-depth wasm) (:parametric-adt-depth js)))
+    (is (= 65536 (:string-literal-bytes js)) "the js manifest said 4096 until P1")
+    (is (= 16384 (:vector-i64-items wasm) (:vector-i64-items js))
+        "host budgets, not the language's 2^24 -- P1 names them, it does not raise them")))
 
 (deftest the-comparison-can-actually-fail
   ;; A test that has never been red cannot be told from one that cannot go red.
-  ;; This is the same shape as the real assertions above, against a number the
-  ;; table does not hold, so the mechanism is exercised on every run rather
-  ;; than only on the day someone edits a bound.
-  (is (not= value/document-node-limit (inc (script-bound 'max-document-nodes)))
-      "if this passes trivially the resolution above is not reading anything"))
+  ;; The same comparison against a table whose number is off by one must
+  ;; disagree for every copy it compares, so the mechanism is exercised on
+  ;; every run rather than only on the day someone edits a bound.
+  (let [table (update-in (read-table) [:language/value :document-nodes :value] inc)
+        rows (filter #(= [:language/value :document-nodes] (:limit %)) (comparisons table))]
+    (is (<= 3 (count rows)))
+    (is (every? #(not= (:expected %) (:actual %)) rows))))

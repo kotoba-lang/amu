@@ -22,6 +22,7 @@
   (:require ["node:crypto" :as crypto]
             [kotoba.artifact.core :as artifact]
             [kotoba.compiler.capability-names :as cap-names]
+            [kotoba.compiler.limits :as limits]
             [kotoba.compiler.effect-row :as effect-row]
             [kotoba.compiler.nbb.cli-support :as support]
             [kotoba.compiler.nbb.io :as io]
@@ -70,25 +71,7 @@
   key for key."
   [fuel typed-values?]
   (cond-> {:fuel fuel :replenishable? false}
-    typed-values? (assoc :string-literal-bytes 4096
-                         :string-module-literal-bytes 65536
-                         :string-value-bytes 65536
-                         :keyword-value-bytes 512
-                         :map-entries 128
-                         :option-i64-slots 2
-                         :result-i64-slots 2
-                         :parametric-adt-depth 12
-                         :parametric-adt-nodes 64
-                         :variant-cases 32
-                         :generic-option-max-slots 3
-                         :heterogeneous-vector-items 32
-                         :typed-set-items 32
-                         :typed-map-entries 31
-                         :record-fields 32
-                         :vector-i64-items 16384
-                         :vector-f64-items 16384
-                         :compact-graph-items 128
-                         :string-index-key-bytes 65536)))
+    typed-values? (merge (limits/typed-manifest-limits :profile/esm :js? true))))
 
 (defn- host-number
   "`--fuel` arrives as a BigInt (exactness for the Wasm i64 path); the JS

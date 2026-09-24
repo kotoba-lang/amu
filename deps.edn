@@ -145,7 +145,12 @@
          ;; only): the emitted runtime checks a value where it enters, not on
          ;; every operation -- string building and document walks were O(n^2)
          ;; (a 30-row HTML render 11.1 ms -> 0.79 ms, same bytes out).
-         :git/sha "63d576e5c49f27c0a473f26ccf9ee44f5f39f7b8"}
+         ;; Advanced 2026-09-24, 63d576e5 -> 98f31c66 (kotoba-script main, ahead 5,
+         ;; forward only): adr-2609242100 P1 -- the prelude's literalBytes 4096 ->
+         ;; 65536 and ADT depth 8 -> 12, the numbers of kotoba-lang
+         ;; lang/limits.edn; the js-parity goldens and runtime/http/route-decide.mjs
+         ;; move with it in this commit.
+         :git/sha "98f31c66773aa8c1bb4daef98de617d4b3f13c74"}
         ;; ADR-0222: source reading and semantic analysis live behind the
         ;; kotoba-sema repository boundary and public semantic-analysis API.
         ;;
@@ -661,7 +666,7 @@
          ;; 0 5))] (+ (vector-at w 0) (vector-at v 0)))` answered 10, the copy
          ;; 5), refuses a store inside cond->/some->/doto, and checks
          ;; vector-f64-assoc! handles, which it never did.
-         "451afdedbea8ffb53d7f611a178a45c960fa1d93"} ;; Advanced 2026-09-24 8571681a -> 451afded (main tip, forward only): selfhost walls: fn-body-clj-only, some-two-arg, regex literal, char literal, clojure.* to kotoba.*
+         "a7f5ae17a618734041b5beffcca9ad666f972e6a"} ;; Advanced 2026-09-24 451afded -> a7f5ae17 (main tip, ahead 5, forward only): adr-2609242100 P1 -- max-type-depth / max-schema-depth 8 -> 12, guest-grammar bdbc8474. Before that: 8571681a -> 451afded (main tip, forward only): selfhost walls: fn-body-clj-only, some-two-arg, regex literal, char literal, clojure.* to kotoba.*
         ;; ADR-2607266000 Phase B: these responsibilities moved out of this repo.
         ;;
         ;; The slice-value stream held this pin on purpose (ADR 0314), because
@@ -971,7 +976,13 @@
          ;; loader-source-sha256 is NOT skewed (deps.edn :paths are
          ;; ["src" "resources"], the test tree is not on any consumer's
          ;; classpath). Main CI green on all runs since 2026-09-23.
-         :git/sha "ae6684c70b4271630f8095ee2fd2ebcceba8c9f9"}
+         ;; Advanced 2026-09-24, ae6684c7 -> 9c13e737 (artifact main, ahead 2,
+         ;; forward only): adr-2609242100 P1 -- windows-loader-source-sha256
+         ;; names tools/kexe_loader_windows.c with KEXE_RECORD_FIELD_LIMIT 32 in
+         ;; this commit; without it windows-arm64 and browser-matrix
+         ;; (windows-2025) refused the loader as "native loader source identity
+         ;; mismatch" (measured on this PR's first CI run).
+         :git/sha "9c13e7377b8cceff4f907ebc66a82926280a4292"}
         ;; HELD at 1a2e10c on 2026-09-03 (ADR 0331), 28 commits behind its main,
         ;; while every other pin in this file moved to the tip. The reason, so
         ;; that a lagging pin and a pin with an argument behind it stay
@@ -1072,7 +1083,10 @@
          ;; returning an invalid module; bytes-count / bytes-at / bytes-slice /
          ;; bytes-concat / string-index-of lower to their own kotoba:typed
          ;; imports, which runtime/browser-host.mjs answers in the same commit.
-         :git/sha "83c8009e11b90d49245322646afd5714ba34ad0a"}
+         ;; Advanced 2026-09-24, 83c8009e -> 3f0a3ac3 (kotoba-wasm main, ahead 5,
+         ;; forward only): adr-2609242100 P1 -- component-vector-item-budget names
+         ;; the 16384 the component memory is sized from (same pages).
+         :git/sha "3f0a3ac352e87fdfa2efb48799582f8e3a1f1f82"}
         ;; Production KIR routes exclusively through whole-module
         ;; GMIR/MIR/allocated-MC, including word/f64/memory/runtime/capability,
         ;; literal-data, scalar variant, word-field record, and x86 privileged
@@ -1561,7 +1575,7 @@
          ;; Advanced 2026-09-16 to e56795f (its #62): expected-context v10.
          ;; Advanced 2026-09-24 1a3abd19 -> 1e304790 (kotoba-verifier main, forward only):
          ;; aggregate ABI v8 -- recursive / generic ADT handles on native.
-         :git/sha "953930179b0630d04c3e7a396df366e3cfc00f86"} ;; Advanced 2026-09-24 1e304790 -> 95393017 (main tip, forward only): selfhost walls: fn-body-clj-only, some-two-arg, regex literal, char literal, clojure.* to kotoba.*
+         :git/sha "9a0d3341d35618a50e83f3ab95f07dbbe1eeceb0"} ;; Advanced 2026-09-24 95393017 -> 9a0d3341 (main tip, ahead 5, forward only): adr-2609242100 P1 -- string-literal-byte-limit 4096 -> 65536. Before that: 1e304790 -> 95393017 (main tip, forward only): selfhost walls: fn-body-clj-only, some-two-arg, regex literal, char literal, clojure.* to kotoba.*
 
         ;; EXPLICIT FLOORS FOR TRANSITIVE DEPENDENCIES (2026-09-12, adr-2609111900
         ;; source-side wave). None of the eight coordinates below was named in
