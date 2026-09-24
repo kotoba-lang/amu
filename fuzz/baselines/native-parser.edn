@@ -62,7 +62,13 @@
 ;; the new request parser (four decimals) runs only inside the provider. The
 ;; floors are carried forward NOT re-measured, same machine limitation as
 ;; above; the Linux CI fuzz job measures them.
+;; Advanced 2026-09-24 for adr-2609242100 P4: fuel unmetered by default
+;; (KEXE_FUEL=n / off), budget_exhausted recorded by the refusing host calls
+;; and named by the supervisor (report_budget_trap), and the alternate-stack
+;; SIGSEGV/SIGBUS handler that names :host/stack-exhausted. The argv/handle
+;; parser is untouched; floors carried forward NOT re-measured (same machine
+;; limitation as above; no libFuzzer runtime here).
 {:format :kotoba.fuzz-baseline/v2
- :loader-source-sha256 "6f147811f1e54bf047b5f61a62c68081ec220cd5bf9939a67779e64a36fb14d0"
+ :loader-source-sha256 "ad409b71749774ee512cf247e341443aab32fa10a4b7b1bba7681bfeef9c2f9c"
  :profiles {:x64 {:min-cov 60 :min-features 100 :min-corpus 20}
             :arm64 {:min-cov 60 :min-features 100 :min-corpus 18}}}

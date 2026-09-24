@@ -269,12 +269,12 @@
              {:source "recursive-tree.kotoba" :symbol "diff"
               :arguments [] :expected "0"}
              ;; 1000 cells since adr-2609242100 P2/P3 (was 5: the oracle's
-             ;; per-value adt-node-limit). ~4,000 function entries: compiled
-             ;; with --fuel so the verifier's re-derivation fits, run with
-             ;; KEXE_FUEL for the same reason.
+             ;; per-value adt-node-limit). Since P4 the native profile does
+             ;; not meter fuel by default, so it compiles with no --fuel (the
+             ;; unmetered artifact's oracle runs under 100,000) and runs with
+             ;; no KEXE_FUEL -- 6,006 entries, measured on both ISAs.
              {:source "recursive-list.kotoba" :symbol "main"
-              :arguments [] :expected "500500"
-              :compile-args ["--fuel" "100000"] :env {"KEXE_FUEL" "100000"}}
+              :arguments [] :expected "500500"}
              {:source "recursive-generic.kotoba" :symbol "main"
               :arguments [] :expected "63"}]]
       (let [artifact (file (str symbol ".kexe"))
@@ -316,17 +316,37 @@
     ;; and with the flag it must compile AND the binary must answer 160,000 --
     ;; the value distinguishes a budget that was really in force from a
     ;; refusal that merely stopped happening.
+    ;;
+    ;; Since adr-2609242100 P4 (section 4) the no-budget direction is no
+    ;; longer a refusal: an oracle that runs out of a resource is "oracle
+    ;; inconclusive", named in the compile output and sealed into the
+    ;; artifact (`:oracle {:status :inconclusive ...}`, no value) -- distinct
+    ;; from a mismatch and from a pass. The native code is still verified
+    ;; structurally, so the artifact is produced, and the unmetered binary
+    ;; still answers 160000. With --fuel the oracle answers and it is
+    ;; :verified.
     (let [source (.join path root "examples" "oracle-fuel-budget.kotoba")
           artifact (file "oracle-fuel-budget.kexe")
           binary (file "oracle-fuel-budget.bin")
-          refused (run js/process.execPath
-                       [amu "compile" source "--target" isa "--output" artifact]
-                       env true)]
-      (ensure! (not= 0 (:status refused))
-               "a program past the oracle's default budget compiled with no budget named")
-      (ensure! (str/includes? (str (:stdout refused) (:stderr refused)) "fuel-exhausted")
-               (str "the no-budget refusal named a different cause: " (:stderr refused)))
-      (invoke ["compile" source "--target" isa "--fuel" "10000000" "--output" artifact])
+          unmetered (file "oracle-fuel-budget-unmetered.kexe")
+          unmetered-binary (file "oracle-fuel-budget-unmetered.bin")
+          inconclusive (invoke ["compile" source "--target" isa "--output" unmetered])]
+      (ensure! (str/includes? (:stdout inconclusive) ":oracle {:status :inconclusive, :trap :budget/fuel}")
+               (str "a program past the oracle's budget did not report oracle inconclusive: "
+                    (:stdout inconclusive)))
+      (ensure! (str/includes? (fs/readFileSync unmetered "utf8")
+                              ":oracle {:status :inconclusive, :trap :budget/fuel, :fuel 100000}")
+               "the inconclusive artifact does not say its value was not oracle-verified")
+      (let [[_ offset] (re-find #":offset ([0-9]+)"
+                                (:stdout (invoke ["extract-native" unmetered "--symbol" "main"
+                                                  "--output" unmetered-binary])))
+            executed (run loader [unmetered-binary offset "0" isa "-"] env)]
+        (ensure! (= "160000" (str/trim (:stdout executed)))
+                 (str "unmetered oracle-fuel-budget expected 160000, got "
+                      (str/trim (:stdout executed)))))
+      (let [verified (invoke ["compile" source "--target" isa "--fuel" "10000000" "--output" artifact])]
+        (ensure! (str/includes? (:stdout verified) ":oracle {:status :verified}")
+                 (str "with --fuel the oracle did not verify: " (:stdout verified))))
       (let [extracted (:stdout (invoke ["extract-native" artifact "--symbol" "main"
                                         "--output" binary]))
             [_ offset] (re-find #":offset ([0-9]+)" extracted)]
@@ -382,17 +402,29 @@
             [_ offset] (re-find #":offset ([0-9]+)" extracted)
             _ (ensure! offset "extract-native returned no forever offset")
             args [binary offset "1" isa "-" "0"]
-            default (run loader args (with-env {"KEXE_STRUCTURED_REPORT" "1"}) true)
+            ;; P4: unmetered by default, so `forever` runs until the CPU
+            ;; emergency stop (SIGXCPU), and the report says :metered false.
+            default (run loader args (with-env {"KEXE_STRUCTURED_REPORT" "1"
+                                                "KEXE_CPU_SECONDS" "1"}) true)
+            opted (run loader args (with-env {"KEXE_STRUCTURED_REPORT" "1"
+                                              "KEXE_FUEL" "512"}) true)
             budget (run loader args (with-env {"KEXE_STRUCTURED_REPORT" "1"
                                                "KEXE_FUEL" "100000"}) true)]
-        (ensure! (and (= 120 (:status default))
-                      (str/includes? (:stdout default) ":fuel {:initial 512 :remaining 0}"))
-                 (str "default fuel: forever did not exhaust 512: "
+        (ensure! (and (not= 0 (:status default))
+                      (str/includes? (:stdout default) ":metered false}")
+                      (not (str/includes? (:stderr default) ":budget/fuel")))
+                 (str "default: forever was metered: "
                       (:status default) " " (str/trim (:stdout default))))
-        (ensure! (and (= 120 (:status budget))
-                      (str/includes? (:stdout budget) ":fuel {:initial 100000 :remaining 0}"))
-                 (str "KEXE_FUEL=100000 was not the budget in force: "
-                      (:status budget) " " (str/trim (:stdout budget))))
+        (doseq [[r n] [[opted "512"] [budget "100000"]]]
+          (ensure! (and (= 120 (:status r))
+                        (str/includes? (:stdout r) (str ":fuel {:initial " n " :remaining 0}"))
+                        (str/includes? (:stderr r) "KEXE_TRAP {:kind :budget :reason :budget/fuel}"))
+                   (str "KEXE_FUEL=" n " was not the budget in force, or not named: "
+                        (:status r) " " (str/trim (:stdout r)) " " (:stderr r))))
+        (let [off (run loader args (with-env {"KEXE_STRUCTURED_REPORT" "1" "KEXE_FUEL" "off"
+                                              "KEXE_CPU_SECONDS" "1"}) true)]
+          (ensure! (str/includes? (:stdout off) ":metered false}")
+                   (str "KEXE_FUEL=off was not unmetered: " (:stdout off))))
         (doseq [bad ["0" "abc" "-5" "12abc" "+7"]]
           (let [refused (run loader args (with-env {"KEXE_FUEL" bad}) true)]
             (ensure! (= 2 (:status refused))

@@ -205,7 +205,9 @@
               (ok! (str name sidecar ": nbb route == JVM golden as an EDN value")))))
         (when fuel
           (swap! scanned inc)
-          (let [needle (str "let fuel=" fuel ";")]
+          ;; adr-2609242100 P4: the baked budget is the default of a per-run
+          ;; override, `budgetValue('fuel',n)`.
+          (let [needle (str "let fuel=budgetValue('fuel'," fuel ");")]
             (if (str/includes? nbb-bytes needle)
               (ok! (str name ".mjs carries `" needle "` (the --fuel override reached the emitter)"))
               (fail! (str name " --fuel") (str "module does not contain " (pr-str needle))))))))))
