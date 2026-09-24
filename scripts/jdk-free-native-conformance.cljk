@@ -258,7 +258,20 @@
              {:source "range-slots.kotoba" :symbol "main"
               :arguments [] :expected "319352"}
              {:source "range-slots.kotoba" :symbol "bad-byte"
-              :arguments [] :expected :trap}]]
+              :arguments [] :expected :trap}
+             ;; Aggregate ABI v8 (kotoba-native ADR 0087, 2026-09-24): recursive
+             ;; and generic ADTs as one-word handles. Each expected value was
+             ;; measured by executing the artifact; each fixture explains it.
+             {:source "recursive-tree.kotoba" :symbol "main"
+              :arguments [] :expected "10"}
+             {:source "recursive-tree.kotoba" :symbol "same"
+              :arguments [] :expected "1"}
+             {:source "recursive-tree.kotoba" :symbol "diff"
+              :arguments [] :expected "0"}
+             {:source "recursive-list.kotoba" :symbol "main"
+              :arguments [] :expected "15"}
+             {:source "recursive-generic.kotoba" :symbol "main"
+              :arguments [] :expected "63"}]]
       (let [artifact (file (str symbol ".kexe"))
             binary (file (str symbol ".bin"))]
         (invoke ["compile" (.join path root "examples" source)

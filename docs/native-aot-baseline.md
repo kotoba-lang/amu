@@ -1,5 +1,11 @@
 # Native AOT (x86-64/aarch64) value-representation baseline
 
+> **Correction (2026-09-24, kotoba-native ADR 0087).** Records and variants
+> are no longer limited to the one nested construction shape described below:
+> aggregate ABI v8 carries records, variants and heterogeneous vectors -- and
+> recursive types through `[:ref ...]` -- as one-word pair handles across
+> internal calls on both ISAs. See `examples/recursive-*.kotoba`.
+
 > **Correction (2026-09-18, root ADR-2609182400 C).** The statements below
 > that the native backends have "no native provider/capability mechanism of
 > any kind" describe the state when this baseline was written and are no

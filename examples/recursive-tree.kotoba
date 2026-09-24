@@ -1,0 +1,27 @@
+;; Aggregate ABI v8 (kotoba-native ADR 0087): a recursive variant whose
+;; children are a heterogeneous vector of [:ref ...], built, persistently
+;; updated and compared in guest code. main = 1 + 9 = 10 after replacing the
+;; right child of (1 (2 3)) with leaf 9; same = 1, diff = 0. Measured by
+;; executing the artifact on aarch64 and x86_64.
+(ns probe.update (:export [main sample-sum replaced-sum same diff])
+  (:schemas {:app/node [:variant :app/node [[:leaf :i64] [:branch [:vector [[:ref :app/node] [:ref :app/node]]]]]]}))
+(defn leaf [n :i64] [:variant :app/node [[:leaf :i64] [:branch [:vector [[:ref :app/node] [:ref :app/node]]]]]] (variant-new [:variant :app/node [[:leaf :i64] [:branch [:vector [[:ref :app/node] [:ref :app/node]]]]]] :leaf n))
+(defn branch [l [:variant :app/node [[:leaf :i64] [:branch [:vector [[:ref :app/node] [:ref :app/node]]]]]] r [:variant :app/node [[:leaf :i64] [:branch [:vector [[:ref :app/node] [:ref :app/node]]]]]]] [:variant :app/node [[:leaf :i64] [:branch [:vector [[:ref :app/node] [:ref :app/node]]]]]] (variant-new [:variant :app/node [[:leaf :i64] [:branch [:vector [[:ref :app/node] [:ref :app/node]]]]]] :branch (hetero-vector [:vector [[:ref :app/node] [:ref :app/node]]] l r)))
+(defn sum [n [:variant :app/node [[:leaf :i64] [:branch [:vector [[:ref :app/node] [:ref :app/node]]]]]]] :i64
+  (match-variant n [:variant :app/node [[:leaf :i64] [:branch [:vector [[:ref :app/node] [:ref :app/node]]]]]] (:leaf x x)
+    (:branch pair (+ (sum (hetero-vector-at [:vector [[:ref :app/node] [:ref :app/node]]] pair 0)) (sum (hetero-vector-at [:vector [[:ref :app/node] [:ref :app/node]]] pair 1))))))
+(defn sample [] [:variant :app/node [[:leaf :i64] [:branch [:vector [[:ref :app/node] [:ref :app/node]]]]]] (branch (leaf 1) (branch (leaf 2) (leaf 3))))
+(defn replaced [] [:variant :app/node [[:leaf :i64] [:branch [:vector [[:ref :app/node] [:ref :app/node]]]]]]
+  (match-variant (sample) [:variant :app/node [[:leaf :i64] [:branch [:vector [[:ref :app/node] [:ref :app/node]]]]]] (:leaf x (leaf x))
+    (:branch pair (variant-new [:variant :app/node [[:leaf :i64] [:branch [:vector [[:ref :app/node] [:ref :app/node]]]]]] :branch (hetero-vector-assoc [:vector [[:ref :app/node] [:ref :app/node]]] pair 1 (leaf 9))))))
+(defn tree-eq [a [:variant :app/node [[:leaf :i64] [:branch [:vector [[:ref :app/node] [:ref :app/node]]]]]] b [:variant :app/node [[:leaf :i64] [:branch [:vector [[:ref :app/node] [:ref :app/node]]]]]]] :i64
+  (match-variant a [:variant :app/node [[:leaf :i64] [:branch [:vector [[:ref :app/node] [:ref :app/node]]]]]]
+    (:leaf x (match-variant b [:variant :app/node [[:leaf :i64] [:branch [:vector [[:ref :app/node] [:ref :app/node]]]]]] (:leaf y (if (= x y) 1 0)) (:branch _ 0)))
+    (:branch pa (match-variant b [:variant :app/node [[:leaf :i64] [:branch [:vector [[:ref :app/node] [:ref :app/node]]]]]] (:leaf _ 0)
+      (:branch pb (if (= (tree-eq (hetero-vector-at [:vector [[:ref :app/node] [:ref :app/node]]] pa 0) (hetero-vector-at [:vector [[:ref :app/node] [:ref :app/node]]] pb 0)) 1)
+                    (tree-eq (hetero-vector-at [:vector [[:ref :app/node] [:ref :app/node]]] pa 1) (hetero-vector-at [:vector [[:ref :app/node] [:ref :app/node]]] pb 1)) 0))))))
+(defn sample-sum [] :i64 (sum (sample)))
+(defn replaced-sum [] :i64 (sum (replaced)))
+(defn same [] :i64 (tree-eq (sample) (sample)))
+(defn diff [] :i64 (tree-eq (sample) (replaced)))
+(defn main [] :i64 (replaced-sum))

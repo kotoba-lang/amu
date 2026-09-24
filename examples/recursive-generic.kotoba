@@ -1,0 +1,16 @@
+;; Aggregate ABI v8: [:option [:ref :app/node]] and [:result [:ref :app/node] :string].
+;; left child 7 + ok leaf 5*10 + err "branch" (6 bytes) = 63.
+(ns probe.generic (:export [main])
+  (:schemas {:app/node [:variant :app/node [[:leaf :i64] [:branch [:vector [[:ref :app/node] [:ref :app/node]]]]]]}))
+(defn leaf [n :i64] [:variant :app/node [[:leaf :i64] [:branch [:vector [[:ref :app/node] [:ref :app/node]]]]]] (variant-new [:variant :app/node [[:leaf :i64] [:branch [:vector [[:ref :app/node] [:ref :app/node]]]]]] :leaf n))
+(defn branch [l [:variant :app/node [[:leaf :i64] [:branch [:vector [[:ref :app/node] [:ref :app/node]]]]]] r [:variant :app/node [[:leaf :i64] [:branch [:vector [[:ref :app/node] [:ref :app/node]]]]]]] [:variant :app/node [[:leaf :i64] [:branch [:vector [[:ref :app/node] [:ref :app/node]]]]]] (variant-new [:variant :app/node [[:leaf :i64] [:branch [:vector [[:ref :app/node] [:ref :app/node]]]]]] :branch (hetero-vector [:vector [[:ref :app/node] [:ref :app/node]]] l r)))
+(defn left-child [n [:variant :app/node [[:leaf :i64] [:branch [:vector [[:ref :app/node] [:ref :app/node]]]]]]] [:option [:ref :app/node]]
+  (match-variant n [:variant :app/node [[:leaf :i64] [:branch [:vector [[:ref :app/node] [:ref :app/node]]]]]] (:leaf _ (option-none-of [:option [:ref :app/node]])) (:branch p (option-some-of [:option [:ref :app/node]] (hetero-vector-at [:vector [[:ref :app/node] [:ref :app/node]]] p 0)))))
+(defn value-of [n [:variant :app/node [[:leaf :i64] [:branch [:vector [[:ref :app/node] [:ref :app/node]]]]]]] [:result [:ref :app/node] :string]
+  (match-variant n [:variant :app/node [[:leaf :i64] [:branch [:vector [[:ref :app/node] [:ref :app/node]]]]]] (:leaf x (result-ok-of [:result [:ref :app/node] :string] (leaf (* x 10)))) (:branch _ (result-err-of [:result [:ref :app/node] :string] "branch"))))
+(defn leafval [n [:variant :app/node [[:leaf :i64] [:branch [:vector [[:ref :app/node] [:ref :app/node]]]]]]] :i64 (match-variant n [:variant :app/node [[:leaf :i64] [:branch [:vector [[:ref :app/node] [:ref :app/node]]]]]] (:leaf x x) (:branch _ -1)))
+(defn main [] :i64
+  (let [t (branch (leaf 7) (leaf 8))]
+    (+ (option-match [:option [:ref :app/node]] (left-child t) 1000 c (leafval c))
+       (result-match-of [:result [:ref :app/node] :string] (value-of (leaf 5)) ok (leafval ok) e (string-byte-length e))
+       (result-match-of [:result [:ref :app/node] :string] (value-of t) ok (leafval ok) e (string-byte-length e)))))
