@@ -56,7 +56,13 @@
 ;; existing branch, adding none; the second runs before the guest starts.
 ;; The floors are carried forward NOT re-measured (same machine limitation
 ;; as above); the Linux CI fuzz job measures them.
+;; Advanced 2026-09-24 for wire 2 (:identity/verify): an Ed25519 verifier
+;; (verify only, no secret) and its provider, reached only through a granted
+;; cap_call -- the argv/handle parser the floors measure is untouched, and
+;; the new request parser (four decimals) runs only inside the provider. The
+;; floors are carried forward NOT re-measured, same machine limitation as
+;; above; the Linux CI fuzz job measures them.
 {:format :kotoba.fuzz-baseline/v2
- :loader-source-sha256 "d3273ec777264c3bc2d2aeefec5a2a947bd065e259e1af7173a0e50afbd33edd"
+ :loader-source-sha256 "6f147811f1e54bf047b5f61a62c68081ec220cd5bf9939a67779e64a36fb14d0"
  :profiles {:x64 {:min-cov 60 :min-features 100 :min-corpus 20}
             :arm64 {:min-cov 60 :min-features 100 :min-corpus 18}}}
