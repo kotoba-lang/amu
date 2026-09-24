@@ -1,0 +1,40 @@
+(ns kotoba.compiler.host-bytes-portable-test
+  "The host's byte container, as the compiler cache and the atomic output
+  writer recognise it. On the JVM it is byte[]. On Node it was Uint8Array /
+  Buffer -- and, on the kbb engine, a Java-shaped byte[] is a SIGNED
+  Int8Array (kotoba-lang/org-babashka-nbb round 2, 2026-09-24): what
+  `byte-array`, `.getBytes` and `.digest` answer there. Measured before this
+  test existed: the cache's `freeze` left an Int8Array untouched (not
+  recognised as bytes, so it was not canonicalised to :bytes-v1), and
+  `write-bytes!` refused one with \"output must be a byte array\".
+  Signed input must also come out as 0..255, never -1 for 0xff."
+  (:require [clojure.test :refer [deftest is testing]]
+            [kotoba.compiler.atomic-output :as atomic-output]
+            [kotoba.compiler.cache]))
+
+(def ^:private freeze @#'kotoba.compiler.cache/freeze)
+(def ^:private thaw @#'kotoba.compiler.cache/thaw)
+
+(deftest cache-freezes-host-bytes-as-unsigned-values
+  (testing "a Java-shaped byte[] (signed) freezes to 0..255"
+    (is (= {:kotoba.cache/format :bytes-v1 :kotoba.cache/value [255 0 127 128]}
+           (freeze (byte-array [-1 0 127 -128])))))
+  (testing "nested in the result map, as store sees it"
+    (is (= [255 1] (get-in (freeze {:bytes (byte-array [-1 1])}) [:bytes :kotoba.cache/value]))))
+  (testing "thaw gives the same bytes back"
+    (is (= [255 0 127 128]
+           (mapv #(bit-and % 0xff) (seq (thaw (freeze (byte-array [-1 0 127 -128]))))))))
+  #?(:cljs
+     (testing "a Uint8Array / Buffer (this library's own Node output) still freezes"
+       (is (= [255 0] (:kotoba.cache/value (freeze (js/Uint8Array. #js [255 0])))))
+       (is (= [1 2] (:kotoba.cache/value (freeze (js/Buffer.from #js [1 2]))))))))
+
+#?(:cljs
+   (deftest atomic-output-accepts-a-signed-byte-array
+     (let [fs (js/require "fs") os (js/require "os") path (js/require "path")
+           dir (.mkdtempSync fs (.join path (.tmpdir os) "amu-host-bytes-"))
+           out (.join path dir "out.bin")]
+       (try
+         (atomic-output/write-bytes! out (byte-array [-1 0 65]))
+         (is (= [255 0 65] (vec (array-seq (.readFileSync fs out)))))
+         (finally (.rmSync fs dir #js {:recursive true :force true}))))))

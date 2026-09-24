@@ -116,8 +116,12 @@
              (reject! "executable output permissions are unsupported" {:path (str path)} nested))))))))
 
 #?(:cljs
-   (defn- byte-source? [bytes]
-     (or (instance? js/Uint8Array bytes) (instance? js/Buffer bytes))))
+   (defn- byte-source?
+     "Uint8Array / Buffer, or the signed Int8Array a Java-shaped byte[] is on
+     the kbb engine (2026-09-24); the file gets the same bytes either way."
+     [bytes]
+     (or (instance? js/Uint8Array bytes) (instance? js/Buffer bytes)
+         (instance? js/Int8Array bytes))))
 
 #?(:cljs
    (defn- write-bytes-node! [output-path bytes {:keys [executable?]}]
