@@ -7,6 +7,8 @@
   (:require [kotoba.compiler.capability-names :as cap-names]
             [kotoba.compiler.nbb.cli-support :as support]
             [kotoba.compiler.nbb.compile-cache :as compile-cache]
+            [kotoba.compiler.nbb.verdict-cache :as verdict-cache]
+            [kotoba.compiler.definition-identity :as definition-identity]
             [kotoba.sema :as sema]
             [kotoba.compiler.nbb.io :as io]
             [kotoba.compiler.nbb.output-set :as output-set]
@@ -413,11 +415,30 @@
              :compatibility compat
              :limits {:memory-bytes 65536 :fuel declared-fuel :stack-bytes 4096}
              :code (mapv #(bit-and (int %) 0xff) code)
-             :program program :exports (:exports emitted)})))]
-    (support/timed "native-verify" #(verifier/verify-artifact! artifact-map))
+             :program program :exports (:exports emitted)})))
+        ;; Computed here rather than inside provenance so the verdict key and
+        ;; the provenance record share ONE computation: `describe` returns
+        ;; `(:definitions result)` unchanged when it is already present.
+        report (definition-identity/describe {:hir hir :kir kir})
+        ;; adr-2609242100 P5: the compile-time verifier verdict is a function
+        ;; of the sealed artifact, the verifier's code and the limits table,
+        ;; so it is answered once per key and replayed after that. See
+        ;; `kotoba.compiler.nbb.verdict-cache` for the key and the integrity
+        ;; checks. A refusal is replayed with the same message and ex-data.
+        verify (support/timed
+                "native-verify"
+                #(verdict-cache/resolve!
+                  (verdict-cache/open-store) :kotoba.verdict/native-verify
+                  {:definitions (definition-identity/cache-material report (:exports hir))
+                   :subject (artifact/sha256 artifact-map)
+                   :target target
+                   :capabilities (artifact/sha256 (support/capability-policy policy))}
+                  (fn [] (verifier/verify-artifact! artifact-map))))]
     {:format :kexe/v1 :target target :hir hir :kir kir
+     :definitions report
      :admission admission :artifact artifact-map :compatibility compat
-     :stage-cache {:kir (:cache kir-result)}}))
+     :stage-cache {:kir (:cache kir-result)}
+     :verdict-cache {:native-verify (:cache verify)}}))
 
 (defn- serialized-native [source policy emit-metadata result package artifact-kind]
   (let [provenance-result (support/timed "provenance"
@@ -472,7 +493,8 @@
         (write-native! output serialized)]
     (cond-> {:ok true :target target :output output
              :provenance-output provenance-output
-             :publication-output publication-output}
+             :publication-output publication-output
+             :verdict-cache (:verdict-cache result)}
       artifact-bytes (assoc :artifact-bytes artifact-bytes))))
 
 (defn- compile-cached! [args source linked? target backend output emit-program package context]
@@ -554,7 +576,8 @@
                  :publication-output publication-output
                  :cache :miss :cache-key key
                  :stage-cache {:hir (:cache hir-result)
-                               :kir (get-in result [:stage-cache :kir])}}
+                               :kir (get-in result [:stage-cache :kir])}
+                 :verdict-cache (:verdict-cache result)}
           artifact-bytes (assoc :artifact-bytes artifact-bytes))))))
 
 (defn run!

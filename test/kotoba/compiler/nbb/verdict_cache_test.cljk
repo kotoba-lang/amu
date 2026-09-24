@@ -1,0 +1,194 @@
+(ns kotoba.compiler.nbb.verdict-cache-test
+  "adr-2609242100 P5: the persistent verdict cache. Every negative asserts the
+  REASON it names (a key that moved, a pinned warning literal, a replayed
+  diagnostic), not only that something missed -- a fresh store misses for the
+  trivial reason that it is empty, so each negative first proves the base key
+  HITS on the same store."
+  (:require [cljs.test :refer [deftest is testing]]
+            ["node:fs" :as fs]
+            ["node:os" :as os]
+            ["node:path" :as node-path]
+            [kotoba.compiler.nbb.verdict-cache :as vc]
+            [kotoba.verifier :as verifier]))
+
+(defn- temp-dir [prefix]
+  (.mkdtempSync fs (.join node-path (.tmpdir os) prefix)))
+
+(defn- store []
+  (vc/open-store {:dir (.join node-path (temp-dir "amu-verdict-test-") "cache")}))
+
+(def base-fields
+  {:definitions {:contract :kotoba.definition-identity/v1
+                 :definitions ["bafyreia6uzbnbti2xqiq3pzaun7yz3grlid4snugc5eqvsyz2ihm53nshq"
+                               "bafyreibpfyjj6xvqtakm6pyeefpklngjc3rswdx2pzhbo72mvskucwijaa"]
+                 :exports ["main"]}
+   :subject "0000000000000000000000000000000000000000000000000000000000000001"
+   :toolchain "toolchain-a"
+   :target :aarch64-kotoba-v1
+   :capabilities "caps-a"
+   :limits "limits-a"})
+
+(defn- counting []
+  (let [n (volatile! 0)] [n (fn [] (vswap! n inc) :ok)]))
+
+(defn- flip-last-char [s]
+  (str (subs s 0 (dec (count s))) (if (= \a (last s)) "b" "a")))
+
+(deftest hit-after-miss-without-recompute
+  (let [s (store) [n compute] (counting)
+        first* (vc/resolve! s :kotoba.verdict/native-verify base-fields compute)
+        second* (vc/resolve! s :kotoba.verdict/native-verify base-fields compute)]
+    (is (= :miss (:cache first*)))
+    (is (= :hit (:cache second*)))
+    (is (= (:key first*) (:key second*)))
+    (is (= 1 @n) "a hit must not run the validator")))
+
+(deftest every-key-field-is-load-bearing
+  (let [s (store) [n compute] (counting)
+        base (vc/resolve! s :kotoba.verdict/native-verify base-fields compute)
+        variants
+        {"one byte of one definition CID"
+         (update-in base-fields [:definitions :definitions 1] flip-last-char)
+         "a dependency's CID (the closure is in the caller's CID, so the list moves)"
+         (update-in base-fields [:definitions :definitions 0] flip-last-char)
+         "the limits table digest" (assoc base-fields :limits "limits-b")
+         "the toolchain digest" (assoc base-fields :toolchain "toolchain-b")
+         "the target" (assoc base-fields :target :x86_64-kotoba-v1)
+         "the capability set" (assoc base-fields :capabilities "caps-b")
+         "the validator's subject" (assoc base-fields :subject (flip-last-char (:subject base-fields)))}]
+    (is (= :miss (:cache base)))
+    (is (= :hit (:cache (vc/resolve! s :kotoba.verdict/native-verify base-fields compute)))
+        "control: the unchanged key hits on this store")
+    (doseq [[label fields] variants]
+      (testing label
+        (let [before @n
+              r (vc/resolve! s :kotoba.verdict/native-verify fields compute)]
+          (is (not= (:key base) (:key r)) (str label " did not move the key"))
+          (is (= :miss (:cache r)) (str label " was served the base verdict"))
+          (is (= (inc before) @n)))))
+    (testing "the verdict kind"
+      (is (= :miss (:cache (vc/resolve! s :kotoba.verdict/other base-fields compute)))))))
+
+(defn- entry-file [s key] (.join node-path (:dir s) (str key ".edn")))
+
+(defn- tamper-and-resolve [edit]
+  (let [s (store) [n compute] (counting)
+        warnings (volatile! [])
+        warn #(vswap! warnings conj %)
+        base (vc/resolve! s :kotoba.verdict/native-verify base-fields compute)
+        file (entry-file s (:key base))]
+    (edit s file (:key base))
+    (let [r (vc/resolve! s :kotoba.verdict/native-verify base-fields compute :warn warn)
+          again (vc/resolve! s :kotoba.verdict/native-verify base-fields compute :warn warn)]
+      {:key (:key base) :result r :again again :calls @n :warnings @warnings})))
+
+(defn- rejected-line [key reason]
+  (str "kotoba.verdict-cache: rejected entry " key " (" reason "); recomputed"))
+
+(deftest a-tampered-entry-is-ignored-recomputed-and-named
+  (testing "verdict flipped to a refusal, digest left alone"
+    (let [{:keys [key result again calls warnings]}
+          (tamper-and-resolve
+           (fn [_ file _]
+             (let [text (str (.readFileSync fs file "utf8"))]
+               (.writeFileSync fs file (.replace text ":verdict {:admitted true}"
+                                                 ":verdict {:refused {:message \"forged\" :data {}}}")))))]
+      (is (= :rejected (:cache result)))
+      (is (= :digest-mismatch (:reason result)))
+      (is (= [(rejected-line key "digest-mismatch")] warnings))
+      (is (= 2 calls) "the validator ran again instead of trusting the entry")
+      (is (= :hit (:cache again)) "the recomputed verdict replaced the bad entry")))
+  (testing "a valid record for another key copied under this key"
+    (let [{:keys [key result warnings]}
+          (tamper-and-resolve
+           (fn [s file _]
+             (let [other (vc/resolve! s :kotoba.verdict/native-verify
+                                      (assoc base-fields :target :x86_64-kotoba-v1)
+                                      (fn [] :ok))]
+               (.copyFileSync fs (entry-file s (:key other)) file))))]
+      (is (= :key-mismatch (:reason result)))
+      (is (= [(rejected-line key "key-mismatch")] warnings))))
+  (testing "the key material rewritten and the key field left alone"
+    (let [{:keys [result]}
+          (tamper-and-resolve
+           (fn [_ file _]
+             (let [text (str (.readFileSync fs file "utf8"))]
+               (.writeFileSync fs file (.replace text "\"caps-a\"" "\"caps-z\"")))))]
+      (is (= :key-material-mismatch (:reason result)))))
+  (testing "bytes that are not a record"
+    (let [{:keys [key result warnings]}
+          (tamper-and-resolve (fn [_ file _] (.writeFileSync fs file "{:format")))]
+      (is (= :unreadable (:reason result)))
+      (is (= [(rejected-line key "unreadable")] warnings)))))
+
+(deftest a-cached-refusal-reproduces-the-fresh-diagnostic
+  ;; The real verifier's refusal, not a stand-in: an artifact whose schema is
+  ;; wrong is refused before anything else is looked at.
+  (let [s (store)
+        calls (volatile! 0)
+        compute (fn [] (vswap! calls inc) (verifier/verify-artifact! {:format :bogus}))
+        fresh (try (verifier/verify-artifact! {:format :bogus}) nil
+                   (catch :default e {:message (ex-message e) :data (ex-data e)}))
+        attempt (fn [] (try (vc/resolve! s :kotoba.verdict/native-verify base-fields compute) nil
+                            (catch :default e {:message (ex-message e) :data (ex-data e)})))
+        first* (attempt)
+        second* (attempt)]
+    (is (= "native artifact schema rejected" (:message fresh)))
+    (is (= fresh first*))
+    (is (= fresh second*) "the replayed refusal carries the same text and ex-data (so the same exit code)")
+    (is (= 1 @calls) "the refusal was served from the cache")))
+
+(deftest a-refusal-that-cannot-be-replayed-is-not-stored
+  (let [s (store)
+        calls (volatile! 0)
+        compute (fn [] (vswap! calls inc)
+                  (throw (ex-info "opaque" {:value (js/Object.)})))]
+    (dotimes [_ 2]
+      (is (thrown-with-msg? js/Error #"opaque"
+                            (vc/resolve! s :kotoba.verdict/native-verify base-fields compute))))
+    (is (= 2 @calls))))
+
+(deftest no-identity-no-cache
+  (let [s (store) [n compute] (counting)]
+    (is (= {:cache :unkeyed :reason :no-definition-identity}
+           (vc/resolve! s :kotoba.verdict/native-verify (assoc base-fields :definitions nil) compute)))
+    (is (= :unkeyed (:cache (vc/resolve! s :kotoba.verdict/native-verify
+                                         (assoc base-fields :definitions nil) compute))))
+    (is (= 2 @n))))
+
+(deftest a-shared-directory-disables-the-cache
+  (let [dir (temp-dir "amu-verdict-open-")]
+    (.chmodSync fs dir 511) ; 0o777
+    (is (= :insecure-directory (:disabled (vc/open-store {:dir dir}))))
+    (let [[n compute] (counting)]
+      (is (= :disabled (:cache (vc/resolve! (vc/open-store {:dir dir})
+                                            :kotoba.verdict/native-verify base-fields compute))))
+      (is (= 1 @n)))))
+
+(deftest the-toolchain-digest-covers-local-bytes-and-pinned-paths
+  (let [root (temp-dir "amu-verdict-toolchain-")
+        src (.join node-path root "src")
+        pinned (.join node-path root ".gitlibs" "libs" "io.github.x" "y"
+                      "0123456789abcdef0123456789abcdef01234567")
+        pinned-other (.join node-path root ".gitlibs" "libs" "io.github.x" "y"
+                            "1123456789abcdef0123456789abcdef01234567")
+        file (.join node-path src "a.cljk")]
+    (.mkdirSync fs src #js {:recursive true})
+    (.mkdirSync fs pinned #js {:recursive true})
+    (.writeFileSync fs file "(ns a)\n")
+    (let [d1 (:digest (vc/toolchain-digest [src pinned]))]
+      (is (string? d1))
+      (.writeFileSync fs file "(ns b)\n")
+      (is (not= d1 (:digest (vc/toolchain-digest [src pinned])))
+          "one changed byte of a loaded local source moves the toolchain digest")
+      (is (not= (:digest (vc/toolchain-digest [src pinned]))
+                (:digest (vc/toolchain-digest [src pinned-other])))
+          "a different pinned sha moves the toolchain digest"))
+    (let [lang (.join node-path root "resources" "kotoba" "lang")]
+      (.mkdirSync fs lang #js {:recursive true})
+      (.writeFileSync fs (.join node-path lang "limits.edn") "{:a 1}\n")
+      (let [l1 (vc/limits-digest [src (.join node-path root "resources")])]
+        (is (string? l1))
+        (.writeFileSync fs (.join node-path lang "limits.edn") "{:a 2}\n")
+        (is (not= l1 (vc/limits-digest [src (.join node-path root "resources")])))))
+    (is (nil? (vc/limits-digest [src])) "no limits table, no digest (and so no cache)")))

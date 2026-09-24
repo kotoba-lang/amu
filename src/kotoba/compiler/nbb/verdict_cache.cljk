@@ -1,0 +1,391 @@
+(ns kotoba.compiler.nbb.verdict-cache
+  "Persistent, content-addressed cache of STATIC VERDICTS about definitions
+  (adr-2609242100 P5, first half).
+
+  ## What it holds, and what it does not
+
+  A verdict is `{:admitted true}` or `{:refused {:message m :data d}}` -- the
+  answer a validator gave, never a value it computed and never a trust
+  decision. The one validator wired to it today is compile-time
+  `kotoba.verifier/verify-artifact!` in the nbb native driver (see
+  `kotoba.compiler.nbb.cli`), because that is the only static verdict on the
+  compile path that costs anything: measured 2026-09-24 on
+  examples/recursive-tree.kotoba and examples/approval-queue-app.kotoba,
+  native-verify was 1.0-3.0 s per compile, while front-end admission
+  (`effect-row/check`) was 0-20 ms and native admission
+  (`only-native-word-typed-features?`) 4-22 ms.
+
+  Execution-time checks are NOT static verdicts and never pass through here:
+  `amu run` / `amu verify` / `extract-native` verify signatures and artifact
+  integrity on every invocation.
+
+  ## The key
+
+  Every input the verdict depended on, each as a named field:
+
+    :kind          which validator (`:kotoba.verdict/native-verify`)
+    :definitions   `definition-identity/cache-material` -- the ordered
+                   definition CIDs and export names. A definition CID covers
+                   its dependency closure (callees are sealed as
+                   `[:kotoba.definition/ref <cid>]`, cycles as scc-v1 groups),
+                   so a changed callee changes every caller's CID.
+    :subject       the validator's own input, canonically hashed (for
+                   native-verify: the whole sealed artifact map, whose seal is
+                   one of its fields)
+    :toolchain     `toolchain-digest`: the classpath the process actually
+                   loaded -- gitlibs entries by their pinned sha path, every
+                   other entry (amu's own src/ and resources/) by the bytes
+                   of every file under it -- plus the Node version and
+                   `compatibility/compiler-version`
+    :target        the target profile keyword
+    :capabilities  canonical sha256 of the capability policy in force
+    :limits        sha256 of the `kotoba/lang/limits.edn` bytes on the
+                   classpath (kotoba-lang `lang/limits.edn`, vendored)
+
+  The toolchain digest is read from disk the first time a process needs it,
+  not when the code was loaded; a long-lived `amu worker` whose checkout is
+  edited between its start and its first native compile keys on the edited
+  bytes. Restart workers after editing the compiler.
+
+  A module without a complete definition identity is NOT cached
+  (`:unkeyed`), for the reason `definition-identity/cache-material` gives: a
+  partial identity is not an identity.
+
+  ## Storage and integrity
+
+  One file per key, `<dir>/<key>.edn`, holding the record
+  `{:format :kotoba.verdict-cache/v1 :key k :key-material m :verdict v
+  :digest d}`, where `d` is the canonical sha256 of `[format k m v]`. On read
+  the record's `:key` must equal the requested key, the key recomputed from
+  `:key-material` must equal it too, and the digest must match. Any failure
+  -- unreadable, malformed, key mismatch, digest mismatch -- deletes the
+  entry, prints one `kotoba.verdict-cache: rejected` line on stderr, and
+  recomputes. A rejected entry is never trusted.
+
+  The digest detects corruption and mismatch, not forgery: anyone who can
+  write the directory can write a self-consistent record. Forgery is kept out
+  the way `bin/amu` keeps its classpath cache: the directory must be owned by
+  this uid and not group/world writable, files are opened without following
+  symlinks and must be owned by this uid, and writes are 0600 temp + rename.
+  A directory that fails those checks disables the cache (`:disabled`).
+
+  ## Configuration
+
+    KOTOBA_VERDICT_CACHE=off           disable
+    KOTOBA_VERDICT_CACHE_DIR           default <os.tmpdir>/amu-verdict-cache-<uid>
+    KOTOBA_VERDICT_CACHE_ENTRIES       default 4096, at most 65536
+    KOTOBA_VERDICT_CACHE_BYTES         default 16 MiB, at most 1 GiB
+
+  parallel to the worker's `KOTOBA_WORKER_CACHE_*` bounds."
+  {:kotoba/export [key-for key-material limits-digest open-store record-digest
+                   resolve! toolchain-digest]}
+  (:require ["node:crypto" :as crypto]
+            ["node:fs" :as fs]
+            ["node:os" :as os]
+            ["node:path" :as node-path]
+            [cljs.reader :as reader]
+            [kotoba.artifact.core :as artifact]
+            [kotoba.kir.compatibility :as compatibility]))
+
+(def ^:private record-format :kotoba.verdict-cache/v1)
+(def ^:private key-format :kotoba.verdict-key/v1)
+
+;; Octal literals do not read on nbb; these are 0o022, 0o700 and 0o600.
+(def ^:private group-or-world-writable 18)
+(def ^:private private-directory-mode 448)
+(def ^:private private-file-mode 384)
+
+(defn- configured-integer [name default maximum]
+  (let [text (aget js/process.env name)
+        value (when text (js/Number text))]
+    (if (and value (js/Number.isSafeInteger value) (<= 1 value maximum))
+      value
+      default)))
+
+;; ---------------------------------------------------------------------------
+;; Toolchain and limits identity
+
+(defn- sha256-update-file! [hash file]
+  (.update hash (.readFileSync fs file)))
+
+(defn- files-under [dir]
+  (let [out (volatile! [])]
+    (letfn [(walk [d]
+              (doseq [entry (sort (map str (.readdirSync fs d)))]
+                (let [p (.join node-path d entry)
+                      st (.lstatSync fs p)]
+                  (cond (.isDirectory st) (walk p)
+                        (.isFile st) (vswap! out conj p)
+                        ;; A symlink inside a hashed tree is refused rather
+                        ;; than followed or skipped: either would let the
+                        ;; digest say less than what was loaded.
+                        :else (throw (ex-info "toolchain tree contains a non-regular file"
+                                              {:path p}))))))]
+      (walk dir))
+    @out))
+
+(defn- pinned-gitlib? [entry]
+  ;; `.../.gitlibs/libs/<group>/<artifact>/<40-hex sha>/...`: the path names
+  ;; the commit, which is the identity deps-lock.edn pins.
+  (boolean (re-find #"[/\\]\.gitlibs[/\\]libs[/\\].+[/\\][0-9a-f]{40}([/\\]|$)" entry)))
+
+(defn- argv-classpath []
+  (let [argv (vec (.-argv js/process))
+        i (.indexOf argv "--classpath")]
+    (when (and (<= 0 i) (< (inc i) (count argv)))
+      (let [cp (nth argv (inc i))]
+        (vec (remove #(= "" %) (.split cp (.-delimiter node-path))))))))
+
+(defn- compute-toolchain-digest [entries]
+  (let [hash (.createHash crypto "sha256")]
+    (.update hash (str "kotoba.verdict-toolchain/v1\0" (.-version js/process) "\0"
+                       (pr-str compatibility/compiler-version) "\0"))
+    (doseq [entry entries]
+      (let [absolute (.resolve node-path entry)]
+        (.update hash (str "entry\0" absolute "\0"))
+        (cond
+          (pinned-gitlib? absolute) (.update hash "pinned\0")
+          (not (.existsSync fs absolute)) (.update hash "absent\0")
+          (.isFile (.statSync fs absolute)) (sha256-update-file! hash absolute)
+          :else (doseq [file (files-under absolute)]
+                  (.update hash (str "file\0" (.relative node-path absolute file) "\0"))
+                  (sha256-update-file! hash file)
+                  (.update hash "\0")))))
+    (.digest hash "hex")))
+
+(def ^:private toolchain-memo (volatile! nil))
+
+(defn toolchain-digest
+  "`{:digest hex}` or `{:unavailable reason}`. Computed once per process from
+  the classpath the process was started with. No classpath on argv means no
+  identity for the code that would produce the verdict, and therefore no
+  cache -- never a cache keyed on less."
+  ([] (or @toolchain-memo
+          (vreset! toolchain-memo
+                   (if-let [entries (argv-classpath)]
+                     (toolchain-digest entries)
+                     {:unavailable :no-classpath-on-argv}))))
+  ([entries]
+   (try {:digest (compute-toolchain-digest entries) :entries entries}
+        (catch :default e
+          {:unavailable :toolchain-unreadable :message (.-message e)}))))
+
+(defn limits-digest
+  "sha256 of the first `kotoba/lang/limits.edn` found on ENTRIES (the
+  vendored copy of kotoba-lang `lang/limits.edn` that `kotoba.compiler.limits`
+  is checked against). nil when none is found."
+  [entries]
+  (some (fn [entry]
+          (let [file (.join node-path entry "kotoba" "lang" "limits.edn")]
+            (when (and (.existsSync fs file) (.isFile (.statSync fs file)))
+              (-> (.createHash crypto "sha256")
+                  (.update (.readFileSync fs file))
+                  (.digest "hex")))))
+        entries))
+
+;; ---------------------------------------------------------------------------
+;; Keys and records
+
+(def ^:private key-fields
+  [:definitions :subject :toolchain :target :capabilities :limits])
+
+(defn key-material
+  "The ordered vector the key is the hash of. Every field is present, named,
+  and in a fixed order; a nil field is part of the material, not omitted."
+  [kind fields]
+  [key-format kind (mapv (fn [k] [k (get fields k)]) key-fields)])
+
+(defn key-for [material] (artifact/sha256 material))
+
+(defn record-digest [key material verdict]
+  (artifact/sha256 [record-format key material verdict]))
+
+(defn- refusal-verdict [error]
+  {:refused {:message (.-message error) :data (ex-data error)}})
+
+(defn- replayable? [verdict]
+  ;; A verdict whose text does not read back as the same value cannot be
+  ;; replayed as the same diagnostic, so it is not stored.
+  (try (= verdict (reader/read-string (pr-str verdict)))
+       (catch :default _ false)))
+
+;; ---------------------------------------------------------------------------
+;; The store
+
+(defn- secure-directory? [dir]
+  (let [st (.lstatSync fs dir)]
+    (and (.isDirectory st)
+         (or (= "win32" (.-platform js/process))
+             (and (= (.-uid st) (.getuid js/process))
+                  (zero? (bit-and (.-mode st) group-or-world-writable)))))))
+
+(defn open-store
+  "`{:dir ...}` or `{:disabled reason}`. Creating the default directory is
+  part of opening it; an existing directory with the wrong owner or mode
+  disables the cache rather than being repaired."
+  ([] (open-store {}))
+  ([{:keys [dir]}]
+   (cond
+     (= "off" (aget js/process.env "KOTOBA_VERDICT_CACHE"))
+     {:disabled :off}
+
+     :else
+     (let [uid (if (= "win32" (.-platform js/process)) "w" (.getuid js/process))
+           dir (or dir (aget js/process.env "KOTOBA_VERDICT_CACHE_DIR")
+                   (.join node-path (.tmpdir os) (str "amu-verdict-cache-" uid)))]
+       (try
+         (when-not (.existsSync fs dir)
+           (.mkdirSync fs dir #js {:recursive true :mode private-directory-mode}))
+         (if (secure-directory? dir)
+           {:dir dir
+            :max-entries (configured-integer "KOTOBA_VERDICT_CACHE_ENTRIES" 4096 65536)
+            :max-bytes (configured-integer "KOTOBA_VERDICT_CACHE_BYTES"
+                                           (* 16 1024 1024) (* 1024 1024 1024))}
+           {:disabled :insecure-directory :dir dir})
+         (catch :default e
+           {:disabled :directory-unavailable :dir dir :message (.-message e)}))))))
+
+(defn- entry-path [store key] (.join node-path (:dir store) (str key ".edn")))
+
+(defn- read-protected [file]
+  ;; nil when absent; throws a named problem when present but not ours.
+  (let [no-follow (if (= "win32" (.-platform js/process)) 0 (.. fs -constants -O_NOFOLLOW))
+        descriptor (try (.openSync fs file (bit-or (.. fs -constants -O_RDONLY) no-follow))
+                        (catch :default e
+                          (if (= "ENOENT" (.-code e))
+                            nil
+                            (throw (ex-info "unreadable" {:reason :unreadable})))))]
+    (when descriptor
+      (try
+        (let [st (.fstatSync fs descriptor)]
+          (when-not (and (.isFile st)
+                         (or (= "win32" (.-platform js/process))
+                             (and (= (.-uid st) (.getuid js/process))
+                                  (zero? (bit-and (.-mode st) group-or-world-writable)))))
+            (throw (ex-info "foreign" {:reason :foreign-entry})))
+          (.readFileSync fs descriptor "utf8"))
+        (finally (.closeSync fs descriptor))))))
+
+(defn- check-record [text key]
+  (let [record (try (reader/read-string {:readers {}
+                                         :default (fn [tag _]
+                                                    (throw (ex-info "tag" {:tag tag})))}
+                                        text)
+                    (catch :default _ ::unreadable))]
+    (cond
+      (= ::unreadable record) {:reason :unreadable}
+      (not (and (map? record) (= record-format (:format record))
+                (= #{:format :key :key-material :verdict :digest} (set (keys record)))))
+      {:reason :malformed}
+      (not= key (:key record)) {:reason :key-mismatch}
+      (not= key (key-for (:key-material record))) {:reason :key-material-mismatch}
+      (not= (:digest record)
+            (record-digest key (:key-material record) (:verdict record)))
+      {:reason :digest-mismatch}
+      (not (or (= {:admitted true} (:verdict record))
+               (and (map? (:refused (:verdict record)))
+                    (string? (get-in record [:verdict :refused :message])))))
+      {:reason :malformed}
+      :else {:verdict (:verdict record)})))
+
+(defn- evict! [store]
+  (let [dir (:dir store)
+        entries (->> (.readdirSync fs dir)
+                     (map str)
+                     (filter #(re-matches #"[0-9a-f]{64}\.edn" %))
+                     (map (fn [n] (let [p (.join node-path dir n)
+                                        st (.statSync fs p)]
+                                    {:path p :size (.-size st) :mtime (.-mtimeMs st)})))
+                     (sort-by :mtime))]
+    (loop [entries entries
+           n (count entries)
+           bytes (reduce + 0 (map :size entries))]
+      (when (and (seq entries)
+                 (or (> n (:max-entries store)) (> bytes (:max-bytes store))))
+        (.rmSync fs (:path (first entries)) #js {:force true})
+        (recur (rest entries) (dec n) (- bytes (:size (first entries))))))))
+
+(defn- write-record! [store key material verdict]
+  (let [file (entry-path store key)
+        text (str (pr-str {:format record-format :key key :key-material material
+                           :verdict verdict
+                           :digest (record-digest key material verdict)})
+                  "\n")
+        temporary (str file "." (.-pid js/process) "."
+                       (.toString (.randomBytes crypto 8) "hex") ".tmp")]
+    (when (<= (.byteLength js/Buffer text "utf8") (:max-bytes store))
+      (try
+        (.writeFileSync fs temporary text #js {:encoding "utf8" :mode private-file-mode :flag "wx"})
+        (.renameSync fs temporary file)
+        (evict! store)
+        (catch :default _
+          ;; The cache is an optimization: a failed write loses the entry,
+          ;; never the verdict.
+          nil)
+        (finally (.rmSync fs temporary #js {:force true}))))))
+
+(defn- default-warn [message]
+  (.write js/process.stderr (str message "\n")))
+
+(defn- answer
+  "Return or throw what VERDICT says, identically for a fresh and a replayed
+  refusal: same message, same ex-data (so the same exit code)."
+  [verdict result]
+  (if-let [refused (:refused verdict)]
+    (throw (ex-info (:message refused) (:data refused)))
+    result))
+
+(defn resolve!
+  "Answer the static verdict of KIND for FIELDS, computing it with COMPUTE only
+  when no trusted entry exists. COMPUTE returns normally for admitted and
+  throws for refused. Returns `{:cache status :key k}` on an admitted verdict
+  (status one of :hit :miss :rejected :disabled :unkeyed; :rejected carries
+  :reason) and rethrows the refusal otherwise.
+
+  FIELDS carries :definitions :subject :target :capabilities; the store
+  supplies :toolchain and :limits unless FIELDS already names them (tests)."
+  [store kind fields compute & {:keys [warn]}]
+  (let [warn (or warn default-warn)
+        toolchain (if (contains? fields :toolchain)
+                    {:digest (:toolchain fields)}
+                    (toolchain-digest))
+        limits (if (contains? fields :limits)
+                 (:limits fields)
+                 (some-> (:entries toolchain) limits-digest))
+        run-fresh (fn []
+                    (try (compute) {:admitted true}
+                         (catch :default e
+                           (if (ex-data e) (refusal-verdict e) (throw e)))))]
+    (cond
+      (:disabled store)
+      (answer (run-fresh) {:cache :disabled :reason (:disabled store)})
+
+      (nil? (:definitions fields))
+      (answer (run-fresh) {:cache :unkeyed :reason :no-definition-identity})
+
+      (not (:digest toolchain))
+      (answer (run-fresh) {:cache :unkeyed :reason (:unavailable toolchain)})
+
+      (nil? limits)
+      (answer (run-fresh) {:cache :unkeyed :reason :no-limits-table})
+
+      :else
+      (let [material (key-material kind (assoc fields
+                                               :toolchain (:digest toolchain)
+                                               :limits limits))
+            key (key-for material)
+            file (entry-path store key)
+            found (try (some-> (read-protected file) (check-record key))
+                       (catch :default e {:reason (or (:reason (ex-data e)) :unreadable)}))]
+        (if-let [verdict (:verdict found)]
+          (answer verdict {:cache :hit :key key})
+          (let [rejected (:reason found)
+                _ (when rejected
+                    (.rmSync fs file #js {:force true})
+                    (warn (str "kotoba.verdict-cache: rejected entry " key
+                               " (" (name rejected) "); recomputed")))
+                verdict (run-fresh)]
+            (when (replayable? verdict)
+              (write-record! store key material verdict))
+            (answer verdict (cond-> {:cache (if rejected :rejected :miss) :key key}
+                              rejected (assoc :reason rejected)))))))))
