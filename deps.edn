@@ -1084,7 +1084,11 @@
          ;; `gh api .../compare`, ahead 2 behind 0): the reader-conditional
          ;; `:default` clause so the Kotoba reader reads src/ipld/schema.cljk
          ;; (adr-2609111900).
-         :git/sha "9a92b16737a6feeb540ed4943c783d88a0b9a941"} ;; Advanced 2026-09-24 d02a63cd -> 9a92b167 (main tip, forward only): selfhost walls: fn-body-clj-only, some-two-arg, regex literal, char literal, clojure.* to kotoba.*
+         ;; Advanced 2026-09-25, 9a92b167 -> 2a012c5d (io-ipld main, forward only):
+         ;; ipld.link's typed tag-42 path (link-tag-bytes / link-fragment) on
+         ;; cbor.core's typed encoder; ipld.link passes the Kotoba project
+         ;; check; suite CIDs identical (adr-2609242330 S1c).
+         :git/sha "2a012c5d6b5ba71267f5390fee9561e010b8781a"} ;; Advanced 2026-09-24 d02a63cd -> 9a92b167 (main tip, forward only): selfhost walls: fn-body-clj-only, some-two-arg, regex literal, char literal, clojure.* to kotoba.*
         ;; Advanced 2026-09-08 to 829966fd (PR #76): the same accessor on
         ;; wasm32, as two CONDITIONALLY imported intrinsics (`list-nth-i64` /
         ;; `list-nth-ref`), which runtime/browser-host.mjs now answers.
@@ -1458,7 +1462,12 @@
          ;; `gh api .../compare`, ahead 2 behind 0): the reader-conditional
          ;; `:default` clause so the Kotoba reader reads src/kotoba/lang/package_contract.cljk
          ;; (adr-2609111900).
-         :git/sha "b1bbfe0dd3a7ae78d11a0db772dfdb29c1fa1db4"} ;; Advanced 2026-09-24 6563b357 -> b1bbfe0d (main tip, forward only): selfhost walls: fn-body-clj-only, some-two-arg, regex literal, char literal, clojure.* to kotoba.*
+         ;; Advanced 2026-09-25, b1bbfe0d -> 500497c4 (kotoba-core-contracts main,
+         ;; forward only): definition-block-fragment encodes the capability
+         ;; definition block with cbor.core's typed encoder; definition CIDs
+         ;; identical (adr-2609242330 S1c). The range also carries ef276ecb
+         ;; (kotoba-migrate-all).
+         :git/sha "500497c4ac74efa6c9ed289c0159b42fea817669"} ;; Advanced 2026-09-24 6563b357 -> b1bbfe0d (main tip, forward only): selfhost walls: fn-body-clj-only, some-two-arg, regex literal, char literal, clojure.* to kotoba.*
         ;; CIDv1 for `module-lock`: pinned module resolution has to prove the
         ;; bytes it read are the ones the lock names, and that is a hash, not a
         ;; path check. Same pin the codebase/semantic layers use, so a source
@@ -1475,7 +1484,10 @@
          ;; `{:kotoba/export [...]}` on every module. The range also carries
          ;; base32's bit-accumulator rewrite (the lazy-seq expansion root
          ;; ADR-2609051700 names) and the sha256 digest seam.
-         :git/sha "dbb877ed22e87ba68d74d995dd8cbe6cf8f24970"}
+         ;; Advanced 2026-09-25, dbb877ed -> 721281d2 (io-multiformats main,
+         ;; forward only): base32's Kotoba reading over code points (the first
+         ;; wall of 10 cbor dependents once cbor.core passed; adr-2609242330 S1c).
+         :git/sha "721281d20525dc4d9af0064862d1c35226065ce2"}
         ;; The verifier independently re-derives aggregate ABI v7, including
         ;; recursive record-payload variants, and re-emits the widened boundary
         ;; in addition to scalar/variant/call-frame checks.
@@ -1749,7 +1761,11 @@
          ;; 2,367-value golden corpus written by 8ddc27d6, io-ipld CIDs unchanged.
          ;; Advanced 2026-09-25, b3391fa3 -> cd9adc9b (org-ietf-cbor main, ahead 2, forward only):
          ;; bytes->str / bytes-like? get Kotoba bodies; text decodes fatally (string-from-bytes, superproject adr-2609242330).
-         :git/sha "cd9adc9bf6fcb889c73b4776f4eafac52bf8e723"} ;; Advanced 2026-09-24 4c129f82 -> 8ddc27d6 (main tip, forward only): selfhost walls: fn-body-clj-only, some-two-arg, regex literal, char literal, clojure.* to kotoba.*
+         ;; Advanced 2026-09-25, cd9adc9b -> a09268f8 (org-ietf-cbor main, forward only):
+         ;; the typed encoder (one function per CBOR type, no run-time dispatch;
+         ;; owner decision 2026-09-25); cbor.core passes the Kotoba project check;
+         ;; golden 2,367 values 0 byte diff (adr-2609242330 S1c).
+         :git/sha "a09268f8227a8c9b1ce145fa57b244af2ebe7d5e"} ;; Advanced 2026-09-24 4c129f82 -> 8ddc27d6 (main tip, forward only): selfhost walls: fn-body-clj-only, some-two-arg, regex literal, char literal, clojure.* to kotoba.*
         ;; org-ietf-ed25519: named by kotoba-core-contracts 06d1e98a and
         ;; security 0e8e1a61 as c1ba8322. Its main adds `org-ietf-x25519` (a
         ;; real dependency of ed25519.edwards, two unannotated modules) -- taken,
