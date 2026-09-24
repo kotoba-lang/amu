@@ -1,8 +1,8 @@
 (ns kotoba.compiler.ipld-adl-test
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [kotoba.bytes :as kbytes] [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.ipld-adl :as adl]
             [kotoba.verifier.signing :as signing])
-  (:import (java.nio.charset StandardCharsets)
+  (:import
            (java.nio.file Files)
            (java.nio.file.attribute FileAttribute)))
 
@@ -17,7 +17,7 @@
                     "\"engineId\":\"kotoba.ipld-adl-wasmtime/v1\","
                     "\"engineVersion\":\"47.0.3\","
                     "\"fuelUsed\":7,\"memoryPages\":1,\"outputBytes\":4}'\n")]
-    (Files/write path (.getBytes source StandardCharsets/UTF_8)
+    (Files/write path (kbytes/utf8-bytes source)
                  (make-array java.nio.file.OpenOption 0))
     (.setExecutable (.toFile path) true true)
     path))
@@ -36,7 +36,7 @@
                     "\"engineVersion\":\"47.0.3\","
                     "\"fuelUsed\":7,\"memoryPages\":1,\"outputBytes\":"
                     byte-count "}'\n")]
-    (Files/write path (.getBytes source StandardCharsets/UTF_8)
+    (Files/write path (kbytes/utf8-bytes source)
                  (make-array java.nio.file.OpenOption 0))
     (.setExecutable (.toFile path) true true)
     path))
@@ -144,7 +144,7 @@
                          :receipt-sink #(swap! receipts conj %)})]
         ;; The capability executes the runner bytes admitted at construction,
         ;; so a later path replacement cannot change the attested artifact.
-        (Files/write runner (.getBytes "#!/bin/sh\nexit 99\n" StandardCharsets/UTF_8)
+        (Files/write runner (kbytes/utf8-bytes "#!/bin/sh\nexit 99\n")
                      (make-array java.nio.file.OpenOption 0))
         ((:invoke capability)
          {:abi "ipld-adl-wasm-v1" :engine-id adl/engine-id

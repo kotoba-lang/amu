@@ -1,5 +1,5 @@
 (ns kotoba.compiler.f32-value-test
-  (:require [clojure.java.shell :as shell]
+  (:require [kotoba.bytes :as kbytes] [kotoba.process :as shell]
             [clojure.test :refer [deftest is testing]]
             [kotoba.wasm.typed :as typed]
             [kotoba.compiler.core :as compiler]
@@ -86,9 +86,9 @@
   (let [js-artifact (compiler/compile-source source :js-kotoba-v1)
         wasm-artifact (compiler/compile-source source :wasm32-browser-kotoba-v1)
         kir (:kir js-artifact)
-        js-encoded (.encodeToString (java.util.Base64/getEncoder)
-                                    (.getBytes ^String (:source js-artifact) "UTF-8"))
-        wasm-encoded (.encodeToString (java.util.Base64/getEncoder) (:bytes wasm-artifact))
+        js-encoded (kbytes/base64-encode
+                                    (kbytes/utf8-bytes ^String (:source js-artifact)))
+        wasm-encoded (kbytes/base64-encode (:bytes wasm-artifact))
         js-result (node-run (str "import('data:text/javascript;base64," js-encoded
                                  "').then(m=>{const x=m.instantiateKotoba({});" assertions "})"))
         wasm-result (node-run

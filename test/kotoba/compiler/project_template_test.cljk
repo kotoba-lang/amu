@@ -7,8 +7,8 @@
   Every refusal here is asserted by its MESSAGE. The failures are easy to
   confuse -- each one ends in a module that did not link -- and a control that
   only checks for a throw counts a run that died for another reason."
-  (:require [clojure.java.shell :as shell]
-            [clojure.set :as set]
+  (:require [kotoba.bytes :as kbytes] [kotoba.process :as shell]
+            [kotoba.lang.coll :as set]
             [clojure.test :refer [deftest is testing]]
             [kotoba.lang.text :as str]
             [kotoba.compiler.core :as compiler]
@@ -101,7 +101,7 @@
     (is (= 3 (count modules))))
   (is (= 5 (execute sources 'root 'main [])) "in the KIR interpreter")
   (let [artifact (compiler/compile-project sources 'root :wasm32-browser-kotoba-v1)
-        encoded (.encodeToString (java.util.Base64/getEncoder) (:bytes artifact))
+        encoded (kbytes/base64-encode (:bytes artifact))
         result (shell/sh "node" "--input-type=module" "-e"
                          (str "import('./runtime/browser-host.mjs').then(async m=>{"
                               "const h=await m.instantiateKotoba(Buffer.from('" encoded "','base64'));"

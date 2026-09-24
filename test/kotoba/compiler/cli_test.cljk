@@ -1,8 +1,8 @@
 (ns kotoba.compiler.cli-test
-  (:require [kotoba.compiler.atomic-output :as atomic-output]
+  (:require [kotoba.io :as kio] [kotoba.compiler.atomic-output :as atomic-output]
             [clojure.edn :as edn]
             [clojure.java.io :as io]
-            [clojure.java.shell :as shell]
+            [kotoba.process :as shell]
             [kotoba.lang.text :as str]
             [clojure.tools.reader :as reader]
             [clojure.test :refer [deftest is testing use-fixtures]]
@@ -121,8 +121,8 @@
         (if (= expected-format :wasm/v1)
           (is (= [0 0x61 0x73 0x6d]
                  (mapv #(bit-and % 0xff)
-                       (take 4 (java.nio.file.Files/readAllBytes
-                                (.toPath (java.io.File. output)))))))
+                       (take 4 (kio/read-all-bytes
+                                (java.io.File. output))))))
           (is (str/includes? (slurp output) "export")))))))
 
 (deftest cljs-target-alias-reaches-the-cljs-backend
@@ -163,8 +163,8 @@
       (is (str/includes? (slurp output) "instantiateKotoba")))))
 
 (deftest compile-source-path-loads-only-a-closed-qualified-project
-  (let [directory (.toFile (java.nio.file.Files/createTempDirectory
-                            "kotoba-cli-project-" (make-array java.nio.file.attribute.FileAttribute 0)))
+  (let [directory (kio/temp-dir
+                            "kotoba-cli-project-")
         source-directory (io/file directory "src")
         dependency (io/file source-directory "example/text.kotoba")
         root (io/file directory "main.kotoba")
@@ -188,9 +188,8 @@
 
 (deftest compile-source-path-component-multi-file-project
   "T8.3 multi-file project kit body first slice: --target component + --source-path."
-  (let [directory (.toFile (java.nio.file.Files/createTempDirectory
-                            "kotoba-cli-component-project-"
-                            (make-array java.nio.file.attribute.FileAttribute 0)))
+  (let [directory (kio/temp-dir
+                            "kotoba-cli-component-project-")
         source-directory (io/file directory "src")
         dependency (io/file source-directory "example/text.kotoba")
         root (io/file directory "main.kotoba")
@@ -221,9 +220,8 @@
 
 (deftest compile-source-path-component-multi-file-with-or
   "T8.3: multi-file Component must admit linked `or` desugar synthetics."
-  (let [directory (.toFile (java.nio.file.Files/createTempDirectory
-                            "kotoba-cli-component-or-"
-                            (make-array java.nio.file.attribute.FileAttribute 0)))
+  (let [directory (kio/temp-dir
+                            "kotoba-cli-component-or-")
         source-directory (io/file directory "src")
         dependency (io/file source-directory "example/bounds.kotoba")
         root (io/file directory "main.kotoba")
@@ -249,9 +247,8 @@
           (is (= "1" (str/trim (:out run)))))))))
 
 (deftest compile-repeated-source-path-links-explicit-package-roots
-  (let [directory (.toFile (java.nio.file.Files/createTempDirectory
-                            "kotoba-cli-multi-root-"
-                            (make-array java.nio.file.attribute.FileAttribute 0)))
+  (let [directory (kio/temp-dir
+                            "kotoba-cli-multi-root-")
         app-root (io/file directory "app-src")
         library-root (io/file directory "library-src")
         dependency (io/file library-root "shared/answer.kotoba")
@@ -275,9 +272,8 @@
       (is (str/includes? (slurp output) "moduleSourceDigests")))))
 
 (deftest compile-repeated-source-path-rejects-cross-package-shadowing
-  (let [directory (.toFile (java.nio.file.Files/createTempDirectory
-                            "kotoba-cli-ambiguous-root-"
-                            (make-array java.nio.file.attribute.FileAttribute 0)))
+  (let [directory (kio/temp-dir
+                            "kotoba-cli-ambiguous-root-")
         roots (mapv #(io/file directory %) ["one" "two"])
         root (io/file directory "main.kotoba")
         status (atom nil)
@@ -303,9 +299,8 @@
              (:message report))))))
 
 (deftest compile-source-path-rejects-namespace-path-substitution
-  (let [directory (.toFile (java.nio.file.Files/createTempDirectory
-                            "kotoba-cli-project-reject-"
-                            (make-array java.nio.file.attribute.FileAttribute 0)))
+  (let [directory (kio/temp-dir
+                            "kotoba-cli-project-reject-")
         dependency (io/file directory "example/text.kotoba")
         root (io/file directory "example/app.kotoba")
         status (atom nil)
@@ -371,7 +366,7 @@
     (binding [*out* out]
       (cli/-main "compile" source "--target" "x86_64-aiueos-user-v1"
                  "--output" output))
-    (let [bytes (java.nio.file.Files/readAllBytes (.toPath (java.io.File. output)))]
+    (let [bytes (kio/read-all-bytes (java.io.File. output))]
       (is (= [0x7f 0x45 0x4c 0x46]
              (mapv #(bit-and % 0xff) (take 4 bytes)))))))
 
@@ -382,7 +377,7 @@
     (binding [*out* out]
       (cli/-main "compile" source "--target" "x86_64-aiueos-kernel-v1"
                  "--artifact" "image" "--output" output))
-    (let [bytes (java.nio.file.Files/readAllBytes (.toPath (java.io.File. output)))]
+    (let [bytes (kio/read-all-bytes (java.io.File. output))]
       (is (= [0x7f 0x45 0x4c 0x46]
              (mapv #(bit-and % 0xff) (take 4 bytes))))
       (is (= 2 (bit-and (aget bytes 16) 0xff)) "ET_EXEC, not ET_REL"))))
@@ -394,7 +389,7 @@
     (binding [*out* out]
       (cli/-main "compile" source "--target" "x86_64-aiueos-kernel-v1"
                  "--artifact" "image" "--fuel" "4096" "--output" output))
-    (let [bytes (java.nio.file.Files/readAllBytes (.toPath (java.io.File. output)))
+    (let [bytes (kio/read-all-bytes (java.io.File. output))
           buffer (doto (ByteBuffer/wrap bytes) (.order ByteOrder/LITTLE_ENDIAN))
           program-header-offset (.getLong buffer 32)
           program-header-size (.getShort buffer 54)
@@ -410,7 +405,7 @@
   The packager emits RX first and RW second; p_offset is the third field of
   an ELF64 program header, and the context's fuel lives 8 bytes in."
   [output]
-  (let [bytes (java.nio.file.Files/readAllBytes (.toPath (java.io.File. output)))
+  (let [bytes (kio/read-all-bytes (java.io.File. output))
         buffer (doto (ByteBuffer/wrap bytes) (.order ByteOrder/LITTLE_ENDIAN))
         program-header-offset (.getLong buffer 32)
         program-header-size (.getShort buffer 54)
@@ -422,8 +417,8 @@
   "A two-module project on disk: `<dir>/main.kotoba` requiring
   `<dir>/src/example/<name>.kotoba`. Returns the root file and source root."
   [root-source module-name module-source]
-  (let [directory (.toFile (java.nio.file.Files/createTempDirectory
-                            "kotoba-cli-project-" (make-array java.nio.file.attribute.FileAttribute 0)))
+  (let [directory (kio/temp-dir
+                            "kotoba-cli-project-")
         source-directory (io/file directory "src")
         dependency (io/file source-directory (str "example/" module-name ".kotoba"))
         root (io/file directory "main.kotoba")]
@@ -524,7 +519,7 @@
               *out* out]
       (cli/-main "compile" source "--target" "wasm32" "--output" output))
     (let [report (edn/read-string (str out))
-          bytes (java.nio.file.Files/readAllBytes (.toPath (java.io.File. ^String output)))]
+          bytes (kio/read-all-bytes (java.io.File. ^String output))]
       (is (nil? @status))
       (is (:ok report))
       (is (= [0 97 115 109] (mapv #(bit-and % 0xff) (take 4 bytes)))
@@ -547,8 +542,8 @@
                  "--policy" policy-file
                  "--output" output))
     (let [report (edn/read-string (str out))
-          written (java.nio.file.Files/readAllBytes
-                   (.toPath (java.io.File. ^String output)))
+          written (kio/read-all-bytes
+                   (java.io.File. ^String output))
           direct (compiler/compile-component
                   text policy {:target :wasm-component-kotoba-v2})
           wit (slurp (str output ".wit"))]
@@ -559,8 +554,8 @@
       (is (str/includes? wit "resource grant;")))))
 
 (defn- multi-module-project! []
-  (let [directory (.toFile (java.nio.file.Files/createTempDirectory
-                            "kotoba-cli-pinned-" (make-array java.nio.file.attribute.FileAttribute 0)))
+  (let [directory (kio/temp-dir
+                            "kotoba-cli-pinned-")
         source-directory (io/file directory "src")
         dependency (io/file source-directory "example/text.kotoba")
         root (io/file directory "main.kotoba")]
