@@ -31,18 +31,50 @@
 (defn- exact-map? [value fields]
   (and (map? value) (= fields (set (keys value)))))
 
+;; Character classes are spelled as scans over one-character substrings, not
+;; host regex literals: a `#"..."` is host data and the Kotoba project route
+;; refuses it (kotoba.error/host-regex-literal). Each predicate accepts exactly
+;; the language of the regex it replaced (named beside it).
+
+(defn- all-in? [value start alphabet]
+  (loop [i start]
+    (cond (= i (count value)) true
+          (str/includes? alphabet (subs value i (inc i))) (recur (inc i))
+          :else false)))
+
+;; was (re-find #"[\u0000-\u001f\u007f]" value): a code unit below U+0020
+;; compares below " ", and DEL is named.
+(defn- control-free? [value]
+  (loop [i 0]
+    (cond (= i (count value)) true
+          (let [c (subs value i (inc i))]
+            (or (neg? (compare c " ")) (= c "\u007f"))) false
+          :else (recur (inc i)))))
+
 (defn- bounded-string? [value limit]
   (and (string? value)
        (not (str/blank? value))
        (<= (count value) limit)
-       (not (re-find #"[\u0000-\u001f\u007f]" value))))
+       (control-free? value)))
 
+;; was (re-matches #"[0-9a-f]{64}" value)
 (defn- sha256? [value]
-  (and (string? value) (boolean (re-matches #"[0-9a-f]{64}" value))))
+  (and (string? value) (= 64 (count value)) (all-in? value 0 "0123456789abcdef")))
 
+;; was (re-matches #"[a-z][a-z0-9+.-]*:.+" value). `.` is any code unit but a
+;; line terminator; bounded-string? has already refused \n and \r, and
+;; U+2028 / U+2029 are refused here by name. (U+0085 was a terminator for
+;; java.util.regex and not for JavaScript; it is now accepted on both.)
 (defn- principal-id? [value]
   (and (bounded-string? value 512)
-       (boolean (re-matches #"[a-z][a-z0-9+.-]*:.+" value))))
+       (let [colon (str/index-of value ":")]
+         (and (some? colon)
+              (<= 1 colon)
+              (< (inc colon) (count value))
+              (str/includes? "abcdefghijklmnopqrstuvwxyz" (subs value 0 1))
+              (all-in? (subs value 0 colon) 1 "abcdefghijklmnopqrstuvwxyz0123456789+.-")
+              (not (str/includes? value "\u2028"))
+              (not (str/includes? value "\u2029"))))))
 
 (defn- capability-id? [value]
   (and (integer? value) (<= 0 value 255)))

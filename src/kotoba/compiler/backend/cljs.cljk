@@ -270,10 +270,25 @@
 
           :else (apply list op (map lower-expr args)))))))
 
+;; __kotoba_invoke(?:_[^$]+)?\$arity[0-4], spelled as a scan: a host regex
+;; literal is refused on the Kotoba project route (host-regex-literal).
+(defn- closure-dispatcher-name? [n]
+  (let [prefix "__kotoba_invoke"
+        k (count n)
+        suffix-at (- k 7)]
+    (and (str/starts-with? n prefix)
+         (<= (count prefix) suffix-at)
+         (= "$arity" (subs n suffix-at (dec k)))
+         (str/includes? "01234" (subs n (dec k)))
+         (let [middle (subs n (count prefix) suffix-at)]
+           (or (= "" middle)
+               (and (< 1 (count middle))
+                    (str/starts-with? middle "_")
+                    (not (str/includes? middle "$"))))))))
+
 (defn- lower-function [{:keys [name params param-types result body]} exported?]
   (let [closure-dispatcher?
-        (boolean (re-matches #"__kotoba_invoke(?:_[^$]+)?\$arity[0-4]"
-                             (clojure.core/name name)))
+        (closure-dispatcher-name? (clojure.core/name name))
         ;; A closure is an i64 handle in Wasm/KIR but a private two-word pair
         ;; in the host CLJS representation. Dispatcher entry is internal and
         ;; validates the handle by closed lambda id, so do not apply the public

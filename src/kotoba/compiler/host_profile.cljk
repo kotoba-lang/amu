@@ -38,10 +38,85 @@
              {:field label :unknown (set unknown)}))
   value)
 
-(defn- bounded-string! [label value maximum pattern]
+;; Each descriptor field is checked by a character-class predicate spelled as
+;; a scan over one-character substrings, not by a host regex literal: a
+;; `#"..."` is host data and the Kotoba project route refuses it
+;; (kotoba.error/host-regex-literal). Every predicate below accepts exactly the
+;; language of the regex it replaced, which is named beside it.
+(def ^:private lower-letters "abcdefghijklmnopqrstuvwxyz")
+(def ^:private upper-letters "ABCDEFGHIJKLMNOPQRSTUVWXYZ")
+(def ^:private digit-chars "0123456789")
+(def ^:private alnum-chars (str upper-letters lower-letters digit-chars))
+
+(defn- char-in? [value i alphabet]
+  (str/includes? alphabet (subs value i (inc i))))
+
+(defn- chars-in? [value start end alphabet]
+  (loop [i start]
+    (cond (>= i end) true
+          (char-in? value i alphabet) (recur (inc i))
+          :else false)))
+
+(defn- head-and-tail? [value head tail]
+  (and (char-in? value 0 head) (chars-in? value 1 (count value) tail)))
+
+;; (?:\./|(?:\.\./){1,8})[A-Za-z0-9_./-]+\.mjs -- the prefix characters are
+;; themselves body characters, so the shortest prefix leaves the longest body.
+(defn- module-path? [value]
+  (let [n (count value)
+        core (- n 4)]
+    (and (str/ends-with? value ".mjs")
+         (or (and (str/starts-with? value "./") (< 2 core))
+             (and (str/starts-with? value "../") (< 3 core)))
+         (chars-in? value 0 core (str alnum-chars "_./-")))))
+
+;; [A-Za-z_$][A-Za-z0-9_$]*
+(defn- identifier? [value]
+  (head-and-tail? value (str upper-letters lower-letters "_$") (str alnum-chars "_$")))
+
+;; [a-z0-9](?:[a-z0-9-]*[a-z0-9])?
+(defn- service-name? [value]
+  (let [n (count value)]
+    (and (chars-in? value 0 n (str lower-letters digit-chars "-"))
+         (not (str/starts-with? value "-"))
+         (not (str/ends-with? value "-")))))
+
+;; [A-Z][A-Z0-9_]*
+(defn- binding-name? [value]
+  (head-and-tail? value upper-letters (str upper-letters digit-chars "_")))
+
+;; [A-Za-z0-9][A-Za-z0-9._-]*
+(defn- object-name? [value]
+  (head-and-tail? value alnum-chars (str alnum-chars "._-")))
+
+;; \d{4}-\d{2}-\d{2}
+(defn- date? [value]
+  (and (= 10 (count value))
+       (chars-in? value 0 4 digit-chars)
+       (= "-" (subs value 4 5))
+       (chars-in? value 5 7 digit-chars)
+       (= "-" (subs value 7 8))
+       (chars-in? value 8 10 digit-chars)))
+
+;; [A-Za-z0-9][A-Za-z0-9._~!$&'()*+,;=:@/-]*
+(defn- key-prefix? [value]
+  (head-and-tail? value alnum-chars (str alnum-chars "._~!$&'()*+,;=:@/-")))
+
+;; [A-Za-z0-9.-]+
+(defn- route-pattern? [value]
+  (chars-in? value 0 (count value) (str alnum-chars ".-")))
+
+;; [A-Za-z0-9*/,? -]+
+(defn- cron? [value]
+  (chars-in? value 0 (count value) (str alnum-chars "*/,? -")))
+
+;; (?s).* -- any text; the length bound is the whole check.
+(defn- any-text? [_value] true)
+
+(defn- bounded-string! [label value maximum admitted?]
   (when-not (and (string? value)
                  (<= 1 (count value) maximum)
-                 (re-matches pattern value))
+                 (admitted? value))
     (reject! (str label " is invalid") {:field label}))
   value)
 
@@ -53,23 +128,23 @@
 
 (defn- module-path! [value]
   (bounded-string! :application/module value 256
-                   #"(?:\./|(?:\.\./){1,8})[A-Za-z0-9_./-]+\.mjs"))
+                   module-path?))
 
 (defn- identifier! [value]
   (bounded-string! :application/factory value 96
-                   #"[A-Za-z_$][A-Za-z0-9_$]*"))
+                   identifier?))
 
 (defn- service-name! [value]
-  (bounded-string! :service value 63 #"[a-z0-9](?:[a-z0-9-]*[a-z0-9])?"))
+  (bounded-string! :service value 63 service-name?))
 
 (defn- binding-name! [value]
-  (bounded-string! :binding value 64 #"[A-Z][A-Z0-9_]*"))
+  (bounded-string! :binding value 64 binding-name?))
 
 (defn- object-name! [label value]
-  (bounded-string! label value 128 #"[A-Za-z0-9][A-Za-z0-9._-]*"))
+  (bounded-string! label value 128 object-name?))
 
 (defn- date! [value]
-  (bounded-string! :compatibility-date value 10 #"\d{4}-\d{2}-\d{2}"))
+  (bounded-string! :compatibility-date value 10 date?))
 
 (defn- origin! [value]
   (let [uri (try (java.net.URI. value) (catch Exception _ nil))]
@@ -85,7 +160,7 @@
 
 (defn- prefix! [value]
   (bounded-string! :object-store/key-prefix value 256
-                   #"[A-Za-z0-9][A-Za-z0-9._~!$&'()*+,;=:@/-]*"))
+                   key-prefix?))
 
 (defn- normalize-application [value]
   (exact-keys! :application value application-keys)
@@ -100,7 +175,7 @@
    (fn [route]
      (exact-keys! :route route route-keys)
      (let [pattern (bounded-string! :route/pattern (:pattern route) 253
-                                    #"[A-Za-z0-9.-]+")
+                                    route-pattern?)
            custom? (:custom-domain? route)]
        (when-not (boolean? custom?)
          (reject! "route custom-domain? must be boolean"
@@ -111,7 +186,7 @@
 (defn- normalize-crons [values]
   (when-not (and (vector? values) (<= (count values) 16))
     (reject! "crons must be a bounded vector" {:field :crons :limit 16}))
-  (mapv #(bounded-string! :cron % 96 #"[A-Za-z0-9*/,? -]+") values))
+  (mapv #(bounded-string! :cron % 96 cron?) values))
 
 (defn- normalize-bindings [values]
   (when-not (and (vector? values) (<= (count values) 32))
@@ -136,7 +211,7 @@
   (into (sorted-map)
         (map (fn [[key value]]
                [(binding-name! (name key))
-                (bounded-string! :vars/value value 4096 #"(?s).*")]))
+                (bounded-string! :vars/value value 4096 any-text?)]))
         values))
 
 (defn- normalize-secrets [values]
