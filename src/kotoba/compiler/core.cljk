@@ -738,7 +738,7 @@
                :floating-point-policy floating-point-policy))
 
       :else
-      (let [program (select-keys kir [:format :entry :exports :signature :effects :functions])
+      (let [program (ir/native-program kir)
             ;; The verifier only receives this closed program from the sealed
             ;; artifact. Native bytes therefore must be a pure function of the
             ;; same value, never of compiler-private KIR metadata.

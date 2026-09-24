@@ -640,8 +640,16 @@ The first algebraic-result profile is `:result-i64`. `(result-ok value)` and
 `result-ok?`, `result-value`, and `result-error` inspect it without host
 truthiness or sentinels, and the two projections evaluate their fallback only
 for the opposite variant. Its Web ABI is frozen `[true, bigint]` or
-`[false, bigint]`. This closes a monomorphic tagged-union ABI foundation; it
-does not yet admit generic or recursive ADTs.
+`[false, bigint]`. This closes a monomorphic tagged-union ABI foundation;
+generic and recursive ADTs are the parametric and variant profiles below.
+On the native targets (x86_64 / aarch64) a recursive variant -- a type that
+names itself through `[:ref ...]`, with children in a heterogeneous vector or
+a record -- and a generic `[:option T]` / `[:result T E]` over it cross
+internal calls as one-word pair handles (kotoba-native aggregate ABI v8,
+ADR 0087; `examples/recursive-*.kotoba`). Exported functions keep the narrower
+host-validated boundary, handle equality stays refused, and every typed value
+is still bounded by the shared ADT budget (64 nodes, depth 12) that all
+targets re-check.
 
 Parametric results use `[:result ok-type err-type]`. Their constructors and
 projections are the explicit `result-*-of` forms and always carry the same
