@@ -67,7 +67,7 @@ static const GUID KEXE_CONDITION_FLAGS =
 #define KEXE_MAX_CODE (1024u * 1024u)
 #define KEXE_PAIR_CAPACITY 4096u
 #define KEXE_STRING_POOL_BYTES 65536u
-#define KEXE_RECORD_FIELD_LIMIT 128u
+#define KEXE_RECORD_FIELD_LIMIT 32u /* lang/limits.edn :language/static :record-fields (128 until 2026-09-24, adr-2609242100 P1) */
 #define KEXE_VECTOR_CAPACITY 4096u
 #define KEXE_VECTOR_ITEM_CAPACITY 65536u
 /* One vector's length bound, re-derived from kotoba.kir.value/vector-item-limit

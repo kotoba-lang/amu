@@ -117,7 +117,18 @@ typedef int64_t (*kexe_fn8)(int64_t, int64_t, int64_t, int64_t,
  * still fixed, and the sentence above is about argv either way.) */
 #define KEXE_REGION_CAPACITY 8u
 #define KEXE_REGION_POOL_BYTES 65536u
-#define KEXE_RECORD_FIELD_LIMIT 128u
+/* Fields of one record crossing argv or a result: kotoba-lang lang/limits.edn
+ * :language/static :record-fields, 32 like every compiler and runtime that
+ * admits the record. It was 128 with no recorded reason (a record the
+ * compiler refuses at 33 fields could never reach this decoder), and a copy
+ * that disagrees is a copy nobody reads -- adr-2609242100 P1. */
+#define KEXE_RECORD_FIELD_LIMIT 32u
+/* The largest fuel budget a run may be given: 2^53-1, kotoba.kir/max-fuel,
+ * the last budget from which every decrement to zero is exact on the
+ * reference interpreter, and the ceiling every other route (verifier, nbb
+ * cli, elf64 packager) already enforced. The loader checked only > 0 until
+ * 2026-09-24 (adr-2609242100 P1); lang/limits.edn :profile/native :fuel :max. */
+#define KEXE_FUEL_MAX 9007199254740991ull
 /* Fuel the guest starts with. 512 unless KEXE_FUEL names another positive
  * decimal budget; the loader enforces the number it is handed and decides
  * nothing about it (the kbb shim passes `--fuel` through here). The CPU and
@@ -5029,6 +5040,13 @@ int main(int argc, char **argv) {
     }
   }
 #endif
+  /* Refused, not clamped, and checked for a packaged command's baked budget
+   * too: a budget above the ceiling is one the reference interpreter could
+   * not have counted down exactly, so the two routes would disagree. */
+  if (kexe_initial_fuel > KEXE_FUEL_MAX) {
+    fprintf(stderr, "kexe-loader: KEXE_FUEL exceeds the maximum budget 9007199254740991 (2^53-1)\n");
+    return 2;
+  }
   /* The string arena budget, in force for this run only. Same shape as
    * KEXE_FUEL above: absent means the default, present means a positive
    * decimal, and anything else is refused BEFORE the guest starts rather

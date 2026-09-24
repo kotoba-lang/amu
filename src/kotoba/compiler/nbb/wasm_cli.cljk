@@ -7,6 +7,7 @@
   {:kotoba/export [targets]}
   (:require ["node:path" :as node-path]
             [kotoba.compiler.capability-names :as cap-names]
+            [kotoba.compiler.limits :as limits]
             [kotoba.compiler.nbb.cli-support :as support]
             [kotoba.compiler.definition-identity :as definition-identity]
             [kotoba.compiler.nbb.package-authoring :as package-authoring]
@@ -158,17 +159,7 @@
                                  (ir/uses-f64? kir) (conj :ieee-754-f64))
                 :limits (cond-> {:fuel fuel :replenishable? false}
                           typed-values?
-                          (assoc :parametric-adt-depth 12
-                                 :parametric-adt-nodes 64
-                                 :variant-cases 32
-                                 :heterogeneous-vector-items 32
-                                 :typed-set-items 32
-                                 :typed-map-entries 31
-                                 :record-fields 32
-                                 :vector-i64-items 16384
-                                 :vector-f64-items 16384
-                                 :compact-graph-items 128
-                                 :string-index-key-bytes 65536))
+                          (merge (limits/typed-manifest-limits :profile/wasm)))
                 :bytes nil}
         wasm-features (:wasm-features result)
         ;; Computed ONCE and carried on the result, so `provenance/descriptor`
