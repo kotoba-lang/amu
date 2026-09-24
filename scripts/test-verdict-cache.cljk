@@ -1,0 +1,103 @@
+#!/usr/bin/env kbb
+;; adr-2609242100 P5. The persistent verdict cache, asked of the REAL
+;; `bin/amu compile` in separate processes -- the claim is that a verdict
+;; survives the process, so a test inside one process would not test it.
+;;
+;;   a  cold compile                          -> :native-verify :miss
+;;   b  warm compile, same input              -> :hit, .kexe and provenance
+;;                                               byte-identical to (a)
+;;   c  one byte of a definition changed      -> :miss
+;;   d  another target                        -> :miss
+;;   e  the stored entry tampered             -> :rejected, the pinned
+;;                                               warning on stderr, bytes
+;;                                               identical to (a); then :hit
+;;   f  KOTOBA_VERDICT_CACHE=off              -> :disabled
+;;
+;; The toolchain and limits-table fields of the key are covered by
+;; test/kotoba/compiler/nbb/verdict_cache_test.cljk (run-tests.cljk).
+;;
+;;   kbb --backend sci --classpath . scripts/test-verdict-cache.cljk
+
+(ns scripts.test-verdict-cache
+  (:require [kotoba.lang.text :as str]
+            [scripts.lib :as lib]
+            ["node:fs" :as fs]))
+
+(def directory (lib/temp-dir "amu-verdict-cache-it-"))
+(def cache-dir (lib/join directory "verdicts"))
+
+(def sources
+  {"base.kotoba" (str "(ns d (:export [main]))\n"
+                      "(defn helper [a] (+ a 2))\n"
+                      "(defn main [] (helper 3))\n")
+   "body.kotoba" (str "(ns d (:export [main]))\n"
+                      "(defn helper [a] (+ a 3))\n"
+                      "(defn main [] (helper 3))\n")})
+
+(doseq [[nm text] sources] (lib/write-text! (lib/join directory nm) text))
+
+(def failures (atom []))
+(defn check! [ok? message]
+  (println (if ok? "PASS" "FAIL") message)
+  (when-not ok? (swap! failures conj message)))
+
+(defn compile! [id src target & {:keys [env]}]
+  (let [out (lib/join directory (str id ".kexe"))
+        r (lib/run js/process.execPath
+                   [(lib/join lib/root "bin" "amu") "compile" (lib/join directory src)
+                    "--target" target "--output" out]
+                   {:env (merge {"KOTOBA_VERDICT_CACHE_DIR" cache-dir} env)
+                    :allow-failure? true})]
+    (when-not (zero? (:status r))
+      (throw (js/Error. (str id " failed: " (lib/describe-exit r) "\n" (:stderr r)))))
+    (assoc r :out out
+           :status* (some-> (re-find #":native-verify (:[a-z]+)" (:stdout r)) second))))
+
+(defn same-bytes? [a b]
+  (and (= (lib/sha256 (:out a)) (lib/sha256 (:out b)))
+       (= (lib/sha256 (str (:out a) ".provenance.edn"))
+          (lib/sha256 (str (:out b) ".provenance.edn")))))
+
+(let [cold (compile! "cold" "base.kotoba" "aarch64")
+      warm (compile! "warm" "base.kotoba" "aarch64")
+      body (compile! "body" "body.kotoba" "aarch64")
+      x86 (compile! "x86" "base.kotoba" "x86_64")]
+  (check! (= ":miss" (:status* cold)) (str "a cold compile misses (" (:status* cold) ")"))
+  (check! (= ":hit" (:status* warm)) (str "a warm compile hits (" (:status* warm) ")"))
+  (check! (same-bytes? cold warm) "the warm artifact and provenance are byte-identical to the cold ones")
+  (check! (= ":miss" (:status* body)) (str "one changed byte of a definition misses (" (:status* body) ")"))
+  (check! (= ":miss" (:status* x86)) (str "another target misses (" (:status* x86) ")"))
+  ;; (e) Flip the stored verdict of the aarch64 base entry to a refusal and
+  ;; leave its digest alone. Exactly one entry for that compile exists: the
+  ;; one whose key material names this target and the base CIDs.
+  (let [entries (->> (.readdirSync fs cache-dir) (map str)
+                     (filter #(str/ends-with? % ".edn")))
+        ;; Both aarch64 entries (base and body) are flipped; the next base
+        ;; compile must reject its own.
+        candidates (filter (fn [n] (str/includes? (lib/read-text (lib/join cache-dir n))
+                                                  ":aarch64-kotoba-v1"))
+                           entries)]
+    (check! (= 3 (count entries)) (str "three distinct keys were stored (" (count entries) ")"))
+    (check! (= 2 (count candidates)) (str "two aarch64 entries to tamper (" (count candidates) ")"))
+    (doseq [n candidates]
+      (let [file (lib/join cache-dir n)]
+        (lib/write-text! file (str/replace (lib/read-text file) ":verdict {:admitted true}"
+                                           ":verdict {:refused {:message \"forged\" :data {:phase :verify}}}"))))
+    (let [tampered (compile! "tampered" "base.kotoba" "aarch64")
+          again (compile! "again" "base.kotoba" "aarch64")]
+      (check! (= ":rejected" (:status* tampered))
+              (str "a tampered entry is rejected (" (:status* tampered) ")"))
+      (check! (boolean (re-find #"kotoba\.verdict-cache: rejected entry [0-9a-f]{64} \(digest-mismatch\); recomputed"
+                                (:stderr tampered)))
+              "the rejection is named on stderr with its reason")
+      (check! (not (str/includes? (:stdout tampered) "forged")) "the forged refusal was not served")
+      (check! (same-bytes? cold tampered) "the recomputed compile is byte-identical to the cold one")
+      (check! (= ":hit" (:status* again)) (str "the recomputed verdict replaced the entry (" (:status* again) ")"))))
+  (let [off (compile! "off" "base.kotoba" "aarch64" :env {"KOTOBA_VERDICT_CACHE" "off"})]
+    (check! (= ":disabled" (:status* off)) (str "KOTOBA_VERDICT_CACHE=off disables (" (:status* off) ")"))
+    (check! (same-bytes? cold off) "the uncached compile is byte-identical too")))
+
+(lib/remove-tree! directory)
+(if (seq @failures)
+  (do (println (count @failures) "failure(s)") (set! (.-exitCode js/process) 1))
+  (println "verdict-cache: cold/warm/changed/target/tamper/off passed"))
