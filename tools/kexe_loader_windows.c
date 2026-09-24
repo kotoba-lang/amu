@@ -146,6 +146,13 @@ struct kexe_context {
   /* ABI v10 (2026-09-16): the two range slots; see kexe_loader.c. */
   void *string_find_byte;
   void *string_append_range;
+  /* ABI v11 (2026-09-25): the string constructor and three bytes slots; see
+   * kexe_loader.c. A refusal here is an unnamed trap -- this host has no
+   * supervisor report to name it in. */
+  void *string_from_utf8;
+  void *bytes_from_vector;
+  void *bytes_slice;
+  void *bytes_concat;
   uint64_t pair_used;
   struct pair_cell pairs[KEXE_PAIR_CAPACITY];
   /* One flag per pair handle: the bytes this handle addresses are
@@ -194,6 +201,10 @@ _Static_assert(offsetof(struct kexe_context, string_compare_lines) == 280, "line
 _Static_assert(offsetof(struct kexe_context, vector_items_base) == 328, "inline ABI");
 _Static_assert(offsetof(struct kexe_context, string_find_byte) == 336, "range ABI");
 _Static_assert(offsetof(struct kexe_context, string_append_range) == 344, "range ABI");
+_Static_assert(offsetof(struct kexe_context, string_from_utf8) == 352, "bytes ABI");
+_Static_assert(offsetof(struct kexe_context, bytes_from_vector) == 360, "bytes ABI");
+_Static_assert(offsetof(struct kexe_context, bytes_slice) == 368, "bytes ABI");
+_Static_assert(offsetof(struct kexe_context, bytes_concat) == 376, "bytes ABI");
 
 static void fail_win(const char *message) {
   fprintf(stderr, "kexe-loader-windows: %s: win32=%lu\n", message, (unsigned long)GetLastError());
@@ -219,7 +230,7 @@ static HANDLE create_guest_job(void) {
 }
 
 static int64_t SYSV cap_call(struct kexe_context *ctx, uint32_t id, int64_t value) {
-  if (ctx == NULL || ctx->version != 10 || id > 255 || !(ctx->allow[id / 8] & (1u << (id % 8))))
+  if (ctx == NULL || ctx->version != 11 || id > 255 || !(ctx->allow[id / 8] & (1u << (id % 8))))
     __builtin_trap();
   return value + 1;
 }
@@ -250,7 +261,7 @@ static int64_t SYSV pair_second(struct kexe_context *ctx, int64_t handle) {
 static const uint8_t *resolve_string_bytes(struct kexe_context *ctx,
                                            int64_t offset, int64_t length) {
   uint64_t pool_offset;
-  if (ctx == NULL || ctx->version != 10 || length < 0) __builtin_trap();
+  if (ctx == NULL || ctx->version != 11 || length < 0) __builtin_trap();
   if (offset >= 0) {
     if ((uint64_t)offset + (uint64_t)length > ctx->code_length ||
         (uint64_t)offset + (uint64_t)length < (uint64_t)offset)
@@ -490,7 +501,7 @@ static int inspect_variant_result(const struct kexe_context *ctx,
  * hosts implement one ABI and must not drift. */
 
 static struct vector_cell *checked_vector(struct kexe_context *ctx, int64_t handle) {
-  if (ctx == NULL || ctx->version != 10 || handle <= 0 ||
+  if (ctx == NULL || ctx->version != 11 || handle <= 0 ||
       (uint64_t)handle > ctx->vector_used) __builtin_trap();
   return &ctx->vectors[(uint64_t)handle - 1];
 }
@@ -505,7 +516,7 @@ static int64_t intern_vector(struct kexe_context *ctx, uint64_t offset, uint64_t
 }
 
 static int64_t SYSV vector_new_empty(struct kexe_context *ctx) {
-  if (ctx == NULL || ctx->version != 10) __builtin_trap();
+  if (ctx == NULL || ctx->version != 11) __builtin_trap();
   return intern_vector(ctx, ctx->vector_item_used, 0);
 }
 
@@ -557,7 +568,7 @@ static int64_t SYSV vector_assoc(struct kexe_context *ctx, int64_t handle,
 static int64_t SYSV vector_alloc(struct kexe_context *ctx, int64_t count) {
   uint64_t offset;
   uint64_t i;
-  if (ctx == NULL || ctx->version != 10) __builtin_trap();
+  if (ctx == NULL || ctx->version != 11) __builtin_trap();
   if (count < 0 || (uint64_t)count > KEXE_VECTOR_LENGTH_LIMIT) __builtin_trap();
   if (ctx->vector_item_used + (uint64_t)count > KEXE_VECTOR_ITEM_CAPACITY) __builtin_trap();
   offset = ctx->vector_item_used;
@@ -912,6 +923,74 @@ static int64_t SYSV string_append_range(struct kexe_context *ctx, int64_t acc,
   return mark_validated(ctx, pair_new(ctx, -((int64_t)pool_offset) - 1, total));
 }
 
+/* ABI v11: see kexe_loader.c's checked_string_from_utf8 -- canonical UTF-8
+ * only, the same walk; a refusal traps. */
+static int canonical_utf8_items(const int64_t *items, uint64_t n) {
+  uint64_t i = 0, j, k;
+  int64_t b0, b1;
+  while (i < n) {
+    b0 = items[i];
+    if (b0 < 0 || b0 > 255) return 0;
+    if (b0 < 0x80) { i++; continue; }
+    if (b0 < 0xc2 || b0 > 0xf4 || i + 1 >= n) return 0;
+    b1 = items[i + 1];
+    k = b0 < 0xe0 ? 1 : b0 < 0xf0 ? 2 : 3;
+    if ((b1 & 0xc0) != 0x80 || b1 > 255 ||
+        (b0 == 0xe0 && b1 < 0xa0) || (b0 == 0xf0 && b1 < 0x90) ||
+        (b0 == 0xed && b1 >= 0xa0) || (b0 == 0xf4 && b1 >= 0x90)) return 0;
+    for (j = 2; j <= k; j++)
+      if (i + j >= n || (items[i + j] & 0xc0) != 0x80 || items[i + j] > 255) return 0;
+    i += k + 1;
+  }
+  return 1;
+}
+
+static int64_t SYSV string_from_utf8(struct kexe_context *ctx, int64_t handle) {
+  struct vector_cell *vector = checked_vector(ctx, handle);
+  uint64_t n = vector->length, i, pool_offset;
+  const int64_t *items = &ctx->vector_items[vector->offset];
+  if (n > 65536u || !canonical_utf8_items(items, n)) __builtin_trap();
+  if (ctx->string_pool_used + n > KEXE_STRING_POOL_BYTES) __builtin_trap();
+  pool_offset = ctx->string_pool_used;
+  for (i = 0; i < n; i++) ctx->string_pool[pool_offset + i] = (uint8_t)items[i];
+  ctx->string_pool_used += n;
+  return mark_validated(ctx, pair_new(ctx, -((int64_t)pool_offset) - 1, (int64_t)n));
+}
+
+static int64_t SYSV bytes_from_vector(struct kexe_context *ctx, int64_t handle) {
+  struct vector_cell *vector = checked_vector(ctx, handle);
+  uint64_t offset = vector->offset, n = vector->length, i, destination;
+  if (n > 65536u) __builtin_trap();
+  for (i = 0; i < n; i++)
+    if (ctx->vector_items[offset + i] < 0 || ctx->vector_items[offset + i] > 255) __builtin_trap();
+  if (ctx->vector_item_used + n > KEXE_VECTOR_ITEM_CAPACITY) __builtin_trap();
+  destination = ctx->vector_item_used;
+  memmove(&ctx->vector_items[destination], &ctx->vector_items[offset], (size_t)n * sizeof(int64_t));
+  ctx->vector_item_used += n;
+  return intern_vector(ctx, destination, n);
+}
+
+static int64_t SYSV bytes_slice(struct kexe_context *ctx, int64_t handle,
+                                int64_t start, int64_t end) {
+  struct vector_cell *vector = checked_vector(ctx, handle);
+  if (start < 0 || end < start || (uint64_t)end > vector->length) __builtin_trap();
+  return intern_vector(ctx, vector->offset + (uint64_t)start, (uint64_t)(end - start));
+}
+
+static int64_t SYSV bytes_concat(struct kexe_context *ctx, int64_t left, int64_t right) {
+  struct vector_cell *a = checked_vector(ctx, left);
+  struct vector_cell *b = checked_vector(ctx, right);
+  uint64_t a_offset = a->offset, a_length = a->length;
+  uint64_t b_offset = b->offset, b_length = b->length, destination;
+  if (a_length + b_length > 65536u) __builtin_trap();
+  if (ctx->vector_item_used + a_length + b_length > KEXE_VECTOR_ITEM_CAPACITY) __builtin_trap();
+  destination = ctx->vector_item_used;
+  memmove(&ctx->vector_items[destination], &ctx->vector_items[a_offset], (size_t)a_length * sizeof(int64_t));
+  memmove(&ctx->vector_items[destination + a_length], &ctx->vector_items[b_offset], (size_t)b_length * sizeof(int64_t));
+  ctx->vector_item_used += a_length + b_length;
+  return intern_vector(ctx, destination, a_length + b_length);
+}
+
 /* See kexe_loader.c's checked_string_code_point_at: offset must be a
  * code-point boundary in [0, byte-length), exclusive upper bound. */
 static int64_t SYSV string_code_point_at(struct kexe_context *ctx, int64_t handle,
@@ -1043,7 +1122,7 @@ static int64_t SYSV typed_cap_call(struct kexe_context *ctx, uint64_t id,
                                    uint64_t request_kind, uint64_t result_kind,
                                    int64_t request) {
   int64_t result;
-  if (ctx == NULL || ctx->version != 10 || id > 255 ||
+  if (ctx == NULL || ctx->version != 11 || id > 255 ||
       !(ctx->allow[id / 8] & (1u << (id % 8))) ||
       request_kind != result_kind ||
       !valid_typed_value(ctx, request_kind, request))
@@ -1808,7 +1887,7 @@ int main(int argc, char **argv) {
   ctx = (struct kexe_context *)VirtualAlloc(NULL, sizeof(*ctx), MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
   if (ctx == NULL) fail_win("VirtualAlloc context");
   ZeroMemory(ctx, sizeof(*ctx));
-  ctx->version = 10;
+  ctx->version = 11;
   ctx->fuel = 512;
   ctx->cap_call = (void *)&cap_call;
   ctx->pair_new = (void *)&pair_new;
@@ -1844,6 +1923,10 @@ int main(int argc, char **argv) {
   ctx->vector_items_base = ctx->vector_items;
   ctx->string_find_byte = (void *)&string_find_byte;
   ctx->string_append_range = (void *)&string_append_range;
+  ctx->string_from_utf8 = (void *)&string_from_utf8;
+  ctx->bytes_from_vector = (void *)&bytes_from_vector;
+  ctx->bytes_slice = (void *)&bytes_slice;
+  ctx->bytes_concat = (void *)&bytes_concat;
   ctx->code_base = code;
   ctx->code_length = (uint64_t)length;
   parse_allow(ctx, argv[5]);

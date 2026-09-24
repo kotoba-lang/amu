@@ -57,6 +57,9 @@ const ALLOWED_IMPORTS = new Set([
   "kotoba:typed/bytes-at/function",
   "kotoba:typed/bytes-slice/function",
   "kotoba:typed/bytes-concat/function",
+  "kotoba:typed/bytes-from-vector-i64/function",
+  "kotoba:typed/vector-i64-from-bytes/function",
+  "kotoba:typed/string-from-utf8/function",
   "kotoba:typed/string-index-of/function",
   "kotoba:typed/assoc-i64/function",
   "kotoba:typed/assoc-f64/function",
@@ -1818,7 +1821,10 @@ function createTypedRuntime(abi, typedCapCall, allow) {
     // kotoba-sema's (frontend `bytes-at` / `bytes-slice` / `bytes-concat`):
     // an unsigned byte widened to i64; an out-of-range index or slice is a
     // trap, never a read past the operand; results are fresh copies bounded
-    // by the 65536-byte bytes value limit.
+    // by the 65536-byte bytes value limit. Since 2026-09-25 each refusal's
+    // CODE is the reference interpreter's trap name (bytes/index-out-of-range,
+    // bytes/slice-bounds, bytes/too-large), as ESM and native name them; it
+    // was the generic invalid-typed-operation / invalid-typed-value.
     "bytes-count"(descriptorId, value) {
       const descriptor = descriptorAt(descriptorId);
       if (descriptor !== "bytes") reject("invalid-typed-operation", "bytes descriptor required");
@@ -1830,7 +1836,7 @@ function createTypedRuntime(abi, typedCapCall, allow) {
       value = assertValue(descriptor, value);
       index = i64(index);
       if (index < 0n || index >= BigInt(value.byteLength))
-        reject("invalid-typed-operation", "bytes index is out of bounds");
+        reject("bytes/index-out-of-range", "bytes index is out of bounds");
       return BigInt(value[Number(index)]);
     },
     "bytes-slice"(descriptorId, value, start, end) {
@@ -1839,7 +1845,7 @@ function createTypedRuntime(abi, typedCapCall, allow) {
       value = assertValue(descriptor, value);
       start = i64(start); end = i64(end);
       if (start < 0n || start > end || end > BigInt(value.byteLength))
-        reject("invalid-typed-operation", "bytes slice offsets are out of bounds");
+        reject("bytes/slice-bounds", "bytes slice offsets are out of bounds");
       return admitValue(descriptor, value.slice(Number(start), Number(end)));
     },
     "bytes-concat"(descriptorId, left, right) {
@@ -1848,11 +1854,75 @@ function createTypedRuntime(abi, typedCapCall, allow) {
       left = assertValue(descriptor, left);
       right = assertValue(descriptor, right);
       if (left.byteLength + right.byteLength > 65536)
-        reject("invalid-typed-value", "typed bytes value is invalid or oversized");
+        reject("bytes/too-large", "typed bytes value is invalid or oversized");
       const result = new Uint8Array(left.byteLength + right.byteLength);
       result.set(left, 0);
       result.set(right, left.byteLength);
       return admitValue(descriptor, result);
+    },
+    // 2026-09-25 (superproject adr-2609242330): the bytes constructor, its
+    // inverse and the string constructor. Each is given the RESULT and the
+    // OPERAND descriptor and checks both. A refusal is a KotobaHostError
+    // whose CODE is the reference interpreter's trap name (osaho kotoba.kir:
+    // bytes/*, utf8/*, string/too-large), so one program refused on every
+    // backend is refused with one name. The UTF-8 walk is the reference's
+    // (kotoba.kir.value/utf8-invalid-at): the first bad sequence is named,
+    // never replaced with U+FFFD.
+    "bytes-from-vector-i64"(descriptorId, vectorDescriptorId, value) {
+      const descriptor = descriptorAt(descriptorId);
+      const source = descriptorAt(vectorDescriptorId);
+      if (descriptor !== "bytes" || !Array.isArray(source) || source[0] !== "vector-i64")
+        reject("invalid-typed-operation", "bytes-from-vector-i64 requires bytes and vector-i64 descriptors");
+      // A vector-i64 value here is [descriptor, item0, item1, ...].
+      const items = assertValue(source, value);
+      const n = items.length - 1;
+      if (n > 65536) reject("bytes/too-large", "bytes-from-vector-i64: more than 65536 items");
+      const result = new Uint8Array(n);
+      for (let i = 0; i < n; i++) {
+        const item = items[i + 1];
+        if (item < 0n || item > 255n) reject("bytes/item-out-of-range", `bytes-from-vector-i64: item ${i} is not in [0,255]`);
+        result[i] = Number(item);
+      }
+      return admitValue(descriptor, result);
+    },
+    "vector-i64-from-bytes"(descriptorId, bytesDescriptorId, value) {
+      const descriptor = descriptorAt(descriptorId);
+      const source = descriptorAt(bytesDescriptorId);
+      if (!Array.isArray(descriptor) || descriptor[0] !== "vector-i64" || source !== "bytes")
+        reject("invalid-typed-operation", "vector-i64-from-bytes requires vector-i64 and bytes descriptors");
+      const bytes = assertValue(source, value);
+      if (bytes.byteLength > VECTOR_ITEM_BUDGET) reject("invalid-typed-value", "vector-i64 item budget exceeded");
+      return admitValue(descriptor, Object.freeze([descriptor, ...Array.from(bytes, b => BigInt(b))]));
+    },
+    "string-from-utf8"(descriptorId, bytesDescriptorId, value) {
+      const descriptor = descriptorAt(descriptorId);
+      const source = descriptorAt(bytesDescriptorId);
+      if (descriptor !== "string" || source !== "bytes")
+        reject("invalid-typed-operation", "string-from-utf8 requires string and bytes descriptors");
+      const b = assertValue(source, value);
+      const n = b.byteLength;
+      if (n > 65536) reject("string/too-large", "string-from-utf8: more than 65536 bytes");
+      let i = 0;
+      while (i < n) {
+        const b0 = b[i];
+        if (b0 < 0x80) { i++; continue; }
+        if (b0 < 0xc0) reject("utf8/unexpected-continuation", `string-from-utf8: byte ${i}`);
+        if (b0 < 0xc2) reject("utf8/overlong", `string-from-utf8: byte ${i}`);
+        if (b0 > 0xf4) reject("utf8/invalid-byte", `string-from-utf8: byte ${i}`);
+        if (i + 1 >= n) reject("utf8/truncated", `string-from-utf8: byte ${i}`);
+        const b1 = b[i + 1];
+        const k = b0 < 0xe0 ? 1 : b0 < 0xf0 ? 2 : 3;
+        if ((b1 & 0xc0) !== 0x80) reject("utf8/bad-continuation", `string-from-utf8: byte ${i + 1}`);
+        if ((b0 === 0xe0 && b1 < 0xa0) || (b0 === 0xf0 && b1 < 0x90)) reject("utf8/overlong", `string-from-utf8: byte ${i}`);
+        if (b0 === 0xed && b1 >= 0xa0) reject("utf8/surrogate", `string-from-utf8: byte ${i}`);
+        if (b0 === 0xf4 && b1 >= 0x90) reject("utf8/above-max", `string-from-utf8: byte ${i}`);
+        for (let j = 2; j <= k; j++) {
+          if (i + j >= n) reject("utf8/truncated", `string-from-utf8: byte ${i}`);
+          if ((b[i + j] & 0xc0) !== 0x80) reject("utf8/bad-continuation", `string-from-utf8: byte ${i + j}`);
+        }
+        i += k + 1;
+      }
+      return new TextDecoder("utf-8", { fatal: true }).decode(b);
     },
     equal(descriptorId, left, right) {
       const descriptor = descriptorAt(descriptorId);

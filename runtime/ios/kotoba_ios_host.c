@@ -51,6 +51,9 @@ struct kotoba_context_v2 {
   int64_t *vector_items_base;
   /* ABI v10 (2026-09-16): the two range slots, unserved here (NULL). */
   void *unserved_range_slots[2];
+  /* ABI v11 (2026-09-25): the string constructor and three bytes slots,
+   * unserved here (NULL). */
+  void *unserved_bytes_slots[4];
   const uint8_t *code_base;
   uint64_t code_length;
 };
