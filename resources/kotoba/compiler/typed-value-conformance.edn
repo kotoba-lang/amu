@@ -47,7 +47,30 @@
   ;; than about one of them working.
   {:id :linear-vector-in-place
    :source "(defn main [] (let [v (vector-alloc 4) a (vector-assoc! v 0 7) b (vector-assoc! a 1 9)] (+ (vector-at b 0) (vector-at b 1))))"
-   :expect 16}]
+   :expect 16}
+  ;; Large values built INSIDE the program (adr-2609242100 P2/P3). Until
+  ;; 2026-09-24 every target re-validated a typed value in full on every
+  ;; construction and call against adt-node-limit 64 / adt-depth-limit 12, so
+  ;; a cons list stopped at about 5 cells and building one was O(n^2). A value
+  ;; is now walked only at a trust boundary; these two are never walked at all.
+  ;; `:fuel` is the run's budget on every target (and the oracle's): tens of
+  ;; thousands of function entries, far past the default 512.
+  ;; `total` reads through helpers because a match-variant binder is not in
+  ;; scope inside a `recur` of an enclosing `loop` (kotoba-sema, 2026-09-24).
+  ;; `kons` is load-bearing on Wasm: with the two constructors spelled inline
+  ;; in the `recur`, the 10,000-cell build exhausted the JS stack inside
+  ;; wasm-function frames (RangeError, measured 2026-09-24) -- the loop was
+  ;; emitted as recursion. A call-depth question for P4, not value validation.
+  {:id :internal-list-10000
+   :source "(ns conformance.list (:export [main]) (:schemas {:conformance/list [:variant :conformance/list [[:empty :i64] [:cons [:ref :conformance/cell]]]] :conformance/cell [:record :conformance/cell [[:head :i64] [:tail [:ref :conformance/list]]]]})) (defn cells [l [:ref :conformance/list]] :i64 (match-variant l [:variant :conformance/list [[:empty :i64] [:cons [:ref :conformance/cell]]]] (:empty e 0) (:cons c 1))) (defn head-of [l [:ref :conformance/list]] :i64 (match-variant l [:variant :conformance/list [[:empty :i64] [:cons [:ref :conformance/cell]]]] (:empty e 0) (:cons c (record-get [:record :conformance/cell [[:head :i64] [:tail [:ref :conformance/list]]]] c :head)))) (defn tail-of [l [:ref :conformance/list]] [:ref :conformance/list] (match-variant l [:variant :conformance/list [[:empty :i64] [:cons [:ref :conformance/cell]]]] (:empty e l) (:cons c (record-get [:record :conformance/cell [[:head :i64] [:tail [:ref :conformance/list]]]] c :tail)))) (defn kons [h :i64 t [:ref :conformance/list]] [:ref :conformance/list] (variant-new [:variant :conformance/list [[:empty :i64] [:cons [:ref :conformance/cell]]]] :cons (record-new [:record :conformance/cell [[:head :i64] [:tail [:ref :conformance/list]]]] h t))) (defn build [count :i64] [:ref :conformance/list] (loop [n count acc (variant-new [:variant :conformance/list [[:empty :i64] [:cons [:ref :conformance/cell]]]] :empty 0)] (if (= n 0) acc (recur (- n 1) (kons n acc))))) (defn total [list [:ref :conformance/list]] :i64 (loop [l list acc 0] (if (= (cells l) 0) acc (recur (tail-of l) (+ acc (head-of l)))))) (defn main [] :i64 (total (build 10000)))"
+   :fuel 1000000
+   :expect 50005000}
+  ;; A balanced tree of 2,000 values (depth 11), built and summed by ordinary
+  ;; non-tail recursion.
+  {:id :internal-tree-2000
+   :source "(ns conformance.tree (:export [main]) (:schemas {:conformance/tree [:variant :conformance/tree [[:leaf :i64] [:node [:ref :conformance/branch]]]] :conformance/branch [:record :conformance/branch [[:left [:ref :conformance/tree]] [:value :i64] [:right [:ref :conformance/tree]]]]})) (defn grow [lo :i64 hi :i64] [:ref :conformance/tree] (if (> lo hi) (variant-new [:variant :conformance/tree [[:leaf :i64] [:node [:ref :conformance/branch]]]] :leaf 0) (let [mid (quot (+ lo hi) 2)] (variant-new [:variant :conformance/tree [[:leaf :i64] [:node [:ref :conformance/branch]]]] :node (record-new [:record :conformance/branch [[:left [:ref :conformance/tree]] [:value :i64] [:right [:ref :conformance/tree]]]] (grow lo (- mid 1)) mid (grow (+ mid 1) hi)))))) (defn sum [t [:ref :conformance/tree]] :i64 (match-variant t [:variant :conformance/tree [[:leaf :i64] [:node [:ref :conformance/branch]]]] (:leaf x x) (:node b (+ (sum (record-get [:record :conformance/branch [[:left [:ref :conformance/tree]] [:value :i64] [:right [:ref :conformance/tree]]]] b :left)) (+ (record-get [:record :conformance/branch [[:left [:ref :conformance/tree]] [:value :i64] [:right [:ref :conformance/tree]]]] b :value) (sum (record-get [:record :conformance/branch [[:left [:ref :conformance/tree]] [:value :i64] [:right [:ref :conformance/tree]]]] b :right))))))) (defn main [] :i64 (sum (grow 1 2000)))"
+   :fuel 1000000
+   :expect 2001000}]
  :negative
  [;; The same program with one name un-threaded: `v` is written twice, so the
   ;; second store would land on what the first consumed. Refused at check
@@ -91,4 +114,29 @@
   {:id :entry-point-takes-arguments
    :source "(defn main [value :i64] :i64 value)"}
   {:id :floating-set-item
-   :source "(defn main [] (typed-set-count [:set :f64] (typed-set [:set :f64] 1.5)))"}]}
+   :source "(defn main [] (typed-set-count [:set :f64] (typed-set [:set :f64] 1.5)))"}]
+ ;; Values that arrive from OUTSIDE: the one place a typed value is walked in
+ ;; full (adr-2609242100 P2/P3), once, by an iterative walk, against the
+ ;; boundary traversal budget (kotoba-lang lang/limits.edn :language/boundary:
+ ;; 65,536 nodes, 1 MiB). The corpus had no vectors asserting a refusal at node
+ ;; 65 or depth 13 to move here -- those limits were never pinned by a vector
+ ;; -- so these are new. `:input {:list-cells n}` is a host-built
+ ;; [:ref :conformance/list] of n cells (3 nodes per cell + the empty tail)
+ ;; passed as `:export`'s one argument; `:expect-trap` names the trap.
+ ;; Run on the reference interpreter and the ESM target; the Wasm instance's
+ ;; boundary is a typed capability result (exported functions accept only
+ ;; host-admitted values), pinned in scripts/test-browser-host-typed-ops.cljk
+ ;; fixture cap-list-result with the same numbers.
+ :boundary
+ [{:id :host-list-deep-admitted
+   :source "(ns conformance.list (:export [main sum]) (:schemas {:conformance/list [:variant :conformance/list [[:empty :i64] [:cons [:ref :conformance/cell]]]] :conformance/cell [:record :conformance/cell [[:head :i64] [:tail [:ref :conformance/list]]]]})) (defn cells [l [:ref :conformance/list]] :i64 (match-variant l [:variant :conformance/list [[:empty :i64] [:cons [:ref :conformance/cell]]]] (:empty e 0) (:cons c 1))) (defn head-of [l [:ref :conformance/list]] :i64 (match-variant l [:variant :conformance/list [[:empty :i64] [:cons [:ref :conformance/cell]]]] (:empty e 0) (:cons c (record-get [:record :conformance/cell [[:head :i64] [:tail [:ref :conformance/list]]]] c :head)))) (defn tail-of [l [:ref :conformance/list]] [:ref :conformance/list] (match-variant l [:variant :conformance/list [[:empty :i64] [:cons [:ref :conformance/cell]]]] (:empty e l) (:cons c (record-get [:record :conformance/cell [[:head :i64] [:tail [:ref :conformance/list]]]] c :tail)))) (defn kons [h :i64 t [:ref :conformance/list]] [:ref :conformance/list] (variant-new [:variant :conformance/list [[:empty :i64] [:cons [:ref :conformance/cell]]]] :cons (record-new [:record :conformance/cell [[:head :i64] [:tail [:ref :conformance/list]]]] h t))) (defn build [count :i64] [:ref :conformance/list] (loop [n count acc (variant-new [:variant :conformance/list [[:empty :i64] [:cons [:ref :conformance/cell]]]] :empty 0)] (if (= n 0) acc (recur (- n 1) (kons n acc))))) (defn total [list [:ref :conformance/list]] :i64 (loop [l list acc 0] (if (= (cells l) 0) acc (recur (tail-of l) (+ acc (head-of l)))))) (defn sum [l [:ref :conformance/list]] :i64 (total l)) (defn main [] :i64 0)"
+   :export sum
+   :input {:list-cells 20000}
+   :fuel 1000000
+   :expect 200010000}
+  {:id :host-list-over-node-budget
+   :source "(ns conformance.list (:export [main sum]) (:schemas {:conformance/list [:variant :conformance/list [[:empty :i64] [:cons [:ref :conformance/cell]]]] :conformance/cell [:record :conformance/cell [[:head :i64] [:tail [:ref :conformance/list]]]]})) (defn cells [l [:ref :conformance/list]] :i64 (match-variant l [:variant :conformance/list [[:empty :i64] [:cons [:ref :conformance/cell]]]] (:empty e 0) (:cons c 1))) (defn head-of [l [:ref :conformance/list]] :i64 (match-variant l [:variant :conformance/list [[:empty :i64] [:cons [:ref :conformance/cell]]]] (:empty e 0) (:cons c (record-get [:record :conformance/cell [[:head :i64] [:tail [:ref :conformance/list]]]] c :head)))) (defn tail-of [l [:ref :conformance/list]] [:ref :conformance/list] (match-variant l [:variant :conformance/list [[:empty :i64] [:cons [:ref :conformance/cell]]]] (:empty e l) (:cons c (record-get [:record :conformance/cell [[:head :i64] [:tail [:ref :conformance/list]]]] c :tail)))) (defn kons [h :i64 t [:ref :conformance/list]] [:ref :conformance/list] (variant-new [:variant :conformance/list [[:empty :i64] [:cons [:ref :conformance/cell]]]] :cons (record-new [:record :conformance/cell [[:head :i64] [:tail [:ref :conformance/list]]]] h t))) (defn build [count :i64] [:ref :conformance/list] (loop [n count acc (variant-new [:variant :conformance/list [[:empty :i64] [:cons [:ref :conformance/cell]]]] :empty 0)] (if (= n 0) acc (recur (- n 1) (kons n acc))))) (defn total [list [:ref :conformance/list]] :i64 (loop [l list acc 0] (if (= (cells l) 0) acc (recur (tail-of l) (+ acc (head-of l)))))) (defn sum [l [:ref :conformance/list]] :i64 (total l)) (defn main [] :i64 0)"
+   :export sum
+   :input {:list-cells 30000}
+   :fuel 1000000
+   :expect-trap :budget/boundary-nodes}]}

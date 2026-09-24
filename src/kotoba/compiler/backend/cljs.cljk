@@ -191,28 +191,28 @@
 
         hetero-vector-new
         (let [[type & items] args]
-          (list 'kotoba$typed-value! (list 'quote type)
+          (list 'kotoba$typed-operand! (list 'quote type)
                 (apply list 'vector (list 'quote type) (map lower-expr items))))
 
         hetero-vector-count
         (let [[type value] args]
           (list 'dec
                 (list 'count
-                      (list 'kotoba$typed-value! (list 'quote type)
+                      (list 'kotoba$typed-operand! (list 'quote type)
                             (lower-expr value)))))
 
         hetero-vector-at
         (let [[type value index] args]
           (list 'nth
-                (list 'kotoba$typed-value! (list 'quote type)
+                (list 'kotoba$typed-operand! (list 'quote type)
                       (lower-expr value))
                 (inc (host-index index))))
 
         hetero-vector-assoc
         (let [[type value index item] args]
-          (list 'kotoba$typed-value! (list 'quote type)
+          (list 'kotoba$typed-operand! (list 'quote type)
                 (list 'assoc
-                      (list 'kotoba$typed-value! (list 'quote type)
+                      (list 'kotoba$typed-operand! (list 'quote type)
                             (lower-expr value))
                       (inc (host-index index))
                       (lower-expr item))))
@@ -220,9 +220,9 @@
         hetero-vector-equal
         (let [[type left right] args]
           (list 'if
-                (list '= (list 'kotoba$typed-value! (list 'quote type)
+                (list '= (list 'kotoba$typed-operand! (list 'quote type)
                                (lower-expr left))
-                      (list 'kotoba$typed-value! (list 'quote type)
+                      (list 'kotoba$typed-operand! (list 'quote type)
                             (lower-expr right)))
                 1 0))
 
@@ -289,6 +289,9 @@
 (defn- lower-function [{:keys [name params param-types result body]} exported?]
   (let [closure-dispatcher?
         (closure-dispatcher-name? (clojure.core/name name))
+        ;; P3 (adr-2609242100): an exported function's parameters are the
+        ;; boundary and are walked in full; an internal call checks the tag.
+        check (if exported? 'kotoba$typed-value! 'kotoba$typed-operand!)
         ;; A closure is an i64 handle in Wasm/KIR but a private two-word pair
         ;; in the host CLJS representation. Dispatcher entry is internal and
         ;; validates the handle by closed lambda id, so do not apply the public
@@ -297,9 +300,9 @@
         (->> (map vector params param-types (range))
              (keep (fn [[parameter type index]]
                      (when-not (and closure-dispatcher? (zero? index))
-                       (list 'kotoba$typed-value! (list 'quote type) parameter))))
+                       (list check (list 'quote type) parameter))))
              vec)
-        lowered-result (list 'kotoba$typed-value! (list 'quote result)
+        lowered-result (list check (list 'quote result)
                              (lower-expr body))]
     (list (if exported? 'defn 'defn-) name (vec params)
           (list* 'do '(kotoba$charge!) (concat parameter-checks [lowered-result])))))
@@ -389,13 +392,20 @@
                     :else [1 3])]
               (recur (+ index units) (+ byte-index bytes)
                      (assoc boundaries (+ byte-index bytes) (+ index units))))))))
-    (defn- kotoba$typed-value! [type value]
-      (let [nodes (atom 0)]
-        (letfn [(walk [descriptor item depth]
-                  (swap! nodes inc)
-                  (when (or (> depth 12) (> @nodes 64))
-                    (kotoba$typed-fail! "invalid-typed-value" {:reason :value-bounds}))
-                  (cond
+    ;; P3 of superproject adr-2609242100: a typed value is walked in full
+    ;; ONCE, where it crosses a trust boundary (an exported function's
+    ;; parameters and result, a typed capability result), by an explicit-stack
+    ;; walk -- no host recursion depth depends on the value -- against the
+    ;; boundary traversal budget (kotoba-lang lang/limits.edn
+    ;; :language/boundary): 65,536 nodes, 1 MiB of string / keyword payload,
+    ;; named traps :budget/boundary-nodes / :budget/boundary-bytes. Inside the
+    ;; program a constructor or an internal call checks only its own node and
+    ;; the tags of its immediate operands (`kotoba$typed-operand!`). No value
+    ;; has a depth or node limit any more.
+    ;;
+    ;; One node: check it, answer its immediate children as [descriptor item].
+    (defn- kotoba$typed-node [descriptor item]
+      (cond
                     (= descriptor :i64)
                     (when-not (kotoba$i64-value? item)
                       (kotoba$typed-fail! "invalid-typed-value" {:expected :i64}))
@@ -425,7 +435,7 @@
                                           {:expected :vector-i64}))
                     (and (vector? descriptor) (= :ref (first descriptor)))
                     (if-let [resolved (get kotoba$schemas (second descriptor))]
-                      (walk resolved item (inc depth))
+                      [[resolved item]]
                       (kotoba$typed-fail! "invalid-typed-value" {:reason :unknown-schema}))
                     (and (vector? descriptor) (= :option (first descriptor)))
                     (let [[actual present? payload & extra] item]
@@ -433,15 +443,14 @@
                                      (= descriptor actual) (boolean? present?)
                                      (= (count item) (if present? 3 2)))
                         (kotoba$typed-fail! "invalid-typed-value" {:expected descriptor}))
-                      (when present? (walk (second descriptor) payload (inc depth))))
+                      (when present? [[(second descriptor) payload]]))
                     (and (vector? descriptor) (= :set (first descriptor)))
                     (let [[actual items & extra] item]
                       (when-not (and (vector? item) (empty? extra) (= descriptor actual)
                                      (vector? items) (<= (count items) 32)
                                      (= (count items) (count (distinct items))))
                         (kotoba$typed-fail! "invalid-typed-value" {:expected descriptor}))
-                      (doseq [member items]
-                        (walk (second descriptor) member (inc depth))))
+                      (map (fn [member] [(second descriptor) member]) items))
                     (and (vector? descriptor) (= :map (first descriptor)))
                     (let [[actual entries & extra] item]
                       (when-not (and (vector? item) (empty? extra) (= descriptor actual)
@@ -450,25 +459,23 @@
                                      (= (count entries)
                                         (count (distinct (map first entries)))))
                         (kotoba$typed-fail! "invalid-typed-value" {:expected descriptor}))
-                      (doseq [[key map-value] entries]
-                        (walk (second descriptor) key (inc depth))
-                        (walk (nth descriptor 2) map-value (inc depth))))
+                      (mapcat (fn [[key map-value]]
+                                [[(second descriptor) key] [(nth descriptor 2) map-value]])
+                              entries))
                     (and (vector? descriptor) (= :vector (first descriptor)))
                     (let [[actual & items] item
                           item-types (second descriptor)]
                       (when-not (and (vector? item) (= descriptor actual)
                                      (= (count items) (count item-types)))
                         (kotoba$typed-fail! "invalid-typed-value" {:expected descriptor}))
-                      (doseq [[item-type member] (map vector item-types items)]
-                        (walk item-type member (inc depth))))
+                      (map vector item-types items))
                     (and (vector? descriptor) (= :record (first descriptor)))
                     (let [[actual & fields] item
                           field-types (map second (nth descriptor 2))]
                       (when-not (and (vector? item) (= descriptor actual)
                                      (= (count fields) (count field-types)))
                         (kotoba$typed-fail! "invalid-typed-value" {:expected descriptor}))
-                      (doseq [[field-type field] (map vector field-types fields)]
-                        (walk field-type field (inc depth))))
+                      (map vector field-types fields))
                     (and (vector? descriptor) (= :variant (first descriptor)))
                     (let [[actual tag payload & extra] item
                           payload-type (some (fn [[case-tag case-type]]
@@ -477,12 +484,41 @@
                       (when-not (and (vector? item) (empty? extra)
                                      (= descriptor actual) payload-type)
                         (kotoba$typed-fail! "invalid-typed-value" {:expected descriptor}))
-                      (walk payload-type payload (inc depth)))
+                      [[payload-type payload]])
                     :else
                     (kotoba$typed-fail! "invalid-typed-value"
-                                        {:reason :unknown-type :type descriptor})))]
-          (walk type value 0)
+                                        {:reason :unknown-type :type descriptor})))
+    (defn- kotoba$typed-value! [type value]
+      (loop [stack (list [type value]) nodes 0 bytes 0]
+        (if-let [[descriptor item] (first stack)]
+          (let [nodes (inc nodes)
+                bytes (+ bytes (cond (string? item) (kotoba$utf8-byte-count item)
+                                     (keyword? item) (kotoba$utf8-byte-count (str item))
+                                     :else 0))]
+            (when (> nodes 65536)
+              (throw (ex-info "budget/boundary-nodes"
+                              {:kotoba.cljs/trap :budget/boundary-nodes :limit 65536})))
+            (when (> bytes 1048576)
+              (throw (ex-info "budget/boundary-bytes"
+                              {:kotoba.cljs/trap :budget/boundary-bytes :limit 1048576})))
+            (recur (into (rest stack) (kotoba$typed-node descriptor item)) nodes bytes))
           value)))
+    ;; O(1): the value carries the tag its descriptor declares.
+    (defn- kotoba$typed-tag? [descriptor item]
+      (let [descriptor (if (and (vector? descriptor) (= :ref (first descriptor)))
+                         (get kotoba$schemas (second descriptor))
+                         descriptor)]
+        (cond
+          (= descriptor :vector-i64) (vector? item)
+          (keyword? descriptor) (do (kotoba$typed-node descriptor item) true)
+          (vector? descriptor) (and (vector? item) (= descriptor (first item)))
+          :else false)))
+    ;; A constructor / internal call: this node in full, operands by tag.
+    (defn- kotoba$typed-operand! [type value]
+      (doseq [[descriptor item] (kotoba$typed-node type value)]
+        (when-not (kotoba$typed-tag? descriptor item)
+          (kotoba$typed-fail! "invalid-typed-value" {:expected descriptor})))
+      value)
     (defn- kotoba$vector-count [items]
       (count (kotoba$typed-value! :vector-i64 items)))
     (defn- kotoba$vector-get [items index fallback]
@@ -550,7 +586,7 @@
                                   {:capability id}))))
         (reset! kotoba$typed-host options)))
     (defn- kotoba$typed-cap-call [id request-type result-type request]
-      (kotoba$typed-value! request-type request)
+      (kotoba$typed-operand! request-type request)
       (let [{:keys [allow providers]} @kotoba$typed-host]
         (when-not (contains? allow id)
           (kotoba$typed-fail! "typed capability denied" {:capability id}))

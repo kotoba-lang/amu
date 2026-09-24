@@ -1,0 +1,149 @@
+(ns test.nbb.typed-value-conformance
+  "The typed-value conformance corpus
+  (`resources/kotoba/compiler/typed-value-conformance.edn`) on nbb: every
+  vector on the reference interpreter (osaho), the restricted-ESM target
+  (kotoba-script) and the Wasm target (kotoba-wasm on runtime/browser-host.mjs),
+  which must agree.
+
+  The corpus's JVM runner (`test/kotoba/compiler/typed_value_conformance_test`)
+  stopped running when the JVM route was removed (2026-09-11); this is its nbb
+  counterpart, added with adr-2609242100 P2/P3 so the vectors that move with
+  that change -- a 10,000-cell list and a 2,000-value tree built inside the
+  program, and host inputs walked at the boundary -- are executed on all three.
+
+    :positive  compiles; all three answer `:expect`;
+    :negative  without `:phase`, refused before a module exists (analysis,
+               admission or lowering); with `:phase :runtime`, compiles and
+               all three trap;
+    :boundary  a host-built input passed to `:export` on reference and ESM:
+               `:expect`, or the trap named by `:expect-trap`, on both.
+
+  Run from the repo root: `npm run test-typed-value-conformance`. The last
+  line is `SCANNED<TAB>n<TAB>failed<TAB>k`; n = 0 exits 2 (nothing measured)."
+  (:require ["node:fs" :as fs]
+            ["node:os" :as os]
+            ["node:path" :as path]
+            ["node:child_process" :as child]
+            [cljs.reader :as reader]
+            [kotoba.sema :as sema]
+            [kotoba.kir :as ir]
+            [kotoba.script :as script]
+            [kotoba.wasm.core :as wasm]
+            [kotoba.compiler.effect-row :as effect-row]))
+
+(def root (.cwd js/process))
+(def corpus (reader/read-string (fs/readFileSync (.join path root "resources" "kotoba" "compiler"
+                                                        "typed-value-conformance.edn") "utf8")))
+(def directory (.mkdtempSync fs (.join path (.tmpdir os) "amu-typed-value-conformance-")))
+(def default-fuel 512)
+
+(def scanned (atom 0))
+(def failures (atom 0))
+(defn- report! [ok? label detail]
+  (swap! scanned inc)
+  (when-not ok? (swap! failures inc))
+  (println (str (if ok? "PASS " "FAIL ") label (when-not ok? (str " -- " detail)))))
+
+(defn- trap-name
+  "The trap of `e`, down the cause chain: a keyword, or the message."
+  [e]
+  (loop [x e]
+    (let [d (ex-data x)]
+      (cond (:trap d) (:trap d)
+            (ex-cause x) (recur (ex-cause x))
+            :else (ex-message e)))))
+
+(defn- compile-kir [source fuel]
+  (let [hir (sema/analyze source)]
+    (effect-row/check hir {})
+    (ir/lower hir {:oracle-fuel fuel})))
+
+(defn- host-list-js
+  "JS source for a host-built [:ref :conformance/list] of `n` cells."
+  [n]
+  (str "(()=>{const F=Object.freeze;"
+       "const L=F(['variant',':conformance/list',F([F([':empty','i64']),F([':cons',F(['ref',':conformance/cell'])])])]);"
+       "const C=F(['record',':conformance/cell',F([F([':head','i64']),F([':tail',F(['ref',':conformance/list'])])])]);"
+       "let v=[L,':empty',0n];for(let i=" n ";i>=1;i--)v=[L,':cons',[C,BigInt(i),v]];return v;})()"))
+
+(defn- host-list-ref
+  "The same list as a reference-interpreter value."
+  [n]
+  (let [lst [:variant :conformance/list [[:empty :i64] [:cons [:ref :conformance/cell]]]]
+        cell [:record :conformance/cell [[:head :i64] [:tail [:ref :conformance/list]]]]]
+    (loop [i n acc [lst :empty (js/BigInt 0)]]
+      (if (zero? i) acc (recur (dec i) [lst :cons [cell (js/BigInt i) acc]])))))
+
+(defn- node! [script & args]
+  (let [r (.spawnSync child js/process.execPath
+                      (clj->js (into ["--input-type=module" "-e" script] args))
+                      #js {:cwd root :encoding "utf8" :timeout 600000 :maxBuffer (* 64 1024 1024)})]
+    (if (and (nil? (.-error r)) (zero? (.-status r)))
+      (.trim (.-stdout r))
+      (str "node-failed:" (.-status r) ":" (subs (str (.-stderr r) (.-error r)) 0 300)))))
+
+(def ^:private run-js
+  ;; argv: module path, export name, argument JS (or empty)
+  "const [p,name,arg]=process.argv.slice(1);const m=await import(p);const x=m.instantiateKotoba({});
+try{const v=arg?x[name](eval(arg)):x[name]();console.log(String(v));}catch(e){console.log('trap:'+e.message);}")
+
+(def ^:private run-wasm
+  "const [host,p]=process.argv.slice(1);const {readFileSync}=await import('node:fs');
+const {pathToFileURL}=await import('node:url');const m=await import(pathToFileURL(host).href);
+try{const h=await m.instantiateKotoba(readFileSync(p));console.log(String(h.instance.exports.main()));}
+catch(e){const t=m.normalizeKotobaTrap(e)||{};console.log('trap:'+(t.code||e.message));}")
+
+(defn- esm [kir fuel export arg-js id]
+  (let [file (.join path directory (str (name id) ".mjs"))]
+    (fs/writeFileSync file (script/emit kir {:fuel fuel}))
+    (node! run-js file export (or arg-js ""))))
+
+(defn- wasm-run [kir fuel id]
+  (let [file (.join path directory (str (name id) ".wasm"))]
+    (fs/writeFileSync file (wasm/emit kir :wasm32-browser-kotoba-v1 {:fuel fuel}))
+    (node! run-wasm (.join path root "runtime" "browser-host.mjs") file)))
+
+(defn- reference [kir fuel export args]
+  (try (str (ir/execute kir export args {:fuel fuel}))
+       (catch :default e (str "trap:" (let [t (trap-name e)] (if (keyword? t) (subs (str t) 1) t))))))
+
+(doseq [{:keys [id source expect fuel]} (:positive corpus)]
+  (let [fuel (or fuel default-fuel)
+        kir (try (compile-kir source fuel) (catch :default e {:error (ex-message e)}))]
+    (if (:error kir)
+      (report! false (str "positive " (name id)) (str "did not compile: " (:error kir)))
+      (let [results {:reference (reference kir fuel 'main [])
+                     :esm (esm kir fuel "main" nil id)
+                     :wasm (wasm-run kir fuel id)}]
+        (report! (every? #(= (str expect) %) (vals results))
+                 (str "positive " (name id) " = " expect)
+                 (pr-str results))))))
+
+(doseq [{:keys [id source phase]} (:negative corpus)]
+  (let [kir (try (compile-kir source default-fuel) (catch :default e {:refused (ex-message e)}))]
+    (if phase
+      (if (:refused kir)
+        (report! false (str "negative " (name id) " (runtime)") (str "refused at compile: " (:refused kir)))
+        (let [results {:reference (reference kir default-fuel 'main [])
+                       :esm (esm kir default-fuel "main" nil id)
+                       :wasm (wasm-run kir default-fuel id)}]
+          (report! (every? #(.startsWith % "trap:") (vals results))
+                   (str "negative " (name id) " traps on all three") (pr-str results))))
+      (report! (some? (:refused kir)) (str "negative " (name id) " refused before a module exists")
+               "compiled"))))
+
+(doseq [{:keys [id source export input fuel expect expect-trap]} (:boundary corpus)]
+  (let [fuel (or fuel default-fuel)
+        n (:list-cells input)
+        kir (try (compile-kir source fuel) (catch :default e {:error (ex-message e)}))]
+    (if (:error kir)
+      (report! false (str "boundary " (name id)) (str "did not compile: " (:error kir)))
+      (let [want (if expect-trap (str "trap:" (subs (str expect-trap) 1)) (str expect))
+            results {:reference (reference kir fuel export [(host-list-ref n)])
+                     :esm (esm kir fuel (str export) (host-list-js n) id)}]
+        (report! (every? #(= want %) (vals results))
+                 (str "boundary " (name id) " = " want)
+                 (pr-str results))))))
+
+(println (str "SCANNED\t" @scanned "\tfailed\t" @failures))
+(set! (.-exitCode js/process) (cond (zero? @scanned) 2 (pos? @failures) 1 :else 0))

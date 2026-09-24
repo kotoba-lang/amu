@@ -1,0 +1,21 @@
+#!/usr/bin/env kbb
+(ns scripts.test-typed-value-conformance
+  "Spawns test/nbb/typed-value-conformance.cljk on the locked classpath (the
+  compiler's own dependency closure plus test/), with the same bounded NBB
+  stack bin/amu gives the compiler. See that file for what it checks."
+  (:require [scripts.lib :as lib]
+            ["node:child_process" :as child]
+            ["node:path" :as path]))
+
+(let [resolved (lib/lock-classpath)
+      nbb-cli (lib/join lib/root "node_modules" "nbb" "cli.js")
+      classpath (str (lib/join lib/root "src") (.-delimiter path)
+                     (lib/join lib/root "resources") (.-delimiter path)
+                     (lib/join lib/root "test") (.-delimiter path)
+                     resolved)
+      result (.spawnSync child js/process.execPath
+                         (clj->js ["--stack-size=4096" nbb-cli "--classpath" classpath
+                                   (lib/join lib/root "test" "nbb" "typed-value-conformance.cljk")])
+                         #js {:cwd lib/root :stdio "inherit" :env js/process.env})]
+  (when (.-error result) (throw (.-error result)))
+  (.exit js/process (or (.-status result) 70)))

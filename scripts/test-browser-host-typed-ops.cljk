@@ -35,14 +35,19 @@
 
 (defn- head [s n] (let [s (str s)] (if (> (count s) n) (subs s 0 n) s)))
 
+;; Extra compile flags per fixture. cap-list-result sums a 20,000-cell list:
+;; about 60,000 function entries, far past the default fuel of 512.
+(def ^:private compile-args {"cap-list-result" ["--fuel" "1000000"]})
+
 (defn- compile! [fixture]
   (let [output (join directory (str fixture ".wasm"))
         r (.spawnSync child js/process.execPath
-                      (clj->js [(join root "bin" "amu") "compile"
-                                (join fixtures (str fixture ".kotoba"))
-                                "--target" "wasm32-browser" "--jvm-free"
-                                "--policy" (join fixtures "policy.edn")
-                                "--output" output])
+                      (clj->js (into [(join root "bin" "amu") "compile"
+                                      (join fixtures (str fixture ".kotoba"))
+                                      "--target" "wasm32-browser" "--jvm-free"
+                                      "--policy" (join fixtures "policy.edn")
+                                      "--output" output]
+                                     (get compile-args fixture)))
                       #js {:cwd root :encoding "utf8" :timeout 600000
                            :maxBuffer (* 64 1024 1024)})]
     (if (and (nil? (.-error r)) (zero? (.-status r)) (.existsSync fs output))
@@ -65,6 +70,9 @@ const providers = {
   i64: (id, req) => req[2] === 'big' ? BIG : 42n,
   bool: (id, req) => req[2] === 'yes',
   reqi64: (id, req) => { if (typeof req !== 'bigint') throw new Error('request not i64: ' + typeof req); return req > 10n; },
+  // A recursive list of `req` cells, built by the HOST as plain arrays: the
+  // untrusted tree the boundary walk admits (or refuses) in one pass.
+  list: (id, req) => { let v = [null, ':empty', 0n]; for (let i = Number(req); i >= 1; i--) v = [null, ':cons', [null, BigInt(i), v]]; return v; },
 };
 const arg = a => (a && typeof a === 'object' && 'i64' in a) ? BigInt(a.i64) : a;
 const show = v => {
@@ -128,6 +136,16 @@ process.stdout.write(JSON.stringify(out));")
     ["false" "f" "bool" ["no"] "false"]
     ["through if (true)" "g" "bool" ["yes"] "1n"]
     ["through if (false)" "g" "bool" ["no"] "0n"]]
+   ;; P3 of adr-2609242100: a capability result is the Wasm instance's trust
+   ;; boundary, walked once, iteratively, against 65,536 nodes / 1 MiB. Under
+   ;; main's host every one of these was refused: a [:ref] payload could not
+   ;; be admitted from the host at all, and a guest-built list stopped at 5
+   ;; cells (`typed runtime value budget exceeded`).
+   "cap-list-result"
+   [["host list of 10 cells" "total" "list" [(i64 10)] "55n"]
+    ["host list of 20,000 cells (60,001 nodes, 40,000 deep) admitted" "total" "list" [(i64 20000)] "200010000n"]
+    ["host list of 30,000 cells (90,001 nodes) refused by the node budget" "total" "list" [(i64 30000)]
+     "trap:budget/boundary-nodes:typed host value exceeds the boundary traversal node budget"]]
    "cap-i64-request"
    [["11 > 10" "f" "reqi64" [(i64 11)] "true"]
     ["2^62 > 10" "f" "reqi64" [(i64 "4611686018427387904")] "true"]

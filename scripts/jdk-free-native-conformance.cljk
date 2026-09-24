@@ -268,14 +268,20 @@
               :arguments [] :expected "1"}
              {:source "recursive-tree.kotoba" :symbol "diff"
               :arguments [] :expected "0"}
+             ;; 1000 cells since adr-2609242100 P2/P3 (was 5: the oracle's
+             ;; per-value adt-node-limit). ~4,000 function entries: compiled
+             ;; with --fuel so the verifier's re-derivation fits, run with
+             ;; KEXE_FUEL for the same reason.
              {:source "recursive-list.kotoba" :symbol "main"
-              :arguments [] :expected "15"}
+              :arguments [] :expected "500500"
+              :compile-args ["--fuel" "100000"] :env {"KEXE_FUEL" "100000"}}
              {:source "recursive-generic.kotoba" :symbol "main"
               :arguments [] :expected "63"}]]
       (let [artifact (file (str symbol ".kexe"))
             binary (file (str symbol ".bin"))]
-        (invoke ["compile" (.join path root "examples" source)
-                 "--target" isa "--output" artifact])
+        (invoke (into ["compile" (.join path root "examples" source)
+                       "--target" isa "--output" artifact]
+                      (:compile-args case)))
         (let [extracted (:stdout (invoke ["extract-native" artifact "--symbol" symbol
                                          "--output" binary]))
               [_ offset] (re-find #":offset ([0-9]+)" extracted)]

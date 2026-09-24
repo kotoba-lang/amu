@@ -150,7 +150,14 @@
          ;; 65536 and ADT depth 8 -> 12, the numbers of kotoba-lang
          ;; lang/limits.edn; the js-parity goldens and runtime/http/route-decide.mjs
          ;; move with it in this commit.
-         :git/sha "98f31c66773aa8c1bb4daef98de617d4b3f13c74"}
+         ;; Advanced 2026-09-24, 98f31c66 -> fe952ba6 (kotoba-script main, ahead 4,
+         ;; behind 0, forward only by gh api compare): adr-2609242100 P3 -- the
+         ;; prelude walks a tree-typed value in full only at a boundary (the
+         ;; export wrapper the host calls, capability results), iteratively,
+         ;; against the 65,536-node / 1 MiB budget (`budget/boundary-nodes` /
+         ;; `-bytes`); constructors and every call inside the module check
+         ;; tags only. Moves WITH osaho below.
+         :git/sha "fe952ba60aa7e620397dbb3e6ab5c72d0bcd38ba"}
         ;; ADR-0222: source reading and semantic analysis live behind the
         ;; kotoba-sema repository boundary and public semantic-analysis API.
         ;;
@@ -839,7 +846,15 @@
          ;; heads' reference semantics.
          ;; Advanced 2026-09-24 85ed11be -> c5f77e12 (osaho main, forward only):
          ;; aggregate ABI v8 -- recursive / generic ADT handles on native.
-         :git/sha "4860f4c1c22350bc92a06fdcdad749e5d1a2f2ff"} ;; Advanced 2026-09-24 c5f77e12 -> 4860f4c1 (main tip, forward only): selfhost walls: fn-body-clj-only, some-two-arg, regex literal, char literal, clojure.* to kotoba.*
+         :git/sha "245bfeb33c2e5cab0c3efde410560fbb9138ea3d"} ;; Advanced 2026-09-24 c5f77e12 -> 4860f4c1 (main tip, forward only): selfhost walls: fn-body-clj-only, some-two-arg, regex literal, char literal, clojure.* to kotoba.*
+         ;; Advanced 2026-09-24, 4860f4c1 -> 245bfeb3 (osaho main, ahead 4, behind 0,
+         ;; forward only by gh api compare): adr-2609242100 P2 -- a typed value is
+         ;; validated once, at execute arguments and capability results, by an
+         ;; iterative walk against the boundary budget; constructors and internal
+         ;; calls check tags only; `frames` budget (:budget/frames) and
+         ;; :host/stack-exhausted as its own trap. Lifts the ~5-cell ceiling the
+         ;; compile-time oracle put on every target (examples/recursive-list.kotoba).
+         ;; Moves WITH kotoba-script above.
         ;; The frontend is an HIR producer and KIR lowering is its consumer;
         ;; both validate the same checked envelope.
         io.github.kotoba-lang/kotoba-hir

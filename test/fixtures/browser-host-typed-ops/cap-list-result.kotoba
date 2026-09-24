@@ -1,0 +1,29 @@
+;; A typed-cap-call whose RESULT is a recursive list the host builds: the one
+;; place an untrusted tree enters a Wasm instance, so the one place it is
+;; walked in full (P3 of superproject adr-2609242100). The walk is iterative
+;; and charged against the boundary traversal budget (65,536 nodes, 1 MiB):
+;; a host list of 20,000 cells (60,001 nodes, 40,000 levels deep) is admitted
+;; without overflowing the JS stack; 30,000 cells (90,001 nodes) is refused as
+;; `budget/boundary-nodes`. Summing the admitted list is guest code, so each
+;; step checks only the node it reads.
+(ns fixture.cap-list-result
+  (:export [main total])
+  (:capabilities #{:object/put-block})
+  (:schemas {:app/list [:variant :app/list [[:empty :i64] [:cons [:ref :app/cell]]]]
+             :app/cell [:record :app/cell [[:head :i64] [:tail [:ref :app/list]]]]}))
+(defn cells [l [:ref :app/list]] :i64
+  (match-variant l [:variant :app/list [[:empty :i64] [:cons [:ref :app/cell]]]]
+    (:empty e 0)
+    (:cons c 1)))
+(defn head-of [l [:ref :app/list]] :i64
+  (match-variant l [:variant :app/list [[:empty :i64] [:cons [:ref :app/cell]]]]
+    (:empty e 0)
+    (:cons c (record-get [:record :app/cell [[:head :i64] [:tail [:ref :app/list]]]] c :head))))
+(defn tail-of [l [:ref :app/list]] [:ref :app/list]
+  (match-variant l [:variant :app/list [[:empty :i64] [:cons [:ref :app/cell]]]]
+    (:empty e l)
+    (:cons c (record-get [:record :app/cell [[:head :i64] [:tail [:ref :app/list]]]] c :tail))))
+(defn total [n :i64] :i64
+  (loop [l (typed-cap-call :object/put-block :i64 [:ref :app/list] n) acc 0]
+    (if (= (cells l) 0) acc (recur (tail-of l) (+ acc (head-of l))))))
+(defn main [] :i64 0)
