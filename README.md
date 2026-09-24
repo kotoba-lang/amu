@@ -496,8 +496,14 @@ digest-bound `answer.evm.manifest.edn`; an unknown selector reverts.
 **no JVM process is spawned at all** for those paths. Target-specific
 entrypoints avoid loading either native emitter for Wasm and avoid loading the
 other ISA emitter for native compilation. This matches the monorepo's
-repo-wide runtime priority (`kotoba wasm runtime` first, JVM/`bb` demoted to
-last-resort compat). The frontend reader/validator
+repo-wide runtime priority: amu's native compiler (`--target <isa>`, run
+through the kexe loader) is the first execution path, and wasm is one build
+target among several, chosen for hosts where native cannot run (browsers and
+Workers: `wasm32-browser`; WASI: `wasm32-wasi`); JVM/`bb` stay last-resort
+compat (superproject ADR-2609241300, 2026-09-24 — the earlier order put
+`kotoba wasm runtime` first). Note that an omitted `--target` still routes to
+the wasm32 path (ADR 0237 did not make native the default), so write the
+target explicitly. The frontend reader/validator
 (`kotoba.compiler.frontend`), the KIR lowering/compile-time oracle
 (`kotoba.compiler.ir`), the wasm32 backend (`kotoba.compiler.backend.wasm`),
 and capability admission (`kotoba.compiler.admission`) are `.cljc`, sharing
