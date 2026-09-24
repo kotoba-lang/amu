@@ -223,9 +223,6 @@
     (reject! "ability wire float requires the float64 wrapper"
              {:type descriptor})))
 
-(declare runtime->wire*)
-(declare wire->runtime*)
-
 (defn- option-wire [present? payload]
   (if present?
     {:kotoba.option/present true :kotoba.option/value payload}
@@ -235,106 +232,190 @@
   {:kotoba.result/status (if ok? :ok :error)
    :kotoba.result/value payload})
 
-(defn- runtime->wire* [descriptor schemas item]
+;; Both translations below are ONE explicit-stack walk each (superproject
+;; adr-2609242100 P2/P3: a boundary walk never lets the value choose the host
+;; stack depth). Until 2026-09-25 they were host-recursive, one frame chain per
+;; level of the value, and a recursive schema (a cons list of
+;; `[:ref ...]` cells) overflowed the host stack at about 1,000 cells on kbb.
+;;
+;; A node function looks at ONE node: it checks what that node owns and
+;; returns `[:leaf translated]` or `[:node [[child-type child-value] ...]
+;; build]`, where `build` assembles the node from its children's translations
+;; (in child order). The driver visits children left to right and builds
+;; post-order, so checks run -- and the first rejection is raised -- in the
+;; same order the recursive version raised it.
+;;
+;; The walk is charged against the boundary budget, like osaho's
+;; `bounded-typed-value!`: `kir-value/boundary-traversal-node-limit` visited
+;; nodes and `kir-value/boundary-traversal-byte-limit` string / keyword /
+;; bytes payload bytes (lang/limits.edn :language/boundary), or `{:nodes n
+;; :bytes b}` from the caller. Exceeding either throws with `:trap
+;; :budget/boundary-nodes` / `:trap :budget/boundary-bytes`.
+
+(defn- budget-exceeded! [budget used limit]
+  (throw (ex-info (str "boundary traversal budget exceeded: " (name budget))
+                  {:phase :value-codec :trap budget :budget budget
+                   :used used :limit limit})))
+
+#?(:cljs (def ^:private utf8-encoder (js/TextEncoder.)))
+
+(defn- utf8-length
+  "UTF-8 length of S for the byte budget. Never throws: whether S is a
+  well-formed value is the validator's question, not the meter's."
+  [s]
+  #?(:clj (alength (.getBytes ^String s "UTF-8"))
+     :cljs (.-length (.encode utf8-encoder s))))
+
+(defn- leaf-bytes [type item]
+  (cond
+    (and (= :string type) (string? item)) (utf8-length item)
+    (and (= :keyword type) (keyword? item)) (utf8-length (str item))
+    (and (= :bytes type) (kir-value/bytes-value? item)) (kir-value/bytes-byte-count item)
+    :else 0))
+
+(defn- walk!
+  "Translate ITEM under DESCRIPTOR with NODE-FN over an explicit stack, within
+  the boundary budget."
+  [node-fn descriptor schemas item {:keys [nodes bytes]}]
+  (let [node-limit (or nodes kir-value/boundary-traversal-node-limit)
+        byte-limit (or bytes kir-value/boundary-traversal-byte-limit)
+        visited (volatile! 0)
+        read-bytes (volatile! 0)
+        visit (fn [t v]
+                (let [n (vswap! visited inc)]
+                  (when (> n node-limit)
+                    (budget-exceeded! :budget/boundary-nodes n node-limit)))
+                (let [node (node-fn t schemas v)]
+                  (when (= :leaf (first node))
+                    (let [used (vswap! read-bytes + (leaf-bytes (resolve-type t schemas) v))]
+                      (when (> used byte-limit)
+                        (budget-exceeded! :budget/boundary-bytes used byte-limit))))
+                  node))
+        root (visit descriptor item)]
+    (if (= :leaf (first root))
+      (second root)
+      (loop [stack [[(nth root 1) (nth root 2) []]]]
+        (let [[children build results] (peek stack)
+              i (count results)]
+          (if (< i (count children))
+            (let [[child-type child-value] (nth children i)
+                  child (visit child-type child-value)]
+              (if (= :leaf (first child))
+                (recur (conj (pop stack) [children build (conj results (second child))]))
+                (recur (conj stack [(nth child 1) (nth child 2) []]))))
+            (let [built (build results)
+                  stack (pop stack)]
+              (if (empty? stack)
+                built
+                (let [[parent-children parent-build parent-results] (peek stack)]
+                  (recur (conj (pop stack)
+                               [parent-children parent-build
+                                (conj parent-results built)])))))))))))
+
+(defn- leaf [value] [:leaf value])
+
+(defn- runtime-node [descriptor schemas item]
   (let [type (resolve-type descriptor schemas)]
     (cond
-      (= :i64 type) (value/int64 item)
-      (contains? #{:f32 :f64} type) (value/float64 item)
-      (contains? direct-wire-types type) item
-      (= :document type) (document->value item)
-      (= :map type) (into {} (map (fn [[k v]] [k (value/int64 v)]) item))
+      (= :i64 type) (leaf (value/int64 item))
+      (contains? #{:f32 :f64} type) (leaf (value/float64 item))
+      (contains? direct-wire-types type) (leaf item)
+      (= :document type) (leaf (document->value item))
+      (= :map type) (leaf (into {} (map (fn [[k v]] [k (value/int64 v)]) item)))
       (= :option-i64 type)
-      (option-wire (first item) (when (first item) (value/int64 (second item))))
-      (= :result-i64 type) (result-wire (first item) (value/int64 (second item)))
-      (= :vector-i64 type) (mapv value/int64 item)
-      (= :vector-f64 type) (mapv value/float64 item)
+      (leaf (option-wire (first item) (when (first item) (value/int64 (second item)))))
+      (= :result-i64 type) (leaf (result-wire (first item) (value/int64 (second item))))
+      (= :vector-i64 type) (leaf (mapv value/int64 item))
+      (= :vector-f64 type) (leaf (mapv value/float64 item))
 
       (and (vector? type) (= :option (first type)))
-      (option-wire (second item)
-                   (when (second item)
-                     (runtime->wire* (second type) schemas (nth item 2))))
+      (if (second item)
+        [:node [[(second type) (nth item 2)]]
+         (fn [[payload]] (option-wire (second item) payload))]
+        (leaf (option-wire (second item) nil)))
 
       (and (vector? type) (= :result (first type)))
-      (result-wire (first item)
-                   (runtime->wire* (if (first item) (second type) (nth type 2))
-                                   schemas (second item)))
+      [:node [[(if (first item) (second type) (nth type 2)) (second item)]]
+       (fn [[payload]] (result-wire (first item) payload))]
 
       (and (vector? type) (= :record (first type)))
-      (let [fields (nth type 2)]
-        {:kotoba.record/type (second type)
-         :kotoba.record/fields
-         (into {} (map (fn [[[field-name field-type] field-value]]
-                         [field-name (runtime->wire* field-type schemas field-value)])
-                       (map vector fields (rest item))))})
+      (let [pairs (map vector (nth type 2) (rest item))]
+        [:node (mapv (fn [[[_ field-type] field-value]] [field-type field-value]) pairs)
+         (fn [translated]
+           {:kotoba.record/type (second type)
+            :kotoba.record/fields
+            (into {} (map (fn [[[field-name]] field-value] [field-name field-value])
+                          pairs translated))})])
 
       (and (vector? type) (= :variant (first type)))
       (let [case-name (second item)
             case-type (some (fn [[candidate payload-type]]
                               (when (= candidate case-name) payload-type))
                             (nth type 2))]
-        {:kotoba.variant/type (second type)
-         :kotoba.variant/case case-name
-         :kotoba.variant/value (runtime->wire* case-type schemas (nth item 2))})
+        [:node [[case-type (nth item 2)]]
+         (fn [[payload]]
+           {:kotoba.variant/type (second type)
+            :kotoba.variant/case case-name
+            :kotoba.variant/value payload})])
 
       (and (vector? type) (= :vector (first type)))
-      (mapv (fn [item-type item-value]
-              (runtime->wire* item-type schemas item-value))
-            (second type) (rest item))
+      [:node (mapv vector (second type) (rest item)) vec]
 
       (and (vector? type) (= :list (first type)))
-      (apply list (map #(runtime->wire* (second type) schemas %)
-                       (second item)))
+      [:node (mapv (fn [member] [(second type) member]) (second item))
+       (fn [translated] (apply list translated))]
 
       (and (vector? type) (= :set (first type)))
-      (let [items (mapv #(runtime->wire* (second type) schemas %) (second item))]
-        (when-not (= (count items) (count (set items)))
-          (reject! "typed set is ambiguous on the canonical value wire" {}))
-        (set items))
+      [:node (mapv (fn [member] [(second type) member]) (second item))
+       (fn [items]
+         (when-not (= (count items) (count (set items)))
+           (reject! "typed set is ambiguous on the canonical value wire" {}))
+         (set items))]
 
       (and (vector? type) (= :map (first type)))
-      (let [entries (mapv (fn [[k v]]
-                            [(runtime->wire* (second type) schemas k)
-                             (runtime->wire* (nth type 2) schemas v)])
-                          (second item))]
-        (when-not (= (count entries) (count (set (map first entries))))
-          (reject! "typed map keys are ambiguous on the canonical value wire" {}))
-        (into {} entries))
+      [:node (into [] (mapcat (fn [[k v]] [[(second type) k] [(nth type 2) v]]))
+                   (second item))
+       (fn [translated]
+         (let [entries (mapv vec (partition 2 translated))]
+           (when-not (= (count entries) (count (set (map first entries))))
+             (reject! "typed map keys are ambiguous on the canonical value wire" {}))
+           (into {} entries)))]
 
       :else
       (reject! "ability wire adapter does not support this runtime value"
                {:type descriptor}))))
 
-(defn- wire->runtime* [descriptor schemas item]
+(defn- wire-node [descriptor schemas item]
   (let [type (resolve-type descriptor schemas)]
     (cond
-      (= :i64 type) (exact-int64! item)
-      (contains? #{:f32 :f64} type) (exact-float! item type)
-      (contains? direct-wire-types type) item
-      (= :document type) (value->document item)
+      (= :i64 type) (leaf (exact-int64! item))
+      (contains? #{:f32 :f64} type) (leaf (exact-float! item type))
+      (contains? direct-wire-types type) (leaf item)
+      (= :document type) (leaf (value->document item))
       (= :map type) (do (when-not (map? item)
                           (reject! "map wire value is not a map" {}))
-                        (into {} (map (fn [[k v]] [k (exact-int64! v)]) item)))
+                        (leaf (into {} (map (fn [[k v]] [k (exact-int64! v)]) item))))
       (= :option-i64 type)
       (do (exact-map! "option" item
                       (if (:kotoba.option/present item)
                         #{:kotoba.option/present :kotoba.option/value}
                         #{:kotoba.option/present}))
-          (if (:kotoba.option/present item)
-            [true (exact-int64! (:kotoba.option/value item))]
-            [false]))
+          (leaf (if (:kotoba.option/present item)
+                  [true (exact-int64! (:kotoba.option/value item))]
+                  [false])))
       (= :result-i64 type)
       (do (exact-map! "result" item
                       #{:kotoba.result/status :kotoba.result/value})
           (let [status (:kotoba.result/status item)]
             (when-not (contains? #{:ok :error} status)
               (reject! "result wire status is invalid" {:status status}))
-            [(= :ok status) (exact-int64! (:kotoba.result/value item))]))
+            (leaf [(= :ok status) (exact-int64! (:kotoba.result/value item))])))
       (= :vector-i64 type)
       (do (when-not (vector? item) (reject! "vector-i64 wire value is not a vector" {}))
-          (mapv exact-int64! item))
+          (leaf (mapv exact-int64! item)))
       (= :vector-f64 type)
       (do (when-not (vector? item) (reject! "vector-f64 wire value is not a vector" {}))
-          (mapv #(exact-float! % :f64) item))
+          (leaf (mapv #(exact-float! % :f64) item)))
 
       (and (vector? type) (= :option (first type)))
       (let [present? (:kotoba.option/present item)]
@@ -345,18 +426,18 @@
                       #{:kotoba.option/present :kotoba.option/value}
                       #{:kotoba.option/present}))
         (if present?
-          [type true (wire->runtime* (second type) schemas
-                                     (:kotoba.option/value item))]
-          [type false]))
+          [:node [[(second type) (:kotoba.option/value item)]]
+           (fn [[payload]] [type true payload])]
+          (leaf [type false])))
 
       (and (vector? type) (= :result (first type)))
       (do (exact-map! "result" item #{:kotoba.result/status :kotoba.result/value})
           (let [status (:kotoba.result/status item)]
             (when-not (contains? #{:ok :error} status)
               (reject! "result wire status is invalid" {:status status}))
-            [(= :ok status)
-             (wire->runtime* (if (= :ok status) (second type) (nth type 2))
-                             schemas (:kotoba.result/value item))]))
+            [:node [[(if (= :ok status) (second type) (nth type 2))
+                     (:kotoba.result/value item)]]
+             (fn [[payload]] [(= :ok status) payload])]))
 
       (and (vector? type) (= :record (first type)))
       (do (exact-map! "record" item #{:kotoba.record/type :kotoba.record/fields})
@@ -367,10 +448,10 @@
                 values (:kotoba.record/fields item)
                 expected (set (map first fields))]
             (exact-map! "record fields" values expected)
-            (into [type]
-                  (map (fn [[field-name field-type]]
-                         (wire->runtime* field-type schemas (get values field-name)))
-                       fields))))
+            [:node (mapv (fn [[field-name field-type]]
+                           [field-type (get values field-name)])
+                         fields)
+             (fn [translated] (into [type] translated))]))
 
       (and (vector? type) (= :variant (first type)))
       (do (exact-map! "variant" item
@@ -384,28 +465,30 @@
                                 (nth type 2))]
             (when-not case-type
               (reject! "variant wire case is not declared" {:case case-name}))
-            [type case-name
-             (wire->runtime* case-type schemas (:kotoba.variant/value item))]))
+            [:node [[case-type (:kotoba.variant/value item)]]
+             (fn [[payload]] [type case-name payload])]))
 
       (and (vector? type) (= :vector (first type)))
       (do (when-not (and (vector? item) (= (count item) (count (second type))))
             (reject! "heterogeneous vector wire value has wrong shape" {}))
-          (into [type] (map #(wire->runtime* %1 schemas %2) (second type) item)))
+          [:node (mapv vector (second type) item)
+           (fn [translated] (into [type] translated))])
 
       (and (vector? type) (= :list (first type)))
       (do (when-not (list? item) (reject! "typed list wire value is not a list" {}))
-          [type (mapv #(wire->runtime* (second type) schemas %) item)])
+          [:node (mapv (fn [member] [(second type) member]) item)
+           (fn [translated] [type (vec translated)])])
 
       (and (vector? type) (= :set (first type)))
       (do (when-not (set? item) (reject! "typed set wire value is not a set" {}))
-          [type (mapv #(wire->runtime* (second type) schemas %) item)])
+          [:node (mapv (fn [member] [(second type) member]) item)
+           (fn [translated] [type (vec translated)])])
 
       (and (vector? type) (= :map (first type)))
       (do (when-not (map? item) (reject! "typed map wire value is not a map" {}))
-          [type (mapv (fn [[k v]]
-                        [(wire->runtime* (second type) schemas k)
-                         (wire->runtime* (nth type 2) schemas v)])
-                      item)])
+          [:node (into [] (mapcat (fn [[k v]] [[(second type) k] [(nth type 2) v]]))
+                       item)
+           (fn [translated] [type (mapv vec (partition 2 translated))])])
 
       :else
       (reject! "ability wire adapter does not support this wire value"
@@ -414,21 +497,28 @@
 (defn runtime->wire-value
   "Translate a checked compiler runtime VALUE into the canonical semantic
   value represented on the ability byte wire. SCHEMAS resolves [:ref ...]
-  descriptors without transmitting compiler constructor vectors."
+  descriptors without transmitting compiler constructor vectors.
+
+  Iterative and budgeted (see `walk!`); BUDGET is `{:nodes n :bytes b}`,
+  defaulting to the language boundary budget, and applies to both the
+  validation walk and the translation walk."
   ([descriptor value] (runtime->wire-value descriptor {} value))
-  ([descriptor schemas value]
+  ([descriptor schemas value] (runtime->wire-value descriptor schemas value nil))
+  ([descriptor schemas value budget]
    (admitted-wire-type! descriptor schemas)
-   (kir-value/bounded-typed-value! descriptor value)
-   (runtime->wire* descriptor schemas value)))
+   (kir-value/bounded-typed-value! descriptor value budget)
+   (walk! runtime-node descriptor schemas value budget)))
 
 (defn wire-value->runtime
   "Translate one decoded canonical wire VALUE into the compiler runtime shape,
-  then revalidate it under DESCRIPTOR."
+  then revalidate it under DESCRIPTOR. Iterative and budgeted, like
+  `runtime->wire-value`."
   ([descriptor value] (wire-value->runtime descriptor {} value))
-  ([descriptor schemas value]
+  ([descriptor schemas value] (wire-value->runtime descriptor schemas value nil))
+  ([descriptor schemas value budget]
    (admitted-wire-type! descriptor schemas)
    (kir-value/bounded-typed-value!
-    descriptor (wire->runtime* descriptor schemas value))))
+    descriptor (walk! wire-node descriptor schemas value budget) budget)))
 
 (defn ability-provider
   "Build the exact typed-provider map accepted by compiler runtimes.
@@ -510,9 +600,14 @@
              (let [decoded (decode-bounded response-bytes max-bytes)
                    runtime-value
                    (wire-value->runtime response-type schemas decoded)
+                   ;; `runtime-value` IS the output of the boundary validation
+                   ;; `wire-value->runtime` just ran under this descriptor, so
+                   ;; only the translation walk runs here. It used to go back
+                   ;; through `runtime->wire-value`, which validated the same
+                   ;; value a second time (4 walks per response, now 3).
                    canonical-bytes
                    (encode-bounded
-                    (runtime->wire-value response-type schemas runtime-value)
+                    (walk! runtime-node response-type schemas runtime-value nil)
                     max-bytes)]
                (kir-value/task-fulfill! task canonical-bytes)))]
        (try

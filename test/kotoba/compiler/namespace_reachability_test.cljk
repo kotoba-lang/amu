@@ -28,9 +28,10 @@
   full. Without the first, writing the evidence down would mark both reachable
   and the check would pass while protecting nothing -- verified by restoring one
   of the deleted files and watching it stay green."
-  (:require [clojure.java.io :as io]
-            [kotoba.lang.text :as str]
-            [clojure.test :refer [deftest is]]))
+  (:require [kotoba.lang.text :as str]
+            [clojure.test :refer [deftest is]]
+            #?@(:cljs [["node:fs" :as fs]
+                       ["node:path" :as path]])))
 
 (def ^:private ns-pattern #"kotoba\.compiler\.[a-zA-Z0-9._-]+")
 
@@ -44,33 +45,77 @@
   '#{kotoba.compiler.nbb.wasm-cli
      kotoba.compiler.nbb.aarch64-cli
      kotoba.compiler.nbb.x86-64-cli
-     kotoba.compiler.nbb.output-set-cli})
+     kotoba.compiler.nbb.output-set-cli
+     ;; `amu run` / `amu measure-runtime` (bin/amu `runCommands`, bin/kotoba):
+     ;; added 2026-09-11 (ce8d7236) while this check scanned 0 files, so
+     ;; nothing asked for it to be listed until 2026-09-25.
+     kotoba.compiler.nbb.run-cli})
 
-(defn- clj-files [root]
-  (->> (file-seq (io/file root))
-       (filter #(re-find #"\.clj[cs]?$" (.getName ^java.io.File %)))))
+;; Test files allowed to require the sema implementation namespace, each with
+;; the reason. Found 2026-09-25, the first time this check scanned anything
+;; since the `.cljk` rename.
+(def ^:private sema-boundary-exceptions
+  {;; Not a consumer of the frontend: it dereferences the limit copies that
+   ;; lang/limits.edn names as (private) vars IN that namespace, and compares
+   ;; their values to the table (adr-2609242100 P1). Requiring the public
+   ;; kotoba.sema would not load the vars it compares.
+   "value_bounds_agreement_test.cljk"
+   :compares-limit-copies-held-in-the-implementation-namespace})
 
-(defn- declared-ns [^java.io.File f]
+(def ^:private source-file-pattern
+  ;; VACUOUS 2026-09-11 .. 2026-09-25: this was `\.clj[cs]?$`, and the `.cljk`
+  ;; rename (e9b58163) left 0 files matching it under src/ or test/. Both tests
+  ;; below then passed over empty graphs. Measured 2026-09-25 on 2dcaac74:
+  ;; 0 files matched the old filter. Hence `SCANNED<TAB>n` and the floor.
+  #"\.clj[csk]?$")
+
+(def ^:private self-file "namespace_reachability_test.cljk")
+
+(defn- clj-files
+  "Paths of the Clojure source files under `root`, as `root/...` strings."
+  [root]
+  #?(:clj (->> (file-seq (java.io.File. ^String root))
+               (filter #(.isFile ^java.io.File %))
+               (map #(.getPath ^java.io.File %))
+               (filter #(re-find source-file-pattern %)))
+     :cljs (->> (js->clj (.readdirSync fs root #js {:recursive true}))
+                (map #(str root "/" (str/replace % (.-sep path) "/")))
+                (filter #(re-find source-file-pattern %))
+                (filter #(.isFile (.statSync fs %))))))
+
+(defn- base-name [p] (last (str/split p #"/")))
+
+(defn- scanned!
+  "Print the evidence line and fail on an empty scan: 0 files under `root`
+  means the input could not be read, not that nothing is wrong."
+  [root files]
+  (println (str "SCANNED\t" (count files) "\t" root))
+  (is (pos? (count files)) (str "scanned 0 source files under " root)))
+
+(defn- declared-ns [f]
   (some-> (re-find #"\(ns\s+([a-zA-Z0-9._-]+)" (slurp f)) second symbol))
 
 (defn- graph [root]
-  (into {} (keep (fn [f]
-                   (when-let [n (declared-ns f)]
-                     [n (into #{} (map symbol) (re-seq ns-pattern (slurp f)))])))
-        (clj-files root)))
+  (let [files (clj-files root)]
+    (scanned! root files)
+    (into {} (keep (fn [f]
+                     (when-let [n (declared-ns f)]
+                       [n (into #{} (map symbol) (re-seq ns-pattern (slurp f)))])))
+          files)))
 
 (deftest consumers-use-the-public-sema-boundary
   (let [implementation-ns (str "kotoba.compiler." "frontend")
         dependency-pattern (re-pattern
-                            (str "\\[" (java.util.regex.Pattern/quote implementation-ns)
+                            (str "\\[" (str/replace implementation-ns "." "\\.")
                                  "(?:\\s|\\])"))
-        consumers (concat (clj-files "src")
-                          (remove #(= "namespace_reachability_test.clj"
-                                      (.getName ^java.io.File %))
-                                  (clj-files "test")))
-        violations (->> consumers
+        src-files (clj-files "src")
+        test-files (remove #(or (= self-file (base-name %))
+                                (contains? sema-boundary-exceptions (base-name %)))
+                           (clj-files "test"))
+        _ (scanned! "src" src-files)
+        _ (scanned! "test" test-files)
+        violations (->> (concat src-files test-files)
                         (filter #(re-find dependency-pattern (slurp %)))
-                        (map #(.getPath ^java.io.File %))
                         sort
                         vec)]
     (is (empty? violations)

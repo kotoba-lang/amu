@@ -56,7 +56,11 @@
 ;; loaded with failures/errors -- they stay JVM-only until that changes, and
 ;; are not listed here so a pass here does not claim them.
 ;;
-;; Anything added to `test/` as `.cljc` belongs in BOTH lists below. Being
+;; Anything added to `test/` as `*_test.cljk` belongs in BOTH lists below if it
+;; passes on kbb, else in both lists of test/kotoba/compiler/test_runner.cljk
+;; (the ledger of namespaces executed nowhere). test-runner-completeness-test,
+;; which runs HERE since 2026-09-25, fails on a namespace in neither and on
+;; the two lists below disagreeing. Being
 ;; required is not being run -- and neither is being NAMED: a namespace placed
 ;; just above the `(t/run-tests ...)` form instead of inside it is a bare
 ;; symbol, evaluated and discarded, and the suite reports the unchanged count
@@ -87,6 +91,7 @@
             [kotoba.compiler.host-profile-test]
             [kotoba.compiler.ios-aot-test]
             [kotoba.compiler.logic-manifest-test]
+            [kotoba.compiler.namespace-reachability-test]
             [kotoba.compiler.native-aot-qualification-test]
             [kotoba.compiler.native-device-io-test]
             [kotoba.compiler.nbb.verdict-cache-test]
@@ -103,10 +108,12 @@
             [kotoba.compiler.surface-convergence-portable-test]
             [kotoba.compiler.symbol-operation-test]
             [kotoba.compiler.test-profile-test]
+            [kotoba.compiler.test-runner-completeness-test]
             [kotoba.compiler.typed-set-nth-test]
             [kotoba.compiler.uefi-operations-portable-test]
             [kotoba.compiler.uefi-target-gate-test]
             [kotoba.compiler.value-bounds-agreement-test]
+            [kotoba.compiler.value-codec-iterative-test]
             [kotoba.compiler.wasm32-kotoba-v1-qualification-test]))
 
 (defmethod t/report [:cljs.test/default :end-run-tests] [m]
@@ -138,6 +145,7 @@
              'kotoba.compiler.host-profile-test
              'kotoba.compiler.ios-aot-test
              'kotoba.compiler.logic-manifest-test
+             'kotoba.compiler.namespace-reachability-test
              'kotoba.compiler.native-aot-qualification-test
              'kotoba.compiler.native-device-io-test
              'kotoba.compiler.nbb.verdict-cache-test
@@ -154,8 +162,10 @@
              'kotoba.compiler.surface-convergence-portable-test
              'kotoba.compiler.symbol-operation-test
              'kotoba.compiler.test-profile-test
+             'kotoba.compiler.test-runner-completeness-test
              'kotoba.compiler.typed-set-nth-test
              'kotoba.compiler.uefi-operations-portable-test
              'kotoba.compiler.uefi-target-gate-test
              'kotoba.compiler.value-bounds-agreement-test
+             'kotoba.compiler.value-codec-iterative-test
              'kotoba.compiler.wasm32-kotoba-v1-qualification-test)
