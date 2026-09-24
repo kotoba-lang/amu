@@ -57,6 +57,30 @@
       (let [kir (ir/lower (sema/analyze source))]
         (assert (= 43 (js/Number (ir/execute kir 'compute [21]))))))))
 
+;; `(:k m)` is Clojure's `(get m :k)`. Until kotoba-sema 110cb48e the keyword
+;; accessor was the record projection only, so a keyword map whose values are
+;; all i64 -- the bounded map -- answered `(get m :k)` and refused `(:k m)`
+;; with "record-get without a type descriptor requires a record value; got
+;; :map". Measured on kotoba-lang/browser's surface reducer (aiueos desktop
+;; floor :browser-component, wall 3). Linked across a module boundary and run,
+;; both arities, present and absent keys.
+(check "keyword-lookup-on-a-map"
+  (fn []
+    (let [{:keys [source]}
+          (project/link-source
+           {'example.window
+            "(ns example.window (:export [x-of y-or]))
+             (defn x-of [id :i64] :i64 (:window/x {:window/id id :window/x 10}))
+             (defn y-or [id :i64 d :i64] :i64 (:window/y {:window/id id :window/x 10} d))"
+            'example.desk
+            "(ns example.desk (:require [example.window :as w]) (:export [probe]))
+             (defn probe [id :i64] :i64 (+ (* 100 (w/x-of id)) (w/y-or id 7)))"}
+           'example.desk)
+          kir (ir/lower (sema/analyze source))]
+      ;; 100 * (:window/x m) + (:window/y m 7): present key 10, absent key
+      ;; answers the default. 1007 and nothing else.
+      (assert (= 1007 (js/Number (ir/execute kir 'probe [3])))))))
+
 ;; ---------------------------------------------------------------------------
 ;; Filesystem graph discovery
 ;;
