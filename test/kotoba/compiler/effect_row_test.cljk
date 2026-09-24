@@ -27,6 +27,8 @@
 
 (deftest grants-drop-control-effects-and-keep-everything-else
   (is (= #{} (effect-row/grants #{:abort})))
+  (is (= #{} (effect-row/grants #{:state})) "the pure ability :state names no authority either")
+  (is (= #{[:cap/call 3]} (effect-row/grants #{[:cap/call 3] :state})))
   (is (= #{[:cap/call 3]} (effect-row/grants #{[:cap/call 3] :abort})))
   (is (= #{} (effect-row/grants nil)) "a missing row is an empty row, not an error")
   (testing "an unrecognised member is KEPT, so it reaches admission and is refused there"
@@ -36,6 +38,8 @@
   (is (effect-row/grant? [:cap/call 3]))
   (is (not (effect-row/grant? :abort)))
   (is (effect-row/control-effect? :abort))
+  (is (effect-row/control-effect? :state))
+  (is (not (effect-row/control-effect? :states)) "closed: a misspelling is not narrowed away")
   (is (not (effect-row/control-effect? [:cap/call 3])))
   (is (not (effect-row/control-effect? :cap/call))
       "the tag of a grant vector is not itself a control effect"))
