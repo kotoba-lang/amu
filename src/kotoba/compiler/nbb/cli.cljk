@@ -295,6 +295,38 @@
                      ", and amu did not fall back to wasm.")
            "."))))
 
+;; P4 of superproject adr-2609242100, section 2: deterministic fuel is OFF by
+;; default on the native profile. These are the targets that profile covers --
+;; a binary this machine runs under the POSIX kexe loader, whose default is
+;; now unmetered. Every other native target keeps metering on by default and
+;; says why: the aiueos kernel / user / UEFI objects replenish fuel per call
+;; and per interrupt entry by tier (kotoba-native elf64 / interrupt-abi, and
+;; `elf64/artifact-fuel` requires one sealed bound), the Windows loader runs
+;; a fixed 512, and android / ios are packaged by routes this step did not
+;; change. `--fuel n` (or policy :budgets :fuel) opts ANY target into
+;; metering at n, for replay and determinism.
+(def unmetered-default-targets
+  #{:x86_64-kotoba-v1 :x86_64-linux-kotoba-v1 :x86_64-macos-kotoba-v1
+    :aarch64-kotoba-v1 :aarch64-linux-kotoba-v1 :aarch64-macos-kotoba-v1})
+
+;; The budget the compile-time oracle runs under when the artifact is
+;; unmetered: `kotoba.kir/lower`'s own default, named here because the
+;; verifier re-derives the value under the artifact's `:limits :fuel`, so the
+;; two must be handed the same number.
+(def unmetered-oracle-fuel 100000)
+
+(defn- oracle-report
+  "What the compile-time oracle did, for the compile output and the sealed
+  artifact (adr-2609242100 section 4): :verified (the entry's value was
+  re-derived by the reference and sealed), :inconclusive (the reference ran
+  out of a resource first -- NOT a mismatch; the artifact seals no value and
+  says so), or :not-applicable (no pure i64/bool entry to fold)."
+  [kir]
+  (cond
+    (:oracle-inconclusive kir) {:status :inconclusive :trap (:oracle-inconclusive kir)}
+    (some? (:oracle-value kir)) {:status :verified}
+    :else {:status :not-applicable}))
+
 (defn- compile-native! [hir target backend policy emit-metadata emit-program stage-cache]
   (when (and (= :kotoba.hir/v3 (:format hir))
              (not (and (contains? #{:x86_64-kotoba-v1 :aarch64-kotoba-v1} backend)
@@ -336,14 +368,19 @@
         ;; sealed value is derived under the same budget `kotoba.verifier`
         ;; re-derives it under -- which used to be true only when both
         ;; happened to fit inside the private constant.
-        declared-fuel (native-fuel! (fuel-policy! policy emit-metadata))
-        ;; nil when the caller named no budget, so `lower` keeps its own
-        ;; default. `declared-fuel` above is not that value: it falls back to
-        ;; the RUNTIME default of 512, and handing 512 to the oracle would
-        ;; stop compiling every program between 512 and 100,000 that compiles
-        ;; today.
-        kir-result (resolve-kir! hir stage-cache
-                                 (support/oracle-fuel emit-metadata policy))
+        ;; P4: metered when the caller named a budget, or when the target's
+        ;; profile keeps fuel on (see `unmetered-default-targets`). A metered
+        ;; artifact's oracle runs under the SAME budget its run gets, so an
+        ;; oracle that runs out is exactly a run that would trap -- which is
+        ;; now `:inconclusive`, not a refused compile. Before P4 the oracle
+        ;; used 100,000 here and the verifier re-derived under 512, so every
+        ;; program between the two was refused at verification.
+        metered? (or (some? (support/oracle-fuel emit-metadata policy))
+                     (not (contains? unmetered-default-targets target)))
+        declared-fuel (if metered?
+                        (native-fuel! (fuel-policy! policy emit-metadata))
+                        unmetered-oracle-fuel)
+        kir-result (resolve-kir! hir stage-cache declared-fuel)
         kir (:value kir-result)
         value (:oracle-value kir)
         profile (target-profile/profile target)
@@ -362,16 +399,16 @@
          "artifact-seal"
          (fn []
            (artifact/seal
-            {:format :kotoba.kexe/v1 :target target :target-profile profile :value value
+            (cond-> {:format :kotoba.kexe/v1 :target target :target-profile profile :value value
              :kir-sha256 (artifact/sha256 program)
              :lowering (case backend
                          :x86_64-kotoba-v1 :runtime-sysv-v1
                          :aarch64-kotoba-v1 :runtime-aapcs64-v1)
              :fuel-abi (case backend
                          :x86_64-kotoba-v1
-                         {:mode :hidden-context-r9 :initial declared-fuel}
+                         {:mode :hidden-context-r9 :initial (if metered? declared-fuel max-native-fuel)}
                          :aarch64-kotoba-v1
-                         {:mode :hidden-context-x7 :initial declared-fuel})
+                         {:mode :hidden-context-x7 :initial (if metered? declared-fuel max-native-fuel)})
              :context-abi {:version 10 :fuel-offset 8 :allow-bitmap-offset 16
                            :allow-bitmap-bytes 32 :cap-call-offset 48
                            :pair-new-offset 56 :pair-first-offset 64
@@ -413,9 +450,20 @@
                            :vector-item-capacity 65536}
              :effects (:effects hir)
              :compatibility compat
-             :limits {:memory-bytes 65536 :fuel declared-fuel :stack-bytes 4096}
+             ;; Unmetered: `:fuel` is the ORACLE's budget (what the verifier
+             ;; re-derives the value under) and `:fuel-abi :initial` is the
+             ;; counter's ceiling the loader starts at. A metered artifact is
+             ;; shaped exactly as before P4.
+             :limits (cond-> {:memory-bytes 65536 :fuel declared-fuel :stack-bytes 4096}
+                       (not metered?) (assoc :fuel-metering :off))
              :code (mapv #(bit-and (int %) 0xff) code)
-             :program program :exports (:exports emitted)})))
+             :program program :exports (:exports emitted)}
+              ;; The artifact says its value was NOT oracle-verified. Present
+              ;; only then, so every other artifact is shaped as before.
+              (:oracle-inconclusive kir)
+              (assoc :oracle {:status :inconclusive
+                              :trap (:oracle-inconclusive kir)
+                              :fuel declared-fuel})))))
         ;; Computed here rather than inside provenance so the verdict key and
         ;; the provenance record share ONE computation: `describe` returns
         ;; `(:definitions result)` unchanged when it is already present.
@@ -438,6 +486,8 @@
      :definitions report
      :admission admission :artifact artifact-map :compatibility compat
      :stage-cache {:kir (:cache kir-result)}
+     :oracle (oracle-report kir)
+     :fuel-metering (if metered? :on :off)
      :verdict-cache {:native-verify (:cache verify)}}))
 
 (defn- serialized-native [source policy emit-metadata result package artifact-kind]
@@ -494,6 +544,8 @@
     (cond-> {:ok true :target target :output output
              :provenance-output provenance-output
              :publication-output publication-output
+             :oracle (:oracle result)
+             :fuel-metering (:fuel-metering result)
              :verdict-cache (:verdict-cache result)}
       artifact-bytes (assoc :artifact-bytes artifact-bytes))))
 
@@ -577,6 +629,8 @@
                  :cache :miss :cache-key key
                  :stage-cache {:hir (:cache hir-result)
                                :kir (get-in result [:stage-cache :kir])}
+                 :oracle (:oracle result)
+                 :fuel-metering (:fuel-metering result)
                  :verdict-cache (:verdict-cache result)}
           artifact-bytes (assoc :artifact-bytes artifact-bytes))))))
 

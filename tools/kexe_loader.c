@@ -136,7 +136,15 @@ typedef int64_t (*kexe_fn8)(int64_t, int64_t, int64_t, int64_t,
  * larger fuel budget: fuel bounds the guest's own steps, the rlimits bound
  * the child, and both stay in force -- each as its own budget
  * (kexe_cpu_seconds / kexe_wall_seconds below). */
-static uint64_t kexe_initial_fuel = 512;
+/* P4 of superproject adr-2609242100: deterministic fuel is OFF by default on
+ * the native profile (ADR section 2). The compiled charge still runs at every
+ * re-entering function's entry -- one decrement and one untaken branch --
+ * but the counter starts at KEXE_FUEL_MAX, which no run reaches before the
+ * CPU-seconds emergency stop does, so it never traps and nothing reads it.
+ * KEXE_FUEL=<n> (or a packaged command's KEXE_EMBEDDED_FUEL n > 0) opts in
+ * to metering for replay and determinism; KEXE_FUEL=off names the default. */
+static uint64_t kexe_initial_fuel = KEXE_FUEL_MAX;
+static int kexe_fuel_metered = 0;
 /* The string arena budget in force for this run: the default above unless
  * KEXE_STRING_POOL (or, in a packaged command, the baked constant) names
  * another positive decimal. Every allocation site checks THIS, never the
@@ -480,6 +488,10 @@ struct kexe_shared_v10 {
   struct kexe_context_v10 context;
   int64_t result;
   uint64_t completed;
+  /* Which per-run budget a guest exhausted, written by the child just before
+   * the trap it raises and read by the supervisor to NAME the trap
+   * (:budget/cells, :budget/bytes). 0 = none recorded. P4 of adr-2609242100. */
+  uint64_t budget_exhausted;
   uint64_t pair_used;
   struct kexe_pair_v1 pairs[KEXE_PAIR_MAX];
   /* One flag per pair handle: the (offset, length) bytes this handle
@@ -535,6 +547,20 @@ _Static_assert(offsetof(struct kexe_shared_v10, region_pool) +
                    KEXE_REGION_POOL_BYTES == sizeof(struct kexe_shared_v10),
                "region pool must be the last field of the shared mapping");
 _Static_assert(offsetof(struct kexe_context_v10, fuel) == 8, "fuel ABI drift");
+
+/* P4 of adr-2609242100: the budget a refusing host call records before its
+ * trap, so the supervisor can name it (see report_budget_trap). */
+#define KEXE_BUDGET_CELLS_PAIRS 1u
+#define KEXE_BUDGET_CELLS_VECTOR_TABLE 2u
+#define KEXE_BUDGET_CELLS_VECTOR_ITEMS 3u
+#define KEXE_BUDGET_BYTES_STRING_POOL 4u
+#define KEXE_BUDGET_CELLS_KGRAPH 5u
+static struct kexe_shared_v10 *kexe_shared_for_budget = NULL;
+static void note_budget(uint64_t reason) {
+  if (kexe_shared_for_budget != NULL && kexe_shared_for_budget->budget_exhausted == 0)
+    kexe_shared_for_budget->budget_exhausted = reason;
+}
+
 _Static_assert(offsetof(struct kexe_context_v10, allow) == 16, "allow ABI drift");
 _Static_assert(offsetof(struct kexe_context_v10, cap_call) == 48, "cap ABI drift");
 _Static_assert(offsetof(struct kexe_context_v10, pair_new) == 56, "pair ABI drift");
@@ -658,6 +684,7 @@ static int64_t checked_pair_new(struct kexe_context_v10 *context,
   if (context == NULL || context->version != 10 ||
       shared->pair_used >= kexe_pair_budget ||
       shared->pair_used >= KEXE_PAIR_MAX) {
+    if (context != NULL && context->version == 10) note_budget(KEXE_BUDGET_CELLS_PAIRS);
     raise(SIGILL);
     return 0;
   }
@@ -725,6 +752,9 @@ static struct kexe_vector_v1 *resolve_vector(struct kexe_shared_v10 *shared,
  * arena is wider. Reporting a KIR limit as an arena would make the diagnostic
  * name the wrong ceiling. */
 static void arena_exhausted(const char *reason) {
+  note_budget(strcmp(reason, "vector-items-exhausted") == 0
+                  ? KEXE_BUDGET_CELLS_VECTOR_ITEMS
+                  : KEXE_BUDGET_CELLS_VECTOR_TABLE);
   static const char prefix[] = "KEXE_TRAP {:kind :arena :reason :";
   ssize_t written = write(STDERR_FILENO, prefix, sizeof(prefix) - 1);
   written = write(STDERR_FILENO, reason, strlen(reason));
@@ -925,6 +955,7 @@ static int64_t checked_kgraph_assert(struct kexe_context_v10 *context,
   struct kexe_shared_v10 *shared = (struct kexe_shared_v10 *)context;
   if (context == NULL || context->version != 10 ||
       shared->kgraph_used >= KEXE_KGRAPH_CAPACITY) {
+    if (context != NULL && context->version == 10) note_budget(KEXE_BUDGET_CELLS_KGRAPH);
     raise(SIGILL);
     return 0;
   }
@@ -1433,6 +1464,7 @@ static int64_t intern_utf8(struct kexe_context_v10 *context,
   struct kexe_shared_v10 *shared = (struct kexe_shared_v10 *)context;
   if (shared->string_pool_used + length > kexe_string_pool_budget ||
       shared->string_pool_used + length > KEXE_STRING_POOL_MAX) {
+    note_budget(KEXE_BUDGET_BYTES_STRING_POOL);
     raise(SIGILL);
     return 0;
   }
@@ -1631,6 +1663,7 @@ static int64_t intern_pool_string(struct kexe_context_v10 *context,
   if (context == NULL || text == NULL ||
       n > kexe_string_pool_budget ||
       shared->string_pool_used + n > kexe_string_pool_budget) {
+    note_budget(KEXE_BUDGET_BYTES_STRING_POOL);
     raise(SIGILL);
     return 0;
   }
@@ -3942,6 +3975,7 @@ static int64_t fs_app_data_range_read_provider(struct kexe_context_v10 *context,
       !kexe_parse_u64_span(spec, (size_t)(colon - spec), &offset) ||
       !kexe_parse_u64_span(colon + 1, (size_t)(spec + spec_length - colon - 1), &window) ||
       window > kexe_string_pool_budget) {
+    note_budget(KEXE_BUDGET_BYTES_STRING_POOL);
     raise(SIGILL);
     return 0;
   }
@@ -4571,6 +4605,7 @@ static int64_t checked_string_append_range(struct kexe_context_v10 *context,
   if (a_is_tail) {
     if (shared->string_pool_used + (uint64_t)length_b > kexe_string_pool_budget ||
         shared->string_pool_used + (uint64_t)length_b < shared->string_pool_used) {
+    note_budget(KEXE_BUDGET_BYTES_STRING_POOL);
       raise(SIGILL);
       return 0;
     }
@@ -4580,6 +4615,7 @@ static int64_t checked_string_append_range(struct kexe_context_v10 *context,
   } else {
     if (shared->string_pool_used + (uint64_t)total > kexe_string_pool_budget ||
         shared->string_pool_used + (uint64_t)total < shared->string_pool_used) {
+    note_budget(KEXE_BUDGET_BYTES_STRING_POOL);
       raise(SIGILL);
       return 0;
     }
@@ -4668,6 +4704,7 @@ static int64_t checked_string_fold_ascii(struct kexe_context_v10 *context,
   if (!ensure_valid_string(context, handle, bytes, length)) { raise(SIGILL); return 0; }
   if (shared->string_pool_used + (uint64_t)length > kexe_string_pool_budget ||
       shared->string_pool_used + (uint64_t)length < shared->string_pool_used) {
+    note_budget(KEXE_BUDGET_BYTES_STRING_POOL);
     raise(SIGILL);
     return 0;
   }
@@ -4778,6 +4815,7 @@ static int64_t checked_string_concat(struct kexe_context_v10 *context,
   if (a_is_tail) {
     if (shared->string_pool_used + (uint64_t)length_b > kexe_string_pool_budget ||
         shared->string_pool_used + (uint64_t)length_b < shared->string_pool_used) {
+    note_budget(KEXE_BUDGET_BYTES_STRING_POOL);
       raise(SIGILL);
       return 0;
     }
@@ -4787,6 +4825,7 @@ static int64_t checked_string_concat(struct kexe_context_v10 *context,
   } else {
     if (shared->string_pool_used + (uint64_t)total > kexe_string_pool_budget ||
         shared->string_pool_used + (uint64_t)total < shared->string_pool_used) {
+    note_budget(KEXE_BUDGET_BYTES_STRING_POOL);
       raise(SIGILL);
       return 0;
     }
@@ -4937,6 +4976,34 @@ static void trap_handler(int signal_number) {
   _exit(120);
 }
 
+/* Top of the guest's stack, recorded by the child before the guest runs, and
+ * the stack size in force before install_limits lowered RLIMIT_STACK: macOS
+ * keeps the main thread's stack at its launch size (measured: the fault lands
+ * 8,364,176 bytes below the recorded top with an 8 MiB launch limit), Linux
+ * grows it up to the lowered 1 MiB. Either floor counts. */
+static uintptr_t kexe_stack_top = 0;
+static uintptr_t kexe_stack_launch_limit = 0;
+
+static int near_stack_floor(uintptr_t address, uintptr_t limit) {
+  return limit > 0 && kexe_stack_top > limit && address < kexe_stack_top &&
+         address + limit + 262144u >= kexe_stack_top &&
+         address + limit <= kexe_stack_top + 262144u;
+}
+
+static void fault_handler(int signal_number, siginfo_t *info, void *context) {
+  (void)context;
+  uintptr_t address = (uintptr_t)info->si_addr;
+  if (near_stack_floor(address, 1024u * 1024u) ||
+      near_stack_floor(address, kexe_stack_launch_limit)) {
+    static const char line[] =
+        "KEXE_TRAP {:kind :host :reason :host/stack-exhausted}\n";
+    ssize_t written = write(STDERR_FILENO, line, sizeof(line) - 1);
+    (void)written;
+    _exit(120);
+  }
+  trap_handler(signal_number);
+}
+
 static void supervisor_alarm_handler(int signal_number) {
   (void)signal_number;
   supervisor_timed_out = 1;
@@ -5034,15 +5101,59 @@ static int supervise(pid_t child) {
  * cannot see. The string arena joins the report for the same reason -- it
  * had no line at all, so a guest that exhausted it had nothing to read. */
 #define KEXE_REPORT_TAIL_FMT                                                  \
-  "} :heap {:capacity %" PRIu64 " :used %" PRIu64                             \
+  "%s} :heap {:capacity %" PRIu64 " :used %" PRIu64                             \
   "} :string-pool {:capacity %" PRIu64 " :used %" PRIu64                      \
   "} :vectors {:capacity %" PRIu64 " :used %"                                 \
   PRIu64 "} :vector-items {:capacity %" PRIu64 " :used %" PRIu64 "}}\n"
+/* An unmetered run says so inside its :fuel map (:metered false); a metered
+ * run's report is byte-identical to what it was before P4. */
 #define KEXE_REPORT_TAIL_ARGS(s)                                              \
+  (kexe_fuel_metered ? "" : " :metered false"),                               \
   kexe_pair_budget, (s)->pair_used,                                           \
       kexe_string_pool_budget, (s)->string_pool_used,                          \
       kexe_vector_budget, (s)->vector_used,                                    \
       kexe_vector_item_budget, (s)->vector_item_used
+
+/* Names the per-run budget a trapped guest exhausted (P4 of adr-2609242100),
+ * on stderr AFTER the child's own signal line, so the first KEXE_TRAP line a
+ * reader takes is unchanged. The four budgets of the native profile:
+ *
+ *   :budget/fuel   metered run whose counter is 0 at a SIGILL/SIGTRAP: the
+ *                  fuel charge is the only guest trap that leaves it at 0
+ *                  (x86-64 restores the decrement before ud2, AArch64 never
+ *                  stores it)
+ *   :budget/cells  the pair arena (KEXE_PAIRS) or a vector arena
+ *                  (KEXE_VECTORS / KEXE_VECTOR_ITEMS: an item is a cell of
+ *                  a second pool) -- recorded by the host call that refused,
+ *                  or inferred from a full pair arena when the refusal came
+ *                  from inline code
+ *   :budget/bytes  the string pool (KEXE_STRING_POOL)
+ *
+ * frames are not metered on native (no call-depth counter in the compiled
+ * code); the guest stack is RLIMIT_STACK and its exhaustion is a signal. */
+static void report_budget_trap(const struct kexe_shared_v10 *shared, int child_status) {
+  if (child_status == 0) return;
+  const char *line = NULL;
+  switch (shared->budget_exhausted) {
+    case KEXE_BUDGET_CELLS_PAIRS:
+      line = "KEXE_TRAP {:kind :budget :reason :budget/cells :arena :pairs}\n"; break;
+    case KEXE_BUDGET_CELLS_VECTOR_TABLE:
+      line = "KEXE_TRAP {:kind :budget :reason :budget/cells :arena :vectors}\n"; break;
+    case KEXE_BUDGET_CELLS_VECTOR_ITEMS:
+      line = "KEXE_TRAP {:kind :budget :reason :budget/cells :arena :vector-items}\n"; break;
+    case KEXE_BUDGET_CELLS_KGRAPH:
+      line = "KEXE_TRAP {:kind :budget :reason :budget/cells :arena :kgraph}\n"; break;
+    case KEXE_BUDGET_BYTES_STRING_POOL:
+      line = "KEXE_TRAP {:kind :budget :reason :budget/bytes :arena :string-pool}\n"; break;
+    default:
+      if (kexe_fuel_metered && shared->context.fuel == 0)
+        line = "KEXE_TRAP {:kind :budget :reason :budget/fuel}\n";
+      else if (shared->pair_used >= kexe_pair_budget)
+        line = "KEXE_TRAP {:kind :budget :reason :budget/cells :arena :pairs}\n";
+      break;
+  }
+  if (line != NULL) write_stderr_checked(line, strlen(line));
+}
 
 static int write_supervisor_report(const struct kexe_shared_v10 *shared,
                                    int child_status,
@@ -5202,6 +5313,31 @@ static void install_limits(void) {
   };
   for (size_t i = 0; i < sizeof(signals) / sizeof(signals[0]); i++) {
     if (sigaction(signals[i], &action, NULL) != 0) fail("sigaction");
+  }
+  /* P4 of adr-2609242100: a guest recursion that runs off the stack faulted
+   * on the stack itself, so the handler above -- which runs on that stack --
+   * could not run, and the supervisor could only say
+   * `:unhandled-child-signal`. SIGSEGV/SIGBUS now run on an alternate stack
+   * and, when the fault lies at the bottom of the guest's stack (within
+   * 256 KiB of the RLIMIT_STACK floor below the stack top recorded here),
+   * name it `:host/stack-exhausted`: the host's limit, not a program budget.
+   * The native profile does NOT meter frames -- the compiled code keeps no
+   * call-depth counter -- so this is the name that fires there. */
+  {
+    static uint8_t alternate_stack[65536];
+    stack_t ss;
+    memset(&ss, 0, sizeof(ss));
+    ss.ss_sp = alternate_stack;
+    ss.ss_size = sizeof(alternate_stack);
+    ss.ss_flags = 0;
+    if (sigaltstack(&ss, NULL) != 0) fail("sigaltstack");
+    struct sigaction fault;
+    memset(&fault, 0, sizeof(fault));
+    fault.sa_sigaction = fault_handler;
+    sigemptyset(&fault.sa_mask);
+    fault.sa_flags = SA_RESETHAND | SA_ONSTACK | SA_SIGINFO;
+    if (sigaction(SIGSEGV, &fault, NULL) != 0) fail("sigaction segv");
+    if (sigaction(SIGBUS, &fault, NULL) != 0) fail("sigaction bus");
   }
   /* The child's own wall alarm, one second inside the supervisor's so that
    * SIGALRM is reported by this handler before the supervisor's SIGKILL is
@@ -5507,6 +5643,7 @@ int main(int argc, char **argv) {
       mmap(NULL, sizeof(*shared), PROT_READ | PROT_WRITE,
            MAP_SHARED | MAP_ANONYMOUS, -1, 0);
   if (shared == MAP_FAILED) fail("mmap shared execution state");
+  kexe_shared_for_budget = shared;
   /* No memset: MAP_ANONYMOUS pages are zero-filled by the kernel, so this
    * only ever re-zeroed memory that was already zero -- and it TOUCHED every
    * page while doing it, which is what would make a large string arena cost
@@ -5521,14 +5658,17 @@ int main(int argc, char **argv) {
    * through the environment would be choosing the command's resource bound
    * on its behalf. This was the last of the four still readable from
    * outside. */
-  kexe_initial_fuel = KEXE_EMBEDDED_FUEL;
+  /* 0 = unmetered (P4: the native default); n > 0 = metered at n. */
+  kexe_fuel_metered = KEXE_EMBEDDED_FUEL != 0;
+  kexe_initial_fuel = kexe_fuel_metered ? (uint64_t)KEXE_EMBEDDED_FUEL : KEXE_FUEL_MAX;
 #else
   const char *fuel_env = getenv("KEXE_FUEL");
-  if (fuel_env != NULL && fuel_env[0] != '\0') {
+  if (fuel_env != NULL && fuel_env[0] != '\0' && strcmp(fuel_env, "off") != 0) {
     if (parse_u64(fuel_env, &kexe_initial_fuel) != 0 || kexe_initial_fuel == 0) {
-      fprintf(stderr, "kexe-loader: KEXE_FUEL must be a positive decimal integer\n");
+      fprintf(stderr, "kexe-loader: KEXE_FUEL must be a positive decimal integer, or off\n");
       return 2;
     }
+    kexe_fuel_metered = 1;
   }
 #endif
   /* Refused, not clamped, and checked for a packaged command's baked budget
@@ -5700,6 +5840,7 @@ int main(int argc, char **argv) {
   if (child < 0) fail("fork");
   if (child > 0) {
     int child_status = supervise(child);
+    report_budget_trap(shared, child_status);
     if (structured_report)
       child_status = write_supervisor_report(shared, child_status, result_type,
                                              record_field_count,
@@ -5721,6 +5862,14 @@ int main(int argc, char **argv) {
   if (getenv("KEXE_TIMEOUT_PROBE") != NULL) {
     for (;;) {
     }
+  }
+  {
+    volatile uint8_t marker = 0;
+    kexe_stack_top = (uintptr_t)&marker;
+    struct rlimit launch;
+    if (getrlimit(RLIMIT_STACK, &launch) == 0 && launch.rlim_cur != RLIM_INFINITY &&
+        launch.rlim_cur < (rlim_t)(1ull << 40))
+      kexe_stack_launch_limit = (uintptr_t)launch.rlim_cur;
   }
   install_limits();
   install_syscall_sandbox();

@@ -75,16 +75,15 @@
       (if (zero? i) acc (recur (dec i) [lst :cons [cell (js/BigInt i) acc]])))))
 
 (defn- node! [script & args]
-  ;; --stack-size=4096, the bounded stack bin/amu gives the compiler, because
-  ;; kotoba-wasm lowers a `loop` whose accumulator is a reference-typed value
-  ;; as RECURSION, not a Wasm loop (an i64-only loop is a real loop): building
-  ;; the 10,000-cell list is 10,000 nested wasm frames. Measured 2026-09-24 on
-  ;; macOS node 26: 10,000 fits the default stack and 30,000 does not; with
-  ;; 4096, 30,000 fits and 60,000 does not; CI's ubuntu default did not fit
-  ;; 10,000. That is a call-depth budget (adr-2609242100 P4), not value
-  ;; validation, which is what this corpus measures.
+  ;; The DEFAULT engine stack. Until P4 of adr-2609242100 this passed
+  ;; --stack-size=4096, because kotoba-wasm lowered a `loop` whose result is
+  ;; reference-typed as RECURSION, so building the 10,000-cell list was
+  ;; 10,000 nested wasm frames (macOS default stack: 10,000 fit and 30,000
+  ;; did not; CI's ubuntu default did not fit 10,000). kotoba-wasm now lowers
+  ;; such a loop as a Wasm loop (measured: 100,000 cells on the default
+  ;; stack), so the probes run on the stack a host actually has.
   (let [r (.spawnSync child js/process.execPath
-                      (clj->js (into ["--stack-size=4096" "--input-type=module" "-e" script] args))
+                      (clj->js (into ["--input-type=module" "-e" script] args))
                       #js {:cwd root :encoding "utf8" :timeout 600000 :maxBuffer (* 64 1024 1024)})]
     (if (and (nil? (.-error r)) (zero? (.-status r)))
       (.trim (.-stdout r))

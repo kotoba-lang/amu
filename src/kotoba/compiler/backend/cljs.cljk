@@ -72,7 +72,7 @@
   loaded cljs module is, like a WASM Instance, permanently exhausted after
   512 total function calls across its whole lifetime -- not 512 per
   top-level call."
-  {:kotoba/export [default-fuel default-ns-name emit]}
+  {:kotoba/export [default-frames default-fuel default-ns-name emit]}
   (:require [kotoba.lang.text :as str]
             [kotoba.compiler.reference-runtime :as reference-runtime]))
 
@@ -305,14 +305,23 @@
         lowered-result (list check (list 'quote result)
                              (lower-expr body))]
     (list (if exported? 'defn 'defn-) name (vec params)
-          (list* 'do '(kotoba$charge!) (concat parameter-checks [lowered-result])))))
+          ;; P4 of adr-2609242100: `frames` -- call depth, trap budget/frames.
+          ;; Entered after the fuel charge, left in `finally` so a trap
+          ;; unwinding through leaves the count right.
+          (list 'do '(kotoba$charge!) '(kotoba$enter!)
+                (list 'try (list* 'do (concat parameter-checks [lowered-result]))
+                      '(finally (swap! kotoba$frames dec)))))))
 
 (def ^:private prelude-tail-forms
   "Everything in the prelude that does not depend on the declared budget."
   '[(defn- kotoba$charge! []
       (let [remaining (swap! kotoba$fuel dec)]
         (when (neg? remaining)
-          (throw (ex-info "fuel-exhausted" {:kotoba.cljs/trap :fuel-exhausted})))))
+          (throw (ex-info "budget/fuel" {:kotoba.cljs/trap :budget/fuel})))))
+    (defn- kotoba$enter! []
+      (when (> (swap! kotoba$frames inc) kotoba$frames-limit)
+        (swap! kotoba$frames dec)
+        (throw (ex-info "budget/frames" {:kotoba.cljs/trap :budget/frames}))))
     ;; 2^53 - 1, JS's own safe-integer bound -- written as a portable
     ;; numeric literal (not js/Number.isSafeInteger) so this evaluates
     ;; identically under real cljs or plain JVM Clojure (see this ns's
@@ -603,6 +612,16 @@
   exactly what it did before."
   512)
 
+(def default-frames
+  "Call-depth budget of the cljs profile (lang/limits.edn :profile/cljs
+  :frames), trap budget/frames. P4 of adr-2609242100: this backend had no
+  frames budget, and a deep non-tail recursion ended as the host's
+  `Maximum call stack size exceeded`. Measured 2026-09-24 on nbb 1.5.212 /
+  node 26, default stack, the emitted module required from a script: a bare
+  `(+ 1 (depth (- n 1)))` answers at 400 and exhausts the host at 450. 256
+  is under that, so the deterministic budget answers first for that shape."
+  256)
+
 (defn- prelude-forms
   "The runtime prelude for a DECLARED fuel budget.
 
@@ -627,8 +646,12 @@
   ceiling of ~510 iterations for the life of an instance — measured: a plain
   countdown returns at n=510 and traps at n=600. Any guest reading input longer
   than that could not finish, whatever the host was willing to spend."
-  [fuel]
-  (into [(list 'defonce 'kotoba$fuel (list 'atom fuel))] prelude-tail-forms))
+  ([fuel] (prelude-forms fuel default-frames))
+  ([fuel frames]
+   (into [(list 'defonce 'kotoba$fuel (list 'atom fuel))
+          (list 'defonce 'kotoba$frames (list 'atom 0))
+          (list 'def 'kotoba$frames-limit frames)]
+         prelude-tail-forms)))
 
 (def default-ns-name
   "KIR carries no `ns` name (sema/analyze validates and discards the

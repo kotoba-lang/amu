@@ -61,7 +61,10 @@
       pool (or (opt "--string-pool") "65536")
       ;; Fuel, the fourth and last thing a caller could still have chosen on
       ;; the command's behalf. Default is the loader's own 512.
-      fuel (or (opt "--fuel") "512")
+      ;; P4 of adr-2609242100: a packaged command is unmetered by default
+      ;; (the native profile's default); `--fuel n` bakes a metered budget,
+      ;; `--fuel off` says the default out loud. 0 is the loader's "off".
+      fuel (let [f (opt "--fuel")] (if (or (nil? f) (= "off" f)) "0" f))
       ;; The pair heap: every string handle is one, and nothing is reclaimed.
       ;; A line walk spends about eight per line, so this is the bound a
       ;; text command meets first.
@@ -90,8 +93,8 @@
   (when-not (re-matches #"[0-9]+" (str offset)) (die "--offset must be a decimal"))
   (when-not (re-matches #"[1-9][0-9]*" (str pool))
     (die "--string-pool must be a positive decimal"))
-  (when-not (re-matches #"[1-9][0-9]*" (str fuel))
-    (die "--fuel must be a positive decimal"))
+  (when-not (or (= "0" fuel) (re-matches #"[1-9][0-9]*" (str fuel)))
+    (die "--fuel must be a positive decimal, or off"))
   (when-not (re-matches #"[1-9][0-9]*" (str pairs))
     (die "--pairs must be a positive decimal"))
   (when-not (re-matches #"[1-9][0-9]*" (str vectors))

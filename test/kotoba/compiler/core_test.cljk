@@ -329,7 +329,7 @@
         kir (:kir (first results))]
     (is (= 42 (:oracle-value kir)))
     (is (= 1 (count (set (map :kir results)))))
-    (is (= :heap-exhausted
+    (is (= :budget/cells
            (:trap (ex-data
                    (try
                      (ir/execute kir 'main [] {:pair-capacity 0})
