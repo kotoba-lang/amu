@@ -10,7 +10,7 @@
   validity bounds and the recorded sizes are admitted through
   `verifier/guest-integer?` and compared through a normalizing equality."
   {:kotoba/export [attest file-identity sbom-bytes verify!]}
-  (:require [clojure.walk :as walk]
+  (:require [kotoba.lang.coll :as coll]
             [kotoba.verifier :as verifier]
             [kotoba.verifier.signing :as signing]
             [kotoba.kir.target :as target]
@@ -35,7 +35,7 @@
      :cljs (if (identical? js/BigInt (type x)) (js/Number x) x)))
 (defn- guest= [a b]
   #?(:clj (= a b)
-     :cljs (= (walk/postwalk as-number a) (walk/postwalk as-number b))))
+     :cljs (= (coll/postwalk as-number a) (coll/postwalk as-number b))))
 
 #?(:clj
    (defn- hex [bytes]

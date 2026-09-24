@@ -3,7 +3,7 @@
   (:require [kotoba.lang.text :as str]
             [kotoba.sema :as sema]
             [kotoba.kir.value :as value]
-            #?@(:cljs [[clojure.walk :as walk]
+            #?@(:cljs [[kotoba.lang.coll :as coll]
                        [kotoba.kir.cljs-i64 :as i64]])))
 
 ;; clojure.core/some, spelled as the loop it is. In Kotoba `some` is the
@@ -868,7 +868,7 @@
 
 #?(:cljs
    (defn- readable-integers [form]
-     (walk/postwalk (fn [x] (if (i64/bigint-value? x) (IntegerLiteral. (str x)) x))
+     (coll/postwalk (fn [x] (if (i64/bigint-value? x) (IntegerLiteral. (str x)) x))
                     form)))
 
 ;; ⚠ `*print-namespace-maps*` is bound off here. A map whose keys are all

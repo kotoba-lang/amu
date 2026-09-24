@@ -49,7 +49,7 @@
             ["node:crypto" :as crypto]
             ["node:fs" :as fs]
             ["node:path" :as node-path]
-            [clojure.set :as set]
+            [kotoba.lang.coll :as coll]
             [kotoba.lang.text :as str]
             [kotoba.lang.package-contract :as contract]
             [kotoba.compiler.nbb.cli-support :as support]))
@@ -299,12 +299,12 @@
                 :manifest declared-cid})))
   (let [signed-by (set (map :did (:kotoba.package/signatures manifest)))
         claimed (set (:dep/signers dep))]
-    (when-let [absent (seq (set/difference claimed signed-by))]
+    (when-let [absent (seq (coll/set-difference claimed signed-by))]
       (reject! "the lock names signers who did not sign this manifest"
                {:dependency (:dep/name dep) :missing (vec (sort absent))})))
   (let [requested (set (:kotoba.package/capabilities manifest))
         granted (set (:dep/capabilities dep))]
-    (when-let [over (seq (set/difference granted requested))]
+    (when-let [over (seq (coll/set-difference granted requested))]
       (reject! "lock grants capabilities the package does not declare"
                {:dependency (:dep/name dep) :granted (vec (sort over))
                 :declared (vec (sort requested))})))
@@ -493,7 +493,7 @@
   [dependencies computed]
   (let [have (set computed)
         missing (keep (fn [dep]
-                        (let [gone (set/difference (:definition-cids dep) have)]
+                        (let [gone (coll/set-difference (:definition-cids dep) have)]
                           (when (seq gone)
                             {:dependency (:name dep)
                              :missing (vec (sort gone))})))

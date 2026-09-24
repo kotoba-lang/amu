@@ -6,7 +6,7 @@
   artifact selected by the output-set commit marker."
   {:kotoba/export [admit! format]}
   (:require [cljs.reader :as reader]
-            [clojure.walk :as walk]
+            [kotoba.lang.coll :as coll]
             [kotoba.artifact.core :as artifact]
             [kotoba.compiler.nbb.cli-support :as support]
             [kotoba.compiler.nbb.compile-cache :as digest]
@@ -93,7 +93,7 @@
         _ (support/parse-policy-material {:present? true :text artifact-text})
         native (-> (reader/read-string artifact-text)
                    (update :value
-                           #(walk/postwalk (fn [x]
+                           #(coll/postwalk (fn [x]
                                              (if (integer? x)
                                                (i64/->bigint x) x))
                                            %)))

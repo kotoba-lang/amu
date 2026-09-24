@@ -1,6 +1,6 @@
 (ns kotoba.compiler.core
   {:kotoba/export [check-project check-source compile-component compile-component-wit compile-ipld-adl-source compile-project compile-source compile-source-cached compiler-version default-component-budgets floating-point-policy refuse-fuel-declared-twice! source-compilable-targets supported-targets targets]}
-  (:require [clojure.walk :as walk]
+  (:require [kotoba.lang.coll :as coll]
             [kotoba.compiler.capability-names :as cap-names]
             [kotoba.sema :as sema]
             [kotoba.kir.compatibility :as compatibility]
@@ -365,7 +365,7 @@
                                     #(or % (vec (repeat (count (:params function)) :i64))))
                             (update :result #(or % :i64))
                             (update :body
-                                    #(walk/postwalk
+                                    #(coll/postwalk
                                       (fn [form]
                                         (if (and (seq? form)
                                                  (= 'cap-call (first form))

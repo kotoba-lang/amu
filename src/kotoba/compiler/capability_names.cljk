@@ -44,7 +44,7 @@
   ;; check` in project mode refuses a module without one. Public functions
   ;; only; `id->name` / `name->id` are defs and an export must be a function.
   {:kotoba/export [named-grant name-grants wire-grant wire-policy]}
-  (:require [clojure.walk :as walk]
+  (:require [kotoba.lang.coll :as coll]
             [kotoba.sema :as sema]
             #?(:cljs [kotoba.kir.cljs-i64 :as i64])))
 
@@ -93,7 +93,7 @@
   the ABAC attributes it echoes -- so one rule covers every place a grant is
   printed, instead of each call site remembering."
   [value]
-  (walk/postwalk named-grant value))
+  (coll/postwalk named-grant value))
 
 (defn- host-wire-int
   "The id in the SAME representation the effect row carries, so a named policy

@@ -11,8 +11,7 @@
   numbers -- every integer in a manifest is a share in basis points, a
   threshold or an epoch, all far below 2^53."
   {:kotoba/export [report validate! verify-dataset!]}
-  (:require [clojure.set :as set]
-            [clojure.walk :as walk]
+  (:require [kotoba.lang.coll :as coll]
             [kotoba.verifier :as verifier]
             #?@(:clj [[clojure.java.io :as io]]
                 :cljs [["node:crypto" :as crypto]
@@ -40,7 +39,7 @@
   representation on both hosts."
   [value]
   #?(:clj value
-     :cljs (walk/postwalk #(if (verifier/guest-integer? %) (js/Number %) %) value)))
+     :cljs (coll/postwalk #(if (verifier/guest-integer? %) (js/Number %) %) value)))
 
 (defn- exact-keys? [value expected]
   (and (map? value) (= expected (set (keys value)))))
@@ -86,7 +85,7 @@
                    (every? #(and (exact-keys? % support-keys)
                                  (keyword? (:platform %))
                                  (contains? statuses (:status %))
-                                 (set? (:paths %)) (set/subset? (:paths %) paths)
+                                 (set? (:paths %)) (coll/subset? (:paths %) paths)
                                  (vector? (:evidence %))
                                  (every? sha256? (:evidence %))
                                  (if (= :release (:status %))
@@ -94,7 +93,7 @@
                                    (empty? (:evidence %))))
                            support)
                    (= (count support) (count (set (map :platform support))))
-                   (set/subset? (set (map :platform support))
+                   (coll/subset? (set (map :platform support))
                                 (set (map :platform observations))))
       (reject! "coverage support evidence rejected" {})))
   manifest))
@@ -117,7 +116,7 @@
                   digest evidence]
             (let [verified (get evidence-by-digest digest)]
               (when-not (and verified (= platform (:platform verified))
-                             (set/subset? paths (:paths verified)))
+                             (coll/subset? paths (:paths verified)))
                 (reject! "release coverage evidence is missing or mismatched"
                          {:platform platform}))))
         supported (reduce + (map #(get shares (:platform %)) released))
