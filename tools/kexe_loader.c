@@ -2430,6 +2430,493 @@ static int64_t hash_sha256_provider(struct kexe_context_v10 *context, int64_t re
   return intern_utf8(context, (const uint8_t *)hex, 64);
 }
 
+/* Ed25519 signature VERIFICATION (RFC 8032 §5.1.7), for the kexe loader's
+ * wire 2 (:identity/verify) provider. Verify only: the loader never holds a
+ * secret key, so there is no signing, no key generation and no secret-
+ * dependent branching to worry about.
+ *
+ * Field arithmetic is the 16 x 16-bit-limb representation of TweetNaCl
+ * (public domain, Bernstein et al.). No curve constant is transcribed: d,
+ * 2d, sqrt(-1) and the base point are COMPUTED once from their definitions
+ * (d = -121665/121666, sqrt(-1) = 2^((p-1)/4), B = (x, 4/5) with x even), so
+ * a typo cannot hide in a hex table. The embedded tables are SHA-512's round
+ * constants and the group order L, both generated (cube roots of the first
+ * 80 primes; 2^252 + 27742317777372353535851937790883648493) and checked by
+ * the test vectors.
+ *
+ * Strictness: S must be < L (RFC 8032 §5.1.7 step 1; rejects the malleable
+ * S + L form), and A must decode to a curve point. */
+
+typedef int64_t ked_gf[16];
+
+static ked_gf ked_gf0, ked_gf1, ked_D, ked_D2, ked_I, ked_BX, ked_BY;
+static int ked_ready = 0;
+
+/* --- SHA-512 ------------------------------------------------------------ */
+
+static const uint64_t ked_sha512_k[80] = {
+  0x428a2f98d728ae22ULL,
+  0x7137449123ef65cdULL,
+  0xb5c0fbcfec4d3b2fULL,
+  0xe9b5dba58189dbbcULL,
+  0x3956c25bf348b538ULL,
+  0x59f111f1b605d019ULL,
+  0x923f82a4af194f9bULL,
+  0xab1c5ed5da6d8118ULL,
+  0xd807aa98a3030242ULL,
+  0x12835b0145706fbeULL,
+  0x243185be4ee4b28cULL,
+  0x550c7dc3d5ffb4e2ULL,
+  0x72be5d74f27b896fULL,
+  0x80deb1fe3b1696b1ULL,
+  0x9bdc06a725c71235ULL,
+  0xc19bf174cf692694ULL,
+  0xe49b69c19ef14ad2ULL,
+  0xefbe4786384f25e3ULL,
+  0x0fc19dc68b8cd5b5ULL,
+  0x240ca1cc77ac9c65ULL,
+  0x2de92c6f592b0275ULL,
+  0x4a7484aa6ea6e483ULL,
+  0x5cb0a9dcbd41fbd4ULL,
+  0x76f988da831153b5ULL,
+  0x983e5152ee66dfabULL,
+  0xa831c66d2db43210ULL,
+  0xb00327c898fb213fULL,
+  0xbf597fc7beef0ee4ULL,
+  0xc6e00bf33da88fc2ULL,
+  0xd5a79147930aa725ULL,
+  0x06ca6351e003826fULL,
+  0x142929670a0e6e70ULL,
+  0x27b70a8546d22ffcULL,
+  0x2e1b21385c26c926ULL,
+  0x4d2c6dfc5ac42aedULL,
+  0x53380d139d95b3dfULL,
+  0x650a73548baf63deULL,
+  0x766a0abb3c77b2a8ULL,
+  0x81c2c92e47edaee6ULL,
+  0x92722c851482353bULL,
+  0xa2bfe8a14cf10364ULL,
+  0xa81a664bbc423001ULL,
+  0xc24b8b70d0f89791ULL,
+  0xc76c51a30654be30ULL,
+  0xd192e819d6ef5218ULL,
+  0xd69906245565a910ULL,
+  0xf40e35855771202aULL,
+  0x106aa07032bbd1b8ULL,
+  0x19a4c116b8d2d0c8ULL,
+  0x1e376c085141ab53ULL,
+  0x2748774cdf8eeb99ULL,
+  0x34b0bcb5e19b48a8ULL,
+  0x391c0cb3c5c95a63ULL,
+  0x4ed8aa4ae3418acbULL,
+  0x5b9cca4f7763e373ULL,
+  0x682e6ff3d6b2b8a3ULL,
+  0x748f82ee5defb2fcULL,
+  0x78a5636f43172f60ULL,
+  0x84c87814a1f0ab72ULL,
+  0x8cc702081a6439ecULL,
+  0x90befffa23631e28ULL,
+  0xa4506cebde82bde9ULL,
+  0xbef9a3f7b2c67915ULL,
+  0xc67178f2e372532bULL,
+  0xca273eceea26619cULL,
+  0xd186b8c721c0c207ULL,
+  0xeada7dd6cde0eb1eULL,
+  0xf57d4f7fee6ed178ULL,
+  0x06f067aa72176fbaULL,
+  0x0a637dc5a2c898a6ULL,
+  0x113f9804bef90daeULL,
+  0x1b710b35131c471bULL,
+  0x28db77f523047d84ULL,
+  0x32caab7b40c72493ULL,
+  0x3c9ebe0a15c9bebcULL,
+  0x431d67c49c100d4cULL,
+  0x4cc5d4becb3e42b6ULL,
+  0x597f299cfc657e2aULL,
+  0x5fcb6fab3ad6faecULL,
+  0x6c44198c4a475817ULL};
+static const int64_t ked_L[32] = {0xed, 0xd3, 0xf5, 0x5c, 0x1a, 0x63, 0x12, 0x58, 0xd6, 0x9c, 0xf7, 0xa2, 0xde, 0xf9, 0xde, 0x14, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10};
+
+#define KED_ROTR(x, n) (((x) >> (n)) | ((x) << (64 - (n))))
+
+static void ked_sha512_block(uint64_t h[8], const uint8_t *p) {
+  uint64_t w[80];
+  for (int i = 0; i < 16; i++) {
+    uint64_t v = 0;
+    for (int j = 0; j < 8; j++) v = (v << 8) | p[8 * i + j];
+    w[i] = v;
+  }
+  for (int i = 16; i < 80; i++) {
+    uint64_t s0 = KED_ROTR(w[i - 15], 1) ^ KED_ROTR(w[i - 15], 8) ^ (w[i - 15] >> 7);
+    uint64_t s1 = KED_ROTR(w[i - 2], 19) ^ KED_ROTR(w[i - 2], 61) ^ (w[i - 2] >> 6);
+    w[i] = w[i - 16] + s0 + w[i - 7] + s1;
+  }
+  uint64_t a = h[0], b = h[1], c = h[2], d = h[3], e = h[4], f = h[5], g = h[6], hh = h[7];
+  for (int i = 0; i < 80; i++) {
+    uint64_t S1 = KED_ROTR(e, 14) ^ KED_ROTR(e, 18) ^ KED_ROTR(e, 41);
+    uint64_t ch = (e & f) ^ (~e & g);
+    uint64_t t1 = hh + S1 + ch + ked_sha512_k[i] + w[i];
+    uint64_t S0 = KED_ROTR(a, 28) ^ KED_ROTR(a, 34) ^ KED_ROTR(a, 39);
+    uint64_t mj = (a & b) ^ (a & c) ^ (b & c);
+    uint64_t t2 = S0 + mj;
+    hh = g; g = f; f = e; e = d + t1; d = c; c = b; b = a; a = t1 + t2;
+  }
+  h[0] += a; h[1] += b; h[2] += c; h[3] += d; h[4] += e; h[5] += f; h[6] += g; h[7] += hh;
+}
+
+/* SHA-512 over the concatenation of three parts (R || A || M). */
+static void ked_sha512_3(uint8_t out[64], const uint8_t *p1, uint64_t n1,
+                         const uint8_t *p2, uint64_t n2,
+                         const uint8_t *p3, uint64_t n3) {
+  uint64_t h[8] = {0x6a09e667f3bcc908ULL, 0xbb67ae8584caa73bULL, 0x3c6ef372fe94f82bULL,
+                   0xa54ff53a5f1d36f1ULL, 0x510e527fade682d1ULL, 0x9b05688c2b3e6c1fULL,
+                   0x1f83d9abfb41bd6bULL, 0x5be0cd19137e2179ULL};
+  uint8_t block[128];
+  uint64_t fill = 0, total = n1 + n2 + n3;
+  const uint8_t *parts[3] = {p1, p2, p3};
+  uint64_t lens[3] = {n1, n2, n3};
+  for (int k = 0; k < 3; k++) {
+    for (uint64_t i = 0; i < lens[k]; i++) {
+      block[fill++] = parts[k][i];
+      if (fill == 128) { ked_sha512_block(h, block); fill = 0; }
+    }
+  }
+  block[fill++] = 0x80;
+  if (fill > 112) {
+    while (fill < 128) block[fill++] = 0;
+    ked_sha512_block(h, block);
+    fill = 0;
+  }
+  while (fill < 120) block[fill++] = 0;
+  uint64_t bits = total * 8u;
+  for (int j = 7; j >= 0; j--) block[fill++] = (uint8_t)(bits >> (8 * j));
+  ked_sha512_block(h, block);
+  for (int i = 0; i < 8; i++)
+    for (int j = 0; j < 8; j++) out[8 * i + j] = (uint8_t)(h[i] >> (56 - 8 * j));
+}
+
+/* --- GF(2^255 - 19) ----------------------------------------------------- */
+
+static void ked_set(ked_gf r, const ked_gf a) { for (int i = 0; i < 16; i++) r[i] = a[i]; }
+
+static void ked_car(ked_gf o) {
+  for (int i = 0; i < 16; i++) {
+    o[i] += 65536;
+    int64_t c = o[i] >> 16;           /* arithmetic shift, as TweetNaCl */
+    if (i < 15) o[i + 1] += c - 1;
+    else o[0] += 38 * (c - 1);
+    o[i] -= c * 65536;
+  }
+}
+
+static void ked_sel(ked_gf p, ked_gf q, int b) {
+  int64_t c = ~(int64_t)(b - 1);
+  for (int i = 0; i < 16; i++) {
+    int64_t t = c & (p[i] ^ q[i]);
+    p[i] ^= t;
+    q[i] ^= t;
+  }
+}
+
+static void ked_pack25519(uint8_t o[32], const ked_gf n) {
+  ked_gf m, t;
+  ked_set(t, n);
+  ked_car(t); ked_car(t); ked_car(t);
+  for (int j = 0; j < 2; j++) {
+    m[0] = t[0] - 0xffed;
+    for (int i = 1; i < 15; i++) {
+      m[i] = t[i] - 0xffff - ((m[i - 1] >> 16) & 1);
+      m[i - 1] &= 0xffff;
+    }
+    m[15] = t[15] - 0x7fff - ((m[14] >> 16) & 1);
+    int b = (int)((m[15] >> 16) & 1);
+    m[14] &= 0xffff;
+    ked_sel(t, m, 1 - b);
+  }
+  for (int i = 0; i < 16; i++) {
+    o[2 * i] = (uint8_t)(t[i] & 0xff);
+    o[2 * i + 1] = (uint8_t)(t[i] >> 8);
+  }
+}
+
+static int ked_neq(const ked_gf a, const ked_gf b) {
+  uint8_t c[32], d[32];
+  ked_pack25519(c, a);
+  ked_pack25519(d, b);
+  uint8_t x = 0;
+  for (int i = 0; i < 32; i++) x |= (uint8_t)(c[i] ^ d[i]);
+  return x != 0;
+}
+
+static int ked_par(const ked_gf a) {
+  uint8_t d[32];
+  ked_pack25519(d, a);
+  return d[0] & 1;
+}
+
+static void ked_unpack25519(ked_gf o, const uint8_t n[32]) {
+  for (int i = 0; i < 16; i++) o[i] = n[2 * i] + ((int64_t)n[2 * i + 1] << 8);
+  o[15] &= 0x7fff;
+}
+
+static void ked_A(ked_gf o, const ked_gf a, const ked_gf b) { for (int i = 0; i < 16; i++) o[i] = a[i] + b[i]; }
+static void ked_Z(ked_gf o, const ked_gf a, const ked_gf b) { for (int i = 0; i < 16; i++) o[i] = a[i] - b[i]; }
+
+static void ked_M(ked_gf o, const ked_gf a, const ked_gf b) {
+  int64_t t[31];
+  for (int i = 0; i < 31; i++) t[i] = 0;
+  for (int i = 0; i < 16; i++)
+    for (int j = 0; j < 16; j++) t[i + j] += a[i] * b[j];
+  for (int i = 0; i < 15; i++) t[i] += 38 * t[i + 16];
+  for (int i = 0; i < 16; i++) o[i] = t[i];
+  ked_car(o);
+  ked_car(o);
+}
+
+static void ked_S(ked_gf o, const ked_gf a) { ked_M(o, a, a); }
+
+static void ked_inv(ked_gf o, const ked_gf i) {
+  ked_gf c;
+  ked_set(c, i);
+  for (int a = 253; a >= 0; a--) {
+    ked_S(c, c);
+    if (a != 2 && a != 4) ked_M(c, c, i);
+  }
+  ked_set(o, c);
+}
+
+static void ked_pow2523(ked_gf o, const ked_gf i) {
+  ked_gf c;
+  ked_set(c, i);
+  for (int a = 250; a >= 0; a--) {
+    ked_S(c, c);
+    if (a != 1) ked_M(c, c, i);
+  }
+  ked_set(o, c);
+}
+
+/* --- points (extended coordinates X, Y, Z, T) --------------------------- */
+
+static void ked_add(ked_gf p[4], ked_gf q[4]) {
+  ked_gf a, b, c, d, t, e, f, g, h;
+  ked_Z(a, p[1], p[0]); ked_Z(t, q[1], q[0]); ked_M(a, a, t);
+  ked_A(b, p[0], p[1]); ked_A(t, q[0], q[1]); ked_M(b, b, t);
+  ked_M(c, p[3], q[3]); ked_M(c, c, ked_D2);
+  ked_M(d, p[2], q[2]); ked_A(d, d, d);
+  ked_Z(e, b, a); ked_Z(f, d, c); ked_A(g, d, c); ked_A(h, b, a);
+  ked_M(p[0], e, f); ked_M(p[1], h, g); ked_M(p[2], g, f); ked_M(p[3], e, h);
+}
+
+static void ked_cswap(ked_gf p[4], ked_gf q[4], int b) {
+  for (int i = 0; i < 4; i++) ked_sel(p[i], q[i], b);
+}
+
+static void ked_pack(uint8_t r[32], ked_gf p[4]) {
+  ked_gf tx, ty, zi;
+  ked_inv(zi, p[2]);
+  ked_M(tx, p[0], zi);
+  ked_M(ty, p[1], zi);
+  ked_pack25519(r, ty);
+  r[31] ^= (uint8_t)(ked_par(tx) << 7);
+}
+
+static void ked_scalarmult(ked_gf p[4], ked_gf q[4], const uint8_t s[32]) {
+  ked_set(p[0], ked_gf0); ked_set(p[1], ked_gf1); ked_set(p[2], ked_gf1); ked_set(p[3], ked_gf0);
+  for (int i = 255; i >= 0; --i) {
+    int b = (s[i / 8] >> (i & 7)) & 1;
+    ked_cswap(p, q, b);
+    ked_add(q, p);
+    ked_add(p, p);
+    ked_cswap(p, q, b);
+  }
+}
+
+static void ked_scalarbase(ked_gf p[4], const uint8_t s[32]) {
+  ked_gf q[4];
+  ked_set(q[0], ked_BX); ked_set(q[1], ked_BY); ked_set(q[2], ked_gf1);
+  ked_M(q[3], ked_BX, ked_BY);
+  ked_scalarmult(p, q, s);
+}
+
+/* --- scalars mod L ------------------------------------------------------ */
+
+static void ked_modL(uint8_t r[32], int64_t x[64]) {
+  int64_t carry;
+  int i, j;
+  for (i = 63; i >= 32; --i) {
+    carry = 0;
+    for (j = i - 32; j < i - 12; ++j) {
+      x[j] += carry - 16 * x[i] * ked_L[j - (i - 32)];
+      carry = (x[j] + 128) >> 8;
+      x[j] -= carry * 256;
+    }
+    x[j] += carry;
+    x[i] = 0;
+  }
+  carry = 0;
+  for (j = 0; j < 32; j++) {
+    x[j] += carry - (x[31] >> 4) * ked_L[j];
+    carry = x[j] >> 8;
+    x[j] &= 255;
+  }
+  for (j = 0; j < 32; j++) x[j] -= carry * ked_L[j];
+  for (i = 0; i < 32; i++) {
+    x[i + 1] += x[i] >> 8;
+    r[i] = (uint8_t)(x[i] & 255);
+  }
+}
+
+static void ked_reduce(uint8_t out[32], const uint8_t h[64]) {
+  int64_t x[64];
+  for (int i = 0; i < 64; i++) x[i] = (int64_t)h[i];
+  ked_modL(out, x);
+}
+
+/* S < L, little-endian */
+static int ked_scalar_canonical(const uint8_t s[32]) {
+  for (int i = 31; i >= 0; i--) {
+    if (s[i] < ked_L[i]) return 1;
+    if (s[i] > ked_L[i]) return 0;
+  }
+  return 0; /* S == L */
+}
+
+/* decode A and negate it (the verify equation wants -A) */
+static int ked_unpackneg(ked_gf r[4], const uint8_t p[32]) {
+  ked_gf t, chk, num, den, den2, den4, den6;
+  ked_set(r[2], ked_gf1);
+  ked_unpack25519(r[1], p);
+  ked_S(num, r[1]);
+  ked_M(den, num, ked_D);
+  ked_Z(num, num, r[2]);
+  ked_A(den, r[2], den);
+  ked_S(den2, den); ked_S(den4, den2); ked_M(den6, den4, den2);
+  ked_M(t, den6, num); ked_M(t, t, den);
+  ked_pow2523(t, t);
+  ked_M(t, t, num); ked_M(t, t, den); ked_M(t, t, den); ked_M(r[0], t, den);
+  ked_S(chk, r[0]); ked_M(chk, chk, den);
+  if (ked_neq(chk, num)) ked_M(r[0], r[0], ked_I);
+  ked_S(chk, r[0]); ked_M(chk, chk, den);
+  if (ked_neq(chk, num)) return -1;
+  if (ked_par(r[0]) == (p[31] >> 7)) ked_Z(r[0], ked_gf0, r[0]);
+  ked_M(r[3], r[0], r[1]);
+  return 0;
+}
+
+static void ked_init(void) {
+  if (ked_ready) return;
+  for (int i = 0; i < 16; i++) { ked_gf0[i] = 0; ked_gf1[i] = 0; }
+  ked_gf1[0] = 1;
+  ked_gf n121665 = {0xdb41, 1}, n121666 = {0xdb42, 1}, inv, neg;
+  ked_inv(inv, n121666);
+  ked_Z(neg, ked_gf0, n121665);
+  ked_M(ked_D, neg, inv);                      /* d = -121665/121666 */
+  ked_A(ked_D2, ked_D, ked_D);
+  ked_gf two = {2}, t;
+  ked_pow2523(t, two);                         /* 2^(2^252 - 3) */
+  ked_S(t, t);
+  ked_M(ked_I, t, two);                        /* 2^((p-1)/4) = sqrt(-1) */
+  ked_gf four = {4}, five = {5}, inv5;
+  ked_inv(inv5, five);
+  ked_M(ked_BY, four, inv5);                   /* y = 4/5 */
+  uint8_t by[32];
+  ked_pack25519(by, ked_BY);                   /* sign bit 0: x even */
+  ked_gf q[4];
+  ked_unpackneg(q, by);                        /* gives -x */
+  ked_Z(ked_BX, ked_gf0, q[0]);
+  ked_ready = 1;
+}
+
+/* 1 valid, 0 invalid (bad key, non-canonical S, or mismatch) */
+static int ked_verify(const uint8_t pk[32], const uint8_t *m, uint64_t mlen,
+                      const uint8_t sig[64]) {
+  ked_init();
+  ked_gf p[4], q[4];
+  uint8_t h[64], k[32], t[32];
+  if (!ked_scalar_canonical(sig + 32)) return 0;
+  if (ked_unpackneg(q, pk)) return 0;
+  ked_sha512_3(h, sig, 32, pk, 32, m, mlen);
+  ked_reduce(k, h);
+  ked_scalarmult(p, q, k);      /* k * (-A) */
+  ked_scalarbase(q, sig + 32);  /* S * B */
+  ked_add(p, q);
+  ked_pack(t, p);
+  uint8_t x = 0;
+  for (int i = 0; i < 32; i++) x |= (uint8_t)(t[i] ^ sig[i]);
+  return x == 0;
+}
+
+/* wire id 2 = :identity/verify. Ed25519 verification over bytes the caller
+ * GRANTED (loader `g:<hex>`), so a guest can check a signature over a block
+ * it cannot turn into a :string or :bytes value.
+ *
+ * Request and result are both `:string` (the type pair the native gate
+ * admits), the addresses travelling as decimal text exactly as wire 38's
+ * index does: "<key> <message> <message-length> <signature>" -- four
+ * non-negative decimals separated by single spaces, each an address the
+ * guest received from a grant (base + offset). The key is 32 bytes, the
+ * signature 64. Every span must lie wholly inside ONE granted region; the
+ * loader checks that against its own table, so a guest cannot point the
+ * verifier at memory it was not given.
+ *
+ * Answers "1" (valid) or "0" (invalid: bad key, S >= L, or mismatch). A
+ * malformed request or a span outside every grant is a trap (SIGILL), not a
+ * "0": that is a guest bug, and a verifier that answered it with "invalid"
+ * would let the bug look like a bad signature. First user: kotoba-lang/dango
+ * (the capability-chain verifier). */
+static const uint8_t *granted_span(struct kexe_shared_v10 *shared,
+                                   uint64_t address, uint64_t length) {
+  for (uint64_t i = 0; i < shared->region_count; i++) {
+    uint64_t base = (uint64_t)(uintptr_t)(shared->region_pool + shared->regions[i].offset);
+    uint64_t size = shared->regions[i].length;
+    if (address >= base && length <= size && address - base <= size - length)
+      return shared->region_pool + shared->regions[i].offset + (address - base);
+  }
+  return NULL;
+}
+
+static int parse_verify_request(const uint8_t *p, uint64_t n, uint64_t out[4]) {
+  uint64_t i = 0;
+  for (int k = 0; k < 4; k++) {
+    if (k > 0) {
+      if (i >= n || p[i] != ' ') return 0;
+      i++;
+    }
+    if (i >= n || p[i] < '0' || p[i] > '9') return 0;
+    if (p[i] == '0' && i + 1 < n && p[i + 1] >= '0' && p[i + 1] <= '9') return 0;
+    uint64_t v = 0;
+    while (i < n && p[i] >= '0' && p[i] <= '9') {
+      uint64_t d = (uint64_t)(p[i] - '0');
+      if (v > (UINT64_MAX - d) / 10u) return 0;
+      v = v * 10u + d;
+      i++;
+    }
+    out[k] = v;
+  }
+  return i == n;
+}
+
+static int64_t identity_verify_provider(struct kexe_context_v10 *context, int64_t request) {
+  const uint8_t *bytes = NULL;
+  uint64_t length = 0;
+  uint64_t a[4];
+  if (!read_string_handle(context, request, &bytes, &length) ||
+      !parse_verify_request(bytes, length, a)) {
+    raise(SIGILL);
+    return 0;
+  }
+  struct kexe_shared_v10 *shared = (struct kexe_shared_v10 *)context;
+  const uint8_t *key = granted_span(shared, a[0], 32u);
+  const uint8_t *message = granted_span(shared, a[1], a[2]);
+  const uint8_t *signature = granted_span(shared, a[3], 64u);
+  if (key == NULL || message == NULL || signature == NULL) {
+    raise(SIGILL);
+    return 0;
+  }
+  const uint8_t *answer = (const uint8_t *)(ked_verify(key, message, a[2], signature) ? "1" : "0");
+  return intern_utf8(context, answer, 1);
+}
+
 /* wire id 38 = :cli/args. The arguments a COMMAND was invoked with.
  *
  * The loader's own positional arguments and the guest's are separated on the
@@ -3796,6 +4283,10 @@ static int64_t checked_typed_cap_call(struct kexe_context_v10 *context,
      * written to fd 2 and the result is the decimal byte count. No resource
      * scope, for the same reason wire 37 has none. */
     result = io_write_error_provider(context, request);
+  } else if (id == 2 && request_kind == KEXE_TYPED_STRING) {
+    /* wire id 2 = :identity/verify. Real provider: Ed25519 over granted
+     * spans named by decimal addresses; "1" / "0". */
+    result = identity_verify_provider(context, request);
   } else if (id == 3 && request_kind == KEXE_TYPED_STRING) {
     /* wire id 3 = :hash/sha256. Real provider: the request bytes' digest
      * as 64 hex characters. */

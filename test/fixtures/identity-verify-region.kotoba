@@ -1,0 +1,32 @@
+(ns amu.identity-verify-region
+  (:export [verify-at verify-past-end]))
+
+;; wire 2 (:identity/verify) over GRANTED bytes. The region is
+;; key (32) ++ signature (64) ++ message; the guest names the three spans by
+;; address -- base + offset, as decimal text -- and the loader checks each
+;; span against its own grant table before it verifies anything.
+
+(defn decimal [n :i64] :string
+  (if (< n 10)
+    (string-substring "0123456789" n (+ n 1))
+    (let [d (- n (* 10 (quot n 10)))]
+      (string-concat (decimal (quot n 10)) (string-substring "0123456789" d (+ d 1))))))
+
+(defn request [key :i64 msg :i64 mlen :i64 sig :i64] :string
+  (string-concat (decimal key)
+    (string-concat " " (string-concat (decimal msg)
+      (string-concat " " (string-concat (decimal mlen)
+        (string-concat " " (decimal sig))))))))
+
+(defn verify [req :string] :string (identity/verify req))
+
+;; 1 valid, 0 invalid
+(defn verify-at [base :i64 len :i64 mlen :i64] :i64
+  (let [m (slice-of-u8 base len)]
+    (if (= (slice-length m) (+ 96 mlen))
+      (if (string=? (verify (request base (+ base 96) mlen (+ base 32))) "1") 1 0)
+      3)))
+
+;; names a message one byte longer than the grant: must trap, not answer
+(defn verify-past-end [base :i64 len :i64 mlen :i64] :i64
+  (if (string=? (verify (request base (+ base 96) (+ mlen 1) (+ base 32))) "1") 1 0))
