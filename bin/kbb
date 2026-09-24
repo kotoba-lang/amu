@@ -28,6 +28,14 @@ if (!fs.existsSync(engine)) {
   console.error(`kbb: engine not found at ${engine}; run \`npm ci\` (node_modules/nbb is the org-babashka-nbb fork) or set KBB_ENGINE`);
   process.exit(3);
 }
+// A directory passes existsSync, and `node <dir>` then exits 0 having run
+// nothing -- so `amu compile` reported success and wrote no artifact
+// (measured 2026-09-24 with KBB_ENGINE=<checkout>/org-babashka-nbb). The
+// engine is a file: cli.js.
+if (!fs.statSync(engine).isFile()) {
+  console.error(`kbb: KBB_ENGINE must name the engine's cli.js, not a directory: ${engine}`);
+  process.exit(3);
+}
 if (args[0] !== "--backend" || args[1] !== "sci") {
   console.error("kbb: this repository's launcher provides the `--backend sci` door only; "
     + "the .kotoba guest and Clojure-CLI-shaped doors are kotoba-lang/kotoba's bin/kbb");
