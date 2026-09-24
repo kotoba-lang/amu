@@ -1056,3 +1056,48 @@ ty 注記なし probe のため過大評価されていた — 以下は型付�
   iter 34 form. wt-somethread2 tree is DIRTY with the applied patch -
   commit it before any other branch work touches that worktree.
 
+
+## Iteration 37 - multi-step some->/some->> linear-chain: gate ALL GREEN, pushed (2026-09-24 06:45 JST, sema bot/lang-somethread-rebase-20260920 @906120b)
+
+- Target hypothesis (carried iters 26-36): linear-chain lower in
+  desugar-some-thread; 2-step KIR parity + 1-step CIDs unchanged +
+  0-step fail-closed + compile + run value + regression suite.
+- DONE this tick (stdout via file-redirect; loadavg 31.8 - quiet gate NOT
+  met, target parity-only so speed N/A):
+  - COMMIT FIRST (iter 36's instruction, before gates): re-applied patch
+    committed as 906120b on bot/lang-somethread-rebase-20260920 (base
+    9401993; tree clean). Pin re-verified: deps-lock.edn:80 still pins
+    kotoba-sema 9898f0e28b48... -> on-pin, no rebase.
+  - Gate (cp-smt2.txt classpath, nbb direct + wasm_cli.cljk, JVM-free):
+    - 0-step fail-closed: smt-0step.kotoba REJECT exit 65, own diagnostic
+      "some->> requires an initial option and at least one step".
+    - 1-step CID-unchanged: smt-first.kotoba check PASS exit 0, t
+      bafyreia2bhjmxm2ljwe7o3urxte2hszr6h2px4wvd6snnvrhid3a7led74 ==
+      iter 26 canon EXACTLY.
+    - 2-step parity: smt-2step.kotoba check PASS exit 0, t
+      bafyreig37xemmislrv5e4izf7ks6lao4ykpkfenjqz53ukpm6ahzo2wluy ==
+      iter 34 measured canon == smt-hand3 hand twin
+      (* 2 (+ 1 (option-value sht 0))) EXACTLY (re-measured on the
+      recovered tree, not assumed from iter 34).
+    - wasm32 compile PASS: smt-2step.wasm 2013 bytes, 2 definitions,
+      provenance + publication sidecars emitted.
+    - RUN: browser-host (instantiateKotoba), main() = 84 (option-some 41
+      -> (+ 1) -> 42 -> (* 2) -> 84) - correct.
+    - Regression: sema suite (nbb run-tests.cljk, wt-somethread2
+      src/test/resources + lock classpath) 555 tests / 1958 assertions /
+      0 failures / 0 errors - same totals as iter 23 baseline.
+  - PUSHED: 9401993..906120b -> kotoba-lang/kotoba-sema
+    bot/lang-somethread-rebase-20260920 (push printed no PR URL this
+    tick; PR creation unconfirmed).
+- comparator ratio: no new lowering (existing option-some?/option-value
+  plain ops) -> speed threshold N/A (iter 1/2/10/11 class).
+- verdict: hypothesis CONFIRMED - multi-step some->/some->> gap CLOSED.
+  Merge-pending PR review. Known coverage limit (recorded in-source,
+  iter 27): a step whose result is itself an option is NOT modeled by
+  the linear chain and is not silently admitted - future hypothesis.
+- Next (1 hypothesis): remaining ledger rows - `(:k m)` ledger update
+  handoff to amu-rank (contains? / (:k m) PASS since iters 6/23), then
+  re-check jvm-dep-ledger blocked list for the next alias-shaped gap
+  (min/max closed upstream per iter 24; parse-long blocked on string
+  boundary per iters 4/5). If none, open a new falsification cycle on
+  the string boundary itself (amu runtime, cross-team with amu-falsify).
