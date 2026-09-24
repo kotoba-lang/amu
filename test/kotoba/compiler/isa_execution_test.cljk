@@ -1524,6 +1524,55 @@
                      (str/trim report)))))))))
 
 
+;; ---------------------------------------------------------------------------
+;; wire 2 (:identity/verify): Ed25519 over GRANTED spans
+;; ---------------------------------------------------------------------------
+
+(def ^:private identity-verify-source
+  (slurp "test/fixtures/identity-verify-region.kotoba"))
+
+(defn- hex->bytes [h]
+  (mapv #(Integer/parseInt (subs h % (+ % 2)) 16) (range 0 (count h) 2)))
+
+;; RFC 8032 section 7.1, TEST 1: the empty message.
+(def ^:private rfc8032-1-key
+  "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a")
+(def ^:private rfc8032-1-signature
+  (str "e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e06522490155"
+       "5fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b"))
+
+(deftest identity-verify-checks-ed25519-over-granted-spans
+  ;; Until this provider the switch had no case for wire 2, so a guest asking
+  ;; for a verdict had no host to ask. Four directions, each a different
+  ;; reason: a valid signature answers "1"; one more message byte answers
+  ;; "0"; a span past the end of the grant TRAPS (SIGILL, the provider's own
+  ;; refusal -- a guest bug must not look like a bad signature); and without
+  ;; bit 2 the emitted mask check traps first (SIGTRAP).
+  (let [available (into {} (remove (comp nil? val) @loaders))
+        region (fn [message-hex]
+                 (str "g:" (region-hex (hex->bytes (str rfc8032-1-key rfc8032-1-signature
+                                                        message-hex)))))
+        policy {:allow #{[:cap/call 2]}}]
+    (doseq [[isa _] available]
+      (testing isa
+        (testing "RFC 8032 test 1 verifies"
+          (let [report (run-native isa identity-verify-source "2" policy
+                                   'verify-at [(region "") "gl:0" "0"])]
+            (is (str/includes? report ":result 1") (str/trim report))))
+        (testing "one more message byte does not"
+          (let [report (run-native isa identity-verify-source "2" policy
+                                   'verify-at [(region "00") "gl:0" "1"])]
+            (is (str/includes? report ":result 0") (str/trim report))))
+        (testing "a span past the grant traps (SIGILL), it is not answered"
+          (let [report (run-native isa identity-verify-source "2" policy
+                                   'verify-past-end [(region "") "gl:0" "0"])]
+            (is (str/includes? report "SIGILL") (str/trim report))
+            (is (not (str/includes? report ":result")) (str/trim report))))
+        (testing "without bit 2 the call traps at the emitted check (SIGTRAP)"
+          (let [report (run-native isa identity-verify-source "-" policy
+                                   'verify-at [(region "") "gl:0" "0"])]
+            (is (str/includes? report "SIGTRAP") (str/trim report))))))))
+
 (def ^:private iq3xxs-source
   (slurp "test/fixtures/rodata-codebook-iq3xxs.kotoba"))
 
