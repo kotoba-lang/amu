@@ -1,0 +1,173 @@
+(ns test.nbb.state-ability
+  "The state ability (kotoba-lang `lang/state-ability.edn`, slice 1) measured on
+  every backend: each positive fixture must give the SAME answer on the
+  reference interpreter (kotoba.kir/execute over the frontend's HIR),
+  restricted ESM (`amu compile --target js`, imported by Node), and native
+  aarch64 and x86_64 (`amu compile` -> `amu extract-native` -> the reviewed
+  `tools/kexe_loader.c`). Then every negative fixture by its exact refusal,
+  and the definition-identity facts the contract states.
+
+  Exit codes keep the three outcomes apart (superproject ADR-2608136000):
+    0  every measurement ran and passed
+    1  a measurement ran and disagreed
+    2  a measurement could not run (no C compiler; no way to run the other
+       ISA's loader). Printed as SKIPPED with its reason, never as a pass.
+
+  x86_64 is run through a loader built with `-arch x86_64` on an arm64 macOS
+  host (Rosetta), aarch64 through `-arch arm64` on an x86_64 one when that
+  host can; on Linux only the host ISA is run and the other is SKIPPED."
+  (:require [kotoba.lang.text :as str]
+            [kotoba.sema :as sema]
+            [kotoba.kir :as kir]
+            [kotoba.compiler.definition-identity :as di]
+            ["node:child_process" :as child]
+            ["node:fs" :as fs]
+            ["node:os" :as os]
+            ["node:path" :as path]))
+
+(def root (.resolve path "."))
+(def amu (.join path root "bin" "amu"))
+(def fixtures (.join path root "test" "nbb" "fixtures" "state"))
+(def tmp (.mkdtempSync fs (.join path (.tmpdir os) "amu-state-ability-")))
+
+(def positives
+  [["counter" "42"] ["inline_operations" "42"] ["nested_handlers" "2110"]
+   ["two_state_types" "10"] ["loop_accumulator" "5050"] ["handler_logic" "77004"]
+   ["branch_join" "114021006"] ["ceiling_declares_state" "42"]])
+
+(def negatives
+  [["unhandled_get" "unhandled ability :state at export boundary; handle it with (handle body (with handler init)): main"]
+   ["public_stateful_export" "unhandled ability :state at export boundary; handle it with (handle body (with handler init)): tick"]
+   ["handler_type_mismatch" "handler bad resumes state/get with string, but state/get returns i64 in a [:state :i64] handler"]
+   ["handler_shape_mismatch" "handler bad does not match the :state ability: its put clause takes [state value], got [s]"]
+   ["impure_handler" "handler stamped is not pure: its put clause performs #{:clock/now}; a handler for the pure ability :state must be pure"]
+   ["ceiling_omits_state" "inferred effects exceed declared effect ceiling for tick: #{:state}"]
+   ["perform_in_fn_literal" "state slice 1 does not admit perform :state/get inside a fn literal"]
+   ["stateful_as_value" "stateful function tick cannot be used as a value in state slice 1; call it under a handler"]
+   ["throw_in_stateful" "state slice 1 does not admit throw or try inside a stateful function or a handle body: tick"]
+   ["unknown_handler" "handle names no handler: nobody"]
+   ["resume_not_tail" "handler twice clause get must end every branch in exactly one (resume value state) in tail position"]])
+
+(def failures (atom []))
+(def skipped (atom []))
+(def passed (atom 0))
+
+(defn- check! [label ok? detail]
+  (if ok?
+    (swap! passed inc)
+    (do (swap! failures conj [label detail]) (println "FAIL" label detail))))
+
+(defn- run [command args & [opts]]
+  (let [r (.spawnSync child command (clj->js args)
+                      (clj->js (merge {:cwd root :encoding "utf8" :maxBuffer 16777216} opts)))]
+    {:status (if (nil? (.-status r)) 70 (.-status r))
+     :stdout (or (.-stdout r) "") :stderr (or (.-stderr r) "")
+     :error (.-error r)}))
+
+(defn- amu! [& args] (run js/process.execPath (into [amu] args)))
+
+(defn- source [name] (fs/readFileSync (.join path fixtures (str name ".kotoba")) "utf8"))
+
+;; ---------------------------------------------------------------------------
+;; reference
+
+(defn- reference [name]
+  (str (kir/execute (kir/lower (sema/analyze (source name))) 'main [])))
+
+;; ---------------------------------------------------------------------------
+;; ESM: fuel is a per-target profile (adr-2609242100 P4); each get/put is two
+;; function entries, so the fixtures run with an explicit budget
+
+(defn- esm [name]
+  (let [out (.join path tmp (str name ".mjs"))
+        c (amu! "compile" (.join path fixtures (str name ".kotoba")) "--target" "js" "--output" out)]
+    (if-not (zero? (:status c))
+      (str "COMPILE-FAIL " (subs (:stdout c) 0 (min 200 (count (:stdout c)))))
+      (let [r (run js/process.execPath
+                   ["--input-type=module" "-e"
+                    (str "import('" (.toString (js/URL. (str "file://" out))) "')"
+                         ".then(async m=>{const i=await m.instantiateKotoba({}, {fuel: 1000000});"
+                         "console.log(String(i.main()))}).catch(e=>console.log('ERR '+e.message))")])]
+        (str/trim (:stdout r))))))
+
+;; ---------------------------------------------------------------------------
+;; native
+
+(def host-isa (if (contains? #{"arm64" "aarch64"} (.arch os)) "aarch64" "x86_64"))
+
+(defn- build-loader [isa]
+  (let [out (.join path tmp (str "kexe-loader-" isa))
+        arch (when (= "darwin" (.platform os)) (if (= isa "aarch64") "arm64" "x86_64"))
+        args (cond-> ["-std=c11" "-O2"] arch (into ["-arch" arch])
+                     true (into [(.join path root "tools" "kexe_loader.c") "-o" out]))
+        r (run "cc" args)]
+    (cond
+      (:error r) {:skip (str "no C compiler: " (.-message (:error r)))}
+      (not (zero? (:status r))) {:skip (str "cc could not build a " isa " loader: " (subs (:stderr r) 0 (min 200 (count (:stderr r)))))}
+      :else
+      ;; a loader that builds but cannot execute on this host (no Rosetta, or
+      ;; Linux cross) is a SKIP, found by running it with no arguments
+      (let [probe (run out [])]
+        (if (or (:error probe) (= 70 (:status probe)) (str/includes? (:stderr probe) "Bad CPU type"))
+          {:skip (str "this host cannot execute a " isa " loader")}
+          {:loader out})))))
+
+(defn- native [name isa loader]
+  (let [kexe (.join path tmp (str name "." isa ".kexe"))
+        bin (.join path tmp (str name "." isa ".bin"))
+        c (amu! "compile" (.join path fixtures (str name ".kotoba")) "--target" isa "--output" kexe)]
+    (if-not (zero? (:status c))
+      (str "COMPILE-FAIL " (subs (:stdout c) 0 (min 200 (count (:stdout c)))))
+      (let [x (amu! "extract-native" kexe "--symbol" "main" "--output" bin)
+            offset (second (re-find #":offset (\d+)" (:stdout x)))]
+        (if-not offset
+          (str "EXTRACT-FAIL " (:stdout x))
+          (str/trim (:stdout (run loader [bin offset "0" isa "-"]))))))))
+
+;; ---------------------------------------------------------------------------
+
+(println "== positives: reference, ESM, aarch64, x86_64")
+(let [loaders (into {} (map (fn [isa] [isa (build-loader isa)])) ["aarch64" "x86_64"])]
+  (doseq [[isa {:keys [skip]}] loaders :when skip]
+    (swap! skipped conj [isa skip])
+    (println "SKIPPED" isa skip))
+  (doseq [[name expected] positives]
+    (let [answers (cond-> {:reference (reference name) :esm (esm name)}
+                    (:loader (get loaders "aarch64"))
+                    (assoc :aarch64 (native name "aarch64" (:loader (get loaders "aarch64"))))
+                    (:loader (get loaders "x86_64"))
+                    (assoc :x86_64 (native name "x86_64" (:loader (get loaders "x86_64")))))]
+      (println (str name "\t" expected "\t" (pr-str answers)))
+      (doseq [[backend answer] answers]
+        (check! (str name " on " (clojure.core/name backend)) (= expected answer)
+                (str "expected " expected ", got " answer))))))
+
+(println "== negatives: the exact refusal")
+(doseq [[name message] negatives]
+  (let [actual (try (sema/analyze (fs/readFileSync (.join path fixtures "negative" (str name ".kotoba")) "utf8"))
+                    "ADMITTED"
+                    (catch :default e (ex-message e)))]
+    (check! (str "refusal " name) (= message actual) (pr-str actual))))
+
+(println "== definition identity")
+(let [hir (sema/analyze (source "counter"))
+      entries (:entries (di/definitions hir (kir/lower hir)))
+      tick (get entries "__kotoba_state_tick_under_counter")
+      main (get entries "main")]
+  (check! "the specialization seals :state" (= #{:state} (:effect-row tick)) (pr-str tick))
+  (check! "main seals no ability" (= #{} (:effect-row main)) (pr-str main))
+  (check! "the specialization references the handler's clauses by CID"
+          (every? (set (:dependencies tick))
+                  [(:cid (get entries "__kotoba_state_counter_get_value"))
+                   (:cid (get entries "__kotoba_state_counter_put_state"))])
+          (pr-str (:dependencies tick)))
+  (println (str "CID\t__kotoba_state_tick_under_counter\t" (:cid tick) "\t" (pr-str (:effect-row tick))))
+  (println (str "CID\tmain\t" (:cid main) "\t" (pr-str (:effect-row main)))))
+
+(println (str "SCANNED\t" (+ @passed (count @failures)) "\tmeasurements; "
+              @passed " passed, " (count @failures) " failed, " (count @skipped) " skipped"))
+(.rmSync fs tmp #js {:recursive true :force true})
+(.exit js/process (cond (seq @failures) 1
+                        (zero? @passed) 2
+                        (seq @skipped) 2
+                        :else 0))

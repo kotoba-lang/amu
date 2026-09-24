@@ -45,11 +45,17 @@
   "Row members that describe how a function may LEAVE its caller's scope, not
   what authority it exercises. Closed: kotoba-hir's `valid-effect?` admits
   exactly these keywords into a row, so this set and that predicate move
-  together."
-  #{:abort})
+  together.
+
+  `:state` joined on 2026-09-25 (kotoba-lang `lang/state-ability.edn`, slice
+  1): the PURE ability state, carried by a handler specialization. Its handler
+  is code in the module and the frontend lowered it to state passing, so like
+  `:abort` it names no authority and no policy could grant it."
+  #{:abort :state})
 
 (defn control-effect?
-  "True for a tracked control effect (`:abort`). No grant is needed for one."
+  "True for a tracked control effect (`:abort`) or a pure ability (`:state`).
+  No grant is needed for one."
   [member]
   (contains? control-effects member))
 

@@ -250,7 +250,12 @@
   ;; that cannot reach a definition identity is refused at the row's boundary
   ;; rather than integrated into it. Recorded there as
   ;; `:effect-row-integration :adjudication`, and in ADR-0326 here.
-  (let [expected #{:abort}
+  ;;
+  ;; 2026-09-25: `:state` joined, the pure ability of kotoba-lang
+  ;; `lang/state-ability.edn` (superproject adr-2609242200). A handler
+  ;; specialization carries it; this repository derives the expectation from
+  ;; that contract, not from osaho.
+  (let [expected #{:abort :state}
         actual kir-id/control-effects]
     (println (str "COMPARED\t" (count actual)
                   "\tsealed control effects against kotoba-kir"))
@@ -567,3 +572,71 @@
     ;; ignores the constant altogether
     (is (not= (get literal "read-k") (get control "read-k"))
         "4096 and 4097 must not share a CID")))
+
+;; ---------------------------------------------------------------------------
+;; The state ability (kotoba-lang lang/state-ability.edn, slice 1): the ability
+;; is part of the function's type, and so of its definition CID; a handler is
+;; a definition with CIDs of its own.
+
+(def ^:private state-cell
+  "(defhandler cell [:state :i64]
+     (get [s] (resume s s))
+     (put [s v] (resume v v)))\n")
+
+(def ^:private state-counter
+  (str "(ns d {:kotoba/export [main]})\n" state-cell
+       "(defn- tick [] (perform :state/put (+ 1 (perform :state/get))))\n"
+       "(defn main [] :i64 (handle (do (tick) (tick) (perform :state/get)) (with cell 40)))\n"))
+
+(deftest state-is-sealed-where-it-is-performed-and-nowhere-else
+  (let [entries (:entries (report state-counter))
+        tick (get entries "__kotoba_state_tick_under_cell")
+        main (get entries "main")]
+    (is (string? (:cid tick)))
+    (is (= #{:state} (:effect-row tick)))
+    (is (= #{} (:effect-row main)) "installing the handler does not perform the ability")
+    (testing "the specialization depends on the handler's clause definitions by CID"
+      (is (contains? (set (:dependencies tick)) (:cid (get entries "__kotoba_state_cell_get_value"))))
+      (is (contains? (set (:dependencies tick)) (:cid (get entries "__kotoba_state_cell_put_state")))))
+    (testing "every clause of the handler has an identity of its own and a pure row"
+      (doseq [clause ["__kotoba_state_cell_get_value" "__kotoba_state_cell_get_state"
+                      "__kotoba_state_cell_put_value" "__kotoba_state_cell_put_state"]]
+        (is (string? (:cid (get entries clause))) clause)
+        (is (= #{} (:effect-row (get entries clause))) clause)))))
+
+(deftest changing-the-ability-set-changes-the-cid
+  (testing "the same typed KIR with and without :state is two definitions"
+    (let [module (fn [effects]
+                   {:hir {:named-operations #{} :exports '[f]}
+                    :kir {:functions [{:name 'f :params '[s x] :param-types [:i64 :i64]
+                                       :result :i64 :effects effects
+                                       :body '(+ s x)}]}})
+          cid (fn [m] (get-in (di/definitions (:hir m) (:kir m)) [:entries "f" :cid]))]
+      (is (string? (cid (module #{:state}))))
+      (is (not= (cid (module #{})) (cid (module #{:state}))))
+      (is (not= (cid (module #{:abort})) (cid (module #{:state}))))))
+  (testing "a function that stops performing state moves its CID, and so does
+            every function that calls it"
+    (let [pure (str "(ns d {:kotoba/export [main]})\n" state-cell
+                    "(defn- tick [] 1)\n"
+                    "(defn main [] :i64 (handle (do (tick) (perform :state/get)) (with cell 40)))\n")
+          stateful (str "(ns d {:kotoba/export [main]})\n" state-cell
+                        "(defn- tick [] (perform :state/get))\n"
+                        "(defn main [] :i64 (handle (do (tick) (perform :state/get)) (with cell 40)))\n")]
+      (is (not= (get (cids pure) "main") (get (cids stateful) "main"))))))
+
+(deftest a-handler-change-moves-every-specialization-under-it
+  (let [clamped (str "(ns d {:kotoba/export [main]})\n"
+                     "(defhandler cell [:state :i64]
+                        (get [s] (resume s s))
+                        (put [s v] (if (< v 0) (resume 0 0) (resume v v))))\n"
+                     "(defn- tick [] (perform :state/put (+ 1 (perform :state/get))))\n"
+                     "(defn main [] :i64 (handle (do (tick) (tick) (perform :state/get)) (with cell 40)))\n")
+        before (cids state-counter)
+        after (cids clamped)]
+    (is (= (get before "__kotoba_state_cell_get_value") (get after "__kotoba_state_cell_get_value"))
+        "an unchanged clause keeps its CID")
+    (is (not= (get before "__kotoba_state_cell_put_value") (get after "__kotoba_state_cell_put_value")))
+    (is (not= (get before "__kotoba_state_tick_under_cell") (get after "__kotoba_state_tick_under_cell"))
+        "the specialization references the clause by CID")
+    (is (not= (get before "main") (get after "main")))))

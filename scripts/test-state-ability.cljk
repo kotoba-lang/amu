@@ -1,0 +1,37 @@
+(ns scripts.test-state-ability
+  "Launcher for `test/nbb/state_ability.cljk`: the state ability (kotoba-lang
+  `lang/state-ability.edn`, slice 1) on every backend this repository runs --
+  the reference interpreter, restricted ESM, aarch64 and x86_64 native -- plus
+  its refusals and definition CIDs.
+
+  Resolves the classpath from `deps-lock.edn` with `scripts/print-classpath.cljk`,
+  as `test-nbb-portable-tests` does, so it runs with no JDK."
+  (:require [scripts.lib :as lib]
+            ["node:child_process" :as child]
+            ["node:path" :as path]))
+
+(let [nbb-cli (lib/join lib/root "node_modules" "nbb" "cli.js")
+      resolved (.spawnSync child js/process.execPath
+                           (clj->js [nbb-cli "--classpath" (lib/join lib/root "src")
+                                     (lib/join lib/root "scripts" "print-classpath.cljk")
+                                     lib/root])
+                           #js {:encoding "utf8" :cwd lib/root :env js/process.env})
+      _ (when-not (zero? (or (.-status resolved) 70))
+          (println "test-state-ability: could not resolve a classpath")
+          (println (.-stderr resolved))
+          (.exit js/process 70))
+      entries (->> (.split (.trim (or (.-stdout resolved) "")) "\n") (remove empty?))
+      _ (when (empty? entries)
+          (println "test-state-ability: classpath resolved to zero entries")
+          (.exit js/process 70))
+      classpath (.join (clj->js (concat [(lib/join lib/root "src")
+                                         (lib/join lib/root "resources")
+                                         (lib/join lib/root "test")]
+                                        entries))
+                       (.-delimiter path))
+      result (.spawnSync child js/process.execPath
+                         (clj->js [nbb-cli "--classpath" classpath
+                                   (lib/join lib/root "test" "nbb" "state_ability.cljk")])
+                         #js {:cwd lib/root :stdio "inherit" :env js/process.env})]
+  (when (.-error result) (throw (.-error result)))
+  (.exit js/process (or (.-status result) 70)))
