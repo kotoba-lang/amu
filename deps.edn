@@ -976,7 +976,13 @@
          ;; loader-source-sha256 is NOT skewed (deps.edn :paths are
          ;; ["src" "resources"], the test tree is not on any consumer's
          ;; classpath). Main CI green on all runs since 2026-09-23.
-         :git/sha "ae6684c70b4271630f8095ee2fd2ebcceba8c9f9"}
+         ;; Advanced 2026-09-24, ae6684c7 -> 9c13e737 (artifact main, ahead 2,
+         ;; forward only): adr-2609242100 P1 -- windows-loader-source-sha256
+         ;; names tools/kexe_loader_windows.c with KEXE_RECORD_FIELD_LIMIT 32 in
+         ;; this commit; without it windows-arm64 and browser-matrix
+         ;; (windows-2025) refused the loader as "native loader source identity
+         ;; mismatch" (measured on this PR's first CI run).
+         :git/sha "9c13e7377b8cceff4f907ebc66a82926280a4292"}
         ;; HELD at 1a2e10c on 2026-09-03 (ADR 0331), 28 commits behind its main,
         ;; while every other pin in this file moved to the tip. The reason, so
         ;; that a lagging pin and a pin with an argument behind it stay

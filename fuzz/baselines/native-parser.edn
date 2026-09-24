@@ -48,7 +48,15 @@
 ;; The floors are again NOT re-measured, for the same reason as above, and
 ;; the change adds no parser branch at all -- the new code runs only on
 ;; paths that were already about to raise(SIGILL).
+;;
+;; Advanced 2026-09-24 for adr-2609242100 P1 (kotoba-lang lang/limits.edn):
+;; KEXE_RECORD_FIELD_LIMIT 128 -> 32 and the KEXE_FUEL ceiling 2^53-1. The
+;; first DOES touch the argv parser -- an `r:` record argument is refused at
+;; its 33rd field instead of its 129th -- but only moves the threshold of an
+;; existing branch, adding none; the second runs before the guest starts.
+;; The floors are carried forward NOT re-measured (same machine limitation
+;; as above); the Linux CI fuzz job measures them.
 {:format :kotoba.fuzz-baseline/v2
- :loader-source-sha256 "c9549e52e78e8832389db0ddd64b6ea421e07028ffa0b429f663c0948a9cef48"
+ :loader-source-sha256 "d3273ec777264c3bc2d2aeefec5a2a947bd065e259e1af7173a0e50afbd33edd"
  :profiles {:x64 {:min-cov 60 :min-features 100 :min-corpus 20}
             :arm64 {:min-cov 60 :min-features 100 :min-corpus 18}}}
