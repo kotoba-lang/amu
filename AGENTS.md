@@ -3,7 +3,9 @@
 ## Q9 compiler routes must be JVM-free
 
 - Q9 callers use `bin/amu check ... --jvm-free` and
-  `bin/amu compile ... --jvm-free`.
+  `bin/amu compile ... --target <target> --jvm-free`. Write the target: an
+  omitted `--target` means the host's native target (ADR 0351), so a
+  browser / Worker / WASI build names `wasm32-browser` / `wasm32-wasi`.
 - `--jvm-free` must never invoke `java`, `javac`, `clojure`, `clj`,
   `resolveWithJvm`, a Clojure main namespace or another JVM launcher.
 - Missing/stale dependency locks, unsupported commands/targets and project

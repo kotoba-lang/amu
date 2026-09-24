@@ -2,7 +2,8 @@
   "Shared ordinary-native CLI implementation. ISA-specific executable
   entrypoints inject exactly one emitter, so compiling AArch64 never loads
   x86-64 code and vice versa."
-  {:kotoba/export [native-value-abi run! targets]}
+  {:kotoba/export [native-feature-refusal-message native-value-abi run! targets
+                  unqualified-native-feature]}
   (:require [kotoba.compiler.capability-names :as cap-names]
             [kotoba.compiler.nbb.cli-support :as support]
             [kotoba.compiler.nbb.compile-cache :as compile-cache]
@@ -180,13 +181,132 @@
                    stage-cache :kir (pr-str [hir oracle-fuel])
                    (fn [] (ir/lower hir {:oracle-fuel oracle-fuel})))))
 
+;; Naming the feature a native target refused (ADR 0351).
+;;
+;; `ir/only-native-word-typed-features?` answers one boolean for the whole
+;; program, and until 2026-09-24 that boolean was the whole diagnostic: "typed
+;; values currently require ..." with nothing saying WHICH form. That was
+;; tolerable while native had to be asked for by name; once an omitted
+;; --target means the host's native target, a program that compiled to Wasm
+;; yesterday with no flag is refused today, and the refusal has to say what
+;; to change.
+;;
+;; The locator asks the SAME predicate smaller questions rather than
+;; re-implementing its admission table -- a second table would be a second
+;; answer that could drift. A body form is probed as the body of a one-function
+;; program with an `:i64` result and no parameters (so the boundary rules pass
+;; and only `walk` decides), and the search descends into the first child that
+;; is refused on its own; a form whose children all pass is the culprit. Let
+;; bindings and match branches are vectors, which the predicate's `walk`
+;; admits wholesale, so their elements are searched as children.
+(defn- probe-body-admitted? [hir body]
+  (ir/only-native-word-typed-features?
+   (assoc hir :functions [{:name '__amu_native_probe :params [] :param-types []
+                           :result :i64 :body body}])))
+
+(defn- form-children [form]
+  (letfn [(spread [x] (if (vector? x) (mapcat spread x) [x]))]
+    (cond (seq? form) (mapcat spread (rest form))
+          (vector? form) (mapcat spread form)
+          :else [])))
+
+(defn- refused-form [hir form]
+  (if-let [child (some #(when-not (probe-body-admitted? hir %) %) (form-children form))]
+    (recur hir child)
+    form))
+
+(defn- bounded-pr [value]
+  ;; `edn-safe` prints an nbb BigInt as the plain integer token, not as
+  ;; `#object[BigInt 1]` (see extract-native below).
+  (let [text (pr-str (artifact/edn-safe value))]
+    (if (> (count text) 160) (str (subs text 0 157) "...") text)))
+
+(defn unqualified-native-feature
+  "The first thing in HIR the native admission gate refuses, as
+  `{:function f :feature op :form text}` for a body form or
+  `{:function f :boundary-types [t ...]}` for a function signature -- or nil
+  when no single function is refused on its own (the gate then still refuses,
+  with the general message)."
+  [hir]
+  (some
+   (fn [{:keys [name param-types result] :as f}]
+     (let [alone (assoc hir :functions [f])]
+       (when-not (ir/only-native-word-typed-features? alone)
+         (if (ir/only-native-word-typed-features? (assoc alone :functions [(assoc f :body 0)]))
+           (let [form (refused-form hir (:body f))]
+             {:function name
+              :feature (if (seq? form) (first form) form)
+              :form (bounded-pr form)})
+           (let [signature (fn [params result*]
+                             (ir/only-native-word-typed-features?
+                              (assoc alone :functions
+                                     [(assoc f :params (vec (take (count params) (:params f)))
+                                             :param-types params :result result* :body 0)])))
+                 refused (vec (concat
+                               (for [t param-types :when (not (signature [t] :i64))] t)
+                               (when (and result (not (signature [] result))) [result])))]
+             {:function name
+              :boundary-types (if (seq refused)
+                                refused
+                                (cond-> (vec param-types) result (conj result)))})))))
+   (:functions hir)))
+
+(defn- target-origin
+  "Where this compile's --target came from, as `bin/amu` recorded it for the
+  child: :host (the host default), :env (AMU_TARGET), or :explicit. The
+  launcher writes or removes the variable on every spawn, so an ambient value
+  is never read."
+  []
+  (case (some-> js/process .-env (aget "AMU_TARGET_ORIGIN"))
+    "host" :host
+    "env" :env
+    :explicit))
+
+(defn native-feature-refusal-message
+  "The refusal for a program native does not qualify. Always names the
+  feature and the wasm32 targets that carry typed values; says that amu chose
+  the target only when it did. The hint is given for an explicit native
+  target too: the person who asked for native by name needs to know where the
+  feature IS qualified just as much, and the pre-ADR-0351 message already
+  pointed there. What differs is only whether they know native was chosen."
+  [target found origin]
+  (let [target-name (some (fn [[k v]] (when (= v target) k)) targets)]
+    (str "typed values currently require the kotoba-script web target, typed Wasm "
+         "target, or qualified native string/scalar-record/option-i64/result-i64 features"
+         (cond
+           (:feature found)
+           (str ": native target " target-name " does not qualify `" (:feature found)
+                "` (in function `" (:function found) "`: " (:form found) ")")
+           (:boundary-types found)
+           (str ": native target " target-name " does not qualify the boundary type"
+                (when (next (:boundary-types found)) "s") " "
+                (bounded-pr (:boundary-types found))
+                " of function `" (:function found) "`")
+           :else "")
+         ". The wasm32 targets carry typed values: compile with `--target "
+         "wasm32-browser` (browser / Worker) or `--target wasm32-wasi` (WASI host). "
+         "Nothing was written"
+         (case origin
+           :host (str "; --target was omitted, so amu chose this host's native target "
+                      target-name " (amu ADR 0351) and did not fall back to wasm.")
+           :env (str "; AMU_TARGET chose " target-name
+                     ", and amu did not fall back to wasm.")
+           "."))))
+
 (defn- compile-native! [hir target backend policy emit-metadata emit-program stage-cache]
   (when (and (= :kotoba.hir/v3 (:format hir))
              (not (and (contains? #{:x86_64-kotoba-v1 :aarch64-kotoba-v1} backend)
                        (ir/only-native-word-typed-features? hir))))
-    (throw (ex-info "typed values currently require the kotoba-script web target, typed Wasm target, or qualified native string/scalar-record/option-i64/result-i64 features"
-                    {:phase :target :target target :backend backend
-                     :value-profile :kotoba.value/typed-v1})))
+    (let [found (unqualified-native-feature hir)
+          origin (target-origin)]
+      (throw (ex-info (native-feature-refusal-message target found origin)
+                      (cond-> {:phase :target :target target :backend backend
+                               :value-profile :kotoba.value/typed-v1
+                               :target-origin origin
+                               :wasm-targets ["wasm32-browser" "wasm32-wasi"]}
+                        (:function found) (assoc :function (str (:function found)))
+                        (:feature found) (assoc :feature (str (:feature found)))
+                        (:boundary-types found) (assoc :boundary-types (:boundary-types found)))))))
   ;; Keep the JDK-free self-hosted driver aligned with the JVM compiler:
   ;; ordinary native artifacts are exportable libraries when their target
   ;; profile does not require an entry symbol. Aiueos firmware/kernel/process

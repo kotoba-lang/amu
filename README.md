@@ -40,11 +40,12 @@ clock. Exported names and declaration order are part of the key because both
 are in the emitted bytes — measured, not assumed.
 
 **`:definitions-recompiled 0` is the worker route.** The cache lives in a worker
-context (`amu worker`), so a one-shot `amu compile` consults no cache and
+context (`amu worker --target wasm32-browser`), so a one-shot
+`amu compile --target wasm32-browser` consults no cache and
 reports every definition in the module — `compile-uncached!` says so in as many
 words, because *the cache was not consulted* and *the cache missed* are
 different facts. Read the `:cache` key to tell them apart: it is absent when
-nothing was consulted, and `:hit`/`:miss` when something was. Under
+nothing was consulted, and `:hit`/`:miss` when something was. Under a Wasm
 `amu worker`, an unchanged recompile answers `:cache :hit` with `0`, and a
 renamed module answers `:cache :miss` with `0` — the artifact key moved because
 the source text did, and nothing had to be re-emitted anyway. See
@@ -501,9 +502,18 @@ through the kexe loader) is the first execution path, and wasm is one build
 target among several, chosen for hosts where native cannot run (browsers and
 Workers: `wasm32-browser`; WASI: `wasm32-wasi`); JVM/`bb` stay last-resort
 compat (superproject ADR-2609241300, 2026-09-24 — the earlier order put
-`kotoba wasm runtime` first). Note that an omitted `--target` still routes to
-the wasm32 path (ADR 0237 did not make native the default), so write the
-target explicitly. The frontend reader/validator
+`kotoba wasm runtime` first). An omitted `--target` on `amu compile` /
+`amu worker` means **this host's native target** (ADR 0351, 2026-09-24; like
+Go's GOOS/GOARCH): `aarch64-macos` on Apple silicon, `x86_64-linux` /
+`aarch64-linux` on Linux, `x86_64-windows` / `aarch64-windows` on Windows,
+`aarch64-android` on Android; any other host is refused by name, never
+defaulted to wasm. `AMU_TARGET` overrides the default and an explicit
+`--target` overrides both. A program that uses a feature native does not
+qualify yet is refused naming the feature and the wasm32 targets that carry
+it -- choose `--target wasm32-browser` (browser / Worker) or
+`--target wasm32-wasi` explicitly; amu never switches to wasm by itself.
+`check`, `definition-cids`, `module-lock` and `package-*` take no target.
+The frontend reader/validator
 (`kotoba.compiler.frontend`), the KIR lowering/compile-time oracle
 (`kotoba.compiler.ir`), the wasm32 backend (`kotoba.compiler.backend.wasm`),
 and capability admission (`kotoba.compiler.admission`) are `.cljc`, sharing

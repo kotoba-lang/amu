@@ -123,7 +123,9 @@ is made here about why it is red**, only that this change is not the cause.
 **One unrelated defect observed and not fixed.** `-o` is not a recognised flag
 on either path -- `--output` is the only spelling, and no `"-o"` appears
 anywhere in `src/kotoba/compiler/`. `amu compile ... -o /tmp/eg.wasm` does not
-fail; it silently ignores the flag and writes the artifact, its provenance and
+fail (that run had no `--target`, which then meant wasm32; since ADR 0351 an
+omitted target means the host's native target, so the same wasm32 run is
+`amu compile ... --target wasm32 -o /tmp/eg.wasm`); it silently ignores the flag and writes the artifact, its provenance and
 its publication record next to the SOURCE file. That is an unknown option
 accepted in silence, and it wrote three files into a read-only repository
 during this investigation (removed). It is a separate defect and is left
