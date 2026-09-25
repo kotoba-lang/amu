@@ -1,6 +1,6 @@
 (ns kotoba.compiler.component-composition-test
   (:require [clojure.edn :as edn]
-            [clojure.java.io :as io]
+            [kotoba.io :as io]
             [clojure.java.shell :as shell]
             [kotoba.lang.text :as str]
             [clojure.test :refer [deftest is]]
@@ -16,7 +16,7 @@
 
 (def ^:private wasmtime-binary
   (let [pinned (io/file ".tools" "wasmtime" "wasmtime")]
-    (if (.canExecute pinned) (.getPath pinned) "wasmtime")))
+    (if (io/can-execute? pinned) (io/path pinned) "wasmtime")))
 
 (def capability-kir
   {:format :kotoba.kir/v4 :exports ['invoke] :schemas {}

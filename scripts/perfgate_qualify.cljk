@@ -1,5 +1,5 @@
 (ns perfgate-qualify
-  (:require [json.data-json :as json]
+  (:require [kotoba.io :as kio] [json.data-json :as json]
             [clojure.java.io :as io]
             [kotoba.lang.text :as str]
             [machine.core :as m]
@@ -96,7 +96,7 @@
 (defn unique? [xs] (= (count xs) (count (set xs))))
 
 (defn canonical-manifest []
-  (let [bytes (java.nio.file.Files/readAllBytes (.toPath (io/file manifest-path)))]
+  (let [bytes (kio/read-all-bytes (io/file manifest-path))]
     {:bytes bytes
      :sha256 (sha256-bytes bytes)
      :value (json/read-str (String. bytes StandardCharsets/UTF_8) {:key-fn keyword})}))

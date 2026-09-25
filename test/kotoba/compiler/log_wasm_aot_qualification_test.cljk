@@ -5,7 +5,7 @@
   sink). Sequence advance plus oldest-drop on overflow are the
   discriminating claims — a canned append result would not drop seq 1."
   (:require [clojure.edn :as edn]
-            [clojure.java.io :as io]
+            [kotoba.io :as io]
             [clojure.java.shell :as shell]
             [kotoba.lang.text :as str]
             [clojure.test :refer [deftest is]]
@@ -16,7 +16,7 @@
 
 (def ^:private wasmtime-binary
   (let [pinned (io/file ".tools" "wasmtime" "wasmtime")]
-    (if (.canExecute pinned) (.getPath pinned) "wasmtime")))
+    (if (io/can-execute? pinned) (io/path pinned) "wasmtime")))
 
 (defn- wat-data [bytes]
   (apply str (map #(format "\\%02x" (bit-and (int %) 0xff)) bytes)))
