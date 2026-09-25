@@ -4340,8 +4340,9 @@ static int kexe_scope_admit(const struct kexe_scope *scope, const char *target,
   return 0;
 }
 
-/* Containment of an OPENED fd -- the second check, after admission, because
- * the path that was admitted and the object that was opened can differ.
+/* Containment of an OPENED fd -- the third check, after admission and the
+ * beneath-resolution of kexe_scope_open, because the path that was admitted
+ * and the object that was opened can differ.
  * macOS: F_GETPATH gives the kernel's path for the fd, compared against each
  * resolved entry. Linux: the candidate was re-spelled under a resolved entry
  * (lexically inside the grant) and opened O_NOFOLLOW, so a (st_dev, st_ino)
@@ -4388,6 +4389,145 @@ static int kexe_scope_contains_fd(const struct kexe_scope *scope, int fd,
   if (fstat(fd, &fd_sb) != 0 || stat(candidate, &cand_sb) != 0) return 0;
   return fd_sb.st_dev == cand_sb.st_dev && fd_sb.st_ino == cand_sb.st_ino;
 #endif
+}
+
+/* Opening a path the scope ADMITTED, so that the kernel -- not a check
+ * after the fact -- keeps the resolution inside the entry it was admitted
+ * under (2026-09-25, superproject adr-2609251400 C3, the loader's
+ * directory-symlink hole). Mechanism only: WHICH entry the candidate lies
+ * under is decide op 8 (scope-admitted), asked here exactly as
+ * kexe_scope_contains_fd asks it; this function only opens.
+ *
+ * Why: the candidate is a string, and `open(candidate)` resolves every
+ * directory symlink in it. `scope/d -> /outside` made `scope/d/secret`
+ * admissible (lexically inside) and openable (the kernel followed d), and on
+ * Linux the containment below compared the fd with a stat of the SAME path,
+ * which the same symlink satisfied -- so a read returned outside bytes and a
+ * mkdir planted a directory outside (measured, C3). On macOS F_GETPATH saw
+ * the escape, but only AFTER the open: a write through d had already created
+ * the outside file (measured on this Mac, the no-Seatbelt build).
+ *
+ * How: the entry's resolved directory is opened (O_NOFOLLOW, so a root that
+ * was swapped for a symlink since start is not followed), and the rest of
+ * the candidate is opened RELATIVE to it with the kernel's beneath rule --
+ * Linux openat2 RESOLVE_BENEATH | RESOLVE_NO_MAGICLINKS, macOS openat with
+ * O_RESOLVE_BENEATH. Both refuse an absolute symlink and any `..` or
+ * symlink that would leave the root (EXDEV / ENOTCAPABLE), follow a relative
+ * symlink that stays beneath it, and leave the final component to the
+ * caller's O_NOFOLLOW -- the rule the static image states for the same
+ * kernel call. There is no unconfined fallback: a Linux kernel without
+ * openat2 (ENOSYS) is reported as ESCAPED, which every caller treats as a
+ * failed containment -- a trap; a macOS kernel that ignores
+ * O_RESOLVE_BENEATH (probed once: `..` from the root must be refused)
+ * resolves with O_NOFOLLOW_ANY, which refuses every symlink.
+ *
+ * A `/dev/fd` entry needs no path of its own here: macOS opens /dev/fd/N
+ * beneath an O_DIRECTORY fd on /dev/fd (a file and a pipe measured, under
+ * Seatbelt), and on Linux realpath gives /dev/fd another spelling.
+ *
+ * Returns the fd, or -1. On -1 `*escaped` is 1 when the refusal is the
+ * scope's (a grant violation) and 0 when it is an ordinary failure the
+ * provider answers (absent, not a directory, permission). */
+#if defined(__linux__)
+#ifndef SYS_openat2
+#define SYS_openat2 437
+#endif
+#ifndef RESOLVE_NO_MAGICLINKS
+#define RESOLVE_NO_MAGICLINKS 0x02
+#endif
+#ifndef RESOLVE_BENEATH
+#define RESOLVE_BENEATH 0x08
+#endif
+struct kexe_open_how {
+  uint64_t flags;
+  uint64_t mode;
+  uint64_t resolve;
+};
+#elif defined(__APPLE__)
+#ifndef O_RESOLVE_BENEATH
+#define O_RESOLVE_BENEATH 0x00001000
+#endif
+#ifndef ENOTCAPABLE
+#define ENOTCAPABLE 107
+#endif
+#ifndef O_NOFOLLOW_ANY
+#define O_NOFOLLOW_ANY 0x20000000
+#endif
+/* 0 unprobed, 1 the kernel refuses `..` beneath a root, -1 it does not. */
+static int kexe_beneath_honoured = 0;
+#endif
+
+static int kexe_scope_open(const struct kexe_scope *scope, const char *candidate,
+                           int flags, int mode, int *escaped) {
+  *escaped = 0;
+  size_t candidate_length = strlen(candidate);
+  for (int s = 0; s < scope->count; s++) {
+    const char *base = scope->resolved[s];
+    size_t base_length = strlen(base);
+    int prefix_equal = candidate_length >= base_length &&
+                       memcmp(candidate, base, base_length) == 0;
+    if (kexe_decide(KEXE_DECIDE_SCOPE, prefix_equal,
+                    prefix_equal ? (int64_t)(unsigned char)candidate[base_length] : 0,
+                    0, 0) != 1) continue;
+    const char *rest = candidate + base_length;
+    while (*rest == '/') rest++;
+    if (*rest == '\0') rest = ".";
+#if defined(__linux__)
+    int root = open(base, O_PATH | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+    if (root < 0) return -1;
+    struct kexe_open_how how;
+    memset(&how, 0, sizeof(how));
+    how.flags = (uint64_t)(unsigned)flags;
+    how.mode = (flags & O_CREAT) ? (uint64_t)(unsigned)mode : 0u;
+    how.resolve = RESOLVE_BENEATH | RESOLVE_NO_MAGICLINKS;
+    int fd = (int)syscall(SYS_openat2, root, rest, &how, sizeof(how));
+    int saved = errno;
+    close(root);
+    if (fd < 0) {
+      *escaped = saved == EXDEV || saved == ENOSYS;
+      errno = saved;
+    }
+    return fd;
+#elif defined(__APPLE__)
+    int root = open(base, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+    if (root < 0) return -1;
+    if (kexe_beneath_honoured == 0) {
+      int probe = openat(root, "..", O_RDONLY | O_DIRECTORY | O_RESOLVE_BENEATH);
+      if (probe >= 0) {
+        close(probe);
+        kexe_beneath_honoured = -1;
+      } else {
+        kexe_beneath_honoured = (errno == ENOTCAPABLE) ? 1 : -1;
+      }
+    }
+    /* A kernel without O_RESOLVE_BENEATH (macOS 14 ignores the bit:
+     * measured on the CI's macos-14 runner, where the probe failed and every
+     * fs open trapped) resolves with O_NOFOLLOW_ANY instead (macOS 11+): no
+     * symlink anywhere in the path. The candidate is lexically normalized
+     * and `rest` is relative, so without symlinks the resolution cannot
+     * leave the root. Stricter than beneath -- an in-scope relative symlink
+     * is refused too -- and any ELOOP is taken as the scope's refusal.
+     * O_NOFOLLOW is dropped there: with O_NOFOLLOW_ANY it is EINVAL
+     * (measured), and O_NOFOLLOW_ANY already covers the last component. */
+    int how = (kexe_beneath_honoured == 1) ? (flags | O_RESOLVE_BENEATH)
+                                           : ((flags & ~O_NOFOLLOW) | O_NOFOLLOW_ANY);
+    int fd = (flags & O_CREAT)
+                 ? openat(root, rest, how, (mode_t)mode)
+                 : openat(root, rest, how);
+    int saved = errno;
+    close(root);
+    if (fd < 0) {
+      *escaped = (kexe_beneath_honoured == 1) ? saved == ENOTCAPABLE
+                                              : saved == ELOOP;
+      errno = saved;
+    }
+    return fd;
+#else
+#error "kexe_scope_open: no beneath-resolution for this OS"
+#endif
+  }
+  *escaped = 1;
+  return -1;
 }
 
 /* Rewrites the absolute path in `target` in place without `.` and `..`
@@ -4529,7 +4669,9 @@ static int64_t fs_app_data_exists_provider(struct kexe_context_v11 *context,
       !kexe_scope_admit(&kexe_scope35, target, candidate)) {
     return intern_utf8(context, (const uint8_t *)"0", 1);
   }
-  int fd = open(candidate, O_RDONLY | O_NOFOLLOW);
+  int escaped = 0;
+  int fd = kexe_scope_open(&kexe_scope35, candidate, O_RDONLY | O_NOFOLLOW, 0,
+                           &escaped);
   if (fd < 0) {
     return intern_utf8(context, (const uint8_t *)"0", 1);
   }
@@ -4549,7 +4691,9 @@ static int64_t fs_app_data_read_provider(struct kexe_context_v11 *context,
     raise(SIGILL);
     return 0;
   }
-  int fd = open(candidate, O_RDONLY | O_NOFOLLOW);
+  int escaped = 0;
+  int fd = kexe_scope_open(&kexe_scope35, candidate, O_RDONLY | O_NOFOLLOW, 0,
+                           &escaped);
   if (fd < 0 || !kexe_scope_contains_fd(&kexe_scope35, fd, candidate)) {
     if (fd >= 0) close(fd);
     raise(SIGILL);
@@ -4675,7 +4819,9 @@ static int64_t fs_app_data_write_provider(struct kexe_context_v11 *context,
         raise(SIGILL);
         return 0;
       }
-      int fd = open(candidate, O_WRONLY | O_APPEND | O_NOFOLLOW);
+      int escaped = 0;
+      int fd = kexe_scope_open(&kexe_scope35, candidate,
+                               O_WRONLY | O_APPEND | O_NOFOLLOW, 0, &escaped);
       if (fd < 0 || !kexe_scope_contains_fd(&kexe_scope35, fd, candidate)) {
         if (fd >= 0) close(fd);
         raise(SIGILL);
@@ -4707,7 +4853,10 @@ static int64_t fs_app_data_write_provider(struct kexe_context_v11 *context,
     raise(SIGILL);
     return 0;
   }
-  int fd = open(candidate, O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW, 0644);
+  int escaped = 0;
+  int fd = kexe_scope_open(&kexe_scope35, candidate,
+                           O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW, 0644,
+                           &escaped);
   if (fd < 0 || !kexe_scope_contains_fd(&kexe_scope35, fd, candidate)) {
     if (fd >= 0) close(fd);
     raise(SIGILL);
@@ -4761,10 +4910,12 @@ static int64_t fs_app_data_stat_provider(struct kexe_context_v11 *context,
     raise(SIGILL);
     return 0;
   }
-  int fd = open(candidate, O_RDONLY | O_NOFOLLOW);
-  if (fd < 0) return intern_utf8(context, (const uint8_t *)"", 0);
-  if (!kexe_scope_contains_fd(&kexe_scope35, fd, candidate)) {
-    close(fd);
+  int escaped = 0;
+  int fd = kexe_scope_open(&kexe_scope35, candidate, O_RDONLY | O_NOFOLLOW, 0,
+                           &escaped);
+  if (fd < 0 && !escaped) return intern_utf8(context, (const uint8_t *)"", 0);
+  if (fd < 0 || !kexe_scope_contains_fd(&kexe_scope35, fd, candidate)) {
+    if (fd >= 0) close(fd);
     raise(SIGILL);
     return 0;
   }
@@ -4807,10 +4958,12 @@ static int64_t fs_app_data_mtime_provider(struct kexe_context_v11 *context,
     raise(SIGILL);
     return 0;
   }
-  int fd = open(candidate, O_RDONLY | O_NOFOLLOW);
-  if (fd < 0) return intern_utf8(context, (const uint8_t *)"", 0);
-  if (!kexe_scope_contains_fd(&kexe_scope35, fd, candidate)) {
-    close(fd);
+  int escaped = 0;
+  int fd = kexe_scope_open(&kexe_scope35, candidate, O_RDONLY | O_NOFOLLOW, 0,
+                           &escaped);
+  if (fd < 0 && !escaped) return intern_utf8(context, (const uint8_t *)"", 0);
+  if (fd < 0 || !kexe_scope_contains_fd(&kexe_scope35, fd, candidate)) {
+    if (fd >= 0) close(fd);
     raise(SIGILL);
     return 0;
   }
@@ -4867,10 +5020,12 @@ static int64_t fs_app_data_chmod_provider(struct kexe_context_v11 *context,
   }
   /* Permission bits only. */
   mode &= 0777u;
-  int fd = open(candidate, O_RDONLY | O_NOFOLLOW);
-  if (fd < 0) return kexe_answer_bool(context, 0);
-  if (!kexe_scope_contains_fd(&kexe_scope35, fd, candidate)) {
-    close(fd);
+  int escaped = 0;
+  int fd = kexe_scope_open(&kexe_scope35, candidate, O_RDONLY | O_NOFOLLOW, 0,
+                           &escaped);
+  if (fd < 0 && !escaped) return kexe_answer_bool(context, 0);
+  if (fd < 0 || !kexe_scope_contains_fd(&kexe_scope35, fd, candidate)) {
+    if (fd >= 0) close(fd);
     raise(SIGILL);
     return 0;
   }
@@ -4883,12 +5038,14 @@ static int64_t fs_app_data_chmod_provider(struct kexe_context_v11 *context,
  *
  * mkdir, unlink, rmdir and rename, each confined to the wire-35 scope.
  *
- * The read and write providers above are safe because they OPEN the target
- * and then ask `kexe_scope_contains_fd`, which resolves the descriptor
- * (F_GETPATH on macOS, dev+ino comparison elsewhere) and so cannot be fooled
- * by a `..` component or a symlink. `kexe_scope_admit` alone would be: it
- * matches text, and `/granted/../../etc` prefixes `/granted` at a `/`
- * boundary.
+ * The read and write providers above OPEN the target with kexe_scope_open
+ * -- beneath the scope root, so a `..` or a directory symlink cannot carry
+ * the resolution out -- and then ask `kexe_scope_contains_fd` as well.
+ * `kexe_scope_admit` alone would not be enough: it matches text, and a
+ * directory symlink under the grant is lexically inside it. (Until
+ * 2026-09-25 the Linux loader opened the plain path and relied on the
+ * dev+ino check, which compared the fd with a stat of the SAME path and so
+ * followed the same symlink: the escape was open.)
  *
  * A mutation has no descriptor for the thing it acts on -- unlink removes a
  * name, not an open file -- so the same guarantee is obtained one level up:
@@ -4934,10 +5091,12 @@ static int kexe_scoped_parent_fd(const char *candidate, char base[256],
     *fatal = 1;
     return -1;
   }
-  int dfd = open(parent, O_RDONLY | O_DIRECTORY);
-  if (dfd < 0) return -1;
-  if (!kexe_scope_contains_fd(&kexe_scope35, dfd, parent)) {
-    close(dfd);
+  int escaped = 0;
+  int dfd = kexe_scope_open(&kexe_scope35, parent, O_RDONLY | O_DIRECTORY, 0,
+                            &escaped);
+  if (dfd < 0 && !escaped) return -1;
+  if (dfd < 0 || !kexe_scope_contains_fd(&kexe_scope35, dfd, parent)) {
+    if (dfd >= 0) close(dfd);
     *fatal = 1;
     return -1;
   }
@@ -5143,7 +5302,9 @@ static int64_t fs_app_data_range_read_provider(struct kexe_context_v11 *context,
     return 0;
   }
 
-  int fd = open(candidate, O_RDONLY | O_NOFOLLOW);
+  int escaped = 0;
+  int fd = kexe_scope_open(&kexe_scope35, candidate, O_RDONLY | O_NOFOLLOW, 0,
+                           &escaped);
   if (fd < 0 || !kexe_scope_contains_fd(&kexe_scope35, fd, candidate)) {
     if (fd >= 0) close(fd);
     raise(SIGILL);
@@ -5344,7 +5505,9 @@ static int64_t fs_browse_provider(struct kexe_context_v11 *context,
     raise(SIGILL);
     return 0;
   }
-  int fd = open(candidate, O_RDONLY | O_DIRECTORY | O_NOFOLLOW);
+  int escaped = 0;
+  int fd = kexe_scope_open(&kexe_scope34, candidate,
+                           O_RDONLY | O_DIRECTORY | O_NOFOLLOW, 0, &escaped);
   if (fd < 0 || !kexe_scope_contains_fd(&kexe_scope34, fd, candidate)) {
     if (fd >= 0) close(fd);
     raise(SIGILL);
@@ -6711,6 +6874,16 @@ static void install_syscall_sandbox(void) {
                                      __NR_openat, 0, 1));
     ADD((struct sock_filter)BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW));
 #endif
+    /* openat2: every :fs/app-data and :fs/browse open is RESOLVE_BENEATH
+     * relative to its scope root (kexe_scope_open), so a directory symlink
+     * cannot carry the resolution out of the grant. The same number, 437,
+     * on x86_64 and aarch64 (the unified table). */
+#ifndef __NR_openat2
+#define __NR_openat2 437
+#endif
+    ADD((struct sock_filter)BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K,
+                                     __NR_openat2, 0, 1));
+    ADD((struct sock_filter)BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW));
     ADD((struct sock_filter)BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K,
                                      __NR_close, 0, 1));
     ADD((struct sock_filter)BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW));
@@ -6742,6 +6915,38 @@ static void install_syscall_sandbox(void) {
 #endif
     ADD((struct sock_filter)BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K,
                                      __NR_faccessat2, 0, 1));
+    ADD((struct sock_filter)BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW));
+  }
+  /* The four :fs/app-data MUTATION forms (wire id 35), admitted only with a
+   * wire-35 scope, each one syscall against a parent directory fd that
+   * kexe_scoped_parent_fd opened beneath the scope and proved contained:
+   *   mkdirat   MKDIR_SEP   (mkdirat(dfd, base, 0777))
+   *   unlinkat  UNLINK_SEP  (unlinkat(dfd, base, 0))
+   *             RMDIR_SEP   (unlinkat(dfd, base, AT_REMOVEDIR))
+   *   renameat  RENAME_SEP  (renameat(from_dfd, from, to_dfd, to))
+   * The rename number is the one libc's renameat() issues, chosen by the
+   * test glibc's own renameat.c makes: __NR_renameat when the kernel headers
+   * define it, else renameat2 with flags 0 (an ABI without renameat, e.g.
+   * riscv64). Measured 2026-09-25 with the c3-gcc image's glibc: x86_64
+   * issues 264 (renameat), aarch64 issues 38 (renameat -- arm64's uapi sets
+   * __ARCH_WANT_RENAMEAT) and kernel 6.15 performs it; renameat2 (316 / 276)
+   * stays denied on both.
+   * Before these the filter admitted none of them, and all four forms died
+   * with SIGSYS on Linux (measured, superproject adr-2609251400 C3). */
+  if (kexe_scope35.count > 0) {
+    ADD((struct sock_filter)BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K,
+                                     __NR_mkdirat, 0, 1));
+    ADD((struct sock_filter)BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW));
+    ADD((struct sock_filter)BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K,
+                                     __NR_unlinkat, 0, 1));
+    ADD((struct sock_filter)BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW));
+#if defined(__NR_renameat)
+    ADD((struct sock_filter)BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K,
+                                     __NR_renameat, 0, 1));
+#else
+    ADD((struct sock_filter)BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K,
+                                     __NR_renameat2, 0, 1));
+#endif
     ADD((struct sock_filter)BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW));
   }
 #define ALLOW_SYSCALL_AT(number) \
