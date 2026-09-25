@@ -15,6 +15,8 @@
             [kotoba.compiler.nbb.cli :as native-cli]
             [kotoba.kir.target :as target-profile]
             [kotoba.native.linux-static :as linux-static]
+            [kotoba.compiler.linux-static-handlers :as static-handlers]
+            #?(:cljs ["node:crypto" :as crypto])
             #?(:cljs ["node:fs" :as fs])))
 
 (def names {"x86_64-linux-static" :x86_64-linux-static-kotoba-v1
@@ -47,3 +49,28 @@
                   (:unimplemented-slot-trap static)
                   :ok :trap/signal]]
       (is (integer? (get codes trap)) (str trap " has an exit status")))))
+
+;; superproject adr-2609251400 C3. The handler decision code a static image
+;; with effects carries is this compiler's compilation of two sources in THIS
+;; tree, held as sealed artifacts in `kotoba.compiler.linux-static-handlers`
+;; (scripts/gen-linux-static-handlers.cljk writes it; --check recompiles and
+;; compares, and refuses unless the C1 module's bytes equal the ones
+;; tools/kexe_loader.c embeds). What this suite can say cheaply is that the
+;; generated namespace was made from the sources as they are now: an edit to
+;; either .kotoba that was not regenerated turns this red.
+#?(:cljs
+   (deftest the-handler-decisions-were-generated-from-these-sources
+     (doseq [[k path] [[:decisions "tools/kexe_loader_decisions.kotoba"]
+                       [:handlers "tools/linux_static_handlers.kotoba"]]]
+       (let [digest (-> (.createHash crypto "sha256") (.update (fs/readFileSync path)) (.digest "hex"))]
+         (is (= digest (get static-handlers/source-sha256 k))
+             (str path " changed since scripts/gen-linux-static-handlers.cljk last ran"))))
+     (doseq [isa [:aarch64 :x86_64] k [:decisions :handlers]]
+       (is (string? (get-in static-handlers/artifact-texts [isa k])) (str isa " " k)))))
+
+(deftest the-profile-hands-the-packager-a-handler-for-every-capability-it-names
+  (let [handled (get-in limits/table [:profile/native :static-elf :capability-handlers :value])]
+    (is (= #{7 33 34 35 37 38 39 41} (set (keys handled))))
+    (is (contains? (set (get-in limits/table [:profile/native :static-elf :admitted-slots :value]))
+                   :typed-cap-call))
+    (is (= #{20 23} (set (keys (get-in limits/table [:profile/native :static-elf :refused-capabilities :value])))))))

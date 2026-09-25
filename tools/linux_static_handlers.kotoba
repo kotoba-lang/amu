@@ -1,0 +1,315 @@
+(ns linux-static-handlers
+  {:kotoba/export [decide]})
+
+;; The DECISIONS of the capability handlers of the loader-less Linux static
+;; ELF (superproject adr-2609251400 C3; adr-2609242330 S5: an ability's
+;; handler, supplied by the target profile).
+;;
+;; kotoba-native `kotoba.native.linux-static` emits the MECHANISM of those
+;; handlers as machine code: the syscall instructions, the byte loops that
+;; copy, compare and scan, the register saves. Every question the mechanism
+;; has to ask on the way -- which handler answers this provider, which form
+;; of a :fs/app-data request this is, is this byte a digit, does this charge
+;; fit the budget, what does this errno mean for this form, does this path
+;; segment pop or push -- is answered HERE, by this module compiled by amu
+;; for the image's ISA and placed in the image's text beside the guest. The
+;; mechanism calls `decide` through the native kexe ABI with a private
+;; context, as the kexe loader calls kexe_loader_decisions.kotoba (C1), so a
+;; decision costs the guest no fuel and no cell.
+;;
+;; The scope containment rule is NOT restated here: the image carries
+;; kexe_loader_decisions.kotoba compiled as well and asks its `decide` op 8
+;; (scope-admitted) and `cap-admitted`, the same code the loader runs.
+;;
+;; The answers reproduce the kexe loader's observable behaviour for the same
+;; request (tools/kexe_loader.c, the provider named beside each op), so a
+;; program and a grant give the same stdout, stderr and exit status through
+;; either path. Where the static image is stricter -- a path that resolves
+;; outside the scope through a directory symlink, which the Linux loader's
+;; (st_dev, st_ino) check cannot see -- the op says so.
+
+;; ---------------------------------------------------------------------
+;; op 0: which static handler answers C1's provider number (decide op 0 of
+;; kexe_loader_decisions.kotoba, cap-provider). 0 = none: the packager
+;; refuses a grant with no handler, and the mechanism traps by name if one
+;; is reached anyway.
+;;   1 :io/write 37        2 :io/write-error 39   3 :io/read 41
+;;   4 :cli/args 38        5 :env/read 33         6 :clock/now 7 (text)
+;;   7 :fs/app-data 35     8 :fs/browse 34
+(defn- handler-for [provider]
+  (cond
+    (= provider 13) 1
+    (= provider 7) 2
+    (= provider 11) 3
+    (= provider 12) 4
+    (= provider 15) 5
+    (= provider 10) 6
+    (= provider 5) 7
+    (= provider 6) 8
+    :else 0))
+
+;; ---------------------------------------------------------------------
+;; op 1: the form of a :fs/app-data request (the loader's token order in
+;; checked_typed_cap_call, wire 35). PRESENT has bit K set when token K
+;; occurs in the request:
+;;   0 WRITE_SEP  1 APPEND_SEP  2 EXISTS_SEP  3 RANGE_SEP  4 STAT_SEP
+;;   5 MTIME_SEP  6 CHMOD_SEP   7 MKDIR_SEP   8 UNLINK_SEP 9 RMDIR_SEP
+;;   10 RENAME_SEP
+;; WRITE-FIRST is 1 when WRITE_SEP occurs before APPEND_SEP. The answer:
+;;   0 read  1 write  2 append  3 exists  4 range  5 stat  6 mtime
+;;   7 chmod 8 mkdir  9 unlink 10 rmdir  11 rename
+(defn- low-bit [r] (- r (i64-shift-left (u64-shift-right r 1) 1)))
+
+(defn- has [present k]
+  (cond
+    (= k 0) (low-bit present)
+    (= k 1) (low-bit (u64-shift-right present 1))
+    (= k 2) (low-bit (u64-shift-right present 2))
+    (= k 3) (low-bit (u64-shift-right present 3))
+    (= k 4) (low-bit (u64-shift-right present 4))
+    (= k 5) (low-bit (u64-shift-right present 5))
+    (= k 6) (low-bit (u64-shift-right present 6))
+    (= k 7) (low-bit (u64-shift-right present 7))
+    (= k 8) (low-bit (u64-shift-right present 8))
+    (= k 9) (low-bit (u64-shift-right present 9))
+    (= k 10) (low-bit (u64-shift-right present 10))
+    :else 0))
+
+(defn- fs-form [present write-first]
+  (let [w (has present 0)
+        a (has present 1)]
+    (cond
+      (= 1 (if (= w 1) (if (= a 0) 1 write-first) 0)) 1
+      (= a 1) 2
+      (= 1 (has present 2)) 3
+      (= 1 (has present 3)) 4
+      (= 1 (has present 4)) 5
+      (= 1 (has present 5)) 6
+      (= 1 (has present 6)) 7
+      (= 1 (has present 7)) 8
+      (= 1 (has present 8)) 9
+      (= 1 (has present 9)) 10
+      (= 1 (has present 10)) 11
+      :else 0)))
+
+;; op 2: the forms this image answers. APPEND (a buffered sink shared across
+;; calls), RANGE and CHMOD are not implemented here and trap BY NAME
+;; (:slot/unimplemented naming the form); the rest answer as the loader does.
+(defn- form-implemented [form]
+  (cond
+    (= form 2) 0
+    (= form 4) 0
+    (= form 7) 0
+    (< form 0) 0
+    (> form 11) 0
+    :else 1))
+
+;; op 17: how many occurrences of its token a form admits. The loader's
+;; kexe_single_token refuses a second occurrence (a path or content holding
+;; the token); EXISTS reads the path up to the FIRST occurrence (memmem) and
+;; so admits any count; the bare read form has no token.
+(defn- token-count-admitted [form n]
+  (cond
+    (= form 0) 1
+    (= form 3) (if (>= n 1) 1 0)
+    (= n 1) 1
+    :else 0))
+
+;; ---------------------------------------------------------------------
+;; op 3: one step of a decimal parse (the loader's cli_args / io_read index:
+;; digits only, no sign). Answers the new accumulator, -2 when BYTE is not a
+;; digit, or saturates at 2^63-1 -- an index or a count that large answers
+;; exactly as the largest one (past every argument; every byte there is).
+;; 2^63-1, built from small literals so the sealed artifact carries no integer
+;; an EDN reader on a double-only host would refuse (kotoba.lang.edn does).
+(defn- i64-max [] (+ (* 2 (- (i64-shift-left 1 62) 1)) 1))
+
+(defn- decimal-step [acc b]
+  (cond
+    (< b 48) -2
+    (> b 57) -2
+    (< acc 0) -2
+    (> acc (quot (- (i64-max) (- b 48)) 10)) (i64-max)
+    :else (+ (* acc 10) (- b 48))))
+
+;; op 4: a decimal request's length: 1..19 bytes (the loader refuses 20 and
+;; more before parsing).
+(defn- decimal-length-admitted [n]
+  (if (< n 1) 0 (if (>= n 20) 0 1)))
+
+;; op 5: an :env/read name (env_read_provider): 1..4095 bytes and no '='.
+(defn- env-name-admitted [n has-equals]
+  (cond
+    (< n 1) 0
+    (>= n 4096) 0
+    (= has-equals 1) 0
+    :else 1))
+
+;; op 6: charge N bytes to a pool holding USED of BUDGET (intern_utf8, and
+;; the fs/browse listing bound). 1 fits, 0 is the budget trap.
+(defn- charge [used n budget]
+  (cond
+    (< n 0) 0
+    (< used 0) 0
+    (> n (- budget used)) 0
+    :else 1))
+
+;; op 7: how many bytes an :io/read call asks the kernel for
+;; (io_read_provider). WHOLE is 1 for the empty request; LIMIT the decimal
+;; count; ROOM what the pool has left. -1 traps: no room, where an empty
+;; answer would read as EOF.
+(defn- io-read-want [whole limit room]
+  (let [want (if (= whole 1) room (if (< limit room) limit room))]
+    (if (= want 0)
+      (if (= whole 1) -1 (if (> limit 0) -1 0))
+      want)))
+
+;; op 8: a whole-input read that filled the pool must probe one more byte;
+;; a byte there is input past the budget, refused rather than answered short.
+(defn- io-read-probe [whole got room]
+  (if (= whole 1) (if (= got room) 1 0) 0))
+
+;; op 9: how many trailing bytes of a decimal-form :io/read answer begin a
+;; UTF-8 sequence the answer does not finish (incomplete_utf8_tail). BACK is
+;; the count of trailing continuation bytes (at most 3), LEAD the byte before
+;; them, LENGTH the answer's length.
+(defn- utf8-hold [back lead length]
+  (if (>= back length) 0
+      (let [need (cond
+                   (= 192 (* 32 (quot lead 32))) 2
+                   (= 224 (* 16 (quot lead 16))) 3
+                   (= 240 (* 8 (quot lead 8))) 4
+                   :else 0)]
+        (if (= need 0) 0 (if (>= (+ back 1) need) 0 (+ back 1))))))
+
+;; op 10: a :clock/now text answer (read_wall_millis / read_monotonic_nanos)
+;; from the kernel's timespec. FORM 1 wall -> milliseconds, 2 monotonic ->
+;; nanoseconds. -1 traps (a negative field, or an answer past i64).
+(defn- clock-answer [form sec nsec]
+  (cond
+    (< sec 0) -1
+    (< nsec 0) -1
+    (= form 1) (if (> sec (quot (- (i64-max) (quot nsec 1000000)) 1000)) -1
+                   (+ (* sec 1000) (quot nsec 1000000)))
+    (= form 2) (if (> sec (quot (- (i64-max) nsec) 1000000000)) -1
+                   (+ (* sec 1000000000) nsec))
+    :else -1))
+
+;; op 11: the monotonic clock never goes backwards across one run.
+(defn- monotonic-admitted [last tick]
+  (if (< last 0) 1 (if (< tick last) 0 1)))
+
+;; ---------------------------------------------------------------------
+;; op 12: what an errno means. FORM is op 1's form, 20 :fs/browse, 30
+;; :io/write / :io/write-error, 31 :io/read. STAGE: 0 opening the object,
+;; 1 opening the parent of a mutation, 2 the mutation itself, 3 moving data
+;; (read / write / getdents64), 4 fstat. ERRNO is positive, 0 for success.
+;;   0 answer the form's negative ("0", or "" for stat / mtime)
+;;   1 trap (SIGILL, as the loader's raise)
+;;   2 retry the syscall
+;;   3 proceed
+;; EXDEV (18) is openat2's RESOLVE_BENEATH refusal: the path resolved out of
+;; the scope root (an absolute symlink, or `..` through a symlink). That is a
+;; grant violation and traps, as a failed kexe_scope_contains_fd does -- except
+;; for EXISTS, which answers "0" for anything it may not read. The Linux
+;; loader cannot see such an escape (its containment compares the fd with a
+;; stat of the SAME path), so there it is answered; this is the one place the
+;; static image is deliberately stricter. ENOSYS (38) -- a kernel before 5.6
+;; without openat2 -- traps: there is no unconfined fallback.
+(defn- errno-outcome [form stage errno]
+  (cond
+    (= errno 0) 3
+    (= errno 4) (if (= stage 3) 2 1)
+    (= errno 38) 1
+    (= form 3) 0
+    (= errno 18) 1
+    (= form 5) (if (= stage 0) 0 (if (= stage 4) 0 1))
+    (= form 6) (if (= stage 0) 0 (if (= stage 4) 0 1))
+    (= form 8) (if (= stage 1) 0 (if (= stage 2) 0 1))
+    (= form 9) (if (= stage 1) 0 (if (= stage 2) 0 1))
+    (= form 10) (if (= stage 1) 0 (if (= stage 2) 0 1))
+    (= form 11) (if (= stage 1) 0 (if (= stage 2) 0 1))
+    :else 1))
+
+;; op 13: a path segment (kexe_normalize_path). CLASS 0 is ".", 1 "..", 2 a
+;; name, 3 empty (repeated slashes). 0 drop it, 1 pop one segment (never
+;; above the root), 2 keep it.
+(defn- segment-action [class]
+  (cond
+    (= class 0) 0
+    (= class 1) 1
+    (= class 3) 0
+    :else 2))
+
+;; op 14: a request path (kexe_request_path): 0 refused, 1 absolute, 2
+;; relative, joined to the working directory the run started in (none
+;; captured = CWD-LENGTH 0 = refused).
+(defn- request-path [n slash-first cwd-length]
+  (cond
+    (< n 1) 0
+    (>= n 4096) 0
+    (= slash-first 1) 1
+    (= cwd-length 0) 0
+    (>= (+ cwd-length (+ 1 n)) 4096) 0
+    :else 2))
+
+;; op 15: the parent / base split of a mutation's path (kexe_split_parent).
+;; PARENT-LENGTH 0 is a path directly under "/"; a base is 1..255 bytes and
+;; never "." or ".." (BASE-CLASS from op 13's classes).
+(defn- split-parent [parent-length base-length base-class]
+  (cond
+    (< parent-length 1) 0
+    (>= parent-length 4096) 0
+    (< base-length 1) 0
+    (>= base-length 256) 0
+    (= base-class 0) 0
+    (= base-class 1) 0
+    :else 1))
+
+;; op 16: STAT's fields from st_mode (fs_app_data_stat_provider): WHICH 0 the
+;; permission bits (mode & 0777), 1 whether it is a directory (S_IFDIR).
+(defn- stat-field [which mode]
+  (let [perm (- mode (* 512 (quot mode 512)))
+        kind (- (quot mode 4096) (* 16 (quot (quot mode 4096) 16)))]
+    (cond
+      (= which 0) perm
+      (= which 1) (if (= kind 4) 1 0)
+      :else -1)))
+
+;; op 18: a directory entry the :fs/browse listing skips ("." and "..").
+(defn- browse-skip [class]
+  (if (= class 0) 1 (if (= class 1) 1 0)))
+
+;; op 19: where a mutation's parent lies against the scope root, from the
+;; last slash's index SLASH and the root's length ROOT (both into the
+;; normalized, admitted path). 0 outside (a grant violation: the kexe loader
+;; on Linux would act in the root's parent), 1 the root itself, 2 beneath.
+(defn- parent-place [slash root]
+  (cond
+    (< slash root) 0
+    (= slash root) 1
+    :else 2))
+
+(defn decide [op a b c d]
+  (cond
+    (= op 0) (handler-for a)
+    (= op 1) (fs-form a b)
+    (= op 2) (form-implemented a)
+    (= op 3) (decimal-step a b)
+    (= op 4) (decimal-length-admitted a)
+    (= op 5) (env-name-admitted a b)
+    (= op 6) (charge a b c)
+    (= op 7) (io-read-want a b c)
+    (= op 8) (io-read-probe a b c)
+    (= op 9) (utf8-hold a b c)
+    (= op 10) (clock-answer a b c)
+    (= op 11) (monotonic-admitted a b)
+    (= op 12) (errno-outcome a b c)
+    (= op 13) (segment-action a)
+    (= op 14) (request-path a b c)
+    (= op 15) (split-parent a b c)
+    (= op 16) (stat-field a b)
+    (= op 17) (token-count-admitted a b)
+    (= op 18) (browse-skip a)
+    (= op 19) (parent-place a b)
+    :else -1))

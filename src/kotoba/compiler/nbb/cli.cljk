@@ -148,6 +148,16 @@
   [args]
   (cap-names/wire-policy (support/read-policy args)))
 
+(defn- admission-policy
+  "The policy admission reads. `:linux-static` (superproject adr-2609251400
+  C3: the grant and fs scope a static ELF seals) is PACKAGING input, not an
+  admission rule -- osaho's admission refuses keys it does not know, and it
+  should -- so it is taken off here and handed to the packager whole
+  (`serialized-native`). It still reaches the provenance record and the
+  compile cache key, both of which read the policy as written."
+  [policy]
+  (dissoc policy :linux-static))
+
 (defn- decode-policy!
   "The cached-compile counterpart of `read-policy!`, for already-read material."
   [material]
@@ -521,7 +531,7 @@
       package (assoc :binary (support/timed
                               "native-package"
                               #(package (:target result) (:artifact result)
-                                        artifact-kind))))))
+                                        artifact-kind policy))))))
 
 (defn- write-native! [output {:keys [artifact-text provenance-text binary]} target]
   (let [;; adr-2609251400 C2: a static ELF is the program itself, so it is
@@ -555,8 +565,8 @@ provenance-output (str output ".provenance.edn")
         emit-metadata (support/emit-metadata args)
         artifact-kind (support/option args "--artifact")
         hir (:value (resolve-hir! source
-                                  (project-source/analyze-opts policy linked?) nil))
-        result (compile-native! hir target backend policy emit-metadata emit-program nil)
+                                  (project-source/analyze-opts (admission-policy policy) linked?) nil))
+        result (compile-native! hir target backend (admission-policy policy) emit-metadata emit-program nil)
         serialized (serialized-native source policy emit-metadata result
                                       package artifact-kind)
         {:keys [provenance-output publication-output artifact-bytes]}
@@ -622,10 +632,10 @@ provenance-output (str output ".provenance.edn")
             policy (support/timed "policy-decode"
                                   #(decode-policy! material))
             hir-result (resolve-hir! source
-                                     (project-source/analyze-opts policy linked?)
+                                     (project-source/analyze-opts (admission-policy policy) linked?)
                                      stage-cache)
             hir (:value hir-result)
-            result (compile-native! hir target backend policy emit-metadata
+            result (compile-native! hir target backend (admission-policy policy) emit-metadata
                                     emit-program stage-cache)
             serialized (serialized-native source policy emit-metadata result
                                           package artifact-kind)

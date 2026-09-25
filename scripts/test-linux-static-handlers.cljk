@@ -1,0 +1,454 @@
+#!/usr/bin/env kbb
+(ns test-linux-static-handlers
+  "The capability handlers of the loader-less Linux static ELF, run on Linux
+  and compared with kexe + loader (superproject adr-2609251400 C3).
+
+  One guest (below) is compiled four ways -- aarch64-linux and x86_64-linux
+  kexe (run by tools/kexe_loader.c built for that ISA) and
+  aarch64-linux-static and x86_64-linux-static (run as the process itself) --
+  with the same capabilities admitted, and every case runs through both
+  paths on both ISAs. A case asserts literals (the answer, the trap line) and
+  that the two paths agree: the same stdout, the same stderr, and the same
+  exit status under the one documented mapping (a budget or slot trap is 120
+  from the loader's supervisor and has its own code in the static profile,
+  lang/limits.edn :static-elf :exit-codes). A case that is EXPECTED to differ
+  names the difference and asserts each side's own literal.
+
+  Linux is reached one of two ways:
+    --vm podman   (default off Linux) through `podman machine ssh`; the work
+                  directory must be one the machine mounts ($TMPDIR is, under
+                  /var/folders). x86_64 runs under qemu-x86_64-static there.
+    --vm none     (default on Linux) directly; the other ISA through
+                  qemu-<isa>-static when it is present, else skipped BY NAME.
+  The loaders are built with --gcc-image <image> (a container with gcc and
+  gcc-x86-64-linux-gnu) under podman, or with cc / x86_64-linux-gnu-gcc when
+  run directly.
+
+    kbb --backend sci --classpath . scripts/test-linux-static-handlers.cljk [--vm podman] [--gcc-image localhost/c3-gcc]
+
+  The kexe loader needs vm.overcommit_memory=1 for its shared-state mmap on a
+  small VM (measured in C2); pass --overcommit to set it for the run and put
+  the previous value back afterwards.
+
+  Exit 0 all cases held, 1 a case failed, 2 could not run."
+  (:require [kotoba.lang.text :as str]
+            [scripts.lib :as lib]
+            ["node:fs" :as fs]
+            ["node:os" :as os]))
+
+(def argv (vec *command-line-args*))
+(defn opt [flag default]
+  (let [i (.indexOf (to-array argv) flag)] (if (>= i 0) (nth argv (inc i) default) default)))
+(defn flag? [flag] (some #{flag} argv))
+
+(def vm (opt "--vm" (if (= "linux" (.platform os)) "none" "podman")))
+(def gcc-image (opt "--gcc-image" "localhost/c3-gcc"))
+(def amu (lib/join lib/root "bin" "amu"))
+(def work (lib/temp-dir "c3-static-handlers-"))
+(def scope "/var/tmp/c3scope")
+(def outside "/var/tmp/c3outside")
+
+(defn fail! [message] (.error js/console (str "test-linux-static-handlers: " message)) (.exit js/process 2))
+
+(defn quote-arg [s] (str "'" (str/replace (str s) "'" "'\\''") "'"))
+
+(defn linux!
+  "Run `command` (one shell command line) on Linux; {:status :stdout :stderr}."
+  [command]
+  (let [r (if (= vm "podman")
+            (lib/run "podman" ["machine" "ssh" command] {:allow-failure? true :max-buffer (* 64 1024 1024)})
+            (lib/run "sh" ["-c" command] {:allow-failure? true :max-buffer (* 64 1024 1024)}))]
+    r))
+
+(def host-isa
+  (let [m (str/trim (:stdout (linux! "uname -m")))]
+    (case m "aarch64" "aarch64" "arm64" "aarch64" "x86_64" "x86_64" (fail! (str "unknown Linux machine " m)))))
+
+(defn runner [isa]
+  (if (= isa host-isa) "" (str "qemu-" isa "-static ")))
+
+;; ---------------------------------------------------------------------------
+;; The guest
+;; ---------------------------------------------------------------------------
+
+(def guest
+  "(ns probe.core (:export [main]))
+(defn arg [i :string] :string (typed-cap-call :cli/args :string :string i))
+(defn emit [s :string] :string (typed-cap-call :io/write :string :string s))
+(defn emit-error [s :string] :string (typed-cap-call :io/write-error :string :string s))
+(defn stdin [s :string] :string (typed-cap-call :io/read :string :string s))
+(defn env [s :string] :string (typed-cap-call :env/read :string :string s))
+(defn clock [s :string] :string (typed-cap-call :clock/now :string :string s))
+(defn fsq [s :string] :string (typed-cap-call :fs/app-data :string :string s))
+(defn browse [s :string] :string (typed-cap-call :fs/browse :string :string s))
+(defn nl [] :string (string-substring \"a
+b\" 1 2))
+(defn line [s :string] :i64 (do (emit s) (emit (nl)) 0))
+(defn show [label :string s :string] :i64
+  (do (emit label) (emit \"=[\") (emit s) (emit \"]\") (emit (nl)) 0))
+(defn idx [n :i64] :string
+  (cond (= n 0) \"0\" (= n 1) \"1\" (= n 2) \"2\" (= n 3) \"3\" (= n 4) \"4\"
+        (= n 5) \"5\" (= n 6) \"6\" (= n 7) \"7\" (= n 8) \"8\" :else \"9\"))
+(defn echo-args [n :i64] :i64
+  (let [a (arg (idx n))]
+    (if (string=? a \"\") n (do (show (string-concat \"arg\" (idx n)) a) (echo-args (+ n 1))))))
+(defn chunks [n :i64] :i64
+  (let [c (stdin \"4\")]
+    (if (string=? c \"\") n (do (emit c) (emit \"|\") (chunks (+ n 1))))))
+(defn monotonic [k :i64 last :string] :string
+  (if (<= k 0) last (monotonic (- k 1) (clock \"monotonic\"))))
+(defn main [] :i64
+  (let [mode (arg \"0\") p (arg \"1\")]
+    (cond
+      (string=? mode \"echo\")
+      (do (show \"argc\" (arg \"\")) (echo-args 0)
+          (show \"C3_VAR\" (env \"C3_VAR\")) (show \"UNSET\" (env \"C3_SURELY_UNSET\")) 0)
+      (string=? mode \"cat\") (do (emit (fsq p)) 0)
+      (string=? mode \"exists\") (do (show \"exists\" (fsq (string-concat p \"EXISTS_SEP\"))) 0)
+      (string=? mode \"stat\") (do (show \"stat\" (fsq (string-concat p \"STAT_SEP\"))) 0)
+      (string=? mode \"missing\")
+      (do (show \"exists\" (fsq (string-concat p \"EXISTS_SEP\")))
+          (show \"stat\" (fsq (string-concat p \"STAT_SEP\")))
+          (emit \"reading anyway\") (emit (nl))
+          (show \"read\" (fsq p)) 0)
+      (string=? mode \"wr\")
+      (let [f (string-concat p \"/note.txt\") d (string-concat p \"/made\") g (string-concat p \"/moved.txt\")]
+        (do (show \"write\" (fsq (string-concat f (string-concat \"WRITE_SEP\" \"hello static
+second line
+\"))))
+            (show \"read\" (fsq f))
+            (show \"stat\" (fsq (string-concat f \"STAT_SEP\")))
+            (show \"exists\" (fsq (string-concat f \"EXISTS_SEP\")))
+            (show \"mkdir\" (fsq (string-concat d \"MKDIR_SEP\")))
+            (show \"mkdir-again\" (fsq (string-concat d \"MKDIR_SEP\")))
+            (show \"rename\" (fsq (string-concat f (string-concat \"RENAME_SEP\" g))))
+            (show \"old-exists\" (fsq (string-concat f \"EXISTS_SEP\")))
+            (show \"moved\" (fsq g))
+            (show \"unlink\" (fsq (string-concat g \"UNLINK_SEP\")))
+            (show \"unlink-again\" (fsq (string-concat g \"UNLINK_SEP\")))
+            (show \"rmdir\" (fsq (string-concat d \"RMDIR_SEP\")))
+            (show \"gone\" (fsq (string-concat d \"EXISTS_SEP\"))) 0))
+      (string=? mode \"mkdir\") (do (show \"mkdir\" (fsq (string-concat p \"MKDIR_SEP\"))) 0)
+      (string=? mode \"ls\") (do (show \"ls\" (browse p)) 0)
+      (string=? mode \"clock\")
+      (let [a (clock \"monotonic\") w (clock \"wall\") b (monotonic 1000 a)]
+        (do (show \"wall\" w) (show \"mono1\" a) (show \"mono2\" b) 0))
+      (string=? mode \"clock-bad\") (do (show \"bad\" (clock \"hourly\")) 0)
+      (string=? mode \"slurp\") (do (show \"stdin\" (stdin \"\")) 0)
+      (string=? mode \"chunk\") (chunks 0)
+      (string=? mode \"err\") (do (emit-error \"to stderr\") (emit-error (nl)) (line \"to stdout\"))
+      (string=? mode \"append\") (do (show \"append\" (fsq (string-concat p \"APPEND_SEPx\"))) 0)
+      (string=? mode \"mtime\") (do (show \"mtime\" (fsq (string-concat p \"MTIME_SEP\"))) 0)
+      (string=? mode \"arg-bad\") (do (show \"arg\" (arg \"1x\")) 0)
+      (string=? mode \"rename-out\") (do (show \"rename\" (fsq (string-concat p (string-concat \"RENAME_SEP\" (arg \"2\"))))) 0)
+      (string=? mode \"write\") (do (show \"write\" (fsq (string-concat p \"WRITE_SEPbody\"))) 0)
+      :else (do (line \"unknown mode\") 1))))
+")
+
+(def all-ids [7 33 34 35 37 38 39 41])
+(def denied-ids (vec (remove #{33} all-ids)))
+
+(defn policy-text [grant]
+  (str "{:allow #{" (str/join " " (map #(str "[:cap/call " % "]") all-ids)) "}"
+       " :linux-static {:fs-scope " (pr-str scope)
+       (when grant (str " :grant [" (str/join " " grant) "]")) "}}"))
+
+;; --classpath-file names a file holding an nbb classpath to compile with
+;; instead of bin/amu's locked one (a change to kotoba-native or
+;; kotoba-verifier measured before it is pinned).
+(def dev-classpath (some-> (opt "--classpath-file" nil) lib/read-text str/trim))
+
+(defn amu-command [args]
+  (if dev-classpath
+    (let [driver (if (some #(str/starts-with? % "aarch64") args) "aarch64_cli.cljk" "x86_64_cli.cljk")]
+      (into ["--stack-size=4096" (lib/join lib/root "node_modules" "nbb" "cli.js") "--classpath" dev-classpath
+             (lib/join lib/root "src" "kotoba" "compiler" "nbb" driver)] args))
+    (into [amu] args)))
+
+(defn compile! [target output policy]
+  (let [r (lib/run js/process.execPath (amu-command ["compile" (lib/join work "probe.kotoba") "--target" target
+                                                     "--policy" policy "--output" output])
+                   {:allow-failure? true})]
+    (when-not (and (zero? (:status r)) (str/includes? (:stdout r) ":ok true"))
+      (fail! (str "compile " target ": " (:stdout r) (:stderr r))))
+    output))
+
+(defn extract! [kexe]
+  (let [bin (str kexe ".bin")
+        r (lib/run js/process.execPath (amu-command ["extract-native" kexe "--symbol" "main" "--output" bin])
+                   {:allow-failure? true})
+        offset (second (re-find #":offset (\d+)" (:stdout r)))]
+    (when-not offset (fail! (str "extract-native " kexe ": " (:stdout r) (:stderr r))))
+    {:bin bin :offset offset}))
+
+(defn build-loaders! []
+  (let [src (lib/join lib/root "tools" "kexe_loader.c")
+        out (lib/join work "kexe_loader.c")]
+    (fs/copyFileSync src out)
+    ;; Two builds per ISA. The production loader (its Linux seccomp filter
+    ;; in force) is what a user runs; qemu-user cannot install a guest-arch
+    ;; seccomp filter (`seccomp: Invalid argument`, measured), and the filter
+    ;; admits no mkdirat / unlinkat / renameat, so the loader's own mutation
+    ;; providers are only reachable in the build that compiles the filter out
+    ;; (-DKEXE_SANITIZER_TEST, the sanitizer harness's switch: no seccomp, no
+    ;; RLIMIT_AS; every provider unchanged).
+    (let [cmd (str "cd " (quote-arg work)
+                   " && gcc -std=c11 -O2 -static kexe_loader.c -o loader-aarch64"
+                   " && gcc -std=c11 -O2 -static -DKEXE_SANITIZER_TEST kexe_loader.c -o loader-aarch64-nosandbox"
+                   " && x86_64-linux-gnu-gcc -std=c11 -O2 -static kexe_loader.c -o loader-x86_64"
+                   " && x86_64-linux-gnu-gcc -std=c11 -O2 -static -DKEXE_SANITIZER_TEST kexe_loader.c -o loader-x86_64-nosandbox")
+          r (if (= vm "podman")
+              (linux! (str "podman run --rm -v " (quote-arg work) ":" (quote-arg work) " " gcc-image
+                           " sh -c " (quote-arg cmd)))
+              (linux! (str "cd " (quote-arg work) " && cc -std=c11 -O2 kexe_loader.c -o loader-" host-isa
+                           " && cc -std=c11 -O2 -DKEXE_SANITIZER_TEST kexe_loader.c -o loader-" host-isa "-nosandbox")))]
+      (when-not (zero? (:status r)) (fail! (str "building the loaders: " (:stdout r) (:stderr r)))))))
+
+(def setup
+  (str/join " && "
+            [(str "rm -rf " scope " " outside)
+             (str "mkdir -p " scope "/sub/dir2 " scope "/work " outside)
+             (str "printf 'hello from the scope\\n' > " scope "/hello.txt")
+             (str "printf A > " scope "/sub/b.txt && printf B > " scope "/sub/a.txt && printf Z > " scope "/sub/Z.txt")
+             (str "printf dot > " scope "/sub/.hidden")
+             (str "head -c 70000 /dev/zero | tr '\\0' x > " scope "/big.txt")
+             (str "printf 'secret\\n' > " outside "/secret.txt")
+             (str "ln -s " outside "/secret.txt " scope "/evil")
+             (str "ln -s " outside " " scope "/d")
+             (str "ln -s hello.txt " scope "/inner")]))
+
+;; ---------------------------------------------------------------------------
+;; Running one case both ways
+;; ---------------------------------------------------------------------------
+
+(defn command-line [{:keys [args env cwd stdin]} program]
+  (str (when cwd (str "cd " (quote-arg cwd) " && "))
+       (str/join " " (map (fn [[k v]] (str k "=" (quote-arg v))) env)) " "
+       program " " (str/join " " (map quote-arg args))
+       (when stdin (str " < " (quote-arg stdin)))))
+
+(defn run-case
+  "The case through the static image, the loader built without its seccomp
+  filter, and -- on the host ISA, where the kernel can install it -- the
+  production loader. Each run starts from a fresh scope."
+  [c isa {:keys [static kexe]} denied?]
+  (let [input (when (:input c)
+                (let [f (lib/join work (str "stdin-" (:name c)))]
+                  (fs/writeFileSync f (:input c))
+                  f))
+        c (assoc c :stdin input)
+        {:keys [bin offset]} kexe
+        allow (str/join "," (if denied? denied-ids all-ids))
+        loader (fn [build] (str (runner isa) (lib/join work (str "loader-" isa build)) " " bin " " offset
+                                " 0 " isa " " allow " --"))
+        loader-env (merge (:env c) {"KEXE_CAP_RESOURCES_35" scope "KEXE_CAP_RESOURCES_34" scope})
+        fresh (fn [thunk]
+                (let [r (linux! setup)]
+                  (when-not (zero? (:status r)) (fail! (str "setup: " (:stderr r))))
+                  (thunk)))]
+    (cond-> {:static (fresh #(linux! (command-line c (str (runner isa) static))))
+             :kexe (fresh #(linux! (command-line (assoc c :env loader-env) (loader "-nosandbox"))))}
+      (= isa host-isa)
+      (assoc :prod (fresh #(linux! (command-line (assoc c :env loader-env) (loader ""))))))))
+
+(def trap-exit
+  {"KEXE_TRAP {:kind :budget :reason :budget/bytes" 124
+   "KEXE_TRAP {:kind :budget :reason :budget/cells" 123
+   "KEXE_TRAP {:kind :budget :reason :budget/fuel" 122
+   "KEXE_TRAP {:kind :slot :reason :slot/unimplemented" 125})
+
+;; The loader names a budget trap twice: the child's signal line, then the
+;; supervisor's budget line. The static image, which has no supervisor, prints
+;; the budget line alone (C2). Compared after taking that one leading line off.
+(def signal-line "KEXE_TRAP {:kind :signal :signal :SIGILL}\n")
+(defn loader-stderr [r]
+  (let [e (:stderr r)]
+    (if (and (str/starts-with? e signal-line)
+             (str/starts-with? (subs e (count signal-line)) "KEXE_TRAP {:kind :budget"))
+      (subs e (count signal-line))
+      e)))
+
+(defn expected-static-exit [loader-result]
+  (if (= 120 (:status loader-result))
+    (or (some (fn [[prefix code]] (when (str/includes? (:stderr loader-result) prefix) code)) trap-exit) 120)
+    (:status loader-result)))
+
+(def results (atom []))
+
+(defn check! [label ok? detail]
+  (swap! results conj {:label label :ok ok?})
+  (println (str (if ok? "PASS " "FAIL ") label (when-not ok? (str "\n     " (pr-str detail))))))
+
+(defn mask [s] (str/replace s #"=\[[0-9]+\]" "=[N]"))
+
+;; A case: :args, optional :env :cwd :input, :expect (a fn over one side's
+;; result answering nil when it holds, else a description), and :same? (the
+;; two paths must agree) -- false only for a documented divergence, which
+;; then carries :static and :kexe expectations of its own.
+(def cases
+  [{:name "echo" :args ["echo" "alpha" "beta gamma" "δ"] :env {"C3_VAR" "value-1"}
+    :expect #(when-not (= (:stdout %) (str "argc=[4]\narg0=[echo]\narg1=[alpha]\narg2=[beta gamma]\narg3=[δ]\n"
+                                             "C3_VAR=[value-1]\nUNSET=[]\n0\n"))
+               :stdout)}
+   {:name "cat" :args ["cat" (str scope "/hello.txt")]
+    :expect #(when-not (= (:stdout %) "hello from the scope\n0\n") :stdout)}
+   {:name "cat-relative" :args ["cat" "hello.txt"] :cwd scope
+    :expect #(when-not (= (:stdout %) "hello from the scope\n0\n") :stdout)}
+   {:name "cat-dotdot-inside" :args ["cat" (str scope "/sub/../hello.txt")]
+    :expect #(when-not (= (:stdout %) "hello from the scope\n0\n") :stdout)}
+   {:name "write-read-back" :args ["wr" (str scope "/work")]
+    ;; the production loader's seccomp filter admits no mkdirat: it dies at
+    ;; the fifth call. What it answered before that is the same.
+    :prod #(when-not (and (= 120 (:status %))
+                          (= (:stdout %) (str "write=[hello static\nsecond line\n]\nread=[hello static\nsecond line\n]\n"
+                                              "stat=[420 25 8 0]\nexists=[1]\n"))
+                          (= (:stderr %) "KEXE_TRAP {:kind :signal :signal :SIGSYS}\n"))
+             :loader-now-mutates)
+    :expect #(when-not (= (:stdout %)
+                          (str "write=[hello static\nsecond line\n]\nread=[hello static\nsecond line\n]\n"
+                               "stat=[420 25 8 0]\nexists=[1]\nmkdir=[1]\nmkdir-again=[0]\nrename=[1]\n"
+                               "old-exists=[0]\nmoved=[hello static\nsecond line\n]\nunlink=[1]\n"
+                               "unlink-again=[0]\nrmdir=[1]\ngone=[0]\n0\n"))
+               :stdout)}
+   {:name "list-dir" :args ["ls" (str scope "/sub")]
+    :expect #(when-not (= (:stdout %) "ls=[.hidden\t0\nZ.txt\t0\na.txt\t0\nb.txt\t0\ndir2\t1]\n0\n") :stdout)}
+   {:name "list-root" :args ["ls" scope]
+    :expect #(when-not (= (:stdout %) "ls=[big.txt\t0\nd\t0\nevil\t0\nhello.txt\t0\ninner\t0\nsub\t1\nwork\t1]\n0\n") :stdout)}
+   {:name "stat" :args ["stat" (str scope "/hello.txt")]
+    :expect #(when-not (= (:stdout %) "stat=[420 21 8 0]\n0\n") :stdout)}
+   {:name "clock" :args ["clock"] :masked? true
+    :expect (fn [r] (let [[_ w] (re-find #"wall=\[(\d+)\]" (:stdout r))
+                          [_ a] (re-find #"mono1=\[(\d+)\]" (:stdout r))
+                          [_ b] (re-find #"mono2=\[(\d+)\]" (:stdout r))]
+                      (cond (not (and w a b)) :shape
+                            (< (js/BigInt b) (js/BigInt a)) :not-monotonic
+                            (> (js/Math.abs (- (js/Number w) (js/Date.now))) 600000) :wall-far-from-now)))}
+   {:name "stderr" :args ["err"]
+    :expect #(when-not (and (= (:stdout %) "to stdout\n0\n") (= (:stderr %) "to stderr\n")) :streams)}
+   {:name "stdin-whole" :args ["slurp"] :input "abcdefghijk"
+    :expect #(when-not (= (:stdout %) "stdin=[abcdefghijk]\n0\n") :stdout)}
+   {:name "stdin-chunks" :args ["chunk"] :input "abcdefghijk"
+    :expect #(when-not (= (:stdout %) "abcd|efgh|ijk|3\n") :stdout)}
+   {:name "stdin-chunks-utf8" :args ["chunk"] :input "日本語"
+    :expect #(when-not (= (:stdout %) "日|本|語|3\n") :stdout)}
+   {:name "mtime" :args ["mtime" (str scope "/hello.txt")] :masked? true
+    :expect #(when-not (re-matches #"mtime=\[\d{10}\]\n0\n" (:stdout %)) :stdout)}
+   {:name "stat-directory" :args ["stat" (str scope "/sub")]
+    :expect #(when-not (re-matches #"stat=\[493 \d+ \d+ 1\]\n0\n" (:stdout %)) :stdout)}
+   {:name "exists-directory" :args ["exists" (str scope "/sub")]
+    :expect #(when-not (= (:stdout %) "exists=[1]\n0\n") :stdout)}
+   {:name "stdin-empty" :args ["slurp"] :input ""
+    :expect #(when-not (= (:stdout %) "stdin=[]\n0\n") :stdout)}
+   ;; --- negatives: the reason literal is pinned --------------------------
+   {:name "read-a-directory" :args ["cat" (str scope "/sub")]
+    :expect #(when-not (and (= 120 (:status %)) (= (:stderr %) "KEXE_TRAP {:kind :signal :signal :SIGILL}\n")) :trap)}
+   {:name "write-parent-missing" :args ["write" (str scope "/no/such/file")]
+    :expect #(when-not (and (= 120 (:status %)) (= (:stderr %) "KEXE_TRAP {:kind :signal :signal :SIGILL}\n")) :trap)}
+   {:name "rename-out-of-scope" :args ["rename-out" (str scope "/hello.txt") (str outside "/stolen.txt")]
+    :expect #(when-not (and (= 120 (:status %)) (= (:stderr %) "KEXE_TRAP {:kind :signal :signal :SIGILL}\n")) :trap)}
+   {:name "malformed-arg-index" :args ["arg-bad"]
+    :expect #(when-not (and (= 120 (:status %)) (= (:stderr %) "KEXE_TRAP {:kind :signal :signal :SIGILL}\n")) :trap)}
+   {:name "denied-capability" :args ["echo" "x"] :denied? true
+    :expect #(when-not (and (= 120 (:status %)) (str/starts-with? (:stdout %) "argc=[2]\narg0=[echo]\narg1=[x]\n")
+                            (re-find #"^KEXE_TRAP \{:kind :signal :signal :SIG(TRAP|ILL)\}\n$" (:stderr %)))
+               :trap)}
+   {:name "escape-dotdot" :args ["cat" (str scope "/../c3outside/secret.txt")]
+    :expect #(when-not (and (= 120 (:status %)) (= "" (:stdout %))
+                            (= (:stderr %) "KEXE_TRAP {:kind :signal :signal :SIGILL}\n")) :trap)}
+   {:name "escape-dotdot-relative" :args ["cat" "../c3outside/secret.txt"] :cwd scope
+    :expect #(when-not (and (= 120 (:status %)) (= (:stderr %) "KEXE_TRAP {:kind :signal :signal :SIGILL}\n")) :trap)}
+   {:name "escape-absolute" :args ["cat" (str outside "/secret.txt")]
+    :expect #(when-not (and (= 120 (:status %)) (= (:stderr %) "KEXE_TRAP {:kind :signal :signal :SIGILL}\n")) :trap)}
+   {:name "escape-symlink-final" :args ["cat" (str scope "/evil")]
+    :expect #(when-not (and (= 120 (:status %)) (= (:stderr %) "KEXE_TRAP {:kind :signal :signal :SIGILL}\n")) :trap)}
+   {:name "symlink-final-inside" :args ["cat" (str scope "/inner")]
+    :expect #(when-not (and (= 120 (:status %)) (= (:stderr %) "KEXE_TRAP {:kind :signal :signal :SIGILL}\n")) :trap)}
+   ;; The Linux loader follows a DIRECTORY symlink out of the scope: its
+   ;; containment compares the fd with a stat of the same path, which the
+   ;; same symlink satisfies. openat2 RESOLVE_BENEATH refuses it (EXDEV).
+   {:name "escape-symlink-directory" :args ["cat" (str scope "/d/secret.txt")] :same? false
+    :static #(when-not (and (= 120 (:status %)) (= "" (:stdout %))
+                            (= (:stderr %) "KEXE_TRAP {:kind :signal :signal :SIGILL}\n")) :trap)
+    :kexe #(when-not (= (:stdout %) "secret\n0\n") :loader-no-longer-escapes)}
+   {:name "escape-mkdir-through-symlink" :args ["mkdir" (str scope "/d/planted")] :same? false
+    :static #(when-not (and (= 120 (:status %)) (= (:stderr %) "KEXE_TRAP {:kind :signal :signal :SIGILL}\n")) :trap)
+    :kexe #(when-not (= (:stdout %) "mkdir=[1]\n0\n") :loader-no-longer-escapes)
+    :prod #(when-not (and (= 120 (:status %)) (= (:stderr %) "KEXE_TRAP {:kind :signal :signal :SIGSYS}\n"))
+             :loader-now-mutates)}
+   {:name "missing-file" :args ["missing" (str scope "/nope.txt")]
+    :expect #(when-not (and (= 120 (:status %))
+                            (= (:stdout %) "exists=[0]\nstat=[]\nreading anyway\n")
+                            (= (:stderr %) "KEXE_TRAP {:kind :signal :signal :SIGILL}\n")) :typed-then-trap)}
+   {:name "bytes-budget" :args ["cat" (str scope "/big.txt")]
+    :expect #(when-not (and (= "" (:stdout %))
+                            (= (loader-stderr %) "KEXE_TRAP {:kind :budget :reason :budget/bytes :arena :string-pool}\n"))
+               :budget)}
+   {:name "stdin-past-pool" :args ["slurp"] :input (.repeat "y" 70000)
+    :expect #(when-not (and (= 120 (:status %)) (= (:stderr %) "KEXE_TRAP {:kind :signal :signal :SIGILL}\n")) :trap)}
+   {:name "clock-unknown-form" :args ["clock-bad"]
+    :expect #(when-not (and (= 120 (:status %)) (= (:stderr %) "KEXE_TRAP {:kind :signal :signal :SIGILL}\n")) :trap)}
+   ;; APPEND is not implemented by the static handlers: a named trap there,
+   ;; the loader's own refusal (no such file to append to) here.
+   {:name "append-unimplemented" :args ["append" (str scope "/work/none.txt")] :same? false
+    :static #(when-not (and (= 125 (:status %))
+                            (= (:stderr %) "KEXE_TRAP {:kind :slot :reason :slot/unimplemented :slot :typed-cap-call :capability :fs/app-data :form :append}\n"))
+               :named-trap)
+    :kexe #(when-not (and (= 120 (:status %)) (= (:stderr %) "KEXE_TRAP {:kind :signal :signal :SIGILL}\n")) :trap)}])
+
+(defn -main []
+  (fs/writeFileSync (lib/join work "probe.kotoba") guest)
+  (fs/writeFileSync (lib/join work "policy.edn") (policy-text nil))
+  (fs/writeFileSync (lib/join work "policy-denied.edn") (policy-text denied-ids))
+  (build-loaders!)
+  (let [builds (into {}
+                     (for [isa ["aarch64" "x86_64"]]
+                       [isa {:static (compile! (str isa "-linux-static") (lib/join work (str "probe-" isa))
+                                               (lib/join work "policy.edn"))
+                             :static-denied (compile! (str isa "-linux-static") (lib/join work (str "probe-denied-" isa))
+                                                      (lib/join work "policy-denied.edn"))
+                             :kexe (extract! (compile! (str isa "-linux") (lib/join work (str "probe-" isa ".kexe"))
+                                                       (lib/join work "policy.edn")))}]))
+        overcommit (when (flag? "--overcommit")
+                     (let [old (str/trim (:stdout (linux! "sysctl -n vm.overcommit_memory")))]
+                       (linux! "sudo sysctl -q -w vm.overcommit_memory=1")
+                       old))]
+    (try
+      (let [static-facts (linux! (str "for f in " (str/join " " (map #(quote-arg (lib/join work (str "probe-" %))) ["aarch64" "x86_64"]))
+                                      "; do ldd \"$f\" 2>&1 | head -1; done"))]
+        (check! "ldd: the static images are not dynamic executables"
+                (= 2 (count (re-seq #"not a dynamic executable" (:stdout static-facts)))) static-facts))
+      (doseq [isa (if-let [only (opt "--only-isa" nil)] [only] ["aarch64" "x86_64"])
+              c cases]
+        (let [b (get builds isa)
+              {:keys [static kexe prod]} (run-case c isa (if (:denied? c)
+                                                            (assoc b :static (:static-denied b))
+                                                            b)
+                                                    (:denied? c))
+              label (str isa " " (:name c))
+              shown (fn [x] (if (:masked? c) (update x :stdout mask) x))
+              same? (fn [loader]
+                      (and (= (:stdout (shown static)) (:stdout (shown loader)))
+                           (= (:stderr static) (loader-stderr loader))
+                           (= (:status static) (expected-static-exit loader))))]
+          (if (false? (:same? c))
+            (do (check! (str label ": static") (nil? ((:static c) static)) static)
+                (check! (str label ": kexe+loader, no seccomp (documented difference)") (nil? ((:kexe c) kexe)) kexe))
+            (do
+              (check! (str label ": static answer") (nil? ((:expect c) static)) static)
+              (check! (str label ": kexe+loader (no seccomp) answer") (nil? ((:expect c) kexe)) kexe)
+              (check! (str label ": static = kexe+loader (no seccomp)") (same? kexe) {:static static :kexe kexe})))
+          (when prod
+            (if-let [p (:prod c)]
+              (check! (str label ": production kexe+loader (documented difference)") (nil? (p prod)) prod)
+              (if (false? (:same? c))
+                (check! (str label ": production kexe+loader (documented difference)") (nil? ((:kexe c) prod)) prod)
+                (check! (str label ": static = production kexe+loader") (same? prod) {:static static :prod prod}))))))
+      (finally
+        (when overcommit (linux! (str "sudo sysctl -q -w vm.overcommit_memory=" overcommit)))
+        (linux! (str "rm -rf " scope " " outside))))
+    (let [failed (remove :ok @results)]
+      (println (str "CASES\t" (count @results) "\tFAILED\t" (count failed)))
+      (lib/remove-tree! work)
+      (.exit js/process (if (seq failed) 1 0)))))
+
+(-main)
