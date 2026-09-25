@@ -1,5 +1,5 @@
 (ns kotoba.compiler.coverage-evidence-test
-  (:require [clojure.test :refer [deftest is]]
+  (:require [kotoba.lang.error :as kerror] [clojure.test :refer [deftest is]]
             [kotoba.artifact.core :as artifact]
             [kotoba.compiler.coverage-evidence :as evidence]
             [kotoba.verifier.signing :as signing]))
@@ -30,20 +30,20 @@
 (deftest coverage-evidence-tampering-expiry-and-revocation-fail-closed
   (let [{:keys [envelope trust]} (fixture)
         digest (artifact/sha256 (:statement envelope))]
-    (is (thrown? clojure.lang.ExceptionInfo
+    (is (thrown? kerror/ExceptionInfo
                  (evidence/verify (assoc-in envelope [:statement :platform] :windows)
                                   trust 1500)))
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"expired"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"expired"
                           (evidence/verify envelope trust 2000)))
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"not trusted"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"not trusted"
                           (evidence/verify envelope (assoc trust :trusted-signers #{}) 1500)))
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"revoked"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"revoked"
                           (evidence/verify envelope
                                            (assoc trust :revoked-artifacts #{digest}) 1500)))
-    (is (thrown? clojure.lang.ExceptionInfo
+    (is (thrown? kerror/ExceptionInfo
                  (evidence/verify (assoc envelope :ignored true) trust 1500)))))
 
 (deftest evidence-bundles-reject-duplicates
   (let [{:keys [envelope trust]} (fixture)]
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"duplicate"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"duplicate"
                           (evidence/verify-bundle [envelope envelope] trust 1500)))))

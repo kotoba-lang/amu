@@ -1,5 +1,5 @@
 (ns kotoba.compiler.signing-test
-  (:require [clojure.test :refer [deftest is]]
+  (:require [kotoba.lang.error :as kerror] [clojure.test :refer [deftest is]]
             [kotoba.artifact.core :as artifact]
             [kotoba.compiler.core :as compiler]
             [kotoba.verifier.signing :as signing]))
@@ -25,19 +25,19 @@
 
 (deftest trust-expiry-and-revocation-fail-closed
   (let [{:keys [kexe key envelope trust]} (fixture)]
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"not trusted"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"not trusted"
                           (signing/verify envelope (assoc trust :trusted-signers #{}) 1500)))
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"malformed trust policy"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"malformed trust policy"
                           (signing/verify envelope (assoc trust :trusted-signers [(:signer key)]) 1500)))
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"signer is revoked"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"signer is revoked"
                           (signing/verify envelope
                                           (assoc trust :revoked-signers #{(:signer key)}) 1500)))
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"artifact is revoked"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"artifact is revoked"
                           (signing/verify envelope
                                           (assoc trust :revoked-artifacts #{(:sha256 kexe)}) 1500)))
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"not yet valid"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"not yet valid"
                           (signing/verify envelope trust 999)))
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"expired"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"expired"
                           (signing/verify envelope trust 2000)))))
 
 (deftest signature-and-artifact-tampering-are-rejected
@@ -46,21 +46,21 @@
         changed (update-in envelope [:artifact :code 0] bit-xor 1)
         resealed-artifact (artifact/seal (:artifact changed))
         resealed (assoc changed :artifact resealed-artifact)]
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"signature verification failed"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"signature verification failed"
                           (signing/verify statement-tamper trust 1500)))
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"integrity mismatch"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"integrity mismatch"
                           (signing/verify changed trust 1500)))
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"statement mismatch"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"statement mismatch"
                           (signing/verify resealed trust 1500)))))
 
 (deftest versioned-signature-and-trust-schemas-reject-unknown-fields
   (let [{:keys [envelope trust]} (fixture)]
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"envelope schema"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"envelope schema"
                           (signing/verify (assoc envelope :ignored true) trust 1500)))
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"statement mismatch"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"statement mismatch"
                           (signing/verify (assoc-in envelope [:statement :ignored] true)
                                           trust 1500)))
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"malformed trust policy"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"malformed trust policy"
                           (signing/verify envelope (assoc trust :ignored true) 1500)))))
 
 (deftest signing-and-verification-key-material-is-validated
@@ -75,8 +75,8 @@
         "legacy trust provisioning from a private key remains accepted")
     (is (not (contains? public :private-key)))
     (is (not (signing/valid-key? mismatch)))
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"malformed Ed25519 signing key"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"malformed Ed25519 signing key"
                           (signing/sign-value mismatch {:value 1})))
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"verification key"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"verification key"
                           (signing/trusted-signer-id!
                            (assoc public :public-key "malformed"))))))

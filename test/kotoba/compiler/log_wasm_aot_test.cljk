@@ -19,7 +19,7 @@
 
   Break: return a bare 5n from the append inject instead of the sealed
   record and `guest-runs-both-log-capabilities` fails on result admission."
-  (:require [kotoba.bytes :as kbytes] [clojure.edn :as edn]
+  (:require [kotoba.lang.error :as kerror] [kotoba.bytes :as kbytes] [clojure.edn :as edn]
             [kotoba.io :as io]
             [clojure.java.shell :as shell]
             [clojure.test :refer [deftest is testing]]
@@ -149,7 +149,7 @@
                  :x86_64-kotoba-v1)
         thrown (try (compiler/compile-source guest-source target policy)
                     nil
-                    (catch clojure.lang.ExceptionInfo e e))]
+                    (catch kerror/ExceptionInfo e e))]
     (is (some? thrown) "native backend unexpectedly admitted a set-valued kit")
     (is (= :target (:phase (ex-data thrown))))
     (is (= :kotoba.value/typed-v1 (:value-profile (ex-data thrown))))

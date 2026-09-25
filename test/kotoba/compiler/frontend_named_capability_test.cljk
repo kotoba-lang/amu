@@ -6,14 +6,14 @@
   strictly BEFORE HIR/KIR construction, so every assertion below is really
   checking that nothing downstream (HIR :functions/:effects,
   admission.cljc) can tell the two forms apart."
-  (:require [clojure.test :refer [deftest is]]
+  (:require [kotoba.lang.error :as kerror] [clojure.test :refer [deftest is]]
             [kotoba.abi.contract :as abi]
             [kotoba.compiler.core :as compiler]
             [kotoba.sema :as sema]))
 
 (defn- rejection-message [source]
   (try (compiler/check-source source) nil
-       (catch clojure.lang.ExceptionInfo e (ex-message e))))
+       (catch kerror/ExceptionInfo e (ex-message e))))
 
 ;; `:identity/sign` is seeded to id 1 in the language-owned semantic catalog
 ;; supplied by kotoba-sema as kotoba/lang/capability-catalog.edn -- asserted
@@ -54,7 +54,7 @@
     (is (= [:task [:stream :bytes]]
            (get-in checked [:hir :functions 0 :result]))))
   (is (thrown-with-msg?
-       clojure.lang.ExceptionInfo #"move-aware parameters"
+       kerror/ExceptionInfo #"move-aware parameters"
        (compiler/check-source
         "(ns app (:export [copy]))
          (defn copy [task [:task [:stream :bytes]]]
@@ -71,7 +71,7 @@
     (is (= 'let (first (get-in checked [:hir :functions 0 :body])))))
   ;; Multi-use of the affine binding is still rejected
   (is (thrown-with-msg?
-       clojure.lang.ExceptionInfo #"one direct typed capability move"
+       kerror/ExceptionInfo #"one direct typed capability move"
        (compiler/check-source
         "(ns app (:export [bad]))
          (defn bad [request :i64] :i64
@@ -121,7 +121,7 @@
   (is (= "cap-call names an unregistered capability: :nonsense/capability"
          (rejection-message
           "(defn main [] (cap-call :nonsense/capability 0))")))
-  (is (thrown-with-msg? clojure.lang.ExceptionInfo #"unregistered capability"
+  (is (thrown-with-msg? kerror/ExceptionInfo #"unregistered capability"
                         (compiler/check-source
                          "(defn main [] (cap-call :nonsense/capability 0))"))))
 
@@ -131,10 +131,10 @@
   ;; arity around it must still fail with validate-expr's ORIGINAL, arity-
   ;; generic message (not a capability-specific one) -- proving the new
   ;; desugar step doesn't mask the pre-existing arity check.
-  (is (thrown-with-msg? clojure.lang.ExceptionInfo
+  (is (thrown-with-msg? kerror/ExceptionInfo
                         #"cap-call requires a literal capability id in \[0,255\] and one value"
                         (compiler/check-source "(defn main [] (cap-call :identity/sign))")))
-  (is (thrown-with-msg? clojure.lang.ExceptionInfo
+  (is (thrown-with-msg? kerror/ExceptionInfo
                         #"cap-call requires a literal capability id in \[0,255\] and one value"
                         (compiler/check-source
                          "(defn main [] (cap-call :identity/sign 1 2))"))))
@@ -155,14 +155,14 @@
            (:admission (compiler/check-source named-source {:allow #{[:cap/call 1]}}))))
     ;; A policy that only grants a DIFFERENT id denies both forms identically
     ;; (deny-by-default is untouched by naming).
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"denies required effects"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"denies required effects"
                           (compiler/check-source named-source {:allow #{[:cap/call 2]}})))
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"denies required effects"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"denies required effects"
                           (compiler/check-source int-source {:allow #{[:cap/call 2]}})))
     ;; No policy at all denies both forms identically (deny-by-default).
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"denies required effects"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"denies required effects"
                           (compiler/check-source named-source)))
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"denies required effects"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"denies required effects"
                           (compiler/check-source int-source)))))
 
 ;; ───────────────────────── optional ns :capabilities declaration ─────────────────────────
@@ -176,7 +176,7 @@
     (is (= #{[:cap/call 1]} (:effects hir)))))
 
 (deftest ns-capabilities-declaration-rejects-used-but-undeclared
-  (is (thrown-with-msg? clojure.lang.ExceptionInfo
+  (is (thrown-with-msg? kerror/ExceptionInfo
                         #"not declared in namespace :capabilities"
                         (compiler/check-source
                          "(ns app.core (:capabilities #{:hash/sha256}))
@@ -185,7 +185,7 @@
                          {:allow #{[:cap/call 1]}}))))
 
 (deftest ns-capabilities-declaration-rejects-declared-but-unused
-  (is (thrown-with-msg? clojure.lang.ExceptionInfo
+  (is (thrown-with-msg? kerror/ExceptionInfo
                         #"never used via cap-call"
                         (compiler/check-source
                          "(ns app.core (:capabilities #{:identity/sign :hash/sha256}))
@@ -228,5 +228,5 @@
            (dissoc named-hir :named-operations)))
     (is (= #{:dataspace/transact} (:named-operations named-hir)))
     (is (= #{[:cap/call 24]} (:effects named-hir)))
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"denies required effects"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"denies required effects"
                           (compiler/check-source named-source)))))

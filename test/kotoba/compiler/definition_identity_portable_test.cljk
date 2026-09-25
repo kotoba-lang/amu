@@ -24,7 +24,7 @@
       `clojure.core/format` does not exist on ClojureScript at all -- the
       printed line is unchanged, `%d` over an integer count and `str` over
       the same integer produce identical text."
-  (:require #?(:clj [clojure.test :refer [deftest is testing]]
+  (:require [kotoba.lang.error :as kerror] #?(:clj [clojure.test :refer [deftest is testing]]
                :cljs [cljs.test :refer [deftest is testing] :include-macros true])
             [kotoba.lang.coll :as set]
             [kotoba.lang.text :as str]
@@ -283,7 +283,7 @@
   (let [catalog {8 :state/transact}
         bridge (fn [effects]
                  (try (kir-id/effect-row-from-hir {:effects effects} {:id->name catalog})
-                      (catch #?(:clj clojure.lang.ExceptionInfo :cljs ExceptionInfo) e
+                      (catch kerror/ExceptionInfo e
                         {:message (ex-message e) :problem (:problem (ex-data e))})))]
     (is (= #{:abort} (bridge #{:abort}))
         "the control effect passes through as itself")

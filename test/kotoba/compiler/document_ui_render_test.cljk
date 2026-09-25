@@ -14,7 +14,7 @@
   is host-side (document_dom_reconcile_test); document-sha256 is first-class
   (document_sha256_test). This slice locks the data→HTML half of the W4 exit
   gate that design-system form-A (string-only call graphs) could not express."
-  (:require [kotoba.bytes :as kbytes] [clojure.java.shell :as shell]
+  (:require [kotoba.lang.error :as kerror] [kotoba.bytes :as kbytes] [clojure.java.shell :as shell]
             [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]
             [kotoba.kir :as ir]
@@ -107,13 +107,13 @@
 
 (deftest document-budgets-reject-unbounded-ui-trees
   (testing "depth budget (document-depth-limit 8) fails closed"
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"depth limit"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"depth limit"
           (value/bounded-document!
            (reduce (fn [item _] (canon-map [[:child item]]))
                    ["string" "leaf"]
                    (range 9))))))
   (testing "container item budget fails closed"
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"invalid document vector|item limit"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"invalid document vector|item limit"
           (value/bounded-document!
            ["vector" (vec (repeat 33 ["string" "x"]))]))))
   (testing "a small UI tree is admitted and equal to itself after revalidation"

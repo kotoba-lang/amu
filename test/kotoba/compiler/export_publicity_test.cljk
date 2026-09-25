@@ -20,7 +20,7 @@
 
 (defn- refusal [thunk]
   (try (thunk) nil
-       (catch #?(:clj clojure.lang.ExceptionInfo :cljs :default) error
+       (catch :default error
          (ex-message error))))
 
 (def ^:private lib-derived

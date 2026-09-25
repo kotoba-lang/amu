@@ -1,9 +1,9 @@
 (ns kotoba.compiler.bounded-edn-test
-  (:require [kotoba.bytes :as kbytes] [kotoba.io :as kio] [kotoba.lang.text] [clojure.test :refer [deftest is testing]]
+  (:require [kotoba.lang.error :as kerror] [kotoba.bytes :as kbytes] [kotoba.io :as kio] [kotoba.lang.text] [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.bounded-edn :as bounded-edn]))
 
 (defn- trap [f]
-  (try (f) nil (catch clojure.lang.ExceptionInfo error error)))
+  (try (f) nil (catch kerror/ExceptionInfo error error)))
 
 (deftest accepts-one-bounded-edn-value
   (is (= {:allow #{[:cap/call 7]} :args [1 -2]}
@@ -26,7 +26,7 @@
            ["too many nodes" (str "[" (kotoba.lang.text/join " " (repeat 200001 "1")) "]") #"too many nodes"]]]
     (testing label
       (let [error (trap #(bounded-edn/read-string input))]
-        (is (instance? clojure.lang.ExceptionInfo error))
+        (is (instance? kerror/ExceptionInfo error))
         (is (re-find message (ex-message error)))
         (is (= :decode (:phase (ex-data error))))))))
 

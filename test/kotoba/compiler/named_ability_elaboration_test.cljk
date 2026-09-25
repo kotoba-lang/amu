@@ -1,5 +1,5 @@
 (ns kotoba.compiler.named-ability-elaboration-test
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [kotoba.lang.error :as kerror] [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]
             [kotoba.sema :as sema]))
 
@@ -49,7 +49,7 @@
 (deftest namespace-declaration-remains-a-security-ceiling
   (testing "friendly operation is included in declare-then-check"
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo
+         kerror/ExceptionInfo
          #"not declared"
          (compiler/check-source
           (str "(ns demo.denied (:export [invoke]) "
@@ -59,7 +59,7 @@
 
 (deftest operations-without-result-context-fail-closed
   (is (thrown-with-msg?
-       clojure.lang.ExceptionInfo
+       kerror/ExceptionInfo
        #"requires a typed result context"
        (compiler/check-source
         "(ns demo.unbound (:export [invoke]))

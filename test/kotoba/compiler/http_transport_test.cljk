@@ -32,7 +32,7 @@
          loopback fixture address is not refused -- except in
          `real-destination-blocked-check-refuses-a-loopback-target`, which
          deliberately leaves it real to prove the guard fires end-to-end."
-  (:require [kotoba.bytes :as kbytes] [kotoba.lang.text :as string]
+  (:require [kotoba.lang.error :as kerror] [kotoba.bytes :as kbytes] [kotoba.lang.text :as string]
             [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]
             [kotoba.kir :as ir]
@@ -363,15 +363,15 @@
       (finally (stop! fake)))))
 
 (deftest production-transport-requires-a-non-empty-allowed-origins-set
-  (is (thrown-with-msg? clojure.lang.ExceptionInfo #"allowed-origins"
+  (is (thrown-with-msg? kerror/ExceptionInfo #"allowed-origins"
                         (transport/production-transport {})))
-  (is (thrown-with-msg? clojure.lang.ExceptionInfo #"allowed-origins"
+  (is (thrown-with-msg? kerror/ExceptionInfo #"allowed-origins"
                         (transport/production-transport {:allowed-origins #{}}))))
 
 (deftest production-transport-rejects-non-canonical-allowed-origins
-  (is (thrown-with-msg? clojure.lang.ExceptionInfo #"canonical"
+  (is (thrown-with-msg? kerror/ExceptionInfo #"canonical"
                         (transport/production-transport {:allowed-origins #{"https://Api.Example.Test"}})))
-  (is (thrown-with-msg? clojure.lang.ExceptionInfo #"canonical"
+  (is (thrown-with-msg? kerror/ExceptionInfo #"canonical"
                         (transport/production-transport {:allowed-origins #{"http://api.example.test"}}))))
 
 (deftest on-call-audit-hook-observes-every-attempt-without-affecting-the-result
@@ -478,11 +478,11 @@
                         {:allowed-origins #{"https://api.example.test"}})
           runtime (hosted-get-stream transport-fn "https://api.example.test")]
       (is (thrown-with-msg?
-           clojure.lang.ExceptionInfo #"http get-stream transport failed|not allowed|destination"
+           kerror/ExceptionInfo #"http get-stream transport failed|not allowed|destination"
            ((:invoke runtime) 'get-stream
             [[http/get-stream-request-type "https://evil.example.test/x"
               [http/header-set-type []]]]))))))
 
 (deftest production-get-stream-transport-requires-allowed-origins
-  (is (thrown-with-msg? clojure.lang.ExceptionInfo #"allowed-origins"
+  (is (thrown-with-msg? kerror/ExceptionInfo #"allowed-origins"
                         (transport/production-get-stream-transport {}))))

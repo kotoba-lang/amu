@@ -5,7 +5,7 @@
   (`lang/capability-catalog.edn`: `:numeric-id :not-user-facing`). The wire id
   is still asserted -- on `ex-data`, where a machine consumer reads it. Prose
   gets names, data keeps ids."
-  (:require [clojure.test :refer [deftest is]]
+  (:require [kotoba.lang.error :as kerror] [clojure.test :refer [deftest is]]
             [kotoba.compiler.core :as compiler]))
 
 (deftest missing-grant-names-effect
@@ -14,7 +14,7 @@
      "(ns t (:export [main])) (defn main [] (cap-call 7 0))"
      {:allow #{}})
     (is false "expected deny")
-    (catch clojure.lang.ExceptionInfo e
+    (catch kerror/ExceptionInfo e
       (is (= :kotoba.error/capability-missing-grant
              (:kotoba.error/code (ex-data e))))
       (is (re-find #"missing grants" (ex-message e)))

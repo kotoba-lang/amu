@@ -1,5 +1,5 @@
 (ns kotoba.compiler.project-test
-  (:require [kotoba.lang.text :as str]
+  (:require [kotoba.lang.error :as kerror] [kotoba.lang.text :as str]
             [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]
             [kotoba.sema :as sema]
@@ -64,7 +64,7 @@
                                           'example.schema schema-lib-source}
                                          'example.schema-app)
                     nil
-                    (catch clojure.lang.ExceptionInfo error error))]
+                    (catch kerror/ExceptionInfo error error))]
     (is (some? thrown))
     (is (str/includes? (ex-message thrown)
                        "modules declare the same schema name with different definitions"))
@@ -107,7 +107,7 @@
                   'example.root :wasm-component-kotoba-v1)]
     (is (= :wasm-component/v1 (:format compiled)))
     (is (pos? (alength ^bytes (:bytes compiled)))))
-  (is (thrown-with-msg? clojure.lang.ExceptionInfo
+  (is (thrown-with-msg? kerror/ExceptionInfo
                         #"reserved __kotoba_ prefix"
                         (compiler/compile-component
                          "(ns u (:export [main])) (defn main [] :i64 (let [__kotoba_or_1 1] __kotoba_or_1))"
@@ -229,7 +229,7 @@
                                     'example.app)]
     (is (= ['example.text 'example.app] (:module-order linked))))
   (is (thrown-with-msg?
-       clojure.lang.ExceptionInfo #"namespace docstring exceeds admission limit"
+       kerror/ExceptionInfo #"namespace docstring exceeds admission limit"
        (project/link-source
         {'example.text
          (str "(ns example.text "
@@ -307,7 +307,7 @@
            (get-in compiled [:manifest :kotoba.artifact/package-receipt-digest])))
     (is (str/includes? (:source compiled)
                        (str "packageLockDigest:\"" (digest "a") "\"")))
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo
+    (is (thrown-with-msg? kerror/ExceptionInfo
                           #"invalid verified supply-chain identity"
                           (compiler/compile-project
                            {'sealed.app "(ns sealed.app (:export [answer])) (defn answer [] 42)"}
@@ -316,10 +316,10 @@
 
 (deftest project-imports-fail-closed
   (testing "missing source"
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"outside the closed project"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"outside the closed project"
                           (project/link-source {'example.app app-source} 'example.app))))
   (testing "private function"
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"not an admitted exported import"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"not an admitted exported import"
                           (project/link-source
                            {'example.text text-source
                             'example.app (str/replace app-source "text/greet" "text/prefix")}
@@ -327,13 +327,13 @@
   (testing "cycle"
     (let [a "(ns cycle.a (:require [cycle.b :as b]) (:export [a])) (defn a [] (b/b))"
           b "(ns cycle.b (:require [cycle.a :as a]) (:export [b])) (defn b [] (a/a))"]
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"cyclic module dependency"
+      (is (thrown-with-msg? kerror/ExceptionInfo #"cyclic module dependency"
                             (project/link-source {'cycle.a a 'cycle.b b} 'cycle.a)))))
   (testing "non alias import"
     ;; `[example.text :refer [greet]]` is ADMITTED since 2026-09-11 (a referred
     ;; name is the alias-qualified name spelled bare); the shape that still
     ;; fails the spec parser is a spec that is not a vector at all.
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"imports require"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"imports require"
                           (project/link-source
                            {'example.app (str/replace app-source
                                                       "[example.text :as text]"
@@ -357,7 +357,7 @@
                      {'example.app (str/replace app-source "(ns example.app" "(ns example.app (:refer-clojure :exclude [update])")
                       'example.text text-source}
                      'example.app))))
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #":refer-clojure :rename is not admitted"
+    (is (thrown-with-msg? kerror/ExceptionInfo #":refer-clojure :rename is not admitted"
                           (project/link-source
                            {'example.app (str/replace app-source "(ns example.app" "(ns example.app (:refer-clojure :rename {update up})")
                             'example.text text-source}
@@ -383,17 +383,17 @@
 
 (deftest project-wide-resource-bounds-fail-before-linking
   (testing "aggregate source bytes"
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"source bytes exceed"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"source bytes exceed"
                           (project/link-source
                            {'large.module
                             (apply str (repeat (inc project/max-project-source-bytes) "x"))}
                            'large.module))))
   (testing "dependency depth"
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"dependency depth exceeds"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"dependency depth exceeds"
                           (project/link-source (dependency-project 66 false)
                                                'bounds.m65))))
   (testing "dependency edge count"
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"dependency edges exceed"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"dependency edges exceed"
                           (project/link-source (dependency-project 24 true)
                                                'bounds.m23))))
   (testing "aggregate expression nodes"
@@ -401,7 +401,7 @@
           source (fn [namespace]
                    (str "(ns " namespace " (:export [f])) "
                         "(defn f [] (do " body "0))"))]
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"expression nodes exceed"
+      (is (thrown-with-msg? kerror/ExceptionInfo #"expression nodes exceed"
                             (project/link-source
                              {'bounds.expr-a (source 'bounds.expr-a)
                               'bounds.expr-b (source 'bounds.expr-b)}
@@ -411,7 +411,7 @@
           source (fn [namespace]
                    (str "(ns " namespace " (:export [f])) "
                         "(defn f [] (do " body "0))"))]
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"project literals exceed"
+      (is (thrown-with-msg? kerror/ExceptionInfo #"project literals exceed"
                             (project/link-source
                              {'bounds.literal-a (source 'bounds.literal-a)
                               'bounds.literal-b (source 'bounds.literal-b)}
@@ -426,7 +426,7 @@
                                   (str "(ns " namespace " (:export [f])) "
                                        "(defn f [] (do " body "))")]))
                         (range 18)))]
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"string literal bytes exceed"
+      (is (thrown-with-msg? kerror/ExceptionInfo #"string literal bytes exceed"
                             (project/link-source sources 'bounds.str0))))))
 
 (deftest capability-effects-close-across-module-boundaries
@@ -441,7 +441,7 @@
          'effects.root
          "(ns effects.root (:require [effects.middle :as middle]) (:export [run]))
           (defn run [value] (middle/forward value))"}]
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"denies required effects"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"denies required effects"
                           (compiler/compile-project sources 'effects.root :js-kotoba-v1)))
     (let [compiled (compiler/compile-project
                     sources 'effects.root :js-kotoba-v1
@@ -467,7 +467,7 @@
                      'substitution.root :js-kotoba-v1)]
     (testing "changing an imported export fails before backend emission"
       (is (thrown-with-msg?
-           clojure.lang.ExceptionInfo #"not an admitted exported import"
+           kerror/ExceptionInfo #"not an admitted exported import"
            (compiler/compile-project
             (assoc sources 'substitution.dep
                    "(ns substitution.dep (:export [replacement]))
@@ -536,14 +536,14 @@
 (deftest project-capability-declarations-fail-closed
   (testing "declared but never used is still rejected per module"
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"never used via cap-call"
+         kerror/ExceptionInfo #"never used via cap-call"
          (project/link-source
           (assoc caps-sources 'caps.render
                  (str/replace commit-source "#{:ui/commit}" "#{:ui/commit :ui/next-event}"))
           'caps.app))))
   (testing "used but never declared is still rejected per module"
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"not declared in namespace :capabilities"
+         kerror/ExceptionInfo #"not declared in namespace :capabilities"
          (project/link-source
           (assoc caps-sources 'caps.render
                  (str/replace commit-source "#{:ui/commit}" "#{:ui/next-event}"))
@@ -560,18 +560,18 @@
           {:keys [source]} (project/link-source sources 'caps.app)]
       (is (str/includes? source "(cap-call 9 "))
       (is (thrown-with-msg?
-           clojure.lang.ExceptionInfo #"policy denies"
+           kerror/ExceptionInfo #"policy denies"
            (compiler/compile-source source :js-kotoba-v1 {:allow #{}})))))
   (testing ":capabilities must be a set of namespaced keywords"
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"bounded set of namespaced keywords"
+         kerror/ExceptionInfo #"bounded set of namespaced keywords"
          (project/link-source
           (assoc caps-sources 'caps.render
                  (str/replace commit-source "#{:ui/commit}" "#{:commit}"))
           'caps.app))))
   (testing "at most one :capabilities clause"
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"are admitted"
+         kerror/ExceptionInfo #"are admitted"
          (project/link-source
           (assoc caps-sources 'caps.render
                  (str/replace commit-source
@@ -594,7 +594,7 @@
       (is (str/includes? source "[:record :caps/r [[:n :i64]]]"))))
   (testing "at most one :schemas clause"
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"are admitted"
+         kerror/ExceptionInfo #"are admitted"
          (project/link-source
           (assoc caps-sources 'caps.render
                  (str/replace commit-source
@@ -649,7 +649,7 @@
                ([x :i64] :i64 (* 2 x))
                ([x :i64 y :i64] :i64 (* y x)))"]
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"no matching multi-arity clause"
+         kerror/ExceptionInfo #"no matching multi-arity clause"
          (project/link-source
           {'ma.lib lib
            'app.main "(ns app.main (:require [ma.lib :as l]) (:export [main]))
@@ -721,7 +721,7 @@
       (is (= 35 (ir/execute (:kir compiled) 'main [])))))
   (testing "a clause past the parameter cap is refused, by the cap's own name"
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"function parameters exceed ABI-supported arity"
+         kerror/ExceptionInfo #"function parameters exceed ABI-supported arity"
          (project/link-source
           {'wide.lib (str "(ns wide.lib (:export [f]))"
                           "(defn f"
@@ -746,7 +746,7 @@
     (try
       (compiler/compile-project {'example.a a 'example.b b} 'example.a :x86_64-kotoba-v1)
       (is false "a 65-parameter function was admitted")
-      (catch clojure.lang.ExceptionInfo error
+      (catch kerror/ExceptionInfo error
         (let [data (ex-data error)]
           (is (= :kotoba.error/max-parameters (:kotoba.error/code data))
               "the refusal itself is unchanged")

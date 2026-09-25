@@ -11,7 +11,7 @@
   for a real AF_PACKET/raw-socket send -- this session did not open a real
   raw Ethernet socket (see the kit's own qualification comment for why:
   no browser or WASI sandbox exposes one)."
-  (:require [clojure.test :refer [deftest is]]
+  (:require [kotoba.lang.error :as kerror] [clojure.test :refer [deftest is]]
             [kotoba.compiler.core :as compiler]
             [kotoba.kir :as ir]
             [kotoba.compiler.support.link-frame-provider :as link-frame]
@@ -66,17 +66,17 @@
         runtime (hosted (fn [_] (reset! called? true) {:bytes-sent 0}))
         payload (value/utf8-string->bytes "x")]
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"denied"
+         kerror/ExceptionInfo #"denied"
          ((:invoke runtime) 'transmit
           [[link-frame/request-type :send
             [link-frame/send-request-type "eth1" goose-ethertype goose-mac payload]]])))
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"denied"
+         kerror/ExceptionInfo #"denied"
          ((:invoke runtime) 'transmit
           [[link-frame/request-type :send
             [link-frame/send-request-type "eth0" 0x0800 goose-mac payload]]])))
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"denied"
+         kerror/ExceptionInfo #"denied"
          ((:invoke runtime) 'transmit
           [[link-frame/request-type :send
             [link-frame/send-request-type "eth0" goose-ethertype
@@ -87,12 +87,12 @@
   (let [called? (atom false)
         runtime (hosted (fn [_] (reset! called? true) {:bytes-sent 0}))
         payload (value/utf8-string->bytes "x")]
-    (is (thrown? clojure.lang.ExceptionInfo
+    (is (thrown? kerror/ExceptionInfo
                  ((:invoke runtime) 'transmit
                   [[link-frame/request-type :send
                     [link-frame/send-request-type "eth0" goose-ethertype
                      "not-a-mac" payload]]])))
-    (is (thrown? clojure.lang.ExceptionInfo
+    (is (thrown? kerror/ExceptionInfo
                  ((:invoke runtime) 'transmit
                   [[link-frame/request-type :send
                     [link-frame/send-request-type "eth0" 99999 goose-mac payload]]])))
@@ -102,7 +102,7 @@
   (let [called? (atom false)
         runtime (hosted (fn [_] (reset! called? true) {:bytes-sent 0}))
         oversized (byte-array (inc link-frame/max-payload-bytes))]
-    (is (thrown? clojure.lang.ExceptionInfo
+    (is (thrown? kerror/ExceptionInfo
                  ((:invoke runtime) 'transmit
                   [[link-frame/request-type :send
                     [link-frame/send-request-type "eth0" goose-ethertype
@@ -137,7 +137,7 @@
         called? (atom false)
         payload (value/utf8-string->bytes "x")]
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"capability denied"
+         kerror/ExceptionInfo #"capability denied"
          ((:invoke runtime) 'transmit
           [[link-frame/request-type :send
             [link-frame/send-request-type "eth0" goose-ethertype goose-mac payload]]])))

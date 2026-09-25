@@ -1,5 +1,5 @@
 (ns kotoba.compiler.frontend-condp-test
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [kotoba.lang.error :as kerror] [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]
             [kotoba.kir :as ir]))
 
@@ -11,7 +11,7 @@
 
 (defn- rejection-message [source]
   (try (checked source) nil
-       (catch clojure.lang.ExceptionInfo e (ex-message e))))
+       (catch kerror/ExceptionInfo e (ex-message e))))
 
 (deftest condp-selects-the-first-match-or-default
   (is (= 20 (oracle "(defn main [] (condp = 2 1 10 2 20 30))")))
@@ -27,7 +27,7 @@
     (is (= 1 (count (re-seq #"\(dispatch\)" (pr-str body)))))))
 
 (deftest condp-without-a-default-traps-on-a-miss
-  (is (thrown? clojure.lang.ExceptionInfo
+  (is (thrown? kerror/ExceptionInfo
                (oracle "(defn main [] (condp = 3 1 10 2 20))"))))
 
 (deftest condp-validates-its-portable-shape

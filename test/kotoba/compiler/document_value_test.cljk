@@ -1,5 +1,5 @@
 (ns kotoba.compiler.document-value-test
-  (:require [kotoba.bytes :as kbytes] [clojure.java.shell :as shell]
+  (:require [kotoba.lang.error :as kerror] [kotoba.bytes :as kbytes] [clojure.java.shell :as shell]
             [clojure.test :refer [deftest is testing]]
             [kotoba.wasm.typed :as typed]
             [kotoba.compiler.core :as compiler]
@@ -70,19 +70,19 @@
 
 (deftest document-boundaries-reject-noncanonical-or-unbounded-values
   (testing "canonical map order, duplicate keys, finite floats, and cycles"
-    (is (thrown? clojure.lang.ExceptionInfo
+    (is (thrown? kerror/ExceptionInfo
                  (value/bounded-document! ["map" [[:b ["null"]] [:a ["null"]]]])))
-    (is (thrown? clojure.lang.ExceptionInfo
+    (is (thrown? kerror/ExceptionInfo
                  (value/bounded-document! ["map" [[:a ["null"]] [:a ["null"]]]])))
-    (is (thrown? clojure.lang.ExceptionInfo
+    (is (thrown? kerror/ExceptionInfo
                  (value/bounded-document! ["f64" Double/POSITIVE_INFINITY])))
     (let [cycle (java.util.ArrayList.)]
       ;; Host-object graphs are outside the Clojure reference representation.
-      (is (thrown? clojure.lang.ExceptionInfo (value/bounded-document! cycle)))))
+      (is (thrown? kerror/ExceptionInfo (value/bounded-document! cycle)))))
   (testing "container, node, and depth budgets"
-    (is (thrown? clojure.lang.ExceptionInfo
+    (is (thrown? kerror/ExceptionInfo
                  (value/bounded-document! ["vector" (vec (repeat 33 ["null"]))])))
-    (is (thrown? clojure.lang.ExceptionInfo
+    (is (thrown? kerror/ExceptionInfo
                  (value/bounded-document!
                   (reduce (fn [item _] ["vector" [item]]) ["null"] (range 9)))))))
 
@@ -201,7 +201,7 @@
     (is (= ["vector" [["map" [[["keyword" :name] ["string" "same"]]]]
                       ["map" [[["keyword" :name] ["string" "same"]]]]]]
            (ir/execute kir 'repeated-value [])))
-    (is (thrown? clojure.lang.ExceptionInfo (ir/execute kir 'bad-assoc [])))
-    (is (thrown? clojure.lang.ExceptionInfo (ir/execute kir 'bad-drop [])))
+    (is (thrown? kerror/ExceptionInfo (ir/execute kir 'bad-assoc [])))
+    (is (thrown? kerror/ExceptionInfo (ir/execute kir 'bad-drop [])))
     (is (zero? (:exit js-probe)) (:err js-probe))
     (is (zero? (:exit wasm-probe)) (:err wasm-probe))))

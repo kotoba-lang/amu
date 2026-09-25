@@ -1,5 +1,5 @@
 (ns kotoba.compiler.core-test
-  (:require [kotoba.bytes :as kbytes] [clojure.test :refer [deftest is testing]]
+  (:require [kotoba.lang.error :as kerror] [kotoba.bytes :as kbytes] [clojure.test :refer [deftest is testing]]
             [clojure.java.shell :as shell]
             [kotoba.lang.text :as str]
             [kotoba.artifact.core :as artifact]
@@ -58,7 +58,7 @@
                                (byte-array (cons (unchecked-byte 1)
                                                  (drop 1 (:bytes result)))))]
              [source {} (assoc-in result [:provenance :target] :wasm32-wasi-kotoba-v1)]]]
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"provenance rejected"
+      (is (thrown-with-msg? kerror/ExceptionInfo #"provenance rejected"
                             (if (identical? changed-result result)
                               (provenance/verify! changed-source changed-policy
                                                   {:package-lock-digest (apply str (repeat 64 "a"))}
@@ -121,19 +121,19 @@
             :os :wasi :abi :wasm-mvp :runtime :kototama-wasi-host-v1}
            (:target-profile wasi)))
     (is (not= (seq (:bytes browser)) (seq (:bytes wasi))))
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"target profile"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"target profile"
                           (verifier/verify-artifact!
                            (artifact/seal
                             (assoc linux :target-profile (:target-profile macos))))))
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"target profile"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"target profile"
                           (verifier/verify-artifact!
                            (artifact/seal
                             (assoc windows :target-profile (:target-profile linux))))))
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"target profile"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"target profile"
                           (verifier/verify-artifact!
                            (artifact/seal
                             (assoc android :target-profile (:target-profile ios))))))
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"target profile"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"target profile"
                           (verifier/verify-artifact!
                            (artifact/seal
                             (assoc windows-arm :target-profile (:target-profile android))))))))
@@ -251,7 +251,7 @@
       (is (= artifact (verifier/verify-artifact! artifact)))
       (is (re-matches #"[0-9a-f]{64}" (:sha256 artifact)))
       (is (re-matches #"[0-9a-f]{64}" (:kir-sha256 artifact)))
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"integrity mismatch"
+      (is (thrown-with-msg? kerror/ExceptionInfo #"integrity mismatch"
                             (verifier/verify-artifact!
                              (update-in artifact [:code 0] bit-xor 1)))))))
 
@@ -269,14 +269,14 @@
                      (assoc artifact :effects #{:ambient/network})
                      (assoc artifact :target :aarch64-kotoba-v1)
                      (assoc artifact :kir-sha256 (apply str (repeat 64 "0")))]]
-      (is (thrown? clojure.lang.ExceptionInfo (verifier/verify-artifact! mutated))))))
+      (is (thrown? kerror/ExceptionInfo (verifier/verify-artifact! mutated))))))
 
 (deftest artifact-schema-and-oracle-metadata-are-recomputed
   (let [kexe (:artifact (compiler/compile-source source :x86_64-kotoba-v1))]
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"schema rejected"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"schema rejected"
                           (verifier/verify-artifact!
                            (artifact/seal (assoc kexe :attacker-field true)))))
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"oracle value rejected"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"oracle value rejected"
                           (verifier/verify-artifact!
                            (artifact/seal (update kexe :value inc)))))))
 
@@ -286,18 +286,18 @@
     (is (= 2 (get-in kexe [:exports 'score :arity])))
     (is (pos? (get-in kexe [:exports 'score :length])))
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"KIR identity mismatch"
+         kerror/ExceptionInfo #"KIR identity mismatch"
          (verifier/verify-artifact!
           (artifact/seal (assoc kexe :kir-sha256 (apply str (repeat 64 "0")))))))
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"export table rejected|instruction stream rejected"
+         kerror/ExceptionInfo #"export table rejected|instruction stream rejected"
          (verifier/verify-artifact!
           (let [changed (assoc-in kexe [:program :functions 0 :body] 999)]
             (artifact/seal
              (assoc changed :kir-sha256 (artifact/sha256 (:program changed))))))))))
 
 (deftest recursion-and-i64-semantics-are-bounded
-  (is (thrown-with-msg? clojure.lang.ExceptionInfo #"fuel-exhausted"
+  (is (thrown-with-msg? kerror/ExceptionInfo #"fuel-exhausted"
                         (compiler/compile-source
                          "(defn forever [x] (forever x)) (defn main [] (forever 0))"
                          :wasm32-kotoba-v1)))
@@ -320,7 +320,7 @@
                                         "(defn divide [x y] (quot x y)) (defn main [] 0)"
                                         :wasm32-kotoba-v1))
                                  'divide [1 0])
-                                (catch clojure.lang.ExceptionInfo error error))))))))
+                                (catch kerror/ExceptionInfo error error))))))))
 
 (deftest bounded-pair-semantics-are-shared-and-fail-closed
   (let [source "(defn read-pair [handle] (+ (pair-first handle) (pair-second handle)))
@@ -333,12 +333,12 @@
            (:trap (ex-data
                    (try
                      (ir/execute kir 'main [] {:pair-capacity 0})
-                     (catch clojure.lang.ExceptionInfo error error))))))
+                     (catch kerror/ExceptionInfo error error))))))
     (is (= :invalid-pair-handle
            (:trap (ex-data
                    (try
                      (ir/execute kir 'read-pair [1])
-                     (catch clojure.lang.ExceptionInfo error error))))))))
+                     (catch kerror/ExceptionInfo error error))))))))
 
 (deftest persistent-list-syntax-desugars-to-the-bounded-pair-arena
   ;; `empty?` is :bool-typed; tally with `(if p 1 0)` as Clojure does.
@@ -356,7 +356,7 @@
            (:trap (ex-data
                    (try
                      (ir/execute kir 'sum2 [0])
-                     (catch clojure.lang.ExceptionInfo error error))))))))
+                     (catch kerror/ExceptionInfo error error))))))))
 
 (deftest list-surface-profile-fails-closed
   (doseq [bad ["(defn list [] 1) (defn main [] 0)"
@@ -364,7 +364,7 @@
                "(defn main [] (cons 1))"
                (str "(defn main [] (list " (apply str (interpose " " (repeat 129 "1"))) "))")]]
     (testing bad
-      (is (thrown? clojure.lang.ExceptionInfo
+      (is (thrown? kerror/ExceptionInfo
                    (compiler/compile-source bad :wasm32-kotoba-v1))))))
 
 (deftest safe-predicates-and-second-desugar-to-verified-core-operations
@@ -386,7 +386,7 @@
   (doseq [bad ["(defn main [] (second))"
                "(defn main [] (zero? 1 2))"
                "(defn not [x] x) (defn main [] 0)"]]
-    (is (thrown? clojure.lang.ExceptionInfo
+    (is (thrown? kerror/ExceptionInfo
                  (compiler/compile-source bad :wasm32-kotoba-v1)))))
 
 (deftest cond-desugars-to-safe-left-to-right-core
@@ -413,7 +413,7 @@
           [["(defn main [] (cond 1))" #"test/result pairs"]
            ["(defn main [] (cond :else 1 1 2))" #":else clause must be last"]]]
     (testing source
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo message
+      (is (thrown-with-msg? kerror/ExceptionInfo message
                             (compiler/compile-source source :wasm32-kotoba-v1))))))
 
 (deftest wasm-recursion-is-fuel-bounded-and-native-fails-closed
@@ -446,5 +446,5 @@
                "(defn main [] (atom 1))"
                "(defmacro pwn [] 1) (defn main [] 1)"]]
     (testing bad
-      (is (thrown? clojure.lang.ExceptionInfo
+      (is (thrown? kerror/ExceptionInfo
                    (compiler/compile-source bad :x86_64-kotoba-v1))))))

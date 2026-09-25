@@ -1,6 +1,6 @@
 (ns kotoba.compiler.multi-map-test
   "Bounded one-to-five-source eager map over vector-i64."
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [kotoba.lang.error :as kerror] [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]
             [kotoba.kir :as ir]))
 
@@ -54,14 +54,14 @@
 (deftest multi-map-callback-bounds-and-lexical-shadowing
   (testing "stored closures retain their arity-four closure ABI"
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"stored map callbacks support at most four"
+         kerror/ExceptionInfo #"stored map callbacks support at most four"
          (compiler/check-source
           "(defn main []
              (let [f (fn [a b c d] (+ a (+ b (+ c d))))]
                (map f [1] [2] [3] [4] [5])))"))))
   (testing "known named callbacks fail before lowering when their arity disagrees"
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"does not support the source arity"
+         kerror/ExceptionInfo #"does not support the source arity"
          (compiler/check-source
           "(defn add [a b] (+ a b))
            (defn main [] (map add [1] [2] [3]))"))))

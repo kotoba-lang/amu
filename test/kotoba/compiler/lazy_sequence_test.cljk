@@ -1,5 +1,5 @@
 (ns kotoba.compiler.lazy-sequence-test
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [kotoba.lang.error :as kerror] [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]
             [kotoba.kir :as kir]))
 
@@ -10,7 +10,7 @@
   (try
     (compiler/check-source source)
     nil
-    (catch clojure.lang.ExceptionInfo error
+    (catch kerror/ExceptionInfo error
       (ex-message error))))
 
 (def naturals-source

@@ -1,7 +1,7 @@
 (ns kotoba.compiler.w1-elaboration-test
   "W1 frontend elaboration: friendly named operations, transitive effects,
   effect ceilings, and source-span diagnostics (ADR-2607279200)."
-  (:require [kotoba.io :as io]
+  (:require [kotoba.lang.error :as kerror] [kotoba.io :as io]
             [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]
             [kotoba.sema :as sema]))
@@ -50,12 +50,12 @@
         data (try
                (sema/analyze source)
                nil
-               (catch clojure.lang.ExceptionInfo e
+               (catch kerror/ExceptionInfo e
                  (ex-data e)))
         msg (try
               (sema/analyze source)
               nil
-              (catch clojure.lang.ExceptionInfo e
+              (catch kerror/ExceptionInfo e
                 (ex-message e)))]
     (is (re-find #"inferred effects exceed declared effect ceiling" (str msg)))
     (is (re-find #"guarded" (str msg)))
@@ -71,7 +71,7 @@
         e (try
             (sema/analyze source)
             nil
-            (catch clojure.lang.ExceptionInfo ex ex))]
+            (catch kerror/ExceptionInfo ex ex))]
     (is (some? e))
     (is (re-find #"capability not declared in namespace :capabilities" (ex-message e)))
     (is (re-find #":clock/now" (ex-message e)))
@@ -82,7 +82,7 @@
         e (try
             (compiler/check-source source {:allow #{}})
             nil
-            (catch clojure.lang.ExceptionInfo ex ex))]
+            (catch kerror/ExceptionInfo ex ex))]
     (is (some? e))
     (is (re-find #"capability policy denies required effects" (ex-message e)))
     (is (= #{:clock/now} (:operations (ex-data e))))
@@ -94,7 +94,7 @@
               (sema/analyze
                "(ns app (:capabilities #{:clock/now}))\n(defn main []\n  (clock/now 1 2))")
               nil
-              (catch clojure.lang.ExceptionInfo ex ex))]
+              (catch kerror/ExceptionInfo ex ex))]
       (is (re-find #"named operation" (ex-message e)))
       (is (= :clock/now (:operation (ex-data e))))
       (is (integer? (get-in (ex-data e) [:span :line])))))
@@ -102,7 +102,7 @@
     (let [e (try
               (sema/analyze "(defn main [] (not/a-capability 1))")
               nil
-              (catch clojure.lang.ExceptionInfo ex ex))]
+              (catch kerror/ExceptionInfo ex ex))]
       (is (re-find #"not a registered capability" (ex-message e)))
       (is (= :subset (:phase (ex-data e)))))))
 

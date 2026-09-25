@@ -1,5 +1,5 @@
 (ns kotoba.compiler.host-profile-test
-  (:require [clojure.edn :as edn]
+  (:require [kotoba.lang.error :as kerror] [clojure.edn :as edn]
             [kotoba.lang.text :as str]
             [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.host-profile :as host-profile]))
@@ -82,7 +82,7 @@
     (testing (name label)
       (let [error (try (host-profile/validate profile)
                        nil
-                       (catch clojure.lang.ExceptionInfo error error))]
+                       (catch kerror/ExceptionInfo error error))]
         (is error)
         (is (= :host-profile (:phase (ex-data error))))))))
 

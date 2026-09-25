@@ -28,7 +28,7 @@
   0078). A budget that cannot be raised past 2^31 and a budget that is silently
   discarded are both `the number the machine runs on is not the number anybody
   wrote`."
-  (:require [clojure.test :refer [deftest is]]
+  (:require [kotoba.lang.error :as kerror] [clojure.test :refer [deftest is]]
             [kotoba.artifact.core :as artifact]
             [kotoba.compiler.packaging.pe32plus :as pe32plus]
             [kotoba.kir :as ir])
@@ -92,7 +92,7 @@
                          :fuel-abi {:initial abi}
                          :code [0xc3]}))
                       nil
-                      (catch clojure.lang.ExceptionInfo e e))]
+                      (catch kerror/ExceptionInfo e e))]
       (is (some? thrown) (str label " must be refused"))
       (is (= :efi-fuel-bound-invalid (:reason (ex-data thrown)))
           (str label " must be refused for THIS reason, not another")))))

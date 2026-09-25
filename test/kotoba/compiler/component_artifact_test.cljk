@@ -1,5 +1,5 @@
 (ns kotoba.compiler.component-artifact-test
-  (:require [clojure.edn :as edn]
+  (:require [kotoba.lang.error :as kerror] [clojure.edn :as edn]
             [kotoba.io :as io]
             [clojure.java.shell :as shell]
             [clojure.test :refer [deftest is]]
@@ -24,7 +24,7 @@
 
 (deftest scalar-slice-and-unsupported-boundaries-are-explicit
   (is (true? (component/assert-scalar-slice! scalar-kir (wit/emit scalar-kir))))
-  (is (thrown-with-msg? clojure.lang.ExceptionInfo #"no qualified Canonical lowering"
+  (is (thrown-with-msg? kerror/ExceptionInfo #"no qualified Canonical lowering"
                         (component/assert-scalar-slice!
                          (assoc-in scalar-kir [:functions 0 :result] :string)
                          (wit/emit (assoc-in scalar-kir [:functions 0 :result] :string)))))
@@ -53,7 +53,7 @@
                          (assoc-in [:functions 0 :body]
                                    '(string-concat left (string-concat " / " right))))]
       (is (true? (component/assert-scalar-slice! concat-kir (wit/emit concat-kir)))))
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"no qualified Canonical lowering"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"no qualified Canonical lowering"
                           (component/assert-scalar-slice!
                            (assoc-in identity-kir [:functions 0 :body]
                                      '(string-replace-all value "a" "b"))
@@ -1045,7 +1045,7 @@
         (finally
           (io/delete-if-exists path)))))
   (is (thrown-with-msg?
-       clojure.lang.ExceptionInfo #"requires a host value"
+       kerror/ExceptionInfo #"requires a host value"
        (compiler/compile-component
         "(ns component.match-host-value (:export [choose]))
          (defn choose [value [:option :i64]] :i64
@@ -1284,7 +1284,7 @@
                                 :param-types [descriptor] :result :i64
                                 :body (list 'option-match descriptor 'value 0)}]}]
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"no qualified Canonical lowering"
+         kerror/ExceptionInfo #"no qualified Canonical lowering"
          (component/assert-scalar-slice! malformed (wit/emit malformed))))))
 
 (deftest named-scalar-record-identity-is-admitted
@@ -1303,7 +1303,7 @@
     ;; path -- see `string-and-keyword-field-record-identity-is-admitted`),
     ;; so a genuinely still-unadmitted field type (`[:vector :i64]`) is
     ;; needed to keep testing "an out-of-set field type is rejected".
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"no qualified Canonical lowering"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"no qualified Canonical lowering"
                           (component/assert-scalar-slice!
                            (assoc-in kir [:schemas :demo/point 2 0 1] [:vector :i64])
                            (wit/emit kir))))))
@@ -1335,7 +1335,7 @@
                       (assoc :schemas two-level-schemas)
                       (assoc-in [:functions 0 :param-types] [[:ref :demo/deep]])
                       (assoc-in [:functions 0 :result] [:ref :demo/deep]))]
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"no qualified Canonical lowering"
+      (is (thrown-with-msg? kerror/ExceptionInfo #"no qualified Canonical lowering"
                             (component/assert-scalar-slice! deep-kir (wit/emit deep-kir)))))
     ;; A nested field with a non-scalar (string) leaf remains fail-closed.
     (let [string-leaf-schemas
@@ -1346,11 +1346,11 @@
                         (assoc :schemas string-leaf-schemas)
                         (assoc-in [:functions 0 :param-types] [[:ref :demo/outer-str]])
                         (assoc-in [:functions 0 :result] [:ref :demo/outer-str]))]
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"no qualified Canonical lowering"
+      (is (thrown-with-msg? kerror/ExceptionInfo #"no qualified Canonical lowering"
                             (component/assert-scalar-slice! string-kir (wit/emit string-kir)))))
     ;; A nested field descriptor whose sealed schema identity has drifted
     ;; remains fail-closed.
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"no qualified Canonical lowering"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"no qualified Canonical lowering"
                           (component/assert-scalar-slice!
                            (assoc-in kir [:schemas :demo/inner 1] :demo/renamed)
                            (wit/emit kir))))))
@@ -1405,7 +1405,7 @@
       ;; this assertion actually checks. Mirrors the identical `(wit/emit
       ;; kir)` substitution in `named-scalar-record-identity-is-admitted`'s
       ;; own `[:vector :i64]` regression case.
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"no qualified Canonical lowering"
+      (is (thrown-with-msg? kerror/ExceptionInfo #"no qualified Canonical lowering"
                             (component/assert-scalar-slice! vector-kir (wit/emit kir)))))
     ;; A case wrapping a record that is itself one level nested (the ADR
     ;; 0051 shape) remains fail-closed: a variant case payload is bounded to
@@ -1419,7 +1419,7 @@
                         (assoc :schemas nested-case-schemas)
                         (assoc-in [:functions 0 :param-types] [[:ref :demo/status]])
                         (assoc-in [:functions 0 :result] [:ref :demo/status]))]
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"no qualified Canonical lowering"
+      (is (thrown-with-msg? kerror/ExceptionInfo #"no qualified Canonical lowering"
                             (component/assert-scalar-slice! nested-kir (wit/emit nested-kir)))))
     ;; A case wrapping another variant remains fail-closed: only scalars and
     ;; sealed all-scalar records are admitted case payloads in this slice.
@@ -1431,17 +1431,17 @@
                                (assoc :schemas variant-case-schemas)
                                (assoc-in [:functions 0 :param-types] [[:ref :demo/status]])
                                (assoc-in [:functions 0 :result] [:ref :demo/status]))]
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"no qualified Canonical lowering"
+      (is (thrown-with-msg? kerror/ExceptionInfo #"no qualified Canonical lowering"
                             (component/assert-scalar-slice! variant-case-kir
                                                             (wit/emit variant-case-kir)))))
     ;; A case schema whose sealed identity has drifted remains fail-closed.
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"no qualified Canonical lowering"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"no qualified Canonical lowering"
                           (component/assert-scalar-slice!
                            (assoc-in kir [:schemas :demo/entry 1] :demo/renamed)
                            (wit/emit kir))))
     ;; A computed variant body (anything other than a bare parameter
     ;; passthrough) remains fail-closed.
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"no qualified Canonical lowering"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"no qualified Canonical lowering"
                           (component/assert-scalar-slice!
                            (assoc-in kir [:functions 0 :body] '(record-get schemas value :found))
                            (wit/emit kir))))))
@@ -1507,7 +1507,7 @@
       ;; `wit/emit` uses the original `kir` here, not `out-of-set-kir`, for
       ;; the same `[:vector :i64]`-has-no-WIT-rendering reason documented in
       ;; `variant-with-record-and-scalar-cases-identity-is-admitted`.
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"no qualified Canonical lowering"
+      (is (thrown-with-msg? kerror/ExceptionInfo #"no qualified Canonical lowering"
                             (component/assert-scalar-slice! out-of-set-kir
                                                             (wit/emit kir)))))))
 
@@ -1633,7 +1633,7 @@
                               (assoc-in [:functions 0 :body]
                                         (list 'typed-cap-call 8 [:ref :demo/cap-nested-outcome]
                                               [:ref :demo/cap-nested-outcome] 'request)))]
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"no qualified Canonical lowering"
+      (is (thrown-with-msg? kerror/ExceptionInfo #"no qualified Canonical lowering"
                             (component/assert-scalar-slice! nested-case-kir
                                                             (wit/emit nested-case-kir)))))
     ;; A bare `:string`/`:keyword` case payload (not wrapped in a record)
@@ -1650,7 +1650,7 @@
                                    (assoc-in [:functions 0 :body]
                                              (list 'typed-cap-call 8 [:ref :demo/cap-label-outcome]
                                                    [:ref :demo/cap-label-outcome] 'request)))]
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"no qualified Canonical lowering"
+      (is (thrown-with-msg? kerror/ExceptionInfo #"no qualified Canonical lowering"
                             (component/assert-scalar-slice! bare-string-case-kir
                                                             (wit/emit bare-string-case-kir)))))
     ;; ADR 0058: different request/result variant identities are now
@@ -1763,19 +1763,19 @@
              (assoc-in [:functions 0 :body]
                        (list 'typed-cap-call 8 [:ref :demo/cap-nested-outcome]
                              [:ref :demo/other-outcome] 'request)))]
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"no qualified Canonical lowering"
+      (is (thrown-with-msg? kerror/ExceptionInfo #"no qualified Canonical lowering"
                             (component/assert-scalar-slice! nested-different-identity-kir
                                                             (wit/emit nested-different-identity-kir)))))
     ;; A computed capability request (anything other than a bare parameter
     ;; passthrough) remains fail-closed.
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"no qualified Canonical lowering"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"no qualified Canonical lowering"
                           (component/assert-scalar-slice!
                            (assoc-in kir [:functions 0 :body]
                                      (list 'typed-cap-call 8 descriptor descriptor
                                            (list 'typed-cap-call 8 descriptor descriptor 'request)))
                            (wit/emit kir))))
     ;; An unknown capability id remains fail-closed.
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"no qualified Canonical lowering"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"no qualified Canonical lowering"
                           (component/assert-scalar-slice!
                            (assoc-in kir [:functions 0 :body]
                                      (list 'typed-cap-call 999999 descriptor descriptor 'request))
@@ -1827,16 +1827,16 @@
                         (assoc :schemas nested-schemas)
                         (assoc-in [:functions 0 :param-types] [[:ref :demo/wrapper]])
                         (assoc-in [:functions 0 :result] [:ref :demo/wrapper]))]
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"no qualified Canonical lowering"
+      (is (thrown-with-msg? kerror/ExceptionInfo #"no qualified Canonical lowering"
                             (component/assert-scalar-slice! nested-kir (wit/emit nested-kir)))))
     ;; A record schema whose sealed identity has drifted remains fail-closed.
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"no qualified Canonical lowering"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"no qualified Canonical lowering"
                           (component/assert-scalar-slice!
                            (assoc-in kir [:schemas :demo/state-entry 1] :demo/renamed)
                            (wit/emit kir))))
     ;; A computed body (anything other than a bare parameter passthrough)
     ;; remains fail-closed.
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"no qualified Canonical lowering"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"no qualified Canonical lowering"
                           (component/assert-scalar-slice!
                            (assoc-in kir [:functions 0 :body]
                                      (list 'record-get schema 'value :key))
@@ -1851,7 +1851,7 @@
              :functions [{:name 'weight :params ['value] :param-types [descriptor]
                           :result :f64 :body (list 'record-get schema 'value :weight)}]}]
     (is (true? (component/assert-scalar-slice! kir (wit/emit kir))))
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"no qualified Canonical lowering"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"no qualified Canonical lowering"
                           (component/assert-scalar-slice!
                            (assoc-in kir [:functions 0 :body]
                                      (list 'record-get schema 'value :missing))
@@ -1874,7 +1874,7 @@
                  :body (list 'record-assoc schema 'point :weight 'weight)}])]
     (is (true? (component/assert-scalar-slice! construction (wit/emit construction))))
     (is (true? (component/assert-scalar-slice! update (wit/emit update))))
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"no qualified Canonical lowering"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"no qualified Canonical lowering"
                           (component/assert-scalar-slice!
                            (assoc-in update [:functions 0 :body]
                                      (list 'record-assoc schema 'point :weight 1))
@@ -1958,14 +1958,14 @@
   ;; Least privilege is enforced in both directions: an effect the policy does
   ;; not grant fails, and a grant nothing uses fails too.
   (is (thrown-with-msg?
-       clojure.lang.ExceptionInfo #"capability policy denies required effects"
+       kerror/ExceptionInfo #"capability policy denies required effects"
        (compiler/compile-component multi-capability-source
                                    (update multi-capability-policy :allow
                                            disj [:cap/call 11])
                                    {})))
   ;; The `:capabilities` clause has to match actual use, so an effect cannot be
   ;; added without also declaring it.
-  (is (thrown? clojure.lang.ExceptionInfo
+  (is (thrown? kerror/ExceptionInfo
                (compiler/compile-component
                 (str/replace multi-capability-source
                              ":state/transact :llm/generate :ui/commit :log/append"

@@ -25,7 +25,7 @@
   "The ex-data of the refusal, or `:admitted` if the gate let it through."
   [f target m]
   (try (do (f target m) :admitted)
-       (catch #?(:clj clojure.lang.ExceptionInfo :cljs :default) e
+       (catch :default e
          (ex-data e))))
 
 (deftest the-two-sets-and-the-target-are-what-both-hosts-see

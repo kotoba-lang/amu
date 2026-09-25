@@ -1,5 +1,5 @@
 (ns kotoba.compiler.record-protocol-static-dispatch-test
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [kotoba.lang.error :as kerror] [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]
             [kotoba.sema :as sema]
             [kotoba.compiler.test-profile :as test-profile]
@@ -116,7 +116,7 @@
 
 (deftest extend-protocol-default-never-becomes-a-dynamic-fallback
   (is (thrown-with-msg?
-       clojure.lang.ExceptionInfo #"statically known implemented record"
+       kerror/ExceptionInfo #"statically known implemented record"
        (sema/analyze
         "(defprotocol Value (value [this]))
          (defrecord Box [x])
@@ -141,7 +141,7 @@
     (is (= "Grace" (ir/execute (:kir (compile-fixture map-source)) 'main [])))
     (is (= "Lin" (ir/execute (:kir (compile-fixture protocol-source)) 'main [])))
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo
+         kerror/ExceptionInfo
          #"type mismatch"
          (compile-fixture
           "(defrecord Person [name :string])
@@ -248,7 +248,7 @@
                (map->Box (if-let [value p] {:x 1})))"
             #"binding conditional requires one binding and both"]]]
     (testing source
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo message
+      (is (thrown-with-msg? kerror/ExceptionInfo message
                             (sema/analyze source))))))
 
 (deftest wide-defrecord-keeps-direct-and-map-construction-data-shaped
@@ -324,7 +324,7 @@
                  (defn main [] 0)"))
               :demo.exact/Entry)))
   (is (thrown-with-msg?
-       clojure.lang.ExceptionInfo
+       kerror/ExceptionInfo
        #"forward declaration must match exactly"
        (sema/analyze
         "(ns demo.collision
@@ -374,5 +374,5 @@
              (defn main [] (value 1))"
             #"must not collide with declared functions"]]]
     (testing source
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo message
+      (is (thrown-with-msg? kerror/ExceptionInfo message
                             (sema/analyze source))))))

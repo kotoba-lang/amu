@@ -37,7 +37,7 @@
   what shows the [:option :i64] payload really crosses rather than being
   reconstructed guest-side, and the never-reached break is what shows
   this runs through typedCapCall at all."
-  (:require [kotoba.bytes :as kbytes] [clojure.edn :as edn]
+  (:require [kotoba.lang.error :as kerror] [kotoba.bytes :as kbytes] [clojure.edn :as edn]
             [kotoba.io :as io]
             [clojure.java.shell :as shell]
             [clojure.test :refer [deftest is testing]]
@@ -233,7 +233,7 @@
     (testing (str target)
       (let [thrown (try (compiler/compile-source guest-source target policy)
                         nil
-                        (catch clojure.lang.ExceptionInfo e e))]
+                        (catch kerror/ExceptionInfo e e))]
         (is (some? thrown) "native must not silently accept the kit ABI")
         (is (= :target (:phase (ex-data thrown))))
         (is (= target (:target (ex-data thrown))))))))

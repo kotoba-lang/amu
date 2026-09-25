@@ -2,7 +2,7 @@
   "Type-directed Option fallback syntax: authors write `(option-or value
   fallback)` while every downstream stage keeps the existing explicit
   `option-value-of` representation."
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [kotoba.lang.error :as kerror] [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]
             [kotoba.sema :as sema]
             [kotoba.kir :as ir]))
@@ -104,12 +104,12 @@
 (deftest rejects-non-options-and-payload-mismatches
   (testing "the type-directed surface fails closed before lowering"
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"option-or requires an option value"
+         kerror/ExceptionInfo #"option-or requires an option value"
          (sema/analyze
           "(ns bad (:export [f])) (defn f [x :i64] :i64 (option-or x 0))"))))
   (testing "the existing type checker still owns fallback compatibility"
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"expression type mismatch"
+         kerror/ExceptionInfo #"expression type mismatch"
          (sema/analyze
           "(ns bad (:export [f]))
            (defn f [x [:option :string]] :string (option-or x 0))")))))

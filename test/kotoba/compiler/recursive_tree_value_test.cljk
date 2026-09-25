@@ -12,7 +12,7 @@
   Complements the open `:document` path (slices 1–4) with a closed recursive
   schema path that design-system cutover can target once dual renderers
   qualify."
-  (:require [kotoba.bytes :as kbytes] [clojure.java.shell :as shell]
+  (:require [kotoba.lang.error :as kerror] [kotoba.bytes :as kbytes] [clojure.java.shell :as shell]
             [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]
             [kotoba.kir :as ir]
@@ -71,5 +71,5 @@
     (testing "schema-ref value admission rejects wrong nominal root"
       (let [other [:variant :other/node [[:leaf :i64]]]
             value (value/bounded-typed-value! other [other :leaf 1])]
-        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"schema ref"
+        (is (thrown-with-msg? kerror/ExceptionInfo #"schema ref"
                               (value/bounded-typed-value! [:ref :app/node] value)))))))

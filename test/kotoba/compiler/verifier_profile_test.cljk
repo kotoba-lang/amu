@@ -1,5 +1,5 @@
 (ns kotoba.compiler.verifier-profile-test
-  (:require [clojure.test :refer [deftest is]]
+  (:require [kotoba.lang.error :as kerror] [clojure.test :refer [deftest is]]
             [kotoba.artifact.core :as artifact]
             [kotoba.compiler.core :as compiler]
             [kotoba.verifier :as verifier]))
@@ -19,7 +19,7 @@
         program (assoc-in (:program kexe) [:functions 0 :body] body)
         hostile (replace-program kexe program)]
     (with-redefs [verifier/max-lowered-nodes 10]
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"lowering budget"
+      (is (thrown-with-msg? kerror/ExceptionInfo #"lowering budget"
                             (verifier/verify-artifact! hostile))))))
 
 (deftest verifier-independently-rejects-hidden-effects-and-invalid-ast
@@ -30,7 +30,7 @@
              [#"heap operation arity" '(pair 1)]
              [#"unbound symbol" 'attacker]]]
       (let [program (assoc-in (:program kexe) [:functions 0 :body] body)]
-        (is (thrown-with-msg? clojure.lang.ExceptionInfo message
+        (is (thrown-with-msg? kerror/ExceptionInfo message
                               (verifier/verify-artifact!
                                (replace-program kexe program))))))))
 
@@ -39,6 +39,6 @@
         function {:name 'six :params '[a b c d e f] :result :i64
                   :effects #{} :body 0}
         program (update (:program kexe) :functions conj function)]
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"function shape"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"function shape"
                           (verifier/verify-artifact!
                            (replace-program kexe program))))))

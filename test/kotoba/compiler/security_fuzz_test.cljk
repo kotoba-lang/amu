@@ -1,5 +1,5 @@
 (ns kotoba.compiler.security-fuzz-test
-  (:require [clojure.test :refer [deftest is]]
+  (:require [kotoba.lang.error :as kerror] [clojure.test :refer [deftest is]]
             [kotoba.artifact.core :as artifact]
             [kotoba.compiler.core :as compiler]
             [kotoba.compiler.receipt :as receipt]
@@ -105,15 +105,15 @@
       (let [domain (.nextInt rng 3)
             assertion-message (str "seed=" seed " case=" case-id " domain=" domain)]
         (case domain
-          0 (is (thrown? clojure.lang.ExceptionInfo
+          0 (is (thrown? kerror/ExceptionInfo
                          (verifier/verify-artifact!
                           (mutate-artifact kexe (.nextInt rng 27))))
                 assertion-message)
-          1 (is (thrown? clojure.lang.ExceptionInfo
+          1 (is (thrown? kerror/ExceptionInfo
                          (signing/verify
                           (mutate-envelope envelope (.nextInt rng 7)) trust 1500))
                 assertion-message)
-          2 (is (thrown? clojure.lang.ExceptionInfo
+          2 (is (thrown? kerror/ExceptionInfo
                          (receipt/verify
                           (mutate-receipt run-receipt (.nextInt rng 8))
                           envelope trust policy input output {:now 1500 :parent nil}))

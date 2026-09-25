@@ -1,5 +1,5 @@
 (ns kotoba.compiler.typed-value-conformance-test
-  (:require [kotoba.bytes :as kbytes] [clojure.edn :as edn]
+  (:require [kotoba.lang.error :as kerror] [kotoba.bytes :as kbytes] [clojure.edn :as edn]
             [kotoba.io :as io]
             [clojure.java.shell :as shell]
             [clojure.test :refer [deftest is testing]]
@@ -47,12 +47,12 @@
       (is (contains? #{nil :runtime} phase))
       (if phase
         (let [compiled (compiler/compile-source source :js-kotoba-v1)]
-          (is (thrown? clojure.lang.ExceptionInfo
+          (is (thrown? kerror/ExceptionInfo
                        (ir/execute (:kir compiled) 'main [])))
           (is (not (zero? (:exit (web-result compiled)))))
           (is (not (zero? (:exit (wasm-result
                                   (compiler/compile-source source :wasm32-kotoba-v1)))))))
-        (is (thrown? clojure.lang.ExceptionInfo
+        (is (thrown? kerror/ExceptionInfo
                      (compiler/check-source source)))))))
 
 ;; ---------------------------------------------------------------------------
@@ -83,11 +83,11 @@
 (deftest a-constant-out-of-range-list-index-is-refused-while-folding
   (doseq [index [3 -1 100]]
     (testing (str "index " index)
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"list-index-out-of-bounds"
+      (is (thrown-with-msg? kerror/ExceptionInfo #"list-index-out-of-bounds"
                             (compiler/compile-source (constant-list-nth index)
                                                      :js-kotoba-v1))))
     (testing (str "and on the wasm route too, index " index)
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"list-index-out-of-bounds"
+      (is (thrown-with-msg? kerror/ExceptionInfo #"list-index-out-of-bounds"
                             (compiler/compile-source (constant-list-nth index)
                                                      :wasm32-kotoba-v1)))))
   (testing "an in-range constant index folds to the item, so the refusal is about the RANGE"

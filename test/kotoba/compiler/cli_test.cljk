@@ -1,5 +1,5 @@
 (ns kotoba.compiler.cli-test
-  (:require [kotoba.io :as kio] [kotoba.compiler.atomic-output :as atomic-output]
+  (:require [kotoba.lang.error :as kerror] [kotoba.io :as kio] [kotoba.compiler.atomic-output :as atomic-output]
             [clojure.edn :as edn]
             [clojure.java.io :as io]
             [clojure.java.shell :as shell]
@@ -61,7 +61,7 @@
                 (sema/analyze
                  "(defn main []\n  (forbidden-call 1))")
                 nil
-                (catch clojure.lang.ExceptionInfo error error))
+                (catch kerror/ExceptionInfo error error))
         report (cli/error-report error "program.cljk")]
     ;; T3.1: reject! sites use stable :kotoba.error/* codes (default :subset-reject).
     ;; kotoba-sema dda80b3 (pinned 2026-09-07 via af8cc780) split the

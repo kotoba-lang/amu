@@ -1,5 +1,5 @@
 (ns kotoba.compiler.reference-runtime-test
-  (:require [clojure.test :refer [deftest is]]
+  (:require [kotoba.lang.error :as kerror] [clojure.test :refer [deftest is]]
             [kotoba.compiler.core :as compiler]
             [kotoba.kir :as ir]
             [kotoba.compiler.reference-runtime :as runtime]))
@@ -45,16 +45,16 @@
     (is (= "hello!" ((:invoke host) 'invoke ["hello"])))))
 
 (deftest provider-contracts-are-closed-and-deny-by-default
-  (is (thrown-with-msg? clojure.lang.ExceptionInfo #"keyed by capability ids"
+  (is (thrown-with-msg? kerror/ExceptionInfo #"keyed by capability ids"
                         (runtime/instantiate (kir) {:providers {:http/post {}}})))
-  (is (thrown-with-msg? clojure.lang.ExceptionInfo #"does not match"
+  (is (thrown-with-msg? kerror/ExceptionInfo #"does not match"
                         (runtime/instantiate
                          (kir)
                          {:allow #{4}
                           :providers {4 {:request-type :i64 :result-type :string
                                          :invoke identity}}})))
   (let [host (runtime/instantiate (kir))]
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"capability denied"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"capability denied"
                           ((:invoke host) 'invoke ["hello"])))))
 
 (deftest lisp-eval-is-the-exact-typed-code-eval-provider
@@ -66,7 +66,7 @@
         request ["map" []]]
     (is (= '(typed-cap-call 30 :document :i64 request) body))
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"capability denied"
+         kerror/ExceptionInfo #"capability denied"
          ((:invoke (runtime/instantiate kir)) 'run [request])))
     (let [host (runtime/instantiate
                 kir {:allow #{30}
@@ -75,7 +75,7 @@
                           :invoke (fn [_] 42)}}})]
       (is (= 42 ((:invoke host) 'run [request]))))
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"does not match"
+         kerror/ExceptionInfo #"does not match"
          (runtime/instantiate
           kir {:allow #{30}
                :providers
@@ -114,7 +114,7 @@
                               :invoke (fn [request]
                                         (reset! invoked? true)
                                         request)}}})]
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"delegated authority"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"delegated authority"
                           ((:invoke host) 'invoke ["hello"])))
     (is (false? @invoked?))))
 
@@ -126,5 +126,5 @@
                :providers {4 {:request-type :string :result-type :string
                               :scope (constantly scope)
                               :invoke identity}}})]
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"grant rejected"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"grant rejected"
                           ((:invoke host) 'invoke ["hello"])))))

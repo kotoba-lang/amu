@@ -1,5 +1,5 @@
 (ns kotoba.compiler.coverage-test
-  (:require [kotoba.bytes :as kbytes] [kotoba.io :as kio] [clojure.test :refer [deftest is testing]]
+  (:require [kotoba.lang.error :as kerror] [kotoba.bytes :as kbytes] [kotoba.io :as kio] [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.coverage :as coverage]))
 
 (def digest (apply str (repeat 64 "a")))
@@ -39,22 +39,22 @@
            ["invalid digest" (assoc-in base [:dataset :sha256] "a")]
            ["invalid period" (assoc-in base [:period :from] "2026-13")]]]
     (testing label
-      (is (thrown? clojure.lang.ExceptionInfo (coverage/report malformed))))))
+      (is (thrown? kerror/ExceptionInfo (coverage/report malformed))))))
 
 (deftest raw-dataset-bytes-are-bound-to-the-manifest
   (let [path (kio/temp-file "kotoba-coverage" ".csv")]
     (try
       (kio/write-bytes path (kbytes/utf8-bytes "fixture"))
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"digest mismatch"
+      (is (thrown-with-msg? kerror/ExceptionInfo #"digest mismatch"
                             (coverage/verify-dataset! base (str path))))
       (finally (kio/delete-if-exists path)))))
 
 (deftest release-platforms-require-matching-verified-evidence
-  (is (thrown-with-msg? clojure.lang.ExceptionInfo #"missing or mismatched"
+  (is (thrown-with-msg? kerror/ExceptionInfo #"missing or mismatched"
                         (coverage/report base)))
-  (is (thrown-with-msg? clojure.lang.ExceptionInfo #"missing or mismatched"
+  (is (thrown-with-msg? kerror/ExceptionInfo #"missing or mismatched"
                         (coverage/report base [{:digest evidence :platform :b
                                                 :paths #{:native}}])))
-  (is (thrown-with-msg? clojure.lang.ExceptionInfo #"missing or mismatched"
+  (is (thrown-with-msg? kerror/ExceptionInfo #"missing or mismatched"
                         (coverage/report base [{:digest evidence :platform :a
                                                 :paths #{:wasm}}]))))

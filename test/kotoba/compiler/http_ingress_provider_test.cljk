@@ -1,7 +1,7 @@
 (ns kotoba.compiler.http-ingress-provider-test
   "W5 family-3 — HTTP ingress accept/reply dual-runtime vectors
   (first slice + multi-inflight queue depth)."
-  (:require [clojure.test :refer [deftest is]]
+  (:require [kotoba.lang.error :as kerror] [clojure.test :refer [deftest is]]
             [kotoba.compiler.core :as compiler]
             [kotoba.kir :as ir]
             [provider.http-ingress :as ingress]
@@ -56,17 +56,17 @@
 (deftest pairing-and-bounds-fail-closed
   (let [{:keys [kit runtime]} (hosted)]
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"reply requires a prior accept"
+         kerror/ExceptionInfo #"reply requires a prior accept"
          ((:invoke runtime) 'reply
           [[ingress/reply-request-type 200
             [ingress/header-set-type []] ""]])))
     ((:enqueue! kit) :http/get "/a" {} "")
     ((:invoke runtime) 'accept [[ingress/accept-request-type 0]])
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"reply before next accept"
+         kerror/ExceptionInfo #"reply before next accept"
          ((:invoke runtime) 'accept [[ingress/accept-request-type 0]])))
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"status is outside"
+         kerror/ExceptionInfo #"status is outside"
          ((:invoke runtime) 'reply
           [[ingress/reply-request-type 99
             [ingress/header-set-type []] ""]])))
@@ -77,12 +77,12 @@
 (deftest enqueue-bounds-fail-before-guest
   (let [{:keys [kit]} (hosted)]
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"path must be non-empty"
+         kerror/ExceptionInfo #"path must be non-empty"
          ((:enqueue! kit) :http/get "" {} "")))
     (dotimes [i ingress/default-max-queue-depth]
       ((:enqueue! kit) :http/get (str "/q" i) {} ""))
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"queue is full"
+         kerror/ExceptionInfo #"queue is full"
          ((:enqueue! kit) :http/get "/overflow" {} "")))))
 
 (deftest multi-inflight-queue-is-fifo-and-allows-host-buffering
@@ -101,7 +101,7 @@
     ((:enqueue! kit) :http/post "/3" {} "c")
     (is (= 3 (:queued ((:snapshot kit)))))
     ;; host may keep buffering path while guest has not accepted yet
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"queue is full"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"queue is full"
                           ((:enqueue! kit) :http/get "/4" {} "")))
     (is (= [ingress/accept-result-type true
             [ingress/incoming-request-type :http/get "/1"
@@ -129,10 +129,10 @@
                              source {:allow #{[:cap/call 17] [:cap/call 18]}})))
         runtime (runtime/instantiate kir)]
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"capability denied"
+         kerror/ExceptionInfo #"capability denied"
          ((:invoke runtime) 'accept [[ingress/accept-request-type 0]])))
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"capability denied"
+         kerror/ExceptionInfo #"capability denied"
          ((:invoke runtime) 'reply
           [[ingress/reply-request-type 200
             [ingress/header-set-type []] ""]])))))

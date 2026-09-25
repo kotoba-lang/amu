@@ -1,5 +1,5 @@
 (ns kotoba.compiler.ios-aot-test
-  (:require [clojure.test :refer [deftest is]]
+  (:require [kotoba.lang.error :as kerror] [clojure.test :refer [deftest is]]
             [kotoba.artifact.core :as artifact]
             [kotoba.compiler.core :as compiler]
             [kotoba.compiler.ios-aot :as ios-aot]))
@@ -29,17 +29,17 @@
     (is (= :ios-simulator
            (get-in (ios-aot/package ios 'main {:platform :ios-simulator})
                    [:manifest :platform])))
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"platform is unsupported"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"platform is unsupported"
                           (ios-aot/package ios 'main {:platform :invented})))))
 
 (deftest rejects-non-ios-and-substituted-artifacts
   (let [android (:artifact (compiler/compile-source source :aarch64-android-kotoba-v1))
         ios (:artifact (compiler/compile-source source :aarch64-ios-kotoba-v1))]
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"explicit iOS target"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"explicit iOS target"
                           (ios-aot/package android 'main)))
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"target profile"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"target profile"
                           (ios-aot/package
                            (artifact/seal
                             (assoc ios :target-profile (:target-profile android))) 'main)))
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"not exported"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"not exported"
                           (ios-aot/package ios 'missing)))))

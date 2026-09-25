@@ -24,7 +24,7 @@
                        ["node:path" :as path]])))
 
 (defn- trap [f]
-  (try (f) nil (catch #?(:clj clojure.lang.ExceptionInfo :cljs :default) error error)))
+  (try (f) nil (catch :default error error)))
 
 (defn- printed [value]
   (pr-str (artifact/edn-safe value)))

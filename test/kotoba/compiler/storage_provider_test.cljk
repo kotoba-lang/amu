@@ -1,5 +1,5 @@
 (ns kotoba.compiler.storage-provider-test
-  (:require [clojure.test :refer [deftest is]]
+  (:require [kotoba.lang.error :as kerror] [clojure.test :refer [deftest is]]
             [kotoba.compiler.core :as compiler]
             [kotoba.kir :as ir]
             [provider.storage :as storage]
@@ -57,7 +57,7 @@
 ;; the message is prose the provider reworded to "storage request denied".
 (defn- denial-code [f]
   (try (f) nil
-       (catch clojure.lang.ExceptionInfo e (:code (ex-data e)))))
+       (catch kerror/ExceptionInfo e (:code (ex-data e)))))
 
 (deftest invalid-conditional-versions-fail-before-the-transport
   (let [called? (atom false)
@@ -75,7 +75,7 @@
         runtime (runtime/instantiate kir)
         called? (atom false)]
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"capability denied"
+         kerror/ExceptionInfo #"capability denied"
          ((:invoke runtime) 'transact
           [[storage/request-type :get [storage/get-type :profile/name]]])))
     (is (false? @called?))))
