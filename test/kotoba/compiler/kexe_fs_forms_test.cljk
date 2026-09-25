@@ -27,22 +27,21 @@
 
 (deftest unanswered-forms-are-found-in-the-code-bytes
   (let [pad (vec (repeat 5 0))]
-    (is (= [:fsync] (forms/unanswered-in (into pad (ascii "/tmp/xFSYNC_SEP")))))
-    (is (= [:make-temp-dir :stat-nofollow]
-           (forms/unanswered-in (vec (concat (ascii "NOFOLLOW_SEP") pad (ascii "MKTEMP_SEP"))))))
+    (is (= [:owner] (forms/unanswered-in (into pad (ascii "/tmp/xOWNER_SEP")))))
     (testing "a token that ends the code exactly is still found (the boundary)"
-      (is (= [:fsync] (forms/unanswered-in (ascii "FSYNC_SEP")))))
+      (is (= [:owner] (forms/unanswered-in (ascii "OWNER_SEP")))))
     (testing "one byte short is not the token"
-      (is (= [] (forms/unanswered-in (ascii "FSYNC_SE")))))
-    (testing "the forms the loader answers are never refused"
-      (is (= [] (forms/unanswered-in (vec (mapcat ascii ["STAT_SEP" "APPEND_SEP" "RANGE_SEP" "CHMOD_SEP"])))))
+      (is (= [] (forms/unanswered-in (ascii "OWNER_SE")))))
+    (testing "the forms the loader answers are never refused (2026-09-25: fsync, make-temp-dir, stat-nofollow too)"
+      (is (= [] (forms/unanswered-in (vec (mapcat ascii ["STAT_SEP" "APPEND_SEP" "RANGE_SEP" "CHMOD_SEP"
+                                                          "FSYNC_SEP" "MKTEMP_SEP" "NOFOLLOW_SEP"])))))
       (is (= [] (forms/unanswered-in []))))))
 
 (deftest a-kexe-loader-target-is-refused-by-name-a-static-one-is-not
-  (let [code (ascii "xFSYNC_SEP")]
+  (let [code (ascii "xOWNER_SEP")]
     (let [d (reason-of #(forms/refuse-unanswered! :aarch64-linux-kotoba-v1 code))]
       (is (= :fs-form-not-answered-by-kexe-loader (:reason d)))
-      (is (= [:fsync] (:forms d)))
+      (is (= [:owner] (:forms d)))
       (is (= :target (:phase d))))
     (is (= :fs-form-not-answered-by-kexe-loader
            (:reason (reason-of #(forms/refuse-unanswered! :x86_64-macos-kotoba-v1 code)))))

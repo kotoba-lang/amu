@@ -3,9 +3,11 @@
   at compile time (superproject adr-2609251400 C3, 2026-09-25).
 
   kotoba-lang `lang/capability-catalog.edn` lists the request forms of wire 35
-  (`:fs/app-data :forms`) and which native host answers each. Three are
-  `:status :proposed` -- fsync, make-temp-dir, stat-nofollow: the loader-less
-  Linux static ELF answers them, tools/kexe_loader.c does not. The loader
+  (`:fs/app-data :forms`) and which native host answers each. The three this
+  was written for -- fsync, make-temp-dir, stat-nofollow -- the loader
+  answers since the same day, from the compiled decisions the static image
+  runs, and they are no longer refused. OWNER (proposed by S5, answered only
+  by amu's nbb handler) is. The loader
   tells forms apart by searching the request for each token it knows, so a
   request carrying a token it does not know reads as the bare READ form, of a
   path that ends in the token: a SIGILL in every case measured, and a read of
@@ -39,9 +41,9 @@
    :unlink {:token "UNLINK_SEP" :kexe-loader? true}
    :rmdir {:token "RMDIR_SEP" :kexe-loader? true}
    :rename {:token "RENAME_SEP" :kexe-loader? true}
-   :fsync {:token "FSYNC_SEP" :kexe-loader? false}
-   :make-temp-dir {:token "MKTEMP_SEP" :kexe-loader? false}
-   :stat-nofollow {:token "NOFOLLOW_SEP" :kexe-loader? false}
+   :fsync {:token "FSYNC_SEP" :kexe-loader? true}
+   :make-temp-dir {:token "MKTEMP_SEP" :kexe-loader? true}
+   :stat-nofollow {:token "NOFOLLOW_SEP" :kexe-loader? true}
    :owner {:token "OWNER_SEP" :kexe-loader? false}})
 
 (def loader-targets
@@ -83,8 +85,7 @@
       (throw (ex-info (str "the kexe loader does not answer the :fs/app-data form"
                            (when (next found) "s") " "
                            (apply str (interpose ", " (map str found)))
-                           " (lang/capability-catalog.edn :status :proposed); the "
-                           "loader-less x86_64-linux-static / aarch64-linux-static "
-                           "targets do. Nothing was written.")
+                           " (lang/capability-catalog.edn :status :proposed). "
+                           "Nothing was written.")
                       {:phase :target :reason :fs-form-not-answered-by-kexe-loader
                        :target target :forms (vec found)})))))

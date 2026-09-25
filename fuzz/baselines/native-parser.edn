@@ -94,7 +94,17 @@
 ;; openat2 / mkdirat / unlinkat / renameat. The argv/handle parser the floors
 ;; measure is untouched. Floors carried forward NOT re-measured (no libFuzzer
 ;; runtime on the machine that made this change); the Linux CI job measures.
+;; Advanced 2026-09-25 for C3 in the loader (superproject adr-2609251400): the
+;; capability handlers' compiled decisions embedded beside C1's and asked for
+;; the :fs/app-data form, RANGE and CHMOD; new providers for :entropy/draw,
+;; :process/spawn (a supervisor-side broker, like wire 42's) and the
+;; fsync / make-temp-dir / stat-nofollow forms; seccomp admits fchmod, fsync,
+;; getrandom and, for the spawn broker, read. The argv/handle parser the
+;; floors measure is untouched. The deterministic-sanitized arm (ASan +
+;; UBSan, 20,000 cases) passed on macOS arm64. Floors carried forward NOT
+;; re-measured (no libFuzzer runtime on the machine that made this change);
+;; the Linux CI job measures.
 {:format :kotoba.fuzz-baseline/v2
- :loader-source-sha256 "04ef5b9e08266c8347aeeb2e1871512e04213a3ede9dba8b31cdb7a0fe14e8ea"
+ :loader-source-sha256 "1a4f2d950e7967137e5601e7a89d0d27af2a1dfacbd479431de2920e554c698c"
  :profiles {:x64 {:min-cov 60 :min-features 100 :min-corpus 20}
             :arm64 {:min-cov 60 :min-features 100 :min-corpus 18}}}

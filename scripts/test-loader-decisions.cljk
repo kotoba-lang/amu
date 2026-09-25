@@ -8,8 +8,8 @@
      and every name there exists. A new function that is not classified
      fails here. Prints the per-class line counts, before (the loader at
      OLD-REV) and after.
-  2. REGION. The KEXE-DECISIONS-GENERATED region names the sha256 of both
-     Kotoba sources; a source edited without regenerating fails here.
+  2. REGION. The KEXE-DECISIONS-GENERATED region names the sha256 of all
+     three Kotoba sources (the handlers' since 2026-09-25); a source edited without regenerating fails here.
      `--full` also regenerates the region and compares it byte for byte
      (scripts/gen-loader-decisions.cljk --check; compiles, ~2 minutes).
   3. DIFFERENTIAL. The decision functions of the loader at OLD-REV (the last
@@ -161,7 +161,8 @@
 (defn check-region! []
   (let [text (lib/read-text loader-path)]
     (doseq [[label file] [["tools/kexe_loader_decisions.kotoba sha256 " "kexe_loader_decisions.kotoba"]
-                          ["tools/kexe_loader_names.kotoba     sha256 " "kexe_loader_names.kotoba"]]]
+                          ["tools/kexe_loader_names.kotoba     sha256 " "kexe_loader_names.kotoba"]
+                          ["tools/linux_static_handlers.kotoba sha256 " "linux_static_handlers.kotoba"]]]
       (let [sha (lib/sha256 (lib/join lib/root "tools" file))]
         (when-not (str/includes? text (str label sha))
           (fail! (str file " changed since the region was generated -- run scripts/gen-loader-decisions.cljk")))))
@@ -381,7 +382,11 @@ int main(void) {
   (str/join "\t" ["rec" (pick ["0" "1" "2" "31" "32" "33" (small 40) (pick u64-edges)])
                   (str (rand-int* 36))]))
 
-(def safe-string-ids ["0" "1" "2" "3" "4" "5" "6" "7" "8" "11" "12" "13" "14" "15" "16" "20" "24" "33" "34" "35" "36" "38" "40" "42" "43" "63" "64" "100" "200" "255"])
+;; Not 20 or 23: since 2026-09-25 the loader answers :process/spawn and
+;; :entropy/draw (the handlers' decisions) where the old loader answered the
+;; identity stub, so the two are measured by scripts/test-linux-static-handlers.cljk
+;; instead of being expected to agree here.
+(def safe-string-ids ["0" "1" "2" "3" "4" "5" "6" "7" "8" "11" "12" "13" "14" "15" "16" "24" "33" "34" "35" "36" "38" "40" "42" "43" "63" "64" "100" "200" "255"])
 (defn tcall-case []
   (let [kind (pick ["1" "1" "1" "2" "3" "4" "5" "6" "7" "0" "8" "18446744073709551615"])
         res (if (zero? (rand-int* 5)) (pick ["1" "2" "3" "4" "5"]) kind)

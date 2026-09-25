@@ -13,6 +13,7 @@
             [kotoba.compiler.limits :as limits]
             [kotoba.compiler.target-names :as target-names]
             [kotoba.compiler.nbb.cli :as native-cli]
+            [kotoba.compiler.nbb.native-package]
             [kotoba.kir.target :as target-profile]
             [kotoba.native.linux-static :as linux-static]
             [kotoba.compiler.linux-static-handlers :as static-handlers]
@@ -77,3 +78,18 @@
                    :typed-cap-call))
     (is (= #{} (set (keys (get-in limits/table [:profile/native :static-elf :refused-capabilities :value])))))
     (is (= 126 (get-in limits/table [:profile/native :static-elf :exit-codes :value :capability/refused])))))
+
+(deftest the-spawn-grant-is-top-level-and-the-older-spelling-is-read
+  ;; superproject adr-2609251400 C3 (2026-09-25): the :process/spawn grant is
+  ;; target-neutral (kotoba-lang lang/capability-catalog.edn :process/spawn
+  ;; :grant), so the compile policy spells it at the top level; the
+  ;; `:linux-static :spawn` spelling it had for one day is still read, and
+  ;; both at once is refused by name rather than one silently winning.
+  (let [spawn-grant @#'kotoba.compiler.nbb.native-package/spawn-grant
+        g {:programs ["/bin/echo"] :path-lookup false :env ["HOME"]}
+        reason (fn [policy] (try (spawn-grant policy) nil
+                                 (catch #?(:clj Exception :cljs :default) e (:reason (ex-data e)))))]
+    (is (= g (spawn-grant {:spawn g})))
+    (is (= g (spawn-grant {:linux-static {:spawn g}})))
+    (is (nil? (spawn-grant {:linux-static {:fs-scope "/tmp"}})))
+    (is (= :policy/spawn-grant-spelled-twice (reason {:spawn g :linux-static {:spawn g}})))))

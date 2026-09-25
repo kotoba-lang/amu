@@ -21,13 +21,16 @@
 ;; kexe_loader_decisions.kotoba compiled as well and asks its `decide` op 8
 ;; (scope-admitted) and `cap-admitted`, the same code the loader runs.
 ;;
-;; The answers reproduce the kexe loader's observable behaviour for the same
-;; request (tools/kexe_loader.c, the provider named beside each op), so a
-;; program and a grant give the same stdout, stderr and exit status through
-;; either path. Where the two differ -- a form or capability the loader
-;; does not answer (process/spawn and entropy/draw are its identity stub;
-;; fsync, make-temp-dir and stat-nofollow it reads as a path) -- the op says
-;; so.
+;; The kexe loader runs THIS module too (2026-09-25): tools/kexe_loader.c
+;; embeds its compiled code in the generated region beside C1's and calls
+;; `decide` for every handler question it shares with the image -- the
+;; :fs/app-data form (op 1), RANGE and CHMOD (ops 20-25), make-temp-dir,
+;; fsync and stat-nofollow, :entropy/draw and :process/spawn (ops 26-47).
+;; scripts/gen-linux-static-handlers.cljk refuses to write unless the bytes
+;; the image carries are the bytes the loader embeds, so a program and a
+;; grant give the same stdout, stderr and exit status through either path
+;; from ONE source of decisions. Ops 44-47 are asked by the loader only (the
+;; image seals its grant at packaging and names its refusals there).
 
 ;; ---------------------------------------------------------------------
 ;; op 0: which static handler answers C1's provider number (decide op 0 of
@@ -38,10 +41,9 @@
 ;;   4 :cli/args 38        5 :env/read 33         6 :clock/now 7 (text)
 ;;   7 :fs/app-data 35     8 :fs/browse 34        9 :entropy/draw 23
 ;;  10 :process/spawn 20
-;; C1 answers provider 0 (the qualification host's identity stub) for wire 23
-;; and wire 20 -- the kexe loader has no provider for either -- so those two
-;; are told apart by the wire id, here, and C1 is left byte-identical to the
-;; code kexe_loader.c embeds.
+;; C1 answers provider 0 (no provider of its own) for wire 23 and wire 20, so
+;; those two are told apart by the wire id, here -- by the image and by the
+;; kexe loader alike -- and C1's code is left as it was.
 (defn- handler-for [provider id]
   (cond
     (= provider 13) 1
@@ -427,7 +429,7 @@
 ;; :process/spawn 20: "<program>" or "<program>ARG_SEP<arg1>ARG_SEP<arg2>..."
 ;; -> "<exit>\n<stdout>" (the answer shape the kbb js host gives wire 20 and
 ;; lib/kbb/proc.kotoba decodes). The program is looked up in the list the
-;; compile policy sealed into the image (`:linux-static :spawn :programs`,
+;; compile policy sealed into the image (`:spawn :programs`,
 ;; canonical absolute paths); the guest's spelling is argv[0], the SEALED
 ;; spelling is what execve runs.
 ;;
@@ -462,7 +464,7 @@
   (if (= has-slash 1) 1 (if (= lookup 1) 1 2)))
 
 ;; op 36: an environment entry passes to the child when its name is one the
-;; grant names (`:linux-static :spawn :env`) and fewer than 64 have passed.
+;; grant names (`:spawn :env`) and fewer than 64 have passed.
 ;; Everything else -- the parent's whole environment by default -- is
 ;; withheld.
 (defn- spawn-env-pass [matched count]
@@ -523,6 +525,58 @@
     (= which 1) 1
     :else 0))
 
+;; ---------------------------------------------------------------------
+;; The :process/spawn GRANT as the kexe loader receives it (kotoba-lang
+;; lang/capability-catalog.edn :process/spawn :grant). The static image's
+;; packager checks the same rules when it seals the grant (kotoba-native
+;; `kotoba.native.linux-static` spawn-grant); the kexe loader is handed the
+;; grant at run time by its host and asks these before anything runs.
+;;
+;; op 44: one entry. KIND 0 a program: SLASH-FIRST 1, BAD 0 (no empty, "."
+;; or ".." segment and no trailing "/", as the loader measured it), LENGTH
+;; 2..4095 (never "/" alone). KIND 1 an environment name: BAD 0 (no "=" and
+;; no NUL), LENGTH 1..255. 1 admitted, 0 the grant is malformed.
+(defn- spawn-grant-entry [kind slash-first bad length]
+  (cond
+    (= bad 1) 0
+    (= kind 0) (cond (= slash-first 0) 0 (< length 2) 0 (> length 4095) 0 :else 1)
+    (= kind 1) (cond (< length 1) 0 (> length 255) 0 :else 1)
+    :else 0))
+
+;; op 45: the grant as a whole: 1..16 programs (a grant naming none has no
+;; authority to state), 0..16 names, and -- when LOOKUP is 1 -- programs
+;; whose last segments are distinct (BASES-DISTINCT 1), so a bare name finds
+;; exactly one.
+(defn- spawn-grant-counts [programs names lookup bases-distinct]
+  (cond
+    (< programs 1) 0
+    (> programs 16) 0
+    (< names 0) 0
+    (> names 16) 0
+    (= lookup 1) bases-distinct
+    :else 1))
+
+;; op 46: the exit status of a capability refused BY NAME
+;; (:spawn/..., :entropy/unavailable) -- kotoba-lang lang/limits.edn
+;; :static-elf :exit-codes :capability/refused, which the static image seals
+;; from the same table.
+(defn- refused-exit [] 126)
+
+;; op 47: which named refusal a spawn outcome is, as the index into the
+;; catalog's :process/spawn :refusals :names (and the loader's generated
+;; trap lines, in that order): SOURCE 0 op 33's 0 (argv budget), 1 op 35's
+;; answer (1 not granted, 2 lookup denied), 2 the output budget, 3 the
+;; deadline, 4 op 42's answer (1 exec failed, 2 isolation unavailable, 3
+;; setup failed). -1 for anything else (a plain trap).
+(defn- spawn-refusal-index [source code]
+  (cond
+    (= source 0) 0
+    (= source 1) (if (= code 1) 1 (if (= code 2) 2 -1))
+    (= source 2) 3
+    (= source 3) 4
+    (= source 4) (cond (= code 1) 5 (= code 2) 6 (= code 3) 7 :else -1)
+    :else -1))
+
 (defn decide [op a b c d]
   (cond
     (= op 0) (handler-for a b)
@@ -569,4 +623,8 @@
     (= op 41) (ns-part a b)
     (= op 42) (spawn-child-failure a)
     (= op 43) (root-spelling-admitted a)
+    (= op 44) (spawn-grant-entry a b c d)
+    (= op 45) (spawn-grant-counts a b c d)
+    (= op 46) (refused-exit)
+    (= op 47) (spawn-refusal-index a b)
     :else -1))

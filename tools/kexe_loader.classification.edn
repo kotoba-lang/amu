@@ -53,9 +53,8 @@
   "checked_string_scan_blank" {:class :mechanism}
   "checked_string_skip_blank" {:class :mechanism}
   "checked_string_substring" {:class :mechanism}
-  "checked_typed_cap_call" {:class :mixed :before :decision
-                            :moved "allow-list (b cap-admitted), kind agreement (b op 1), the wire id x kind -> provider table (b op 0)"
-                            :left "the :fs/app-data request-form dispatch by ASCII token (WRITE_SEP before APPEND_SEP before EXISTS_SEP ...)"}
+  "checked_typed_cap_call" {:class :mechanism :before :decision
+                            :moved "allow-list (b cap-admitted), kind agreement (b op 1), the wire id x kind -> provider table (b op 0); the :fs/app-data request-form dispatch (b handlers op 1, fs-form) and the wire 20 / 23 routing (b handlers op 0, handler-for), 2026-09-25"}
   "checked_vector_alloc" {:class :mechanism}
   "checked_vector_assoc" {:class :mechanism}
   "checked_vector_assoc_in_place" {:class :mechanism}
@@ -83,11 +82,15 @@
   "fault_handler" {:class :mixed :before :mixed
                    :moved "the :host/stack-exhausted text (a)"
                    :left "the 1 MiB stack floor it tests is install_limits' RLIMIT_STACK, spelled twice"}
-  "fs_app_data_chmod_provider" {:class :mixed :left "request grammar (CHMOD_SEP, octal mode)"}
+  "fs_app_data_chmod_provider" {:class :mixed
+                                :moved "the digit count, the octal digit, the permission bits and what an errno answers (b handlers ops 24, 23, 25, 12), 2026-09-25"
+                                :left "CHMOD_SEP occurs once (kexe_single_token; the static image asks handlers op 17)"}
   "fs_app_data_exists_provider" {:class :mixed :left "outside-scope answers \"0\", not a trap"}
   "fs_app_data_mkdir_provider" {:class :mixed :left "request grammar, create mode"}
   "fs_app_data_mtime_provider" {:class :mixed :left "request grammar"}
-  "fs_app_data_range_read_provider" {:class :mixed :left "RANGE_SEP <off>:<len> grammar, bounds"}
+  "fs_app_data_range_read_provider" {:class :mixed
+                                     :moved "the spec (b handlers op 21) and the window against the file (b handlers op 22), 2026-09-25"
+                                     :left "RANGE_SEP occurs once and the spec splits at the first ':' (kexe_single_token, memchr)"}
   "fs_app_data_read_provider" {:class :mixed :left "whole-file read must fit the string pool"}
   "fs_app_data_rename_provider" {:class :mixed :left "both ends in scope"}
   "fs_app_data_rmdir_provider" {:class :mixed :left "request grammar"}
@@ -162,7 +165,8 @@
   "kexe_free_browse_entries" {:class :mechanism}
   "kexe_le64" {:class :mechanism}
   "kexe_normalize_path" {:class :decision :left "lexical . / .. / // normalization: what a path MEANS before admission"}
-  "kexe_parse_u64_span" {:class :mechanism}
+  "kexe_parse_u64_span" {:class :mechanism :before :decision
+                         :moved "a span's length and each digit step (b handlers ops 20, 3), 2026-09-25"}
   "kexe_request_path" {:class :mixed :left "relative paths join the captured cwd; 4095-byte bound"}
   "kexe_result_type_named" {:class :mechanism :new true}
   "kexe_rotr32" {:class :mechanism}
@@ -246,7 +250,30 @@
   "write_supervisor_report" {:class :mixed :before :mixed
                              :moved "the result trap texts and result type names (a)"
                              :left "the report format and exit codes 126..130"}
-  "write_trap_line" {:class :mechanism :new true}}
+  "write_trap_line" {:class :mechanism :new true}
+  "entropy_draw_provider" {:class :mechanism :new true :note "wire 23: count grammar, range and hex spelling are handlers ops 4, 3, 31, 32"}
+  "fs_app_data_fsync_provider" {:class :mechanism :new true :note "errno meaning is handlers op 12 (form 12)"}
+  "fs_app_data_make_temp_dir_provider" {:class :mechanism :new true :note "prefix, suffix alphabet and length, mode, attempts and errno meaning are handlers ops 26-30 and 12 (form 13)"}
+  "fs_app_data_stat_nofollow_provider" {:class :mechanism :new true :note "kind and permission bits are handlers op 16; errno meaning op 12 (form 14)"}
+  "kexe_decision_call_at" {:class :mechanism :new true}
+  "kexe_errno_word" {:class :mechanism :new true :note "the host's errno spelled in the decisions' (Linux) numbers; which errno means what is handlers op 12"}
+  "kexe_form_path" {:class :mechanism :new true}
+  "kexe_frame_write" {:class :mechanism :new true}
+  "kexe_handler_decide" {:class :mechanism :new true}
+  "kexe_map_decision_code" {:class :mechanism :new true}
+  "kexe_monotonic_ns" {:class :mechanism :new true}
+  "kexe_path_has_bad_segment" {:class :mechanism :new true :note "measures what handlers op 44 rules on"}
+  "kexe_random_bytes" {:class :mechanism :new true :note "getrandom / getentropy; retry and ENOSYS are handlers op 12 (form 40)"}
+  "kexe_read_exact" {:class :mechanism :new true}
+  "kexe_refuse_by_name" {:class :mechanism :new true}
+  "kexe_spawn_grant_init" {:class :mechanism :new true :note "entries and counts are ruled by handlers ops 44, 45"}
+  "kexe_spawn_kill" {:class :mechanism :new true}
+  "kexe_spawn_refuse" {:class :mechanism :new true :note "which name a refusal carries is handlers op 47"}
+  "kexe_spawn_reply" {:class :mechanism :new true}
+  "kexe_spawn_serve_one" {:class :mechanism :new true :note "every question is a handlers op: 33 shape and budget, 34/35 program, 36 environment, 37 output, 38 exit field, 39-41 deadline, 42 start failure, 47 refusal name"}
+  "kexe_spawn_start" {:class :mechanism :new true :note "fork/execve + close_range + no_new_privs (Linux), posix_spawn + CLOEXEC_DEFAULT (macOS); a failed step's meaning is handlers op 42"}
+  "kexe_split_colon" {:class :mechanism :new true}
+  "process_spawn_provider" {:class :mechanism :new true :note "wire 20 guest side: the request crosses to the supervisor"}}
 
  ;; Top-level (outside any function) hand-written decision DATA: #defines
  ;; and tables whose values are rules. Counted by the test in both loaders;
