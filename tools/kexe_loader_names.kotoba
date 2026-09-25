@@ -1,0 +1,76 @@
+(ns kexe-loader-names
+  {:kotoba/export [trap-line value-trap-name result-type-name]})
+
+;; The fixed text of every trap the POSIX kexe loader names, and the result
+;; type names it admits (superproject adr-2609251400 C1, kind (a): DATA).
+;; scripts/gen-loader-decisions.cljk evaluates these natively and writes the
+;; answers into the generated region of tools/kexe_loader.c, where signal
+;; handlers and the supervisor index them. A separate module from
+;; kexe_loader_decisions.kotoba so the machine code the loader EXECUTES
+;; (that module's) does not carry these strings as dead weight.
+
+;; ---------------------------------------------------------------------
+;; Trap names. Every KEXE_TRAP line the loader prints whose text is
+;; fixed. The index is the generator's (KEXE_TRAP_LINE_* in C).
+
+(defn trap-line [k] :string
+  (cond
+    (= k 0) "KEXE_TRAP {:kind :signal :signal :SIGILL}\n"
+    (= k 1) "KEXE_TRAP {:kind :signal :signal :SIGTRAP}\n"
+    (= k 2) "KEXE_TRAP {:kind :signal :signal :SIGFPE}\n"
+    (= k 3) "KEXE_TRAP {:kind :signal :signal :SIGBUS}\n"
+    (= k 4) "KEXE_TRAP {:kind :signal :signal :SIGSEGV}\n"
+    (= k 5) "KEXE_TRAP {:kind :signal :signal :SIGXCPU}\n"
+    (= k 6) "KEXE_TRAP {:kind :signal :signal :SIGALRM}\n"
+    (= k 7) "KEXE_TRAP {:kind :signal :signal :SIGSYS}\n"
+    (= k 8) "KEXE_TRAP {:kind :signal :signal :unknown}\n"
+    (= k 9) "KEXE_TRAP {:kind :host :reason :host/stack-exhausted}\n"
+    (= k 10) "KEXE_TRAP {:kind :supervisor :reason :wall-timeout}\n"
+    (= k 11) "KEXE_TRAP {:kind :supervisor :reason :unhandled-child-signal}\n"
+    (= k 12) "KEXE_TRAP {:kind :budget :reason :budget/cells :arena :pairs}\n"
+    (= k 13) "KEXE_TRAP {:kind :budget :reason :budget/cells :arena :vectors}\n"
+    (= k 14) "KEXE_TRAP {:kind :budget :reason :budget/cells :arena :vector-items}\n"
+    (= k 15) "KEXE_TRAP {:kind :budget :reason :budget/bytes :arena :string-pool}\n"
+    (= k 16) "KEXE_TRAP {:kind :budget :reason :budget/cells :arena :kgraph}\n"
+    (= k 17) "KEXE_TRAP {:kind :budget :reason :budget/fuel}\n"
+    (= k 18) "KEXE_TRAP {:kind :result :reason :invalid-string-handle}\n"
+    (= k 19) "KEXE_TRAP {:kind :result :reason :invalid-record-chain}\n"
+    (= k 20) "KEXE_TRAP {:kind :result :reason :invalid-option-i64}\n"
+    (= k 21) "KEXE_TRAP {:kind :result :reason :invalid-result-i64}\n"
+    (= k 22) "KEXE_TRAP {:kind :result :reason :invalid-variant}\n"
+    (= k 23) "KEXE_TRAP {:kind :arena :reason :vector-table-exhausted}\n"
+    (= k 24) "KEXE_TRAP {:kind :arena :reason :vector-items-exhausted}\n"
+    (= k 25) "KEXE_TRAP {:kind :sandbox :reason :filesystem-denied}\n"
+    (= k 26) "KEXE_TRAP {:kind :sandbox :reason :network-denied}\n"
+    (= k 27) "KEXE_TRAP {:kind :sandbox :reason :process-denied}\n"
+    (= k 28) "KEXE_TRAP {:kind :value :reason :"
+    :else ""))
+
+;; ABI v11 value traps: the index a refusing host call records, the name
+;; osaho's reference interpreter and the ESM prelude give the same refusal.
+;; 0 is "none recorded".
+(defn value-trap-name [k] :string
+  (cond
+    (= k 1) "utf8/unexpected-continuation"
+    (= k 2) "utf8/overlong"
+    (= k 3) "utf8/invalid-byte"
+    (= k 4) "utf8/truncated"
+    (= k 5) "utf8/bad-continuation"
+    (= k 6) "utf8/surrogate"
+    (= k 7) "utf8/above-max"
+    (= k 8) "string/too-large"
+    (= k 9) "bytes/item-out-of-range"
+    (= k 10) "bytes/too-large"
+    (= k 11) "bytes/slice-bounds"
+    :else ""))
+
+;; The plain KEXE_RESULT_TYPE names a run may ask for (the `record:<n>` and
+;; `variant:<n>:<mask>` forms are admitted by `decide` ops 3 and 4).
+(defn result-type-name [k] :string
+  (cond
+    (= k 0) "i64"
+    (= k 1) "string"
+    (= k 2) "option-i64"
+    (= k 3) "result-i64"
+    :else ""))
+

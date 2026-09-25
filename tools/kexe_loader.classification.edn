@@ -1,0 +1,259 @@
+;; Every function of tools/kexe_loader.c, classified (superproject
+;; adr-2609251400 C1). scripts/test-loader-decisions.cljk fails on a function
+;; that is not named here and on a name here that no longer exists, and
+;; prints the per-class line counts before (the loader at 0d244a95, whose
+;; decisions were C) and after.
+;;
+;;   :mechanism  decides nothing: mmap / fork / signals / syscalls / sandbox
+;;               installation, handle and arena bookkeeping, memory-safety
+;;               bounds (a handle resolves, an index is inside its slice, a
+;;               copy fits its buffer), pure computation with a published
+;;               definition (SHA-256, Ed25519, UTF-8 scanning), and CALLING a
+;;               decision.
+;;   :decision   the function IS a rule someone chose: a limit, a vocabulary,
+;;               a policy, a name.
+;;   :mixed      mechanism with a rule inside it.
+;;
+;; :before is the class at 0d244a95 when it differs; :moved names what went
+;; to Kotoba (tools/kexe_loader_decisions.kotoba / _names.kotoba) and how:
+;; (a) data evaluated into the generated region, (b) code the loader calls.
+;; :left names a rule still in C. :new marks the glue this change added.
+;; The classification is judgement, recorded so it can be argued with.
+{:functions
+ {"allocate_host_pair" {:class :mechanism}
+  "arena_exhausted" {:class :mechanism :before :mixed
+                     :moved "which arena a reason names, and the trap text (a)"}
+  "checked_arena_enter" {:class :mechanism}
+  "checked_arena_leave" {:class :mechanism}
+  "checked_bytes_concat" {:class :mechanism}
+  "checked_bytes_from_vector" {:class :mechanism}
+  "checked_bytes_slice" {:class :mechanism}
+  "checked_cap_call" {:class :mechanism :before :decision
+                      :moved "the allow-list and the wire-id domain (b cap-admitted)"}
+  "checked_kgraph_assert" {:class :mechanism}
+  "checked_kgraph_count" {:class :mechanism}
+  "checked_kgraph_entity_at" {:class :mechanism}
+  "checked_kgraph_get" {:class :mechanism}
+  "checked_pair_first" {:class :mechanism}
+  "checked_pair_get" {:class :mechanism}
+  "checked_pair_new" {:class :mechanism}
+  "checked_pair_second" {:class :mechanism}
+  "checked_string_append_range" {:class :mechanism}
+  "checked_string_code_point_at" {:class :mechanism}
+  "checked_string_compare" {:class :mechanism}
+  "checked_string_compare_lines" {:class :mechanism}
+  "checked_string_concat" {:class :mechanism}
+  "checked_string_equal" {:class :mechanism}
+  "checked_string_find_blank" {:class :mechanism}
+  "checked_string_find_byte" {:class :mechanism}
+  "checked_string_fold_ascii" {:class :mechanism}
+  "checked_string_from_utf8" {:class :mechanism}
+  "checked_string_index_of" {:class :mechanism}
+  "checked_string_index_of_from" {:class :mechanism}
+  "checked_string_scan_blank" {:class :mechanism}
+  "checked_string_skip_blank" {:class :mechanism}
+  "checked_string_substring" {:class :mechanism}
+  "checked_typed_cap_call" {:class :mixed :before :decision
+                            :moved "allow-list (b cap-admitted), kind agreement (b op 1), the wire id x kind -> provider table (b op 0)"
+                            :left "the :fs/app-data request-form dispatch by ASCII token (WRITE_SEP before APPEND_SEP before EXISTS_SEP ...)"}
+  "checked_vector_alloc" {:class :mechanism}
+  "checked_vector_assoc" {:class :mechanism}
+  "checked_vector_assoc_in_place" {:class :mechanism}
+  "checked_vector_at" {:class :mechanism}
+  "checked_vector_conj" {:class :mechanism}
+  "checked_vector_count" {:class :mechanism}
+  "checked_vector_drop" {:class :mechanism}
+  "checked_vector_new_empty" {:class :mechanism}
+  "cli_args_provider" {:class :mixed :left "request grammar: empty = count, decimal index, < 20 digits, past-the-end answers empty"}
+  "clock_error_result" {:class :mechanism}
+  "clock_success_result" {:class :mechanism}
+  "clock_text_provider" {:class :mixed :left "request vocabulary \"wall\" / \"monotonic\"; regression traps"}
+  "dataspace_inject" {:class :mixed :left "32 facets, 32 items, 256-byte documents, 8 mail slots, error names"}
+  "ds_bytes_eq" {:class :mechanism}
+  "ds_empty_handle" {:class :mechanism}
+  "ds_enqueue" {:class :mechanism}
+  "ds_notice_handle" {:class :mechanism}
+  "ds_result_asserted" {:class :mechanism}
+  "ds_result_facet" {:class :mechanism}
+  "ds_result_matches" {:class :mechanism}
+  "ds_result_retracted" {:class :mechanism}
+  "ensure_valid_string" {:class :mechanism}
+  "env_read_provider" {:class :mixed :left "an env name is 1..4095 bytes without '='; unset answers empty"}
+  "fail" {:class :mechanism}
+  "fault_handler" {:class :mixed :before :mixed
+                   :moved "the :host/stack-exhausted text (a)"
+                   :left "the 1 MiB stack floor it tests is install_limits' RLIMIT_STACK, spelled twice"}
+  "fs_app_data_chmod_provider" {:class :mixed :left "request grammar (CHMOD_SEP, octal mode)"}
+  "fs_app_data_exists_provider" {:class :mixed :left "outside-scope answers \"0\", not a trap"}
+  "fs_app_data_mkdir_provider" {:class :mixed :left "request grammar, create mode"}
+  "fs_app_data_mtime_provider" {:class :mixed :left "request grammar"}
+  "fs_app_data_range_read_provider" {:class :mixed :left "RANGE_SEP <off>:<len> grammar, bounds"}
+  "fs_app_data_read_provider" {:class :mixed :left "whole-file read must fit the string pool"}
+  "fs_app_data_rename_provider" {:class :mixed :left "both ends in scope"}
+  "fs_app_data_rmdir_provider" {:class :mixed :left "request grammar"}
+  "fs_app_data_stat_provider" {:class :mixed :left "answer vocabulary"}
+  "fs_app_data_unlink_provider" {:class :mixed :left "request grammar"}
+  "fs_app_data_write_provider" {:class :mixed :left "WRITE_SEP / APPEND_SEP grammar, single-token rule, append sink policy"}
+  "fs_browse_provider" {:class :mixed :left "listing format NAME<TAB>D, entry bound"}
+  "gpu_compute_provider" {:class :mechanism}
+  "granted_span" {:class :mechanism}
+  "hash_sha256_provider" {:class :mechanism}
+  "hex_nibble" {:class :mechanism}
+  "hosted_clock_v1" {:class :mixed :left "monotonic regression is an error result; error names :clock/source, :clock/regressed"}
+  "identity_verify_provider" {:class :mechanism}
+  "incomplete_utf8_tail" {:class :mechanism}
+  "inspect_record_result" {:class :mechanism :before :decision
+                           :moved "1..32 record fields (b op 2); the array bound stays"}
+  "inspect_string_result" {:class :mechanism}
+  "inspect_tagged_i64_result" {:class :mechanism :before :decision
+                               :moved "tag 0/1, an option's none carries 0 (b op 6)"}
+  "inspect_variant_result" {:class :mechanism :before :decision
+                            :moved "ordinal names a case; a bool case carries 0/1 (b op 5)"}
+  "install_limits" {:class :mixed
+                    :left "RLIMIT_CORE 0, RLIMIT_CPU hard = soft + 1, RLIMIT_AS 64 MiB, RLIMIT_STACK 1 MiB, the child alarm one second inside the wall budget, which signals are trapped"}
+  "install_syscall_sandbox" {:class :mixed
+                             :left "the sandbox POLICY: the seccomp syscall allow-list and the Seatbelt profile text (ADR decision 3 names it; not moved in C1)"}
+  "intern_pool_string" {:class :mechanism}
+  "intern_utf8" {:class :mechanism}
+  "intern_vector" {:class :mechanism}
+  "io_read_provider" {:class :mixed :left "request grammar \"\" / \"<n>\"; trap-vs-short-answer rules"}
+  "io_write_error_provider" {:class :mechanism}
+  "io_write_provider" {:class :mechanism}
+  "ked_A" {:class :mechanism}
+  "ked_M" {:class :mechanism}
+  "ked_S" {:class :mechanism}
+  "ked_Z" {:class :mechanism}
+  "ked_add" {:class :mechanism}
+  "ked_car" {:class :mechanism}
+  "ked_cswap" {:class :mechanism}
+  "ked_init" {:class :mechanism}
+  "ked_inv" {:class :mechanism}
+  "ked_modL" {:class :mechanism}
+  "ked_neq" {:class :mechanism}
+  "ked_pack" {:class :mechanism}
+  "ked_pack25519" {:class :mechanism}
+  "ked_par" {:class :mechanism}
+  "ked_pow2523" {:class :mechanism}
+  "ked_reduce" {:class :mechanism}
+  "ked_scalar_canonical" {:class :mechanism}
+  "ked_scalarbase" {:class :mechanism}
+  "ked_scalarmult" {:class :mechanism}
+  "ked_sel" {:class :mechanism}
+  "ked_set" {:class :mechanism}
+  "ked_sha512_3" {:class :mechanism}
+  "ked_sha512_block" {:class :mechanism}
+  "ked_unpack25519" {:class :mechanism}
+  "ked_unpackneg" {:class :mechanism}
+  "ked_verify" {:class :mechanism}
+  "kexe_answer_bool" {:class :mechanism}
+  "kexe_append_close" {:class :mechanism}
+  "kexe_append_flush" {:class :mechanism}
+  "kexe_blank_byte" {:class :mechanism}
+  "kexe_browse_add" {:class :mechanism}
+  "kexe_browse_compare" {:class :mechanism}
+  "kexe_cap_admitted" {:class :mechanism :new true}
+  "kexe_capture_cwd" {:class :mechanism}
+  "kexe_compare_lines" {:class :mechanism}
+  "kexe_decide" {:class :mechanism :new true}
+  "kexe_decimal" {:class :mechanism}
+  "kexe_decision_call" {:class :mechanism :new true}
+  "kexe_decisions_init" {:class :mechanism :new true}
+  "kexe_enumerate_directory" {:class :mechanism}
+  "kexe_free_browse_entries" {:class :mechanism}
+  "kexe_le64" {:class :mechanism}
+  "kexe_normalize_path" {:class :decision :left "lexical . / .. / // normalization: what a path MEANS before admission"}
+  "kexe_parse_u64_span" {:class :mechanism}
+  "kexe_request_path" {:class :mixed :left "relative paths join the captured cwd; 4095-byte bound"}
+  "kexe_result_type_named" {:class :mechanism :new true}
+  "kexe_rotr32" {:class :mechanism}
+  "kexe_scope_add" {:class :mechanism}
+  "kexe_scope_admit" {:class :mechanism :before :decision
+                      :moved "equal-or-beneath containment and the re-spelled length bound (b op 8)"}
+  "kexe_scope_contains_fd" {:class :mixed :before :decision
+                            :moved "the macOS F_GETPATH prefix rule (b op 8)"
+                            :left "a /dev/fd entry admits the caller's descriptors"}
+  "kexe_scope_from_list" {:class :decision :left "$PATH and $PWD scope-entry expansion"}
+  "kexe_scope_from_text" {:class :mechanism}
+  "kexe_scope_init" {:class :decision :left "a packaged command's scope is a constant; a loader invocation's is the environment's"}
+  "kexe_scoped_parent_fd" {:class :mixed :left "parent must be in scope"}
+  "kexe_sha256_block" {:class :mechanism}
+  "kexe_single_token" {:class :mixed :left "a separator token must occur exactly once"}
+  "kexe_split_parent" {:class :mechanism}
+  "kexe_stdout_append" {:class :mechanism}
+  "kexe_stdout_flush" {:class :mechanism}
+  "kexe_write_all" {:class :mechanism}
+  "kexe_zero_byte_mask" {:class :mechanism}
+  "kgraph_entity_seen_before" {:class :mechanism}
+  "main" {:class :mixed :before :mixed
+          :moved "budget verdicts zero / ceiling for all seven budgets (b op 7), record-field admission (b op 2), the result type names (a), the GPU grant test (b cap-admitted), every budget default and ceiling (a)"
+          :left "argv arity 6..11 and entry arity <= 5, the ISA names, KEXE_FUEL=off, which environment variables exist, the probes, command mode"}
+  "mark_validated" {:class :mechanism}
+  "near_stack_floor" {:class :decision :left "a fault within 256 KiB of the stack floor is :host/stack-exhausted"}
+  "note_budget" {:class :mechanism}
+  "note_value_trap" {:class :mechanism}
+  "parse_allow" {:class :mechanism :before :mixed
+                 :moved "the wire-id domain 0..255 (b op 9); the array bound stays"}
+  "parse_guest_arg" {:class :mixed :before :mixed
+                     :moved "v:<cases>:<ordinal>:<kind>:<payload> admission (b op 4)"
+                     :left "the argument-form grammar itself (v: o: e: r: g: gl: s: and bare decimals)"}
+  "parse_i64" {:class :mechanism}
+  "parse_u64" {:class :mechanism}
+  "parse_ulong_decimal" {:class :mechanism}
+  "parse_variant_profile" {:class :mechanism :before :decision
+                           :moved "1..32 cases and mask < 2^cases (b op 3)"}
+  "parse_verify_request" {:class :mixed :left "four canonical decimals, no leading zeros"}
+  "peek_pair" {:class :mechanism}
+  "peek_string_bytes" {:class :mechanism}
+  "peek_vector" {:class :mechanism}
+  "probe_denied" {:class :mechanism :before :mixed :moved "the sandbox trap texts (a)"}
+  "read_monotonic_nanos" {:class :mechanism}
+  "read_string_handle" {:class :mechanism}
+  "read_wall_millis" {:class :mechanism}
+  "report_budget_trap" {:class :mixed :before :decision
+                        :moved "every trap text it prints (a)"
+                        :left "the inference when no host call recorded a budget: a metered run at fuel 0 is :budget/fuel, else a full pair arena is :budget/cells"}
+  "resolve_string_bytes" {:class :mechanism}
+  "resolve_vector" {:class :mechanism}
+  "shim_memmem" {:class :mechanism}
+  "simd_bytes_equal" {:class :mechanism}
+  "supervise" {:class :mixed :before :mixed
+               :moved "the supervisor trap texts (a)"
+               :left "SIGPIPE is not a trap; exit codes 122 / 123"}
+  "supervisor_alarm_handler" {:class :mechanism}
+  "trap_handler" {:class :mechanism :before :decision :moved "every signal trap text (a)"}
+  "ui_commit_inject" {:class :mixed :left "base revision must match; first node becomes the event"}
+  "ui_event_inject" {:class :mixed :left "event visibility by revision"}
+  "utf8_invalid_reason" {:class :decision :left "which UTF-8 refusal gets which value-trap index (mirrors osaho kotoba.kir.value/utf8-invalid-at)"}
+  "valid_clock_request" {:class :decision :left "the clock-v1 request descriptor: 2 cases, both bool"}
+  "valid_clock_result" {:class :decision :left "the clock-v1 result descriptor: 3 cases, 2-field records, tick >= 0, sequence > 0"}
+  "valid_dataspace_request" {:class :decision :left "dataspace-v1 request shape"}
+  "valid_dataspace_result" {:class :decision :left "dataspace-v1 result shape"}
+  "valid_string_handle" {:class :mechanism}
+  "valid_typed_value" {:class :mixed :before :decision
+                       :moved "the option / result tag rule (b op 6)"
+                       :left "which typed kinds exist (1..7) and the walk into each descriptor"}
+  "valid_ui_commit_request" {:class :decision :left "ui-commit-v1 request shape"}
+  "valid_ui_commit_result" {:class :decision :left "ui-commit-v1 result shape"}
+  "valid_ui_event" {:class :decision :left "ui-event-v1 shape"}
+  "valid_ui_event_request" {:class :decision :left "ui-event-v1 request shape"}
+  "valid_ui_event_result" {:class :decision :left "ui-event-v1 result shape"}
+  "valid_ui_node" {:class :decision :left "ui node shape"}
+  "valid_ui_nodes" {:class :decision :left "at most 32 ui nodes"}
+  "valid_utf8" {:class :mechanism :note "canonical UTF-8 is a published definition (RFC 3629), not a choice this loader makes"}
+  "write_i64" {:class :mechanism}
+  "write_stderr_checked" {:class :mechanism}
+  "write_supervisor_report" {:class :mixed :before :mixed
+                             :moved "the result trap texts and result type names (a)"
+                             :left "the report format and exit codes 126..130"}
+  "write_trap_line" {:class :mechanism :new true}}
+
+ ;; Top-level (outside any function) hand-written decision DATA: #defines
+ ;; and tables whose values are rules. Counted by the test in both loaders;
+ ;; after C1 the ones listed here live only in the generated region.
+ :top-level-decisions
+ ["KEXE_PAIR_CAPACITY" "KEXE_PAIR_MAX" "KEXE_KGRAPH_CAPACITY" "KEXE_ARENA_SCOPE_DEPTH"
+  "KEXE_STRING_POOL_BYTES" "KEXE_STRING_POOL_MAX" "KEXE_REGION_CAPACITY" "KEXE_REGION_POOL_BYTES"
+  "KEXE_RECORD_FIELD_LIMIT" "KEXE_FUEL_MAX" "KEXE_CPU_SECONDS" "KEXE_WALL_SECONDS" "KEXE_SECONDS_MAX"
+  "KEXE_VECTOR_CAPACITY" "KEXE_VECTOR_ITEM_CAPACITY" "KEXE_VECTOR_MAX" "KEXE_VECTOR_ITEM_MAX"
+  "KEXE_VECTOR_ITEM_LIMIT" "KEXE_STRING_VALUE_LIMIT" "KEXE_BYTES_VALUE_LIMIT" "KEXE_SCOPE_ENTRIES"
+  "KEXE_CLOCK_CAPABILITY_ID" "kexe_value_trap_names"]}
