@@ -165,7 +165,10 @@
   ;; android and ios on both ISAs as well as the two bare `kotoba-v1`s. The
   ;; count is asserted beside the set so that a profile table gaining a
   ;; native target is visible here rather than silent.
-  (is (= 12 (count uefi/rodata-literal-targets)))
+  ;; FOURTEEN since 2026-09-25: `x86_64-linux-static` and
+  ;; `aarch64-linux-static` (superproject adr-2609251400 C2) joined, `:native`
+  ;; execution whose image carries the code and its pool verbatim.
+  (is (= 14 (count uefi/rodata-literal-targets)))
   (is (every? uefi/rodata-literal-targets
               [:x86_64-aiueos-uefi-v1 :x86_64-aiueos-kernel-v1
                :x86_64-kotoba-v1 :aarch64-kotoba-v1]))

@@ -42,6 +42,11 @@
    "x86_64-windows" :x86_64-windows-kotoba-v1
    "aarch64" :aarch64-kotoba-v1
    "aarch64-linux" :aarch64-linux-kotoba-v1
+   ;; superproject adr-2609251400 C2: the same two ISA emitters, packaged by
+   ;; `kotoba.native.linux-static` into an ELF that runs with no loader and no
+   ;; libc. `--output` holds the executable (see native-package).
+   "x86_64-linux-static" :x86_64-linux-static-kotoba-v1
+   "aarch64-linux-static" :aarch64-linux-static-kotoba-v1
    "aarch64-macos" :aarch64-macos-kotoba-v1
    "aarch64-windows" :aarch64-windows-kotoba-v1
    "aarch64-android" :aarch64-android-kotoba-v1
@@ -307,7 +312,11 @@
 ;; metering at n, for replay and determinism.
 (def unmetered-default-targets
   #{:x86_64-kotoba-v1 :x86_64-linux-kotoba-v1 :x86_64-macos-kotoba-v1
-    :aarch64-kotoba-v1 :aarch64-linux-kotoba-v1 :aarch64-macos-kotoba-v1})
+    :aarch64-kotoba-v1 :aarch64-linux-kotoba-v1 :aarch64-macos-kotoba-v1
+    ;; adr-2609251400 C2: the static ELF runs the native profile, so its
+    ;; default is the native profile's (fuel off); the prelude starts the
+    ;; counter at the artifact's :fuel-abi :initial as the loader does.
+    :x86_64-linux-static-kotoba-v1 :aarch64-linux-static-kotoba-v1})
 
 ;; The budget the compile-time oracle runs under when the artifact is
 ;; unmetered: `kotoba.kir/lower`'s own default, named here because the
@@ -514,8 +523,13 @@
                               #(package (:target result) (:artifact result)
                                         artifact-kind))))))
 
-(defn- write-native! [output {:keys [artifact-text provenance-text binary]}]
-  (let [provenance-output (str output ".provenance.edn")
+(defn- write-native! [output {:keys [artifact-text provenance-text binary]} target]
+  (let [;; adr-2609251400 C2: a static ELF is the program itself, so it is
+        ;; published executable -- 0700, the posture the loader binary gets.
+        ;; Every other packaged form stays 0600.
+        mode (when (and binary (= :static (:linkage (target-profile/profile target))))
+               448)
+provenance-output (str output ".provenance.edn")
         publication-output (str output ".publication.edn")
         ;; When a target packages, `--output` holds the ELF64/PE32+ bytes and
         ;; the artifact EDN is not published at all -- the JVM CLI's behaviour
@@ -528,7 +542,7 @@
     (support/timed
      "output-set-write"
      #(io/write-set! [(if binary
-                        {:path output :bytes binary}
+                        (cond-> {:path output :bytes binary} mode (assoc :mode mode))
                         {:path output :text artifact-text})
                       {:path provenance-output :text provenance-text}
                       {:path publication-output :text publication-text}]))
@@ -546,7 +560,7 @@
         serialized (serialized-native source policy emit-metadata result
                                       package artifact-kind)
         {:keys [provenance-output publication-output artifact-bytes]}
-        (write-native! output serialized)]
+        (write-native! output serialized target)]
     (cond-> {:ok true :target target :output output
              :provenance-output provenance-output
              :publication-output publication-output
@@ -598,7 +612,7 @@
                          (:binary-base64 cached)
                          (assoc :binary (js/Buffer.from (:binary-base64 cached) "base64")))
               {:keys [provenance-output publication-output artifact-bytes]}
-              (write-native! output restored)]
+              (write-native! output restored target)]
           (cond-> {:ok true :target target :output output
                    :provenance-output provenance-output
                    :publication-output publication-output
@@ -616,7 +630,7 @@
             serialized (serialized-native source policy emit-metadata result
                                           package artifact-kind)
             {:keys [provenance-output publication-output artifact-bytes]}
-            (write-native! output serialized)
+            (write-native! output serialized target)
             binary-base64 (some-> (:binary serialized) (.toString "base64"))
             sealed (cond-> (assoc (dissoc serialized :binary)
                                   :artifact-sha256 (compile-cache/sha256 (:artifact-text serialized))

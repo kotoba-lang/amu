@@ -216,7 +216,11 @@
   ;; Advanced again 2026-09-25 with deps.edn: context ABI v11 -- :bytes and
   ;; string-from-utf8, slots 352-376 (superproject adr-2609242330). The bytes
   ;; slots are ordinary runtime calls; no aggregate sequence moved.
-  (is (= "98406d1669637be5d4fe54ad2a6ddd30752113af"
+  ;; Advanced again 2026-09-25 with deps.edn (fe3409bf, amu #1103, had not
+  ;; moved this line) to 27228973: the loader-less Linux static ELF packager
+  ;; (superproject adr-2609251400 C2). It emits a prelude around the code
+  ;; bytes; no aggregate sequence moved.
+  (is (= "27228973a0c0b615f79ccdf5ea4e61fdcf3d433d"
          (dependency-pin 'io.github.kotoba-lang/kotoba-native)))
   ;; Advanced 2026-09-07 to kotoba-native main c9d5c44 (hoist #151, cross-call
   ;; hoist #152, copy coalescing #154; 06badc8's allow-list entry is on main as
@@ -379,7 +383,9 @@
   ;; lang/state-ability.edn) -- :state sealed and oracled.
   ;; Advanced again 2026-09-25 with deps.edn: the bytes heads and
   ;; string-from-utf8 (superproject adr-2609242330).
-  (is (= "353dd5f30bf803528f355f3b8090413a71e51bc8"
+  ;; Advanced again 2026-09-25 with deps.edn: the two linux-static target
+  ;; profiles (superproject adr-2609251400 C2).
+  (is (= "e46766f7c09ea3c0c5913524c40ad6049f578d06"
          (dependency-pin 'io.github.kotoba-lang/osaho)))
   ;; Advanced 2026-09-01 alongside the backend: the verifier re-derives the
   ;; two new arities and the v4 `expected-context`, and is what turns a
@@ -508,7 +514,9 @@
   ;; lang/state-ability.edn) -- a :state row in a native artifact is verified.
   ;; Advanced again 2026-09-25 with deps.edn: expected-context v11
   ;; (superproject adr-2609242330).
-  (is (= "58de25fa191c2e10bd3dd73745a45915c3cdd1fc"
+  ;; Advanced again 2026-09-25 with deps.edn: `kotoba.verifier.linux-static`
+  ;; (superproject adr-2609251400 C2).
+  (is (= "a204f5330fb69b271d2cd690f497643189e0282f"
          (dependency-pin 'io.github.kotoba-lang/kotoba-verifier)))
   (is (= 8 (:abi/version aggregate-abi/contract)))
   (is (= :recursive-word-handles

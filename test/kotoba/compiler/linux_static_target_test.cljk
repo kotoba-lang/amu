@@ -1,0 +1,49 @@
+(ns kotoba.compiler.linux-static-target-test
+  "The loader-less Linux static ELF targets (superproject adr-2609251400 C2):
+  registered on every table a target name has to reach, packaged, and
+  decided by the profile this compiler ships.
+
+  Execution is not asserted here (the suite runs on macOS as well as Linux).
+  It was measured when the target landed: on Linux aarch64 natively and on
+  x86-64 under qemu-x86_64 user mode, recursive-list 500500, recursive-tree 10
+  and string-index-of 189600 on both ISAs, equal to the kexe loader's answers;
+  the cell, byte and fuel budgets trapped by name with exit 123 / 124 / 122,
+  and an unadmitted slot with 125. The ADR's :adr/gaps line records it."
+  (:require [kotoba.test :refer [deftest is testing]]
+            [kotoba.compiler.limits :as limits]
+            [kotoba.compiler.target-names :as target-names]
+            [kotoba.compiler.nbb.cli :as native-cli]
+            [kotoba.kir.target :as target-profile]
+            [kotoba.native.linux-static :as linux-static]
+            #?(:cljs ["node:fs" :as fs])))
+
+(def names {"x86_64-linux-static" :x86_64-linux-static-kotoba-v1
+            "aarch64-linux-static" :aarch64-linux-static-kotoba-v1})
+
+(deftest every-table-knows-the-two-names
+  (doseq [[spelling target] names]
+    (testing spelling
+      (is (= target (target-names/parse spelling)) "the vocabulary")
+      (is (= target (get native-cli/targets spelling)) "the nbb native route")
+      (is (contains? native-cli/unmetered-default-targets target)
+          "the native profile's default: fuel off")
+      (is (= :static (:linkage (target-profile/profile target))))
+      (is (= :native (:execution (target-profile/profile target))))
+      (is (contains? linux-static/targets target) "the packager serves it")
+      #?(:cljs (is (.includes (fs/readFileSync "bin/amu" "utf8") (str "\"" spelling "\""))
+                   "bin/amu routes it to the nbb native driver")))))
+
+(deftest the-profile-this-compiler-ships-is-one-the-packager-accepts
+  (let [static (get-in limits/table [:profile/native :static-elf])
+        admitted (get-in static [:admitted-slots :value])
+        codes (get-in static [:exit-codes :value])]
+    (is (seq admitted))
+    (is (every? linux-static/implemented-slots admitted)
+        "every slot the profile admits has code; the packager refuses otherwise")
+    (is (= (count codes) (count (distinct (vals codes)))) "one exit status per outcome")
+    (doseq [trap [(get-in limits/table [:profile/native :fuel :trap])
+                  (get-in limits/table [:profile/native :cells :trap])
+                  (get-in limits/table [:profile/native :bytes :trap])
+                  (:unimplemented-slot-trap static)
+                  :ok :trap/signal]]
+      (is (integer? (get codes trap)) (str trap " has an exit status")))))
