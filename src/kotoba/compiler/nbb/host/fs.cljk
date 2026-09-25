@@ -1,0 +1,113 @@
+(ns kotoba.compiler.nbb.host.fs
+  "MECHANISM LAYER -- the nbb/Node handler of the fs/app-data (catalog wire
+  35) and fs/browse (wire 34) abilities (superproject adr-2609242330 S5,
+  section 1 (c)). Not Kotoba source: a compiler module writes
+  `(fs/app-data request)` / `(fs/browse dir)` and requires this namespace
+  only under `#?(:cljs ...)`.
+
+  The request grammar is the wire's (kexe loader checked_typed_cap_call,
+  wire 35), with the same token precedence:
+
+    \"<path>WRITE_SEP<content>\"  write, answers the content
+    \"<path>EXISTS_SEP\"          \"1\" / \"0\"
+    \"<path>STAT_SEP\"            \"<mode> <size> <blocks> <isdir>\" or \"\"
+    \"<path>MTIME_SEP\"           seconds since the epoch, or \"\"
+    \"<path>MKDIR_SEP\"           \"1\" / \"0\"
+    \"<path>UNLINK_SEP\"          \"1\" / \"0\"
+    \"<path>RMDIR_SEP\"           \"1\" / \"0\"
+    \"<from>RENAME_SEP<to>\"      \"1\" / \"0\"
+    \"<path>\"                    read, answers the file's text
+
+  APPEND, RANGE and CHMOD are not answered here (the static ELF image does
+  not answer them either); they throw by name.
+
+  What this profile does NOT do, and says so: it holds no fs-scope. nbb runs
+  with the authority of the Node process, as the compiler's node:fs calls
+  always have; a scope is what the native profiles seal into the image. The
+  handler parses the wire and makes one Node call per form -- no path
+  containment, no cache or ownership decision. See
+  kotoba.compiler.nbb.host.io for the layer's contract."
+  {:kotoba/export []}
+  (:require ["node:fs" :as fs]))
+
+(defn- split-at-token [request token]
+  (let [at (.indexOf request token)]
+    (when (>= at 0)
+      [(subs request 0 at) (subs request (+ at (count token))) at])))
+
+(defn- answer [f]
+  (try (if (f) "1" "0") (catch :default _ "0")))
+
+(defn- decode [buffer]
+  (.decode (js/TextDecoder. "utf-8" #js {:fatal true}) buffer))
+
+(defn- stat-answer [path]
+  (try
+    (let [s (.statSync fs path)]
+      (str (bit-and (.-mode s) 511) " " (.-size s) " " (.-blocks s) " "
+           (if (.isDirectory s) 1 0)))
+    (catch :default _ "")))
+
+(defn app-data
+  "fs/app-data 35."
+  [request]
+  (let [write (split-at-token request "WRITE_SEP")
+        append (split-at-token request "APPEND_SEP")]
+    (cond
+      (and write (or (nil? append) (< (nth write 2) (nth append 2))))
+      (let [[path content] write]
+        (.writeFileSync fs path content)
+        content)
+
+      append (throw (ex-info "fs/app-data APPEND is not answered by the nbb handler"
+                             {:phase :host :form :append}))
+
+      (split-at-token request "EXISTS_SEP")
+      (let [[path] (split-at-token request "EXISTS_SEP")]
+        (answer #(.isFile (.statSync fs path))))
+
+      (split-at-token request "RANGE_SEP")
+      (throw (ex-info "fs/app-data RANGE is not answered by the nbb handler"
+                      {:phase :host :form :range}))
+
+      (split-at-token request "STAT_SEP")
+      (stat-answer (first (split-at-token request "STAT_SEP")))
+
+      (split-at-token request "MTIME_SEP")
+      (let [[path] (split-at-token request "MTIME_SEP")]
+        (try (str (js/Math.floor (/ (.-mtimeMs (.statSync fs path)) 1000)))
+             (catch :default _ "")))
+
+      (split-at-token request "CHMOD_SEP")
+      (throw (ex-info "fs/app-data CHMOD is not answered by the nbb handler"
+                      {:phase :host :form :chmod}))
+
+      (split-at-token request "MKDIR_SEP")
+      (let [[path] (split-at-token request "MKDIR_SEP")]
+        (answer #(do (.mkdirSync fs path) true)))
+
+      (split-at-token request "UNLINK_SEP")
+      (let [[path] (split-at-token request "UNLINK_SEP")]
+        (answer #(do (.unlinkSync fs path) true)))
+
+      (split-at-token request "RMDIR_SEP")
+      (let [[path] (split-at-token request "RMDIR_SEP")]
+        (answer #(do (.rmdirSync fs path) true)))
+
+      (split-at-token request "RENAME_SEP")
+      (let [[from to] (split-at-token request "RENAME_SEP")]
+        (answer #(do (.renameSync fs from to) true)))
+
+      :else (decode (.readFileSync fs request)))))
+
+(defn browse
+  "fs/browse 34: DIR's entries as NAME<TAB>D lines (D 1 for a directory),
+  sorted bytewise by name, joined by a single newline; \".\" and \"..\" are
+  never listed."
+  [dir]
+  (let [entries (.readdirSync fs dir #js {:withFileTypes true})
+        rows (map (fn [e] [(.-name e) (if (.isDirectory e) "1" "0")]) entries)
+        sorted (sort-by first (fn [a b] (js/Buffer.compare (js/Buffer.from a "utf8")
+                                                          (js/Buffer.from b "utf8")))
+                        rows)]
+    (apply str (interpose "\n" (map (fn [[n d]] (str n "\t" d)) sorted)))))

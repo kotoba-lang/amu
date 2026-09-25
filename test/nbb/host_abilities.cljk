@@ -1,0 +1,187 @@
+(ns test.nbb.host-abilities
+  "The nbb handlers of the compiler's abilities (superproject adr-2609242330
+  S5) and the pure path module that replaced node:path.
+
+  Two kinds of check. The path functions are compared with node:path itself
+  over fixed cases and a seeded random corpus -- they must answer the same
+  string, since compiler output locations and diagnostics are spelled with
+  them. The handlers are checked against the catalog's wire shapes, and
+  hash/sha256 against the pure org-nist-sha2 library: the ability exists for
+  speed, so its value must be the pure library's value."
+  (:require ["node:fs" :as fs]
+            ["node:os" :as os]
+            ["node:path" :as node-path]
+            [kotoba.compiler.json-text :as json-text]
+            [kotoba.compiler.posix-path :as posix-path]
+            [kotoba.compiler.project :as project]
+            [kotoba.compiler.project-files :as project-files]
+            [kotoba.kir :as ir]
+            [kotoba.sema :as sema]
+            [kotoba.compiler.text-bytes :as text-bytes]
+            [kotoba.lang.json :as json]
+            [kotoba.compiler.nbb.host.cli :as cli]
+            [kotoba.compiler.nbb.host.clock :as clock]
+            [kotoba.compiler.nbb.host.env :as env]
+            [kotoba.compiler.nbb.host.fs :as host-fs]
+            [kotoba.compiler.nbb.host.hash :as hash]
+            [sha2.core :as sha2]))
+
+(def failures (volatile! []))
+(def checks (volatile! 0))
+
+(defn check! [ok? label & detail]
+  (vswap! checks inc)
+  (when-not ok? (vswap! failures conj (into [label] detail))))
+
+;; ---- posix-path against node:path ----
+
+(def fixed
+  ["" "/" "//" "///" "." ".." "./" "../" "a" "a/" "/a" "/a/" "a/b" "/a/b/"
+   "a//b" "a/./b" "a/../b" "../a" "../../a/b" "/.." "/../a" "a/.." "a/../.."
+   "./a/./b/." "examples/foo.kotoba" "/tmp/out.kexe" "out.wasm.provenance.edn"
+   "..a" "a.." ".a/..b/..." "/é/ü/" "日本/語" "a/b/c/../../d" "//a" "a/b//"])
+
+(defn- lcg [seed] (mod (+ (* seed 48271) 11) 2147483647))
+
+(def alphabet ["/" "/" "." "." ".." "a" "b" "é" "日"])
+
+(defn- random-paths [n]
+  (loop [i 0 seed 12345 out []]
+    (if (= i n)
+      out
+      (let [seed (lcg seed)
+            len (mod seed 9)
+            [seed parts] (loop [k 0 seed seed parts []]
+                           (if (= k len)
+                             [seed parts]
+                             (let [seed (lcg seed)]
+                               (recur (inc k) seed (conj parts (nth alphabet (mod seed (count alphabet))))))))]
+        (recur (inc i) seed (conj out (apply str parts)))))))
+
+(let [corpus (into fixed (random-paths 4000))]
+  (doseq [p corpus]
+    (check! (= (.basename node-path p) (posix-path/basename p)) :basename p)
+    (check! (= (.dirname node-path p) (posix-path/dirname p)) :dirname p)
+    (check! (= (.normalize node-path p) (posix-path/normalize p)) :normalize p))
+  (doseq [[a b] (map vector corpus (rest corpus))]
+    (check! (= (.join node-path a b) (posix-path/join a b)) :join a b)))
+
+;; The same module's KOTOBA reading, run: linked, analyzed, lowered to KIR and
+;; executed by the reference interpreter, against node:path. This is the
+;; reading the leaves' `:kotoba` branches select (byte offsets,
+;; string-find-byte), which the nbb comparison above never executes.
+(let [file (.join node-path (.cwd js/process) "src" "kotoba" "compiler" "posix_path.cljk")
+      graph (project-files/load-closed-graph file [(.join node-path (.cwd js/process) "src")])
+      linked (project/link-source (:sources graph) (:root graph))
+      kir (ir/lower (sema/analyze (:source linked) {:admit-linked-synthetics? true}) {})
+      run (fn [f args] (try (ir/execute kir f args {:fuel 10000000})
+                            (catch :default e (str "TRAP " (ex-message e)))))
+      corpus (into fixed (take 150 (random-paths 4000)))]
+  (doseq [p corpus]
+    (check! (= (.basename node-path p) (run 'basename [p])) :kotoba-basename p)
+    (check! (= (.dirname node-path p) (run 'dirname [p])) :kotoba-dirname p)
+    (check! (= (.normalize node-path p) (run 'normalize [p])) :kotoba-normalize p))
+  (doseq [[a b] (map vector corpus (rest corpus))]
+    (check! (= (.join node-path a b) (run 'join [a b])) :kotoba-join a b)))
+
+;; ---- leaves: the nbb reading against the pure library / builtin meaning ----
+
+(def text-pool ["a" "\"" "\\" "\n" "\t" "\u0001" "\u001f" "\u007f" "é" "日" "😀" "/"
+                "\u2028" " " "kotoba"])
+
+(defn- random-text [seed n]
+  (loop [i 0 seed seed out ""]
+    (if (= i n)
+      [seed out]
+      (let [seed (lcg seed)]
+        (recur (inc i) seed (str out (nth text-pool (mod seed (count text-pool)))))))))
+
+(loop [k 0 seed 99]
+  (when (< k 3000)
+    (let [[seed a] (random-text seed (mod seed 48))
+          [seed b] (random-text (lcg seed) 6)
+          key-shape ["kotoba.compile-cache/v4" a (odd? seed) (:text {}) b nil]
+          response {:format "kotoba.compiler-worker/v1" :type "result" :id (when (odd? k) b)
+                    :status (mod seed 80) :stdout a :stderr b :timing nil}
+          timing {:format "kotoba.compiler-timing/v1"
+                  :totalMilliseconds (/ seed 1000.0)
+                  :phases [{:phase "frontend" :milliseconds (/ (lcg seed) 7.0)}
+                           {:phase a :milliseconds 0.1}]}]
+      (check! (= (json/encode key-shape) (json-text/encode-array key-shape)) :json-leaf key-shape)
+      ;; Maps are NOT a json-text shape: the pure library sorts keys. Pinned
+      ;; so the day they agree is noticed rather than assumed.
+      (check! (or (<= (count response) 1)
+                  (not= (json/encode response) (.stringify js/JSON (clj->js response))))
+              :json-map-order-differs response)
+      (check! (= (count (js/Array.from (js/Buffer.from a "utf8"))) (text-bytes/utf8-length a))
+              :utf8-length a)
+      (check! (= a (text-bytes/utf8-text (js/Buffer.from a "utf8"))) :utf8-text a)
+      (recur (inc k) seed))))
+
+(check! (try (text-bytes/utf8-text (js/Buffer.from #js [0xC0 0x80])) false
+             (catch :default _ true))
+        :utf8-text-refuses-overlong)
+(check! (= [1 2 255] (vec (js/Array.from (text-bytes/bytes-from-ints [1 2 255])))) :bytes-from-ints)
+(check! (= 3 (text-bytes/bytes-length (text-bytes/bytes-from-ints [1 2 255]))) :bytes-length)
+
+;; ---- handler shapes ----
+
+(aset js/process.env "KOTOBA_HOST_ABILITY_PROBE" "value=1")
+(js-delete js/process.env "KOTOBA_HOST_ABILITY_UNSET")
+(check! (= "value=1" (env/read "KOTOBA_HOST_ABILITY_PROBE")) :env-set)
+(check! (= "" (env/read "KOTOBA_HOST_ABILITY_UNSET")) :env-unset)
+
+(let [argv (vec *command-line-args*)]
+  (check! (= (str (count argv)) (cli/args "")) :args-count)
+  (check! (= "" (cli/args (str (count argv)))) :args-past-end)
+  (check! (try (cli/args "-1") false (catch :default _ true)) :args-malformed))
+
+(let [a (js/BigInt (clock/now "monotonic"))
+      b (js/BigInt (clock/now "monotonic"))
+      wall (js/Number (clock/now "wall"))]
+  (check! (<= a b) :monotonic)
+  (check! (< (js/Math.abs (- wall (js/Date.now))) 600000) :wall)
+  (check! (try (clock/now "utc") false (catch :default _ true)) :clock-unknown-form))
+
+;; hash/sha256: the handler's value is the pure library's value, for a text
+;; request (UTF-8) and a byte request.
+(let [bytes-of (fn [b] (vec (js/Array.from b)))
+      hex (fn [bs] (apply str (map #(.padStart (.toString % 16) 2 "0") bs)))]
+  (doseq [text ["" "abc" "kotoba.compile-cache/v4" "日本語 ü" (apply str (repeat 3000 "x"))]]
+    (let [pure (hex (sha2/sha256 (bytes-of (js/Buffer.from text "utf8"))))]
+      (check! (= pure (hash/sha256 text)) :sha256-text text)
+      (check! (= pure (hash/sha256 (js/Buffer.from text "utf8"))) :sha256-bytes text))))
+
+;; fs/app-data and fs/browse against a private directory.
+(let [dir (.mkdtempSync fs (.join node-path (.tmpdir os) "amu-host-fs-"))
+      f (.join node-path dir "a.txt")
+      g (.join node-path dir "b.txt")
+      sub (.join node-path dir "sub")]
+  (try
+    (check! (= "0" (host-fs/app-data (str f "EXISTS_SEP"))) :exists-absent)
+    (check! (= "héllo" (host-fs/app-data (str f "WRITE_SEPhéllo"))) :write-answers-content)
+    (check! (= "héllo" (host-fs/app-data f)) :read)
+    (check! (= "1" (host-fs/app-data (str f "EXISTS_SEP"))) :exists)
+    (check! (re-matches #"[0-7]+ 6 [0-9]+ 0" (host-fs/app-data (str f "STAT_SEP"))) :stat)
+    (check! (= "" (host-fs/app-data (str g "STAT_SEP"))) :stat-absent)
+    (check! (re-matches #"[0-9]+" (host-fs/app-data (str f "MTIME_SEP"))) :mtime)
+    (check! (= "1" (host-fs/app-data (str sub "MKDIR_SEP"))) :mkdir)
+    (check! (= "0" (host-fs/app-data (str sub "MKDIR_SEP"))) :mkdir-again)
+    (check! (= "a.txt\t0\nsub\t1" (host-fs/browse dir)) :browse)
+    (check! (= "1" (host-fs/app-data (str f "RENAME_SEP" g))) :rename)
+    (check! (= "1" (host-fs/app-data (str g "UNLINK_SEP"))) :unlink)
+    (check! (= "1" (host-fs/app-data (str sub "RMDIR_SEP"))) :rmdir)
+    (check! (= "" (host-fs/browse dir)) :browse-empty)
+    (check! (try (host-fs/app-data (str f "APPEND_SEPx")) false
+                 (catch :default e (= "fs/app-data APPEND is not answered by the nbb handler"
+                                      (ex-message e))))
+            :append-refused-by-name)
+    (finally (.rmSync fs dir #js {:recursive true :force true}))))
+
+(println (str "host-abilities: " @checks " checks, " (count @failures) " failed"))
+(when (seq @failures)
+  (doseq [f (take 20 @failures)] (println "FAIL" (pr-str f)))
+  (.exit js/process 1))
+(when (zero? @checks)
+  (println "host-abilities: no checks ran")
+  (.exit js/process 2))

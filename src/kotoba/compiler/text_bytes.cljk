@@ -1,0 +1,38 @@
+(ns kotoba.compiler.text-bytes
+  "Text and bytes, measured and converted -- leaves with two readings
+  (superproject adr-2609242330 section 1 (b), the S1 leaf pattern).
+
+  Under Kotoba a string IS its UTF-8 bytes and bytes are the `:bytes` type,
+  so each leaf is a builtin (`string-byte-length`, `bytes-count`,
+  `string-from-utf8`). Under nbb a string is UTF-16 and bytes are a
+  Uint8Array, and each leaf is the Node call the compiler used before
+  (Buffer.byteLength, .length, a fatal TextDecoder). Not abilities:
+  measuring or decoding a value observes nothing.
+
+  `utf8-text` refuses what is not canonical UTF-8 in both readings: the
+  fatal decoder throws, `string-from-utf8` traps by name."
+  {:kotoba/export [bytes-from-ints bytes-length utf8-length utf8-text]})
+
+(defn utf8-length
+  "The number of bytes TEXT occupies in UTF-8."
+  [#?@(:kotoba [text :string] :default [text])] #?@(:kotoba [:i64])
+  #?(:cljs (.byteLength js/Buffer text "utf8")
+     :default (string-byte-length text)))
+
+(defn bytes-length
+  "The number of bytes in BYTES."
+  [#?@(:kotoba [bytes :bytes] :default [bytes])] #?@(:kotoba [:i64])
+  #?(:cljs (.-length bytes)
+     :default (bytes-count bytes)))
+
+(defn utf8-text
+  "BYTES decoded as UTF-8; refused when they are not canonical UTF-8."
+  [#?@(:kotoba [bytes :bytes] :default [bytes])] #?@(:kotoba [:string])
+  #?(:cljs (.decode (js/TextDecoder. "utf-8" #js {:fatal true}) bytes)
+     :default (string-from-utf8 bytes)))
+
+(defn bytes-from-ints
+  "Bytes holding the integers of INTS in order, each already 0..255."
+  [#?@(:kotoba [ints :vector-i64] :default [ints])] #?@(:kotoba [:bytes])
+  #?(:cljs (js/Buffer.from (clj->js (vec ints)))
+     :default (bytes-from-vector-i64 ints)))

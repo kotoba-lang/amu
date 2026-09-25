@@ -4,46 +4,65 @@
   Keeping policy decoding and the CLI error contract here is important: the
   Wasm/native split may reduce namespace load time, but must not create two
   subtly different admission boundaries."
-  {:kotoba/export [analyze-options capability-policy emit-metadata execute! invoke option options oracle-fuel parse-policy-material read-artifact-file! read-artifact-text! read-edn-file! read-policy read-policy-material serve! source! timed usage-error!]}
-  (:require ["node:path" :as node-path]
-            ["node:perf_hooks" :refer [performance]]
-            [kotoba.compiler.diagnostic :as diagnostic]
+  {:kotoba/export [analyze-options capability-policy command-line-args emit-metadata execute! invoke option options oracle-fuel parse-policy-material read-artifact-file! read-artifact-text! read-edn-file! read-policy read-policy-material refusal serve! source! timed usage-error!]}
+  (:require [kotoba.compiler.diagnostic :as diagnostic]
             [kotoba.compiler.kotoba-reader :as kr]
+            [kotoba.compiler.posix-path :as posix-path]
+            [kotoba.compiler.text-bytes :as text-bytes]
             [kotoba.kir.cljs-i64 :as i64]
-            [kotoba.compiler.nbb.io :as io]
-            [kotoba.compiler.source-path :as source-path]))
+            [kotoba.compiler.nbb.io :as nbb-io]
+            [kotoba.compiler.source-path :as source-path]
+            ;; Abilities (superproject adr-2609242330 S5). Under Kotoba
+            ;; `env/read`, `clock/now`, `cli/args`, `io/write` and
+            ;; `io/write-error` are catalog operations (wires 33, 7, 38, 37,
+            ;; 39) whose handlers come from the target profile; under nbb
+            ;; these aliases name the mechanism-layer handlers, the only
+            ;; place a host module is required by string.
+            #?(:cljs [kotoba.compiler.nbb.host.cli :as cli])
+            #?(:cljs [kotoba.compiler.nbb.host.clock :as clock])
+            #?(:cljs [kotoba.compiler.nbb.host.env :as env])
+            #?(:cljs [kotoba.compiler.nbb.host.io :as io])
+            ;; Not an ability: loading, the event loop and handing the exit
+            ;; status to the OS (adr-2609242330 section 1 (c)(2)).
+            #?(:cljs [kotoba.compiler.nbb.host.entry :as host-entry])))
 
 ;; Opt-in phase timings go to stderr behind a stable marker. Normal stdout and
 ;; artifact bytes remain unchanged.
 (def ^:private timing-enabled?
-  (= "1" (aget js/process.env "KOTOBA_COMPILER_TIMING")))
-(def ^:private timing-origin-ms (volatile! (.now performance)))
+  (= "1" (env/read "KOTOBA_COMPILER_TIMING")))
+
+;; The monotonic clock in milliseconds. clock/now answers nanoseconds as
+;; decimal text; phases are differences of two readings, so the clock's
+;; origin does not matter (performance.now's did not either).
+(defn- monotonic-ms []
+  (/ (parse-double (clock/now "monotonic")) 1000000))
+
+(def ^:private timing-origin-ms (volatile! (monotonic-ms)))
 (def ^:private timing-phases (volatile! []))
 
 (defn- reset-timing! []
-  (vreset! timing-origin-ms (.now performance))
+  (vreset! timing-origin-ms (monotonic-ms))
   (vreset! timing-phases []))
 
 (defn timed [phase f]
   (if-not timing-enabled?
     (f)
-    (let [started (.now performance)]
+    (let [started (monotonic-ms)]
       (try
         (f)
         (finally
           (vswap! timing-phases conj
-                  {:phase phase :milliseconds (- (.now performance) started)}))))))
+                  {:phase phase :milliseconds (- (monotonic-ms) started)}))))))
 
 (defn- timing-report []
   (when timing-enabled?
     {:format "kotoba.compiler-timing/v1"
-     :totalMilliseconds (- (.now performance) @timing-origin-ms)
+     :totalMilliseconds (- (monotonic-ms) @timing-origin-ms)
      :phases @timing-phases}))
 
 (defn- emit-timing! [report]
   (when report
-    (.error js/console
-            (str "KOTOBA_TIMING " (.stringify js/JSON (clj->js report))))))
+    (io/write-error (str "KOTOBA_TIMING " (.stringify js/JSON (clj->js report)) "\n"))))
 
 (defn option [args flag] (second (drop-while #(not= flag %) args)))
 
@@ -110,7 +129,7 @@
 ;; supposed to make a build MORE constrained, so it must not be the one input
 ;; read without limits.
 (defn read-edn-file! [path]
-  (read-edn-form! max-policy-nodes (io/read-text-file path)))
+  (read-edn-form! max-policy-nodes (nbb-io/read-text-file path)))
 
 (def ^:private structural-index-keys
   "KIR function metadata whose integers are HOST indexes into `:params`, not
@@ -160,7 +179,7 @@
   One narrowing, after the read: `structural-index-keys` above -- host
   indexes, not values."
   [path]
-  (narrow-structural-indexes (read-edn-form! max-artifact-nodes (io/read-artifact-text-file path))))
+  (narrow-structural-indexes (read-edn-form! max-artifact-nodes (nbb-io/read-artifact-text-file path))))
 
 (defn read-artifact-text!
   "`read-artifact-file!` over text already in hand: the sealed handler
@@ -172,7 +191,7 @@
 
 (defn read-policy-material [args]
   (if-let [path (option args "--policy")]
-    {:present? true :text (io/read-text-file path)}
+    {:present? true :text (nbb-io/read-text-file path)}
     {:present? false :text ""}))
 
 (defn parse-policy-material
@@ -309,7 +328,7 @@
              :diagnostic (diagnostic/from-error error source-name)
              :message (if (= phase :internal)
                         "internal compiler error"
-                        (diagnostic/refined-message error (.-message error)))}
+                        (diagnostic/refined-message error (ex-message error)))}
       (:details refined) (assoc :details (:details refined)))))
 
 (defn- invoke* [run! args reset?]
@@ -323,7 +342,7 @@
     (catch :default error
       (let [source (second args)
             source-name (when (source-path/source-kind source)
-                          (.basename node-path source))
+                          (posix-path/basename source))
             report (error-report error source-name)]
         {:status (exit-code (:error report))
          :stdout ""
@@ -341,36 +360,46 @@
   and the same exit code `invoke` would have produced for ERROR."
   [error source]
   (let [source-name (when (source-path/source-kind source)
-                      (.basename node-path source))
+                      (posix-path/basename source))
         report (error-report error source-name)]
     {:status (exit-code (:error report))
      :stderr (str (pr-str report) "\n")}))
 
-(defn execute! [run!]
+(defn command-line-args
+  "The arguments this entrypoint was invoked with, through the cli/args
+  ability: the empty request answers the count, a decimal the argument."
+  []
+  (mapv #(cli/args (str %)) (range (parse-long (cli/args "")))))
+
+(defn execute!
+  "Run one command and answer its exit status. The status is the entry's
+  RESULT (adr-2609242330 section 1 (a): exit is not an ability); on nbb the
+  mechanism layer hands a non-zero one to the OS."
+  [run!]
   (let [{:keys [status stdout stderr timing]}
-        (invoke* run! (vec *command-line-args*) false)]
+        (invoke* run! (command-line-args) false)]
     (emit-timing! timing)
-    (when (seq stdout) (.write js/process.stdout stdout))
-    (when (seq stderr) (.write js/process.stderr stderr))
-    (when-not (zero? status) (.exit js/process status))))
+    (when (seq stdout) (io/write stdout))
+    (when (seq stderr) (io/write-error stderr))
+    #?(:cljs (when-not (zero? status) (host-entry/exit! status)))
+    status))
 
 (def ^:private max-worker-line-bytes (* 64 1024))
 (def ^:private max-worker-args 64)
 (def ^:private max-worker-arg-chars 4096)
 
 (defn- configured-max-requests []
-  (let [text (or (aget js/process.env "KOTOBA_WORKER_MAX_REQUESTS") "1000")
+  (let [text (let [t (env/read "KOTOBA_WORKER_MAX_REQUESTS")] (if (seq t) t "1000"))
         value (js/Number text)]
     (if (and (js/Number.isSafeInteger value) (<= 1 value 100000))
       value
       1000)))
 
 (defn- write-worker-response! [response]
-  (.write js/process.stdout
-          (str (.stringify js/JSON (clj->js response)) "\n")))
+  (io/write (str (.stringify js/JSON (clj->js response)) "\n")))
 
 (defn- request! [line]
-  (when (> (.byteLength js/Buffer line "utf8") max-worker-line-bytes)
+  (when (> (text-bytes/utf8-length line) max-worker-line-bytes)
     (usage-error! "worker request exceeds byte limit"))
   (let [request (js->clj (.parse js/JSON line) :keywordize-keys true)
         args (:args request)]
@@ -398,8 +427,8 @@
         close! (fn []
                  (when-not @closed?
                    (vreset! closed? true)
-                   (.pause js/process.stdin)
-                   (js/setImmediate #(.exit js/process 0))))
+                   (host-entry/pause-stdin!)
+                   (host-entry/exit-soon! 0)))
         handle-line!
         (fn [line]
           (let [count (vswap! requests inc)]
@@ -429,11 +458,11 @@
                   (write-worker-response! {:format "kotoba.compiler-worker/v1"
                                            :type "result" :id nil :status 64
                                            :stdout ""
-                                           :stderr (str (.-message error) "\n")}))))))]
+                                           :stderr (str (ex-message error) "\n")}))))))]
     (write-worker-response! {:format "kotoba.compiler-worker/v1"
                              :type "ready" :target (name target)
                              :maxRequests maximum})
-    (.on js/process.stdin "data"
+    (host-entry/on-stdin-data!
          (fn [chunk]
            (when-not @closed?
              (vreset! pending (.concat js/Buffer #js [@pending chunk]))
@@ -463,7 +492,7 @@
                        (do
                          (handle-line! (.toString line-buffer "utf8"))
                          (when-not @closed? (recur)))))))))))
-    (.on js/process.stdin "end"
+    (host-entry/on-stdin-end!
          (fn []
            (when-not @closed?
              (when (pos? (.-length @pending))

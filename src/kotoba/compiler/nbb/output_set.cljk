@@ -2,24 +2,25 @@
   "Deterministic commit marker for a primary artifact and its provenance."
   {:kotoba/export [descriptor format serialize verify!]}
   (:require [kotoba.compiler.nbb.compile-cache :as digest]
-            ["node:path" :as path]))
+            [kotoba.compiler.posix-path :as posix-path]
+            [kotoba.compiler.text-bytes :as text-bytes]))
 
 (def format :kotoba.output-set/v1)
 
-(defn- buffer [value]
-  (if (string? value) (.from js/Buffer value "utf8") value))
-
-(defn- identity [role name value]
-  (let [bytes (buffer value)]
-    {:role role :name name
-     :sha256 (digest/sha256 bytes)
-     :size (.-length bytes)}))
+(defn- identity
+  "VALUE is text (sized and hashed as its UTF-8 bytes) or bytes."
+  [role name value]
+  {:role role :name name
+   :sha256 (digest/sha256 value)
+   :size (if (string? value)
+           (text-bytes/utf8-length value)
+           (text-bytes/bytes-length value))})
 
 (defn descriptor [output artifact-value provenance-value]
   (let [payload {:format format
-                 :files [(identity :artifact (.basename path output) artifact-value)
+                 :files [(identity :artifact (posix-path/basename output) artifact-value)
                          (identity :provenance
-                                   (.basename path (str output ".provenance.edn"))
+                                   (posix-path/basename (str output ".provenance.edn"))
                                    provenance-value)]}]
     (assoc payload :sha256 (digest/sha256 (pr-str payload)))))
 
