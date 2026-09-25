@@ -14,10 +14,12 @@
   code beside the guest's, and to kotoba-verifier, which re-derives that code
   from each artifact's own program.
 
-  The C1 module's code is ALSO embedded in tools/kexe_loader.c (the
-  KEXE-DECISIONS-GENERATED region). This script refuses to write unless the
-  bytes it compiled are byte-identical to the ones in that region, per ISA:
-  the static image and the loader run one compiled predicate, not two.
+  BOTH modules' code is ALSO embedded in tools/kexe_loader.c (the
+  KEXE-DECISIONS-GENERATED region; the handlers' since the kexe loader answers
+  spawn, entropy and every :fs/app-data form, 2026-09-25). This script refuses
+  to write unless the bytes it compiled are byte-identical to the ones in that
+  region, per ISA and per module: the static image and the loader run one
+  compiled decision module, not two.
 
     kbb --backend sci --classpath . scripts/gen-linux-static-handlers.cljk          rewrite
     kbb --backend sci --classpath . scripts/gen-linux-static-handlers.cljk --check  exit 1 when stale
@@ -55,11 +57,12 @@
     (mapv js/Number (remove str/blank? (str/split (subs text (+ start 7) end) #"[ ,]+")))))
 
 (defn loader-region-bytes
-  "The C1 decision code tools/kexe_loader.c embeds for the ISA guarded by
-  GUARD, as numbers."
-  [text guard]
+  "The decision code tools/kexe_loader.c embeds for the ISA guarded by GUARD,
+  as numbers: ARRAY names the C1 module's (kexe_decisions_code) or the
+  handlers' (kexe_handler_decisions_code)."
+  [text guard array]
   (let [start (.indexOf text (str "#if defined(" guard ")\n#define KEXE_DECISIONS_CAP_ADMITTED_OFFSET"))
-        open (.indexOf text "{" (.indexOf text "kexe_decisions_code[" start))
+        open (.indexOf text "{" (.indexOf text (str array "[") start))
         close (.indexOf text "};" open)]
     (when (neg? start) (fail! (str "tools/kexe_loader.c embeds no decision code for " guard)))
     (mapv #(js/parseInt % 16)
@@ -99,10 +102,12 @@
                         (for [[isa target guard] [[:aarch64 "aarch64" "__aarch64__"]
                                                   [:x86_64 "x86_64" "__x86_64__"]]]
                           (let [t (into {} (for [[k path] sources] [k (compile! tmp path target)]))]
-                            (when-not (= (code-bytes (:decisions t)) (loader-region-bytes loader guard))
-                              (fail! (str "the " target " code compiled from tools/kexe_loader_decisions.kotoba "
-                                          "is not the code tools/kexe_loader.c embeds -- regenerate that "
-                                          "region first (scripts/gen-loader-decisions.cljk)")))
+                            (doseq [[k array] [[:decisions "kexe_decisions_code"]
+                                               [:handlers "kexe_handler_decisions_code"]]]
+                              (when-not (= (code-bytes (get t k)) (loader-region-bytes loader guard array))
+                                (fail! (str "the " target " code compiled from " (get (into {} sources) k)
+                                            " is not the code tools/kexe_loader.c embeds -- regenerate that "
+                                            "region first (scripts/gen-loader-decisions.cljk)"))))
                             [isa t])))
             shas (into {} (for [[k path] sources] [k (lib/sha256 (lib/join lib/root path))]))]
         (render texts shas))

@@ -30,6 +30,17 @@
 ;; -- so the packager is handed that profile rather than restating any of it.
 (defn- num [n] (js/Number n))
 
+(defn- spawn-grant
+  "The :process/spawn grant of a compile policy: top-level `:spawn`, or the
+  older `:linux-static :spawn` spelling. Both at once is refused."
+  [policy]
+  (let [top (:spawn policy)
+        old (get-in policy [:linux-static :spawn])]
+    (when (and (some? top) (some? old))
+      (throw (ex-info "the :process/spawn grant is spelled twice: use the top-level :spawn, not also :linux-static :spawn"
+                      {:reason :policy/spawn-grant-spelled-twice})))
+    (if (some? top) top old)))
+
 (defn- static-options
   "superproject adr-2609251400 C3. What a program with capability effects is
   packaged with, all of it sealed into the image:
@@ -45,10 +56,16 @@
                the effects themselves, each already admitted by `:allow`.
     :fs-scope  the policy's `:linux-static :fs-scope`, the one directory
                :fs/app-data and :fs/browse resolve under.
-    :spawn     the policy's `:linux-static :spawn` ({:programs [..]
+    :spawn     the policy's top-level `:spawn` ({:programs [..]
                :path-lookup bool :env [..]}): what :process/spawn may run,
                whether a bare name is looked up among those programs, and
-               which variables the child receives (C3, second half).
+               which variables the child receives (C3, second half). The
+               grant is target-neutral (kotoba-lang lang/capability-catalog.edn
+               :process/spawn :grant; the kexe loader and the kbb js host take
+               the same shape), so it is not spelled under `:linux-static`
+               any more; that older spelling is still read, and a policy that
+               spells it both ways is refused rather than one silently
+               winning.
 
   The grant is authority (adr-2609242100: a capability is the authority to
   use a handler), so it comes from the compile policy and nowhere else: the
@@ -56,7 +73,8 @@
   [artifact policy]
   (let [isa (get-in linux-static/targets [(:target artifact) :isa])
         texts (get static-handlers/artifact-texts isa)
-        {:keys [grant fs-scope spawn]} (:linux-static policy)]
+        {:keys [grant fs-scope]} (:linux-static policy)
+        spawn (spawn-grant policy)]
     (cond-> {:handlers {:decisions (support/read-artifact-text! (:decisions texts))
                         :handlers (support/read-artifact-text! (:handlers texts))}}
       (some? grant) (assoc :grant (set (map num grant)))
