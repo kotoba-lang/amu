@@ -10,7 +10,7 @@
             [kotoba.compiler.nbb.verdict-cache :as verdict-cache]
             [kotoba.compiler.definition-identity :as definition-identity]
             [kotoba.sema :as sema]
-            [kotoba.compiler.nbb.io :as io]
+            [kotoba.compiler.nbb.io :as nbb-io]
             [kotoba.compiler.nbb.output-set :as output-set]
             [kotoba.compiler.nbb.project-source :as project-source]
             [kotoba.compiler.effect-row :as effect-row]
@@ -22,7 +22,12 @@
             [kotoba.compiler.source-path :as source-path]
             [kotoba.compiler.uefi-operations :as uefi]
             [kotoba.kir.target :as target-profile]
-            [kotoba.verifier :as verifier]))
+            [kotoba.verifier :as verifier]
+            [kotoba.compiler.text-bytes :as text-bytes]
+            ;; The env/read ability (catalog wire 33, superproject
+            ;; adr-2609242330 S5); under nbb the alias names the
+            ;; mechanism-layer handler.
+            #?(:cljs [kotoba.compiler.nbb.host.env :as env])))
 
 ;; Mirrors `kotoba.compiler.cli`'s `parse-target`, restricted to ORDINARY
 ;; (non-aiueos) native target names -- everything this fast
@@ -274,7 +279,7 @@
   launcher writes or removes the variable on every spawn, so an ambient value
   is never read."
   []
-  (case (some-> js/process .-env (aget "AMU_TARGET_ORIGIN"))
+  (case (env/read "AMU_TARGET_ORIGIN")
     "host" :host
     "env" :env
     :explicit))
@@ -551,7 +556,7 @@ provenance-output (str output ".provenance.edn")
         publication-text (output-set/serialize output published provenance-text)]
     (support/timed
      "output-set-write"
-     #(io/write-set! [(if binary
+     #(nbb-io/write-set! [(if binary
                         (cond-> {:path output :bytes binary} mode (assoc :mode mode))
                         {:path output :text artifact-text})
                       {:path provenance-output :text provenance-text}
@@ -647,10 +652,10 @@ provenance-output (str output ".provenance.edn")
                                   :provenance-sha256 (compile-cache/sha256 (:provenance-text serialized)))
                      binary-base64 (assoc :binary-base64 binary-base64
                                           :binary-sha256 (compile-cache/sha256 binary-base64)))
-            size (+ (.byteLength js/Buffer (:artifact-text serialized) "utf8")
-                    (.byteLength js/Buffer (:provenance-text serialized) "utf8")
+            size (+ (text-bytes/utf8-length (:artifact-text serialized))
+                    (text-bytes/utf8-length (:provenance-text serialized))
                     (if binary-base64
-                      (.byteLength js/Buffer binary-base64 "utf8")
+                      (text-bytes/utf8-length binary-base64)
                       0))]
         (support/timed "cache-store" #(compile-cache/put! artifact-cache key sealed size))
         (cond-> {:ok true :target target :output output
@@ -739,7 +744,7 @@ provenance-output (str output ".provenance.edn")
       ;; else the reader returns. `Buffer.from` throws on a BigInt element, so
       ;; narrow here -- at the one place that needs Numbers -- rather than
       ;; walking the artifact and widening what the verifier was handed.
-      (io/write-bytes! output
+      (nbb-io/write-bytes! output
                        (js/Buffer.from (clj->js (mapv #(js/Number %) (:code artifact-map)))))
       ;; `:offset`, `:length` and `:arity` come out of the artifact, so they
       ;; are BigInts too, and `pr-str` renders a BigInt as
