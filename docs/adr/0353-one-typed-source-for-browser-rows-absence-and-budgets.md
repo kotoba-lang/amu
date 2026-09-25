@@ -49,7 +49,14 @@ Clojure it is today, the language gains:
    only; `when`, `if-let`, `when-let`, `cond->`, `some->` over an option
    desugar to `option-match`. Numbers, strings and records are never truthy.
    (Narrows ADR 0028's "no truthiness" to "no truthiness except presence";
-   coercion stays refused.)
+   coercion stays refused.) Landed 2026-09-25 (floor `:absence`, gate
+   `nil-field-is-absence-test`) with one measured cut: a literal learns T
+   from the record its context names (a declared record result, a record
+   field); `nil` with no record in context is refused by name, and the row
+   inference of point 3 is what will supply T there. Strings and records are
+   refused as tests. Numbers are not yet: the predicate primitives still
+   answer the legacy 0/1 `:i64` (`record-equal` was the one measured), so
+   refusing an `:i64` test is its own floor, `:bool-predicates`.
 3. **Row-polymorphic records with principal inference.** An unannotated
    parameter's type is inferred from its uses as a row: `(defn f [m] (:a m))`
    is `{:a T | r} -> T`. `assoc` extends the row, `dissoc` shrinks it,
