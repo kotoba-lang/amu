@@ -1,0 +1,100 @@
+(ns kotoba.compiler.row-operations-test
+  "ADR 0353 floor :row-operations (the extend-and-shrink half; the rest of
+  the floor as the ladder first wrote it is floor :row-unification).
+
+  assoc / dissoc / merge / select-keys on a record are row operations whose
+  results are record types, never the keyword->i64 pair map: assoc of a field
+  the record has keeps its type, of one it lacks EXTENDS it; dissoc and
+  select-keys SHRINK it; merge assoc's each field of a record or of a
+  keyword-keyed map literal onto it. A changed field set is the anonymous
+  closed record a map literal with those fields lowers to. A parameter used
+  by a row operation is a row (floor :row-records) and is monomorphized with
+  its function. kotoba-sema elaborates each to record-new / record-get /
+  record-assoc, so KIR and every backend see nothing new.
+
+  What stays refused is pinned by the literal of each refusal: a field is not
+  coerced (assoc / merge onto a field of another type), a row shrinks only by
+  fields it has, a record keeps at least one field, fields are static
+  (keyword literals), only a record is a row operation's receiver or a
+  merge operand, a shrunk record has no removed field, and a row parameter
+  still takes only a record."
+  (:require [clojure.test :refer [deftest is testing]]
+            [kotoba.kir :as ir]
+            [kotoba.sema :as sema]))
+
+(def ^:private prelude
+  (str "(ns b (:schemas {:b/s [:record :b/s [[:a :i64] [:b :i64]]]"
+       " :b/t [:record :b/t [[:a :i64] [:c :string]]]}))\n"
+       "(defn mk [] [:ref :b/s] {:a 5 :b 2})\n"
+       "(defn mt [] [:ref :b/t] {:a 7 :c \"xy\"})\n"))
+
+(defn- run-main [source]
+  (#?(:clj long :cljs js/Number)
+   (ir/execute (ir/lower (sema/analyze (str prelude source))) 'main [])))
+
+(defn- results [source]
+  (into {} (map (juxt :name :result)) (:functions (sema/analyze (str prelude source)))))
+
+(defn- refusal [source]
+  (try (ir/lower (sema/analyze (str prelude source))) nil
+       (catch #?(:clj clojure.lang.ExceptionInfo :cljs :default) error
+         (ex-message error))))
+
+(deftest row-operations-extend-and-shrink-test
+  (testing "admitted: assoc of a field the record has keeps its type"
+    (is (= 9 (run-main "(defn main [] :i64 (:a (assoc (mk) :a 9)))")))
+    (is (= [:ref :b/s] (get (results "(defn main [] [:ref :b/s] (assoc (mk) :a 1))") 'main))))
+  (testing "admitted: assoc of a field it lacks extends it"
+    (is (= 11 (run-main "(defn main [] :i64 (let [m (assoc (mk) :d 4)] (+ (:d m) (+ (:a m) (:b m)))))")))
+    (is (= 7 (run-main "(defn main [] :i64 (:a (:x (assoc (mk) :x (mt) :y 2))))"))))
+  (testing "admitted: dissoc and select-keys shrink it"
+    (is (= 5 (run-main "(defn main [] :i64 (:a (dissoc (mk) :b)))")))
+    (is (= 2 (run-main "(defn main [] :i64 (string-byte-length (:c (select-keys (mt) [:c]))))")))
+    (is (= 9 (run-main "(defn main [] :i64 (let [m (assoc (mk) :d 4)] (+ (:d m) (:a (dissoc m :b)))))"))))
+  (testing "admitted: merge assoc's a record's or a map literal's fields, right wins"
+    (is (= 3 (run-main "(defn main [] :i64 (:c (merge (mk) {:c 3})))")))
+    (is (= 11 (run-main "(defn main [] :i64 (let [m (merge (mk) (mt))] (+ (:a m) (+ (:b m) (string-byte-length (:c m))))))"))))
+  (testing "results are record types, never the keyword->i64 map"
+    (let [rs (results (str "(defn- ext [] (assoc (mk) :d 4)) (defn- shr [] (dissoc (mk) :b))"
+                           " (defn- mrg [] (merge (mk) (mt)))"
+                           " (defn main [] :i64 (+ (:d (ext)) (+ (:a (shr)) (:b (mrg)))))"))]
+      (is (= [:record :kotoba.map-literal/a+b+d [[:a :i64] [:b :i64] [:d :i64]]] (get rs 'ext)))
+      (is (= [:record :kotoba.map-literal/a [[:a :i64]]] (get rs 'shr)))
+      (is (= [:record :kotoba.map-literal/a+b+c [[:a :i64] [:b :i64] [:c :string]]] (get rs 'mrg)))))
+  (testing "admitted: a parameter a row operation uses is a row, specialized per record"
+    (is (= 16 (run-main "(defn- f [m] (assoc m :d 9)) (defn main [] :i64 (+ (:d (f (mk))) (:a (f (mt)))))")))
+    (is (= 12 (run-main (str "(defn- f [m] (select-keys m [:a])) (defn- g [r] (:a r))"
+                             " (defn main [] :i64 (+ (g (f (mk))) (g (f (mt)))))"))))
+    (is (= #{'f__row_0_b_s 'f__row_0_b_t}
+           (set (filter #(re-find #"^f" (str %))
+                        (keys (results "(defn- f [m] (assoc m :d 9)) (defn main [] :i64 (+ (:d (f (mk))) (:a (f (mt)))))")))))))
+  (testing "refused: a field is not coerced"
+    (is (= "expression type mismatch: expected i64, got string"
+           (refusal "(defn main [] :i64 (:a (assoc (mk) :a \"x\")))")))
+    (is (= "expression type mismatch: expected i64, got string"
+           (refusal "(defn main [] :i64 (:a (merge (mk) {:a \"x\"})))"))))
+  (testing "refused: a row shrinks only by fields it has, and keeps one"
+    (is (= "dissoc names field :z, which record :b/s does not have: a row shrinks only by fields it has"
+           (refusal "(defn main [] :i64 (:a (dissoc (mk) :z)))")))
+    (is (= "select-keys names field :z, which record :b/s does not have: a row shrinks only by fields it has"
+           (refusal "(defn main [] :i64 (:a (select-keys (mk) [:z])))")))
+    (is (= "dissoc leaves record :b/s with no field, and a record has at least one"
+           (refusal "(defn main [] :i64 (:a (dissoc (mk) :a :b)))")))
+    (is (= "argument (mt) to f is record :b/t, which has no field :b that the row {:b T | r} of parameter m reads"
+           (refusal "(defn- f [m] (dissoc m :b)) (defn main [] :i64 (:a (f (mt))))"))))
+  (testing "refused: a shrunk record has no removed field"
+    (is (= "record field must be a declared keyword literal"
+           (refusal "(defn main [] :i64 (:b (select-keys (mk) [:a])))"))))
+  (testing "refused: fields are static"
+    (is (= "assoc on record :b/s needs keyword literal fields: a record's fields are static; k is not a keyword literal"
+           (refusal "(defn main [] :i64 (let [k :a] (:a (assoc (mk) k 1))))")))
+    (is (= (str "select-keys requires a record and a literal vector of keyword fields: a record's "
+                "fields are static, so the fields it keeps are written, not computed")
+           (refusal "(defn main [] :i64 (let [ks [:a]] (:a (select-keys (mk) ks))))"))))
+  (testing "refused: only a record is a receiver, a merge operand, or a row argument"
+    (is (= "select-keys is a row operation on a record; 3 is i64"
+           (refusal "(defn main [] :i64 (:a (select-keys 3 [:a])))")))
+    (is (= "merge onto record :b/s takes records and keyword-keyed map literals; 3 is i64"
+           (refusal "(defn main [] :i64 (:a (merge (mk) 3)))")))
+    (is (= "argument 3 to f is i64, and parameter m of f is the row {| r}: only a record satisfies a row"
+           (refusal "(defn- f [m] (assoc m :d 1)) (defn main [] :i64 (:d (f 3)))")))))

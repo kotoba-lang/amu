@@ -91,12 +91,28 @@ Clojure it is today, the language gains:
    generic (an export has one ABI: annotate it or `defn-`), a generic used as
    a value. A record crossing a function boundary is still refused by the
    native oracle (exit 65), as an annotated one is: floor `:native-handles`.
-   Still open: `assoc` / `dissoc` / `merge` / `select-keys`, a map literal
-   passed to a row (it still lowers to the keyword->i64 map and is refused as
-   "map"), vectors of records, `(if c m n)` unification and loops over a row
-   parameter (floor `:row-operations`); the specialization CID derived from
-   the generic's (floor `:specialization-identity`; until then a
-   specialization's CID is its own monomorphic KIR's, which seals the record).
+   Floor `:row-operations` (gate `row-operations-extend-and-shrink-test`,
+   2026-09-26): on a record, `assoc` of a field it has keeps its type (the
+   value must be the field's type, no coercion), of one it lacks extends it;
+   `dissoc` / `select-keys` shrink it, naming only fields it has and keeping
+   at least one; `merge` assoc's every field of a record or keyword-keyed map
+   literal. A changed field set is the anonymous closed record a map literal
+   with those fields lowers to, never the keyword->i64 map. kotoba-sema
+   elaborates each to `record-new` / `record-get` / `record-assoc`, so KIR and
+   the backends see nothing new; a parameter a row operation uses is a row.
+   Refused by name: a missing field ("dissoc names field :z, which record
+   :b/s does not have: a row shrinks only by fields it has"), a record left
+   with no field, a computed field, a non-record receiver or merge operand.
+   Hosted (`wasm32-browser`) compiles these forms; both native targets refuse
+   them, as they refuse the same forms written by hand: `record-assoc` is not
+   natively qualified (exit 70) and the verifier does not see a record through
+   a `let` operand (exit 65) -- floor `:native-handles`.
+   Still open: a map literal passed to a row (it still lowers to the
+   keyword->i64 map and is refused as "map"), vectors of records, `(if c m n)`
+   unification and loops over a row parameter (floor `:row-unification`); the
+   specialization CID derived from the generic's (floor
+   `:specialization-identity`; until then a specialization's CID is its own
+   monomorphic KIR's, which seals the record).
 4. **Function values.** A function type carries its effect row; a closure is a
    one-word handle (code, environment) under aggregate ABI v8 and may be a
    record field or vector element. A stored function's effects are part of the
