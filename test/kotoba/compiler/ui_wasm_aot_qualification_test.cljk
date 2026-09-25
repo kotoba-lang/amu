@@ -3,7 +3,7 @@
 
   Empty queue stays option none (existing commit drivers). A host injects
   through ui-host.enqueue; next-event must return that event, not none."
-  (:require [clojure.edn :as edn]
+  (:require [kotoba.bytes :as kbytes] [clojure.edn :as edn]
             [kotoba.io :as io]
             [clojure.java.shell :as shell]
             [kotoba.lang.text :as str]
@@ -75,9 +75,9 @@
 (defn- enqueue-driver-wat []
   (let [ui "cm32p2|kotoba:application/ui@1"
         host "cm32p2|kotoba:application/ui-host@1"
-        target-bytes (vec (.getBytes "btn" "UTF-8"))
-        kind-bytes (vec (.getBytes "click" "UTF-8"))
-        value-bytes (vec (.getBytes "x" "UTF-8"))
+        target-bytes (vec (kbytes/utf8-bytes "btn"))
+        kind-bytes (vec (kbytes/utf8-bytes "click"))
+        value-bytes (vec (kbytes/utf8-bytes "x"))
         tptr 8
         kptr (+ tptr (count target-bytes))
         vptr (+ kptr (count kind-bytes))

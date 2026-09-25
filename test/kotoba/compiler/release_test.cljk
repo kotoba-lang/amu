@@ -1,5 +1,5 @@
 (ns kotoba.compiler.release-test
-  (:require [clojure.test :refer [deftest is]]
+  (:require [kotoba.bytes :as kbytes] [clojure.test :refer [deftest is]]
             [kotoba.compiler.release :as release]
             [kotoba.verifier.signing :as signing])
   (:import [java.nio.file Files Path]
@@ -21,7 +21,7 @@
             second (release/sbom-bytes (str artifact))]
         (is (= (seq first) (seq second)))
         (Files/write sbom first (make-array java.nio.file.OpenOption 0))
-        (let [text (String. first "UTF-8")
+        (let [text (kbytes/utf8-string first)
               envelope (release/attest (str artifact) (str sbom)
                                        :wasm32-wasi-kotoba-v1 key 1000 2000)]
           (is (.contains text "SPDXVersion: SPDX-2.3"))

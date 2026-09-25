@@ -10,7 +10,7 @@
   validity bounds and the recorded sizes are admitted through
   `verifier/guest-integer?` and compared through a normalizing equality."
   {:kotoba/export [attest file-identity sbom-bytes verify!]}
-  (:require [kotoba.lang.coll :as coll]
+  (:require [kotoba.bytes :as kbytes] [kotoba.lang.coll :as coll]
             [kotoba.verifier :as verifier]
             [kotoba.verifier.signing :as signing]
             [kotoba.kir.target :as target]
@@ -18,7 +18,6 @@
                        ["node:fs" :as fs]
                        ["node:path" :as node-path]]))
   #?(:clj (:import [java.io FileInputStream]
-                   [java.nio.charset StandardCharsets]
                    [java.nio.file Files LinkOption Path Paths]
                    [java.security MessageDigest])))
 
@@ -110,7 +109,7 @@
          "Relationship: SPDXRef-DOCUMENT DESCRIBES " file-id "\n")))
 (defn sbom-bytes [artifact-path]
   (let [text (sbom-text artifact-path)]
-    #?(:clj (.getBytes text StandardCharsets/UTF_8)
+    #?(:clj (kbytes/utf8-bytes text)
        :cljs (js/Buffer.from text "utf8"))))
 (defn- canonical-sbom! [artifact-path sbom-path]
   (let [path (regular-path sbom-path)
