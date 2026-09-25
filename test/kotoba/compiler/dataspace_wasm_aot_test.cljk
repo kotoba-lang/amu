@@ -7,8 +7,8 @@
   It is not clock's i64 kotoba:cap/call surface (:wasm32-kotoba-v1).
   :native-aot / :jit are proved in dataspace-native-aot-test and
   dataspace-jit-test. Matcher stays .cljc."
-  (:require [clojure.edn :as edn]
-            [clojure.java.io :as io]
+  (:require [kotoba.bytes :as kbytes] [clojure.edn :as edn]
+            [kotoba.io :as io]
             [clojure.java.shell :as shell]
             [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]
@@ -42,7 +42,7 @@
    (slurp (io/resource "kotoba/lang/capability-kits/dataspace-v1.edn"))))
 
 (defn- node-probe [compiled javascript]
-  (let [encoded (.encodeToString (java.util.Base64/getEncoder)
+  (let [encoded (kbytes/base64-encode
                                  ^bytes (:bytes compiled))
         probe (str "import('./runtime/browser-host.mjs').then(async m=>{"
                    javascript

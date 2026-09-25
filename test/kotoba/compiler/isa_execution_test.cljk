@@ -18,7 +18,7 @@
   macOS therefore requires the full table, while other hosts require their host
   ISA. The availability set is always printed so the evidence cannot silently
   imply a cross-ISA run that did not occur."
-  (:require [clojure.java.io :as io]
+  (:require [kotoba.bytes :as kbytes] [clojure.java.io :as io]
             [clojure.java.shell :as shell]
             [kotoba.lang.text :as str]
             [clojure.test :refer [deftest is testing]]
@@ -503,7 +503,7 @@
    ["multi-byte needle" "日本語" "本" "X" "日X語"]
    ["multi-byte replacement" "a-b" "-" "日" "a日b"]])
 
-(defn- utf8-length [^String s] (alength (.getBytes s "UTF-8")))
+(defn- utf8-length [^String s] (alength (kbytes/utf8-bytes s)))
 
 (def ^:private string-search-cases
   (vec

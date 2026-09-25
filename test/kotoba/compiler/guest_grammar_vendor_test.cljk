@@ -47,9 +47,9 @@
      advances, but it may never move backwards.
   4. The grammar read names exactly the kernel heads the pinned frontend
      admits."
-  (:require [kotoba.compiler.core :as compiler]
+  (:require [kotoba.bytes :as kbytes] [kotoba.compiler.core :as compiler]
             [clojure.edn :as edn]
-            [clojure.java.io :as io]
+            [kotoba.io :as io]
             [kotoba.lang.coll :as set]
             [kotoba.lang.text :as str]
             [clojure.test :refer [deftest is testing]]
@@ -293,7 +293,7 @@
                (let [bytes (with-open [in (.openStream url)] (.readAllBytes in))]
                  {:url (str url)
                   :sha256 (sha256-hex bytes)
-                  :grammar (edn/read-string (String. bytes "UTF-8"))})))))
+                  :grammar (edn/read-string (kbytes/utf8-string bytes))})))))
 
 (defn- head-names [x] (into #{} (map name) x))
 
@@ -302,12 +302,12 @@
   ;; mechanism whether or not today's bytes happen to agree: it puts the
   ;; frontend's refusal set back under a file this repository updates in a
   ;; different commit from the frontend that reads it.
-  (is (.isFile (io/file "deps.edn"))
+  (is (io/file? (io/file "deps.edn"))
       "deps.edn is not readable from the test working directory, so a relative
        path here proves nothing; refusing rather than reporting a pass on a
        check that could not run")
-  (is (not (.isFile retired-local-copy))
-      (str "this repository ships " (.getPath retired-local-copy) " again.\n"
+  (is (not (io/file? retired-local-copy))
+      (str "this repository ships " (io/path retired-local-copy) " again.\n"
            "It SHADOWS kotoba-sema's copy on this classpath, and kotoba-sema"
            " owns the frontend that reads it (`load-catalog-forbidden`), so the"
            " language the compiler admits would again be decided by a file"
@@ -361,7 +361,7 @@
           (str "the grammar on this classpath is a SUPERSEDED authority digest\n"
                "  copy   " url "\n"
                "  sha256 " (subs sha256 0 12) " -- position "
-               (.indexOf ^java.util.List authority-digest-history sha256)
+               (set/index-of authority-digest-history sha256)
                " of " (count authority-digest-history) "\n"
                "Resync FORWARD to " (subs current 0 12)
                "; do not pin a kotoba-sema whose grammar this repository has"
@@ -469,7 +469,7 @@
         (str/split-lines text)))
 
 (deftest deps-edn-claim
-  (is (.isFile deps-edn-file)
+  (is (io/file? deps-edn-file)
       "deps.edn is not readable from the test working directory, so its claim about
        the grammar cannot be checked; refusing rather than reporting a pass")
   (let [text (slurp deps-edn-file)
