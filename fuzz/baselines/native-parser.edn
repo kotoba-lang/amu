@@ -86,7 +86,14 @@
 ;; the same behaviour. The deterministic-sanitized arm (ASan + UBSan, 20,000
 ;; cases) passed. Floors carried forward NOT re-measured (no libFuzzer
 ;; runtime on the machine that made this change); the Linux CI job measures.
+;; Advanced 2026-09-25 for the loader's two holes (superproject
+;; adr-2609251400 C3): the :fs/app-data and :fs/browse opens go beneath the
+;; scope root (openat2 RESOLVE_BENEATH on Linux, O_RESOLVE_BENEATH on macOS)
+;; through the new kexe_scope_open, and the Linux seccomp filter admits
+;; openat2 / mkdirat / unlinkat / renameat. The argv/handle parser the floors
+;; measure is untouched. Floors carried forward NOT re-measured (no libFuzzer
+;; runtime on the machine that made this change); the Linux CI job measures.
 {:format :kotoba.fuzz-baseline/v2
- :loader-source-sha256 "273b97a66831bb3388ec7c0d8de66c250299fbad86a08d490edbdcc13d55f849"
+ :loader-source-sha256 "9c2bbcee741c56f630538bdc77dba414f42f9c26610895e2c736867d78e4cf6b"
  :profiles {:x64 {:min-cov 60 :min-features 100 :min-corpus 20}
             :arm64 {:min-cov 60 :min-features 100 :min-corpus 18}}}

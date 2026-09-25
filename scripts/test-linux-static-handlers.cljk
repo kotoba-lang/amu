@@ -45,10 +45,22 @@
 (def gcc-image (opt "--gcc-image" "localhost/c3-gcc"))
 (def amu (lib/join lib/root "bin" "amu"))
 (def work (lib/temp-dir "c3-static-handlers-"))
-(def scope "/var/tmp/c3scope")
-(def outside "/var/tmp/c3outside")
+;; Per run, so two runs on one VM (two agents, two ISAs) do not rebuild each
+;; other's scope between a case's setup and its run -- which happened
+;; (`ln: ... File exists`, 2026-09-25).
+(def run-tag (str (.-pid js/process)))
+(def scope (str "/var/tmp/c3scope-" run-tag))
+(def outside-name (str "c3outside-" run-tag))
+(def outside (str "/var/tmp/" outside-name))
 
-(defn fail! [message] (.error js/console (str "test-linux-static-handlers: " message)) (.exit js/process 2))
+;; What a run must undo however it ends: fail! exits the process, so the
+;; `finally` below never runs on that path -- a setup failure left the VM at
+;; vm.overcommit_memory=1 (measured 2026-09-25).
+(def on-exit (atom nil))
+(defn fail! [message]
+  (.error js/console (str "test-linux-static-handlers: " message))
+  (when-let [f @on-exit] (reset! on-exit nil) (f))
+  (.exit js/process 2))
 
 (defn quote-arg [s] (str "'" (str/replace (str s) "'" "'\\''") "'"))
 
@@ -142,6 +154,7 @@ second line
       (string=? mode \"arg-bad\") (do (show \"arg\" (arg \"1x\")) 0)
       (string=? mode \"rename-out\") (do (show \"rename\" (fsq (string-concat p (string-concat \"RENAME_SEP\" (arg \"2\"))))) 0)
       (string=? mode \"write\") (do (show \"write\" (fsq (string-concat p \"WRITE_SEPbody\"))) 0)
+      (string=? mode \"chmod\") (do (show \"chmod\" (fsq (string-concat p \"CHMOD_SEP600\"))) 0)
       :else (do (line \"unknown mode\") 1))))
 ")
 
@@ -186,12 +199,11 @@ second line
         out (lib/join work "kexe_loader.c")]
     (fs/copyFileSync src out)
     ;; Two builds per ISA. The production loader (its Linux seccomp filter
-    ;; in force) is what a user runs; qemu-user cannot install a guest-arch
-    ;; seccomp filter (`seccomp: Invalid argument`, measured), and the filter
-    ;; admits no mkdirat / unlinkat / renameat, so the loader's own mutation
-    ;; providers are only reachable in the build that compiles the filter out
-    ;; (-DKEXE_SANITIZER_TEST, the sanitizer harness's switch: no seccomp, no
-    ;; RLIMIT_AS; every provider unchanged).
+    ;; in force) is what a user runs, and it runs only on the host ISA:
+    ;; qemu-user cannot install a guest-arch seccomp filter (`seccomp:
+    ;; Invalid argument`, measured). The other ISA runs the build that
+    ;; compiles the filter out (-DKEXE_SANITIZER_TEST, the sanitizer
+    ;; harness's switch: no seccomp, no RLIMIT_AS; every provider unchanged).
     (let [cmd (str "cd " (quote-arg work)
                    " && gcc -std=c11 -O2 -static kexe_loader.c -o loader-aarch64"
                    " && gcc -std=c11 -O2 -static -DKEXE_SANITIZER_TEST kexe_loader.c -o loader-aarch64-nosandbox"
@@ -215,7 +227,9 @@ second line
              (str "printf 'secret\\n' > " outside "/secret.txt")
              (str "ln -s " outside "/secret.txt " scope "/evil")
              (str "ln -s " outside " " scope "/d")
-             (str "ln -s hello.txt " scope "/inner")]))
+             (str "ln -s hello.txt " scope "/inner")
+             (str "ln -s sub " scope "/sd")
+             (str "ln -s " scope "/sub " scope "/sdabs")]))
 
 ;; ---------------------------------------------------------------------------
 ;; Running one case both ways
@@ -296,14 +310,10 @@ second line
     :expect #(when-not (= (:stdout %) "hello from the scope\n0\n") :stdout)}
    {:name "cat-dotdot-inside" :args ["cat" (str scope "/sub/../hello.txt")]
     :expect #(when-not (= (:stdout %) "hello from the scope\n0\n") :stdout)}
+   ;; mkdir / rename / unlink / rmdir: the production loader's seccomp
+   ;; filter admits mkdirat, unlinkat and renameat (x86_64) / renameat2
+   ;; (aarch64) since 2026-09-25; before, it died with SIGSYS at the mkdir.
    {:name "write-read-back" :args ["wr" (str scope "/work")]
-    ;; the production loader's seccomp filter admits no mkdirat: it dies at
-    ;; the fifth call. What it answered before that is the same.
-    :prod #(when-not (and (= 120 (:status %))
-                          (= (:stdout %) (str "write=[hello static\nsecond line\n]\nread=[hello static\nsecond line\n]\n"
-                                              "stat=[420 25 8 0]\nexists=[1]\n"))
-                          (= (:stderr %) "KEXE_TRAP {:kind :signal :signal :SIGSYS}\n"))
-             :loader-now-mutates)
     :expect #(when-not (= (:stdout %)
                           (str "write=[hello static\nsecond line\n]\nread=[hello static\nsecond line\n]\n"
                                "stat=[420 25 8 0]\nexists=[1]\nmkdir=[1]\nmkdir-again=[0]\nrename=[1]\n"
@@ -313,7 +323,14 @@ second line
    {:name "list-dir" :args ["ls" (str scope "/sub")]
     :expect #(when-not (= (:stdout %) "ls=[.hidden\t0\nZ.txt\t0\na.txt\t0\nb.txt\t0\ndir2\t1]\n0\n") :stdout)}
    {:name "list-root" :args ["ls" scope]
-    :expect #(when-not (= (:stdout %) "ls=[big.txt\t0\nd\t0\nevil\t0\nhello.txt\t0\ninner\t0\nsub\t1\nwork\t1]\n0\n") :stdout)}
+    :expect #(when-not (= (:stdout %) "ls=[big.txt\t0\nd\t0\nevil\t0\nhello.txt\t0\ninner\t0\nsd\t0\nsdabs\t0\nsub\t1\nwork\t1]\n0\n") :stdout)}
+   ;; A RELATIVE directory symlink that stays beneath the scope root is
+   ;; followed by both paths (RESOLVE_BENEATH follows it; only the final
+   ;; component is O_NOFOLLOW), for a read and for a mutation's parent.
+   {:name "cat-through-inside-dir-symlink" :args ["cat" (str scope "/sd/a.txt")]
+    :expect #(when-not (= (:stdout %) "B0\n") :stdout)}
+   {:name "mkdir-through-inside-dir-symlink" :args ["mkdir" (str scope "/sd/made")]
+    :expect #(when-not (= (:stdout %) "mkdir=[1]\n0\n") :stdout)}
    {:name "stat" :args ["stat" (str scope "/hello.txt")]
     :expect #(when-not (= (:stdout %) "stat=[420 21 8 0]\n0\n") :stdout)}
    {:name "clock" :args ["clock"] :masked? true
@@ -352,10 +369,10 @@ second line
     :expect #(when-not (and (= 120 (:status %)) (str/starts-with? (:stdout %) "argc=[2]\narg0=[echo]\narg1=[x]\n")
                             (re-find #"^KEXE_TRAP \{:kind :signal :signal :SIG(TRAP|ILL)\}\n$" (:stderr %)))
                :trap)}
-   {:name "escape-dotdot" :args ["cat" (str scope "/../c3outside/secret.txt")]
+   {:name "escape-dotdot" :args ["cat" (str scope "/../" outside-name "/secret.txt")]
     :expect #(when-not (and (= 120 (:status %)) (= "" (:stdout %))
                             (= (:stderr %) "KEXE_TRAP {:kind :signal :signal :SIGILL}\n")) :trap)}
-   {:name "escape-dotdot-relative" :args ["cat" "../c3outside/secret.txt"] :cwd scope
+   {:name "escape-dotdot-relative" :args ["cat" (str "../" outside-name "/secret.txt")] :cwd scope
     :expect #(when-not (and (= 120 (:status %)) (= (:stderr %) "KEXE_TRAP {:kind :signal :signal :SIGILL}\n")) :trap)}
    {:name "escape-absolute" :args ["cat" (str outside "/secret.txt")]
     :expect #(when-not (and (= 120 (:status %)) (= (:stderr %) "KEXE_TRAP {:kind :signal :signal :SIGILL}\n")) :trap)}
@@ -363,18 +380,26 @@ second line
     :expect #(when-not (and (= 120 (:status %)) (= (:stderr %) "KEXE_TRAP {:kind :signal :signal :SIGILL}\n")) :trap)}
    {:name "symlink-final-inside" :args ["cat" (str scope "/inner")]
     :expect #(when-not (and (= 120 (:status %)) (= (:stderr %) "KEXE_TRAP {:kind :signal :signal :SIGILL}\n")) :trap)}
-   ;; The Linux loader follows a DIRECTORY symlink out of the scope: its
-   ;; containment compares the fd with a stat of the same path, which the
-   ;; same symlink satisfies. openat2 RESOLVE_BENEATH refuses it (EXDEV).
-   {:name "escape-symlink-directory" :args ["cat" (str scope "/d/secret.txt")] :same? false
-    :static #(when-not (and (= 120 (:status %)) (= "" (:stdout %))
-                            (= (:stderr %) "KEXE_TRAP {:kind :signal :signal :SIGILL}\n")) :trap)
-    :kexe #(when-not (= (:stdout %) "secret\n0\n") :loader-no-longer-escapes)}
-   {:name "escape-mkdir-through-symlink" :args ["mkdir" (str scope "/d/planted")] :same? false
-    :static #(when-not (and (= 120 (:status %)) (= (:stderr %) "KEXE_TRAP {:kind :signal :signal :SIGILL}\n")) :trap)
-    :kexe #(when-not (= (:stdout %) "mkdir=[1]\n0\n") :loader-no-longer-escapes)
-    :prod #(when-not (and (= 120 (:status %)) (= (:stderr %) "KEXE_TRAP {:kind :signal :signal :SIGSYS}\n"))
-             :loader-now-mutates)}
+   ;; A DIRECTORY symlink out of the scope (d -> outside). Both paths open
+   ;; beneath the scope root (openat2 RESOLVE_BENEATH), which refuses it
+   ;; with EXDEV: a trap, for a read, a mkdir and a write alike. Until
+   ;; 2026-09-25 the loader followed it -- its containment compared the fd
+   ;; with a stat of the same path, which the same symlink satisfied -- and
+   ;; the read returned the outside bytes (a documented difference here).
+   {:name "escape-symlink-directory" :args ["cat" (str scope "/d/secret.txt")]
+    :expect #(when-not (and (= 120 (:status %)) (= "" (:stdout %))
+                            (= (:stderr %) "KEXE_TRAP {:kind :signal :signal :SIGILL}\n")) :trap)}
+   {:name "escape-mkdir-through-symlink" :args ["mkdir" (str scope "/d/planted")]
+    :expect #(when-not (and (= 120 (:status %)) (= "" (:stdout %))
+                            (= (:stderr %) "KEXE_TRAP {:kind :signal :signal :SIGILL}\n")) :trap)}
+   {:name "escape-write-through-symlink" :args ["write" (str scope "/d/planted.txt")]
+    :expect #(when-not (and (= 120 (:status %)) (= "" (:stdout %))
+                            (= (:stderr %) "KEXE_TRAP {:kind :signal :signal :SIGILL}\n")) :trap)}
+   ;; An ABSOLUTE symlink is refused even when it points inside the scope:
+   ;; RESOLVE_BENEATH does not restart resolution at "/".
+   {:name "absolute-symlink-inside" :args ["cat" (str scope "/sdabs/a.txt")]
+    :expect #(when-not (and (= 120 (:status %)) (= "" (:stdout %))
+                            (= (:stderr %) "KEXE_TRAP {:kind :signal :signal :SIGILL}\n")) :trap)}
    {:name "missing-file" :args ["missing" (str scope "/nope.txt")]
     :expect #(when-not (and (= 120 (:status %))
                             (= (:stdout %) "exists=[0]\nstat=[]\nreading anyway\n")
@@ -387,6 +412,18 @@ second line
     :expect #(when-not (and (= 120 (:status %)) (= (:stderr %) "KEXE_TRAP {:kind :signal :signal :SIGILL}\n")) :trap)}
    {:name "clock-unknown-form" :args ["clock-bad"]
     :expect #(when-not (and (= 120 (:status %)) (= (:stderr %) "KEXE_TRAP {:kind :signal :signal :SIGILL}\n")) :trap)}
+   ;; CHMOD: the loader answers it with fchmod, which the production seccomp
+   ;; filter does NOT admit -- the one unlisted syscall kept as the negative:
+   ;; the production loader is killed with SIGSYS. The static image has no
+   ;; CHMOD handler and traps by name.
+   {:name "chmod-unlisted-syscall" :args ["chmod" (str scope "/hello.txt")] :same? false
+    :static #(when-not (and (= 125 (:status %))
+                            (= (:stderr %) "KEXE_TRAP {:kind :slot :reason :slot/unimplemented :slot :typed-cap-call :capability :fs/app-data :form :chmod}\n"))
+               :named-trap)
+    :kexe #(when-not (= (:stdout %) "chmod=[1]\n0\n") :stdout)
+    :prod #(when-not (and (= 120 (:status %)) (= "" (:stdout %))
+                          (= (:stderr %) "KEXE_TRAP {:kind :signal :signal :SIGSYS}\n"))
+             :seccomp-no-longer-kills)}
    ;; APPEND is not implemented by the static handlers: a named trap there,
    ;; the loader's own refusal (no such file to append to) here.
    {:name "append-unimplemented" :args ["append" (str scope "/work/none.txt")] :same? false
@@ -411,7 +448,11 @@ second line
         overcommit (when (flag? "--overcommit")
                      (let [old (str/trim (:stdout (linux! "sysctl -n vm.overcommit_memory")))]
                        (linux! "sudo sysctl -q -w vm.overcommit_memory=1")
-                       old))]
+                       old))
+        restore! (fn []
+                   (when overcommit (linux! (str "sudo sysctl -q -w vm.overcommit_memory=" overcommit)))
+                   (linux! (str "rm -rf " scope " " outside)))]
+    (reset! on-exit restore!)
     (try
       (let [static-facts (linux! (str "for f in " (str/join " " (map #(quote-arg (lib/join work (str "probe-" %))) ["aarch64" "x86_64"]))
                                       "; do ldd \"$f\" 2>&1 | head -1; done"))]
@@ -444,8 +485,8 @@ second line
                 (check! (str label ": production kexe+loader (documented difference)") (nil? ((:kexe c) prod)) prod)
                 (check! (str label ": static = production kexe+loader") (same? prod) {:static static :prod prod}))))))
       (finally
-        (when overcommit (linux! (str "sudo sysctl -q -w vm.overcommit_memory=" overcommit)))
-        (linux! (str "rm -rf " scope " " outside))))
+        (reset! on-exit nil)
+        (restore!)))
     (let [failed (remove :ok @results)]
       (println (str "CASES\t" (count @results) "\tFAILED\t" (count failed)))
       (lib/remove-tree! work)
