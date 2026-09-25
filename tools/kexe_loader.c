@@ -4416,9 +4416,10 @@ static int kexe_scope_contains_fd(const struct kexe_scope *scope, int fd,
  * symlink that stays beneath it, and leave the final component to the
  * caller's O_NOFOLLOW -- the rule the static image states for the same
  * kernel call. There is no unconfined fallback: a Linux kernel without
- * openat2 (ENOSYS) and a macOS kernel that ignores O_RESOLVE_BENEATH (probed
- * once: `..` from the root must be refused) are both reported as ESCAPED,
- * which every caller treats as a failed containment -- a trap.
+ * openat2 (ENOSYS) is reported as ESCAPED, which every caller treats as a
+ * failed containment -- a trap; a macOS kernel that ignores
+ * O_RESOLVE_BENEATH (probed once: `..` from the root must be refused)
+ * resolves with O_NOFOLLOW_ANY, which refuses every symlink.
  *
  * A `/dev/fd` entry needs no path of its own here: macOS opens /dev/fd/N
  * beneath an O_DIRECTORY fd on /dev/fd (a file and a pipe measured, under
@@ -4448,6 +4449,9 @@ struct kexe_open_how {
 #endif
 #ifndef ENOTCAPABLE
 #define ENOTCAPABLE 107
+#endif
+#ifndef O_NOFOLLOW_ANY
+#define O_NOFOLLOW_ANY 0x20000000
 #endif
 /* 0 unprobed, 1 the kernel refuses `..` beneath a root, -1 it does not. */
 static int kexe_beneath_honoured = 0;
@@ -4496,18 +4500,25 @@ static int kexe_scope_open(const struct kexe_scope *scope, const char *candidate
         kexe_beneath_honoured = (errno == ENOTCAPABLE) ? 1 : -1;
       }
     }
-    if (kexe_beneath_honoured != 1) {
-      close(root);
-      *escaped = 1;
-      return -1;
-    }
+    /* A kernel without O_RESOLVE_BENEATH (macOS 14 ignores the bit:
+     * measured on the CI's macos-14 runner, where the probe failed and every
+     * fs open trapped) resolves with O_NOFOLLOW_ANY instead (macOS 11+): no
+     * symlink anywhere in the path. The candidate is lexically normalized
+     * and `rest` is relative, so without symlinks the resolution cannot
+     * leave the root. Stricter than beneath -- an in-scope relative symlink
+     * is refused too -- and any ELOOP is taken as the scope's refusal.
+     * O_NOFOLLOW is dropped there: with O_NOFOLLOW_ANY it is EINVAL
+     * (measured), and O_NOFOLLOW_ANY already covers the last component. */
+    int how = (kexe_beneath_honoured == 1) ? (flags | O_RESOLVE_BENEATH)
+                                           : ((flags & ~O_NOFOLLOW) | O_NOFOLLOW_ANY);
     int fd = (flags & O_CREAT)
-                 ? openat(root, rest, flags | O_RESOLVE_BENEATH, (mode_t)mode)
-                 : openat(root, rest, flags | O_RESOLVE_BENEATH);
+                 ? openat(root, rest, how, (mode_t)mode)
+                 : openat(root, rest, how);
     int saved = errno;
     close(root);
     if (fd < 0) {
-      *escaped = saved == ENOTCAPABLE;
+      *escaped = (kexe_beneath_honoured == 1) ? saved == ENOTCAPABLE
+                                              : saved == ELOOP;
       errno = saved;
     }
     return fd;
