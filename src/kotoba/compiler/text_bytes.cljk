@@ -11,7 +11,7 @@
 
   `utf8-text` refuses what is not canonical UTF-8 in both readings: the
   fatal decoder throws, `string-from-utf8` traps by name."
-  {:kotoba/export [bytes-from-ints bytes-length utf8-length utf8-text]})
+  {:kotoba/export [byte-at bytes-from-ints bytes-length concat-bytes empty-bytes index-of-byte slice-bytes utf8-bytes utf8-length utf8-text utf8-text-lossy]})
 
 (defn utf8-length
   "The number of bytes TEXT occupies in UTF-8."
@@ -36,3 +36,68 @@
   [#?@(:kotoba [ints :vector-i64] :default [ints])] #?@(:kotoba [:bytes])
   #?(:cljs (js/Buffer.from (clj->js (vec ints)))
      :default (bytes-from-vector-i64 ints)))
+
+(defn- byte-at-offset
+  "The byte at offset I of TEXT's UTF-8. Kotoba has no string-byte-at
+  builtin, so its reading asks string-find-byte which byte value sits at I
+  (at most 256 probes -- a reference reading, not a fast one)."
+  [#?@(:kotoba [text :string i :i64] :default [text i])] #?@(:kotoba [:i64])
+  (loop [b 0]
+    (if (or (> b 255) (= i #?(:kotoba (string-find-byte text b i)
+                              :cljs (let [at (.indexOf (.from js/Buffer text "utf8") b i)] at))))
+      b
+      (recur (inc b)))))
+
+(defn utf8-bytes
+  "TEXT's UTF-8 bytes. Under Kotoba there is no builtin for this direction
+  (string-from-utf8 is the other one), so the reading walks the bytes with
+  `byte-at-offset`."
+  [#?@(:kotoba [text :string] :default [text])] #?@(:kotoba [:bytes])
+  #?(:cljs (.from js/Buffer text "utf8")
+     :default (let [n (string-byte-length text)]
+                (loop [i 0 out (vector-i64)]
+                  (if (>= i n)
+                    (bytes-from-vector-i64 out)
+                    (recur (inc i) (vector-conj out (byte-at-offset text i))))))))
+
+(defn utf8-text-lossy
+  "BYTES decoded as UTF-8, an invalid sequence read as U+FFFD -- what
+  Buffer#toString(\"utf8\") answers. Kotoba has no lossy decoder, so its
+  reading refuses such bytes by name (string-from-utf8)."
+  [#?@(:kotoba [bytes :bytes] :default [bytes])] #?@(:kotoba [:string])
+  #?(:cljs (.toString bytes "utf8")
+     :default (string-from-utf8 bytes)))
+
+(defn empty-bytes
+  "Bytes of length 0."
+  [] #?@(:kotoba [:bytes])
+  #?(:cljs (.alloc js/Buffer 0)
+     :default (bytes-empty)))
+
+(defn concat-bytes
+  "A followed by B."
+  [#?@(:kotoba [a :bytes b :bytes] :default [a b])] #?@(:kotoba [:bytes])
+  #?(:cljs (.concat js/Buffer #js [a b])
+     :default (bytes-concat a b)))
+
+(defn byte-at
+  "The byte at offset I of BYTES, 0..255."
+  [#?@(:kotoba [bytes :bytes i :i64] :default [bytes i])] #?@(:kotoba [:i64])
+  #?(:cljs (aget bytes i)
+     :default (bytes-at bytes i)))
+
+(defn slice-bytes
+  "BYTES from START (inclusive) to END (exclusive). Under nbb a view that
+  shares the buffer (subarray), as the callers used before."
+  [#?@(:kotoba [bytes :bytes start :i64 end :i64] :default [bytes start end])] #?@(:kotoba [:bytes])
+  #?(:cljs (.subarray bytes start end)
+     :default (bytes-slice bytes start end)))
+
+(defn index-of-byte
+  "The first offset of the byte B in BYTES, or -1."
+  [#?@(:kotoba [bytes :bytes b :i64] :default [bytes b])] #?@(:kotoba [:i64])
+  #?(:cljs (.indexOf bytes b)
+     :default (loop [i 0]
+                (cond (>= i (bytes-count bytes)) -1
+                      (= b (bytes-at bytes i)) i
+                      :else (recur (inc i))))))

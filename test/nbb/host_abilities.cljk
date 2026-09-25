@@ -24,6 +24,14 @@
             [kotoba.compiler.nbb.host.env :as env]
             [kotoba.compiler.nbb.host.fs :as host-fs]
             [kotoba.compiler.nbb.host.hash :as hash]
+            [kotoba.compiler.nbb.host.entropy :as entropy]
+            [kotoba.compiler.nbb.host.process :as process]
+            [kotoba.compiler.nbb.host.sys :as sys]
+            [kotoba.compiler.nbb.fs-tree :as fs-tree]
+            [kotoba.compiler.process-wire :as process-wire]
+            [kotoba.compiler.host-integer :as host-integer]
+            [kotoba.compiler.base64-text :as base64-text]
+            [kotoba.bytes :as pure-bytes]
             [sha2.core :as sha2]))
 
 (def failures (volatile! []))
@@ -172,11 +180,161 @@
     (check! (= "1" (host-fs/app-data (str g "UNLINK_SEP"))) :unlink)
     (check! (= "1" (host-fs/app-data (str sub "RMDIR_SEP"))) :rmdir)
     (check! (= "" (host-fs/browse dir)) :browse-empty)
-    (check! (try (host-fs/app-data (str f "APPEND_SEPx")) false
-                 (catch :default e (= "fs/app-data APPEND is not answered by the nbb handler"
-                                      (ex-message e))))
-            :append-refused-by-name)
     (finally (.rmSync fs dir #js {:recursive true :force true}))))
+
+;; ---- the forms added in S5's second half (2026-09-25) ----
+;; Each against a private directory; every answer is the catalog's shape, and
+;; every refusal is pinned by the literal of its reason.
+(let [dir (.mkdtempSync fs (.join node-path (.tmpdir os) "amu-host-fs2-"))
+      f (str dir "/f.txt")
+      bin (str dir "/b.bin")
+      link (str dir "/link")
+      missing (str dir "/missing")
+      reason (fn [thunk] (try (thunk) :no-error (catch :default e (or (:reason (ex-data e)) (ex-message e)))))
+      uid (.getuid js/process)]
+  (try
+    ;; WRITE creates 0644 & ~umask, O_NOFOLLOW; APPEND needs the file.
+    (check! (= "ab" (host-fs/app-data (str f "WRITE_SEPab"))) :write)
+    (check! (= "cd" (host-fs/app-data (str f "APPEND_SEPcd"))) :append-answers-content)
+    (check! (= "abcd" (host-fs/app-data f)) :append-appended)
+    (check! (not= :no-error (reason #(host-fs/app-data (str missing "APPEND_SEPx")))) :append-needs-the-file)
+    ;; A content form is taken by its EARLIEST token.
+    (check! (= "xAPPEND_SEPy" (host-fs/app-data (str f "WRITE_SEPxAPPEND_SEPy"))) :write-content-holds-a-token)
+    (check! (= "xAPPEND_SEPy" (host-fs/app-data f)) :write-content-verbatim)
+    ;; RANGE: exactly the window, inside a regular file; outside is refused.
+    (host-fs/app-data (str f "WRITE_SEPhello"))
+    (check! (= "ell" (host-fs/app-data (str f "RANGE_SEP1:3"))) :range)
+    (check! (= "" (host-fs/app-data (str f "RANGE_SEP5:0"))) :range-empty-at-end)
+    (check! (= :fs/range-outside (reason #(host-fs/app-data (str f "RANGE_SEP3:3")))) :range-past-end)
+    (check! (= "fs/app-data RANGE spec must be <offset>:<length>"
+               (reason #(host-fs/app-data (str f "RANGE_SEP1-3"))))
+            :range-malformed)
+    ;; CHMOD: permission bits only; 1..6 octal digits.
+    (check! (= "1" (host-fs/app-data (str f "CHMOD_SEP600"))) :chmod)
+    (check! (= "384 5 " (subs (host-fs/app-data (str f "STAT_SEP")) 0 6)) :chmod-600)
+    (check! (= "1" (host-fs/app-data (str f "CHMOD_SEP4755"))) :chmod-setuid)
+    (check! (= 493 (bit-and (.-mode (.statSync fs f)) 4095)) :chmod-drops-setuid)
+    (check! (= "fs/app-data CHMOD takes 1..6 octal digits"
+               (reason #(host-fs/app-data (str f "CHMOD_SEP8")))) :chmod-8)
+    (check! (= "fs/app-data CHMOD takes 1..6 octal digits"
+               (reason #(host-fs/app-data (str f "CHMOD_SEP1234567")))) :chmod-7-digits)
+    (check! (= "0" (host-fs/app-data (str missing "CHMOD_SEP600"))) :chmod-absent)
+    ;; FSYNC of a file and of a directory; 0 when it cannot be opened.
+    (check! (= "1" (host-fs/app-data (str f "FSYNC_SEP"))) :fsync-file)
+    (check! (= "1" (host-fs/app-data (str dir "FSYNC_SEP"))) :fsync-dir)
+    (check! (= "0" (host-fs/app-data (str missing "FSYNC_SEP"))) :fsync-absent)
+    ;; MKTEMP: a new 0700 directory <dir>/<prefix>XXXXXX; "" when <dir> fails.
+    (let [a (host-fs/app-data (str dir "MKTEMP_SEP.p-"))
+          b (host-fs/app-data (str dir "MKTEMP_SEP.p-"))]
+      (check! (and (.startsWith a (str dir "/.p-")) (= (+ (count dir) 10) (count a))) :mktemp-name a)
+      (check! (not= a b) :mktemp-fresh)
+      (check! (= 448 (bit-and (.-mode (.statSync fs a)) 511)) :mktemp-0700))
+    (check! (= "" (host-fs/app-data (str missing "MKTEMP_SEP.p-"))) :mktemp-absent-dir)
+    (check! (= "fs/app-data MKTEMP prefix must not hold / or NUL"
+               (reason #(host-fs/app-data (str dir "MKTEMP_SEPa/b")))) :mktemp-slash)
+    ;; NOFOLLOW: the final component itself; OWNER: its uid and ours.
+    (.symlinkSync fs f link)
+    (check! (re-matches #"[0-9]+ [0-9]+ [0-9]+ 2" (host-fs/app-data (str link "NOFOLLOW_SEP"))) :nofollow-symlink)
+    (check! (re-matches #"[0-9]+ 5 [0-9]+ 0" (host-fs/app-data (str f "NOFOLLOW_SEP"))) :nofollow-file)
+    (check! (re-matches #"[0-9]+ [0-9]+ [0-9]+ 1" (host-fs/app-data (str dir "NOFOLLOW_SEP"))) :nofollow-dir)
+    (check! (= "" (host-fs/app-data (str missing "NOFOLLOW_SEP"))) :nofollow-absent)
+    (check! (= (str uid " " uid) (host-fs/app-data (str f "OWNER_SEP"))) :owner-self)
+    (check! (= (str "0 " uid) (host-fs/app-data "/OWNER_SEP")) :owner-root)
+    (check! (= "" (host-fs/app-data (str missing "OWNER_SEP"))) :owner-absent)
+    ;; WRITE does not follow a final symlink; RANGE does not either.
+    (check! (not= :no-error (reason #(host-fs/app-data (str link "WRITE_SEPz")))) :write-nofollow)
+    (check! (not= :no-error (reason #(host-fs/app-data (str link "RANGE_SEP0:1")))) :range-nofollow)
+    ;; The bytes payload.
+    (let [payload (js/Buffer.from #js [0 255 1 128 10])]
+      (host-fs/app-data-bytes (str bin "WRITE_SEP") payload)
+      (check! (.equals payload (host-fs/app-data-bytes bin)) :bytes-read)
+      (check! (.equals (.subarray payload 1 4) (host-fs/app-data-bytes (str bin "RANGE_SEP1:3"))) :bytes-range)
+      (check! (= :fs/invalid-utf8 (reason #(host-fs/app-data bin))) :text-read-refuses-bytes))
+    ;; fs-tree over the handler.
+    (fs-tree/make-directories! (str dir "/t/u/v"))
+    (check! (fs-tree/directory? (str dir "/t/u/v")) :make-directories)
+    (fs-tree/make-directories! (str dir "/t/u/v"))
+    (check! (fs-tree/directory? (str dir "/t/u/v")) :make-directories-again)
+    (.writeFileSync fs (str dir "/t/u/x") "x")
+    (.symlinkSync fs f (str dir "/t/u/out"))
+    (check! (= ["out" "v" "x"] (fs-tree/entries (str dir "/t/u"))) :entries)
+    (check! (= 2 (fs-tree/kind (str dir "/t/u/out"))) :kind-symlink)
+    (fs-tree/remove-tree! (str dir "/t"))
+    (check! (not (fs-tree/exists? (str dir "/t"))) :remove-tree)
+    (check! (= "hello" (.readFileSync fs f "utf8")) :remove-tree-never-follows)
+    (finally (.rmSync fs dir #js {:recursive true :force true}))))
+
+;; ---- entropy/draw ----
+(let [draws (repeatedly 200 #(entropy/draw "16"))]
+  (check! (every? #(re-matches #"[0-9a-f]{32}" %) draws) :draw-shape)
+  (check! (= 200 (count (set draws))) :draw-distinct)
+  (check! (= 512 (count (entropy/draw "256"))) :draw-256)
+  (doseq [bad ["0" "257" "" "-1" "01" "1.5" "abc"]]
+    (check! (try (entropy/draw bad) false
+                 (catch :default e (= "entropy/draw request must be a decimal count 1..256" (ex-message e))))
+            :draw-refused bad)))
+
+;; ---- process/spawn and its wire ----
+(let [node-run (fn [& args] (process/spawn (process-wire/request "node" (vec args))))
+      reason (fn [thunk] (try (thunk) :no-error (catch :default e (or (:reason (ex-data e)) (ex-message e)))))]
+  (check! (= "0\nhi" (node-run "-e" "process.stdout.write('hi')")) :spawn-stdout)
+  (check! (= "7\n" (node-run "-e" "process.exit(7)")) :spawn-exit)
+  (check! (= "-1\n" (node-run "-e" "process.kill(process.pid,'SIGKILL')")) :spawn-signal)
+  (check! (= "0\n" (node-run "-e" "process.stdin.on('data',()=>process.stdout.write('x'));process.stdin.on('end',()=>{})")) :spawn-stdin-eof)
+  (aset js/process.env "KOTOBA_SPAWN_PROBE_SECRET" "leak")
+  (check! (= "0\nundefined|string"
+             (node-run "-e" "process.stdout.write(String(process.env.KOTOBA_SPAWN_PROBE_SECRET)+'|'+typeof process.env.PATH)"))
+          :spawn-env-allow-list)
+  (check! (= (str "0\n" (.-execPath js/process)) (node-run "-e" "process.stdout.write(process.execPath)")) :spawn-node-is-exec-path)
+  (check! (= "0\na|b c|" (node-run "-e" "process.stdout.write(process.argv.slice(1).join('|'))" "a" "b c" ""))
+          :spawn-argv-verbatim)
+  (check! (re-matches #"0\n[0-9a-f]{40}\n" (process/spawn (process-wire/request "git" ["-C" "." "rev-parse" "HEAD"]))) :spawn-git)
+  (check! (= :spawn/program-not-granted (reason #(process/spawn "sh"))) :spawn-not-granted)
+  (check! (= :spawn/program-not-granted (reason #(process/spawn "/bin/echo"))) :spawn-absolute-not-granted)
+  (check! (= "process/spawn request names no program" (reason #(process/spawn "ARG_SEPx"))) :spawn-empty-program)
+  (check! (= "process/spawn request must not hold NUL" (reason #(process/spawn "node\u0000"))) :spawn-nul)
+  (check! (= :spawn/output-budget
+             (reason #(node-run "-e" "process.stdout.write('x'.repeat(64*1024*1024+1))")))
+          :spawn-output-budget)
+  (check! (= "process/spawn argument holds the ARG_SEP token"
+             (reason #(process-wire/request "node" ["xARG_SEPy"])))
+          :wire-refuses-separator)
+  (check! (= [7 "a\nb"] [(process-wire/answer-exit "7\na\nb") (process-wire/answer-out "7\na\nb")]) :wire-answer)
+  (check! (= -1 (process-wire/answer-exit "-1\n")) :wire-signal))
+
+;; ---- host facts and leaves ----
+(check! (= (.cwd js/process) (sys/cwd "")) :cwd)
+(check! (= 5 (host-integer/narrow (js/BigInt 5))) :narrow)
+(check! (= (js/BigInt "9007199254740993") (host-integer/exact "9007199254740993")) :exact)
+(check! (= [true false] [(host-integer/safe-integer? 9007199254740991) (host-integer/safe-integer? 9007199254740992)]) :safe-integer)
+(check! (= [12 nil 1000] [(host-integer/decimal-count "12") (host-integer/decimal-count "x") (host-integer/decimal-count "1e3")]) :decimal-count)
+(check! (= [5 (js/BigInt "9007199254740991")]
+           [(host-integer/narrow-below-max-safe (js/BigInt 5))
+            (host-integer/narrow-below-max-safe (js/BigInt "9007199254740991"))])
+        :narrow-below-max-safe)
+(let [rng (let [state (volatile! 2609251)] (fn [n] (vswap! state #(mod (+ (* % 1103515245) 12345) 2147483648)) (mod @state n)))]
+  (doseq [n (concat (range 0 70) [1000 4097 65536])]
+    (let [b (js/Buffer.from (clj->js (vec (repeatedly n #(rng 256)))))
+          text (base64-text/encode b)]
+      (check! (= text (pure-bytes/base64-encode b)) :base64-encode-pure n)
+      (check! (.equals b (base64-text/decode text)) :base64-round-trip n)
+      (check! (= (vec (js/Array.from b)) (pure-bytes/base64-decode text)) :base64-decode-pure n))))
+(let [b (text-bytes/concat-bytes (text-bytes/utf8-bytes "ab\r") (js/Buffer.from #js [10 0xC3 0x28]))]
+  (check! (= 6 (text-bytes/bytes-length b)) :concat)
+  (check! (= 3 (text-bytes/index-of-byte b 10)) :index-of-byte)
+  (check! (= -1 (text-bytes/index-of-byte b 9)) :index-of-byte-absent)
+  (check! (= 13 (text-bytes/byte-at b 2)) :byte-at)
+  (check! (= "ab" (text-bytes/utf8-text-lossy (text-bytes/slice-bytes b 0 2))) :slice)
+  (check! (= "�(" (text-bytes/utf8-text-lossy (text-bytes/slice-bytes b 4 6))) :lossy)
+  (check! (= 0 (text-bytes/bytes-length (text-bytes/empty-bytes))) :empty))
+(doseq [line ["{\"id\":7,\"op\":\"run\",\"args\":[\"compile\",\"x.kotoba\"]}"
+              "{\"id\":\"a\",\"op\":\"shutdown\"}" "{\"id\":null,\"args\":[]}"
+              "{\"n\":{\"deep\":[1,2,{\"k\":\"v\\u00e9\"}]}}"]]
+  (check! (= (json-text/decode-object line)
+             (let [walk (fn walk [v] (cond (map? v) (into {} (map (fn [[k x]] [(keyword k) (walk x)])) v)
+                                           (vector? v) (mapv walk v) :else v))]
+               (walk (json/decode line))))
+          :decode-object-pure line))
 
 (println (str "host-abilities: " @checks " checks, " (count @failures) " failed"))
 (when (seq @failures)

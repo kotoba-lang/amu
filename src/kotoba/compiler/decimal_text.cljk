@@ -1,0 +1,75 @@
+(ns kotoba.compiler.decimal-text
+  "Decimal integer text, read -- pure, with one leaf per host primitive
+  (superproject adr-2609242330 section 1 (b)). The compiler reads decimals
+  from the wire answers of its abilities (STAT fields, exit statuses);
+  Kotoba has no integer-parse builtin (only decimal-f64-parse), and nbb's
+  parse-long is not Kotoba, so the algorithm is written once here.
+
+    decimal?  an optional `-` and then 1..18 ASCII digits
+    parse     the value of a `decimal?` TEXT (0 for any other text)
+    fields    the space-separated decimals of TEXT (a STAT / NOFOLLOW /
+              OWNER answer), [] for the empty answer"
+  {:kotoba/export [decimal? fields parse]})
+
+;; ---- leaves ----
+
+(defn- len [#?@(:kotoba [s :string] :default [s])] #?@(:kotoba [:i64])
+  #?(:kotoba (string-byte-length s) :default (count s)))
+
+(defn- byte-is? [#?@(:kotoba [s :string i :i64 b :i64] :default [s i b])] #?@(:kotoba [:bool])
+  #?(:kotoba (= i (string-find-byte s b i))
+     :cljs (= b (.charCodeAt s i))))
+
+(defn- next-space
+  "The offset of the first space at or after FROM, or -1."
+  [#?@(:kotoba [s :string from :i64] :default [s from])] #?@(:kotoba [:i64])
+  #?(:kotoba (string-find-byte s 32 from)
+     :cljs (.indexOf s " " from)))
+
+(defn- cut [#?@(:kotoba [s :string start :i64 end :i64] :default [s start end])] #?@(:kotoba [:string])
+  #?(:kotoba (string-substring s start end) :default (subs s start end)))
+
+(defn- push [#?@(:kotoba [v :vector-i64 x :i64] :default [v x])] #?@(:kotoba [:vector-i64])
+  #?(:kotoba (vector-conj v x) :default (conj v x)))
+
+;; ---- the algorithm ----
+
+(defn- digit-at
+  "The digit at offset I of S, or -1."
+  [#?@(:kotoba [s :string i :i64] :default [s i])] #?@(:kotoba [:i64])
+  (loop [d 0]
+    (if (> d 9)
+      -1
+      (if (byte-is? s i (+ 48 d)) d (recur (inc d))))))
+
+(defn- start [#?@(:kotoba [s :string] :default [s])] #?@(:kotoba [:i64])
+  (if (and (> (len s) 0) (byte-is? s 0 45)) 1 0))
+
+(defn decimal? [#?@(:kotoba [s :string] :default [s])] #?@(:kotoba [:bool])
+  (let [from (start s)
+        n (len s)]
+    (and (> n from)
+         (<= (- n from) 18)
+         (loop [i from]
+           (if (>= i n)
+             true
+             (if (< (digit-at s i) 0) false (recur (inc i))))))))
+
+(defn parse [#?@(:kotoba [s :string] :default [s])] #?@(:kotoba [:i64])
+  (if (decimal? s)
+    (let [from (start s)
+          n (len s)
+          magnitude (loop [i from acc 0]
+                      (if (>= i n) acc (recur (inc i) (+ (* acc 10) (digit-at s i)))))]
+      (if (= from 1) (- 0 magnitude) magnitude))
+    0))
+
+(defn fields [#?@(:kotoba [s :string] :default [s])] #?@(:kotoba [:vector-i64])
+  (let [n (len s)]
+    (loop [i 0 acc #?(:kotoba (vector-i64) :default [])]
+      (if (>= i n)
+        acc
+        (let [j (next-space s i)]
+          (if (< j 0)
+            (push acc (parse (cut s i n)))
+            (recur (inc j) (push acc (parse (cut s i j))))))))))

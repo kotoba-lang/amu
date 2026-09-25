@@ -192,3 +192,50 @@
         (.writeFileSync fs (.join node-path lang "limits.edn") "{:a 2}\n")
         (is (not= l1 (vc/limits-digest [src (.join node-path root "resources")])))))
     (is (nil? (vc/limits-digest [src])) "no limits table, no digest (and so no cache)")))
+
+;; superproject adr-2609242330 S5 (2026-09-25): the store's security rules are
+;; now spelled as fs/app-data requests (NOFOLLOW, OWNER, MKTEMP + RENAME,
+;; WRITE + CHMOD + WRITE + RENAME). Each rule is pinned by the reason it names.
+(deftest the-store-rules-hold-over-the-ability-requests
+  (testing "a created directory is 0700 from the start, parents included"
+    (let [root (temp-dir "amu-verdict-mk-")
+          dir (.join node-path root "a" "b" "cache")
+          s (vc/open-store {:dir dir})]
+      (is (= dir (:dir s)))
+      (is (= 448 (bit-and (.-mode (.statSync fs dir)) 511)))
+      (is (= 448 (bit-and (.-mode (.statSync fs (.join node-path root "a"))) 511)))
+      (is (empty? (filter #(.startsWith % ".amu-verdict-cache-") (.readdirSync fs (.join node-path root "a" "b"))))
+          "no staging directory is left behind")))
+  (testing "a symlinked directory is refused, not followed"
+    (let [root (temp-dir "amu-verdict-ln-")
+          real (.join node-path root "real")
+          link (.join node-path root "link")]
+      (.mkdirSync fs real #js {:mode 448})
+      (.symlinkSync fs real link)
+      (is (= :insecure-directory (:disabled (vc/open-store {:dir link}))))))
+  (testing "a group-writable entry is foreign; a symlinked entry is unreadable"
+    (doseq [[label edit reason]
+            [["group-writable" (fn [file] (.chmodSync fs file 436)) "foreign-entry"] ; 0o664
+             ["a symlink to a copy" (fn [file]
+                                      (let [copy (str file ".copy")]
+                                        (.copyFileSync fs file copy)
+                                        (.unlinkSync fs file)
+                                        (.symlinkSync fs copy file)))
+              "unreadable"]]]
+      (let [{:keys [key result warnings calls]}
+            (tamper-and-resolve (fn [_ file _] (edit file)))]
+        (is (= (keyword reason) (:reason result)) label)
+        (is (= [(rejected-line key reason)] warnings) label)
+        (is (= 2 calls) (str label ": the validator ran again")))))
+  (testing "a directory at the entry's name is foreign on every read (it cannot be unlinked)"
+    (let [{:keys [result again calls]}
+          (tamper-and-resolve (fn [_ file _] (.unlinkSync fs file) (.mkdirSync fs file)))]
+      (is (= :foreign-entry (:reason result)))
+      (is (= :foreign-entry (:reason again)))
+      (is (= 3 calls) "never served, recomputed each time")))
+  (testing "an entry is written 0600 and no temporary survives"
+    (let [s (store)
+          r (vc/resolve! s :kotoba.verdict/native-verify base-fields (fn [] :ok))
+          names (vec (.readdirSync fs (:dir s)))]
+      (is (= [(str (:key r) ".edn")] names))
+      (is (= 384 (bit-and (.-mode (.statSync fs (entry-file s (:key r)))) 511))))))
