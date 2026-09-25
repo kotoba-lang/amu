@@ -47,7 +47,7 @@
                   (get-in limits/table [:profile/native :cells :trap])
                   (get-in limits/table [:profile/native :bytes :trap])
                   (:unimplemented-slot-trap static)
-                  :ok :trap/signal]]
+                  :ok :trap/signal :capability/refused]]
       (is (integer? (get codes trap)) (str trap " has an exit status")))))
 
 ;; superproject adr-2609251400 C3. The handler decision code a static image
@@ -70,7 +70,10 @@
 
 (deftest the-profile-hands-the-packager-a-handler-for-every-capability-it-names
   (let [handled (get-in limits/table [:profile/native :static-elf :capability-handlers :value])]
-    (is (= #{7 33 34 35 37 38 39 41} (set (keys handled))))
+    ;; C3, second half (2026-09-25): :process/spawn 20 and :entropy/draw 23
+    ;; joined, so no capability is refused at packaging any more.
+    (is (= #{7 20 23 33 34 35 37 38 39 41} (set (keys handled))))
     (is (contains? (set (get-in limits/table [:profile/native :static-elf :admitted-slots :value]))
                    :typed-cap-call))
-    (is (= #{20 23} (set (keys (get-in limits/table [:profile/native :static-elf :refused-capabilities :value])))))))
+    (is (= #{} (set (keys (get-in limits/table [:profile/native :static-elf :refused-capabilities :value])))))
+    (is (= 126 (get-in limits/table [:profile/native :static-elf :exit-codes :value :capability/refused])))))
