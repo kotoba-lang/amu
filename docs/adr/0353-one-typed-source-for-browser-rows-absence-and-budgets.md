@@ -66,7 +66,11 @@ Clojure it is today, the language gains:
    values unchanged; five aiueos kernel sources (`journal-plan`,
    `journal-record-build`, `mutable-object-build`, `service-registry-build`,
    `value-handle-arena`, all testing a 0/1 `write-u32` answer) are refused
-   by this amu and must be migrated when aiueos next re-attests its objects.
+   by this amu (exit 65; the first four have committed objects) and must be
+   migrated when aiueos next re-attests its objects. No aiueos source uses the
+   six elaborated operations, so no other aiueos object changes because of
+   this floor. `task-ready?` stays one linear consume: the ownership check
+   sees through its elaboration.
 3. **Row-polymorphic records with principal inference.** An unannotated
    parameter's type is inferred from its uses as a row: `(defn f [m] (:a m))`
    is `{:a T | r} -> T`. `assoc` extends the row, `dissoc` shrinks it,
