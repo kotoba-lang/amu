@@ -784,6 +784,8 @@
       :capability-handlers
       {:value
        {7 :clock/now,
+        20 :process/spawn,
+        23 :entropy/draw,
         33 :env/read,
         34 :fs/browse,
         35 :fs/app-data,
@@ -792,11 +794,11 @@
         39 :io/write-error,
         41 :io/read},
        :why
-       "Capabilities (lang/capability-catalog.edn :compiler-wire-id -> name) whose handler the static image carries (superproject adr-2609251400 C3, 2026-09-25). The mechanism is machine code over raw Linux syscalls (write, read, openat2 with RESOLVE_BENEATH, fstat, getdents64, mkdirat, unlinkat, renameat2, clock_gettime, getcwd); every decision is amu-compiled Kotoba the image carries (amu tools/kexe_loader_decisions.kotoba, the kexe loader's own, and tools/linux_static_handlers.kotoba). :clock/now answers the text form only (\"wall\" / \"monotonic\"); :fs/app-data answers the read, write, exists, stat, mtime, mkdir, unlink, rmdir and rename forms and traps :slot/unimplemented naming append, range and chmod. A program whose effects include a capability not listed here is refused at packaging, by name."},
+       "Capabilities (lang/capability-catalog.edn :compiler-wire-id -> name) whose handler the static image carries (superproject adr-2609251400 C3, 2026-09-25). The mechanism is machine code over raw Linux syscalls (write, read, openat2 with RESOLVE_BENEATH, fstat, getdents64, mkdirat, unlinkat, renameat2, clock_gettime, getcwd); every decision is amu-compiled Kotoba the image carries (amu tools/kexe_loader_decisions.kotoba, the kexe loader's own, and tools/linux_static_handlers.kotoba). :clock/now answers the text form only (\"wall\" / \"monotonic\"); :fs/app-data answers the read, write, exists, stat, mtime, mkdir, unlink, rmdir and rename forms, and since the second half of C3 (2026-09-25) append, range and chmod and the three proposed forms fsync, make-temp-dir and stat-nofollow (lang/capability-catalog.edn :fs/app-data :forms). The second half added :entropy/draw (getrandom, flags 0; ENOSYS is a named refusal, never a /dev/urandom fallback) and :process/spawn (clone / execve / wait4 over pipe2, dup3, close_range and PR_SET_NO_NEW_PRIVS; the executables, bare-name lookup and passed variables sealed from the compile policy's :linux-static :spawn). A program whose effects include a capability not listed here is refused at packaging, by name."},
       :refused-capabilities
-      {:value {20 :process/spawn, 23 :entropy/draw},
+      {:value {},
        :why
-       "Named so the packaging refusal says what it refused. process/spawn needs fork/execve and a child supervisor the static image does not carry; entropy/draw is cheap (getrandom) but the kexe loader answers it with the qualification host's identity stub, so there is no loader behaviour to match yet. Both are refused, not stubbed."},
+       "Capabilities refused at packaging BY NAME, so the refusal says what it refused. Empty since the second half of C3 (2026-09-25): process/spawn and entropy/draw, the two listed until then, have handlers. The kexe loader still answers both with the qualification host's identity stub, so the static image is the only native path that runs them."},
       :unimplemented-slot-trap :slot/unimplemented,
       :exit-codes
       {:value
@@ -805,9 +807,10 @@
         :budget/fuel 122,
         :budget/cells 123,
         :budget/bytes 124,
-        :slot/unimplemented 125},
+        :slot/unimplemented 125,
+        :capability/refused 126},
        :why
-       "Process exit status per outcome. 120 is the kexe loader's status for a guest signal (SIGILL / SIGTRAP / SIGSEGV ...), kept so a caller reading either path sees the same code for the same trap; a budget or slot trap gets its own code because a loader-less process has no supervisor to name it after the fact. 121 is left to the loader's stdout-write failure."}}},
+       "Process exit status per outcome. 120 is the kexe loader's status for a guest signal (SIGILL / SIGTRAP / SIGSEGV ...), kept so a caller reading either path sees the same code for the same trap; a budget or slot trap gets its own code because a loader-less process has no supervisor to name it after the fact. 121 is left to the loader's stdout-write failure. 126 (C3, second half) is a capability call the image refuses BY NAME -- process/spawn's program, argv, output, time and isolation refusals, entropy/draw without getrandom -- each with a `KEXE_TRAP {:kind :capability ...}` line naming the reason."}}},
     :language/admission
     {:authority "lang/guest-grammar.edn",
      :key :admission-limits,

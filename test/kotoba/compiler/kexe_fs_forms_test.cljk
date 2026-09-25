@@ -1,0 +1,50 @@
+(ns kotoba.compiler.kexe-fs-forms-test
+  "The :fs/app-data forms the kexe loader does not answer are refused by name
+  at compile time, and the list is the catalog's (superproject adr-2609251400
+  C3, 2026-09-25)."
+  (:require [kotoba.test :refer [deftest is testing]]
+            [kotoba.compiler.kexe-fs-forms :as forms]
+            [kotoba.lang.edn :as edn]
+            #?(:cljs ["node:fs" :as fs])))
+
+(defn- ascii [s] (mapv (fn [i] #?(:clj (int (.charAt ^String s (int i))) :cljs (.charCodeAt s i)))
+                       (range (count s))))
+
+#?(:cljs
+   (deftest the-table-is-the-catalogs
+     ;; resources/kotoba/lang/capability-catalog.edn is amu's byte copy of the
+     ;; kotoba-lang authority (lang/vendored-copies.edn).
+     (let [catalog (edn/read-string (str (fs/readFileSync "resources/kotoba/lang/capability-catalog.edn" "utf8")))
+           declared (get-in catalog [:capabilities :fs/app-data :forms])]
+       (is (= 15 (count declared)))
+       (is (= (into {} (map (fn [[k v]] [k {:token (:token v)
+                                            :kexe-loader? (contains? (:answered-by v) :kexe-loader)}]))
+                    declared)
+              forms/forms)))))
+
+(defn- reason-of [f]
+  (try (f) nil (catch #?(:clj Exception :cljs :default) e (ex-data e))))
+
+(deftest unanswered-forms-are-found-in-the-code-bytes
+  (let [pad (vec (repeat 5 0))]
+    (is (= [:fsync] (forms/unanswered-in (into pad (ascii "/tmp/xFSYNC_SEP")))))
+    (is (= [:make-temp-dir :stat-nofollow]
+           (forms/unanswered-in (vec (concat (ascii "NOFOLLOW_SEP") pad (ascii "MKTEMP_SEP"))))))
+    (testing "a token that ends the code exactly is still found (the boundary)"
+      (is (= [:fsync] (forms/unanswered-in (ascii "FSYNC_SEP")))))
+    (testing "one byte short is not the token"
+      (is (= [] (forms/unanswered-in (ascii "FSYNC_SE")))))
+    (testing "the forms the loader answers are never refused"
+      (is (= [] (forms/unanswered-in (vec (mapcat ascii ["STAT_SEP" "APPEND_SEP" "RANGE_SEP" "CHMOD_SEP"])))))
+      (is (= [] (forms/unanswered-in []))))))
+
+(deftest a-kexe-loader-target-is-refused-by-name-a-static-one-is-not
+  (let [code (ascii "xFSYNC_SEP")]
+    (let [d (reason-of #(forms/refuse-unanswered! :aarch64-linux-kotoba-v1 code))]
+      (is (= :fs-form-not-answered-by-kexe-loader (:reason d)))
+      (is (= [:fsync] (:forms d)))
+      (is (= :target (:phase d))))
+    (is (= :fs-form-not-answered-by-kexe-loader
+           (:reason (reason-of #(forms/refuse-unanswered! :x86_64-macos-kotoba-v1 code)))))
+    (is (nil? (reason-of #(forms/refuse-unanswered! :aarch64-linux-static-kotoba-v1 code))))
+    (is (nil? (reason-of #(forms/refuse-unanswered! :aarch64-linux-kotoba-v1 (ascii "xSTAT_SEP")))))))
