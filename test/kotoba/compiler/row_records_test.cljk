@@ -51,6 +51,9 @@
   (testing "admitted: passing a row parameter on makes the caller's a row too"
     (is (= 15 (run-main (str "(defn- f [m] (:a m)) (defn- g [n k] (+ k (f n)))"
                              " (defn main [] :i64 (+ (g (mk) 1) (g (mt) 2)))")))))
+  (testing "admitted as before rows: a parameter also passed to a declared record parameter is that record"
+    (is (= 7 (run-main (str "(defn g [m [:ref :b/s]] :i64 (:b m))"
+                            " (defn f [m] (+ (g m) (:a m))) (defn main [] :i64 (f (mk)))")))))
   (testing "monomorphized: the generic is gone; each specialization is typed at its record"
     (let [fs (functions "(defn- f [m] (:a m)) (defn main [] :i64 (+ (f (mk)) (f (mt))))")]
       (is (not (contains? fs 'f)))
