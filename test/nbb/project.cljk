@@ -108,6 +108,32 @@
       ;; [1 2 10 20 30]. 5000 + 300 + (peek v) 30 + (first w) 1.
       (assert (= 5331 (js/Number (ir/execute kir 'probe [3])))))))
 
+;; `remove` is Clojure's `(filter (complement pred) coll)`. Until kotoba-sema
+;; 05d8bd8a it was "unknown operation: remove is not a builtin" (aiueos desktop
+;; floor :browser-component, wall 7: browser.surface's close-window). Linked
+;; across a module boundary and run, with the #() reader form and a named
+;; predicate; the kept items are discriminated from filter's (the complement,
+;; in order).
+(check "remove"
+  (fn []
+    (let [{:keys [source]}
+          (project/link-source
+           {'example.wins
+            "(ns example.wins (:export [close keep-small]))
+             (defn close [id :i64] :vector-i64 (remove #(= % id) [1 2 3 2]))
+             (defn- big? [x] (> x 2))
+             (defn keep-small [] :vector-i64 (remove big? [1 2 3 4]))"
+            'example.desk
+            "(ns example.desk (:require [example.wins :as w]) (:export [probe]))
+             (defn probe [id :i64] :i64
+               (let [left (w/close id) small (w/keep-small)]
+                 (+ (* 1000 (count left)) (* 100 (peek left)) (* 10 (count small)) (peek small))))"}
+           'example.desk)
+          kir (ir/lower (sema/analyze source {:admit-linked-synthetics? true}))]
+      ;; id=2: [1 2 3 2] minus 2 -> [1 3]; [1 2 3 4] minus big -> [1 2].
+      ;; 2000 + 300 + 20 + 2.
+      (assert (= 2322 (js/Number (ir/execute kir 'probe [2])))))))
+
 ;; ---------------------------------------------------------------------------
 ;; Filesystem graph discovery
 ;;
