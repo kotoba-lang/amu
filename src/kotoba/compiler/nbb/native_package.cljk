@@ -45,6 +45,10 @@
                the effects themselves, each already admitted by `:allow`.
     :fs-scope  the policy's `:linux-static :fs-scope`, the one directory
                :fs/app-data and :fs/browse resolve under.
+    :spawn     the policy's `:linux-static :spawn` ({:programs [..]
+               :path-lookup bool :env [..]}): what :process/spawn may run,
+               whether a bare name is looked up among those programs, and
+               which variables the child receives (C3, second half).
 
   The grant is authority (adr-2609242100: a capability is the authority to
   use a handler), so it comes from the compile policy and nowhere else: the
@@ -52,11 +56,12 @@
   [artifact policy]
   (let [isa (get-in linux-static/targets [(:target artifact) :isa])
         texts (get static-handlers/artifact-texts isa)
-        {:keys [grant fs-scope]} (:linux-static policy)]
+        {:keys [grant fs-scope spawn]} (:linux-static policy)]
     (cond-> {:handlers {:decisions (support/read-artifact-text! (:decisions texts))
                         :handlers (support/read-artifact-text! (:handlers texts))}}
       (some? grant) (assoc :grant (set (map num grant)))
-      (some? fs-scope) (assoc :fs-scope fs-scope))))
+      (some? fs-scope) (assoc :fs-scope fs-scope)
+      (some? spawn) (assoc :spawn spawn))))
 
 (defn- package-linux-static [artifact policy]
   (let [profile (:profile/native limits/table)

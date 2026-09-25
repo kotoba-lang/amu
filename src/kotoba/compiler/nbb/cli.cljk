@@ -5,6 +5,7 @@
   {:kotoba/export [native-feature-refusal-message native-value-abi run! targets
                   unqualified-native-feature]}
   (:require [kotoba.compiler.capability-names :as cap-names]
+            [kotoba.compiler.kexe-fs-forms :as kexe-fs-forms]
             [kotoba.compiler.nbb.cli-support :as support]
             [kotoba.compiler.nbb.compile-cache :as compile-cache]
             [kotoba.compiler.nbb.verdict-cache :as verdict-cache]
@@ -418,6 +419,10 @@
         ;; compiler-private KIR metadata influence the bytes being sealed.
         emitted (support/timed "native-emit" #(emit-program program))
         code (:code emitted)
+        ;; superproject adr-2609251400 C3: a kexe-loader program carrying the
+        ;; token of an :fs/app-data form the loader does not answer yet is
+        ;; refused by name here, before anything is written.
+        _ (kexe-fs-forms/refuse-unanswered! target code)
         artifact-map
         (support/timed
          "artifact-seal"

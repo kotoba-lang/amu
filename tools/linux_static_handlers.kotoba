@@ -24,19 +24,25 @@
 ;; The answers reproduce the kexe loader's observable behaviour for the same
 ;; request (tools/kexe_loader.c, the provider named beside each op), so a
 ;; program and a grant give the same stdout, stderr and exit status through
-;; either path. Where the static image is stricter -- a path that resolves
-;; outside the scope through a directory symlink, which the Linux loader's
-;; (st_dev, st_ino) check cannot see -- the op says so.
+;; either path. Where the two differ -- a form or capability the loader
+;; does not answer (process/spawn and entropy/draw are its identity stub;
+;; fsync, make-temp-dir and stat-nofollow it reads as a path) -- the op says
+;; so.
 
 ;; ---------------------------------------------------------------------
 ;; op 0: which static handler answers C1's provider number (decide op 0 of
-;; kexe_loader_decisions.kotoba, cap-provider). 0 = none: the packager
-;; refuses a grant with no handler, and the mechanism traps by name if one
-;; is reached anyway.
+;; kexe_loader_decisions.kotoba, cap-provider) for wire id ID. 0 = none: the
+;; packager refuses a grant with no handler, and the mechanism traps by name if
+;; one is reached anyway.
 ;;   1 :io/write 37        2 :io/write-error 39   3 :io/read 41
 ;;   4 :cli/args 38        5 :env/read 33         6 :clock/now 7 (text)
-;;   7 :fs/app-data 35     8 :fs/browse 34
-(defn- handler-for [provider]
+;;   7 :fs/app-data 35     8 :fs/browse 34        9 :entropy/draw 23
+;;  10 :process/spawn 20
+;; C1 answers provider 0 (the qualification host's identity stub) for wire 23
+;; and wire 20 -- the kexe loader has no provider for either -- so those two
+;; are told apart by the wire id, here, and C1 is left byte-identical to the
+;; code kexe_loader.c embeds.
+(defn- handler-for [provider id]
   (cond
     (= provider 13) 1
     (= provider 7) 2
@@ -46,6 +52,7 @@
     (= provider 10) 6
     (= provider 5) 7
     (= provider 6) 8
+    (= provider 0) (cond (= id 23) 9 (= id 20) 10 :else 0)
     :else 0))
 
 ;; ---------------------------------------------------------------------
@@ -54,10 +61,17 @@
 ;; occurs in the request:
 ;;   0 WRITE_SEP  1 APPEND_SEP  2 EXISTS_SEP  3 RANGE_SEP  4 STAT_SEP
 ;;   5 MTIME_SEP  6 CHMOD_SEP   7 MKDIR_SEP   8 UNLINK_SEP 9 RMDIR_SEP
-;;   10 RENAME_SEP
+;;   10 RENAME_SEP 11 FSYNC_SEP 12 MKTEMP_SEP 13 NOFOLLOW_SEP
 ;; WRITE-FIRST is 1 when WRITE_SEP occurs before APPEND_SEP. The answer:
 ;;   0 read  1 write  2 append  3 exists  4 range  5 stat  6 mtime
 ;;   7 chmod 8 mkdir  9 unlink 10 rmdir  11 rename
+;;   12 fsync  13 make-temp-dir  14 stat-nofollow
+;; The last three are C3's proposals to the :fs/app-data forms (kotoba-lang
+;; lang/capability-catalog.edn :forms). Their tokens contain no other form's
+;; token and no other token contains them, so the kexe loader, which does not
+;; answer them yet, cannot mistake one for another form: it reads the request
+;; as a path, which does not resolve (and amu refuses a kexe program whose
+;; literals carry one of those tokens, by name, before that can happen).
 (defn- low-bit [r] (- r (i64-shift-left (u64-shift-right r 1) 1)))
 
 (defn- has [present k]
@@ -73,6 +87,9 @@
     (= k 8) (low-bit (u64-shift-right present 8))
     (= k 9) (low-bit (u64-shift-right present 9))
     (= k 10) (low-bit (u64-shift-right present 10))
+    (= k 11) (low-bit (u64-shift-right present 11))
+    (= k 12) (low-bit (u64-shift-right present 12))
+    (= k 13) (low-bit (u64-shift-right present 13))
     :else 0))
 
 (defn- fs-form [present write-first]
@@ -90,18 +107,20 @@
       (= 1 (has present 8)) 9
       (= 1 (has present 9)) 10
       (= 1 (has present 10)) 11
+      (= 1 (has present 11)) 12
+      (= 1 (has present 12)) 13
+      (= 1 (has present 13)) 14
       :else 0)))
 
-;; op 2: the forms this image answers. APPEND (a buffered sink shared across
-;; calls), RANGE and CHMOD are not implemented here and trap BY NAME
-;; (:slot/unimplemented naming the form); the rest answer as the loader does.
+;; op 2: the forms this image answers: every one of the fifteen. A form
+;; answered 0 here traps BY NAME (:slot/unimplemented naming the form); none
+;; does since APPEND, RANGE and CHMOD landed (C3, second half). APPEND is
+;; written through at each call where the loader buffers consecutive appends
+;; to one file: the bytes a later read, stat or rename sees are the same.
 (defn- form-implemented [form]
   (cond
-    (= form 2) 0
-    (= form 4) 0
-    (= form 7) 0
     (< form 0) 0
-    (> form 11) 0
+    (> form 14) 0
     :else 1))
 
 ;; op 17: how many occurrences of its token a form admits. The loader's
@@ -201,34 +220,52 @@
 
 ;; ---------------------------------------------------------------------
 ;; op 12: what an errno means. FORM is op 1's form, 20 :fs/browse, 30
-;; :io/write / :io/write-error, 31 :io/read. STAGE: 0 opening the object,
-;; 1 opening the parent of a mutation, 2 the mutation itself, 3 moving data
-;; (read / write / getdents64), 4 fstat. ERRNO is positive, 0 for success.
-;;   0 answer the form's negative ("0", or "" for stat / mtime)
+;; :io/write / :io/write-error, 31 :io/read, 40 :entropy/draw (getrandom),
+;; 50 :process/spawn. STAGE: 0 opening the object, 1 opening the parent of a
+;; mutation (make-temp-dir: the directory it creates in), 2 the mutation
+;; itself, 3 moving data (read / write / pread / getdents64 / getrandom /
+;; fsync, and spawn's ppoll / wait4), 4 fstat. ERRNO is positive, 0 for
+;; success.
+;;   0 answer the form's negative ("0", or "" for stat / mtime /
+;;     stat-nofollow / make-temp-dir)
 ;;   1 trap (SIGILL, as the loader's raise)
 ;;   2 retry the syscall
 ;;   3 proceed
+;;   4 trap BY NAME: the capability cannot be answered on this kernel
+;;     (getrandom's ENOSYS). There is no fallback to /dev/urandom: a device
+;;     node is a path the grant does not name, and a silent substitute would
+;;     answer from a source nobody chose.
+;; make-temp-dir's mkdirat answering EEXIST retries with a new name (op 28
+;; bounds the attempts).
 ;; EXDEV (18) is openat2's RESOLVE_BENEATH refusal: the path resolved out of
 ;; the scope root (an absolute symlink, or `..` through a symlink). That is a
 ;; grant violation and traps, as a failed kexe_scope_contains_fd does -- except
-;; for EXISTS, which answers "0" for anything it may not read. The Linux
-;; loader cannot see such an escape (its containment compares the fd with a
-;; stat of the SAME path), so there it is answered; this is the one place the
-;; static image is deliberately stricter. ENOSYS (38) -- a kernel before 5.6
+;; for EXISTS, which answers "0" for anything it may not read. The kexe
+;; loader opens beneath the scope root the same way since amu #1137
+;; (2026-09-25); before, it followed such a symlink. ENOSYS (38) -- a kernel before 5.6
 ;; without openat2 -- traps: there is no unconfined fallback.
 (defn- errno-outcome [form stage errno]
   (cond
     (= errno 0) 3
     (= errno 4) (if (= stage 3) 2 1)
+    (= form 40) (if (= errno 38) 4 1)
     (= errno 38) 1
     (= form 3) 0
     (= errno 18) 1
     (= form 5) (if (= stage 0) 0 (if (= stage 4) 0 1))
     (= form 6) (if (= stage 0) 0 (if (= stage 4) 0 1))
+    ;; chmod (fs_app_data_chmod_provider): a target it cannot open, or a
+    ;; fchmod the kernel refuses, answers "0"
+    (= form 7) (if (= stage 0) 0 (if (= stage 2) 0 1))
     (= form 8) (if (= stage 1) 0 (if (= stage 2) 0 1))
     (= form 9) (if (= stage 1) 0 (if (= stage 2) 0 1))
     (= form 10) (if (= stage 1) 0 (if (= stage 2) 0 1))
     (= form 11) (if (= stage 1) 0 (if (= stage 2) 0 1))
+    (= form 12) (if (= stage 0) 0 (if (= stage 3) 0 1))
+    (= form 13) (cond (= stage 1) 0
+                      (= stage 2) (if (= errno 17) 2 0)
+                      :else 1)
+    (= form 14) (if (= stage 0) 0 (if (= stage 4) 0 1))
     :else 1))
 
 ;; op 13: a path segment (kexe_normalize_path). CLASS 0 is ".", 1 "..", 2 a
@@ -267,13 +304,16 @@
     :else 1))
 
 ;; op 16: STAT's fields from st_mode (fs_app_data_stat_provider): WHICH 0 the
-;; permission bits (mode & 0777), 1 whether it is a directory (S_IFDIR).
+;; permission bits (mode & 0777), 1 whether it is a directory (S_IFDIR), 2 the
+;; stat-nofollow form's kind: 0 a regular file, 1 a directory, 2 a symbolic
+;; link (the link itself, not what it names), 3 anything else.
 (defn- stat-field [which mode]
   (let [perm (- mode (* 512 (quot mode 512)))
         kind (- (quot mode 4096) (* 16 (quot (quot mode 4096) 16)))]
     (cond
       (= which 0) perm
       (= which 1) (if (= kind 4) 1 0)
+      (= which 2) (cond (= kind 8) 0 (= kind 4) 1 (= kind 10) 2 :else 3)
       :else -1)))
 
 ;; op 18: a directory entry the :fs/browse listing skips ("." and "..").
@@ -290,9 +330,202 @@
     (= slash root) 1
     :else 2))
 
+;; ---------------------------------------------------------------------
+;; :fs/app-data RANGE: "<path>RANGE_SEP<offset>:<length>" -> exactly LENGTH
+;; bytes from OFFSET (fs_app_data_range_read_provider).
+;;
+;; op 20: a decimal span's length, 1..20 (kexe_parse_u64_span).
+(defn- range-span-admitted [n]
+  (if (< n 1) 0 (if (> n 20) 0 1)))
+
+;; op 21: the spec itself. OK is 1 when both spans parsed; a malformed spec
+;; and a window past the string pool's budget are the SAME refusal in the
+;; loader (note_budget(string pool) then raise), so here too: 1 proceed, 0 the
+;; bytes trap.
+(defn- range-spec [ok length budget]
+  (if (= ok 0) 0 (if (< length 0) 0 (if (> length budget) 0 1))))
+
+;; op 22: the window against the file: a regular file, and [offset,
+;; offset+length) inside its size -- a short window is never answered.
+(defn- range-window [offset length size regular]
+  (cond
+    (= regular 0) 0
+    (< size 0) 0
+    (< offset 0) 0
+    (< length 0) 0
+    (> offset size) 0
+    (> length (- size offset)) 0
+    :else 1))
+
+;; ---------------------------------------------------------------------
+;; :fs/app-data CHMOD: "<path>CHMOD_SEP<octal>" -> "1" / "0"
+;; (fs_app_data_chmod_provider).
+;;
+;; op 23: one step of the octal parse; -2 for a byte that is not 0..7.
+(defn- octal-step [acc b]
+  (cond
+    (< b 48) -2
+    (> b 55) -2
+    :else (+ (* acc 8) (- b 48))))
+
+;; op 24: 1..6 octal digits.
+(defn- chmod-digits-admitted [n]
+  (if (< n 1) 0 (if (> n 6) 0 1)))
+
+;; op 25: the permission bits only. setuid, setgid and the sticky bit are
+;; not settable through this form: a grant to write a file's bytes is not a
+;; grant to make it run as someone else.
+(defn- chmod-mode [m]
+  (- m (* 512 (quot m 512))))
+
+;; ---------------------------------------------------------------------
+;; :fs/app-data MAKE-TEMP-DIR (C3 proposal): "<dir>MKTEMP_SEP<prefix>" -> the
+;; absolute path of a NEW directory "<dir>/<prefix><six characters>", mode
+;; 0700, created by mkdirat through a descriptor of <dir> opened beneath the
+;; scope root (mkdtemp's contract); "" when <dir> cannot be opened.
+;;
+;; op 26: the prefix is part of ONE name: no '/', no NUL, and short enough
+;; that the name stays within NAME_MAX (255) with the suffix.
+(defn- temp-prefix-admitted [n slash-or-nul]
+  (cond
+    (< n 0) 0
+    (> n 249) 0
+    (= slash-or-nul 1) 0
+    :else 1))
+
+;; op 27: one suffix character from one random byte: [0-9a-z]. The modulo
+;; bias (256 = 7 x 36 + 4) is harmless here: uniqueness is the kernel's
+;; mkdirat EEXIST, not the name's unpredictability.
+(defn- temp-name-char [b]
+  (let [k (- b (* 36 (quot b 36)))]
+    (if (< k 10) (+ 48 k) (+ 87 k))))
+
+;; op 28: how many names are tried before the form answers "".
+(defn- temp-attempt-admitted [k]
+  (if (< k 16) 1 0))
+
+;; op 29: the suffix length; op 30: the new directory's mode (0700).
+(defn- temp-suffix-length [] 6)
+(defn- temp-dir-mode [] 448)
+
+;; ---------------------------------------------------------------------
+;; :entropy/draw 23: a decimal byte count N -> 2N lowercase hex characters
+;; of getrandom(2) output (flags 0: the kernel's CSPRNG, blocking only until
+;; it is first seeded). The answer is a string, and random bytes are not
+;; UTF-8, so they are spelled in hex.
+;;
+;; op 31: N is 1..256 -- what getrandom guarantees to answer whole once the
+;; pool is seeded.
+(defn- entropy-count-admitted [n]
+  (if (< n 1) 0 (if (> n 256) 0 1)))
+
+;; op 32: a nibble's hex character.
+(defn- hex-digit [nibble]
+  (if (< nibble 10) (+ 48 nibble) (+ 87 nibble)))
+
+;; ---------------------------------------------------------------------
+;; :process/spawn 20: "<program>" or "<program>ARG_SEP<arg1>ARG_SEP<arg2>..."
+;; -> "<exit>\n<stdout>" (the answer shape the kbb js host gives wire 20 and
+;; lib/kbb/proc.kotoba decodes). The program is looked up in the list the
+;; compile policy sealed into the image (`:linux-static :spawn :programs`,
+;; canonical absolute paths); the guest's spelling is argv[0], the SEALED
+;; spelling is what execve runs.
+;;
+;; op 33: the request's shape. COUNT arguments after the program, BYTES the
+;; argv strings with their NULs, HAS-NUL a NUL byte anywhere (execve cannot
+;; carry one), PROGRAM the program's length. -1 malformed (SIGILL), 0 over
+;; the argv budget (a named trap), 1 admitted. Budget: 32 arguments and 4,096
+;; bytes -- the image's argv buffer, and far under the kernel's ARG_MAX.
+(defn- spawn-argv-admitted [count bytes has-nul program]
+  (cond
+    (= has-nul 1) -1
+    (< program 1) -1
+    (> program 4095) -1
+    (> count 32) 0
+    (> bytes 4096) 0
+    :else 1))
+
+;; op 34: is sealed program K the one to run? HAS-SLASH: the request names a
+;; path; EXACT: it is byte-equal to program K; BASE: it is byte-equal to
+;; program K's last segment; LOOKUP: the grant admits lookup by name. A path
+;; must match a sealed path exactly. A bare name is found only when the grant
+;; says `:path-lookup true`, and then only among the sealed programs -- the
+;; environment's $PATH is never read, so no variable can widen what runs.
+(defn- spawn-program-chosen [has-slash exact base lookup]
+  (if (= has-slash 1)
+      exact
+      (if (= lookup 1) base 0)))
+
+;; op 35: when no program was chosen, which refusal: 1
+;; :spawn/program-not-granted, 2 :spawn/path-lookup-denied.
+(defn- spawn-program-refusal [has-slash lookup]
+  (if (= has-slash 1) 1 (if (= lookup 1) 1 2)))
+
+;; op 36: an environment entry passes to the child when its name is one the
+;; grant names (`:linux-static :spawn :env`) and fewer than 64 have passed.
+;; Everything else -- the parent's whole environment by default -- is
+;; withheld.
+(defn- spawn-env-pass [matched count]
+  (if (= matched 1) (if (< count 64) 1 0) 0))
+
+;; op 37: how many bytes of the child's standard output are captured before
+;; the output budget is exceeded (a named trap, the child killed): 16,384, or
+;; the capture buffer if the image's is smaller.
+(defn- spawn-output-limit [region]
+  (if (< region 16384) region 16384))
+
+;; op 38: the exit field of the answer from wait4's status: the exit code of
+;; a child that exited, -1 for one a signal ended (the js host's null status,
+;; written -1; kbb.proc reads -1 as "no status").
+(defn- spawn-exit-status [raw]
+  (let [low (- raw (* 128 (quot raw 128)))]
+    (if (= low 0)
+        (let [high (quot raw 256)] (- high (* 256 (quot high 256))))
+        -1)))
+
+;; op 39: nanoseconds left of the child's 10 s wall budget, ELAPSED since the
+;; fork; -1 when it is spent (the child is killed and the call traps by name).
+(defn- spawn-time-left [elapsed]
+  (let [left (- 10000000000 elapsed)]
+    (if (<= left 0) -1 left)))
+
+;; op 40: how long one wait for the child's exit may sleep once its output
+;; has ended: 10 ms, or what is left.
+(defn- spawn-reap-slice [left]
+  (if (< left 10000000) left 10000000))
+
+;; op 41: a nanosecond count as a timespec: WHICH 0 seconds, 1 nanoseconds.
+(defn- ns-part [which ns]
+  (if (= which 0) (quot ns 1000000000) (- ns (* 1000000000 (quot ns 1000000000)))))
+
+;; op 42: what a failure the child reports before its execve means, by the
+;; step that failed: 0 dup3 onto stdio, 1 close_range, 2 PR_SET_NO_NEW_PRIVS,
+;; 3 fchdir to the scope root, 4 execve. 1 :spawn/exec-failed, 2
+;; :spawn/isolation-unavailable (the child could not be cut off from the
+;; parent's descriptors or privileges -- it does not run), 3
+;; :spawn/setup-failed.
+(defn- spawn-child-failure [stage]
+  (cond
+    (= stage 4) 1
+    (= stage 1) 2
+    (= stage 2) 2
+    :else 3))
+
+;; op 43: which spellings of the scope root a request path may be admitted
+;; under: 0 the one the compile policy sealed, 1 the kernel's (its realpath,
+;; read at _start). Both, as the kexe loader keeps both (kexe_scope_add): a
+;; guest may name /home/u/x or /var/home/u/x for one root. Containment does
+;; not rest on the spelling -- every open is openat2 RESOLVE_BENEATH from the
+;; one root descriptor.
+(defn- root-spelling-admitted [which]
+  (cond
+    (= which 0) 1
+    (= which 1) 1
+    :else 0))
+
 (defn decide [op a b c d]
   (cond
-    (= op 0) (handler-for a)
+    (= op 0) (handler-for a b)
     (= op 1) (fs-form a b)
     (= op 2) (form-implemented a)
     (= op 3) (decimal-step a b)
@@ -312,4 +545,28 @@
     (= op 17) (token-count-admitted a b)
     (= op 18) (browse-skip a)
     (= op 19) (parent-place a b)
+    (= op 20) (range-span-admitted a)
+    (= op 21) (range-spec a b c)
+    (= op 22) (range-window a b c d)
+    (= op 23) (octal-step a b)
+    (= op 24) (chmod-digits-admitted a)
+    (= op 25) (chmod-mode a)
+    (= op 26) (temp-prefix-admitted a b)
+    (= op 27) (temp-name-char a)
+    (= op 28) (temp-attempt-admitted a)
+    (= op 29) (temp-suffix-length)
+    (= op 30) (temp-dir-mode)
+    (= op 31) (entropy-count-admitted a)
+    (= op 32) (hex-digit a)
+    (= op 33) (spawn-argv-admitted a b c d)
+    (= op 34) (spawn-program-chosen a b c d)
+    (= op 35) (spawn-program-refusal a b)
+    (= op 36) (spawn-env-pass a b)
+    (= op 37) (spawn-output-limit a)
+    (= op 38) (spawn-exit-status a)
+    (= op 39) (spawn-time-left a)
+    (= op 40) (spawn-reap-slice a)
+    (= op 41) (ns-part a b)
+    (= op 42) (spawn-child-failure a)
+    (= op 43) (root-spelling-admitted a)
     :else -1))
