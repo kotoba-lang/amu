@@ -128,7 +128,13 @@
   (answer #(do (.chmodSync fs path (bit-and (js/parseInt digits 8) 511)) true)))
 
 (defn- fsync-answer [path]
-  (answer #(let [fd (.openSync fs path (.-O_RDONLY (constants)))]
+  ;; A regular file is opened read-write: Windows' FlushFileBuffers needs a
+  ;; writable handle (fsync of a read-only one answers EPERM there, measured
+  ;; on the windows-arm64 CI job 2026-09-25); a directory can only be opened
+  ;; read-only.
+  (answer #(let [fd (.openSync fs path (if (.isDirectory (.statSync fs path))
+                                          (.-O_RDONLY (constants))
+                                          (.-O_RDWR (constants))))]
              (try (.fsyncSync fs fd) true
                   (finally (.closeSync fs fd))))))
 
