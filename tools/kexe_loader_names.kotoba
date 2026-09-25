@@ -44,6 +44,19 @@
     (= k 26) "KEXE_TRAP {:kind :sandbox :reason :network-denied}\n"
     (= k 27) "KEXE_TRAP {:kind :sandbox :reason :process-denied}\n"
     (= k 28) "KEXE_TRAP {:kind :value :reason :"
+    ;; Capabilities refused BY NAME (exit :capability/refused, 126), the
+    ;; same lines the Linux static image prints. 29..36 are kotoba-lang
+    ;; lang/capability-catalog.edn :process/spawn :refusals :names in that
+    ;; order (tools/linux_static_handlers.kotoba op 47 answers the index).
+    (= k 29) "KEXE_TRAP {:kind :capability :capability :process/spawn :reason :spawn/argv-budget}\n"
+    (= k 30) "KEXE_TRAP {:kind :capability :capability :process/spawn :reason :spawn/program-not-granted}\n"
+    (= k 31) "KEXE_TRAP {:kind :capability :capability :process/spawn :reason :spawn/path-lookup-denied}\n"
+    (= k 32) "KEXE_TRAP {:kind :capability :capability :process/spawn :reason :spawn/output-budget}\n"
+    (= k 33) "KEXE_TRAP {:kind :capability :capability :process/spawn :reason :spawn/timeout}\n"
+    (= k 34) "KEXE_TRAP {:kind :capability :capability :process/spawn :reason :spawn/exec-failed}\n"
+    (= k 35) "KEXE_TRAP {:kind :capability :capability :process/spawn :reason :spawn/isolation-unavailable}\n"
+    (= k 36) "KEXE_TRAP {:kind :capability :capability :process/spawn :reason :spawn/setup-failed}\n"
+    (= k 37) "KEXE_TRAP {:kind :capability :capability :entropy/draw :reason :entropy/unavailable}\n"
     :else ""))
 
 ;; ABI v11 value traps: the index a refusing host call records, the name

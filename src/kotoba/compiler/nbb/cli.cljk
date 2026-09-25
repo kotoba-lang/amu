@@ -160,9 +160,12 @@
   admission rule -- osaho's admission refuses keys it does not know, and it
   should -- so it is taken off here and handed to the packager whole
   (`serialized-native`). It still reaches the provenance record and the
-  compile cache key, both of which read the policy as written."
+  compile cache key, both of which read the policy as written. The
+  top-level `:spawn` (the :process/spawn grant, kotoba-lang
+  lang/capability-catalog.edn :process/spawn :grant) is packaging input for
+  the same reason."
   [policy]
-  (dissoc policy :linux-static))
+  (dissoc policy :linux-static :spawn))
 
 (defn- decode-policy!
   "The cached-compile counterpart of `read-policy!`, for already-read material."
@@ -419,9 +422,10 @@
         ;; compiler-private KIR metadata influence the bytes being sealed.
         emitted (support/timed "native-emit" #(emit-program program))
         code (:code emitted)
-        ;; superproject adr-2609251400 C3: a kexe-loader program carrying the
-        ;; token of an :fs/app-data form the loader does not answer yet is
-        ;; refused by name here, before anything is written.
+        ;; A kexe-loader program carrying the token of an :fs/app-data form
+        ;; the loader does not answer (kotoba-lang lang/capability-catalog.edn
+        ;; :status :proposed -- OWNER since S5) is refused by name here,
+        ;; before anything is written.
         _ (kexe-fs-forms/refuse-unanswered! target code)
         artifact-map
         (support/timed

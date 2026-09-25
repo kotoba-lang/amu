@@ -5,6 +5,8 @@
 
     tools/kexe_loader_decisions.kotoba  constants (a) + predicates (b)
     tools/kexe_loader_names.kotoba      trap names and result type names (a)
+    tools/linux_static_handlers.kotoba  the capability handlers' decisions (b),
+                                        the same code the Linux static image runs
 
   (a) DATA: every constant and name is EVALUATED -- compiled by amu for this
       host, extracted, and run under a loader built from the current
@@ -31,6 +33,12 @@
 (def loader-path (lib/join lib/root "tools" "kexe_loader.c"))
 (def decisions-path (lib/join lib/root "tools" "kexe_loader_decisions.kotoba"))
 (def names-path (lib/join lib/root "tools" "kexe_loader_names.kotoba"))
+;; The capability handlers' decisions (C3). The Linux static image places the
+;; SAME compiled module beside its guest (scripts/gen-linux-static-handlers.cljk
+;; refuses to write unless its bytes equal the ones embedded here), so the
+;; loader and the static image answer every handler question -- spawn,
+;; entropy, the :fs/app-data forms -- from one source.
+(def handlers-path (lib/join lib/root "tools" "linux_static_handlers.kotoba"))
 (def amu (lib/join lib/root "bin" "amu"))
 (def begin-marker "/* KEXE-DECISIONS-GENERATED BEGIN")
 (def end-marker "/* KEXE-DECISIONS-GENERATED END */")
@@ -72,7 +80,10 @@
    "BUDGET_PAIRS" "BUDGET_VECTORS" "BUDGET_VECTOR_ITEMS" "BUDGET_STRING_POOL"
    "BUDGET_KGRAPH" "BUDGET_FUEL" "RESULT_STRING" "RESULT_RECORD" "RESULT_OPTION"
    "RESULT_RESULT" "RESULT_VARIANT" "ARENA_VECTOR_TABLE" "ARENA_VECTOR_ITEMS"
-   "SANDBOX_FILESYSTEM" "SANDBOX_NETWORK" "SANDBOX_PROCESS" "VALUE_PREFIX"])
+   "SANDBOX_FILESYSTEM" "SANDBOX_NETWORK" "SANDBOX_PROCESS" "VALUE_PREFIX"
+   "CAP_SPAWN_ARGV_BUDGET" "CAP_SPAWN_PROGRAM_NOT_GRANTED" "CAP_SPAWN_PATH_LOOKUP_DENIED"
+   "CAP_SPAWN_OUTPUT_BUDGET" "CAP_SPAWN_TIMEOUT" "CAP_SPAWN_EXEC_FAILED"
+   "CAP_SPAWN_ISOLATION_UNAVAILABLE" "CAP_SPAWN_SETUP_FAILED" "CAP_ENTROPY_UNAVAILABLE"])
 
 (def value-trap-count 12)
 (def result-type-count 4)
@@ -165,11 +176,14 @@
        " * edit by hand. Regenerate after changing either source:\n"
        " *   tools/kexe_loader_decisions.kotoba sha256 " (:decisions source-shas) "\n"
        " *   tools/kexe_loader_names.kotoba     sha256 " (:names source-shas) "\n"
+       " *   tools/linux_static_handlers.kotoba sha256 " (:handlers source-shas) "\n"
        " * The DECISIONS of this loader are Kotoba (superproject adr-2609251400 C1):\n"
        " * the defines and tables below are those modules' answers, evaluated\n"
        " * natively (kind (a), data), and the byte arrays are the decisions module\n"
        " * compiled by amu for each ISA (kind (b), code the loader maps read+execute\n"
-       " * and calls: kexe_cap_admitted / kexe_decide). */\n"
+       " * and calls: kexe_cap_admitted / kexe_decide), and the capability handlers'\n"
+       " * decisions module compiled the same way (kexe_handler_decide; the Linux\n"
+       " * static image carries the identical bytes). */\n"
        (str/join "\n" (for [[[_ name fmt] value] (map vector constants constant-values)]
                         (str "#define " name " " (spell value fmt))))
        "\n\n"
@@ -192,12 +206,16 @@
        "\n};\n\n"
        (str/join "\n"
                  (for [[isa guard] [["aarch64" "__aarch64__"] ["x86_64" "__x86_64__"]]
-                       :let [{:keys [cap-admitted decide bytes]} (get code isa)]]
+                       :let [{:keys [cap-admitted decide bytes handlers]} (get code isa)]]
                    (str "#if defined(" guard ")\n"
                         "#define KEXE_DECISIONS_CAP_ADMITTED_OFFSET " cap-admitted "u\n"
                         "#define KEXE_DECISIONS_DECIDE_OFFSET " decide "u\n"
                         "static const uint8_t kexe_decisions_code[" (.-length bytes) "] = {\n"
                         (byte-rows bytes)
+                        "\n};\n"
+                        "#define KEXE_HANDLER_DECISIONS_DECIDE_OFFSET " (:offset handlers) "u\n"
+                        "static const uint8_t kexe_handler_decisions_code[" (.-length (:bytes handlers)) "] = {\n"
+                        (byte-rows (:bytes handlers))
                         "\n};\n#endif")))
        "\n" end-marker))
 
@@ -231,15 +249,18 @@
                 (fail! "a name index has no answer"))
             code (into {} (for [isa ["aarch64" "x86_64"]
                                 :let [cap (extract! tmp (get decisions isa) "cap-admitted")
-                                      decide (extract! tmp (get decisions isa) "decide")]]
+                                      decide (extract! tmp (get decisions isa) "decide")
+                                      handlers (extract! tmp (compile! tmp handlers-path isa) "decide")]]
                             (do (lib/ensure! (.equals (:bytes cap) (:bytes decide))
                                              "extract-native answered two different code blobs for one module")
                                 [isa {:cap-admitted (:offset cap) :decide (:offset decide)
-                                      :bytes (:bytes cap)}])))]
+                                      :bytes (:bytes cap)
+                                      :handlers {:offset (:offset handlers) :bytes (:bytes handlers)}}])))]
         (region {:constant-values constant-values :trap-texts trap-texts
                  :value-names value-names :result-names result-names :code code
                  :source-shas {:decisions (lib/sha256 decisions-path)
-                               :names (lib/sha256 names-path)}}))
+                               :names (lib/sha256 names-path)
+                               :handlers (lib/sha256 handlers-path)}}))
       (finally (lib/remove-tree! tmp)))))
 
 (let [check? (some #{"--check"} *command-line-args*)
