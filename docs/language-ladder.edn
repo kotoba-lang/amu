@@ -40,8 +40,19 @@
   ;; kotoba-hir's function schema refuses a key naming the generic).
   {:id :row-records :gate "row-polymorphic-record-inference-test"
    :goal "an unannotated parameter read as a record, or passed on to a row parameter, gets the row type {:k T | r} from those uses; its function exists only as its specializations, one per record type a call passes (monomorphized), each typed at that record; a non-record argument, a record lacking a field the row reads, an exported generic and a generic used as a value are refused by name"}
+;; :row-operations split in two (2026-09-26), because measuring showed two
+  ;; changes: the four operations are a type-directed elaboration in
+  ;; kotoba-sema's `rewrite-record-projection` onto record-new / record-get /
+  ;; record-assoc (nothing reaches KIR), while the rest is unification --
+  ;; a map literal typed by the row it is passed to (today it lowers to the
+  ;; keyword->i64 map before any row is known, and is refused as "map"),
+  ;; `(if c m n)` joining two parameters, a loop helper made generic with its
+  ;; function, and `(nth [(mk) (mk)] 1)` (refused "expected i64, got
+  ;; [:ref :b/s]") -- each a change to inference, not to elaboration.
   {:id :row-operations :gate "row-operations-extend-and-shrink-test"
-   :goal "assoc / dissoc / merge / select-keys are row operations whose results are record types; a map literal passed to a row is that row's record, not the keyword->i64 map, which is retired; vectors of records are ordinary; a parameter returned beside a row ((if c m n)) unifies into it; a loop over a row parameter is specialized with its function"}
+   :goal "assoc / dissoc / merge / select-keys are row operations whose results are record types: assoc extends, dissoc / select-keys shrink, merge assoc's a record's or a map literal's fields; a parameter a row operation uses is a row"}
+  {:id :row-unification :gate "row-literal-join-and-loop-unification-test"
+   :goal "a map literal passed to a row is that row's record, not the keyword->i64 map, which is retired; vectors of records are ordinary; a parameter returned beside a row ((if c m n)) unifies into it; a loop over a row parameter is specialized with its function"}
   {:id :specialization-identity :gate "specialization-cid-derived-from-generic-test"
    :goal "every row specialization's definition CID is derived from the generic definition's CID and its type arguments, so two modules specializing one generic at one record share a CID and ADR 0300's compile-once cache holds across them"}
   {:id :function-values :gate "function-value-in-record-test"
@@ -57,7 +68,7 @@
    :goal "the 1 MiB bound moves from linked source bytes to per-definition size and closure count; cssom/layout.cljk (1,083,132 bytes) is admitted definition by definition"
    :amends "ADR 0005 linked-source bound"}
   {:id :native-handles :gate "native-record-vector-closure-boundary-test"
-   :goal "kotoba-native qualifies record, vector and closure handles as loop-helper boundary types and retires map-new; the forms of every floor above compile for x86_64-aiueos-kernel-v1 and aarch64-macos (target refusals exit 65, not 70)"}
+   :goal "kotoba-native qualifies record, vector and closure handles as loop-helper boundary types and retires map-new; record-assoc is qualified, and kotoba-verifier's record projection sees through a let operand (a row operation elaborates to (record-get T (let [..] (record-new T ..)) :f), refused today as runtime KIR record projection rejected, exit 65, hand-written too); the forms of every floor above compile for x86_64-aiueos-kernel-v1 and aarch64-macos (target refusals exit 65, not 70)"}
   {:id :browser-text-edit :gate "browser-text-edit-native-test"
    :goal "kotoba-lang/browser's browser.text-edit, migrated only mechanically (defn-, nil's meaning, a :kotoba interop branch), compiles for both native targets and its hosted tests pass on amu's output"}
   {:id :browser-input :gate "browser-input-native-test"
