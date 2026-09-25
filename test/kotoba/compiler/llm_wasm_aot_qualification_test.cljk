@@ -9,7 +9,7 @@
 
   hello(5)+xy(2)=7. Fixed `\"ok\"` cannot produce 7. Withholding the stub
   fails to link on `llm-host`."
-  (:require [clojure.edn :as edn]
+  (:require [kotoba.bytes :as kbytes] [clojure.edn :as edn]
             [kotoba.io :as io]
             [clojure.java.shell :as shell]
             [kotoba.lang.text :as str]
@@ -80,9 +80,9 @@
 
 (defn- echo-driver-wat []
   (let [mod "cm32p2|kotoba:application/llm@1"
-        model-bytes (vec (.getBytes "m" "UTF-8"))
-        p1 (vec (.getBytes "hello" "UTF-8"))
-        p2 (vec (.getBytes "xy" "UTF-8"))
+        model-bytes (vec (kbytes/utf8-bytes "m"))
+        p1 (vec (kbytes/utf8-bytes "hello"))
+        p2 (vec (kbytes/utf8-bytes "xy"))
         model-ptr 8
         p1-ptr 16
         p2-ptr 24

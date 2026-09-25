@@ -3,7 +3,7 @@
   kotoba-lang/kotoba's already-proven runtime.clj desugar-and/desugar-or),
   and keyword/map literals + get/assoc (new, desugared entirely to the
   existing heap-pair/list primitives -- no backend/codegen change)."
-  (:require [kotoba.compiler.atomic-output :as atomic-output]
+  (:require [kotoba.bytes :as kbytes] [kotoba.compiler.atomic-output :as atomic-output]
             [clojure.test :refer [deftest is testing]]
             [kotoba.lang.text :as str]
             [clojure.java.shell :as shell]
@@ -49,7 +49,7 @@
   (let [source "(ns demo.multi (:export [offset]))
                 (defn offset ([x] (offset x 1)) ([x delta] (+ x delta)))"
         compiled (compiler/compile-source source :js-kotoba-v1)
-        encoded (.encodeToString (java.util.Base64/getEncoder)
+        encoded (kbytes/base64-encode
                                  (.getBytes ^String (:source compiled) "UTF-8"))
         probe (shell/sh
                "node" "--input-type=module" "-e"
@@ -166,7 +166,7 @@
                 (defn same? [left :option-i64 right :option-i64] (= left right))"
         compiled (compiler/compile-source source :js-kotoba-v1)
         kir (:kir compiled)
-        encoded (.encodeToString (java.util.Base64/getEncoder)
+        encoded (kbytes/base64-encode
                                  (.getBytes ^String (:source compiled) "UTF-8"))
         probe (str "import('data:text/javascript;base64," encoded
                    "').then(m=>{const x=m.instantiateKotoba({});"
@@ -205,7 +205,7 @@
                 (defn same? [left :vector-i64 right :vector-i64] (= left right))"
         compiled (compiler/compile-source source :js-kotoba-v1)
         kir (:kir compiled)
-        encoded (.encodeToString (java.util.Base64/getEncoder)
+        encoded (kbytes/base64-encode
                                  (.getBytes ^String (:source compiled) "UTF-8"))
         probe (str "import('data:text/javascript;base64," encoded
                    "').then(m=>{const x=m.instantiateKotoba({});const before=[1n,2n];"
@@ -252,7 +252,7 @@
         checked (compiler/check-source source)
         compiled (compiler/compile-source source :js-kotoba-v1)
         kir (:kir compiled)
-        encoded (.encodeToString (java.util.Base64/getEncoder)
+        encoded (kbytes/base64-encode
                                  (.getBytes ^String (:source compiled) "UTF-8"))
         probe (str "import('data:text/javascript;base64," encoded
                    "').then(m=>{const x=m.instantiateKotoba({}),v=x.make();"
@@ -290,7 +290,7 @@
                 (defn next [x :i64] :i64 (xorshift32 x))"
         compiled (compiler/compile-source source :js-kotoba-v1)
         kir (:kir compiled)
-        encoded (.encodeToString (java.util.Base64/getEncoder)
+        encoded (kbytes/base64-encode
                                  (.getBytes ^String (:source compiled) "UTF-8"))
         result (shell/sh
                 "node" "--input-type=module" "-e"
@@ -327,7 +327,7 @@
                 (defn same? [left :keyword right :keyword] (= left right))"
         compiled (compiler/compile-source source :js-kotoba-v1)
         js-source (:source compiled)
-        encoded (.encodeToString (java.util.Base64/getEncoder)
+        encoded (kbytes/base64-encode
                                  (.getBytes ^String js-source "UTF-8"))
         probe (str "import('data:text/javascript;base64," encoded
                    "').then(m=>{const x=m.instantiateKotoba({});"
@@ -428,7 +428,7 @@
                     (err code code)))"
         compiled (compiler/compile-source source :js-kotoba-v1)
         kir (:kir compiled)
-        encoded (.encodeToString (java.util.Base64/getEncoder)
+        encoded (kbytes/base64-encode
                                  (.getBytes ^String (:source compiled) "UTF-8"))
         probe (str "import('data:text/javascript;base64," encoded
                    "').then(m=>{const x=m.instantiateKotoba({});"
@@ -455,7 +455,7 @@
                     (:failed message (string-byte-length message))))"
         compiled (compiler/compile-source source :js-kotoba-v1)
         kir (:kir compiled)
-        encoded (.encodeToString (java.util.Base64/getEncoder)
+        encoded (kbytes/base64-encode
                                  (.getBytes ^String (:source compiled) "UTF-8"))
         probe (str "import('data:text/javascript;base64," encoded
                    "').then(m=>{const x=m.instantiateKotoba({});"
@@ -491,7 +491,7 @@
                   (option-value-of [:option :string] value (explode)))"
         compiled (compiler/compile-source source :js-kotoba-v1)
         kir (:kir compiled)
-        encoded (.encodeToString (java.util.Base64/getEncoder)
+        encoded (kbytes/base64-encode
                                  (.getBytes ^String (:source compiled) "UTF-8"))
         probe (str "import('data:text/javascript;base64," encoded
                    "').then(m=>{const x=m.instantiateKotoba({}),t=Object.freeze(['option','string']);"
@@ -604,7 +604,7 @@
                   (hetero-vector-equal [:vector [:i64 :string :bool]] left right))"
         compiled (compiler/compile-source source :js-kotoba-v1)
         kir (:kir compiled)
-        encoded (.encodeToString (java.util.Base64/getEncoder)
+        encoded (kbytes/base64-encode
                                  (.getBytes ^String (:source compiled) "UTF-8"))
         probe (str "import('data:text/javascript;base64," encoded
                    "').then(m=>{const x=m.instantiateKotoba({});"
@@ -665,7 +665,7 @@
                   (typed-set-equal [:set :i64] left right))"
         compiled (compiler/compile-source source :js-kotoba-v1)
         kir (:kir compiled)
-        encoded (.encodeToString (java.util.Base64/getEncoder)
+        encoded (kbytes/base64-encode
                                  (.getBytes ^String (:source compiled) "UTF-8"))
         probe (str "import('data:text/javascript;base64," encoded
                    "').then(m=>{const x=m.instantiateKotoba({}),t=Object.freeze(['set','i64']);"
@@ -716,7 +716,7 @@
                   (record-equal [:record :demo/person [[:name :string] [:age :i64] [:nickname [:option :string]]]] left right))"
         compiled (compiler/compile-source source :js-kotoba-v1)
         kir (:kir compiled)
-        encoded (.encodeToString (java.util.Base64/getEncoder)
+        encoded (kbytes/base64-encode
                                  (.getBytes ^String (:source compiled) "UTF-8"))
         probe (str "import('data:text/javascript;base64," encoded
                    "').then(m=>{const x=m.instantiateKotoba({}),v=x.make(),u=x.birthday(v,8n);"
@@ -751,7 +751,7 @@
                 (defn lookup [value :map] (get value :a 0))
                 (defn update [value :map] :map (assoc value :b 2 :a 3))"
         compiled (compiler/compile-source source :js-kotoba-v1)
-        encoded (.encodeToString (java.util.Base64/getEncoder)
+        encoded (kbytes/base64-encode
                                  (.getBytes ^String (:source compiled) "UTF-8"))
         probe (str "import('data:text/javascript;base64," encoded
                    "').then(m=>{const x=m.instantiateKotoba({});"
@@ -776,7 +776,7 @@
                 (defn link-name [xml :string index :i64] [:option :string]
                   (xml-path-attr xml \"html/robot/link\" index \"name\"))"
         compiled (compiler/compile-source source :js-kotoba-v1)
-        encoded (.encodeToString (java.util.Base64/getEncoder)
+        encoded (kbytes/base64-encode
                                  (.getBytes ^String (:source compiled) "UTF-8"))
         xml "<?xml version=\"1.0\" encoding=\"utf-8\"?><!DOCTYPE html><html><robot><link name=\"base\"> Hello <span>bounded</span> XML </link><link name=\"tip\"/></robot></html>"
         probe (str "import('data:text/javascript;base64," encoded
@@ -1030,7 +1030,7 @@
         checked (compiler/check-source source)
         compiled (compiler/compile-source source :js-kotoba-v1)
         js-source (:source compiled)
-        encoded (.encodeToString (java.util.Base64/getEncoder)
+        encoded (kbytes/base64-encode
                                  (.getBytes ^String js-source "UTF-8"))
         probe (str "import('data:text/javascript;base64," encoded
                    "').then(m=>{const x=m.instantiateKotoba({});"
@@ -1060,7 +1060,7 @@
         checked (compiler/check-source source)
         compiled (compiler/compile-source source :js-kotoba-v1)
         js-source (:source compiled)
-        encoded (.encodeToString (java.util.Base64/getEncoder)
+        encoded (kbytes/base64-encode
                                  (.getBytes ^String js-source "UTF-8"))
         probe (str "import('data:text/javascript;base64," encoded
                    "').then(m=>{const x=m.instantiateKotoba({});"
@@ -1165,7 +1165,7 @@
                 "        (typed-map-get " type " m3 :b) 0) 0) 0)))")]
     (is (= 7 (oracle source)))
     (let [compiled (compiler/compile-source source :js-kotoba-v1)
-          encoded (.encodeToString (java.util.Base64/getEncoder)
+          encoded (kbytes/base64-encode
                                    (.getBytes ^String (:source compiled) "UTF-8"))
           probe (shell/sh "node" "--input-type=module" "-e"
                           (str "import('data:text/javascript;base64," encoded

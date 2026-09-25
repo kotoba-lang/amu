@@ -1,5 +1,5 @@
 (ns kotoba.compiler.component-composition-test
-  (:require [clojure.edn :as edn]
+  (:require [kotoba.bytes :as kbytes] [clojure.edn :as edn]
             [kotoba.io :as io]
             [clojure.java.shell :as shell]
             [kotoba.lang.text :as str]
@@ -1548,7 +1548,7 @@
                   "state/capacity"]]
     (loop [remaining literals offset 8 acc {}]
       (if-let [text (first remaining)]
-        (let [bytes (vec (.getBytes ^String text "UTF-8"))]
+        (let [bytes (vec (kbytes/utf8-bytes ^String text))]
           (recur (next remaining) (+ offset (count bytes))
                  (assoc acc text {:pointer offset :length (count bytes)})))
         acc))))
@@ -1693,7 +1693,7 @@
         (apply str
                (map (fn [[text {:keys [pointer]}]]
                       (str "  (data (i32.const " pointer ") \""
-                           (state-driver-wat-data (vec (.getBytes ^String text "UTF-8")))
+                           (state-driver-wat-data (vec (kbytes/utf8-bytes ^String text)))
                            "\")\n"))
                     literal-plan))]
     (str
@@ -1884,7 +1884,7 @@
                                     steps))]
     (loop [remaining literals offset 8 acc {}]
       (if-let [text (first remaining)]
-        (let [bytes (vec (.getBytes ^String text "UTF-8"))]
+        (let [bytes (vec (kbytes/utf8-bytes ^String text))]
           (recur (next remaining) (+ offset (count bytes))
                  (assoc acc text {:pointer offset :length (count bytes)})))
         acc))))
@@ -1982,7 +1982,7 @@
         (apply str
                (map (fn [[text {:keys [pointer]}]]
                       (str "  (data (i32.const " pointer ") \""
-                           (state-driver-wat-data (vec (.getBytes ^String text "UTF-8")))
+                           (state-driver-wat-data (vec (kbytes/utf8-bytes ^String text)))
                            "\")\n"))
                     literal-plan))]
     (str

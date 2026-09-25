@@ -11,7 +11,7 @@
   restricted ESM (default fuel envelope), with tighter CPU/process budgets.
 
   Complements slices 1–8. Does not claim HAMT selection or :ui/commit (W5)."
-  (:require [clojure.java.shell :as shell]
+  (:require [kotoba.bytes :as kbytes] [clojure.java.shell :as shell]
             [kotoba.lang.text :as str]
             [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]
@@ -99,8 +99,8 @@
   ([kir sym args] (ir/execute kir sym args {:fuel kir-fuel})))
 
 (defn- script-probe [compiled javascript]
-  (let [encoded (.encodeToString (java.util.Base64/getEncoder)
-                                 (.getBytes ^String (:source compiled) "UTF-8"))]
+  (let [encoded (kbytes/base64-encode
+                                 (kbytes/utf8-bytes ^String (:source compiled)))]
     (shell/sh "node" "--input-type=module" "-e"
               (str "import('data:text/javascript;base64," encoded
                    "').then(m=>{" javascript

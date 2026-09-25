@@ -5,7 +5,7 @@
   Pilot fixtures ship under `resources/kotoba/lang-conformance/`. Full matrix
   expansion is progressive as compiler admission covers more fixtures."
   {:kotoba/export [-main case-language-profile check-goldens collect-goldens digest-case golden-document golden-resource known-backends load-goldens load-manifest pilot-manifest-resource pilot-root-resource pure-product-cases pure-product-required run-case run-kir run-suite run-wasm32 write-goldens!]}
-  (:require [kotoba.lang.edn :as edn]
+  (:require [kotoba.bytes :as kbytes] [kotoba.lang.edn :as edn]
             [kotoba.io :as io]
             [clojure.java.shell :as shell]
             [kotoba.lang.text :as str]
@@ -133,7 +133,7 @@
          bytes (:bytes compiled)]
      (when-not (bytes? bytes)
        (throw (ex-info "wasm compile produced no bytes" {:phase :lang-conformance})))
-     (let [encoded (.encodeToString (java.util.Base64/getEncoder) ^bytes bytes)
+     (let [encoded (kbytes/base64-encode ^bytes bytes)
            root (project-root)
            ;; Same pattern as typed_value_conformance_test (relative import).
            probe (str "import('./runtime/browser-host.mjs').then(async m=>{"

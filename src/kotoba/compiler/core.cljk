@@ -1,6 +1,6 @@
 (ns kotoba.compiler.core
   {:kotoba/export [check-project check-source compile-component compile-component-wit compile-ipld-adl-source compile-project compile-source compile-source-cached compiler-version default-component-budgets floating-point-policy refuse-fuel-declared-twice! source-compilable-targets supported-targets targets]}
-  (:require [kotoba.lang.coll :as coll]
+  (:require [kotoba.bytes :as kbytes] [kotoba.lang.coll :as coll]
             [kotoba.compiler.capability-names :as cap-names]
             [kotoba.sema :as sema]
             [kotoba.kir.compatibility :as compatibility]
@@ -31,7 +31,7 @@
             [kotoba.kir.target :as target-profile]
             [kotoba.verifier :as verifier]
             #?@(:cljs [["node:crypto" :as crypto]]))
-  #?(:clj (:import [java.nio.charset StandardCharsets]
+  #?(:clj (:import
                    [java.security MessageDigest])))
 
 (def compiler-version compatibility/compiler-version)
@@ -41,7 +41,7 @@
   ;; This one function was the whole JVM surface of the compile driver
   ;; (ADR 0348 iteration 7); everything it drives had already been ported.
   #?(:clj (let [digest (.digest (MessageDigest/getInstance "SHA-256")
-                                (.getBytes ^String text StandardCharsets/UTF_8))]
+                                (kbytes/utf8-bytes ^String text))]
             (apply str (map #(format "%02x" (bit-and (int %) 0xff)) digest)))
      :cljs (-> (.createHash crypto "sha256") (.update text "utf8") (.digest "hex"))))
 
