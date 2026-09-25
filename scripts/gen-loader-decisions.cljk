@@ -1,0 +1,256 @@
+#!/usr/bin/env kbb
+(ns gen-loader-decisions
+  "Writes the KEXE-DECISIONS-GENERATED region of tools/kexe_loader.c from
+  the loader's decisions in Kotoba (superproject adr-2609251400 C1):
+
+    tools/kexe_loader_decisions.kotoba  constants (a) + predicates (b)
+    tools/kexe_loader_names.kotoba      trap names and result type names (a)
+
+  (a) DATA: every constant and name is EVALUATED -- compiled by amu for this
+      host, extracted, and run under a loader built from the current
+      tools/kexe_loader.c -- and its answer is written as a #define or a
+      string table. Nothing is transcribed by hand: the generator carries a
+      NAME for each index and never a value.
+  (b) CODE: the decisions module is compiled for aarch64 AND x86_64 and its
+      machine code is embedded as two byte arrays, with the offsets of
+      `cap-admitted` and `decide`; the loader maps the one for its own ISA
+      read+execute and calls it.
+
+  The region lives inside kexe_loader.c, not in a header, because artifact's
+  native loader source identity is the sha256 of that one file.
+
+    kbb --backend sci --classpath . scripts/gen-loader-decisions.cljk          rewrite
+    kbb --backend sci --classpath . scripts/gen-loader-decisions.cljk --check  exit 1 when stale
+
+  Exit codes: 0 written / up to date, 1 stale (--check), 2 could not generate."
+  (:require [clojure.edn :as edn]
+            [kotoba.lang.text :as str]
+            [scripts.lib :as lib]
+            ["node:fs" :as fs]))
+
+(def loader-path (lib/join lib/root "tools" "kexe_loader.c"))
+(def decisions-path (lib/join lib/root "tools" "kexe_loader_decisions.kotoba"))
+(def names-path (lib/join lib/root "tools" "kexe_loader_names.kotoba"))
+(def amu (lib/join lib/root "bin" "amu"))
+(def begin-marker "/* KEXE-DECISIONS-GENERATED BEGIN")
+(def end-marker "/* KEXE-DECISIONS-GENERATED END */")
+
+;; Index -> the C name the answer of (constant index) becomes, and how it is
+;; spelled. The spelling matters: amu's value_bounds_agreement_test reads
+;; these defines with the regexes kotoba-lang lang/limits.edn names (e.g.
+;; `#define KEXE_VECTOR_ITEM_LIMIT \((\d+)u \* 1024u \* 1024u\)`), and
+;; KEXE_SCOPE_ENTRIES is compared against an int.
+(def constants
+  [[0 "KEXE_PAIR_CAPACITY" :u]
+   [1 "KEXE_PAIR_MAX" :mib]
+   [2 "KEXE_KGRAPH_CAPACITY" :u]
+   [3 "KEXE_ARENA_SCOPE_DEPTH" :u]
+   [4 "KEXE_STRING_POOL_BYTES" :u]
+   [5 "KEXE_STRING_POOL_MAX" :mib]
+   [6 "KEXE_REGION_CAPACITY" :u]
+   [7 "KEXE_REGION_POOL_BYTES" :u]
+   [8 "KEXE_RECORD_FIELD_LIMIT" :u]
+   [9 "KEXE_FUEL_MAX" :ull]
+   [10 "KEXE_CPU_SECONDS" :u]
+   [11 "KEXE_WALL_SECONDS" :u]
+   [12 "KEXE_SECONDS_MAX" :u]
+   [13 "KEXE_VECTOR_CAPACITY" :u]
+   [14 "KEXE_VECTOR_ITEM_CAPACITY" :u]
+   [15 "KEXE_VECTOR_MAX" :mib]
+   [16 "KEXE_VECTOR_ITEM_MAX" :mib]
+   [17 "KEXE_VECTOR_ITEM_LIMIT" :mib]
+   [18 "KEXE_STRING_VALUE_LIMIT" :u]
+   [19 "KEXE_BYTES_VALUE_LIMIT" :u]
+   [20 "KEXE_SCOPE_ENTRIES" :int]
+   [21 "KEXE_PATH_BYTES" :u]])
+
+;; Index -> C name of (trap-line index). The table is emitted whole; these
+;; names are the #defines the loader indexes it with.
+(def trap-lines
+  ["SIGILL" "SIGTRAP" "SIGFPE" "SIGBUS" "SIGSEGV" "SIGXCPU" "SIGALRM" "SIGSYS"
+   "SIGNAL_UNKNOWN" "HOST_STACK_EXHAUSTED" "WALL_TIMEOUT" "UNHANDLED_CHILD_SIGNAL"
+   "BUDGET_PAIRS" "BUDGET_VECTORS" "BUDGET_VECTOR_ITEMS" "BUDGET_STRING_POOL"
+   "BUDGET_KGRAPH" "BUDGET_FUEL" "RESULT_STRING" "RESULT_RECORD" "RESULT_OPTION"
+   "RESULT_RESULT" "RESULT_VARIANT" "ARENA_VECTOR_TABLE" "ARENA_VECTOR_ITEMS"
+   "SANDBOX_FILESYSTEM" "SANDBOX_NETWORK" "SANDBOX_PROCESS" "VALUE_PREFIX"])
+
+(def value-trap-count 12)
+(def result-type-count 4)
+
+(defn fail! [message]
+  (.error js/console (str "gen-loader-decisions: " message))
+  (.exit js/process 2))
+
+(defn host-isa []
+  (case (.-arch js/process) "arm64" "aarch64" "x64" "x86_64"
+        (fail! (str "no native target for host arch " (.-arch js/process)))))
+
+(defn read-edn-line [text]
+  (edn/read-string (last (remove str/blank? (str/split-lines text)))))
+
+(defn compile! [tmp source isa]
+  (let [output (lib/join tmp (str (last (str/split source #"/")) "." isa ".kexe"))
+        result (lib/run amu ["compile" source "--target" isa "--output" output]
+                        {:allow-failure? true})]
+    (when-not (zero? (:status result))
+      (fail! (str "amu compile " source " --target " isa ":\n" (:stdout result) (:stderr result))))
+    output))
+
+(defn extract! [tmp kexe symbol]
+  (let [output (lib/join tmp (str (last (str/split kexe #"/")) "." symbol ".bin"))
+        result (lib/run amu ["extract-native" kexe "--symbol" symbol "--output" output]
+                        {:allow-failure? true})
+        answer (when (zero? (:status result)) (read-edn-line (:stdout result)))]
+    (when-not (and (:ok answer) (integer? (:offset answer)))
+      (fail! (str "amu extract-native " kexe " --symbol " symbol ":\n"
+                  (:stdout result) (:stderr result))))
+    {:bin output :offset (:offset answer) :bytes (.readFileSync fs output)}))
+
+(defn build-loader! [tmp]
+  (let [loader (lib/join tmp "kexe-loader")
+        result (lib/run "cc" ["-std=c11" "-O2" loader-path "-o" loader] {:allow-failure? true})]
+    (when-not (zero? (:status result))
+      (fail! (str "the current tools/kexe_loader.c does not build:\n" (:stderr result))))
+    loader))
+
+(defn eval-i64! [loader {:keys [bin offset]} isa k]
+  (let [result (lib/run loader [bin (str offset) "1" isa "-" (str k)] {:allow-failure? true})
+        text (str/trim (:stdout result))]
+    (when-not (and (zero? (:status result)) (re-matches #"-?[0-9]+" text))
+      (fail! (str "evaluating index " k ": " (lib/describe-exit result) " " text (:stderr result))))
+    (js/BigInt text)))
+
+(defn eval-string! [loader {:keys [bin offset]} isa k]
+  (let [result (lib/run loader [bin (str offset) "1" isa "-" (str k)]
+                        {:allow-failure? true
+                         :env {:KEXE_STRUCTURED_REPORT "1" :KEXE_RESULT_TYPE "string"}})
+        [_ hex] (re-find #":result-utf8-hex \"([0-9a-f]*)\"" (:stdout result))]
+    (when-not (and (zero? (:status result)) hex)
+      (fail! (str "evaluating string index " k ": " (lib/describe-exit result) " "
+                  (:stdout result) (:stderr result))))
+    (.toString (js/Buffer.from hex "hex") "utf8")))
+
+(defn c-string [s]
+  (str "\""
+       (apply str (map (fn [c]
+                         (case c
+                           "\\" "\\\\" "\"" "\\\"" "\n" "\\n"
+                           (let [code (.charCodeAt c 0)]
+                             (when (or (< code 32) (> code 126))
+                               (fail! (str "non-printable character in a trap name: " code)))
+                             c)))
+                       s))
+       "\""))
+
+(defn spell [value fmt]
+  (let [mib (js/BigInt 1048576)]
+    (case fmt
+      :u (str value "u")
+      :int (str value)
+      :ull (str value "ull")
+      :mib (do (when-not (and (pos? (js/Number value))
+                              (= (js/BigInt 0) (js/BigInt.asUintN 64 (mod value mib))))
+                 (fail! (str value " is not a whole number of MiB")))
+               (str "(" (/ value mib) "u * 1024u * 1024u)")))))
+
+(defn byte-rows [bytes]
+  (->> (range (.-length bytes))
+       (map #(str "0x" (.padStart (.toString (aget bytes %) 16) 2 "0")))
+       (partition-all 12)
+       (map #(str "  " (str/join ", " %) ","))
+       (str/join "\n")))
+
+(defn region [{:keys [constant-values trap-texts value-names result-names code source-shas]}]
+  (str begin-marker " -- written by scripts/gen-loader-decisions.cljk; do not\n"
+       " * edit by hand. Regenerate after changing either source:\n"
+       " *   tools/kexe_loader_decisions.kotoba sha256 " (:decisions source-shas) "\n"
+       " *   tools/kexe_loader_names.kotoba     sha256 " (:names source-shas) "\n"
+       " * The DECISIONS of this loader are Kotoba (superproject adr-2609251400 C1):\n"
+       " * the defines and tables below are those modules' answers, evaluated\n"
+       " * natively (kind (a), data), and the byte arrays are the decisions module\n"
+       " * compiled by amu for each ISA (kind (b), code the loader maps read+execute\n"
+       " * and calls: kexe_cap_admitted / kexe_decide). */\n"
+       (str/join "\n" (for [[[_ name fmt] value] (map vector constants constant-values)]
+                        (str "#define " name " " (spell value fmt))))
+       "\n\n"
+       (str/join "\n" (map-indexed (fn [i name] (str "#define KEXE_TRAP_LINE_" name " " i "u"))
+                                   trap-lines))
+       "\n#define KEXE_TRAP_LINE_COUNT " (count trap-lines) "u\n"
+       "static const char *const kexe_trap_lines[KEXE_TRAP_LINE_COUNT] = {\n"
+       (str/join "\n" (map #(str "  " (c-string %) ",") trap-texts))
+       "\n};\n"
+       "static const size_t kexe_trap_line_lengths[KEXE_TRAP_LINE_COUNT] = {\n  "
+       (str/join ", " (map #(str (count %) "u") trap-texts))
+       "\n};\n\n"
+       "#define KEXE_VALUE_TRAP_COUNT " value-trap-count "u\n"
+       "static const char *const kexe_value_trap_names[KEXE_VALUE_TRAP_COUNT] = {\n  NULL,\n"
+       (str/join "\n" (map #(str "  " (c-string %) ",") (rest value-names)))
+       "\n};\n\n"
+       "#define KEXE_RESULT_TYPE_COUNT " result-type-count "u\n"
+       "static const char *const kexe_result_type_names[KEXE_RESULT_TYPE_COUNT] = {\n"
+       (str/join "\n" (map #(str "  " (c-string %) ",") result-names))
+       "\n};\n\n"
+       (str/join "\n"
+                 (for [[isa guard] [["aarch64" "__aarch64__"] ["x86_64" "__x86_64__"]]
+                       :let [{:keys [cap-admitted decide bytes]} (get code isa)]]
+                   (str "#if defined(" guard ")\n"
+                        "#define KEXE_DECISIONS_CAP_ADMITTED_OFFSET " cap-admitted "u\n"
+                        "#define KEXE_DECISIONS_DECIDE_OFFSET " decide "u\n"
+                        "static const uint8_t kexe_decisions_code[" (.-length bytes) "] = {\n"
+                        (byte-rows bytes)
+                        "\n};\n#endif")))
+       "\n" end-marker))
+
+(defn splice [text generated]
+  (let [begin (.indexOf text begin-marker)
+        end (.indexOf text end-marker)]
+    (when (or (neg? begin) (neg? end) (< end begin))
+      (fail! "tools/kexe_loader.c has no KEXE-DECISIONS-GENERATED region"))
+    (str (subs text 0 begin) generated (subs text (+ end (count end-marker))))))
+
+(defn generate []
+  (let [tmp (lib/temp-dir "gen-loader-decisions-")]
+    (try
+      (let [host (host-isa)
+            loader (build-loader! tmp)
+            decisions {"aarch64" (compile! tmp decisions-path "aarch64")
+                       "x86_64" (compile! tmp decisions-path "x86_64")}
+            names-kexe (compile! tmp names-path host)
+            constant-fn (extract! tmp (get decisions host) "constant")
+            trap-fn (extract! tmp names-kexe "trap-line")
+            value-fn (extract! tmp names-kexe "value-trap-name")
+            result-fn (extract! tmp names-kexe "result-type-name")
+            constant-values (mapv (fn [[k]] (eval-i64! loader constant-fn host k)) constants)
+            _ (when-not (every? #(>= (js/Number %) 0) constant-values)
+                (fail! (str "a constant index has no answer: " (pr-str (map str constant-values)))))
+            trap-texts (mapv #(eval-string! loader trap-fn host %) (range (count trap-lines)))
+            value-names (mapv #(eval-string! loader value-fn host %) (range value-trap-count))
+            result-names (mapv #(eval-string! loader result-fn host %) (range result-type-count))
+            _ (when-not (and (every? seq trap-texts) (every? seq (rest value-names))
+                             (every? seq result-names) (= "" (first value-names)))
+                (fail! "a name index has no answer"))
+            code (into {} (for [isa ["aarch64" "x86_64"]
+                                :let [cap (extract! tmp (get decisions isa) "cap-admitted")
+                                      decide (extract! tmp (get decisions isa) "decide")]]
+                            (do (lib/ensure! (.equals (:bytes cap) (:bytes decide))
+                                             "extract-native answered two different code blobs for one module")
+                                [isa {:cap-admitted (:offset cap) :decide (:offset decide)
+                                      :bytes (:bytes cap)}])))]
+        (region {:constant-values constant-values :trap-texts trap-texts
+                 :value-names value-names :result-names result-names :code code
+                 :source-shas {:decisions (lib/sha256 decisions-path)
+                               :names (lib/sha256 names-path)}}))
+      (finally (lib/remove-tree! tmp)))))
+
+(let [check? (some #{"--check"} *command-line-args*)
+      current (lib/read-text loader-path)
+      updated (splice current (generate))]
+  (cond
+    (= current updated)
+    (println "gen-loader-decisions: tools/kexe_loader.c region is up to date")
+    check?
+    (do (.error js/console "gen-loader-decisions: tools/kexe_loader.c region is STALE -- run scripts/gen-loader-decisions.cljk")
+        (.exit js/process 1))
+    :else
+    (do (lib/write-text! loader-path updated)
+        (println "gen-loader-decisions: wrote the tools/kexe_loader.c region"))))

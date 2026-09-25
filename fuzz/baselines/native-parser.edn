@@ -76,7 +76,17 @@
 ;; untouched; the deterministic-sanitized arm (ASan + UBSan, 20,000 cases)
 ;; passed with the new cases in the mix. Floors carried forward NOT
 ;; re-measured (same machine limitation as above).
+;; Advanced 2026-09-25 for superproject adr-2609251400 C1: the loader DECISIONS
+;; moved to Kotoba and are consumed through a generated region of this file
+;; (budgets and trap names as data; the allow-list, provider table, result
+;; descriptor admission, budget verdicts and scope containment as compiled
+;; code the loader maps and calls), and checked_cap_call wraps at INT64_MAX.
+;; The argv parser keeps its shape; its v: / variant / record checks now call
+;; the compiled decision, which is not instrumented, so cov may read LOWER for
+;; the same behaviour. The deterministic-sanitized arm (ASan + UBSan, 20,000
+;; cases) passed. Floors carried forward NOT re-measured (no libFuzzer
+;; runtime on the machine that made this change); the Linux CI job measures.
 {:format :kotoba.fuzz-baseline/v2
- :loader-source-sha256 "287f6037506402a034c00a6cfe09464518221920b36735affc69309c5eab6e88"
+ :loader-source-sha256 "273b97a66831bb3388ec7c0d8de66c250299fbad86a08d490edbdcc13d55f849"
  :profiles {:x64 {:min-cov 60 :min-features 100 :min-corpus 20}
             :arm64 {:min-cov 60 :min-features 100 :min-corpus 18}}}

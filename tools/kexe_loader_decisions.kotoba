@@ -1,0 +1,276 @@
+(ns kexe-loader-decisions
+  {:kotoba/export [constant cap-admitted decide]})
+
+;; The POSIX kexe loader's DECISIONS, as Kotoba (superproject
+;; adr-2609251400 C1). tools/kexe_loader.c keeps the mechanism -- mmap,
+;; fork, signals, the sandbox, the syscalls -- and consumes what is decided
+;; here in one of two ways, and never re-implements it:
+;;
+;;   (a) DATA. `constant` here, and `trap-line`, `value-trap-name` and
+;;       `result-type-name` in kexe_loader_names.kotoba, are evaluated once,
+;;       natively, by
+;;       scripts/gen-loader-decisions.cljk, and their answers are written
+;;       into the generated region of tools/kexe_loader.c (between the
+;;       KEXE-DECISIONS-GENERATED markers). The C indexes those tables and
+;;       interprets nothing. Data, because the C needs these at COMPILE time
+;;       (array sizes of the shared mapping) or inside a signal handler.
+;;
+;;   (b) CODE. `cap-admitted` and `decide` are compiled by amu for aarch64
+;;       and x86_64, and the machine code is embedded in the same generated
+;;       region. The loader maps it read+execute next to the guest (the same
+;;       W^X mapping it gives the guest) and CALLS it through the native
+;;       kexe ABI whenever it has to decide: is this capability granted,
+;;       which provider answers this wire id, is this budget admissible, is
+;;       this path inside the scope. Code, because these are predicates over
+;;       run-time inputs.
+;;
+;; The region is inside kexe_loader.c on purpose: artifact's native loader
+;; source identity hashes that ONE file, so a decision that moved to a
+;; header would change the loader without changing its identity.
+;;
+;; Every function here is i64 -> i64 (or -> :string for the data tables):
+;; the loader calls (b) with a private context, never the guest's, so a
+;; decision costs the guest no fuel and no arena cell.
+;;
+;; Values agree with kotoba-lang lang/limits.edn: the generated #defines
+;; keep the spellings amu's value_bounds_agreement_test reads.
+
+;; ---------------------------------------------------------------------
+;; (a) constants. The index is the generator's; the NAME it becomes in C
+;; is in scripts/gen-loader-decisions.cljk next to the same index.
+
+(defn constant [k]
+  (cond
+    ;; :profile/native :cells :default -- the pair arena budget.
+    (= k 0) 4096
+    ;; :profile/native :cells :pair-arena-max -- 64 Mi handles, address space.
+    (= k 1) 67108864
+    ;; kgraph datoms per run.
+    (= k 2) 4096
+    ;; :profile/native :structural :arena-scope-depth.
+    (= k 3) 256
+    ;; :profile/native :bytes :default -- the string pool budget.
+    (= k 4) 65536
+    ;; :profile/native :bytes :max -- 1 GiB of address space.
+    (= k 5) 1073741824
+    ;; granted regions: count and pool bytes.
+    (= k 6) 8
+    (= k 7) 65536
+    ;; :language/static :record-fields.
+    (= k 8) 32
+    ;; :profile/native :fuel :max and :unmetered-initial (2^53-1).
+    (= k 9) 9007199254740991
+    ;; :profile/native :emergency-stop cpu-seconds / wall-seconds, and the
+    ;; ceiling either may be raised to.
+    (= k 10) 1
+    (= k 11) 3
+    (= k 12) 86400
+    ;; :profile/native :cells :vectors / :vector-items (per-run budgets) and
+    ;; their address-space maxima.
+    (= k 13) 4096
+    (= k 14) 65536
+    (= k 15) 4194304
+    (= k 16) 134217728
+    ;; :language/value :vector-items -- one vector, 2^24.
+    (= k 17) 16777216
+    ;; :language/value :string-value-bytes, and the bytes twin.
+    (= k 18) 65536
+    (= k 19) 65536
+    ;; filesystem scope entries per grant.
+    (= k 20) 64
+    ;; the longest path a scope admits, NUL included (PATH_MAX-sized
+    ;; buffers; a joined path must be strictly shorter).
+    (= k 21) 4096
+    :else -1))
+
+;; ---------------------------------------------------------------------
+;; (b) predicates.
+
+;; Bit K (0..63) of W, with the shift counts the language admits (literals
+;; in [0,63]): K is decomposed into its binary digits.
+(defn- low-bit [r] (- r (i64-shift-left (u64-shift-right r 1) 1)))
+
+(defn- bit-of [w k]
+  (let [a (if (>= k 32) (u64-shift-right w 32) w)
+        ka (if (>= k 32) (- k 32) k)
+        b (if (>= ka 16) (u64-shift-right a 16) a)
+        kb (if (>= ka 16) (- ka 16) ka)
+        c (if (>= kb 8) (u64-shift-right b 8) b)
+        kc (if (>= kb 8) (- kb 8) kb)
+        d (if (>= kc 4) (u64-shift-right c 4) c)
+        kd (if (>= kc 4) (- kc 4) kc)
+        e (if (>= kd 2) (u64-shift-right d 2) d)
+        ke (if (>= kd 2) (- kd 2) kd)
+        f (if (>= ke 1) (u64-shift-right e 1) e)]
+    (low-bit f)))
+
+;; 2^K for K in [0,62].
+(defn- pow2 [k]
+  (let [a (if (>= k 32) (i64-shift-left 1 32) 1)
+        ka (if (>= k 32) (- k 32) k)
+        b (if (>= ka 16) (i64-shift-left a 16) a)
+        kb (if (>= ka 16) (- ka 16) ka)
+        c (if (>= kb 8) (i64-shift-left b 8) b)
+        kc (if (>= kb 8) (- kb 8) kb)
+        d (if (>= kc 4) (i64-shift-left c 4) c)
+        kd (if (>= kc 4) (- kc 4) kc)
+        e (if (>= kd 2) (i64-shift-left d 2) d)
+        ke (if (>= kd 2) (- kd 2) kd)]
+    (if (>= ke 1) (i64-shift-left e 1) e)))
+
+;; The wire-id domain: a capability id is 0..255 (the allow mask is four
+;; 64-bit words). A u64 the C read as negative is outside it.
+(defn- wire-id-admissible [id]
+  (if (< id 0) 0 (if (> id 255) 0 1)))
+
+;; The capability allow-list. A grant is four 64-bit words, bit ID of the
+;; mask; an id outside the domain is never granted. Answers 1 or 0.
+(defn cap-admitted [w0 w1 w2 w3 id]
+  (if (= 0 (wire-id-admissible id)) 0
+      (let [w (if (< id 64) w0 (if (< id 128) w1 (if (< id 192) w2 w3)))]
+        (bit-of w (- id (* 64 (quot id 64)))))))
+
+;; Which provider answers a typed capability call, given a granted wire id
+;; and the typed kind the call carries (request kind = result kind). The
+;; wire ids are kotoba-lang lang/capability-catalog.edn :compiler-wire-id.
+;; The C switches on the answer and calls the provider; it knows no id.
+;;
+;;   -1 refused (a clock-v1 record on any id but :clock/now)
+;;    0 the qualification host's identity stub
+;;    1 hosted clock-v1 record       2 dataspace-v1 (:dataspace 24)
+;;    3 ui commit (:ui/commit 9)     4 ui event (:ui/event 10)
+;;    5 :fs/app-data 35              6 :fs/browse 34
+;;    7 :io/write-error 39           8 :identity/verify 2
+;;    9 :hash/sha256 3              10 :clock/now 7, text form
+;;   11 :io/read 41                 12 :cli/args 38
+;;   13 :io/write 37                14 :gpu/compute 42
+;;   15 :env/read 33
+;;
+;; Typed kinds: 1 string, 2 option-i64, 3 result-i64, 4 clock-v1,
+;; 5 dataspace-v1, 6 ui-commit-v1, 7 ui-event-v1.
+(defn- cap-provider [id kind]
+  (cond
+    (= kind 4) (if (= id 7) 1 -1)
+    (= kind 5) (if (= id 24) 2 0)
+    (= kind 6) (if (= id 9) 3 0)
+    (= kind 7) (if (= id 10) 4 0)
+    (= kind 1) (cond (= id 35) 5
+                     (= id 34) 6
+                     (= id 39) 7
+                     (= id 2) 8
+                     (= id 3) 9
+                     (= id 7) 10
+                     (= id 41) 11
+                     (= id 38) 12
+                     (= id 37) 13
+                     (= id 42) 14
+                     (= id 33) 15
+                     :else 0)
+    :else 0))
+
+;; A typed call's two kinds must be the same kind.
+(defn- typed-kinds-admitted [request-kind result-kind]
+  (if (= request-kind result-kind) 1 0))
+
+;; `record:<n>` result descriptors and record results: 1..32 fields
+;; (:language/static :record-fields). N arrives as a u64; negative = huge.
+(defn- record-fields-admitted [n]
+  (if (< n 1) 0 (if (> n (constant 8)) 0 1)))
+
+;; `variant:<cases>:<mask>`: 1..32 cases, and the bool mask names no case
+;; past the last (mask < 2^cases, read unsigned).
+(defn- variant-profile-admitted [cases mask]
+  (if (< cases 1) 0
+      (if (> cases 32) 0
+          (if (< mask 0) 0
+              (if (< mask (pow2 cases)) 1 0)))))
+
+;; A `v:<cases>:<ordinal>:<kind>:<payload>` guest argument. KIND is the
+;; character code the C read ('i' 105, 'b' 98); a bool payload is 0 or 1.
+(defn- variant-arg-admitted [cases ordinal kind payload]
+  (cond
+    (< cases 1) 0
+    (> cases 32) 0
+    (< ordinal 0) 0
+    (>= ordinal cases) 0
+    (= kind 105) 1
+    (= kind 98) (if (= payload 0) 1 (if (= payload 1) 1 0))
+    :else 0))
+
+;; A variant RESULT (ordinal, payload) against its descriptor: the ordinal
+;; names a case, and a case the mask marks bool carries 0 or 1.
+(defn- variant-result-admitted [cases mask ordinal payload]
+  (cond
+    (< ordinal 0) 0
+    (>= ordinal cases) 0
+    (= 0 (bit-of mask ordinal)) 1
+    (= payload 0) 1
+    (= payload 1) 1
+    :else 0))
+
+;; An option-i64 / result-i64 value (tag, payload): the tag is 0 or 1, and
+;; an option's none carries 0.
+(defn- tagged-admitted [option tag payload]
+  (cond
+    (< tag 0) 0
+    (> tag 1) 0
+    (= option 0) 1
+    (= tag 1) 1
+    (= payload 0) 1
+    :else 0))
+
+;; A per-run budget the caller named (environment or packaged constant).
+;; BUDGET: 0 fuel, 1 string pool, 2 pairs, 3 vectors, 4 vector items,
+;; 5 cpu seconds, 6 wall seconds. VALUE is the u64 the C parsed.
+;;   0 admitted, 1 refused as zero (must be positive), 2 above the ceiling.
+(defn- budget-ceiling [budget]
+  (cond
+    (= budget 0) (constant 9)
+    (= budget 1) (constant 5)
+    (= budget 2) (constant 1)
+    (= budget 3) (constant 15)
+    (= budget 4) (constant 16)
+    (= budget 5) (constant 12)
+    (= budget 6) (constant 12)
+    :else 0))
+
+(defn- budget-verdict [budget value]
+  (cond
+    (= value 0) 1
+    (< value 0) 2
+    (> value (budget-ceiling budget)) 2
+    :else 0))
+
+;; Filesystem scope containment, the RULE half of kexe_scope_admit and of
+;; the macOS fd containment. The C measures (the byte comparison is
+;; mechanism) and asks: PREFIX-EQUAL is 1 when the target's first
+;; len(entry) bytes are the entry's, NEXT-BYTE the target's byte just past
+;; them (0 at its end), JOINED-LENGTH the length of the path re-spelled
+;; under the entry's resolved prefix (0 when nothing is re-spelled).
+;; Admitted exactly when the target IS the entry or lies beneath it -- a
+;; sibling that merely shares the spelling (`/tmp/ab` vs `/tmp/abc`) is not
+;; -- and the re-spelled path fits the path buffer.
+(defn- scope-admitted [prefix-equal next-byte joined-length]
+  (cond
+    (= prefix-equal 0) 0
+    (>= joined-length (constant 21)) 0
+    (= next-byte 0) 1
+    (= next-byte 47) 1
+    :else 0))
+
+;; The one native entry for every decision but the allow-list (which needs
+;; all five argument registers). OP is the ABI; the C names each one
+;; KEXE_DECIDE_*.
+(defn decide [op a b c d]
+  (cond
+    (= op 0) (cap-provider a b)
+    (= op 1) (typed-kinds-admitted a b)
+    (= op 2) (record-fields-admitted a)
+    (= op 3) (variant-profile-admitted a b)
+    (= op 4) (variant-arg-admitted a b c d)
+    (= op 5) (variant-result-admitted a b c d)
+    (= op 6) (tagged-admitted a b c)
+    (= op 7) (budget-verdict a b)
+    (= op 8) (scope-admitted a b c)
+    (= op 9) (wire-id-admissible a)
+    :else -1))

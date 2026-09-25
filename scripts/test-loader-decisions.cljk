@@ -1,0 +1,704 @@
+#!/usr/bin/env kbb
+(ns test-loader-decisions
+  "The loader's decisions in Kotoba (superproject adr-2609251400 C1), checked
+  four ways:
+
+  1. CLASSIFICATION. Every function of tools/kexe_loader.c is named in
+     tools/kexe_loader.classification.edn as :mechanism, :decision or :mixed,
+     and every name there exists. A new function that is not classified
+     fails here. Prints the per-class line counts, before (the loader at
+     OLD-REV) and after.
+  2. REGION. The KEXE-DECISIONS-GENERATED region names the sha256 of both
+     Kotoba sources; a source edited without regenerating fails here.
+     `--full` also regenerates the region and compares it byte for byte
+     (scripts/gen-loader-decisions.cljk --check; compiles, ~2 minutes).
+  3. DIFFERENTIAL. The decision functions of the loader at OLD-REV (the last
+     one whose decisions were C) and of this loader are driven with the same
+     cases -- boundaries plus seeded random -- by one driver compiled against
+     each, and the answers must be identical, line for line. Then both
+     loader BINARIES run the same black-box matrix (budgets from the
+     environment, result descriptors, guest arguments, capability grants,
+     typed dispatch, scope containment, every nameable trap) and
+     exit status, stdout and stderr must be identical.
+  4. THE :733 PIN. checked_cap_call answered `value + 1` in signed
+     arithmetic, undefined at INT64_MAX. A loader built with
+     -fsanitize=undefined runs a guest that calls cap 1 with INT64_MAX and
+     must answer INT64_MIN with no sanitizer report; a guest's answer is
+     compared, not assumed.
+
+  The driver (C, written to a temporary directory and never committed) is
+  test glue: it includes a loader source the way tools/kexe_parser_fuzz.c
+  does and calls its static functions.
+
+    kbb --backend sci --classpath . scripts/test-loader-decisions.cljk [--old-rev <rev>] [--full] [--cases <n>] [--arch x86_64] [--static]
+
+  Exit: 0 pass, 1 a difference or a failed check, 3 UNMEASURED (the old
+  loader source is not in this clone -- a shallow clone cannot run 3)."
+  (:require [clojure.edn :as edn]
+            [kotoba.lang.text :as str]
+            [scripts.lib :as lib]
+            ["node:fs" :as fs]))
+
+(def args (vec *command-line-args*))
+(defn arg [flag default]
+  (let [i (.indexOf (clj->js args) flag)] (if (neg? i) default (nth args (inc i)))))
+(def old-rev (arg "--old-rev" "0d244a957f6d84f07ee2ac0f96ce1c55367e9498"))
+(def case-count (js/parseInt (arg "--cases" "4000") 10))
+(def full? (some #{"--full"} args))
+;; `--static`: 1 and 2 only, for a clone that cannot hold the old loader (CI's
+;; shallow checkout). It says so on stdout; it is not the full test.
+(def static? (some #{"--static"} args))
+;; `--arch x86_64` on an arm64 Mac builds every loader and driver for x86_64
+;; (cc -arch x86_64, run under Rosetta) and compiles the guests for x86_64, so
+;; the x86_64 decision code is the one exercised.
+(def cross-arch (arg "--arch" nil))
+(def cc-arch (if cross-arch ["-arch" cross-arch] []))
+(def host-isa (or ({"x86_64" "x86_64" "arm64" "aarch64"} cross-arch)
+                  (case (.-arch js/process) "arm64" "aarch64" "x86_64")))
+
+(def loader-path (lib/join lib/root "tools" "kexe_loader.c"))
+(def classification-path (lib/join lib/root "tools" "kexe_loader.classification.edn"))
+(def amu (lib/join lib/root "bin" "amu"))
+(def failures (atom []))
+(defn fail! [message] (swap! failures conj message) (.error js/console (str "FAIL " message)))
+(defn exit-unmeasured! [message]
+  (.error js/console (str "UNMEASURED " message))
+  (.exit js/process 3))
+
+;; ---------------------------------------------------------------------------
+;; 1. classification
+
+(defn functions
+  "Top-level function definitions of C source TEXT outside the generated
+  region: [{:name :lines}], a name defined under several #if arms summed."
+  [text]
+  (let [lines (vec (str/split-lines text))
+        begin (first (keep-indexed #(when (str/starts-with? %2 "/* KEXE-DECISIONS-GENERATED BEGIN") %1) lines))
+        end (first (keep-indexed #(when (str/starts-with? %2 "/* KEXE-DECISIONS-GENERATED END") %1) lines))
+        generated? (fn [i] (and begin end (<= begin i end)))
+        head #"^(?:static\s+)?(?:inline\s+)?(?:const\s+)?[A-Za-z_][A-Za-z0-9_ ]*[\s\*]+\**([A-Za-z_][A-Za-z0-9_]*)\s*\("]
+    (loop [i 0 found []]
+      (if (>= i (count lines))
+        (->> found (group-by :name)
+             (map (fn [[n fs]] {:name n :lines (reduce + (map :lines fs))}))
+             (sort-by :name))
+        (let [line (nth lines i)
+              [_ name] (when-not (generated? i) (re-find head line))]
+          (if (and name (not (#{"if" "while" "for" "switch" "return" "sizeof"} name)) (not (str/starts-with? line "typedef")) (not (str/ends-with? (str/trim line) ";"))
+                   (not (str/starts-with? line " ")))
+            ;; the body ends at the first column-0 `}`
+            (let [close (if (and (str/includes? line "{") (str/ends-with? (str/trim line) "}")) i (loop [j i] (cond (>= j (count lines)) nil
+                                          (str/starts-with? (nth lines j) "}") j
+                                          :else (recur (inc j)))))]
+              (if (and close (some #(str/includes? % "{") (subvec lines i (inc close))))
+                (recur (inc close) (conj found {:name name :lines (inc (- close i))}))
+                (recur (inc i) found)))
+            (recur (inc i) found)))))))
+
+(defn region-lines [text]
+  (let [lines (vec (str/split-lines text))
+        begin (first (keep-indexed #(when (str/starts-with? %2 "/* KEXE-DECISIONS-GENERATED BEGIN") %1) lines))
+        end (first (keep-indexed #(when (str/starts-with? %2 "/* KEXE-DECISIONS-GENERATED END") %1) lines))]
+    (if (and begin end) (inc (- end begin)) 0)))
+
+(defn top-level-decision-lines
+  "Lines outside functions and outside the generated region that define one
+  of NAMES: a #define is one line, a table runs to its `};`."
+  [text names]
+  (let [lines (vec (str/split-lines text))
+        begin (first (keep-indexed #(when (str/starts-with? %2 "/* KEXE-DECISIONS-GENERATED BEGIN") %1) lines))
+        end (first (keep-indexed #(when (str/starts-with? %2 "/* KEXE-DECISIONS-GENERATED END") %1) lines))
+        outside? (fn [i] (not (and begin end (<= begin i end))))]
+    (reduce + (for [name names
+                    i (range (count lines))
+                    :let [line (nth lines i)]
+                    :when (and (outside? i)
+                               (or (str/starts-with? line (str "#define " name " "))
+                                   (and (str/starts-with? line "static const char *const ")
+                                        (str/includes? line (str name "[")))))]
+                (if (str/starts-with? line "#define")
+                  1
+                  (inc (- (or (first (filter #(str/starts-with? (nth lines %) "};") (range i (count lines)))) i) i)))))))
+
+(defn tally [fns classes class-key]
+  (reduce (fn [acc {:keys [name lines]}]
+            (let [entry (get classes name)
+                  class (or (get entry class-key) (:class entry))]
+              (update acc class (fnil + 0) lines)))
+          {} fns))
+
+(defn check-classification! [old-text]
+  (let [table (edn/read-string (lib/read-text classification-path))
+        classes (:functions table)
+        fns (functions (lib/read-text loader-path))
+        names (set (map :name fns))
+        missing (remove #(contains? classes %) (sort names))
+        stale (remove names (sort (keys classes)))
+        bad (remove #(#{:mechanism :decision :mixed} (:class (get classes %))) (sort (keys classes)))]
+    (println (str "SCANNED\t" (count fns) "\tfunctions in tools/kexe_loader.c"))
+    (when (< (count fns) 150) (fail! (str "only " (count fns) " functions found: the scanner is broken")))
+    (doseq [m missing] (fail! (str "unclassified function " m " -- add it to tools/kexe_loader.classification.edn")))
+    (doseq [s stale] (fail! (str "classified function " s " no longer exists in tools/kexe_loader.c")))
+    (doseq [b bad] (fail! (str b " has no :class in #{:mechanism :decision :mixed}")))
+    (let [after (tally fns classes :class)
+          old-fns (when old-text (functions old-text))
+          before (when old-fns (tally (filter #(contains? classes (:name %)) old-fns) classes :before))
+          old-unknown (when old-fns (remove #(contains? classes (:name %)) old-fns))]
+      (println (str "AFTER\t" (pr-str (into (sorted-map) after))
+                    "\ttop-level-decision-lines " (top-level-decision-lines (lib/read-text loader-path) (:top-level-decisions table))
+                    "\tgenerated-region-lines " (region-lines (lib/read-text loader-path))))
+      (when (pos? (top-level-decision-lines (lib/read-text loader-path) (:top-level-decisions table)))
+        (fail! "a moved decision is hand-written in tools/kexe_loader.c again"))
+      (when before
+        (println (str "BEFORE\t" (pr-str (into (sorted-map) before))
+                      "\ttop-level-decision-lines " (top-level-decision-lines old-text (:top-level-decisions table))))
+        (doseq [u old-unknown]
+          (fail! (str "old loader function " (:name u) " has no classification (give it an entry with :gone true)")))))))
+
+;; ---------------------------------------------------------------------------
+;; 2. region freshness
+
+(defn check-region! []
+  (let [text (lib/read-text loader-path)]
+    (doseq [[label file] [["tools/kexe_loader_decisions.kotoba sha256 " "kexe_loader_decisions.kotoba"]
+                          ["tools/kexe_loader_names.kotoba     sha256 " "kexe_loader_names.kotoba"]]]
+      (let [sha (lib/sha256 (lib/join lib/root "tools" file))]
+        (when-not (str/includes? text (str label sha))
+          (fail! (str file " changed since the region was generated -- run scripts/gen-loader-decisions.cljk")))))
+    (when full?
+      (let [r (lib/run js/process.execPath [(lib/join lib/root "bin" "kbb") "--backend" "sci" "--classpath" "."
+                                            "scripts/gen-loader-decisions.cljk" "--check"]
+                       {:allow-failure? true})]
+        (if (zero? (:status r))
+          (println "REGION\tregenerated byte-identical")
+          (fail! (str "region is stale:\n" (:stdout r) (:stderr r))))))))
+
+;; ---------------------------------------------------------------------------
+;; 3a. the function-level differential driver
+
+(def driver-source
+  "#define main kexe_loader_main_not_used_by_driver
+#define KEXE_SANITIZER_TEST 1
+#include LOADER_SOURCE
+#undef main
+#include <setjmp.h>
+
+static sigjmp_buf driver_jump;
+static void driver_trap(int s) { (void)s; siglongjmp(driver_jump, 1); }
+static struct kexe_shared_v11 *S;
+
+static void reset(void) {
+  S->pair_used = 0; S->string_pool_used = 0; S->vector_used = 0;
+  S->vector_item_used = 0; S->region_used = 0; S->region_count = 0;
+  S->budget_exhausted = 0; S->value_trap = 0;
+}
+
+static int64_t pair(int64_t first, int64_t second) {
+  int64_t h = 0;
+  if (allocate_host_pair(S, first, second, &h) != 0) return 0;
+  return h;
+}
+
+int main(void) {
+  S = mmap(NULL, sizeof(*S), PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+  if (S == MAP_FAILED) return 2;
+  S->context.version = 11;
+  S->context.code_base = (const uint8_t *)\"\";
+  S->context.code_length = 0;
+  S->context.pair_new = checked_pair_new;
+  struct sigaction a; memset(&a, 0, sizeof a); a.sa_handler = driver_trap;
+  sigemptyset(&a.sa_mask); a.sa_flags = SA_NODEFER;
+  sigaction(SIGILL, &a, NULL);
+  char line[16384];
+  while (fgets(line, sizeof line, stdin)) {
+    line[strcspn(line, \"\\n\")] = 0;
+    char *op = strtok(line, \"\\t\");
+    if (op == NULL) continue;
+    reset();
+    if (sigsetjmp(driver_jump, 1)) { printf(\"TRAP\\n\"); fflush(stdout); continue; }
+    if (strcmp(op, \"cap\") == 0) {
+      for (int i = 0; i < 4; i++) S->context.allow[i] = strtoull(strtok(NULL, \"\\t\"), NULL, 10);
+      uint64_t id = strtoull(strtok(NULL, \"\\t\"), NULL, 10);
+      int64_t value = strtoll(strtok(NULL, \"\\t\"), NULL, 10);
+      printf(\"%\" PRId64 \"\\n\", checked_cap_call(&S->context, id, value));
+    } else if (strcmp(op, \"allow\") == 0) {
+      uint64_t w[4] = {0, 0, 0, 0};
+      char *text = strtok(NULL, \"\\t\");
+      int rc = parse_allow(text ? text : \"\", w);
+      printf(\"%d %\" PRIu64 \" %\" PRIu64 \" %\" PRIu64 \" %\" PRIu64 \"\\n\", rc, w[0], w[1], w[2], w[3]);
+    } else if (strcmp(op, \"vprof\") == 0) {
+      uint64_t c = 0, m = 0;
+      char *text = strtok(NULL, \"\\t\");
+      int rc = parse_variant_profile(text ? text : \"\", &c, &m);
+      printf(\"%d %\" PRIu64 \" %\" PRIu64 \"\\n\", rc, rc ? c : 0, rc ? m : 0);
+    } else if (strcmp(op, \"garg\") == 0) {
+      int64_t v = 0;
+      char *text = strtok(NULL, \"\\t\");
+      int rc = parse_guest_arg(S, text ? text : \"\", &v);
+      /* a granted region answers an ADDRESS, which differs per process:
+       * compare its offset into the pool instead */
+      if (rc == 0 && text && strncmp(text, \"g:\", 2) == 0) v -= (int64_t)(uintptr_t)S->region_pool;
+      printf(\"%d %\" PRId64 \" %\" PRIu64, rc, rc == 0 ? v : 0, S->pair_used);
+      for (uint64_t i = 0; i < S->pair_used && i < 40; i++)
+        printf(\" (%\" PRId64 \",%\" PRId64 \")\", S->pairs[i].first, S->pairs[i].second);
+      printf(\"\\n\");
+    } else if (strcmp(op, \"vres\") == 0) {
+      uint64_t cases = strtoull(strtok(NULL, \"\\t\"), NULL, 10);
+      uint64_t mask = strtoull(strtok(NULL, \"\\t\"), NULL, 10);
+      int64_t first = strtoll(strtok(NULL, \"\\t\"), NULL, 10);
+      int64_t second = strtoll(strtok(NULL, \"\\t\"), NULL, 10);
+      int64_t h = pair(first, second), o = 0, p = 0;
+      int rc = inspect_variant_result(S, h, cases, mask, &o, &p);
+      printf(\"%d %\" PRId64 \" %\" PRId64 \"\\n\", rc, o, p);
+    } else if (strcmp(op, \"tag\") == 0) {
+      int option = atoi(strtok(NULL, \"\\t\"));
+      int64_t first = strtoll(strtok(NULL, \"\\t\"), NULL, 10);
+      int64_t second = strtoll(strtok(NULL, \"\\t\"), NULL, 10);
+      int64_t h = pair(first, second), t = 0, p = 0;
+      int rc = inspect_tagged_i64_result(S, h, option, &t, &p);
+      int kind = option ? KEXE_TYPED_OPTION_I64 : KEXE_TYPED_RESULT_I64;
+      int typed = valid_typed_value(&S->context, (uint64_t)kind, h);
+      printf(\"%d %\" PRId64 \" %\" PRId64 \" %d\\n\", rc, t, p, typed);
+    } else if (strcmp(op, \"rec\") == 0) {
+      uint64_t count = strtoull(strtok(NULL, \"\\t\"), NULL, 10);
+      uint64_t chain = strtoull(strtok(NULL, \"\\t\"), NULL, 10);
+      int64_t head = 0;
+      for (uint64_t i = 0; i < chain; i++) head = pair((int64_t)(i * 7), head);
+      int64_t fields[KEXE_RECORD_FIELD_LIMIT];
+      printf(\"%d\\n\", inspect_record_result(S, head, count, fields));
+    } else if (strcmp(op, \"tcall\") == 0) {
+      uint64_t id = strtoull(strtok(NULL, \"\\t\"), NULL, 10);
+      uint64_t req = strtoull(strtok(NULL, \"\\t\"), NULL, 10);
+      uint64_t res = strtoull(strtok(NULL, \"\\t\"), NULL, 10);
+      char *value = strtok(NULL, \"\\t\");
+      for (int i = 0; i < 4; i++) S->context.allow[i] = ~UINT64_C(0);
+      int64_t request = 0;
+      if (parse_guest_arg(S, value, &request) != 0) { printf(\"BADARG\\n\"); continue; }
+      int64_t r = checked_typed_cap_call(&S->context, id, req, res, request);
+      uint64_t n = 0;
+      const uint8_t *bytes = inspect_string_result(S, r, &n);
+      printf(\"%\" PRId64, r);
+      if (bytes) { printf(\" \\\"\"); for (uint64_t i = 0; i < n; i++) printf(\"%02x\", bytes[i]); printf(\"\\\"\"); }
+      printf(\"\\n\");
+    } else if (strcmp(op, \"scope\") == 0) {
+      static struct kexe_scope scope;
+      memset(&scope, 0, sizeof scope);
+      char *target = strtok(NULL, \"\\t\");
+      char *entry;
+      while ((entry = strtok(NULL, \"\\t\")) != NULL && scope.count < KEXE_SCOPE_ENTRIES) {
+        char *bar = strchr(entry, '|');
+        if (bar) *bar = 0;
+        snprintf(scope.orig[scope.count], 4096, \"%s\", entry);
+        snprintf(scope.resolved[scope.count], 4096, \"%s\", bar ? bar + 1 : entry);
+        scope.count++;
+      }
+      char candidate[4096] = {0};
+      int rc = kexe_scope_admit(&scope, target ? target : \"\", candidate);
+      printf(\"%d %s\\n\", rc, rc ? candidate : \"\");
+    } else {
+      printf(\"UNKNOWN %s\\n\", op);
+    }
+    fflush(stdout);
+  }
+  return 0;
+}
+")
+
+(defn build-driver! [tmp label source]
+  (let [c (lib/join tmp (str "driver-" label ".c"))
+        exe (lib/join tmp (str "driver-" label))]
+    (lib/write-text! c driver-source)
+    (let [r (lib/run "cc" (concat cc-arch ["-std=c11" "-O1" "-w" (str "-DLOADER_SOURCE=\"" source "\"") c "-o" exe])
+                     {:allow-failure? true})]
+      (when-not (zero? (:status r)) (fail! (str "driver " label " does not build:\n" (:stderr r))))
+      exe)))
+
+;; seeded xorshift64*, so a failing case is reproducible from --cases alone
+(def rng-state (atom (js/BigInt "0x9E3779B97F4A7C15")))
+(defn rand-u64 []
+  (let [x @rng-state
+        x (js/BigInt.asUintN 64 (bit-xor x (bit-shift-left x (js/BigInt 13))))
+        x (js/BigInt.asUintN 64 (bit-xor x (bit-shift-right x (js/BigInt 7))))
+        x (js/BigInt.asUintN 64 (bit-xor x (bit-shift-left x (js/BigInt 17))))]
+    (reset! rng-state x)
+    x))
+(defn rand-int* [n] (js/Number (mod (rand-u64) (js/BigInt n))))
+(defn pick [xs] (nth xs (rand-int* (count xs))))
+
+(def u64-edges ["0" "1" "2" "31" "32" "33" "63" "64" "65" "127" "128" "191" "192" "254" "255" "256" "257"
+                "4096" "65535" "65536" "4294967295" "4294967296"
+                "9223372036854775806" "9223372036854775807" "9223372036854775808"
+                "18446744073709551614" "18446744073709551615"])
+(def i64-edges ["0" "1" "-1" "2" "-2" "9223372036854775807" "-9223372036854775808" "9223372036854775806"])
+(defn rand-u64-text [] (if (zero? (rand-int* 3)) (pick u64-edges) (str (rand-u64))))
+(defn rand-i64-text [] (if (zero? (rand-int* 3)) (pick i64-edges) (str (js/BigInt.asIntN 64 (rand-u64)))))
+(defn small [n] (str (rand-int* n)))
+
+(defn cap-case []
+  (let [words (repeatedly 4 #(case (rand-int* 4) 0 "0" 1 "18446744073709551615" (str (rand-u64))))
+        id (if (zero? (rand-int* 4)) (pick u64-edges) (small 300))]
+    (str/join "\t" (concat ["cap"] words [id (rand-i64-text)]))))
+
+(defn allow-case []
+  (let [n (rand-int* 5)
+        ids (repeatedly n #(if (zero? (rand-int* 3)) (pick u64-edges) (small 300)))
+        text (case (rand-int* 8) 0 "-" 1 "" 2 (str (str/join "," ids) ",") 3 (str "," (str/join "," ids))
+                   4 (str (str/join "," ids) "x") (str/join "," ids))]
+    (str "allow\t" text)))
+
+(defn vprof-case []
+  (let [c (if (zero? (rand-int* 3)) (pick u64-edges) (small 40))
+        m (if (zero? (rand-int* 3)) (pick u64-edges) (str (rand-int* 70000)))]
+    (str "vprof\t" (case (rand-int* 6) 0 (str "variant:" c) 1 (str "variant:" c ":" m "x")
+                         (str "variant:" c ":" m)))))
+
+(defn garg-case []
+  (case (rand-int* 9)
+    0 (str "garg\tv:" (pick ["0" "1" "2" "31" "32" "33" (small 40) (pick u64-edges)]) ":"
+           (pick ["0" "1" "2" "31" "32" (small 40) (pick u64-edges)]) ":"
+           (pick ["i" "b" "x" "I" "B" "0"]) ":" (pick ["0" "1" "2" "-1" (rand-i64-text)]))
+    1 (str "garg\tr:" (str/join "," (repeatedly (pick [1 2 31 32 33 (inc (rand-int* 40))]) rand-i64-text)))
+    2 (str "garg\t" (pick ["o:none" "o:some:5" "o:some:-1" "o:some:" "e:ok:3" "e:err:-9" "e:ok:x"
+                           (str "o:some:" (rand-i64-text)) (str "e:err:" (rand-i64-text))]))
+    3 (str "garg\ts:" (pick ["" "61" "616" "e38182" "c080" "ff" "ED" (apply str (repeatedly (rand-int* 20) #(pick ["61" "7a" "30"])))]))
+    4 (str "garg\t" (rand-i64-text))
+    5 (str "garg\tg:" (pick ["" "00" "0102" "zz" "abc"]))
+    6 (str "garg\tgl:" (pick ["0" "1" "x"]))
+    7 (str "garg\tv:" (small 34) ":" (small 34) ":b:" (small 3))
+    (str "garg\tv:" (small 34) ":" (small 34) ":i:" (rand-i64-text))))
+
+(defn vres-case []
+  (let [cases (inc (rand-int* 32))
+        mask (str (mod (rand-u64) (bit-shift-left (js/BigInt 1) (js/BigInt cases))))]
+    (str/join "\t" ["vres" (str cases) mask
+                    (pick [(small 34) "-1" "0" (str (dec cases)) (str cases) (rand-i64-text)])
+                    (pick ["0" "1" "2" "-1" (rand-i64-text)])])))
+
+(defn tag-case []
+  (str/join "\t" ["tag" (small 2) (pick ["0" "1" "2" "-1" (rand-i64-text)]) (pick ["0" "1" "-1" (rand-i64-text)])]))
+
+(defn rec-case []
+  (str/join "\t" ["rec" (pick ["0" "1" "2" "31" "32" "33" (small 40) (pick u64-edges)])
+                  (str (rand-int* 36))]))
+
+(def safe-string-ids ["0" "1" "2" "3" "4" "5" "6" "7" "8" "11" "12" "13" "14" "15" "16" "20" "24" "33" "34" "35" "36" "38" "40" "42" "43" "63" "64" "100" "200" "255"])
+(defn tcall-case []
+  (let [kind (pick ["1" "1" "1" "2" "3" "4" "5" "6" "7" "0" "8" "18446744073709551615"])
+        res (if (zero? (rand-int* 5)) (pick ["1" "2" "3" "4" "5"]) kind)
+        id (pick (concat safe-string-ids ["9" "10" "256" "300"]))
+        value (case kind
+                "1" (str "s:" (pick ["" "30" "31" "77616c6c" "626f677573" "2f746d70" "2f746d702f7845584953545f534550"
+                                     "6162632f45584953545f534550" "414243"]))
+                "2" (pick ["o:none" "o:some:4" "o:some:0"])
+                "3" (pick ["e:ok:1" "e:err:2"])
+                (pick ["o:none" "e:ok:0" "7" "0"]))]
+    ;; clock-v1 on wire 7 reads the clock: nondeterministic, never generated
+    (if (and (= kind "4") (= id "7"))
+      (str/join "\t" ["tcall" "8" kind res value])
+      (str/join "\t" ["tcall" id kind res value]))))
+
+(def scope-names ["/tmp" "/tmp/a" "/tmp/ab" "/tmp/abc" "/private/tmp" "/private/tmp/a" "/" "/dev/fd" "/usr/bin" "/a/b/c"])
+(defn scope-case []
+  (let [entries (repeatedly (inc (rand-int* 4))
+                            #(let [e (pick scope-names)]
+                               (if (zero? (rand-int* 3)) (str e "|" (pick scope-names)) e)))
+        long-seg (apply str (repeat (pick [10 4000 4080 4090 4094 4095 4096]) "x"))
+        target (case (rand-int* 7)
+                 0 (pick scope-names)
+                 1 (str (pick scope-names) "/" (pick ["x" "a" "b/c" ""]))
+                 2 (str (pick scope-names) (pick ["x" "c" "bc" "/"]))
+                 3 (str (pick scope-names) "/" long-seg)
+                 4 (subs long-seg 0 (min 4095 (count long-seg)))
+                 5 "/tmp/a/../ab"
+                 (str "/" (pick ["tm" "tmp" "private"]) "/" (pick ["a" "ab" "abc"])))]
+    (str/join "\t" (concat ["scope" target] entries))))
+
+(defn driver-cases [n]
+  (vec (concat
+        ;; boundaries first, then seeded random
+        (for [id ["0" "1" "63" "64" "127" "128" "191" "192" "255" "256" "9223372036854775807"
+                  "9223372036854775808" "18446744073709551615"]
+              w ["0" "18446744073709551615" "9223372036854775808" "1"]]
+          (str/join "\t" ["cap" w w w w id "9223372036854775807"]))
+        (for [t ["-" "" "0" "255" "256" "0,255" "1,,2" "1," ",1" "18446744073709551615" "18446744073709551616" "1x"]]
+          (str "allow\t" t))
+        (for [c ["0" "1" "32" "33" "63" "64" "18446744073709551615"]
+              m ["0" "1" "4294967295" "4294967296" "9223372036854775808"]]
+          (str "vprof\tvariant:" c ":" m))
+        (for [c ["0" "1" "32" "33"] o ["0" "31" "32"] k ["i" "b"] p ["0" "1" "2"]]
+          (str "garg\tv:" c ":" o ":" k ":" p))
+        (for [c ["0" "1" "31" "32" "33" "18446744073709551615"] chain ["0" "1" "31" "32" "33"]]
+          (str "rec\t" c "\t" chain))
+        (repeatedly n #((pick [cap-case cap-case allow-case vprof-case garg-case garg-case vres-case
+                                tag-case rec-case tcall-case tcall-case scope-case scope-case]))))))
+
+(defn differential-driver! [tmp old-source]
+  (let [old (build-driver! tmp "old" old-source)
+        new (build-driver! tmp "new" loader-path)
+        cases (driver-cases case-count)
+        input (lib/join tmp "cases.tsv")
+        _ (lib/write-text! input (str (str/join "\n" cases) "\n"))
+        run (fn [exe] (lib/run "sh" ["-c" (str "\"" exe "\" < \"" input "\"")]
+                               {:allow-failure? true :max-buffer (* 256 1024 1024)
+                                :env {:KEXE_CAP_RESOURCES_35 "" :KEXE_CAP_RESOURCES_34 ""}}))
+        a (run old) b (run new)
+        la (str/split-lines (:stdout a)) lb (str/split-lines (:stdout b))]
+    (when-not (and (zero? (:status a)) (zero? (:status b)))
+      (fail! (str "driver exited old " (lib/describe-exit a) " new " (lib/describe-exit b) "\n" (:stderr a) (:stderr b))))
+    (when-not (= (count cases) (count la) (count lb))
+      (fail! (str "driver answered " (count la) " / " (count lb) " lines for " (count cases) " cases")))
+    (let [diffs (filter (fn [i] (not= (nth la i nil) (nth lb i nil))) (range (count cases)))
+          by-op (frequencies (map #(first (str/split % #"\t")) cases))
+          trapped (count (filter #(= "TRAP" %) la))]
+      (println (str "COMPARED\t" (count cases) "\tdriver cases " (pr-str (into (sorted-map) by-op))
+                    " trapped " trapped))
+      (when (< trapped 10) (fail! "the driver trapped fewer than 10 cases: refusals are not being exercised"))
+      (doseq [i (take 20 diffs)]
+        (fail! (str "case " (nth cases i) "\n  old " (nth la i nil) "\n  new " (nth lb i nil))))
+      (when (seq diffs) (fail! (str (count diffs) " driver cases differ"))))))
+
+;; ---------------------------------------------------------------------------
+;; 3b. the black-box matrix: two loader binaries, one guest set
+
+;; A compile policy of more than eight grants is refused as malformed by this
+;; amu (measured 2026-09-25: eight compile, nine do not), so the untyped cap
+;; guest is two guests and the typed one names eight providers.
+(def caps-a [1 2 3 7 9 10 24 33])
+(def caps-b [34 35 37 38 39 41 42])
+(def typed-caps [3 7 33 34 35 37 38 39])
+(defn caps-guest [ids]
+  (str "(ns g {:kotoba/export [main entry]}) (defn main [] 0) (defn entry [s x] (cond "
+       (str/join " " (for [id ids] (str "(= s " id ") (cap-call " id " x)")))
+       " :else -1))"))
+(def guest-caps {"caps-a" caps-a "caps-b" caps-b "typed" typed-caps})
+
+(def guests
+  {"ret7" "(ns g {:kotoba/export [main entry]}) (defn main [] 0) (defn entry [] 7)"
+   "ident" "(ns g {:kotoba/export [main entry]}) (defn main [] 0) (defn entry [x] x)"
+   "caps-a" (caps-guest caps-a)
+   "caps-b" (caps-guest caps-b)
+   "typed" (str "(ns g {:kotoba/export [main entry]}) (defn main [] 0) (defn entry [sel s :string] :string (cond "
+                "(= sel 0) (typed-cap-call :hash/sha256 :string :string s) "
+                "(= sel 1) (typed-cap-call :cli/args :string :string s) "
+                "(= sel 2) (typed-cap-call :env/read :string :string s) "
+                "(= sel 3) (typed-cap-call :fs/app-data :string :string s) "
+                "(= sel 4) (typed-cap-call :clock/now :string :string s) "
+                "(= sel 5) (typed-cap-call :io/write :string :string s) "
+                "(= sel 6) (typed-cap-call :io/write-error :string :string s) "
+                "(= sel 7) (typed-cap-call :fs/browse :string :string s) "
+                ":else s))")
+   "pairs" "(ns g {:kotoba/export [main entry]}) (defn main [] 0) (defn build [n acc :string] :string (if (= n 0) acc (build (- n 1) (string-concat acc \"ab\")))) (defn entry [n] (string-byte-length (build n \"\")))"
+   "deep" "(ns g {:kotoba/export [main entry]}) (defn main [] 0) (defn down [n] (if (= n 0) 0 (+ 1 (down (- n 1))))) (defn entry [n] (down n))"
+   "spin" "(ns g {:kotoba/export [main entry]}) (defn main [] 0) (defn spin [n] (if (= n -1) 0 (spin (+ n 1)))) (defn entry [] (spin 0))"
+   "vat" "(ns g {:kotoba/export [main entry]}) (defn main [] 0) (defn entry [i] (vector-at (vector-i64 1 2 3) i))"
+   ;; the ABI v11 value traps, one per selector (osaho's names)
+   "bytes" (str "(ns g {:kotoba/export [main entry]}) (defn main [] 0) (defn entry [k] (cond "
+                "(= k 0) (string-byte-length (string-from-utf8 (bytes-from-vector-i64 (vector-i64 192 128)))) "
+                "(= k 1) (string-byte-length (string-from-utf8 (bytes-from-vector-i64 (vector-i64 237 160 128)))) "
+                "(= k 2) (bytes-count (bytes-from-vector-i64 (vector-i64 1 256))) "
+                "(= k 3) (string-byte-length (string-from-utf8 (bytes-from-vector-i64 (vector-i64 128)))) "
+                "(= k 4) (string-byte-length (string-from-utf8 (bytes-from-vector-i64 (vector-i64 226 130)))) "
+                "(= k 5) (bytes-count (bytes-slice (bytes-from-vector-i64 (vector-i64 1 2)) 1 3)) "
+                "(= k 6) (string-byte-length (string-from-utf8 (bytes-from-vector-i64 (vector-i64 244 144 128 128)))) "
+                "(= k 7) (string-byte-length (string-from-utf8 (bytes-from-vector-i64 (vector-i64 255)))) "
+                ":else (bytes-count (bytes-from-vector-i64 (vector-i64 104 105)))))")
+   ;; the vector arenas: many vectors, then long ones
+   "vecs" "(ns g {:kotoba/export [main entry]}) (defn main [] 0) (defn grow [v :vector-i64 n] :vector-i64 (if (= n 0) v (grow (vector-conj v n) (- n 1)))) (defn entry [n] (vector-count (grow (vector-i64) n)))"})
+
+;; Only catalog capabilities compile (an id with no catalog entry declares no
+;; classification and is refused); the bit arithmetic past them -- 0, 63/64,
+;; 127/128, 191/192, 255/256 and u64 edges -- is the driver's `cap` family.
+
+(defn compile-guests! [tmp isa]
+  (into {}
+        (for [[name source] guests]
+          (let [src (lib/join tmp (str name ".kotoba"))
+                kexe (lib/join tmp (str name "." isa ".kexe"))
+                bin (lib/join tmp (str name "." isa ".bin"))]
+            (lib/write-text! src source)
+            (lib/write-text! (lib/join tmp (str name ".policy.edn"))
+                             (str "{:allow #{" (str/join " " (map #(str "[:cap/call " % "]") (get guest-caps name))) "}}"))
+            (let [c (lib/run amu ["compile" src "--target" isa "--policy" (lib/join tmp (str name ".policy.edn")) "--output" kexe] {:allow-failure? true})]
+              (if-not (zero? (:status c))
+                (do (fail! (str "guest " name " does not compile:\n" (:stdout c) (:stderr c))) [name nil])
+                (let [x (lib/run amu ["extract-native" kexe "--symbol" "entry" "--output" bin] {:allow-failure? true})
+                      [_ offset] (re-find #":offset (\d+)" (:stdout x))
+                      [_ arity] (re-find #":arity (\d+)" (:stdout x))]
+                  [name {:bin bin :offset offset :arity arity}])))))))
+
+(defn hex [s] (.toString (js/Buffer.from s "utf8") "hex"))
+
+(defn matrix [tmp]
+  (let [scope-dir (lib/join tmp "scope")
+        _ (.mkdirSync fs (lib/join scope-dir "sub") #js {:recursive true})
+        _ (lib/write-text! (lib/join scope-dir "sub" "f.txt") "hello\n")
+        budget-envs ["KEXE_FUEL" "KEXE_STRING_POOL" "KEXE_PAIRS" "KEXE_VECTORS" "KEXE_VECTOR_ITEMS"
+                     "KEXE_CPU_SECONDS" "KEXE_WALL_SECONDS"]
+        budget-values ["0" "1" "2" "off" "" "-1" "1x" " 1" "01" "86399" "86400" "86401"
+                       "4096" "65536" "4194303" "4194304" "4194305" "67108863" "67108864" "67108865"
+                       "134217727" "134217728" "134217729" "1073741823" "1073741824" "1073741825"
+                       "9007199254740990" "9007199254740991" "9007199254740992"
+                       "9223372036854775807" "9223372036854775808" "18446744073709551615" "18446744073709551616"]]
+    (concat
+     ;; budgets from the environment (ceilings, zero, garbage); the CPU and
+     ;; wall values that would slow the matrix are run on a returning guest
+     (for [env budget-envs v budget-values]
+       {:guest "ret7" :args [] :env {env v}})
+     ;; result descriptors against a pair-shaped argument
+     (for [rt ["i64" "string" "option-i64" "result-i64" "record:0" "record:1" "record:2" "record:3"
+               "record:32" "record:33" "record:" "record:x" "variant:0:0" "variant:1:0" "variant:2:3"
+               "variant:3:8" "variant:32:4294967295" "variant:33:0" "variant:2:4" "variant:x" "float" ""]
+           a ["o:some:5" "o:none" "e:err:3" "v:3:2:b:1" "v:3:1:i:9" "r:1,2" "r:1,2,3" "7" "s:6869"]]
+       {:guest "ident" :args [a] :env {"KEXE_STRUCTURED_REPORT" "1" "KEXE_RESULT_TYPE" rt}})
+     ;; capability grants: every compiled cap id against grants that cover
+     ;; it, miss it, and are malformed
+     (for [s (concat caps-a caps-b)
+           allow ["-" "0" (str s) "0,1,2,3,63,64,127,128,191,192,254,255" "255" "256" (str s ",300") "1,"]]
+       {:guest (if (some #{s} caps-a) "caps-a" "caps-b") :args [(str s) "9223372036854775807"] :allow allow})
+     ;; typed dispatch: every provider the guest names, granted and not
+     (for [[sel s] [[0 "abc"] [0 ""] [1 ""] [1 "0"] [1 "x"] [2 "KEXE_MATRIX_ENV"] [2 "A=B"] [2 ""]
+                    [3 (str scope-dir "/sub/f.txt")] [3 (str scope-dir "/sub/f.txtEXISTS_SEP")]
+                    [3 (str scope-dir "/nopeEXISTS_SEP")] [3 "/etc/passwdEXISTS_SEP"] [3 "sub/f.txtEXISTS_SEP"]
+                    [4 "bogus"] [5 "out"] [6 "err"] [7 scope-dir] [7 (str scope-dir "/sub")] [9 "echo"]]
+           allow ["-" "3,33,34,35,37,38,39,2,7" "3" "35"]]
+       {:guest "typed" :args [(str sel) (str "s:" (hex s))] :allow allow
+        :env {"KEXE_MATRIX_ENV" "value" "KEXE_CAP_RESOURCES_35" (str scope-dir "/sub")
+              "KEXE_CAP_RESOURCES_34" scope-dir}
+        :cwd scope-dir :guest-argv ["--" "one" "two"]})
+     ;; scope containment through the loader: prefix siblings, parents, relative
+     (for [[scope target] [[(str scope-dir "/sub") (str scope-dir "/subx/f.txt")]
+                           [(str scope-dir "/sub") (str scope-dir "/sub/../sub/f.txt")]
+                           [(str scope-dir "/sub") (str scope-dir "/sub/../f.txt")]
+                           [(str scope-dir "/sub") (str scope-dir "/sub")]
+                           [(str scope-dir "/su") (str scope-dir "/sub/f.txt")]
+                           [(str scope-dir "/sub:" scope-dir) (str scope-dir "/sub/f.txt")]
+                           ["$PWD" "sub/f.txt"] ["" (str scope-dir "/sub/f.txt")]]]
+       {:guest "typed" :args ["3" (str "s:" (hex (str target "EXISTS_SEP")))] :allow "35"
+        :env {"KEXE_CAP_RESOURCES_35" scope} :cwd scope-dir})
+     ;; every nameable trap
+     (for [k (range 9)] {:guest "bytes" :args [(str k)]})
+     (for [[env n] [[{"KEXE_VECTORS" "3"} "10"] [{"KEXE_VECTOR_ITEMS" "4"} "10"]
+                    [{"KEXE_VECTORS" "3" "KEXE_STRUCTURED_REPORT" "1"} "10"] [{} "10"]]]
+       {:guest "vecs" :args [n] :env env})
+     [{:guest "pairs" :args ["100"] :env {"KEXE_STRING_POOL" "64"}}
+      {:guest "pairs" :args ["100"] :env {"KEXE_PAIRS" "8"}}
+      {:guest "pairs" :args ["10"] :env {"KEXE_PAIRS" "8" "KEXE_STRUCTURED_REPORT" "1"}}
+      {:guest "deep" :args ["100"] :env {"KEXE_FUEL" "20"}}
+      {:guest "deep" :args ["100"] :env {"KEXE_FUEL" "20" "KEXE_STRUCTURED_REPORT" "1"}}
+      {:guest "deep" :args ["100000000"]}
+      {:guest "vat" :args ["5"]}
+      {:guest "vat" :args ["1"]}
+      {:guest "ret7" :args [] :env {"KEXE_TIMEOUT_PROBE" "1" "KEXE_WALL_SECONDS" "1"}}
+      ;; a wall budget far past the CPU one, so SIGXCPU wins on a loaded machine
+      {:guest "spin" :args [] :env {"KEXE_CPU_SECONDS" "1" "KEXE_WALL_SECONDS" "30"}}
+      {:guest "ret7" :args [] :env {"KEXE_FILESYSTEM_PROBE" "1"}}
+      {:guest "ret7" :args [] :env {"KEXE_NETWORK_PROBE" "1"}}
+      {:guest "ret7" :args [] :env {"KEXE_PROCESS_PROBE" "1"}}
+      {:guest "ident" :args ["5"] :env {"KEXE_STRUCTURED_REPORT" "1" "KEXE_RESULT_TYPE" "string"}}
+      {:guest "ident" :args ["5"] :env {"KEXE_STRUCTURED_REPORT" "1" "KEXE_RESULT_TYPE" "record:2"}}
+      {:guest "ident" :args ["5"] :env {"KEXE_STRUCTURED_REPORT" "1" "KEXE_RESULT_TYPE" "option-i64"}}
+      {:guest "ident" :args ["5"] :env {"KEXE_STRUCTURED_REPORT" "1" "KEXE_RESULT_TYPE" "result-i64"}}
+      {:guest "ident" :args ["5"] :env {"KEXE_STRUCTURED_REPORT" "1" "KEXE_RESULT_TYPE" "variant:2:0"}}])))
+
+(defn run-case [loader compiled isa {:keys [guest args env allow cwd guest-argv]}]
+  (let [{:keys [bin offset arity]} (get compiled guest)
+        argv (concat [bin offset arity isa (or allow "-")] args guest-argv)
+        r (lib/run loader argv {:allow-failure? true :cwd (or cwd lib/root)
+                                :env env})]
+    [(:status r) (:signal r) (:stdout r) (:stderr r)]))
+
+(defn differential-matrix! [tmp old-source]
+  (let [isa host-isa
+        old-loader (lib/join tmp "loader-old") new-loader (lib/join tmp "loader-new")]
+    (doseq [[src out] [[old-source old-loader] [loader-path new-loader]]]
+      (let [r (lib/run "cc" (concat cc-arch ["-std=c11" "-O2" src "-o" out]) {:allow-failure? true})]
+        (when-not (zero? (:status r)) (fail! (str src " does not build:\n" (:stderr r))))))
+    (let [compiled (compile-guests! tmp isa)
+          cases (vec (matrix tmp))
+          results (for [c cases]
+                    [c (run-case old-loader compiled isa c) (run-case new-loader compiled isa c)])
+          diffs (filter (fn [[_ a b]] (not= a b)) results)
+          stderr-lines (set (mapcat (fn [[_ a _]] (filter #(str/starts-with? % "KEXE_TRAP")
+                                                          (str/split-lines (nth a 3))))
+                                    results))]
+      (println (str "COMPARED\t" (count cases) "\tloader runs (old binary vs new binary), "
+                    (count stderr-lines) " distinct KEXE_TRAP lines seen, exit statuses "
+                    (pr-str (into (sorted-map) (frequencies (map (fn [[_ a _]] (first a)) results))))))
+      (when (< (count (filter (fn [[_ a _]] (zero? (first a))) results)) 100)
+        (fail! "fewer than 100 matrix runs succeeded: the matrix is measuring refusals only"))
+      (doseq [l (sort stderr-lines)] (println (str "  trap\t" l)))
+      (when (< (count stderr-lines) 15) (fail! "fewer than 15 distinct trap lines: the trap cases are not reaching the loader"))
+      (doseq [[c a b] (take 20 diffs)]
+        (fail! (str "loader case " (pr-str c) "\n  old " (pr-str a) "\n  new " (pr-str b))))
+      (when (seq diffs) (fail! (str (count diffs) " loader runs differ")))
+      [compiled isa new-loader])))
+
+(defn trap-literals
+  "Every complete KEXE_TRAP text the old C spelled, prefix + reason forms
+  expanded, so the new table can be held to all of them."
+  [old-text]
+  (let [full (set (map second (re-seq #"\"(KEXE_TRAP \{[^\"%]*\})\\n\"" old-text)))
+        arena (map #(str "KEXE_TRAP {:kind :arena :reason :" % "}")
+                   ["vector-table-exhausted" "vector-items-exhausted"])
+        sandbox (map #(str "KEXE_TRAP {:kind :sandbox :reason :" % "}")
+                     ["filesystem-denied" "network-denied" "process-denied"])
+        result (map #(str "KEXE_TRAP {:kind :result :reason :" % "}") ["invalid-option-i64" "invalid-result-i64"])]
+    (set (concat full arena sandbox result))))
+
+(defn check-trap-names! [old-text]
+  (let [new-text (lib/read-text loader-path)
+        table (set (map #(str/replace % #"\\n$" "")
+                        (map second (re-seq #"(?m)^  \"(KEXE_TRAP [^\"]*)\",$" new-text))))
+        old (trap-literals old-text)
+        missing (remove table old)]
+    (println (str "COMPARED\t" (count old) "\ttrap names of the old loader against the generated table"))
+    (doseq [m missing] (fail! (str "trap name lost: " m)))
+    (let [old-values (map second (re-seq #"\"((?:utf8|string|bytes)/[a-z-]+)\"" old-text))]
+      (doseq [v old-values]
+        (when-not (str/includes? new-text (str "\"" v "\""))
+          (fail! (str "value trap name lost: " v)))))))
+
+;; ---------------------------------------------------------------------------
+;; 4. the :733 pin
+
+(defn check-cap-overflow! [tmp compiled isa]
+  (let [ubsan (lib/join tmp "loader-ubsan")
+        r (lib/run "cc" (concat cc-arch ["-std=c11" "-O1" "-fsanitize=undefined" "-fno-sanitize-recover=undefined"
+                         "-DKEXE_SANITIZER_TEST" loader-path "-o" ubsan]) {:allow-failure? true})]
+    (if-not (zero? (:status r))
+      (fail! (str "UBSan loader does not build:\n" (:stderr r)))
+      (let [{:keys [bin offset arity]} (get compiled "caps-a")
+            run (lib/run ubsan [bin offset arity isa "1" "1" "9223372036854775807"] {:allow-failure? true})]
+        (if (and (zero? (:status run))
+                 (= "-9223372036854775808" (str/trim (:stdout run)))
+                 (not (str/includes? (:stderr run) "runtime error")))
+          (println "PINNED\tcap 1 of INT64_MAX answers INT64_MIN under -fsanitize=undefined, no report")
+          (fail! (str "cap-call overflow pin: " (lib/describe-exit run) " stdout " (pr-str (:stdout run))
+                      " stderr " (pr-str (:stderr run)))))))))
+
+;; ---------------------------------------------------------------------------
+
+(let [tmp (lib/temp-dir "test-loader-decisions-")]
+  (try
+    (let [old-source (lib/join tmp "kexe_loader.old.c")
+          shown (lib/run "git" ["show" (str old-rev ":tools/kexe_loader.c")]
+                         {:allow-failure? true :max-buffer (* 64 1024 1024)})
+          old-text (when (zero? (:status shown)) (:stdout shown))]
+      (check-classification! old-text)
+      (check-region!)
+      (when static?
+        (println "DIFFERENTIAL\tnot run (--static): classification and region only")
+        (when (seq @failures) (.exit js/process 1))
+        (.exit js/process 0))
+      (when-not old-text
+        (exit-unmeasured! (str "tools/kexe_loader.c at " old-rev " is not in this clone; "
+                               "the differential needs the loader whose decisions were C")))
+      (lib/write-text! old-source old-text)
+      (check-trap-names! old-text)
+      (differential-driver! tmp old-source)
+      (let [[compiled isa] (differential-matrix! tmp old-source)]
+        (check-cap-overflow! tmp compiled isa)))
+    (finally (lib/remove-tree! tmp)))
+  (if (seq @failures)
+    (do (println (str "test-loader-decisions: " (count @failures) " failure(s)")) (.exit js/process 1))
+    (println "test-loader-decisions: passed")))
