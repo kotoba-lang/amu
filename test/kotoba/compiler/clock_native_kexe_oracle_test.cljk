@@ -5,7 +5,7 @@
   These tests prove the nested request/result codec and semantic vectors on
   the hosted C loader so identity cannot masquerade as wall time. Kit
   `:native-aot` / `:jit` stay pending."
-  (:require [clojure.edn :as edn]
+  (:require [kotoba.lang.error :as kerror] [clojure.edn :as edn]
             [kotoba.io :as io]
             [clojure.test :refer [deftest is]]
             [kotoba.compiler.atomic-output :as atomic-output]
@@ -145,5 +145,5 @@
   (let [source (clock-guest ":wall false" "unix-millis")
         {:keys [envelope trust]} (signed source clock-policy)
         {:keys [trust options]} (execution-options trust)]
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"capability policy denies"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"capability policy denies"
                           (executor/execute envelope trust {:allow #{}} {:args []} options)))))

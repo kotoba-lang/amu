@@ -1,5 +1,5 @@
 (ns kotoba.compiler.typed-capability-test
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [kotoba.lang.error :as kerror] [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]
             [kotoba.sema :as sema]
             [kotoba.kir :as ir]))
@@ -30,17 +30,17 @@
                           [result-type 204])})))
     (testing "a provider cannot forge a differently typed result"
       (is (thrown-with-msg?
-           clojure.lang.ExceptionInfo #"invalid-parametric-value"
+           kerror/ExceptionInfo #"invalid-parametric-value"
            (ir/execute kir 'invoke [request]
                        {:typed-cap-call (fn [& _] [request-type "wrong boundary"])}))))
     (testing "legacy cap-call cannot satisfy a typed boundary"
       (is (thrown-with-msg?
-           clojure.lang.ExceptionInfo #"capability-denied"
+           kerror/ExceptionInfo #"capability-denied"
            (ir/execute kir 'invoke [request] {:cap-call (fn [_ _] 0)}))))))
 
 (deftest typed-capability-is-checked-statically
   (is (thrown-with-msg?
-       clojure.lang.ExceptionInfo #"expression type mismatch"
+       kerror/ExceptionInfo #"expression type mismatch"
        (compiler/check-source
         "(defn main [] :string (typed-cap-call 4 :string :string 1))"))))
 
@@ -60,7 +60,7 @@
                                           (is (= [:ref :demo/request] request-ref result-ref))
                                           value)})))
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"outside the closed namespace table"
+         kerror/ExceptionInfo #"outside the closed namespace table"
          (compiler/check-source
           "(ns missing.ref (:export [identity]))
            (defn identity [x [:ref :missing/schema]] [:ref :missing/schema] x)")))))

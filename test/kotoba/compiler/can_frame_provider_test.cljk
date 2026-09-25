@@ -11,7 +11,7 @@
   transport-exception redaction. The transport is an injected host
   function standing in for a real SocketCAN/vendor-driver send -- this
   session did not open a real CAN bus."
-  (:require [clojure.test :refer [deftest is]]
+  (:require [kotoba.lang.error :as kerror] [clojure.test :refer [deftest is]]
             [kotoba.compiler.core :as compiler]
             [kotoba.kir :as ir]
             [kotoba.compiler.support.can-frame-provider :as can-frame]
@@ -65,7 +65,7 @@
         runtime (hosted (fn [_] (reset! called? true) true))
         payload (value/utf8-string->bytes "x")]
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"denied"
+         kerror/ExceptionInfo #"denied"
          ((:invoke runtime) 'transmit
           [[can-frame/request-type :send
             [can-frame/send-request-type "can1" j1939-can-id true payload]]])))
@@ -77,7 +77,7 @@
         payload (value/utf8-string->bytes "x")]
     ;; 29-bit extended ceiling is 2^29 - 1 = 536870911.
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"denied"
+         kerror/ExceptionInfo #"denied"
          ((:invoke runtime) 'transmit
           [[can-frame/request-type :send
             [can-frame/send-request-type "can0"
@@ -85,12 +85,12 @@
     ;; 11-bit standard ceiling is 2047 -- a value legal when extended but
     ;; not when standard must be rejected for the standard-frame request.
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"denied"
+         kerror/ExceptionInfo #"denied"
          ((:invoke runtime) 'transmit
           [[can-frame/request-type :send
             [can-frame/send-request-type "can0" j1939-can-id false payload]]])))
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"denied"
+         kerror/ExceptionInfo #"denied"
          ((:invoke runtime) 'transmit
           [[can-frame/request-type :send
             [can-frame/send-request-type "can0" -1 true payload]]])))
@@ -100,7 +100,7 @@
   (let [called? (atom false)
         runtime (hosted (fn [_] (reset! called? true) true))
         oversized (byte-array (inc can-frame/max-payload-bytes))]
-    (is (thrown? clojure.lang.ExceptionInfo
+    (is (thrown? kerror/ExceptionInfo
                  ((:invoke runtime) 'transmit
                   [[can-frame/request-type :send
                     [can-frame/send-request-type "can0" j1939-can-id true oversized]]])))
@@ -134,7 +134,7 @@
         called? (atom false)
         payload (value/utf8-string->bytes "x")]
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"capability denied"
+         kerror/ExceptionInfo #"capability denied"
          ((:invoke runtime) 'transmit
           [[can-frame/request-type :send
             [can-frame/send-request-type "can0" j1939-can-id true payload]]])))

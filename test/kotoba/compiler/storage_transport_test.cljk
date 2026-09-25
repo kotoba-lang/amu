@@ -26,7 +26,7 @@
      protocol is designed to be pinned against -- see
      docs/adr/0071-production-storage-transport-host-configured-kv-endpoint.md
      'Remaining gaps'."
-  (:require [kotoba.bytes :as kbytes] [json.data-json :as json]
+  (:require [kotoba.lang.error :as kerror] [kotoba.bytes :as kbytes] [json.data-json :as json]
             [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]
             [kotoba.kir :as ir]
@@ -56,7 +56,7 @@
   (testing "an explicit :endpoint wins outright"
     (is (= "https://kv.example.test" (transport/resolve-endpoint {:endpoint "https://kv.example.test"}))))
   (testing "no :endpoint and no env var throws -- no ambient default"
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #":endpoint"
+    (is (thrown-with-msg? kerror/ExceptionInfo #":endpoint"
                           (transport/resolve-endpoint {})))))
 
 (deftest wire-reply-maps-every-tag-to-the-typed-boundary-shape
@@ -79,7 +79,7 @@
                                            :retryable true}}))))
 
 (deftest wire-reply-rejects-an-unknown-tag
-  (is (thrown-with-msg? clojure.lang.ExceptionInfo #"unknown wire tag"
+  (is (thrown-with-msg? kerror/ExceptionInfo #"unknown wire tag"
                         (#'transport/wire->reply {:tag "not-a-real-tag"}))))
 
 (deftest finalize-reply-sanitizes-an-oversized-value-instead-of-crashing-storage-cljc

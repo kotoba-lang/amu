@@ -1,5 +1,5 @@
 (ns kotoba.compiler.value-codec-test
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [kotoba.lang.error :as kerror] [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]
             [kotoba.compiler.reference-runtime :as runtime]
             [kotoba.compiler.value-codec :as codec]
@@ -22,14 +22,14 @@
   (let [value {:payload (apply str (repeat 64 "x"))}
         encoded (codec/encode-bounded value 256)]
     (testing "encode cannot exceed the declared ability limit"
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"max-bytes-exceeded"
+      (is (thrown-with-msg? kerror/ExceptionInfo #"max-bytes-exceeded"
                             (codec/encode-bounded value 8))))
     (testing "decode rejects the same payload under a narrower grant"
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"max-bytes-exceeded"
+      (is (thrown-with-msg? kerror/ExceptionInfo #"max-bytes-exceeded"
                             (codec/decode-bounded encoded 8))))
     (testing "zero, negative, and non-integer limits fail closed"
       (doseq [limit [0 -1 1.5 nil]]
-        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"max-bytes-invalid"
+        (is (thrown-with-msg? kerror/ExceptionInfo #"max-bytes-invalid"
                               (codec/encode-bounded value limit)))))))
 
 (deftest generated-ability-adapter-keeps-physical-wire-out-of-source
@@ -74,7 +74,7 @@
 (deftest ability-adapter-is-exact-and-bounded-in-both-directions
   (testing "unknown specification fields cannot smuggle host policy"
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"specification is not exact"
+         kerror/ExceptionInfo #"specification is not exact"
          (codec/ability-provider
           {:request-type :document :result-type :document :max-bytes 32
            :invoke-wire identity :ambient-authority true}))))
@@ -87,11 +87,11 @@
           (codec/ability-provider
            {:request-type :document :result-type :document :max-bytes 16
             :invoke-wire (fn [_] (value/encode-value {:payload oversized}))})]
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"max-bytes-exceeded"
+      (is (thrown-with-msg? kerror/ExceptionInfo #"max-bytes-exceeded"
                             ((:invoke echo)
                              (kir-value/document-edn-read
                               (pr-str {:payload oversized})))))
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"max-bytes-exceeded"
+      (is (thrown-with-msg? kerror/ExceptionInfo #"max-bytes-exceeded"
                             ((:invoke oversized-result) ["null"]))))))
 
 (deftest async-ability-completion-is-observable-without-serializing-handles
@@ -129,7 +129,7 @@
            {:request-type :document :response-type :document :max-bytes 64
             :start-wire (fn [_ _] {:status :completed})})]
       (is (thrown-with-msg?
-           clojure.lang.ExceptionInfo #"does not match task state"
+           kerror/ExceptionInfo #"does not match task state"
            ((:invoke provider) (kir-value/document-edn-read "nil"))))))
   (testing "pending cannot hide synchronous completion"
     (let [provider
@@ -140,7 +140,7 @@
               (complete-wire! (value/encode-value nil))
               {:status :pending})})]
       (is (thrown-with-msg?
-           clojure.lang.ExceptionInfo #"does not match task state"
+           kerror/ExceptionInfo #"does not match task state"
            ((:invoke provider) (kir-value/document-edn-read "nil"))))))
   (testing "invalid completion bytes do not transition the task"
     (let [complete (atom nil)
@@ -151,7 +151,7 @@
                           (reset! complete done)
                           {:status :pending})})
           task ((:invoke provider) (kir-value/document-edn-read "nil"))]
-      (is (thrown? clojure.lang.ExceptionInfo (@complete (byte-array [1 2 3]))))
+      (is (thrown? kerror/ExceptionInfo (@complete (byte-array [1 2 3]))))
       (is (= :pending (:state (kir-value/task-poll task)))))))
 
 (deftest schema-directed-aggregates-cross-the-canonical-byte-wire
@@ -214,36 +214,36 @@
     (is (= [record-type 7]
            (codec/wire-value->runtime record-type good)))
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"nominal identity"
+         kerror/ExceptionInfo #"nominal identity"
          (codec/wire-value->runtime
           record-type (assoc good :kotoba.record/type :demo/other))))
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"record fields wire envelope is not exact"
+         kerror/ExceptionInfo #"record fields wire envelope is not exact"
          (codec/wire-value->runtime
           record-type (assoc-in good [:kotoba.record/fields :extra] 1))))
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"option wire envelope is not exact"
+         kerror/ExceptionInfo #"option wire envelope is not exact"
          (codec/wire-value->runtime
           [:option :i64]
           {:kotoba.option/present false
            :kotoba.option/value (value/int64 0)})))
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"exact int64 wrapper"
+         kerror/ExceptionInfo #"exact int64 wrapper"
          (codec/wire-value->runtime :i64 7)))
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"cannot resolve schema reference"
+         kerror/ExceptionInfo #"cannot resolve schema reference"
          (codec/ability-provider
           {:request-type [:ref :demo/missing]
            :result-type :i64 :max-bytes 32 :invoke-wire identity})))
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"not an exact nominal definition"
+         kerror/ExceptionInfo #"not an exact nominal definition"
          (codec/ability-provider
           {:request-type [:ref :demo/request]
            :result-type :i64
            :schemas {:demo/request [:record :demo/other [[:id :i64]]]}
            :max-bytes 32 :invoke-wire identity})))
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"does not support this value type"
+         kerror/ExceptionInfo #"does not support this value type"
          (codec/ability-provider
           {:request-type [:stream :bytes]
            :result-type :i64 :max-bytes 32 :invoke-wire identity}))))
@@ -252,7 +252,7 @@
                     {:request-type :document :result-type :document
                      :max-bytes 256 :invoke-wire identity})]
       (is (thrown-with-msg?
-           clojure.lang.ExceptionInfo #"(duplicate|ambiguous on the canonical value wire)"
+           kerror/ExceptionInfo #"(duplicate|ambiguous on the canonical value wire)"
            ((:invoke provider)
             (kir-value/bounded-document!
              ["set" [["i64" 1] ["f64" 1.0]]])))))))

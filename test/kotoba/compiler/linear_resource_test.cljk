@@ -1,5 +1,5 @@
 (ns kotoba.compiler.linear-resource-test
-  (:require [clojure.test :refer [deftest is]]
+  (:require [kotoba.lang.error :as kerror] [clojure.test :refer [deftest is]]
             [kotoba.compiler.core :as compiler]))
 
 (def direct-stream-source
@@ -36,7 +36,7 @@
             [:task [:stream :bytes]] task)"
          {})
         false
-        (catch clojure.lang.ExceptionInfo error
+        (catch kerror/ExceptionInfo error
           (boolean (re-find #"move-aware" (.getMessage error)))))))
 
 (deftest linear-let-move-is-admitted
@@ -100,7 +100,7 @@
                  (bytes-task-byte-count task))))"
          {:allow #{[:cap/call 13]}})
         false
-        (catch clojure.lang.ExceptionInfo error
+        (catch kerror/ExceptionInfo error
           (boolean (re-find #"one direct typed capability move"
                             (.getMessage error)))))))
 
@@ -160,7 +160,7 @@
                 0)))"
          {:allow #{[:cap/call 13]}})
         false
-        (catch clojure.lang.ExceptionInfo error
+        (catch kerror/ExceptionInfo error
           (boolean (re-find #"one direct typed capability move"
                             (.getMessage error)))))))
 
@@ -235,7 +235,7 @@
                 (bytes-task-byte-count task))))"
          {:allow #{[:cap/call 13]}})
         false
-        (catch clojure.lang.ExceptionInfo error
+        (catch kerror/ExceptionInfo error
           (boolean (re-find #"one direct typed capability move"
                             (.getMessage error)))))))
 
@@ -284,6 +284,6 @@
          {:allow #{[:cap/call 13]}})
         ;; Two distinct producers — ownership rejects even if both consume
         false
-        (catch clojure.lang.ExceptionInfo error
+        (catch kerror/ExceptionInfo error
           (boolean (re-find #"one direct typed capability move"
                             (.getMessage error)))))))

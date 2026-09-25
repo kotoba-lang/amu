@@ -1,5 +1,5 @@
 (ns kotoba.compiler.wasm-typed-test
-  (:require [kotoba.bytes :as kbytes] [kotoba.compiler.atomic-output :as atomic-output]
+  (:require [kotoba.lang.error :as kerror] [kotoba.bytes :as kbytes] [kotoba.compiler.atomic-output :as atomic-output]
             [kotoba.process :as shell]
             [kotoba.lang.text :as str]
             [clojure.test :refer [deftest is testing]]
@@ -373,7 +373,7 @@
                     (str "(defn main [] " type " 0)")
                     :wasm32-browser-kotoba-v1)
                    nil
-                   (catch clojure.lang.ExceptionInfo e e))]
+                   (catch kerror/ExceptionInfo e e))]
         (is (some? e) (str type " must be refused"))
         (is (= code (:kotoba.error/code (ex-data e))) (pr-str (ex-data e)))
         (is (str/includes? (ex-message e) fragment) (ex-message e))))))

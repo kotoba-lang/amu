@@ -1,5 +1,5 @@
 (ns ipld-adl-conformance
-  (:require [kotoba.io :as kio] [kotoba.lang.text :as str]
+  (:require [kotoba.lang.error :as kerror] [kotoba.io :as kio] [kotoba.lang.text :as str]
             [ipld.schema :as schema]
             [ipld.schema-dsl :as dsl]
             [kotoba.compiler.ipld-adl :as adl]
@@ -62,7 +62,7 @@
                   (let [thrown (try (schema/representation->logical!
                                      compiled "Item" value limits)
                                     nil
-                                    (catch clojure.lang.ExceptionInfo error error))
+                                    (catch kerror/ExceptionInfo error error))
                         data (ex-data thrown)]
                     (ensure! (some? thrown)
                              "ADL output was accepted but should have been refused")

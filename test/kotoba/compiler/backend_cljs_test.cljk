@@ -16,7 +16,7 @@
   Real nbb execution of the exact same generated sources (including the
   fuel-exhaustion global-depletion property) was independently verified by
   hand before this commit; see ADR-2607151500."
-  (:require [kotoba.compiler.atomic-output :as atomic-output]
+  (:require [kotoba.lang.error :as kerror] [kotoba.compiler.atomic-output :as atomic-output]
             [clojure.test :refer [deftest is testing]]
             [kotoba.process :as shell]
             [clojure.tools.reader :as reader]
@@ -118,7 +118,7 @@
         compiled (compile-cljs source)
         ns (eval-in-fresh-ns (:source compiled))]
     (is (= 3 (call ns 'main)))
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"division-by-zero"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"division-by-zero"
                           (call ns 'maybe-div 10 0)))))
 
 (deftest fuel-is-a-global-never-replenished-budget-not-per-call
@@ -131,7 +131,7 @@
         ns (eval-in-fresh-ns (:source compiled))]
     (dotimes [_ 511] (call ns 'noop))
     (is (= 3 (call ns 'main)) "the 512th call still succeeds")
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"budget/fuel"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"budget/fuel"
                           (call ns 'noop))
         "the 513th call, ever, on this loaded module traps -- not reset per top-level call")))
 
@@ -154,7 +154,7 @@
   ;; wrong" to "loudly fails."
   (let [compiled (compile-cljs "(defn main [] (* 100000000 100000000))") ; 10^16 > 2^53-1
         ns (eval-in-fresh-ns (:source compiled))]
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"arithmetic-overflow"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"arithmetic-overflow"
                           (call ns 'main)))))
 
 (deftest arithmetic-overflow-check-applies-to-plus-minus-and-times
@@ -165,7 +165,7 @@
     (let [compiled (compile-cljs source)
           ns (eval-in-fresh-ns (:source compiled))]
       (if expect-throw?
-        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"arithmetic-overflow" (call ns 'main))
+        (is (thrown-with-msg? kerror/ExceptionInfo #"arithmetic-overflow" (call ns 'main))
             source)
         (is (= (:oracle-value (:kir compiled)) (call ns 'main)) source)))))
 
@@ -178,7 +178,7 @@
   ;; earlier, stricter static admission gate short-circuiting first.
   (let [compiled (compile-cljs "(defn main [] (cap-call 1 2))" {:allow #{[:cap/call 1]}})
         ns (eval-in-fresh-ns (:source compiled))]
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"capability-denied"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"capability-denied"
                           (call ns 'main))
         "no dispatcher installed -- every cap-call denied, matching kotoba-lang/kotoba's own fail-closed has-capability-fn")))
 
@@ -268,10 +268,10 @@
         compiled (compile-cljs source {:allow #{[:cap/call 4]}})
         ns (eval-in-fresh-ns (:source compiled))
         request [request-type "hello"]]
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"typed capability denied"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"typed capability denied"
                           (call ns 'invoke request)))
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"typed provider contract mismatch"
+         kerror/ExceptionInfo #"typed provider contract mismatch"
          (call ns 'set-typed-providers!
                {:allow #{4}
                 :providers {4 {:request-type :string :result-type result-type
@@ -280,7 +280,7 @@
           {:allow #{4}
            :providers {4 {:request-type request-type :result-type result-type
                           :invoke (fn [_] [request-type "forged"])}}})
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"invalid-typed-value"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"invalid-typed-value"
                           (call ns 'invoke request)))
     (let [called? (atom false)]
       (call ns 'set-typed-providers!
@@ -288,11 +288,11 @@
              :providers {4 {:request-type request-type :result-type result-type
                             :invoke (fn [_] (reset! called? true)
                                       [result-type true])}}})
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"invalid-typed-value"
+      (is (thrown-with-msg? kerror/ExceptionInfo #"invalid-typed-value"
                             (call ns 'invoke [request-type 1])))
       (is (false? @called?))
       (is (thrown-with-msg?
-           clojure.lang.ExceptionInfo #"invalid-typed-value"
+           kerror/ExceptionInfo #"invalid-typed-value"
            (call ns 'invoke [request-type (apply str (repeat 16385 "😀"))])))
       (is (false? @called?)))))
 
@@ -411,7 +411,7 @@
         compiled (compile-cljs source)
         ns (eval-in-fresh-ns (:source compiled))]
     (is (zero? (call ns 'main)))
-    (is (thrown? clojure.lang.ExceptionInfo (call ns 'wrong)))))
+    (is (thrown? kerror/ExceptionInfo (call ns 'wrong)))))
 
 (deftest vector-get-preserves-lazy-fallback-semantics
   (let [compiled (compile-cljs
@@ -462,12 +462,12 @@
                    (defn append [items :vector-i64 item :i64] :vector-i64
                      (vector-conj items item))")
         ns (eval-in-fresh-ns (:source compiled))]
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"vector-too-large"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"vector-too-large"
                           (call ns 'append (vec (repeat 16384 1)) 2)))))
 
 (deftest cljs-typed-admission-remains-narrow-to-boundaries
   (is (thrown-with-msg?
-       clojure.lang.ExceptionInfo #"typed values currently require"
+       kerror/ExceptionInfo #"typed values currently require"
        (compile-cljs
         "(defn main [] [:record :demo/one [[:x :i64]]]
            (record [:record :demo/one [[:x :i64]]] 1))"))))

@@ -2,7 +2,7 @@
   "Compiler injects kotoba-lang/provider's dataspace host (ADR-2608154100).
 
   Guest uses named :dataspace/transact. Assertions are inert documents."
-  (:require [clojure.edn :as edn]
+  (:require [kotoba.lang.error :as kerror] [clojure.edn :as edn]
             [clojure.test :refer [deftest is]]
             [kotoba.compiler.core :as compiler]
             [kotoba.kir :as ir]
@@ -133,7 +133,7 @@
 
 (deftest native-source-forms-cannot-launder-the-dataspace-effect
   (is (thrown-with-msg?
-       clojure.lang.ExceptionInfo #"capability policy denies required effects"
+       kerror/ExceptionInfo #"capability policy denies required effects"
        (compiler/check-source surface-source {:allow #{}}))))
 
 (deftest native-facet-forms-clean-up-owned-state
@@ -238,10 +238,10 @@
                              source {:allow #{[:cap/call 24]}})))
         runtime (runtime/instantiate kir)]
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"capability denied"
+         kerror/ExceptionInfo #"capability denied"
          (invoke runtime (assert-req "[:temperature :room/a 21]" 0))))
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"capability denied"
+         kerror/ExceptionInfo #"capability denied"
          (invoke runtime (observe-req "[:temperature :room/a ?t]" 0))))))
 
 (deftest copied-assertion-document-does-not-grant-observe
@@ -256,11 +256,11 @@
 (deftest non-document-assertion-is-rejected
   (let [runtime (host)]
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"value is not a tagged document node"
+         kerror/ExceptionInfo #"value is not a tagged document node"
          (invoke runtime [dataspace/request-type :assert
                           [dataspace/assert-type "#cap \"dataspace\"" 0]])))
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"value is not a tagged document node"
+         kerror/ExceptionInfo #"value is not a tagged document node"
          (invoke runtime [dataspace/request-type :observe
                           [dataspace/observe-type "#cap-ref \"dataspace\"" 0]])))))
 
@@ -279,7 +279,7 @@
     (is (= :asserted (second stored)))
     (is (= [{}] (matches-bindings seen)))
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"capability denied"
+         kerror/ExceptionInfo #"capability denied"
          (invoke (runtime/instantiate
                   (ir/lower (:hir (compiler/check-source
                                    source {:allow #{[:cap/call 24]}}))))

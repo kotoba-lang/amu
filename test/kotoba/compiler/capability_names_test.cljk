@@ -13,7 +13,7 @@
   PRINTS, and what `--policy` ACCEPTS. The wire id is deliberately not asserted
   away -- `wire-policy` must still produce it, because admission, KIR and the
   emitted bytes are all agreed on the integer."
-  (:require [kotoba.compiler.atomic-output :as atomic-output]
+  (:require [kotoba.lang.error :as kerror] [kotoba.compiler.atomic-output :as atomic-output]
             [clojure.edn :as edn]
             [clojure.test :refer [deftest is testing use-fixtures]]
             [kotoba.compiler.capability-names :as cap-names]
@@ -107,8 +107,8 @@
   ;; as a grant that is merely never used. Asserted on the MESSAGE, not merely
   ;; on something being thrown.
   (let [error (try (cap-names/wire-policy {:allow #{[:cap/call :hash/sha257]}})
-                   (catch clojure.lang.ExceptionInfo e e))]
-    (is (instance? clojure.lang.ExceptionInfo error))
+                   (catch kerror/ExceptionInfo e e))]
+    (is (instance? kerror/ExceptionInfo error))
     (is (= "policy names an unregistered capability: :hash/sha257"
            (ex-message error)))
     (is (= :admission (:phase (ex-data error))))

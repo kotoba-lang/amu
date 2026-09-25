@@ -1,5 +1,5 @@
 (ns kotoba.compiler.component-composition-test
-  (:require [kotoba.bytes :as kbytes] [clojure.edn :as edn]
+  (:require [kotoba.lang.error :as kerror] [kotoba.bytes :as kbytes] [clojure.edn :as edn]
             [kotoba.io :as io]
             [clojure.java.shell :as shell]
             [kotoba.lang.text :as str]
@@ -89,7 +89,7 @@
     ;; imports", and CI went red on main the moment that pin advanced. What this
     ;; test is actually about is that composing without the required provider
     ;; FAILS CLOSED -- not which adjective the upstream message uses.
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo
+    (is (thrown-with-msg? kerror/ExceptionInfo
                           #"do not (exactly )?close application imports"
                           (composition/compose-closed application [])))))
 
@@ -120,9 +120,9 @@
              :functions [{:name 'invoke :params ['request]
                           :param-types [descriptor] :result descriptor
                           :body (list 'typed-cap-call 4 descriptor descriptor 'request)}]}]
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"no qualified Canonical lowering"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"no qualified Canonical lowering"
                           (component-core/emit kir :wasm32-wasi-kotoba-v1)))
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"sealed scalar schema"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"sealed scalar schema"
                           (composition/package-record-identity-provider
                            :http/post descriptor (:schemas kir))))))
 
@@ -1063,9 +1063,9 @@
              :functions [{:name 'invoke :params ['request]
                           :param-types [descriptor] :result descriptor
                           :body (list 'typed-cap-call 8 descriptor descriptor 'request)}]}]
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"no qualified Canonical lowering"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"no qualified Canonical lowering"
                           (component-core/emit kir :wasm32-wasi-kotoba-v1)))
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"scalar, sealed all-scalar record, or sealed string/keyword-bearing record cases"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"scalar, sealed all-scalar record, or sealed string/keyword-bearing record cases"
                           (composition/package-variant-identity-provider
                            :state/transact descriptor schemas)))))
 
@@ -1191,12 +1191,12 @@
   ;; `asymmetric-state-shaped-string-keyword-variant-provider-closes-the-
   ;; application-world` below.
   (is (thrown-with-msg?
-       clojure.lang.ExceptionInfo #"requires two distinct admitted scalar-or-record variant identities"
+       kerror/ExceptionInfo #"requires two distinct admitted scalar-or-record variant identities"
        (composition/package-variant-asymmetric-provider
         :state/transact [:ref :demo/flag-or-ratio] [:ref :demo/flag-or-ratio]
         {:demo/flag-or-ratio [:variant :demo/flag-or-ratio [[:urgent :bool] [:weight :f32]]]})))
   (is (thrown-with-msg?
-       clojure.lang.ExceptionInfo #"requires two distinct admitted scalar-or-record variant identities"
+       kerror/ExceptionInfo #"requires two distinct admitted scalar-or-record variant identities"
        (composition/package-variant-asymmetric-provider
         :state/transact [:ref :demo/cap-nested-outcome] [:ref :demo/other-outcome]
         {:demo/cap-inner [:record :demo/cap-inner [[:count :i64]]]
@@ -1391,7 +1391,7 @@
                                       [:deleted :bool]
                                       [:error [:ref :demo/state-error]]]]}]
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"state-v1's own literal request/result shape"
+         kerror/ExceptionInfo #"state-v1's own literal request/result shape"
          (composition/package-state-provider
           :state/transact descriptor result-descriptor schemas)))))
 
@@ -2124,7 +2124,7 @@
                    [:monotonic [:ref :demo/mono]]
                    [:error [:ref :demo/err]]]]}]
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"clock-v1's own literal request/result shape"
+         kerror/ExceptionInfo #"clock-v1's own literal request/result shape"
          (composition/package-clock-provider
           :clock/now descriptor result-descriptor schemas)))))
 

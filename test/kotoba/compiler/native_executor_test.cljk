@@ -1,5 +1,5 @@
 (ns kotoba.compiler.native-executor-test
-  (:require [clojure.edn :as edn]
+  (:require [kotoba.lang.error :as kerror] [clojure.edn :as edn]
             [kotoba.lang.text :as str]
             [clojure.test :refer [deftest is]]
             [kotoba.compiler.atomic-output :as atomic-output]
@@ -94,10 +94,10 @@
         "a host boolean enters an entryless native export as a typed :bool")
     (is (true? (get-in (run 'negate [false 0]) [:evidence :result]))
         "a :bool result from the selected export leaves as a host boolean")
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"entry arguments"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"entry arguments"
                           (run 'choose [1 41]))
         "the old raw 0/1 word spelling cannot impersonate a host boolean")
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"entry arguments"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"entry arguments"
                           (run 'choose [true true]))
         "a host boolean cannot cross an :i64 slot")))
 
@@ -120,7 +120,7 @@
         "a code-region literal result crosses the same inspected boundary")
     (is (= "" (get-in (run 'echo [""]) [:evidence :result]))
         "the empty string retains a real handle and is not confused with nil")
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"entry arguments"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"entry arguments"
                           (run 'echo [1]))
         "an integer handle cannot impersonate a host string")))
 
@@ -177,11 +177,11 @@
     (is (= 107 (get-in (run 'score [{:left 7 :ready true}])
                        [:evidence :result]))
         "a host record is materialized as the native pair chain")
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"record fields"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"record fields"
                           (run 'echo [{:left 7}])))
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"record fields"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"record fields"
                           (run 'echo [{:left 7 :ready true :extra 0}])))
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"record field"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"record field"
                           (run 'echo [{:left 7 :ready 1}])))))
 
 (deftest native-loader-refuses-an-invalid-record-result-chain
@@ -253,11 +253,11 @@
     (is (= [false 11] (get-in (run 'make-err [11]) [:evidence :result])))
     (is (= 2007 (get-in (run 'inspect-result [[true 7]]) [:evidence :result])))
     (is (= 1008 (get-in (run 'inspect-result [[false 8]]) [:evidence :result])))
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"tagged i64 value"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"tagged i64 value"
                           (run 'echo-option [[false 0]])))
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"tagged i64 value"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"tagged i64 value"
                           (run 'echo-option [[true]])))
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"tagged i64 value"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"tagged i64 value"
                           (run 'echo-result [[1 0]])))))
 
 (deftest native-loader-refuses-invalid-option-and-result-handles
@@ -323,9 +323,9 @@
                      [:evidence :result])))
     (is (= 100 (get-in (run-source score-source 'score [[type :ready true]])
                        [:evidence :result])))
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"scalar variant"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"scalar variant"
                           (run-source echo-source 'echo [[type :missing 1]])))
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"scalar variant"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"scalar variant"
                           (run-source echo-source 'echo [[type :ready 1]])))))
 
 (deftest native-loader-refuses-an-invalid-variant-result-handle
@@ -477,8 +477,8 @@
     (let [error (try
                   (compiler/compile-source source (target))
                   nil
-                  (catch clojure.lang.ExceptionInfo error error))]
-      (is (instance? clojure.lang.ExceptionInfo error))
+                  (catch kerror/ExceptionInfo error error))]
+      (is (instance? kerror/ExceptionInfo error))
       (is (= :scalar-value-required (:problem (ex-data error))))
       (is (= :kir-to-gmir (:ir/phase (ex-data error))))
       (is (re-find #"machine IR rejected" (.getMessage error))))))
@@ -488,20 +488,20 @@
         tampered (assoc-in envelope [:artifact :code 0] 255)
         {:keys [runtime loader-path]} @measured-runtime
         {trusted-trust :trust trusted-options :options} (execution-options trust)]
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"runtime identity is not trusted"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"runtime identity is not trusted"
                           (executor/execute envelope trust {:allow #{}} {:args []}
                                             {:now 1500 :entry 'main :runtime runtime
                                              :loader-path loader-path})))
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"artifact integrity mismatch"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"artifact integrity mismatch"
                           (executor/execute tampered trust {:allow #{}} {:args []}
                                             {:now 1500 :entry 'main})))
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"entry arity"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"entry arity"
                           (executor/execute envelope trusted-trust {:allow #{}}
                                             {:args [1]} trusted-options))))
   (let [policy {:allow #{[:cap/call 7]}}
         {:keys [envelope trust]} (signed "(defn main [] (cap-call 7 41))" policy)
         {trusted-trust :trust options :options} (execution-options trust)]
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"denies required effects"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"denies required effects"
                           (executor/execute envelope trusted-trust {:allow #{}}
                                             {:args []} options)))))
 
@@ -515,7 +515,7 @@
         envelope (signing/sign artifact key {:not-before 1000 :expires 2000})
         trust {:format :kotoba.trust/v1 :trusted-signers #{(:signer key)}
                :revoked-signers #{} :revoked-artifacts #{}}]
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"does not match execution host"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"does not match execution host"
                           (executor/execute envelope trust {:allow #{}} {:args []}
                                             {:now 1500 :entry 'main})))))
 
@@ -531,7 +531,7 @@
                                       :kototama-macos-supervisor-v1)))
         pinned (assoc trust :trusted-runtime-sha256
                       #{(runtime-identity/identity-sha256 other-runtime)})]
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"runtime target profile"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"runtime target profile"
                           (executor/execute envelope pinned {:allow #{}} {:args []}
                                             {:now 1500 :entry 'main
                                              :runtime other-runtime
@@ -546,7 +546,7 @@
                                 (assoc :loader-source-sha256
                                        runtime-identity/windows-loader-source-sha256))]
         (is (= windows-runtime (runtime-identity/validate! windows-runtime)))
-        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"runtime identity rejected"
+        (is (thrown-with-msg? kerror/ExceptionInfo #"runtime identity rejected"
                               (runtime-identity/validate!
                                (assoc windows-runtime :loader-source-sha256
                                       runtime-identity/loader-source-sha256))))))))
@@ -565,7 +565,7 @@
         changed (atomic-output/temp-file! "kotoba-changed-loader-" "")]
     (atomic-output/write-bytes! (.getPath changed) (byte-array [0 1 2 3])
                                 {:executable? true})
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"does not match runtime identity"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"does not match runtime identity"
                           (executor/execute envelope trust {:allow #{}} {:args []}
                                             (assoc options :loader-path (.getPath changed)))))))
 
@@ -611,7 +611,7 @@
          path (make-array java.nio.file.LinkOption 0)))
     (is (java.nio.file.Files/isExecutable path))
     (is (re-matches #"[0-9a-f]{64}" (file-sha256 (.toFile path))))
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"invalid toolchain"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"invalid toolchain"
                           (resolve-executable "./cc")))))
 
 (deftest compiler-reported-tools-require-canonical-executable-paths
@@ -619,11 +619,11 @@
         env {"PATH" "/usr/bin:/bin"}]
     (is (.isAbsolute (resolve-tool "/bin/sh\n" env)))
     (is (.isAbsolute (resolve-tool "sh\n" env)))
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"not an executable"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"not an executable"
                           (resolve-tool "relative/tool\n" env)))
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"malformed tool path"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"malformed tool path"
                           (resolve-tool "as\nld\n" env)))
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"malformed tool path"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"malformed tool path"
                           (resolve-tool (str "as" \u0000) env)))))
 
 (deftest compiler-resource-manifest-is-deterministic-bounded-and-symlink-free
@@ -649,12 +649,12 @@
         (java.nio.file.Files/createSymbolicLink
          (.resolve root "link") first-file
          (make-array java.nio.file.attribute.FileAttribute 0))
-        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"contains a symlink"
+        (is (thrown-with-msg? kerror/ExceptionInfo #"contains a symlink"
                               (manifest root)))
         (java.nio.file.Files/delete (.resolve root "link"))
         (with-open [large (java.io.RandomAccessFile. (.toFile (.resolve root "large")) "rw")]
           (.setLength large (inc (* 64 1024 1024))))
-        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"bytes exceed limit"
+        (is (thrown-with-msg? kerror/ExceptionInfo #"bytes exceed limit"
                               (manifest root))))
       (finally (delete-tree (.toFile root))))))
 
@@ -670,9 +670,9 @@
       (is (= ["C:\\Program Files\\SDK\\windows.h" "D:\\a\\source.h"]
              (parse-deps (str "D:\\a\\output.o: C:\\Program\\ Files\\SDK\\windows.h \\\r\n"
                               " D:\\a\\source.h\r\n"))))
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"no target separator"
+      (is (thrown-with-msg? kerror/ExceptionInfo #"no target separator"
                             (parse-deps "missing target")))
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"ends in an escape"
+      (is (thrown-with-msg? kerror/ExceptionInfo #"ends in an escape"
                             (parse-deps "out: path\\")))
       (let [first-file (.resolve root "first.h")
             second-file (.resolve root "second.h")]
@@ -686,12 +686,12 @@
                                            (make-array java.nio.file.OpenOption 0))
           (is (not= first-hash (manifest [(str first-file) (str second-file)]))))
         (java.nio.file.Files/delete second-file)
-        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"not a regular file"
+        (is (thrown-with-msg? kerror/ExceptionInfo #"not a regular file"
                               (manifest [(str second-file)])))
         (let [large (.resolve root "large.h")]
           (with-open [file (java.io.RandomAccessFile. (.toFile large) "rw")]
             (.setLength file (inc (* 64 1024 1024))))
-          (is (thrown-with-msg? clojure.lang.ExceptionInfo #"bytes exceed limit"
+          (is (thrown-with-msg? kerror/ExceptionInfo #"bytes exceed limit"
                                 (manifest [(str large)])))))
       (finally (delete-tree (.toFile root))))))
 
@@ -954,7 +954,7 @@
                 "(defn project-s [] :symbol
                    (record-get " schema " (record-new " schema " (symbol \"x\")) :s))
                  (defn main [] 0)")]
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo
+    (is (thrown-with-msg? kerror/ExceptionInfo
                           #"qualified native"
                           (compiler/compile-source source (target))))
     ;; Confirms the rejection is native-specific admission, not a generic
@@ -1051,7 +1051,7 @@
                 "(defn project-s [] :symbol
                    (variant-match " schema " (variant-new " schema " :s (symbol \"x\")) [[:s v v]]))
                  (defn main [] 0)")]
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo
+    (is (thrown-with-msg? kerror/ExceptionInfo
                           #"qualified native"
                           (compiler/compile-source source (target))))
     (is (= :wasm/v1 (:format (compiler/compile-source source :wasm32-kotoba-v1))))))
@@ -1208,7 +1208,7 @@
 ;; are not canonical UTF-8.
 (deftest constant-string-substring-splitting-a-code-point-is-rejected-at-compile-time
   (is (thrown-with-msg?
-       clojure.lang.ExceptionInfo #"splits a UTF-8 code point"
+       kerror/ExceptionInfo #"splits a UTF-8 code point"
        (compiler/compile-source
         "(defn main [] (string-byte-length (string-substring \"日本語\" 1 9)))"
         (target) {:allow #{}}))))
@@ -1262,7 +1262,7 @@
 
 (deftest string-code-point-at-splitting-a-code-point-is-rejected-at-compile-time
   (is (thrown-with-msg?
-       clojure.lang.ExceptionInfo #"splits a UTF-8 code point"
+       kerror/ExceptionInfo #"splits a UTF-8 code point"
        (compiler/compile-source "(defn main [] (string-code-point-at \"日本語\" 1))"
                                 (target) {:allow #{}}))))
 
@@ -1472,7 +1472,7 @@
   ;; in-place store would corrupt -- so it is refused at compile time rather
   ;; than lowered to the copying slot as a silent fallback.
   (is (thrown-with-msg?
-       clojure.lang.ExceptionInfo #"vector-assoc! requires a linear handle"
+       kerror/ExceptionInfo #"vector-assoc! requires a linear handle"
        (compiler/compile-source
         "(ns pilot.native-slab (:export [leak]))
          (defn leak [slots :i64] :i64

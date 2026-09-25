@@ -47,7 +47,7 @@
      advances, but it may never move backwards.
   4. The grammar read names exactly the kernel heads the pinned frontend
      admits."
-  (:require [kotoba.bytes :as kbytes] [kotoba.compiler.core :as compiler]
+  (:require [kotoba.lang.error :as kerror] [kotoba.bytes :as kbytes] [kotoba.compiler.core :as compiler]
             [clojure.edn :as edn]
             [kotoba.io :as io]
             [kotoba.lang.coll :as set]
@@ -428,7 +428,7 @@
         (try
           (compiler/check-source source {})
           (is false (str "STM ref must be refused: " source))
-          (catch clojure.lang.ExceptionInfo e
+          (catch kerror/ExceptionInfo e
             (is (= :kotoba.error/ambient-forbidden (:kotoba.error/code (ex-data e)))
                 "the STM reading keeps the ambient-mutation CODE it always had")))))
     (testing "and the definition reading is admitted, so the above is not

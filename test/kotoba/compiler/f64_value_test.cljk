@@ -1,5 +1,5 @@
 (ns kotoba.compiler.f64-value-test
-  (:require [kotoba.bytes :as kbytes] [kotoba.process :as shell]
+  (:require [kotoba.lang.error :as kerror] [kotoba.bytes :as kbytes] [kotoba.process :as shell]
             [clojure.test :refer [deftest is testing]]
             [kotoba.wasm.typed :as typed]
             [kotoba.compiler.core :as compiler]
@@ -30,7 +30,7 @@
     (is (= 9221120237041090560 (ir/execute kir 'nan-bits [])))
     (is (Double/isInfinite ^double (ir/execute kir 'infinity [])))
     (is (Double/isNaN ^double (ir/execute kir 'from-bits [9221120237041090560])))
-    (is (thrown? clojure.lang.ExceptionInfo (ir/execute kir 'bits [1])))))
+    (is (thrown? kerror/ExceptionInfo (ir/execute kir 'bits [1])))))
 
 (deftest f64-wasm-abi-and-reinterpretation-match-reference
   (let [artifact (compiler/compile-source source :wasm32-kotoba-v1)
@@ -198,13 +198,13 @@
     ;; So the invariant is kept and the fixtures now demonstrate it. Both of
     ;; these are refused, and each for a reason that is written down where the
     ;; refusal lives.
-    (is (thrown? clojure.lang.ExceptionInfo
+    (is (thrown? kerror/ExceptionInfo
                  (compiler/compile-source f64-record-source :x86_64-kotoba-v1)))
-    (is (thrown? clojure.lang.ExceptionInfo
+    (is (thrown? kerror/ExceptionInfo
                  (compiler/compile-source f64-record-source :aarch64-kotoba-v1)))
-    (is (thrown? clojure.lang.ExceptionInfo
+    (is (thrown? kerror/ExceptionInfo
                  (compiler/compile-source f32-signature-source :x86_64-kotoba-v1)))
-    (is (thrown? clojure.lang.ExceptionInfo
+    (is (thrown? kerror/ExceptionInfo
                  (compiler/compile-source f32-signature-source :aarch64-kotoba-v1)))))
 
 (deftest f64-scalar-signatures-reach-native
@@ -299,10 +299,10 @@
     (is (true? (ir/execute kir 'unordered [Double/NaN 1.0])))
     (is (false? (ir/execute kir 'equal [Double/NaN Double/NaN])))
     (is (= 9007199254740992.0 (ir/execute kir 'to-f64 [9007199254740992])))
-    (is (thrown? clojure.lang.ExceptionInfo
+    (is (thrown? kerror/ExceptionInfo
                  (ir/execute kir 'to-f64 [9007199254740993])))
     (is (= 1 (ir/execute kir 'truncating [1.9])))
-    (is (thrown? clojure.lang.ExceptionInfo
+    (is (thrown? kerror/ExceptionInfo
                  (ir/execute kir 'to-i64 [1.5])))
     (is (zero? (:exit js-result)) (:err js-result))
     (is (zero? (:exit wasm-result)) (:err wasm-result))))

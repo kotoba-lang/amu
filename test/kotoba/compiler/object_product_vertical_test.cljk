@@ -1,7 +1,7 @@
 (ns kotoba.compiler.object-product-vertical-test
   "W5 fuller product apps (ADR 0140–0142): guest put→get, put→CAS→get, and
   conditional-get product verticals on dual-runtime (affine let / one-arm if)."
-  (:require [clojure.test :refer [deftest is]]
+  (:require [kotoba.lang.error :as kerror] [clojure.test :refer [deftest is]]
             [kotoba.compiler.core :as compiler]
             [kotoba.compiler.reference-runtime :as runtime]
             [kotoba.kir :as ir]
@@ -138,7 +138,7 @@
                  :example/blocks "only-put" (value/utf8-string->bytes "x")]
         get-req [object/get-stream-request-type :example/blocks "missing-key"]]
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"object provider failed|missing"
+         kerror/ExceptionInfo #"object provider failed|missing"
          ((:invoke runtime) 'put-then-count [put-req get-req])))))
 
 (deftest product-put-then-count-ordering-records-put-before-get

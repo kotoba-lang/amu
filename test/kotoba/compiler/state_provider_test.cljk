@@ -1,5 +1,5 @@
 (ns kotoba.compiler.state-provider-test
-  (:require [clojure.test :refer [deftest is]]
+  (:require [kotoba.lang.error :as kerror] [clojure.test :refer [deftest is]]
             [kotoba.compiler.core :as compiler]
             [kotoba.kir :as ir]
             [provider.state :as state]
@@ -55,12 +55,12 @@
                              source {:allow #{[:cap/call 8]}})))
         runtime (runtime/instantiate kir)]
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"capability denied"
+         kerror/ExceptionInfo #"capability denied"
          ((:invoke runtime) 'transact
           [[state/request-type :put
             [state/put-type :profile/name "x"]]])))
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"capability denied"
+         kerror/ExceptionInfo #"capability denied"
          ((:invoke runtime) 'transact
           [[state/request-type :get
             [state/get-type :profile/name]]])))))

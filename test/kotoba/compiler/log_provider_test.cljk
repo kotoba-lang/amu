@@ -1,5 +1,5 @@
 (ns kotoba.compiler.log-provider-test
-  (:require [clojure.test :refer [deftest is]]
+  (:require [kotoba.lang.error :as kerror] [clojure.test :refer [deftest is]]
             [kotoba.compiler.core :as compiler]
             [kotoba.kir :as ir]
             [provider.log :as log]
@@ -38,16 +38,16 @@
                        [log/field-type (keyword "field" (str index)) "value"])
                      (range 5))]
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"field limit"
+         kerror/ExceptionInfo #"field limit"
          ((:invoke runtime) 'append
           [[log/append-request-type :log/info :app/event "message"
             [log/field-set-type fields]]])))
     (is (empty? ((:snapshot kit))))
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"read limit"
+         kerror/ExceptionInfo #"read limit"
          ((:invoke runtime) 'read [[log/read-request-type 0 9]])))
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"cursor must be non-negative"
+         kerror/ExceptionInfo #"cursor must be non-negative"
          ((:invoke runtime) 'read [[log/read-request-type -1 1]])))))
 
 (deftest retained-window-signals-truncation
@@ -71,10 +71,10 @@
                              source {:allow #{[:cap/call 5] [:cap/call 6]}})))
         runtime (runtime/instantiate kir)]
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"capability denied"
+         kerror/ExceptionInfo #"capability denied"
          ((:invoke runtime) 'append
           [[log/append-request-type :log/info :app/started "ready"
             [log/field-set-type []]]])))
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"capability denied"
+         kerror/ExceptionInfo #"capability denied"
          ((:invoke runtime) 'read [[log/read-request-type 0 1]])))))

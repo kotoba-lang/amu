@@ -1416,7 +1416,7 @@
         hir (try
               (sema/analyze (source-text augmented)
                             {:lambda-id-base (* module-index sema/max-functions)})
-              (catch #?(:clj clojure.lang.ExceptionInfo :cljs :default) error
+              (catch :default error
                 (throw (attribute-module-error error (:namespace info) forms augmented binding))))
         defn-lines (definition-lines forms)
         ;; Matched on `:source-name`, not `:name`: a multi-arity stub is one

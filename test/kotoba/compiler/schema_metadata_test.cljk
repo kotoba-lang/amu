@@ -1,5 +1,5 @@
 (ns kotoba.compiler.schema-metadata-test
-  (:require [clojure.test :refer [deftest is]]
+  (:require [kotoba.lang.error :as kerror] [clojure.test :refer [deftest is]]
             [kotoba.wasm.typed :as typed]
             [kotoba.compiler.core :as compiler]))
 
@@ -22,7 +22,7 @@
     (is (bytes? (:bytes compiled)))))
 
 (deftest malformed-source-schema-fails-before-lowering
-  (is (thrown-with-msg? clojure.lang.ExceptionInfo #"not declared"
+  (is (thrown-with-msg? kerror/ExceptionInfo #"not declared"
                         (compiler/check-source
                          "(ns bad (:schemas {:app/a [:option [:ref :app/missing]]}))
                           (defn main [] 0)"))))

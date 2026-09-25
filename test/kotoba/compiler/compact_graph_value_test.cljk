@@ -1,5 +1,5 @@
 (ns kotoba.compiler.compact-graph-value-test
-  (:require [kotoba.bytes :as kbytes] [kotoba.process :as shell]
+  (:require [kotoba.lang.error :as kerror] [kotoba.bytes :as kbytes] [kotoba.process :as shell]
             [clojure.test :refer [deftest is testing]]
             [kotoba.wasm.typed :as typed]
             [kotoba.compiler.core :as compiler]
@@ -70,18 +70,18 @@
 
 (deftest compact-values-enforce-canonical-bounds
   (testing "string indexes reject duplicates, non-canonical order, and aggregate overflow"
-    (is (thrown? clojure.lang.ExceptionInfo
+    (is (thrown? kerror/ExceptionInfo
                  (value/bounded-string-index! [["a" 1] ["a" 2]])))
-    (is (thrown? clojure.lang.ExceptionInfo
+    (is (thrown? kerror/ExceptionInfo
                  (value/bounded-string-index! [["b" 1] ["a" 2]])))
-    (is (thrown? clojure.lang.ExceptionInfo
+    (is (thrown? kerror/ExceptionInfo
                  (value/bounded-string-index!
                   (mapv (fn [index] [(str (apply str (repeat 512 "x")) index) index])
                         (range 128))))))
   (testing "disjoint sets reject out-of-range parents and parent cycles"
-    (is (thrown? clojure.lang.ExceptionInfo
+    (is (thrown? kerror/ExceptionInfo
                  (value/bounded-disjoint-set-i64! [[1 0] [0 0]])))
-    (is (thrown? clojure.lang.ExceptionInfo
+    (is (thrown? kerror/ExceptionInfo
                  (value/bounded-disjoint-set-i64! [[0 2] [0 0]])))))
 
 (deftest compact-constructors-reject-runtime-overflow-and-invalid-indexes
@@ -91,5 +91,5 @@
                     (defn bad-index [] [:option :disjoint-set-i64]
                       (disjoint-set-i64-union (disjoint-set-i64-new 2) 0 2))"))
         kir (ir/lower hir)]
-    (is (thrown? clojure.lang.ExceptionInfo (ir/execute kir 'oversize [])))
-    (is (thrown? clojure.lang.ExceptionInfo (ir/execute kir 'bad-index [])))))
+    (is (thrown? kerror/ExceptionInfo (ir/execute kir 'oversize [])))
+    (is (thrown? kerror/ExceptionInfo (ir/execute kir 'bad-index [])))))

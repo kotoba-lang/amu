@@ -1,5 +1,5 @@
 (ns kotoba.compiler.property-test
-  (:require [clojure.test :refer [deftest is]]
+  (:require [kotoba.lang.error :as kerror] [clojure.test :refer [deftest is]]
             [kotoba.compiler.core :as compiler]
             [kotoba.kir :as ir]
             [kotoba.verifier :as verifier])
@@ -67,5 +67,5 @@
         (is (= (:sha256 x86) (:sha256 x86-again)) (str "nondeterministic seal case " case-id))
         (is (= x86 (verifier/verify-artifact! x86)))
         (is (= arm (verifier/verify-artifact! arm)))
-        (is (thrown? clojure.lang.ExceptionInfo
+        (is (thrown? kerror/ExceptionInfo
                      (verifier/verify-artifact! (update-in x86 [:code 0] bit-xor 1))))))))

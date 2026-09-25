@@ -16,7 +16,7 @@
   REAL OS UDP socket (`send-round-trips-over-a-real-loopback-udp-socket`),
   not only an in-memory mock transport -- no other reference-kit test in
   this repository does that."
-  (:require [kotoba.bytes :as kbytes] [clojure.test :refer [deftest is]]
+  (:require [kotoba.lang.error :as kerror] [kotoba.bytes :as kbytes] [clojure.test :refer [deftest is]]
             [kotoba.compiler.core :as compiler]
             [kotoba.kir :as ir]
             [kotoba.compiler.support.net-datagram-provider :as datagram]
@@ -69,17 +69,17 @@
         runtime (hosted (fn [_] (reset! called? true) {:bytes-sent 0}))
         payload (value/utf8-string->bytes "x")]
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"denied"
+         kerror/ExceptionInfo #"denied"
          ((:invoke runtime) 'transmit
           [[datagram/request-type :send
             [datagram/send-request-type "10.0.0.1" 9999 payload 1000]]])))
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"denied"
+         kerror/ExceptionInfo #"denied"
          ((:invoke runtime) 'transmit
           [[datagram/request-type :send
             [datagram/send-request-type "127.0.0.1" 70000 payload 1000]]])))
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"denied"
+         kerror/ExceptionInfo #"denied"
          ((:invoke runtime) 'transmit
           [[datagram/request-type :send
             [datagram/send-request-type "127.0.0.1" 9999 payload 0]]])))
@@ -89,7 +89,7 @@
   (let [called? (atom false)
         runtime (hosted (fn [_] (reset! called? true) {:bytes-sent 0}))
         oversized (byte-array (inc datagram/max-payload-bytes))]
-    (is (thrown? clojure.lang.ExceptionInfo
+    (is (thrown? kerror/ExceptionInfo
                  ((:invoke runtime) 'transmit
                   [[datagram/request-type :send
                     [datagram/send-request-type "127.0.0.1" 9999 oversized 1000]]])))
@@ -123,7 +123,7 @@
         called? (atom false)
         payload (value/utf8-string->bytes "x")]
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"capability denied"
+         kerror/ExceptionInfo #"capability denied"
          ((:invoke runtime) 'transmit
           [[datagram/request-type :send
             [datagram/send-request-type "127.0.0.1" 9999 payload 1000]]])))

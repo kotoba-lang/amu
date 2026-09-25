@@ -1,5 +1,5 @@
 (ns kotoba.compiler.aiueos-target-test
-  (:require [kotoba.lang.text :as str]
+  (:require [kotoba.lang.error :as kerror] [kotoba.lang.text :as str]
             [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]
             [kotoba.artifact.core :as artifact]
@@ -218,7 +218,7 @@
   ;; native, and `:x86_64-aiueos-user-v1` -- `:execution :process` -- stays
   ;; on the refused side, which is what keeps the two apart.
   (doseq [target [:x86_64-linux-kotoba-v1 :x86_64-aiueos-user-v1]]
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"requires the aiueos kernel target"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"requires the aiueos kernel target"
           (compiler/compile-source "(defn main [] (kernel-read-cr3))" target)))))
 
 (deftest the-firmware-target-may-name-the-machine
@@ -263,7 +263,7 @@
               (partition 4 1 bytes))
         "GetMemoryMap is bounded to the inline 16 KiB region")
     (is (= bytes (:bytes second-image)) "embedded boot image is reproducible")
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"x86-64 ET_EXEC"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"x86-64 ET_EXEC"
           (pe32plus/package-embedded-kernel (vec (repeat 128 0)))))))
 
 (deftest compiler-packages-a-bounded-external-rt-payload
@@ -298,7 +298,7 @@
         "payload length store names boot-info offset 104, not four bytes later")
     (is (= (:bytes image)
            (:bytes (pe32plus/package-embedded-kernel kernel payload))))
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"exceeds 16 KiB"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"exceeds 16 KiB"
           (pe32plus/package-embedded-kernel kernel (vec (repeat 16385 0)))))))
 
 (deftest pe32plus-refuses-a-paddr-outside-the-pt-load-contract
@@ -307,7 +307,7 @@
   ;; two runtimes are held to one statement rather than to two descriptions of
   ;; one, and so the fixture has a caller that fails if its shape drifts.
   (let [error (is (thrown-with-msg?
-                   clojure.lang.ExceptionInfo #"PT_LOAD contract rejected"
+                   kerror/ExceptionInfo #"PT_LOAD contract rejected"
                    (pe32plus/package-embedded-kernel
                     (elf-fixture/kernel-with-out-of-range-paddr))))]
     (is (= elf-fixture/paddr-above-the-bound
@@ -327,7 +327,7 @@
       (is (= 2 (read-le bytes 56 2)) "two PT_LOAD program headers (text + context)")
       (is (= :aiueos_kernel_entry (get-in result [:binary :entry])))))
   (testing "kernel intrinsics are rejected on a non-kernel aarch64 target"
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"requires the aiueos kernel target"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"requires the aiueos kernel target"
           (compiler/compile-source "(defn main [] (kernel-store-u8 1 8 0 0))"
                                    :aarch64-kotoba-v1))))
   (testing "the aarch64 kernel image is reproducible"
@@ -357,7 +357,7 @@
            (get-in (compiler/compile-source "(defn main [] (do (kernel-store-u8 100 8 0 65)))" :aarch64-aiueos-kernel-v1)
                    [:artifact :code]))))
   (testing "an empty do is rejected"
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"do requires at least one expression"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"do requires at least one expression"
           (compiler/compile-source "(defn main [] (do))" :aarch64-aiueos-kernel-v1))))
   (testing "do works on a pure target too (returns the last value)"
     (is (= 3 (get-in (compiler/compile-source "(defn main [] (do 1 2 3))" :aarch64-kotoba-v1)
@@ -490,7 +490,7 @@
 
 (deftest bounded-byte-load-requires-base-length-index
   (is (thrown-with-msg?
-       clojure.lang.ExceptionInfo #"kernel memory operation arity mismatch"
+       kerror/ExceptionInfo #"kernel memory operation arity mismatch"
        (compiler/check-source "(defn main [] (kernel-load-u8 1 2))"))))
 
 (deftest kernel-target-exports-bounded-fnv-function
@@ -636,13 +636,13 @@
 (deftest bounded-kernel-memory-is-rejected-for-host-targets
   (let [source "(defn read-byte [base length index] (kernel-load-u8 base length index)) (defn main [] 0)"]
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"requires the aiueos kernel target"
+         kerror/ExceptionInfo #"requires the aiueos kernel target"
          (compiler/compile-source source :x86_64-linux-kotoba-v1)))))
 
 (deftest wide-bounded-kernel-memory-is-rejected-for-host-targets
   (let [source "(defn read-byte [base length index] (kernel-load-u8-16k base length index)) (defn main [] 0)"]
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"requires the aiueos kernel target"
+         kerror/ExceptionInfo #"requires the aiueos kernel target"
          (compiler/compile-source source :x86_64-linux-kotoba-v1)))))
 
 (deftest kernel-target-exports-record-validators
@@ -675,7 +675,7 @@
 
 (deftest bounded-byte-store-requires-four-operands
   (is (thrown-with-msg?
-       clojure.lang.ExceptionInfo #"kernel memory operation arity mismatch"
+       kerror/ExceptionInfo #"kernel memory operation arity mismatch"
        (compiler/check-source "(defn main [] (kernel-store-u8 1 2 3))"))))
 
 (deftest kernel-target-exports-pci-planners
@@ -764,7 +764,7 @@
     (is (<= (+ section-table (* 3 40)) 0x200))))
 
 (deftest efi-packaging-rejects-an-entry-that-cannot-satisfy-its-boundary-contract
-  (is (thrown-with-msg? clojure.lang.ExceptionInfo #"zero (arguments|arity)"
+  (is (thrown-with-msg? kerror/ExceptionInfo #"zero (arguments|arity)"
                         (compiler/compile-source "(defn main [image] image)"
                                                  :x86_64-aiueos-uefi-v1))))
 
@@ -871,8 +871,8 @@
                             "(defn aiueos-not-in-the-table [n :i64] :i64 n)"
                             "(defn main [] :i64 0)")
                        :x86_64-aiueos-kernel-v1)
-                      (catch clojure.lang.ExceptionInfo e e))]
-      (is (instance? clojure.lang.ExceptionInfo thrown)
+                      (catch kerror/ExceptionInfo e e))]
+      (is (instance? kerror/ExceptionInfo thrown)
           "packaging must refuse rather than emit a colliding symbol")
       (is (re-find #"no admitted symbol" (ex-message thrown)))
       (is (= '[aiueos-not-in-the-table] (:unlisted-exports (ex-data thrown)))

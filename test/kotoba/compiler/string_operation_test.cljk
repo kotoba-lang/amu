@@ -1,5 +1,5 @@
 (ns kotoba.compiler.string-operation-test
-  (:require [kotoba.bytes :as kbytes] [kotoba.process :as shell]
+  (:require [kotoba.lang.error :as kerror] [kotoba.bytes :as kbytes] [kotoba.process :as shell]
             [clojure.test :refer [deftest is]]
             [kotoba.compiler.core :as compiler]
             [kotoba.kir :as ir]))
@@ -38,10 +38,10 @@
                                    "const x=h.instance.exports;" checks "})") wasm64)]
     (is (= "ab" (ir/execute kir 'concat ["a" "b"])))
     (is (= "😀語" (ir/execute kir 'substring ["a😀語z" 1 8])))
-    (is (thrown? clojure.lang.ExceptionInfo
+    (is (thrown? kerror/ExceptionInfo
                  (ir/execute kir 'substring ["a😀" 2 5])))
     (is (= "a$$a$$" (ir/execute kir 'replace ["a.$a.$" "." "$"])))
-    (is (thrown? clojure.lang.ExceptionInfo (ir/execute kir 'replace ["abc" "" "x"])))
+    (is (thrown? kerror/ExceptionInfo (ir/execute kir 'replace ["abc" "" "x"])))
     (is (zero? (:exit js-result)) (:err js-result))
     (is (zero? (:exit wasm-result)) (:err wasm-result))))
 
@@ -85,8 +85,8 @@
                                    "const x=h.instance.exports;" wasm-checks "})") wasm64)]
     (is (true? (ir/execute kir 'contains ["final decision made" "decision"])))
     (is (false? (ir/execute kir 'contains ["final decision made" "banana"])))
-    (is (thrown? clojure.lang.ExceptionInfo (ir/execute kir 'contains ["abc" ""])))
-    (is (thrown? clojure.lang.ExceptionInfo (ir/execute kir 'contains ["" ""])))
+    (is (thrown? kerror/ExceptionInfo (ir/execute kir 'contains ["abc" ""])))
+    (is (thrown? kerror/ExceptionInfo (ir/execute kir 'contains ["" ""])))
     (is (= "final decision" (ir/execute kir 'fold ["FINAL DECISION"])))
     (is (= "café" (ir/execute kir 'fold ["CAFÉ"])))
     (is (false? (ir/execute kir 'contains ["This Is The FINAL Decision" "final decision"])))
@@ -154,8 +154,8 @@
     (is (= 97 (ir/execute kir 'cp [s 0])))
     (is (= 0x3042 (ir/execute kir 'cp [s 1])))
     (is (= 0x1d7d8 (ir/execute kir 'cp [s 4])))
-    (is (thrown? clojure.lang.ExceptionInfo (ir/execute kir 'cp [s 2])))
-    (is (thrown? clojure.lang.ExceptionInfo (ir/execute kir 'cp [s 9])))
+    (is (thrown? kerror/ExceptionInfo (ir/execute kir 'cp [s 2])))
+    (is (thrown? kerror/ExceptionInfo (ir/execute kir 'cp [s 9])))
     (is (= 6 (ir/execute kir 'alnum-run-bytes ["abc123 xyz"])))
     (is (= 0 (ir/execute kir 'alnum-run-bytes [" abc"])))
     (is (= 1 (ir/execute kir 'alnum-run-bytes [s])))
@@ -200,7 +200,7 @@
     (is (zero? (:exit wasm-result)) (:err wasm-result))))
 
 (deftest string-join-rejects-too-many-parts
-  (is (thrown-with-msg? clojure.lang.ExceptionInfo #"max 8 parts"
+  (is (thrown-with-msg? kerror/ExceptionInfo #"max 8 parts"
         (compiler/compile-source
          "(ns t (:export [f]))
           (defn f [] :string

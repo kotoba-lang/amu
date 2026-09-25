@@ -6,7 +6,7 @@
   natural shape of u256 limb arithmetic -- could not be written. These tests
   pin the semantics against `ir/execute` (the interpreter oracle) and pin the
   emitted opcodes, so a future refactor cannot silently change either."
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [kotoba.lang.error :as kerror] [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]
             [kotoba.sema :as sema]
             [kotoba.kir :as ir]))
@@ -19,7 +19,7 @@
 
 (defn- rejection [body]
   (try (compiler/check-source (str "(ns t) (defn main [] " body ")")) nil
-       (catch clojure.lang.ExceptionInfo e (ex-message e))))
+       (catch kerror/ExceptionInfo e (ex-message e))))
 
 (defn- wasm-hex [body]
   (let [source (str "(ns t) (defn main [] " body ")")
@@ -127,5 +127,5 @@
       (is (some? (try (compiler/check-source
                        (str "(ns t) (defn " op " [x] x) (defn main [] 1)"))
                       nil
-                      (catch clojure.lang.ExceptionInfo e (ex-message e))))
+                      (catch kerror/ExceptionInfo e (ex-message e))))
           (str op " must be reserved")))))

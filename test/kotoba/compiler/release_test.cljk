@@ -1,5 +1,5 @@
 (ns kotoba.compiler.release-test
-  (:require [kotoba.bytes :as kbytes] [clojure.test :refer [deftest is]]
+  (:require [kotoba.lang.error :as kerror] [kotoba.bytes :as kbytes] [clojure.test :refer [deftest is]]
             [kotoba.compiler.release :as release]
             [kotoba.verifier.signing :as signing])
   (:import [java.nio.file Files Path]
@@ -28,17 +28,17 @@
           (is (.contains text "Created: 1970-01-01T00:00:00Z"))
           (is (= :wasm32-wasi-kotoba-v1
                  (:target (release/verify! envelope (str artifact) (str sbom) (trust key) 1500))))
-          (is (thrown-with-msg? clojure.lang.ExceptionInfo #"outside validity"
+          (is (thrown-with-msg? kerror/ExceptionInfo #"outside validity"
                                 (release/verify! envelope (str artifact) (str sbom) (trust key) 2000)))
-          (is (thrown-with-msg? clojure.lang.ExceptionInfo #"signature rejected"
+          (is (thrown-with-msg? kerror/ExceptionInfo #"signature rejected"
                                 (release/verify! (assoc-in envelope [:statement :not-before] 1001)
                                                  (str artifact) (str sbom) (trust key) 1500)))
           (write! sbom "SPDXVersion: SPDX-2.3\n")
-          (is (thrown-with-msg? clojure.lang.ExceptionInfo #"SBOM identity mismatch"
+          (is (thrown-with-msg? kerror/ExceptionInfo #"SBOM identity mismatch"
                                 (release/verify! envelope (str artifact) (str sbom) (trust key) 1500)))
           (Files/write sbom first (make-array java.nio.file.OpenOption 0))
           (write! artifact "mutated")
-          (is (thrown-with-msg? clojure.lang.ExceptionInfo #"artifact identity mismatch"
+          (is (thrown-with-msg? kerror/ExceptionInfo #"artifact identity mismatch"
                                 (release/verify! envelope (str artifact) (str sbom) (trust key) 1500)))))
       (finally
         (Files/deleteIfExists sbom)

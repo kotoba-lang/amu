@@ -1,5 +1,5 @@
 (ns kotoba.compiler.llm-provider-test
-  (:require [clojure.test :refer [deftest is]]
+  (:require [kotoba.lang.error :as kerror] [clojure.test :refer [deftest is]]
             [kotoba.compiler.core :as compiler]
             [kotoba.kir :as ir]
             [provider.llm :as llm]
@@ -35,11 +35,11 @@
   (let [called? (atom false)
         runtime (hosted (fn [_] (reset! called? true)))]
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"model is not allowed"
+         kerror/ExceptionInfo #"model is not allowed"
          ((:invoke runtime) 'generate
           [[llm/request-type :example/other "" "hello" 64 0]])))
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"token budget is outside"
+         kerror/ExceptionInfo #"token budget is outside"
          ((:invoke runtime) 'generate
           [[llm/request-type :example/text-v1 "" "hello" 4097 0]])))
     (is (false? @called?))))
@@ -63,7 +63,7 @@
         runtime (runtime/instantiate kir)
         called? (atom false)]
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"capability denied"
+         kerror/ExceptionInfo #"capability denied"
          ((:invoke runtime) 'generate
           [[llm/request-type :example/text-v1 "" "hello" 64 0]])))
     (is (false? @called?))))

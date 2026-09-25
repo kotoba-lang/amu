@@ -23,7 +23,7 @@
   2026-09-11 (kotoba-verifier f1efb423)."
   {:kotoba/export [max-edn-bytes max-source-bytes read-file read-string read-text-file]}
   (:refer-clojure :exclude [read-string])
-  (:require #?@(:clj [[clojure.edn :as edn]
+  (:require [kotoba.lang.error :as kerror] #?@(:clj [[clojure.edn :as edn]
                       [kotoba.io :as io]]
                 :cljs [[kotoba.compiler.kotoba-reader :as kr]
                        [kotoba.compiler.nbb.io :as nbb-io]]))
@@ -207,7 +207,7 @@
   (preflight! text)
   (try
     (validate-shape! (read-one! text))
-    (catch #?(:clj clojure.lang.ExceptionInfo :cljs ExceptionInfo) error
+    (catch kerror/ExceptionInfo error
       ;; The kotoba reader's own refusals carry {:phase :read}; every other
       ;; ex-info here is one of this namespace's. Both are already named.
       (throw error))
