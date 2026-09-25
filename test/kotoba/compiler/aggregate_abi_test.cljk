@@ -639,3 +639,18 @@
                 [target (:mc/name function)])
             (is (zero? (count (filter #{load-encoding} encodings)))
                 [target (:mc/name function)])))))))
+
+(deftest cbor-typed-encoder-closure-is-pinned
+  ;; adr-2609242330 S1c (2026-09-25): cbor.core's typed encoder and the three
+  ;; libraries moved onto it -- base32's Kotoba reading, ipld.link's typed
+  ;; tag 42, capability-repository's typed definition block. Each moves only
+  ;; forward, with the same encoded bytes (golden 2,367 values, io-ipld suite
+  ;; CIDs, definition CIDs) as the pins before it.
+  (is (= "a09268f8227a8c9b1ce145fa57b244af2ebe7d5e"
+         (dependency-pin 'io.github.kotoba-lang/org-ietf-cbor)))
+  (is (= "721281d20525dc4d9af0064862d1c35226065ce2"
+         (dependency-pin 'io.github.kotoba-lang/io-multiformats)))
+  (is (= "2a012c5d6b5ba71267f5390fee9561e010b8781a"
+         (dependency-pin 'io.github.kotoba-lang/io-ipld)))
+  (is (= "500497c4ac74efa6c9ed289c0159b42fea817669"
+         (dependency-pin 'io.github.kotoba-lang/kotoba-core-contracts))))
