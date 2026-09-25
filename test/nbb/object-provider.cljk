@@ -272,7 +272,7 @@
 (def guest-poll-read-source
   (str "(ns app.object-guest (:export [get-stream-ready get-stream-byte-count]) "
        "(:capabilities #{:object/get-stream}))"
-       "(defn get-stream-ready [request " (pr-str object/get-stream-request-type) "] :i64 "
+       "(defn get-stream-ready [request " (pr-str object/get-stream-request-type) "] :bool "
        "(task-ready? (typed-cap-call :object/get-stream "
        (pr-str object/get-stream-request-type) " "
        (pr-str object/get-stream-result-type) " request)))"
@@ -297,7 +297,7 @@
           request [object/get-stream-request-type :example/blocks "k"]
           n ((:invoke runtime) 'get-stream-ready [request])]
       (check "cljs-guest-task-ready?-reports-ready-task"
-             (= (js/BigInt 1) n)
+             (true? n)
              (pr-str {:n n})))
     (catch :default e
       (check "cljs-guest-task-ready?-reports-ready-task" false (.-message e)))))

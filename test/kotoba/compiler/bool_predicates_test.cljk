@@ -67,6 +67,17 @@
     (is (= "if test must be bool or an option" (refusal "(defn main [] :i64 (if \"s\" 1 2))")))
     (is (= "if test must be bool or an option"
            (refusal (str schema "(defn main [] :i64 (let [s (mk 1)] (if s 1 2)))")))))
+  (testing "admitted: task-ready? answers :bool and is still one linear consume"
+    (let [call "(typed-cap-call :http/get-stream :string [:task [:stream :bytes]] url)"
+          module (fn [result body]
+                   (str "(ns app (:export [ready]) (:capabilities #{:http/get-stream}))"
+                        "(defn ready [url :string] " result " " body ")"))]
+      (is (some? (sema/analyze (module ":bool" (str "(task-ready? " call ")")))))
+      (is (some? (sema/analyze (module ":bool" (str "(let [t " call "] (task-ready? t))")))))
+      (is (= "expression type mismatch: expected i64, got bool"
+             (refusal (module ":i64" (str "(task-ready? " call ")")))))
+      (is (= "linear result must be one direct typed capability move"
+             (refusal (module ":bool" (str "(let [t " call "] (and (task-ready? t) (task-ready? t)))")))))))
   (testing "refused: a predicate's answer is not the number it used to be (no coercion)"
     (is (= "expression type mismatch: expected i64, got bool"
            (refusal (str schema "(defn main [] :i64 (let [a (mk 1)] (+ 1 (record-equal [:ref :b/s] a a))))"))))

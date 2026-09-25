@@ -82,7 +82,7 @@
           (defn ready [url :string] :i64
             (let [task (typed-cap-call :http/get-stream :string
                          [:task [:stream :bytes]] url)]
-              (task-ready? task)))"
+              (if (task-ready? task) 1 0)))"
          {:allow #{[:cap/call 13]}})
         function (first (get-in checked [:hir :functions]))]
     (is (= :i64 (:result function)))
@@ -138,12 +138,12 @@
   (let [checked
         (compiler/check-source
          "(ns app (:export [size]))
-          (defn size [url :string flag :i64] :i64
+          (defn size [url :string flag :bool] :i64
             (let [task (typed-cap-call :http/get-stream :string
                          [:task [:stream :bytes]] url)]
               (if flag
                 (bytes-task-byte-count task)
-                (task-ready? task))))"
+                (if (task-ready? task) 1 0))))"
          {:allow #{[:cap/call 13]}})]
     (is (= :i64 (get-in checked [:hir :functions 0 :result])))))
 
@@ -152,7 +152,7 @@
   (is (try
         (compiler/check-source
          "(ns app (:export [bad]))
-          (defn bad [url :string flag :i64] :i64
+          (defn bad [url :string flag :bool] :i64
             (let [task (typed-cap-call :http/get-stream :string
                          [:task [:stream :bytes]] url)]
               (if flag
@@ -168,7 +168,7 @@
   (let [checked
         (compiler/check-source
          "(ns app (:export [open]))
-          (defn open [url :string flag :i64] [:task [:stream :bytes]]
+          (defn open [url :string flag :bool] [:task [:stream :bytes]]
             (let [task (typed-cap-call :http/get-stream :string
                          [:task [:stream :bytes]] url)]
               (if flag task task)))"
@@ -181,11 +181,11 @@
   (let [checked
         (compiler/check-source
          "(ns app (:export [size]))
-          (defn size [url :string a :i64 b :i64] :i64
+          (defn size [url :string a :bool b :bool] :i64
             (let [task (typed-cap-call :http/get-stream :string
                          [:task [:stream :bytes]] url)]
               (cond a (bytes-task-byte-count task)
-                    b (task-ready? task)
+                    b (if (task-ready? task) 1 0)
                     :else (bytes-task-byte-count task))))"
          {:allow #{[:cap/call 13]}})]
     (is (= :i64 (get-in checked [:hir :functions 0 :result])))))
@@ -201,7 +201,7 @@
                          [:task [:stream :bytes]] url)]
               (case k
                 0 (bytes-task-byte-count task)
-                1 (task-ready? task)
+                1 (if (task-ready? task) 1 0)
                 (bytes-task-byte-count task))))"
          {:allow #{[:cap/call 13]}})]
     (is (= :i64 (get-in checked [:hir :functions 0 :result])))
@@ -249,7 +249,7 @@
                          [:task [:stream :bytes]] url)]
               (condp = k
                 0 (bytes-task-byte-count task)
-                1 (task-ready? task)
+                1 (if (task-ready? task) 1 0)
                 (bytes-task-byte-count task))))"
          {:allow #{[:cap/call 13]}})]
     (is (= :i64 (get-in checked [:hir :functions 0 :result])))))
@@ -259,7 +259,7 @@
   (let [checked
         (compiler/check-source
          "(ns app (:export [size]))
-          (defn size [url :string flag :i64] :i64
+          (defn size [url :string flag :bool] :i64
             (if flag
               (let [task (typed-cap-call :http/get-stream :string
                            [:task [:stream :bytes]] url)]
@@ -273,7 +273,7 @@
   (is (try
         (compiler/check-source
          "(ns app (:export [bad]))
-          (defn bad [url :string flag :i64] :i64
+          (defn bad [url :string flag :bool] :i64
             (if flag
               (let [task (typed-cap-call :http/get-stream :string
                            [:task [:stream :bytes]] url)]
