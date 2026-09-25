@@ -396,6 +396,22 @@
       (reject! (str "referred name " n " (from " from ") collides with a definition of this module")
                {:namespace module-name :name n :from from}))))
 
+(defn- public-definition-names
+  "The module's public top-level functions, in source order: every `defn`
+  whose name carries no `^:private`. `defn-` is private by its head. A `def`
+  constant is not in the set -- the frontend refuses a constant as an export
+  (`:kotoba.error/export-names-constant`), so deriving one would turn a
+  module that says nothing into a refusal it never asked for."
+  [forms]
+  (->> forms
+       (keep (fn [form]
+               (when (and (seq? form) (= 'defn (first form))
+                          (simple-symbol? (second form))
+                          (not (:private (meta (second form)))))
+                 (with-meta (second form) nil))))
+       distinct
+       vec))
+
 (defn module-info
   "Return the bounded declared namespace, exports, alias-only requires and
   declared capability set for one project module. This is also the authority
@@ -520,12 +536,17 @@
                                        (dissoc :spec))
                                    require))
                                requires)]
-            (when-not (some? exports)
-              ;; The module is NAMED in the sentence: on the self-host route the
-              ;; refusal is almost always about a dependency two links away, and a
-              ;; histogram of 59 identical sentences said nothing about which
-              ;; (measured 2026-09-11, adr-2609111900).
-              (reject! (str "project module " name " requires an explicit :export vector") {:namespace name}))
+            ;; ADR 0353 floor 1 (amends ADR 0005): with no `:export` the
+            ;; export vector IS the module's public `defn`s, in source order.
+            ;; The set is still exact and closed -- only its spelling moved
+            ;; from the header to `defn` / `defn-` -- and an explicit
+            ;; `:export` still wins. A module whose every function is private
+            ;; exports nothing, which no importer can use, so it is refused by
+            ;; name rather than linked as an empty interface.
+            (when (and (nil? exports) (empty? (public-definition-names forms)))
+              (reject! (str "project module " name " exports nothing: every top-level defn is private;"
+                            " declare one with defn, or add an explicit :export vector")
+                       {:namespace name}))
             (when-not (= (count requires) (count (set (map :alias requires))))
               (reject! "duplicate import alias" {:namespace name :requires requires}))
             (check-referred-names! name requires forms)
@@ -549,7 +570,8 @@
             ;; declared default binding, a map over some or all of those
             ;; names (nil for an ordinary module, `{}` for a template that
             ;; declares none).
-            {:namespace name :exports exports :requires requires
+            {:namespace name :exports (or exports (public-definition-names forms))
+             :exports-derived? (nil? exports) :requires requires
              :capabilities capabilities :schemas schemas
              :params (:names params) :param-defaults (:defaults params)}))))))
 
@@ -579,6 +601,21 @@
 ;; validated by `module-info`, so the linked source a module with the clause
 ;; hands to the frontend is byte-identical to the one without it -- one
 ;; analysis, one set of definition CIDs -- whatever the frontend would say.
+(defn- with-derived-export
+  "Hand the frontend the export vector the linker derived (ADR 0353 floor 1)
+  as the `(:export [...])` clause the author could have written, so the two
+  spellings analyse to the same module: the frontend's own rules -- an
+  entryless library needs an export list, a variadic function cannot be
+  exported -- then apply to the derived set exactly as to a declared one."
+  [forms {:keys [exports exports-derived?]}]
+  (if-not exports-derived?
+    forms
+    (mapv (fn [form]
+            (if (and (seq? form) (= 'ns (first form)))
+              (apply list (concat form [(list :export exports)]))
+              form))
+          forms)))
+
 (defn- without-requires [forms]
   (mapv (fn [form]
           (if (and (seq? form) (= 'ns (first form)))
@@ -1370,7 +1407,7 @@
         stub-source-names (into #{} (map second) stub-pairs)
         _ (check-referred-exports! info dependencies)
         rewritten (mapv #(rewrite-import-calls % import->stub)
-                        (rewrite-referred-symbols (without-requires forms)
+                        (rewrite-referred-symbols (with-derived-export (without-requires forms) info)
                                                   (referred-alias-table (:requires info))))
         augmented (into rewritten (map (fn [[_ stub clauses]] (stub-form stub clauses)) stub-pairs))
         ;; Lambda IDs are artifact data. Give every source module a disjoint
