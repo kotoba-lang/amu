@@ -9,7 +9,8 @@
             [kotoba.compiler.kotoba-reader :as kr]
             [kotoba.compiler.posix-path :as posix-path]
             [kotoba.compiler.text-bytes :as text-bytes]
-            [kotoba.kir.cljs-i64 :as i64]
+            [kotoba.compiler.host-integer :as host-integer]
+            [kotoba.compiler.json-text :as json-text]
             [kotoba.compiler.nbb.io :as nbb-io]
             [kotoba.compiler.source-path :as source-path]
             ;; Abilities (superproject adr-2609242330 S5). Under Kotoba
@@ -62,7 +63,7 @@
 
 (defn- emit-timing! [report]
   (when report
-    (io/write-error (str "KOTOBA_TIMING " (.stringify js/JSON (clj->js report)) "\n"))))
+    (io/write-error (str "KOTOBA_TIMING " (json-text/encode-value report) "\n"))))
 
 (defn option [args flag] (second (drop-while #(not= flag %) args)))
 
@@ -154,7 +155,7 @@
                  (mapv (fn [function]
                          (reduce (fn [function key]
                                    (if (contains? function key)
-                                     (update function key #(mapv js/Number %))
+                                     (update function key #(mapv host-integer/narrow %))
                                      function))
                                  function structural-index-keys))
                        functions)))
@@ -226,7 +227,7 @@
       (when-not (and text (re-matches #"[0-9]+" text))
         (throw (ex-info "--fuel must be a positive decimal integer"
                         {:phase :usage :fuel text})))
-      (let [fuel (js/BigInt text)]
+      (let [fuel (host-integer/exact text)]
         (when (zero? fuel)
           (throw (ex-info "--fuel must be a positive decimal integer"
                           {:phase :usage :fuel text})))
@@ -252,7 +253,7 @@
   would stop compiling for callers who named no budget at all."
   [emit-metadata policy]
   (when-let [declared (or (:fuel emit-metadata) (get-in policy [:budgets :fuel]))]
-    (if (i64/bigint-value? declared) (js/Number declared) declared)))
+    (host-integer/narrow declared)))
 
 (def ^:private declarative-policy-keys
   "Policy controls consumed by the compiler rather than capability admission.
@@ -390,18 +391,18 @@
 
 (defn- configured-max-requests []
   (let [text (let [t (env/read "KOTOBA_WORKER_MAX_REQUESTS")] (if (seq t) t "1000"))
-        value (js/Number text)]
-    (if (and (js/Number.isSafeInteger value) (<= 1 value 100000))
+        value (host-integer/decimal-count text)]
+    (if (and value (<= 1 value 100000))
       value
       1000)))
 
 (defn- write-worker-response! [response]
-  (io/write (str (.stringify js/JSON (clj->js response)) "\n")))
+  (io/write (str (json-text/encode-value response) "\n")))
 
 (defn- request! [line]
   (when (> (text-bytes/utf8-length line) max-worker-line-bytes)
     (usage-error! "worker request exceeds byte limit"))
-  (let [request (js->clj (.parse js/JSON line) :keywordize-keys true)
+  (let [request (json-text/decode-object line)
         args (:args request)]
     (when-not (map? request)
       (usage-error! "worker request must be a JSON object"))
@@ -422,7 +423,7 @@
   [run! target]
   (let [requests (volatile! 0)
         maximum (configured-max-requests)
-        pending (volatile! (.alloc js/Buffer 0))
+        pending (volatile! (text-bytes/empty-bytes))
         closed? (volatile! false)
         close! (fn []
                  (when-not @closed?
@@ -465,24 +466,25 @@
     (host-entry/on-stdin-data!
          (fn [chunk]
            (when-not @closed?
-             (vreset! pending (.concat js/Buffer #js [@pending chunk]))
+             (vreset! pending (text-bytes/concat-bytes @pending chunk))
              (loop []
-               (let [newline (.indexOf @pending 10)]
+               (let [newline (text-bytes/index-of-byte @pending 10)]
                  (if (neg? newline)
-                   (when (> (.-length @pending) max-worker-line-bytes)
+                   (when (> (text-bytes/bytes-length @pending) max-worker-line-bytes)
                      (write-worker-response! {:format "kotoba.compiler-worker/v1"
                                               :type "result" :id nil :status 64
                                               :stdout ""
                                               :stderr "worker request exceeds byte limit\n"})
                      (close!))
-                   (let [line-buffer (.subarray @pending 0 newline)
-                         line-buffer (if (and (pos? (.-length line-buffer))
-                                              (= 13 (aget line-buffer
-                                                          (dec (.-length line-buffer)))))
-                                       (.subarray line-buffer 0 (dec (.-length line-buffer)))
+                   (let [line-buffer (text-bytes/slice-bytes @pending 0 newline)
+                         line-length (text-bytes/bytes-length line-buffer)
+                         line-buffer (if (and (pos? line-length)
+                                              (= 13 (text-bytes/byte-at line-buffer (dec line-length))))
+                                       (text-bytes/slice-bytes line-buffer 0 (dec line-length))
                                        line-buffer)]
-                     (vreset! pending (.subarray @pending (inc newline)))
-                     (if (> (.-length line-buffer) max-worker-line-bytes)
+                     (vreset! pending (text-bytes/slice-bytes @pending (inc newline)
+                                                             (text-bytes/bytes-length @pending)))
+                     (if (> (text-bytes/bytes-length line-buffer) max-worker-line-bytes)
                        (do
                          (write-worker-response! {:format "kotoba.compiler-worker/v1"
                                                   :type "result" :id nil :status 64
@@ -490,12 +492,12 @@
                                                   :stderr "worker request exceeds byte limit\n"})
                          (close!))
                        (do
-                         (handle-line! (.toString line-buffer "utf8"))
+                         (handle-line! (text-bytes/utf8-text-lossy line-buffer))
                          (when-not @closed? (recur)))))))))))
     (host-entry/on-stdin-end!
          (fn []
            (when-not @closed?
-             (when (pos? (.-length @pending))
+             (when (pos? (text-bytes/bytes-length @pending))
                (write-worker-response! {:format "kotoba.compiler-worker/v1"
                                         :type "result" :id nil :status 64
                                         :stdout ""

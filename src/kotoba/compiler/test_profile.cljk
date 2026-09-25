@@ -7,7 +7,10 @@
   checked KIR is executed by the JVM oracle, restricted ESM, and Wasm."
   {:kotoba/export [run-source targets]}
   (:require [json.data-json :as json]
-            ["node:child_process" :as child]
+            [kotoba.compiler.process-wire :as process-wire]
+            ;; process/spawn (catalog wire 20; superproject adr-2609242330
+            ;; S5): under nbb the alias names the mechanism-layer handler.
+            #?(:cljs [kotoba.compiler.nbb.host.process :as process])
             [kotoba.lang.text :as str]
             [kotoba.artifact.core :as artifact]
             [kotoba.compiler.core :as compiler]
@@ -92,12 +95,19 @@
                               :err (slurp (.getErrorStream p))})
                            (finally
                              (.destroyForcibly p))))
-                  :cljs (let [r (.spawnSync child js/process.execPath
-                                            #js ["--input-type=module" "-e" program]
-                                            #js {:encoding "utf8" :maxBuffer (* 64 1024 1024)})]
-                          {:exit (if (.-error r) 1 (.-status r))
-                           :out (str (.-stdout r))
-                           :err (str (some-> (.-error r) .-message) (.-stderr r))}))]
+                  ;; `node` is the granted program: the running Node binary
+                  ;; under the nbb handler, never a `node` found on PATH.
+                  ;; The child's stderr is this process's (the wire captures
+                  ;; stdout only), so `:err` names a start failure alone.
+                  :cljs (try
+                          (let [answer (process/spawn
+                                        (process-wire/request
+                                         "node" ["--input-type=module" "-e" program]))]
+                            {:exit (process-wire/answer-exit answer)
+                             :out (process-wire/answer-out answer)
+                             :err ""})
+                          (catch :default error
+                            {:exit 1 :out "" :err (ex-message error)})))]
     (when-not (zero? (:exit result))
       (throw (ex-info "Kotoba target test process failed"
                       {:phase :test :target target :stderr (:err result)})))

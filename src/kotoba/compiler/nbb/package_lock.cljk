@@ -45,10 +45,16 @@
   refuses when it declines to fall back to a path search. A dep without
   definition CIDs is refused with the command that produces them."
   {:kotoba/export [dependency-root lock-schema manifest-file-name normalize-numbers package-dir-name report resolve-lock tree-bytes tree-serialization trust-context verify-definitions]}
-  (:require ["node:child_process" :as child]
-            ["node:crypto" :as crypto]
-            ["node:fs" :as fs]
-            ["node:path" :as node-path]
+  (:require [kotoba.compiler.decimal-text :as decimal-text]
+            [kotoba.compiler.host-integer :as host-integer]
+            [kotoba.compiler.posix-path :as posix-path]
+            [kotoba.compiler.process-wire :as process-wire]
+            [kotoba.compiler.text-bytes :as text-bytes]
+            ;; Abilities (superproject adr-2609242330 S5): fs/app-data,
+            ;; fs/browse, hash/sha256 and process/spawn.
+            #?(:cljs [kotoba.compiler.nbb.host.fs :as fs])
+            #?(:cljs [kotoba.compiler.nbb.host.hash :as hash])
+            #?(:cljs [kotoba.compiler.nbb.host.process :as process])
             [kotoba.lang.coll :as coll]
             [kotoba.lang.text :as str]
             [kotoba.lang.package-contract :as contract]
@@ -58,14 +64,6 @@
 
 (defn- reject! [message data]
   (throw (ex-info message (assoc data :phase :package-lock))))
-
-(defn- bigint?
-  "True for a JS BigInt. `goog/typeOf` and `js*` are both unavailable under
-  nbb/SCI, and `instance?` is false for a primitive; reading `.constructor`
-  boxes it, which is why this is the check. Guarded because that read throws
-  on nil."
-  [x]
-  (and (some? x) (= js/BigInt (.-constructor x))))
 
 (defn normalize-numbers
   "Turn the bounded reader's BigInt integers back into JS numbers.
@@ -88,8 +86,8 @@
   not a smaller version of it."
   [value]
   (cond
-    (bigint? value)
-    (if (<= (js/BigInt js/Number.MAX_SAFE_INTEGER) value) value (js/Number value))
+    (host-integer/bigint? value)
+    (host-integer/narrow-below-max-safe value)
 
     (map? value) (into (empty value)
                        (map (fn [[k v]] [(normalize-numbers k)
@@ -115,12 +113,18 @@
   by version: two locks pinning the same name at different commits coexist,
   and a re-tagged version cannot silently reuse the other's directory."
   [packages-dir dep]
-  (.join node-path packages-dir
-         (package-dir-name (:dep/name dep))
-         (:dep/commit dep)))
+  (posix-path/join (posix-path/join packages-dir (package-dir-name (:dep/name dep)))
+                   (:dep/commit dep)))
+
+(defn- stat-fields [p]
+  (let [answer (fs/app-data (str p "STAT_SEP"))]
+    (when (seq answer) (decimal-text/fields answer))))
 
 (defn- directory? [p]
-  (try (.isDirectory (.statSync fs p)) (catch :default _ false)))
+  (= 1 (nth (stat-fields p) 3 nil)))
+
+(defn- exists? [p]
+  (some? (stat-fields p)))
 
 ;; ── provenance: is this checkout at the commit the lock names ────────────────
 
@@ -130,10 +134,11 @@
   holds that commit -- the same check `kotoba.compiler.nbb.classpath` makes
   for Amu's own pinned dependencies."
   [dir]
-  (let [result (.spawnSync child "git" #js ["-C" dir "rev-parse" "HEAD"]
-                           #js {:encoding "utf8"})]
-    (when (and (not (.-error result)) (zero? (or (.-status result) 1)))
-      (str/trim (.-stdout result)))))
+  ;; process/spawn: git's stderr is this process's own.
+  (let [answer (try (process/spawn (process-wire/request "git" ["-C" dir "rev-parse" "HEAD"]))
+                    (catch :default _ nil))]
+    (when (and answer (zero? (process-wire/answer-exit answer)))
+      (str/trim (process-wire/answer-out answer)))))
 
 (defn- commit-verdict
   "Three outcomes, and the third is not the second. A tree with no git
@@ -197,17 +202,20 @@
   What is skipped, and why, is `ignored-tree-entries`."
   ([root] (vec (sort (tree-files root ""))))
   ([root prefix]
-   (let [dir (if (str/blank? prefix) root (.join node-path root prefix))]
+   (let [dir (if (str/blank? prefix) root (posix-path/join root prefix))
+         listing (fs/browse dir)]
      (mapcat
-      (fn [entry]
-        (let [name (.-name entry)
-              rel (if (str/blank? prefix) name (str prefix "/" name))]
+      (fn [line]
+        (let [name (first (str/split line #"\t"))
+              rel (if (str/blank? prefix) name (str prefix "/" name))
+              kind (let [answer (fs/app-data (str dir "/" name "NOFOLLOW_SEP"))]
+                     (when (seq answer) (nth (decimal-text/fields answer) 3)))]
           (cond
             (contains? ignored-tree-entries name) nil
-            (.isDirectory entry) (tree-files root rel)
-            (.isFile entry) [rel]
+            (= 1 kind) (tree-files root rel)
+            (= 0 kind) [rel]
             :else nil)))
-      (.readdirSync fs dir #js {:withFileTypes true})))))
+      (if (= "" listing) [] (str/split listing #"\n"))))))
 
 (defn tree-bytes
   "The bytes `:tree-cid` is the CIDv1-raw of, for a package tree on disk.
@@ -230,18 +238,16 @@
   than a silent one."
   [root]
   (let [lines (mapv (fn [rel]
-                      (let [bytes (.readFileSync fs (.join node-path root rel))
-                            digest (-> (.createHash crypto "sha256")
-                                       (.update bytes) (.digest "hex"))]
+                      (let [digest (hash/sha256 (fs/app-data-bytes (posix-path/join root rel)))]
                         (str rel "\t" digest)))
                     (tree-files root))]
     (when (empty? lines)
       (reject! "package tree is empty" {:root root}))
-    (.from js/Buffer (str/join "\n" lines) "utf8")))
+    (text-bytes/utf8-bytes (str/join "\n" lines))))
 
 (defn- read-manifest! [root dep]
-  (let [path (.join node-path root manifest-file-name)]
-    (when-not (.existsSync fs path)
+  (let [path (posix-path/join root manifest-file-name)]
+    (when-not (exists? path)
       (reject! "dependency tree carries no package manifest"
                {:dependency (:dep/name dep) :expected path
                 :note (str "the lock names signers for this dependency; "
@@ -325,10 +331,10 @@
   linker raises, and it should not be reachable by depending on a package
   that happens to have a test fixture with a colliding name."
   [root]
-  (let [subdirs (filterv #(directory? (.join node-path root %))
+  (let [subdirs (filterv #(directory? (posix-path/join root %))
                          default-source-subdirs)]
     (if (seq subdirs)
-      (mapv #(.join node-path root %) subdirs)
+      (mapv #(posix-path/join root %) subdirs)
       [root])))
 
 ;; ── the trust context the contract validates against ────────────────────────
@@ -433,7 +439,7 @@
   path fails later as `namespace not found`, which reads like the guest's
   mistake."
   [lock-path packages-dir trust]
-  (when-not (.existsSync fs lock-path)
+  (when-not (exists? lock-path)
     (reject! "package lock not found" {:path lock-path}))
   (when-not (directory? packages-dir)
     (reject! "--packages must name an existing directory" {:path packages-dir}))

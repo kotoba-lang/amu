@@ -17,7 +17,7 @@
             [kotoba.compiler.effect-row :as effect-row]
             [kotoba.artifact.core :as artifact]
             [kotoba.kir.compatibility :as compatibility]
-            [kotoba.kir.cljs-i64 :as i64]
+            [kotoba.compiler.host-integer :as host-integer]
             [kotoba.kir :as ir]
             [kotoba.compiler.provenance :as provenance]
             [kotoba.compiler.source-path :as source-path]
@@ -25,6 +25,7 @@
             [kotoba.kir.target :as target-profile]
             [kotoba.verifier :as verifier]
             [kotoba.compiler.text-bytes :as text-bytes]
+            [kotoba.compiler.base64-text :as base64-text]
             ;; The env/read ability (catalog wire 33, superproject
             ;; adr-2609242330 S5); under nbb the alias names the
             ;; mechanism-layer handler.
@@ -120,8 +121,8 @@
         ;; hid it. The ceiling is not an invention; it is the number this line
         ;; already implemented, now written down where the other routes can
         ;; read it.
-        fuel (if (i64/bigint-value? declared) (js/Number declared) declared)]
-    (when-not (and (js/Number.isSafeInteger fuel)
+        fuel (host-integer/narrow declared)]
+    (when-not (and (host-integer/safe-integer? fuel)
                    (<= 1 fuel max-native-fuel))
       (throw (ex-info "native fuel budget is not admitted"
                       {:phase :verify :fuel declared
@@ -630,7 +631,7 @@ provenance-output (str output ".provenance.edn")
           (throw (ex-info "compiler cache integrity mismatch" {:cache-key key})))
         (let [restored (cond-> cached
                          (:binary-base64 cached)
-                         (assoc :binary (js/Buffer.from (:binary-base64 cached) "base64")))
+                         (assoc :binary (base64-text/decode (:binary-base64 cached))))
               {:keys [provenance-output publication-output artifact-bytes]}
               (write-native! output restored target)]
           (cond-> {:ok true :target target :output output
@@ -651,7 +652,7 @@ provenance-output (str output ".provenance.edn")
                                           package artifact-kind)
             {:keys [provenance-output publication-output artifact-bytes]}
             (write-native! output serialized target)
-            binary-base64 (some-> (:binary serialized) (.toString "base64"))
+            binary-base64 (some-> (:binary serialized) base64-text/encode)
             sealed (cond-> (assoc (dissoc serialized :binary)
                                   :artifact-sha256 (compile-cache/sha256 (:artifact-text serialized))
                                   :provenance-sha256 (compile-cache/sha256 (:provenance-text serialized)))
@@ -750,7 +751,7 @@ provenance-output (str output ".provenance.edn")
       ;; narrow here -- at the one place that needs Numbers -- rather than
       ;; walking the artifact and widening what the verifier was handed.
       (nbb-io/write-bytes! output
-                       (js/Buffer.from (clj->js (mapv #(js/Number %) (:code artifact-map)))))
+                       (text-bytes/bytes-from-ints (mapv host-integer/narrow (:code artifact-map))))
       ;; `:offset`, `:length` and `:arity` come out of the artifact, so they
       ;; are BigInts too, and `pr-str` renders a BigInt as
       ;; `#object[BigInt 10500]` -- unreadable to the caller that has to pass

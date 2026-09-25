@@ -16,7 +16,7 @@
      ;; kotoba-lang authority (lang/vendored-copies.edn).
      (let [catalog (edn/read-string (str (fs/readFileSync "resources/kotoba/lang/capability-catalog.edn" "utf8")))
            declared (get-in catalog [:capabilities :fs/app-data :forms])]
-       (is (= 15 (count declared)))
+       (is (= 16 (count declared)))
        (is (= (into {} (map (fn [[k v]] [k {:token (:token v)
                                             :kexe-loader? (contains? (:answered-by v) :kexe-loader)}]))
                     declared)
