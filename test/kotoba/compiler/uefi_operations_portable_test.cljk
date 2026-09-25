@@ -44,7 +44,10 @@
     ;; execution profile, on both ISAs. The COUNT is what makes a host that
     ;; resolved profiles differently answer differently -- naming four members
     ;; would still pass on a host that lost the other eight.
-    (is (= 12 (count uefi/rodata-literal-targets)))
+    ;; FOURTEEN since 2026-09-25: the two loader-less `*-linux-static` profiles
+    ;; (superproject adr-2609251400 C2) are `:native` execution and carry the
+    ;; artifact's code -- pool included -- verbatim in their text.
+    (is (= 14 (count uefi/rodata-literal-targets)))
     (is (every? uefi/rodata-literal-targets
                 [:x86_64-aiueos-uefi-v1 :x86_64-aiueos-kernel-v1
                  :x86_64-kotoba-v1 :aarch64-kotoba-v1]))
