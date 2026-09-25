@@ -1,0 +1,44 @@
+;; amu's language ladder toward one typed source for kotoba-lang/browser
+;; (ADR 0353, which decides ADR 0352).
+;;
+;; A floor is CLOSED only when its gate -- a `(deftest <gate>` in the floor's
+;; repository (default kotoba-lang/amu) -- is on that repository's
+;; origin/main. The superproject tick `scripts/amu-language-tick.cljk` reads
+;; exactly that. The gate test must pin the admission AND the refusal the
+;; floor keeps (ADR 0353 "What stays refused"). Order is the order the loop
+;; takes them; an iteration may split or reorder a floor when measuring shows
+;; the ladder was wrong, in the same commit, with the reason.
+{:format :amu.language-ladder/v1
+ :goal "kotoba-lang/browser as one typed source that amu compiles for the hosted engine and for x86_64-aiueos-kernel-v1 / aarch64-macos, without giving up safety, speed or code identity"
+ :adr "0353"
+ :floors
+ [{:id :export-from-publicity :gate "export-derived-from-defn-publicity-test"
+   :goal "a module's export vector is its public top-level definitions; defn- is private; an explicit :export still wins; the interface CID is computed from the public set"
+   :amends "ADR 0005"}
+  {:id :absence :gate "nil-field-is-absence-test"
+   :goal "nil as a map-literal value makes the field [:option T] and absent; truthiness only on :bool and [:option T]; when / if-let / when-let / cond-> / some-> over an option desugar to option-match; numbers, strings, records are never truthy"
+   :amends "ADR 0028"}
+  {:id :row-records :gate "row-polymorphic-record-inference-test"
+   :goal "unannotated parameters get principal row types from their uses; assoc / dissoc / merge / select-keys are row operations; vectors of records are ordinary; every specialization is monomorphized with a CID derived from the generic definition's CID and its type arguments; the bounded keyword->i64 map is retired"}
+  {:id :function-values :gate "function-value-in-record-test"
+   :goal "a function type carries its effect row; a closure is a one-word ABI v8 handle that may be a record field or vector element; the ADR 0352 internal error on a stored closure is gone"}
+  {:id :code-units :gate "string-code-unit-primitives-test"
+   :goal "string-code-unit-count, string-code-unit-at and subs over code units are primitives; count of a string stays refused"}
+  {:id :hiccup-node :gate "hiccup-literal-is-node-adt-test"
+   :goal "Node = Text | Elem tag attrs [Node] | Frag [Node] over ABI v8 [:ref q]; a hiccup literal desugars to it; shape tests over hiccup become an exhaustive variant-match"}
+  {:id :allocation-budget :gate "allocation-charged-to-fuel-test"
+   :goal "every constructor debits the 64-bit fuel ledger; the ADT node/depth ceilings are the caller's budget, not the constants 64 / 12"
+   :amends "osaho adt-node-limit / adt-depth-limit"}
+  {:id :definition-admission :gate "admission-by-definition-graph-test"
+   :goal "the 1 MiB bound moves from linked source bytes to per-definition size and closure count; cssom/layout.cljk (1,083,132 bytes) is admitted definition by definition"
+   :amends "ADR 0005 linked-source bound"}
+  {:id :native-handles :gate "native-record-vector-closure-boundary-test"
+   :goal "kotoba-native qualifies record, vector and closure handles as loop-helper boundary types and retires map-new; the forms of every floor above compile for x86_64-aiueos-kernel-v1 and aarch64-macos (target refusals exit 65, not 70)"}
+  {:id :browser-text-edit :gate "browser-text-edit-native-test"
+   :goal "kotoba-lang/browser's browser.text-edit, migrated only mechanically (defn-, nil's meaning, a :kotoba interop branch), compiles for both native targets and its hosted tests pass on amu's output"}
+  {:id :browser-input :gate "browser-input-native-test"
+   :goal "browser.input the same"}
+  {:id :browser-surface :gate "browser-surface-native-test"
+   :goal "browser.surface with cssom.layout and kotoba.wasm.dom the same"}
+  {:id :hosted-engine-switch :gate "browser-hosted-runs-amu-output-test" :repo "kotoba-lang/browser"
+   :goal "kotoba-lang/browser's hosted engine runs amu's compiled output of its own source; the Clojure source is that source, not a second copy"}]}
