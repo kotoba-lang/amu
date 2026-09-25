@@ -1,0 +1,81 @@
+(ns kotoba.compiler.export-publicity-test
+  "ADR 0353 floor 1 (amends ADR 0005): a project module's export vector is its
+  public top-level functions. `defn-` and `defn ^:private` stay private, an
+  explicit `:export` still wins, and the interface -- the linked root's export
+  clause and `interface/inspect-source` over it -- is the public set exactly.
+
+  What stays refused is pinned by the literal of each refusal: calling a
+  private function of a dependency, calling a public one an explicit `:export`
+  left out, and a module whose every function is private."
+  (:require [clojure.test :refer [deftest is testing]]
+            [kotoba.compiler.interface :as interface]
+            [kotoba.compiler.project :as project]
+            [kotoba.kir :as ir]
+            [kotoba.sema :as sema]))
+
+(defn- run-main [sources root]
+  (let [{:keys [source]} (project/link-source sources root)
+        kir (ir/lower (sema/analyze source {:admit-linked-synthetics? true}))]
+    (ir/execute kir 'main [])))
+
+(defn- refusal [thunk]
+  (try (thunk) nil
+       (catch #?(:clj clojure.lang.ExceptionInfo :cljs :default) error
+         (ex-message error))))
+
+(def ^:private lib-derived
+  "(ns lib)
+   (def base 10)
+   (defn- hidden [x :i64] :i64 (* 2 x))
+   (defn ^:private also-hidden [x :i64] :i64 (* 3 x))
+   (defn twice [x :i64] :i64 (hidden x))
+   (defn thrice [x :i64] :i64 (also-hidden x))")
+
+(def ^:private lib-declared
+  "(ns lib (:export [twice thrice]))
+   (def base 10)
+   (defn- hidden [x :i64] :i64 (* 2 x))
+   (defn ^:private also-hidden [x :i64] :i64 (* 3 x))
+   (defn twice [x :i64] :i64 (hidden x))
+   (defn thrice [x :i64] :i64 (also-hidden x))")
+
+(def ^:private root-derived
+  "(ns root (:require [lib :as l]))
+   (defn- helper [x :i64] :i64 (+ x 1))
+   (defn main [] :i64 (helper (+ (l/twice 5) (l/thrice 1))))")
+
+(defn- root-calling [call]
+  (str "(ns root (:require [lib :as l]) (:export [main]))\n"
+       "(defn main [] :i64 " call ")"))
+
+(deftest export-derived-from-defn-publicity-test
+  (testing "admitted: no :export anywhere -- the public defns are the exports"
+    (is (= 14 (#?(:clj long :cljs js/Number) (run-main {'lib lib-derived 'root root-derived} 'root)))))
+  (testing "the derived vector is the public set, in source order, without constants"
+    (is (= '[twice thrice] (:exports (project/module-info (sema/read-forms lib-derived)))))
+    (is (= '[main] (:exports (project/module-info (sema/read-forms root-derived))))))
+  (testing "derived and declared spellings link to the same source, so the same identity"
+    (is (= (:source (project/link-source {'lib lib-derived 'root (root-calling "(l/twice 1)")} 'root))
+           (:source (project/link-source {'lib lib-declared 'root (root-calling "(l/twice 1)")} 'root)))))
+  (testing "the interface is computed from the public set: helper stays out"
+    (let [{:keys [source]} (project/link-source {'lib lib-derived 'root root-derived} 'root)
+          value (interface/inspect-source source)]
+      (is (= ['main] (mapv :name (:exports value))))
+      (is (interface/valid? value))))
+  (testing "refused: a dependency's defn- is not callable"
+    (is (= "qualified call is not an admitted exported import"
+           (refusal #(project/link-source {'lib lib-derived 'root (root-calling "(l/hidden 1)")} 'root)))))
+  (testing "refused: a dependency's ^:private defn is not callable"
+    (is (= "qualified call is not an admitted exported import"
+           (refusal #(project/link-source {'lib lib-derived 'root (root-calling "(l/also-hidden 1)")} 'root)))))
+  (testing "an explicit :export still wins over publicity"
+    (let [narrowed "(ns lib (:export [twice]))
+                    (defn twice [x :i64] :i64 (* 2 x))
+                    (defn thrice [x :i64] :i64 (* 3 x))"]
+      (is (= '[twice] (:exports (project/module-info (sema/read-forms narrowed)))))
+      (is (= "qualified call is not an admitted exported import"
+             (refusal #(project/link-source {'lib narrowed 'root (root-calling "(l/thrice 1)")} 'root))))))
+  (testing "refused: a module whose every function is private exports nothing"
+    (is (= "project module lib exports nothing: every top-level defn is private; declare one with defn, or add an explicit :export vector"
+           (refusal #(project/module-info
+                      (sema/read-forms "(ns lib) (defn- a [x :i64] :i64 x) (defn ^:private b [x :i64] :i64 x)")))))))

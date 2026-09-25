@@ -36,7 +36,20 @@ proposed) a spec may also bind a template module's type parameters --
 `[kotoba.set.union :as ui :with {elem :i64}]` against a module declaring
 `(:params [elem])` -- and the linker instantiates that module per binding
 before the frontend reads it. Only functions in the
-dependency's explicit `:export` vector can be called. The linker rejects missing
+dependency's export vector can be called.
+
+Since 2026-09-25 (ADR 0353 floor `:export-from-publicity`) the export vector
+need not be written. A module with no `:export` clause (and no
+`:kotoba/export` attr-map key) exports exactly its public top-level
+functions, in source order: every `defn` whose name carries no `^:private`.
+`defn-` and `defn ^:private` are private; a `def` constant is never exported
+(the frontend refuses a constant as an export). An explicit `:export` still
+wins and may narrow the set. The linker hands the frontend the derived vector
+as the `(:export [...])` clause the author could have written, so both
+spellings link to the same source and the same interface; a module whose every
+function is private is refused (`project module <ns> exports nothing`).
+Closedness is unchanged: the set is still exact, only its spelling moved from
+the header to `defn` / `defn-`. The linker rejects missing
 source units, namespace/key mismatches, duplicate aliases or dependencies,
 unknown qualified calls, cycles, and projects above 256 modules or 1,024 linked
 functions.

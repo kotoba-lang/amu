@@ -803,9 +803,12 @@
              ["the value goes through the clause loop"
               "(ns root {:kotoba/export main})\n(defn main [] :i64 1)"
               "only one :export, one :capabilities, one :schemas, one :params and alias-only :require clauses are admitted"]
-             ["an empty attr-map declares nothing, so the export is still required"
-              "(ns root {})\n(defn main [] :i64 1)"
-              "project module root requires an explicit :export vector"]]]
+             ;; ADR 0353 floor 1: an empty attr-map declares nothing, so the
+             ;; export vector is derived from publicity -- and a module whose
+             ;; every function is private has nothing to derive.
+             ["an empty attr-map declares nothing, and nothing is public"
+              "(ns root {})\n(defn- main [] :i64 1)"
+              "project module root exports nothing: every top-level defn is private; declare one with defn, or add an explicit :export vector"]]]
       (when-let [failure (rejects #(project/link-source {'root source} 'root) expected)]
         (throw (js/Error. (str label ": " failure)))))))
 
