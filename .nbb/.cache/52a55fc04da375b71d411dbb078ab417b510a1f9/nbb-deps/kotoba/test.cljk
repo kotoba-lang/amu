@@ -26,7 +26,7 @@
 
   THE clojure.test-COMPATIBLE SURFACE (the one section that is not a
   re-export). deftest, is, are, testing, use-fixtures, async,
-  run-tests, successful?, report -- the names a call site rewritten from
+  run-tests, successful?, report, and test-ns on the JVM -- the names a call site rewritten from
   `[clojure.test :refer [...]]` / `[clojure.test :as t]` to kotoba.test must
   find here, with `(is (thrown? C ...))` and `(is (thrown-with-msg? C re ...))`.
 
@@ -47,7 +47,7 @@
   NOT covered, on purpose (a call site using them is refused by
   scripts/migrate-clojure-test-to-kotoba-test.cljk rather than rewritten):
   assert-expr / do-report / *report-counters* / *testing-vars* /
-  *testing-contexts* / inc-report-counter / test-var / test-vars / test-ns /
+  *testing-contexts* / inc-report-counter / test-var / test-vars /
   run-all-tests / with-test / set-test / compose-fixtures / join-fixtures /
   deftest- (0 call sites in the workspace, and the kbb engine's own
   cljs.test/deftest- fails with `Unable to resolve symbol:
@@ -173,6 +173,18 @@
 (def successful?
   "clojure.test/successful? (host)."
   host/successful?)
+
+#?(:clj
+   (def test-ns
+     "clojure.test/test-ns (host): runs one namespace's tests and returns the
+     host's counters map. JVM only, exactly as in the host: the kbb engine's
+     cljs.test has no test-ns (measured 2026-09-25: `(resolve 'cljs.test/test-ns)`
+     is nil), so a call site that used clojure.test/test-ns there was already
+     unresolved and stays so. Added for runner namespaces such as amu's
+     test/kotoba/compiler/test_runner.cljk, the one call site that kept amu's
+     182 test files on clojure.test (scripts/migrate-clojure-test-to-kotoba-test
+     refused the repository :uncovered-var t/test-ns)."
+     host/test-ns))
 
 (def report
   "clojure.test/report (host) -- the multimethod OBJECT, not a copy, so a
