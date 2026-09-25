@@ -80,6 +80,23 @@ Clojure it is today, the language gains:
    definition's CID and its type arguments, so ADR 0300's compile-once cache
    holds. There is still no dynamically shaped record boundary (ADR 0214): the
    shape is known at every call. The bounded keyword->i64 map is retired.
+   Landed 2026-09-25 as three floors, because they are three changes. Floor
+   `:row-records` (gate `row-polymorphic-record-inference-test`): a parameter
+   read as a record (`(:a m)`) or passed on to a row parameter is the row
+   `{:a T | r}`, and its function exists only as `f__row_<i>_<record>`, one
+   specialization per record type a call passes, typed at that record; the
+   generic is dropped. Refused by name: a non-record argument ("argument 3 to
+   f is i64, and parameter m of f is the row {:a T | r}: only a record
+   satisfies a row"), a record lacking a field the row reads, an exported
+   generic (an export has one ABI: annotate it or `defn-`), a generic used as
+   a value. A record crossing a function boundary is still refused by the
+   native oracle (exit 65), as an annotated one is: floor `:native-handles`.
+   Still open: `assoc` / `dissoc` / `merge` / `select-keys`, a map literal
+   passed to a row (it still lowers to the keyword->i64 map and is refused as
+   "map"), vectors of records, `(if c m n)` unification and loops over a row
+   parameter (floor `:row-operations`); the specialization CID derived from
+   the generic's (floor `:specialization-identity`; until then a
+   specialization's CID is its own monomorphic KIR's, which seals the record).
 4. **Function values.** A function type carries its effect row; a closure is a
    one-word handle (code, environment) under aggregate ABI v8 and may be a
    record field or vector element. A stored function's effects are part of the

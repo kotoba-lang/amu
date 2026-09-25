@@ -30,8 +30,20 @@
   {:id :bool-predicates :gate "numbers-are-never-truthy-test"
    :goal "every predicate primitive answers :bool, not a 0/1 i64; an :i64 `if` / `when` / `if-let` test is refused by name; numbers are never truthy"
    :amends "ADR 0028"}
+;; :row-records split in three (2026-09-25), because measuring showed three
+  ;; changes in three places: inferring the row and monomorphizing the calls is
+  ;; one kotoba-sema pass before parameter inference; the row OPERATIONS need
+  ;; record types that are not declared schemas (assoc extends the row) and a
+  ;; retirement of the keyword->i64 map that `{:a 5}` still lowers to; and a
+  ;; specialization's CID derived from its generic's is amu's
+  ;; definition-identity, which today hashes only monomorphic KIR (and
+  ;; kotoba-hir's function schema refuses a key naming the generic).
   {:id :row-records :gate "row-polymorphic-record-inference-test"
-   :goal "unannotated parameters get principal row types from their uses; assoc / dissoc / merge / select-keys are row operations; vectors of records are ordinary; every specialization is monomorphized with a CID derived from the generic definition's CID and its type arguments; the bounded keyword->i64 map is retired"}
+   :goal "an unannotated parameter read as a record, or passed on to a row parameter, gets the row type {:k T | r} from those uses; its function exists only as its specializations, one per record type a call passes (monomorphized), each typed at that record; a non-record argument, a record lacking a field the row reads, an exported generic and a generic used as a value are refused by name"}
+  {:id :row-operations :gate "row-operations-extend-and-shrink-test"
+   :goal "assoc / dissoc / merge / select-keys are row operations whose results are record types; a map literal passed to a row is that row's record, not the keyword->i64 map, which is retired; vectors of records are ordinary; a parameter returned beside a row ((if c m n)) unifies into it; a loop over a row parameter is specialized with its function"}
+  {:id :specialization-identity :gate "specialization-cid-derived-from-generic-test"
+   :goal "every row specialization's definition CID is derived from the generic definition's CID and its type arguments, so two modules specializing one generic at one record share a CID and ADR 0300's compile-once cache holds across them"}
   {:id :function-values :gate "function-value-in-record-test"
    :goal "a function type carries its effect row; a closure is a one-word ABI v8 handle that may be a record field or vector element; the ADR 0352 internal error on a stored closure is gone"}
   {:id :code-units :gate "string-code-unit-primitives-test"

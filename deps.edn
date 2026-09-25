@@ -702,7 +702,11 @@
          ;; answer :bool (gate numbers-are-never-truthy-test). Then b98cd9c9 ->
          ;; a8be041c (main, forward only): linear ownership sees through the
          ;; :bool elaboration of task-ready? (public sema consumers on NBB).
-         "a8be041c4bf851586a130487d2a15b083dec58f3"} ;; Before that: Advanced 2026-09-25 05d8bd8a -> 5d3054b0 (main tip, forward only): a quoted ns attr-map value ({:kotoba/export (quote [..])}) means the unquoted one -- the spelling JVM Clojure can load. Before that: Advanced 2026-09-25 a7f5ae17 -> 5d4161c5 (main tip, forward only): the state ability, slice 1 (kotoba-lang lang/state-ability.edn, superproject adr-2609242200) -- defhandler / perform :state/* / handle (with ..), specialization and state passing; guest-grammar d87fe28a. Before that: Advanced 2026-09-24 451afded -> a7f5ae17 (main tip, ahead 5, forward only): adr-2609242100 P1 -- max-type-depth / max-schema-depth 8 -> 12, guest-grammar bdbc8474. Before that: 8571681a -> 451afded (main tip, forward only): selfhost walls: fn-body-clj-only, some-two-arg, regex literal, char literal, clojure.* to kotoba.*
+         ;; Advanced 2026-09-25, a8be041c -> ea7262de (kotoba-sema main, ahead 1, forward only):
+         ;; ADR 0353 floor :row-records -- an unannotated parameter read as a
+         ;; record is a row {:a T | r}, monomorphized per record a call passes
+         ;; (gate row-polymorphic-record-inference-test).
+         "ea7262de9ba1cfbc231abe3f12bb7dba5e7c2483"} ;; Before that: Advanced 2026-09-25 05d8bd8a -> 5d3054b0 (main tip, forward only): a quoted ns attr-map value ({:kotoba/export (quote [..])}) means the unquoted one -- the spelling JVM Clojure can load. Before that: Advanced 2026-09-25 a7f5ae17 -> 5d4161c5 (main tip, forward only): the state ability, slice 1 (kotoba-lang lang/state-ability.edn, superproject adr-2609242200) -- defhandler / perform :state/* / handle (with ..), specialization and state passing; guest-grammar d87fe28a. Before that: Advanced 2026-09-24 451afded -> a7f5ae17 (main tip, ahead 5, forward only): adr-2609242100 P1 -- max-type-depth / max-schema-depth 8 -> 12, guest-grammar bdbc8474. Before that: 8571681a -> 451afded (main tip, forward only): selfhost walls: fn-body-clj-only, some-two-arg, regex literal, char literal, clojure.* to kotoba.*
         ;; ADR-2607266000 Phase B: these responsibilities moved out of this repo.
         ;;
         ;; The slice-value stream held this pin on purpose (ADR 0314), because

@@ -1,0 +1,79 @@
+(ns kotoba.compiler.row-records-test
+  "ADR 0353 floor :row-records (point 3, first slice).
+
+  An unannotated parameter the body reads a field off -- `(:a m)` -- or
+  passes unchanged to another row parameter has a row type inferred from
+  those uses, `{:a T | r}`, instead of the provisional `:i64` that refused
+  `(:a m)`. The function exists only as its specializations, one per record
+  type a call passes (monomorphization): each is an ordinary function whose
+  parameter is that record, and the generic is gone from the module. There is
+  still no dynamically shaped record boundary (ADR 0214): the shape is known
+  at every call.
+
+  What stays refused is pinned by the literal of each refusal: an argument
+  that is not a record, a record without a field the row reads, an exported
+  generic (an export has one ABI), a generic used as a value, a record as an
+  `if` test, and a field used as a type it is not (no coercion)."
+  (:require [clojure.test :refer [deftest is testing]]
+            [kotoba.kir :as ir]
+            [kotoba.sema :as sema]))
+
+(def ^:private prelude
+  (str "(ns b (:schemas {:b/s [:record :b/s [[:a :i64] [:b :i64]]]"
+       " :b/t [:record :b/t [[:a :i64] [:c :string]]]}))\n"
+       "(defn mk [] [:ref :b/s] {:a 5 :b 2})\n"
+       "(defn mt [] [:ref :b/t] {:a 7 :c \"xy\"})\n"))
+
+(defn- run-main [source]
+  (#?(:clj long :cljs js/Number)
+   (ir/execute (ir/lower (sema/analyze (str prelude source))) 'main [])))
+
+(defn- functions [source]
+  (into {} (map (juxt :name :param-types)) (:functions (sema/analyze (str prelude source)))))
+
+(defn- refusal [source]
+  (try (ir/lower (sema/analyze (str prelude source))) nil
+       (catch #?(:clj clojure.lang.ExceptionInfo :cljs :default) error
+         (ex-message error))))
+
+(deftest row-polymorphic-record-inference-test
+  (testing "admitted: a field read makes the parameter a row"
+    (is (= 5 (run-main "(defn- f [m] (:a m)) (defn main [] :i64 (f (mk)))")))
+    (is (= 7 (run-main "(defn- f [m] (+ (:a m) (:b m))) (defn main [] :i64 (f (mk)))"))))
+  (testing "admitted: one generic, two records, each call its own specialization"
+    (is (= 12 (run-main "(defn- f [m] (:a m)) (defn main [] :i64 (+ (f (mk)) (f (mt))))")))
+    (is (= 12 (run-main "(defn- f [m] (:a m)) (defn main [] :i64 (let [x (mk) y (mt)] (+ (f x) (f y))))"))))
+  (testing "admitted: the field's type comes from the record it is specialized at"
+    (is (= 2 (run-main "(defn- f [m] (:c m)) (defn main [] :i64 (string-byte-length (f (mt))))"))))
+  (testing "admitted: a row parameter beside an ordinary one, and recursion"
+    (is (= 15 (run-main "(defn- f [m d] (+ d (:a m))) (defn main [] :i64 (f (mk) 10))")))
+    (is (= 5 (run-main "(defn- f [m n] (if (= n 0) (:a m) (f m (- n 1)))) (defn main [] :i64 (f (mk) 3))"))))
+  (testing "admitted: passing a row parameter on makes the caller's a row too"
+    (is (= 15 (run-main (str "(defn- f [m] (:a m)) (defn- g [n k] (+ k (f n)))"
+                             " (defn main [] :i64 (+ (g (mk) 1) (g (mt) 2)))")))))
+  (testing "monomorphized: the generic is gone; each specialization is typed at its record"
+    (let [fs (functions "(defn- f [m] (:a m)) (defn main [] :i64 (+ (f (mk)) (f (mt))))")]
+      (is (not (contains? fs 'f)))
+      (is (= [[:ref :b/s]] (get fs 'f__row_0_b_s)))
+      (is (= [[:ref :b/t]] (get fs 'f__row_0_b_t))))
+    (is (= '#{mk mt main f__row_0_b_s}
+           (set (keys (functions "(defn- f [m] (:a m)) (defn main [] :i64 (+ (f (mk)) (f (mk))))"))))))
+  (testing "refused: only a record satisfies a row"
+    (is (= "argument 3 to f is i64, and parameter m of f is the row {:a T | r}: only a record satisfies a row"
+           (refusal "(defn- f [m] (:a m)) (defn main [] :i64 (f 3))"))))
+  (testing "refused: a record without a field the row reads"
+    (is (= "argument (mt) to f is record :b/t, which has no field :b that the row {:b T | r} of parameter m reads"
+           (refusal "(defn- f [m] (:b m)) (defn main [] :i64 (f (mt)))"))))
+  (testing "refused: an exported generic has no single ABI"
+    (is (= (str "exported function f has the row-polymorphic parameter m {:a T | r}, and an export has "
+                "one ABI: annotate m with a record type, or make f private with defn-")
+           (refusal "(defn f [m] (:a m)) (defn main [] :i64 (f (mk)))"))))
+  (testing "refused: a generic is not a value"
+    (is (= (str "row-polymorphic function f cannot be used as a value: it exists only as its "
+                "specializations, one per record type a call passes it")
+           (refusal "(defn- f [m] (:a m)) (defn main [] :i64 (let [g f] 1))"))))
+  (testing "refused: a record is never truthy, and a field is not coerced"
+    (is (= "if test must be bool or an option"
+           (refusal "(defn- f [m] (if m (:a m) 2)) (defn main [] :i64 (f (mk)))")))
+    (is (= "expression type mismatch: expected i64, got string"
+           (refusal "(defn- f [m] (+ 1 (:c m))) (defn main [] :i64 (f (mt)))")))))
