@@ -19,11 +19,14 @@
    :goal "nil as a map-literal value makes the field [:option T] and absent; truthiness only on :bool and [:option T]; when / if-let / when-let / cond-> / some-> over an option desugar to option-match; strings and records are never truthy"
    :amends "ADR 0028"}
   ;; Split out of :absence (2026-09-25), because measuring showed it is not
-  ;; the same change. Refusing an :i64 `if` test breaks no desugaring -- one
-  ;; kotoba-sema test of 596 went red -- but that one is the reason: the
-  ;; predicate primitives themselves (`record-equal` was the one measured)
-  ;; still answer the legacy 0/1 i64, so "numbers are never truthy" first
-  ;; needs every predicate to answer :bool through KIR and kotoba-native.
+  ;; the same change: the predicate primitives (`record-equal` was the one
+  ;; measured) still answered the legacy 0/1 i64. Landed the same day at the
+  ;; language surface, not through KIR: the six 0/1 operations (record-equal,
+  ;; typed-map-equal, typed-set-equal, hetero-vector-equal, task-ready?,
+  ;; object-cas-won) are elaborated to `(= op 1)` by kotoba-sema, so the KIR
+  ;; operations and every backend are unchanged. Retiring the 0/1 KIR
+  ;; answer itself is not needed for safety and is left to whoever measures a
+  ;; cost in the extra compare.
   {:id :bool-predicates :gate "numbers-are-never-truthy-test"
    :goal "every predicate primitive answers :bool, not a 0/1 i64; an :i64 `if` / `when` / `if-let` test is refused by name; numbers are never truthy"
    :amends "ADR 0028"}
