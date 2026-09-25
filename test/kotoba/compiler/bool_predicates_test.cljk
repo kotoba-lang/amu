@@ -1,0 +1,85 @@
+(ns kotoba.compiler.bool-predicates-test
+  "ADR 0353 floor :bool-predicates (amends ADR 0028): numbers are never truthy.
+
+  Every predicate primitive a program can write answers `:bool`. The four
+  structural equalities (`record-equal`, `typed-map-equal`, `typed-set-equal`,
+  `hetero-vector-equal`) and `task-ready?` / `object-cas-won` still lower to a
+  KIR operation that answers the legacy 0/1 `:i64` -- the backends are not
+  changed -- and each source occurrence is elaborated once to `(= op 1)`, so
+  the language sees a `:bool`: it composes with `and` / `or` / `not`, it is a
+  `:bool` function's result, and it is not a number.
+
+  With that, `if` refuses an `:i64` test by name, and so does every form that
+  reaches `if` (`when`, `when-not`, `if-not`, `if-let`, `when-let`, `cond`,
+  `cond->`, `and`, `or`, `not`, a `filter` predicate). Pinned by the literal of
+  each refusal: an `:i64` test, a string or record test, and a predicate's
+  answer used as the number it used to be (no coercion)."
+  (:require [clojure.test :refer [deftest is testing]]
+            [kotoba.kir :as ir]
+            [kotoba.sema :as sema]))
+
+(def ^:private schema
+  "(ns b (:schemas {:b/s [:record :b/s [[:caret :i64]]]}))
+   (defn mk [c :i64] [:ref :b/s] {:caret c})\n")
+
+(defn- run-main [source]
+  (#?(:clj long :cljs js/Number)
+   (ir/execute (ir/lower (sema/analyze source)) 'main [])))
+
+(defn- refusal [source]
+  (try (ir/lower (sema/analyze source)) nil
+       (catch #?(:clj clojure.lang.ExceptionInfo :cljs :default) error
+         (ex-message error))))
+
+(def ^:private i64-test
+  (str "if test is :i64, and a number is never truthy: "
+       "compare it (for example (not= x 0)) or answer :bool"))
+
+(deftest numbers-are-never-truthy-test
+  (testing "admitted: record-equal answers :bool -- a :bool result, composed with and / not"
+    (is (= 20 (run-main (str schema
+                             "(defn same [a [:ref :b/s] b [:ref :b/s]] :bool (record-equal [:ref :b/s] a b))
+                              (defn main [] :i64 (if (same (mk 1) (mk 2)) 10 20))"))))
+    (is (= 10 (run-main (str schema
+                             "(defn main [] :i64
+                                (let [a (mk 1)]
+                                  (if (and (record-equal [:ref :b/s] a a)
+                                           (not (record-equal [:ref :b/s] a (mk 2))))
+                                    10 20)))")))))
+  (testing "admitted: the collection equalities answer :bool"
+    (is (= 10 (run-main "(defn main [] :i64 (let [s (typed-set-new [:set :i64] 1 2)] (if (typed-set-equal [:set :i64] s s) 10 20)))")))
+    (is (= 20 (run-main "(defn main [] :i64 (let [m (typed-map-new [:map :i64 :i64] 1 10)] (if (typed-map-equal [:map :i64 :i64] m (typed-map-new [:map :i64 :i64] 1 11)) 10 20)))")))
+    (is (= 10 (run-main "(defn main [] :i64 (let [v (hetero-vector [:vector [:i64 :string]] 1 \"a\")] (if (hetero-vector-equal [:vector [:i64 :string]] v v) 10 20)))"))))
+  (testing "admitted: bool and option tests, and a :bool filter predicate"
+    (is (= 5 (run-main "(defn main [] :i64 (if (and true (or false (< 1 2))) (if-not false 5 6) 7))")))
+    (is (= 7 (run-main "(defn main [] :i64 (if-let [x (some 7)] x 0))")))
+    (is (= 5 (run-main "(defn p [x :i64] :bool (> x 1)) (defn main [] :i64 (reduce + 0 (filter p (vector-i64 1 2 3))))"))))
+  (testing "refused: an :i64 test, by name, through every form that reaches if"
+    (doseq [body ["(if 1 10 20)" "(when 1 10)" "(when-not 0 7)" "(if-not 0 7 8)"
+                  "(if-let [x 1] x 20)" "(when-let [x 1] x)" "(cond 0 1 :else 2)"
+                  "(cond-> 1 1 (+ 10))" "(if (and 1 1) 10 20)" "(if (or 0 1) 10 20)"
+                  "(if (not 0) 10 20)"]]
+      (is (= i64-test (refusal (str "(defn main [] :i64 " body ")"))) body))
+    (is (= i64-test (refusal "(defn f [x] :i64 (if x 10 20)) (defn main [] :i64 (f 0))")))
+    (is (= i64-test (refusal "(defn p [x :i64] :i64 (if (> x 1) 1 0)) (defn main [] :i64 (if (p 2) 10 20))")))
+    (is (= i64-test (refusal "(defn p [x :i64] :i64 (if (> x 1) 1 0)) (defn main [] :i64 (reduce + 0 (filter p (vector-i64 1 2 3))))"))))
+  (testing "refused: strings and records are never truthy either"
+    (is (= "if test must be bool or an option" (refusal "(defn main [] :i64 (if \"s\" 1 2))")))
+    (is (= "if test must be bool or an option"
+           (refusal (str schema "(defn main [] :i64 (let [s (mk 1)] (if s 1 2)))")))))
+  (testing "admitted: task-ready? answers :bool and is still one linear consume"
+    (let [call "(typed-cap-call :http/get-stream :string [:task [:stream :bytes]] url)"
+          module (fn [result body]
+                   (str "(ns app (:export [ready]) (:capabilities #{:http/get-stream}))"
+                        "(defn ready [url :string] " result " " body ")"))]
+      (is (some? (sema/analyze (module ":bool" (str "(task-ready? " call ")")))))
+      (is (some? (sema/analyze (module ":bool" (str "(let [t " call "] (task-ready? t))")))))
+      (is (= "expression type mismatch: expected i64, got bool"
+             (refusal (module ":i64" (str "(task-ready? " call ")")))))
+      (is (= "linear result must be one direct typed capability move"
+             (refusal (module ":bool" (str "(let [t " call "] (and (task-ready? t) (task-ready? t)))")))))))
+  (testing "refused: a predicate's answer is not the number it used to be (no coercion)"
+    (is (= "expression type mismatch: expected i64, got bool"
+           (refusal (str schema "(defn main [] :i64 (let [a (mk 1)] (+ 1 (record-equal [:ref :b/s] a a))))"))))
+    (is (= "expression type mismatch: expected i64, got bool"
+           (refusal "(defn main [] :i64 (let [m (typed-map-new [:map :i64 :i64] 1 10)] (typed-map-equal [:map :i64 :i64] m m)))")))))

@@ -54,9 +54,23 @@ Clojure it is today, the language gains:
    from the record its context names (a declared record result, a record
    field); `nil` with no record in context is refused by name, and the row
    inference of point 3 is what will supply T there. Strings and records are
-   refused as tests. Numbers are not yet: the predicate primitives still
-   answer the legacy 0/1 `:i64` (`record-equal` was the one measured), so
-   refusing an `:i64` test is its own floor, `:bool-predicates`.
+   refused as tests. Numbers landed the same day as floor `:bool-predicates`
+   (gate `numbers-are-never-truthy-test`): an `:i64` test is refused by name
+   ("if test is :i64, and a number is never truthy: ...") through every form
+   that reaches `if`, including `and` / `or` / `not` and a `filter`
+   predicate, and the six predicate operations whose KIR answer is still the
+   legacy 0/1 `:i64` (`record-equal`, `typed-map-equal`, `typed-set-equal`,
+   `hetero-vector-equal`, `task-ready?`, `object-cas-won`) are elaborated to
+   `(= op 1)`, so the language sees `:bool` and the backends are unchanged.
+   Ten amu sources that tested numbers were migrated with their expected
+   values unchanged; five aiueos kernel sources (`journal-plan`,
+   `journal-record-build`, `mutable-object-build`, `service-registry-build`,
+   `value-handle-arena`, all testing a 0/1 `write-u32` answer) are refused
+   by this amu (exit 65; the first four have committed objects) and must be
+   migrated when aiueos next re-attests its objects. No aiueos source uses the
+   six elaborated operations, so no other aiueos object changes because of
+   this floor. `task-ready?` stays one linear consume: the ownership check
+   sees through its elaboration.
 3. **Row-polymorphic records with principal inference.** An unannotated
    parameter's type is inferred from its uses as a row: `(defn f [m] (:a m))`
    is `{:a T | r} -> T`. `assoc` extends the row, `dissoc` shrinks it,
