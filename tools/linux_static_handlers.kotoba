@@ -24,9 +24,10 @@
 ;; The answers reproduce the kexe loader's observable behaviour for the same
 ;; request (tools/kexe_loader.c, the provider named beside each op), so a
 ;; program and a grant give the same stdout, stderr and exit status through
-;; either path. Where the static image is stricter -- a path that resolves
-;; outside the scope through a directory symlink, which the Linux loader's
-;; (st_dev, st_ino) check cannot see -- the op says so.
+;; either path. Where the two differ -- a form or capability the loader
+;; does not answer (process/spawn and entropy/draw are its identity stub;
+;; fsync, make-temp-dir and stat-nofollow it reads as a path) -- the op says
+;; so.
 
 ;; ---------------------------------------------------------------------
 ;; op 0: which static handler answers C1's provider number (decide op 0 of
@@ -239,10 +240,9 @@
 ;; EXDEV (18) is openat2's RESOLVE_BENEATH refusal: the path resolved out of
 ;; the scope root (an absolute symlink, or `..` through a symlink). That is a
 ;; grant violation and traps, as a failed kexe_scope_contains_fd does -- except
-;; for EXISTS, which answers "0" for anything it may not read. The Linux
-;; loader cannot see such an escape (its containment compares the fd with a
-;; stat of the SAME path), so there it is answered; this is the one place the
-;; static image is deliberately stricter. ENOSYS (38) -- a kernel before 5.6
+;; for EXISTS, which answers "0" for anything it may not read. The kexe
+;; loader opens beneath the scope root the same way since amu #1137
+;; (2026-09-25); before, it followed such a symlink. ENOSYS (38) -- a kernel before 5.6
 ;; without openat2 -- traps: there is no unconfined fallback.
 (defn- errno-outcome [form stage errno]
   (cond
