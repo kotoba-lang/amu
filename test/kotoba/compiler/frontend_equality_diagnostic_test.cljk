@@ -1,9 +1,9 @@
 (ns kotoba.compiler.frontend-equality-diagnostic-test
-  "The safe equality profile rejects `=` on :string operands, and a rejection
-  must NAME the admitted alternative (string=?) instead of only saying the
-  type is outside the profile -- fleet-migration field evidence
-  (com-junkawasaki/root ADR-2607241100 D2) showed the bare message costs a
-  compile-debug cycle per project.
+  "`=` on two :string operands is `string=?` since 2026-09-25 (kotoba-sema,
+  superproject adr-2609242330; kotoba-lang guest-grammar `:sugar
+  :string-equality`). Until then it was refused, and the refusal had to NAME
+  string=? (ADR-2607241100 D2). What is still refused is a type outside the
+  profile -- a :symbol pair -- and that refusal keeps its sentence.
 
   `=` on two :f64 operands is no longer a rejection: since kotoba-sema
   e42b74ef (type-directed arithmetic, consumed here by ADR 0294) the
@@ -20,13 +20,17 @@
     (catch clojure.lang.ExceptionInfo error
       (ex-message error))))
 
-(deftest string-equality-rejection-names-the-admitted-operator
-  (let [message (rejection-message
-                 (str "(ns pilot.eq-str (:export [check])) "
-                      "(defn check [] (if (= \"a\" \"b\") 1 0))"))]
-    (is (some? message))
-    (is (kotoba.lang.text/includes? message "outside the safe value profile"))
-    (is (kotoba.lang.text/includes? message "string=?"))))
+(deftest string-equality-is-string=?-and-a-symbol-pair-is-still-refused
+  (testing "two :string operands analyze, lowered to string=?"
+    (let [hir (sema/analyze (str "(ns pilot.eq-str (:export [check])) "
+                                 "(defn check [] (if (= \"a\" \"b\") 1 0))"))]
+      (is (kotoba.lang.text/includes? (pr-str hir) "string=?"))))
+  (testing "a :symbol pair keeps the profile refusal"
+    (let [message (rejection-message
+                   (str "(ns pilot.eq-sym (:export [check])) "
+                        "(defn check [] (if (= 'a 'b) 1 0))"))]
+      (is (some? message))
+      (is (kotoba.lang.text/includes? message "outside the safe value profile")))))
 
 (deftest f64-equality-is-type-directed-and-a-mixed-pair-names-both-conversions
   (testing "two f64 operands resolve to f64-eq; nothing to reject"
