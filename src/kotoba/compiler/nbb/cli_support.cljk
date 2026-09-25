@@ -4,7 +4,7 @@
   Keeping policy decoding and the CLI error contract here is important: the
   Wasm/native split may reduce namespace load time, but must not create two
   subtly different admission boundaries."
-  {:kotoba/export [analyze-options capability-policy emit-metadata execute! invoke option options oracle-fuel parse-policy-material read-artifact-file! read-edn-file! read-policy read-policy-material serve! source! timed usage-error!]}
+  {:kotoba/export [analyze-options capability-policy emit-metadata execute! invoke option options oracle-fuel parse-policy-material read-artifact-file! read-artifact-text! read-edn-file! read-policy read-policy-material serve! source! timed usage-error!]}
   (:require ["node:path" :as node-path]
             ["node:perf_hooks" :refer [performance]]
             [kotoba.compiler.diagnostic :as diagnostic]
@@ -161,6 +161,14 @@
   indexes, not values."
   [path]
   (narrow-structural-indexes (read-edn-form! max-artifact-nodes (io/read-artifact-text-file path))))
+
+(defn read-artifact-text!
+  "`read-artifact-file!` over text already in hand: the sealed handler
+  artifacts a linux-static image carries are compiled into this compiler as
+  text (`kotoba.compiler.linux-static-handlers`), and are read exactly --
+  every integer a BigInt -- for the same reason a `.kexe` file is."
+  [text]
+  (narrow-structural-indexes (read-edn-form! max-artifact-nodes text)))
 
 (defn read-policy-material [args]
   (if-let [path (option args "--policy")]

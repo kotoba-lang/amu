@@ -16,6 +16,8 @@
   `emit-program`."
   {:kotoba/export [package]}
   (:require [kotoba.compiler.limits :as limits]
+            [kotoba.compiler.linux-static-handlers :as static-handlers]
+            [kotoba.compiler.nbb.cli-support :as support]
             [kotoba.compiler.packaging.pe32plus :as pe32plus]
             [kotoba.kir.target :as target-profile]
             [kotoba.native.elf64 :as elf64]
@@ -26,14 +28,46 @@
 ;; admitted slots, trap names and exit codes from the native profile of
 ;; kotoba-lang lang/limits.edn -- this compiler's `kotoba.compiler.limits/table`
 ;; -- so the packager is handed that profile rather than restating any of it.
-(defn- package-linux-static [artifact]
+(defn- num [n] (js/Number n))
+
+(defn- static-options
+  "superproject adr-2609251400 C3. What a program with capability effects is
+  packaged with, all of it sealed into the image:
+
+    :handlers  the decision code its handlers call -- amu's own
+               tools/kexe_loader_decisions.kotoba (the kexe loader's) and
+               tools/linux_static_handlers.kotoba, compiled by this compiler
+               for the image's ISA and held here as sealed artifacts
+               (scripts/gen-linux-static-handlers.cljk writes them; --check
+               recompiles and compares).
+    :grant     the policy's `:linux-static :grant` (wire ids) when it names
+               one, which may only narrow the program's effects; otherwise
+               the effects themselves, each already admitted by `:allow`.
+    :fs-scope  the policy's `:linux-static :fs-scope`, the one directory
+               :fs/app-data and :fs/browse resolve under.
+
+  The grant is authority (adr-2609242100: a capability is the authority to
+  use a handler), so it comes from the compile policy and nowhere else: the
+  image reads no argument or variable that could widen it."
+  [artifact policy]
+  (let [isa (get-in linux-static/targets [(:target artifact) :isa])
+        texts (get static-handlers/artifact-texts isa)
+        {:keys [grant fs-scope]} (:linux-static policy)]
+    (cond-> {:handlers {:decisions (support/read-artifact-text! (:decisions texts))
+                        :handlers (support/read-artifact-text! (:handlers texts))}}
+      (some? grant) (assoc :grant (set (map num grant)))
+      (some? fs-scope) (assoc :fs-scope fs-scope))))
+
+(defn- package-linux-static [artifact policy]
   (let [profile (:profile/native limits/table)
-        image (linux-static/package artifact profile)]
+        options (static-options artifact policy)
+        image (linux-static/package artifact profile options)]
     ;; The image is verified before it is written: the code bytes re-derived
-    ;; from the program (as for every kexe), the prelude re-derived from the
-    ;; artifact and the profile, and the ELF held to no interpreter / no
-    ;; dynamic section / no W+X by a parser that is not the packager's.
-    (linux-static-verifier/verify-image! artifact (:bytes image) profile)
+    ;; from the program (as for every kexe), the handler decision code
+    ;; re-derived from ITS programs, the prelude re-derived from the artifact,
+    ;; the profile and the sealed grant, and the ELF held to no interpreter /
+    ;; no dynamic section / no W+X by a parser that is not the packager's.
+    (linux-static-verifier/verify-image! artifact (:bytes image) profile options)
     image))
 
 (def ^:private kits
@@ -113,7 +147,7 @@
   yields a `.o` (what `bisect-object-migration.sh` hashes) while the UEFI
   image requires `--artifact image` (what `build-kotoba-native-kernel.sh`
   passes)."
-  [target artifact artifact-kind]
+  [target artifact artifact-kind policy]
   (let [kit (get kits target)
         packager (case artifact-kind
                    "image" (:image kit)
@@ -134,5 +168,8 @@
                        :reason :packager-twin-divergence})))
     (when packager
       (let [packaged (refusal-is-not-a-defect
-                      target selected-kind #(packager artifact))]
+                      target selected-kind
+                      #(if (= packager package-linux-static)
+                         (packager artifact policy)
+                         (packager artifact)))]
         (js/Buffer.from (clj->js (mapv #(bit-and (int %) 0xff) (:bytes packaged))))))))
