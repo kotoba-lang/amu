@@ -57,9 +57,10 @@ Since 2026-09-25 (ADR 0353 floor `:absence`) the language as a whole admits
 exactly one truthiness besides `:bool`: presence of an `[:option T]`. An
 option tested by `if` / `when` / `if-let` / `when-let` / `cond->` / `some->`
 is present or absent, and `nil` as a record literal's field value is the
-absent option. A document node, a string and a record are never truthy; an
-`:i64` is a test only as the legacy 0/1 predicate answer, which retires with
-floor `:bool-predicates`. Nothing is coerced.
+absent option. A document node, a string, a record and a number are never
+truthy: since floor `:bool-predicates` (the same day) an `:i64` test is
+refused by name, and every predicate primitive answers `:bool`. Nothing is
+coerced.
 
 Canonical binary encoding and bounded EDN reading/printing cover every
 admitted node. The binary encoding defines document identity and the total
