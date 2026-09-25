@@ -1,7 +1,7 @@
 (ns kotoba.compiler.component-admission-test
   "Component target exposure, declared fuel/memory budgets, and the admission
   request the compiler owes kototama (ADR-2607252500)."
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [kotoba.lang.error :as kerror] [clojure.test :refer [deftest is testing]]
             [kotoba.lang.text :as str]
             [kotoba.component.admission :as admission]
             [kotoba.wasm.core :as wasm]
@@ -57,12 +57,12 @@
 (deftest fuel-budget-is-fail-closed
   (testing "a budget that cannot be enforced is rejected, not silently defaulted"
     (doseq [bad [0 -1 -512]]
-      (is (thrown? clojure.lang.ExceptionInfo
+      (is (thrown? kerror/ExceptionInfo
                    (wasm/emit (kir scalar-source) :wasm32-kotoba-v1 {:fuel bad}))
           (str "non-positive fuel " bad " must be rejected")))
-    (is (thrown? clojure.lang.ExceptionInfo
+    (is (thrown? kerror/ExceptionInfo
                  (wasm/emit (kir scalar-source) :wasm32-kotoba-v1 {:fuel :unbounded})))
-    (is (thrown? clojure.lang.ExceptionInfo
+    (is (thrown? kerror/ExceptionInfo
                  (wasm/emit (kir scalar-source) :wasm32-kotoba-v1
                             {:fuel (inc wasm/max-fuel)})))))
 
@@ -76,7 +76,7 @@
   (testing "compile-source refuses it instead of emitting a bare core module"
     (let [thrown (try (compiler/compile-source scalar-source :wasm-component-kotoba-v1)
                       nil
-                      (catch clojure.lang.ExceptionInfo e (ex-data e)))]
+                      (catch kerror/ExceptionInfo e (ex-data e)))]
       (is (= :target-routing (:phase thrown)))
       (is (= 'kotoba.compiler.core/compile-component (:entry-point thrown))))))
 
@@ -161,18 +161,18 @@
                (set (keys (admission/complete with-imports
                                               #{"cap-a" "cap-b"} bound))))))
       (testing "an ungranted import cannot be composed"
-        (is (thrown? clojure.lang.ExceptionInfo
+        (is (thrown? kerror/ExceptionInfo
                      (admission/complete with-imports #{"cap-a"} bound))))
       (testing "an unbound import cannot be composed"
-        (is (thrown? clojure.lang.ExceptionInfo
+        (is (thrown? kerror/ExceptionInfo
                      (admission/complete with-imports #{"cap-a" "cap-b"}
                                          {"cap-a" :test-provider}))))
       (testing "a binding for an undeclared import cannot be composed"
-        (is (thrown? clojure.lang.ExceptionInfo
+        (is (thrown? kerror/ExceptionInfo
                      (admission/complete with-imports #{"cap-a" "cap-b"}
                                          (assoc bound "cap-c" :test-provider))))))
     (testing "a request without bound identity cannot be completed"
-      (is (thrown? clojure.lang.ExceptionInfo
+      (is (thrown? kerror/ExceptionInfo
                    (admission/complete (:admission-request
                                         (compiler/compile-component scalar-source {} {}))
                                        #{} {}))))))

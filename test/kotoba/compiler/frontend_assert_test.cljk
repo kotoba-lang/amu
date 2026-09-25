@@ -1,5 +1,5 @@
 (ns kotoba.compiler.frontend-assert-test
-  (:require [clojure.test :refer [deftest is]]
+  (:require [kotoba.lang.error :as kerror] [clojure.test :refer [deftest is]]
             [kotoba.compiler.core :as compiler]
             [kotoba.kir :as ir]))
 
@@ -11,11 +11,11 @@
 
 (defn- rejection-message [source]
   (try (checked source) nil
-       (catch clojure.lang.ExceptionInfo e (ex-message e))))
+       (catch kerror/ExceptionInfo e (ex-message e))))
 
 (deftest assert-returns-zero-on-success-and-traps-on-failure
   (is (= 0 (oracle "(defn main [] (assert 1))")))
-  (is (thrown? clojure.lang.ExceptionInfo
+  (is (thrown? kerror/ExceptionInfo
                (oracle "(defn main [] (assert 0))"))))
 
 (deftest assert-condition-is-present-once-after-desugaring

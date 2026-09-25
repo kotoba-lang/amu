@@ -22,7 +22,7 @@
      metadata the elaborated form still carries to restore the source spelling
      for capability calls only -- module-to-module calls keep their synthetic
      names, so per-module isolation is unchanged."
-  (:require [kotoba.lang.text] [clojure.test :refer [deftest is testing]]
+  (:require [kotoba.lang.error :as kerror] [kotoba.lang.text] [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]
             [kotoba.sema :as sema]
             [kotoba.compiler.project :as project]))
@@ -100,7 +100,7 @@
   [source policy]
   (try
     (get-in (compiler/check-source source policy) [:admission :missing])
-    (catch clojure.lang.ExceptionInfo e (:missing (ex-data e)))))
+    (catch kerror/ExceptionInfo e (:missing (ex-data e)))))
 
 (deftest admission-agrees-on-both-paths
   (testing "the same policy admits both"

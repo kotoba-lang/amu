@@ -28,7 +28,7 @@
   full. Without the first, writing the evidence down would mark both reachable
   and the check would pass while protecting nothing -- verified by restoring one
   of the deleted files and watching it stay green."
-  (:require [kotoba.lang.text :as str]
+  (:require [kotoba.io :as kio] [kotoba.lang.text :as str]
             [clojure.test :refer [deftest is]]
             #?@(:cljs [["node:fs" :as fs]
                        ["node:path" :as path]])))
@@ -74,14 +74,14 @@
 (defn- clj-files
   "Paths of the Clojure source files under `root`, as `root/...` strings."
   [root]
-  #?(:clj (->> (file-seq (java.io.File. ^String root))
-               (filter #(.isFile ^java.io.File %))
-               (map #(.getPath ^java.io.File %))
+  #?(:clj (->> (kio/file-seq (kio/file ^String root))
+               (filter #(kio/file? %))
+               (map #(kio/path %))
                (filter #(re-find source-file-pattern %)))
      :cljs (->> (js->clj (.readdirSync fs root #js {:recursive true}))
                 (map #(str root "/" (str/replace % (.-sep path) "/")))
                 (filter #(re-find source-file-pattern %))
-                (filter #(.isFile (.statSync fs %))))))
+                (filter #(kio/file? (.statSync fs %))))))
 
 (defn- base-name [p] (last (str/split p #"/")))
 

@@ -1,5 +1,5 @@
 (ns kotoba.compiler.http-provider-test
-  (:require [clojure.test :refer [deftest is]]
+  (:require [kotoba.lang.error :as kerror] [clojure.test :refer [deftest is]]
             [kotoba.compiler.core :as compiler]
             [kotoba.kir :as ir]
             [provider.http :as http]
@@ -43,12 +43,12 @@
   (let [called? (atom false)
         runtime (hosted (fn [_] (reset! called? true)))]
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"origin is not allowed"
+         kerror/ExceptionInfo #"origin is not allowed"
          ((:invoke runtime) 'post
           [[http/request-type "https://other.example.test/path"
             [http/header-set-type []] "" 1000]])))
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"timeout is outside"
+         kerror/ExceptionInfo #"timeout is outside"
          ((:invoke runtime) 'post
           [[http/request-type "https://api.example.test/path"
             [http/header-set-type []] "" 0]])))
@@ -81,7 +81,7 @@
         runtime (runtime/instantiate kir)
         called? (atom false)]
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"capability denied"
+         kerror/ExceptionInfo #"capability denied"
          ((:invoke runtime) 'post
           [[http/request-type "https://api.example.test/path"
             [http/header-set-type []] "" 1000]])))
@@ -123,14 +123,14 @@
   (let [called? (atom false)
         runtime (hosted-get-stream (fn [_] (reset! called? true) {:bytes (byte-array 0)}))]
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"origin is not allowed"
+         kerror/ExceptionInfo #"origin is not allowed"
          ((:invoke runtime) 'get-stream
           [[http/get-stream-request-type "https://evil.example.test/x"
             [http/header-set-type []]]])))
     (is (false? @called?)))
   (let [runtime (hosted-get-stream (fn [_] (throw (ex-info "secret" {}))))]
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"http get-stream transport failed"
+         kerror/ExceptionInfo #"http get-stream transport failed"
          ((:invoke runtime) 'get-stream
           [[http/get-stream-request-type "https://api.example.test/x"
             [http/header-set-type []]]])))))
@@ -140,7 +140,7 @@
                              get-stream-source {:allow #{[:cap/call 13]}})))
         runtime (runtime/instantiate kir)]
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"capability denied"
+         kerror/ExceptionInfo #"capability denied"
          ((:invoke runtime) 'get-stream
           [[http/get-stream-request-type "https://api.example.test/x"
             [http/header-set-type []]]])))))

@@ -1,5 +1,5 @@
 (ns kotoba.compiler.aggregate-abi-test
-  (:require [clojure.edn :as edn]
+  (:require [kotoba.lang.error :as kerror] [clojure.edn :as edn]
             [clojure.test :refer [deftest is]]
             [kotoba.native.aggregate-abi :as aggregate-abi]
             [kotoba.native.machine-ir :as machine]))
@@ -563,7 +563,7 @@
   (try
     (machine/lower-kir-expression ['x] '(callee x))
     (is false "standalone call-shaped KIR must require module lowering")
-    (catch clojure.lang.ExceptionInfo error
+    (catch kerror/ExceptionInfo error
       (is (= :aggregate-abi (:phase (ex-data error))))
       (is (= :call-abi-not-admitted (:problem (ex-data error))))))
   (let [module {:format :kotoba.kir/v4

@@ -18,7 +18,6 @@
   {:kotoba/export [temp-file! write-bytes! write-edn! write-text!]}
   #?(:clj (:import [java.nio ByteBuffer]
                    [java.nio.channels FileChannel]
-                   [java.nio.charset StandardCharsets]
                    [java.nio.file CopyOption Files OpenOption Path Paths StandardCopyOption StandardOpenOption]
                    [java.nio.file.attribute AclEntry AclEntryPermission AclEntryType
                     AclFileAttributeView FileAttribute PosixFilePermissions]
@@ -27,7 +26,8 @@
                      [kotoba.compiler.nbb.io :as nbb-io]
                      ["node:fs" :as fs]
                      ["node:os" :as os]
-                     ["node:path" :as path])))
+                     ["node:path" :as path]))
+  (:require [kotoba.bytes :as kbytes]))
 
 (defn temp-file!
   "Create a temporary file under the host's temporary directory and return
@@ -192,7 +192,7 @@
         (write-bytes-node! path bytes options)))))
 
 (defn- utf8-bytes [^String text]
-  #?(:clj (.getBytes text StandardCharsets/UTF_8)
+  #?(:clj (kbytes/utf8-bytes text)
      :cljs (js/Buffer.from text "utf8")
      ;; Kotoba: the :cljs form, refused by name (host Buffer); see temp-file!.
      :default (js/Buffer.from text "utf8")))

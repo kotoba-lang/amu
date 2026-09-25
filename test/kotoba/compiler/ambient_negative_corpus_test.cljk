@@ -4,7 +4,7 @@
   Complements kotoba-lang `docs/grade-a-malicious-source-corpus.md` and
   `lang/malicious-source/*` (policy evaluator corpus). This suite pins the
   **compiler frontend** gate for the same security classes on guest source."
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [kotoba.lang.error :as kerror] [clojure.test :refer [deftest is testing]]
             [kotoba.sema :as sema]))
 
 (defn- analyze-error
@@ -13,7 +13,7 @@
    (try
      (sema/analyze source opts)
      nil
-     (catch clojure.lang.ExceptionInfo e
+     (catch kerror/ExceptionInfo e
        e))))
 
 (def ambient-cases

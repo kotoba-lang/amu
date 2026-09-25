@@ -1,5 +1,5 @@
 (ns kotoba.compiler.frontend-multimethod-test
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [kotoba.lang.error :as kerror] [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]
             [kotoba.kir :as ir]))
 
@@ -11,7 +11,7 @@
 
 (defn- rejection-message [source]
   (try (checked source) nil
-       (catch clojure.lang.ExceptionInfo e (ex-message e))))
+       (catch kerror/ExceptionInfo e (ex-message e))))
 
 (deftest closed-multimethod-dispatches-and-defaults
   (let [prefix "(defn kind [x] x)
@@ -32,7 +32,7 @@
                   (defn main [] (render 2))"))))
 
 (deftest closed-multimethod-without-default-traps-on-a-miss
-  (is (thrown? clojure.lang.ExceptionInfo
+  (is (thrown? kerror/ExceptionInfo
                (oracle "(defn kind [x] x)
                         (defmulti render kind)
                         (defmethod render 1 [x] 10)

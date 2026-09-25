@@ -1,6 +1,6 @@
 (ns kotoba.compiler.component-artifact-test
-  (:require [clojure.edn :as edn]
-            [clojure.java.io :as io]
+  (:require [kotoba.lang.error :as kerror] [clojure.edn :as edn]
+            [kotoba.io :as io]
             [clojure.java.shell :as shell]
             [clojure.test :refer [deftest is]]
             [kotoba.lang.text :as str]
@@ -10,13 +10,11 @@
             [kotoba.component.wit :as wit]
             [kotoba.compiler.core :as compiler]
             [kotoba.kir :as ir]
-            [kotoba.kir.value :as value])
-  (:import [java.nio.file Files]
-           [java.nio.file.attribute FileAttribute]))
+            [kotoba.kir.value :as value]))
 
 (def ^:private wasmtime-binary
   (let [pinned (io/file ".tools" "wasmtime" "wasmtime")]
-    (if (.canExecute pinned) (.getPath pinned) "wasmtime")))
+    (if (io/can-execute? pinned) (io/path pinned) "wasmtime")))
 
 (def scalar-kir
   {:format :kotoba.kir/v4 :exports ['add]
@@ -26,7 +24,7 @@
 
 (deftest scalar-slice-and-unsupported-boundaries-are-explicit
   (is (true? (component/assert-scalar-slice! scalar-kir (wit/emit scalar-kir))))
-  (is (thrown-with-msg? clojure.lang.ExceptionInfo #"no qualified Canonical lowering"
+  (is (thrown-with-msg? kerror/ExceptionInfo #"no qualified Canonical lowering"
                         (component/assert-scalar-slice!
                          (assoc-in scalar-kir [:functions 0 :result] :string)
                          (wit/emit (assoc-in scalar-kir [:functions 0 :result] :string)))))
@@ -55,7 +53,7 @@
                          (assoc-in [:functions 0 :body]
                                    '(string-concat left (string-concat " / " right))))]
       (is (true? (component/assert-scalar-slice! concat-kir (wit/emit concat-kir)))))
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"no qualified Canonical lowering"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"no qualified Canonical lowering"
                           (component/assert-scalar-slice!
                            (assoc-in identity-kir [:functions 0 :body]
                                      '(string-replace-all value "a" "b"))
@@ -69,15 +67,13 @@
         kir (:kir (compiler/compile-source source :wasm32-wasi-kotoba-v1))
         world (:wit artifact)
         core (component-core/emit kir :wasm32-wasi-kotoba-v1)
-        dir (Files/createTempDirectory
-             "kotoba-component-list-" (make-array FileAttribute 0))
-        component-path (.resolve dir "list.component.wasm")
-        core-path (.resolve dir "list.core.wasm")]
+        dir (io/temp-dir
+             "kotoba-component-list-")
+        component-path (io/file dir "list.component.wasm")
+        core-path (io/file dir "list.core.wasm")]
     (try
-      (Files/write component-path ^bytes (:bytes artifact)
-                   (make-array java.nio.file.OpenOption 0))
-      (Files/write core-path ^bytes core
-                   (make-array java.nio.file.OpenOption 0))
+      (io/write-bytes component-path ^bytes (:bytes artifact))
+      (io/write-bytes core-path ^bytes core)
       (let [round-trip
             (shell/sh wasmtime-binary "run" "--invoke"
                       "echo([1, 2, 3, -4])" (str component-path))
@@ -103,9 +99,9 @@
         (is (not (zero? (:exit oversize)))
             "a length above vector-item-limit must trap in the core"))
       (finally
-        (Files/deleteIfExists component-path)
-        (Files/deleteIfExists core-path)
-        (Files/deleteIfExists dir)))))
+        (io/delete-if-exists component-path)
+        (io/delete-if-exists core-path)
+        (io/delete-if-exists dir)))))
 
 (deftest vector-literals-and-owned-transforms-are-executable-components
   (let [artifact
@@ -118,12 +114,10 @@
           "(ns component.list-literal (:export [items]))
            (defn items [] :vector-i64 (vector-i64 7 -8 9))"
           :wasm32-wasi-kotoba-v1))
-        path (Files/createTempFile
-              "kotoba-component-list-literal-" ".wasm"
-              (make-array FileAttribute 0))]
+        path (io/temp-file
+              "kotoba-component-list-literal-" ".wasm")]
     (try
-      (Files/write path ^bytes (:bytes artifact)
-                   (make-array java.nio.file.OpenOption 0))
+      (io/write-bytes path ^bytes (:bytes artifact))
       (let [result (shell/sh wasmtime-binary "run" "--invoke"
                              "items()" (str path))]
         (is (= :vector-i64-literal (:canonical-lowering artifact)))
@@ -131,7 +125,7 @@
         (is (zero? (:exit result)) (:err result))
         (is (= "[7, -8, 9]" (str/trim (:out result)))))
       (finally
-        (Files/deleteIfExists path))))
+        (io/delete-if-exists path))))
   (doseq [{:keys [source invoke expected oracle-args oracle-expected]}
           [{:source "(ns component.list-drop (:export [apply-op]))
                      (defn apply-op [items :vector-i64 amount :i64] :vector-i64
@@ -173,19 +167,17 @@
             :oracle-args [[1.5] 2.5] :oracle-expected [1.5 2.5]}]]
     (let [artifact (compiler/compile-component source)
           kir (:kir (compiler/compile-source source :wasm32-wasi-kotoba-v1))
-          path (Files/createTempFile
-                "kotoba-source-owned-vector-transform-" ".wasm"
-                (make-array FileAttribute 0))]
+          path (io/temp-file
+                "kotoba-source-owned-vector-transform-" ".wasm")]
       (try
-        (Files/write path ^bytes (:bytes artifact)
-                     (make-array java.nio.file.OpenOption 0))
+        (io/write-bytes path ^bytes (:bytes artifact))
         (let [run (shell/sh wasmtime-binary "run" "--invoke" invoke (str path))]
           (is (= :owned-vector-transform (:canonical-lowering artifact)))
           (is (= oracle-expected (ir/execute kir 'apply-op oracle-args)))
           (is (zero? (:exit run)) (:err run))
           (is (= expected (str/trim (:out run))) invoke))
         (finally
-          (Files/deleteIfExists path))))))
+          (io/delete-if-exists path))))))
 
 (deftest structural-option-and-result-round-trip-through-a-real-component
   (doseq [{:keys [descriptor calls expected]}
@@ -204,15 +196,13 @@
                     (component-core/emit kir :wasm32-wasi-kotoba-v1)
                     kir world)
           core (component-core/emit kir :wasm32-wasi-kotoba-v1)
-          dir (Files/createTempDirectory
-               "kotoba-component-union-" (make-array FileAttribute 0))
-          component-path (.resolve dir "union.component.wasm")
-          core-path (.resolve dir "union.core.wasm")]
+          dir (io/temp-dir
+               "kotoba-component-union-")
+          component-path (io/file dir "union.component.wasm")
+          core-path (io/file dir "union.core.wasm")]
       (try
-        (Files/write component-path ^bytes (:bytes artifact)
-                     (make-array java.nio.file.OpenOption 0))
-        (Files/write core-path ^bytes core
-                     (make-array java.nio.file.OpenOption 0))
+        (io/write-bytes component-path ^bytes (:bytes artifact))
+        (io/write-bytes core-path ^bytes core)
         (is (= :structural-union-identity (:canonical-lowering artifact)))
         (doseq [[call output] (map vector calls expected)]
           (let [run (shell/sh wasmtime-binary "run" "--invoke" call
@@ -224,9 +214,9 @@
           (is (not (zero? (:exit malformed)))
               "an out-of-range option/result discriminant must trap"))
         (finally
-          (Files/deleteIfExists component-path)
-          (Files/deleteIfExists core-path)
-          (Files/deleteIfExists dir))))))
+          (io/delete-if-exists component-path)
+          (io/delete-if-exists core-path)
+          (io/delete-if-exists dir))))))
 
 (deftest structural-option-vector-round-trips-from-kotoba-through-a-real-component
   (let [source
@@ -236,17 +226,13 @@
         kir (:kir compiled)
         artifact (compiler/compile-component source)
         core (component-core/emit kir :wasm32-wasi-kotoba-v1)
-        component-path (Files/createTempFile
-                        "kotoba-component-option-vector-" ".wasm"
-                        (make-array FileAttribute 0))
-        core-path (Files/createTempFile
-                   "kotoba-component-option-vector-core-" ".wasm"
-                   (make-array FileAttribute 0))]
+        component-path (io/temp-file
+                        "kotoba-component-option-vector-" ".wasm")
+        core-path (io/temp-file
+                   "kotoba-component-option-vector-core-" ".wasm")]
     (try
-      (Files/write component-path ^bytes (:bytes artifact)
-                   (make-array java.nio.file.OpenOption 0))
-      (Files/write core-path ^bytes core
-                   (make-array java.nio.file.OpenOption 0))
+      (io/write-bytes component-path ^bytes (:bytes artifact))
+      (io/write-bytes core-path ^bytes core)
       (is (= :structural-union-identity (:canonical-lowering artifact)))
       (is (str/includes? (:source (:wit artifact)) "option<list<s64>>"))
       (doseq [[invoke expected]
@@ -267,8 +253,8 @@
         (is (not (zero? (:exit active)))
             "the selected list must validate alignment and item count"))
       (finally
-        (Files/deleteIfExists component-path)
-        (Files/deleteIfExists core-path)))))
+        (io/delete-if-exists component-path)
+        (io/delete-if-exists core-path)))))
 
 (deftest structural-option-f64-vector-round-trips-through-a-real-component
   (let [source
@@ -276,12 +262,10 @@
          (defn echo [value [:option :vector-f64]]
            [:option :vector-f64] value)"
         artifact (compiler/compile-component source)
-        path (Files/createTempFile
-              "kotoba-component-option-f64-vector-" ".wasm"
-              (make-array FileAttribute 0))]
+        path (io/temp-file
+              "kotoba-component-option-f64-vector-" ".wasm")]
     (try
-      (Files/write path ^bytes (:bytes artifact)
-                   (make-array java.nio.file.OpenOption 0))
+      (io/write-bytes path ^bytes (:bytes artifact))
       (is (= :structural-union-identity (:canonical-lowering artifact)))
       (is (str/includes? (:source (:wit artifact))
                          "option<list<f64>>"))
@@ -293,7 +277,7 @@
           (is (zero? (:exit run)) (:err run))
           (is (= expected (str/trim (:out run))))))
       (finally
-        (Files/deleteIfExists path)))))
+        (io/delete-if-exists path)))))
 
 (deftest nested-structural-unions-round-trip-from-kotoba
   (let [source
@@ -303,17 +287,13 @@
         kir (:kir (compiler/compile-source source :wasm32-wasi-kotoba-v1))
         artifact (compiler/compile-component source)
         core (component-core/emit kir :wasm32-wasi-kotoba-v1)
-        component-path (Files/createTempFile
-                        "kotoba-component-nested-union-" ".wasm"
-                        (make-array FileAttribute 0))
-        core-path (Files/createTempFile
-                   "kotoba-component-nested-union-core-" ".wasm"
-                   (make-array FileAttribute 0))]
+        component-path (io/temp-file
+                        "kotoba-component-nested-union-" ".wasm")
+        core-path (io/temp-file
+                   "kotoba-component-nested-union-core-" ".wasm")]
     (try
-      (Files/write component-path ^bytes (:bytes artifact)
-                   (make-array java.nio.file.OpenOption 0))
-      (Files/write core-path ^bytes core
-                   (make-array java.nio.file.OpenOption 0))
+      (io/write-bytes component-path ^bytes (:bytes artifact))
+      (io/write-bytes core-path ^bytes core)
       (is (= :structural-union-identity (:canonical-lowering artifact)))
       (is (str/includes? (:source (:wit artifact))
                          "option<result<string, bool>>"))
@@ -337,8 +317,8 @@
             (is (not (zero? (:exit run))))
             (is (zero? (:exit run)) (:err run)))))
       (finally
-        (Files/deleteIfExists component-path)
-        (Files/deleteIfExists core-path)))))
+        (io/delete-if-exists component-path)
+        (io/delete-if-exists core-path)))))
 
 (deftest structural-option-record-round-trips-through-the-extracted-backend
   (let [point [:ref :demo/point]
@@ -354,18 +334,14 @@
         world (wit/emit kir)
         core-bytes (component-core/emit kir :wasm32-wasi-kotoba-v1)
         artifact (component/package core-bytes kir world)
-        component-path (Files/createTempFile
-                        "kotoba-component-option-record-" ".wasm"
-                        (make-array FileAttribute 0))
-        core-path (Files/createTempFile
-                   "kotoba-component-option-record-core-" ".wasm"
-                   (make-array FileAttribute 0))]
+        component-path (io/temp-file
+                        "kotoba-component-option-record-" ".wasm")
+        core-path (io/temp-file
+                   "kotoba-component-option-record-core-" ".wasm")]
     (try
       (is (= :structural-union-identity (:canonical-lowering artifact)))
-      (Files/write component-path ^bytes (:bytes artifact)
-                   (make-array java.nio.file.OpenOption 0))
-      (Files/write core-path ^bytes core-bytes
-                   (make-array java.nio.file.OpenOption 0))
+      (io/write-bytes component-path ^bytes (:bytes artifact))
+      (io/write-bytes core-path ^bytes core-bytes)
       (doseq [[invoke expected]
               [["echo(none)" "none"]
                ["echo(some({x: 7, visible: true}))"
@@ -381,8 +357,8 @@
         (is (zero? (:exit inactive)))
         (is (not (zero? (:exit active)))))
       (finally
-        (Files/deleteIfExists component-path)
-        (Files/deleteIfExists core-path)))))
+        (io/delete-if-exists component-path)
+        (io/delete-if-exists core-path)))))
 
 (deftest kotoba-source-round-trips-a-bounded-list-of-records
   (let [source
@@ -397,12 +373,10 @@
            value)"
         compiled (compiler/compile-source source :wasm32-wasi-kotoba-v1)
         artifact (compiler/compile-component source)
-        path (Files/createTempFile
-              "kotoba-source-option-list-record-" ".wasm"
-              (make-array FileAttribute 0))]
+        path (io/temp-file
+              "kotoba-source-option-list-record-" ".wasm")]
     (try
-      (Files/write path ^bytes (:bytes artifact)
-                   (make-array java.nio.file.OpenOption 0))
+      (io/write-bytes path ^bytes (:bytes artifact))
       (is (= [:option [:list [:ref :demo/point]]]
              (get-in compiled [:kir :functions 0 :result])))
       (is (= :structural-union-identity (:canonical-lowering artifact)))
@@ -416,7 +390,7 @@
           (is (zero? (:exit run)) (:err run))
           (is (= expected (str/trim (:out run))) invoke)))
       (finally
-        (Files/deleteIfExists path)))))
+        (io/delete-if-exists path)))))
 
 (deftest nested-record-and-string-unions-use-the-extracted-recursive-codec
   (let [schemas {:demo/inner
@@ -442,20 +416,18 @@
             artifact (component/package
                       (component-core/emit kir :wasm32-wasi-kotoba-v1)
                       kir world)
-            path (Files/createTempFile
-                  "kotoba-component-recursive-union-" ".wasm"
-                  (make-array FileAttribute 0))]
+            path (io/temp-file
+                  "kotoba-component-recursive-union-" ".wasm")]
         (try
           (is (= :structural-union-identity
                  (:canonical-lowering artifact)))
-          (Files/write path ^bytes (:bytes artifact)
-                       (make-array java.nio.file.OpenOption 0))
+          (io/write-bytes path ^bytes (:bytes artifact))
           (let [run (shell/sh wasmtime-binary "run" "--invoke" invoke
                               (str path))]
             (is (zero? (:exit run)) (:err run))
             (is (= expected (str/trim (:out run)))))
           (finally
-            (Files/deleteIfExists path)))))))
+            (io/delete-if-exists path)))))))
 
 (deftest structural-option-and-result-constructors-compile-from-kotoba
   (doseq [{:keys [source export invoke output args oracle]}
@@ -481,12 +453,10 @@
             :args [-9] :oracle [false -9]}]]
     (let [artifact (compiler/compile-component source)
           kir (:kir (compiler/compile-source source :wasm32-wasi-kotoba-v1))
-          path (Files/createTempFile
-                "kotoba-component-union-constructor-" ".wasm"
-                (make-array FileAttribute 0))]
+          path (io/temp-file
+                "kotoba-component-union-constructor-" ".wasm")]
       (try
-        (Files/write path ^bytes (:bytes artifact)
-                     (make-array java.nio.file.OpenOption 0))
+        (io/write-bytes path ^bytes (:bytes artifact))
         (let [run (shell/sh wasmtime-binary "run" "--invoke" invoke (str path))]
           (is (= :structural-union-construction
                  (:canonical-lowering artifact)))
@@ -494,7 +464,7 @@
           (is (zero? (:exit run)) (:err run))
           (is (= output (str/trim (:out run)))))
         (finally
-          (Files/deleteIfExists path))))))
+          (io/delete-if-exists path))))))
 
 (deftest structural-option-and-result-eliminators-compile-from-kotoba
   (doseq [{:keys [source export calls]}
@@ -535,12 +505,10 @@
                     ["read-error(err(-9), 41)" "-9" [[false -9] 41]]]}]]
     (let [artifact (compiler/compile-component source)
           kir (:kir (compiler/compile-source source :wasm32-wasi-kotoba-v1))
-          path (Files/createTempFile
-                "kotoba-component-union-eliminator-" ".wasm"
-                (make-array FileAttribute 0))]
+          path (io/temp-file
+                "kotoba-component-union-eliminator-" ".wasm")]
       (try
-        (Files/write path ^bytes (:bytes artifact)
-                     (make-array java.nio.file.OpenOption 0))
+        (io/write-bytes path ^bytes (:bytes artifact))
         (is (= :structural-union-elimination
                (:canonical-lowering artifact)))
         (doseq [[invoke output args] calls]
@@ -549,7 +517,7 @@
             (is (zero? (:exit run)) (:err run))
             (is (= output (str (ir/execute kir export args))))))
         (finally
-          (Files/deleteIfExists path))))))
+          (io/delete-if-exists path))))))
 
 (deftest structural-option-bool-projection-validates-only-the-active-case
   (let [source "(ns component.option-bool (:export [read-bool]))
@@ -559,15 +527,13 @@
         artifact (compiler/compile-component source)
         kir (:kir (compiler/compile-source source :wasm32-wasi-kotoba-v1))
         core (component-core/emit kir :wasm32-wasi-kotoba-v1)
-        dir (Files/createTempDirectory
-             "kotoba-component-option-bool-" (make-array FileAttribute 0))
-        component-path (.resolve dir "option-bool.component.wasm")
-        core-path (.resolve dir "option-bool.core.wasm")]
+        dir (io/temp-dir
+             "kotoba-component-option-bool-")
+        component-path (io/file dir "option-bool.component.wasm")
+        core-path (io/file dir "option-bool.core.wasm")]
     (try
-      (Files/write component-path ^bytes (:bytes artifact)
-                   (make-array java.nio.file.OpenOption 0))
-      (Files/write core-path ^bytes core
-                   (make-array java.nio.file.OpenOption 0))
+      (io/write-bytes component-path ^bytes (:bytes artifact))
+      (io/write-bytes core-path ^bytes core)
       (let [component-run
             (shell/sh wasmtime-binary "run" "--invoke"
                       "read-bool(some(true), false)" (str component-path))
@@ -585,9 +551,9 @@
         (is (= "0" (str/trim (:out malformed-inactive)))
             "an inactive payload is not interpreted"))
       (finally
-        (Files/deleteIfExists component-path)
-        (Files/deleteIfExists core-path)
-        (Files/deleteIfExists dir)))))
+        (io/delete-if-exists component-path)
+        (io/delete-if-exists core-path)
+        (io/delete-if-exists dir)))))
 
 (deftest structural-option-and-result-matches-reuse-general-wasm-expressions
   (doseq [{:keys [source export calls]}
@@ -612,12 +578,10 @@
                     ["choose(err(3), 10)" "7" [[false 3] 10]]]}]]
     (let [artifact (compiler/compile-component source)
           kir (:kir (compiler/compile-source source :wasm32-wasi-kotoba-v1))
-          path (Files/createTempFile
-                "kotoba-component-union-match-" ".wasm"
-                (make-array FileAttribute 0))]
+          path (io/temp-file
+                "kotoba-component-union-match-" ".wasm")]
       (try
-        (Files/write path ^bytes (:bytes artifact)
-                     (make-array java.nio.file.OpenOption 0))
+        (io/write-bytes path ^bytes (:bytes artifact))
         (is (= :structural-union-match (:canonical-lowering artifact)))
         (is (= :module-global (:fuel-enforcement artifact)))
         (doseq [[invoke expected args] calls]
@@ -626,7 +590,7 @@
             (is (= expected (str/trim (:out run))))
             (is (= expected (str (ir/execute kir export args))))))
         (finally
-          (Files/deleteIfExists path))))))
+          (io/delete-if-exists path))))))
 
 (deftest kotoba-source-record-payload-match-crosses-the-component-boundary
   (let [source
@@ -683,17 +647,13 @@
         kir (:kir compiled)
         artifact (compiler/compile-component source)
         core (component-core/emit kir :wasm32-wasi-kotoba-v1)
-        component-path (Files/createTempFile
-                        "kotoba-source-record-match-" ".wasm"
-                        (make-array FileAttribute 0))
-        core-path (Files/createTempFile
-                   "kotoba-source-record-match-core-" ".wasm"
-                   (make-array FileAttribute 0))]
+        component-path (io/temp-file
+                        "kotoba-source-record-match-" ".wasm")
+        core-path (io/temp-file
+                   "kotoba-source-record-match-core-" ".wasm")]
     (try
-      (Files/write component-path ^bytes (:bytes artifact)
-                   (make-array java.nio.file.OpenOption 0))
-      (Files/write core-path ^bytes core
-                   (make-array java.nio.file.OpenOption 0))
+      (io/write-bytes component-path ^bytes (:bytes artifact))
+      (io/write-bytes core-path ^bytes core)
       (is (= :structural-union-match-module (:canonical-lowering artifact)))
       (is (empty? (:required-imports artifact)))
       (doseq [[invoke expected]
@@ -716,8 +676,8 @@
         (is (not (zero? (:exit active)))
             "all selected bool leaves are canonical, even when unread"))
       (finally
-        (Files/deleteIfExists component-path)
-        (Files/deleteIfExists core-path)))))
+        (io/delete-if-exists component-path)
+        (io/delete-if-exists core-path)))))
 
 (deftest kotoba-source-match-consumes-an-indirect-string-record-leaf
   (let [source
@@ -759,17 +719,13 @@
         kir (:kir compiled)
         artifact (compiler/compile-component source)
         core (component-core/emit kir :wasm32-wasi-kotoba-v1)
-        component-path (Files/createTempFile
-                        "kotoba-source-indirect-string-match-" ".wasm"
-                        (make-array FileAttribute 0))
-        core-path (Files/createTempFile
-                   "kotoba-source-indirect-string-match-core-" ".wasm"
-                   (make-array FileAttribute 0))]
+        component-path (io/temp-file
+                        "kotoba-source-indirect-string-match-" ".wasm")
+        core-path (io/temp-file
+                   "kotoba-source-indirect-string-match-core-" ".wasm")]
     (try
-      (Files/write component-path ^bytes (:bytes artifact)
-                   (make-array java.nio.file.OpenOption 0))
-      (Files/write core-path ^bytes core
-                   (make-array java.nio.file.OpenOption 0))
+      (io/write-bytes component-path ^bytes (:bytes artifact))
+      (io/write-bytes core-path ^bytes core)
       (is (= :structural-union-match-module (:canonical-lowering artifact)))
       (is (empty? (:required-imports artifact)))
       (doseq [[invoke expected]
@@ -794,8 +750,8 @@
         (is (not (zero? (:exit over-bound))))
         (is (not (zero? (:exit wrapped)))))
       (finally
-        (Files/deleteIfExists component-path)
-        (Files/deleteIfExists core-path)))))
+        (io/delete-if-exists component-path)
+        (io/delete-if-exists core-path)))))
 
 (deftest kotoba-source-match-consumes-an-indirect-list-record-leaf
   (let [source
@@ -913,17 +869,13 @@
         kir (:kir compiled)
         artifact (compiler/compile-component source)
         core (component-core/emit kir :wasm32-wasi-kotoba-v1)
-        component-path (Files/createTempFile
-                        "kotoba-source-indirect-list-match-" ".wasm"
-                        (make-array FileAttribute 0))
-        core-path (Files/createTempFile
-                   "kotoba-source-indirect-list-match-core-" ".wasm"
-                   (make-array FileAttribute 0))]
+        component-path (io/temp-file
+                        "kotoba-source-indirect-list-match-" ".wasm")
+        core-path (io/temp-file
+                   "kotoba-source-indirect-list-match-core-" ".wasm")]
     (try
-      (Files/write component-path ^bytes (:bytes artifact)
-                   (make-array java.nio.file.OpenOption 0))
-      (Files/write core-path ^bytes core
-                   (make-array java.nio.file.OpenOption 0))
+      (io/write-bytes component-path ^bytes (:bytes artifact))
+      (io/write-bytes core-path ^bytes core)
       (is (= :structural-union-match-module (:canonical-lowering artifact)))
       (is (empty? (:required-imports artifact)))
       (doseq [[invoke expected]
@@ -976,8 +928,8 @@
         (is (not (zero? (:exit equal-index))))
         (is (not (zero? (:exit invalid-list-before-fallback)))))
       (finally
-        (Files/deleteIfExists component-path)
-        (Files/deleteIfExists core-path)))))
+        (io/delete-if-exists component-path)
+        (io/delete-if-exists core-path)))))
 
 (deftest kotoba-source-union-match-returns-owned-list-results
   (doseq [{:keys [source calls]}
@@ -1026,12 +978,10 @@
              ["choose(err([1.5, 2.5]), 0, 9.5)" "[9.5, 5.5]"]]}]]
     (let [compiled (compiler/compile-source source :wasm32-wasi-kotoba-v1)
           artifact (compiler/compile-component source)
-          path (Files/createTempFile
-                "kotoba-source-owned-union-list-" ".wasm"
-                (make-array FileAttribute 0))]
+          path (io/temp-file
+                "kotoba-source-owned-union-list-" ".wasm")]
       (try
-        (Files/write path ^bytes (:bytes artifact)
-                     (make-array java.nio.file.OpenOption 0))
+        (io/write-bytes path ^bytes (:bytes artifact))
         (is (= :kotoba.kir/v4 (get-in compiled [:kir :format])))
         (is (= :owned-vector-match (:canonical-lowering artifact)))
         (is (empty? (:required-imports artifact)))
@@ -1041,7 +991,7 @@
             (is (zero? (:exit run)) (:err run))
             (is (= expected (str/trim (:out run))) invoke)))
         (finally
-          (Files/deleteIfExists path))))))
+          (io/delete-if-exists path))))))
 
 (deftest structural-union-matches-cover-all-canonical-scalar-types
   (doseq [{:keys [source export calls]}
@@ -1080,12 +1030,10 @@
                      [[[:option :bool] true true] false]]]}]]
     (let [artifact (compiler/compile-component source)
           kir (:kir (compiler/compile-source source :wasm32-wasi-kotoba-v1))
-          path (Files/createTempFile
-                "kotoba-component-scalar-union-match-" ".wasm"
-                (make-array FileAttribute 0))]
+          path (io/temp-file
+                "kotoba-component-scalar-union-match-" ".wasm")]
       (try
-        (Files/write path ^bytes (:bytes artifact)
-                     (make-array java.nio.file.OpenOption 0))
+        (io/write-bytes path ^bytes (:bytes artifact))
         (is (= :structural-union-match (:canonical-lowering artifact)))
         (is (empty? (:required-imports artifact))
             "canonical scalar matching must remain host-free")
@@ -1095,9 +1043,9 @@
             (is (= expected (str/trim (:out run))))
             (is (= expected (str (ir/execute kir export args))))))
         (finally
-          (Files/deleteIfExists path)))))
+          (io/delete-if-exists path)))))
   (is (thrown-with-msg?
-       clojure.lang.ExceptionInfo #"requires a host value"
+       kerror/ExceptionInfo #"requires a host value"
        (compiler/compile-component
         "(ns component.match-host-value (:export [choose]))
          (defn choose [value [:option :i64]] :i64
@@ -1115,11 +1063,10 @@
                     (some item item)))"
         kir (:kir (compiler/compile-source source :wasm32-wasi-kotoba-v1))
         core (component-core/emit kir :wasm32-wasi-kotoba-v1)
-        path (Files/createTempFile
-              "kotoba-component-bool-union-core-" ".wasm"
-              (make-array FileAttribute 0))]
+        path (io/temp-file
+              "kotoba-component-bool-union-core-" ".wasm")]
     (try
-      (Files/write path ^bytes core (make-array java.nio.file.OpenOption 0))
+      (io/write-bytes path ^bytes core)
       (let [inactive (shell/sh wasmtime-binary "run" "--invoke" "cm32p2||choose"
                                (str path) "0" "2" "0")
             active (shell/sh wasmtime-binary "run" "--invoke" "cm32p2||choose"
@@ -1135,7 +1082,7 @@
         (is (not (zero? (:exit malformed-fallback)))
             "an ordinary bool parameter is validated at entry"))
       (finally
-        (Files/deleteIfExists path)))))
+        (io/delete-if-exists path)))))
 
 (deftest structural-result-match-decodes-every-heterogeneous-scalar-join
   (let [fixtures
@@ -1163,12 +1110,10 @@
                  "(err error " ((:body err) "error") ")))")
             artifact (compiler/compile-component source)
             kir (:kir (compiler/compile-source source :wasm32-wasi-kotoba-v1))
-            path (Files/createTempFile
-                  "kotoba-component-heterogeneous-result-" ".wasm"
-                  (make-array FileAttribute 0))]
+            path (io/temp-file
+                  "kotoba-component-heterogeneous-result-" ".wasm")]
         (try
-          (Files/write path ^bytes (:bytes artifact)
-                       (make-array java.nio.file.OpenOption 0))
+          (io/write-bytes path ^bytes (:bytes artifact))
           (is (= :structural-union-match (:canonical-lowering artifact)))
           (is (empty? (:required-imports artifact)))
           (doseq [[case-name fixture tag]
@@ -1182,7 +1127,7 @@
               (is (= expected (str/trim (:out run))) (str descriptor " " invoke))
               (is (= expected (str (ir/execute kir 'choose oracle-arg))))))
           (finally
-            (Files/deleteIfExists path)))))))
+            (io/delete-if-exists path)))))))
 
 (deftest heterogeneous-result-bool-validation-is-case-dependent
   (doseq [{:keys [descriptor valid-tag invalid-tag]}
@@ -1199,11 +1144,10 @@
                ")))")
           kir (:kir (compiler/compile-source source :wasm32-wasi-kotoba-v1))
           core (component-core/emit kir :wasm32-wasi-kotoba-v1)
-          path (Files/createTempFile
-                "kotoba-component-heterogeneous-bool-core-" ".wasm"
-                (make-array FileAttribute 0))]
+          path (io/temp-file
+                "kotoba-component-heterogeneous-bool-core-" ".wasm")]
       (try
-        (Files/write path ^bytes core (make-array java.nio.file.OpenOption 0))
+        (io/write-bytes path ^bytes core)
         (let [inactive-bits
               (shell/sh wasmtime-binary "run" "--invoke" "cm32p2||choose"
                         (str path) valid-tag "2")
@@ -1216,7 +1160,7 @@
           (is (not (zero? (:exit active-bool)))
               "the bool case validates the selected joined slot"))
         (finally
-          (Files/deleteIfExists path))))))
+          (io/delete-if-exists path))))))
 
 (deftest multiple-scalar-union-match-exports-share-one-component-module
   (let [source
@@ -1236,26 +1180,20 @@
          (defn negate [flag :bool] :bool (bool-not flag))"
         artifact (compiler/compile-component source)
         kir (:kir (compiler/compile-source source :wasm32-wasi-kotoba-v1))
-        component-path (Files/createTempFile
-                        "kotoba-component-multiple-matches-" ".wasm"
-                        (make-array FileAttribute 0))
-        fuel-one-path (Files/createTempFile
-                       "kotoba-component-multiple-fuel-one-" ".wasm"
-                       (make-array FileAttribute 0))
-        fuel-two-path (Files/createTempFile
-                       "kotoba-component-multiple-fuel-two-" ".wasm"
-                       (make-array FileAttribute 0))]
+        component-path (io/temp-file
+                        "kotoba-component-multiple-matches-" ".wasm")
+        fuel-one-path (io/temp-file
+                       "kotoba-component-multiple-fuel-one-" ".wasm")
+        fuel-two-path (io/temp-file
+                       "kotoba-component-multiple-fuel-two-" ".wasm")]
     (try
-      (Files/write component-path ^bytes (:bytes artifact)
-                   (make-array java.nio.file.OpenOption 0))
-      (Files/write fuel-one-path
+      (io/write-bytes component-path ^bytes (:bytes artifact))
+      (io/write-bytes fuel-one-path
                    ^bytes (component-core/emit
-                           kir :wasm32-wasi-kotoba-v1 {:fuel 1})
-                   (make-array java.nio.file.OpenOption 0))
-      (Files/write fuel-two-path
+                           kir :wasm32-wasi-kotoba-v1 {:fuel 1}))
+      (io/write-bytes fuel-two-path
                    ^bytes (component-core/emit
-                           kir :wasm32-wasi-kotoba-v1 {:fuel 2})
-                   (make-array java.nio.file.OpenOption 0))
+                           kir :wasm32-wasi-kotoba-v1 {:fuel 2}))
       (is (= :structural-union-match-module (:canonical-lowering artifact)))
       (is (= :module-global (:fuel-enforcement artifact)))
       (is (empty? (:required-imports artifact)))
@@ -1303,9 +1241,9 @@
         (is (not (zero? (:exit ordinary-bool)))
             "another export's ordinary bool parameter remains entry-validated"))
       (finally
-        (Files/deleteIfExists component-path)
-        (Files/deleteIfExists fuel-one-path)
-        (Files/deleteIfExists fuel-two-path)))))
+        (io/delete-if-exists component-path)
+        (io/delete-if-exists fuel-one-path)
+        (io/delete-if-exists fuel-two-path)))))
 
 (deftest structural-union-match-is-lazy-and-rejects-malformed-tags
   (let [source "(ns component.lazy-match (:export [choose]))
@@ -1317,15 +1255,13 @@
         artifact (compiler/compile-component source)
         kir (:kir (compiler/compile-source source :wasm32-wasi-kotoba-v1))
         core (component-core/emit kir :wasm32-wasi-kotoba-v1)
-        dir (Files/createTempDirectory
-             "kotoba-component-lazy-union-match-" (make-array FileAttribute 0))
-        component-path (.resolve dir "lazy.component.wasm")
-        core-path (.resolve dir "lazy.core.wasm")]
+        dir (io/temp-dir
+             "kotoba-component-lazy-union-match-")
+        component-path (io/file dir "lazy.component.wasm")
+        core-path (io/file dir "lazy.core.wasm")]
     (try
-      (Files/write component-path ^bytes (:bytes artifact)
-                   (make-array java.nio.file.OpenOption 0))
-      (Files/write core-path ^bytes core
-                   (make-array java.nio.file.OpenOption 0))
+      (io/write-bytes component-path ^bytes (:bytes artifact))
+      (io/write-bytes core-path ^bytes core)
       (let [inactive (shell/sh wasmtime-binary "run" "--invoke"
                                "choose(none, 41)" (str component-path))
             active (shell/sh wasmtime-binary "run" "--invoke"
@@ -1339,16 +1275,16 @@
         (is (not (zero? (:exit malformed)))
             "a tag outside the two-case union traps before branch dispatch"))
       (finally
-        (Files/deleteIfExists component-path)
-        (Files/deleteIfExists core-path)
-        (Files/deleteIfExists dir))))
+        (io/delete-if-exists component-path)
+        (io/delete-if-exists core-path)
+        (io/delete-if-exists dir))))
   (let [descriptor [:option :i64]
         malformed {:format :kotoba.kir/v4 :exports ['choose] :schemas {} :effects #{}
                    :functions [{:name 'choose :params ['value]
                                 :param-types [descriptor] :result :i64
                                 :body (list 'option-match descriptor 'value 0)}]}]
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"no qualified Canonical lowering"
+         kerror/ExceptionInfo #"no qualified Canonical lowering"
          (component/assert-scalar-slice! malformed (wit/emit malformed))))))
 
 (deftest named-scalar-record-identity-is-admitted
@@ -1367,7 +1303,7 @@
     ;; path -- see `string-and-keyword-field-record-identity-is-admitted`),
     ;; so a genuinely still-unadmitted field type (`[:vector :i64]`) is
     ;; needed to keep testing "an out-of-set field type is rejected".
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"no qualified Canonical lowering"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"no qualified Canonical lowering"
                           (component/assert-scalar-slice!
                            (assoc-in kir [:schemas :demo/point 2 0 1] [:vector :i64])
                            (wit/emit kir))))))
@@ -1399,7 +1335,7 @@
                       (assoc :schemas two-level-schemas)
                       (assoc-in [:functions 0 :param-types] [[:ref :demo/deep]])
                       (assoc-in [:functions 0 :result] [:ref :demo/deep]))]
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"no qualified Canonical lowering"
+      (is (thrown-with-msg? kerror/ExceptionInfo #"no qualified Canonical lowering"
                             (component/assert-scalar-slice! deep-kir (wit/emit deep-kir)))))
     ;; A nested field with a non-scalar (string) leaf remains fail-closed.
     (let [string-leaf-schemas
@@ -1410,11 +1346,11 @@
                         (assoc :schemas string-leaf-schemas)
                         (assoc-in [:functions 0 :param-types] [[:ref :demo/outer-str]])
                         (assoc-in [:functions 0 :result] [:ref :demo/outer-str]))]
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"no qualified Canonical lowering"
+      (is (thrown-with-msg? kerror/ExceptionInfo #"no qualified Canonical lowering"
                             (component/assert-scalar-slice! string-kir (wit/emit string-kir)))))
     ;; A nested field descriptor whose sealed schema identity has drifted
     ;; remains fail-closed.
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"no qualified Canonical lowering"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"no qualified Canonical lowering"
                           (component/assert-scalar-slice!
                            (assoc-in kir [:schemas :demo/inner 1] :demo/renamed)
                            (wit/emit kir))))))
@@ -1469,7 +1405,7 @@
       ;; this assertion actually checks. Mirrors the identical `(wit/emit
       ;; kir)` substitution in `named-scalar-record-identity-is-admitted`'s
       ;; own `[:vector :i64]` regression case.
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"no qualified Canonical lowering"
+      (is (thrown-with-msg? kerror/ExceptionInfo #"no qualified Canonical lowering"
                             (component/assert-scalar-slice! vector-kir (wit/emit kir)))))
     ;; A case wrapping a record that is itself one level nested (the ADR
     ;; 0051 shape) remains fail-closed: a variant case payload is bounded to
@@ -1483,7 +1419,7 @@
                         (assoc :schemas nested-case-schemas)
                         (assoc-in [:functions 0 :param-types] [[:ref :demo/status]])
                         (assoc-in [:functions 0 :result] [:ref :demo/status]))]
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"no qualified Canonical lowering"
+      (is (thrown-with-msg? kerror/ExceptionInfo #"no qualified Canonical lowering"
                             (component/assert-scalar-slice! nested-kir (wit/emit nested-kir)))))
     ;; A case wrapping another variant remains fail-closed: only scalars and
     ;; sealed all-scalar records are admitted case payloads in this slice.
@@ -1495,17 +1431,17 @@
                                (assoc :schemas variant-case-schemas)
                                (assoc-in [:functions 0 :param-types] [[:ref :demo/status]])
                                (assoc-in [:functions 0 :result] [:ref :demo/status]))]
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"no qualified Canonical lowering"
+      (is (thrown-with-msg? kerror/ExceptionInfo #"no qualified Canonical lowering"
                             (component/assert-scalar-slice! variant-case-kir
                                                             (wit/emit variant-case-kir)))))
     ;; A case schema whose sealed identity has drifted remains fail-closed.
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"no qualified Canonical lowering"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"no qualified Canonical lowering"
                           (component/assert-scalar-slice!
                            (assoc-in kir [:schemas :demo/entry 1] :demo/renamed)
                            (wit/emit kir))))
     ;; A computed variant body (anything other than a bare parameter
     ;; passthrough) remains fail-closed.
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"no qualified Canonical lowering"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"no qualified Canonical lowering"
                           (component/assert-scalar-slice!
                            (assoc-in kir [:functions 0 :body] '(record-get schemas value :found))
                            (wit/emit kir))))))
@@ -1571,7 +1507,7 @@
       ;; `wit/emit` uses the original `kir` here, not `out-of-set-kir`, for
       ;; the same `[:vector :i64]`-has-no-WIT-rendering reason documented in
       ;; `variant-with-record-and-scalar-cases-identity-is-admitted`.
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"no qualified Canonical lowering"
+      (is (thrown-with-msg? kerror/ExceptionInfo #"no qualified Canonical lowering"
                             (component/assert-scalar-slice! out-of-set-kir
                                                             (wit/emit kir)))))))
 
@@ -1697,7 +1633,7 @@
                               (assoc-in [:functions 0 :body]
                                         (list 'typed-cap-call 8 [:ref :demo/cap-nested-outcome]
                                               [:ref :demo/cap-nested-outcome] 'request)))]
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"no qualified Canonical lowering"
+      (is (thrown-with-msg? kerror/ExceptionInfo #"no qualified Canonical lowering"
                             (component/assert-scalar-slice! nested-case-kir
                                                             (wit/emit nested-case-kir)))))
     ;; A bare `:string`/`:keyword` case payload (not wrapped in a record)
@@ -1714,7 +1650,7 @@
                                    (assoc-in [:functions 0 :body]
                                              (list 'typed-cap-call 8 [:ref :demo/cap-label-outcome]
                                                    [:ref :demo/cap-label-outcome] 'request)))]
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"no qualified Canonical lowering"
+      (is (thrown-with-msg? kerror/ExceptionInfo #"no qualified Canonical lowering"
                             (component/assert-scalar-slice! bare-string-case-kir
                                                             (wit/emit bare-string-case-kir)))))
     ;; ADR 0058: different request/result variant identities are now
@@ -1827,19 +1763,19 @@
              (assoc-in [:functions 0 :body]
                        (list 'typed-cap-call 8 [:ref :demo/cap-nested-outcome]
                              [:ref :demo/other-outcome] 'request)))]
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"no qualified Canonical lowering"
+      (is (thrown-with-msg? kerror/ExceptionInfo #"no qualified Canonical lowering"
                             (component/assert-scalar-slice! nested-different-identity-kir
                                                             (wit/emit nested-different-identity-kir)))))
     ;; A computed capability request (anything other than a bare parameter
     ;; passthrough) remains fail-closed.
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"no qualified Canonical lowering"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"no qualified Canonical lowering"
                           (component/assert-scalar-slice!
                            (assoc-in kir [:functions 0 :body]
                                      (list 'typed-cap-call 8 descriptor descriptor
                                            (list 'typed-cap-call 8 descriptor descriptor 'request)))
                            (wit/emit kir))))
     ;; An unknown capability id remains fail-closed.
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"no qualified Canonical lowering"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"no qualified Canonical lowering"
                           (component/assert-scalar-slice!
                            (assoc-in kir [:functions 0 :body]
                                      (list 'typed-cap-call 999999 descriptor descriptor 'request))
@@ -1891,16 +1827,16 @@
                         (assoc :schemas nested-schemas)
                         (assoc-in [:functions 0 :param-types] [[:ref :demo/wrapper]])
                         (assoc-in [:functions 0 :result] [:ref :demo/wrapper]))]
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"no qualified Canonical lowering"
+      (is (thrown-with-msg? kerror/ExceptionInfo #"no qualified Canonical lowering"
                             (component/assert-scalar-slice! nested-kir (wit/emit nested-kir)))))
     ;; A record schema whose sealed identity has drifted remains fail-closed.
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"no qualified Canonical lowering"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"no qualified Canonical lowering"
                           (component/assert-scalar-slice!
                            (assoc-in kir [:schemas :demo/state-entry 1] :demo/renamed)
                            (wit/emit kir))))
     ;; A computed body (anything other than a bare parameter passthrough)
     ;; remains fail-closed.
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"no qualified Canonical lowering"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"no qualified Canonical lowering"
                           (component/assert-scalar-slice!
                            (assoc-in kir [:functions 0 :body]
                                      (list 'record-get schema 'value :key))
@@ -1915,7 +1851,7 @@
              :functions [{:name 'weight :params ['value] :param-types [descriptor]
                           :result :f64 :body (list 'record-get schema 'value :weight)}]}]
     (is (true? (component/assert-scalar-slice! kir (wit/emit kir))))
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"no qualified Canonical lowering"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"no qualified Canonical lowering"
                           (component/assert-scalar-slice!
                            (assoc-in kir [:functions 0 :body]
                                      (list 'record-get schema 'value :missing))
@@ -1938,7 +1874,7 @@
                  :body (list 'record-assoc schema 'point :weight 'weight)}])]
     (is (true? (component/assert-scalar-slice! construction (wit/emit construction))))
     (is (true? (component/assert-scalar-slice! update (wit/emit update))))
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"no qualified Canonical lowering"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"no qualified Canonical lowering"
                           (component/assert-scalar-slice!
                            (assoc-in update [:functions 0 :body]
                                      (list 'record-assoc schema 'point :weight 1))
@@ -2004,10 +1940,9 @@
           "an undeclared helper must not reach the world"))
     ;; The regression itself: a component may not import the host intrinsic
     ;; tables, because nothing in a WIT world can bind them.
-    (let [path (Files/createTempFile "kotoba-source-capability-" ".wasm"
-                                     (make-array FileAttribute 0))]
+    (let [path (io/temp-file "kotoba-source-capability-" ".wasm")]
       (try
-        (Files/write path ^bytes (:bytes artifact) (make-array java.nio.file.OpenOption 0))
+        (io/write-bytes path ^bytes (:bytes artifact))
         (let [{:keys [exit out err]} (shell/sh "wasm-tools" "validate"
                                                "--features" "all" (str path))]
           (is (zero? exit) (str out err)))
@@ -2017,20 +1952,20 @@
           (is (not (str/includes? out "kotoba:heap"))
               "a component must not import the kotoba:heap intrinsics")
           (is (str/includes? out "import kotoba:application/llm@1.0.0;")))
-        (finally (Files/deleteIfExists path))))))
+        (finally (io/delete-if-exists path))))))
 
 (deftest source-level-capability-application-is-deny-by-default
   ;; Least privilege is enforced in both directions: an effect the policy does
   ;; not grant fails, and a grant nothing uses fails too.
   (is (thrown-with-msg?
-       clojure.lang.ExceptionInfo #"capability policy denies required effects"
+       kerror/ExceptionInfo #"capability policy denies required effects"
        (compiler/compile-component multi-capability-source
                                    (update multi-capability-policy :allow
                                            disj [:cap/call 11])
                                    {})))
   ;; The `:capabilities` clause has to match actual use, so an effect cannot be
   ;; added without also declaring it.
-  (is (thrown? clojure.lang.ExceptionInfo
+  (is (thrown? kerror/ExceptionInfo
                (compiler/compile-component
                 (str/replace multi-capability-source
                              ":state/transact :llm/generate :ui/commit :log/append"

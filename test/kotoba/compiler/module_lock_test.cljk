@@ -5,11 +5,10 @@
   already does that. It is that resolution is CLOSED: what gets compiled is
   exactly what the lock names, proven by hash, with no path search available as
   a fallback when the lock is wrong or incomplete."
-  (:require [clojure.java.io :as io]
+  (:require [kotoba.lang.error :as kerror] [kotoba.io :as kio] [clojure.java.io :as io]
             [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]
-            [kotoba.compiler.module-lock :as module-lock])
-  (:import [java.nio.file Files]))
+            [kotoba.compiler.module-lock :as module-lock]))
 
 (def lib-source
   "(ns example.lib (:export [answer])) (defn answer [] :i64 42)")
@@ -19,7 +18,7 @@
    (defn main [] :i64 (lib/answer))")
 
 (defn- temp-dir [prefix]
-  (.toFile (Files/createTempDirectory prefix (make-array java.nio.file.attribute.FileAttribute 0))))
+  (kio/temp-dir prefix))
 
 (defn- delete-tree [root]
   (doseq [f (reverse (file-seq root))] (.delete ^java.io.File f)))
@@ -62,7 +61,7 @@
       (spit (io/file blocks (get modules 'example.lib))
             "(ns example.lib (:export [answer])) (defn answer [] :i64 0)")
       (let [error (try (module-lock/load-locked-graph lock (str blocks))
-                       (catch clojure.lang.ExceptionInfo e e))]
+                       (catch kerror/ExceptionInfo e e))]
         (is (= :module-lock (:phase (ex-data error))))
         (is (re-find #"does not hash" (ex-message error)))))))
 
@@ -72,7 +71,7 @@
       ;; example.lib exists on disk in this very repo's test fixtures in the
       ;; path-resolved world. Here it simply is not pinned, and that is fatal.
       (let [error (try (module-lock/load-locked-graph lock (str blocks))
-                       (catch clojure.lang.ExceptionInfo e e))]
+                       (catch kerror/ExceptionInfo e e))]
         (is (= 'example.lib (:module (ex-data error))))
         (is (re-find #"not pinned" (ex-message error)))))))
 
@@ -86,7 +85,7 @@
                                 :root 'example.root
                                 :modules (assoc modules 'example.lib impostor)}))
         (let [error (try (module-lock/load-locked-graph (str tampered) (str blocks))
-                         (catch clojure.lang.ExceptionInfo e e))]
+                         (catch kerror/ExceptionInfo e e))]
           (is (= 'example.other (:declared (ex-data error))))
           (is (re-find #"different namespace" (ex-message error))))))))
 
@@ -112,7 +111,7 @@
                           :modules {'example.lib "bafkone"}}))
       (is (re-find #"does not pin its own root"
                    (ex-message (try (module-lock/read-lock (str lock))
-                                    (catch clojure.lang.ExceptionInfo e e)))))
+                                    (catch kerror/ExceptionInfo e e)))))
       (finally (delete-tree dir)))))
 
 (deftest writing-the-same-source-twice-produces-one-block

@@ -1,8 +1,6 @@
 (ns kotoba.compiler.coverage-test
-  (:require [clojure.test :refer [deftest is testing]]
-            [kotoba.compiler.coverage :as coverage])
-  (:import [java.nio.file Files]
-           [java.nio.file.attribute FileAttribute]))
+  (:require [kotoba.lang.error :as kerror] [kotoba.bytes :as kbytes] [kotoba.io :as kio] [clojure.test :refer [deftest is testing]]
+            [kotoba.compiler.coverage :as coverage]))
 
 (def digest (apply str (repeat 64 "a")))
 (def evidence (apply str (repeat 64 "b")))
@@ -41,23 +39,22 @@
            ["invalid digest" (assoc-in base [:dataset :sha256] "a")]
            ["invalid period" (assoc-in base [:period :from] "2026-13")]]]
     (testing label
-      (is (thrown? clojure.lang.ExceptionInfo (coverage/report malformed))))))
+      (is (thrown? kerror/ExceptionInfo (coverage/report malformed))))))
 
 (deftest raw-dataset-bytes-are-bound-to-the-manifest
-  (let [path (Files/createTempFile "kotoba-coverage" ".csv"
-                                   (make-array FileAttribute 0))]
+  (let [path (kio/temp-file "kotoba-coverage" ".csv")]
     (try
-      (Files/write path (.getBytes "fixture" "UTF-8") (make-array java.nio.file.OpenOption 0))
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"digest mismatch"
+      (kio/write-bytes path (kbytes/utf8-bytes "fixture"))
+      (is (thrown-with-msg? kerror/ExceptionInfo #"digest mismatch"
                             (coverage/verify-dataset! base (str path))))
-      (finally (Files/deleteIfExists path)))))
+      (finally (kio/delete-if-exists path)))))
 
 (deftest release-platforms-require-matching-verified-evidence
-  (is (thrown-with-msg? clojure.lang.ExceptionInfo #"missing or mismatched"
+  (is (thrown-with-msg? kerror/ExceptionInfo #"missing or mismatched"
                         (coverage/report base)))
-  (is (thrown-with-msg? clojure.lang.ExceptionInfo #"missing or mismatched"
+  (is (thrown-with-msg? kerror/ExceptionInfo #"missing or mismatched"
                         (coverage/report base [{:digest evidence :platform :b
                                                 :paths #{:native}}])))
-  (is (thrown-with-msg? clojure.lang.ExceptionInfo #"missing or mismatched"
+  (is (thrown-with-msg? kerror/ExceptionInfo #"missing or mismatched"
                         (coverage/report base [{:digest evidence :platform :a
                                                 :paths #{:wasm}}]))))

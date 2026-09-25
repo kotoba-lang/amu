@@ -1,5 +1,5 @@
 (ns kotoba.compiler.backend-evm-test
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [kotoba.lang.error :as kerror] [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.backend.evm :as evm]
             [kotoba.compiler.core :as compiler]))
 
@@ -38,19 +38,19 @@
 (deftest unsupported-kir-fails-closed
   (testing "unsupported arithmetic is not silently miscompiled"
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo
+         kerror/ExceptionInfo
          #"unsupported checked-KIR expression"
          (evm/emit (assoc-in valid-kir [:functions 0 :body] '(- 42 1))))))
   (testing "effects are rejected at the EVM boundary"
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo
+         kerror/ExceptionInfo
          #"one pure zero-arity main"
          (evm/emit (-> valid-kir
                        (assoc :effects #{[:cap/call 7]})
                        (assoc-in [:functions 0 :effects] #{[:cap/call 7]}))))))
   (testing "extra functions are rejected"
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo
+         kerror/ExceptionInfo
          #"one pure zero-arity main"
          (evm/emit (update valid-kir :functions conj
                            {:name 'helper :params [] :result :i64
@@ -60,6 +60,6 @@
   (let [artifact (evm/emit valid-kir)
         tampered (update-in artifact [:runtime-bytes 0] bit-xor 1)]
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo
+         kerror/ExceptionInfo
          #"does not match checked-KIR re-emission"
          (evm/verify-artifact! tampered)))))

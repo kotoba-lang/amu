@@ -1,5 +1,5 @@
 (ns kotoba.compiler.ipld-adl-source-test
-  (:require [clojure.java.shell :as shell]
+  (:require [kotoba.lang.error :as kerror] [kotoba.process :as shell]
             [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]
             [kotoba.compiler.provenance :as provenance])
@@ -275,35 +275,35 @@
 (deftest profile-rejects-source-it-cannot-faithfully-lower
   (testing "a changed body is not silently compiled as identity"
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"unsupported IPLD ADL operation body"
+         kerror/ExceptionInfo #"unsupported IPLD ADL operation body"
          (compiler/compile-ipld-adl-source
           (.replace identity-source
                     "(defn decode [value :bytes] :bytes value)"
                     "(defn decode [value :bytes] :bytes (if true value (bytes)))")))))
   (testing "extra exports cannot enlarge the ABI"
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"exact operation set"
+         kerror/ExceptionInfo #"exact operation set"
          (compiler/compile-ipld-adl-source
           (.replace identity-source
                     "validate-logical]))"
                     "validate-logical extra]))\n(defn extra [] 1)")))))
   (testing "unbounded or reordered byte expressions are not admitted"
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"unsupported IPLD ADL operation body"
+         kerror/ExceptionInfo #"unsupported IPLD ADL operation body"
          (compiler/compile-ipld-adl-source
           (.replace input-count-source
                     "(= (bytes-count value) 4)"
                     "(= 4 (bytes-count value))")))))
   (testing "a reordered indexed byte comparison is not admitted"
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"unsupported IPLD ADL operation body"
+         kerror/ExceptionInfo #"unsupported IPLD ADL operation body"
          (compiler/compile-ipld-adl-source
           (.replace byte-at-source
                     "(= (bytes-at value 0) 161)"
                     "(= 161 (bytes-at value 0))")))))
   (testing "a negative byte index is refused by name, not lowered"
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"byte index must be a non-negative int32"
+         kerror/ExceptionInfo #"byte index must be a non-negative int32"
          (compiler/compile-ipld-adl-source
           (.replace byte-at-source
                     "(bytes-at value 0)"
@@ -312,31 +312,31 @@
     ;; bytes-at yields an unsigned byte. Admitting 256 would compile a source
     ;; mistake into a validator that silently always answers false.
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"byte comparison must be an unsigned byte"
+         kerror/ExceptionInfo #"byte comparison must be an unsigned byte"
          (compiler/compile-ipld-adl-source
           (.replace byte-at-source
                     "(bytes-at value 0) 161)"
                     "(bytes-at value 0) 256)"))))
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"byte comparison must be an unsigned byte"
+         kerror/ExceptionInfo #"byte comparison must be an unsigned byte"
          (compiler/compile-ipld-adl-source
           (.replace byte-at-source
                     "(bytes-at value 0) 161)"
                     "(bytes-at value 0) -1)")))))
   (testing "a computed index is outside this closed profile"
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"unsupported IPLD ADL operation body"
+         kerror/ExceptionInfo #"unsupported IPLD ADL operation body"
          (compiler/compile-ipld-adl-source
           (.replace byte-at-source
                     "(bytes-at value 0)"
                     "(bytes-at value (bytes-count value))")))))
   (testing "an inverted or negative subrange is refused by name"
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"subrange offsets must satisfy 0 <= start <= end"
+         kerror/ExceptionInfo #"subrange offsets must satisfy 0 <= start <= end"
          (compiler/compile-ipld-adl-source
           (.replace slice-source "(bytes-slice value 1 3)" "(bytes-slice value 3 1)"))))
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"subrange offsets must satisfy 0 <= start <= end"
+         kerror/ExceptionInfo #"subrange offsets must satisfy 0 <= start <= end"
          (compiler/compile-ipld-adl-source
           (.replace slice-source "(bytes-slice value 1 3)" "(bytes-slice value -1 3)")))))
   (testing "a subrange the fixed memory could never satisfy is refused"
@@ -344,50 +344,50 @@
     ;; never be in range at run time. Rejecting it at compile time is the
     ;; lowering half of the max-output bound; the runner enforces the other.
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"subrange exceeds the module's input capacity"
+         kerror/ExceptionInfo #"subrange exceeds the module's input capacity"
          (compiler/compile-ipld-adl-source
           (.replace slice-source "(bytes-slice value 1 3)" "(bytes-slice value 0 130049)"))))
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"subrange exceeds the module's input capacity"
+         kerror/ExceptionInfo #"subrange exceeds the module's input capacity"
          (compiler/compile-ipld-adl-source
           (.replace slice-source "(bytes-slice value 1 3)" "(bytes-slice value 0 65000)")
           {:memory-pages 1}))))
   (testing "a computed offset is outside this closed profile"
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"unsupported IPLD ADL operation body"
+         kerror/ExceptionInfo #"unsupported IPLD ADL operation body"
          (compiler/compile-ipld-adl-source
           (.replace slice-source
                     "(bytes-slice value 1 3)"
                     "(bytes-slice value 1 (bytes-count value))")))))
   (testing "an expression whose constant part alone cannot fit is refused"
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"expression exceeds the module's input capacity"
+         kerror/ExceptionInfo #"expression exceeds the module's input capacity"
          (compiler/compile-ipld-adl-source
           (.replace join-source
                     "(bytes-slice value 1 3) (bytes-slice value 0 1)"
                     "(bytes-slice value 0 70000) (bytes-slice value 0 70000)")))))
   (testing "an inverted offset inside a join is still refused by name"
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"subrange offsets must satisfy 0 <= start <= end"
+         kerror/ExceptionInfo #"subrange offsets must satisfy 0 <= start <= end"
          (compiler/compile-ipld-adl-source
           (.replace join-source "(bytes-slice value 1 3)" "(bytes-slice value 3 1)")))))
   (testing "an inverted offset nested inside a composed expression is too"
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"subrange offsets must satisfy 0 <= start <= end"
+         kerror/ExceptionInfo #"subrange offsets must satisfy 0 <= start <= end"
          (compiler/compile-ipld-adl-source
           (.replace composed-source "(bytes-slice value 1 3)" "(bytes-slice value 3 1)")))))
   (testing "the expression node budget is a bound, not a suggestion"
     (let [deep (reduce (fn [form _] (str "(bytes-concat " form " value)"))
                        "value" (range 40))]
       (is (thrown-with-msg?
-           clojure.lang.ExceptionInfo #"expression exceeds the node budget"
+           kerror/ExceptionInfo #"expression exceeds the node budget"
            (compiler/compile-ipld-adl-source
             (.replace composed-source
                       "(bytes-concat (bytes-slice value 3 4)\n                   (bytes-concat (bytes-slice value 1 3) (bytes-slice value 0 1)))"
                       deep))))))
   (testing "a computed offset stays outside the grammar however deeply nested"
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"unsupported IPLD ADL operation body"
+         kerror/ExceptionInfo #"unsupported IPLD ADL operation body"
          (compiler/compile-ipld-adl-source
           (.replace composed-source
                     "(bytes-slice value 1 3)"

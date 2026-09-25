@@ -11,7 +11,7 @@
   exported top-level function names (this compiler's byte-for-byte
   reproducible-build goal requires deterministic naming, not a JVM-process-
   global counter)."
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [kotoba.lang.error :as kerror] [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]
             [kotoba.sema :as sema]
             [kotoba.kir :as ir]))
@@ -22,7 +22,7 @@
 
 (defn- rejection-message [source]
   (try (compiler/check-source source) nil
-       (catch clojure.lang.ExceptionInfo e (ex-message e))))
+       (catch kerror/ExceptionInfo e (ex-message e))))
 
 ;; ───────────────────────── let bug-fix regression ─────────────────────────
 
@@ -66,7 +66,7 @@
       "the rest binding collects everything after the named positions"))
 
 (deftest vector-destructuring-missing-position-fails-closed
-  (is (thrown-with-msg? clojure.lang.ExceptionInfo #"vector-index-out-of-range"
+  (is (thrown-with-msg? kerror/ExceptionInfo #"vector-index-out-of-range"
                         (oracle "(defn main [] (let [[a b] [1]] (+ a b)))"))))
 
 (deftest map-destructuring-in-let-binds-via-keys

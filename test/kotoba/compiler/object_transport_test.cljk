@@ -1,7 +1,7 @@
 (ns kotoba.compiler.object-transport-test
   "Production object-store transport (ADR 0129) — host-configured endpoint,
   fixed-path JSON, get-stream / put-block / CAS through typed providers."
-  (:require [json.data-json :as json]
+  (:require [kotoba.lang.error :as kerror] [kotoba.bytes :as kbytes] [json.data-json :as json]
             [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]
             [kotoba.kir :as ir]
@@ -11,11 +11,10 @@
             [kotoba.kir.value :as value])
   (:import (com.sun.net.httpserver HttpServer HttpHandler)
            (java.net InetSocketAddress)
-           (java.util Base64)
            (java.util.concurrent ConcurrentHashMap)))
 
 (defn- respond-json! [ex status m]
-  (let [body (.getBytes (json/write-str m) "UTF-8")]
+  (let [body (kbytes/utf8-bytes (json/write-str m))]
     (.. ex getResponseHeaders (add "Content-Type" "application/json"))
     (.sendResponseHeaders ex status (alength body))
     (doto (.getResponseBody ex)
@@ -108,7 +107,7 @@
     (runtime/instantiate kir {:allow #{14 15 16} :providers (:providers kit)})))
 
 (deftest resolve-endpoint-requires-host-config
-  (is (thrown-with-msg? clojure.lang.ExceptionInfo #":endpoint"
+  (is (thrown-with-msg? kerror/ExceptionInfo #":endpoint"
                         (transport/resolve-endpoint {})))
   (is (= "https://o.example" (transport/resolve-endpoint {:endpoint "https://o.example"}))))
 
@@ -154,7 +153,7 @@
     (try
       (let [runtime (hosted endpoint)]
         (is (thrown-with-msg?
-             clojure.lang.ExceptionInfo #"object provider failed|missing"
+             kerror/ExceptionInfo #"object provider failed|missing"
              ((:invoke runtime) 'get-stream
               [[object/get-stream-request-type :example/blocks "nope"]]))))
       (finally (stop! fake)))))

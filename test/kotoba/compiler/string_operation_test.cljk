@@ -1,5 +1,5 @@
 (ns kotoba.compiler.string-operation-test
-  (:require [clojure.java.shell :as shell]
+  (:require [kotoba.lang.error :as kerror] [kotoba.bytes :as kbytes] [kotoba.process :as shell]
             [clojure.test :refer [deftest is]]
             [kotoba.compiler.core :as compiler]
             [kotoba.kir :as ir]))
@@ -15,13 +15,13 @@
      (string-replace-all value needle replacement))")
 
 (defn- encoded [bytes]
-  (.encodeToString (java.util.Base64/getEncoder) bytes))
+  (kbytes/base64-encode bytes))
 
 (deftest bounded-literal-string-replacement-has-cross-target-conformance
   (let [javascript (compiler/compile-source source :js-kotoba-v1)
         wasm (compiler/compile-source source :wasm32-browser-kotoba-v1)
         kir (:kir wasm)
-        js64 (encoded (.getBytes ^String (:source javascript) "UTF-8"))
+        js64 (encoded (kbytes/utf8-bytes ^String (:source javascript)))
         wasm64 (encoded (:bytes wasm))
         checks (str "if(x.concat('a','b')!=='ab')process.exit(2);"
                     "if(x.substring('a😀語z',1n,8n)!=='😀語')process.exit(6);"
@@ -38,10 +38,10 @@
                                    "const x=h.instance.exports;" checks "})") wasm64)]
     (is (= "ab" (ir/execute kir 'concat ["a" "b"])))
     (is (= "😀語" (ir/execute kir 'substring ["a😀語z" 1 8])))
-    (is (thrown? clojure.lang.ExceptionInfo
+    (is (thrown? kerror/ExceptionInfo
                  (ir/execute kir 'substring ["a😀" 2 5])))
     (is (= "a$$a$$" (ir/execute kir 'replace ["a.$a.$" "." "$"])))
-    (is (thrown? clojure.lang.ExceptionInfo (ir/execute kir 'replace ["abc" "" "x"])))
+    (is (thrown? kerror/ExceptionInfo (ir/execute kir 'replace ["abc" "" "x"])))
     (is (zero? (:exit js-result)) (:err js-result))
     (is (zero? (:exit wasm-result)) (:err wasm-result))))
 
@@ -63,7 +63,7 @@
   (let [javascript (compiler/compile-source search-source :js-kotoba-v1)
         wasm (compiler/compile-source search-source :wasm32-browser-kotoba-v1)
         kir (:kir wasm)
-        js64 (encoded (.getBytes ^String (:source javascript) "UTF-8"))
+        js64 (encoded (kbytes/utf8-bytes ^String (:source javascript)))
         wasm64 (encoded (:bytes wasm))
         js-checks (str "if(x.contains('final decision made','decision')!==true)process.exit(2);"
                     "if(x.contains('final decision made','banana')!==false)process.exit(3);"
@@ -85,8 +85,8 @@
                                    "const x=h.instance.exports;" wasm-checks "})") wasm64)]
     (is (true? (ir/execute kir 'contains ["final decision made" "decision"])))
     (is (false? (ir/execute kir 'contains ["final decision made" "banana"])))
-    (is (thrown? clojure.lang.ExceptionInfo (ir/execute kir 'contains ["abc" ""])))
-    (is (thrown? clojure.lang.ExceptionInfo (ir/execute kir 'contains ["" ""])))
+    (is (thrown? kerror/ExceptionInfo (ir/execute kir 'contains ["abc" ""])))
+    (is (thrown? kerror/ExceptionInfo (ir/execute kir 'contains ["" ""])))
     (is (= "final decision" (ir/execute kir 'fold ["FINAL DECISION"])))
     (is (= "café" (ir/execute kir 'fold ["CAFÉ"])))
     (is (false? (ir/execute kir 'contains ["This Is The FINAL Decision" "final decision"])))
@@ -127,7 +127,7 @@
   (let [javascript (compiler/compile-source code-point-source :js-kotoba-v1)
         wasm (compiler/compile-source code-point-source :wasm32-browser-kotoba-v1)
         kir (:kir wasm)
-        js64 (encoded (.getBytes ^String (:source javascript) "UTF-8"))
+        js64 (encoded (kbytes/utf8-bytes ^String (:source javascript)))
         wasm64 (encoded (:bytes wasm))
         ;; "aあ𝟘0": a@0=0x61, あ@1=0x3042(3B), 𝟘@4=0x1d7d8(4B), 0@8=0x30
         s "aあ𝟘0"
@@ -154,8 +154,8 @@
     (is (= 97 (ir/execute kir 'cp [s 0])))
     (is (= 0x3042 (ir/execute kir 'cp [s 1])))
     (is (= 0x1d7d8 (ir/execute kir 'cp [s 4])))
-    (is (thrown? clojure.lang.ExceptionInfo (ir/execute kir 'cp [s 2])))
-    (is (thrown? clojure.lang.ExceptionInfo (ir/execute kir 'cp [s 9])))
+    (is (thrown? kerror/ExceptionInfo (ir/execute kir 'cp [s 2])))
+    (is (thrown? kerror/ExceptionInfo (ir/execute kir 'cp [s 9])))
     (is (= 6 (ir/execute kir 'alnum-run-bytes ["abc123 xyz"])))
     (is (= 0 (ir/execute kir 'alnum-run-bytes [" abc"])))
     (is (= 1 (ir/execute kir 'alnum-run-bytes [s])))
@@ -179,7 +179,7 @@
   (let [javascript (compiler/compile-source join-source :js-kotoba-v1)
         wasm (compiler/compile-source join-source :wasm32-kotoba-v1)
         kir (:kir wasm)
-        js64 (encoded (.getBytes ^String (:source javascript) "UTF-8"))
+        js64 (encoded (kbytes/utf8-bytes ^String (:source javascript)))
         wasm64 (encoded (:bytes wasm))
         checks (str "if(x.join2(',', 'a', 'b')!=='a,b')process.exit(2);"
                     "if(x.join3('-', 'x', 'y', 'z')!=='x-y-z')process.exit(3);"
@@ -200,7 +200,7 @@
     (is (zero? (:exit wasm-result)) (:err wasm-result))))
 
 (deftest string-join-rejects-too-many-parts
-  (is (thrown-with-msg? clojure.lang.ExceptionInfo #"max 8 parts"
+  (is (thrown-with-msg? kerror/ExceptionInfo #"max 8 parts"
         (compiler/compile-source
          "(ns t (:export [f]))
           (defn f [] :string

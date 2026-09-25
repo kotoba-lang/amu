@@ -1,5 +1,5 @@
 (ns kotoba.compiler.cache-test
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [kotoba.lang.error :as kerror] [clojure.test :refer [deftest is testing]]
             [kotoba.artifact.core :as artifact]
             [kotoba.compiler.cache :as cache]
             [kotoba.compiler.core :as compiler]
@@ -10,7 +10,7 @@
   {:format :kotoba.trust/v1 :trusted-signers #{(:signer key)}
    :revoked-signers #{} :revoked-artifacts #{}})
 (defn- reason [f]
-  (try (f) nil (catch clojure.lang.ExceptionInfo error (:reason (ex-data error)))))
+  (try (f) nil (catch kerror/ExceptionInfo error (:reason (ex-data error)))))
 
 (deftest signed-cache-admission-is-input-exact-and-fail-closed
   (let [key (signing/generate-keypair)
@@ -54,7 +54,7 @@
                         source :x86_64-kotoba-v1 {} {} nil nil 5))))
     (is (true? (:hit? (compiler/compile-source-cached
                        source :x86_64-kotoba-v1 {} {} entry (trust key) 5))))
-    (is (thrown? clojure.lang.ExceptionInfo
+    (is (thrown? kerror/ExceptionInfo
                  (compiler/compile-source-cached
                   "(defn main [] 0)" :x86_64-kotoba-v1 {} {}
                   entry (trust key) 5)))))

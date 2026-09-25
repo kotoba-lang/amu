@@ -15,7 +15,7 @@
   by the failure it names, not by an unrelated one: the denial's `:missing`
   set is asserted by value, and the destructuring sites are exercised with a
   row that actually holds the keyword."
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [kotoba.lang.error :as kerror] [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]
             [kotoba.compiler.effect-row :as effect-row]
             [kotoba.compiler.test-profile :as profile]
@@ -48,7 +48,7 @@
   (testing "a row that is only :abort is admitted by the empty policy"
     (is (map? (effect-row/check {:effects #{:abort}} {}))))
   (testing "a grant next to :abort is still required, and the denial names ONLY the grant"
-    (let [e (is (thrown? clojure.lang.ExceptionInfo
+    (let [e (is (thrown? kerror/ExceptionInfo
                          (effect-row/check {:effects #{:abort [:cap/call 3]}} {})))]
       (is (= #{[:cap/call 3]} (:missing (ex-data e))))
       (is (= #{[:cap/call 3]} (:required (ex-data e)))
@@ -85,7 +85,7 @@
   (is (= "unhandled abort at export boundary; catch it with try: main"
          (try (compiler/check-source "(defn main [] :i64 (if (= 1 1) (throw \"s\") 1))" {})
               nil
-              (catch clojure.lang.ExceptionInfo e (ex-message e))))))
+              (catch kerror/ExceptionInfo e (ex-message e))))))
 
 ;; ---------------------------------------------------------------------------
 ;; The two destructuring sites in the test profile, fed a row that holds the

@@ -1,5 +1,5 @@
 (ns kotoba.compiler.f32-value-test
-  (:require [clojure.java.shell :as shell]
+  (:require [kotoba.lang.error :as kerror] [kotoba.bytes :as kbytes] [kotoba.process :as shell]
             [clojure.test :refer [deftest is testing]]
             [kotoba.wasm.typed :as typed]
             [kotoba.compiler.core :as compiler]
@@ -86,9 +86,9 @@
   (let [js-artifact (compiler/compile-source source :js-kotoba-v1)
         wasm-artifact (compiler/compile-source source :wasm32-browser-kotoba-v1)
         kir (:kir js-artifact)
-        js-encoded (.encodeToString (java.util.Base64/getEncoder)
-                                    (.getBytes ^String (:source js-artifact) "UTF-8"))
-        wasm-encoded (.encodeToString (java.util.Base64/getEncoder) (:bytes wasm-artifact))
+        js-encoded (kbytes/base64-encode
+                                    (kbytes/utf8-bytes ^String (:source js-artifact)))
+        wasm-encoded (kbytes/base64-encode (:bytes wasm-artifact))
         js-result (node-run (str "import('data:text/javascript;base64," js-encoded
                                  "').then(m=>{const x=m.instantiateKotoba({});" assertions "})"))
         wasm-result (node-run
@@ -113,35 +113,35 @@
            (Double/doubleToLongBits ^double (ir/execute kir 'cos [(/ Math/PI 4.0)]))))
     (is (= Long/MIN_VALUE
            (Double/doubleToLongBits ^double (ir/execute kir 'sin [-0.0]))))
-    (is (thrown? clojure.lang.ExceptionInfo
+    (is (thrown? kerror/ExceptionInfo
                  (ir/execute kir 'sin [(Math/nextUp (/ Math/PI 4.0))])))
     (is (< (Math/abs (- (ir/execute kir 'wide-sin [(* 4096.0 Math/PI)])
                         (Math/sin (* 4096.0 Math/PI))))
            5.0e-12))
     (is (= Long/MIN_VALUE
            (Double/doubleToLongBits ^double (ir/execute kir 'wide-sin [-0.0]))))
-    (is (thrown? clojure.lang.ExceptionInfo
+    (is (thrown? kerror/ExceptionInfo
                  (ir/execute kir 'wide-cos [(Math/nextUp (* 8192.0 Math/PI))])))
     (is (< (Math/abs (- (ir/execute kir 'exp [0.5]) (Math/exp 0.5))) 4.0e-15))
     (is (< (Math/abs (- (ir/execute kir 'log [1.5]) (Math/log 1.5))) 4.0e-15))
-    (is (thrown? clojure.lang.ExceptionInfo (ir/execute kir 'exp [(Math/nextUp 0.5)])))
-    (is (thrown? clojure.lang.ExceptionInfo (ir/execute kir 'log [(Math/nextDown 0.75)])))
+    (is (thrown? kerror/ExceptionInfo (ir/execute kir 'exp [(Math/nextUp 0.5)])))
+    (is (thrown? kerror/ExceptionInfo (ir/execute kir 'log [(Math/nextDown 0.75)])))
     (is (< (Math/abs (- (ir/execute kir 'atan2 [7.0 -9.0]) (Math/atan2 7.0 -9.0))) 2.0e-15))
     (is (= Long/MIN_VALUE
            (Double/doubleToLongBits ^double (ir/execute kir 'atan2 [-0.0 1.0]))))
     (is (= Math/PI (ir/execute kir 'atan2 [0.0 -1.0])))
-    (is (thrown? clojure.lang.ExceptionInfo (ir/execute kir 'atan2 [Double/POSITIVE_INFINITY 1.0])))
+    (is (thrown? kerror/ExceptionInfo (ir/execute kir 'atan2 [Double/POSITIVE_INFINITY 1.0])))
     (is (< (/ (Math/abs (- (ir/execute kir 'wide-exp [300.0]) (Math/exp 300.0)))
               (Math/exp 300.0))
            1.0e-13))
     (is (< (Math/abs (- (ir/execute kir 'wide-log [(Math/pow 2.0 300.0)])
                         (Math/log (Math/pow 2.0 300.0))))
            1.0e-13))
-    (is (thrown? clojure.lang.ExceptionInfo
+    (is (thrown? kerror/ExceptionInfo
                  (ir/execute kir 'wide-exp [(Math/nextUp (* 512.0 (Math/log 2.0)))])))
-    (is (thrown? clojure.lang.ExceptionInfo (ir/execute kir 'wide-log [(Math/pow 2.0 513.0)])))
+    (is (thrown? kerror/ExceptionInfo (ir/execute kir 'wide-log [(Math/pow 2.0 513.0)])))
     (is (= 16777216.0 (double (ir/execute kir 'rounded-i64 [16777217]))))
-    (is (thrown? clojure.lang.ExceptionInfo (ir/execute kir 'to-f32 [16777217])))
+    (is (thrown? kerror/ExceptionInfo (ir/execute kir 'to-f32 [16777217])))
     (is (= :kotoba.typed/mixed-f32-f64-v3 (:value-abi wasm-artifact)))
     (is (= #{:ieee-754-f32 :ieee-754-f64 :reference-types} (:wasm-features wasm-artifact)))
     (is (= 8 typed/abi-version))
@@ -172,7 +172,7 @@
   (testing "min/max stay out: x86 MINSS/MAXSS return the second operand on NaN
             while AArch64 FMIN and the KIR oracle return the NaN"
     (doseq [op ["f32-min" "f32-max"]]
-      (is (thrown? clojure.lang.ExceptionInfo
+      (is (thrown? kerror/ExceptionInfo
                    (compiler/compile-source
                     (str "(defn step [a :i64 b :i64] :i64"
                          "  (f32-to-bits (" op " (f32-from-bits a) (f32-from-bits b))))"
@@ -182,7 +182,7 @@
   (testing "the checked conversions stay out: they trap in the oracle on
             inexactness and no backend emits the check"
     (doseq [op ["i64-to-f32-checked"]]
-      (is (thrown? clojure.lang.ExceptionInfo
+      (is (thrown? kerror/ExceptionInfo
                    (compiler/compile-source
                     (str "(defn step [a :i64] :i64 (f32-to-bits (" op " a)))"
                          "(defn main [] :i64 (step 1))")
@@ -191,14 +191,14 @@
   (testing "the truncating float-to-int conversions stay out: x86 yields the
             integer indefinite value, AArch64 saturates, the oracle traps"
     (doseq [op ["f32-to-i64-truncating" "f32-to-i64-checked"]]
-      (is (thrown? clojure.lang.ExceptionInfo
+      (is (thrown? kerror/ExceptionInfo
                    (compiler/compile-source
                     (str "(defn step [a :i64] :i64 (" op " (f32-from-bits a)))"
                          "(defn main [] :i64 (step 0))")
                     :x86_64-kotoba-v1))
           op)))
   (testing "the initial profile remains scalar-only"
-    (is (thrown? clojure.lang.ExceptionInfo
+    (is (thrown? kerror/ExceptionInfo
                  (compiler/compile-source
                   "(ns bad) (defn main [x [:option :f32]] :i64 0)"
                   :wasm32-kotoba-v1)))))

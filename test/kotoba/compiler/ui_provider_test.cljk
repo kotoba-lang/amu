@@ -1,5 +1,5 @@
 (ns kotoba.compiler.ui-provider-test
-  (:require [clojure.test :refer [deftest is]]
+  (:require [kotoba.lang.error :as kerror] [clojure.test :refer [deftest is]]
             [kotoba.compiler.core :as compiler]
             [kotoba.kir :as ir]
             [provider.ui :as ui]
@@ -42,7 +42,7 @@
   (let [{:keys [runtime]} (hosted)
         nodes [ui/node-set-type []]
         request [ui/commit-request-type 1 nodes]]
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"revision conflict"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"revision conflict"
                           ((:invoke runtime) 'commit [request])))))
 
 (deftest node-limit-fails-before-mutation
@@ -54,7 +54,7 @@
     ;; typed-set-item-limit is 32 (= ui/max-nodes); admission rejects before
     ;; the provider's own node-limit check when the set is oversized.
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"(node limit|typed set)"
+         kerror/ExceptionInfo #"(node limit|typed set)"
          ((:invoke runtime) 'commit
           [[ui/commit-request-type 0 [ui/node-set-type nodes]]])))
     (is (= 0 (:revision ((:snapshot kit)))))))
@@ -64,10 +64,10 @@
                              source {:allow #{[:cap/call 9] [:cap/call 10]}})))
         runtime (runtime/instantiate kir)]
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"capability denied"
+         kerror/ExceptionInfo #"capability denied"
          ((:invoke runtime) 'commit
           [[ui/commit-request-type 0 [ui/node-set-type []]]])))
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"capability denied"
+         kerror/ExceptionInfo #"capability denied"
          ((:invoke runtime) 'next-event
           [[ui/event-request-type 0]])))))

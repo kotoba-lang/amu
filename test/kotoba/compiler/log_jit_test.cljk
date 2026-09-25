@@ -12,9 +12,9 @@
 
   Break: emit typed-cap-call as callCapability (i64 only) or return the host
   result without assertTypedValue. Then this Node probe exits non-zero."
-  (:require [clojure.edn :as edn]
-            [clojure.java.io :as io]
-            [clojure.java.shell :as shell]
+  (:require [kotoba.bytes :as kbytes] [clojure.edn :as edn]
+            [kotoba.io :as io]
+            [kotoba.process :as shell]
             [clojure.test :refer [deftest is]]
             [kotoba.compiler.core :as compiler]
             [provider.log :as log]))
@@ -59,8 +59,8 @@
 
 (deftest jit-log-guest-round-trips-both-wires-on-kotoba-script-v8
   (let [compiled (compiler/compile-source guest-source :js-kotoba-v1 policy)
-        encoded (.encodeToString (java.util.Base64/getEncoder)
-                                 (.getBytes ^String (:source compiled) "UTF-8"))
+        encoded (kbytes/base64-encode
+                                 (kbytes/utf8-bytes ^String (:source compiled)))
         js (str inject-js
                 "import('data:text/javascript;base64," encoded
                 "').then(m=>{const x=m.instantiateKotoba("

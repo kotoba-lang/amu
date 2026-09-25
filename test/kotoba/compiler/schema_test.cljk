@@ -1,5 +1,5 @@
 (ns kotoba.compiler.schema-test
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [kotoba.lang.error :as kerror] [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.schema :as schema]))
 
 (def node-table
@@ -34,7 +34,7 @@
            [:unqualified {:a [:option :i64]} #"qualified"]
            [:wrong-nominal {:app/a [:record :app/b [[:x :i64]]]} #"outside"]]]
     (testing (name label)
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo message
+      (is (thrown-with-msg? kerror/ExceptionInfo message
                             (schema/validate-table! table))))))
 
 (deftest document-is-a-closed-record-field-type

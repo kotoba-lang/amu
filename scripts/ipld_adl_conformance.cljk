@@ -1,11 +1,10 @@
 (ns ipld-adl-conformance
-  (:require [kotoba.lang.text :as str]
+  (:require [kotoba.lang.error :as kerror] [kotoba.io :as kio] [kotoba.lang.text :as str]
             [ipld.schema :as schema]
             [ipld.schema-dsl :as dsl]
             [kotoba.compiler.ipld-adl :as adl]
             [kotoba.verifier.signing :as signing]
-            [multiformats.core :as mf])
-  (:import (java.nio.file Files Paths)))
+            [multiformats.core :as mf]))
 
 (defn- ensure! [condition message]
   (when-not condition (throw (ex-info message {:phase :ipld-adl-conformance}))))
@@ -29,7 +28,7 @@
    through the schema when the subrange is itself a DAG-CBOR node, which
    depends on the value."
   [& [runner module-path expected value-hex]]
-  (let [module (Files/readAllBytes (Paths/get module-path (make-array String 0)))
+  (let [module (kio/read-all-bytes module-path)
         module-cid (mf/cidv1-raw module)
         executor-key (signing/generate-keypair)
         trust {:format :kotoba.trust/v1
@@ -63,7 +62,7 @@
                   (let [thrown (try (schema/representation->logical!
                                      compiled "Item" value limits)
                                     nil
-                                    (catch clojure.lang.ExceptionInfo error error))
+                                    (catch kerror/ExceptionInfo error error))
                         data (ex-data thrown)]
                     (ensure! (some? thrown)
                              "ADL output was accepted but should have been refused")

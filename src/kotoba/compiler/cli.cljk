@@ -1,6 +1,6 @@
 (ns kotoba.compiler.cli
   {:kotoba/export [*exit* -main error-report exit-code]}
-  (:require [kotoba.compiler.atomic-output :as atomic-output]
+  (:require [kotoba.lang.error :as kerror] [kotoba.io :as kio] [kotoba.compiler.atomic-output :as atomic-output]
             [kotoba.artifact.core :as artifact]
             [kotoba.compiler.bounded-edn :as bounded-edn]
             [kotoba.compiler.capability-names :as cap-names]
@@ -205,7 +205,7 @@
         (let [result (if graph
                        (try
                          (compiler/check-project (:sources graph) (:root graph) policy)
-                         (catch clojure.lang.ExceptionInfo error
+                         (catch kerror/ExceptionInfo error
                            (throw (project/with-module-file error (:paths graph)))))
                        (compiler/check-source (bounded-edn/read-text-file input) policy))
               ;; The reporting boundary. The wire id stays in HIR, in the
@@ -400,7 +400,7 @@
                        (compiler/compile-project sources root target policy {} source-opts)
                        ;; The graph came from paths, so a refusal attributed
                        ;; to a module can name the file it was loaded from.
-                       (catch clojure.lang.ExceptionInfo error
+                       (catch kerror/ExceptionInfo error
                          (throw (project/with-module-file error paths)))))
 
                    :else
@@ -514,10 +514,10 @@
 (defn -main [& args]
   (try
     (apply dispatch! args)
-    (catch clojure.lang.ExceptionInfo error
+    (catch kerror/ExceptionInfo error
       (let [source (second args)
             source-name (when (source-path/source-kind source)
-                          (.getName (java.io.File. source)))
+                          (kio/file-name (kio/file source)))
             report (error-report error source-name)]
         (binding [*out* *err*] (println (pr-str report)))
         (*exit* (exit-code (:error report)))))

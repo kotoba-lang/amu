@@ -1,5 +1,5 @@
 (ns kotoba.compiler.frontend-fuzz-test
-  (:require [clojure.test :refer [deftest is]]
+  (:require [kotoba.lang.error :as kerror] [clojure.test :refer [deftest is]]
             [kotoba.compiler.core :as compiler]
             [kotoba.sema :as sema]
             [kotoba.verifier :as verifier])
@@ -41,7 +41,7 @@
            (= x86 (verifier/verify-artifact! x86))
            (= arm (verifier/verify-artifact! arm))
            (= (seq (:bytes wasm)) (seq (:bytes wasm-again)))))
-    (catch clojure.lang.ExceptionInfo error
+    (catch kerror/ExceptionInfo error
       ;; A mutation can turn an i64 local into a lexical closure head. The
       ;; checked closure refinement promotes that module to typed KIR, after
       ;; which a backend may reject an otherwise unsupported result family at
@@ -60,16 +60,16 @@
           (str "raw seed=" seed " case=" case-id)))))
 
 (deftest frontend-admission-bounds-host-resource-inputs
-  (is (thrown-with-msg? clojure.lang.ExceptionInfo #"source must be a string"
+  (is (thrown-with-msg? kerror/ExceptionInfo #"source must be a string"
                         (sema/analyze nil)))
-  (is (thrown-with-msg? clojure.lang.ExceptionInfo #"reader nesting"
+  (is (thrown-with-msg? kerror/ExceptionInfo #"reader nesting"
                         (sema/analyze
                          (str (apply str (repeat 513 "(")) "0"
                               (apply str (repeat 513 ")"))))))
-  (is (thrown-with-msg? clojure.lang.ExceptionInfo #"outside i64"
+  (is (thrown-with-msg? kerror/ExceptionInfo #"outside i64"
                         (sema/analyze
                          "(defn main [] 9223372036854775808)")))
-  (is (thrown-with-msg? clojure.lang.ExceptionInfo #"source reader rejected"
+  (is (thrown-with-msg? kerror/ExceptionInfo #"source reader rejected"
                         (sema/analyze "(defn main [] \"unterminated)"))))
 
 (deftest extracted-native-phases-have-one-public-ir-diagnostic-boundary
@@ -77,7 +77,7 @@
         error (try
                 (compiler/compile-source source :x86_64-kotoba-v1)
                 nil
-                (catch clojure.lang.ExceptionInfo error error))]
+                (catch kerror/ExceptionInfo error error))]
     (is (some? error))
     (is (= :ir (:phase (ex-data error))))
     (is (= :aggregate-abi (:ir/phase (ex-data error))))))

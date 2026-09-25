@@ -18,13 +18,13 @@
             [kotoba.artifact.core :as artifact]
             [kotoba.compiler.bounded-edn :as bounded-edn]
             [kotoba.lang.text :as text]
-            #?@(:clj [[clojure.java.io :as io]]
+            #?@(:clj [[kotoba.io :as io]]
                 :cljs [["node:fs" :as fs]
                        ["node:os" :as os]
                        ["node:path" :as path]])))
 
 (defn- trap [f]
-  (try (f) nil (catch #?(:clj clojure.lang.ExceptionInfo :cljs :default) error error)))
+  (try (f) nil (catch :default error error)))
 
 (defn- printed [value]
   (pr-str (artifact/edn-safe value)))

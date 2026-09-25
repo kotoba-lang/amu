@@ -1,6 +1,6 @@
 (ns kotoba.compiler.object-provider-test
   "W5 stream-object dual-runtime — put-block + CAS + get-stream ready/pending/multi-chunk."
-  (:require [clojure.test :refer [deftest is]]
+  (:require [kotoba.lang.error :as kerror] [clojure.test :refer [deftest is]]
             [kotoba.compiler.core :as compiler]
             [kotoba.kir :as ir]
             [provider.object :as object]
@@ -14,7 +14,7 @@
 ;; Assert the contract.
 (defn- denial-code [f]
   (try (f) nil
-       (catch clojure.lang.ExceptionInfo e (:code (ex-data e)))))
+       (catch kerror/ExceptionInfo e (:code (ex-data e)))))
 
 (def source
   (str "(ns app.object (:export [get-stream put-block compare-and-set-ref]) "
@@ -85,7 +85,7 @@
 (deftest transport-exceptions-are-redacted
   (let [runtime (hosted (fn [_] (throw (ex-info "secret object URL" {}))))]
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"object provider failed"
+         kerror/ExceptionInfo #"object provider failed"
          ((:invoke runtime) 'put-block
           [[object/put-block-request-type
             :example/blocks "sha256:x" (value/utf8-string->bytes "p")]])))))
@@ -95,19 +95,19 @@
                              source {:allow #{[:cap/call 14] [:cap/call 15] [:cap/call 16]}})))
         runtime (runtime/instantiate kir)]
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"capability denied"
+         kerror/ExceptionInfo #"capability denied"
          ((:invoke runtime) 'put-block
           [[object/put-block-request-type
             :example/blocks "sha256:x" (value/utf8-string->bytes "p")]])))
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"capability denied"
+         kerror/ExceptionInfo #"capability denied"
          ((:invoke runtime) 'compare-and-set-ref
           [[object/cas-request-type
             :example/refs "main"
             [object/expected-etag-type false]
             "etag-2"]])))
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"capability denied"
+         kerror/ExceptionInfo #"capability denied"
          ((:invoke runtime) 'get-stream
           [[object/get-stream-request-type :example/blocks "k"]])))))
 
@@ -136,7 +136,7 @@
     (is (false? @called?)))
   (let [runtime (hosted (fn [_] (throw (ex-info "secret object URL" {}))))]
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"object provider failed"
+         kerror/ExceptionInfo #"object provider failed"
          ((:invoke runtime) 'get-stream
           [[object/get-stream-request-type :example/blocks "k"]])))))
 
@@ -263,7 +263,7 @@
     (is (true? (value/task-live? task)))
     (value/task-drop! task)
     (is (false? (value/task-live? task)))
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"not live"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"not live"
                           (value/task-poll task))))
   (value/resource-table-reset!)
   (let [payload (value/utf8-string->bytes "hello")

@@ -1,6 +1,6 @@
 (ns kotoba.compiler.core
   {:kotoba/export [check-project check-source compile-component compile-component-wit compile-ipld-adl-source compile-project compile-source compile-source-cached compiler-version default-component-budgets floating-point-policy refuse-fuel-declared-twice! source-compilable-targets supported-targets targets]}
-  (:require [kotoba.lang.coll :as coll]
+  (:require [kotoba.lang.error :as kerror] [kotoba.bytes :as kbytes] [kotoba.lang.coll :as coll]
             [kotoba.compiler.capability-names :as cap-names]
             [kotoba.sema :as sema]
             [kotoba.kir.compatibility :as compatibility]
@@ -31,7 +31,7 @@
             [kotoba.kir.target :as target-profile]
             [kotoba.verifier :as verifier]
             #?@(:cljs [["node:crypto" :as crypto]]))
-  #?(:clj (:import [java.nio.charset StandardCharsets]
+  #?(:clj (:import
                    [java.security MessageDigest])))
 
 (def compiler-version compatibility/compiler-version)
@@ -41,7 +41,7 @@
   ;; This one function was the whole JVM surface of the compile driver
   ;; (ADR 0348 iteration 7); everything it drives had already been ported.
   #?(:clj (let [digest (.digest (MessageDigest/getInstance "SHA-256")
-                                (.getBytes ^String text StandardCharsets/UTF_8))]
+                                (kbytes/utf8-bytes ^String text))]
             (apply str (map #(format "%02x" (bit-and (int %) 0xff)) digest)))
      :cljs (-> (.createHash crypto "sha256") (.update text "utf8") (.digest "hex"))))
 
@@ -267,7 +267,7 @@
   [hir policy]
   (try
     (effect-row/check hir policy)
-    (catch #?(:clj clojure.lang.ExceptionInfo :cljs ExceptionInfo) e
+    (catch kerror/ExceptionInfo e
       (if (= :admission (:phase (ex-data e)))
         (rethrow-admission! e)
         (throw e)))))
@@ -281,7 +281,7 @@
     ((case backend
        :x86_64-kotoba-v1 x86-64/emit-program
        :aarch64-kotoba-v1 aarch64/emit-program) kir)
-    (catch #?(:clj clojure.lang.ExceptionInfo :cljs ExceptionInfo) error
+    (catch kerror/ExceptionInfo error
       (let [data (ex-data error)
             phase (:phase data)]
         (if (contains? #{:kir-to-gmir :gmir :mir :mc :mc-encode :aggregate-abi
@@ -335,7 +335,7 @@
        {:hir hir
         :admission (admit! hir admission-policy)
         :language-profile language-profile}
-       (catch #?(:clj clojure.lang.ExceptionInfo :cljs ExceptionInfo) e
+       (catch kerror/ExceptionInfo e
          ;; W1: rethrow admission denials with semantic operation names from
          ;; elaboration, not only numeric [:cap/call id] effect rows.
          (let [data (ex-data e)
@@ -834,7 +834,7 @@
    (let [linked (project/link-source sources root)]
      (assoc (try
               (check-source (:source linked) policy {:admit-linked-synthetics? true})
-              (catch #?(:clj clojure.lang.ExceptionInfo :cljs ExceptionInfo) error
+              (catch kerror/ExceptionInfo error
                 (throw (project/attribute-linked-error error linked))))
             :root root
             :module-order (:module-order linked)))))
@@ -914,7 +914,7 @@
                     ;; A refusal here was raised against the linked unit. Name
                     ;; the module and line that wrote the form instead
                     ;; (amu-h10; `project/attribute-linked-error`).
-                    (catch #?(:clj clojure.lang.ExceptionInfo :cljs ExceptionInfo) error
+                    (catch kerror/ExceptionInfo error
                       (throw (project/attribute-linked-error error linked))))]
      (cond-> (assoc compiled :project graph :project-digest graph-digest
                     :project-linkage linkage-evidence)

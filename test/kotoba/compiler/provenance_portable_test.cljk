@@ -101,7 +101,7 @@
   (let [attached (provenance/attach "abc" {:allow #{}} {} result)
         refusal (fn [& args]
                   (try (do (apply provenance/verify! args) :verified)
-                       (catch #?(:clj clojure.lang.ExceptionInfo :cljs :default) e
+                       (catch :default e
                          (ex-data e))))]
     (doseq [[what data]
             [["a different source"   (refusal "abd" {:allow #{}} {} attached)]

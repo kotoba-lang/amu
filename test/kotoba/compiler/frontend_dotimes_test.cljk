@@ -1,5 +1,5 @@
 (ns kotoba.compiler.frontend-dotimes-test
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [kotoba.lang.error :as kerror] [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]
             [kotoba.kir :as ir]))
 
@@ -11,7 +11,7 @@
 
 (defn- rejection-message [source]
   (try (checked source) nil
-       (catch clojure.lang.ExceptionInfo e (ex-message e))))
+       (catch kerror/ExceptionInfo e (ex-message e))))
 
 (deftest dotimes-uses-the-fuel-trapped-loop-path
   (is (= 0 (oracle "(defn main [] (dotimes [i 4] (+ i 1)))")))
@@ -19,7 +19,7 @@
       "zero iterations must not evaluate the body")
   (is (= 0 (oracle "(defn main [] (dotimes [i -3] (quot 1 0)))"))
       "a negative count also performs no iterations")
-  (is (thrown? clojure.lang.ExceptionInfo
+  (is (thrown? kerror/ExceptionInfo
                (oracle "(defn main [] (dotimes [i 4] (if (= i 3) (quot 1 0) 0)))"))
       "the index reaches the final iteration"))
 

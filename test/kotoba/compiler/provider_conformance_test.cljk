@@ -1,6 +1,6 @@
 (ns kotoba.compiler.provider-conformance-test
-  (:require [clojure.edn :as edn]
-            [clojure.java.io :as io]
+  (:require [kotoba.lang.error :as kerror] [clojure.edn :as edn]
+            [kotoba.io :as io]
             [clojure.test :refer [deftest is]]
             [kotoba.compiler.core :as compiler]
             [kotoba.sema :as sema]
@@ -88,16 +88,16 @@
 (deftest malformed-provider-inventories-fail-closed
   (let [valid (first (fixtures))]
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"provider map is not exact"
+         kerror/ExceptionInfo #"provider map is not exact"
          (conformance/validate-provider!
           sema/capability-registry
           (update valid :provider assoc :ambient-host true))))
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"not registered exactly"
+         kerror/ExceptionInfo #"not registered exactly"
          (conformance/validate-provider!
           sema/capability-registry (assoc valid :id 255))))
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"duplicate ids"
+         kerror/ExceptionInfo #"duplicate ids"
          (conformance/validate-suite!
           sema/capability-registry [valid (assoc valid :name :clock/now)])))))
 
@@ -122,15 +122,15 @@
                   :invoke (fn [_] (reset! called? true)
                             [probe-result-type true])}
         host (runtime/instantiate (probe-kir) {:allow #{4} :providers {4 provider}})]
-    (is (thrown? clojure.lang.ExceptionInfo
+    (is (thrown? kerror/ExceptionInfo
                  ((:invoke host) 'probe [[probe-request-type 1]])))
     (is (false? @called?))
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"capability denied"
+         kerror/ExceptionInfo #"capability denied"
          ((:invoke (runtime/instantiate (probe-kir)))
           'probe [[probe-request-type "valid"]])))
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"invalid-parametric-value"
+         kerror/ExceptionInfo #"invalid-parametric-value"
          ((:invoke
            (runtime/instantiate
             (probe-kir)
@@ -139,7 +139,7 @@
                                   (fn [_] [probe-request-type "forged"]))}}))
           'probe [[probe-request-type "valid"]])))
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"does not match"
+         kerror/ExceptionInfo #"does not match"
          (runtime/instantiate
           (probe-kir)
           {:allow #{4}

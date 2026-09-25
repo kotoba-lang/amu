@@ -1,6 +1,6 @@
 (ns kotoba.compiler.backend-qualification-test
-  (:require [clojure.edn :as edn]
-            [clojure.java.io :as io]
+  (:require [kotoba.lang.error :as kerror] [clojure.edn :as edn]
+            [kotoba.io :as io]
             [clojure.test :refer [deftest is]]
             [kotoba.compiler.backend-qualification :as qualification]))
 
@@ -120,19 +120,19 @@
 
 (deftest stale-manifest-and-false-qualification-claims-fail-closed
   (is (thrown-with-msg?
-       clojure.lang.ExceptionInfo #"not bound to this provider manifest"
+       kerror/ExceptionInfo #"not bound to this provider manifest"
        (qualification/verify-data!
         (update manifest :invariants conj :invented) registry claims :wasmtime)))
   (let [false-claim (-> claims
                         (assoc-in [:backends :native :execution-status] :qualified)
                         (assoc-in [:backends :native :gaps] []))]
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"lacks closed semantic evidence"
+         kerror/ExceptionInfo #"lacks closed semantic evidence"
          (qualification/verify-data! manifest registry false-claim :native))))
   (let [hosted-c-claim (assoc-in claims [:backends :native :execution-surface]
                                  :hosted-kexe-c-loader)]
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"not the compiler-owned surface"
+         kerror/ExceptionInfo #"not the compiler-owned surface"
          (qualification/verify-data! manifest registry hosted-c-claim :native))))
   (let [missing-foreign-receipt
         (-> claims
@@ -142,18 +142,18 @@
                       {:runtime-boundary "native/runtime-test"
                        :semantic-vectors "native/semantic-test"}))]
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"lacks closed semantic evidence"
+         kerror/ExceptionInfo #"lacks closed semantic evidence"
          (qualification/verify-data! manifest registry
                                      missing-foreign-receipt :native)))))
 
 (deftest stale-capability-count-nine-fails-closed
   (let [false-count (assoc-in claims [:provider-manifest :capability-count] 9)]
     (is (thrown-with-msg?
-         clojure.lang.ExceptionInfo #"not bound to this provider manifest"
+         kerror/ExceptionInfo #"not bound to this provider manifest"
          (qualification/verify-data! manifest registry false-count :cljs)))))
 
 (deftest registry-drift-fails-every-backend-gate
   (is (thrown-with-msg?
-       clojure.lang.ExceptionInfo #"disagrees with capability registry"
+       kerror/ExceptionInfo #"disagrees with capability registry"
        (qualification/verify-data! manifest (assoc registry :clock/now 255)
                                    claims :cljs))))

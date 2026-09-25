@@ -1,5 +1,5 @@
 (ns kotoba.compiler.receipt-test
-  (:require [clojure.test :refer [deftest is]]
+  (:require [kotoba.lang.error :as kerror] [clojure.test :refer [deftest is]]
             [kotoba.artifact.core :as artifact]
             [kotoba.compiler.core :as compiler]
             [kotoba.compiler.receipt :as receipt]
@@ -43,20 +43,20 @@
 (deftest receipt-evidence-and-current-trust-fail-closed
   (let [{:keys [envelope key trust policy input output]} (fixture)
         value (receipt/create envelope trust policy input output (assoc opts :executor-key key))]
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"evidence mismatch"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"evidence mismatch"
                           (receipt/verify value envelope trust policy {:argv ["changed"]} output
                                           {:now 1500 :parent nil})))
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"integrity mismatch"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"integrity mismatch"
                           (receipt/verify (update value :status (constantly :trap))
                                           envelope trust policy input output
                                           {:now 1500 :parent nil})))
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"executor receipt attestation rejected"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"executor receipt attestation rejected"
                           (receipt/verify (update-in value [:executor :signature]
                                                      #(str (if (= \A (first %)) "B" "A")
                                                            (subs % 1)))
                                           envelope trust policy input output
                                           {:now 1500 :parent nil})))
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"signer is revoked"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"signer is revoked"
                           (receipt/verify value envelope
                                           (assoc trust :revoked-signers
                                                  #{(get-in envelope [:statement :signer])})
@@ -72,10 +72,10 @@
                                   :authority-decision authority-decision})]
     (is (= :kotoba.run-receipt/v2 (:format value)))
     (is (= authority-decision (:authority-decision verified)))
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"evidence mismatch"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"evidence mismatch"
                           (receipt/verify value envelope trust policy input output
                                           {:now 1500 :parent nil})))
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"integrity mismatch"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"integrity mismatch"
                           (receipt/verify
                            (assoc-in value [:authority-decision :resource]
                                      "https://api.example.test/admin")
@@ -87,11 +87,11 @@
   (let [{:keys [envelope key trust policy input output]} (fixture)
         value (receipt/create envelope trust policy input output
                               (assoc opts :executor-key key))]
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"schema rejected"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"schema rejected"
                           (receipt/verify (assoc value :ignored true)
                                           envelope trust policy input output
                                           {:now 1500 :parent nil})))
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"schema rejected"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"schema rejected"
                           (receipt/verify (assoc-in value [:fuel :ignored] 0)
                                           envelope trust policy input output
                                           {:now 1500 :parent nil})))))
@@ -109,9 +109,9 @@
            (receipt/verify-chain [first-receipt second-receipt] trust)))
     (is (:verified? (receipt/verify second-receipt envelope trust policy input 43
                                     {:now 1500 :parent first-receipt})))
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"parent link mismatch"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"parent link mismatch"
                           (receipt/verify-chain [second-receipt first-receipt] trust)))
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"evidence mismatch"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"evidence mismatch"
                           (receipt/verify second-receipt envelope trust policy input 43
                                           {:now 1500 :parent nil})))))
 
@@ -122,24 +122,24 @@
         changed (assoc value :status :trap)
         forged (assoc changed :receipt-sha256
                       (artifact/sha256 (dissoc changed :receipt-sha256 :executor)))]
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"attestation rejected"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"attestation rejected"
                           (receipt/verify-chain [forged] trust)))
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"attestation rejected"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"attestation rejected"
                           (receipt/verify-chain
                            [value] (assoc trust :revoked-signers #{(:signer key)}))))
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"attestation rejected"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"attestation rejected"
                           (receipt/create envelope trust policy input output
                                           (assoc opts :parent forged
                                                  :executor-key key))))
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"must not be empty"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"must not be empty"
                           (receipt/verify-chain [] trust)))))
 
 (deftest receipt-creation-validates-accounting
   (let [{:keys [envelope key trust policy input output]} (fixture)]
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"fuel accounting"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"fuel accounting"
                           (receipt/create envelope trust policy input output
                                           (assoc opts :fuel-remaining 257 :executor-key key))))
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"time interval"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"time interval"
                           (receipt/create envelope trust policy input output
                                           (assoc opts :finished-at 1399 :executor-key key))))))
 
@@ -162,21 +162,21 @@
         pinned-trust (assoc trust :trusted-runtime-sha256 #{identity})
         value (receipt/create envelope pinned-trust policy input output
                               (assoc opts :executor-key key))]
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"not trusted"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"not trusted"
                           (receipt/create envelope trust policy input output
                                           (assoc opts :executor-key key))))
     (is (:verified? (receipt/verify value envelope
                                     pinned-trust
                                     policy input output {:now 1500 :parent nil})))
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"not trusted"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"not trusted"
                           (receipt/verify value envelope
                                           (assoc trust :trusted-runtime-sha256 #{})
                                           policy input output {:now 1500 :parent nil})))
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"revoked"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"revoked"
                           (receipt/verify value envelope
                                           (assoc trust :revoked-runtime-sha256 #{identity})
                                           policy input output {:now 1500 :parent nil})))
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"identity rejected"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"identity rejected"
                           (receipt/verify value envelope trust policy input
                                           (assoc-in output [:runtime :loader-source-sha256]
                                                     (apply str (repeat 64 "0")))
@@ -201,17 +201,17 @@
               (runtime-identity/identity-sha256
                (assoc runtime :compiler-binary-sha256
                       (apply str (repeat 64 "1"))))))
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"identity rejected"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"identity rejected"
                           (runtime-identity/validate!
                            (-> runtime
                                (assoc :format :kotoba.native-runtime/v4)
                                (dissoc :compiler-binary-sha256)
                                (assoc :compiler-identity-sha256
                                       (apply str (repeat 64 "b")))))))
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"schema mismatch"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"schema mismatch"
                           (runtime-identity/validate-measurement!
                            (assoc measurement :ignored true))))
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"identity rejected"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"identity rejected"
                           (runtime-identity/validate-measurement!
                            (assoc-in measurement [:runtime :target-profile :os]
                                      :unspecified))))))

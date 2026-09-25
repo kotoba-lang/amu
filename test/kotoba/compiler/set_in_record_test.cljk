@@ -7,7 +7,7 @@
   packages still use hand-WAT substring uniqueness until a pure Component
   twin without kotoba:typed is admitted; this slice does **not** flip
   `:wasm-aot :implemented`."
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [kotoba.lang.error :as kerror] [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]
             [kotoba.kir :as ir]))
 
@@ -68,6 +68,6 @@
            "                (typed-set [:set :string] \"Host\" \"Host\"))\n"
            "    :seen))\n")
           c (compiler/compile-source src :wasm32-kotoba-v1 {})]
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo
+      (is (thrown-with-msg? kerror/ExceptionInfo
                             #"duplicate"
                             (ir/execute (:kir c) 'go [] {}))))))

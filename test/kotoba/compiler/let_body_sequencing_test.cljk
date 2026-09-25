@@ -25,7 +25,7 @@
   subject. What is asserted instead is the property itself -- a `let` body of
   N forms emits exactly what the explicit `(do ...)` of those N forms emits,
   and N forms do not fit in the object for N-1."
-  (:require [kotoba.lang.text] [clojure.test :refer [deftest is testing]]
+  (:require [kotoba.lang.error :as kerror] [kotoba.lang.text] [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]))
 
 (def ^:private kernel-targets [:x86_64-aiueos-kernel-v1 :aarch64-aiueos-kernel-v1])
@@ -142,7 +142,7 @@
 ;; --- refusals -------------------------------------------------------------
 
 (deftest an-empty-let-body-is-refused
-  (is (thrown-with-msg? clojure.lang.ExceptionInfo #"at least one body expression"
+  (is (thrown-with-msg? kerror/ExceptionInfo #"at least one body expression"
         (compiler/compile-source "(defn main [] (let [x 1]))" :aarch64-kotoba-v1))))
 
 (deftest an-if-that-is-not-ternary-is-refused
@@ -150,7 +150,7 @@
   ;; was dropped by a pass that rebuilt the form from [test then else], and
   ;; `(if (> n 0) (+ n 10) (+ n 100) (+ n 1000))` compiled and answered its
   ;; `then`.
-  (is (thrown-with-msg? clojure.lang.ExceptionInfo #"if requires test, then, else; got 4"
+  (is (thrown-with-msg? kerror/ExceptionInfo #"if requires test, then, else; got 4"
         (compiler/compile-source "(defn main [] (if (< 0 1) 10 100 1000))" :aarch64-kotoba-v1)))
-  (is (thrown-with-msg? clojure.lang.ExceptionInfo #"if requires test, then, else; got 2"
+  (is (thrown-with-msg? kerror/ExceptionInfo #"if requires test, then, else; got 2"
         (compiler/compile-source "(defn main [] (if (< 0 1) 10))" :aarch64-kotoba-v1))))

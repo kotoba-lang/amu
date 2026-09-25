@@ -1,5 +1,5 @@
 (ns kotoba.compiler.callable-values-test
-  (:require [kotoba.compiler.atomic-output :as atomic-output]
+  (:require [kotoba.lang.error :as kerror] [kotoba.bytes :as kbytes] [kotoba.compiler.atomic-output :as atomic-output]
             [clojure.test :refer [deftest is testing]]
             [clojure.java.shell :as shell]
             [kotoba.lang.text :as str]
@@ -13,7 +13,7 @@
   (try
     (compiler/check-source source)
     nil
-    (catch clojure.lang.ExceptionInfo error
+    (catch kerror/ExceptionInfo error
       (ex-message error))))
 
 (defn- execute-main-esm [source]
@@ -35,8 +35,8 @@
         wasm-b (compiler/compile-source source :wasm32-browser-kotoba-v1)
         functions (into {} (map (juxt :name identity)) (get-in js [:kir :functions]))
         javascript (:source js)
-        encoded (.encodeToString (java.util.Base64/getEncoder)
-                                 (.getBytes javascript "UTF-8"))
+        encoded (kbytes/base64-encode
+                                 (kbytes/utf8-bytes javascript))
         malformed-probe
         (shell/sh
          "node" "--input-type=module" "-e"
@@ -207,22 +207,22 @@
                (document-count
                 (invoke :document (fn [x] (document-vector (document-i64 x))) 42)))")))
   (testing "a closure from a different result family traps closed"
-    (is (thrown? clojure.lang.ExceptionInfo
+    (is (thrown? kerror/ExceptionInfo
                  (execute-main
                   "(defn main []
                      (if (invoke :bool (fn [x] (+ x 1)) 3) 1 0))"))))
   (testing "a vector dispatcher rejects a scalar-returning closure"
-    (is (thrown? clojure.lang.ExceptionInfo
+    (is (thrown? kerror/ExceptionInfo
                  (execute-main
                   "(defn main []
                      (vector-count (invoke :vector-i64 (fn [x] (+ x 1)) 3)))"))))
   (testing "a string dispatcher rejects a scalar-returning closure"
-    (is (thrown? clojure.lang.ExceptionInfo
+    (is (thrown? kerror/ExceptionInfo
                  (execute-main
                   "(defn main []
                      (string-length (invoke :string (fn [x] (+ x 1)) 3)))"))))
   (testing "a document dispatcher rejects a scalar-returning closure"
-    (is (thrown? clojure.lang.ExceptionInfo
+    (is (thrown? kerror/ExceptionInfo
                  (execute-main
                   "(defn main []
                      (document-count (invoke :document (fn [x] (+ x 1)) 3)))")))))
@@ -268,7 +268,7 @@
     (is (= 5 (execute-main
               "(defn main [] (invoke (fn [x] (+ x 1)) 4))"))))
   (testing "contextual dispatch remains family-specific and traps closed"
-    (is (thrown? clojure.lang.ExceptionInfo
+    (is (thrown? kerror/ExceptionInfo
                  (execute-main
                   "(defn main []
                      (string-length (invoke (fn [x] (+ x 1)) 3)))")))))
@@ -335,7 +335,7 @@
                        (record-get " point "
                          (invoke " point " (fn-ref make) 10) :x))"))))
     (testing "nominally distinct record dispatchers do not share candidates"
-      (is (thrown? clojure.lang.ExceptionInfo
+      (is (thrown? kerror/ExceptionInfo
                    (execute-main
                     (str "(defn main []
                             (record-get " other "
@@ -391,7 +391,7 @@
                                       (string-from-i64 x))) 42)
                           \"\")))"))))
     (testing "parameterized option dispatchers remain descriptor-specific"
-      (is (thrown? clojure.lang.ExceptionInfo
+      (is (thrown? kerror/ExceptionInfo
                    (execute-main
                     (str "(defn main []
                             (option-value-of " option-i64 "
@@ -455,7 +455,7 @@
                             (typed-map-get " map-type " (make 42) :value)
                             \"\"))))"))))
     (testing "a variant dispatcher traps before returning its typed default"
-      (is (thrown? clojure.lang.ExceptionInfo
+      (is (thrown? kerror/ExceptionInfo
                    (execute-main
                     (str "(defn main []
                             (match-variant
@@ -464,7 +464,7 @@
                               (:ok value value)
                               (:label text 0)))")))))
     (testing "descriptor-distinct typed collections do not share candidates"
-      (is (thrown? clojure.lang.ExceptionInfo
+      (is (thrown? kerror/ExceptionInfo
                    (execute-main
                     "(defn main []
                        (typed-set-count [:set :string]
@@ -526,7 +526,7 @@
                       (invoke :f64 (fn [bits] (f64-from-bits bits))
                         " one-f64-bits ")))"))))
     (testing "numeric result dispatch remains family-specific"
-      (is (thrown? clojure.lang.ExceptionInfo
+      (is (thrown? kerror/ExceptionInfo
                    (execute-main
                     (str "(defn main []
                             (f64-to-bits
@@ -601,7 +601,7 @@
                (let [singleton (fn [x] [x]) stored [singleton]]
                  (vector-at (invoke :vector-i64 (vector-at stored 0) 9) 0)))")))
   (testing "the default scalar family still rejects vector-returning closures"
-    (is (thrown? clojure.lang.ExceptionInfo
+    (is (thrown? kerror/ExceptionInfo
                  (execute-main
                   "(defn main []
                      (let [singleton (fn [x] [x])]
@@ -624,7 +624,7 @@
                (let [> (fn [a b] (< b a))]
                  (if (> 3 2) 1 0)))")))
   (testing "contextual boolean calls retain result-family safety"
-    (is (thrown? clojure.lang.ExceptionInfo
+    (is (thrown? kerror/ExceptionInfo
                  (execute-main
                   "(defn main []
                      (let [not-a-predicate (fn [x] (+ x 1))]

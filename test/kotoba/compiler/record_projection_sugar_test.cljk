@@ -2,7 +2,7 @@
   "`(record-get value :field)` — the schema is recovered from the value's
   inferred type and rewritten to the canonical 3-arity form before validation,
   so lowering and the backends are untouched."
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [kotoba.lang.error :as kerror] [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]
             [kotoba.kir :as ir]))
 
@@ -19,7 +19,7 @@
     (compiler/compile-source src :wasm32-kotoba-v1 {}
                              {:language-profile :pure-product})
     nil
-    (catch clojure.lang.ExceptionInfo e
+    (catch kerror/ExceptionInfo e
       {:code (:kotoba.error/code (ex-data e)) :message (.getMessage e)})))
 
 (deftest projects-a-let-bound-record

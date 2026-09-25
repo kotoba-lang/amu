@@ -1,8 +1,8 @@
 (ns kotoba.compiler.ipld-adl-test
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [kotoba.lang.error :as kerror] [kotoba.bytes :as kbytes] [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.ipld-adl :as adl]
             [kotoba.verifier.signing :as signing])
-  (:import (java.nio.charset StandardCharsets)
+  (:import
            (java.nio.file Files)
            (java.nio.file.attribute FileAttribute)))
 
@@ -17,7 +17,7 @@
                     "\"engineId\":\"kotoba.ipld-adl-wasmtime/v1\","
                     "\"engineVersion\":\"47.0.3\","
                     "\"fuelUsed\":7,\"memoryPages\":1,\"outputBytes\":4}'\n")]
-    (Files/write path (.getBytes source StandardCharsets/UTF_8)
+    (Files/write path (kbytes/utf8-bytes source)
                  (make-array java.nio.file.OpenOption 0))
     (.setExecutable (.toFile path) true true)
     path))
@@ -36,7 +36,7 @@
                     "\"engineVersion\":\"47.0.3\","
                     "\"fuelUsed\":7,\"memoryPages\":1,\"outputBytes\":"
                     byte-count "}'\n")]
-    (Files/write path (.getBytes source StandardCharsets/UTF_8)
+    (Files/write path (kbytes/utf8-bytes source)
                  (make-array java.nio.file.OpenOption 0))
     (.setExecutable (.toFile path) true true)
     path))
@@ -73,14 +73,14 @@
       (try
         (is (= :adl-output-not-a-node
                (:code (ex-data (try (decode-through runner nil)
-                                    (catch clojure.lang.ExceptionInfo e e))))))
+                                    (catch kerror/ExceptionInfo e e))))))
         (finally (Files/deleteIfExists runner)))))
   (testing "trailing bytes after a node are refused"
     (let [runner (runner-emitting "\\101\\005\\005" 3)]
       (try
         (is (= :adl-output-not-a-node
                (:code (ex-data (try (decode-through runner nil)
-                                    (catch clojure.lang.ExceptionInfo e e))))))
+                                    (catch kerror/ExceptionInfo e e))))))
         (finally (Files/deleteIfExists runner)))))
   (testing "a non-canonical encoding decodes cleanly and is still refused"
     ;; 18 05 reads as the integer 5, so decoding alone accepts it. Only
@@ -88,7 +88,7 @@
     (let [runner (runner-emitting "\\030\\005" 2)]
       (try
         (let [data (ex-data (try (decode-through runner nil)
-                                 (catch clojure.lang.ExceptionInfo e e)))]
+                                 (catch kerror/ExceptionInfo e e)))]
           (is (= :adl-output-not-canonical (:code data)))
           (is (= :decode (:operation data)))
           (is (= [2 1] [(:output-bytes data) (:canonical-bytes data)])))
@@ -100,7 +100,7 @@
   (let [runner (runner-emitting "\\030\\005" 2)
         receipts (atom [])]
     (try
-      (is (thrown? clojure.lang.ExceptionInfo (decode-through runner receipts)))
+      (is (thrown? kerror/ExceptionInfo (decode-through runner receipts)))
       (is (empty? @receipts))
       (finally (Files/deleteIfExists runner)))))
 
@@ -144,7 +144,7 @@
                          :receipt-sink #(swap! receipts conj %)})]
         ;; The capability executes the runner bytes admitted at construction,
         ;; so a later path replacement cannot change the attested artifact.
-        (Files/write runner (.getBytes "#!/bin/sh\nexit 99\n" StandardCharsets/UTF_8)
+        (Files/write runner (kbytes/utf8-bytes "#!/bin/sh\nexit 99\n")
                      (make-array java.nio.file.OpenOption 0))
         ((:invoke capability)
          {:abi "ipld-adl-wasm-v1" :engine-id adl/engine-id
@@ -161,16 +161,16 @@
           (is (= 1 (:memory-pages receipt)))
           (is (= 4 (:output-bytes receipt)))
           (is (thrown-with-msg?
-               clojure.lang.ExceptionInfo #"execution receipt rejected"
+               kerror/ExceptionInfo #"execution receipt rejected"
                (adl/verify-execution-receipt!
                 (update receipt :fuel-used inc) trust runner-policy)))
           (is (thrown-with-msg?
-               clojure.lang.ExceptionInfo #"execution receipt rejected"
+               kerror/ExceptionInfo #"execution receipt rejected"
                (adl/verify-execution-receipt!
                 receipt (assoc trust :revoked-signers #{(:signer key)})
                 runner-policy)))
           (is (thrown-with-msg?
-               clojure.lang.ExceptionInfo #"execution receipt rejected"
+               kerror/ExceptionInfo #"execution receipt rejected"
                (adl/verify-execution-receipt!
                 receipt trust {:trusted-runner-sha256 #{(apply str (repeat 64 "0"))}})))))
       (finally (Files/deleteIfExists runner)))))

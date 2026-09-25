@@ -7,8 +7,8 @@
   Every refusal here is asserted by its MESSAGE. The failures are easy to
   confuse -- each one ends in a module that did not link -- and a control that
   only checks for a throw counts a run that died for another reason."
-  (:require [clojure.java.shell :as shell]
-            [clojure.set :as set]
+  (:require [kotoba.lang.error :as kerror] [kotoba.bytes :as kbytes] [kotoba.process :as shell]
+            [kotoba.lang.coll :as set]
             [clojure.test :refer [deftest is testing]]
             [kotoba.lang.text :as str]
             [kotoba.compiler.core :as compiler]
@@ -87,7 +87,7 @@
   "The message of the refusal THUNK raises, or a description of its absence."
   [thunk]
   (try (thunk) "no refusal was raised"
-       (catch clojure.lang.ExceptionInfo error (ex-message error))))
+       (catch kerror/ExceptionInfo error (ex-message error))))
 
 ;; ---------------------------------------------------------------------------
 ;; 1. The program links, and main answers 5 -- in KIR and on wasm32-browser
@@ -101,7 +101,7 @@
     (is (= 3 (count modules))))
   (is (= 5 (execute sources 'root 'main [])) "in the KIR interpreter")
   (let [artifact (compiler/compile-project sources 'root :wasm32-browser-kotoba-v1)
-        encoded (.encodeToString (java.util.Base64/getEncoder) (:bytes artifact))
+        encoded (kbytes/base64-encode (:bytes artifact))
         result (shell/sh "node" "--input-type=module" "-e"
                          (str "import('./runtime/browser-host.mjs').then(async m=>{"
                               "const h=await m.instantiateKotoba(Buffer.from('" encoded "','base64'));"
@@ -158,7 +158,7 @@
            (rejection #(project/link-source sources 'kotoba.set.union)))))
   (testing "as a single file, on the frontend path"
     (let [error (try (compiler/check-source union-template) nil
-                     (catch clojure.lang.ExceptionInfo error error))
+                     (catch kerror/ExceptionInfo error error))
           refined (diagnostic/refine error)]
       (is (some? error) "the frontend does not admit a (:params ...) clause")
       (is (= :kotoba.error/namespace-params-needs-instantiation (:code refined)))
@@ -239,7 +239,7 @@
         root "(ns root (:require [t.plus :as pi :with {elem :i64}] [t.plus :as ps :with {elem :string}]) (:export [main]))
 (defn main [] :i64 (pi/plus 1 2))"
         error (try (project/link-source {'t.plus template 'root root} 'root) nil
-                   (catch clojure.lang.ExceptionInfo error error))
+                   (catch kerror/ExceptionInfo error error))
         data (ex-data error)]
     (is (some? error) "+ on :string is refused under one binding and not the other")
     (is (str/ends-with? (ex-message error) " in t.plus with {elem :string}") (ex-message error))
