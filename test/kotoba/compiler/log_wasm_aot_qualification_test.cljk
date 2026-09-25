@@ -4,7 +4,7 @@
   The in-component ring is the production source of truth (no stdout
   sink). Sequence advance plus oldest-drop on overflow are the
   discriminating claims — a canned append result would not drop seq 1."
-  (:require [clojure.edn :as edn]
+  (:require [kotoba.bytes :as kbytes] [clojure.edn :as edn]
             [kotoba.io :as io]
             [clojure.java.shell :as shell]
             [kotoba.lang.text :as str]
@@ -90,10 +90,10 @@
 
 (defn- append-sequence-wat []
   (let [mod "cm32p2|kotoba:application/log@1"
-        level-bytes (vec (.getBytes "info" "UTF-8"))
-        event-bytes (vec (.getBytes "boot" "UTF-8"))
-        msg1-bytes (vec (.getBytes "one" "UTF-8"))
-        msg2-bytes (vec (.getBytes "two" "UTF-8"))
+        level-bytes (vec (kbytes/utf8-bytes "info"))
+        event-bytes (vec (kbytes/utf8-bytes "boot"))
+        msg1-bytes (vec (kbytes/utf8-bytes "one"))
+        msg2-bytes (vec (kbytes/utf8-bytes "two"))
         level-ptr 8
         event-ptr (+ level-ptr (count level-bytes))
         msg1-ptr (+ event-ptr (count event-bytes))
@@ -161,9 +161,9 @@
 
 (defn- ring-overflow-wat []
   (let [mod "cm32p2|kotoba:application/log@1"
-        level-bytes (vec (.getBytes "info" "UTF-8"))
-        event-bytes (vec (.getBytes "boot" "UTF-8"))
-        msg-bytes (vec (.getBytes "hi" "UTF-8"))
+        level-bytes (vec (kbytes/utf8-bytes "info"))
+        event-bytes (vec (kbytes/utf8-bytes "boot"))
+        msg-bytes (vec (kbytes/utf8-bytes "hi"))
         level-ptr 8
         event-ptr (+ level-ptr (count level-bytes))
         msg-ptr (+ event-ptr (count event-bytes))

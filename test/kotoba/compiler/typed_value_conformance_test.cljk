@@ -1,5 +1,5 @@
 (ns kotoba.compiler.typed-value-conformance-test
-  (:require [clojure.edn :as edn]
+  (:require [kotoba.bytes :as kbytes] [clojure.edn :as edn]
             [kotoba.io :as io]
             [kotoba.process :as shell]
             [clojure.test :refer [deftest is testing]]
@@ -10,15 +10,15 @@
   (-> "kotoba/compiler/typed-value-conformance.edn" io/resource slurp edn/read-string))
 
 (defn- web-result [compiled]
-  (let [encoded (.encodeToString (java.util.Base64/getEncoder)
-                                 (.getBytes ^String (:source compiled) "UTF-8"))
+  (let [encoded (kbytes/base64-encode
+                                 (kbytes/utf8-bytes ^String (:source compiled)))
         probe (str "import('data:text/javascript;base64," encoded
                    "').then(m=>{const value=m.instantiateKotoba({}).main();"
                    "if(typeof value!=='bigint')process.exit(2);console.log(value.toString())})")]
     (shell/sh "node" "--input-type=module" "-e" probe)))
 
 (defn- wasm-result [compiled]
-  (let [encoded (.encodeToString (java.util.Base64/getEncoder) ^bytes (:bytes compiled))
+  (let [encoded (kbytes/base64-encode ^bytes (:bytes compiled))
         probe (str "import('./runtime/browser-host.mjs').then(async m=>{"
                    "const h=await m.instantiateKotoba(Buffer.from(process.argv[1],'base64'));"
                    "const value=h.instance.exports.main();"
@@ -107,9 +107,9 @@
        "(defn main [] :i64 (at 1))"))
 
 (defn- probe-at [compiled kind index]
-  (let [encoded (.encodeToString (java.util.Base64/getEncoder)
+  (let [encoded (kbytes/base64-encode
                                  (if (= kind :web)
-                                   (.getBytes ^String (:source compiled) "UTF-8")
+                                   (kbytes/utf8-bytes ^String (:source compiled))
                                    ^bytes (:bytes compiled)))
         body (if (= kind :web)
                (str "import('data:text/javascript;base64," encoded

@@ -11,7 +11,7 @@
   authority--and unsupported bodies are rejected instead of being silently
   replaced by another transform."
   {:kotoba/export [compile-source max-expression-nodes target target-profile]}
-  (:require [kotoba.sema :as sema]
+  (:require [kotoba.bytes :as kbytes] [kotoba.sema :as sema]
             [kotoba.kir.compatibility :as compatibility]))
 
 ;; clojure.core/some, spelled as the loop it is. In Kotoba `some` is the
@@ -46,7 +46,7 @@
       (if done? (conj out b) (recur n' (conj out (bit-or b 0x80)))))))
 
 (defn- utf8 [s]
-  #?(:clj (mapv #(bit-and (int %) 0xff) (.getBytes ^String s "UTF-8"))
+  #?(:clj (mapv #(bit-and (int %) 0xff) (kbytes/utf8-bytes ^String s))
      :cljs (vec (js/Array.from (js/Buffer.from s "utf8")))))
 
 (defn- name-bytes [s]

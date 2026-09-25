@@ -14,7 +14,7 @@
   is host-side (document_dom_reconcile_test); document-sha256 is first-class
   (document_sha256_test). This slice locks the data→HTML half of the W4 exit
   gate that design-system form-A (string-only call graphs) could not express."
-  (:require [kotoba.process :as shell]
+  (:require [kotoba.bytes :as kbytes] [kotoba.process :as shell]
             [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]
             [kotoba.kir :as ir]
@@ -76,8 +76,8 @@
    (defn depth-ok [] :i64 (document-count (page)))")
 
 (defn- script-probe [compiled javascript]
-  (let [encoded (.encodeToString (java.util.Base64/getEncoder)
-                                 (.getBytes ^String (:source compiled) "UTF-8"))]
+  (let [encoded (kbytes/base64-encode
+                                 (kbytes/utf8-bytes ^String (:source compiled)))]
     (shell/sh "node" "--input-type=module" "-e"
               (str "import('data:text/javascript;base64," encoded
                    "').then(m=>{const x=m.instantiateKotoba({});" javascript

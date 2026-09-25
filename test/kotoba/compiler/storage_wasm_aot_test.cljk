@@ -37,7 +37,7 @@
   what shows the [:option :i64] payload really crosses rather than being
   reconstructed guest-side, and the never-reached break is what shows
   this runs through typedCapCall at all."
-  (:require [clojure.edn :as edn]
+  (:require [kotoba.bytes :as kbytes] [clojure.edn :as edn]
             [kotoba.io :as io]
             [kotoba.process :as shell]
             [clojure.test :refer [deftest is testing]]
@@ -145,7 +145,7 @@
        "}"))
 
 (defn- node-probe [compiled javascript]
-  (let [encoded (.encodeToString (java.util.Base64/getEncoder)
+  (let [encoded (kbytes/base64-encode
                                  ^bytes (:bytes compiled))
         probe (str "import('./runtime/browser-host.mjs').then(async m=>{"
                    javascript
@@ -210,8 +210,8 @@
 
 (deftest jit-storage-guest-round-trips-on-kotoba-script-v8
   (let [compiled (compiler/compile-source guest-source :js-kotoba-v1 policy)
-        encoded (.encodeToString (java.util.Base64/getEncoder)
-                                 (.getBytes ^String (:source compiled) "UTF-8"))
+        encoded (kbytes/base64-encode
+                                 (kbytes/utf8-bytes ^String (:source compiled)))
         js (str jit-inject-js
                 "import('data:text/javascript;base64," encoded
                 "').then(m=>{const x=m.instantiateKotoba({12:storageInject});"

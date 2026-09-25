@@ -9,7 +9,7 @@
   Proves the W4 exit-gate piece 'reconciled to browser DOM' without claiming
   the full :ui/commit capability kit (flat node set + revision). Dangerous
   tags fail closed. Second reconcile updates text/structure in place."
-  (:require [kotoba.process :as shell]
+  (:require [kotoba.bytes :as kbytes] [kotoba.process :as shell]
             [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]
             [kotoba.kir :as ir]))
@@ -34,8 +34,8 @@
      (leaf \"script\" \"alert(1)\"))")
 
 (defn- script-probe [compiled javascript]
-  (let [encoded (.encodeToString (java.util.Base64/getEncoder)
-                                 (.getBytes ^String (:source compiled) "UTF-8"))]
+  (let [encoded (kbytes/base64-encode
+                                 (kbytes/utf8-bytes ^String (:source compiled)))]
     (shell/sh "node" "--input-type=module" "-e"
               (str "import('data:text/javascript;base64," encoded
                    "').then(async m=>{"

@@ -1,5 +1,5 @@
 (ns kotoba.compiler.f64-value-test
-  (:require [kotoba.process :as shell]
+  (:require [kotoba.bytes :as kbytes] [kotoba.process :as shell]
             [clojure.test :refer [deftest is testing]]
             [kotoba.wasm.typed :as typed]
             [kotoba.compiler.core :as compiler]
@@ -34,7 +34,7 @@
 
 (deftest f64-wasm-abi-and-reinterpretation-match-reference
   (let [artifact (compiler/compile-source source :wasm32-kotoba-v1)
-        encoded (.encodeToString (java.util.Base64/getEncoder) (:bytes artifact))
+        encoded (kbytes/base64-encode (:bytes artifact))
         js (str "const bytes=Buffer.from('" encoded "','base64');"
                 "WebAssembly.instantiate(bytes,{}).then(({instance})=>{const x=instance.exports;"
                 "if(x.bits(1.5)!==4609434218613702656n)process.exit(2);"
@@ -53,8 +53,8 @@
 
 (deftest f64-kotoba-script-matches-reference
   (let [artifact (compiler/compile-source source :js-kotoba-v1)
-        encoded (.encodeToString (java.util.Base64/getEncoder)
-                                 (.getBytes ^String (:source artifact) "UTF-8"))
+        encoded (kbytes/base64-encode
+                                 (kbytes/utf8-bytes ^String (:source artifact)))
         js (str "import('data:text/javascript;base64," encoded
                 "').then(m=>{const x=m.instantiateKotoba({});"
                 "if(x.bits(1.5)!==4609434218613702656n)process.exit(2);"
@@ -78,9 +78,9 @@
         js-artifact (compiler/compile-source decimal-source :js-kotoba-v1)
         wasm-artifact (compiler/compile-source decimal-source :wasm32-browser-kotoba-v1)
         kir (:kir wasm-artifact)
-        js-encoded (.encodeToString (java.util.Base64/getEncoder)
-                                    (.getBytes ^String (:source js-artifact) "UTF-8"))
-        wasm-encoded (.encodeToString (java.util.Base64/getEncoder) (:bytes wasm-artifact))
+        js-encoded (kbytes/base64-encode
+                                    (kbytes/utf8-bytes ^String (:source js-artifact)))
+        wasm-encoded (kbytes/base64-encode (:bytes wasm-artifact))
         assertions
         (str "const valid=[['0',0],['-0',-0],['+1.5',1.5],['.5',.5],['1.',1],"
              "['1e-324',0],['5e-324',Number.MIN_VALUE],['1.7976931348623157e308',Number.MAX_VALUE]];"
@@ -110,9 +110,9 @@
         js-artifact (compiler/compile-source source :js-kotoba-v1)
         wasm-artifact (compiler/compile-source source :wasm32-browser-kotoba-v1)
         kir (:kir wasm-artifact)
-        js64 (.encodeToString (java.util.Base64/getEncoder)
-                              (.getBytes ^String (:source js-artifact) "UTF-8"))
-        wasm64 (.encodeToString (java.util.Base64/getEncoder) (:bytes wasm-artifact))
+        js64 (kbytes/base64-encode
+                              (kbytes/utf8-bytes ^String (:source js-artifact)))
+        wasm64 (kbytes/base64-encode (:bytes wasm-artifact))
         assertions
         (str "const good=x.parse(' -0  1.5\\t5e-324 ');"
              "if(!good[1]||!Object.is(good[2][1],-0)||good[2][2]!==1.5||good[2][3]!==Number.MIN_VALUE)process.exit(2);"
@@ -160,7 +160,7 @@
                                       [:rpy [:vector [:f64 :f64 :f64]]]]]
                               xyz rpy)))))))"
         artifact (compiler/compile-source source :wasm32-browser-kotoba-v1)
-        encoded (.encodeToString (java.util.Base64/getEncoder) (:bytes artifact))
+        encoded (kbytes/base64-encode (:bytes artifact))
         result (node-run
                 (str "import('./runtime/browser-host.mjs').then(async m=>{"
                      "const h=await m.instantiateKotoba(Buffer.from('" encoded "','base64'));"
@@ -235,7 +235,7 @@
              "(defn classify [x :f64] :f64 "
              "  (if (f64-lt x 25.0) 0.0 (if (f64-lt x 60.0) 1.0 2.0)))")
         artifact (compiler/compile-source conditional-source :wasm32-browser-kotoba-v1)
-        encoded (.encodeToString (java.util.Base64/getEncoder) (:bytes artifact))
+        encoded (kbytes/base64-encode (:bytes artifact))
         result (node-run
                 (str "import('./runtime/browser-host.mjs').then(async m=>{"
                      "const h=await m.instantiateKotoba(Buffer.from('" encoded "','base64'));"
@@ -267,9 +267,9 @@
   (let [kir (:kir (compiler/compile-source arithmetic-source :js-kotoba-v1))
         js-artifact (compiler/compile-source arithmetic-source :js-kotoba-v1)
         wasm-artifact (compiler/compile-source arithmetic-source :wasm32-browser-kotoba-v1)
-        js-encoded (.encodeToString (java.util.Base64/getEncoder)
-                                    (.getBytes ^String (:source js-artifact) "UTF-8"))
-        wasm-encoded (.encodeToString (java.util.Base64/getEncoder) (:bytes wasm-artifact))
+        js-encoded (kbytes/base64-encode
+                                    (kbytes/utf8-bytes ^String (:source js-artifact)))
+        wasm-encoded (kbytes/base64-encode (:bytes wasm-artifact))
         assertions (str "const check=x=>{"
                         "if(x.add(0.1,0.2)!==0.30000000000000004)process.exit(2);"
                         "if(x.divide(1,0)!==Infinity||!Number.isNaN(x.divide(0,0)))process.exit(3);"

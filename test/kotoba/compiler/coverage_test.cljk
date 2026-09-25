@@ -1,5 +1,5 @@
 (ns kotoba.compiler.coverage-test
-  (:require [kotoba.io :as kio] [clojure.test :refer [deftest is testing]]
+  (:require [kotoba.bytes :as kbytes] [kotoba.io :as kio] [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.coverage :as coverage]))
 
 (def digest (apply str (repeat 64 "a")))
@@ -44,7 +44,7 @@
 (deftest raw-dataset-bytes-are-bound-to-the-manifest
   (let [path (kio/temp-file "kotoba-coverage" ".csv")]
     (try
-      (kio/write-bytes path (.getBytes "fixture" "UTF-8"))
+      (kio/write-bytes path (kbytes/utf8-bytes "fixture"))
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"digest mismatch"
                             (coverage/verify-dataset! base (str path))))
       (finally (kio/delete-if-exists path)))))
