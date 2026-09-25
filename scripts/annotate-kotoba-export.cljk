@@ -321,8 +321,12 @@
       (skip-string text after-name)
       name-end)))
 
+;; QUOTED (2026-09-25): JVM Clojure's `ns` evaluates the attr-map, so a bare
+;; vector of symbols fails to load there ("Unable to resolve symbol: <first
+;; name>"); `'[...]` loads on the JVM and on SCI, and kotoba-sema reads it as
+;; the unquoted vector (kotoba-sema 7e8036a).
 (defn render-export-map [names]
-  (str "{:kotoba/export [" (str/join " " names) "]}"))
+  (str "{:kotoba/export '[" (str/join " " names) "]}"))
 
 (defn process-file [path-str mode]
   (let [text (.readFileSync fs path-str "utf8")
