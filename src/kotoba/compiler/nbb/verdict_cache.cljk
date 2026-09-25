@@ -105,11 +105,11 @@
   {:kotoba/export [key-for key-material limits-digest open-store record-digest
                    resolve! toolchain-digest]}
   (:require [kotoba.compiler.decimal-text :as decimal-text]
-            [cljs.reader :as reader]
             [kotoba.artifact.core :as artifact]
             [kotoba.compiler.posix-path :as posix-path]
             [kotoba.compiler.text-bytes :as text-bytes]
             [kotoba.kir.compatibility :as compatibility]
+            [kotoba.lang.edn :as edn]
             [kotoba.lang.text :as text]
             ;; Abilities (superproject adr-2609242330 S5); `sys` holds the
             ;; host facts no ability carries.
@@ -294,7 +294,12 @@
 (defn- replayable? [verdict]
   ;; A verdict whose text does not read back as the same value cannot be
   ;; replayed as the same diagnostic, so it is not stored.
-  (try (= verdict (reader/read-string (pr-str verdict)))
+  ;; Read back with the same reader `check-record` uses, so what is stored is
+  ;; exactly what can be read. kotoba.lang.edn since 2026-09-25 (cljs.reader
+  ;; before; superproject adr-2609242330): it is bounded and refuses tags,
+  ;; integers beyond 2^53-1 and `#_`, so a verdict carrying one is now not
+  ;; stored -- a miss, never a different verdict.
+  (try (= verdict (edn/read-string (pr-str verdict)))
        (catch :default _ false)))
 
 ;; ---------------------------------------------------------------------------
@@ -384,10 +389,9 @@
                    (catch :default _ (throw (ex-info "unreadable" {:reason :unreadable}))))))))
 
 (defn- check-record [text key]
-  (let [record (try (reader/read-string {:readers {}
-                                         :default (fn [tag _]
-                                                    (throw (ex-info "tag" {:tag tag})))}
-                                        text)
+  ;; kotoba.lang.edn refuses every tagged literal with no options, which is
+  ;; what the `{:readers {} :default <throw>}` pair told cljs.reader to do.
+  (let [record (try (edn/read-string text)
                     (catch :default _ ::unreadable))]
     (cond
       (= ::unreadable record) {:reason :unreadable}
