@@ -4,7 +4,7 @@
   Empty queue stays option none (existing accept drivers). A host injects
   through http-ingress-host.inject; accept must return that request, not none."
   (:require [clojure.edn :as edn]
-            [clojure.java.io :as io]
+            [kotoba.io :as io]
             [clojure.java.shell :as shell]
             [kotoba.lang.text :as str]
             [clojure.test :refer [deftest is]]
@@ -15,7 +15,7 @@
 
 (def ^:private wasmtime-binary
   (let [pinned (io/file ".tools" "wasmtime" "wasmtime")]
-    (if (.canExecute pinned) (.getPath pinned) "wasmtime")))
+    (if (io/can-execute? pinned) (io/path pinned) "wasmtime")))
 
 (defn- wat-data [bytes]
   (apply str (map #(format "\\%02x" (bit-and (int %) 0xff)) bytes)))

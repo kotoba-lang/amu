@@ -6,7 +6,7 @@
   expansion is progressive as compiler admission covers more fixtures."
   {:kotoba/export [-main case-language-profile check-goldens collect-goldens digest-case golden-document golden-resource known-backends load-goldens load-manifest pilot-manifest-resource pilot-root-resource pure-product-cases pure-product-required run-case run-kir run-suite run-wasm32 write-goldens!]}
   (:require [kotoba.lang.edn :as edn]
-            [clojure.java.io :as io]
+            [kotoba.io :as io]
             [kotoba.process :as shell]
             [kotoba.lang.text :as str]
             [kotoba.artifact.core :as artifact]
@@ -70,7 +70,7 @@
     (if-let [url (io/resource rel)]
       (slurp url)
       (let [f (io/file entry)]
-        (when (.isFile f)
+        (when (io/file? f)
           (slurp f))))))
 
 (defn- symbolize-function [function]
@@ -116,11 +116,11 @@
 (defn- project-root
   "Best-effort compiler repo root (dir containing runtime/browser-host.mjs)."
   []
-  (loop [dir (.getAbsoluteFile (io/file "."))]
+  (loop [dir (io/absolute-file (io/file "."))]
     (cond
-      (.isFile (io/file dir "runtime/browser-host.mjs")) dir
-      (nil? (.getParentFile dir)) (io/file ".")
-      :else (recur (.getParentFile dir)))))
+      (io/file? (io/file dir "runtime/browser-host.mjs")) dir
+      (nil? (io/parent-file dir)) (io/file ".")
+      :else (recur (io/parent-file dir)))))
 
 (defn run-wasm32
   "Compile to wasm32-kotoba-v1 and execute `main` via Node browser-host runtime.
@@ -142,7 +142,7 @@
                       "if(typeof value!=='bigint' && typeof value!=='number' && typeof value!=='boolean')process.exit(2);"
                       "console.log(String(value))})")
            res (shell/sh "node" "--input-type=module" "-e" probe encoded
-                         :dir (.getAbsolutePath root))]
+                         :dir (io/absolute-path root))]
        (if (zero? (:exit res))
          (let [out (str/trim (:out res))
                parsed (case out
@@ -378,7 +378,7 @@
          f (io/file "resources/kotoba/lang-conformance/pilot-golden.edn")]
      (io/make-parents f)
      (spit f (with-out-str (kotoba.pprint/pprint doc)))
-     (.getPath f))))
+     (io/path f))))
 
 (defn -main
   "CLI: kbb -M:conformance
