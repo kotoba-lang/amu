@@ -74,11 +74,11 @@
     (is (= "map literal key :bogus is not a field of record :b/s"
            (refusal (with-state "{:caret 3 :bogus 1}" "1")))))
   (testing "refused: strings and records are never truthy"
-    (is (= "if test must be bool or legacy i64"
+    (is (= "if test must be bool or an option"
            (refusal "(defn main [] :i64 (if \"s\" 1 2))")))
-    (is (= "if test must be bool or legacy i64"
+    (is (= "if test must be bool or an option"
            (refusal "(defn main [] :i64 (when-let [x \"s\"] 1))")))
-    (is (= "if test must be bool or legacy i64"
+    (is (= "if test must be bool or an option"
            (refusal (with-state "{:caret 3}" "(if s 1 2)")))))
   (testing "refused: an option is not coerced to the number it holds"
     (is (= "expression type mismatch: expected i64, got [:option :i64]"
