@@ -5,8 +5,8 @@
   sealed provenance is structurally closed and names the exact verified
   artifact selected by the output-set commit marker."
   {:kotoba/export [admit! format]}
-  (:require [cljs.reader :as reader]
-            [kotoba.lang.coll :as coll]
+  (:require [kotoba.lang.coll :as coll]
+            [kotoba.lang.edn :as edn]
             [kotoba.artifact.core :as artifact]
             [kotoba.compiler.nbb.cli-support :as support]
             [kotoba.compiler.nbb.compile-cache :as digest]
@@ -84,14 +84,22 @@
 
 (defn- admit-native! [artifact-bytes provenance]
   ;; The bounded reader has already admitted this exact text before this
-  ;; standard EDN decode.  The latter preserves JS integer representation
-  ;; expected by the independent native verifier.
+  ;; second decode, which preserves the JS integer representation the
+  ;; independent native verifier expects. The second decode is
+  ;; kotoba.lang.edn (cljs.reader until 2026-09-25, superproject
+  ;; adr-2609242330): the same values for every artifact cljs.reader read
+  ;; exactly. The one input it answers differently is an integer beyond
+  ;; 2^53-1 (`:value` of examples/i64-beyond-double.kotoba): cljs.reader
+  ;; rounded it and the verifier then refused the artifact as an integrity
+  ;; mismatch; kotoba.lang.edn refuses the token itself, named here as
+  ;; :native-decode. Both refuse the output set; neither admits it.
   (let [artifact-text (try
                         (.decode (js/TextDecoder. "utf-8" #js {:fatal true})
                                  artifact-bytes)
                         (catch :default _ (reject! :native-decode)))
         _ (support/parse-policy-material {:present? true :text artifact-text})
-        native (-> (reader/read-string artifact-text)
+        native (-> (try (edn/read-string artifact-text)
+                        (catch :default _ (reject! :native-decode)))
                    (update :value
                            #(coll/postwalk (fn [x]
                                              (if (integer? x)

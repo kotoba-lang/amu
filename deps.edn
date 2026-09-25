@@ -1476,7 +1476,13 @@
          ;; the last JVM-only family in docs/jvm-route-topology.edn outside
          ;; this repository (ADR 0348 iteration 6). The encoder's whole JVM
          ;; surface was 40 `.getBytes`, two `format`, and the wasm-tools seam.
-         :git/sha "94a9382c94acfab48836e67fd194e6acab7742cc"} ;; Advanced 2026-09-24 db8690ac -> 94a9382c (main tip, forward only): selfhost walls: fn-body-clj-only, some-two-arg, regex literal, char literal, clojure.* to kotoba.*
+         :git/sha "b4c181a90aac8ba0e0fa3939d028689890eff3bd"} ;; Advanced 2026-09-24 db8690ac -> 94a9382c (main tip, forward only): selfhost walls: fn-body-clj-only, some-two-arg, regex literal, char literal, clojure.* to kotoba.*
+         ;; Advanced 2026-09-25 94a9382c -> b4c181a9 (main tip, forward only):
+         ;; the component contract and vendored WASI WIT are compile-time text
+         ;; (kotoba.component.embedded-resources, superproject adr-2609242330
+         ;; S3 (b')), so wit / wasi-contract / doctor / composition no longer
+         ;; require clojure.java.io; also carries main's clojure.* -> kotoba.*
+         ;; codemods (kotoba.bytes, kotoba.io, kotoba.lang.error).
         ;; The package contract: `kotoba.lang.package-contract` validates a
         ;; `kotoba.lock.edn` -- required fields, real CIDv1s, capability grant
         ;; ⊆ declaration, signer revocation, and Ed25519 signature
