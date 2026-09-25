@@ -1,0 +1,85 @@
+(ns kotoba.compiler.absence-test
+  "ADR 0353 floor :absence (narrows ADR 0028's \"no truthiness\" to presence).
+
+  `nil` as a map-literal value makes that field an absent `[:option T]`: a
+  keyword-keyed literal whose context names a record lowers against that
+  record, and a nil (or left-out) option field is `option-none-of`. Truthiness
+  exists on `:bool` and `[:option T]` only: `if`, `when`, `when-not`,
+  `if-let`, `when-let`, `cond->` and `some->` over an option are presence.
+
+  What stays refused is pinned by the literal of each refusal: nil where
+  nothing says T, nil for a field that is not an option, a key the record does
+  not have, a string or a record as a test, and an option used as the number
+  it holds (no coercion)."
+  (:require [clojure.test :refer [deftest is testing]]
+            [kotoba.kir :as ir]
+            [kotoba.sema :as sema]))
+
+(def ^:private schema
+  "(ns b (:schemas {:b/s [:record :b/s [[:caret :i64]
+                                          [:sel [:option :i64]]
+                                          [:name [:option :string]]]]}))\n")
+
+(defn- run-main [source]
+  (#?(:clj long :cljs js/Number)
+   (ir/execute (ir/lower (sema/analyze source)) 'main [])))
+
+(defn- with-state [init body]
+  (str schema "(defn init [] [:ref :b/s] " init ")\n"
+       "(defn main [] :i64 (let [s (init)] " body "))"))
+
+(defn- refusal [source]
+  (try (ir/lower (sema/analyze source)) nil
+       (catch #?(:clj clojure.lang.ExceptionInfo :cljs :default) error
+         (ex-message error))))
+
+(deftest nil-field-is-absence-test
+  (testing "admitted: nil in a record literal is the absent option; if-let binds the payload"
+    (is (= 3 (run-main (with-state "{:caret 3 :sel nil}"
+                                   "(if-let [x (:sel s)] x (:caret s))"))))
+    (is (= 42 (run-main (with-state "{:caret 3 :sel (option-some-of [:option :i64] 40)}"
+                                    "(if-let [x (:sel s)] (+ x 2) (:caret s))")))))
+  (testing "admitted: a left-out option field is absent too"
+    (is (= 7 (run-main (with-state "{:caret 3}" "(when-not (:sel s) 7)")))))
+  (testing "admitted: when / if over an option are presence"
+    (is (= 1 (run-main (with-state "{:caret 3 :sel nil}"
+                                   "(+ (when (:sel s) 100) (if (:name s) 10 1))"))))
+    (is (= 110 (run-main (with-state "{:caret 3 :sel (option-some-of [:option :i64] 0) :name (option-some-of [:option :string] \"\")}"
+                                     "(+ (when (:sel s) 100) (if (:name s) 10 1))")))))
+  (testing "admitted: when-let binds a non-i64 payload"
+    (is (= 2 (run-main (with-state "{:caret 3 :name (option-some-of [:option :string] \"ab\")}"
+                                   "(when-let [n (:name s)] (string-byte-length n))")))))
+  (testing "admitted: cond-> tests presence"
+    (is (= 11 (run-main (with-state "{:caret 3 :sel (option-some-of [:option :i64] 1)}"
+                                    "(cond-> 1 (:sel s) (+ 10) (:name s) (+ 100))")))))
+  (testing "admitted: some-> threads while present and always answers an option"
+    (is (= 12 (run-main (with-state "{:caret 3 :sel (option-some-of [:option :i64] 5)}"
+                                    "(option-value-of [:option :i64] (some-> (:sel s) inc (* 2)) 0)"))))
+    (is (= -1 (run-main (with-state "{:caret 3 :sel nil}"
+                                    "(option-value-of [:option :i64] (some-> (:sel s) inc (* 2)) -1)")))))
+  (testing "refused: nil where nothing says T"
+    (is (= (str "map literal value at key :c is nil, which makes the field an absent "
+                "[:option T], and nothing here says T: give the literal a record type "
+                "from context (a declared record result, or a record field) or write "
+                "(option-none-of [:option T])")
+           (refusal "(defn main [] :i64 (let [m {:a 1 :c nil}] 1))"))))
+  (testing "refused: only an option field can be absent"
+    (is (= (str "map literal field :caret of record :b/s is :i64, which is not an option, "
+                "so it cannot be absent (its value is nil); only an [:option T] field is absent")
+           (refusal (with-state "{:caret nil}" "1"))))
+    (is (= (str "map literal field :caret of record :b/s is :i64, which is not an option, "
+                "so it cannot be absent (the key is left out); only an [:option T] field is absent")
+           (refusal (with-state "{:sel nil}" "1")))))
+  (testing "refused: a key the record does not have"
+    (is (= "map literal key :bogus is not a field of record :b/s"
+           (refusal (with-state "{:caret 3 :bogus 1}" "1")))))
+  (testing "refused: strings and records are never truthy"
+    (is (= "if test must be bool or legacy i64"
+           (refusal "(defn main [] :i64 (if \"s\" 1 2))")))
+    (is (= "if test must be bool or legacy i64"
+           (refusal "(defn main [] :i64 (when-let [x \"s\"] 1))")))
+    (is (= "if test must be bool or legacy i64"
+           (refusal (with-state "{:caret 3}" "(if s 1 2)")))))
+  (testing "refused: an option is not coerced to the number it holds"
+    (is (= "expression type mismatch: expected i64, got [:option :i64]"
+           (refusal (with-state "{:caret 3 :sel nil}" "(+ (:sel s) 1)"))))))
