@@ -13,11 +13,15 @@
   output paths and diagnostics are spelled by node:path today, and a path
   written differently is a different artifact location.
 
-  Only `/` is a separator, and the algorithm only ever compares a position
-  with `/` and cuts at such positions. That is why the three leaves below may
-  count in different units per host -- bytes under Kotoba, UTF-16 units
-  under ClojureScript -- and still give the same answer: a cut at a `/` is a
-  cut between the same two characters in either unit."
+  Only `/` is a separator. The path is read as its SEGMENTS -- the
+  non-empty runs between slashes, found by a forward search for the next
+  `/` -- and every offset the algorithm ever holds is 0, the length, a
+  slash, or one past a slash. That is why the leaves below may count in
+  different units per host -- bytes under Kotoba, UTF-16 units under
+  ClojureScript -- and give the same answer, and why no offset ever falls
+  inside a UTF-8 sequence (a Kotoba string refuses such an offset by name).
+  Run under the KIR reference interpreter and under nbb against node:path:
+  test/nbb/host_abilities.cljk."
   {:kotoba/export [basename dirname join normalize]})
 
 ;; ---- leaves: the only host-specific lines, one per primitive ----
@@ -25,13 +29,15 @@
 (defn- len [#?@(:kotoba [s :string] :default [s])] #?@(:kotoba [:i64])
   #?(:kotoba (string-byte-length s) :default (count s)))
 
-(defn- slash-at? [#?@(:kotoba [s :string i :i64] :default [s i])] #?@(:kotoba [:bool])
-  #?(:kotoba (= i (string-find-byte s 47 i))
-     :default (= "/" (subs s i (inc i)))))
+(defn- next-slash
+  "The offset of the first `/` at or after FROM, or -1."
+  [#?@(:kotoba [s :string from :i64] :default [s from])] #?@(:kotoba [:i64])
+  #?(:kotoba (string-find-byte s 47 from)
+     :cljs (.indexOf s "/" from)))
 
 (defn- dot-at? [#?@(:kotoba [s :string i :i64] :default [s i])] #?@(:kotoba [:bool])
   #?(:kotoba (= i (string-find-byte s 46 i))
-     :default (= "." (subs s i (inc i)))))
+     :cljs (= 46 (.charCodeAt s i))))
 
 (defn- cut [#?@(:kotoba [s :string start :i64 end :i64] :default [s start end])] #?@(:kotoba [:string])
   #?(:kotoba (string-substring s start end) :default (subs s start end)))
@@ -39,109 +45,126 @@
 (defn- cat2 [#?@(:kotoba [a :string b :string] :default [a b])] #?@(:kotoba [:string])
   #?(:kotoba (string-concat a b) :default (str a b)))
 
+(defn- push [#?@(:kotoba [v :vector-i64 x :i64] :default [v x])] #?@(:kotoba [:vector-i64])
+  #?(:kotoba (vector-conj v x) :default (conj v x)))
+
+;; ---- segments ----
+
+(defn- segments
+  "P's non-empty segments as a flat vector [start0 end0 start1 end1 ...].
+  Kotoba's loop-result inference types a loop EXIT written `(conj v x)` as
+  i64 (`expected vector-i64, got i64`, measured 2026-09-25); `push` is
+  `vector-conj` there and `conj` on nbb."
+  [#?@(:kotoba [p :string] :default [p])] #?@(:kotoba [:vector-i64])
+  (let [n (len p)]
+    (loop [i 0 j (next-slash p 0) acc #?(:kotoba (vector-i64) :default [])]
+      (if (>= i n)
+        acc
+        (if (< j 0)
+          (push (push acc i) n)
+          (if (> j i)
+            (recur (inc j) (next-slash p (inc j)) (push (push acc i) j))
+            (recur (inc j) (next-slash p (inc j)) acc)))))))
+
+(defn- slash-first? [#?@(:kotoba [p :string] :default [p])] #?@(:kotoba [:bool])
+  (and (> (len p) 0) (= 0 (next-slash p 0))))
+
+(defn- slash-last? [#?@(:kotoba [p :string] :default [p])] #?@(:kotoba [:bool])
+  (let [n (len p)]
+    (and (> n 0)
+         (let [segs (segments p)]
+           (or (= 0 (count segs))
+               (< (nth segs (- (count segs) 1)) n))))))
+
 ;; ---- node:path posix, lib/path.js ----
 
 (defn basename
   "The last segment of P, trailing slashes ignored; \"\" for \"\" and \"/\"."
   [#?@(:kotoba [p :string] :default [p])] #?@(:kotoba [:string])
-  (loop [i (dec (len p)) end -1]
-    (cond
-      (< i 0) (if (= end -1) "" (cut p 0 end))
-      (slash-at? p i) (if (= end -1) (recur (dec i) end) (cut p (inc i) end))
-      :else (recur (dec i) (if (= end -1) (inc i) end)))))
+  (let [segs (segments p)
+        k (count segs)]
+    (if (= 0 k)
+      ""
+      (cut p (nth segs (- k 2)) (nth segs (- k 1))))))
 
 (defn dirname
-  "Everything before the last segment of P: \".\" when there is no slash,
-  \"/\" for a root child, \"//\" for the one node:path spelling of that."
+  "Everything before the slash that precedes the last segment of P: \".\"
+  when there is none, \"/\" for a root child, \"//\" for the one node:path
+  spelling of that."
   [#?@(:kotoba [p :string] :default [p])] #?@(:kotoba [:string])
-  (let [n (len p)]
-    (if (= n 0)
-      "."
-      (let [root? (slash-at? p 0)
-            end (loop [i (dec n) matched-slash true]
-                  (cond
-                    (< i 1) -1
-                    (slash-at? p i) (if matched-slash (recur (dec i) true) i)
-                    :else (recur (dec i) false)))]
-        (cond
-          (= end -1) (if root? "/" ".")
-          (and root? (= end 1)) "//"
-          :else (cut p 0 end))))))
+  (if (= 0 (len p))
+    "."
+    (let [root? (slash-first? p)
+          segs (segments p)
+          k (count segs)
+          end (if (= 0 k) -1 (- (nth segs (- k 2)) 1))]
+      (cond
+        (< end 1) (if root? "/" ".")
+        (and root? (= end 1)) "//"
+        :else (cut p 0 end)))))
 
-(defn- ends-dot-dot? [#?@(:kotoba [res :string] :default [res])] #?@(:kotoba [:bool])
-  (let [n (len res)]
-    (and (>= n 2) (dot-at? res (- n 2)) (dot-at? res (- n 1)))))
+(defn- dot-segment? [p start end]
+  (and (= 1 (- end start)) (dot-at? p start)))
 
-(defn- last-slash [#?@(:kotoba [res :string] :default [res])] #?@(:kotoba [:i64])
-  (loop [i (dec (len res))]
-    (cond (< i 0) -1
-          (slash-at? res i) i
-          :else (recur (dec i)))))
+(defn- dot-dot-segment? [p start end]
+  (and (= 2 (- end start)) (dot-at? p start) (dot-at? p (+ start 1))))
 
-(defn- normalize-string
-  "node:path normalizeString: resolve `.` and `..` segments of P; `..` above
-  the start is kept when ALLOW-ABOVE-ROOT."
-  [#?@(:kotoba [p :string allow-above-root :bool] :default [p allow-above-root])] #?@(:kotoba [:string])
-  (let [n (len p)]
-    (loop [i 0 res "" last-segment-length 0 last-slash-at -1 dots 0]
-      (if (> i n)
-        res
-        (let [slash? (or (= i n) (slash-at? p i))]
-          (if slash?
-            (cond
-              (or (= last-slash-at (dec i)) (= dots 1))
-              (recur (inc i) res last-segment-length i 0)
+(defn- poppable?
+  "STACK's top segment exists and is not itself `..`."
+  [#?@(:kotoba [p :string stack :vector-i64] :default [p stack])] #?@(:kotoba [:bool])
+  (and (> (count stack) 0)
+       (not (dot-dot-segment? p (nth stack (- (count stack) 2)) (nth stack (- (count stack) 1))))))
 
-              (= dots 2)
-              (if (or (< (len res) 2) (not= last-segment-length 2) (not (ends-dot-dot? res)))
-                (cond
-                  (> (len res) 2)
-                  (let [at (last-slash res)]
-                    (if (= at -1)
-                      (recur (inc i) "" 0 i 0)
-                      (let [kept (cut res 0 at)]
-                        (recur (inc i) kept (- (len kept) 1 (last-slash kept)) i 0))))
+(defn- resolved-segments
+  "node:path normalizeString over P's segments, as a stack of [start end]
+  pairs: `.` is dropped, `..` pops a segment that is not itself `..`, and is
+  kept when nothing can be popped and ABOVE-ROOT allows it."
+  [#?@(:kotoba [p :string above-root :bool] :default [p above-root])] #?@(:kotoba [:vector-i64])
+  (let [segs (segments p)
+        k (count segs)]
+    (loop [i 0 stack #?(:kotoba (vector-i64) :default [])]
+      (if (>= i k)
+        stack
+        (if (dot-segment? p (nth segs i) (nth segs (+ i 1)))
+          (recur (+ i 2) stack)
+          (if (dot-dot-segment? p (nth segs i) (nth segs (+ i 1)))
+            (if (poppable? p stack)
+              (recur (+ i 2) (pop (pop stack)))
+              (if above-root
+                (recur (+ i 2) (push (push stack (nth segs i)) (nth segs (+ i 1))))
+                (recur (+ i 2) stack)))
+            (recur (+ i 2) (push (push stack (nth segs i)) (nth segs (+ i 1))))))))))
 
-                  (not= (len res) 0)
-                  (recur (inc i) "" 0 i 0)
-
-                  allow-above-root
-                  (recur (inc i) (if (> (len res) 0) (cat2 res "/..") "..") 2 i 0)
-
-                  :else (recur (inc i) res last-segment-length i 0))
-                (if allow-above-root
-                  (recur (inc i) (if (> (len res) 0) (cat2 res "/..") "..") 2 i 0)
-                  (recur (inc i) res last-segment-length i 0)))
-
-              :else
-              (let [segment (cut p (inc last-slash-at) i)]
-                (recur (inc i)
-                       (if (> (len res) 0) (cat2 (cat2 res "/") segment) segment)
-                       (- i last-slash-at 1)
-                       i 0)))
-            (recur (inc i) res last-segment-length last-slash-at
-                   (cond (and (dot-at? p i) (not= dots -1)) (inc dots)
-                         :else -1))))))))
+(defn- spell
+  "The segments of STACK (offsets into P) joined by `/`."
+  [#?@(:kotoba [p :string stack :vector-i64] :default [p stack])] #?@(:kotoba [:string])
+  (let [k (count stack)]
+    (loop [i 0 out ""]
+      (if (>= i k)
+        out
+        (recur (+ i 2)
+               (if (= 0 i)
+                 (cut p (nth stack i) (nth stack (+ i 1)))
+                 (cat2 (cat2 out "/") (cut p (nth stack i) (nth stack (+ i 1))))))))))
 
 (defn normalize
   "node:path posix normalize: resolve `.` / `..`, collapse repeated slashes,
   keep one trailing slash if P had one; \".\" for \"\"."
   [#?@(:kotoba [p :string] :default [p])] #?@(:kotoba [:string])
-  (let [n (len p)]
-    (if (= n 0)
-      "."
-      (let [absolute? (slash-at? p 0)
-            trailing? (slash-at? p (dec n))
-            body (normalize-string p (not absolute?))
-            spelled (cond
-                      (and (= 0 (len body)) absolute?) ""
-                      (= 0 (len body)) (if trailing? "./" ".")
-                      trailing? (cat2 body "/")
-                      :else body)]
-        (cond
-          (and absolute? (= 0 (len spelled))) "/"
-          absolute? (cat2 "/" spelled)
-          :else spelled)))))
+  (if (= 0 (len p))
+    "."
+    (let [absolute? (slash-first? p)
+          trailing? (slash-last? p)
+          body (spell p (resolved-segments p (not absolute?)))
+          spelled (cond
+                    (and (= 0 (len body)) absolute?) ""
+                    (= 0 (len body)) (if trailing? "./" ".")
+                    trailing? (cat2 body "/")
+                    :else body)]
+      (cond
+        (and absolute? (= 0 (len spelled))) "/"
+        absolute? (cat2 "/" spelled)
+        :else spelled))))
 
 (defn join
   "node:path posix join of A and B: the non-empty parts joined by `/`, then
