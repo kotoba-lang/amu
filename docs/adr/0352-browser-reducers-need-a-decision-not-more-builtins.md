@@ -103,6 +103,22 @@ export attr-map added so the checker reaches their bodies:
     Declaring it is a browser change -- not a bug fix, so it was not made
     here. Deriving exports from public `defn`s would change ADR 0005.
 
+11. **`amu check` is not the native question.** `check` stops at the
+    frontend. The three landed forms check clean and still do not compile
+    for either native target (amu `e442e253`, 2026-09-25):
+    `(:window/x {:window/id 1 :window/x 10})` -> `native target
+    x86_64-aiueos-kernel-v1 does not qualify map-new`, and
+    `(count (filterv (fn [x] (= x 1)) [1 2 3]))` -- filter/remove/conj
+    over a vector -- -> `does not qualify the boundary types [:vector-i64
+    :vector-i64] of function __kotoba_loop_1`; `aarch64-macos` the same.
+    `(defn main [] (+ 40 2))` compiles for both (control). So the kernel
+    also needs kotoba-native to qualify the bounded map and vectors as
+    loop-helper boundary types, whichever option below is chosen, and the
+    floor's exit condition has to be `amu compile --target
+    x86_64-aiueos-kernel-v1`, not `amu check`. (These refusals exit 70,
+    `:kotoba/target-rejected`; a target refusal is not an internal error
+    and should exit 65.)
+
 So "admit browser unchanged" is not a list of missing builtins. The reducers
 are dynamically typed Clojure over open maps and hiccup; amu's application
 profile is closed and static on purpose. One of them has to move.
