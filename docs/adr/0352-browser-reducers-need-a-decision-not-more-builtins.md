@@ -1,7 +1,7 @@
 # ADR 0352 — kotoba-lang/browser's reducers need a language decision, not more builtins
 
 - Date: 2026-09-25
-- Status: Proposed (needs an owner decision; nothing below is decided)
+- Status: Decided by ADR 0353 (2026-09-25): C, reached through a principled B; not A.
 - Related: aiueos ADR-0226 and its desktop maturity floor `:browser-component`
   (`os/aiueos/contracts/desktop-maturity-floors.edn`), ADR 0005 (closed module
   linking, explicit `:export`), ADR 0028 (document values: no coercion, no
