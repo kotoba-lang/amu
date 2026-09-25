@@ -12,7 +12,7 @@
             [kotoba.artifact.core :as artifact]
             [kotoba.compiler.core :as compiler]
             [kotoba.kir :as ir]
-            [clojure.pprint])
+            [kotoba.pprint])
   (:import [java.security MessageDigest]
            [java.nio.charset StandardCharsets]))
 
@@ -377,7 +377,7 @@
          ;; Prefer repo resources path when running from compiler root.
          f (io/file "resources/kotoba/lang-conformance/pilot-golden.edn")]
      (io/make-parents f)
-     (spit f (with-out-str (clojure.pprint/pprint doc)))
+     (spit f (with-out-str (kotoba.pprint/pprint doc)))
      (.getPath f))))
 
 (defn -main
