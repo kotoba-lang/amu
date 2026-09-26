@@ -104,4 +104,7 @@
    :amends "kotoba-lang guest-grammar :when (the i64 0 as the absent value); ADR 0353 point 2 (nil as a map-literal value) carried to expression level"}
   {:id :native-abort :gate "native-abort-compiles-verifies-and-packages-test"
    :goal "throw / try (the abort ability, lowered to [:result T E] values) compile for aarch64-macos and x86_64, the verifier admits :abort beside :state and re-derives the sealed answer, and the linux-static packager needs no handler for it; an ex-info (:document) error stays refused on native by name until :native-document"
-   :amends "kotoba-lang lang/abort-ability.edn :backends (native :not-qualified)"}]}
+   :amends "kotoba-lang lang/abort-ability.edn :backends (native :not-qualified)"}
+  {:id :native-document :gate "native-document-values-test"
+   :goal "a :document on aarch64-macos and x86_64: the canonical EDN text in the string handle native documents already were; construction, get / assoc / dissoc / merge, count, kind, the vector / list / set / map-entry accessors, sort, the scalar accessors and structural equality lowered onto the string slots plus emitted helpers, answering what the reference and restricted ESM answer; ex-info on native; f64 documents, the sha256 digest and the hex codec stay refused by name"
+   :amends "kotoba-lang surface-status :contextual-document-literal (native had no document operations)"}]}
