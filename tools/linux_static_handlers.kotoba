@@ -63,12 +63,15 @@
 ;; occurs in the request:
 ;;   0 WRITE_SEP  1 APPEND_SEP  2 EXISTS_SEP  3 RANGE_SEP  4 STAT_SEP
 ;;   5 MTIME_SEP  6 CHMOD_SEP   7 MKDIR_SEP   8 UNLINK_SEP 9 RMDIR_SEP
-;;   10 RENAME_SEP 11 FSYNC_SEP 12 MKTEMP_SEP 13 NOFOLLOW_SEP
+;;   10 RENAME_SEP 11 FSYNC_SEP 12 MKTEMP_SEP 13 NOFOLLOW_SEP 14 OWNER_SEP
 ;; WRITE-FIRST is 1 when WRITE_SEP occurs before APPEND_SEP. The answer:
 ;;   0 read  1 write  2 append  3 exists  4 range  5 stat  6 mtime
 ;;   7 chmod 8 mkdir  9 unlink 10 rmdir  11 rename
-;;   12 fsync  13 make-temp-dir  14 stat-nofollow
-;; The last three are C3's proposals to the :fs/app-data forms (kotoba-lang
+;;   12 fsync  13 make-temp-dir  14 stat-nofollow  15 owner
+;; OWNER (15) is S5's proposal, answered by both hosts since 2026-09-26
+;; (superproject adr-2609242330, selfhost stage 2). Before that the loader
+;; read OWNER_SEP as part of a path and amu refused the token by name.
+;; The three before it are C3's proposals to the :fs/app-data forms (kotoba-lang
 ;; lang/capability-catalog.edn :forms). Their tokens contain no other form's
 ;; token and no other token contains them, so the kexe loader, which does not
 ;; answer them yet, cannot mistake one for another form: it reads the request
@@ -92,6 +95,7 @@
     (= k 11) (low-bit (u64-shift-right present 11))
     (= k 12) (low-bit (u64-shift-right present 12))
     (= k 13) (low-bit (u64-shift-right present 13))
+    (= k 14) (low-bit (u64-shift-right present 14))
     :else 0))
 
 (defn- fs-form [present write-first]
@@ -112,9 +116,10 @@
       (= 1 (has present 11)) 12
       (= 1 (has present 12)) 13
       (= 1 (has present 13)) 14
+      (= 1 (has present 14)) 15
       :else 0)))
 
-;; op 2: the forms this image answers: every one of the fifteen. A form
+;; op 2: the forms this image answers: every one of the sixteen. A form
 ;; answered 0 here traps BY NAME (:slot/unimplemented naming the form); none
 ;; does since APPEND, RANGE and CHMOD landed (C3, second half). APPEND is
 ;; written through at each call where the loader buffers consecutive appends
@@ -122,7 +127,7 @@
 (defn- form-implemented [form]
   (cond
     (< form 0) 0
-    (> form 14) 0
+    (> form 15) 0
     :else 1))
 
 ;; op 17: how many occurrences of its token a form admits. The loader's
@@ -229,7 +234,7 @@
 ;; fsync, and spawn's ppoll / wait4), 4 fstat. ERRNO is positive, 0 for
 ;; success.
 ;;   0 answer the form's negative ("0", or "" for stat / mtime /
-;;     stat-nofollow / make-temp-dir)
+;;     stat-nofollow / make-temp-dir / owner)
 ;;   1 trap (SIGILL, as the loader's raise)
 ;;   2 retry the syscall
 ;;   3 proceed
@@ -268,6 +273,9 @@
                       (= stage 2) (if (= errno 17) 2 0)
                       :else 1)
     (= form 14) (if (= stage 0) 0 (if (= stage 4) 0 1))
+    ;; owner: as stat-nofollow -- a component it cannot open or stat
+    ;; answers ""
+    (= form 15) (if (= stage 0) 0 (if (= stage 4) 0 1))
     :else 1))
 
 ;; op 13: a path segment (kexe_normalize_path). CLASS 0 is ".", 1 "..", 2 a

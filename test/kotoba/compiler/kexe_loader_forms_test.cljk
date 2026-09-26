@@ -2,9 +2,9 @@
   "Every :fs/app-data form the capability catalog says the kexe loader
   answers is one the loader dispatches, by the catalog's token (superproject
   adr-2609251400 C3, 2026-09-25): the loader's form table holds exactly those
-  tokens, in the bit order tools/linux_static_handlers.kotoba op 1 reads. A
-  form it does not answer (OWNER, proposed by S5) is refused at compile time
-  by kotoba.compiler.kexe-fs-forms."
+  tokens, in the bit order tools/linux_static_handlers.kotoba op 1 reads.
+  OWNER (proposed by S5) joined on 2026-09-26; a form the loader did not
+  answer would be refused at compile time by kotoba.compiler.kexe-fs-forms."
   (:require [kotoba.test :refer [deftest is]]
             [kotoba.lang.edn :as edn]
             [kotoba.lang.text :as text]
@@ -17,22 +17,22 @@
      (let [catalog (edn/read-string (str (fs/readFileSync "resources/kotoba/lang/capability-catalog.edn" "utf8")))
            forms (get-in catalog [:capabilities :fs/app-data :forms])
            loader (str (fs/readFileSync "tools/kexe_loader.c" "utf8"))
-           start (.indexOf loader "static const char *const form_tokens[14] = {")
+           start (.indexOf loader "static const char *const form_tokens[15] = {")
            table (subs loader start (.indexOf loader "};" start))
            tokens (mapv second (re-seq #"\"([A-Z_]+)\"" table))]
        (is (= 16 (count forms)))
        (is (pos? start) "the loader has its form table")
-       (is (= 14 (count tokens)))
+       (is (= 15 (count tokens)))
        (is (= (set (keep (fn [f] (when (contains? (:answered-by f) :kexe-loader) (:token f))) (vals forms)))
               (set tokens)))
        (is (= ["WRITE_SEP" "APPEND_SEP" "EXISTS_SEP" "RANGE_SEP" "STAT_SEP" "MTIME_SEP"
                "CHMOD_SEP" "MKDIR_SEP" "UNLINK_SEP" "RMDIR_SEP" "RENAME_SEP" "FSYNC_SEP"
-               "MKTEMP_SEP" "NOFOLLOW_SEP"]
+               "MKTEMP_SEP" "NOFOLLOW_SEP" "OWNER_SEP"]
               tokens)
            "op 1's bit order")
-       (is (= #{:owner} (set (keep (fn [[k f]] (when-not (contains? (:answered-by f) :kexe-loader) k)) forms)))
-           "every form but OWNER is answered by the kexe loader")
-       (is (= #{:owner} (set (keep (fn [[k f]] (when (= :proposed (:status f)) k)) forms)))))))
+       (is (= #{} (set (keep (fn [[k f]] (when-not (contains? (:answered-by f) :kexe-loader) k)) forms)))
+           "every form is answered by the kexe loader (OWNER since 2026-09-26)")
+       (is (= #{} (set (keep (fn [[k f]] (when (= :proposed (:status f)) k)) forms)))))))
 
 #?(:cljs
    (deftest the-catalog-names-the-loader-for-spawn-and-entropy
