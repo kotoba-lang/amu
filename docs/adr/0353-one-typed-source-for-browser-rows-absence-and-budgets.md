@@ -189,6 +189,14 @@ like the rest:
   byte-identical). A loop's exits join the same way: a find-first answers
   `[:option T]`. Refused by name: an absent i64 used as the number it would
   hold, two present types, an `if` with no else.
+- `:native-abort` (gate `native-abort-compiles-verifies-and-packages-test`,
+  landed 2026-09-26): `throw` / `try` on native. The frontend already lowered
+  them to `[:result T E]` values; what refused them was admission, not
+  lowering -- the verifier admitted only `:state` beside capability calls and
+  the compile-time oracle sealed nothing for an `:abort` row. Both ISAs now
+  compile an aborting program and agree with the reference, ESM and Wasm; the
+  linux-static packager needs no handler for the ability. An ex-info error is
+  a `:document` and is still refused on native.
 
 ## What stays refused, permanently
 
