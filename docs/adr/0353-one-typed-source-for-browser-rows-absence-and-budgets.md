@@ -141,9 +141,33 @@ Clojure it is today, the language gains:
    i64. Native: a literal record compiles for `x86_64-aiueos-kernel-v1` and
    `aarch64-macos`; a `[:list record]` is refused there by the typed-values
    gate -- floor `:native-handles`.
-   Still open: the specialization CID derived from the generic's
-   (floor `:specialization-identity`; until then a specialization's CID is its
-   own monomorphic KIR's, which seals the record).
+   Floor `:specialization-identity` (gate
+   `specialization-cid-derived-from-generic-test`, 2026-09-27): a
+   specialization's definition CID is a function of its generic's body and the
+   record types it is specialized at, and of nothing else -- not the generic's
+   name, the specialization's name (`f__row_0_b_s_2` around a taken name), the
+   caller or the module. That was measured to hold already: kotoba-sema
+   monomorphizes before KIR and ADR 0300 hashes the monomorphic KIR, whose
+   body names callees by CID and carries the record descriptor inline, and
+   whose interface seals the schema. So two modules specializing one generic
+   at one record share the CID, a recursive generic and a loop helper included,
+   and it is the CID of the hand-written twin `(defn- f [m [:ref :b/s]] ..)`;
+   a private rename of the generic leaves ADR 0300's cache material equal.
+   The floor first asked for a CID derived from "the generic definition's
+   CID". There is none: the generic never reaches KIR, and inventing an
+   identity for it is what ADR 0300 refuses; deriving the specialization's
+   from it would also have split the specialization from its hand-written
+   twin, i.e. broken the compile-once sharing the floor is for. The gate pins
+   both directions -- sealing a definition's name turns its seven sharing
+   assertions red, dropping the body and the schemas turns "another body" and
+   "another schema" red. Not done: a report field naming the generic and type
+   arguments a specialization came from (provenance, unsealed); it needs a
+   kotoba-hir function key and is not what identity or the cache rests on.
+   A CID is target-independent (`definition-cids` takes no target). Native:
+   the gate's modules, generic and hand-written alike, are refused by both
+   `x86_64-aiueos-kernel-v1` and `aarch64-macos` at the native artifact
+   oracle (exit 65) -- a record crossing a function boundary, floor
+   `:native-handles`.
 4. **Function values.** A function type carries its effect row; a closure is a
    one-word handle (code, environment) under aggregate ABI v8 and may be a
    record field or vector element. A stored function's effects are part of the
