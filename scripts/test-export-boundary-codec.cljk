@@ -254,17 +254,23 @@
       (str prefix "boundary/malformed :arg 0}") ["b:0f"] {}]
      ["invalid UTF-8 in an option-string" "olen" ["o:some:s:c0"] {}
       (str prefix "boundary/invalid-utf8 :arg 0}") ["o:some:s:41"] {}]
-     ["value too large: 65537 bytes" "blen" [(str "b:" (hex-of big-bytes))] {}
-      (str prefix "boundary/value-too-large :arg 0}") [(str "b:" (hex-of ok-bytes))] {}]
-     ["arena: more vector items than the run's budget" "vsum" [(str "vi:" (str/join "," (repeat 65537 1)))] {}
-      (str prefix "boundary/arena :arg 0}") [(str "vi:" (str/join "," (repeat 65536 1)))] {}]
+     ;; Linux caps ONE argv string at 128 KiB (MAX_ARG_STRLEN), so 65537
+     ;; bytes cannot reach the loader there as hex at all: this case runs
+     ;; where argv can carry it (macOS) and prints UNMEASURED elsewhere.
+     (when-not (= "linux" (.-platform js/process))
+       ["value too large: 65537 bytes" "blen" [(str "b:" (hex-of big-bytes))] {}
+        (str prefix "boundary/value-too-large :arg 0}") [(str "b:" (hex-of ok-bytes))] {}])
+     ["arena: more vector items than the run's (narrowed) budget" "vsum" ["vi:1,2,3,4,5"] {:KEXE_VECTOR_ITEMS "4"}
+      (str prefix "boundary/arena :arg 0}") ["vi:1,2,3,4"] {:KEXE_VECTOR_ITEMS "4"}]
      ["traversal nodes: an option some is two nodes" "olen" ["o:some:s:6869"] {:KEXE_BOUNDARY_NODES "1"}
       (str prefix "budget/boundary-nodes :arg 0}") ["o:some:s:6869"] {:KEXE_BOUNDARY_NODES "2"}]
      ["traversal bytes: charged across the call's arguments" "bplus" ["b:0001" "b:0203"] {:KEXE_BOUNDARY_BYTES "3"}
       (str prefix "budget/boundary-bytes :arg 1}") ["b:0001" "b:0203"] {:KEXE_BOUNDARY_BYTES "4"}]]))
 
 (defn check-refusals! [loader compiled isa]
-  (doseq [[label fname wires env expected cwires cenv] (refusal-cases)]
+  (when (= "linux" (.-platform js/process))
+    (println "UNMEASURED\tvalue-too-large for a 65537-byte leaf: Linux MAX_ARG_STRLEN (128 KiB) refuses the argv before the loader runs"))
+  (doseq [[label fname wires env expected cwires cenv] (remove nil? (refusal-cases))]
     (let [r (run-native loader compiled isa fname wires env)
           c (run-native loader compiled isa fname cwires cenv)
           reason (second (re-find #":reason (:[a-z/-]+)" expected))]
