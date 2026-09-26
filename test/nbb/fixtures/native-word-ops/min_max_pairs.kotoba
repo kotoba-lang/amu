@@ -1,0 +1,31 @@
+(ns fixtures.native-word-ops.min-max-pairs
+  {:kotoba/export [main probe]})
+
+;; i64 `min` / `max` over every ordered pair of nine boundary words, typed
+;; (a :vector-i64 makes this a :kotoba.hir/v3 module, the path the native
+;; admission gate inspects). Each answer is folded into a wrapping
+;; multiply-xor digest (FNV-1a's prime; `*` wraps on every backend) so one i64
+;; says whether all 162 answers agree across backends; `probe` answers one
+;; pair so a disagreement can be located.
+(defn- words [] :vector-i64
+  (vector-i64 -9223372036854775808 -9223372036854775807 -2 -1 0 1 2
+              9223372036854775806 9223372036854775807))
+
+(defn- mix [h :i64 x :i64] :i64
+  (* (bit-xor h x) 1099511628211))
+
+(defn- pick [a :i64 b :i64 sel :i64] :i64
+  (if (= sel 0) (min a b) (max a b)))
+
+(defn probe [i :i64 j :i64 sel :i64] :i64
+  (let [w (words)]
+    (pick (vector-at w i) (vector-at w j) sel)))
+
+(defn main [] :i64
+  (let [w (words)]
+    (loop [i 0 h 0]
+      (if (= i 81)
+        h
+        (let [a (vector-at w (quot i 9))
+              b (vector-at w (- i (* 9 (quot i 9))))]
+          (recur (+ i 1) (mix (mix h (min a b)) (max a b))))))))

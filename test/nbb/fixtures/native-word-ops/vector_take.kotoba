@@ -1,0 +1,31 @@
+(ns fixtures.native-word-ops.vector-take
+  {:kotoba/export [main take-count]})
+
+;; `vector-take`, the head mirror of `vector-drop` and the frontend's `pop`.
+;; Every length 0..4 of a four-item vector, then the aliasing rows: a
+;; `vector-conj` onto a prefix view must not write into the parent's next
+;; item, and a `vector-assoc` on a prefix must not change the parent.
+(defn- sum-prefix [v :vector-i64 n :i64] :i64
+  (let [p (vector-take v n)]
+    (loop [i 0 s 0]
+      (if (= i (vector-count p)) (+ (* 1000 (vector-count p)) s)
+          (recur (+ i 1) (+ s (vector-at p i)))))))
+
+(defn main [] :i64
+  (let [v (vector-i64 10 20 30 40)
+        lengths (+ (sum-prefix v 0) (sum-prefix v 1) (sum-prefix v 2)
+                   (sum-prefix v 3) (sum-prefix v 4))
+        grown (vector-conj (vector-take (vector-i64 1 2 3 4) 2) 99)
+        parent (vector-i64 5 6 7 8)
+        changed (vector-assoc (vector-take parent 3) 0 50)
+        popped (vector-take (vector-i64 7 8 9) 2)]
+    (+ (* 1000000 lengths)
+       (* 10000 (vector-at grown 2))
+       (* 100 (+ (vector-at parent 0) (vector-at changed 0)))
+       (+ (vector-count popped) (vector-at popped 1)))))
+
+;; The bound, driven from outside so it is not folded at compile time: n in
+;; [0, 4] answers n; -1 and 5 trap on every backend (the reference names it
+;; :vector-take-out-of-range; native traps before the slice slot is reached).
+(defn take-count [n :i64] :i64
+  (vector-count (vector-take (vector-i64 1 2 3 4) n)))

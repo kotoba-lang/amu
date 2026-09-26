@@ -1,0 +1,8 @@
+(ns fixtures.native-word-ops.min-max-plain)
+
+;; The same two operations with no typed value anywhere: a :kotoba.hir/v2
+;; module, which the native admission gate never inspects. Until 2026-09-26
+;; this reached the native lowering unlowered and was refused as
+;; "aggregate ABI rejected: call-abi-not-admitted".
+(defn main []
+  (+ (* 1000000 (min 3 -7)) (* 1000 (max 5 9)) (min 4 4) (max -1 -1)))
