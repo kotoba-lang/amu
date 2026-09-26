@@ -62,6 +62,10 @@
   ;; keyword literal, not only those a row receives.
   {:id :row-unification :gate "row-literal-join-and-loop-unification-test"
    :goal "a map literal passed to a row is that row's record; a parameter returned beside a row ((if c m n)) unifies into it, and two records at one join are refused by name; a loop over a row parameter is specialized with its function"}
+  ;; :literal-typing (2026-09-26): kotoba-sema `type-literals` types a map /
+  ;; vector literal once its items' types are known. A vector of records is
+  ;; [:list T] (hosted); native refuses it by the typed-values gate, which is
+  ;; :native-handles' vector handle.
   {:id :literal-typing :gate "record-vector-and-map-literal-retirement-test"
    :goal "a vector literal of records is an ordinary typed vector ((nth [(mk) (mk)] 1) is the record, today refused \"expected i64, got [:ref :b/s]\"); a keyword map literal is a record wherever it is written, including a let binding later passed to a row; the keyword->i64 map is retired"}
   {:id :specialization-identity :gate "specialization-cid-derived-from-generic-test"

@@ -4,7 +4,7 @@
 
   A keyword-keyed map literal written as an argument to a row parameter is
   that row's record -- the anonymous closed record of its fields, each typed
-  by its value -- not the keyword->i64 pair map it otherwise lowers to. Two
+  by its value -- not the keyword->i64 pair map it once lowered to. Two
   parameters that are the branches of one `if` (`(if c m n)`, or `(:k (if c m
   n))`) are one row: a parameter returned beside a row is that row, and reads
   what it reads. A loop helper is generic with its function: a loop (or a
@@ -18,8 +18,8 @@
   missing it, the two branches of one `if` are ONE record type at a call (no
   join of two record types into a union), only a record satisfies a row, an
   exported generic has no single ABI, and numbers are never truthy. A literal
-  bound by `let` before it is passed is still the pair map (floor
-  :literal-typing retires the pair map outright)."
+  bound by `let` before it is passed is its record since floor
+  :literal-typing retired the pair map."
   (:require [clojure.test :refer [deftest is testing]]
             [kotoba.kir :as ir]
             [kotoba.sema :as sema]))
@@ -94,6 +94,5 @@
   (testing "refused: numbers are never truthy, a row join changes nothing there"
     (is (= "if test is :i64, and a number is never truthy: compare it (for example (not= x 0)) or answer :bool"
            (refusal "(defn- f [c m n] (:a (if c m n))) (defn main [] :i64 (f 0 (mk) (mk)))"))))
-  (testing "still the pair map: a literal bound before it is passed (floor :literal-typing)"
-    (is (= "argument m to f is map, and parameter m of f is the row {:a T | r}: only a record satisfies a row"
-           (refusal "(defn- f [m] (:a m)) (defn main [] :i64 (let [m {:a 3}] (f m)))")))))
+  (testing "admitted since floor :literal-typing: a literal bound before it is passed is its record"
+    (is (= 3 (run-main "(defn- f [m] (:a m)) (defn main [] :i64 (let [m {:a 3}] (f m)))")))))
