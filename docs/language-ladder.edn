@@ -87,4 +87,15 @@
   {:id :browser-surface :gate "browser-surface-native-test"
    :goal "browser.surface with cssom.layout and kotoba.wasm.dom the same"}
   {:id :hosted-engine-switch :gate "browser-hosted-runs-amu-output-test" :repo "kotoba-lang/browser"
-   :goal "kotoba-lang/browser's hosted engine runs amu's compiled output of its own source; the Clojure source is that source, not a second copy"}]}
+   :goal "kotoba-lang/browser's hosted engine runs amu's compiled output of its own source; the Clojure source is that source, not a second copy"}
+  ;; The selfhost foundation (appended 2026-09-26, superproject
+  ;; adr-2609242330). amu's own source manipulates EDN data of arbitrary
+  ;; shape (HIR, KIR, ns forms), so compiling amu with amu needs that data
+  ;; model on every target, native included. Measured as the selfhost walls
+  ;; of 2026-09-24/26 (per-file project check, grant
+  ;; lang/selfhost-compiler-grant.edn). Appended after the browser floors so
+  ;; the loop reaches them last; each closes like any other floor, by its
+  ;; gate on origin/main, and a floor taken by another writer is left to it.
+  {:id :document-type-predicates :gate "document-type-predicates-ask-the-kind-test"
+   :goal "map? vector? set? list? seq? coll? keyword? string? symbol? integer? boolean? true? false? nil? some? on a :document are its run-time document-kind; on a static type the type's answer; on [:option T] presence when T answers true; an option whose payload answers by value, nil? on a type with no absence and map? on a [:ref q] stay refused by name"
+   :amends "kotoba-lang guest-grammar :true? / :integer? (a :document was refused by name)"}]}
