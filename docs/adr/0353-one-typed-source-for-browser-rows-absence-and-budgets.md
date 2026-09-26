@@ -143,6 +143,23 @@ with cssom and dom-gpu), and the hosted engine switches to amu's output of
 the same source. The kernel's mirrored objects (aiueos ADR-0223..0234) retire
 as each module lands.
 
+## Selfhost foundation floors (appended 2026-09-26)
+
+Superproject adr-2609242330 measured that compiling amu with amu needs the
+data model amu's own source uses -- EDN of arbitrary shape (HIR, KIR, ns
+forms) -- on every target, native included. Those floors are appended to the
+ladder after the browser floors, one change each, and close by their gates
+like the rest:
+
+- `:document-type-predicates` (gate `document-type-predicates-ask-the-kind-test`,
+  landed 2026-09-26): `map?`, `vector?`, `keyword?`, `string?`, `integer?`,
+  `true?`, `nil?` and the rest ask a `:document` node its run-time
+  `document-kind`; a static type answers for itself; an `[:option T]` is
+  presence when T answers true. Refused by name: an option whose payload
+  answers by value, `nil?` on a type with no absence, `map?` on a `[:ref q]`.
+  Native still has no `:document`, so there the program is refused as before
+  (`does not qualify document-kind`).
+
 ## What stays refused, permanently
 
 Coercion; truthiness of numbers, strings, records; `eval` and host interop;
