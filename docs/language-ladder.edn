@@ -101,4 +101,7 @@
    :amends "kotoba-lang guest-grammar :true? / :integer? (a :document was refused by name)"}
   {:id :expression-absence :gate "expression-absence-typed-by-the-present-branch-test"
    :goal "a missing else (when, when-not, if-not, when-let, if-let, cond) and a literal nil branch answer nothing, typed by the present branch: false beside :bool, the option's none beside an option, [:option T] beside any other T (an :i64 too where the result is inferred), the legacy 0 where the author declared :i64; a loop's exits join the same way; an absent i64 used as a number, two present types and an else-less if stay refused by name"
-   :amends "kotoba-lang guest-grammar :when (the i64 0 as the absent value); ADR 0353 point 2 (nil as a map-literal value) carried to expression level"}]}
+   :amends "kotoba-lang guest-grammar :when (the i64 0 as the absent value); ADR 0353 point 2 (nil as a map-literal value) carried to expression level"}
+  {:id :native-abort :gate "native-abort-compiles-verifies-and-packages-test"
+   :goal "throw / try (the abort ability, lowered to [:result T E] values) compile for aarch64-macos and x86_64, the verifier admits :abort beside :state and re-derives the sealed answer, and the linux-static packager needs no handler for it; an ex-info (:document) error stays refused on native by name until :native-document"
+   :amends "kotoba-lang lang/abort-ability.edn :backends (native :not-qualified)"}]}

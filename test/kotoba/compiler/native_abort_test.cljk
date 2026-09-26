@@ -1,0 +1,78 @@
+(ns kotoba.compiler.native-abort-test
+  "Ladder floor :native-abort (gap 4 of the selfhost foundation, superproject
+  adr-2609242330; kotoba-lang lang/abort-ability.edn :backends
+  :qualification).
+
+  The frontend lowers every throw / try to `[:result T E]` values before KIR
+  exists, so an aborting program is ordinary functions over result values:
+  nothing unwinds and the ability names no host authority. Native refused
+  every one by name (\"native artifact contains an unsupported effect\")
+  because the verifier admitted only `:state` beside capability calls and the
+  compile-time oracle sealed nothing for an `:abort` row. Now both native ISAs
+  compile it, the verifier re-derives its sealed answer, and the linux-static
+  packager needs no handler for it.
+
+  Pinned beside the admission: an ex-info (`:document`) error is still refused
+  on native by name -- native has no `:document` yet (gap 2)."
+  (:require [clojure.test :refer [deftest is testing]]
+            [kotoba.compiler.core :as compiler]
+            [kotoba.compiler.limits :as limits]
+            [kotoba.native.linux-static :as linux-static]
+            [kotoba.verifier :as verifier]
+            [kotoba.verifier.linux-static :as linux-static-verifier]))
+
+(def ^:private source
+  ;; A keyword E through a caller that writes no throw, an i64 E thrown from
+  ;; a loop body on the exiting path, a string rethrown from a nested handler.
+  "(ns native-abort)
+   (defn- parse [x :i64] :i64 (if (< x 0) (throw :parse/negative) (* x 3)))
+   (defn- read [x :i64] :i64 (+ 1 (parse x)))
+   (defn- find-over [v :vector-i64 limit :i64] :i64
+     (loop [i 0 acc 0]
+       (if (< i (count v))
+         (let [x (nth v i)]
+           (if (> x limit) (throw x) (recur (inc i) (+ acc x))))
+         acc)))
+   (defn- nested [x :i64] :i64
+     (try (try (if (> x 5) (throw \"big\") x)
+               (catch e (throw (string-concat e \"!\"))))
+          (catch e2 (string-byte-length e2))))
+   (defn- kw-code [k :keyword] :i64 (if (= k :parse/negative) 7 9))
+   (defn main [] :i64
+     (+ (try (read 4) (catch e (kw-code e)))
+        (* 100 (try (read -4) (catch e (kw-code e))))
+        (* 10000 (try (find-over (vector-i64 1 2 3) 10) (catch e (+ 1000 e))))
+        (* 100000 (try (find-over (vector-i64 1 20 3) 10) (catch e e)))
+        (* 10000000 (nested 3))
+        (* 100000000 (nested 9))))")
+
+(defn- n [x] #?(:clj (long x) :cljs (js/Number x)))
+
+(defn- refusal [target source]
+  (try (compiler/compile-source source target) nil
+       (catch #?(:clj clojure.lang.ExceptionInfo :cljs :default) error
+         (ex-message error))))
+
+(deftest native-abort-compiles-verifies-and-packages-test
+  (testing "admitted: both native ISAs, the sealed answer the reference's, re-verified"
+    (doseq [target [:aarch64-macos-kotoba-v1 :x86_64-linux-kotoba-v1]]
+      (let [kexe (:artifact (compiler/compile-source source target))]
+        (is (= #{:abort} (set (:effects kexe))) (str target))
+        (is (= 432060713 (n (:value kexe))) (str target))
+        (is (map? (verifier/verify-artifact! kexe)) (str target)))))
+  (testing "admitted: the linux-static image, with no handler and no grant for the ability"
+    (let [kexe (:artifact (compiler/compile-source source :aarch64-linux-static-kotoba-v1))
+          profile (:profile/native limits/table)
+          image (linux-static/package kexe profile {})]
+      (is (= [] (vec (:grant image))))
+      (is (:ok (linux-static-verifier/verify-image! kexe (:bytes image) profile {})))))
+  (testing "refused: a :document error (ex-info) -- native has no :document yet"
+    (let [message (refusal :aarch64-macos-kotoba-v1
+                           "(defn- f [x :i64] :i64 (if (< x 0) (throw (ex-info \"neg\" {:x x})) x))
+                            (defn main [] :i64 (try (f -1) (catch e 7)))")]
+      ;; The compiler's own refusal; `bin/amu` names the feature on top of it
+      ;; ("native target aarch64-macos does not qualify `document-keyword`").
+      (is (= (str "typed values currently require the kotoba-script web target, "
+                  "typed Wasm/CLJS target, or the qualified native one-word "
+                  "string/record/variant/option/result slice")
+             message)))))
