@@ -1,0 +1,84 @@
+(ns kotoba.compiler.stored-closure-test
+  "ADR 0353 floor :stored-closures (split from :function-values, 2026-09-27).
+
+  ADR 0352 point 5 measured `(let [m {:f (fn [x] (+ x 1)) :n \"a\"}] ((:f m)
+  1))` exiting 70 with `internal compiler error`. The cause was not the type
+  system: kotoba-sema built a map literal's record fields -- and a
+  `record-new`'s -- as a lazy `map` under `list*`, so the `fn` was lowered when
+  the body was first walked, after the `binding` holding the lambda counter
+  had ended (`vswap!` on nil). kotoba-sema `realized-lowering` realizes each
+  defn and lambda body inside its own binding. A closure is the one-word
+  handle it already was (the i64 pair word the invoke dispatchers take), so a
+  stored closure is now called out of a record field or a vector element on
+  the KIR interpreter and on both native targets.
+
+  What stays refused, pinned by the literal: a stored closure is never truthy;
+  a `[:fn ...]` field is not given a fn literal while a fn literal is still an
+  i64 word statically (refused by name, not crashed); and the ADR 0352 inline
+  `filter` over a stored predicate, which trapped `:division-by-zero` at run
+  time, is refused at compile time. Its effect is in the caller's row: a
+  capability a stored closure calls is part of `main`'s effects.
+
+  Not here, and why the floor was split: a function TYPE. Measured the same
+  day, a closure's static type is `:i64` (a `[:fn ...]` result contract
+  erases to it), so `(+ f 1)`, `(+ (make) 4)` and `(= f g)` are admitted.
+  Refusing them is floor :function-values."
+  (:require [clojure.test :refer [deftest is testing]]
+            [kotoba.compiler.core :as compiler]
+            [kotoba.kir :as ir]
+            [kotoba.sema :as sema]))
+
+(defn- run-main [source]
+  (#?(:clj long :cljs js/Number)
+   (ir/execute (ir/lower (sema/analyze (str "(ns t)\n" source))) 'main [])))
+
+(defn- refusal [source]
+  (try (ir/lower (sema/analyze (str "(ns t)\n" source))) nil
+       (catch #?(:clj clojure.lang.ExceptionInfo :cljs :default) error
+         (ex-message error))))
+
+(def ^:private in-record
+  "(defn main [] :i64 (let [k 10 m {:f (fn [x] (+ x k)) :n \"a\"}] ((:f m) 1)))")
+
+(def ^:private in-vector
+  "(defn main [] :i64 (let [v [(fn [x] (+ x 1)) (fn [x] (* x 2))]] ((nth v 1) 5)))")
+
+(deftest stored-closure-in-record-and-vector-test
+  (testing "admitted: the ADR 0352 reproduction is a program, not an internal error"
+    (is (= 2 (run-main "(defn main [] :i64 (let [m {:f (fn [x] (+ x 1)) :n \"a\"}] ((:f m) 1)))"))))
+  (testing "admitted: a capturing closure in a record field, a record returned from a function"
+    (is (= 11 (run-main in-record)))
+    (is (= 5 (run-main (str "(defn- mk [] {:f (fn [x] (+ x 1)) :n \"a\"})\n"
+                            "(defn main [] :i64 ((:f (mk)) 4))")))))
+  (testing "admitted: a closure as a vector element"
+    (is (= 10 (run-main in-vector))))
+  (testing "admitted: two stored closures of different result types in one record"
+    (is (= 2 (run-main (str "(defn main [] :i64 (let [m {:f (fn [x] (+ x 1)) :g (fn [x] (= x 1)) :n \"a\"}]"
+                            " (if ((:g m) 1) ((:f m) 1) 0)))")))))
+  (testing "a stored closure's capability is in the caller's effect row"
+    (let [hir (sema/analyze (str "(ns app (:capabilities #{:clock/now}))\n"
+                                 "(defn main [] :i64 (let [m {:f (fn [x] (+ x (cap-call :clock/now 0))) :n \"a\"}]"
+                                 " ((:f m) 1)))"))
+          main (first (filter #(= 'main (:name %)) (:functions hir)))]
+      (is (seq (:effects main)))
+      (is (= (:effects hir) (:effects main)))))
+  (testing "refused: a stored closure is never truthy"
+    (is (= "if test is :i64, and a number is never truthy: compare it (for example (not= x 0)) or answer :bool"
+           (refusal "(defn main [] :i64 (let [m {:f (fn [x] (+ x 1)) :n \"a\"}] (if (:f m) 1 0)))"))))
+  (testing "refused by name, not crashed: a [:fn ...] field given a fn literal"
+    (is (= "expression type mismatch: expected [:fn [[:i64] :i64]], got i64"
+           (refusal (str "(defn main [] :i64 ((:f (record-new [:record :t/h [[:f [:fn [[:i64] :i64]]]]]"
+                         " (fn [x] (+ x 1)))) 1))")))))
+  (testing "refused at compile time: the ADR 0352 filter over a stored predicate no longer traps at run time"
+    (is (= "if test is :i64, and a number is never truthy: compare it (for example (not= x 0)) or answer :bool"
+           (refusal (str "(defn main [] :i64 (let [p (fn [x] (< x 3)) v [1 2 3 4]]"
+                         " (count (filter (fn [y] (not (p y))) v))))")))))
+  ;; `amu compile --target aarch64-macos` reaches the compiler as
+  ;; :aarch64-kotoba-v1. Measured 2026-09-27 through the CLI: both targets
+  ;; oracle-verified, and the aarch64-macos kexe of each source printed 11 and
+  ;; 10 under tools/kexe_loader.c.
+  (testing "native: both kernel-side targets compile a stored closure"
+    (doseq [target [:x86_64-aiueos-kernel-v1 :aarch64-kotoba-v1]
+            source [in-record in-vector]]
+      (is (pos? (count (:code (:artifact (compiler/compile-source (str "(ns t)\n" source) target)))))
+          (str target)))))
