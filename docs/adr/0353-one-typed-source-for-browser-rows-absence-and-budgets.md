@@ -177,6 +177,18 @@ like the rest:
   answers by value, `nil?` on a type with no absence, `map?` on a `[:ref q]`.
   Native still has no `:document`, so there the program is refused as before
   (`does not qualify document-kind`).
+- `:expression-absence` (gate `expression-absence-typed-by-the-present-branch-test`,
+  landed 2026-09-26): point 2's absence at expression level. A `when` /
+  `if-let` / `cond` with no else and a literal `nil` branch answer nothing, and
+  the present branch's type decides: `false` beside a `:bool`, the option's
+  none beside an option, `[:option T]` beside any other T. Beside an `:i64` it
+  is `[:option :i64]` where the result is inferred (an unannotated `defn`, a
+  `fn` literal), and the 0 it always was where the author declared the result
+  or the value is a statement, so no program that compiled before changes (the
+  42 examples' definition CIDs and the 125 aiueos kernel objects are
+  byte-identical). A loop's exits join the same way: a find-first answers
+  `[:option T]`. Refused by name: an absent i64 used as the number it would
+  hold, two present types, an `if` with no else.
 
 ## What stays refused, permanently
 
