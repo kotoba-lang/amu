@@ -25,13 +25,23 @@
 (defn- reason-of [f]
   (try (f) nil (catch #?(:clj Exception :cljs :default) e (ex-data e))))
 
+(def ^:private owner-proposed
+  "The table as it stood until 2026-09-26: OWNER proposed, not answered by the
+  loader. Kept so the refusal is still measured now that no form is."
+  (assoc forms/forms :owner {:token "OWNER_SEP" :kexe-loader? false}))
+
+(deftest owner-is-answered-and-no-longer-refused
+  (is (= [] (forms/unanswered-in (ascii "/tmp/xOWNER_SEP"))))
+  (is (= [] (vec (keep (fn [[k v]] (when (and (:token v) (not (:kexe-loader? v))) k)) forms/forms))))
+  (is (nil? (reason-of #(forms/refuse-unanswered! :aarch64-linux-kotoba-v1 (ascii "xOWNER_SEP"))))))
+
 (deftest unanswered-forms-are-found-in-the-code-bytes
   (let [pad (vec (repeat 5 0))]
-    (is (= [:owner] (forms/unanswered-in (into pad (ascii "/tmp/xOWNER_SEP")))))
+    (is (= [:owner] (forms/unanswered-in owner-proposed (into pad (ascii "/tmp/xOWNER_SEP")))))
     (testing "a token that ends the code exactly is still found (the boundary)"
-      (is (= [:owner] (forms/unanswered-in (ascii "OWNER_SEP")))))
+      (is (= [:owner] (forms/unanswered-in owner-proposed (ascii "OWNER_SEP")))))
     (testing "one byte short is not the token"
-      (is (= [] (forms/unanswered-in (ascii "OWNER_SE")))))
+      (is (= [] (forms/unanswered-in owner-proposed (ascii "OWNER_SE")))))
     (testing "the forms the loader answers are never refused (2026-09-25: fsync, make-temp-dir, stat-nofollow too)"
       (is (= [] (forms/unanswered-in (vec (mapcat ascii ["STAT_SEP" "APPEND_SEP" "RANGE_SEP" "CHMOD_SEP"
                                                           "FSYNC_SEP" "MKTEMP_SEP" "NOFOLLOW_SEP"])))))
@@ -39,11 +49,11 @@
 
 (deftest a-kexe-loader-target-is-refused-by-name-a-static-one-is-not
   (let [code (ascii "xOWNER_SEP")]
-    (let [d (reason-of #(forms/refuse-unanswered! :aarch64-linux-kotoba-v1 code))]
+    (let [d (reason-of #(forms/refuse-unanswered! owner-proposed :aarch64-linux-kotoba-v1 code))]
       (is (= :fs-form-not-answered-by-kexe-loader (:reason d)))
       (is (= [:owner] (:forms d)))
       (is (= :target (:phase d))))
     (is (= :fs-form-not-answered-by-kexe-loader
-           (:reason (reason-of #(forms/refuse-unanswered! :x86_64-macos-kotoba-v1 code)))))
-    (is (nil? (reason-of #(forms/refuse-unanswered! :aarch64-linux-static-kotoba-v1 code))))
-    (is (nil? (reason-of #(forms/refuse-unanswered! :aarch64-linux-kotoba-v1 (ascii "xSTAT_SEP")))))))
+           (:reason (reason-of #(forms/refuse-unanswered! owner-proposed :x86_64-macos-kotoba-v1 code)))))
+    (is (nil? (reason-of #(forms/refuse-unanswered! owner-proposed :aarch64-linux-static-kotoba-v1 code))))
+    (is (nil? (reason-of #(forms/refuse-unanswered! owner-proposed :aarch64-linux-kotoba-v1 (ascii "xSTAT_SEP")))))))

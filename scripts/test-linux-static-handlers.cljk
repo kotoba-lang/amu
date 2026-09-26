@@ -32,7 +32,7 @@
 
   A second guest (C3, second half: :entropy/draw, :process/spawn and the
   :fs/app-data forms append, range, chmod, fsync, make-temp-dir,
-  stat-nofollow) is compiled the same four ways with its own policies: one
+  stat-nofollow, owner) is compiled the same four ways with its own policies: one
   whose :spawn grant names nine programs, one that also admits lookup by
   name, and one whose fs scope is spelled through a symlink. The kexe loader
   answers wire 20 and 23 with the qualification identity stub and does not
@@ -701,6 +701,17 @@ b\" 1 2))
     ;; evil -> <outside>/secret.txt: the link's size is that spelling's length
     :expect #(when-not (= (:stdout %) (str "fs=[" link-mode " 5 0 2]\nfs=[420 16 8 0]\nfs=[" link-mode " " (count (str outside "/secret.txt"))
                                            " 0 2]\nfs=[]\nfs=[]\n5\n")) :stdout)}
+   ;; owner (S5's proposal, answered 2026-09-26, superproject adr-2609242330):
+   ;; "<owner uid> <euid>" of the component itself. The fixture files are
+   ;; made by the account that runs the guest, so owner = euid, both decimal;
+   ;; the link is described, never followed; absent is "".
+   {:name "owner" :args ["fs" (str scope "/r.txtOWNER_SEP") (str scope "/lnkOWNER_SEP")
+                         (str scope "/nopeOWNER_SEP") (str scope "/evilOWNER_SEP")]
+    :expect #(when-not (re-matches #"fs=\[(\d+) \1\]\nfs=\[\1 \1\]\nfs=\[\]\nfs=\[\1 \1\]\n4\n" (:stdout %)) :stdout)}
+   {:name "owner-outside-the-scope" :args ["fs" (str outside "/secret.txtOWNER_SEP")]
+    :expect #(when-not (sigill? %) :trap)}
+   {:name "owner-token-twice" :args ["fs" (str scope "/r.txtOWNER_SEPOWNER_SEP")]
+    :expect #(when-not (sigill? %) :trap)}
    ;; --- the scope root in both spellings ------------------------------------
    {:name "scope-spelled-through-a-symlink" :variant :link
     :args ["fs" (str link "/hello.txt") (str scope "/hello.txt")]

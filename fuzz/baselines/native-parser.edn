@@ -114,7 +114,14 @@
 ;; arm (ASan + UBSan, 20,000 cases) passed on macOS arm64. Floors carried
 ;; forward NOT re-measured (no libFuzzer runtime on the machine that made this
 ;; change); the Linux CI job measures.
+;; Advanced 2026-09-26 for the :fs/app-data OWNER form (superproject
+;; adr-2609242330): one provider (fstatat AT_SYMLINK_NOFOLLOW beneath the
+;; scope, the euid read in main() before the sandbox), a 15th entry in the form
+;; token table, and the recompiled handlers region. The argv/handle parser the
+;; floors measure is untouched. Floors carried forward NOT re-measured (no
+;; libFuzzer runtime on the machine that made this change); the Linux CI job
+;; measures.
 {:format :kotoba.fuzz-baseline/v2
- :loader-source-sha256 "107c6055e85c568663d1ba9f9d4688b428c41f4d3c3407c77a59c8b09f7c1b75"
+ :loader-source-sha256 "daa8df69c642c2c29d3900ace79a5095d8590773b0fbe724d6d19616d106a4e1"
  :profiles {:x64 {:min-cov 60 :min-features 100 :min-corpus 20}
             :arm64 {:min-cov 60 :min-features 100 :min-corpus 18}}}
