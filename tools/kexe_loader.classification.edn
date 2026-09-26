@@ -273,7 +273,18 @@
   "kexe_spawn_serve_one" {:class :mechanism :new true :note "every question is a handlers op: 33 shape and budget, 34/35 program, 36 environment, 37 output, 38 exit field, 39-41 deadline, 42 start failure, 47 refusal name"}
   "kexe_spawn_start" {:class :mechanism :new true :note "fork/execve + close_range + no_new_privs (Linux), posix_spawn + CLOEXEC_DEFAULT (macOS); a failed step's meaning is handlers op 42"}
   "kexe_split_colon" {:class :mechanism :new true}
-  "process_spawn_provider" {:class :mechanism :new true :note "wire 20 guest side: the request crosses to the supervisor"}}
+  "process_spawn_provider" {:class :mechanism :new true :note "wire 20 guest side: the request crosses to the supervisor"}
+  ;; The export boundary codec (superproject adr-2609242330). Every rule is
+  ;; tools/kexe_loader_boundary.kotoba `boundary-decide`.
+  "inspect_vector_result" {:class :mechanism :new true :note "a :bytes item is a byte: boundary op 4"}
+  "kexe_boundary_arg" {:class :mechanism :new true :note "which token a slot admits is boundary op 0; the per-leaf bound op 1; nodes / bytes a token costs ops 5, 6; the budget verdict op 2; a bool word op 7"}
+  "kexe_boundary_decide" {:class :mechanism :new true}
+  "kexe_boundary_refuse" {:class :mechanism :new true :note "the reason's name is the generated kexe_boundary_reason_names table"}
+  "kexe_mint_hex_string" {:class :mechanism :new true :note "moved out of parse_guest_arg's s: branch unchanged, so the codec's string leaves share it"}
+  "kexe_parse_arg_types" {:class :mechanism :new true :note "the kind vocabulary is the generated kexe_boundary_kind_names table"}
+  "kexe_parse_i64_items" {:class :mechanism :new true}
+  "kexe_token_kind" {:class :mixed :new true :left "the codec's argument-form grammar (vi: b: o:some:s: beside parse_guest_arg's forms), as parse_guest_arg's grammar is left"}
+  "kexe_vector_room" {:class :mechanism :new true}}
 
  ;; Top-level (outside any function) hand-written decision DATA: #defines
  ;; and tables whose values are rules. Counted by the test in both loaders;

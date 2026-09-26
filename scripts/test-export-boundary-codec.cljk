@@ -1,0 +1,339 @@
+#!/usr/bin/env kbb
+(ns test-export-boundary-codec
+  "The kexe loader's export boundary codec (superproject adr-2609242330):
+  a native EXPORT takes and returns :vector-i64, :bytes and [:option :string]
+  through typed wire tokens the loader decodes into its own arenas and
+  decodes back out after the call. Rules: tools/kexe_loader_boundary.kotoba.
+
+  1. ROUND TRIP. One guest, compiled by amu for aarch64 AND x86_64, every
+     export driven through tools/kexe_loader.c with fixed boundary values and
+     seeded random ones; each answer is compared with osaho's reference
+     interpreter (`kotoba.kir/execute`) on the same arguments. On an arm64
+     Mac the x86_64 loader is built with -arch x86_64 and runs under
+     Rosetta 2; on an x86_64 host the aarch64 half is UNMEASURED and says so.
+  2. REFUSALS BY NAME. Forged handles, wrong-kind tokens, undeclared handle
+     tokens, malformed payloads, invalid UTF-8, over-long leaves, arena
+     exhaustion, and the traversal budget (narrowed per run) are each refused
+     with the exact KEXE_TRAP line and exit 131; each has a CONTROL beside it
+     (the same call with the input corrected) that must succeed, so a
+     refusal that fires for another reason is caught.
+  3. RESULT DECODING. A result declared as a kind it is not (a word read as
+     a vector, a vector with a non-byte item read as :bytes, a word read as
+     an option-string) is refused with its named trap and exit 132..134.
+
+    kbb --backend sci --classpath . scripts/test-export-boundary-codec.cljk [--random <n>]
+
+  Exit: 0 pass, 1 a difference or a failed check, 3 UNMEASURED (no ISA of
+  the two could be executed on this host)."
+  (:require [clojure.edn :as edn]
+            [kotoba.lang.text :as str]
+            [scripts.lib :as lib]
+            ["node:fs" :as fs]))
+
+(def args (vec *command-line-args*))
+(def random-count
+  (let [i (.indexOf (clj->js args) "--random")]
+    (if (neg? i) 24 (js/parseInt (nth args (inc i)) 10))))
+(def amu (lib/join lib/root "bin" "amu"))
+(def loader-path (lib/join lib/root "tools" "kexe_loader.c"))
+(def failures (atom []))
+(def checks (atom 0))
+(defn fail! [message] (swap! failures conj message) (.error js/console (str "FAIL " message)))
+(defn check! [ok? message] (swap! checks inc) (when-not ok? (fail! message)))
+
+(def guest
+  "(ns boundary-probe
+  {:kotoba/export [vsum vecho vfirst vconj becho bat blen bplus ostr oecho olen main]})
+(defn vsum [v :vector-i64] :i64
+  (loop [i 0 acc 0] (if (< i (vector-count v)) (recur (+ i 1) (+ acc (vector-at v i))) acc)))
+(defn vecho [v :vector-i64] :vector-i64 v)
+(defn vfirst [v :vector-i64 d :i64] :i64 (if (> (vector-count v) 0) (vector-at v 0) d))
+(defn vconj [v :vector-i64 x :i64] :vector-i64 (vector-conj v x))
+(defn becho [b :bytes] :bytes b)
+(defn bat [b :bytes i :i64] :i64 (bytes-at b i))
+(defn blen [b :bytes] :i64 (bytes-count b))
+(defn bplus [a :bytes b :bytes] :bytes (bytes-concat a b))
+(defn ostr [s :string present :i64] [:option :string]
+  (if (= present 1) (option-some-of [:option :string] s) (option-none-of [:option :string])))
+(defn oecho [o [:option :string]] [:option :string] o)
+(defn olen [o [:option :string]] :i64 (string-byte-length (option-value-of [:option :string] o \"\")))
+(defn main [] :i64 0)
+")
+
+;; name -> [declared kinds, result type]
+(def signatures
+  {"vsum" [["vector-i64"] "i64"] "vecho" [["vector-i64"] "vector-i64"]
+   "vfirst" [["vector-i64" "i64"] "i64"] "vconj" [["vector-i64" "i64"] "vector-i64"]
+   "becho" [["bytes"] "bytes"] "bat" [["bytes" "i64"] "i64"] "blen" [["bytes"] "i64"]
+   "bplus" [["bytes" "bytes"] "bytes"] "ostr" [["string" "i64"] "option-string"]
+   "oecho" [["option-string"] "option-string"] "olen" [["option-string"] "i64"]})
+
+;; ---------------------------------------------------------------------------
+;; values: [:i64 "n"] [:vector ["n" ...]] [:bytes [0..255 ...]] [:string s]
+;; [:option-string nil|s]
+
+(defn hex-of [items] (apply str (map #(.padStart (.toString % 16) 2 "0") items)))
+(defn utf8-hex [s] (.toString (js/Buffer.from s "utf8") "hex"))
+
+(defn wire [[kind v]]
+  (case kind
+    :i64 v
+    :string (str "s:" (utf8-hex v))
+    :vector (str "vi:" (str/join "," v))
+    :bytes (str "b:" (hex-of v))
+    :option-string (if (nil? v) "o:none" (str "o:some:s:" (utf8-hex v)))))
+
+;; Deterministic xorshift32, the seed printed.
+(def seed 20260926)
+(defn- next-u32 [x]
+  (let [x (bit-xor x (bit-shift-left x 13))
+        x (bit-xor x (unsigned-bit-shift-right x 17))
+        x (bit-xor x (bit-shift-left x 5))]
+    (unsigned-bit-shift-right x 0)))
+(def words (atom (unsigned-bit-shift-right seed 0)))
+(defn word [] (swap! words next-u32))
+(defn rand-i64 []
+  (str (js/BigInt.asIntN 64 (+ (* (js/BigInt (word)) (js/BigInt 4294967296)) (js/BigInt (word))))))
+(defn rand-vector [] (vec (repeatedly (mod (word) 9) rand-i64)))
+(defn rand-bytes [] (vec (repeatedly (mod (word) 17) #(mod (word) 256))))
+(defn rand-string [] (apply str (repeatedly (mod (word) 10) #(js/String.fromCodePoint (+ 32 (mod (word) 55000))))))
+
+(def fixed-vectors
+  [[] ["0"] ["1" "2" "3" "-4"] ["9223372036854775807" "-9223372036854775808" "0"]
+   ["9007199254740993"] ["-1" "255" "256"]])
+(def fixed-bytes [[] [0] [255] [0 255 128] [227 129 130] [1 2 3 4 5 6 7 8]])
+(def fixed-strings ["" "a" "日本語" "é\n" "9223372036854775807"])
+
+(defn positive-cases []
+  (let [vs (concat fixed-vectors (repeatedly random-count rand-vector))
+        bs (concat fixed-bytes (repeatedly random-count rand-bytes))
+        ss (concat fixed-strings (repeatedly random-count rand-string))
+        os (concat [nil] fixed-strings (repeatedly random-count #(when (odd? (word)) (rand-string))))]
+    (vec (concat
+          (for [v vs] ["vsum" [[:vector v]]])
+          (for [v vs] ["vecho" [[:vector v]]])
+          (for [v vs] ["vfirst" [[:vector v] [:i64 "77"]]])
+          (for [v vs] ["vconj" [[:vector v] [:i64 (rand-i64)]]])
+          (for [b bs] ["becho" [[:bytes b]]])
+          (for [b bs :when (seq b)] ["bat" [[:bytes b] [:i64 (str (mod (word) (count b)))]]])
+          (for [b bs] ["blen" [[:bytes b]]])
+          (for [[a b] (partition 2 bs)] ["bplus" [[:bytes a] [:bytes b]]])
+          (for [s ss p ["0" "1"]] ["ostr" [[:string s] [:i64 p]]])
+          (for [o os] ["oecho" [[:option-string o]]])
+          (for [o os] ["olen" [[:option-string o]]])))))
+
+;; ---------------------------------------------------------------------------
+;; native side
+
+(defn compile! [tmp isa]
+  (let [out (lib/join tmp (str "probe-" isa ".kexe"))
+        src (lib/join tmp "boundary_probe.kotoba")]
+    (lib/run js/process.execPath [amu "compile" src "--target" isa "--output" out])
+    (into {} (for [fname (keys signatures)
+                   :let [bin (lib/join tmp (str isa "-" fname ".bin"))
+                         r (lib/run js/process.execPath [amu "extract-native" out "--symbol" fname "--output" bin])
+                         answer (edn/read-string (last (remove str/blank? (str/split-lines (:stdout r)))))]]
+               [fname {:bin bin :offset (str (:offset answer))}]))))
+
+(defn build-loader! [tmp isa cross?]
+  ;; -arch is Apple's; on Linux only the host ISA is built.
+  (let [out (lib/join tmp (str "kexe-loader-" isa))]
+    (lib/run "cc" (concat ["-std=c11" "-O2"] (when cross? ["-arch" isa]) [loader-path "-o" out]))
+    out))
+
+(defn run-native [loader compiled isa fname wires & [env]]
+  (let [[kinds result] (get signatures fname)
+        {:keys [bin offset]} (get compiled fname)]
+    (lib/run loader (concat [bin offset (str (count wires)) isa "-"] wires)
+             {:allow-failure? true
+              :max-buffer (* 16 1024 1024)
+              ;; A nil value leaves the variable unset (the undeclared case).
+              :env (into {} (remove (comp nil? val)
+                                    (merge {:KEXE_STRUCTURED_REPORT "1"
+                                            :KEXE_ARG_TYPES (str/join "," kinds)
+                                            :KEXE_RESULT_TYPE result}
+                                           env)))})))
+
+(defn native-value [fname {:keys [stdout]}]
+  (let [line (last (filter #(str/starts-with? % "{:status") (str/split-lines stdout)))
+        result (second (get signatures fname))]
+    (cond
+      (nil? line) [:no-report]
+      (not (str/starts-with? line "{:status :ok")) [:not-ok (subs line 0 (min 120 (count line)))]
+      (= result "i64") [:int (second (re-find #":result (-?\d+)" line))]
+      (= result "vector-i64") [:vector (let [inner (second (re-find #":result-items \[([-0-9 ]*)\]" line))]
+                                         (if (str/blank? inner) [] (str/split inner #" ")))]
+      (= result "bytes") [:bytes (second (re-find #":result-hex \"([0-9a-f]*)\"" line))]
+      (= result "option-string") (if (re-find #":result-tag true" line)
+                                   [:string (second (re-find #":result-utf8-hex \"([0-9a-f]*)\"" line))]
+                                   [:nil]))))
+
+;; ---------------------------------------------------------------------------
+;; reference side: one nbb process, osaho's interpreter on the same KIR
+
+(def reference-driver
+  "(ns boundary-reference
+  (:require [kotoba.compiler.core :as compiler] [kotoba.kir :as ir]
+            [kotoba.kir.value :as value] [cljs.reader :as reader] [\"node:fs\" :as fs]))
+(defn arg [[kind v]]
+  (case kind
+    :i64 (js/BigInt v)
+    :string v
+    :vector (mapv #(js/BigInt %) v)
+    :bytes (value/bytes-from-items v)
+    :option-string (if (nil? v) [[:option :string] false] [[:option :string] true v])))
+(defn norm [v]
+  (cond
+    (identical? (type v) js/BigInt) [:int (str v)]
+    (instance? js/Uint8Array v) [:bytes (.toString (js/Buffer.from v) \"hex\")]
+    (string? v) [:string (.toString (js/Buffer.from v \"utf8\") \"hex\")]
+    (and (vector? v) (= [:option :string] (first v)))
+    (if (true? (second v)) (norm (nth v 2)) [:nil])
+    (vector? v) [:vector (mapv str v)]
+    :else [:other (pr-str v)]))
+(let [argv (vec (drop 2 (js->clj js/process.argv)))
+      src (str (fs/readFileSync (last argv) \"utf8\"))
+      cases (reader/read-string (str (fs/readFileSync (first (take-last 2 argv)) \"utf8\")))
+      kir (:kir (compiler/compile-source src :wasm32-kotoba-v1 {} {}))]
+  (println \"REFERENCE\")
+  (prn (mapv (fn [[f as]]
+               (try (norm (ir/execute kir (symbol f) (mapv arg as)))
+                    (catch :default e [:threw (str (.-message e))])))
+             cases)))
+")
+
+(defn reference-values [tmp cases]
+  (let [driver (lib/join tmp "boundary_reference.cljs")
+        cases-file (lib/join tmp "cases.edn")
+        _ (lib/write-text! driver reference-driver)
+        _ (lib/write-text! cases-file (pr-str cases))
+        cp (str (lib/join lib/root "src") ":" (lib/join lib/root "resources") ":" (lib/lock-classpath))
+        r (lib/run js/process.execPath [(lib/join lib/root "node_modules" "nbb" "cli.js")
+                                        "--classpath" cp driver cases-file
+                                        (lib/join tmp "boundary_probe.kotoba")]
+                   {:allow-failure? true :max-buffer (* 64 1024 1024)})
+        lines (str/split-lines (:stdout r))
+        i (.indexOf (clj->js lines) "REFERENCE")]
+    (when (or (not (zero? (:status r))) (neg? i))
+      (fail! (str "reference driver: " (lib/describe-exit r) " " (subs (:stderr r) 0 (min 600 (count (:stderr r))))))
+      (.exit js/process 1))
+    (edn/read-string (nth lines (inc i)))))
+
+;; ---------------------------------------------------------------------------
+;; refusals
+
+(def prefix "KEXE_TRAP {:kind :boundary :reason :")
+
+(defn refusal-cases []
+  (let [big-bytes (vec (repeat 65537 0))
+        ok-bytes (vec (repeat 65536 0))]
+    ;; [label fname wires env expected-stderr-line control-wires control-env]
+    [["forged handle: a bare word in a :vector-i64 slot" "vsum" ["1"] {}
+      (str prefix "boundary/forged-handle :arg 0}") ["vi:1"] {}]
+     ["forged handle: a bare word in a :bytes slot" "blen" ["0"] {}
+      (str prefix "boundary/forged-handle :arg 0}") ["b:00"] {}]
+     ["forged handle: a bare word in an option-string slot" "olen" ["2"] {}
+      (str prefix "boundary/forged-handle :arg 0}") ["o:none"] {}]
+     ["type mismatch: bytes where a vector is declared" "vsum" ["b:00"] {}
+      (str prefix "boundary/type-mismatch :arg 0}") ["vi:0"] {}]
+     ["type mismatch: a vector in a word slot" "vfirst" ["vi:" "vi:1"] {}
+      (str prefix "boundary/type-mismatch :arg 1}") ["vi:" "1"] {}]
+     ["undeclared: a handle token needs a signature" "vsum" ["vi:1,2"] {:KEXE_ARG_TYPES nil}
+      (str prefix "boundary/signature :arg 0}") ["vi:1,2"] {}]
+     ["signature: more kinds than arguments" "vsum" ["vi:1"] {:KEXE_ARG_TYPES "vector-i64,i64"}
+      (str prefix "boundary/signature :arg -1}") ["vi:1"] {}]
+     ["unsupported kind: :vector-f64 has no wire form" "vsum" ["vi:1"] {:KEXE_ARG_TYPES "vector-f64"}
+      (str prefix "boundary/unsupported-kind :arg 0}") ["vi:1"] {}]
+     ["malformed: an empty vector item" "vsum" ["vi:1,,2"] {}
+      (str prefix "boundary/malformed :arg 0}") ["vi:1,2"] {}]
+     ["malformed: an i64 item past the range" "vsum" ["vi:9223372036854775808"] {}
+      (str prefix "boundary/malformed :arg 0}") ["vi:9223372036854775807"] {}]
+     ["malformed: odd hex" "blen" ["b:0"] {}
+      (str prefix "boundary/malformed :arg 0}") ["b:00"] {}]
+     ["malformed: a non-hex digit" "blen" ["b:0g"] {}
+      (str prefix "boundary/malformed :arg 0}") ["b:0f"] {}]
+     ["invalid UTF-8 in an option-string" "olen" ["o:some:s:c0"] {}
+      (str prefix "boundary/invalid-utf8 :arg 0}") ["o:some:s:41"] {}]
+     ["value too large: 65537 bytes" "blen" [(str "b:" (hex-of big-bytes))] {}
+      (str prefix "boundary/value-too-large :arg 0}") [(str "b:" (hex-of ok-bytes))] {}]
+     ["arena: more vector items than the run's budget" "vsum" [(str "vi:" (str/join "," (repeat 65537 1)))] {}
+      (str prefix "boundary/arena :arg 0}") [(str "vi:" (str/join "," (repeat 65536 1)))] {}]
+     ["traversal nodes: an option some is two nodes" "olen" ["o:some:s:6869"] {:KEXE_BOUNDARY_NODES "1"}
+      (str prefix "budget/boundary-nodes :arg 0}") ["o:some:s:6869"] {:KEXE_BOUNDARY_NODES "2"}]
+     ["traversal bytes: charged across the call's arguments" "bplus" ["b:0001" "b:0203"] {:KEXE_BOUNDARY_BYTES "3"}
+      (str prefix "budget/boundary-bytes :arg 1}") ["b:0001" "b:0203"] {:KEXE_BOUNDARY_BYTES "4"}]]))
+
+(defn check-refusals! [loader compiled isa]
+  (doseq [[label fname wires env expected cwires cenv] (refusal-cases)]
+    (let [r (run-native loader compiled isa fname wires env)
+          c (run-native loader compiled isa fname cwires cenv)
+          reason (second (re-find #":reason (:[a-z/-]+)" expected))]
+      (check! (and (= 131 (:status r))
+                   (some #(= expected %) (str/split-lines (:stderr r)))
+                   (str/includes? (:stdout r) (str "{:status :refused :reason " reason)))
+              (str isa " " label ": expected exit 131 and `" expected "`, got "
+                   (lib/describe-exit r) " " (str/trim (:stderr r))))
+      (check! (and (zero? (:status c)) (str/starts-with? (str/trim (:stdout c)) "{:status :ok"))
+              (str isa " " label " CONTROL: the corrected call must succeed, got "
+                   (lib/describe-exit c) " " (subs (:stderr c) 0 (min 200 (count (:stderr c))))))))
+  ;; A budget above the default is refused, never clamped (exit 2, the
+  ;; loader's usage status, before any argument is read).
+  (doseq [[k v] [[:KEXE_BOUNDARY_NODES "65537"] [:KEXE_BOUNDARY_NODES "0"] [:KEXE_BOUNDARY_BYTES "1048577"]]]
+    (let [r (run-native loader compiled isa "vsum" ["vi:1"] {k v})]
+      (check! (and (= 2 (:status r)) (str/includes? (:stderr r) (str (name k) " must be a positive decimal integer")))
+              (str isa " " (name k) "=" v " must be refused, got " (lib/describe-exit r))))))
+
+(defn check-result-refusals! [loader compiled isa]
+  (doseq [[label fname wires result exit line]
+          [["a word read as a vector" "vsum" ["vi:1,2"] "vector-i64" 132
+            "KEXE_TRAP {:kind :result :reason :invalid-vector-i64}"]
+           ["a non-byte item read as :bytes" "vecho" ["vi:1,300"] "bytes" 133
+            "KEXE_TRAP {:kind :result :reason :invalid-bytes}"]
+           ["a word read as an option-string" "vsum" ["vi:999"] "option-string" 134
+            "KEXE_TRAP {:kind :result :reason :invalid-option-string}"]]]
+    (let [r (run-native loader compiled isa fname wires {:KEXE_RESULT_TYPE result})]
+      (check! (and (= exit (:status r)) (some #(= line %) (str/split-lines (:stderr r))))
+              (str isa " result " label ": expected exit " exit " and `" line "`, got "
+                   (lib/describe-exit r) " " (str/trim (:stderr r)))))))
+
+;; ---------------------------------------------------------------------------
+
+(let [tmp (lib/temp-dir "export-boundary-codec-")
+      platform (.-platform js/process)
+      host ({"arm64" "aarch64" "x64" "x86_64"} (.-arch js/process))
+      ;; [isa cross-built?]: an arm64 Mac also runs x86_64 under Rosetta 2.
+      runnable (cond
+                 (and (= "darwin" platform) (= "aarch64" host)) [["x86_64" true] ["aarch64" false]]
+                 (and host (#{"darwin" "linux"} platform)) [[host false]]
+                 :else [])
+      rosetta? (and (= "darwin" platform) (= "aarch64" host))]
+  (try
+    (lib/write-text! (lib/join tmp "boundary_probe.kotoba") guest)
+    (when (empty? runnable)
+      (println "UNMEASURED\tno kexe loader for" platform (.-arch js/process))
+      (.exit js/process 3))
+    (doseq [isa ["aarch64" "x86_64"] :when (not-any? #(= isa (first %)) runnable)]
+      (println (str "UNMEASURED\t" isa " (this " platform " " (.-arch js/process) " host cannot run it)")))
+    (let [cases (positive-cases)
+          reference (reference-values tmp (mapv (fn [[f as]] [f as]) cases))]
+      (check! (= (count reference) (count cases)) "the reference answered every case")
+      (check! (not-any? #(= :threw (first %)) reference)
+              (str "the reference refused a positive case: " (pr-str (first (filter #(= :threw (first %)) reference)))))
+      (doseq [[isa cross?] runnable]
+        (let [compiled (compile! tmp isa)
+              loader (build-loader! tmp isa cross?)
+              native (mapv (fn [[f as]] (native-value f (run-native loader compiled isa f (mapv wire as)))) cases)
+              agree (count (filter true? (map = native reference)))]
+          (println (str "ROUNDTRIP\t" isa (when (and rosetta? (= isa "x86_64")) " (Rosetta 2)")
+                        "\t" agree "/" (count cases) " agree with the reference"
+                        "\t" (pr-str (frequencies (map first cases)))))
+          (doseq [[[f as] n r] (map vector cases native reference) :when (not= n r)]
+            (fail! (str isa " " f " " (pr-str as) ": native " (pr-str n) " reference " (pr-str r))))
+          (swap! checks + (count cases))
+          (check-refusals! loader compiled isa)
+          (check-result-refusals! loader compiled isa))))
+    (finally (lib/remove-tree! tmp)))
+  (println (str "SCANNED\t" @checks "\tchecks, seed " seed ", " random-count " random values per kind"))
+  (if (seq @failures)
+    (do (println (str "FAILED\t" (count @failures))) (.exit js/process 1))
+    (println "PASS")))

@@ -1,5 +1,5 @@
 (ns kexe-loader-names
-  {:kotoba/export [trap-line value-trap-name result-type-name]})
+  {:kotoba/export [trap-line value-trap-name result-type-name boundary-kind-name boundary-reason-name]})
 
 ;; The fixed text of every trap the POSIX kexe loader names, and the result
 ;; type names it admits (superproject adr-2609251400 C1, kind (a): DATA).
@@ -57,6 +57,13 @@
     (= k 35) "KEXE_TRAP {:kind :capability :capability :process/spawn :reason :spawn/isolation-unavailable}\n"
     (= k 36) "KEXE_TRAP {:kind :capability :capability :process/spawn :reason :spawn/setup-failed}\n"
     (= k 37) "KEXE_TRAP {:kind :capability :capability :entropy/draw :reason :entropy/unavailable}\n"
+    ;; The export boundary codec (tools/kexe_loader_boundary.kotoba): the
+    ;; three result decodings it added, and the prefix of a refused argument
+    ;; (the loader appends the reason name and ` :arg <i>}`).
+    (= k 38) "KEXE_TRAP {:kind :result :reason :invalid-vector-i64}\n"
+    (= k 39) "KEXE_TRAP {:kind :result :reason :invalid-bytes}\n"
+    (= k 40) "KEXE_TRAP {:kind :result :reason :invalid-option-string}\n"
+    (= k 41) "KEXE_TRAP {:kind :boundary :reason :"
     :else ""))
 
 ;; ABI v11 value traps: the index a refusing host call records, the name
@@ -85,5 +92,46 @@
     (= k 1) "string"
     (= k 2) "option-i64"
     (= k 3) "result-i64"
+    ;; The export boundary codec's results (tools/kexe_loader_boundary.kotoba).
+    (= k 4) "vector-i64"
+    (= k 5) "bytes"
+    (= k 6) "option-string"
+    :else ""))
+
+;; The declared argument kinds KEXE_ARG_TYPES may name, by the index
+;; tools/kexe_loader_boundary.kotoba numbers them (0, undeclared, has no
+;; spelling). A name not in this table is refused as
+;; :boundary/unsupported-kind -- :vector-f64, maps, sets, :document and
+;; handle-carrying records have no wire form.
+(defn boundary-kind-name [k] :string
+  (cond
+    (= k 1) "i64"
+    (= k 2) "bool"
+    (= k 3) "string"
+    (= k 4) "option-i64"
+    (= k 5) "result-i64"
+    (= k 6) "vector-i64"
+    (= k 7) "bytes"
+    (= k 8) "option-string"
+    (= k 9) "record"
+    (= k 10) "variant"
+    :else ""))
+
+;; A refused boundary argument's reason, by tools/kexe_loader_boundary.kotoba's
+;; index (0 is admitted and has no name). The two budget names are the
+;; reference interpreter's and the ESM prelude's.
+(defn boundary-reason-name [k] :string
+  (cond
+    (= k 1) "boundary/forged-handle"
+    (= k 2) "boundary/type-mismatch"
+    (= k 3) "boundary/signature"
+    (= k 4) "boundary/malformed"
+    (= k 5) "boundary/value-too-large"
+    (= k 6) "boundary/invalid-utf8"
+    (= k 7) "boundary/not-a-bool"
+    (= k 8) "boundary/arena"
+    (= k 9) "budget/boundary-nodes"
+    (= k 10) "budget/boundary-bytes"
+    (= k 11) "boundary/unsupported-kind"
     :else ""))
 
