@@ -125,10 +125,23 @@ Clojure it is today, the language gains:
    the native artifact oracle (exit 65), as they refuse a record crossing a
    function boundary: floor `:native-handles`. Programs admitted before are
    unchanged -- every new row slot was a refusal.
-   Still open: a vector literal of records, a map literal bound by `let`
-   before it reaches a row, and retiring the keyword->i64 map outright (floor
-   `:literal-typing`: those literals are lowered from their source before any
-   type is inferred); the specialization CID derived from the generic's
+   Floor `:literal-typing` (gate `record-vector-and-map-literal-retirement-test`,
+   2026-09-26): a literal is typed by its items. kotoba-sema's `type-literals`
+   runs once every signature is known and before rows are specialized, so a
+   keyword map literal is the anonymous closed record of its fields wherever
+   it is written (a `let` binding of one passed to a row is that row's record;
+   `(defn- m [] {:a 3 :b 4})` answers `[:record :kotoba.map-literal/a+b ..]`),
+   and a vector literal of non-`:i64` items is a typed vector -- `[:list T]`
+   when every item is one T (`(nth [(mk) (mk)] 1)` is the record, at any
+   index), the heterogeneous `[:vector [T ..]]` otherwise. The keyword->i64
+   pair map is no longer what a literal is: reading a key a literal lacks is
+   refused ("record field must be a declared keyword literal"), not 0, and a
+   literal is not counted. Refused by name beside it: a coerced field, a
+   record as an `if` test, `=` over records, a typed vector item used as an
+   i64. Native: a literal record compiles for `x86_64-aiueos-kernel-v1` and
+   `aarch64-macos`; a `[:list record]` is refused there by the typed-values
+   gate -- floor `:native-handles`.
+   Still open: the specialization CID derived from the generic's
    (floor `:specialization-identity`; until then a specialization's CID is its
    own monomorphic KIR's, which seals the record).
 4. **Function values.** A function type carries its effect row; a closure is a
