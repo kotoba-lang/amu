@@ -51,8 +51,19 @@
   ;; [:ref :b/s]") -- each a change to inference, not to elaboration.
   {:id :row-operations :gate "row-operations-extend-and-shrink-test"
    :goal "assoc / dissoc / merge / select-keys are row operations whose results are record types: assoc extends, dissoc / select-keys shrink, merge assoc's a record's or a map literal's fields; a parameter a row operation uses is a row"}
+  ;; :row-unification split in two (2026-09-26), because measuring showed two
+  ;; changes in two places: a row argument, an if join and a loop helper are
+  ;; all decided in kotoba-sema's row pass (`specialize-row-parameters`),
+  ;; where the row is known; a vector literal of records and a let-bound map
+  ;; literal are lowered by `desugar-expr` from their source alone, before
+  ;; any type is inferred (`closed-vector-literal-type`,
+  ;; `keyword-map-literal-record-fields`), and retiring the keyword->i64 map
+  ;; changes the lowering -- and the definition CID -- of every all-i64
+  ;; keyword literal, not only those a row receives.
   {:id :row-unification :gate "row-literal-join-and-loop-unification-test"
-   :goal "a map literal passed to a row is that row's record, not the keyword->i64 map, which is retired; vectors of records are ordinary; a parameter returned beside a row ((if c m n)) unifies into it; a loop over a row parameter is specialized with its function"}
+   :goal "a map literal passed to a row is that row's record; a parameter returned beside a row ((if c m n)) unifies into it, and two records at one join are refused by name; a loop over a row parameter is specialized with its function"}
+  {:id :literal-typing :gate "record-vector-and-map-literal-retirement-test"
+   :goal "a vector literal of records is an ordinary typed vector ((nth [(mk) (mk)] 1) is the record, today refused \"expected i64, got [:ref :b/s]\"); a keyword map literal is a record wherever it is written, including a let binding later passed to a row; the keyword->i64 map is retired"}
   {:id :specialization-identity :gate "specialization-cid-derived-from-generic-test"
    :goal "every row specialization's definition CID is derived from the generic definition's CID and its type arguments, so two modules specializing one generic at one record share a CID and ADR 0300's compile-once cache holds across them"}
   {:id :function-values :gate "function-value-in-record-test"
