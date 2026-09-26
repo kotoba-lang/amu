@@ -98,7 +98,10 @@
                           (ByteBuffer/wrap bytes)))
        :cljs (.decode (js/TextDecoder. "utf-8" #js {:fatal true}) bytes))
     (catch #?(:clj Exception :cljs :default) error
-      (throw (ex-info "input is not valid UTF-8" {:phase :decode :kind kind} error)))))
+      ;; No cause on Kotoba: a cause is another Throwable and Kotoba has
+      ;; none (kotoba-lang lang/abort-ability.edn). The host keeps it.
+      (throw #?(:kotoba (ex-info "input is not valid UTF-8" {:phase :decode :kind kind})
+                :default (ex-info "input is not valid UTF-8" {:phase :decode :kind kind} error))))))
 
 (defn read-bytes-file
   "The raw bytes of a regular file under LIMIT -- a `byte[]` on the JVM, a
@@ -205,6 +208,14 @@
   (when-not (string? text)
     (reject! "EDN input must be text" {}))
   (preflight! text)
+  ;; Kotoba: there is no host Exception, so the second clause cannot fire;
+  ;; what the body throws (reject!, the kotoba reader) is ex-info, which the
+  ;; first clause rethrows unchanged -- so the whole try is the body
+  ;; (a Kotoba try admits one body and one catch; lang/abort-ability.edn).
+  ;; The host keeps both clauses as they were.
+  #?(:kotoba
+     (validate-shape! (read-one! text))
+     :default
   (try
     (validate-shape! (read-one! text))
     (catch #?(:clj clojure.lang.ExceptionInfo :cljs ExceptionInfo) error
@@ -212,7 +223,7 @@
       ;; ex-info here is one of this namespace's. Both are already named.
       (throw error))
     (catch #?(:clj Exception :cljs :default) error
-      (throw (ex-info "EDN input was rejected" {:phase :decode} error)))))
+      (throw (ex-info "EDN input was rejected" {:phase :decode} error))))))
 
 (defn read-file [path]
   (read-string (decode-utf8 (read-bytes path max-edn-bytes :edn) :edn)))
