@@ -1,0 +1,99 @@
+(ns kotoba.compiler.row-unification-test
+  "ADR 0353 floor :row-unification: rows meet the three places a row value
+  comes from that floor :row-records left refused.
+
+  A keyword-keyed map literal written as an argument to a row parameter is
+  that row's record -- the anonymous closed record of its fields, each typed
+  by its value -- not the keyword->i64 pair map it otherwise lowers to. Two
+  parameters that are the branches of one `if` (`(if c m n)`, or `(:k (if c m
+  n))`) are one row: a parameter returned beside a row is that row, and reads
+  what it reads. A loop helper is generic with its function: a loop (or a
+  reduce / map closure, which lowers to one) over a row parameter is
+  specialized with the specialization that runs it. Reads made inside a loop
+  helper or a callee are the caller's reads, so a missing field is refused at
+  the outermost call.
+
+  What stays refused is pinned by the literal of each refusal: a field is not
+  coerced, a literal missing a field the row reads is refused like a record
+  missing it, the two branches of one `if` are ONE record type at a call (no
+  join of two record types into a union), only a record satisfies a row, an
+  exported generic has no single ABI, and numbers are never truthy. A literal
+  bound by `let` before it is passed is still the pair map (floor
+  :literal-typing retires the pair map outright)."
+  (:require [clojure.test :refer [deftest is testing]]
+            [kotoba.kir :as ir]
+            [kotoba.sema :as sema]))
+
+(def ^:private prelude
+  (str "(ns b (:schemas {:b/s [:record :b/s [[:a :i64] [:b :i64]]]"
+       " :b/t [:record :b/t [[:a :i64] [:c :string]]]}))\n"
+       "(defn mk [] [:ref :b/s] {:a 5 :b 2})\n"
+       "(defn mt [] [:ref :b/t] {:a 7 :c \"xy\"})\n"))
+
+(defn- run-main [source]
+  (#?(:clj long :cljs js/Number)
+   (ir/execute (ir/lower (sema/analyze (str prelude source))) 'main [])))
+
+(defn- results [source]
+  (into {} (map (juxt :name :result)) (:functions (sema/analyze (str prelude source)))))
+
+(defn- refusal [source]
+  (try (ir/lower (sema/analyze (str prelude source))) nil
+       (catch #?(:clj clojure.lang.ExceptionInfo :cljs :default) error
+         (ex-message error))))
+
+(deftest row-literal-join-and-loop-unification-test
+  (testing "admitted: a map literal passed to a row is that row's record"
+    (is (= 3 (run-main "(defn- f [m] (:a m)) (defn main [] :i64 (f {:a 3 :b 4}))")))
+    (is (= 7 (run-main "(defn- f [m] (:a m)) (defn main [] :i64 (+ (f {:a 3}) (f {:a 4 :c \"x\"})))")))
+    (is (= 1 (run-main "(defn- f [m] (assoc m :d 1)) (defn main [] :i64 (:d (f {:a 3})))")))
+    (is (= #{'f__row_0_kotoba_map_literal_a 'f__row_0_kotoba_map_literal_a_c}
+           (set (filter #(re-find #"^f" (str %))
+                        (keys (results "(defn- f [m] (:a m)) (defn main [] :i64 (+ (f {:a 3}) (f {:a 4 :c \"x\"})))"))))))
+    (is (= [:record :kotoba.map-literal/a+d [[:a :i64] [:d :i64]]]
+           (get (results "(defn- f [m] (assoc m :d 1)) (defn main [] :i64 (:d (f {:a 3})))")
+                'f__row_0_kotoba_map_literal_a))))
+  (testing "admitted: the branches of one if are one row"
+    (is (= 12 (run-main (str "(defn- f [c m n] (:a (if (= c 1) m n)))"
+                             " (defn main [] :i64 (+ (f 1 (mk) (mk)) (f 0 (mt) (mt))))"))))
+    (is (= 9 (run-main (str "(defn- pick [m n] (if (> (:a m) 6) m n))"
+                            " (defn main [] :i64 (+ (:b (pick (mk) (mk))) (:a (pick (mt) (mt)))))"))))
+    (is (= [:ref :b/t]
+           (get (results (str "(defn- pick [m n] (if (> (:a m) 6) m n))"
+                              " (defn main [] :i64 (:a (pick (mt) (mt))))"))
+                'pick__row_0_b_t_1_b_t))))
+  (testing "admitted: a loop over a row parameter is specialized with its function"
+    (is (= 22 (run-main (str "(defn- f [m n] (loop [i 0 acc 0] (if (< i n) (recur (+ i 1) (+ acc (:a m))) acc)))"
+                             " (defn main [] :i64 (+ (f (mk) 3) (f (mt) 1)))"))))
+    (is (= 30 (run-main (str "(defn- f [m] (reduce (fn [acc x] (+ acc (* x (:a m)))) 0 [1 2 3]))"
+                             " (defn main [] :i64 (f (mk)))")))))
+  (testing "refused: a field is not coerced"
+    (is (= "expression type mismatch: expected i64, got string"
+           (refusal "(defn- f [m] (:a m)) (defn main [] :i64 (f {:a \"x\"}))"))))
+  (testing "refused: a literal lacking a field the row reads"
+    (is (= (str "argument {:a 3} to f is record :kotoba.map-literal/a, which has no field :b"
+                " that the row {:b T | r} of parameter m reads")
+           (refusal "(defn- f [m] (:b m)) (defn main [] :i64 (f {:a 3}))"))))
+  (testing "refused: the branches of one if are one record type at a call"
+    (is (= (str "arguments (mk) and (mt) to pick are [:ref :b/s] and [:ref :b/t], and parameters"
+                " m and n of pick are branches of one if, so one row: a row is one record type at each call")
+           (refusal "(defn- pick [m n] (if (> (:a m) 6) m n)) (defn main [] :i64 (:a (pick (mk) (mt))))")))
+    (is (= "argument 3 to pick is i64, and parameter n of pick is the row {:a T | r}: only a record satisfies a row"
+           (refusal "(defn- pick [m n] (if (> (:a m) 6) m n)) (defn main [] :i64 (:a (pick (mk) 3)))"))))
+  (testing "refused: a loop's reads are its function's, refused at the outermost call"
+    (is (= "argument (mt) to f is record :b/t, which has no field :b that the row {:b T | r} of parameter m reads"
+           (refusal (str "(defn- f [m n] (loop [i 0 acc 0] (if (< i n) (recur (+ i 1) (+ acc (:b m))) acc)))"
+                         " (defn main [] :i64 (f (mt) 1))"))))
+    (is (= "argument 4 to f is i64, and parameter m of f is the row {:a T | r}: only a record satisfies a row"
+           (refusal (str "(defn- f [m n] (loop [i 0 acc 0] (if (< i n) (recur (+ i 1) (+ acc (:a m))) acc)))"
+                         " (defn main [] :i64 (f 4 1))"))))
+    (is (= (str "exported function f has the row-polymorphic parameter m {:a T | r}, and an export has one ABI:"
+                " annotate m with a record type, or make f private with defn-")
+           (refusal (str "(defn f [m] (loop [i 0 acc 0] (if (< i 2) (recur (+ i 1) (+ acc (:a m))) acc)))"
+                         " (defn main [] :i64 (f (mk)))")))))
+  (testing "refused: numbers are never truthy, a row join changes nothing there"
+    (is (= "if test is :i64, and a number is never truthy: compare it (for example (not= x 0)) or answer :bool"
+           (refusal "(defn- f [c m n] (:a (if c m n))) (defn main [] :i64 (f 0 (mk) (mk)))"))))
+  (testing "still the pair map: a literal bound before it is passed (floor :literal-typing)"
+    (is (= "argument m to f is map, and parameter m of f is the row {:a T | r}: only a record satisfies a row"
+           (refusal "(defn- f [m] (:a m)) (defn main [] :i64 (let [m {:a 3}] (f m)))")))))

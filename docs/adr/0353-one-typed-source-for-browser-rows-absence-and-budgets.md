@@ -107,12 +107,30 @@ Clojure it is today, the language gains:
    them, as they refuse the same forms written by hand: `record-assoc` is not
    natively qualified (exit 70) and the verifier does not see a record through
    a `let` operand (exit 65) -- floor `:native-handles`.
-   Still open: a map literal passed to a row (it still lowers to the
-   keyword->i64 map and is refused as "map"), vectors of records, `(if c m n)`
-   unification and loops over a row parameter (floor `:row-unification`); the
-   specialization CID derived from the generic's (floor
-   `:specialization-identity`; until then a specialization's CID is its own
-   monomorphic KIR's, which seals the record).
+   Floor `:row-unification` (gate
+   `row-literal-join-and-loop-unification-test`, 2026-09-26): a keyword map
+   literal written as a row argument is that row's record, the anonymous
+   closed record of its fields typed by its values (`(f {:a 3})` runs as
+   `f__row_0_kotoba_map_literal_a`); two parameters that are the branches of
+   one `if` are one row and read what it reads, so `(defn- pick [m n] (if (>
+   (:a m) 6) m n))` returns its record; a loop helper -- and so a `reduce` /
+   `map` closure -- is generic with its function; a slot's reads include those
+   of the rows it is passed on to, so a missing field is refused at the
+   outermost call. Refused by name: two record types at one join ("arguments
+   (mk) and (mt) to pick are [:ref :b/s] and [:ref :b/t], and parameters m
+   and n of pick are branches of one if, so one row: a row is one record type
+   at each call"), a literal lacking a read field, a coerced field, a
+   non-record, an exported generic, an `:i64` if test. Hosted
+   (`wasm32-browser`) compiles these forms; both native targets refuse them at
+   the native artifact oracle (exit 65), as they refuse a record crossing a
+   function boundary: floor `:native-handles`. Programs admitted before are
+   unchanged -- every new row slot was a refusal.
+   Still open: a vector literal of records, a map literal bound by `let`
+   before it reaches a row, and retiring the keyword->i64 map outright (floor
+   `:literal-typing`: those literals are lowered from their source before any
+   type is inferred); the specialization CID derived from the generic's
+   (floor `:specialization-identity`; until then a specialization's CID is its
+   own monomorphic KIR's, which seals the record).
 4. **Function values.** A function type carries its effect row; a closure is a
    one-word handle (code, environment) under aggregate ABI v8 and may be a
    record field or vector element. A stored function's effects are part of the
