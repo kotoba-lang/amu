@@ -13,7 +13,8 @@
   one type T, the heterogeneous `[:vector [T ...]]` otherwise.
 
   What stays refused is pinned by the literal of each refusal: a field is not
-  coerced, a record is closed (a key a literal lacks is refused, never 0), a
+  coerced, a record is closed (a key a literal lacks is refused, never 0; with
+  a default, `(:k m d)` answers d statically), a
   record is never truthy, records have no structural equality, a record is
   not counted, and an item of a typed vector is its type, never an i64."
   (:require [clojure.test :refer [deftest is testing]]
@@ -54,6 +55,16 @@
     (is (= [:record :kotoba.map-literal/a+b [[:a :i64] [:b :i64]]]
            (get (results "(defn- m [] {:a 3 :b 4}) (defn main [] :i64 (:a (m)))") 'm)))
     (is (= 2 (run-main "(defn main [] :i64 (let [m (assoc {:a 1} :b 2)] (:b m)))"))))
+  (testing "admitted: a default lookup on a record is decided statically (a record is closed)"
+    (is (= 7 (run-main "(defn main [] :i64 (let [m {:a 3}] (:z m 7)))")))
+    (is (= 3 (run-main "(defn main [] :i64 (let [m {:a 3}] (:a m 7)))")))
+    (is (= 9 (run-main "(defn main [] :i64 (get (mk) :z 9))"))))
+  (testing "refused: the default of a present field is its type, and is a literal or a local"
+    (is (= "expression type mismatch: expected i64, got string"
+           (refusal "(defn main [] :i64 (let [m {:a 3}] (:a m \"x\")))")))
+    (is (= (str "the default of :a on record :kotoba.map-literal/a is never evaluated, because"
+                " the record has that field: write the default as a literal or a local")
+           (refusal "(defn main [] :i64 (let [m {:a 3}] (:a m (+ 1 2))))"))))
   (testing "refused: a field is not coerced"
     (is (= "expression type mismatch: expected i64, got string"
            (refusal "(defn- f [m] (:a m)) (defn main [] :i64 (let [m {:a \"x\"}] (+ 1 (f m))))"))))
