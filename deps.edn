@@ -34,6 +34,15 @@
         ;; (adr-2609111500) / kbb cutover (adr-2609112000). Superproject ADR
         ;; adr-2609111900, source-side wave. io-ipld stays HELD (see its note).
         io.github.kotoba-lang/text {:git/sha "3dcb2ab087933dc7b703b340dac9afce62cb30ff"}
+        ;; kotoba.bytes. Declared 2026-09-26 as an explicit floor, d5259f35 -> 630e37cf
+        ;; (bytes main, ahead 6, behind 0, forward only): it arrived only through
+        ;; artifact / kotoba-component, which name d5259f35, where `->bytes` has no
+        ;; Kotoba reading -- 13 selfhost rows stopped at bytes.cljk:156 `expression
+        ;; type mismatch: expected vector-i64, got string` (superproject
+        ;; adr-2609242330). 630e37cf gives every function a Kotoba reading (the
+        ;; project check passes) with the host bodies unchanged.
+        io.github.kotoba-lang/bytes {:git/url "https://github.com/kotoba-lang/bytes.git"
+                                     :git/sha "630e37cfce401e5e508ca48a57f2751e3b30e3b1"}
         ;; The ONE classification lattice (root ADR-2607280100 D1, which exists
         ;; because there were two copies of that rank map and merging them was
         ;; the point). `kotoba.compiler.effect-classification` ranks a
@@ -1074,7 +1083,12 @@
          ;; Then e410e976 -> 04c4e0a4 (ahead 2): identity 1a4f2d95, the loader answering
          ;; :process/spawn, :entropy/draw and fsync / make-temp-dir / stat-nofollow from the
          ;; handlers' compiled decisions (superproject adr-2609251400 C3).
-         :git/sha "04c4e0a4c4f694ccfcd029c00081590e80348e27"}
+         ;; Advanced 2026-09-26, 04c4e0a4 -> 197aefc7 (artifact main, ahead 2, behind 0,
+         ;; forward only): kotoba.artifact.core has a Kotoba reading over :document whose
+         ;; sha256 is the host's digest (superproject adr-2609242330, selfhost wall
+         ;; `map fn parameter destructures ([k v])`, 17 rows). Host bodies unchanged, so
+         ;; no loader identity moves.
+         :git/sha "197aefc703c6be16255eb0e54d15007ce6799f45"}
         ;; HELD at 1a2e10c on 2026-09-03 (ADR 0331), 28 commits behind its main,
         ;; while every other pin in this file moved to the tip. The reason, so
         ;; that a lagging pin and a pin with an argument behind it stay

@@ -680,3 +680,13 @@
          (dependency-pin 'io.github.kotoba-lang/io-ipld)))
   (is (= "500497c4ac74efa6c9ed289c0159b42fea817669"
          (dependency-pin 'io.github.kotoba-lang/kotoba-core-contracts))))
+
+(deftest artifact-and-bytes-kotoba-readings-are-pinned
+  ;; adr-2609242330 (2026-09-26): kotoba.artifact.core's Kotoba reading over
+  ;; :document (its sha256 is the host digest; artifact
+  ;; scripts/verify-kotoba-digest.cljk) and kotoba.bytes with a Kotoba reading
+  ;; for every function. Both move only forward, host bodies unchanged.
+  (is (= "197aefc703c6be16255eb0e54d15007ce6799f45"
+         (dependency-pin 'io.github.kotoba-lang/artifact)))
+  (is (= "630e37cfce401e5e508ca48a57f2751e3b30e3b1"
+         (dependency-pin 'io.github.kotoba-lang/bytes))))
