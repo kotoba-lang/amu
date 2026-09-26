@@ -171,8 +171,20 @@ Clojure it is today, the language gains:
 4. **Function values.** A function type carries its effect row; a closure is a
    one-word handle (code, environment) under aggregate ABI v8 and may be a
    record field or vector element. A stored function's effects are part of the
-   record's type, so nothing ambient enters. (The ADR 0352 internal error on a
-   stored closure becomes either this or a named refusal.)
+   record's type, so nothing ambient enters. Split on 2026-09-27 into two
+   floors. `:stored-closures` (gate `stored-closure-in-record-and-vector-test`,
+   landed 2026-09-27): the ADR 0352 internal error was not a missing type --
+   kotoba-sema built a record literal's (and a `record-new`'s) fields as a lazy
+   seq, so the `fn` was lowered after the binding holding the lambda counter
+   had ended; each defn and lambda body is now realized inside its binding. A
+   closure stored in a record field or vector element is called out of it on
+   the KIR interpreter, compiles for `x86_64-aiueos-kernel-v1` and
+   `aarch64-macos` (the aarch64-macos kexe printed 11 and 10 under
+   `tools/kexe_loader.c`), and its capability is in the caller's effect row.
+   `:function-values` keeps the type: measured the same day, a closure's
+   static type is `:i64` (a `[:fn ...]` result contract erases to it), so
+   `(+ f 1)` and `(= f g)` on closures are admitted and a `[:fn ...]` record
+   field refuses a fn literal (`expected [:fn [[:i64] :i64]], got i64`).
 5. **Strings by code unit, by name.** `count` of a string stays refused (it
    has two answers). `string-code-unit-count`, `string-code-unit-at` and
    `subs` over code units are primitives; browser's `#?(:clj ...)` interop
