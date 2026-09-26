@@ -12,8 +12,10 @@
   compile it, the verifier re-derives its sealed answer, and the linux-static
   packager needs no handler for it.
 
-  Pinned beside the admission: an ex-info (`:document`) error is still refused
-  on native by name -- native has no `:document` yet (gap 2)."
+  Pinned beside the admission: an abort across an export boundary is refused
+  on native as everywhere. An ex-info (`:document`) error was refused here
+  until native had documents (ladder floor :native-document); it is admitted
+  since."
   (:require [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]
             [kotoba.compiler.limits :as limits]
@@ -66,13 +68,17 @@
           image (linux-static/package kexe profile {})]
       (is (= [] (vec (:grant image))))
       (is (:ok (linux-static-verifier/verify-image! kexe (:bytes image) profile {})))))
-  (testing "refused: a :document error (ex-info) -- native has no :document yet"
-    (let [message (refusal :aarch64-macos-kotoba-v1
+  (testing "admitted since :native-document: a :document error (ex-info) -- it was
+            refused by the compiler's typed-values literal until native had
+            documents (the gate is native-document-values-test)"
+    (let [kexe (:artifact (compiler/compile-source
                            "(defn- f [x :i64] :i64 (if (< x 0) (throw (ex-info \"neg\" {:x x})) x))
-                            (defn main [] :i64 (try (f -1) (catch e 7)))")]
-      ;; The compiler's own refusal; `bin/amu` names the feature on top of it
-      ;; ("native target aarch64-macos does not qualify `document-keyword`").
-      (is (= (str "typed values currently require the kotoba-script web target, "
-                  "typed Wasm/CLJS target, or the qualified native one-word "
-                  "string/record/variant/option/result slice")
-             message)))))
+                            (defn main [] :i64 (try (f -1) (catch e 7)))"
+                           :aarch64-macos-kotoba-v1))]
+      (is (= 7 (n (:value kexe))))
+      (is (map? (verifier/verify-artifact! kexe)))))
+  (testing "refused: an abort across an export boundary, on native as everywhere"
+    (is (= "unhandled abort at export boundary; catch it with try: g"
+           (refusal :aarch64-macos-kotoba-v1
+                    "(defn g [x :i64] :i64 (if (< x 0) (throw \"e\") x))
+                     (defn main [] :i64 (try (g 1) (catch e 0)))")))))

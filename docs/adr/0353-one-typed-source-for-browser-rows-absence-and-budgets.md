@@ -196,7 +196,18 @@ like the rest:
   the compile-time oracle sealed nothing for an `:abort` row. Both ISAs now
   compile an aborting program and agree with the reference, ESM and Wasm; the
   linux-static packager needs no handler for the ability. An ex-info error is
-  a `:document` and is still refused on native.
+  a `:document`; native admits it since `:native-document`.
+- `:native-document` (gate `native-document-values-test`, landed 2026-09-26):
+  a `:document` on native. It is the document's canonical EDN text in the
+  string handle native documents already were (the dataspace provider's
+  boundary), so structural equality is `string=?`, and every operation is a
+  rewrite onto the existing string slots plus private helpers kotoba-native
+  appends (`kotoba.native.document`) -- no ABI word, no loader code. Bounds
+  (32 items, depth 8, 4096 nodes) are re-derived in emitted code and trap
+  through the native trap path. 1,000 random document expressions answer the
+  same on restricted ESM and the kexe loader on both ISAs (and the KIR
+  reference on 640 of them). Still refused on native, by name: f64 documents,
+  `document-sha256`, `document-print` / `document-read`.
 
 ## What stays refused, permanently
 
