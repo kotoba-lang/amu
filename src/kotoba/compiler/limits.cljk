@@ -159,7 +159,10 @@
         :var kotoba.kir.value/string-value-byte-limit}
        {:repo "kotoba-lang/kotoba-script",
         :path "src/kotoba/script.cljk",
-        :var kotoba.script/max-string-value-bytes}]},
+        :var kotoba.script/max-string-value-bytes}
+       {:repo "kotoba-lang/amu",
+        :path "tools/kexe_loader.c",
+        :pattern "#define KEXE_BOUNDARY_STRING_BYTES (\\d+)u"}]},
      :vector-items
      {:value 16777216,
       :why
@@ -175,7 +178,10 @@
         :scale 1048576}
        {:repo "kotoba-lang/amu",
         :path "tools/kexe_loader_windows.c",
-        :pattern "#define KEXE_VECTOR_LENGTH_LIMIT (\\d+)u"}]},
+        :pattern "#define KEXE_VECTOR_LENGTH_LIMIT (\\d+)u"}
+       {:repo "kotoba-lang/amu",
+        :path "tools/kexe_loader.c",
+        :pattern "#define KEXE_BOUNDARY_VECTOR_ITEMS (\\d+)u"}]},
      :document-utf8-bytes
      {:value 65536,
       :why
@@ -564,7 +570,7 @@
     :language/boundary
     {:status :enforced,
      :why
-     "The ADR's default traversal budget for an untrusted value (an entry argument, a capability result, a decoded value), replacing the per-value 64-node / depth-12 bounds that were re-checked on every internal value. Enforced since 2026-09-24 by P2 (reference interpreter) and P3 (ESM, cljs backend, browser Wasm host): one explicit-stack iterative walk per boundary crossing, named traps :budget/boundary-nodes and :budget/boundary-bytes. A caller may name its own budget per run (osaho execute :boundary-budget).",
+     "The ADR's default traversal budget for an untrusted value (an entry argument, a capability result, a decoded value), replacing the per-value 64-node / depth-12 bounds that were re-checked on every internal value. Enforced since 2026-09-24 by P2 (reference interpreter) and P3 (ESM, cljs backend, browser Wasm host): one explicit-stack iterative walk per boundary crossing, named traps :budget/boundary-nodes and :budget/boundary-bytes. A caller may name its own budget per run (osaho execute :boundary-budget). The native kexe loader enforces it on an export call's arguments since 2026-09-26 (amu tools/kexe_loader_boundary.kotoba; KEXE_BOUNDARY_NODES / _BYTES narrow it per run).",
      :traversal-nodes
      {:value 65536,
       :why
@@ -581,7 +587,10 @@
         :pattern "const BOUNDARY_TRAVERSAL_NODES = (\\d+);"}
        {:repo "kotoba-lang/amu",
         :path "src/kotoba/compiler/backend/cljs.cljk",
-        :pattern "\\(when \\(> nodes (\\d+)\\)"}]},
+        :pattern "\\(when \\(> nodes (\\d+)\\)"}
+       {:repo "kotoba-lang/amu",
+        :path "tools/kexe_loader.c",
+        :pattern "#define KEXE_BOUNDARY_TRAVERSAL_NODES (\\d+)u"}]},
      :traversal-bytes
      {:value 1048576,
       :why
@@ -598,7 +607,10 @@
         :pattern "const BOUNDARY_TRAVERSAL_BYTES = (\\d+);"}
        {:repo "kotoba-lang/amu",
         :path "src/kotoba/compiler/backend/cljs.cljk",
-        :pattern "\\(when \\(> bytes (\\d+)\\)"}]}},
+        :pattern "\\(when \\(> bytes (\\d+)\\)"}
+       {:repo "kotoba-lang/amu",
+        :path "tools/kexe_loader.c",
+        :pattern "#define KEXE_BOUNDARY_TRAVERSAL_BYTES (\\d+)u"}]}},
     :profile/reference
     {:why
      "osaho's KIR interpreter: the oracle every target is compared against at compile time. Set per run through kotoba.kir/execute :fuel :cells :bytes :frames.",

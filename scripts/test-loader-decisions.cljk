@@ -9,7 +9,8 @@
      fails here. Prints the per-class line counts, before (the loader at
      OLD-REV) and after.
   2. REGION. The KEXE-DECISIONS-GENERATED region names the sha256 of all
-     three Kotoba sources (the handlers' since 2026-09-25); a source edited without regenerating fails here.
+     four Kotoba sources (the handlers' since 2026-09-25, the export boundary
+     codec's since 2026-09-26); a source edited without regenerating fails here.
      `--full` also regenerates the region and compares it byte for byte
      (scripts/gen-loader-decisions.cljk --check; compiles, ~2 minutes).
   3. DIFFERENTIAL. The decision functions of the loader at OLD-REV (the last
@@ -162,7 +163,9 @@
   (let [text (lib/read-text loader-path)]
     (doseq [[label file] [["tools/kexe_loader_decisions.kotoba sha256 " "kexe_loader_decisions.kotoba"]
                           ["tools/kexe_loader_names.kotoba     sha256 " "kexe_loader_names.kotoba"]
-                          ["tools/linux_static_handlers.kotoba sha256 " "linux_static_handlers.kotoba"]]]
+                          ["tools/linux_static_handlers.kotoba sha256 " "linux_static_handlers.kotoba"]
+                          ;; the export boundary codec (superproject adr-2609242330)
+                          ["tools/kexe_loader_boundary.kotoba  sha256 " "kexe_loader_boundary.kotoba"]]]
       (let [sha (lib/sha256 (lib/join lib/root "tools" file))]
         (when-not (str/includes? text (str label sha))
           (fail! (str file " changed since the region was generated -- run scripts/gen-loader-decisions.cljk")))))

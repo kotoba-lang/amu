@@ -7,6 +7,8 @@
     tools/kexe_loader_names.kotoba      trap names and result type names (a)
     tools/linux_static_handlers.kotoba  the capability handlers' decisions (b),
                                         the same code the Linux static image runs
+    tools/kexe_loader_boundary.kotoba   the export boundary codec: constants (a)
+                                        + predicates (b), this loader only
 
   (a) DATA: every constant and name is EVALUATED -- compiled by amu for this
       host, extracted, and run under a loader built from the current
@@ -39,6 +41,11 @@
 ;; loader and the static image answer every handler question -- spawn,
 ;; entropy, the :fs/app-data forms -- from one source.
 (def handlers-path (lib/join lib/root "tools" "linux_static_handlers.kotoba"))
+;; The export boundary codec (superproject adr-2609242330): which wire token a
+;; declared argument slot admits, per-leaf bounds, the traversal budget.
+;; Loader-only: a static image has no export boundary, so C1's bytes -- which
+;; that image embeds verbatim -- stay as they were.
+(def boundary-path (lib/join lib/root "tools" "kexe_loader_boundary.kotoba"))
 (def amu (lib/join lib/root "bin" "amu"))
 (def begin-marker "/* KEXE-DECISIONS-GENERATED BEGIN")
 (def end-marker "/* KEXE-DECISIONS-GENERATED END */")
@@ -72,6 +79,21 @@
    [20 "KEXE_SCOPE_ENTRIES" :int]
    [21 "KEXE_PATH_BYTES" :u]])
 
+;; Index -> C name of (boundary-constant index), tools/kexe_loader_boundary.
+;; The last three are the per-leaf bounds the codec's decisions hold a leaf
+;; to; the loader does not read them, they are emitted so kotoba-lang
+;; lang/limits.edn can list them as copies (value_bounds_agreement_test).
+(def boundary-constants
+  [[0 "KEXE_BOUNDARY_TRAVERSAL_NODES" :u]
+   [1 "KEXE_BOUNDARY_TRAVERSAL_BYTES" :u]
+   [2 "KEXE_EXIT_BOUNDARY_REFUSED" :int]
+   [3 "KEXE_EXIT_RESULT_VECTOR" :int]
+   [4 "KEXE_EXIT_RESULT_BYTES" :int]
+   [5 "KEXE_EXIT_RESULT_OPTION_STRING" :int]
+   [6 "KEXE_BOUNDARY_VECTOR_ITEMS" :u]
+   [7 "KEXE_BOUNDARY_STRING_BYTES" :u]
+   [8 "KEXE_BOUNDARY_BYTES_ITEMS" :u]])
+
 ;; Index -> C name of (trap-line index). The table is emitted whole; these
 ;; names are the #defines the loader indexes it with.
 (def trap-lines
@@ -83,10 +105,14 @@
    "SANDBOX_FILESYSTEM" "SANDBOX_NETWORK" "SANDBOX_PROCESS" "VALUE_PREFIX"
    "CAP_SPAWN_ARGV_BUDGET" "CAP_SPAWN_PROGRAM_NOT_GRANTED" "CAP_SPAWN_PATH_LOOKUP_DENIED"
    "CAP_SPAWN_OUTPUT_BUDGET" "CAP_SPAWN_TIMEOUT" "CAP_SPAWN_EXEC_FAILED"
-   "CAP_SPAWN_ISOLATION_UNAVAILABLE" "CAP_SPAWN_SETUP_FAILED" "CAP_ENTROPY_UNAVAILABLE"])
+   "CAP_SPAWN_ISOLATION_UNAVAILABLE" "CAP_SPAWN_SETUP_FAILED" "CAP_ENTROPY_UNAVAILABLE"
+   "RESULT_VECTOR" "RESULT_BYTES" "RESULT_OPTION_STRING" "BOUNDARY_PREFIX"])
 
 (def value-trap-count 12)
-(def result-type-count 4)
+(def result-type-count 7)
+;; boundary-kind-name / boundary-reason-name: index 0 has no name.
+(def boundary-kind-count 11)
+(def boundary-reason-count 12)
 
 (defn fail! [message]
   (.error js/console (str "gen-loader-decisions: " message))
@@ -171,20 +197,32 @@
        (map #(str "  " (str/join ", " %) ","))
        (str/join "\n")))
 
-(defn region [{:keys [constant-values trap-texts value-names result-names code source-shas]}]
+(defn- name-table [c-name count-name names]
+  (str "#define " count-name " " (count names) "u\n"
+       "static const char *const " c-name "[" count-name "] = {\n  NULL,\n"
+       (str/join "\n" (map #(str "  " (c-string %) ",") (rest names)))
+       "\n};\n\n"))
+
+(defn region [{:keys [constant-values boundary-values trap-texts value-names result-names
+                      kind-names reason-names code source-shas]}]
   (str begin-marker " -- written by scripts/gen-loader-decisions.cljk; do not\n"
        " * edit by hand. Regenerate after changing either source:\n"
        " *   tools/kexe_loader_decisions.kotoba sha256 " (:decisions source-shas) "\n"
        " *   tools/kexe_loader_names.kotoba     sha256 " (:names source-shas) "\n"
        " *   tools/linux_static_handlers.kotoba sha256 " (:handlers source-shas) "\n"
+       " *   tools/kexe_loader_boundary.kotoba  sha256 " (:boundary source-shas) "\n"
        " * The DECISIONS of this loader are Kotoba (superproject adr-2609251400 C1):\n"
        " * the defines and tables below are those modules' answers, evaluated\n"
        " * natively (kind (a), data), and the byte arrays are the decisions module\n"
        " * compiled by amu for each ISA (kind (b), code the loader maps read+execute\n"
        " * and calls: kexe_cap_admitted / kexe_decide), and the capability handlers'\n"
        " * decisions module compiled the same way (kexe_handler_decide; the Linux\n"
-       " * static image carries the identical bytes). */\n"
+       " * static image carries the identical bytes), and the export boundary codec's\n"
+       " * decisions module (kexe_boundary_decide; this loader only). */\n"
        (str/join "\n" (for [[[_ name fmt] value] (map vector constants constant-values)]
+                        (str "#define " name " " (spell value fmt))))
+       "\n"
+       (str/join "\n" (for [[[_ name fmt] value] (map vector boundary-constants boundary-values)]
                         (str "#define " name " " (spell value fmt))))
        "\n\n"
        (str/join "\n" (map-indexed (fn [i name] (str "#define KEXE_TRAP_LINE_" name " " i "u"))
@@ -204,9 +242,11 @@
        "static const char *const kexe_result_type_names[KEXE_RESULT_TYPE_COUNT] = {\n"
        (str/join "\n" (map #(str "  " (c-string %) ",") result-names))
        "\n};\n\n"
+       (name-table "kexe_boundary_kind_names" "KEXE_BOUNDARY_KIND_COUNT" kind-names)
+       (name-table "kexe_boundary_reason_names" "KEXE_BOUNDARY_REASON_COUNT" reason-names)
        (str/join "\n"
                  (for [[isa guard] [["aarch64" "__aarch64__"] ["x86_64" "__x86_64__"]]
-                       :let [{:keys [cap-admitted decide bytes handlers]} (get code isa)]]
+                       :let [{:keys [cap-admitted decide bytes handlers boundary]} (get code isa)]]
                    (str "#if defined(" guard ")\n"
                         "#define KEXE_DECISIONS_CAP_ADMITTED_OFFSET " cap-admitted "u\n"
                         "#define KEXE_DECISIONS_DECIDE_OFFSET " decide "u\n"
@@ -216,6 +256,10 @@
                         "#define KEXE_HANDLER_DECISIONS_DECIDE_OFFSET " (:offset handlers) "u\n"
                         "static const uint8_t kexe_handler_decisions_code[" (.-length (:bytes handlers)) "] = {\n"
                         (byte-rows (:bytes handlers))
+                        "\n};\n"
+                        "#define KEXE_BOUNDARY_DECISIONS_DECIDE_OFFSET " (:offset boundary) "u\n"
+                        "static const uint8_t kexe_boundary_decisions_code[" (.-length (:bytes boundary)) "] = {\n"
+                        (byte-rows (:bytes boundary))
                         "\n};\n#endif")))
        "\n" end-marker))
 
@@ -238,6 +282,21 @@
             trap-fn (extract! tmp names-kexe "trap-line")
             value-fn (extract! tmp names-kexe "value-trap-name")
             result-fn (extract! tmp names-kexe "result-type-name")
+            kind-fn (extract! tmp names-kexe "boundary-kind-name")
+            reason-fn (extract! tmp names-kexe "boundary-reason-name")
+            boundary {"aarch64" (compile! tmp boundary-path "aarch64")
+                      "x86_64" (compile! tmp boundary-path "x86_64")}
+            boundary-constant-fn (extract! tmp (get boundary host) "boundary-constant")
+            boundary-values (mapv (fn [[k]] (eval-i64! loader boundary-constant-fn host k))
+                                  boundary-constants)
+            _ (when-not (every? #(>= (js/Number %) 0) boundary-values)
+                (fail! (str "a boundary constant index has no answer: "
+                            (pr-str (map str boundary-values)))))
+            kind-names (mapv #(eval-string! loader kind-fn host %) (range boundary-kind-count))
+            reason-names (mapv #(eval-string! loader reason-fn host %) (range boundary-reason-count))
+            _ (when-not (and (= "" (first kind-names)) (every? seq (rest kind-names))
+                             (= "" (first reason-names)) (every? seq (rest reason-names)))
+                (fail! "a boundary name index has no answer"))
             constant-values (mapv (fn [[k]] (eval-i64! loader constant-fn host k)) constants)
             _ (when-not (every? #(>= (js/Number %) 0) constant-values)
                 (fail! (str "a constant index has no answer: " (pr-str (map str constant-values)))))
@@ -250,17 +309,25 @@
             code (into {} (for [isa ["aarch64" "x86_64"]
                                 :let [cap (extract! tmp (get decisions isa) "cap-admitted")
                                       decide (extract! tmp (get decisions isa) "decide")
-                                      handlers (extract! tmp (compile! tmp handlers-path isa) "decide")]]
+                                      handlers (extract! tmp (compile! tmp handlers-path isa) "decide")
+                                      bdecide (extract! tmp (get boundary isa) "boundary-decide")
+                                      bconst (extract! tmp (get boundary isa) "boundary-constant")]]
                             (do (lib/ensure! (.equals (:bytes cap) (:bytes decide))
                                              "extract-native answered two different code blobs for one module")
                                 [isa {:cap-admitted (:offset cap) :decide (:offset decide)
                                       :bytes (:bytes cap)
-                                      :handlers {:offset (:offset handlers) :bytes (:bytes handlers)}}])))]
-        (region {:constant-values constant-values :trap-texts trap-texts
+                                      :handlers {:offset (:offset handlers) :bytes (:bytes handlers)}
+                                      :boundary (do (lib/ensure! (.equals (:bytes bdecide) (:bytes bconst))
+                                                                 "extract-native answered two different code blobs for the boundary module")
+                                                    {:offset (:offset bdecide) :bytes (:bytes bdecide)})}])))]
+        (region {:constant-values constant-values :boundary-values boundary-values
+                 :kind-names kind-names :reason-names reason-names
+                 :trap-texts trap-texts
                  :value-names value-names :result-names result-names :code code
                  :source-shas {:decisions (lib/sha256 decisions-path)
                                :names (lib/sha256 names-path)
-                               :handlers (lib/sha256 handlers-path)}}))
+                               :handlers (lib/sha256 handlers-path)
+                               :boundary (lib/sha256 boundary-path)}}))
       (finally (lib/remove-tree! tmp)))))
 
 (let [check? (some #{"--check"} *command-line-args*)
