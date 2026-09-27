@@ -77,7 +77,13 @@
    [18 "KEXE_STRING_VALUE_LIMIT" :u]
    [19 "KEXE_BYTES_VALUE_LIMIT" :u]
    [20 "KEXE_SCOPE_ENTRIES" :int]
-   [21 "KEXE_PATH_BYTES" :u]])
+   [21 "KEXE_PATH_BYTES" :u]
+   ;; native TCP, wires 43..47 (root ADR-2609261900 stage B)
+   [22 "KEXE_NET_HANDLES" :u]
+   [23 "KEXE_NET_BYTES" :u]
+   [24 "KEXE_NET_TIMEOUT_MS_MAX" :u]
+   [25 "KEXE_NET_WRITE_DEADLINE_MS" :u]
+   [26 "KEXE_NET_SCOPE_ENTRIES" :u]])
 
 ;; Index -> C name of (boundary-constant index), tools/kexe_loader_boundary.
 ;; The last three are the per-leaf bounds the codec's decisions hold a leaf
@@ -106,13 +112,19 @@
    "CAP_SPAWN_ARGV_BUDGET" "CAP_SPAWN_PROGRAM_NOT_GRANTED" "CAP_SPAWN_PATH_LOOKUP_DENIED"
    "CAP_SPAWN_OUTPUT_BUDGET" "CAP_SPAWN_TIMEOUT" "CAP_SPAWN_EXEC_FAILED"
    "CAP_SPAWN_ISOLATION_UNAVAILABLE" "CAP_SPAWN_SETUP_FAILED" "CAP_ENTROPY_UNAVAILABLE"
-   "RESULT_VECTOR" "RESULT_BYTES" "RESULT_OPTION_STRING" "BOUNDARY_PREFIX"])
+   "RESULT_VECTOR" "RESULT_BYTES" "RESULT_OPTION_STRING" "BOUNDARY_PREFIX"
+   "CAP_NET_PREFIX"])
 
 (def value-trap-count 12)
 (def result-type-count 7)
 ;; boundary-kind-name / boundary-reason-name: index 0 has no name.
 (def boundary-kind-count 11)
 (def boundary-reason-count 12)
+;; native TCP: net-capability-name / net-refusal-name / net-answer-word, index
+;; 0 has no name.
+(def net-capability-count 6)
+(def net-refusal-count 10)
+(def net-answer-count 6)
 
 (defn fail! [message]
   (.error js/console (str "gen-loader-decisions: " message))
@@ -204,7 +216,8 @@
        "\n};\n\n"))
 
 (defn region [{:keys [constant-values boundary-values trap-texts value-names result-names
-                      kind-names reason-names code source-shas]}]
+                      kind-names reason-names net-cap-names net-refusal-names net-answer-words
+                      code source-shas]}]
   (str begin-marker " -- written by scripts/gen-loader-decisions.cljk; do not\n"
        " * edit by hand. Regenerate after changing either source:\n"
        " *   tools/kexe_loader_decisions.kotoba sha256 " (:decisions source-shas) "\n"
@@ -244,6 +257,9 @@
        "\n};\n\n"
        (name-table "kexe_boundary_kind_names" "KEXE_BOUNDARY_KIND_COUNT" kind-names)
        (name-table "kexe_boundary_reason_names" "KEXE_BOUNDARY_REASON_COUNT" reason-names)
+       (name-table "kexe_net_capability_names" "KEXE_NET_CAPABILITY_COUNT" net-cap-names)
+       (name-table "kexe_net_refusal_names" "KEXE_NET_REFUSAL_COUNT" net-refusal-names)
+       (name-table "kexe_net_answer_words" "KEXE_NET_ANSWER_COUNT" net-answer-words)
        (str/join "\n"
                  (for [[isa guard] [["aarch64" "__aarch64__"] ["x86_64" "__x86_64__"]]
                        :let [{:keys [cap-admitted decide bytes handlers boundary]} (get code isa)]]
@@ -284,6 +300,9 @@
             result-fn (extract! tmp names-kexe "result-type-name")
             kind-fn (extract! tmp names-kexe "boundary-kind-name")
             reason-fn (extract! tmp names-kexe "boundary-reason-name")
+            net-cap-fn (extract! tmp names-kexe "net-capability-name")
+            net-refusal-fn (extract! tmp names-kexe "net-refusal-name")
+            net-answer-fn (extract! tmp names-kexe "net-answer-word")
             boundary {"aarch64" (compile! tmp boundary-path "aarch64")
                       "x86_64" (compile! tmp boundary-path "x86_64")}
             boundary-constant-fn (extract! tmp (get boundary host) "boundary-constant")
@@ -297,6 +316,12 @@
             _ (when-not (and (= "" (first kind-names)) (every? seq (rest kind-names))
                              (= "" (first reason-names)) (every? seq (rest reason-names)))
                 (fail! "a boundary name index has no answer"))
+            net-cap-names (mapv #(eval-string! loader net-cap-fn host %) (range net-capability-count))
+            net-refusal-names (mapv #(eval-string! loader net-refusal-fn host %) (range net-refusal-count))
+            net-answer-words (mapv #(eval-string! loader net-answer-fn host %) (range net-answer-count))
+            _ (when-not (every? (fn [ns] (and (= "" (first ns)) (every? seq (rest ns))))
+                                [net-cap-names net-refusal-names net-answer-words])
+                (fail! "a native TCP name index has no answer"))
             constant-values (mapv (fn [[k]] (eval-i64! loader constant-fn host k)) constants)
             _ (when-not (every? #(>= (js/Number %) 0) constant-values)
                 (fail! (str "a constant index has no answer: " (pr-str (map str constant-values)))))
@@ -322,6 +347,8 @@
                                                     {:offset (:offset bdecide) :bytes (:bytes bdecide)})}])))]
         (region {:constant-values constant-values :boundary-values boundary-values
                  :kind-names kind-names :reason-names reason-names
+                 :net-cap-names net-cap-names :net-refusal-names net-refusal-names
+                 :net-answer-words net-answer-words
                  :trap-texts trap-texts
                  :value-names value-names :result-names result-names :code code
                  :source-shas {:decisions (lib/sha256 decisions-path)

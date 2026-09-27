@@ -1,5 +1,6 @@
 (ns kexe-loader-names
-  {:kotoba/export [trap-line value-trap-name result-type-name boundary-kind-name boundary-reason-name]})
+  {:kotoba/export [trap-line value-trap-name result-type-name boundary-kind-name boundary-reason-name
+                  net-capability-name net-refusal-name net-answer-word]})
 
 ;; The fixed text of every trap the POSIX kexe loader names, and the result
 ;; type names it admits (superproject adr-2609251400 C1, kind (a): DATA).
@@ -64,6 +65,9 @@
     (= k 39) "KEXE_TRAP {:kind :result :reason :invalid-bytes}\n"
     (= k 40) "KEXE_TRAP {:kind :result :reason :invalid-option-string}\n"
     (= k 41) "KEXE_TRAP {:kind :boundary :reason :"
+    ;; Native TCP (wires 43..47): the prefix of a refusal BY NAME; the loader
+    ;; appends net-capability-name, " :reason :", net-refusal-name and "}".
+    (= k 42) "KEXE_TRAP {:kind :capability :capability :"
     :else ""))
 
 ;; ABI v11 value traps: the index a refusing host call records, the name
@@ -135,3 +139,43 @@
     (= k 11) "boundary/unsupported-kind"
     :else ""))
 
+
+
+;; Native TCP (wires 43..47, root ADR-2609261900 stage B): the capability a
+;; refusal names, by wire - 42 (0 has no name).
+(defn net-capability-name [k] :string
+  (cond
+    (= k 1) "net/listen"
+    (= k 2) "net/accept"
+    (= k 3) "net/dial"
+    (= k 4) "net/read"
+    (= k 5) "net/write"
+    :else ""))
+
+;; The reason of a native TCP refusal, by the index
+;; kexe_loader_decisions.kotoba's net ops answer (0 is admitted). kotoba-lang
+;; lang/capability-catalog.edn lists, per wire, which of these it can raise.
+(defn net-refusal-name [k] :string
+  (cond
+    (= k 1) "net/malformed-request"
+    (= k 2) "net/address-not-granted"
+    (= k 3) "net/handle-out-of-range"
+    (= k 4) "net/handle-not-open"
+    (= k 5) "net/handle-budget"
+    (= k 6) "net/byte-budget"
+    (= k 7) "net/timeout-budget"
+    (= k 8) "net/listen-failed"
+    (= k 9) "net/setup-failed"
+    :else ""))
+
+;; The words a native TCP answer uses for an ENVIRONMENTAL outcome -- not a
+;; guest bug, so not a refusal. None can be read as a handle (decimal), as
+;; read bytes (lowercase hex) or as a count.
+(defn net-answer-word [k] :string
+  (cond
+    (= k 1) "timeout"
+    (= k 2) "refused"
+    (= k 3) "unreachable"
+    (= k 4) "reset"
+    (= k 5) "closed"
+    :else ""))
