@@ -1,0 +1,90 @@
+(ns kotoba.compiler.function-value-test
+  "ADR 0353 floor :function-values.
+
+  Measured 2026-09-27 (floor :stored-closures): a closure's static type was
+  `:i64` -- a `[:fn ...]` result contract erased to it -- so `(+ f 1)`,
+  `(+ (make) 4)` and `(= f g)` were admitted, and a `[:fn ...]` record field
+  refused a fn literal with `expected [:fn [[:i64] :i64]], got i64`.
+
+  Now, in kotoba-sema: the closure analysis that already knew which words are
+  closures (`infer-closure-refinements`: a let-bound fn, a call whose result
+  is a `[:fn ...]` contract, a `[:fn ...]` record field) refuses every number
+  operation and `=` over one by name. A fn literal written where a record
+  field is declared `[:fn ...]` is lifted under that contract -- its arities
+  and parameter types are the clause's -- and anything else in that field is
+  refused. The closure stays the one-word handle `(lambda-id, captures)` the
+  dispatchers take; KIR, which has no function type, receives the field as
+  `:i64`, the way a `[:fn ...]` result or parameter contract already reaches
+  it. A module with no such field keeps its HIR (and CIDs) exactly.
+
+  Not here, and why the floor was split: a function type that DECLARES its
+  effect row. A stored closure's effects are in the caller's row
+  (:stored-closures), but `[:fn ...]` has no effect-row component to bound
+  them by; that is floor :function-effect-rows."
+  (:require [clojure.test :refer [deftest is testing]]
+            [kotoba.compiler.core :as compiler]
+            [kotoba.kir :as ir]
+            [kotoba.sema :as sema]))
+
+(defn- run-main [source]
+  (#?(:clj long :cljs js/Number)
+   (ir/execute (ir/lower (sema/analyze (str "(ns t)\n" source))) 'main [])))
+
+(defn- refusal [source]
+  (try (ir/lower (sema/analyze (str "(ns t)\n" source))) nil
+       (catch #?(:clj clojure.lang.ExceptionInfo :cljs :default) error
+         (ex-message error))))
+
+(def ^:private h "[:record :t/h [[:f [:fn [[:i64] :i64]]] [:n :i64]]]")
+
+(def ^:private in-field
+  (str "(defn main [] :i64 (let [k 10 r (record-new " h " (fn [x] (+ x k)) 7)]"
+       " ((record-get " h " r :f) 5)))"))
+
+(def ^:private not-a-number
+  "a function value is not a number: + over a closure is refused; call it instead (ADR 0353)")
+
+(deftest function-value-in-record-test
+  (testing "admitted: a fn literal where a [:fn ...] record field is declared"
+    (is (= 2 (run-main (str "(defn main [] :i64 ((:f (record-new " h " (fn [x] (+ x 1)) 7)) 1))"))))
+    (is (= 15 (run-main in-field)))
+    (is (= 15 (run-main (str "(defn main [] :i64 (let [r (record-new " h " (fn [x] (+ x 1)) 7)"
+                             " s (record-assoc " h " r :f (fn [x] (* x 3)))]"
+                             " ((record-get " h " s :f) 5)))")))))
+  (testing "admitted: a closure is still called, from a local and from a [:fn ...] result"
+    (is (= 3 (run-main "(defn main [] :i64 (let [f (fn [x] (+ x 1))] (f 2)))")))
+    (is (= 5 (run-main (str "(defn- make [] [:fn [[:i64] :i64]] (fn [x] (+ x 1)))\n"
+                            "(defn main [] :i64 ((make) 4))")))))
+  (testing "refused: a closure is not a number"
+    (is (= not-a-number
+           (refusal "(defn main [] :i64 (let [f (fn [x] (+ x 1))] (+ f 1)))")))
+    (is (= not-a-number
+           (refusal (str "(defn- make [] [:fn [[:i64] :i64]] (fn [x] (+ x 1)))\n"
+                         "(defn main [] :i64 (+ (make) 4))"))))
+    (is (= not-a-number
+           (refusal (str "(defn main [] :i64 (let [r (record-new " h " (fn [x] (+ x 1)) 7)]"
+                         " (+ (record-get " h " r :f) 1)))"))))
+    (is (= "a function value is not a number: < over a closure is refused; call it instead (ADR 0353)"
+           (refusal "(defn main [] :bool (let [f (fn [x] (+ x 1))] (< f 3)))"))))
+  (testing "refused: equality over closure handles"
+    (is (= (str "a function value has no equality: (= f g) would compare two closure handles,"
+                " and equality over handles stays refused (ADR 0353)")
+           (refusal "(defn main [] :bool (let [f (fn [x] (+ x 1)) g (fn [x] (+ x 2))] (= f g)))"))))
+  (testing "refused: a [:fn ...] field given what is not a fn literal of its clauses"
+    (is (= "expression type mismatch: expected [:fn [[:i64] :i64]], got i64"
+           (refusal (str "(defn main [] :i64 ((:f (record-new " h " 5 7)) 1))"))))
+    (is (= "a [:fn ...] record field takes a fn literal; this value is not a closure (ADR 0353)"
+           (refusal (str "(defn main [] :i64 ((:f (record-new " h " (pair 1 0) 7)) 1))"))))
+    (is (= "fn arities do not match the declared callable result contract"
+           (refusal (str "(defn main [] :i64 ((:f (record-new " h " (fn [x y] (+ x y)) 7)) 1))")))))
+  (testing "the closure is the one-word handle below the language: KIR sees the field as :i64"
+    (let [hir (sema/analyze (str "(ns t)\n" in-field))
+          main (first (filter #(= 'main (:name %)) (:functions hir)))]
+      (is (re-find #"\[:record :t/h \[\[:f :i64\] \[:n :i64\]\]\]" (pr-str (:body main))))
+      (is (not (re-find #":fn" (pr-str (:body main)))))))
+  ;; `amu compile --target aarch64-macos` reaches the compiler as
+  ;; :aarch64-kotoba-v1.
+  (testing "native: both kernel-side targets compile a fn literal in a [:fn ...] field"
+    (doseq [target [:x86_64-aiueos-kernel-v1 :aarch64-kotoba-v1]]
+      (is (pos? (count (:code (:artifact (compiler/compile-source (str "(ns t)\n" in-field) target)))))
+          (str target)))))

@@ -83,8 +83,17 @@
   ;; a closure are admitted; that is what :function-values still owes.
   {:id :stored-closures :gate "stored-closure-in-record-and-vector-test"
    :goal "a closure stored as a map-literal field or vector element is a program, not the ADR 0352 internal error: called out of the record or vector on the KIR interpreter and compiled for both native targets; its capability is in the caller's effect row; a stored closure is never truthy"}
+  ;; :function-values split 2026-09-27 (second time). Measured: refusing
+  ;; number operations and equality on a closure, and a fn literal in a
+  ;; [:fn ...] field, are both decided by kotoba-sema's closure analysis
+  ;; (`infer-closure-refinements`) and the field's contract; the closure word
+  ;; stays the i64 handle KIR already has. A DECLARED effect row is a new
+  ;; component of `[:fn ...]` (validate-value-type!, the contract lift and
+  ;; the effect ceiling), not the same change -- floor :function-effect-rows.
   {:id :function-values :gate "function-value-in-record-test"
-   :goal "a function type carries its effect row, so a closure is not an i64: (+ f 1), (+ (make) 4) with make returning [:fn ...], and (= f g) are refused (admitted 2026-09-27), a fn literal is admitted where a [:fn ...] record field is declared (refused today: \"expected [:fn [[:i64] :i64]], got i64\"), and a closure is a one-word ABI v8 handle"}
+   :goal "a closure is a function, not a number: (+ f 1), (+ (make) 4) with make returning [:fn ...], (+ (:f r) 1) on a [:fn ...] field, any number operation and (= f g) are refused by name; a fn literal is admitted where a [:fn ...] record field is declared, lifted under that contract, and anything else there is refused; the closure stays the one-word (lambda-id, captures) handle, which KIR receives as :i64"}
+  {:id :function-effect-rows :gate "function-type-declares-its-effect-row-test"
+   :goal "[:fn ...] declares an effect row; a closure whose body exceeds the row of the contract it is lifted under is refused by name, and a caller's row is bounded by the rows of the function types it calls, not by the closures a module happens to lift"}
   {:id :code-units :gate "string-code-unit-primitives-test"
    :goal "string-code-unit-count, string-code-unit-at and subs over code units are primitives; count of a string stays refused"}
   {:id :hiccup-node :gate "hiccup-literal-is-node-adt-test"

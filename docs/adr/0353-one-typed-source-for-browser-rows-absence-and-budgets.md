@@ -181,10 +181,26 @@ Clojure it is today, the language gains:
    the KIR interpreter, compiles for `x86_64-aiueos-kernel-v1` and
    `aarch64-macos` (the aarch64-macos kexe printed 11 and 10 under
    `tools/kexe_loader.c`), and its capability is in the caller's effect row.
-   `:function-values` keeps the type: measured the same day, a closure's
-   static type is `:i64` (a `[:fn ...]` result contract erases to it), so
-   `(+ f 1)` and `(= f g)` on closures are admitted and a `[:fn ...]` record
-   field refuses a fn literal (`expected [:fn [[:i64] :i64]], got i64`).
+   `:function-values` (gate `function-value-in-record-test`, landed
+   2026-09-27): a closure is a function, not a number. kotoba-sema's closure
+   analysis (`infer-closure-refinements`), which already knew which words are
+   closures -- a let-bound fn, a call whose result is a `[:fn ...]` contract,
+   a `[:fn ...]` record field -- refuses every number operation over one
+   (`a function value is not a number`) and `=` (`a function value has no
+   equality`). A fn literal where a record field is declared `[:fn ...]` is
+   lifted under that contract; a number there, or a value that is not a
+   closure, is refused. The closure stays the one-word `(lambda-id,
+   captures)` handle; KIR, which has no function type, receives the field as
+   `:i64`, as a `[:fn ...]` result or parameter contract already reached it,
+   and a module with no such field keeps its HIR and CIDs. Both native
+   targets compile it, oracle-verified through the CLI; the aarch64-macos
+   kexe of a capturing fn stored in a `[:fn ...]` field and called with 5
+   printed 15 under `tools/kexe_loader.c`. Not yet: a closure reaching an unannotated parameter
+   is that parameter's `:i64` (the analysis propagates requirements toward
+   callers, not closure-ness toward callees), and a closure in a map-literal
+   field or vector element is an `:i64` field or element. A DECLARED effect
+   row is floor `:function-effect-rows`: `[:fn ...]` has no effect component
+   today, so a stored closure's effects are the caller's by inference only.
 5. **Strings by code unit, by name.** `count` of a string stays refused (it
    has two answers). `string-code-unit-count`, `string-code-unit-at` and
    `subs` over code units are primitives; browser's `#?(:clj ...)` interop
