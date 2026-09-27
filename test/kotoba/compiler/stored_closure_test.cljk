@@ -14,7 +14,8 @@
 
   What stays refused, pinned by the literal: a stored closure is never truthy;
   a `[:fn ...]` field is not given a fn literal while a fn literal is still an
-  i64 word statically (refused by name, not crashed); and the ADR 0352 inline
+  i64 word statically (refused by name, not crashed; admitted since floor
+  :function-values, which keeps a number there refused); and the ADR 0352 inline
   `filter` over a stored predicate, which trapped `:division-by-zero` at run
   time, is refused at compile time. Its effect is in the caller's row: a
   capability a stored closure calls is part of `main`'s effects.
@@ -65,10 +66,12 @@
   (testing "refused: a stored closure is never truthy"
     (is (= "if test is :i64, and a number is never truthy: compare it (for example (not= x 0)) or answer :bool"
            (refusal "(defn main [] :i64 (let [m {:f (fn [x] (+ x 1)) :n \"a\"}] (if (:f m) 1 0)))"))))
-  (testing "refused by name, not crashed: a [:fn ...] field given a fn literal"
+  ;; A fn literal in a [:fn ...] field is admitted since floor
+  ;; :function-values (function_value_test.cljk); a number there is not.
+  (testing "refused by name, not crashed: a [:fn ...] field given a number"
     (is (= "expression type mismatch: expected [:fn [[:i64] :i64]], got i64"
            (refusal (str "(defn main [] :i64 ((:f (record-new [:record :t/h [[:f [:fn [[:i64] :i64]]]]]"
-                         " (fn [x] (+ x 1)))) 1))")))))
+                         " 5)) 1))")))))
   (testing "refused at compile time: the ADR 0352 filter over a stored predicate no longer traps at run time"
     (is (= "if test is :i64, and a number is never truthy: compare it (for example (not= x 0)) or answer :bool"
            (refusal (str "(defn main [] :i64 (let [p (fn [x] (< x 3)) v [1 2 3 4]]"
