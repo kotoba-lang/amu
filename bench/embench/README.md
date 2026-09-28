@@ -39,8 +39,8 @@ the timing boundaries and repetition loops differ from the C suite. The
 `crc32` port compiles and returns the upstream expected `11433` on native
 AArch64. The `matmult-int` port checks all 400 cells and the `ud` port checks
 all 20 solution values on native AArch64. `amu test` is not the acceptance
-gate for this suite: it invokes JS and Wasm targets, and the requested
-qualification is through Amu's native compiler.
+gate for this suite: it invokes JS and Wasm targets. The evidence below uses
+Amu's native AArch64 output, with the compiler host disclosed separately.
 The `tarfind` port checks all generated filename bytes against a fingerprint
 from the upstream BEEBS random generator and checks each of five first-match
 positions. It represents one C benchmark iteration, without the TAR header's
