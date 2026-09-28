@@ -15,7 +15,7 @@ record. Do not label a translated workload as an official Embench score.
 | edn | unverified | port and compare full output |
 | huffbench | unverified | port and compare full output |
 | matmult-int | passed for all 400 output cells | timed-loop parity |
-| md5sum | unverified | port and compare full output |
+| md5sum | passed for all four MD5 state words | timed-loop parity |
 | nettle-aes | unverified | port and compare full output |
 | nettle-sha256 | unverified | port and compare full output |
 | nsichneu | unverified | port and compare full output |
@@ -29,7 +29,7 @@ record. Do not label a translated workload as an official Embench score.
 | wikisort | unverified | port and compare full output |
 | xgboost | unverified | port and compare full output |
 
-As of 2026-09-29, the four correctness ports live outside this Apache-licensed
+As of 2026-09-29, the five correctness ports live outside this Apache-licensed
 repository because they adapt upstream benchmark code with its own license.
 Their results are correctness probes, not representative performance samples:
 the timing boundaries and repetition loops differ from the C suite. The
@@ -42,6 +42,9 @@ The `tarfind` port checks all generated filename bytes against a fingerprint
 from the upstream BEEBS random generator and checks each of five first-match
 positions. It represents one C benchmark iteration, without the TAR header's
 unused fields or the full timing loop.
+The `md5sum` port checks all four state words after hashing the upstream
+1000-byte message. The expected words were independently computed from the
+message with a second MD5 implementation; their XOR is Embench's `0x33f673b4`.
 
 ## Qualification gate for each workload
 
