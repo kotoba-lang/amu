@@ -17,7 +17,7 @@ record. Do not label a translated workload as an official Embench score.
 | matmult-int | passed for all 400 output cells | timed-loop parity |
 | md5sum | passed for all four MD5 state words | timed-loop parity |
 | nettle-aes | unverified | port and compare full output |
-| nettle-sha256 | unverified | port and compare full output |
+| nettle-sha256 | passed for all 32 digest bytes | timed-loop parity |
 | nsichneu | unverified | port and compare full output |
 | picojpeg | unverified | port and compare full output |
 | qrduino | unverified | port and compare full output |
@@ -29,8 +29,11 @@ record. Do not label a translated workload as an official Embench score.
 | wikisort | unverified | port and compare full output |
 | xgboost | unverified | port and compare full output |
 
-As of 2026-09-29, the six correctness ports live outside this Apache-licensed
-repository because they adapt upstream benchmark code with its own license.
+As of 2026-09-29, seven correctness ports are in `ports/`, with their original
+license notices and the relevant license texts in `licenses/`. These benchmark
+programs are separate from the Apache-licensed compiler and are compiled as
+test inputs; they are not linked into Amu. `tarfind` includes a GPL-licensed
+BEEBS random generator adaptation, while its upstream benchmark body is MIT.
 Their results are correctness probes, not representative performance samples:
 the timing boundaries and repetition loops differ from the C suite. The
 `crc32` port compiles and returns the upstream expected `11433` on native
@@ -48,6 +51,22 @@ message with a second MD5 implementation; their XOR is Embench's `0x33f673b4`.
 The `aha-mont64` port reproduces unsigned 64-bit multiplication, remainder,
 extended GCD, and Montgomery multiplication. Both calculation paths agree
 with an independent modular exponentiation result for the upstream inputs.
+The `nettle-sha256` port checks all eight 32-bit state words, corresponding to
+the upstream 32-byte digest of its 56-byte input. `evidence/native-20260929-apple-m4.json`
+records the source and compiled artifact hashes for all seven native passes.
+
+The frontend used here includes kotoba-sema PR #89, pinned in `deps.edn`.
+It fixes dependent loops that capture a vector returned by an earlier loop.
+The small regression compiled through Amu's native AArch64 route and returned
+`2` under the native KEXE loader. This repository's pin must be revisited
+when that PR lands on kotoba-sema main.
+
+**Compiler-host boundary:** `bin/amu` is currently a Node.js launcher and
+the compiler runs as ClojureScript under nbb. The seven passes prove native
+AArch64 **output execution**, not JS-independent compilation. A requirement
+that the compiler itself run without JS remains unqualified. No Embench
+performance or compiler-host-independence claim may cite this evidence as a
+pass for that requirement.
 
 ## Qualification gate for each workload
 
@@ -60,6 +79,8 @@ with an independent modular exponentiation result for the upstream inputs.
    `bin/amu compile PORT.kotoba --target aarch64-macos --jvm-free`.
    Execute the native export and assert the expected result. Do not count
    `amu test` as evidence of native correctness; it exercises other targets.
+   Record the compiler host separately from the generated target; `--jvm-free`
+   does not mean JS-free.
 4. Only after correctness, align the benchmark loop, warmup, scale factor,
    hardware, compiler options, timing boundary, and code-size metric before
    reporting performance. Repeat samples and retain the raw results.

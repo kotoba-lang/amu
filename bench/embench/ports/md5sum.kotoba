@@ -1,0 +1,85 @@
+(ns embench.md5sum (:export [run test-md5sum]))
+
+;; Correctness port of Embench 2.0rc2 src/md5sum/md5.c, one benchmark_body
+;; iteration with MSG_SIZE=1000. Original source SPDX-License-Identifier: MIT.
+
+(defn- mask32 [n :i64] :i64 (bit-and n 4294967295))
+
+(defn- shifts [] :vector-i64
+  [7 12 17 22 7 12 17 22 7 12 17 22 7 12 17 22 5 9 14 20 5 9 14 20 5 9 14 20 5 9 14 20 4 11 16 23 4 11 16 23 4 11 16 23 4 11 16 23 6 10 15 21 6 10 15 21 6 10 15 21 6 10 15 21])
+
+(defn- constants [] :vector-i64
+  [3614090360 3905402710 606105819 3250441966 4118548399 1200080426 2821735955 4249261313 1770035416 2336552879 4294925233 2304563134 1804603682 4254626195 2792965006 1236535329 4129170786 3225465664 643717713 3921069994 3593408605 38016083 3634488961 3889429448 568446438 3275163606 4107603335 1163531501 2850285829 4243563512 1735328473 2368359562 4294588738 2272392833 1839030562 4259657740 2763975236 1272893353 4139469664 3200236656 681279174 3936430074 3572445317 76029189 3654602809 3873151461 530742520 3299628645 4096336452 1126891415 2878612391 4237533241 1700485571 2399980690 4293915773 2240044497 1873313359 4264355552 2734768916 1309151649 4149444226 3174756917 718787259 3951481745])
+
+(defn- message [] :vector-i64
+  (loop [bytes [] i 0]
+    (if (= i 1024) bytes
+      (let [byte (if (< i 1000) (bit-and i 255)
+                   (if (= i 1000) 128
+                     (if (= i 1016) 64
+                       (if (= i 1017) 31 0))))]
+        (recur (vector-conj bytes byte) (+ i 1))))))
+
+(defn- word-at [bytes :vector-i64 offset :i64 word :i64] :i64
+  (let [start (+ offset (* word 4))]
+    (+ (vector-at bytes start)
+       (i64-shift-left (vector-at bytes (+ start 1)) 8)
+       (i64-shift-left (vector-at bytes (+ start 2)) 16)
+       (i64-shift-left (vector-at bytes (+ start 3)) 24))))
+
+(defn- rotate-left [value :i64 amount :i64] :i64
+  (mask32 (bit-or (i64-shift-left (mask32 value) amount)
+                  (u64-shift-right (mask32 value) (- 32 amount)))))
+
+(defn- round-f [i :i64 b :i64 c :i64 d :i64] :i64
+  (if (< i 16)
+    (bit-or (bit-and b c) (bit-and (bit-not b) d))
+    (if (< i 32)
+      (bit-or (bit-and d b) (bit-and (bit-not d) c))
+      (if (< i 48)
+        (bit-xor (bit-xor b c) d)
+        (bit-xor c (bit-or b (bit-not d)))))))
+
+(defn- round-g [i :i64] :i64
+  (if (< i 16) i
+    (if (< i 32) (bit-and (+ (* 5 i) 1) 15)
+      (if (< i 48) (bit-and (+ (* 3 i) 5) 15)
+        (bit-and (* 7 i) 15)))))
+
+(defn- compress [bytes :vector-i64 offset :i64 h :vector-i64
+                r :vector-i64 k :vector-i64] :vector-i64
+  (let [a0 (vector-at h 0)
+        b0 (vector-at h 1)
+        c0 (vector-at h 2)
+        d0 (vector-at h 3)
+        state (loop [i 0 a a0 b b0 c c0 d d0]
+                (if (= i 64) [a b c d]
+                  (let [f (round-f i b c d)
+                        g (round-g i)
+                        sum (mask32 (+ (+ a f) (+ (vector-at k i)
+                                                 (word-at bytes offset g))))
+                        next-b (mask32 (+ b (rotate-left sum (vector-at r i))))]
+                    (recur (+ i 1) d next-b b c))))]
+    [(mask32 (+ a0 (vector-at state 0)))
+     (mask32 (+ b0 (vector-at state 1)))
+     (mask32 (+ c0 (vector-at state 2)))
+     (mask32 (+ d0 (vector-at state 3)))]))
+
+(defn- digest [] :vector-i64
+  (let [bytes (message)
+        r (shifts)
+        k (constants)]
+    (loop [offset 0 h [1732584193 4023233417 2562383102 271733878]]
+      (if (= offset 1024) h
+        (recur (+ offset 64) (compress bytes offset h r k))))))
+
+(defn run [token :i64] :i64
+  (if (= token 1)
+    (let [h (digest)]
+      (if (and (= (vector-at h 0) 2965236939)
+               (= (vector-at h 1) 3251557885)
+               (= (vector-at h 2) 994656994)
+               (= (vector-at h 3) 2043414624)) 1 0))
+    0))
+
+(defn test-md5sum [] :i64 (run 1))
