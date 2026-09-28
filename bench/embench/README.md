@@ -24,12 +24,12 @@ record. Do not label a translated workload as an official Embench score.
 | sglib-combined | unverified | port and compare full output |
 | slre | unverified | port and compare full output |
 | statemate | unverified | port and compare full output |
-| tarfind | unverified | port and compare full output |
+| tarfind | passed for generated filename bytes and five searches | timed-loop parity |
 | ud | passed for all 20 result values | timed-loop parity |
 | wikisort | unverified | port and compare full output |
 | xgboost | unverified | port and compare full output |
 
-As of 2026-09-29, the three correctness ports live outside this Apache-licensed
+As of 2026-09-29, the four correctness ports live outside this Apache-licensed
 repository because they adapt upstream benchmark code with its own license.
 Their results are correctness probes, not representative performance samples:
 the timing boundaries and repetition loops differ from the C suite. The
@@ -38,6 +38,10 @@ AArch64. The `matmult-int` port checks all 400 cells and the `ud` port checks
 all 20 solution values on native AArch64. `amu test` is not the acceptance
 gate for this suite: it invokes JS and Wasm targets, and the requested
 qualification is through Amu's native compiler.
+The `tarfind` port checks all generated filename bytes against a fingerprint
+from the upstream BEEBS random generator and checks each of five first-match
+positions. It represents one C benchmark iteration, without the TAR header's
+unused fields or the full timing loop.
 
 ## Qualification gate for each workload
 
