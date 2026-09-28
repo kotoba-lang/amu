@@ -4,7 +4,7 @@
 
   Under Kotoba a string IS its UTF-8 bytes and bytes are the `:bytes` type,
   so each leaf is a builtin (`string-byte-length`, `bytes-count`,
-  `string-from-utf8`). Under nbb a string is UTF-16 and bytes are a
+  `string-from-utf8`, `string-to-utf8`). Under nbb a string is UTF-16 and bytes are a
   Uint8Array, and each leaf is the Node call the compiler used before
   (Buffer.byteLength, .length, a fatal TextDecoder). Not abilities:
   measuring or decoding a value observes nothing.
@@ -37,28 +37,12 @@
   #?(:cljs (js/Buffer.from (clj->js (vec ints)))
      :default (bytes-from-vector-i64 ints)))
 
-(defn- byte-at-offset
-  "The byte at offset I of TEXT's UTF-8. Kotoba has no string-byte-at
-  builtin, so its reading asks string-find-byte which byte value sits at I
-  (at most 256 probes -- a reference reading, not a fast one)."
-  [#?@(:kotoba [text :string i :i64] :default [text i])] #?@(:kotoba [:i64])
-  (loop [b 0]
-    (if (or (> b 255) (= i #?(:kotoba (string-find-byte text b i)
-                              :cljs (let [at (.indexOf (.from js/Buffer text "utf8") b i)] at))))
-      b
-      (recur (inc b)))))
-
 (defn utf8-bytes
-  "TEXT's UTF-8 bytes. Under Kotoba there is no builtin for this direction
-  (string-from-utf8 is the other one), so the reading walks the bytes with
-  `byte-at-offset`."
+  "TEXT's UTF-8 bytes. The Kotoba primitive preserves every UTF-8 byte,
+  including continuation bytes above 127."
   [#?@(:kotoba [text :string] :default [text])] #?@(:kotoba [:bytes])
   #?(:cljs (.from js/Buffer text "utf8")
-     :default (let [n (string-byte-length text)]
-                (loop [i 0 out (vector-i64)]
-                  (if (>= i n)
-                    (bytes-from-vector-i64 out)
-                    (recur (inc i) (vector-conj out (byte-at-offset text i))))))))
+     :default (string-to-utf8 text)))
 
 (defn utf8-text-lossy
   "BYTES decoded as UTF-8, an invalid sequence read as U+FFFD -- what
