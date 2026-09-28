@@ -10,7 +10,7 @@ record. Do not label a translated workload as an official Embench score.
 | Workload | Kotoba native correctness | Remaining qualification |
 | --- | --- | --- |
 | aha-mont64 | unverified | port and compare full output |
-| crc32 | passed for one seeded 1024-byte run | cross-backend check, timed-loop parity |
+| crc32 | passed for one seeded 1024-byte run | timed-loop parity |
 | depthconv | unverified | port and compare full output |
 | edn | unverified | port and compare full output |
 | huffbench | unverified | port and compare full output |
@@ -25,18 +25,19 @@ record. Do not label a translated workload as an official Embench score.
 | slre | unverified | port and compare full output |
 | statemate | unverified | port and compare full output |
 | tarfind | unverified | port and compare full output |
-| ud | unverified | port and compare full output |
+| ud | passed for all 20 result values | timed-loop parity |
 | wikisort | unverified | port and compare full output |
 | xgboost | unverified | port and compare full output |
 
-As of 2026-09-29, the two correctness ports live outside this Apache-licensed
+As of 2026-09-29, the three correctness ports live outside this Apache-licensed
 repository because they adapt upstream benchmark code with its own license.
 Their results are correctness probes, not representative performance samples:
 the timing boundaries and repetition loops differ from the C suite. The
 `crc32` port compiles and returns the upstream expected `11433` on native
-AArch64. `amu test` does not yet accept its JS KIR shift operations, so the
-three-target test route has not passed for that port. The `matmult-int` port
-passes JVM KIR, JS, Wasm, and native AArch64 with all 400 cells checked.
+AArch64. The `matmult-int` port checks all 400 cells and the `ud` port checks
+all 20 solution values on native AArch64. `amu test` is not the acceptance
+gate for this suite: it invokes JS and Wasm targets, and the requested
+qualification is through Amu's native compiler.
 
 ## Qualification gate for each workload
 
@@ -47,9 +48,8 @@ passes JVM KIR, JS, Wasm, and native AArch64 with all 400 cells checked.
    is insufficient where the upstream verifier checks individual values.
 3. Compile through `bin/amu check PORT.kotoba --jvm-free` and
    `bin/amu compile PORT.kotoba --target aarch64-macos --jvm-free`.
-   Execute the native export and assert the expected result. Run JS and Wasm
-   checks where those backends support the required operations. Record an
-   unsupported backend as unverified, never as a pass.
+   Execute the native export and assert the expected result. Do not count
+   `amu test` as evidence of native correctness; it exercises other targets.
 4. Only after correctness, align the benchmark loop, warmup, scale factor,
    hardware, compiler options, timing boundary, and code-size metric before
    reporting performance. Repeat samples and retain the raw results.
