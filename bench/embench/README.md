@@ -9,7 +9,7 @@ record. Do not label a translated workload as an official Embench score.
 
 | Workload | Kotoba native correctness | Remaining qualification |
 | --- | --- | --- |
-| aha-mont64 | unverified | port and compare full output |
+| aha-mont64 | passed for Montgomery and reference modular results | timed-loop parity |
 | crc32 | passed for one seeded 1024-byte run | timed-loop parity |
 | depthconv | unverified | port and compare full output |
 | edn | unverified | port and compare full output |
@@ -29,7 +29,7 @@ record. Do not label a translated workload as an official Embench score.
 | wikisort | unverified | port and compare full output |
 | xgboost | unverified | port and compare full output |
 
-As of 2026-09-29, the five correctness ports live outside this Apache-licensed
+As of 2026-09-29, the six correctness ports live outside this Apache-licensed
 repository because they adapt upstream benchmark code with its own license.
 Their results are correctness probes, not representative performance samples:
 the timing boundaries and repetition loops differ from the C suite. The
@@ -45,6 +45,9 @@ unused fields or the full timing loop.
 The `md5sum` port checks all four state words after hashing the upstream
 1000-byte message. The expected words were independently computed from the
 message with a second MD5 implementation; their XOR is Embench's `0x33f673b4`.
+The `aha-mont64` port reproduces unsigned 64-bit multiplication, remainder,
+extended GCD, and Montgomery multiplication. Both calculation paths agree
+with an independent modular exponentiation result for the upstream inputs.
 
 ## Qualification gate for each workload
 
