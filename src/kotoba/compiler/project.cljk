@@ -760,14 +760,21 @@
                   (list (clause-params clause) (clause-result clause) (body-of clause)))
                 clauses))))
 
-(defn- stub-body [{:keys [result callable-result-contract]}]
+(defn- stub-body [stub-name {:keys [params result callable-result-contract] :as clause}]
   (if callable-result-contract
     ;; The stub exists only for isolated type/effect analysis and is
     ;; removed before linking. Its explicit result contract supplies
     ;; the closure refinement without inventing a lambda ID/helper that
     ;; could be mistaken for executable project code.
     0
-    (stub-value result)))
+    (try (stub-value result)
+         (catch #?(:clj Exception :cljs :default) _
+           ;; A result type with no closed value -- a `[:ref :x/y]` record
+           ;; returned across a module boundary is the case measured -- is
+           ;; still a well-typed result. The stub is never executed or linked,
+           ;; only analysed, and a call to itself has exactly the declared
+           ;; result type, so it types as that result without inventing a value.
+           (list* stub-name params)))))
 
 (defn- stub-form
   "The import stub an importing module analyses in place of a dependency.
@@ -776,7 +783,7 @@
   call it at exactly one arity: the stub is what its own call resolution sees,
   and the frontend rejects `no matching multi-arity clause` for the others."
   [stub clauses]
-  (arity-declaration 'defn- stub clauses stub-body))
+  (arity-declaration 'defn- stub clauses (partial stub-body stub)))
 
 (defn- capability-operation?
   "True for a friendly capability operation such as `clock/now`.
@@ -856,7 +863,7 @@
                     ;; one import resolved. The frontend's refusal is the one
                     ;; that names the thing.
                     (when (= "kotoba.reader" (namespace op)) op)
-                    (reject! "qualified call is not an admitted exported import" {:call op}))
+                    (reject! (str "qualified call is not an admitted exported import: " op) {:call op}))
                 op)]
       (list* op' (map #(rewrite-import-calls % imported) args)))
     (vector? form) (mapv #(rewrite-import-calls % imported) form)
@@ -1406,6 +1413,27 @@
     (check-no-loose-parameters! substituted binding module)
     substituted))
 
+(defn- with-dependency-schemas
+  "The module's ns with its dependencies' schema tables merged into its own
+  `:schemas` clause. An import stub returns `[:ref :x/y]` when the dependency
+  exports a record; the importer analysed alone must be able to NAME that schema
+  or the frontend refuses \"value type references a schema outside the closed
+  namespace table\". Union is safe: `reject-schema-collisions!` has already
+  refused any name two modules define differently."
+  [forms dependency-schemas]
+  (if (empty? dependency-schemas)
+    forms
+    (mapv (fn [form]
+            (if (and (seq? form) (= 'ns (first form)))
+              (let [[op name & clauses] form
+                    own? (fn [c] (and (seq? c) (= :schemas (first c)) (map? (second c))))
+                    own (some #(when (own? %) (second %)) clauses)
+                    merged (merge dependency-schemas own)
+                    others (remove own? clauses)]
+                (list* op name (concat others [(list :schemas merged)])))
+              form))
+          forms)))
+
 (defn- analyze-module
   "Analyse one module -- or one INSTANTIATION of a template, when `binding`
   is non-nil, in which case `forms` are already the substituted forms and
@@ -1439,7 +1467,12 @@
         rewritten (mapv #(rewrite-import-calls % import->stub)
                         (rewrite-referred-symbols (with-derived-export (without-requires forms) info)
                                                   (referred-alias-table (:requires info))))
-        augmented (into rewritten (map (fn [[_ stub clauses]] (stub-form stub clauses)) stub-pairs))
+        dependency-schemas (into {}
+                                 (map (fn [{dep-name :namespace with :with}]
+                                        (:schemas (get dependencies (instantiation-key dep-name with)))))
+                                 (:requires info))
+        augmented (into (with-dependency-schemas rewritten dependency-schemas)
+                        (map (fn [[_ stub clauses]] (stub-form stub clauses)) stub-pairs))
         ;; Lambda IDs are artifact data. Give every source module a disjoint
         ;; range so the project-level dispatcher can route a closure back to
         ;; the module whose lifted helper owns that ID.
@@ -1535,6 +1568,7 @@
                                      clauses)])))
               (:exports info))]
     {:namespace (:namespace info) :requires (:requires info)
+     :schemas (:schemas info)
      :functions functions :interface interface}))
 
 (defn- wrapper-form
