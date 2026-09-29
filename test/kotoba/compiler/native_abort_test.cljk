@@ -77,8 +77,8 @@
                            :aarch64-macos-kotoba-v1))]
       (is (= 7 (n (:value kexe))))
       (is (map? (verifier/verify-artifact! kexe)))))
-  (testing "refused: an abort across an export boundary, on native as everywhere"
-    (is (= "unhandled abort at export boundary; catch it with try: g"
+  (testing "an export that may abort is admitted by the language (amu ADR 0354) and refused by name where the target cannot carry it: native does not yet"
+    (is (= "native artifact contains an unsupported effect"
            (refusal :aarch64-macos-kotoba-v1
                     "(defn g [x :i64] :i64 (if (< x 0) (throw \"e\") x))
                      (defn main [] :i64 (try (g 1) (catch e 0)))")))))
