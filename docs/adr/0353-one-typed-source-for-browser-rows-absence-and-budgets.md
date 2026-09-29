@@ -205,7 +205,7 @@ Clojure it is today, the language gains:
    has two answers). `string-code-unit-count`, `string-code-unit-at` and
    `subs` over code units are primitives; browser's `#?(:clj ...)` interop
    branches gain a `:kotoba` branch that calls them. Landed (kotoba-sema
-   `d72677cb`, gate `string-code-unit-primitives-test`) as library heads over
+   `baeddf12`, gate `string-code-unit-primitives-test`) as library heads over
    `string-code-point-at` / `string-substring`, so every backend answers the
    same; an index outside the string traps out of bounds, and a `subs` bound
    inside a surrogate pair traps as splitting a code point (UTF-8 cannot hold

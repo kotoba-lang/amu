@@ -65,6 +65,10 @@
     (is (= "" (run-main (string-main (str "(subs " s " 4)")))))
     (is (= "bc" (run-main (str "(defn- tail [t i] (subs t i))\n"
                                "(defn main [] :string (tail \"abc\" 1))")))))
+  (testing "a local named subs is the local, not the head"
+    (is (= 2 (run-main "(defn main [] :i64 (let [subs (fn [x] (+ x 1))] (subs 1)))")))
+    (is (= "bc" (run-main (str "(defn main [] :string (let [t (subs \"abc\" 1) subs (fn [x] (+ x 1))]"
+                               " (if (= (subs 1) 2) t \"no\")))")))))
   (testing "an unannotated parameter is typed by its use"
     (is (= 101 (run-main (str text-edit
                               "(defn main [] :i64 (+ (if (surrogate-pair-boundary? " s " 2) 100 0)"
