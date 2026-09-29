@@ -308,9 +308,9 @@
         :path "src/kotoba/script.cljk",
         :var kotoba.script/max-map-entries}]},
      :type-descriptor-depth
-     {:value 12,
+     {:value 32,
       :why
-      "Nesting of one value-type descriptor. 12 since osaho ADR 0025 (structured kv EDN spines); sema, ESM and the browser host's descriptor decoder had stayed at 8 -- unified 2026-09-24 (P1).",
+      "Nesting of one value-type descriptor. 32 since amu ADR 0355 (a compiler pass's s-expression sum type needs nesting the browser-row work never did); 12 since osaho ADR 0025 (structured kv EDN spines); 8 before that -- unified 2026-09-24 (P1), raised 2026-09-29.",
       :copies
       [{:repo "kotoba-lang/osaho",
         :path "src/kotoba/kir/value.cljk",
@@ -412,9 +412,9 @@
         :path "src/kotoba/verifier.cljk",
         :var kotoba.verifier/max-vector-literal-items}]},
      :type-descriptor-nodes
-     {:value 64,
+     {:value 512,
       :why
-      "Nodes in one value-type descriptor, or one schema graph; bounds the checker's work per type.",
+      "Nodes in one value-type descriptor, or one schema graph; bounds the checker's work per type. 64 until amu ADR 0355 (2026-09-29), raised with the depth so a recursive-shaped sum type unrolled to depth 32 fits.",
       :copies
       [{:repo "kotoba-lang/osaho",
         :path "src/kotoba/kir/value.cljk",

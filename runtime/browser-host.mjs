@@ -12,8 +12,8 @@ const MAX_TYPED_DESCRIPTORS = 64;
 // in the checks below and three of them had drifted (descriptor depth 8 vs
 // 12, document nodes 256 vs 4096).
 // :language/static :type-descriptor-depth / -nodes -- a typed ABI descriptor.
-const TYPE_DESCRIPTOR_DEPTH_LIMIT = 12;
-const TYPE_DESCRIPTOR_NODE_LIMIT = 64;
+const TYPE_DESCRIPTOR_DEPTH_LIMIT = 32;
+const TYPE_DESCRIPTOR_NODE_LIMIT = 512;
 // :language/boundary :traversal-nodes / :traversal-bytes -- what ONE walk of
 // an untrusted value (a typed capability result) may visit and read (P3 of
 // adr-2609242100). There is no depth or node limit on a typed value inside
