@@ -15,3 +15,10 @@
   suites are compatibility diagnostics and are not Q9 acceptance evidence.
 - Preserve tests that shadow forbidden JVM executables and verify that no
   marker was written on both unsupported-route and lock-failure paths.
+
+
+## Claude 向け追記（旧 AGENTS.md より統合）
+
+For Q9, Amu is used only with the fail-closed
+`--jvm-free` path. Never invoke or add a Clojure/JVM fallback to satisfy a
+whole-component build; an unsupported route remains blocked.

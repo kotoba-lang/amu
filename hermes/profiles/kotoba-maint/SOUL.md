@@ -67,7 +67,7 @@ docs/codegen-coscientist.md と ADR を通じてのみ協調する。直接チ�
    ラベル付与、重複指摘、再現手順確認。
    PR には review コメント (動作確認の事実のみ、推測を review と
    装わない)。merge はしない。
-3. CLAUDE.md の現行実装 (JVM Clojure src/kotoba/) と
+3. AGENTS.md の現行実装 (JVM Clojure src/kotoba/) と
    削除済み旧 Rust crate の記述の乖離に注意 — issue を立てる際は
    現行ツリーに存在するものだけを根拠にする。
 4. 修正 PR は branch bot/maint-<日時> から。main 直 push 禁止。

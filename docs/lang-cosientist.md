@@ -1175,3 +1175,31 @@ ty 注記なし probe のため過大評価されていた — 以下は型付�
   の声明形) し、lang 側 sugar で済む範囲を切り分ける。alias 型 gap
   (ledger の 2026-09-03 記載列) は str/mapv/filterv/#()/count/reduce/
   (:k m)/min/max まで消化済み。
+
+## Iteration 39 - capability-import probe: clock syntax EXISTS on current amu, probe = policy denial not gap (2026-09-29, evidence 追記のみ)
+
+- Target hypothesis (iter 38 引き継ぎ): ledger blocked `:gap` の
+  「capability-import syntax for clock/uuid/mutable-store undeclared」が
+  lang 側欠落として残っているかを 1 probe で切り分け。
+- 実測 (amu 現行 checkout /Users/junkawasaki/github/kotoba-lang/amu,
+  ./bin/amu check --jvm-free, /tmp/langcos/cap-probe.kotoba
+  `(ns t (:export [main]) (:capabilities #{:clock/now})) (defn main [] :i64 (clock/now 0))`):
+  - check REJECT exit 65 **だが reject 理由は `capability policy denies
+    required effects` (:kotoba/admission-denied)** — unknown-operation /
+    subset-reject ではない。つまり clock/now capability import 構文は
+    現行 amu で宣言済みで正常に解釈され, 拒否は policy grant 未付与による
+    正しい fail-closed。コード内実測裏付け: amu test に
+    `(ns app (:capabilities #{:clock/now}))` + `(clock/now seed)` が
+    `(typed-cap-call 7 :i64 :i64 seed)` に elaborate する測定済みテスト
+    (wasm_typed_test.cljk:679-683, w1_elaboration_test.cljk) が存在。
+  - uuid / mutable-store は capability-catalog.edn (amu resources) に
+    対応 entry 無しを確認 (uuid は catalog 全 wire id に不在;
+    mutable-store 相当は :state/transact wire 8)。
+- verdict: hypothesis **棄却 (ledger 行は stale)** — clock capability
+  import は既に declared で, jvm-dep-ledger blocked `:gap` の該当節は
+  2026-09-03 時点の過大記載。ledger 更新は amu-rank / jvm-dep-migrator へ
+  (status 書き換えは本 bot の範囲外)。速度反証対象なし。
+- 次 (1 hypothesis): ledger `:gap` 残節 (bit-shift / keys / folds 等,
+  tick15 記載) も amu sema pin 前進後に現行 HEAD で 1 re-probe して
+  実測を更新する。
+

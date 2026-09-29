@@ -538,3 +538,34 @@ the lever is exactly "inline + existing select-instructions" and the J-C
 hand-patch reduces to a function-inliner with constant-argument cloning.
 J-B stays open, not-killed/not-confirmed. No compiler change (scratch
 only), no policy change, no sealed claim.
+
+- 2026-09-26 13:02 JST tick 43 (JIT): quiet gate failed a 37th consecutive
+  time - load1 73.52 on 10 CPUs at 13:02 JST (uptime 38 min; 5m avg 122.62,
+  15m avg 158.92 - host at its heaviest load1 in recent ticks). iostat cpu
+  idle probe was blocked by the security scanner this tick, so idle is
+  unmeasured; load1 alone already disqualifies (idle cannot be >=90
+  percent at load1 73.52 on 10 CPUs). J-B measurement deferred; no
+  compiler change, no policy change, no sealed claim. Read path this
+  tick: foreground terminal stdout empty for most commands (same as
+  ticks 31/34); iostat probe blocked by the scanner. Next tick first
+  action unchanged from tick 42: word-scan /tmp/jit_t42_kernel_inline.bin
+  for sdiv 0x9ac10cxx vs smulh 0x9b407cxx counts to close the
+  falsification fork (inlined shape -> sdiv: J-C lever absent even
+  post-inline; -> smulh: J-C hand-patch is a function-inliner with
+  constant-argument cloning); then on a quiet host (idle >=90 percent)
+  the qualified three-arm J-B run, 4000000 iters x 24 alternations,
+  ratio of medians.
+
+- 2026-09-29 (JIT tick 44): quiet gate UNMEASURED this tick (budget exhausted on
+  artifact recovery; no load/idle probe was taken, so per the no-fabrication
+  rule gate status = unmeasured, not "failed"). Tick-42 falsification fork
+  STILL OPEN: the hand-inlined control artifacts were lost to /tmp cleanup
+  (/tmp/jit_t42_kernel_inline.bin missing; t41 scratch word-scan script also
+  gone; /tmp/jit_t42* and /tmp/jit_t41* both absent as of this tick). Next
+  tick first action: REGENERATE the artifacts (compile
+  bench/kernel_strings-based inlined control via bin/amu compile --target
+  aarch64 --jvm-free --output, extract-native positional form, blob to a
+  DURABLE path under the profile scratch dir, not /tmp) and word-scan for
+  sdiv 0x9ac10cxx vs smulh 0x9b407cxx to close the fork. J-B stays open,
+  not-killed/not-confirmed (last under-qualified band 5.9-8.8 percent,
+  ticks 27-36). No compiler change, no policy change, no sealed claim.
