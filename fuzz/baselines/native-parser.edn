@@ -121,7 +121,14 @@
 ;; floors measure is untouched. Floors carried forward NOT re-measured (no
 ;; libFuzzer runtime on the machine that made this change); the Linux CI job
 ;; measures.
+;; Advanced 2026-09-29 for the native TCP supervisor broker (amu PR #1184,
+;; wires 43..47): the request parser (six decimals) runs only inside the
+;; provider, reached through a granted cap_call like wire 42's GPU broker;
+;; the argv/handle parser the floors measure is untouched. The
+;; deterministic-sanitized arm passed on the authoring machine's platform in
+;; CI. Floors carried forward NOT re-measured (no libFuzzer runtime on the
+;; machine that made this change); the Linux CI job measures.
 {:format :kotoba.fuzz-baseline/v2
- :loader-source-sha256 "daa8df69c642c2c29d3900ace79a5095d8590773b0fbe724d6d19616d106a4e1"
+ :loader-source-sha256 "ac2ed4730f7c8394d631be9822eeda1cecf9d9cf0f3e183c17a9a00b839fa39a"
  :profiles {:x64 {:min-cov 60 :min-features 100 :min-corpus 20}
             :arm64 {:min-cov 60 :min-features 100 :min-corpus 18}}}
