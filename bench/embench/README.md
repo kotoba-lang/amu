@@ -1,5 +1,11 @@
 # Embench native qualification
 
+> **Selfhost status.** The measured artifact below was produced with a
+> GraalVM-built compiler, so under `docs/selfhost-priority.md` it is a
+> *bootstrap-reference* result, not a selfhost result. Selfhost is the top
+> priority for the Amu compiler: Embench numbers are published as selfhost
+> only when taken with a compiler that Amu built, on a quiet host.
+
 The reference is the current `embench/embench-iot` master at commit
 `09c2ed8c3b7008c95d08b038de4a3f6dc103ed70` (2026-09-29). Its benchmark
 sources and support directory are byte-identical to tag `embench-2.0rc2` for
