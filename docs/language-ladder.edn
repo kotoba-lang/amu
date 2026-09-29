@@ -101,6 +101,13 @@
   {:id :allocation-budget :gate "allocation-charged-to-fuel-test"
    :goal "every constructor debits the 64-bit fuel ledger; the ADT node/depth ceilings are the caller's budget, not the constants 64 / 12"
    :amends "osaho adt-node-limit / adt-depth-limit"}
+  ;; Split 2026-09-30 from :allocation-budget, which landed the debit on the
+  ;; reference (kotoba.kir, the oracle and verifier authority). Each target
+  ;; keeps its own counter: native charges entries and recur steps, ESM's
+  ;; cell() debits the cells budget only. Moving native codegen moves every
+  ;; aiueos kernel object, so it is its own change.
+  {:id :allocation-budget-targets :gate "target-constructors-charge-fuel-test"
+   :goal "ESM (kotoba-script cell()), wasm32 and both native ISAs debit one fuel unit per constructor as kotoba.kir does, so a program that allocates past its budget traps budget/fuel on every target, not only on the reference; the aiueos objects that move are re-attested"}
   {:id :definition-admission :gate "admission-by-definition-graph-test"
    :goal "the 1 MiB bound moves from linked source bytes to per-definition size and closure count; cssom/layout.cljk (1,083,132 bytes) is admitted definition by definition"
    :amends "ADR 0005 linked-source bound"}
