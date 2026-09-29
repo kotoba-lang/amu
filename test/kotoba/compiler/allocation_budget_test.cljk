@@ -1,0 +1,109 @@
+(ns kotoba.compiler.allocation-budget-test
+  "ADR 0353 floor :allocation-budget (point 7).
+
+  Measured 2026-09-30 (osaho 1bb61f3d, before this floor): a loop that
+  built 1,000 records answered under `:fuel 2`, and under the default 512.
+  Fuel was charged at function entries only; a self-tail loop's re-entries
+  are free, and the one ledger that counted constructors -- `:cells` -- is
+  unmetered unless the embedder names it. So nothing the caller granted
+  bounded what a run allocated.
+
+  Now, in kotoba.kir (osaho): every constructor (`cell-constructor-ops`:
+  record, variant, option / result, list, set, map, vector, pair, document)
+  debits one unit of the run's fuel, whether or not cells are metered. The
+  64 / 12 of `adt-node-limit` / `adt-depth-limit` bound a type DESCRIPTOR
+  (since superproject adr-2609242100 P2), never a value; a value -- a list, a
+  DOM tree -- is as large as the fuel it was paid for.
+
+  Pinned here: the exact price (one unit per constructed cell, on top of the
+  entries), a value far past 64 nodes / depth 12 admitted at the budget that
+  pays for it and refused one unit short, the compile-time oracle paying the
+  same, and the refusal that stays: a program cannot allocate past its
+  caller's budget."
+  (:require [clojure.test :refer [deftest is testing]]
+            [kotoba.kir :as ir]
+            [kotoba.sema :as sema]))
+
+(def ^:private point
+  "(ns app (:schemas {:app/p [:record :app/p [[:x :i64] [:y :i64]]]}))\n")
+
+(def ^:private thousand-records
+  "A self-tail loop -- its re-entries cost no fuel -- building 1,000 records."
+  (str point
+       "(defn main [] :i64 (loop [i 0 acc 0] (if (< i 1000)"
+       " (recur (+ i 1) (+ acc (:x (record-new [:record :app/p [[:x :i64] [:y :i64]]] i i))))"
+       " acc)))"))
+
+(def ^:private list-type "[:variant :app/list [[:empty :i64] [:cons [:ref :app/cell]]]]")
+(def ^:private cell-type "[:record :app/cell [[:head :i64] [:tail [:ref :app/list]]]]")
+
+(def ^:private hundred-cells
+  "A cons list of 100 cells: 201 constructed nodes (one :empty, a variant and
+  a record per cell), nested 200 deep -- past the 64 nodes and depth 12 a
+  value was once held to."
+  (str "(ns app (:schemas {:app/list " list-type " :app/cell " cell-type "}))\n"
+       "(defn- build [n :i64] [:ref :app/list] (loop [i 0 acc (variant-new " list-type " :empty 0)]"
+       " (if (< i n) (recur (+ i 1) (variant-new " list-type " :cons (record-new " cell-type " i acc))) acc)))\n"
+       "(defn- head-of [l [:ref :app/list]] :i64 (match-variant l [:ref :app/list] (:empty e -1) (:cons c (:head c))))\n"
+       "(defn- tail-of [l [:ref :app/list]] [:ref :app/list] (match-variant l [:ref :app/list] (:empty e l) (:cons c (:tail c))))\n"
+       "(defn- total [l [:ref :app/list]] :i64 (loop [l l acc 0]"
+       " (if (< (head-of l) 0) acc (recur (tail-of l) (+ acc (head-of l))))))\n"
+       "(defn main [] :i64 (total (build 100)))"))
+
+(def ^:private no-allocation
+  "The same walk's shape with no constructor: what the entries alone cost."
+  (str "(defn- step [i :i64] :i64 (+ i 1))\n"
+       "(defn main [] :i64 (loop [i 0 acc 0] (if (< i 100) (recur (step i) (+ acc i)) acc)))"))
+
+(defn- run [source opts]
+  (try {:value (str (ir/execute (ir/lower (sema/analyze source)) 'main [] opts))}
+       (catch #?(:clj clojure.lang.ExceptionInfo :cljs :default) error
+         {:message (ex-message error)
+          :data (select-keys (ex-data error) [:trap :limit :operation :allocation])})))
+
+(defn- least-fuel
+  "The smallest fuel budget under which `source` answers."
+  [source]
+  (loop [lo 1 hi 100000]
+    (if (= lo hi)
+      lo
+      (let [mid (quot (+ lo hi) 2)]
+        (if (:value (run source {:fuel mid})) (recur lo mid) (recur (inc mid) hi))))))
+
+(deftest allocation-charged-to-fuel-test
+  (testing "admitted: a loop's allocations are paid from the fuel its caller granted"
+    ;; main's entry, the loop's first entry, 1,000 record-new.
+    (is (= {:value "499500"} (run thousand-records {:fuel 1002})))
+    (is (= 1002 (least-fuel thousand-records))
+        "one unit per constructed record: before this floor the least fuel was 2"))
+  (testing "admitted: a value past 64 nodes and depth 12 is bounded by its budget, not by a constant"
+    (is (= {:value "4950"} (run hundred-cells {:fuel 507})))
+    (is (= 507 (least-fuel hundred-cells))
+        "306 for the entries, and 201 for the 201 nodes the list is built of")
+    (is (= {:value "4950"} (run hundred-cells {}))
+        "the default budget (512) pays for it")
+    (is (= {:value "4950"} (run hundred-cells {:fuel 507 :cells 201}))
+        "and the cells ledger, when metered, counts the same 201 beside it"))
+  (testing "a program that constructs nothing pays nothing new"
+    (is (= 102 (least-fuel no-allocation)) "main, the loop's first entry and 100 entries of step"))
+  (testing "refused: allocating past the caller's budget is a budget/fuel trap, named at the constructor"
+    (is (= {:message "budget/fuel"
+            :data {:trap :budget/fuel :limit 1001 :operation 'record-new :allocation true}}
+           (run thousand-records {:fuel 1001})))
+    (is (= {:message "budget/fuel" :data {:trap :budget/fuel :limit 506}}
+           (run hundred-cells {:fuel 506}))
+        "one unit short of the list's price: the walk, having paid for the build, runs out")
+    (is (= {:message "budget/fuel"
+            :data {:trap :budget/fuel :limit 203 :operation 'record-new :allocation true}}
+           (run hundred-cells {:fuel 203})))
+    (is (= {:message "budget/fuel"
+            :data {:trap :budget/fuel :limit 512 :operation 'record-new :allocation true}}
+           (run thousand-records {}))
+        "unbounded allocation stays refused: the default budget does not stretch to 1,000 records")
+    (is (= :budget/cells (get-in (run hundred-cells {:fuel 507 :cells 200}) [:data :trap]))
+        "a cells budget below the node count still traps by its own name"))
+  (testing "the compile-time oracle pays the same price"
+    (let [hir (sema/analyze thousand-records)]
+      (is (= "499500" (str (:oracle-value (ir/lower hir {:oracle-fuel 1002})))))
+      (is (= :budget/fuel (:oracle-inconclusive (ir/lower hir {:oracle-fuel 1001})))
+          "one unit short, nothing is sealed -- inconclusive, not a refusal"))))

@@ -249,6 +249,32 @@ Clojure it is today, the language gains:
    64-bit ledger fuel uses (kotoba-kir ADR 0268, amu ADR 0333). The ADT
    node/depth ceilings stop being language constants and become the budget
    the caller grants; a DOM tree is bounded by what it was given, not by 64.
+   Landed 2026-09-30 on the reference semantics (osaho `635bea6d`, gate
+   `allocation-charged-to-fuel-test`). Measured before: fuel counted function
+   entries only and a self-tail loop's re-entries are free, so a loop built
+   1,000 records under `:fuel 2`; the one ledger that counted constructors,
+   `:cells`, is unmetered unless the embedder names it. Now `kotoba.kir`
+   debits one unit of the run's fuel at every constructor
+   (`cell-constructor-ops`: record, variant, option / result, list, set, map,
+   vector, pair, document), metered cells or not, and the trap names the
+   constructor (`:operation record-new :allocation true`). The price is exact:
+   the 1,000-record loop needs 1,002 (was 2), a 100-cell cons list -- 201
+   nodes, 200 deep -- needs 507 (was 306), a program that constructs nothing
+   pays nothing new, and the compile-time oracle pays the same (one unit short
+   it is inconclusive, not refused). The 64 / 12 had stopped bounding a value
+   at superproject adr-2609242100 P2 (2026-09-24); they bound a type
+   DESCRIPTOR, which is checker work per type, a static language size like the
+   32 record fields -- not an allocation. Refused, as before and now by the
+   budget: allocating past what the caller granted (`budget/fuel`, and
+   `budget/cells` when metered). Native: both forms compile for
+   `x86_64-aiueos-kernel-v1` and `aarch64-macos`, and the aarch64 kexes
+   printed 499500 and 4950 under `tools/kexe_loader.c`; but the targets keep
+   their own counters -- native charges entries and recur steps, ESM's
+   `cell()` debits cells only -- so the constructor debit on ESM, wasm32 and
+   both ISAs is floor `:allocation-budget-targets`. aiueos objects
+   (`reproduce-kotoba-objects.cljk`, aiueos `ca7fc504`): 116 scanned, 112
+   byte-identical (`differs=0`), 4 not compiled -- the four sources point 2
+   already names as testing a 0/1 `write-u32` answer.
 8. **Admission by definition graph.** The 1 MiB bound moves from linked source
    bytes to per-definition size and closure count; a module is its definitions
    (as ADR 0300 already identifies it), so cssom's 1 MB file is admitted
