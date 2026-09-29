@@ -72,7 +72,7 @@
   (:require [kotoba.compiler.capability-names :as names]
             [kotoba.security.information-flow :as flow]
             #?@(:clj [[kotoba.lang.edn :as edn]
-                      [clojure.java.io :as io]])))
+                      [kotoba.io :as io]])))
 
 (def classification-key
   "The catalog key. Named once so the resource, the fallback and the test
@@ -136,7 +136,15 @@
    ;; supervisor. :internal -- what crosses is device handles and the bytes
    ;; the guest itself wrote or computed; no path the guest names is opened
    ;; for the guest to read (root ADR-2609182400 C).
-   :gpu/compute :internal})
+   :gpu/compute :internal
+   ;; net/listen .. net/write (43..47): native TCP brokered by the kexe
+   ;; loader's supervisor (root ADR-2609261900 stage B). :confidential like
+   ;; :net/datagram -- the network is someone else's data.
+   :net/listen :confidential
+   :net/accept :confidential
+   :net/dial :confidential
+   :net/read :confidential
+   :net/write :confidential})
 
 (def catalog-resource
   "The capability catalog, at the resource path consumers resolve. Read here

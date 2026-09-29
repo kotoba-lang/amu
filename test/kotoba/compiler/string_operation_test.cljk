@@ -1,5 +1,5 @@
 (ns kotoba.compiler.string-operation-test
-  (:require [clojure.java.shell :as shell]
+  (:require [kotoba.bytes :as kbytes] [clojure.java.shell :as shell]
             [clojure.test :refer [deftest is]]
             [kotoba.compiler.core :as compiler]
             [kotoba.kir :as ir]))
@@ -15,13 +15,13 @@
      (string-replace-all value needle replacement))")
 
 (defn- encoded [bytes]
-  (.encodeToString (java.util.Base64/getEncoder) bytes))
+  (kbytes/base64-encode bytes))
 
 (deftest bounded-literal-string-replacement-has-cross-target-conformance
   (let [javascript (compiler/compile-source source :js-kotoba-v1)
         wasm (compiler/compile-source source :wasm32-browser-kotoba-v1)
         kir (:kir wasm)
-        js64 (encoded (.getBytes ^String (:source javascript) "UTF-8"))
+        js64 (encoded (kbytes/utf8-bytes ^String (:source javascript)))
         wasm64 (encoded (:bytes wasm))
         checks (str "if(x.concat('a','b')!=='ab')process.exit(2);"
                     "if(x.substring('a😀語z',1n,8n)!=='😀語')process.exit(6);"
@@ -63,7 +63,7 @@
   (let [javascript (compiler/compile-source search-source :js-kotoba-v1)
         wasm (compiler/compile-source search-source :wasm32-browser-kotoba-v1)
         kir (:kir wasm)
-        js64 (encoded (.getBytes ^String (:source javascript) "UTF-8"))
+        js64 (encoded (kbytes/utf8-bytes ^String (:source javascript)))
         wasm64 (encoded (:bytes wasm))
         js-checks (str "if(x.contains('final decision made','decision')!==true)process.exit(2);"
                     "if(x.contains('final decision made','banana')!==false)process.exit(3);"
@@ -127,7 +127,7 @@
   (let [javascript (compiler/compile-source code-point-source :js-kotoba-v1)
         wasm (compiler/compile-source code-point-source :wasm32-browser-kotoba-v1)
         kir (:kir wasm)
-        js64 (encoded (.getBytes ^String (:source javascript) "UTF-8"))
+        js64 (encoded (kbytes/utf8-bytes ^String (:source javascript)))
         wasm64 (encoded (:bytes wasm))
         ;; "aあ𝟘0": a@0=0x61, あ@1=0x3042(3B), 𝟘@4=0x1d7d8(4B), 0@8=0x30
         s "aあ𝟘0"
@@ -179,7 +179,7 @@
   (let [javascript (compiler/compile-source join-source :js-kotoba-v1)
         wasm (compiler/compile-source join-source :wasm32-kotoba-v1)
         kir (:kir wasm)
-        js64 (encoded (.getBytes ^String (:source javascript) "UTF-8"))
+        js64 (encoded (kbytes/utf8-bytes ^String (:source javascript)))
         wasm64 (encoded (:bytes wasm))
         checks (str "if(x.join2(',', 'a', 'b')!=='a,b')process.exit(2);"
                     "if(x.join3('-', 'x', 'y', 'z')!=='x-y-z')process.exit(3);"

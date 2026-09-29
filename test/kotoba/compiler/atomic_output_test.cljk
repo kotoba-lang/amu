@@ -1,8 +1,8 @@
 (ns kotoba.compiler.atomic-output-test
-  (:require [clojure.edn :as edn]
+  (:require [kotoba.bytes :as kbytes] [clojure.edn :as edn]
             [clojure.test :refer [deftest is]]
             [kotoba.compiler.atomic-output :as atomic-output])
-  (:import [java.nio.charset StandardCharsets]
+  (:import
            [java.nio.file Files LinkOption Path]
            [java.nio.file.attribute FileAttribute PosixFilePermissions]))
 
@@ -18,7 +18,7 @@
         victim (.resolve directory "victim")
         output (.resolve directory "output.edn")]
     (try
-      (Files/write victim (.getBytes "unchanged" StandardCharsets/UTF_8)
+      (Files/write victim (kbytes/utf8-bytes "unchanged")
                    (make-array java.nio.file.OpenOption 0))
       (Files/createSymbolicLink output victim (make-array FileAttribute 0))
       (atomic-output/write-edn! (str output) {:safe true})
@@ -42,7 +42,7 @@
                                               (make-array FileAttribute 0))
         output (.resolve directory "loader")]
     (try
-      (atomic-output/write-bytes! (str output) (.getBytes "binary" StandardCharsets/UTF_8)
+      (atomic-output/write-bytes! (str output) (kbytes/utf8-bytes "binary")
                                   {:executable? true})
       (is (= (PosixFilePermissions/fromString "rwx------")
              (Files/getPosixFilePermissions output (make-array LinkOption 0))))

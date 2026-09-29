@@ -26,7 +26,7 @@
      protocol is designed to be pinned against -- see
      docs/adr/0071-production-storage-transport-host-configured-kv-endpoint.md
      'Remaining gaps'."
-  (:require [json.data-json :as json]
+  (:require [kotoba.bytes :as kbytes] [json.data-json :as json]
             [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]
             [kotoba.kir :as ir]
@@ -127,7 +127,7 @@
 ;; ---------------------------------------------------------------------------
 
 (defn- respond! [exchange status ^String body]
-  (let [bytes (.getBytes body "UTF-8")]
+  (let [bytes (kbytes/utf8-bytes body)]
     (.sendResponseHeaders exchange status (count bytes))
     (doto (.getResponseBody exchange)
       (.write bytes)

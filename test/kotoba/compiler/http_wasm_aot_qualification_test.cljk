@@ -10,8 +10,8 @@
 
   hello(5)+xy(2)=7. Fixed `\"ok\"` cannot produce 7. Withholding the stub
   fails to link on `http-host`."
-  (:require [clojure.edn :as edn]
-            [clojure.java.io :as io]
+  (:require [kotoba.bytes :as kbytes] [clojure.edn :as edn]
+            [kotoba.io :as io]
             [clojure.java.shell :as shell]
             [kotoba.lang.text :as str]
             [clojure.test :refer [deftest is]]
@@ -22,7 +22,7 @@
 
 (def ^:private wasmtime-binary
   (let [pinned (io/file ".tools" "wasmtime" "wasmtime")]
-    (if (.canExecute pinned) (.getPath pinned) "wasmtime")))
+    (if (io/can-execute? pinned) (io/path pinned) "wasmtime")))
 
 (defn- wat-data [bytes]
   (apply str (map #(format "\\%02x" (bit-and (int %) 0xff)) bytes)))
@@ -80,9 +80,9 @@
 
 (defn- echo-driver-wat []
   (let [mod "cm32p2|kotoba:application/http-post@1"
-        url-bytes (vec (.getBytes "https://x" "UTF-8"))
-        b1 (vec (.getBytes "hello" "UTF-8"))
-        b2 (vec (.getBytes "xy" "UTF-8"))
+        url-bytes (vec (kbytes/utf8-bytes "https://x"))
+        b1 (vec (kbytes/utf8-bytes "hello"))
+        b2 (vec (kbytes/utf8-bytes "xy"))
         url-ptr 8
         b1-ptr 24
         b2-ptr 32

@@ -32,7 +32,7 @@
          loopback fixture address is not refused -- except in
          `real-destination-blocked-check-refuses-a-loopback-target`, which
          deliberately leaves it real to prove the guard fires end-to-end."
-  (:require [kotoba.lang.text :as string]
+  (:require [kotoba.bytes :as kbytes] [kotoba.lang.text :as string]
             [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]
             [kotoba.kir :as ir]
@@ -125,7 +125,7 @@
 ;; ---------------------------------------------------------------------------
 
 (defn- respond! [exchange status ^String body]
-  (let [bytes (.getBytes body "UTF-8")]
+  (let [bytes (kbytes/utf8-bytes body)]
     (.sendResponseHeaders exchange status (count bytes))
     (doto (.getResponseBody exchange)
       (.write bytes)
