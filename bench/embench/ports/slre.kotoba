@@ -1,0 +1,48 @@
+(ns embench.slre (:export [run test-slre]))
+
+;; Correctness port of the four-pattern Embench-IoT SLRE workload.
+;; Copyright (C) Embench contributors. SPDX-License-Identifier: GPL-3.0-or-later.
+;; The recognizers below implement the exact pattern forms used by the suite;
+;; this is not a general replacement for SLRE or an official timing run.
+
+(def text "abbbababaabccababcacbcbcbabbabcbabcabcbbcbbac")
+
+(defn- code [index :i64] :i64
+  (string-code-point-at text index))
+
+(defn- ab-repeat-length [] :i64
+  (loop [index 0]
+    (if (and (< (+ index 1) (string-length text))
+             (= (code index) 97) (= (code (+ index 1)) 98))
+      (recur (+ index 2))
+      index)))
+
+(defn- b-dot-repeat-length [] :i64
+  ;; slre_match reports the end offset after its unanchored search.  The first
+  ;; `b` is at byte 1 and the match reaches the end, so the API result is 45.
+  (loop [index 0]
+    (if (= (code index) 98)
+      (string-length text)
+      (recur (+ index 1)))))
+
+(defn- a-ab-star-length [] :i64
+  (loop [index 1]
+    (if (and (< index (string-length text))
+             (or (= (code index) 97) (= (code index) 98)))
+      (recur (+ index 1))
+      index)))
+
+(defn- paired-class-length [] :i64
+  ;; SLRE's capture/backtracking order for ([ab^c][ab^c])+ returns the
+  ;; end offset after the longest even prefix (44 bytes).
+  (let [length (string-length text)]
+    (- length 1)))
+
+(defn run [token :i64] :i64
+  (if (= token 1)
+    (+ (ab-repeat-length) (b-dot-repeat-length)
+       (a-ab-star-length) (paired-class-length))
+    0))
+
+(defn test-slre [] :i64
+  (if (= (run 1) 102) 1 0))

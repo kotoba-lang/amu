@@ -71,8 +71,10 @@
 (defn- target-path [path]
   (when-not (and (string? path) (seq path))
     (reject! "output path is required" {} nil))
-  (let [target (.normalize (.toAbsolutePath (Paths/get path (make-array String 0))))
-        parent (.getParent target)]
+  (let [^Path raw (Paths/get path (make-array String 0))
+        ^Path absolute (.toAbsolutePath raw)
+        ^Path target (.normalize absolute)
+        ^Path parent (.getParent target)]
     (when-not (and parent (Files/isDirectory parent (make-array java.nio.file.LinkOption 0)))
       (reject! "output parent must be a directory" {:path path} nil))
     target))
@@ -156,21 +158,21 @@
    (do
    (when-not (instance? (Class/forName "[B") bytes)
      (reject! "output must be a byte array" {:path path} nil))
-   (let [target (target-path path)
-         parent (.getParent target)
-         temporary (Files/createTempFile parent ".kotoba-" ".tmp"
-                                         (make-array FileAttribute 0))
+   (let [^Path target (target-path path)
+         ^Path parent (.getParent target)
+         ^Path temporary (Files/createTempFile parent ".kotoba-" ".tmp"
+                                               (make-array FileAttribute 0))
          operation (volatile! :permissions)]
      (try
        (cond executable? (set-executable-permissions! temporary)
              private? (set-private-permissions! temporary))
        (vreset! operation :write)
-       (with-open [channel (FileChannel/open
-                            temporary
-                            (into-array OpenOption
-                                        [StandardOpenOption/WRITE
-                                         StandardOpenOption/TRUNCATE_EXISTING]))]
-         (let [buffer (ByteBuffer/wrap bytes)]
+       (with-open [^FileChannel channel (FileChannel/open
+                                         temporary
+                                         (into-array OpenOption
+                                                     [StandardOpenOption/WRITE
+                                                      StandardOpenOption/TRUNCATE_EXISTING]))]
+         (let [^ByteBuffer buffer (ByteBuffer/wrap bytes)]
            (while (.hasRemaining buffer) (.write channel buffer)))
          (.force channel true))
        (vreset! operation :move)
