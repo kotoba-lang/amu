@@ -120,7 +120,7 @@
 (deftest the-manifest-limits-are-read-from-the-table
   (let [wasm (limits/typed-manifest-limits :profile/wasm)
         js (limits/typed-manifest-limits :profile/esm :js? true)]
-    (is (= 32 (:parametric-adt-depth wasm) (:parametric-adt-depth js)))
+    (is (= 64 (:parametric-adt-depth wasm) (:parametric-adt-depth js)))
     (is (= 65536 (:string-literal-bytes js)) "the js manifest said 4096 until P1")
     (is (= 16384 (:vector-i64-items wasm) (:vector-i64-items js))
         "host budgets, not the language's 2^24 -- P1 names them, it does not raise them")))

@@ -1,4 +1,4 @@
-# ADR 0355 — Value-type descriptor bounds: depth 12 → 32, nodes 64 → 512
+# ADR 0355 — Value-type descriptor bounds: depth 12 → 64, nodes 64 → 512
 
 - Date: 2026-09-29
 - Status: Accepted (owner decision, 2026-09-29).
@@ -27,9 +27,11 @@ adr-2609242100 already makes the resource side a target-profile matter.
 
 ## Decision
 
-1. `:type-descriptor-depth` 12 → **32**; `:type-descriptor-nodes` 64 → **512**.
-   The nodes bound rises with the depth so that a recursive-shaped sum type
-   unrolled to depth 32 fits.
+1. `:type-descriptor-depth` 12 → **64**; `:type-descriptor-nodes` 64 → **512**.
+   One unrolled level of an s-expression sum type (variant, then its list of
+   children) costs two levels of descriptor depth, so depth 64 gives about 31
+   levels of source nesting; roughly 8 nodes per level keeps that inside 512.
+   (The first cut of this ADR was depth 32, which allowed only about 15 levels.)
 2. Every copy moves together, as `lang/limits.edn` lists them: osaho
    `adt-depth-limit`/`adt-node-limit`, kotoba-sema `max-type-depth`/`max-type-nodes`
    and `max-schema-depth`/`max-schema-nodes`, kotoba-script
@@ -39,7 +41,7 @@ adr-2609242100 already makes the resource side a target-profile matter.
 3. The other structural bounds are unchanged: `max-variant-cases` 32,
    `max-record-fields` 32, `max-expression-nodes`, `max-lowered-nodes`. They are
    not what limits an s-expression type.
-4. Per ADR 0354, a target whose runtime cannot decode a 32-deep, 512-node
+4. Per ADR 0354, a target whose runtime cannot decode a 64-deep, 512-node
    descriptor refuses the program by name; the language bound is not lowered to
    suit it.
 
@@ -47,7 +49,7 @@ adr-2609242100 already makes the resource side a target-profile matter.
 
 - Tests that pinned 12/13 and 20/21-field counts move: the record-literal test
   now meets `max-record-fields` (32) before the node budget, and the depth tests
-  use 32/33.
+  use 64/65.
 - The browser host's descriptor decoder accepts the same bounds, so values that
   cross the boundary keep the same limits on both sides.
 - Descriptor checking costs more per type in the worst case (still bounded).
