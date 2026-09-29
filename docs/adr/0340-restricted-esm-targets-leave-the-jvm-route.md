@@ -8,7 +8,7 @@
 `bin/amu` hosts every Wasm, native and EVM target on nbb/Node and refuses
 `--jvm-free` only where the JVM genuinely still owns something. `--target js`
 and `js-browser` were the exception: they spawned `kbb -M`, and the
-superproject's CLAUDE.md table said so in bold (*JVM を起こす*; *新規で選ばない*).
+superproject's AGENTS.md table said so in bold (*JVM を起こす*; *新規で選ばない*).
 
 Nothing in code generation needed the JVM. The frontend, admission, KIR
 lowering and provenance are the same `.cljc` this route already runs for
@@ -60,7 +60,7 @@ instantiate.
   helpers (the first nbb compile "differed" from the old golden at byte
   22,624 for exactly that reason — a pin skew, not a port bug, settled by
   compiling both routes at the new pin).
-- The superproject CLAUDE.md table that marks `js` / `js-browser` as *JVM*
+- The superproject AGENTS.md table that marks `js` / `js-browser` as *JVM*
   and *新規で選ばない* is superseded for the JVM half; the *default is
   `wasm32-browser`* guidance stands.
 - The parity gate widened past `route-decide` (2026-09-06, second slice):
