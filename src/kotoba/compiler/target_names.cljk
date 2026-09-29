@@ -8,7 +8,7 @@
   vocabulary."
   {:kotoba/export [parse]})
 
-(defn parse [s]
+(defn parse [#?@(:kotoba [s :string] :default [s])] #?@(:kotoba [:keyword])
   (case s "wasm32" :wasm32-kotoba-v1 "x86_64" :x86_64-kotoba-v1
         "aarch64" :aarch64-kotoba-v1
         ;; ADR-2607252500: the primary application artifact.
@@ -48,4 +48,4 @@
         "aarch64-windows" :aarch64-windows-kotoba-v1
         "aarch64-android" :aarch64-android-kotoba-v1
         "aarch64-ios" :aarch64-ios-kotoba-v1
-        (keyword s)))
+        #?(:kotoba (keyword-from-string s) :default (keyword s))))
