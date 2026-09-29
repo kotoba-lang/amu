@@ -1,0 +1,288 @@
+#!/usr/bin/env kbb
+(ns test-net-broker
+  "Native TCP through the kexe loader's supervisor broker (root ADR-2609261900
+  stage B): wires 43..47, :net/listen :net/accept :net/dial :net/read
+  :net/write. The guest (test/fixtures/net-broker-loopback.kotoba) never holds
+  a socket -- its seccomp filter / Seatbelt profile stay closed to them -- and
+  every rule on the way (grammar, scope, handle range, bounds, refusal names,
+  answer words) is tools/kexe_loader_decisions.kotoba / _names.kotoba.
+
+  Each case asserts the exit status, stdout and stderr LITERALLY (a refusal
+  is held to its reason's name, not to 'it failed'), in both directions:
+
+    roundtrip        granted + scoped: listen, dial itself, accept, both
+                     directions, close, EOF, an accept timeout; the read size
+                     and the timeout at exactly their bounds are admitted
+    dial-refused     a granted address nobody listens on answers \"refused\"
+    no-grant         the same program run without wires 43..47: the ISA's
+                     trap signal, nothing answered
+    scope-listen     :net/listen of an address the scope does not name
+    scope-dial       :net/dial of an address the scope does not name
+    malformed        a request the grammar does not admit
+    out-of-range     handle 17 (one past the table)
+    not-open         handle 5 (in range, never issued)
+    byte-budget      a read of 16,385 bytes (one past the bound)
+    timeout-budget   a timeout of 30,001 ms (one past the bound)
+    bad-hex          a write payload that is not lowercase hex
+    network-probe    the guest's own socket() with the net grant active is
+                     still denied (production sandbox builds only; the
+                     unsandboxed build is skipped BY NAME)
+    malformed-grant  a scope entry with no port: the loader refuses to start
+
+  and once per run, at compile time: the static Linux image has no handler
+  for wires 43..47 and refuses the program by name of the wire.
+
+  Platforms:
+    --vm macos   (default on macOS) the production loader (Seatbelt) on this
+                 Mac: aarch64 natively, x86_64 under Rosetta when present
+    --vm podman  Linux through `podman machine ssh`: the host ISA with the
+                 production loader (seccomp), the other ISA under
+                 qemu-<isa>-static with the build that compiles the filter out
+                 (-DKEXE_SANITIZER_TEST: qemu-user cannot install a guest-arch
+                 filter). Loaders are built in --gcc-image (default
+                 localhost/c3-gcc). --overcommit sets vm.overcommit_memory=1
+                 for the run and puts the previous value back.
+    --vm none    (default on Linux) directly.
+
+    --loader-source <file>  build this kexe_loader.c instead of tools/ (the
+                            mutation runs: a copy whose decision module was
+                            broken on purpose)
+    --only-isa aarch64|x86_64
+
+    kbb --backend sci --classpath . scripts/test-net-broker.cljk [--vm macos|podman|none]
+
+  Exit 0 every case held (and at least one ran), 1 a case failed, 2 could
+  not run."
+  (:require [kotoba.lang.text :as str]
+            [scripts.lib :as lib]
+            ["node:fs" :as fs]
+            ["node:os" :as os]))
+
+(def argv (vec *command-line-args*))
+(defn opt [flag default]
+  (let [i (.indexOf (to-array argv) flag)] (if (>= i 0) (nth argv (inc i) default) default)))
+(defn flag? [flag] (some #{flag} argv))
+
+(def vm (opt "--vm" (if (= "linux" (.platform os)) "none" "macos")))
+(def gcc-image (opt "--gcc-image" "localhost/c3-gcc"))
+(def only-isa (opt "--only-isa" nil))
+(def loader-source (or (opt "--loader-source" nil) (lib/join lib/root "tools" "kexe_loader.c")))
+(def fixture (lib/join lib/root "test" "fixtures" "net-broker-loopback.kotoba"))
+(def amu (lib/join lib/root "bin" "amu"))
+(def work (lib/temp-dir "net-broker-"))
+(def macos? (= vm "macos"))
+
+(def on-exit (atom nil))
+(defn cleanup! []
+  (when-let [f @on-exit] (reset! on-exit nil) (f))
+  (lib/remove-tree! work))
+(defn fail! [message]
+  (.error js/console (str "test-net-broker: " message))
+  (cleanup!)
+  (.exit js/process 2))
+
+(defn quote-arg [s] (str "'" (str/replace (str s) "'" "'\\''") "'"))
+
+(defn shell!
+  "Run one shell command line where the loaders run: {:status :stdout :stderr}."
+  [command]
+  (if (= vm "podman")
+    (lib/run "podman" ["machine" "ssh" command] {:allow-failure? true :max-buffer (* 16 1024 1024)})
+    (lib/run "sh" ["-c" command] {:allow-failure? true :max-buffer (* 16 1024 1024)})))
+
+(def host-isa
+  (if macos?
+    (case (.-arch js/process) "arm64" "aarch64" "x64" "x86_64")
+    (let [m (str/trim (:stdout (shell! "uname -m")))]
+      (case m "aarch64" "aarch64" "arm64" "aarch64" "x86_64" "x86_64" (fail! (str "unknown Linux machine " (pr-str m)))))))
+
+(def other-isa (if (= host-isa "aarch64") "x86_64" "aarch64"))
+
+(defn other-isa-runnable? []
+  (if macos?
+    (and (= host-isa "aarch64") (zero? (:status (lib/run "arch" ["-x86_64" "/usr/bin/true"] {:allow-failure? true}))))
+    (zero? (:status (shell! (str "test -x /usr/bin/qemu-" other-isa "-static"))))))
+
+(defn runner [isa]
+  (cond (= isa host-isa) ""
+        macos? (str "arch -" isa " ")
+        :else (str "qemu-" isa "-static ")))
+
+;; ---------------------------------------------------------------------------
+;; build: the loaders and the guest
+
+(defn build-loaders!
+  "{isa {:prod path-or-nil :nosandbox path-or-nil}} -- the builds each ISA runs."
+  [isas]
+  (let [src (lib/join work "kexe_loader.c")]
+    (fs/copyFileSync loader-source src)
+    (if macos?
+      (into {}
+            (for [isa isas]
+              (let [out (lib/join work (str "loader-" isa))
+                    r (lib/run "cc" ["-arch" (if (= isa "aarch64") "arm64" "x86_64") "-std=c11" "-O2"
+                                     "-Wall" "-Wextra" "-Werror" src "-o" out] {:allow-failure? true})]
+                (when-not (zero? (:status r)) (fail! (str "building the " isa " loader:\n" (:stderr r))))
+                [isa {:prod out}])))
+      (let [cmd (str "cd " (quote-arg work)
+                     " && gcc -std=c11 -O2 -static kexe_loader.c -o loader-aarch64"
+                     " && gcc -std=c11 -O2 -static -DKEXE_SANITIZER_TEST kexe_loader.c -o loader-aarch64-nosandbox"
+                     " && x86_64-linux-gnu-gcc -std=c11 -O2 -static kexe_loader.c -o loader-x86_64"
+                     " && x86_64-linux-gnu-gcc -std=c11 -O2 -static -DKEXE_SANITIZER_TEST kexe_loader.c -o loader-x86_64-nosandbox")
+            r (if (= vm "podman")
+                (shell! (str "podman run --rm -v " (quote-arg work) ":" (quote-arg work) " " gcc-image
+                             " sh -c " (quote-arg cmd)))
+                (shell! (str "cd " (quote-arg work) " && cc -std=c11 -O2 kexe_loader.c -o loader-" host-isa
+                             " && cc -std=c11 -O2 -DKEXE_SANITIZER_TEST kexe_loader.c -o loader-" host-isa "-nosandbox")))]
+        (when-not (zero? (:status r)) (fail! (str "building the loaders: " (:stdout r) (:stderr r))))
+        (into {}
+              (for [isa isas]
+                [isa (if (= isa host-isa)
+                       {:prod (lib/join work (str "loader-" isa))}
+                       ;; qemu-user cannot install a guest-arch seccomp filter
+                       {:nosandbox (lib/join work (str "loader-" isa "-nosandbox"))})]))))))
+
+(def policy (lib/join work "net.policy.edn"))
+
+(defn compile-guest! [isa]
+  (let [target (str isa (if macos? "-macos" "-linux"))
+        kexe (lib/join work (str "net-" isa ".kexe"))
+        bin (str kexe ".bin")
+        c (lib/run js/process.execPath [amu "compile" fixture "--target" target "--policy" policy "--output" kexe]
+                   {:allow-failure? true})]
+    (when-not (and (zero? (:status c)) (str/includes? (:stdout c) ":ok true"))
+      (fail! (str "compile " target ": " (:stdout c) (:stderr c))))
+    (let [x (lib/run js/process.execPath [amu "extract-native" kexe "--symbol" "main" "--output" bin]
+                     {:allow-failure? true})
+          offset (second (re-find #":offset (\d+)" (:stdout x)))]
+      (when-not offset (fail! (str "extract-native " kexe ": " (:stdout x) (:stderr x))))
+      {:bin bin :offset offset})))
+
+;; ---------------------------------------------------------------------------
+;; cases
+
+(def all-net "37,38,43,44,45,46,47")
+(defn trap [cap reason]
+  (str "KEXE_TRAP {:kind :capability :capability :net/" cap " :reason :net/" reason "}\n"))
+
+;; The trap an ungranted typed capability call raises in the guest's own code
+;; (the grant check is compiled in): brk on aarch64, ud2 on x86_64.
+(def ungranted-signal {"aarch64" "SIGTRAP" "x86_64" "SIGILL"})
+
+(defn cases
+  "Every case for one ISA. A and B are two loopback addresses: A the one the
+  program listens on, B one it dials that nobody listens on."
+  [isa a b]
+  [{:name "roundtrip" :args ["roundtrip" a b] :allow all-net
+    :env {"KEXE_CAP_RESOURCES_43" a "KEXE_CAP_RESOURCES_45" (str a "," b)}
+    :status 0 :stderr ""
+    :stdout (str "listen=[1]\ndial=[2]\naccept=[3]\nwrite=[5]\nread=[68656c6c6f]\n"
+                 "write-back=[5]\nread-back=[776f726c64]\nclose=[closed]\neof=[]\n"
+                 "accept-timeout=[timeout]\n0\n")}
+   {:name "dial-refused" :args ["dial-refused" a b] :allow all-net
+    :env {"KEXE_CAP_RESOURCES_45" b} :status 0 :stderr "" :stdout "dial=[refused]\n0\n"}
+   {:name "no-grant" :args ["listen-only" a b] :allow "37,38"
+    :env {"KEXE_CAP_RESOURCES_43" a} :status 120 :stdout ""
+    :stderr (str "KEXE_TRAP {:kind :signal :signal :" (get ungranted-signal isa) "}\n")}
+   {:name "scope-listen" :args ["listen-only" a b] :allow all-net
+    :env {"KEXE_CAP_RESOURCES_43" b "KEXE_CAP_RESOURCES_45" a}
+    :status 126 :stdout "" :stderr (trap "listen" "address-not-granted")}
+   {:name "scope-dial" :args ["dial-refused" a b] :allow all-net
+    :env {"KEXE_CAP_RESOURCES_43" b "KEXE_CAP_RESOURCES_45" a}
+    :status 126 :stdout "" :stderr (trap "dial" "address-not-granted")}
+   {:name "malformed" :args ["malformed" a b] :allow all-net
+    :env {"KEXE_CAP_RESOURCES_43" a} :status 126 :stdout "" :stderr (trap "listen" "malformed-request")}
+   {:name "out-of-range" :args ["out-of-range" a b] :allow all-net
+    :env {} :status 126 :stdout "" :stderr (trap "read" "handle-out-of-range")}
+   {:name "not-open" :args ["not-open" a b] :allow all-net
+    :env {} :status 126 :stdout "" :stderr (trap "read" "handle-not-open")}
+   {:name "byte-budget" :args ["byte-budget" a b] :allow all-net
+    :env {"KEXE_CAP_RESOURCES_43" a "KEXE_CAP_RESOURCES_45" a}
+    :status 126 :stdout "listen=[1]\ndial=[2]\n" :stderr (trap "read" "byte-budget")}
+   {:name "timeout-budget" :args ["timeout-budget" a b] :allow all-net
+    :env {"KEXE_CAP_RESOURCES_43" a}
+    :status 126 :stdout "listen=[1]\n" :stderr (trap "accept" "timeout-budget")}
+   {:name "bad-hex" :args ["bad-hex" a b] :allow all-net
+    :env {"KEXE_CAP_RESOURCES_43" a "KEXE_CAP_RESOURCES_45" a}
+    :status 126 :stdout "listen=[1]\ndial=[2]\n" :stderr (trap "write" "malformed-request")}
+   {:name "network-probe" :args ["listen-only" a b] :allow all-net :prod-only true
+    :env {"KEXE_CAP_RESOURCES_43" a "KEXE_NETWORK_PROBE" "1"}
+    :stdout ""
+    ;; macOS: Seatbelt refuses connect (EPERM) and the loader names it; Linux:
+    ;; the seccomp filter traps socket() itself
+    :status (if macos? 124 120)
+    :stderr (if macos?
+              "KEXE_TRAP {:kind :sandbox :reason :network-denied}\n"
+              "KEXE_TRAP {:kind :signal :signal :SIGSYS}\n")}
+   {:name "malformed-grant" :args ["listen-only" a b] :allow all-net
+    :env {"KEXE_CAP_RESOURCES_43" "127.0.0.1"} :status 2 :stdout ""
+    :stderr "kexe-loader: malformed native TCP grant (KEXE_CAP_RESOURCES_43 / KEXE_CAP_RESOURCES_45: comma-separated <ipv4>:<port>)\n"}])
+
+(defn command-line [env program args]
+  (str (when (seq env) (str "env " (str/join " " (map (fn [[k v]] (str k "=" (quote-arg v))) env)) " "))
+       program " " (str/join " " (map quote-arg args))))
+
+(def results (atom []))
+(defn check! [label ok? detail]
+  (swap! results conj {:label label :ok ok?})
+  (println (str (if ok? "PASS " "FAIL ") label (when-not ok? (str "\n     " (pr-str detail))))))
+(defn skip! [label why]
+  (swap! results conj {:label label :skipped true})
+  (println (str "SKIP " label " -- " why)))
+
+(defn run-isa! [isa loaders guest port-base]
+  (let [{:keys [bin offset]} guest]
+    (doseq [[build loader] (sort (get loaders isa))
+            :when loader
+            [i c0] (map-indexed vector (cases isa "A" "B"))
+            :let [a (str "127.0.0.1:" (+ port-base (* 2 i) (if (= build :prod) 0 100)))
+                  b (str "127.0.0.1:" (+ port-base (* 2 i) 1 (if (= build :prod) 0 100)))
+                  c (first (filter #(= (:name %) (:name c0)) (cases isa a b)))
+                  label (str vm " " isa " " (name build) " " (:name c))]]
+      (if (and (:prod-only c) (not= build :prod))
+        (skip! label "the unsandboxed build has no syscall filter to deny the probe")
+        (let [r (shell! (command-line (:env c) (str (runner isa) loader " " bin " " offset " 0 " isa " " (:allow c) " --")
+                                      (:args c)))
+              got {:status (:status r) :stdout (:stdout r) :stderr (:stderr r)}
+              want (select-keys c [:status :stdout :stderr])]
+          (check! label (= got want) {:want want :got got}))))))
+
+(defn static-refusal! []
+  (let [out (lib/join work "net-static")
+        r (lib/run js/process.execPath [amu "compile" fixture "--target" (str host-isa "-linux-static")
+                                        "--policy" policy "--output" out] {:allow-failure? true})
+        want "a linux-static image has no handler for wire (wire 43), wire (wire 44), wire (wire 45), wire (wire 46), wire (wire 47)"]
+    (check! "compile static-image-refuses-wires-43..47"
+            (and (= 70 (:status r)) (str/includes? (str (:stdout r) (:stderr r)) want)
+                 (not (fs/existsSync out)))
+            {:status (:status r) :out (str (:stdout r) (:stderr r))})))
+
+(let [isas (vec (filter #(or (nil? only-isa) (= only-isa %))
+                        (if (other-isa-runnable?) [host-isa other-isa] [host-isa])))]
+  (try
+    (when (and (not only-isa) (not (other-isa-runnable?)))
+      (println (str "SKIP " vm " " other-isa " -- no way to run it on this host (Rosetta / qemu-" other-isa "-static)")))
+    (when (and (= vm "podman") (flag? "--overcommit"))
+      (let [before (str/trim (:stdout (shell! "cat /proc/sys/vm/overcommit_memory")))]
+        (when-not (re-matches #"[0-2]" before) (fail! (str "cannot read vm.overcommit_memory: " (pr-str before))))
+        (reset! on-exit #(shell! (str "sudo sysctl -q -w vm.overcommit_memory=" before)))
+        (let [r (shell! "sudo sysctl -q -w vm.overcommit_memory=1")]
+          (when-not (zero? (:status r)) (fail! (str "setting vm.overcommit_memory: " (:stderr r)))))
+        (println (str "vm.overcommit_memory " before " -> 1 for this run"))))
+    (lib/write-text! policy (str "{:allow #{" (str/join " " (map #(str "[:cap/call " % "]") [37 38 43 44 45 46 47])) "}}"))
+    (let [loaders (build-loaders! isas)
+          guests (into {} (for [isa isas] [isa (compile-guest! isa)]))
+          port-base (+ 20000 (* 200 (mod (.-pid js/process) 100)))]
+      (doseq [[k isa] (map-indexed vector isas)]
+        (run-isa! isa loaders (get guests isa) (+ port-base (* 50 k))))
+      (static-refusal!))
+    (finally (cleanup!)))
+  (let [rs @results
+        passed (count (filter :ok rs))
+        failed (count (filter #(and (not (:ok %)) (not (:skipped %))) rs))
+        skipped (count (filter :skipped rs))]
+    (println (str "CASES\t" (count rs) "\tpassed " passed " failed " failed " skipped " skipped))
+    (cond
+      (pos? failed) (do (println "test-net-broker: FAILED") (.exit js/process 1))
+      (zero? passed) (do (println "test-net-broker: nothing ran") (.exit js/process 2))
+      :else (println "test-net-broker: passed"))))

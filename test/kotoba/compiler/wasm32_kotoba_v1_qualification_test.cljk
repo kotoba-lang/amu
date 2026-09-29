@@ -64,8 +64,15 @@
   :component-core, :jvm-host -- so the keys below do not apply to it and this
   file does not govern it. Named rather than omitted: a hand-kept list that
   silently skips a kit is how stream-ingress carried an unguarded
-  :qualification until 2026-08-18."
-  #{"stream-object-v1.edn"})
+  :qualification until 2026-08-18.
+
+  tcp-v1 (native TCP, wires 43..47, root ADR-2609261900 stage B) is outside it
+  too: its five capabilities are one `:string -> :string` wire answered by the
+  kexe loader's supervisor broker, and the one claim it makes (:native-aot) is
+  measured by scripts/test-net-broker.cljk, not by a KIR reference provider --
+  so this file's reference-first rule (every kit here has :reference
+  :implemented) is not the rule that governs it."
+  #{"stream-object-v1.edn" "tcp-v1.edn"})
 
 (def typed-kit-abi-wasm-aot-kits
   "Adding a name here without a test that actually runs the guest is the

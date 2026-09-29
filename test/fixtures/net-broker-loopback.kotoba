@@ -1,0 +1,60 @@
+;; Native TCP (wires 43..47) through the kexe loader's supervisor broker
+;; (root ADR-2609261900 stage B). Driven by scripts/test-net-broker.cljk:
+;; argv is <mode> <address A> <address B>. The guest only crosses a pipe; the
+;; sockets are the supervisor's, and every rule -- grammar, scope, handle
+;; range, bounds, refusal names -- is tools/kexe_loader_decisions.kotoba.
+;;
+;;   roundtrip     listen A, dial A, accept, both directions, close, EOF,
+;;                 accept timeout, and the two bounds at exactly their limit
+;;   dial-refused  dial B (granted, nothing listening) -> "refused"
+;;   listen-only   listen A (the scope and no-grant cases)
+;;   malformed     a listen request with no port
+;;   out-of-range  a read naming handle 17 (one past the table)
+;;   not-open      a read naming handle 5 (in range, never issued)
+;;   byte-budget   a read of 16,385 bytes on an open connection
+;;   timeout-budget an accept that names 30,001 ms
+;;   bad-hex       a write whose payload is not lowercase hex
+(ns net.broker (:export [main]))
+(defn arg [i :string] :string (typed-cap-call :cli/args :string :string i))
+(defn emit [s :string] :string (typed-cap-call :io/write :string :string s))
+(defn listen [s :string] :string (typed-cap-call :net/listen :string :string s))
+(defn accept [s :string] :string (typed-cap-call :net/accept :string :string s))
+(defn dial [s :string] :string (typed-cap-call :net/dial :string :string s))
+(defn rd [s :string] :string (typed-cap-call :net/read :string :string s))
+(defn wr [s :string] :string (typed-cap-call :net/write :string :string s))
+(defn nl [] :string (string-substring "a
+b" 1 2))
+(defn show [label :string s :string] :i64
+  (do (emit label) (emit "=[") (emit s) (emit "]") (emit (nl)) 0))
+(defn ++ [a :string b :string] :string (string-concat a b))
+(defn main [] :i64
+  (let [mode (arg "0") a (arg "1") b (arg "2")]
+    (cond
+      (string=? mode "roundtrip")
+      (let [l (listen a)
+            c (dial (++ a " 2000"))
+            s (accept (++ l " 2000"))]
+        (do (show "listen" l) (show "dial" c) (show "accept" s)
+            (show "write" (wr (++ c " 68656c6c6f")))
+            (show "read" (rd (++ s " 16 2000")))
+            (show "write-back" (wr (++ s " 776f726c64")))
+            (show "read-back" (rd (++ c " 16 2000")))
+            (show "close" (wr c))
+            (show "eof" (rd (++ s " 16384 30000")))
+            (show "accept-timeout" (accept (++ l " 0")))
+            0))
+      (string=? mode "dial-refused") (do (show "dial" (dial (++ b " 1000"))) 0)
+      (string=? mode "listen-only") (do (show "listen" (listen a)) 0)
+      (string=? mode "malformed") (do (show "listen" (listen "127.0.0.1")) 0)
+      (string=? mode "out-of-range") (do (show "read" (rd "17 16 0")) 0)
+      (string=? mode "not-open") (do (show "read" (rd "5 16 0")) 0)
+      (string=? mode "byte-budget")
+      (let [l (listen a) c (dial (++ a " 2000"))]
+        (do (show "listen" l) (show "dial" c) (show "read" (rd (++ c " 16385 0"))) 0))
+      (string=? mode "timeout-budget")
+      (let [l (listen a)]
+        (do (show "listen" l) (show "accept" (accept (++ l " 30001"))) 0))
+      (string=? mode "bad-hex")
+      (let [l (listen a) c (dial (++ a " 2000"))]
+        (do (show "listen" l) (show "dial" c) (show "write" (wr (++ c " 6g"))) 0))
+      :else (do (show "mode" "unknown") 1))))

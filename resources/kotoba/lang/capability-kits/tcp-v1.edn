@@ -1,0 +1,97 @@
+{:kotoba.capability-kit/name :tcp
+ :kotoba.capability-kit/version 1
+ ;; Native TCP, root ADR-2609261900 stage B (the agent-centric write plane).
+ ;; Five capabilities, one authority per direction -- a guest that may take
+ ;; connections has not thereby been allowed to open them, and one that may
+ ;; read a connection has not been allowed to write into it.
+ :capabilities [{:name :net/listen :id 43}
+                {:name :net/accept :id 44}
+                {:name :net/dial :id 45}
+                {:name :net/read :id 46}
+                {:name :net/write :id 47}]
+ :semantics {:transport :tcp
+             :address-family :ipv4
+             :connection-oriented true
+             :destination-authority :host-exact-address-allowlist
+             :ambient-network false
+             ;; the kexe loader's SUPERVISOR owns every socket; the guest's
+             ;; sandbox (Linux seccomp, macOS Seatbelt) admits no socket
+             ;; syscall and reaches the broker over a pipe pair, as
+             ;; :process/spawn 20 and :gpu/compute 42 do
+             :execution :supervisor-broker
+             :handles :per-execution}
+ :limits {:open-handles 16
+          :read-bytes [1 16384]
+          :write-bytes [1 16384]
+          :timeout-ms [0 30000]
+          :write-deadline-ms 1000
+          :scope-entries-per-wire 16
+          :scope-shape :ipv4-colon-port-exact-set}
+ ;; Every number above is kexe_loader_decisions.kotoba `constant` 22..26 (the
+ ;; loader's #defines KEXE_NET_* are that function's answers, generated), and
+ ;; the rules that use them are its decide ops 10..18. The string pool is a
+ ;; 65,536-byte bump allocator by default (KEXE_STRING_POOL raises it, to at
+ ;; most 1 GiB) and never reclaims: a read of N bytes answers 2N hex
+ ;; characters into it, so a long-running guest raises the budget.
+ :wire
+ {:typed-kind [:string :string]
+  :elaboration "(typed-cap-call :net/<op> :string :string request)"
+  :requests {:net/listen "<ipv4>:<port>"
+             :net/accept "<listener-handle> <timeout-ms>"
+             :net/dial "<ipv4>:<port> <timeout-ms>"
+             :net/read "<connection-handle> <max-bytes> <timeout-ms>"
+             :net/write "<connection-handle> <lowercase-hex> | <connection-handle>"}
+  :answers {:net/listen "<listener-handle>"
+            :net/accept "<connection-handle> | timeout"
+            :net/dial "<connection-handle> | timeout | refused | unreachable"
+            :net/read "<lowercase-hex> | \"\" (end of stream) | timeout | reset"
+            :net/write "<bytes-written> | reset | closed (the close form)"}
+  ;; A GUEST BUG is refused BY NAME -- exit 126, one line
+  ;; `KEXE_TRAP {:kind :capability :capability :net/<op> :reason :net/<name>}`
+  ;; -- and is never answered with something that looks like data.
+  :refusals [:net/malformed-request :net/address-not-granted
+             :net/handle-out-of-range :net/handle-not-open :net/handle-budget
+             :net/byte-budget :net/timeout-budget :net/listen-failed
+             :net/setup-failed]}
+ ;; The grant a kexe loader host hands over. There is no "profile" object;
+ ;; a DHT daemon profile is this GRANT SET: the allow list names 43..47 (plus
+ ;; whatever else the daemon needs, e.g. 37 :io/write), and the two address
+ ;; scopes name the one address it listens on and the peers it may dial:
+ ;;
+ ;;   loader <bin> <offset> <arity> <isa> 37,43,44,45,46,47 -- ...
+ ;;   KEXE_CAP_RESOURCES_43=127.0.0.1:7400
+ ;;   KEXE_CAP_RESOURCES_45=127.0.0.1:7401,127.0.0.1:7402
+ ;;
+ ;; A packaged command bakes the scopes in (KEXE_EMBEDDED_NET_LISTEN /
+ ;; KEXE_EMBEDDED_NET_DIAL) and reads no environment for them. An entry that
+ ;; is not <ipv4>:<port> makes the loader refuse to start (exit 2).
+ :grant {:allow [43 44 45 46 47]
+         :scopes {:net/listen "KEXE_CAP_RESOURCES_43"
+                  :net/dial "KEXE_CAP_RESOURCES_45"}
+         :separator ","}
+ :qualification {:reference :pending
+                 :wasm-aot :pending
+                 :wasm32-kotoba-v1 :pending
+                 :native-aot :implemented
+                 :jit :pending}
+ ;; :native-aot :implemented -- MEASURED 2026-09-27 by
+ ;; scripts/test-net-broker.cljk over test/fixtures/net-broker-loopback.kotoba
+ ;; compiled by amu and run under tools/kexe_loader.c: macOS aarch64 and
+ ;; x86_64 (Rosetta) with the production loader (Seatbelt), 26/26 cases;
+ ;; Linux aarch64 with the production loader (seccomp) and Linux x86_64 under
+ ;; qemu-x86_64-static with the filter compiled out, 25/25 + 1 named skip
+ ;; (the network probe needs a filter to deny it); the static image's
+ ;; refusal of wires 43..47, 1/1. The cases hold a loopback round trip in
+ ;; both directions, EOF, an accept timeout, a refused dial, the bounds at
+ ;; and one past their limits, every guest-bug refusal by its literal name,
+ ;; an ungranted call trapping with the ISA's signal (SIGTRAP aarch64, SIGILL
+ ;; x86_64), and the guest's own socket() still denied with the grant active.
+ ;; Mutating the scope rule (decide op 13 answering 1) turns exactly the two
+ ;; scope cases red on every platform.
+ ;;
+ ;; This is the kexe-loader host (a supervised native process). The
+ ;; loader-less static Linux image carries no handler for wires 43..47 and
+ ;; refuses such a program at packaging; the aiueos bare-metal surface has
+ ;; no network. :reference / :wasm-aot / :jit / :wasm32-kotoba-v1 were not
+ ;; attempted.
+ }

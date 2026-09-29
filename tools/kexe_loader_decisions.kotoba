@@ -81,6 +81,17 @@
     ;; the longest path a scope admits, NUL included (PATH_MAX-sized
     ;; buffers; a joined path must be strictly shorter).
     (= k 21) 4096
+    ;; Native TCP (wires 43..47, root ADR-2609261900 stage B), brokered by
+    ;; the supervisor: the handles one execution may hold open at once
+    ;; (listeners and connections together), the most bytes one read answers
+    ;; or one write takes, the longest timeout a request may name (ms), how
+    ;; long the supervisor waits for a peer to take a write (ms), and the
+    ;; address entries one wire's scope may list.
+    (= k 22) 16
+    (= k 23) 16384
+    (= k 24) 30000
+    (= k 25) 1000
+    (= k 26) 16
     :else -1))
 
 ;; ---------------------------------------------------------------------
@@ -147,7 +158,8 @@
 ;;    9 :hash/sha256 3              10 :clock/now 7, text form
 ;;   11 :io/read 41                 12 :cli/args 38
 ;;   13 :io/write 37                14 :gpu/compute 42
-;;   15 :env/read 33
+;;   15 :env/read 33               16 native TCP 43..47 (the net broker;
+;;                                    which wire is the request's first byte)
 ;;
 ;; Typed kinds: 1 string, 2 option-i64, 3 result-i64, 4 clock-v1,
 ;; 5 dataspace-v1, 6 ui-commit-v1, 7 ui-event-v1.
@@ -168,6 +180,11 @@
                      (= id 37) 13
                      (= id 42) 14
                      (= id 33) 15
+                     (= id 43) 16
+                     (= id 44) 16
+                     (= id 45) 16
+                     (= id 46) 16
+                     (= id 47) 16
                      :else 0)
     :else 0))
 
@@ -261,6 +278,89 @@
     (= next-byte 47) 1
     :else 0))
 
+;; ---------------------------------------------------------------------
+;; Native TCP, wires 43..47 (root ADR-2609261900 stage B). The SUPERVISOR
+;; owns the sockets and asks these; the guest only crosses a pipe. The C
+;; measures -- splits the request at single spaces, counts the dots and
+;; colons of an address, walks each decimal with the handlers' ops 3/4 --
+;; and asks. A refusal is an index into kexe_loader_names.kotoba
+;; net-refusal-name:
+;;   1 malformed-request  2 address-not-granted  3 handle-out-of-range
+;;   4 handle-not-open    5 handle-budget        6 byte-budget
+;;   7 timeout-budget     8 listen-failed        9 setup-failed
+
+;; op 10: how many space-separated fields each wire's request has.
+;; 0 malformed, 1 admitted, 2 the close form (wire 47 with a handle alone).
+;;   43 "<ip>:<port>"   44 "<listener> <ms>"   45 "<ip>:<port> <ms>"
+;;   46 "<conn> <max-bytes> <ms>"   47 "<conn> <hex>" or "<conn>"
+(defn- net-form [wire fields]
+  (cond
+    (= wire 43) (if (= fields 1) 1 0)
+    (= wire 44) (if (= fields 2) 1 0)
+    (= wire 45) (if (= fields 2) 1 0)
+    (= wire 46) (if (= fields 3) 1 0)
+    (= wire 47) (if (= fields 2) 1 (if (= fields 1) 2 0))
+    :else 0))
+
+;; op 11: one part of "<a>.<b>.<c>.<d>:<port>" -- WHICH 0..3 an octet
+;; (0..255), 4 the port (1..65535). VALUE is the decimal the C walked, -1
+;; when it was not one.
+(defn- net-address-part [which value]
+  (cond
+    (< value 0) 0
+    (< which 4) (if (> value 255) 0 1)
+    (= which 4) (if (< value 1) 0 (if (> value 65535) 0 1))
+    :else 0))
+
+;; op 12: the address's punctuation: exactly three dots and one colon.
+(defn- net-address-shape [dots colons]
+  (if (= dots 3) (if (= colons 1) 1 0) 0))
+
+;; op 13: THE SCOPE RULE. A granted entry (ip as a 32-bit number, port)
+;; admits a requested address exactly when both are equal -- no wildcard,
+;; no port range, no prefix. The C asks this once per entry of the wire's
+;; scope (KEXE_CAP_RESOURCES_43 for listen, _45 for dial) and admits on
+;; the first 1; with no entry nothing is admitted.
+(defn- net-address-granted [entry-ip entry-port ip port]
+  (if (= entry-ip ip) (if (= entry-port port) 1 0) 0))
+
+;; op 14: a handle the request names, against what the slot holds (0 free,
+;; 1 listener, 2 connection) and what this wire needs. 0 admitted, else the
+;; refusal: out of range (not 1..(constant 22)), or not open as that kind.
+(defn- net-handle [handle expected slot]
+  (cond
+    (< handle 1) 3
+    (> handle (constant 22)) 3
+    (= slot expected) 0
+    :else 4))
+
+;; op 15: a read's max-bytes: 1..(constant 23). 0 admitted, 6 byte-budget.
+(defn- net-read-bytes [n]
+  (if (< n 1) 6 (if (> n (constant 23)) 6 0)))
+
+;; op 16: a timeout in ms: 0..(constant 24). 0 admitted, 7 timeout-budget.
+(defn- net-timeout [ms]
+  (if (< ms 0) 7 (if (> ms (constant 24)) 7 0)))
+
+;; op 17: one lowercase hex digit's value, -1 for any other byte (the
+;; answer of a read is lowercase, so a write takes lowercase only).
+(defn- hex-nibble [b]
+  (cond
+    (< b 48) -1
+    (<= b 57) (- b 48)
+    (< b 97) -1
+    (<= b 102) (- b 87)
+    :else -1))
+
+;; op 18: a write's hex length N: even and 2..2*(constant 23). 0 admitted,
+;; 1 malformed (empty or odd), 6 byte-budget (more than the bound).
+(defn- net-write-hex [n]
+  (cond
+    (< n 2) 1
+    (> n (* 2 (constant 23))) 6
+    (= n (* 2 (quot n 2))) 0
+    :else 1))
+
 ;; The one native entry for every decision but the allow-list (which needs
 ;; all five argument registers). OP is the ABI; the C names each one
 ;; KEXE_DECIDE_*.
@@ -276,4 +376,13 @@
     (= op 7) (budget-verdict a b)
     (= op 8) (scope-admitted a b c)
     (= op 9) (wire-id-admissible a)
+    (= op 10) (net-form a b)
+    (= op 11) (net-address-part a b)
+    (= op 12) (net-address-shape a b)
+    (= op 13) (net-address-granted a b c d)
+    (= op 14) (net-handle a b c)
+    (= op 15) (net-read-bytes a)
+    (= op 16) (net-timeout a)
+    (= op 17) (hex-nibble a)
+    (= op 18) (net-write-hex a)
     :else -1))
