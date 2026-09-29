@@ -21,8 +21,8 @@
   disagree about the creation bytes, that is a contradiction, not a richer
   description -- hence the cross-check below, which fails the compile."
   {:kotoba/export [targets]}
-  (:require ["node:buffer" :refer [Buffer]]
-            [json.data-json :as json]
+  (:require [json.data-json :as json]
+            [kotoba.compiler.text-bytes :as text-bytes]
             [kotoba.artifact.core :as artifact]
             [kotoba.compiler.backend.evm :as evm]
             [kotoba.compiler.capability-names :as cap-names]
@@ -92,8 +92,8 @@
                     {:phase :provenance
                      :backend-manifest-sha256 (:creation-sha256 result)
                      :provenance-sha256 (:sha256 primary)})))
-        bytes (Buffer.from (clj->js (map #(bit-and (int %) 0xff)
-                                         (:creation-bytes result))))
+        bytes (text-bytes/bytes-from-ints (mapv #(bit-and (int %) 0xff)
+                                                (:creation-bytes result)))
         abi-json (json/write-str (:abi result)
                                  {:key-fn (fn [k] (if (keyword? k)
                                                     (subs (str k) 1)
@@ -153,5 +153,5 @@
 ;; CLI against nothing and fail the suite's own run. Execute only when this
 ;; file was actually named as the entrypoint -- the same guard every other
 ;; nbb entrypoint draws by checking for a subcommand first.
-(when (seq *command-line-args*)
+(when (seq (support/command-line-args))
   (support/execute! run!))

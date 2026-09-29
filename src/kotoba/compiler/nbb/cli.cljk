@@ -5,24 +5,31 @@
   {:kotoba/export [native-feature-refusal-message native-value-abi run! targets
                   unqualified-native-feature]}
   (:require [kotoba.compiler.capability-names :as cap-names]
+            [kotoba.compiler.kexe-fs-forms :as kexe-fs-forms]
             [kotoba.compiler.nbb.cli-support :as support]
             [kotoba.compiler.nbb.compile-cache :as compile-cache]
             [kotoba.compiler.nbb.verdict-cache :as verdict-cache]
             [kotoba.compiler.definition-identity :as definition-identity]
             [kotoba.sema :as sema]
-            [kotoba.compiler.nbb.io :as io]
+            [kotoba.compiler.nbb.io :as nbb-io]
             [kotoba.compiler.nbb.output-set :as output-set]
             [kotoba.compiler.nbb.project-source :as project-source]
             [kotoba.compiler.effect-row :as effect-row]
             [kotoba.artifact.core :as artifact]
             [kotoba.kir.compatibility :as compatibility]
-            [kotoba.kir.cljs-i64 :as i64]
+            [kotoba.compiler.host-integer :as host-integer]
             [kotoba.kir :as ir]
             [kotoba.compiler.provenance :as provenance]
             [kotoba.compiler.source-path :as source-path]
             [kotoba.compiler.uefi-operations :as uefi]
             [kotoba.kir.target :as target-profile]
-            [kotoba.verifier :as verifier]))
+            [kotoba.verifier :as verifier]
+            [kotoba.compiler.text-bytes :as text-bytes]
+            [kotoba.compiler.base64-text :as base64-text]
+            ;; The env/read ability (catalog wire 33, superproject
+            ;; adr-2609242330 S5); under nbb the alias names the
+            ;; mechanism-layer handler.
+            #?(:cljs [kotoba.compiler.nbb.host.env :as env])))
 
 ;; Mirrors `kotoba.compiler.cli`'s `parse-target`, restricted to ORDINARY
 ;; (non-aiueos) native target names -- everything this fast
@@ -114,8 +121,8 @@
         ;; hid it. The ceiling is not an invention; it is the number this line
         ;; already implemented, now written down where the other routes can
         ;; read it.
-        fuel (if (i64/bigint-value? declared) (js/Number declared) declared)]
-    (when-not (and (js/Number.isSafeInteger fuel)
+        fuel (host-integer/narrow declared)]
+    (when-not (and (host-integer/safe-integer? fuel)
                    (<= 1 fuel max-native-fuel))
       (throw (ex-info "native fuel budget is not admitted"
                       {:phase :verify :fuel declared
@@ -147,6 +154,19 @@
   reason as `kotoba.compiler.nbb.wasm-cli/read-policy!`."
   [args]
   (cap-names/wire-policy (support/read-policy args)))
+
+(defn- admission-policy
+  "The policy admission reads. `:linux-static` (superproject adr-2609251400
+  C3: the grant and fs scope a static ELF seals) is PACKAGING input, not an
+  admission rule -- osaho's admission refuses keys it does not know, and it
+  should -- so it is taken off here and handed to the packager whole
+  (`serialized-native`). It still reaches the provenance record and the
+  compile cache key, both of which read the policy as written. The
+  top-level `:spawn` (the :process/spawn grant, kotoba-lang
+  lang/capability-catalog.edn :process/spawn :grant) is packaging input for
+  the same reason."
+  [policy]
+  (dissoc policy :linux-static :spawn))
 
 (defn- decode-policy!
   "The cached-compile counterpart of `read-policy!`, for already-read material."
@@ -264,7 +284,7 @@
   launcher writes or removes the variable on every spawn, so an ambient value
   is never read."
   []
-  (case (some-> js/process .-env (aget "AMU_TARGET_ORIGIN"))
+  (case (env/read "AMU_TARGET_ORIGIN")
     "host" :host
     "env" :env
     :explicit))
@@ -403,6 +423,11 @@
         ;; compiler-private KIR metadata influence the bytes being sealed.
         emitted (support/timed "native-emit" #(emit-program program))
         code (:code emitted)
+        ;; A kexe-loader program carrying the token of an :fs/app-data form
+        ;; the loader does not answer (kotoba-lang lang/capability-catalog.edn
+        ;; :status :proposed -- OWNER since S5) is refused by name here,
+        ;; before anything is written.
+        _ (kexe-fs-forms/refuse-unanswered! target code)
         artifact-map
         (support/timed
          "artifact-seal"
@@ -521,7 +546,7 @@
       package (assoc :binary (support/timed
                               "native-package"
                               #(package (:target result) (:artifact result)
-                                        artifact-kind))))))
+                                        artifact-kind policy))))))
 
 (defn- write-native! [output {:keys [artifact-text provenance-text binary]} target]
   (let [;; adr-2609251400 C2: a static ELF is the program itself, so it is
@@ -541,7 +566,7 @@ provenance-output (str output ".provenance.edn")
         publication-text (output-set/serialize output published provenance-text)]
     (support/timed
      "output-set-write"
-     #(io/write-set! [(if binary
+     #(nbb-io/write-set! [(if binary
                         (cond-> {:path output :bytes binary} mode (assoc :mode mode))
                         {:path output :text artifact-text})
                       {:path provenance-output :text provenance-text}
@@ -555,8 +580,8 @@ provenance-output (str output ".provenance.edn")
         emit-metadata (support/emit-metadata args)
         artifact-kind (support/option args "--artifact")
         hir (:value (resolve-hir! source
-                                  (project-source/analyze-opts policy linked?) nil))
-        result (compile-native! hir target backend policy emit-metadata emit-program nil)
+                                  (project-source/analyze-opts (admission-policy policy) linked?) nil))
+        result (compile-native! hir target backend (admission-policy policy) emit-metadata emit-program nil)
         serialized (serialized-native source policy emit-metadata result
                                       package artifact-kind)
         {:keys [provenance-output publication-output artifact-bytes]}
@@ -610,7 +635,7 @@ provenance-output (str output ".provenance.edn")
           (throw (ex-info "compiler cache integrity mismatch" {:cache-key key})))
         (let [restored (cond-> cached
                          (:binary-base64 cached)
-                         (assoc :binary (js/Buffer.from (:binary-base64 cached) "base64")))
+                         (assoc :binary (base64-text/decode (:binary-base64 cached))))
               {:keys [provenance-output publication-output artifact-bytes]}
               (write-native! output restored target)]
           (cond-> {:ok true :target target :output output
@@ -622,25 +647,25 @@ provenance-output (str output ".provenance.edn")
             policy (support/timed "policy-decode"
                                   #(decode-policy! material))
             hir-result (resolve-hir! source
-                                     (project-source/analyze-opts policy linked?)
+                                     (project-source/analyze-opts (admission-policy policy) linked?)
                                      stage-cache)
             hir (:value hir-result)
-            result (compile-native! hir target backend policy emit-metadata
+            result (compile-native! hir target backend (admission-policy policy) emit-metadata
                                     emit-program stage-cache)
             serialized (serialized-native source policy emit-metadata result
                                           package artifact-kind)
             {:keys [provenance-output publication-output artifact-bytes]}
             (write-native! output serialized target)
-            binary-base64 (some-> (:binary serialized) (.toString "base64"))
+            binary-base64 (some-> (:binary serialized) base64-text/encode)
             sealed (cond-> (assoc (dissoc serialized :binary)
                                   :artifact-sha256 (compile-cache/sha256 (:artifact-text serialized))
                                   :provenance-sha256 (compile-cache/sha256 (:provenance-text serialized)))
                      binary-base64 (assoc :binary-base64 binary-base64
                                           :binary-sha256 (compile-cache/sha256 binary-base64)))
-            size (+ (.byteLength js/Buffer (:artifact-text serialized) "utf8")
-                    (.byteLength js/Buffer (:provenance-text serialized) "utf8")
+            size (+ (text-bytes/utf8-length (:artifact-text serialized))
+                    (text-bytes/utf8-length (:provenance-text serialized))
                     (if binary-base64
-                      (.byteLength js/Buffer binary-base64 "utf8")
+                      (text-bytes/utf8-length binary-base64)
                       0))]
         (support/timed "cache-store" #(compile-cache/put! artifact-cache key sealed size))
         (cond-> {:ok true :target target :output output
@@ -729,8 +754,8 @@ provenance-output (str output ".provenance.edn")
       ;; else the reader returns. `Buffer.from` throws on a BigInt element, so
       ;; narrow here -- at the one place that needs Numbers -- rather than
       ;; walking the artifact and widening what the verifier was handed.
-      (io/write-bytes! output
-                       (js/Buffer.from (clj->js (mapv #(js/Number %) (:code artifact-map)))))
+      (nbb-io/write-bytes! output
+                       (text-bytes/bytes-from-ints (mapv host-integer/narrow (:code artifact-map))))
       ;; `:offset`, `:length` and `:arity` come out of the artifact, so they
       ;; are BigInts too, and `pr-str` renders a BigInt as
       ;; `#object[BigInt 10500]` -- unreadable to the caller that has to pass

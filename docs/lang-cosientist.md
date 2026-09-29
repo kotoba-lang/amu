@@ -1056,3 +1056,122 @@ ty 注記なし probe のため過大評価されていた — 以下は型付�
   iter 34 form. wt-somethread2 tree is DIRTY with the applied patch -
   commit it before any other branch work touches that worktree.
 
+
+## Iteration 37 - multi-step some->/some->> linear-chain: gate ALL GREEN, pushed (2026-09-24 06:45 JST, sema bot/lang-somethread-rebase-20260920 @906120b)
+
+- Target hypothesis (carried iters 26-36): linear-chain lower in
+  desugar-some-thread; 2-step KIR parity + 1-step CIDs unchanged +
+  0-step fail-closed + compile + run value + regression suite.
+- DONE this tick (stdout via file-redirect; loadavg 31.8 - quiet gate NOT
+  met, target parity-only so speed N/A):
+  - COMMIT FIRST (iter 36's instruction, before gates): re-applied patch
+    committed as 906120b on bot/lang-somethread-rebase-20260920 (base
+    9401993; tree clean). Pin re-verified: deps-lock.edn:80 still pins
+    kotoba-sema 9898f0e28b48... -> on-pin, no rebase.
+  - Gate (cp-smt2.txt classpath, nbb direct + wasm_cli.cljk, JVM-free):
+    - 0-step fail-closed: smt-0step.kotoba REJECT exit 65, own diagnostic
+      "some->> requires an initial option and at least one step".
+    - 1-step CID-unchanged: smt-first.kotoba check PASS exit 0, t
+      bafyreia2bhjmxm2ljwe7o3urxte2hszr6h2px4wvd6snnvrhid3a7led74 ==
+      iter 26 canon EXACTLY.
+    - 2-step parity: smt-2step.kotoba check PASS exit 0, t
+      bafyreig37xemmislrv5e4izf7ks6lao4ykpkfenjqz53ukpm6ahzo2wluy ==
+      iter 34 measured canon == smt-hand3 hand twin
+      (* 2 (+ 1 (option-value sht 0))) EXACTLY (re-measured on the
+      recovered tree, not assumed from iter 34).
+    - wasm32 compile PASS: smt-2step.wasm 2013 bytes, 2 definitions,
+      provenance + publication sidecars emitted.
+    - RUN: browser-host (instantiateKotoba), main() = 84 (option-some 41
+      -> (+ 1) -> 42 -> (* 2) -> 84) - correct.
+    - Regression: sema suite (nbb run-tests.cljk, wt-somethread2
+      src/test/resources + lock classpath) 555 tests / 1958 assertions /
+      0 failures / 0 errors - same totals as iter 23 baseline.
+  - PUSHED: 9401993..906120b -> kotoba-lang/kotoba-sema
+    bot/lang-somethread-rebase-20260920 (push printed no PR URL this
+    tick; PR creation unconfirmed).
+- comparator ratio: no new lowering (existing option-some?/option-value
+  plain ops) -> speed threshold N/A (iter 1/2/10/11 class).
+- verdict: hypothesis CONFIRMED - multi-step some->/some->> gap CLOSED.
+  Merge-pending PR review. Known coverage limit (recorded in-source,
+  iter 27): a step whose result is itself an option is NOT modeled by
+  the linear chain and is not silently admitted - future hypothesis.
+- Next (1 hypothesis): remaining ledger rows - `(:k m)` ledger update
+  handoff to amu-rank (contains? / (:k m) PASS since iters 6/23), then
+  re-check jvm-dep-ledger blocked list for the next alias-shaped gap
+  (min/max closed upstream per iter 24; parse-long blocked on string
+  boundary per iters 4/5). If none, open a new falsification cycle on
+  the string boundary itself (amu runtime, cross-team with amu-falsify).
+
+## Iteration 38 - `(long x)` JVM cast: identity sugar, gate ALL GREEN, pushed (2026-09-25 08:4x JST, amu@98f16bff, sema bot/lang-long-cast-20260925 @6305a06)
+
+- Target hypothesis: `(long x)` (in the ledger's blocked-gap list,
+  jvm-dep-ledger blocked-components `:gap`) is a JVM long cast with no
+  guest meaning beyond i64 (the guest's only integer kind is 64-bit
+  signed i64), so it is the IDENTITY on admitted numerics - pure
+  surface sugar, mapv/filterv/into class (iters 1/2/10).
+- hand-patch 反証 (実装前, amu@98f16bff, bin/amu check --jvm-free, real
+  bin, loadavg ~500 - quiet gate NOT met; parity-only target so speed
+  N/A):
+  - baseline it38-longx-baseline.kotoba `(long x)`: REJECT exit 65,
+    `unknown operation: long is not a builtin, a sugar head, or a
+    function of this module` (r-it38-baseline.txt).
+  - hand twin it38-longx-twin.kotoba `(defn t [x :i64] :i64 x)`: check
+    **PASS** exit 0 (t @bafyreifdgbr4mqwjord6xcn5lv7zo2wjrn7ruvwyy6dwo6o4
+    3zs3g67bku, main @bafyreifthvazyrlgqqsqijv5nmblarlgkndgikahmvqsj2mgy
+    glubpy7mm) -> the cost of `(long x)` if admitted as identity is
+    ZERO new code (the twin is already admitted). Hypothesis survives
+    the falsification: no speed design change needed.
+  - shadow probe (module defines its own `long`): pre-patch check PASS
+    with the module's own function (t @bafyreidcq2ckwi2i3ofkmv3obrg47j3
+    3mmtc5mvtezoqhi2da7bcsyre3y, deps on its own long @bafyreieokmkejlit
+    qmabunk3tgya6qufraawvymckuiezb7gpb75enh2ke) - mapv lesson applies:
+    the alias must not steal a module's own name.
+- 実装: kotoba-sema branch `bot/lang-long-cast-20260925` @6305a06 on
+  pin 9898f0e (deps-lock.edn:80, no rebase needed - pin is ancestor of
+  local sema HEAD 3d5de58). frontend.cljk case に `long` 1 clause
+  (+21 行, mapv/filterv と同一 case 内):
+  - `(contains? *function-arities* 'long)` なら自前 defn へ (steal
+    しない, mapv/filterv と同 policy)
+  - arity != 1 は self diagnostic `long requires exactly one numeric
+    value` で fail-closed
+  - 1-arg は `(desugar-expr (first args))` — operand そのものへ identity
+    rewrite。初版は `(list (first args))` 0-arg 呼出形にして
+    `__kotoba_invoke$arity0` が出て parity を壊した (実測で判明,
+    `first args` に修正 - iter 34 と同じ手 twin 照合で取り戻した形)。
+- gate (nbb direct, cp-longx.txt = lock classpath の pin sema 2 entries
+  を wt-longx/{src,resources} に置換, amu unchanged, JVM-free):
+  - 1-arg check **PASS** exit 0, KIR parity: t
+    bafyreifdgbr4mqwjord6xcn5lv7zo2wjrn7ruvwyy6dwo6o43zs3g67bku ==
+    hand twin EXACTLY, main bafyreifthvazyrlgqqsqijv5nmblarlgkndgikahmv
+    qsj2mgyglubpy7mm == twin EXACTLY (p-it38-baseline.txt).
+  - 0-arg `(long)`: REJECT exit 65 self diagnostic `long requires
+    exactly one numeric value` (p-it38-0arg.txt) - fail-closed.
+  - 2-arg `(long x y)`: REJECT exit 65 同 diagnostic (p-it38-2arg.txt)
+    - fail-closed.
+  - shadow: 自前 `long` defn ありモジュールで check PASS exit 0, t CID
+    bafyreidcq2ckwi2i3ofkmv3obrg47j33mmtc5mvtezoqhi2da7bcsyre3y ==
+    実装前と完全一致 (steal していない, p-it38-shadow.txt).
+  - wasm32 compile **PASS** exit 0: it38-longx.wasm, 2 definitions,
+    provenance + publication sidecars 発出 (c-it38-compile.txt).
+  - RUN: browser-host (instantiateKotoba) main() = 41 - 正
+    (t 41 -> (long 41) = 41, run-it38.txt).
+  - Regression: sema suite (nbb run-tests.cljk, wt-longx src/test +
+    patched classpath) **555 tests / 1958 assertions / 0 failures /
+    0 errors** (itest38.txt) - iter 23/37 baseline と同一 totals.
+  - PUSHED: 9898f0e..6305a06 -> kotoba-lang/kotoba-sema
+    bot/lang-long-cast-20260925 (new branch; PR URL 出力あり, PR 作成は
+    未実施 - 前回 iter 37 と同じく merge-pending)。
+- comparator ratio: identity rewrite が既存 i64 path そのものなので
+  新規 runtime cost 0 (新 lowering 無し, iter 1/2/10/37 型)。速度閾値
+  不適用。C 同形比は不実施 (no new code = no new cost to measure)。
+- verdict: hypothesis CONFIRMED - `(long x)` gap CLOSED (coverage 拡大:
+  jvm-dep-migrator の blocked 行 `:gap` に列挙されていた 1 項目消滅)。
+  perfgate は速度対象なしのため不適用 (parity + fail-closed + value
+  check + regression の全ゲートで qualify 相当)。
+- 次 (1 hypothesis): ledger blocked `:gap` の次候補は capability
+  import 構文 (clock/uuid/mutable-store) — 他 bot 領域の import
+  machinery 変更を伴うので、まず `amu check` での capability import
+  現行挙動を 1 probe で実測 (拒否メッセージと、capability-catalog.edn
+  の声明形) し、lang 側 sugar で済む範囲を切り分ける。alias 型 gap
+  (ledger の 2026-09-03 記載列) は str/mapv/filterv/#()/count/reduce/
+  (:k m)/min/max まで消化済み。

@@ -49,7 +49,28 @@ Clojure it is today, the language gains:
    only; `when`, `if-let`, `when-let`, `cond->`, `some->` over an option
    desugar to `option-match`. Numbers, strings and records are never truthy.
    (Narrows ADR 0028's "no truthiness" to "no truthiness except presence";
-   coercion stays refused.)
+   coercion stays refused.) Landed 2026-09-25 (floor `:absence`, gate
+   `nil-field-is-absence-test`) with one measured cut: a literal learns T
+   from the record its context names (a declared record result, a record
+   field); `nil` with no record in context is refused by name, and the row
+   inference of point 3 is what will supply T there. Strings and records are
+   refused as tests. Numbers landed the same day as floor `:bool-predicates`
+   (gate `numbers-are-never-truthy-test`): an `:i64` test is refused by name
+   ("if test is :i64, and a number is never truthy: ...") through every form
+   that reaches `if`, including `and` / `or` / `not` and a `filter`
+   predicate, and the six predicate operations whose KIR answer is still the
+   legacy 0/1 `:i64` (`record-equal`, `typed-map-equal`, `typed-set-equal`,
+   `hetero-vector-equal`, `task-ready?`, `object-cas-won`) are elaborated to
+   `(= op 1)`, so the language sees `:bool` and the backends are unchanged.
+   Ten amu sources that tested numbers were migrated with their expected
+   values unchanged; five aiueos kernel sources (`journal-plan`,
+   `journal-record-build`, `mutable-object-build`, `service-registry-build`,
+   `value-handle-arena`, all testing a 0/1 `write-u32` answer) are refused
+   by this amu (exit 65; the first four have committed objects) and must be
+   migrated when aiueos next re-attests its objects. No aiueos source uses the
+   six elaborated operations, so no other aiueos object changes because of
+   this floor. `task-ready?` stays one linear consume: the ownership check
+   sees through its elaboration.
 3. **Row-polymorphic records with principal inference.** An unannotated
    parameter's type is inferred from its uses as a row: `(defn f [m] (:a m))`
    is `{:a T | r} -> T`. `assoc` extends the row, `dissoc` shrinks it,
@@ -59,11 +80,127 @@ Clojure it is today, the language gains:
    definition's CID and its type arguments, so ADR 0300's compile-once cache
    holds. There is still no dynamically shaped record boundary (ADR 0214): the
    shape is known at every call. The bounded keyword->i64 map is retired.
+   Landed 2026-09-25 as three floors, because they are three changes. Floor
+   `:row-records` (gate `row-polymorphic-record-inference-test`): a parameter
+   read as a record (`(:a m)`) or passed on to a row parameter is the row
+   `{:a T | r}`, and its function exists only as `f__row_<i>_<record>`, one
+   specialization per record type a call passes, typed at that record; the
+   generic is dropped. Refused by name: a non-record argument ("argument 3 to
+   f is i64, and parameter m of f is the row {:a T | r}: only a record
+   satisfies a row"), a record lacking a field the row reads, an exported
+   generic (an export has one ABI: annotate it or `defn-`), a generic used as
+   a value. A record crossing a function boundary is still refused by the
+   native oracle (exit 65), as an annotated one is: floor `:native-handles`.
+   Floor `:row-operations` (gate `row-operations-extend-and-shrink-test`,
+   2026-09-26): on a record, `assoc` of a field it has keeps its type (the
+   value must be the field's type, no coercion), of one it lacks extends it;
+   `dissoc` / `select-keys` shrink it, naming only fields it has and keeping
+   at least one; `merge` assoc's every field of a record or keyword-keyed map
+   literal. A changed field set is the anonymous closed record a map literal
+   with those fields lowers to, never the keyword->i64 map. kotoba-sema
+   elaborates each to `record-new` / `record-get` / `record-assoc`, so KIR and
+   the backends see nothing new; a parameter a row operation uses is a row.
+   Refused by name: a missing field ("dissoc names field :z, which record
+   :b/s does not have: a row shrinks only by fields it has"), a record left
+   with no field, a computed field, a non-record receiver or merge operand.
+   Hosted (`wasm32-browser`) compiles these forms; both native targets refuse
+   them, as they refuse the same forms written by hand: `record-assoc` is not
+   natively qualified (exit 70) and the verifier does not see a record through
+   a `let` operand (exit 65) -- floor `:native-handles`.
+   Floor `:row-unification` (gate
+   `row-literal-join-and-loop-unification-test`, 2026-09-26): a keyword map
+   literal written as a row argument is that row's record, the anonymous
+   closed record of its fields typed by its values (`(f {:a 3})` runs as
+   `f__row_0_kotoba_map_literal_a`); two parameters that are the branches of
+   one `if` are one row and read what it reads, so `(defn- pick [m n] (if (>
+   (:a m) 6) m n))` returns its record; a loop helper -- and so a `reduce` /
+   `map` closure -- is generic with its function; a slot's reads include those
+   of the rows it is passed on to, so a missing field is refused at the
+   outermost call. Refused by name: two record types at one join ("arguments
+   (mk) and (mt) to pick are [:ref :b/s] and [:ref :b/t], and parameters m
+   and n of pick are branches of one if, so one row: a row is one record type
+   at each call"), a literal lacking a read field, a coerced field, a
+   non-record, an exported generic, an `:i64` if test. Hosted
+   (`wasm32-browser`) compiles these forms; both native targets refuse them at
+   the native artifact oracle (exit 65), as they refuse a record crossing a
+   function boundary: floor `:native-handles`. Programs admitted before are
+   unchanged -- every new row slot was a refusal.
+   Floor `:literal-typing` (gate `record-vector-and-map-literal-retirement-test`,
+   2026-09-26): a literal is typed by its items. kotoba-sema's `type-literals`
+   runs once every signature is known and before rows are specialized, so a
+   keyword map literal is the anonymous closed record of its fields wherever
+   it is written (a `let` binding of one passed to a row is that row's record;
+   `(defn- m [] {:a 3 :b 4})` answers `[:record :kotoba.map-literal/a+b ..]`),
+   and a vector literal of non-`:i64` items is a typed vector -- `[:list T]`
+   when every item is one T (`(nth [(mk) (mk)] 1)` is the record, at any
+   index), the heterogeneous `[:vector [T ..]]` otherwise. The keyword->i64
+   pair map is no longer what a literal is: reading a key a literal lacks is
+   refused ("record field must be a declared keyword literal"), not 0, and a
+   literal is not counted. Refused by name beside it: a coerced field, a
+   record as an `if` test, `=` over records, a typed vector item used as an
+   i64. Native: a literal record compiles for `x86_64-aiueos-kernel-v1` and
+   `aarch64-macos`; a `[:list record]` is refused there by the typed-values
+   gate -- floor `:native-handles`.
+   Floor `:specialization-identity` (gate
+   `specialization-cid-derived-from-generic-test`, 2026-09-27): a
+   specialization's definition CID is a function of its generic's body and the
+   record types it is specialized at, and of nothing else -- not the generic's
+   name, the specialization's name (`f__row_0_b_s_2` around a taken name), the
+   caller or the module. That was measured to hold already: kotoba-sema
+   monomorphizes before KIR and ADR 0300 hashes the monomorphic KIR, whose
+   body names callees by CID and carries the record descriptor inline, and
+   whose interface seals the schema. So two modules specializing one generic
+   at one record share the CID, a recursive generic and a loop helper included,
+   and it is the CID of the hand-written twin `(defn- f [m [:ref :b/s]] ..)`;
+   a private rename of the generic leaves ADR 0300's cache material equal.
+   The floor first asked for a CID derived from "the generic definition's
+   CID". There is none: the generic never reaches KIR, and inventing an
+   identity for it is what ADR 0300 refuses; deriving the specialization's
+   from it would also have split the specialization from its hand-written
+   twin, i.e. broken the compile-once sharing the floor is for. The gate pins
+   both directions -- sealing a definition's name turns its seven sharing
+   assertions red, dropping the body and the schemas turns "another body" and
+   "another schema" red. Not done: a report field naming the generic and type
+   arguments a specialization came from (provenance, unsealed); it needs a
+   kotoba-hir function key and is not what identity or the cache rests on.
+   A CID is target-independent (`definition-cids` takes no target). Native:
+   the gate's modules, generic and hand-written alike, are refused by both
+   `x86_64-aiueos-kernel-v1` and `aarch64-macos` at the native artifact
+   oracle (exit 65) -- a record crossing a function boundary, floor
+   `:native-handles`.
 4. **Function values.** A function type carries its effect row; a closure is a
    one-word handle (code, environment) under aggregate ABI v8 and may be a
    record field or vector element. A stored function's effects are part of the
-   record's type, so nothing ambient enters. (The ADR 0352 internal error on a
-   stored closure becomes either this or a named refusal.)
+   record's type, so nothing ambient enters. Split on 2026-09-27 into two
+   floors. `:stored-closures` (gate `stored-closure-in-record-and-vector-test`,
+   landed 2026-09-27): the ADR 0352 internal error was not a missing type --
+   kotoba-sema built a record literal's (and a `record-new`'s) fields as a lazy
+   seq, so the `fn` was lowered after the binding holding the lambda counter
+   had ended; each defn and lambda body is now realized inside its binding. A
+   closure stored in a record field or vector element is called out of it on
+   the KIR interpreter, compiles for `x86_64-aiueos-kernel-v1` and
+   `aarch64-macos` (the aarch64-macos kexe printed 11 and 10 under
+   `tools/kexe_loader.c`), and its capability is in the caller's effect row.
+   `:function-values` (gate `function-value-in-record-test`, landed
+   2026-09-27): a closure is a function, not a number. kotoba-sema's closure
+   analysis (`infer-closure-refinements`), which already knew which words are
+   closures -- a let-bound fn, a call whose result is a `[:fn ...]` contract,
+   a `[:fn ...]` record field -- refuses every number operation over one
+   (`a function value is not a number`) and `=` (`a function value has no
+   equality`). A fn literal where a record field is declared `[:fn ...]` is
+   lifted under that contract; a number there, or a value that is not a
+   closure, is refused. The closure stays the one-word `(lambda-id,
+   captures)` handle; KIR, which has no function type, receives the field as
+   `:i64`, as a `[:fn ...]` result or parameter contract already reached it,
+   and a module with no such field keeps its HIR and CIDs. Both native
+   targets compile it, oracle-verified through the CLI; the aarch64-macos
+   kexe of a capturing fn stored in a `[:fn ...]` field and called with 5
+   printed 15 under `tools/kexe_loader.c`. Not yet: a closure reaching an unannotated parameter
+   is that parameter's `:i64` (the analysis propagates requirements toward
+   callers, not closure-ness toward callees), and a closure in a map-literal
+   field or vector element is an `:i64` field or element. A DECLARED effect
+   row is floor `:function-effect-rows`: `[:fn ...]` has no effect component
+   today, so a stored closure's effects are the caller's by inference only.
 5. **Strings by code unit, by name.** `count` of a string stays refused (it
    has two answers). `string-code-unit-count`, `string-code-unit-at` and
    `subs` over code units are primitives; browser's `#?(:clj ...)` interop
@@ -88,6 +225,54 @@ Then browser moves, whole component by component (text-edit, input, surface
 with cssom and dom-gpu), and the hosted engine switches to amu's output of
 the same source. The kernel's mirrored objects (aiueos ADR-0223..0234) retire
 as each module lands.
+
+## Selfhost foundation floors (appended 2026-09-26)
+
+Superproject adr-2609242330 measured that compiling amu with amu needs the
+data model amu's own source uses -- EDN of arbitrary shape (HIR, KIR, ns
+forms) -- on every target, native included. Those floors are appended to the
+ladder after the browser floors, one change each, and close by their gates
+like the rest:
+
+- `:document-type-predicates` (gate `document-type-predicates-ask-the-kind-test`,
+  landed 2026-09-26): `map?`, `vector?`, `keyword?`, `string?`, `integer?`,
+  `true?`, `nil?` and the rest ask a `:document` node its run-time
+  `document-kind`; a static type answers for itself; an `[:option T]` is
+  presence when T answers true. Refused by name: an option whose payload
+  answers by value, `nil?` on a type with no absence, `map?` on a `[:ref q]`.
+  Native still has no `:document`, so there the program is refused as before
+  (`does not qualify document-kind`).
+- `:expression-absence` (gate `expression-absence-typed-by-the-present-branch-test`,
+  landed 2026-09-26): point 2's absence at expression level. A `when` /
+  `if-let` / `cond` with no else and a literal `nil` branch answer nothing, and
+  the present branch's type decides: `false` beside a `:bool`, the option's
+  none beside an option, `[:option T]` beside any other T. Beside an `:i64` it
+  is `[:option :i64]` where the result is inferred (an unannotated `defn`, a
+  `fn` literal), and the 0 it always was where the author declared the result
+  or the value is a statement, so no program that compiled before changes (the
+  42 examples' definition CIDs and the 125 aiueos kernel objects are
+  byte-identical). A loop's exits join the same way: a find-first answers
+  `[:option T]`. Refused by name: an absent i64 used as the number it would
+  hold, two present types, an `if` with no else.
+- `:native-abort` (gate `native-abort-compiles-verifies-and-packages-test`,
+  landed 2026-09-26): `throw` / `try` on native. The frontend already lowered
+  them to `[:result T E]` values; what refused them was admission, not
+  lowering -- the verifier admitted only `:state` beside capability calls and
+  the compile-time oracle sealed nothing for an `:abort` row. Both ISAs now
+  compile an aborting program and agree with the reference, ESM and Wasm; the
+  linux-static packager needs no handler for the ability. An ex-info error is
+  a `:document`; native admits it since `:native-document`.
+- `:native-document` (gate `native-document-values-test`, landed 2026-09-26):
+  a `:document` on native. It is the document's canonical EDN text in the
+  string handle native documents already were (the dataspace provider's
+  boundary), so structural equality is `string=?`, and every operation is a
+  rewrite onto the existing string slots plus private helpers kotoba-native
+  appends (`kotoba.native.document`) -- no ABI word, no loader code. Bounds
+  (32 items, depth 8, 4096 nodes) are re-derived in emitted code and trap
+  through the native trap path. 1,000 random document expressions answer the
+  same on restricted ESM and the kexe loader on both ISAs (and the KIR
+  reference on 640 of them). Still refused on native, by name: f64 documents,
+  `document-sha256`, `document-print` / `document-read`.
 
 ## What stays refused, permanently
 

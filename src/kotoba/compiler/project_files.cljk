@@ -114,6 +114,28 @@
           (reject! "namespace resolves from multiple explicit source paths"
                    {:module namespace}))))))
 
+;; A refusal raised while parsing one module's header (a string host import,
+;; a malformed :require, an unknown clause) is that module's refusal, not the
+;; root's. Without `:source-module` / `:source-file` the CLI's `:source` fell
+;; back to the ROOT file the caller named, so the selfhost scoreboard counted
+;; one module's wall once per importer (superproject adr-2609242330 S5,
+;; 2026-09-25: 20 reachable "string host module" rows traced to fewer
+;; modules). The module is the namespace that was required (`expected`), or
+;; for the root, the namespace the header itself declares when it parsed that
+;; far (`:namespace` in the refusal's data).
+(defn- module-info-attributed [source real expected]
+  (try
+    (project/module-info (sema/read-forms source))
+    (catch #?(:clj Exception :cljs :default) error
+      (let [data (ex-data error)]
+        (if (or (not (map? data)) (contains? data :source-module))
+          (throw error)
+          (throw (ex-info (ex-message error)
+                          (cond-> (assoc data :source-file (str real))
+                            (some? (or expected (:namespace data)))
+                            (assoc :source-module (or expected (:namespace data))))
+                          error)))))))
+
 (defn load-closed-graph
   "Load only the transitive closure rooted at input from explicit source
   directories. The explicitly selected root may live beside those directories;
@@ -139,7 +161,7 @@
                     (reject! "project module escapes the explicit source paths"
                              {:module expected}))
                   (let [source (read-source real)
-                        info (project/module-info (sema/read-forms source))
+                        info (module-info-attributed source real expected)
                         declared (:namespace info)]
                     (when (and expected (not= expected declared))
                       (reject! "resolved path namespace does not match requirement"

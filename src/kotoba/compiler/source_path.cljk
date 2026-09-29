@@ -24,9 +24,14 @@
 
 (defn source-kind [path]
   (when (string? path)
-    (first-truthy (fn [[extension kind]]
-            (when (str/ends-with? path extension) kind))
-          extensions)))
+    ;; The entry is bound inside the body, not destructured in the parameter
+    ;; vector: a fn VALUE takes plain-symbol parameters only (kotoba-sema
+    ;; `lift-lambda`; a defn's parameters may destructure). Same entries, same
+    ;; order, same answer.
+    (first-truthy (fn [entry]
+                    (let [[extension kind] entry]
+                      (when (str/ends-with? path extension) kind)))
+                  extensions)))
 
 (defn admit! [path]
   (or (source-kind path)

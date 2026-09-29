@@ -107,6 +107,12 @@ jobs:
       - if: ${{ !cancelled() }}
         run: npm run test-jdk-free-native
       - if: ${{ !cancelled() }}
+        name: Loader decisions (classification and generated region; the differential needs the full history)
+        run: npm run test-loader-decisions-static
+      - if: ${{ !cancelled() }}
+        name: Export boundary codec (typed native export arguments and results against the reference)
+        run: npm run test-export-boundary-codec
+      - if: ${{ !cancelled() }}
         run: npm run test-policy-bound-provenance
       - if: ${{ !cancelled() }}
         run: npm run test-output-set-publisher-auth
@@ -142,6 +148,8 @@ jobs:
         run: npm run test-nbb-io
       - if: ${{ !cancelled() }}
         run: npm run test-compile-cache
+      - if: ${{ !cancelled() }}
+        run: npm run test-nbb-host-abilities
       - if: ${{ !cancelled() }}
         run: npm run test-compiler-worker
       # ADR 0351: an omitted --target is the host's native target. Run on all

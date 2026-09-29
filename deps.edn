@@ -34,6 +34,15 @@
         ;; (adr-2609111500) / kbb cutover (adr-2609112000). Superproject ADR
         ;; adr-2609111900, source-side wave. io-ipld stays HELD (see its note).
         io.github.kotoba-lang/text {:git/sha "3dcb2ab087933dc7b703b340dac9afce62cb30ff"}
+        ;; kotoba.bytes. Declared 2026-09-26 as an explicit floor, d5259f35 -> 630e37cf
+        ;; (bytes main, ahead 6, behind 0, forward only): it arrived only through
+        ;; artifact / kotoba-component, which name d5259f35, where `->bytes` has no
+        ;; Kotoba reading -- 13 selfhost rows stopped at bytes.cljk:156 `expression
+        ;; type mismatch: expected vector-i64, got string` (superproject
+        ;; adr-2609242330). 630e37cf gives every function a Kotoba reading (the
+        ;; project check passes) with the host bodies unchanged.
+        io.github.kotoba-lang/bytes {:git/url "https://github.com/kotoba-lang/bytes.git"
+                                     :git/sha "630e37cfce401e5e508ca48a57f2751e3b30e3b1"}
         ;; The ONE classification lattice (root ADR-2607280100 D1, which exists
         ;; because there were two copies of that rank map and merging them was
         ;; the point). `kotoba.compiler.effect-classification` ranks a
@@ -161,7 +170,9 @@
          ;; behind 0, forward only), adr-2609242100 P4: ESM profile: four named budgets, frames 1024, instantiateKotoba(grants, budgets).
          ;; Advanced 2026-09-25, 73801678 -> d90bc851 (kotoba-script main, ahead 2, forward only):
          ;; the bytes heads and string-from-utf8 in emitted ESM, named traps (string-from-bytes, superproject adr-2609242330).
-         :git/sha "d90bc851e9425f2d019130cda3c987defef9117f"}
+         ;; Advanced 2026-09-26, d90bc851 -> 6500189e (kotoba-script main tip, forward only):
+         ;; vector-take / vector-f64-take in emitted ESM (vectorTake, named traps); carries the 2026-09-25 kotoba.test codemod (tests only) -- selfhost stage 2 (superproject adr-2609242330)
+         :git/sha "6500189e20e434f9001a4c84b1544a22e9473fe3"}
         ;; ADR-0222: source reading and semantic analysis live behind the
         ;; kotoba-sema repository boundary and public semantic-analysis API.
         ;;
@@ -691,7 +702,78 @@
          ;; `remove` lowers to filter's bounded loop with the predicate negated;
          ;; a module defining its own `remove` keeps it (aiueos
          ;; :browser-component wall 7; test/nbb/project.cljk "remove").
-         "5d3054b08ab9136beee6fcc660de38cf55a3fe1b"} ;; Advanced 2026-09-25 05d8bd8a -> 5d3054b0 (main tip, forward only): a quoted ns attr-map value ({:kotoba/export (quote [..])}) means the unquoted one -- the spelling JVM Clojure can load. Before that: Advanced 2026-09-25 a7f5ae17 -> 5d4161c5 (main tip, forward only): the state ability, slice 1 (kotoba-lang lang/state-ability.edn, superproject adr-2609242200) -- defhandler / perform :state/* / handle (with ..), specialization and state passing; guest-grammar d87fe28a. Before that: Advanced 2026-09-24 451afded -> a7f5ae17 (main tip, ahead 5, forward only): adr-2609242100 P1 -- max-type-depth / max-schema-depth 8 -> 12, guest-grammar bdbc8474. Before that: 8571681a -> 451afded (main tip, forward only): selfhost walls: fn-body-clj-only, some-two-arg, regex literal, char literal, clojure.* to kotoba.*
+         ;; Advanced 2026-09-25, 5d3054b0 -> 98dcb389 (kotoba-sema main, ahead 6, forward only):
+         ;; ADR 0353 floor :absence -- nil in a record literal is an absent
+         ;; [:option T] field; option tests are presence in if / when / if-let /
+         ;; when-let / cond-> / some-> (gate nil-field-is-absence-test).
+         ;; Advanced 2026-09-25, 98dcb389 -> b98cd9c9 (kotoba-sema main, ahead 2, forward only):
+         ;; ADR 0353 floor :bool-predicates -- numbers are never truthy: an :i64
+         ;; test is refused by name, and record-equal / typed-map-equal /
+         ;; typed-set-equal / hetero-vector-equal / task-ready? / object-cas-won
+         ;; answer :bool (gate numbers-are-never-truthy-test). Then b98cd9c9 ->
+         ;; a8be041c (main, forward only): linear ownership sees through the
+         ;; :bool elaboration of task-ready? (public sema consumers on NBB).
+         ;; Advanced 2026-09-25, a8be041c -> ea7262de (kotoba-sema main, ahead 1, forward only):
+         ;; ADR 0353 floor :row-records -- an unannotated parameter read as a
+         ;; record is a row {:a T | r}, monomorphized per record a call passes
+         ;; (gate row-polymorphic-record-inference-test).
+         ;; Advanced 2026-09-26, ea7262de -> c99790f (kotoba-sema main tip, forward only):
+         ;; the selfhost builtin gaps (superproject adr-2609242330) -- library heads
+         ;; string-to-utf8 / string-parse-i64 / parse-long / subvec / ex-info /
+         ;; ex-message / ex-data as appended Kotoba helpers (no new operation),
+         ;; = on strings, true? / integer?, conj at a loop exit, throw in a loop
+         ;; body (not before recur), the facet-unwind guard firing on nbb; and
+         ;; the :row-records fix for a parameter passed to a declared record.
+         ;; Advanced 2026-09-26, c99790fe -> 15cc6e25 (kotoba-sema main tip, forward only):
+         ;; ADR 0353 floor :row-operations -- assoc / dissoc / merge / select-keys
+         ;; on a record are row operations whose results are record types
+         ;; (gate row-operations-extend-and-shrink-test).
+         ;; Advanced 2026-09-26, 15cc6e25 -> 0db8462b (kotoba-sema main tip, forward only):
+         ;; affine.cljk's fn values bind their destructuring in a let instead of
+         ;; the parameter vector (selfhost wall "fn value requires unique arities
+         ;; ...", superproject adr-2609242330); affine verdicts unchanged. Then
+         ;; 0db8462b -> 281947c8 (main tip, forward only): affine's two let walks
+         ;; are recursive defns instead of a named fn swap!-ing an atom (the wall
+         ;; behind the first); affine verdicts unchanged.
+         ;; Advanced 2026-09-26, 281947c8 -> 8e243551 (kotoba-sema main tip, ahead 4, forward only):
+         ;; ADR 0353 floor :row-unification -- a map literal written as a row
+         ;; argument is that row's record, the branches of one if are one row,
+         ;; a loop over a row parameter is specialized with its function (gate
+         ;; row-literal-join-and-loop-unification-test); and 51ad4fef, type
+         ;; predicates on a :document ask its kind (superproject adr-2609242330).
+         ;; 8e243551 also carries 634192f9: type predicates on a :document ask
+         ;; its kind -- gap 3 of the selfhost foundation (superproject
+         ;; adr-2609242330), ladder floor :document-type-predicates;
+         ;; guest-grammar digest e2a90a2a.
+         ;; Advanced 2026-09-26, 8e243551 -> 0015dfd6 (kotoba-sema main tip, forward only):
+         ;; expression-level absence -- a missing else and a literal nil answer
+         ;; nothing, typed by the present branch (gap 1 of the selfhost
+         ;; foundation, superproject adr-2609242330), ladder floor
+         ;; :expression-absence; guest-grammar digest 407357fd.
+         ;; Advanced 2026-09-26, 0015dfd6 -> 97635e52 (kotoba-sema main tip, forward only):
+         ;; ADR 0353 floor :literal-typing -- `type-literals` types a map / vector
+         ;; literal by its items: a keyword map literal is a record wherever it is
+         ;; written, a vector literal of non-i64 items is [:list T] or
+         ;; [:vector [T ..]] (gate record-vector-and-map-literal-retirement-test).
+         ;; Also carries 7291dce0 (kernel-dequant-dot-ptq1-0 at arity five).
+         ;; Then 97635e52 -> 18c58545 (main tip, forward only): (:k r default) on a
+         ;; record answers statically -- the default where the record lacks :k,
+         ;; the field where it has it (test/nbb/project.cljk keyword-lookup-on-a-map).
+         ;; Advanced 2026-09-27, 18c58545 -> 69fed11f (main tip, forward only):
+         ;; ADR 0353 floor :stored-closures -- a fn literal stored as a map-literal
+         ;; value or record-new field is lowered inside its binding, not as a lazy
+         ;; seq after it (the ADR 0352 internal error; gate
+         ;; stored-closure-in-record-and-vector-test). Frontend only, grammar unchanged.
+         ;; Advanced 2026-09-27, 69fed11f -> 0cb5b506 (main tip, forward only):
+         ;; ADR 0353 floor :function-values -- number operations and `=` over a
+         ;; closure are refused by name, a fn literal is admitted in a declared
+         ;; [:fn ...] record field (which reaches KIR as :i64); gate
+         ;; function-value-in-record-test. Frontend only, grammar unchanged.
+         ;; Then 0cb5b506 -> bcde5502 (main tip, forward only): the [:fn ...]
+         ;; field erasure no longer reads a variant-match arm [:record p body] as
+         ;; a descriptor (examples/held-operations.kotoba was an internal error).
+         ;; Native Embench loop-capture fix, kotoba-sema PR #89.
+         "9a32183ef165d66eecb23d12824bf17a8c7ee57b"} ;; Before that: Advanced 2026-09-25 05d8bd8a -> 5d3054b0 (main tip, forward only): a quoted ns attr-map value ({:kotoba/export (quote [..])}) means the unquoted one -- the spelling JVM Clojure can load. Before that: Advanced 2026-09-25 a7f5ae17 -> 5d4161c5 (main tip, forward only): the state ability, slice 1 (kotoba-lang lang/state-ability.edn, superproject adr-2609242200) -- defhandler / perform :state/* / handle (with ..), specialization and state passing; guest-grammar d87fe28a. Before that: Advanced 2026-09-24 451afded -> a7f5ae17 (main tip, ahead 5, forward only): adr-2609242100 P1 -- max-type-depth / max-schema-depth 8 -> 12, guest-grammar bdbc8474. Before that: 8571681a -> 451afded (main tip, forward only): selfhost walls: fn-body-clj-only, some-two-arg, regex literal, char literal, clojure.* to kotoba.*
         ;; ADR-2607266000 Phase B: these responsibilities moved out of this repo.
         ;;
         ;; The slice-value stream held this pin on purpose (ADR 0314), because
@@ -871,7 +953,22 @@
          ;; Advanced 2026-09-25, 353dd5f3 -> e46766f7 (osaho main, ahead 4, behind 0,
          ;; forward only): the x86_64/aarch64-linux-static target profiles
          ;; (superproject adr-2609251400 C2).
-         :git/sha "e46766f7c09ea3c0c5913524c40ad6049f578d06"} ;; Advanced 2026-09-25 f305bb00 -> ed96b8da (main tip, forward only): the state ability -- :state is a sealed control-effect keyword and a :state-only module is oracled like a pure one. Before that: Advanced 2026-09-24 c5f77e12 -> 4860f4c1 (main tip, forward only): selfhost walls: fn-body-clj-only, some-two-arg, regex literal, char literal, clojure.* to kotoba.*
+         ;; Advanced 2026-09-26, e46766f7 -> 1872b84c (osaho main tip, forward only):
+         ;; a module whose row is pure abilities only (:state, :abort) is oracled --
+         ;; gap 4 of the selfhost foundation (superproject adr-2609242330), ladder
+         ;; floor :native-abort.
+         ;; Advanced 2026-09-26, 1872b84c -> f97fec2b (osaho main tip, forward only):
+         ;; the native gate admits the document operations kotoba-native lowers --
+         ;; gap 2 of the selfhost foundation (superproject adr-2609242330), ladder
+         ;; floor :native-document.
+         ;; Advanced 2026-09-26, f97fec2b -> 00d03837 (osaho main tip, forward only;
+         ;; recorded 2026-09-26 after the fact: the range also carried a8977be, the
+         ;; native gate's :vector-i64 / :bytes EXPORT boundary, which amu #1171
+         ;; completed on the verifier and loader side):
+         ;; the native gate admits i64 min / max (arity 2) and the nbb reference answers them exactly past 2^53 -- selfhost stage 2 (superproject adr-2609242330)
+         ;; Advanced 2026-09-27, 00d03837 -> 1bb61f3d (osaho main tip, forward only):
+         ;; kernel-dequant-dot-ptq1-0, PTQ1_0 fused dequant-dot (aiueos ADR-0222, kotoba-native ADR 0088).
+         :git/sha "1bb61f3d5616dcf638915c24236669a1ece7250d"} ;; Advanced 2026-09-25 f305bb00 -> ed96b8da (main tip, forward only): the state ability -- :state is a sealed control-effect keyword and a :state-only module is oracled like a pure one. Before that: Advanced 2026-09-24 c5f77e12 -> 4860f4c1 (main tip, forward only): selfhost walls: fn-body-clj-only, some-two-arg, regex literal, char literal, clojure.* to kotoba.*
          ;; Advanced 2026-09-24, 4860f4c1 -> 245bfeb3 (osaho main, ahead 4, behind 0,
          ;; forward only by gh api compare): adr-2609242100 P2 -- a typed value is
          ;; validated once, at execute arguments and capability results, by an
@@ -1029,7 +1126,30 @@
          ;; mismatch" (measured on this PR's first CI run).
          ;; Advanced 2026-09-25, 9c13e737 -> 52e91b8c (artifact main, ahead 2, forward only):
          ;; the POSIX / Windows loader identities at context ABI v11 (string-from-bytes, superproject adr-2609242330).
-         :git/sha "52e91b8cb5e3e196d33f58cebeb79766e962f0b8"}
+         ;; Advanced 2026-09-25, 52e91b8c -> 4bdf84aa (artifact main, ahead 4, forward only):
+         ;; the POSIX loader identity 273b97a6 -- tools/kexe_loader.c with its decisions in Kotoba
+         ;; (superproject adr-2609251400 C1); without it every executor refuses this loader as
+         ;; "native loader source identity mismatch".
+         ;; Advanced 2026-09-25, 4bdf84aa -> eff17393 (artifact main, ahead 2, forward only):
+         ;; the POSIX loader identity 9c2bbcee -- fs opens beneath the scope root and a seccomp
+         ;; filter that admits the fs mutation syscalls (superproject adr-2609251400 C3, the
+         ;; loader's two holes). Then eff17393 -> e410e976 (ahead 2): identity 04ef5b9e, the
+         ;; O_NOFOLLOW_ANY path for a macOS kernel that ignores O_RESOLVE_BENEATH (macos-14 CI).
+         ;; Then e410e976 -> 04c4e0a4 (ahead 2): identity 1a4f2d95, the loader answering
+         ;; :process/spawn, :entropy/draw and fsync / make-temp-dir / stat-nofollow from the
+         ;; handlers' compiled decisions (superproject adr-2609251400 C3).
+         ;; Advanced 2026-09-26, 04c4e0a4 -> 197aefc7 (artifact main, ahead 2, behind 0,
+         ;; forward only): kotoba.artifact.core has a Kotoba reading over :document whose
+         ;; sha256 is the host's digest (superproject adr-2609242330, selfhost wall
+         ;; `map fn parameter destructures ([k v])`, 17 rows). Host bodies unchanged, so
+         ;; no loader identity moves.
+         ;; Advanced 2026-09-26, 197aefc7 -> 0274ce3b (artifact main, forward only): POSIX
+         ;; loader identity 107c6055 -- tools/kexe_loader.c's export boundary codec
+         ;; (superproject adr-2609242330).
+         ;; Advanced 2026-09-26, 0274ce3b -> 4aca449e (artifact main tip, forward only): POSIX
+         ;; loader identity daa8df69 -- the :fs/app-data OWNER form (superproject
+         ;; adr-2609242330, selfhost stage 2).
+         :git/sha "4aca449e1d973a7470a3a39baea827930d083b3d"}
         ;; HELD at 1a2e10c on 2026-09-03 (ADR 0331), 28 commits behind its main,
         ;; while every other pin in this file moved to the tip. The reason, so
         ;; that a lagging pin and a pin with an argument behind it stay
@@ -1431,7 +1551,30 @@
          ;; forward only): `kotoba.native.linux-static`, the loader-less Linux static ELF
          ;; packager behind --target x86_64-linux-static / aarch64-linux-static
          ;; (superproject adr-2609251400 C2).
-         :git/sha "27228973a0c0b615f79ccdf5ea4e61fdcf3d433d"} ;; Advanced 2026-09-24 71026eb2 -> b6bfe0aa (main tip, forward only): selfhost walls: fn-body-clj-only, some-two-arg, regex literal, char literal, clojure.* to kotoba.*
+         ;; Advanced 2026-09-25, 27228973 -> d8f668cd (kotoba-native main, ahead 2, behind 0,
+         ;; forward only): the static ELF's capability handlers -- typed-cap-call over raw
+         ;; syscalls, decisions in tools/*.kotoba compiled by this compiler (adr-2609251400 C3).
+         ;; Advanced 2026-09-26, 6d5afeda -> bc42c311 (kotoba-native main, ahead 2, behind 0,
+         ;; forward only): the `aiueos-browser-damage` kernel-object row (arity 5) and its
+         ;; measured fuel tier 262144 (aiueos ADR-0242) -- that object compiles only with the row.
+         ;; Advanced 2026-09-26, a0e10057 -> cf02c3d8 (kotoba-native main tip, forward only):
+         ;; the linux-static packager needs no handler and seals no grant bit for a
+         ;; pure ability (:state, :abort) -- gap 4 of the selfhost foundation
+         ;; (superproject adr-2609242330), ladder floor :native-abort.
+         ;; Advanced 2026-09-26, cf02c3d8 -> da64ecbe (kotoba-native main tip, forward only):
+         ;; native :document values -- the canonical EDN text in the string handle,
+         ;; every operation a rewrite onto the string slots plus emitted helpers
+         ;; (kotoba.native.document); keyword-name drops a namespace. Gap 2 of the
+         ;; selfhost foundation (superproject adr-2609242330), ladder floor
+         ;; :native-document.
+         ;; Advanced 2026-09-26, da64ecbe -> 91dc22cc (kotoba-native main tip, forward only):
+         ;; i64 min / max and vector-take lowered (compare-select; bytes-slice view after an emitted bound), and the call-shaped refusal names the unlowered operation -- selfhost stage 2 (superproject adr-2609242330)
+         ;; Advanced 2026-09-26, 91dc22cc -> b1cb6037 (kotoba-native main tip, forward only):
+         ;; the static ELF answers the :fs/app-data OWNER form (form 15: O_PATH |
+         ;; O_NOFOLLOW, fstat, geteuid) -- superproject adr-2609242330. The range also
+         ;; carries a3f439f (bonsai: PTQ1_0 fused dequant-dot on x86-64, ADR 0088).
+         :git/sha "b1cb6037be9954bd2774e750a5715be75a523a92"} ;; Advanced 2026-09-25 d8f668cd -> 6d5afeda (main tip, forward only): the static ELF's :process/spawn / :entropy/draw handlers, append / range / chmod / fsync / make-temp-dir / stat-nofollow, both spellings of the scope root (superproject adr-2609251400 C3, second half). Before that: Advanced 2026-09-24 71026eb2 -> b6bfe0aa (main tip, forward only): selfhost walls: fn-body-clj-only, some-two-arg, regex literal, char literal, clojure.* to kotoba.*
+         ;; Advanced 2026-09-26 bc42c311 -> a0e10057 (main tip, forward only): string-search drops a bare (:require [kotoba.lang.text]) that named nothing (selfhost wall A, superproject adr-2609242330).
         io.github.kotoba-lang/kotoba-component
         {:git/url "https://github.com/kotoba-lang/kotoba-component.git"
          ;; Advanced 2026-09-11, ff2c3e8c -> cad39ab0 (kotoba-component main,
@@ -1450,7 +1593,13 @@
          ;; the last JVM-only family in docs/jvm-route-topology.edn outside
          ;; this repository (ADR 0348 iteration 6). The encoder's whole JVM
          ;; surface was 40 `.getBytes`, two `format`, and the wasm-tools seam.
-         :git/sha "94a9382c94acfab48836e67fd194e6acab7742cc"} ;; Advanced 2026-09-24 db8690ac -> 94a9382c (main tip, forward only): selfhost walls: fn-body-clj-only, some-two-arg, regex literal, char literal, clojure.* to kotoba.*
+         :git/sha "b4c181a90aac8ba0e0fa3939d028689890eff3bd"} ;; Advanced 2026-09-24 db8690ac -> 94a9382c (main tip, forward only): selfhost walls: fn-body-clj-only, some-two-arg, regex literal, char literal, clojure.* to kotoba.*
+         ;; Advanced 2026-09-25 94a9382c -> b4c181a9 (main tip, forward only):
+         ;; the component contract and vendored WASI WIT are compile-time text
+         ;; (kotoba.component.embedded-resources, superproject adr-2609242330
+         ;; S3 (b')), so wit / wasi-contract / doctor / composition no longer
+         ;; require clojure.java.io; also carries main's clojure.* -> kotoba.*
+         ;; codemods (kotoba.bytes, kotoba.io, kotoba.lang.error).
         ;; The package contract: `kotoba.lang.package-contract` validates a
         ;; `kotoba.lock.edn` -- required fields, real CIDv1s, capability grant
         ;; ⊆ declaration, signer revocation, and Ed25519 signature
@@ -1654,7 +1803,26 @@
          ;; Advanced 2026-09-25, 58de25fa -> a204f533 (kotoba-verifier main, ahead 4,
          ;; behind 0, forward only): `kotoba.verifier.linux-static`, which the
          ;; static ELF is verified by before it is written (superproject adr-2609251400 C2).
-         :git/sha "a204f5330fb69b271d2cd690f497643189e0282f"} ;; Advanced 2026-09-25 447dfb00 -> c4742c04 (main tip, forward only): the state ability -- a native artifact whose rows carry :state is verified, capability part re-derived. Before that: Advanced 2026-09-24 95393017 -> 9a0d3341 (main tip, ahead 5, forward only): adr-2609242100 P1 -- string-literal-byte-limit 4096 -> 65536. Before that: 1e304790 -> 95393017 (main tip, forward only): selfhost walls: fn-body-clj-only, some-two-arg, regex literal, char literal, clojure.* to kotoba.*
+         ;; Advanced 2026-09-25, a204f533 -> 13475abc (kotoba-verifier main, ahead 2, behind 0,
+         ;; forward only): `verify-image!` with the packager's options -- the handler decision
+         ;; artifacts re-derived from their programs, the sealed grant checked (adr-2609251400 C3).
+         ;; Advanced 2026-09-26, 1e92074c -> 83552671 (kotoba-verifier main tip, forward only):
+         ;; :abort is a pure-ability row member beside :state, and the static-ELF
+         ;; verifier reads only capability wire ids -- gap 4 of the selfhost
+         ;; foundation (superproject adr-2609242330), ladder floor :native-abort.
+         ;; Advanced 2026-09-26, 83552671 -> 475ce1ec (kotoba-verifier main tip, forward only):
+         ;; the native document operations verify (its own table) -- gap 2 of the
+         ;; selfhost foundation (superproject adr-2609242330), ladder floor
+         ;; :native-document.
+         ;; Advanced 2026-09-26, 475ce1ec -> d6515111 (kotoba-verifier main tip, forward only):
+         ;; min / max and vector-take / vector-f64-take in its own tables -- selfhost stage 2 (superproject adr-2609242330)
+         ;; Advanced 2026-09-26, d6515111 -> 7fd42966 (kotoba-verifier main tip, forward only):
+         ;; the verifier's own copy of the export codec types (:vector-i64, :bytes),
+         ;; which tools/kexe_loader.c's boundary codec builds and decodes
+         ;; (superproject adr-2609242330).
+         ;; Advanced 2026-09-27, 7fd42966 -> e3e24593 (kotoba-verifier main tip, forward only):
+         ;; kernel-dequant-dot-ptq1-0, PTQ1_0 fused dequant-dot (aiueos ADR-0222, kotoba-native ADR 0088).
+         :git/sha "e3e245936d795bdd94d3989395df7524e2f5a00e"} ;; Advanced 2026-09-25 13475abc -> 1e92074c (main tip, forward only): verify-image! reports the sealed :process/spawn grant (adr-2609251400 C3, second half). Before that: Advanced 2026-09-25 447dfb00 -> c4742c04 (main tip, forward only): the state ability -- a native artifact whose rows carry :state is verified, capability part re-derived. Before that: Advanced 2026-09-24 95393017 -> 9a0d3341 (main tip, ahead 5, forward only): adr-2609242100 P1 -- string-literal-byte-limit 4096 -> 65536. Before that: 1e304790 -> 95393017 (main tip, forward only): selfhost walls: fn-body-clj-only, some-two-arg, regex literal, char literal, clojure.* to kotoba.*
 
         ;; EXPLICIT FLOORS FOR TRANSITIVE DEPENDENCIES (2026-09-12, adr-2609111900
         ;; source-side wave). None of the eight coordinates below was named in
@@ -1727,7 +1895,8 @@
         io.github.kotoba-lang/edn
         {:git/url "https://github.com/kotoba-lang/edn.git"
          ;; 21cfcaef -> 79dba32c (edn main, ahead 22, behind 0)
-         :git/sha "3f1889ddaf1a3073d4a9880a3a82a31a738030ea" ;; Advanced 2026-09-24 79dba32c -> 3f1889dd (main tip, forward only): selfhost walls: fn-body-clj-only, some-two-arg, regex literal, char literal, clojure.* to kotoba.*
+         ;; Advanced 2026-09-26 3f1889dd -> 9e58ee22 (main tip, forward only): read-string gives Kotoba the 2-arity ex-info, host keeps the cause (selfhost wall C, superproject adr-2609242330); also carries kotoba.bytes for UTF-8 size and kotoba.test in edn tests.
+         :git/sha "9e58ee2272383f229bb9b38c53f9ba7e572fb13a" ;; Advanced 2026-09-24 79dba32c -> 3f1889dd (main tip, forward only): selfhost walls: fn-body-clj-only, some-two-arg, regex literal, char literal, clojure.* to kotoba.*
          :exclusions [io.github.kotoba-lang/edn-escape-controls
                       io.github.kotoba-lang/edn-read-all
                       io.github.kotoba-lang/edn-read-string
@@ -1736,7 +1905,9 @@
         io.github.kotoba-lang/kotoba-codegen
         {:git/url "https://github.com/kotoba-lang/kotoba-codegen.git"
          ;; ce1aada1 -> 3b79b3fd (kotoba-codegen main, ahead 6, behind 0)
-         :git/sha "9a54c2496f8d185223ca89b1fc1817f4f9c5bf19"}
+         ;; Advanced 2026-09-27, 9a54c249 -> dabdc0b9 (kotoba-codegen main tip, forward only):
+         ;; kernel-dequant-dot-ptq1-0, PTQ1_0 fused dequant-dot (aiueos ADR-0222, kotoba-native ADR 0088).
+         :git/sha "dabdc0b966412211a58db4c57b230b819b8193d7"}
         ;; kotoba-mir / kotoba-gmir: named by kotoba-native 19400641 as
         ;; 1a1c4358 / a3f0597c. The two move together (mir requires gmir).
         io.github.kotoba-lang/kotoba-mir
@@ -1751,7 +1922,9 @@
          ;; 2c4793dd -> 944b5d30 (2026-09-16, its #70): offsets 336 / 344.
          ;; Advanced 2026-09-25, cfb086be -> 67a83d06 (kotoba-mir main, ahead 4, forward only):
          ;; offsets 352-376 (string-from-bytes, superproject adr-2609242330).
-         :git/sha "67a83d0635e8502acab7f56cb6c4cf50f31de575"} ;; Advanced 2026-09-24 6d92aea9 -> cfb086be (main tip, forward only): selfhost walls: fn-body-clj-only, some-two-arg, regex literal, char literal, clojure.* to kotoba.*
+         ;; Advanced 2026-09-27, 67a83d06 -> abb72f61 (kotoba-mir main tip, forward only):
+         ;; kernel-dequant-dot-ptq1-0, PTQ1_0 fused dequant-dot (aiueos ADR-0222, kotoba-native ADR 0088).
+         :git/sha "abb72f61633c78780345559f1b877b34ef4a3c1a"} ;; Advanced 2026-09-24 6d92aea9 -> cfb086be (main tip, forward only): selfhost walls: fn-body-clj-only, some-two-arg, regex literal, char literal, clojure.* to kotoba.*
         io.github.kotoba-lang/kotoba-gmir
         {:git/url "https://github.com/kotoba-lang/kotoba-gmir.git"
          ;; a3f0597c -> a4b682c4 (kotoba-gmir main, ahead 6, behind 0)
@@ -1763,7 +1936,9 @@
          ;; 790a7298 -> 3350ad20 (2026-09-16, its #35): the two range arities.
          ;; Advanced 2026-09-25, cf39f7c1 -> 47763164 (kotoba-gmir main, ahead 4, forward only):
          ;; the four ABI v11 runtime arities (string-from-bytes, superproject adr-2609242330).
-         :git/sha "47763164ceec7be14d67fc35ef619f71d383eab9"}
+         ;; Advanced 2026-09-27, 47763164 -> 8e0c3a23 (kotoba-gmir main tip, forward only):
+         ;; kernel-dequant-dot-ptq1-0, PTQ1_0 fused dequant-dot (aiueos ADR-0222, kotoba-native ADR 0088).
+         :git/sha "8e0c3a23a54d761be65c93246c498821da149461"}
         ;; org-nist-sha2: named by osaho f404babb as cb67e53e. Its main adds
         ;; `text` as a dependency (already here) and moves amu / osaho into
         ;; the :test alias, so the closure does not grow.

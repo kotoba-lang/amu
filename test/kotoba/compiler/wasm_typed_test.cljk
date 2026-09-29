@@ -393,9 +393,9 @@
              (hetero-vector-assoc [:vector [:i64 :string]]
                (hetero-vector [:vector [:i64 :string]] 1 \"before\") 1 \"after\") 1))
          (defn compare-vector [] :i64
-           (hetero-vector-equal [:vector [:i64 :string]]
-             (hetero-vector [:vector [:i64 :string]] 1 \"same\")
-             (hetero-vector [:vector [:i64 :string]] 1 \"same\")))
+           (if (hetero-vector-equal [:vector [:i64 :string]]
+                 (hetero-vector [:vector [:i64 :string]] 1 \"same\")
+                 (hetero-vector [:vector [:i64 :string]] 1 \"same\")) 1 0))
          (defn set-has [] :bool
            (typed-set-contains [:set :i64] (typed-set [:set :i64] 1 2) 2))
          (defn set-add [] :i64
@@ -405,16 +405,16 @@
            (typed-set-count [:set :i64]
              (typed-set-disj [:set :i64] (typed-set [:set :i64] 1 2) 1)))
          (defn compare-set [] :i64
-           (typed-set-equal [:set :i64]
-             (typed-set [:set :i64] 2 1) (typed-set [:set :i64] 1 2)))
+           (if (typed-set-equal [:set :i64]
+                 (typed-set [:set :i64] 2 1) (typed-set [:set :i64] 1 2)) 1 0))
          (defn update-record [] :i64
            (record-get [:record :demo/person [[:name :string] [:age :i64]]]
              (record-assoc [:record :demo/person [[:name :string] [:age :i64]]]
                (record [:record :demo/person [[:name :string] [:age :i64]]] \"A\" 1) :age 2) :age))
          (defn compare-record [] :i64
-           (record-equal [:record :demo/person [[:name :string] [:age :i64]]]
-             (record [:record :demo/person [[:name :string] [:age :i64]]] \"A\" 1)
-             (record [:record :demo/person [[:name :string] [:age :i64]]] \"A\" 1)))
+           (if (record-equal [:record :demo/person [[:name :string] [:age :i64]]]
+                 (record [:record :demo/person [[:name :string] [:age :i64]]] \"A\" 1)
+                 (record [:record :demo/person [[:name :string] [:age :i64]]] \"A\" 1)) 1 0))
          (defn nested-set-count [] :i64
            (typed-set-count [:set :keyword]
              (record-get [:record :demo/report [[:covered [:set :keyword]]]]
@@ -564,9 +564,9 @@
              (typed-map-dissoc [:map :keyword :i64]
                (typed-map-new [:map :keyword :i64] :a 1 :b 2) :a) :b))
          (defn compare-map [] :i64
-           (typed-map-equal [:map :keyword :i64]
-             (typed-map-new [:map :keyword :i64] :b 2 :a 1)
-             (typed-map-new [:map :keyword :i64] :a 1 :b 2)))"
+           (if (typed-map-equal [:map :keyword :i64]
+                 (typed-map-new [:map :keyword :i64] :b 2 :a 1)
+                 (typed-map-new [:map :keyword :i64] :a 1 :b 2)) 1 0))"
         compiled (compiler/compile-source source :wasm32-kotoba-v1)
         probe (node-probe
                compiled

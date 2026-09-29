@@ -658,6 +658,13 @@ int main(int argc, char **argv) {
   context->vector_drop = checked_vector_drop;
   context->vector_alloc = checked_vector_alloc;
   context->vector_assoc_in_place = checked_vector_assoc_in_place;
+  /* Native vector lowering reads these ABI v9 arena pointers directly. */
+  context->pair_used_pointer = &shared.pair_used;
+  context->pairs_base = shared.pairs;
+  context->pair_validated_base = shared.pair_validated;
+  context->vector_used_pointer = &shared.vector_used;
+  context->vectors_base = shared.vectors;
+  context->vector_items_base = shared.vector_items;
   /* String literals resolve into the mapped artifact itself: raw extraction
    * appends literal data past the last function's code, so the whole file is
    * the code+literal-data region. dylib twins are plain C and never receive

@@ -1146,3 +1146,32 @@
       (assert (string? message) "an exported variadic defn is refused")
       (assert (re-find #"variadic function add-all cannot be exported: an export must have a fixed interface" message) message)
       (assert (not (re-find #"export does not name a declared function" message)) message))))
+
+;; A module-header refusal is the refusing module's, not the root's
+;; (superproject adr-2609242330 S5, 2026-09-25). Before, `:source` fell back to
+;; the file the caller named, so one module's string host import was counted
+;; once per importer on the selfhost scoreboard.
+(check "a-dependency-s-header-refusal-is-attributed-to-the-dependency"
+  (fn []
+    (let [root (tmpdir)
+          main (spit! (.join path root "hx") "main.cljk"
+                      "(ns hx.main (:require [hx.leaf :as leaf]) (:export [main]))\n(defn main [] :i64 (leaf/one))")
+          leaf (spit! (.join path root "hx") "leaf.cljk"
+                      "(ns hx.leaf (:require [\"node:fs\" :as fs]) (:export [one]))\n(defn one [] :i64 1)")
+          data (try (project-files/load-closed-graph main [root]) nil
+                    (catch :default e (ex-data e)))]
+      (assert (map? data) "the graph is refused")
+      (assert (= 'hx.leaf (:source-module data)) (pr-str data))
+      (assert (= "leaf.cljk" (last (.split (str (:source-file data)) "/"))) (pr-str data))
+      (assert (= "node:fs" (:host-module data)) (pr-str data))
+      (let [refused (try (project/link-source
+                          {'hx.main "(ns hx.main (:require [hx.leaf :as leaf]) (:export [main]))\n(defn main [] :i64 (leaf/one))"
+                           'hx.leaf "(ns hx.leaf (:require [\"node:fs\" :as fs]) (:export [one]))\n(defn one [] :i64 1)"}
+                          'hx.main)
+                         nil
+                         (catch :default e (ex-data e)))]
+        (assert (= 'hx.leaf (:source-module refused)) (pr-str refused)))
+      ;; The root's own header refusal names the root.
+      (let [own (try (project-files/load-closed-graph leaf [root]) nil
+                     (catch :default e (ex-data e)))]
+        (assert (= 'hx.leaf (:source-module own)) (pr-str own))))))

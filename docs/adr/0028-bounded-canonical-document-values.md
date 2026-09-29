@@ -53,6 +53,15 @@ membership, map contains/get/assoc/dissoc, and right-biased map merge. String,
 bool, i64, and f64 accessors return typed options. Container-kind or
 scalar-kind mismatches trap; no coercion or truthiness conversion occurs.
 
+Since 2026-09-25 (ADR 0353 floor `:absence`) the language as a whole admits
+exactly one truthiness besides `:bool`: presence of an `[:option T]`. An
+option tested by `if` / `when` / `if-let` / `when-let` / `cond->` / `some->`
+is present or absent, and `nil` as a record literal's field value is the
+absent option. A document node, a string, a record and a number are never
+truthy: since floor `:bool-predicates` (the same day) an `:i64` test is
+refused by name, and every predicate primitive answers `:bool`. Nothing is
+coerced.
+
 Canonical binary encoding and bounded EDN reading/printing cover every
 admitted node. The binary encoding defines document identity and the total
 order used by sets and non-keyword map keys. Existing keyword map entries keep

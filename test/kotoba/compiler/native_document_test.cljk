@@ -1,0 +1,93 @@
+(ns kotoba.compiler.native-document-test
+  "Ladder floor :native-document (gap 2 of the selfhost foundation,
+  superproject adr-2609242330; kotoba-lang surface-status
+  `:contextual-document-literal :native`).
+
+  amu's own source manipulates EDN of arbitrary shape, and native refused
+  every document operation by name (\"does not qualify `document-keyword`\"),
+  and with it ex-info. A native document is now the canonical EDN text in the
+  string handle native documents already were (kotoba-native
+  `kotoba.native.document`): structural equality is `string=?`, and every
+  operation is a rewrite onto the existing string slots plus emitted helpers.
+
+  Pinned beside the admission: f64 documents, the digest and the hex codec are
+  still refused on native, by the compiler's literal."
+  (:require [clojure.test :refer [deftest is testing]]
+            [kotoba.compiler.core :as compiler]
+            [kotoba.kir :as ir]
+            [kotoba.sema :as sema]
+            [kotoba.verifier :as verifier]))
+
+(def ^:private source
+  "(ns native-document)
+   (defn- kind-code [d :document] :i64
+     (let [k (document-kind d)]
+       (cond (= k :null) 0 (= k :bool) 1 (= k :i64) 2 (= k :string) 4
+             (= k :keyword) 5 (= k :vector) 7 (= k :list) 8 (= k :set) 9
+             (= k :map) 10 :else 99)))
+   (defn- dn [o [:option :document]] :document
+     (option-value-of [:option :document] o (document-null)))
+   (defn main [] :i64
+     (let [m (document-map :b (document-i64 2) :a (document-string \"x\\\"y\"))
+           v (document-vector (document-i64 -7) (document-keyword :k) m)
+           m2 (document-assoc m :c (document-bool true))
+           s (document-set (document-i64 10) (document-string \"a\") (document-keyword :z))]
+       (+ (kind-code v)
+          (* 10 (document-count m2))
+          (* 100 (document-count v))
+          (* 1000 (if (document-equal? (document-assoc m2 :c (document-bool true)) m2) 1 0))
+          (* 10000 (- 0 (option-value-of [:option :i64] (document-i64-value (dn (document-vector-at v 0))) 0)))
+          (* 100000 (string-byte-length (option-value-of [:option :string] (document-string-value (dn (document-get m :a))) \"\")))
+          (* 1000000 (if (option-value-of [:option :bool] (document-bool-value (dn (document-get m2 :c))) false) 1 0))
+          (* 10000000 (kind-code (dn (document-vector-at v 2))))
+          (* 100000000 (if (document-set-contains? s (document-keyword :z)) 1 0))
+          (* 1000000000 (string-byte-length (document-edn-print (document-dissoc m2 :b)))))))")
+
+(def ^:private ex-info-source
+  "(ns native-ex-info)
+   (defn- f [x :i64] :i64 (if (< x 0) (throw (ex-info \"negative input\" {:x x})) (* x 2)))
+   (defn main [] :i64
+     (+ (try (f 5) (catch e 0))
+        (try (f -3) (catch e (+ (* 100 (string-byte-length (ex-message e)))
+                                (option-value-of [:option :i64]
+                                                 (document-i64-value
+                                                  (option-value-of [:option :document]
+                                                                   (document-get (ex-data e) :x)
+                                                                   (document-null)))
+                                                 0))))))")
+
+(defn- n [x] #?(:clj (long x) :cljs (js/Number x)))
+
+(defn- reference [source]
+  (n (ir/execute (ir/lower (sema/analyze source)) 'main [])))
+
+(defn- refusal [target source]
+  (try (compiler/compile-source source target) nil
+       (catch #?(:clj clojure.lang.ExceptionInfo :cljs :default) error
+         (ex-message error))))
+
+(deftest native-document-values-test
+  (testing "admitted: both native ISAs compile the document program, the sealed
+            answer is the reference's, and the artifact re-verifies"
+    ;; {:a "x\"y" :c true} prints as 19 bytes; the map has 3 entries after
+    ;; the assoc, the vector 3 items; the rest as the source reads. The same
+    ;; answer came from restricted ESM and the kexe loader on both ISAs.
+    (is (= 19201371337 (reference source)))
+    (doseq [target [:aarch64-macos-kotoba-v1 :x86_64-linux-kotoba-v1]]
+      (let [kexe (:artifact (compiler/compile-source source target))]
+        (is (= 19201371337 (n (:value kexe))) (str target))
+        (is (map? (verifier/verify-artifact! kexe)) (str target)))))
+  (testing "admitted: ex-info, a document error, thrown and caught on native"
+    (is (= 1407 (reference ex-info-source)))
+    (doseq [target [:aarch64-macos-kotoba-v1 :x86_64-linux-kotoba-v1]]
+      (let [kexe (:artifact (compiler/compile-source ex-info-source target))]
+        (is (= 1407 (n (:value kexe))) (str target))
+        (is (map? (verifier/verify-artifact! kexe)) (str target)))))
+  (testing "refused: an f64 document and the digest -- not lowered on native"
+    (doseq [body ["(document-count (document-vector (document-f64 1.5)))"
+                  "(string-byte-length (document-sha256 (document-null)))"]]
+      (is (= (str "typed values currently require the kotoba-script web target, "
+                  "typed Wasm/CLJS target, or the qualified native one-word "
+                  "string/record/variant/option/result slice")
+             (refusal :aarch64-macos-kotoba-v1 (str "(defn main [] :i64 " body ")")))
+          body))))

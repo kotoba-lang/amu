@@ -1,0 +1,71 @@
+(ns kotoba.compiler.expression-absence-test
+  "Ladder floor :expression-absence (gap 1 of the selfhost foundation,
+  superproject adr-2609242330; kotoba-lang guest-grammar `:sugar
+  :expression-absence`). ADR 0353 point 2 made nil a map-literal value; this
+  is nil at expression level.
+
+  A missing else and a literal `nil` branch answer nothing, and the present
+  branch's type decides what nothing is: false beside a `:bool`, the option's
+  none beside an option, `[:option T]` beside any other T -- an `:i64` too
+  where the result is inferred -- and the 0 it always was where the author
+  declared `:i64`. Until 2026-09-26 the desugar wrote the i64 0 on every such
+  path, which was the selfhost wall \"loop exits with two different value
+  types: bool from __kotoba_or_2 and i64 from 0\" (first-truthy).
+
+  What stays refused is pinned by the literal of each refusal."
+  (:require [clojure.test :refer [deftest is testing]]
+            [kotoba.kir :as ir]
+            [kotoba.sema :as sema]))
+
+(defn- run-main [source]
+  (#?(:clj long :cljs js/Number)
+   (ir/execute (ir/lower (sema/analyze source)) 'main [])))
+
+(defn- refusal [source]
+  (try (ir/lower (sema/analyze source)) nil
+       (catch #?(:clj clojure.lang.ExceptionInfo :cljs :default) error
+         (ex-message error))))
+
+(def ^:private first-truthy
+  ;; affine.cljk's shape, over a vector: the first present (pred x).
+  "(defn- first-present [v :vector-i64 t :i64]
+     (loop [i 0]
+       (when (< i (count v))
+         (or (when (= (nth v i) t) :hit) (recur (inc i))))))
+   (defn- any-equal [v :vector-i64 t :i64]
+     (loop [i 0]
+       (when (< i (count v))
+         (or (= (nth v i) t) (recur (inc i))))))\n")
+
+(deftest expression-absence-typed-by-the-present-branch-test
+  (testing "admitted: first-truthy's loop, with an option and with a bool predicate"
+    (is (= 21 (run-main (str first-truthy
+                             "(defn main [] :i64 (+ (if (first-present (vector-i64 1 2) 2) 1 0) "
+                             "(if (first-present (vector-i64 1 2) 3) 10 0) "
+                             "(if (any-equal (vector-i64 1 2) 1) 20 0) "
+                             "(if (any-equal (vector-i64 1 2) 9) 300 0)))")))))
+  (testing "admitted: a keyword, a string, an i64 in an inferred result is [:option T]"
+    (is (= 11 (run-main (str "(defn- sign [x :i64] (when (> x 0) :pos))\n"
+                             "(defn main [] :i64 (+ (if (sign 1) 1 0) (if (sign -1) 100 0) "
+                             "(if-let [k (sign 2)] 10 0)))"))))
+    (is (= 2 (run-main (str "(defn- f [x :i64] (if (> x 0) \"ab\" nil))\n"
+                            "(defn main [] :i64 (if-let [s (f 1)] (string-byte-length s) 99))")))))
+  (testing "admitted: find-first -- index 0 found is not the same as nothing found"
+    (is (= -10 (run-main (str "(defn- idx [v :vector-i64 t :i64] (loop [i 0] (when (< i (count v)) "
+                              "(if (= (nth v i) t) i (recur (inc i))))))\n"
+                              "(defn main [] :i64 (+ (option-value-of [:option :i64] (idx (vector-i64 5 6 7) 5) -1) "
+                              "(* 10 (option-value-of [:option :i64] (idx (vector-i64 5 6 7) 9) -1))))")))))
+  (testing "admitted: cond with no :else wraps every present branch"
+    (is (= 1 (run-main (str "(defn- c [x :i64] (cond (= x 1) :one (= x 2) :two))\n"
+                            "(defn main [] :i64 (+ (if (c 1) 1 0) (if (c 3) 10 0)))")))))
+  (testing "admitted, unchanged: a declared :i64 keeps the 0 (the :absence gate's reading)"
+    (is (= 101 (run-main "(defn main [] :i64 (+ (when true 100) (when false 10) 1))"))))
+  (testing "refused: an absent i64 is not the number it would hold"
+    (is (= "expression type mismatch: expected i64, got [:option :i64]"
+           (refusal "(defn- f [x :i64] (when (> x 0) x))\n(defn main [] :i64 (+ (f 1) 1))"))))
+  (testing "refused: two present types are still two types"
+    (is (= "if branches must have the same value type"
+           (refusal "(defn main [] :i64 (let [k (if (> 1 0) :k 5)] 1))"))))
+  (testing "refused: if takes an else; when is the form without one"
+    (is (= "if requires test, then, else; got 2 arguments"
+           (refusal "(defn main [] :i64 (if (> 1 0) 1))")))))

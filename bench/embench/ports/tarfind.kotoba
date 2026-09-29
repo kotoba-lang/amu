@@ -1,0 +1,61 @@
+(ns embench.tarfind (:export [run test-tarfind]))
+
+;; Correctness port of Embench 2.0rc2 src/tarfind/tarfind.c and
+;; support/beebsc.c, one benchmark_body iteration.
+;; tarfind.c SPDX-License-Identifier: MIT; support/beebsc.c
+;; SPDX-License-Identifier: GPL-3.0-or-later.
+
+(defn- next-seed [seed :i64] :i64
+  (bit-and (+ (* seed 1103515245) 12345) 2147483647))
+
+(defn- name-length [file :i64] :i64
+  (+ 5 file))
+
+(defn- build-archive [] :vector-i64
+  (loop [bytes [] seed 0 index 0]
+    (if (= index 3500) bytes
+      (let [file (quot index 100)
+            position (- index (* file 100))]
+        (if (< position (name-length file))
+          (let [next (next-seed seed)
+                byte (+ 65 (- (u64-shift-right next 16)
+                              (* 26 (quot (u64-shift-right next 16) 26))))]
+            (recur (vector-conj bytes byte) next (+ index 1)))
+          (recur (vector-conj bytes 0) seed (+ index 1)))))))
+
+(defn- same-name [bytes :vector-i64 left :i64 right :i64] :i64
+  (loop [position 0]
+    (let [a (vector-at bytes (+ (* left 100) position))
+          b (vector-at bytes (+ (* right 100) position))]
+      (if (= a b)
+        (if (= a 0) 1 (recur (+ position 1)))
+        0))))
+
+(defn- find-name [bytes :vector-i64 target :i64] :i64
+  (loop [file 0]
+    (if (= file 35) -1
+      (if (= (same-name bytes file target) 1)
+        file
+        (recur (+ file 1))))))
+
+(defn- found-count [bytes :vector-i64] :i64
+  (loop [search 0 found 0]
+    (if (= search 5) found
+      (recur (+ search 1)
+             (+ found (if (= (find-name bytes (+ search 17))
+                             (+ search 17)) 1 0))))))
+
+(defn- archive-fingerprint [bytes :vector-i64] :i64
+  (loop [i 0 hash -3750763034362895579]
+    (if (= i 3500) hash
+      (recur (+ i 1)
+             (* (bit-xor hash (vector-at bytes i)) 1099511628211)))))
+
+(defn run [token :i64] :i64
+  (if (= token 1)
+    (let [bytes (build-archive)]
+      (if (and (= (archive-fingerprint bytes) 7326356327413186574)
+               (= (found-count bytes) 5)) 1 0))
+    0))
+
+(defn test-tarfind [] :i64 (run 1))

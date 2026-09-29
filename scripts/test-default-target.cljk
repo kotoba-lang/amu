@@ -150,7 +150,10 @@
     (lib/write-text! source "(defn main [] :i64 (+ 40 2))\n")
     ;; A legacy pair-map literal: the Wasm targets carry it, native does not
     ;; (`map-new` is outside `kotoba.kir/only-native-word-typed-features?`).
-    (lib/write-text! unqualified "(ns unqualified)\n(defn main [] :i64 (get {:a 1 :b 2} :b))\n")
+    ;; `{}`: since ADR 0353 floor :literal-typing a keyword literal WITH fields
+    ;; is a record, which native qualifies; the empty literal is still the
+    ;; `map-new` pair map, which it does not.
+    (lib/write-text! unqualified "(ns unqualified)\n(defn main [] :i64 (get {} :b))\n")
     (.mkdirSync fs (lib/join project "src") #js {:recursive true})
     (lib/write-text! (lib/join project "src" "util.cljk")
                      "(ns util (:export [twice]))\n(defn twice [x :i64] :i64 (* 2 x))\n")

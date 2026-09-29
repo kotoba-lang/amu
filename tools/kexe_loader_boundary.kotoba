@@ -1,0 +1,218 @@
+(ns kexe-loader-boundary
+  {:kotoba/export [boundary-constant boundary-decide]})
+
+;; The POSIX kexe loader's EXPORT BOUNDARY CODEC decisions, as Kotoba
+;; (superproject adr-2609242330 / adr-2609251400: a native export may take and
+;; return typed values -- :vector-i64, :bytes, [:option :string] -- that the
+;; loader builds from a typed wire form and decodes back out of the arena).
+;;
+;; tools/kexe_loader.c keeps the MECHANISM: it splits a wire token into its
+;; prefix and payload, parses decimals and hex, copies bytes into the arena,
+;; and walks a result's cells. Every RULE is here and nowhere else: which
+;; token a declared slot admits (a bare word in a handle slot is a forged
+;; handle), how large one leaf may be, what a token costs against the
+;; boundary traversal budget and when that budget is exhausted, whether a
+;; caller-named budget is admissible, and whether a decoded bytes item is a
+;; byte. The loader maps this module's machine code read+execute and calls
+;; `boundary-decide` through the native kexe ABI with a private context, as
+;; it calls tools/kexe_loader_decisions.kotoba (C1) -- so a boundary
+;; decision costs the guest no fuel and no cell.
+;;
+;; A module of its own, not more ops in C1's `decide`: the Linux static image
+;; embeds C1's bytes verbatim (scripts/gen-linux-static-handlers.cljk refuses
+;; to write when they differ), and a static image has no export boundary --
+;; its prelude calls an arity-0 entry and a packaged command is arity 0 too.
+;; Putting the codec here leaves C1's bytes, and the static image, unchanged.
+;;
+;; `boundary-constant` answers are evaluated natively by
+;; scripts/gen-loader-decisions.cljk and written into the generated region
+;; as #defines (array bounds and the report need them as data). They agree
+;; with kotoba-lang lang/limits.edn :language/boundary and :language/value,
+;; which list these #defines as copies.
+
+;; ---------------------------------------------------------------------
+;; The wire forms (the C recognises the prefix; the kind numbers are this
+;; module's ABI and the C names them KEXE_TOKEN_*):
+;;
+;;    1 decimal i64            "-12"
+;;    2 string                 "s:<utf8 hex>"
+;;    3 option none            "o:none"
+;;    4 option-i64 some        "o:some:<i64>"
+;;    5 result-i64             "e:ok:<i64>" / "e:err:<i64>"
+;;    6 scalar record          "r:<i64>,<i64>,..."
+;;    7 scalar variant         "v:<cases>:<ordinal>:<kind>:<payload>"
+;;    8 granted region base    "g:<hex>"
+;;    9 granted region length "gl:<n>"
+;;   10 vector-i64             "vi:" or "vi:<i64>,<i64>,..."
+;;   11 bytes                  "b:<hex>"
+;;   12 option-string some     "o:some:s:<utf8 hex>"
+;;
+;; The declared kinds (KEXE_ARG_TYPES names them; tools/kexe_loader_names
+;; `boundary-kind-name` spells them):
+;;
+;;    0 undeclared (no KEXE_ARG_TYPES: the pre-codec loader invocation)
+;;    1 i64   2 bool   3 string   4 option-i64   5 result-i64
+;;    6 vector-i64   7 bytes   8 option-string   9 record   10 variant
+
+(defn boundary-constant [k]
+  (cond
+    ;; kotoba-lang lang/limits.edn :language/boundary :traversal-nodes.
+    (= k 0) 65536
+    ;; :language/boundary :traversal-bytes (1 MiB of string / bytes leaves).
+    (= k 1) 1048576
+    ;; The exit status of a boundary refusal (past the result traps'
+    ;; 126..130), and of the three new result decodings' refusals.
+    (= k 2) 131
+    (= k 3) 132
+    (= k 4) 133
+    (= k 5) 134
+    ;; :language/value :vector-items, :string-value-bytes and the bytes twin:
+    ;; the per-leaf bounds a boundary leaf is held to.
+    (= k 6) 16777216
+    (= k 7) 65536
+    (= k 8) 65536
+    :else -1))
+
+;; ---------------------------------------------------------------------
+;; Refusal reasons (the index `boundary-reason-name` spells; 0 admitted):
+;;   1 boundary/forged-handle     a bare word where the slot is a handle
+;;   2 boundary/type-mismatch     a typed token of another kind
+;;   3 boundary/signature         a handle token with no declared signature,
+;;                                or a signature that does not parse / count
+;;   4 boundary/malformed         the token's payload does not parse
+;;   5 boundary/value-too-large   a leaf past its per-value bound
+;;   6 boundary/invalid-utf8      a string leaf that is not UTF-8
+;;   7 boundary/not-a-bool        a bool slot given a word other than 0 / 1
+;;   8 boundary/arena             the per-run arena cannot hold the value
+;;   9 budget/boundary-nodes      the traversal node budget is exhausted
+;;  10 budget/boundary-bytes      the traversal byte budget is exhausted
+;;  11 boundary/unsupported-kind  a declared kind the codec has no form for
+
+(defn- handle-kind? [declared]
+  (if (< declared 3) 0 (if (> declared 10) 0 1)))
+
+;; Which declared kind a token spells, or 0 for a token no slot but i64 takes.
+(defn- token-spells [token]
+  (cond
+    (= token 2) 3
+    (= token 3) 4
+    (= token 4) 4
+    (= token 5) 5
+    (= token 6) 9
+    (= token 7) 10
+    (= token 10) 6
+    (= token 11) 7
+    (= token 12) 8
+    :else 0))
+
+;; op 0: may a slot declared DECLARED take a token of kind TOKEN?
+(defn- token-admitted [declared token]
+  (cond
+    (< token 1) 4
+    (> token 12) 4
+    ;; Undeclared: the pre-codec invocation keeps every form it had; a
+    ;; token that MINTS a codec handle needs a signature to land against.
+    (= declared 0) (if (> token 9) 3 0)
+    (< declared 0) 11
+    (> declared 10) 11
+    ;; A word slot: decimals, and the two granted-region words.
+    (= declared 1) (cond (= token 1) 0 (= token 8) 0 (= token 9) 0 :else 2)
+    (= declared 2) (if (= token 1) 0 2)
+    ;; A handle slot. A bare word is the forgery this op exists to refuse:
+    ;; the loader mints every handle a call receives, the host names none.
+    (= token 1) 1
+    (= token 8) 1
+    (= token 9) 1
+    ;; o:none is the none of either option kind.
+    (= token 3) (if (= declared 4) 0 (if (= declared 8) 0 2))
+    (= (token-spells token) declared) 0
+    :else 2))
+
+;; op 1: is a leaf of LENGTH items / bytes within its per-value bound?
+;; TOKEN kinds 2 and 12 are strings, 11 bytes, 10 a vector; others have no
+;; length and are admitted.
+(defn- leaf-admitted [token length]
+  (cond
+    (< length 0) 5
+    (= token 10) (if (> length (boundary-constant 6)) 5 0)
+    (= token 2) (if (> length (boundary-constant 7)) 5 0)
+    (= token 12) (if (> length (boundary-constant 7)) 5 0)
+    (= token 11) (if (> length (boundary-constant 8)) 5 0)
+    :else 0))
+
+;; op 2: the traversal budget, after charging a token: NODES and BYTES are the
+;; running totals of this call's arguments, the budgets the run's.
+(defn- charge-verdict [nodes bytes node-budget byte-budget]
+  (cond
+    (> nodes node-budget) 9
+    (> bytes byte-budget) 10
+    :else 0))
+
+;; op 3: a caller-named traversal budget (WHICH 0 nodes, 1 bytes). It may
+;; narrow the default, never widen it; zero is no budget. 0 admitted,
+;; 1 zero, 2 above the default.
+(defn- budget-verdict [which value]
+  (cond
+    (= value 0) 1
+    (< value 0) 2
+    (> value (boundary-constant (if (= which 0) 0 1))) 2
+    :else 0))
+
+;; op 4: a bytes item read back from the arena is a byte.
+(defn- byte-item [item]
+  (if (< item 0) 0 (if (> item 255) 0 1)))
+
+;; op 5: the nodes one token visits, counted as the reference walk
+;; (osaho kotoba.kir.value/bounded-typed-value!) counts them: a scalar,
+;; string, bytes or vector-i64 is one leaf; an option some is the option
+;; and its payload; a record is the record and each field.
+(defn- token-nodes [token count]
+  (cond
+    (= token 4) 2
+    (= token 12) 2
+    (= token 6) (+ 1 count)
+    (= token 5) 2
+    (= token 7) 2
+    :else 1))
+
+;; op 6: the payload bytes one token charges -- string and bytes leaves,
+;; as the reference walk charges them; a vector of words charges none.
+(defn- token-bytes [token length]
+  (cond
+    (= token 2) length
+    (= token 11) length
+    (= token 12) length
+    :else 0))
+
+;; op 7: a bool slot's word is 0 or 1.
+(defn- bool-word [value]
+  (if (= value 0) 0 (if (= value 1) 0 7)))
+
+;; op 8: is DECLARED a handle kind (1) or a word kind (0)?
+;; op 9: which result-type index (tools/kexe_loader_names result-type-name)
+;; decodes a result of declared kind DECLARED, or -1 when none does.
+(defn- result-type-for [declared]
+  (cond
+    (= declared 1) 0
+    (= declared 2) 0
+    (= declared 3) 1
+    (= declared 4) 2
+    (= declared 5) 3
+    (= declared 6) 4
+    (= declared 7) 5
+    (= declared 8) 6
+    :else -1))
+
+(defn boundary-decide [op a b c d]
+  (cond
+    (= op 0) (token-admitted a b)
+    (= op 1) (leaf-admitted a b)
+    (= op 2) (charge-verdict a b c d)
+    (= op 3) (budget-verdict a b)
+    (= op 4) (byte-item a)
+    (= op 5) (token-nodes a b)
+    (= op 6) (token-bytes a b)
+    (= op 7) (bool-word a)
+    (= op 8) (handle-kind? a)
+    (= op 9) (result-type-for a)
+    :else -1))

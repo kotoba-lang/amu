@@ -2,7 +2,7 @@
   "CI gate binding backend qualification claims to the provider manifest."
   {:kotoba/export [-main backend-keys catalog-resource execution-surfaces manifest-resource qualification-keys qualification-resource qualified-evidence-keys verify! verify-data!]}
   (:require [kotoba.lang.edn :as edn]
-            [clojure.java.io :as io]
+            [kotoba.compiler.embedded-resources :as embedded-resources]
             [kotoba.artifact.core :as artifact]))
 
 (def manifest-resource "kotoba/lang/provider-conformance-v1.edn")
@@ -23,9 +23,15 @@
 (defn- fail! [message data]
   (throw (ex-info message (assoc data :phase :backend-provider-qualification))))
 
-(defn- read-resource [path]
-  (when-let [resource (io/resource path)]
-    (edn/read-string (slurp resource))))
+(defn- read-resource
+  "The resource's text is compile-time data since 2026-09-25 (superproject
+  adr-2609242330 S3 (b')): kotoba.compiler.embedded-resources, the byte copy
+  of resources/ that kotoba.compiler.embedded-resources-test holds equal.
+  nil for a path it does not hold, as io/resource answered for a path that was
+  not on the classpath."
+  [path]
+  (when-let [text (embedded-resources/resource-text path)]
+    (edn/read-string text)))
 
 (defn verify-data!
   "Verifies one backend claim against supplied decoded resources. A pending

@@ -1577,7 +1577,17 @@
                      (map (fn [[declared source]]
                             (let [forms (sema/read-forms source)
                                   _ (admit-project-forms! forms counters)
-                                  info (module-info forms)]
+                                  ;; A header refusal is this module's, not
+                                  ;; the root's (see project-files).
+                                  info (try (module-info forms)
+                                            (catch #?(:clj Exception :cljs :default) error
+                                              (let [data (ex-data error)]
+                                                (throw (if (or (not (map? data))
+                                                               (contains? data :source-module))
+                                                         error
+                                                         (ex-info (ex-message error)
+                                                                  (assoc data :source-module declared)
+                                                                  error))))))]
                               (when-not (= declared (:namespace info))
                                 (reject! "source-map key does not match declared namespace"
                                          {:key declared :declared (:namespace info)}))

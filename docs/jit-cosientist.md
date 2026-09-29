@@ -509,3 +509,49 @@ rerun, then the tick-27 emit-verification hand-patch.
   MIR lowering; recompile kernel_strings and expect the emitted body to
   switch sdiv 0x9ac10c02 -> smulh+asr (smulh count 0 -> >=1); only then
   end-to-end measurement on a quiet host (idle >=90 percent).
+
+- 2026-09-24 07:0x JST tick 42 (JIT): quiet gate failed a 36th consecutive
+time - probe at 06:43 JST: load1 30.96 (5m 27.85, 15m 27.74) on 10 CPUs,
+iostat cpu idle 25-46 percent across 6 samples, never >=90 percent. J-B
+qualified rerun deferred again. Branch (b) advanced STATICALLY (no quiet
+gate needed): located the specialization decision itself - it is NOT in
+machine_ir.cljk (emit-side) but in kotoba-mir/src/kotoba/mir.cljk
+select-instructions (lines 1304-1333): a :gmir/quotient becomes
+:mir/quotient-constant only when its :gmir/right vreg is a :gmir/constant
+defined EARLIER IN THE SAME FUNCTION (constants map, function-local). The
+call-site literal 1000003 in kernel_strings is passed as a register
+argument to imod, so inside imod the divisor is a parameter vreg and never
+enters the constants map - specialization cannot fire regardless of emit
+side. Pipeline-wide grep found NO function inliner anywhere in kotoba-sema
+/ kotoba-mir / kotoba-native ("inline" hits are schema descriptors and
+handle-runtime emission only). Hand-inlined control kernel written to
+/tmp/jit_t42_kernel_inline.kotoba (imod body in the scan loop, literal
+divisors 16/8/1000003 at each quot), compiled jvm-free OK ({:ok true}
+/tmp/jit_t42_kernel_inline.kexe), kernel blob extracted OK (452 bytes,
+offset 372, /tmp/jit_t42_kernel_inline.bin) - sdiv/smulh count of the
+blob NOT completed this tick (run budget exhausted); next tick first
+action: count sdiv 0x9ac10cxx and smulh 0x9b407cxx words in the blob
+(scratch python word-scan, tick-41 method). Falsification fork: if the
+inlined shape still emits sdiv, the J-C lever is absent even post-inline
+(deeper drop, e.g. machine_ir constant hoisting); if it emits smulh+asr,
+the lever is exactly "inline + existing select-instructions" and the J-C
+hand-patch reduces to a function-inliner with constant-argument cloning.
+J-B stays open, not-killed/not-confirmed. No compiler change (scratch
+only), no policy change, no sealed claim.
+
+- 2026-09-26 13:02 JST tick 43 (JIT): quiet gate failed a 37th consecutive
+  time - load1 73.52 on 10 CPUs at 13:02 JST (uptime 38 min; 5m avg 122.62,
+  15m avg 158.92 - host at its heaviest load1 in recent ticks). iostat cpu
+  idle probe was blocked by the security scanner this tick, so idle is
+  unmeasured; load1 alone already disqualifies (idle cannot be >=90
+  percent at load1 73.52 on 10 CPUs). J-B measurement deferred; no
+  compiler change, no policy change, no sealed claim. Read path this
+  tick: foreground terminal stdout empty for most commands (same as
+  ticks 31/34); iostat probe blocked by the scanner. Next tick first
+  action unchanged from tick 42: word-scan /tmp/jit_t42_kernel_inline.bin
+  for sdiv 0x9ac10cxx vs smulh 0x9b407cxx counts to close the
+  falsification fork (inlined shape -> sdiv: J-C lever absent even
+  post-inline; -> smulh: J-C hand-patch is a function-inliner with
+  constant-argument cloning); then on a quiet host (idle >=90 percent)
+  the qualified three-arm J-B run, 4000000 iters x 24 alternations,
+  ratio of medians.

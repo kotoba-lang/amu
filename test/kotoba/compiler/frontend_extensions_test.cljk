@@ -601,7 +601,7 @@
                   (hetero-vector-count [:vector [:i64 :string :bool]] value))
                 (defn same? [left [:vector [:i64 :string :bool]]
                              right [:vector [:i64 :string :bool]]]
-                  (hetero-vector-equal [:vector [:i64 :string :bool]] left right))"
+                  (if (hetero-vector-equal [:vector [:i64 :string :bool]] left right) 1 0))"
         compiled (compiler/compile-source source :js-kotoba-v1)
         kir (:kir compiled)
         encoded (.encodeToString (java.util.Base64/getEncoder)
@@ -662,7 +662,7 @@
                 (defn count-items [value [:set :i64]]
                   (typed-set-count [:set :i64] value))
                 (defn same? [left [:set :i64] right [:set :i64]]
-                  (typed-set-equal [:set :i64] left right))"
+                  (if (typed-set-equal [:set :i64] left right) 1 0))"
         compiled (compiler/compile-source source :js-kotoba-v1)
         kir (:kir compiled)
         encoded (.encodeToString (java.util.Base64/getEncoder)
@@ -713,7 +713,7 @@
                   (record-assoc [:record :demo/person [[:name :string] [:age :i64] [:nickname [:option :string]]]] value :age age))
                 (defn same? [left [:record :demo/person [[:name :string] [:age :i64] [:nickname [:option :string]]]]
                              right [:record :demo/person [[:name :string] [:age :i64] [:nickname [:option :string]]]]]
-                  (record-equal [:record :demo/person [[:name :string] [:age :i64] [:nickname [:option :string]]]] left right))"
+                  (if (record-equal [:record :demo/person [[:name :string] [:age :i64] [:nickname [:option :string]]]] left right) 1 0))"
         compiled (compiler/compile-source source :js-kotoba-v1)
         kir (:kir compiled)
         encoded (.encodeToString (java.util.Base64/getEncoder)

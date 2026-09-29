@@ -1,0 +1,85 @@
+(ns kotoba.compiler.literal-typing-test
+  "ADR 0353 floor :literal-typing: a literal is typed by its items.
+
+  A map or vector literal is lowered from its source before any type is
+  inferred, so until this floor a vector of records was refused (`(nth [(mk)
+  (mk)] 1)`: \"expected i64, got [:ref :b/s]\") and a keyword map literal whose
+  values spelled no type was the keyword->i64 pair map -- so a `let` binding
+  of one could not be passed to a row, and reading a key it lacked answered 0.
+  kotoba-sema now types each literal once its items' types are known
+  (`type-literals`, before rows are specialized): a keyword map literal is the
+  anonymous closed record of its fields wherever it is written, and a vector
+  literal of non-i64 items is a typed vector -- `[:list T]` when every item is
+  one type T, the heterogeneous `[:vector [T ...]]` otherwise.
+
+  What stays refused is pinned by the literal of each refusal: a field is not
+  coerced, a record is closed (a key a literal lacks is refused, never 0; with
+  a default, `(:k m d)` answers d statically), a
+  record is never truthy, records have no structural equality, a record is
+  not counted, and an item of a typed vector is its type, never an i64."
+  (:require [clojure.test :refer [deftest is testing]]
+            [kotoba.kir :as ir]
+            [kotoba.sema :as sema]))
+
+(def ^:private prelude
+  (str "(ns b (:schemas {:b/s [:record :b/s [[:a :i64] [:b :i64]]]"
+       " :b/t [:record :b/t [[:a :i64] [:c :string]]]}))\n"
+       "(defn mk [] [:ref :b/s] {:a 5 :b 2})\n"
+       "(defn mt [] [:ref :b/t] {:a 7 :c \"xy\"})\n"))
+
+(defn- run-main [source]
+  (#?(:clj long :cljs js/Number)
+   (ir/execute (ir/lower (sema/analyze (str prelude source))) 'main [])))
+
+(defn- results [source]
+  (into {} (map (juxt :name :result)) (:functions (sema/analyze (str prelude source)))))
+
+(defn- refusal [source]
+  (try (ir/lower (sema/analyze (str prelude source))) nil
+       (catch #?(:clj clojure.lang.ExceptionInfo :cljs :default) error
+         (ex-message error))))
+
+(deftest record-vector-and-map-literal-retirement-test
+  (testing "admitted: a vector literal of records is an ordinary typed vector"
+    (is (= 2 (run-main "(defn main [] :i64 (:b (nth [(mk) (mk)] 1)))")))
+    (is (= 2 (run-main "(defn main [] :i64 (count [(mk) (mk)]))")))
+    (is (= 4 (run-main "(defn main [] :i64 (let [v [(mk) (mk)]] (+ (count v) (:b (nth v 1)))))")))
+    (is (= 40 (run-main "(defn main [] :i64 (let [i 2 v [{:a 1} {:a 2} {:a 40}]] (:a (nth v i))))")))
+    (is (= [:list [:ref :b/s]]
+           (get (results "(defn- rs [] [(mk) (mk)]) (defn main [] :i64 (count (rs)))") 'rs)))
+    (is (= [:vector [[:ref :b/s] [:ref :b/t]]]
+           (get (results "(defn- rs [] [(mk) (mt)]) (defn main [] :i64 (count (rs)))") 'rs))))
+  (testing "admitted: a keyword map literal is a record wherever it is written"
+    (is (= 3 (run-main "(defn- f [m] (:a m)) (defn main [] :i64 (let [m {:a 3}] (f m)))")))
+    (is (= 7 (run-main "(defn main [] :i64 (let [m {:a 3 :b 4}] (+ (:a m) (:b m))))")))
+    (is (= [:record :kotoba.map-literal/a+b [[:a :i64] [:b :i64]]]
+           (get (results "(defn- m [] {:a 3 :b 4}) (defn main [] :i64 (:a (m)))") 'm)))
+    (is (= 2 (run-main "(defn main [] :i64 (let [m (assoc {:a 1} :b 2)] (:b m)))"))))
+  (testing "admitted: a default lookup on a record is decided statically (a record is closed)"
+    (is (= 7 (run-main "(defn main [] :i64 (let [m {:a 3}] (:z m 7)))")))
+    (is (= 3 (run-main "(defn main [] :i64 (let [m {:a 3}] (:a m 7)))")))
+    (is (= 9 (run-main "(defn main [] :i64 (get (mk) :z 9))"))))
+  (testing "refused: the default of a present field is its type, and is a literal or a local"
+    (is (= "expression type mismatch: expected i64, got string"
+           (refusal "(defn main [] :i64 (let [m {:a 3}] (:a m \"x\")))")))
+    (is (= (str "the default of :a on record :kotoba.map-literal/a is never evaluated, because"
+                " the record has that field: write the default as a literal or a local")
+           (refusal "(defn main [] :i64 (let [m {:a 3}] (:a m (+ 1 2))))"))))
+  (testing "refused: a field is not coerced"
+    (is (= "expression type mismatch: expected i64, got string"
+           (refusal "(defn- f [m] (:a m)) (defn main [] :i64 (let [m {:a \"x\"}] (+ 1 (f m))))"))))
+  (testing "refused: the keyword->i64 map is retired -- a key a literal lacks is not 0"
+    (is (= "record field must be a declared keyword literal"
+           (refusal "(defn main [] :i64 (let [m {:a 3}] (:z m)))")))
+    (is (= "count requires a bounded vector, a typed set or a canonical typed map; got [:record :kotoba.map-literal/a+b [[:a :i64] [:b :i64]]]."
+           (refusal "(defn main [] :i64 (count {:a 1 :b 2}))"))))
+  (testing "refused: a record is never truthy, and has no structural equality"
+    (is (= "if test must be bool or an option"
+           (refusal "(defn main [] :i64 (let [m {:a 3}] (if m 1 0)))")))
+    (is (= "if test must be bool or an option"
+           (refusal "(defn main [] :i64 (let [v [(mk) (mk)]] (if (nth v 0) 1 0)))")))
+    (is (= "equality type is outside the safe value profile"
+           (refusal "(defn main [] :i64 (let [m {:a 3} n {:a 3}] (if (= m n) 1 0)))"))))
+  (testing "refused: an item of a typed vector is its type, never an i64"
+    (is (= "expression type mismatch: expected i64, got [:ref :b/s]"
+           (refusal "(defn main [] :i64 (let [v [(mk) (mk)]] (+ 1 (nth v 0))))")))))

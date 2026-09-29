@@ -1,0 +1,76 @@
+(ns kotoba.compiler.document-type-predicates-test
+  "Ladder floor :document-type-predicates (gap 3 of the selfhost foundation,
+  superproject adr-2609242330; kotoba-lang guest-grammar `:sugar
+  :type-predicates`).
+
+  A `:document` is the one value whose shape is decided at run time, and the
+  compiler's walkers ask its nodes `map?`, `vector?`, `keyword?`, `nil?`...
+  Each predicate on a document is the node's `document-kind`; on a static type
+  it is that type's answer; on `[:option T]` it is presence when T answers
+  true. Until 2026-09-26 `true?` / `integer?` refused a document by name and
+  the other heads were unknown operations.
+
+  What stays refused is pinned by the literal of each refusal: an option whose
+  payload answers by value, `nil?` on a type that has no absence, and `map?`
+  on a schema reference."
+  (:require [clojure.test :refer [deftest is testing]]
+            [kotoba.kir :as ir]
+            [kotoba.sema :as sema]))
+
+(defn- run-main [source]
+  (#?(:clj long :cljs js/Number)
+   (ir/execute (ir/lower (sema/analyze source)) 'main [])))
+
+(defn- refusal [source]
+  (try (ir/lower (sema/analyze source)) nil
+       (catch #?(:clj clojure.lang.ExceptionInfo :cljs :default) error
+         (ex-message error))))
+
+(def ^:private kind-bits
+  "Fifteen predicates as the bits of one i64, so one run reads every answer."
+  (str "(defn- k [d :document] :i64 (+ (if (map? d) 1 0) (if (vector? d) 2 0) "
+       "(if (keyword? d) 4 0) (if (string? d) 8 0) (if (integer? d) 16 0) "
+       "(if (true? d) 32 0) (if (false? d) 64 0) (if (nil? d) 128 0) "
+       "(if (coll? d) 256 0) (if (some? d) 512 0) (if (set? d) 1024 0) "
+       "(if (seq? d) 2048 0) (if (symbol? d) 4096 0) (if (boolean? d) 8192 0) "
+       "(if (list? d) 16384 0)))\n"))
+
+(defn- kinds [document]
+  (run-main (str kind-bits "(defn main [] :i64 (k " document "))")))
+
+(deftest document-type-predicates-ask-the-kind-test
+  (testing "admitted: on a :document every predicate is the node's run-time kind"
+    (is (= 128 (kinds "(document-null)")))
+    (is (= (+ 32 512 8192) (kinds "(document-bool true)")))
+    (is (= (+ 64 512 8192) (kinds "(document-bool false)")))
+    (is (= (+ 16 512) (kinds "(document-i64 7)")))
+    (is (= (+ 8 512) (kinds "(document-string \"s\")")))
+    (is (= (+ 4 512) (kinds "(document-keyword :x)")))
+    (is (= (+ 2 256 512) (kinds "(document-vector (document-i64 1))")))
+    (is (= (+ 256 512 2048 16384) (kinds "(document-list (document-i64 1))")))
+    (is (= (+ 256 512 1024) (kinds "(document-set (document-i64 1))")))
+    (is (= (+ 1 256 512) (kinds "(document-map :a (document-i64 1))"))))
+  (testing "admitted: a walker over a document tree"
+    (is (= 3 (run-main (str "(defn- leaves [d :document] :i64 "
+                            "(if (vector? d) (+ (leaves (option-value-of [:option :document] (document-vector-at d 0) (document-null))) "
+                            "(leaves (option-value-of [:option :document] (document-vector-at d 1) (document-null)))) "
+                            "(if (integer? d) 1 0)))\n"
+                            "(defn main [] :i64 (leaves (document-vector (document-vector (document-i64 1) (document-i64 2)) (document-i64 3))))")))))
+  (testing "admitted: on a static type the answer is the type's; the operand still runs"
+    (is (= 1111 (run-main (str "(defn main [] :i64 (+ (if (string? \"x\") 1 0) (if (keyword? :a) 10 0) "
+                               "(if (vector? (vector-i64 1 2)) 100 0) (if (false? (= 1 2)) 1000 0) "
+                               "(if (map? \"x\") 10000 0) (if (coll? 5) 100000 0)))")))))
+  (testing "admitted: on [:option T] a predicate T answers true for is presence"
+    (is (= 1 (run-main (str "(defn main [] :i64 (let [o (option-some-of [:option :string] \"s\") "
+                            "n (option-none-of [:option :string])] (+ (if (string? o) 1 0) "
+                            "(if (string? n) 10 0) (if (integer? o) 100 0))))")))))
+  (testing "refused: an option whose payload answers by value"
+    (is (= (str "true? on [:option :bool] depends on the value, not the type: "
+                "bind the payload first (when-let / if-let) and ask the payload")
+           (refusal "(defn main [] :i64 (if (true? (option-some-of [:option :bool] true)) 1 0))")))
+    (is (= (str "map? on [:option :document] depends on the value, not the type: "
+                "bind the payload first (when-let / if-let) and ask the payload")
+           (refusal "(defn main [] :i64 (if (map? (option-none-of [:option :document])) 1 0))"))))
+  (testing "refused: nil? asks absence, and a string has none"
+    (is (= "expression type mismatch: expected option-i64, got string"
+           (refusal "(defn main [] :i64 (if (nil? \"s\") 1 0))")))))

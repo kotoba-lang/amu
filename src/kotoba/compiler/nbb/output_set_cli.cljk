@@ -3,6 +3,8 @@
   (:require [kotoba.artifact.core :as artifact]
             [kotoba.compiler.nbb.cli-support :as support]
             [kotoba.compiler.nbb.io :as io]
+            [kotoba.compiler.text-bytes :as text-bytes]
+            [kotoba.lang.text :as text]
             [kotoba.compiler.nbb.output-admission :as admission]
             [kotoba.compiler.nbb.output-attestation :as attestation]
             [kotoba.compiler.nbb.output-set :as output-set]))
@@ -12,7 +14,7 @@
 
 (defn- decode-utf8! [path bytes]
   (try
-    (.decode (js/TextDecoder. "utf-8" #js {:fatal true}) bytes)
+    (text-bytes/utf8-text bytes)
     (catch :default error
       (throw (ex-info "output-set member is not valid UTF-8"
                       {:phase :verify :path path} error)))))
@@ -29,7 +31,7 @@
       result
       (let [[flag value & tail] remaining]
         (when-not (and (contains? allowed flag) value
-                       (not (.startsWith value "--"))
+                       (not (text/starts-with? value "--"))
                        (not (contains? result flag)))
           (support/usage-error! "error: output-set options are malformed"))
         (recur tail (assoc result flag value))))))
@@ -62,7 +64,7 @@
             (support/usage-error!
              "error: verify-output-set requires an artifact path"))
         _ (when (and (= 3 (count args))
-                     (not (.startsWith (nth args 2) "--")))
+                     (not (text/starts-with? (nth args 2) "--")))
             (support/usage-error!
              "error: verify-output-set requires exactly one artifact path"))
         options (options! args #{"--attestation" "--trust" "--now"})
