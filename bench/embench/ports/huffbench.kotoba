@@ -1,0 +1,28 @@
+(ns embench.huffbench (:export [run test-huffbench]))
+
+;; Reduced Huffman round-trip qualification kernel. The upstream workload's
+;; allocator and 500-byte corpus are not reproduced, so timing is nonofficial.
+;; SPDX-License-Identifier: GPL-3.0-or-later.
+
+;; Canonical code: A=0, B=10, C=110, D=111. The packed bit stream encodes
+;; ABACABADABACABA and the decoder must recover its 64-bit FNV fingerprint.
+(defn- packed-bit [index :i64] :i64
+  (let [bits 1285370368 shift (- 31 index)]
+    (bit-and (u64-shift-right bits shift) 1)))
+(defn- decoded-symbol [position :i64] :i64
+  (let [first (packed-bit position)]
+    (if (= first 0) 65
+      (let [second (packed-bit (+ position 1))]
+        (if (= second 0) 66
+          (if (= (packed-bit (+ position 2)) 0) 67 68))))))
+(defn- code-length [symbol :i64] :i64
+  (if (= symbol 65) 1 (if (= symbol 66) 2 3)))
+(defn run [token :i64] :i64
+  (if (= token 1)
+    (loop [i 0 bit 0 hash -3750763034362895579]
+      (if (= i 15) hash
+        (let [symbol (decoded-symbol bit)]
+          (recur (+ i 1) (+ bit (code-length symbol))
+                 (* (bit-xor hash symbol) 1099511628211)))))
+    0))
+(defn test-huffbench [] :i64 (if (= (run 1) 2461662444362658147) 1 0))

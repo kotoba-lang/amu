@@ -429,6 +429,36 @@
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"string literal bytes exceed"
                             (project/link-source sources 'bounds.str0))))))
 
+(deftest linked-source-admission-is-per-definition
+  (let [small-string (apply str (repeat 36 "x"))
+        source (str "(ns bounds.definitions (:export [main]))"
+                    "(defn- a [] :string \"" small-string "\")"
+                    "(defn- b [] :string \"" small-string "\")"
+                    "(defn- c [] :string \"" small-string "\")"
+                    "(defn main [] :i64 0)")]
+    (with-redefs [project/max-linked-source-bytes 96]
+      (let [linked (:source (project/link-source {'bounds.definitions source}
+                                                 'bounds.definitions))]
+        (is (> (count linked) project/max-linked-source-bytes))
+        (is (str/includes? linked "defn- main"))))
+    (with-redefs [project/max-linked-source-bytes 48]
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                            #"linked definition source exceeds byte limit"
+                            (project/link-source {'bounds.definitions source}
+                                                 'bounds.definitions))))))
+
+(deftest each-definition-has-a-bounded-dependency-closure
+  (let [source "(ns bounds.closure (:export [main]))
+                (defn- c [] :i64 1)
+                (defn- b [] :i64 (c))
+                (defn- a [] :i64 (b))
+                (defn main [] :i64 (a))"]
+    (with-redefs [project/max-definition-closure-count 3]
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                            #"definition dependency closure exceeds limit"
+                            (project/link-source {'bounds.closure source}
+                                                 'bounds.closure))))))
+
 (deftest capability-effects-close-across-module-boundaries
   (let [sources
         {'effects.leaf

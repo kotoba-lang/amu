@@ -1,5 +1,17 @@
 # Agent rules
 
+## Selfhost is the top priority
+
+- The Amu compiler must become a native executable produced by Amu, with no
+  JVM, GraalVM or Node.js needed to build it. This outranks features, new
+  targets and benchmark publication. Details: `docs/selfhost-priority.md`.
+- Only a selfhost-built compiler is selfhost evidence. GraalVM Native Image,
+  JVM and Node/nbb builds are bootstrap references; label their numbers so.
+- Do not add a JVM, GraalVM or Node fallback to make a selfhost stage pass.
+  Unreachable files stay on the scoreboard as refused, with the reason.
+- Compiler benchmarks (Embench etc.) are published as selfhost results only
+  when taken with a selfhost-built compiler on a quiet host.
+
 ## Q9 compiler routes must be JVM-free
 
 - Q9 callers use `bin/amu check ... --jvm-free` and

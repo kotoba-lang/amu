@@ -1,0 +1,13 @@
+#!/bin/sh
+set -eu
+
+repo_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+work_dir=${AMU_NATIVE_IMAGE_WORK_DIR:-"$repo_root/build/native-image"}
+output=${AMU_NATIVE_IMAGE_OUTPUT:-"$repo_root/bin/amu-native"}
+graal_home=${GRAALVM_HOME:-/opt/homebrew/opt/graalvm}
+
+exec python3 "$repo_root/scripts/build-native-image.py" \
+  --graal-home "$graal_home" \
+  --work-dir "$work_dir" \
+  --output "$output" \
+  --opt "${AMU_NATIVE_IMAGE_OPT:-2}"

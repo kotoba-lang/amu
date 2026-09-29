@@ -1,5 +1,5 @@
 (ns kotoba.compiler.project
-  {:kotoba/export [attribute-error attribute-linked-error instantiate-forms instantiation-key key-binding key-namespace link-source linked-position max-linked-source-bytes max-project-dependency-edges max-project-depth max-project-exports max-project-expression-nodes max-project-functions max-project-literals max-project-modules max-project-source-bytes max-project-string-literal-bytes max-template-parameters module-info module-namespaces source-position with-module-file]}
+  {:kotoba/export [attribute-error attribute-linked-error instantiate-forms instantiation-key key-binding key-namespace link-source linked-position max-definition-closure-count max-linked-source-bytes max-project-dependency-edges max-project-depth max-project-exports max-project-expression-nodes max-project-functions max-project-literals max-project-modules max-project-source-bytes max-project-string-literal-bytes max-template-parameters module-info module-namespaces source-position with-module-file]}
   (:require [kotoba.lang.text :as str]
             [kotoba.sema :as sema]
             [kotoba.kir.value :as value]
@@ -19,7 +19,11 @@
 (def max-project-modules 256)
 (def max-project-functions 1024)
 (def max-project-source-bytes (* 8 1024 1024))
+;; Kept under its published name for callers that use it as the canonical
+;; size of one linked definition. It no longer bounds the concatenation of all
+;; definitions in a project.
 (def max-linked-source-bytes (* 1024 1024))
+(def max-definition-closure-count max-project-functions)
 (def max-project-dependency-edges 256)
 (def max-project-depth 64)
 (def max-project-exports 1024)
@@ -920,6 +924,32 @@
     (str (str/join "\n" (map #(pr-str #?(:clj % :cljs (readable-integers %))) forms))
          "\n")))
 
+(defn- definition-symbols [form names]
+  (into #{} (filter names) (tree-seq coll? seq form)))
+
+(defn- admit-definition-closures!
+  "Bound each definition by the transitive definition graph it can call.
+   This keeps admission tied to the compiler's cache/identity unit even when
+   the containing linked source is larger than the former 1 MiB ceiling."
+  [functions]
+  (let [names (set (map :name functions))
+        graph (into {}
+                    (map (fn [{:keys [name body]}]
+                           [name (definition-symbols body names)]))
+                    functions)]
+    (doseq [start names]
+      (let [count* (loop [pending [start] seen #{}]
+                     (if-let [node (peek pending)]
+                       (if (contains? seen node)
+                         (recur (pop pending) seen)
+                         (recur (into (pop pending) (get graph node #{}))
+                                (conj seen node)))
+                       (count seen)))]
+        (when (> count* max-definition-closure-count)
+          (reject! "definition dependency closure exceeds limit"
+                   {:definition start :count count*
+                    :limit max-definition-closure-count}))))))
+
 (defn- admit-project-forms!
   [forms counters]
   (loop [pending (seq forms)]
@@ -1738,21 +1768,29 @@
           merged-schemas (reduce (fn [acc module]
                                    (merge acc (get-in parsed [module :info :schemas])))
                                  {} (module-namespaces @order))
+          definition-forms
+          (into
+           (mapv (fn [{:keys [name params param-types result body
+                              callable-param-contracts callable-result-contract]}]
+                   (list 'defn- name
+                         (typed-params params param-types callable-param-contracts)
+                         (or callable-result-contract result)
+                         body))
+                 functions)
+           wrappers)
+          _ (doseq [[index form] (map-indexed vector definition-forms)]
+              (let [bytes (value/utf8-byte-count! (source-text [form]))]
+                (when (> bytes max-linked-source-bytes)
+                  (reject! "linked definition source exceeds byte limit"
+                           {:definition-index index :bytes bytes
+                            :limit max-linked-source-bytes}))))
           linked-source
           (source-text
            (into [(if (seq merged-schemas)
                     (list 'ns root (list :export (vec (map first exports)))
                           (list :schemas merged-schemas))
                     (list 'ns root (list :export (vec (map first exports)))))]
-                 (concat
-                  (map (fn [{:keys [name params param-types result body
-                                    callable-param-contracts callable-result-contract]}]
-                         (list 'defn- name
-                               (typed-params params param-types callable-param-contracts)
-                               (or callable-result-contract result)
-                               body))
-                       functions)
-                  wrappers)))
+                 definition-forms))
           ;; source-text emits exactly one form per line, and the `ns` form is
           ;; line 1, so an emitted function's linked line is its index + 2.
           ;; Synthetic forms -- project dispatchers and export wrappers -- have
@@ -1775,13 +1813,12 @@
                                            (contains? function :source-binding)
                                            (assoc :binding (:source-binding function)))))
                                      functions))}
-          linked-bytes (value/utf8-byte-count! linked-source)]
+          ]
       (when (> function-count max-project-functions)
         (reject! "linked project exceeds function limit" {:count function-count}))
+      (admit-definition-closures! functions)
       (when (> export-count max-project-exports)
         (reject! "linked project exports exceed limit" {:count export-count}))
-      (when (> linked-bytes max-linked-source-bytes)
-        (reject! "linked project source exceeds byte limit" {:bytes linked-bytes}))
       {:source
        linked-source
        :root root :module-order @order :modules (set @order)

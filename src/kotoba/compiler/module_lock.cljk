@@ -129,9 +129,9 @@
       (reject! "locked module block is missing from the block store"
                {:cid cid :block-store (str blocks-root)}))
     (let [bytes (read-block-bytes p)]
-      (when (> (byte-length bytes) project/max-linked-source-bytes)
+      (when (> (byte-length bytes) project/max-project-source-bytes)
         (reject! "locked module exceeds the source size limit"
-                 {:cid cid :limit project/max-linked-source-bytes}))
+                 {:cid cid :limit project/max-project-source-bytes}))
       (let [actual (cidv1-raw bytes)]
         (when-not (= cid actual)
           (reject! "locked module block does not hash to its CID"

@@ -5,6 +5,12 @@ language. The repository is `kotoba-lang/amu`; the name evokes Japanese
 「編む」— weaving checked source, typed KIR, and target artifacts into one
 cloth.
 
+> **Selfhost is the top priority.** The Amu compiler is to be a native
+> executable produced by Amu itself, built with no JVM, no GraalVM and no
+> Node.js. Only a selfhost-built compiler counts as selfhost evidence; a
+> GraalVM- or Node-hosted build is a bootstrap reference and is labelled so.
+> See [docs/selfhost-priority.md](docs/selfhost-priority.md).
+
 ## Definition CIDs (compile once per hash)
 
 Every top-level function gets a content identity — the payload-v2 definition
