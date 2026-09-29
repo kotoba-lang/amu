@@ -33,7 +33,7 @@
   compiler does not depend on; `test/nbb/project.cljk` pins that shortcut
   against the JVM's vectors."
   {:kotoba/export [load-locked-graph lock-cid lock-from-source-paths lock-schema read-lock write-block!]}
-  (:require [kotoba.compiler.bounded-edn :as bounded-edn]
+  (:require [kotoba.bytes :as kbytes] [kotoba.compiler.bounded-edn :as bounded-edn]
             [kotoba.compiler.project :as project]
             [kotoba.sema :as sema]
             #?@(:clj [[clojure.java.io :as io]
@@ -66,7 +66,7 @@
              (str "b" (base32/encode (into cidv1-raw-prefix (js/Array.from digest)))))))
 
 (defn- utf8-bytes [text]
-  #?(:clj (.getBytes ^String text "UTF-8")
+  #?(:clj (kbytes/utf8-bytes ^String text)
      :cljs (.from js/Buffer text "utf8")))
 
 (defn- byte-length [bytes]
@@ -93,7 +93,7 @@
   ;; Decoded only after the hash matched. The decoder is strict so a block
   ;; whose bytes verify but are not UTF-8 is rejected here rather than
   ;; reaching the reader as replacement characters.
-  #?(:clj (String. ^bytes bytes "UTF-8")
+  #?(:clj (kbytes/utf8-string ^bytes bytes)
      :cljs (try
              (.decode (js/TextDecoder. "utf-8" #js {:fatal true}) bytes)
              (catch :default error

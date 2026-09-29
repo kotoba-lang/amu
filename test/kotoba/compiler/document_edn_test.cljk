@@ -1,5 +1,5 @@
 (ns kotoba.compiler.document-edn-test
-  (:require [clojure.java.shell :as shell]
+  (:require [kotoba.bytes :as kbytes] [clojure.java.shell :as shell]
             [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]
             [kotoba.sema :as sema]
@@ -92,15 +92,15 @@
   "{:attempt -7 :goal \"言葉\" :ready true :steps [nil :actor/run]}")
 
 (defn- script-probe [compiled javascript]
-  (let [encoded (.encodeToString (java.util.Base64/getEncoder)
-                                 (.getBytes ^String (:source compiled) "UTF-8"))]
+  (let [encoded (kbytes/base64-encode
+                                 (kbytes/utf8-bytes ^String (:source compiled)))]
     (shell/sh "node" "--input-type=module" "-e"
               (str "import('data:text/javascript;base64," encoded
                    "').then(m=>{" javascript
                    "}).catch(e=>{console.error(e);process.exit(70)})"))))
 
 (defn- wasm-probe [compiled javascript]
-  (let [encoded (.encodeToString (java.util.Base64/getEncoder) ^bytes (:bytes compiled))]
+  (let [encoded (kbytes/base64-encode ^bytes (:bytes compiled))]
     (shell/sh "node" "--input-type=module" "-e"
               (str "import('./runtime/browser-host.mjs').then(async m=>{"
                    "const h=await m.instantiateKotoba(Buffer.from(process.argv[1],'base64'));"

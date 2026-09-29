@@ -1,5 +1,5 @@
 (ns kotoba.compiler.callable-values-test
-  (:require [kotoba.compiler.atomic-output :as atomic-output]
+  (:require [kotoba.bytes :as kbytes] [kotoba.compiler.atomic-output :as atomic-output]
             [clojure.test :refer [deftest is testing]]
             [clojure.java.shell :as shell]
             [kotoba.lang.text :as str]
@@ -35,8 +35,8 @@
         wasm-b (compiler/compile-source source :wasm32-browser-kotoba-v1)
         functions (into {} (map (juxt :name identity)) (get-in js [:kir :functions]))
         javascript (:source js)
-        encoded (.encodeToString (java.util.Base64/getEncoder)
-                                 (.getBytes javascript "UTF-8"))
+        encoded (kbytes/base64-encode
+                                 (kbytes/utf8-bytes javascript))
         malformed-probe
         (shell/sh
          "node" "--input-type=module" "-e"

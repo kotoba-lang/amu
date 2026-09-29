@@ -16,7 +16,7 @@
   REAL OS UDP socket (`send-round-trips-over-a-real-loopback-udp-socket`),
   not only an in-memory mock transport -- no other reference-kit test in
   this repository does that."
-  (:require [clojure.test :refer [deftest is]]
+  (:require [kotoba.bytes :as kbytes] [clojure.test :refer [deftest is]]
             [kotoba.compiler.core :as compiler]
             [kotoba.kir :as ir]
             [kotoba.compiler.support.net-datagram-provider :as datagram]
@@ -172,7 +172,7 @@
         (let [received (byte-array (.getLength recv-packet))]
           (System/arraycopy (.getData recv-packet) 0 received 0 (.getLength recv-packet))
           (is (zero? (value/compare-typed-values :bytes payload-bytes received)))
-          (is (= "hello-over-a-real-udp-socket" (String. received "UTF-8")))))
+          (is (= "hello-over-a-real-udp-socket" (kbytes/utf8-string received)))))
       (finally
         (.close sender)
         (.close receiver)))))

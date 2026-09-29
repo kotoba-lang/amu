@@ -1,8 +1,6 @@
 (ns kotoba.compiler.bounded-edn-test
-  (:require [kotoba.lang.text] [clojure.test :refer [deftest is testing]]
-            [kotoba.compiler.bounded-edn :as bounded-edn])
-  (:import [java.nio.file Files]
-           [java.nio.file.attribute FileAttribute]))
+  (:require [kotoba.bytes :as kbytes] [kotoba.io :as kio] [kotoba.lang.text] [clojure.test :refer [deftest is testing]]
+            [kotoba.compiler.bounded-edn :as bounded-edn]))
 
 (defn- trap [f]
   (try (f) nil (catch clojure.lang.ExceptionInfo error error)))
@@ -33,17 +31,14 @@
         (is (= :decode (:phase (ex-data error))))))))
 
 (deftest file-input-is-byte-bounded-and-strict-utf8
-  (let [path (Files/createTempFile "kotoba-bounded-edn-" ".edn"
-                                   (make-array FileAttribute 0))]
+  (let [path (kio/temp-file "kotoba-bounded-edn-" ".edn")]
     (try
-      (Files/write path (byte-array (map unchecked-byte [0x7b 0x7d 0xff]))
-                   (make-array java.nio.file.OpenOption 0))
+      (kio/write-bytes path (byte-array (map unchecked-byte [0x7b 0x7d 0xff])))
       (is (re-find #"valid UTF-8"
                    (ex-message (trap #(bounded-edn/read-file (str path))))))
-      (Files/write path (.getBytes "{:0123456789 1}" "UTF-8")
-                   (make-array java.nio.file.OpenOption 0))
+      (kio/write-bytes path (kbytes/utf8-bytes "{:0123456789 1}"))
       (with-redefs [bounded-edn/max-edn-bytes 8]
         (let [error (trap #(bounded-edn/read-file (str path)))]
           (is (re-find #"byte limit" (ex-message error)))
           (is (= 8 (:limit (ex-data error))))))
-      (finally (Files/deleteIfExists path)))))
+      (finally (kio/delete-if-exists path)))))

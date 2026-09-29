@@ -5,7 +5,7 @@
   ability chooses its own `max-bytes`, then uses the same `kotoba.value.v1`
   bytes as actor and I/O libraries."
   {:kotoba/export [ability-adapter-contract ability-provider aggregate-envelopes async-ability-provider async-ability-result-type decode-bounded encode-bounded runtime->wire-value wire-contract wire-value->runtime]}
-  (:require [kotoba.kir.value :as kir-value]
+  (:require [kotoba.bytes :as kbytes] [kotoba.kir.value :as kir-value]
             [kotoba.value.codec :as value]))
 
 (def wire-contract value/wire-contract)
@@ -263,7 +263,7 @@
   "UTF-8 length of S for the byte budget. Never throws: whether S is a
   well-formed value is the validator's question, not the meter's."
   [s]
-  #?(:clj (alength (.getBytes ^String s "UTF-8"))
+  #?(:clj (alength (kbytes/utf8-bytes ^String s))
      :cljs (.-length (.encode utf8-encoder s))))
 
 (defn- leaf-bytes [type item]

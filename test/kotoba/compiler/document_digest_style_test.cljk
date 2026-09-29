@@ -15,7 +15,7 @@
      half of 'Document/Style fixtures' in the W4 exit gate.
 
   DOM reconciliation remains out of scope."
-  (:require [clojure.java.shell :as shell]
+  (:require [kotoba.bytes :as kbytes] [clojure.java.shell :as shell]
             [clojure.test :refer [deftest is testing]]
             [kotoba.compiler.core :as compiler]
             [kotoba.kir :as ir]
@@ -139,8 +139,8 @@
            (decl \"padding\" \"16px\")))))")
 
 (defn- script-probe [compiled javascript]
-  (let [encoded (.encodeToString (java.util.Base64/getEncoder)
-                                 (.getBytes ^String (:source compiled) "UTF-8"))]
+  (let [encoded (kbytes/base64-encode
+                                 (kbytes/utf8-bytes ^String (:source compiled)))]
     (shell/sh "node" "--input-type=module" "-e"
               (str "import('data:text/javascript;base64," encoded
                    "').then(m=>{const x=m.instantiateKotoba({});" javascript
