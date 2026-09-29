@@ -204,7 +204,12 @@ Clojure it is today, the language gains:
 5. **Strings by code unit, by name.** `count` of a string stays refused (it
    has two answers). `string-code-unit-count`, `string-code-unit-at` and
    `subs` over code units are primitives; browser's `#?(:clj ...)` interop
-   branches gain a `:kotoba` branch that calls them.
+   branches gain a `:kotoba` branch that calls them. Landed (kotoba-sema
+   `d72677cb`, gate `string-code-unit-primitives-test`) as library heads over
+   `string-code-point-at` / `string-substring`, so every backend answers the
+   same; an index outside the string traps out of bounds, and a `subs` bound
+   inside a surrogate pair traps as splitting a code point (UTF-8 cannot hold
+   a lone surrogate). Each call walks the string from its start: O(n).
 6. **Hiccup is syntax for a node ADT.** `Node = Text string | Elem tag attrs
    [Node] | Frag [Node]` over ABI v8's recursive `[:ref q]`. A hiccup literal
    desugars to it at compile time; runtime shape tests over hiccup become an
