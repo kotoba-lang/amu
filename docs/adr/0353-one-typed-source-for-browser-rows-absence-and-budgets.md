@@ -214,6 +214,37 @@ Clojure it is today, the language gains:
    [Node] | Frag [Node]` over ABI v8's recursive `[:ref q]`. A hiccup literal
    desugars to it at compile time; runtime shape tests over hiccup become an
    exhaustive `variant-match`.
+   Landed 2026-09-30 (kotoba-sema `25618d31`, gate
+   `hiccup-literal-is-node-adt-test`). The type is the language's, named
+   `[:ref :kotoba.hiccup/node]`: `[:text :string] | [:elem [:ref
+   :kotoba.hiccup/elem]] | [:frag [:list [:ref :kotoba.hiccup/node]]]`, the
+   element `{:tag :keyword, :attrs [:map :keyword :string], :children [:list
+   [:ref :kotoba.hiccup/node]]}` (a record inside a variant must be its own
+   schema, so there are two). A module that names it gets both schemas and may
+   not redeclare them. The literal is typed by its context, as `nil` was in
+   point 2: where a node is expected -- the tail of a function or `fn` declared
+   to return one, an argument at a parameter declared one, a literal's child --
+   a tag-headed vector is an element, `[:<> ..]` a fragment, and a string, a
+   `:string` parameter or a `str` / `subs` call is text. It is a source rewrite
+   before desugaring, so the literal is the hand-written `variant-new` /
+   `record-new` / `typed-list-new` and has their definition CID. Elsewhere a
+   vector literal is still a vector, and a module that does not name the type
+   is returned unchanged (no existing CID moves). A shape test over a node
+   (`string?` / `vector?` / `seq?` / `sequential?` / `coll?`, in a `cond`, an
+   `if` or alone) is a `variant-match`; in a branch that one case reaches, the
+   node is that case's payload -- the string, the element record, the child
+   list -- as browser's `render-content!` reads it. Refused by name: a shape
+   test that misses a case or is unreachable, a shape a node never has
+   (`map?`), a number, keyword or `nil` child or attribute value (no coercion;
+   absence is not a child), a node as an `if` test, `=` over nodes. Measured
+   cut: a child that is neither a literal, a string-typed parameter nor a
+   `str` / `subs` call must be a node (a string from a record field is written
+   `(str ..)`), and an attribute value is a string (browser's `:style` map is
+   not yet a node attribute). Hosted: `amu check` exits 0 and
+   `wasm32-browser` compiles. Native: both `x86_64-aiueos-kernel-v1` and
+   `aarch64-macos` refuse at the typed-values gate (exit 70,
+   `:kotoba/target-rejected`) -- the node's `[:list T]` and `[:map :keyword
+   :string]` are not qualified natively: floor `:native-handles`.
 7. **Allocation is charged like fuel.** Every constructor debits the same
    64-bit ledger fuel uses (kotoba-kir ADR 0268, amu ADR 0333). The ADT
    node/depth ceilings stop being language constants and become the budget
