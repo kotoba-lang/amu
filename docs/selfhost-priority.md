@@ -34,7 +34,11 @@ own `.cljk` sources satisfies the second one.
    compiler, on a quiet host, with the compiler binary hash recorded. Results
    from a bootstrap compiler are published as bootstrap-reference numbers,
    never as selfhost numbers.
-5. **Fail closed.** No JVM, GraalVM or Node fallback is added to make a
+5. **The language is not shaped by wasm32.** Selfhost walls are fixed in the
+   language, frontend and native backends even when wasm32 has no lowering
+   yet; wasm32 refuses the feature by name until it gains one
+   (ADR 0354).
+6. **Fail closed.** No JVM, GraalVM or Node fallback is added to make a
    selfhost stage pass. An unreachable file stays on the scoreboard as
    refused, with its reason.
 

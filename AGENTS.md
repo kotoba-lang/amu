@@ -12,6 +12,19 @@
 - Compiler benchmarks (Embench etc.) are published as selfhost results only
   when taken with a selfhost-built compiler on a quiet host.
 
+## Language semantics are target-independent
+
+- wasm32 is one build target of the Amu native compiler, not the definition of
+  the language. Do not cap, narrow or defer a language or stdlib feature
+  because wasm32 cannot lower it yet. Specify the semantics, check them
+  against the KIR interpreter, and let each target either lower the feature or
+  refuse it by name (exit 65, recorded in `lang/surface-status.edn`).
+- A limit is kept only if it bounds a resource or protects an invariant. Remove
+  a limit that only records what one backend could do. Details:
+  `docs/adr/0354-language-semantics-are-target-independent.md`.
+- This never relaxes the shared safety pipeline, fail-closed behaviour, or the
+  no-JVM/GraalVM/Node-fallback rules.
+
 ## Q9 compiler routes must be JVM-free
 
 - Q9 callers use `bin/amu check ... --jvm-free` and
