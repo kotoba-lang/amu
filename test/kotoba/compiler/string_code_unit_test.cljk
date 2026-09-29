@@ -1,0 +1,113 @@
+(ns kotoba.compiler.string-code-unit-test
+  "ADR 0353 floor :code-units.
+
+  Measured 2026-09-29 (kotoba-sema d595e80e, before this floor):
+  `string-code-unit-count`, `string-code-unit-at` and `subs` were each
+  `unknown operation ... is not a builtin, a sugar head, or a function of this
+  module`. kotoba-lang/browser's text-edit counts and reads UTF-16 code units
+  (its surrogate-pair logic depends on it) only through host interop, so on
+  amu its `code-unit-at` read as an empty function.
+
+  Now, in kotoba-sema: the three are library heads, written once over
+  `string-byte-length`, `string-code-point-at` and `string-substring`, so the
+  reference, ESM, Wasm and both native ISAs answer the same by construction.
+  Indexes are UTF-16 code units, the unit browser.text-edit and the hosts'
+  `.charAt` / `.charCodeAt` / `subs` use. A string stays canonical UTF-8: an
+  index outside [0, count] traps out of bounds, and a `subs` bound strictly
+  inside a surrogate pair traps as splitting a code point (a lone surrogate
+  is not representable), where the host would build an invalid string.
+
+  What stays refused: `count` of a string. It has two answers (UTF-8 bytes,
+  UTF-16 code units), and the refusal now names both."
+  (:require [clojure.test :refer [deftest is testing]]
+            [kotoba.compiler.core :as compiler]
+            [kotoba.kir :as ir]
+            [kotoba.sema :as sema]))
+
+(defn- analyze [source] (sema/analyze (str "(ns app)\n" source)))
+
+(defn- run-main [source]
+  (let [v (ir/execute (ir/lower (analyze source)) 'main [])]
+    (if (string? v) v (#?(:clj long :cljs js/Number) v))))
+
+(defn- refusal [source]
+  (try (run-main source) nil
+       (catch #?(:clj clojure.lang.ExceptionInfo :cljs :default) error
+         (ex-message error))))
+
+;; "a😀é": a (1 unit), U+1F600 (2 units, D83D DE00), é (1 unit); 7 UTF-8 bytes.
+(def ^:private s "\"a😀é\"")
+
+(defn- i64-main [expr] (str "(defn main [] :i64 " expr ")"))
+(defn- string-main [expr] (str "(defn main [] :string " expr ")"))
+
+(def ^:private text-edit
+  "browser.text-edit's surrogate-pair check with the :kotoba branch its
+  `code-unit-at` gains (ADR 0353 section 5), parameters unannotated."
+  (str "(defn- code-unit-at [s idx] (string-code-unit-at s idx))\n"
+       "(defn- surrogate-pair-boundary? [value p]\n"
+       "  (and (> p 0) (< p (string-code-unit-count value))\n"
+       "       (<= 55296 (code-unit-at value (- p 1)) 56319)\n"
+       "       (<= 56320 (code-unit-at value p) 57343)))\n"))
+
+(deftest string-code-unit-primitives-test
+  (testing "admitted: string-code-unit-count counts UTF-16 code units"
+    (is (= 4 (run-main (i64-main (str "(string-code-unit-count " s ")")))))
+    (is (= 0 (run-main (i64-main "(string-code-unit-count \"\")"))))
+    (testing "not the byte count"
+      (is (= 7 (run-main (i64-main (str "(string-byte-length " s ")")))))))
+  (testing "admitted: string-code-unit-at reads one code unit, a surrogate half inside a pair"
+    (is (= [97 0xD83D 0xDE00 233]
+           (mapv #(run-main (i64-main (str "(string-code-unit-at " s " " % ")"))) (range 4)))))
+  (testing "admitted: subs over code units, both arities"
+    (is (= "😀" (run-main (string-main (str "(subs " s " 1 3)")))))
+    (is (= "é" (run-main (string-main (str "(subs " s " 3)")))))
+    (is (= "" (run-main (string-main (str "(subs " s " 4)")))))
+    (is (= "bc" (run-main (str "(defn- tail [t i] (subs t i))\n"
+                               "(defn main [] :string (tail \"abc\" 1))")))))
+  (testing "a local named subs is the local, not the head"
+    (is (= 2 (run-main "(defn main [] :i64 (let [subs (fn [x] (+ x 1))] (subs 1)))")))
+    (is (= "bc" (run-main (str "(defn main [] :string (let [t (subs \"abc\" 1) subs (fn [x] (+ x 1))]"
+                               " (if (= (subs 1) 2) t \"no\")))")))))
+  (testing "an unannotated parameter is typed by its use"
+    (is (= 101 (run-main (str text-edit
+                              "(defn main [] :i64 (+ (if (surrogate-pair-boundary? " s " 2) 100 0)"
+                              " (if (surrogate-pair-boundary? " s " 1) 10 0)"
+                              " (if (surrogate-pair-boundary? " s " 3) 10 0)"
+                              " (string-code-unit-count (subs " s " 3))))")))))
+  (testing "refused at run time: an index outside the string"
+    (is (= "string code-point offset is out of bounds"
+           (refusal (i64-main (str "(string-code-unit-at " s " 4)")))))
+    (is (= "string code-point offset is out of bounds"
+           (refusal (i64-main (str "(string-code-unit-at " s " -1)")))))
+    (is (= "string substring indexes are out of bounds"
+           (refusal (string-main (str "(subs " s " 0 5)")))))
+    (is (= "string substring indexes are out of bounds"
+           (refusal (string-main (str "(subs " s " 3 1)"))))))
+  (testing "refused at run time: a subs bound inside a surrogate pair, which UTF-8 cannot hold"
+    (is (= "string substring index splits a UTF-8 code point"
+           (refusal (string-main (str "(subs " s " 2)")))))
+    (is (= "string substring index splits a UTF-8 code point"
+           (refusal (string-main (str "(subs " s " 0 2)"))))))
+  (testing "what stays refused: count of a string, which has two answers"
+    (is (= (str "count requires a bounded vector, a typed set or a canonical typed map; got :string. "
+                "A string has no element count in this profile: string-byte-length counts UTF-8 BYTES "
+                "and string-code-unit-count counts UTF-16 code units, and naming either one count "
+                "would give two different answers the same spelling (ADR 0353)")
+           (refusal (i64-main (str "(count " s ")")))))
+    (testing "and a string is still not a number"
+      (is (some? (refusal (i64-main (str "(+ 1 " s ")"))))))
+    (testing "and still has no truthiness"
+      (is (some? (refusal (i64-main (str "(if " s " 1 0)")))))))
+  ;; `amu compile --target aarch64-macos` reaches the compiler as
+  ;; :aarch64-kotoba-v1.
+  (testing "native: both kernel-side targets compile the three heads"
+    (doseq [target [:x86_64-aiueos-kernel-v1 :aarch64-kotoba-v1]]
+      (is (pos? (count (:code (:artifact
+                               (compiler/compile-source
+                                (str "(ns app)\n" text-edit
+                                     "(defn main [] :i64 (+ (if (surrogate-pair-boundary? " s " 2) 100 0)"
+                                     " (string-code-unit-count (subs " s " 1 3))"
+                                     " (string-code-unit-count (subs " s " 3))))")
+                                target)))))
+          (str target)))))
