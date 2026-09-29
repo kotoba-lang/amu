@@ -1,0 +1,170 @@
+(ns kotoba.compiler.hiccup-node-test
+  "ADR 0353 floor :hiccup-node.
+
+  Measured 2026-09-30 (kotoba-sema baeddf12, before this floor): a hiccup
+  literal in a function declared to return `[:ref :kotoba.hiccup/node]` was
+  refused (`schema reference is not declared`), and with the schemas declared
+  by hand it was a heterogeneous vector, `expression type mismatch`. The node
+  type existed only if an author wrote its constructors -- `variant-new`,
+  `record-new`, `typed-list-new` -- by hand, and browser's shape tests
+  (`string?` / `vector?` / `seq?` over hiccup) had nothing to ask.
+
+  Now, in kotoba-sema (`expand-hiccup-forms`): a module that names
+  `:kotoba.hiccup/node` has the language's schemas
+
+    :kotoba.hiccup/node = [:text :string] | [:elem [:ref :kotoba.hiccup/elem]]
+                        | [:frag [:list [:ref :kotoba.hiccup/node]]]
+    :kotoba.hiccup/elem = {:tag :keyword, :attrs [:map :keyword :string],
+                           :children [:list [:ref :kotoba.hiccup/node]]}
+
+  and, where a node is expected (a declared node result's tail, an argument
+  at a declared node parameter, a child of a literal), a tag-headed vector
+  literal is an element, `[:<> ..]` a fragment and a string text. It is a
+  source rewrite before desugaring, so the literal IS the hand-written
+  constructors: same HIR, same definition CID. A shape test over a node is an
+  exhaustive `variant-match`, and in a branch that names one case the node is
+  that case's payload (the string, the element record, the child list).
+
+  What stays refused, by name: a number / keyword child or attribute value
+  (no coercion), a shape test that misses a case, a shape a node never has
+  (`map?`), a node as an `if` test (no truthiness), `=` over nodes (no
+  structural equality over handles), and a vector literal outside a node
+  context stays a vector."
+  (:require [clojure.test :refer [deftest is testing]]
+            [kotoba.compiler.core :as compiler]
+            [kotoba.compiler.definition-identity :as di]
+            [kotoba.kir :as ir]
+            [kotoba.sema :as sema]))
+
+(defn- analyze [source] (sema/analyze (str "(ns app)\n" source)))
+
+(defn- run-main [source]
+  (let [v (ir/execute (ir/lower (analyze source)) 'main [])]
+    (if (or (string? v) (boolean? v)) v (#?(:clj long :cljs js/Number) v))))
+
+(defn- refusal [source]
+  (try (run-main source) nil
+       (catch #?(:clj clojure.lang.ExceptionInfo :cljs :default) error
+         (ex-message error))))
+
+(defn- refusal-ns [source]
+  (try (ir/execute (ir/lower (sema/analyze source)) 'main []) nil
+       (catch #?(:clj clojure.lang.ExceptionInfo :cljs :default) error
+         (ex-message error))))
+
+(def ^:private node "[:ref :kotoba.hiccup/node]")
+(def ^:private nodes "[:list [:ref :kotoba.hiccup/node]]")
+
+(def ^:private view
+  "browser.surface's window-node, reduced to what this floor admits."
+  (str "(defn- window-node [title :string focused :bool] " node "\n"
+       "  [:section {:class (if focused \"window focused\" \"window\") :data-id \"w1\"}\n"
+       "   [:header {:class \"titlebar\"} title]\n"
+       "   [:<> \"ab\" [:p \"c\"]]\n"
+       "   (str \"x\" \"y\")])\n"))
+
+(def ^:private walk
+  "render-content!'s cond, over the node: each branch names one case, so the
+  node is that case's payload inside it."
+  (str "(defn- size [n " node "] :i64\n"
+       "  (cond (string? n) (string-byte-length n)\n"
+       "        (vector? n) (+ 1 (size-list (:children n)))\n"
+       "        (seq? n) (size-list n)))\n"
+       "(defn- size-list [cs " nodes "] :i64\n"
+       "  (loop [i 0 acc 0] (if (< i (count cs))"
+       " (recur (+ i 1) (+ acc (size (typed-list-nth " nodes " cs i)))) acc)))\n"))
+
+(defn- probe [expr]
+  (str view "(defn main [] :i64 (match-variant (window-node \"hello\" true) " node
+       " (:text s 0) (:elem e " expr ") (:frag f 0)))"))
+
+(def ^:private hand-schemas
+  (str "(ns app (:schemas {:kotoba.hiccup/node [:variant :kotoba.hiccup/node"
+       " [[:text :string] [:elem [:ref :kotoba.hiccup/elem]] [:frag " nodes "]]]"
+       " :kotoba.hiccup/elem [:record :kotoba.hiccup/elem [[:tag :keyword]"
+       " [:attrs [:map :keyword :string]] [:children " nodes "]]]}))\n"))
+
+(defn- cid [source nm]
+  (let [hir (sema/analyze source {})]
+    (get-in (di/definitions hir (ir/lower hir)) [:entries nm :cid])))
+
+(deftest hiccup-literal-is-node-adt-test
+  (testing "admitted: a hiccup literal where a node is expected is the node ADT"
+    (is (= 3 (run-main (probe "(count (:children e))"))) "header, fragment, text")
+    (is (= 1 (run-main (probe "(if (= (:tag e) :section) 1 0)"))))
+    (is (= "window focused" (run-main (str view "(defn main [] :string (match-variant (window-node \"t\" true) " node
+                                           " (:text s s) (:elem e (get (:attrs e) :class \"none\")) (:frag f \"f\")))"))))
+    (is (= "w1" (run-main (str view "(defn main [] :string (match-variant (window-node \"t\" false) " node
+                                 " (:text s s) (:elem e (get (:attrs e) :data-id \"none\")) (:frag f \"f\")))")))))
+  (testing "admitted: a string-typed value in a node tail is text"
+    (is (= 2 (run-main (str walk "(defn- v [t :string] " node " t)\n(defn main [] :i64 (size (v \"ab\")))")))))
+  (testing "admitted: an argument at a declared node parameter, and a string there is text"
+    (is (= 4 (run-main (str walk "(defn main [] :i64 (size [:p \"ab\" [:<> \"c\"]]))"))))
+    (is (= 3 (run-main (str walk "(defn main [] :i64 (size \"abc\"))")))))
+  (testing "admitted: a shape test is an exhaustive variant-match that narrows the node"
+    (is (= 1 (run-main (str "(defn- s? [n " node "] :bool (string? n))\n"
+                            "(defn main [] :i64 (+ (if (s? \"t\") 1 0) (if (s? [:p]) 10 0)))"))))
+    (is (= 2 (run-main (str "(defn- k [n " node "] :i64 (if (sequential? n) 2 (string-byte-length n)))\n"
+                            "(defn main [] :i64 (k [:<>]))"))))
+    (is (= 5 (run-main (str "(defn- k [n " node "] :i64 (cond (vector? n) 1 :else 5))\n"
+                            "(defn main [] :i64 (k \"t\"))")))))
+  (testing "admitted: the literal is the hand-written constructors -- one definition CID"
+    (is (= (cid (str "(ns app)\n(defn- v [t :string] " node " [:p {:class \"c\"} t [:<> \"u\"]])\n"
+                     "(defn main [] :i64 1)")
+                "v")
+           (cid (str hand-schemas
+                     "(defn- v [t :string] " node
+                     " (variant-new [:variant :kotoba.hiccup/node [[:text :string] [:elem [:ref :kotoba.hiccup/elem]] [:frag " nodes "]]] :elem"
+                     " (record-new [:record :kotoba.hiccup/elem [[:tag :keyword] [:attrs [:map :keyword :string]] [:children " nodes "]]] :p"
+                     " (typed-map-new [:map :keyword :string] :class \"c\")"
+                     " (typed-list-new " nodes
+                     " (variant-new [:variant :kotoba.hiccup/node [[:text :string] [:elem [:ref :kotoba.hiccup/elem]] [:frag " nodes "]]] :text t)"
+                     " (variant-new [:variant :kotoba.hiccup/node [[:text :string] [:elem [:ref :kotoba.hiccup/elem]] [:frag " nodes "]]] :frag"
+                     " (typed-list-new " nodes
+                     " (variant-new [:variant :kotoba.hiccup/node [[:text :string] [:elem [:ref :kotoba.hiccup/elem]] [:frag " nodes "]]] :text \"u\")))))))\n"
+                     "(defn main [] :i64 1)")
+                "v")))
+    (is (string? (cid (str "(ns app)\n(defn- v [t :string] " node " [:p t])\n(defn main [] :i64 1)") "v"))))
+  (testing "refused: a shape test that misses a case"
+    (is (= (str "the shape test over node n does not cover :frag: a shape test over a node is an "
+                "exhaustive variant-match; add a branch or :else (ADR 0353)")
+           (refusal (str "(defn- f [n " node "] :i64 (cond (string? n) 1 (vector? n) 2))\n"
+                         "(defn main [] :i64 (f \"t\"))")))))
+  (testing "refused: a shape a node never has"
+    (is (= "(map? n) asks node n a shape a node never has: a node is :text, :elem or :frag (ADR 0353)"
+           (refusal (str "(defn- f [n " node "] :bool (map? n))\n(defn main [] :i64 1)")))))
+  (testing "refused: coercion -- a number is not a child or an attribute value"
+    (is (= "child 12 of :p is a number, and a hiccup child is a node or a string: no coercion, write (str 12) (ADR 0353)"
+           (refusal (str "(defn- v [] " node " [:p 12])\n(defn main [] :i64 1)"))))
+    (is (= "attribute :width of :p is 12, and a node attribute value is a string: no coercion, write (str 12) (ADR 0353)"
+           (refusal (str "(defn- v [] " node " [:p {:width 12} \"a\"])\n(defn main [] :i64 1)"))))
+    (is (= "child nil of :p is nil, and a hiccup child is a node or a string: absence is not a child, leave it out (ADR 0353)"
+           (refusal (str "(defn- v [] " node " [:p nil])\n(defn main [] :i64 1)")))))
+  (testing "refused: a node is never truthy"
+    (is (= "if test must be bool or an option"
+           (refusal (str "(defn- f [n " node "] :i64 (if n 1 0))\n(defn main [] :i64 (f \"t\"))")))))
+  (testing "refused: no structural equality over node handles"
+    (is (= "equality type is outside the safe value profile"
+           (refusal (str "(defn- f [n " node " m " node "] :bool (= n m))\n"
+                         "(defn main [] :i64 (if (f \"t\" \"t\") 1 0))")))))
+  (testing "refused: the language's node schemas are not redeclared"
+    (is (= "a module names :kotoba.hiccup/node, whose schemas are the language's: do not redeclare them (ADR 0353)"
+           (refusal-ns "(ns app (:schemas {:kotoba.hiccup/node [:record :kotoba.hiccup/node [[:a :i64]]]}))\n(defn main [] :i64 1)"))))
+  (testing "unchanged: a vector literal outside a node context is a vector"
+    (is (= 2 (run-main "(defn main [] :i64 (count [:a :b]))"))))
+  ;; `amu compile --target aarch64-macos` reaches the compiler as
+  ;; :aarch64-kotoba-v1.
+  (testing "hosted: restricted ESM compiles the node program"
+    (is (string? (:source (compiler/compile-source
+                           (str "(ns app)\n" (probe "(count (:children e))")) :js-kotoba-v1)))))
+  ;; Both kernel-side targets refuse the node at the typed-values gate: its
+  ;; payload holds a `[:list T]` and a `[:map :keyword :string]`, which the
+  ;; native one-word slice does not qualify -- floor :native-handles.
+  (testing "native: both kernel-side targets refuse, for now, by the typed-values gate"
+    (doseq [target [:x86_64-aiueos-kernel-v1 :aarch64-kotoba-v1]]
+      (is (= (str "typed values currently require the kotoba-script web target, typed Wasm/CLJS target, "
+                  "or the qualified native one-word string/record/variant/option/result slice")
+             (try (compiler/compile-source (str "(ns app)\n" (probe "(count (:children e))")) target) nil
+                  (catch #?(:clj clojure.lang.ExceptionInfo :cljs :default) error
+                    (ex-message error))))
+          (str target)))))

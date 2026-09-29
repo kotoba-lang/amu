@@ -804,7 +804,14 @@
          ;; string-code-unit-primitives-test. A module calling none of them is
          ;; unchanged, so no existing CID moves. A local that binds a head's
          ;; name shadows it (it did not, for subvec, before).
-         "baeddf12198881af9061ddc285ea35b078505f78"} ;; Before that: Advanced 2026-09-25 05d8bd8a -> 5d3054b0 (main tip, forward only): a quoted ns attr-map value ({:kotoba/export (quote [..])}) means the unquoted one -- the spelling JVM Clojure can load. Before that: Advanced 2026-09-25 a7f5ae17 -> 5d4161c5 (main tip, forward only): the state ability, slice 1 (kotoba-lang lang/state-ability.edn, superproject adr-2609242200) -- defhandler / perform :state/* / handle (with ..), specialization and state passing; guest-grammar d87fe28a. Before that: Advanced 2026-09-24 451afded -> a7f5ae17 (main tip, ahead 5, forward only): adr-2609242100 P1 -- max-type-depth / max-schema-depth 8 -> 12, guest-grammar bdbc8474. Before that: 8571681a -> 451afded (main tip, forward only): selfhost walls: fn-body-clj-only, some-two-arg, regex literal, char literal, clojure.* to kotoba.*
+         ;; Advanced 2026-09-30, baeddf12 -> 25618d31 (main tip, forward only):
+         ;; ADR 0353 floor :hiccup-node -- a module naming :kotoba.hiccup/node
+         ;; gets the node schemas, a hiccup literal where a node is expected
+         ;; is its constructors (same CID as written by hand), and a shape
+         ;; test over a node is an exhaustive variant-match; gate
+         ;; hiccup-literal-is-node-adt-test. A module that does not name the
+         ;; type is returned unchanged, so no existing CID moves.
+         "25618d3108ac2edc6f2c042a170dce11c985ac49"} ;; Before that: Advanced 2026-09-25 05d8bd8a -> 5d3054b0 (main tip, forward only): a quoted ns attr-map value ({:kotoba/export (quote [..])}) means the unquoted one -- the spelling JVM Clojure can load. Before that: Advanced 2026-09-25 a7f5ae17 -> 5d4161c5 (main tip, forward only): the state ability, slice 1 (kotoba-lang lang/state-ability.edn, superproject adr-2609242200) -- defhandler / perform :state/* / handle (with ..), specialization and state passing; guest-grammar d87fe28a. Before that: Advanced 2026-09-24 451afded -> a7f5ae17 (main tip, ahead 5, forward only): adr-2609242100 P1 -- max-type-depth / max-schema-depth 8 -> 12, guest-grammar bdbc8474. Before that: 8571681a -> 451afded (main tip, forward only): selfhost walls: fn-body-clj-only, some-two-arg, regex literal, char literal, clojure.* to kotoba.*
         ;; ADR-2607266000 Phase B: these responsibilities moved out of this repo.
         ;;
         ;; The slice-value stream held this pin on purpose (ADR 0314), because
