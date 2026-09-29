@@ -1,0 +1,92 @@
+(ns kotoba.compiler.policy-grant-count-test
+  "A capability policy is admitted at any grant count, not only at eight or
+  fewer.
+
+  The policy text is read by the same reader as `.kotoba` source
+  (`kotoba.compiler.kotoba-reader`), which reads every integer as a JS BigInt
+  under nbb. `cljs.core/hash` had no case for a BigInt and threw, and a set
+  hashes its elements from the ninth one on (up to eight it is an array set
+  compared with `=`). Measured 2026-09-25 on amu 961f8eea with engine
+  org-babashka-nbb 95ff779, `bin/amu check examples/capability.kotoba`:
+    - `{:allow #{[:cap/call 1] ... [:cap/call 8]}}` admitted;
+    - the same with 9 or 32 grants answered `malformed capability policy`:
+      the reader caught the hash error and returned the tagged form
+      `(kotoba.reader/set [...])`, which is not a `set?`;
+    - 9, 10 or 12 grants spelled by catalog name answered
+      `internal compiler error`: `capability-names/wire-policy` rebuilt the
+      set from the catalog's BigInt wire ids and the hash threw there.
+  The engine fix (org-babashka-nbb `nbb.bigint-hash`) gives a BigInt a hash.
+  Measured on the old engine: 7 of these assertions pass, 13 fail and 2
+  error -- every case above eight grants, and the malformed cases too,
+  because a nine-grant policy was refused for its set shape (`:entries`
+  empty) rather than for the entry that is wrong. On the fixed engine all
+  pass."
+  (:require [clojure.test :refer [deftest is testing]]
+            [kotoba.compiler.capability-names :as cap-names]
+            [kotoba.compiler.core :as compiler]
+            [kotoba.compiler.kotoba-reader :as kr]))
+
+(def ^:private source
+  "(ns g {:kotoba/export [audit main]}) (defn audit [v] (cap-call 7 v)) (defn main [] (audit 1))")
+
+(def ^:private catalog-names
+  [":cli/args" ":clock/now" ":env/read" ":fs/app-data" ":hash/sha256"
+   ":io/read" ":io/write" ":io/write-error" ":fs/browse" ":identity/sign"
+   ":process/spawn" ":entropy/draw"])
+
+(defn- policy-text [grants]
+  (str "{:allow #{" (apply str (interpose " " (map #(str "[:cap/call " % "]") grants))) "}}"))
+
+(defn- read-policy
+  "Decode as `amu check --policy` does: the Kotoba reader, then the name ->
+  wire-id canonicalisation."
+  [text]
+  (cap-names/wire-policy (first (kr/read-forms text))))
+
+(defn- admit [policy]
+  (try
+    (let [admission (:admission (compiler/check-source source policy))]
+      {:admitted? (:admitted? admission)
+       :unused (count (:unused-grants admission))})
+    (catch #?(:clj clojure.lang.ExceptionInfo :cljs ExceptionInfo) e
+      {:refused (ex-message e)
+       :entries (set (map (comp str second) (:entries (ex-data e))))})))
+
+(deftest numbered-grants-at-any-count
+  ;; ids 0 .. n-1: every case holds id 7, the one the source names; 256 is
+  ;; the whole wire range.
+  (doseq [n [8 9 32 256]]
+    (testing (str n " numbered grants")
+      (let [policy (read-policy (policy-text (range n)))]
+        (is (set? (:allow policy)) "the reader hands back a set, not (kotoba.reader/set ...)")
+        (is (= n (count (:allow policy))))
+        (is (= {:admitted? true :unused (dec n)} (admit policy)))))))
+
+(deftest named-grants-at-any-count
+  (doseq [n [8 9 10 12]]
+    (testing (str n " named grants")
+      (let [policy (read-policy (policy-text (take n catalog-names)))]
+        (is (set? (:allow policy)))
+        (is (= n (count (:allow policy))))
+        ;; :clock/now is wire id 7, the one the source names.
+        (is (= {:admitted? true :unused (dec n)} (admit policy)))))))
+
+(deftest same-policy-read-twice-is-equal
+  (let [a (read-policy (policy-text (range 1 33)))
+        b (read-policy (policy-text (reverse (range 1 33))))]
+    (is (= a b))
+    (is (= (hash a) (hash b)))))
+
+(deftest malformed-policy-still-refused-by-name
+  (testing "an out-of-range id among nine grants is named in :entries"
+    (is (= {:refused "malformed capability policy" :entries #{"256"}}
+           (admit (read-policy (policy-text (concat (range 1 9) [256])))))))
+  (testing "a non-integer id among 32 grants is named in :entries"
+    (is (= {:refused "malformed capability policy" :entries #{"x"}}
+           (admit (read-policy (policy-text (concat (range 1 32) ["\"x\""])))))))
+  (testing ":allow that is not a set is refused before any entry is looked at"
+    (is (= {:refused "malformed capability policy" :entries #{}}
+           (admit (read-policy "{:allow [[:cap/call 7]]}")))))
+  (testing "a policy that omits the required grant is denied, not malformed"
+    (is (re-find #"^capability policy denies required effects;"
+           (:refused (admit (read-policy (policy-text (range 8 40)))))))))

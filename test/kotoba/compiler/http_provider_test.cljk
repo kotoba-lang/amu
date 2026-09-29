@@ -217,7 +217,7 @@
 (def guest-poll-read-source
   (str "(ns app.http-guest (:export [get-stream-ready get-stream-byte-count]) "
        "(:capabilities #{:http/get-stream}))"
-       "(defn get-stream-ready [request " (pr-str http/get-stream-request-type) "] :i64 "
+       "(defn get-stream-ready [request " (pr-str http/get-stream-request-type) "] :bool "
        "(task-ready? (typed-cap-call :http/get-stream "
        (pr-str http/get-stream-request-type) " "
        (pr-str http/get-stream-result-type) " request)))"
@@ -238,7 +238,7 @@
         runtime (hosted-guest-poll (fn [_] {:bytes payload}))
         request [http/get-stream-request-type "https://api.example.test/v1/x"
                  [http/header-set-type []]]]
-    (is (= 1 ((:invoke runtime) 'get-stream-ready [request])))))
+    (is (true? ((:invoke runtime) 'get-stream-ready [request])))))
 
 (deftest guest-bytes-task-byte-count-http-without-host-poll
   (let [payload (value/utf8-string->bytes "http-body")

@@ -86,7 +86,42 @@
 ;; the same behaviour. The deterministic-sanitized arm (ASan + UBSan, 20,000
 ;; cases) passed. Floors carried forward NOT re-measured (no libFuzzer
 ;; runtime on the machine that made this change); the Linux CI job measures.
+;; Advanced 2026-09-25 for the loader's two holes (superproject
+;; adr-2609251400 C3): the :fs/app-data and :fs/browse opens go beneath the
+;; scope root (openat2 RESOLVE_BENEATH on Linux, O_RESOLVE_BENEATH on macOS)
+;; through the new kexe_scope_open (O_NOFOLLOW_ANY on a macOS kernel that
+;; ignores O_RESOLVE_BENEATH), and the Linux seccomp filter admits
+;; openat2 / mkdirat / unlinkat / renameat. The argv/handle parser the floors
+;; measure is untouched. Floors carried forward NOT re-measured (no libFuzzer
+;; runtime on the machine that made this change); the Linux CI job measures.
+;; Advanced 2026-09-25 for C3 in the loader (superproject adr-2609251400): the
+;; capability handlers' compiled decisions embedded beside C1's and asked for
+;; the :fs/app-data form, RANGE and CHMOD; new providers for :entropy/draw,
+;; :process/spawn (a supervisor-side broker, like wire 42's) and the
+;; fsync / make-temp-dir / stat-nofollow forms; seccomp admits fchmod, fsync,
+;; getrandom and, for the spawn broker, read. The argv/handle parser the
+;; floors measure is untouched. The deterministic-sanitized arm (ASan +
+;; UBSan, 20,000 cases) passed on macOS arm64. Floors carried forward NOT
+;; re-measured (no libFuzzer runtime on the machine that made this change);
+;; the Linux CI job measures.
+;; Advanced 2026-09-26 for the export boundary codec (superproject
+;; adr-2609242330): the argv parser the floors measure DID change this time --
+;; parse_guest_arg's s: branch moved into kexe_mint_hex_string unchanged, and
+;; kexe_boundary_arg (vi: b: o:some:s: against a declared kind, budgeted by the
+;; traversal budget) sits beside it; the fuzz target's parser sub-target now
+;; drives it too, with five new corpus seeds (vector-arg, vector-empty,
+;; vector-malformed, bytes-arg, option-string-arg). The deterministic-sanitized
+;; arm (ASan + UBSan, 20,000 cases) passed on macOS arm64. Floors carried
+;; forward NOT re-measured (no libFuzzer runtime on the machine that made this
+;; change); the Linux CI job measures.
+;; Advanced 2026-09-26 for the :fs/app-data OWNER form (superproject
+;; adr-2609242330): one provider (fstatat AT_SYMLINK_NOFOLLOW beneath the
+;; scope, the euid read in main() before the sandbox), a 15th entry in the form
+;; token table, and the recompiled handlers region. The argv/handle parser the
+;; floors measure is untouched. Floors carried forward NOT re-measured (no
+;; libFuzzer runtime on the machine that made this change); the Linux CI job
+;; measures.
 {:format :kotoba.fuzz-baseline/v2
- :loader-source-sha256 "273b97a66831bb3388ec7c0d8de66c250299fbad86a08d490edbdcc13d55f849"
+ :loader-source-sha256 "daa8df69c642c2c29d3900ace79a5095d8590773b0fbe724d6d19616d106a4e1"
  :profiles {:x64 {:min-cov 60 :min-features 100 :min-corpus 20}
             :arm64 {:min-cov 60 :min-features 100 :min-corpus 18}}}

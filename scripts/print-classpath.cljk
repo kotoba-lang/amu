@@ -8,6 +8,12 @@
 ;;   kbb --backend sci --classpath src scripts/print-classpath.cljk [root]
 
 (ns print-classpath
-  (:require [kotoba.compiler.nbb.classpath :as classpath]))
+  (:require [kotoba.compiler.nbb.classpath :as classpath]
+            [kotoba.compiler.nbb.host.entry :as entry]))
 
-(apply classpath/-main *command-line-args*)
+;; `-main` returns the exit status (superproject adr-2609242330 S5, section 1
+;; (c)(2)); a non-zero one is handed to the OS here. Zero is left to the
+;; process's natural end so a piped stdout is never cut short.
+(let [status (apply classpath/-main *command-line-args*)]
+  (when-not (zero? status)
+    (entry/exit! status)))

@@ -1,0 +1,206 @@
+(ns test.nbb.native-word-ops
+  "i64 `min` / `max` and `vector-take` measured on every backend
+  (superproject adr-2609242330, selfhost stage 2, 2026-09-26). Each positive
+  row must give the SAME answer, pinned here as a literal, on the reference
+  interpreter (kotoba.kir/execute over the frontend's HIR), restricted ESM
+  (`amu compile --target js`, imported by Node), and native aarch64 and x86_64
+  (`amu compile` -> `amu extract-native` -> the reviewed `tools/kexe_loader.c`).
+  Each trapping row must trap on every backend, by the name each backend
+  gives. Then the refusals that must stay, by their exact text.
+
+  Before this, native refused all three: `min` / `max` by name in a typed
+  module (\"does not qualify `min`\"), and both `min` and `vector-take` in any
+  module as \"aggregate ABI rejected: call-abi-not-admitted\", because the
+  native lowering had no case for them; ESM refused `vector-take` as
+  \"unsupported KIR operation\". The reference's nbb branch answered `min` /
+  `max` through Number, so a word past 2^53 came back rounded.
+
+  Exit codes keep the three outcomes apart (superproject ADR-2608136000):
+    0  every measurement ran and passed
+    1  a measurement ran and disagreed
+    2  a measurement could not run (no C compiler; no way to run the other
+       ISA's loader). Printed as SKIPPED with its reason, never as a pass."
+  (:require [kotoba.lang.text :as str]
+            [kotoba.sema :as sema]
+            [kotoba.kir :as kir]
+            ["node:child_process" :as child]
+            ["node:fs" :as fs]
+            ["node:os" :as os]
+            ["node:path" :as path]))
+
+(def root (.resolve path "."))
+(def amu (.join path root "bin" "amu"))
+(def fixtures (.join path root "test" "nbb" "fixtures" "native-word-ops"))
+(def tmp (.mkdtempSync fs (.join path (.tmpdir os) "amu-native-word-ops-")))
+
+;; [fixture export [args] expected]. An expected string starting with TRAP
+;; means every backend must refuse: the reference and ESM by the trap name
+;; after it, native by the loader's signal report.
+(def rows
+  [["min_max_pairs" "main" [] "677599606229681868"]
+   ["min_max_pairs" "probe" [7 8 0] "9223372036854775806"]
+   ["min_max_pairs" "probe" [0 8 1] "9223372036854775807"]
+   ["min_max_pairs" "probe" [0 1 0] "-9223372036854775808"]
+   ["min_max_pairs" "probe" [3 4 1] "0"]
+   ["min_max_pairs" "probe" [4 4 0] "0"]
+   ["min_max_plain" "main" [] "-6990997"]
+   ["vector_take" "main" [] "10200995510"]
+   ["vector_take" "take-count" [0] "0"]
+   ["vector_take" "take-count" [4] "4"]
+   ["vector_take" "take-count" [-1] "TRAP vector-take-out-of-range"]
+   ["vector_take" "take-count" [5] "TRAP vector-take-out-of-range"]])
+
+(def native-trap "KEXE_TRAP {:kind :signal :signal :SIGILL}")
+
+;; Refused on native by name, on both ISAs: the widening must not carry
+;; `f32-min` along (x86 MINSS / AArch64 FMIN order NaN and signed zero
+;; differently, and no admission slice exists).
+(def native-refusals
+  [["negative/f32_min" "does not qualify `f32-min`"]])
+
+;; Refused by the frontend before any backend: `min` is strictly binary.
+(def frontend-refusals
+  [["negative/min_three" "i64 operation arity mismatch: min takes 2 arguments; got 3"]])
+
+(def failures (atom []))
+(def skipped (atom []))
+(def passed (atom 0))
+
+(defn- check! [label ok? detail]
+  (if ok?
+    (swap! passed inc)
+    (do (swap! failures conj [label detail]) (println "FAIL" label detail))))
+
+(defn- run [command args & [opts]]
+  (let [r (.spawnSync child command (clj->js args)
+                      (clj->js (merge {:cwd root :encoding "utf8" :maxBuffer 16777216} opts)))]
+    {:status (if (nil? (.-status r)) 70 (.-status r))
+     :stdout (or (.-stdout r) "") :stderr (or (.-stderr r) "")
+     :error (.-error r)}))
+
+(defn- amu! [& args] (run js/process.execPath (into [amu] args)))
+
+(defn- fixture [name] (.join path fixtures (str name ".kotoba")))
+
+(defn- head [s] (subs s 0 (min 240 (count s))))
+
+;; ---------------------------------------------------------------------------
+;; reference
+
+(defn- reference [name f args]
+  (try
+    (str (kir/execute (kir/lower (sema/analyze (fs/readFileSync (fixture name) "utf8")))
+                      (symbol f) (mapv #(js/BigInt %) args) {:fuel 10000000}))
+    (catch :default e (str "TRAP " (ex-message e)))))
+
+;; ---------------------------------------------------------------------------
+;; ESM
+
+(def esm-modules (atom {}))
+
+(defn- esm-module [name]
+  (or (get @esm-modules name)
+      (let [out (.join path tmp (str name ".mjs"))
+            c (amu! "compile" (fixture name) "--target" "js" "--output" out)
+            m (if (zero? (:status c)) {:out out} {:fail (str "COMPILE-FAIL " (head (str (:stdout c) (:stderr c))))})]
+        (swap! esm-modules assoc name m)
+        m)))
+
+(defn- esm [name f args]
+  (let [{:keys [out fail]} (esm-module name)]
+    (or fail
+        (let [call (str "i[" (js/JSON.stringify f) "](" (str/join "," (map #(str % "n") args)) ")")
+              r (run js/process.execPath
+                     ["--input-type=module" "-e"
+                      (str "import('" (.toString (js/URL. (str "file://" out))) "')"
+                           ".then(async m=>{const i=await m.instantiateKotoba({}, {fuel: 10000000});"
+                           "try{console.log(String(" call "))}catch(e){console.log('TRAP '+e.message)}})"
+                           ".catch(e=>console.log('ERR '+e.message))")])]
+          (str/trim (:stdout r))))))
+
+;; ---------------------------------------------------------------------------
+;; native
+
+(defn- build-loader [isa]
+  (let [out (.join path tmp (str "kexe-loader-" isa))
+        arch (when (= "darwin" (.platform os)) (if (= isa "aarch64") "arm64" "x86_64"))
+        args (cond-> ["-std=c11" "-O2"] arch (into ["-arch" arch])
+                     true (into [(.join path root "tools" "kexe_loader.c") "-o" out]))
+        r (run "cc" args)]
+    (cond
+      (:error r) {:skip (str "no C compiler: " (.-message (:error r)))}
+      (not (zero? (:status r))) {:skip (str "cc could not build a " isa " loader: " (head (:stderr r)))}
+      :else
+      (let [probe (run out [])]
+        (if (or (:error probe) (= 70 (:status probe)) (str/includes? (:stderr probe) "Bad CPU type"))
+          {:skip (str "this host cannot execute a " isa " loader")}
+          {:loader out})))))
+
+(def kexes (atom {}))
+
+(defn- kexe [name isa]
+  (or (get @kexes [name isa])
+      (let [out (.join path tmp (str name "." isa ".kexe"))
+            c (amu! "compile" (fixture name) "--target" isa "--output" out)
+            k (if (zero? (:status c)) {:out out} {:fail (str "COMPILE-FAIL " (head (str (:stdout c) (:stderr c))))})]
+        (swap! kexes assoc [name isa] k)
+        k)))
+
+(defn- native [name f args isa loader]
+  (let [{:keys [out fail]} (kexe name isa)]
+    (or fail
+        (let [bin (.join path tmp (str name "." f "." isa ".bin"))
+              x (amu! "extract-native" out "--symbol" f "--output" bin)
+              offset (second (re-find #":offset (\d+)" (:stdout x)))]
+          (if-not offset
+            (str "EXTRACT-FAIL " (head (:stdout x)))
+            (let [r (run loader (into [bin offset (str (count args)) isa "-"] (map str args)))]
+              (str/trim (last (str/split-lines (str (:stdout r) "\n" (:stderr r)))))))))))
+
+;; ---------------------------------------------------------------------------
+
+(defn- expected-on [backend expected]
+  (if (str/starts-with? expected "TRAP ")
+    (if (contains? #{:aarch64 :x86_64} backend) native-trap expected)
+    expected))
+
+(println "== rows: reference, ESM, aarch64, x86_64")
+(let [loaders (into {} (map (fn [isa] [isa (build-loader isa)])) ["aarch64" "x86_64"])]
+  (doseq [[isa {:keys [skip]}] loaders :when skip]
+    (swap! skipped conj [isa skip])
+    (println "SKIPPED" isa skip))
+  (doseq [[name f args expected] rows]
+    (let [answers (cond-> {:reference (reference name f args) :esm (esm name f args)}
+                    (:loader (get loaders "aarch64"))
+                    (assoc :aarch64 (native name f args "aarch64" (:loader (get loaders "aarch64"))))
+                    (:loader (get loaders "x86_64"))
+                    (assoc :x86_64 (native name f args "x86_64" (:loader (get loaders "x86_64")))))]
+      (println (str name "/" f (pr-str args) "\t" expected "\t" (pr-str answers)))
+      (doseq [[backend answer] answers]
+        (let [want (expected-on backend expected)]
+          (check! (str name "/" f (pr-str args) " on " (clojure.core/name backend))
+                  (= want answer)
+                  (str "expected " want ", got " answer)))))))
+
+(println "== native refusals, by name, on both ISAs")
+(doseq [[name literal] native-refusals
+        isa ["aarch64" "x86_64"]]
+  (let [c (amu! "compile" (fixture name) "--target" isa "--output" (.join path tmp (str name "." isa ".kexe")))]
+    (check! (str "native refusal " name " on " isa)
+            (and (= 70 (:status c)) (str/includes? (str (:stdout c) (:stderr c)) literal))
+            (str "status " (:status c) ": " (head (str (:stdout c) (:stderr c)))))))
+
+(println "== frontend refusals, exact text")
+(doseq [[name message] frontend-refusals]
+  (let [actual (try (sema/analyze (fs/readFileSync (fixture name) "utf8"))
+                    "ADMITTED"
+                    (catch :default e (ex-message e)))]
+    (check! (str "refusal " name) (= message actual) (pr-str actual))))
+
+(println (str "SCANNED\t" (+ @passed (count @failures)) "\tmeasurements; "
+              @passed " passed, " (count @failures) " failed, " (count @skipped) " skipped"))
+(.rmSync fs tmp #js {:recursive true :force true})
+(.exit js/process (cond (seq @failures) 1
+                        (zero? @passed) 2
+                        (seq @skipped) 2
+                        :else 0))

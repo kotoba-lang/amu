@@ -5,8 +5,9 @@
   policy, target profile, compatibility descriptor, and bytes as the JVM
   compiler."
   {:kotoba/export [targets]}
-  (:require ["node:path" :as node-path]
-            [kotoba.compiler.capability-names :as cap-names]
+  (:require [kotoba.compiler.capability-names :as cap-names]
+            [kotoba.compiler.posix-path :as posix-path]
+            [kotoba.compiler.text-bytes :as text-bytes]
             [kotoba.compiler.limits :as limits]
             [kotoba.compiler.nbb.cli-support :as support]
             [kotoba.compiler.definition-identity :as definition-identity]
@@ -384,8 +385,8 @@
                           :sha256 (compile-cache/sha256 bytes)
                           :provenance-sha256
                           (compile-cache/sha256 (:provenance-text serialized)))
-            size (+ (.-length bytes)
-                    (.byteLength js/Buffer (:provenance-text serialized) "utf8"))]
+            size (+ (text-bytes/bytes-length bytes)
+                    (text-bytes/utf8-length (:provenance-text serialized)))]
         (support/timed "cache-store"
                        #(compile-cache/put! artifact-cache key sealed size))
         {:ok true :target target :output output
@@ -473,7 +474,7 @@
         ;; to the entry module puts the lock beside the sources it pins. Pass
         ;; --output to say otherwise.
         output (or (support/option args "--output")
-                   (.join node-path (.dirname node-path input) "kotoba.modules.edn"))
+                   (posix-path/join (posix-path/dirname input) "kotoba.modules.edn"))
         lock (support/timed
               "module-lock-derive"
               #(module-lock/lock-from-source-paths
@@ -528,14 +529,15 @@
     (support/usage-error!
      (str "error: nbb Wasm path does not cover command " (first args)))))
 
-(if (= "worker" (first *command-line-args*))
+(let [args (support/command-line-args)]
+ (if (= "worker" (first args))
   ;; Same as `compile!`: bin/amu reaches this worker only with a wasm32*
   ;; --target (ADR 0351); the fallback serves a direct spawn of this driver.
-  (let [target-name (or (support/option *command-line-args* "--target") "wasm32")
+  (let [target-name (or (support/option args "--target") "wasm32")
         target (get targets target-name)
         _ (when-not target
             (support/usage-error!
              (str "error: nbb Wasm worker does not cover target " target-name)))
         context (assoc (compile-cache/create-context) :target target)]
     (support/serve! #(run! % context) target))
-  (support/execute! #(run! % nil)))
+  (support/execute! #(run! % nil))))

@@ -4,11 +4,18 @@
   Only fully admitted/emitted (and for native, independently verified)
   artifacts are inserted. Values never cross worker processes."
   {:kotoba/export [create create-context key-for lookup! lookup-stage! put! put-stage! remove! resolve-stage! sha256 stage-key-for stats]}
-  (:require ["node:crypto" :as crypto]))
+  (:require [kotoba.compiler.json-text :as json-text]
+            [kotoba.compiler.text-bytes :as text-bytes]
+            ;; Abilities (superproject adr-2609242330 S5): under Kotoba
+            ;; `env/read` and `hash/sha256` are catalog operations whose
+            ;; handler comes from the target profile; under nbb the aliases
+            ;; name the mechanism-layer handlers.
+            #?(:cljs [kotoba.compiler.nbb.host.env :as env])
+            #?(:cljs [kotoba.compiler.nbb.host.hash :as hash])))
 
 (defn- configured-integer [name default maximum]
-  (let [text (aget js/process.env name)
-        value (when text (js/Number text))]
+  (let [text (env/read name)
+        value (when (seq text) (js/Number text))]
     (if (and value (js/Number.isSafeInteger value) (<= 1 value maximum))
       value
       default)))
@@ -28,10 +35,11 @@
   {:artifacts (create)
    :stages (create "KOTOBA_WORKER_STAGE_CACHE" 128 (* 64 1024 1024))})
 
-(defn sha256 [value]
-  (-> (.createHash crypto "sha256")
-      (.update value)
-      (.digest "hex")))
+(defn sha256
+  "SHA-256 of VALUE (text, hashed as UTF-8, or bytes) as 64 lowercase hex
+  characters: the hash/sha256 ability (catalog wire 3)."
+  [value]
+  (hash/sha256 value))
 
 (defn key-for
   ;; `linked?` is in the key because it changes what the frontend ADMITS, not
@@ -54,20 +62,18 @@
   ;; entries written under v3 miss rather than being read under the new meaning.
   ([target source policy-material emit-metadata linked? artifact-kind]
    (sha256
-    (.stringify js/JSON
-                (clj->js ["kotoba.compile-cache/v4"
-                          (name target)
-                          source
-                          (boolean (:present? policy-material))
-                          (:text policy-material)
-                          (pr-str emit-metadata)
-                          (boolean linked?)
-                          artifact-kind])))))
+    (json-text/encode-array ["kotoba.compile-cache/v4"
+                       (name target)
+                       source
+                       (boolean (:present? policy-material))
+                       (:text policy-material)
+                       (pr-str emit-metadata)
+                       (boolean linked?)
+                       artifact-kind]))))
 
 (defn stage-key-for [stage material]
   (sha256
-   (.stringify js/JSON
-               (clj->js ["kotoba.stage-cache/v1" (name stage) material]))))
+   (json-text/encode-array ["kotoba.stage-cache/v1" (name stage) material])))
 
 (defn- without [items value]
   (into [] (remove #(= value %)) items))
@@ -115,7 +121,7 @@
   (let [serialized (pr-str value)]
     (put! cache key
           {:value value :sha256 (sha256 serialized)}
-          (.byteLength js/Buffer serialized "utf8")))
+          (text-bytes/utf8-length serialized)))
   value)
 
 (defn resolve-stage! [cache stage material compute]

@@ -19,8 +19,12 @@
   consumers read them, they do not diff their text -- `test/nbb/js_parity.cljk`
   compares them as EDN. The `.mjs` bytes are the byte-level parity claim."
   {:kotoba/export [targets]}
-  (:require ["node:crypto" :as crypto]
-            [kotoba.artifact.core :as artifact]
+  (:require [kotoba.artifact.core :as artifact]
+            [kotoba.compiler.text-bytes :as text-bytes]
+            ;; The hash/sha256 ability (catalog wire 3, superproject
+            ;; adr-2609242330 S5); under nbb the alias names the
+            ;; mechanism-layer handler (node:crypto).
+            #?(:cljs [kotoba.compiler.nbb.host.hash :as hash])
             [kotoba.compiler.capability-names :as cap-names]
             [kotoba.compiler.limits :as limits]
             [kotoba.compiler.effect-row :as effect-row]
@@ -61,7 +65,7 @@
   :kotoba.floating-point/ieee-754-f32-f64-v7)
 
 (defn- text-sha256 [text]
-  (-> (.createHash crypto "sha256") (.update text "utf8") (.digest "hex")))
+  (hash/sha256 text))
 
 (defn- read-policy! [args]
   (cap-names/wire-policy (support/read-policy args)))
@@ -119,7 +123,7 @@
             :admission (cap-names/name-grants admission)
             :effects (cap-names/name-grants (:effects hir))
             :limits {:fuel fuel :replenishable? false}
-            :bytes (.byteLength js/Buffer cljs-source "utf8")}
+            :bytes (text-bytes/utf8-length cljs-source)}
            (project-source/inputs-record resolved))))
 
 (declare compile-esm!)
@@ -237,7 +241,7 @@
             :manifest-json-output manifest-json
             :admission (cap-names/name-grants admission)
             :effects (cap-names/name-grants (:effects hir))
-            :bytes (.byteLength js/Buffer js-source "utf8")}
+            :bytes (text-bytes/utf8-length js-source)}
            (when module-graph
              {:project (:graph module-graph)
               :project-digest (:digest module-graph)})

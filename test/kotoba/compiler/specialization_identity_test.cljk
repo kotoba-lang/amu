@@ -1,0 +1,92 @@
+(ns kotoba.compiler.specialization-identity-test
+  "ADR 0353 floor :specialization-identity.
+
+  A row specialization's definition CID is a function of its generic's body
+  and the record types it was specialized at, and of nothing else: not the
+  generic's name, not the name the specialization was given, not the caller,
+  not the module around it. Measured 2026-09-27 before this test was written:
+  that already holds, because kotoba-sema monomorphizes before KIR and ADR
+  0300 hashes the monomorphic KIR -- the body with every callee as a CID and
+  every binder renumbered, and the interface with the record's schema. So two
+  modules that specialize one generic at one record share the CID, and it is
+  the CID of the same function written by hand with the record annotated:
+  compile-once across modules, and across the generic / hand-written line.
+
+  The generic itself has no CID. It never reaches KIR (it exists only as its
+  specializations), so there is nothing to hash; an identity for it would be
+  one invented for a hole, which ADR 0300 refuses. The floor's first wording
+  (\"derived from the generic definition's CID\") asked for exactly that, and
+  would have split a specialization from its hand-written twin.
+
+  Every case is a pair that must agree or must differ: a test that only
+  asserted a CID is a string would pass for an identity that hashed names."
+  (:require [clojure.test :refer [deftest is testing]]
+            [kotoba.compiler.definition-identity :as di]
+            [kotoba.kir :as ir]
+            [kotoba.sema :as sema]))
+
+(defn- prelude [[b-fields b-literal]]
+  (str "(ns b (:schemas {:b/s [:record :b/s [" b-fields "]]"
+       " :b/t [:record :b/t [[:a :i64] [:c :string]]]}))\n"
+       "(defn mk [] [:ref :b/s] " b-literal ")\n"
+       "(defn mt [] [:ref :b/t] {:a 7 :c \"xy\"})\n"))
+
+(def ^:private b-s ["[:a :i64] [:b :i64]" "{:a 5 :b 2}"])
+
+(defn- report
+  ([source] (report b-s source))
+  ([b-fields source]
+   (let [hir (sema/analyze (str (prelude b-fields) source) {})]
+     (di/definitions hir (ir/lower hir)))))
+
+(defn- cids [r]
+  (into {} (map (fn [[k v]] [k (:cid v)])) (:entries r)))
+
+(defn- cid [r nm]
+  (let [c (get (cids r) nm)]
+    (assert (string? c) (str nm " has no CID in " (pr-str (keys (cids r)))))
+    c))
+
+(deftest specialization-cid-derived-from-generic-test
+  (let [m1 (report "(defn- f [m] (:a m))\n(defn main [] :i64 (+ (f (mk)) (f (mt))))\n")
+        spec (cid m1 "f__row_0_b_s")]
+    (testing "admitted: two modules specializing one generic at one record share the CID"
+      (is (= spec (cid (report "(defn- g [m] (:a m))\n(defn main [] :i64 (* 2 (g (mk))))\n")
+                       "g__row_0_b_s"))
+          "a different generic name and a different caller")
+      (is (= spec (cid (report (str "(defn- f__row_0_b_s [] :i64 9)\n(defn- f [m] (:a m))\n"
+                                    "(defn main [] :i64 (+ (f__row_0_b_s) (f (mk))))\n"))
+                       "f__row_0_b_s_2"))
+          "a specialization renamed around a taken name"))
+    (testing "admitted: a specialization is its hand-written twin, compiled once"
+      (is (= spec (cid (report "(defn- f [m [:ref :b/s]] :i64 (:a m))\n(defn main [] :i64 (f (mk)))\n")
+                       "f"))))
+    (testing "admitted: a recursive generic and a loop inside one, across two modules"
+      (let [rec (fn [g n] (str "(defn- " g " [m n] (if (= n 0) (:a m) (" g " m (- n 1))))\n"
+                               "(defn main [] :i64 (" g " (mk) " n "))\n"))]
+        (is (= (cid (report (rec "f" 3)) "f__row_0_b_s")
+               (cid (report (rec "h" 7)) "h__row_0_b_s"))))
+      (let [lp (fn [g n] (str "(defn- " g " [m n] (loop [i 0 acc 0] (if (< i n) (recur (+ i 1) (+ acc (:a m))) acc)))\n"
+                              "(defn main [] :i64 (" g " (mk) " n "))\n"))
+            a (report (lp "f" 2))
+            b (report (lp "k" 4))]
+        (is (= (cid a "f__row_0_b_s") (cid b "k__row_0_b_s")))
+        (is (< 4 (count (cids a))) "the specialization owns a loop helper")
+        (is (= (sort (vals (dissoc (cids a) "main"))) (sort (vals (dissoc (cids b) "main"))))
+            "the loop helper each specialization owns shares its CID too")))
+    (testing "admitted: a private rename of the generic keys ADR 0300's cache identically"
+      (let [renamed (report "(defn- q [m] (:a m))\n(defn main [] :i64 (+ (q (mk)) (q (mt))))\n")]
+        (is (some? (di/cache-material m1 ['main])))
+        (is (= (di/cache-material m1 ['main]) (di/cache-material renamed ['main])))))
+    (testing "refused: the generic has no CID -- none is invented for it"
+      (is (not (contains? (cids m1) "f")))
+      (is (= #{"mk" "mt" "main" "f__row_0_b_s" "f__row_0_b_t"} (set (keys (cids m1))))))
+    (testing "refused: one CID for two type arguments, or for two generic bodies"
+      (is (not= spec (cid m1 "f__row_0_b_t")) "another record")
+      (is (not= spec (cid (report "(defn- f [m] (+ 1 (:a m)))\n(defn main [] :i64 (f (mk)))\n")
+                          "f__row_0_b_s"))
+          "another body")
+      (is (not= spec (cid (report ["[:a :i64] [:b :i64] [:z :i64]" "{:a 5 :b 2 :z 0}"]
+                                  "(defn- f [m] (:a m))\n(defn main [] :i64 (f (mk)))\n")
+                          "f__row_0_b_s"))
+          "the same record name with another schema: the body's descriptor and the interface seal it"))))

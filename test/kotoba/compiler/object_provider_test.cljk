@@ -215,7 +215,7 @@
   "Guest poll/read ops (ADR 0127): task-ready? + bytes-task-byte-count over get-stream."
   (str "(ns app.object-guest (:export [get-stream-ready get-stream-byte-count]) "
        "(:capabilities #{:object/get-stream}))"
-       "(defn get-stream-ready [request " (pr-str object/get-stream-request-type) "] :i64 "
+       "(defn get-stream-ready [request " (pr-str object/get-stream-request-type) "] :bool "
        "(task-ready? (typed-cap-call :object/get-stream "
        (pr-str object/get-stream-request-type) " "
        (pr-str object/get-stream-result-type) " request)))"
@@ -237,7 +237,7 @@
   (let [payload (value/utf8-string->bytes "abc")
         runtime (hosted-guest-poll (fn [_] {:bytes payload}))
         request [object/get-stream-request-type :example/blocks "k"]]
-    (is (= 1 ((:invoke runtime) 'get-stream-ready [request])))))
+    (is (true? ((:invoke runtime) 'get-stream-ready [request])))))
 
 (deftest guest-bytes-task-byte-count-reads-without-host-poll
   "Guest bytes-task-byte-count drains the stream; host does not call task-poll."

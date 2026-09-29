@@ -1,0 +1,5 @@
+(ns fixtures.native-word-ops.f32-min)
+;; f32-min stays refused on native (NaN / signed-zero order, and no admission
+;; slice yet): the widening of i64 min/max must not carry it along.
+(defn main [] :i64
+  (f32-to-bits (f32-min (f32-from-bits 1065353216) (f32-from-bits 1073741824))))

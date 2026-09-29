@@ -220,7 +220,24 @@
   ;; moved this line) to 27228973: the loader-less Linux static ELF packager
   ;; (superproject adr-2609251400 C2). It emits a prelude around the code
   ;; bytes; no aggregate sequence moved.
-  (is (= "27228973a0c0b615f79ccdf5ea4e61fdcf3d433d"
+  ;; Advanced again 2026-09-25 with deps.edn to d8f668cd: the static ELF's
+  ;; capability handlers (superproject adr-2609251400 C3). Prelude and
+  ;; handler mechanism only; no aggregate sequence moved.
+  ;; Advanced again 2026-09-25 with deps.edn to 6d5afeda: :process/spawn,
+  ;; :entropy/draw and six :fs/app-data forms on the static ELF (C3, second
+  ;; half). Prelude and handler mechanism only; no aggregate sequence moved.
+  ;; Advanced again 2026-09-26 with deps.edn to a0e10057 (via bc42c311, amu
+  ;; #1157, which had not moved this line): bc42c311's elf64 damage entry and
+  ;; string-search dropping a bare require (selfhost wall A). No aggregate
+  ;; sequence moved.
+  ;; Advanced 2026-09-26 with deps.edn: the linux-static packager admits a
+  ;; pure ability (:state, :abort) -- ladder floor :native-abort.
+  ;; Advanced 2026-09-26 with deps.edn: native :document values (ladder
+  ;; floor :native-document).
+  ;; Advanced 2026-09-26 with deps.edn: i64 min / max and vector-take on
+  ;; native (selfhost stage 2).
+  ;; Advanced 2026-09-26 with deps.edn: the static ELF answers the OWNER form.
+  (is (= "b1cb6037be9954bd2774e750a5715be75a523a92"
          (dependency-pin 'io.github.kotoba-lang/kotoba-native)))
   ;; Advanced 2026-09-07 to kotoba-native main c9d5c44 (hoist #151, cross-call
   ;; hoist #152, copy coalescing #154; 06badc8's allow-list entry is on main as
@@ -385,8 +402,28 @@
   ;; string-from-utf8 (superproject adr-2609242330).
   ;; Advanced again 2026-09-25 with deps.edn: the two linux-static target
   ;; profiles (superproject adr-2609251400 C2).
-  (is (= "e46766f7c09ea3c0c5913524c40ad6049f578d06"
+  ;; Advanced 2026-09-26 with deps.edn: an :abort row is oracled (ladder
+  ;; floor :native-abort).
+  ;; Advanced 2026-09-26 with deps.edn: the native gate admits the document
+  ;; operations (ladder floor :native-document).
+  ;; Advanced 2026-09-26 with deps.edn: i64 min / max and vector-take on
+  ;; native (selfhost stage 2).
+  (is (= "00d03837b7696b1e462562e0fef1cd56ec7286b2"
          (dependency-pin 'io.github.kotoba-lang/osaho)))
+  ;; 2026-09-25: the selfhost builtin gaps (superproject adr-2609242330) --
+  ;; the frontend's library heads and loop-body abort; the grammar digest
+  ;; guest_grammar_vendor_test pins is this commit's copy.
+  ;; Advanced 2026-09-26 with deps.edn: affine.cljk's fn values bind their
+  ;; destructuring in the body (selfhost fn-value wall, adr-2609242330), and
+  ;; its two let walks are recursive defns rather than a named fn over an atom.
+  ;; Advanced 2026-09-26 with deps.edn to 8e243551 (ADR 0353 floor
+  ;; :row-unification, which also carries 634192f9 -- type predicates on a
+  ;; :document ask its kind, gap 3 of the selfhost foundation, ladder floor
+  ;; :document-type-predicates; the grammar digest advances with it).
+  ;; Advanced 2026-09-26 with deps.edn to 0015dfd6: expression-level absence
+  ;; (gap 1 of the selfhost foundation, ladder floor :expression-absence).
+  (is (= "0015dfd6c62c2262752823bb008d5049a559d8bc"
+         (dependency-pin 'io.github.kotoba-lang/kotoba-sema)))
   ;; Advanced 2026-09-01 alongside the backend: the verifier re-derives the
   ;; two new arities and the v4 `expected-context`, and is what turns a
   ;; mismatched ABI into an explicit refusal rather than a v3 artifact
@@ -516,7 +553,18 @@
   ;; (superproject adr-2609242330).
   ;; Advanced again 2026-09-25 with deps.edn: `kotoba.verifier.linux-static`
   ;; (superproject adr-2609251400 C2).
-  (is (= "a204f5330fb69b271d2cd690f497643189e0282f"
+  ;; Advanced again 2026-09-25 with deps.edn: `verify-image!` re-derives the
+  ;; handler decision code and checks the sealed grant (adr-2609251400 C3).
+  ;; Advanced again 2026-09-25 with deps.edn: `verify-image!` reports the
+  ;; sealed :process/spawn grant (adr-2609251400 C3, second half).
+  ;; Advanced 2026-09-26 with deps.edn: :abort is admitted beside :state as a
+  ;; pure-ability row member (ladder floor :native-abort).
+  ;; Advanced 2026-09-26 with deps.edn: native document operations verify
+  ;; (ladder floor :native-document).
+  ;; Advanced 2026-09-26 with deps.edn: i64 min / max and vector-take on
+  ;; native (selfhost stage 2).
+  ;; Advanced 2026-09-26 with deps.edn: the verifier copy of the export codec types.
+  (is (= "7fd42966d4d4f8b11f215b012b5d3473becae6ed"
          (dependency-pin 'io.github.kotoba-lang/kotoba-verifier)))
   (is (= 8 (:abi/version aggregate-abi/contract)))
   (is (= :recursive-word-handles
@@ -662,3 +710,15 @@
          (dependency-pin 'io.github.kotoba-lang/io-ipld)))
   (is (= "500497c4ac74efa6c9ed289c0159b42fea817669"
          (dependency-pin 'io.github.kotoba-lang/kotoba-core-contracts))))
+
+(deftest artifact-and-bytes-kotoba-readings-are-pinned
+  ;; adr-2609242330 (2026-09-26): kotoba.artifact.core's Kotoba reading over
+  ;; :document (its sha256 is the host digest; artifact
+  ;; scripts/verify-kotoba-digest.cljk) and kotoba.bytes with a Kotoba reading
+  ;; for every function. Both move only forward, host bodies unchanged.
+  ;; Advanced 2026-09-26 with deps.edn: POSIX loader identity 107c6055 (the export boundary codec).
+  ;; Advanced 2026-09-26 with deps.edn: POSIX loader identity daa8df69 (the OWNER form).
+  (is (= "4aca449e1d973a7470a3a39baea827930d083b3d"
+         (dependency-pin 'io.github.kotoba-lang/artifact)))
+  (is (= "630e37cfce401e5e508ca48a57f2751e3b30e3b1"
+         (dependency-pin 'io.github.kotoba-lang/bytes))))

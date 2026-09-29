@@ -52,6 +52,15 @@
       ;; which is what a command that reads no file should be given.
       fs-scope (or (opt "--fs-scope") "")
       browse-scope (or (opt "--browse-scope") "")
+      ;; The :process/spawn grant (wire 20; kotoba-lang
+      ;; lang/capability-catalog.edn :process/spawn :grant) is a constant of
+      ;; the binary for the same reason: programs and variable names
+      ;; colon-separated, lookup by name only when asked. Empty = no program.
+      ;; The loader rules on the entries (handlers ops 44, 45) at start and
+      ;; refuses a malformed grant before the guest runs.
+      spawn-programs (or (opt "--spawn-programs") "")
+      spawn-env (or (opt "--spawn-env") "")
+      spawn-lookup (if (some #{"--spawn-path-lookup"} argv) "1" "0")
       ;; The resource bound is a constant of the binary for the same reason
       ;; the grant and the scopes are: a command's ceiling is a fact about
       ;; the command, and a caller that could raise it through the
@@ -115,7 +124,8 @@
   ;; would end the literal early and silently grant something else. Refuse
   ;; rather than escape: a path that needs escaping is not a path anyone
   ;; means to grant.
-  (doseq [[flag v] [["--fs-scope" fs-scope] ["--browse-scope" browse-scope]]]
+  (doseq [[flag v] [["--fs-scope" fs-scope] ["--browse-scope" browse-scope]
+                    ["--spawn-programs" spawn-programs] ["--spawn-env" spawn-env]]]
     (when (re-find #"[\"\\\n]" v) (die (str flag " must not contain a quote, backslash or newline"))))
   (when-not (.existsSync fs code-path) (die (str "no such file: " code-path)))
   (when-not (.existsSync fs loader) (die (str "loader source not found: " loader)))
@@ -137,6 +147,9 @@
                     "#define KEXE_EMBEDDED_ALLOW \"" allow "\"\n"
                     "#define KEXE_EMBEDDED_SCOPE35 \"" fs-scope "\"\n"
                     "#define KEXE_EMBEDDED_SCOPE34 \"" browse-scope "\"\n"
+                    "#define KEXE_EMBEDDED_SPAWN_PROGRAMS \"" spawn-programs "\"\n"
+                    "#define KEXE_EMBEDDED_SPAWN_ENV \"" spawn-env "\"\n"
+                    "#define KEXE_EMBEDDED_SPAWN_PATH_LOOKUP " spawn-lookup "\n"
                     "#define KEXE_EMBEDDED_STRING_POOL " pool "u\n"
                     "#define KEXE_EMBEDDED_FUEL " fuel "u\n"
                     "#define KEXE_EMBEDDED_PAIRS " pairs "u\n"

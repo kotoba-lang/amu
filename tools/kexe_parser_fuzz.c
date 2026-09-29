@@ -783,6 +783,18 @@ static void fuzz_parsers(const uint8_t *data, size_t size) {
     (void)parse_guest_arg(shared, text, &value);
     fuzz_unmap_shared(shared);
   }
+  /* The export boundary codec (superproject adr-2609242330): the same text
+   * decoded against a declared kind (0 undeclared .. 10 variant, and one
+   * past the table), charged against a traversal budget the input narrows. */
+  shared = fuzz_map_shared();
+  if (shared != NULL) {
+    shared->context.version = 11;
+    int64_t value = 0;
+    struct kexe_boundary_state state = {0, 0, 1u + (uint64_t)(size % 7u),
+                                        1u + (uint64_t)(size * 131u % 70000u)};
+    (void)kexe_boundary_arg(shared, text, (int64_t)(size % 12u), &state, &value);
+    fuzz_unmap_shared(shared);
+  }
 
   free(text);
 }

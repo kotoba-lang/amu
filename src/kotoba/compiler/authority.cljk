@@ -113,7 +113,7 @@
 (defn- scope-set? [value]
   (and (set? value)
        (<= (count value) max-authority-entries)
-       (every? #(try (validate-scope! %) true
+       (every? #(try (do (validate-scope! %) true)
                      (catch #?(:clj Exception :cljs :default) _ false))
                value)))
 

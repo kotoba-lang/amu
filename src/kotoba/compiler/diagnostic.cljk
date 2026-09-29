@@ -1,6 +1,6 @@
 (ns kotoba.compiler.diagnostic
   {:kotoba/export [format-human from-error phase-codes refine refined-message source-label]}
-  (:require [kotoba.lang.text]))
+  (:require [kotoba.lang.text :as text]))
 
 (def phase-codes
   {:usage :kotoba/invalid-usage
@@ -51,7 +51,7 @@
 (declare refine refined-message)
 
 (defn- base-name [path]
-  (last (kotoba.lang.text/split (str path) #"[/\\]")))
+  (last (text/split (str path) #"[/\\]")))
 
 (defn source-label
   "What `:source` names. A refusal the project linker attributed to a module

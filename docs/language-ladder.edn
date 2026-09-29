@@ -16,12 +16,84 @@
    :goal "a module's export vector is its public top-level definitions; defn- is private; an explicit :export still wins; the interface CID is computed from the public set"
    :amends "ADR 0005"}
   {:id :absence :gate "nil-field-is-absence-test"
-   :goal "nil as a map-literal value makes the field [:option T] and absent; truthiness only on :bool and [:option T]; when / if-let / when-let / cond-> / some-> over an option desugar to option-match; numbers, strings, records are never truthy"
+   :goal "nil as a map-literal value makes the field [:option T] and absent; truthiness only on :bool and [:option T]; when / if-let / when-let / cond-> / some-> over an option desugar to option-match; strings and records are never truthy"
    :amends "ADR 0028"}
+  ;; Split out of :absence (2026-09-25), because measuring showed it is not
+  ;; the same change: the predicate primitives (`record-equal` was the one
+  ;; measured) still answered the legacy 0/1 i64. Landed the same day at the
+  ;; language surface, not through KIR: the six 0/1 operations (record-equal,
+  ;; typed-map-equal, typed-set-equal, hetero-vector-equal, task-ready?,
+  ;; object-cas-won) are elaborated to `(= op 1)` by kotoba-sema, so the KIR
+  ;; operations and every backend are unchanged. Retiring the 0/1 KIR
+  ;; answer itself is not needed for safety and is left to whoever measures a
+  ;; cost in the extra compare.
+  {:id :bool-predicates :gate "numbers-are-never-truthy-test"
+   :goal "every predicate primitive answers :bool, not a 0/1 i64; an :i64 `if` / `when` / `if-let` test is refused by name; numbers are never truthy"
+   :amends "ADR 0028"}
+;; :row-records split in three (2026-09-25), because measuring showed three
+  ;; changes in three places: inferring the row and monomorphizing the calls is
+  ;; one kotoba-sema pass before parameter inference; the row OPERATIONS need
+  ;; record types that are not declared schemas (assoc extends the row) and a
+  ;; retirement of the keyword->i64 map that `{:a 5}` still lowers to; and a
+  ;; specialization's CID derived from its generic's is amu's
+  ;; definition-identity, which today hashes only monomorphic KIR (and
+  ;; kotoba-hir's function schema refuses a key naming the generic).
   {:id :row-records :gate "row-polymorphic-record-inference-test"
-   :goal "unannotated parameters get principal row types from their uses; assoc / dissoc / merge / select-keys are row operations; vectors of records are ordinary; every specialization is monomorphized with a CID derived from the generic definition's CID and its type arguments; the bounded keyword->i64 map is retired"}
+   :goal "an unannotated parameter read as a record, or passed on to a row parameter, gets the row type {:k T | r} from those uses; its function exists only as its specializations, one per record type a call passes (monomorphized), each typed at that record; a non-record argument, a record lacking a field the row reads, an exported generic and a generic used as a value are refused by name"}
+;; :row-operations split in two (2026-09-26), because measuring showed two
+  ;; changes: the four operations are a type-directed elaboration in
+  ;; kotoba-sema's `rewrite-record-projection` onto record-new / record-get /
+  ;; record-assoc (nothing reaches KIR), while the rest is unification --
+  ;; a map literal typed by the row it is passed to (today it lowers to the
+  ;; keyword->i64 map before any row is known, and is refused as "map"),
+  ;; `(if c m n)` joining two parameters, a loop helper made generic with its
+  ;; function, and `(nth [(mk) (mk)] 1)` (refused "expected i64, got
+  ;; [:ref :b/s]") -- each a change to inference, not to elaboration.
+  {:id :row-operations :gate "row-operations-extend-and-shrink-test"
+   :goal "assoc / dissoc / merge / select-keys are row operations whose results are record types: assoc extends, dissoc / select-keys shrink, merge assoc's a record's or a map literal's fields; a parameter a row operation uses is a row"}
+  ;; :row-unification split in two (2026-09-26), because measuring showed two
+  ;; changes in two places: a row argument, an if join and a loop helper are
+  ;; all decided in kotoba-sema's row pass (`specialize-row-parameters`),
+  ;; where the row is known; a vector literal of records and a let-bound map
+  ;; literal are lowered by `desugar-expr` from their source alone, before
+  ;; any type is inferred (`closed-vector-literal-type`,
+  ;; `keyword-map-literal-record-fields`), and retiring the keyword->i64 map
+  ;; changes the lowering -- and the definition CID -- of every all-i64
+  ;; keyword literal, not only those a row receives.
+  {:id :row-unification :gate "row-literal-join-and-loop-unification-test"
+   :goal "a map literal passed to a row is that row's record; a parameter returned beside a row ((if c m n)) unifies into it, and two records at one join are refused by name; a loop over a row parameter is specialized with its function"}
+  ;; :literal-typing (2026-09-26): kotoba-sema `type-literals` types a map /
+  ;; vector literal once its items' types are known. A vector of records is
+  ;; [:list T] (hosted); native refuses it by the typed-values gate, which is
+  ;; :native-handles' vector handle.
+  {:id :literal-typing :gate "record-vector-and-map-literal-retirement-test"
+   :goal "a vector literal of records is an ordinary typed vector ((nth [(mk) (mk)] 1) is the record, today refused \"expected i64, got [:ref :b/s]\"); a keyword map literal is a record wherever it is written, including a let binding later passed to a row; the keyword->i64 map is retired"}
+  {:id :specialization-identity :gate "specialization-cid-derived-from-generic-test"
+   :goal "every row specialization's definition CID is a function of its generic's body and its type arguments only (not of the generic's name, its own name, the caller or the module), so two modules specializing one generic at one record share a CID, it is the hand-written twin's, and ADR 0300's compile-once cache holds across them; the generic, which never reaches KIR, is given no CID"
+   ;; Amended 2026-09-27: first worded "derived from the generic definition's
+   ;; CID". Measured: the generic has no KIR and so no CID, and the
+   ;; monomorphic-KIR CID already satisfies the consequence; a CID keyed on
+   ;; the generic would split a specialization from its hand-written twin.
+   }
+;; :function-values split 2026-09-27. Measured: the ADR 0352 internal error
+  ;; on a stored closure was kotoba-sema lowering a record's fields as a lazy
+  ;; seq outside the lambda counter's binding, not a missing type -- fixed as
+  ;; :stored-closures. The same day measured a closure's static type is :i64
+  ;; (a [:fn ...] result contract erases to it), so arithmetic and equality on
+  ;; a closure are admitted; that is what :function-values still owes.
+  {:id :stored-closures :gate "stored-closure-in-record-and-vector-test"
+   :goal "a closure stored as a map-literal field or vector element is a program, not the ADR 0352 internal error: called out of the record or vector on the KIR interpreter and compiled for both native targets; its capability is in the caller's effect row; a stored closure is never truthy"}
+  ;; :function-values split 2026-09-27 (second time). Measured: refusing
+  ;; number operations and equality on a closure, and a fn literal in a
+  ;; [:fn ...] field, are both decided by kotoba-sema's closure analysis
+  ;; (`infer-closure-refinements`) and the field's contract; the closure word
+  ;; stays the i64 handle KIR already has. A DECLARED effect row is a new
+  ;; component of `[:fn ...]` (validate-value-type!, the contract lift and
+  ;; the effect ceiling), not the same change -- floor :function-effect-rows.
   {:id :function-values :gate "function-value-in-record-test"
-   :goal "a function type carries its effect row; a closure is a one-word ABI v8 handle that may be a record field or vector element; the ADR 0352 internal error on a stored closure is gone"}
+   :goal "a closure is a function, not a number: (+ f 1), (+ (make) 4) with make returning [:fn ...], (+ (:f r) 1) on a [:fn ...] field, any number operation and (= f g) are refused by name; a fn literal is admitted where a [:fn ...] record field is declared, lifted under that contract, and anything else there is refused; the closure stays the one-word (lambda-id, captures) handle, which KIR receives as :i64"}
+  {:id :function-effect-rows :gate "function-type-declares-its-effect-row-test"
+   :goal "[:fn ...] declares an effect row; a closure whose body exceeds the row of the contract it is lifted under is refused by name, and a caller's row is bounded by the rows of the function types it calls, not by the closures a module happens to lift"}
   {:id :code-units :gate "string-code-unit-primitives-test"
    :goal "string-code-unit-count, string-code-unit-at and subs over code units are primitives; count of a string stays refused"}
   {:id :hiccup-node :gate "hiccup-literal-is-node-adt-test"
@@ -33,7 +105,7 @@
    :goal "the 1 MiB bound moves from linked source bytes to per-definition size and closure count; cssom/layout.cljk (1,083,132 bytes) is admitted definition by definition"
    :amends "ADR 0005 linked-source bound"}
   {:id :native-handles :gate "native-record-vector-closure-boundary-test"
-   :goal "kotoba-native qualifies record, vector and closure handles as loop-helper boundary types and retires map-new; the forms of every floor above compile for x86_64-aiueos-kernel-v1 and aarch64-macos (target refusals exit 65, not 70)"}
+   :goal "kotoba-native qualifies record, vector and closure handles as loop-helper boundary types and retires map-new; record-assoc is qualified, and kotoba-verifier's record projection sees through a let operand (a row operation elaborates to (record-get T (let [..] (record-new T ..)) :f), refused today as runtime KIR record projection rejected, exit 65, hand-written too); the forms of every floor above compile for x86_64-aiueos-kernel-v1 and aarch64-macos (target refusals exit 65, not 70)"}
   {:id :browser-text-edit :gate "browser-text-edit-native-test"
    :goal "kotoba-lang/browser's browser.text-edit, migrated only mechanically (defn-, nil's meaning, a :kotoba interop branch), compiles for both native targets and its hosted tests pass on amu's output"}
   {:id :browser-input :gate "browser-input-native-test"
@@ -41,4 +113,24 @@
   {:id :browser-surface :gate "browser-surface-native-test"
    :goal "browser.surface with cssom.layout and kotoba.wasm.dom the same"}
   {:id :hosted-engine-switch :gate "browser-hosted-runs-amu-output-test" :repo "kotoba-lang/browser"
-   :goal "kotoba-lang/browser's hosted engine runs amu's compiled output of its own source; the Clojure source is that source, not a second copy"}]}
+   :goal "kotoba-lang/browser's hosted engine runs amu's compiled output of its own source; the Clojure source is that source, not a second copy"}
+  ;; The selfhost foundation (appended 2026-09-26, superproject
+  ;; adr-2609242330). amu's own source manipulates EDN data of arbitrary
+  ;; shape (HIR, KIR, ns forms), so compiling amu with amu needs that data
+  ;; model on every target, native included. Measured as the selfhost walls
+  ;; of 2026-09-24/26 (per-file project check, grant
+  ;; lang/selfhost-compiler-grant.edn). Appended after the browser floors so
+  ;; the loop reaches them last; each closes like any other floor, by its
+  ;; gate on origin/main, and a floor taken by another writer is left to it.
+  {:id :document-type-predicates :gate "document-type-predicates-ask-the-kind-test"
+   :goal "map? vector? set? list? seq? coll? keyword? string? symbol? integer? boolean? true? false? nil? some? on a :document are its run-time document-kind; on a static type the type's answer; on [:option T] presence when T answers true; an option whose payload answers by value, nil? on a type with no absence and map? on a [:ref q] stay refused by name"
+   :amends "kotoba-lang guest-grammar :true? / :integer? (a :document was refused by name)"}
+  {:id :expression-absence :gate "expression-absence-typed-by-the-present-branch-test"
+   :goal "a missing else (when, when-not, if-not, when-let, if-let, cond) and a literal nil branch answer nothing, typed by the present branch: false beside :bool, the option's none beside an option, [:option T] beside any other T (an :i64 too where the result is inferred), the legacy 0 where the author declared :i64; a loop's exits join the same way; an absent i64 used as a number, two present types and an else-less if stay refused by name"
+   :amends "kotoba-lang guest-grammar :when (the i64 0 as the absent value); ADR 0353 point 2 (nil as a map-literal value) carried to expression level"}
+  {:id :native-abort :gate "native-abort-compiles-verifies-and-packages-test"
+   :goal "throw / try (the abort ability, lowered to [:result T E] values) compile for aarch64-macos and x86_64, the verifier admits :abort beside :state and re-derives the sealed answer, and the linux-static packager needs no handler for it; an ex-info (:document) error stays refused on native by name until :native-document"
+   :amends "kotoba-lang lang/abort-ability.edn :backends (native :not-qualified)"}
+  {:id :native-document :gate "native-document-values-test"
+   :goal "a :document on aarch64-macos and x86_64: the canonical EDN text in the string handle native documents already were; construction, get / assoc / dissoc / merge, count, kind, the vector / list / set / map-entry accessors, sort, the scalar accessors and structural equality lowered onto the string slots plus emitted helpers, answering what the reference and restricted ESM answer; ex-info on native; f64 documents, the sha256 digest and the hex codec stay refused by name"
+   :amends "kotoba-lang surface-status :contextual-document-literal (native had no document operations)"}]}

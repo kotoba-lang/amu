@@ -1,0 +1,32 @@
+(ns kotoba.compiler.embedded-resources-test
+  "kotoba.compiler.embedded-resources is a COPY of three files under
+  resources/ (superproject adr-2609242330 S3 (b')). This refuses a copy that
+  is not byte-equal to the file it was written from. Runs from this
+  repository's root on both hosts; `scripts/gen-embedded-resources.cljk`
+  rewrites the copy."
+  (:require [kotoba.test :refer [deftest is testing]]
+            [kotoba.compiler.embedded-resources :as embedded-resources]
+            #?@(:cljs [["node:fs" :as fs]])))
+
+(defn- resource-file-text [p]
+  (let [f (str "resources/" p)]
+    #?(:clj (slurp f)
+       :cljs (.readFileSync fs f "utf8"))))
+
+(def ^:private embedded-paths
+  "The paths scripts/gen-embedded-resources.cljk writes (its --check refuses a module that
+  holds any other set)."
+  ["kotoba/lang/backend-provider-qualification-v2.edn"
+   "kotoba/lang/capability-catalog.edn"
+   "kotoba/lang/provider-conformance-v1.edn"])
+
+(deftest every-embedded-text-equals-its-resource
+  (testing "three texts: the two backend-qualification inputs and the catalog"
+    (is (= 3 (count embedded-paths))))
+  (doseq [p embedded-paths]
+    (is (= (resource-file-text p) (embedded-resources/resource-text p))
+        (str "stale embedded copy of " p " -- run scripts/gen-embedded-resources.cljk"))))
+
+(deftest resource-text-answers-nil-off-the-list
+  (is (nil? (embedded-resources/resource-text "kotoba/lang/no-such.edn")))
+  (is (string? (embedded-resources/resource-text "kotoba/lang/capability-catalog.edn"))))
