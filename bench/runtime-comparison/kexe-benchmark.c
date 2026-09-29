@@ -128,7 +128,11 @@ _Static_assert(offsetof(struct kexe_context_v11, vector_items_base) == 328, "inl
 _Static_assert(offsetof(struct kexe_context_v11, string_append_range) == 344, "range ABI drift");
 _Static_assert(offsetof(struct kexe_context_v11, bytes_concat) == 376, "bytes ABI drift");
 
-#define BENCH_PAIR_CAPACITY 4096u
+/* Large constant-heavy kernels (for example Embench xgboost's 400 trees)
+ * materialize a string handle at each literal access. Keep enough handles for
+ * a complete measured call plus warmup; the old 4096-entry test capacity
+ * trapped partway through the sixth output class. */
+#define BENCH_PAIR_CAPACITY 2097152u
 #define BENCH_STRING_POOL_BYTES 65536u
 #define BENCH_VECTOR_CAPACITY 4096u
 #define BENCH_VECTOR_ITEM_CAPACITY 65536u
@@ -586,7 +590,7 @@ int main(int argc, char **argv) {
   int64_t input = (int64_t)bounded(argv[5], "n", 1, UINT64_C(2147483646));
   uint64_t calls = bounded(argv[6], "calls", 0, UINT64_C(100000000));
   uint64_t warmup = bounded(argv[7], "warmup", 1, UINT64_C(100000000));
-  uint64_t fuel = bounded(argv[8], "fuel", 0, UINT64_C(1048576));
+  uint64_t fuel = bounded(argv[8], "fuel", 0, UINT64_C(16777216));
   size_t mapped = 0;
   size_t artifact_bytes = 0;
   void *memory = NULL;

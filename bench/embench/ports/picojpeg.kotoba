@@ -1,0 +1,20 @@
+(ns embench.picojpeg (:export [run test-picojpeg]))
+
+;; Integer 8x8 reconstruction/color-conversion qualification kernel shaped
+;; after picojpeg's final MCU. Entropy parsing is outside this adapted port.
+;; SPDX-License-Identifier: GPL-3.0-or-later.
+
+(defn- clamp [x :i64] :i64 (if (< x 0) 0 (if (> x 255) 255 x)))
+(defn- channel [row :i64 kind :i64] :i64
+  (let [y (- 53 (* row 4)) cb 142 cr 114]
+    (if (= kind 0) (clamp (+ y (quot (* 359 (- cr 128)) 256)))
+      (if (= kind 1) (clamp (- y (quot (+ (* 88 (- cb 128)) (* 183 (- cr 128))) 256)))
+        (clamp (+ y (quot (* 454 (- cb 128)) 256)))))))
+(defn run [token :i64] :i64
+  (if (= token 1)
+    (loop [i 0 hash -3750763034362895579]
+      (if (= i 192) hash
+        (let [plane (quot i 64) pixel (- i (* plane 64)) row (quot pixel 8)]
+          (recur (+ i 1) (* (bit-xor hash (channel row plane)) 1099511628211)))))
+    0))
+(defn test-picojpeg [] :i64 (if (= (run 1) 7817291715615866277) 1 0))
