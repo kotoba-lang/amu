@@ -154,7 +154,7 @@ sha -- for a state that does not exist.
 defined. Apple clang 21 on the authoring workstation says nothing; Apple clang
 17 on simeon fails the run. Same source, same seed, same 20,000 inputs, same
 architecture -- **green here, red there, for a difference in neither the loader
-nor the input**. This is CLAUDE.md's "ローカルで緑 は fleet で緑 ではない" in a
+nor the input**. This is AGENTS.md's "ローカルで緑 は fleet で緑 ではない" in a
 form that tree-shape reasoning does not cover: nothing about what was shipped
 explains it.
 

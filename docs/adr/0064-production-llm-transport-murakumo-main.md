@@ -12,7 +12,7 @@ identity wiring fixtures, not implementations" of the nine application
 capabilities). This ADR adds the first REAL transport for `:llm/generate`:
 `kotoba.compiler.provider.llm-transport/production-transport`, a `:clj`-only
 synchronous function that performs the actual network call to the
-`murakumo-main` fleet alias described in the superproject's root `CLAUDE.md`
+`murakumo-main` fleet alias described in the superproject's root `AGENTS.md`
 ("LLM モデル選択", ADR-2607173100).
 
 `llm.cljc` itself is unmodified. Every bound it already enforces before
@@ -112,7 +112,7 @@ that contract exactly. nbb/Node's `fetch` is Promise-based; faking synchrony
 over it (busy-polling, a hand-rolled microtask pump) is a separate, larger,
 independently-reviewable design decision this task does not make unilaterally
 on cljs's behalf. This mirrors the repo's own JVM/Chicory-first host pattern
-for prior capability kits (ADR 0024-0030) and the root CLAUDE.md runtime
+for prior capability kits (ADR 0024-0030) and the root AGENTS.md runtime
 priority note that JVM app-runtime status is downgraded for *application*
 code, not for host-side compiler-repo infrastructure written in this
 `.cljc` reference-provider style.
@@ -233,6 +233,6 @@ code, not for host-side compiler-repo infrastructure written in this
   at the JVM/Chicory reference-provider layer (not yet the WASM Component
   Model layer ADR 0037-0063 build toward) -- see that ADR's own updated
   ledger entry for the precise scope of what remains.
-- Root superproject `CLAUDE.md`, "LLM モデル選択 — murakumo-main alias"
+- Root superproject `AGENTS.md`, "LLM モデル選択 — murakumo-main alias"
   (ADR-2607173100) -- the repo-wide mandatory model-resolution order this
   transport implements.
