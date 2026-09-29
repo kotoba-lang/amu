@@ -24,4 +24,7 @@
   "Padded base64 TEXT as bytes."
   [text]
   #?(:cljs (.from js/Buffer text "base64")
+     :kotoba (match-option (pure-bytes/base64-decode text) [:option :vector-i64]
+               (none (bytes-from-vector-i64 (vector-i64)))
+               (some v (bytes-from-vector-i64 v)))
      :default (bytes-from-vector-i64 (pure-bytes/base64-decode text))))
