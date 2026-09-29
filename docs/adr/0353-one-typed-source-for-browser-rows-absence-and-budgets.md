@@ -271,8 +271,10 @@ Clojure it is today, the language gains:
    printed 499500 and 4950 under `tools/kexe_loader.c`; but the targets keep
    their own counters -- native charges entries and recur steps, ESM's
    `cell()` debits cells only -- so the constructor debit on ESM, wasm32 and
-   both ISAs is floor `:allocation-budget-targets`. aiueos objects: see the
-   floor's PR (no codegen changed here).
+   both ISAs is floor `:allocation-budget-targets`. aiueos objects
+   (`reproduce-kotoba-objects.cljk`, aiueos `ca7fc504`): 116 scanned, 112
+   byte-identical (`differs=0`), 4 not compiled -- the four sources point 2
+   already names as testing a 0/1 `write-u32` answer.
 8. **Admission by definition graph.** The 1 MiB bound moves from linked source
    bytes to per-definition size and closure count; a module is its definitions
    (as ADR 0300 already identifies it), so cssom's 1 MB file is admitted
