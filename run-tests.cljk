@@ -69,6 +69,7 @@
 (ns run-tests
   (:require [cljs.test :as t]
             [kotoba.compiler.accelerator-test]
+            [kotoba.compiler.allocation-budget-test]
             [kotoba.compiler.backend-cljs-portable-test]
             [kotoba.compiler.backend-evm-test]
             [kotoba.compiler.backend-qualification-test]
@@ -131,7 +132,8 @@
             [kotoba.compiler.value-bounds-agreement-test]
             [kotoba.compiler.embedded-resources-test]
             [kotoba.compiler.value-codec-iterative-test]
-            [kotoba.compiler.wasm32-kotoba-v1-qualification-test]))
+            [kotoba.compiler.wasm32-kotoba-v1-qualification-test]
+            [kotoba.compiler.target-allocation-budget-test]))
 
 (defmethod t/report [:cljs.test/default :end-run-tests] [m]
   (println (str "\nnbb: " (:test m) " tests, " (:pass m) " passed, "
@@ -140,6 +142,7 @@
     (set! (.-exitCode js/process) 1)))
 
 (t/run-tests 'kotoba.compiler.accelerator-test
+             'kotoba.compiler.allocation-budget-test
              'kotoba.compiler.backend-cljs-portable-test
              'kotoba.compiler.backend-evm-test
              'kotoba.compiler.backend-qualification-test
@@ -202,4 +205,5 @@
              'kotoba.compiler.value-bounds-agreement-test
              'kotoba.compiler.embedded-resources-test
              'kotoba.compiler.value-codec-iterative-test
-             'kotoba.compiler.wasm32-kotoba-v1-qualification-test)
+             'kotoba.compiler.wasm32-kotoba-v1-qualification-test
+             'kotoba.compiler.target-allocation-budget-test)

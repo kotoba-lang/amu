@@ -1,0 +1,178 @@
+(ns kotoba.compiler.target-allocation-budget-test
+  "ADR 0353 floor :allocation-budget-targets (point 7, on the hosted targets).
+
+  Floor :allocation-budget made every constructor debit the run's fuel on the
+  reference (kotoba.kir, osaho 635bea6d). The targets kept their own counters.
+  Measured 2026-09-30 before this floor, on the programs below:
+
+    restricted ESM  `cell()` debited the cells budget only, which is unmetered
+                    unless the embedder names it. Fuel counted function entries
+                    and each self-tail iteration, never a constructor.
+    wasm32          the fuel global is charged at function entry, and loop
+                    helpers are zero-charge (T7.1), so a loop that built 1,000
+                    records answered under a module compiled with `:fuel 1`.
+
+  Now kotoba-script's `cell()` calls `charge()` before its cells debit, and
+  kotoba-wasm puts the fuel-global charge in front of every constructor (the
+  reference's `cell-constructor-ops`) and in front of the vector literals it
+  keeps in locals instead of building. Each target keeps its own per-entry
+  counting -- ESM charges every loop iteration, wasm32 no loop iteration -- so
+  what is pinned is the least budget each target answers under AND that each
+  target's price for allocating equals the reference's: the same program with
+  and without its constructors differs by the same number of units everywhere.
+
+  The refusal that stays: a program cannot allocate past the budget its caller
+  granted, on either target -- ESM throws `budget/fuel`, wasm32 traps
+  `unreachable` (the entry charge's trap) one unit short.
+
+  Native (x86_64-aiueos-kernel-v1, aarch64-macos) is floor
+  :allocation-budget-native: its fuel is charged by the entry prefix and the
+  loop's bulk pre-charge, which the verifier re-derives, and moving that moves
+  every aiueos kernel object."
+  (:require [clojure.test :refer [deftest is testing]]
+            [kotoba.kir :as ir]
+            [kotoba.lang.text :as str]
+            [kotoba.sema :as sema]
+            [kotoba.script :as script]
+            [kotoba.wasm.core :as wasm]
+            #?@(:cljs [["node:child_process" :as cp]
+                       ["node:fs" :as fs]
+                       ["node:os" :as os]
+                       ["node:path" :as path]
+                       ["node:url" :as url]])))
+
+(def ^:private point
+  "(ns app (:schemas {:app/p [:record :app/p [[:x :i64] [:y :i64]]]}))\n")
+
+(defn- thousand
+  "A self-tail loop summing 1,000 values, each read out of a record it builds
+  (`build? true`) or taken directly (`build? false`)."
+  [build?]
+  (str point
+       "(defn main [] :i64 (loop [i 0 acc 0] (if (< i 1000)"
+       " (recur (+ i 1) (+ acc " (if build?
+                                   "(:x (record-new [:record :app/p [[:x :i64] [:y :i64]]] i i))"
+                                   "i")
+       ")) acc)))"))
+
+(def ^:private list-type "[:variant :app/list [[:empty :i64] [:cons [:ref :app/cell]]]]")
+(def ^:private cell-type "[:record :app/cell [[:head :i64] [:tail [:ref :app/list]]]]")
+
+(def ^:private hundred-cells
+  "A cons list of 100 cells, 201 constructed nodes, walked for its sum."
+  (str "(ns app (:schemas {:app/list " list-type " :app/cell " cell-type "}))\n"
+       "(defn- build [n :i64] [:ref :app/list] (loop [i 0 acc (variant-new " list-type " :empty 0)]"
+       " (if (< i n) (recur (+ i 1) (variant-new " list-type " :cons (record-new " cell-type " i acc))) acc)))\n"
+       "(defn- head-of [l [:ref :app/list]] :i64 (match-variant l [:ref :app/list] (:empty e -1) (:cons c (:head c))))\n"
+       "(defn- tail-of [l [:ref :app/list]] [:ref :app/list] (match-variant l [:ref :app/list] (:empty e l) (:cons c (:tail c))))\n"
+       "(defn- total [l [:ref :app/list]] :i64 (loop [l l acc 0]"
+       " (if (< (head-of l) 0) acc (recur (tail-of l) (+ acc (head-of l))))))\n"
+       "(defn main [] :i64 (total (build 100)))"))
+
+(defn- vectors
+  "100 iterations, each reading a vector literal three ways wasm32 keeps in
+  locals rather than building: indexed directly, counted directly, and bound
+  by a let and indexed. Three constructed vectors per iteration on the
+  reference."
+  [build?]
+  (str "(defn main [] :i64 (loop [i 0 acc 0] (if (< i 100)"
+       " (recur (+ i 1) (+ acc "
+       (if build?
+         "(vector-at (vector-new i 1) 0) (vector-count (vector-new i 2 3)) (let [v (vector-new 5 i)] (vector-at v 1))"
+         "i 3 i")
+       ")) acc)))"))
+
+(defn- kir [source] (ir/lower (sema/analyze source)))
+
+(defn- reference [source fuel]
+  (try (str (ir/execute (kir source) 'main [] {:fuel fuel}))
+       (catch #?(:clj clojure.lang.ExceptionInfo :cljs :default) error
+         (str "THREW:" (ex-message error)))))
+
+#?(:cljs
+   (defn- node! [dir file text]
+     (let [f (path/join dir file)]
+       (fs/writeFileSync f text)
+       (.trim (str (.-stdout (cp/spawnSync js/process.execPath #js [f]
+                                           #js {:encoding "utf8" :timeout 60000})))))))
+
+(def ^:private scratch
+  #?(:cljs (delay (fs/mkdtempSync (path/join (os/tmpdir) "amu-target-alloc-")))
+     :clj nil))
+
+(defn- esm
+  "The restricted-ESM module run under a per-run fuel budget (the embedder's
+  `instantiateKotoba(grants, budgets)`): its answer, or THREW:<message>."
+  [source fuel]
+  #?(:cljs (node! @scratch "m.mjs"
+                  (str (script/emit (kir source) {:fuel 512})
+                       "\ntry{console.log(String(instantiateKotoba({},{fuel:" fuel "}).main()))}"
+                       "catch(e){console.log('THREW:'+e.message)}"))
+     :clj (throw (ex-info "restricted ESM is run through node on the kbb route" {:fuel fuel}))))
+
+(defn- wasm32
+  "The wasm32-browser module compiled with `:fuel` (a module's budget is sealed
+  into it), instantiated by runtime/browser-host.mjs: its answer, or THREW."
+  [source fuel]
+  #?(:cljs (let [bytes (wasm/emit (kir source) :wasm32-browser-kotoba-v1 {:fuel fuel})
+                 file (path/join @scratch "m.wasm")]
+             (fs/writeFileSync file bytes)
+             (node! @scratch "w.mjs"
+                    ;; A file: URL and a JSON string, so a Windows path's
+                    ;; backslashes are neither escapes nor a bad specifier.
+                    (str "import {instantiateKotoba} from "
+                         (js/JSON.stringify (.-href (url/pathToFileURL (path/resolve "runtime/browser-host.mjs"))))
+                         ";import fs from 'node:fs';"
+                         "try{const h=await instantiateKotoba(fs.readFileSync(" (js/JSON.stringify file) "));"
+                         "console.log(String(h.instance.exports.main()))}"
+                         "catch(e){console.log('THREW:'+e.message)}")))
+     :clj (throw (ex-info "wasm32 is run through node on the kbb route" {:fuel fuel}))))
+
+(defn- least-fuel
+  "The smallest budget under which `run` answers `source`."
+  [run source]
+  (loop [lo 1 hi 20000]
+    (if (= lo hi)
+      lo
+      (let [mid (quot (+ lo hi) 2)]
+        (if (str/starts-with? (run source mid) "THREW:") (recur (inc mid) hi) (recur lo mid))))))
+
+(deftest target-constructors-charge-fuel-test
+  (testing "admitted: each target answers under the budget that pays for its allocations"
+    (is (= "499500" (esm (thousand true) 2002)))
+    (is (= "499500" (wasm32 (thousand true) 1001)))
+    (is (= "4950" (esm hundred-cells 707)))
+    (is (= "4950" (wasm32 hundred-cells 505))))
+  (testing "the least budget on each target"
+    ;; ESM: main, 1,001 loop entries, 1,000 records. Before: 1002.
+    (is (= 2002 (least-fuel esm (thousand true))))
+    ;; wasm32: main and 1,000 records; the loop helper is zero-charge.
+    ;; Before: 1 -- 1,000 records built for one unit.
+    (is (= 1001 (least-fuel wasm32 (thousand true))))
+    ;; 201 nodes on top of each target's entries. Before: 506 and 304.
+    (is (= 707 (least-fuel esm hundred-cells)))
+    (is (= 505 (least-fuel wasm32 hundred-cells))))
+  (testing "the price of allocating is the reference's, on every target"
+    (doseq [[label built unbuilt nodes] [["1,000 records" (thousand true) (thousand false) 1000]
+                                         ["300 vector literals" (vectors true) (vectors false) 300]]]
+      (let [price (fn [run] (- (least-fuel run built) (least-fuel run unbuilt)))]
+        (is (= nodes (price reference)) (str label " on the reference"))
+        (is (= nodes (price esm)) (str label " on restricted ESM"))
+        (is (= nodes (price wasm32)) (str label " on wasm32, literals kept in locals included")))))
+  (testing "a program that constructs nothing pays nothing new"
+    (is (= 1002 (least-fuel esm (thousand false))))
+    (is (= 1 (least-fuel wasm32 (thousand false)))))
+  (testing "refused: allocating past the granted budget, one unit short, on each target"
+    (is (= "THREW:budget/fuel" (esm (thousand true) 2001)))
+    (is (= "THREW:unreachable" (wasm32 (thousand true) 1000)))
+    (is (= "THREW:budget/fuel" (esm hundred-cells 706)))
+    (is (= "THREW:unreachable" (wasm32 hundred-cells 504)))
+    (is (= "THREW:budget/fuel" (esm (thousand true) 512))
+        "the emitted default does not stretch to 1,000 records")
+    (is (= "THREW:budget/cells"
+           #?(:cljs (node! @scratch "c.mjs"
+                           (str (script/emit (kir hundred-cells) {:fuel 512})
+                                "\ntry{console.log(String(instantiateKotoba({},{fuel:707,cells:200}).main()))}"
+                                "catch(e){console.log('THREW:'+e.message)}"))
+              :clj nil))
+        "a metered cells budget below the node count still traps by its own name")))
