@@ -181,3 +181,39 @@ Differential: interp_diff 677 cases (192 sema, 223 generated, 262 hand), 656 por
 disagree (sema corpus ported 171/192, was 34/64); twin (lower/execute/eval-expr) 113/227/86, all agree.
 Still unported: records/variants (need the schema table), typed maps/sets, pair heap, closures,
 bytes, document-*, f64/f32, string-upper/fold-case (Unicode), kgraph, cap-call.
+
+## Wave 10: bytes, f64/f32, documents (measured 2026-10-01)
+
+Ported in `kotoba.kir.interp` (wt-D-osaho d820dcc, f348950, ed182d2):
+
+* `:bytes` (tag 7): bytes-empty/count/at/slice/concat, bytes-from-vector-i64, vector-i64-from-bytes,
+  with the host's `bytes/index-out-of-range`, `bytes/slice-bounds`, `bytes/too-large`,
+  `bytes/item-out-of-range` traps (pre-checked: a Kotoba builtin aborts on a bad offset).
+* f64 / f32 (tag 3, `n` holds the IEEE bits; f32 as signed i32 bits): from-bits/to-bits, add sub mul
+  div min max neg abs sqrt, eq lt le gt ge unordered, and the conversions i64-to-f64/f32
+  (checked, rounded), f64/f32-to-i64 (checked, truncating), f64-to-f32-rounded, f32-to-f64-exact.
+  The arithmetic is the Kotoba `:f64`/`:f32` builtins over `f64-from-bits`. Conversions the host
+  answers with an untyped error (inexact, non-finite, out of range) have no oracle outcome; they
+  answer the named traps `i64-not-exact-f64/f32`, `f64-not-integral`, `f64-conversion-out-of-range`.
+  Not ported: the bounded transcendental heads (sin/cos/exp/log/atan2), decimal parse.
+* Documents: a document Value is a variant (tag 13, k = :document; s = document tag, kids =
+  payload, a map's kids are key/value pairs sorted by keyword text). null/bool/i64/f64/string/keyword
+  leaves, vector/list/map constructors, count, kind, vector-at/list-at/vector-assoc/conj/drop/remove,
+  map-entry-at/contains/get/assoc/dissoc/merge, equal?, the typed `*-value` accessors. Map keys must
+  be keyword literals in the source (`ported?` refuses otherwise); sets, non-keyword keys,
+  document-vector-sort, sha256, print and read/edn are not ported (they need the canonical-byte
+  order / hashing). Keyword ordering is UTF-8 byte order of the printed keyword; the host uses UTF-16
+  `compare`, which differs only for supplementary-plane characters in keyword text.
+* Keyword literals evaluate to keyword Values; `:keyword`, `:document`, `:bytes`, `:f64`, `:f32`
+  are accepted parameter and result types (tag check only).
+
+Differential (`tools/interp_diff.sh`, DIFF_GEN=100, 3 budgets): 1637 cases (192 sema, 178 generated,
+1267 hand), 1634 inside the ported subset, **1634 agree, 0 disagree** (sema corpus ported 189/192,
+was 171/192; the 3 left use kernel/slice memory, which is not oraclable). New traps exercised:
+bytes/* 24, document-* 57. Float cases (224 hand: signed zero, NaN, infinities, min/max, rounding,
+conversions) agree on the host interpreter's builtins; bit equality of NaN payloads and -0.0 min/max
+against the natively compiled builtins is untested until the native route runs the interpreter.
+
+Still unported: records/variants (schema table), typed maps/sets, hetero vectors, pair heap, closures,
+kgraph, cap-call, string-upper/fold-case, slice-load/store and kernel heads (not oraclable),
+document sets / general map keys / sha256 / print / read, xml, task/stream.
