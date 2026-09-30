@@ -1014,6 +1014,62 @@ ty 注記なし probe のため過大評価されていた — 以下は型付�
   push. Worktree: /Users/junkawasaki/github/wt-somethread2 (DIRTY,
   +21/-17 applied patch, uncommitted as of this tick's end).
 
+## Iteration 37 - environment rebuilt (2nd wipe), gap re-measured on NEW pin 8571681a: LIVE for 1-step AND 2-step; hand twin re-canonicalized (2026-09-30 19:35 JST)
+
+- Target hypothesis (carried iters 26-36): some->/some->> multi-step repair;
+  pass criteria = 1-step/2-step check PASS with definition CIDs == hand twin,
+  1-step CIDs unchanged vs prior canon.
+- Environment: wt-somethread2 AND /tmp/langcos wiped AGAIN (host reboot, up
+  6:31). All worktrees/probes/scripts lost. Rebuilt from state file + remote:
+  branch bot/lang-somethread-rebase-20260920 @9401993 confirmed pushed
+  (remote kotoba-lang) - 1-step repair commit recoverable.
+- PIN MOVED (step 0): amu deps-lock.edn now pins kotoba-sema
+  8571681a068fce2e2efa9069dcd75bbc87b297d2 (was 9898f0e). The 9401993 branch
+  (base 9898f0e) is OFF-PIN - a rebase is required before any gate.
+- UPSTREAM REWRITE MEASURED (code read of 8571681a
+  src/kotoba/compiler/frontend.cljk :3850-3872): desugar-some-thread was
+  completely rewritten on main - new marker-based scheme
+  (__kotoba_some_bind / __kotoba_some_last / __kotoba_present, docstring:
+  "The result is always an option"). The old recursive-lower text that
+  iter34-patch.py targeted NO LONGER EXISTS - the linear-chain patch cannot
+  be re-applied mechanically; a fresh patch design against the new rewrite
+  is required.
+- Falsify probes on pinned main 8571681a (bin/amu check --jvm-free, fresh
+  /tmp/langcos):
+  - 1-step `(some->> opt (+ 1))` with `t [opt [:option :i64]] :i64`: REJECT
+    exit 65 "if branches must have the same value type" - iter 7's case-3
+    structural defect (then=payload i64 vs else=option) SURVIVES the new
+    rewrite. Note `:option-i64` annotation spelling now rejected
+    ("expected [:option :i64], got option-i64"); canonical is `[:option :i64]`.
+  - 2-step `(some->> opt (+ 1) (* 2))` with `[:option :i64]`: REJECT exit 65
+    "expression type mismatch: expected [:option :i64], got i64" - multi-step
+    gap LIVE on the new pin.
+  - HAND TWIN (`smt2-hand.kotoba`: let+if payload-drop,
+    `(if (option-some? sht) (* 2 (+ 1 (option-value sht 0))) 0)`): check
+    **PASS exit 0**, t cid
+    `bafyreia223c4ht222gs3ouwm2ilbqgzyxsb4urzao54q3irvt3xdihklbe`
+    (NEW canon on pin 8571681a; old-base canons are superseded).
+- Verdict: hypothesis SURVIVES falsification - the repair shape (plain
+  option-some?/option-value payload-drop) admits on the current pin while
+  both some-> spellings reject. The gap is not alias-shaped this time: the
+  upstream rewrite is a semantic redesign (option-returning) that is broken
+  for BOTH 1-step and 2-step; a repair must either fix the markers'
+  resolution or emit the measured hand-twin shape. Design decision needed:
+  upstream's "result is always an option" docstring conflicts with the
+  measured hand-twin semantics (payload + fallback) - resolve before
+  patching (some-> in Clojure returns the payload, not an option).
+- Route notes (recorded): deps-lock.edn had to be regenerated this tick
+  (`kbb --backend sci scripts/lock-classpath.cljk` after `npm ci`; result
+  identical to committed lock - tree stayed clean). stdout-empty issue
+  returned intermittently; file-redirect workaround used.
+- NOT DONE (budget): rebase 9401993 onto 8571681a; fresh patch design vs the
+  new marker rewrite; gate. Hypothesis open.
+- Next (1 hypothesis): decide the canonical some-> semantics against
+  ADR 0353's absence floor (option-returning vs payload-drop), then a fresh
+  patch on a 8571681a-based branch; pass criteria = 1-step+2-step check PASS
+  with definition CIDs == smt2-hand canon
+  bafyreia223c4ht222gs3ouwm2ilbqgzyxsb4urzao54q3irvt3xdihklbe.
+
 ## Iteration 35 - setup re-verified, remaining 4 gate items NOT run, no verdict (2026-09-23 18:56 JST, amu@81cf05a4)
 
 - Target hypothesis (unchanged iters 26-34): linear-chain lower in
