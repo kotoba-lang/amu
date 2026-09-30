@@ -17,13 +17,35 @@
   answer. `:now` and the receipt's integers follow the trust plane's rules
   (`kotoba.compiler.trust-cli`)."
   {:kotoba/export [commands dispatch!]}
-  (:require [kotoba.artifact.runtime-identity :as runtime-identity]
-            [kotoba.compiler.atomic-output :as atomic-output]
-            [kotoba.compiler.bounded-edn :as bounded-edn]
-            [kotoba.compiler.receipt :as receipt]
-            [kotoba.compiler.trust-cli :as trust-cli]))
+  (:require #?@(:kotoba []
+                :default [[kotoba.artifact.runtime-identity :as runtime-identity]
+                          [kotoba.compiler.atomic-output :as atomic-output]
+                          [kotoba.compiler.bounded-edn :as bounded-edn]
+                          [kotoba.compiler.receipt :as receipt]
+                          [kotoba.compiler.trust-cli :as trust-cli]])))
 
-(def commands #{"measure-runtime" "run"})
+;; Kotoba: the two commands execute a signed native artifact under a loader
+;; through an executor plugin handed in as a map of host closures, and read
+;; and write open EDN maps (envelope, trust, policy, receipt). None of that
+;; has a Kotoba spelling, and the plugin is a runtime with no Kotoba host, so
+;; on this route the surface is the command names and a refusal that names
+;; the reason -- the same shape `cli-support/serve!` takes for worker mode.
+#?(:kotoba
+   (defn commands [] [:list :string]
+     (typed-list-new [:list :string] "measure-runtime" "run"))
+   :default
+   (def commands #{"measure-runtime" "run"}))
+
+#?(:kotoba
+   (defn dispatch! [args [:list :string]] :string
+     (throw (ex-info "amu run and measure-runtime are not available on the Kotoba route"
+                     {:phase :usage})))
+   :default
+   nil)
+
+#?(:kotoba nil
+   :default
+   (do
 
 (defn- option [args flag] (second (drop-while #(not= flag %) args)))
 
@@ -108,4 +130,4 @@
                :result-output result-path :output receipt-path
                :receipt-sha256 (:receipt-sha256 value)}})
 
-    (throw (ex-info (str "not an execution command: " (pr-str (first args))) {:phase :usage}))))
+    (throw (ex-info (str "not an execution command: " (pr-str (first args))) {:phase :usage}))))))

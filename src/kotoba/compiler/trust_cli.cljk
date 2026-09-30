@@ -26,23 +26,48 @@
   parsed with the host's `parse-long`; values read back from files arrive
   in the host's guest-integer representation (a bigint on Node, see
   `bounded-edn`). The verifier compares across the two exactly."
-  {:kotoba/export [commands dispatch! now-seconds]}
-  (:require [kotoba.artifact.core :as artifact]
-            [kotoba.artifact.runtime-identity :as runtime-identity]
-            [kotoba.compiler.atomic-output :as atomic-output]
-            [kotoba.compiler.bounded-edn :as bounded-edn]
-            [kotoba.compiler.coverage :as coverage]
-            [kotoba.compiler.coverage-evidence :as coverage-evidence]
-            [kotoba.compiler.interface :as interface]
-            [kotoba.compiler.ios-aot :as ios-aot]
-            [kotoba.compiler.packaging.pe32plus :as pe32plus]
-            [kotoba.compiler.receipt :as receipt]
-            [kotoba.compiler.release :as release]
-            [kotoba.compiler.source-path :as source-path]
-            [kotoba.compiler.target-names :as target-names]
-            [kotoba.verifier :as verifier]
-            [kotoba.verifier.signing :as signing]))
+  {:kotoba/export #?(:kotoba [commands dispatch!] :default [commands dispatch! now-seconds])}
+  (:require #?@(:kotoba []
+                :default [[kotoba.artifact.core :as artifact]
+                          [kotoba.artifact.runtime-identity :as runtime-identity]
+                          [kotoba.compiler.atomic-output :as atomic-output]
+                          [kotoba.compiler.bounded-edn :as bounded-edn]
+                          [kotoba.compiler.coverage :as coverage]
+                          [kotoba.compiler.coverage-evidence :as coverage-evidence]
+                          [kotoba.compiler.interface :as interface]
+                          [kotoba.compiler.ios-aot :as ios-aot]
+                          [kotoba.compiler.packaging.pe32plus :as pe32plus]
+                          [kotoba.compiler.receipt :as receipt]
+                          [kotoba.compiler.release :as release]
+                          [kotoba.compiler.source-path :as source-path]
+                          [kotoba.compiler.target-names :as target-names]
+                          [kotoba.verifier :as verifier]
+                          [kotoba.verifier.signing :as signing]])))
 
+;; Kotoba: the trust plane signs and verifies open EDN maps (keys, trust sets,
+;; envelopes, receipts, SBOMs) through `kotoba.verifier`, which compares
+;; guest integers across hosts, and reads and writes them as EDN files. The
+;; verifier and the release/packaging modules it reaches are host values end
+;; to end, so on this route the surface is the command names and a refusal
+;; that names the reason.
+#?(:kotoba
+   (defn commands [] [:list :string]
+     (typed-list-new [:list :string]
+                     "keygen" "public-key" "inspect" "trust-key" "trust-runtime"
+                     "sign" "verify-signed" "verify" "receipt" "verify-receipt" "verify-chain"
+                     "sbom" "attest-release" "verify-release" "package-ios"
+                     "coverage" "sign-coverage-evidence" "package-aiueos-boot"))
+   :default nil)
+
+#?(:kotoba
+   (defn dispatch! [args [:list :string]] :string
+     (throw (ex-info "the trust-plane commands are not available on the Kotoba route"
+                     {:phase :usage})))
+   :default nil)
+
+#?(:kotoba nil
+   :default
+   (do
 (def commands
   "Every command this namespace answers. `bin/amu` routes exactly these to
   the Node entrypoint; the JVM CLI delegates exactly these here. One set,
@@ -305,4 +330,4 @@
          :k16-note k16-note
          :payload-sha256 (:embedded-payload-sha256 packaged)})
 
-      (usage! (str "not a trust-plane command: " (pr-str command))))))
+      (usage! (str "not a trust-plane command: " (pr-str command))))))))
