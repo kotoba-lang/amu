@@ -4,13 +4,15 @@
   Keeping policy decoding and the CLI error contract here is important: the
   Wasm/native split may reduce namespace load time, but must not create two
   subtly different admission boundaries."
-  {:kotoba/export #?(:kotoba [command-line-args execute! option options serve! source! timed usage-error!] :default [analyze-options capability-policy command-line-args emit-metadata execute! invoke option options oracle-fuel parse-policy-material read-artifact-file! read-artifact-text! read-edn-file! read-policy read-policy-material refusal serve! source! timed usage-error!])}
+  {:kotoba/export #?(:kotoba [command-line-args execute! option options read-edn-file! serve! source! timed usage-error!] :default [analyze-options capability-policy command-line-args emit-metadata execute! invoke option options oracle-fuel parse-policy-material read-artifact-file! read-artifact-text! read-edn-file! read-policy read-policy-material refusal serve! source! timed usage-error!])}
   (:require [kotoba.compiler.diagnostic :as diagnostic]
             [kotoba.compiler.kotoba-reader :as kr]
             [kotoba.compiler.posix-path :as posix-path]
             [kotoba.compiler.text-bytes :as text-bytes]
             [kotoba.compiler.host-integer :as host-integer]
             #?(:kotoba [kotoba.compiler.decimal-text :as decimal-text])
+            #?(:kotoba [kotoba.compiler.bounded-edn :as bounded-edn])
+            #?(:kotoba [kotoba.form :as form])
             [kotoba.compiler.json-text :as json-text]
             [kotoba.compiler.nbb.io :as nbb-io]
             [kotoba.compiler.source-path :as source-path]
@@ -26,7 +28,11 @@
             #?(:cljs [kotoba.compiler.nbb.host.io :as io])
             ;; Not an ability: loading, the event loop and handing the exit
             ;; status to the OS (adr-2609242330 section 1 (c)(2)).
-            #?(:cljs [kotoba.compiler.nbb.host.entry :as host-entry])))
+            #?(:cljs [kotoba.compiler.nbb.host.entry :as host-entry]))
+  ;; Kotoba: an EDN value is the recursive `:form/r` record (kotoba.form), the
+  ;; same schema `kotoba.compiler.bounded-edn` answers with.
+  #?(:kotoba (:schemas {:form/r [:record :form/r [[:tag :i64] [:s :string] [:n :i64] [:k :keyword]
+                                                  [:kids [:list [:ref :form/r]]] [:span :i64] [:data :bytes]]]})))
 
 ;; Opt-in phase timings go to stderr behind a stable marker. Normal stdout and
 ;; artifact bytes remain unchanged.
@@ -127,6 +133,20 @@
   (throw (ex-info message {:phase :usage})))
 
 (defn source! [path] (source-path/admit! path))
+
+;; Kotoba: the file is read through the app-data scope and read as EDN by the
+;; bounded reader (same bounds as below: 200000 nodes, 4096-char tokens, 128
+;; depth, 1 MiB strings), and the answer is the Form. The host definition
+;; stays where it was, in the host-only region.
+#?(:kotoba
+   (defn read-edn-file! [path :string] [:ref :form/r]
+     ;; `bounded-edn/read-file` aborts, so across the module boundary its
+     ;; interface is a result: unwrap it and abort again with the same error
+     ;; (the pattern `kotoba.lang.json/decode` uses for `json.core/decode`).
+     (let [r (bounded-edn/read-file path)]
+       (if (result-ok?-of [:result [:ref :form/r] :document] r)
+         (result-value-of [:result [:ref :form/r] :document] r (form/nil-form))
+         (throw (result-error-of [:result [:ref :form/r] :document] r (document-null)))))))
 
 ;; Everything from here to `command-line-args` decodes, narrows and reports on
 ;; host values: EDN maps, BigInts, `ex-info` data and `catch :default`. A

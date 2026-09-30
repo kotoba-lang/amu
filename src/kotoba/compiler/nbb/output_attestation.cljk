@@ -4,13 +4,45 @@
   The signature binds the committed marker, sealed provenance, primary
   artifact identity, and target.  It intentionally does not replace the
   independent output admission that callers must run first."
-  {:kotoba/export [format parse-epoch! sign signer-id statement-format verify!]}
+  {:kotoba/export #?(:kotoba [format parse-epoch! statement-format] :default [format parse-epoch! sign signer-id statement-format verify!])}
   (:require [kotoba.artifact.core :as artifact]
             [kotoba.kir.cljs-i64 :as i64]
+            [kotoba.compiler.host-integer :as host-integer]
+            #?(:kotoba [kotoba.compiler.decimal-text :as decimal-text])
             #?(:cljs ["node:crypto" :as crypto])))
 
-(def format :kotoba.output-attestation/v1)
-(def statement-format :kotoba.output-attestation-statement/v1)
+;; Kotoba: an exported constant is a function returning it.
+#?(:kotoba
+   (defn format [] :keyword :kotoba.output-attestation/v1)
+   :default
+   (def format :kotoba.output-attestation/v1))
+#?(:kotoba
+   (defn statement-format [] :keyword :kotoba.output-attestation-statement/v1)
+   :default
+   (def statement-format :kotoba.output-attestation-statement/v1))
+
+;; Kotoba: the signature time a caller types on the command line. Reading is
+;; `decimal-text` (an optional `-` and 1..18 digits -- a 19-digit time, more
+;; than year 31 billion, is refused here where the host accepts it up to the
+;; i64 maximum), and the range check is the host's: a non-negative i64. A
+;; Kotoba raise takes a keyword-keyed literal, so the two refusals are spelled
+;; out; their phase, reason and message are the host's.
+#?(:kotoba
+   (defn parse-epoch! [value :string] :i64
+     (if (decimal-text/decimal? value)
+       (let [epoch (decimal-text/parse value)]
+         (if (>= epoch 0)
+           epoch
+           (throw (ex-info "output-set signature time must be a non-negative i64"
+                           {:phase :usage :reason :invalid-time}))))
+       (throw (ex-info "output-set signature time must be a non-negative i64"
+                       {:phase :usage :reason :invalid-time})))))
+
+;; Everything below signs and verifies with node:crypto over host maps and
+;; sets; a Kotoba module has neither, so it is the host reading's alone.
+#?(:kotoba nil
+   :default
+   (do
 
 (def ^:private envelope-keys #{:format :statement :signature})
 (def ^:private statement-keys
@@ -110,7 +142,7 @@
 
 (defn parse-epoch! [value]
   (try
-    (epoch! (js/BigInt value) :invalid-time)
+    (epoch! (host-integer/exact value) :invalid-time)
     (catch :default _
       (reject! :usage :invalid-time "output-set signature time must be a non-negative i64"))))
 
@@ -200,4 +232,4 @@
       {:publisher-authenticated true
        :publisher (:signer statement)
        :publisher-attestation format
-       :publisher-validity {:not-before not-before :expires expires}})))
+       :publisher-validity {:not-before not-before :expires expires}})))))
