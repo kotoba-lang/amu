@@ -1503,10 +1503,18 @@
                                    :arity (arity-of function)}))
                        [(:name function) target])))
               stub-functions)
-        local-names (into {} (map-indexed (fn [function-index {:keys [name]}]
-                                            [name (symbol (str "kotoba_module__"
-                                                               module-index "__"
-                                                               function-index))])
+        ;; A synthesized loop helper keeps the `__kotoba_loop_<digits>` shape
+        ;; (made unique across modules): the KIR interpreter trampolines a
+        ;; self-tail call only for a helper of that name, and a helper renamed
+        ;; `kotoba_module__M__F` nested one host frame per iteration, so a loop
+        ;; of a few hundred turns exhausted the host stack on the project route.
+        local-names (into {} (map-indexed (fn [function-index {:keys [name loop-helper?]}]
+                                            [name (if loop-helper?
+                                                    (symbol (str "__kotoba_loop_"
+                                                                 (+ (* module-index 1000000) function-index)))
+                                                    (symbol (str "kotoba_module__"
+                                                                 module-index "__"
+                                                                 function-index)))])
                                           locals))
         global-dispatcher-names
         (into {}
